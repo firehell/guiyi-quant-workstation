@@ -114,7 +114,8 @@ def test_retrospective_preserves_measurement_and_gate_limits() -> None:
         "Task 05 later merged independently through PR #100",
         "PR #100 cannot be retroactively counted as Phase 3",
         "Charter metrics and separate contexts were not recorded from task start",
-        "no Phase 4/5 automation or delegation authority",
+        "no Phase 4/5",
+        "automation or delegation authority",
     ):
         assert finding in report
 
@@ -214,24 +215,27 @@ def test_retrospective_binds_each_measured_metric_to_its_authoritative_source() 
     assert "three read-only forward tests" in trial
 
 
-def test_external_task05_merge_does_not_reclassify_phase3_or_expand_authority() -> None:
-    """Later independent Task 05 delivery must not rewrite Phase 2 evidence."""
+def test_external_task05_merge_preserves_phase3_and_integration_boundaries() -> None:
+    """Later Task 05 delivery must not rewrite Phase 2 policy or Gate limits."""
     report = _report()
     decision = _section(report, "Phase 3 decision")
     design = _design()
 
     for fact in (
-        "b64453eab89692e5250a4275f04cac1bd26f02d4",
-        "a932793830e1e68a3e2c1634a38f50840a55efc5",
-        "2026-08-02T05:34:14Z",
-        "Phase 2's branch base is `0867e123`",
-        "no path overlap or merge conflict with PR #100",
         "new independent ordinary reversible task",
         "frozen Charter",
         "metrics recorded from task start",
         "new Issue/task worktree",
         "separate implementation and final-review contexts",
         "PR #100 cannot be retroactively counted as Phase 3",
+        "Source-bound GitHub PR #100 metadata",
+        "Evidence source and method: local Git inspection ran",
+        "git merge-base HEAD a9327938",
+        "cc4302b57728133a1471447902563d3abf3604fb",
+        "Phase 2 task branch itself starts at `0867e123`",
+        "zero changed-path intersection",
+        "produced no conflict markers",
+        "exact-head compatibility and integration against current `origin/develop` must be rechecked",
         "does not authorize Phase 4 or Phase 5, `main`, release, Runtime, data writes, or notifications",
     ):
         assert fact in report
@@ -240,6 +244,7 @@ def test_external_task05_merge_does_not_reclassify_phase3_or_expand_authority() 
         "Task 05 later merged independently through PR #100",
         "did not adopt or modify the then-active Task 05 worktree",
         "does not count retroactively as Phase 3",
+        "exact-head compatibility and integration against current `origin/develop` must be rechecked",
         "Phase 3：新的普通可逆工程试运行",
         "PR #100 不能追认为该试运行",
     ):

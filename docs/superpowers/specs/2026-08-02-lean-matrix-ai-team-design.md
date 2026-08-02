@@ -81,7 +81,7 @@ GitHub / develop / 外部人工 Gate
 
 当前 active 合同仍为 `docs/tasks/GY-DATA-CORE-V2.md`。Task 04 已在 `develop` 完成收尾；其 legacy historical Shadow 仅作为可选且冻结的历史观察，不是 Task 05 的前置 Gate，也不需要为本设计重新打开执行路径。
 
-在 AI-TEAM-001 / Phase 2 取样当时，Task 05 的 then-active 实现位于独立 worktree。Phase 2 不采纳、不修改、也不以此 worktree 的内容作为本任务的实现输入；Task 05 随后已通过独立的 PR #100 合入 `develop`（merge `b64453eab89692e5250a4275f04cac1bd26f02d4`，当时 head `a932793830e1e68a3e2c1634a38f50840a55efc5`）。
+在 AI-TEAM-001 / Phase 2 取样当时，Task 05 的 then-active 实现位于独立 worktree。Phase 2 不采纳、不修改、也不以此 worktree 的内容作为本任务的实现输入；Task 05 随后已通过独立的 PR #100 合入 `develop`（GitHub PR #100 metadata：merge `b64453eab89692e5250a4275f04cac1bd26f02d4`，task head `a932793830e1e68a3e2c1634a38f50840a55efc5`）。Phase 2 task branch 本身起于 `0867e123`；与 PR #100 task head 的拓扑比较共享基线为 `cc4302b57728133a1471447902563d3abf3604fb`。该次 exact-head 检查记录为零 changed-path intersection 和零 merge-tree conflict markers，但不构成永久可合入性声明；Draft PR / integration 前必须针对当前 `origin/develop` 重新检查 exact-head compatibility。
 
 ## 3. 设计目标
 
@@ -1001,7 +1001,7 @@ Phase 1 的 CLI 不创建 worktree、不调用 Git/GitHub、不检查或合并 P
 
 ### Phase 2：历史复盘与受控试运行
 
-Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. That independent merge cannot be retroactively counted as Phase 3 because the Charter metrics and implementation/final-review context separation were not recorded from task start. Phase 2 evidence does not reopen Task 04 or authorize Phase 3 execution, Phase 4/5 automation/delegation, `main`, release, Runtime, data writes, or notifications.
+Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. Before Draft PR / integration, exact-head compatibility and integration against current `origin/develop` must be rechecked. That independent merge cannot be retroactively counted as Phase 3 because the Charter metrics and implementation/final-review context separation were not recorded from task start. Phase 2 evidence does not reopen Task 04 or authorize Phase 3 execution, Phase 4/5 automation/delegation, `main`, release, Runtime, data writes, or notifications.
 
 - 以已完成的 Task 04 作为历史复盘样本，检验角色路由是否与其事实一致；
 - 在新的、独立批准任务中记录实际会话数、用户打断数、修复轮次和集成时间；

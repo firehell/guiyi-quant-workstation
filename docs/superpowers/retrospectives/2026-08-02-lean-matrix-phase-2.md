@@ -277,15 +277,25 @@ or Runtime Gate.
   interruptions are NOT_MEASURABLE for both samples. Future trials must record
   these metrics from task start rather than infer them after merge.
 - Scope boundary: Phase 2 did not adopt or modify the then-active Task 05
-  worktree. Task 05 later merged independently through PR #100 at merge
-  `b64453eab89692e5250a4275f04cac1bd26f02d4` (develop head
+  worktree. Source-bound GitHub PR #100 metadata records its independent merge
+  `b64453eab89692e5250a4275f04cac1bd26f02d4` (task head
   `a932793830e1e68a3e2c1634a38f50840a55efc5`, merged
-  2026-08-02T05:34:14Z). Phase 2's branch base is `0867e123`; it has no path overlap or merge conflict with PR #100. Zero main/release/Runtime/data-write/
-  notification authority, and no Phase 4/5 automation or delegation authority.
+  2026-08-02T05:34:14Z). Evidence source and method: local Git inspection ran
+  `git merge-base HEAD a9327938`, yielding
+  `cc4302b57728133a1471447902563d3abf3604fb`; this is the topology comparison
+  base, while the Phase 2 task branch itself starts at `0867e123`. At inspection,
+  the exact heads `d249f0a3` and `a9327938` had zero changed-path intersection
+  (a `comm -12` comparison) and `git merge-tree cc4302b5 d249f0a3 a9327938`
+  produced no conflict markers. This historical topology check does not
+  establish permanent mergeability. Before Draft PR / integration, exact-head
+  compatibility and integration against current `origin/develop` must be
+  rechecked.
+  Zero main/release/Runtime/data-write/notification authority, and no Phase 4/5
+  automation or delegation authority.
 
 ## Phase 3 decision
 
-Phase 3 permits only a new independent ordinary reversible task with a frozen Charter and metrics recorded from task start. It must begin through a new Issue/task worktree and preserve separate implementation and final-review contexts. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. PR #100 cannot be retroactively counted as Phase 3 because those Charter metrics and separate contexts were not recorded from task start. This does not authorize Phase 4 or Phase 5, `main`, release, Runtime, data writes, or notifications.
+Phase 3 permits only a new independent ordinary reversible task with a frozen Charter and metrics recorded from task start. It must begin through a new Issue/task worktree and preserve separate implementation and final-review contexts. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. PR #100 cannot be retroactively counted as Phase 3 because those Charter metrics and separate contexts were not recorded from task start. Before Phase 2 Draft PR / integration, exact-head compatibility and integration against current `origin/develop` must be rechecked. This does not authorize Phase 4 or Phase 5, `main`, release, Runtime, data writes, or notifications.
 
 - Decision: permitted only within that new independent task boundary.
 - Required human decision or Gate: the new task's ordinary approvals and any
