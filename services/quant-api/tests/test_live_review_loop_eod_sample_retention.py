@@ -102,13 +102,6 @@ def _historical_bars() -> list[dict[str, object]]:
 def _decision(session: Session, *, result_kind: str = "no_signal") -> SignalDecision:
     bar_end = datetime(2026, 8, 2, 13, 15, tzinfo=UTC)
     schema = StrategyInputSchema.build(
-        strategy_code="task06_causal_test_observation",
-        strategy_version="v1.0",
-        policy_id="task06_causal_confirmed_close_test_v1",
-        indicator_code="causal_close_change_test",
-        indicator_version="test-v1",
-        parameters={"comparison": "close_above_previous_close", "lookback": 2},
-        recipe_version="task06_causal_confirmed_close_test_recipe_v1",
         trading_day=date(2026, 8, 3),
         actual_contract="JM2609",
         decision_bar=_payload(bar_end),
@@ -165,7 +158,7 @@ def test_eod_records_four_deterministic_outcomes(
         }
         row = EodReconciliationService(session).complete(
             decision,
-            recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+            recipe_version="jm_ema21_confirmed_close_direction_v1",
             provider_final_snapshot=snapshot,
             provider_data_version="rqdata-test-final-v1",
             provider_request_digest="c" * 64,
@@ -204,7 +197,7 @@ def test_eod_requires_the_original_strategy_recipe_and_identity() -> None:
         with pytest.raises(ValueError, match="EOD_INPUT_IDENTITY_MISMATCH"):
             service.complete(
                 decision,
-                recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+                recipe_version="jm_ema21_confirmed_close_direction_v1",
                 provider_final_snapshot=changed_identity,
                 provider_data_version="rqdata-test-final-v1",
                 provider_request_digest="c" * 64,
@@ -267,8 +260,11 @@ def test_eod_provider_final_loader_uses_exact_rqdata_adapter_window() -> None:
         assert len(provider_final.request_digest) == 64
         strategy = provider_final.strategy_input["strategy"]
         assert strategy["parameters"] == {
-            "comparison": "close_above_previous_close",
-            "lookback": 2,
+            "comparison": "confirmed_close_vs_ema21",
+            "equal_close_policy": "no_signal",
+            "period": 21,
+            "round_digits": 6,
+            "seed_policy": "sma_window",
         }
         assert strategy["future_looking"] is False
         assert strategy["auto_order"] is False
@@ -289,9 +285,8 @@ def test_eod_retries_exactly_three_times_then_records_gap() -> None:
         for expected_attempt in range(1, 4):
             row = service.run(
                 decision,
-                recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+                recipe_version="jm_ema21_confirmed_close_direction_v1",
                 provider_final_loader=loader,
-                evaluator=lambda *_: {},
                 gap_recorder=gap_recorder,
             )
             assert row.attempt_count == expected_attempt
@@ -301,9 +296,8 @@ def test_eod_retries_exactly_three_times_then_records_gap() -> None:
 
         again = service.run(
             decision,
-            recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+            recipe_version="jm_ema21_confirmed_close_direction_v1",
             provider_final_loader=loader,
-            evaluator=lambda *_: {},
             gap_recorder=gap_recorder,
         )
         assert again.attempt_count == 3
@@ -315,11 +309,10 @@ def test_eod_persists_only_redacted_error_fingerprint() -> None:
         decision = _decision(session)
         row = EodReconciliationService(session).run(
             decision,
-            recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+            recipe_version="jm_ema21_confirmed_close_direction_v1",
             provider_final_loader=lambda _: (_ for _ in ()).throw(
                 RuntimeError("password=do-not-store https://secret.example/webhook")
             ),
-            evaluator=lambda *_: {},
             gap_recorder=lambda *_: None,
         )
 
@@ -378,7 +371,7 @@ def test_research_sample_requires_complete_human_labels_and_is_idempotent() -> N
         decision = _decision(session)
         reconciliation = EodReconciliationService(session).complete(
             decision,
-            recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+            recipe_version="jm_ema21_confirmed_close_direction_v1",
             provider_final_snapshot=decision.input_snapshot,
             provider_data_version="rqdata-test-final-v1",
             provider_request_digest="c" * 64,
@@ -420,7 +413,7 @@ def test_retention_plan_is_exact_protects_sample_and_rejects_drift() -> None:
         session.expire(decision)
         reconciliation = EodReconciliationService(session).complete(
             decision,
-            recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+            recipe_version="jm_ema21_confirmed_close_direction_v1",
             provider_final_snapshot=decision.input_snapshot,
             provider_data_version="rqdata-test-final-v1",
             provider_request_digest="c" * 64,

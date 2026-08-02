@@ -427,7 +427,7 @@ def test_empty_0027_upgrade_downgrade_upgrade_roundtrip(
     assert CANONICAL_VIEW not in parent_snapshot["views"]
 
     command.upgrade(config, "head")
-    assert _revision(engine) == REVISION
+    assert _revision(engine) == HEAD_REVISION
     assert CANONICAL_VIEW in inspect(engine).get_view_names()
 
     command.downgrade(config, PARENT_REVISION)
@@ -435,7 +435,7 @@ def test_empty_0027_upgrade_downgrade_upgrade_roundtrip(
     assert _dataset_schema_snapshot(engine) == parent_snapshot
 
     command.upgrade(config, "head")
-    assert _revision(engine) == REVISION
+    assert _revision(engine) == HEAD_REVISION
 
 
 def test_0027_upgrade_fails_closed_without_partial_schema_change_when_nonempty(
@@ -481,7 +481,7 @@ def test_0027_downgrade_fails_closed_without_partial_schema_change_when_nonempty
     ):
         command.downgrade(config, PARENT_REVISION)
 
-    assert _revision(engine) == REVISION
+    assert _revision(engine) == HEAD_REVISION
     assert _dataset_schema_snapshot(engine) == before
     with engine.connect() as connection:
         stored = connection.execute(

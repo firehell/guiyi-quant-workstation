@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 
 from app.live_review_loop.contracts import StrategyInputSchema
 from app.live_review_loop.decisions import SignalDecisionStore
 from app.live_review_loop.eod import EodReconciliationService
+from app.live_review_loop.evaluator import ApprovedEma21DirectionEvaluator
 from app.live_review_loop.gates import LiveReviewExecutionGate
 from app.live_review_loop.live import LiveObservationInput, LiveObservationStore
 from app.live_review_loop.provider_final import ProviderFinalSnapshot
@@ -20,35 +20,19 @@ from app.models.live_review_loop import (
 )
 
 
-class DecisionEvaluator(Protocol):
-    def evaluate_schema(
-        self, strategy_input: StrategyInputSchema
-    ) -> Mapping[str, Any]: ...
-
-    def __call__(
-        self,
-        decision: SignalDecision,
-        snapshot: Mapping[str, Any],
-    ) -> Mapping[str, Any]: ...
-
-
-class LiveReviewEvaluatorUnavailableError(RuntimeError):
-    pass
-
-
 class LiveReviewRuntime:
     """The only enabled execution facade; domain services remain pure/testable."""
+
+    __slots__ = ("session", "gate")
 
     def __init__(
         self,
         session: Session,
         *,
         environ: Mapping[str, str],
-        evaluator: DecisionEvaluator | None = None,
     ) -> None:
         self.session = session
         self.gate = LiveReviewExecutionGate(environ)
-        self.evaluator = evaluator
 
     def record_live(self, item: LiveObservationInput) -> LiveObservationBar:
         self.gate.require_live()
@@ -61,8 +45,7 @@ class LiveReviewRuntime:
         decision_at: datetime,
     ) -> SignalDecision:
         self.gate.require_live()
-        evaluator = self._require_evaluator()
-        result = evaluator.evaluate_schema(strategy_input)
+        result = ApprovedEma21DirectionEvaluator().evaluate_schema(strategy_input)
         return SignalDecisionStore(self.session).create(
             strategy_input,
             result_kind=str(result["result_kind"]),
@@ -84,17 +67,9 @@ class LiveReviewRuntime:
             decision,
             recipe_version=recipe_version,
             provider_final_loader=provider_final_loader,
-            evaluator=self._require_evaluator(),
             gap_recorder=gap_recorder,
         )
 
     def apply_retention(self, plan: RetentionPlan) -> dict[str, int]:
         self.gate.require_retention()
         return RetentionService(self.session).apply(plan)
-
-    def _require_evaluator(self) -> DecisionEvaluator:
-        if self.evaluator is None:
-            raise LiveReviewEvaluatorUnavailableError(
-                "LIVE_REVIEW_APPROVED_EVALUATOR_REQUIRED"
-            )
-        return self.evaluator

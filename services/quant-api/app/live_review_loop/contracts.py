@@ -6,19 +6,26 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import re
+from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 
 STRATEGY_INPUT_SCHEMA_VERSION = "strategy_input_v1"
 FINGERPRINT_RECIPE_VERSION = "strategy_fingerprint_v1"
 PARAMETER_SCHEMA_VERSION = "strategy_parameters_v1"
-_IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\Z")
-_FORBIDDEN_FUTURE_LOOKING_IDENTITIES = {
-    "htdy_original_realtime_first_seen",
-    "htdy_original_xma_15m_first_seen_v1",
-    "htdy_original_xma_15m_close_first_seen_v1",
-    "huotian_dayou_original_v0",
-}
+APPROVED_STRATEGY_CODE = "jm_data_core_v2_ema21_direction_observation"
+APPROVED_STRATEGY_VERSION = "v1.0"
+APPROVED_INDICATOR_CODE = "ema21"
+APPROVED_INDICATOR_VERSION = "v1"
+APPROVED_POLICY_ID = "ema_sma_window_v1"
+APPROVED_RECIPE_VERSION = "jm_ema21_confirmed_close_direction_v1"
+APPROVED_PARAMETERS: Mapping[str, Any] = MappingProxyType({
+    "period": 21,
+    "seed_policy": "sma_window",
+    "round_digits": 6,
+    "comparison": "confirmed_close_vs_ema21",
+    "equal_close_policy": "no_signal",
+})
 
 
 def _canonical_value(value: Any) -> Any:
@@ -59,7 +66,7 @@ def canonical_digest(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class StrategyInputSchema:
     snapshot: dict[str, Any]
     input_digest: str
@@ -74,26 +81,20 @@ class StrategyInputSchema:
     trading_day: date
     actual_contract: str
 
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        raise TypeError("STRATEGY_INPUT_TRUSTED_BUILDER_REQUIRED")
+
     @classmethod
     def build(
         cls,
         *,
-        strategy_code: str,
-        strategy_version: str,
-        indicator_code: str,
-        indicator_version: str,
-        policy_id: str,
-        parameters: Mapping[str, Any],
-        recipe_version: str,
         trading_day: date,
         actual_contract: str,
         decision_bar: Mapping[str, Any],
         historical_input: Mapping[str, Any],
         live_inputs: Sequence[Mapping[str, Any]],
     ) -> StrategyInputSchema:
-        if not isinstance(parameters, Mapping):
-            raise ValueError("STRATEGY_PARAMETERS_MAPPING_REQUIRED")
-        normalized_parameters = _canonical_value(dict(parameters))
+        normalized_parameters = _canonical_value(APPROVED_PARAMETERS)
         parameter_digest = canonical_digest(
             {
                 "schema_version": PARAMETER_SCHEMA_VERSION,
@@ -109,14 +110,6 @@ class StrategyInputSchema:
             decision_bar,
             trading_day=trading_day,
             actual_contract=normalized_contract,
-        )
-        _validate_strategy_contract(
-            strategy_code=strategy_code,
-            strategy_version=strategy_version,
-            indicator_code=indicator_code,
-            indicator_version=indicator_version,
-            policy_id=policy_id,
-            recipe_version=recipe_version,
         )
         _validate_historical_input(
             historical_input,
@@ -134,15 +127,15 @@ class StrategyInputSchema:
                 "schema_version": STRATEGY_INPUT_SCHEMA_VERSION,
                 "trigger": "confirmed_15m_close",
                 "strategy": {
-                    "code": strategy_code,
-                    "version": strategy_version,
-                    "indicator_code": indicator_code,
-                    "indicator_version": indicator_version,
-                    "policy_id": policy_id,
+                    "code": APPROVED_STRATEGY_CODE,
+                    "version": APPROVED_STRATEGY_VERSION,
+                    "indicator_code": APPROVED_INDICATOR_CODE,
+                    "indicator_version": APPROVED_INDICATOR_VERSION,
+                    "policy_id": APPROVED_POLICY_ID,
                     "parameters_schema_version": PARAMETER_SCHEMA_VERSION,
                     "parameters": normalized_parameters,
                     "parameter_digest": parameter_digest,
-                    "recipe_version": recipe_version,
+                    "recipe_version": APPROVED_RECIPE_VERSION,
                     "purpose": "observation_only",
                     "future_looking": False,
                     "repainting_accepted": False,
@@ -166,27 +159,31 @@ class StrategyInputSchema:
             {
                 "fingerprint_recipe_version": FINGERPRINT_RECIPE_VERSION,
                 "input_digest": input_digest,
-                "strategy_code": strategy_code,
-                "strategy_version": strategy_version,
-                "policy_id": policy_id,
+                "strategy_code": APPROVED_STRATEGY_CODE,
+                "strategy_version": APPROVED_STRATEGY_VERSION,
+                "policy_id": APPROVED_POLICY_ID,
                 "parameter_digest": parameter_digest,
-                "recipe_version": recipe_version,
+                "recipe_version": APPROVED_RECIPE_VERSION,
             }
         )
-        return cls(
-            snapshot=snapshot,
-            input_digest=input_digest,
-            fingerprint=fingerprint,
-            strategy_code=strategy_code,
-            strategy_version=strategy_version,
-            indicator_code=indicator_code,
-            indicator_version=indicator_version,
-            policy_id=policy_id,
-            parameter_digest=parameter_digest,
-            recipe_version=recipe_version,
-            trading_day=trading_day,
-            actual_contract=normalized_contract,
-        )
+        values = {
+            "snapshot": snapshot,
+            "input_digest": input_digest,
+            "fingerprint": fingerprint,
+            "strategy_code": APPROVED_STRATEGY_CODE,
+            "strategy_version": APPROVED_STRATEGY_VERSION,
+            "indicator_code": APPROVED_INDICATOR_CODE,
+            "indicator_version": APPROVED_INDICATOR_VERSION,
+            "policy_id": APPROVED_POLICY_ID,
+            "parameter_digest": parameter_digest,
+            "recipe_version": APPROVED_RECIPE_VERSION,
+            "trading_day": trading_day,
+            "actual_contract": normalized_contract,
+        }
+        instance = object.__new__(cls)
+        for name in cls.__dataclass_fields__:
+            object.__setattr__(instance, name, values[name])
+        return instance
 
 
 def _validate_decision_bar(
@@ -220,32 +217,6 @@ def _validate_decision_bar(
         or bar_end.utcoffset() is None
     ):
         raise ValueError("STRATEGY_DECISION_BAR_CONFIRMED_15M_REQUIRED")
-
-
-def _validate_strategy_contract(
-    *,
-    strategy_code: str,
-    strategy_version: str,
-    indicator_code: str,
-    indicator_version: str,
-    policy_id: str,
-    recipe_version: str,
-) -> None:
-    identities = (
-        strategy_code,
-        strategy_version,
-        indicator_code,
-        indicator_version,
-        policy_id,
-        recipe_version,
-    )
-    if any(
-        not isinstance(value, str)
-        or _IDENTIFIER.fullmatch(value.strip()) is None
-        or value.strip() in _FORBIDDEN_FUTURE_LOOKING_IDENTITIES
-        for value in identities
-    ):
-        raise ValueError("STRATEGY_POLICY_CONTRACT_INVALID")
 
 
 def _validate_historical_input(

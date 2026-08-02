@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.live_review_loop.contracts import canonical_digest
+from app.live_review_loop.evaluator import ApprovedEma21DirectionEvaluator
 from app.data_core.catalog import GapWindow, HistoricalCatalog
 from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
 from app.models.data_center import utc_now
@@ -94,7 +95,6 @@ class EodReconciliationService:
         *,
         recipe_version: str,
         provider_final_loader: Callable[[SignalDecision], ProviderFinalSnapshot],
-        evaluator: Callable[[SignalDecision, Mapping[str, Any]], Mapping[str, Any]],
         gap_recorder: Callable[[SignalDecision, datetime, datetime], None],
     ) -> SignalDecisionReconciliation:
         _validate_recipe(decision, recipe_version)
@@ -129,7 +129,10 @@ class EodReconciliationService:
                 gap_recorder(decision, decision.input_window_start, decision.input_window_end)
             self.session.flush()
             return row
-        result = evaluator(decision, provider_final.strategy_input)
+        result = ApprovedEma21DirectionEvaluator()(
+            decision,
+            provider_final.strategy_input,
+        )
         return self.complete(
             decision,
             recipe_version=recipe_version,

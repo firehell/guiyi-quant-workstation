@@ -45,7 +45,9 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
   `notification.enabled=false`；Adapter 不导入 Session/writer，不创建或修改本节任何表。
 - Task 06 clean-start candidate 新增 immutable `SignalDecision` 作为 confirmed 15m 判断账本，但明确
   不创建 `SignalEvent` 或 `SignalNotification`。`signal_events.decision_id` 只是 additive/reserved
-  schema，不构成 writer 授权；EOD、repair、replay、recompute 均无事件服务，因此不得补发。
+  schema，不构成 writer 授权；其唯一 evaluator 固定为 JM confirmed 15m close 对因果 EMA21 的
+  observation-only 判断，且 `auto_order=false`。EOD、repair、replay、recompute 均无事件服务，
+  因此不得补发。
 
 ## 2. 数据边界
 

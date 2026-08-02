@@ -201,7 +201,8 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_review_loop_models.py \
   services/quant-api/tests/test_live_review_loop_contracts.py \
   services/quant-api/tests/test_live_review_loop_eod_sample_retention.py \
-  services/quant-api/tests/test_live_review_loop_api_and_event_gate.py
+  services/quant-api/tests/test_live_review_loop_api_and_event_gate.py \
+  services/quant-api/tests/test_runtime_health.py
 
 PYTHONPATH=services/quant-api \
 uv run --project services/quant-api pytest -q \
@@ -213,6 +214,8 @@ uv run --project services/quant-api pytest -q \
 未配置时的
 skip 只证明 offline SQL/head tests，不满足 Task 06 migration 验收。所有 Task 06 flags 默认 false；
 disabled smoke 不读取 RQData、不写业务表、不启动 scheduler、不创建 SignalEvent/notification。
+合同测试同时冻结 trusted builder 的 EMA21 identity/parameters/digest/fingerprint golden vector、
+long/short/equal 三态，以及 Runtime/EOD 不允许注入其他 evaluator 的边界。
 
 ## 数据、回测与运行时只读验证
 

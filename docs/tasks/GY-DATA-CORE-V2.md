@@ -76,9 +76,10 @@ live 1m 与盘中聚合保存在 PostgreSQL observation 层。正式策略判断
 修复、补数、replay 与 EOD 重算永不补发通知。
 
 EOD 重新从 RQData 获取 provider-final 数据，先比较输入指纹，再以原 strategy/schema/recipe
-确定性重算结果。参数对象由 StrategyInput trusted builder 内部计算 digest；不接受
-外部传入的任意参数摘要。Task 06 当前不注册新 evaluator，未获得 owner 批准的 causal
-strategy/indicator/policy/parameters/recipe 时必须 fail-closed；live bar 不复制或晋升为
+确定性重算结果。StrategyInput trusted builder 固定
+`jm_data_core_v2_ema21_direction_observation/v1.0`、`ema21/v1`、`ema_sma_window_v1`、固定参数与
+`jm_ema21_confirmed_close_direction_v1`，内部计算 digest，不接受外部 identity、parameters 或摘要。
+Runtime 与 EOD 只使用该 confirmed-close EMA21 evaluator；live bar 不复制或晋升为
 historical canonical。
 
 ### 2.4 Retention 与受控删除
@@ -147,7 +148,7 @@ lineage，不再逐项调度。
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
 | 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（本 task PR merge 后生效）；exact-head independent Review=`CLEAN_FOR_INTEGRATION`；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 external Gate |
-| 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | `BLOCKED_LIVE_EOD_CONTRACT`（branch-local infrastructure candidate）；隔离 PG 通过；未注册 owner-approved causal evaluator，production incident owner decision/CI/integration 也未完成，默认 disabled |
+| 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | `BLOCKED_AT_PRODUCTION_MIGRATION_GATE`（branch-local candidate）；固定 EMA21 evaluator 已实现，默认 disabled；fresh backup、exact approval、CI/Review/integration 未完成 |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
@@ -160,14 +161,16 @@ Task 07 migration/legacy evidence -> Task 08 release/Runtime`；任何受控删�
 
 Task 06 首次隔离 migration 测试发生 URL 覆盖 incident，项目数据库已意外到 empty/disabled
 `20260802_0028`。该操作没有事前 Gate，不是合规 acceptance。根因、空表/flags 证据、隔离库复测
-和 downgrade/保留选项见 `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`；owner 决定前禁止继续
-生产 schema、真实 live/EOD、scheduler、Runtime 或通知操作。
+和 downgrade/保留选项见 `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`；Owner 已选择保留并追认
+当前 empty/disabled `0028`，但该 ratification 不改写事故性质，也不授权继续生产 schema、真实
+live/EOD、scheduler、Runtime 或通知操作。
 branch-local candidate 后续新增 `20260802_0029`，把 `revision + confirmed` 纳入 immutable live
 identity；`20260802_0030` 再以 PostgreSQL trigger 拒绝 SignalDecision UPDATE。生产库未执行
 `0029/0030`；`20260802_0031` 持久化 provider-final data version/request digest。生产库未执行
 `0029..0031`，仍停在 incident `0028`。
 生产 schema exact scope、备份/回滚与 disabled smoke 见
-`GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`；该 packet 当前仍为 blocked，不是执行授权。
+`GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`；该 packet 仍等待 exact reviewed head 与 fresh backup
+前置批准，不是执行授权。
 
 ### 4.0 Task 04 closeout Owner 决策与正式验收（2026-08-02）
 

@@ -46,14 +46,18 @@ research_samples`。新路径仅接受 `jm + rank=1 actual contract + confirmed 
 不双写；Task 07 前不删除。
 
 `StrategyInputSchema v1` 以 canonical JSON 固定 Decimal、UTC 时间、DatasetKey/manifest、策略、
-indicator、policy、recipe、历史 15m 输入与有序 live 1m；参数对象由 trusted builder 内部
-canonicalize 并生成 parameter digest，不接受调用方伪造的 digest。该合同固定
+indicator、policy、recipe、历史 15m 输入与有序 live 1m；trusted builder 固定唯一合同
+`jm_data_core_v2_ema21_direction_observation/v1.0 + ema21/v1 + ema_sma_window_v1 +
+jm_ema21_confirmed_close_direction_v1` 及 `period=21 / sma_window / round_digits=6 /
+confirmed_close_vs_ema21 / equal=no_signal`，不接受调用方注入 identity、parameters 或 digest。该合同固定
 `observation_only=true / future_looking=false / repainting_accepted=false /
 historical_backtest_allowed=false / auto_order=false`，并显式拒绝既有 centered-XMA original
 strategy/indicator/policy identity。历史输入窗口精确 128 根。
 RQData provider-final loader 通过 data-core adapter 与 `validate_provider_batch` 重新获取 exact 1m
-window，持久化 provider data version/request digest。当前未绑定任何新的正式 evaluator；
-`LiveReviewRuntime` 只接受组合根显式注入的 approved evaluator，未配置时 fail-closed。
+window，持久化 provider data version/request digest。固定 evaluator 只消费 128 根 confirmed
+historical 15m 与当前 confirmed decision bar，复用 quant-core EMA21 registry/policy/kernel；close
+大于/小于 EMA 分别记录 long/short，等于记录 no_signal。`LiveReviewRuntime` 不提供 evaluator 注入点，
+EOD 也必须复用同一 evaluator。
 SignalDecision create-only；有信号和无信号均记录。Task 06 不创建 SignalEvent 或 notification；
 future first-seen 双时间语义必须另走既有 frozen Event 合同与独立 Gate。
 
@@ -61,8 +65,9 @@ future first-seen 双时间语义必须另走既有 frozen Event 合同与独立
 false 的 flag fail-closed；SignalEvent/notification flag 继续保留为健康状态读回项但 Task 06 无写入器。
 底层纯 domain service 只供编排与测试复用，不是 Runtime 入口。
 
-以上仍只是默认 disabled 的基础设施候选；在 owner 冻结具体 causal evaluator 合同前，
-状态为 `BLOCKED_LIVE_EOD_CONTRACT`。生产 migration、真实 provider-final 读取、scheduler、Runtime、
+以上仍只是默认 disabled 的基础设施候选；`/api/runtime/health` 的
+`data_core_v2_live_review` 必须回读 disabled、observation_only 与 auto_order=false。生产 migration、
+真实 provider-final 读取、scheduler、Runtime、
 通知和 Task 06 complete 也均需后续独立 Gate。
 
 ### 2.0 Task 04 Gate 前实现边界

@@ -15,8 +15,8 @@ from app.live_review_loop.decisions import SignalDecisionStore
 from app.live_review_loop.eod import EodReconciliationService
 from app.live_review_loop.contracts import StrategyInputSchema
 from app.live_review_loop.gates import LiveReviewFeatureDisabledError
+from app.live_review_loop.provider_final import ProviderFinalSnapshot
 from app.live_review_loop.runtime import (
-    LiveReviewEvaluatorUnavailableError,
     LiveReviewRuntime,
 )
 from app.main import app
@@ -52,7 +52,7 @@ def _historical_bars() -> list[dict[str, object]]:
     ]
 
 
-def _create_decision(session, *, result_kind: str = "signal") -> SignalDecision:
+def _strategy_input() -> StrategyInputSchema:
     bar_end = datetime(2026, 8, 2, 13, 15, tzinfo=UTC)
     decision_bar = {
         "provider": "rqdata",
@@ -91,14 +91,7 @@ def _create_decision(session, *, result_kind: str = "signal") -> SignalDecision:
                 "expected_bar_count": 1,
             }
         )
-    schema = StrategyInputSchema.build(
-        strategy_code="task06_causal_test_observation",
-        strategy_version="v1.0",
-        policy_id="task06_causal_confirmed_close_test_v1",
-        indicator_code="causal_close_change_test",
-        indicator_version="test-v1",
-        parameters={"comparison": "close_above_previous_close", "lookback": 2},
-        recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+    return StrategyInputSchema.build(
         trading_day=date(2026, 8, 3),
         actual_contract="JM2609",
         decision_bar=decision_bar,
@@ -120,12 +113,16 @@ def _create_decision(session, *, result_kind: str = "signal") -> SignalDecision:
         },
         live_inputs=live_inputs,
     )
+
+
+def _create_decision(session, *, result_kind: str = "signal") -> SignalDecision:
+    schema = _strategy_input()
     return SignalDecisionStore(session).create(
         schema,
         result_kind=result_kind,
         direction="long" if result_kind == "signal" else None,
         result_payload={"candidates": ["long"] if result_kind == "signal" else []},
-        decision_at=bar_end,
+        decision_at=datetime(2026, 8, 2, 13, 15, tzinfo=UTC),
     )
 
 
@@ -137,7 +134,7 @@ def test_review_api_lists_decisions_and_extracts_sample_after_complete_labels(
         decision = _create_decision(session)
         EodReconciliationService(session).complete(
             decision,
-            recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+            recipe_version="jm_ema21_confirmed_close_direction_v1",
             provider_final_snapshot=decision.input_snapshot,
             provider_data_version="rqdata-test-final-v1",
             provider_request_digest="c" * 64,
@@ -219,7 +216,7 @@ def test_runtime_execution_facade_fails_closed_when_flags_are_absent() -> None:
         ):
             runtime.reconcile_eod(
                 decision,
-                recipe_version="task06_causal_confirmed_close_test_recipe_v1",
+                recipe_version="jm_ema21_confirmed_close_direction_v1",
                 provider_final_loader=lambda _: {},
                 gap_recorder=lambda *_: None,
             )
@@ -227,37 +224,59 @@ def test_runtime_execution_facade_fails_closed_when_flags_are_absent() -> None:
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
 
 
-def test_runtime_requires_an_explicit_approved_evaluator_when_live_gate_is_enabled() -> (
-    None
-):
+def test_runtime_binds_the_approved_evaluator_when_live_gate_is_enabled() -> None:
     SessionLocal = _database()
     with SessionLocal() as session:
-        decision = _create_decision(session)
+        schema = _strategy_input()
         runtime = LiveReviewRuntime(
             session,
             environ={"GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED": "true"},
         )
 
-        with pytest.raises(
-            LiveReviewEvaluatorUnavailableError,
-            match="LIVE_REVIEW_APPROVED_EVALUATOR_REQUIRED",
-        ):
-            runtime.create_decision(
-                StrategyInputSchema(
-                    snapshot=decision.input_snapshot,
-                    input_digest=decision.input_digest,
-                    fingerprint=decision.fingerprint,
-                    strategy_code=decision.strategy_code,
-                    strategy_version=decision.strategy_version,
-                    indicator_code="causal_close_change_test",
-                    indicator_version="test-v1",
-                    policy_id=decision.policy_id,
-                    parameter_digest=decision.parameter_digest,
-                    recipe_version=decision.input_snapshot["strategy"][
-                        "recipe_version"
-                    ],
-                    trading_day=decision.trading_day,
-                    actual_contract=decision.actual_contract,
-                ),
-                decision_at=decision.decision_at,
+        created = runtime.create_decision(
+            schema,
+            decision_at=datetime(2026, 8, 2, 13, 15, tzinfo=UTC),
+        )
+        assert created.result_kind in {"signal", "no_signal"}
+
+
+def test_runtime_does_not_accept_an_injected_evaluator() -> None:
+    SessionLocal = _database()
+    with SessionLocal() as session:
+        with pytest.raises(TypeError, match="unexpected keyword argument 'evaluator'"):
+            LiveReviewRuntime(
+                session,
+                environ={},
+                evaluator=lambda *_: {},  # type: ignore[call-arg]
             )
+
+        runtime = LiveReviewRuntime(session, environ={})
+        with pytest.raises(AttributeError):
+            runtime.evaluator = lambda *_: {}  # type: ignore[attr-defined]
+
+
+def test_runtime_eod_reuses_the_approved_ema21_evaluator() -> None:
+    SessionLocal = _database()
+    with SessionLocal() as session:
+        decision = _create_decision(session)
+        runtime = LiveReviewRuntime(
+            session,
+            environ={"GUIYI_DATA_CORE_V2_EOD_ENABLED": "true"},
+        )
+
+        reconciliation = runtime.reconcile_eod(
+            decision,
+            recipe_version="jm_ema21_confirmed_close_direction_v1",
+            provider_final_loader=lambda _: ProviderFinalSnapshot(
+                strategy_input=decision.input_snapshot,
+                data_version="rqdata-test-final-v1",
+                request_digest="d" * 64,
+            ),
+            gap_recorder=lambda *_: None,
+        )
+
+        assert reconciliation.status == "completed"
+        assert reconciliation.recomputed_result["payload"]["indicator_code"] == "ema21"
+        assert reconciliation.recomputed_result["payload"]["auto_order"] is False
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0

@@ -36,11 +36,13 @@ provider-final lineage；最终隔离库已对 head `0031` 完成
 并在 Alembic 执行前把测试进程 `DATABASE_URL` 明确绑定到隔离库。测试不能再只设置会被
 `env.py` 覆盖的 `sqlalchemy.url`。
 
-## 当前 Gate
+## Owner 处置决定与当前 Gate
 
-在 owner 明确选择前，不再执行任何生产 schema 写操作。
+Owner 于 2026-08-02 明确选择保留并追认当前 additive、empty、disabled `0028`，且选择在后续
+`0028 -> 0031` 前生成系统数据卷上的 fresh 最小数据库备份。该决定只处置事故后的当前状态，
+不把未事前批准的操作改写为合规 migration receipt。
 
-推荐恢复选项：
+未采用的恢复选项：
 
 1. 先使用仓库现行业务数据库备份流程生成新备份证据；
 2. 再在 flags 全 false、新表全空、migration hash 精确匹配时执行
@@ -48,8 +50,8 @@ provider-final lineage；最终隔离库已对 head `0031` 完成
 3. 回读 revision=`20260730_0027`、五张表不存在、`signal_events.decision_id` 不存在；
 4. 待 Task 06 exact-head Review/CI 与正式 approval packet 通过后重新 apply 到 head `0031`。
 
-备选处置：owner 可明确批准保留当前 additive/empty/disabled `0028`，但必须记录为 incident
-ratification；随后仍需对 exact reviewed `0029..0031` 单独批准并回读。任何 ratification 都不授权真实业务
+已采用处置：保留当前 additive/empty/disabled `0028`；随后仍需对 exact reviewed `0029..0031`
+单独批准并回读。该 ratification 不授权真实业务
 写入、scheduler、Runtime、通知、release 或 Task 06 完成。
 
 ## 停止条件

@@ -76,6 +76,16 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
     assert payload["components"]["notification_retry"]["sent_count"] == 1
     assert payload["components"]["live_checkpoints"]["status"] == "disabled"
     assert payload["components"]["notification_retry"]["status"] == "disabled"
+    assert payload["components"]["data_core_v2_live_review"] == {
+        "status": "disabled",
+        "live_decision_enabled": False,
+        "eod_enabled": False,
+        "retention_scheduler_enabled": False,
+        "notification_enabled": False,
+        "review_enabled": False,
+        "auto_order": False,
+        "observation_only": True,
+    }
     after_market = payload["components"]["after_market_scheduler"]
     assert after_market["status"] == "disabled"
     assert after_market["enabled"] is False

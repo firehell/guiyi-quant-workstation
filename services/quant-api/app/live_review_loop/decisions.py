@@ -12,6 +12,7 @@ from app.live_review_loop.contracts import (
     StrategyInputSchema,
     canonical_digest,
 )
+from app.live_review_loop.evaluator import ApprovedEma21DirectionEvaluator
 from app.models.live_review_loop import SignalDecision
 
 
@@ -32,6 +33,7 @@ class SignalDecisionStore:
         result_payload: Mapping[str, Any],
         decision_at: datetime,
     ) -> SignalDecision:
+        ApprovedEma21DirectionEvaluator().evaluate_schema(strategy_input)
         if result_kind not in {"signal", "no_signal"}:
             raise ValueError("SIGNAL_DECISION_RESULT_KIND_INVALID")
         if (result_kind == "signal" and direction not in {"long", "short"}) or (
