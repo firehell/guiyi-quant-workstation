@@ -94,7 +94,7 @@ def test_inventory_is_deterministic_and_classifies_read_only_surfaces(tmp_path: 
 
 def test_market_data_inventory_columns_match_real_models() -> None:
     assert {"id", "provider", "data_type", "instrument_symbol", "contract_code", "period", "file_path", "checksum", "data_version", "data_role", "quality_status"} <= set(MarketDataFile.__table__.columns.keys())
-    assert {"id", "provider", "symbol", "contract_or_series", "frequency", "schema_version"} <= set(MarketDataset.__table__.columns.keys())
+    assert {"id", "provider", "symbol", "contract_or_series", "frequency", "adjustment", "schema_version"} <= set(MarketDataset.__table__.columns.keys())
     assert {"id", "dataset_id", "file_uri", "manifest_uri", "manifest_digest", "checksum", "manifest_version"} <= set(MarketPartition.__table__.columns.keys())
 
 
@@ -448,7 +448,7 @@ def test_reference_scan_keeps_legacy_consumer_tests_and_fails_closed_on_ambiguou
     ("text", "expected_state"),
     [
         ("frozen backtest reference", "review_required"),
-        ("compatibility-only backtest is still used", "active"),
+        ("compatibility-only backtest is still used", "review_required"),
         ("historical snapshot; not active Gate: backtest", "historical"),
         ("superseded and unused backtest", "review_required"),
         ("历史快照且非 active Gate：backtest", "historical"),
@@ -521,6 +521,28 @@ def test_archive_code_and_active_override_inside_historical_section_still_block_
 
     locations = next(category for category in result["categories"] if category["category"] == "backtest")["reference_locations"]
     assert {item["reference_state"] for item in locations} >= {"active"}
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "仅历史引用：old backtest; current signal remains active",
+        "Historical snapshot; not active Gate: old backtest; current signal is active",
+    ],
+)
+def test_mixed_historical_marker_with_current_active_text_blocks_task07(tmp_path: Path, text: str) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    (repo_root / "reference.md").write_text(text, encoding="utf-8")
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+    location = next(category for category in result["categories"] if category["category"] == "backtest")["reference_locations"][0]
+    assert location["reference_state"] in {"active", "review_required"}
     assert result["task07_zero_active_reference_eligible"] is False
 
 
@@ -632,6 +654,7 @@ def _market_data_file_connection() -> sqlite3.Connection:
             symbol TEXT NOT NULL,
             contract_or_series TEXT NOT NULL,
             frequency TEXT NOT NULL,
+            adjustment TEXT NOT NULL,
             schema_version TEXT NOT NULL
         );
         CREATE TABLE market_partitions (
@@ -643,7 +666,7 @@ def _market_data_file_connection() -> sqlite3.Connection:
             checksum TEXT NOT NULL,
             manifest_version TEXT NOT NULL
         );
-        INSERT INTO market_datasets VALUES (1, 'rqdata', 'actual_dominant', 'jm', 'JM2609', '1m', 'canonical-bar-v1');
+        INSERT INTO market_datasets VALUES (1, 'rqdata', 'actual_dominant', 'jm', 'JM2609', '1m', 'none', 'canonical-bar-v1');
         INSERT INTO market_partitions VALUES (
             1, 1, 'canonical/linked.parquet', '/data/manifests/linked.json',
             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -689,7 +712,7 @@ def _complete_empty_connection() -> sqlite3.Connection:
         "period TEXT, file_path TEXT, checksum TEXT, data_version TEXT, data_role TEXT, quality_status TEXT)"
     )
     connection.execute("DROP TABLE market_datasets")
-    connection.execute("CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, symbol TEXT, contract_or_series TEXT, frequency TEXT, schema_version TEXT)")
+    connection.execute("CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, symbol TEXT, contract_or_series TEXT, frequency TEXT, adjustment TEXT, schema_version TEXT)")
     connection.execute("DROP TABLE market_partitions")
     connection.execute(
         "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, manifest_uri TEXT, manifest_digest TEXT, checksum TEXT, manifest_version TEXT)"

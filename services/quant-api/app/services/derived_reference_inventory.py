@@ -63,7 +63,7 @@ _MARKET_DATA_FILE_COLUMNS = (
     "id", "provider", "data_type", "instrument_symbol", "contract_code", "period", "file_path", "checksum",
     "data_version", "data_role", "quality_status",
 )
-_CATALOG_DATASET_COLUMNS = ("id", "provider", "dataset_kind", "symbol", "contract_or_series", "frequency", "schema_version")
+_CATALOG_DATASET_COLUMNS = ("id", "provider", "dataset_kind", "symbol", "contract_or_series", "frequency", "adjustment", "schema_version")
 _CATALOG_PARTITION_COLUMNS = ("id", "dataset_id", "file_uri", "manifest_uri", "manifest_digest", "checksum", "manifest_version")
 _REFERENCE_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".toml", ".sql", ".html", ".js", ".txt", ".sh", ".ts", ".tsx", ".vue"}
 _IGNORED_DIRS = {".git", ".venv", "node_modules", "dist", "__pycache__", ".superpowers"}
@@ -82,7 +82,7 @@ _EXPLICIT_HISTORICAL_DOC_MARKER = re.compile(
 )
 _AMBIGUOUS_HISTORY_MARKER = re.compile(r"(?:\bhistorical\b|\bfrozen\b|\bcompatibility-only\b|\bsuperseded\b)", re.IGNORECASE)
 _ACTIVE_OVERRIDE_MARKER = re.compile(
-    r"(?:\bcurrent\b|\bstill\b|\bactive\b|\bin\s+use\b|\bmust\b|当前|仍|继续|在用|不得视为非\s*active|"
+    r"(?:\bcurrent\s+(?:signal\s+)?(?:(?:is|remains)\s+)?active\b|\bstill\s+active\b|\bremains\s+active\b|\bin\s+use\b|\bmust\b|当前|仍|继续|在用|不得视为非\s*active|"
     r"not\s+merely\s+historical|must\s+not\s+be\s+treated\s+as\s+not\s+active)",
     re.IGNORECASE,
 )
@@ -361,7 +361,7 @@ def _catalog_evidence(
     rows = _fetchall(
         connection,
         "SELECT p.\"file_uri\", d.\"provider\", d.\"symbol\", d.\"contract_or_series\", d.\"frequency\", "
-        "d.\"dataset_kind\", d.\"schema_version\", p.\"manifest_uri\", p.\"manifest_digest\", "
+        "d.\"dataset_kind\", d.\"adjustment\", d.\"schema_version\", p.\"manifest_uri\", p.\"manifest_digest\", "
         "p.\"checksum\", p.\"manifest_version\" "
         "FROM \"market_partitions\" AS p JOIN \"market_datasets\" AS d ON d.\"id\" = p.\"dataset_id\" "
         f"ORDER BY p.\"id\" LIMIT {placeholder}",
@@ -379,11 +379,12 @@ def _catalog_evidence(
             "contract_or_series": str(row[3]),
             "frequency": str(row[4]),
             "dataset_kind": str(row[5]),
-            "schema_version": str(row[6]),
-            "manifest_uri": str(row[7]),
-            "manifest_digest": str(row[8]),
-            "checksum": str(row[9]),
-            "manifest_version": str(row[10]),
+            "adjustment": str(row[6]),
+            "schema_version": str(row[7]),
+            "manifest_uri": str(row[8]),
+            "manifest_digest": str(row[9]),
+            "checksum": str(row[10]),
+            "manifest_version": str(row[11]),
             }
         )
     for file_uri, candidates in evidence.items():
@@ -488,6 +489,9 @@ def _catalog_identity_matches(row: dict[str, str | None], catalog: dict[str, str
         and row["contract_code"] == catalog["contract_or_series"]
         and row["period"] == catalog["frequency"]
         and row["checksum"] == catalog["checksum"]
+        and catalog["dataset_kind"] == "actual_dominant"
+        and catalog["adjustment"] == "none"
+        and catalog["schema_version"] == "canonical-bar-v1"
         and bool(catalog["manifest_uri"] and catalog["manifest_digest"])
     )
 
@@ -877,10 +881,10 @@ def _reference_state_for_context(
     normalized_path = relative.replace("\\", "/")
     if kind != "doc":
         return "review_required" if _AMBIGUOUS_HISTORY_MARKER.search(line) or _EXPLICIT_HISTORICAL_DOC_MARKER.fullmatch(line) else "active"
-    if _EXPLICIT_HISTORICAL_DOC_MARKER.fullmatch(line):
-        return "historical"
     if _ACTIVE_OVERRIDE_MARKER.search(line):
         return "active"
+    if _EXPLICIT_HISTORICAL_DOC_MARKER.fullmatch(line):
+        return "historical"
     if _ARCHIVE_PATH_MARKER.search(normalized_path):
         return "historical"
     if kind == "doc" and section_state is not None and section_state != "active":
