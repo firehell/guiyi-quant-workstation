@@ -59,7 +59,8 @@ PostgreSQL trigger；`0031` 增加 provider-final data version/request digest �
 
 直接以 `/Users/zhangzhao/GuiyiBackup` 为 output root 的 dry-run 已按合同 fail-closed：
 `output_mount_not_external`。当前机器只有系统盘与项目外置盘，W7 明确拒绝系统根卷，且不能把
-备份写回项目所在外置盘。拟在 exact approval 后创建 2 GiB APFS sparsebundle，物理文件固定为
+备份写回项目所在外置盘。production database 当前只读回读约 3.95 GB；拟在 exact approval 后创建
+8 GiB APFS sparsebundle，物理文件固定为
 `/Users/zhangzhao/GuiyiBackup/task06-pre0031.sparsebundle`，只读核对后挂载为
 `/Volumes/GuiyiTask06Backup`，再以该独立 mount 作为 database-only backup output root。
 backup id 固定为 `task06-pre0031-6c747ab6`。完成后必须校验 manifest/dump SHA-256 与
