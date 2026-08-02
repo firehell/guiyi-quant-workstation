@@ -1,7 +1,7 @@
 # 归一量化精简矩阵式 AI 研发团队设计
 
 - 日期：2026-08-02
-- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Task 05 later merged independently through PR #100 and does not count retroactively as Phase 3.
+- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 merged through PR #101 at `develop@7a668eeb`. Phase 3 is active under Issue #102 and is not merged; its planned task branch is `research/AI-TEAM-003-phase3-status-consistency-pilot`, and it is implemented on that task branch only after tracked evidence exists. Task 05 later merged independently through PR #100 and does not count retroactively as Phase 3.
 - 适用项目：`firehell/guiyi-quant-workstation`
 - 设计范围：研发组织模型、专家角色、任务路由、自治状态机、权限边界和最小落地方式
 
@@ -1001,7 +1001,7 @@ Phase 1 的 CLI 不创建 worktree、不调用 Git/GitHub、不检查或合并 P
 
 ### Phase 2：历史复盘
 
-Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. Before Draft PR / integration, exact-head compatibility and integration against current `origin/develop` must be rechecked. That independent merge cannot be retroactively counted as Phase 3 because the Charter metrics and implementation/final-review context separation were not recorded from task start. Phase 2 evidence does not reopen Task 04 or authorize Phase 3 execution, Phase 4/5 automation/delegation, `main`, release, Runtime, data writes, or notifications.
+Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 merged through PR #101 at `develop@7a668eeb`. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. For any future Draft PR / integration, exact-head compatibility and integration against current `origin/develop` must be rechecked. That independent merge cannot be retroactively counted as Phase 3 because the Charter metrics and implementation/final-review context separation were not recorded from task start. Phase 2 evidence does not reopen Task 04 or authorize Phase 3 execution, Phase 4/5 automation/delegation, `main`, release, Runtime, data writes, or notifications.
 
 - 以已完成的 Task 04 作为历史复盘样本，检验角色路由是否与其事实一致；
 - 以 AI-TEAM-001 / PR #98 作为已完成历史样本，只记录 canonical / GitHub 可证明的实际事实；
@@ -1009,6 +1009,8 @@ Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented unde
 - 不重新执行 Task 04，不改变真实数据 Gate。
 
 ### Phase 3：新的普通可逆工程试运行
+
+Phase 3 is active under Issue #102 and is not merged. Its planned task branch is `research/AI-TEAM-003-phase3-status-consistency-pilot`; it is implemented on its task branch only after tracked evidence exists. This does not authorize Phase 4 or Phase 5, `main`, Runtime, data writes, notifications, release, or deployment.
 
 - 必须从一个新的独立普通可逆任务开始，创建新的 Issue 和 task worktree，并在实现开始前冻结 Charter；
 - 从任务开始记录 Charter 指标，并保持实现与最终 Review 的上下文分离；
