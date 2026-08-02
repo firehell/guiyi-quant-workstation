@@ -1,3 +1,5 @@
+import type { CanonicalInputIdentity } from './backtest'
+
 /** 交易信号 */
 export interface SignalRecord {
   signalId: string
@@ -108,6 +110,7 @@ export interface StrategySignalRecord {
   reasons: string[]
   data_role: 'primary' | string
   research_only: boolean
+  input_identity?: CanonicalInputIdentity | null
   features: Record<string, unknown>
   quality_status: Record<string, unknown>
   profile_id?: string | null

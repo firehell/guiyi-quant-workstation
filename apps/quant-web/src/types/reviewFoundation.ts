@@ -81,6 +81,7 @@ export interface ReviewFoundationTradeLike {
 
 /** 构建复盘基础上下文所需的 lineage 字段子集 */
 export interface ReviewFoundationLineageLike {
+  schema_version?: string
   input_identity?: CanonicalInputIdentity | null
   input_digest?: string | null
 }

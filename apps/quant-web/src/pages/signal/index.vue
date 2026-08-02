@@ -55,7 +55,11 @@ import {
   sourceModeBadge,
 } from '@/utils/signalSourceMode'
 import { buildReviewResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
-import { buildFormalSignalScanRequest, presentCanonicalInputIdentity } from '@/utils/dataCoreV2Consumer'
+import {
+  buildFormalSignalScanRequest,
+  presentCanonicalInputIdentity,
+  validateFormalSignalScanInput,
+} from '@/utils/dataCoreV2Consumer'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
 
@@ -106,7 +110,9 @@ let pollInFlight = false
 let activePollTaskNo: string | null = null
 let signalListController: AbortController | null = null
 
-const periodOptions = PERIODS.map((item) => ({ label: item.label, value: item.value }))
+const periodOptions = PERIODS
+  .filter((item) => item.value !== '1w')
+  .map((item) => ({ label: item.label, value: item.value }))
 const bucketOptions = [
   { label: '全部', value: 'all' },
   { label: '51 观察', value: '51' },
@@ -147,8 +153,8 @@ const selectedHtDyEvidence = computed(() =>
   selectedSignal.value ? buildHtDyFirstSeenPresentation(selectedSignal.value) : null,
 )
 const selectedInputIdentity = computed(() => {
-  const value = selectedSignal.value?.features?.input_identity
-  return presentCanonicalInputIdentity(value && typeof value === 'object' ? value as import('@/types/backtest').CanonicalInputIdentity : null)
+  const value = selectedSignal.value?.input_identity ?? selectedSignal.value?.features?.input_identity
+  return presentCanonicalInputIdentity(value, { expectedDatasetKind: 'actual_dominant' })
 })
 const scanDateRangeValue = computed<[number, number]>({
   get: (): [number, number] => [formalStart.value, formalEnd.value],
@@ -270,8 +276,20 @@ onUnmounted(() => {
 
 /** 启动 canonical actual-dominant 正式历史扫描，创建任务后进入 watchTask。 */
 async function startScan() {
-  scanning.value = true
   error.value = null
+  const requestError = validateFormalSignalScanInput({
+    contractOrSeries: formalContract.value,
+    periods: selectedPeriods.value,
+    startMs: formalStart.value,
+    endMs: formalEnd.value,
+    riskPerTradePercent: riskPerTradePct.value,
+    maxMarginUsagePercent: maxMarginUsagePct.value,
+  })
+  if (requestError) {
+    error.value = requestError
+    return
+  }
+  scanning.value = true
   try {
     const task = await scanStrategySignals(buildFormalSignalScanRequest({
       dataset_kind: 'actual_dominant',
@@ -622,10 +640,10 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
                   <NInputNumber v-model:value="accountEquity" :min="10000" :step="10000" />
                 </NFormItem>
                 <NFormItem label="单笔风险%">
-                  <NInputNumber v-model:value="riskPerTradePct" :min="0.1" :max="10" :step="0.1" />
+                  <NInputNumber v-model:value="riskPerTradePct" :min="0.1" :max="1" :step="0.1" />
                 </NFormItem>
                 <NFormItem label="保证金上限%">
-                  <NInputNumber v-model:value="maxMarginUsagePct" :min="1" :max="100" :step="1" />
+                  <NInputNumber v-model:value="maxMarginUsagePct" :min="1" :max="35" :step="1" />
                 </NFormItem>
               </NForm>
             </NCollapseItem>
@@ -722,6 +740,16 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
           <NAlert v-if="selectedHtDyEvidence" type="warning" :bordered="false">
             <strong>HTDY first-seen 安全边界</strong> · 仅供观察，不是交易指令；重绘、反向、消失或
             revision 不撤回首次事件。
+          </NAlert>
+          <NAlert
+            v-if="selectedInputIdentity.status === 'unavailable'"
+            type="warning"
+            :bordered="false"
+          >
+            <strong>Canonical input unavailable</strong> · {{ selectedInputIdentity.warning }}；该信号不能按 canonical history 解释。
+          </NAlert>
+          <NAlert v-else type="info" :bordered="false">
+            <strong>Canonical input structurally valid</strong> · {{ selectedInputIdentity.warning }}。
           </NAlert>
           <NDescriptions :column="2" bordered size="small">
             <NDescriptionsItem label="品种">{{ selectedSignal.symbol }}</NDescriptionsItem>

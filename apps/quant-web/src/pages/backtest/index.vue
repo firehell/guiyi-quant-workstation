@@ -1564,6 +1564,13 @@ function directionLabel(direction: string) {
         <NAlert type="info" :bordered="false" class="risk-alert">
           {{ reportPresentation.boundary }}
         </NAlert>
+        <NAlert
+          :type="reportPresentation.canonicalInput.status === 'unavailable' ? 'warning' : 'info'"
+          :bordered="false"
+          class="risk-alert"
+        >
+          <strong>Canonical input</strong> · {{ reportPresentation.canonicalInput.warning }}。
+        </NAlert>
         <NDescriptions :column="2" bordered size="small">
           <NDescriptionsItem label="报告身份"><code>{{ reportPresentation.identity }}</code></NDescriptionsItem>
           <NDescriptionsItem label="Trust audit">

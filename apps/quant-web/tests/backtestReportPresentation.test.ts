@@ -15,7 +15,12 @@ describe('backtest report presentation', () => {
             dataset_kind: 'actual_dominant', symbol: 'jm', contract_or_series: 'JM2609', frequency: '15m',
             start: '2026-07-01T00:00:00+00:00', end: '2026-07-31T00:00:00+00:00', strict: true,
           },
-          source_datasets: [], manifest_digests: ['a'.repeat(64)], source_data_versions: [],
+          source_datasets: [
+            {
+              provider: 'rqdata', dataset_kind: 'actual_dominant', symbol: 'jm', contract_or_series: 'JM2609',
+              frequency: '1m', adjustment: 'none', schema_version: 'canonical-bar-v1',
+            },
+          ], manifest_digests: ['a'.repeat(64)], source_data_versions: [],
           derived_frequency: null, strategy_input_version: 'backtest:su_bing_ema21:v0', digest: 'b'.repeat(64),
         },
         candidate_status: 'oos_hard_rejected',

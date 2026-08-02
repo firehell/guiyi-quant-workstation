@@ -47,7 +47,7 @@ import {
   parseReviewDeepLinkQuery,
   reviewSourceIdentity,
 } from '@/utils/reviewFoundation'
-import { presentCanonicalInputIdentity } from '@/utils/dataCoreV2Consumer'
+import { presentReviewLineage } from '@/utils/reviewLineagePresentation'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { signalSourceDataMode } from '@/utils/signalSourceMode'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
@@ -576,15 +576,34 @@ function reviewToBacktestTrade(review: ReviewNote): BacktestTrade | null {
 }
 
 function lineageDebugItems(lineage: ReviewFormalLineage) {
-  const identity = presentCanonicalInputIdentity(lineage.input_identity)
+  const presentation = presentReviewLineage(lineage)
+  if (presentation.kind === 'canonical') {
+    return [
+      { label: 'canonical_request', value: presentation.canonical.request },
+      { label: 'source_datasets', value: presentation.canonical.sourceDatasets },
+      { label: 'manifest_digests', value: presentation.canonical.manifestDigests },
+      { label: 'requested_window', value: presentation.requestedWindow },
+      { label: 'input_digest', value: presentation.inputDigest || presentation.canonical.digest },
+      { label: 'source_window', value: presentation.sourceWindow },
+    ]
+  }
   return [
-    { label: 'canonical_request', value: identity.request },
-    { label: 'source_datasets', value: identity.sourceDatasets },
-    { label: 'manifest_digests', value: identity.manifestDigests },
-    { label: 'requested_window', value: identity.requestedWindow },
-    { label: 'input_digest', value: lineage.input_digest || identity.digest },
-    { label: 'source_window', value: `${lineage.source_window.start || '-'} → ${lineage.source_window.end || '-'}` },
+    { label: 'lineage_kind', value: presentation.label },
+    ...(presentation.kind === 'observation' ? [{ label: 'source_mode', value: presentation.sourceMode }] : [{ label: 'reason', value: presentation.reason }]),
+    { label: 'source_window', value: presentation.sourceWindow },
+    ...(presentation.kind === 'observation' ? [{ label: 'source_snapshot_schema_version', value: presentation.sourceSnapshotSchemaVersion }] : []),
   ]
+}
+
+function reviewLineageSummary(lineage: ReviewFormalLineage | null) {
+  return lineage ? presentReviewLineage(lineage) : null
+}
+
+function reviewLineageTitle(lineage: ReviewFormalLineage | null) {
+  const kind = reviewLineageSummary(lineage)?.kind
+  if (kind === 'canonical') return 'Review canonical lineage'
+  if (kind === 'observation') return 'Review live observation lineage'
+  return 'Review invalid lineage'
 }
 
 function klineQueryObject() {
@@ -765,12 +784,15 @@ function apiError(err: unknown, fallback: string) {
           <span v-for="item in klineQueryItems" :key="item.label">{{ item.label }}={{ item.value }}</span>
         </div>
         <div
-          v-if="selectedReview && foundationLineage?.input_identity"
+          v-if="selectedReview && foundationLineage"
           class="kline-lineage-state"
         >
-          <strong>Review canonical lineage</strong>
+          <strong>{{ reviewLineageTitle(foundationLineage) }}</strong>
           <span>schema_version={{ foundationLineage.schema_version }}</span>
-          <span>input_digest={{ foundationLineage.input_digest }}</span>
+          <span v-if="reviewLineageSummary(foundationLineage)?.kind === 'canonical'">
+            input_digest={{ reviewLineageSummary(foundationLineage)?.inputDigest }}
+          </span>
+          <span v-else>source_window={{ reviewLineageSummary(foundationLineage)?.sourceWindow }}</span>
         </div>
         <div v-if="selectedReview" class="kline-note">
           <strong>交易点备注</strong>

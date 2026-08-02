@@ -120,8 +120,8 @@ export interface ReviewStats {
   system_compliance: Array<{ name: string; count: number; net_pnl: number }>
 }
 
-/** 正式复盘数据溯源（canonical consumer identity） */
-export interface ReviewFormalLineage {
+/** Canonical historical review lineage with a persisted exact consumer input. */
+export interface ReviewCanonicalLineage {
   schema_version: 'review_canonical_lineage_v1'
   source_type: string
   source_id: number
@@ -134,6 +134,23 @@ export interface ReviewFormalLineage {
   input_identity: CanonicalInputIdentity
   auxiliary_input_identities?: Record<string, CanonicalInputIdentity>
 }
+
+/** Legacy live-observation lineage; it must not be displayed as canonical history. */
+export interface ReviewObservationLineage {
+  schema_version: 'review_source_lineage_v1'
+  source_type: string
+  source_id: number
+  source_snapshot_schema_version?: string | null
+  source_mode?: string | null
+  bar?: {
+    bar_start?: string | null
+    bar_end?: string | null
+    confirmation_mode?: string | null
+  } | null
+}
+
+/** Backend-supported review lineage variants, discriminated by schema_version. */
+export type ReviewFormalLineage = ReviewCanonicalLineage | ReviewObservationLineage
 
 /** 复盘页 K 线响应（含 lineage） */
 export interface ReviewBarsResponse {
