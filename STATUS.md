@@ -30,7 +30,7 @@ Task 04 或 Task 05 的准入 Gate。PR #90～#94、既有 Shadow 失败、ident
 实现、旧 packet 与 receipt 继续作为 frozen historical evidence 或可选诊断能力保留，不删除、
 不改写，也不继续执行生产 Shadow。
 
-2026-08-02 closeout 只读现场对账：
+2026-08-02 Task 04 closeout 只读现场对账（其后 Task 06 migration incident 已使 revision 变化）：
 
 - PostgreSQL revision：`20260730_0027`；
 - Catalog：`85 datasets / 85 partitions / 0 gaps`；
@@ -55,6 +55,18 @@ derived/reference 只读 inventory 已在独立 task worktree 完成，exact-hea
 返回 `CLEAN_FOR_INTEGRATION`。本状态只在 task PR 可从 `develop` 到达且 post-merge CI 成功后生效；
 真实 PostgreSQL/data root 只读盘点仍是 Task 07 的 external Gate，不阻塞 Task 05，也不授权删除。
 
+Task 06 clean-start live/review loop 正在独立 task worktree 实现。当前 branch-local candidate
+新增 additive `20260802_0028` + identity correction `20260802_0029` + create-only trigger
+`20260802_0030` + provider-lineage `20260802_0031`、immutable live
+observation/SignalDecision、EOD 四类对账、
+人工 Review → ResearchSample 与 exact 30 天 retention；全部开关默认关闭。隔离 PostgreSQL
+upgrade/downgrade/upgrade 已通过。独立 Review 阻断了未授权的 centered-XMA 新 policy；该写入器
+已撤回，并改为只接受显式注入、经批准的 causal evaluator，未配置时 fail-closed。当前
+仍缺 owner 冻结的 live/EOD strategy/indicator/policy/parameters/recipe 合同；production incident
+owner decision、PR/CI 与 develop integration 也尚未完成，因此不得写成 Task 06 completed，
+也不授权真实 RQData、scheduler、Runtime、
+SignalEvent、通知、删除或交易。
+
 ## 数据核心任务状态
 
 | 任务 | 状态 | 说明 |
@@ -65,7 +77,8 @@ derived/reference 只读 inventory 已在独立 task worktree 完成，exact-hea
 | GY-DATA-CORE-V2 Task 03 | completed on develop | PR #82；staging、quality 与 canonical writer |
 | GY-DATA-CORE-V2 Task 04 | completed on develop（本 closeout commit 可从 develop 到达时生效） | Canonical 自身 Gate、统一读取与普通消费者回归；legacy Shadow 不再是准入 Gate |
 | GY-DATA-CORE-V2 Task 05 | completed on develop（本 task PR merge 后生效） | canonical trusted consumers、synthetic/golden tests、fail-closed derived/reference inventory；不含真实删除或外部 DB/data-root inventory |
-| GY-DATA-CORE-V2 Task 06～08 | pending | live/EOD、其他品种/受控清理、release/Runtime 分别保留独立 Gate |
+| GY-DATA-CORE-V2 Task 06 | BLOCKED_LIVE_EOD_CONTRACT（branch-local infrastructure candidate） | `0028..0031` + live/decision/EOD/Review/Sample/retention 基础设施；隔离 PG 通过；未注册经 owner 批准的 causal evaluator，production 仍停在 incident `0028` |
+| GY-DATA-CORE-V2 Task 07～08 | pending | 其他品种/受控清理、release/Runtime 分别保留独立 Gate |
 
 ## 未关闭 Gate
 
@@ -76,6 +89,8 @@ derived/reference 只读 inventory 已在独立 task worktree 完成，exact-hea
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
 | Task 05 可信消费者切换 | independent Review passed；develop integration pending | `CLEAN_FOR_INTEGRATION`；仍须 task PR、post-merge CI 与 ancestry readback，不是 release 或 Runtime Gate |
 | Task 07 inventory external read-only Gate | pending | 真实 PostgreSQL/data root 必须另行显式只读运行；不授权 migration、rebuild、delete 或 repair |
+| Task 06 live/EOD contract | BLOCKED | 原计划未冻结允许在新 Data-Core V2 input 上执行的 causal strategy/indicator/policy/parameters/recipe；不得借用 centered-XMA original kernel 扩展白名单 |
+| Task 06 production migration | INCIDENT / owner decision required | 隔离测试 URL 被 `env.py` 覆盖，项目 DB 已意外升级到 empty/disabled `0028`；不得改写为合规 Gate，见 incident 与 migration approval packet |
 | 旧行情与 legacy 工件删除 | not authorized | 旧行情只读保留；任何删除需独立 exact deletion Gate |
 | release / main / tag | not authorized | 本 closeout 只合入 develop |
 | Runtime promotion | not authorized | Runtime 保持独立 detached，不同步本任务 |
@@ -92,7 +107,7 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 
 | 事实 | 当前值 | 证据 |
 |---|---|---|
-| PostgreSQL revision | `20260730_0027` | Task 04 closeout 只读 Alembic 现场核验 |
+| PostgreSQL revision | `20260802_0028`（Task 06 incident；五张新表全空、flags false） | `docs/tasks/GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`；等待 owner 决定 downgrade 或保留 |
 | Canonical current state | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 closeout DB、Manifest 与物理 checksum 只读复验 |
 | MainContractMap | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 closeout 只读 mapping audit |
 | legacy compatibility | PR #90～#94 实现与历史 evidence 保留；不再扩展或作为准入 Gate | `docs/tasks/GY-DATA-CORE-V2.md` |

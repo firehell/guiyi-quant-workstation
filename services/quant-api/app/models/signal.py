@@ -122,6 +122,7 @@ class SignalEvent(Base):
     event_key: Mapped[str] = mapped_column(String(240), index=True)
     event_type: Mapped[str] = mapped_column(String(32), index=True)
     signal_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    decision_id: Mapped[int | None] = mapped_column(Integer, index=True)
     task_no: Mapped[str | None] = mapped_column(String(64), index=True)
     source_mode: Mapped[str] = mapped_column(String(32), index=True)
     strategy_name: Mapped[str] = mapped_column(String(64), index=True)

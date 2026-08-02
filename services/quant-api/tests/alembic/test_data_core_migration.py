@@ -25,6 +25,10 @@ from app.db.migration_test_guard import (
 LEGACY_PARENT_REVISION = "20260721_0025"
 PARENT_REVISION = "20260730_0026"
 REVISION = "20260730_0027"
+LIVE_REVIEW_REVISION = "20260802_0028"
+LIVE_IDENTITY_REVISION = "20260802_0029"
+LIVE_IMMUTABLE_REVISION = "20260802_0030"
+HEAD_REVISION = "20260802_0031"
 NEW_TABLES = {"market_datasets", "market_partitions", "data_gaps"}
 CANONICAL_VIEW = "data_core_main_contract_map"
 QUANT_API_ROOT = Path(__file__).resolve().parents[2]
@@ -77,13 +81,17 @@ def test_isolated_url_guard_compares_runtime_database_without_network(
     assert probed_urls == [isolated_url, runtime_url]
 
 
-def test_contract_alignment_revision_is_the_declared_head() -> None:
+def test_contract_alignment_revision_precedes_live_review_loop_head() -> None:
     config = Config(str(QUANT_API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == [REVISION]
+    assert scripts.get_heads() == [HEAD_REVISION]
     assert scripts.get_revision(REVISION).down_revision == PARENT_REVISION
+    assert scripts.get_revision(LIVE_REVIEW_REVISION).down_revision == REVISION
+    assert scripts.get_revision(LIVE_IDENTITY_REVISION).down_revision == LIVE_REVIEW_REVISION
+    assert scripts.get_revision(LIVE_IMMUTABLE_REVISION).down_revision == LIVE_IDENTITY_REVISION
+    assert scripts.get_revision(HEAD_REVISION).down_revision == LIVE_IMMUTABLE_REVISION
 
 
 @pytest.mark.parametrize("direction", ["upgrade", "downgrade"])
