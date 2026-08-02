@@ -7,7 +7,9 @@ Gate. Its canonical repository sources are `STATUS.md`,
 `docs/tasks/GY-DATA-CORE-V2.md`, and
 `docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`. GitHub PR
 metadata, commit lists, files lists, and evidence comments support only the
-facts explicitly attributed to each of them below.
+facts explicitly attributed to each of them below. GitHub Issue #99 records
+the Phase 2 sample-selection and classification contract; it does not replace
+the samples' canonical or GitHub execution evidence.
 
 - `MEASURED` means that a value appears in one of those canonical repository
   sources or GitHub evidence.
@@ -40,8 +42,10 @@ or Runtime Gate.
 
 - Classification: historical_retrospective
 - Classification provenance: MEASURED
-- Classification evidence: Task 04 completed on develop in the canonical
-  status and task records; this is a retrospective of its finished chain.
+- Classification evidence: GitHub Issue #99 selects Task 04 as the
+  `historical_retrospective` sample. Task 04 completed on develop in the
+  canonical status and task records; this is a retrospective of its finished
+  chain.
 
 ### Routing prediction
 
@@ -159,8 +163,9 @@ or Runtime Gate.
 
 - Classification: controlled_trial
 - Classification provenance: MEASURED
-- Classification evidence: Issue 97 and PR 98 record the independent
-  AI-TEAM-001 trial.
+- Classification evidence: GitHub Issue #99 selects AI-TEAM-001 as the
+  `controlled_trial` sample; Issue 97 and PR 98 record that task's identity and
+  delivery facts.
 
 ### Routing prediction
 
@@ -170,8 +175,9 @@ or Runtime Gate.
 - Predicted context separation: Implementer and Independent quality reviewer
   are separate.
 - Prediction provenance: MEASURED
-- Prediction evidence: the four-role, no-specialist route from the approved
-  controlled-trial Charter and design.
+- Prediction evidence: the frozen design retrospectively predicts four base
+  roles and no specialist for this ordinary reversible task. It is not an
+  observed PR #98 role roster or an approved Charter fact.
 
 ### Observed execution
 
@@ -241,9 +247,10 @@ or Runtime Gate.
 
 ### Findings
 
-- Finding: the predicted four base roles with no permanent specialist are
-  suitable for an ordinary reversible trial. The actual role roster,
-  specialist classification, and full context separation are NOT_MEASURABLE.
+- Finding: the frozen design's retrospective prediction is four base roles
+  with no permanent specialist for an ordinary reversible task. The actual
+  role roster, specialist classification, and full context separation are
+  NOT_MEASURABLE.
 - Evidence limitations: four commits and three remediation commits are
   measurable, but they do not measure review-fix rounds, total agent sessions,
   or user interruptions.
@@ -261,10 +268,11 @@ or Runtime Gate.
 
 ## Cross-sample findings
 
-- Routing accuracy: Task 04's predicted four base roles plus a data/database
-  specialist match its historical data exposure. AI-TEAM-001's predicted four
-  base roles with no permanent specialist match an ordinary reversible task.
-  Actual role rosters, permanent-specialist counts, and full context maps are
+- Routing accuracy: the frozen design retrospectively predicts four base roles
+  plus a data/database specialist for Task 04's historical data exposure and
+  four base roles with no permanent specialist for AI-TEAM-001 as an ordinary
+  reversible task. These are retrospective predictions only. Actual role
+  rosters, permanent-specialist counts, and full context maps are
   NOT_MEASURABLE unless a future source records them.
 - Cycle cost: the recorded Task 04 PR-chain window is 21h28m57s and the
   AI-TEAM-001 PR window is 26m23s. They are not comparable as an efficiency

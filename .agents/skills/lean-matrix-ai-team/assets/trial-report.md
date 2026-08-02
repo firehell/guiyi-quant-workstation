@@ -12,7 +12,7 @@
 
 ## Sample classification
 
-- Classification: historical-retrospective / controlled-trial
+- Classification: historical_retrospective / controlled_trial
 - Classification provenance: MEASURED / MANUALLY_RECORDED / NOT_MEASURABLE
 - Classification evidence:
 
@@ -34,6 +34,7 @@
 - Start timestamp:
 - Merge timestamp:
 - Review-fix rounds:
+- Total agent sessions:
 - User interruption count:
 - Observation provenance: MEASURED / MANUALLY_RECORDED / NOT_MEASURABLE
 - Observation evidence:

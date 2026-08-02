@@ -999,17 +999,18 @@ AI 项目负责人
 
 Phase 1 的 CLI 不创建 worktree、不调用 Git/GitHub、不检查或合并 PR、不清理 worktree，也不执行任何工作流自动化；这些仍是既有工具或后续独立阶段的职责。
 
-### Phase 2：历史复盘与受控试运行
+### Phase 2：历史复盘
 
 Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. Before Draft PR / integration, exact-head compatibility and integration against current `origin/develop` must be rechecked. That independent merge cannot be retroactively counted as Phase 3 because the Charter metrics and implementation/final-review context separation were not recorded from task start. Phase 2 evidence does not reopen Task 04 or authorize Phase 3 execution, Phase 4/5 automation/delegation, `main`, release, Runtime, data writes, or notifications.
 
 - 以已完成的 Task 04 作为历史复盘样本，检验角色路由是否与其事实一致；
-- 在新的、独立批准任务中记录实际会话数、用户打断数、修复轮次和集成时间；
+- 以 AI-TEAM-001 / PR #98 作为已完成历史样本，只记录 canonical / GitHub 可证明的实际事实；
+- 实际角色、专家、上下文分离、会话数、用户打断数和 Review 修复轮次若无当时证据，统一记为 `NOT_MEASURABLE`；
 - 不重新执行 Task 04，不改变真实数据 Gate。
 
 ### Phase 3：新的普通可逆工程试运行
 
-- 必须从一个新的独立普通可逆任务开始，创建新的 Issue 和 task worktree，并在开始时冻结 Charter；
+- 必须从一个新的独立普通可逆任务开始，创建新的 Issue 和 task worktree，并在实现开始前冻结 Charter；
 - 从任务开始记录 Charter 指标，并保持实现与最终 Review 的上下文分离；
 - PR #100 不能追认为该试运行；
 - 验证普通开发能否从 Task Charter 自治到 `develop`；
@@ -1060,7 +1061,7 @@ Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented unde
 
 ### 20.4 第一版成功标准
 
-第一版在历史 Task 04 复盘与独立批准的 Task 05 试运行后应达到：
+以下标准仅能在 Phase 2 历史复盘完成，且未来 Phase 3 新独立试运行从任务开始产生可测证据后评估：
 
 - 普通代码修复、测试、Review 和 `develop` 集成无需用户逐步确认；
 - 真实 Gate 仍准确保留；

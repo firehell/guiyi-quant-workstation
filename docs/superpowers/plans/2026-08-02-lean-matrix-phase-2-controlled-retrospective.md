@@ -11,14 +11,27 @@
 ## Global Constraints
 
 - Work only in `/Volumes/扩展盘/GuiyiWorktrees/tasks/AI-TEAM-002-phase2-controlled-retrospective` on `research/AI-TEAM-002-phase2-controlled-retrospective`.
-- Base is `origin/develop@0867e12353e6fbb145c0e14427432e5ba06b9b7e`; Issue is #99.
+- Immutable task base is `0867e12353e6fbb145c0e14427432e5ba06b9b7e`
+  (the `origin/develop` value when this worktree was created); Issue is #99.
+  Final compatibility is a separate exact-head review against current
+  `origin/develop`, whose tip may move after task creation.
 - Task 04 is an immutable historical sample. Do not rerun it, create packets, query RQData, or write PostgreSQL/Parquet.
 - AI-TEAM-001 / PR #98 is a completed controlled-trial sample, not authorization to merge, release, or automate future tasks.
-- Do not adopt or modify the active Task 05 worktree or any of its files.
+- Do not adopt or modify the then-active Task 05 worktree or any of its files.
 - Evidence precedence is repository canonical and GitHub exact facts. Conversation memory is not evidence.
 - Metrics that cannot be proven from canonical or GitHub facts must be `NOT_MEASURABLE`, not estimated.
 - No changes to `main`, Runtime, real data, notification, release/tag, worktree cleanup, or GitHub rules.
 - No new service, database, background process, control plane, or workflow CLI.
+
+## External drift addendum (2026-08-02)
+
+The immutable task base remains `0867e123`. The locally observed current
+`origin/develop` is `b64453eab89692e5250a4275f04cac1bd26f02d4` after PR #100;
+that moving ref is the final compatibility-review target, not a replacement
+task base. The historical zero-overlap/merge-tree result cannot establish
+current compatibility. Any Phase 3 task must create its own Issue and
+worktree and freeze its Charter before implementation begins; PR #100 cannot
+be reused or counted retroactively.
 
 ---
 
@@ -115,7 +128,8 @@ It must also assert that the document:
 - records PR #98 as four commits with three post-feature remediation commits and exact-head CI success; the review-fix round count remains `NOT_MEASURABLE` unless an explicit canonical/GitHub source proves it;
 - uses `NOT_MEASURABLE` for conversation/session/user-interruption metrics that cannot be reconstructed from canonical/GitHub facts;
 - states zero Task 05 adoption and zero `main`/Runtime/data/notification authority;
-- concludes Phase 3 is eligible only for a new independent task, not the active Task 05 worktree;
+- concludes Phase 3 is eligible only for a new independent task, not the
+  then-active Task 05 worktree or its later PR #100 merge;
 - contains no `TBD`, `TODO`, profitability, trading instruction, or Runtime-ready claim.
 
 - [ ] **Step 2: Run the evidence test and observe RED**
@@ -132,7 +146,7 @@ For Task 04, distinguish the predicted single data/database specialist route fro
 
 For AI-TEAM-001, record PR created `2026-08-02T04:34:47Z`, merged `2026-08-02T05:01:10Z`, four commits, 11 changed files, three exact-head CI checks, and three post-feature remediation commits. Mark review-fix rounds, user interruptions, and total agent sessions `NOT_MEASURABLE` because they are absent from canonical/GitHub facts.
 
-End with evidence-based Phase 3 entry conditions: new Issue, new task worktree, one ordinary reversible task, frozen Charter, no Task 05 adoption, measured report fields from task start, exact-head review, and no new authority.
+End with evidence-based Phase 3 entry conditions: new Issue, new task worktree, one ordinary reversible task, Charter frozen before implementation begins, no Task 05 adoption, measured report fields from task start, exact-head review, and no new authority.
 
 - [ ] **Step 4: Run GREEN and combined policy tests**
 
@@ -181,7 +195,12 @@ Expected: all commands exit 0, with no real-write or Runtime action.
 
 - [ ] **Step 3: Obtain independent exact-head review**
 
-Review against `origin/develop@0867e123`. Require findings by Critical/Important/Minor and explicit `Spec PASS/FAIL` plus `Quality APPROVED/CHANGES_REQUIRED`. Fix findings with bounded TDD rounds; stop after three failed rounds.
+Review the task diff from immutable base `0867e123`, then separately review
+the exact task head for compatibility with current `origin/develop`. Record
+the observed ref/SHA for that final compatibility check. Require findings by
+Critical/Important/Minor and explicit `Spec PASS/FAIL` plus
+`Quality APPROVED/CHANGES_REQUIRED`. Fix findings with bounded TDD rounds;
+stop after three failed rounds.
 
 - [ ] **Step 4: Commit status alignment if changed**
 

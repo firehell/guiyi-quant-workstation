@@ -2,12 +2,44 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 RETROSPECTIVE = ROOT / "docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-2.md"
 DESIGN = ROOT / "docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md"
+PLAN = ROOT / "docs/superpowers/plans/2026-08-02-lean-matrix-phase-2-controlled-retrospective.md"
+
+FORBIDDEN_AFFIRMATIVE_PATTERNS = (
+    re.compile(
+        r"\bPR #100\s+(?:is|was|counts as|served as|completed)\s+"
+        r"(?:the\s+)?Phase 3\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bTask 05\s+(?:is|was|became|served as)\s+(?:the\s+)?"
+        r"Phase 3(?:\s+(?:trial|controlled trial|task))?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bPhase 3(?:\s+(?:trial|controlled trial))?\s+(?:is|was)\s+Task 05\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<![\w`])(?:Phase 4(?:/| or )Phase 5|Phase 4|Phase 5|`main`|main|"
+        r"release|`Runtime`|Runtime|data writes?(?:/notifications?)?|notifications?)"
+        r"(?:\s+(?:automation|delegation|automation/delegation))?\s+"
+        r"(?:is|are|has been|have been)\s+authorized\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<!does not )(?<!doesn't )(?<!not )\bauthorizes?\s+"
+        r"(?:Phase 4(?:/| or )Phase 5|Phase 4|Phase 5|`main`|main|release|"
+        r"`Runtime`|Runtime|data writes?(?:/notifications?)?|notifications?)\b",
+        re.IGNORECASE,
+    ),
+)
 
 
 def _report() -> str:
@@ -18,9 +50,18 @@ def _design() -> str:
     return DESIGN.read_text(encoding="utf-8")
 
 
+def _plan() -> str:
+    return PLAN.read_text(encoding="utf-8")
+
+
 def _section(markdown: str, heading: str) -> str:
     body = markdown.split(f"## {heading}\n", 1)[1]
     return body.split("\n## ", 1)[0]
+
+
+def _subsection(markdown: str, heading: str) -> str:
+    body = markdown.split(f"### {heading}\n", 1)[1]
+    return body.split("\n### ", 1)[0]
 
 
 def _metric_block(section: str, name: str) -> str:
@@ -28,9 +69,65 @@ def _metric_block(section: str, name: str) -> str:
     return body.split("\n- Metric name: ", 1)[0]
 
 
+def _affirmative_authority_claims(markdown: str) -> list[str]:
+    return [
+        match.group(0)
+        for pattern in FORBIDDEN_AFFIRMATIVE_PATTERNS
+        for match in pattern.finditer(markdown)
+    ]
+
+
+def _assert_sample_contract(section: str, classification: str) -> None:
+    """Bind identity, provenance, and limits to one sample, not the whole report."""
+    identity = _subsection(section, "Identity")
+    sample_classification = _subsection(section, "Sample classification")
+    prediction = _subsection(section, "Routing prediction")
+    observed = _subsection(section, "Observed execution")
+    gate = _subsection(section, "Gate preservation")
+    findings = _subsection(section, "Findings")
+    decision = _subsection(section, "Decision")
+
+    for field in (
+        "Issue:", "PR:", "Base SHA:", "Task HEAD:", "Merge SHA:",
+        "Source type:", "Source references:",
+    ):
+        assert f"- {field}" in identity, (classification, field)
+    for field in (
+        f"Classification: {classification}",
+        "Classification provenance: MEASURED",
+        "Classification evidence:",
+        "Issue #99",
+    ):
+        assert field in sample_classification, (classification, field)
+    for field in (
+        "Predicted base roles:", "Predicted specialists:",
+        "Predicted specialist count:", "Predicted context separation:",
+        "Prediction provenance: MEASURED", "Prediction evidence:",
+    ):
+        assert field in prediction, (classification, field)
+    for field in (
+        "Observed base roles:", "Observed specialists:",
+        "Observed specialist count:", "Observed context separation:",
+        "Start timestamp:", "Merge timestamp:", "Review-fix rounds:",
+        "Total agent sessions:", "User interruption count:",
+        "Observation provenance:", "Observation evidence:",
+    ):
+        assert field in observed, (classification, field)
+    assert "Observation provenance: MEASURED" in observed, classification
+    assert "NOT_MEASURABLE" in observed, classification
+    for field in ("CI:", "External Gates:", "Gate evidence:", "No-authority statement:"):
+        assert field in gate, (classification, field)
+    for field in ("Finding:", "Evidence limitations:"):
+        assert field in findings, (classification, field)
+    for field in ("Decision:", "Required human decision or Gate:", "Next permitted action:"):
+        assert field in decision, (classification, field)
+
+
 def test_retrospective_preserves_two_source_bound_samples() -> None:
     """Removing a measured chain fact must make the historical comparison incomplete."""
     report = _report()
+    task04 = _section(report, "Task 04 historical retrospective")
+    trial = _section(report, "AI-TEAM-001 controlled trial")
 
     for heading in (
         "## Evidence policy and limitations",
@@ -51,6 +148,9 @@ def test_retrospective_preserves_two_source_bound_samples() -> None:
 
     for state in ("MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE"):
         assert state in report
+
+    _assert_sample_contract(task04, "historical_retrospective")
+    _assert_sample_contract(trial, "controlled_trial")
 
     for fact in (
         "Classification: historical_retrospective",
@@ -251,3 +351,75 @@ def test_external_task05_merge_preserves_phase3_and_integration_boundaries() -> 
         assert fact in design
 
     assert "PR #100 cannot be retroactively counted as Phase 3" in decision
+
+
+def test_phase_contracts_reject_affirmative_authority_claims_without_rejecting_denials() -> None:
+    """A scoped positive Phase/Gate claim must fail while required denials remain valid."""
+    report = _report()
+    design = _design()
+    plan = _plan()
+    audited_scope = "\n".join((
+        _section(report, "Cross-sample findings"),
+        _section(report, "Phase 3 decision"),
+        _section(design, "19. 分阶段实施"),
+        _section(design, "20. 验收指标"),
+        plan,
+    ))
+
+    assert not _affirmative_authority_claims(audited_scope)
+
+    for injected_claim in (
+        "PR #100 is Phase 3.",
+        "Task 05 was the Phase 3 controlled trial.",
+        "Phase 3 trial is Task 05.",
+        "Phase 4/Phase 5 automation is authorized.",
+        "Phase 4 is authorized.",
+        "Phase 5 is authorized.",
+        "`main` is authorized.",
+        "main is authorized.",
+        "release is authorized.",
+        "`Runtime` is authorized.",
+        "Runtime is authorized.",
+        "data writes/notifications are authorized.",
+        "data writes are authorized.",
+        "notifications are authorized.",
+    ):
+        assert _affirmative_authority_claims(injected_claim), injected_claim
+
+    for required_denial in (
+        "PR #100 cannot be retroactively counted as Phase 3.",
+        "This does not authorize Phase 4 or Phase 5, main, release, Runtime, "
+        "data writes, or notifications.",
+    ):
+        assert not _affirmative_authority_claims(required_denial), required_denial
+
+
+def test_phase2_history_and_phase3_new_task_remain_separate_in_design_and_plan() -> None:
+    """Task 05 delivery cannot fill Phase 2 gaps or become the new Phase 3 trial."""
+    design = _design()
+    plan = _plan()
+    phased_design = _section(design, "19. 分阶段实施")
+    success_criteria = _subsection(_section(design, "20. 验收指标"), "20.4 第一版成功标准")
+
+    for fact in (
+        "### Phase 2：历史复盘",
+        "NOT_MEASURABLE",
+        "### Phase 3：新的普通可逆工程试运行",
+        "新的 Issue 和 task worktree",
+        "实现开始前冻结 Charter",
+        "从任务开始记录 Charter 指标",
+        "实现与最终 Review 的上下文分离",
+        "PR #100 不能追认为该试运行",
+    ):
+        assert fact in phased_design
+    assert "Task 05 试运行" not in success_criteria
+    assert "未来 Phase 3 新独立试运行" in success_criteria
+
+    for fact in (
+        "Immutable task base",
+        "0867e12353e6fbb145c0e14427432e5ba06b9b7e",
+        "current `origin/develop`",
+        "External drift addendum",
+        "before implementation begins",
+    ):
+        assert fact in plan

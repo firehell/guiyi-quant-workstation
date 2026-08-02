@@ -67,6 +67,7 @@ def test_required_resources_are_complete() -> None:
         "references/routing.md",
         "assets/task-charter.md",
         "assets/stage-report.md",
+        "assets/trial-report.md",
     )
 
     for relative_path in required_paths:
@@ -284,12 +285,13 @@ def test_controlled_trial_report_contract_preserves_provenance_and_gate_boundari
     for field in (
         "Issue:", "PR:", "Base SHA:", "Task HEAD:", "Merge SHA:",
         "Source type:", "Source references:",
-        "Classification: historical-retrospective / controlled-trial",
+        "Classification: historical_retrospective / controlled_trial",
         "Predicted base roles:", "Observed base roles:",
         "Predicted specialists:", "Observed specialists:",
         "Predicted specialist count:", "Observed specialist count:",
         "Predicted context separation:", "Observed context separation:",
         "Start timestamp:", "Merge timestamp:", "Review-fix rounds:",
+        "Total agent sessions:",
         "User interruption count:", "CI:", "External Gates:",
         "Evidence limitations:", "No-authority statement:",
         "MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE",
@@ -314,7 +316,9 @@ def test_skill_does_not_claim_control_plane_or_gatekeeper_authority() -> None:
         "references/routing.md",
         "assets/task-charter.md",
         "assets/stage-report.md",
+        "assets/trial-report.md",
     ))
+    lowered = combined.lower()
 
     assert "does not replace canonical sources or Gatekeepers" in combined
     for statement in (
@@ -324,3 +328,16 @@ def test_skill_does_not_claim_control_plane_or_gatekeeper_authority() -> None:
         "does not send real notifications",
     ):
         assert statement in combined
+    for forbidden_affirmative in (
+        "merges main",
+        "promotes runtime",
+        "writes real data",
+        "sends real notifications",
+        "this report can satisfy",
+        "this report authorizes",
+        "this report drives a gate",
+        "this report can drive a gate",
+        "this report replaces a gate",
+        "this report can replace a gate",
+    ):
+        assert forbidden_affirmative not in lowered
