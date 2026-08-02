@@ -19,6 +19,7 @@ from app.models.review import ReviewNote
 from app.models.signal import SignalEvent, StrategySignal
 from app.services.canonical_market_data import build_canonical_reader
 from app.services.market_data_service import MarketDataService
+from app.signal.formal_identity import parse_formal_auxiliary_identities
 
 
 @dataclass
@@ -91,19 +92,17 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
         )
         try:
             identity = CanonicalConsumerInput.from_snapshot(input_snapshot)
-            auxiliary_identities = {
-                period: CanonicalConsumerInput.from_snapshot(snapshot)
-                for period, snapshot in auxiliary_snapshots.items()
-            }
         except (DataCoreError, TypeError, ValueError) as exc:
             raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id) from exc
-        if any(
-            period != auxiliary.request.frequency.value
-            or auxiliary.strategy_input_version != identity.strategy_input_version
-            for period, auxiliary in auxiliary_identities.items()
-        ):
-            raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id)
         if source_row is not None:
+            try:
+                parse_formal_auxiliary_identities(identity, auxiliary_snapshots)
+            except (TypeError, ValueError) as exc:
+                raise _error(
+                    "REVIEW_SOURCE_IDENTITY_MISMATCH",
+                    source_type,
+                    source_id,
+                ) from exc
             _validate_canonical_signal_source(
                 source_row,
                 identity=identity,
@@ -112,6 +111,21 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
                 source_type=source_type,
                 source_id=source_id,
             )
+        else:
+            try:
+                auxiliary_identities = {
+                    period: CanonicalConsumerInput.from_snapshot(snapshot)
+                    for period, snapshot in auxiliary_snapshots.items()
+                }
+            except (DataCoreError, TypeError, ValueError) as exc:
+                raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id) from exc
+            if any(
+                period != auxiliary.request.frequency.value
+                or auxiliary.strategy_input_version
+                != identity.strategy_input_version
+                for period, auxiliary in auxiliary_identities.items()
+            ):
+                raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id)
         if (
             not strategy_version
             or _identity_strategy_version(identity) != strategy_version
@@ -197,13 +211,19 @@ def load_review_bars(
             raise _error("REVIEW_LINEAGE_UNAVAILABLE", note.source_type, int(note.source_id or 0))
         try:
             identity = CanonicalConsumerInput.from_snapshot(input_snapshot)
-            auxiliary_identities = {
-                str(period): CanonicalConsumerInput.from_snapshot(snapshot)
-                for period, snapshot in auxiliary_snapshots.items()
-                if isinstance(period, str) and isinstance(snapshot, dict)
-            }
-            if len(auxiliary_identities) != len(auxiliary_snapshots):
-                raise ValueError("invalid auxiliary identity")
+            if note.source_type in {"strategy_signal", "signal_event"}:
+                auxiliary_identities = parse_formal_auxiliary_identities(
+                    identity,
+                    auxiliary_snapshots,
+                )
+            else:
+                auxiliary_identities = {
+                    str(period): CanonicalConsumerInput.from_snapshot(snapshot)
+                    for period, snapshot in auxiliary_snapshots.items()
+                    if isinstance(period, str) and isinstance(snapshot, dict)
+                }
+                if len(auxiliary_identities) != len(auxiliary_snapshots):
+                    raise ValueError("invalid auxiliary identity")
             service = market_data or MarketDataService(
                 session,
                 canonical_reader=build_canonical_reader(session),
@@ -217,7 +237,7 @@ def load_review_bars(
             auxiliary_results: dict[str, Any] = {}
             confirmed_auxiliary: dict[str, CanonicalConsumerInput] = {}
             for period, auxiliary in sorted(auxiliary_identities.items()):
-                if (
+                if note.source_type not in {"strategy_signal", "signal_event"} and (
                     period != auxiliary.request.frequency.value
                     or auxiliary.strategy_input_version != identity.strategy_input_version
                 ):

@@ -17,9 +17,10 @@ from app.schemas.signal import (
     FORMAL_SIGNAL_STRATEGY_CODE,
     FORMAL_SIGNAL_STRATEGY_VERSION,
     SignalScanMode,
-    SignalScanRequest,
+    validate_formal_signal_task_payload,
 )
 from app.signal.contract_context import signal_contract_context_payload
+from app.signal.formal_identity import parse_formal_auxiliary_identities
 
 SIGNAL_CREATED = "signal_created"
 SIGNAL_CHANGED = "signal_changed"
@@ -60,13 +61,8 @@ def _valid_formal_scan_identity(
     task: SignalScanTask,
 ) -> bool:
     request_payload = task.request_payload or {}
-    formal_payload = {
-        key: value
-        for key, value in request_payload.items()
-        if key not in {"data_role", "research_only"}
-    }
     try:
-        formal_request = SignalScanRequest.model_validate(formal_payload)
+        formal_request = validate_formal_signal_task_payload(request_payload)
     except (TypeError, ValueError):
         return False
     if formal_request.mode is not SignalScanMode.SCAN:
@@ -152,6 +148,13 @@ def _valid_formal_scan_identity(
     if formal_lineage.get("strategy_version") != signal.strategy_version:
         return False
     features = signal.features or {}
+    auxiliary_snapshots = formal_lineage.get("auxiliary_input_identities")
+    if features.get("auxiliary_input_identities") != auxiliary_snapshots:
+        return False
+    try:
+        parse_formal_auxiliary_identities(identity, auxiliary_snapshots)
+    except (TypeError, ValueError):
+        return False
     if (
         features.get("observation_only") is not True
         or features.get("not_trading_instruction") is not True

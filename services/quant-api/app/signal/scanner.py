@@ -17,7 +17,15 @@ from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
 from app.models.backtest import WatchlistItem
 from app.models.signal import SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
-from app.schemas.signal import SignalDataRole, SignalScanMode, SignalScanRequest, SignalStatus
+from app.schemas.signal import (
+    FORMAL_SIGNAL_AUXILIARY_PERIOD,
+    SignalDataRole,
+    SignalScanMode,
+    SignalScanRequest,
+    SignalStatus,
+    build_formal_signal_task_payload,
+    validate_formal_signal_task_payload,
+)
 from app.services import signal_scanner as legacy
 from app.services.canonical_market_data import build_canonical_reader
 from app.services.market_data_service import MarketDataService
@@ -45,7 +53,13 @@ class SignalScanner(legacy.SignalScanner):
 
     def run(self, task_id: int) -> dict[str, Any]:
         task = self.session.get(SignalScanTask, task_id)
-        self._formal_execution = bool(task is not None and not (task.request_payload or {}).get("research_only"))
+        if task is None:
+            raise ValueError(f"signal scan task not found: {task_id}")
+        self._formal_execution = (
+            task.profile_id is None and task.market_data_file_id is None
+        )
+        if self._formal_execution:
+            _validate_formal_task(task)
         if not self._formal_execution:
             self.reader = legacy.MarketDataReader(self.session)
         try:
@@ -168,7 +182,7 @@ class SignalScanner(legacy.SignalScanner):
         higher_bars: list[dict[str, Any]] = []
         auxiliary_identities: dict[str, dict[str, object]] = {}
         canonical_results = [result]
-        higher_period = legacy.HIGHER_PERIOD.get(target.period)
+        higher_period = FORMAL_SIGNAL_AUXILIARY_PERIOD.get(target.period)
         if higher_period is not None:
             _, higher_result, higher_identity = self._canonical_bars(payload, higher_period)
             canonical_results.append(higher_result)
@@ -390,21 +404,39 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
     research_only = bool(request_payload.get("research_only", False))
     if research_only:
         normalized_request = dict(request_payload)
+        payload = {
+            **normalized_request,
+            "data_role": str(
+                normalized_request.get("data_role")
+                or SignalDataRole.PRIMARY.value
+            ),
+            "research_only": True,
+        }
     else:
         request = SignalScanRequest.model_validate(request_payload)
         if request.mode is not SignalScanMode.SCAN:
             raise ValueError("SIGNAL_NON_SCAN_MODE_IS_PREVIEW_ONLY")
-        normalized_request = request.model_dump(mode="json")
-    payload = {
-        **normalized_request,
-        "data_role": str(normalized_request.get("data_role") or SignalDataRole.PRIMARY.value),
-        "research_only": research_only,
-    }
+        payload = build_formal_signal_task_payload(request)
     task = legacy.create_signal_scan_task(session, payload)
     task.request_payload = payload
     task.profile_id = str(payload.get("profile_id")) if payload["research_only"] and payload.get("profile_id") else None
     task.market_data_file_id = None
     return task
+
+
+def _validate_formal_task(task: SignalScanTask) -> SignalScanRequest:
+    try:
+        request = validate_formal_signal_task_payload(task.request_payload)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("SIGNAL_FORMAL_TASK_IDENTITY_INVALID") from exc
+    if (
+        task.profile_id is not None
+        or task.market_data_file_id is not None
+        or task.watchlist_code != request.watchlist_code
+        or list(task.periods or []) != request.periods
+    ):
+        raise ValueError("SIGNAL_FORMAL_TASK_IDENTITY_INVALID")
+    return request
 
 
 def enqueue_signal_scan_task(task_id: int) -> str:

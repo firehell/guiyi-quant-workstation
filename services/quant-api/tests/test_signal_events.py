@@ -24,6 +24,7 @@ from app.models.data_center import (
     ProfileActiveBinding,
 )
 from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
+from app.schemas.signal import SignalScanRequest, build_formal_signal_task_payload
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 from app.signal.events import SIGNAL_CREATED, record_signal_scan_event
 
@@ -263,6 +264,31 @@ def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
             "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
         ),
     ).to_snapshot()
+    auxiliary_query = BarQuery(
+        dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+        symbol="jm",
+        contract_or_series="JM2609",
+        frequency=BarFrequency.M15,
+        start=request_start,
+        end=request_end,
+    )
+    auxiliary_result = BarsResult(
+        bars=(),
+        source_datasets=result.source_datasets,
+        manifest_digests=result.manifest_digests,
+        requested_window=(request_start, request_end),
+        data_type=DatasetKind.ACTUAL_DOMINANT,
+        derived_frequency=BarFrequency.M15,
+        source_data_versions=result.source_data_versions,
+    )
+    auxiliary_identity = build_canonical_consumer_input(
+        auxiliary_query,
+        auxiliary_result,
+        strategy_input_version=(
+            "su_bing_ema21:v0:"
+            "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        ),
+    ).to_snapshot()
     signal = StrategySignal(
         task_no="SIG-CANONICAL-1",
         dedupe_key="canonical:signal-events-test",
@@ -291,13 +317,14 @@ def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
         reasons=["canonical test"],
         features={
             "input_identity": input_identity,
+            "auxiliary_input_identities": {"15m": auxiliary_identity},
             "observation_only": True,
             "not_trading_instruction": True,
             "auto_order": False,
             "formal_lineage": {
                 "schema_version": "signal_canonical_inputs_v1",
                 "input_identity": input_identity,
-                "auxiliary_input_identities": {},
+                "auxiliary_input_identities": {"15m": auxiliary_identity},
                 "strategy_version": "v0",
             },
         },
@@ -317,18 +344,21 @@ def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
         periods=["5m"],
         total_items=1,
         completed_items=1,
-        request_payload={
-            "mode": "scan",
-            "research_only": False,
-            "dataset_kind": "actual_dominant",
-            "instrument_symbol": "jm",
-            "contract_or_series": "JM2609",
-            "periods": ["5m"],
-            "start": request_start.isoformat(),
-            "end": request_end.isoformat(),
-            "strategy_code": "su_bing_ema21",
-            "strategy_version": "v0",
-        },
+        request_payload=build_formal_signal_task_payload(
+            SignalScanRequest.model_validate(
+                {
+                    "mode": "scan",
+                    "dataset_kind": "actual_dominant",
+                    "instrument_symbol": "jm",
+                    "contract_or_series": "JM2609",
+                    "periods": ["5m"],
+                    "start": request_start.isoformat(),
+                    "end": request_end.isoformat(),
+                    "strategy_code": "su_bing_ema21",
+                    "strategy_version": "v0",
+                }
+            )
+        ),
         result_payload={},
         profile_id=None,
         market_data_file_id=None,

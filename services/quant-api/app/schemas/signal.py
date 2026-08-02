@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+import hashlib
+import json
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -12,6 +14,25 @@ from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
 
 FORMAL_SIGNAL_STRATEGY_CODE = "su_bing_ema21"
 FORMAL_SIGNAL_STRATEGY_VERSION = "v0"
+FORMAL_SIGNAL_EXECUTION_CONTRACT = "formal_historical_scan_v1"
+FORMAL_SIGNAL_AUXILIARY_PERIOD = {
+    "5m": "15m",
+    "15m": "30m",
+    "30m": "60m",
+    "60m": "1d",
+}
+FORMAL_SIGNAL_PERIODS = frozenset({*FORMAL_SIGNAL_AUXILIARY_PERIOD, "1d"})
+FORMAL_SIGNAL_INTERNAL_TASK_FIELDS = frozenset(
+    {
+        "data_role",
+        "research_only",
+        "observation_only",
+        "not_trading_instruction",
+        "auto_order",
+        "execution_contract",
+        "request_payload_sha256",
+    }
+)
 
 
 class SignalDataRole(StrEnum):
@@ -106,6 +127,8 @@ class SignalScanRequest(BaseModel):
             raise ValueError("periods cannot be empty or contain blank values")
         if len(set(normalized)) != len(normalized):
             raise ValueError("periods cannot contain duplicates")
+        if any(period not in FORMAL_SIGNAL_PERIODS for period in normalized):
+            raise ValueError("SIGNAL_FORMAL_PERIOD_UNSUPPORTED")
         return normalized
 
     @field_validator("start", "end")
@@ -140,6 +163,63 @@ class SignalScanRequest(BaseModel):
                 end=self.end,
             )
         return self
+
+
+def build_formal_signal_task_payload(request: SignalScanRequest) -> dict[str, Any]:
+    payload = {
+        **request.model_dump(mode="json"),
+        "data_role": SignalDataRole.PRIMARY.value,
+        "research_only": False,
+        "observation_only": True,
+        "not_trading_instruction": True,
+        "auto_order": False,
+        "execution_contract": FORMAL_SIGNAL_EXECUTION_CONTRACT,
+    }
+    payload["request_payload_sha256"] = _formal_signal_payload_sha256(payload)
+    return payload
+
+
+def validate_formal_signal_task_payload(payload: Any) -> SignalScanRequest:
+    if not isinstance(payload, dict):
+        raise ValueError("SIGNAL_FORMAL_TASK_IDENTITY_INVALID")
+    provided_hash = payload.get("request_payload_sha256")
+    payload_without_hash = {
+        key: value for key, value in payload.items() if key != "request_payload_sha256"
+    }
+    if (
+        payload.get("data_role") != SignalDataRole.PRIMARY.value
+        or payload.get("research_only") is not False
+        or payload.get("observation_only") is not True
+        or payload.get("not_trading_instruction") is not True
+        or payload.get("auto_order") is not False
+        or payload.get("execution_contract") != FORMAL_SIGNAL_EXECUTION_CONTRACT
+        or provided_hash != _formal_signal_payload_sha256(payload_without_hash)
+    ):
+        raise ValueError("SIGNAL_FORMAL_TASK_IDENTITY_INVALID")
+    formal_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in FORMAL_SIGNAL_INTERNAL_TASK_FIELDS
+    }
+    try:
+        request = SignalScanRequest.model_validate(formal_payload)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("SIGNAL_FORMAL_TASK_IDENTITY_INVALID") from exc
+    if request.mode is not SignalScanMode.SCAN:
+        raise ValueError("SIGNAL_FORMAL_TASK_IDENTITY_INVALID")
+    if payload != build_formal_signal_task_payload(request):
+        raise ValueError("SIGNAL_FORMAL_TASK_IDENTITY_INVALID")
+    return request
+
+
+def _formal_signal_payload_sha256(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 class ResearchSignalScanRequest(BaseModel):
