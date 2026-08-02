@@ -522,14 +522,9 @@ def test_review_freezes_and_exactly_verifies_every_auxiliary_input() -> None:
     with factory() as session:
         primary = _canonical_identity(canonical, BarFrequency.M5)
         auxiliary = _canonical_identity(canonical, BarFrequency.M15)
-        signal = _legacy_signal()
-        signal.features = {
-            "formal_lineage": {
-                "schema_version": "signal_canonical_inputs_v1",
-                "input_identity": deepcopy(primary),
-                "auxiliary_input_identities": {"15m": deepcopy(auxiliary)},
-                "strategy_version": "v0",
-            }
+        signal = _canonical_signal(primary, task_no="SIG-REVIEW-AUXILIARY")
+        signal.features["formal_lineage"]["auxiliary_input_identities"] = {
+            "15m": deepcopy(auxiliary)
         }
         session.add(signal)
         session.flush()
@@ -608,6 +603,56 @@ def test_review_legacy_historical_row_is_stably_unavailable() -> None:
                 session,
                 source_type="strategy_signal",
                 source_id=signal.id,
+            )
+
+
+@pytest.mark.parametrize("source_type", ["strategy_signal", "signal_event"])
+@pytest.mark.parametrize(
+    "malformed_field",
+    [
+        "symbol",
+        "actual_contract",
+        "period",
+        "bar_start_before_request",
+        "bar_end_after_request",
+        "signal_time_mismatch",
+    ],
+)
+def test_review_rejects_source_row_unbound_from_canonical_identity(
+    source_type: str,
+    malformed_field: str,
+) -> None:
+    from app.services.review_lineage import (
+        ReviewLineageError,
+        resolve_review_source_lineage,
+    )
+
+    factory = _session_factory()
+    with factory() as session:
+        source = _canonical_review_source(session, source_type=source_type)
+        if malformed_field == "symbol":
+            source.symbol = "rb"
+        elif malformed_field == "actual_contract":
+            source.actual_contract = "RB2610"
+        elif malformed_field == "period":
+            source.period = "15m"
+        elif malformed_field == "bar_start_before_request":
+            source.bar_start = START - timedelta(minutes=1)
+        elif malformed_field == "bar_end_after_request":
+            source.bar_end = END + timedelta(minutes=1)
+            source.signal_time = source.bar_end
+        elif malformed_field == "signal_time_mismatch":
+            source.signal_time = END - timedelta(minutes=1)
+        session.flush()
+
+        with pytest.raises(
+            ReviewLineageError,
+            match="REVIEW_SOURCE_IDENTITY_MISMATCH",
+        ):
+            resolve_review_source_lineage(
+                session,
+                source_type=source_type,
+                source_id=source.id,
             )
 
 
@@ -839,6 +884,47 @@ def _canonical_signal(
         "canonical_consumer_input_digest": identity["digest"],
     }
     return signal
+
+
+def _canonical_review_source(
+    session: Session,
+    *,
+    source_type: str,
+) -> StrategySignal | SignalEvent:
+    from app.signal.events import SIGNAL_CREATED, record_signal_scan_event
+
+    canonical = FakeCanonicalMarketData()
+    request_payload = _formal_request()
+    identity = _canonical_identity(
+        canonical,
+        BarFrequency.M5,
+        strategy_input_version=_expected_strategy_input_version(request_payload),
+    )
+    formal_payload = SignalScanRequest.model_validate(request_payload).model_dump(
+        mode="json"
+    )
+    task = SignalScanTask(
+        task_no=f"SIG-REVIEW-SOURCE-{source_type}",
+        status="running",
+        watchlist_code="black",
+        periods=["5m"],
+        request_payload={
+            **formal_payload,
+            "research_only": False,
+            "data_role": "primary",
+        },
+        result_payload={},
+        profile_id=None,
+        market_data_file_id=None,
+    )
+    signal = _canonical_signal(identity, task_no=task.task_no)
+    session.add_all([task, signal])
+    session.flush()
+    if source_type == "strategy_signal":
+        return signal
+    event = record_signal_scan_event(session, signal, SIGNAL_CREATED, task)
+    assert event is not None
+    return event
 
 
 def _session_factory():

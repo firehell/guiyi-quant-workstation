@@ -12,6 +12,10 @@ from app.backtest.v1b_jm_tasks import (
     SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_VERSION,
 )
 from app.core.env import PROJECT_ROOT
+from app.schemas.signal import (
+    FORMAL_SIGNAL_STRATEGY_CODE,
+    FORMAL_SIGNAL_STRATEGY_VERSION,
+)
 
 
 def list_strategy_registry() -> list[dict[str, Any]]:
@@ -115,7 +119,7 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "spec_doc_path": "docs/strategy_specs/su_bing_jm_v1b_short_hold/STRATEGY_SPEC.md",
         },
         {
-            "strategy_code": "su_bing_ema21",
+            "strategy_code": FORMAL_SIGNAL_STRATEGY_CODE,
             "name": "苏冰 EMA21 趋势系统",
             "description": "通用 EMA21 趋势策略模板，可用于多品种回测。",
             "symbol": None,
@@ -127,7 +131,7 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "live_observation": False,
             "backtest_endpoints": [],
             "scan_endpoint": "/api/signals/scan",
-            "strategy_version": "demo-0.1.0",
+            "strategy_version": FORMAL_SIGNAL_STRATEGY_VERSION,
             "spec_doc_path": None,
         },
     ]

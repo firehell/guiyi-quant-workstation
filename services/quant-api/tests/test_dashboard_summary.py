@@ -147,6 +147,8 @@ def test_dashboard_summary_returns_live_aggregates() -> None:
 
 
 def test_strategy_registry_lists_v1b_entries() -> None:
+    from app.schemas.signal import SignalScanRequest
+
     client = TestClient(app)
     response = client.get("/api/v1/strategies/registry")
     assert response.status_code == 200
@@ -164,3 +166,21 @@ def test_strategy_registry_lists_v1b_entries() -> None:
         item.get("scan_endpoint") != "/api/signals/v1b/jm/scan"
         for item in payload["items"]
     )
+    formal_scan = next(
+        item for item in payload["items"] if item["strategy_code"] == "su_bing_ema21"
+    )
+    assert formal_scan["scan_endpoint"] == "/api/signals/scan"
+    assert "historical_scan" in formal_scan["capability_classes"]
+    request = SignalScanRequest.model_validate(
+        {
+            "dataset_kind": "actual_dominant",
+            "instrument_symbol": "jm",
+            "contract_or_series": "JM2609",
+            "periods": [formal_scan["periods"][0]],
+            "start": "2026-07-10T00:00:00+00:00",
+            "end": "2026-07-10T01:00:00+00:00",
+            "strategy_code": formal_scan["strategy_code"],
+            "strategy_version": formal_scan["strategy_version"],
+        }
+    )
+    assert request.strategy_version == "v0"

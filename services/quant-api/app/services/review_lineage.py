@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,8 @@ class ReviewLineageError(ValueError):
 
 def resolve_review_source_lineage(session: Session, *, source_type: str, source_id: int) -> dict[str, Any]:
     raw_snapshot: dict[str, Any] | None
+    source_row: StrategySignal | SignalEvent | None = None
+    source_input_snapshot: dict[str, Any] | None = None
     bar_start: datetime | str | None = None
     bar_end: datetime | str | None = None
     strategy_version: str | None = None
@@ -59,6 +61,9 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
             raise _error("REVIEW_SOURCE_NOT_FOUND", source_type, source_id)
         value = (signal.features or {}).get("formal_lineage")
         raw_snapshot = value if isinstance(value, dict) else None
+        source_row = signal
+        source_value = (signal.features or {}).get("input_identity")
+        source_input_snapshot = source_value if isinstance(source_value, dict) else None
         strategy_version = signal.strategy_version
         bar_start, bar_end = signal.bar_start, signal.bar_end
     elif source_type == "signal_event":
@@ -67,6 +72,9 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
             raise _error("REVIEW_SOURCE_NOT_FOUND", source_type, source_id)
         value = (event.payload or {}).get("formal_lineage")
         raw_snapshot = value if isinstance(value, dict) else None
+        source_row = event
+        source_value = (event.payload or {}).get("input_identity")
+        source_input_snapshot = source_value if isinstance(source_value, dict) else None
         strategy_version = event.strategy_version
         bar_start, bar_end = event.bar_start, event.bar_end
     else:
@@ -95,6 +103,15 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
             for period, auxiliary in auxiliary_identities.items()
         ):
             raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id)
+        if source_row is not None:
+            _validate_canonical_signal_source(
+                source_row,
+                identity=identity,
+                formal_input_snapshot=input_snapshot,
+                source_input_snapshot=source_input_snapshot,
+                source_type=source_type,
+                source_id=source_id,
+            )
         if (
             not strategy_version
             or _identity_strategy_version(identity) != strategy_version
@@ -287,9 +304,14 @@ def _iso(value: datetime | str | None) -> str | None:
 
 
 def _datetime(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    parsed = (
+        value
+        if isinstance(value, datetime)
+        else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    )
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _canonical_input_snapshot(snapshot: dict[str, Any]) -> dict[str, Any] | None:
@@ -319,6 +341,47 @@ def _canonical_auxiliary_snapshots(
 def _identity_strategy_version(identity: CanonicalConsumerInput) -> str | None:
     parts = identity.strategy_input_version.rsplit(":", 2)
     return parts[1] if len(parts) == 3 else None
+
+
+def _validate_canonical_signal_source(
+    source: StrategySignal | SignalEvent,
+    *,
+    identity: CanonicalConsumerInput,
+    formal_input_snapshot: dict[str, Any],
+    source_input_snapshot: dict[str, Any] | None,
+    source_type: str,
+    source_id: int,
+) -> None:
+    request = identity.request
+    contract = request.contract_or_series
+    source_symbol = source.symbol.lower() if isinstance(source.symbol, str) else ""
+    actual_contract = (
+        source.actual_contract.upper()
+        if isinstance(source.actual_contract, str)
+        else ""
+    )
+    source_datasets_match = bool(contract) and all(
+        dataset.symbol == source_symbol
+        and dataset.contract_or_series == actual_contract
+        for dataset in identity.source_datasets
+    )
+    try:
+        bar_start = _datetime(source.bar_start)
+        bar_end = _datetime(source.bar_end)
+        signal_time = _datetime(source.signal_time)
+    except (TypeError, ValueError):
+        raise _error("REVIEW_SOURCE_IDENTITY_MISMATCH", source_type, source_id) from None
+    if (
+        source_input_snapshot != formal_input_snapshot
+        or source.data_role != "primary"
+        or source_symbol != request.symbol
+        or actual_contract != contract
+        or source.period != request.frequency.value
+        or not source_datasets_match
+        or not (request.start <= bar_start < bar_end <= request.end)
+        or signal_time != bar_end
+    ):
+        raise _error("REVIEW_SOURCE_IDENTITY_MISMATCH", source_type, source_id)
 
 
 def _is_live_snapshot(snapshot: dict[str, Any]) -> bool:
