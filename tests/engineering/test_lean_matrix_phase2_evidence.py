@@ -150,10 +150,12 @@ def test_retrospective_binds_each_measured_metric_to_its_authoritative_source() 
             "Evidence source: GitHub PR #86-#95 metadata",
         ),
         "chain counts": (
+            "Evidence source: GitHub PR #86-#95 metadata/commit lists",
             "PR commit-list lengths: 2, 1, 1, 1, 1, 1, 1, 1, 1, 1",
             "derived as 10 PRs + 11 task commits = 21 develop commits",
         ),
         "observed PR chain window": (
+            "Evidence source: GitHub PR #86-#95 metadata",
             "PR #86 createdAt: 2026-08-01T01:09:01Z",
             "PR #95 mergedAt: 2026-08-01T22:37:58Z",
             "derived as final PR merge timestamp minus first PR creation timestamp",
