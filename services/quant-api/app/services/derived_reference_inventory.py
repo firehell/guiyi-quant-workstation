@@ -73,6 +73,7 @@ _SELF_REFERENCE_PATHS = {
     "services/quant-api/tests/test_derived_reference_inventory.py",
 }
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ACTUAL_CONTRACT = re.compile(r"^([A-Z]+)[0-9]{3,4}$")
 _ARCHIVE_PATH_MARKER = re.compile(r"(?:^|/)(?:archive|archived|归档)(?:/|$)", re.IGNORECASE)
 _EXPLICIT_HISTORICAL_DOC_MARKER = re.compile(
     r"^\s*(?:historical\s+snapshot\s*;\s*not\s+active\s+gate|"
@@ -498,9 +499,15 @@ def _catalog_identity_matches(row: dict[str, str | None], catalog: dict[str, str
     if not base:
         return False
     if catalog["dataset_kind"] == "actual_dominant":
-        return not contract.endswith(".MAIN") and contract.startswith(symbol.upper()) and contract == catalog_contract
+        match = _ACTUAL_CONTRACT.fullmatch(contract)
+        return (
+            match is not None
+            and match.group(1).upper() == symbol.upper()
+            and contract == catalog_contract
+            and row["period"] in {"1m", "1d"}
+        )
     if catalog["dataset_kind"] == "continuous":
-        return catalog_contract == f"{symbol.upper()}.MAIN" and contract == catalog_contract
+        return catalog_contract == f"{symbol.upper()}.MAIN" and contract == catalog_contract and row["period"] in {"1m", "1d", "1w"}
     return False
 
 

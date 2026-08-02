@@ -106,6 +106,10 @@ def test_market_data_inventory_columns_match_real_models() -> None:
         ("continuous", "jm.main", "JM.MAIN", True),
         ("actual_dominant", "JM.MAIN", "JM.MAIN", False),
         ("continuous", "JM2609", "JM.MAIN", False),
+        ("actual_dominant", "JMABC", "JMABC", False),
+        ("actual_dominant", "JM", "JM", False),
+        ("actual_dominant", "JM2609X", "JM2609X", False),
+        ("actual_dominant", "JMX2609", "JMX2609", False),
     ],
 )
 def test_catalog_identity_supports_only_valid_actual_or_continuous_direct_contracts(
@@ -113,6 +117,20 @@ def test_catalog_identity_supports_only_valid_actual_or_continuous_direct_contra
 ) -> None:
     row = {"provider": "rqdata", "data_type": "bars", "data_role": "primary", "quality_status": "passed", "instrument_symbol": "jm", "contract_code": row_contract, "period": "1m", "checksum": "a"}
     catalog = {"provider": "rqdata", "symbol": "jm", "contract_or_series": catalog_contract, "frequency": "1m", "checksum": "a", "dataset_kind": dataset_kind, "adjustment": "none", "schema_version": "canonical-bar-v1", "manifest_uri": "manifest.json", "manifest_digest": "b"}
+    assert _catalog_identity_matches(row, catalog) is expected
+
+
+@pytest.mark.parametrize(
+    ("dataset_kind", "period", "expected"),
+    [
+        ("actual_dominant", "1m", True), ("actual_dominant", "1d", True), ("actual_dominant", "1w", False),
+        ("continuous", "1m", True), ("continuous", "1d", True), ("continuous", "1w", True),
+    ],
+)
+def test_catalog_identity_enforces_direct_frequency_contract(dataset_kind: str, period: str, expected: bool) -> None:
+    contract = "JM2609" if dataset_kind == "actual_dominant" else "JM.MAIN"
+    row = {"provider": "rqdata", "data_type": "bars", "data_role": "primary", "quality_status": "passed", "instrument_symbol": "jm", "contract_code": contract, "period": period, "checksum": "a"}
+    catalog = {"provider": "rqdata", "symbol": "jm", "contract_or_series": contract, "frequency": period, "checksum": "a", "dataset_kind": dataset_kind, "adjustment": "none", "schema_version": "canonical-bar-v1", "manifest_uri": "manifest.json", "manifest_digest": "b"}
     assert _catalog_identity_matches(row, catalog) is expected
 
 
