@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 复盘「正式上下文」只读面板：策略/Profile/lineage/OOS 等字段，缺失标 unavailable。 */
+/** 复盘「正式上下文」只读面板：策略/canonical lineage/OOS 等字段，缺失标 unavailable。 */
 import { computed } from 'vue'
 import { NAlert, NDescriptions, NDescriptionsItem, NTag } from 'naive-ui'
 import type { ReviewFoundationContext } from '@/types/reviewFoundation'
@@ -18,8 +18,8 @@ const rows = computed(() => {
     { key: 'strategy_version', label: '版本', field: ctx.strategy_version },
     { key: 'indicator_policy_status', label: 'Indicator Policy', field: ctx.indicator_policy_status },
     { key: 'indicator_policy_summary', label: 'Policy Snapshot', field: ctx.indicator_policy_summary },
-    { key: 'profile_id', label: 'Profile', field: ctx.profile_id },
-    { key: 'binding_snapshot_present', label: 'Profile Binding', field: ctx.binding_snapshot_present },
+    { key: 'canonical_input_identity', label: 'Canonical Input', field: ctx.canonical_input_identity },
+    { key: 'canonical_input_digest', label: 'Input Digest', field: ctx.canonical_input_digest },
     { key: 'signal_bar', label: 'Signal Bar', field: ctx.signal_bar },
     { key: 'next_bar_fill', label: 'Next Bar Fill', field: ctx.next_bar_fill },
     { key: 'cost_model', label: 'Cost Model', field: ctx.cost_model },
@@ -63,7 +63,7 @@ function tagType(field: FoundationField): 'default' | 'success' | 'warning' | 'e
     <div class="panel__header">
       <div>
         <h2>冻结证据与 Lineage</h2>
-        <p>策略、Profile、成本、OOS 与数据身份只读展示；缺失字段不伪造</p>
+        <p>策略、Canonical 输入、成本、OOS 与数据身份只读展示；缺失字段不伪造</p>
       </div>
     </div>
 

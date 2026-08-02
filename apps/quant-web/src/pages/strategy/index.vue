@@ -4,7 +4,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NEmpty, NTag, useMessage } from 'naive-ui'
 import { getStrategyRegistry } from '@/api/dashboard'
-import { scanJmV1bSignals } from '@/api/signal'
 import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import PageShell from '@/components/common/PageShell.vue'
 import type { StrategyRegistryItem } from '@/types/dashboard'
@@ -58,19 +57,8 @@ function itemBadges(item: StrategyRegistryItem) {
 
 async function scanHistorical(item: StrategyRegistryItem) {
   if (!item.scan_endpoint || isRejectedStrategy(item)) return
-  try {
-    if (item.scan_endpoint.includes('/v1b/jm/scan')) {
-      await scanJmV1bSignals(true)
-    } else {
-      message.info('请前往信号页配置通用历史研究扫描')
-      void router.push({ name: 'signal' })
-      return
-    }
-    message.success('已触发历史研究扫描')
-    void router.push({ name: 'signal', query: { signal_layer: 'latest' } })
-  } catch (err) {
-    message.error(toSafeApiError(err, '历史研究扫描失败'))
-  }
+  message.info('旧 JM V1-B 扫描入口已退役；请前往信号页填写 exact actual-dominant 合约与时间窗口。')
+  void router.push({ name: 'signal' })
 }
 
 function sectionAnchor(key: StrategyCapabilityCategory) {

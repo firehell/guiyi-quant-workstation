@@ -1,3 +1,5 @@
+import type { CanonicalDatasetKey, CanonicalInputIdentity } from './backtest'
+
 /** 复盘来源交易（回测成交明细） */
 export interface ReviewSourceTrade {
   id: number
@@ -118,32 +120,19 @@ export interface ReviewStats {
   system_compliance: Array<{ name: string; count: number; net_pnl: number }>
 }
 
-/** 正式复盘数据溯源（primary 数据与触发 bar） */
+/** 正式复盘数据溯源（canonical consumer identity） */
 export interface ReviewFormalLineage {
-  schema_version: 'review_source_lineage_v1'
-  source_snapshot_schema_version?: string | null
-  resolver_name?: string | null
-  resolver_contract_version?: string | null
+  schema_version: 'review_canonical_lineage_v1'
   source_type: string
   source_id: number
-  quality_policy?: string | null
-  primary: {
-    profile_id?: string | null
-    market_data_file_id: number
-    instrument_symbol: string
-    contract_code: string
-    period: string
-    data_version?: string | null
-    provider: string
-    data_role: 'primary'
-    quality_status: 'passed'
-  }
-  bar: {
-    bar_start: string
-    bar_end: string
-    trigger_price?: number | null
-    confirmation_mode?: string | null
-  }
+  strategy_version?: string | null
+  input_digest: string
+  dataset_keys: CanonicalDatasetKey[]
+  manifest_digests: string[]
+  window: { start: string; end: string }
+  source_window: { start: string | null; end: string | null }
+  input_identity: CanonicalInputIdentity
+  auxiliary_input_identities?: Record<string, CanonicalInputIdentity>
 }
 
 /** 复盘页 K 线响应（含 lineage） */

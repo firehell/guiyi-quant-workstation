@@ -54,7 +54,7 @@ describe('reviewFoundation', () => {
     assert.equal(ctx.review_skip_status.value, 'SKIPPED_BY_FROZEN_HARD_REJECT')
     assert.equal(ctx.lineage_status.status, 'unavailable')
     assert.equal(ctx.signal_bar.status, 'unavailable')
-    assert.equal(ctx.binding_snapshot_present.status, 'unavailable')
+    assert.equal(ctx.canonical_input_identity.status, 'unavailable')
   })
 
   it('marks empty input fields unavailable without inventing values', () => {

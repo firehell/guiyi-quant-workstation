@@ -1,9 +1,10 @@
+import type { CanonicalInputIdentity } from '@/types/backtest'
+import { presentCanonicalInputIdentity } from './dataCoreV2Consumer.ts'
+
 type ReportLike = {
   id: number
   report_no: string
-  profile_id?: string | null
-  data_version?: string | null
-  data_role?: string | null
+  input_identity?: CanonicalInputIdentity | null
   candidate_status?: string | null
   hard_reject_reason?: string | null
   summary?: Record<string, unknown>
@@ -41,11 +42,11 @@ export function buildBacktestReportPresentation(
     stringValue(candidate.candidate_trust_audit) ||
     stringValue(candidate.report14_trust_audit) ||
     'unavailable'
+  const inputIdentity = presentCanonicalInputIdentity(report.input_identity)
 
   return {
     identity: `${report.report_no} · report #${report.id}`,
-    profile: report.profile_id || 'unavailable',
-    dataIdentity: [report.data_role, report.data_version].filter(Boolean).join(' · ') || 'unavailable',
+    canonicalInput: inputIdentity,
     costModel: stringValue(metadata.cost_model_version) || 'unavailable',
     trustAudit,
     validationEvidence: observation?.available

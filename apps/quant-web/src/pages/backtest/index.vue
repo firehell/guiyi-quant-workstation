@@ -62,6 +62,7 @@ import { useBacktestStore } from '@/stores/backtest'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { buildBacktestReportPresentation } from '@/utils/backtestReportPresentation'
+import { buildFormalBacktestRequest } from '@/utils/dataCoreV2Consumer'
 import { buildChartResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
 const DISCLAIMER = '回测结果不等于实盘结果，实盘前必须模拟和小资金验证。'
@@ -146,9 +147,9 @@ const form = ref<BacktestTaskForm>({
   strategy_code: '',
   strategy_version: '',
   engine_type: 'vnpy',
+  dataset_kind: 'actual_dominant',
   instrument_symbol: '',
-  contract_code: '',
-  profile_id: '',
+  contract_or_series: '',
   exchange: '',
   interval: '60m',
   start: now - 90 * 24 * 60 * 60 * 1000,
@@ -174,6 +175,10 @@ const form = ref<BacktestTaskForm>({
 })
 
 const engineOptions = [{ label: 'vn.py CTA', value: 'vnpy' }]
+const datasetKindOptions = [
+  { label: '实际主力合约（actual_dominant）', value: 'actual_dominant' },
+  { label: '连续序列（continuous）', value: 'continuous' },
+]
 const intervalOptions = [
   { label: '1分钟', value: '1m' },
   { label: '5分钟', value: '5m' },
@@ -202,7 +207,7 @@ const canSubmit = computed(() =>
     form.value.strategy_code.trim() &&
       form.value.strategy_version.trim() &&
       form.value.instrument_symbol &&
-      form.value.contract_code &&
+      form.value.contract_or_series &&
       form.value.interval &&
       form.value.start &&
       form.value.end,
@@ -265,10 +270,6 @@ const reportMetaItems = computed(() => {
     { label: '周期', value: selectedReport.value.period || '-' },
     { label: '时间范围', value: reportDateRange(selectedReport.value) },
     { label: '引擎', value: selectedReport.value.engine_type || 'vnpy' },
-    { label: '数据源', value: selectedReport.value.data_source || '-' },
-    { label: '数据角色', value: selectedReport.value.data_role || '-' },
-    { label: '数据版本', value: selectedReport.value.data_version || '-' },
-    { label: 'Profile', value: selectedReport.value.profile_id || '-' },
     {
       label: 'Indicator Policy',
       value: formatIndicatorPolicyStatus(selectedReport.value.indicator_policy_status),
@@ -512,14 +513,14 @@ async function submitTask() {
 
   submitting.value = true
   try {
-    const payload: BacktestTaskCreateRequest = {
+    const payload = buildFormalBacktestRequest({
       engine_type: 'vnpy',
       task_type: 'single',
+      dataset_kind: form.value.dataset_kind,
       instrument_symbol: form.value.instrument_symbol,
-      contract_code: form.value.contract_code,
+      contract_or_series: form.value.contract_or_series,
       exchange: form.value.exchange,
       interval: form.value.interval,
-      profile_id: form.value.profile_id.trim() || undefined,
       start: new Date(form.value.start).toISOString(),
       end: new Date(form.value.end).toISOString(),
       strategy_class_path: DEFAULT_STRATEGY_CLASS,
@@ -531,7 +532,7 @@ async function submitTask() {
       size: form.value.size,
       pricetick: form.value.pricetick,
       capital: form.value.initial_capital,
-    }
+    } satisfies BacktestTaskCreateRequest)
     const task = await createBacktestTask(payload)
     message.success(`任务已创建：${task.task_no}`)
     await loadTasks()
@@ -1414,7 +1415,7 @@ function directionLabel(direction: string) {
       <div class="panel__header">
         <div>
           <h2>回测任务</h2>
-          <p>vn.py CTA 研究任务（需从 registry / coverage 选择合约与 Profile）</p>
+          <p>vn.py CTA 研究任务（使用明确的 canonical DatasetKey 请求）</p>
         </div>
         <div class="header-actions">
           <NInputNumber
@@ -1435,7 +1436,7 @@ function directionLabel(direction: string) {
 
       <NAlert type="warning" :bordered="false" class="risk-alert">{{ DISCLAIMER }}</NAlert>
       <NAlert type="info" :bordered="false" class="risk-alert">
-        下方通用表单不会自动绑定 formal Profile / passed lineage；Indicator Policy / trust 字段仅作审计展示，不代表策略有效。
+        任务只提交 DatasetKey 身份；后端返回 input_identity、Manifest 与 digest 供审计。Indicator Policy / trust 字段不代表策略有效。
       </NAlert>
       <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
 
@@ -1449,14 +1450,14 @@ function directionLabel(direction: string) {
         <NFormItem label="回测引擎">
           <NSelect v-model:value="form.engine_type" :options="engineOptions" disabled />
         </NFormItem>
+        <NFormItem label="数据集类型">
+          <NSelect v-model:value="form.dataset_kind" :options="datasetKindOptions" />
+        </NFormItem>
         <NFormItem label="品种代码">
           <NInput v-model:value="form.instrument_symbol" placeholder="从 registry / coverage 选择，如 jm" />
         </NFormItem>
-        <NFormItem label="合约">
-          <NInput v-model:value="form.contract_code" placeholder="如 jm2609；勿留空暗示 formal" />
-        </NFormItem>
-        <NFormItem label="数据 Profile（可选）">
-          <NInput v-model:value="form.profile_id" placeholder="留空不会自动获得 formal passed lineage" />
+        <NFormItem label="合约或连续序列">
+          <NInput v-model:value="form.contract_or_series" placeholder="如 jm2609 或 JM.MAIN；必须与数据集类型一致" />
         </NFormItem>
         <NFormItem label="交易所">
           <NInput v-model:value="form.exchange" placeholder="如 DCE / SHFE" />
@@ -1570,8 +1571,11 @@ function directionLabel(direction: string) {
               {{ reportPresentation.trustAudit }}
             </NTag>
           </NDescriptionsItem>
-          <NDescriptionsItem label="Profile"><code>{{ reportPresentation.profile }}</code></NDescriptionsItem>
-          <NDescriptionsItem label="数据身份"><code>{{ reportPresentation.dataIdentity }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="Canonical request"><code>{{ reportPresentation.canonicalInput.request }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="Source DatasetKey" :span="2"><code>{{ reportPresentation.canonicalInput.sourceDatasets }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="Manifest digests" :span="2"><code>{{ reportPresentation.canonicalInput.manifestDigests }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="Requested window" :span="2"><code>{{ reportPresentation.canonicalInput.requestedWindow }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="Input digest" :span="2"><code>{{ reportPresentation.canonicalInput.digest }}</code></NDescriptionsItem>
           <NDescriptionsItem label="成本模型"><code>{{ reportPresentation.costModel }}</code></NDescriptionsItem>
           <NDescriptionsItem label="验证证据">{{ reportPresentation.validationEvidence }}</NDescriptionsItem>
           <NDescriptionsItem label="候选状态"><code>{{ reportPresentation.candidateStatus }}</code></NDescriptionsItem>

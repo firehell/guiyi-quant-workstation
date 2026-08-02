@@ -81,7 +81,15 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
 
   const strategyCode = readString(report?.strategy_code, meta.strategy_code)
   const strategyVersion = readString(report?.strategy_version, meta.strategy_version)
-  const profileId = readString(report?.profile_id, lineage?.primary?.profile_id, meta.profile_id)
+  const canonicalInput = report?.input_identity || lineage?.input_identity || null
+  const canonicalRequest = canonicalInput
+    ? [
+        canonicalInput.request.dataset_kind,
+        canonicalInput.request.symbol,
+        canonicalInput.request.contract_or_series || '-',
+        canonicalInput.request.frequency,
+      ].join(' · ')
+    : null
 
   const policyStatus = readString(report?.indicator_policy_status)
   const policySnapshot = report?.indicator_policy_snapshot
@@ -104,12 +112,6 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
     indicatorPolicyStatus = unavailable('indicator_policy_status missing')
     indicatorPolicySummary = unavailable('indicator_policy_snapshot missing')
   }
-
-  const binding = report?.binding_snapshot
-  const bindingPresent =
-    binding && typeof binding === 'object' && Object.keys(binding).length > 0
-      ? available<'yes' | 'no'>('yes')
-      : unavailable<'yes' | 'no'>('binding_snapshot missing')
 
   const signalBar = readString(trade?.entry_signal_time)
   const fillTime = readString(trade?.open_time)
@@ -160,7 +162,7 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
     lineageField = warning('warning', 'lineage warning')
   } else if (input.lineage_status_hint === 'unavailable') {
     lineageField = unavailable('lineage unavailable')
-  } else if (lineage?.primary?.market_data_file_id) {
+  } else if (canonicalInput?.digest || lineage?.input_digest) {
     lineageField = available('ready')
   } else if (input.lineage_status_hint === 'ready') {
     lineageField = available('ready')
@@ -173,8 +175,12 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
     strategy_version: strategyVersion ? available(strategyVersion) : unavailable('strategy_version missing'),
     indicator_policy_status: indicatorPolicyStatus,
     indicator_policy_summary: indicatorPolicySummary,
-    profile_id: profileId ? available(profileId) : unavailable('profile_id missing'),
-    binding_snapshot_present: bindingPresent,
+    canonical_input_identity: canonicalRequest
+      ? available(canonicalRequest)
+      : unavailable('input_identity missing'),
+    canonical_input_digest: readString(canonicalInput?.digest, lineage?.input_digest)
+      ? available(readString(canonicalInput?.digest, lineage?.input_digest) as string)
+      : unavailable('input_identity digest missing'),
     signal_bar: signalBar ? available(signalBar) : unavailable('entry_signal_time missing'),
     next_bar_fill: nextBarFill,
     cost_model: costModel ? available(costModel) : unavailable('cost_model_version missing'),

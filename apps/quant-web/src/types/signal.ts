@@ -12,11 +12,17 @@ export interface SignalRecord {
   confidence: number
 }
 
+export type SignalScanMode = 'scan' | 'replay' | 'repair' | 'recompute'
+
 export interface SignalScanRequest {
-  profile_id: string
+  dataset_kind: 'actual_dominant'
+  instrument_symbol: string
+  contract_or_series: string
   watchlist_code: string
   periods: string[]
-  symbols?: string[]
+  start: string
+  end: string
+  mode?: SignalScanMode
   account_equity: number
   risk_per_trade_pct: number
   max_margin_usage_pct: number
@@ -42,6 +48,17 @@ export interface SignalScanTask {
   started_at?: string | null
   finished_at?: string | null
   result_payload: Record<string, unknown>
+  mode?: SignalScanMode | string
+  research_only?: boolean
+}
+
+/** Formal replay/repair/recompute response; the backend guarantees created=changed=0. */
+export interface SignalScanPreview {
+  mode: Exclude<SignalScanMode, 'scan'>
+  evaluations: StrategySignalRecord[]
+  blocked_items: Array<Record<string, unknown>>
+  created: 0
+  changed: 0
 }
 
 export type SignalLifecycleStatus = 'new' | 'viewed' | 'ignored' | 'watching' | 'expired'

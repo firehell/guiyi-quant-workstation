@@ -47,6 +47,7 @@ import {
   parseReviewDeepLinkQuery,
   reviewSourceIdentity,
 } from '@/utils/reviewFoundation'
+import { presentCanonicalInputIdentity } from '@/utils/dataCoreV2Consumer'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { signalSourceDataMode } from '@/utils/signalSourceMode'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
@@ -575,22 +576,14 @@ function reviewToBacktestTrade(review: ReviewNote): BacktestTrade | null {
 }
 
 function lineageDebugItems(lineage: ReviewFormalLineage) {
-  const primary = lineage.primary
-  const bar = lineage.bar
+  const identity = presentCanonicalInputIdentity(lineage.input_identity)
   return [
-    {
-      label: 'source_snapshot_schema_version',
-      value: lineage.source_snapshot_schema_version || '-',
-    },
-    { label: 'symbol', value: primary.instrument_symbol || '-' },
-    { label: 'contract', value: primary.contract_code || '-' },
-    { label: 'interval', value: primary.period || '-' },
-    { label: 'start', value: bar.bar_start || '-' },
-    { label: 'end', value: bar.bar_end || '-' },
-    { label: 'provider', value: primary.provider || '-' },
-    { label: 'data_role', value: primary.data_role || '-' },
-    { label: 'profile_id', value: primary.profile_id || '-' },
-    { label: 'market_data_file_id', value: String(primary.market_data_file_id) },
+    { label: 'canonical_request', value: identity.request },
+    { label: 'source_datasets', value: identity.sourceDatasets },
+    { label: 'manifest_digests', value: identity.manifestDigests },
+    { label: 'requested_window', value: identity.requestedWindow },
+    { label: 'input_digest', value: lineage.input_digest || identity.digest },
+    { label: 'source_window', value: `${lineage.source_window.start || '-'} → ${lineage.source_window.end || '-'}` },
   ]
 }
 
@@ -772,16 +765,12 @@ function apiError(err: unknown, fallback: string) {
           <span v-for="item in klineQueryItems" :key="item.label">{{ item.label }}={{ item.value }}</span>
         </div>
         <div
-          v-if="selectedReview && foundationLineage?.source_snapshot_schema_version"
+          v-if="selectedReview && foundationLineage?.input_identity"
           class="kline-lineage-state"
         >
-          <strong>Review 来源快照</strong>
+          <strong>Review canonical lineage</strong>
           <span>schema_version={{ foundationLineage.schema_version }}</span>
-          <span>source_snapshot_schema_version={{ foundationLineage.source_snapshot_schema_version }}</span>
-          <span v-if="foundationLineage.resolver_name">resolver={{ foundationLineage.resolver_name }}</span>
-          <span v-if="foundationLineage.resolver_contract_version">
-            resolver_contract={{ foundationLineage.resolver_contract_version }}
-          </span>
+          <span>input_digest={{ foundationLineage.input_digest }}</span>
         </div>
         <div v-if="selectedReview" class="kline-note">
           <strong>交易点备注</strong>
