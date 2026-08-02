@@ -41,6 +41,14 @@ historical canonical 与 live observation 分离。live 只能用于观察、con
 前向判断和盘后核对，不能复制或晋升为 historical canonical；EOD 必须重新获取 RQData
 provider-final 数据并进行指纹与结果对账。
 
+V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainContractMap metadata。
+旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 raw/
+standard/canonical bar layer，以及 Profile/Binding/legacy lineage 都是 rebuild-only 或
+compatibility-only，不是新的 active migration asset。report 14/15 是可由 Git 追溯的历史快照，
+不作为 active Gate 或回归基线；不改写其历史结论，也不删除历史证据。Task 07 只有在 exact
+deletion manifest、zero active references、independent Sol Review 和 owner exact-scope approval
+齐备后才可另行执行删除。
+
 ## 模块责任
 
 | 文件 | 职责 |

@@ -2,22 +2,20 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 import sys
 from typing import Any, Literal
-from uuid import uuid4
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.backtest.v1b_jm_tasks import JM_V1B_DATA_SOURCE, JM_V1B_EXCHANGE, JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION, JM_V1B_SYMBOL
 from app.core.env import PROJECT_ROOT
-from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
+from app.models.signal import SignalEvent
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_data_reader import MarketDataReader
 from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE, LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
 from app.services.signal_lineage import SignalFormalLineageResolver
-from app.signal.events import SIGNAL_CREATED, record_signal_scan_event
+from app.signal.events import SIGNAL_CREATED
 from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
 
 ENTRY_STATUS = "entry_signal"
@@ -73,7 +71,7 @@ class ReplayCandidate:
 
 
 class Stage9JmV1bReplayService:
-    """Materialize one guarded historical JM V1-B entry event for Stage 9 smoke testing."""
+    """Evaluate the retired Stage 9 historical replay as preview-only evidence."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -97,7 +95,9 @@ class Stage9JmV1bReplayService:
         except ValueError as exc:
             return {
                 "ok": False,
-                "dry_run": not run_write,
+                "dry_run": True,
+                "mode": "replay",
+                "persistence_allowed": False,
                 "candidate_found": False,
                 "blocked_reasons": [str(exc)],
                 "would_write_signal_event": False,
@@ -106,7 +106,9 @@ class Stage9JmV1bReplayService:
         if candidate is None:
             return {
                 "ok": True,
-                "dry_run": not run_write,
+                "dry_run": True,
+                "mode": "replay",
+                "persistence_allowed": False,
                 "candidate_found": False,
                 "blocked_reasons": ["entry_signal_not_found"],
                 "would_write_signal_event": False,
@@ -116,7 +118,9 @@ class Stage9JmV1bReplayService:
         gate = evaluate_stage9_signal_event_gate(preview_event)
         payload = {
             "ok": True,
-            "dry_run": not run_write,
+            "dry_run": True,
+            "mode": "replay",
+            "persistence_allowed": False,
             "candidate_found": True,
             "candidate": candidate.to_public_dict(),
             "gate": {
@@ -124,27 +128,10 @@ class Stage9JmV1bReplayService:
                 "blocked_reasons": gate["blocked_reasons"],
                 "payload_basis": gate["payload_basis"],
             },
-            "would_write_signal_event": True,
+            "would_write_signal_event": False,
             "event_id": None,
             "signal_id": None,
         }
-        if not run_write:
-            return payload
-
-        signal, event = self._write_candidate(candidate)
-        persisted_gate = evaluate_stage9_signal_event_gate(event)
-        payload.update(
-            {
-                "dry_run": False,
-                "event_id": event.id,
-                "signal_id": signal.id,
-                "gate": {
-                    "allowed": persisted_gate["allowed"],
-                    "blocked_reasons": persisted_gate["blocked_reasons"],
-                    "payload_basis": persisted_gate["payload_basis"],
-                },
-            }
-        )
         return payload
 
     def find_latest_candidate(
@@ -328,116 +315,6 @@ class Stage9JmV1bReplayService:
             "checksum": market_file.checksum,
         }
         return bars[-limit:], asset
-
-    def _write_candidate(self, candidate: ReplayCandidate) -> tuple[StrategySignal, SignalEvent]:
-        event_key = f"{SIGNAL_CREATED}:{_dedupe_key(candidate)}"
-        existing_event = self.session.scalar(select(SignalEvent).where(SignalEvent.event_key == event_key))
-        if existing_event is not None and existing_event.signal_id is not None:
-            signal = self.session.get(StrategySignal, existing_event.signal_id)
-            if signal is not None:
-                return signal, existing_event
-
-        signal = self.session.scalar(select(StrategySignal).where(StrategySignal.dedupe_key == _dedupe_key(candidate)))
-        if signal is None:
-            task = self._create_task(candidate)
-            signal = self._signal_from_candidate(candidate, task.task_no)
-            self.session.add(signal)
-            self.session.flush()
-        else:
-            task = self._create_task(candidate)
-
-        event = record_signal_scan_event(self.session, signal, SIGNAL_CREATED, task)
-        if event is None:
-            raise RuntimeError("failed to create historical replay signal event")
-        event.payload = {
-            **(event.payload or {}),
-            "historical_replay": {
-                "observation_only": True,
-                "not_trading_instruction": True,
-                "auto_order": False,
-                "purpose": "stage9_b2_enterprise_wechat_smoke",
-            },
-        }
-        self.session.commit()
-        self.session.refresh(signal)
-        self.session.refresh(event)
-        return signal, event
-
-    def _create_task(self, candidate: ReplayCandidate) -> SignalScanTask:
-        task = SignalScanTask(
-            task_no=f"SIG-JM-V1B-REPLAY-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}",
-            status="completed",
-            progress=100.0,
-            watchlist_code=REPLAY_WATCHLIST_CODE,
-            periods=[candidate.period],
-            total_items=1,
-            completed_items=1,
-            profile_id=INTRADAY_RESEARCH_PROFILE,
-            market_data_file_id=int(candidate.formal_lineage["primary"]["market_data_file_id"]),
-            request_payload={
-                "watchlist_code": REPLAY_WATCHLIST_CODE,
-                "symbols": ["jm"],
-                "periods": [candidate.period],
-                "provider": JM_V1B_DATA_SOURCE,
-                "data_role": "primary",
-                "strategy_code": JM_V1B_STRATEGY_CODE,
-                "strategy_version": JM_V1B_STRATEGY_VERSION,
-                "source_mode": REPLAY_SOURCE_MODE,
-                "historical_replay": True,
-                "observation_only": True,
-                "auto_order": False,
-            },
-            result_payload={"candidate": candidate.to_public_dict()},
-            started_at=datetime.now(UTC),
-            finished_at=datetime.now(UTC),
-        )
-        self.session.add(task)
-        self.session.flush()
-        return task
-
-    def _signal_from_candidate(self, candidate: ReplayCandidate, task_no: str) -> StrategySignal:
-        return StrategySignal(
-            task_no=task_no,
-            dedupe_key=_dedupe_key(candidate),
-            strategy_name=JM_V1B_STRATEGY_CODE,
-            strategy_version=JM_V1B_STRATEGY_VERSION,
-            watchlist_code=REPLAY_WATCHLIST_CODE,
-            symbol="jm",
-            contract=candidate.actual_contract,
-            product=candidate.product,
-            continuous_contract=candidate.continuous_contract,
-            actual_contract=candidate.actual_contract,
-            dominant_mapping_date=datetime.fromisoformat(candidate.dominant_mapping_date).date(),
-            exchange=candidate.exchange,
-            period=candidate.period,
-            signal_time=candidate.bar_end,
-            bar_start=candidate.bar_start,
-            bar_end=candidate.bar_end,
-            trigger_price=candidate.trigger_price,
-            provider=JM_V1B_DATA_SOURCE,
-            source=REPLAY_SOURCE,
-            data_role="primary",
-            status=ENTRY_STATUS,
-            direction=candidate.direction,
-            signal_level=80,
-            score_bucket=80,
-            bucket_label="历史回放提醒",
-            current_price=candidate.trigger_price,
-            target_price=None,
-            stop_loss_price=candidate.stop_loss_price,
-            risk_reward_ratio=None,
-            open_volume=0,
-            margin_required=0.0,
-            risk_amount=0.0,
-            account_equity=100000.0,
-            reasons=[candidate.entry_reason, f"daily_direction={candidate.daily_direction}", "historical_replay_observation_only"],
-            features=_candidate_features(candidate),
-            quality_status=candidate.quality_status,
-            research_contract=False,
-            spec_source="stage9_b2_historical_replay",
-            profile_id=INTRADAY_RESEARCH_PROFILE,
-            market_data_file_id=int(candidate.formal_lineage["primary"]["market_data_file_id"]),
-        )
 
     def _event_from_candidate(self, candidate: ReplayCandidate, *, signal_id: int | None, task_no: str | None) -> SignalEvent:
         return SignalEvent(

@@ -16,7 +16,7 @@ from app.backtest.runner import BacktestTaskRunner
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel
+from app.models.backtest import BacktestReportModel, BacktestTradeModel
 from app.models.data_center import DataProfile, MarketDataFile, ProfileActiveBinding
 from app.models.data_center import Contract, Exchange, FuturesTradingParameter, Instrument, MainContractMap, TradingCalendar
 
@@ -432,10 +432,8 @@ def _run_v1b_task_with_trade(session, trade: dict[str, Any]):
     from app.backtest.v1b_jm_tasks import build_jm_v1b_task_config
 
     spec = build_jm_v1b_task_config(session, "15m")  # type: ignore[arg-type]
-    from app.api.backtests import _fixed_jm_formal_request
-
-    task = BacktestService(session).create_formal_task(
-        _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+    task = BacktestService(session).create_task(
+        spec.config.model_copy(update={"research_only": True})
     )
     session.commit()
     result = BacktestTaskRunner(session, adapter=FakeV1bTradeAdapter(trade)).run(task.id)
@@ -564,7 +562,7 @@ def test_build_jm_daily_ema21_macd_volume_task_rejects_non_primary_or_missing_co
             build_jm_daily_ema21_macd_volume_task_config(session)
 
 
-def test_create_jm_daily_ema21_macd_volume_task_enters_backtest_queue(tmp_path: Path, monkeypatch) -> None:
+def test_legacy_profile_only_fixed_jm_daily_routes_fail_closed(tmp_path: Path, monkeypatch) -> None:
     import app.api.backtests as api_module
 
     SessionLocal = _session_factory()
@@ -590,29 +588,14 @@ def test_create_jm_daily_ema21_macd_volume_task_enters_backtest_queue(tmp_path: 
         created = client.post("/api/backtests/v1b/jm/daily-ema21-macd-volume/tasks")
         legacy = client.post("/api/backtests/v1b/jm/15m/tasks")
 
-        assert created.status_code == 200
-        assert legacy.status_code == 200
-        assert created.json()["status"] == "queued"
-        assert created.json()["fixed_task"]["name"] == "JM V1-B daily EMA21 MACD volume"
-        assert created.json()["fixed_task"]["interval"] == "1d"
-        assert created.json()["fixed_task"]["strategy_code"] == "su_bing_jm_daily_ema21_macd_volume"
-        assert created.json()["fixed_task"]["result_report_id_path"] == "result_payload.report_id"
-        assert legacy.json()["fixed_task"]["entry_interval"] == "15m"
-        assert queued_ids == [created.json()["id"], legacy.json()["id"]]
-
-        with SessionLocal() as session:
-            tasks = session.scalars(select(BacktestTask).order_by(BacktestTask.id)).all()
-            assert [task.task_type for task in tasks] == ["v1b_jm_daily_ema21_macd_volume", "v1b_jm_15m_entry"]
-            assert tasks[0].vnpy_setting_json["interval"] == "1d"
-            assert tasks[0].vnpy_setting_json["auxiliary_bar_data_paths"] == {}
-            assert "daily_ema21_macd_volume" in tasks[0].vnpy_strategy_class
-            assert tasks[1].vnpy_setting_json["interval"] == "15m"
-            assert tasks[1].vnpy_setting_json["auxiliary_bar_data_paths"].keys() == {"1d"}
+        assert created.status_code == 422
+        assert legacy.status_code == 422
+        assert queued_ids == []
     finally:
         app.dependency_overrides.clear()
 
 
-def test_create_jm_daily_score2of4_task_enters_backtest_queue(tmp_path: Path, monkeypatch) -> None:
+def test_legacy_profile_only_fixed_jm_score2of4_route_fails_closed(tmp_path: Path, monkeypatch) -> None:
     import app.api.backtests as api_module
 
     SessionLocal = _session_factory()
@@ -637,28 +620,13 @@ def test_create_jm_daily_score2of4_task_enters_backtest_queue(tmp_path: Path, mo
         client = TestClient(app)
         created = client.post("/api/backtests/v1b/jm/daily-score2of4/tasks")
 
-        assert created.status_code == 200
-        payload = created.json()
-        assert payload["status"] == "queued"
-        assert payload["fixed_task"]["name"] == "JM V1-B daily score2of4"
-        assert payload["fixed_task"]["interval"] == "1d"
-        assert payload["fixed_task"]["strategy_code"] == "su_bing_jm_daily_ema21_macd_volume"
-        assert payload["fixed_task"]["strategy_version"] == "v0.3.0-daily-score2of4"
-        assert payload["fixed_task"]["result_report_id_path"] == "result_payload.report_id"
-        assert queued_ids == [payload["id"]]
-
-        with SessionLocal() as session:
-            task = session.scalar(select(BacktestTask))
-            assert task is not None
-            assert task.task_type == "v1b_jm_daily_score2of4"
-            assert "su_bing_jm_daily_score2of4" in task.vnpy_strategy_class
-            assert task.vnpy_setting_json["strategy_version"] == "v0.3.0-daily-score2of4"
-            assert task.vnpy_setting_json["strategy_parameters"]["min_entry_score"] == 2
+        assert created.status_code == 422
+        assert queued_ids == []
     finally:
         app.dependency_overrides.clear()
 
 
-def test_create_jm_daily_trend_cross_score2_task_enters_backtest_queue(tmp_path: Path, monkeypatch) -> None:
+def test_legacy_profile_only_fixed_jm_trend_cross_route_fails_closed(tmp_path: Path, monkeypatch) -> None:
     import app.api.backtests as api_module
 
     SessionLocal = _session_factory()
@@ -683,25 +651,8 @@ def test_create_jm_daily_trend_cross_score2_task_enters_backtest_queue(tmp_path:
         client = TestClient(app)
         created = client.post("/api/backtests/v1b/jm/daily-trend-cross-score2/tasks")
 
-        assert created.status_code == 200
-        payload = created.json()
-        assert payload["status"] == "queued"
-        assert payload["fixed_task"]["name"] == "JM V1-B daily trend cross score2"
-        assert payload["fixed_task"]["interval"] == "1d"
-        assert payload["fixed_task"]["strategy_code"] == "su_bing_jm_daily_ema21_macd_volume"
-        assert payload["fixed_task"]["strategy_version"] == "v0.3.1-daily-trend-cross-score2"
-        assert payload["fixed_task"]["result_report_id_path"] == "result_payload.report_id"
-        assert queued_ids == [payload["id"]]
-
-        with SessionLocal() as session:
-            task = session.scalar(select(BacktestTask))
-            assert task is not None
-            assert task.task_type == "v1b_jm_daily_trend_cross_score2"
-            assert "su_bing_jm_daily_trend_cross_score2" in task.vnpy_strategy_class
-            assert task.vnpy_setting_json["strategy_version"] == "v0.3.1-daily-trend-cross-score2"
-            assert task.vnpy_setting_json["strategy_parameters"]["min_entry_score"] == 2
-            assert task.vnpy_setting_json["strategy_parameters"]["require_trend_alignment"] is True
-            assert task.vnpy_setting_json["strategy_parameters"]["require_macd_cross"] is True
+        assert created.status_code == 422
+        assert queued_ids == []
     finally:
         app.dependency_overrides.clear()
 
@@ -716,10 +667,8 @@ def test_jm_daily_ema21_macd_volume_runner_persists_report_and_exportable_artifa
         _seed_jm_v1b_files(session, tmp_path)
         _seed_jm_daily_contract_reference(session)
         spec = build_jm_daily_ema21_macd_volume_task_config(session)
-        from app.api.backtests import _fixed_jm_formal_request
-
-        task = BacktestService(session).create_formal_task(
-            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        task = BacktestService(session).create_task(
+            spec.config.model_copy(update={"research_only": True})
         )
         session.commit()
 
@@ -762,7 +711,7 @@ def test_jm_daily_ema21_macd_volume_runner_persists_report_and_exportable_artifa
         assert trades[0].raw_payload["entry_reason"].startswith("daily_close_above_ema21")
 
 
-def test_create_jm_v1b_15m_and_5m_tasks_enter_backtest_queue(tmp_path: Path, monkeypatch) -> None:
+def test_legacy_profile_only_fixed_jm_intraday_routes_fail_closed(tmp_path: Path, monkeypatch) -> None:
     import app.api.backtests as api_module
 
     SessionLocal = _session_factory()
@@ -787,25 +736,9 @@ def test_create_jm_v1b_15m_and_5m_tasks_enter_backtest_queue(tmp_path: Path, mon
         created_15m = client.post("/api/backtests/v1b/jm/15m/tasks")
         created_5m = client.post("/api/backtests/v1b/jm/5m/tasks")
 
-        assert created_15m.status_code == 200
-        assert created_5m.status_code == 200
-        assert created_15m.json()["status"] == "queued"
-        assert created_5m.json()["status"] == "queued"
-        assert created_15m.json()["fixed_task"]["entry_interval"] == "15m"
-        assert created_5m.json()["fixed_task"]["entry_interval"] == "5m"
-        assert queued_ids == [created_15m.json()["id"], created_5m.json()["id"]]
-
-        with SessionLocal() as session:
-            tasks = session.scalars(select(BacktestTask).order_by(BacktestTask.id)).all()
-            assert [task.task_type for task in tasks] == ["v1b_jm_15m_entry", "v1b_jm_5m_entry"]
-            assert [task.vnpy_setting_json["interval"] for task in tasks] == ["15m", "5m"]
-            assert all(task.vnpy_strategy_class and "jm_v1b_daily_direction_fast_entry" in task.vnpy_strategy_class for task in tasks)
-            assert all(task.vnpy_setting_json["auxiliary_bar_data_paths"].keys() == {"1d"} for task in tasks)
-            assert tasks[0].vnpy_setting_json["strategy_parameters"]["entry_interval"] == "15m"
-            assert tasks[1].vnpy_setting_json["strategy_parameters"]["entry_interval"] == "5m"
-            assert all(task.vnpy_setting_json["strategy_parameters"]["max_hold_bars_min"] == 5 for task in tasks)
-            assert all(task.vnpy_setting_json["strategy_parameters"]["max_hold_bars_max"] == 8 for task in tasks)
-            assert all(task.vnpy_setting_json["strategy_parameters"]["stop_loss_atr_multiple"] > 0 for task in tasks)
+        assert created_15m.status_code == 422
+        assert created_5m.status_code == 422
+        assert queued_ids == []
     finally:
         app.dependency_overrides.clear()
 
@@ -877,10 +810,8 @@ def test_jm_v1b_fixed_task_runner_persists_real_contract_costs_and_totals(tmp_pa
         _seed_jm_v1b_files(session, tmp_path)
         _seed_jm_contract_reference(session)
         spec = build_jm_v1b_task_config(session, entry_interval)  # type: ignore[arg-type]
-        from app.api.backtests import _fixed_jm_formal_request
-
-        task = BacktestService(session).create_formal_task(
-            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        task = BacktestService(session).create_task(
+            spec.config.model_copy(update={"research_only": True})
         )
         session.commit()
 
@@ -1045,10 +976,8 @@ def test_jm_v1b_runner_fails_clearly_when_trading_parameters_are_missing(tmp_pat
         _seed_jm_v1b_files(session, tmp_path)
         _seed_jm_contract_reference(session, with_params=False)
         spec = build_jm_v1b_task_config(session, "15m")
-        from app.api.backtests import _fixed_jm_formal_request
-
-        task = BacktestService(session).create_formal_task(
-            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+        task = BacktestService(session).create_task(
+            spec.config.model_copy(update={"research_only": True})
         )
         session.commit()
 
@@ -1063,7 +992,9 @@ def test_jm_v1b_runner_fails_clearly_when_trading_parameters_are_missing(tmp_pat
         assert task.traceback
 
 
-def test_jm_v1b_fixed_task_rejects_missing_formal_data(tmp_path: Path, monkeypatch) -> None:
+def test_jm_v1b_fixed_task_ignores_legacy_profile_file_and_fails_on_canonical_data(
+    tmp_path: Path, monkeypatch
+) -> None:
     import app.api.backtests as api_module
 
     SessionLocal = _session_factory()
@@ -1085,6 +1016,6 @@ def test_jm_v1b_fixed_task_rejects_missing_formal_data(tmp_path: Path, monkeypat
         response = TestClient(app).post("/api/backtests/v1b/jm/15m/tasks")
 
         assert response.status_code == 422
-        assert response.json()["detail"]["code"] == "BACKTEST_PROFILE_FILE_MISSING"
+        assert "BACKTEST_PROFILE" not in str(response.json()["detail"])
     finally:
         app.dependency_overrides.clear()

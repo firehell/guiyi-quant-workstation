@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -71,8 +72,8 @@ class VnpyBacktestRunner:
         settings = VnpyBacktestSettings(
             vt_symbol=to_vt_symbol(runtime_symbol, request.exchange),
             interval=request.interval,
-            start=request.start,
-            end=request.end,
+            start=_to_naive_utc_datetime(request.start),
+            end=_to_naive_utc_datetime(request.end),
             rate=request.rate,
             slippage=request.slippage,
             size=request.size,
@@ -119,6 +120,7 @@ class VnpyBacktestRunner:
             strategy_parameters["_guiyi_auxiliary_bars"] = auxiliary_bars
         engine.add_strategy(prepared.strategy_class, strategy_parameters)
         engine.history_data = bars
+        contract_roll_cancellations = _install_contract_roll_boundary_handler(engine)
         engine.run_backtesting()
         daily_df = engine.calculate_result()
         statistics = engine.calculate_statistics(daily_df, output=False)
@@ -137,6 +139,7 @@ class VnpyBacktestRunner:
             "signal_candidates": _strategy_runtime_records(engine, "signal_candidates"),
             "rejected_signals": _strategy_runtime_records(engine, "rejected_signals"),
             "orders": engine.get_all_orders(),
+            "contract_roll_cancellations": contract_roll_cancellations,
             "daily_results": engine.get_all_daily_results(),
             "equity_curve": _dataframe_records(daily_df, fields=("balance",)),
             "drawdown_curve": _dataframe_records(daily_df, fields=("drawdown", "ddpercent")),
@@ -189,6 +192,87 @@ def _load_vnpy_backtesting_objects() -> tuple[type[Any], type[Any], Any, Any]:
         constant_module.Exchange,
         constant_module.Interval,
     )
+
+
+def _install_contract_roll_boundary_handler(engine: Any) -> list[dict[str, Any]]:
+    """Cancel old-contract working orders before vn.py crosses the first new bar."""
+    original_new_bar = engine.new_bar
+    cancellations: list[dict[str, Any]] = []
+    previous_symbol: str | None = None
+
+    def guarded_new_bar(bar: Any) -> None:
+        nonlocal previous_symbol
+        new_symbol = _to_vnpy_runtime_symbol(str(bar.symbol))
+        if previous_symbol is not None and new_symbol != previous_symbol:
+            cancellations.extend(
+                _cancel_runtime_orders_before_roll(
+                    engine,
+                    old_symbol=previous_symbol,
+                    new_symbol=new_symbol,
+                )
+            )
+        _switch_engine_runtime_symbol(engine, bar)
+        previous_symbol = new_symbol
+        original_new_bar(bar)
+
+    engine.new_bar = guarded_new_bar
+    return cancellations
+
+
+def _cancel_runtime_orders_before_roll(
+    engine: Any,
+    *,
+    old_symbol: str,
+    new_symbol: str,
+) -> list[dict[str, Any]]:
+    cancellations: list[dict[str, Any]] = []
+    for order_id, order in list(engine.active_limit_orders.items()):
+        if _to_vnpy_runtime_symbol(str(order.symbol)) != old_symbol:
+            continue
+        volume = float(order.volume)
+        traded = float(order.traded)
+        cancelled_volume = max(volume - traded, 0.0)
+        setattr(order, "cancel_reason", "contract_roll_boundary")
+        setattr(order, "cancelled_volume", cancelled_volume)
+        engine.cancel_limit_order(engine.strategy, order_id)
+        cancellations.append(
+            {
+                "order_no": str(order.vt_orderid),
+                "old_contract": old_symbol,
+                "new_contract": new_symbol,
+                "reason": "contract_roll_boundary",
+                "volume": volume,
+                "traded": traded,
+                "cancelled_volume": cancelled_volume,
+            }
+        )
+    for order_id, order in list(engine.active_stop_orders.items()):
+        if _to_vnpy_runtime_symbol(str(order.vt_symbol).rsplit(".", 1)[0]) != old_symbol:
+            continue
+        volume = float(order.volume)
+        setattr(order, "cancel_reason", "contract_roll_boundary")
+        setattr(order, "cancelled_volume", volume)
+        engine.cancel_stop_order(engine.strategy, order_id)
+        cancellations.append(
+            {
+                "order_no": str(order.stop_orderid),
+                "old_contract": old_symbol,
+                "new_contract": new_symbol,
+                "reason": "contract_roll_boundary",
+                "volume": volume,
+                "traded": 0.0,
+                "cancelled_volume": volume,
+            }
+        )
+    return cancellations
+
+
+def _switch_engine_runtime_symbol(engine: Any, bar: Any) -> None:
+    symbol = _to_vnpy_runtime_symbol(str(bar.symbol))
+    engine.symbol = symbol
+    engine.exchange = bar.exchange
+    engine.vt_symbol = f"{symbol}.{bar.exchange.value}"
+    engine.strategy.vt_symbol = engine.vt_symbol
 
 
 def _load_request_bars(request: GuiyiBacktestRequest, *, bar_class: type[Any], exchange_enum: Any, interval_enum: Any) -> list[Any]:
@@ -261,9 +345,13 @@ def _validate_standard_rows(rows: list[dict[str, Any]]) -> None:
         quality_status = str(row["quality_status"])
         if quality_status != "passed":
             raise BacktestConfigurationError("vn.py backtest only accepts quality_status=passed standard bars")
-        if float(row["high"]) < max(float(row["open"]), float(row["close"])):
+        high = _exact_decimal(row["high"], field="high")
+        low = _exact_decimal(row["low"], field="low")
+        open_price = _exact_decimal(row["open"], field="open")
+        close_price = _exact_decimal(row["close"], field="close")
+        if high < max(open_price, close_price):
             raise BacktestConfigurationError("standard bar high must be greater than or equal to open and close")
-        if float(row["low"]) > min(float(row["open"]), float(row["close"])):
+        if low > min(open_price, close_price):
             raise BacktestConfigurationError("standard bar low must be less than or equal to open and close")
 
 
@@ -303,8 +391,8 @@ def _row_to_bar(
 
 
 def _filter_rows_to_request_window(rows: list[dict[str, Any]], *, request: GuiyiBacktestRequest) -> list[dict[str, Any]]:
-    start = request.start.replace(tzinfo=None)
-    end = request.end.replace(tzinfo=None)
+    start = _to_naive_utc_datetime(request.start)
+    end = _to_naive_utc_datetime(request.end)
     return [
         row
         for row in rows
@@ -356,7 +444,22 @@ def _to_naive_datetime(value: Any) -> datetime:
         value = value.to_pydatetime()
     if not isinstance(value, datetime):
         value = datetime.fromisoformat(str(value))
-    return value.replace(tzinfo=None)
+    return _to_naive_utc_datetime(value)
+
+
+def _to_naive_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=None)
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _exact_decimal(value: Any, *, field: str) -> Decimal:
+    try:
+        return value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise BacktestConfigurationError(
+            f"standard bar {field} must be decimal-compatible"
+        ) from exc
 
 
 def _dataframe_records(frame: Any, *, fields: tuple[str, ...]) -> list[dict[str, Any]]:

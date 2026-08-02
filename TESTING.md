@@ -56,7 +56,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_target_freshness.py
 ```
 
-下游尚未迁移，其 Profile/lineage 合同仍须回归：
+legacy Profile/lineage compatibility 回归（不证明 active selector）：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -145,6 +145,49 @@ EXPECT_CANONICAL_MARKET=1 pnpm --dir apps/quant-web test:e2e
 `guiyi data migrate inventory/plan` 为零写入命令；plan 必须同时显式传入 task worktree
 `--project-root`、旧资产 `--legacy-root`、新 `--canonical-root/--staging-root` 与 exact window。
 worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval packet。
+
+### Task 05 derived/reference inventory
+
+下列 CLI 只输出稳定 JSON；不加载 RQData、不含 delete/apply/repair mode。真实 DB 只允许通过
+显式 `--database-url-env NAME` 外部只读 Gate 注入，绝不输出 URL；PostgreSQL 精确使用
+`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`。`--max-files` 限制文件、匹配和输出记录，
+`--max-directories` 单独限制目录；`--max-file-bytes`、`--max-total-bytes` 与 `--max-ids` 均有安全默认值。任何预算、
+symlink、非 UTF-8、TOCTOU、缺表/缺列或读取错误都会返回 incomplete diagnostics，绝不把截断
+或猜测结果当作完整 inventory。`market_data_files.file_path` 必须为绝对路径、containment 于显式
+`--canonical-root`（默认 data root）后转为 POSIX 相对 URI，并与唯一 `Catalog partition.file_uri`
+精确一致；provider、symbol、contract、period、checksum、manifest/version 证据任一漂移或 URI
+歧义均为 REVIEW_REQUIRED。legacy `bars` 的 5m/15m/30m/60m 和明确 derived 均为 REBUILD_ONLY。
+Task 05 inventory 当前未实现对 manifest/Parquet 的完整物理 proof reader；因此即使 Catalog
+字段一致的 direct candidate 也必须保持 REVIEW_REQUIRED 并输出
+`PHYSICAL_KEEP_PROOF_REQUIRED`，绝不产生弱 `KEEP_TRUSTED_CANONICAL`。
+Catalog 表中没有可与 `MarketDataFile.data_version` 直接对照的 source-data-version 字段；
+`manifest_version` 不是 data version，故 inventory 只可标记
+`metadata_aligned_partial_data_version_unverified`，不能声称 data version 已对齐。
+
+Task 07 的 zero-reference eligibility 同时要求 repository active/review references 为零，且
+27 条显式数据库 relation rule 的 active/review count 为零。规则覆盖 active/unknown Profile
+Binding、quality report→file、file→download task、active/unknown download task、Backtest
+task/report/trade/order、StrategySignal/SignalEvent/scan/notification、Review note/attachment/tag
+与 live/EOD 表；每条输出 `table/predicate/count/row_ids/target_ids/status/reason`。查询只使用固定
+allowlist、参数化 predicate、精确 count 和受 `--max-ids` 限制的 identifier read；缺表、缺列、
+未知状态或 identifier 超限均 fail-closed，不能产生 zero-reference 资格。
+
+repository source/doc scan 包含 `.mjs/.mts/.cjs` 及 Makefile/GNUmakefile、extensionless README、
+Dockerfile。其他未知无扩展名 regular file 会输出 `REPO_UNKNOWN_EXTENSIONLESS_FILE`，未知 suffix
+输出 `REPO_UNKNOWN_FILE_TYPE`，并令结果 incomplete；CSV、binary/data、compiled/cache 类型只可按
+`explicit_file_type_exclusions` 中的显式理由跳过，不能静默漏掉潜在 consumer reference。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_derived_reference_inventory.py
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api python scripts/derived_reference_inventory.py \
+  --repo-root /path/to/fixture-repo --data-root /path/to/fixture-data
+```
+
+真实 PostgreSQL/data root 只读盘点是 external Gate；它不授权重建、迁移、删除、Runtime、通知或交易。
 
 生产 migration、真实 RQData/Parquet/PostgreSQL apply 与创建/删除隔离 PostgreSQL 数据库
 都需要精确授权。Task 04 的专用临时库已在用户授权后完成测试并删除；这不授权生产 apply，

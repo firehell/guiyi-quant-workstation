@@ -66,10 +66,10 @@ def _enrich_trade(session: Session, config: BacktestTaskConfig, trade: dict[str,
     multiplier = entry.contract_multiplier
     gross_pnl = direction_sign * (exit_price - entry_price) * volume * multiplier
     commission = _commission(entry, exit_, entry_price=entry_price, exit_price=exit_price, volume=volume, entry_time=entry_time, exit_time=exit_time)
-    slippage = 2 * float(config.slippage) * entry.price_tick * volume * multiplier
+    slippage = 2 * float(config.slippage) * float(entry.price_tick) * volume * multiplier
     net_pnl = gross_pnl - commission - slippage
     turnover = (entry_price + exit_price) * volume * multiplier
-    margin_required = entry_price * volume * multiplier * entry.margin_ratio
+    margin_required = entry_price * volume * multiplier * float(entry.margin_ratio)
     contract_code = entry.actual_contract if entry.actual_contract == exit_.actual_contract else f"{entry.actual_contract}->{exit_.actual_contract}"
 
     enriched = dict(trade)
@@ -83,10 +83,10 @@ def _enrich_trade(session: Session, config: BacktestTaskConfig, trade: dict[str,
             "entry_contract_month": entry.contract_month,
             "exit_contract_month": exit_.contract_month,
             "contract_multiplier": multiplier,
-            "price_tick": entry.price_tick,
+            "price_tick": float(entry.price_tick),
             "commission": commission,
             "slippage": slippage,
-            "margin_ratio": entry.margin_ratio,
+            "margin_ratio": float(entry.margin_ratio),
             "margin_required": margin_required,
             "parameter_source": _parameter_source(entry, exit_),
             "fee_rule_source": {"entry": _commission_rule_payload(entry), "exit": _commission_rule_payload(exit_)},
@@ -179,17 +179,21 @@ def _commission(
 def _leg_commission(rule: CommissionRule, *, price: float, volume: int, multiplier: int, close: bool) -> float:
     fee = rule.close_fee if close else rule.open_fee
     if rule.fee_type == "rate":
-        return price * volume * multiplier * fee
-    return volume * fee
+        return price * volume * multiplier * float(fee)
+    return volume * float(fee)
 
 
 def _commission_rule_payload(contract: ResolvedContract) -> dict[str, Any]:
     return {
         "parameter_source": contract.parameter_source,
         "fee_type": contract.commission_rule.fee_type,
-        "open_fee": contract.commission_rule.open_fee,
-        "close_fee": contract.commission_rule.close_fee,
-        "close_today_fee": contract.commission_rule.close_today_fee,
+        "open_fee": float(contract.commission_rule.open_fee),
+        "close_fee": float(contract.commission_rule.close_fee),
+        "close_today_fee": (
+            float(contract.commission_rule.close_today_fee)
+            if contract.commission_rule.close_today_fee is not None
+            else None
+        ),
     }
 
 

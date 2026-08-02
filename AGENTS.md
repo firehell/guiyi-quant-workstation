@@ -58,6 +58,11 @@
 - historical evidence/report/receipt 默认保护。只有逐文件 deletion manifest、替代回归证据、
   active 引用扫描、独立 Review 和用户对 exact scope 的批准全部具备时，才可执行受控删除；
   本规则本身不授权删除任何文件、Git 历史、数据库记录、Parquet、report 或 receipt。
+- 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata。
+  旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 bar
+  layer 与 Profile/Binding/legacy lineage 均为 rebuild-only 或 compatibility-only，不得迁移为
+  新 active 输入。Task 07 的删除前置条件固定为 exact deletion manifest、zero active refs、
+  independent Sol Review 与 owner 对 exact scope 的批准。
 
 协作 Lane、worktree、PR 与人工 Gate 见 `docs/DEVELOPMENT.md`；业务目标与迁移顺序不得复制到
 该工作流文档中另行解释。

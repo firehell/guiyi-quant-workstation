@@ -20,7 +20,6 @@ from app.db.base import Base
 from app.models.backtest import BacktestReportModel
 from app.models.data_center import DataProfile, MarketDataFile, ProfileActiveBinding
 from app.schemas.backtest import BacktestTaskConfig
-from app.vnpy_integration.errors import BacktestConfigurationError
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -238,54 +237,6 @@ def test_strategy_class_loads_via_strategy_loader() -> None:
     from guiyi_quant.strategies.huotian_dayou_strict import STRATEGY_CLASS_PATH, HuoTianDaYouStrictStrategy
 
     assert load_strategy_class(STRATEGY_CLASS_PATH) is HuoTianDaYouStrictStrategy
-
-
-def test_htdy_strict_enters_formal_profile_lineage_and_freezes_report_snapshot(
-    tmp_path: Path,
-) -> None:
-    SessionLocal = _session_factory()
-    with SessionLocal() as session:
-        market_file = _seed_formal_profile(session, tmp_path)
-        service = BacktestService(session)
-        task = service.create_formal_task(_formal_htdy_payload())
-
-        assert task.research_only is False
-        assert task.profile_id == "intraday_research_v1"
-        assert task.market_data_file_id == market_file.id
-        assert task.data_version == market_file.data_version
-        assert task.binding_snapshot["resolver_name"] == "ProfileLineageResolver"
-        assert task.binding_snapshot["resolver_contract_version"] == "backtest_profile_v1"
-        assert task.binding_snapshot["quality_policy"] == "passed_only"
-        assert task.binding_snapshot["primary"]["market_data_file_id"] == market_file.id
-        policy = task.binding_snapshot["indicator_policy_snapshot"]
-        assert policy["indicator_versions"] == ["huotian_dayou_strict_v1"]
-        assert policy["formal_policy_ids"] == ["huotian_dayou_strict_v1"]
-        assert policy["profile_id"] == task.profile_id
-        assert policy["confirmed_only"] is True
-        assert policy["execution_timing"] == "next_bar_open"
-
-        service.persist_result(
-            task,
-            {"summary": {"initial_capital": 1_000_000}, "trades": [], "orders": []},
-        )
-        report = session.scalar(
-            select(BacktestReportModel).where(BacktestReportModel.task_id == task.id)
-        )
-        assert report is not None
-        assert report.research_only is False
-        assert report.profile_id == task.profile_id
-        assert report.market_data_file_id == task.market_data_file_id
-        assert report.binding_snapshot == task.binding_snapshot
-
-
-def test_htdy_strict_formal_profile_rejects_non_passed_asset(tmp_path: Path) -> None:
-    SessionLocal = _session_factory()
-    with SessionLocal() as session:
-        _seed_formal_profile(session, tmp_path, quality_status="warning")
-        with pytest.raises(BacktestConfigurationError) as caught:
-            BacktestService(session).create_formal_task(_formal_htdy_payload())
-
-        assert getattr(caught.value, "code", None) == "BACKTEST_PROFILE_QUALITY_BLOCKED"
 
 
 def test_strict_candidate_future_tail_does_not_repaint_prior_outputs() -> None:

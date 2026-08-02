@@ -36,7 +36,7 @@ import {
   updateReview,
 } from '@/api/review'
 import { getSignalEvent } from '@/api/signal'
-import type { BacktestReport, BacktestTrade } from '@/types/backtest'
+import type { BacktestReport, BacktestTrade, CanonicalInputIdentity } from '@/types/backtest'
 import type { BacktestValidationContext } from '@/types/backtestValidation'
 import type { BarData, KlineMarker } from '@/types/market'
 import type { ReviewFormalLineage, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
@@ -47,6 +47,8 @@ import {
   parseReviewDeepLinkQuery,
   reviewSourceIdentity,
 } from '@/utils/reviewFoundation'
+import { isCanonicalReviewLineage, presentReviewLineage } from '@/utils/reviewLineagePresentation'
+import { parseCanonicalInputIdentity } from '@/utils/dataCoreV2Consumer'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { signalSourceDataMode } from '@/utils/signalSourceMode'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
@@ -89,6 +91,7 @@ const foundationValidation = ref<BacktestValidationContext | null>(null)
 const foundationValidationError = ref<string | null>(null)
 const foundationLineage = ref<ReviewFormalLineage | null>(null)
 const foundationLineageError = ref<string | null>(null)
+const foundationExactBarsIdentity = ref<CanonicalInputIdentity | null>(null)
 const bars = ref<BarData[]>([])
 const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
@@ -113,6 +116,7 @@ const foundationContext = computed<ReviewFoundationContext>(() =>
     },
     lineage: foundationLineage.value,
     lineage_error: foundationLineageError.value,
+    exact_bars_identity: foundationExactBarsIdentity.value,
     validation_context: foundationValidation.value,
     validation_error: foundationValidationError.value,
   }),
@@ -433,12 +437,17 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
   klineError.value = null
   foundationLineage.value = null
   foundationLineageError.value = null
+  foundationExactBarsIdentity.value = null
   bars.value = []
   klineQueryItems.value = []
   try {
     const result = await getReviewBars(review.id)
     if (!isCurrentReviewSelection(requestId)) return
     foundationLineage.value = result.lineage
+    const lineagePresentation = presentReviewLineage(result.lineage)
+    foundationExactBarsIdentity.value = lineagePresentation.kind === 'canonical' && isCanonicalReviewLineage(result.lineage)
+      ? parseCanonicalInputIdentity(result.lineage.input_identity).identity
+      : null
     klineQueryItems.value = lineageDebugItems(result.lineage)
     bars.value = result.bars || []
     if (bars.value.length === 0) klineError.value = '冻结 lineage 的精确交易窗口未返回K线数据'
@@ -464,6 +473,7 @@ function clearSelectedReviewState() {
   foundationValidationError.value = null
   foundationLineage.value = null
   foundationLineageError.value = null
+  foundationExactBarsIdentity.value = null
   bars.value = []
   klineQueryItems.value = []
   activeMarkerId.value = null
@@ -575,23 +585,34 @@ function reviewToBacktestTrade(review: ReviewNote): BacktestTrade | null {
 }
 
 function lineageDebugItems(lineage: ReviewFormalLineage) {
-  const primary = lineage.primary
-  const bar = lineage.bar
+  const presentation = presentReviewLineage(lineage)
+  if (presentation.kind === 'canonical') {
+    return [
+      { label: 'canonical_request', value: presentation.canonical.request },
+      { label: 'source_datasets', value: presentation.canonical.sourceDatasets },
+      { label: 'manifest_digests', value: presentation.canonical.manifestDigests },
+      { label: 'requested_window', value: presentation.requestedWindow },
+      { label: 'input_digest', value: presentation.inputDigest || presentation.canonical.digest },
+      { label: 'source_window', value: presentation.sourceWindow },
+    ]
+  }
   return [
-    {
-      label: 'source_snapshot_schema_version',
-      value: lineage.source_snapshot_schema_version || '-',
-    },
-    { label: 'symbol', value: primary.instrument_symbol || '-' },
-    { label: 'contract', value: primary.contract_code || '-' },
-    { label: 'interval', value: primary.period || '-' },
-    { label: 'start', value: bar.bar_start || '-' },
-    { label: 'end', value: bar.bar_end || '-' },
-    { label: 'provider', value: primary.provider || '-' },
-    { label: 'data_role', value: primary.data_role || '-' },
-    { label: 'profile_id', value: primary.profile_id || '-' },
-    { label: 'market_data_file_id', value: String(primary.market_data_file_id) },
+    { label: 'lineage_kind', value: presentation.label },
+    ...(presentation.kind === 'observation' ? [{ label: 'source_mode', value: presentation.sourceMode }] : [{ label: 'reason', value: presentation.reason }]),
+    { label: 'source_window', value: presentation.sourceWindow },
+    ...(presentation.kind === 'observation' ? [{ label: 'source_snapshot_schema_version', value: presentation.sourceSnapshotSchemaVersion }] : []),
   ]
+}
+
+function reviewLineageSummary(lineage: ReviewFormalLineage | null) {
+  return lineage ? presentReviewLineage(lineage) : null
+}
+
+function reviewLineageTitle(lineage: ReviewFormalLineage | null) {
+  const kind = reviewLineageSummary(lineage)?.kind
+  if (kind === 'canonical') return 'Review canonical lineage'
+  if (kind === 'observation') return 'Review live observation lineage'
+  return 'Review invalid lineage'
 }
 
 function klineQueryObject() {
@@ -772,16 +793,15 @@ function apiError(err: unknown, fallback: string) {
           <span v-for="item in klineQueryItems" :key="item.label">{{ item.label }}={{ item.value }}</span>
         </div>
         <div
-          v-if="selectedReview && foundationLineage?.source_snapshot_schema_version"
+          v-if="selectedReview && foundationLineage"
           class="kline-lineage-state"
         >
-          <strong>Review 来源快照</strong>
+          <strong>{{ reviewLineageTitle(foundationLineage) }}</strong>
           <span>schema_version={{ foundationLineage.schema_version }}</span>
-          <span>source_snapshot_schema_version={{ foundationLineage.source_snapshot_schema_version }}</span>
-          <span v-if="foundationLineage.resolver_name">resolver={{ foundationLineage.resolver_name }}</span>
-          <span v-if="foundationLineage.resolver_contract_version">
-            resolver_contract={{ foundationLineage.resolver_contract_version }}
+          <span v-if="reviewLineageSummary(foundationLineage)?.kind === 'canonical'">
+            input_digest={{ reviewLineageSummary(foundationLineage)?.inputDigest }}
           </span>
+          <span v-else>source_window={{ reviewLineageSummary(foundationLineage)?.sourceWindow }}</span>
         </div>
         <div v-if="selectedReview" class="kline-note">
           <strong>交易点备注</strong>

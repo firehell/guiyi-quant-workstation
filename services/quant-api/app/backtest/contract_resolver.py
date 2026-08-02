@@ -49,9 +49,9 @@ class DeliveryCalendarMissingError(ContractResolutionError):
 @dataclass(frozen=True)
 class CommissionRule:
     fee_type: FeeType
-    open_fee: float
-    close_fee: float
-    close_today_fee: float | None
+    open_fee: Decimal
+    close_fee: Decimal
+    close_today_fee: Decimal | None
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,7 @@ class MainContractSource:
     data_version: str
     rule: str
     rank: int
+    known_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -71,9 +72,9 @@ class ResolvedContract:
     contract_month: str
     exchange: str
     contract_multiplier: int
-    price_tick: float
+    price_tick: Decimal
     commission_rule: CommissionRule
-    margin_ratio: float
+    margin_ratio: Decimal
     parameter_source: ParameterSource
     main_contract_source: MainContractSource
     last_allowed_holding_date: date
@@ -151,6 +152,7 @@ def resolve_jm_contract(
             data_version=mapping.data_version,
             rule=mapping.rule,
             rank=mapping.rank,
+            known_at=_mapping_known_at(mapping),
         ),
         last_allowed_holding_date=last_allowed_holding_date,
     )
@@ -294,29 +296,29 @@ def _resolve_parameters(
     if contract_multiplier is None:
         contract_multiplier = _first_int(contract.contract_multiplier)
 
-    price_tick = _first_float(params_price_tick)
+    price_tick = _first_decimal(params_price_tick)
     if price_tick is None:
-        price_tick = _first_float(_getattr(fee_rule, "price_tick"))
+        price_tick = _first_decimal(_getattr(fee_rule, "price_tick"))
         used_fee_rule = used_fee_rule or price_tick is not None
 
-    margin_ratio = _first_float(params_margin_ratio)
+    margin_ratio = _first_decimal(params_margin_ratio)
     if margin_ratio is None:
-        margin_ratio = _first_float(_getattr(fee_rule, "margin_rate"))
+        margin_ratio = _first_decimal(_getattr(fee_rule, "margin_rate"))
         used_fee_rule = used_fee_rule or margin_ratio is not None
 
-    open_fee = _first_float(params_open_fee)
+    open_fee = _first_decimal(params_open_fee)
     if open_fee is None:
-        open_fee = _first_float(_getattr(fee_rule, "open_fee"))
+        open_fee = _first_decimal(_getattr(fee_rule, "open_fee"))
         used_fee_rule = used_fee_rule or open_fee is not None
 
-    close_fee = _first_float(params_close_fee)
+    close_fee = _first_decimal(params_close_fee)
     if close_fee is None:
-        close_fee = _first_float(_getattr(fee_rule, "close_fee"))
+        close_fee = _first_decimal(_getattr(fee_rule, "close_fee"))
         used_fee_rule = used_fee_rule or close_fee is not None
 
-    close_today_fee = _optional_float(_getattr(params, "close_today_commission"))
+    close_today_fee = _optional_decimal(_getattr(params, "close_today_commission"))
     if close_today_fee is None:
-        close_today_fee = _optional_float(_getattr(fee_rule, "close_today_fee"))
+        close_today_fee = _optional_decimal(_getattr(fee_rule, "close_today_fee"))
         used_fee_rule = used_fee_rule or close_today_fee is not None
 
     fee_type = _normalize_fee_type(params_fee_type)
@@ -450,21 +452,41 @@ def _getattr(row: object | None, name: str) -> object | None:
     return getattr(row, name)
 
 
-def _first_float(*values: object | None) -> float | None:
+def _mapping_known_at(mapping: MainContractMap) -> datetime | None:
+    raw_payload = mapping.raw_payload if isinstance(mapping.raw_payload, dict) else {}
+    raw_value = raw_payload.get("known_at")
+    if raw_value in (None, ""):
+        return None
+    if isinstance(raw_value, datetime):
+        parsed = raw_value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(raw_value).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ContractResolutionError(
+                "main_contract_map raw_payload.known_at is invalid"
+            ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ContractResolutionError(
+            "main_contract_map raw_payload.known_at must be timezone-aware"
+        )
+    return parsed
+
+
+def _first_decimal(*values: object | None) -> Decimal | None:
     for value in values:
-        parsed = _optional_float(value)
+        parsed = _optional_decimal(value)
         if parsed is not None:
             return parsed
     return None
 
 
-def _optional_float(value: object | None) -> float | None:
+def _optional_decimal(value: object | None) -> Decimal | None:
     if value is None:
         return None
     if isinstance(value, Decimal):
-        return float(value)
-    parsed = float(value)
-    return parsed
+        return value
+    return Decimal(str(value))
 
 
 def _first_int(*values: object | None) -> int | None:
@@ -474,7 +496,7 @@ def _first_int(*values: object | None) -> int | None:
     return None
 
 
-def _max_optional(*values: object | None) -> float | None:
-    parsed = [_optional_float(value) for value in values]
+def _max_optional(*values: object | None) -> Decimal | None:
+    parsed = [_optional_decimal(value) for value in values]
     numbers = [value for value in parsed if value is not None]
     return max(numbers) if numbers else None

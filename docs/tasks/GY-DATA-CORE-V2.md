@@ -82,17 +82,17 @@ EOD 重新从 RQData 获取 provider-final 数据，先比较输入指纹，再�
 live/decision/event/notification/reconciliation/snapshot/fingerprint 的目标留存为 30 天。
 人工复盘完成后只提取精简 `ResearchSample` 长期保留；该机制尚未实现或启用。
 
-historical evidence/report/receipt 默认保护。6B 只允许在以下条件全部满足后，由独立任务执行：
+historical evidence/report/receipt 默认保护。Task 07 只允许在以下条件全部满足后，由独立任务执行：
 
 1. 精确逐文件 deletion manifest；
-2. 替代 regression/release/runtime 必要证据；
-3. active canonical、测试、Gate、文档和 Runtime 引用扫描为零；
-4. 独立 Review 允许删除；
-5. 用户批准 exact scope；
-6. 删除后全仓验证与引用扫描。
+2. zero active references（active canonical、测试、Gate、文档和 Runtime 引用扫描为零）；
+3. independent Sol Review 允许删除；
+4. owner 批准 exact scope；
+5. 删除后全仓验证与引用扫描。
 
 本合同和任务 00 均不授权删除任何文件、Git 历史、数据库记录、Parquet、evidence、report
-或 receipt。report 14/15 与仍被 Gate/Runtime 引用的工件必须保护。
+或 receipt。report 14/15 是 Git-traceable historical snapshots，不是 active Gate/regression；
+不得改写其历史结论或删除历史证据。
 
 ## 3. Legacy compatibility 与替换关系
 
@@ -119,10 +119,10 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 -> JM canonical apply + physical/catalog/read verification
 -> 普通 Web/API/Indicator consumers 切换
 -> Task 04 closeout merge
--> Backtest/Signal/Review consumers 逐个切换（Task 05）
--> live/EOD 收口
--> 其他已有品种迁移
--> legacy 引用为零 + rollback 证据
+-> Task 05 trusted-consumer switch and read-only derived/reference inventory
+-> Task 06 live/EOD 收口
+-> Task 07 其他已有品种迁移、legacy 引用为零 + rollback 证据
+-> Task 08 release candidate 与 Runtime 验收
 -> 独立删除任务
 ```
 
@@ -138,7 +138,7 @@ lineage，不再逐项调度。
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 schema 已在 Task 04 Gate 下升级到 0027 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
 | 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
-| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换 | Task 04 closeout 合入后为 next；必须使用新会话、新 branch、新 task worktree，本分支不实现 |
+| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（本 task PR merge 后生效）；exact-head independent Review=`CLEAN_FOR_INTEGRATION`；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 external Gate |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
@@ -147,6 +147,8 @@ lineage，不再逐项调度。
 集成 `develop`。Task 04 已批准的生产 migration 和 canonical apply 已完成；本 closeout 只允许
 只读复验和文档收口，不授权新的 RQData、Parquet、PostgreSQL、packet、apply、Shadow、删除、
 release 或 Runtime 副作用。Task 05 只能在本 closeout PR 合入后另起任务。
+后续编号不得跳过：`Task 04 closeout -> Task 05 trusted consumers/inventory -> Task 06 live/EOD ->
+Task 07 migration/legacy evidence -> Task 08 release/Runtime`；任何受控删除仍另需独立 Gate。
 
 ### 4.0 Task 04 closeout Owner 决策与正式验收（2026-08-02）
 

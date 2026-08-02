@@ -61,3 +61,28 @@ class ReviewAttachmentRequest(BaseModel):
     file_type: str | None = "image"
     title: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReviewLineageResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: str
+    source_type: str
+    source_id: int
+    strategy_version: str | None = None
+    input_digest: str | None = None
+    dataset_keys: list[dict[str, Any]] | None = None
+    manifest_digests: list[str] | None = None
+    window: dict[str, str] | None = None
+    source_window: dict[str, str | None] | None = None
+    input_identity: dict[str, Any] | None = None
+    auxiliary_input_identities: dict[str, dict[str, Any]] | None = None
+
+
+class ReviewExactBarsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lineage: dict[str, Any]
+    bars: list[dict[str, Any]]
+    auxiliary_bars: dict[str, list[dict[str, Any]]] | None = None
+    source_1m: list[dict[str, Any]] | None = None

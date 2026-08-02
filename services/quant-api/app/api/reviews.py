@@ -10,7 +10,13 @@ from app.db.session import get_db
 from app.models.backtest import BacktestReportModel, BacktestTradeModel
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
 from app.review.backtest_trade import apply_review_fields, default_mistake_tag_payloads, review_response, tag_response
-from app.schemas.review import ReviewAttachmentRequest, ReviewFromBacktestTradeRequest, ReviewUpdateRequest
+from app.schemas.review import (
+    ReviewAttachmentRequest,
+    ReviewExactBarsResponse,
+    ReviewFromBacktestTradeRequest,
+    ReviewLineageResponse,
+    ReviewUpdateRequest,
+)
 from app.services.review_center import (
     attachment_payload,
     backtest_trade_source_payload,
@@ -93,7 +99,7 @@ def list_paper_trade_sources() -> list[dict[str, Any]]:
     return []
 
 
-@router.get("/lineage/{source_type}/{source_id}")
+@router.get("/lineage/{source_type}/{source_id}", response_model=ReviewLineageResponse)
 def get_source_lineage(
     source_type: str,
     source_id: int,
@@ -201,7 +207,7 @@ def get_review_stats(session: Session = Depends(get_db)) -> dict[str, Any]:
     return review_stats(session)
 
 
-@router.get("/{review_id}/bars")
+@router.get("/{review_id}/bars", response_model=ReviewExactBarsResponse)
 def get_review_exact_bars(review_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
     note = session.get(ReviewNote, review_id)
     if note is None:
