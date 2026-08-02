@@ -1,7 +1,7 @@
 # 归一量化精简矩阵式 AI 研发团队设计
 
 - 日期：2026-08-02
-- 状态：设计基线，待用户书面复核后进入实施计划
+- 状态：设计基线已获用户书面批准，Phase 1 实施中
 - 适用项目：`firehell/guiyi-quant-workstation`
 - 设计范围：研发组织模型、专家角色、任务路由、自治状态机、权限边界和最小落地方式
 
@@ -79,7 +79,9 @@ GitHub / develop / 外部人工 Gate
 
 ### 2.3 当前迁移阶段
 
-当前 active 合同仍为 `docs/tasks/GY-DATA-CORE-V2.md`。Task 04 尚未完成真实 Shadow 验收，Task 05 仍受其前置依赖约束。专家团可以用于 Task 04 的诊断、修复、测试、Review 和集成，但不能借此提前启动受阻塞任务或绕过新的 exact-hash 真实执行批准。
+当前 active 合同仍为 `docs/tasks/GY-DATA-CORE-V2.md`。Task 04 已在 `develop` 完成收尾；其 legacy historical Shadow 仅作为可选且冻结的历史观察，不是 Task 05 的前置 Gate，也不需要为本设计重新打开执行路径。
+
+Task 05 的当前实现位于独立 worktree。AI-TEAM-001 不采纳、不修改、也不以此 worktree 的内容作为本任务的实现输入；它只定义可复用的研发组织与权限边界。
 
 ## 3. 设计目标
 
@@ -893,7 +895,9 @@ active canonical
 
 ## 17. 首轮任务组合示例
 
-### 17.1 Task 04 收尾
+### 17.1 Task 04 收尾（历史复盘示例）
+
+以下内容仅记录 Task 04 当时的团队路由与 Gate 边界，属于已完成工作的历史复盘，不构成新的执行授权、恢复 legacy historical Shadow 的授权，或对任何后续任务的前置条件声明。
 
 ```text
 AI 项目负责人
@@ -903,13 +907,15 @@ AI 项目负责人
 + 独立质量负责人
 ```
 
-自动范围：诊断、代码修复、测试、Review、PR、CI 和 `develop` 集成。
+当时的自动范围：诊断、代码修复、测试、Review、PR、CI 和 `develop` 集成。
 
-人工范围：fresh packet、真实 preflight/apply/Shadow 和 final receipt 所需批准。
+当时的人工范围：fresh packet、真实 preflight/apply/Shadow 和 final receipt 所需批准。
 
-Task 04 final acceptance 前不得启动 Task 05 实现。
+Task 04 已完成于 `develop`；legacy historical Shadow 现为可选/冻结历史观察，而非 Task 05 Gate。此处不授权重新执行或扩展 Task 04。
 
 ### 17.2 Task 05 可信消费者切换
+
+Task 05 的实现属于独立 worktree；AI-TEAM-001 不采纳或修改该 worktree，以下仅是未来同类任务的角色路由示例。
 
 ```text
 AI 项目负责人
@@ -958,6 +964,7 @@ AI 项目负责人
 5. 专家路由表；
 6. 阶段报告模板；
 7. 针对越权、错误路由和状态扩写的工程测试。
+8. 一个只读 Task Charter CLI：读取结构化输入，仅向 stdout 输出结果。
 
 继续复用：
 
@@ -970,6 +977,8 @@ AI 项目负责人
 - `STATUS.md` 和 active canonical。
 
 第一版不增加运行时服务或数据库。
+
+该 CLI 不是新的控制面，也不执行工作流自动化：不得创建或清理 worktree，不得调用 Git 或 GitHub，不得检查或合并 PR，不得执行 CI/Review 编排，且不得产生除 stdout 外的副作用。这些能力继续由既有工具承担，或留待后续独立阶段与批准。
 
 ## 19. 分阶段实施
 
@@ -984,14 +993,17 @@ AI 项目负责人
 - 实现四个基础角色；
 - 实现专项专家叠加模板；
 - 实现 Task Charter 和阶段报告；
+- 实现只读 Task Charter CLI：读取结构化输入，仅向 stdout 输出；
 - 添加最小政策测试；
 - 默认由用户手动启动总调度会话。
 
-### Phase 2：Task 04 收尾试运行
+Phase 1 的 CLI 不创建 worktree、不调用 Git/GitHub、不检查或合并 PR、不清理 worktree，也不执行任何工作流自动化；这些仍是既有工具或后续独立阶段的职责。
 
-- 用真实现有任务检验角色路由；
-- 记录实际会话数、用户打断数、修复轮次和集成时间；
-- 不改变真实数据 Gate。
+### Phase 2：历史复盘与受控试运行
+
+- 以已完成的 Task 04 作为历史复盘样本，检验角色路由是否与其事实一致；
+- 在新的、独立批准任务中记录实际会话数、用户打断数、修复轮次和集成时间；
+- 不重新执行 Task 04，不改变真实数据 Gate。
 
 ### Phase 3：Task 05 正常工程试运行
 
@@ -1001,7 +1013,7 @@ AI 项目负责人
 
 ### Phase 4：有限 CLI automation
 
-只有在 Phase 1～3 证明流程稳定、重复且机械后，才考虑仓库内可审查的 CLI 编排，用于：
+只有在 Phase 1～3 证明流程稳定、重复且机械，并在独立任务中取得新的批准后，才考虑仓库内可审查的 CLI 编排。该阶段不属于 AI-TEAM-001；在获得该批准前，以下能力继续由既有工具承担：
 
 - 创建 task worktree；
 - 记录角色分配；
@@ -1043,7 +1055,7 @@ AI 项目负责人
 
 ### 20.4 第一版成功标准
 
-第一版在 Task 04/05 试运行后应达到：
+第一版在历史 Task 04 复盘与独立批准的 Task 05 试运行后应达到：
 
 - 普通代码修复、测试、Review 和 `develop` 集成无需用户逐步确认；
 - 真实 Gate 仍准确保留；
