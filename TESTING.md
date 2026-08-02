@@ -193,6 +193,30 @@ uv run --project services/quant-api python scripts/derived_reference_inventory.p
 都需要精确授权。Task 04 的专用临时库已在用户授权后完成测试并删除；这不授权生产 apply，
 也不得用未设置 isolated URL 时的 skipped 用例冒充 upgrade/downgrade/upgrade 通过。
 
+### GY-DATA-CORE-V2 Task 06 clean-start live/review loop
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_live_review_loop_models.py \
+  services/quant-api/tests/test_live_review_loop_contracts.py \
+  services/quant-api/tests/test_live_review_loop_eod_sample_retention.py \
+  services/quant-api/tests/test_live_review_loop_api_and_event_gate.py \
+  services/quant-api/tests/test_runtime_health.py
+
+PYTHONPATH=services/quant-api \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/alembic/test_live_review_loop_migration.py
+```
+
+迁移测试必须提供 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，并由 safety guard 证明与 Runtime
+`DATABASE_URL` 的 database/OID 均不同；实际完成 `0027 -> head(0031) -> 0027 -> head(0031)`。
+未配置时的
+skip 只证明 offline SQL/head tests，不满足 Task 06 migration 验收。所有 Task 06 flags 默认 false；
+disabled smoke 不读取 RQData、不写业务表、不启动 scheduler、不创建 SignalEvent/notification。
+合同测试同时冻结 trusted builder 的 EMA21 identity/parameters/digest/fingerprint golden vector、
+long/short/equal 三态，以及 Runtime/EOD 不允许注入其他 evaluator 的边界。
+
 ## 数据、回测与运行时只读验证
 
 ```bash

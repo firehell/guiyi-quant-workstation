@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.backtest import BacktestReportModel, BacktestTradeModel
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
+from app.models.live_review_loop import SignalDecision
 from app.review.backtest_trade import apply_review_fields, default_mistake_tag_payloads, review_response, tag_response
 from app.schemas.review import (
     ReviewAttachmentRequest,
@@ -28,6 +30,15 @@ from app.services.review_lineage import (
     ReviewLineageError,
     load_review_bars,
     resolve_review_source_lineage,
+)
+from app.live_review_loop.research import (
+    ResearchSampleError,
+    create_or_get_decision_review,
+    extract_research_sample,
+)
+from app.live_review_loop.gates import (
+    LiveReviewExecutionGate,
+    LiveReviewFeatureDisabledError,
 )
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
@@ -99,6 +110,40 @@ def list_paper_trade_sources() -> list[dict[str, Any]]:
     return []
 
 
+@router.get("/sources/signal-decisions")
+def list_signal_decision_sources(
+    session: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    decisions = list(session.scalars(select(SignalDecision).order_by(SignalDecision.bar_end.desc())))
+    reviewed_ids = set(
+        session.scalars(
+            select(ReviewNote.source_id).where(
+                ReviewNote.source_type == "signal_decision",
+                ReviewNote.source_id.is_not(None),
+            )
+        )
+    )
+    return [
+        {
+            "id": decision.id,
+            "decision_key": decision.decision_key,
+            "reviewed": decision.id in reviewed_ids,
+            "symbol": "jm",
+            "contract": decision.actual_contract,
+            "period": "15m",
+            "trading_day": decision.trading_day.isoformat(),
+            "bar_end": decision.bar_end.isoformat(),
+            "strategy_name": decision.strategy_code,
+            "strategy_version": decision.strategy_version,
+            "result_kind": decision.result_kind,
+            "direction": decision.direction,
+            "input_digest": decision.input_digest,
+            "fingerprint": decision.fingerprint,
+        }
+        for decision in decisions
+    ]
+
+
 @router.get("/lineage/{source_type}/{source_id}", response_model=ReviewLineageResponse)
 def get_source_lineage(
     source_type: str,
@@ -137,6 +182,21 @@ def create_review_from_signal_event(
         source_id=event_id,
         request=request,
     )
+
+
+@router.post("/from-signal-decision/{decision_id}")
+def create_review_from_signal_decision(
+    decision_id: int,
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _require_live_review_enabled()
+    try:
+        note = create_or_get_decision_review(session, decision_id)
+    except ResearchSampleError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session.commit()
+    session.refresh(note)
+    return review_response(note, include_source=False, session=session)
 
 
 @router.post("/from-backtest-trade/{trade_id}")
@@ -231,6 +291,8 @@ def update_review(review_id: int, request: ReviewUpdateRequest, session: Session
     note = session.get(ReviewNote, review_id)
     if note is None:
         raise HTTPException(status_code=404, detail="review not found")
+    if note.source_type == "signal_decision":
+        _require_live_review_enabled()
     data = request.model_dump(exclude_unset=True)
     apply_review_fields(note, data)
     session.commit()
@@ -238,11 +300,47 @@ def update_review(review_id: int, request: ReviewUpdateRequest, session: Session
     return review_response(note, include_source=True, session=session)
 
 
+@router.post("/{review_id}/research-sample")
+def create_research_sample(
+    review_id: int,
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
+    _require_live_review_enabled()
+    try:
+        sample = extract_research_sample(session, review_id)
+    except ResearchSampleError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    session.commit()
+    session.refresh(sample)
+    return {
+        "id": sample.id,
+        "sample_key": sample.sample_key,
+        "schema_version": sample.schema_version,
+        "decision_key": sample.decision_key,
+        "review_id": sample.review_id,
+        "reconciliation_digest": sample.reconciliation_digest,
+        "features": sample.features,
+        "outcome": sample.outcome,
+        "labels": sample.labels,
+        "lineage": sample.lineage,
+        "created_at": sample.created_at.isoformat(),
+    }
+
+
+def _require_live_review_enabled() -> None:
+    try:
+        LiveReviewExecutionGate(os.environ).require_review()
+    except LiveReviewFeatureDisabledError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.post("/{review_id}/attachments")
 def add_review_attachment(review_id: int, request: ReviewAttachmentRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
     note = session.get(ReviewNote, review_id)
     if note is None:
         raise HTTPException(status_code=404, detail="review not found")
+    if note.source_type == "signal_decision":
+        _require_live_review_enabled()
     attachment = ReviewAttachment(
         review_id=review_id,
         file_path=request.file_path,
