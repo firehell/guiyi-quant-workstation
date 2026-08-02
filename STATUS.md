@@ -50,11 +50,10 @@ Task 04 或 Task 05 的准入 Gate。PR #90～#94、既有 Shadow 失败、ident
 packet、不执行 preflight/apply/legacy Shadow，也不删除旧行情、Profile、Binding、receipt、
 report、evidence 或 legacy reader。
 
-Task 05 的 Backtest / Signal / Review canonical consumer 切换仍在独立 task worktree 的 independent
-review fix round 中。derived/reference inventory 已在该 fix round 补充数据库 active-relation
-证据和扩展 source/doc scan，但仍须 fresh independent Review/CI；不得把 branch-local 修复或测试
-解释为完成、合入 `develop` 或通过 Review。真实
-PostgreSQL/data root 只读盘点仍是 external Gate。
+Task 05 的 Backtest / Signal / Review canonical consumer 切换、synthetic/golden 回归与
+derived/reference 只读 inventory 已在独立 task worktree 完成，exact-head independent Review
+返回 `CLEAN_FOR_INTEGRATION`。本状态只在 task PR 可从 `develop` 到达且 post-merge CI 成功后生效；
+真实 PostgreSQL/data root 只读盘点仍是 Task 07 的 external Gate，不阻塞 Task 05，也不授权删除。
 
 ## 数据核心任务状态
 
@@ -65,7 +64,7 @@ PostgreSQL/data root 只读盘点仍是 external Gate。
 | GY-DATA-CORE-V2 Task 02 | completed on develop | PR #80；Catalog/Manifest/Gap schema 与隔离 migration 验证；生产 revision 已是 0027 |
 | GY-DATA-CORE-V2 Task 03 | completed on develop | PR #82；staging、quality 与 canonical writer |
 | GY-DATA-CORE-V2 Task 04 | completed on develop（本 closeout commit 可从 develop 到达时生效） | Canonical 自身 Gate、统一读取与普通消费者回归；legacy Shadow 不再是准入 Gate |
-| GY-DATA-CORE-V2 Task 05 | review fix round in progress | DB relation/source-scan false-zero fixes are branch-local; fresh independent Review/CI are still required |
+| GY-DATA-CORE-V2 Task 05 | completed on develop（本 task PR merge 后生效） | canonical trusted consumers、synthetic/golden tests、fail-closed derived/reference inventory；不含真实删除或外部 DB/data-root inventory |
 | GY-DATA-CORE-V2 Task 06～08 | pending | live/EOD、其他品种/受控清理、release/Runtime 分别保留独立 Gate |
 
 ## 未关闭 Gate
@@ -75,7 +74,7 @@ PostgreSQL/data root 只读盘点仍是 external Gate。
 | HTDY XMA 语义 | blocked | 保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计 |
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
-| Task 05 可信消费者切换 | blocked at independent Review | fix round and fresh Review/CI are required; not an integration, release or Runtime Gate |
+| Task 05 可信消费者切换 | independent Review passed；develop integration pending | `CLEAN_FOR_INTEGRATION`；仍须 task PR、post-merge CI 与 ancestry readback，不是 release 或 Runtime Gate |
 | Task 07 inventory external read-only Gate | pending | 真实 PostgreSQL/data root 必须另行显式只读运行；不授权 migration、rebuild、delete 或 repair |
 | 旧行情与 legacy 工件删除 | not authorized | 旧行情只读保留；任何删除需独立 exact deletion Gate |
 | release / main / tag | not authorized | 本 closeout 只合入 develop |
@@ -98,7 +97,7 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 | MainContractMap | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 closeout 只读 mapping audit |
 | legacy compatibility | PR #90～#94 实现与历史 evidence 保留；不再扩展或作为准入 Gate | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
-| Task 05 | review fix round in progress | `scripts/derived_reference_inventory.py` is fail-closed work in progress; real DB/data root inventory not run |
+| Task 05 | completed on develop（本 task PR merge 后生效） | trusted consumers and fail-closed inventory complete；real DB/data-root inventory remains a Task 07 external Gate |
 
 ## 不可宣称
 
