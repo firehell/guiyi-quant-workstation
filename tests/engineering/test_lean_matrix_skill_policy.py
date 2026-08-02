@@ -8,9 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
-
 ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / ".agents" / "skills" / "lean-matrix-ai-team"
 CLI_PATH = ROOT / "scripts" / "engineering" / "lean_matrix_team.py"
@@ -38,6 +35,19 @@ def _section(markdown: str, heading: str) -> str:
     return body.split("\n## ", 1)[0]
 
 
+def _parse_scalar_metadata(text: str) -> dict[str, str]:
+    """Parse this skill's deliberately flat string metadata without a YAML dependency."""
+    metadata: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.endswith(":"):
+            continue
+        key, separator, raw_value = stripped.partition(": ")
+        assert separator, f"invalid metadata line: {line!r}"
+        metadata[key] = json.loads(raw_value) if raw_value.startswith('"') else raw_value
+    return metadata
+
+
 def test_required_resources_are_complete() -> None:
     """A usable skill ships every routing resource without scaffold placeholders."""
     required_paths = (
@@ -60,8 +70,8 @@ def test_required_resources_are_complete() -> None:
 def test_frontmatter_and_agent_interface_are_exact() -> None:
     """Skill discovery and its user-facing invocation keep their frozen identifiers."""
     skill = _read("SKILL.md")
-    frontmatter = yaml.safe_load(skill.split("---", 2)[1])
-    interface = yaml.safe_load(_read("agents/openai.yaml"))["interface"]
+    frontmatter = _parse_scalar_metadata(skill.split("---", 2)[1])
+    interface = _parse_scalar_metadata(_read("agents/openai.yaml"))
 
     assert frontmatter == {
         "name": "lean-matrix-ai-team",
