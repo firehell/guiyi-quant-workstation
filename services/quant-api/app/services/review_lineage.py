@@ -76,10 +76,34 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
         raise _error("REVIEW_LINEAGE_UNAVAILABLE", source_type, source_id)
     input_snapshot = _canonical_input_snapshot(raw_snapshot)
     if input_snapshot is not None:
+        auxiliary_snapshots = _canonical_auxiliary_snapshots(
+            raw_snapshot,
+            source_type=source_type,
+            source_id=source_id,
+        )
         try:
             identity = CanonicalConsumerInput.from_snapshot(input_snapshot)
+            auxiliary_identities = {
+                period: CanonicalConsumerInput.from_snapshot(snapshot)
+                for period, snapshot in auxiliary_snapshots.items()
+            }
         except (DataCoreError, TypeError, ValueError) as exc:
             raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id) from exc
+        if any(
+            period != auxiliary.request.frequency.value
+            or auxiliary.strategy_input_version != identity.strategy_input_version
+            for period, auxiliary in auxiliary_identities.items()
+        ):
+            raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id)
+        if (
+            not strategy_version
+            or _identity_strategy_version(identity) != strategy_version
+            or (
+                raw_snapshot.get("strategy_version") is not None
+                and raw_snapshot.get("strategy_version") != strategy_version
+            )
+        ):
+            raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id)
         return {
             "schema_version": "review_canonical_lineage_v1",
             "source_type": source_type,
@@ -97,6 +121,7 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
                 "end": _iso(bar_end),
             },
             "input_identity": deepcopy(input_snapshot),
+            "auxiliary_input_identities": deepcopy(auxiliary_snapshots),
         }
     if raw_snapshot.get("schema_version") != "signal_review_lineage_v2" and not _is_live_snapshot(raw_snapshot):
         raise _error("REVIEW_LINEAGE_UNAVAILABLE", source_type, source_id)
@@ -150,8 +175,18 @@ def load_review_bars(
         input_snapshot = lineage.get("input_identity")
         if not isinstance(input_snapshot, dict):
             raise _error("REVIEW_LINEAGE_INVALID", note.source_type, int(note.source_id or 0))
+        auxiliary_snapshots = lineage.get("auxiliary_input_identities")
+        if not isinstance(auxiliary_snapshots, dict):
+            raise _error("REVIEW_LINEAGE_UNAVAILABLE", note.source_type, int(note.source_id or 0))
         try:
             identity = CanonicalConsumerInput.from_snapshot(input_snapshot)
+            auxiliary_identities = {
+                str(period): CanonicalConsumerInput.from_snapshot(snapshot)
+                for period, snapshot in auxiliary_snapshots.items()
+                if isinstance(period, str) and isinstance(snapshot, dict)
+            }
+            if len(auxiliary_identities) != len(auxiliary_snapshots):
+                raise ValueError("invalid auxiliary identity")
             service = market_data or MarketDataService(
                 session,
                 canonical_reader=build_canonical_reader(session),
@@ -162,13 +197,38 @@ def load_review_bars(
                 result,
                 strategy_input_version=identity.strategy_input_version,
             )
+            auxiliary_results: dict[str, Any] = {}
+            confirmed_auxiliary: dict[str, CanonicalConsumerInput] = {}
+            for period, auxiliary in sorted(auxiliary_identities.items()):
+                if (
+                    period != auxiliary.request.frequency.value
+                    or auxiliary.strategy_input_version != identity.strategy_input_version
+                ):
+                    raise ValueError("invalid auxiliary identity")
+                auxiliary_result = service.get_bars(auxiliary.request)
+                auxiliary_results[period] = auxiliary_result
+                confirmed_auxiliary[period] = build_canonical_consumer_input(
+                    auxiliary.request,
+                    auxiliary_result,
+                    strategy_input_version=auxiliary.strategy_input_version,
+                )
         except (DataCoreError, TypeError, ValueError) as exc:
             raise _error(
                 "REVIEW_EXACT_BARS_UNAVAILABLE",
                 note.source_type,
                 int(note.source_id or 0),
             ) from exc
-        if confirmed.to_snapshot() != input_snapshot or lineage.get("input_digest") != identity.digest:
+        auxiliary_changed = any(
+            confirmed_auxiliary[period].to_snapshot() != auxiliary_snapshots[period]
+            for period in auxiliary_identities
+        )
+        if (
+            confirmed.to_snapshot() != input_snapshot
+            or lineage.get("input_digest") != identity.digest
+            or lineage.get("strategy_version") != note.strategy_version
+            or _identity_strategy_version(identity) != note.strategy_version
+            or auxiliary_changed
+        ):
             raise _error(
                 "REVIEW_EXACT_BARS_IDENTITY_CHANGED",
                 note.source_type,
@@ -177,6 +237,10 @@ def load_review_bars(
         return {
             "lineage": deepcopy(lineage),
             "bars": [_canonical_review_bar(bar) for bar in result.bars],
+            "auxiliary_bars": {
+                period: [_canonical_review_bar(bar) for bar in auxiliary_results[period].bars]
+                for period in auxiliary_identities
+            },
         }
     source_snapshot = lineage.get("source_snapshot")
     if (
@@ -236,6 +300,25 @@ def _canonical_input_snapshot(snapshot: dict[str, Any]) -> dict[str, Any] | None
         value = snapshot.get("input_identity")
         return value if isinstance(value, dict) else None
     return None
+
+
+def _canonical_auxiliary_snapshots(
+    snapshot: dict[str, Any],
+    *,
+    source_type: str,
+    source_id: int,
+) -> dict[str, dict[str, Any]]:
+    value = snapshot.get("auxiliary_input_identities")
+    if not isinstance(value, dict):
+        raise _error("REVIEW_LINEAGE_UNAVAILABLE", source_type, source_id)
+    if any(not isinstance(period, str) or not isinstance(item, dict) for period, item in value.items()):
+        raise _error("REVIEW_LINEAGE_INVALID", source_type, source_id)
+    return {period: item for period, item in value.items()}
+
+
+def _identity_strategy_version(identity: CanonicalConsumerInput) -> str | None:
+    parts = identity.strategy_input_version.rsplit(":", 2)
+    return parts[1] if len(parts) == 3 else None
 
 
 def _is_live_snapshot(snapshot: dict[str, Any]) -> bool:

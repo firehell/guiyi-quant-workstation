@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
+
+
+FORMAL_SIGNAL_STRATEGY_CODE = "su_bing_ema21"
+FORMAL_SIGNAL_STRATEGY_VERSION = "v0"
 
 
 class SignalDataRole(StrEnum):
@@ -43,12 +48,12 @@ class SignalScanRequest(BaseModel):
     end: datetime
     mode: SignalScanMode = SignalScanMode.SCAN
     watchlist_code: str = "black"
-    account_equity: float = Field(default=100000.0, gt=0)
-    risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
-    max_margin_usage_pct: float = Field(default=0.35, gt=0, le=1)
+    account_equity: Decimal = Field(default=Decimal("100000"), gt=0)
+    risk_per_trade_pct: Decimal = Field(default=Decimal("0.01"), gt=0, le=Decimal("0.01"))
+    max_margin_usage_pct: Decimal = Field(default=Decimal("0.35"), gt=0, le=Decimal("0.35"))
     min_score_bucket: int = Field(default=51, ge=0, le=80)
-    strategy_code: str = "su_bing_ema21"
-    strategy_version: str = "v0"
+    strategy_code: str = FORMAL_SIGNAL_STRATEGY_CODE
+    strategy_version: str = FORMAL_SIGNAL_STRATEGY_VERSION
     strategy_params: dict[str, Any] = Field(default_factory=dict)
     run_inline: bool = False
 
@@ -112,6 +117,11 @@ class SignalScanRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_canonical_identity(self) -> SignalScanRequest:
+        if (
+            self.strategy_code != FORMAL_SIGNAL_STRATEGY_CODE
+            or self.strategy_version != FORMAL_SIGNAL_STRATEGY_VERSION
+        ):
+            raise ValueError("SIGNAL_FORMAL_STRATEGY_UNSUPPORTED")
         if self.dataset_kind is not DatasetKind.ACTUAL_DOMINANT:
             raise ValueError("SIGNAL_FORMAL_ACTUAL_DOMINANT_REQUIRED")
         if self.instrument_symbol.lower() != "jm":

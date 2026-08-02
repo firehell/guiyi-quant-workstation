@@ -3,6 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import hashlib
+import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -20,6 +23,7 @@ from app.data_core.contracts import (
     DatasetKind,
 )
 from app.db.base import Base
+from app.models.data_center import MainContractMap
 from app.models.review import ReviewNote
 from app.models.signal import SignalEvent, SignalNotification, SignalScanTask, StrategySignal
 from app.schemas.signal import SignalScanRequest
@@ -30,9 +34,15 @@ END = datetime(2026, 7, 10, 2, 0, tzinfo=UTC)
 
 
 class FakeCanonicalMarketData:
-    def __init__(self, *, manifest_suffix: str = "a") -> None:
+    def __init__(
+        self,
+        *,
+        manifest_suffix: str = "a",
+        manifest_suffix_by_frequency: dict[BarFrequency, str] | None = None,
+    ) -> None:
         self.queries: list[BarQuery] = []
         self.manifest_suffix = manifest_suffix
+        self.manifest_suffix_by_frequency = manifest_suffix_by_frequency or {}
 
     def get_bars(self, query: BarQuery) -> BarsResult:
         self.queries.append(query)
@@ -73,7 +83,13 @@ class FakeCanonicalMarketData:
         return BarsResult(
             bars=bars,
             source_datasets=(source,),
-            manifest_digests=(self.manifest_suffix * 64,),
+            manifest_digests=(
+                self.manifest_suffix_by_frequency.get(
+                    query.frequency,
+                    self.manifest_suffix,
+                )
+                * 64,
+            ),
             requested_window=(query.start, query.end),
             data_type=query.dataset_kind,
             derived_frequency=query.frequency,
@@ -99,16 +115,99 @@ def test_formal_signal_request_requires_explicit_actual_dominant_identity() -> N
         SignalScanRequest.model_validate({**_formal_request(), "profile_id": "legacy"})
 
 
+@pytest.mark.parametrize(
+    ("strategy_code", "strategy_version"),
+    [
+        ("htdy_original_realtime_first_seen", "v1.0"),
+        ("su_bing_ema21", "forged-version"),
+        ("caller_selected_evaluator", "v0"),
+    ],
+)
+def test_formal_signal_request_rejects_unsupported_evaluator_identity(
+    strategy_code: str,
+    strategy_version: str,
+) -> None:
+    with pytest.raises(ValidationError, match="SIGNAL_FORMAL_STRATEGY_UNSUPPORTED"):
+        SignalScanRequest.model_validate(
+            {
+                **_formal_request(),
+                "strategy_code": strategy_code,
+                "strategy_version": strategy_version,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"risk_per_trade_pct": "0.0100001"},
+        {"max_margin_usage_pct": "0.3500001"},
+    ],
+)
+def test_formal_signal_request_enforces_existing_risk_caps(
+    override: dict[str, str],
+) -> None:
+    with pytest.raises(ValidationError):
+        SignalScanRequest.model_validate({**_formal_request(), **override})
+
+
+def test_formal_risk_derivation_uses_decimal_until_payload_boundary() -> None:
+    from app.signal.scanner import SignalScanner
+
+    factory = _session_factory()
+    with factory() as session:
+        risk = SignalScanner(session)._risk_payload(
+            SimpleNamespace(
+                direction="long",
+                features={"atr": "1.25", "prior_low": "98.75"},
+            ),
+            {"symbol": "jm", "contract": "JM2609", "close": Decimal("100.10")},
+            {
+                "account_equity": "100000.01",
+                "risk_per_trade_pct": "0.01",
+                "max_margin_usage_pct": "0.35",
+            },
+        )
+
+        assert isinstance(risk["entry_price"], Decimal)
+        assert isinstance(risk["margin_required"], Decimal)
+        assert isinstance(risk["risk_amount"], Decimal)
+        assert isinstance(risk["account_equity"], Decimal)
+
+
+def test_formal_scan_passes_canonical_decimal_close_to_risk_derivation() -> None:
+    from app.signal.scanner import SignalScanner, create_signal_scan_task
+
+    class DecimalBoundaryScanner(SignalScanner):
+        def _risk_payload(
+            self,
+            snapshot: Any,
+            bar: dict[str, Any],
+            payload: dict[str, Any],
+        ) -> dict[str, Any]:
+            assert isinstance(bar["close"], Decimal)
+            return super()._risk_payload(snapshot, bar, payload)
+
+    factory = _session_factory()
+    with factory() as session:
+        _seed_rank1_mapping(session, known_at=START)
+        task = create_signal_scan_task(session, _formal_request())
+        scanner = DecimalBoundaryScanner(
+            session,
+            canonical_market_data=FakeCanonicalMarketData(),
+        )
+
+        scanner._scan_one(task, scanner._targets(task.request_payload)[0])
+
+
 def test_formal_scan_uses_canonical_service_and_deep_copies_identity() -> None:
     from app.signal.scanner import SignalScanner, create_signal_scan_task
 
     factory = _session_factory()
     canonical = FakeCanonicalMarketData()
     with factory() as session:
-        task = create_signal_scan_task(
-            session,
-            {**_formal_request(), "strategy_version": "v-test"},
-        )
+        _seed_rank1_mapping(session, known_at=START)
+        task = create_signal_scan_task(session, _formal_request())
         session.commit()
 
         result = SignalScanner(session, canonical_market_data=canonical).run(task.id)
@@ -126,10 +225,13 @@ def test_formal_scan_uses_canonical_service_and_deep_copies_identity() -> None:
         assert event.profile_id is None
         assert event.market_data_file_id is None
         assert signal.research_contract is False
-        assert signal.strategy_version == "v-test"
-        assert event.strategy_version == "v-test"
+        assert signal.strategy_version == "v0"
+        assert event.strategy_version == "v0"
         assert signal.actual_contract == "JM2609"
         assert signal.continuous_contract == "JM.MAIN"
+        assert signal.features["observation_only"] is True
+        assert signal.features["not_trading_instruction"] is True
+        assert signal.features["auto_order"] is False
         identity = signal.features["input_identity"]
         assert identity["schema_version"] == "canonical_consumer_input_v1"
         assert identity["request"]["dataset_kind"] == "actual_dominant"
@@ -138,39 +240,94 @@ def test_formal_scan_uses_canonical_service_and_deep_copies_identity() -> None:
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
 
 
-def test_formal_strategy_code_cannot_select_legacy_research_reader() -> None:
-    from app.signal.jm_v1b import JM_V1B_STRATEGY_CODE
+@pytest.mark.parametrize(
+    ("known_at", "error_code"),
+    [
+        (None, "SIGNAL_MAIN_CONTRACT_KNOWN_AT_MISSING"),
+        (END + timedelta(minutes=1), "SIGNAL_MAIN_CONTRACT_KNOWN_AT_AFTER_DECISION"),
+    ],
+)
+def test_formal_scan_validates_mapping_knowledge_before_evaluator(
+    known_at: datetime | None,
+    error_code: str,
+) -> None:
     from app.signal.scanner import SignalScanner, create_signal_scan_task
 
     factory = _session_factory()
     with factory() as session:
-        task = create_signal_scan_task(
-            session,
-            {**_formal_request(), "strategy_code": JM_V1B_STRATEGY_CODE},
-        )
+        _seed_rank1_mapping(session, known_at=known_at)
+        task = create_signal_scan_task(session, _formal_request())
+        scanner = SignalScanner(session, canonical_market_data=FakeCanonicalMarketData())
+        target = scanner._targets(task.request_payload)[0]
 
-        targets = SignalScanner(
-            session,
-            canonical_market_data=FakeCanonicalMarketData(),
-        )._targets(task.request_payload)
+        with pytest.raises(ValueError, match=error_code):
+            scanner._scan_one(task, target)
 
-        assert [(item.contract, item.period) for item in targets] == [("JM2609", "5m")]
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+
+
+def test_formal_strategy_code_cannot_select_legacy_research_reader() -> None:
+    from app.signal.jm_v1b import JM_V1B_STRATEGY_CODE
+    from app.signal.scanner import create_signal_scan_task
+
+    factory = _session_factory()
+    with factory() as session:
+        with pytest.raises(ValidationError, match="SIGNAL_FORMAL_STRATEGY_UNSUPPORTED"):
+            create_signal_scan_task(
+                session,
+                {**_formal_request(), "strategy_code": JM_V1B_STRATEGY_CODE},
+            )
 
 
 @pytest.mark.parametrize("mode", ["replay", "repair", "recompute"])
 def test_non_scan_modes_evaluate_without_signal_side_effects(mode: str) -> None:
-    from app.signal.scanner import SignalScanner, create_signal_scan_task
+    from app.signal.scanner import SignalScanner
 
     factory = _session_factory()
     canonical = FakeCanonicalMarketData()
     with factory() as session:
-        task = create_signal_scan_task(session, {**_formal_request(), "mode": mode})
-        session.commit()
+        _seed_rank1_mapping(session, known_at=START)
 
-        result = SignalScanner(session, canonical_market_data=canonical).run(task.id)
+        result = SignalScanner(session, canonical_market_data=canonical).preview(
+            {**_formal_request(), "mode": mode}
+        )
 
         assert result["evaluations"]
         assert result["evaluations"][0]["input_identity"]["schema_version"] == "canonical_consumer_input_v1"
+        assert session.scalar(select(func.count()).select_from(SignalScanTask)) == 0
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+
+
+@pytest.mark.parametrize("mode", ["replay", "repair", "recompute"])
+def test_non_scan_api_path_is_synchronous_and_writes_no_task_or_result(
+    mode: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.signals import _start_scan
+    from app.signal.scanner import SignalScanner
+
+    factory = _session_factory()
+    canonical = FakeCanonicalMarketData()
+    with factory() as session:
+        _seed_rank1_mapping(session, known_at=START)
+        request = SignalScanRequest.model_validate(
+            {**_formal_request(), "mode": mode, "run_inline": False}
+        )
+        monkeypatch.setattr(
+            SignalScanner,
+            "_canonical_service",
+            lambda _self: canonical,
+        )
+
+        response = _start_scan(request, session, research_only=False)
+
+        assert response["mode"] == mode
+        assert response["evaluations"]
+        assert "task_no" not in response
+        assert session.scalar(select(func.count()).select_from(SignalScanTask)) == 0
         assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
         assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
@@ -230,6 +387,85 @@ def test_continuous_preview_cannot_persist_formal_event() -> None:
         assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
 
 
+@pytest.mark.parametrize(
+    "forgery",
+    [
+        "minimal_identity",
+        "symbol_mismatch",
+        "strategy_mismatch",
+        "strategy_input_mismatch",
+        "legacy_profile",
+        "missing_safety",
+        "task_auto_order",
+    ],
+)
+def test_event_writer_rejects_forged_canonical_signal_identity(forgery: str) -> None:
+    from app.signal.events import SIGNAL_CREATED, record_signal_scan_event
+
+    factory = _session_factory()
+    canonical = FakeCanonicalMarketData()
+    with factory() as session:
+        identity = _canonical_identity(
+            canonical,
+            BarFrequency.M5,
+            strategy_input_version=_expected_strategy_input_version(
+                _formal_request()
+            ),
+        )
+        formal_payload = SignalScanRequest.model_validate(
+            _formal_request()
+        ).model_dump(mode="json")
+        task = SignalScanTask(
+            task_no=f"SIG-FORGED-{forgery}",
+            status="running",
+            watchlist_code="black",
+            periods=["5m"],
+            request_payload={
+                **formal_payload,
+                "research_only": False,
+                "data_role": "primary",
+            },
+            result_payload={},
+            profile_id=None,
+            market_data_file_id=None,
+        )
+        signal = _canonical_signal(identity, task_no=task.task_no)
+        if forgery == "minimal_identity":
+            signal.features["input_identity"] = {
+                "request": {"dataset_kind": "actual_dominant"}
+            }
+        elif forgery == "symbol_mismatch":
+            signal.symbol = "rb"
+            signal.product = "rb"
+        elif forgery == "strategy_mismatch":
+            signal.strategy_name = "htdy_original_realtime_first_seen"
+            signal.strategy_version = "v1.0"
+        elif forgery == "strategy_input_mismatch":
+            wrong_identity = _canonical_identity(
+                canonical,
+                BarFrequency.M5,
+                strategy_input_version=f"su_bing_ema21:v0:{'f' * 64}",
+            )
+            signal.features["input_identity"] = deepcopy(wrong_identity)
+            signal.features["formal_lineage"]["input_identity"] = deepcopy(
+                wrong_identity
+            )
+            signal.quality_status["canonical_consumer_input_digest"] = wrong_identity[
+                "digest"
+            ]
+        elif forgery == "legacy_profile":
+            signal.profile_id = "legacy-profile"
+        elif forgery == "missing_safety":
+            del signal.features["auto_order"]
+        elif forgery == "task_auto_order":
+            task.request_payload["auto_order"] = True
+        session.add_all([task, signal])
+        session.flush()
+
+        assert record_signal_scan_event(session, signal, SIGNAL_CREATED, task) is None
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+
+
 def test_review_reconstructs_canonical_query_and_detects_identity_drift() -> None:
     from app.services.review_lineage import ReviewLineageError, load_review_bars
 
@@ -255,6 +491,107 @@ def test_review_reconstructs_canonical_query_and_detects_identity_drift() -> Non
         drifted = FakeCanonicalMarketData(manifest_suffix="f")
         with pytest.raises(ReviewLineageError, match="REVIEW_EXACT_BARS_IDENTITY_CHANGED"):
             load_review_bars(session, note, market_data=drifted)
+
+
+def test_review_exact_bars_rejects_strategy_version_drift() -> None:
+    from app.services.review_lineage import ReviewLineageError, load_review_bars
+
+    factory = _session_factory()
+    canonical = FakeCanonicalMarketData()
+    with factory() as session:
+        note = _canonical_review_note(session, canonical)
+        note.strategy_version = "forged-version"
+        note.extra["formal_lineage"]["strategy_version"] = "forged-version"
+
+        with pytest.raises(
+            ReviewLineageError,
+            match="REVIEW_EXACT_BARS_IDENTITY_CHANGED",
+        ):
+            load_review_bars(session, note, market_data=canonical)
+
+
+def test_review_freezes_and_exactly_verifies_every_auxiliary_input() -> None:
+    from app.services.review_lineage import (
+        ReviewLineageError,
+        load_review_bars,
+        resolve_review_source_lineage,
+    )
+
+    factory = _session_factory()
+    canonical = FakeCanonicalMarketData()
+    with factory() as session:
+        primary = _canonical_identity(canonical, BarFrequency.M5)
+        auxiliary = _canonical_identity(canonical, BarFrequency.M15)
+        signal = _legacy_signal()
+        signal.features = {
+            "formal_lineage": {
+                "schema_version": "signal_canonical_inputs_v1",
+                "input_identity": deepcopy(primary),
+                "auxiliary_input_identities": {"15m": deepcopy(auxiliary)},
+                "strategy_version": "v0",
+            }
+        }
+        session.add(signal)
+        session.flush()
+
+        lineage = resolve_review_source_lineage(
+            session,
+            source_type="strategy_signal",
+            source_id=signal.id,
+        )
+        assert lineage["auxiliary_input_identities"]["15m"] == auxiliary
+
+        note = ReviewNote(
+            source_type="strategy_signal",
+            source_id=signal.id,
+            symbol="jm",
+            contract="JM2609",
+            period="5m",
+            strategy_name="su_bing_ema21",
+            strategy_version="v0",
+            mistake_tags=[],
+            rule_tags=[],
+            emotion_tags=[],
+            screenshot_paths=[],
+            extra={"lineage_status": "ready", "formal_lineage": lineage},
+        )
+        session.add(note)
+        session.flush()
+
+        canonical.queries.clear()
+        response = load_review_bars(session, note, market_data=canonical)
+        assert [query.frequency for query in canonical.queries] == [
+            BarFrequency.M5,
+            BarFrequency.M15,
+        ]
+        assert response["auxiliary_bars"]["15m"][-1]["period"] == "15m"
+
+        auxiliary_drift = FakeCanonicalMarketData(
+            manifest_suffix_by_frequency={BarFrequency.M15: "f"}
+        )
+        with pytest.raises(
+            ReviewLineageError,
+            match="REVIEW_EXACT_BARS_IDENTITY_CHANGED",
+        ):
+            load_review_bars(session, note, market_data=auxiliary_drift)
+
+
+def test_review_openapi_explicitly_declares_canonical_lineage_fields() -> None:
+    from app.schemas.review import ReviewExactBarsResponse, ReviewLineageResponse
+
+    lineage_properties = ReviewLineageResponse.model_json_schema()["properties"]
+    assert {
+        "strategy_version",
+        "input_digest",
+        "dataset_keys",
+        "manifest_digests",
+        "window",
+        "source_window",
+        "input_identity",
+        "auxiliary_input_identities",
+    } <= set(lineage_properties)
+    exact_properties = ReviewExactBarsResponse.model_json_schema()["properties"]
+    assert "auxiliary_bars" in exact_properties
 
 
 def test_review_legacy_historical_row_is_stably_unavailable() -> None:
@@ -300,6 +637,7 @@ def _canonical_review_note(
         "strategy_version": "v0",
         "input_digest": identity["digest"],
         "input_identity": deepcopy(identity),
+        "auxiliary_input_identities": {},
     }
     note = ReviewNote(
         source_type="strategy_signal",
@@ -318,6 +656,39 @@ def _canonical_review_note(
     session.add(note)
     session.flush()
     return note
+
+
+def _canonical_identity(
+    canonical: FakeCanonicalMarketData,
+    frequency: BarFrequency,
+    *,
+    strategy_input_version: str = "su_bing_ema21:v0:test-input",
+) -> dict[str, Any]:
+    from app.data_core.consumer_identity import build_canonical_consumer_input
+
+    query = BarQuery(
+        dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+        symbol="jm",
+        contract_or_series="JM2609",
+        frequency=frequency,
+        start=START,
+        end=END,
+    )
+    return build_canonical_consumer_input(
+        query,
+        canonical.get_bars(query),
+        strategy_input_version=strategy_input_version,
+    ).to_snapshot()
+
+
+def _expected_strategy_input_version(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        payload.get("strategy_params") or {},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return f"su_bing_ema21:v0:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def _formal_request() -> dict[str, Any]:
@@ -349,6 +720,29 @@ def _formal_request() -> dict[str, Any]:
         },
         "run_inline": True,
     }
+
+
+def _seed_rank1_mapping(
+    session: Session,
+    *,
+    known_at: datetime | None,
+) -> None:
+    raw_payload: dict[str, Any] = {}
+    if known_at is not None:
+        raw_payload["known_at"] = known_at.isoformat()
+    session.add(
+        MainContractMap(
+            instrument_symbol="jm",
+            trade_date=START.date(),
+            rank=1,
+            contract_code="JM2609",
+            rule="volume_open_interest",
+            provider="rqdata",
+            data_version="canonical-mapping-v1",
+            raw_payload=raw_payload,
+        )
+    )
+    session.flush()
 
 
 def _bars(
@@ -406,6 +800,45 @@ def _legacy_signal() -> StrategySignal:
         },
         quality_status={"status": "passed"},
     )
+
+
+def _canonical_signal(
+    identity: dict[str, Any],
+    *,
+    task_no: str,
+) -> StrategySignal:
+    signal = _legacy_signal()
+    signal.task_no = task_no
+    signal.profile_id = None
+    signal.market_data_file_id = None
+    signal.product = "jm"
+    signal.continuous_contract = "JM.MAIN"
+    signal.actual_contract = "JM2609"
+    signal.period = "5m"
+    signal.bar_start = END - timedelta(minutes=5)
+    signal.bar_end = END
+    signal.signal_time = END
+    signal.provider = "rqdata"
+    signal.source = "historical_canonical"
+    signal.data_role = "primary"
+    signal.research_contract = False
+    signal.features = {
+        "input_identity": deepcopy(identity),
+        "observation_only": True,
+        "not_trading_instruction": True,
+        "auto_order": False,
+        "formal_lineage": {
+            "schema_version": "signal_canonical_inputs_v1",
+            "input_identity": deepcopy(identity),
+            "auxiliary_input_identities": {},
+            "strategy_version": "v0",
+        },
+    }
+    signal.quality_status = {
+        "status": "passed",
+        "canonical_consumer_input_digest": identity["digest"],
+    }
+    return signal
 
 
 def _session_factory():

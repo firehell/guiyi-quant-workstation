@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import json
 from pathlib import Path
@@ -11,6 +11,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.session import get_db
+from app.data_core.consumer_identity import build_canonical_consumer_input
+from app.data_core.contracts import BarFrequency, BarQuery, BarsResult, DatasetKey, DatasetKind
 from app.main import app
 from app.models.data_center import (
     DataProfile,
@@ -223,11 +225,44 @@ def _scan_payload() -> dict:
 
 
 def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
-    signal_time = datetime(2026, 7, 10, 1, 30)
-    input_identity = {
-        "schema_version": "canonical_consumer_input_v1",
-        "request": {"dataset_kind": "actual_dominant"},
-    }
+    signal_time = datetime(2026, 7, 10, 1, 30, tzinfo=UTC)
+    request_start = datetime(2026, 7, 10, 1, 0, tzinfo=UTC)
+    request_end = datetime(2026, 7, 10, 2, 0, tzinfo=UTC)
+    query = BarQuery(
+        dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+        symbol="jm",
+        contract_or_series="JM2609",
+        frequency=BarFrequency.M5,
+        start=request_start,
+        end=request_end,
+    )
+    result = BarsResult(
+        bars=(),
+        source_datasets=(
+            DatasetKey(
+                provider="rqdata",
+                dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                contract_or_series="JM2609",
+                frequency=BarFrequency.M1,
+                adjustment="none",
+                schema_version="canonical-bar-v1",
+            ),
+        ),
+        manifest_digests=("a" * 64,),
+        requested_window=(request_start, request_end),
+        data_type=DatasetKind.ACTUAL_DOMINANT,
+        derived_frequency=BarFrequency.M5,
+        source_data_versions=("canonical-5m-v1",),
+    )
+    input_identity = build_canonical_consumer_input(
+        query,
+        result,
+        strategy_input_version=(
+            "su_bing_ema21:v0:"
+            "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        ),
+    ).to_snapshot()
     signal = StrategySignal(
         task_no="SIG-CANONICAL-1",
         dedupe_key="canonical:signal-events-test",
@@ -256,12 +291,20 @@ def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
         reasons=["canonical test"],
         features={
             "input_identity": input_identity,
+            "observation_only": True,
+            "not_trading_instruction": True,
+            "auto_order": False,
             "formal_lineage": {
                 "schema_version": "signal_canonical_inputs_v1",
                 "input_identity": input_identity,
+                "auxiliary_input_identities": {},
+                "strategy_version": "v0",
             },
         },
-        quality_status={"status": "passed"},
+        quality_status={
+            "status": "passed",
+            "canonical_consumer_input_digest": input_identity["digest"],
+        },
         profile_id=None,
         market_data_file_id=None,
         research_contract=False,
@@ -278,8 +321,17 @@ def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
             "mode": "scan",
             "research_only": False,
             "dataset_kind": "actual_dominant",
+            "instrument_symbol": "jm",
+            "contract_or_series": "JM2609",
+            "periods": ["5m"],
+            "start": request_start.isoformat(),
+            "end": request_end.isoformat(),
+            "strategy_code": "su_bing_ema21",
+            "strategy_version": "v0",
         },
         result_payload={},
+        profile_id=None,
+        market_data_file_id=None,
     )
     session.add_all([task, signal])
     session.flush()

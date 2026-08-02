@@ -14,6 +14,7 @@ from app.schemas.signal import (
     LiveSignalEvaluationResponse,
     ResearchSignalScanRequest,
     SignalEventOut,
+    SignalScanMode,
     SignalScanRequest,
     SignalStatus,
     SignalStatusUpdate,
@@ -26,7 +27,6 @@ from app.signal.stage9_wechat import build_stage9_wechat_preview
 from app.signal.scanner import (
     DEFAULT_PERIODS,
     SignalScanner,
-    create_jm_v1b_signal_scan_task,
     create_signal_scan_task,
     enqueue_signal_scan_task,
     signal_payload,
@@ -62,8 +62,12 @@ def _start_scan(
     *,
     research_only: bool,
 ) -> dict[str, Any]:
-    payload = request.model_dump()
-    payload["research_only"] = research_only
+    payload = request.model_dump(mode="json")
+    if not research_only and isinstance(request, SignalScanRequest):
+        if request.mode is not SignalScanMode.SCAN:
+            return SignalScanner(session).preview(payload)
+    if research_only:
+        payload["research_only"] = True
     if not payload["periods"]:
         payload["periods"] = DEFAULT_PERIODS.copy()
     task = create_signal_scan_task(session, payload)
@@ -90,26 +94,11 @@ def _start_scan(
 
 @router.post("/v1b/jm/scan")
 def scan_jm_v1b_signals(run_inline: bool = True, session: Session = Depends(get_db)) -> dict[str, Any]:
-    task = create_jm_v1b_signal_scan_task(session, {"run_inline": run_inline})
-    session.commit()
-
-    if run_inline:
-        SignalScanner(session).run(task.id)
-        session.refresh(task)
-        return task_snapshot(task)
-
-    try:
-        job_id = enqueue_signal_scan_task(task.id)
-    except Exception as exc:
-        task.status = "failed"
-        task.error_message = f"failed to enqueue RQ task: {exc}"
-        task.finished_at = datetime.now(UTC)
-        session.commit()
-        raise HTTPException(status_code=503, detail="Redis/RQ is unavailable; signal scan was not queued") from exc
-
-    task.result_payload = {"rq_job_id": job_id}
-    session.commit()
-    return task_snapshot(task)
+    del run_inline, session
+    raise HTTPException(
+        status_code=410,
+        detail="SIGNAL_JM_V1B_HISTORICAL_SCAN_RETIRED",
+    )
 
 
 @router.get("/latest")

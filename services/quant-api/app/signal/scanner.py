@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 import hashlib
 import json
 from typing import Any
@@ -17,10 +18,10 @@ from app.models.backtest import WatchlistItem
 from app.models.signal import SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
 from app.schemas.signal import SignalDataRole, SignalScanMode, SignalScanRequest, SignalStatus
-from app.signal.jm_v1b import JM_V1B_SCAN_PERIODS, JM_V1B_STRATEGY_CODE, JM_V1B_SYMBOL, JM_V1B_WATCHLIST_CODE, scan_jm_v1b_signal
 from app.services import signal_scanner as legacy
 from app.services.canonical_market_data import build_canonical_reader
 from app.services.market_data_service import MarketDataService
+from app.services.actual_contract_semantics import load_strict_main_contract_mapping
 
 DEFAULT_PERIODS = legacy.DEFAULT_PERIODS
 SIGNAL_STATUS_VALUES = {item.value for item in SignalStatus}
@@ -52,6 +53,46 @@ class SignalScanner(legacy.SignalScanner):
         finally:
             self._formal_execution = False
 
+    def preview(self, request_payload: dict[str, Any]) -> dict[str, Any]:
+        request = SignalScanRequest.model_validate(request_payload)
+        if request.mode is SignalScanMode.SCAN:
+            raise ValueError("SIGNAL_SCAN_MODE_REQUIRES_PERSISTED_TASK")
+        payload = {
+            **request.model_dump(mode="json"),
+            "data_role": SignalDataRole.PRIMARY.value,
+            "research_only": False,
+        }
+        task = SignalScanTask(
+            task_no=f"SIG-PREVIEW-{uuid4().hex}",
+            status="preview",
+            progress=0.0,
+            watchlist_code=request.watchlist_code,
+            periods=list(request.periods),
+            total_items=len(request.periods),
+            request_payload=payload,
+            result_payload={},
+            profile_id=None,
+            market_data_file_id=None,
+        )
+        self._formal_execution = True
+        self._formal_blocked_items = []
+        self._formal_evaluations = []
+        try:
+            for target in self._targets(payload):
+                self._scan_one(task, target)
+        finally:
+            self._formal_execution = False
+        return {
+            "mode": request.mode.value,
+            "evaluations": deepcopy(self._formal_evaluations),
+            "blocked_items": deepcopy(self._formal_blocked_items),
+            "created": 0,
+            "changed": 0,
+            "skipped": 0,
+            "failed": 0,
+            "total": len(request.periods),
+        }
+
     def _publish(self, event: str, payload: dict[str, Any]) -> None:
         if self._formal_execution:
             return
@@ -69,17 +110,6 @@ class SignalScanner(legacy.SignalScanner):
         }
 
     def _targets(self, payload: dict[str, Any]) -> list[legacy.ScanTarget]:
-        if payload.get("research_only") and payload.get("strategy_code") == JM_V1B_STRATEGY_CODE:
-            return [
-                legacy.ScanTarget(
-                    symbol="jm",
-                    name="焦煤",
-                    contract=JM_V1B_SYMBOL,
-                    exchange_code="DCE",
-                    period=period,
-                )
-                for period in JM_V1B_SCAN_PERIODS
-            ]
         if not payload.get("research_only"):
             return [
                 legacy.ScanTarget(
@@ -129,8 +159,6 @@ class SignalScanner(legacy.SignalScanner):
 
     def _scan_one(self, task: SignalScanTask, target: legacy.ScanTarget) -> tuple[StrategySignal | None, str | None]:
         payload = task.request_payload or {}
-        if payload.get("research_only") and payload.get("strategy_code") == JM_V1B_STRATEGY_CODE:
-            return scan_jm_v1b_signal(self.session, self._research_reader(), task, target.period)
         if payload.get("research_only"):
             return super()._scan_one(task, target)
         query, result, input_identity = self._canonical_bars(payload, target.period)
@@ -139,15 +167,21 @@ class SignalScanner(legacy.SignalScanner):
             return None, None
         higher_bars: list[dict[str, Any]] = []
         auxiliary_identities: dict[str, dict[str, object]] = {}
+        canonical_results = [result]
         higher_period = legacy.HIGHER_PERIOD.get(target.period)
         if higher_period is not None:
             _, higher_result, higher_identity = self._canonical_bars(payload, higher_period)
+            canonical_results.append(higher_result)
             higher_bars = [
                 _canonical_bar_payload(item, exchange=target.exchange_code)
                 for item in higher_result.bars
                 if item.bar_end <= result.bars[-1].bar_end
             ]
             auxiliary_identities[higher_period] = higher_identity
+        _validate_actual_dominant_mapping_provenance(
+            self.session,
+            canonical_results,
+        )
         snapshot = legacy.generate_signals(
             bars,
             higher_timeframe_bars=higher_bars,
@@ -159,7 +193,11 @@ class SignalScanner(legacy.SignalScanner):
             "provider": "rqdata",
             "canonical_consumer_input_digest": input_identity["digest"],
         }
-        risk = self._risk_payload(snapshot, last_bar, payload)
+        risk = self._risk_payload(
+            snapshot,
+            {**last_bar, "close": result.bars[-1].close},
+            payload,
+        )
         score = legacy.score_signal(snapshot, risk)
         dedupe_key = _canonical_dedupe_key(
             target=target,
@@ -201,6 +239,9 @@ class SignalScanner(legacy.SignalScanner):
         features["auxiliary_input_identities"] = deepcopy(auxiliary_identities)
         features["research_only"] = False
         features["source_mode"] = "historical_scan"
+        features["observation_only"] = True
+        features["not_trading_instruction"] = True
+        features["auto_order"] = False
         signal.features = features
         signal.profile_id = None
         signal.market_data_file_id = None
@@ -228,6 +269,75 @@ class SignalScanner(legacy.SignalScanner):
             self.session.add(signal)
             self.session.flush()
         return signal, event_type
+
+    def _risk_payload(
+        self,
+        snapshot: Any,
+        bar: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        if payload.get("research_only"):
+            return super()._risk_payload(snapshot, bar, payload)
+        spec = legacy.load_contract_spec(
+            self.session,
+            str(bar["symbol"]),
+            str(bar["contract"]),
+        )
+        entry = _decimal_value(bar["close"], field="bar.close")
+        atr = _decimal_value(snapshot.features.get("atr") or 0, field="atr")
+        price_tick = _decimal_value(spec.price_tick, field="price_tick")
+        prior_high = _decimal_or_none(snapshot.features.get("prior_high"))
+        prior_low = _decimal_or_none(snapshot.features.get("prior_low"))
+        if snapshot.direction == "long":
+            stop = prior_low if prior_low is not None else entry - max(Decimal("2") * atr, price_tick)
+            target = entry + Decimal("2") * abs(entry - stop)
+        elif snapshot.direction == "short":
+            stop = prior_high if prior_high is not None else entry + max(Decimal("2") * atr, price_tick)
+            target = entry - Decimal("2") * abs(entry - stop)
+        else:
+            stop = None
+            target = None
+        account_equity = _decimal_value(
+            payload.get("account_equity", "100000"),
+            field="account_equity",
+        )
+        risk_pct = _decimal_value(
+            payload.get("risk_per_trade_pct", "0.01"),
+            field="risk_per_trade_pct",
+        )
+        max_margin_pct = _decimal_value(
+            payload.get("max_margin_usage_pct", "0.35"),
+            field="max_margin_usage_pct",
+        )
+        multiplier = Decimal(spec.volume_multiple)
+        margin_rate = _decimal_value(spec.margin_rate, field="margin_rate")
+        risk_budget = account_equity * risk_pct
+        risk_per_lot = abs(entry - stop) * multiplier if stop is not None else Decimal("0")
+        risk_volume = _floor_decimal(risk_budget / risk_per_lot) if risk_per_lot > 0 else 0
+        margin_per_lot = entry * multiplier * margin_rate
+        margin_volume = (
+            _floor_decimal(account_equity * max_margin_pct / margin_per_lot)
+            if margin_per_lot > 0
+            else 0
+        )
+        open_volume = max(0, min(risk_volume, margin_volume))
+        margin_required = Decimal(open_volume) * margin_per_lot
+        risk_amount = Decimal(open_volume) * risk_per_lot
+        return {
+            "entry_price": entry,
+            "target_price": target,
+            "stop_loss_price": stop,
+            "risk_reward_ratio": (
+                None
+                if stop is None or target is None or abs(entry - stop) <= 0
+                else abs(target - entry) / abs(entry - stop)
+            ),
+            "open_volume": open_volume,
+            "margin_required": margin_required,
+            "risk_amount": risk_amount,
+            "account_equity": account_equity,
+            "spec_source": spec.source,
+        }
 
     def _canonical_bars(
         self,
@@ -281,7 +391,10 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
     if research_only:
         normalized_request = dict(request_payload)
     else:
-        normalized_request = SignalScanRequest.model_validate(request_payload).model_dump(mode="json")
+        request = SignalScanRequest.model_validate(request_payload)
+        if request.mode is not SignalScanMode.SCAN:
+            raise ValueError("SIGNAL_NON_SCAN_MODE_IS_PREVIEW_ONLY")
+        normalized_request = request.model_dump(mode="json")
     payload = {
         **normalized_request,
         "data_role": str(normalized_request.get("data_role") or SignalDataRole.PRIMARY.value),
@@ -291,39 +404,6 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
     task.request_payload = payload
     task.profile_id = str(payload.get("profile_id")) if payload["research_only"] and payload.get("profile_id") else None
     task.market_data_file_id = None
-    return task
-
-
-def create_jm_v1b_signal_scan_task(session: Session, request_payload: dict[str, Any] | None = None) -> SignalScanTask:
-    payload = {
-        "watchlist_code": JM_V1B_WATCHLIST_CODE,
-        "symbols": ["jm"],
-        "periods": JM_V1B_SCAN_PERIODS.copy(),
-        "provider": None,
-        "data_role": SignalDataRole.PRIMARY.value,
-        "research_only": True,
-        "strategy_code": JM_V1B_STRATEGY_CODE,
-        "strategy_version": "v1b.0",
-        "account_equity": 100000.0,
-        "risk_per_trade_pct": 0.01,
-        "max_margin_usage_pct": 0.35,
-        "min_score_bucket": 0,
-        "allow_warning_quality": False,
-        "strategy_params": {},
-        **(request_payload or {}),
-    }
-    task = SignalScanTask(
-        task_no=f"SIG-JM-V1B-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}",
-        status="pending",
-        progress=0.0,
-        watchlist_code=JM_V1B_WATCHLIST_CODE,
-        periods=JM_V1B_SCAN_PERIODS.copy(),
-        total_items=len(JM_V1B_SCAN_PERIODS),
-        request_payload=payload,
-        result_payload={},
-    )
-    session.add(task)
-    session.flush()
     return task
 
 
@@ -352,6 +432,17 @@ def task_snapshot(task: SignalScanTask) -> dict[str, Any]:
 
 def signal_payload(signal: StrategySignal) -> dict[str, Any]:
     payload = legacy.signal_payload(signal)
+    for field in (
+        "current_price",
+        "target_price",
+        "stop_loss_price",
+        "risk_reward_ratio",
+        "margin_required",
+        "risk_amount",
+        "account_equity",
+    ):
+        if isinstance(payload.get(field), Decimal):
+            payload[field] = float(payload[field])
     features = dict(signal.features or {})
     strategy_status = signal.status
     lifecycle_status = _lifecycle_status(signal)
@@ -500,3 +591,68 @@ def _aware_datetime(value: Any) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("formal signal window datetimes must be timezone-aware")
     return parsed.astimezone(UTC)
+
+
+def _decimal_value(value: Any, *, field: str) -> Decimal:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"SIGNAL_RISK_DECIMAL_INVALID:{field}") from exc
+    if not parsed.is_finite():
+        raise ValueError(f"SIGNAL_RISK_DECIMAL_INVALID:{field}")
+    return parsed
+
+
+def _decimal_or_none(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    return _decimal_value(value, field="strategy_feature")
+
+
+def _floor_decimal(value: Decimal) -> int:
+    return int(value.to_integral_value(rounding=ROUND_FLOOR))
+
+
+def _validate_actual_dominant_mapping_provenance(
+    session: Session,
+    results: list[Any],
+) -> None:
+    first_decision_by_day: dict[Any, datetime] = {}
+    contract_by_day: dict[Any, str] = {}
+    symbol_by_day: dict[Any, str] = {}
+    for result in results:
+        for bar in result.bars:
+            trading_day = bar.trading_day
+            decision_time = _aware_datetime(bar.bar_end)
+            current = first_decision_by_day.get(trading_day)
+            if current is None or decision_time < current:
+                first_decision_by_day[trading_day] = decision_time
+            contract = str(bar.contract_or_series).strip().upper()
+            existing_contract = contract_by_day.setdefault(trading_day, contract)
+            if existing_contract != contract:
+                raise ValueError("SIGNAL_MAIN_CONTRACT_BAR_CONFLICT")
+            symbol_by_day.setdefault(trading_day, str(bar.symbol).strip().lower())
+
+    for trading_day, decision_time in first_decision_by_day.items():
+        try:
+            mapping = load_strict_main_contract_mapping(
+                session,
+                instrument_symbol=symbol_by_day[trading_day],
+                trade_date=trading_day,
+            )
+        except ValueError as exc:
+            raise ValueError("SIGNAL_MAIN_CONTRACT_MAPPING_INVALID") from exc
+        if mapping is None:
+            raise ValueError("SIGNAL_MAIN_CONTRACT_MAPPING_MISSING")
+        if str(mapping.contract_code).strip().upper() != contract_by_day[trading_day]:
+            raise ValueError("SIGNAL_MAIN_CONTRACT_MAPPING_MISMATCH")
+        raw_payload = mapping.raw_payload if isinstance(mapping.raw_payload, dict) else {}
+        known_at = raw_payload.get("known_at")
+        if known_at is None:
+            raise ValueError("SIGNAL_MAIN_CONTRACT_KNOWN_AT_MISSING")
+        try:
+            normalized_known_at = _aware_datetime(known_at)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("SIGNAL_MAIN_CONTRACT_KNOWN_AT_INVALID") from exc
+        if normalized_known_at > decision_time:
+            raise ValueError("SIGNAL_MAIN_CONTRACT_KNOWN_AT_AFTER_DECISION")

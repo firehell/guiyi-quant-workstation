@@ -158,4 +158,9 @@ def test_strategy_registry_lists_v1b_entries() -> None:
     assert "su_bing_jm_daily_ema21_macd_volume" in codes
     jm_v1b = next(item for item in payload["items"] if item["strategy_code"] == "jm_v1b_daily_direction_fast_entry")
     assert len(jm_v1b["backtest_endpoints"]) == 2
-    assert jm_v1b["scan_endpoint"] == "/api/signals/v1b/jm/scan"
+    assert jm_v1b["scan_endpoint"] is None
+    assert "historical_scan" not in jm_v1b["capability_classes"]
+    assert all(
+        item.get("scan_endpoint") != "/api/signals/v1b/jm/scan"
+        for item in payload["items"]
+    )

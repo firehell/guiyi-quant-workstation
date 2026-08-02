@@ -2,12 +2,23 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime
+from decimal import Decimal
+import hashlib
+import json
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.data_core.consumer_identity import CanonicalConsumerInput
+from app.data_core.contracts import DataCoreError, DatasetKind
 from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
+from app.schemas.signal import (
+    FORMAL_SIGNAL_STRATEGY_CODE,
+    FORMAL_SIGNAL_STRATEGY_VERSION,
+    SignalScanMode,
+    SignalScanRequest,
+)
 from app.signal.contract_context import signal_contract_context_payload
 
 SIGNAL_CREATED = "signal_created"
@@ -28,13 +39,7 @@ def record_signal_scan_event(
         return None
     if str(request_payload.get("mode") or "scan") != "scan":
         return None
-    input_identity = _input_identity(signal)
-    identity_request = input_identity.get("request") if isinstance(input_identity, dict) else None
-    if (
-        request_payload.get("dataset_kind") != "actual_dominant"
-        or not isinstance(identity_request, dict)
-        or identity_request.get("dataset_kind") != "actual_dominant"
-    ):
+    if not _valid_formal_scan_identity(signal, task):
         return None
     if event_type not in SIGNAL_SCAN_EVENT_TYPES:
         return None
@@ -48,6 +53,120 @@ def record_signal_scan_event(
         task_no=task.task_no,
         payload_extra={"task": _task_payload(task)},
     )
+
+
+def _valid_formal_scan_identity(
+    signal: StrategySignal,
+    task: SignalScanTask,
+) -> bool:
+    request_payload = task.request_payload or {}
+    formal_payload = {
+        key: value
+        for key, value in request_payload.items()
+        if key not in {"data_role", "research_only"}
+    }
+    try:
+        formal_request = SignalScanRequest.model_validate(formal_payload)
+    except (TypeError, ValueError):
+        return False
+    if formal_request.mode is not SignalScanMode.SCAN:
+        return False
+    input_snapshot = _input_identity(signal)
+    if not isinstance(input_snapshot, dict):
+        return False
+    try:
+        identity = CanonicalConsumerInput.from_snapshot(input_snapshot)
+    except (DataCoreError, TypeError, ValueError):
+        return False
+    request = identity.request
+    if request.dataset_kind is not DatasetKind.ACTUAL_DOMINANT:
+        return False
+    if signal.profile_id is not None or signal.market_data_file_id is not None:
+        return False
+    if task.profile_id is not None or task.market_data_file_id is not None:
+        return False
+    if signal.research_contract or signal.data_role != "primary":
+        return False
+    if signal.source != "historical_canonical" or signal.provider != "rqdata":
+        return False
+    if signal.strategy_name != FORMAL_SIGNAL_STRATEGY_CODE:
+        return False
+    if signal.strategy_version != FORMAL_SIGNAL_STRATEGY_VERSION:
+        return False
+    if formal_request.strategy_code != signal.strategy_name:
+        return False
+    if formal_request.strategy_version != signal.strategy_version:
+        return False
+    strategy_prefix = f"{signal.strategy_name}:{signal.strategy_version}:"
+    if not identity.strategy_input_version.startswith(strategy_prefix):
+        return False
+    strategy_params = formal_request.strategy_params
+    if not isinstance(strategy_params, dict):
+        return False
+    encoded_params = json.dumps(
+        strategy_params,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    expected_strategy_input_version = (
+        f"{strategy_prefix}{hashlib.sha256(encoded_params).hexdigest()}"
+    )
+    if identity.strategy_input_version != expected_strategy_input_version:
+        return False
+    if formal_request.dataset_kind is not request.dataset_kind:
+        return False
+    if formal_request.instrument_symbol != request.symbol:
+        return False
+    if formal_request.contract_or_series != request.contract_or_series:
+        return False
+    if request.frequency.value not in formal_request.periods:
+        return False
+    try:
+        signal_start = _event_datetime(signal.bar_start)
+        signal_end = _event_datetime(signal.bar_end)
+        signal_time = _event_datetime(signal.signal_time)
+    except (TypeError, ValueError):
+        return False
+    if formal_request.start != request.start or formal_request.end != request.end:
+        return False
+    if not (request.start <= signal_start < signal_end <= request.end):
+        return False
+    if signal_time != signal_end:
+        return False
+    if signal.symbol.lower() != request.symbol or (signal.product or "").lower() != request.symbol:
+        return False
+    if signal.contract.upper() != request.contract_or_series:
+        return False
+    if (signal.actual_contract or "").upper() != request.contract_or_series:
+        return False
+    if signal.period != request.frequency.value:
+        return False
+    formal_lineage = (signal.features or {}).get("formal_lineage")
+    if not isinstance(formal_lineage, dict):
+        return False
+    if formal_lineage.get("schema_version") != "signal_canonical_inputs_v1":
+        return False
+    if formal_lineage.get("input_identity") != input_snapshot:
+        return False
+    if formal_lineage.get("strategy_version") != signal.strategy_version:
+        return False
+    features = signal.features or {}
+    if (
+        features.get("observation_only") is not True
+        or features.get("not_trading_instruction") is not True
+        or features.get("auto_order") is not False
+    ):
+        return False
+    quality = signal.quality_status if isinstance(signal.quality_status, dict) else {}
+    return quality.get("canonical_consumer_input_digest") == identity.digest
+
+
+def _event_datetime(value: Any) -> datetime:
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def record_signal_status_change(
@@ -426,4 +545,6 @@ def _sanitize(value: Any) -> Any:
         return sanitized
     if isinstance(value, list):
         return [_sanitize(item) for item in value]
+    if isinstance(value, Decimal):
+        return float(value)
     return value
