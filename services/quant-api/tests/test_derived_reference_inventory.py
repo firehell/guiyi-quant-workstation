@@ -327,9 +327,9 @@ def test_market_data_file_rows_require_catalog_evidence_and_classify_exact_rows(
     assert derived[0]["disposition"] == "REBUILD_ONLY"
     assert duplicate[0]["table"] == "market_data_files"
     assert duplicate[0]["ids"] == ["1", "3"]
-    assert duplicate[0]["disposition"] == "MIXED"
+    assert duplicate[0]["disposition"] == "REVIEW_REQUIRED"
     market_files = next(item for item in result["database"]["tables"] if item["table"] == "market_data_files")
-    assert market_files["row_classifications"][0]["disposition"] == "KEEP_TRUSTED_CANONICAL"
+    assert market_files["row_classifications"][0]["disposition"] == "REVIEW_REQUIRED"
     assert market_files["row_classifications"][0]["catalog_evidence"] == "verified"
     assert result["status"] == "incomplete"  # fixture intentionally lacks unrelated allowlisted tables
 
@@ -340,7 +340,7 @@ def test_reference_state_excludes_historical_and_non_active_sections_from_task07
     (repo_root / "docs" / "archive").mkdir(parents=True)
     data_root.mkdir()
     (repo_root / "docs" / "historical.md").write_text(
-        "## Historical snapshot; not active Gate\nreport 14 backtest legacy lineage\n",
+        "## Historical snapshot; not active Gate: archived evidence\nreport 14 backtest legacy lineage\n",
         encoding="utf-8",
     )
     (repo_root / "docs" / "archive" / "old.md").write_text("signal review\n", encoding="utf-8")
@@ -447,13 +447,13 @@ def test_reference_scan_keeps_legacy_consumer_tests_and_fails_closed_on_ambiguou
 @pytest.mark.parametrize(
     ("text", "expected_state"),
     [
-        ("frozen backtest reference", "active"),
-        ("compatibility-only backtest is still used", "active"),
-        ("historical snapshot; not active Gate; backtest", "historical"),
-        ("superseded and unused backtest", "non_active"),
+        ("frozen backtest reference", "review_required"),
+        ("compatibility-only backtest is still used", "review_required"),
+        ("historical snapshot; not active Gate: backtest", "historical"),
+        ("superseded and unused backtest", "review_required"),
         ("历史快照且非 active Gate：backtest", "historical"),
         ("仅历史引用：backtest", "historical"),
-        ("不再 active：backtest", "non_active"),
+        ("不再 active：backtest", "active"),
         ("已归档：backtest", "historical"),
     ],
 )
@@ -474,6 +474,34 @@ def test_reference_state_requires_explicit_non_active_evidence(tmp_path: Path, t
     assert result["task07_zero_active_reference_eligible"] is (expected_state in {"historical", "non_active"})
 
 
+@pytest.mark.parametrize(
+    ("relative", "text"),
+    [
+        ("docs/negated.md", "backtest is not merely historical reference"),
+        ("docs/negated.md", "backtest must not be treated as not active"),
+        ("services/quant-api/app/legacy.py", "historical snapshot; not active Gate: backtest"),
+        ("services/quant-api/tests/test_legacy.py", "仅历史引用：backtest"),
+    ],
+)
+def test_reference_state_never_downgrades_negated_or_code_test_text(tmp_path: Path, relative: str, text: str) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    path = repo_root / relative
+    path.parent.mkdir(parents=True)
+    data_root.mkdir()
+    path.write_text(text, encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+
+    location = next(item for item in next(category for category in result["categories"] if category["category"] == "backtest")["reference_locations"])
+    assert location["reference_state"] in {"active", "review_required"}
+    assert location["disposition"] != "HISTORICAL_SNAPSHOT"
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
 def test_market_data_file_mismatches_and_direct_5m_bars_are_never_keep(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     data_root = tmp_path / "data"
@@ -486,11 +514,14 @@ def test_market_data_file_mismatches_and_direct_5m_bars_are_never_keep(tmp_path:
 
     classes = next(item for item in result["database"]["tables"] if item["table"] == "market_data_files")["row_classifications"]
     assert [item["disposition"] for item in classes] == [
-        "KEEP_TRUSTED_CANONICAL", "REBUILD_ONLY", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REBUILD_ONLY",
+        "REVIEW_REQUIRED", "REBUILD_ONLY", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REBUILD_ONLY",
     ]
     assert classes[-1]["category"] == "permanent_derived_periods"
     assert classes[-1]["reason"] == "legacy bar period is regenerated from provider-direct canonical 1m bars"
     assert all(item["category"] is not None for item in classes)
+    assert {item["code"] for item in result["database"]["diagnostics"]} >= {"PHYSICAL_KEEP_PROOF_REQUIRED"}
+    assert all(category["database_scope"] == "INCOMPLETE" for category in result["categories"])
+    assert result["status"] == "incomplete"
 
 
 def test_market_data_file_path_normalization_rejects_root_escape_and_ambiguous_uri(tmp_path: Path) -> None:

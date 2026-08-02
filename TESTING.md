@@ -157,6 +157,9 @@ symlink、非 UTF-8、TOCTOU、缺表/缺列或读取错误都会返回 incomple
 `--canonical-root`（默认 data root）后转为 POSIX 相对 URI，并与唯一 `Catalog partition.file_uri`
 精确一致；provider、symbol、contract、period、checksum、manifest/version 证据任一漂移或 URI
 歧义均为 REVIEW_REQUIRED。legacy `bars` 的 5m/15m/30m/60m 和明确 derived 均为 REBUILD_ONLY。
+Task 05 inventory 当前未实现对 manifest/Parquet 的完整物理 proof reader；因此即使 Catalog
+字段一致的 direct candidate 也必须保持 REVIEW_REQUIRED 并输出
+`PHYSICAL_KEEP_PROOF_REQUIRED`，绝不产生弱 `KEEP_TRUSTED_CANONICAL`。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

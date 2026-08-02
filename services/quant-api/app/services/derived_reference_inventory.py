@@ -74,12 +74,12 @@ _SELF_REFERENCE_PATHS = {
 }
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _ARCHIVE_PATH_MARKER = re.compile(r"(?:^|/)(?:archive|archived|归档)(?:/|$)", re.IGNORECASE)
-_HISTORICAL_STRONG_MARKER = re.compile(
-    r"(?:historical\s+snapshot.*(?:not\s+active\s+gate|reference[- ]only|only\s+historical\s+reference)|"
-    r"仅历史引用|历史快照且非\s*active\s*gate|已归档)",
+_EXPLICIT_HISTORICAL_DOC_MARKER = re.compile(
+    r"^\s*(?:historical\s+snapshot\s*;\s*not\s+active\s+gate|"
+    r"historical_snapshot\s*:\s*true\s*;\s*active_gate\s*:\s*false|"
+    r"仅历史引用|历史快照且非\s*active\s*gate|已归档)\s*(?::|：|-).*$",
     re.IGNORECASE,
 )
-_NON_ACTIVE_STRONG_MARKER = re.compile(r"(?:\bno\s+longer\s+active\b|\bnot\s+active\b|\bsuperseded\s+and\s+unused\b|不再\s*active)", re.IGNORECASE)
 _AMBIGUOUS_HISTORY_MARKER = re.compile(r"(?:\bhistorical\b|\bfrozen\b|\bcompatibility-only\b|\bsuperseded\b)", re.IGNORECASE)
 
 
@@ -145,7 +145,8 @@ def build_derived_reference_inventory(
                 "filesystem_paths": _paths_for_category(category, filesystem["records"]),
                 "reference_locations": category_references,
                 "active_reference_status": "present" if active_references else "review_required" if review_references else "zero_active_references",
-                "non_active_reference_count": len(category_references) - len(active_references),
+                "non_active_reference_count": sum(item["reference_state"] in {"historical", "non_active"} for item in category_references),
+                "review_required_count": len(review_references),
             }
         )
     diagnostics = [*database["diagnostics"], *filesystem["diagnostics"], *reference_scan["diagnostics"]]
@@ -177,7 +178,7 @@ def _validate_limits(config: DerivedReferenceInventoryConfig) -> None:
 
 
 def _database_scope(database: dict[str, Any], category_tables: list[dict[str, Any]]) -> str:
-    if not database["available"]:
+    if not database["available"] or database["diagnostics"]:
         return "INCOMPLETE"
     if category_tables:
         return "PRESENT"
@@ -430,8 +431,9 @@ def _classify_market_data_file_row(
         reason = "legacy bar period is regenerated from provider-direct canonical 1m bars" if data_type == "bars" else "derived data_type is regenerated from provider-direct canonical bars"
         category = "permanent_derived_periods"
     elif _is_trusted_provider_direct_bar(row, catalog_record):
-        disposition = "KEEP_TRUSTED_CANONICAL"
-        reason = "provider, role, quality, frequency, and catalog partition linkage are verified"
+        diagnostics.append({"code": "PHYSICAL_KEEP_PROOF_REQUIRED", "table": "market_data_files"})
+        disposition = "REVIEW_REQUIRED"
+        reason = "catalog linkage is present but physical manifest and parquet proof is required before KEEP"
         category = "duplicate_bar_layers"
     elif any(marker in path for marker in ("/raw/", "/standard/", "/canonical/")):
         disposition = "REVIEW_REQUIRED"
@@ -440,7 +442,7 @@ def _classify_market_data_file_row(
     else:
         disposition = "REVIEW_REQUIRED"
         reason = "legacy file metadata has no verified canonical catalog linkage"
-        category = None
+        category = "duplicate_bar_layers"
     return {
         "id": row["id"],
         "provider": row["provider"],
@@ -772,10 +774,10 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
             truncated = True
             continue
         kind = "doc" if path.suffix.lower() == ".md" else "code"
-        section_state = _reference_state_for_context(relative, "")
+        section_state = _reference_state_for_context(relative, "", kind=kind)
         for line_number, line in enumerate(lines, start=1):
             if path.suffix.lower() == ".md" and line.lstrip().startswith("#"):
-                section_state = _reference_state_for_context(relative, line)
+                section_state = _reference_state_for_context(relative, line.lstrip("#").strip(), kind=kind)
             for category in CATEGORY_ORDER:
                 for rule in _REFERENCE_RULES[category]:
                     match = rule.pattern.search(line)
@@ -788,7 +790,7 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
                         if output_count > config.max_files:
                             diagnostics.append({"code": "REPO_MAX_OUTPUTS_EXCEEDED", "path": relative})
                             return locations, _reference_scan_payload(True, diagnostics)
-                        reference_state = _reference_state_for_context(relative, line, section_state=section_state)
+                        reference_state = _reference_state_for_context(relative, line, kind=kind, section_state=section_state)
                         locations[category].append(
                             {
                                 "path": relative,
@@ -797,7 +799,7 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
                                 "matched_token": match.group(0),
                                 "reason": rule.reason,
                                 "reference_state": reference_state,
-                                "disposition": "KEEP_ACTIVE_REFERENCE" if reference_state == "active" else "HISTORICAL_SNAPSHOT",
+                                "disposition": "KEEP_ACTIVE_REFERENCE" if reference_state == "active" else "HISTORICAL_SNAPSHOT" if reference_state in {"historical", "non_active"} else "REVIEW_REQUIRED",
                                 "sha256": record["sha256"],
                             }
                         )
@@ -850,18 +852,20 @@ def _walk_repo_regular_candidates(
     yield from walk(repo_root)
 
 
-def _reference_state_for_context(relative: str, line: str, *, section_state: str | None = None) -> str:
+def _reference_state_for_context(
+    relative: str,
+    line: str,
+    *,
+    kind: str = "doc",
+    section_state: str | None = None,
+) -> str:
     normalized_path = relative.replace("\\", "/")
     if _ARCHIVE_PATH_MARKER.search(normalized_path):
         return "historical"
-    if _HISTORICAL_STRONG_MARKER.search(line):
+    if kind == "doc" and _EXPLICIT_HISTORICAL_DOC_MARKER.fullmatch(line):
         return "historical"
-    if _NON_ACTIVE_STRONG_MARKER.search(line):
-        return "non_active"
-    if section_state is not None and section_state != "active":
+    if kind == "doc" and section_state is not None and section_state != "active":
         return section_state
-    if re.search(r"\bfrozen\b|(?:compatibility-only.*\b(?:used|in use)\b)", line, re.IGNORECASE):
-        return "active"
     if _AMBIGUOUS_HISTORY_MARKER.search(line):
         return "review_required"
     return "active"
