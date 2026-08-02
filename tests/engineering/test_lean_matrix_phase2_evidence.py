@@ -14,6 +14,24 @@ DESIGN = ROOT / "docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md
 PLAN = ROOT / "docs/superpowers/plans/2026-08-02-lean-matrix-phase-2-controlled-retrospective.md"
 METRIC_FIELDS = ("Metric name", "Value", "Provenance", "Evidence source")
 METRIC_PROVENANCE_STATES = {"MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE"}
+CANONICAL_PATH = (
+    r"(?:STATUS\.md|docs/tasks/[A-Za-z0-9._/-]+\.md|"
+    r"docs/superpowers/specs/[A-Za-z0-9._/-]+\.md)"
+)
+RECOGNIZED_MEASURED_SOURCE_PATTERNS = (
+    re.compile(rf"(?:{CANONICAL_PATH}|`{CANONICAL_PATH}`)"),
+    re.compile(
+        r"Canonical repository (?:status|design|task)"
+        r"(?:/(?:status|design|task))* records?",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"GitHub (?:Issue|PR) #\d+(?:-#\d+)? "
+        r"(?:metadata|commit lists?|files? lists?|checks?|evidence comment)"
+        r"(?:/(?:metadata|commit lists?|files? lists?|checks?|evidence comment))*",
+        re.IGNORECASE,
+    ),
+)
 
 FORBIDDEN_AFFIRMATIVE_PATTERNS = (
     re.compile(
@@ -73,6 +91,13 @@ def _metric_block(section: str, name: str) -> str:
     return body.split("\n- Metric name: ", 1)[0]
 
 
+def _is_recognized_measured_source(evidence_source: str) -> bool:
+    return any(
+        pattern.fullmatch(evidence_source)
+        for pattern in RECOGNIZED_MEASURED_SOURCE_PATTERNS
+    )
+
+
 def _validated_metric_blocks(sample_section: str) -> list[dict[str, str]]:
     """Return validated metric blocks from one sample's Metrics subsection."""
     metrics = _subsection(sample_section, "Metrics")
@@ -98,7 +123,11 @@ def _validated_metric_blocks(sample_section: str) -> list[dict[str, str]]:
             f"metric {fields['Metric name']} has invalid provenance {provenance}"
         )
         evidence_source = fields["Evidence source"]
-        if provenance == "MANUALLY_RECORDED":
+        if provenance == "MEASURED":
+            assert _is_recognized_measured_source(evidence_source), (
+                f"metric {fields['Metric name']} must cite a recognized canonical or GitHub source"
+            )
+        elif provenance == "MANUALLY_RECORDED":
             assert re.search(r"\bhuman observation\s*:\s*\S", evidence_source, re.IGNORECASE), (
                 f"metric {fields['Metric name']} must name the human observation"
             )
@@ -448,6 +477,79 @@ def test_metric_contract_enforces_manual_and_unmeasurable_evidence_semantics() -
     ):
         with pytest.raises(AssertionError):
             _validated_metric_blocks(invalid_sample)
+
+
+def test_unenumerated_measured_metric_rejects_conversation_memory_source() -> None:
+    """The generic parser must reject unsourced evidence on a metric absent from name tables."""
+    trial = _section(_report(), "AI-TEAM-001 controlled trial")
+    verification = _metric_block(trial, "verification and boundary evidence")
+    mutated_verification = verification.replace(
+        "- Evidence source: GitHub PR #98 evidence comment",
+        "- Evidence source: conversation memory",
+        1,
+    )
+    mutated_trial = trial.replace(verification, mutated_verification, 1)
+
+    with pytest.raises(AssertionError):
+        _validated_metric_blocks(mutated_trial)
+
+
+@pytest.mark.parametrize(
+    "recognized_source",
+    (
+        "STATUS.md",
+        "docs/tasks/GY-DATA-CORE-V2.md",
+        "docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md",
+        "Canonical repository status/design/task records",
+        "GitHub Issue #99 metadata",
+        "GitHub PR #98 metadata/commit list/files list",
+        "GitHub PR #98 checks",
+        "GitHub PR #98 evidence comment",
+    ),
+)
+def test_measured_metric_accepts_only_bounded_recognized_source_forms(
+    recognized_source: str,
+) -> None:
+    """Measured evidence accepts explicit canonical and structured GitHub source forms."""
+    sample = f"""### Metrics
+
+- Metric name: measured fixture
+- Value: one
+- Provenance: MEASURED
+- Evidence source: {recognized_source}
+
+### Gate preservation
+"""
+
+    assert _validated_metric_blocks(sample)[0]["Evidence source"] == recognized_source
+
+
+@pytest.mark.parametrize(
+    "unrecognized_source",
+    (
+        "conversation memory",
+        "Human observation: project owner",
+        "unsourced narrative",
+        "GitHub says the check passed",
+        "notes mentioning GitHub PR #98 evidence comment",
+    ),
+)
+def test_measured_metric_rejects_unrecognized_source_forms(
+    unrecognized_source: str,
+) -> None:
+    """A GitHub token or narrative label alone cannot make a source measured evidence."""
+    sample = f"""### Metrics
+
+- Metric name: measured fixture
+- Value: one
+- Provenance: MEASURED
+- Evidence source: {unrecognized_source}
+
+### Gate preservation
+"""
+
+    with pytest.raises(AssertionError):
+        _validated_metric_blocks(sample)
 
 
 def test_external_task05_merge_preserves_phase3_and_integration_boundaries() -> None:
