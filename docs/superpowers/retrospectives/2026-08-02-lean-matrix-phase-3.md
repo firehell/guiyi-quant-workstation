@@ -113,12 +113,19 @@ source.
 - Evidence limitation: Two review-fix rounds did not reach the three-round stop
   rule and cannot satisfy or drive a Gate.
 
-- Metric name: Changed-path isolation
-- Value: 4 tracked paths in PR #103
+- Metric name: Phase 3 PR changed-path isolation
+- Value: docs/superpowers/plans/2026-08-02-lean-matrix-phase-3-status-consistency.md; docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md; docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md; tests/engineering/test_lean_matrix_phase3_evidence.py
 - Provenance: MEASURED
 - Evidence source: https://github.com/firehell/guiyi-quant-workstation/pull/103
-- Evidence limitation: PR #103 metadata records only the plan, retrospective,
-  canonical design, and Phase 3 evidence test.
+- Evidence limitation: This is PR #103's historical four-path scope; its plan
+  path is the status-consistency plan, not the later closeout plan.
+
+- Metric name: Closeout tracked allowlist
+- Value: docs/superpowers/plans/2026-08-02-lean-matrix-phase-3-closeout.md; docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md; docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md; tests/engineering/test_lean_matrix_phase3_evidence.py
+- Provenance: MEASURED
+- Evidence source: https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5157004088
+- Evidence limitation: This is the separate closeout Charter allowlist; exact
+  diff compatibility is rechecked before integration.
 
 - Metric name: Task 1 independent review result
 - Value: Spec PASS; Quality APPROVED; no findings

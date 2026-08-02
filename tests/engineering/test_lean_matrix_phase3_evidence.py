@@ -38,9 +38,22 @@ CHECKPOINT_2_URL = f"{CHARTER_URL}#issuecomment-5156261324"
 CHECKPOINT_4_URL = f"{CHARTER_URL}#issuecomment-5156354955"
 CHECKPOINT_6_URL = f"{CHARTER_URL}#issuecomment-5156412693"
 CHECKPOINT_8_URL = f"{CHARTER_URL}#issuecomment-5156427389"
+CLOSEOUT_CHARTER_URL = f"{CHARTER_URL}#issuecomment-5157004088"
 CHARTER_TO_DEVELOP_SOURCE = (
     f"{CHARTER_URL} createdAt 2026-08-02T07:22:32Z; "
     f"{PHASE3_PR_URL} mergedAt {PHASE3_MERGED_AT}"
+)
+PHASE3_PR_PATHS = (
+    "docs/superpowers/plans/2026-08-02-lean-matrix-phase-3-status-consistency.md; "
+    "docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md; "
+    "docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md; "
+    "tests/engineering/test_lean_matrix_phase3_evidence.py"
+)
+CLOSEOUT_ALLOWED_PATHS = (
+    "docs/superpowers/plans/2026-08-02-lean-matrix-phase-3-closeout.md; "
+    "docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md; "
+    "docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md; "
+    "tests/engineering/test_lean_matrix_phase3_evidence.py"
 )
 FINAL_SNAPSHOT_METRICS = {
     "Logical sessions through current known checkpoint": "11",
@@ -49,13 +62,15 @@ FINAL_SNAPSHOT_METRICS = {
     "Charter-to-local-complete timing through Task 2": "NOT_MEASURABLE",
     "Charter-to-develop cycle": "2h17m29s",
     "Three-round stop status": "NOT_TRIGGERED",
-    "Changed-path isolation": "4 tracked paths in PR #103",
+    "Phase 3 PR changed-path isolation": PHASE3_PR_PATHS,
+    "Closeout tracked allowlist": CLOSEOUT_ALLOWED_PATHS,
 }
 RECOGNIZED_MEASURED_SOURCES = {
     CHARTER_URL,
     PHASE3_PR_URL,
     POST_MERGE_CI_URL,
     CHARTER_TO_DEVELOP_SOURCE,
+    CLOSEOUT_CHARTER_URL,
     f"Git repository exact base `{IMMUTABLE_BASE}`",
     "Canonical repository design `docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`",
     "Git repository exact commit range "
