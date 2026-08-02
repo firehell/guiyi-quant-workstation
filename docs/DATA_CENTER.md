@@ -44,6 +44,8 @@ worktree，现仅为 superseded 诊断。clean `e01784ff` / production `20260802
 已完成 103,481 个 asset 与 5,018 条 reference 的不截断扫描；但必需的
 `/Volumes/扩展盘/GuiyiApprovals` protected root 当前不存在，显式纳入它时 inventory
 fail-closed，因此该 v9 仅为完整 blocker diagnosis，不是最终 approval inventory。
+Task 07 CLI 现要求至少一个显式 `--protected-root`；缺省时在打开数据库前拒绝，
+service 层也会以 `TASK07_PROTECTED_ROOT_REQUIRED` fail-closed，防止通过漏传参数产生假完整 inventory。
 
 实现已覆盖 exact write-target binding、generic source validation、Canonical staging/publish/readback、
 fsync durable batch journal/crash resume 和 exact retirement rollback，并通过第六轮独立 Review。

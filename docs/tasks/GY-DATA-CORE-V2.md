@@ -180,6 +180,8 @@ Task 07 从 clean `develop@39d1002d` 建立独立 task branch/worktree。专用
 retirement-plan / retirement-apply`；只有两个 apply 命令是潜在写入口，且在 CLI 打开数据库前
 要求 exact approval 参数。inventory 使用 PostgreSQL `REPEATABLE READ READ ONLY`、稳定 keyset、
 SHA-256 分片 JSONL，并扫描 checkout 与 detached Runtime；不调用 RQData。
+`inventory` 必须显式传入至少一个 `--protected-root`；CLI 与 service 层都不允许以
+空 protected scope 继续。
 
 2026-08-02 首轮生产只读 v8 snapshot：103,481 个资产，85 个
 `KEEP_CANONICAL_VERIFIED`、7,232 个 `REUSE_TRUSTED_SOURCE`、26 个
