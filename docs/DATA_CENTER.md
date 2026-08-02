@@ -40,13 +40,17 @@ Task 07 新 inventory 对 PostgreSQL 使用 `REPEATABLE READ READ ONLY` 与稳�
 全量进入 SHA-256 分片 JSONL；checkout 与 detached Runtime 引用扫描同样不使用命中数截断。
 approved data/canonical root 以外的文件不会作为 migration source 读取；`GuiyiApprovals`/Runtime
 等 protected evidence 不进入 migration 或 retirement 写范围。旧 v8 的 103,481 数字来自 dirty
-worktree，现仅为 superseded 诊断；最终 Gate 必须使用 clean exact HEAD 重采的 v9。
+worktree，现仅为 superseded 诊断。clean `e01784ff` / production `20260802_0031` 的 v9
+已完成 103,481 个 asset 与 5,018 条 reference 的不截断扫描；但必需的
+`/Volumes/扩展盘/GuiyiApprovals` protected root 当前不存在，显式纳入它时 inventory
+fail-closed，因此该 v9 仅为完整 blocker diagnosis，不是最终 approval inventory。
 
 实现已覆盖 exact write-target binding、generic source validation、Canonical staging/publish/readback、
 fsync durable batch journal/crash resume 和 exact retirement rollback，并通过第六轮独立 Review。
 checkout-only 开发扫描已为 active/review-required 零；detached Runtime 的可执行
-services/packages/apps 引用优先判 active/review。clean-head v9 未重采前，K-line 与
-active-reference Gate 均保持 external evidence pending；不生成 approval packet、不调用 RQData、
+services/packages/apps 引用优先判 active/review。v9 确认正在提供 API 的 detached
+Runtime `10351ccd` 为 300 active / 1,581 review-required，因此 K-line 与 active-reference
+Gate 保持阻断；不生成 K-line migration apply approval packet、不调用 RQData、
 不写 Canonical/Catalog。
 
 retirement before-image 只包含当前 4,279 active bindings、8 个 active download tasks、2 个 active

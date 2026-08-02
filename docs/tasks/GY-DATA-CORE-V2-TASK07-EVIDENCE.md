@@ -5,8 +5,8 @@
 本文件只保存脱敏摘要与 digest。完整分片 JSONL 位于受控临时 evidence 目录，未提交仓库；
 其中不包含凭据。下述 v8 snapshot 以 `develop@39d1002d1051e0ccb6ffc7f480bdc236d9930edc`
 为起点，但采集时 Task 07 worktree 含未提交实现，现已被后续代码修改 supersede；它只保留为
-阻塞诊断历史，不能代表当前分类、不能生成或替代 exact approval packet。必须从最终 clean exact
-Task 07 HEAD 重采 v9。
+阻塞诊断历史，不能代表当前分类、不能生成或替代 exact approval packet。clean exact
+Task 07 HEAD `e01784ff` 的 v9 已重采，并证明 active-reference/protected-root Gate 仍阻断。
 
 ## 0. Current implementation checkpoint
 
@@ -18,8 +18,8 @@ Web Profile selector 和 queued legacy batch worker 已退出 active path。
 
 checkout 引用分类逐条保存 classification reason；detached Runtime 的可执行 services/packages/apps
 引用优先判 active/review，不能被 retired/frozen/read-only 分类提前隐藏。当前 worktree 的
-checkout-only 开发扫描为 `active=0 / review_required=0`，但它不是 clean-head production evidence；
-detached Runtime 和 production DB 的最终 v9 结果尚未重采。
+checkout-only 开发扫描为 `active=0 / review_required=0`。detached Runtime 和 production DB
+的 v9 blocker diagnosis 已重采；因 GuiyiApprovals root 不可用，它不是最终 approval inventory。
 
 ## 1. Safety envelope
 
@@ -36,7 +36,47 @@ deletion_authorized=false
 扫描范围为 Task 07 checkout、生产 PostgreSQL metadata、项目 data root、Data Core V2 canonical
 root，以及 detached Runtime checkout。未修改 Runtime、scheduler、通知、交易、旧 Parquet 或历史行。
 
-## 2. Superseded v8 inventory summary
+## 2. Clean-head v9 blocker evidence
+
+```text
+base_sha=e01784ff91395f6519bd13d62e72aa9d8c7515b9
+database_revision=20260802_0031
+asset_count=103481
+shards=11
+truncated=false
+inventory_digest=ce47184a0db06c1b14e7fb0794d8e27153f9b723673c143afbb73a89dc96b048
+assets_digest=30e5f1aa096ed1c5e5543651d36ba18d7f69b5c52fbcde561f3821df2eb8550f
+```
+
+disposition 为 85 `KEEP_CANONICAL_VERIFIED`、7,232 `REUSE_TRUSTED_SOURCE`、2,817
+`REGISTER_DATA_GAP`、0 `CONFLICT_BLOCKED`、14,402 `EXCLUDE_DERIVED` 与 78,945
+`RETIREMENT_CANDIDATE`。migration plan 含 411 batches / 7,232 sources：
+
+```text
+plan_digest=c27121384b6408db7db9b7fc68e318dff182c30d593f623e0d546e8212c0fa1a
+gate_status=BLOCKED_ACTIVE_REFERENCE
+approval_eligible=false
+writes_authorized=false
+calls_rqdata=false
+```
+
+checkout 为 active=0 / review-required=0 / historical=2,170。detached Runtime `10351ccd`
+正在提供 `/health=200` API，扫描为
+300 active、967 historical 与 1,581 review-required；references digest 为
+`36739f34c090261f0ed14ae019238852ab122116cef9ee46ceeaf18f688741d7`。这些命中不能
+在 Runtime 未变更的情况下降级为历史引用。
+
+retirement before-image 为 4,297 rows（4,279 bindings、8 download tasks、2 scan tasks、8
+active signals），`before_image_digest=556679b55fcdf552d569099662cfb9ce68e0897dcb92a943d1bd1d605a3c59dd`，
+`plan_digest=4d8fc15fd312b199361f57244cb6ab636889ea84e370d294db53601ac5a00af4`，
+`approval_packet_hash=550601379c9d831ef8b18b0109aee120cb501dc22b909367def24c8cd9e05623`。
+该 packet 未获 owner approval，也不得在 Runtime Gate 未解决时使用。
+
+`/Volumes/扩展盘/GuiyiApprovals` 当前不存在。不显式纳入该 root 的 v9 只用于
+blocker diagnosis；显式纳入时 CLI 返回 `status=error` 并且没有 business write，
+证明 protected evidence 缺失不会被静默跳过。
+
+## 3. Superseded v8 inventory summary
 
 ```text
 asset_count=103481
@@ -56,7 +96,7 @@ truncated=false
 另有可重算 digest。来源路径只有在 approved data/canonical root 或显式 protected evidence root
 内才会读取和 hash；其他路径直接归为 retirement candidate。
 
-## 3. Superseded v8 K-line diagnosis
+## 4. Superseded v8 K-line diagnosis
 
 确定性 plan：
 
@@ -93,7 +133,7 @@ proposal；proposal digest 为
 资产不自动进入补数范围，继续人工分类。实际 provider 请求必须重新绑定 clean task HEAD、当前
 revision、inventory/plan digest 和 exact window，并获得 owner 批准。
 
-## 4. Superseded v8 active-reference diagnosis
+## 5. Superseded v8 active-reference diagnosis
 
 不截断文本扫描读取 2,486 个文件，形成 5,162 条 hash-only 命中：
 
@@ -111,7 +151,7 @@ review-required；真正的 `ProfileActiveBinding`、旧 reader、active switch�
 Parquet glob 在可执行 checkout/Runtime 中保持 fail-closed active 分类。扫描结果是引用清理的
 保守候选清单，不把历史快照误当作删除授权。
 
-## 5. Superseded v8 retirement before-image
+## 6. Superseded v8 retirement before-image
 
 生产只读 before-image：
 
@@ -136,12 +176,12 @@ retirement apply 只允许 hash-bound packet manifest 中的逐表主键和 befo
 `deletion_authorized=false`。report 14/15、Task 04--07 receipts、S6 历史 Gate、Git 历史和
 `GuiyiApprovals` 均不在删除范围。
 
-## 6. Current result
+## 7. Current result
 
 ```text
-Task_07=CODE_COMPLETE_EXTERNAL_GATE_PENDING
-Kline_Gate=EXACT_CLEAN_HEAD_V9_PENDING
-Active_Reference_Gate=DETACHED_RUNTIME_AND_DB_V9_PENDING
+Task_07=BLOCKED_ACTIVE_REFERENCE
+Kline_Gate=BLOCKED_BY_ACTIVE_REFERENCE_AND_PROTECTED_ROOT
+Active_Reference_Gate=RUNTIME_300_ACTIVE_1581_REVIEW_DB_4297_PENDING
 Review_Gate=CODE_REVIEW_PASS
 READY_FOR_TASK_08=false
 ```
