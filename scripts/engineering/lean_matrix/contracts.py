@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any, ClassVar, Mapping
+from typing import ClassVar, Mapping
 
 from .charter import WORKTREE_ROOT, validate_charter
 from .errors import LeanMatrixError

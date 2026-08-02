@@ -13,8 +13,15 @@ from pathlib import Path
 # from creating an ignored __pycache__ beside repository modules.
 sys.dont_write_bytecode = True
 
-from lean_matrix.charter import SCHEMA_VERSION, render_charter
-from lean_matrix.errors import LeanMatrixError
+from lean_matrix.charter import SCHEMA_VERSION, render_charter  # noqa: E402
+from lean_matrix.contracts import TaskCharterV1  # noqa: E402
+from lean_matrix.errors import LeanMatrixError  # noqa: E402
+from lean_matrix.git_readonly import BASE_REF, resolve_base_sha  # noqa: E402
+from lean_matrix.planning import build_execution_plan  # noqa: E402
+from lean_matrix.rendering import render_execution_plan_markdown  # noqa: E402
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class LeanMatrixArgumentParser(argparse.ArgumentParser):
@@ -62,15 +69,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     charter = subcommands.add_parser("charter")
     charter.add_argument("--input", required=True)
     charter.add_argument("--format", required=True, choices=("markdown", "json"))
+    plan = subcommands.add_parser("plan")
+    plan.add_argument("--charter", required=True)
+    plan.add_argument("--format", required=True, choices=("markdown", "json"))
     try:
         args = parser.parse_args(argv)
-        result = render_charter(_read_input(args.input))
+        if args.command == "charter":
+            result = render_charter(_read_input(args.input))
+            output = result["charter_markdown"] if args.format == "markdown" else result
+        else:
+            charter_contract = TaskCharterV1.from_mapping(_read_input(args.charter))
+            base_sha = resolve_base_sha(REPO_ROOT)
+            plan_contract = build_execution_plan(
+                charter_contract, base_ref=BASE_REF, base_sha=base_sha,
+            )
+            result = plan_contract.to_dict()
+            output = render_execution_plan_markdown(plan_contract) if args.format == "markdown" else result
     except LeanMatrixError as exc:
         return _blocked(exc)
     if args.format == "markdown":
-        print(result["charter_markdown"], end="")
+        print(output, end="")
     else:
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(output, ensure_ascii=False, sort_keys=True))
     return 0
 
 

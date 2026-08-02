@@ -198,8 +198,14 @@ def test_workflow_preserves_read_only_charter_and_human_gates() -> None:
     combined = f"{skill}\n{routing}"
 
     assert "python3 scripts/engineering/lean_matrix_team.py charter --input - --format markdown" in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py plan --charter - --format markdown" in skill
     assert "stdout-only" in skill
     assert "creates no worktree" in skill
+    assert "git -c core.fsmonitor=false rev-parse --verify origin/develop^{commit}" in skill
+    assert "GIT_OPTIONAL_LOCKS=0" in skill
+    assert "never executes a transition" in skill
+    assert "does not fetch" in skill
+    assert "does not call GitHub" in skill
     assert "three failed implementation-validation-review rounds" in skill
     for gate in (
         "real data/DB",

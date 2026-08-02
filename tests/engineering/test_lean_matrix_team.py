@@ -234,6 +234,9 @@ def test_cli_usage_errors_are_machine_readable_blocked_json() -> None:
         ("charter",),
         ("charter", "--input", "-"),
         ("charter", "--input", "-", "--format", "yaml"),
+        ("plan",),
+        ("plan", "--charter", "-"),
+        ("plan", "--charter", "-", "--format", "yaml"),
     ):
         _blocked(_invoke(*arguments), "invalid_cli_arguments")
 
