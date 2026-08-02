@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import json
 import subprocess
 import sys
@@ -11,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / ".agents" / "skills" / "lean-matrix-ai-team"
 CLI_PATH = ROOT / "scripts" / "engineering" / "lean_matrix_team.py"
+ENGINEERING = ROOT / "scripts" / "engineering"
 CHARTER_HEADINGS = (
     "Identity",
     "Value",
@@ -162,13 +162,11 @@ def test_role_prompts_preserve_required_outputs_and_boundaries() -> None:
 def test_routing_matches_the_cli_and_limits_specialists() -> None:
     """The routing table rejects an oversized team rather than silently growing it."""
     routing = _read("references/routing.md")
-    tree = ast.parse(CLI_PATH.read_text(encoding="utf-8"), filename=str(CLI_PATH))
-    assignment = next(
-        node for node in tree.body
-        if isinstance(node, ast.Assign)
-        and any(isinstance(target, ast.Name) and target.id == "DOMAIN_SPECIALISTS" for target in node.targets)
-    )
-    cli_mapping = ast.literal_eval(assignment.value)
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.routing import DOMAIN_SPECIALISTS as cli_mapping
+    finally:
+        sys.path.pop(0)
     expected_mapping = {
         "product-interaction": "product-interaction-specialist",
         "frontend": "frontend-specialist",
@@ -200,8 +198,14 @@ def test_workflow_preserves_read_only_charter_and_human_gates() -> None:
     combined = f"{skill}\n{routing}"
 
     assert "python3 scripts/engineering/lean_matrix_team.py charter --input - --format markdown" in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py plan --charter - --format markdown" in skill
     assert "stdout-only" in skill
     assert "creates no worktree" in skill
+    assert "git -c core.fsmonitor=false rev-parse --verify origin/develop^{commit}" in skill
+    assert "GIT_OPTIONAL_LOCKS=0" in skill
+    assert "never executes a transition" in skill
+    assert "does not fetch" in skill
+    assert "does not call GitHub" in skill
     assert "three failed implementation-validation-review rounds" in skill
     for gate in (
         "real data/DB",

@@ -18,11 +18,21 @@ Create one bounded, independently testable Task Charter. This skill does not rep
    ```
 
    The CLI is advisory and stdout-only: it creates no worktree, makes no repository or external change, and does not replace `task-worktree.sh` or the GitHub workflow.
-4. Freeze the Charter before using the existing `task-worktree.sh` and GitHub workflow. Do not duplicate either tool or expand task state.
-5. Route the minimum team using [roles.md](references/roles.md) and [routing.md](references/routing.md). Assign at most two specialists; split a task with three or more domains. Use separate implementer and reviewer contexts. Keep quant research and backtest audit in separate contexts when both are needed.
-6. Let code, tests, and independent review proceed only within existing permissions. Preserve human Gates for real data/DB, strategy/backtest semantics, notifications, live, main/release/tag, Runtime, deletion, candidate promotion, and GitHub rules.
-7. After three failed implementation-validation-review rounds, stop. Report verified facts, attempts, the blocker, and the decision needed. Do not use another round to bypass a Gate.
-8. Use [task-charter.md](assets/task-charter.md) and [stage-report.md](assets/stage-report.md) to distinguish code, tests, CI, independent review, real Gate, release, and Runtime status exactly.
+4. Freeze the Charter, then render its version-one Execution Plan when an exact local base is required:
+
+   ```bash
+   python3 scripts/engineering/lean_matrix_team.py plan --charter - --format markdown
+   ```
+
+   The plan command uses `GIT_OPTIONAL_LOCKS=0` and may run only
+   `git -c core.fsmonitor=false rev-parse --verify origin/develop^{commit}`. It does not fetch,
+   does not call GitHub or the network, never executes a transition, and writes no receipt or repository file.
+   Its transition list is descriptive only.
+5. Use the existing `task-worktree.sh` and GitHub workflow only after the Charter is frozen. Do not duplicate either tool or expand task state.
+6. Route the minimum team using [roles.md](references/roles.md) and [routing.md](references/routing.md). Assign at most two specialists; split a task with three or more domains. Use separate implementer and reviewer contexts. Keep quant research and backtest audit in separate contexts when both are needed.
+7. Let code, tests, and independent review proceed only within existing permissions. Preserve human Gates for real data/DB, strategy/backtest semantics, notifications, live, main/release/tag, Runtime, deletion, candidate promotion, and GitHub rules.
+8. After three failed implementation-validation-review rounds, stop. Report verified facts, attempts, the blocker, and the decision needed. Do not use another round to bypass a Gate.
+9. Use [task-charter.md](assets/task-charter.md) and [stage-report.md](assets/stage-report.md) to distinguish code, tests, CI, independent review, real Gate, release, and Runtime status exactly.
 
 ## Output discipline
 

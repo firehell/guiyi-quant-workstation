@@ -1,7 +1,7 @@
 # 归一量化精简矩阵式 AI 研发团队设计
 
 - 日期：2026-08-02
-- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 merged through PR #101 at `develop@7a668eeb`; Phase 3 merged through PR #103 at `develop@c59cda24`, and post-merge engineering CI passed. Task 05 merged independently through PR #100 and does not count retroactively as Phase 3. Phase 4 remains `NO_GO_PENDING_SEPARATE_APPROVAL`; Phase 5 remains `NO_GO`.
+- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 merged through PR #101 at `develop@7a668eeb`; Phase 3 merged through PR #103 at `develop@c59cda24`, and post-merge engineering CI passed. Task 05 merged independently through PR #100 and does not count retroactively as Phase 3. Phase 4 contract-kernel implementation is approved as AI-TEAM-004 / Issue #107 from `origin/develop@39d1002d1051e0ccb6ffc7f480bdc236d9930edc`; this approval covers only modular read-only contracts and one fixed local `git rev-parse`, not transition execution or broader automation. Phase 5 remains `NO_GO`.
 - 适用项目：`firehell/guiyi-quant-workstation`
 - 设计范围：研发组织模型、专家角色、任务路由、自治状态机、权限边界和最小落地方式
 
@@ -1030,6 +1030,13 @@ Phase 3 merged through PR #103 at `develop@c59cda24`; task head `0d84c9ab512c7ca
 - 输出结构化阶段报告。
 
 不得构建对话归档、长期代理服务或新的任务数据库。
+
+AI-TEAM-004 / Issue #107 已获得单独批准，但范围只到运行合同与模块化只读内核：保持现有
+`charter` CLI 完全兼容，新增 `ExecutionPlanV1` 与运行期 dataclass，并允许 `plan` CLI
+通过固定 argv、`shell=False`、`GIT_OPTIONAL_LOCKS=0` 执行一次本地只读
+`git -c core.fsmonitor=false rev-parse --verify origin/develop^{commit}`。该例外不允许
+`fetch`、任意 Git 命令、GitHub/网络访问、worktree 操作、transition apply、receipt 写入、
+PR/CI/Review 编排、合入或清理；这些能力仍由既有工具承担或等待后续独立任务。
 
 ### Phase 5：可选 bounded delegation
 
