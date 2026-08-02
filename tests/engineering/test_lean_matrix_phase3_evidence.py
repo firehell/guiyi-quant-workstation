@@ -24,10 +24,15 @@ TRIAL_REPORT_HEADINGS = (
 )
 METRIC_FIELDS = ("Metric name", "Value", "Provenance", "Evidence source")
 METRIC_PROVENANCE_STATES = {"MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE"}
+IMMUTABLE_BASE = "7a668eeb802b50d140591b75895398550f6c3ae8"
+CHARTER_URL = "https://github.com/firehell/guiyi-quant-workstation/issues/102"
+CHECKPOINT_1_URL = f"{CHARTER_URL}#issuecomment-5156225160"
+CHECKPOINT_2_URL = f"{CHARTER_URL}#issuecomment-5156261324"
+CHECKPOINT_4_URL = f"{CHARTER_URL}#issuecomment-5156354955"
 FINAL_SNAPSHOT_METRICS = {
-    "Logical sessions through versioned snapshot": "5",
-    "User interruptions through versioned snapshot": "0",
-    "Independent review-fix rounds through versioned snapshot": "0",
+    "Logical sessions through current known checkpoint": "9 before fix round 2 resume",
+    "User interruptions through current known checkpoint": "0",
+    "Independent review-fix rounds through current known checkpoint": "2 opened",
     "Charter-to-local-complete timing through Task 2": "NOT_MEASURABLE",
     "Three-round stop status": "NOT_TRIGGERED",
     "Changed-path isolation": (
@@ -36,13 +41,12 @@ FINAL_SNAPSHOT_METRICS = {
     ),
 }
 RECOGNIZED_MEASURED_SOURCES = {
-    "GitHub Issue #102 Charter/checkpoints",
-    "Git repository exact base `7a668eeb`",
+    CHARTER_URL,
+    f"Git repository exact base `{IMMUTABLE_BASE}`",
     "Canonical repository design `docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`",
-    "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2",
-    "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 1 entry",
-    "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 2 entry",
-    "Git repository exact pre-review diff from Task 3 base `00c0e756`",
+    "Git repository exact commit range "
+    "00c0e7564577aa185f82c20b9f1d6225d1262035.."
+    "295f65992615822204c5529380016f87621504f0",
 }
 
 
@@ -128,7 +132,7 @@ def _assert_trial_report_contract(report: str) -> None:
     findings = _section(report, "Findings")
     decision = _section(report, "Decision")
 
-    for field in ("Issue: #102", "Base SHA: `7a668eeb`", "Source type: controlled_trial"):
+    for field in ("Issue: #102", f"Base SHA: `{IMMUTABLE_BASE}`", "Source type: controlled_trial"):
         assert field in identity
     for field in (
         "PR: PENDING_EXTERNAL_GITHUB_EXACT_HEAD",
@@ -139,12 +143,14 @@ def _assert_trial_report_contract(report: str) -> None:
         assert field in identity
     assert "Classification: controlled_trial" in classification
     assert "Classification provenance: MEASURED" in classification
-    assert "GitHub Issue #102 Charter/checkpoints" in classification
+    assert CHARTER_URL in classification
     for field in (
         "Predicted base roles: 4",
         "Predicted specialists: none",
         "Predicted specialist count: 0",
         "Predicted context separation: implementation and independent review are separate",
+        "Prediction provenance: MEASURED",
+        f"Prediction evidence: {CHARTER_URL}",
     ):
         assert field in routing
     for field in (
@@ -153,10 +159,17 @@ def _assert_trial_report_contract(report: str) -> None:
         "Observed specialist count: 0",
         "Observed context separation: implementation and independent review are separate",
         "Start timestamp: 2026-08-02T07:22:32Z",
+        "Merge timestamp: NOT_MEASURABLE",
+        "Review-fix rounds: 2 opened",
+        "Total agent sessions: 9 before fix round 2 resume",
+        "User interruption count: 0",
+        "Observation provenance: MANUALLY_RECORDED",
+        f"Observation evidence: human observation: Issue #102 checkpoint 4 ({CHECKPOINT_4_URL})",
         "Current process checkpoints:",
     ):
         assert field in observed
     _assert_metric_contract(metrics)
+    assert _metric_fields(metrics, "Immutable base revision")["Value"] == IMMUTABLE_BASE
     for metric_name, expected_value in FINAL_SNAPSHOT_METRICS.items():
         assert _metric_fields(metrics, metric_name)["Value"] == expected_value
     charter_to_local_complete = _metric_fields(
@@ -173,6 +186,7 @@ def _assert_trial_report_contract(report: str) -> None:
     ):
         _metric_fields(metrics, metric_name)
     assert "Spec PASS; Quality APPROVED; no findings" in metrics
+    assert "0 Critical; 3 Important; 2 Minor; Spec FAIL; Quality CHANGES_REQUIRED; Draft PR NO" in metrics
     assert "Three-round stop status" in metrics
     assert "NO_GO_PENDING_SEPARATE_APPROVAL" in metrics
     assert "NO_GO" in metrics
@@ -186,15 +200,24 @@ def _assert_trial_report_contract(report: str) -> None:
     assert "merge facts" in metrics
     assert "Phase 4: NO_GO_PENDING_SEPARATE_APPROVAL" in gate
     assert "Phase 5: NO_GO" in gate
+    assert "Gate evidence:" in gate
     assert "cannot authorize Phase 4" in findings
     assert "workflow mechanics" in findings
+    assert "Unmeasurable or manually recorded observations:" in findings
     assert "Decision: controlled-trial evidence only" in decision
     assert "Required human decision or Gate:" in decision
     assert "NO_GO_PENDING_SEPARATE_APPROVAL" in decision
     assert "NO_GO" in decision
     assert "PR #100 cannot be retroactively counted as Phase 3" in report
     assert "Phase 2 merged through PR #101 at `develop@7a668eeb`" in report
-    assert not re.search(r"\b(?:Phase 4|Phase 5|Runtime)\s+is\s+authorized\b", report, re.IGNORECASE)
+    assert "SDD ledger" not in report
+    assert "GitHub Issue #102 Charter/checkpoints" not in report
+    assert not re.search(
+        r"\b(?:Phase 4|Phase 5|Runtime|main|release|data writes|notifications|deployment)"
+        r"\s+is\s+authorized\b",
+        report,
+        re.IGNORECASE,
+    )
 
 
 def test_phase_three_retrospective_is_a_source_bound_controlled_trial() -> None:
@@ -207,7 +230,7 @@ def test_phase_three_report_rejects_metric_and_authority_mutations() -> None:
     report = _report()
 
     mutations = (
-        report.replace("- Evidence source: GitHub Issue #102 Charter/checkpoints", "- Evidence source: ", 1),
+        report.replace(f"- Evidence source: {CHARTER_URL}", "- Evidence source: ", 1),
         report.replace("- Provenance: MEASURED", "- Provenance: INFERRED", 1),
         report.replace(
             "PR #100 cannot be retroactively counted as Phase 3",
@@ -220,15 +243,17 @@ def test_phase_three_report_rejects_metric_and_authority_mutations() -> None:
             1,
         ),
         report.replace(
-            "- Value: 0\n- Provenance: MEASURED\n- Evidence source: "
-            "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` "
-            "checkpoint 2",
-            "- Value: 1\n- Provenance: MEASURED\n- Evidence source: "
-            "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` "
-            "checkpoint 2",
+            "- Value: 9 before fix round 2 resume",
+            "- Value: 10 before fix round 2 resume",
             1,
         ),
-        f"{report}\nPhase 4 is authorized.\nRuntime is authorized.\n",
+        *(
+            f"{report}\n{target} is authorized.\n"
+            for target in (
+                "Phase 4", "Phase 5", "Runtime", "main", "release", "data writes",
+                "notifications", "deployment",
+            )
+        ),
     )
     for mutated_report in mutations:
         with pytest.raises(AssertionError):

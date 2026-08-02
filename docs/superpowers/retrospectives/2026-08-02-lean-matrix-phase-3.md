@@ -2,19 +2,21 @@
 
 This versioned task snapshot records one narrow, reversible docs/test controlled
 trial. Conversation memory is not evidence; measured facts below cite the frozen
-Issue, repository, or canonical design source named in each metric.
+Issue permalink, immutable Git range, or canonical design source named in each
+metric.
 
 ## Identity
 
-- Issue: #102
+- Issue: #102 (`https://github.com/firehell/guiyi-quant-workstation/issues/102`)
 - PR: PENDING_EXTERNAL_GITHUB_EXACT_HEAD
-- Base SHA: `7a668eeb`
+- Base SHA: `7a668eeb802b50d140591b75895398550f6c3ae8`
 - Task HEAD: PENDING_EXTERNAL_GITHUB_EXACT_HEAD
 - Merge SHA: PENDING_EXTERNAL_GITHUB_EXACT_HEAD
 - Merge time: PENDING_EXTERNAL_GITHUB_EXACT_HEAD
 - Source type: controlled_trial
-- Source references: GitHub Issue #102 Charter/checkpoints; Git repository exact
-  base `7a668eeb`; Canonical repository design
+- Source references: `https://github.com/firehell/guiyi-quant-workstation/issues/102`;
+  Git repository exact base `7a668eeb802b50d140591b75895398550f6c3ae8`;
+  Canonical repository design
   `docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`.
 
 The pending PR number, final task head, merge SHA, and merge time are external
@@ -25,8 +27,9 @@ task snapshot and require later GitHub evidence.
 
 - Classification: controlled_trial
 - Classification provenance: MEASURED
-- Classification evidence: GitHub Issue #102 Charter/checkpoints classifies this
-  ordinary reversible Lane 2 docs/test sample as the Phase 3 controlled trial.
+- Classification evidence: https://github.com/firehell/guiyi-quant-workstation/issues/102
+  classifies this ordinary reversible Lane 2 docs/test sample as the Phase 3
+  controlled trial.
 - Phase truth baseline: Phase 2 merged through PR #101 at `develop@7a668eeb`;
   Phase 3 is active under Issue #102 and is not merged.
 - Historical separation: PR #100 cannot be retroactively counted as Phase 3.
@@ -39,7 +42,8 @@ task snapshot and require later GitHub evidence.
 - Predicted specialists: none
 - Predicted specialist count: 0
 - Predicted context separation: implementation and independent review are separate
-- Prediction evidence: GitHub Issue #102 Charter/checkpoints.
+- Prediction provenance: MEASURED
+- Prediction evidence: https://github.com/firehell/guiyi-quant-workstation/issues/102
 
 ## Observed execution
 
@@ -50,8 +54,15 @@ task snapshot and require later GitHub evidence.
 - Observed specialist count: 0
 - Observed context separation: implementation and independent review are separate
 - Start timestamp: 2026-08-02T07:22:32Z
-- Baseline evidence: GitHub Issue #102 Charter/checkpoints and the canonical
-  Phase 2/3 design status.
+- Merge timestamp: NOT_MEASURABLE
+- Review-fix rounds: 2 opened
+- Total agent sessions: 9 before fix round 2 resume
+- User interruption count: 0
+- Observation provenance: MANUALLY_RECORDED
+- Observation evidence: human observation: Issue #102 checkpoint 4 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156354955)
+- Observation limitation: This observation cannot satisfy or drive a Gate.
+- Baseline evidence: https://github.com/firehell/guiyi-quant-workstation/issues/102
+  and the canonical Phase 2/3 design status.
 - Current process checkpoints:
   - Task branch remains scoped to the versioned docs/test evidence artifact.
   - Phase truth records the merged Phase 2 baseline and active, unmerged Phase 3.
@@ -63,24 +74,27 @@ task snapshot and require later GitHub evidence.
 - Metric name: Controlled-trial start timestamp
 - Value: 2026-08-02T07:22:32Z
 - Provenance: MEASURED
-- Evidence source: GitHub Issue #102 Charter/checkpoints
+- Evidence source: https://github.com/firehell/guiyi-quant-workstation/issues/102
 
-- Metric name: Logical sessions through versioned snapshot
-- Value: 5
-- Provenance: MEASURED
-- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2
+- Metric name: Logical sessions through current known checkpoint
+- Value: 9 before fix round 2 resume
+- Provenance: MANUALLY_RECORDED
+- Evidence source: human observation: Issue #102 checkpoint 4 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156354955)
+- Evidence limitation: This observation cannot satisfy or drive a Gate.
 
-- Metric name: User interruptions through versioned snapshot
+- Metric name: User interruptions through current known checkpoint
 - Value: 0
-- Provenance: MEASURED
-- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2
+- Provenance: MANUALLY_RECORDED
+- Evidence source: human observation: Issue #102 checkpoint 4 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156354955)
+- Evidence limitation: This observation cannot satisfy or drive a Gate.
 
-- Metric name: Independent review-fix rounds through versioned snapshot
-- Value: 0
-- Provenance: MEASURED
-- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2
+- Metric name: Independent review-fix rounds through current known checkpoint
+- Value: 2 opened
+- Provenance: MANUALLY_RECORDED
+- Evidence source: human observation: Issue #102 checkpoint 4 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156354955)
 - Evidence limitation: A review-fix round counts only when an independent
-  Critical or Important finding caused a tracked-file fix wave; none is recorded.
+  Critical or Important finding caused a tracked-file fix wave; this observation
+  cannot satisfy or drive a Gate.
 
 - Metric name: Charter-to-local-complete timing through Task 2
 - Value: NOT_MEASURABLE
@@ -92,27 +106,36 @@ task snapshot and require later GitHub evidence.
 
 - Metric name: Three-round stop status
 - Value: NOT_TRIGGERED
-- Provenance: MEASURED
-- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2
-- Evidence limitation: The recorded zero review-fix rounds did not reach the
-  three-round stop rule.
+- Provenance: MANUALLY_RECORDED
+- Evidence source: human observation: Issue #102 checkpoint 4 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156354955)
+- Evidence limitation: The recorded two opened review-fix rounds did not reach
+  the three-round stop rule and cannot satisfy or drive a Gate.
 
 - Metric name: Changed-path isolation
 - Value: only docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md and tests/engineering/test_lean_matrix_phase3_evidence.py
 - Provenance: MEASURED
-- Evidence source: Git repository exact pre-review diff from Task 3 base `00c0e756`
+- Evidence source: Git repository exact commit range 00c0e7564577aa185f82c20b9f1d6225d1262035..295f65992615822204c5529380016f87621504f0
 - Evidence limitation: This isolates the versioned Task 3 tracked-file scope;
   ignored SDD execution records are not tracked delivery paths.
 
 - Metric name: Task 1 independent review result
 - Value: Spec PASS; Quality APPROVED; no findings
-- Provenance: MEASURED
-- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 1 entry
+- Provenance: MANUALLY_RECORDED
+- Evidence source: human observation: Issue #102 checkpoint 1 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156225160)
+- Evidence limitation: This observation cannot satisfy or drive a Gate.
 
 - Metric name: Task 2 independent review result
 - Value: Spec PASS; Quality APPROVED; no findings
-- Provenance: MEASURED
-- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 2 entry
+- Provenance: MANUALLY_RECORDED
+- Evidence source: human observation: Issue #102 checkpoint 2 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156261324)
+- Evidence limitation: This observation cannot satisfy or drive a Gate.
+
+- Metric name: Whole-branch review result before fix round 2
+- Value: 0 Critical; 3 Important; 2 Minor; Spec FAIL; Quality CHANGES_REQUIRED; Draft PR NO
+- Provenance: MANUALLY_RECORDED
+- Evidence source: human observation: Issue #102 checkpoint 4 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156354955)
+- Evidence limitation: This observation cannot satisfy or drive a Gate; the
+  required after-fix independent review remains external pending.
 
 - Metric name: Phase 4/5 decision at versioned task snapshot
 - Value: Phase 4=NO_GO_PENDING_SEPARATE_APPROVAL; Phase 5=NO_GO
@@ -135,24 +158,24 @@ task snapshot and require later GitHub evidence.
   self-referential task head; they remain external pending evidence.
 
 - Metric name: Immutable base revision
-- Value: 7a668eeb
+- Value: 7a668eeb802b50d140591b75895398550f6c3ae8
 - Provenance: MEASURED
-- Evidence source: Git repository exact base `7a668eeb`
+- Evidence source: Git repository exact base `7a668eeb802b50d140591b75895398550f6c3ae8`
 
 - Metric name: Predicted base-role count
 - Value: 4
 - Provenance: MEASURED
-- Evidence source: GitHub Issue #102 Charter/checkpoints
+- Evidence source: https://github.com/firehell/guiyi-quant-workstation/issues/102
 
 - Metric name: Predicted specialist count
 - Value: 0
 - Provenance: MEASURED
-- Evidence source: GitHub Issue #102 Charter/checkpoints
+- Evidence source: https://github.com/firehell/guiyi-quant-workstation/issues/102
 
 - Metric name: Implementation and independent-review context checkpoint
 - Value: separate contexts recorded for the controlled trial
 - Provenance: MANUALLY_RECORDED
-- Evidence source: human observation: task workflow checkpoint
+- Evidence source: human observation: Issue #102 checkpoint 4 (https://github.com/firehell/guiyi-quant-workstation/issues/102#issuecomment-5156354955)
 - Evidence limitation: This observation cannot satisfy or drive a Gate.
 
 - Metric name: Final PR number at versioned task snapshot
@@ -182,6 +205,9 @@ task snapshot and require later GitHub evidence.
   remains external GitHub exact-head evidence pending.
 - External Gates: this sample has no real data, database, notification, release,
   deployment, `main`, or Runtime operation.
+- Gate evidence: local report-contract verification is not a release, Runtime,
+  data-write, notification, or deployment Gate; final external evidence remains
+  pending.
 - Phase 4: NO_GO_PENDING_SEPARATE_APPROVAL
 - Phase 5: NO_GO
 - No-authority statement: a controlled-trial record does not grant Phase 4 or
@@ -196,6 +222,10 @@ task snapshot and require later GitHub evidence.
   expanded task class or any higher-risk Gate.
 - Evidence limitations: final GitHub PR/head/merge facts are deliberately pending
   external exact-head evidence; they are not estimated from conversation memory.
+- Unmeasurable or manually recorded observations: merge timestamp,
+  Charter-to-local-complete timing, after-fix reviewer result, PR, exact head,
+  CI, final counts, and merge facts remain external pending; process metrics are
+  manually recorded observations that cannot satisfy or drive a Gate.
 
 ## Decision
 
