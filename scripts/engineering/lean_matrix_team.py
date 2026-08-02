@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import string
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -42,6 +43,7 @@ LANE_DISPATCH = {
     3: ("Sol", "high", "plan-only-start", 4),
 }
 WORKTREE_ROOT = "/Volumes/扩展盘/GuiyiWorktrees/tasks"
+MARKDOWN_ESCAPE_TABLE = str.maketrans({character: f"\\{character}" for character in string.punctuation})
 
 
 class CharterError(ValueError):
@@ -173,8 +175,13 @@ def _validate(raw: object) -> dict[str, Any]:
     }
 
 
+def _markdown_text(value: str) -> str:
+    """Escape untrusted text so it cannot introduce Markdown structure."""
+    return value.translate(MARKDOWN_ESCAPE_TABLE)
+
+
 def _bullets(items: Sequence[str]) -> str:
-    return "\n".join(f"- {item}" for item in items)
+    return "\n".join(f"- {_markdown_text(item)}" for item in items)
 
 
 def _dispatch(charter: dict[str, Any]) -> dict[str, Any]:
@@ -214,7 +221,7 @@ def _markdown(charter: dict[str, Any], task: dict[str, Any], dispatch: dict[str,
         "",
         "## Identity",
         "",
-        f"- Title: {task['title']}",
+        f"- Title: {_markdown_text(task['title'])}",
         f"- Issue: {task['issue_number']}",
         f"- Task ID: {task['task_id']}",
         f"- Kind: {task['kind']}",
@@ -222,10 +229,10 @@ def _markdown(charter: dict[str, Any], task: dict[str, Any], dispatch: dict[str,
         f"- Planned worktree: {task['worktree']}",
         "",
         "## Value",
-        charter["value"],
+        _markdown_text(charter["value"]),
         "",
         "## Goal",
-        charter["goal"],
+        _markdown_text(charter["goal"]),
         "",
         "## Current facts",
         _bullets(charter["current_facts"]),

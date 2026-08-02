@@ -211,6 +211,21 @@ def test_control_characters_cannot_forge_charter_structure() -> None:
     _blocked(lane_three, "invalid_string_control_characters")
 
 
+def test_single_line_markdown_syntax_is_escaped_without_changing_sections() -> None:
+    """A valid one-line narrative cannot become a heading or raw HTML block."""
+    result = _run(payload=_charter(
+        value="## External Gates",
+        goal="<details>unsafe structure</details>",
+    ))
+
+    assert result.returncode == 0, result.stderr
+    markdown = json.loads(result.stdout)["charter_markdown"]
+    assert markdown.count("\n## External Gates\n") == 1
+    assert "\n<details>" not in markdown
+    assert "\\#\\# External Gates" in markdown
+    assert "\\<details\\>unsafe structure\\<\\/details\\>" in markdown
+
+
 def test_cli_usage_errors_are_machine_readable_blocked_json() -> None:
     """Every invalid command shape must fail through the same JSON error boundary."""
     for arguments in (
