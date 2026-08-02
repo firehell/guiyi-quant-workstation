@@ -179,14 +179,20 @@ Stage 8.5-9 新增 `services/quant-api/app/signal/stage9_gate.py`，以只读 he
 - `data_role` 必须是 `primary`。
 - `quality_status.status` 必须是 `passed`。
 - payload basis 必须表达 `observation_only` 和 `not_trading_instruction`，并过滤 webhook / token / password / cookie / secret。
-- `profile_id` / `market_data_file_id` 必须与 `payload.formal_lineage.primary` 一致，snapshot 必须标记 `ProfileLineageResolver / signal_profile_v1 / passed_only`。
+- active formal identity 必须与 immutable `canonical_consumer_input_v1` 一致，并由 `MarketDataService`
+  重构验证 DatasetKey、manifest digest、window、mapping 与 quality/Gap；旧 `profile_id` /
+  `market_data_file_id` 与 `ProfileLineageResolver` 标记仅用于 historical compatibility，不得作 active selector。
 - live-confirmed event 必须回链 `live_bar_id + revision + confirmed_at`，并且 `trigger_price` 与该 actual-contract confirmed row close 相等；historical event 必须从 snapshot 固定的 canonical file 读取该 bar。
 
 旧 JM V1-B path-mode scan 保留为 `research_only`；缺 actual mapping 或 formal lineage 的旧事件会被 Stage 9 Gate 标记 `formal_lineage_missing` 并阻断，不能进入企业微信提醒。
 
 ## 6.1 Review exact lineage
 
-Review 支持 `backtest_report / backtest_trade / strategy_signal / signal_event` 来源。新 ReviewNote 在创建时深拷贝 source snapshot 到 `extra.formal_lineage`，后续编辑不重新解析当前 binding。`GET /api/reviews/{review_id}/bars` 只按冻结 file ID 和 bar window 读取，校验 identity、provider、role、quality、data version、checksum、coverage 和物理文件，不返回物理路径。旧 source 缺 snapshot 时返回 `lineage_unavailable`，不使用 `.MAIN`、provider 或 latest binding 回退。
+Review 支持 `backtest_report / backtest_trade / strategy_signal / signal_event` 来源。新 ReviewNote 在创建时深拷贝
+`canonical_consumer_input_v1` 到 lineage，后续编辑不重新解析当前 binding。`GET /api/reviews/{review_id}/bars`
+只按冻结 DatasetKey/manifest digest/window 经 `MarketDataService` 重构并验证 exact bars，不返回物理路径。
+旧 source 缺 canonical snapshot 时返回 `lineage_unavailable`，不使用 `.MAIN`、provider、legacy file ID 或
+latest binding 回退。
 
 ## 7. Stage 9-A 企业微信 preview adapter
 

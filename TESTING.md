@@ -148,8 +148,10 @@ worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval p
 
 ### Task 05 derived/reference inventory
 
-下列 CLI 只输出稳定 JSON；不加载环境变量或 RQData、不含 delete/apply/repair mode。`--database-url`
-仅用于外部 read-only Gate 的显式注入，绝不输出其值；PostgreSQL 使用 `SET TRANSACTION READ ONLY`。
+下列 CLI 只输出稳定 JSON；不加载 RQData、不含 delete/apply/repair mode。真实 DB 只允许通过
+显式 `--database-url-env NAME` 外部只读 Gate 注入，绝不输出 URL；PostgreSQL 使用
+`SET TRANSACTION READ ONLY`。`--max-files`、`--max-file-bytes`、`--max-total-bytes` 与 `--max-ids`
+均有安全默认值，预算不足时返回 incomplete diagnostics，绝不把截断结果当作完整 inventory。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

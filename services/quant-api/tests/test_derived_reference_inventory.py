@@ -7,6 +7,9 @@ import sys
 from types import SimpleNamespace
 from pathlib import Path
 
+import pytest
+from sqlalchemy import create_engine
+
 from app.services.derived_reference_inventory import (
     DerivedReferenceInventoryConfig,
     build_derived_reference_inventory,
@@ -55,32 +58,35 @@ def test_inventory_is_deterministic_and_classifies_read_only_surfaces(tmp_path: 
         for item in categories.values()
     )
     assert categories["backtest"]["database_tables"] == [
-        {"count": 1, "ids": ["7"], "table": "backtest_reports"}
+        {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["7"], "table": "backtest_reports"}
     ]
     assert categories["profile_binding_legacy_lineage"]["database_tables"] == [
-        {"count": 1, "ids": ["8"], "table": "data_profiles"},
-        {"count": 1, "ids": ["9"], "table": "profile_active_bindings"},
+        {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["8"], "table": "data_profiles"},
+        {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["9"], "table": "profile_active_bindings"},
     ]
     assert categories["duplicate_bar_layers"]["filesystem_paths"] == [
         {
             "path": "data/parquet/canonical/jm/part-000.parquet",
-            "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-            "size_bytes": 3,
+                "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                "size_bytes": 3,
+                "disposition": "KEEP_TRUSTED_CANONICAL",
         },
         {
             "path": "data/raw/jm/source.parquet",
-            "sha256": "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed",
-            "size_bytes": 3,
+                "sha256": "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed",
+                "size_bytes": 3,
+                "disposition": "REVIEW_REQUIRED",
         },
         {
             "path": "data/standard/jm/normalized.parquet",
-            "sha256": "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3",
-            "size_bytes": 3,
+                "sha256": "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3",
+                "size_bytes": 3,
+                "disposition": "REVIEW_REQUIRED",
         },
     ]
-    assert categories["report_14_15_references"]["reference_locations"] == [
-        {"line": 1, "path": "docs/gate.md"},
-        {"line": 1, "path": "services/quant-api/app/example.py"},
+    assert [{key: item[key] for key in ("line", "path", "kind", "matched_token")} for item in categories["report_14_15_references"]["reference_locations"]] == [
+        {"kind": "doc", "line": 1, "matched_token": "report 14", "path": "docs/gate.md"},
+        {"kind": "code", "line": 1, "matched_token": "report_15_", "path": "services/quant-api/app/example.py"},
     ]
 
 
@@ -151,11 +157,11 @@ def test_postgresql_collector_sets_read_only_transaction_without_commit(tmp_path
         connection=connection,
     )
 
-    assert result["database"] == {
-        "available": True,
-        "dialect": "postgresql",
-        "tables": [{"count": 1, "ids": ["14"], "table": "backtest_reports"}],
-    }
+    assert result["database"]["available"] is True
+    assert result["database"]["dialect"] == "postgresql"
+    assert result["database"]["tables"] == [
+        {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["14"], "table": "backtest_reports"}
+    ]
     assert connection.statements[:2] == ["BEGIN", "SET TRANSACTION READ ONLY"]
     assert connection.rollback_count == 1
     assert connection.commit_count == 0
@@ -163,6 +169,114 @@ def test_postgresql_collector_sets_read_only_transaction_without_commit(tmp_path
         statement.upper().startswith(("INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER"))
         for statement in connection.statements
     )
+
+
+def test_reference_scan_classifies_every_category_without_inventory_self_reference(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    _write_active_reference_files(repo_root)
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+    )
+
+    categories = {item["category"]: item for item in result["categories"]}
+    assert all(item["active_reference_status"] == "present" for item in categories.values())
+    assert {item["category"] for item in categories.values() if item["reference_locations"]} == set(categories)
+    assert all(
+        all(location["path"] != "scripts/derived_reference_inventory.py" for location in item["reference_locations"])
+        for item in categories.values()
+    )
+    assert all(
+        {"path", "line", "kind", "matched_token", "reason"}.issubset(location)
+        for item in categories.values()
+        for location in item["reference_locations"]
+    )
+    assert any(location["path"] == "config.toml" for location in categories["backtest"]["reference_locations"])
+
+
+def test_filesystem_rejects_external_symlink_and_reports_stable_budget_truncation(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    outside = tmp_path / "outside-secret.parquet"
+    outside.write_bytes(b"do-not-read")
+    (data_root / "raw").mkdir(parents=True)
+    (data_root / "raw" / "0outside.parquet").symlink_to(outside)
+    (data_root / "raw" / "a.parquet").write_bytes(b"a")
+    (data_root / "raw" / "b.parquet").write_bytes(b"b")
+    (data_root / "raw" / "c.parquet").write_bytes(b"c")
+    config = DerivedReferenceInventoryConfig(
+        repo_root=tmp_path / "repo",
+        data_root=data_root,
+        max_files=1,
+        max_file_bytes=8,
+        max_total_bytes=8,
+    )
+
+    first = build_derived_reference_inventory(config)
+    second = build_derived_reference_inventory(config)
+
+    assert first == second
+    assert first["filesystem"]["truncated"] is True
+    assert first["filesystem"]["records"] == [
+        {
+            "path": "data/raw/a.parquet",
+                "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+                "size_bytes": 1,
+                "disposition": "REVIEW_REQUIRED",
+        }
+    ]
+    assert {item["code"] for item in first["filesystem"]["diagnostics"]} == {
+        "MAX_FILES_EXCEEDED",
+        "SYMLINK_SKIPPED",
+    }
+    assert sum(item["code"] == "MAX_FILES_EXCEEDED" for item in first["filesystem"]["diagnostics"]) == 1
+    assert all("outside-secret" not in str(item) for item in first["filesystem"]["diagnostics"])
+
+
+def test_database_uses_allowlist_reports_missing_and_fails_closed_on_id_limit(tmp_path: Path) -> None:
+    connection = _fixture_connection()
+    connection.execute("CREATE TABLE secrets (id INTEGER PRIMARY KEY, token TEXT)")
+    connection.execute("INSERT INTO secrets VALUES (99, 'never-read')")
+    connection.execute("INSERT INTO backtest_reports VALUES (70, 'second-report')")
+    connection.commit()
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=tmp_path / "repo", data_root=tmp_path / "data", max_ids=1),
+        connection=connection,
+    )
+
+    assert "secrets" not in {item["table"] for item in result["database"]["tables"]}
+    backtest = next(item for item in result["database"]["tables"] if item["table"] == "backtest_reports")
+    assert backtest == {"table": "backtest_reports", "count": 2, "ids": [], "id_status": "limit_exceeded", "disposition": "REBUILD_ONLY"}
+    assert {item["code"] for item in result["database"]["diagnostics"]} >= {
+        "ID_LIMIT_EXCEEDED",
+        "TABLE_MISSING",
+    }
+
+
+def test_real_sqlalchemy_sqlite_connection_uses_readonly_inventory_path(tmp_path: Path) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.connect() as connection:
+        connection.exec_driver_sql("CREATE TABLE backtest_reports (id INTEGER PRIMARY KEY, name TEXT)")
+        connection.exec_driver_sql("INSERT INTO backtest_reports VALUES (14, 'fixture')")
+        result = build_derived_reference_inventory(
+            DerivedReferenceInventoryConfig(repo_root=tmp_path / "repo", data_root=tmp_path / "data"),
+            connection=connection,
+        )
+
+    assert result["database"]["available"] is True
+    assert result["database"]["dialect"] == "sqlite"
+    assert result["database"]["tables"] == [
+        {"table": "backtest_reports", "count": 1, "ids": ["14"], "id_status": "complete", "disposition": "REBUILD_ONLY"}
+    ]
+
+
+def test_unknown_database_dialect_fails_closed(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="unsupported database dialect"):
+        build_derived_reference_inventory(
+            DerivedReferenceInventoryConfig(repo_root=tmp_path / "repo", data_root=tmp_path / "data"),
+            connection=object(),
+        )
 
 
 def _fixture_connection() -> sqlite3.Connection:
@@ -225,16 +339,39 @@ def _write_fixture_files(repo_root: Path, data_root: Path) -> None:
         path.write_bytes(contents)
 
 
-class _FakePostgresConnection:
-    dialect = SimpleNamespace(name="postgresql")
+def _write_active_reference_files(repo_root: Path) -> None:
+    (repo_root / "docs").mkdir(parents=True)
+    (repo_root / "services" / "quant-api" / "app" / "services").mkdir(parents=True)
+    (repo_root / "docs" / "active.md").write_text(
+        "indicator cache\nbacktest\nsignal review\nlive eod ResearchSample\nderived 15m\n"
+        "raw standard canonical\nDataProfile ActiveBinding legacy lineage\nreport 14 backup runtime gate\n",
+        encoding="utf-8",
+    )
+    (repo_root / "services" / "quant-api" / "app" / "services" / "consumer.py").write_text(
+        "MarketDataService canonical_consumer_input_v1\n",
+        encoding="utf-8",
+    )
+    (repo_root / "config.toml").write_text("backtest = true\n", encoding="utf-8")
 
+
+class _FakePostgresConnection:
     def __init__(self) -> None:
+        self.engine = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
         self.statements: list[str] = []
         self.rollback_count = 0
         self.commit_count = 0
 
-    def cursor(self) -> _FakePostgresCursor:
-        return _FakePostgresCursor(self)
+    def exec_driver_sql(self, statement: str, parameters: tuple[object, ...] = ()) -> _FakePostgresResult:
+        self.statements.append(statement + (f" {parameters!r}" if parameters else ""))
+        if statement == "SELECT to_regclass(%s)":
+            return _FakePostgresResult([(parameters[0].split(".")[-1],)] if parameters == ("public.backtest_reports",) else [(None,)])
+        if "information_schema.columns" in statement:
+            return _FakePostgresResult([("id",)] if parameters == ("public", "backtest_reports") else [])
+        if "COUNT(*)" in statement:
+            return _FakePostgresResult([(1,)])
+        if "SELECT id" in statement:
+            return _FakePostgresResult([(14,)])
+        return _FakePostgresResult([])
 
     def rollback(self) -> None:
         self.rollback_count += 1
@@ -243,25 +380,9 @@ class _FakePostgresConnection:
         self.commit_count += 1
 
 
-class _FakePostgresCursor:
-    def __init__(self, connection: _FakePostgresConnection) -> None:
-        self.connection = connection
-        self.statement = ""
-
-    def execute(self, statement: str, parameters: tuple[object, ...] = ()) -> None:
-        self.statement = statement
-        self.connection.statements.append(statement + (f" {parameters!r}" if parameters else ""))
+class _FakePostgresResult:
+    def __init__(self, rows: list[tuple[object, ...]]) -> None:
+        self.rows = rows
 
     def fetchall(self) -> list[tuple[object, ...]]:
-        if "information_schema.tables" in self.statement:
-            return [("backtest_reports",)]
-        if "information_schema.columns" in self.statement:
-            return [("id",)]
-        if "COUNT(*)" in self.statement:
-            return [(1,)]
-        if "SELECT id" in self.statement:
-            return [(14,)]
-        return []
-
-    def close(self) -> None:
-        return None
+        return self.rows

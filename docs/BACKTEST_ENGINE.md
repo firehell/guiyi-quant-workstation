@@ -50,8 +50,10 @@ Backtest API
   Binding 重新解析。历史 `profile_id`/`market_data_file_id` 仅为 legacy compatibility fields。
 - formal 任务另附 `indicator_policy_snapshot`（`strategy_indicator_policy_v1`）：创建时 fail-closed；旧报告无 snapshot 时 API 返回 `indicator_policy_status=legacy_policy_unavailable`，禁止用当前 Registry 猜测。
 - formal policy 必须允许 `formal_backtest` consumer；精确的 JM V1-B v1b.0 冻结链路使用独立 `frozen_legacy_backtest` consumer，其他策略不得伪造 legacy 身份。
-- batch task 可因多资产令顶层 `market_data_file_id` 为空，但 snapshot 必须列出全部资产，且每个 report 的文件 ID 必须非空。
-- runner 只执行 snapshot 固定的文件 ID/路径，并要求 Parquet 显式携带 `data_role=primary`、`quality_status=passed`；缺字段不再默认通过。
+- batch task 的 immutable `canonical_consumer_input_v1` 必须列出每个 DatasetKey、manifest digest、
+  source data version 与 exact window；它不以旧 `market_data_file_id` 作为 active identity。
+- runner 只执行 `MarketDataService` 根据冻结 canonical input 重构并验证的 bars；identity、manifest、
+  Gap、mapping 或 quality 漂移一律 fail-closed，不读取固定 legacy file ID/path。
 - trade/order 保存 signal/fill/order 映射与 lineage summary。
 - 当前 bar 信号采用 `next_bar_open` 成交，禁止当前 bar 提前成交。
 - 手续费、滑点、乘数、price tick、保证金和真实合约映射必须可追溯。
@@ -93,7 +95,7 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 
 Stage 13 审计不重跑策略，不能单独证明没有未来函数或过拟合。XMA PoC 已明确存在重绘风险，不得进入正式回测或信号。
 
-## 6. 阶段 5 验收结论与下一步
+## 6. 阶段 5 历史验收快照（非 active contract）
 
 阶段 5 已完成独立可信候选、report14/report15 双 trust audit、固定 OOS、rolling diagnostics、Review closed loop 与 R45-01～04 closeout。最终 Gate：
 
