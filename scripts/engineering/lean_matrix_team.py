@@ -23,7 +23,7 @@ from lean_matrix.observing import observe_execution_plan  # noqa: E402
 from lean_matrix.planning import build_execution_plan  # noqa: E402
 from lean_matrix.rendering import render_execution_plan_markdown  # noqa: E402
 from lean_matrix.transitions import propose_next_transition  # noqa: E402
-from lean_matrix.workspace import load_evidence, plan_digest, record_transition  # noqa: E402
+from lean_matrix.workspace import claim_transition, load_evidence, plan_digest, record_transition  # noqa: E402
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -141,6 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 "transition_not_applicable",
                                 "the current proposal has no executable local transition",
                             )
+                        claim_transition(REPO_ROOT, plan_contract, proposal)
                         execution = execute_action(plan_contract, proposal.action, REPO_ROOT)
                         after = observe_execution_plan(plan_contract, REPO_ROOT)
                         execution_error = execution.error_type

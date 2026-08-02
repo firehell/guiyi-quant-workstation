@@ -45,11 +45,14 @@ def _contracts(task_id: str = "AI-TEAM-005"):
         "external_gates": [],
     })
     plan_digest = semantic_digest(plan.to_dict())
+    from lean_matrix.adapters import command_for_action
+    from lean_matrix.transitions import transition_id
+    state_digest = "sha256:" + "3" * 64
     proposal = TransitionProposalV1.from_mapping({
-        "transition_id": "tr-" + "2" * 64,
-        "from_state_digest": "sha256:" + "3" * 64,
+        "transition_id": transition_id(plan, "task-create", state_digest),
+        "from_state_digest": state_digest,
         "action": "task-create",
-        "commands": [["bash", "scripts/engineering/task-worktree.sh", "create"]],
+        "commands": [list(command_for_action(plan, "task-create"))],
         "side_effect_scope": "task-worktree",
         "requires_apply": True,
         "human_gate": None,
@@ -59,7 +62,7 @@ def _contracts(task_id: str = "AI-TEAM-005"):
         "plan_digest": plan_digest,
         "before_state_digest": proposal.from_state_digest,
         "after_state_digest": "sha256:" + "4" * 64,
-        "command_digests": ["sha256:" + "5" * 64],
+        "command_digests": [semantic_digest(list(command_for_action(plan, "task-create", apply=True)))],
         "exit_codes": [0],
         "result": "PASS",
         "recorded_at": "2026-08-02T12:00:00Z",
@@ -74,6 +77,41 @@ def _workspace_api():
     finally:
         sys.path.pop(0)
     return load_evidence, record_transition
+
+
+def _valid_evidence():
+    plan, _, _ = _contracts()
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.adapters import command_for_action
+        from lean_matrix.contracts import TransitionProposalV1, TransitionReceiptV1
+        from lean_matrix.digests import semantic_digest
+        from lean_matrix.transitions import transition_id
+        from lean_matrix.workspace import plan_digest
+    finally:
+        sys.path.pop(0)
+    state_digest = "sha256:" + "3" * 64
+    identifier = transition_id(plan, "task-create", state_digest)
+    proposal = TransitionProposalV1.from_mapping({
+        "transition_id": identifier,
+        "from_state_digest": state_digest,
+        "action": "task-create",
+        "commands": [list(command_for_action(plan, "task-create"))],
+        "side_effect_scope": "task-worktree",
+        "requires_apply": True,
+        "human_gate": None,
+    })
+    receipt = TransitionReceiptV1.from_mapping({
+        "transition_id": identifier,
+        "plan_digest": plan_digest(plan),
+        "before_state_digest": state_digest,
+        "after_state_digest": "sha256:" + "4" * 64,
+        "command_digests": [semantic_digest(list(command_for_action(plan, "task-create", apply=True)))],
+        "exit_codes": [0],
+        "result": "PASS",
+        "recorded_at": "2026-08-02T12:00:00Z",
+    })
+    return plan, proposal, receipt
 
 
 def test_loading_missing_workspace_is_read_only(tmp_path: Path) -> None:
@@ -159,3 +197,61 @@ def test_receipt_bound_to_another_plan_is_rejected_before_write(tmp_path: Path) 
         record_transition(tmp_path, plan, proposal, foreign_receipt, error_type=None)
     assert raised.value.error_type == "receipt_plan_mismatch"
     assert not (tmp_path / ".ai").exists()
+
+
+def test_workspace_root_symlink_is_rejected_without_external_write(tmp_path: Path) -> None:
+    """Ignored evidence must not escape the repository through a pre-existing symlink."""
+    plan, _, _ = _contracts()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / ".ai").symlink_to(outside, target_is_directory=True)
+    load_evidence, _ = _workspace_api()
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.errors import LeanMatrixError
+    finally:
+        sys.path.pop(0)
+
+    with pytest.raises(LeanMatrixError) as raised:
+        load_evidence(tmp_path, plan)
+    assert raised.value.error_type == "workspace_symlink_forbidden"
+    assert list(outside.iterdir()) == []
+
+
+def test_receipt_is_rederived_from_plan_and_command_contract(tmp_path: Path) -> None:
+    """Rehashed but fabricated proposal commands cannot become recovery evidence."""
+    plan, proposal, receipt = _valid_evidence()
+    load_evidence, record_transition = _workspace_api()
+    record_transition(tmp_path, plan, proposal, receipt, error_type=None)
+    workspace = tmp_path / ".ai" / "lean-matrix" / receipt.plan_digest.removeprefix("sha256:")
+    proposal_path = next((workspace / "proposals").iterdir())
+    payload = json.loads(proposal_path.read_text(encoding="utf-8"))
+    payload["commands"] = [["bash", "attacker.sh"]]
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.receipts import artifact_name
+    finally:
+        sys.path.pop(0)
+    forged = proposal_path.with_name(artifact_name(proposal.transition_id, payload))
+    proposal_path.unlink()
+    forged.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(Exception) as raised:
+        load_evidence(tmp_path, plan)
+    assert raised.value.error_type == "proposal_command_mismatch"
+
+
+def test_claim_is_atomic_and_blocks_a_concurrent_second_apply(tmp_path: Path) -> None:
+    """The attempt marker must exist before the external command can start."""
+    plan, proposal, _ = _valid_evidence()
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.errors import LeanMatrixError
+        from lean_matrix.workspace import claim_transition
+    finally:
+        sys.path.pop(0)
+
+    claim_transition(tmp_path, plan, proposal)
+    with pytest.raises(LeanMatrixError) as raised:
+        claim_transition(tmp_path, plan, proposal)
+    assert raised.value.error_type == "transition_already_attempted"

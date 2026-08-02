@@ -85,12 +85,14 @@ class _FakeGit:
         dirty: bool,
         merged: bool,
         protected_dirty: bool = False,
+        content_marker: str = "first",
     ) -> None:
         self.repo = repo.resolve()
         self.branch = branch
         self.dirty = dirty
         self.merged = merged
         self.protected_dirty = protected_dirty
+        self.content_marker = content_marker
         self.base_sha = "a" * 40
         self.task_sha = "b" * 40
 
@@ -134,6 +136,8 @@ class _FakeGit:
             stdout = ""
         elif cwd == TASK_PATH and args == ("diff", "--name-only", "-z"):
             stdout = "scripts/engineering/lean_matrix/observing.py\0" if self.dirty else ""
+        elif cwd == TASK_PATH and args == ("ls-files", "--stage", "-z"):
+            stdout = self.content_marker if self.dirty else ""
         elif args in {
             ("merge-base", "--is-ancestor", self.task_sha, "refs/heads/develop"),
             ("merge-base", "--is-ancestor", self.task_sha, "origin/develop"),
@@ -244,6 +248,39 @@ def test_state_digest_binds_task_head_even_when_changed_path_names_are_unchanged
     second = observe_execution_plan(plan, repo, runner=second_git)
 
     assert first.state.changed_paths == second.state.changed_paths
+    assert first.state.state_digest != second.state.state_digest
+
+
+def test_state_digest_binds_dirty_content_when_path_names_and_head_are_unchanged(tmp_path: Path) -> None:
+    """Editing an already-dirty file must invalidate the previously approved state digest."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    first_git = _FakeGit(
+        repo,
+        branch="feature/AI-TEAM-005-local-orchestrator",
+        dirty=True,
+        merged=False,
+        content_marker="first patch content",
+    )
+    second_git = _FakeGit(
+        repo,
+        branch="feature/AI-TEAM-005-local-orchestrator",
+        dirty=True,
+        merged=False,
+        content_marker="different patch content",
+    )
+    plan = _plan(first_git.base_sha)
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.observing import observe_execution_plan
+    finally:
+        sys.path.pop(0)
+
+    first = observe_execution_plan(plan, repo, runner=first_git)
+    second = observe_execution_plan(plan, repo, runner=second_git)
+
+    assert first.state.changed_paths == second.state.changed_paths
+    assert first.task_head == second.task_head
     assert first.state.state_digest != second.state.state_digest
 
 

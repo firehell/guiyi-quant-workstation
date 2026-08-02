@@ -24,6 +24,7 @@ def _contracts():
 
 def _plan(*, external_gates: list[str] | None = None):
     ExecutionPlanV1, _, _ = _contracts()
+    gates = external_gates or []
     return ExecutionPlanV1.from_mapping({
         "schema_version": 1,
         "status": "ok",
@@ -36,22 +37,22 @@ def _plan(*, external_gates: list[str] | None = None):
         },
         "base": {"ref": "origin/develop", "expected_sha": "a" * 40},
         "dispatch": {
-            "model": "Terra",
-            "reasoning_effort": "medium",
+            "model": "Sol" if gates else "Terra",
+            "reasoning_effort": "high" if gates else "medium",
             "roles": ["ai-project-lead"],
             "specialists": [],
             "independence_requirements": ["independent review"],
         },
         "scope": {
             "allowed_paths": [
-                "scripts/engineering/lean_matrix/observing.py",
-                "tests/engineering/test_lean_matrix_observing.py",
+                "tests/example.py",
+                "docs/research/note.md",
             ],
             "forbidden_paths": ["Runtime"],
         },
         "validation": {"test_profile": "engineering", "required_checks": ["diff-check"]},
         "transitions": ["task-create", "draft-pr", "cleanup"],
-        "external_gates": external_gates or [],
+        "external_gates": gates,
     })
 
 
@@ -151,7 +152,7 @@ def test_implementation_with_allowed_changes_proposes_atomic_draft_pr_transition
         _plan(),
         _observed(
             "implementation-ready",
-            changed_paths=("scripts/engineering/lean_matrix/observing.py",),
+            changed_paths=("tests/example.py",),
             dirty=True,
         ),
     )
@@ -184,7 +185,7 @@ def test_clean_committed_changes_without_receipt_block_integrate_retry() -> None
             _plan(),
             _observed(
                 "implementation-ready",
-                changed_paths=("scripts/engineering/lean_matrix/observing.py",),
+                changed_paths=("tests/example.py",),
                 dirty=False,
             ),
         )
@@ -197,7 +198,7 @@ def test_successful_integrate_receipt_turns_clean_committed_state_into_draft_pr_
         _plan(),
         _observed(
             "implementation-ready",
-            changed_paths=("scripts/engineering/lean_matrix/observing.py",),
+            changed_paths=("tests/example.py",),
             dirty=False,
         ),
         frozenset({"local-integrate-to-draft-pr"}),
@@ -231,7 +232,7 @@ def test_recursive_allowlist_entry_accepts_only_its_descendants() -> None:
     ExecutionPlanV1, _, _ = _contracts()
     payload = _plan().to_dict()
     payload["scope"] = {
-        "allowed_paths": ["scripts/engineering/lean_matrix/**"],
+        "allowed_paths": ["docs/research/**"],
         "forbidden_paths": ["Runtime"],
     }
     plan = ExecutionPlanV1.from_mapping(payload)
@@ -240,12 +241,56 @@ def test_recursive_allowlist_entry_accepts_only_its_descendants() -> None:
         plan,
         _observed(
             "implementation-ready",
-            changed_paths=("scripts/engineering/lean_matrix/nested/module.py",),
+            changed_paths=("docs/research/nested/note.md",),
             dirty=True,
         ),
     )
 
     assert proposal.action == "local-integrate-to-draft-pr"
+
+
+def test_explicit_forbidden_path_overrides_recursive_allowlist() -> None:
+    """A broad allowlist must never cancel a more specific frozen prohibition."""
+    ExecutionPlanV1, _, _ = _contracts()
+    payload = _plan().to_dict()
+    payload["scope"] = {
+        "allowed_paths": ["scripts/**"],
+        "forbidden_paths": ["scripts/private.py"],
+    }
+    plan = ExecutionPlanV1.from_mapping(payload)
+
+    with pytest.raises(Exception) as raised:
+        _propose(
+            plan,
+            _observed(
+                "implementation-ready",
+                changed_paths=("scripts/private.py",),
+                dirty=True,
+            ),
+        )
+    assert raised.value.error_type == "changed_path_forbidden"
+
+
+def test_control_plane_change_cannot_use_generic_integration() -> None:
+    """A task cannot replace the workflow guard that generic apply is about to execute."""
+    ExecutionPlanV1, _, _ = _contracts()
+    payload = _plan().to_dict()
+    payload["scope"] = {
+        "allowed_paths": ["scripts/engineering/task-worktree.sh"],
+        "forbidden_paths": [],
+    }
+    plan = ExecutionPlanV1.from_mapping(payload)
+
+    with pytest.raises(Exception) as raised:
+        _propose(
+            plan,
+            _observed(
+                "implementation-ready",
+                changed_paths=("scripts/engineering/task-worktree.sh",),
+                dirty=True,
+            ),
+        )
+    assert raised.value.error_type == "controller_path_requires_manual_integration"
 
 
 def test_lane_three_plan_only_returns_human_gate_and_never_an_apply_action() -> None:

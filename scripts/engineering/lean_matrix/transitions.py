@@ -4,14 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
-from .adapters import command_for_action
+from .adapters import command_for_action, plan_lane
 from .contracts import ExecutionPlanV1, TransitionProposalV1
 from .digests import semantic_digest
 from .errors import LeanMatrixError
 from .observing import ObservedExecution
 
 
-def _transition_id(plan: ExecutionPlanV1, action: str, state_digest: str) -> str:
+CONTROL_PLANE_PATHS = frozenset({
+    "scripts/engineering/task-worktree.sh",
+    "scripts/engineering/task_workflow.py",
+    "scripts/engineering/worktree_flow.py",
+    "scripts/engineering/lean_matrix_team.py",
+})
+CONTROL_PLANE_PREFIXES = ("scripts/engineering/lean_matrix/",)
+
+
+def transition_id(plan: ExecutionPlanV1, action: str, state_digest: str) -> str:
     digest = semantic_digest({
         "plan": semantic_digest(plan.to_dict()),
         "action": action,
@@ -30,7 +39,7 @@ def _proposal(
 ) -> TransitionProposalV1:
     commands = [list(command_for_action(plan, action))] if apply_action else []
     return TransitionProposalV1.from_mapping({
-        "transition_id": _transition_id(plan, action, observed.state.state_digest),
+        "transition_id": transition_id(plan, action, observed.state.state_digest),
         "from_state_digest": observed.state.state_digest,
         "action": action,
         "commands": commands,
@@ -46,7 +55,29 @@ def _validate_scope(plan: ExecutionPlanV1, changed_paths: tuple[str, ...]) -> No
     unsupported = [entry for entry in plan.scope.allowed_paths if "*" in entry and not entry.endswith("/**")]
     if unsupported:
         raise LeanMatrixError("unsupported_allowlist_pattern", f"unsupported allowlist pattern: {unsupported[0]}")
+    forbidden_exact = frozenset(entry for entry in plan.scope.forbidden_paths if "*" not in entry)
+    forbidden_recursive = tuple(
+        entry.removesuffix("**") for entry in plan.scope.forbidden_paths if entry.endswith("/**")
+    )
+    forbidden_unsupported = [
+        entry for entry in plan.scope.forbidden_paths if "*" in entry and not entry.endswith("/**")
+    ]
+    if forbidden_unsupported:
+        raise LeanMatrixError(
+            "unsupported_forbidden_pattern",
+            f"unsupported forbidden pattern: {forbidden_unsupported[0]}",
+        )
     for path in changed_paths:
+        if path in CONTROL_PLANE_PATHS or path.startswith(CONTROL_PLANE_PREFIXES):
+            raise LeanMatrixError(
+                "controller_path_requires_manual_integration",
+                f"generic apply cannot integrate a change to its own controller: {path}",
+            )
+        if path in forbidden_exact or any(path.startswith(prefix) for prefix in forbidden_recursive):
+            raise LeanMatrixError(
+                "changed_path_forbidden",
+                f"changed path is explicitly forbidden by the frozen plan: {path}",
+            )
         if path not in exact and not any(path.startswith(prefix) for prefix in recursive):
             raise LeanMatrixError(
                 "changed_path_out_of_scope",
@@ -62,7 +93,8 @@ def propose_next_transition(
     successful_actions: Collection[str] = (),
 ) -> TransitionProposalV1:
     """Return one deterministic proposal or fail closed on inconsistent local facts."""
-    if plan.external_gates:
+    lane = plan_lane(plan)
+    if lane == 3:
         return _proposal(
             plan,
             observed,

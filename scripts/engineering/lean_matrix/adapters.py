@@ -14,6 +14,7 @@ from .errors import LeanMatrixError
 
 ENTRYPOINT = "scripts/engineering/task-worktree.sh"
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+LANE_ONE_PREFIXES = ("experiments/", "tests/", "docs/research/")
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,38 @@ def _commit_message(plan: ExecutionPlanV1) -> str:
     return f"{commit_kind}(workstation): complete {plan.task.task_id}"
 
 
+def plan_lane(plan: ExecutionPlanV1) -> int:
+    """Validate frozen dispatch/Gate consistency and infer the least privileged Lane."""
+    dispatch = (plan.dispatch.model, plan.dispatch.reasoning_effort)
+    if dispatch == ("Sol", "high"):
+        if not plan.external_gates:
+            raise LeanMatrixError(
+                "lane_three_plan_invalid",
+                "a Sol/high Lane 3 plan cannot omit its required external Gate",
+            )
+        return 3
+    if dispatch != ("Terra", "medium"):
+        raise LeanMatrixError("invalid_plan_dispatch", "execution plan has no supported frozen Lane dispatch")
+    if plan.external_gates:
+        raise LeanMatrixError(
+            "invalid_plan_dispatch",
+            "a Terra local execution plan cannot contain external Gates",
+        )
+
+    def lane_one_path(path: str) -> bool:
+        literal = path.removesuffix("**")
+        return any(literal.startswith(prefix) for prefix in LANE_ONE_PREFIXES)
+
+    return 1 if all(lane_one_path(path) for path in plan.scope.allowed_paths) else 2
+
+
+def execution_lane(plan: ExecutionPlanV1) -> int:
+    lane = plan_lane(plan)
+    if lane == 3:
+        raise LeanMatrixError("lane_three_apply_forbidden", "Lane 3 cannot use local apply")
+    return lane
+
+
 def command_for_action(
     plan: ExecutionPlanV1,
     action: str,
@@ -51,7 +84,7 @@ def command_for_action(
 ) -> tuple[str, ...]:
     """Return one fixed argv command; execution and cwd selection remain separate."""
     kind, slug = _identity(plan)
-    common = ("--lane", "2", "--issue", str(plan.task.issue_number))
+    common = ("--lane", str(execution_lane(plan)), "--issue", str(plan.task.issue_number))
     if action == "task-create":
         command = (
             "bash", ENTRYPOINT, "create", "--kind", kind, "--task-id", plan.task.task_id,

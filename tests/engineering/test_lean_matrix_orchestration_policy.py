@@ -52,6 +52,7 @@ def _isolated_cli(tmp_path: Path) -> tuple[Path, Path, str]:
 
 
 def _plan(base_sha: str, *, external_gates: list[str] | None = None) -> dict[str, object]:
+    gates = external_gates or []
     return {
         "schema_version": 1,
         "status": "ok",
@@ -64,8 +65,8 @@ def _plan(base_sha: str, *, external_gates: list[str] | None = None) -> dict[str
         },
         "base": {"ref": "origin/develop", "expected_sha": base_sha},
         "dispatch": {
-            "model": "Terra",
-            "reasoning_effort": "medium",
+            "model": "Sol" if gates else "Terra",
+            "reasoning_effort": "high" if gates else "medium",
             "roles": ["ai-project-lead"],
             "specialists": [],
             "independence_requirements": ["independent review"],
@@ -73,7 +74,7 @@ def _plan(base_sha: str, *, external_gates: list[str] | None = None) -> dict[str
         "scope": {"allowed_paths": ["tests/example.py"], "forbidden_paths": ["Runtime"]},
         "validation": {"test_profile": "engineering", "required_checks": ["diff-check"]},
         "transitions": ["task-create", "draft-pr", "cleanup"],
-        "external_gates": external_gates or [],
+        "external_gates": gates,
     }
 
 
@@ -190,6 +191,41 @@ def test_adapter_executes_exactly_one_existing_entrypoint_with_fixed_cwd() -> No
     assert result.exit_code == 0
     assert result.error_type is None
     assert result.command_digest.startswith("sha256:")
+
+
+def test_lane_one_scope_is_delegated_with_least_privilege() -> None:
+    """A research-only plan must not be widened to Lane 2 by the adapter."""
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.adapters import command_for_action
+        from lean_matrix.contracts import ExecutionPlanV1
+    finally:
+        sys.path.pop(0)
+    payload = _plan("a" * 40)
+    payload["scope"] = {"allowed_paths": ["tests/**", "docs/research/**"], "forbidden_paths": []}
+    plan = ExecutionPlanV1.from_mapping(payload)
+
+    command = command_for_action(plan, "task-create")
+
+    assert command[command.index("--lane") + 1] == "1"
+
+
+def test_sol_dispatch_cannot_be_downgraded_by_removing_external_gates(tmp_path: Path) -> None:
+    """Editing only external_gates must not turn a Lane 3 plan into a local apply plan."""
+    repo, cli, base_sha = _isolated_cli(tmp_path)
+    payload = _plan(base_sha)
+    payload["dispatch"] = {
+        **payload["dispatch"],
+        "model": "Sol",
+        "reasoning_effort": "high",
+    }
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = _invoke(cli, repo, "next", "--plan", str(plan_path), "--format", "json")
+
+    assert result.returncode == 2
+    assert json.loads(result.stderr)["error_type"] == "lane_three_plan_invalid"
 
 
 def test_cleanup_cannot_remove_the_checkout_running_the_controller() -> None:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import stat
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -125,6 +127,40 @@ def _state(payload: dict[str, object], *, local_facts: dict[str, object]) -> Obs
     return ObservedStateV1.from_mapping(payload)
 
 
+def _worktree_content_digest(task_path: Path, changed_paths: set[str], *, runner: Runner) -> str:
+    """Bind index metadata and working-tree bytes without persisting file content."""
+    index = _git(task_path, ("ls-files", "--stage", "-z"), runner=runner).stdout
+    entries: list[dict[str, str]] = []
+    for relative in sorted(changed_paths):
+        candidate = task_path / relative
+        try:
+            metadata = candidate.lstat()
+        except FileNotFoundError:
+            entries.append({"path": relative, "kind": "missing", "digest": semantic_digest(None)})
+            continue
+        if stat.S_ISLNK(metadata.st_mode):
+            payload = os.readlink(candidate).encode("utf-8", errors="surrogateescape")
+            kind = "symlink"
+        elif stat.S_ISREG(metadata.st_mode):
+            try:
+                payload = candidate.read_bytes()
+            except OSError as exc:
+                raise LeanMatrixError(
+                    "worktree_content_unreadable",
+                    f"cannot fingerprint changed path: {relative}",
+                ) from exc
+            kind = "file"
+        else:
+            payload = f"mode:{metadata.st_mode}".encode("ascii")
+            kind = "other"
+        entries.append({
+            "path": relative,
+            "kind": kind,
+            "digest": f"sha256:{hashlib.sha256(payload).hexdigest()}",
+        })
+    return semantic_digest({"index": index, "entries": entries})
+
+
 def observe_execution_plan(
     plan: ExecutionPlanV1,
     repo_root: Path,
@@ -175,6 +211,7 @@ def observe_execution_plan(
     dirty = False
     changed_paths: set[str] = set()
     cleanup_safe = False
+    content_digest: str | None = None
     if worktree_registered:
         entry_branch = worktrees[task_path].get("branch", "").removeprefix("refs/heads/")
         actual_branch = _git(task_path, ("branch", "--show-current"), runner=runner).stdout.strip()
@@ -202,6 +239,7 @@ def observe_execution_plan(
             ("ls-files", "--others", "--exclude-standard", "-z"),
         ):
             changed_paths |= _nul_paths(_git(task_path, arguments, runner=runner).stdout)
+        content_digest = _worktree_content_digest(task_path, changed_paths, runner=runner)
         local_contains = bool(local_develop) and _is_ancestor(
             repo, task_head, "refs/heads/develop", runner=runner,
         )
@@ -244,6 +282,7 @@ def observe_execution_plan(
             "local_task_head": local_task_head,
             "remote_task_head": remote_task_head,
             "worktree_registered": worktree_registered,
+            "content_digest": content_digest,
         },
     )
     return ObservedExecution(

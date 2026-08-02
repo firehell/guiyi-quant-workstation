@@ -13,7 +13,7 @@
 - Issue #109; Lane 2; branch `feature/AI-TEAM-005-local-orchestrator`; base `origin/develop@ea16e4f2fcd9f025dba0b66545ef9b4e63ad8e15`.
 - Preserve byte-compatible `charter` and `plan`; do not change `ExecutionPlanV1` schema.
 - `observe`, `next`, and `apply` without `--apply` are read-only and create no runtime workspace.
-- External Gates identify Lane 3 and permanently block generic apply.
+- Frozen dispatch plus mandatory External Gates identify Lane 3 and permanently block generic apply.
 - No business code, data/DB, daemon, GitHub inspection/merge controller, `main`, release, Runtime, live, or notification change.
 
 ---
@@ -22,12 +22,12 @@
 
 - [x] Add RED tests using temporary Git repositories and a complete fake at the Git executable boundary.
 - [x] Reconstruct exact base, task refs, registered worktree identity, HEAD, dirty state, committed/staged/unstaged/untracked paths, and dual-develop ancestry.
-- [x] Compute `state_digest` from canonical material facts excluding the digest field itself.
+- [x] Compute `state_digest` from canonical material facts excluding the digest field itself, including index and changed-file content fingerprints.
 - [x] Keep all observation commands local, fixed argv, `shell=False`, `GIT_OPTIONAL_LOCKS=0`, and free of fetch/network/writes.
 
 ### Task 2: Deterministic one-step transition policy
 
-- [x] Add RED tests for base drift, scope drift, Lane 3, replay, interrupted integrate, cleanup ancestry, and recursive `/**` allowlists.
+- [x] Add RED tests for base drift, scope drift, forbidden-over-allowed precedence, controller self-modification, Lane 3, replay, interrupted/concurrent integrate, cleanup ancestry, and recursive `/**` allowlists.
 - [x] Derive deterministic transition IDs from plan digest, action, and before-state digest.
 - [x] Permit only `task-create`, `local-integrate-to-draft-pr`, and `local-cleanup-after-merge-observed` as executable actions.
 - [x] Return non-executable wait proposals for implementation, AI-TEAM-007/develop merge, human Gate, and closed states.
@@ -36,8 +36,8 @@
 
 - [x] Generate one fixed `task-worktree.sh` argv command per executable action and select its exact cwd.
 - [x] Execute exactly one subprocess and persist only command digest, exit code, result, and stable error type—never raw stdout/stderr or environment values.
-- [x] Store plan/proposal/receipt/log JSON atomically under `.ai/lean-matrix/<plan-digest>/` with content-bound filenames.
-- [x] Reject cross-plan evidence, tamper, incomplete pairs, duplicate actions, state mismatch, and successful exit without an observed state change.
+- [x] Atomically claim before execution, then store plan/proposal/receipt/log JSON under `.ai/lean-matrix/<plan-digest>/` with content-bound filenames.
+- [x] Reject symlink escape, cross-plan evidence, rehashed contract forgery, tamper, incomplete attempts, duplicate actions, state mismatch, and successful exit without an observed state change.
 
 ### Task 4: CLI, policy, and delivery
 
