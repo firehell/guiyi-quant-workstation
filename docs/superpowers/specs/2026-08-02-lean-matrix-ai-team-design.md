@@ -1,7 +1,7 @@
 # 归一量化精简矩阵式 AI 研发团队设计
 
 - 日期：2026-08-02
-- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 merged through PR #101 at `develop@7a668eeb`. Phase 3 is active under Issue #102 and is not merged; its planned task branch is `research/AI-TEAM-003-phase3-status-consistency-pilot`, and it is implemented on that task branch only after tracked evidence exists. Task 05 later merged independently through PR #100 and does not count retroactively as Phase 3.
+- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 merged through PR #101 at `develop@7a668eeb`; Phase 3 merged through PR #103 at `develop@c59cda24`, and post-merge engineering CI passed. Task 05 merged independently through PR #100 and does not count retroactively as Phase 3. Phase 4 remains `NO_GO_PENDING_SEPARATE_APPROVAL`; Phase 5 remains `NO_GO`.
 - 适用项目：`firehell/guiyi-quant-workstation`
 - 设计范围：研发组织模型、专家角色、任务路由、自治状态机、权限边界和最小落地方式
 
@@ -1010,7 +1010,7 @@ Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 merged through PR #
 
 ### Phase 3：新的普通可逆工程试运行
 
-Phase 3 is active under Issue #102 and is not merged. Its planned task branch is `research/AI-TEAM-003-phase3-status-consistency-pilot`; it is implemented on its task branch only after tracked evidence exists. This does not authorize Phase 4 or Phase 5, `main`, Runtime, data writes, notifications, release, or deployment.
+Phase 3 merged through PR #103 at `develop@c59cda24`; task head `0d84c9ab512c7ca03eb8c4b10831e041a41dd249` is reachable from merge `c59cda243c141d68ae006c6879da5ce5822a0044`, and post-merge engineering CI passed. The controlled trial ran from Issue #102 on branch `research/AI-TEAM-003-phase3-status-consistency-pilot` with tracked evidence from task start. This does not authorize Phase 4 or Phase 5, `main`, Runtime, data writes, notifications, release, or deployment.
 
 - 必须从一个新的独立普通可逆任务开始，创建新的 Issue 和 task worktree，并在实现开始前冻结 Charter；
 - 从任务开始记录 Charter 指标，并保持实现与最终 Review 的上下文分离；

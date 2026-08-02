@@ -25,23 +25,37 @@ TRIAL_REPORT_HEADINGS = (
 METRIC_FIELDS = ("Metric name", "Value", "Provenance", "Evidence source")
 METRIC_PROVENANCE_STATES = {"MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE"}
 IMMUTABLE_BASE = "7a668eeb802b50d140591b75895398550f6c3ae8"
+PHASE3_TASK_HEAD = "0d84c9ab512c7ca03eb8c4b10831e041a41dd249"
+PHASE3_MERGE_SHA = "c59cda243c141d68ae006c6879da5ce5822a0044"
+PHASE3_MERGED_AT = "2026-08-02T09:40:01Z"
 CHARTER_URL = "https://github.com/firehell/guiyi-quant-workstation/issues/102"
+PHASE3_PR_URL = "https://github.com/firehell/guiyi-quant-workstation/pull/103"
+POST_MERGE_CI_URL = (
+    "https://github.com/firehell/guiyi-quant-workstation/actions/runs/30742215606"
+)
 CHECKPOINT_1_URL = f"{CHARTER_URL}#issuecomment-5156225160"
 CHECKPOINT_2_URL = f"{CHARTER_URL}#issuecomment-5156261324"
 CHECKPOINT_4_URL = f"{CHARTER_URL}#issuecomment-5156354955"
+CHECKPOINT_6_URL = f"{CHARTER_URL}#issuecomment-5156412693"
+CHECKPOINT_8_URL = f"{CHARTER_URL}#issuecomment-5156427389"
+CHARTER_TO_DEVELOP_SOURCE = (
+    f"{CHARTER_URL} createdAt 2026-08-02T07:22:32Z; "
+    f"{PHASE3_PR_URL} mergedAt {PHASE3_MERGED_AT}"
+)
 FINAL_SNAPSHOT_METRICS = {
-    "Logical sessions through current known checkpoint": "9 before fix round 2 resume",
+    "Logical sessions through current known checkpoint": "11",
     "User interruptions through current known checkpoint": "0",
-    "Independent review-fix rounds through current known checkpoint": "2 opened",
+    "Independent review-fix rounds through current known checkpoint": "2",
     "Charter-to-local-complete timing through Task 2": "NOT_MEASURABLE",
+    "Charter-to-develop cycle": "2h17m29s",
     "Three-round stop status": "NOT_TRIGGERED",
-    "Changed-path isolation": (
-        "only docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md "
-        "and tests/engineering/test_lean_matrix_phase3_evidence.py"
-    ),
+    "Changed-path isolation": "4 tracked paths in PR #103",
 }
 RECOGNIZED_MEASURED_SOURCES = {
     CHARTER_URL,
+    PHASE3_PR_URL,
+    POST_MERGE_CI_URL,
+    CHARTER_TO_DEVELOP_SOURCE,
     f"Git repository exact base `{IMMUTABLE_BASE}`",
     "Canonical repository design `docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`",
     "Git repository exact commit range "
@@ -135,10 +149,10 @@ def _assert_trial_report_contract(report: str) -> None:
     for field in ("Issue: #102", f"Base SHA: `{IMMUTABLE_BASE}`", "Source type: controlled_trial"):
         assert field in identity
     for field in (
-        "PR: PENDING_EXTERNAL_GITHUB_EXACT_HEAD",
-        "Task HEAD: PENDING_EXTERNAL_GITHUB_EXACT_HEAD",
-        "Merge SHA: PENDING_EXTERNAL_GITHUB_EXACT_HEAD",
-        "Merge time: PENDING_EXTERNAL_GITHUB_EXACT_HEAD",
+        "PR: #103",
+        f"Task HEAD: `{PHASE3_TASK_HEAD}`",
+        f"Merge SHA: `{PHASE3_MERGE_SHA}`",
+        f"Merge time: {PHASE3_MERGED_AT}",
     ):
         assert field in identity
     assert "Classification: controlled_trial" in classification
@@ -159,12 +173,12 @@ def _assert_trial_report_contract(report: str) -> None:
         "Observed specialist count: 0",
         "Observed context separation: implementation and independent review are separate",
         "Start timestamp: 2026-08-02T07:22:32Z",
-        "Merge timestamp: NOT_MEASURABLE",
-        "Review-fix rounds: 2 opened",
-        "Total agent sessions: 9 before fix round 2 resume",
+        f"Merge timestamp: {PHASE3_MERGED_AT}",
+        "Review-fix rounds: 2",
+        "Total agent sessions: 11",
         "User interruption count: 0",
         "Observation provenance: MANUALLY_RECORDED",
-        f"Observation evidence: human observation: Issue #102 checkpoint 4 ({CHECKPOINT_4_URL})",
+        f"Observation evidence: human observation: Issue #102 checkpoint 8 ({CHECKPOINT_8_URL})",
         "Current process checkpoints:",
     ):
         assert field in observed
@@ -181,30 +195,26 @@ def _assert_trial_report_contract(report: str) -> None:
     for metric_name in (
         "Task 1 independent review result",
         "Task 2 independent review result",
-        "Final independent reviewer result at versioned task snapshot",
-        "Final GitHub evidence required after versioned snapshot",
+        "Final independent reviewer result",
+        "Final PR exact-head and merge result",
+        "Post-merge engineering CI",
     ):
         _metric_fields(metrics, metric_name)
     assert "Spec PASS; Quality APPROVED; no findings" in metrics
-    assert "0 Critical; 3 Important; 2 Minor; Spec FAIL; Quality CHANGES_REQUIRED; Draft PR NO" in metrics
+    assert "0 Critical; 0 Important; 0 Minor; Spec PASS; Quality APPROVED; Draft PR YES" in metrics
     assert "Three-round stop status" in metrics
     assert "NO_GO_PENDING_SEPARATE_APPROVAL" in metrics
     assert "NO_GO" in metrics
-    assert "Draft PR evidence comment" in metrics
-    assert "final logical-session count" in metrics
-    assert "final review-fix count" in metrics
-    assert "final reviewer result" in metrics
-    assert "PR number" in metrics
-    assert "exact head" in metrics
-    assert "CI" in metrics
-    assert "merge facts" in metrics
+    assert PHASE3_PR_URL in metrics
+    assert POST_MERGE_CI_URL in metrics
+    assert CHARTER_TO_DEVELOP_SOURCE in metrics
     assert "Phase 4: NO_GO_PENDING_SEPARATE_APPROVAL" in gate
     assert "Phase 5: NO_GO" in gate
     assert "Gate evidence:" in gate
     assert "cannot authorize Phase 4" in findings
     assert "workflow mechanics" in findings
     assert "Unmeasurable or manually recorded observations:" in findings
-    assert "Decision: controlled-trial evidence only" in decision
+    assert "Decision: Phase 3 controlled trial merged and post-merge verified" in decision
     assert "Required human decision or Gate:" in decision
     assert "NO_GO_PENDING_SEPARATE_APPROVAL" in decision
     assert "NO_GO" in decision
@@ -212,6 +222,8 @@ def _assert_trial_report_contract(report: str) -> None:
     assert "Phase 2 merged through PR #101 at `develop@7a668eeb`" in report
     assert "SDD ledger" not in report
     assert "GitHub Issue #102 Charter/checkpoints" not in report
+    assert "PENDING_EXTERNAL_GITHUB_EXACT_HEAD" not in report
+    assert "remain external pending" not in report
     assert not re.search(
         r"\b(?:Phase 4|Phase 5|Runtime|main|release|data writes|notifications|deployment)"
         r"\s+is\s+authorized\b",
@@ -242,11 +254,9 @@ def test_phase_three_report_rejects_metric_and_authority_mutations() -> None:
             "Phase 2 remains pending Draft PR exact-head review, CI, and merge",
             1,
         ),
-        report.replace(
-            "- Value: 9 before fix round 2 resume",
-            "- Value: 10 before fix round 2 resume",
-            1,
-        ),
+        report.replace("- Value: 11", "- Value: 12", 1),
+        report.replace(PHASE3_MERGE_SHA, "0" * 40, 1),
+        report.replace("- Value: 2h17m29s", "- Value: 2h17m28s", 1),
         *(
             f"{report}\n{target} is authorized.\n"
             for target in (
@@ -260,8 +270,8 @@ def test_phase_three_report_rejects_metric_and_authority_mutations() -> None:
             _assert_trial_report_contract(mutated_report)
 
 
-def test_phase_status_records_the_merged_phase_two_and_active_phase_three_pilot() -> None:
-    """A stale pending-PR status must not hide Phase 2's merged evidence."""
+def test_phase_status_records_the_merged_and_verified_phase_three_pilot() -> None:
+    """The canonical status must not retain Phase 3's pre-merge snapshot."""
     design = _design()
     phased_implementation = _section(design, "19. 分阶段实施")
 
@@ -269,8 +279,9 @@ def test_phase_status_records_the_merged_phase_two_and_active_phase_three_pilot(
     assert "remains pending Draft PR exact-head review, CI, and merge" not in design
     assert "Issue #102" in design
     assert PLANNED_BRANCH in design
-    assert "Phase 3 is active under Issue #102 and is not merged" in design
-    assert "implemented on its task branch only after tracked evidence exists" in design
+    assert "Phase 3 merged through PR #103 at `develop@c59cda24`" in design
+    assert "post-merge engineering CI passed" in design
+    assert "Phase 3 is active under Issue #102 and is not merged" not in design
     assert "PR #100 不能追认为该试运行" in phased_implementation
 
 
