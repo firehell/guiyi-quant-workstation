@@ -90,6 +90,7 @@ const foundationValidation = ref<BacktestValidationContext | null>(null)
 const foundationValidationError = ref<string | null>(null)
 const foundationLineage = ref<ReviewFormalLineage | null>(null)
 const foundationLineageError = ref<string | null>(null)
+const foundationExactBarsVerified = ref(false)
 const bars = ref<BarData[]>([])
 const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
@@ -114,6 +115,7 @@ const foundationContext = computed<ReviewFoundationContext>(() =>
     },
     lineage: foundationLineage.value,
     lineage_error: foundationLineageError.value,
+    backend_exact_bars_verified: foundationExactBarsVerified.value,
     validation_context: foundationValidation.value,
     validation_error: foundationValidationError.value,
   }),
@@ -434,12 +436,14 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
   klineError.value = null
   foundationLineage.value = null
   foundationLineageError.value = null
+  foundationExactBarsVerified.value = false
   bars.value = []
   klineQueryItems.value = []
   try {
     const result = await getReviewBars(review.id)
     if (!isCurrentReviewSelection(requestId)) return
     foundationLineage.value = result.lineage
+    foundationExactBarsVerified.value = result.lineage.schema_version === 'review_canonical_lineage_v1'
     klineQueryItems.value = lineageDebugItems(result.lineage)
     bars.value = result.bars || []
     if (bars.value.length === 0) klineError.value = '冻结 lineage 的精确交易窗口未返回K线数据'
@@ -465,6 +469,7 @@ function clearSelectedReviewState() {
   foundationValidationError.value = null
   foundationLineage.value = null
   foundationLineageError.value = null
+  foundationExactBarsVerified.value = false
   bars.value = []
   klineQueryItems.value = []
   activeMarkerId.value = null

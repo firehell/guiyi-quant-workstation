@@ -93,6 +93,8 @@ export interface ReviewFoundationInput {
   lineage?: ReviewFoundationLineageLike | null
   lineage_error?: string | null
   lineage_status_hint?: LineageDisplayStatus | null
+  /** Set only after `/api/reviews/{id}/bars` returns a canonical exact-bars response. */
+  backend_exact_bars_verified?: boolean
   validation_context?: BacktestValidationContext | null
   validation_error?: string | null
 }

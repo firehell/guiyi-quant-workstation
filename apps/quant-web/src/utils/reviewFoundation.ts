@@ -11,8 +11,8 @@ function unavailable<T = string>(reason: string): FoundationField<T> {
   return { status: 'unavailable', value: null, reason }
 }
 
-function available<T = string>(value: T): FoundationField<T> {
-  return { status: 'available', value, reason: null }
+function available<T = string>(value: T, reason: string | null = null): FoundationField<T> {
+  return { status: 'available', value, reason }
 }
 
 function warning<T = string>(value: T | null, reason: string): FoundationField<T> {
@@ -92,6 +92,17 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
         canonicalInput.request.frequency,
       ].join(' · ')
     : null
+  const exactBarsReason = 'verified by successful backend exact-bars response; browser digest recomputation is not used'
+  const canonicalInputField = canonicalRequest
+    ? input.backend_exact_bars_verified
+      ? available(canonicalRequest, exactBarsReason)
+      : warning(canonicalRequest, parsedCanonicalInput.reason)
+    : unavailable(parsedCanonicalInput.reason)
+  const canonicalDigestField = canonicalInput?.digest
+    ? input.backend_exact_bars_verified
+      ? available(canonicalInput.digest, exactBarsReason)
+      : warning(canonicalInput.digest, parsedCanonicalInput.reason)
+    : unavailable(parsedCanonicalInput.reason)
 
   const policyStatus = readString(report?.indicator_policy_status)
   const policySnapshot = report?.indicator_policy_snapshot
@@ -164,8 +175,10 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
     lineageField = warning('warning', 'lineage warning')
   } else if (input.lineage_status_hint === 'unavailable') {
     lineageField = unavailable('lineage unavailable')
+  } else if (canonicalInput?.digest && input.backend_exact_bars_verified) {
+    lineageField = available('ready', exactBarsReason)
   } else if (canonicalInput?.digest) {
-    lineageField = available('ready')
+    lineageField = warning('warning', parsedCanonicalInput.reason)
   } else if (input.lineage_status_hint === 'ready') {
     lineageField = available('ready')
   } else {
@@ -177,12 +190,8 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
     strategy_version: strategyVersion ? available(strategyVersion) : unavailable('strategy_version missing'),
     indicator_policy_status: indicatorPolicyStatus,
     indicator_policy_summary: indicatorPolicySummary,
-    canonical_input_identity: canonicalRequest
-      ? available(canonicalRequest)
-      : unavailable(parsedCanonicalInput.reason),
-    canonical_input_digest: canonicalInput?.digest
-      ? available(canonicalInput.digest)
-      : unavailable(parsedCanonicalInput.reason),
+    canonical_input_identity: canonicalInputField,
+    canonical_input_digest: canonicalDigestField,
     signal_bar: signalBar ? available(signalBar) : unavailable('entry_signal_time missing'),
     next_bar_fill: nextBarFill,
     cost_model: costModel ? available(costModel) : unavailable('cost_model_version missing'),

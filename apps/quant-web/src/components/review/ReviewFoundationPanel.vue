@@ -50,6 +50,7 @@ const hardRejectAlert = computed(() => {
 })
 
 const lineageUnavailable = computed(() => props.context?.lineage_status.status === 'unavailable')
+const lineageUnverified = computed(() => props.context?.lineage_status.status === 'warning')
 
 function tagType(field: FoundationField): 'default' | 'success' | 'warning' | 'error' {
   if (field.status === 'available') return 'success'
@@ -78,6 +79,9 @@ function tagType(field: FoundationField): 'default' | 'success' | 'warning' | 'e
     </NAlert>
     <NAlert v-if="context && lineageUnavailable" type="warning" :bordered="false" style="margin-bottom: 8px" title="Lineage unavailable">
       {{ foundationFieldLabel(context.lineage_status) }}
+    </NAlert>
+    <NAlert v-else-if="context && lineageUnverified" type="warning" :bordered="false" style="margin-bottom: 8px" title="Canonical shape valid only">
+      {{ foundationFieldLabel(context.lineage_status) }} Browser digest recomputation is not performed.
     </NAlert>
 
     <NDescriptions v-if="context" label-placement="left" size="small" :column="1" bordered>
