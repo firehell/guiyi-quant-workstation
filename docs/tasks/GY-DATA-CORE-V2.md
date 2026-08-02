@@ -138,7 +138,7 @@ lineage，不再逐项调度。
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 schema 已在 Task 04 Gate 下升级到 0027 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
 | 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
-| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | independent review fix round in progress；inventory 仅为受限证据，不授权 rebuild/delete；不得跳过 Task 05 直接进入 Task 06 |
+| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | independent review fix round in progress；DB relation/source-scan false-zero 修复仅存在于 task branch，仍需 fresh Review/CI；inventory 不授权 rebuild/delete；不得跳过 Task 05 直接进入 Task 06 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | pending / migration + Runtime + deletion Gate |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |

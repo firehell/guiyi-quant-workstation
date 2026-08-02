@@ -51,8 +51,9 @@ packet、不执行 preflight/apply/legacy Shadow，也不删除旧行情、Profi
 report、evidence 或 legacy reader。
 
 Task 05 的 Backtest / Signal / Review canonical consumer 切换仍在独立 task worktree 的 independent
-review fix round 中。derived/reference inventory 的第一版被 Review 阻断，当前只允许 fail-closed
-修复与测试；不得把此前的 branch-local 记录解释为完成、合入 `develop` 或通过 Review。真实
+review fix round 中。derived/reference inventory 已在该 fix round 补充数据库 active-relation
+证据和扩展 source/doc scan，但仍须 fresh independent Review/CI；不得把 branch-local 修复或测试
+解释为完成、合入 `develop` 或通过 Review。真实
 PostgreSQL/data root 只读盘点仍是 external Gate。
 
 ## 数据核心任务状态
@@ -64,7 +65,7 @@ PostgreSQL/data root 只读盘点仍是 external Gate。
 | GY-DATA-CORE-V2 Task 02 | completed on develop | PR #80；Catalog/Manifest/Gap schema 与隔离 migration 验证；生产 revision 已是 0027 |
 | GY-DATA-CORE-V2 Task 03 | completed on develop | PR #82；staging、quality 与 canonical writer |
 | GY-DATA-CORE-V2 Task 04 | completed on develop（本 closeout commit 可从 develop 到达时生效） | Canonical 自身 Gate、统一读取与普通消费者回归；legacy Shadow 不再是准入 Gate |
-| GY-DATA-CORE-V2 Task 05 | review fix round in progress | inventory independent review has unresolved Critical findings; earlier test results are historical and not final acceptance |
+| GY-DATA-CORE-V2 Task 05 | review fix round in progress | DB relation/source-scan false-zero fixes are branch-local; fresh independent Review/CI are still required |
 | GY-DATA-CORE-V2 Task 06～08 | pending | live/EOD、其他品种/受控清理、release/Runtime 分别保留独立 Gate |
 
 ## 未关闭 Gate

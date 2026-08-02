@@ -56,7 +56,9 @@ _CATEGORY_TABLES = {
     "profile_binding_legacy_lineage": ("data_profiles", "profile_active_bindings"),
     "report_14_15_references": (),
 }
-_TRUSTED_METADATA_TABLES = ("data_gaps", "main_contract_map", "market_datasets", "market_partitions")
+_TRUSTED_METADATA_TABLES = (
+    "data_download_tasks", "data_gaps", "data_quality_reports", "main_contract_map", "market_datasets", "market_partitions",
+)
 _REVIEW_METADATA_TABLES = ("market_data_files",)
 _ALLOWED_TABLES = tuple(sorted({table for tables in _CATEGORY_TABLES.values() for table in tables} | set(_TRUSTED_METADATA_TABLES) | set(_REVIEW_METADATA_TABLES)))
 _MARKET_DATA_FILE_COLUMNS = (
@@ -65,8 +67,29 @@ _MARKET_DATA_FILE_COLUMNS = (
 )
 _CATALOG_DATASET_COLUMNS = ("id", "provider", "dataset_kind", "symbol", "contract_or_series", "frequency", "adjustment", "schema_version")
 _CATALOG_PARTITION_COLUMNS = ("id", "dataset_id", "file_uri", "manifest_uri", "manifest_digest", "checksum", "manifest_version")
-_REFERENCE_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".toml", ".sql", ".html", ".js", ".txt", ".sh", ".ts", ".tsx", ".vue"}
-_IGNORED_DIRS = {".git", ".venv", "node_modules", "dist", "__pycache__", ".superpowers"}
+_REFERENCE_SUFFIXES = {
+    ".cjs", ".conf", ".css", ".diff", ".example", ".html", ".ini", ".js", ".json", ".mako", ".md", ".mjs",
+    ".mts", ".py", ".rules", ".service", ".sh", ".sql", ".target", ".template", ".toml", ".ts", ".tsx", ".txt",
+    ".vue", ".yaml", ".yml",
+}
+_REFERENCE_BASENAMES = {".gitignore", ".python-version", "Dockerfile", "GNUmakefile", "Makefile", "README"}
+_NON_REFERENCE_TYPE_REASONS = {
+    ".csv": "tabular data asset; not executable source or documentation",
+    ".lock": "generated dependency lock; not a consumer implementation surface",
+    ".parquet": "binary data asset; inventoried through the data-root/catalog path",
+    ".pdf": "binary document; not safely searchable as UTF-8 source text",
+    ".png": "binary image asset",
+    ".pyc": "compiled Python artifact",
+    ".svg": "image asset; not an executable consumer surface",
+    ".xlsx": "binary spreadsheet asset",
+}
+_NON_REFERENCE_BASENAME_REASONS = {
+    ".git": "worktree metadata pointer",
+    ".gitkeep": "empty directory placeholder",
+}
+_IGNORED_DIRS = {
+    ".git", ".pytest_cache", ".ruff_cache", ".superpowers", ".venv", "__pycache__", "dist", "node_modules",
+}
 _SELF_REFERENCE_PATHS = {
     "scripts/derived_reference_inventory.py",
     "services/quant-api/app/services/derived_reference_inventory.py",
@@ -95,6 +118,19 @@ class _ReferenceRule:
     reason: str
 
 
+@dataclass(frozen=True)
+class _RelationRule:
+    rule: str
+    table: str
+    columns: tuple[str, ...]
+    sql_predicate: str
+    predicate: str
+    parameters: tuple[Any, ...]
+    target_columns: tuple[str, ...]
+    status: str
+    reason: str
+
+
 _REFERENCE_RULES = {
     "indicator_cache": (_ReferenceRule(re.compile(r"\b(?:indicator|cache)\b", re.IGNORECASE), "active indicator/cache reference"),),
     "backtest": (_ReferenceRule(re.compile(r"\b(?:backtest|BacktestService)\b", re.IGNORECASE), "active backtest reference"),),
@@ -105,6 +141,157 @@ _REFERENCE_RULES = {
     "profile_binding_legacy_lineage": (_ReferenceRule(re.compile(r"\b(?:DataProfile|ActiveBinding|profile|binding|legacy[ _-]?lineage)\b", re.IGNORECASE), "legacy compatibility reference"),),
     "report_14_15_references": (_ReferenceRule(re.compile(r"\breport(?:[_\s-]*(?:id)?[_\s:=]*)?(?:14|15)(?:\b|_)", re.IGNORECASE), "report 14/15 historical reference"),),
 }
+
+
+_RELATION_RULES = (
+    _RelationRule(
+        "active_profile_binding", "profile_active_bindings",
+        ("id", "profile_id", "market_data_file_id", "data_version", "binding_status"),
+        '"binding_status" = {p}', "binding_status = active", ("active",),
+        ("profile_id", "market_data_file_id", "data_version"), "active",
+        "active binding still targets legacy profile/file/version lineage",
+    ),
+    _RelationRule(
+        "unknown_profile_binding_status", "profile_active_bindings",
+        ("id", "profile_id", "market_data_file_id", "data_version", "binding_status"),
+        '("binding_status" IS NULL OR "binding_status" NOT IN ({p}, {p}))',
+        "binding_status is null or outside active/superseded", ("active", "superseded"),
+        ("profile_id", "market_data_file_id", "data_version"), "review_required",
+        "unrecognized binding status cannot prove a relationship inactive",
+    ),
+    _RelationRule(
+        "quality_report_file_reference", "data_quality_reports", ("id", "file_id"),
+        '"file_id" IS NOT NULL', "file_id is not null", (), ("file_id",), "active",
+        "quality evidence still references a market data file row",
+    ),
+    _RelationRule(
+        "market_file_download_task_reference", "market_data_files", ("id", "task_id"),
+        '"task_id" IS NOT NULL', "task_id is not null", (), ("task_id",), "review_required",
+        "market data file lineage still references a download task",
+    ),
+    _RelationRule(
+        "active_download_task", "data_download_tasks", ("id", "status"),
+        '"status" IN ({p}, {p}, {p})', "status in pending/running/retrying", ("pending", "running", "retrying"),
+        (), "active", "download task remains active",
+    ),
+    _RelationRule(
+        "unknown_download_task_status", "data_download_tasks", ("id", "status"),
+        '("status" IS NULL OR "status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}))',
+        "status is null or outside known active/inactive values",
+        ("pending", "running", "retrying", "completed", "success", "failed", "cancelled"), (), "review_required",
+        "unrecognized download status cannot prove the task inactive",
+    ),
+    *tuple(
+        _RelationRule(
+            f"{table.removesuffix('s')}_legacy_relation", table,
+            ("id", "profile_id", "market_data_file_id", "binding_snapshot", "status"),
+            '("profile_id" IS NOT NULL OR "market_data_file_id" IS NOT NULL OR "binding_snapshot" IS NOT NULL '
+            'OR "status" IN ({p}, {p}, {p}))',
+            "legacy profile/file/binding reference or active status", ("pending", "running", "retrying"),
+            ("profile_id", "market_data_file_id"), "review_required",
+            "backtest lineage or active execution still references legacy surfaces",
+        )
+        for table in ("backtest_tasks", "backtest_reports")
+    ),
+    *tuple(
+        _RelationRule(
+            f"unknown_{table.removesuffix('s')}_status", table, ("id", "status"),
+            '("status" IS NULL OR "status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}))',
+            "status is null or outside known active/inactive values",
+            ("pending", "running", "retrying", "success", "completed", "partial_failed", "failed", "cancelled"),
+            (), "review_required", "unrecognized backtest status cannot prove the row inactive",
+        )
+        for table in ("backtest_tasks", "backtest_reports")
+    ),
+    *tuple(
+        _RelationRule(
+            f"{table.removesuffix('s')}_report_reference", table, ("id", "report_id"),
+            '"report_id" IS NOT NULL', "report_id is not null", (), ("report_id",), "review_required",
+            "backtest child evidence still references a report row",
+        )
+        for table in ("backtest_trades", "backtest_orders")
+    ),
+    _RelationRule(
+        "strategy_signal_legacy_or_active", "strategy_signals",
+        ("id", "profile_id", "market_data_file_id", "status", "is_active"),
+        '("profile_id" IS NOT NULL OR "market_data_file_id" IS NOT NULL OR "is_active" = {p} '
+        'OR "status" IN ({p}, {p}, {p}))',
+        "legacy profile/file reference or active signal status", (True, "pending", "active", "triggered"),
+        ("profile_id", "market_data_file_id"), "review_required",
+        "signal lineage or active status still references legacy surfaces",
+    ),
+    _RelationRule(
+        "unknown_strategy_signal_active_state", "strategy_signals", ("id", "is_active"),
+        '"is_active" IS NULL', "is_active is null", (), (), "review_required",
+        "missing active state cannot prove the signal inactive",
+    ),
+    _RelationRule(
+        "signal_event_legacy_or_active", "signal_events",
+        ("id", "profile_id", "market_data_file_id", "lifecycle_status"),
+        '("profile_id" IS NOT NULL OR "market_data_file_id" IS NOT NULL OR "lifecycle_status" IN ({p}, {p}, {p}, {p}))',
+        "legacy profile/file reference or active lifecycle", ("created", "pending", "active", "new"),
+        ("profile_id", "market_data_file_id"), "review_required",
+        "signal event lineage or lifecycle remains active",
+    ),
+    _RelationRule(
+        "unknown_signal_event_lifecycle", "signal_events", ("id", "lifecycle_status"),
+        '("lifecycle_status" IS NULL OR "lifecycle_status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}))',
+        "lifecycle is null or outside known active/inactive values",
+        ("created", "pending", "active", "new", "viewed", "closed", "archived"), (), "review_required",
+        "unrecognized signal event lifecycle cannot prove the event inactive",
+    ),
+    _RelationRule(
+        "review_note_source_reference", "review_notes", ("id", "source_type", "source_id"),
+        '"source_id" IS NOT NULL', "source_id is not null", (), ("source_type", "source_id"), "review_required",
+        "review evidence still references a consumer row",
+    ),
+    _RelationRule(
+        "review_attachment_reference", "review_attachments", ("id", "review_id"),
+        '"review_id" IS NOT NULL', "review_id is not null", (), ("review_id",), "review_required",
+        "review attachment still references a review row",
+    ),
+    _RelationRule(
+        "active_review_tag", "review_tags", ("id", "is_active"),
+        '"is_active" = {p}', "is_active = true", (True,), (), "review_required",
+        "active review tag remains a surviving consumer dependency",
+    ),
+    _RelationRule(
+        "signal_scan_legacy_or_active", "signal_scan_tasks",
+        ("id", "profile_id", "market_data_file_id", "status"),
+        '("profile_id" IS NOT NULL OR "market_data_file_id" IS NOT NULL OR "status" IN ({p}, {p}, {p}))',
+        "legacy profile/file reference or active scan status", ("pending", "running", "retrying"),
+        ("profile_id", "market_data_file_id"), "review_required",
+        "signal scan lineage or execution remains active",
+    ),
+    _RelationRule(
+        "unknown_signal_scan_status", "signal_scan_tasks", ("id", "status"),
+        '("status" IS NULL OR "status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}))',
+        "status is null or outside known active/inactive values",
+        ("pending", "running", "retrying", "completed", "partial_failed", "failed", "cancelled"),
+        (), "review_required", "unrecognized signal scan status cannot prove the task inactive",
+    ),
+    _RelationRule(
+        "signal_notification_reference", "signal_notifications", ("id", "event_id", "signal_id", "status"),
+        '("event_id" IS NOT NULL OR "signal_id" IS NOT NULL OR "status" IN ({p}, {p}, {p}, {p}))',
+        "event/signal reference or pending notification status", ("pending", "retrying", "retry_pending", "sending"),
+        ("event_id", "signal_id"), "review_required",
+        "notification evidence or delivery remains linked to signal consumers",
+    ),
+    _RelationRule(
+        "unknown_signal_notification_status", "signal_notifications", ("id", "status"),
+        '("status" IS NULL OR "status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}))',
+        "status is null or outside known active/inactive values",
+        ("pending", "retrying", "retry_pending", "sending", "sent", "failed", "cancelled"),
+        (), "review_required", "unrecognized notification status cannot prove delivery inactive",
+    ),
+    *tuple(
+        _RelationRule(
+            f"nonempty_{table}", table, ("id",), "1 = 1", "table contains rows", (), (), "review_required",
+            "non-empty live/EOD/sample evidence requires explicit retirement review",
+        )
+        for table in _CATEGORY_TABLES["live_eod_sample"]
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -157,6 +344,7 @@ def build_derived_reference_inventory(
         )
     diagnostics = [*database["diagnostics"], *filesystem["diagnostics"], *reference_scan["diagnostics"]]
     status = "complete" if database["available"] and filesystem["data_root_exists"] and repo_root.is_dir() and not diagnostics and not filesystem["truncated"] and not reference_scan["truncated"] else "incomplete"
+    active_relation_reference_count = database.get("active_relation_reference_count", 0)
     return {
         "schema_version": SCHEMA_VERSION,
         "command": COMMAND,
@@ -173,7 +361,11 @@ def build_derived_reference_inventory(
         "reference_scan": reference_scan,
         "categories": categories,
         "status": status,
-        "task07_zero_active_reference_eligible": status == "complete" and all(item["active_reference_status"] == "zero_active_references" for item in categories),
+        "task07_zero_active_reference_eligible": (
+            status == "complete"
+            and active_relation_reference_count == 0
+            and all(item["active_reference_status"] == "zero_active_references" for item in categories)
+        ),
         "diagnostic_count": len(diagnostics),
     }
 
@@ -198,7 +390,10 @@ def _read_database_inventory(
     canonical_root: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if connection is None:
-        return {"available": False, "dialect": None, "tables": [], "diagnostics": [{"code": "DATABASE_NOT_CONFIGURED"}]}, []
+        return {
+            "available": False, "dialect": None, "tables": [], "relation_references": [],
+            "active_relation_reference_count": 0, "diagnostics": [{"code": "DATABASE_NOT_CONFIGURED"}],
+        }, []
     dialect = _dialect_name(connection)
     if dialect not in {"sqlite", "postgresql"}:
         raise ValueError(f"unsupported database dialect: {dialect}")
@@ -224,6 +419,13 @@ def _read_database_inventory(
             inventory.append(record)
             if limit_hit:
                 diagnostics.append({"code": "ID_LIMIT_EXCEEDED", "table": table})
+        relation_references = _read_relation_references(
+            connection,
+            dialect=dialect,
+            table_columns=table_columns,
+            max_ids=max_ids,
+            diagnostics=diagnostics,
+        )
         market_data_file_classifications = _classify_market_data_files(
             connection,
             table_columns=table_columns,
@@ -238,6 +440,10 @@ def _read_database_inventory(
             "available": True,
             "dialect": dialect,
             "tables": inventory,
+            "relation_references": relation_references,
+            "active_relation_reference_count": sum(
+                item["count"] for item in relation_references if item["status"] in {"active", "review_required"}
+            ),
             "market_data_file_classifications": market_data_file_classifications,
             "diagnostics": diagnostics,
         }, inventory
@@ -246,12 +452,86 @@ def _read_database_inventory(
             "available": False,
             "dialect": dialect,
             "tables": inventory,
+            "relation_references": [],
+            "active_relation_reference_count": 0,
             "market_data_file_classifications": [],
             "diagnostics": [*diagnostics, {"code": "DATABASE_SCAN_ERROR"}],
         }, inventory
     finally:
         if dialect == "postgresql":
             connection.rollback()
+
+
+def _read_relation_references(
+    connection: Any,
+    *,
+    dialect: str,
+    table_columns: dict[str, set[str]],
+    max_ids: int,
+    diagnostics: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Evaluate explicit DB relationship rules with exact counts and bounded identifiers."""
+
+    placeholder = "?" if dialect == "sqlite" else "%s"
+    records: list[dict[str, Any]] = []
+    for rule in _RELATION_RULES:
+        columns = table_columns.get(rule.table)
+        if columns is None:
+            diagnostics.append({"code": "RELATION_TABLE_MISSING", "table": rule.table, "rule": rule.rule})
+            records.append(_incomplete_relation_record(rule, "relation table is missing"))
+            continue
+        missing = sorted(set(rule.columns) - columns)
+        if missing:
+            diagnostics.append({"code": "RELATION_COLUMNS_MISSING", "table": rule.table, "rule": rule.rule})
+            records.append(_incomplete_relation_record(rule, f"required columns missing: {','.join(missing)}"))
+            continue
+        predicate = rule.sql_predicate.format(p=placeholder)
+        selected = ", ".join(f'"{column}"' for column in rule.columns)
+        table = _quote_identifier(rule.table)
+        count = int(
+            _fetchall(connection, f"SELECT COUNT(*) FROM {table} WHERE {predicate}", rule.parameters)[0][0]
+        )
+        rows = _fetchall(
+            connection,
+            f"SELECT {selected} FROM {table} WHERE {predicate} ORDER BY \"id\" LIMIT {placeholder}",
+            (*rule.parameters, max_ids + 1),
+        )
+        if len(rows) > max_ids:
+            diagnostics.append({"code": "RELATION_ID_LIMIT_EXCEEDED", "table": rule.table, "rule": rule.rule})
+            records.append(
+                {
+                    "rule": rule.rule, "table": rule.table, "predicate": rule.predicate, "count": count,
+                    "row_ids": [], "target_ids": {}, "status": "incomplete",
+                    "reason": "bounded relationship identifier limit exceeded",
+                }
+            )
+            continue
+        mapped = [dict(zip(rule.columns, row, strict=True)) for row in rows]
+        target_ids = {
+            column: sorted({str(row[column]) for row in mapped if row[column] is not None})
+            for column in rule.target_columns
+        }
+        target_ids = {column: values for column, values in target_ids.items() if values}
+        records.append(
+            {
+                "rule": rule.rule,
+                "table": rule.table,
+                "predicate": rule.predicate,
+                "count": count,
+                "row_ids": [str(row["id"]) for row in mapped],
+                "target_ids": target_ids,
+                "status": rule.status,
+                "reason": rule.reason,
+            }
+        )
+    return records
+
+
+def _incomplete_relation_record(rule: _RelationRule, reason: str) -> dict[str, Any]:
+    return {
+        "rule": rule.rule, "table": rule.table, "predicate": rule.predicate, "count": 0,
+        "row_ids": [], "target_ids": {}, "status": "incomplete", "reason": reason,
+    }
 
 
 def _dialect_name(connection: Any) -> str:
@@ -774,9 +1054,17 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
     truncated = False
     root_resolved = repo_root.resolve(strict=True)
     for path in _walk_repo_regular_candidates(repo_root, diagnostics, max_directories=config.max_directories):
-        if not _is_reference_file(repo_root, path):
-            continue
         relative = path.relative_to(repo_root).as_posix()
+        if path.name in _NON_REFERENCE_BASENAME_REASONS or path.suffix.lower() in _NON_REFERENCE_TYPE_REASONS:
+            continue
+        if not path.suffix and path.name not in _REFERENCE_BASENAMES:
+            diagnostics.append({"code": "REPO_UNKNOWN_EXTENSIONLESS_FILE", "path": relative})
+            truncated = True
+            continue
+        if not _is_reference_file(repo_root, path):
+            diagnostics.append({"code": "REPO_UNKNOWN_FILE_TYPE", "path": relative})
+            truncated = True
+            continue
         if inspected >= config.max_files:
             diagnostics.append({"code": "REPO_MAX_FILES_EXCEEDED", "path": relative})
             truncated = True
@@ -841,7 +1129,14 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
 
 
 def _reference_scan_payload(truncated: bool, diagnostics: list[dict[str, str]]) -> dict[str, Any]:
-    return {"truncated": truncated, "diagnostics": sorted(diagnostics, key=lambda item: (item["code"], item["path"]))}
+    return {
+        "truncated": truncated,
+        "diagnostics": sorted(diagnostics, key=lambda item: (item["code"], item["path"])),
+        "explicit_file_type_exclusions": [
+            {"file_type": file_type, "reason": reason}
+            for file_type, reason in sorted({**_NON_REFERENCE_TYPE_REASONS, **_NON_REFERENCE_BASENAME_REASONS}.items())
+        ],
+    }
 
 
 def _walk_repo_regular_candidates(
@@ -910,7 +1205,7 @@ def _reference_state_for_context(
 
 
 def _is_reference_file(repo_root: Path, path: Path) -> bool:
-    if path.suffix.lower() not in _REFERENCE_SUFFIXES:
+    if path.suffix.lower() not in _REFERENCE_SUFFIXES and path.name not in _REFERENCE_BASENAMES:
         return False
     relative = path.relative_to(repo_root).as_posix()
     return relative not in _SELF_REFERENCE_PATHS and not any(

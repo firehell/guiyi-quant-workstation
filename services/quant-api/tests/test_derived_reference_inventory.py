@@ -10,10 +10,15 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
+from app.db.base import Base
+from app.models import backtest as _backtest_models  # noqa: F401
+from app.models import review as _review_models  # noqa: F401
+from app.models import signal as _signal_models  # noqa: F401
 from app.models.data_center import MarketDataFile
 from app.models.data_core import MarketDataset, MarketPartition
 from app.services.derived_reference_inventory import (
     DerivedReferenceInventoryConfig,
+    _RELATION_RULES,
     _catalog_identity_matches,
     build_derived_reference_inventory,
 )
@@ -97,6 +102,12 @@ def test_market_data_inventory_columns_match_real_models() -> None:
     assert {"id", "provider", "data_type", "instrument_symbol", "contract_code", "period", "file_path", "checksum", "data_version", "data_role", "quality_status"} <= set(MarketDataFile.__table__.columns.keys())
     assert {"id", "provider", "symbol", "contract_or_series", "frequency", "adjustment", "schema_version"} <= set(MarketDataset.__table__.columns.keys())
     assert {"id", "dataset_id", "file_uri", "manifest_uri", "manifest_digest", "checksum", "manifest_version"} <= set(MarketPartition.__table__.columns.keys())
+
+
+def test_relation_rule_columns_match_real_orm_tables() -> None:
+    for rule in _RELATION_RULES:
+        assert rule.table in Base.metadata.tables
+        assert set(rule.columns) <= set(Base.metadata.tables[rule.table].columns.keys())
 
 
 @pytest.mark.parametrize(
@@ -401,6 +412,166 @@ def test_reference_state_excludes_historical_and_non_active_sections_from_task07
     active_category = next(item for item in active["categories"] if item["category"] == "report_14_15_references")
     assert active_category["active_reference_status"] == "present"
     assert active["task07_zero_active_reference_eligible"] is False
+
+
+def test_task07_blocks_active_binding_even_when_repo_references_are_zero(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    connection = _complete_empty_connection()
+    connection.execute(
+        "INSERT INTO profile_active_bindings "
+        "(id, profile_id, market_data_file_id, data_version, binding_status) VALUES (?, ?, ?, ?, ?)",
+        (41, 7, 19, "v2", "active"),
+    )
+    connection.commit()
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=connection,
+    )
+
+    active_binding = next(
+        rule for rule in result["database"]["relation_references"]
+        if rule["rule"] == "active_profile_binding"
+    )
+    assert active_binding == {
+        "rule": "active_profile_binding",
+        "table": "profile_active_bindings",
+        "predicate": "binding_status = active",
+        "count": 1,
+        "row_ids": ["41"],
+        "target_ids": {"profile_id": ["7"], "market_data_file_id": ["19"], "data_version": ["v2"]},
+        "status": "active",
+        "reason": "active binding still targets legacy profile/file/version lineage",
+    }
+    assert result["database"]["active_relation_reference_count"] == 1
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
+def test_task07_blocks_quality_report_file_fk_but_not_superseded_binding(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    connection = _complete_empty_connection()
+    connection.execute(
+        "INSERT INTO profile_active_bindings "
+        "(id, profile_id, market_data_file_id, data_version, binding_status) VALUES (?, ?, ?, ?, ?)",
+        (42, 8, 20, "v1", "superseded"),
+    )
+    connection.execute(
+        "INSERT INTO data_quality_reports (id, file_id, task_id) VALUES (?, ?, ?)",
+        (51, 20, None),
+    )
+    connection.commit()
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=connection,
+    )
+
+    relations = {rule["rule"]: rule for rule in result["database"]["relation_references"]}
+    assert relations["active_profile_binding"]["count"] == 0
+    assert relations["unknown_profile_binding_status"]["count"] == 0
+    assert relations["quality_report_file_reference"]["row_ids"] == ["51"]
+    assert relations["quality_report_file_reference"]["target_ids"] == {"file_id": ["20"]}
+    assert result["database"]["active_relation_reference_count"] == 1
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
+def test_inactive_rows_are_not_counted_but_uncertain_status_blocks(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    connection = _complete_empty_connection()
+    connection.executemany(
+        "INSERT INTO data_download_tasks (id, status) VALUES (?, ?)",
+        [(61, "success"), (62, "provider_specific_unknown")],
+    )
+    connection.execute("INSERT INTO backtest_tasks (id, status) VALUES (?, ?)", (63, "success"))
+    connection.execute("INSERT INTO signal_events (id, lifecycle_status) VALUES (?, ?)", (64, "archived"))
+    connection.commit()
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=connection,
+    )
+
+    relations = {rule["rule"]: rule for rule in result["database"]["relation_references"]}
+    assert relations["active_download_task"]["count"] == 0
+    assert relations["unknown_download_task_status"]["row_ids"] == ["62"]
+    assert relations["backtest_task_legacy_relation"]["count"] == 0
+    assert relations["unknown_backtest_task_status"]["count"] == 0
+    assert relations["signal_event_legacy_or_active"]["count"] == 0
+    assert relations["unknown_signal_event_lifecycle"]["count"] == 0
+    assert result["database"]["active_relation_reference_count"] == 1
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
+@pytest.mark.parametrize("suffix", [".mjs", ".mts", ".cjs"])
+def test_reference_scan_includes_extended_javascript_suffixes(tmp_path: Path, suffix: str) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    (repo_root / f"consumer{suffix}").write_text("backtest = true\n", encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+
+    backtest = next(category for category in result["categories"] if category["category"] == "backtest")
+    assert backtest["reference_locations"][0]["path"] == f"consumer{suffix}"
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
+def test_reference_scan_includes_makefile_and_fails_closed_for_unknown_extensionless_file(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    (repo_root / "Makefile").write_text("backtest:\n\t@true\n", encoding="utf-8")
+    (repo_root / "consumer_config").write_text("signal = enabled\n", encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+
+    backtest = next(category for category in result["categories"] if category["category"] == "backtest")
+    assert backtest["reference_locations"][0]["path"] == "Makefile"
+    assert {item["code"] for item in result["reference_scan"]["diagnostics"]} >= {
+        "REPO_UNKNOWN_EXTENSIONLESS_FILE"
+    }
+    assert result["status"] == "incomplete"
+
+
+def test_reference_scan_fails_closed_for_unknown_suffix_and_explains_data_exclusion(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    (repo_root / "consumer.custom").write_text("backtest = enabled\n", encoding="utf-8")
+    (repo_root / "fixture.csv").write_text("signal\n", encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+
+    assert {item["code"] for item in result["reference_scan"]["diagnostics"]} >= {
+        "REPO_UNKNOWN_FILE_TYPE"
+    }
+    exclusions = {
+        item["file_type"]: item["reason"]
+        for item in result["reference_scan"]["explicit_file_type_exclusions"]
+    }
+    assert exclusions[".csv"] == "tabular data asset; not executable source or documentation"
+    assert result["status"] == "incomplete"
 
 
 def test_reference_scan_fails_closed_for_non_utf8_symlink_and_match_budget(tmp_path: Path) -> None:
@@ -736,16 +907,47 @@ def _strict_market_data_file_connection() -> sqlite3.Connection:
 def _complete_empty_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     for table in (
-        "after_market_scheduler_checkpoints", "backtest_orders", "backtest_reports", "backtest_tasks", "backtest_trades",
+        "after_market_scheduler_checkpoints",
         "data_gaps", "data_profiles", "live_aggregated_bars", "live_aggregation_checkpoints", "live_ingest_checkpoints",
-        "live_minute_bars", "main_contract_map", "market_datasets", "market_partitions", "profile_active_bindings",
-        "review_attachments", "review_notes", "review_tags", "signal_events", "signal_notifications", "signal_scan_tasks",
-        "strategy_signals",
+        "live_minute_bars", "main_contract_map", "market_datasets", "market_partitions",
     ):
         connection.execute(f'CREATE TABLE "{table}" (id INTEGER PRIMARY KEY)')
     connection.execute(
+        "CREATE TABLE profile_active_bindings (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, "
+        "data_version TEXT, binding_status TEXT)"
+    )
+    connection.execute("CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER)")
+    connection.execute("CREATE TABLE data_download_tasks (id INTEGER PRIMARY KEY, status TEXT)")
+    connection.execute(
+        "CREATE TABLE backtest_tasks (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, "
+        "binding_snapshot TEXT, status TEXT)"
+    )
+    connection.execute(
+        "CREATE TABLE backtest_reports (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, "
+        "binding_snapshot TEXT, status TEXT)"
+    )
+    connection.execute("CREATE TABLE backtest_trades (id INTEGER PRIMARY KEY, report_id INTEGER)")
+    connection.execute("CREATE TABLE backtest_orders (id INTEGER PRIMARY KEY, report_id INTEGER)")
+    connection.execute(
+        "CREATE TABLE strategy_signals (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, "
+        "status TEXT, is_active INTEGER)"
+    )
+    connection.execute(
+        "CREATE TABLE signal_events (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, "
+        "lifecycle_status TEXT)"
+    )
+    connection.execute("CREATE TABLE review_notes (id INTEGER PRIMARY KEY, source_type TEXT, source_id INTEGER)")
+    connection.execute("CREATE TABLE review_attachments (id INTEGER PRIMARY KEY, review_id INTEGER)")
+    connection.execute("CREATE TABLE review_tags (id INTEGER PRIMARY KEY, is_active INTEGER)")
+    connection.execute(
+        "CREATE TABLE signal_scan_tasks (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, status TEXT)"
+    )
+    connection.execute(
+        "CREATE TABLE signal_notifications (id INTEGER PRIMARY KEY, event_id INTEGER, signal_id INTEGER, status TEXT)"
+    )
+    connection.execute(
         "CREATE TABLE market_data_files (id INTEGER PRIMARY KEY, provider TEXT, data_type TEXT, instrument_symbol TEXT, contract_code TEXT, "
-        "period TEXT, file_path TEXT, checksum TEXT, data_version TEXT, data_role TEXT, quality_status TEXT)"
+        "period TEXT, file_path TEXT, checksum TEXT, data_version TEXT, data_role TEXT, quality_status TEXT, task_id INTEGER)"
     )
     connection.execute("DROP TABLE market_datasets")
     connection.execute("CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, symbol TEXT, contract_or_series TEXT, frequency TEXT, adjustment TEXT, schema_version TEXT)")

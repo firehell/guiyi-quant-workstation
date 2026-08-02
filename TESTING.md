@@ -164,6 +164,19 @@ Catalog 表中没有可与 `MarketDataFile.data_version` 直接对照的 source-
 `manifest_version` 不是 data version，故 inventory 只可标记
 `metadata_aligned_partial_data_version_unverified`，不能声称 data version 已对齐。
 
+Task 07 的 zero-reference eligibility 同时要求 repository active/review references 为零，且
+27 条显式数据库 relation rule 的 active/review count 为零。规则覆盖 active/unknown Profile
+Binding、quality report→file、file→download task、active/unknown download task、Backtest
+task/report/trade/order、StrategySignal/SignalEvent/scan/notification、Review note/attachment/tag
+与 live/EOD 表；每条输出 `table/predicate/count/row_ids/target_ids/status/reason`。查询只使用固定
+allowlist、参数化 predicate、精确 count 和受 `--max-ids` 限制的 identifier read；缺表、缺列、
+未知状态或 identifier 超限均 fail-closed，不能产生 zero-reference 资格。
+
+repository source/doc scan 包含 `.mjs/.mts/.cjs` 及 Makefile/GNUmakefile、extensionless README、
+Dockerfile。其他未知无扩展名 regular file 会输出 `REPO_UNKNOWN_EXTENSIONLESS_FILE`，未知 suffix
+输出 `REPO_UNKNOWN_FILE_TYPE`，并令结果 incomplete；CSV、binary/data、compiled/cache 类型只可按
+`explicit_file_type_exclusions` 中的显式理由跳过，不能静默漏掉潜在 consumer reference。
+
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
