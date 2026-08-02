@@ -279,6 +279,11 @@ const reportMetaItems = computed(() => {
       value: summaryString(summary.value.report_metadata, 'execution_timing') || '-',
     },
     { label: '研究用途', value: selectedReport.value.research_only ? '是' : '否' },
+    {
+      label: '合约语义',
+      value: selectedReport.value.contract_semantics || summaryString(summary.value.report_metadata, 'contract_semantics') || '-',
+    },
+    { label: '自动下单', value: selectedReport.value.auto_order === false ? '否' : '边界证据不可用' },
   ]
 })
 const reportPresentation = computed(() =>
@@ -1584,6 +1589,9 @@ function directionLabel(direction: string) {
           <NDescriptionsItem label="Requested window" :span="2"><code>{{ reportPresentation.canonicalInput.requestedWindow }}</code></NDescriptionsItem>
           <NDescriptionsItem label="Input digest" :span="2"><code>{{ reportPresentation.canonicalInput.digest }}</code></NDescriptionsItem>
           <NDescriptionsItem label="成本模型"><code>{{ reportPresentation.costModel }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="研究用途">{{ reportPresentation.researchUse }}</NDescriptionsItem>
+          <NDescriptionsItem label="合约语义"><code>{{ reportPresentation.contractSemantics }}</code></NDescriptionsItem>
+          <NDescriptionsItem label="订单边界" :span="2">{{ reportPresentation.orderBoundary }}</NDescriptionsItem>
           <NDescriptionsItem label="验证证据">{{ reportPresentation.validationEvidence }}</NDescriptionsItem>
           <NDescriptionsItem label="候选状态"><code>{{ reportPresentation.candidateStatus }}</code></NDescriptionsItem>
           <NDescriptionsItem label="OOS">{{ reportPresentation.oosWindow }} · {{ reportPresentation.oosGate }}</NDescriptionsItem>

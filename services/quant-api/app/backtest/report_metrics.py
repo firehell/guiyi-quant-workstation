@@ -68,14 +68,7 @@ def compute_report_metrics(
     average_win = sum(wins, Decimal("0")) / len(wins) if wins else Decimal("0")
     average_loss = abs(sum(losses, Decimal("0")) / len(losses)) if losses else Decimal("0")
     hold_bars = [_trade_hold_bars(trade) for trade in trades if _trade_hold_bars(trade) is not None]
-    max_margin_required = max(
-        (
-            _safe_decimal(trade.get("margin_required"))
-            for trade in trades
-            if _has_value(trade.get("margin_required"))
-        ),
-        default=Decimal("0"),
-    )
+    max_margin_required = _concurrent_margin_peak(trades)
 
     return {
         "initial_capital": initial_capital,
@@ -116,6 +109,7 @@ def compute_report_metrics(
             if initial_capital
             else Decimal("0")
         ),
+        "margin_peak_method": "concurrent_trade_event_sweep_v1",
         "rollover_exit_count": sum(1 for trade in trades if trade.get("rollover_forced_exit")),
         "delivery_risk_exit_count": sum(1 for trade in trades if trade.get("delivery_risk_exit")),
         "average_hold_bars": (
@@ -125,6 +119,41 @@ def compute_report_metrics(
         ),
         "metric_units": dict(METRIC_UNITS),
     }
+
+
+def _concurrent_margin_peak(trades: list[dict[str, Any]]) -> Decimal:
+    events: list[tuple[datetime, int, Decimal]] = []
+    for trade in trades:
+        if not _has_value(trade.get("margin_required")):
+            continue
+        margin = _safe_decimal(trade.get("margin_required"))
+        if margin < 0:
+            raise ValueError("trade margin_required cannot be negative")
+        opened = _parse_optional_time(
+            trade.get("entry_datetime")
+            or trade.get("entry_time")
+            or trade.get("open_time")
+        )
+        closed = _parse_optional_time(
+            trade.get("exit_datetime")
+            or trade.get("exit_time")
+            or trade.get("close_time")
+        )
+        if opened is None or closed is None or closed < opened:
+            raise ValueError(
+                "concurrent margin peak requires valid trade entry and exit times"
+            )
+        events.append((opened, 1, margin))
+        events.append((closed, 0, -margin))
+
+    running = Decimal("0")
+    peak = Decimal("0")
+    for _moment, _priority, delta in sorted(events, key=lambda item: (item[0], item[1])):
+        running += delta
+        if running < 0:
+            raise ValueError("concurrent margin event sweep became negative")
+        peak = max(peak, running)
+    return peak
 
 
 def _final_equity(

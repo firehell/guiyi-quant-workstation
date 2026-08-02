@@ -12,6 +12,7 @@ from app.backtest.contract_resolver import (
     ResolvedContract,
     resolve_jm_contract,
 )
+from app.services.trading_session_clock import SHANGHAI, TradingSessionClock
 
 
 ROLL_BOUNDARY_REASON = "contract_roll_boundary"
@@ -32,6 +33,8 @@ class _RollBoundary:
     new_bar: Mapping[str, Any]
     old_contract: ResolvedContract
     new_contract: ResolvedContract
+    old_close_time: datetime
+    new_open_time: datetime
 
 
 class MainContractMappingKnowledgeError(ContractResolutionError):
@@ -54,7 +57,7 @@ def apply_actual_dominant_roll_accounting(
         raise ContractResolutionError("slippage_ticks cannot be negative")
 
     resolved_by_day = _resolve_and_validate_contract_days(session, ordered_bars)
-    boundaries = _roll_boundaries(ordered_bars, resolved_by_day)
+    boundaries = _roll_boundaries(session, ordered_bars, resolved_by_day)
     orders = _cancel_pending_old_contract_orders(
         list(normalized_result.get("orders") or []),
         boundaries,
@@ -72,13 +75,14 @@ def apply_actual_dominant_roll_accounting(
         intersecting = [
             boundary
             for boundary in boundaries
-            if entry_time <= _bar_time(boundary.old_bar)
-            and bar_open_time(boundary.new_bar) <= exit_time
+            if entry_time <= boundary.old_close_time
+            and boundary.new_open_time <= exit_time
         ]
         if not intersecting:
             trades.append(trade)
             continue
         split, events = _split_trade(
+            session,
             trade,
             entry_time=entry_time,
             exit_time=exit_time,
@@ -101,7 +105,7 @@ def apply_actual_dominant_roll_accounting(
     metadata.update(
         {
             "contract_semantics": "actual_dominant_rank1",
-            "roll_policy": "close_last_confirmed_close_reopen_first_confirmed_open_v1",
+            "roll_policy": "close_real_session_end_reopen_real_session_start_v2",
             "roll_event_count": len(roll_events),
             "monetary_derivation": "decimal",
         }
@@ -119,7 +123,7 @@ def validate_actual_dominant_inputs(
     if not ordered_bars:
         raise ContractResolutionError("actual_dominant backtest bars are empty")
     resolved_by_day = _resolve_and_validate_contract_days(session, ordered_bars)
-    _roll_boundaries(ordered_bars, resolved_by_day)
+    _roll_boundaries(session, ordered_bars, resolved_by_day)
 
 
 def _resolve_and_validate_contract_days(
@@ -138,7 +142,7 @@ def _resolve_and_validate_contract_days(
                 rank=1,
             )
             known_at = day_contract.main_contract_source.known_at
-            decision_time = bar_open_time(bar)
+            decision_time, _ = _execution_bounds(session, bar)
             if known_at is None:
                 raise MainContractMappingKnowledgeError(
                     "main_contract_map raw_payload.known_at evidence is required"
@@ -161,6 +165,7 @@ def _resolve_and_validate_contract_days(
 
 
 def _roll_boundaries(
+    session: Session,
     bars: Sequence[Mapping[str, Any]],
     resolved_by_day: Mapping[date, ResolvedContract],
 ) -> list[_RollBoundary]:
@@ -172,18 +177,23 @@ def _roll_boundaries(
             continue
         _decimal(old_bar.get("close"), field="old_contract_last_confirmed_close")
         _decimal(new_bar.get("open"), field="new_contract_first_confirmed_open")
+        _, old_close_time = _execution_bounds(session, old_bar)
+        new_open_time, _ = _execution_bounds(session, new_bar)
         boundaries.append(
             _RollBoundary(
                 old_bar=old_bar,
                 new_bar=new_bar,
                 old_contract=resolved_by_day[_bar_trading_day(old_bar)],
                 new_contract=resolved_by_day[_bar_trading_day(new_bar)],
+                old_close_time=old_close_time,
+                new_open_time=new_open_time,
             )
         )
     return boundaries
 
 
 def _split_trade(
+    session: Session,
     trade: dict[str, Any],
     *,
     entry_time: datetime,
@@ -204,10 +214,10 @@ def _split_trade(
     exit_price = _decimal(
         trade.get("exit_price", trade.get("close_price")), field="trade.exit_price"
     )
-    entry_contract = _contract_for_time(bars, entry_time)
-    exit_contract = _contract_for_time(bars, exit_time)
-    entry_params = resolved_by_day[_trading_day_for_time(bars, entry_time)]
-    exit_params = resolved_by_day[_trading_day_for_time(bars, exit_time)]
+    entry_contract = _contract_for_time(session, bars, entry_time)
+    exit_contract = _contract_for_time(session, bars, exit_time)
+    entry_params = resolved_by_day[_trading_day_for_time(session, bars, entry_time)]
+    exit_params = resolved_by_day[_trading_day_for_time(session, bars, exit_time)]
     if entry_params.actual_contract != entry_contract or exit_params.actual_contract != exit_contract:
         raise ContractResolutionError("trade contract does not match rank=1 mapping")
 
@@ -229,7 +239,7 @@ def _split_trade(
             volume=volume,
             close=True,
             close_today=(
-                _trading_day_for_time(bars, points[-1][0])
+                _trading_day_for_time(session, bars, points[-1][0])
                 == _bar_trading_day(boundary.old_bar)
             ),
             slippage_ticks=slippage_ticks,
@@ -244,7 +254,7 @@ def _split_trade(
         )
         exits.append(
             (
-                _bar_time(boundary.old_bar),
+                boundary.old_close_time,
                 close_price,
                 boundary.old_contract,
                 ROLL_BOUNDARY_REASON,
@@ -252,7 +262,7 @@ def _split_trade(
         )
         points.append(
             (
-                bar_open_time(boundary.new_bar),
+                boundary.new_open_time,
                 open_price,
                 boundary.new_contract,
                 ROLL_REOPEN_REASON,
@@ -485,25 +495,42 @@ def _fee_rule_payload(contract: ResolvedContract) -> dict[str, Any]:
     }
 
 
-def _contract_for_time(bars: Sequence[Mapping[str, Any]], moment: datetime) -> str:
-    candidates = [bar for bar in bars if _bar_time(bar) <= moment]
-    if not candidates:
-        candidates = [bar for bar in bars if _bar_time(bar) >= moment]
-    if not candidates:
-        raise ContractResolutionError("trade time is outside canonical bars")
-    return _bar_contract(candidates[-1] if _bar_time(candidates[-1]) <= moment else candidates[0])
+def _contract_for_time(
+    session: Session, bars: Sequence[Mapping[str, Any]], moment: datetime
+) -> str:
+    return _bar_contract(_bar_for_time(session, bars, moment))
 
 
 def _trading_day_for_time(
-    bars: Sequence[Mapping[str, Any]], moment: datetime
+    session: Session, bars: Sequence[Mapping[str, Any]], moment: datetime
 ) -> date:
+    return _bar_trading_day(_bar_for_time(session, bars, moment))
+
+
+def _bar_for_time(
+    session: Session, bars: Sequence[Mapping[str, Any]], moment: datetime
+) -> Mapping[str, Any]:
+    frequencies = {
+        str(bar.get("interval") or bar.get("period") or "").strip().lower()
+        for bar in bars
+    }
+    if frequencies and frequencies <= {"1d", "d", "day"}:
+        bounded = [(_execution_bounds(session, bar), bar) for bar in bars]
+        containing = [bar for (start, end), bar in bounded if start <= moment <= end]
+        if containing:
+            return containing[-1]
+        started = [(start, bar) for (start, _end), bar in bounded if start <= moment]
+        if started:
+            return max(started, key=lambda item: item[0])[1]
+        if bounded:
+            return min(bounded, key=lambda item: item[0][0])[1]
+
     candidates = [bar for bar in bars if _bar_time(bar) <= moment]
     if not candidates:
         candidates = [bar for bar in bars if _bar_time(bar) >= moment]
     if not candidates:
         raise ContractResolutionError("trade time is outside canonical bars")
-    selected = candidates[-1] if _bar_time(candidates[-1]) <= moment else candidates[0]
-    return _bar_trading_day(selected)
+    return candidates[-1] if _bar_time(candidates[-1]) <= moment else candidates[0]
 
 
 def _bar_time(bar: Mapping[str, Any]) -> datetime:
@@ -529,6 +556,33 @@ def bar_open_time(bar: Mapping[str, Any]) -> datetime:
     raise ContractResolutionError(
         f"actual_dominant bar frequency cannot derive open time: {frequency!r}"
     )
+
+
+def _execution_bounds(
+    session: Session, bar: Mapping[str, Any]
+) -> tuple[datetime, datetime]:
+    frequency = str(bar.get("interval") or bar.get("period") or "").strip().lower()
+    if frequency in {"1w", "w", "week"}:
+        raise ContractResolutionError(
+            "weekly actual_dominant cannot prove a real session execution boundary "
+            "from an aggregate bar"
+        )
+    if frequency not in {"1d", "d", "day"}:
+        return bar_open_time(bar), _bar_time(bar)
+
+    trading_day = _bar_trading_day(bar)
+    windows = TradingSessionClock(session).windows_for_trading_day(
+        trading_day,
+        product="jm",
+        exchange="DCE",
+    )
+    if not windows:
+        raise ContractResolutionError(
+            "daily actual_dominant requires a provable trading-session boundary"
+        )
+    starts = [window.start.replace(tzinfo=SHANGHAI).astimezone(UTC) for window in windows]
+    ends = [window.end.replace(tzinfo=SHANGHAI).astimezone(UTC) for window in windows]
+    return min(starts), max(ends)
 
 
 def _bar_trading_day(bar: Mapping[str, Any]) -> date:

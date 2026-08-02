@@ -43,26 +43,19 @@ class BacktestTaskRunner:
         try:
             request = self._request_from_task(task)
             config = self.service.config_from_task(task)
-            if (
-                not task.research_only
-                and config.request_payload.get("dataset_kind")
-                == "actual_dominant"
-            ):
+            canonical_formal = _is_canonical_formal_task(task)
+            if canonical_formal and config.request_payload.get("dataset_kind") == "actual_dominant":
                 validate_actual_dominant_inputs(
                     self.session,
                     request.bars or [],
                 )
             raw_result = self.adapter.run(request)
             normalized_result = convert_vnpy_result(raw_result)
-            if task.research_only and should_enrich_jm_v1b_result(config):
+            if task.research_only and not canonical_formal and should_enrich_jm_v1b_result(config):
                 normalized_result = enrich_jm_v1b_result(self.session, config, normalized_result)
-            if task.research_only and should_enrich_jm_daily_ema21_result(config):
+            if task.research_only and not canonical_formal and should_enrich_jm_daily_ema21_result(config):
                 normalized_result = enrich_jm_daily_ema21_result(self.session, config, normalized_result)
-            if (
-                not task.research_only
-                and config.request_payload.get("dataset_kind")
-                == "actual_dominant"
-            ):
+            if canonical_formal and config.request_payload.get("dataset_kind") == "actual_dominant":
                 normalized_result = apply_actual_dominant_roll_accounting(
                     self.session,
                     normalized_result,
@@ -92,11 +85,11 @@ class BacktestTaskRunner:
         config = self.service.config_from_task(task)
         bars: list[dict[str, Any]] | None = None
         auxiliary_bars: dict[str, list[dict[str, Any]]] = {}
-        if task.research_only:
-            bar_data_path, auxiliary_bar_data_paths = self._execution_paths(task, config)
-        else:
+        if _is_canonical_formal_task(task):
             bars, auxiliary_bars = self._canonical_execution_rows(task, config)
             bar_data_path, auxiliary_bar_data_paths = None, {}
+        else:
+            bar_data_path, auxiliary_bar_data_paths = self._execution_paths(task, config)
         return GuiyiBacktestRequest(
             symbol=config.symbol,
             exchange=config.exchange,
@@ -368,3 +361,11 @@ def _canonical_bar_row(bar: Any, *, exchange: str) -> dict[str, Any]:
         "dataset_kind": bar.dataset_kind.value,
         "schema_version": bar.schema_version,
     }
+
+
+def _is_canonical_formal_task(task: BacktestTask) -> bool:
+    snapshot = task.binding_snapshot
+    return bool(
+        isinstance(snapshot, dict)
+        and snapshot.get("schema_version") == "backtest_canonical_inputs_v1"
+    )

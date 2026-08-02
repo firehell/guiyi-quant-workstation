@@ -3,8 +3,54 @@ from __future__ import annotations
 import importlib.util
 from io import StringIO
 from pathlib import Path
+import subprocess
 
 from app import cli as legacy_cli
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_installed_guiyi_data_backtest_command_fails_closed_without_legacy_reads() -> None:
+    completed = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--project",
+            "services/quant-api",
+            "guiyi-data",
+            "run-su-bing-backtest",
+            "--symbol",
+            "jm",
+            "--contract",
+            "JM.MAIN",
+            "--period",
+            "15m",
+            "--profile-id",
+            "legacy-profile",
+            "--start",
+            "2024-01-02",
+            "--end",
+            "2024-02-02",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr == ""
+    assert __import__("json").loads(completed.stdout) == {
+        "ok": False,
+        "code": "BACKTEST_LEGACY_CLI_DISABLED",
+        "message": (
+            "run-su-bing-backtest is retired because it used legacy Profile/file data; "
+            "create a canonical formal task through POST /api/backtests/tasks"
+        ),
+        "writes_database": False,
+        "auto_order": False,
+    }
 
 
 def test_guiyi_data_check_bars_preserves_text_output_via_shared_verifier() -> None:

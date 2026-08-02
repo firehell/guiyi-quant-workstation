@@ -176,6 +176,7 @@ class BacktestService:
             raise BacktestConfigurationError(str(exc)) from exc
         indicator_policy_snapshot = indicator_policy.to_dict()
         binding_snapshot["indicator_policy_snapshot"] = indicator_policy_snapshot
+        continuous_research = formal_request.dataset_kind is DatasetKind.CONTINUOUS
         task_config = BacktestTaskConfig(
             engine_type=formal_request.engine_type,
             task_type=formal_request.task_type,
@@ -199,7 +200,7 @@ class BacktestService:
             # BacktestTask.data_version is VARCHAR(64); the canonical digest is
             # already a self-describing sha256 identity in the frozen snapshot.
             data_version=primary_identity.digest,
-            research_only=False,
+            research_only=continuous_research,
             quality_status="passed",
             bar_data_path=None,
             auxiliary_bar_data_paths={},
@@ -215,6 +216,17 @@ class BacktestService:
                     if formal_request.dataset_kind is DatasetKind.CONTINUOUS
                     else "actual_dominant_rank1"
                 ),
+                "observation_only": True,
+                "not_trading_instruction": True,
+                "auto_order": False,
+                "risk_control_scope": {
+                    "live_pre_order_risk_gate": "NOT_APPLICABLE_HISTORICAL_RESEARCH_NO_ORDER",
+                    "drawdown_pause": "NOT_APPLICABLE_FROZEN_STRATEGY_SEMANTICS",
+                    "consecutive_loss_pause": "NOT_APPLICABLE_FROZEN_STRATEGY_SEMANTICS",
+                    "maximum_position": formal_request.strategy_parameters.get(
+                        "maximum_position"
+                    ),
+                },
                 "indicator_policy_snapshot": indicator_policy_snapshot,
             },
         )
@@ -493,7 +505,7 @@ class BacktestService:
 
     def persist_result(self, task: BacktestTask, normalized_result: dict[str, Any]) -> None:
         config = self.config_from_task(task)
-        if not task.research_only:
+        if not task.research_only or _is_canonical_formal_task(task):
             snapshot = task.binding_snapshot
             if (
                 task.profile_id is not None
@@ -681,6 +693,17 @@ class BacktestService:
                     ),
                     "input_identity": deepcopy(
                         (task.binding_snapshot or {}).get("input_identity")
+                    ),
+                    "research_only": task.research_only,
+                    "observation_only": bool(
+                        config.request_payload.get("observation_only")
+                    ),
+                    "not_trading_instruction": bool(
+                        config.request_payload.get("not_trading_instruction")
+                    ),
+                    "auto_order": False,
+                    "risk_control_scope": deepcopy(
+                        config.request_payload.get("risk_control_scope") or {}
                     ),
                 }
             )
@@ -1099,3 +1122,11 @@ def _parse_optional_time(value: Any) -> datetime | None:
         return datetime.combine(value, time.min, tzinfo=UTC)
     parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _is_canonical_formal_task(task: BacktestTask) -> bool:
+    snapshot = task.binding_snapshot
+    return bool(
+        isinstance(snapshot, dict)
+        and snapshot.get("schema_version") == "backtest_canonical_inputs_v1"
+    )

@@ -746,7 +746,7 @@ def _get_task_by_ref(session: Session, task_ref: str) -> BacktestTask | None:
 def task_api_payload(task: BacktestTask) -> dict[str, Any]:
     payload = task_snapshot(task)
     input_identity = _canonical_input_identity(task.binding_snapshot)
-    if input_identity is not None and not task.research_only:
+    if input_identity is not None:
         payload.pop("profile_id", None)
         payload.pop("market_data_file_id", None)
         payload.pop("binding_snapshot", None)
@@ -764,7 +764,8 @@ def task_api_payload(task: BacktestTask) -> dict[str, Any]:
             "disclaimer": BACKTEST_DISCLAIMER,
         }
     )
-    if input_identity is not None and not task.research_only:
+    if input_identity is not None:
+        payload.update(_formal_safety_payload((task.request_payload or {}).get("request_payload")))
         payload = _without_legacy_input_identity(payload)
     return _sanitize_api_payload(payload)
 
@@ -772,7 +773,7 @@ def task_api_payload(task: BacktestTask) -> dict[str, Any]:
 def report_api_payload(report: BacktestReportModel, include_detail: bool = False) -> dict[str, Any]:
     payload = report_payload(report, include_detail=include_detail)
     input_identity = _canonical_input_identity(report.binding_snapshot)
-    if input_identity is not None and not report.research_only:
+    if input_identity is not None:
         payload.pop("profile_id", None)
         payload.pop("market_data_file_id", None)
         payload.pop("binding_snapshot", None)
@@ -795,7 +796,9 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
             **foundation,
         }
     )
-    if input_identity is not None and not report.research_only:
+    if input_identity is not None:
+        metadata = (report.summary or {}).get("report_metadata")
+        payload.update(_formal_safety_payload(metadata))
         payload = _without_legacy_input_identity(payload)
     return _sanitize_api_payload(payload)
 
@@ -809,6 +812,17 @@ def _canonical_input_identity(
         return None
     identity = snapshot.get("input_identity")
     return dict(identity) if isinstance(identity, dict) else None
+
+
+def _formal_safety_payload(value: Any) -> dict[str, Any]:
+    metadata = value if isinstance(value, dict) else {}
+    return {
+        "contract_semantics": metadata.get("contract_semantics"),
+        "observation_only": metadata.get("observation_only") is True,
+        "not_trading_instruction": metadata.get("not_trading_instruction") is True,
+        "auto_order": False,
+        "risk_control_scope": metadata.get("risk_control_scope") or {},
+    }
 
 
 def _without_legacy_input_identity(value: Any) -> Any:

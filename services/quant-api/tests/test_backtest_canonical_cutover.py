@@ -324,6 +324,7 @@ def test_runner_rereads_identity_and_injects_canonical_rows_in_memory() -> None:
         ).run(task.id)
 
         assert outcome["status"] == "success", outcome
+        assert task.research_only is True
         assert adapter.request.bar_data_path is None
         assert adapter.request.auxiliary_bar_data_paths == {}
         assert adapter.request.bars[0]["open"] == Decimal("1000.123456789012345678")
@@ -333,8 +334,14 @@ def test_runner_rereads_identity_and_injects_canonical_rows_in_memory() -> None:
         assert len(market_data.queries) == 4
 
         report = session.query(BacktestReportModel).one()
+        assert report.research_only is True
         for payload in (task_api_payload(task), report_api_payload(report)):
             assert payload["input_identity"]["schema_version"] == "canonical_consumer_input_v1"
+            assert payload["research_only"] is True
+            assert payload["contract_semantics"] == "research_contract_only"
+            assert payload["observation_only"] is True
+            assert payload["not_trading_instruction"] is True
+            assert payload["auto_order"] is False
             assert "profile_id" not in payload
             assert "market_data_file_id" not in payload
             assert "binding_snapshot" not in payload
@@ -393,6 +400,11 @@ def test_continuous_report_is_labeled_research_contract_only() -> None:
 
         assert metadata["dataset_kind"] == "continuous"
         assert metadata["contract_semantics"] == "research_contract_only"
+        assert metadata["research_only"] is True
+        assert metadata["observation_only"] is True
+        assert metadata["not_trading_instruction"] is True
+        assert metadata["auto_order"] is False
+        assert task.research_only is True
 
 
 def test_runner_data_gap_fails_closed_without_creating_report() -> None:

@@ -7,6 +7,11 @@ type ReportLike = {
   input_identity?: CanonicalInputIdentity | null
   candidate_status?: string | null
   hard_reject_reason?: string | null
+  research_only?: boolean
+  contract_semantics?: string | null
+  observation_only?: boolean
+  not_trading_instruction?: boolean
+  auto_order?: boolean
   summary?: Record<string, unknown>
 }
 
@@ -43,6 +48,15 @@ export function buildBacktestReportPresentation(
     stringValue(candidate.report14_trust_audit) ||
     'unavailable'
   const inputIdentity = presentCanonicalInputIdentity(report.input_identity)
+  const contractSemantics =
+    stringValue(report.contract_semantics) ||
+    stringValue(metadata.contract_semantics) ||
+    'unavailable'
+  const observationOnly =
+    report.observation_only === true || metadata.observation_only === true
+  const notTradingInstruction =
+    report.not_trading_instruction === true || metadata.not_trading_instruction === true
+  const autoOrder = report.auto_order ?? metadata.auto_order
 
   return {
     identity: `${report.report_no} · report #${report.id}`,
@@ -56,6 +70,12 @@ export function buildBacktestReportPresentation(
     oosWindow: context?.oos?.window_id || 'unavailable',
     oosGate: context?.oos?.gate || 'unavailable',
     hardReject: context?.hard_reject_reason || report.hard_reject_reason || 'none recorded',
+    researchUse: report.research_only ? '是' : '否',
+    contractSemantics,
+    orderBoundary:
+      observationOnly && notTradingInstruction && autoOrder === false
+        ? '仅供研究观察，不是交易指令，不自动下单。'
+        : '安全边界证据不可用。',
     boundary: '可信审计仅说明报告口径与证据可核对，不等于策略有效或可盈利。',
   }
 }

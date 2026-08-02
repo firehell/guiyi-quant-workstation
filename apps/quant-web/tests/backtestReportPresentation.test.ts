@@ -64,4 +64,25 @@ describe('backtest report presentation', () => {
     assert.equal(result.validationEvidence, 'BACKTEST_VALIDATION_EVIDENCE_INVALID')
     assert.equal(result.canonicalInput.digest, 'unavailable')
   })
+
+  it('labels continuous formal reports as research-only and never an order instruction', () => {
+    const result = buildBacktestReportPresentation(
+      {
+        id: 15,
+        report_no: 'BT-15',
+        research_only: true,
+        contract_semantics: 'research_contract_only',
+        observation_only: true,
+        not_trading_instruction: true,
+        auto_order: false,
+        summary: {},
+      },
+      null,
+    )
+
+    assert.equal(result.researchUse, '是')
+    assert.equal(result.contractSemantics, 'research_contract_only')
+    assert.match(result.orderBoundary, /不是交易指令/)
+    assert.match(result.orderBoundary, /不自动下单/)
+  })
 })

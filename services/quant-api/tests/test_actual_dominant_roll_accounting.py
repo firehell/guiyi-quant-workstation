@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 
 import pytest
@@ -14,6 +14,7 @@ from app.backtest.actual_dominant_roll import (
 )
 from app.backtest.runner import BacktestTaskRunner
 from app.backtest.service import BacktestService
+from app.api.backtests import report_api_payload
 from app.backtest.contract_resolver import (
     ContractResolutionError,
     TradingParameterMissingError,
@@ -30,6 +31,7 @@ from app.models.data_center import (
     Instrument,
     MainContractMap,
     TradingCalendar,
+    TradingSession,
 )
 from app.models.backtest import BacktestReportModel
 
@@ -373,6 +375,111 @@ def test_mapping_requires_explicit_known_at_no_later_than_first_bar_open() -> No
             )
 
 
+def test_daily_roll_uses_real_night_session_boundaries_and_rejects_late_mapping() -> None:
+    SessionLocal = _session_factory()
+    daily_bars = [
+        {
+            "datetime": datetime(2024, 5, 6, tzinfo=UTC),
+            "trading_day": date(2024, 5, 6),
+            "contract": "JM2405",
+            "interval": "1d",
+            "open": Decimal("100"),
+            "close": Decimal("105"),
+        },
+        {
+            "datetime": datetime(2024, 5, 7, tzinfo=UTC),
+            "trading_day": date(2024, 5, 7),
+            "contract": "JM2409",
+            "interval": "1d",
+            "open": Decimal("110"),
+            "close": Decimal("115"),
+        },
+    ]
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        may_6 = session.query(MainContractMap).filter_by(trade_date=date(2024, 5, 6)).one()
+        may_6.contract_code = "JM2405"
+        may_6.raw_payload = {"known_at": "2024-05-03T12:59:59+00:00"}
+        may_6_parameter = session.query(FuturesTradingParameter).filter_by(
+            trade_date=date(2024, 5, 6)
+        ).one()
+        may_6_parameter.contract_code = "JM2405"
+        _seed_contract_day(
+            session,
+            trading_day=date(2024, 5, 7),
+            contract="JM2409",
+            multiplier=20,
+            tick="1",
+            open_fee="0.003",
+            close_fee="0.004",
+        )
+        session.flush()
+        may_7 = session.query(MainContractMap).filter_by(
+            trade_date=date(2024, 5, 7)
+        ).one()
+        may_7.raw_payload = {"known_at": "2024-05-06T12:59:59+00:00"}
+        session.add_all(
+            [
+                TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True, has_night_session=True, provider="rqdata")
+                for day in (date(2024, 5, 3), date(2024, 5, 6), date(2024, 5, 7))
+            ]
+        )
+        session.add_all(
+            [
+                TradingSession(exchange_code="DCE", instrument_symbol="jm", session_name="night", start_time=time(21), end_time=time(23), crosses_midnight=False, is_active=True, provider="rqdata"),
+                TradingSession(exchange_code="DCE", instrument_symbol="jm", session_name="day", start_time=time(9), end_time=time(15), crosses_midnight=False, is_active=True, provider="rqdata"),
+            ]
+        )
+        session.flush()
+
+        result = apply_actual_dominant_roll_accounting(
+            session,
+            _result(
+                trades=[
+                    {
+                        "trade_id": "daily-roll",
+                        "direction": "long",
+                        "entry_datetime": datetime(2024, 5, 3, 13, 0, tzinfo=UTC),
+                        # This is after the next trading day's night open but before
+                        # its misleading UTC-midnight daily-bar label.
+                        "exit_datetime": datetime(2024, 5, 6, 14, 0, tzinfo=UTC),
+                        "entry_price": Decimal("100"),
+                        "exit_price": Decimal("115"),
+                        "volume": 1,
+                    }
+                ]
+            ),
+            bars=daily_bars,
+            slippage_ticks=Decimal("0"),
+        )
+
+        assert result["trades"][0]["exit_datetime"] == "2024-05-06T07:00:00+00:00"
+        assert result["trades"][1]["entry_datetime"] == "2024-05-06T13:00:00+00:00"
+
+        may_6.raw_payload = {"known_at": "2024-05-03T13:00:00.000001+00:00"}
+        session.flush()
+        with pytest.raises(ContractResolutionError, match="known_at"):
+            apply_actual_dominant_roll_accounting(
+                session,
+                _result(trades=[]),
+                bars=daily_bars,
+                slippage_ticks=Decimal("0"),
+            )
+
+
+def test_weekly_actual_dominant_fails_closed_when_session_boundary_is_unprovable() -> None:
+    SessionLocal = _session_factory()
+    weekly_bars = [{**row, "interval": "1w"} for row in _bars()[:2]]
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        with pytest.raises(ContractResolutionError, match="weekly.*cannot prove"):
+            apply_actual_dominant_roll_accounting(
+                session,
+                _result(trades=[]),
+                bars=weekly_bars,
+                slippage_ticks=Decimal("0"),
+            )
+
 def test_runner_blocks_unknown_mapping_before_vnpy_execution() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
@@ -614,6 +721,12 @@ def test_runner_persists_one_recomputed_rolled_fact_set() -> None:
 
         assert result["status"] == "success", result
         report = session.query(BacktestReportModel).one()
+        payload = report_api_payload(report)
+        assert payload["research_only"] is False
+        assert payload["contract_semantics"] == "actual_dominant_rank1"
+        assert payload["observation_only"] is True
+        assert payload["not_trading_instruction"] is True
+        assert payload["auto_order"] is False
         assert len(report.trades) == 2
         assert report.trades[0].exit_reason == "contract_roll_boundary"
         assert report.trades[1].entry_reason == "contract_roll_reopen"
