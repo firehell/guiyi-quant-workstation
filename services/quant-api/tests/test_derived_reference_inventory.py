@@ -330,7 +330,7 @@ def test_market_data_file_rows_require_catalog_evidence_and_classify_exact_rows(
     assert duplicate[0]["disposition"] == "REVIEW_REQUIRED"
     market_files = next(item for item in result["database"]["tables"] if item["table"] == "market_data_files")
     assert market_files["row_classifications"][0]["disposition"] == "REVIEW_REQUIRED"
-    assert market_files["row_classifications"][0]["catalog_evidence"] == "verified"
+    assert market_files["row_classifications"][0]["catalog_evidence"] == "metadata_aligned_partial_data_version_unverified"
     assert result["status"] == "incomplete"  # fixture intentionally lacks unrelated allowlisted tables
 
 
@@ -448,7 +448,7 @@ def test_reference_scan_keeps_legacy_consumer_tests_and_fails_closed_on_ambiguou
     ("text", "expected_state"),
     [
         ("frozen backtest reference", "review_required"),
-        ("compatibility-only backtest is still used", "review_required"),
+        ("compatibility-only backtest is still used", "active"),
         ("historical snapshot; not active Gate: backtest", "historical"),
         ("superseded and unused backtest", "review_required"),
         ("历史快照且非 active Gate：backtest", "historical"),
@@ -499,6 +499,28 @@ def test_reference_state_never_downgrades_negated_or_code_test_text(tmp_path: Pa
     location = next(item for item in next(category for category in result["categories"] if category["category"] == "backtest")["reference_locations"])
     assert location["reference_state"] in {"active", "review_required"}
     assert location["disposition"] != "HISTORICAL_SNAPSHOT"
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
+def test_archive_code_and_active_override_inside_historical_section_still_block_task07(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    (repo_root / "archive").mkdir(parents=True)
+    data_root.mkdir()
+    (repo_root / "archive" / "legacy.py").write_text("historical snapshot; not active Gate: backtest", encoding="utf-8")
+    (repo_root / "docs").mkdir()
+    (repo_root / "docs" / "history.md").write_text(
+        "## Historical snapshot; not active Gate: legacy\ncurrent active backtest\n",
+        encoding="utf-8",
+    )
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+
+    locations = next(category for category in result["categories"] if category["category"] == "backtest")["reference_locations"]
+    assert {item["reference_state"] for item in locations} >= {"active"}
     assert result["task07_zero_active_reference_eligible"] is False
 
 

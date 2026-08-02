@@ -160,6 +160,9 @@ symlink、非 UTF-8、TOCTOU、缺表/缺列或读取错误都会返回 incomple
 Task 05 inventory 当前未实现对 manifest/Parquet 的完整物理 proof reader；因此即使 Catalog
 字段一致的 direct candidate 也必须保持 REVIEW_REQUIRED 并输出
 `PHYSICAL_KEEP_PROOF_REQUIRED`，绝不产生弱 `KEEP_TRUSTED_CANONICAL`。
+Catalog 表中没有可与 `MarketDataFile.data_version` 直接对照的 source-data-version 字段；
+`manifest_version` 不是 data version，故 inventory 只可标记
+`metadata_aligned_partial_data_version_unverified`，不能声称 data version 已对齐。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

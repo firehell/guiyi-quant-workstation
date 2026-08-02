@@ -81,6 +81,11 @@ _EXPLICIT_HISTORICAL_DOC_MARKER = re.compile(
     re.IGNORECASE,
 )
 _AMBIGUOUS_HISTORY_MARKER = re.compile(r"(?:\bhistorical\b|\bfrozen\b|\bcompatibility-only\b|\bsuperseded\b)", re.IGNORECASE)
+_ACTIVE_OVERRIDE_MARKER = re.compile(
+    r"(?:\bcurrent\b|\bstill\b|\bactive\b|\bin\s+use\b|\bmust\b|当前|仍|继续|在用|不得视为非\s*active|"
+    r"not\s+merely\s+historical|must\s+not\s+be\s+treated\s+as\s+not\s+active)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -423,6 +428,7 @@ def _classify_market_data_file_row(
         diagnostics.append({"code": path_diagnostic, "table": "market_data_files"})
     candidates = catalog.get(normalized_uri, []) if normalized_uri is not None else []
     catalog_record = candidates[0] if len(candidates) == 1 else None
+    catalog_evidence = "missing"
     if len(candidates) > 1:
         diagnostics.append({"code": "CATALOG_FILE_URI_AMBIGUOUS", "table": "market_partitions"})
     is_derived = "derived" in data_type or (data_type == "bars" and period in {"5m", "15m", "30m", "60m"})
@@ -430,19 +436,28 @@ def _classify_market_data_file_row(
         disposition = "REBUILD_ONLY"
         reason = "legacy bar period is regenerated from provider-direct canonical 1m bars" if data_type == "bars" else "derived data_type is regenerated from provider-direct canonical bars"
         category = "permanent_derived_periods"
-    elif _is_trusted_provider_direct_bar(row, catalog_record):
+    elif catalog_record is not None and _catalog_identity_matches(row, catalog_record):
         diagnostics.append({"code": "PHYSICAL_KEEP_PROOF_REQUIRED", "table": "market_data_files"})
         disposition = "REVIEW_REQUIRED"
-        reason = "catalog linkage is present but physical manifest and parquet proof is required before KEEP"
+        reason = "metadata is aligned but data_version is catalog-unverified and physical manifest/parquet proof is required before KEEP"
         category = "duplicate_bar_layers"
+        catalog_evidence = "metadata_aligned_partial_data_version_unverified"
+    elif catalog_record is not None:
+        diagnostics.append({"code": "CATALOG_IDENTITY_MISMATCH", "table": "market_data_files"})
+        disposition = "REVIEW_REQUIRED"
+        reason = "catalog identity fields differ from legacy file metadata"
+        category = "duplicate_bar_layers"
+        catalog_evidence = "mismatch"
     elif any(marker in path for marker in ("/raw/", "/standard/", "/canonical/")):
         disposition = "REVIEW_REQUIRED"
         reason = "canonical-looking file path has no verified catalog partition linkage" if "/canonical/" in path else "bar-layer path requires explicit retirement review"
         category = "duplicate_bar_layers"
+        catalog_evidence = "missing"
     else:
         disposition = "REVIEW_REQUIRED"
         reason = "legacy file metadata has no verified canonical catalog linkage"
         category = "duplicate_bar_layers"
+        catalog_evidence = "missing"
     return {
         "id": row["id"],
         "provider": row["provider"],
@@ -458,13 +473,11 @@ def _classify_market_data_file_row(
         "disposition": disposition,
         "reason": reason,
         "category": category,
-        "catalog_evidence": "verified" if catalog_record is not None else "missing",
+        "catalog_evidence": catalog_evidence,
     }
 
 
-def _is_trusted_provider_direct_bar(row: dict[str, str | None], catalog: dict[str, str] | None) -> bool:
-    if catalog is None:
-        return False
+def _catalog_identity_matches(row: dict[str, str | None], catalog: dict[str, str]) -> bool:
     return (
         row["provider"] == "rqdata"
         and row["data_type"] == "bars"
@@ -475,7 +488,6 @@ def _is_trusted_provider_direct_bar(row: dict[str, str | None], catalog: dict[st
         and row["contract_code"] == catalog["contract_or_series"]
         and row["period"] == catalog["frequency"]
         and row["checksum"] == catalog["checksum"]
-        and row["data_version"] == catalog["manifest_version"]
         and bool(catalog["manifest_uri"] and catalog["manifest_digest"])
     )
 
@@ -689,12 +701,13 @@ def _read_regular_file_under_root(
         digest = sha256()
         contents = bytearray() if capture_bytes else None
         streamed = 0
+        stream_limit = min(max_file_bytes, max_stream_bytes) if max_stream_bytes is not None else max_file_bytes
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             while True:
-                remaining = None if max_stream_bytes is None else max_stream_bytes - streamed
-                if remaining is not None and remaining <= 0:
+                remaining = stream_limit - streamed
+                if remaining <= 0:
                     break
-                chunk = handle.read(1024 * 1024 if remaining is None else min(1024 * 1024, remaining))
+                chunk = handle.read(min(1024 * 1024, remaining))
                 if not chunk:
                     break
                 digest.update(chunk)
@@ -702,6 +715,8 @@ def _read_regular_file_under_root(
                 if contents is not None:
                     contents.extend(chunk)
         after = os.fstat(descriptor)
+        if after.st_size > max_file_bytes:
+            return None, {"code": "MAX_FILE_BYTES_EXCEEDED", "path": display_path}
         if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
             return None, {"code": "TOCTOU_CHANGED", "path": display_path}
         if max_stream_bytes is not None and after.st_size > max_stream_bytes:
@@ -773,7 +788,7 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
             diagnostics.append({"code": "REPO_NON_UTF8_SKIPPED", "path": relative})
             truncated = True
             continue
-        kind = "doc" if path.suffix.lower() == ".md" else "code"
+        kind = "doc" if path.suffix.lower() in {".md", ".txt"} else "code"
         section_state = _reference_state_for_context(relative, "", kind=kind)
         for line_number, line in enumerate(lines, start=1):
             if path.suffix.lower() == ".md" and line.lstrip().startswith("#"):
@@ -860,9 +875,13 @@ def _reference_state_for_context(
     section_state: str | None = None,
 ) -> str:
     normalized_path = relative.replace("\\", "/")
-    if _ARCHIVE_PATH_MARKER.search(normalized_path):
+    if kind != "doc":
+        return "review_required" if _AMBIGUOUS_HISTORY_MARKER.search(line) or _EXPLICIT_HISTORICAL_DOC_MARKER.fullmatch(line) else "active"
+    if _EXPLICIT_HISTORICAL_DOC_MARKER.fullmatch(line):
         return "historical"
-    if kind == "doc" and _EXPLICIT_HISTORICAL_DOC_MARKER.fullmatch(line):
+    if _ACTIVE_OVERRIDE_MARKER.search(line):
+        return "active"
+    if _ARCHIVE_PATH_MARKER.search(normalized_path):
         return "historical"
     if kind == "doc" and section_state is not None and section_state != "active":
         return section_state

@@ -88,7 +88,7 @@ historical evidence/report/receipt 默认保护。Task 07 只允许在以下条�
 2. zero active references（active canonical、测试、Gate、文档和 Runtime 引用扫描为零）；
 3. independent Sol Review 允许删除；
 4. owner 批准 exact scope；
-6. 删除后全仓验证与引用扫描。
+5. 删除后全仓验证与引用扫描。
 
 本合同和任务 00 均不授权删除任何文件、Git 历史、数据库记录、Parquet、evidence、report
 或 receipt。report 14/15 是 Git-traceable historical snapshots，不是 active Gate/regression；
