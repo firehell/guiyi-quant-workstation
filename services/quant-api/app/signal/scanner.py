@@ -20,6 +20,7 @@ from app.queue import get_redis_connection, get_signal_queue
 from app.schemas.signal import (
     FORMAL_SIGNAL_AUXILIARY_PERIOD,
     FORMAL_SIGNAL_EXECUTION_CONTRACT,
+    ResearchSignalScanRequest,
     SignalDataRole,
     SignalScanMode,
     SignalScanRequest,
@@ -76,6 +77,7 @@ class SignalScanner(legacy.SignalScanner):
         if self._formal_execution:
             _validate_formal_task(task)
         if not self._formal_execution:
+            _validate_legacy_task(task)
             self.reader = legacy.MarketDataReader(self.session)
         try:
             return super().run(task_id)
@@ -418,7 +420,12 @@ class SignalScanner(legacy.SignalScanner):
 def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -> SignalScanTask:
     research_only = bool(request_payload.get("research_only", False))
     if research_only:
-        normalized_request = dict(request_payload)
+        request = ResearchSignalScanRequest.model_validate(request_payload)
+        if request.research_only is not True:
+            raise ValueError("SIGNAL_TASK_ROUTING_INVALID")
+        normalized_request = request.model_dump(mode="json")
+        if not normalized_request["periods"]:
+            normalized_request["periods"] = DEFAULT_PERIODS.copy()
         payload = {
             **normalized_request,
             "data_role": str(
@@ -471,6 +478,40 @@ def _validate_formal_task(task: SignalScanTask) -> SignalScanRequest:
         or list(task.periods or []) != request.periods
     ):
         raise ValueError("SIGNAL_FORMAL_TASK_IDENTITY_INVALID")
+    return request
+
+
+def _validate_legacy_task(task: SignalScanTask) -> ResearchSignalScanRequest:
+    payload = task.request_payload
+    if not isinstance(payload, dict):
+        raise ValueError("SIGNAL_TASK_ROUTING_INVALID")
+    try:
+        request = ResearchSignalScanRequest.model_validate(
+            {
+                key: value
+                for key, value in payload.items()
+                if key != "execution_contract"
+            }
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("SIGNAL_TASK_ROUTING_INVALID") from exc
+    profile_id = request.profile_id.strip()
+    expected_payload = {
+        **request.model_dump(mode="json"),
+        "execution_contract": LEGACY_SIGNAL_EXECUTION_CONTRACT,
+    }
+    if (
+        request.research_only is not True
+        or not profile_id
+        or payload != expected_payload
+        or payload.get("profile_id") != profile_id
+        or task.profile_id != profile_id
+        or task.market_data_file_id is not None
+        or "market_data_file_id" in payload
+        or task.watchlist_code != request.watchlist_code
+        or list(task.periods or []) != request.periods
+    ):
+        raise ValueError("SIGNAL_TASK_ROUTING_INVALID")
     return request
 
 

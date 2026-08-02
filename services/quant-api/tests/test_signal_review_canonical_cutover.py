@@ -432,6 +432,159 @@ def test_research_worker_requires_explicit_legacy_execution_contract(
         assert result == {"legacy_research": True}
 
 
+def test_research_worker_freezes_default_periods_before_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.signal import scanner as scanner_module
+
+    legacy_run_calls: list[int] = []
+
+    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
+        legacy_run_calls.append(task_id)
+        return {"legacy_research": True}
+
+    factory = _session_factory()
+    with factory() as session:
+        task = scanner_module.create_signal_scan_task(
+            session,
+            {
+                "watchlist_code": "black",
+                "profile_id": "intraday_research_v1",
+                "research_only": True,
+            },
+        )
+        session.commit()
+        monkeypatch.setattr(
+            scanner_module.legacy.SignalScanner,
+            "run",
+            legacy_run_spy,
+        )
+
+        result = scanner_module.SignalScanner(session).run(task.id)
+
+        assert task.periods == ["5m", "15m", "30m", "60m", "1d"]
+        assert task.request_payload["periods"] == task.periods
+        assert legacy_run_calls == [task.id]
+        assert result == {"legacy_research": True}
+
+
+def test_stripped_formal_payload_cannot_route_to_legacy_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.signal import scanner as scanner_module
+
+    legacy_run_calls: list[int] = []
+
+    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
+        legacy_run_calls.append(task_id)
+        return {"wrong_route": True}
+
+    factory = _session_factory()
+    canonical = FakeCanonicalMarketData()
+    with factory() as session:
+        task = scanner_module.create_signal_scan_task(session, _formal_request())
+        task.request_payload = {
+            "execution_contract": "legacy_research_scan_v1",
+            "research_only": True,
+        }
+        session.commit()
+        monkeypatch.setattr(
+            scanner_module.legacy.SignalScanner,
+            "run",
+            legacy_run_spy,
+        )
+
+        with pytest.raises(ValueError, match="SIGNAL_TASK_ROUTING_INVALID"):
+            scanner_module.SignalScanner(
+                session,
+                canonical_market_data=canonical,
+            ).run(task.id)
+
+        session.refresh(task)
+        assert legacy_run_calls == []
+        assert canonical.queries == []
+        assert task.status == "pending"
+        assert task.started_at is None
+        assert task.finished_at is None
+        assert task.result_payload == {}
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "missing_payload_profile",
+        "blank_payload_profile",
+        "missing_top_profile",
+        "profile_mismatch",
+        "top_market_data_file",
+        "payload_market_data_file",
+        "unknown_payload_field",
+    ],
+)
+def test_legacy_worker_rejects_profile_or_payload_drift_before_dispatch(
+    drift: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.signal import scanner as scanner_module
+
+    legacy_run_calls: list[int] = []
+
+    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
+        legacy_run_calls.append(task_id)
+        return {"wrong_route": True}
+
+    factory = _session_factory()
+    with factory() as session:
+        task = scanner_module.create_signal_scan_task(
+            session,
+            {
+                "watchlist_code": "black",
+                "profile_id": "intraday_research_v1",
+                "periods": ["5m"],
+                "research_only": True,
+            },
+        )
+        payload = dict(task.request_payload)
+        if drift == "missing_payload_profile":
+            payload.pop("profile_id")
+        elif drift == "blank_payload_profile":
+            payload["profile_id"] = ""
+        elif drift == "missing_top_profile":
+            task.profile_id = None
+        elif drift == "profile_mismatch":
+            payload["profile_id"] = "different_profile"
+        elif drift == "top_market_data_file":
+            task.market_data_file_id = 999
+        elif drift == "payload_market_data_file":
+            payload["market_data_file_id"] = 999
+        elif drift == "unknown_payload_field":
+            payload["unexpected"] = True
+        task.request_payload = payload
+        session.commit()
+        monkeypatch.setattr(
+            scanner_module.legacy.SignalScanner,
+            "run",
+            legacy_run_spy,
+        )
+
+        with pytest.raises(ValueError, match="SIGNAL_TASK_ROUTING_INVALID"):
+            scanner_module.SignalScanner(session).run(task.id)
+
+        session.refresh(task)
+        assert legacy_run_calls == []
+        assert task.status == "pending"
+        assert task.started_at is None
+        assert task.finished_at is None
+        assert task.result_payload == {}
+        assert task.error_message is None
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+
+
 @pytest.mark.parametrize(
     ("known_at", "error_code"),
     [
