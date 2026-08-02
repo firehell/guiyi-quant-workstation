@@ -245,7 +245,7 @@ def test_templates_match_the_charter_and_stage_reporting_contracts() -> None:
     assert rendered.returncode == 0, rendered.stderr
     assert tuple(
         line.removeprefix("## ") for line in rendered.stdout.splitlines() if line.startswith("## ")
-    ) == CHARTER_HEADINGS[1:]
+    ) == CHARTER_HEADINGS
     for identity_field in (
         "Title:", "Issue:", "Task ID:", "Kind:", "Planned branch:", "Planned worktree:",
     ):

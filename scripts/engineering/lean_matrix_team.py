@@ -11,6 +11,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+# The CLI's contract is stdout/stderr only. Prevent Python's import machinery
+# from creating an ignored __pycache__ beside the shared repository policy.
+sys.dont_write_bytecode = True
+
 from task_workflow import WorkflowError, _validate_paths, classify_paths
 
 
@@ -59,6 +63,11 @@ class CharterArgumentParser(argparse.ArgumentParser):
 def _require_string(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise CharterError("invalid_string", f"{field} must be a non-blank string")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise CharterError(
+            "invalid_string_control_characters",
+            f"{field} must be a single-line string without control characters",
+        )
     return value.strip()
 
 
@@ -202,6 +211,8 @@ def _markdown(charter: dict[str, Any], task: dict[str, Any], dispatch: dict[str,
     gates = charter["external_gates"] or ["None; this Lane has no external Gate."]
     return "\n".join([
         "# Task Charter",
+        "",
+        "## Identity",
         "",
         f"- Title: {task['title']}",
         f"- Issue: {task['issue_number']}",

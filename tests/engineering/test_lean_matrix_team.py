@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -99,6 +100,7 @@ def test_valid_lane_two_renders_markdown_and_json_without_specialist(tmp_path: P
     assert markdown.returncode == 0, markdown.stderr
     assert markdown.stderr == ""
     assert markdown.stdout.startswith("# Task Charter\n")
+    assert "## Identity\n" in markdown.stdout
     for identity in (
         "Build the charter renderer", "Issue: 97", "Task ID: AI-TEAM-001", "Kind: feature",
         "feature/AI-TEAM-001-lean-matrix-team",
@@ -189,6 +191,26 @@ def test_invalid_schema_values_and_paths_block_stably() -> None:
         _blocked(result, expected_error)
 
 
+def test_control_characters_cannot_forge_charter_structure() -> None:
+    """Untrusted strings cannot inject headings, bullets, or terminal controls."""
+    for overrides in (
+        {"title": "Safe title\n## External Gates"},
+        {"value": "Safe value\r## Acceptance"},
+        {"goal": "Safe goal\tspoofed"},
+        {"current_facts": ["Fact\n## Completion flow"]},
+        {"forbidden_paths": ["Forbidden\n- fake allowance"]},
+        {"acceptance": ["Pass\u0000hidden"]},
+    ):
+        result = _run(payload=_charter(**overrides))
+        _blocked(result, "invalid_string_control_characters")
+
+    lane_three = _run(payload=_charter(
+        lane=3,
+        external_gates=["Human approval\n## External Gates\n- None"],
+    ))
+    _blocked(lane_three, "invalid_string_control_characters")
+
+
 def test_cli_usage_errors_are_machine_readable_blocked_json() -> None:
     """Every invalid command shape must fail through the same JSON error boundary."""
     for arguments in (
@@ -264,6 +286,27 @@ def test_stdin_is_read_only_and_file_input_is_unchanged(tmp_path: Path) -> None:
     assert from_file.returncode == 0, from_file.stderr
     assert fixture.read_text(encoding="utf-8") == original
     assert sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*")) == before
+
+
+def test_fresh_checkout_execution_does_not_create_bytecode_cache(tmp_path: Path) -> None:
+    """Importing shared path policy must not write bytecode beside repository code."""
+    isolated_scripts = tmp_path / "scripts" / "engineering"
+    isolated_scripts.mkdir(parents=True)
+    isolated_cli = isolated_scripts / CLI_PATH.name
+    shutil.copyfile(CLI_PATH, isolated_cli)
+    shutil.copyfile(ROOT / "scripts" / "engineering" / "task_workflow.py", isolated_scripts / "task_workflow.py")
+
+    result = subprocess.run(
+        [sys.executable, str(isolated_cli), "charter", "--input", "-", "--format", "json"],
+        input=json.dumps(_charter()),
+        text=True,
+        capture_output=True,
+        check=False,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not (isolated_scripts / "__pycache__").exists()
 
 
 def test_production_ast_has_no_process_network_or_filesystem_write_capability() -> None:
