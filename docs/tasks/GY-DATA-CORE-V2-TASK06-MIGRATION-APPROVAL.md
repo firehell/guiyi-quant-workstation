@@ -2,17 +2,22 @@
 
 更新时间：2026-08-02
 
-状态：`BLOCKED_LIVE_EOD_CONTRACT`
+状态：`DRAFT_PR_CI_AND_EXACT_OWNER_APPROVAL_PENDING`
 
 本 packet 只申请恢复 Task 06 schema 到已审查候选 head；不申请 RQData、live/EOD 业务写入、
 scheduler、Runtime、SignalEvent、通知、删除、release、订单或自动交易。
-当前仍缺 owner 冻结的 causal live/EOD evaluator 合同，因此本 packet 不可用于 apply；
-即使后续合同通过，仍须先解决未批准 `0028` incident 并刷新 exact-head 证据。
+Owner 已冻结单一 EMA21 confirmed-close evaluator 合同，并选择追认/保留 empty/disabled `0028`
+incident。该追认不等于事前批准。本 packet 仍须绑定最终 commit、PR/CI、独立 Review 与 fresh 最小
+数据库备份命令后，取得 exact approval 才可 apply。
 
 ## Exact scope
 
 - task branch：`feature/live-review-loop-clean-start`
-- base：`develop@b64453eab89692e5250a4275f04cac1bd26f02d4`
+- original base：`develop@b64453eab89692e5250a4275f04cac1bd26f02d4`
+- reviewed implementation source：`6c747ab69f9de1ee09beaf808c90a723bfd63f3d`
+- PR base target：`develop@385356b351abf824c09fb056a4b2cc196679fcc5`
+- develop drift audit：相对 original base 的 changed-path 交集为空；直接 merge 被 workflow hook
+  拒绝，最终只允许 GitHub PR 三方集成
 - production 当前 revision：`20260802_0028`（未事前批准的 incident；见 incident packet）
 - candidate head revision：`20260802_0031`
 - `0028` SHA-256：`f09fc15ef09f260ebff1aa0b5065bbe8386e4670db96adbb12b23e54bfa095e5`
@@ -37,24 +42,29 @@ PostgreSQL trigger；`0031` 增加 provider-final data version/request digest �
 
 - isolated PostgreSQL：exact head `0031` 完成 `0027 -> 0031 -> 0027 -> 0031`，6 passed，
   19 warnings（既有 `Column.copy()` deprecation），临时库已删除；
-- 全后端：2560 passed，37 skipped；
-- Task 06 focused/offline migration：42 passed，32 skipped；
+- 全后端：2573 passed，37 skipped；
+- Task 06 focused + health + offline migration：70 passed，32 skipped；
+- isolated PostgreSQL exact roundtrip：6 passed，19 条既有 `Column.copy()` deprecation warnings；
+- independent Review：`CLEAN_FOR_INTEGRATION`；
 - Ruff、docs、diff check、secret scan：passed；
 - production readback：revision=`0028`，五张新表均 0 行，六个相关 flags 均 false；
 - 未执行 RQData、live/EOD/sample 业务写入、scheduler、Runtime、SignalEvent 或通知。
 
-## Owner 必须先选择 incident 处置
+## Owner incident 处置（已记录）
 
-推荐：先批准 fresh backup，再把 empty/disabled production 从 `0028` 降回 `0027`；完成回读后，
-另行批准从 exact reviewed source 升级到 head `0031`。
-
-备选：明确 ratify 当前 empty/disabled `0028` incident，再对 `0028 -> 0031` 单独批准。ratification
-不能改写为事前合规，也不授权任何业务开关。
+已选择：ratify 当前 empty/disabled `0028` incident，再对 `0028 -> 0031` 单独批准。ratification
+不能改写为事前合规，也不授权任何业务开关、Runtime 或数据读取。
 
 ## 备份与 apply 前停止条件
 
-先按 `docs/LOCAL_BACKUP_RESTORE.md` 对仓库既有 backup CLI 做 dry-run。真正 `--execute` 需要 owner
-单独批准并产生新 receipt。以下任一条件不满足即停止：
+直接以 `/Users/zhangzhao/GuiyiBackup` 为 output root 的 dry-run 已按合同 fail-closed：
+`output_mount_not_external`。当前机器只有系统盘与项目外置盘，W7 明确拒绝系统根卷，且不能把
+备份写回项目所在外置盘。拟在 exact approval 后创建 2 GiB APFS sparsebundle，物理文件固定为
+`/Users/zhangzhao/GuiyiBackup/task06-pre0031.sparsebundle`，只读核对后挂载为
+`/Volumes/GuiyiTask06Backup`，再以该独立 mount 作为 database-only backup output root。
+backup id 固定为 `task06-pre0031-6c747ab6`。完成后必须校验 manifest/dump SHA-256 与
+`pg_restore --list`，再允许 `0028 -> 0031`。真正 sparsebundle 创建、backup `--execute` 与 migration
+必须在同一最终 exact approval 中由 owner 明确批准。以下任一条件不满足即停止：
 
 - production revision 与所选路径不一致；
 - 任一 Task 06 新表非空，或存在 `signal_events.decision_id IS NOT NULL`；
@@ -83,7 +93,6 @@ downgrade 当成业务删除工具。
 
 ## 尚缺 Gate
 
-- owner 对 incident 的 downgrade 或 ratification 决策；
 - exact source 独立 Review 结论；
 - task PR/CI 与 `develop` integration；
 - fresh backup receipt；
