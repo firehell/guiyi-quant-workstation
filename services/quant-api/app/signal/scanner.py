@@ -19,6 +19,7 @@ from app.models.signal import SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
 from app.schemas.signal import (
     FORMAL_SIGNAL_AUXILIARY_PERIOD,
+    FORMAL_SIGNAL_EXECUTION_CONTRACT,
     SignalDataRole,
     SignalScanMode,
     SignalScanRequest,
@@ -33,6 +34,22 @@ from app.services.actual_contract_semantics import load_strict_main_contract_map
 
 DEFAULT_PERIODS = legacy.DEFAULT_PERIODS
 SIGNAL_STATUS_VALUES = {item.value for item in SignalStatus}
+LEGACY_SIGNAL_EXECUTION_CONTRACT = "legacy_research_scan_v1"
+FORMAL_SIGNAL_ROUTING_MARKERS = frozenset(
+    {
+        "request_payload_sha256",
+        "dataset_kind",
+        "instrument_symbol",
+        "contract_or_series",
+        "start",
+        "end",
+        "strategy_code",
+        "strategy_version",
+        "observation_only",
+        "not_trading_instruction",
+        "auto_order",
+    }
+)
 
 
 class SignalScanner(legacy.SignalScanner):
@@ -55,9 +72,7 @@ class SignalScanner(legacy.SignalScanner):
         task = self.session.get(SignalScanTask, task_id)
         if task is None:
             raise ValueError(f"signal scan task not found: {task_id}")
-        self._formal_execution = (
-            task.profile_id is None and task.market_data_file_id is None
-        )
+        self._formal_execution = _is_formal_task_payload(task.request_payload)
         if self._formal_execution:
             _validate_formal_task(task)
         if not self._formal_execution:
@@ -411,6 +426,7 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
                 or SignalDataRole.PRIMARY.value
             ),
             "research_only": True,
+            "execution_contract": LEGACY_SIGNAL_EXECUTION_CONTRACT,
         }
     else:
         request = SignalScanRequest.model_validate(request_payload)
@@ -422,6 +438,25 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
     task.profile_id = str(payload.get("profile_id")) if payload["research_only"] and payload.get("profile_id") else None
     task.market_data_file_id = None
     return task
+
+
+def _is_formal_task_payload(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        raise ValueError("SIGNAL_TASK_ROUTING_INVALID")
+    execution_contract = payload.get("execution_contract")
+    has_formal_marker = (
+        execution_contract == FORMAL_SIGNAL_EXECUTION_CONTRACT
+        or payload.get("research_only") is False
+        or bool(FORMAL_SIGNAL_ROUTING_MARKERS & set(payload))
+    )
+    if has_formal_marker:
+        return True
+    if (
+        execution_contract == LEGACY_SIGNAL_EXECUTION_CONTRACT
+        and payload.get("research_only") is True
+    ):
+        return False
+    raise ValueError("SIGNAL_TASK_ROUTING_INVALID")
 
 
 def _validate_formal_task(task: SignalScanTask) -> SignalScanRequest:

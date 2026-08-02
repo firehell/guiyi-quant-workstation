@@ -334,6 +334,104 @@ def test_formal_worker_rejects_persisted_payload_hash_drift() -> None:
         assert task.result_payload == {}
 
 
+@pytest.mark.parametrize("legacy_fk", ["profile_id", "market_data_file_id"])
+@pytest.mark.parametrize(
+    "routing_tamper",
+    [
+        "unchanged",
+        "legacy_execution_contract",
+        "missing_execution_contract",
+        "missing_payload_hash",
+    ],
+)
+def test_formal_worker_never_routes_by_tampered_legacy_fk(
+    legacy_fk: str,
+    routing_tamper: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.signal import scanner as scanner_module
+
+    legacy = scanner_module.legacy
+    SignalScanner = scanner_module.SignalScanner
+    create_signal_scan_task = scanner_module.create_signal_scan_task
+
+    legacy_run_calls: list[int] = []
+
+    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
+        legacy_run_calls.append(task_id)
+        return {"wrong_route": True}
+
+    factory = _session_factory()
+    canonical = FakeCanonicalMarketData()
+    with factory() as session:
+        task = create_signal_scan_task(session, _formal_request())
+        if legacy_fk == "profile_id":
+            task.profile_id = "forged-legacy-profile"
+        else:
+            task.market_data_file_id = 999
+        payload = dict(task.request_payload)
+        if routing_tamper == "legacy_execution_contract":
+            payload["execution_contract"] = "legacy_research_scan_v1"
+        elif routing_tamper == "missing_execution_contract":
+            payload.pop("execution_contract")
+        elif routing_tamper == "missing_payload_hash":
+            payload.pop("request_payload_sha256")
+        task.request_payload = payload
+        session.commit()
+        monkeypatch.setattr(legacy.SignalScanner, "run", legacy_run_spy)
+
+        with pytest.raises(ValueError, match="SIGNAL_FORMAL_TASK_IDENTITY_INVALID"):
+            SignalScanner(session, canonical_market_data=canonical).run(task.id)
+
+        session.refresh(task)
+        assert legacy_run_calls == []
+        assert canonical.queries == []
+        assert task.status == "pending"
+        assert task.started_at is None
+        assert task.finished_at is None
+        assert task.result_payload == {}
+        assert task.error_message is None
+        assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
+        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
+
+
+def test_research_worker_requires_explicit_legacy_execution_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.signal import scanner as scanner_module
+
+    legacy = scanner_module.legacy
+    SignalScanner = scanner_module.SignalScanner
+    create_signal_scan_task = scanner_module.create_signal_scan_task
+
+    legacy_run_calls: list[int] = []
+
+    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
+        legacy_run_calls.append(task_id)
+        return {"legacy_research": True}
+
+    factory = _session_factory()
+    with factory() as session:
+        task = create_signal_scan_task(
+            session,
+            {
+                "watchlist_code": "black",
+                "profile_id": "intraday_research_v1",
+                "periods": ["5m"],
+                "research_only": True,
+            },
+        )
+        session.commit()
+        monkeypatch.setattr(legacy.SignalScanner, "run", legacy_run_spy)
+
+        result = SignalScanner(session).run(task.id)
+
+        assert task.request_payload["execution_contract"] == "legacy_research_scan_v1"
+        assert legacy_run_calls == [task.id]
+        assert result == {"legacy_research": True}
+
+
 @pytest.mark.parametrize(
     ("known_at", "error_code"),
     [
