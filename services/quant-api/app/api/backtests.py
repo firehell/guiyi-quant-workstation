@@ -38,7 +38,7 @@ from app.services.batch_backtest import (
     report_payload,
     task_snapshot,
 )
-from app.services.market_data_reader import MarketDataReader
+from app.data_core.catalog import HistoricalCatalog
 from app.tasks.backtests import run_backtest_task
 from app.vnpy_integration.errors import BacktestConfigurationError
 
@@ -134,7 +134,6 @@ class BacktestRunRequest(BaseModel):
     symbol: str
     contract: str
     period: str
-    profile_id: str | None = None
     start: str
     end: str
     initial_capital: float = Field(default=100000.0, gt=0)
@@ -160,7 +159,6 @@ class BatchBacktestRunRequest(BaseModel):
     period: str
     start: str
     end: str
-    profile_id: str | None = None
     symbols: list[str] | None = None
     initial_capital: float = Field(default=100000.0, gt=0)
     risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
@@ -710,14 +708,13 @@ def list_watchlist_items(code: str, session: Session = Depends(get_db)) -> list[
     watchlist = session.scalar(select(Watchlist).where(Watchlist.code == code, Watchlist.is_active.is_(True)))
     if watchlist is None:
         raise HTTPException(status_code=404, detail="watchlist not found")
-    reader = MarketDataReader(session)
     return [
         {
             "symbol": item.symbol,
             "name": item.name,
             "exchange_code": item.exchange_code,
             "default_contract": item.default_contract,
-            "available_periods": sorted({row.period for row in reader.get_coverage(symbol=item.symbol) if row.period}),
+            "available_periods": sorted({row.frequency for row in HistoricalCatalog(session).list_datasets(symbol=item.symbol)}),
         }
         for item in sorted([item for item in watchlist.items if item.is_active], key=lambda row: (row.sort_order, row.symbol))
     ]

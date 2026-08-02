@@ -118,6 +118,62 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--preflight-receipt", type=Path)
     apply.add_argument("--preflight-hash")
 
+    task07 = data_commands.add_parser("task07")
+    task07_commands = task07.add_subparsers(dest="task07_command", required=True)
+    task07_inventory = task07_commands.add_parser("inventory")
+    task07_inventory.add_argument("--project-root", type=Path, required=True)
+    task07_inventory.add_argument("--data-root", type=Path, required=True)
+    task07_inventory.add_argument("--canonical-root", type=Path, required=True)
+    task07_inventory.add_argument("--evidence-root", type=Path, required=True)
+    task07_inventory.add_argument(
+        "--runtime-root",
+        type=Path,
+        action="append",
+        default=[],
+        help="Detached Runtime root to scan read-only; repeat for multiple roots.",
+    )
+    task07_inventory.add_argument(
+        "--protected-root",
+        type=Path,
+        action="append",
+        default=[],
+        help="Explicit protected evidence root; repeat for multiple roots.",
+    )
+    task07_inventory.add_argument("--database-revision")
+    task07_plan = task07_commands.add_parser("plan")
+    task07_plan.add_argument("--inventory", type=Path, required=True)
+    task07_plan.add_argument("--batch-key")
+    task07_plan.add_argument("--staging-root", type=Path, required=True)
+    task07_plan.add_argument("--canonical-root", type=Path, required=True)
+    task07_preflight = task07_commands.add_parser("preflight")
+    task07_preflight.add_argument("--plan", type=Path, required=True)
+    task07_preflight.add_argument("--approval-packet", type=Path, required=True)
+    task07_preflight.add_argument("--approval-hash", required=True)
+    task07_preflight.add_argument("--batch-key", required=True)
+    task07_preflight.add_argument("--staging-root", type=Path, required=True)
+    task07_preflight.add_argument("--canonical-root", type=Path, required=True)
+    task07_apply = task07_commands.add_parser("apply")
+    task07_apply.add_argument("--plan", type=Path, required=True)
+    task07_apply.add_argument("--approval-packet", type=Path)
+    task07_apply.add_argument("--approval-hash")
+    task07_apply.add_argument("--preflight-receipt", type=Path)
+    task07_apply.add_argument("--preflight-hash")
+    task07_apply.add_argument("--batch-key")
+    task07_apply.add_argument("--staging-root", type=Path)
+    task07_apply.add_argument("--canonical-root", type=Path)
+    task07_verify = task07_commands.add_parser("verify")
+    task07_verify.add_argument("--plan", type=Path, required=True)
+    task07_verify.add_argument("--receipt", type=Path, required=True)
+    task07_verify.add_argument("--batch-key", required=True)
+    task07_verify.add_argument("--canonical-root", type=Path, required=True)
+    retirement_plan = task07_commands.add_parser("retirement-plan")
+    retirement_plan.add_argument("--project-root", type=Path, required=True)
+    retirement_plan.add_argument("--database-revision")
+    retirement_apply = task07_commands.add_parser("retirement-apply")
+    retirement_apply.add_argument("--plan", type=Path, required=True)
+    retirement_apply.add_argument("--approval-packet", type=Path)
+    retirement_apply.add_argument("--approval-hash")
+
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(
         dest="runtime_command",
@@ -162,6 +218,29 @@ def main(
         return 2
     data_core_command = _data_core_command(args)
     if data_core_command is not None:
+        if _is_task07_apply(args) and (
+            args.approval_packet is None
+            or not args.approval_hash
+            or args.preflight_receipt is None
+            or not args.preflight_hash
+            or not args.batch_key
+            or args.staging_root is None
+            or args.canonical_root is None
+        ):
+            _print_json(
+                {
+                    "schema_version": 1,
+                    "command": f"data.{data_core_command}",
+                    "status": "blocked",
+                    "readonly": True,
+                    "error": {
+                        "code": "TASK07_EXACT_APPROVAL_REQUIRED",
+                        "type": "Task07ApprovalError",
+                    },
+                },
+                stderr,
+            )
+            return 78
         if _is_data_core_apply(args) and (
             args.approval_packet is None
             or not args.approval_hash
@@ -430,6 +509,8 @@ def _data_core_command(args: argparse.Namespace) -> str | None:
         return "verify"
     if args.data_command == "migrate":
         return f"migrate.{args.migrate_command}"
+    if args.data_command == "task07":
+        return f"task07.{args.task07_command}"
     return None
 
 
@@ -461,6 +542,22 @@ def _is_data_core_apply(args: argparse.Namespace) -> bool:
             args.data_command == "migrate"
             and args.migrate_command == "apply"
         )
+        or _is_task07_apply(args)
+        or _is_task07_retirement_apply(args)
+    )
+
+
+def _is_task07_apply(args: argparse.Namespace) -> bool:
+    return bool(
+        args.data_command == "task07"
+        and args.task07_command == "apply"
+    )
+
+
+def _is_task07_retirement_apply(args: argparse.Namespace) -> bool:
+    return bool(
+        args.data_command == "task07"
+        and args.task07_command == "retirement-apply"
     )
 
 

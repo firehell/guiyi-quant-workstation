@@ -71,6 +71,20 @@ SignalEvent 仍 6 行且 decision link 全空、六个 flags 全 false、health 
 `develop` 后 Task 06 完成状态生效；本次仍不授权真实 RQData、scheduler、Runtime、
 SignalEvent、通知、删除或交易。
 
+Task 07 已完成代码实现并通过第六轮独立 Review，当前为
+`CODE_COMPLETE_EXTERNAL_GATE_PENDING`：可扩展 inventory、exact-target plan/preflight、Canonical
+apply/verify、fsync durable partial journal/resume、retirement before-image/rollback、canonical
+consumer 收口与 Web selector/legacy batch worker 退出均已落地。checkout-only 开发扫描当前为
+active/review-required 零；detached Runtime 可执行引用优先判 active/review，不能被 frozen/retired
+分类隐藏。旧 v8 生产只读 snapshot 的 103,481 assets、2,791 conflicts、4,297 retirement
+candidates 与引用数字均为 dirty-worktree 历史诊断，已被代码修改 supersede，不能用于 approval。
+当前未调用 RQData、未写 Canonical/PostgreSQL，也未执行 retirement DML；必须从 clean exact HEAD
+重采 v9 后再决定 Gate。脱敏 ledger 见 `docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。
+
+初步 checksum-drift 对照曾发现 45 个品种共 78,210 根 bar 的 `trading_day` 冲突；最终 v8 内容
+Gate 进一步直接识别出 2,791 个文件至少包含一个周末 trading day。因此不得把 checksum drift
+当作纯 metadata 修复，也不得让现有 `quality_status=passed` 绕过 session Gate。
+
 ## 数据核心任务状态
 
 | 任务 | 状态 | 说明 |
@@ -82,7 +96,8 @@ SignalEvent、通知、删除或交易。
 | GY-DATA-CORE-V2 Task 04 | completed on develop（本 closeout commit 可从 develop 到达时生效） | Canonical 自身 Gate、统一读取与普通消费者回归；legacy Shadow 不再是准入 Gate |
 | GY-DATA-CORE-V2 Task 05 | completed on develop（本 task PR merge 后生效） | canonical trusted consumers、synthetic/golden tests、fail-closed derived/reference inventory；不含真实删除或外部 DB/data-root inventory |
 | GY-DATA-CORE-V2 Task 06 | completed on develop（PR #105 merge 后生效） | 固定 EMA21 evaluator + `0028..0031` + live/decision/EOD/Review/Sample/retention；production=`0031`，empty/disabled smoke passed |
-| GY-DATA-CORE-V2 Task 07～08 | pending | 其他品种/受控清理、release/Runtime 分别保留独立 Gate |
+| GY-DATA-CORE-V2 Task 07 | code complete / external Gate pending | clean-head v9 inventory、逐批 approval/apply/readback、retirement approval 与 develop integration 尚未完成；无生产写入/删除 |
+| GY-DATA-CORE-V2 Task 08 | pending | 仅在 Task 07=`READY_FOR_TASK_08` 后进入 release/Runtime Gate |
 
 ## 未关闭 Gate
 
@@ -92,7 +107,8 @@ SignalEvent、通知、删除或交易。
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
 | Task 05 可信消费者切换 | independent Review passed；develop integration pending | `CLEAN_FOR_INTEGRATION`；仍须 task PR、post-merge CI 与 ancestry readback，不是 release 或 Runtime Gate |
-| Task 07 inventory external read-only Gate | pending | 真实 PostgreSQL/data root 必须另行显式只读运行；不授权 migration、rebuild、delete 或 repair |
+| Task 07 K-line data Gate | external evidence pending | v8 dirty snapshot 已 supersede；clean exact HEAD v9 尚未重采，不得生成 approval/apply |
+| Task 07 active-reference Gate | external evidence pending | checkout 开发扫描为零；detached Runtime 与 DB before-image 须由 clean-head v9 重新判定 |
 | Task 06 live/EOD contract | passed | 已冻结并验证单一 EMA21 confirmed-close observation 合同；不得注入其他 evaluator，且不扩展 centered-XMA 白名单 |
 | Task 06 production migration | passed | exact backup + approval 后完成 `0028 -> 0031`；empty/disabled smoke passed，不授权 Runtime/live enable |
 | 旧行情与 legacy 工件删除 | not authorized | 旧行情只读保留；任何删除需独立 exact deletion Gate |
@@ -117,6 +133,7 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 | legacy compatibility | PR #90～#94 实现与历史 evidence 保留；不再扩展或作为准入 Gate | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
 | Task 05 | completed on develop（本 task PR merge 后生效） | trusted consumers and fail-closed inventory complete；real DB/data-root inventory remains a Task 07 external Gate |
+| Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | v8 digests 仅为 superseded 诊断；clean-head v9、owner approvals、production apply/readback、retirement DML 与 develop integration 未完成；`READY_FOR_TASK_08=false` |
 
 ## 不可宣称
 

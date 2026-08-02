@@ -49,14 +49,11 @@ describe('marketChartInit', () => {
         contract: 'JM2609',
         period: '15m',
         access_mode: 'research',
-        profile_id: 'intraday_research_v1',
       }),
       {
         symbol: 'jm',
         contract: 'JM2609',
         period: '15m',
-        profile_id: 'intraday_research_v1',
-        access_mode: 'research',
         include_paths: false,
       },
     )
@@ -65,8 +62,6 @@ describe('marketChartInit', () => {
   it('preserves symbol-only browser coverage when a deep link has no complete contract scope', () => {
     assert.deepEqual(scopedCoverageParams({ symbol: 'jm' }), {
       symbol: 'jm',
-      profile_id: undefined,
-      access_mode: 'browser',
       include_paths: false,
     })
   })
@@ -81,8 +76,6 @@ describe('marketChartInit', () => {
       }),
       {
         symbol: 'jm',
-        profile_id: undefined,
-        access_mode: 'browser',
         include_paths: false,
       },
     )
@@ -96,14 +89,11 @@ describe('marketChartInit', () => {
         period: '1d',
         contract_view: 'continuous',
         access_mode: 'research',
-        profile_id: 'long_horizon_daily_v1',
       }),
       {
         symbol: 'jm',
         contract: 'jm.MAIN',
         period: '1d',
-        profile_id: 'long_horizon_daily_v1',
-        access_mode: 'research',
         include_paths: false,
       },
     )

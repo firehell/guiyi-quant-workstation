@@ -149,7 +149,7 @@ lineage，不再逐项调度。
 | 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（本 task PR merge 后生效）；exact-head independent Review=`CLEAN_FOR_INTEGRATION`；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 external Gate |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | completed on develop（PR #105 merge 后生效）；固定 EMA21 evaluator；production=`0031`，empty/disabled smoke passed；Runtime/live 未启用 |
-| 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
+| 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；clean-head v9、真实 approvals/apply/readback 与 develop integration 待完成，无 production write/delete |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
@@ -172,6 +172,32 @@ SignalEvent 无 decision link、六个 flags 全 false，health 为 disabled。
 生产 schema exact scope、备份/回滚与 disabled smoke 见
 `GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`；该 packet 现记录已执行的 backup、migration 与
 disabled/empty smoke receipt，不授权后续 Runtime、live、scheduler 或通知操作。
+
+### 4.0.0 Task 07 当前执行快照
+
+Task 07 从 clean `develop@39d1002d` 建立独立 task branch/worktree。专用
+`guiyi data task07` 合同覆盖 `inventory / plan / preflight / apply / verify /
+retirement-plan / retirement-apply`；只有两个 apply 命令是潜在写入口，且在 CLI 打开数据库前
+要求 exact approval 参数。inventory 使用 PostgreSQL `REPEATABLE READ READ ONLY`、稳定 keyset、
+SHA-256 分片 JSONL，并扫描 checkout 与 detached Runtime；不调用 RQData。
+
+2026-08-02 首轮生产只读 v8 snapshot：103,481 个资产，85 个
+`KEEP_CANONICAL_VERIFIED`、7,232 个 `REUSE_TRUSTED_SOURCE`、26 个
+`REGISTER_DATA_GAP`、2,791 个 `CONFLICT_BLOCKED`、14,402 个 `EXCLUDE_DERIVED` 和 78,945 个
+`RETIREMENT_CANDIDATE`。v8 内容 Gate 确认 2,791 个 conflict 均为 passed RQData
+actual-dominant direct bars 且至少包含一个周末 `trading_day`；411-batch migration plan 因此为
+`approval_eligible=false`。该 snapshot 来自 dirty worktree，现为 superseded 历史诊断，不得生成
+apply packet。
+
+当前实现已补齐 generic migration、exact write-target binding、fsync durable batch journal/crash
+resume、consumer cutover 与 exact retirement rollback，并通过第六轮独立 Review。checkout-only
+开发扫描为 active/review-required 零；detached Runtime 的可执行源码优先判 active/review。
+生产 DB v8 retirement before-image 为 4,297 行精确 update candidates，但最终 detached Runtime、
+inventory 和 DB before-image 必须由 clean exact HEAD v9 重采。没有 owner exact approval，所以未
+supersede binding、未 cancel task、未 deactivate signal，也没有文件/数据库删除。
+完整脱敏摘要、plan/before-image/候选 digest 与 rollback 边界见
+`docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。Task 07 当前不是完成态，且
+`READY_FOR_TASK_08=false`。
 
 ### 4.0 Task 04 closeout Owner 决策与正式验收（2026-08-02）
 

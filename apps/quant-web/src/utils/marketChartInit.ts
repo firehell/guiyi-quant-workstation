@@ -12,7 +12,6 @@ export interface RouteChartQuery {
   period?: string | null
   interval?: string | null
   contract_view?: string | null
-  profile_id?: string | null
   access_mode?: string | null
 }
 
@@ -95,8 +94,6 @@ export function scopedCoverageParams(query: RouteChartQuery) {
   return {
     symbol,
     ...(contract && period ? { contract, period } : {}),
-    profile_id: query.profile_id?.trim() || undefined,
-    access_mode: accessMode,
     include_paths: false as const,
   }
 }

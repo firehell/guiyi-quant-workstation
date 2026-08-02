@@ -216,7 +216,7 @@ def test_create_task_fails_closed_when_canonical_reader_is_unconfigured() -> Non
         app.dependency_overrides.clear()
 
 
-def test_inline_profile_backtest_is_disabled_instead_of_resolving_legacy_binding() -> None:
+def test_inline_profile_selector_is_rejected_before_legacy_route_handler() -> None:
     response = TestClient(app).post(
         "/api/backtests/run",
         json={
@@ -229,8 +229,11 @@ def test_inline_profile_backtest_is_disabled_instead_of_resolving_legacy_binding
         },
     )
 
-    assert response.status_code == 410
-    assert response.json()["detail"]["code"] == "BACKTEST_LEGACY_INLINE_DISABLED"
+    assert response.status_code == 422
+    assert any(
+        item["type"] == "extra_forbidden" and item["loc"][-1] == "profile_id"
+        for item in response.json()["detail"]
+    )
 
 
 def test_create_task_rejects_inactive_validation_and_legacy_roles_even_for_research(monkeypatch: pytest.MonkeyPatch) -> None:

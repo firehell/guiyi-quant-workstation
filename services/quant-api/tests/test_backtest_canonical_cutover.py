@@ -13,7 +13,12 @@ from sqlalchemy.pool import StaticPool
 
 from app.backtest.service import BacktestService
 from app.backtest.runner import BacktestTaskRunner
-from app.api.backtests import report_api_payload, task_api_payload
+from app.api.backtests import (
+    BacktestRunRequest,
+    BatchBacktestRunRequest,
+    report_api_payload,
+    task_api_payload,
+)
 from app.backtest.v1b_jm_tasks import build_jm_v1b_formal_request
 from app.data_core.bar_schema import CANONICAL_BAR_SCHEMA_VERSION, CanonicalBar
 from app.data_core.contracts import (
@@ -28,7 +33,7 @@ from app.db.base import Base
 from app.models.backtest import BacktestReportModel, BacktestTask
 from app.db.session import get_db
 from app.main import app
-from app.services.batch_backtest import create_batch_task
+from app.services.batch_backtest import BatchBacktestRunner, create_batch_task
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.schemas.backtest import FormalBacktestTaskRequest
 from app.vnpy_integration.backtest_runner import _validate_standard_rows
@@ -222,7 +227,6 @@ def test_fixed_jm_formal_spec_contains_no_profile_or_file_identity() -> None:
                 "symbol": "jm",
                 "contract": "jm.MAIN",
                 "period": "15m",
-                "profile_id": "intraday_research_v1",
                 "start": "2024-01-02",
                 "end": "2024-02-02",
             },
@@ -233,7 +237,6 @@ def test_fixed_jm_formal_spec_contains_no_profile_or_file_identity() -> None:
             {
                 "watchlist_code": "black",
                 "period": "15m",
-                "profile_id": "intraday_research_v1",
                 "start": "2024-01-02",
                 "end": "2024-02-02",
                 "run_inline": True,
@@ -281,6 +284,44 @@ def test_legacy_batch_service_cannot_create_nonresearch_task() -> None:
                 "end": "2024-02-02T00:00:00+00:00",
             },
         )
+
+
+@pytest.mark.parametrize("model", [BacktestRunRequest, BatchBacktestRunRequest])
+def test_legacy_backtest_request_models_reject_profile_selector(model: type) -> None:
+    payload = {
+        "period": "15m",
+        "start": "2024-01-02T00:00:00+00:00",
+        "end": "2024-02-02T00:00:00+00:00",
+        "profile_id": "legacy-profile",
+    }
+    if model is BacktestRunRequest:
+        payload.update({"symbol": "jm", "contract": "JM2609"})
+    else:
+        payload["watchlist_code"] = "black"
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+def test_queued_legacy_batch_task_cannot_execute_even_when_research_only() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        task = BacktestTask(
+            task_no="legacy-batch",
+            task_type="batch",
+            research_only=True,
+            status="pending",
+            request_payload={},
+            result_payload={},
+        )
+        session.add(task)
+        session.commit()
+        with pytest.raises(
+            BacktestConfigurationError,
+            match="BACKTEST_LEGACY_BATCH_DISABLED",
+        ):
+            BatchBacktestRunner(session).run(task.id)
+        session.refresh(task)
+        assert task.status == "pending"
 
 
 def test_formal_task_freezes_canonical_input_and_leaves_legacy_columns_null() -> None:

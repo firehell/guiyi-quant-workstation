@@ -453,6 +453,13 @@ class CanonicalStore:
                 self._cleanup_staged(staged)
             raise
 
+    def discard(self, staged: StagedBatch) -> None:
+        """Remove one caller-owned staged batch without touching canonical data."""
+
+        if not isinstance(staged, StagedBatch):
+            raise CanonicalStoreError("CANONICAL_STAGED_HANDLE_INVALID")
+        self._cleanup_staged(staged)
+
     def publish(
         self,
         staged: StagedBatch,

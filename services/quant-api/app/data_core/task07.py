@@ -1,0 +1,1589 @@
+"""Fail-closed Task 07 inventory, planning, and exact retirement contracts.
+
+Inventory and planning never call a provider or mutate business data.  The only
+mutation implemented here is the separately approved, exact-row retirement DML;
+it never deletes rows or files.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from enum import StrEnum
+from hashlib import sha256
+import json
+from pathlib import Path
+import re
+from typing import Any, Iterable, Mapping
+from zoneinfo import ZoneInfo
+
+import pyarrow.parquet as pq
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_TASK_HEAD = re.compile(r"[0-9a-f]{40}\Z")
+_DIRECT_FREQUENCIES = {"1m", "1d", "1w"}
+_DERIVED_FREQUENCIES = {"5m", "15m", "30m", "60m"}
+_ACTUAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
+_REFERENCE_PATTERNS = {
+    "profile_active_binding": re.compile(r"\b(?:ProfileActiveBinding|profile_active_bindings)\b"),
+    "legacy_reader": re.compile(r"\bMarketDataReader\b"),
+    "legacy_active_switch": re.compile(r"\bswitch_profile_active_binding\b"),
+    "legacy_selector": re.compile(r"\b(?:profile_id|market_data_file_id)\b"),
+    "legacy_bar_path": re.compile(r"(?:data/parquet/canonical/bars|data/raw/rqdata)"),
+    "parquet_glob": re.compile(r"(?:glob|rglob)\([^\n]*(?:parquet|\*\.)"),
+}
+_REFERENCE_SUFFIXES = {
+    ".cjs", ".conf", ".html", ".ini", ".js", ".json", ".md", ".mjs",
+    ".mts", ".py", ".service", ".sh", ".sql", ".toml", ".ts", ".tsx",
+    ".txt", ".vue", ".yaml", ".yml",
+}
+_REFERENCE_IGNORED_DIRS = {
+    ".git", ".pytest_cache", ".ruff_cache", ".venv", "__pycache__", "dist",
+    "node_modules",
+}
+_REFERENCE_SELF_PATHS = {
+    "services/quant-api/app/data_core/task07.py",
+    "services/quant-api/app/data_core/task07_migration.py",
+    "services/quant-api/app/services/derived_reference_inventory.py",
+    "services/quant-api/tests/data_core/test_task07_orchestration.py",
+    "services/quant-api/tests/test_derived_reference_inventory.py",
+}
+_RETIRED_LEGACY_MODULES = {
+    "services/quant-api/app/data_sources/local_parquet_provider.py",
+    "services/quant-api/app/repositories/data_center.py",
+    "services/quant-api/app/services/active_dataset.py",
+    "services/quant-api/app/services/active_dataset_resolver.py",
+    "services/quant-api/app/services/data_profile_registry.py",
+    "services/quant-api/app/services/market_data_reader.py",
+    "services/quant-api/app/services/market_workbench.py",
+    "services/quant-api/app/services/multi_primary_rulebook.py",
+    "services/quant-api/app/services/profile_active_switch.py",
+    "services/quant-api/app/services/profile_binding_candidate_generator.py",
+    "services/quant-api/app/services/profile_binding_rollout.py",
+    "services/quant-api/app/services/profile_binding_validator.py",
+    "services/quant-api/app/services/profile_lineage.py",
+    "services/quant-api/app/services/profile_target_resolver.py",
+}
+_READONLY_LINEAGE_PATHS = {
+    "apps/quant-web/src/components/market/MarketEvidenceDrawer.vue",
+    "apps/quant-web/src/components/market/MarketRuntimeObservationPanel.vue",
+    "apps/quant-web/src/pages/data/index.vue",
+    "apps/quant-web/src/pages/market/chart.vue",
+    "apps/quant-web/src/utils/marketRuntimeObservation.ts",
+    "packages/quant-core/guiyi_quant/strategies/indicator_policy.py",
+    "services/quant-api/app/cli.py",
+    "services/quant-api/app/api/data_center.py",
+    "services/quant-api/app/api/backtests.py",
+    "services/quant-api/app/backtest/runner.py",
+    "services/quant-api/app/backtest/service.py",
+    "services/quant-api/app/backtest/v1b_jm_tasks.py",
+    "services/quant-api/app/data_core/canonical_store.py",
+    "services/quant-api/app/data_core/cli_service.py",
+    "services/quant-api/app/data_core/historical_migration.py",
+    "services/quant-api/app/guiyi_cli/main.py",
+    "services/quant-api/app/services/backtest_validation_context.py",
+    "services/quant-api/app/services/batch_backtest.py",
+    "services/quant-api/app/services/canonical_market_data.py",
+    "services/quant-api/app/services/core_cli.py",
+    "services/quant-api/app/services/market_indicators.py",
+    "services/quant-api/app/services/review_lineage.py",
+    "services/quant-api/app/services/runtime_health.py",
+    "services/quant-api/app/services/signal_lineage.py",
+    "services/quant-api/app/services/signal_scanner.py",
+    "services/quant-api/app/signal/events.py",
+    "services/quant-api/app/signal/scanner.py",
+}
+_FROZEN_OBSERVATION_PREFIXES = (
+    "services/quant-api/app/backtest/htdy_",
+    "services/quant-api/app/services/after_market_",
+    "services/quant-api/app/services/htdy_",
+    "services/quant-api/app/services/live_",
+    "services/quant-api/app/services/s607_",
+    "services/quant-api/app/signal/jm_",
+    "services/quant-api/app/signal/stage9_",
+)
+_OFFLINE_DATA_TOOL_PREFIXES = (
+    "services/quant-api/app/services/rqdata_ingest/",
+    "services/quant-api/scripts/",
+)
+
+
+class AssetDisposition(StrEnum):
+    KEEP_CANONICAL_VERIFIED = "KEEP_CANONICAL_VERIFIED"
+    REUSE_TRUSTED_SOURCE = "REUSE_TRUSTED_SOURCE"
+    PROTECTED_EVIDENCE_SOURCE = "PROTECTED_EVIDENCE_SOURCE"
+    REGISTER_DATA_GAP = "REGISTER_DATA_GAP"
+    CONFLICT_BLOCKED = "CONFLICT_BLOCKED"
+    EXCLUDE_DERIVED = "EXCLUDE_DERIVED"
+    RETIREMENT_CANDIDATE = "RETIREMENT_CANDIDATE"
+
+
+@dataclass(frozen=True, slots=True)
+class Task07Asset:
+    market_data_file_id: int
+    provider: str
+    data_type: str
+    symbol: str
+    contract_or_series: str
+    frequency: str
+    data_role: str
+    quality_status: str
+    file_path: str
+    source_scope: str
+    content_gate_status: str
+    checksum: str | None
+    file_size_bytes: int | None
+    physical_exists: bool
+    physical_checksum: str | None
+    catalog_checksum: str | None
+    dataset_kind: str | None
+    coverage_start: str | None
+    coverage_end: str | None
+    row_count: int | None = None
+    data_version: str | None = None
+
+
+def canonical_digest(value: Any) -> str:
+    return sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def classify_asset(asset: Task07Asset) -> AssetDisposition:
+    # Protected approvals/evidence are immutable regardless of metadata
+    # quality. They cannot enter migration, repair, retirement, or deletion.
+    if asset.source_scope == "protected_evidence_root":
+        return AssetDisposition.PROTECTED_EVIDENCE_SOURCE
+    if asset.source_scope == "outside_approved_roots":
+        return AssetDisposition.RETIREMENT_CANDIDATE
+    if asset.frequency in _DERIVED_FREQUENCIES:
+        return AssetDisposition.EXCLUDE_DERIVED
+    if asset.provider != "rqdata" or asset.data_type not in {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}:
+        return AssetDisposition.RETIREMENT_CANDIDATE
+    if asset.data_role != "primary":
+        return AssetDisposition.RETIREMENT_CANDIDATE
+    if asset.frequency not in _DIRECT_FREQUENCIES:
+        return AssetDisposition.RETIREMENT_CANDIDATE
+    if not asset.symbol or not asset.contract_or_series:
+        return AssetDisposition.RETIREMENT_CANDIDATE
+    if asset.dataset_kind == "actual_dominant" and asset.frequency == "1w":
+        return AssetDisposition.RETIREMENT_CANDIDATE
+    if asset.dataset_kind not in {"continuous", "actual_dominant"}:
+        return AssetDisposition.RETIREMENT_CANDIDATE
+    if asset.dataset_kind == "continuous" and asset.contract_or_series != f"{asset.symbol.upper()}.MAIN":
+        return AssetDisposition.CONFLICT_BLOCKED
+    if asset.dataset_kind == "actual_dominant":
+        match = _ACTUAL_CONTRACT.fullmatch(asset.contract_or_series)
+        if match is None or match.group(1) != asset.symbol.upper():
+            return AssetDisposition.CONFLICT_BLOCKED
+    if asset.content_gate_status in {
+        "trading_day_null_conflict",
+        "trading_day_weekend_conflict",
+        "night_session_trading_day_conflict",
+        "day_session_trading_day_conflict",
+    }:
+        return AssetDisposition.REGISTER_DATA_GAP
+    if asset.content_gate_status.endswith("_conflict"):
+        return AssetDisposition.CONFLICT_BLOCKED
+    if asset.quality_status != "passed" or not asset.physical_exists:
+        return AssetDisposition.REGISTER_DATA_GAP
+    if (
+        not asset.checksum
+        or not asset.physical_checksum
+        or asset.checksum != asset.physical_checksum
+        or asset.catalog_checksum is not None
+        and asset.catalog_checksum != asset.physical_checksum
+    ):
+        return AssetDisposition.CONFLICT_BLOCKED
+    if asset.catalog_checksum == asset.physical_checksum:
+        return AssetDisposition.KEEP_CANONICAL_VERIFIED
+    return AssetDisposition.REUSE_TRUSTED_SOURCE
+
+
+def _asset_record(asset: Task07Asset) -> dict[str, Any]:
+    record = asdict(asset)
+    record["disposition"] = classify_asset(asset).value
+    return record
+
+
+def collect_task07_assets(
+    session: Session,
+    *,
+    data_root: Path,
+    canonical_root: Path,
+    protected_roots: Iterable[Path] = (),
+    page_size: int = 1_000,
+    inspect_content: bool = True,
+) -> Iterable[Task07Asset]:
+    """Yield a stable keyset-paginated snapshot of registered physical assets."""
+
+    if page_size < 1:
+        raise ValueError("TASK07_PAGE_SIZE_INVALID")
+    data_root = _require_inventory_root(data_root, "DATA")
+    canonical_root = _require_inventory_root(canonical_root, "CANONICAL")
+    protected = tuple(
+        _require_inventory_root(path, "PROTECTED") for path in protected_roots
+    )
+    begin_task07_readonly_snapshot(session)
+    catalog_rows = session.execute(
+        text(
+            "SELECT p.id, d.provider, d.dataset_kind, d.symbol, d.contract_or_series, d.frequency, "
+            "p.file_uri, p.checksum, p.coverage_start, p.coverage_end, p.row_count "
+            "FROM market_datasets d JOIN market_partitions p ON p.dataset_id = d.id "
+            "ORDER BY d.id, p.id"
+        )
+    ).all()
+    catalog: dict[tuple[str, str, str, str], list[tuple[str, str, str]]] = {}
+    data = data_root.absolute()
+    canonical = canonical_root.absolute()
+    for _partition_id, provider, kind, symbol, contract, frequency, file_uri, checksum, _start, _end, _row_count in catalog_rows:
+        relative = Path(str(file_uri))
+        if relative.is_absolute() or ".." in relative.parts:
+            continue
+        catalog.setdefault(
+            (str(provider), str(symbol).lower(), str(contract).upper(), str(frequency)), []
+        ).append((str(kind), str(checksum), str((canonical / relative).absolute())))
+
+    cursor = 0
+    hash_cache: dict[str, tuple[bool, str | None]] = {}
+    content_cache: dict[str, str] = {}
+    while True:
+        rows = session.execute(
+            text(
+                "SELECT id, provider, data_type, instrument_symbol, contract_code, period, start_time, end_time, "
+                "file_path, file_size_bytes, checksum, data_version, row_count, data_role, quality_status "
+                "FROM market_data_files WHERE id > :cursor ORDER BY id LIMIT :page_size"
+            ),
+            {"cursor": cursor, "page_size": page_size},
+        ).mappings().all()
+        if not rows:
+            break
+        for row in rows:
+            cursor = int(row["id"])
+            path_text = str(row["file_path"])
+            source_path = Path(path_text).absolute().resolve(strict=False)
+            source_scope = _source_scope(
+                source_path,
+                data_root=data,
+                canonical_root=canonical,
+                protected_roots=protected,
+            )
+            physical = hash_cache.get(path_text)
+            if physical is None:
+                physical = (
+                    _physical_identity(source_path)
+                    if source_scope != "outside_approved_roots"
+                    else (False, None)
+                )
+                hash_cache[path_text] = physical
+            symbol = str(row["instrument_symbol"] or "").lower()
+            contract = str(row["contract_code"] or "").upper()
+            frequency = str(row["period"] or "")
+            content_gate_status = "not_applicable"
+            if (
+                inspect_content
+                and physical[0]
+                and str(row["provider"]) == "rqdata"
+                and str(row["data_role"]) == "primary"
+                and str(row["quality_status"]) == "passed"
+                and frequency in _DIRECT_FREQUENCIES
+                and str(row["data_type"]) in {"bars", "contract_bars_raw"}
+            ):
+                content_gate_status = content_cache.get(path_text, "")
+                if not content_gate_status:
+                    content_gate_status = _parquet_content_gate(
+                        source_path,
+                        data_type=str(row["data_type"]),
+                        frequency=frequency,
+                    )
+                    content_cache[path_text] = content_gate_status
+            key = (str(row["provider"]), symbol, contract, frequency)
+            matches = catalog.get(key, [])
+            catalog_checksum: str | None = None
+            dataset_kind = _dataset_kind(contract)
+            if matches:
+                kinds = {item[0] for item in matches}
+                if len(kinds) == 1:
+                    dataset_kind = next(iter(kinds))
+                path_checksums = {item[1] for item in matches if item[2] == str(Path(path_text).absolute())}
+                if path_checksums:
+                    catalog_checksum = next(iter(path_checksums)) if len(path_checksums) == 1 else "CATALOG_CONFLICT"
+            yield Task07Asset(
+                market_data_file_id=cursor,
+                provider=str(row["provider"]),
+                data_type=str(row["data_type"]),
+                symbol=symbol,
+                contract_or_series=contract,
+                frequency=frequency,
+                data_role=str(row["data_role"]),
+                quality_status=str(row["quality_status"]),
+                file_path=path_text,
+                source_scope=source_scope,
+                content_gate_status=content_gate_status,
+                checksum=str(row["checksum"]) if row["checksum"] else None,
+                file_size_bytes=int(row["file_size_bytes"]) if row["file_size_bytes"] is not None else None,
+                physical_exists=physical[0],
+                physical_checksum=physical[1],
+                catalog_checksum=catalog_checksum,
+                dataset_kind=dataset_kind,
+                coverage_start=_iso(row["start_time"]),
+                coverage_end=_iso(row["end_time"]),
+                row_count=(int(row["row_count"]) if row["row_count"] is not None else None),
+                data_version=(str(row["data_version"]) if row["data_version"] else None),
+            )
+    for partition_id, provider, kind, symbol, contract, frequency, file_uri, checksum, start, end, row_count in catalog_rows:
+        relative = Path(str(file_uri))
+        if relative.is_absolute() or ".." in relative.parts:
+            continue
+        physical_path = canonical / relative
+        exists, physical_checksum = _physical_identity(physical_path)
+        try:
+            size = physical_path.stat().st_size if exists else None
+        except OSError:
+            size = None
+        yield Task07Asset(
+            market_data_file_id=2_000_000_000 + int(partition_id),
+            provider=str(provider),
+            data_type="v2_canonical",
+            symbol=str(symbol).lower(),
+            contract_or_series=str(contract).upper(),
+            frequency=str(frequency),
+            data_role="primary",
+            quality_status="passed",
+            file_path=str(physical_path.absolute()),
+            source_scope="approved_canonical_root",
+            content_gate_status=(
+                _parquet_content_gate(
+                    physical_path,
+                    data_type="v2_canonical",
+                    frequency=str(frequency),
+                )
+                if inspect_content and exists
+                else "not_inspected"
+            ),
+            checksum=str(checksum),
+            file_size_bytes=size,
+            physical_exists=exists,
+            physical_checksum=physical_checksum,
+            catalog_checksum=str(checksum),
+            dataset_kind=str(kind),
+            coverage_start=_iso(start),
+            coverage_end=_iso(end),
+            row_count=int(row_count),
+            data_version=None,
+        )
+
+
+def begin_task07_readonly_snapshot(session: Session) -> None:
+    """Start the PostgreSQL snapshot before any Task 07 query."""
+
+    if session.info.get("task07_readonly_snapshot"):
+        return
+    if session.in_transaction():
+        raise ValueError("TASK07_READONLY_SNAPSHOT_STARTED_TOO_LATE")
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        )
+    session.info["task07_readonly_snapshot"] = True
+
+
+def begin_task07_serializable_apply(session: Session) -> None:
+    """Start the retirement write transaction before its first database query."""
+
+    if session.info.get("task07_serializable_apply"):
+        return
+    if session.get_bind().dialect.name == "postgresql":
+        if session.in_transaction():
+            raise ValueError("TASK07_SERIALIZABLE_APPLY_STARTED_TOO_LATE")
+        # PostgreSQL SERIALIZABLE predicate locks make a concurrent insertion
+        # into the active row-set conflict with this transaction instead of
+        # silently escaping the approved manifest.
+        session.execute(text("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"))
+    session.info["task07_serializable_apply"] = True
+
+
+def _dataset_kind(contract: str) -> str | None:
+    if contract.endswith(".MAIN"):
+        return "continuous"
+    if _ACTUAL_CONTRACT.fullmatch(contract):
+        return "actual_dominant"
+    return None
+
+
+def _source_scope(
+    path: Path,
+    *,
+    data_root: Path,
+    canonical_root: Path,
+    protected_roots: tuple[Path, ...],
+) -> str:
+    if any(path.is_relative_to(root) for root in protected_roots):
+        return "protected_evidence_root"
+    if path.is_relative_to(canonical_root):
+        return "approved_canonical_root"
+    if path.is_relative_to(data_root):
+        return "approved_data_root"
+    return "outside_approved_roots"
+
+
+def _require_inventory_root(path: Path, label: str) -> Path:
+    absolute = path.absolute()
+    if not absolute.is_dir() or absolute.is_symlink():
+        raise ValueError(f"TASK07_{label}_ROOT_INVALID")
+    try:
+        return absolute.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"TASK07_{label}_ROOT_INVALID") from exc
+
+
+def _iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    method = getattr(value, "isoformat", None)
+    return str(method() if callable(method) else value)
+
+
+def _physical_identity(path: Path) -> tuple[bool, str | None]:
+    try:
+        if not path.is_file() or path.is_symlink():
+            return False, None
+        digest = sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+        return True, digest.hexdigest()
+    except OSError:
+        return False, None
+
+
+def _parquet_content_gate(path: Path, *, data_type: str, frequency: str) -> str:
+    try:
+        # Read the physical file directly. ``pq.read_table(path)`` treats a file
+        # below Hive-style directories as a dataset and can merge inferred
+        # partition columns with same-named columns stored in legacy bar files.
+        parquet_file = pq.ParquetFile(path)
+        schema_names = set(parquet_file.schema_arrow.names)
+        day_column = "trading_day" if "trading_day" in schema_names else "trading_date"
+        time_column = (
+            "bar_end"
+            if "bar_end" in schema_names
+            else "datetime"
+            if "datetime" in schema_names
+            else "date"
+        )
+        if day_column not in schema_names or time_column not in schema_names:
+            return "schema_conflict"
+        table = parquet_file.read(columns=[time_column, day_column])
+        times = table.column(time_column).to_pylist()
+        days = table.column(day_column).to_pylist()
+    except (OSError, ValueError, TypeError):
+        return "schema_conflict"
+    if not times or len(times) != len(days):
+        return "schema_conflict"
+    for timestamp, raw_day in zip(times, days, strict=True):
+        if timestamp is None or raw_day is None:
+            return "trading_day_null_conflict"
+        trading_day = raw_day.date() if hasattr(raw_day, "date") else raw_day
+        if not hasattr(trading_day, "weekday") or trading_day.weekday() >= 5:
+            return "trading_day_weekend_conflict"
+        if frequency != "1m":
+            continue
+        if not hasattr(timestamp, "hour"):
+            return "schema_conflict"
+        local = timestamp
+        if getattr(timestamp, "tzinfo", None) is not None:
+            local = timestamp.astimezone(_SHANGHAI)
+        local_day = local.date()
+        if local.hour >= 21 and trading_day <= local_day:
+            return "night_session_trading_day_conflict"
+        if 3 <= local.hour < 21 and trading_day != local_day:
+            return "day_session_trading_day_conflict"
+    return "passed"
+
+
+def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
+    """Scan checkout/runtime text surfaces without file-count or finding truncation."""
+
+    records: list[dict[str, Any]] = []
+    scanned_files = 0
+    for root_kind, raw_root in roots:
+        root = raw_root.absolute()
+        if root_kind not in {"checkout", "detached_runtime"} or not root.is_dir() or root.is_symlink():
+            raise ValueError("TASK07_REFERENCE_ROOT_INVALID")
+        for path in sorted(root.rglob("*")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            relative = path.relative_to(root)
+            if relative.as_posix() in _REFERENCE_SELF_PATHS:
+                continue
+            if any(part in _REFERENCE_IGNORED_DIRS for part in relative.parts):
+                continue
+            if relative.parts[:1] == ("data",) or relative.parts[:2] == ("backtests", "results"):
+                continue
+            if path.suffix.lower() not in _REFERENCE_SUFFIXES and path.name not in {"Dockerfile", "Makefile"}:
+                continue
+            scanned_files += 1
+            try:
+                with path.open("r", encoding="utf-8", errors="replace") as handle:
+                    for line_number, line in enumerate(handle, 1):
+                        for marker, pattern in _REFERENCE_PATTERNS.items():
+                            if pattern.search(line):
+                                state, reason = _reference_classification(
+                                    root_kind,
+                                    relative,
+                                    marker,
+                                )
+                                records.append(
+                                    {
+                                        "root_kind": root_kind,
+                                        "path": relative.as_posix(),
+                                        "line": line_number,
+                                        "marker": marker,
+                                        "reference_state": state,
+                                        "classification_reason": reason,
+                                        "line_sha256": sha256(line.encode()).hexdigest(),
+                                    }
+                                )
+            except OSError as exc:
+                raise ValueError("TASK07_REFERENCE_READ_FAILED") from exc
+    records.sort(
+        key=lambda item: (
+            item["root_kind"], item["path"], item["line"], item["marker"]
+        )
+    )
+    state_counts = {
+        state: sum(item["reference_state"] == state for item in records)
+        for state in ("active", "historical_non_active", "review_required")
+    }
+    return {
+        "schema_version": 2,
+        "scanned_file_count": scanned_files,
+        "record_count": len(records),
+        "state_counts": state_counts,
+        "records": records,
+        "references_digest": canonical_digest(records),
+        "truncated": False,
+    }
+
+
+def _reference_classification(
+    root_kind: str,
+    relative: Path,
+    marker: str,
+) -> tuple[str, str]:
+    parts = relative.parts
+    path = relative.as_posix()
+    if "tests" in parts or "e2e" in parts:
+        return "historical_non_active", "test_or_fixture_reference"
+    if path.startswith("services/quant-api/alembic/") or "migrations" in parts:
+        return "historical_non_active", "immutable_schema_history"
+    if parts[:1] in {(".agents",), ("configs",), ("docs",), ("experiments",)}:
+        return "historical_non_active", "documentation_or_frozen_evidence"
+    if parts[:1] == ("scripts",) and not path.startswith("scripts/engineering/"):
+        return "historical_non_active", "manual_historical_script_not_runtime_wired"
+    if root_kind == "detached_runtime" and parts[:1] in {
+        ("services",),
+        ("packages",),
+        ("apps",),
+    }:
+        if marker == "legacy_selector":
+            return "review_required", "detached_runtime_selector_requires_reachability_review"
+        return "active", "detached_runtime_executable_reference"
+    if path in _RETIRED_LEGACY_MODULES:
+        return "historical_non_active", "retired_legacy_module_not_runtime_selected"
+    if path.startswith(_OFFLINE_DATA_TOOL_PREFIXES):
+        return "historical_non_active", "offline_data_tool_not_runtime_wired"
+    if path.startswith(_FROZEN_OBSERVATION_PREFIXES):
+        return "historical_non_active", "task06_frozen_observation_lineage_not_data_selection"
+    if path in _READONLY_LINEAGE_PATHS:
+        return "historical_non_active", "readonly_historical_lineage_or_retired_cli"
+    if path.startswith("services/quant-api/app/models/") or path.startswith(
+        "services/quant-api/app/schemas/"
+    ):
+        return "historical_non_active", "retained_database_or_response_schema"
+    if path.startswith("apps/quant-web/src/types/") and marker == "legacy_selector":
+        return "historical_non_active", "readonly_frontend_snapshot_type"
+    if root_kind == "detached_runtime":
+        return "review_required", "detached_runtime_unclassified_reference"
+    if marker == "legacy_selector":
+        return "review_required", "selector_requires_manual_reachability_review"
+    if parts[:1] in {("services",), ("packages",), ("apps",)}:
+        return "active", "executable_source_reference"
+    return "review_required", "unclassified_reference"
+
+
+def build_inventory_index(
+    assets: Iterable[Task07Asset],
+    *,
+    base_sha: str,
+    database_revision: str,
+    include_assets: bool = True,
+) -> dict[str, Any]:
+    if not _TASK_HEAD.fullmatch(base_sha):
+        raise ValueError("TASK07_BASE_SHA_INVALID")
+    digest = sha256()
+    records: list[dict[str, Any]] = []
+    counts = {item.value: 0 for item in AssetDisposition}
+    asset_count = 0
+    previous_id = 0
+    for asset in assets:
+        if asset.market_data_file_id <= previous_id:
+            raise ValueError("TASK07_INVENTORY_ORDER_INVALID")
+        previous_id = asset.market_data_file_id
+        record = _asset_record(asset)
+        digest.update(json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode())
+        digest.update(b"\n")
+        counts[record["disposition"]] += 1
+        asset_count += 1
+        if include_assets:
+            records.append(record)
+    eligible = (
+        counts[AssetDisposition.KEEP_CANONICAL_VERIFIED]
+        + counts[AssetDisposition.REUSE_TRUSTED_SOURCE]
+    )
+    return {
+        "schema_version": 1,
+        "command": "data.task07.inventory",
+        "status": "complete",
+        "readonly_business_data": True,
+        "base_sha": base_sha,
+        "database_revision": database_revision,
+        "asset_count": asset_count,
+        "eligible_asset_count": eligible,
+        "blocked_asset_count": counts[AssetDisposition.CONFLICT_BLOCKED],
+        "disposition_counts": counts,
+        "assets_digest": digest.hexdigest(),
+        "assets": records,
+        "truncated": False,
+        "deletion_authorized": False,
+        "calls_rqdata": False,
+    }
+
+
+def write_inventory_evidence(
+    assets: Iterable[Task07Asset],
+    *,
+    evidence_root: Path,
+    base_sha: str,
+    database_revision: str,
+    shard_size: int = 10_000,
+    reference_report: Mapping[str, Any] | None = None,
+    inventory_scope: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create exact, chunked evidence without modifying business data."""
+
+    if shard_size < 1:
+        raise ValueError("TASK07_SHARD_SIZE_INVALID")
+    root = evidence_root.absolute()
+    if root.exists() and root.is_symlink():
+        raise ValueError("TASK07_EVIDENCE_ROOT_SYMLINK")
+    root.mkdir(parents=True, exist_ok=True)
+    index_path = root / "inventory-index.json"
+    if index_path.exists():
+        raise ValueError("TASK07_EVIDENCE_ALREADY_EXISTS")
+
+    asset_digest = sha256()
+    counts = {item.value: 0 for item in AssetDisposition}
+    shards: list[dict[str, Any]] = []
+    rows: list[str] = []
+    row_count = 0
+    previous_id = 0
+
+    def flush() -> None:
+        nonlocal rows
+        if not rows:
+            return
+        number = len(shards) + 1
+        name = f"assets-{number:06d}.jsonl"
+        path = root / name
+        payload = "".join(rows).encode()
+        if path.exists():
+            raise ValueError("TASK07_EVIDENCE_ALREADY_EXISTS")
+        path.write_bytes(payload)
+        shards.append({"path": name, "row_count": len(rows), "sha256": sha256(payload).hexdigest()})
+        rows = []
+
+    for asset in assets:
+        if asset.market_data_file_id <= previous_id:
+            raise ValueError("TASK07_INVENTORY_ORDER_INVALID")
+        previous_id = asset.market_data_file_id
+        record = _asset_record(asset)
+        line = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        asset_digest.update(line.encode())
+        counts[record["disposition"]] += 1
+        row_count += 1
+        rows.append(line)
+        if len(rows) == shard_size:
+            flush()
+    flush()
+    reference_index: dict[str, Any] | None = None
+    if reference_report is not None:
+        records = reference_report.get("records")
+        if not isinstance(records, list) or reference_report.get("truncated") is not False:
+            raise ValueError("TASK07_REFERENCE_REPORT_INVALID")
+        reference_path = root / "references.jsonl"
+        if reference_path.exists():
+            raise ValueError("TASK07_EVIDENCE_ALREADY_EXISTS")
+        reference_payload = "".join(
+            json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+            for item in records
+        ).encode()
+        reference_path.write_bytes(reference_payload)
+        reference_index = {
+            key: value
+            for key, value in reference_report.items()
+            if key != "records"
+        }
+        reference_index.update(
+            {
+                "path": reference_path.name,
+                "file_sha256": sha256(reference_payload).hexdigest(),
+            }
+        )
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.inventory",
+        "status": "complete",
+        "readonly_business_data": True,
+        "base_sha": base_sha,
+        "database_revision": database_revision,
+        "asset_count": row_count,
+        "assets_digest": asset_digest.hexdigest(),
+        "disposition_counts": counts,
+        "shards": shards,
+        "truncated": False,
+        "calls_rqdata": False,
+        "deletion_authorized": False,
+        "reference_index": reference_index,
+        "inventory_scope": dict(inventory_scope or {}),
+    }
+    index = {**body, "inventory_digest": canonical_digest(body)}
+    temporary = root / ".inventory-index.json.tmp"
+    temporary.write_text(
+        json.dumps(index, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    temporary.replace(index_path)
+    return index
+
+
+def build_migration_plan(
+    index: Mapping[str, Any],
+    *,
+    write_targets: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if index.get("status") != "complete" or index.get("truncated") is not False:
+        raise ValueError("TASK07_INVENTORY_INCOMPLETE")
+    eligible = {
+        AssetDisposition.KEEP_CANONICAL_VERIFIED.value,
+        AssetDisposition.REUSE_TRUSTED_SOURCE.value,
+    }
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for raw in index.get("assets", []):
+        if raw.get("disposition") not in eligible:
+            continue
+        key = (str(raw["symbol"]).lower(), str(raw["dataset_kind"]), str(raw["frequency"]))
+        grouped.setdefault(key, []).append(dict(raw))
+    provider_requests = []
+    for raw in index.get("assets", []):
+        disposition = raw.get("disposition")
+        if disposition == AssetDisposition.CONFLICT_BLOCKED.value or (
+            disposition == AssetDisposition.REGISTER_DATA_GAP.value
+            and raw.get("physical_exists") is False
+        ):
+            provider_requests.append(
+                {
+                    "market_data_file_id": int(raw["market_data_file_id"]),
+                    "provider": raw["provider"],
+                    "symbol": raw["symbol"],
+                    "contract_or_series": raw["contract_or_series"],
+                    "dataset_kind": raw["dataset_kind"],
+                    "frequency": raw["frequency"],
+                    "window": {
+                        "start": raw["coverage_start"],
+                        "end": raw["coverage_end"],
+                    },
+                    "reason": disposition,
+                    "registered_checksum": raw["checksum"],
+                    "observed_checksum": raw["physical_checksum"],
+                }
+            )
+    provider_requests.sort(
+        key=lambda item: (
+            str(item["symbol"]),
+            str(item["dataset_kind"]),
+            str(item["frequency"]),
+            str(item["window"]["start"]),
+            int(item["market_data_file_id"]),
+        )
+    )
+    batches = []
+    for key in sorted(grouped):
+        rows = sorted(grouped[key], key=lambda item: (str(item.get("coverage_start")), int(item["market_data_file_id"])))
+        migration_rows = [
+            item
+            for item in rows
+            if item["disposition"] == AssetDisposition.REUSE_TRUSTED_SOURCE.value
+        ]
+        verified_rows = [
+            item
+            for item in rows
+            if item["disposition"] == AssetDisposition.KEEP_CANONICAL_VERIFIED.value
+        ]
+        body = {
+            "batch_key": ":".join(key),
+            "symbol": key[0],
+            "dataset_kind": key[1],
+            "frequency": key[2],
+            "source_ids": [int(item["market_data_file_id"]) for item in migration_rows],
+            "source_checksums": [item["physical_checksum"] for item in migration_rows],
+            "sources": [
+                {
+                    "market_data_file_id": int(item["market_data_file_id"]),
+                    "contract_or_series": item["contract_or_series"],
+                    "file_path": item["file_path"],
+                    "physical_checksum": item["physical_checksum"],
+                    "disposition": item["disposition"],
+                    "coverage_start": item["coverage_start"],
+                    "coverage_end": item["coverage_end"],
+                    "row_count": item.get("row_count"),
+                    "data_version": item.get("data_version"),
+                }
+                for item in migration_rows
+            ],
+            "verified_partition_ids": [
+                int(item["market_data_file_id"]) for item in verified_rows
+            ],
+            "protected_evidence_ids": [],
+            "coverage_start": min(str(item["coverage_start"]) for item in rows),
+            "coverage_end": max(str(item["coverage_end"]) for item in rows),
+        }
+        batches.append({**body, "batch_digest": canonical_digest(body)})
+    disposition_counts = dict(index.get("disposition_counts", {}))
+    blocked = int(disposition_counts.get(AssetDisposition.CONFLICT_BLOCKED.value, 0))
+    protected = int(disposition_counts.get(AssetDisposition.PROTECTED_EVIDENCE_SOURCE.value, 0))
+    gap_count = int(disposition_counts.get(AssetDisposition.REGISTER_DATA_GAP.value, 0))
+    retirement_count = int(disposition_counts.get(AssetDisposition.RETIREMENT_CANDIDATE.value, 0))
+    reference_counts = (index.get("reference_index") or {}).get("state_counts", {})
+    active_reference_count = int(reference_counts.get("active", 0))
+    review_reference_count = int(reference_counts.get("review_required", 0))
+    provider_request_proposal = {
+        "schema_version": 1,
+        "command": "data.task07.provider-request",
+        "base_sha": index["base_sha"],
+        "database_revision": index["database_revision"],
+        "inventory_digest": index.get("inventory_digest", index["assets_digest"]),
+        "request_count": len(provider_requests),
+        "requests": provider_requests,
+        "calls_rqdata": False,
+        "provider_call_authorized": False,
+        "writes_authorized": False,
+    }
+    provider_request_proposal["proposal_digest"] = canonical_digest(
+        provider_request_proposal
+    )
+    active_reference_gate = (
+        "zero_active_references"
+        if active_reference_count == 0 and review_reference_count == 0
+        else "BLOCKED_ACTIVE_REFERENCE"
+    )
+    approval_eligible = (
+        blocked == 0
+        and active_reference_count == 0
+        and review_reference_count == 0
+    )
+    gate_status = (
+        "BLOCKED_ACTIVE_REFERENCE"
+        if active_reference_count or review_reference_count
+        else "exact_owner_approval_required"
+        if approval_eligible
+        else "BLOCKED_AT_KLINE_DATA_GATE"
+    )
+    deletion_candidate_manifest = {
+        "inventory_digest": index["assets_digest"],
+        "count": retirement_count,
+        "deletion_authorized": False,
+    }
+    facts = {
+        "base_sha": index["base_sha"],
+        "database_revision": index["database_revision"],
+        "inventory_digest": index.get("inventory_digest", index["assets_digest"]),
+        "assets_digest": index["assets_digest"],
+        "references_digest": (index.get("reference_index") or {}).get(
+            "references_digest"
+        ),
+        "write_targets": dict(write_targets or {}),
+        "provider_requests": provider_requests,
+        "batches": batches,
+        "disposition_counts": disposition_counts,
+        "blocked_asset_count": blocked,
+        "protected_evidence_count": protected,
+        "data_gap_count": gap_count,
+        "deletion_candidate_count": retirement_count,
+        "active_reference_count": active_reference_count,
+        "review_reference_count": review_reference_count,
+        "active_reference_gate": active_reference_gate,
+        "deletion_candidate_manifest": deletion_candidate_manifest,
+        "approval_eligible": approval_eligible,
+        "gate_status": gate_status,
+        "calls_rqdata": False,
+        "writes_authorized": False,
+        "deletion_authorized": False,
+    }
+    return {
+        "schema_version": 1,
+        "command": "data.task07.plan",
+        "status": "planned",
+        **facts,
+        "plan_digest": canonical_digest(facts),
+        "provider_request_proposal": provider_request_proposal,
+    }
+
+
+def load_inventory_evidence(index_path: Path) -> dict[str, Any]:
+    index = _load_json(index_path, "TASK07_INVENTORY_INDEX_INVALID")
+    stored_digest = index.get("inventory_digest")
+    body = {key: value for key, value in index.items() if key != "inventory_digest"}
+    if stored_digest != canonical_digest(body) or index.get("status") != "complete" or index.get("truncated") is not False:
+        raise ValueError("TASK07_INVENTORY_INDEX_MISMATCH")
+    assets: list[dict[str, Any]] = []
+    asset_digest = sha256()
+    for shard in index.get("shards", []):
+        name = shard.get("path")
+        if not isinstance(name, str) or Path(name).name != name:
+            raise ValueError("TASK07_INVENTORY_SHARD_PATH_INVALID")
+        payload = (index_path.parent / name).read_bytes()
+        if sha256(payload).hexdigest() != shard.get("sha256"):
+            raise ValueError("TASK07_INVENTORY_SHARD_HASH_MISMATCH")
+        lines = payload.splitlines(keepends=True)
+        if len(lines) != shard.get("row_count"):
+            raise ValueError("TASK07_INVENTORY_SHARD_COUNT_MISMATCH")
+        for line in lines:
+            asset_digest.update(line)
+            try:
+                assets.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise ValueError("TASK07_INVENTORY_SHARD_JSON_INVALID") from exc
+    if len(assets) != index.get("asset_count") or asset_digest.hexdigest() != index.get("assets_digest"):
+        raise ValueError("TASK07_INVENTORY_ASSETS_MISMATCH")
+    reference_index = index.get("reference_index")
+    if reference_index is not None:
+        name = reference_index.get("path")
+        if not isinstance(name, str) or Path(name).name != name:
+            raise ValueError("TASK07_REFERENCE_PATH_INVALID")
+        payload = (index_path.parent / name).read_bytes()
+        if sha256(payload).hexdigest() != reference_index.get("file_sha256"):
+            raise ValueError("TASK07_REFERENCE_HASH_MISMATCH")
+        try:
+            references = [json.loads(line) for line in payload.splitlines()]
+        except json.JSONDecodeError as exc:
+            raise ValueError("TASK07_REFERENCE_JSON_INVALID") from exc
+        if (
+            len(references) != reference_index.get("record_count")
+            or canonical_digest(references) != reference_index.get("references_digest")
+        ):
+            raise ValueError("TASK07_REFERENCE_CONTENT_MISMATCH")
+        index = {**index, "references": references}
+    return {**index, "assets": assets}
+
+
+def build_approval_packet(
+    plan: Mapping[str, Any],
+    *,
+    command: str,
+    batch_key: str | None = None,
+) -> dict[str, Any]:
+    if command not in {"data.task07.apply", "data.task07.retirement-apply"}:
+        raise ValueError("TASK07_APPROVAL_COMMAND_INVALID")
+    if command == "data.task07.apply":
+        _validate_migration_plan_integrity(plan)
+    else:
+        _validate_retirement_plan_integrity(plan)
+    if command == "data.task07.apply" and plan.get("approval_eligible") is not True:
+        raise ValueError("TASK07_KLINE_GATE_BLOCKED")
+    facts = {
+        "base_sha": plan["base_sha"],
+        "database_revision": plan["database_revision"],
+        "plan_digest": plan["plan_digest"],
+    }
+    if "inventory_digest" in plan:
+        facts["inventory_digest"] = plan["inventory_digest"]
+    if command == "data.task07.apply":
+        batch = _task07_batch(plan, batch_key)
+        if not plan.get("write_targets"):
+            raise ValueError("TASK07_WRITE_TARGETS_REQUIRED")
+        facts["batch_key"] = batch["batch_key"]
+        facts["batch_digest"] = batch["batch_digest"]
+        facts["write_targets"] = plan["write_targets"]
+    if "before_image_digest" in plan:
+        facts["before_image_digest"] = plan["before_image_digest"]
+    return {
+        "schema_version": 1,
+        "command": command,
+        "writes_authorized": True,
+        "deletion_authorized": False,
+        "bound_facts": facts,
+    }
+
+
+def build_preflight_receipt(
+    plan: Mapping[str, Any],
+    *,
+    packet_path: Path,
+    approval_hash: str,
+    current_base_sha: str,
+    current_database_revision: str,
+    batch_key: str,
+    current_write_targets: Mapping[str, Any],
+) -> dict[str, Any]:
+    _validate_migration_plan_integrity(plan)
+    batch = _task07_batch(plan, batch_key)
+    facts = {
+        "base_sha": current_base_sha,
+        "database_revision": current_database_revision,
+        "plan_digest": plan.get("plan_digest"),
+        "inventory_digest": plan.get("inventory_digest"),
+        "batch_key": batch["batch_key"],
+        "batch_digest": batch["batch_digest"],
+        "write_targets": dict(current_write_targets),
+    }
+    verify_exact_approval(
+        packet_path,
+        approval_hash=approval_hash,
+        expected_command="data.task07.apply",
+        current_facts=facts,
+    )
+    sources = list(batch.get("sources", []))
+    for source in sources:
+        exists, checksum = _physical_identity(Path(str(source["file_path"])))
+        if not exists or checksum != source.get("physical_checksum"):
+            raise ValueError("TASK07_SOURCE_DRIFT")
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.preflight",
+        "status": "passed",
+        "readonly": True,
+        "bound_facts": facts,
+        "source_count": len(sources),
+        "batch_key": batch["batch_key"],
+        "batch_digest": batch["batch_digest"],
+        "calls_rqdata": False,
+        "writes_postgresql": False,
+        "writes_canonical": False,
+    }
+    return {**body, "preflight_digest": canonical_digest(body)}
+
+
+def verify_task07_preflight_receipt(
+    path: Path,
+    *,
+    receipt_hash: str,
+    plan: Mapping[str, Any],
+    batch_key: str,
+    current_base_sha: str,
+    current_database_revision: str,
+    current_write_targets: Mapping[str, Any],
+) -> dict[str, Any]:
+    _validate_migration_plan_integrity(plan)
+    if not _SHA256.fullmatch(receipt_hash):
+        raise ValueError("TASK07_PREFLIGHT_HASH_INVALID")
+    receipt = _load_json(path, "TASK07_PREFLIGHT_RECEIPT_INVALID")
+    if canonical_digest(receipt) != receipt_hash:
+        raise ValueError("TASK07_PREFLIGHT_HASH_MISMATCH")
+    stored_digest = receipt.get("preflight_digest")
+    body = {key: value for key, value in receipt.items() if key != "preflight_digest"}
+    batch = _task07_batch(plan, batch_key)
+    expected_facts = {
+        "base_sha": current_base_sha,
+        "database_revision": current_database_revision,
+        "plan_digest": plan.get("plan_digest"),
+        "inventory_digest": plan.get("inventory_digest"),
+        "batch_key": batch["batch_key"],
+        "batch_digest": batch["batch_digest"],
+        "write_targets": dict(current_write_targets),
+    }
+    if (
+        stored_digest != canonical_digest(body)
+        or receipt.get("command") != "data.task07.preflight"
+        or receipt.get("status") != "passed"
+        or receipt.get("readonly") is not True
+        or receipt.get("bound_facts") != expected_facts
+        or receipt.get("source_count") != len(batch.get("sources", []))
+        or receipt.get("batch_key") != batch["batch_key"]
+        or receipt.get("batch_digest") != batch["batch_digest"]
+        or receipt.get("calls_rqdata") is not False
+        or receipt.get("writes_postgresql") is not False
+        or receipt.get("writes_canonical") is not False
+    ):
+        raise ValueError("TASK07_PREFLIGHT_RECEIPT_DRIFT")
+    return receipt
+
+
+def _task07_batch(plan: Mapping[str, Any], batch_key: str | None) -> Mapping[str, Any]:
+    if not isinstance(batch_key, str) or not batch_key:
+        raise ValueError("TASK07_BATCH_KEY_REQUIRED")
+    matches = [
+        item
+        for item in plan.get("batches", [])
+        if isinstance(item, Mapping) and item.get("batch_key") == batch_key
+    ]
+    if len(matches) != 1:
+        raise ValueError("TASK07_BATCH_KEY_INVALID")
+    return matches[0]
+
+
+def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
+    batches = plan.get("batches")
+    if not isinstance(batches, list):
+        raise ValueError("TASK07_PLAN_INVALID")
+    for batch in batches:
+        if not isinstance(batch, Mapping):
+            raise ValueError("TASK07_PLAN_INVALID")
+        body = {key: value for key, value in batch.items() if key != "batch_digest"}
+        if batch.get("batch_digest") != canonical_digest(body):
+            raise ValueError("TASK07_BATCH_DIGEST_MISMATCH")
+    requests = plan.get("provider_requests")
+    proposal = plan.get("provider_request_proposal")
+    if not isinstance(requests, list) or not isinstance(proposal, Mapping):
+        raise ValueError("TASK07_PLAN_INVALID")
+    proposal_body = {
+        key: value for key, value in proposal.items() if key != "proposal_digest"
+    }
+    if (
+        proposal.get("proposal_digest") != canonical_digest(proposal_body)
+        or proposal.get("requests") != requests
+    ):
+        raise ValueError("TASK07_PROVIDER_PROPOSAL_DIGEST_MISMATCH")
+    disposition_counts = plan.get("disposition_counts")
+    if not isinstance(disposition_counts, Mapping):
+        raise ValueError("TASK07_PLAN_INVALID")
+    expected_controls = {
+        "blocked_asset_count": int(
+            disposition_counts.get(AssetDisposition.CONFLICT_BLOCKED.value, 0)
+        ),
+        "protected_evidence_count": int(
+            disposition_counts.get(AssetDisposition.PROTECTED_EVIDENCE_SOURCE.value, 0)
+        ),
+        "data_gap_count": int(
+            disposition_counts.get(AssetDisposition.REGISTER_DATA_GAP.value, 0)
+        ),
+        "deletion_candidate_count": int(
+            disposition_counts.get(AssetDisposition.RETIREMENT_CANDIDATE.value, 0)
+        ),
+    }
+    if any(plan.get(key) != value for key, value in expected_controls.items()):
+        raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    active_count = plan.get("active_reference_count")
+    review_count = plan.get("review_reference_count")
+    if type(active_count) is not int or type(review_count) is not int:
+        raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    expected_active_gate = (
+        "zero_active_references"
+        if active_count == 0 and review_count == 0
+        else "BLOCKED_ACTIVE_REFERENCE"
+    )
+    expected_eligible = (
+        expected_controls["blocked_asset_count"] == 0
+        and active_count == 0
+        and review_count == 0
+    )
+    expected_gate = (
+        "BLOCKED_ACTIVE_REFERENCE"
+        if active_count or review_count
+        else "exact_owner_approval_required"
+        if expected_eligible
+        else "BLOCKED_AT_KLINE_DATA_GATE"
+    )
+    expected_manifest = {
+        "inventory_digest": plan.get("assets_digest"),
+        "count": expected_controls["deletion_candidate_count"],
+        "deletion_authorized": False,
+    }
+    if (
+        plan.get("active_reference_gate") != expected_active_gate
+        or plan.get("approval_eligible") is not expected_eligible
+        or plan.get("gate_status") != expected_gate
+        or plan.get("deletion_candidate_manifest") != expected_manifest
+        or plan.get("calls_rqdata") is not False
+        or plan.get("writes_authorized") is not False
+        or plan.get("deletion_authorized") is not False
+    ):
+        raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    facts = {
+        "base_sha": plan.get("base_sha"),
+        "database_revision": plan.get("database_revision"),
+        "inventory_digest": plan.get("inventory_digest"),
+        "assets_digest": plan.get("assets_digest"),
+        "references_digest": plan.get("references_digest"),
+        "write_targets": plan.get("write_targets"),
+        "provider_requests": requests,
+        "batches": batches,
+        "disposition_counts": dict(disposition_counts),
+        **expected_controls,
+        "active_reference_count": active_count,
+        "review_reference_count": review_count,
+        "active_reference_gate": expected_active_gate,
+        "deletion_candidate_manifest": expected_manifest,
+        "approval_eligible": expected_eligible,
+        "gate_status": expected_gate,
+        "calls_rqdata": False,
+        "writes_authorized": False,
+        "deletion_authorized": False,
+    }
+    if plan.get("plan_digest") != canonical_digest(facts):
+        raise ValueError("TASK07_PLAN_DIGEST_MISMATCH")
+
+
+def build_write_targets(
+    *,
+    staging_root: Path,
+    canonical_root: Path,
+    postgresql_target: Mapping[str, Any],
+    inventory_scope: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind exact, non-secret write destinations and reject protected overlap."""
+
+    staging = staging_root.resolve(strict=False)
+    canonical = canonical_root.resolve(strict=False)
+    approved_canonical = inventory_scope.get("canonical_root")
+    if not isinstance(approved_canonical, str) or canonical != Path(approved_canonical).resolve(strict=False):
+        raise ValueError("TASK07_CANONICAL_ROOT_SCOPE_DRIFT")
+    protected_values = inventory_scope.get("protected_roots")
+    if not isinstance(protected_values, list):
+        raise ValueError("TASK07_PROTECTED_ROOT_SCOPE_INVALID")
+    protected = sorted({str(Path(value).resolve(strict=False)) for value in protected_values})
+    if staging == canonical or _paths_overlap(staging, canonical):
+        raise ValueError("TASK07_WRITE_ROOTS_OVERLAP")
+    for value in protected:
+        protected_path = Path(value)
+        if _paths_overlap(staging, protected_path) or _paths_overlap(canonical, protected_path):
+            raise ValueError("TASK07_PROTECTED_WRITE_TARGET")
+    database = dict(postgresql_target)
+    required = {"drivername", "username", "host", "port", "database"}
+    if set(database) != required:
+        raise ValueError("TASK07_POSTGRESQL_TARGET_INVALID")
+    return {
+        "staging_root": str(staging),
+        "canonical_root": str(canonical),
+        "postgresql_target": database,
+        "protected_roots": protected,
+    }
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left in right.parents or right in left.parents
+
+
+def _load_json(path: Path, code: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(code) from exc
+    if not isinstance(value, dict):
+        raise ValueError(code)
+    return value
+
+
+def build_retirement_plan(
+    *,
+    base_sha: str,
+    database_revision: str,
+    relations: Iterable[Mapping[str, Any]],
+    retirement_at: str | datetime | None = None,
+) -> dict[str, Any]:
+    if not _TASK_HEAD.fullmatch(base_sha):
+        raise ValueError("TASK07_BASE_SHA_INVALID")
+    retirement_timestamp = _retirement_timestamp(retirement_at)
+    before = sorted((dict(item) for item in relations), key=lambda item: (str(item["table"]), int(item["id"])))
+    updates: list[dict[str, Any]] = []
+    historical = 0
+    for item in before:
+        table = item["table"]
+        if table == "profile_active_bindings" and item.get("binding_status") == "active":
+            updates.append(
+                {
+                    **item,
+                    "set": {
+                        "binding_status": "superseded",
+                        "superseded_at": retirement_timestamp,
+                    },
+                }
+            )
+        elif table in {"signal_scan_tasks", "data_download_tasks"} and item.get("status") in {"pending", "running", "retrying"}:
+            updates.append({**item, "set": {"status": "cancelled"}})
+        elif table == "strategy_signals" and item.get("is_active") is True:
+            updates.append({**item, "set": {"is_active": False}})
+        else:
+            historical += 1
+    facts = {
+        "base_sha": base_sha,
+        "database_revision": database_revision,
+        "retirement_at": retirement_timestamp,
+        "before_image": before,
+        "before_image_digest": canonical_digest(before),
+        "updates": updates,
+    }
+    return {
+        "schema_version": 1,
+        "command": "data.task07.retirement-plan",
+        "status": "planned",
+        **facts,
+        "plan_digest": canonical_digest(facts),
+        "historical_non_active_count": historical,
+        "deletes": [],
+        "writes_authorized": False,
+        "deletion_authorized": False,
+    }
+
+
+def collect_retirement_relations(
+    session: Session,
+    *,
+    readonly: bool = True,
+) -> list[dict[str, Any]]:
+    """Collect only currently active legacy rows; completed history is preserved."""
+
+    if readonly:
+        begin_task07_readonly_snapshot(session)
+
+    specifications = (
+        (
+            "profile_active_bindings",
+            ("id", "binding_status", "superseded_at"),
+            "binding_status = :active",
+            {"active": "active"},
+        ),
+        (
+            "signal_scan_tasks",
+            ("id", "status"),
+            "status IN (:pending, :running, :retrying)",
+            {"pending": "pending", "running": "running", "retrying": "retrying"},
+        ),
+        (
+            "data_download_tasks",
+            ("id", "status"),
+            "status IN (:pending, :running, :retrying)",
+            {"pending": "pending", "running": "running", "retrying": "retrying"},
+        ),
+        (
+            "strategy_signals",
+            ("id", "status", "is_active"),
+            "is_active = :active",
+            {"active": True},
+        ),
+    )
+    relations: list[dict[str, Any]] = []
+    for table, columns, predicate, parameters in specifications:
+        selected = ", ".join(f'"{column}"' for column in columns)
+        rows = session.execute(
+            text(f'SELECT {selected} FROM "{table}" WHERE {predicate} ORDER BY id'),
+            parameters,
+        ).mappings()
+        for row in rows:
+            record = {"table": table, **dict(row)}
+            if table == "profile_active_bindings" and record.get("superseded_at") is not None:
+                record["superseded_at"] = _retirement_timestamp(record["superseded_at"])
+            if table == "strategy_signals":
+                record["is_active"] = bool(record["is_active"])
+            relations.append(record)
+    return sorted(relations, key=lambda item: (str(item["table"]), int(item["id"])))
+
+
+_RETIREMENT_COLUMNS = {
+    "profile_active_bindings": {"binding_status", "superseded_at"},
+    "signal_scan_tasks": {"status"},
+    "data_download_tasks": {"status"},
+    "strategy_signals": {"status", "is_active"},
+}
+
+
+def apply_retirement_plan(
+    session: Session,
+    plan: Mapping[str, Any],
+    *,
+    packet_path: Path,
+    approval_hash: str,
+    current_base_sha: str,
+    current_database_revision: str,
+) -> dict[str, Any]:
+    begin_task07_serializable_apply(session)
+    _validate_retirement_plan_integrity(plan)
+    current_plan = build_retirement_plan(
+        base_sha=current_base_sha,
+        database_revision=current_database_revision,
+        relations=collect_retirement_relations(session, readonly=False),
+        retirement_at=plan.get("retirement_at"),
+    )
+    if current_plan["plan_digest"] != plan.get("plan_digest"):
+        raise ValueError("TASK07_RETIREMENT_ROW_SET_DRIFT")
+    facts = {
+        "base_sha": current_base_sha,
+        "database_revision": current_database_revision,
+        "plan_digest": plan.get("plan_digest"),
+        "before_image_digest": plan.get("before_image_digest"),
+    }
+    verify_exact_approval(
+        packet_path,
+        approval_hash=approval_hash,
+        expected_command="data.task07.retirement-apply",
+        current_facts=facts,
+    )
+    updates = list(plan.get("updates", []))
+    if plan.get("deletes") != [] or plan.get("deletion_authorized") is not False:
+        raise ValueError("TASK07_RETIREMENT_DELETE_SCOPE_INVALID")
+    after: list[dict[str, Any]] = []
+    rollback_updates: list[dict[str, Any]] = []
+    try:
+        for item in updates:
+            table = str(item.get("table"))
+            allowed = _RETIREMENT_COLUMNS.get(table)
+            identifier = item.get("id")
+            changes = item.get("set")
+            if allowed is None or type(identifier) is not int or not isinstance(changes, dict):
+                raise ValueError("TASK07_RETIREMENT_SCOPE_INVALID")
+            before = {
+                key: value
+                for key, value in item.items()
+                if key not in {"table", "id", "set"}
+            }
+            if (
+                not before
+                or not set(before) <= allowed
+                or not set(changes) <= allowed
+                or not set(changes) <= set(before)
+            ):
+                raise ValueError("TASK07_RETIREMENT_SCOPE_INVALID")
+            predicates = ["id = :row_id"]
+            parameters: dict[str, Any] = {"row_id": identifier}
+            for position, (column, value) in enumerate(sorted(before.items())):
+                if value is None:
+                    predicates.append(f'"{column}" IS NULL')
+                    continue
+                name = f"before_{position}"
+                predicates.append(f'"{column}" = :{name}')
+                parameters[name] = value
+            assignments = []
+            for position, (column, value) in enumerate(sorted(changes.items())):
+                name = f"after_{position}"
+                assignments.append(f'"{column}" = :{name}')
+                parameters[name] = value
+            result = session.execute(
+                text(
+                    f'UPDATE "{table}" SET {", ".join(assignments)} '
+                    f'WHERE {" AND ".join(predicates)}'
+                ),
+                parameters,
+            )
+            if result.rowcount != 1:
+                raise ValueError("TASK07_RETIREMENT_ROW_DRIFT")
+            selected = ", ".join(f'"{column}"' for column in sorted(allowed))
+            readback = session.execute(
+                text(f'SELECT {selected} FROM "{table}" WHERE id = :row_id'),
+                {"row_id": identifier},
+            ).mappings().one()
+            actual = {
+                column: _retirement_value(readback[column])
+                for column in sorted(allowed)
+            }
+            expected = {
+                column: _retirement_value(changes.get(column, before.get(column)))
+                for column in sorted(allowed)
+            }
+            if actual != expected:
+                raise ValueError("TASK07_RETIREMENT_READBACK_DRIFT")
+            after.append({"table": table, "id": identifier, **actual})
+            rollback_updates.append({"table": table, "id": identifier, "set": before, "expected": changes})
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.retirement-apply",
+        "status": "passed",
+        "plan_digest": plan["plan_digest"],
+        "before_image_digest": plan["before_image_digest"],
+        "after_image_digest": canonical_digest(after),
+        "updated_row_count": len(after),
+        "deleted_row_count": 0,
+        "deletion_authorized": False,
+        "rollback": {
+            "authorized": False,
+            "updates": rollback_updates,
+            "digest": canonical_digest(rollback_updates),
+        },
+    }
+    return {**body, "receipt_digest": canonical_digest(body)}
+
+
+def _validate_retirement_plan_integrity(plan: Mapping[str, Any]) -> None:
+    before = plan.get("before_image")
+    updates = plan.get("updates")
+    if not isinstance(before, list) or not isinstance(updates, list):
+        raise ValueError("TASK07_RETIREMENT_PLAN_INVALID")
+    before_digest = canonical_digest(before)
+    if before_digest != plan.get("before_image_digest"):
+        raise ValueError("TASK07_RETIREMENT_BEFORE_IMAGE_MISMATCH")
+    facts = {
+        "base_sha": plan.get("base_sha"),
+        "database_revision": plan.get("database_revision"),
+        "retirement_at": plan.get("retirement_at"),
+        "before_image": before,
+        "before_image_digest": before_digest,
+        "updates": updates,
+    }
+    if plan.get("plan_digest") != canonical_digest(facts):
+        raise ValueError("TASK07_RETIREMENT_PLAN_DIGEST_MISMATCH")
+
+
+def _retirement_timestamp(value: str | datetime | None) -> str:
+    if value is None:
+        parsed = datetime.now(UTC)
+    elif isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("TASK07_RETIREMENT_TIMESTAMP_INVALID") from exc
+    else:
+        raise ValueError("TASK07_RETIREMENT_TIMESTAMP_INVALID")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("TASK07_RETIREMENT_TIMESTAMP_INVALID")
+    return parsed.astimezone(UTC).isoformat()
+
+
+def _retirement_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return _retirement_timestamp(value)
+    return value
+
+
+def verify_exact_approval(
+    path: Path,
+    *,
+    approval_hash: str,
+    expected_command: str,
+    current_facts: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not _SHA256.fullmatch(approval_hash):
+        raise ValueError("TASK07_APPROVAL_HASH_INVALID")
+    try:
+        packet = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("TASK07_APPROVAL_PACKET_INVALID") from exc
+    if canonical_digest(packet) != approval_hash:
+        raise ValueError("TASK07_APPROVAL_HASH_MISMATCH")
+    if packet.get("command") != expected_command or packet.get("writes_authorized") is not True:
+        raise ValueError("TASK07_APPROVAL_SCOPE_INVALID")
+    if packet.get("bound_facts") != dict(current_facts):
+        raise ValueError("TASK07_APPROVAL_FACTS_DRIFT")
+    return packet
+
+
+verify_exact_approval.digest_packet = canonical_digest  # type: ignore[attr-defined]

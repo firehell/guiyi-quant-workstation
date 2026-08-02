@@ -52,22 +52,24 @@ def scan_signals(request: SignalScanRequest, session: Session = Depends(get_db))
 
 
 @router.post("/research/scan")
-def scan_research_signals(request: ResearchSignalScanRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    return _start_scan(request, session, research_only=True)
+def scan_research_signals(request: ResearchSignalScanRequest) -> dict[str, Any]:
+    del request
+    raise HTTPException(
+        status_code=410,
+        detail={"code": "SIGNAL_LEGACY_EXECUTION_RETIRED"},
+    )
 
 
 def _start_scan(
-    request: SignalScanRequest | ResearchSignalScanRequest,
+    request: SignalScanRequest,
     session: Session,
     *,
     research_only: bool,
 ) -> dict[str, Any]:
     payload = request.model_dump(mode="json")
-    if not research_only and isinstance(request, SignalScanRequest):
+    if not research_only:
         if request.mode is not SignalScanMode.SCAN:
             return SignalScanner(session).preview(payload)
-    if research_only:
-        payload["research_only"] = True
     if not payload["periods"]:
         payload["periods"] = DEFAULT_PERIODS.copy()
     task = create_signal_scan_task(session, payload)
