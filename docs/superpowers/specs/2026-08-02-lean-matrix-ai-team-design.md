@@ -1047,12 +1047,13 @@ digest 的 `apply` 每次委托一个既有 `task-worktree.sh` 动作。无显�
 `develop-merge`、状态不确定时的远端恢复、`main`、release、Runtime 和真实操作仍被禁止；其中
 GitHub Gate 与 `develop` 集成只能由后续 AI-TEAM-007 独立实现。
 
-AI-TEAM-005 的 `state_digest` 同时绑定 task HEAD、index、changed paths 与变更文件内容；同一路径
-再次编辑也会使旧 proposal 失效。显式 forbidden path 优先于 allowlist。为避免任务代码替换其
+AI-TEAM-005 的 `state_digest` 同时绑定 task HEAD、index、changed paths、变更文件内容与 Git
+有效 mode；同一路径再次编辑或仅 `chmod` 也会使旧 proposal 失效。显式 forbidden path 优先于 allowlist。为避免任务代码替换其
 即将调用的 guard，Lean Matrix controller、`task-worktree.sh` 及其 worktree policy 的变更必须
-人工集成，通用 apply 永久拒绝。每次 apply 在外部动作前以 `O_EXCL` 原子 claim transition，
+人工集成，通用 apply 永久拒绝；CLI 必须从 clean `develop` controller checkout 运行，实际
+entrypoint 使用该 checkout 的 absolute non-symlink path，task Git 操作仍绑定 task cwd。每次 apply 在外部动作前以 `O_EXCL` 原子 claim transition，
 中断或并发竞争均保留 fail-closed 证据；恢复时重新派生 transition、argv、command digest 与
-result 关系，并拒绝 workspace 任一层的 symlink。
+result 关系，command digest 同时绑定 argv/cwd，并拒绝 workspace 任一层的 symlink。
 
 ### Phase 5：可选 bounded delegation
 

@@ -37,8 +37,9 @@ Create one bounded, independently testable Task Charter. This skill does not rep
 
    `observe` and `next` are read-only. They use local Git/worktree facts, do not fetch, and do not
    inspect GitHub. Runtime evidence under `.ai/lean-matrix/<plan-digest>/` is ignored recovery
-   evidence, never editable canonical task state. The state digest binds the task HEAD, index,
-   changed path set, and changed working-tree bytes; editing an already-dirty file invalidates it.
+   evidence, never editable canonical task state. Run these commands from the clean surviving
+   `develop` controller checkout. The state digest binds the task HEAD, index, changed path set,
+   changed working-tree bytes, and Git-effective file mode; content or chmod drift invalidates it.
 6. Apply at most one transition by binding the proposal and the immediately re-observed state:
 
    ```bash
@@ -56,7 +57,9 @@ Create one bounded, independently testable Task Charter. This skill does not rep
    Lane is inferred at least privilege from the frozen dispatch and scope. Explicit forbidden paths
    override allowed paths, and changes to this controller or its workflow policy require manual
    integration instead of generic apply. Apply claims its transition atomically before execution;
-   an interrupted or concurrent attempt remains blocked for inspection.
+   an interrupted or concurrent attempt remains blocked for inspection. The executed entrypoint is
+   the absolute non-symlink file in the controller checkout, while task Git operations keep the exact
+   task cwd; recovery command digests bind both argv and cwd.
    Lane 3 generic apply is always blocked. `develop-merge`, PR/CI/Review inspection, and uncertain
    remote recovery remain AI-TEAM-007 or human work.
 7. Use the existing `task-worktree.sh` and GitHub workflow only after the Charter is frozen. Do not duplicate either tool or expand task state.

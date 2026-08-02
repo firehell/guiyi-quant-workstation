@@ -86,6 +86,7 @@ class _FakeGit:
         merged: bool,
         protected_dirty: bool = False,
         content_marker: str = "first",
+        local_develop_sha: str | None = None,
     ) -> None:
         self.repo = repo.resolve()
         self.branch = branch
@@ -94,6 +95,7 @@ class _FakeGit:
         self.protected_dirty = protected_dirty
         self.content_marker = content_marker
         self.base_sha = "a" * 40
+        self.local_develop_sha = local_develop_sha or self.base_sha
         self.task_sha = "b" * 40
 
     def __call__(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -106,6 +108,10 @@ class _FakeGit:
         returncode = 0
         if args == ("rev-parse", "--show-toplevel"):
             stdout = f"{self.repo}\n"
+        elif cwd == self.repo and args == ("branch", "--show-current"):
+            stdout = "develop\n"
+        elif cwd == self.repo and args == ("rev-parse", "HEAD"):
+            stdout = f"{self.local_develop_sha}\n"
         elif args == ("rev-parse", "--verify", "origin/develop^{commit}"):
             stdout = f"{self.base_sha}\n"
         elif args == ("rev-parse", "--verify", "--quiet", "refs/heads/feature/AI-TEAM-005-local-orchestrator^{commit}"):
@@ -113,10 +119,10 @@ class _FakeGit:
         elif args == ("rev-parse", "--verify", "--quiet", "refs/remotes/origin/feature/AI-TEAM-005-local-orchestrator^{commit}"):
             returncode = 1
         elif args == ("rev-parse", "--verify", "--quiet", "refs/heads/develop^{commit}"):
-            stdout = f"{self.base_sha}\n"
+            stdout = f"{self.local_develop_sha}\n"
         elif args == ("worktree", "list", "--porcelain"):
             stdout = (
-                f"worktree {self.repo}\nHEAD {self.base_sha}\nbranch refs/heads/develop\n\n"
+                f"worktree {self.repo}\nHEAD {self.local_develop_sha}\nbranch refs/heads/develop\n\n"
                 f"worktree {TASK_PATH}\nHEAD {self.task_sha}\nbranch refs/heads/{self.branch}\n\n"
             )
         elif cwd == self.repo and args == ("status", "--porcelain=v1", "-z"):
@@ -284,6 +290,30 @@ def test_state_digest_binds_dirty_content_when_path_names_and_head_are_unchanged
     assert first.state.state_digest != second.state.state_digest
 
 
+def test_content_fingerprint_binds_unstaged_executable_mode(tmp_path: Path) -> None:
+    """A chmod-only change must invalidate the state before `git add --all` can commit it."""
+    task = tmp_path / "task"
+    task.mkdir()
+    changed = task / "changed.py"
+    changed.write_text("print('same bytes')\n", encoding="utf-8")
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.observing import _worktree_content_digest
+    finally:
+        sys.path.pop(0)
+
+    def runner(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command[-3:] == ["ls-files", "--stage", "-z"]
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    changed.chmod(0o644)
+    before = _worktree_content_digest(task, {"changed.py"}, runner=runner)
+    changed.chmod(0o755)
+    after = _worktree_content_digest(task, {"changed.py"}, runner=runner)
+
+    assert before != after
+
+
 def test_registered_task_worktree_collects_identity_dirty_state_and_changed_paths(tmp_path: Path) -> None:
     """Dropping any staged, unstaged, committed, or untracked path would bypass scope validation."""
     repo = tmp_path / "repo"
@@ -348,6 +378,30 @@ def test_clean_task_head_reachable_from_both_develop_refs_is_cleanup_safe(tmp_pa
     assert observed.phase == "merged-develop-observed"
     assert observed.state.merge_state == "PASS"
     assert observed.state.cleanup_safe is True
+
+
+def test_cleanup_rejects_divergent_local_and_remote_develop_refs(tmp_path: Path) -> None:
+    """Dual ancestry alone is insufficient when the two integration refs do not agree."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    fake = _FakeGit(
+        repo,
+        branch="feature/AI-TEAM-005-local-orchestrator",
+        dirty=False,
+        merged=True,
+        local_develop_sha="c" * 40,
+    )
+    plan = _plan(fake.base_sha)
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.observing import observe_execution_plan
+    finally:
+        sys.path.pop(0)
+
+    observed = observe_execution_plan(plan, repo, runner=fake)
+
+    assert observed.phase == "implementation-ready"
+    assert observed.state.cleanup_safe is False
 
 
 def test_clean_new_worktree_at_base_is_not_cleanup_safe(tmp_path: Path) -> None:

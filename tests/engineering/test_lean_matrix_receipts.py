@@ -13,11 +13,13 @@ ROOT = Path(__file__).resolve().parents[2]
 ENGINEERING = ROOT / "scripts" / "engineering"
 
 
-def _contracts(task_id: str = "AI-TEAM-005"):
+def _contracts(task_id: str = "AI-TEAM-005", *, repo_root: Path | None = None):
     sys.path.insert(0, str(ENGINEERING))
     try:
         from lean_matrix.contracts import ExecutionPlanV1, TransitionProposalV1, TransitionReceiptV1
+        from lean_matrix.adapters import command_for_action, execution_digest
         from lean_matrix.digests import semantic_digest
+        from lean_matrix.transitions import transition_id
     finally:
         sys.path.pop(0)
     suffix = "local-orchestrator" if task_id == "AI-TEAM-005" else "other-plan"
@@ -45,8 +47,11 @@ def _contracts(task_id: str = "AI-TEAM-005"):
         "external_gates": [],
     })
     plan_digest = semantic_digest(plan.to_dict())
-    from lean_matrix.adapters import command_for_action
-    from lean_matrix.transitions import transition_id
+    if repo_root is not None:
+        entrypoint = repo_root / "scripts" / "engineering" / "task-worktree.sh"
+        if not entrypoint.exists():
+            entrypoint.parent.mkdir(parents=True, exist_ok=True)
+            entrypoint.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     state_digest = "sha256:" + "3" * 64
     proposal = TransitionProposalV1.from_mapping({
         "transition_id": transition_id(plan, "task-create", state_digest),
@@ -62,7 +67,10 @@ def _contracts(task_id: str = "AI-TEAM-005"):
         "plan_digest": plan_digest,
         "before_state_digest": proposal.from_state_digest,
         "after_state_digest": "sha256:" + "4" * 64,
-        "command_digests": [semantic_digest(list(command_for_action(plan, "task-create", apply=True)))],
+        "command_digests": [
+            execution_digest(plan, "task-create", repo_root)
+            if repo_root is not None else "sha256:" + "5" * 64
+        ],
         "exit_codes": [0],
         "result": "PASS",
         "recorded_at": "2026-08-02T12:00:00Z",
@@ -79,13 +87,13 @@ def _workspace_api():
     return load_evidence, record_transition
 
 
-def _valid_evidence():
-    plan, _, _ = _contracts()
+def _valid_evidence(repo_root: Path):
+    plan, _, _ = _contracts(repo_root=repo_root)
     sys.path.insert(0, str(ENGINEERING))
     try:
         from lean_matrix.adapters import command_for_action
         from lean_matrix.contracts import TransitionProposalV1, TransitionReceiptV1
-        from lean_matrix.digests import semantic_digest
+        from lean_matrix.adapters import execution_digest
         from lean_matrix.transitions import transition_id
         from lean_matrix.workspace import plan_digest
     finally:
@@ -106,7 +114,7 @@ def _valid_evidence():
         "plan_digest": plan_digest(plan),
         "before_state_digest": state_digest,
         "after_state_digest": "sha256:" + "4" * 64,
-        "command_digests": [semantic_digest(list(command_for_action(plan, "task-create", apply=True)))],
+        "command_digests": [execution_digest(plan, "task-create", repo_root)],
         "exit_codes": [0],
         "result": "PASS",
         "recorded_at": "2026-08-02T12:00:00Z",
@@ -128,7 +136,7 @@ def test_loading_missing_workspace_is_read_only(tmp_path: Path) -> None:
 
 def test_recorded_transition_is_plan_scoped_and_round_trips(tmp_path: Path) -> None:
     """Losing proposal-to-receipt linkage would allow a receipt to authorize another action."""
-    plan, proposal, receipt = _contracts()
+    plan, proposal, receipt = _contracts(repo_root=tmp_path)
     load_evidence, record_transition = _workspace_api()
 
     record_transition(tmp_path, plan, proposal, receipt, error_type=None)
@@ -152,7 +160,7 @@ def test_recorded_transition_is_plan_scoped_and_round_trips(tmp_path: Path) -> N
 
 def test_modified_receipt_content_fails_filename_digest_check(tmp_path: Path) -> None:
     """An in-place receipt edit must block recovery instead of silently changing history."""
-    plan, proposal, receipt = _contracts()
+    plan, proposal, receipt = _contracts(repo_root=tmp_path)
     load_evidence, record_transition = _workspace_api()
     record_transition(tmp_path, plan, proposal, receipt, error_type=None)
     workspace = tmp_path / ".ai" / "lean-matrix" / receipt.plan_digest.removeprefix("sha256:")
@@ -173,8 +181,8 @@ def test_modified_receipt_content_fails_filename_digest_check(tmp_path: Path) ->
 
 def test_two_plan_workspaces_remain_isolated(tmp_path: Path) -> None:
     """Scanning a sibling plan directory would let one task suppress another task transition."""
-    first = _contracts()
-    second = _contracts("AI-TEAM-006")
+    first = _contracts(repo_root=tmp_path)
+    second = _contracts("AI-TEAM-006", repo_root=tmp_path)
     load_evidence, record_transition = _workspace_api()
     record_transition(tmp_path, *first, error_type=None)
 
@@ -184,8 +192,8 @@ def test_two_plan_workspaces_remain_isolated(tmp_path: Path) -> None:
 
 def test_receipt_bound_to_another_plan_is_rejected_before_write(tmp_path: Path) -> None:
     """A valid receipt from a sibling plan must not be copied into this plan's workspace."""
-    plan, proposal, _ = _contracts()
-    _, _, foreign_receipt = _contracts("AI-TEAM-006")
+    plan, proposal, _ = _contracts(repo_root=tmp_path)
+    _, _, foreign_receipt = _contracts("AI-TEAM-006", repo_root=tmp_path)
     _, record_transition = _workspace_api()
     sys.path.insert(0, str(ENGINEERING))
     try:
@@ -220,7 +228,7 @@ def test_workspace_root_symlink_is_rejected_without_external_write(tmp_path: Pat
 
 def test_receipt_is_rederived_from_plan_and_command_contract(tmp_path: Path) -> None:
     """Rehashed but fabricated proposal commands cannot become recovery evidence."""
-    plan, proposal, receipt = _valid_evidence()
+    plan, proposal, receipt = _valid_evidence(tmp_path)
     load_evidence, record_transition = _workspace_api()
     record_transition(tmp_path, plan, proposal, receipt, error_type=None)
     workspace = tmp_path / ".ai" / "lean-matrix" / receipt.plan_digest.removeprefix("sha256:")
@@ -243,7 +251,7 @@ def test_receipt_is_rederived_from_plan_and_command_contract(tmp_path: Path) -> 
 
 def test_claim_is_atomic_and_blocks_a_concurrent_second_apply(tmp_path: Path) -> None:
     """The attempt marker must exist before the external command can start."""
-    plan, proposal, _ = _valid_evidence()
+    plan, proposal, _ = _valid_evidence(tmp_path)
     sys.path.insert(0, str(ENGINEERING))
     try:
         from lean_matrix.errors import LeanMatrixError

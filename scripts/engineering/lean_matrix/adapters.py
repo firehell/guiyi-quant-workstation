@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,16 @@ class ExecutionResult:
     command_digest: str
     exit_code: int
     error_type: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionInvocation:
+    argv: tuple[str, ...]
+    cwd: Path
+
+    @property
+    def digest(self) -> str:
+        return semantic_digest({"argv": list(self.argv), "cwd": str(self.cwd)})
 
 
 def _identity(plan: ExecutionPlanV1) -> tuple[str, str]:
@@ -106,6 +117,39 @@ def command_for_action(
     return (*command, "--apply") if apply else command
 
 
+def invocation_for_action(
+    plan: ExecutionPlanV1,
+    action: str,
+    repo_root: Path,
+) -> ExecutionInvocation:
+    """Bind execution to the surviving clean controller checkout and exact target cwd."""
+    controller = repo_root.resolve()
+    task = Path(plan.task.worktree).resolve()
+    if controller == task:
+        raise LeanMatrixError(
+            "untrusted_controller_checkout",
+            "local apply must run from the surviving develop controller checkout",
+        )
+    entrypoint = controller / ENTRYPOINT
+    try:
+        metadata = entrypoint.lstat()
+    except OSError as exc:
+        raise LeanMatrixError("controller_entrypoint_unavailable", "trusted task workflow is unavailable") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise LeanMatrixError(
+            "controller_entrypoint_untrusted",
+            "trusted task workflow must be a regular non-symlink file",
+        )
+    logical = list(command_for_action(plan, action, apply=True))
+    logical[1] = str(entrypoint)
+    cwd = task if action == "local-integrate-to-draft-pr" else controller
+    return ExecutionInvocation(tuple(logical), cwd)
+
+
+def execution_digest(plan: ExecutionPlanV1, action: str, repo_root: Path) -> str:
+    return invocation_for_action(plan, action, repo_root).digest
+
+
 def execute_action(
     plan: ExecutionPlanV1,
     action: str,
@@ -122,19 +166,17 @@ def execute_action(
             "cleanup_invocation_from_target",
             "cleanup must run from a surviving repository checkout, not the target worktree",
         )
-    command = command_for_action(plan, action, apply=True)
-    cwd = Path(plan.task.worktree) if action == "local-integrate-to-draft-pr" else repo_root.resolve()
-    command_digest = semantic_digest(list(command))
+    invocation = invocation_for_action(plan, action, repo_root)
     try:
         result = runner(
-            list(command),
-            cwd=cwd,
+            list(invocation.argv),
+            cwd=invocation.cwd,
             capture_output=True,
             text=True,
             check=False,
             shell=False,
         )
     except OSError:
-        return ExecutionResult(command_digest, -1, "transition_process_unavailable")
+        return ExecutionResult(invocation.digest, -1, "transition_process_unavailable")
     error_type = None if result.returncode == 0 else "transition_command_failed"
-    return ExecutionResult(command_digest, result.returncode, error_type)
+    return ExecutionResult(invocation.digest, result.returncode, error_type)

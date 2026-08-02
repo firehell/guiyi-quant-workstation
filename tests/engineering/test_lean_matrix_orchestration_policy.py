@@ -165,7 +165,7 @@ def test_lane_three_explicit_apply_is_always_rejected(tmp_path: Path) -> None:
     assert not (repo / ".ai").exists()
 
 
-def test_adapter_executes_exactly_one_existing_entrypoint_with_fixed_cwd() -> None:
+def test_adapter_executes_exactly_one_existing_entrypoint_with_fixed_cwd(tmp_path: Path) -> None:
     """Direct Git or multiple subprocess calls would duplicate the controlled workflow."""
     sys.path.insert(0, str(ENGINEERING))
     try:
@@ -174,23 +174,46 @@ def test_adapter_executes_exactly_one_existing_entrypoint_with_fixed_cwd() -> No
     finally:
         sys.path.pop(0)
     plan = ExecutionPlanV1.from_mapping(_plan("a" * 40))
+    controller = tmp_path / "controller"
+    entrypoint = controller / "scripts" / "engineering" / "task-worktree.sh"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     calls: list[tuple[list[str], dict[str, Any]]] = []
 
     def runner(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         calls.append((command, kwargs))
         return subprocess.CompletedProcess(command, 0, stdout='{"status":"ok"}\n', stderr="")
 
-    result = execute_action(plan, "local-integrate-to-draft-pr", ROOT, runner=runner)
+    result = execute_action(plan, "local-integrate-to-draft-pr", controller, runner=runner)
 
     assert len(calls) == 1
     command, kwargs = calls[0]
-    assert command[:3] == ["bash", "scripts/engineering/task-worktree.sh", "integrate"]
+    assert command[:3] == ["bash", str(entrypoint), "integrate"]
     assert command[-1] == "--apply"
     assert kwargs["cwd"] == Path(plan.task.worktree)
     assert kwargs["shell"] is False
     assert result.exit_code == 0
     assert result.error_type is None
     assert result.command_digest.startswith("sha256:")
+
+
+def test_execution_digest_binds_the_exact_cwd(tmp_path: Path) -> None:
+    """The same logical argv from another controller checkout must not share a receipt digest."""
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.adapters import execution_digest
+        from lean_matrix.contracts import ExecutionPlanV1
+    finally:
+        sys.path.pop(0)
+    plan = ExecutionPlanV1.from_mapping(_plan("a" * 40))
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for root in (first, second):
+        entrypoint = root / "scripts" / "engineering" / "task-worktree.sh"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    assert execution_digest(plan, "task-create", first) != execution_digest(plan, "task-create", second)
 
 
 def test_lane_one_scope_is_delegated_with_least_privilege() -> None:

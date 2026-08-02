@@ -141,6 +141,7 @@ def _worktree_content_digest(task_path: Path, changed_paths: set[str], *, runner
         if stat.S_ISLNK(metadata.st_mode):
             payload = os.readlink(candidate).encode("utf-8", errors="surrogateescape")
             kind = "symlink"
+            git_mode = "120000"
         elif stat.S_ISREG(metadata.st_mode):
             try:
                 payload = candidate.read_bytes()
@@ -150,12 +151,15 @@ def _worktree_content_digest(task_path: Path, changed_paths: set[str], *, runner
                     f"cannot fingerprint changed path: {relative}",
                 ) from exc
             kind = "file"
+            git_mode = "100755" if metadata.st_mode & 0o111 else "100644"
         else:
             payload = f"mode:{metadata.st_mode}".encode("ascii")
             kind = "other"
+            git_mode = f"other:{stat.S_IFMT(metadata.st_mode):o}"
         entries.append({
             "path": relative,
             "kind": kind,
+            "git_mode": git_mode,
             "digest": f"sha256:{hashlib.sha256(payload).hexdigest()}",
         })
     return semantic_digest({"index": index, "entries": entries})
@@ -174,6 +178,13 @@ def observe_execution_plan(
     top_level = _git(repo, ("rev-parse", "--show-toplevel"), runner=runner, error_type="not_a_git_repository")
     if Path(top_level.stdout.strip()).resolve() != repo:
         raise LeanMatrixError("repository_identity_mismatch", "repo_root must be the current Git worktree root")
+    controller_branch = _git(repo, ("branch", "--show-current"), runner=runner).stdout.strip()
+    if controller_branch != "develop":
+        raise LeanMatrixError(
+            "untrusted_controller_checkout",
+            "local orchestration must run from the clean surviving develop checkout",
+        )
+    controller_head = _git(repo, ("rev-parse", "HEAD"), runner=runner).stdout.strip()
 
     remote_develop = _git(
         repo,
@@ -246,7 +257,12 @@ def observe_execution_plan(
         remote_contains = _is_ancestor(repo, task_head, plan.base.ref, runner=runner)
         merged = local_contains and remote_contains
         merge_state = "PASS" if merged else "FAIL"
-        cleanup_safe = merged and not dirty and task_head != plan.base.expected_sha
+        cleanup_safe = (
+            merged
+            and local_develop == remote_develop
+            and not dirty
+            and task_head != plan.base.expected_sha
+        )
         branch = actual_branch
         worktree = str(task_path)
         phase = "merged-develop-observed" if cleanup_safe else "implementation-ready"
@@ -283,12 +299,17 @@ def observe_execution_plan(
             "remote_task_head": remote_task_head,
             "worktree_registered": worktree_registered,
             "content_digest": content_digest,
+            "controller_head": controller_head,
         },
     )
     return ObservedExecution(
         state=state,
         phase=phase,
-        base_matches_plan=remote_develop == plan.base.expected_sha,
+        base_matches_plan=(
+            remote_develop == plan.base.expected_sha
+            and controller_head == remote_develop
+            and local_develop == remote_develop
+        ),
         task_head=task_head,
         local_develop_sha=local_develop,
         remote_develop_sha=remote_develop,

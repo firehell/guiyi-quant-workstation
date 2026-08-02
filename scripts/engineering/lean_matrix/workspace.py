@@ -8,7 +8,7 @@ import stat
 import tempfile
 from pathlib import Path
 
-from .adapters import command_for_action
+from .adapters import command_for_action, execution_digest
 from .contracts import ExecutionPlanV1, TransitionProposalV1, TransitionReceiptV1
 from .digests import canonical_json, semantic_digest
 from .errors import LeanMatrixError
@@ -140,6 +140,7 @@ def _validate_proposal(plan: ExecutionPlanV1, proposal: TransitionProposalV1) ->
 
 
 def _validate_receipt(
+    repo_root: Path,
     plan: ExecutionPlanV1,
     proposal: TransitionProposalV1,
     receipt: TransitionReceiptV1,
@@ -150,7 +151,7 @@ def _validate_receipt(
         raise LeanMatrixError("receipt_transition_mismatch", "receipt transition does not match its proposal")
     if receipt.before_state_digest != proposal.from_state_digest:
         raise LeanMatrixError("receipt_state_mismatch", "receipt before-state does not match its proposal")
-    expected_command_digest = semantic_digest(list(command_for_action(plan, proposal.action, apply=True)))
+    expected_command_digest = execution_digest(plan, proposal.action, repo_root)
     if receipt.command_digests != (expected_command_digest,) or len(receipt.exit_codes) != 1:
         raise LeanMatrixError("receipt_command_mismatch", "receipt command is not derived from the frozen plan")
     successful_shape = (
@@ -208,11 +209,11 @@ def load_evidence(repo_root: Path, plan: ExecutionPlanV1) -> EvidenceBundle:
             "plan_digest": plan_digest(plan),
             "action": proposal.action,
             "from_state_digest": proposal.from_state_digest,
-            "command_digest": semantic_digest(list(command_for_action(plan, proposal.action, apply=True))),
+            "command_digest": execution_digest(plan, proposal.action, repo_root),
         }
         if attempts[identifier] != expected_attempt:
             raise LeanMatrixError("attempt_contract_mismatch", "attempt claim is not derived from its plan")
-        _validate_receipt(plan, proposal, receipt)
+        _validate_receipt(repo_root, plan, proposal, receipt)
         records.append(EvidenceRecord(proposal, receipt))
     return EvidenceBundle(tuple(records))
 
@@ -231,7 +232,7 @@ def claim_transition(repo_root: Path, plan: ExecutionPlanV1, proposal: Transitio
         "plan_digest": plan_digest(plan),
         "action": proposal.action,
         "from_state_digest": proposal.from_state_digest,
-        "command_digest": semantic_digest(list(command_for_action(plan, proposal.action, apply=True))),
+        "command_digest": execution_digest(plan, proposal.action, repo_root),
     }
     attempt_path = workspace / "attempts" / artifact_name(proposal.transition_id, attempt_payload)
     _exclusive_json(attempt_path, attempt_payload, repo_root)
@@ -250,7 +251,7 @@ def record_transition(
 ) -> None:
     """Finalize one pre-claimed transition without storing raw command output."""
     _validate_proposal(plan, proposal)
-    _validate_receipt(plan, proposal, receipt)
+    _validate_receipt(repo_root, plan, proposal, receipt)
     workspace = workspace_path(repo_root, plan)
     attempt_dir = workspace / "attempts"
     claimed = [

@@ -22,7 +22,7 @@
 
 - [x] Add RED tests using temporary Git repositories and a complete fake at the Git executable boundary.
 - [x] Reconstruct exact base, task refs, registered worktree identity, HEAD, dirty state, committed/staged/unstaged/untracked paths, and dual-develop ancestry.
-- [x] Compute `state_digest` from canonical material facts excluding the digest field itself, including index and changed-file content fingerprints.
+- [x] Compute `state_digest` from canonical material facts excluding the digest field itself, including index, changed-file content, and Git-effective mode fingerprints.
 - [x] Keep all observation commands local, fixed argv, `shell=False`, `GIT_OPTIONAL_LOCKS=0`, and free of fetch/network/writes.
 
 ### Task 2: Deterministic one-step transition policy
@@ -34,7 +34,7 @@
 
 ### Task 3: Adapter and ignored recovery evidence
 
-- [x] Generate one fixed `task-worktree.sh` argv command per executable action and select its exact cwd.
+- [x] Generate one fixed `task-worktree.sh` argv command per executable action; execute the absolute non-symlink entrypoint from the clean surviving `develop` controller while binding the exact task/controller cwd.
 - [x] Execute exactly one subprocess and persist only command digest, exit code, result, and stable error type—never raw stdout/stderr or environment values.
 - [x] Atomically claim before execution, then store plan/proposal/receipt/log JSON under `.ai/lean-matrix/<plan-digest>/` with content-bound filenames.
 - [x] Reject symlink escape, cross-plan evidence, rehashed contract forgery, tamper, incomplete attempts, duplicate actions, state mismatch, and successful exit without an observed state change.
