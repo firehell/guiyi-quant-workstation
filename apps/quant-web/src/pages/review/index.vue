@@ -36,7 +36,7 @@ import {
   updateReview,
 } from '@/api/review'
 import { getSignalEvent } from '@/api/signal'
-import type { BacktestReport, BacktestTrade } from '@/types/backtest'
+import type { BacktestReport, BacktestTrade, CanonicalInputIdentity } from '@/types/backtest'
 import type { BacktestValidationContext } from '@/types/backtestValidation'
 import type { BarData, KlineMarker } from '@/types/market'
 import type { ReviewFormalLineage, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag } from '@/types/review'
@@ -47,7 +47,8 @@ import {
   parseReviewDeepLinkQuery,
   reviewSourceIdentity,
 } from '@/utils/reviewFoundation'
-import { presentReviewLineage } from '@/utils/reviewLineagePresentation'
+import { isCanonicalReviewLineage, presentReviewLineage } from '@/utils/reviewLineagePresentation'
+import { parseCanonicalInputIdentity } from '@/utils/dataCoreV2Consumer'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import { signalSourceDataMode } from '@/utils/signalSourceMode'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
@@ -90,7 +91,7 @@ const foundationValidation = ref<BacktestValidationContext | null>(null)
 const foundationValidationError = ref<string | null>(null)
 const foundationLineage = ref<ReviewFormalLineage | null>(null)
 const foundationLineageError = ref<string | null>(null)
-const foundationExactBarsVerified = ref(false)
+const foundationExactBarsIdentity = ref<CanonicalInputIdentity | null>(null)
 const bars = ref<BarData[]>([])
 const klineQueryItems = ref<Array<{ label: string; value: string }>>([])
 const activeMarkerId = ref<string | null>(null)
@@ -115,7 +116,7 @@ const foundationContext = computed<ReviewFoundationContext>(() =>
     },
     lineage: foundationLineage.value,
     lineage_error: foundationLineageError.value,
-    backend_exact_bars_verified: foundationExactBarsVerified.value,
+    exact_bars_identity: foundationExactBarsIdentity.value,
     validation_context: foundationValidation.value,
     validation_error: foundationValidationError.value,
   }),
@@ -436,14 +437,17 @@ async function loadBars(review: ReviewNote, requestId = reviewSelectionRequestId
   klineError.value = null
   foundationLineage.value = null
   foundationLineageError.value = null
-  foundationExactBarsVerified.value = false
+  foundationExactBarsIdentity.value = null
   bars.value = []
   klineQueryItems.value = []
   try {
     const result = await getReviewBars(review.id)
     if (!isCurrentReviewSelection(requestId)) return
     foundationLineage.value = result.lineage
-    foundationExactBarsVerified.value = result.lineage.schema_version === 'review_canonical_lineage_v1'
+    const lineagePresentation = presentReviewLineage(result.lineage)
+    foundationExactBarsIdentity.value = lineagePresentation.kind === 'canonical' && isCanonicalReviewLineage(result.lineage)
+      ? parseCanonicalInputIdentity(result.lineage.input_identity).identity
+      : null
     klineQueryItems.value = lineageDebugItems(result.lineage)
     bars.value = result.bars || []
     if (bars.value.length === 0) klineError.value = '冻结 lineage 的精确交易窗口未返回K线数据'
@@ -469,7 +473,7 @@ function clearSelectedReviewState() {
   foundationValidationError.value = null
   foundationLineage.value = null
   foundationLineageError.value = null
-  foundationExactBarsVerified.value = false
+  foundationExactBarsIdentity.value = null
   bars.value = []
   klineQueryItems.value = []
   activeMarkerId.value = null

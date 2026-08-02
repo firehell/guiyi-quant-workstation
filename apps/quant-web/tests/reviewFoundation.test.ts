@@ -112,16 +112,37 @@ describe('reviewFoundation', () => {
     }
   })
 
-  it('keeps a successful backend exact-bars verification distinct from a report payload', () => {
+  it('marks ready only when report identity fully equals the exact-bars identity', () => {
     const ctx = buildReviewFoundationContext({
-      lineage: { input_identity: canonicalInputIdentity() } as never,
-      backend_exact_bars_verified: true,
+      report: { input_identity: canonicalInputIdentity() } as never,
+      exact_bars_identity: canonicalInputIdentity(),
     })
     assert.equal(ctx.canonical_input_identity.status, 'available')
     assert.equal(ctx.canonical_input_digest.status, 'available')
     assert.equal(ctx.lineage_status.status, 'available')
     assert.equal(ctx.lineage_status.value, 'ready')
     assert.match(String(ctx.lineage_status.reason), /exact-bars/i)
+  })
+
+  it('does not let exact-bars digest B verify report digest C', () => {
+    const ctx = buildReviewFoundationContext({
+      report: { input_identity: canonicalInputIdentity('c'.repeat(64)) } as never,
+      exact_bars_identity: canonicalInputIdentity('b'.repeat(64)),
+    })
+    assert.equal(ctx.canonical_input_identity.status, 'warning')
+    assert.equal(ctx.canonical_input_digest.status, 'warning')
+    assert.equal(ctx.lineage_status.status, 'warning')
+    assert.notEqual(ctx.lineage_status.value, 'ready')
+    assert.match(String(ctx.lineage_status.reason), /does not match/i)
+  })
+
+  it('keeps malformed exact-bars evidence unavailable and never ready', () => {
+    const ctx = buildReviewFoundationContext({
+      exact_bars_identity: { schema_version: 'canonical_consumer_input_v1', digest: 'b'.repeat(64) } as never,
+    })
+    assert.equal(ctx.canonical_input_identity.status, 'unavailable')
+    assert.equal(ctx.canonical_input_digest.status, 'unavailable')
+    assert.equal(ctx.lineage_status.status, 'unavailable')
   })
 
   it('shows legacy policy as warning, not invented snapshot', () => {
