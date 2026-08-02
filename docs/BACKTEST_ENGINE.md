@@ -17,11 +17,16 @@ quality_policy = "passed_only"
 quality_status = "passed"
 ```
 
-公开 `/api/backtests/tasks`、inline `/run`、`/run-batch` 和 fixed JM 均属于 formal consumer。客户端只提交行情 identity 和可选 `profile_id`，不得提交主/辅助本地路径、data role、quality、data version 或 warning override。服务端通过 `ProfileLineageResolver` 固定 active Profile binding；主资产与辅助资产必须属于同一 Profile。
+公开 `/api/backtests/tasks`、inline `/run`、`/run-batch` 和 fixed JM 均属于 formal consumer。客户端只提交
+`canonical_consumer_input_v1` 的 DatasetKey/query identity，不能提交主/辅助本地路径、Profile、binding、
+data role、quality、data version 或 warning override。服务端只经 `MarketDataService` 解析并验证
+canonical identity、Manifest/Gap/MainContractMap 与 exact window；Profile/Binding 不是 active selector。
 
 低层 `GuiyiBacktestRequest` 仍可接收路径，但仅供显式 `research_only` 的 legacy、experiment 和 test fixture 使用，不能通过公开 formal API 持久化为正式任务或报告。
 
-Formal contract 错误采用稳定 code：`BACKTEST_FORMAL_PATH_FORBIDDEN`、`BACKTEST_PROFILE_NOT_FOUND`、`BACKTEST_PROFILE_BINDING_MISSING`、`BACKTEST_PROFILE_MARKET_FILE_MISSING`、`BACKTEST_PROFILE_QUALITY_BLOCKED`、`BACKTEST_PROFILE_RANGE_NOT_COVERED`、`BACKTEST_PROFILE_FILE_MISSING`、`BACKTEST_PROFILE_IDENTITY_MISMATCH`、`BACKTEST_PROFILE_BINDING_CHANGED`。错误 context 不返回物理文件路径；并发 binding 切换使用 HTTP 409，其余契约拒绝使用 HTTP 422。
+formal canonical contract fail-closed：缺少或漂移的 DatasetKey、manifest digest、query window、actual mapping、
+quality 或 DataGap 都不能创建正式任务。错误 context 不返回物理文件路径；保留的 `BACKTEST_PROFILE_*`
+code 只服务 legacy compatibility，不构成 active contract。
 
 禁止 validation、legacy_reference、candidate、failed、live DB、旧 TqSdk / 天勤和交易练习者数据进入正式回测。
 
@@ -30,8 +35,9 @@ Formal contract 错误采用稳定 code：`BACKTEST_FORMAL_PATH_FORBIDDEN`、`BA
 ```text
 Backtest API
 -> BacktestService
--> ProfileLineageResolver (active / passed_only)
--> immutable binding snapshot
+-> canonical_consumer_input_v1
+-> MarketDataService (DatasetKey / Manifest / Gap / MainContractMap)
+-> immutable canonical input snapshot
 -> vn.py runner
 -> ResultConverter
 -> BacktestReport / Trade / Order
@@ -40,8 +46,8 @@ Backtest API
 ```
 
 - report 曲线从 closed trades 派生，忽略外部输入的 equity/drawdown 曲线。
-- task 保存 `profile_id`、主 `market_data_file_id` 和包含全部辅助资产的 immutable snapshot；report 深拷贝 task snapshot，不按当前 binding 重新解析。
-- snapshot 记录 `resolver_name=ProfileLineageResolver`、`resolver_contract_version=backtest_profile_v1` 和 `quality_policy=passed_only`。
+- task/report 保存 immutable `canonical_consumer_input_v1` snapshot；不得在运行或展示时按当前 Profile/
+  Binding 重新解析。历史 `profile_id`/`market_data_file_id` 仅为 legacy compatibility fields。
 - formal 任务另附 `indicator_policy_snapshot`（`strategy_indicator_policy_v1`）：创建时 fail-closed；旧报告无 snapshot 时 API 返回 `indicator_policy_status=legacy_policy_unavailable`，禁止用当前 Registry 猜测。
 - formal policy 必须允许 `formal_backtest` consumer；精确的 JM V1-B v1b.0 冻结链路使用独立 `frozen_legacy_backtest` consumer，其他策略不得伪造 legacy 身份。
 - batch task 可因多资产令顶层 `market_data_file_id` 为空，但 snapshot 必须列出全部资产，且每个 report 的文件 ID 必须非空。
@@ -102,7 +108,8 @@ REJECTED_RESEARCH_CANDIDATE
 当前业务入口为 Stage 6 的 `JM Data Continuity -> T3 -> T4 -> EOD Automation -> T5 -> T6 -> T7` 串行主线；下一步是 `S6-01` JM 数据连续性只读盘点与冻结 Plan。不得把 HTDY rejection 用调参、覆盖 packet 或自动重跑翻转，也不得把阶段 5 验证结果写成 live、通知或长稳 Ready。
 
 - `20260718_0024` 仅新增 task/report nullable JSON snapshot，无 UPDATE、server default 或历史 backfill。包含 report 14 的隔离 PostgreSQL 已完成 `0023 -> head -> 0023 -> head` roundtrip，canonical PostgreSQL 已应用；report 14、trades、orders 和 trust audit 与迁移前副本一致，历史 snapshot 保持 null。
-- 保持 `report_id=14` 作为回归基线，不修改策略参数以改善收益。
+- report 14/15 是 Git-traceable historical snapshots；不改写策略参数、历史结论或证据，但也不把它们
+  当作 active regression 或 Gate。
 - 阶段 4 已取得 `INDICATOR_CONTRACT_READY / HTDY_STRICT_FORMAL_REPORT_READY`；阶段 5 已按 final-frozen protocol 完成，不再把 X5-02 描述为当前入口。
 - D4-00 HTDY original 审计最终 Gate 仍为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；original 不得进入正式回测，独立 causal strict 仅获得历史正式报告输入资格。
 - OOS / walk-forward 默认仅输出文件或隔离数据库；任何 canonical PostgreSQL 写入都需独立审批包和用户明确批准。trust audit passed 不能直接写为策略有效，最终候选结论必须留给阶段验收任务。

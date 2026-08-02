@@ -82,17 +82,17 @@ EOD 重新从 RQData 获取 provider-final 数据，先比较输入指纹，再�
 live/decision/event/notification/reconciliation/snapshot/fingerprint 的目标留存为 30 天。
 人工复盘完成后只提取精简 `ResearchSample` 长期保留；该机制尚未实现或启用。
 
-historical evidence/report/receipt 默认保护。6B 只允许在以下条件全部满足后，由独立任务执行：
+historical evidence/report/receipt 默认保护。Task 07 只允许在以下条件全部满足后，由独立任务执行：
 
 1. 精确逐文件 deletion manifest；
-2. 替代 regression/release/runtime 必要证据；
-3. active canonical、测试、Gate、文档和 Runtime 引用扫描为零；
-4. 独立 Review 允许删除；
-5. 用户批准 exact scope；
+2. zero active references（active canonical、测试、Gate、文档和 Runtime 引用扫描为零）；
+3. independent Sol Review 允许删除；
+4. owner 批准 exact scope；
 6. 删除后全仓验证与引用扫描。
 
 本合同和任务 00 均不授权删除任何文件、Git 历史、数据库记录、Parquet、evidence、report
-或 receipt。report 14/15 与仍被 Gate/Runtime 引用的工件必须保护。
+或 receipt。report 14/15 是 Git-traceable historical snapshots，不是 active Gate/regression；
+不得改写其历史结论或删除历史证据。
 
 ## 3. Legacy compatibility 与替换关系
 

@@ -56,7 +56,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_target_freshness.py
 ```
 
-下游尚未迁移，其 Profile/lineage 合同仍须回归：
+legacy Profile/lineage compatibility 回归（不证明 active selector）：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -145,6 +145,23 @@ EXPECT_CANONICAL_MARKET=1 pnpm --dir apps/quant-web test:e2e
 `guiyi data migrate inventory/plan` 为零写入命令；plan 必须同时显式传入 task worktree
 `--project-root`、旧资产 `--legacy-root`、新 `--canonical-root/--staging-root` 与 exact window。
 worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval packet。
+
+### Task 05 derived/reference inventory
+
+下列 CLI 只输出稳定 JSON；不加载环境变量或 RQData、不含 delete/apply/repair mode。`--database-url`
+仅用于外部 read-only Gate 的显式注入，绝不输出其值；PostgreSQL 使用 `SET TRANSACTION READ ONLY`。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_derived_reference_inventory.py
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api python scripts/derived_reference_inventory.py \
+  --repo-root /path/to/fixture-repo --data-root /path/to/fixture-data
+```
+
+真实 PostgreSQL/data root 只读盘点是 external Gate；它不授权重建、迁移、删除、Runtime、通知或交易。
 
 生产 migration、真实 RQData/Parquet/PostgreSQL apply 与创建/删除隔离 PostgreSQL 数据库
 都需要精确授权。Task 04 的专用临时库已在用户授权后完成测试并删除；这不授权生产 apply，

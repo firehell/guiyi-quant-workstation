@@ -50,8 +50,10 @@ Task 04 或 Task 05 的准入 Gate。PR #90～#94、既有 Shadow 失败、ident
 packet、不执行 preflight/apply/legacy Shadow，也不删除旧行情、Profile、Binding、receipt、
 report、evidence 或 legacy reader。
 
-Task 04 closeout 合入后，下一任务是 Task 05：Backtest / Signal / Review 可信消费者切换。
-Task 05 必须使用新的 Codex 会话、新 branch 和新 task worktree，本分支不实现。
+Task 05 的 Backtest / Signal / Review canonical consumer 切换已在独立 task worktree 完成。本 task
+branch 同时完成 Task 07 前置的 derived/reference 只读 inventory CLI 与 active canonical docs 收口；
+当前仅为 branch-local code/test/document fact，尚未合入 `develop`。inventory 的真实 PostgreSQL 与
+真实 data root 只读执行仍是 external Gate，不能由 fixture、CLI smoke 或文档改动代替。
 
 ## 数据核心任务状态
 
@@ -62,7 +64,7 @@ Task 05 必须使用新的 Codex 会话、新 branch 和新 task worktree，本�
 | GY-DATA-CORE-V2 Task 02 | completed on develop | PR #80；Catalog/Manifest/Gap schema 与隔离 migration 验证；生产 revision 已是 0027 |
 | GY-DATA-CORE-V2 Task 03 | completed on develop | PR #82；staging、quality 与 canonical writer |
 | GY-DATA-CORE-V2 Task 04 | completed on develop（本 closeout commit 可从 develop 到达时生效） | Canonical 自身 Gate、统一读取与普通消费者回归；legacy Shadow 不再是准入 Gate |
-| GY-DATA-CORE-V2 Task 05 | next after Task 04 merge | Backtest / Signal / Review 可信消费者切换；须新会话、branch、worktree |
+| GY-DATA-CORE-V2 Task 05 | completed on task branch; unmerged | Backtest / Signal / Review canonical consumer cutover、derived/reference inventory 与 canonical docs；focused 5 passed、consumer regression 34 passed、backend 2420 passed/36 skipped、Web 185 passed/1 skipped/build passed |
 | GY-DATA-CORE-V2 Task 06～08 | pending | live/EOD、其他品种/受控清理、release/Runtime 分别保留独立 Gate |
 
 ## 未关闭 Gate
@@ -72,7 +74,8 @@ Task 05 必须使用新的 Codex 会话、新 branch 和新 task worktree，本�
 | HTDY XMA 语义 | blocked | 保持 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`，不重开公式审计 |
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
-| Task 05 可信消费者切换 | pending | Task 04 closeout 合入后用独立任务执行 |
+| Task 05 可信消费者切换 | task branch complete; integration pending | 尚待独立 Review、exact-head CI/PR 与 `develop` merge；不构成 release/Runtime Gate |
+| Task 07 inventory external read-only Gate | pending | 真实 PostgreSQL/data root 必须另行显式只读运行；不授权 migration、rebuild、delete 或 repair |
 | 旧行情与 legacy 工件删除 | not authorized | 旧行情只读保留；任何删除需独立 exact deletion Gate |
 | release / main / tag | not authorized | 本 closeout 只合入 develop |
 | Runtime promotion | not authorized | Runtime 保持独立 detached，不同步本任务 |
@@ -94,7 +97,7 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 | MainContractMap | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 closeout 只读 mapping audit |
 | legacy compatibility | PR #90～#94 实现与历史 evidence 保留；不再扩展或作为准入 Gate | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
-| Task 05 | Task 04 merge 后下一任务 | 本任务不实现 Task 05 |
+| Task 05 | task branch implementation/test complete | `scripts/derived_reference_inventory.py`；真实 DB/data root read-only inventory 未运行 |
 
 ## 不可宣称
 
@@ -105,6 +108,8 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
   evidence 已获删除授权。
 - 不可把既有 legacy Shadow 失败、PR #90～#94 或历史 packet/receipt 改写成新的生产授权。
 - 不可把 `report_id=14` trust audit、任何 backtest 或单次 smoke 写成策略盈利或实盘准入。
+- 不可把 Task 05 branch-local 完成写成 `develop` merge、release、Runtime、notification、deletion 或
+  profitability；Task 07 删除前仍须 exact manifest、zero active refs、independent Sol Review 与 owner approval。
 - 不可把 HTDY realtime exception 写成历史回测、OOS、收益或交易资格；
   `REJECTED_RESEARCH_CANDIDATE` 不得被翻转。
 

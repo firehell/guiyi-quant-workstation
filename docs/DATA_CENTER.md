@@ -25,6 +25,12 @@ RQData
 - PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
 - 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
 - 旧 Profile/ActiveBinding/复杂 lineage 仅为 legacy compatibility，不再扩展为 active selector。
+- V2 migration asset 只有 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap
+  metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、permanent derived
+  period、重复 raw/standard/canonical bar layer 和 Profile/Binding/legacy lineage 均为 rebuild-only
+  或 compatibility-only，不迁移为新的 active input。
+- report 14/15 是 Git-traceable historical snapshots，不是 active Gate 或 regression；保留其
+  历史结论和证据，不做重写或删除。
 - Task 04 完成不表示 Task 05、release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
   residual 为零。
 
@@ -418,7 +424,7 @@ historical `confirmed` 同时要求：目标 bucket 已完成、数据来自盘�
 
 周线完成需满足：交易日历完整、该周最后实际交易日已收盘、provider completed bar 存在。live 聚合的 confirmed bar 仍不自动成为 historical canonical。
 
-### 2.2.5 五层状态与 Profile eligibility
+### 2.2.5 五层状态与 legacy Profile eligibility（冻结历史）
 
 以下状态必须独立记录，禁止用一层成功替代另一层：
 
@@ -430,18 +436,23 @@ reference_metadata: passed / warning / missing / not_applicable / unavailable
 profile_eligibility: eligible / blocked / unresolved / not_applicable
 ```
 
-Profile eligibility 至少要求 physical covered、registration registered、reference metadata passed/not-applicable、identity 在 Profile target 内、bar confirmed，并满足 Profile quality policy。当前 Profile JSON 不在本任务修改；target-aware 选优属于 B2-07。
+Profile eligibility 是 legacy compatibility 的历史口径，不能作为 Backtest、Signal 或 Review 的
+active selector。V2 formal consumer 必须只通过 `MarketDataService` 消费
+`canonical_consumer_input_v1` 所固定的 DatasetKey、manifest digest、query window、mapping 与
+quality/Gap 证据。
 
 ### 2.2.6 formal consumer 准入
 
 | Consumer | 默认准入 | warning 边界 |
 |---|---|---|
 | Market | 五层完整、confirmed、quality passed/warning | 允许展示，必须返回并显示 warning |
-| Backtest | confirmed、passed、Profile eligible | 显式 opt-in 仅为 research warning run，不计入最终 Ready Gate |
-| Signal | confirmed、passed、reference/Profile 完整 | warning、partial、failed、unchecked 全部阻断 |
+| Backtest | confirmed、passed、`canonical_consumer_input_v1` + MarketDataService | 显式 opt-in 仅为 research warning run，不计入最终 Ready Gate |
+| Signal | confirmed、passed、`canonical_consumer_input_v1` + MarketDataService | warning、partial、failed、unchecked 全部阻断 |
 | Review | passed 可作正式证据 | warning 只可带标签展示，不可作信号证据 |
 
-所有 formal consumers 均阻断 registration missing、reference metadata gap、Profile ineligible 和 historical partial。`report_id=14` 是冻结历史基线，只能读取和引用，禁止更新、回填、重算覆盖或替换 lineage。
+所有 formal consumers 均阻断 registration missing、reference metadata gap、historical partial 与
+canonical identity/manifest/mapping drift。report 14/15 只能读取和引用为 Git-traceable historical
+snapshots，不是 active Gate/regression；禁止更新、回填、重算覆盖、替换 lineage 或删除证据。
 
 ## 2.2.7 Audit V2（2026-07-17）
 

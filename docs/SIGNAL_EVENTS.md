@@ -59,7 +59,8 @@ Stage 8 只记录观察 / 提醒事件：
   `htdy_original_xma_15m_first_seen_v1` 精确 realtime observation policy 在后续独立
   schema-v3 Gate 中可复用既有 `StrategySignal -> SignalEvent`，且只允许 `signal_created`。
 
-新 formal historical Signal 只读取服务端 Profile binding 解析的严格资产：
+新 formal historical Signal 只读取 `canonical_consumer_input_v1` 固定并由 `MarketDataService`
+验证的严格 canonical assets：
 
 ```text
 provider/source in ("rqdata", "local_parquet")
@@ -69,7 +70,8 @@ actual_contract != "*.MAIN"
 target bar window covered
 ```
 
-旧路径/警告研究能力只保留在显式 `research_only` 边界，可展示但不创建 formal `SignalEvent`、Stage 9 evidence 或通知。
+Profile/Binding/legacy lineage 只保留在显式 `research_only` compatibility 边界，可展示但不创建
+formal `SignalEvent`、Stage 9 evidence 或通知，也不作为 active selector。
 
 ## 3. 表结构
 
@@ -97,7 +99,8 @@ signal_events
 - `provider` / `source`：数据提供方和数据来源层。
 - `data_role`、`quality_status`：保留数据边界和质量信息。
 - `payload`：事件快照，已过滤 `webhook`、`token`、`password`、`secret`、`cookie` 等敏感键。
-- `profile_id` / `market_data_file_id`：migration `0023` 已有 nullable 列，新 formal task/signal/event 写入，旧记录保持 `NULL`。
+- `profile_id` / `market_data_file_id`：legacy compatibility nullable fields；formal task/signal/event 的
+  active identity 是 immutable `canonical_consumer_input_v1`，旧记录保持历史值或 `NULL`，不回填。
 - `payload.formal_lineage`：不可变 `signal_review_lineage_v1` snapshot，包含 resolver/version、passed-only policy、primary/context assets、continuous/actual contract、mapping date、bar window 和 historical/live confirmation proof。live path 另含 `context_contract_version=historical_live_context_v1`、`historical_context` 与 `live_trigger`；两侧 identity/hash 分别验证，任一缺失或漂移均不能形成可持久化 entry signal。
 
 去重口径：
