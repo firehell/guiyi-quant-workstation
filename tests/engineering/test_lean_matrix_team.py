@@ -310,6 +310,7 @@ def test_fresh_checkout_execution_does_not_create_bytecode_cache(tmp_path: Path)
     isolated_cli = isolated_scripts / CLI_PATH.name
     shutil.copyfile(CLI_PATH, isolated_cli)
     shutil.copyfile(ROOT / "scripts" / "engineering" / "task_workflow.py", isolated_scripts / "task_workflow.py")
+    shutil.copytree(ROOT / "scripts" / "engineering" / "lean_matrix", isolated_scripts / "lean_matrix")
 
     result = subprocess.run(
         [sys.executable, str(isolated_cli), "charter", "--input", "-", "--format", "json"],
