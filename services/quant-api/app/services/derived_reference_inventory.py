@@ -479,21 +479,29 @@ def _classify_market_data_file_row(
 
 
 def _catalog_identity_matches(row: dict[str, str | None], catalog: dict[str, str]) -> bool:
-    return (
+    symbol = (row["instrument_symbol"] or "").lower()
+    contract = (row["contract_code"] or "").upper()
+    catalog_contract = catalog["contract_or_series"].upper()
+    base = (
         row["provider"] == "rqdata"
         and row["data_type"] == "bars"
         and row["data_role"] == "primary"
         and row["quality_status"] == "passed"
         and row["provider"] == catalog["provider"]
-        and row["instrument_symbol"] == catalog["symbol"]
-        and row["contract_code"] == catalog["contract_or_series"]
+        and symbol == catalog["symbol"].lower()
         and row["period"] == catalog["frequency"]
         and row["checksum"] == catalog["checksum"]
-        and catalog["dataset_kind"] == "actual_dominant"
         and catalog["adjustment"] == "none"
         and catalog["schema_version"] == "canonical-bar-v1"
         and bool(catalog["manifest_uri"] and catalog["manifest_digest"])
     )
+    if not base:
+        return False
+    if catalog["dataset_kind"] == "actual_dominant":
+        return not contract.endswith(".MAIN") and contract.startswith(symbol.upper()) and contract == catalog_contract
+    if catalog["dataset_kind"] == "continuous":
+        return catalog_contract == f"{symbol.upper()}.MAIN" and contract == catalog_contract
+    return False
 
 
 def _normalized_catalog_uri(file_path: str, canonical_root: Path) -> tuple[str | None, str | None]:

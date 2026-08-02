@@ -14,6 +14,7 @@ from app.models.data_center import MarketDataFile
 from app.models.data_core import MarketDataset, MarketPartition
 from app.services.derived_reference_inventory import (
     DerivedReferenceInventoryConfig,
+    _catalog_identity_matches,
     build_derived_reference_inventory,
 )
 
@@ -96,6 +97,23 @@ def test_market_data_inventory_columns_match_real_models() -> None:
     assert {"id", "provider", "data_type", "instrument_symbol", "contract_code", "period", "file_path", "checksum", "data_version", "data_role", "quality_status"} <= set(MarketDataFile.__table__.columns.keys())
     assert {"id", "provider", "symbol", "contract_or_series", "frequency", "adjustment", "schema_version"} <= set(MarketDataset.__table__.columns.keys())
     assert {"id", "dataset_id", "file_uri", "manifest_uri", "manifest_digest", "checksum", "manifest_version"} <= set(MarketPartition.__table__.columns.keys())
+
+
+@pytest.mark.parametrize(
+    ("dataset_kind", "row_contract", "catalog_contract", "expected"),
+    [
+        ("actual_dominant", "JM2609", "JM2609", True),
+        ("continuous", "jm.main", "JM.MAIN", True),
+        ("actual_dominant", "JM.MAIN", "JM.MAIN", False),
+        ("continuous", "JM2609", "JM.MAIN", False),
+    ],
+)
+def test_catalog_identity_supports_only_valid_actual_or_continuous_direct_contracts(
+    dataset_kind: str, row_contract: str, catalog_contract: str, expected: bool,
+) -> None:
+    row = {"provider": "rqdata", "data_type": "bars", "data_role": "primary", "quality_status": "passed", "instrument_symbol": "jm", "contract_code": row_contract, "period": "1m", "checksum": "a"}
+    catalog = {"provider": "rqdata", "symbol": "jm", "contract_or_series": catalog_contract, "frequency": "1m", "checksum": "a", "dataset_kind": dataset_kind, "adjustment": "none", "schema_version": "canonical-bar-v1", "manifest_uri": "manifest.json", "manifest_digest": "b"}
+    assert _catalog_identity_matches(row, catalog) is expected
 
 
 def test_inventory_uses_sqlite_query_only_and_never_emits_write_statement(tmp_path: Path) -> None:
