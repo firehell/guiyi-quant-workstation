@@ -150,12 +150,13 @@ worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval p
 
 下列 CLI 只输出稳定 JSON；不加载 RQData、不含 delete/apply/repair mode。真实 DB 只允许通过
 显式 `--database-url-env NAME` 外部只读 Gate 注入，绝不输出 URL；PostgreSQL 精确使用
-`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`。`--max-files` 同时限制目录、文件、匹配和
-输出记录；`--max-file-bytes`、`--max-total-bytes` 与 `--max-ids` 均有安全默认值。任何预算、
+`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`。`--max-files` 限制文件、匹配和输出记录，
+`--max-directories` 单独限制目录；`--max-file-bytes`、`--max-total-bytes` 与 `--max-ids` 均有安全默认值。任何预算、
 symlink、非 UTF-8、TOCTOU、缺表/缺列或读取错误都会返回 incomplete diagnostics，绝不把截断
-或猜测结果当作完整 inventory。`market_data_files` 逐行只在 provider/role/quality/period 与
-Catalog partition 的 path、manifest、checksum linkage 均可验证时标为 KEEP；derived 为
-REBUILD_ONLY，raw/standard/canonical 而无 linkage 一律 REVIEW_REQUIRED。
+或猜测结果当作完整 inventory。`market_data_files.file_path` 必须为绝对路径、containment 于显式
+`--canonical-root`（默认 data root）后转为 POSIX 相对 URI，并与唯一 `Catalog partition.file_uri`
+精确一致；provider、symbol、contract、period、checksum、manifest/version 证据任一漂移或 URI
+歧义均为 REVIEW_REQUIRED。legacy `bars` 的 5m/15m/30m/60m 和明确 derived 均为 REBUILD_ONLY。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

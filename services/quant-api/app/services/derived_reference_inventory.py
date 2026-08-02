@@ -25,6 +25,7 @@ CATEGORY_ORDER = (
     "report_14_15_references",
 )
 DEFAULT_MAX_FILES = 10_000
+DEFAULT_MAX_DIRECTORIES = 10_000
 DEFAULT_MAX_FILE_BYTES = 256 * 1024 * 1024
 DEFAULT_MAX_TOTAL_BYTES = 1024 * 1024 * 1024
 DEFAULT_MAX_IDS = 1_000
@@ -59,10 +60,11 @@ _TRUSTED_METADATA_TABLES = ("data_gaps", "main_contract_map", "market_datasets",
 _REVIEW_METADATA_TABLES = ("market_data_files",)
 _ALLOWED_TABLES = tuple(sorted({table for tables in _CATEGORY_TABLES.values() for table in tables} | set(_TRUSTED_METADATA_TABLES) | set(_REVIEW_METADATA_TABLES)))
 _MARKET_DATA_FILE_COLUMNS = (
-    "id", "provider", "data_type", "period", "file_path", "data_version", "data_role", "quality_status",
+    "id", "provider", "data_type", "instrument_symbol", "contract_code", "period", "file_path", "checksum",
+    "data_version", "data_role", "quality_status",
 )
-_CATALOG_DATASET_COLUMNS = ("id", "provider", "dataset_kind", "frequency")
-_CATALOG_PARTITION_COLUMNS = ("id", "dataset_id", "file_uri", "manifest_uri", "manifest_digest", "checksum")
+_CATALOG_DATASET_COLUMNS = ("id", "provider", "dataset_kind", "symbol", "contract_or_series", "frequency", "schema_version")
+_CATALOG_PARTITION_COLUMNS = ("id", "dataset_id", "file_uri", "manifest_uri", "manifest_digest", "checksum", "manifest_version")
 _REFERENCE_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".toml", ".sql", ".html", ".js", ".txt", ".sh", ".ts", ".tsx", ".vue"}
 _IGNORED_DIRS = {".git", ".venv", "node_modules", "dist", "__pycache__", ".superpowers"}
 _SELF_REFERENCE_PATHS = {
@@ -71,7 +73,14 @@ _SELF_REFERENCE_PATHS = {
     "services/quant-api/tests/test_derived_reference_inventory.py",
 }
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_NON_ACTIVE_MARKER = re.compile(r"\b(?:historical|frozen|superseded|not\s+active|non-active|archive|compatibility-only)\b", re.IGNORECASE)
+_ARCHIVE_PATH_MARKER = re.compile(r"(?:^|/)(?:archive|archived|归档)(?:/|$)", re.IGNORECASE)
+_HISTORICAL_STRONG_MARKER = re.compile(
+    r"(?:historical\s+snapshot.*(?:not\s+active\s+gate|reference[- ]only|only\s+historical\s+reference)|"
+    r"仅历史引用|历史快照且非\s*active\s*gate|已归档)",
+    re.IGNORECASE,
+)
+_NON_ACTIVE_STRONG_MARKER = re.compile(r"(?:\bno\s+longer\s+active\b|\bnot\s+active\b|\bsuperseded\s+and\s+unused\b|不再\s*active)", re.IGNORECASE)
+_AMBIGUOUS_HISTORY_MARKER = re.compile(r"(?:\bhistorical\b|\bfrozen\b|\bcompatibility-only\b|\bsuperseded\b)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -96,7 +105,9 @@ _REFERENCE_RULES = {
 class DerivedReferenceInventoryConfig:
     repo_root: Path
     data_root: Path
+    canonical_root: Path | None = None
     max_files: int = DEFAULT_MAX_FILES
+    max_directories: int = DEFAULT_MAX_DIRECTORIES
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
     max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES
     max_ids: int = DEFAULT_MAX_IDS
@@ -112,22 +123,28 @@ def build_derived_reference_inventory(
     _validate_limits(config)
     repo_root = config.repo_root.resolve(strict=False)
     data_root = config.data_root.absolute()
-    database, table_inventory = _read_database_inventory(connection, max_ids=config.max_ids)
+    database, table_inventory = _read_database_inventory(
+        connection,
+        max_ids=config.max_ids,
+        canonical_root=(config.canonical_root or config.data_root).absolute(),
+    )
     filesystem = _read_filesystem_inventory(data_root, config)
     references, reference_scan = _read_reference_locations(repo_root, config)
     categories = []
     for category in CATEGORY_ORDER:
         category_references = references[category]
         active_references = [item for item in category_references if item["reference_state"] == "active"]
+        review_references = [item for item in category_references if item["reference_state"] == "review_required"]
+        category_tables = _tables_for_category(category, table_inventory, database.get("market_data_file_classifications", []))
         categories.append(
             {
                 "category": category,
                 "reason": _CATEGORY_REASONS[category],
-                "database_tables": _tables_for_category(category, table_inventory, database.get("market_data_file_classifications", [])),
-                "database_scope": "NOT_APPLICABLE" if not _CATEGORY_TABLES[category] else "APPLICABLE",
+                "database_tables": category_tables,
+                "database_scope": _database_scope(database, category_tables),
                 "filesystem_paths": _paths_for_category(category, filesystem["records"]),
                 "reference_locations": category_references,
-                "active_reference_status": "present" if active_references else "zero_active_references",
+                "active_reference_status": "present" if active_references else "review_required" if review_references else "zero_active_references",
                 "non_active_reference_count": len(category_references) - len(active_references),
             }
         )
@@ -155,11 +172,24 @@ def build_derived_reference_inventory(
 
 
 def _validate_limits(config: DerivedReferenceInventoryConfig) -> None:
-    if min(config.max_files, config.max_file_bytes, config.max_total_bytes, config.max_ids) <= 0:
+    if min(config.max_files, config.max_directories, config.max_file_bytes, config.max_total_bytes, config.max_ids) <= 0:
         raise ValueError("inventory limits must be positive")
 
 
-def _read_database_inventory(connection: Any | None, *, max_ids: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _database_scope(database: dict[str, Any], category_tables: list[dict[str, Any]]) -> str:
+    if not database["available"]:
+        return "INCOMPLETE"
+    if category_tables:
+        return "PRESENT"
+    return "COMPLETE"
+
+
+def _read_database_inventory(
+    connection: Any | None,
+    *,
+    max_ids: int,
+    canonical_root: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if connection is None:
         return {"available": False, "dialect": None, "tables": [], "diagnostics": [{"code": "DATABASE_NOT_CONFIGURED"}]}, []
     dialect = _dialect_name(connection)
@@ -192,6 +222,7 @@ def _read_database_inventory(connection: Any | None, *, max_ids: int) -> tuple[d
             table_columns=table_columns,
             max_ids=max_ids,
             diagnostics=diagnostics,
+            canonical_root=canonical_root,
         )
         for record in inventory:
             if record["table"] == "market_data_files":
@@ -268,6 +299,7 @@ def _classify_market_data_files(
     table_columns: dict[str, set[str]],
     max_ids: int,
     diagnostics: list[dict[str, str]],
+    canonical_root: Path,
 ) -> list[dict[str, Any]]:
     """Classify legacy file rows only when their real schema can prove the evidence."""
 
@@ -291,7 +323,15 @@ def _classify_market_data_files(
     if limit_hit:
         diagnostics.append({"code": "MARKET_DATA_FILE_ROW_LIMIT_EXCEEDED", "table": "market_data_files"})
         return []
-    return [_classify_market_data_file_row(row, catalog) for row in rows]
+    return [
+        _classify_market_data_file_row(
+            row,
+            catalog,
+            canonical_root=canonical_root,
+            diagnostics=diagnostics,
+        )
+        for row in rows
+    ]
 
 
 def _catalog_evidence(
@@ -300,7 +340,7 @@ def _catalog_evidence(
     table_columns: dict[str, set[str]],
     max_ids: int,
     diagnostics: list[dict[str, str]],
-) -> dict[str, dict[str, str]]:
+) -> dict[str, list[dict[str, str]]]:
     required_datasets = set(_CATALOG_DATASET_COLUMNS)
     required_partitions = set(_CATALOG_PARTITION_COLUMNS)
     dataset_columns = table_columns.get("market_datasets")
@@ -314,8 +354,9 @@ def _catalog_evidence(
     placeholder = "?" if dialect == "sqlite" else "%s"
     rows = _fetchall(
         connection,
-        "SELECT p.\"file_uri\", d.\"provider\", d.\"frequency\", d.\"dataset_kind\", "
-        "p.\"manifest_uri\", p.\"manifest_digest\", p.\"checksum\" "
+        "SELECT p.\"file_uri\", d.\"provider\", d.\"symbol\", d.\"contract_or_series\", d.\"frequency\", "
+        "d.\"dataset_kind\", d.\"schema_version\", p.\"manifest_uri\", p.\"manifest_digest\", "
+        "p.\"checksum\", p.\"manifest_version\" "
         "FROM \"market_partitions\" AS p JOIN \"market_datasets\" AS d ON d.\"id\" = p.\"dataset_id\" "
         f"ORDER BY p.\"id\" LIMIT {placeholder}",
         (max_ids + 1,),
@@ -323,17 +364,26 @@ def _catalog_evidence(
     if len(rows) > max_ids:
         diagnostics.append({"code": "CANONICAL_CATALOG_ROW_LIMIT_EXCEEDED", "table": "market_partitions"})
         return {}
-    return {
-        str(row[0]): {
+    evidence: dict[str, list[dict[str, str]]] = {}
+    for row in rows:
+        evidence.setdefault(str(row[0]).replace("\\", "/"), []).append(
+            {
             "provider": str(row[1]),
-            "frequency": str(row[2]),
-            "dataset_kind": str(row[3]),
-            "manifest_uri": str(row[4]),
-            "manifest_digest": str(row[5]),
-            "checksum": str(row[6]),
-        }
-        for row in rows
-    }
+            "symbol": str(row[2]),
+            "contract_or_series": str(row[3]),
+            "frequency": str(row[4]),
+            "dataset_kind": str(row[5]),
+            "schema_version": str(row[6]),
+            "manifest_uri": str(row[7]),
+            "manifest_digest": str(row[8]),
+            "checksum": str(row[9]),
+            "manifest_version": str(row[10]),
+            }
+        )
+    for file_uri, candidates in evidence.items():
+        if len(candidates) > 1:
+            diagnostics.append({"code": "CATALOG_FILE_URI_AMBIGUOUS", "table": "market_partitions"})
+    return evidence
 
 
 def _read_rows_with_limit(
@@ -356,23 +406,33 @@ def _read_rows_with_limit(
     return [dict(zip(columns, (None if value is None else str(value) for value in row), strict=True)) for row in rows], False
 
 
-def _classify_market_data_file_row(row: dict[str, str | None], catalog: dict[str, dict[str, str]]) -> dict[str, Any]:
+def _classify_market_data_file_row(
+    row: dict[str, str | None],
+    catalog: dict[str, list[dict[str, str]]],
+    *,
+    canonical_root: Path,
+    diagnostics: list[dict[str, str]],
+) -> dict[str, Any]:
     file_path = row["file_path"] or ""
     data_type = (row["data_type"] or "").lower()
     period = (row["period"] or "").lower()
     path = file_path.lower()
-    catalog_record = catalog.get(file_path)
-    is_derived = "derived" in data_type or (
-        period in {"5m", "15m", "30m", "60m"} and "/derived/" in path
-    )
+    normalized_uri, path_diagnostic = _normalized_catalog_uri(file_path, canonical_root)
+    if path_diagnostic is not None:
+        diagnostics.append({"code": path_diagnostic, "table": "market_data_files"})
+    candidates = catalog.get(normalized_uri, []) if normalized_uri is not None else []
+    catalog_record = candidates[0] if len(candidates) == 1 else None
+    if len(candidates) > 1:
+        diagnostics.append({"code": "CATALOG_FILE_URI_AMBIGUOUS", "table": "market_partitions"})
+    is_derived = "derived" in data_type or (data_type == "bars" and period in {"5m", "15m", "30m", "60m"})
     if is_derived:
         disposition = "REBUILD_ONLY"
-        reason = "derived data_type is regenerated from provider-direct canonical bars"
+        reason = "legacy bar period is regenerated from provider-direct canonical 1m bars" if data_type == "bars" else "derived data_type is regenerated from provider-direct canonical bars"
         category = "permanent_derived_periods"
     elif _is_trusted_provider_direct_bar(row, catalog_record):
         disposition = "KEEP_TRUSTED_CANONICAL"
         reason = "provider, role, quality, frequency, and catalog partition linkage are verified"
-        category = None
+        category = "duplicate_bar_layers"
     elif any(marker in path for marker in ("/raw/", "/standard/", "/canonical/")):
         disposition = "REVIEW_REQUIRED"
         reason = "canonical-looking file path has no verified catalog partition linkage" if "/canonical/" in path else "bar-layer path requires explicit retirement review"
@@ -385,8 +445,11 @@ def _classify_market_data_file_row(row: dict[str, str | None], catalog: dict[str
         "id": row["id"],
         "provider": row["provider"],
         "data_type": row["data_type"],
+        "instrument_symbol": row["instrument_symbol"],
+        "contract_code": row["contract_code"],
         "period": row["period"],
         "file_path": file_path,
+        "checksum": row["checksum"],
         "data_role": row["data_role"],
         "quality_status": row["quality_status"],
         "data_version": row["data_version"],
@@ -400,16 +463,33 @@ def _classify_market_data_file_row(row: dict[str, str | None], catalog: dict[str
 def _is_trusted_provider_direct_bar(row: dict[str, str | None], catalog: dict[str, str] | None) -> bool:
     if catalog is None:
         return False
-    data_type = (row["data_type"] or "").lower()
     return (
         row["provider"] == "rqdata"
-        and "bar" in data_type
+        and row["data_type"] == "bars"
         and row["data_role"] == "primary"
         and row["quality_status"] == "passed"
         and row["provider"] == catalog["provider"]
+        and row["instrument_symbol"] == catalog["symbol"]
+        and row["contract_code"] == catalog["contract_or_series"]
         and row["period"] == catalog["frequency"]
-        and bool(catalog["manifest_uri"] and catalog["manifest_digest"] and catalog["checksum"])
+        and row["checksum"] == catalog["checksum"]
+        and row["data_version"] == catalog["manifest_version"]
+        and bool(catalog["manifest_uri"] and catalog["manifest_digest"])
     )
+
+
+def _normalized_catalog_uri(file_path: str, canonical_root: Path) -> tuple[str | None, str | None]:
+    candidate = Path(file_path)
+    if not candidate.is_absolute():
+        return None, "MARKET_DATA_FILE_PATH_NOT_ABSOLUTE"
+    try:
+        root = canonical_root.resolve(strict=False)
+        relative = candidate.resolve(strict=False).relative_to(root)
+    except (OSError, ValueError):
+        return None, "MARKET_DATA_FILE_PATH_OUTSIDE_CANONICAL_ROOT"
+    if not relative.parts:
+        return None, "MARKET_DATA_FILE_PATH_INVALID"
+    return relative.as_posix(), None
 
 
 def _table_disposition(table: str) -> str:
@@ -466,7 +546,7 @@ def _read_filesystem_inventory(data_root: Path, config: DerivedReferenceInventor
     total_bytes = 0
     inspected_files = 0
     truncated = False
-    for candidate in _walk_regular_candidates(data_root, diagnostics):
+    for candidate in _walk_regular_candidates(data_root, diagnostics, max_directories=config.max_directories):
         relative = candidate.relative_to(data_root).as_posix()
         display_path = f"{data_root.name}/{relative}"
         try:
@@ -488,19 +568,16 @@ def _read_filesystem_inventory(data_root: Path, config: DerivedReferenceInventor
             display_path,
             config.max_file_bytes,
             capture_bytes=False,
+            max_stream_bytes=config.max_total_bytes - total_bytes,
         )
         if diagnostic is not None:
             diagnostics.append(diagnostic)
             truncated = True
             continue
         assert record is not None
-        if total_bytes + record["size_bytes"] > config.max_total_bytes:
-            diagnostics.append({"code": "MAX_TOTAL_BYTES_EXCEEDED", "path": display_path})
-            truncated = True
-            break
         total_bytes += record["size_bytes"]
         records.append(record)
-    return _filesystem_payload(data_root, records, diagnostics, truncated=truncated)
+    return _filesystem_payload(data_root, records, diagnostics, truncated=truncated or any("MAX_" in item["code"] for item in diagnostics))
 
 
 def _filesystem_payload(data_root: Path, records: list[dict[str, Any]], diagnostics: list[dict[str, str]], *, truncated: bool) -> dict[str, Any]:
@@ -513,9 +590,30 @@ def _filesystem_payload(data_root: Path, records: list[dict[str, Any]], diagnost
     }
 
 
-def _walk_regular_candidates(data_root: Path, diagnostics: list[dict[str, str]]) -> Iterable[Path]:
+def _walk_regular_candidates(
+    data_root: Path,
+    diagnostics: list[dict[str, str]],
+    *,
+    max_directories: int,
+) -> Iterable[Path]:
+    directory_count = 0
+    exhausted = False
+
     def walk(directory: Path) -> Iterable[Path]:
-        for entry in sorted(os.scandir(directory), key=lambda item: item.name):
+        nonlocal directory_count, exhausted
+        if exhausted:
+            return
+        directory_count += 1
+        if directory_count > max_directories:
+            diagnostics.append({"code": "MAX_DIRECTORIES_EXCEEDED", "path": f"{data_root.name}/{directory.relative_to(data_root).as_posix()}"})
+            exhausted = True
+            return
+        try:
+            entries = sorted(os.scandir(directory), key=lambda item: item.name)
+        except OSError:
+            diagnostics.append({"code": "DIRECTORY_OPEN_FAILED", "path": f"{data_root.name}/{directory.relative_to(data_root).as_posix()}"})
+            return
+        for entry in entries:
             path = Path(entry.path)
             relative = path.relative_to(data_root).as_posix()
             if entry.is_symlink():
@@ -546,6 +644,7 @@ def _read_regular_file_under_root(
     max_file_bytes: int,
     *,
     capture_bytes: bool,
+    max_stream_bytes: int | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
     """Read once through root-relative nofollow descriptors and verify the opened inode."""
 
@@ -583,16 +682,28 @@ def _read_regular_file_under_root(
             return None, {"code": "NON_REGULAR_SKIPPED", "path": display_path}
         if before.st_size > max_file_bytes:
             return None, {"code": "MAX_FILE_BYTES_EXCEEDED", "path": display_path}
+        if max_stream_bytes is not None and before.st_size > max_stream_bytes:
+            return None, {"code": "MAX_TOTAL_BYTES_EXCEEDED", "path": display_path}
         digest = sha256()
         contents = bytearray() if capture_bytes else None
+        streamed = 0
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            while True:
+                remaining = None if max_stream_bytes is None else max_stream_bytes - streamed
+                if remaining is not None and remaining <= 0:
+                    break
+                chunk = handle.read(1024 * 1024 if remaining is None else min(1024 * 1024, remaining))
+                if not chunk:
+                    break
                 digest.update(chunk)
+                streamed += len(chunk)
                 if contents is not None:
                     contents.extend(chunk)
         after = os.fstat(descriptor)
         if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
             return None, {"code": "TOCTOU_CHANGED", "path": display_path}
+        if max_stream_bytes is not None and after.st_size > max_stream_bytes:
+            return None, {"code": "MAX_TOTAL_BYTES_EXCEEDED", "path": display_path}
         record: dict[str, Any] = {"path": display_path, "size_bytes": before.st_size, "sha256": digest.hexdigest(), "disposition": _path_disposition(display_path)}
         if contents is not None:
             record["contents"] = bytes(contents)
@@ -626,7 +737,7 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
     output_count = 0
     truncated = False
     root_resolved = repo_root.resolve(strict=True)
-    for path in _walk_repo_regular_candidates(repo_root, diagnostics, max_directories=config.max_files):
+    for path in _walk_repo_regular_candidates(repo_root, diagnostics, max_directories=config.max_directories):
         if not _is_reference_file(repo_root, path):
             continue
         relative = path.relative_to(repo_root).as_posix()
@@ -641,17 +752,18 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
             continue
         inspected += 1
         record, diagnostic = _read_regular_file_under_root(
-            repo_root, path.relative_to(repo_root), relative, config.max_file_bytes, capture_bytes=True,
+            repo_root,
+            path.relative_to(repo_root),
+            relative,
+            config.max_file_bytes,
+            capture_bytes=True,
+            max_stream_bytes=config.max_total_bytes - total_bytes,
         )
         if diagnostic is not None:
             diagnostics.append({"code": f"REPO_{diagnostic['code']}", "path": relative})
             truncated = True
             continue
         assert record is not None
-        if total_bytes + record["size_bytes"] > config.max_total_bytes:
-            diagnostics.append({"code": "REPO_MAX_TOTAL_BYTES_EXCEEDED", "path": relative})
-            truncated = True
-            break
         total_bytes += record["size_bytes"]
         try:
             lines = record.pop("contents").decode("utf-8").splitlines()
@@ -689,7 +801,7 @@ def _read_reference_locations(repo_root: Path, config: DerivedReferenceInventory
                                 "sha256": record["sha256"],
                             }
                         )
-    return locations, _reference_scan_payload(truncated, diagnostics)
+    return locations, _reference_scan_payload(truncated or any("MAX_" in item["code"] for item in diagnostics), diagnostics)
 
 
 def _reference_scan_payload(truncated: bool, diagnostics: list[dict[str, str]]) -> dict[str, Any]:
@@ -739,17 +851,27 @@ def _walk_repo_regular_candidates(
 
 
 def _reference_state_for_context(relative: str, line: str, *, section_state: str | None = None) -> str:
-    marker = _NON_ACTIVE_MARKER.search(relative.replace("_", " ").replace("-", " ")) or _NON_ACTIVE_MARKER.search(line)
-    if marker is None:
-        return section_state if section_state is not None else "active"
-    return "historical" if marker.group(0).lower() in {"historical", "archive"} else "non_active"
+    normalized_path = relative.replace("\\", "/")
+    if _ARCHIVE_PATH_MARKER.search(normalized_path):
+        return "historical"
+    if _HISTORICAL_STRONG_MARKER.search(line):
+        return "historical"
+    if _NON_ACTIVE_STRONG_MARKER.search(line):
+        return "non_active"
+    if section_state is not None and section_state != "active":
+        return section_state
+    if re.search(r"\bfrozen\b|(?:compatibility-only.*\b(?:used|in use)\b)", line, re.IGNORECASE):
+        return "active"
+    if _AMBIGUOUS_HISTORY_MARKER.search(line):
+        return "review_required"
+    return "active"
 
 
 def _is_reference_file(repo_root: Path, path: Path) -> bool:
     if path.suffix.lower() not in _REFERENCE_SUFFIXES:
         return False
     relative = path.relative_to(repo_root).as_posix()
-    return relative not in _SELF_REFERENCE_PATHS and not relative.startswith("services/quant-api/tests/") and not any(
+    return relative not in _SELF_REFERENCE_PATHS and not any(
         part in _IGNORED_DIRS for part in path.relative_to(repo_root).parts
     )
 
@@ -781,7 +903,7 @@ def _public_market_data_file_row(record: dict[str, Any]) -> dict[str, Any]:
     return {
         key: record[key]
         for key in (
-            "id", "provider", "data_type", "period", "file_path", "data_role", "quality_status", "data_version", "disposition", "reason",
+            "id", "provider", "data_type", "instrument_symbol", "contract_code", "period", "file_path", "checksum", "data_role", "quality_status", "data_version", "disposition", "reason",
         )
     }
 

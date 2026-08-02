@@ -36,8 +36,9 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
   true。`JM_RUNTIME_READY` 只可在单日自然运行、独立恢复 evidence、独立 Review 通过并由
   用户最终批准后发布。
 - 本文不授权自动交易、订单草稿或无人值守发送。
-- `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码与 canonical Gate 收口：JM2609 actual `2026-07-08..2026-07-10` 的 `5m/15m` 已从 passed 1m 派生、登记为 primary/passed，并绑定到 `intraday_research_v1` / `live_observation_v1`；当前状态是 `COMPLETED / SIGNAL_REVIEW_LINEAGE_READY`。
-- C2-05 direct PostgreSQL read-only Golden Query rerun 已验证 formal Signal source 与 Market、Backtest、Review 使用一致的 Profile/file/version/binding lineage；`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过，但这不构成 live-confirmed 或企业微信 autosend Gate。
+- `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 与 C2-05 是 historical compatibility evidence：其中的
+  Profile/file/version/binding 与固定 file/path 结论不构成当前 canonical Signal 输入或 Stage 9
+  准入。它们不得被重写，也不得被解释为 `SIGNAL_REVIEW_LINEAGE_READY` 的现行授权。
 - S6-04 live evaluator preview 已使用 `historical_live_context_v1`，将 current actual-contract passed historical warm-up 与 latest live trading day confirmed/passed bars 只读拼接；该 Gate 为 `JM_LIVE_CONTEXT_READY`，不写 `strategy_signals`、`signal_events` 或 `signal_notifications`。
 - GY-CORE-04 的文件型 `ObservationPlanRegistry` 与 `HtDyStrategyAdapter` 仍是候选生成前的
   只读边界：唯一 active plan 固定为 JM dominant-rank1 15m HTDY realtime first-seen，
@@ -59,8 +60,8 @@ Stage 8 只记录观察 / 提醒事件：
   `htdy_original_xma_15m_first_seen_v1` 精确 realtime observation policy 在后续独立
   schema-v3 Gate 中可复用既有 `StrategySignal -> SignalEvent`，且只允许 `signal_created`。
 
-新 formal historical Signal 只读取 `canonical_consumer_input_v1` 固定并由 `MarketDataService`
-验证的严格 canonical assets：
+以下是后续 canonical formal Signal 的候选合同；在 Task 05 受控切换前不是当前 Stage 9 的 active
+输入。届时只读取由 `MarketDataService` 验证的严格 `canonical_consumer_input_v1` assets：
 
 ```text
 provider/source in ("rqdata", "local_parquet")

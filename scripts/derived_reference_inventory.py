@@ -33,8 +33,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = JsonArgumentParser(description="Read-only derived/reference inventory; it has no delete or apply mode.", allow_abbrev=False)
     parser.add_argument("--repo-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--data-root", type=Path, default=PROJECT_ROOT / "data")
+    parser.add_argument("--canonical-root", type=Path, help="Explicit canonical-root for normalizing legacy absolute file paths.")
     parser.add_argument("--database-url-env", help="Explicit URL environment-variable name for an external read-only Gate.")
     parser.add_argument("--max-files", type=int, default=10_000)
+    parser.add_argument("--max-directories", type=int, default=10_000)
     parser.add_argument("--max-file-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument("--max-total-bytes", type=int, default=1024 * 1024 * 1024)
     parser.add_argument("--max-ids", type=int, default=1_000)
@@ -60,7 +62,9 @@ def main(argv: list[str] | None = None) -> int:
             DerivedReferenceInventoryConfig(
                 repo_root=args.repo_root.resolve(strict=False),
                 data_root=args.data_root.absolute(),
+                canonical_root=args.canonical_root.absolute() if args.canonical_root else None,
                 max_files=args.max_files,
+                max_directories=args.max_directories,
                 max_file_bytes=args.max_file_bytes,
                 max_total_bytes=args.max_total_bytes,
                 max_ids=args.max_ids,

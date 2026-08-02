@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
+from app.models.data_center import MarketDataFile
+from app.models.data_core import MarketDataset, MarketPartition
 from app.services.derived_reference_inventory import (
     DerivedReferenceInventoryConfig,
     build_derived_reference_inventory,
@@ -88,6 +90,12 @@ def test_inventory_is_deterministic_and_classifies_read_only_surfaces(tmp_path: 
         {"kind": "doc", "line": 1, "matched_token": "report 14", "path": "docs/gate.md"},
         {"kind": "code", "line": 1, "matched_token": "report_15_", "path": "services/quant-api/app/example.py"},
     ]
+
+
+def test_market_data_inventory_columns_match_real_models() -> None:
+    assert {"id", "provider", "data_type", "instrument_symbol", "contract_code", "period", "file_path", "checksum", "data_version", "data_role", "quality_status"} <= set(MarketDataFile.__table__.columns.keys())
+    assert {"id", "provider", "symbol", "contract_or_series", "frequency", "schema_version"} <= set(MarketDataset.__table__.columns.keys())
+    assert {"id", "dataset_id", "file_uri", "manifest_uri", "manifest_digest", "checksum", "manifest_version"} <= set(MarketPartition.__table__.columns.keys())
 
 
 def test_inventory_uses_sqlite_query_only_and_never_emits_write_statement(tmp_path: Path) -> None:
@@ -306,59 +314,20 @@ def test_market_data_file_rows_require_catalog_evidence_and_classify_exact_rows(
     connection = _market_data_file_connection()
 
     result = build_derived_reference_inventory(
-        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, canonical_root=Path("/data")),
         connection=connection,
     )
 
     categories = {item["category"]: item for item in result["categories"]}
     derived = categories["permanent_derived_periods"]["database_tables"]
     duplicate = categories["duplicate_bar_layers"]["database_tables"]
-    assert derived == [
-        {
-            "table": "market_data_files",
-            "count": 1,
-            "ids": ["2"],
-            "id_status": "complete",
-            "disposition": "REBUILD_ONLY",
-            "rows": [
-                {
-                    "id": "2",
-                    "provider": "rqdata",
-                    "data_type": "derived_bar",
-                    "period": "15m",
-                    "file_path": "/data/derived/jm/15m.parquet",
-                    "data_role": "candidate",
-                    "quality_status": "passed",
-                    "data_version": "derived-v1",
-                    "disposition": "REBUILD_ONLY",
-                    "reason": "derived data_type is regenerated from provider-direct canonical bars",
-                }
-            ],
-        }
-    ]
-    assert duplicate == [
-        {
-            "table": "market_data_files",
-            "count": 1,
-            "ids": ["3"],
-            "id_status": "complete",
-            "disposition": "REVIEW_REQUIRED",
-            "rows": [
-                {
-                    "id": "3",
-                    "provider": "rqdata",
-                    "data_type": "futures_bar",
-                    "period": "1m",
-                    "file_path": "/data/canonical/unlinked.parquet",
-                    "data_role": "primary",
-                    "quality_status": "passed",
-                    "data_version": "v2",
-                    "disposition": "REVIEW_REQUIRED",
-                    "reason": "canonical-looking file path has no verified catalog partition linkage",
-                }
-            ],
-        }
-    ]
+    assert derived[0]["table"] == "market_data_files"
+    assert derived[0]["count"] == 1
+    assert derived[0]["ids"] == ["2"]
+    assert derived[0]["disposition"] == "REBUILD_ONLY"
+    assert duplicate[0]["table"] == "market_data_files"
+    assert duplicate[0]["ids"] == ["1", "3"]
+    assert duplicate[0]["disposition"] == "MIXED"
     market_files = next(item for item in result["database"]["tables"] if item["table"] == "market_data_files")
     assert market_files["row_classifications"][0]["disposition"] == "KEEP_TRUSTED_CANONICAL"
     assert market_files["row_classifications"][0]["catalog_evidence"] == "verified"
@@ -371,7 +340,7 @@ def test_reference_state_excludes_historical_and_non_active_sections_from_task07
     (repo_root / "docs" / "archive").mkdir(parents=True)
     data_root.mkdir()
     (repo_root / "docs" / "historical.md").write_text(
-        "## Frozen historical compatibility-only section\nreport 14 backtest legacy lineage\n",
+        "## Historical snapshot; not active Gate\nreport 14 backtest legacy lineage\n",
         encoding="utf-8",
     )
     (repo_root / "docs" / "archive" / "old.md").write_text("signal review\n", encoding="utf-8")
@@ -430,7 +399,7 @@ def test_reference_scan_fails_closed_when_directory_budget_is_exhausted(tmp_path
     (repo_root / "a" / "b" / "consumer.py").write_text("backtest", encoding="utf-8")
 
     result = build_derived_reference_inventory(
-        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, max_files=2),
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, max_directories=2),
     )
 
     assert result["status"] == "incomplete"
@@ -448,6 +417,110 @@ def test_database_scan_error_is_structured_and_ineligible(tmp_path: Path) -> Non
     assert result["database"]["diagnostics"][-1] == {"code": "DATABASE_SCAN_ERROR"}
     assert result["status"] == "incomplete"
     assert result["task07_zero_active_reference_eligible"] is False
+
+
+def test_reference_scan_keeps_legacy_consumer_tests_and_fails_closed_on_ambiguous_status(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    (repo_root / "services" / "quant-api" / "tests").mkdir(parents=True)
+    data_root.mkdir()
+    (repo_root / "services" / "quant-api" / "tests" / "test_legacy_consumer.py").write_text(
+        "def test_legacy_consumer():\n    backtest = canonical\n",
+        encoding="utf-8",
+    )
+    (repo_root / "docs").mkdir()
+    (repo_root / "docs" / "ambiguous.md").write_text("historical canonical backtest\n", encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+
+    backtest = next(item for item in result["categories"] if item["category"] == "backtest")
+    states = {(item["path"], item["reference_state"]) for item in backtest["reference_locations"]}
+    assert ("services/quant-api/tests/test_legacy_consumer.py", "active") in states
+    assert ("docs/ambiguous.md", "review_required") in states
+    assert backtest["active_reference_status"] == "present"
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_state"),
+    [
+        ("frozen backtest reference", "active"),
+        ("compatibility-only backtest is still used", "active"),
+        ("historical snapshot; not active Gate; backtest", "historical"),
+        ("superseded and unused backtest", "non_active"),
+        ("历史快照且非 active Gate：backtest", "historical"),
+        ("仅历史引用：backtest", "historical"),
+        ("不再 active：backtest", "non_active"),
+        ("已归档：backtest", "historical"),
+    ],
+)
+def test_reference_state_requires_explicit_non_active_evidence(tmp_path: Path, text: str, expected_state: str) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    (repo_root / "reference.md").write_text(text, encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+
+    backtest = next(item for item in result["categories"] if item["category"] == "backtest")
+    assert backtest["reference_locations"][0]["reference_state"] == expected_state
+    assert result["task07_zero_active_reference_eligible"] is (expected_state in {"historical", "non_active"})
+
+
+def test_market_data_file_mismatches_and_direct_5m_bars_are_never_keep(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, canonical_root=Path("/data")),
+        connection=_strict_market_data_file_connection(),
+    )
+
+    classes = next(item for item in result["database"]["tables"] if item["table"] == "market_data_files")["row_classifications"]
+    assert [item["disposition"] for item in classes] == [
+        "KEEP_TRUSTED_CANONICAL", "REBUILD_ONLY", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REVIEW_REQUIRED", "REBUILD_ONLY",
+    ]
+    assert classes[-1]["category"] == "permanent_derived_periods"
+    assert classes[-1]["reason"] == "legacy bar period is regenerated from provider-direct canonical 1m bars"
+    assert all(item["category"] is not None for item in classes)
+
+
+def test_market_data_file_path_normalization_rejects_root_escape_and_ambiguous_uri(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    connection = _market_data_file_connection()
+    connection.execute(
+        "INSERT INTO market_data_files VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (8, "rqdata", "bars", "jm", "JM2609", "1m", "/outside/linked.parquet", "outside", "v2", "primary", "passed"),
+    )
+    connection.execute(
+        "INSERT INTO market_partitions VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (2, 1, "canonical/linked.parquet", "/data/manifests/duplicate.json", "c" * 64, "d" * 64, "v2"),
+    )
+    connection.commit()
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, canonical_root=Path("/data")),
+        connection=connection,
+    )
+
+    classes = next(item for item in result["database"]["tables"] if item["table"] == "market_data_files")["row_classifications"]
+    assert next(item for item in classes if item["id"] == "1")["disposition"] == "REVIEW_REQUIRED"
+    assert next(item for item in classes if item["id"] == "8")["disposition"] == "REVIEW_REQUIRED"
+    assert {item["code"] for item in result["database"]["diagnostics"]} >= {
+        "CATALOG_FILE_URI_AMBIGUOUS",
+        "MARKET_DATA_FILE_PATH_OUTSIDE_CANONICAL_ROOT",
+    }
 
 
 def _fixture_connection() -> sqlite3.Connection:
@@ -490,8 +563,11 @@ def _market_data_file_connection() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY,
             provider TEXT NOT NULL,
             data_type TEXT NOT NULL,
+            instrument_symbol TEXT,
+            contract_code TEXT,
             period TEXT,
             file_path TEXT NOT NULL,
+            checksum TEXT,
             data_version TEXT,
             data_role TEXT NOT NULL,
             quality_status TEXT NOT NULL
@@ -500,7 +576,10 @@ def _market_data_file_connection() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY,
             provider TEXT NOT NULL,
             dataset_kind TEXT NOT NULL,
-            frequency TEXT NOT NULL
+            symbol TEXT NOT NULL,
+            contract_or_series TEXT NOT NULL,
+            frequency TEXT NOT NULL,
+            schema_version TEXT NOT NULL
         );
         CREATE TABLE market_partitions (
             id INTEGER PRIMARY KEY,
@@ -508,19 +587,35 @@ def _market_data_file_connection() -> sqlite3.Connection:
             file_uri TEXT NOT NULL,
             manifest_uri TEXT NOT NULL,
             manifest_digest TEXT NOT NULL,
-            checksum TEXT NOT NULL
+            checksum TEXT NOT NULL,
+            manifest_version TEXT NOT NULL
         );
-        INSERT INTO market_datasets VALUES (1, 'rqdata', 'actual_dominant', '1m');
+        INSERT INTO market_datasets VALUES (1, 'rqdata', 'actual_dominant', 'jm', 'JM2609', '1m', 'canonical-bar-v1');
         INSERT INTO market_partitions VALUES (
-            1, 1, '/data/canonical/linked.parquet', '/data/manifests/linked.json',
+            1, 1, 'canonical/linked.parquet', '/data/manifests/linked.json',
             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'v2'
         );
         INSERT INTO market_data_files VALUES
-            (1, 'rqdata', 'futures_bar', '1m', '/data/canonical/linked.parquet', 'v2', 'primary', 'passed'),
-            (2, 'rqdata', 'derived_bar', '15m', '/data/derived/jm/15m.parquet', 'derived-v1', 'candidate', 'passed'),
-            (3, 'rqdata', 'futures_bar', '1m', '/data/canonical/unlinked.parquet', 'v2', 'primary', 'passed');
+            (1, 'rqdata', 'bars', 'jm', 'JM2609', '1m', '/data/canonical/linked.parquet', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'v2', 'primary', 'passed'),
+            (2, 'rqdata', 'derived_bar', 'jm', 'JM2609', '15m', '/data/derived/jm/15m.parquet', 'derived-checksum', 'derived-v1', 'candidate', 'passed'),
+            (3, 'rqdata', 'bars', 'jm', 'JM2609', '1m', '/data/canonical/unlinked.parquet', 'unlinked-checksum', 'v2', 'primary', 'passed');
         """
+    )
+    connection.commit()
+    return connection
+
+
+def _strict_market_data_file_connection() -> sqlite3.Connection:
+    connection = _market_data_file_connection()
+    connection.executemany(
+        "INSERT INTO market_data_files VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (4, "rqdata", "bars", "wrong", "JM2609", "1m", "/data/canonical/linked.parquet", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "v2", "primary", "passed"),
+            (5, "rqdata", "bars", "jm", "JM2609", "1m", "/data/canonical/linked.parquet", "wrong-checksum", "v2", "primary", "passed"),
+            (6, "rqdata", "bars", "jm", "JM2609", "1m", "/data/canonical/linked.parquet", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "wrong-version", "primary", "passed"),
+            (7, "rqdata", "bars", "jm", "JM2609", "5m", "/data/canonical/direct-5m.parquet", "five-minute", "v2", "primary", "passed"),
+        ],
     )
     connection.commit()
     return connection
@@ -537,14 +632,14 @@ def _complete_empty_connection() -> sqlite3.Connection:
     ):
         connection.execute(f'CREATE TABLE "{table}" (id INTEGER PRIMARY KEY)')
     connection.execute(
-        "CREATE TABLE market_data_files (id INTEGER PRIMARY KEY, provider TEXT, data_type TEXT, period TEXT, file_path TEXT, "
-        "data_version TEXT, data_role TEXT, quality_status TEXT)"
+        "CREATE TABLE market_data_files (id INTEGER PRIMARY KEY, provider TEXT, data_type TEXT, instrument_symbol TEXT, contract_code TEXT, "
+        "period TEXT, file_path TEXT, checksum TEXT, data_version TEXT, data_role TEXT, quality_status TEXT)"
     )
     connection.execute("DROP TABLE market_datasets")
-    connection.execute("CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, frequency TEXT)")
+    connection.execute("CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, symbol TEXT, contract_or_series TEXT, frequency TEXT, schema_version TEXT)")
     connection.execute("DROP TABLE market_partitions")
     connection.execute(
-        "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, manifest_uri TEXT, manifest_digest TEXT, checksum TEXT)"
+        "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, manifest_uri TEXT, manifest_digest TEXT, checksum TEXT, manifest_version TEXT)"
     )
     connection.commit()
     return connection

@@ -147,6 +147,8 @@ lineage，不再逐项调度。
 集成 `develop`。Task 04 已批准的生产 migration 和 canonical apply 已完成；本 closeout 只允许
 只读复验和文档收口，不授权新的 RQData、Parquet、PostgreSQL、packet、apply、Shadow、删除、
 release 或 Runtime 副作用。Task 05 只能在本 closeout PR 合入后另起任务。
+后续编号不得跳过：`Task 04 closeout -> Task 05 trusted consumers/inventory -> Task 06 live/EOD ->
+Task 07 migration/legacy evidence -> Task 08 release/Runtime`；任何受控删除仍另需独立 Gate。
 
 ### 4.0 Task 04 closeout Owner 决策与正式验收（2026-08-02）
 
