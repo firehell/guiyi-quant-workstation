@@ -24,6 +24,16 @@ CHARTER_HEADINGS = (
     "External Gates",
     "Completion flow",
 )
+TRIAL_REPORT_HEADINGS = (
+    "Identity",
+    "Sample classification",
+    "Routing prediction",
+    "Observed execution",
+    "Metrics",
+    "Gate preservation",
+    "Findings",
+    "Decision",
+)
 
 
 def _read(relative_path: str) -> str:
@@ -261,6 +271,39 @@ def test_templates_match_the_charter_and_stage_reporting_contracts() -> None:
         assert f"## {section}" in report
     for distinction in ("Code", "Tests", "CI", "Independent review", "Real Gate", "Release", "Runtime"):
         assert distinction in report
+
+
+def test_controlled_trial_report_contract_preserves_provenance_and_gate_boundaries() -> None:
+    """Missing trial fields could make retrospective evidence appear Gate-authoritative."""
+    trial_report = _read("assets/trial-report.md")
+    skill = _read("SKILL.md")
+
+    assert tuple(
+        line.removeprefix("## ") for line in trial_report.splitlines() if line.startswith("## ")
+    ) == TRIAL_REPORT_HEADINGS
+    for field in (
+        "Issue:", "PR:", "Base SHA:", "Task HEAD:", "Merge SHA:",
+        "Source type:", "Source references:",
+        "Classification: historical-retrospective / controlled-trial",
+        "Predicted base roles:", "Observed base roles:",
+        "Predicted specialists:", "Observed specialists:",
+        "Predicted specialist count:", "Observed specialist count:",
+        "Predicted context separation:", "Observed context separation:",
+        "Start timestamp:", "Merge timestamp:", "Review-fix rounds:",
+        "User interruption count:", "CI:", "External Gates:",
+        "Evidence limitations:", "No-authority statement:",
+        "MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE",
+        "canonical repository or GitHub source",
+        "explicitly named human observation",
+        "cannot satisfy or drive a Gate",
+        "mandatory when neither source exists",
+        "must never be estimated or inferred from conversation memory",
+    ):
+        assert field in trial_report
+
+    assert "assets/trial-report.md" in skill
+    assert "controlled trials and historical retrospectives" in skill
+    assert "must never be estimated or inferred from conversation memory" in skill
 
 
 def test_skill_does_not_claim_control_plane_or_gatekeeper_authority() -> None:

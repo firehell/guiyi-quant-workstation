@@ -27,3 +27,5 @@ Create one bounded, independently testable Task Charter. This skill does not rep
 ## Output discipline
 
 Keep the Charter and reports traceable to current canonical sources and exact heads. A passed test, CI run, or review never authorizes a real Gate, release, or Runtime action.
+
+For controlled trials and historical retrospectives, use [trial-report.md](assets/trial-report.md); metrics must never be estimated or inferred from conversation memory.
