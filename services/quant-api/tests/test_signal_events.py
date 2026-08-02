@@ -21,8 +21,9 @@ from app.models.data_center import (
     MarketDataFile,
     ProfileActiveBinding,
 )
-from app.models.signal import SignalEvent, StrategySignal
+from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
+from app.signal.events import SIGNAL_CREATED, record_signal_scan_event
 
 
 def _session_factory(tmp_path: Path):
@@ -51,16 +52,10 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
     app.dependency_overrides[get_db] = override_get_db
     try:
         client = TestClient(app)
-        payload = _scan_payload()
-
-        first_scan = client.post("/api/signals/scan", json=payload)
-        assert first_scan.status_code == 200
-        second_scan = client.post("/api/signals/scan", json=payload)
-        assert second_scan.status_code == 200
-
         with TestingSessionLocal() as session:
-            signal = session.scalar(select(StrategySignal).where(StrategySignal.symbol == "rb"))
-            assert signal is not None
+            signal, event = _add_canonical_signal_event(session)
+            session.commit()
+            session.refresh(signal)
             events = list(session.scalars(select(SignalEvent).order_by(SignalEvent.id)))
 
         assert len(events) == 1
@@ -68,47 +63,47 @@ def test_signal_scan_writes_created_event_once_and_exposes_event_api(tmp_path: P
         assert event.event_type == "signal_created"
         assert event.event_key == f"signal_created:{signal.dedupe_key}"
         assert event.signal_id == signal.id
-        assert event.task_no == first_scan.json()["task_no"]
+        assert event.task_no == signal.task_no
         assert event.source_mode == "historical_scan"
         assert event.signal_status == signal.status
         assert event.lifecycle_status == "new"
         assert event.data_role == "primary"
-        assert signal.product == "rb"
-        assert signal.continuous_contract == "rb.MAIN"
-        assert signal.actual_contract == "rb2405"
+        assert signal.product == "jm"
+        assert signal.continuous_contract == "JM.MAIN"
+        assert signal.actual_contract == "JM2609"
         assert signal.bar_end == signal.signal_time
         assert signal.bar_start == signal.signal_time - timedelta(minutes=5)
         assert signal.trigger_price == signal.current_price
         assert signal.provider == "rqdata"
-        assert signal.source == "historical_standard_parquet"
+        assert signal.source == "historical_canonical"
         assert signal.data_role == "primary"
         assert event.product == signal.product
         assert event.continuous_contract == signal.continuous_contract
-        assert event.actual_contract == "rb2405"
+        assert event.actual_contract == "JM2609"
         assert event.bar_start == signal.bar_start
         assert event.bar_end == signal.bar_end
         assert event.trigger_price == signal.trigger_price
         assert event.provider == signal.provider
         assert event.source == signal.source
         assert event.payload["signal"]["id"] == signal.id
-        assert event.payload["signal"]["product"] == "rb"
-        assert event.payload["signal"]["continuous_contract"] == "rb.MAIN"
-        assert event.payload["signal"]["actual_contract"] == "rb2405"
-        assert signal.profile_id == "intraday_research_v1"
-        assert signal.market_data_file_id is not None
-        assert event.payload["formal_lineage"]["primary"]["market_data_file_id"] == signal.market_data_file_id
+        assert event.payload["signal"]["product"] == "jm"
+        assert event.payload["signal"]["continuous_contract"] == "JM.MAIN"
+        assert event.payload["signal"]["actual_contract"] == "JM2609"
+        assert signal.profile_id is None
+        assert signal.market_data_file_id is None
+        assert event.payload["input_identity"]["schema_version"] == "canonical_consumer_input_v1"
         assert _contains_no_secret_words(event.payload)
 
-        list_response = client.get("/api/signals/events", params={"symbol": "rb", "event_type": "signal_created"})
+        list_response = client.get("/api/signals/events", params={"symbol": "jm", "event_type": "signal_created"})
         assert list_response.status_code == 200
         event_items = list_response.json()
         assert [item["id"] for item in event_items] == [event.id]
-        assert event_items[0]["product"] == "rb"
-        assert event_items[0]["continuous_contract"] == "rb.MAIN"
-        assert event_items[0]["actual_contract"] == "rb2405"
+        assert event_items[0]["product"] == "jm"
+        assert event_items[0]["continuous_contract"] == "JM.MAIN"
+        assert event_items[0]["actual_contract"] == "JM2609"
         assert event_items[0]["trigger_price"] == signal.current_price
 
-        filtered_response = client.get("/api/signals/events", params={"product": "rb", "provider": "rqdata", "data_role": "primary"})
+        filtered_response = client.get("/api/signals/events", params={"product": "jm", "provider": "rqdata", "data_role": "primary"})
         assert filtered_response.status_code == 200
         assert [item["id"] for item in filtered_response.json()] == [event.id]
 
@@ -147,7 +142,9 @@ def test_signal_status_changes_write_append_only_events_only_when_status_changes
     app.dependency_overrides[get_db] = override_get_db
     try:
         client = TestClient(app)
-        assert client.post("/api/signals/scan", json=_scan_payload()).status_code == 200
+        with TestingSessionLocal() as session:
+            _add_canonical_signal_event(session)
+            session.commit()
         signal = client.get("/api/signals/latest", params={"watchlist_code": "black"}).json()[0]
 
         watching = client.patch(f"/api/signals/{signal['id']}/status", json={"status": "watching"})
@@ -223,6 +220,72 @@ def _scan_payload() -> dict:
             "rapid_move_atr_threshold": 99,
         },
     }
+
+
+def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
+    signal_time = datetime(2026, 7, 10, 1, 30)
+    input_identity = {
+        "schema_version": "canonical_consumer_input_v1",
+        "request": {"dataset_kind": "actual_dominant"},
+    }
+    signal = StrategySignal(
+        task_no="SIG-CANONICAL-1",
+        dedupe_key="canonical:signal-events-test",
+        watchlist_code="black",
+        symbol="jm",
+        contract="JM2609",
+        product="jm",
+        continuous_contract="JM.MAIN",
+        actual_contract="JM2609",
+        dominant_mapping_date=date(2026, 7, 10),
+        exchange="DCE",
+        period="5m",
+        signal_time=signal_time,
+        bar_start=signal_time - timedelta(minutes=5),
+        bar_end=signal_time,
+        trigger_price=102.4,
+        provider="rqdata",
+        source="historical_canonical",
+        data_role="primary",
+        status="entry_signal",
+        direction="long",
+        signal_level=80,
+        score_bucket=80,
+        bucket_label="重点关注",
+        current_price=102.4,
+        reasons=["canonical test"],
+        features={
+            "input_identity": input_identity,
+            "formal_lineage": {
+                "schema_version": "signal_canonical_inputs_v1",
+                "input_identity": input_identity,
+            },
+        },
+        quality_status={"status": "passed"},
+        profile_id=None,
+        market_data_file_id=None,
+        research_contract=False,
+    )
+    task = SignalScanTask(
+        task_no=signal.task_no,
+        status="completed",
+        progress=100,
+        watchlist_code="black",
+        periods=["5m"],
+        total_items=1,
+        completed_items=1,
+        request_payload={
+            "mode": "scan",
+            "research_only": False,
+            "dataset_kind": "actual_dominant",
+        },
+        result_payload={},
+    )
+    session.add_all([task, signal])
+    session.flush()
+    event = record_signal_scan_event(session, signal, SIGNAL_CREATED, task)
+    assert event is not None
+    return signal, event
 
 
 def _add_rb_signal_bars(session, tmp_path: Path) -> None:

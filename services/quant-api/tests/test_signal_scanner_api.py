@@ -336,7 +336,7 @@ def test_repeated_signal_scan_does_not_duplicate_signal_or_notification(tmp_path
         app.dependency_overrides.clear()
 
 
-def test_signal_scan_defaults_to_primary_data_role_and_rejects_auto_order(tmp_path) -> None:
+def test_signal_scan_rejects_legacy_identity_and_auto_order(tmp_path) -> None:
     TestingSessionLocal = _setup_imported_bars(tmp_path)
 
     def override_get_db():
@@ -351,10 +351,8 @@ def test_signal_scan_defaults_to_primary_data_role_and_rejects_auto_order(tmp_pa
             json={"watchlist_code": "black", "symbols": ["rb"], "periods": ["5m"], "run_inline": True, "min_score_bucket": 0},
         )
 
-        assert response.status_code == 200
-        task = response.json()
-        assert task["data_role"] == "primary"
-        assert task["research_only"] is False
+        assert response.status_code == 422
+        assert "signal_formal_data_selection_forbidden" in response.text
 
         blocked_response = client.post(
             "/api/signals/scan",

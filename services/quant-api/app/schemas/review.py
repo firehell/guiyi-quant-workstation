@@ -61,3 +61,19 @@ class ReviewAttachmentRequest(BaseModel):
     file_type: str | None = "image"
     title: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReviewLineageResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: str
+    source_type: str
+    source_id: int
+
+
+class ReviewExactBarsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lineage: dict[str, Any]
+    bars: list[dict[str, Any]]
+    source_1m: list[dict[str, Any]] | None = None

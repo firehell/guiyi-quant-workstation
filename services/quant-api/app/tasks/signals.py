@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.db.session import SessionLocal
-from app.services.signal_scanner import SignalScanner
+from app.signal.scanner import SignalScanner
 
 
 def run_signal_scan_task(task_id: int) -> dict:

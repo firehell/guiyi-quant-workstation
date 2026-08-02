@@ -23,7 +23,18 @@ def record_signal_scan_event(
     event_type: str | None,
     task: SignalScanTask,
 ) -> SignalEvent | None:
-    if bool((task.request_payload or {}).get("research_only")):
+    request_payload = task.request_payload or {}
+    if bool(request_payload.get("research_only")):
+        return None
+    if str(request_payload.get("mode") or "scan") != "scan":
+        return None
+    input_identity = _input_identity(signal)
+    identity_request = input_identity.get("request") if isinstance(input_identity, dict) else None
+    if (
+        request_payload.get("dataset_kind") != "actual_dominant"
+        or not isinstance(identity_request, dict)
+        or identity_request.get("dataset_kind") != "actual_dominant"
+    ):
         return None
     if event_type not in SIGNAL_SCAN_EVENT_TYPES:
         return None
@@ -204,6 +215,7 @@ def _signal_events_query(
 
 
 def signal_event_payload(event: SignalEvent) -> dict[str, Any]:
+    input_identity = (event.payload or {}).get("input_identity")
     return {
         "id": event.id,
         "event_key": event.event_key,
@@ -236,6 +248,7 @@ def signal_event_payload(event: SignalEvent) -> dict[str, Any]:
         "quality_status": event.quality_status,
         "profile_id": event.profile_id,
         "market_data_file_id": event.market_data_file_id,
+        "input_identity": deepcopy(input_identity) if isinstance(input_identity, dict) else None,
         "payload": event.payload,
         "created_at": event.created_at.isoformat() if event.created_at else None,
     }
@@ -271,6 +284,7 @@ def _create_event_if_missing(
     if existing is not None:
         return existing
     formal_lineage = _formal_lineage(signal)
+    input_identity = _input_identity(signal)
     event = SignalEvent(
         event_key=event_key,
         event_type=event_type,
@@ -307,6 +321,7 @@ def _create_event_if_missing(
                 "event": {"type": event_type, "source_mode": source_mode},
                 "signal": _signal_payload(signal),
                 **({"formal_lineage": deepcopy(formal_lineage)} if formal_lineage else {}),
+                **({"input_identity": deepcopy(input_identity)} if input_identity else {}),
                 **payload_extra,
             }
         ),
@@ -383,6 +398,11 @@ def _signal_payload(signal: StrategySignal) -> dict[str, Any]:
 
 def _formal_lineage(signal: StrategySignal) -> dict[str, Any] | None:
     value = (signal.features or {}).get("formal_lineage")
+    return value if isinstance(value, dict) else None
+
+
+def _input_identity(signal: StrategySignal) -> dict[str, Any] | None:
+    value = (signal.features or {}).get("input_identity")
     return value if isinstance(value, dict) else None
 
 

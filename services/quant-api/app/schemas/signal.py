@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
 
 
 class SignalDataRole(StrEnum):
@@ -20,7 +23,116 @@ class SignalStatus(StrEnum):
     EXPIRED = "expired"
 
 
+class SignalScanMode(StrEnum):
+    SCAN = "scan"
+    REPLAY = "replay"
+    REPAIR = "repair"
+    RECOMPUTE = "recompute"
+
+
 class SignalScanRequest(BaseModel):
+    """Formal historical scan contract over canonical actual-dominant data."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_kind: DatasetKind
+    instrument_symbol: str
+    contract_or_series: str
+    periods: list[str] = Field(default_factory=lambda: ["15m"])
+    start: datetime
+    end: datetime
+    mode: SignalScanMode = SignalScanMode.SCAN
+    watchlist_code: str = "black"
+    account_equity: float = Field(default=100000.0, gt=0)
+    risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
+    max_margin_usage_pct: float = Field(default=0.35, gt=0, le=1)
+    min_score_bucket: int = Field(default=51, ge=0, le=80)
+    strategy_code: str = "su_bing_ema21"
+    strategy_version: str = "v0"
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    run_inline: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_identity(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            forbidden = {
+                "profile_id",
+                "market_data_file_id",
+                "symbols",
+                "provider",
+                "data_role",
+                "allow_warning_quality",
+                "research_only",
+            } & set(value)
+            if forbidden:
+                raise ValueError("signal_formal_data_selection_forbidden")
+        return value
+
+    @field_validator("instrument_symbol")
+    @classmethod
+    def validate_instrument_symbol(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
+
+    @field_validator("watchlist_code", "strategy_code", "strategy_version")
+    @classmethod
+    def validate_non_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
+
+    @field_validator("contract_or_series")
+    @classmethod
+    def validate_contract(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized:
+            raise ValueError("contract_or_series cannot be blank")
+        return normalized
+
+    @field_validator("periods")
+    @classmethod
+    def validate_formal_periods(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if not normalized or any(not item for item in normalized):
+            raise ValueError("periods cannot be empty or contain blank values")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("periods cannot contain duplicates")
+        return normalized
+
+    @field_validator("start", "end")
+    @classmethod
+    def validate_aware_window(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("formal signal window datetimes must be timezone-aware")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_canonical_identity(self) -> SignalScanRequest:
+        if self.dataset_kind is not DatasetKind.ACTUAL_DOMINANT:
+            raise ValueError("SIGNAL_FORMAL_ACTUAL_DOMINANT_REQUIRED")
+        if self.instrument_symbol.lower() != "jm":
+            raise ValueError("SIGNAL_FORMAL_ACTUAL_DOMINANT_PRODUCT_UNSUPPORTED")
+        if self.contract_or_series.endswith(".MAIN"):
+            raise ValueError("SIGNAL_FORMAL_CONCRETE_CONTRACT_REQUIRED")
+        if self.start >= self.end:
+            raise ValueError("start must be earlier than end")
+        for period in self.periods:
+            BarQuery(
+                dataset_kind=self.dataset_kind,
+                symbol=self.instrument_symbol,
+                contract_or_series=self.contract_or_series,
+                frequency=BarFrequency(period),
+                start=self.start,
+                end=self.end,
+            )
+        return self
+
+
+class ResearchSignalScanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     watchlist_code: str = "black"
@@ -52,10 +164,7 @@ class SignalScanRequest(BaseModel):
         return [item.strip() for item in value if item.strip()]
 
     @model_validator(mode="after")
-    def validate_data_role(self) -> SignalScanRequest:
-        forbidden = {"provider", "data_role", "allow_warning_quality"} & self.model_fields_set
-        if forbidden and not self.research_only:
-            raise ValueError("signal_formal_data_selection_forbidden")
+    def validate_data_role(self) -> ResearchSignalScanRequest:
         if self.data_role is not SignalDataRole.PRIMARY:
             raise ValueError("only primary RQData/local parquet data is active for signal scans")
         return self
@@ -189,6 +298,7 @@ class SignalScanTaskOut(BaseModel):
     periods: list[str]
     data_role: str = SignalDataRole.PRIMARY.value
     research_only: bool = False
+    mode: SignalScanMode = SignalScanMode.SCAN
     profile_id: str | None = None
     market_data_file_id: int | None = None
     total_items: int
@@ -257,6 +367,7 @@ class StrategySignalOut(BaseModel):
     quality_status: dict[str, Any]
     profile_id: str | None = None
     market_data_file_id: int | None = None
+    input_identity: dict[str, Any] | None = None
     research_contract: bool
     spec_source: str | None = None
     alert_status: str
@@ -296,6 +407,7 @@ class SignalEventOut(BaseModel):
     quality_status: dict[str, Any]
     profile_id: str | None = None
     market_data_file_id: int | None = None
+    input_identity: dict[str, Any] | None = None
     payload: dict[str, Any]
     created_at: str | None = None
 

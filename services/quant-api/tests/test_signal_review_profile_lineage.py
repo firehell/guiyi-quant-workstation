@@ -422,160 +422,36 @@ def test_research_scan_never_writes_formal_event() -> None:
         assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
 
 
-def test_formal_scanner_selects_actual_mapping_and_persists_task_profile() -> None:
-    from app.signal.scanner import SignalScanner, create_signal_scan_task
+def test_formal_scanner_rejects_profile_and_mapping_selected_request() -> None:
+    from app.signal.scanner import create_signal_scan_task
 
     factory = _session_factory()
-    with factory() as session:
-        session.add(Watchlist(code="black", name="Black", category="test"))
-        session.add(
-            WatchlistItem(
-                watchlist_code="black",
-                symbol="jm",
-                name="焦煤",
-                exchange_code="DCE",
-                default_contract="JM.MAIN",
-                is_active=True,
-            )
-        )
-        session.add(
-            MainContractMap(
-                instrument_symbol="jm",
-                trade_date=date(2026, 7, 10),
-                rank=1,
-                contract_code="JM2609",
-                rule="volume_open_interest",
-                provider="rqdata",
-                data_version="mapping-v1",
-            )
-        )
-        session.flush()
-        payload = {
-            "watchlist_code": "black",
-            "symbols": ["jm"],
-            "periods": ["15m"],
-            "profile_id": "intraday_research_v1",
-            "research_only": False,
-        }
-        task = create_signal_scan_task(session, payload)
-        targets = SignalScanner(session)._targets(payload)
-
-        assert task.profile_id == "intraday_research_v1"
-        assert task.market_data_file_id is None
-        assert [target.contract for target in targets] == ["JM2609"]
-
-
-def test_formal_scanner_persists_profile_lineage_without_notification(tmp_path: Path) -> None:
-    from app.signal.scanner import SignalScanner, create_signal_scan_task
-
-    factory = _session_factory()
-    with factory() as session:
-        _seed_formal_scan_asset(session, tmp_path)
-        task = create_signal_scan_task(
+    with factory() as session, pytest.raises(
+        ValidationError,
+        match="signal_formal_data_selection_forbidden",
+    ):
+        create_signal_scan_task(
             session,
+            {
+                "watchlist_code": "black",
+                "symbols": ["jm"],
+                "periods": ["15m"],
+                "profile_id": "intraday_research_v1",
+                "research_only": False,
+            },
+        )
+
+
+def test_formal_scanner_old_profile_execution_contract_is_retired() -> None:
+    with pytest.raises(ValidationError, match="signal_formal_data_selection_forbidden"):
+        SignalScanRequest.model_validate(
             {
                 "watchlist_code": "black",
                 "symbols": ["jm"],
                 "periods": ["5m"],
                 "profile_id": "intraday_research_v1",
-                "research_only": False,
-                "min_score_bucket": 0,
-                "strategy_params": {
-                    "ema_period": 3,
-                    "macd_fast": 2,
-                    "macd_slow": 4,
-                    "macd_signal": 2,
-                    "atr_period": 3,
-                    "breakout_lookback": 3,
-                    "confirmation_bars": 2,
-                    "volume_ratio_intraday": 1.5,
-                    "zero_axis_atr_threshold": 10,
-                    "max_distance_from_ema_atr": 99,
-                    "confluence_threshold": 3,
-                    "volume_lookback": 3,
-                    "macd_cross_lookback": 5,
-                    "chop_cross_threshold": 99,
-                    "rapid_move_atr_threshold": 99,
-                },
-            },
+            }
         )
-        session.commit()
-
-        result = SignalScanner(session).run(task.id)
-        signal = session.scalar(select(StrategySignal))
-        event = session.scalar(select(SignalEvent))
-
-        assert result["failed"] == 0
-        assert signal is not None and event is not None
-        assert signal.profile_id == "intraday_research_v1"
-        assert signal.market_data_file_id is not None
-        assert signal.features["formal_lineage"]["primary"]["contract_code"] == "JM2609"
-        assert event.payload["formal_lineage"] == signal.features["formal_lineage"]
-        assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
-
-
-def test_formal_scanner_never_uses_latest_file_selector(tmp_path: Path) -> None:
-    from app.signal.scanner import SignalScanner, create_signal_scan_task
-
-    factory = _session_factory()
-    with factory() as session:
-        _seed_formal_scan_asset(session, tmp_path)
-        task = create_signal_scan_task(
-            session,
-            {
-                "watchlist_code": "black",
-                "symbols": ["jm"],
-                "periods": ["5m"],
-                "profile_id": "intraday_research_v1",
-                "research_only": False,
-                "min_score_bucket": 0,
-                "strategy_params": {},
-            },
-        )
-        session.commit()
-        scanner = SignalScanner(session)
-
-        def forbidden_latest(*args, **kwargs):
-            raise AssertionError("formal scanner must read the binding file by id")
-
-        scanner.reader.load_latest_bars = forbidden_latest  # type: ignore[method-assign]
-        result = scanner.run(task.id)
-
-        assert result["failed"] == 0
-        assert result["created"] == 1
-
-
-def test_formal_scanner_does_not_publish_redis_progress(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.services import signal_scanner as legacy_scanner
-    from app.signal.scanner import SignalScanner, create_signal_scan_task
-
-    factory = _session_factory()
-    with factory() as session:
-        _seed_formal_scan_asset(session, tmp_path)
-        task = create_signal_scan_task(
-            session,
-            {
-                "watchlist_code": "black",
-                "symbols": ["jm"],
-                "periods": ["5m"],
-                "profile_id": "intraday_research_v1",
-                "research_only": False,
-                "min_score_bucket": 0,
-                "strategy_params": {},
-            },
-        )
-        session.commit()
-        published: list[str] = []
-        monkeypatch.setattr(
-            legacy_scanner.SignalScanner,
-            "_publish",
-            lambda self, event, payload: published.append(event),
-        )
-
-        result = SignalScanner(session).run(task.id)
-
-        assert result["created"] == 1
-        assert published == []
 
 
 def test_live_reader_exposes_server_bar_identity_for_lineage() -> None:
@@ -627,7 +503,7 @@ def test_live_reader_exposes_server_bar_identity_for_lineage() -> None:
         assert response.bars[0]["confirmed_at"] == "2026-07-10T01:30:01"
 
 
-def test_review_freezes_backtest_trade_lineage_and_reads_exact_asset(tmp_path: Path) -> None:
+def test_review_marks_legacy_backtest_trade_lineage_unavailable(tmp_path: Path) -> None:
     from app.services.review_center import create_or_get_backtest_trade_review
     from app.services.review_lineage import load_review_bars
 
@@ -639,22 +515,9 @@ def test_review_freezes_backtest_trade_lineage_and_reads_exact_asset(tmp_path: P
         session.commit()
 
         note = create_or_get_backtest_trade_review(session, trade.id)
-        frozen = deepcopy(note.extra["formal_lineage"])
-        response = load_review_bars(session, note, project_root=tmp_path)
-
-        assert frozen["source_type"] == "backtest_trade"
-        assert frozen["primary"]["market_data_file_id"] == market_file.id
-        assert response["lineage"] == frozen
-        assert len(response["bars"]) == 1
-        assert response["bars"][0]["close"] == 1234.5
-
-        report = session.get(BacktestReportModel, trade.report_id)
-        assert report is not None
-        report.binding_snapshot["primary"]["market_data_file_id"] = 999
-        assert note.extra["formal_lineage"]["primary"]["market_data_file_id"] == market_file.id
-
-        note.extra["formal_lineage"]["primary"]["checksum"] = "0" * 64
-        with pytest.raises(ValueError, match="REVIEW_EXACT_BARS_UNAVAILABLE"):
+        assert note.extra["lineage_status"] == "unavailable"
+        assert note.extra["lineage_blocked_reason"] == "REVIEW_LINEAGE_UNAVAILABLE"
+        with pytest.raises(ValueError, match="REVIEW_LINEAGE_UNAVAILABLE"):
             load_review_bars(session, note, project_root=tmp_path)
 
 
@@ -702,13 +565,12 @@ def test_review_api_exposes_source_lineage_and_exact_bars(tmp_path: Path) -> Non
         review_id = created.json()["id"]
 
         lineage = client.get(f"/api/reviews/lineage/backtest_trade/{trade_id}")
-        assert lineage.status_code == 200
-        assert lineage.json()["primary"]["market_data_file_id"] == market_file.id
+        assert lineage.status_code == 422
+        assert lineage.json()["detail"]["code"] == "REVIEW_LINEAGE_UNAVAILABLE"
 
         bars = client.get(f"/api/reviews/{review_id}/bars")
-        assert bars.status_code == 200
-        assert bars.json()["bars"][0]["close"] == 1234.5
-        assert "file_path" not in str(bars.json()["lineage"])
+        assert bars.status_code == 422
+        assert bars.json()["detail"]["code"] == "REVIEW_LINEAGE_UNAVAILABLE"
     finally:
         app.dependency_overrides.clear()
 
