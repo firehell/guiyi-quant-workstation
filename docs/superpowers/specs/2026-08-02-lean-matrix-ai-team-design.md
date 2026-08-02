@@ -1,7 +1,7 @@
 # 归一量化精简矩阵式 AI 研发团队设计
 
 - 日期：2026-08-02
-- 状态：设计基线已获用户书面批准，Phase 1 实施中
+- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge.
 - 适用项目：`firehell/guiyi-quant-workstation`
 - 设计范围：研发组织模型、专家角色、任务路由、自治状态机、权限边界和最小落地方式
 
@@ -1000,6 +1000,8 @@ AI 项目负责人
 Phase 1 的 CLI 不创建 worktree、不调用 Git/GitHub、不检查或合并 PR、不清理 worktree，也不执行任何工作流自动化；这些仍是既有工具或后续独立阶段的职责。
 
 ### Phase 2：历史复盘与受控试运行
+
+Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Phase 2 evidence does not reopen Task 04, adopt Task 05, or authorize Phase 3 execution, Phase 4/5 automation/delegation, release, or Runtime.
 
 - 以已完成的 Task 04 作为历史复盘样本，检验角色路由是否与其事实一致；
 - 在新的、独立批准任务中记录实际会话数、用户打断数、修复轮次和集成时间；
