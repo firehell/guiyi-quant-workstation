@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 from sqlalchemy import create_engine
@@ -49,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     connection = None
     engine = None
     try:
+        if args.database_url_env and not re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", args.database_url_env):
+            raise ValueError("DATABASE_URL_ENV_NAME_INVALID")
         database_url = os.environ.get(args.database_url_env) if args.database_url_env else None
         if database_url:
             engine = create_engine(database_url)

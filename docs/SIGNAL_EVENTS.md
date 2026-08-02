@@ -73,6 +73,11 @@ target bar window covered
 Profile/Binding/legacy lineage 只保留在显式 `research_only` compatibility 边界，可展示但不创建
 formal `SignalEvent`、Stage 9 evidence 或通知，也不作为 active selector。
 
+上述 canonical formal Signal/Review contract 不把现有 Stage 9 运行 Gate 改写为已切换。Stage 9
+当前仍是 legacy Profile/file compatibility 的历史 Gate，对新的 canonical event 保持 blocked，直到
+后续任务完成受控切换或明确退役；其中固定 file/path 叙述只属于 historical legacy snapshot，不能
+作为 active `MarketDataService` input。
+
 ## 3. 表结构
 
 新增表：

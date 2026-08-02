@@ -40,7 +40,7 @@ _CATEGORY_REASONS = {
     "report_14_15_references": "report 14/15 references are Git-traceable historical snapshots, not active Gates",
 }
 _CATEGORY_TABLES = {
-    "indicator_cache": ("indicator_cache",),
+    "indicator_cache": (),
     "backtest": ("backtest_orders", "backtest_reports", "backtest_tasks", "backtest_trades"),
     "signal_review": (
         "review_attachments", "review_notes", "review_tags", "signal_events", "signal_notifications",
@@ -55,7 +55,7 @@ _CATEGORY_TABLES = {
     "profile_binding_legacy_lineage": ("data_profiles", "profile_active_bindings"),
     "report_14_15_references": (),
 }
-_TRUSTED_METADATA_TABLES = ("data_gaps", "market_datasets", "market_partitions")
+_TRUSTED_METADATA_TABLES = ("data_gaps", "main_contract_map", "market_datasets", "market_partitions")
 _REVIEW_METADATA_TABLES = ("market_data_files",)
 _ALLOWED_TABLES = tuple(sorted({table for tables in _CATEGORY_TABLES.values() for table in tables} | set(_TRUSTED_METADATA_TABLES) | set(_REVIEW_METADATA_TABLES)))
 _REFERENCE_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".toml", ".sql", ".html", ".js", ".txt", ".sh", ".ts", ".tsx", ".vue"}
@@ -117,13 +117,14 @@ def build_derived_reference_inventory(
                 "category": category,
                 "reason": _CATEGORY_REASONS[category],
                 "database_tables": _tables_for_category(category, table_inventory),
+                "database_scope": "NOT_APPLICABLE" if not _CATEGORY_TABLES[category] else "APPLICABLE",
                 "filesystem_paths": _paths_for_category(category, filesystem["records"]),
                 "reference_locations": category_references,
                 "active_reference_status": "present" if category_references else "zero_active_references",
             }
         )
     diagnostics = [*database["diagnostics"], *filesystem["diagnostics"], *reference_scan["diagnostics"]]
-    status = "complete" if database["available"] and filesystem["data_root_exists"] and repo_root.is_dir() and not filesystem["truncated"] and not reference_scan["truncated"] else "incomplete"
+    status = "complete" if database["available"] and filesystem["data_root_exists"] and repo_root.is_dir() and not diagnostics and not filesystem["truncated"] and not reference_scan["truncated"] else "incomplete"
     return {
         "schema_version": SCHEMA_VERSION,
         "command": COMMAND,
@@ -159,8 +160,7 @@ def _read_database_inventory(connection: Any | None, *, max_ids: int) -> tuple[d
         if dialect == "sqlite":
             _execute(connection, "PRAGMA query_only = ON")
         elif dialect == "postgresql":
-            _execute(connection, "BEGIN")
-            _execute(connection, "SET TRANSACTION READ ONLY")
+            _execute(connection, "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
         else:
             raise ValueError(f"unsupported database dialect: {dialect}")
         inventory = []
@@ -377,7 +377,7 @@ def _read_regular_file(path: Path, display_path: str, max_file_bytes: int) -> tu
 def _path_disposition(path: str) -> str:
     lowered = path.lower()
     if "/canonical/" in lowered:
-        return "KEEP_TRUSTED_CANONICAL"
+        return "REVIEW_REQUIRED"
     if "/derived/" in lowered:
         return "REBUILD_ONLY"
     return "REVIEW_REQUIRED"

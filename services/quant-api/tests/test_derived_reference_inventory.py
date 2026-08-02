@@ -69,7 +69,7 @@ def test_inventory_is_deterministic_and_classifies_read_only_surfaces(tmp_path: 
             "path": "data/parquet/canonical/jm/part-000.parquet",
                 "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
                 "size_bytes": 3,
-                "disposition": "KEEP_TRUSTED_CANONICAL",
+                "disposition": "REVIEW_REQUIRED",
         },
         {
             "path": "data/raw/jm/source.parquet",
@@ -162,7 +162,7 @@ def test_postgresql_collector_sets_read_only_transaction_without_commit(tmp_path
     assert result["database"]["tables"] == [
         {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["14"], "table": "backtest_reports"}
     ]
-    assert connection.statements[:2] == ["BEGIN", "SET TRANSACTION READ ONLY"]
+    assert connection.statements[:1] == ["BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"]
     assert connection.rollback_count == 1
     assert connection.commit_count == 0
     assert not any(
@@ -252,6 +252,24 @@ def test_database_uses_allowlist_reports_missing_and_fails_closed_on_id_limit(tm
         "ID_LIMIT_EXCEEDED",
         "TABLE_MISSING",
     }
+    assert result["status"] == "incomplete"
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
+def test_database_missing_table_forces_incomplete_even_with_existing_roots(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_fixture_connection(),
+    )
+
+    assert any(item["code"] == "TABLE_MISSING" for item in result["database"]["diagnostics"])
+    assert result["status"] == "incomplete"
+    assert result["task07_zero_active_reference_eligible"] is False
 
 
 def test_real_sqlalchemy_sqlite_connection_uses_readonly_inventory_path(tmp_path: Path) -> None:
