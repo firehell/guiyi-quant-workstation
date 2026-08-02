@@ -178,6 +178,7 @@ def test_reference_scan_classifies_every_category_without_inventory_self_referen
 
     result = build_derived_reference_inventory(
         DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
     )
 
     categories = {item["category"]: item for item in result["categories"]}
@@ -297,6 +298,158 @@ def test_unknown_database_dialect_fails_closed(tmp_path: Path) -> None:
         )
 
 
+def test_market_data_file_rows_require_catalog_evidence_and_classify_exact_rows(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    connection = _market_data_file_connection()
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=connection,
+    )
+
+    categories = {item["category"]: item for item in result["categories"]}
+    derived = categories["permanent_derived_periods"]["database_tables"]
+    duplicate = categories["duplicate_bar_layers"]["database_tables"]
+    assert derived == [
+        {
+            "table": "market_data_files",
+            "count": 1,
+            "ids": ["2"],
+            "id_status": "complete",
+            "disposition": "REBUILD_ONLY",
+            "rows": [
+                {
+                    "id": "2",
+                    "provider": "rqdata",
+                    "data_type": "derived_bar",
+                    "period": "15m",
+                    "file_path": "/data/derived/jm/15m.parquet",
+                    "data_role": "candidate",
+                    "quality_status": "passed",
+                    "data_version": "derived-v1",
+                    "disposition": "REBUILD_ONLY",
+                    "reason": "derived data_type is regenerated from provider-direct canonical bars",
+                }
+            ],
+        }
+    ]
+    assert duplicate == [
+        {
+            "table": "market_data_files",
+            "count": 1,
+            "ids": ["3"],
+            "id_status": "complete",
+            "disposition": "REVIEW_REQUIRED",
+            "rows": [
+                {
+                    "id": "3",
+                    "provider": "rqdata",
+                    "data_type": "futures_bar",
+                    "period": "1m",
+                    "file_path": "/data/canonical/unlinked.parquet",
+                    "data_role": "primary",
+                    "quality_status": "passed",
+                    "data_version": "v2",
+                    "disposition": "REVIEW_REQUIRED",
+                    "reason": "canonical-looking file path has no verified catalog partition linkage",
+                }
+            ],
+        }
+    ]
+    market_files = next(item for item in result["database"]["tables"] if item["table"] == "market_data_files")
+    assert market_files["row_classifications"][0]["disposition"] == "KEEP_TRUSTED_CANONICAL"
+    assert market_files["row_classifications"][0]["catalog_evidence"] == "verified"
+    assert result["status"] == "incomplete"  # fixture intentionally lacks unrelated allowlisted tables
+
+
+def test_reference_state_excludes_historical_and_non_active_sections_from_task07_gate(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    (repo_root / "docs" / "archive").mkdir(parents=True)
+    data_root.mkdir()
+    (repo_root / "docs" / "historical.md").write_text(
+        "## Frozen historical compatibility-only section\nreport 14 backtest legacy lineage\n",
+        encoding="utf-8",
+    )
+    (repo_root / "docs" / "archive" / "old.md").write_text("signal review\n", encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+
+    categories = {item["category"]: item for item in result["categories"]}
+    assert categories["report_14_15_references"]["active_reference_status"] == "zero_active_references"
+    assert categories["report_14_15_references"]["reference_locations"][0]["reference_state"] == "historical"
+    assert categories["signal_review"]["reference_locations"][0]["reference_state"] == "historical"
+    assert result["status"] == "complete"
+    assert result["task07_zero_active_reference_eligible"] is True
+
+    (repo_root / "docs" / "active.md").write_text("report 15 remains active\n", encoding="utf-8")
+    active = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
+        connection=_complete_empty_connection(),
+    )
+    active_category = next(item for item in active["categories"] if item["category"] == "report_14_15_references")
+    assert active_category["active_reference_status"] == "present"
+    assert active["task07_zero_active_reference_eligible"] is False
+
+
+def test_reference_scan_fails_closed_for_non_utf8_symlink_and_match_budget(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    repo_root.mkdir()
+    data_root.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("backtest", encoding="utf-8")
+    (repo_root / "0-link.py").symlink_to(outside)
+    (repo_root / "1-invalid.py").write_bytes(bytes([255]))
+    (repo_root / "2-many.py").write_text("backtest signal review live eod derived 15m", encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, max_files=3),
+    )
+
+    assert result["reference_scan"]["truncated"] is True
+    assert {item["code"] for item in result["reference_scan"]["diagnostics"]} >= {
+        "REPO_SYMLINK_SKIPPED",
+        "REPO_NON_UTF8_SKIPPED",
+        "REPO_MAX_MATCHES_EXCEEDED",
+    }
+    assert result["status"] == "incomplete"
+
+
+def test_reference_scan_fails_closed_when_directory_budget_is_exhausted(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+    (repo_root / "a" / "b").mkdir(parents=True)
+    data_root.mkdir()
+    (repo_root / "a" / "b" / "consumer.py").write_text("backtest", encoding="utf-8")
+
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, max_files=2),
+    )
+
+    assert result["status"] == "incomplete"
+    assert {item["code"] for item in result["reference_scan"]["diagnostics"]} >= {"REPO_MAX_DIRECTORIES_EXCEEDED"}
+
+
+def test_database_scan_error_is_structured_and_ineligible(tmp_path: Path) -> None:
+    connection = sqlite3.connect(":memory:", factory=_BrokenSqliteConnection)
+    result = build_derived_reference_inventory(
+        DerivedReferenceInventoryConfig(repo_root=tmp_path / "repo", data_root=tmp_path / "data"),
+        connection=connection,
+    )
+
+    assert result["database"]["available"] is False
+    assert result["database"]["diagnostics"][-1] == {"code": "DATABASE_SCAN_ERROR"}
+    assert result["status"] == "incomplete"
+    assert result["task07_zero_active_reference_eligible"] is False
+
+
 def _fixture_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     connection.executescript(
@@ -324,6 +477,74 @@ def _fixture_connection() -> sqlite3.Connection:
         INSERT INTO market_data_files VALUES (12, 'file');
         INSERT INTO data_gaps VALUES (13, 'gap');
         """
+    )
+    connection.commit()
+    return connection
+
+
+def _market_data_file_connection() -> sqlite3.Connection:
+    connection = sqlite3.connect(":memory:")
+    connection.executescript(
+        """
+        CREATE TABLE market_data_files (
+            id INTEGER PRIMARY KEY,
+            provider TEXT NOT NULL,
+            data_type TEXT NOT NULL,
+            period TEXT,
+            file_path TEXT NOT NULL,
+            data_version TEXT,
+            data_role TEXT NOT NULL,
+            quality_status TEXT NOT NULL
+        );
+        CREATE TABLE market_datasets (
+            id INTEGER PRIMARY KEY,
+            provider TEXT NOT NULL,
+            dataset_kind TEXT NOT NULL,
+            frequency TEXT NOT NULL
+        );
+        CREATE TABLE market_partitions (
+            id INTEGER PRIMARY KEY,
+            dataset_id INTEGER NOT NULL,
+            file_uri TEXT NOT NULL,
+            manifest_uri TEXT NOT NULL,
+            manifest_digest TEXT NOT NULL,
+            checksum TEXT NOT NULL
+        );
+        INSERT INTO market_datasets VALUES (1, 'rqdata', 'actual_dominant', '1m');
+        INSERT INTO market_partitions VALUES (
+            1, 1, '/data/canonical/linked.parquet', '/data/manifests/linked.json',
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+        );
+        INSERT INTO market_data_files VALUES
+            (1, 'rqdata', 'futures_bar', '1m', '/data/canonical/linked.parquet', 'v2', 'primary', 'passed'),
+            (2, 'rqdata', 'derived_bar', '15m', '/data/derived/jm/15m.parquet', 'derived-v1', 'candidate', 'passed'),
+            (3, 'rqdata', 'futures_bar', '1m', '/data/canonical/unlinked.parquet', 'v2', 'primary', 'passed');
+        """
+    )
+    connection.commit()
+    return connection
+
+
+def _complete_empty_connection() -> sqlite3.Connection:
+    connection = sqlite3.connect(":memory:")
+    for table in (
+        "after_market_scheduler_checkpoints", "backtest_orders", "backtest_reports", "backtest_tasks", "backtest_trades",
+        "data_gaps", "data_profiles", "live_aggregated_bars", "live_aggregation_checkpoints", "live_ingest_checkpoints",
+        "live_minute_bars", "main_contract_map", "market_datasets", "market_partitions", "profile_active_bindings",
+        "review_attachments", "review_notes", "review_tags", "signal_events", "signal_notifications", "signal_scan_tasks",
+        "strategy_signals",
+    ):
+        connection.execute(f'CREATE TABLE "{table}" (id INTEGER PRIMARY KEY)')
+    connection.execute(
+        "CREATE TABLE market_data_files (id INTEGER PRIMARY KEY, provider TEXT, data_type TEXT, period TEXT, file_path TEXT, "
+        "data_version TEXT, data_role TEXT, quality_status TEXT)"
+    )
+    connection.execute("DROP TABLE market_datasets")
+    connection.execute("CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, frequency TEXT)")
+    connection.execute("DROP TABLE market_partitions")
+    connection.execute(
+        "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, manifest_uri TEXT, manifest_digest TEXT, checksum TEXT)"
     )
     connection.commit()
     return connection
@@ -404,3 +625,8 @@ class _FakePostgresResult:
 
     def fetchall(self) -> list[tuple[object, ...]]:
         return self.rows
+
+
+class _BrokenSqliteConnection(sqlite3.Connection):
+    def execute(self, statement: str, parameters: object = ()) -> sqlite3.Cursor:
+        raise sqlite3.OperationalError("fixture read failure")
