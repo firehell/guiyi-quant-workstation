@@ -555,6 +555,93 @@ def test_daily_night_session_fails_closed_without_previous_calendar_proof() -> N
             )
 
 
+def test_historical_daily_night_policy_fails_closed_when_prior_friday_is_missing() -> None:
+    SessionLocal = _session_factory()
+    trading_day = date(2022, 5, 9)
+    daily_bar = {
+        "datetime": datetime(2022, 5, 9, tzinfo=UTC),
+        "trading_day": trading_day,
+        "contract": "JM2409",
+        "interval": "1d",
+        "open": Decimal("100"),
+        "close": Decimal("105"),
+    }
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        _seed_contract_day(
+            session,
+            trading_day=trading_day,
+            contract="JM2409",
+            multiplier=20,
+            tick="1",
+            open_fee="0.003",
+            close_fee="0.004",
+        )
+        session.flush()
+        session.query(TradingCalendar).delete()
+        session.add_all(
+            [
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=date(2022, 5, 5),
+                    is_trading_day=True,
+                    has_night_session=False,
+                    provider="rqdata",
+                ),
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=trading_day,
+                    is_trading_day=True,
+                    # Pre-2023 JM must use the historical product policy even
+                    # though this legacy flag is false.
+                    has_night_session=False,
+                    provider="rqdata",
+                ),
+            ]
+        )
+        session.add_all(
+            [
+                TradingSession(
+                    exchange_code="DCE",
+                    instrument_symbol="jm",
+                    session_name="night",
+                    start_time=time(21),
+                    end_time=time(23),
+                    crosses_midnight=False,
+                    is_active=True,
+                    provider="rqdata",
+                ),
+                TradingSession(
+                    exchange_code="DCE",
+                    instrument_symbol="jm",
+                    session_name="day",
+                    start_time=time(9),
+                    end_time=time(15),
+                    crosses_midnight=False,
+                    is_active=True,
+                    provider="rqdata",
+                ),
+            ]
+        )
+        mapping = session.query(MainContractMap).filter_by(
+            trade_date=trading_day
+        ).one()
+        # Later than the omitted Friday 21:00 CST open, earlier than Monday day open.
+        mapping.raw_payload = {"known_at": "2022-05-09T00:30:00+00:00"}
+        session.flush()
+
+        with pytest.raises(
+            ContractResolutionError,
+            match="night session.*previous trading-day calendar",
+        ):
+            apply_actual_dominant_roll_accounting(
+                session,
+                _result(trades=[]),
+                bars=[daily_bar],
+                slippage_ticks=Decimal("0"),
+            )
+
+
 def test_weekly_actual_dominant_fails_closed_when_session_boundary_is_unprovable() -> None:
     SessionLocal = _session_factory()
     weekly_bars = [{**row, "interval": "1w"} for row in _bars()[:2]]

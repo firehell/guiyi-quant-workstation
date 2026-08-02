@@ -14,6 +14,10 @@ from app.backtest.contract_resolver import (
     resolve_jm_contract,
 )
 from app.models.data_center import TradingCalendar
+from app.services.jm_session_contract import (
+    JM_HISTORICAL_CALENDAR_FLAG_START,
+    jm_historical_night_bounds,
+)
 from app.services.trading_session_clock import (
     NIGHT_SESSION_CUTOFF,
     SHANGHAI,
@@ -609,7 +613,10 @@ def _validate_daily_session_proof(
         raise ContractResolutionError(
             "daily actual_dominant requires a complete trading-day calendar proof"
         )
-    if not calendar.has_night_session:
+    if not _jm_night_session_expected(
+        trading_day,
+        calendar_has_night_session=calendar.has_night_session,
+    ):
         return
 
     night_windows = [
@@ -635,6 +642,25 @@ def _validate_daily_session_proof(
             "daily actual_dominant night session requires complete previous "
             "trading-day calendar and night-start proof"
         )
+
+
+def _jm_night_session_expected(
+    trading_day: date,
+    *,
+    calendar_has_night_session: bool,
+) -> bool:
+    if trading_day >= JM_HISTORICAL_CALENDAR_FLAG_START:
+        return bool(calendar_has_night_session)
+    expected_anchor = trading_day - timedelta(
+        days=3 if trading_day.weekday() == 0 else 1
+    )
+    return (
+        jm_historical_night_bounds(
+            trading_day=trading_day,
+            previous_trading_day=expected_anchor,
+        )
+        is not None
+    )
 
 
 def _bar_trading_day(bar: Mapping[str, Any]) -> date:
