@@ -65,10 +65,10 @@ future first-seen 双时间语义必须另走既有 frozen Event 合同与独立
 false 的 flag fail-closed；SignalEvent/notification flag 继续保留为健康状态读回项但 Task 06 无写入器。
 底层纯 domain service 只供编排与测试复用，不是 Runtime 入口。
 
-以上仍只是默认 disabled 的基础设施候选；`/api/runtime/health` 的
+以上是默认 disabled 的基础设施；`/api/runtime/health` 的
 `data_core_v2_live_review` 必须回读 disabled、observation_only 与 auto_order=false。生产 migration、
-真实 provider-final 读取、scheduler、Runtime、
-通知和 Task 06 complete 也均需后续独立 Gate。
+已在 exact backup/approval 后升级到 `0031` 并通过 empty/disabled smoke。真实 provider-final 读取、
+scheduler、Runtime 与通知仍需后续独立 Gate；schema ready 不等于 Runtime ready。
 
 ### 2.0 Task 04 Gate 前实现边界
 

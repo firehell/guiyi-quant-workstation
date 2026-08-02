@@ -148,7 +148,7 @@ lineage，不再逐项调度。
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
 | 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（本 task PR merge 后生效）；exact-head independent Review=`CLEAN_FOR_INTEGRATION`；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 external Gate |
-| 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | `BLOCKED_AT_PRODUCTION_MIGRATION_GATE`（branch-local candidate）；固定 EMA21 evaluator 已实现，默认 disabled；fresh backup、exact approval、CI/Review/integration 未完成 |
+| 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | completed on develop（PR #105 merge 后生效）；固定 EMA21 evaluator；production=`0031`，empty/disabled smoke passed；Runtime/live 未启用 |
 | 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | pending / batched data + exact deletion Gate |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
@@ -165,12 +165,13 @@ Task 06 首次隔离 migration 测试发生 URL 覆盖 incident，项目数据�
 当前 empty/disabled `0028`，但该 ratification 不改写事故性质，也不授权继续生产 schema、真实
 live/EOD、scheduler、Runtime 或通知操作。
 branch-local candidate 后续新增 `20260802_0029`，把 `revision + confirmed` 纳入 immutable live
-identity；`20260802_0030` 再以 PostgreSQL trigger 拒绝 SignalDecision UPDATE。生产库未执行
-`0029/0030`；`20260802_0031` 持久化 provider-final data version/request digest。生产库未执行
-`0029..0031`，仍停在 incident `0028`。
+identity；`20260802_0030` 再以 PostgreSQL trigger 拒绝 SignalDecision UPDATE；`20260802_0031`
+持久化 provider-final data version/request digest。Owner 对 PR #105 exact head `300cccbd` 批准
+database-only backup 与 `0028 -> 0031` 后，production 已到 `0031`；五张新表全空、既有
+SignalEvent 无 decision link、六个 flags 全 false，health 为 disabled。
 生产 schema exact scope、备份/回滚与 disabled smoke 见
-`GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`；该 packet 仍等待 exact reviewed head 与 fresh backup
-前置批准，不是执行授权。
+`GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`；该 packet 现记录已执行的 backup、migration 与
+disabled/empty smoke receipt，不授权后续 Runtime、live、scheduler 或通知操作。
 
 ### 4.0 Task 04 closeout Owner 决策与正式验收（2026-08-02）
 

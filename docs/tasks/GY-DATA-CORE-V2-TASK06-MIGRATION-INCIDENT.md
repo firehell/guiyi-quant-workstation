@@ -27,8 +27,7 @@
 后续审查再新增未应用生产的 `20260802_0030` create-only trigger 与 `20260802_0031`
 provider-final lineage；最终隔离库已对 head `0031` 完成
 `0027 -> 0031 -> 0027 -> 0031`，6 passed / 19 条既有 deprecation warnings，临时库已删除。
-项目数据库未执行 `0029..0031`，
-当前仍为 empty/disabled `0028`。
+当时项目数据库未执行 `0029..0031`，仍为 empty/disabled `0028`；最终处置见文末完成回读。
 
 ## 根因修复
 
@@ -63,3 +62,18 @@ Owner 于 2026-08-02 明确选择保留并追认当前 additive、empty、disabl
 - 任一 Task 06/SignalEvent/WeCom flag 为 true；
 - migration file SHA-256 不再等于上述值；
 - Runtime、release 或数据库备份事实无法确认。
+
+## 处置完成回读
+
+Owner 保留/追认 empty/disabled `0028` 后，另对 PR #105 exact head `300cccbd` 明确批准 8 GiB
+sparsebundle database-only backup、备份校验、`0028 -> 0031` 与 disabled/empty smoke。执行结果：
+
+- backup `task06-pre0031-6c747ab6` completed，revision=`0028`，manifest/dump SHA-256 匹配，
+  `pg_restore --list` 可读 PostgreSQL 16.14 custom archive；
+- production revision=`20260802_0031`；
+- 五张 Task 06 表均 0 行；既有 SignalEvent 仍 6 行且 `decision_id` 全空；
+- immutable trigger 与 provider-final lineage columns 存在；
+- 六个相关 flags 全 false，health=`disabled / observation_only=true / auto_order=false`。
+
+该回读关闭本 incident 的 schema recovery Gate，但不把最初未批准的 `0028` 改写为合规操作，
+也不授权 RQData、live/EOD 业务运行、scheduler、Runtime、通知、release 或交易。
