@@ -191,8 +191,8 @@ def test_routing_matches_the_cli_and_limits_specialists() -> None:
     assert "plan-only-start" in routing
 
 
-def test_workflow_preserves_read_only_charter_and_human_gates() -> None:
-    """The skill must stop after three failed rounds and retain the human-only boundary."""
+def test_workflow_preserves_read_only_planning_guarded_local_apply_and_human_gates() -> None:
+    """The skill must expose AI-TEAM-005 without widening Lane 3 or merge authority."""
     skill = _read("SKILL.md")
     routing = _read("references/routing.md")
     combined = f"{skill}\n{routing}"
@@ -203,7 +203,16 @@ def test_workflow_preserves_read_only_charter_and_human_gates() -> None:
     assert "creates no worktree" in skill
     assert "git -c core.fsmonitor=false rev-parse --verify origin/develop^{commit}" in skill
     assert "GIT_OPTIONAL_LOCKS=0" in skill
-    assert "never executes a transition" in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py observe --plan" in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py next --plan" in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py apply" in skill
+    assert "--expected-transition" in skill
+    assert "--expected-state-digest" in skill
+    assert "explicit `--apply`" in skill
+    assert ".ai/lean-matrix/<plan-digest>/" in skill
+    assert "Lane 3" in skill
+    assert "AI-TEAM-007" in skill
+    assert "one transition" in skill
     assert "does not fetch" in skill
     assert "does not call GitHub" in skill
     assert "three failed implementation-validation-review rounds" in skill

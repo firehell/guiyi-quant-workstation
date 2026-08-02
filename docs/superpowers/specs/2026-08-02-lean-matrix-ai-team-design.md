@@ -1,7 +1,7 @@
 # 归一量化精简矩阵式 AI 研发团队设计
 
 - 日期：2026-08-02
-- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 merged through PR #101 at `develop@7a668eeb`; Phase 3 merged through PR #103 at `develop@c59cda24`, and post-merge engineering CI passed. Task 05 merged independently through PR #100 and does not count retroactively as Phase 3. Phase 4 contract-kernel implementation is approved as AI-TEAM-004 / Issue #107 from `origin/develop@39d1002d1051e0ccb6ffc7f480bdc236d9930edc`; this approval covers only modular read-only contracts and one fixed local `git rev-parse`, not transition execution or broader automation. Phase 5 remains `NO_GO`.
+- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 merged through PR #101 at `develop@7a668eeb`; Phase 3 merged through PR #103 at `develop@c59cda24`, and post-merge engineering CI passed. Task 05 merged independently through PR #100 and does not count retroactively as Phase 3. AI-TEAM-004 merged through PR #108 at `develop@ea16e4f2`; AI-TEAM-005 / Issue #109 is approved only for local fact reconstruction and one guarded Lane 1/2 transition delegated to the existing task workflow. Phase 5 bounded delegation remains `NO_GO`.
 - 适用项目：`firehell/guiyi-quant-workstation`
 - 设计范围：研发组织模型、专家角色、任务路由、自治状态机、权限边界和最小落地方式
 
@@ -1038,6 +1038,15 @@ AI-TEAM-004 / Issue #107 已获得单独批准，但范围只到运行合同与�
 `fetch`、任意 Git 命令、GitHub/网络访问、worktree 操作、transition apply、receipt 写入、
 PR/CI/Review 编排、合入或清理；这些能力仍由既有工具承担或等待后续独立任务。
 
+AI-TEAM-005 / Issue #109 在 `origin/develop@ea16e4f2` 上获得下一段独立批准。它可以从本地
+Git、worktree 和 `ExecutionPlanV1` 重建状态，并通过 `observe`、`next` 和绑定 transition/state
+digest 的 `apply` 每次委托一个既有 `task-worktree.sh` 动作。无显式 `--apply` 时完全只读；
+运行证据只可写入已忽略的 `.ai/lean-matrix/<plan-digest>/`，不是 canonical 状态。该批准只覆盖
+`task-create`、本地验证/commit/push/Draft PR 的既有原子入口，以及确认 task HEAD 已同时进入
+本地与 remote-tracking `develop` 后的 cleanup。Lane 3 通用 apply、GitHub PR/CI/Review 检查、
+`develop-merge`、状态不确定时的远端恢复、`main`、release、Runtime 和真实操作仍被禁止；其中
+GitHub Gate 与 `develop` 集成只能由后续 AI-TEAM-007 独立实现。
+
 ### Phase 5：可选 bounded delegation
 
 只有长期证据表明人工 Gate 频繁且高度重复时，才单独设计 standing mandate。其设计必须是 scope-bound、time-bound、hash-bound、operation-bound，并继续排除 release、Runtime、删除和策略晋升。
@@ -1108,4 +1117,6 @@ PR/CI/Review 编排、合入或清理；这些能力仍由既有工具承担或�
 + 不可逆操作保留人工 Gate
 ```
 
-本设计批准后，下一步是编写独立实施计划；实施计划只能落地 Prompt、模板、路由和政策测试，不得顺便建设新的多代理平台或扩大真实执行权限。
+当前按独立 Issue/branch/PR 顺序推进有限能力：AI-TEAM-005 只增加本地单步编排；后续协议、
+GitHub Gate 和封板必须继续拆成 AI-TEAM-006～009。任何一步都不得顺便建设常驻多代理平台、
+第二状态源或扩大真实操作权限。

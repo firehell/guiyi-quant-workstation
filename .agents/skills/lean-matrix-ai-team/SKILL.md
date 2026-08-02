@@ -28,11 +28,37 @@ Create one bounded, independently testable Task Charter. This skill does not rep
    `git -c core.fsmonitor=false rev-parse --verify origin/develop^{commit}`. It does not fetch,
    does not call GitHub or the network, never executes a transition, and writes no receipt or repository file.
    Its transition list is descriptive only.
-5. Use the existing `task-worktree.sh` and GitHub workflow only after the Charter is frozen. Do not duplicate either tool or expand task state.
-6. Route the minimum team using [roles.md](references/roles.md) and [routing.md](references/routing.md). Assign at most two specialists; split a task with three or more domains. Use separate implementer and reviewer contexts. Keep quant research and backtest audit in separate contexts when both are needed.
-7. Let code, tests, and independent review proceed only within existing permissions. Preserve human Gates for real data/DB, strategy/backtest semantics, notifications, live, main/release/tag, Runtime, deletion, candidate promotion, and GitHub rules.
-8. After three failed implementation-validation-review rounds, stop. Report verified facts, attempts, the blocker, and the decision needed. Do not use another round to bypass a Gate.
-9. Use [task-charter.md](assets/task-charter.md) and [stage-report.md](assets/stage-report.md) to distinguish code, tests, CI, independent review, real Gate, release, and Runtime status exactly.
+5. Reconstruct local state and request the unique next proposal without changing Git or runtime evidence:
+
+   ```bash
+   python3 scripts/engineering/lean_matrix_team.py observe --plan <plan.json> --format json
+   python3 scripts/engineering/lean_matrix_team.py next --plan <plan.json> --format json
+   ```
+
+   `observe` and `next` are read-only. They use local Git/worktree facts, do not fetch, and do not
+   inspect GitHub. Runtime evidence under `.ai/lean-matrix/<plan-digest>/` is ignored recovery
+   evidence, never editable canonical task state.
+6. Apply at most one transition by binding the proposal and the immediately re-observed state:
+
+   ```bash
+   python3 scripts/engineering/lean_matrix_team.py apply \
+     --plan <plan.json> \
+     --expected-transition <transition-id> \
+     --expected-state-digest <sha256:...> \
+     --format json \
+     --apply
+   ```
+
+   Without explicit `--apply`, this command is a read-only dry-run. With it, only a Lane 1/2 plan
+   with no external Gate may delegate one transition to the existing `task-worktree.sh` entrypoint:
+   `task-create`, `local-integrate-to-draft-pr`, or cleanup after dual-develop ancestry is observed.
+   Lane 3 generic apply is always blocked. `develop-merge`, PR/CI/Review inspection, and uncertain
+   remote recovery remain AI-TEAM-007 or human work.
+7. Use the existing `task-worktree.sh` and GitHub workflow only after the Charter is frozen. Do not duplicate either tool or expand task state.
+8. Route the minimum team using [roles.md](references/roles.md) and [routing.md](references/routing.md). Assign at most two specialists; split a task with three or more domains. Use separate implementer and reviewer contexts. Keep quant research and backtest audit in separate contexts when both are needed.
+9. Let code, tests, and independent review proceed only within existing permissions. Preserve human Gates for real data/DB, strategy/backtest semantics, notifications, live, main/release/tag, Runtime, deletion, candidate promotion, and GitHub rules.
+10. After three failed implementation-validation-review rounds, stop. Report verified facts, attempts, the blocker, and the decision needed. Do not use another round to bypass a Gate.
+11. Use [task-charter.md](assets/task-charter.md) and [stage-report.md](assets/stage-report.md) to distinguish code, tests, CI, independent review, real Gate, release, and Runtime status exactly.
 
 ## Output discipline
 
