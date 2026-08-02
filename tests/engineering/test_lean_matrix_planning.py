@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import ast
@@ -69,6 +70,37 @@ def _snapshot(root: Path) -> dict[str, bytes]:
         for path in root.rglob("*")
         if path.is_file()
     }
+
+
+def _isolated_cli_repo(root: Path) -> tuple[Path, Path, str]:
+    """Create a checkout whose local origin/develop ref is fully test-controlled."""
+    repo = root / "repo"
+    isolated_scripts = repo / "scripts" / "engineering"
+    isolated_scripts.mkdir(parents=True)
+    isolated_cli = isolated_scripts / CLI_PATH.name
+    shutil.copyfile(CLI_PATH, isolated_cli)
+    shutil.copyfile(ENGINEERING / "task_workflow.py", isolated_scripts / "task_workflow.py")
+    shutil.copytree(
+        ENGINEERING / "lean_matrix",
+        isolated_scripts / "lean_matrix",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+
+    _git(repo, "init")
+    _git(repo, "add", "scripts")
+    _git(
+        repo,
+        "-c",
+        "user.name=Lean Matrix Tests",
+        "-c",
+        "user.email=lean-matrix-tests@example.invalid",
+        "commit",
+        "-m",
+        "test fixture",
+    )
+    expected_sha = _git(repo, "rev-parse", "HEAD^{commit}")
+    _git(repo, "update-ref", "refs/remotes/origin/develop", expected_sha)
+    return repo, isolated_cli, expected_sha
 
 
 def test_execution_plan_matches_the_fixed_schema_without_legacy_dispatch_fields() -> None:
@@ -253,25 +285,25 @@ def test_git_resolver_reports_missing_executable_without_traceback() -> None:
     assert raised.value.error_type == "git_unavailable"
 
 
-def test_plan_cli_emits_json_and_markdown_bound_to_current_origin_develop() -> None:
+def test_plan_cli_emits_json_and_markdown_bound_to_current_origin_develop(tmp_path: Path) -> None:
     """Both formats must describe the same exact local base without creating a receipt."""
-    expected_sha = _git(ROOT, "rev-parse", "--verify", "origin/develop^{commit}")
+    repo, isolated_cli, expected_sha = _isolated_cli_repo(tmp_path)
     payload = json.dumps(_charter())
     json_result = subprocess.run(
-        [sys.executable, str(CLI_PATH), "plan", "--charter", "-", "--format", "json"],
+        [sys.executable, str(isolated_cli), "plan", "--charter", "-", "--format", "json"],
         input=payload,
         text=True,
         capture_output=True,
         check=False,
-        cwd=ROOT,
+        cwd=repo,
     )
     markdown_result = subprocess.run(
-        [sys.executable, str(CLI_PATH), "plan", "--charter", "-", "--format", "markdown"],
+        [sys.executable, str(isolated_cli), "plan", "--charter", "-", "--format", "markdown"],
         input=payload,
         text=True,
         capture_output=True,
         check=False,
-        cwd=ROOT,
+        cwd=repo,
     )
 
     assert json_result.returncode == 0, json_result.stderr
@@ -285,17 +317,21 @@ def test_plan_cli_emits_json_and_markdown_bound_to_current_origin_develop() -> N
 
 def test_plan_cli_from_an_empty_cwd_creates_no_files_or_bytecode(tmp_path: Path) -> None:
     """Reading a plan from stdin cannot create a receipt, cache, or other cwd artifact."""
+    repo, isolated_cli, _ = _isolated_cli_repo(tmp_path)
+    empty_cwd = tmp_path / "empty-cwd"
+    empty_cwd.mkdir()
     result = subprocess.run(
-        [sys.executable, str(CLI_PATH), "plan", "--charter", "-", "--format", "json"],
+        [sys.executable, str(isolated_cli), "plan", "--charter", "-", "--format", "json"],
         input=json.dumps(_charter()),
         text=True,
         capture_output=True,
         check=False,
-        cwd=tmp_path,
+        cwd=empty_cwd,
     )
 
     assert result.returncode == 0, result.stderr
-    assert list(tmp_path.iterdir()) == []
+    assert list(empty_cwd.iterdir()) == []
+    assert not any(path.name == "__pycache__" for path in repo.rglob("__pycache__"))
 
 
 def test_charter_cli_does_not_require_or_invoke_git() -> None:
