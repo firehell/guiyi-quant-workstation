@@ -5,11 +5,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 RETROSPECTIVE = ROOT / "docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-2.md"
 DESIGN = ROOT / "docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md"
 PLAN = ROOT / "docs/superpowers/plans/2026-08-02-lean-matrix-phase-2-controlled-retrospective.md"
+METRIC_FIELDS = ("Metric name", "Value", "Provenance", "Evidence source")
+METRIC_PROVENANCE_STATES = {"MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE"}
 
 FORBIDDEN_AFFIRMATIVE_PATTERNS = (
     re.compile(
@@ -67,6 +71,53 @@ def _subsection(markdown: str, heading: str) -> str:
 def _metric_block(section: str, name: str) -> str:
     body = section.split(f"- Metric name: {name}\n", 1)[1]
     return body.split("\n- Metric name: ", 1)[0]
+
+
+def _validated_metric_blocks(sample_section: str) -> list[dict[str, str]]:
+    """Return validated metric blocks from one sample's Metrics subsection."""
+    metrics = _subsection(sample_section, "Metrics")
+    starts = [match.start() for match in re.finditer(r"(?m)^- Metric name:", metrics)]
+    assert starts, "Metrics subsection must contain at least one metric block"
+
+    blocks = [
+        metrics[start:end].rstrip()
+        for start, end in zip(starts, (*starts[1:], len(metrics)), strict=True)
+    ]
+    validated: list[dict[str, str]] = []
+    for index, block in enumerate(blocks, start=1):
+        fields: dict[str, str] = {}
+        for field in METRIC_FIELDS:
+            matches = re.findall(rf"(?m)^- {re.escape(field)}:[ \t]*(.*)$", block)
+            assert len(matches) == 1, f"metric block {index} must contain exactly one {field}"
+            value = matches[0].strip()
+            assert value, f"metric block {index} has empty {field}"
+            fields[field] = value
+
+        provenance = fields["Provenance"]
+        assert provenance in METRIC_PROVENANCE_STATES, (
+            f"metric {fields['Metric name']} has invalid provenance {provenance}"
+        )
+        evidence_source = fields["Evidence source"]
+        if provenance == "MANUALLY_RECORDED":
+            assert re.search(r"\bhuman observation\s*:\s*\S", evidence_source, re.IGNORECASE), (
+                f"metric {fields['Metric name']} must name the human observation"
+            )
+            assert re.search(
+                r"\bcannot\s+(?:satisfy\s+or\s+)?drive\s+(?:a|any)\s+Gate\b",
+                block,
+                re.IGNORECASE,
+            ), f"metric {fields['Metric name']} must state that it cannot drive a Gate"
+        elif provenance == "NOT_MEASURABLE":
+            assert re.search(
+                r"\b(?:absent|absence|missing|unavailable|not recorded|"
+                r"do not record|does not record|no (?:canonical|GitHub|source|evidence))\b",
+                block,
+                re.IGNORECASE,
+            ), f"metric {fields['Metric name']} must document limitation or absence evidence"
+
+        validated.append(fields)
+
+    return validated
 
 
 def _affirmative_authority_claims(markdown: str) -> list[str]:
@@ -313,6 +364,90 @@ def test_retrospective_binds_each_measured_metric_to_its_authoritative_source() 
     assert "implementation and final review stayed separate" not in trial
     assert "independent Spec PASS / Quality APPROVED / 0 findings" in trial
     assert "three read-only forward tests" in trial
+
+
+def test_every_metric_block_has_a_complete_provenance_contract() -> None:
+    """A newly added metric must be validated without adding its name to a test table."""
+    report = _report()
+    task04 = _section(report, "Task 04 historical retrospective")
+    trial = _section(report, "AI-TEAM-001 controlled trial")
+
+    task04_metrics = _validated_metric_blocks(task04)
+    trial_metrics = _validated_metric_blocks(trial)
+
+    assert len(task04_metrics) == 6
+    assert len(trial_metrics) == 5
+    assert "verification and boundary evidence" in {
+        metric["Metric name"] for metric in trial_metrics
+    }
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("invalid provenance", "deleted evidence", "duplicate value"),
+)
+def test_metric_contract_rejects_in_memory_provenance_and_evidence_mutations(
+    mutation: str,
+) -> None:
+    """Changed provenance or deleted evidence must fail before the report can pass."""
+    task04 = _section(_report(), "Task 04 historical retrospective")
+    mutations = {
+        "invalid provenance": task04.replace(
+            "- Provenance: MEASURED",
+            "- Provenance: ESTIMATED",
+            1,
+        ),
+        "deleted evidence": task04.replace(
+            "- Evidence source: GitHub PR #86-#95 metadata",
+            "- Evidence source:",
+            1,
+        ),
+        "duplicate value": task04.replace(
+            "- Value: observed_chain_base:",
+            "- Value:\n- Value: duplicated:",
+            1,
+        ),
+    }
+
+    with pytest.raises(AssertionError):
+        _validated_metric_blocks(mutations[mutation])
+
+
+def test_metric_contract_enforces_manual_and_unmeasurable_evidence_semantics() -> None:
+    """Non-measured provenance requires its provenance-specific limitation evidence."""
+    valid_manual = """### Metrics
+
+- Metric name: human note
+- Value: reviewed boundary
+- Provenance: MANUALLY_RECORDED
+- Evidence source: Human observation: Project owner Zhang Zhao
+- Evidence limitation: This observation cannot satisfy or drive a Gate.
+
+### Gate preservation
+"""
+    valid_unmeasurable = """### Metrics
+
+- Metric name: session count
+- Value: NOT_MEASURABLE
+- Provenance: NOT_MEASURABLE
+- Evidence source: Canonical and GitHub records do not record this value; evidence is absent.
+
+### Gate preservation
+"""
+
+    assert _validated_metric_blocks(valid_manual)[0]["Provenance"] == "MANUALLY_RECORDED"
+    assert _validated_metric_blocks(valid_unmeasurable)[0]["Provenance"] == "NOT_MEASURABLE"
+
+    for invalid_sample in (
+        valid_manual.replace("Human observation: Project owner Zhang Zhao", "conversation memory"),
+        valid_manual.replace("cannot satisfy or drive a Gate", "is sufficient evidence"),
+        valid_unmeasurable.replace(
+            "do not record this value; evidence is absent",
+            "were inspected",
+        ),
+    ):
+        with pytest.raises(AssertionError):
+            _validated_metric_blocks(invalid_sample)
 
 
 def test_external_task05_merge_preserves_phase3_and_integration_boundaries() -> None:
