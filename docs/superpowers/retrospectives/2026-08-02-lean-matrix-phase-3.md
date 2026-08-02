@@ -65,6 +65,74 @@ task snapshot and require later GitHub evidence.
 - Provenance: MEASURED
 - Evidence source: GitHub Issue #102 Charter/checkpoints
 
+- Metric name: Logical sessions through versioned snapshot
+- Value: 5
+- Provenance: MEASURED
+- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2
+
+- Metric name: User interruptions through versioned snapshot
+- Value: 0
+- Provenance: MEASURED
+- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2
+
+- Metric name: Independent review-fix rounds through versioned snapshot
+- Value: 0
+- Provenance: MEASURED
+- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2
+- Evidence limitation: A review-fix round counts only when an independent
+  Critical or Important finding caused a tracked-file fix wave; none is recorded.
+
+- Metric name: Charter-to-local-complete timing through Task 2
+- Value: 12 minutes 53 seconds
+- Provenance: MEASURED
+- Evidence source: Git repository exact Task 2 commit `00c0e7564577aa185f82c20b9f1d6225d1262035` at `2026-08-02T15:35:25+08:00`, measured from the Issue #102 Charter start `2026-08-02T07:22:32Z`
+- Evidence limitation: This measures the Charter-to-Task-2 local-complete
+  checkpoint only; Task 3 and final external review remain pending.
+
+- Metric name: Three-round stop status
+- Value: NOT_TRIGGERED
+- Provenance: MEASURED
+- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2
+- Evidence limitation: The recorded zero review-fix rounds did not reach the
+  three-round stop rule.
+
+- Metric name: Changed-path isolation
+- Value: only docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md and tests/engineering/test_lean_matrix_phase3_evidence.py
+- Provenance: MEASURED
+- Evidence source: Git repository exact pre-review diff from Task 3 base `00c0e756`
+- Evidence limitation: This isolates the versioned Task 3 tracked-file scope;
+  ignored SDD execution records are not tracked delivery paths.
+
+- Metric name: Task 1 independent review result
+- Value: Spec PASS; Quality APPROVED; no findings
+- Provenance: MEASURED
+- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 1 entry
+
+- Metric name: Task 2 independent review result
+- Value: Spec PASS; Quality APPROVED; no findings
+- Provenance: MEASURED
+- Evidence source: SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 2 entry
+
+- Metric name: Phase 4/5 decision at versioned task snapshot
+- Value: Phase 4=NO_GO_PENDING_SEPARATE_APPROVAL; Phase 5=NO_GO
+- Provenance: MEASURED
+- Evidence source: Canonical repository design `docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`
+
+- Metric name: Final independent reviewer result at versioned task snapshot
+- Value: NOT_MEASURABLE
+- Provenance: NOT_MEASURABLE
+- Evidence source: External GitHub exact-head evidence is absent at the versioned task snapshot.
+- Evidence limitation: A separate final reviewer must later record
+  Critical/Important/Minor counts, Spec PASS/FAIL, Quality APPROVED/CHANGES_REQUIRED,
+  and Draft PR readiness in the Draft PR evidence comment.
+
+- Metric name: Final GitHub evidence required after versioned snapshot
+- Value: Draft PR evidence comment must record final reviewer result, PR number, exact head, CI, final logical-session count, final review-fix count, and merge facts
+- Provenance: NOT_MEASURABLE
+- Evidence source: External GitHub exact-head evidence is absent at the versioned task snapshot.
+- Evidence limitation: Those facts cannot be created or estimated inside this
+  self-referential task head; they remain external pending evidence.
+
 - Metric name: Immutable base revision
 - Value: 7a668eeb
 - Provenance: MEASURED

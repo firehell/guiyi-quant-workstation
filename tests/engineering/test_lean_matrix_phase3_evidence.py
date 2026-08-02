@@ -24,10 +24,26 @@ TRIAL_REPORT_HEADINGS = (
 )
 METRIC_FIELDS = ("Metric name", "Value", "Provenance", "Evidence source")
 METRIC_PROVENANCE_STATES = {"MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE"}
+FINAL_SNAPSHOT_METRICS = {
+    "Logical sessions through versioned snapshot": "5",
+    "User interruptions through versioned snapshot": "0",
+    "Independent review-fix rounds through versioned snapshot": "0",
+    "Charter-to-local-complete timing through Task 2": "12 minutes 53 seconds",
+    "Three-round stop status": "NOT_TRIGGERED",
+    "Changed-path isolation": (
+        "only docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md "
+        "and tests/engineering/test_lean_matrix_phase3_evidence.py"
+    ),
+}
 RECOGNIZED_MEASURED_SOURCES = {
     "GitHub Issue #102 Charter/checkpoints",
     "Git repository exact base `7a668eeb`",
     "Canonical repository design `docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`",
+    "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2",
+    "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 1 entry",
+    "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 2 entry",
+    "Git repository exact Task 2 commit `00c0e7564577aa185f82c20b9f1d6225d1262035` at `2026-08-02T15:35:25+08:00`, measured from the Issue #102 Charter start `2026-08-02T07:22:32Z`",
+    "Git repository exact pre-review diff from Task 3 base `00c0e756`",
 }
 
 
@@ -89,6 +105,17 @@ def _assert_metric_contract(metrics: str) -> None:
             ), f"metric {fields['Metric name']} must document absence evidence"
 
 
+def _metric_fields(metrics: str, metric_name: str) -> dict[str, str]:
+    for block in _metric_blocks(metrics):
+        fields = {
+            field: re.search(rf"(?m)^- {re.escape(field)}:[ \t]*(.*)$", block).group(1).strip()
+            for field in METRIC_FIELDS
+        }
+        if fields["Metric name"] == metric_name:
+            return fields
+    raise AssertionError(f"missing final-snapshot metric: {metric_name}")
+
+
 def _assert_trial_report_contract(report: str) -> None:
     for heading in TRIAL_REPORT_HEADINGS:
         assert f"## {heading}\n" in report
@@ -131,6 +158,27 @@ def _assert_trial_report_contract(report: str) -> None:
     ):
         assert field in observed
     _assert_metric_contract(metrics)
+    for metric_name, expected_value in FINAL_SNAPSHOT_METRICS.items():
+        assert _metric_fields(metrics, metric_name)["Value"] == expected_value
+    for metric_name in (
+        "Task 1 independent review result",
+        "Task 2 independent review result",
+        "Final independent reviewer result at versioned task snapshot",
+        "Final GitHub evidence required after versioned snapshot",
+    ):
+        _metric_fields(metrics, metric_name)
+    assert "Spec PASS; Quality APPROVED; no findings" in metrics
+    assert "Three-round stop status" in metrics
+    assert "NO_GO_PENDING_SEPARATE_APPROVAL" in metrics
+    assert "NO_GO" in metrics
+    assert "Draft PR evidence comment" in metrics
+    assert "final logical-session count" in metrics
+    assert "final review-fix count" in metrics
+    assert "final reviewer result" in metrics
+    assert "PR number" in metrics
+    assert "exact head" in metrics
+    assert "CI" in metrics
+    assert "merge facts" in metrics
     assert "Phase 4: NO_GO_PENDING_SEPARATE_APPROVAL" in gate
     assert "Phase 5: NO_GO" in gate
     assert "cannot authorize Phase 4" in findings
@@ -164,6 +212,15 @@ def test_phase_three_report_rejects_metric_and_authority_mutations() -> None:
         report.replace(
             "Phase 2 merged through PR #101 at `develop@7a668eeb`",
             "Phase 2 remains pending Draft PR exact-head review, CI, and merge",
+            1,
+        ),
+        report.replace(
+            "- Value: 0\n- Provenance: MEASURED\n- Evidence source: "
+            "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` "
+            "checkpoint 2",
+            "- Value: 1\n- Provenance: MEASURED\n- Evidence source: "
+            "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` "
+            "checkpoint 2",
             1,
         ),
         f"{report}\nPhase 4 is authorized.\nRuntime is authorized.\n",
