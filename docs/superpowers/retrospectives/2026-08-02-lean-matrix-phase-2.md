@@ -5,8 +5,9 @@
 This retrospective is a source-bound comparison, not an execution record or a
 Gate. Its canonical repository sources are `STATUS.md`,
 `docs/tasks/GY-DATA-CORE-V2.md`, and
-`docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`. The
-AI-TEAM-001 sample additionally uses the GitHub PR #98 evidence comment.
+`docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md`. GitHub PR
+metadata, commit lists, files lists, and evidence comments support only the
+facts explicitly attributed to each of them below.
 
 - `MEASURED` means that a value appears in one of those canonical repository
   sources or GitHub evidence.
@@ -31,9 +32,9 @@ or Runtime Gate.
 - Base SHA: da2233b0c3c0b2707cabd1d2774ec22a9ab5f75e
 - Task HEAD: 2851b2649bcdd4af1331c15bf2269c4455f2992b
 - Merge SHA: cc4302b57728133a1471447902563d3abf3604fb
-- Source type: canonical repository historical record
-- Source references: `STATUS.md`; `docs/tasks/GY-DATA-CORE-V2.md`; Lean
-  Matrix design specification.
+- Source type: GitHub PR-chain metadata plus canonical repository historical
+  record
+- Source references: GitHub PR #86-#95 metadata; Canonical completion/Gate sources: `STATUS.md` and `docs/tasks/GY-DATA-CORE-V2.md`; Lean Matrix design specification.
 
 ### Sample classification
 
@@ -60,8 +61,8 @@ or Runtime Gate.
 - Observed specialists: NOT_MEASURABLE as a complete per-session specialist
   roster.
 - Observed specialist count: NOT_MEASURABLE
-- Observed context separation: MEASURED for independent review versus the
-  implemented change; individual session identities are NOT_MEASURABLE.
+- Observed context separation: NOT_MEASURABLE as a complete context map;
+  independent review is recorded but does not prove all execution contexts.
 - Start timestamp: 2026-08-01T01:09:01Z
 - Merge timestamp: 2026-08-01T22:37:58Z
 - Review-fix rounds: NOT_MEASURABLE
@@ -78,32 +79,38 @@ or Runtime Gate.
 - Metric name: observed_chain_base
 - Value: observed_chain_base: da2233b0c3c0b2707cabd1d2774ec22a9ab5f75e
 - Provenance: MEASURED
-- Evidence source: `docs/tasks/GY-DATA-CORE-V2.md`
+- Evidence source: GitHub PR #86-#95 metadata
+- Derivation inputs: PR #86 baseRefOid.
 
 - Metric name: closeout_head
 - Value: closeout_head: 2851b2649bcdd4af1331c15bf2269c4455f2992b
 - Provenance: MEASURED
-- Evidence source: `STATUS.md` and `docs/tasks/GY-DATA-CORE-V2.md`
+- Evidence source: GitHub PR #86-#95 metadata
+- Derivation inputs: PR #95 headRefOid.
 
 - Metric name: closeout_merge
 - Value: closeout_merge: cc4302b57728133a1471447902563d3abf3604fb
 - Provenance: MEASURED
-- Evidence source: `STATUS.md` and `docs/tasks/GY-DATA-CORE-V2.md`
+- Evidence source: GitHub PR #86-#95 metadata
+- Derivation inputs: PR #95 mergeCommit.oid.
 
 - Metric name: pull_requests
 - Value: pull_requests: 86, 87, 88, 89, 90, 91, 92, 93, 94, 95
 - Provenance: MEASURED
-- Evidence source: `docs/tasks/GY-DATA-CORE-V2.md`
+- Evidence source: GitHub PR #86-#95 metadata
+- Derivation inputs: PR numbers: 86 through 95.
 
 - Metric name: chain counts
 - Value: pr_chain_count: 10; task_commits_in_prs: 11; merge_commits: 10; develop_commits_across_chain: 21
 - Provenance: MEASURED
-- Evidence source: canonical Task 04 closeout evidence
+- Evidence source: GitHub PR #86-#95 metadata/commit lists
+- Derivation inputs: PR commit-list lengths: 2, 1, 1, 1, 1, 1, 1, 1, 1, 1; one mergeCommit.oid for each of the ten PRs; derived as 10 PRs + 11 task commits = 21 develop commits.
 
 - Metric name: observed PR chain window
 - Value: first_pr_created: 2026-08-01T01:09:01Z; final_pr_merged: 2026-08-01T22:37:58Z; observed_pr_chain_window: 21h28m57s
 - Provenance: MEASURED
-- Evidence source: canonical Task 04 closeout evidence
+- Evidence source: GitHub PR #86-#95 metadata
+- Derivation inputs: PR #86 createdAt: 2026-08-01T01:09:01Z; PR #95 mergedAt: 2026-08-01T22:37:58Z; derived as final PR merge timestamp minus first PR creation timestamp.
 
 ### Gate preservation
 
@@ -144,8 +151,9 @@ or Runtime Gate.
 - Task HEAD: a4af1e8e5798802f4e553d1fe9e6460285e24a67
 - Merge SHA: 0867e12353e6fbb145c0e14427432e5ba06b9b7e
 - Source type: controlled trial
-- Source references: GitHub PR #98 evidence comment; Lean Matrix design
-  specification; `STATUS.md`.
+- Source references: GitHub PR #98 metadata/commit list/files list; GitHub PR
+  #98 evidence comment for verification and boundary evidence; Lean Matrix
+  design specification; `STATUS.md`.
 
 ### Sample classification
 
@@ -167,34 +175,47 @@ or Runtime Gate.
 
 ### Observed execution
 
-- Observed base roles: four base roles.
-- Observed specialists: no permanent specialist; temporary fresh-context
-  pressure-test agents are execution evidence rather than permanent
-  specialists.
-- Observed specialist count: 0 permanent specialists.
-- Observed context separation: implementation and final review stayed separate.
+- Observed base roles: NOT_MEASURABLE
+- Observed specialists: NOT_MEASURABLE
+- Observed specialist count: NOT_MEASURABLE
+- Observed context separation: NOT_MEASURABLE
 - Start timestamp: 2026-08-02T04:34:47Z
 - Merge timestamp: 2026-08-02T05:01:10Z
 - Review-fix rounds: NOT_MEASURABLE
 - Total agent sessions: NOT_MEASURABLE
 - User interruption count: NOT_MEASURABLE
-- Observation provenance: MEASURED for PR facts and recorded review evidence;
-  NOT_MEASURABLE for the three absent counts.
-- Observation evidence: GitHub PR #98 evidence comment records independent
-  Spec PASS / Quality APPROVED / 0 findings and three read-only forward tests.
+- Observation provenance: MEASURED for PR facts, independent review, and
+  read-only forward tests; NOT_MEASURABLE for role, specialist, and context
+  classifications and for the three absent counts.
+- Observation evidence: GitHub PR #98 evidence comment records independent Spec PASS / Quality APPROVED / 0 findings and three read-only forward tests.
 
 ### Metrics
 
 - Metric name: PR window
 - Value: pr_created: 2026-08-02T04:34:47Z; pr_merged: 2026-08-02T05:01:10Z; pr_window: 26m23s
 - Provenance: MEASURED
-- Evidence source: GitHub PR #98 evidence comment
+- Evidence source: GitHub PR #98 metadata
+- Derivation inputs: createdAt: 2026-08-02T04:34:47Z; mergedAt: 2026-08-02T05:01:10Z; mergedAt minus createdAt.
 
 - Metric name: change size
-- Value: commit_count: 4; post_feature_remediation_commits: 3;
-  changed_files: 11
+- Value: commit_count: 4; changed_files: 11
 - Provenance: MEASURED
-- Evidence source: GitHub PR #98 evidence comment
+- Evidence source: GitHub PR #98 metadata/commit list/files list
+- Derivation inputs: commit list length: 4; files list length: 11.
+
+- Metric name: post-feature remediation commits
+- Value: post_feature_remediation_commits: 3
+- Provenance: MEASURED
+- Evidence source: GitHub PR #98 commit list
+- Derivation rule: the first `feat(workstation):` commit is the feature baseline; later `test(workstation):` or `fix(workstation):` commits count.
+- Derivation inputs: baseline `cadd3373a43f7468b0d11618e99fc53af31cc7ef`
+  (`feat(workstation): add lean matrix task charter foundation`); counted
+  later commits `a0f81680d72117f94335063228e4af355bd2cb98`
+  (`test(workstation): remove implicit yaml dependency`),
+  `94b13024aed65fe023aa159f8bd1ff394787d598`
+  (`fix(workstation): harden charter rendering boundaries`), and
+  `a4af1e8e5798802f4e553d1fe9e6460285e24a67`
+  (`fix(workstation): escape charter markdown input`).
 
 - Metric name: exact-head checks
 - Value: exact_head_checks: 3
@@ -220,9 +241,9 @@ or Runtime Gate.
 
 ### Findings
 
-- Finding: four base roles with no permanent specialist covered the ordinary,
-  reversible trial; temporary fresh-context pressure-test agents supplied
-  execution evidence without becoming a standing specialist layer.
+- Finding: the predicted four base roles with no permanent specialist are
+  suitable for an ordinary reversible trial. The actual role roster,
+  specialist classification, and full context separation are NOT_MEASURABLE.
 - Evidence limitations: four commits and three remediation commits are
   measurable, but they do not measure review-fix rounds, total agent sessions,
   or user interruptions.
@@ -243,7 +264,8 @@ or Runtime Gate.
 - Routing accuracy: Task 04's predicted four base roles plus a data/database
   specialist match its historical data exposure. AI-TEAM-001's predicted four
   base roles with no permanent specialist match an ordinary reversible task.
-  In both samples, implementation and final review remained separate.
+  Actual role rosters, permanent-specialist counts, and full context maps are
+  NOT_MEASURABLE unless a future source records them.
 - Cycle cost: the recorded Task 04 PR-chain window is 21h28m57s and the
   AI-TEAM-001 PR window is 26m23s. They are not comparable as an efficiency
   claim because the samples differ in scope, external boundaries, and history.

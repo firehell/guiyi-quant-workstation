@@ -13,6 +13,16 @@ def _report() -> str:
     return RETROSPECTIVE.read_text(encoding="utf-8")
 
 
+def _section(markdown: str, heading: str) -> str:
+    body = markdown.split(f"## {heading}\n", 1)[1]
+    return body.split("\n## ", 1)[0]
+
+
+def _metric_block(section: str, name: str) -> str:
+    body = section.split(f"- Metric name: {name}\n", 1)[1]
+    return body.split("\n- Metric name: ", 1)[0]
+
+
 def test_retrospective_preserves_two_source_bound_samples() -> None:
     """Removing a measured chain fact must make the historical comparison incomplete."""
     report = _report()
@@ -87,9 +97,10 @@ def test_retrospective_preserves_measurement_and_gate_limits() -> None:
         "failed closed",
         "Predicted base roles: AI project lead, Technical lead, Implementer, Independent quality reviewer",
         "Predicted specialists: data/database specialist",
-        "Observed specialists: no permanent specialist",
-        "temporary fresh-context pressure-test agents",
-        "implementation and final review stayed separate",
+        "Observed base roles: NOT_MEASURABLE",
+        "Observed specialists: NOT_MEASURABLE",
+        "Observed specialist count: NOT_MEASURABLE",
+        "Observed context separation: NOT_MEASURABLE",
         "new independent ordinary reversible task",
         "frozen Charter",
         "metrics recorded from task start",
@@ -108,3 +119,86 @@ def test_retrospective_preserves_measurement_and_gate_limits() -> None:
         "automatic gate",
     ):
         assert forbidden_claim not in lowered
+
+
+def test_retrospective_binds_each_measured_metric_to_its_authoritative_source() -> None:
+    """Swapping GitHub metadata and a PR comment must fail the evidence contract."""
+    report = _report()
+    task04 = _section(report, "Task 04 historical retrospective")
+    trial = _section(report, "AI-TEAM-001 controlled trial")
+
+    assert "GitHub PR #86-#95 metadata" in task04.split("### Sample classification", 1)[0]
+    assert (
+        "Canonical completion/Gate sources: `STATUS.md` and "
+        "`docs/tasks/GY-DATA-CORE-V2.md`" in task04
+    )
+    for metric, facts in {
+        "observed_chain_base": (
+            "PR #86 baseRefOid",
+            "Evidence source: GitHub PR #86-#95 metadata",
+        ),
+        "closeout_head": (
+            "PR #95 headRefOid",
+            "Evidence source: GitHub PR #86-#95 metadata",
+        ),
+        "closeout_merge": (
+            "PR #95 mergeCommit.oid",
+            "Evidence source: GitHub PR #86-#95 metadata",
+        ),
+        "pull_requests": (
+            "PR numbers: 86 through 95",
+            "Evidence source: GitHub PR #86-#95 metadata",
+        ),
+        "chain counts": (
+            "PR commit-list lengths: 2, 1, 1, 1, 1, 1, 1, 1, 1, 1",
+            "derived as 10 PRs + 11 task commits = 21 develop commits",
+        ),
+        "observed PR chain window": (
+            "PR #86 createdAt: 2026-08-01T01:09:01Z",
+            "PR #95 mergedAt: 2026-08-01T22:37:58Z",
+            "derived as final PR merge timestamp minus first PR creation timestamp",
+        ),
+    }.items():
+        block = _metric_block(task04, metric)
+        for fact in facts:
+            assert fact in block, (metric, fact)
+
+    assert "GitHub PR #98 metadata/commit list/files list" in trial.split("### Sample classification", 1)[0]
+    for metric, facts in {
+        "PR window": (
+            "Evidence source: GitHub PR #98 metadata",
+            "createdAt: 2026-08-02T04:34:47Z",
+            "mergedAt: 2026-08-02T05:01:10Z",
+        ),
+        "change size": (
+            "Evidence source: GitHub PR #98 metadata/commit list/files list",
+            "commit list length: 4",
+            "files list length: 11",
+        ),
+        "post-feature remediation commits": (
+            "Evidence source: GitHub PR #98 commit list",
+            "first `feat(workstation):` commit is the feature baseline",
+            "later `test(workstation):` or `fix(workstation):` commits count",
+            "a0f81680d72117f94335063228e4af355bd2cb98",
+            "94b13024aed65fe023aa159f8bd1ff394787d598",
+            "a4af1e8e5798802f4e553d1fe9e6460285e24a67",
+        ),
+        "exact-head checks": (
+            "Evidence source: GitHub PR #98 evidence comment",
+        ),
+    }.items():
+        block = _metric_block(trial, metric)
+        for fact in facts:
+            assert fact in block, (metric, fact)
+
+    for label in (
+        "Observed base roles: NOT_MEASURABLE",
+        "Observed specialists: NOT_MEASURABLE",
+        "Observed specialist count: NOT_MEASURABLE",
+        "Observed context separation: NOT_MEASURABLE",
+    ):
+        assert label in trial
+    assert "temporary fresh-context pressure-test agents" not in trial
+    assert "implementation and final review stayed separate" not in trial
+    assert "independent Spec PASS / Quality APPROVED / 0 findings" in trial
+    assert "three read-only forward tests" in trial
