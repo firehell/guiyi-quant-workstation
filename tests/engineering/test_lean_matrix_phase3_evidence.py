@@ -28,7 +28,7 @@ FINAL_SNAPSHOT_METRICS = {
     "Logical sessions through versioned snapshot": "5",
     "User interruptions through versioned snapshot": "0",
     "Independent review-fix rounds through versioned snapshot": "0",
-    "Charter-to-local-complete timing through Task 2": "12 minutes 53 seconds",
+    "Charter-to-local-complete timing through Task 2": "NOT_MEASURABLE",
     "Three-round stop status": "NOT_TRIGGERED",
     "Changed-path isolation": (
         "only docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-3.md "
@@ -42,7 +42,6 @@ RECOGNIZED_MEASURED_SOURCES = {
     "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` checkpoint 2",
     "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 1 entry",
     "SDD ledger `.superpowers/sdd/2026-08-02-lean-matrix-phase-3-status-consistency/progress.md` Task 2 entry",
-    "Git repository exact Task 2 commit `00c0e7564577aa185f82c20b9f1d6225d1262035` at `2026-08-02T15:35:25+08:00`, measured from the Issue #102 Charter start `2026-08-02T07:22:32Z`",
     "Git repository exact pre-review diff from Task 3 base `00c0e756`",
 }
 
@@ -160,6 +159,12 @@ def _assert_trial_report_contract(report: str) -> None:
     _assert_metric_contract(metrics)
     for metric_name, expected_value in FINAL_SNAPSHOT_METRICS.items():
         assert _metric_fields(metrics, metric_name)["Value"] == expected_value
+    charter_to_local_complete = _metric_fields(
+        metrics, "Charter-to-local-complete timing through Task 2"
+    )
+    assert charter_to_local_complete["Provenance"] == "NOT_MEASURABLE"
+    assert "timestamp receipt is absent" in charter_to_local_complete["Evidence source"]
+    assert not any("Task 2 commit" in source for source in RECOGNIZED_MEASURED_SOURCES)
     for metric_name in (
         "Task 1 independent review result",
         "Task 2 independent review result",

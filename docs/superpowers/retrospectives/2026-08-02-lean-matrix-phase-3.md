@@ -83,11 +83,12 @@ task snapshot and require later GitHub evidence.
   Critical or Important finding caused a tracked-file fix wave; none is recorded.
 
 - Metric name: Charter-to-local-complete timing through Task 2
-- Value: 12 minutes 53 seconds
-- Provenance: MEASURED
-- Evidence source: Git repository exact Task 2 commit `00c0e7564577aa185f82c20b9f1d6225d1262035` at `2026-08-02T15:35:25+08:00`, measured from the Issue #102 Charter start `2026-08-02T07:22:32Z`
-- Evidence limitation: This measures the Charter-to-Task-2 local-complete
-  checkpoint only; Task 3 and final external review remain pending.
+- Value: NOT_MEASURABLE
+- Provenance: NOT_MEASURABLE
+- Evidence source: An independently checkable Git timestamp receipt is absent from the review package.
+- Evidence limitation: Without that receipt, the Charter-to-Task-2
+  local-complete duration cannot be calculated or estimated; Task 3 and final
+  external review remain pending.
 
 - Metric name: Three-round stop status
 - Value: NOT_TRIGGERED
