@@ -936,6 +936,45 @@ def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() ->
     assert json.loads(stderr.getvalue())["error"]["code"] == "TASK07_EXACT_APPROVAL_REQUIRED"
 
 
+def test_task07_inventory_requires_explicit_protected_root_before_opening_database() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "data",
+            "task07",
+            "inventory",
+            "--project-root",
+            "/tmp/project",
+            "--data-root",
+            "/tmp/data",
+            "--canonical-root",
+            "/tmp/canonical",
+            "--evidence-root",
+            "/tmp/evidence",
+        ],
+        session_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("must not open database")
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
+
+
+def test_task07_inventory_service_rejects_empty_protected_root_scope() -> None:
+    with pytest.raises(ValueError, match="TASK07_PROTECTED_ROOT_REQUIRED"):
+        run_data_core_command(
+            "task07.inventory",
+            object(),
+            SimpleNamespace(protected_root=[]),
+        )
+
+
 def test_task07_apply_requires_hash_bound_preflight_before_opening_database() -> None:
     stdout = StringIO()
     stderr = StringIO()

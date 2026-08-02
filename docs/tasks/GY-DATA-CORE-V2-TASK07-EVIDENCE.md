@@ -75,6 +75,8 @@ active signals），`before_image_digest=556679b55fcdf552d569099662cfb9ce68e0897
 `/Volumes/扩展盘/GuiyiApprovals` 当前不存在。不显式纳入该 root 的 v9 只用于
 blocker diagnosis；显式纳入时 CLI 返回 `status=error` 并且没有 business write，
 证明 protected evidence 缺失不会被静默跳过。
+后续 hardening 已把 `--protected-root` 改为 Task 07 inventory 必填且可重复参数，
+并在 service 层二次拒绝空 scope；因此无法再生成省略受保护根的新 inventory。
 
 ## 3. Superseded v8 inventory summary
 

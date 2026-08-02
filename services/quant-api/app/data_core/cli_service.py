@@ -109,6 +109,8 @@ def run_data_core_command(
     args: Any,
 ) -> dict[str, Any]:
     if command == "task07.inventory":
+        if not getattr(args, "protected_root", None):
+            raise ValueError("TASK07_PROTECTED_ROOT_REQUIRED")
         project_root = _absolute_path(args.project_root, "project_root")
         _require_loaded_source_checkout(project_root)
         git_state = _git_state(project_root)
