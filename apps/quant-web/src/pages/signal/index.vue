@@ -57,6 +57,7 @@ import {
 import { buildReviewResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 import {
   buildFormalSignalScanRequest,
+  normalizeFormalSignalDateRange,
   presentCanonicalInputIdentity,
   validateFormalSignalScanInput,
 } from '@/utils/dataCoreV2Consumer'
@@ -85,8 +86,8 @@ const signalTableDensity = ref<'small' | 'medium'>(
 
 const selectedPeriods = ref(['15m'])
 const formalContract = ref('')
-const formalStart = ref(Date.now() - 90 * 24 * 60 * 60 * 1000)
-const formalEnd = ref(Date.now())
+const formalStart = ref<number | null>(Date.now() - 90 * 24 * 60 * 60 * 1000)
+const formalEnd = ref<number | null>(Date.now())
 const selectedBucket = ref('all')
 const accountEquity = ref(100000)
 const riskPerTradePct = ref(1)
@@ -156,11 +157,16 @@ const selectedInputIdentity = computed(() => {
   const value = selectedSignal.value?.input_identity ?? selectedSignal.value?.features?.input_identity
   return presentCanonicalInputIdentity(value, { expectedDatasetKind: 'actual_dominant' })
 })
-const scanDateRangeValue = computed<[number, number]>({
-  get: (): [number, number] => [formalStart.value, formalEnd.value],
-  set: (value: [number, number]) => {
-    formalStart.value = value[0]
-    formalEnd.value = value[1]
+const scanDateRangeValue = computed<[number, number] | null>({
+  get: (): [number, number] | null => (
+    formalStart.value === null || formalEnd.value === null
+      ? null
+      : [formalStart.value, formalEnd.value]
+  ),
+  set: (value: [number, number] | null) => {
+    const normalized = normalizeFormalSignalDateRange(value)
+    formalStart.value = normalized.startMs
+    formalEnd.value = normalized.endMs
   },
 })
 
@@ -277,11 +283,13 @@ onUnmounted(() => {
 /** 启动 canonical actual-dominant 正式历史扫描，创建任务后进入 watchTask。 */
 async function startScan() {
   error.value = null
+  const startMs = formalStart.value
+  const endMs = formalEnd.value
   const requestError = validateFormalSignalScanInput({
     contractOrSeries: formalContract.value,
     periods: selectedPeriods.value,
-    startMs: formalStart.value,
-    endMs: formalEnd.value,
+    startMs,
+    endMs,
     riskPerTradePercent: riskPerTradePct.value,
     maxMarginUsagePercent: maxMarginUsagePct.value,
   })
@@ -289,6 +297,7 @@ async function startScan() {
     error.value = requestError
     return
   }
+  if (startMs === null || endMs === null) return
   scanning.value = true
   try {
     const task = await scanStrategySignals(buildFormalSignalScanRequest({
@@ -297,8 +306,8 @@ async function startScan() {
       contract_or_series: formalContract.value,
       watchlist_code: 'black',
       periods: selectedPeriods.value,
-      start: new Date(formalStart.value).toISOString(),
-      end: new Date(formalEnd.value).toISOString(),
+      start: new Date(startMs).toISOString(),
+      end: new Date(endMs).toISOString(),
       mode: 'scan',
       account_equity: accountEquity.value,
       risk_per_trade_pct: riskPerTradePct.value / 100,

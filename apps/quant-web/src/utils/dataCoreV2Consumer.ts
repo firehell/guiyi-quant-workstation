@@ -7,13 +7,131 @@ function compact(value: string) {
 
 const SHA256 = /^[0-9a-f]{64}$/
 const DATASET_KINDS = new Set(['continuous', 'actual_dominant'])
+const BAR_FREQUENCIES = new Set(['1m', '5m', '15m', '30m', '60m', '1d', '1w'])
+const DIRECT_FREQUENCIES = new Set(['1m', '1d', '1w'])
+const DERIVED_FREQUENCIES = new Set(['5m', '15m', '30m', '60m'])
+const CANONICAL_INPUT_FIELDS = [
+  'schema_version',
+  'request',
+  'source_datasets',
+  'manifest_digests',
+  'source_data_versions',
+  'derived_frequency',
+  'strategy_input_version',
+  'digest',
+]
+const CANONICAL_REQUEST_FIELDS = [
+  'dataset_kind',
+  'symbol',
+  'contract_or_series',
+  'frequency',
+  'start',
+  'end',
+  'strict',
+]
+const CANONICAL_DATASET_FIELDS = [
+  'provider',
+  'dataset_kind',
+  'symbol',
+  'contract_or_series',
+  'frequency',
+  'adjustment',
+  'schema_version',
+]
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function nonBlankString(value: unknown) {
-  return typeof value === 'string' && Boolean(value.trim())
+function exactText(value: unknown, transform?: (text: string) => string): value is string {
+  return typeof value === 'string'
+    && Boolean(value.trim())
+    && value === (transform ? transform(value.trim()) : value.trim())
+}
+
+function exactFields(value: Record<string, unknown>, expected: string[]) {
+  const fields = Object.keys(value)
+  return fields.length === expected.length
+    && fields.every((field) => expected.includes(field))
+}
+
+function canonicalUtcDatetimeParts(value: unknown): number[] | null {
+  if (typeof value !== 'string') return null
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{6}))?\+00:00$/.exec(value)
+  if (!match) return null
+  const [year, month, day, hour, minute, second, microsecond = 0] = match.slice(1).map(Number)
+  if (year < 1) return null
+  const parsed = new Date(0)
+  parsed.setUTCFullYear(year, month - 1, day)
+  parsed.setUTCHours(hour, minute, second, 0)
+  if (!Number.isFinite(parsed.getTime())) return null
+  if (parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+    || parsed.getUTCHours() !== hour
+    || parsed.getUTCMinutes() !== minute
+    || parsed.getUTCSeconds() !== second) return null
+  return [year, month, day, hour, minute, second, microsecond]
+}
+
+function canonicalUtcDatetime(value: unknown): value is string {
+  return canonicalUtcDatetimeParts(value) !== null
+}
+
+function precedesCanonicalUtcDatetime(start: string, end: string) {
+  const startParts = canonicalUtcDatetimeParts(start)
+  const endParts = canonicalUtcDatetimeParts(end)
+  if (!startParts || !endParts) return false
+  for (let index = 0; index < startParts.length; index += 1) {
+    if (startParts[index] !== endParts[index]) return startParts[index] < endParts[index]
+  }
+  return false
+}
+
+function validRequestContract(datasetKind: string, symbol: string, contractOrSeries: unknown): contractOrSeries is string | null {
+  if (datasetKind === 'continuous') return contractOrSeries === `${symbol.toUpperCase()}.MAIN`
+  return contractOrSeries === null || (
+    exactText(contractOrSeries, (value) => value.toUpperCase())
+    && new RegExp(`^${symbol.toUpperCase()}\\d{3,4}$`).test(contractOrSeries)
+  )
+}
+
+function validDatasetContract(datasetKind: string, symbol: string, contractOrSeries: unknown) {
+  return typeof contractOrSeries === 'string'
+    && validRequestContract(datasetKind, symbol, contractOrSeries)
+}
+
+function canonicalStringArray(value: unknown, predicate: (item: string) => boolean): value is string[] {
+  return Array.isArray(value)
+    && value.every((item) => typeof item === 'string' && predicate(item))
+    && value.every((item, index) => index === 0 || value[index - 1] < item)
+}
+
+function datasetSortKey(item: CanonicalInputIdentity['source_datasets'][number]) {
+  return [
+    item.provider,
+    item.dataset_kind,
+    item.symbol,
+    item.contract_or_series,
+    item.frequency,
+    item.adjustment,
+    item.schema_version,
+  ].join('\u0000')
+}
+
+function isCanonicalDataset(value: unknown): value is CanonicalInputIdentity['source_datasets'][number] {
+  if (!isRecord(value) || !exactFields(value, CANONICAL_DATASET_FIELDS)) return false
+  if (value.provider !== 'rqdata'
+    || !DATASET_KINDS.has(String(value.dataset_kind))
+    || !exactText(value.symbol, (text) => text.toLowerCase())
+    || !exactText(value.adjustment, (text) => text.toLowerCase())
+    || !exactText(value.schema_version)
+    || !BAR_FREQUENCIES.has(String(value.frequency))
+    || !DIRECT_FREQUENCIES.has(String(value.frequency))
+    || !validDatasetContract(String(value.dataset_kind), String(value.symbol), value.contract_or_series)) {
+    return false
+  }
+  return !(value.dataset_kind === 'actual_dominant' && value.frequency === '1w')
 }
 
 function unavailableIdentity(reason: string) {
@@ -32,46 +150,101 @@ export function parseCanonicalInputIdentity(
   if (!isRecord(value) || value.schema_version !== 'canonical_consumer_input_v1') {
     return unavailableIdentity('unsupported or missing canonical input schema')
   }
+  if (!exactFields(value, CANONICAL_INPUT_FIELDS)) return unavailableIdentity('canonical input fields are malformed')
   const request = value.request
-  if (!isRecord(request)) return unavailableIdentity('canonical request is missing')
-  const requestFields = ['dataset_kind', 'symbol', 'contract_or_series', 'frequency', 'start', 'end']
-  if (requestFields.some((field) => !nonBlankString(request[field])) || typeof request.strict !== 'boolean') {
+  if (!isRecord(request) || !exactFields(request, CANONICAL_REQUEST_FIELDS)) {
+    return unavailableIdentity('canonical request is missing or malformed')
+  }
+  const requestDatasetKind = request.dataset_kind
+  const requestSymbol = request.symbol
+  const requestContract = request.contract_or_series
+  const requestFrequency = request.frequency
+  const requestStart = request.start
+  const requestEnd = request.end
+  const requestStrict = request.strict
+  if (typeof requestDatasetKind !== 'string'
+    || !DATASET_KINDS.has(requestDatasetKind)
+    || !exactText(requestSymbol, (text) => text.toLowerCase())
+    || typeof requestFrequency !== 'string'
+    || !BAR_FREQUENCIES.has(requestFrequency)
+    || !canonicalUtcDatetime(requestStart)
+    || !canonicalUtcDatetime(requestEnd)
+    || typeof requestStrict !== 'boolean') {
     return unavailableIdentity('canonical request fields are malformed')
   }
-  if (!DATASET_KINDS.has(String(request.dataset_kind))) {
-    return unavailableIdentity('canonical request dataset_kind is unsupported')
+  if (!validRequestContract(requestDatasetKind, requestSymbol, requestContract)) {
+    return unavailableIdentity('canonical request contract is malformed')
   }
-  if (options.expectedDatasetKind && request.dataset_kind !== options.expectedDatasetKind) {
+  if (!precedesCanonicalUtcDatetime(requestStart, requestEnd)) {
+    return unavailableIdentity('canonical request window is malformed')
+  }
+  if (requestDatasetKind === 'actual_dominant' && requestFrequency === '1w') {
+    return unavailableIdentity('actual_dominant canonical request does not support 1w')
+  }
+  if (options.expectedDatasetKind && requestDatasetKind !== options.expectedDatasetKind) {
     return unavailableIdentity(`expected ${options.expectedDatasetKind} canonical dataset_kind`)
   }
-  if (!Array.isArray(value.source_datasets) || value.source_datasets.length === 0) {
+  const sourceDatasetsRaw = value.source_datasets
+  if (!Array.isArray(sourceDatasetsRaw) || sourceDatasetsRaw.length === 0) {
     return unavailableIdentity('canonical source_datasets are missing')
   }
-  const sourceFields = ['provider', 'dataset_kind', 'symbol', 'contract_or_series', 'frequency', 'adjustment', 'schema_version']
-  if (value.source_datasets.some((item) =>
-    !isRecord(item)
-    || sourceFields.some((field) => !nonBlankString(item[field]))
-    || !DATASET_KINDS.has(String(item.dataset_kind))
-    || item.dataset_kind !== request.dataset_kind,
-  )) {
+  const sourceDatasets: CanonicalInputIdentity['source_datasets'] = []
+  for (const sourceDataset of sourceDatasetsRaw) {
+    if (!isCanonicalDataset(sourceDataset)) return unavailableIdentity('canonical source_datasets are malformed')
+    sourceDatasets.push(sourceDataset)
+  }
+  if (!sourceDatasets.every((item, index) => index === 0 || datasetSortKey(sourceDatasets[index - 1]) < datasetSortKey(item))
+    || sourceDatasets.some((item) => item.dataset_kind !== requestDatasetKind
+      || item.symbol !== requestSymbol
+      || (requestContract !== null && item.contract_or_series !== requestContract))) {
     return unavailableIdentity('canonical source_datasets are malformed')
   }
-  if (!Array.isArray(value.manifest_digests) || value.manifest_digests.length === 0 || value.manifest_digests.some((item) => typeof item !== 'string' || !SHA256.test(item))) {
+  const manifestDigests = value.manifest_digests
+  if (!canonicalStringArray(manifestDigests, (item) => SHA256.test(item)) || manifestDigests.length === 0) {
     return unavailableIdentity('canonical manifest digests are malformed')
   }
-  if (!Array.isArray(value.source_data_versions) || value.source_data_versions.some((item) => !nonBlankString(item))) {
+  const sourceDataVersions = value.source_data_versions
+  if (!canonicalStringArray(sourceDataVersions, (item) => exactText(item))) {
     return unavailableIdentity('canonical source_data_versions are malformed')
   }
-  if (value.derived_frequency !== null && !nonBlankString(value.derived_frequency)) {
+  const derivedFrequency = value.derived_frequency
+  if (derivedFrequency !== null && (typeof derivedFrequency !== 'string' || !DERIVED_FREQUENCIES.has(derivedFrequency))) {
     return unavailableIdentity('canonical derived_frequency is malformed')
   }
-  if (!nonBlankString(value.strategy_input_version) || !nonBlankString(value.digest) || !SHA256.test(String(value.digest))) {
+  if (derivedFrequency !== null) {
+    if (requestFrequency !== derivedFrequency || sourceDatasets.some((item) => item.frequency !== '1m')) {
+      return unavailableIdentity('canonical derived frequency relationship is malformed')
+    }
+  } else if (sourceDatasets.some((item) => item.frequency !== requestFrequency)) {
+    return unavailableIdentity('canonical direct frequency relationship is malformed')
+  }
+  const strategyInputVersion = value.strategy_input_version
+  const digest = value.digest
+  if (!exactText(strategyInputVersion) || typeof digest !== 'string' || !SHA256.test(digest)) {
     return unavailableIdentity('canonical input digest is malformed')
+  }
+  const identity: CanonicalInputIdentity = {
+    schema_version: 'canonical_consumer_input_v1',
+    request: {
+      dataset_kind: requestDatasetKind,
+      symbol: requestSymbol,
+      contract_or_series: requestContract,
+      frequency: requestFrequency,
+      start: requestStart,
+      end: requestEnd,
+      strict: requestStrict,
+    },
+    source_datasets: sourceDatasets.map((item) => ({ ...item })),
+    manifest_digests: [...manifestDigests],
+    source_data_versions: [...sourceDataVersions],
+    derived_frequency: derivedFrequency,
+    strategy_input_version: strategyInputVersion,
+    digest,
   }
   return {
     status: 'unverified' as const,
-    reason: 'canonical input structure is valid; browser digest recomputation is not performed',
-    identity: value as unknown as CanonicalInputIdentity,
+    reason: 'valid canonical shape; digest unverified because the browser does not recompute it',
+    identity,
   }
 }
 
@@ -138,13 +311,13 @@ export function validateFormalSignalRiskPercentages(
 export function validateFormalSignalScanInput(input: {
   contractOrSeries: string
   periods: string[]
-  startMs: number
-  endMs: number
+  startMs: number | null
+  endMs: number | null
   riskPerTradePercent: number
   maxMarginUsagePercent: number
 }): string | null {
-  if (!input.contractOrSeries.trim() || input.contractOrSeries.trim().toUpperCase().endsWith('.MAIN')) {
-    return '必须填写具体实际主力合约（例如 JM2609），不能使用 JM.MAIN；未提交扫描请求。'
+  if (!/^JM\d{3,4}$/.test(input.contractOrSeries)) {
+    return '必须填写大写且规范的 JM 实际主力合约（例如 JM2609，格式 JM\\d{3,4}）；未提交扫描请求。'
   }
   if (!input.periods.length || input.periods.some((period) => !period.trim())) {
     return '必须选择至少一个有效周期；未提交扫描请求。'
@@ -152,10 +325,20 @@ export function validateFormalSignalScanInput(input: {
   if (input.periods.some((period) => period.trim() === '1w')) {
     return 'actual_dominant 正式 Signal 暂不支持 1w 周期；未提交扫描请求。'
   }
-  if (!Number.isFinite(input.startMs) || !Number.isFinite(input.endMs) || input.startMs >= input.endMs) {
+  if (input.startMs === null || input.endMs === null
+    || !Number.isFinite(input.startMs) || !Number.isFinite(input.endMs)
+    || input.startMs >= input.endMs) {
     return '请求时间窗口必须有效且开始时间早于结束时间；未提交扫描请求。'
   }
   return validateFormalSignalRiskPercentages(input.riskPerTradePercent, input.maxMarginUsagePercent)
+}
+
+/** Preserve an intentionally cleared Naive UI date range as an invalid form state. */
+export function normalizeFormalSignalDateRange(value: readonly number[] | null) {
+  if (!value || value.length !== 2 || !Number.isFinite(value[0]) || !Number.isFinite(value[1])) {
+    return { startMs: null, endMs: null }
+  }
+  return { startMs: value[0], endMs: value[1] }
 }
 
 export function presentCanonicalInputIdentity(

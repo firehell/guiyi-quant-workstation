@@ -5,6 +5,7 @@ import type {
   ReviewFoundationInput,
   ReviewFoundationReportLike,
 } from '../types/reviewFoundation.ts'
+import { parseCanonicalInputIdentity } from './dataCoreV2Consumer.ts'
 
 function unavailable<T = string>(reason: string): FoundationField<T> {
   return { status: 'unavailable', value: null, reason }
@@ -81,7 +82,8 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
 
   const strategyCode = readString(report?.strategy_code, meta.strategy_code)
   const strategyVersion = readString(report?.strategy_version, meta.strategy_version)
-  const canonicalInput = report?.input_identity || lineage?.input_identity || null
+  const parsedCanonicalInput = parseCanonicalInputIdentity(report?.input_identity || lineage?.input_identity || null)
+  const canonicalInput = parsedCanonicalInput.identity
   const canonicalRequest = canonicalInput
     ? [
         canonicalInput.request.dataset_kind,
@@ -162,7 +164,7 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
     lineageField = warning('warning', 'lineage warning')
   } else if (input.lineage_status_hint === 'unavailable') {
     lineageField = unavailable('lineage unavailable')
-  } else if (canonicalInput?.digest || lineage?.input_digest) {
+  } else if (canonicalInput?.digest) {
     lineageField = available('ready')
   } else if (input.lineage_status_hint === 'ready') {
     lineageField = available('ready')
@@ -177,10 +179,10 @@ export function buildReviewFoundationContext(input: ReviewFoundationInput = {}):
     indicator_policy_summary: indicatorPolicySummary,
     canonical_input_identity: canonicalRequest
       ? available(canonicalRequest)
-      : unavailable('input_identity missing'),
-    canonical_input_digest: readString(canonicalInput?.digest, lineage?.input_digest)
-      ? available(readString(canonicalInput?.digest, lineage?.input_digest) as string)
-      : unavailable('input_identity digest missing'),
+      : unavailable(parsedCanonicalInput.reason),
+    canonical_input_digest: canonicalInput?.digest
+      ? available(canonicalInput.digest)
+      : unavailable(parsedCanonicalInput.reason),
     signal_bar: signalBar ? available(signalBar) : unavailable('entry_signal_time missing'),
     next_bar_fill: nextBarFill,
     cost_model: costModel ? available(costModel) : unavailable('cost_model_version missing'),

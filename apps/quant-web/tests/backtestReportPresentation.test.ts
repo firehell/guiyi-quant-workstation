@@ -21,7 +21,7 @@ describe('backtest report presentation', () => {
               frequency: '1m', adjustment: 'none', schema_version: 'canonical-bar-v1',
             },
           ], manifest_digests: ['a'.repeat(64)], source_data_versions: [],
-          derived_frequency: null, strategy_input_version: 'backtest:su_bing_ema21:v0', digest: 'b'.repeat(64),
+          derived_frequency: '15m', strategy_input_version: 'backtest:su_bing_ema21:v0', digest: 'b'.repeat(64),
         },
         candidate_status: 'oos_hard_rejected',
         hard_reject_reason: 'max_drawdown_pct_gt_0.15',

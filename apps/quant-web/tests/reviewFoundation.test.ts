@@ -67,6 +67,20 @@ describe('reviewFoundation', () => {
     assert.equal(ctx.lineage_status.status, 'unavailable')
   })
 
+  it('does not dereference or mark malformed canonical input as ready', () => {
+    const ctx = buildReviewFoundationContext({
+      report: {
+        input_identity: {
+          schema_version: 'canonical_consumer_input_v1',
+          digest: 'a'.repeat(64),
+        } as never,
+      },
+    })
+    assert.equal(ctx.canonical_input_identity.status, 'unavailable')
+    assert.equal(ctx.canonical_input_digest.status, 'unavailable')
+    assert.equal(ctx.lineage_status.status, 'unavailable')
+  })
+
   it('shows legacy policy as warning, not invented snapshot', () => {
     const ctx = buildReviewFoundationContext({
       report: {
