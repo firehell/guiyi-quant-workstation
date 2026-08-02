@@ -7,10 +7,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 RETROSPECTIVE = ROOT / "docs/superpowers/retrospectives/2026-08-02-lean-matrix-phase-2.md"
+DESIGN = ROOT / "docs/superpowers/specs/2026-08-02-lean-matrix-ai-team-design.md"
 
 
 def _report() -> str:
     return RETROSPECTIVE.read_text(encoding="utf-8")
+
+
+def _design() -> str:
+    return DESIGN.read_text(encoding="utf-8")
 
 
 def _section(markdown: str, heading: str) -> str:
@@ -105,8 +110,11 @@ def test_retrospective_preserves_measurement_and_gate_limits() -> None:
         "frozen Charter",
         "metrics recorded from task start",
         "new Issue/task worktree",
-        "Zero Task 05 adoption",
-        "Zero main/Runtime/data/notification authority",
+        "Phase 2 did not adopt or modify the then-active Task 05 worktree",
+        "Task 05 later merged independently through PR #100",
+        "PR #100 cannot be retroactively counted as Phase 3",
+        "Charter metrics and separate contexts were not recorded from task start",
+        "no Phase 4/5 automation or delegation authority",
     ):
         assert finding in report
 
@@ -204,3 +212,37 @@ def test_retrospective_binds_each_measured_metric_to_its_authoritative_source() 
     assert "implementation and final review stayed separate" not in trial
     assert "independent Spec PASS / Quality APPROVED / 0 findings" in trial
     assert "three read-only forward tests" in trial
+
+
+def test_external_task05_merge_does_not_reclassify_phase3_or_expand_authority() -> None:
+    """Later independent Task 05 delivery must not rewrite Phase 2 evidence."""
+    report = _report()
+    decision = _section(report, "Phase 3 decision")
+    design = _design()
+
+    for fact in (
+        "b64453eab89692e5250a4275f04cac1bd26f02d4",
+        "a932793830e1e68a3e2c1634a38f50840a55efc5",
+        "2026-08-02T05:34:14Z",
+        "Phase 2's branch base is `0867e123`",
+        "no path overlap or merge conflict with PR #100",
+        "new independent ordinary reversible task",
+        "frozen Charter",
+        "metrics recorded from task start",
+        "new Issue/task worktree",
+        "separate implementation and final-review contexts",
+        "PR #100 cannot be retroactively counted as Phase 3",
+        "does not authorize Phase 4 or Phase 5, `main`, release, Runtime, data writes, or notifications",
+    ):
+        assert fact in report
+
+    for fact in (
+        "Task 05 later merged independently through PR #100",
+        "did not adopt or modify the then-active Task 05 worktree",
+        "does not count retroactively as Phase 3",
+        "Phase 3：新的普通可逆工程试运行",
+        "PR #100 不能追认为该试运行",
+    ):
+        assert fact in design
+
+    assert "PR #100 cannot be retroactively counted as Phase 3" in decision

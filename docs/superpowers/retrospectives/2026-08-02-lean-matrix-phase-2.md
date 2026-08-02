@@ -276,11 +276,16 @@ or Runtime Gate.
 - Measurement gaps: review-fix rounds, total agent sessions, and user
   interruptions are NOT_MEASURABLE for both samples. Future trials must record
   these metrics from task start rather than infer them after merge.
-- Scope boundary: Zero Task 05 adoption. Zero main/Runtime/data/notification authority.
+- Scope boundary: Phase 2 did not adopt or modify the then-active Task 05
+  worktree. Task 05 later merged independently through PR #100 at merge
+  `b64453eab89692e5250a4275f04cac1bd26f02d4` (develop head
+  `a932793830e1e68a3e2c1634a38f50840a55efc5`, merged
+  2026-08-02T05:34:14Z). Phase 2's branch base is `0867e123`; it has no path overlap or merge conflict with PR #100. Zero main/release/Runtime/data-write/
+  notification authority, and no Phase 4/5 automation or delegation authority.
 
 ## Phase 3 decision
 
-Phase 3 permits only a new independent ordinary reversible task with a frozen Charter and metrics recorded from task start. It must begin through a new Issue/task worktree and preserve separate implementation and final-review contexts. It does not adopt the active Task 05 worktree and does not authorize Phase 4 or Phase 5.
+Phase 3 permits only a new independent ordinary reversible task with a frozen Charter and metrics recorded from task start. It must begin through a new Issue/task worktree and preserve separate implementation and final-review contexts. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. PR #100 cannot be retroactively counted as Phase 3 because those Charter metrics and separate contexts were not recorded from task start. This does not authorize Phase 4 or Phase 5, `main`, release, Runtime, data writes, or notifications.
 
 - Decision: permitted only within that new independent task boundary.
 - Required human decision or Gate: the new task's ordinary approvals and any

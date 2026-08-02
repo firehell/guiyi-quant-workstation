@@ -1,7 +1,7 @@
 # 归一量化精简矩阵式 AI 研发团队设计
 
 - 日期：2026-08-02
-- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge.
+- 状态：Phase 1 merged through PR #98 at develop@0867e123; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Task 05 later merged independently through PR #100 and does not count retroactively as Phase 3.
 - 适用项目：`firehell/guiyi-quant-workstation`
 - 设计范围：研发组织模型、专家角色、任务路由、自治状态机、权限边界和最小落地方式
 
@@ -81,7 +81,7 @@ GitHub / develop / 外部人工 Gate
 
 当前 active 合同仍为 `docs/tasks/GY-DATA-CORE-V2.md`。Task 04 已在 `develop` 完成收尾；其 legacy historical Shadow 仅作为可选且冻结的历史观察，不是 Task 05 的前置 Gate，也不需要为本设计重新打开执行路径。
 
-Task 05 的当前实现位于独立 worktree。AI-TEAM-001 不采纳、不修改、也不以此 worktree 的内容作为本任务的实现输入；它只定义可复用的研发组织与权限边界。
+在 AI-TEAM-001 / Phase 2 取样当时，Task 05 的 then-active 实现位于独立 worktree。Phase 2 不采纳、不修改、也不以此 worktree 的内容作为本任务的实现输入；Task 05 随后已通过独立的 PR #100 合入 `develop`（merge `b64453eab89692e5250a4275f04cac1bd26f02d4`，当时 head `a932793830e1e68a3e2c1634a38f50840a55efc5`）。
 
 ## 3. 设计目标
 
@@ -1001,14 +1001,17 @@ Phase 1 的 CLI 不创建 worktree、不调用 Git/GitHub、不检查或合并 P
 
 ### Phase 2：历史复盘与受控试运行
 
-Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Phase 2 evidence does not reopen Task 04, adopt Task 05, or authorize Phase 3 execution, Phase 4/5 automation/delegation, release, or Runtime.
+Phase 1 merged through PR #98 at `develop@0867e123`; Phase 2 is implemented under Issue #99 on its task branch and remains pending Draft PR exact-head review, CI, and merge. Phase 2 did not adopt or modify the then-active Task 05 worktree; Task 05 later merged independently through PR #100. That independent merge cannot be retroactively counted as Phase 3 because the Charter metrics and implementation/final-review context separation were not recorded from task start. Phase 2 evidence does not reopen Task 04 or authorize Phase 3 execution, Phase 4/5 automation/delegation, `main`, release, Runtime, data writes, or notifications.
 
 - 以已完成的 Task 04 作为历史复盘样本，检验角色路由是否与其事实一致；
 - 在新的、独立批准任务中记录实际会话数、用户打断数、修复轮次和集成时间；
 - 不重新执行 Task 04，不改变真实数据 Gate。
 
-### Phase 3：Task 05 正常工程试运行
+### Phase 3：新的普通可逆工程试运行
 
+- 必须从一个新的独立普通可逆任务开始，创建新的 Issue 和 task worktree，并在开始时冻结 Charter；
+- 从任务开始记录 Charter 指标，并保持实现与最终 Review 的上下文分离；
+- PR #100 不能追认为该试运行；
 - 验证普通开发能否从 Task Charter 自治到 `develop`；
 - 检查是否存在过度设计和专家滥用；
 - 根据证据调整路由规则。
