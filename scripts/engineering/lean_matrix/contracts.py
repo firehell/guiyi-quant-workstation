@@ -14,6 +14,9 @@ from .errors import LeanMatrixError
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 RECORDED_AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+BRANCH_RE = re.compile(r"^(feature|fix|docs|research|refactor)/[A-Za-z0-9][A-Za-z0-9._-]{0,160}$")
+WORKTREE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,160}$")
 CORE_STATES = frozenset({"NOT_RUN", "PASS", "FAIL"})
 GATE_STATES = CORE_STATES | {"NOT_APPLICABLE"}
 
@@ -42,6 +45,20 @@ def _string(value: object, field: str) -> str:
 
 def _optional_string(value: object, field: str) -> str | None:
     return None if value is None else _string(value, field)
+
+
+def _identifier(value: object, field: str) -> str:
+    identifier = _string(value, field)
+    if not IDENTIFIER_RE.fullmatch(identifier) or ".." in identifier:
+        raise LeanMatrixError("invalid_identifier", f"{field} must be a simple identifier")
+    return identifier
+
+
+def _branch(value: object, field: str) -> str:
+    branch = _string(value, field)
+    if not BRANCH_RE.fullmatch(branch) or ".." in branch or branch.endswith(".lock") or "@{" in branch:
+        raise LeanMatrixError("invalid_branch", f"{field} must be a managed task branch")
+    return branch
 
 
 def _strings(value: object, field: str, *, allow_empty: bool = True) -> tuple[str, ...]:
@@ -113,7 +130,15 @@ def _status(value: object, field: str, allowed: frozenset[str]) -> str:
 def _worktree(value: object, field: str) -> str:
     path = _string(value, field)
     prefix = f"{WORKTREE_ROOT}/"
-    if not path.startswith(prefix) or path == prefix or ".." in PurePosixPath(path).parts:
+    suffix = path.removeprefix(prefix)
+    if (
+        not path.startswith(prefix)
+        or not suffix
+        or "/" in suffix
+        or "//" in path
+        or ".." in PurePosixPath(path).parts
+        or not WORKTREE_COMPONENT_RE.fullmatch(suffix)
+    ):
         raise LeanMatrixError("invalid_worktree", f"{field} must be inside {WORKTREE_ROOT}")
     return path
 
@@ -195,8 +220,8 @@ class TaskIdentityV1:
             raise LeanMatrixError("invalid_positive_integer", "task.issue_number must be a positive integer")
         return cls(
             issue_number=issue_number,
-            task_id=_string(data["task_id"], "task.task_id"),
-            branch=_string(data["branch"], "task.branch"),
+            task_id=_identifier(data["task_id"], "task.task_id"),
+            branch=_branch(data["branch"], "task.branch"),
             worktree=_worktree(data["worktree"], "task.worktree"),
         )
 
@@ -382,7 +407,7 @@ class ObservedStateV1:
         assert base_sha is not None
         return cls(
             state_digest=_digest(data["state_digest"], "state_digest"),
-            branch=_optional_string(data["branch"], "branch"),
+            branch=None if data["branch"] is None else _branch(data["branch"], "branch"),
             worktree=None if data["worktree"] is None else _worktree(data["worktree"], "worktree"),
             base_sha=base_sha,
             dirty=_bool(data["dirty"], "dirty"),
@@ -436,11 +461,11 @@ class TransitionProposalV1:
             raise LeanMatrixError("invalid_commands", "commands must be a JSON list of argv lists")
         commands = tuple(_strings(command, "command", allow_empty=False) for command in commands_raw)
         return cls(
-            transition_id=_string(data["transition_id"], "transition_id"),
+            transition_id=_identifier(data["transition_id"], "transition_id"),
             from_state_digest=_digest(data["from_state_digest"], "from_state_digest"),
-            action=_string(data["action"], "action"),
+            action=_identifier(data["action"], "action"),
             commands=commands,
-            side_effect_scope=_string(data["side_effect_scope"], "side_effect_scope"),
+            side_effect_scope=_identifier(data["side_effect_scope"], "side_effect_scope"),
             requires_apply=_bool(data["requires_apply"], "requires_apply"),
             human_gate=_optional_string(data["human_gate"], "human_gate"),
         )
@@ -491,7 +516,7 @@ class TransitionReceiptV1:
         if not RECORDED_AT_RE.fullmatch(recorded_at):
             raise LeanMatrixError("invalid_recorded_at", "recorded_at must be UTC YYYY-MM-DDTHH:MM:SSZ")
         return cls(
-            transition_id=_string(data["transition_id"], "transition_id"),
+            transition_id=_identifier(data["transition_id"], "transition_id"),
             plan_digest=_digest(data["plan_digest"], "plan_digest"),
             before_state_digest=_digest(data["before_state_digest"], "before_state_digest"),
             after_state_digest=_digest(data["after_state_digest"], "after_state_digest"),
@@ -551,7 +576,7 @@ class StageReportV1:
         assert exact_head_sha is not None
         return cls(
             schema_version=1,
-            task_id=_string(data["task_id"], "task_id"),
+            task_id=_identifier(data["task_id"], "task_id"),
             charter_digest=_digest(data["charter_digest"], "charter_digest"),
             plan_digest=_digest(data["plan_digest"], "plan_digest"),
             exact_head_sha=exact_head_sha,

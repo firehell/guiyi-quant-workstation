@@ -243,3 +243,100 @@ def test_runtime_contracts_fail_closed_on_invalid_sha_status_path_and_control_te
             "user_actions": [],
             "automatic_next_step": "Create a Draft PR.",
         })
+
+
+def test_runtime_contracts_reject_invalid_identifiers_branches_and_worktrees() -> None:
+    """Runtime contract identity fields cannot contain spaces, traversal, or nested worktree paths."""
+    sys.path.insert(0, str(ENGINEERING))
+    try:
+        from lean_matrix.contracts import (
+            ObservedStateV1,
+            StageReportV1,
+            TaskIdentityV1,
+            TransitionProposalV1,
+            TransitionReceiptV1,
+        )
+        from lean_matrix.errors import LeanMatrixError
+    finally:
+        sys.path.pop(0)
+
+    task = {
+        "issue_number": 107,
+        "task_id": "AI-TEAM-004",
+        "branch": "feature/AI-TEAM-004-execution-contracts",
+        "worktree": "/Volumes/扩展盘/GuiyiWorktrees/tasks/AI-TEAM-004-execution-contracts",
+    }
+    invalid_tasks = (
+        task | {"task_id": "bad task/id"},
+        task | {"branch": "../../main"},
+        task | {"worktree": "/Volumes/扩展盘/GuiyiWorktrees/tasks//nested"},
+        task | {"worktree": "/Volumes/扩展盘/GuiyiWorktrees/tasks/nested/child"},
+    )
+    for payload in invalid_tasks:
+        with pytest.raises(LeanMatrixError):
+            TaskIdentityV1.from_mapping(payload)
+
+    observed = {
+        "state_digest": "sha256:" + "1" * 64,
+        "branch": "../../main",
+        "worktree": None,
+        "base_sha": "2" * 40,
+        "dirty": False,
+        "changed_paths": [],
+        "pr_number": None,
+        "pr_head_sha": None,
+        "ci_state": "NOT_RUN",
+        "review_state": "NOT_RUN",
+        "merge_state": "NOT_RUN",
+        "cleanup_safe": False,
+    }
+    with pytest.raises(LeanMatrixError):
+        ObservedStateV1.from_mapping(observed)
+
+    proposal = {
+        "transition_id": "transition-001",
+        "from_state_digest": "sha256:" + "1" * 64,
+        "action": "task-create",
+        "commands": [],
+        "side_effect_scope": "repository-task-worktree",
+        "requires_apply": False,
+        "human_gate": None,
+    }
+    for payload in (proposal | {"transition_id": "bad transition"}, proposal | {"action": "../apply"}):
+        with pytest.raises(LeanMatrixError):
+            TransitionProposalV1.from_mapping(payload)
+
+    receipt = {
+        "transition_id": "transition-001",
+        "plan_digest": "sha256:" + "3" * 64,
+        "before_state_digest": "sha256:" + "1" * 64,
+        "after_state_digest": "sha256:" + "4" * 64,
+        "command_digests": [],
+        "exit_codes": [],
+        "result": "PASS",
+        "recorded_at": "2026-08-02T12:00:00Z",
+    }
+    with pytest.raises(LeanMatrixError):
+        TransitionReceiptV1.from_mapping(receipt | {"transition_id": "bad/transition"})
+
+    report = {
+        "schema_version": 1,
+        "task_id": "bad task/id",
+        "charter_digest": "sha256:" + "6" * 64,
+        "plan_digest": "sha256:" + "7" * 64,
+        "exact_head_sha": "8" * 40,
+        "code_state": "PASS",
+        "tests_state": "PASS",
+        "ci_state": "NOT_RUN",
+        "review_state": "NOT_RUN",
+        "real_gate_state": "NOT_APPLICABLE",
+        "release_state": "NOT_APPLICABLE",
+        "runtime_state": "NOT_APPLICABLE",
+        "completed": [],
+        "verification_evidence": [],
+        "remaining_risks": [],
+        "user_actions": [],
+        "automatic_next_step": "none",
+    }
+    with pytest.raises(LeanMatrixError):
+        StageReportV1.from_mapping(report)

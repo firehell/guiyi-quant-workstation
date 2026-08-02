@@ -22,7 +22,12 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 def resolve_base_sha(repo_root: Path, *, runner: Runner = subprocess.run) -> str:
     """Resolve only local ``origin/develop`` without fetch, fallback, or Git writes."""
-    environment = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+    environment = {
+        key: os.environ[key]
+        for key in ("PATH", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT")
+        if key in os.environ
+    }
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
     try:
         result = runner(
             list(GIT_COMMAND),

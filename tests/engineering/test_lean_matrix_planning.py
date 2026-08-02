@@ -165,6 +165,29 @@ def test_read_only_git_resolver_binds_the_local_origin_develop_without_writes(tm
     assert _snapshot(tmp_path) == before
 
 
+def test_git_resolver_ignores_inherited_repository_redirection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GIT_DIR and related inherited state cannot redirect observation to another repository."""
+    _, resolve_base_sha, _ = _import_kernel()
+    target = tmp_path / "target"
+    attacker = tmp_path / "attacker"
+    target.mkdir()
+    attacker.mkdir()
+    for repo, message in ((target, "target"), (attacker, "attacker")):
+        _git(repo, "init")
+        _git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", message)
+        _git(repo, "update-ref", "refs/remotes/origin/develop", _git(repo, "rev-parse", "HEAD"))
+    target_sha = _git(target, "rev-parse", "origin/develop^{commit}")
+    attacker_sha = _git(attacker, "rev-parse", "origin/develop^{commit}")
+    assert target_sha != attacker_sha
+    monkeypatch.setenv("GIT_DIR", str(attacker / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(attacker))
+    monkeypatch.setenv("GIT_OBJECT_DIRECTORY", str(attacker / ".git" / "objects"))
+
+    assert resolve_base_sha(target) == target_sha
+
+
 def test_git_resolver_uses_one_fixed_argv_shell_false_and_optional_locks_disabled() -> None:
     """The production adapter cannot accept an arbitrary Git command or enable shell execution."""
     _, resolve_base_sha, _ = _import_kernel()
@@ -185,6 +208,8 @@ def test_git_resolver_uses_one_fixed_argv_shell_false_and_optional_locks_disable
     assert kwargs["capture_output"] is True
     assert kwargs["text"] is True
     assert kwargs["env"]["GIT_OPTIONAL_LOCKS"] == "0"  # type: ignore[index]
+    assert "GIT_DIR" not in kwargs["env"]  # type: ignore[operator]
+    assert "GIT_WORK_TREE" not in kwargs["env"]  # type: ignore[operator]
 
 
 @pytest.mark.parametrize(
