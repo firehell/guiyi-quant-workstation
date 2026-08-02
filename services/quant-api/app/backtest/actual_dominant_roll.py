@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping, Sequence
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.backtest.contract_resolver import (
@@ -12,7 +13,12 @@ from app.backtest.contract_resolver import (
     ResolvedContract,
     resolve_jm_contract,
 )
-from app.services.trading_session_clock import SHANGHAI, TradingSessionClock
+from app.models.data_center import TradingCalendar
+from app.services.trading_session_clock import (
+    NIGHT_SESSION_CUTOFF,
+    SHANGHAI,
+    TradingSessionClock,
+)
 
 
 ROLL_BOUNDARY_REASON = "contract_roll_boundary"
@@ -571,7 +577,8 @@ def _execution_bounds(
         return bar_open_time(bar), _bar_time(bar)
 
     trading_day = _bar_trading_day(bar)
-    windows = TradingSessionClock(session).windows_for_trading_day(
+    clock = TradingSessionClock(session)
+    windows = clock.windows_for_trading_day(
         trading_day,
         product="jm",
         exchange="DCE",
@@ -580,9 +587,54 @@ def _execution_bounds(
         raise ContractResolutionError(
             "daily actual_dominant requires a provable trading-session boundary"
         )
+    _validate_daily_session_proof(session, clock, trading_day, windows)
     starts = [window.start.replace(tzinfo=SHANGHAI).astimezone(UTC) for window in windows]
     ends = [window.end.replace(tzinfo=SHANGHAI).astimezone(UTC) for window in windows]
     return min(starts), max(ends)
+
+
+def _validate_daily_session_proof(
+    session: Session,
+    clock: TradingSessionClock,
+    trading_day: date,
+    windows: Sequence[Any],
+) -> None:
+    calendar = session.scalar(
+        select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == trading_day,
+        )
+    )
+    if calendar is None or not calendar.is_trading_day:
+        raise ContractResolutionError(
+            "daily actual_dominant requires a complete trading-day calendar proof"
+        )
+    if not calendar.has_night_session:
+        return
+
+    night_windows = [
+        window for window in windows if window.start.time() >= NIGHT_SESSION_CUTOFF
+    ]
+    if not night_windows:
+        raise ContractResolutionError(
+            "daily actual_dominant night session requires previous trading-day calendar proof"
+        )
+    night_start = min(window.start for window in night_windows)
+    trading_days, complete = clock.trading_days_between(
+        night_start.date(),
+        trading_day,
+        exchange="DCE",
+    )
+    if (
+        not complete
+        or len(trading_days) < 2
+        or trading_days[-2] != night_start.date()
+        or trading_days[-1] != trading_day
+    ):
+        raise ContractResolutionError(
+            "daily actual_dominant night session requires complete previous "
+            "trading-day calendar and night-start proof"
+        )
 
 
 def _bar_trading_day(bar: Mapping[str, Any]) -> date:

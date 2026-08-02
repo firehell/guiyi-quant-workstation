@@ -420,8 +420,20 @@ def test_daily_roll_uses_real_night_session_boundaries_and_rejects_late_mapping(
         may_7.raw_payload = {"known_at": "2024-05-06T12:59:59+00:00"}
         session.add_all(
             [
-                TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True, has_night_session=True, provider="rqdata")
-                for day in (date(2024, 5, 3), date(2024, 5, 6), date(2024, 5, 7))
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=day,
+                    is_trading_day=is_trading_day,
+                    has_night_session=is_trading_day,
+                    provider="rqdata",
+                )
+                for day, is_trading_day in (
+                    (date(2024, 5, 3), True),
+                    (date(2024, 5, 4), False),
+                    (date(2024, 5, 5), False),
+                    (date(2024, 5, 6), True),
+                    (date(2024, 5, 7), True),
+                )
             ]
         )
         session.add_all(
@@ -463,6 +475,82 @@ def test_daily_roll_uses_real_night_session_boundaries_and_rejects_late_mapping(
                 session,
                 _result(trades=[]),
                 bars=daily_bars,
+                slippage_ticks=Decimal("0"),
+            )
+
+
+def test_daily_night_session_fails_closed_without_previous_calendar_proof() -> None:
+    SessionLocal = _session_factory()
+    daily_bar = {
+        "datetime": datetime(2024, 5, 6, tzinfo=UTC),
+        "trading_day": date(2024, 5, 6),
+        "contract": "JM2409",
+        "interval": "1d",
+        "open": Decimal("100"),
+        "close": Decimal("105"),
+    }
+    with SessionLocal() as session:
+        _seed_reference_data(session)
+        session.query(TradingCalendar).delete()
+        session.add_all(
+            [
+                # A stale older row must not be mistaken for the missing prior
+                # trading-day calendar proof.
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=date(2024, 4, 30),
+                    is_trading_day=True,
+                    has_night_session=True,
+                    provider="rqdata",
+                ),
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=date(2024, 5, 6),
+                    is_trading_day=True,
+                    has_night_session=True,
+                    provider="rqdata",
+                ),
+            ]
+        )
+        session.add_all(
+            [
+                TradingSession(
+                    exchange_code="DCE",
+                    instrument_symbol="jm",
+                    session_name="night",
+                    start_time=time(21),
+                    end_time=time(23),
+                    crosses_midnight=False,
+                    is_active=True,
+                    provider="rqdata",
+                ),
+                TradingSession(
+                    exchange_code="DCE",
+                    instrument_symbol="jm",
+                    session_name="day",
+                    start_time=time(9),
+                    end_time=time(15),
+                    crosses_midnight=False,
+                    is_active=True,
+                    provider="rqdata",
+                ),
+            ]
+        )
+        mapping = session.query(MainContractMap).filter_by(
+            trade_date=date(2024, 5, 6)
+        ).one()
+        # This is before the day session but after the omitted prior night open.
+        mapping.raw_payload = {"known_at": "2024-05-06T00:30:00+00:00"}
+        session.flush()
+
+        with pytest.raises(
+            ContractResolutionError,
+            match="night session.*previous trading-day calendar",
+        ):
+            apply_actual_dominant_roll_accounting(
+                session,
+                _result(trades=[]),
+                bars=[daily_bar],
                 slippage_ticks=Decimal("0"),
             )
 
