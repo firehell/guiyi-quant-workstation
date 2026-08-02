@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,13 +19,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = PROJECT_ROOT / "services" / "quant-api"
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
-
-from app.backtest.jm_v1b_result_enricher import enrich_jm_v1b_result, should_enrich_jm_v1b_result  # noqa: E402
-from app.backtest.v1b_jm_tasks import build_jm_v1b_task_config  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
-from app.schemas.backtest import BacktestTaskConfig  # noqa: E402
-from app.vnpy_integration.backtest_runner import GuiyiBacktestRequest, VnpyBacktestRunner  # noqa: E402
-from app.vnpy_integration.result_converter import convert_vnpy_result  # noqa: E402
 
 DEFAULT_CONFIG = PROJECT_ROOT / "configs" / "oos" / "jm_v1b_report14_frozen.json"
 
@@ -59,8 +52,27 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"ok": False, "error": "no windows selected"}, ensure_ascii=False))
         return 1
 
+    if args.run:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "BACKTEST_LEGACY_OOS_EXECUTION_DISABLED",
+                    "message": (
+                        "Profile/file OOS execution is disabled pending canonical "
+                        "MarketDataService cutover"
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
+
     output_dir = args.output_dir or (
-        PROJECT_ROOT / "data" / "reports" / f"oos_validation_{datetime.utcnow():%Y%m%d_%H%M%S}"
+        PROJECT_ROOT
+        / "data"
+        / "reports"
+        / f"oos_validation_{datetime.now(UTC):%Y%m%d_%H%M%S}"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -74,20 +86,11 @@ def main(argv: list[str] | None = None) -> int:
         "windows": [],
     }
 
-    if not args.run:
-        for window in selected:
-            plan["windows"].append({"window_id": window.get("id"), "window": window, "status": "plan_only"})
-        _write_outputs(output_dir, plan, args.format)
-        return 0
-
-    runner = VnpyBacktestRunner()
-    with SessionLocal() as session:
-        base_spec = build_jm_v1b_task_config(session, entry_interval="15m")
-        for window in selected:
-            plan["windows"].append(_run_window(session, runner, base_spec.config, window))
-
+    for window in selected:
+        plan["windows"].append({"window_id": window.get("id"), "window": window, "status": "plan_only"})
     _write_outputs(output_dir, plan, args.format)
-    return 0 if all(w.get("status") == "success" for w in plan["windows"]) else 1
+    return 0
+
 
 
 def _select_windows(windows: list[dict[str, Any]], ids: list[str] | None) -> list[dict[str, Any]]:
@@ -103,71 +106,21 @@ def _parse_dt(value: str) -> datetime:
 
 def _run_window(
     session: Any,
-    runner: VnpyBacktestRunner,
-    base_config: BacktestTaskConfig,
+    runner: Any,
+    base_config: Any,
     window: dict[str, Any],
 ) -> dict[str, Any]:
+    del session, runner, base_config
     window_id = str(window.get("id"))
     start = _parse_dt(str(window["start"]))
     end = _parse_dt(str(window["end"]))
     if start >= end:
         return {"window_id": window_id, "status": "failed", "error": "invalid window: start >= end"}
-
-    config = base_config.model_copy(
-        update={
-            "start": start,
-            "end": end,
-            "request_payload": {
-                **dict(base_config.request_payload),
-                "oos_window": window,
-                "baseline_report_id": 14,
-            },
-        }
-    )
-    request = GuiyiBacktestRequest(
-        symbol=config.symbol,
-        exchange=config.exchange,
-        interval=config.interval,
-        start=config.start,
-        end=config.end,
-        rate=config.rate,
-        slippage=config.slippage,
-        size=config.size,
-        pricetick=config.pricetick,
-        capital=config.capital,
-        strategy_class_path=config.strategy_class_path,
-        strategy_parameters=dict(config.strategy_parameters),
-        bar_data_path=config.bar_data_path,
-        auxiliary_bar_data_paths=dict(config.auxiliary_bar_data_paths),
-        execution_timing=config.execution_timing,
-    )
-    try:
-        raw = runner.run(request)
-        normalized = convert_vnpy_result(raw)
-        if should_enrich_jm_v1b_result(config):
-            normalized = enrich_jm_v1b_result(session, config, normalized)
-        metrics = normalized.get("summary") or normalized.get("report") or {}
-        trades = normalized.get("trades") or []
-        return {
-            "window_id": window_id,
-            "label": window.get("label"),
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "status": "success",
-            "summary": _summarize(metrics, trades),
-            "data_version": config.data_version,
-            "quality_status": config.quality_status,
-        }
-    except Exception as exc:  # noqa: BLE001 - CLI boundary
-        return {
-            "window_id": window_id,
-            "label": window.get("label"),
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "status": "failed",
-            "error_type": type(exc).__name__,
-            "error": str(exc)[:500],
-        }
+    return {
+        "window_id": window_id,
+        "status": "failed",
+        "error": "BACKTEST_LEGACY_OOS_EXECUTION_DISABLED",
+    }
 
 
 def _summarize(metrics: dict[str, Any], trades: list[Any]) -> dict[str, Any]:

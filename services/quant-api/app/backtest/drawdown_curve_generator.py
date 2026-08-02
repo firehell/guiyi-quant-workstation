@@ -25,28 +25,28 @@ def generate_drawdown_curve(equity_curve: Sequence[Mapping[str, Any]]) -> dict[s
             {
                 "point_index": point.get("point_index", original_index),
                 "time": point.get("time"),
-                "equity": float(equity),
-                "peak_equity": float(peak),
-                "drawdown": float(drawdown),
-                "drawdown_pct": float(drawdown_pct),
+                "equity": equity,
+                "peak_equity": peak,
+                "drawdown": drawdown,
+                "drawdown_pct": drawdown_pct,
                 "source_trade_id": point.get("trade_id") if _has_value(point.get("trade_id")) else None,
             }
         )
 
     return {
         "drawdown_curve": drawdown_curve,
-        "max_drawdown": float(max_drawdown_pct),
-        "max_drawdown_amount": float(max_drawdown_amount),
-        "max_drawdown_pct": float(max_drawdown_pct),
+        "max_drawdown": max_drawdown_pct,
+        "max_drawdown_amount": max_drawdown_amount,
+        "max_drawdown_pct": max_drawdown_pct,
     }
 
 
 def _empty_result() -> dict[str, Any]:
     return {
         "drawdown_curve": [],
-        "max_drawdown": 0.0,
-        "max_drawdown_amount": 0.0,
-        "max_drawdown_pct": 0.0,
+        "max_drawdown": Decimal("0"),
+        "max_drawdown_amount": Decimal("0"),
+        "max_drawdown_pct": Decimal("0"),
     }
 
 

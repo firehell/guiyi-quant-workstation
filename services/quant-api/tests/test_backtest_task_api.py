@@ -216,69 +216,21 @@ def test_create_task_fails_closed_when_canonical_reader_is_unconfigured() -> Non
         app.dependency_overrides.clear()
 
 
-def test_inline_backtest_reports_binding_change_with_conflict_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.backtest.service import BacktestService
-    from app.services.market_data_reader import MarketDataReader
-    from app.services.profile_lineage import ProfileLineage
-
-    SessionLocal = _session_factory()
-    calls = 0
-    asset = {
-        "profile_id": "intraday_research_v1",
-        "instrument_symbol": "jm",
-        "contract_code": "jm.MAIN",
-        "period": "15m",
-        "provider": "rqdata",
-        "data_version": "version-15m",
-        "start_time": "2024-01-01T00:00:00+00:00",
-        "end_time": "2024-03-01T00:00:00+00:00",
-    }
-
-    def fake_resolve(self, **kwargs):
-        nonlocal calls
-        calls += 1
-        file_id = 101 if calls == 1 else 202
-        return (
-            ProfileLineage(
-                profile_id="intraday_research_v1",
-                quality_policy="passed_only",
-                data_version="version-15m",
-                market_data_file_id=file_id,
-                binding_snapshot={"market_data_file_id": file_id},
-                market_file=None,
-            ),
-            {**asset, "market_data_file_id": file_id},
-        )
-
-    monkeypatch.setattr(BacktestService, "resolve_formal_asset", fake_resolve)
-    monkeypatch.setattr(
-        MarketDataReader,
-        "load_bars",
-        lambda self, **kwargs: [{"provider": "rqdata", "data_version": "version-15m"}],
+def test_inline_profile_backtest_is_disabled_instead_of_resolving_legacy_binding() -> None:
+    response = TestClient(app).post(
+        "/api/backtests/run",
+        json={
+            "symbol": "jm",
+            "contract": "jm.MAIN",
+            "period": "15m",
+            "profile_id": "intraday_research_v1",
+            "start": "2024-01-02",
+            "end": "2024-02-02",
+        },
     )
 
-    def override_get_db():
-        with SessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        response = TestClient(app).post(
-            "/api/backtests/run",
-            json={
-                "symbol": "jm",
-                "contract": "jm.MAIN",
-                "period": "15m",
-                "profile_id": "intraday_research_v1",
-                "start": "2024-01-02",
-                "end": "2024-02-02",
-            },
-        )
-
-        assert response.status_code == 409
-        assert response.json()["detail"]["code"] == "BACKTEST_PROFILE_BINDING_CHANGED"
-    finally:
-        app.dependency_overrides.clear()
+    assert response.status_code == 410
+    assert response.json()["detail"]["code"] == "BACKTEST_LEGACY_INLINE_DISABLED"
 
 
 def test_create_task_rejects_inactive_validation_and_legacy_roles_even_for_research(monkeypatch: pytest.MonkeyPatch) -> None:

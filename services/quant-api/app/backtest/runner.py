@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.backtest.jm_daily_ema21_result_enricher import enrich_jm_daily_ema21_result, should_enrich_jm_daily_ema21_result
 from app.backtest.jm_v1b_result_enricher import enrich_jm_v1b_result, should_enrich_jm_v1b_result
-from app.backtest.actual_dominant_roll import apply_actual_dominant_roll_accounting
+from app.backtest.actual_dominant_roll import (
+    apply_actual_dominant_roll_accounting,
+    validate_actual_dominant_inputs,
+)
 from app.backtest.errors import BacktestContractError
 from app.backtest.service import BacktestService
 from app.data_core.consumer_identity import (
@@ -39,9 +42,18 @@ class BacktestTaskRunner:
         self.service.mark_running(task)
         try:
             request = self._request_from_task(task)
+            config = self.service.config_from_task(task)
+            if (
+                not task.research_only
+                and config.request_payload.get("dataset_kind")
+                == "actual_dominant"
+            ):
+                validate_actual_dominant_inputs(
+                    self.session,
+                    request.bars or [],
+                )
             raw_result = self.adapter.run(request)
             normalized_result = convert_vnpy_result(raw_result)
-            config = self.service.config_from_task(task)
             if task.research_only and should_enrich_jm_v1b_result(config):
                 normalized_result = enrich_jm_v1b_result(self.session, config, normalized_result)
             if task.research_only and should_enrich_jm_daily_ema21_result(config):
@@ -56,6 +68,9 @@ class BacktestTaskRunner:
                     normalized_result,
                     bars=request.bars or [],
                     slippage_ticks=Decimal(str(config.slippage)),
+                )
+                normalized_result = self.service.recompute_result_facts(
+                    task, normalized_result
                 )
             self.service.mark_success(task, normalized_result)
             return {

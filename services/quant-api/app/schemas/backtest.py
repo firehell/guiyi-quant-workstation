@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -87,7 +87,7 @@ class FormalBacktestTaskRequest(BaseModel):
     def validate_aware_window(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("formal backtest window datetimes must be timezone-aware")
-        return value
+        return value.astimezone(UTC)
 
     @field_validator("auxiliary_periods")
     @classmethod
@@ -107,6 +107,15 @@ class FormalBacktestTaskRequest(BaseModel):
             raise ValueError("start must be earlier than end")
         if self.dataset_kind is DatasetKind.CONTINUOUS and self.contract_or_series is None:
             raise ValueError("continuous formal backtests require contract_or_series")
+        if (
+            self.dataset_kind is DatasetKind.ACTUAL_DOMINANT
+            and self.instrument_symbol.strip().lower() != "jm"
+        ):
+            raise PydanticCustomError(
+                "backtest_actual_dominant_product_unsupported",
+                "actual_dominant formal backtest currently supports only jm",
+                {"code": "BACKTEST_ACTUAL_DOMINANT_PRODUCT_UNSUPPORTED"},
+            )
         if self.interval in self.auxiliary_periods:
             raise ValueError("auxiliary_periods cannot include the primary interval")
         for frequency in (self.interval, *self.auxiliary_periods):

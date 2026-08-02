@@ -4,6 +4,7 @@ import csv
 from io import StringIO
 import json
 from datetime import UTC, date, datetime, time
+from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -14,8 +15,6 @@ from sqlalchemy.orm import Session
 from app.backtest.errors import BacktestContractError
 from app.data_core.contracts import DataCoreError
 from app.backtest.service import BacktestService
-from app.backtest.engine import BacktestConfig, run_su_bing_backtest
-from app.backtest.specs import load_contract_spec
 from app.backtest.v1b_jm_tasks import (
     build_jm_daily_ema21_macd_volume_formal_request,
     build_jm_daily_score2of4_formal_request,
@@ -35,15 +34,11 @@ from app.services.backtest_validation_context import (
     build_backtest_validation_context,
 )
 from app.services.batch_backtest import (
-    BatchBacktestRunner,
-    create_batch_task,
-    enqueue_batch_task,
     ensure_default_watchlists,
     report_payload,
     task_snapshot,
 )
 from app.services.market_data_reader import MarketDataReader
-from app.strategy.su_bing_ema21 import SuBingParams
 from app.tasks.backtests import run_backtest_task
 from app.vnpy_integration.errors import BacktestConfigurationError
 
@@ -388,154 +383,26 @@ def create_jm_v1b_backtest_task(entry_interval: str, session: Session = Depends(
 
 @router.post("/run")
 def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    start = _parse_query_datetime(request.start, end_of_day=False)
-    end = _parse_query_datetime(request.end, end_of_day=True)
-    if start >= end:
-        raise HTTPException(status_code=422, detail="start must be before end")
-
-    reader = MarketDataReader(session)
-    service = BacktestService(session)
-    try:
-        lineage, asset = service.resolve_formal_asset(
-            instrument_symbol=request.symbol,
-            contract_code=request.contract,
-            period=request.period,
-            profile_id=request.profile_id,
-        )
-        service._validate_requested_window(asset, start=start, end=end)
-    except BacktestContractError as exc:
-        raise _contract_http_exception(exc) from exc
-    except BacktestConfigurationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    bars = reader.load_bars(
-        symbol=request.symbol,
-        contract=request.contract,
-        period=request.period,
-        start=start,
-        end=end,
-        provider=str(asset["provider"]),
-        data_role="primary",
-        passed_only=True,
-        profile_id=lineage.profile_id,
+    del request, session
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "BACKTEST_LEGACY_INLINE_DISABLED",
+            "message": "legacy Profile/file inline backtest is disabled; use POST /api/backtests/tasks",
+        },
     )
-    if not bars:
-        raise HTTPException(status_code=422, detail="no bars found for backtest")
-    if {str(bar.get("provider")) for bar in bars} != {str(asset["provider"])} or {
-        str(bar.get("data_version")) for bar in bars
-    } != {str(asset["data_version"])}:
-        raise _contract_http_exception(
-            BacktestContractError(
-                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
-                "resolved backtest bars do not match the pinned binding snapshot",
-                context=service._lineage_context(
-                    profile_id=lineage.profile_id,
-                    instrument_symbol=request.symbol,
-                    contract_code=request.contract,
-                    period=request.period,
-                ),
-                status_code=409,
-            )
-        )
-    try:
-        confirmed_lineage, _ = service.resolve_formal_asset(
-            instrument_symbol=request.symbol,
-            contract_code=request.contract,
-            period=request.period,
-            profile_id=lineage.profile_id,
-        )
-    except BacktestConfigurationError as exc:
-        raise _contract_http_exception(
-            BacktestContractError(
-                "BACKTEST_PROFILE_BINDING_CHANGED",
-                "Profile binding changed while loading inline backtest bars",
-                context=service._lineage_context(
-                    profile_id=lineage.profile_id,
-                    instrument_symbol=request.symbol,
-                    contract_code=request.contract,
-                    period=request.period,
-                ),
-                status_code=409,
-            )
-        ) from exc
-    if confirmed_lineage.market_data_file_id != lineage.market_data_file_id:
-        raise _contract_http_exception(
-            BacktestContractError(
-                "BACKTEST_PROFILE_BINDING_CHANGED",
-                "Profile binding changed while loading inline backtest bars",
-                context=service._lineage_context(
-                    profile_id=lineage.profile_id,
-                    instrument_symbol=request.symbol,
-                    contract_code=request.contract,
-                    period=request.period,
-                ),
-                status_code=409,
-            )
-        )
-
-    try:
-        config = BacktestConfig(
-            initial_capital=request.initial_capital,
-            risk_per_trade_pct=request.risk_per_trade_pct,
-            max_margin_usage_pct=request.max_margin_usage_pct,
-            slippage_ticks=request.slippage_ticks,
-            take_profit_r=request.take_profit_r,
-            enable_take_profit=request.enable_take_profit,
-            strategy_params=SuBingParams(**request.strategy_params),
-        )
-        report = run_su_bing_backtest(
-            bars=bars,
-            config=config,
-            contract_spec=load_contract_spec(session, request.symbol, request.contract),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    payload = report.to_dict()
-    payload["quality_status"] = {"status": "passed", "market_data_file_id": lineage.market_data_file_id}
-    payload["profile_id"] = lineage.profile_id
-    payload["market_data_file_id"] = lineage.market_data_file_id
-    payload["binding_snapshot"] = asset
-    return _sanitize_api_payload(payload)
 
 
 @router.post("/run-batch")
 def run_batch_backtest(request: BatchBacktestRunRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    start = _parse_query_datetime(request.start, end_of_day=False)
-    end = _parse_query_datetime(request.end, end_of_day=True)
-    if start >= end:
-        raise HTTPException(status_code=422, detail="start must be before end")
-
-    payload = request.model_dump()
-    payload["start"] = start.isoformat()
-    payload["end"] = end.isoformat()
-    try:
-        task = create_batch_task(session, payload)
-    except BacktestContractError as exc:
-        session.rollback()
-        raise _contract_http_exception(exc) from exc
-    except (BacktestConfigurationError, ValueError) as exc:
-        session.rollback()
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    session.commit()
-
-    if request.run_inline:
-        BatchBacktestRunner(session).run(task.id)
-        session.refresh(task)
-        return task_snapshot(task)
-
-    try:
-        job_id = enqueue_batch_task(task.id)
-    except Exception as exc:
-        task.status = "failed"
-        task.error_message = f"failed to enqueue RQ task: {exc}"
-        task.finished_at = datetime.now(UTC)
-        session.commit()
-        raise HTTPException(status_code=503, detail="Redis/RQ is unavailable; batch task was not queued") from exc
-
-    task.result_payload = {"rq_job_id": job_id}
-    session.commit()
-    return task_snapshot(task)
+    del request, session
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "BACKTEST_LEGACY_BATCH_DISABLED",
+            "message": "legacy Profile/file batch backtest is disabled pending canonical batch cutover",
+        },
+    )
 
 
 @router.get("/tasks")
@@ -1284,6 +1151,8 @@ def _sanitize_api_payload(value: Any) -> Any:
         }
     if isinstance(value, list):
         return [_sanitize_api_payload(item) for item in value]
+    if isinstance(value, Decimal):
+        return float(value)
     if isinstance(value, str) and any(marker in value for marker in LOCAL_PATH_MARKERS):
         return "<redacted>"
     return value

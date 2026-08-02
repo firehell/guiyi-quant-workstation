@@ -61,6 +61,7 @@ class MainContractSource:
     data_version: str
     rule: str
     rank: int
+    known_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,7 @@ def resolve_jm_contract(
             data_version=mapping.data_version,
             rule=mapping.rule,
             rank=mapping.rank,
+            known_at=_mapping_known_at(mapping),
         ),
         last_allowed_holding_date=last_allowed_holding_date,
     )
@@ -448,6 +450,27 @@ def _getattr(row: object | None, name: str) -> object | None:
     if row is None:
         return None
     return getattr(row, name)
+
+
+def _mapping_known_at(mapping: MainContractMap) -> datetime | None:
+    raw_payload = mapping.raw_payload if isinstance(mapping.raw_payload, dict) else {}
+    raw_value = raw_payload.get("known_at")
+    if raw_value in (None, ""):
+        return None
+    if isinstance(raw_value, datetime):
+        parsed = raw_value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(raw_value).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ContractResolutionError(
+                "main_contract_map raw_payload.known_at is invalid"
+            ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ContractResolutionError(
+            "main_contract_map raw_payload.known_at must be timezone-aware"
+        )
+    return parsed
 
 
 def _first_decimal(*values: object | None) -> Decimal | None:

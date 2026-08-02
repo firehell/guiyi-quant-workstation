@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping, Sequence
 
@@ -34,6 +34,10 @@ class _RollBoundary:
     new_contract: ResolvedContract
 
 
+class MainContractMappingKnowledgeError(ContractResolutionError):
+    """Raised when a rank-1 mapping lacks decision-time availability evidence."""
+
+
 def apply_actual_dominant_roll_accounting(
     session: Session,
     normalized_result: Mapping[str, Any],
@@ -52,27 +56,24 @@ def apply_actual_dominant_roll_accounting(
     resolved_by_day = _resolve_and_validate_contract_days(session, ordered_bars)
     boundaries = _roll_boundaries(ordered_bars, resolved_by_day)
     orders = _cancel_pending_old_contract_orders(
-        list(normalized_result.get("orders") or []), boundaries
+        list(normalized_result.get("orders") or []),
+        boundaries,
+        runtime_cancellations=list(
+            normalized_result.get("contract_roll_cancellations") or []
+        ),
     )
-    cancelled_order_nos = {
-        _order_no(order)
-        for order in orders
-        if order.get("cancel_reason") == ROLL_BOUNDARY_REASON
-    }
 
     trades: list[dict[str, Any]] = []
     roll_events: list[dict[str, Any]] = []
     for raw_trade in list(normalized_result.get("trades") or []):
         trade = dict(raw_trade)
-        if str(trade.get("entry_order_no") or "") in cancelled_order_nos:
-            continue
         entry_time = _trade_time(trade, "entry_datetime", "entry_time", "open_time")
         exit_time = _trade_time(trade, "exit_datetime", "exit_time", "close_time")
         intersecting = [
             boundary
             for boundary in boundaries
             if entry_time <= _bar_time(boundary.old_bar)
-            and _bar_time(boundary.new_bar) <= exit_time
+            and bar_open_time(boundary.new_bar) <= exit_time
         ]
         if not intersecting:
             trades.append(trade)
@@ -109,6 +110,18 @@ def apply_actual_dominant_roll_accounting(
     return result
 
 
+def validate_actual_dominant_inputs(
+    session: Session,
+    bars: Sequence[Mapping[str, Any]],
+) -> None:
+    """Fail before strategy execution when roll inputs are not decision-safe."""
+    ordered_bars = sorted((dict(bar) for bar in bars), key=_bar_time)
+    if not ordered_bars:
+        raise ContractResolutionError("actual_dominant backtest bars are empty")
+    resolved_by_day = _resolve_and_validate_contract_days(session, ordered_bars)
+    _roll_boundaries(ordered_bars, resolved_by_day)
+
+
 def _resolve_and_validate_contract_days(
     session: Session,
     bars: Sequence[Mapping[str, Any]],
@@ -124,6 +137,19 @@ def _resolve_and_validate_contract_days(
                 trading_day=trading_day,
                 rank=1,
             )
+            known_at = day_contract.main_contract_source.known_at
+            decision_time = bar_open_time(bar)
+            if known_at is None:
+                raise MainContractMappingKnowledgeError(
+                    "main_contract_map raw_payload.known_at evidence is required"
+                )
+            normalized_known_at = _datetime(known_at, field="mapping.known_at")
+            if normalized_known_at > decision_time:
+                raise MainContractMappingKnowledgeError(
+                    "main_contract_map known_at is later than first decision boundary: "
+                    f"known_at={normalized_known_at.isoformat()}, "
+                    f"decision_time={decision_time.isoformat()}"
+                )
             resolved[trading_day] = day_contract
         if day_contract.actual_contract != contract:
             raise ContractResolutionError(
@@ -226,7 +252,7 @@ def _split_trade(
         )
         points.append(
             (
-                _bar_time(boundary.new_bar),
+                bar_open_time(boundary.new_bar),
                 open_price,
                 boundary.new_contract,
                 ROLL_REOPEN_REASON,
@@ -278,8 +304,8 @@ def _split_trade(
             volume=volume,
             close=True,
             close_today=(
-                _trading_day_for_time(bars, segment_entry_time)
-                == _trading_day_for_time(bars, segment_exit_time)
+                segment_entry_contract.trading_day
+                == segment_exit_contract.trading_day
             ),
             slippage_ticks=slippage_ticks,
         )
@@ -391,10 +417,28 @@ def _leg_costs(
 def _cancel_pending_old_contract_orders(
     orders: Sequence[Mapping[str, Any]],
     boundaries: Sequence[_RollBoundary],
+    *,
+    runtime_cancellations: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
+    runtime_by_order: dict[str, dict[str, Any]] = {}
+    for item in runtime_cancellations:
+        order_no = str(item.get("order_no") or "")
+        if not order_no:
+            continue
+        cancellation = dict(item)
+        runtime_by_order[order_no] = cancellation
+        runtime_by_order[order_no.rsplit(".", 1)[-1]] = cancellation
     output: list[dict[str, Any]] = []
     for original in orders:
         order = dict(original)
+        runtime = runtime_by_order.get(_order_no(order))
+        if runtime is not None:
+            order["status"] = "cancelled"
+            order["cancel_reason"] = ROLL_BOUNDARY_REASON
+            order["reject_reason"] = ROLL_BOUNDARY_REASON
+            order["cancelled_volume"] = runtime.get("cancelled_volume")
+            output.append(order)
+            continue
         status = str(order.get("status") or "").strip().lower()
         contract = str(
             order.get("contract")
@@ -410,6 +454,9 @@ def _cancel_pending_old_contract_orders(
                 order["status"] = "cancelled"
                 order["cancel_reason"] = ROLL_BOUNDARY_REASON
                 order["reject_reason"] = ROLL_BOUNDARY_REASON
+                volume = _decimal(order.get("volume") or 0, field="order.volume")
+                traded = _decimal(order.get("traded") or 0, field="order.traded")
+                order["cancelled_volume"] = max(volume - traded, Decimal("0"))
                 break
         output.append(order)
     return output
@@ -462,6 +509,26 @@ def _trading_day_for_time(
 def _bar_time(bar: Mapping[str, Any]) -> datetime:
     value = bar.get("datetime") or bar.get("bar_end")
     return _datetime(value, field="bar.datetime")
+
+
+def bar_open_time(bar: Mapping[str, Any]) -> datetime:
+    bar_end = _bar_time(bar)
+    frequency = str(bar.get("interval") or bar.get("period") or "").strip().lower()
+    minutes = {
+        "1m": 1,
+        "5m": 5,
+        "15m": 15,
+        "30m": 30,
+        "60m": 60,
+        "1h": 60,
+    }.get(frequency)
+    if minutes is not None:
+        return bar_end - timedelta(minutes=minutes)
+    if frequency in {"1d", "d", "day", "1w", "w", "week"}:
+        return bar_end
+    raise ContractResolutionError(
+        f"actual_dominant bar frequency cannot derive open time: {frequency!r}"
+    )
 
 
 def _bar_trading_day(bar: Mapping[str, Any]) -> date:
@@ -529,4 +596,6 @@ __all__ = [
     "ROLL_BOUNDARY_REASON",
     "ROLL_REOPEN_REASON",
     "apply_actual_dominant_roll_accounting",
+    "bar_open_time",
+    "validate_actual_dominant_inputs",
 ]

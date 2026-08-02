@@ -19,7 +19,7 @@ def generate_equity_curve(
     """Generate a realized equity curve from closed trades only."""
     equity = _to_decimal(initial_capital, field="initial_capital")
     curve: list[dict[str, Any]] = [
-        {"point_index": 0, "time": None, "equity": float(equity), "source": "initial_capital"}
+        {"point_index": 0, "time": None, "equity": equity, "source": "initial_capital"}
     ]
 
     for point_index, prepared in enumerate(sorted(_prepare_trades(trades), key=_sort_key), start=1):
@@ -30,11 +30,11 @@ def generate_equity_curve(
                 "time": prepared["exit_time"].isoformat(),
                 "trade_id": prepared["trade_id"],
                 "sequence": prepared["sequence"],
-                "gross_pnl": _optional_float(prepared["gross_pnl"]),
-                "commission": float(prepared["commission"]),
-                "slippage": float(prepared["slippage"]),
-                "net_pnl": float(prepared["net_pnl"]),
-                "equity": float(equity),
+                "gross_pnl": prepared["gross_pnl"],
+                "commission": prepared["commission"],
+                "slippage": prepared["slippage"],
+                "net_pnl": prepared["net_pnl"],
+                "equity": equity,
             }
         )
 
@@ -141,10 +141,6 @@ def _to_decimal(value: Any, *, field: str, original_index: int | None = None) ->
     except (InvalidOperation, ValueError) as exc:
         prefix = f"trade[{original_index}] " if original_index is not None else ""
         raise ValueError(f"{prefix}{field} must be numeric") from exc
-
-
-def _optional_float(value: Decimal | None) -> float | None:
-    return float(value) if value is not None else None
 
 
 def _has_value(value: Any) -> bool:

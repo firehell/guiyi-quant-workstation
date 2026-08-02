@@ -463,17 +463,22 @@ class BacktestService:
         self.session.commit()
 
     def mark_success(self, task: BacktestTask, result: dict[str, Any]) -> None:
-        self.persist_result(task, result)
-        task.status = "success"
-        task.progress = 100.0
-        task.completed_items = 1
-        task.failed_items = 0
-        task.finished_at = utc_now()
-        task.error_type = None
-        task.error_message = None
-        task.traceback = None
-        self.sanitize_task_local_paths(task)
-        self.session.commit()
+        try:
+            with self.session.begin_nested():
+                self.persist_result(task, result)
+                task.status = "success"
+                task.progress = 100.0
+                task.completed_items = 1
+                task.failed_items = 0
+                task.finished_at = utc_now()
+                task.error_type = None
+                task.error_message = None
+                task.traceback = None
+                self.sanitize_task_local_paths(task)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
 
     def mark_failed(self, task: BacktestTask, error_type: str, error_message: str, traceback_text: str | None = None) -> None:
         task.status = "failed"
@@ -523,12 +528,14 @@ class BacktestService:
         trades = lineage["trades"]
         orders = lineage["orders"]
         summary["lineage_summary"] = lineage["lineage_summary"]
-        initial_capital = _float_metric(summary, "initial_capital", "capital", default=config.capital)
+        initial_capital = _decimal_metric(
+            summary, "initial_capital", "capital", default=Decimal(str(config.capital))
+        )
         equity_curve = generate_equity_curve(trades, initial_capital=initial_capital)
         drawdown_result = generate_drawdown_curve(equity_curve)
         drawdown_curve = drawdown_result["drawdown_curve"]
         metrics = compute_report_metrics(
-            summary=summary,
+            summary=_json_safe_value(summary),
             trades=trades,
             equity_curve=equity_curve,
             drawdown_curve=drawdown_curve,
@@ -564,7 +571,7 @@ class BacktestService:
             suitability_label="数据不足",
             suitability_score=0.0,
             consistency_hash=consistency_hash,
-            summary=summary,
+            summary=_json_safe_value(summary),
             warnings=list(normalized_result.get("warnings") or []),
             started_at=task.started_at,
             finished_at=now,
@@ -594,6 +601,46 @@ class BacktestService:
                 if key in normalized_result
             ],
         }
+
+    def recompute_result_facts(
+        self,
+        task: BacktestTask,
+        normalized_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        config = self.config_from_task(task)
+        result = dict(normalized_result)
+        trades = _standardize_trade_sequence(list(result.get("trades") or []))
+        prior_summary = dict(result.get("summary") or {})
+        initial_capital = _decimal_metric(
+            prior_summary,
+            "initial_capital",
+            "capital",
+            default=Decimal(str(config.capital)),
+        )
+        equity_curve = generate_equity_curve(
+            trades, initial_capital=initial_capital
+        )
+        drawdown_result = generate_drawdown_curve(equity_curve)
+        metrics = compute_report_metrics(
+            summary={"initial_capital": initial_capital},
+            trades=trades,
+            equity_curve=equity_curve,
+            drawdown_curve=drawdown_result["drawdown_curve"],
+            start=config.start,
+            end=config.end,
+            default_initial_capital=initial_capital,
+        )
+        summary = {**prior_summary, **metrics}
+        result.update(
+            {
+                "trades": trades,
+                "summary": summary,
+                "report": dict(summary),
+                "equity_curve": equity_curve,
+                "drawdown_curve": drawdown_result["drawdown_curve"],
+            }
+        )
+        return result
 
     def report_metadata(self, task: BacktestTask, config: BacktestTaskConfig) -> dict[str, Any]:
         metadata = {
@@ -807,6 +854,18 @@ def _float_metric(summary: dict[str, Any], *keys: str, default: float = 0.0) -> 
     return default
 
 
+def _decimal_metric(
+    summary: dict[str, Any],
+    *keys: str,
+    default: Decimal = Decimal("0"),
+) -> Decimal:
+    for key in keys:
+        if key in summary and summary[key] is not None:
+            value = summary[key]
+            return value if isinstance(value, Decimal) else Decimal(str(value))
+    return default
+
+
 def _int_metric(summary: dict[str, Any], *keys: str, default: int = 0) -> int:
     for key in keys:
         if key in summary and summary[key] is not None:
@@ -932,7 +991,7 @@ def _canonical_hash_value(value: Any) -> Any:
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, Decimal):
-        return float(value)
+        return str(value)
     return value
 
 
@@ -940,7 +999,7 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, datetime | date):
         return value.isoformat()
     if isinstance(value, Decimal):
-        return float(value)
+        return str(value)
     return str(value)
 
 
@@ -975,7 +1034,10 @@ def _json_safe_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_safe_value(item) for item in value]
     if isinstance(value, Decimal):
-        return str(value)
+        # SQLAlchemy JSON is an explicit external serialization boundary.
+        # Keep Decimal throughout accounting and metrics, then preserve the
+        # established numeric JSON contract here.
+        return float(value)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     return value

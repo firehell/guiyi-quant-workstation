@@ -21,6 +21,7 @@ if str(QUANT_CORE_ROOT) not in sys.path:
 
 from app.backtest.htdy_trusted_candidate import (  # noqa: E402
     CandidateApplyError,
+    RETIRED_GATE,
     apply_candidate_transaction,
     build_failure_packet,
     build_success_packet,
@@ -304,43 +305,37 @@ def test_load_x502_bundle_recomputes_all_artifact_hashes() -> None:
     assert len(bundle["dry_run"]["orders"]) == 2510
 
 
-def test_apply_candidate_commits_one_task_report_and_children_with_dual_passed_audits(tmp_path: Path) -> None:
+def test_apply_candidate_is_retired_before_any_database_access(tmp_path: Path) -> None:
+    calls = 0
+
+    def forbidden_session_factory():
+        nonlocal calls
+        calls += 1
+        pytest.fail("retired X5-03 path accessed the database")
+
+    with pytest.raises(CandidateApplyError, match=RETIRED_GATE) as caught:
+        apply_candidate_transaction(
+            forbidden_session_factory,
+            repo_root=tmp_path,
+            bundle={},
+            source_commit="1" * 40,
+        )
+
+    assert calls == 0
+    assert caught.value.failure["gate"] == RETIRED_GATE
+    assert caught.value.failure["transaction"] == {"status": "not_started"}
+    assert caught.value.failure["database_accessed"] is False
+    assert caught.value.failure["historical_evidence_mutated"] is False
+
+
+def test_retired_apply_preserves_existing_report_and_creates_no_rows(tmp_path: Path) -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
         market_file, binding = _seed_profile(session, tmp_path)
         report14_id = _seed_report14(session)
         before = _counts(session)
 
-    result = apply_candidate_transaction(
-        SessionLocal,
-        repo_root=tmp_path,
-        bundle=_bundle(market_file, binding),
-        source_commit="1" * 40,
-        report14_id=report14_id,
-    )
-
-    assert result["transaction"]["status"] == "committed"
-    assert result["audits"]["candidate"]["audit_status"] == "passed"
-    assert result["audits"]["report14"]["audit_status"] == "passed"
-    assert result["row_counts"]["delta"] == {"tasks": 1, "reports": 1, "trades": 1, "orders": 2}
-    with SessionLocal() as session:
-        after = _counts(session)
-        assert {key: after[key] - before[key] for key in before} == result["row_counts"]["delta"]
-        candidate = session.get(BacktestReportModel, result["candidate_identity"]["report"]["id"])
-        assert candidate is not None
-        assert candidate.id != report14_id
-        assert candidate.strategy_code == "huotian_dayou_strict"
-        assert candidate.binding_snapshot == session.get(BacktestTask, candidate.task_id).binding_snapshot
-
-
-def test_candidate_audit_failure_rolls_back_all_new_rows(tmp_path: Path) -> None:
-    SessionLocal = _session_factory()
-    with SessionLocal() as session:
-        market_file, binding = _seed_profile(session, tmp_path)
-        report14_id = _seed_report14(session)
-        before = _counts(session)
-
-    with pytest.raises(CandidateApplyError, match="candidate trust audit failed") as caught:
+    with pytest.raises(CandidateApplyError, match=RETIRED_GATE) as caught:
         apply_candidate_transaction(
             SessionLocal,
             repo_root=tmp_path,
@@ -349,36 +344,30 @@ def test_candidate_audit_failure_rolls_back_all_new_rows(tmp_path: Path) -> None
             report14_id=report14_id,
         )
 
-    assert caught.value.failure["transaction"]["status"] == "rolled_back"
+    assert caught.value.failure["transaction"]["status"] == "not_started"
     with SessionLocal() as session:
         assert _counts(session) == before
         assert session.get(BacktestReportModel, report14_id) is not None
 
 
-def test_repeated_apply_is_rejected_without_duplicate_candidate_rows(tmp_path: Path) -> None:
+def test_repeated_retired_apply_is_stably_rejected_without_rows(tmp_path: Path) -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
         market_file, binding = _seed_profile(session, tmp_path)
         report14_id = _seed_report14(session)
     bundle = _bundle(market_file, binding)
-    apply_candidate_transaction(
-        SessionLocal,
-        repo_root=tmp_path,
-        bundle=bundle,
-        source_commit="5" * 40,
-        report14_id=report14_id,
-    )
     with SessionLocal() as session:
         before = _counts(session)
 
-    with pytest.raises(CandidateApplyError, match="already exists"):
-        apply_candidate_transaction(
-            SessionLocal,
-            repo_root=tmp_path,
-            bundle=bundle,
-            source_commit="5" * 40,
-            report14_id=report14_id,
-        )
+    for _ in range(2):
+        with pytest.raises(CandidateApplyError, match=RETIRED_GATE):
+            apply_candidate_transaction(
+                SessionLocal,
+                repo_root=tmp_path,
+                bundle=bundle,
+                source_commit="5" * 40,
+                report14_id=report14_id,
+            )
 
     with SessionLocal() as session:
         assert _counts(session) == before

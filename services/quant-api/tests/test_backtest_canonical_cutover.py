@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 import json
 
 import pytest
 from pydantic import ValidationError
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -25,6 +26,10 @@ from app.data_core.contracts import (
 )
 from app.db.base import Base
 from app.models.backtest import BacktestReportModel, BacktestTask
+from app.db.session import get_db
+from app.main import app
+from app.services.batch_backtest import create_batch_task
+from app.vnpy_integration.errors import BacktestConfigurationError
 from app.schemas.backtest import FormalBacktestTaskRequest
 from app.vnpy_integration.backtest_runner import _validate_standard_rows
 
@@ -187,6 +192,17 @@ def test_formal_request_requires_series_only_for_continuous_and_timezone_aware_w
         FormalBacktestTaskRequest.model_validate(_formal_payload(interval="2m"))
 
 
+def test_actual_dominant_non_jm_is_rejected_with_stable_code() -> None:
+    with pytest.raises(ValidationError) as caught:
+        FormalBacktestTaskRequest.model_validate(
+            _formal_payload(instrument_symbol="rb")
+        )
+
+    error = caught.value.errors()[0]
+    assert error["type"] == "backtest_actual_dominant_product_unsupported"
+    assert error["ctx"]["code"] == "BACKTEST_ACTUAL_DOMINANT_PRODUCT_UNSUPPORTED"
+
+
 def test_fixed_jm_formal_spec_contains_no_profile_or_file_identity() -> None:
     spec = build_jm_v1b_formal_request("15m")
 
@@ -195,6 +211,76 @@ def test_fixed_jm_formal_spec_contains_no_profile_or_file_identity() -> None:
     assert spec.request.auxiliary_periods == ["1d"]
     assert "profile" not in json.dumps(spec.server_context)
     assert "file" not in json.dumps(spec.server_context)
+
+
+@pytest.mark.parametrize(
+    ("route", "payload", "expected_code"),
+    [
+        (
+            "/api/backtests/run",
+            {
+                "symbol": "jm",
+                "contract": "jm.MAIN",
+                "period": "15m",
+                "profile_id": "intraday_research_v1",
+                "start": "2024-01-02",
+                "end": "2024-02-02",
+            },
+            "BACKTEST_LEGACY_INLINE_DISABLED",
+        ),
+        (
+            "/api/backtests/run-batch",
+            {
+                "watchlist_code": "black",
+                "period": "15m",
+                "profile_id": "intraday_research_v1",
+                "start": "2024-01-02",
+                "end": "2024-02-02",
+                "run_inline": True,
+            },
+            "BACKTEST_LEGACY_BATCH_DISABLED",
+        ),
+    ],
+)
+def test_legacy_formal_routes_fail_closed_before_creating_task_or_report(
+    route: str,
+    payload: dict[str, object],
+    expected_code: str,
+) -> None:
+    SessionLocal = _session_factory()
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).post(route, json=payload)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 410
+    assert response.json()["detail"]["code"] == expected_code
+    with SessionLocal() as session:
+        assert session.query(BacktestTask).count() == 0
+        assert session.query(BacktestReportModel).count() == 0
+
+
+def test_legacy_batch_service_cannot_create_nonresearch_task() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session, pytest.raises(
+        BacktestConfigurationError,
+        match="BACKTEST_LEGACY_BATCH_DISABLED",
+    ):
+        create_batch_task(
+            session,
+            {
+                "watchlist_code": "black",
+                "period": "15m",
+                "start": "2024-01-02T00:00:00+00:00",
+                "end": "2024-02-02T00:00:00+00:00",
+            },
+        )
 
 
 def test_formal_task_freezes_canonical_input_and_leaves_legacy_columns_null() -> None:
@@ -256,6 +342,38 @@ def test_runner_rereads_identity_and_injects_canonical_rows_in_memory() -> None:
             assert '"profile_id"' not in encoded
             assert '"market_data_file_id"' not in encoded
             assert '"binding_snapshot"' not in encoded
+
+
+def test_asia_shanghai_window_is_stored_and_executed_as_utc() -> None:
+    SessionLocal = _session_factory()
+    market_data = FakeMarketDataService()
+    adapter = CapturingAdapter()
+    china = timezone(timedelta(hours=8))
+    with SessionLocal() as session:
+        service = BacktestService(session, market_data=market_data)
+        task = service.create_formal_task(
+            _formal_payload(
+                start=datetime(2024, 1, 2, 8, 0, tzinfo=china),
+                end=datetime(2024, 2, 2, 8, 0, tzinfo=china),
+                auxiliary_periods=[],
+                dataset_kind="continuous",
+                contract_or_series="JM.MAIN",
+            )
+        )
+        session.commit()
+
+        outcome = BacktestTaskRunner(
+            session,
+            adapter=adapter,
+            service=service,
+        ).run(task.id)
+
+        assert outcome["status"] == "success"
+        assert task.request_payload["start"] == "2024-01-02T00:00:00Z"
+        assert task.request_payload["end"] == "2024-02-02T00:00:00Z"
+        assert adapter.request.start == datetime(2024, 1, 2, tzinfo=UTC)
+        assert adapter.request.end == datetime(2024, 2, 2, tzinfo=UTC)
+        assert market_data.queries[0].start == datetime(2024, 1, 2, tzinfo=UTC)
 
 
 def test_continuous_report_is_labeled_research_contract_only() -> None:
