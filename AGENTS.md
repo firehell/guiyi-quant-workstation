@@ -92,5 +92,7 @@
 通过 PR、CI 与独立 Review 集成；满足上述可逆集成条件时无需重复请求用户批准 Plan 或
 task→`develop` merge。只有 task clean 且其 HEAD 已被 `develop` 包含时，才可移除 task
 worktree 与本地分支。`worktree_flow.py` 默认 dry-run；`task-worktree.sh` 仍只负责到 Draft PR，
-后续 merge 由 Codex 编排层执行。`release-flow.sh publish --expected-sha <sha>` 仍只在用户批准、
-main/develop clean 且精确匹配时更新远端；task 自动集成不授权发布、tag 或 Runtime。
+后续 merge 由 Codex 编排层执行。`release-flow.sh prepare/publish/tag` 仍只在用户批准 exact packet、
+current/target/rollback SHA、clean worktree 与远端 refs 精确匹配时逐项执行；publish 必须绑定批准时
+的远端 main 且不得隐式修改 upstream，tag 重试只接受 annotated object、target 与 message 全部精确
+一致的原 packet；task 自动集成不授权 release、tag 或 Runtime。

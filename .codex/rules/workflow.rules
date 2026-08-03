@@ -36,10 +36,30 @@ prefix_rule(
     pattern = [
         "bash",
         "scripts/engineering/release-flow.sh",
+        "prepare"
+    ],
+    decision = "prompt",
+    justification = "本地 main fast-forward 需要用户 exact release 批准",
+)
+
+prefix_rule(
+    pattern = [
+        "bash",
+        "scripts/engineering/release-flow.sh",
         "publish"
     ],
     decision = "prompt",
-    justification = "发布 main 和正式 tag 需要用户 release 批准",
+    justification = "发布 main/develop release refs 需要用户 exact release 批准",
+)
+
+prefix_rule(
+    pattern = [
+        "bash",
+        "scripts/engineering/release-flow.sh",
+        "tag"
+    ],
+    decision = "prompt",
+    justification = "创建并发布 annotated release tags 需要用户 exact release 批准",
 )
 
 prefix_rule(

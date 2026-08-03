@@ -63,17 +63,37 @@ PR 可走同一 develop 集成 Gate，但生产 apply、真实写入、删除、
 
 ## 发布与 Runtime
 
-release 必须以用户批准的 PR 合入 main。仅在 main 与 develop 都 clean 且精确指向同一 commit 后，
-用户可将该 SHA 绑定到一次原子远端发布：
+release 必须先创建并通过用户批准的 `develop -> main` exact-head PR。用户批准 packet 后，先用
+`prepare` 验证当前/目标 SHA、远端 refs、clean worktree 与 fast-forward 关系，再只更新本地 main；
+随后以 `publish` 原子更新远端 main/develop，最后以 `tag` 创建并原子发布两个 annotated tags：
 
 ```bash
-bash scripts/engineering/release-flow.sh publish --expected-sha <40位小写SHA> --json
-bash scripts/engineering/release-flow.sh publish --expected-sha <40位小写SHA> --apply --json
+bash scripts/engineering/release-flow.sh prepare \
+  --current-main-sha <当前main SHA> --expected-sha <目标SHA> --json
+bash scripts/engineering/release-flow.sh prepare \
+  --current-main-sha <当前main SHA> --expected-sha <目标SHA> --apply --json
+
+bash scripts/engineering/release-flow.sh publish \
+  --previous-main-sha <批准时的远端main SHA> --expected-sha <40位小写SHA> --json
+bash scripts/engineering/release-flow.sh publish \
+  --previous-main-sha <批准时的远端main SHA> --expected-sha <40位小写SHA> --apply --json
+
+bash scripts/engineering/release-flow.sh tag --expected-sha <目标SHA> \
+  --release-tag <annotated release tag> --release-message <批准的单行消息> \
+  --rollback-sha <rollback SHA> --rollback-tag <annotated rollback tag> \
+  --rollback-message <批准的单行消息> --json
+bash scripts/engineering/release-flow.sh tag --expected-sha <目标SHA> \
+  --release-tag <annotated release tag> --release-message <批准的单行消息> \
+  --rollback-sha <rollback SHA> --rollback-tag <annotated rollback tag> \
+  --rollback-message <批准的单行消息> --apply --json
 ```
 
-默认是 dry-run；`--apply` 只以精确 SHA 原子更新 `origin/main` 与 `origin/develop`，随后验证远端
-两分支。它不打 tag、不创建 Release、不合并 PR，也不切换 Runtime。annotated tag 与 Runtime promotion
-继续使用独立批准和业务 Gate；不可用 worktree 工具、release 批准或 S6-11 计划替代。
+三个动作默认均为 dry-run。`prepare --apply` 只允许本地 main fast-forward；`publish` 在写入前绑定
+批准时的远端 main、目标 develop 和本地两条 refs，`publish --apply` 只以精确 SHA 原子更新
+`origin/main` 与 `origin/develop`，不会隐式修改本地 upstream；`tag --apply` 只在两条远端 release refs
+已精确匹配后创建并原子发布两个 `runtime-*` annotated tags。若两个本地/远端 annotated tag object、
+解引用目标与批准消息全部精确一致，相同 packet 重试返回 `already_published`；任一部分存在或内容漂移
+均拒绝。脚本不创建 GitHub Release、不切换 Runtime；Runtime promotion 继续使用独立批准和业务 Gate。
 
 在运行任何业务专用 Runtime Gate 前，可使用以下只读校验封装绑定 annotated tag、detached Runtime 和
 approval packet 哈希；它不写 Runtime，`promote --apply` 也会明确拒绝通用 promotion：
