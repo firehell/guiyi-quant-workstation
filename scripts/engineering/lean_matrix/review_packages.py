@@ -63,9 +63,6 @@ def build_review_package(
         "specialist_evidence_digests": [
             semantic_digest(report.to_dict()) for _, report in specialist_evidence
         ],
-        "specialist_reviewed_head_sha": (
-            specialist_evidence[0][1].exact_head_sha if specialist_evidence else None
-        ),
     }
     return ReviewPackageV1.from_mapping(
         payload,

@@ -189,6 +189,7 @@ def recover_review_ledger(
     implementation_contexts: set[str] = set()
     reviewer_contexts: set[str] = set()
     previous_head: str | None = None
+    previous_specialist_head: str | None = None
     for expected_round, raw_entry in enumerate(raw_rounds):
         entry = _mapping(raw_entry, "review ledger round")
         _keys(entry, ROUND_KEYS, "review ledger round")
@@ -296,6 +297,9 @@ def recover_review_ledger(
             specialist_evidence=tuple(specialist_evidence),
             require_current_head=round_number == len(raw_rounds) - 1,
         )
+        specialist_reviewed_head = (
+            specialist_evidence[0][1].exact_head_sha if specialist_evidence else None
+        )
         if previous_head is not None and not is_ancestor(repo_root, previous_head, package.exact_head_sha):
             raise LeanMatrixError(
                 "review_head_rewritten", "repair round HEAD must descend from prior reviewed HEAD",
@@ -305,14 +309,14 @@ def recover_review_ledger(
             if (
                 package.specialist_evidence_digests
                 != predecessor_package.specialist_evidence_digests
-                or package.specialist_reviewed_head_sha
-                != predecessor_package.specialist_reviewed_head_sha
+                or specialist_reviewed_head != previous_specialist_head
             ):
                 raise LeanMatrixError(
                     "specialist_predecessor_mismatch",
                     "repair package must retain the predecessor specialist evidence and reviewed HEAD",
                 )
         previous_head = package.exact_head_sha
+        previous_specialist_head = specialist_reviewed_head
         decision_path, raw_decision = _artifact(
             repo_root, workspace, entry["final_decision"], "final decision",
         )

@@ -32,12 +32,7 @@ PROTOCOL_TEMPLATE_FIELDS = {
         "changed_paths", "test_evidence", "advisory_evidence_digests", "status",
         "concerns", "predecessor_decision_digest",
     ),
-    "assets/review-package.md": (
-        "schema_version", "execution_plan_digest", "intake_digest", "task_brief_digest",
-        "exact_base_sha", "exact_head_sha", "round", "implementer_context_id",
-        "reviewer_context_id", "changed_paths", "diff_digest", "test_receipts",
-        "implementer_handoff_digest", "specialist_evidence_digests",
-    ),
+    "assets/review-package.md": None,
     "assets/final-decision.md": (
         "schema_version", "review_package_digest", "exact_head_sha", "implementer_context_id",
         "reviewer_context_id", "round", "spec_verdict", "quality_verdict", "findings", "decision",
@@ -261,7 +256,16 @@ def test_subagent_templates_match_the_strict_json_contract_fields() -> None:
             for line in _read(relative_path).splitlines()
             if line.startswith("## ")
         )
-        assert headings == expected_fields, relative_path
+        if expected_fields is None:
+            sys.path.insert(0, str(ENGINEERING))
+            try:
+                from lean_matrix.contracts import ReviewPackageV1
+            finally:
+                sys.path.pop(0)
+            assert len(headings) == len(ReviewPackageV1.KEYS), relative_path
+            assert set(headings) == ReviewPackageV1.KEYS, relative_path
+        else:
+            assert headings == expected_fields, relative_path
 
 
 def test_subagent_protocol_links_execution_review_recovery_and_frozen_boundaries() -> None:

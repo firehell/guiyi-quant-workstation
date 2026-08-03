@@ -756,11 +756,81 @@ def test_repair_reuses_round_zero_specialist_evidence_without_claiming_new_head_
     repair_package = _package(repair_state)
 
     assert repair_package.exact_head_sha == repair_head
-    assert repair_package.specialist_reviewed_head_sha == state["head"]
+    assert "specialist_reviewed_head_sha" not in repair_package.to_dict()
+    assert {report.exact_head_sha for _, report in repair_state["specialists"]} == {
+        state["head"],
+    }
     assert repair_package.specialist_evidence_digests == (
         round_zero_package.specialist_evidence_digests
     )
 
+    repair_decision = _decision(repair_state, repair_package, round_number=1)
+    entry_one = _persist_round(repair_state, repair_package, repair_decision)
+    ledger = _ledger(state["repo"], state["intake"], [entry_zero, entry_one])
+
+    recovered = state["api"]["recover_review_ledger"](
+        state["repo"], state["intake"], ledger,
+        round_zero_brief=state["implementer"],
+    )
+    assert [decision.decision for decision in recovered] == [
+        "要求修正后再集成",
+        "允许集成 develop",
+    ]
+
+
+def test_pre_fix_v1_round_zero_package_loads_and_recovers_with_new_repair_round(
+    tmp_path: Path,
+) -> None:
+    """Adding a mandatory V1 key must not strand a digest-bound pre-fix round-zero package."""
+    state = _round_zero(tmp_path)
+    pre_fix_payload = _package(state).to_dict()
+    pre_fix_payload.pop("specialist_reviewed_head_sha", None)
+    pre_fix_package = state["api"]["ReviewPackageV1"].from_mapping(
+        pre_fix_payload,
+        repo_root=state["repo"],
+        document_intake=state["intake"],
+        implementer_brief=state["implementer"],
+        implementer_handoff=state["handoff"],
+        reviewer_brief=state["reviewer"],
+        specialist_evidence=state["specialists"],
+    )
+    assert pre_fix_package.to_dict() == pre_fix_payload
+
+    round_zero_decision = _decision(
+        state,
+        pre_fix_package,
+        spec="FAIL",
+        quality="CHANGES_REQUIRED",
+        findings=[{"severity": "Important", "summary": "repair required"}],
+        decision="要求修正后再集成",
+    )
+    entry_zero = _persist_round(state, pre_fix_package, round_zero_decision)
+    predecessor = _digest(round_zero_decision.to_dict())
+    repair_head = _commit(state["repo"], "src/feature.py", "value = 2\n")
+    repair_implementer = _brief(
+        state["api"], state["intake"], role="implementer", context_id="implementer-0",
+        round_number=1, predecessor=predecessor, round_zero_brief=state["implementer"],
+    )
+    repair_reviewer = _brief(
+        state["api"], state["intake"], role="reviewer", context_id="reviewer-0",
+        round_number=1, predecessor=predecessor, round_zero_brief=state["implementer"],
+    )
+    repair_state = {
+        **state,
+        "head": repair_head,
+        "implementer": repair_implementer,
+        "reviewer": repair_reviewer,
+        "handoff": _handoff(
+            state["api"], repair_implementer, head=repair_head,
+            changed_paths=["src/feature.py"],
+            test_evidence=_receipts(
+                state["api"], state["repo"], state["intake"],
+                head=repair_head, prefix="pre-fix-repair-round-1",
+            ),
+        ),
+    }
+    repair_package = _package(repair_state)
+    assert "specialist_reviewed_head_sha" not in repair_package.to_dict()
     repair_decision = _decision(repair_state, repair_package, round_number=1)
     entry_one = _persist_round(repair_state, repair_package, repair_decision)
     ledger = _ledger(state["repo"], state["intake"], [entry_zero, entry_one])
@@ -991,7 +1061,6 @@ def test_recovery_rejects_legacy_destination_only_forbidden_rename(tmp_path: Pat
         ],
         "implementer_handoff_digest": _digest(handoff.to_dict()),
         "specialist_evidence_digests": [],
-        "specialist_reviewed_head_sha": None,
     }
     decision_payload = {
         "schema_version": 1,
