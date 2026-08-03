@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 import pyarrow.parquet as pq
@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.data_core.bar_schema import CanonicalBar
+from app.data_core.aggregation import AggregationSession, aggregate_bars
 from app.data_core.canonical_store import (
     CANONICAL_MANIFEST_FORMAT_V2,
     CANONICAL_PARQUET_SCHEMA,
@@ -27,6 +28,8 @@ from app.data_core.catalog import HistoricalCatalog
 from app.data_core.contracts import (
     DERIVED_FREQUENCIES,
     BarFrequency,
+    BarsResult,
+    DataCoreError,
     DatasetKey,
     DatasetKind,
     DatasetOrigin,
@@ -53,6 +56,7 @@ _VALUE_COLUMNS = (
     "open_interest",
 )
 TASK07_AGGREGATE_MANIFEST_VERSION = "task07-aggregate-migration-v1"
+TASK07_DIRECT_REPAIR_MANIFEST_VERSION = "task07-direct-repair-v1"
 
 
 class Task07MigrationError(ValueError):
@@ -88,6 +92,420 @@ class PreparedLegacyBatch:
     batch: ProviderBarBatch
     evidence: Task07CorrectionEvidence | Task07AggregateEvidence
     lineage: ManifestLineage | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Task07RepairTarget:
+    operation: str
+    dataset: DatasetKey
+    start: datetime
+    end: datetime
+    source_action_ids: tuple[int, ...]
+    source_action_digests: tuple[str, ...]
+    target_digest: str
+
+
+def build_task07_repair_targets(
+    plan: Mapping[str, Any],
+    batch: Mapping[str, Any],
+) -> tuple[Task07RepairTarget, ...]:
+    operation = batch.get("operation")
+    if operation not in {"rqdata_redownload", "canonical_1m_reaggregate"}:
+        raise Task07MigrationError("TASK07_REPAIR_OPERATION_INVALID")
+    action_by_id: dict[int, Mapping[str, Any]] = {}
+    for action in plan.get("repair_actions", []):
+        if not isinstance(action, Mapping):
+            raise Task07MigrationError("TASK07_REPAIR_ACTION_INVALID")
+        try:
+            identifier = int(action["market_data_file_id"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise Task07MigrationError("TASK07_REPAIR_ACTION_INVALID") from exc
+        if identifier in action_by_id:
+            raise Task07MigrationError("TASK07_REPAIR_ACTION_INVALID")
+        action_by_id[identifier] = action
+    action_ids = batch.get("repair_action_ids")
+    action_digests = batch.get("repair_action_digests")
+    if (
+        not isinstance(action_ids, list)
+        or not isinstance(action_digests, list)
+        or not action_ids
+        or len(action_ids) != len(action_digests)
+    ):
+        raise Task07MigrationError("TASK07_REPAIR_BATCH_INVALID")
+    grouped: dict[DatasetKey, list[tuple[datetime, datetime, int, str]]] = {}
+    for raw_id, raw_digest in zip(action_ids, action_digests, strict=True):
+        identifier = int(raw_id)
+        action = action_by_id.get(identifier)
+        if (
+            action is None
+            or action.get("action") != operation
+            or action.get("action_digest") != raw_digest
+            or action.get("symbol") != batch.get("symbol")
+            or action.get("dataset_kind") != batch.get("dataset_kind")
+            or action.get("frequency") != batch.get("frequency")
+        ):
+            raise Task07MigrationError("TASK07_REPAIR_BATCH_INVALID")
+        try:
+            dataset = DatasetKey(
+                provider=str(action["provider"]),
+                dataset_kind=DatasetKind(str(action["dataset_kind"])),
+                symbol=str(action["symbol"]),
+                contract_or_series=str(action["contract_or_series"]),
+                frequency=BarFrequency(str(action["frequency"])),
+                adjustment=str(action["adjustment"]),
+                schema_version=str(action["schema_version"]),
+            )
+            window = action["window"]
+            if not isinstance(window, Mapping):
+                raise TypeError
+            start = _aware_datetime(str(window["start"]))
+            end = _aware_datetime(str(window["end"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise Task07MigrationError("TASK07_REPAIR_ACTION_INVALID") from exc
+        if start >= end:
+            raise Task07MigrationError("TASK07_REPAIR_ACTION_INVALID")
+        grouped.setdefault(dataset, []).append(
+            (start, end, identifier, str(raw_digest))
+        )
+    targets: list[Task07RepairTarget] = []
+    for dataset, windows in grouped.items():
+        ordered = sorted(windows, key=lambda item: (item[0], item[1], item[2]))
+        current_start, current_end, identifier, digest = ordered[0]
+        current_ids = [identifier]
+        current_digests = [digest]
+        for start, end, identifier, digest in ordered[1:]:
+            if start <= current_end:
+                current_end = max(current_end, end)
+                current_ids.append(identifier)
+                current_digests.append(digest)
+                continue
+            targets.append(
+                _task07_repair_target(
+                    operation=operation,
+                    dataset=dataset,
+                    start=current_start,
+                    end=current_end,
+                    action_ids=current_ids,
+                    action_digests=current_digests,
+                )
+            )
+            current_start, current_end = start, end
+            current_ids = [identifier]
+            current_digests = [digest]
+        targets.append(
+            _task07_repair_target(
+                operation=operation,
+                dataset=dataset,
+                start=current_start,
+                end=current_end,
+                action_ids=current_ids,
+                action_digests=current_digests,
+            )
+        )
+    return tuple(
+        sorted(
+            targets,
+            key=lambda item: (
+                item.dataset.symbol,
+                item.dataset.dataset_kind.value,
+                item.dataset.frequency.value,
+                item.dataset.contract_or_series,
+                item.start,
+            ),
+        )
+    )
+
+
+def _task07_repair_target(
+    *,
+    operation: str,
+    dataset: DatasetKey,
+    start: datetime,
+    end: datetime,
+    action_ids: Sequence[int],
+    action_digests: Sequence[str],
+) -> Task07RepairTarget:
+    body = {
+        "operation": operation,
+        "dataset": {
+            "provider": dataset.provider,
+            "dataset_kind": dataset.dataset_kind.value,
+            "symbol": dataset.symbol,
+            "contract_or_series": dataset.contract_or_series,
+            "frequency": dataset.frequency.value,
+            "adjustment": dataset.adjustment,
+            "schema_version": dataset.schema_version,
+        },
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "source_action_ids": list(action_ids),
+        "source_action_digests": list(action_digests),
+    }
+    return Task07RepairTarget(
+        operation=operation,
+        dataset=dataset,
+        start=start,
+        end=end,
+        source_action_ids=tuple(action_ids),
+        source_action_digests=tuple(action_digests),
+        target_digest=canonical_json_digest(body),
+    )
+
+
+def execute_task07_repair_target(
+    target: Task07RepairTarget,
+    *,
+    sessions: Sequence[TradingSessionCoverage],
+    fetch_direct: Callable[[ProviderBarRequest], ProviderBarBatch],
+    read_canonical_1m: Callable[[Task07RepairTarget], object],
+    publish: Callable[[ProviderBarBatch, ManifestLineage | None], Mapping[str, object]],
+    record_gap: Callable[[Task07RepairTarget, str], object],
+) -> dict[str, object]:
+    if not isinstance(target, Task07RepairTarget):
+        raise Task07MigrationError("TASK07_REPAIR_TARGET_INVALID")
+    session_tuple = tuple(sessions)
+    if not session_tuple or not all(
+        isinstance(item, TradingSessionCoverage) for item in session_tuple
+    ):
+        raise Task07MigrationError("TASK07_REPAIR_SESSION_INVALID")
+    calls_rqdata = target.operation == "rqdata_redownload"
+    try:
+        lineage: ManifestLineage | None = None
+        request = ProviderBarRequest(
+            dataset=target.dataset,
+            start=target.start,
+            end=target.end,
+            sessions=session_tuple,
+        )
+        if calls_rqdata:
+            batch = fetch_direct(request)
+        elif target.operation == "canonical_1m_reaggregate":
+            source = read_canonical_1m(target)
+            if not isinstance(source, BarsResult):
+                raise Task07MigrationError("TASK07_REAGGREGATE_SOURCE_INVALID")
+            if (
+                not source.source_datasets
+                or any(
+                    item.frequency is not BarFrequency.M1
+                    or item.provider != target.dataset.provider
+                    or item.dataset_kind is not target.dataset.dataset_kind
+                    or item.symbol != target.dataset.symbol
+                    or item.contract_or_series
+                    != target.dataset.contract_or_series
+                    for item in source.source_datasets
+                )
+            ):
+                raise Task07MigrationError("TASK07_REAGGREGATE_SOURCE_INVALID")
+            aggregation_sessions = tuple(
+                AggregationSession(
+                    trading_day=item.trading_day,
+                    name=f"task07-repair-{index:06d}",
+                    start=item.start,
+                    end=item.end,
+                )
+                for index, item in enumerate(session_tuple, 1)
+            )
+            bars = aggregate_bars(
+                source.bars,
+                target_frequency=target.dataset.frequency,
+                sessions=aggregation_sessions,
+                requested_window=(target.start, target.end),
+            )
+            source_manifest_digest = canonical_json_digest(
+                {
+                    "source_datasets": [
+                        {
+                            "provider": item.provider,
+                            "dataset_kind": item.dataset_kind.value,
+                            "symbol": item.symbol,
+                            "contract_or_series": item.contract_or_series,
+                            "frequency": item.frequency.value,
+                            "adjustment": item.adjustment,
+                            "schema_version": item.schema_version,
+                        }
+                        for item in source.source_datasets
+                    ],
+                    "manifest_digests": list(source.manifest_digests),
+                }
+            )
+            quality_evidence_digest = canonical_json_digest(
+                {
+                    "source_manifest_digest": source_manifest_digest,
+                    "source_data_versions": list(source.source_data_versions),
+                    "requested_window": [
+                        target.start.isoformat(),
+                        target.end.isoformat(),
+                    ],
+                }
+            )
+            lineage = ManifestLineage(
+                origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+                source_frequency=BarFrequency.M1,
+                legacy_source_checksum=source_manifest_digest,
+                quality_evidence_digest=quality_evidence_digest,
+            )
+            batch = ProviderBarBatch(
+                request=request,
+                bars=bars,
+                data_version=f"task07-reaggregate-{target.target_digest[:16]}",
+            )
+        else:
+            raise Task07MigrationError("TASK07_REPAIR_OPERATION_INVALID")
+        validate_provider_batch(batch)
+    except (
+        DataCoreError,
+        Task07MigrationError,
+        RuntimeError,
+        TimeoutError,
+        ConnectionError,
+    ) as exc:
+        reason = (
+            "task07_rqdata_redownload_failed"
+            if calls_rqdata
+            else "task07_canonical_1m_reaggregate_failed"
+        )
+        record_gap(target, reason)
+        body = {
+            "schema_version": 1,
+            "command": "data.task07.repair",
+            "status": "data_gap",
+            "operation": target.operation,
+            "target_digest": target.target_digest,
+            "source_action_ids": list(target.source_action_ids),
+            "source_action_digests": list(target.source_action_digests),
+            "calls_rqdata": calls_rqdata,
+            "publication": None,
+            "data_gap": {
+                "reason_code": reason,
+                "error_type": type(exc).__name__,
+            },
+        }
+        return {**body, "receipt_digest": canonical_json_digest(body)}
+    publication = dict(publish(batch, lineage))
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.repair",
+        "status": "passed",
+        "operation": target.operation,
+        "target_digest": target.target_digest,
+        "source_action_ids": list(target.source_action_ids),
+        "source_action_digests": list(target.source_action_digests),
+        "calls_rqdata": calls_rqdata,
+        "publication": publication,
+        "data_gap": None,
+    }
+    return {**body, "receipt_digest": canonical_json_digest(body)}
+
+
+def publish_task07_repair_batch(
+    batch: ProviderBarBatch,
+    *,
+    lineage: ManifestLineage | None,
+    target: Task07RepairTarget,
+    store: CanonicalStore,
+    catalog: HistoricalCatalog,
+    batch_key: str,
+    plan_digest: str,
+    batch_digest: str,
+    source_market_data_file_id: int,
+    canonical_root: Path,
+) -> dict[str, object]:
+    _require_sha256(plan_digest, "TASK07_PLAN_DIGEST_INVALID")
+    _require_sha256(batch_digest, "TASK07_BATCH_DIGEST_INVALID")
+    if batch.request.dataset != target.dataset:
+        raise Task07MigrationError("TASK07_REPAIR_TARGET_DRIFT")
+    staged = store.stage(batch)
+    validation = store.validate(staged)
+    manifest_version = (
+        TASK07_AGGREGATE_MANIFEST_VERSION
+        if lineage is not None
+        else TASK07_DIRECT_REPAIR_MANIFEST_VERSION
+    )
+    exact = [
+        item
+        for item in catalog.list_partitions(target.dataset)
+        if _as_utc(item.coverage_start) == _as_utc(validation.coverage_start)
+        and _as_utc(item.coverage_end) == _as_utc(validation.coverage_end)
+        and item.row_count == validation.row_count
+        and item.checksum == validation.file_checksum
+        and item.overlap_reason == "version_replacement"
+        and item.manifest_version == manifest_version
+    ]
+    if len(exact) > 1:
+        store.discard(staged)
+        raise Task07MigrationError("TASK07_REPAIR_REPLACEMENT_AMBIGUOUS")
+    if exact:
+        store.discard(staged)
+        manifest = exact[0]
+        publication_status = "reused"
+    else:
+        expectation_kwargs: dict[str, object] = {
+            "overlap_reason": "version_replacement",
+        }
+        if lineage is not None:
+            expectation_kwargs.update(
+                {
+                    "manifest_format": CANONICAL_MANIFEST_FORMAT_V2,
+                    "lineage": lineage,
+                }
+            )
+        published = store.publish(
+            staged,
+            PublishExpectation.from_validation(
+                validation,
+                manifest_version=manifest_version,
+                **expectation_kwargs,
+            ),
+        )
+        manifest = published.partition_manifest
+        publication_status = "published"
+    body: dict[str, object] = {
+        "schema_version": 1,
+        "command": "data.task07.repair-publication",
+        "status": "passed",
+        "publication_status": publication_status,
+        "overlap_reason": "version_replacement",
+        "batch_key": batch_key,
+        "plan_digest": plan_digest,
+        "batch_digest": batch_digest,
+        "market_data_file_id": source_market_data_file_id,
+        "target_digest": target.target_digest,
+        "dataset": {
+            "provider": target.dataset.provider,
+            "dataset_kind": target.dataset.dataset_kind.value,
+            "symbol": target.dataset.symbol,
+            "contract_or_series": target.dataset.contract_or_series,
+            "frequency": target.dataset.frequency.value,
+            "adjustment": target.dataset.adjustment,
+            "schema_version": target.dataset.schema_version,
+        },
+        "coverage_start": manifest.coverage_start.isoformat(),
+        "coverage_end": manifest.coverage_end.isoformat(),
+        "row_count": manifest.row_count,
+        "file_uri": manifest.file_uri,
+        "physical_checksum": manifest.checksum,
+        "manifest_uri": manifest.manifest_uri,
+        "manifest_digest": manifest.manifest_digest,
+        "manifest_version": manifest.manifest_version,
+        "data_version": validation.data_version,
+        "canonical_logical_fingerprint": validation.canonical_logical_fingerprint,
+        "calls_rqdata": target.operation == "rqdata_redownload",
+        "deletion_authorized": False,
+    }
+    if lineage is not None:
+        body.update(
+            {
+                "manifest_format": CANONICAL_MANIFEST_FORMAT_V2,
+                "source_lineage": lineage.as_payload(),
+            }
+        )
+    receipt = {**body, "receipt_digest": _digest(body)}
+    verify_task07_published_batch(
+        receipt,
+        catalog=catalog,
+        canonical_root=canonical_root,
+    )
+    return receipt
 
 
 def prepare_legacy_aggregate_parquet_batch(
@@ -797,6 +1215,13 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _aware_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("timezone required")
+    return parsed.astimezone(UTC)
 
 
 def _safe_canonical_path(root: Path, relative_text: str) -> Path:
