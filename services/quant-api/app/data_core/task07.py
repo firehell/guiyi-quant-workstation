@@ -48,8 +48,10 @@ _REFERENCE_IGNORED_DIRS = {
 _REFERENCE_SELF_PATHS = {
     "services/quant-api/app/data_core/task07.py",
     "services/quant-api/app/data_core/task07_migration.py",
+    "services/quant-api/app/data_core/task07_deletion.py",
     "services/quant-api/app/services/derived_reference_inventory.py",
     "services/quant-api/tests/data_core/test_task07_orchestration.py",
+    "services/quant-api/tests/data_core/test_task07_deletion.py",
     "services/quant-api/tests/test_derived_reference_inventory.py",
 }
 _RETIRED_LEGACY_MODULES = {

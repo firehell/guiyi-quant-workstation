@@ -90,6 +90,13 @@ from app.data_core.task07_migration import (
     resolve_task07_provider_sessions,
     verify_task07_published_batch,
 )
+from app.data_core.task07_deletion import (
+    apply_deletion_plan as apply_task07_deletion_plan,
+    build_deletion_approval_packet as build_task07_deletion_approval_packet,
+    build_deletion_plan as build_task07_deletion_plan,
+    build_deletion_preflight as build_task07_deletion_preflight,
+    verify_deletion_apply as verify_task07_deletion_apply,
+)
 from app.data_core.rqdata_provider import CanonicalRQDataAdapter
 from app.services.rqdata_ingest.client import RqDataClient
 from app.services.market_data_reader import MarketDataReader
@@ -522,6 +529,137 @@ def run_data_core_command(
             "runtime_cutover_eligible": True,
         }
         return {**body, "verification_digest": task07_canonical_digest(body)}
+    if command == "task07.deletion-plan":
+        project_root = _absolute_path(args.project_root, "project_root")
+        _require_loaded_source_checkout(project_root)
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        inventory = load_inventory_evidence(
+            _absolute_path(args.inventory, "inventory")
+        )
+        if (
+            inventory.get("base_sha") != git_state["head"]
+            or inventory.get("database_revision") != revision
+        ):
+            raise ValueError("TASK07_DELETION_INVENTORY_FACTS_DRIFT")
+        reference_digest = _task07_current_reference_digest(
+            project_root, args.runtime_root
+        )
+        replacements, verified_ids = _task07_replacement_receipts(
+            session,
+            args.replacement_receipt,
+            canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+        )
+        plan = build_task07_deletion_plan(
+            assets=_task07_deletion_candidates(
+                inventory["assets"], verified_ids
+            ),
+            approved_roots=tuple(
+                _absolute_path(path, "approved_root")
+                for path in args.approved_root
+            ),
+            quarantine_root=_absolute_path(
+                args.quarantine_root, "quarantine_root"
+            ),
+            base_sha=str(git_state["head"]),
+            database_revision=revision,
+            reference_digest=reference_digest,
+            canonical_replacements=replacements,
+            verified_replacement_ids=verified_ids,
+        )
+        packet = build_task07_deletion_approval_packet(plan)
+        return {
+            **plan,
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "approval_packet": packet,
+            "approval_packet_hash": task07_canonical_digest(packet),
+        }
+    if command in {
+        "task07.deletion-preflight",
+        "task07.deletion-apply",
+        "task07.deletion-verify",
+    }:
+        project_root = _absolute_path(args.project_root, "project_root")
+        _require_loaded_source_checkout(project_root)
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        plan = _load_task07_document(
+            _absolute_path(args.plan, "plan"),
+            expected_command="data.task07.deletion-plan",
+        )
+        reference_digest = _task07_current_reference_digest(
+            project_root, args.runtime_root
+        )
+        replacement_receipts = [
+            item["canonical_replacement_receipt"]
+            for item in plan.get("files", [])
+            if isinstance(item, Mapping)
+            and isinstance(item.get("canonical_replacement_receipt"), Mapping)
+        ]
+        verified_ids = _task07_verify_embedded_replacements(
+            session,
+            replacement_receipts,
+            canonical_root=_absolute_path(
+                args.canonical_root, "canonical_root"
+            ),
+        )
+        common = {
+            "current_base_sha": str(git_state["head"]),
+            "current_database_revision": revision,
+            "current_reference_digest": reference_digest,
+        }
+        if command == "task07.deletion-preflight":
+            result = build_task07_deletion_preflight(
+                plan,
+                packet_path=_absolute_path(
+                    args.approval_packet, "approval_packet"
+                ),
+                approval_hash=args.approval_hash,
+                **common,
+            )
+            return {**result, "effects": _readonly_effects()}
+        if command == "task07.deletion-apply":
+            preflight = _load_task07_document(
+                _absolute_path(args.preflight_receipt, "preflight_receipt"),
+                expected_command="data.task07.deletion-preflight",
+            )
+            if task07_canonical_digest(preflight) != args.preflight_hash:
+                raise ValueError("TASK07_DELETION_PREFLIGHT_HASH_MISMATCH")
+            result = apply_task07_deletion_plan(
+                plan,
+                packet_path=_absolute_path(
+                    args.approval_packet, "approval_packet"
+                ),
+                approval_hash=args.approval_hash,
+                preflight=preflight,
+                **common,
+            )
+            return {
+                **result,
+                "effects": {
+                    "calls_rqdata": False,
+                    "writes_postgresql": False,
+                    "writes_parquet": False,
+                    "moves_legacy_files_to_quarantine": True,
+                    "permanent_unlink": False,
+                },
+            }
+        receipt = _load_task07_document(
+            _absolute_path(args.receipt, "receipt"),
+            expected_command="data.task07.deletion-apply",
+        )
+        result = verify_task07_deletion_apply(
+            plan,
+            receipt,
+            verified_replacement_ids=verified_ids,
+            **common,
+        )
+        return {**result, "effects": _readonly_effects()}
     if command == "task07.retirement-plan":
         project_root = _absolute_path(args.project_root, "project_root")
         _require_loaded_source_checkout(project_root)
@@ -650,6 +788,104 @@ def _load_task07_document(path: Path, *, expected_command: str) -> dict[str, Any
     if not isinstance(payload, dict) or payload.get("command") != expected_command:
         raise ValueError("TASK07_DOCUMENT_SCOPE_INVALID")
     return payload
+
+
+def _task07_current_reference_digest(
+    project_root: Path, runtime_roots: list[Path]
+) -> str:
+    roots = [("checkout", project_root)]
+    roots.extend(
+        ("detached_runtime", _absolute_path(path, "runtime_root"))
+        for path in runtime_roots
+    )
+    report = scan_task07_references(roots)
+    if report.get("truncated") is not False:
+        raise ValueError("TASK07_DELETION_REFERENCE_SCAN_INCOMPLETE")
+    return task07_canonical_digest(report)
+
+
+def _task07_replacement_receipts(
+    session: Session,
+    receipt_paths: list[Path],
+    *,
+    canonical_root: Path,
+) -> tuple[list[dict[str, Any]], set[int]]:
+    receipts: list[dict[str, Any]] = []
+    for path in receipt_paths:
+        document = _load_task07_document(
+            _absolute_path(path, "replacement_receipt"),
+            expected_command="data.task07.apply",
+        )
+        source_receipts = document.get("source_receipts")
+        if isinstance(source_receipts, list):
+            receipts.extend(
+                dict(item) for item in source_receipts if isinstance(item, Mapping)
+            )
+        elif type(document.get("market_data_file_id")) is int:
+            receipts.append(document)
+        else:
+            raise ValueError("TASK07_DELETION_REPLACEMENT_RECEIPT_INVALID")
+    return receipts, _task07_verify_embedded_replacements(
+        session, receipts, canonical_root=canonical_root
+    )
+
+
+def _task07_verify_embedded_replacements(
+    session: Session,
+    receipts: list[Mapping[str, Any]],
+    *,
+    canonical_root: Path,
+) -> set[int]:
+    verified: set[int] = set()
+    catalog = HistoricalCatalog(session)
+    for receipt in receipts:
+        verify_task07_published_batch(
+            receipt,
+            catalog=catalog,
+            canonical_root=canonical_root,
+        )
+        source_id = receipt.get("market_data_file_id")
+        if type(source_id) is not int or source_id in verified:
+            raise ValueError("TASK07_DELETION_REPLACEMENT_RECEIPT_INVALID")
+        verified.add(source_id)
+    return verified
+
+
+def _task07_deletion_candidates(
+    assets: list[Mapping[str, Any]], verified_replacement_ids: set[int]
+) -> list[Mapping[str, Any]]:
+    candidates: list[Mapping[str, Any]] = []
+    for asset in assets:
+        source_path = Path(str(asset.get("file_path") or ""))
+        path_parts = {part.lower() for part in source_path.parts}
+        source_name = source_path.name.lower()
+        if (
+            asset.get("source_scope") != "approved_data_root"
+            or asset.get("frequency") in {"5m", "15m", "30m", "60m"}
+            or path_parts & {"evidence", "reports", "receipts"}
+            or "receipt" in source_name
+            or any(
+                marker in source_name
+                for marker in ("report-14", "report-15", "report_14", "report_15")
+            )
+        ):
+            continue
+        is_direct = (
+            asset.get("provider") == "rqdata"
+            and asset.get("data_type")
+            in {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}
+            and asset.get("frequency") in {"1m", "1d", "1w"}
+        )
+        if is_direct:
+            if (
+                asset.get("data_type") != "v2_canonical"
+                and asset.get("market_data_file_id") in verified_replacement_ids
+            ):
+                candidates.append(asset)
+            continue
+        if asset.get("disposition") == "RETIREMENT_CANDIDATE":
+            candidates.append(asset)
+    return candidates
 
 
 def _task07_plan_batch(plan: Mapping[str, Any], batch_key: str) -> dict[str, Any]:
