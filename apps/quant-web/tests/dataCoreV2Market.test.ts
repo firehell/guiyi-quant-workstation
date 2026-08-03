@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import {
   toCanonicalBarsRequest,
   toCanonicalIndicatorsRequest,
+  toCanonicalReportBarsQuery,
 } from '../src/utils/dataCoreV2Market.ts'
 
 describe('dataCoreV2Market', () => {
@@ -103,6 +104,61 @@ describe('dataCoreV2Market', () => {
         start: '2026-07-01T01:00:00Z',
         end: '2026-07-01T02:00:00Z',
       },
+    )
+  })
+
+  it('replays a canonical backtest report from its frozen input identity without legacy fallback', () => {
+    const query = toCanonicalReportBarsQuery({
+      input_identity: {
+        schema_version: 'canonical_consumer_input_v1',
+        request: {
+          dataset_kind: 'actual_dominant',
+          symbol: 'jm',
+          contract_or_series: null,
+          frequency: '15m',
+          start: '2026-07-01T00:00:00+00:00',
+          end: '2026-07-31T00:00:00+00:00',
+          strict: true,
+        },
+        source_datasets: [{
+          provider: 'rqdata',
+          dataset_kind: 'actual_dominant',
+          symbol: 'jm',
+          contract_or_series: 'JM2609',
+          frequency: '1m',
+          adjustment: 'none',
+          schema_version: 'canonical-bar-v1',
+        }],
+        manifest_digests: ['a'.repeat(64)],
+        source_data_versions: ['rqdata-20260731'],
+        derived_frequency: '15m',
+        strategy_input_version: 'backtest:su_bing_ema21:v0',
+        digest: 'b'.repeat(64),
+      },
+    })
+
+    assert.deepEqual(query.attempted, [{
+      dataset_kind: 'actual_dominant',
+      symbol: 'jm',
+      contract: null,
+      period: '15m',
+      start: '2026-07-01T00:00:00+00:00',
+      end: '2026-07-31T00:00:00+00:00',
+    }])
+    assert.equal(query.dataset_kind, 'actual_dominant')
+    assert.equal(query.contract, null)
+    assert.equal('profile_id' in query.attempted[0], false)
+    assert.equal('market_data_file_id' in query.attempted[0], false)
+  })
+
+  it('fails closed when a historical report has only legacy Profile lineage', () => {
+    assert.throws(
+      () => toCanonicalReportBarsQuery({
+        input_identity: null,
+        profile_id: 'intraday_research_v1',
+        market_data_file_id: 7,
+      } as never),
+      /canonical_report_input_identity_required/,
     )
   })
 })

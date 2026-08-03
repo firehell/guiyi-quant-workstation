@@ -476,7 +476,7 @@ export interface LiveMarketBarsResponse {
 export interface MarketBarsRequestParams {
   dataset_kind?: 'continuous' | 'actual_dominant'
   symbol: string
-  contract: string
+  contract: string | null
   period: string
   start?: string
   end?: string
@@ -492,9 +492,10 @@ export interface MarketBarsRequestParams {
 
 /** 回测报告映射到行情查询的调试信息 */
 export interface BacktestMarketBarsQueryDebug {
+  dataset_kind?: 'continuous' | 'actual_dominant'
   symbol: string
   vt_symbol?: string | null
-  contract: string
+  contract: string | null
   exchange?: string | null
   interval: string
   start?: string
