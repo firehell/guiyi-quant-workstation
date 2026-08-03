@@ -259,6 +259,24 @@ def test_non_rqdata_direct_conflict_proposes_only_rqdata_redownload() -> None:
     with pytest.raises(ValueError, match="TASK07_PLAN_CONTROL_DRIFT"):
         task07._validate_migration_plan_integrity(forged)
 
+    for field, forged_value in (
+        ("symbol", "rb"),
+        ("window", {"start": "2025-01-01T00:00:00+00:00", "end": "2025-01-02T00:00:00+00:00"}),
+    ):
+        forged = deepcopy(plan)
+        forged["provider_requests"][0][field] = forged_value
+        forged["provider_request_proposal"]["requests"][0][field] = forged_value
+        proposal_body = {
+            key: value
+            for key, value in forged["provider_request_proposal"].items()
+            if key != "proposal_digest"
+        }
+        forged["provider_request_proposal"]["proposal_digest"] = (
+            task07.canonical_digest(proposal_body)
+        )
+        with pytest.raises(ValueError, match="TASK07_PLAN_CONTROL_DRIFT"):
+            task07._validate_migration_plan_integrity(forged)
+
 
 def _manifest_scope(tmp_path: Path) -> dict[str, str]:
     roots = {

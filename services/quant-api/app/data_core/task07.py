@@ -2310,6 +2310,9 @@ def build_migration_plan(
                     "contract_or_series": raw["contract_or_series"],
                     "dataset_kind": raw["dataset_kind"],
                     "frequency": raw["frequency"],
+                    "adjustment": raw.get("adjustment") or "none",
+                    "schema_version": raw.get("schema_version")
+                    or "canonical-bar-v1",
                     "window": {
                         "start": raw["coverage_start"],
                         "end": raw["coverage_end"],
@@ -2940,6 +2943,17 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
     if len(action_by_id) != len(repair_actions):
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     request_ids: set[int] = set()
+    request_action_identity_fields = (
+        "provider",
+        "original_provider",
+        "symbol",
+        "contract_or_series",
+        "dataset_kind",
+        "frequency",
+        "adjustment",
+        "schema_version",
+        "window",
+    )
     for request in requests:
         if not isinstance(request, Mapping):
             raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
@@ -2963,9 +2977,10 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
                 and (
                     not isinstance(action, Mapping)
                     or action.get("action") != "rqdata_redownload"
-                    or action.get("provider") != request.get("provider")
-                    or action.get("original_provider")
-                    != request.get("original_provider")
+                    or any(
+                        action.get(field) != request.get(field)
+                        for field in request_action_identity_fields
+                    )
                 )
             )
         ):
