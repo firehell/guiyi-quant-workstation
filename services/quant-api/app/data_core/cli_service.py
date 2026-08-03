@@ -441,7 +441,12 @@ def run_data_core_command(
             "preflight_digest": preflight["preflight_digest"],
             "source_receipts": source_receipts,
             "source_receipt_digests": [item["receipt_digest"] for item in source_receipts],
-            "published_source_count": len(source_receipts),
+            "published_source_count": sum(
+                item.get("status") == "passed" for item in source_receipts
+            ),
+            "data_gap_count": sum(
+                item.get("status") == "data_gap" for item in source_receipts
+            ),
             "verified_partition_readbacks": verified_partition_readbacks,
             "verified_partition_count": len(verified_partition_readbacks),
             "batch_journal_path": str(journal_path),
@@ -552,6 +557,10 @@ def run_data_core_command(
                     "batch_digest": batch["batch_digest"],
                     "apply_receipt_digest": verified["receipt_digest"],
                     "batch_verify_digest": verified["verify_digest"],
+                    "published_source_count": verified[
+                        "verified_published_source_count"
+                    ],
+                    "data_gap_count": verified["verified_data_gap_count"],
                 }
             )
         body = {
@@ -568,6 +577,14 @@ def run_data_core_command(
             "batch_manifest": plan["migration_envelope"]["batch_manifest"],
             "batches_merkle_root": plan["migration_envelope"]["merkle_root"],
             "verified_batch_count": len(verification_manifest),
+            "published_source_count": sum(
+                int(item["published_source_count"])
+                for item in verification_manifest
+            ),
+            "data_gap_count": sum(
+                int(item["data_gap_count"])
+                for item in verification_manifest
+            ),
             "verification_manifest": verification_manifest,
             "runtime_cutover_eligible": True,
         }
@@ -1652,6 +1669,17 @@ def _verify_task07_apply_receipt(
     source_receipts = receipt.get("source_receipts")
     if not isinstance(source_receipts, list):
         raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    published_count = sum(
+        item.get("status") == "passed" for item in source_receipts
+    )
+    data_gap_count = sum(
+        item.get("status") == "data_gap" for item in source_receipts
+    )
+    if (
+        receipt.get("published_source_count") != published_count
+        or receipt.get("data_gap_count", 0) != data_gap_count
+    ):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
     repair_batch = batch.get("operation") in {
         "rqdata_redownload",
         "canonical_1m_reaggregate",
@@ -1748,6 +1776,8 @@ def _verify_task07_apply_receipt(
         "receipt_digest": canonical_json_digest(receipt),
         "batch_digest": batch["batch_digest"],
         "verified_source_count": len(verified),
+        "verified_published_source_count": published_count,
+        "verified_data_gap_count": data_gap_count,
         "verified_partition_count": len(verified_partition_readbacks),
         "verified_partition_digests": [
             item["validation_digest"]
