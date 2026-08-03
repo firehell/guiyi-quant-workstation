@@ -65,7 +65,9 @@ def _contracts():  # noqa: ANN202
             ExecutionPlanV1,
             HandoffReportV1,
             TaskCharterV1,
+            required_checks_for_owner,
         )
+        from lean_matrix.errors import LeanMatrixError
         from lean_matrix.planning import build_execution_plan
         from lean_matrix.review_packages import build_review_package
         from lean_matrix.workspace import intake_workspace
@@ -78,9 +80,11 @@ def _contracts():  # noqa: ANN202
         "DocumentIntakeV1": DocumentIntakeV1,
         "ExecutionPlanV1": ExecutionPlanV1,
         "HandoffReportV1": HandoffReportV1,
+        "LeanMatrixError": LeanMatrixError,
         "TaskCharterV1": TaskCharterV1,
         "intake_digest": intake_digest,
         "intake_workspace": intake_workspace,
+        "required_checks_for_owner": required_checks_for_owner,
     }
 
 
@@ -98,12 +102,19 @@ def _gate_module():  # noqa: ANN202
         sys.path.pop(0)
 
 
-def _charter(*, lane: int = 2, domains: list[str] | None = None) -> dict[str, object]:
-    external_gates = (
-        ["Owner Gate: Lane 3, product direction, active canonical, or real operation"]
-        if lane == 3
-        else []
-    )
+def _charter(
+    *,
+    lane: int = 2,
+    domains: list[str] | None = None,
+    external_gates: list[str] | None = None,
+) -> dict[str, object]:
+    gates = external_gates
+    if gates is None:
+        gates = (
+            ["Owner Gate: Lane 3, product direction, active canonical, or real operation"]
+            if lane == 3
+            else []
+        )
     allowed_paths = (
         ["tests/engineering/**"]
         if lane == 1
@@ -128,13 +139,22 @@ def _charter(*, lane: int = 2, domains: list[str] | None = None) -> dict[str, ob
         "allowed_paths": allowed_paths,
         "forbidden_paths": ["Runtime/**", "data/**", ".env"],
         "acceptance": ["Full negative matrix passes."],
-        "external_gates": external_gates,
+        "external_gates": gates,
     }
 
 
-def _plan(*, lane: int = 2, domains: list[str] | None = None) -> dict[str, object]:
+def _plan(
+    *,
+    lane: int = 2,
+    domains: list[str] | None = None,
+    external_gates: list[str] | None = None,
+) -> dict[str, object]:
     api = _contracts()
-    charter = api["TaskCharterV1"].from_mapping(_charter(lane=lane, domains=domains))
+    charter = api["TaskCharterV1"].from_mapping(_charter(
+        lane=lane,
+        domains=domains,
+        external_gates=external_gates,
+    ))
     return api["build_execution_plan"](
         charter, base_ref="origin/develop", base_sha=BASE_SHA,
     ).to_dict()
@@ -168,13 +188,14 @@ def _review(**overrides: object) -> dict[str, object]:
 def _facts(
     *,
     plan: dict[str, object] | None = None,
+    charter: dict[str, object] | None = None,
     stage: str = "pre_merge",
     checks: list[dict[str, object]] | None = None,
     observed_at: datetime = NOW,
     **overrides: object,
 ) -> dict[str, object]:
     plan_payload = plan or _plan()
-    charter_payload = _charter()
+    charter_payload = charter or _charter()
     requested_operations = {
         "pre_merge": ["develop_merge"],
         "merge_readback": ["merge_readback"],
@@ -253,6 +274,29 @@ def test_generated_plan_uses_domain_literals_and_old_role_label_plan_still_loads
     assert api["ExecutionPlanV1"].from_mapping(old).dispatch.specialists == (
         "security-specialist",
     )
+
+
+def test_unknown_required_check_owner_fails_closed_after_wire_loading() -> None:
+    """A typo or future check must not silently inherit implementer authority."""
+    api = _contracts()
+    payload = _plan()
+    payload["validation"]["required_checks"] = ["diff-check", "mystery-policy-check"]
+    loaded = api["ExecutionPlanV1"].from_mapping(payload)
+
+    with pytest.raises(api["LeanMatrixError"]) as raised:
+        api["required_checks_for_owner"](
+            loaded.validation.required_checks,
+            "implementer",
+        )
+
+    assert raised.value.error_type == "unknown_required_check"
+
+    with pytest.raises(api["LeanMatrixError"]) as gate_raised:
+        _decision(
+            _facts(plan=loaded.to_dict()),
+            plan=loaded.to_dict(),
+        )
+    assert gate_raised.value.error_type == "unknown_required_check"
 
 
 def test_old_plan_review_package_requires_only_pre_review_local_receipts(tmp_path: Path) -> None:
@@ -350,6 +394,33 @@ def test_old_plan_review_package_requires_only_pre_review_local_receipts(tmp_pat
 
     assert tuple(receipt.path for receipt in package.test_receipts) == tuple(receipt_paths)
 
+    forged_receipt_paths = list(receipt_paths)
+    for check in ("independent-review", "exact-head-ci"):
+        path = api["intake_workspace"](repo, intake) / f"receipts/fake-{check}.json"
+        _write_json(path, {
+            "schema_version": 1,
+            "required_check": check,
+            "exact_head_sha": head,
+            "status": "PASS",
+            "exit_code": 0,
+        })
+        forged_receipt_paths.append(path.relative_to(repo).as_posix())
+    forged_payload = handoff.to_dict()
+    forged_payload["test_evidence"] = forged_receipt_paths
+    forged_handoff = api["HandoffReportV1"].from_mapping(
+        forged_payload,
+        role_brief=implementer,
+    )
+    with pytest.raises(api["LeanMatrixError"]) as raised:
+        api["build_review_package"](
+            repo,
+            intake,
+            implementer_brief=implementer,
+            implementer_handoff=forged_handoff,
+            reviewer_brief=reviewer,
+        )
+    assert raised.value.error_type == "required_check_coverage_missing"
+
 
 def test_v07_requires_only_fresh_ci_owned_checks_and_validates_review_separately() -> None:
     """Local checks and independent review must never be duplicated into GitHub checks."""
@@ -383,6 +454,31 @@ def test_v07_requires_only_fresh_ci_owned_checks_and_validates_review_separately
 
 
 @pytest.mark.parametrize(
+    "gate",
+    [
+        "Owner Gate: product-direction change",
+        "Owner Gate: active-canonical conflict",
+    ],
+)
+def test_product_direction_and_active_canonical_each_require_owner_gate(gate: str) -> None:
+    """Neither protected decision can be hidden inside an otherwise safe Lane 2 PR."""
+    charter = _charter(lane=3, external_gates=[gate])
+    plan = _plan(lane=3, external_gates=[gate])
+    facts = _facts(
+        plan=plan,
+        charter=charter,
+        pending_external_gates=[gate],
+    )
+
+    result = _decision(facts, plan=plan)
+
+    assert (result.decision, result.reason_codes) == (
+        "MANUAL_GATE_REQUIRED",
+        ("EXTERNAL_GATE_REQUIRED",),
+    )
+
+
+@pytest.mark.parametrize(
     ("updates", "decision", "reason"),
     [
         ({"base_sha": "4" * 40}, "BLOCKED_BASE_DRIFT", "PR_BASE_SHA_DRIFT"),
@@ -401,6 +497,38 @@ def test_provenance_scope_thread_and_merge_conflict_matrix(
     facts = _mutated(_facts(), **updates)
     result = _decision(facts)
     assert (result.decision, result.reason_codes) == (decision, (reason,))
+
+
+@pytest.mark.parametrize(
+    ("updates", "decision", "reason"),
+    [
+        ({"repository_id": 999}, "BLOCKED_PR_IDENTITY", "REPOSITORY_ID_MISMATCH"),
+        ({"head_ref": "feature/wrong-branch"}, "BLOCKED_PR_IDENTITY", "PR_HEAD_REF_MISMATCH"),
+        (
+            {"review": _review(reviewer_context_id="implementer-sol")},
+            "BLOCKED_REVIEW",
+            "INDEPENDENT_REVIEW_REQUIRED",
+        ),
+    ],
+)
+def test_repository_branch_and_context_identity_fail_closed(
+    updates: dict[str, object], decision: str, reason: str,
+) -> None:
+    """Repository, branch, and independent-context identity are load-bearing facts."""
+    result = _decision(_mutated(_facts(), **updates))
+    assert (result.decision, result.reason_codes) == (decision, (reason,))
+
+
+def test_expired_future_and_tampered_facts_are_rejected() -> None:
+    """Stale, future, or digest-tampered GitHub evidence cannot authorize integration."""
+    expired = _facts(observed_at=NOW - timedelta(minutes=5))
+    future = _facts(observed_at=NOW + timedelta(seconds=1))
+    tampered = _facts()
+    tampered["head_sha"] = "9" * 40
+
+    assert _decision(expired).reason_codes == ("FACTS_EXPIRED",)
+    assert _decision(future).reason_codes == ("FACTS_FROM_FUTURE",)
+    assert _decision(tampered).reason_codes == ("FACTS_DIGEST_MISMATCH",)
 
 
 def test_ci_failure_is_repairable_only_with_fresh_success_on_the_new_exact_head() -> None:
@@ -484,6 +612,64 @@ def test_missing_workspace_observation_is_read_only(tmp_path: Path) -> None:
     assert evidence.records == ()
     assert evidence.attempted_actions == frozenset()
     assert not (tmp_path / ".ai").exists()
+
+
+def test_round_three_load_bearing_review_is_terminally_blocked(tmp_path: Path) -> None:
+    """Round three cannot produce another repair when a Critical finding remains."""
+    review_test = ROOT / "tests/engineering/test_lean_matrix_review_protocol.py"
+    name = f"lean_matrix_review_protocol_bootstrap_{id(tmp_path)}"
+    spec = importlib.util.spec_from_file_location(name, review_test)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    state = module._round_zero(tmp_path)
+    predecessor = "sha256:" + "7" * 64
+    implementer = module._brief(
+        state["api"],
+        state["intake"],
+        role="implementer",
+        context_id="implementer-0",
+        round_number=3,
+        predecessor=predecessor,
+        round_zero_brief=state["implementer"],
+    )
+    reviewer = module._brief(
+        state["api"],
+        state["intake"],
+        role="reviewer",
+        context_id="reviewer-0",
+        round_number=3,
+        predecessor=predecessor,
+        round_zero_brief=state["implementer"],
+    )
+    handoff = module._handoff(
+        state["api"],
+        implementer,
+        head=state["head"],
+        changed_paths=["src/feature.py"],
+        test_evidence=module._receipts(
+            state["api"],
+            state["repo"],
+            state["intake"],
+            head=state["head"],
+            prefix="bootstrap-round-3",
+        ),
+    )
+    terminal = {**state, "implementer": implementer, "reviewer": reviewer, "handoff": handoff}
+    package = module._package(terminal)
+
+    decision = module._decision(
+        terminal,
+        package,
+        round_number=3,
+        spec="FAIL",
+        quality="CHANGES_REQUIRED",
+        findings=[{"severity": "Critical", "summary": "load-bearing finding remains"}],
+        decision="阻塞",
+    )
+
+    assert decision.decision == "阻塞"
 
 
 @pytest.mark.parametrize(

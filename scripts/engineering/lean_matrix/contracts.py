@@ -35,19 +35,27 @@ CHECK_OWNER_BY_NAME = {
     "exact-head-ci": "ci",
     "diff-check": "implementer",
     "secret-scan": "implementer",
+    "pytest focused": "implementer",
+    "git diff --check": "implementer",
 }
 
 
 def required_checks_for_owner(
     required_checks: tuple[str, ...], owner: str,
 ) -> tuple[str, ...]:
-    """Return stage-owned checks while treating unknown legacy checks as local."""
+    """Return stage-owned checks and reject literals without frozen ownership."""
     if owner not in CHECK_OWNERS:
         raise LeanMatrixError("invalid_check_owner", "required check owner is not recognized")
+    unknown = tuple(check for check in required_checks if check not in CHECK_OWNER_BY_NAME)
+    if unknown:
+        raise LeanMatrixError(
+            "unknown_required_check",
+            f"required check has no recognized stage owner: {unknown[0]}",
+        )
     return tuple(
         check
         for check in required_checks
-        if CHECK_OWNER_BY_NAME.get(check, "implementer") == owner
+        if CHECK_OWNER_BY_NAME[check] == owner
     )
 
 
