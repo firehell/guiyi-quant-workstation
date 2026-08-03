@@ -149,7 +149,7 @@ lineage，不再逐项调度。
 | 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（本 task PR merge 后生效）；exact-head independent Review=`CLEAN_FOR_INTEGRATION`；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 external Gate |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | completed on develop（PR #105 merge 后生效）；固定 EMA21 evaluator；production=`0031`，empty/disabled smoke passed；Runtime/live 未启用 |
-| 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | `BLOCKED_ACTIVE_REFERENCE`；v9 确认 Runtime active/review 非零且 GuiyiApprovals root 缺失；无 production write/delete |
+| 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | `BLOCKED_ACTIVE_REFERENCE`；v9 确认 Runtime active/review 非零；旧 GuiyiApprovals root 已由 owner 退出必需范围；无 production write/delete |
 | 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
@@ -180,8 +180,9 @@ Task 07 从 clean `develop@39d1002d` 建立独立 task branch/worktree。专用
 retirement-plan / retirement-apply`；只有两个 apply 命令是潜在写入口，且在 CLI 打开数据库前
 要求 exact approval 参数。inventory 使用 PostgreSQL `REPEATABLE READ READ ONLY`、稳定 keyset、
 SHA-256 分片 JSONL，并扫描 checkout 与 detached Runtime；不调用 RQData。
-`inventory` 必须显式传入至少一个 `--protected-root`；CLI 与 service 层都不允许以
-空 protected scope 继续。
+`inventory` 的必填 `--evidence-root` 永久自动进入 protected scope；可重复的
+`--protected-root` 只用于额外存在的受保护目录，可以省略。这样即使旧外部 approval 目录退出，
+inventory evidence 本身仍不会成为 migration source 或 retirement candidate。
 
 2026-08-02 首轮生产只读 v8 snapshot：103,481 个资产，85 个
 `KEEP_CANONICAL_VERIFIED`、7,232 个 `REUSE_TRUSTED_SOURCE`、26 个
@@ -199,8 +200,9 @@ resume、consumer cutover 与 exact retirement rollback，并通过第六轮独�
 78,945 retirement candidates；411-batch plan digest 为
 `c27121384b6408db7db9b7fc68e318dff182c30d593f623e0d546e8212c0fa1a`。但正在提供 API
 的 detached Runtime `10351ccd` 扫描为 300 active / 1,581 review-required，plan 因此
-`approval_eligible=false / writes_authorized=false`。必需 GuiyiApprovals protected root 当前不存在，
-显式纳入它时 inventory fail-closed。
+`approval_eligible=false / writes_authorized=false`。项目所有者于 2026-08-03 确认已删除的
+`/Volumes/扩展盘/GuiyiApprovals` 不再是必需 protected root；该项不再构成 Gate。v9 的 base SHA
+已被后续 hardening supersede，最终 approval inventory 仍须绑定新的 clean exact HEAD。
 
 生产 DB v9 retirement before-image 仍为 4,297 行精确 update candidates（4,279 bindings +
 8 download tasks + 2 scan tasks + 8 active signals），plan digest 为

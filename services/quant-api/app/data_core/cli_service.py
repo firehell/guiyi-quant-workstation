@@ -109,9 +109,20 @@ def run_data_core_command(
     args: Any,
 ) -> dict[str, Any]:
     if command == "task07.inventory":
-        if not getattr(args, "protected_root", None):
-            raise ValueError("TASK07_PROTECTED_ROOT_REQUIRED")
         project_root = _absolute_path(args.project_root, "project_root")
+        evidence_root = _absolute_path(args.evidence_root, "evidence_root")
+        additional_protected_roots = getattr(args, "protected_root", None) or []
+        protected_roots = tuple(
+            dict.fromkeys(
+                [
+                    *(
+                        _absolute_path(path, "protected_root")
+                        for path in additional_protected_roots
+                    ),
+                    evidence_root,
+                ]
+            )
+        )
         _require_loaded_source_checkout(project_root)
         git_state = _git_state(project_root)
         begin_task07_readonly_snapshot(session)
@@ -128,12 +139,9 @@ def run_data_core_command(
                 session,
                 data_root=_absolute_path(args.data_root, "data_root"),
                 canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
-                protected_roots=(
-                    _absolute_path(path, "protected_root")
-                    for path in args.protected_root
-                ),
+                protected_roots=protected_roots,
             ),
-            evidence_root=_absolute_path(args.evidence_root, "evidence_root"),
+            evidence_root=evidence_root,
             base_sha=git_state["head"],
             database_revision=revision,
             reference_report=scan_task07_references(reference_roots),
@@ -142,8 +150,7 @@ def run_data_core_command(
                 "canonical_root": str(_absolute_path(args.canonical_root, "canonical_root").resolve(strict=False)),
                 "protected_roots": sorted(
                     {
-                        str(_absolute_path(path, "protected_root").resolve(strict=False))
-                        for path in [*args.protected_root, args.evidence_root]
+                        str(path.resolve(strict=False)) for path in protected_roots
                     }
                 ),
             },

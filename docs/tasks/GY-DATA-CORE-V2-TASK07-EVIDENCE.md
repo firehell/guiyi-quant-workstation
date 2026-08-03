@@ -1,12 +1,12 @@
 # GY-DATA-CORE-V2 Task 07 evidence ledger
 
-更新时间：2026-08-02
+更新时间：2026-08-03
 
 本文件只保存脱敏摘要与 digest。完整分片 JSONL 位于受控临时 evidence 目录，未提交仓库；
 其中不包含凭据。下述 v8 snapshot 以 `develop@39d1002d1051e0ccb6ffc7f480bdc236d9930edc`
 为起点，但采集时 Task 07 worktree 含未提交实现，现已被后续代码修改 supersede；它只保留为
 阻塞诊断历史，不能代表当前分类、不能生成或替代 exact approval packet。clean exact
-Task 07 HEAD `e01784ff` 的 v9 已重采，并证明 active-reference/protected-root Gate 仍阻断。
+Task 07 HEAD `e01784ff` 的 v9 已重采，并证明 active-reference Gate 仍阻断。
 
 ## 0. Current implementation checkpoint
 
@@ -19,7 +19,9 @@ Web Profile selector 和 queued legacy batch worker 已退出 active path。
 checkout 引用分类逐条保存 classification reason；detached Runtime 的可执行 services/packages/apps
 引用优先判 active/review，不能被 retired/frozen/read-only 分类提前隐藏。当前 worktree 的
 checkout-only 开发扫描为 `active=0 / review_required=0`。detached Runtime 和 production DB
-的 v9 blocker diagnosis 已重采；因 GuiyiApprovals root 不可用，它不是最终 approval inventory。
+的 v9 blocker diagnosis 已重采。项目所有者已确认删除的 GuiyiApprovals root 不再是必需范围；
+v9 不是最终 approval inventory，是因为其 base SHA 已被后续 hardening supersede 且 Runtime
+active-reference Gate 尚未关闭。
 
 ## 1. Safety envelope
 
@@ -72,11 +74,12 @@ active signals），`before_image_digest=556679b55fcdf552d569099662cfb9ce68e0897
 `approval_packet_hash=550601379c9d831ef8b18b0109aee120cb501dc22b909367def24c8cd9e05623`。
 该 packet 未获 owner approval，也不得在 Runtime Gate 未解决时使用。
 
-`/Volumes/扩展盘/GuiyiApprovals` 当前不存在。不显式纳入该 root 的 v9 只用于
-blocker diagnosis；显式纳入时 CLI 返回 `status=error` 并且没有 business write，
-证明 protected evidence 缺失不会被静默跳过。
-后续 hardening 已把 `--protected-root` 改为 Task 07 inventory 必填且可重复参数，
-并在 service 层二次拒绝空 scope；因此无法再生成省略受保护根的新 inventory。
+项目所有者于 2026-08-03 确认 `/Volumes/扩展盘/GuiyiApprovals` 已主动删除且不再作为必需
+protected root；仓库不会恢复、创建或依赖该目录。后续合同改为把必填的 `--evidence-root`
+永久自动加入 protected scope，额外存在的证据目录才通过可重复的 `--protected-root` 加入。
+因此不存在空 protected scope，同时也不会把已退出的外部路径误报为生产 Gate。分类同时
+比较登记的 lexical path 与解析后的 physical path；回归测试确认 protected root 内指向
+approved data root 的 symbolic link 仍为 `PROTECTED_EVIDENCE_SOURCE`，不会进入 migration。
 
 ## 3. Superseded v8 inventory summary
 
@@ -176,13 +179,13 @@ retirement apply 只允许 hash-bound packet manifest 中的逐表主键和 befo
 78,945 个 deletion candidates 的行集 digest 为
 `c696fac14748b5281cc60e924e5b2d8da7afd9a840406c1cd940da00be528e11`；此 manifest 明确
 `deletion_authorized=false`。report 14/15、Task 04--07 receipts、S6 历史 Gate、Git 历史和
-`GuiyiApprovals` 均不在删除范围。
+任何现存 protected evidence root 均不在删除范围；已退出且不存在的 `GuiyiApprovals` 不作为候选。
 
 ## 7. Current result
 
 ```text
 Task_07=BLOCKED_ACTIVE_REFERENCE
-Kline_Gate=BLOCKED_BY_ACTIVE_REFERENCE_AND_PROTECTED_ROOT
+Kline_Gate=BLOCKED_BY_ACTIVE_REFERENCE_AND_EXACT_APPROVAL
 Active_Reference_Gate=RUNTIME_300_ACTIVE_1581_REVIEW_DB_4297_PENDING
 Review_Gate=CODE_REVIEW_PASS
 READY_FOR_TASK_08=false

@@ -225,9 +225,12 @@ def collect_task07_assets(
         raise ValueError("TASK07_PAGE_SIZE_INVALID")
     data_root = _require_inventory_root(data_root, "DATA")
     canonical_root = _require_inventory_root(canonical_root, "CANONICAL")
-    protected = tuple(
-        _require_inventory_root(path, "PROTECTED") for path in protected_roots
-    )
+    protected_aliases: list[Path] = []
+    for path in protected_roots:
+        protected_aliases.extend(
+            (path.absolute(), _require_inventory_root(path, "PROTECTED"))
+        )
+    protected = tuple(dict.fromkeys(protected_aliases))
     begin_task07_readonly_snapshot(session)
     catalog_rows = session.execute(
         text(
@@ -265,9 +268,11 @@ def collect_task07_assets(
         for row in rows:
             cursor = int(row["id"])
             path_text = str(row["file_path"])
-            source_path = Path(path_text).absolute().resolve(strict=False)
+            registered_path = Path(path_text).absolute()
+            source_path = registered_path.resolve(strict=False)
             source_scope = _source_scope(
-                source_path,
+                registered_path,
+                physical_path=source_path,
                 data_root=data,
                 canonical_root=canonical,
                 protected_roots=protected,
@@ -416,17 +421,21 @@ def _dataset_kind(contract: str) -> str | None:
 
 
 def _source_scope(
-    path: Path,
+    registered_path: Path,
     *,
+    physical_path: Path,
     data_root: Path,
     canonical_root: Path,
     protected_roots: tuple[Path, ...],
 ) -> str:
-    if any(path.is_relative_to(root) for root in protected_roots):
+    if any(
+        registered_path.is_relative_to(root) or physical_path.is_relative_to(root)
+        for root in protected_roots
+    ):
         return "protected_evidence_root"
-    if path.is_relative_to(canonical_root):
+    if physical_path.is_relative_to(canonical_root):
         return "approved_canonical_root"
-    if path.is_relative_to(data_root):
+    if physical_path.is_relative_to(data_root):
         return "approved_data_root"
     return "outside_approved_roots"
 

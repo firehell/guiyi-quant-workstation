@@ -136,8 +136,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--protected-root",
         type=Path,
         action="append",
-        required=True,
-        help="Explicit protected evidence root; repeat for multiple roots.",
+        default=[],
+        help="Optional additional protected evidence root; repeat for multiple roots.",
     )
     task07_inventory.add_argument("--database-revision")
     task07_plan = task07_commands.add_parser("plan")

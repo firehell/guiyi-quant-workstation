@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session
 
+from app.data_core import cli_service as cli_service_module
 from app.data_core import task07
 from app.data_core.task07 import (
     AssetDisposition,
@@ -242,6 +243,62 @@ def test_source_outside_approved_roots_is_not_hashed_or_migrated(tmp_path: Path)
     assert assets[0].source_scope == "outside_approved_roots"
     assert assets[0].physical_checksum is None
     assert classify_asset(assets[0]) == AssetDisposition.RETIREMENT_CANDIDATE
+
+
+def test_symlink_inside_protected_root_cannot_become_a_migration_source(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    canonical_root = tmp_path / "canonical"
+    protected_root = tmp_path / "protected-evidence"
+    for path in (data_root, canonical_root, protected_root):
+        path.mkdir()
+    target = data_root / "bars.parquet"
+    payload = b"trusted-looking-bars"
+    target.write_bytes(payload)
+    registered = protected_root / "linked.parquet"
+    registered.symlink_to(target)
+    checksum = sha256(payload).hexdigest()
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE market_data_files (id INTEGER PRIMARY KEY, provider TEXT, data_type TEXT, "
+            "instrument_symbol TEXT, contract_code TEXT, period TEXT, start_time TEXT, end_time TEXT, "
+            "file_path TEXT, file_size_bytes INTEGER, checksum TEXT, data_version TEXT, row_count INTEGER, "
+            "data_role TEXT, quality_status TEXT)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, symbol TEXT, "
+            "contract_or_series TEXT, frequency TEXT, adjustment TEXT, schema_version TEXT)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
+            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+        )
+        connection.execute(
+            text(
+                "INSERT INTO market_data_files VALUES "
+                "(1,'rqdata','bars','jm','JM.MAIN','1m','2026-01-01','2026-01-02',"
+                ":path,:size,:checksum,'legacy-v1',1,'primary','passed')"
+            ),
+            {"path": str(registered), "size": len(payload), "checksum": checksum},
+        )
+
+    with Session(engine) as session:
+        asset = next(
+            iter(
+                collect_task07_assets(
+                    session,
+                    data_root=data_root,
+                    canonical_root=canonical_root,
+                    protected_roots=(protected_root,),
+                    inspect_content=False,
+                )
+            )
+        )
+
+    assert asset.source_scope == "protected_evidence_root"
+    assert classify_asset(asset) == AssetDisposition.PROTECTED_EVIDENCE_SOURCE
 
 
 def test_inventory_evidence_is_sharded_with_recomputable_index(tmp_path: Path) -> None:
@@ -936,9 +993,10 @@ def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() ->
     assert json.loads(stderr.getvalue())["error"]["code"] == "TASK07_EXACT_APPROVAL_REQUIRED"
 
 
-def test_task07_inventory_requires_explicit_protected_root_before_opening_database() -> None:
+def test_task07_inventory_allows_omitted_external_protected_root() -> None:
     stdout = StringIO()
     stderr = StringIO()
+    engine = create_engine("sqlite://")
 
     exit_code = main(
         [
@@ -954,25 +1012,93 @@ def test_task07_inventory_requires_explicit_protected_root_before_opening_databa
             "--evidence-root",
             "/tmp/evidence",
         ],
-        session_factory=lambda: (_ for _ in ()).throw(
-            AssertionError("must not open database")
-        ),
+        session_factory=lambda: Session(engine),
+        data_core_runner=lambda command, _session, args: {
+            "status": "passed",
+            "command": command,
+            "protected_roots": [str(path) for path in args.protected_root],
+        },
         stdout=stdout,
         stderr=stderr,
     )
 
-    assert exit_code == 2
-    assert stdout.getvalue() == ""
-    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
+    assert exit_code == 0
+    assert stderr.getvalue() == ""
+    assert json.loads(stdout.getvalue()) == {
+        "command": "task07.inventory",
+        "protected_roots": [],
+        "status": "passed",
+    }
 
 
-def test_task07_inventory_service_rejects_empty_protected_root_scope() -> None:
-    with pytest.raises(ValueError, match="TASK07_PROTECTED_ROOT_REQUIRED"):
-        run_data_core_command(
-            "task07.inventory",
-            object(),
-            SimpleNamespace(protected_root=[]),
-        )
+def test_task07_inventory_service_automatically_protects_evidence_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    data_root = tmp_path / "data"
+    canonical_root = tmp_path / "canonical"
+    evidence_root = tmp_path / "evidence"
+    for path in (project_root, data_root, canonical_root):
+        path.mkdir()
+    captured: dict[str, tuple[Path, ...]] = {}
+
+    monkeypatch.setattr(
+        cli_service_module,
+        "_require_loaded_source_checkout",
+        lambda _project_root: None,
+    )
+    monkeypatch.setattr(
+        cli_service_module,
+        "_git_state",
+        lambda _project_root: {"head": "8" * 40, "clean": True},
+    )
+    monkeypatch.setattr(
+        cli_service_module,
+        "begin_task07_readonly_snapshot",
+        lambda _session: None,
+    )
+    monkeypatch.setattr(
+        cli_service_module,
+        "_data_core_revision",
+        lambda _session: "20260802_0031",
+    )
+    monkeypatch.setattr(
+        cli_service_module,
+        "scan_task07_references",
+        lambda _roots: {"records": [], "truncated": False},
+    )
+
+    def collect_assets(
+        _session: object,
+        *,
+        data_root: Path,
+        canonical_root: Path,
+        protected_roots: object,
+    ) -> list[Task07Asset]:
+        del data_root, canonical_root
+        captured["protected_roots"] = tuple(protected_roots)
+        return []
+
+    monkeypatch.setattr(cli_service_module, "collect_task07_assets", collect_assets)
+
+    result = run_data_core_command(
+        "task07.inventory",
+        object(),
+        SimpleNamespace(
+            project_root=project_root,
+            data_root=data_root,
+            canonical_root=canonical_root,
+            evidence_root=evidence_root,
+            runtime_root=[],
+            protected_root=[],
+            database_revision=None,
+        ),
+    )
+
+    expected = evidence_root.resolve(strict=False)
+    assert captured["protected_roots"] == (expected,)
+    assert result["inventory_scope"]["protected_roots"] == [str(expected)]
 
 
 def test_task07_apply_requires_hash_bound_preflight_before_opening_database() -> None:
