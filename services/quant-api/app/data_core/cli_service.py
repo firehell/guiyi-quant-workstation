@@ -65,6 +65,7 @@ from app.data_core.historical_sync import (
     plan_missing_windows,
 )
 from app.data_core.task07 import (
+    _aggregate_parquet_content_gate,
     build_approval_packet as build_task07_approval_packet,
     build_migration_approval_facts as build_task07_migration_approval_facts,
     build_migration_batch_facts as build_task07_migration_batch_facts,
@@ -78,15 +79,19 @@ from app.data_core.task07 import (
     collect_retirement_relations,
     collect_task07_assets,
     load_inventory_evidence,
+    read_task07_quality_evidence,
     scan_task07_references,
     verify_exact_approval as verify_task07_exact_approval,
     verify_task07_preflight_receipt,
     write_inventory_evidence,
 )
 from app.data_core.task07_migration import (
+    TASK07_AGGREGATE_MANIFEST_VERSION,
     execute_task07_prepared_batch,
     load_task07_rank1_map,
+    prepare_legacy_aggregate_parquet_batch,
     prepare_legacy_parquet_batch,
+    read_legacy_aggregate_trading_days,
     resolve_task07_provider_sessions,
     verify_task07_published_batch,
 )
@@ -338,7 +343,11 @@ def run_data_core_command(
                         prepared,
                         store=store,
                         catalog=HistoricalCatalog(catalog_session),
-                        manifest_version="task07-canonical-migration-v1",
+                        manifest_version=(
+                            TASK07_AGGREGATE_MANIFEST_VERSION
+                            if prepared.lineage is not None
+                            else "task07-canonical-migration-v1"
+                        ),
                         batch_key=f"{batch['batch_key']}:{source_id}",
                         plan_digest=str(plan["plan_digest"]),
                         batch_digest=str(batch["batch_digest"]),
@@ -884,29 +893,110 @@ def _task07_validate_batch_readonly(
         )
         start = _aware_datetime(source["coverage_start"])
         end = _aware_datetime(source["coverage_end"])
-        sessions = resolve_task07_provider_sessions(
-            session,
-            dataset=dataset,
-            start=start,
-            end=end,
+        data_version = (
+            str(source.get("data_version"))
+            if source.get("data_version")
+            else f"task07-legacy-{int(source['market_data_file_id'])}"
         )
-        rank1 = load_task07_rank1_map(
-            session,
-            dataset=dataset,
-            trading_days=tuple(item.trading_day for item in sessions),
+        aggregate_source = (
+            source.get("disposition") == "REUSE_VERIFIED_AGGREGATE"
         )
-        prepared = prepare_legacy_parquet_batch(
-            path=Path(str(source["file_path"])),
-            source_checksum=str(source["physical_checksum"]),
-            dataset=dataset,
-            sessions=sessions,
-            data_version=(
-                str(source.get("data_version"))
-                if source.get("data_version")
-                else f"task07-legacy-{int(source['market_data_file_id'])}"
-            ),
-            rank1_contract_by_day=(rank1 if rank1 else None),
-        )
+        if aggregate_source:
+            if (
+                batch.get("dataset_origin") != "preaggregated_from_1m"
+                or source.get("source_frequency") != "1m"
+                or source.get("manifest_format") != "canonical-manifest-v2"
+                or source.get("manifest_version")
+                != TASK07_AGGREGATE_MANIFEST_VERSION
+            ):
+                raise ValueError("TASK07_AGGREGATE_ORIGIN_INVALID")
+            quality_records = read_task07_quality_evidence(
+                session,
+                market_data_file_id=int(source["market_data_file_id"]),
+            )
+            quality_evidence_digest = task07_canonical_digest(quality_records)
+            if (
+                not quality_records
+                or {item["status"] for item in quality_records} != {"passed"}
+                or quality_evidence_digest
+                != source.get("quality_evidence_digest")
+            ):
+                raise ValueError("TASK07_QUALITY_EVIDENCE_DRIFT")
+            source_path = Path(str(source["file_path"]))
+            inspection = _aggregate_parquet_content_gate(
+                session,
+                registered_path=source_path,
+                physical_path=source_path.resolve(strict=False),
+                frequency=dataset.frequency.value,
+                registered_row_count=(
+                    int(source["row_count"])
+                    if source.get("row_count") is not None
+                    else None
+                ),
+                registered_start=source["coverage_start"],
+                registered_end=source["coverage_end"],
+                dataset_kind=dataset.dataset_kind.value,
+                symbol=dataset.symbol,
+                contract=dataset.contract_or_series,
+            )
+            planned_inspection = {
+                "physical_row_count": source.get("physical_row_count"),
+                "physical_min_datetime": source.get("physical_min_datetime"),
+                "physical_max_datetime": source.get("physical_max_datetime"),
+                "declared_periods": tuple(source.get("declared_periods", ())),
+                "source_intervals": tuple(source.get("source_intervals", ())),
+                "registration_wall_clock_matches": True,
+                "main_map_digest": source.get("main_map_digest"),
+            }
+            current_inspection = {
+                key: inspection.get(key) for key in planned_inspection
+            }
+            if (
+                inspection.get("status") != "passed"
+                or current_inspection != planned_inspection
+            ):
+                raise ValueError("TASK07_AGGREGATE_SOURCE_DRIFT")
+            trading_days = read_legacy_aggregate_trading_days(
+                source_path,
+                source_checksum=str(source["physical_checksum"]),
+            )
+            rank1 = load_task07_rank1_map(
+                session,
+                dataset=dataset,
+                trading_days=trading_days,
+            )
+            prepared = prepare_legacy_aggregate_parquet_batch(
+                path=source_path,
+                source_checksum=str(source["physical_checksum"]),
+                dataset=dataset,
+                data_version=data_version,
+                quality_evidence_digest=quality_evidence_digest,
+                rank1_contract_by_day=(rank1 if rank1 else None),
+            )
+            target_start = prepared.batch.request.start
+            target_end = prepared.batch.request.end
+        else:
+            sessions = resolve_task07_provider_sessions(
+                session,
+                dataset=dataset,
+                start=start,
+                end=end,
+            )
+            rank1 = load_task07_rank1_map(
+                session,
+                dataset=dataset,
+                trading_days=tuple(item.trading_day for item in sessions),
+            )
+            prepared = prepare_legacy_parquet_batch(
+                path=Path(str(source["file_path"])),
+                source_checksum=str(source["physical_checksum"]),
+                dataset=dataset,
+                sessions=sessions,
+                data_version=data_version,
+                rank1_contract_by_day=(rank1 if rank1 else None),
+            )
+            target_start = start
+            target_end = end
         partitions = HistoricalCatalog(session).list_partitions(dataset)
         target_state = [
             {
@@ -920,12 +1010,11 @@ def _task07_validate_batch_readonly(
                 "manifest_uri": item.manifest_uri,
             }
             for item in partitions
-            if _aware_utc(item.coverage_start) < end
-            and start < _aware_utc(item.coverage_end)
+            if _aware_utc(item.coverage_start) < target_end
+            and target_start < _aware_utc(item.coverage_end)
         ]
         correction = asdict(prepared.evidence)
-        evidence.append(
-            {
+        validation_record = {
                 "market_data_file_id": int(source["market_data_file_id"]),
                 "dataset": {
                     "provider": dataset.provider,
@@ -944,7 +1033,22 @@ def _task07_validate_batch_readonly(
                 "target_state": target_state,
                 "target_state_digest": canonical_json_digest(target_state),
             }
-        )
+        if aggregate_source:
+            assert prepared.lineage is not None
+            validation_record.update(
+                {
+                    "dataset_origin": "preaggregated_from_1m",
+                    "quality_evidence_digest": source[
+                        "quality_evidence_digest"
+                    ],
+                    "manifest_format": "canonical-manifest-v2",
+                    "manifest_version": source.get("manifest_version"),
+                    "manifest_lineage": prepared.lineage.as_payload(),
+                    "coverage_basis": "exact_source_rows_only",
+                    "session_completeness_validated": False,
+                }
+            )
+        evidence.append(validation_record)
         prepared_sources.append((source, prepared))
     return evidence, prepared_sources
 

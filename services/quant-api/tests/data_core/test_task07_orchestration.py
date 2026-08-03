@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from hashlib import sha256
 from io import StringIO
 import json
@@ -37,7 +37,12 @@ from app.data_core.task07 import (
 from app.data_core.cli_service import run_data_core_command
 from app.db.base import Base
 from app.guiyi_cli.main import main
-from app.models.data_center import Instrument, TradingCalendar, TradingSession
+from app.models.data_center import (
+    DataQualityReport,
+    Instrument,
+    TradingCalendar,
+    TradingSession,
+)
 
 
 def _asset(**overrides: object) -> Task07Asset:
@@ -81,6 +86,23 @@ def _write_targets(root: Path = Path("/tmp/task07-test")) -> dict[str, object]:
         },
         "protected_roots": [str((root / "evidence").resolve(strict=False))],
     }
+
+
+def _aggregate_asset(**overrides: object) -> Task07Asset:
+    values: dict[str, object] = {
+        "frequency": "5m",
+        "catalog_checksum": None,
+        "content_gate_status": "passed",
+        "physical_row_count": 10,
+        "declared_periods": ("5m",),
+        "source_intervals": ("1m",),
+        "registration_wall_clock_matches": True,
+        "quality_evidence_digest": "b" * 64,
+        "quality_evidence_count": 1,
+        "quality_evidence_statuses": ("passed",),
+    }
+    values.update(overrides)
+    return _asset(**values)
 
 
 def _reference_report(tmp_path: Path, *, active: bool = False) -> dict[str, object]:
@@ -147,7 +169,7 @@ def test_inventory_classifies_only_passed_rqdata_direct_bars_as_trusted() -> Non
     assert [item["disposition"] for item in index["assets"]] == [
         AssetDisposition.KEEP_CANONICAL_VERIFIED,
         AssetDisposition.REGISTER_DATA_GAP,
-        AssetDisposition.EXCLUDE_DERIVED,
+        AssetDisposition.REGISTER_DATA_GAP,
         AssetDisposition.RETIREMENT_CANDIDATE,
         AssetDisposition.PROTECTED_EVIDENCE_SOURCE,
         AssetDisposition.CONFLICT_BLOCKED,
@@ -158,6 +180,26 @@ def test_inventory_classifies_only_passed_rqdata_direct_bars_as_trusted() -> Non
     assert index["eligible_asset_count"] == 1
     assert index["blocked_asset_count"] == 2
     assert index["deletion_authorized"] is False
+
+
+def test_inventory_marks_verified_aggregate_minute_source_for_schema_only_reuse() -> None:
+    aggregate = _aggregate_asset(
+        frequency="15m",
+        declared_periods=("15m",),
+    )
+
+    assert classify_asset(aggregate).value == "REUSE_VERIFIED_AGGREGATE"
+
+
+def test_inventory_keeps_verified_canonical_aggregate_partition() -> None:
+    canonical = _asset(
+        frequency="30m",
+        data_type="v2_canonical",
+        source_scope="approved_canonical_root",
+        catalog_checksum="a" * 64,
+    )
+
+    assert classify_asset(canonical) == AssetDisposition.KEEP_CANONICAL_VERIFIED
 
 
 def test_protected_evidence_stays_protected_when_physical_content_is_missing() -> None:
@@ -235,6 +277,12 @@ def test_source_outside_approved_roots_is_not_hashed_or_migrated(tmp_path: Path)
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
             "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
         )
+        connection.exec_driver_sql(
+            "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
+            "provider TEXT, data_type TEXT, instrument_symbol TEXT, contract_code TEXT, period TEXT, "
+            "start_time TEXT, end_time TEXT, status TEXT, missing_bars INTEGER, duplicated_bars INTEGER, "
+            "abnormal_price_count INTEGER, abnormal_volume_count INTEGER, details TEXT, created_at TEXT)"
+        )
         connection.execute(
             text(
                 "INSERT INTO market_data_files VALUES "
@@ -288,6 +336,12 @@ def test_symlink_inside_protected_root_cannot_become_a_migration_source(
         connection.exec_driver_sql(
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
             "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
+            "provider TEXT, data_type TEXT, instrument_symbol TEXT, contract_code TEXT, period TEXT, "
+            "start_time TEXT, end_time TEXT, status TEXT, missing_bars INTEGER, duplicated_bars INTEGER, "
+            "abnormal_price_count INTEGER, abnormal_volume_count INTEGER, details TEXT, created_at TEXT)"
         )
         connection.execute(
             text(
@@ -466,6 +520,12 @@ def test_database_inventory_uses_stable_keyset_and_physical_checksum(tmp_path: P
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
             "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
         )
+        connection.exec_driver_sql(
+            "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
+            "provider TEXT, data_type TEXT, instrument_symbol TEXT, contract_code TEXT, period TEXT, "
+            "start_time TEXT, end_time TEXT, status TEXT, missing_bars INTEGER, duplicated_bars INTEGER, "
+            "abnormal_price_count INTEGER, abnormal_volume_count INTEGER, details TEXT, created_at TEXT)"
+        )
         connection.execute(
             text(
                 "INSERT INTO market_data_files VALUES "
@@ -500,6 +560,138 @@ def test_database_inventory_uses_stable_keyset_and_physical_checksum(tmp_path: P
     assert classify_asset(assets[2]) == AssetDisposition.KEEP_CANONICAL_VERIFIED
 
 
+def test_database_inventory_promotes_only_physically_verified_aggregate_with_quality_evidence(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "aggregate.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": [
+                    datetime(2026, 3, 31, 21, 5),
+                    datetime(2026, 3, 31, 21, 10),
+                ],
+                "trading_day": [date(2026, 4, 1), date(2026, 4, 1)],
+                "open": ["100.10", "100.20"],
+                "high": ["100.50", "100.60"],
+                "low": ["99.90", "100.00"],
+                "close": ["100.30", "100.40"],
+                "volume": ["12", "13"],
+                "turnover": ["1203.60", "1305.20"],
+                "open_interest": ["30", "31"],
+                "period": ["5m", "5m"],
+                "source_interval": ["1m", "1m"],
+            }
+        ),
+        source,
+    )
+    checksum = sha256(source.read_bytes()).hexdigest()
+    engine = create_engine("sqlite://")
+    _task07_inventory_schema(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO market_data_files VALUES "
+                "(1,'rqdata','bars','a','A.MAIN','5m','2026-03-31 21:05:00+00:00',"
+                "'2026-03-31 21:10:00+00:00',:path,:size,:checksum,'legacy-v1',2,'primary','passed')"
+            ),
+            {
+                "path": str(source),
+                "size": source.stat().st_size,
+                "checksum": checksum,
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO data_quality_reports VALUES "
+                "(11,1,NULL,'rqdata','bars','a','A.MAIN','5m',"
+                "'2026-03-31 21:05:00+00:00','2026-03-31 21:10:00+00:00',"
+                "'passed',0,0,0,0,'{}','2026-07-08 00:00:00+00:00')"
+            )
+        )
+
+    with Session(engine) as session:
+        asset = next(
+            iter(
+                collect_task07_assets(
+                    session,
+                    data_root=tmp_path,
+                    canonical_root=tmp_path,
+                    page_size=1,
+                )
+            )
+        )
+
+    assert classify_asset(asset).value == "REUSE_VERIFIED_AGGREGATE"
+    assert getattr(asset, "quality_evidence_count", None) == 1
+    assert getattr(asset, "quality_evidence_statuses", None) == ("passed",)
+    assert getattr(asset, "source_intervals", None) == ("1m",)
+    assert getattr(asset, "declared_periods", None) == ("5m",)
+    assert getattr(asset, "physical_row_count", None) == 2
+    assert getattr(asset, "registration_wall_clock_matches", None) is True
+
+
+def test_aggregate_inventory_content_gate_streams_parquet_batches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "aggregate.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": [datetime(2026, 3, 31, 21, 5)],
+                "trading_day": [date(2026, 4, 1)],
+                "open": ["100.10"],
+                "high": ["100.50"],
+                "low": ["99.90"],
+                "close": ["100.30"],
+                "volume": ["12"],
+                "turnover": ["1203.60"],
+                "open_interest": ["30"],
+                "period": ["5m"],
+                "source_interval": ["1m"],
+            }
+        ),
+        source,
+    )
+    physical = pq.ParquetFile(source)
+
+    class StreamingOnlyParquet:
+        schema_arrow = physical.schema_arrow
+        metadata = physical.metadata
+
+        @staticmethod
+        def read(*_args, **_kwargs):
+            raise AssertionError("full-table read is forbidden")
+
+        @staticmethod
+        def iter_batches(*args, **kwargs):
+            return physical.iter_batches(*args, **kwargs)
+
+    monkeypatch.setattr(
+        task07.pq,
+        "ParquetFile",
+        lambda _path: StreamingOnlyParquet(),
+    )
+
+    with Session(create_engine("sqlite://")) as session:
+        evidence = task07._aggregate_parquet_content_gate(
+            session,
+            registered_path=source,
+            physical_path=source,
+            frequency="5m",
+            registered_row_count=1,
+            registered_start="2026-03-31 21:05:00+00:00",
+            registered_end="2026-03-31 21:05:00+00:00",
+            dataset_kind="continuous",
+            symbol="a",
+            contract="A.MAIN",
+        )
+
+    assert evidence["status"] == "passed"
+    assert evidence["physical_row_count"] == 1
+
+
 def test_inventory_keyset_jsonl_reload_and_plan_digest_are_stable_above_six_hundred_thousand_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -523,6 +715,12 @@ def test_inventory_keyset_jsonl_reload_and_plan_digest_are_stable_above_six_hund
         connection.exec_driver_sql(
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
             "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
+            "provider TEXT, data_type TEXT, instrument_symbol TEXT, contract_code TEXT, period TEXT, "
+            "start_time TEXT, end_time TEXT, status TEXT, missing_bars INTEGER, duplicated_bars INTEGER, "
+            "abnormal_price_count INTEGER, abnormal_volume_count INTEGER, details TEXT, created_at TEXT)"
         )
         connection.execute(
             text(
@@ -616,6 +814,52 @@ def test_migration_plan_batches_deterministically_and_never_requests_rqdata() ->
     assert len(plan["plan_digest"]) == 64
 
 
+def test_migration_plan_binds_verified_aggregate_origin_and_quality_lineage() -> None:
+    index = build_inventory_index(
+        [_aggregate_asset()],
+        base_sha="3" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    assert plan["approval_eligible"] is True
+    assert plan["provider_request_proposal"]["request_count"] == 0
+    assert plan["batches"][0]["batch_key"] == "jm:continuous:5m"
+    assert plan["batches"][0]["dataset_origin"] == "preaggregated_from_1m"
+    assert plan["batches"][0]["required_database_revision"] == "20260803_0032"
+    assert plan["batches"][0]["sources"][0]["quality_evidence_digest"] == "b" * 64
+    assert plan["batches"][0]["sources"][0]["source_frequency"] == "1m"
+    assert plan["batches"][0]["sources"][0]["manifest_format"] == "canonical-manifest-v2"
+    assert plan["batches"][0]["sources"][0]["dataset_origin"] == "preaggregated_from_1m"
+
+
+def test_aggregate_gap_or_conflict_never_emits_provider_request_proposal() -> None:
+    index = build_inventory_index(
+        [
+            _aggregate_asset(
+                market_data_file_id=1,
+                quality_evidence_digest=None,
+                quality_evidence_count=0,
+                quality_evidence_statuses=(),
+            ),
+            _aggregate_asset(
+                market_data_file_id=2,
+                source_intervals=("5m",),
+            ),
+        ],
+        base_sha="3" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    assert plan["disposition_counts"]["REGISTER_DATA_GAP"] == 1
+    assert plan["disposition_counts"]["CONFLICT_BLOCKED"] == 1
+    assert plan["provider_request_proposal"]["request_count"] == 0
+    assert plan["calls_rqdata"] is False
+
+
 @pytest.mark.parametrize(
     ("leaf_count", "expected_root"),
     [
@@ -688,9 +932,12 @@ def test_migration_eligibility_is_independent_of_active_references_but_retiremen
     ]["migration_envelope"] == plan["migration_envelope"]
 
 
-def test_migration_plan_with_any_conflict_cannot_emit_approval_eligible_scope() -> None:
+def test_migration_plan_preserves_conflict_without_blocking_other_exact_batch() -> None:
     index = build_inventory_index(
-        [_asset(physical_checksum="b" * 64)],
+        [
+            _asset(market_data_file_id=1, catalog_checksum=None),
+            _asset(market_data_file_id=2, physical_checksum="b" * 64),
+        ],
         base_sha="3" * 40,
         database_revision="20260802_0031",
     )
@@ -698,8 +945,9 @@ def test_migration_plan_with_any_conflict_cannot_emit_approval_eligible_scope() 
     plan = build_migration_plan(index, write_targets=_write_targets())
 
     assert plan["blocked_asset_count"] == 1
-    assert plan["approval_eligible"] is False
-    assert plan["gate_status"] == "BLOCKED_AT_KLINE_DATA_GATE"
+    assert plan["approval_eligible"] is True
+    assert plan["gate_status"] == "exact_owner_approval_required"
+    assert plan["batches"][0]["source_ids"] == [1]
     assert plan["provider_request_proposal"]["request_count"] == 1
     assert plan["provider_request_proposal"]["provider_call_authorized"] is False
     assert plan["provider_request_proposal"]["requests"][0]["window"] == {
@@ -1181,6 +1429,12 @@ def _task07_inventory_schema(engine: Engine) -> None:
         connection.exec_driver_sql(
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
             "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
+            "provider TEXT, data_type TEXT, instrument_symbol TEXT, contract_code TEXT, period TEXT, "
+            "start_time TEXT, end_time TEXT, status TEXT, missing_bars INTEGER, duplicated_bars INTEGER, "
+            "abnormal_price_count INTEGER, abnormal_volume_count INTEGER, details TEXT, created_at TEXT)"
         )
         connection.execute(
             text("INSERT INTO alembic_version VALUES ('20260802_0031')")
@@ -1664,6 +1918,111 @@ def test_task07_preflight_apply_and_verify_use_real_canonical_pipeline(
     assert migration_verified["migration_approval_hash"] == approval_hash
 
 
+def test_task07_aggregate_preflight_uses_schema_only_converter_without_provider_or_aggregation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.data_core.cli_service as cli_module
+
+    source = tmp_path / "aggregate.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": [datetime(2026, 3, 31, 21, 5)],
+                "trading_day": [date(2026, 4, 1)],
+                "open": ["100.10"],
+                "high": ["100.50"],
+                "low": ["99.90"],
+                "close": ["100.30"],
+                "volume": ["12"],
+                "turnover": ["1203.60"],
+                "open_interest": ["30"],
+                "period": ["5m"],
+                "source_interval": ["1m"],
+            }
+        ),
+        source,
+    )
+    checksum = sha256(source.read_bytes()).hexdigest()
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            DataQualityReport(
+                id=11,
+                file_id=1,
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="a",
+                contract_code="A.MAIN",
+                period="5m",
+                start_time=datetime(2026, 3, 31, 21, 5, tzinfo=UTC),
+                end_time=datetime(2026, 3, 31, 21, 5, tzinfo=UTC),
+                status="passed",
+                missing_bars=0,
+                duplicated_bars=0,
+                abnormal_price_count=0,
+                abnormal_volume_count=0,
+                details={},
+                created_at=datetime(2026, 7, 8, tzinfo=UTC),
+            )
+        )
+        session.commit()
+        quality_records = task07.read_task07_quality_evidence(
+            session,
+            market_data_file_id=1,
+        )
+    quality_digest = canonical_digest(quality_records)
+    batch = {
+        "batch_key": "a:continuous:5m",
+        "dataset_kind": "continuous",
+        "symbol": "a",
+        "frequency": "5m",
+        "dataset_origin": "preaggregated_from_1m",
+        "sources": [
+            {
+                "market_data_file_id": 1,
+                "contract_or_series": "A.MAIN",
+                "file_path": str(source),
+                "physical_checksum": checksum,
+                "disposition": "REUSE_VERIFIED_AGGREGATE",
+                "coverage_start": "2026-03-31T21:05:00+00:00",
+                "coverage_end": "2026-03-31T21:05:00+00:00",
+                "row_count": 1,
+                "data_version": "legacy-aggregate-v1",
+                "source_frequency": "1m",
+                "manifest_format": "canonical-manifest-v2",
+                "manifest_version": "task07-aggregate-migration-v1",
+                "quality_evidence_digest": quality_digest,
+                "main_map_digest": None,
+                "registered_min_datetime": "2026-03-31T21:05:00+00:00",
+                "registered_max_datetime": "2026-03-31T21:05:00+00:00",
+                "physical_row_count": 1,
+                "physical_min_datetime": "2026-03-31T21:05:00",
+                "physical_max_datetime": "2026-03-31T21:05:00",
+                "declared_periods": ["5m"],
+                "source_intervals": ["1m"],
+            }
+        ],
+    }
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("aggregate preflight must not aggregate or call RQData")
+
+    monkeypatch.setattr(cli_module, "aggregate_bars", forbidden)
+    monkeypatch.setattr(cli_module, "CanonicalRQDataAdapter", forbidden)
+    with Session(engine) as session:
+        validation, prepared = cli_module._task07_validate_batch_readonly(
+            session,
+            batch=batch,
+        )
+
+    assert validation[0]["dataset"]["frequency"] == "5m"
+    assert validation[0]["dataset_origin"] == "preaggregated_from_1m"
+    assert validation[0]["quality_evidence_digest"] == quality_digest
+    assert prepared[0][1].evidence.schema_conversion_only is True
+
+
 def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1740,7 +2099,16 @@ def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
         "app.data_core.cli_service._task07_validate_batch_readonly",
         lambda _session, *, batch: (
             validation,
-            [(source, int(source["market_data_file_id"])) for source in batch["sources"]],
+            [
+                (
+                    source,
+                    SimpleNamespace(
+                        lineage=None,
+                        source_id=int(source["market_data_file_id"]),
+                    ),
+                )
+                for source in batch["sources"]
+            ],
         ),
     )
     monkeypatch.setattr(
@@ -1750,13 +2118,13 @@ def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
     attempts: list[int] = []
 
     def first_attempt(prepared, **_kwargs):
-        attempts.append(prepared)
-        if prepared == 2:
+        attempts.append(prepared.source_id)
+        if prepared.source_id == 2:
             raise RuntimeError("injected second-source failure")
         body = {
-            "market_data_file_id": prepared,
+            "market_data_file_id": prepared.source_id,
             "status": "passed",
-            "batch_key": f"jm:continuous:1m:{prepared}",
+            "batch_key": f"jm:continuous:1m:{prepared.source_id}",
             "plan_digest": plan["plan_digest"],
             "batch_digest": plan["batches"][0]["batch_digest"],
         }
@@ -1794,11 +2162,11 @@ def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
     attempts.clear()
 
     def resumed_attempt(prepared, **_kwargs):
-        attempts.append(prepared)
+        attempts.append(prepared.source_id)
         body = {
-            "market_data_file_id": prepared,
+            "market_data_file_id": prepared.source_id,
             "status": "passed",
-            "batch_key": f"jm:continuous:1m:{prepared}",
+            "batch_key": f"jm:continuous:1m:{prepared.source_id}",
             "plan_digest": plan["plan_digest"],
             "batch_digest": plan["batches"][0]["batch_digest"],
         }

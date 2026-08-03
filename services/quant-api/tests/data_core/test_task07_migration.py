@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from hashlib import sha256
+import json
 from pathlib import Path
 
 import pyarrow as pa
@@ -25,6 +26,7 @@ from app.data_core.task07_migration import (
     verify_task07_published_batch,
 )
 from app.models.data_center import Instrument, MainContractMap, TradingCalendar, TradingSession
+from app.data_core import task07_migration as migration_module
 
 
 def _write_legacy_minute(path: Path, *, trading_day: date) -> str:
@@ -86,6 +88,149 @@ def _friday_night_session() -> TradingSessionCoverage:
         end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
         expected_bar_ends=(datetime(2026, 7, 31, 13, 1, tzinfo=UTC),),
     )
+
+
+def _aggregate_dataset(
+    *,
+    dataset_kind: DatasetKind = DatasetKind.CONTINUOUS,
+    contract: str = "A.MAIN",
+) -> DatasetKey:
+    return DatasetKey(
+        provider="rqdata",
+        dataset_kind=dataset_kind,
+        symbol="a",
+        contract_or_series=contract,
+        frequency=BarFrequency.M5,
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+
+
+def _write_legacy_aggregate(
+    path: Path,
+    *,
+    datetimes: list[datetime] | None = None,
+    trading_days: list[date] | None = None,
+) -> str:
+    values = datetimes or [
+        datetime(2026, 3, 31, 21, 5),
+        datetime(2026, 3, 31, 21, 10),
+    ]
+    days = trading_days or [date(2026, 4, 1)] * len(values)
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": values,
+                "trading_day": days,
+                "open": ["100.10", "100.20"][: len(values)],
+                "high": ["100.50", "100.60"][: len(values)],
+                "low": ["99.90", "100.00"][: len(values)],
+                "close": ["100.30", "100.40"][: len(values)],
+                "volume": ["12", "13"][: len(values)],
+                "turnover": ["1203.60", "1305.20"][: len(values)],
+                "open_interest": ["30", "31"][: len(values)],
+                "period": ["5m"] * len(values),
+                "source_interval": ["1m"] * len(values),
+            }
+        ),
+        path,
+    )
+    return sha256(path.read_bytes()).hexdigest()
+
+
+def test_prepare_aggregate_batch_is_schema_only_and_preserves_source_values(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "aggregate.parquet"
+    checksum = _write_legacy_aggregate(source)
+    prepare = getattr(
+        migration_module,
+        "prepare_legacy_aggregate_parquet_batch",
+        None,
+    )
+    assert callable(prepare), "aggregate schema-only converter must exist"
+
+    prepared = prepare(
+        path=source,
+        source_checksum=checksum,
+        dataset=_aggregate_dataset(),
+        data_version="legacy-aggregate-v1",
+        quality_evidence_digest="a" * 64,
+    )
+
+    bars = tuple(prepared.batch.bars)
+    assert [item.bar_end for item in bars] == [
+        datetime(2026, 3, 31, 13, 5, tzinfo=UTC),
+        datetime(2026, 3, 31, 13, 10, tzinfo=UTC),
+    ]
+    assert [item.trading_day for item in bars] == [date(2026, 4, 1)] * 2
+    assert [item.close for item in bars] == [Decimal("100.3"), Decimal("100.4")]
+    assert [item.volume for item in bars] == [Decimal("12"), Decimal("13")]
+    assert prepared.evidence.schema_conversion_only is True
+    assert prepared.evidence.session_completeness_validated is False
+    assert prepared.evidence.quality_evidence_digest == "a" * 64
+    assert prepared.lineage is not None
+    assert prepared.lineage.as_payload() == {
+        "origin": "preaggregated_from_1m",
+        "source_frequency": "1m",
+        "legacy_source_checksum": checksum,
+        "quality_evidence_digest": "a" * 64,
+    }
+
+
+def test_execute_aggregate_batch_publishes_v2_manifest_with_exact_lineage(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "aggregate.parquet"
+    checksum = _write_legacy_aggregate(source)
+    prepared = migration_module.prepare_legacy_aggregate_parquet_batch(
+        path=source,
+        source_checksum=checksum,
+        dataset=_aggregate_dataset(),
+        data_version="legacy-aggregate-v1",
+        quality_evidence_digest="a" * 64,
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    canonical_root = tmp_path / "canonical"
+    store = CanonicalStore(
+        staging_root=tmp_path / "staging",
+        canonical_root=canonical_root,
+        metadata_session_factory=lambda: Session(engine),
+    )
+
+    with Session(engine) as session:
+        receipt = execute_task07_prepared_batch(
+            prepared,
+            store=store,
+            catalog=HistoricalCatalog(session),
+            manifest_version="task07-preaggregated-1m-v1",
+            batch_key="a:continuous:5m:1",
+            plan_digest="1" * 64,
+            batch_digest="2" * 64,
+            source_market_data_file_id=1,
+        )
+
+    manifest = json.loads(
+        (canonical_root / str(receipt["manifest_uri"])).read_text(encoding="utf-8")
+    )
+    assert receipt["manifest_format"] == "canonical-manifest-v2"
+    assert receipt["source_lineage"] == {
+        "origin": "preaggregated_from_1m",
+        "source_frequency": "1m",
+        "legacy_source_checksum": checksum,
+        "quality_evidence_digest": "a" * 64,
+    }
+    assert manifest["manifest_format"] == receipt["manifest_format"]
+    assert manifest["source_lineage"] == receipt["source_lineage"]
+
+    with Session(engine) as session:
+        verified = verify_task07_published_batch(
+            receipt,
+            catalog=HistoricalCatalog(session),
+            canonical_root=canonical_root,
+        )
+    assert verified["status"] == "passed"
 
 
 def test_prepare_legacy_batch_corrects_weekend_trading_day_without_changing_values(

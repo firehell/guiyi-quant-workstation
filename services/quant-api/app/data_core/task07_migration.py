@@ -17,13 +17,21 @@ from sqlalchemy.orm import Session
 
 from app.data_core.bar_schema import CanonicalBar
 from app.data_core.canonical_store import (
+    CANONICAL_MANIFEST_FORMAT_V2,
     CANONICAL_PARQUET_SCHEMA,
     CanonicalStore,
     PublishExpectation,
     canonical_json_digest,
 )
 from app.data_core.catalog import HistoricalCatalog
-from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
+from app.data_core.contracts import (
+    DERIVED_FREQUENCIES,
+    BarFrequency,
+    DatasetKey,
+    DatasetKind,
+    DatasetOrigin,
+    ManifestLineage,
+)
 from app.data_core.quality import validate_provider_batch
 from app.data_core.historical_sessions import build_provider_sessions, product_sessions
 from app.data_core.rqdata_adapter import (
@@ -44,6 +52,7 @@ _VALUE_COLUMNS = (
     "turnover",
     "open_interest",
 )
+TASK07_AGGREGATE_MANIFEST_VERSION = "task07-aggregate-migration-v1"
 
 
 class Task07MigrationError(ValueError):
@@ -64,9 +73,146 @@ class Task07CorrectionEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class Task07AggregateEvidence:
+    source_checksum: str
+    source_row_count: int
+    target_frequency: str
+    source_frequency: str
+    quality_evidence_digest: str
+    trading_day_digest: str
+    main_map_digest: str | None
+    schema_conversion_only: bool
+    session_completeness_validated: bool
+
+
+@dataclass(frozen=True, slots=True)
 class PreparedLegacyBatch:
     batch: ProviderBarBatch
-    evidence: Task07CorrectionEvidence
+    evidence: Task07CorrectionEvidence | Task07AggregateEvidence
+    lineage: ManifestLineage | None = None
+
+
+def prepare_legacy_aggregate_parquet_batch(
+    *,
+    path: Path,
+    source_checksum: str,
+    dataset: DatasetKey,
+    data_version: str,
+    quality_evidence_digest: str,
+    rank1_contract_by_day: Mapping[date, str] | None = None,
+) -> PreparedLegacyBatch:
+    """Convert a verified same-frequency legacy aggregate without reaggregation."""
+
+    if dataset.frequency not in DERIVED_FREQUENCIES:
+        raise Task07MigrationError("TASK07_AGGREGATE_FREQUENCY_INVALID")
+    _require_sha256(
+        quality_evidence_digest,
+        "TASK07_QUALITY_EVIDENCE_DIGEST_INVALID",
+    )
+    if _file_checksum(path) != source_checksum:
+        raise Task07MigrationError("TASK07_SOURCE_DRIFT")
+    rows = _read_legacy_aggregate_rows(path)
+    periods = {
+        str(row.get("period") or "").strip().lower()
+        for row in rows
+    }
+    source_intervals = {
+        str(row.get("source_interval") or "").strip().lower()
+        for row in rows
+    }
+    if periods != {dataset.frequency.value}:
+        raise Task07MigrationError("TASK07_AGGREGATE_PERIOD_MISMATCH")
+    if source_intervals != {BarFrequency.M1.value}:
+        raise Task07MigrationError("TASK07_AGGREGATE_SOURCE_INTERVAL_MISMATCH")
+    bars: list[CanonicalBar] = []
+    seen_bar_ends: set[datetime] = set()
+    source_days: set[date] = set()
+    for row in rows:
+        bar_end = _bar_end(row.get("datetime"), dataset.frequency)
+        if bar_end in seen_bar_ends:
+            raise Task07MigrationError("TASK07_AGGREGATE_DUPLICATE_BAR")
+        seen_bar_ends.add(bar_end)
+        trading_day = date.fromisoformat(
+            _day_text(row.get("trading_day", row.get("trading_date")))
+        )
+        source_days.add(trading_day)
+        if dataset.dataset_kind is DatasetKind.ACTUAL_DOMINANT:
+            if rank1_contract_by_day is None:
+                raise Task07MigrationError("TASK07_MAIN_MAP_MISSING")
+            mapped = rank1_contract_by_day.get(trading_day)
+            if mapped is None:
+                raise Task07MigrationError("TASK07_MAIN_MAP_MISSING")
+            if str(mapped).strip().upper() != dataset.contract_or_series:
+                raise Task07MigrationError("TASK07_MAIN_MAP_MISMATCH")
+        bars.append(
+            CanonicalBar(
+                provider="rqdata",
+                dataset_kind=dataset.dataset_kind,
+                symbol=dataset.symbol,
+                contract_or_series=dataset.contract_or_series,
+                frequency=dataset.frequency,
+                bar_end=bar_end,
+                trading_day=trading_day,
+                open=_decimal(row, "open"),
+                high=_decimal(row, "high"),
+                low=_decimal(row, "low"),
+                close=_decimal(row, "close"),
+                volume=_decimal(row, "volume"),
+                turnover=_decimal(row, "turnover", optional=True),
+                open_interest=_decimal(row, "open_interest", optional=True),
+                adjustment=dataset.adjustment,
+                schema_version=dataset.schema_version,
+            )
+        )
+    sessions = _exact_source_coverage_sessions(bars, dataset.frequency)
+    request = ProviderBarRequest(
+        dataset=dataset,
+        start=min(item.start for item in sessions),
+        end=max(item.end for item in sessions),
+        sessions=sessions,
+    )
+    validated = validate_provider_batch(
+        ProviderBarBatch(
+            request=request,
+            bars=tuple(bars),
+            data_version=data_version,
+        )
+    )
+    main_map_digest = None
+    if rank1_contract_by_day is not None:
+        main_map_digest = _digest(
+            [
+                [day.isoformat(), str(rank1_contract_by_day[day]).strip().upper()]
+                for day in sorted(source_days)
+            ]
+        )
+    lineage = ManifestLineage(
+        origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+        source_frequency=BarFrequency.M1,
+        legacy_source_checksum=source_checksum,
+        quality_evidence_digest=quality_evidence_digest,
+    )
+    return PreparedLegacyBatch(
+        batch=ProviderBarBatch(
+            request=request,
+            bars=validated.bars,
+            data_version=validated.data_version,
+        ),
+        evidence=Task07AggregateEvidence(
+            source_checksum=source_checksum,
+            source_row_count=len(rows),
+            target_frequency=dataset.frequency.value,
+            source_frequency=BarFrequency.M1.value,
+            quality_evidence_digest=quality_evidence_digest,
+            trading_day_digest=_digest(
+                [item.trading_day.isoformat() for item in validated.bars]
+            ),
+            main_map_digest=main_map_digest,
+            schema_conversion_only=True,
+            session_completeness_validated=False,
+        ),
+        lineage=lineage,
+    )
 
 
 def execute_task07_prepared_batch(
@@ -114,11 +260,18 @@ def execute_task07_prepared_batch(
         logical_fingerprint = validation.canonical_logical_fingerprint
         publication_status = "reused"
     else:
+        expectation_kwargs: dict[str, object] = {}
+        if prepared.lineage is not None:
+            expectation_kwargs = {
+                "manifest_format": CANONICAL_MANIFEST_FORMAT_V2,
+                "lineage": prepared.lineage,
+            }
         published = store.publish(
             staged,
             PublishExpectation.from_validation(
                 validation,
                 manifest_version=manifest_version,
+                **expectation_kwargs,
             ),
         )
         manifest = published.partition_manifest
@@ -159,6 +312,13 @@ def execute_task07_prepared_batch(
         "calls_rqdata": False,
         "deletion_authorized": False,
     }
+    if prepared.lineage is not None:
+        body.update(
+            {
+                "manifest_format": CANONICAL_MANIFEST_FORMAT_V2,
+                "source_lineage": prepared.lineage.as_payload(),
+            }
+        )
     return {**body, "receipt_digest": _digest(body)}
 
 
@@ -219,6 +379,20 @@ def verify_task07_published_batch(
         raise Task07MigrationError("TASK07_CANONICAL_READBACK_INVALID") from exc
     if not isinstance(manifest, dict):
         raise Task07MigrationError("TASK07_CANONICAL_READBACK_INVALID")
+    receipt_manifest_format = receipt.get("manifest_format")
+    if receipt_manifest_format is not None:
+        if (
+            receipt_manifest_format != CANONICAL_MANIFEST_FORMAT_V2
+            or manifest.get("manifest_format") != receipt_manifest_format
+            or manifest.get("manifest_version") != receipt.get("manifest_version")
+            or manifest.get("source_lineage") != receipt.get("source_lineage")
+        ):
+            raise Task07MigrationError("TASK07_MANIFEST_LINEAGE_MISMATCH")
+        try:
+            lineage = ManifestLineage.from_payload(receipt.get("source_lineage"))
+            lineage.validate_dataset(dataset)
+        except ValueError as exc:
+            raise Task07MigrationError("TASK07_MANIFEST_LINEAGE_MISMATCH") from exc
     stored_manifest_digest = manifest.pop("manifest_digest", None)
     if (
         stored_manifest_digest != receipt.get("manifest_digest")
@@ -509,6 +683,119 @@ def _read_legacy_rows(path: Path) -> tuple[dict[str, object], ...]:
         for row in rows:
             row["trading_day"] = row.pop(day_column)
     return rows
+
+
+def _read_legacy_aggregate_rows(path: Path) -> tuple[dict[str, object], ...]:
+    try:
+        parquet = pq.ParquetFile(path)
+        names = set(parquet.schema_arrow.names)
+        day_column = (
+            "trading_day" if "trading_day" in names else "trading_date"
+        )
+        required = {
+            "datetime",
+            day_column,
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "period",
+            "source_interval",
+        }
+        if not required <= names:
+            raise Task07MigrationError("TASK07_SOURCE_SCHEMA_INVALID")
+        columns = [
+            "datetime",
+            day_column,
+            *_VALUE_COLUMNS,
+            "period",
+            "source_interval",
+        ]
+        table = parquet.read(
+            columns=[name for name in columns if name in names]
+        )
+    except (OSError, ValueError, TypeError) as exc:
+        if isinstance(exc, Task07MigrationError):
+            raise
+        raise Task07MigrationError("TASK07_SOURCE_SCHEMA_INVALID") from exc
+    rows = tuple(dict(item) for item in table.to_pylist())
+    if not rows:
+        raise Task07MigrationError("TASK07_SOURCE_EMPTY")
+    if day_column != "trading_day":
+        for row in rows:
+            row["trading_day"] = row.pop(day_column)
+    return rows
+
+
+def read_legacy_aggregate_trading_days(
+    path: Path,
+    *,
+    source_checksum: str,
+) -> tuple[date, ...]:
+    if _file_checksum(path) != source_checksum:
+        raise Task07MigrationError("TASK07_SOURCE_DRIFT")
+    try:
+        parquet = pq.ParquetFile(path)
+        names = set(parquet.schema_arrow.names)
+        day_column = (
+            "trading_day" if "trading_day" in names else "trading_date"
+        )
+        if day_column not in names:
+            raise Task07MigrationError("TASK07_SOURCE_SCHEMA_INVALID")
+        days: set[date] = set()
+        for batch in parquet.iter_batches(
+            batch_size=65_536,
+            columns=[day_column],
+        ):
+            days.update(_source_day(item) for item in batch.column(0).to_pylist())
+    except (OSError, TypeError, ValueError) as exc:
+        if isinstance(exc, Task07MigrationError):
+            raise
+        raise Task07MigrationError("TASK07_SOURCE_SCHEMA_INVALID") from exc
+    if not days:
+        raise Task07MigrationError("TASK07_SOURCE_EMPTY")
+    return tuple(sorted(days))
+
+
+def _source_day(value: object) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError as exc:
+        raise Task07MigrationError("TASK07_SOURCE_TRADING_DAY_INVALID") from exc
+
+
+def _exact_source_coverage_sessions(
+    bars: Sequence[CanonicalBar],
+    frequency: BarFrequency,
+) -> tuple[TradingSessionCoverage, ...]:
+    minutes = {
+        BarFrequency.M5: 5,
+        BarFrequency.M15: 15,
+        BarFrequency.M30: 30,
+        BarFrequency.H1: 60,
+    }.get(frequency)
+    if minutes is None:
+        raise Task07MigrationError("TASK07_AGGREGATE_FREQUENCY_INVALID")
+    by_day: dict[date, list[datetime]] = {}
+    for bar in bars:
+        by_day.setdefault(bar.trading_day, []).append(bar.bar_end)
+    sessions = tuple(
+        TradingSessionCoverage(
+            trading_day=trading_day,
+            start=min(bar_ends) - timedelta(minutes=minutes),
+            end=max(bar_ends),
+            expected_bar_ends=tuple(sorted(bar_ends)),
+        )
+        for trading_day, bar_ends in sorted(by_day.items())
+    )
+    if not sessions:
+        raise Task07MigrationError("TASK07_SESSION_COVERAGE_MISSING")
+    return sessions
 
 
 def _bar_end(value: object, frequency: BarFrequency) -> datetime:

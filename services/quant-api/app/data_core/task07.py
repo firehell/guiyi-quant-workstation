@@ -8,7 +8,8 @@ it never deletes rows or files.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
 import json
@@ -20,6 +21,10 @@ from zoneinfo import ZoneInfo
 import pyarrow.parquet as pq
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from app.data_core.bar_schema import CanonicalBar
+from app.data_core.contracts import BarFrequency, DatasetKind
+from app.data_core.quality import decimal_profile_reason
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -117,6 +122,7 @@ _OFFLINE_DATA_TOOL_PREFIXES = (
 class AssetDisposition(StrEnum):
     KEEP_CANONICAL_VERIFIED = "KEEP_CANONICAL_VERIFIED"
     REUSE_TRUSTED_SOURCE = "REUSE_TRUSTED_SOURCE"
+    REUSE_VERIFIED_AGGREGATE = "REUSE_VERIFIED_AGGREGATE"
     PROTECTED_EVIDENCE_SOURCE = "PROTECTED_EVIDENCE_SOURCE"
     REGISTER_DATA_GAP = "REGISTER_DATA_GAP"
     CONFLICT_BLOCKED = "CONFLICT_BLOCKED"
@@ -147,6 +153,17 @@ class Task07Asset:
     coverage_end: str | None
     row_count: int | None = None
     data_version: str | None = None
+    physical_is_symlink: bool = False
+    physical_row_count: int | None = None
+    physical_min_datetime: str | None = None
+    physical_max_datetime: str | None = None
+    declared_periods: tuple[str, ...] = ()
+    source_intervals: tuple[str, ...] = ()
+    registration_wall_clock_matches: bool | None = None
+    quality_evidence_digest: str | None = None
+    quality_evidence_count: int = 0
+    quality_evidence_statuses: tuple[str, ...] = ()
+    main_map_digest: str | None = None
 
 
 def canonical_digest(value: Any) -> str:
@@ -162,7 +179,61 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
         return AssetDisposition.PROTECTED_EVIDENCE_SOURCE
     if asset.source_scope == "outside_approved_roots":
         return AssetDisposition.RETIREMENT_CANDIDATE
+    if asset.data_type == "v2_canonical":
+        identity_valid = (
+            asset.provider == "rqdata"
+            and asset.data_role == "primary"
+            and asset.dataset_kind in {"continuous", "actual_dominant"}
+            and (
+                asset.dataset_kind != "continuous"
+                or asset.contract_or_series == f"{asset.symbol.upper()}.MAIN"
+            )
+            and not (
+                asset.dataset_kind == "actual_dominant"
+                and asset.frequency == "1w"
+            )
+        )
+        if (
+            identity_valid
+            and asset.source_scope == "approved_canonical_root"
+            and asset.physical_exists
+            and asset.checksum
+            and asset.checksum == asset.physical_checksum
+            and asset.catalog_checksum == asset.physical_checksum
+            and asset.content_gate_status in {"passed", "not_inspected"}
+        ):
+            return AssetDisposition.KEEP_CANONICAL_VERIFIED
+        return AssetDisposition.CONFLICT_BLOCKED
     if asset.frequency in _DERIVED_FREQUENCIES:
+        if asset.provider != "rqdata" or asset.data_type != "bars":
+            return AssetDisposition.RETIREMENT_CANDIDATE
+        if asset.data_role != "primary" or asset.quality_status != "passed":
+            return AssetDisposition.REGISTER_DATA_GAP
+        if not asset.physical_exists or asset.quality_evidence_count < 1:
+            return AssetDisposition.REGISTER_DATA_GAP
+        if asset.quality_evidence_statuses != ("passed",):
+            return AssetDisposition.REGISTER_DATA_GAP
+        if asset.physical_is_symlink:
+            return AssetDisposition.CONFLICT_BLOCKED
+        if (
+            asset.content_gate_status == "passed"
+            and asset.checksum
+            and asset.physical_checksum
+            and asset.checksum == asset.physical_checksum
+            and asset.dataset_kind in {"continuous", "actual_dominant"}
+            and asset.declared_periods == (asset.frequency,)
+            and asset.source_intervals == ("1m",)
+            and asset.physical_row_count == asset.row_count
+            and asset.registration_wall_clock_matches is True
+            and asset.quality_evidence_digest is not None
+            and (
+                asset.dataset_kind != "actual_dominant"
+                or asset.main_map_digest is not None
+            )
+        ):
+            return AssetDisposition.REUSE_VERIFIED_AGGREGATE
+        return AssetDisposition.CONFLICT_BLOCKED
+    if asset.frequency == "1d" and asset.source_intervals == ("1m",):
         return AssetDisposition.EXCLUDE_DERIVED
     if asset.provider != "rqdata" or asset.data_type not in {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}:
         return AssetDisposition.RETIREMENT_CANDIDATE
@@ -267,6 +338,12 @@ def collect_task07_assets(
         ).mappings().all()
         if not rows:
             break
+        quality_evidence = _quality_evidence_for_file_range(
+            session,
+            first_file_id=int(rows[0]["id"]),
+            last_file_id=int(rows[-1]["id"]),
+            page_size=page_size,
+        )
         for row in rows:
             cursor = int(row["id"])
             path_text = str(row["file_path"])
@@ -291,23 +368,60 @@ def collect_task07_assets(
             contract = str(row["contract_code"] or "").upper()
             frequency = str(row["period"] or "")
             content_gate_status = "not_applicable"
+            physical_inspection: dict[str, Any] = {}
             if (
                 inspect_content
                 and physical[0]
                 and str(row["provider"]) == "rqdata"
                 and str(row["data_role"]) == "primary"
                 and str(row["quality_status"]) == "passed"
-                and frequency in _DIRECT_FREQUENCIES
+                and frequency in _DIRECT_FREQUENCIES | _DERIVED_FREQUENCIES
                 and str(row["data_type"]) in {"bars", "contract_bars_raw"}
             ):
-                content_gate_status = content_cache.get(path_text, "")
-                if not content_gate_status:
+                if frequency in _DERIVED_FREQUENCIES and str(row["data_type"]) == "bars":
+                    physical_inspection = _aggregate_parquet_content_gate(
+                        session,
+                        registered_path=registered_path,
+                        physical_path=source_path,
+                        frequency=frequency,
+                        registered_row_count=(
+                            int(row["row_count"])
+                            if row["row_count"] is not None
+                            else None
+                        ),
+                        registered_start=row["start_time"],
+                        registered_end=row["end_time"],
+                        dataset_kind=_dataset_kind(contract),
+                        symbol=symbol,
+                        contract=contract,
+                    )
+                    content_gate_status = str(physical_inspection["status"])
+                elif frequency == "1d" and str(row["data_type"]) == "bars":
+                    source_intervals = _parquet_declared_values(
+                        source_path,
+                        "source_interval",
+                    )
+                    physical_inspection = {"source_intervals": source_intervals}
+                    if source_intervals == ("1m",):
+                        content_gate_status = "derived_daily_source_interval_1m"
+                    else:
+                        content_gate_status = _parquet_content_gate(
+                            source_path,
+                            data_type=str(row["data_type"]),
+                            frequency=frequency,
+                        )
+                else:
                     content_gate_status = _parquet_content_gate(
                         source_path,
                         data_type=str(row["data_type"]),
                         frequency=frequency,
                     )
-                    content_cache[path_text] = content_gate_status
+                content_cache[path_text] = content_gate_status
+            reports = quality_evidence.get(cursor, ())
+            quality_digest = canonical_digest(reports) if reports else None
+            quality_statuses = tuple(
+                sorted({str(item["status"]).strip().lower() for item in reports})
+            )
             key = (str(row["provider"]), symbol, contract, frequency)
             matches = catalog.get(key, [])
             catalog_checksum: str | None = None
@@ -341,6 +455,19 @@ def collect_task07_assets(
                 coverage_end=_iso(row["end_time"]),
                 row_count=(int(row["row_count"]) if row["row_count"] is not None else None),
                 data_version=(str(row["data_version"]) if row["data_version"] else None),
+                physical_is_symlink=registered_path.is_symlink(),
+                physical_row_count=physical_inspection.get("physical_row_count"),
+                physical_min_datetime=physical_inspection.get("physical_min_datetime"),
+                physical_max_datetime=physical_inspection.get("physical_max_datetime"),
+                declared_periods=tuple(physical_inspection.get("declared_periods", ())),
+                source_intervals=tuple(physical_inspection.get("source_intervals", ())),
+                registration_wall_clock_matches=physical_inspection.get(
+                    "registration_wall_clock_matches"
+                ),
+                quality_evidence_digest=quality_digest,
+                quality_evidence_count=len(reports),
+                quality_evidence_statuses=quality_statuses,
+                main_map_digest=physical_inspection.get("main_map_digest"),
             )
     for partition_id, provider, kind, symbol, contract, frequency, file_uri, checksum, start, end, row_count in catalog_rows:
         relative = Path(str(file_uri))
@@ -515,6 +642,399 @@ def _parquet_content_gate(path: Path, *, data_type: str, frequency: str) -> str:
         if 3 <= local.hour < 21 and trading_day != local_day:
             return "day_session_trading_day_conflict"
     return "passed"
+
+
+def _quality_evidence_for_file_range(
+    session: Session,
+    *,
+    first_file_id: int,
+    last_file_id: int,
+    page_size: int,
+) -> dict[int, tuple[dict[str, Any], ...]]:
+    by_file: dict[int, list[dict[str, Any]]] = {}
+    file_cursor = first_file_id - 1
+    report_cursor = 0
+    while True:
+        rows = session.execute(
+            text(
+                "SELECT id, file_id, task_id, provider, data_type, instrument_symbol, "
+                "contract_code, period, start_time, end_time, status, missing_bars, "
+                "duplicated_bars, abnormal_price_count, abnormal_volume_count, details, "
+                "created_at FROM data_quality_reports "
+                "WHERE file_id BETWEEN :first_file_id AND :last_file_id "
+                "AND (file_id > :file_cursor OR "
+                "(file_id = :file_cursor AND id > :report_cursor)) "
+                "ORDER BY file_id, id LIMIT :page_size"
+            ),
+            {
+                "first_file_id": first_file_id,
+                "last_file_id": last_file_id,
+                "file_cursor": file_cursor,
+                "report_cursor": report_cursor,
+                "page_size": page_size,
+            },
+        ).mappings().all()
+        if not rows:
+            break
+        for row in rows:
+            file_id = int(row["file_id"])
+            report_id = int(row["id"])
+            by_file.setdefault(file_id, []).append(
+                _quality_evidence_record(row)
+            )
+            file_cursor = file_id
+            report_cursor = report_id
+    return {
+        file_id: tuple(records)
+        for file_id, records in by_file.items()
+    }
+
+
+def read_task07_quality_evidence(
+    session: Session,
+    *,
+    market_data_file_id: int,
+    page_size: int = 1_000,
+) -> tuple[dict[str, Any], ...]:
+    """Re-read one source's complete linked quality evidence without an ID list."""
+
+    if market_data_file_id < 1 or page_size < 1:
+        raise ValueError("TASK07_QUALITY_EVIDENCE_SCOPE_INVALID")
+    return _quality_evidence_for_file_range(
+        session,
+        first_file_id=market_data_file_id,
+        last_file_id=market_data_file_id,
+        page_size=page_size,
+    ).get(market_data_file_id, ())
+
+
+def _quality_evidence_record(row: Mapping[str, Any]) -> dict[str, Any]:
+    details: Any = row["details"]
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except json.JSONDecodeError:
+            pass
+    return {
+        "id": int(row["id"]),
+        "file_id": int(row["file_id"]),
+        "task_id": int(row["task_id"]) if row["task_id"] is not None else None,
+        "provider": str(row["provider"] or ""),
+        "data_type": str(row["data_type"] or ""),
+        "instrument_symbol": str(row["instrument_symbol"] or ""),
+        "contract_code": str(row["contract_code"] or ""),
+        "period": str(row["period"] or ""),
+        "start_time": _iso(row["start_time"]),
+        "end_time": _iso(row["end_time"]),
+        "status": str(row["status"] or "").strip().lower(),
+        "missing_bars": int(row["missing_bars"] or 0),
+        "duplicated_bars": int(row["duplicated_bars"] or 0),
+        "abnormal_price_count": int(row["abnormal_price_count"] or 0),
+        "abnormal_volume_count": int(row["abnormal_volume_count"] or 0),
+        "details": details,
+        "created_at": _iso(row["created_at"]),
+    }
+
+
+def _aggregate_parquet_content_gate(
+    session: Session,
+    *,
+    registered_path: Path,
+    physical_path: Path,
+    frequency: str,
+    registered_row_count: int | None,
+    registered_start: object,
+    registered_end: object,
+    dataset_kind: str | None,
+    symbol: str,
+    contract: str,
+) -> dict[str, Any]:
+    evidence: dict[str, Any] = {
+        "status": "schema_conflict",
+        "physical_row_count": None,
+        "physical_min_datetime": None,
+        "physical_max_datetime": None,
+        "declared_periods": (),
+        "source_intervals": (),
+        "registration_wall_clock_matches": False,
+        "main_map_digest": None,
+    }
+    if registered_path.is_symlink():
+        return {**evidence, "status": "symlink_conflict"}
+    try:
+        parquet = pq.ParquetFile(physical_path)
+        names = set(parquet.schema_arrow.names)
+        day_column = (
+            "trading_day" if "trading_day" in names else "trading_date"
+        )
+        required = {
+            "datetime",
+            day_column,
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "period",
+            "source_interval",
+        }
+        if not required <= names:
+            return evidence
+        columns = [
+            "datetime",
+            day_column,
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "turnover",
+            "open_interest",
+            "period",
+            "source_interval",
+        ]
+    except (OSError, TypeError, ValueError):
+        return evidence
+    physical_row_count = int(parquet.metadata.num_rows)
+    if registered_row_count != physical_row_count:
+        return {
+            **evidence,
+            "physical_row_count": physical_row_count,
+            "status": "row_count_conflict",
+        }
+    declared_period_values: set[str] = set()
+    source_interval_values: set[str] = set()
+    physical_min: datetime | None = None
+    physical_max: datetime | None = None
+    previous_bar_end: datetime | None = None
+    processed_row_count = 0
+    trading_days: set[date] = set()
+    try:
+        target_frequency = BarFrequency(frequency)
+        target_kind = DatasetKind(dataset_kind)
+        for batch in parquet.iter_batches(
+            batch_size=65_536,
+            columns=[item for item in columns if item in names],
+        ):
+            for row in batch.to_pylist():
+                processed_row_count += 1
+                declared_period_values.add(
+                    str(row.get("period") or "").strip().lower()
+                )
+                source_interval_values.add(
+                    str(row.get("source_interval") or "").strip().lower()
+                )
+                raw_bar_end = row.get("datetime")
+                if not isinstance(raw_bar_end, datetime) or (
+                    raw_bar_end.tzinfo is not None
+                    and raw_bar_end.utcoffset() is not None
+                ):
+                    return {
+                        **evidence,
+                        "physical_row_count": physical_row_count,
+                        "status": "datetime_timezone_conflict",
+                    }
+                if previous_bar_end is not None and raw_bar_end <= previous_bar_end:
+                    return {
+                        **evidence,
+                        "physical_row_count": physical_row_count,
+                        "status": "duplicate_or_order_conflict",
+                    }
+                previous_bar_end = raw_bar_end
+                physical_min = (
+                    raw_bar_end
+                    if physical_min is None
+                    else min(physical_min, raw_bar_end)
+                )
+                physical_max = (
+                    raw_bar_end
+                    if physical_max is None
+                    else max(physical_max, raw_bar_end)
+                )
+                trading_day = _source_trading_day(row[day_column])
+                trading_days.add(trading_day)
+                values = {
+                    field: (
+                        None
+                        if row.get(field) is None
+                        and field in {"turnover", "open_interest"}
+                        else Decimal(str(row.get(field)))
+                    )
+                    for field in (
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "turnover",
+                        "open_interest",
+                    )
+                }
+                if any(
+                    value is not None
+                    and decimal_profile_reason(value) is not None
+                    for value in values.values()
+                ):
+                    return {
+                        **evidence,
+                        "physical_row_count": physical_row_count,
+                        "status": "canonical_profile_conflict",
+                    }
+                CanonicalBar(
+                    provider="rqdata",
+                    dataset_kind=target_kind,
+                    symbol=symbol,
+                    contract_or_series=contract,
+                    frequency=target_frequency,
+                    bar_end=raw_bar_end.replace(tzinfo=_SHANGHAI).astimezone(UTC),
+                    trading_day=trading_day,
+                    open=values["open"],
+                    high=values["high"],
+                    low=values["low"],
+                    close=values["close"],
+                    volume=values["volume"],
+                    turnover=values["turnover"],
+                    open_interest=values["open_interest"],
+                    adjustment="none",
+                    schema_version="canonical-bar-v1",
+                )
+    except (ArithmeticError, OSError, TypeError, ValueError):
+        return {
+            **evidence,
+            "physical_row_count": physical_row_count,
+            "status": "canonical_profile_conflict",
+        }
+    declared_periods = tuple(sorted(declared_period_values))
+    source_intervals = tuple(sorted(source_interval_values))
+    evidence.update(
+        {
+            "physical_row_count": physical_row_count,
+            "physical_min_datetime": (
+                physical_min.isoformat() if physical_min is not None else None
+            ),
+            "physical_max_datetime": (
+                physical_max.isoformat() if physical_max is not None else None
+            ),
+            "declared_periods": declared_periods,
+            "source_intervals": source_intervals,
+        }
+    )
+    if (
+        processed_row_count == 0
+        or processed_row_count != physical_row_count
+        or physical_min is None
+        or physical_max is None
+    ):
+        return {**evidence, "status": "row_count_conflict"}
+    if declared_periods != (frequency,):
+        return {**evidence, "status": "period_conflict"}
+    if source_intervals != ("1m",):
+        return {**evidence, "status": "source_interval_conflict"}
+    try:
+        registered_min = _registration_wall_clock_component(registered_start)
+        registered_max = _registration_wall_clock_component(registered_end)
+    except (TypeError, ValueError):
+        return {**evidence, "status": "registration_coverage_conflict"}
+    registration_matches = (
+        physical_min == registered_min and physical_max == registered_max
+    )
+    evidence["registration_wall_clock_matches"] = registration_matches
+    if not registration_matches:
+        return {**evidence, "status": "registration_coverage_conflict"}
+    if dataset_kind not in {"continuous", "actual_dominant"}:
+        return {**evidence, "status": "identity_conflict"}
+    if dataset_kind == "continuous" and contract != f"{symbol.upper()}.MAIN":
+        return {**evidence, "status": "identity_conflict"}
+    if dataset_kind == "actual_dominant":
+        main_map_digest = _aggregate_main_map_digest(
+            session,
+            symbol=symbol,
+            contract=contract,
+            trading_days=trading_days,
+        )
+        if main_map_digest is None:
+            return {**evidence, "status": "main_map_conflict"}
+        evidence["main_map_digest"] = main_map_digest
+    return {**evidence, "status": "passed"}
+
+
+def _parquet_declared_values(path: Path, column: str) -> tuple[str, ...]:
+    try:
+        parquet = pq.ParquetFile(path)
+        if column not in parquet.schema_arrow.names:
+            return ()
+        values = parquet.read(columns=[column]).column(column).to_pylist()
+    except (OSError, TypeError, ValueError):
+        return ()
+    return tuple(
+        sorted({str(item).strip().lower() for item in values if item is not None})
+    )
+
+
+def _registration_wall_clock_component(value: object) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    else:
+        raise TypeError("registration datetime required")
+    if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+def _source_trading_day(value: object) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
+
+
+def _aggregate_main_map_digest(
+    session: Session,
+    *,
+    symbol: str,
+    contract: str,
+    trading_days: set[date],
+) -> str | None:
+    if not trading_days:
+        return None
+    rows = session.execute(
+        text(
+            "SELECT id, trade_date, contract_code, data_version "
+            "FROM main_contract_map WHERE lower(instrument_symbol) = :symbol "
+            "AND provider = 'rqdata' AND rule = 'volume_open_interest' "
+            "AND rank = 1 AND trade_date BETWEEN :start_day AND :end_day "
+            "ORDER BY trade_date, data_version, id"
+        ),
+        {
+            "symbol": symbol,
+            "start_day": min(trading_days),
+            "end_day": max(trading_days),
+        },
+    ).mappings().all()
+    records = [
+        {
+            "id": int(row["id"]),
+            "trading_day": _source_trading_day(row["trade_date"]).isoformat(),
+            "contract": str(row["contract_code"] or "").strip().upper(),
+            "data_version": str(row["data_version"] or ""),
+        }
+        for row in rows
+        if _source_trading_day(row["trade_date"]) in trading_days
+    ]
+    contracts_by_day = {
+        day: {
+            item["contract"]
+            for item in records
+            if item["trading_day"] == day.isoformat()
+        }
+        for day in trading_days
+    }
+    if any(values != {contract} for values in contracts_by_day.values()):
+        return None
+    return canonical_digest(records)
 
 
 def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
@@ -839,6 +1359,7 @@ def build_inventory_index(
     eligible = (
         counts[AssetDisposition.KEEP_CANONICAL_VERIFIED]
         + counts[AssetDisposition.REUSE_TRUSTED_SOURCE]
+        + counts[AssetDisposition.REUSE_VERIFIED_AGGREGATE]
     )
     return {
         "schema_version": 1,
@@ -966,6 +1487,48 @@ def write_inventory_evidence(
     return index
 
 
+def _migration_source_record(
+    item: Mapping[str, Any],
+    *,
+    aggregate: bool,
+) -> dict[str, Any]:
+    record = {
+        "market_data_file_id": int(item["market_data_file_id"]),
+        "contract_or_series": item["contract_or_series"],
+        "file_path": item["file_path"],
+        "physical_checksum": item["physical_checksum"],
+        "disposition": item["disposition"],
+        "coverage_start": item["coverage_start"],
+        "coverage_end": item["coverage_end"],
+        "row_count": item.get("row_count"),
+        "data_version": item.get("data_version"),
+        "dataset_origin": (
+            "preaggregated_from_1m" if aggregate else "provider_direct"
+        ),
+    }
+    if not aggregate:
+        return record
+    return {
+        **record,
+        "source_frequency": "1m",
+        "quality_evidence_digest": item.get("quality_evidence_digest"),
+        "main_map_digest": item.get("main_map_digest"),
+        "manifest_format": "canonical-manifest-v2",
+        "manifest_version": "task07-aggregate-migration-v1",
+        "registered_row_count": item.get("row_count"),
+        "physical_row_count": item.get("physical_row_count"),
+        "registered_min_datetime": item.get("coverage_start"),
+        "registered_max_datetime": item.get("coverage_end"),
+        "physical_min_datetime": item.get("physical_min_datetime"),
+        "physical_max_datetime": item.get("physical_max_datetime"),
+        "declared_periods": list(item.get("declared_periods", ())),
+        "source_intervals": list(item.get("source_intervals", ())),
+        "registration_wall_clock_matches": item.get(
+            "registration_wall_clock_matches"
+        ),
+    }
+
+
 def build_migration_plan(
     index: Mapping[str, Any],
     *,
@@ -976,6 +1539,7 @@ def build_migration_plan(
     eligible = {
         AssetDisposition.KEEP_CANONICAL_VERIFIED.value,
         AssetDisposition.REUSE_TRUSTED_SOURCE.value,
+        AssetDisposition.REUSE_VERIFIED_AGGREGATE.value,
     }
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for raw in index.get("assets", []):
@@ -985,6 +1549,11 @@ def build_migration_plan(
         grouped.setdefault(key, []).append(dict(raw))
     provider_requests = []
     for raw in index.get("assets", []):
+        if raw.get("frequency") in _DERIVED_FREQUENCIES or (
+            raw.get("frequency") == "1d"
+            and tuple(raw.get("source_intervals", ())) == ("1m",)
+        ):
+            continue
         disposition = raw.get("disposition")
         if disposition == AssetDisposition.CONFLICT_BLOCKED.value or (
             disposition == AssetDisposition.REGISTER_DATA_GAP.value
@@ -1018,11 +1587,16 @@ def build_migration_plan(
     )
     batches = []
     for key in sorted(grouped):
+        aggregate = key[2] in _DERIVED_FREQUENCIES
         rows = sorted(grouped[key], key=lambda item: (str(item.get("coverage_start")), int(item["market_data_file_id"])))
         migration_rows = [
             item
             for item in rows
-            if item["disposition"] == AssetDisposition.REUSE_TRUSTED_SOURCE.value
+            if item["disposition"]
+            in {
+                AssetDisposition.REUSE_TRUSTED_SOURCE.value,
+                AssetDisposition.REUSE_VERIFIED_AGGREGATE.value,
+            }
         ]
         verified_rows = [
             item
@@ -1034,20 +1608,16 @@ def build_migration_plan(
             "symbol": key[0],
             "dataset_kind": key[1],
             "frequency": key[2],
+            "dataset_origin": (
+                "preaggregated_from_1m" if aggregate else "provider_direct"
+            ),
+            "required_database_revision": (
+                "20260803_0032" if aggregate else index["database_revision"]
+            ),
             "source_ids": [int(item["market_data_file_id"]) for item in migration_rows],
             "source_checksums": [item["physical_checksum"] for item in migration_rows],
             "sources": [
-                {
-                    "market_data_file_id": int(item["market_data_file_id"]),
-                    "contract_or_series": item["contract_or_series"],
-                    "file_path": item["file_path"],
-                    "physical_checksum": item["physical_checksum"],
-                    "disposition": item["disposition"],
-                    "coverage_start": item["coverage_start"],
-                    "coverage_end": item["coverage_end"],
-                    "row_count": item.get("row_count"),
-                    "data_version": item.get("data_version"),
-                }
+                _migration_source_record(item, aggregate=aggregate)
                 for item in migration_rows
             ],
             "verified_partition_ids": [
@@ -1100,20 +1670,24 @@ def build_migration_plan(
     )
     write_targets_value = dict(write_targets or {})
     target_valid = _migration_write_targets_valid(write_targets_value)
+    revision_ready = all(
+        batch.get("required_database_revision") == index["database_revision"]
+        for batch in batches
+    )
     approval_eligible = (
-        blocked == 0
-        and migration_envelope["batch_count"] > 0
+        migration_envelope["batch_count"] > 0
         and target_valid
+        and revision_ready
     )
     gate_status = (
         "exact_owner_approval_required"
         if approval_eligible
-        else "BLOCKED_AT_KLINE_DATA_GATE"
-        if blocked != 0
         else "BLOCKED_MIGRATION_BATCH_EMPTY"
         if migration_envelope["batch_count"] == 0
         else "BLOCKED_MIGRATION_WRITE_TARGET"
         if not target_valid
+        else "BLOCKED_DATABASE_REVISION"
+        if not revision_ready
         else "BLOCKED_AT_KLINE_DATA_GATE"
     )
     reference_eligible = active_reference_gate == "zero_active_references"
@@ -1153,6 +1727,11 @@ def build_migration_plan(
             "exact_write_targets_bound"
             if target_valid
             else "BLOCKED_MIGRATION_WRITE_TARGET"
+        ),
+        "migration_revision_gate": (
+            "required_database_revision_bound"
+            if revision_ready
+            else "BLOCKED_DATABASE_REVISION"
         ),
         "migration_approval_eligible": approval_eligible,
         "approval_eligible": approval_eligible,
@@ -1443,6 +2022,34 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         body = {key: value for key, value in batch.items() if key != "batch_digest"}
         if batch.get("batch_digest") != canonical_digest(body):
             raise ValueError("TASK07_BATCH_DIGEST_MISMATCH")
+        aggregate = batch.get("frequency") in _DERIVED_FREQUENCIES
+        expected_origin = (
+            "preaggregated_from_1m" if aggregate else "provider_direct"
+        )
+        expected_revision = (
+            "20260803_0032" if aggregate else plan.get("database_revision")
+        )
+        if (
+            batch.get("dataset_origin") != expected_origin
+            or batch.get("required_database_revision") != expected_revision
+        ):
+            raise ValueError("TASK07_BATCH_ORIGIN_INVALID")
+        for source in batch.get("sources", []):
+            if not isinstance(source, Mapping) or source.get(
+                "dataset_origin"
+            ) != expected_origin:
+                raise ValueError("TASK07_BATCH_ORIGIN_INVALID")
+            if aggregate and (
+                source.get("source_frequency") != "1m"
+                or source.get("manifest_format") != "canonical-manifest-v2"
+                or source.get("manifest_version")
+                != "task07-aggregate-migration-v1"
+                or not _SHA256.fullmatch(
+                    str(source.get("quality_evidence_digest") or "")
+                )
+                or source.get("registration_wall_clock_matches") is not True
+            ):
+                raise ValueError("TASK07_BATCH_ORIGIN_INVALID")
     batch_manifest = [
         {"batch_key": batch["batch_key"], "batch_digest": batch["batch_digest"]}
         for batch in batches
@@ -1519,20 +2126,24 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         else "BLOCKED_ACTIVE_REFERENCE"
     )
     target_valid = _migration_write_targets_valid(plan.get("write_targets"))
+    revision_ready = all(
+        batch.get("required_database_revision") == plan.get("database_revision")
+        for batch in batches
+    )
     expected_eligible = (
-        expected_controls["blocked_asset_count"] == 0
-        and expected_envelope["batch_count"] > 0
+        expected_envelope["batch_count"] > 0
         and target_valid
+        and revision_ready
     )
     expected_gate = (
         "exact_owner_approval_required"
         if expected_eligible
-        else "BLOCKED_AT_KLINE_DATA_GATE"
-        if expected_controls["blocked_asset_count"] != 0
         else "BLOCKED_MIGRATION_BATCH_EMPTY"
         if expected_envelope["batch_count"] == 0
         else "BLOCKED_MIGRATION_WRITE_TARGET"
         if not target_valid
+        else "BLOCKED_DATABASE_REVISION"
+        if not revision_ready
         else "BLOCKED_AT_KLINE_DATA_GATE"
     )
     expected_reference_eligible = expected_active_gate == "zero_active_references"
@@ -1555,6 +2166,12 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             else "BLOCKED_MIGRATION_WRITE_TARGET"
         )
         or plan.get("migration_approval_eligible") is not expected_eligible
+        or plan.get("migration_revision_gate")
+        != (
+            "required_database_revision_bound"
+            if revision_ready
+            else "BLOCKED_DATABASE_REVISION"
+        )
         or plan.get("approval_eligible") is not expected_eligible
         or plan.get("migration_gate_status") != expected_gate
         or plan.get("gate_status") != expected_gate
@@ -1592,6 +2209,11 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             "exact_write_targets_bound"
             if target_valid
             else "BLOCKED_MIGRATION_WRITE_TARGET"
+        ),
+        "migration_revision_gate": (
+            "required_database_revision_bound"
+            if revision_ready
+            else "BLOCKED_DATABASE_REVISION"
         ),
         "migration_approval_eligible": expected_eligible,
         "approval_eligible": expected_eligible,
