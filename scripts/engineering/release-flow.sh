@@ -6,7 +6,8 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/engineering/release-flow.sh prepare --current-main-sha <sha> --expected-sha <sha> [--apply] [--json]
+  scripts/engineering/release-flow.sh prepare --local-main-sha <sha> --current-main-sha <sha> \
+    --expected-sha <sha> [--apply] [--json]
   scripts/engineering/release-flow.sh publish --previous-main-sha <sha> --expected-sha <sha> [--apply] [--json]
   scripts/engineering/release-flow.sh tag --expected-sha <sha> \
     --release-tag <runtime-tag> --release-message <message> \
@@ -31,8 +32,8 @@ digest_text() {
 
 json_prepare_report() {
   local mode="$1"
-  printf '{"action":"prepare","mode":"%s","status":"ok","bound_facts":{"current_main_sha":"%s","expected_sha":"%s","main_sha":"%s","develop_sha":"%s","remote_main_sha":"%s","remote_develop_sha":"%s"},"planned_commands":[["git","merge","--ff-only","%s"]]}\n' \
-    "$mode" "$current_main_sha" "$expected_sha" "$main_sha" "$develop_sha" \
+  printf '{"action":"prepare","mode":"%s","status":"ok","bound_facts":{"local_main_sha":"%s","current_main_sha":"%s","expected_sha":"%s","main_sha":"%s","develop_sha":"%s","remote_main_sha":"%s","remote_develop_sha":"%s"},"planned_commands":[["git","merge","--ff-only","%s"]]}\n' \
+    "$mode" "$local_main_sha" "$current_main_sha" "$expected_sha" "$main_sha" "$develop_sha" \
     "$remote_main" "$remote_develop" "$expected_sha"
 }
 
@@ -169,6 +170,7 @@ shift
 [[ "$action" =~ ^(prepare|publish|tag)$ ]] || fail "supported actions are prepare, publish, and tag"
 
 expected_sha=""
+local_main_sha=""
 current_main_sha=""
 previous_main_sha=""
 release_tag=""
@@ -181,6 +183,7 @@ json=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --expected-sha) [[ $# -ge 2 ]] || fail "--expected-sha requires a value"; expected_sha="$2"; shift 2 ;;
+    --local-main-sha) [[ $# -ge 2 ]] || fail "--local-main-sha requires a value"; local_main_sha="$2"; shift 2 ;;
     --current-main-sha) [[ $# -ge 2 ]] || fail "--current-main-sha requires a value"; current_main_sha="$2"; shift 2 ;;
     --previous-main-sha) [[ $# -ge 2 ]] || fail "--previous-main-sha requires a value"; previous_main_sha="$2"; shift 2 ;;
     --release-tag) [[ $# -ge 2 ]] || fail "--release-tag requires a value"; release_tag="$2"; shift 2 ;;
@@ -208,10 +211,15 @@ require_clean_worktree main
 require_clean_worktree develop
 
 if [[ "$action" == "prepare" ]]; then
+  [[ "$local_main_sha" =~ ^[0-9a-f]{40}$ ]] || fail "--local-main-sha must be exactly 40 lowercase hexadecimal characters"
   [[ "$current_main_sha" =~ ^[0-9a-f]{40}$ ]] || fail "--current-main-sha must be exactly 40 lowercase hexadecimal characters"
-  [[ "$main_sha" == "$current_main_sha" ]] || fail "main does not match --current-main-sha"
+  [[ "$main_sha" == "$local_main_sha" ]] || fail "main does not match --local-main-sha"
   [[ "$develop_sha" == "$expected_sha" ]] || fail "develop does not match --expected-sha"
-  git merge-base --is-ancestor "$main_sha" "$expected_sha" || fail "expected release is not a fast-forward of main"
+  git cat-file -e "${current_main_sha}^{commit}" 2>/dev/null || fail "current remote main commit is unavailable locally"
+  git merge-base --is-ancestor "$local_main_sha" "$current_main_sha" \
+    || fail "current remote main is not a fast-forward of local main"
+  git merge-base --is-ancestor "$current_main_sha" "$expected_sha" \
+    || fail "expected release is not a fast-forward of current remote main"
   read_remote_release_refs
   [[ "$remote_main" == "$current_main_sha" ]] || fail "remote main does not match --current-main-sha"
   [[ "$remote_develop" == "$expected_sha" ]] || fail "remote develop does not match --expected-sha"

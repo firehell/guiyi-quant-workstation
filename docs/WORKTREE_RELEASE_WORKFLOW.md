@@ -69,9 +69,11 @@ release 必须先创建并通过用户批准的 `develop -> main` exact-head PR�
 
 ```bash
 bash scripts/engineering/release-flow.sh prepare \
-  --current-main-sha <当前main SHA> --expected-sha <目标SHA> --json
+  --local-main-sha <本地main SHA> --current-main-sha <当前远端main SHA> \
+  --expected-sha <目标SHA> --json
 bash scripts/engineering/release-flow.sh prepare \
-  --current-main-sha <当前main SHA> --expected-sha <目标SHA> --apply --json
+  --local-main-sha <本地main SHA> --current-main-sha <当前远端main SHA> \
+  --expected-sha <目标SHA> --apply --json
 
 bash scripts/engineering/release-flow.sh publish \
   --previous-main-sha <批准时的远端main SHA> --expected-sha <40位小写SHA> --json
@@ -88,8 +90,9 @@ bash scripts/engineering/release-flow.sh tag --expected-sha <目标SHA> \
   --rollback-message <批准的单行消息> --apply --json
 ```
 
-三个动作默认均为 dry-run。`prepare --apply` 只允许本地 main fast-forward；`publish` 在写入前绑定
-批准时的远端 main、目标 develop 和本地两条 refs，`publish --apply` 只以精确 SHA 原子更新
+三个动作默认均为 dry-run。`prepare` 显式绑定本地 main、当前远端 main 与目标 develop，且只允许
+两段 ancestry 均为 fast-forward；`prepare --apply` 可将 clean 本地 main 一次推进到目标 develop。
+`publish` 在写入前绑定批准时的远端 main、目标 develop 和本地两条 refs，`publish --apply` 只以精确 SHA 原子更新
 `origin/main` 与 `origin/develop`，不会隐式修改本地 upstream；`tag --apply` 只在两条远端 release refs
 已精确匹配后创建并原子发布两个 `runtime-*` annotated tags。若两个本地/远端 annotated tag object、
 解引用目标与批准消息全部精确一致，相同 packet 重试返回 `already_published`；任一部分存在或内容漂移
