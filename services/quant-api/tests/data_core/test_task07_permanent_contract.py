@@ -299,6 +299,34 @@ def test_daily_from_minute_conflict_still_emits_rqdata_provider_request() -> Non
     ]
     task07._validate_migration_plan_integrity(plan)
 
+    forged = deepcopy(plan)
+    forged["provider_requests"] = []
+    forged["provider_request_proposal"]["requests"] = []
+    forged["provider_request_proposal"]["request_count"] = 0
+    proposal_body = {
+        key: value
+        for key, value in forged["provider_request_proposal"].items()
+        if key != "proposal_digest"
+    }
+    forged["provider_request_proposal"]["proposal_digest"] = (
+        task07.canonical_digest(proposal_body)
+    )
+    plan_facts = {
+        key: value
+        for key, value in forged.items()
+        if key
+        not in {
+            "schema_version",
+            "command",
+            "status",
+            "plan_digest",
+            "provider_request_proposal",
+        }
+    }
+    forged["plan_digest"] = task07.canonical_digest(plan_facts)
+    with pytest.raises(ValueError, match="TASK07_PLAN_CONTROL_DRIFT"):
+        task07._validate_migration_plan_integrity(forged)
+
 
 def _manifest_scope(tmp_path: Path) -> dict[str, str]:
     roots = {

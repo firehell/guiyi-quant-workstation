@@ -2917,21 +2917,36 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         action_body = {
             key: value for key, value in action.items() if key != "action_digest"
         }
+        frequency = action.get("frequency")
+        aggregate = frequency in _DERIVED_FREQUENCIES
+        expected_action = (
+            "canonical_1m_reaggregate" if aggregate else "rqdata_redownload"
+        )
+        source_dataset = action.get("source_dataset")
+        expected_source_dataset = (
+            {
+                "provider": action.get("provider"),
+                "dataset_kind": action.get("dataset_kind"),
+                "symbol": action.get("symbol"),
+                "contract_or_series": action.get("contract_or_series"),
+                "frequency": "1m",
+                "adjustment": action.get("adjustment"),
+                "schema_version": action.get("schema_version"),
+            }
+            if aggregate
+            else None
+        )
         if (
-            action.get("action")
-            not in {"rqdata_redownload", "canonical_1m_reaggregate"}
+            frequency not in _SUPPORTED_FREQUENCIES
+            or action.get("action") != expected_action
             or action.get("provider") != "rqdata"
             or not isinstance(action.get("original_provider"), str)
             or not action.get("original_provider")
+            or action.get("base_sha") != plan.get("base_sha")
+            or action.get("manifest_digest") != plan.get("manifest_digest")
             or action.get("authorized") is not False
             or action.get("action_digest") != canonical_digest(action_body)
-            or (
-                action.get("action") == "canonical_1m_reaggregate"
-                and (
-                    not isinstance(action.get("source_dataset"), Mapping)
-                    or action["source_dataset"].get("frequency") != "1m"
-                )
-            )
+            or source_dataset != expected_source_dataset
         ):
             raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     action_by_id = {
@@ -2982,12 +2997,28 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             )
         ):
             raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    redownload_action_ids = {
+        identifier
+        for identifier, action in action_by_id.items()
+        if action.get("action") == "rqdata_redownload"
+    }
+    conflict_request_ids = {
+        int(request["market_data_file_id"])
+        for request in requests
+        if request.get("reason") == AssetDisposition.CONFLICT_BLOCKED.value
+    }
+    if redownload_action_ids != conflict_request_ids:
+        raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     proposal_body = {
         key: value for key, value in proposal.items() if key != "proposal_digest"
     }
     if (
         proposal.get("proposal_digest") != canonical_digest(proposal_body)
         or proposal.get("requests") != requests
+        or proposal.get("schema_version") != 1
+        or proposal.get("command") != "data.task07.provider-request"
+        or proposal.get("base_sha") != plan.get("base_sha")
+        or proposal.get("database_revision") != plan.get("database_revision")
         or proposal.get("request_count") != len(requests)
         or proposal.get("provider_call_authorized") is not False
         or proposal.get("writes_authorized") is not False
@@ -3007,6 +3038,8 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         ),
     }
     if any(plan.get(key) != value for key, value in expected_controls.items()):
+        raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    if len(repair_actions) != expected_controls["blocked_asset_count"]:
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     target_valid = _migration_write_targets_valid(plan.get("write_targets"))
     revision_ready = all(
