@@ -1,4 +1,5 @@
 import type { BacktestTaskCreateRequest, CanonicalInputIdentity } from '@/types/backtest'
+import { isHistoricalBarFrequency } from '../types/historicalBarFrequency.ts'
 import type { SignalScanRequest } from '@/types/signal'
 
 function compact(value: string) {
@@ -7,9 +8,14 @@ function compact(value: string) {
 
 const SHA256 = /^[0-9a-f]{64}$/
 const DATASET_KINDS = new Set(['continuous', 'actual_dominant'])
-const BAR_FREQUENCIES = new Set(['1m', '5m', '15m', '30m', '60m', '1d', '1w'])
-const DIRECT_FREQUENCIES = new Set(['1m', '1d', '1w'])
-const DERIVED_FREQUENCIES = new Set(['5m', '15m', '30m', '60m'])
+export const FORMAL_SIGNAL_HISTORICAL_FREQUENCIES = [
+  '5m', '15m', '30m', '60m', '1d',
+] as const
+const FORMAL_SIGNAL_FREQUENCY_SET = new Set<string>(FORMAL_SIGNAL_HISTORICAL_FREQUENCIES)
+
+export function isFormalSignalHistoricalFrequency(value: string): boolean {
+  return FORMAL_SIGNAL_FREQUENCY_SET.has(value)
+}
 const CANONICAL_INPUT_FIELDS = [
   'schema_version',
   'request',
@@ -126,12 +132,11 @@ function isCanonicalDataset(value: unknown): value is CanonicalInputIdentity['so
     || !exactText(value.symbol, (text) => text.toLowerCase())
     || !exactText(value.adjustment, (text) => text.toLowerCase())
     || !exactText(value.schema_version)
-    || !BAR_FREQUENCIES.has(String(value.frequency))
-    || !DIRECT_FREQUENCIES.has(String(value.frequency))
+    || !isHistoricalBarFrequency(value.frequency)
     || !validDatasetContract(String(value.dataset_kind), String(value.symbol), value.contract_or_series)) {
     return false
   }
-  return !(value.dataset_kind === 'actual_dominant' && value.frequency === '1w')
+  return true
 }
 
 function unavailableIdentity(reason: string) {
@@ -166,7 +171,7 @@ export function parseCanonicalInputIdentity(
     || !DATASET_KINDS.has(requestDatasetKind)
     || !exactText(requestSymbol, (text) => text.toLowerCase())
     || typeof requestFrequency !== 'string'
-    || !BAR_FREQUENCIES.has(requestFrequency)
+    || !isHistoricalBarFrequency(requestFrequency)
     || !canonicalUtcDatetime(requestStart)
     || !canonicalUtcDatetime(requestEnd)
     || typeof requestStrict !== 'boolean') {
@@ -177,9 +182,6 @@ export function parseCanonicalInputIdentity(
   }
   if (!precedesCanonicalUtcDatetime(requestStart, requestEnd)) {
     return unavailableIdentity('canonical request window is malformed')
-  }
-  if (requestDatasetKind === 'actual_dominant' && requestFrequency === '1w') {
-    return unavailableIdentity('actual_dominant canonical request does not support 1w')
   }
   if (options.expectedDatasetKind && requestDatasetKind !== options.expectedDatasetKind) {
     return unavailableIdentity(`expected ${options.expectedDatasetKind} canonical dataset_kind`)
@@ -208,15 +210,11 @@ export function parseCanonicalInputIdentity(
     return unavailableIdentity('canonical source_data_versions are malformed')
   }
   const derivedFrequency = value.derived_frequency
-  if (derivedFrequency !== null && (typeof derivedFrequency !== 'string' || !DERIVED_FREQUENCIES.has(derivedFrequency))) {
-    return unavailableIdentity('canonical derived_frequency is malformed')
-  }
   if (derivedFrequency !== null) {
-    if (requestFrequency !== derivedFrequency || sourceDatasets.some((item) => item.frequency !== '1m')) {
-      return unavailableIdentity('canonical derived frequency relationship is malformed')
-    }
-  } else if (sourceDatasets.some((item) => item.frequency !== requestFrequency)) {
-    return unavailableIdentity('canonical direct frequency relationship is malformed')
+    return unavailableIdentity('historical derived lineage cannot drive an active canonical read')
+  }
+  if (sourceDatasets.some((item) => item.frequency !== requestFrequency)) {
+    return unavailableIdentity('canonical same-frequency relationship is malformed')
   }
   const strategyInputVersion = value.strategy_input_version
   const digest = value.digest
@@ -257,8 +255,8 @@ export function buildFormalBacktestRequest(input: BacktestTaskCreateRequest): Ba
     instrument_symbol: compact(input.instrument_symbol).toLowerCase(),
     contract_or_series: compact(input.contract_or_series).toUpperCase(),
     exchange: compact(input.exchange).toUpperCase(),
-    interval: compact(input.interval),
-    ...(input.auxiliary_periods ? { auxiliary_periods: input.auxiliary_periods.map(compact) } : {}),
+    interval: input.interval,
+    ...(input.auxiliary_periods ? { auxiliary_periods: [...input.auxiliary_periods] } : {}),
     start: input.start,
     end: input.end,
     strategy_class_path: compact(input.strategy_class_path),
@@ -322,8 +320,11 @@ export function validateFormalSignalScanInput(input: {
   if (!input.periods.length || input.periods.some((period) => !period.trim())) {
     return '必须选择至少一个有效周期；未提交扫描请求。'
   }
-  if (input.periods.some((period) => period.trim() === '1w')) {
-    return 'actual_dominant 正式 Signal 暂不支持 1w 周期；未提交扫描请求。'
+  if (input.periods.some((period) => !isHistoricalBarFrequency(period))) {
+    return '周期仅支持 1m/5m/15m/30m/60m/1d/1w，且不接受别名或大小写转换；未提交扫描请求。'
+  }
+  if (input.periods.some((period) => !isFormalSignalHistoricalFrequency(period))) {
+    return '当前正式信号策略仅支持 5m/15m/30m/60m/1d；历史数据合同仍支持全部七种周期。'
   }
   if (input.startMs === null || input.endMs === null
     || !Number.isFinite(input.startMs) || !Number.isFinite(input.endMs)

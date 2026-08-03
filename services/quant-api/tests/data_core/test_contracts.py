@@ -13,8 +13,10 @@ from app.data_core.contracts import (
     BarsResult,
     DataGapError,
     DatasetAmbiguousError,
+    DatasetOrigin,
     DatasetKey,
     DatasetKind,
+    ManifestLineage,
     ManifestMismatchError,
 )
 
@@ -103,28 +105,20 @@ def test_dataset_key_keeps_continuous_and_actual_dominant_distinct() -> None:
     assert {actual, continuous} == {actual, continuous}
 
 
-@pytest.mark.parametrize("frequency", [BarFrequency.M1, BarFrequency.D1])
-def test_dataset_key_accepts_only_provider_direct_frequencies(
+@pytest.mark.parametrize("frequency", tuple(BarFrequency))
+def test_dataset_key_accepts_all_persisted_frequencies(
     frequency: BarFrequency,
 ) -> None:
     assert _key(frequency=frequency).frequency is frequency
 
 
-def test_direct_frequency_matrix_keeps_weekly_continuous_only() -> None:
+def test_weekly_is_supported_for_continuous_and_actual_dominant() -> None:
     assert _key(
         dataset_kind=DatasetKind.CONTINUOUS,
         contract_or_series="JM.MAIN",
         frequency=BarFrequency.W1,
     ).frequency is BarFrequency.W1
-
-    with pytest.raises(ValueError) as error:
-        _key(frequency=BarFrequency.W1)
-
-    assert error.value.facts == {
-        "field": "frequency",
-        "reason": "actual_dominant_weekly_not_supported",
-        "value": "1w",
-    }
+    assert _key(frequency=BarFrequency.W1).frequency is BarFrequency.W1
 
 
 @pytest.mark.parametrize(
@@ -154,8 +148,9 @@ def test_dataset_key_rejects_semantically_incompatible_contract_identity(
     ("overrides", "reason"),
     [
         ({"provider": "local_parquet"}, "provider"),
-        ({"frequency": BarFrequency.M5}, "frequency"),
-        ({"frequency": BarFrequency.H1}, "frequency"),
+        ({"frequency": "2m"}, "frequency"),
+        ({"frequency": "4h"}, "frequency"),
+        ({"frequency": "1D"}, "frequency"),
         ({"symbol": " "}, "symbol"),
         ({"contract_or_series": ""}, "contract_or_series"),
         ({"adjustment": "\t"}, "adjustment"),
@@ -170,6 +165,105 @@ def test_dataset_key_rejects_noncanonical_identity(
         _key(**overrides)
 
     assert getattr(error.value, "facts")["field"] == reason
+
+
+def test_manifest_lineage_accepts_exact_direct_and_aggregate_shapes() -> None:
+    direct = ManifestLineage(origin=DatasetOrigin.PROVIDER_DIRECT)
+    aggregate = ManifestLineage(
+        origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+        source_frequency=BarFrequency.M1,
+        legacy_source_checksum="a" * 64,
+        quality_evidence_digest="b" * 64,
+    )
+
+    direct.validate_dataset(_key(frequency=BarFrequency.D1))
+    aggregate.validate_dataset(_key(frequency=BarFrequency.M15))
+    assert direct.as_payload() == {"origin": "provider_direct"}
+    assert aggregate.as_payload() == {
+        "origin": "preaggregated_from_1m",
+        "source_frequency": "1m",
+        "legacy_source_checksum": "a" * 64,
+        "quality_evidence_digest": "b" * 64,
+    }
+
+
+@pytest.mark.parametrize(
+    ("lineage", "frequency", "reason"),
+    [
+        (
+            ManifestLineage(origin=DatasetOrigin.PROVIDER_DIRECT),
+            BarFrequency.M5,
+            "provider_direct_frequency_invalid",
+        ),
+        (
+            ManifestLineage(
+                origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+                source_frequency=BarFrequency.M1,
+                legacy_source_checksum="a" * 64,
+                quality_evidence_digest="b" * 64,
+            ),
+            BarFrequency.D1,
+            "preaggregated_target_frequency_invalid",
+        ),
+    ],
+)
+def test_manifest_lineage_rejects_origin_frequency_mismatch_and_derived_daily(
+    lineage: ManifestLineage,
+    frequency: BarFrequency,
+    reason: str,
+) -> None:
+    with pytest.raises(ValueError) as error:
+        lineage.validate_dataset(_key(frequency=frequency))
+
+    assert error.value.facts == {
+        "field": "lineage",
+        "reason": reason,
+        "frequency": frequency.value,
+    }
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"source_frequency": BarFrequency.M1},
+        {"legacy_source_checksum": "a" * 64},
+        {"quality_evidence_digest": "b" * 64},
+    ],
+)
+def test_direct_lineage_rejects_fabricated_aggregate_fields(
+    overrides: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        ManifestLineage(
+            origin=DatasetOrigin.PROVIDER_DIRECT,
+            **overrides,
+        )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"source_frequency": None},
+        {"source_frequency": BarFrequency.M5},
+        {"legacy_source_checksum": None},
+        {"legacy_source_checksum": "A" * 64},
+        {"quality_evidence_digest": None},
+        {"quality_evidence_digest": "short"},
+    ],
+)
+def test_aggregate_lineage_requires_exact_m1_digest_bound_evidence(
+    overrides: dict[str, object],
+) -> None:
+    values: dict[str, object] = {
+        "origin": DatasetOrigin.PREAGGREGATED_FROM_1M,
+        "source_frequency": BarFrequency.M1,
+        "legacy_source_checksum": "a" * 64,
+        "quality_evidence_digest": "b" * 64,
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValueError):
+        ManifestLineage(**values)  # type: ignore[arg-type]
 
 
 def test_bar_query_normalizes_identity_and_window_to_utc() -> None:
@@ -190,6 +284,46 @@ def test_bar_query_normalizes_identity_and_window_to_utc() -> None:
     assert query.frequency is BarFrequency.M15
     assert query.start == START
     assert query.end == END
+
+
+@pytest.mark.parametrize("frequency", tuple(BarFrequency))
+def test_bar_query_accepts_all_seven_frequencies(
+    frequency: BarFrequency,
+) -> None:
+    query = BarQuery(
+        dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+        symbol="jm",
+        contract_or_series="JM2609",
+        frequency=frequency,
+        start=START,
+        end=END,
+    )
+    assert query.frequency is frequency
+
+
+@pytest.mark.parametrize("frequency", ["2m", "4h", "1D"])
+def test_bar_query_rejects_frequency_aliases_with_stable_code(
+    frequency: str,
+) -> None:
+    with pytest.raises(ValueError) as raised:
+        BarQuery(
+            dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+            symbol="jm",
+            contract_or_series="JM2609",
+            frequency=frequency,  # type: ignore[arg-type]
+            start=START,
+            end=END,
+        )
+    assert raised.value.code == "UNSUPPORTED_FREQUENCY"
+    assert raised.value.facts["allowed"] == (
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "1d",
+        "1w",
+    )
 
 
 @pytest.mark.parametrize(
@@ -264,7 +398,7 @@ def test_bar_query_requires_an_explicit_bool(strict: object) -> None:
 
 
 def test_bars_result_freezes_sequences_and_normalizes_window() -> None:
-    source = _key()
+    source = _key(frequency=BarFrequency.M15)
     bar = _bar(frequency=BarFrequency.M15)
     shanghai = timezone(timedelta(hours=8))
     result = BarsResult(
@@ -276,7 +410,7 @@ def test_bars_result_freezes_sequences_and_normalizes_window() -> None:
             datetime(2026, 7, 29, 22, 0, tzinfo=shanghai),
         ),
         data_type="actual_dominant",  # type: ignore[arg-type]
-        derived_frequency="15m",  # type: ignore[arg-type]
+        derived_frequency=None,
     )
 
     assert result.bars == (bar,)
@@ -284,7 +418,7 @@ def test_bars_result_freezes_sequences_and_normalizes_window() -> None:
     assert result.manifest_digests == ("a" * 64,)
     assert result.requested_window == (START, END)
     assert result.data_type is DatasetKind.ACTUAL_DOMINANT
-    assert result.derived_frequency is BarFrequency.M15
+    assert result.derived_frequency is None
 
 
 def test_bars_result_preserves_strictly_increasing_bar_order() -> None:
@@ -425,11 +559,8 @@ def test_bars_result_requires_bar_identity_to_match_a_source_dataset(
     }
 
 
-@pytest.mark.parametrize(
-    "derived_frequency",
-    [BarFrequency.M1, BarFrequency.D1, BarFrequency.W1],
-)
-def test_bars_result_rejects_non_derived_frequency(
+@pytest.mark.parametrize("derived_frequency", tuple(BarFrequency))
+def test_active_bars_result_rejects_non_null_derived_frequency(
     derived_frequency: BarFrequency,
 ) -> None:
     with pytest.raises(ValueError) as error:
@@ -442,60 +573,13 @@ def test_bars_result_rejects_non_derived_frequency(
             derived_frequency=derived_frequency,
         )
 
-    assert getattr(error.value, "facts")["field"] == "derived_frequency"
-
-
-def test_bars_result_requires_derived_bars_to_match_frequency_and_m1_source() -> None:
-    with pytest.raises(ValueError) as bar_error:
-        BarsResult(
-            bars=(_bar(frequency=BarFrequency.M5),),
-            source_datasets=(_key(),),
-            manifest_digests=("a" * 64,),
-            requested_window=(START, END),
-            data_type=DatasetKind.ACTUAL_DOMINANT,
-            derived_frequency=BarFrequency.M15,
-        )
-
-    assert getattr(bar_error.value, "facts") == {
-        "field": "bars",
-        "reason": "derived_bar_frequency_mismatch",
-        "expected": "15m",
-        "actual": "5m",
-    }
-
-    with pytest.raises(ValueError) as source_error:
-        BarsResult(
-            bars=(_bar(frequency=BarFrequency.M5),),
-            source_datasets=(_key(frequency=BarFrequency.D1),),
-            manifest_digests=("a" * 64,),
-            requested_window=(START, END),
-            data_type=DatasetKind.ACTUAL_DOMINANT,
-            derived_frequency=BarFrequency.M5,
-        )
-
-    assert getattr(source_error.value, "facts") == {
-        "field": "source_datasets",
-        "reason": "derived_source_frequency_must_be_1m",
+    assert getattr(error.value, "facts") == {
+        "field": "derived_frequency",
+        "reason": "active_result_requires_null",
     }
 
 
-def test_bars_result_requires_direct_bar_frequency_to_match_source() -> None:
-    with pytest.raises(ValueError) as non_direct_error:
-        BarsResult(
-            bars=(_bar(frequency=BarFrequency.M5),),
-            source_datasets=(_key(),),
-            manifest_digests=("a" * 64,),
-            requested_window=(START, END),
-            data_type=DatasetKind.ACTUAL_DOMINANT,
-            derived_frequency=None,
-        )
-
-    assert getattr(non_direct_error.value, "facts") == {
-        "field": "bars",
-        "reason": "direct_bar_frequency_required",
-        "actual": "5m",
-    }
-
+def test_bars_result_requires_bar_frequency_to_match_persisted_source() -> None:
     with pytest.raises(ValueError) as mismatch_error:
         BarsResult(
             bars=(_bar(frequency=BarFrequency.D1),),
@@ -508,7 +592,7 @@ def test_bars_result_requires_direct_bar_frequency_to_match_source() -> None:
 
     assert getattr(mismatch_error.value, "facts") == {
         "field": "bars",
-        "reason": "direct_source_frequency_mismatch",
+        "reason": "source_frequency_mismatch",
         "bar_end": (START + timedelta(minutes=1)).isoformat(),
     }
 
@@ -527,23 +611,6 @@ def test_bars_result_requires_nonempty_source_datasets() -> None:
     assert getattr(error.value, "facts") == {
         "field": "source_datasets",
         "reason": "empty",
-    }
-
-
-def test_bars_result_rejects_derived_result_with_non_m1_source_when_empty() -> None:
-    with pytest.raises(ValueError) as error:
-        BarsResult(
-            bars=(),
-            source_datasets=(_key(frequency=BarFrequency.D1),),
-            manifest_digests=("a" * 64,),
-            requested_window=(START, END),
-            data_type=DatasetKind.ACTUAL_DOMINANT,
-            derived_frequency=BarFrequency.M15,
-        )
-
-    assert getattr(error.value, "facts") == {
-        "field": "source_datasets",
-        "reason": "derived_source_frequency_must_be_1m",
     }
 
 

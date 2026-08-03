@@ -26,12 +26,12 @@ describe('data core v2 trusted consumers', () => {
     source_datasets: [
       {
         provider: 'rqdata', dataset_kind: 'actual_dominant', symbol: 'jm', contract_or_series: 'JM2609',
-        frequency: '1m', adjustment: 'none', schema_version: 'canonical-bar-v1',
+        frequency: '15m', adjustment: 'none', schema_version: 'canonical-bar-v1',
       },
     ],
     manifest_digests: ['a'.repeat(64)],
     source_data_versions: ['rqdata-20260731'],
-    derived_frequency: '15m',
+    derived_frequency: null,
     strategy_input_version: 'signal:su_bing_ema21:v0',
     digest: 'b'.repeat(64),
   })
@@ -124,13 +124,21 @@ describe('data core v2 trusted consumers', () => {
     assert.match(String(validateFormalSignalRiskPercentages(1, 35.1)), /35%/)
   })
 
-  it('blocks formal Signal requests with a missing concrete contract, unsupported week, empty periods, or invalid window', () => {
+  it('keeps the Signal strategy subset separate from the seven-frequency historical contract', () => {
     const valid = {
       contractOrSeries: 'JM2609', periods: ['15m'], startMs: 10, endMs: 20, riskPerTradePercent: 1, maxMarginUsagePercent: 35,
     }
     assert.equal(validateFormalSignalScanInput(valid), null)
     assert.match(String(validateFormalSignalScanInput({ ...valid, contractOrSeries: 'JM.MAIN' })), /实际主力合约/)
-    assert.match(String(validateFormalSignalScanInput({ ...valid, periods: ['1w'] })), /1w/)
+    for (const period of ['5m', '15m', '30m', '60m', '1d']) {
+      assert.equal(validateFormalSignalScanInput({ ...valid, periods: [period] }), null)
+    }
+    for (const period of ['1m', '1w']) {
+      assert.match(String(validateFormalSignalScanInput({ ...valid, periods: [period] })), /正式信号策略/)
+    }
+    for (const period of ['2m', '4h', '1D']) {
+      assert.match(String(validateFormalSignalScanInput({ ...valid, periods: [period] })), /仅支持/)
+    }
     assert.match(String(validateFormalSignalScanInput({ ...valid, periods: [] })), /周期/)
     assert.match(String(validateFormalSignalScanInput({ ...valid, startMs: 20, endMs: 20 })), /时间窗口/)
   })
@@ -162,15 +170,15 @@ describe('data core v2 trusted consumers', () => {
       { name: 'uppercase request symbol is not canonical', mutate: (identity) => { identity.request.symbol = 'JM' } },
       { name: 'lowercase actual contract is not canonical', mutate: (identity) => { identity.request.contract_or_series = 'jm2609' } },
       { name: 'unsupported request frequency', mutate: (identity) => { identity.request.frequency = '2m' } },
-      { name: 'actual-dominant weekly request is unsupported', mutate: (identity) => { identity.request.frequency = '1w' } },
+      { name: 'uppercase alias is unsupported', mutate: (identity) => { identity.request.frequency = '1D' } },
       { name: 'timezone-less request start', mutate: (identity) => { identity.request.start = '2026-07-01T00:00:00' } },
       { name: 'non-increasing request window', mutate: (identity) => { identity.request.end = identity.request.start } },
       { name: 'non-rqdata source provider', mutate: (identity) => { identity.source_datasets[0].provider = 'other' } },
       { name: 'non-canonical source adjustment', mutate: (identity) => { identity.source_datasets[0].adjustment = ' None ' } },
-      { name: 'unsupported source frequency', mutate: (identity) => { identity.source_datasets[0].frequency = '15m' } },
+      { name: 'unsupported source frequency', mutate: (identity) => { identity.source_datasets[0].frequency = '2m' } },
       { name: 'source dataset request mismatch', mutate: (identity) => { identity.source_datasets[0].symbol = 'i' } },
-      { name: 'derived request source must be 1m', mutate: (identity) => { identity.source_datasets[0].frequency = '1d' } },
-      { name: 'derived frequency must match request', mutate: (identity) => { identity.derived_frequency = '5m' } },
+      { name: 'source frequency must match request', mutate: (identity) => { identity.source_datasets[0].frequency = '1d' } },
+      { name: 'historical derived lineage is not active', mutate: (identity) => { identity.derived_frequency = '15m' } },
       { name: 'unordered duplicate manifests', mutate: (identity) => { identity.manifest_digests = ['b'.repeat(64), 'a'.repeat(64), 'a'.repeat(64)] } },
       { name: 'non-canonical source version', mutate: (identity) => { identity.source_data_versions = [' version '] } },
     ]
@@ -205,6 +213,11 @@ describe('data core v2 trusted consumers', () => {
     microsecondWindow.request.start = '2026-07-01T00:00:00.000001+00:00'
     microsecondWindow.request.end = '2026-07-01T00:00:00.000002+00:00'
     assert.equal(parseCanonicalInputIdentity(microsecondWindow, { expectedDatasetKind: 'actual_dominant' }).status, 'unverified')
+
+    const weeklyActual = canonicalIdentity() as any
+    weeklyActual.request.frequency = '1w'
+    weeklyActual.source_datasets[0].frequency = '1w'
+    assert.equal(parseCanonicalInputIdentity(weeklyActual, { expectedDatasetKind: 'actual_dominant' }).status, 'unverified')
   })
 
   it('blocks formal Signal contracts that backend will reject and preserves a clearable empty date range', () => {
@@ -223,7 +236,7 @@ describe('data core v2 trusted consumers', () => {
 
     assert.equal(presentation.status, 'unverified')
     assert.equal(presentation.request, 'actual_dominant · jm · JM2609 · 15m')
-    assert.equal(presentation.sourceDatasets, 'rqdata · actual_dominant · jm · JM2609 · 1m')
+    assert.equal(presentation.sourceDatasets, 'rqdata · actual_dominant · jm · JM2609 · 15m')
     assert.equal(presentation.manifestDigests, 'a'.repeat(64))
     assert.equal(presentation.requestedWindow, '2026-07-01T00:00:00+00:00 → 2026-07-31T00:00:00+00:00')
     assert.equal(presentation.digest, 'b'.repeat(64))

@@ -13,7 +13,7 @@ from app.data_core.canonical_store import (
     _bars_from_table,
     _validate_stored_manifest_document,
 )
-from app.data_core.aggregation import AggregationSession, aggregate_bars
+from app.data_core.aggregation import AggregationSession
 from app.data_core.catalog import CatalogError, HistoricalCatalog
 from app.data_core.contracts import (
     BarFrequency,
@@ -62,9 +62,7 @@ class CanonicalHistoricalReader:
             raise ContractValidationError(
                 facts={"field": "contract_or_series", "reason": "required"}
             )
-        if query.frequency.value in {"1m", "1d", "1w"}:
-            return self._get_direct_bars(query)
-        return self._get_derived_bars(query)
+        return self._get_direct_bars(query)
 
     def _get_direct_bars(self, query: BarQuery) -> BarsResult:
         datasets: tuple[DatasetKey, ...]
@@ -150,75 +148,6 @@ class CanonicalHistoricalReader:
             data_type=query.dataset_kind,
             derived_frequency=None,
             source_data_versions=tuple(dict.fromkeys(source_data_versions)),
-        )
-
-    def _get_derived_bars(self, query: BarQuery) -> BarsResult:
-        if self._session_provider is None:
-            raise DataGapError(facts={"reason": "aggregation_session_provider_required"})
-        source_query = BarQuery(
-            dataset_kind=query.dataset_kind,
-            symbol=query.symbol,
-            contract_or_series=query.contract_or_series,
-            frequency=BarFrequency.M1,
-            start=query.start,
-            end=query.end,
-            strict=query.strict,
-        )
-        source = self._get_direct_bars(source_query)
-        sessions = tuple(self._session_provider(query.symbol, query.start, query.end))
-        active_sessions = tuple(
-            session
-            for session in sessions
-            if _intersects(session.start, session.end, query.start, query.end)
-        )
-        if not active_sessions:
-            raise DataGapError(facts={"reason": "aggregation_session_coverage_missing"})
-
-        groups: dict[str, tuple[tuple[object, ...], tuple[AggregationSession, ...]]]
-        if query.contract_or_series is None:
-            mappings = self._resolve_actual_dominant_contracts(query)
-            groups = {
-                contract: (
-                    tuple(
-                        bar
-                        for bar in source.bars
-                        if bar.contract_or_series == contract
-                    ),
-                    tuple(
-                        session
-                        for session in active_sessions
-                        if mappings.get(session.trading_day) == contract
-                    ),
-                )
-                for contract in sorted(set(mappings.values()))
-            }
-        else:
-            groups = {
-                query.contract_or_series: (source.bars, active_sessions),
-            }
-
-        derived: list[object] = []
-        for bars, contract_sessions in groups.values():
-            if not contract_sessions:
-                continue
-            derived.extend(
-                aggregate_bars(
-                    bars,
-                    target_frequency=query.frequency,
-                    sessions=contract_sessions,
-                    requested_window=(query.start, query.end),
-                )
-            )
-        if not derived:
-            raise DataGapError(facts={"reason": "no_requested_bucket"})
-        return BarsResult(
-            bars=tuple(sorted(derived, key=lambda bar: bar.bar_end)),
-            source_datasets=source.source_datasets,
-            manifest_digests=source.manifest_digests,
-            requested_window=(query.start, query.end),
-            data_type=query.dataset_kind,
-            derived_frequency=query.frequency,
-            source_data_versions=source.source_data_versions,
         )
 
     def _require_direct_coverage(
@@ -323,6 +252,12 @@ class CanonicalHistoricalReader:
                 if _intersects(session.start, session.end, query.start, query.end)
             }
         )
+        if query.frequency is BarFrequency.W1:
+            last_day_by_week: dict[tuple[int, int], object] = {}
+            for trading_day in trading_days:
+                iso = trading_day.isocalendar()
+                last_day_by_week[(iso.year, iso.week)] = trading_day
+            trading_days = list(last_day_by_week.values())
         if not trading_days:
             raise DataGapError(facts={"reason": "mapping_session_coverage_missing"})
         mappings: dict[object, str] = {}

@@ -587,7 +587,7 @@ def test_active_profile_binding_drift_fails_closed(
     assert list(output.iterdir()) == []
 
 
-def test_full_backup_requires_at_least_one_active_profile_binding(tmp_path: Path) -> None:
+def test_full_backup_allows_zero_legacy_active_profile_bindings(tmp_path: Path) -> None:
     source = _source_root(tmp_path)
     output = tmp_path / "backup-device"
     output.mkdir()
@@ -599,22 +599,24 @@ def test_full_backup_requires_at_least_one_active_profile_binding(tmp_path: Path
         return replace(evidence, active_profile_bindings=[])
 
     provider.create_dump = no_bindings  # type: ignore[method-assign]
-    with pytest.raises(BackupError, match="active_profile_bindings_missing"):
-        execute_backup(
-            mode="full",
-            source_root=source,
-            output_root=output,
-            backup_id="no-active-bindings",
-            retention_class="daily",
-            include_raw=False,
-            execute=True,
-            tool_mode="auto",
-            postgres_container="guiyi-postgres",
-            dependencies=_dependencies(tmp_path, provider),
-        )
+    execute_backup(
+        mode="full",
+        source_root=source,
+        output_root=output,
+        backup_id="no-active-bindings",
+        retention_class="daily",
+        include_raw=False,
+        execute=True,
+        tool_mode="auto",
+        postgres_container="guiyi-postgres",
+        dependencies=_dependencies(tmp_path, provider),
+    )
 
-    assert list(output.iterdir()) == []
-
+    manifest = json.loads(
+        (output / "no-active-bindings/backup_manifest.json").read_text()
+    )
+    assert manifest["database"]["active_profile_binding_count"] == 0
+    assert manifest["database"]["active_profile_bindings"] == []
 
 def test_dry_run_validates_backup_id_and_execute_respects_exclusive_lock(tmp_path: Path) -> None:
     source = _source_root(tmp_path)

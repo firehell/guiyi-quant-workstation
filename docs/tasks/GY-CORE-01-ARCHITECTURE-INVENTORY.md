@@ -258,7 +258,7 @@ dispatcher 全部按历史 `ARCHIVE` 保留。
 得到 143 个路径，并将下列 brace 展开为 143 个路径做集合比对：
 `missing=[] / extra=[]`。测试产生且被忽略的 `__pycache__/*.pyc` 不属于脚本清单。
 
-### 3.1 KEEP（44）
+### 3.1 KEEP（43）
 
 当前正式入口、唯一业务入口或稳定工程/恢复依赖：
 
@@ -282,7 +282,7 @@ scripts/run-local-service.sh
 scripts/rqdata_{catalog_sync,continuous_contracts_sync,contract_universe_sync,
                 daily_baseline_sync,ex_factor_sync,jm_update_plan,live_1m_ingest,
                 live_multi_tf_aggregate,main_mapping_sync,member_rank_sync,
-                research_enhancers_sync,trading_params_sync,v1b_jm_asset}.py
+                research_enhancers_sync,trading_params_sync}.py
 ```
 
 ### 3.2 MERGE（5）
@@ -310,10 +310,15 @@ scripts/rqdata_jm_v2_register_quality.py
 scripts/rqdata_sync_common.py
 ```
 
-### 3.4 ARCHIVE（75）
+### 3.4 ARCHIVE（77）
 
 阶段性 Gate、旧 S6-07/08/09/10、历史数据闭环或一次性修复入口。全部保留到相应历史、
 测试、rollback/hash 依赖经 `GY-CORE-08` 重新证明可处置：
+
+Task 07 closeout 进一步确认：`rqdata_v1b_jm_asset.py` 的旧 reader/write 命令已从
+`jm_update_plan` 退出，`signal_review_lineage_gate_003.py` 的旧 Profile/Binding Gate 已由
+canonical consumer + checkout reference Gate 替代。二者均只保留作历史证据，不再是可执行
+active 数据选择入口；该决定 supersede 下方旧 UNKNOWN 分类。
 
 ```text
 scripts/backfill_jm_price_tick.py
@@ -359,13 +364,15 @@ scripts/rqdata_backfill_1w_pre2020_listing.sh
 scripts/rqdata_full_universe_backfill_1d_1w.sh
 scripts/rqdata_full_universe_backfill_1m.sh
 scripts/rqdata_full_universe_download.sh
+scripts/rqdata_v1b_jm_asset.py
 scripts/rqdata_incremental_tail_universe.sh
 scripts/rqdata_roll_1d_1w_incremental.sh
 scripts/rqdata_roll_gap_master.sh
 scripts/rqdata_roll_incremental.sh
+scripts/signal_review_lineage_gate_003.py
 ```
 
-### 3.5 UNKNOWN（13）
+### 3.5 UNKNOWN（12）
 
 用途或外部依赖不能仅靠仓库静态引用证明；必须保留并阻塞删除：
 
@@ -381,7 +388,6 @@ scripts/public-healthcheck.sh
 scripts/rqdata_reference_metadata_gap_apply.py
 scripts/server-recover.sh
 scripts/server-status.sh
-scripts/signal_review_lineage_gate_003.py
 scripts/tunnel-healthcheck.sh
 ```
 

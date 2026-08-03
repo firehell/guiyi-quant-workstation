@@ -224,12 +224,12 @@ class BatchBacktestRunner:
         task = self.session.get(BacktestTask, task_id)
         if task is None:
             raise ValueError(f"backtest task not found: {task_id}")
-        if not task.research_only:
-            raise BacktestConfigurationError(
-                "BACKTEST_LEGACY_BATCH_DISABLED: non-research Profile/file batch task cannot execute"
-            )
+        raise BacktestConfigurationError(
+            "BACKTEST_LEGACY_BATCH_DISABLED: queued Profile/file batch tasks cannot execute; "
+            "use the canonical single-run contract"
+        )
 
-        task.status = "running"
+        task.status = "running"  # pragma: no cover - unreachable legacy implementation
         task.started_at = utc_now()
         self.session.commit()
         self._publish(task, "started")

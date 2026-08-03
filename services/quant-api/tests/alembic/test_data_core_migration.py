@@ -28,7 +28,8 @@ REVISION = "20260730_0027"
 LIVE_REVIEW_REVISION = "20260802_0028"
 LIVE_IDENTITY_REVISION = "20260802_0029"
 LIVE_IMMUTABLE_REVISION = "20260802_0030"
-HEAD_REVISION = "20260802_0031"
+EOD_LINEAGE_REVISION = "20260802_0031"
+HEAD_REVISION = "20260803_0032"
 NEW_TABLES = {"market_datasets", "market_partitions", "data_gaps"}
 CANONICAL_VIEW = "data_core_main_contract_map"
 QUANT_API_ROOT = Path(__file__).resolve().parents[2]
@@ -91,7 +92,42 @@ def test_contract_alignment_revision_precedes_live_review_loop_head() -> None:
     assert scripts.get_revision(LIVE_REVIEW_REVISION).down_revision == REVISION
     assert scripts.get_revision(LIVE_IDENTITY_REVISION).down_revision == LIVE_REVIEW_REVISION
     assert scripts.get_revision(LIVE_IMMUTABLE_REVISION).down_revision == LIVE_IDENTITY_REVISION
-    assert scripts.get_revision(HEAD_REVISION).down_revision == LIVE_IMMUTABLE_REVISION
+    assert scripts.get_revision(EOD_LINEAGE_REVISION).down_revision == LIVE_IMMUTABLE_REVISION
+    assert scripts.get_revision(HEAD_REVISION).down_revision == EOD_LINEAGE_REVISION
+
+
+@pytest.mark.parametrize("direction", ["upgrade", "downgrade"])
+def test_0032_offline_sql_replaces_frequency_check_with_fail_closed_guard(
+    direction: str,
+) -> None:
+    output = StringIO()
+    config = Config(
+        str(QUANT_API_ROOT / "alembic.ini"),
+        output_buffer=output,
+    )
+    config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
+
+    if direction == "upgrade":
+        command.upgrade(
+            config,
+            f"{EOD_LINEAGE_REVISION}:{HEAD_REVISION}",
+            sql=True,
+        )
+    else:
+        command.downgrade(
+            config,
+            f"{HEAD_REVISION}:{EOD_LINEAGE_REVISION}",
+            sql=True,
+        )
+
+    generated_sql = output.getvalue()
+    assert "LOCK TABLE market_datasets IN ACCESS EXCLUSIVE MODE" in generated_sql
+    assert "ck_market_datasets_frequency" in generated_sql
+    assert "ck_market_datasets_actual_dominant_weekly" not in generated_sql
+    if direction == "upgrade":
+        assert "'5m', '15m', '30m', '60m'" in generated_sql
+    else:
+        assert "persisted aggregate market_datasets block 20260803_0032 downgrade" in generated_sql
 
 
 @pytest.mark.parametrize("direction", ["upgrade", "downgrade"])
@@ -352,6 +388,105 @@ def _constraint_map(engine: Engine, table_name: str) -> dict[str, str]:
             {"table_name": table_name},
         )
         return {str(name): str(kind) for name, kind in rows}
+
+
+def test_0032_upgrade_accepts_seven_frequencies_and_rejects_unknown(
+    migration_context: tuple[str, Config, Engine],
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    _clear_data_core_rows(engine)
+
+    for frequency in ("1m", "5m", "15m", "30m", "60m", "1d", "1w"):
+        _insert_dataset(
+            engine,
+            dataset_kind="continuous",
+            contract_or_series="JM.MAIN",
+            frequency=frequency,
+        )
+    with pytest.raises(SQLAlchemyError):
+        _insert_dataset(
+            engine,
+            dataset_kind="continuous",
+            contract_or_series="JM.MAIN",
+            frequency="2m",
+        )
+    with pytest.raises(SQLAlchemyError):
+        _insert_dataset(engine, frequency="1w")
+
+    with engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT count(*) FROM market_datasets")
+        ).scalar_one() == 7
+    _clear_data_core_rows(engine)
+
+
+def test_0032_downgrade_succeeds_when_no_aggregate_rows_exist(
+    migration_context: tuple[str, Config, Engine],
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    _clear_data_core_rows(engine)
+
+    command.downgrade(config, EOD_LINEAGE_REVISION)
+
+    assert _revision(engine) == EOD_LINEAGE_REVISION
+    constraints = _constraint_map(engine, "market_datasets")
+    assert "ck_market_datasets_frequency" not in constraints
+    assert "ck_market_datasets_actual_dominant_weekly" not in constraints
+    assert constraints["ck_market_datasets_direct_frequency"] == "CHECK"
+    command.upgrade(config, "head")
+
+
+def test_0032_upgrade_fails_closed_when_actual_weekly_row_preexists(
+    migration_context: tuple[str, Config, Engine],
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    _clear_data_core_rows(engine)
+    command.downgrade(config, EOD_LINEAGE_REVISION)
+    dataset_id = _insert_dataset(engine, frequency="1w")
+    before = _dataset_schema_snapshot(engine)
+
+    with pytest.raises(SQLAlchemyError):
+        command.upgrade(config, "head")
+
+    assert _revision(engine) == EOD_LINEAGE_REVISION
+    assert _dataset_schema_snapshot(engine) == before
+    with engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT frequency FROM market_datasets WHERE id = :dataset_id"),
+            {"dataset_id": dataset_id},
+        ).scalar_one() == "1w"
+    _clear_data_core_rows(engine)
+    command.upgrade(config, "head")
+
+
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
+def test_0032_downgrade_fails_closed_when_aggregate_row_exists(
+    migration_context: tuple[str, Config, Engine],
+    frequency: str,
+) -> None:
+    _, config, engine = migration_context
+    command.upgrade(config, "head")
+    _clear_data_core_rows(engine)
+    dataset_id = _insert_dataset(engine, frequency=frequency)
+    before = _dataset_schema_snapshot(engine)
+
+    with pytest.raises(
+        SQLAlchemyError,
+        match="persisted aggregate market_datasets block 20260803_0032 downgrade",
+    ):
+        command.downgrade(config, EOD_LINEAGE_REVISION)
+
+    assert _revision(engine) == HEAD_REVISION
+    assert _dataset_schema_snapshot(engine) == before
+    with engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT frequency FROM market_datasets WHERE id = :dataset_id"),
+            {"dataset_id": dataset_id},
+        ).scalar_one() == frequency
+    _clear_data_core_rows(engine)
 
 
 def _snapshot_rows(engine: Engine, table_name: str, marker_column: str) -> list[tuple]:
@@ -871,7 +1006,8 @@ def test_schema_introspection_has_named_constraints_trigger_and_function(
     dataset_constraints = _constraint_map(engine, "market_datasets")
     assert dataset_constraints["ck_market_datasets_provider_rqdata"] == "CHECK"
     assert dataset_constraints["ck_market_datasets_kind"] == "CHECK"
-    assert dataset_constraints["ck_market_datasets_direct_frequency"] == "CHECK"
+    assert dataset_constraints["ck_market_datasets_frequency"] == "CHECK"
+    assert "ck_market_datasets_actual_dominant_weekly" not in dataset_constraints
     assert dataset_constraints["ck_market_datasets_identity_nonempty"] == "CHECK"
     assert dataset_constraints["ck_market_datasets_identity_canonical"] == "CHECK"
     partition_constraints = _constraint_map(engine, "market_partitions")
@@ -1024,7 +1160,7 @@ def test_dataset_key_and_gap_window_uniqueness_are_enforced(
     [
         ("provider", "other"),
         ("dataset_kind", "synthetic"),
-        ("frequency", "5m"),
+        ("frequency", "2m"),
         ("symbol", " "),
         ("symbol", "JM"),
         ("contract_or_series", ""),

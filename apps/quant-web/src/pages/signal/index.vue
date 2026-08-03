@@ -57,6 +57,7 @@ import {
 import { buildReviewResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 import {
   buildFormalSignalScanRequest,
+  isFormalSignalHistoricalFrequency,
   normalizeFormalSignalDateRange,
   presentCanonicalInputIdentity,
   validateFormalSignalScanInput,
@@ -112,7 +113,7 @@ let activePollTaskNo: string | null = null
 let signalListController: AbortController | null = null
 
 const periodOptions = PERIODS
-  .filter((item) => item.value !== '1w')
+  .filter((item) => isFormalSignalHistoricalFrequency(item.value))
   .map((item) => ({ label: item.label, value: item.value }))
 const bucketOptions = [
   { label: '全部', value: 'all' },

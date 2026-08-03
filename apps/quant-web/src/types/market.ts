@@ -476,15 +476,13 @@ export interface LiveMarketBarsResponse {
 export interface MarketBarsRequestParams {
   dataset_kind?: 'continuous' | 'actual_dominant'
   symbol: string
-  contract: string
+  contract: string | null
   period: string
   start?: string
   end?: string
   provider?: string | null
   data_role?: string | null
-  profile_id?: string | null
   access_mode?: MarketAccessMode
-  expected_market_data_file_id?: number | null
   expected_lineage_token?: string | null
   quote_mode?: boolean
   allow_continuous?: boolean
@@ -494,16 +492,16 @@ export interface MarketBarsRequestParams {
 
 /** 回测报告映射到行情查询的调试信息 */
 export interface BacktestMarketBarsQueryDebug {
+  dataset_kind?: 'continuous' | 'actual_dominant'
   symbol: string
   vt_symbol?: string | null
-  contract: string
+  contract: string | null
   exchange?: string | null
   interval: string
   start?: string
   end?: string
   provider?: string | null
   data_role?: string | null
-  profile_id?: string | null
   attempted: MarketBarsRequestParams[]
 }
 

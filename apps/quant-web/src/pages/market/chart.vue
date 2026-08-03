@@ -18,13 +18,12 @@ import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObse
 import { getLatestStrategySignals, getSignalEvent, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
 import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
-import { getCanonicalMarketCoverage, getDataProfiles, getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator, getMarketWorkbenchCoverage } from '@/api/market'
+import { getCanonicalMarketCoverage, getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator, getMarketWorkbenchCoverage } from '@/api/market'
 import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
   BarData,
   ChartOverlay,
   DominantContractItem,
-  DataProfileSummary,
   HoverKlineContext,
   KlineMarker,
   LiveMarketBarsQuality,
@@ -90,10 +89,8 @@ import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObser
 import {
   buildEmaObservationStatus,
   buildMarketChartRouteQuery,
-  isResearchProfileRequired,
   LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE,
   qualityFailedObservationText,
-  RESEARCH_PROFILE_REQUIRED_MESSAGE,
   safeMarketApiError,
 } from '@/utils/marketChartQuery'
 import {
@@ -107,7 +104,6 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const chartTheme = resolveChartTheme()
-const jmCanonicalHistoricalEnabled = import.meta.env.VITE_JM_DATA_CORE_V2_ENABLED === 'true'
 
 type KlineChartExpose = {
   focusTime: (value: string) => void
@@ -140,7 +136,6 @@ const metaWarning = ref<string | null>(null)
 const qualityWarningMessage = ref<string | null>(null)
 const coverage = ref<MarketWorkbenchCoverage | null>(null)
 const dominants = ref<DominantContractItem[]>([])
-const dataProfiles = ref<DataProfileSummary[]>([])
 const bars = ref<BarData[]>([])
 const quality = ref<MarketBarsQuality | LiveMarketBarsQuality | null>(null)
 const barsCoverage = ref<MarketBarsCoverage | null>(null)
@@ -154,7 +149,6 @@ const selectedSymbol = ref<string | null>(null)
 const selectedActualContract = ref<string | null>(null)
 const contractView = ref<ContractViewMode>('actual')
 const selectedPeriod = ref<string | null>(null)
-const selectedProfileId = ref<string | null>(typeof route.query.profile_id === 'string' ? route.query.profile_id : null)
 const accessMode = ref<MarketAccessMode>(route.query.access_mode === 'research' ? 'research' : 'browser')
 const chartPreferences = loadMainChartPreferences()
 const visibleMainIndicators = ref<MainIndicatorId[]>(
@@ -202,13 +196,9 @@ let liveRefreshInFlight = false
 
 const coverageItems = computed(() => coverage.value?.items || [])
 const isLiveMode = computed(() => dataMode.value === 'live')
-const useJmCanonicalHistorical = computed(
-  () => jmCanonicalHistoricalEnabled
-    && !isLiveMode.value
-    && selectedSymbol.value?.trim().toLowerCase() === 'jm',
-)
+const useCanonicalHistorical = computed(() => !isLiveMode.value)
 const canonicalDatasetKind = computed<'continuous' | 'actual_dominant' | undefined>(() => {
-  if (!useJmCanonicalHistorical.value) return undefined
+  if (!useCanonicalHistorical.value) return undefined
   return isContinuousView.value ? 'continuous' : 'actual_dominant'
 })
 const chartControlsBusy = computed(
@@ -300,7 +290,7 @@ const runtimeObservationContext = computed<MarketRuntimeObservationContext>(() =
     quality_status: isLiveMode.value
       ? liveQuality.value?.status || null
       : (quality.value as { status?: string } | null)?.status || null,
-    profile_id: isLiveMode.value ? null : selectedProfileId.value || null,
+    profile_id: null,
     active_data_version: isLiveMode.value
       ? null
       : barsCoverage.value?.data_version || selectedItem.value?.data_version || null,
@@ -322,20 +312,13 @@ const mainIndicatorStatusText = computed(() => {
   if (!visibleMainIndicators.value.length) return '主图指标已关闭'
   return '统一 EMA · 前端展示计算 · 非 StrategySignal'
 })
-const profileOptions = computed(() => dataProfiles.value.map((profile) => ({
-  label: `${profile.label} · ${profile.quality_policy}`,
-  value: profile.profile_id,
-})))
-const selectedProfile = computed(() =>
-  dataProfiles.value.find((profile) => profile.profile_id === selectedProfileId.value) || null,
-)
 const marketQualification = computed(() =>
   buildMarketQualificationPresentation({
     accessMode: accessMode.value,
     strictResearchReady: Boolean(barsLineage.value?.strict_research_ready),
     qualityStatus: barsCoverage.value?.quality_status || quality.value?.status || 'unknown',
-    profileId: selectedProfileId.value,
-    canonicalIdentity: useJmCanonicalHistorical.value,
+    profileId: null,
+    canonicalIdentity: useCanonicalHistorical.value,
   }),
 )
 const crossFileConflictCount = computed(() =>
@@ -358,8 +341,8 @@ const qualityImpact = computed(() => {
     warningReasons,
     crossFileConflicts: crossFileConflictCount.value,
     accessMode: accessMode.value,
-    profileId: selectedProfileId.value,
-    canonicalIdentity: useJmCanonicalHistorical.value,
+    profileId: null,
+    canonicalIdentity: useCanonicalHistorical.value,
     strictResearchReady: Boolean(barsLineage.value?.strict_research_ready),
     contractView: contractView.value,
     dataMode: dataMode.value,
@@ -386,18 +369,6 @@ function hoverMainIndicatorRows(context: HoverKlineContext | null) {
 const strategyStatus = computed(() => {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     return { label: '等待选择', type: 'default' as const, text: '请选择品种与周期。' }
-  }
-  if (isResearchProfileRequired(
-    accessMode.value,
-    dataMode.value,
-    selectedProfileId.value,
-    useJmCanonicalHistorical.value,
-  )) {
-    return {
-      label: '缺少 Profile',
-      type: 'warning' as const,
-      text: `${RESEARCH_PROFILE_REQUIRED_MESSAGE}，暂不可加载 K 线（fail-closed）。`,
-    }
   }
   if (loadingBars.value || loadingMeta.value || loadingDominants.value) {
     return { label: '加载中', type: 'default' as const, text: '正在加载 K 线数据…' }
@@ -522,10 +493,7 @@ async function handleQualityAction(action: MarketQualityAction) {
     handleContractViewUpdate('actual')
     return
   }
-  await nextTick()
-  const profileControl = document.querySelector<HTMLElement>('.market-context-bar__profile')
-  profileControl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  profileControl?.querySelector<HTMLElement>('[role="combobox"], input')?.focus()
+  focusQualityCard()
 }
 
 // Reload backend EMA series when standard overlay selection changes.
@@ -568,7 +536,7 @@ async function initializeChartPage() {
   const requestId = ++marketRouteRequestId
   applyRouteSelectionFromQueryToState()
   viewportLoadEnabled.value = false
-  const results = await Promise.allSettled([loadDominants(), loadScopedCoverage(), loadDataProfiles()])
+  const results = await Promise.allSettled([loadDominants(), loadScopedCoverage()])
   if (!isCurrentMarketRoute(requestId)) return
   const dominantsResult = results[0]
   if (dominantsResult.status === 'fulfilled' && !selectionMatchesRoute() && !isBacktestDeepLink.value) {
@@ -591,7 +559,6 @@ function applyRouteSelectionFromQueryToState() {
     interval: stringQuery(route.query.interval),
     contract_view: stringQuery(route.query.contract_view),
   })
-  selectedProfileId.value = stringQuery(route.query.profile_id)
   accessMode.value = route.query.access_mode === 'research' ? 'research' : 'browser'
   if (!selection) return
   selectedSymbol.value = selection.selectedSymbol
@@ -607,7 +574,6 @@ function currentCoverageScope() {
     contract: selectedActualContract.value || stringQuery(route.query.contract),
     period: selectedPeriod.value || queryPeriod(),
     contract_view: contractView.value,
-    profile_id: selectedProfileId.value || stringQuery(route.query.profile_id),
     access_mode: accessMode.value,
   })
 }
@@ -652,20 +618,6 @@ async function loadDominants() {
   }
 }
 
-async function loadDataProfiles() {
-  if (useJmCanonicalHistorical.value) {
-    dataProfiles.value = []
-    selectedProfileId.value = null
-    return
-  }
-  try {
-    dataProfiles.value = (await getDataProfiles()).filter((profile) => profile.is_active)
-  } catch (err) {
-    dataProfiles.value = []
-    metaWarning.value = safeMarketApiError(err, '加载数据 Profile 失败')
-  }
-}
-
 watch(
   () => [
     route.query.report_id,
@@ -676,7 +628,6 @@ watch(
     route.query.period,
     route.query.interval,
     route.query.contract_view,
-    route.query.profile_id,
     route.query.access_mode,
     route.query.data_mode,
     route.query.time,
@@ -702,7 +653,7 @@ async function reloadChartPage() {
   const requestId = ++marketRouteRequestId
   applyRouteSelectionFromQueryToState()
   viewportLoadEnabled.value = false
-  await Promise.allSettled([loadDominants(), loadScopedCoverage(), loadDataProfiles()])
+  await Promise.allSettled([loadDominants(), loadScopedCoverage()])
   await applyRouteSelectionAndLoad(requestId)
 }
 
@@ -710,29 +661,11 @@ async function loadScopedCoverage() {
   loadingMeta.value = true
   metaWarning.value = null
   try {
-    if (!isLiveMode.value && isResearchProfileRequired(
-      accessMode.value,
-      dataMode.value,
-      selectedProfileId.value,
-      useJmCanonicalHistorical.value,
-    )) {
-      coverage.value = null
-      return
-    }
     const params = currentCoverageScope()
-    if (
-      !isLiveMode.value
-      && !useJmCanonicalHistorical.value
-      && params?.access_mode === 'research'
-      && !params.profile_id
-    ) {
-      coverage.value = null
-      return
-    }
     coverage.value = isLiveMode.value
       ? await getLiveMarketCoverage(params)
-      : useJmCanonicalHistorical.value
-        ? await getCanonicalMarketCoverage('jm')
+      : useCanonicalHistorical.value
+        ? await getCanonicalMarketCoverage(selectedSymbol.value || 'jm')
         : await getMarketWorkbenchCoverage(params)
     syncDateRangeForSelection()
   } catch (err) {
@@ -758,19 +691,6 @@ async function applyRouteSelectionAndLoad(requestId = ++marketRouteRequestId) {
 async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptions = {}) {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     bars.value = []
-    clearMarketMacd()
-    return
-  }
-  if (isResearchProfileRequired(
-    accessMode.value,
-    dataMode.value,
-    selectedProfileId.value,
-    useJmCanonicalHistorical.value,
-  )) {
-    barsError.value = RESEARCH_PROFILE_REQUIRED_MESSAGE
-    bars.value = []
-    barsLineage.value = null
-    mainIndicatorSeries.value = []
     clearMarketMacd()
     return
   }
@@ -953,10 +873,7 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
     period: selectedPeriod.value,
     provider: selectedItem.value?.provider,
     data_role: selectedItem.value?.data_role,
-    profile_id: selectedProfileId.value,
     access_mode: accessMode.value,
-    expected_market_data_file_id: barsLineage.value?.market_data_file_id,
-    expected_lineage_token: barsLineage.value?.lineage_token,
     quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
     allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
   }
@@ -1033,10 +950,7 @@ function buildMacdRequestParams(): MarketBarsRequestParams | null {
     period: selectedPeriod.value,
     provider: selectedItem.value?.provider,
     data_role: selectedItem.value?.data_role,
-    profile_id: selectedProfileId.value,
     access_mode: accessMode.value,
-    expected_market_data_file_id: barsLineage.value?.market_data_file_id,
-    expected_lineage_token: barsLineage.value?.lineage_token,
     start: formatBarsRequestTime(extent.startMs),
     end: formatBarsRequestTime(extent.endMs),
     quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
@@ -1103,10 +1017,9 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
     visibleIds: visibleMainIndicators.value,
     provider: selectedItem.value?.provider,
     dataRole: selectedItem.value?.data_role,
-    profileId: selectedProfileId.value,
     accessMode: accessMode.value,
-    expectedMarketDataFileId: barsLineage.value?.market_data_file_id,
-    expectedLineageToken: barsLineage.value?.lineage_token,
+    expectedMarketDataFileId: null,
+    expectedLineageToken: null,
     quoteMode: !isBacktestDeepLink.value && !isContinuousRequest,
     allowContinuous: isBacktestDeepLink.value || isContinuousRequest,
   })
@@ -1169,7 +1082,6 @@ function handleDataModeUpdate(value: MarketDataMode) {
   qualityWarningMessage.value = null
   if (value === 'live') {
     accessMode.value = 'browser'
-    selectedProfileId.value = null
   }
   if (value === 'live' && selectedPeriod.value && !isLivePeriodSupported(selectedPeriod.value)) {
     const fallback = chartPeriodOptions.value.find((item) => !item.disabled)?.value || '15m'
@@ -1195,18 +1107,6 @@ function handleAccessModeUpdate(value: MarketAccessMode) {
   accessMode.value = value
   barsLineage.value = null
   if (value === 'research' && isLiveMode.value) dataMode.value = 'historical'
-  coverage.value = null
-  bars.value = []
-  mainIndicatorSeries.value = []
-  void syncQuery().then(() => reloadChartPage())
-}
-
-function handleProfileUpdate(value: string | null) {
-  if (chartControlsBusy.value) return
-  if (value === selectedProfileId.value) return
-  marketRouteRequestId += 1
-  selectedProfileId.value = value
-  barsLineage.value = null
   coverage.value = null
   bars.value = []
   mainIndicatorSeries.value = []
@@ -1265,7 +1165,6 @@ function applyInitialSelection() {
     if (!selected) return
     selectedSymbol.value = selected.symbol
     selectedActualContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
-    selectedProfileId.value = selected.profile_id || selectedProfileId.value
     contractView.value = defaultContractViewForPeriod(selected.period)
     selectedPeriod.value = selected.period
     syncDateRange(selected)
@@ -1302,7 +1201,6 @@ function applyInitialSelection() {
   if (!selected) return
   selectedSymbol.value = selected.symbol
   selectedActualContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
-  selectedProfileId.value = selected.profile_id || selectedProfileId.value
   contractView.value = defaultContractViewForPeriod(selected.period)
   selectedPeriod.value = selected.period
   syncDateRange(selected)
@@ -1548,7 +1446,6 @@ function selectionMatchesRoute() {
   return (
     routeProduct === selectedSymbol.value &&
     routeContract === selectedActualContract.value &&
-    stringQuery(route.query.profile_id) === selectedProfileId.value &&
     (route.query.access_mode === 'research' ? 'research' : 'browser') === accessMode.value &&
     (route.query.data_mode === 'live' ? 'live' : 'historical') === dataMode.value &&
     (routeView === contractView.value || (!routeView && contractView.value === defaultContractViewForPeriod(selectedPeriod.value || ''))) &&
@@ -1757,7 +1654,6 @@ function syncQuery(): Promise<void> {
         actualContract: selectedActualContract.value,
         period: selectedPeriod.value,
         contractView: contractView.value,
-        profileId: selectedProfileId.value,
         accessMode: accessMode.value,
         dataMode: dataMode.value,
       },
@@ -1812,7 +1708,7 @@ function formatDate(value: number) {
 }
 
 function formatBarsRequestTime(value: number) {
-  return useJmCanonicalHistorical.value
+  return useCanonicalHistorical.value
     ? new Date(value).toISOString()
     : formatDate(value)
 }
@@ -1851,13 +1747,10 @@ function isNotFoundApiError(err: unknown) {
           :contract-view="contractView"
           :data-mode="dataMode"
           :access-mode="accessMode"
-          :profile-id="selectedProfileId"
-          :profile-options="profileOptions"
           @back="goBackToList"
           @update:contract-view="handleContractViewUpdate"
           @update:data-mode="handleDataModeUpdate"
           @update:access-mode="handleAccessModeUpdate"
-          @update:profile-id="handleProfileUpdate"
         />
         <div class="chart-header__secondary">
           <MarketEvidenceStrip
@@ -1869,8 +1762,8 @@ function isNotFoundApiError(err: unknown) {
             :asset-count="barsLineage?.asset_evidence?.length || barsLineage?.market_data_file_ids?.length || 0"
             :latest-time="barsCoverage?.latest_bar_time || selectedItem?.latest_bar_time || latestBar?.time || '-'"
             :period="selectedPeriod || '-'"
-            :profile-id="selectedProfileId"
-            :profile-label="selectedProfile?.label || selectedProfileId"
+            :profile-id="null"
+            profile-label="Canonical DatasetKey"
             @evidence="evidenceDrawerOpen = true"
           />
           <div class="chart-header__actions">
@@ -2018,7 +1911,7 @@ function isNotFoundApiError(err: unknown) {
           <div class="snapshot-grid">
             <span>访问模式</span><strong>{{ accessMode === 'research' ? '严格研究' : '浏览观察' }}</strong>
             <span>质量</span><strong>{{ barsCoverage?.quality_status || quality?.status || 'unknown' }}</strong>
-            <span>Profile</span><strong>{{ selectedProfile?.label || selectedProfileId || '未绑定' }}</strong>
+            <span>数据身份</span><strong>Canonical DatasetKey</strong>
             <span>lineage</span><strong>{{ barsLineage ? '已绑定' : '未证明' }}</strong>
             <span>数据冲突</span><strong>{{ crossFileConflictCount.toLocaleString('zh-CN') }}</strong>
           </div>

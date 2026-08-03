@@ -245,7 +245,7 @@ def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
                 dataset_kind=DatasetKind.ACTUAL_DOMINANT,
                 symbol="jm",
                 contract_or_series="JM2609",
-                frequency=BarFrequency.M1,
+                frequency=BarFrequency.M5,
                 adjustment="none",
                 schema_version="canonical-bar-v1",
             ),
@@ -253,7 +253,7 @@ def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
         manifest_digests=("a" * 64,),
         requested_window=(request_start, request_end),
         data_type=DatasetKind.ACTUAL_DOMINANT,
-        derived_frequency=BarFrequency.M5,
+        derived_frequency=None,
         source_data_versions=("canonical-5m-v1",),
     )
     input_identity = build_canonical_consumer_input(
@@ -274,11 +274,21 @@ def _add_canonical_signal_event(session) -> tuple[StrategySignal, SignalEvent]:
     )
     auxiliary_result = BarsResult(
         bars=(),
-        source_datasets=result.source_datasets,
+        source_datasets=(
+            DatasetKey(
+                provider="rqdata",
+                dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                contract_or_series="JM2609",
+                frequency=BarFrequency.M15,
+                adjustment="none",
+                schema_version="canonical-bar-v1",
+            ),
+        ),
         manifest_digests=result.manifest_digests,
         requested_window=(request_start, request_end),
         data_type=DatasetKind.ACTUAL_DOMINANT,
-        derived_frequency=BarFrequency.M15,
+        derived_frequency=None,
         source_data_versions=result.source_data_versions,
     )
     auxiliary_identity = build_canonical_consumer_input(

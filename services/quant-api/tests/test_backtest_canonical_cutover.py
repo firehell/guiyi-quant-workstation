@@ -13,7 +13,12 @@ from sqlalchemy.pool import StaticPool
 
 from app.backtest.service import BacktestService
 from app.backtest.runner import BacktestTaskRunner
-from app.api.backtests import report_api_payload, task_api_payload
+from app.api.backtests import (
+    BacktestRunRequest,
+    BatchBacktestRunRequest,
+    report_api_payload,
+    task_api_payload,
+)
 from app.backtest.v1b_jm_tasks import build_jm_v1b_formal_request
 from app.data_core.bar_schema import CANONICAL_BAR_SCHEMA_VERSION, CanonicalBar
 from app.data_core.contracts import (
@@ -28,7 +33,7 @@ from app.db.base import Base
 from app.models.backtest import BacktestReportModel, BacktestTask
 from app.db.session import get_db
 from app.main import app
-from app.services.batch_backtest import create_batch_task
+from app.services.batch_backtest import BatchBacktestRunner, create_batch_task
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.schemas.backtest import FormalBacktestTaskRequest
 from app.vnpy_integration.backtest_runner import _validate_standard_rows
@@ -73,13 +78,12 @@ def _session_factory() -> sessionmaker[Session]:
 
 
 def _canonical_result(query: BarQuery) -> BarsResult:
-    source_frequency = BarFrequency.M1 if query.frequency is BarFrequency.M15 else query.frequency
     source = DatasetKey(
         provider="rqdata",
         dataset_kind=query.dataset_kind,
         symbol=query.symbol,
         contract_or_series=(query.contract_or_series or "JM2405"),
-        frequency=source_frequency,
+        frequency=query.frequency,
         adjustment="none",
         schema_version=CANONICAL_BAR_SCHEMA_VERSION,
     )
@@ -108,7 +112,7 @@ def _canonical_result(query: BarQuery) -> BarsResult:
         source_data_versions=(("canonical-15m" if query.frequency is BarFrequency.M15 else "canonical-1d"),),
         requested_window=(query.start, query.end),
         data_type=query.dataset_kind,
-        derived_frequency=(BarFrequency.M15 if query.frequency is BarFrequency.M15 else None),
+        derived_frequency=None,
     )
 
 
@@ -188,8 +192,14 @@ def test_formal_request_requires_series_only_for_continuous_and_timezone_aware_w
         FormalBacktestTaskRequest.model_validate(
             _formal_payload(start=datetime(2024, 1, 2))
         )
-    with pytest.raises(ValidationError):
-        FormalBacktestTaskRequest.model_validate(_formal_payload(interval="2m"))
+    for frequency in ("2m", "4h", "1D"):
+        with pytest.raises(ValidationError) as raised:
+            FormalBacktestTaskRequest.model_validate(
+                _formal_payload(interval=frequency)
+            )
+        assert raised.value.errors()[0]["ctx"]["code"] == (
+            "UNSUPPORTED_FREQUENCY"
+        )
 
 
 def test_actual_dominant_non_jm_is_rejected_with_stable_code() -> None:
@@ -222,7 +232,6 @@ def test_fixed_jm_formal_spec_contains_no_profile_or_file_identity() -> None:
                 "symbol": "jm",
                 "contract": "jm.MAIN",
                 "period": "15m",
-                "profile_id": "intraday_research_v1",
                 "start": "2024-01-02",
                 "end": "2024-02-02",
             },
@@ -233,7 +242,6 @@ def test_fixed_jm_formal_spec_contains_no_profile_or_file_identity() -> None:
             {
                 "watchlist_code": "black",
                 "period": "15m",
-                "profile_id": "intraday_research_v1",
                 "start": "2024-01-02",
                 "end": "2024-02-02",
                 "run_inline": True,
@@ -281,6 +289,44 @@ def test_legacy_batch_service_cannot_create_nonresearch_task() -> None:
                 "end": "2024-02-02T00:00:00+00:00",
             },
         )
+
+
+@pytest.mark.parametrize("model", [BacktestRunRequest, BatchBacktestRunRequest])
+def test_legacy_backtest_request_models_reject_profile_selector(model: type) -> None:
+    payload = {
+        "period": "15m",
+        "start": "2024-01-02T00:00:00+00:00",
+        "end": "2024-02-02T00:00:00+00:00",
+        "profile_id": "legacy-profile",
+    }
+    if model is BacktestRunRequest:
+        payload.update({"symbol": "jm", "contract": "JM2609"})
+    else:
+        payload["watchlist_code"] = "black"
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+def test_queued_legacy_batch_task_cannot_execute_even_when_research_only() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        task = BacktestTask(
+            task_no="legacy-batch",
+            task_type="batch",
+            research_only=True,
+            status="pending",
+            request_payload={},
+            result_payload={},
+        )
+        session.add(task)
+        session.commit()
+        with pytest.raises(
+            BacktestConfigurationError,
+            match="BACKTEST_LEGACY_BATCH_DISABLED",
+        ):
+            BatchBacktestRunner(session).run(task.id)
+        session.refresh(task)
+        assert task.status == "pending"
 
 
 def test_formal_task_freezes_canonical_input_and_leaves_legacy_columns_null() -> None:
@@ -335,7 +381,15 @@ def test_runner_rereads_identity_and_injects_canonical_rows_in_memory() -> None:
 
         report = session.query(BacktestReportModel).one()
         assert report.research_only is True
-        for payload in (task_api_payload(task), report_api_payload(report)):
+        task_payload = task_api_payload(task)
+        report_payload = report_api_payload(report)
+        assert "input_identity_attestation" not in task_payload
+        assert report_payload["input_identity_attestation"] == {
+            "schema_version": "canonical_consumer_input_attestation_v1",
+            "status": "server_verified",
+            "digest": report_payload["input_identity"]["digest"],
+        }
+        for payload in (task_payload, report_payload):
             assert payload["input_identity"]["schema_version"] == "canonical_consumer_input_v1"
             assert payload["research_only"] is True
             assert payload["contract_semantics"] == "research_contract_only"
@@ -349,6 +403,52 @@ def test_runner_rereads_identity_and_injects_canonical_rows_in_memory() -> None:
             assert '"profile_id"' not in encoded
             assert '"market_data_file_id"' not in encoded
             assert '"binding_snapshot"' not in encoded
+
+
+def test_report_api_withholds_replay_identity_when_stored_digest_is_forged() -> None:
+    SessionLocal = _session_factory()
+    market_data = FakeMarketDataService()
+    with SessionLocal() as session:
+        service = BacktestService(session, market_data=market_data)
+        task = service.create_formal_task(_formal_payload())
+        report = BacktestReportModel(
+            task_id=task.id,
+            task_no=task.task_no,
+            report_no="RPT-FORGED-DIGEST",
+            template_name="vnpy",
+            engine_type="vnpy",
+            symbol="jm",
+            contract="jm.MAIN",
+            period="15m",
+            status="success",
+            binding_snapshot=task.binding_snapshot,
+            summary={},
+            warnings=[],
+        )
+        session.add(report)
+        session.flush()
+        forged = dict(report.binding_snapshot or {})
+        identity = dict(forged["input_identity"])
+        identity["digest"] = "f" * 64
+        forged["input_identity"] = identity
+        report.binding_snapshot = forged
+        session.commit()
+        report_id = report.id
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).get(f"/api/backtests/reports/{report_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        assert "input_identity" not in payload
+        assert "input_identity_attestation" not in payload
+        assert "binding_snapshot" not in payload
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_asia_shanghai_window_is_stored_and_executed_as_utc() -> None:

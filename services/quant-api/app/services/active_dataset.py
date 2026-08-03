@@ -8,12 +8,14 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any, Literal, Mapping
 
+from app.data_core.contracts import BAR_FREQUENCY_VALUES
+
 
 DatasetContext = Literal["historical", "live"]
 AccessMode = Literal["browser", "research"]
 ContractSelector = Literal["explicit", "dominant_rank1"]
 
-HISTORICAL_PERIODS = frozenset({"1m", "5m", "15m", "30m", "60m", "1d", "1w"})
+HISTORICAL_PERIODS = frozenset(BAR_FREQUENCY_VALUES)
 LIVE_PERIOD_SOURCE_MODES = {
     "1m": "poll_get_price_1m",
     "15m": "live_1m_sequential_bucket",

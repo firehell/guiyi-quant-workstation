@@ -1,4 +1,5 @@
 import type { EChartsOption } from 'echarts'
+import { HISTORICAL_BAR_FREQUENCIES } from '../types/historicalBarFrequency'
 
 /** A股配色：涨红跌绿 */
 export const STOCK_COLORS = {
@@ -32,22 +33,10 @@ export const EXCHANGES = [
 
 /** K线周期选项 */
 export const PERIODS = [
-  { label: '1分钟', value: '1m' },
-  { label: '5分钟', value: '5m' },
-  { label: '15分钟', value: '15m' },
-  { label: '30分钟', value: '30m' },
-  { label: '60分钟', value: '60m' },
-  { label: '日线', value: '1d' },
-  { label: '周线', value: '1w' },
-] as const
+  '1分钟', '5分钟', '15分钟', '30分钟', '60分钟', '日线', '周线',
+].map((label, index) => ({ label, value: HISTORICAL_BAR_FREQUENCIES[index] }))
 
 /** 行情图表周期工具栏（TradingView 风格短标签） */
 export const CHART_PERIOD_OPTIONS = [
-  { label: '1m', value: '1m' },
-  { label: '5m', value: '5m' },
-  { label: '15m', value: '15m' },
-  { label: '30m', value: '30m' },
-  { label: '1h', value: '60m' },
-  { label: '1D', value: '1d' },
-  { label: '1W', value: '1w' },
-] as const
+  '1m', '5m', '15m', '30m', '1h', '1D', '1W',
+].map((label, index) => ({ label, value: HISTORICAL_BAR_FREQUENCIES[index] }))

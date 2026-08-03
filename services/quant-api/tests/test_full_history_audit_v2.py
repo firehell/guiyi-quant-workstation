@@ -129,8 +129,13 @@ def test_actual_rank1_rows_use_direct_supported_starts_and_have_no_duplicates() 
     rows = _actual_range_rows((duplicate_range, duplicate_range), date(2026, 7, 10), expected)
 
     assert [(row["period"], row["expected_start"]) for row in rows] == [
+        ("15m", "2013-03-01"),
         ("1d", "2013-03-22"),
         ("1m", "2013-03-22"),
+        ("1w", "2013-03-22"),
+        ("30m", "2013-03-01"),
+        ("5m", "2013-03-01"),
+        ("60m", "2013-03-01"),
     ]
 
 

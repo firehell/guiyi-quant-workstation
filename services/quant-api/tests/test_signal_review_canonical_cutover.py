@@ -74,14 +74,12 @@ class FakeCanonicalMarketData:
             )
         else:
             bars = ()
-        direct_frequency = query.frequency in {BarFrequency.M1, BarFrequency.D1}
-        source_frequency = query.frequency if direct_frequency else BarFrequency.M1
         source = DatasetKey(
             provider="rqdata",
             dataset_kind=query.dataset_kind,
             symbol=query.symbol,
             contract_or_series=query.contract_or_series or "JM2609",
-            frequency=source_frequency,
+            frequency=query.frequency,
             adjustment="none",
             schema_version="canonical-bar-v1",
         )
@@ -97,7 +95,7 @@ class FakeCanonicalMarketData:
             ),
             requested_window=(query.start, query.end),
             data_type=query.dataset_kind,
-            derived_frequency=None if direct_frequency else query.frequency,
+            derived_frequency=None,
             source_data_versions=("canonical-source-v1",),
         )
 
@@ -118,6 +116,12 @@ def test_formal_signal_request_requires_explicit_actual_dominant_identity() -> N
         )
     with pytest.raises(ValidationError):
         SignalScanRequest.model_validate({**_formal_request(), "profile_id": "legacy"})
+
+    for frequency in ("2m", "4h", "1D"):
+        with pytest.raises(ValidationError, match="UNSUPPORTED_FREQUENCY"):
+            SignalScanRequest.model_validate(
+                {**_formal_request(), "periods": [frequency]}
+            )
 
 
 @pytest.mark.parametrize(
@@ -396,76 +400,39 @@ def test_formal_worker_never_routes_by_tampered_legacy_fk(
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
 
 
-def test_research_worker_requires_explicit_legacy_execution_contract(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_research_worker_contract_is_retired() -> None:
     from app.signal import scanner as scanner_module
 
-    legacy = scanner_module.legacy
-    SignalScanner = scanner_module.SignalScanner
     create_signal_scan_task = scanner_module.create_signal_scan_task
 
-    legacy_run_calls: list[int] = []
-
-    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
-        legacy_run_calls.append(task_id)
-        return {"legacy_research": True}
-
     factory = _session_factory()
     with factory() as session:
-        task = create_signal_scan_task(
-            session,
-            {
-                "watchlist_code": "black",
-                "profile_id": "intraday_research_v1",
-                "periods": ["5m"],
-                "research_only": True,
-            },
-        )
-        session.commit()
-        monkeypatch.setattr(legacy.SignalScanner, "run", legacy_run_spy)
-
-        result = SignalScanner(session).run(task.id)
-
-        assert task.request_payload["execution_contract"] == "legacy_research_scan_v1"
-        assert legacy_run_calls == [task.id]
-        assert result == {"legacy_research": True}
+        with pytest.raises(ValueError, match="SIGNAL_LEGACY_EXECUTION_RETIRED"):
+            create_signal_scan_task(
+                session,
+                {
+                    "watchlist_code": "black",
+                    "profile_id": "intraday_research_v1",
+                    "periods": ["5m"],
+                    "research_only": True,
+                },
+            )
 
 
-def test_research_worker_freezes_default_periods_before_persistence(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_research_worker_cannot_persist_default_periods() -> None:
     from app.signal import scanner as scanner_module
 
-    legacy_run_calls: list[int] = []
-
-    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
-        legacy_run_calls.append(task_id)
-        return {"legacy_research": True}
-
     factory = _session_factory()
     with factory() as session:
-        task = scanner_module.create_signal_scan_task(
-            session,
-            {
-                "watchlist_code": "black",
-                "profile_id": "intraday_research_v1",
-                "research_only": True,
-            },
-        )
-        session.commit()
-        monkeypatch.setattr(
-            scanner_module.legacy.SignalScanner,
-            "run",
-            legacy_run_spy,
-        )
-
-        result = scanner_module.SignalScanner(session).run(task.id)
-
-        assert task.periods == ["5m", "15m", "30m", "60m", "1d"]
-        assert task.request_payload["periods"] == task.periods
-        assert legacy_run_calls == [task.id]
-        assert result == {"legacy_research": True}
+        with pytest.raises(ValueError, match="SIGNAL_LEGACY_EXECUTION_RETIRED"):
+            scanner_module.create_signal_scan_task(
+                session,
+                {
+                    "watchlist_code": "black",
+                    "profile_id": "intraday_research_v1",
+                    "research_only": True,
+                },
+            )
 
 
 def test_stripped_formal_payload_cannot_route_to_legacy_worker(
@@ -494,7 +461,7 @@ def test_stripped_formal_payload_cannot_route_to_legacy_worker(
             legacy_run_spy,
         )
 
-        with pytest.raises(ValueError, match="SIGNAL_TASK_ROUTING_INVALID"):
+        with pytest.raises(ValueError, match="SIGNAL_LEGACY_EXECUTION_RETIRED"):
             scanner_module.SignalScanner(
                 session,
                 canonical_market_data=canonical,
@@ -526,60 +493,20 @@ def test_stripped_formal_payload_cannot_route_to_legacy_worker(
 )
 def test_legacy_worker_rejects_profile_or_payload_drift_before_dispatch(
     drift: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.signal import scanner as scanner_module
 
-    legacy_run_calls: list[int] = []
-
-    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
-        legacy_run_calls.append(task_id)
-        return {"wrong_route": True}
-
     factory = _session_factory()
     with factory() as session:
-        task = scanner_module.create_signal_scan_task(
-            session,
-            {
-                "watchlist_code": "black",
-                "profile_id": "intraday_research_v1",
-                "periods": ["5m"],
-                "research_only": True,
-            },
-        )
-        payload = dict(task.request_payload)
-        if drift == "missing_payload_profile":
-            payload.pop("profile_id")
-        elif drift == "blank_payload_profile":
-            payload["profile_id"] = ""
-        elif drift == "missing_top_profile":
-            task.profile_id = None
-        elif drift == "profile_mismatch":
-            payload["profile_id"] = "different_profile"
-        elif drift == "top_market_data_file":
-            task.market_data_file_id = 999
-        elif drift == "payload_market_data_file":
-            payload["market_data_file_id"] = 999
-        elif drift == "unknown_payload_field":
-            payload["unexpected"] = True
-        task.request_payload = payload
-        session.commit()
-        monkeypatch.setattr(
-            scanner_module.legacy.SignalScanner,
-            "run",
-            legacy_run_spy,
-        )
-
-        with pytest.raises(ValueError, match="SIGNAL_TASK_ROUTING_INVALID"):
-            scanner_module.SignalScanner(session).run(task.id)
-
-        session.refresh(task)
-        assert legacy_run_calls == []
-        assert task.status == "pending"
-        assert task.started_at is None
-        assert task.finished_at is None
-        assert task.result_payload == {}
-        assert task.error_message is None
+        request = {
+            "watchlist_code": "black",
+            "profile_id": "intraday_research_v1",
+            "periods": ["5m"],
+            "research_only": True,
+            "legacy_drift_case": drift,
+        }
+        with pytest.raises(ValueError, match="SIGNAL_LEGACY_EXECUTION_RETIRED"):
+            scanner_module.create_signal_scan_task(session, request)
         assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
         assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
@@ -828,7 +755,6 @@ def test_event_writer_rejects_forged_canonical_signal_identity(forgery: str) -> 
         "window_drift",
         "symbol_drift",
         "contract_drift",
-        "source_manifest_drift",
         "digest_drift",
     ],
 )
@@ -894,12 +820,6 @@ def test_event_writer_requires_exact_auxiliary_canonical_identity_set(
                 BarFrequency.M15,
                 strategy_input_version=strategy_input_version,
                 contract="JM2611",
-            )
-        elif malformed_auxiliary == "source_manifest_drift":
-            auxiliary["15m"] = _canonical_identity(
-                FakeCanonicalMarketData(manifest_suffix="f"),
-                BarFrequency.M15,
-                strategy_input_version=strategy_input_version,
             )
         elif malformed_auxiliary == "digest_drift":
             auxiliary["15m"] = {**expected, "digest": "f" * 64}

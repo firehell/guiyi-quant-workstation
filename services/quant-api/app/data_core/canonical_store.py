@@ -26,7 +26,12 @@ from app.data_core.catalog import (
     HistoricalCatalog,
     PartitionManifest,
 )
-from app.data_core.contracts import DataCoreError, DatasetKey
+from app.data_core.contracts import (
+    DIRECT_FREQUENCIES,
+    DataCoreError,
+    DatasetKey,
+    ManifestLineage,
+)
 from app.data_core.quality import (
     ValidatedProviderBatch,
     require_safe_component,
@@ -36,7 +41,9 @@ from app.data_core.rqdata_adapter import ProviderBarBatch
 
 
 CANONICAL_PARQUET_PROFILE_ID = "canonical-parquet-v1"
-CANONICAL_MANIFEST_FORMAT = "canonical-manifest-v1"
+CANONICAL_MANIFEST_FORMAT_V1 = "canonical-manifest-v1"
+CANONICAL_MANIFEST_FORMAT_V2 = "canonical-manifest-v2"
+CANONICAL_MANIFEST_FORMAT = CANONICAL_MANIFEST_FORMAT_V1
 CANONICAL_PARQUET_SCHEMA = pa.schema(
     [
         pa.field("provider", pa.string(), nullable=False),
@@ -213,10 +220,12 @@ class PublishExpectation:
     row_count: int
     data_version: str
     manifest_version: str
+    manifest_format: str = CANONICAL_MANIFEST_FORMAT_V1
     file_checksum: str | None = None
     canonical_logical_fingerprint: str | None = None
     manifest_digest: str | None = None
     overlap_reason: str | None = None
+    lineage: ManifestLineage | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -256,6 +265,29 @@ class PublishExpectation:
             raise CanonicalPublishError(
                 "CANONICAL_PUBLISH_EXPECTATION_INVALID"
             )
+        if self.manifest_format not in {
+            CANONICAL_MANIFEST_FORMAT_V1,
+            CANONICAL_MANIFEST_FORMAT_V2,
+        }:
+            raise CanonicalPublishError(
+                "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+            )
+        is_v2 = self.manifest_format == CANONICAL_MANIFEST_FORMAT_V2
+        if is_v2:
+            if not isinstance(self.lineage, ManifestLineage):
+                raise CanonicalPublishError(
+                    "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+                )
+            try:
+                self.lineage.validate_dataset(self.dataset)
+            except DataCoreError as exc:
+                raise CanonicalPublishError(
+                    "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+                ) from exc
+        elif self.lineage is not None or self.dataset.frequency not in DIRECT_FREQUENCIES:
+            raise CanonicalPublishError(
+                "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+            )
 
     @classmethod
     def from_validation(
@@ -263,7 +295,9 @@ class PublishExpectation:
         validation: ValidationResult,
         *,
         manifest_version: str,
+        manifest_format: str = CANONICAL_MANIFEST_FORMAT_V1,
         overlap_reason: str | None = None,
+        lineage: ManifestLineage | None = None,
     ) -> PublishExpectation:
         if not isinstance(validation, ValidationResult):
             raise CanonicalPublishError(
@@ -276,11 +310,13 @@ class PublishExpectation:
             row_count=validation.row_count,
             data_version=validation.data_version,
             manifest_version=manifest_version,
+            manifest_format=manifest_format,
             file_checksum=validation.file_checksum,
             canonical_logical_fingerprint=(
                 validation.canonical_logical_fingerprint
             ),
             overlap_reason=overlap_reason,
+            lineage=lineage,
         )
 
 
@@ -452,6 +488,13 @@ class CanonicalStore:
             if isinstance(staged, StagedBatch):
                 self._cleanup_staged(staged)
             raise
+
+    def discard(self, staged: StagedBatch) -> None:
+        """Remove one caller-owned staged batch without touching canonical data."""
+
+        if not isinstance(staged, StagedBatch):
+            raise CanonicalStoreError("CANONICAL_STAGED_HANDLE_INVALID")
+        self._cleanup_staged(staged)
 
     def publish(
         self,
@@ -2793,7 +2836,8 @@ def _validate_stored_manifest_document(
     canonical_logical_fingerprint: str,
     overlap_reason: str | None = None,
 ) -> dict[str, object]:
-    if set(document) != {
+    manifest_format = document.get("manifest_format")
+    v1_fields = {
         "manifest_format",
         "manifest_version",
         "profile_id",
@@ -2804,7 +2848,25 @@ def _validate_stored_manifest_document(
         "canonical_logical_fingerprint",
         "writer",
         "manifest_digest",
-    }:
+    }
+    if manifest_format == CANONICAL_MANIFEST_FORMAT_V1:
+        if (
+            dataset.frequency not in DIRECT_FREQUENCIES
+            or set(document) != v1_fields
+        ):
+            raise ValueError
+        lineage: ManifestLineage | None = None
+    elif manifest_format == CANONICAL_MANIFEST_FORMAT_V2:
+        if (
+            set(document) != v1_fields | {"source_lineage"}
+        ):
+            raise ValueError
+        try:
+            lineage = ManifestLineage.from_payload(document["source_lineage"])
+            lineage.validate_dataset(dataset)
+        except DataCoreError as exc:
+            raise ValueError from exc
+    else:
         raise ValueError
     writer = document["writer"]
     if (
@@ -2836,7 +2898,7 @@ def _validate_stored_manifest_document(
             raise ValueError
         partition["overlap_reason"] = overlap_reason
     payload: dict[str, object] = {
-        "manifest_format": CANONICAL_MANIFEST_FORMAT,
+        "manifest_format": manifest_format,
         "manifest_version": manifest_version,
         "profile_id": CANONICAL_PARQUET_PROFILE_ID,
         "dataset_key": _dataset_payload(dataset),
@@ -2852,6 +2914,8 @@ def _validate_stored_manifest_document(
             "parameters": dict(CANONICAL_PARQUET_WRITER_PARAMETERS),
         },
     }
+    if lineage is not None:
+        payload["source_lineage"] = lineage.as_payload()
     if _canonical_json_bytes(document["writer"]) != _canonical_json_bytes(
         payload["writer"]
     ):
@@ -2897,8 +2961,9 @@ def _manifest_payload(
     }
     if expected.overlap_reason is not None:
         partition["overlap_reason"] = expected.overlap_reason
-    return {
-        "manifest_format": CANONICAL_MANIFEST_FORMAT,
+    is_v2 = expected.manifest_format == CANONICAL_MANIFEST_FORMAT_V2
+    payload: dict[str, object] = {
+        "manifest_format": expected.manifest_format,
         "manifest_version": expected.manifest_version,
         "profile_id": CANONICAL_PARQUET_PROFILE_ID,
         "dataset_key": _dataset_payload(validation.dataset),
@@ -2914,6 +2979,13 @@ def _manifest_payload(
             "parameters": dict(CANONICAL_PARQUET_WRITER_PARAMETERS),
         },
     }
+    if is_v2:
+        if expected.lineage is None:
+            raise CanonicalPublishError(
+                "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+            )
+        payload["source_lineage"] = expected.lineage.as_payload()
+    return payload
 
 
 def _validate_expectation(

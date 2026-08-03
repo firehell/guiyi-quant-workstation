@@ -424,3 +424,75 @@ def test_skill_does_not_claim_control_plane_or_gatekeeper_authority() -> None:
         "this report can replace a gate",
     ):
         assert forbidden_affirmative not in lowered
+
+
+def test_v07_skill_exposes_only_the_pure_three_stage_develop_gate() -> None:
+    """Removing one staged re-evaluation or adding controller authority must fail policy."""
+    skill = _read("SKILL.md")
+    execution = _read("references/execution.md")
+    review = _read("references/review.md")
+    recovery = _read("references/recovery.md")
+    combined = "\n".join((skill, execution, review, recovery))
+
+    assert "## V07 develop Gate evaluator" in skill
+    assert (
+        "python3 scripts/engineering/lean_matrix_team.py develop-gate "
+        "--plan <approved-execution-plan.json> --facts <github-gate-facts.json> --format json"
+    ) in skill
+    for contract in (
+        "GitHubCheckV1",
+        "GitHubReviewEvidenceV1",
+        "GitHubGateFactsV1",
+        "DevelopGateDecisionV1",
+    ):
+        assert contract in combined
+    for stage in ("pre_merge", "merge_readback", "cleanup"):
+        assert f"`{stage}`" in combined
+    for category in ("code", "test", "dry_run", "disabled_feature", "isolated_migration"):
+        assert f"`{category}`" in combined
+    assert "exactly five minutes" in combined
+    assert "strict base drift" in combined
+    assert "change_categories=()" in combined
+    assert "four positional arguments" in combined
+    assert "pure evaluator" in combined
+
+
+def test_v07_skill_keeps_connector_mutations_receipt_and_cleanup_outside_harness() -> None:
+    """An operator must re-read exact-head facts and never infer a timed-out merge result."""
+    skill = _read("SKILL.md")
+    execution = _read("references/execution.md")
+    review = _read("references/review.md")
+    recovery = _read("references/recovery.md")
+    combined = "\n".join((skill, execution, review, recovery))
+
+    for phrase in (
+        "Connector/Codex owns",
+        "ready transition",
+        "re-read",
+        "expected head SHA",
+        "must not retry",
+        "digest-bound merge receipt",
+        "separate cleanup transition",
+        "V07 adds and uses no GitHub client",
+        "V07 uses no `gh`",
+        "V07 uses no token",
+        "V07 runs no poller",
+        "V07 runs no merge daemon",
+        "V07 has no merge executor",
+        "pre-existing Draft-PR adapter remains outside V07",
+        "AI-TEAM-007 self-bootstrap",
+        "existing Connector/Codex flow",
+    ):
+        assert phrase in combined
+    for manual_gate in (
+        "main/release/tag",
+        "Runtime",
+        "real data/DB",
+        "strategy/backtest semantics",
+        "notifications",
+        "live",
+        "deletion",
+        "candidate promotion",
+        "GitHub rules",
+    ):
+        assert manual_gate in combined

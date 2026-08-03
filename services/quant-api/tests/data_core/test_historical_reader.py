@@ -11,14 +11,20 @@ from sqlalchemy.pool import StaticPool
 
 from app.data_core.bar_schema import CanonicalBar
 from app.data_core.aggregation import AggregationSession
-from app.data_core.canonical_store import CanonicalStore, PublishExpectation
+from app.data_core.canonical_store import (
+    CANONICAL_MANIFEST_FORMAT_V2,
+    CanonicalStore,
+    PublishExpectation,
+)
 from app.data_core.catalog import GapWindow, HistoricalCatalog
 from app.data_core.contracts import (
     BarFrequency,
     BarQuery,
     DataGapError,
+    DatasetOrigin,
     DatasetKey,
     DatasetKind,
+    ManifestLineage,
 )
 from app.data_core.historical_reader import CanonicalHistoricalReader
 from app.data_core.rqdata_adapter import (
@@ -36,13 +42,16 @@ SECOND = datetime(2026, 7, 1, 1, 2, tzinfo=UTC)
 FIFTH = datetime(2026, 7, 1, 1, 5, tzinfo=UTC)
 
 
-def _dataset(contract: str = "JM2609") -> DatasetKey:
+def _dataset(
+    contract: str = "JM2609",
+    frequency: BarFrequency = BarFrequency.M1,
+) -> DatasetKey:
     return DatasetKey(
         provider="rqdata",
         dataset_kind=DatasetKind.ACTUAL_DOMINANT,
         symbol="jm",
         contract_or_series=contract,
-        frequency=BarFrequency.M1,
+        frequency=frequency,
         adjustment="none",
         schema_version="canonical-bar-v1",
     )
@@ -54,13 +63,14 @@ def _bar(
     *,
     contract: str = "JM2609",
     trading_day: date = date(2026, 7, 1),
+    frequency: BarFrequency = BarFrequency.M1,
 ) -> CanonicalBar:
     return CanonicalBar(
         provider="rqdata",
         dataset_kind=DatasetKind.ACTUAL_DOMINANT,
         symbol="jm",
         contract_or_series=contract,
-        frequency=BarFrequency.M1,
+        frequency=frequency,
         bar_end=bar_end,
         trading_day=trading_day,
         open=Decimal("100"),
@@ -126,14 +136,21 @@ def _publish_sample(
             expire_on_commit=False,
         )(),
     )
+    source_minutes = {
+        BarFrequency.M1: 1,
+        BarFrequency.M5: 5,
+        BarFrequency.M15: 15,
+        BarFrequency.M30: 30,
+        BarFrequency.H1: 60,
+    }.get((dataset or _dataset()).frequency, 1)
     request = ProviderBarRequest(
         dataset=dataset or _dataset(),
-        start=bars[0].bar_end - timedelta(minutes=1),
+        start=bars[0].bar_end - timedelta(minutes=source_minutes),
         end=bars[-1].bar_end,
         sessions=(
             TradingSessionCoverage(
                 trading_day=bars[0].trading_day,
-                start=bars[0].bar_end - timedelta(minutes=1),
+                start=bars[0].bar_end - timedelta(minutes=source_minutes),
                 end=bars[-1].bar_end,
                 expected_bar_ends=tuple(bar.bar_end for bar in bars),
             ),
@@ -147,6 +164,12 @@ def _publish_sample(
         )
     )
     source = staged.source
+    aggregate = source.dataset.frequency in {
+        BarFrequency.M5,
+        BarFrequency.M15,
+        BarFrequency.M30,
+        BarFrequency.H1,
+    }
     store.publish(
         staged,
         PublishExpectation(
@@ -159,6 +182,19 @@ def _publish_sample(
             file_checksum=staged.file_checksum,
             canonical_logical_fingerprint=staged.canonical_logical_fingerprint,
             overlap_reason=overlap_reason,
+            manifest_format=(
+                CANONICAL_MANIFEST_FORMAT_V2 if aggregate else "canonical-manifest-v1"
+            ),
+            lineage=(
+                ManifestLineage(
+                    origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+                    source_frequency=BarFrequency.M1,
+                    legacy_source_checksum="a" * 64,
+                    quality_evidence_digest="b" * 64,
+                )
+                if aggregate
+                else None
+            ),
         ),
     )
 
@@ -508,7 +544,7 @@ def test_actual_dominant_reads_only_mapping_valid_segments_and_ignores_other_con
     assert [bar.contract_or_series for bar in result.bars] == ["JM2609", "JM2610"]
 
 
-def test_reader_derives_five_minute_bars_from_verified_one_minute_source(
+def test_reader_does_not_fallback_from_missing_five_minute_to_one_minute(
     tmp_path: Path,
 ) -> None:
     engine = create_engine(
@@ -564,7 +600,42 @@ def test_reader_derives_five_minute_bars_from_verified_one_minute_source(
                 ),
             ),
         )
-        result = reader.get_bars(
+        with pytest.raises(DataGapError) as raised:
+            reader.get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M5,
+                    start=START,
+                    end=FIFTH,
+                )
+            )
+
+    assert raised.value.facts["reason"] == "catalog_coverage_missing"
+
+
+def test_reader_reads_persisted_five_minute_partition_at_same_frequency(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    bar = _bar(FIFTH, "101.5", frequency=BarFrequency.M5)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(
+            root=tmp_path,
+            session=session,
+            bars=(bar,),
+            dataset=_dataset(frequency=BarFrequency.M5),
+        )
+        result = CanonicalHistoricalReader(
+            catalog=HistoricalCatalog(session),
+            canonical_root=tmp_path / "canonical",
+        ).get_bars(
             BarQuery(
                 dataset_kind=DatasetKind.ACTUAL_DOMINANT,
                 symbol="jm",
@@ -575,8 +646,144 @@ def test_reader_derives_five_minute_bars_from_verified_one_minute_source(
             )
         )
 
-    assert len(result.bars) == 1
-    assert result.bars[0].close == Decimal("101.5")
-    assert result.bars[0].frequency is BarFrequency.M5
-    assert result.source_datasets == (_dataset(),)
-    assert result.derived_frequency is BarFrequency.M5
+    assert result.bars == (bar,)
+    assert result.source_datasets == (_dataset(frequency=BarFrequency.M5),)
+    assert result.derived_frequency is None
+
+
+@pytest.mark.parametrize("frequency", tuple(BarFrequency))
+def test_reader_reads_each_legal_frequency_only_from_same_frequency_catalog(
+    tmp_path: Path,
+    frequency: BarFrequency,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    bar_end = datetime(2026, 7, 3, 0, 0, tzinfo=UTC)
+    bar = _bar(bar_end, "101.5", frequency=frequency)
+    dataset = _dataset(frequency=frequency)
+    root = tmp_path / frequency.value
+    root.mkdir()
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(
+            root=root,
+            session=session,
+            bars=(bar,),
+            dataset=dataset,
+        )
+        result = CanonicalHistoricalReader(
+            catalog=HistoricalCatalog(session),
+            canonical_root=root / "canonical",
+        ).get_bars(
+            BarQuery(
+                dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                contract_or_series="JM2609",
+                frequency=frequency,
+                start=bar_end - timedelta(minutes=1),
+                end=bar_end,
+            )
+        )
+
+    assert result.bars == (bar,)
+    assert result.source_datasets == (dataset,)
+    assert result.derived_frequency is None
+
+
+def test_actual_dominant_weekly_uses_last_trading_day_rank_one_mapping(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE VIEW data_core_main_contract_map AS
+                SELECT id, instrument_symbol AS symbol, trade_date AS trading_day,
+                       contract_code AS actual_contract, provider, rank, rule,
+                       data_version, created_at
+                FROM main_contract_map
+                WHERE provider = 'rqdata' AND rank = 1
+                  AND rule = 'volume_open_interest'
+                """
+            )
+        )
+    monday = date(2026, 6, 29)
+    friday = date(2026, 7, 3)
+    start = datetime(2026, 6, 28, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 7, 3, 0, 0, tzinfo=UTC)
+    weekly_bar = _bar(
+        end,
+        "101.5",
+        trading_day=friday,
+        frequency=BarFrequency.W1,
+    )
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(
+            root=tmp_path,
+            session=session,
+            bars=(weekly_bar,),
+            dataset=_dataset(frequency=BarFrequency.W1),
+        )
+        session.add_all(
+            [
+                MainContractMap(
+                    instrument_symbol="jm",
+                    trade_date=monday,
+                    rank=1,
+                    contract_code="JM2605",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="monday",
+                ),
+                MainContractMap(
+                    instrument_symbol="jm",
+                    trade_date=friday,
+                    rank=1,
+                    contract_code="JM2609",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="friday",
+                ),
+            ]
+        )
+        session.commit()
+        sessions = (
+            AggregationSession(
+                name="monday",
+                trading_day=monday,
+                start=datetime(2026, 6, 29, 0, 0, tzinfo=UTC),
+                end=datetime(2026, 6, 29, 1, 0, tzinfo=UTC),
+            ),
+            AggregationSession(
+                name="friday",
+                trading_day=friday,
+                start=end - timedelta(hours=1),
+                end=end,
+            ),
+        )
+        result = CanonicalHistoricalReader(
+            catalog=HistoricalCatalog(session),
+            canonical_root=tmp_path / "canonical",
+            session_provider=lambda _symbol, _start, _end: sessions,
+        ).get_bars(
+            BarQuery(
+                dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                contract_or_series=None,
+                frequency=BarFrequency.W1,
+                start=start,
+                end=end,
+            )
+        )
+
+    assert result.bars == (weekly_bar,)
+    assert result.source_datasets == (_dataset(frequency=BarFrequency.W1),)

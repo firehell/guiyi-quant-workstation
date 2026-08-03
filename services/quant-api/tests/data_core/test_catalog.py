@@ -261,7 +261,7 @@ def test_dataset_identity_keeps_each_canonical_dimension_distinct(
     [
         ("provider", "other"),
         ("dataset_kind", "synthetic"),
-        ("frequency", "5m"),
+        ("frequency", "2m"),
         ("symbol", " "),
         ("symbol", "JM"),
         ("contract_or_series", "jm2609"),

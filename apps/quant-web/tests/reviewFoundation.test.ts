@@ -29,11 +29,11 @@ function canonicalInputIdentity(digest = 'b'.repeat(64)) {
     },
     source_datasets: [{
       provider: 'rqdata', dataset_kind: 'actual_dominant', symbol: 'jm', contract_or_series: 'JM2609',
-      frequency: '1m', adjustment: 'none', schema_version: 'canonical-bar-v1',
+      frequency: '15m', adjustment: 'none', schema_version: 'canonical-bar-v1',
     }],
     manifest_digests: ['a'.repeat(64)],
     source_data_versions: [],
-    derived_frequency: '15m',
+    derived_frequency: null,
     strategy_input_version: 'review:test:v1',
     digest,
   }

@@ -7,7 +7,13 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
-from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
+from app.data_core.contracts import (
+    BarFrequency,
+    BarQuery,
+    DatasetKind,
+    UnsupportedFrequencyError,
+    parse_bar_frequency,
+)
 
 
 class BacktestEngineType(StrEnum):
@@ -33,8 +39,8 @@ class FormalBacktestTaskRequest(BaseModel):
     instrument_symbol: str
     contract_or_series: str | None = None
     exchange: str
-    interval: str
-    auxiliary_periods: list[str] = Field(default_factory=list)
+    interval: BarFrequency
+    auxiliary_periods: list[BarFrequency] = Field(default_factory=list)
     start: datetime
     end: datetime
     strategy_class_path: str
@@ -64,13 +70,28 @@ class FormalBacktestTaskRequest(BaseModel):
                 )
         return value
 
-    @field_validator("instrument_symbol", "exchange", "interval", "strategy_class_path")
+    @field_validator("instrument_symbol", "exchange", "strategy_class_path")
     @classmethod
     def validate_not_blank(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             raise ValueError("value cannot be blank")
         return normalized
+
+    @field_validator("interval", mode="before")
+    @classmethod
+    def validate_interval(cls, value: Any) -> BarFrequency:
+        try:
+            return parse_bar_frequency(value, field="interval")
+        except UnsupportedFrequencyError as exc:
+            raise PydanticCustomError(
+                "unsupported_frequency",
+                "unsupported frequency; allowed={allowed}",
+                {
+                    "code": exc.code,
+                    "allowed": "/".join(exc.facts["allowed"]),
+                },
+            ) from exc
 
     @field_validator("contract_or_series")
     @classmethod
@@ -89,12 +110,25 @@ class FormalBacktestTaskRequest(BaseModel):
             raise ValueError("formal backtest window datetimes must be timezone-aware")
         return value.astimezone(UTC)
 
-    @field_validator("auxiliary_periods")
+    @field_validator("auxiliary_periods", mode="before")
     @classmethod
-    def normalize_auxiliary_periods(cls, values: list[str]) -> list[str]:
-        normalized = [value.strip() for value in values]
-        if any(not value for value in normalized):
-            raise ValueError("auxiliary_periods cannot contain blank values")
+    def normalize_auxiliary_periods(cls, values: Any) -> list[BarFrequency]:
+        if not isinstance(values, list):
+            raise ValueError("auxiliary_periods must be a list")
+        try:
+            normalized = [
+                parse_bar_frequency(value, field="auxiliary_periods")
+                for value in values
+            ]
+        except UnsupportedFrequencyError as exc:
+            raise PydanticCustomError(
+                "unsupported_frequency",
+                "unsupported frequency; allowed={allowed}",
+                {
+                    "code": exc.code,
+                    "allowed": "/".join(exc.facts["allowed"]),
+                },
+            ) from exc
         if len(set(normalized)) != len(normalized):
             raise ValueError("auxiliary_periods cannot contain duplicates")
         return normalized
@@ -123,7 +157,7 @@ class FormalBacktestTaskRequest(BaseModel):
                 dataset_kind=self.dataset_kind,
                 symbol=self.instrument_symbol,
                 contract_or_series=self.contract_or_series,
-                frequency=BarFrequency(frequency),
+                frequency=frequency,
                 start=self.start,
                 end=self.end,
             )

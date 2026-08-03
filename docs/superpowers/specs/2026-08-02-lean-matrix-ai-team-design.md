@@ -61,6 +61,37 @@ Fast Path（Lane 1）与普通 Team Path（Lane 2）在 intake 成立后自动�
 只是 evidence 结论，PR/CI/merge/readback/cleanup 仍由既有 Codex/GitHub 流程执行，不扩大 Runtime、
 真实写入、通知、release 或 `main` 权限。
 
+### 1.2 V07 GitHub develop Gate 评估器
+
+V07 将“是否可以进入下一个 develop 集成 transition”收敛为仓库内纯函数。V07 自身不新增也不使用
+GitHub 客户端、`gh`、token、CI poller、merge daemon、merge executor 或常驻控制面。仓库既有
+`task-worktree.sh` Draft-PR adapter 仍在 V07 之外，其受控职责未被扩张。V07 只消费 trusted
+`ExecutionPlanV1` 和 Connector/Codex 归一化的 `GitHubGateFactsV1`，输出闭集
+`DevelopGateDecisionV1`；真实 PR/CI/Review/Git 读取、ready、expected-head merge、不确定结果回读、
+merge receipt 和 cleanup 均由既有 Connector/Codex 编排层负责。
+
+V07 的三个阶段是 `pre_merge`、`merge_readback` 和 `cleanup`。facts 以 semantic SHA-256 绑定全字段，
+`observed_at` / `expires_at` 只有恰好五分钟窗口；当 `now >= expires_at` 时必须拒绝。未确认
+merge 前使用 strict base drift：PR base、review base 或 current `develop` 偏离 frozen
+`origin/develop` SHA 都必须重新 intake、exact-head Review 与 CI。
+
+Lane 只能来自与 plan digest 匹配的完整 `TaskCharterV1`。`change_categories` 也是 facts digest 的一部分，
+闭集为 `code`、`test`、`dry_run`、`disabled_feature`、`isolated_migration`。共享
+`classify_develop_merge(lane, paths, requested_operations, external_gates, *, change_categories=())`
+保持前四个位置参数兼容；Lane 1/2 复用现有 path policy，Lane 3 必须有非空、受 path 绑定的安全
+类别，真实 apply/write/enable/delete 和 pending external Gate 仍 fail-closed。
+
+集成序列固定为：用 fresh `pre_merge` facts 评估；Draft 先只做 ready；ready 后重读全部 exact-head
+事实再评估；仅在第二次仍允许时发出一次绑定 expected head SHA 的 merge-commit 请求。
+超时或结果不确定禁止重试，必须生成 fresh `merge_readback` facts；只有 exact PR head 已 merge、
+存在 merge SHA 且 `develop` 包含 task head 时才生成 digest-bound 外部 merge receipt。清理是独立
+transition，必须再用 fresh `cleanup` facts 验证 worktree clean 与本地/远端追踪 `develop` 双 ancestry。
+
+`ALLOW_DEVELOP_MERGE` 只是 stage-qualified evidence，不证明任何外部操作已完成。`main`/release/tag、
+Runtime、生产 migration apply、真实数据/DB、策略/回测语义、live、通知、删除、candidate promotion 与
+GitHub rules 保留所有既有人工 Gate。AI-TEAM-007 自身不能使用 V07 自批，必须沿用既有
+Connector/Codex 流程、独立 exact-head Review 和本任务专属批准。
+
 ## 2. 项目上下文与设计约束
 
 ### 2.1 产品边界
@@ -1068,7 +1099,8 @@ digest 的 `apply` 每次委托一个既有 `task-worktree.sh` 动作。无显�
 `task-create`、本地验证/commit/push/Draft PR 的既有原子入口，以及确认 task HEAD 已同时进入
 本地与 remote-tracking `develop` 后的 cleanup。Lane 3 通用 apply、GitHub PR/CI/Review 检查、
 `develop-merge`、状态不确定时的远端恢复、`main`、release、Runtime 和真实操作仍被禁止；其中
-GitHub Gate 与 `develop` 集成只能由后续 AI-TEAM-007 独立实现。
+GitHub Gate 的确定性判定由后续 AI-TEAM-007 独立实现为 V07 纯 evaluator。它不改变
+AI-TEAM-005 的 apply 范围，也不把真实 GitHub 读取、ready/merge、receipt 或 cleanup 执行移入仓库生产代码。
 
 AI-TEAM-005 的 `state_digest` 同时绑定 task HEAD、index、changed paths、变更文件内容与 Git
 有效 mode；同一路径再次编辑或仅 `chmod` 也会使旧 proposal 失效。显式 forbidden path 优先于 allowlist。为避免任务代码替换其
@@ -1147,6 +1179,7 @@ AI 交付负责人提供统一交付视角
 + 不可逆操作保留人工 Gate
 ```
 
-当前按独立 Issue/branch/PR 顺序推进有限能力：AI-TEAM-005 只增加本地单步编排；后续协议、
-GitHub Gate 和封板必须继续拆成 AI-TEAM-006～009。任何一步都不得顺便建设常驻多代理平台、
+当前按独立 Issue/branch/PR 顺序推进有限能力：AI-TEAM-005 只增加本地单步编排；AI-TEAM-006 冻结
+独立实现/Review 协议；AI-TEAM-007 只增加纯 GitHub develop Gate evaluator。后续封板仍必须使用独立
+Issue/branch/PR。任何一步都不得顺便建设常驻多代理平台、
 第二状态源或扩大真实操作权限。

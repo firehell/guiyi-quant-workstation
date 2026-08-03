@@ -23,7 +23,6 @@ from app.schemas.data_center import (
     SymbolOut,
 )
 from app.services.data_profile_registry import DataProfileRegistry
-from app.services.market_data_reader import MarketDataReader
 
 router = APIRouter(prefix="/api/v1/data", tags=["data-center"])
 compat_router = APIRouter(tags=["compat"])
@@ -266,25 +265,8 @@ def get_profiles(session: Session = Depends(get_db)) -> list:
 
 @router.get("/profiles/{profile_id}/active-versions", response_model=list[ProfileActiveBindingOut])
 def get_profile_active_versions(profile_id: str, session: Session = Depends(get_db)) -> list:
-    registry = DataProfileRegistry(session)
-    if registry.get_profile(profile_id) is None:
-        raise HTTPException(status_code=404, detail=f"profile not found: {profile_id}")
-    return [
-        ProfileActiveBindingOut(
-            profile_id=binding.profile_id,
-            instrument_symbol=binding.instrument_symbol,
-            contract_code=binding.contract_code,
-            contract_role=binding.contract_role,
-            period=binding.period,
-            data_version=binding.data_version,
-            market_data_file_id=binding.market_data_file_id,
-            binding_status=binding.binding_status,
-            activated_at=binding.activated_at,
-            superseded_at=binding.superseded_at,
-            updated_at=binding.updated_at,
-        )
-        for binding in registry.list_active_bindings(profile_id)
-    ]
+    del profile_id, session
+    raise HTTPException(status_code=410, detail={"code": "PROFILE_ACTIVE_SELECTOR_RETIRED"})
 
 
 @compat_router.get("/api/symbols", response_model=list[SymbolOut])
@@ -311,17 +293,8 @@ def get_klines(
     limit: int | None = Query(default=None, ge=1, le=10000),
     session: Session = Depends(get_db),
 ) -> list[dict]:
-    start_time = _parse_query_datetime(start, end_of_day=False) if start else datetime.min
-    end_time = _parse_query_datetime(end, end_of_day=True) if end else datetime.max
-    return MarketDataReader(session).load_bars(
-        symbol=symbol,
-        contract=contract,
-        period=period,
-        start=start_time,
-        end=end_time,
-        provider=provider,
-        limit=limit,
-    )
+    del symbol, contract, period, start, end, provider, limit, session
+    raise HTTPException(status_code=410, detail={"code": "LEGACY_KLINE_ROUTE_RETIRED"})
 
 
 def _parse_query_datetime(value: str, end_of_day: bool) -> datetime:

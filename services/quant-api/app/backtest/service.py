@@ -12,7 +12,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.data_core.consumer_identity import build_canonical_consumer_input
-from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
+from app.data_core.contracts import BarQuery, DatasetKind
 from app.backtest.drawdown_curve_generator import generate_drawdown_curve
 from app.backtest.equity_curve_generator import generate_equity_curve
 from app.backtest.errors import BacktestContractError
@@ -115,7 +115,7 @@ class BacktestService:
             dataset_kind=formal_request.dataset_kind,
             symbol=formal_request.instrument_symbol,
             contract_or_series=formal_request.contract_or_series,
-            frequency=BarFrequency(formal_request.interval),
+            frequency=formal_request.interval,
             start=formal_request.start,
             end=formal_request.end,
         )
@@ -133,7 +133,7 @@ class BacktestService:
                 dataset_kind=formal_request.dataset_kind,
                 symbol=formal_request.instrument_symbol,
                 contract_or_series=formal_request.contract_or_series,
-                frequency=BarFrequency(period),
+                frequency=period,
                 start=formal_request.start,
                 end=formal_request.end,
             )

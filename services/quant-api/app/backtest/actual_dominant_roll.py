@@ -13,6 +13,7 @@ from app.backtest.contract_resolver import (
     ResolvedContract,
     resolve_jm_contract,
 )
+from app.data_core.contracts import BarFrequency, ContractValidationError, parse_bar_frequency
 from app.models.data_center import TradingCalendar
 from app.services.jm_session_contract import (
     JM_HISTORICAL_CALENDAR_FLAG_START,
@@ -550,34 +551,43 @@ def _bar_time(bar: Mapping[str, Any]) -> datetime:
 
 def bar_open_time(bar: Mapping[str, Any]) -> datetime:
     bar_end = _bar_time(bar)
-    frequency = str(bar.get("interval") or bar.get("period") or "").strip().lower()
+    raw_frequency = bar.get("interval") or bar.get("period") or ""
+    try:
+        frequency = parse_bar_frequency(raw_frequency, field="bar.frequency")
+    except ContractValidationError as exc:
+        raise ContractResolutionError(
+            f"actual_dominant bar frequency cannot derive open time: {raw_frequency!r}"
+        ) from exc
     minutes = {
-        "1m": 1,
-        "5m": 5,
-        "15m": 15,
-        "30m": 30,
-        "60m": 60,
-        "1h": 60,
+        BarFrequency.M1: 1,
+        BarFrequency.M5: 5,
+        BarFrequency.M15: 15,
+        BarFrequency.M30: 30,
+        BarFrequency.H1: 60,
     }.get(frequency)
     if minutes is not None:
         return bar_end - timedelta(minutes=minutes)
-    if frequency in {"1d", "d", "day", "1w", "w", "week"}:
+    if frequency in {BarFrequency.D1, BarFrequency.W1}:
         return bar_end
-    raise ContractResolutionError(
-        f"actual_dominant bar frequency cannot derive open time: {frequency!r}"
-    )
+    raise AssertionError(f"unhandled canonical bar frequency: {frequency.value}")
 
 
 def _execution_bounds(
     session: Session, bar: Mapping[str, Any]
 ) -> tuple[datetime, datetime]:
-    frequency = str(bar.get("interval") or bar.get("period") or "").strip().lower()
-    if frequency in {"1w", "w", "week"}:
+    raw_frequency = bar.get("interval") or bar.get("period") or ""
+    try:
+        frequency = parse_bar_frequency(raw_frequency, field="bar.frequency")
+    except ContractValidationError as exc:
+        raise ContractResolutionError(
+            f"actual_dominant bar frequency cannot derive execution bounds: {raw_frequency!r}"
+        ) from exc
+    if frequency is BarFrequency.W1:
         raise ContractResolutionError(
             "weekly actual_dominant cannot prove a real session execution boundary "
             "from an aggregate bar"
         )
-    if frequency not in {"1d", "d", "day"}:
+    if frequency is not BarFrequency.D1:
         return bar_open_time(bar), _bar_time(bar)
 
     trading_day = _bar_trading_day(bar)

@@ -55,8 +55,8 @@ class MarketDataset(Base):
             name="ck_market_datasets_kind",
         ),
         CheckConstraint(
-            "frequency IN ('1m', '1d', '1w')",
-            name="ck_market_datasets_direct_frequency",
+            "frequency IN ('1m', '5m', '15m', '30m', '60m', '1d', '1w')",
+            name="ck_market_datasets_frequency",
         ),
         CheckConstraint(
             "length(trim(provider)) > 0"

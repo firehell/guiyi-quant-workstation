@@ -1,3 +1,5 @@
+import type { HistoricalBarFrequency } from './historicalBarFrequency'
+
 /** 回测引擎类型 */
 export type BacktestEngineType = 'vnpy'
 /** 回测数据角色（正式研究默认 primary） */
@@ -15,8 +17,8 @@ export interface BacktestTaskCreateRequest {
   instrument_symbol: string
   contract_or_series: string
   exchange: string
-  interval: string
-  auxiliary_periods?: string[]
+  interval: HistoricalBarFrequency
+  auxiliary_periods?: HistoricalBarFrequency[]
   start: string
   end: string
   strategy_class_path: string
@@ -213,6 +215,7 @@ export interface BacktestReport {
   finished_at?: string | null
   disclaimer?: string
   input_identity?: CanonicalInputIdentity | null
+  input_identity_attestation?: CanonicalInputIdentityAttestation | null
   contract_semantics?: string | null
   observation_only?: boolean
   not_trading_instruction?: boolean
@@ -223,6 +226,12 @@ export interface BacktestReport {
   fills?: BacktestFill[]
   equity_curve?: BacktestEquityPoint[]
   drawdown_curve?: BacktestDrawdownPoint[]
+}
+
+export interface CanonicalInputIdentityAttestation {
+  schema_version: 'canonical_consumer_input_attestation_v1'
+  status: 'server_verified'
+  digest: string
 }
 
 /** 回测成交方向 */
@@ -341,7 +350,7 @@ export interface BacktestTaskForm {
   instrument_symbol: string
   contract_or_series: string
   exchange: string
-  interval: string
+  interval: HistoricalBarFrequency
   start: number
   end: number
   initial_capital: number
@@ -359,7 +368,7 @@ export interface CanonicalDatasetKey {
   dataset_kind: 'continuous' | 'actual_dominant' | string
   symbol: string
   contract_or_series: string
-  frequency: string
+  frequency: HistoricalBarFrequency
   adjustment: string
   schema_version: string
 }
@@ -371,7 +380,7 @@ export interface CanonicalInputIdentity {
     dataset_kind: 'continuous' | 'actual_dominant' | string
     symbol: string
     contract_or_series: string | null
-    frequency: string
+    frequency: HistoricalBarFrequency
     start: string
     end: string
     strict: boolean
@@ -379,7 +388,7 @@ export interface CanonicalInputIdentity {
   source_datasets: CanonicalDatasetKey[]
   manifest_digests: string[]
   source_data_versions: string[]
-  derived_frequency: string | null
+  derived_frequency: null
   strategy_input_version: string
   digest: string
 }
