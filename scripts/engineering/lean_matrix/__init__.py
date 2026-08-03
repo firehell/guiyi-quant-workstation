@@ -1,4 +1,4 @@
-"""Read-only Lean Matrix contracts, routing, planning, and rendering."""
+"""Lean Matrix contracts, read-only planning, and guarded local orchestration."""
 
 from .charter import render_charter
 

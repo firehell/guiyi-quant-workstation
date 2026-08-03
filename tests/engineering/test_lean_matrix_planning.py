@@ -350,8 +350,8 @@ def test_charter_cli_does_not_require_or_invoke_git() -> None:
     assert json.loads(result.stdout)["status"] == "ok"
 
 
-def test_production_modules_limit_process_and_network_capabilities_to_fixed_git_adapter() -> None:
-    """No module except git_readonly may import process APIs, and none may import network clients."""
+def test_production_modules_limit_process_network_and_write_capabilities_to_fixed_adapters() -> None:
+    """Only reviewed Git/task adapters and the ignored workspace may own their narrow capabilities."""
     package = ENGINEERING / "lean_matrix"
     imports_by_file: dict[str, set[str]] = {}
     forbidden_network = {
@@ -382,7 +382,10 @@ def test_production_modules_limit_process_and_network_capabilities_to_fixed_git_
             for node in ast.walk(tree)
             if isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute))
         }
-        assert not (call_names & forbidden_writes), path.name
+        if path.name == "workspace.py":
+            assert call_names & forbidden_writes
+        else:
+            assert not (call_names & forbidden_writes), path.name
 
     process_importers = {name for name, imports in imports_by_file.items() if "subprocess" in imports}
-    assert process_importers == {"git_readonly.py"}
+    assert process_importers == {"adapters.py", "git_readonly.py", "observing.py"}
