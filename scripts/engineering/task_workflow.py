@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 class WorkflowError(RuntimeError):
@@ -83,6 +83,46 @@ MANUAL_GATE_OPERATIONS = frozenset({
 
 LANE_THREE_ISOLATED_MIGRATION_PREFIX = "services/quant-api/alembic/versions/"
 
+DEVELOP_CHANGE_CATEGORIES = frozenset({
+    "code",
+    "test",
+    "dry_run",
+    "disabled_feature",
+    "isolated_migration",
+})
+
+LANE_THREE_CODE_SUFFIXES = frozenset({
+    ".bash",
+    ".cjs",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".py",
+    ".sh",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".zsh",
+})
+
+LANE_THREE_TEST_DATA_SUFFIXES = frozenset({
+    ".csv",
+    ".html",
+    ".json",
+    ".md",
+    ".txt",
+    ".yaml",
+    ".yml",
+})
+
+LANE_THREE_FORBIDDEN_PREFIXES = (
+    "data/",
+    "reports/",
+    "receipts/",
+)
+
+LANE_THREE_FORBIDDEN_PARTS = frozenset({"evidence", "reports", "receipts"})
+
 def _validate_paths(paths: Sequence[str]) -> list[str]:
     normalized = list(paths)
     if not normalized:
@@ -119,6 +159,7 @@ def classify_develop_merge(
     paths: Sequence[str],
     requested_operations: Sequence[str],
     external_gates: Sequence[str],
+    change_categories: Sequence[str],
 ) -> str:
     """Return ``ok`` only for a side-effect-free develop transition.
 
@@ -145,10 +186,30 @@ def classify_develop_merge(
             "unknown_requested_operation",
             "requested operations must be known develop transition operations",
         )
+    categories = list(change_categories)
+    if any(
+        not isinstance(category, str) or category not in DEVELOP_CHANGE_CATEGORIES
+        for category in categories
+    ) or len(categories) != len(set(categories)):
+        raise WorkflowError(
+            "unknown_change_category",
+            "change categories must be unique members of the closed safe-category set",
+        )
     if lane in (1, 2):
         return classify_paths(lane, paths)
     if lane == 3:
         normalized = _validate_paths(paths)
+        if not categories:
+            raise WorkflowError(
+                "lane_three_change_categories_required",
+                "Lane 3 requires at least one digest-bound safe change category",
+            )
+        category_set = set(categories)
+        migration_paths = [
+            path
+            for path in normalized
+            if path.startswith(LANE_THREE_ISOLATED_MIGRATION_PREFIX)
+        ]
         lane_two_surface = [
             path
             for path in normalized
@@ -156,6 +217,64 @@ def classify_develop_merge(
         ]
         if lane_two_surface:
             classify_paths(2, lane_two_surface)
+        for path in normalized:
+            parts = PurePosixPath(path).parts
+            if path.startswith(LANE_THREE_FORBIDDEN_PREFIXES) or any(
+                part in LANE_THREE_FORBIDDEN_PARTS for part in parts
+            ):
+                raise WorkflowError(
+                    "lane_three_path_forbidden",
+                    f"Lane 3 automation cannot change evidence, report, receipt, or data assets: {path}",
+                )
+        possible_categories: set[str] = set()
+        categorized_paths: list[tuple[str, set[str]]] = []
+        for path in normalized:
+            pure = PurePosixPath(path)
+            if path.startswith(LANE_THREE_ISOLATED_MIGRATION_PREFIX):
+                path_categories = {"isolated_migration"}
+            elif (
+                path.startswith("tests/")
+                or "tests" in pure.parts
+                or pure.name.startswith("test_")
+                or ".test." in pure.name
+                or ".spec." in pure.name
+            ) and pure.suffix.lower() in LANE_THREE_CODE_SUFFIXES | LANE_THREE_TEST_DATA_SUFFIXES:
+                path_categories = {"test"}
+            elif (
+                "dry_run" in pure.name.lower()
+                or "dry-run" in pure.name.lower()
+            ) and pure.suffix.lower() in LANE_THREE_CODE_SUFFIXES:
+                path_categories = {"dry_run"}
+            elif pure.suffix.lower() in LANE_THREE_CODE_SUFFIXES:
+                path_categories = {"code", "disabled_feature"}
+            else:
+                raise WorkflowError(
+                    "lane_three_path_forbidden",
+                    f"Lane 3 automation requires an explicit source, test, dry-run, or migration path: {path}",
+                )
+            categorized_paths.append((path, path_categories))
+            possible_categories.update(path_categories)
+        if migration_paths and "isolated_migration" not in category_set:
+            raise WorkflowError(
+                "isolated_migration_category_required",
+                "isolated migration paths require the isolated_migration category",
+            )
+        if "isolated_migration" in category_set and not migration_paths:
+            raise WorkflowError(
+                "isolated_migration_path_required",
+                "isolated_migration requires a path under the isolated migration prefix",
+            )
+        for path, path_categories in categorized_paths:
+            if not category_set.intersection(path_categories):
+                raise WorkflowError(
+                    "lane_three_change_category_mismatch",
+                    f"change categories do not describe the Lane 3 path: {path}",
+                )
+        if not category_set.issubset(possible_categories):
+            raise WorkflowError(
+                "lane_three_change_category_mismatch",
+                "every declared Lane 3 category must bind at least one changed path",
+            )
         return "ok"
     raise WorkflowError("invalid_lane", "lane must be 1, 2, or 3")
 

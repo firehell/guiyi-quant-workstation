@@ -60,18 +60,21 @@ def test_develop_merge_classifier_reuses_lane_one_and_two_path_policy() -> None:
         ["experiments/example/research.py", "tests/example.py"],
         ["develop_merge"],
         [],
+        [],
     ) == "ok"
     assert policy.classify_develop_merge(
         2,
         ["apps/quant-web/src/example.ts"],
         ["develop_merge"],
         [],
+        ["code"],
     ) == "ok"
     with pytest.raises(policy.WorkflowError) as lane_one:
         policy.classify_develop_merge(
             1,
             ["services/quant-api/app/strategies/formal.py"],
             ["develop_merge"],
+            [],
             [],
         )
     with pytest.raises(policy.WorkflowError) as lane_two:
@@ -80,6 +83,7 @@ def test_develop_merge_classifier_reuses_lane_one_and_two_path_policy() -> None:
             ["services/quant-api/alembic/versions/20260729_new.py"],
             ["develop_merge"],
             [],
+            [],
         )
 
     assert lane_one.value.error_type == "lane_one_path_forbidden"
@@ -87,19 +91,25 @@ def test_develop_merge_classifier_reuses_lane_one_and_two_path_policy() -> None:
 
 
 @pytest.mark.parametrize(
-    "path",
+    ("path", "category"),
     [
-        "services/quant-api/app/services/ordinary_service.py",
-        "tests/engineering/test_ordinary_service.py",
-        "scripts/engineering/example_dry_run.py",
-        "services/quant-api/alembic/versions/20260803_isolated.py",
+        ("services/quant-api/app/services/ordinary_service.py", "code"),
+        ("services/quant-api/app/services/new_disabled_adapter.py", "disabled_feature"),
+        ("tests/engineering/test_ordinary_service.py", "test"),
+        ("scripts/engineering/example_dry_run.py", "dry_run"),
+        ("services/quant-api/alembic/versions/20260803_isolated.py", "isolated_migration"),
     ],
 )
-def test_lane_three_allows_side_effect_free_changes_for_develop_integration(path: str) -> None:
+def test_lane_three_allows_side_effect_free_changes_for_develop_integration(
+    path: str,
+    category: str,
+) -> None:
     """Rejecting a scoped code-only Lane 3 PR would prevent its safe develop integration."""
     policy = _module(POLICY_PATH, f"task_workflow_develop_lane_three_{path.rsplit('/', 1)[-1]}")
 
-    assert policy.classify_develop_merge(3, [path], ["develop_merge"], []) == "ok"
+    assert policy.classify_develop_merge(
+        3, [path], ["develop_merge"], [], [category],
+    ) == "ok"
 
 
 @pytest.mark.parametrize(
@@ -137,9 +147,125 @@ def test_lane_three_rejects_every_existing_sensitive_path_surface(path: str) -> 
     policy = _module(POLICY_PATH, f"task_workflow_develop_lane_three_block_{path.rsplit('/', 1)[-1]}")
 
     with pytest.raises(policy.WorkflowError) as raised:
-        policy.classify_develop_merge(3, [path], ["develop_merge"], [])
+        policy.classify_develop_merge(3, [path], ["develop_merge"], [], ["code"])
 
     assert raised.value.error_type == "lane_two_path_forbidden"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "data/reports/run/completion_receipt.json",
+        "reports/final-report.json",
+        "receipts/merge-receipt.json",
+        "canonical.sqlite3",
+        "artifacts/cache.duckdb",
+    ],
+)
+@pytest.mark.parametrize(
+    "category",
+    ["code", "test", "dry_run", "disabled_feature", "isolated_migration"],
+)
+def test_lane_three_safe_category_claim_cannot_authorize_evidence_or_binary_artifacts(
+    path: str,
+    category: str,
+) -> None:
+    """Trusting a digest-bound label alone must let protected artifacts auto-merge."""
+    policy = _module(POLICY_PATH, "task_workflow_develop_lane_three_artifact")
+
+    with pytest.raises(policy.WorkflowError) as raised:
+        policy.classify_develop_merge(
+            3, [path], ["develop_merge"], [], [category],
+        )
+
+    assert raised.value.error_type == "lane_three_path_forbidden"
+
+
+@pytest.mark.parametrize(
+    ("path", "category"),
+    [
+        ("tests/engineering/test_example.py", "code"),
+        ("scripts/engineering/example_dry_run.py", "code"),
+        ("services/quant-api/app/services/example.py", "test"),
+    ],
+)
+def test_lane_three_category_must_match_the_changed_path_surface(
+    path: str,
+    category: str,
+) -> None:
+    """A valid category for a different path kind must not authorize this path."""
+    policy = _module(POLICY_PATH, "task_workflow_develop_lane_three_category_binding")
+
+    with pytest.raises(policy.WorkflowError) as raised:
+        policy.classify_develop_merge(
+            3, [path], ["develop_merge"], [], [category],
+        )
+
+    assert raised.value.error_type == "lane_three_change_category_mismatch"
+
+
+def test_lane_three_isolated_migration_category_and_path_are_bidirectionally_bound() -> None:
+    """A migration path or category without its counterpart must not auto-merge."""
+    policy = _module(POLICY_PATH, "task_workflow_develop_lane_three_migration_binding")
+    migration = "services/quant-api/alembic/versions/20260803_isolated.py"
+
+    with pytest.raises(policy.WorkflowError) as missing_category:
+        policy.classify_develop_merge(3, [migration], ["develop_merge"], [], ["code"])
+    with pytest.raises(policy.WorkflowError) as missing_path:
+        policy.classify_develop_merge(
+            3,
+            ["services/quant-api/app/services/example.py"],
+            ["develop_merge"],
+            [],
+            ["isolated_migration"],
+        )
+
+    assert missing_category.value.error_type == "isolated_migration_category_required"
+    assert missing_path.value.error_type == "isolated_migration_path_required"
+    assert policy.classify_develop_merge(
+        3,
+        [migration, "tests/engineering/test_migration.py"],
+        ["develop_merge"],
+        [],
+        ["isolated_migration", "test"],
+    ) == "ok"
+
+
+@pytest.mark.parametrize("lane", [1, 2])
+def test_lane_one_and_two_allow_empty_or_valid_safe_categories(lane: int) -> None:
+    """Adding category evidence must not narrow existing Lane 1/2 path behavior."""
+    policy = _module(POLICY_PATH, f"task_workflow_develop_lane_{lane}_categories")
+    path = "tests/example.py" if lane == 1 else "apps/quant-web/src/example.ts"
+
+    assert policy.classify_develop_merge(lane, [path], ["develop_merge"], [], []) == "ok"
+    assert policy.classify_develop_merge(
+        lane, [path], ["develop_merge"], [], ["code", "test"],
+    ) == "ok"
+
+
+@pytest.mark.parametrize("lane", [1, 2, 3])
+def test_unknown_change_category_fails_closed_for_every_lane(lane: int) -> None:
+    """An unrecognized category must not gain authority in any lane."""
+    policy = _module(POLICY_PATH, f"task_workflow_develop_lane_{lane}_unknown_category")
+
+    with pytest.raises(policy.WorkflowError) as raised:
+        policy.classify_develop_merge(
+            lane, ["tests/example.py"], ["develop_merge"], [], ["unknown"],
+        )
+
+    assert raised.value.error_type == "unknown_change_category"
+
+
+def test_lane_three_requires_at_least_one_change_category() -> None:
+    """Missing category evidence must stop Lane 3 even on an otherwise safe code path."""
+    policy = _module(POLICY_PATH, "task_workflow_develop_lane_three_empty_categories")
+
+    with pytest.raises(policy.WorkflowError) as raised:
+        policy.classify_develop_merge(
+            3, ["services/quant-api/app/services/example.py"], ["develop_merge"], [], [],
+        )
+
+    assert raised.value.error_type == "lane_three_change_categories_required"
 
 
 @pytest.mark.parametrize("operation", ["develop_merge", "merge_readback", "cleanup"])
@@ -149,7 +275,9 @@ def test_develop_merge_classifier_accepts_only_known_develop_transition_operatio
     """Dropping a stage operation from the allowlist must block its safe transition."""
     policy = _module(POLICY_PATH, f"task_workflow_develop_safe_{operation}")
 
-    assert policy.classify_develop_merge(3, ["tests/example.py"], [operation], []) == "ok"
+    assert policy.classify_develop_merge(
+        3, ["tests/example.py"], [operation], [], ["test"],
+    ) == "ok"
 
 
 def test_pending_external_gate_requires_manual_gate_for_every_lane() -> None:
@@ -163,6 +291,7 @@ def test_pending_external_gate_requires_manual_gate_for_every_lane() -> None:
                 ["tests/example.py"],
                 ["develop_merge"],
                 ["owner approves production apply"],
+                [],
             )
         assert raised.value.error_type == "manual_gate_required"
 
@@ -190,7 +319,7 @@ def test_sensitive_real_operation_requires_manual_gate(operation: str) -> None:
     policy = _module(POLICY_PATH, f"task_workflow_develop_sensitive_{operation}")
 
     with pytest.raises(policy.WorkflowError) as raised:
-        policy.classify_develop_merge(3, ["tests/example.py"], [operation], [])
+        policy.classify_develop_merge(3, ["tests/example.py"], [operation], [], ["test"])
 
     assert raised.value.error_type == "manual_gate_required"
 
@@ -204,7 +333,7 @@ def test_unknown_or_missing_requested_operation_fails_closed(operations: list[st
     policy = _module(POLICY_PATH, "task_workflow_develop_unknown_operation")
 
     with pytest.raises(policy.WorkflowError) as raised:
-        policy.classify_develop_merge(3, ["tests/example.py"], operations, [])
+        policy.classify_develop_merge(3, ["tests/example.py"], operations, [], ["test"])
 
     assert raised.value.error_type == "unknown_requested_operation"
 

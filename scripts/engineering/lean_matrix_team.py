@@ -148,6 +148,7 @@ _SENSITIVE_OPERATIONS = frozenset({
     "main", "tag", "release", "runtime", "live", "notification", "data_write", "db_write",
     "delete", "github_rules",
 })
+DEVELOP_GATE_CHANGE_CATEGORIES = task_workflow.DEVELOP_CHANGE_CATEGORIES
 
 
 def _gate_mapping(raw: object, name: str) -> Mapping[str, object]:
@@ -382,6 +383,7 @@ class GitHubGateFactsV1:
     review: GitHubReviewEvidenceV1
     pending_external_gates: tuple[str, ...]
     requested_operations: tuple[str, ...]
+    change_categories: tuple[str, ...]
     mergeability: str
     observed_at: str
     expires_at: str
@@ -397,7 +399,8 @@ class GitHubGateFactsV1:
         "repository_full_name", "pr_number", "pr_state", "pr_merged", "pr_draft", "base_ref",
         "base_sha", "head_ref", "head_sha", "current_task_head_sha", "current_develop_sha",
         "changed_paths", "checks", "review", "pending_external_gates", "requested_operations",
-        "mergeability", "observed_at", "expires_at", "facts_digest", "readback_merge_sha",
+        "change_categories", "mergeability", "observed_at", "expires_at", "facts_digest",
+        "readback_merge_sha",
         "readback_develop_contains_task_head", "cleanup_worktree_clean",
         "cleanup_local_develop_contains_task_head", "cleanup_remote_develop_contains_task_head",
     })
@@ -435,6 +438,12 @@ class GitHubGateFactsV1:
         current_develop = _gate_sha(data["current_develop_sha"], "current_develop_sha")
         assert base_sha is not None and head_sha is not None
         assert current_task_head is not None and current_develop is not None
+        change_categories = _gate_strings(data["change_categories"], "change_categories")
+        if not set(change_categories).issubset(DEVELOP_GATE_CHANGE_CATEGORIES):
+            raise LeanMatrixError(
+                "invalid_change_category",
+                "change_categories must use the closed safe-category set",
+            )
         return cls(
             schema_version=_gate_schema_version(data["schema_version"], "GitHub Gate facts"),
             stage=stage,
@@ -460,6 +469,7 @@ class GitHubGateFactsV1:
                 data["pending_external_gates"], "pending_external_gates",
             ),
             requested_operations=_gate_strings(data["requested_operations"], "requested_operations"),
+            change_categories=change_categories,
             mergeability=_gate_status(
                 data["mergeability"], "mergeability", GITHUB_MERGEABILITY_STATES,
             ),
@@ -509,6 +519,7 @@ class GitHubGateFactsV1:
             "review": self.review.to_dict(),
             "pending_external_gates": list(self.pending_external_gates),
             "requested_operations": list(self.requested_operations),
+            "change_categories": list(self.change_categories),
             "mergeability": self.mergeability,
             "observed_at": self.observed_at,
             "expires_at": self.expires_at,
@@ -645,6 +656,7 @@ def _manual_or_scope_decision(
                 facts.changed_paths,
                 facts.requested_operations,
                 facts.pending_external_gates,
+                facts.change_categories,
             )
     except WorkflowError as exc:
         if exc.error_type == "manual_gate_required":

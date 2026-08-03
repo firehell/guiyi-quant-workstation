@@ -140,6 +140,7 @@ def _facts(
         "review": _review(),
         "pending_external_gates": [],
         "requested_operations": requested_operations,
+        "change_categories": [],
         "mergeability": "MERGEABLE",
         "observed_at": observed_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "expires_at": (observed_at + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -211,6 +212,25 @@ def test_strict_contracts_reject_unknown_keys_and_tampered_facts_fail_closed() -
 
     assert malformed["reason_codes"] == ["FACTS_MALFORMED"]
     assert digest_mismatch["reason_codes"] == ["FACTS_DIGEST_MISMATCH"]
+
+
+def test_change_categories_are_exact_closed_and_digest_bound() -> None:
+    """Removing schema, allowlist, or digest binding must trust an unreviewed category claim."""
+    module = _module()
+    validated = module.GitHubGateFactsV1.from_mapping(_facts())
+    missing = _facts()
+    missing.pop("change_categories")
+    missing.pop("facts_digest")
+    missing["facts_digest"] = _semantic_digest(missing)
+    unknown = _mutated(_facts(), change_categories=["unknown"])
+    tampered = _facts()
+    tampered["change_categories"] = ["code"]
+
+    assert validated.change_categories == ()
+    assert validated.to_dict()["change_categories"] == []
+    _assert_decision(missing, "BLOCKED", "FACTS_MALFORMED")
+    _assert_decision(unknown, "BLOCKED", "FACTS_MALFORMED")
+    _assert_decision(tampered, "BLOCKED", "FACTS_DIGEST_MISMATCH")
 
 
 def test_facts_expire_at_exactly_five_minutes_but_not_one_second_before() -> None:
@@ -360,12 +380,34 @@ def test_lane_three_code_only_pr_uses_shared_workflow_policy() -> None:
     charter["lane"] = 3
     charter["external_gates"] = ["owner approves any later real operation"]
     plan = _plan(charter)
-    facts = _facts(charter=charter, plan=plan)
+    facts = _facts(charter=charter, plan=plan, change_categories=["code", "test"])
 
     _assert_decision(
         facts,
         "ALLOW_DEVELOP_MERGE",
         "DEVELOP_MERGE_ALLOWED",
+        plan=plan,
+    )
+
+
+def test_lane_three_evaluator_blocks_sensitive_artifact_despite_safe_category_claim() -> None:
+    """Dropping classifier category/path binding must let a scoped receipt auto-merge."""
+    charter = _charter()
+    charter["lane"] = 3
+    charter["allowed_paths"] = ["data/reports/run/completion_receipt.json"]
+    charter["external_gates"] = ["owner approves any later real operation"]
+    plan = _plan(charter)
+    facts = _facts(
+        charter=charter,
+        plan=plan,
+        changed_paths=["data/reports/run/completion_receipt.json"],
+        change_categories=["code"],
+    )
+
+    _assert_decision(
+        facts,
+        "BLOCKED_SCOPE_DRIFT",
+        "WORKFLOW_CLASSIFICATION_BLOCKED",
         plan=plan,
     )
 
