@@ -7,6 +7,7 @@ it never deletes rows or files.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -1431,28 +1432,48 @@ def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
                 continue
             scanned_files += 1
             try:
+                file_matches: list[dict[str, Any]] = []
                 with path.open("r", encoding="utf-8", errors="replace") as handle:
                     for line_number, line in enumerate(handle, 1):
                         line_digest = sha256(line.encode()).hexdigest()
                         for marker, pattern in _REFERENCE_PATTERNS.items():
                             if pattern.search(line):
-                                state, reason = _reference_classification(
-                                    root_kind,
-                                    relative,
-                                    marker,
-                                    line_digest,
-                                )
-                                records.append(
+                                file_matches.append(
                                     {
-                                        "root_kind": root_kind,
-                                        "path": relative.as_posix(),
                                         "line": line_number,
                                         "marker": marker,
-                                        "reference_state": state,
-                                        "classification_reason": reason,
                                         "line_sha256": line_digest,
                                     }
                                 )
+                expected_snapshot = _OPERATIONAL_HISTORICAL_SCHEMA_LINES.get(
+                    relative.as_posix()
+                )
+                snapshot_intact = (
+                    root_kind == "checkout"
+                    and expected_snapshot is not None
+                    and Counter(
+                        (item["marker"], item["line_sha256"])
+                        for item in file_matches
+                    )
+                    == Counter(expected_snapshot)
+                )
+                for item in file_matches:
+                    state, reason = _reference_classification(
+                        root_kind,
+                        relative,
+                        item["marker"],
+                        item["line_sha256"],
+                        operational_snapshot_intact=snapshot_intact,
+                    )
+                    records.append(
+                        {
+                            "root_kind": root_kind,
+                            "path": relative.as_posix(),
+                            **item,
+                            "reference_state": state,
+                            "classification_reason": reason,
+                        }
+                    )
             except OSError as exc:
                 raise ValueError("TASK07_REFERENCE_READ_FAILED") from exc
     records.sort(
@@ -1657,6 +1678,8 @@ def _reference_classification(
     relative: Path,
     marker: str,
     line_digest: str,
+    *,
+    operational_snapshot_intact: bool,
 ) -> tuple[str, str]:
     parts = relative.parts
     path = relative.as_posix()
@@ -1691,6 +1714,7 @@ def _reference_classification(
         return "historical_non_active", "exact_offline_admin_script"
     if (
         root_kind == "checkout"
+        and operational_snapshot_intact
         and (marker, line_digest)
         in _OPERATIONAL_HISTORICAL_SCHEMA_LINES.get(path, frozenset())
     ):

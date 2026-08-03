@@ -634,6 +634,28 @@ def test_reference_scan_operational_backup_rule_cannot_hide_new_active_reference
     }
 
 
+def test_reference_scan_rejects_duplicated_approved_snapshot_line(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "scripts" / "backup" / "core.py"
+    source.parent.mkdir(parents=True)
+    approved_line = (
+        '        market_data_file_id = binding.get("market_data_file_id")\n'
+    )
+    source.write_text(approved_line * 2, encoding="utf-8")
+
+    report = scan_task07_references([("checkout", tmp_path)])
+
+    assert report["state_counts"] == {
+        "active": 0,
+        "historical_non_active": 0,
+        "review_required": 2,
+    }
+    assert {
+        item["classification_reason"] for item in report["records"]
+    } == {"selector_requires_manual_reachability_review"}
+
+
 @pytest.mark.parametrize(
     "relative",
     [
