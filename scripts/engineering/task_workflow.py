@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
@@ -82,6 +83,17 @@ MANUAL_GATE_OPERATIONS = frozenset({
 })
 
 LANE_THREE_ISOLATED_MIGRATION_PREFIX = "services/quant-api/alembic/versions/"
+
+LANE_THREE_MIGRATION_NAME_RE = re.compile(
+    r"^[0-9]{8}_[0-9]{4}_[a-z0-9]+(?:_[a-z0-9]+)*\.py$",
+)
+
+LANE_THREE_MIGRATION_FORBIDDEN_TOKENS = frozenset({
+    "approval",
+    "evidence",
+    "receipt",
+    "report",
+})
 
 DEVELOP_CHANGE_CATEGORIES = frozenset({
     "code",
@@ -159,7 +171,8 @@ def classify_develop_merge(
     paths: Sequence[str],
     requested_operations: Sequence[str],
     external_gates: Sequence[str],
-    change_categories: Sequence[str],
+    *,
+    change_categories: Sequence[str] = (),
 ) -> str:
     """Return ``ok`` only for a side-effect-free develop transition.
 
@@ -205,11 +218,27 @@ def classify_develop_merge(
                 "Lane 3 requires at least one digest-bound safe change category",
             )
         category_set = set(categories)
-        migration_paths = [
+        migration_candidates = [
             path
             for path in normalized
             if path.startswith(LANE_THREE_ISOLATED_MIGRATION_PREFIX)
         ]
+        migration_paths: list[str] = []
+        for path in migration_candidates:
+            relative = path.removeprefix(LANE_THREE_ISOLATED_MIGRATION_PREFIX)
+            name = PurePosixPath(relative).name
+            slug_tokens = name.removesuffix(".py").split("_")[2:]
+            if (
+                "/" in relative
+                or LANE_THREE_MIGRATION_NAME_RE.fullmatch(name) is None
+                or any(token in LANE_THREE_MIGRATION_FORBIDDEN_TOKENS for token in slug_tokens)
+                or {"production", "data"}.issubset(slug_tokens)
+            ):
+                raise WorkflowError(
+                    "lane_three_path_forbidden",
+                    f"isolated migration must be a safe Alembic Python source filename: {path}",
+                )
+            migration_paths.append(path)
         lane_two_surface = [
             path
             for path in normalized
@@ -230,7 +259,7 @@ def classify_develop_merge(
         categorized_paths: list[tuple[str, set[str]]] = []
         for path in normalized:
             pure = PurePosixPath(path)
-            if path.startswith(LANE_THREE_ISOLATED_MIGRATION_PREFIX):
+            if path in migration_paths:
                 path_categories = {"isolated_migration"}
             elif (
                 path.startswith("tests/")

@@ -656,7 +656,7 @@ def _manual_or_scope_decision(
                 facts.changed_paths,
                 facts.requested_operations,
                 facts.pending_external_gates,
-                facts.change_categories,
+                change_categories=facts.change_categories,
             )
     except WorkflowError as exc:
         if exc.error_type == "manual_gate_required":
