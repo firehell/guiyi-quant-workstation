@@ -320,9 +320,7 @@ def _validate_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         "runtime_cutover_gate", "deletion_eligible", "plan_digest",
         "deletion_authorized",
     }
-    annotation_keys = {"readonly", "effects", "approval_packet", "approval_packet_hash"}
-    unknown = set(plan) - core_keys - annotation_keys
-    present_annotations = set(plan) & annotation_keys
+    unknown = set(plan) - core_keys
     if (
         unknown
         or plan.get("schema_version") != 1
@@ -338,21 +336,6 @@ def _validate_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         != "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
         or plan.get("deletion_eligible") is not False
         or not _is_sha256(plan.get("inventory_digest"))
-        or (
-            present_annotations
-            and (
-                present_annotations != annotation_keys
-                or plan.get("readonly") is not True
-                or plan.get("effects")
-                != {
-                    "calls_rqdata": False,
-                    "writes_postgresql": False,
-                    "writes_parquet": False,
-                }
-                or plan.get("approval_packet") is not None
-                or plan.get("approval_packet_hash") is not None
-            )
-        )
     ):
         raise Task07DeletionError("TASK07_DELETION_PLAN_INVALID")
     excluded = {
@@ -361,10 +344,6 @@ def _validate_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         "status",
         "plan_digest",
         "deletion_authorized",
-        "readonly",
-        "effects",
-        "approval_packet",
-        "approval_packet_hash",
     }
     facts = {key: value for key, value in plan.items() if key not in excluded}
     if plan.get("plan_digest") != _digest("guiyi.task07.deletion-plan.v1", facts):
@@ -553,8 +532,14 @@ def _validate_preflight(
         "command",
         "status",
         "preflight_digest",
-        "effects",
     }
+    if set(preflight) != {
+        "schema_version", "command", "status", "plan_digest", "approval_hash",
+        "base_sha", "database_revision", "reference_digest",
+        "file_manifest_digest", "file_count", "permanent_unlink_authorized",
+        "readonly", "preflight_digest",
+    }:
+        raise Task07DeletionError("TASK07_DELETION_PREFLIGHT_DRIFT")
     facts = {key: value for key, value in preflight.items() if key not in excluded}
     if (
         preflight.get("schema_version") != 1
@@ -686,6 +671,45 @@ def _verify_pinned_source(
         or checksum != item.get("sha256")
     ):
         raise Task07DeletionError("TASK07_DELETION_FILE_DRIFT")
+
+
+def _verify_planned_source_absent(
+    plan: Mapping[str, Any], item: Mapping[str, Any]
+) -> None:
+    root = Path(str(item["approved_root_lexical"]))
+    matches = [
+        record
+        for record in plan["approved_roots"]
+        if record.get("lexical") == str(root)
+        and record.get("resolved") == item.get("approved_root_resolved")
+        and record.get("dev") == item.get("root_dev")
+        and record.get("inode") == item.get("root_inode")
+    ]
+    if len(matches) != 1:
+        raise Task07DeletionError("TASK07_DELETION_ROOT_DRIFT")
+    try:
+        root_fd, parent_fd = _open_parent(
+            root, Path(str(item["lexical_path"]))
+        )
+    except OSError as exc:
+        raise Task07DeletionError("TASK07_DELETION_ROOT_DRIFT") from exc
+    try:
+        root_value = os.fstat(root_fd)
+        if (
+            root_value.st_dev != item["root_dev"]
+            or root_value.st_ino != item["root_inode"]
+            or str(root.resolve(strict=True)) != item["approved_root_resolved"]
+        ):
+            raise Task07DeletionError("TASK07_DELETION_ROOT_DRIFT")
+        name = Path(str(item["lexical_path"])).name
+        try:
+            os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        raise Task07DeletionError("TASK07_DELETION_SOURCE_REAPPEARED")
+    finally:
+        os.close(parent_fd)
+        os.close(root_fd)
 
 
 def apply_deletion_plan(
@@ -881,6 +905,18 @@ def verify_deletion_apply(
     current_reference_digest: str,
 ) -> dict[str, Any]:
     _validate_plan(plan)
+    raise Task07DeletionError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
+
+
+def _verify_unlocked_deletion_apply(
+    plan: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    *,
+    current_base_sha: str,
+    current_database_revision: str,
+    current_reference_digest: str,
+) -> dict[str, Any]:
+    _validate_plan(plan)
     _verify_facts(
         plan,
         current_base_sha=current_base_sha,
@@ -898,11 +934,10 @@ def verify_deletion_apply(
         "command",
         "status",
         "receipt_digest",
-        "effects",
     }
     facts = {key: value for key, value in receipt.items() if key not in excluded}
     if (
-        set(receipt) - {"effects"} != core_receipt_keys
+        set(receipt) != core_receipt_keys
         or receipt.get("schema_version") != 1
         or receipt.get("command") != "data.task07.deletion-apply"
         or receipt.get("status") != "passed"
@@ -922,9 +957,7 @@ def verify_deletion_apply(
     quarantine_fd = _open_plan_quarantine(plan)
     try:
         for planned, moved in zip(plan["files"], files, strict=True):
-            source = Path(str(planned["lexical_path"]))
-            if source.exists() or source.is_symlink():
-                raise Task07DeletionError("TASK07_DELETION_SOURCE_REAPPEARED")
+            _verify_planned_source_absent(plan, planned)
             file_fd = os.open(str(moved["target_name"]), _FILE_FLAGS, dir_fd=quarantine_fd)
             try:
                 value = os.fstat(file_fd)

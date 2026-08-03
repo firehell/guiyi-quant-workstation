@@ -252,7 +252,7 @@ def main(
         return 2
     data_core_command = _data_core_command(args)
     if data_core_command is not None:
-        if _is_task07_deletion_apply(args):
+        if _is_task07_deletion_apply(args) or _is_task07_deletion_verify(args):
             _print_json(
                 {
                     "schema_version": 1,
@@ -615,6 +615,13 @@ def _is_task07_deletion_apply(args: argparse.Namespace) -> bool:
     return bool(
         args.data_command == "task07"
         and args.task07_command == "deletion-apply"
+    )
+
+
+def _is_task07_deletion_verify(args: argparse.Namespace) -> bool:
+    return bool(
+        args.data_command == "task07"
+        and args.task07_command == "deletion-verify"
     )
 
 

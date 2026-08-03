@@ -16,11 +16,12 @@ from app.data_core.task07_deletion import (
     _apply_unlocked_deletion_plan as apply_deletion_plan,
     _build_unlocked_deletion_approval_packet as build_deletion_approval_packet,
     _build_unlocked_deletion_preflight as build_deletion_preflight,
+    _verify_unlocked_deletion_apply as verify_deletion_apply,
     apply_deletion_plan as public_apply_deletion_plan,
     build_deletion_approval_packet as public_build_deletion_approval_packet,
     build_deletion_plan,
     build_deletion_preflight as public_build_deletion_preflight,
-    verify_deletion_apply,
+    verify_deletion_apply as public_verify_deletion_apply,
 )
 from app.guiyi_cli.main import main
 
@@ -958,3 +959,183 @@ def test_committed_and_recovery_journal_failures_still_restore_every_file(
 
     assert first.read_bytes() == b"first"
     assert second.read_bytes() == b"second"
+
+
+def test_public_verify_and_cli_verify_block_before_task6_runtime_receipt(
+    tmp_path: Path,
+) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    source = approved / "old.bin"
+    source.write_bytes(b"old")
+    plan = _plan(tmp_path, [_asset(source)])
+    packet = build_deletion_approval_packet(plan)
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    approval_hash = canonical_digest(packet)
+    preflight = build_deletion_preflight(
+        plan,
+        packet_path=packet_path,
+        approval_hash=approval_hash,
+        current_base_sha=BASE_SHA,
+        current_database_revision=REVISION,
+        current_reference_digest="a" * 64,
+    )
+    receipt = apply_deletion_plan(
+        plan,
+        packet_path=packet_path,
+        approval_hash=approval_hash,
+        preflight=preflight,
+        current_base_sha=BASE_SHA,
+        current_database_revision=REVISION,
+        current_reference_digest="a" * 64,
+    )
+    with pytest.raises(Task07DeletionError, match="TASK07_RUNTIME_CUTOVER_GATE_REQUIRED"):
+        public_verify_deletion_apply(
+            plan,
+            receipt,
+            current_base_sha=BASE_SHA,
+            current_database_revision=REVISION,
+            current_reference_digest="a" * 64,
+        )
+
+    stdout = StringIO()
+    stderr = StringIO()
+    exit_code = main(
+        [
+            "data",
+            "task07",
+            "deletion-verify",
+            "--project-root",
+            str(tmp_path),
+            "--plan",
+            str(tmp_path / "plan.json"),
+            "--receipt",
+            str(tmp_path / "receipt.json"),
+        ],
+        session_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("must not open database")
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+    assert exit_code == 78
+    assert json.loads(stderr.getvalue())["error"]["code"] == (
+        "TASK07_RUNTIME_CUTOVER_GATE_REQUIRED"
+    )
+
+
+def test_internal_verify_rejects_replaced_secondary_source_root(tmp_path: Path) -> None:
+    first_root = tmp_path / "first-root"
+    second_root = tmp_path / "second-root"
+    first_root.mkdir()
+    second_root.mkdir()
+    quarantine = first_root / ".task07-quarantine"
+    quarantine.mkdir(mode=0o700)
+    source = second_root / "old.bin"
+    source.write_bytes(b"old")
+    plan = build_deletion_plan(
+        assets=(_asset(source),),
+        approved_roots=(first_root, second_root),
+        quarantine_root=quarantine,
+        base_sha=BASE_SHA,
+        database_revision=REVISION,
+        reference_digest="a" * 64,
+    )
+    packet = build_deletion_approval_packet(plan)
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    approval_hash = canonical_digest(packet)
+    preflight = build_deletion_preflight(
+        plan,
+        packet_path=packet_path,
+        approval_hash=approval_hash,
+        current_base_sha=BASE_SHA,
+        current_database_revision=REVISION,
+        current_reference_digest="a" * 64,
+    )
+    receipt = apply_deletion_plan(
+        plan,
+        packet_path=packet_path,
+        approval_hash=approval_hash,
+        preflight=preflight,
+        current_base_sha=BASE_SHA,
+        current_database_revision=REVISION,
+        current_reference_digest="a" * 64,
+    )
+    displaced = tmp_path / "displaced-root"
+    second_root.rename(displaced)
+    second_root.mkdir()
+
+    with pytest.raises(Task07DeletionError, match="TASK07_DELETION_ROOT_DRIFT"):
+        verify_deletion_apply(
+            plan,
+            receipt,
+            current_base_sha=BASE_SHA,
+            current_database_revision=REVISION,
+            current_reference_digest="a" * 64,
+        )
+
+
+def test_internal_documents_reject_all_display_annotations(tmp_path: Path) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    source = approved / "old.bin"
+    source.write_bytes(b"old")
+    plan = _plan(tmp_path, [_asset(source)])
+    annotated_plan = {
+        **plan,
+        "readonly": True,
+        "effects": {
+            "calls_rqdata": False,
+            "writes_postgresql": False,
+            "writes_parquet": False,
+        },
+        "approval_packet": None,
+        "approval_packet_hash": None,
+    }
+    with pytest.raises(Task07DeletionError, match="TASK07_DELETION_PLAN_INVALID"):
+        build_deletion_approval_packet(annotated_plan)
+
+    packet = build_deletion_approval_packet(plan)
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    approval_hash = canonical_digest(packet)
+    preflight = build_deletion_preflight(
+        plan,
+        packet_path=packet_path,
+        approval_hash=approval_hash,
+        current_base_sha=BASE_SHA,
+        current_database_revision=REVISION,
+        current_reference_digest="a" * 64,
+    )
+    annotated_preflight = {**preflight, "effects": {"writes_postgresql": False}}
+    with pytest.raises(Task07DeletionError, match="TASK07_DELETION_PREFLIGHT_DRIFT"):
+        apply_deletion_plan(
+            plan,
+            packet_path=packet_path,
+            approval_hash=approval_hash,
+            preflight=annotated_preflight,
+            current_base_sha=BASE_SHA,
+            current_database_revision=REVISION,
+            current_reference_digest="a" * 64,
+        )
+    receipt = apply_deletion_plan(
+        plan,
+        packet_path=packet_path,
+        approval_hash=approval_hash,
+        preflight=preflight,
+        current_base_sha=BASE_SHA,
+        current_database_revision=REVISION,
+        current_reference_digest="a" * 64,
+    )
+    receipt["effects"] = {"writes_postgresql": False}
+    _resign_apply_receipt(receipt)
+    with pytest.raises(Task07DeletionError, match="TASK07_DELETION_RECEIPT_DRIFT"):
+        verify_deletion_apply(
+            plan,
+            receipt,
+            current_base_sha=BASE_SHA,
+            current_database_revision=REVISION,
+            current_reference_digest="a" * 64,
+        )

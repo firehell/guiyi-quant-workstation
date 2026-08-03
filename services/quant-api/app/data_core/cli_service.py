@@ -561,9 +561,12 @@ def run_data_core_command(
             inventory_digest=str(inventory["inventory_digest"]),
         )
         return {
-            **plan,
+            "schema_version": 1,
+            "command": "data.task07.deletion-plan-envelope",
+            "status": "planned",
             "readonly": True,
             "effects": _readonly_effects(),
+            "plan": plan,
             "approval_packet": None,
             "approval_packet_hash": None,
         }
