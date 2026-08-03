@@ -263,6 +263,27 @@ def test_preconstructed_facts_are_revalidated_before_evaluation() -> None:
     assert result["reason_codes"] == ["FACTS_DIGEST_MISMATCH"]
 
 
+def test_non_json_serializable_direct_facts_fail_closed_with_a_deterministic_digest() -> None:
+    """A public pure-evaluator caller cannot turn malformed Python state into a traceback."""
+    module = _module()
+    results = []
+    for _ in range(2):
+        try:
+            result = module.evaluate_develop_gate(
+                _plan(), {"not-json-serializable"}, now=NOW,
+            ).to_dict()
+        except TypeError:
+            result = None
+        results.append(result)
+
+    assert None not in results
+    assert results[0] == results[1]
+    assert results[0]["decision"] == "BLOCKED"
+    assert results[0]["reason_codes"] == ["FACTS_MALFORMED"]
+    assert results[0]["facts_digest"].startswith("sha256:")
+    assert len(results[0]["facts_digest"]) == 71
+
+
 @pytest.mark.parametrize(
     ("stage", "decision", "reason", "error_type"),
     [

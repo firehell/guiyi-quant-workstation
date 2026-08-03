@@ -139,6 +139,10 @@ DEVELOP_GATE_REASON_RULES: dict[str, tuple[str, frozenset[str]]] = {
 _GATE_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _GATE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _GATE_RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+_MALFORMED_FACTS_DIGEST = semantic_digest({
+    "schema_version": 1,
+    "kind": "malformed-github-gate-facts",
+})
 _SAFE_STAGE_OPERATIONS = {
     "pre_merge": frozenset({"develop_merge"}),
     "merge_readback": frozenset({"merge_readback"}),
@@ -613,7 +617,7 @@ def _fallback_facts_identity(raw: object) -> tuple[str, str]:
         digest_raw = raw.get("facts_digest")
         if isinstance(digest_raw, str) and _GATE_DIGEST_RE.fullmatch(digest_raw):
             return stage, digest_raw
-    return "pre_merge", semantic_digest(raw)
+    return "pre_merge", _MALFORMED_FACTS_DIGEST
 
 
 def _plan_matches_charter(plan: ExecutionPlanV1, charter: TaskCharterV1) -> bool:
