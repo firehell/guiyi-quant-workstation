@@ -83,6 +83,20 @@ def _write_targets(root: Path = Path("/tmp/task07-test")) -> dict[str, object]:
     }
 
 
+def _reference_report(tmp_path: Path, *, active: bool = False) -> dict[str, object]:
+    checkout = tmp_path / "checkout"
+    runtime = tmp_path / "runtime"
+    checkout.mkdir(exist_ok=True)
+    runtime.mkdir(exist_ok=True)
+    if active:
+        consumer = runtime / "services" / "quant-api" / "app" / "consumer.py"
+        consumer.parent.mkdir(parents=True, exist_ok=True)
+        consumer.write_text("reader = MarketDataReader()\n", encoding="utf-8")
+    return scan_task07_references(
+        [("checkout", checkout), ("detached_runtime", runtime)]
+    )
+
+
 def test_parquet_content_gate_reads_file_inside_hive_style_directories(
     tmp_path: Path,
 ) -> None:
@@ -591,7 +605,62 @@ def test_migration_plan_batches_deterministically_and_never_requests_rqdata() ->
     assert plan["batches"][0]["sources"][0]["contract_or_series"] == "JM.MAIN"
     assert plan["calls_rqdata"] is False
     assert plan["writes_authorized"] is False
+    assert plan["migration_envelope"]["batch_manifest"] == [
+        {
+            "batch_key": batch["batch_key"],
+            "batch_digest": batch["batch_digest"],
+        }
+        for batch in plan["batches"]
+    ]
+    assert plan["migration_envelope"]["batch_count"] == 2
     assert len(plan["plan_digest"]) == 64
+
+
+def test_migration_merkle_root_uses_domain_separation_and_duplicates_odd_leaf() -> None:
+    envelope = task07.build_migration_envelope(
+        [
+            {"batch_key": "gamma", "batch_digest": "33" * 32},
+            {"batch_key": "alpha", "batch_digest": "11" * 32},
+            {"batch_key": "beta", "batch_digest": "22" * 32},
+        ]
+    )
+
+    assert envelope["batch_manifest"] == [
+        {"batch_key": "alpha", "batch_digest": "11" * 32},
+        {"batch_key": "beta", "batch_digest": "22" * 32},
+        {"batch_key": "gamma", "batch_digest": "33" * 32},
+    ]
+    assert envelope["batch_count"] == 3
+    assert (
+        envelope["merkle_root"]
+        == "b871be998c6fc1744eec77b437bb0b5018d87044bcf2c1d71d07ed43a2d45ded"
+    )
+    assert len(envelope["envelope_digest"]) == 64
+
+
+def test_migration_eligibility_is_independent_of_active_references_but_retirement_is_not(
+    tmp_path: Path,
+) -> None:
+    index = build_inventory_index(
+        [_asset(catalog_checksum=None)],
+        base_sha="3" * 40,
+        database_revision="20260802_0031",
+    )
+    report = _reference_report(tmp_path, active=True)
+    index["reference_index"] = {
+        key: value for key, value in report.items() if key != "records"
+    }
+
+    plan = build_migration_plan(index, write_targets=_write_targets(tmp_path))
+
+    assert plan["approval_eligible"] is True
+    assert plan["gate_status"] == "exact_owner_approval_required"
+    assert plan["active_reference_gate"] == "BLOCKED_ACTIVE_REFERENCE"
+    assert plan["retirement_eligible"] is False
+    assert plan["deletion_eligible"] is False
+    assert build_approval_packet(plan, command="data.task07.apply")[
+        "bound_facts"
+    ]["migration_envelope"] == plan["migration_envelope"]
 
 
 def test_migration_plan_with_any_conflict_cannot_emit_approval_eligible_scope() -> None:
@@ -614,7 +683,7 @@ def test_migration_plan_with_any_conflict_cannot_emit_approval_eligible_scope() 
     }
 
 
-def test_kline_approval_packet_is_bound_to_one_deterministic_batch_and_write_target(
+def test_kline_approval_packet_is_one_envelope_for_every_batch_and_write_target(
     tmp_path: Path,
 ) -> None:
     index = build_inventory_index(
@@ -635,13 +704,18 @@ def test_kline_approval_packet_is_bound_to_one_deterministic_batch_and_write_tar
     packet = build_approval_packet(
         plan,
         command="data.task07.apply",
-        batch_key="jm:continuous:1m",
     )
 
-    assert packet["bound_facts"]["batch_key"] == "jm:continuous:1m"
-    assert packet["bound_facts"]["batch_digest"] == plan["batches"][0]["batch_digest"]
+    assert packet["bound_facts"]["migration_envelope"] == plan["migration_envelope"]
     assert packet["bound_facts"]["write_targets"] == _write_targets(tmp_path)
-    assert "rb:continuous:1m" not in json.dumps(packet)
+    assert packet["bound_facts"]["migration_envelope"]["batch_manifest"] == [
+        {
+            "batch_key": batch["batch_key"],
+            "batch_digest": batch["batch_digest"],
+        }
+        for batch in plan["batches"]
+    ]
+    assert "rb:continuous:1m" in json.dumps(packet)
 
     packet_path = tmp_path / "approval.json"
     packet_path.write_text(json.dumps(packet), encoding="utf-8")
@@ -661,12 +735,199 @@ def test_kline_approval_packet_is_bound_to_one_deterministic_batch_and_write_tar
         build_approval_packet(
             tampered,
             command="data.task07.apply",
-            batch_key="jm:continuous:1m",
         )
     except ValueError as exc:
         assert str(exc) == "TASK07_BATCH_DIGEST_MISMATCH"
     else:  # pragma: no cover
         raise AssertionError("tampered batch must fail")
+
+
+def test_migration_envelope_rejects_missing_extra_reordered_or_tampered_batches(
+    tmp_path: Path,
+) -> None:
+    plan = build_migration_plan(
+        build_inventory_index(
+            [
+                _asset(market_data_file_id=1, catalog_checksum=None),
+                _asset(
+                    market_data_file_id=2,
+                    symbol="rb",
+                    contract_or_series="RB.MAIN",
+                    catalog_checksum=None,
+                ),
+            ],
+            base_sha="3" * 40,
+            database_revision="20260802_0031",
+        ),
+        write_targets=_write_targets(tmp_path),
+    )
+    mutations = []
+    missing = deepcopy(plan)
+    missing["migration_envelope"]["batch_manifest"].pop()
+    mutations.append(missing)
+    extra = deepcopy(plan)
+    extra["migration_envelope"]["batch_manifest"].append(
+        {"batch_key": "zn:continuous:1m", "batch_digest": "a" * 64}
+    )
+    mutations.append(extra)
+    reordered = deepcopy(plan)
+    reordered["batches"].reverse()
+    mutations.append(reordered)
+    tampered = deepcopy(plan)
+    tampered["migration_envelope"]["merkle_root"] = "0" * 64
+    mutations.append(tampered)
+
+    for mutated in mutations:
+        with pytest.raises(
+            ValueError,
+            match="TASK07_(?:MIGRATION_ENVELOPE|BATCH_ORDER|PLAN_DIGEST)",
+        ):
+            build_approval_packet(mutated, command="data.task07.apply")
+
+
+def test_same_migration_envelope_hash_preflights_every_exact_member_batch(
+    tmp_path: Path,
+) -> None:
+    assets = []
+    for source_id, symbol in ((1, "jm"), (2, "rb")):
+        source = tmp_path / f"{symbol}.parquet"
+        source.write_bytes(symbol.encode())
+        checksum = sha256(source.read_bytes()).hexdigest()
+        assets.append(
+            _asset(
+                market_data_file_id=source_id,
+                symbol=symbol,
+                contract_or_series=f"{symbol.upper()}.MAIN",
+                file_path=str(source),
+                checksum=checksum,
+                physical_checksum=checksum,
+                catalog_checksum=None,
+            )
+        )
+    plan = build_migration_plan(
+        build_inventory_index(
+            assets,
+            base_sha="3" * 40,
+            database_revision="20260802_0031",
+        ),
+        write_targets=_write_targets(tmp_path),
+    )
+    packet = build_approval_packet(plan, command="data.task07.apply")
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    approval_hash = canonical_digest(packet)
+
+    receipts = [
+        task07.build_preflight_receipt(
+            plan,
+            packet_path=packet_path,
+            approval_hash=approval_hash,
+            current_base_sha="3" * 40,
+            current_database_revision="20260802_0031",
+            batch_key=batch["batch_key"],
+            current_write_targets=_write_targets(tmp_path),
+        )
+        for batch in plan["batches"]
+    ]
+
+    assert [receipt["batch_key"] for receipt in receipts] == [
+        "jm:continuous:1m",
+        "rb:continuous:1m",
+    ]
+    assert {receipt["migration_approval_hash"] for receipt in receipts} == {
+        approval_hash
+    }
+
+
+def _batch_verify_receipt(
+    plan: dict[str, object],
+    batch: dict[str, object],
+    *,
+    approval_hash: str = "f" * 64,
+    status: str = "passed",
+) -> dict[str, object]:
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.verify",
+        "status": status,
+        "readonly": True,
+        "plan_digest": plan["plan_digest"],
+        "migration_envelope_digest": plan["migration_envelope"][
+            "envelope_digest"
+        ],
+        "migration_approval_hash": approval_hash,
+        "batch_key": batch["batch_key"],
+        "batch_digest": batch["batch_digest"],
+        "receipt_digest": "d" * 64,
+        "verified_source_count": len(batch["sources"]),
+        "source_verify_digests": ["e" * 64 for _item in batch["sources"]],
+    }
+    return {**body, "verify_digest": canonical_digest(body)}
+
+
+def test_runtime_cutover_requires_every_batch_verify_receipt_in_manifest_order(
+    tmp_path: Path,
+) -> None:
+    plan = build_migration_plan(
+        build_inventory_index(
+            [
+                _asset(market_data_file_id=1, catalog_checksum=None),
+                _asset(
+                    market_data_file_id=2,
+                    symbol="rb",
+                    contract_or_series="RB.MAIN",
+                    catalog_checksum=None,
+                ),
+            ],
+            base_sha="3" * 40,
+            database_revision="20260802_0031",
+        ),
+        write_targets=_write_targets(tmp_path),
+    )
+    receipts = [
+        _batch_verify_receipt(plan, batch) for batch in plan["batches"]
+    ]
+
+    completion = task07.build_migration_verification_receipt(plan, receipts)
+
+    assert completion["runtime_cutover_eligible"] is True
+    assert completion["verified_batch_count"] == 2
+    assert completion["batch_manifest"] == plan["migration_envelope"][
+        "batch_manifest"
+    ]
+
+    with pytest.raises(ValueError, match="TASK07_MIGRATION_VERIFY_SET_INCOMPLETE"):
+        task07.build_migration_verification_receipt(plan, receipts[:-1])
+    with pytest.raises(ValueError, match="TASK07_MIGRATION_VERIFY_ORDER_INVALID"):
+        task07.build_migration_verification_receipt(plan, list(reversed(receipts)))
+    failed = deepcopy(receipts)
+    failed[1] = _batch_verify_receipt(plan, plan["batches"][1], status="failed")
+    with pytest.raises(ValueError, match="TASK07_MIGRATION_BATCH_VERIFY_FAILED"):
+        task07.build_migration_verification_receipt(plan, failed)
+    approval_drift = deepcopy(receipts)
+    approval_drift[1] = _batch_verify_receipt(
+        plan,
+        plan["batches"][1],
+        approval_hash="a" * 64,
+    )
+    with pytest.raises(ValueError, match="TASK07_MIGRATION_APPROVAL_HASH_DRIFT"):
+        task07.build_migration_verification_receipt(plan, approval_drift)
+    tampered = deepcopy(receipts)
+    tampered[0]["verified_source_count"] = 99
+    with pytest.raises(ValueError, match="TASK07_MIGRATION_VERIFY_RECEIPT_DRIFT"):
+        task07.build_migration_verification_receipt(plan, tampered)
+    incomplete = deepcopy(receipts)
+    incomplete_body = {
+        key: value
+        for key, value in incomplete[0].items()
+        if key not in {"verify_digest", "receipt_digest"}
+    }
+    incomplete[0] = {
+        **incomplete_body,
+        "verify_digest": canonical_digest(incomplete_body),
+    }
+    with pytest.raises(ValueError, match="TASK07_MIGRATION_VERIFY_RECEIPT_DRIFT"):
+        task07.build_migration_verification_receipt(plan, incomplete)
 
 
 def test_batch_approval_rejects_tampered_kline_gate_controls() -> None:
@@ -692,7 +953,6 @@ def test_batch_approval_rejects_tampered_kline_gate_controls() -> None:
         build_approval_packet(
             tampered,
             command="data.task07.apply",
-            batch_key="jm:continuous:1m",
         )
     except ValueError as exc:
         assert str(exc) in {"TASK07_PLAN_CONTROL_DRIFT", "TASK07_PLAN_DIGEST_MISMATCH"}
@@ -700,10 +960,14 @@ def test_batch_approval_rejects_tampered_kline_gate_controls() -> None:
         raise AssertionError("tampered K-line gate must fail")
 
 
-def test_retirement_plan_treats_completed_history_as_non_active_and_binds_before_image() -> None:
+def test_retirement_plan_treats_completed_history_as_non_active_and_binds_before_image(
+    tmp_path: Path,
+) -> None:
+    references = _reference_report(tmp_path)
     plan = build_retirement_plan(
         base_sha="4" * 40,
         database_revision="20260802_0031",
+        reference_report=references,
         relations=[
             {"table": "backtest_tasks", "id": 1, "status": "success"},
             {
@@ -725,7 +989,24 @@ def test_retirement_plan_treats_completed_history_as_non_active_and_binds_before
     ]
     assert plan["deletes"] == []
     assert plan["deletion_authorized"] is False
+    assert plan["retirement_eligible"] is True
     assert len(plan["before_image_digest"]) == 64
+
+
+def test_retirement_approval_is_blocked_by_checkout_or_runtime_reference(
+    tmp_path: Path,
+) -> None:
+    plan = build_retirement_plan(
+        base_sha="4" * 40,
+        database_revision="20260802_0031",
+        reference_report=_reference_report(tmp_path, active=True),
+        relations=[],
+    )
+
+    assert plan["retirement_eligible"] is False
+    assert plan["reference_gate"] == "BLOCKED_ACTIVE_REFERENCE"
+    with pytest.raises(ValueError, match="TASK07_RETIREMENT_REFERENCE_GATE_BLOCKED"):
+        build_approval_packet(plan, command="data.task07.retirement-apply")
 
 
 def test_exact_approval_fails_on_any_bound_fact_drift(tmp_path: Path) -> None:
@@ -783,7 +1064,6 @@ def test_apply_gate_rejects_tampered_preflight_receipt(tmp_path: Path) -> None:
     packet = build_approval_packet(
         plan,
         command="data.task07.apply",
-        batch_key="jm:continuous:1m",
     )
     packet_path = tmp_path / "approval.json"
     packet_path.write_text(json.dumps(packet), encoding="utf-8")
@@ -813,6 +1093,7 @@ def test_apply_gate_rejects_tampered_preflight_receipt(tmp_path: Path) -> None:
 
 
 def test_retirement_apply_updates_only_exact_rows_and_preserves_history(tmp_path: Path) -> None:
+    references = _reference_report(tmp_path)
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -830,6 +1111,7 @@ def test_retirement_apply_updates_only_exact_rows_and_preserves_history(tmp_path
     plan = build_retirement_plan(
         base_sha="6" * 40,
         database_revision="20260802_0031",
+        reference_report=references,
         relations=[
             {
                 "table": "profile_active_bindings",
@@ -841,17 +1123,7 @@ def test_retirement_apply_updates_only_exact_rows_and_preserves_history(tmp_path
             {"table": "strategy_signals", "id": 4, "status": "entry_signal", "is_active": True},
         ],
     )
-    packet = {
-        "schema_version": 1,
-        "command": "data.task07.retirement-apply",
-        "writes_authorized": True,
-        "bound_facts": {
-            "base_sha": plan["base_sha"],
-            "database_revision": plan["database_revision"],
-            "plan_digest": plan["plan_digest"],
-            "before_image_digest": plan["before_image_digest"],
-        },
-    }
+    packet = build_approval_packet(plan, command="data.task07.retirement-apply")
     packet_path = tmp_path / "retirement-approval.json"
     packet_path.write_text(json.dumps(packet), encoding="utf-8")
 
@@ -863,6 +1135,7 @@ def test_retirement_apply_updates_only_exact_rows_and_preserves_history(tmp_path
             approval_hash=verify_exact_approval.digest_packet(packet),
             current_base_sha="6" * 40,
             current_database_revision="20260802_0031",
+            current_reference_report=references,
         )
         assert session.execute(text("SELECT binding_status FROM profile_active_bindings WHERE id=2")).scalar_one() == "superseded"
         assert session.execute(text("SELECT status FROM signal_scan_tasks WHERE id=3")).scalar_one() == "cancelled"
@@ -875,6 +1148,7 @@ def test_retirement_apply_updates_only_exact_rows_and_preserves_history(tmp_path
 
 
 def test_retirement_apply_rolls_back_every_update_when_one_row_drifted(tmp_path: Path) -> None:
+    references = _reference_report(tmp_path)
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -891,6 +1165,7 @@ def test_retirement_apply_rolls_back_every_update_when_one_row_drifted(tmp_path:
     plan = build_retirement_plan(
         base_sha="7" * 40,
         database_revision="20260802_0031",
+        reference_report=references,
         relations=[
             {
                 "table": "profile_active_bindings",
@@ -901,15 +1176,7 @@ def test_retirement_apply_rolls_back_every_update_when_one_row_drifted(tmp_path:
             {"table": "signal_scan_tasks", "id": 2, "status": "pending"},
         ],
     )
-    packet = {
-        "schema_version": 1,
-        "command": "data.task07.retirement-apply",
-        "writes_authorized": True,
-        "bound_facts": {
-            "base_sha": plan["base_sha"], "database_revision": plan["database_revision"],
-            "plan_digest": plan["plan_digest"], "before_image_digest": plan["before_image_digest"],
-        },
-    }
+    packet = build_approval_packet(plan, command="data.task07.retirement-apply")
     packet_path = tmp_path / "approval.json"
     packet_path.write_text(json.dumps(packet), encoding="utf-8")
 
@@ -919,6 +1186,7 @@ def test_retirement_apply_rolls_back_every_update_when_one_row_drifted(tmp_path:
                 session, plan, packet_path=packet_path,
                 approval_hash=verify_exact_approval.digest_packet(packet),
                 current_base_sha="7" * 40, current_database_revision="20260802_0031",
+                current_reference_report=references,
             )
         except ValueError as exc:
             assert str(exc) == "TASK07_RETIREMENT_ROW_SET_DRIFT"
@@ -928,6 +1196,7 @@ def test_retirement_apply_rolls_back_every_update_when_one_row_drifted(tmp_path:
 
 
 def test_retirement_apply_rejects_new_active_row_outside_approved_row_set(tmp_path: Path) -> None:
+    references = _reference_report(tmp_path)
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -943,6 +1212,7 @@ def test_retirement_apply_rejects_new_active_row_outside_approved_row_set(tmp_pa
     plan = build_retirement_plan(
         base_sha="8" * 40,
         database_revision="20260802_0031",
+        reference_report=references,
         relations=[
             {
                 "table": "profile_active_bindings",
@@ -969,6 +1239,7 @@ def test_retirement_apply_rejects_new_active_row_outside_approved_row_set(tmp_pa
                 approval_hash=verify_exact_approval.digest_packet(packet),
                 current_base_sha="8" * 40,
                 current_database_revision="20260802_0031",
+                current_reference_report=references,
             )
         except ValueError as exc:
             assert str(exc) == "TASK07_RETIREMENT_ROW_SET_DRIFT"
@@ -1238,7 +1509,6 @@ def test_task07_preflight_apply_and_verify_use_real_canonical_pipeline(
     packet = build_approval_packet(
         plan,
         command="data.task07.apply",
-        batch_key="jm:continuous:1m",
     )
     plan_path = tmp_path / "plan.json"
     packet_path = tmp_path / "approval.json"
@@ -1356,7 +1626,6 @@ def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
     packet = build_approval_packet(
         plan,
         command="data.task07.apply",
-        batch_key="jm:continuous:1m",
     )
     plan_path = tmp_path / "plan.json"
     packet_path = tmp_path / "approval.json"
@@ -1581,7 +1850,6 @@ def test_multisource_real_canonical_commit_then_journal_crash_resumes_as_exact_r
     packet = build_approval_packet(
         plan,
         command="data.task07.apply",
-        batch_key="jm:continuous:1m",
     )
     plan_path = tmp_path / "real-plan.json"
     packet_path = tmp_path / "real-approval.json"

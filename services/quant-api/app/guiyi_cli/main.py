@@ -142,7 +142,6 @@ def build_parser() -> argparse.ArgumentParser:
     task07_inventory.add_argument("--database-revision")
     task07_plan = task07_commands.add_parser("plan")
     task07_plan.add_argument("--inventory", type=Path, required=True)
-    task07_plan.add_argument("--batch-key")
     task07_plan.add_argument("--staging-root", type=Path, required=True)
     task07_plan.add_argument("--canonical-root", type=Path, required=True)
     task07_preflight = task07_commands.add_parser("preflight")
@@ -168,6 +167,13 @@ def build_parser() -> argparse.ArgumentParser:
     task07_verify.add_argument("--canonical-root", type=Path, required=True)
     retirement_plan = task07_commands.add_parser("retirement-plan")
     retirement_plan.add_argument("--project-root", type=Path, required=True)
+    retirement_plan.add_argument(
+        "--runtime-root",
+        type=Path,
+        action="append",
+        required=True,
+        help="Detached Runtime root to scan read-only; repeat for multiple roots.",
+    )
     retirement_plan.add_argument("--database-revision")
     retirement_apply = task07_commands.add_parser("retirement-apply")
     retirement_apply.add_argument("--plan", type=Path, required=True)

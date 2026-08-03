@@ -519,11 +519,17 @@ def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
     """Scan checkout/runtime text surfaces without file-count or finding truncation."""
 
     records: list[dict[str, Any]] = []
+    root_manifest: list[dict[str, str]] = []
     scanned_files = 0
     for root_kind, raw_root in roots:
         root = raw_root.absolute()
         if root_kind not in {"checkout", "detached_runtime"} or not root.is_dir() or root.is_symlink():
             raise ValueError("TASK07_REFERENCE_ROOT_INVALID")
+        resolved_root = root.resolve(strict=True)
+        root_record = {"root_kind": root_kind, "path": str(resolved_root)}
+        if root_record in root_manifest:
+            raise ValueError("TASK07_REFERENCE_ROOT_DUPLICATE")
+        root_manifest.append(root_record)
         for path in sorted(root.rglob("*")):
             if path.is_symlink() or not path.is_file():
                 continue
@@ -565,12 +571,14 @@ def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
             item["root_kind"], item["path"], item["line"], item["marker"]
         )
     )
+    root_manifest.sort(key=lambda item: (item["root_kind"], item["path"]))
     state_counts = {
         state: sum(item["reference_state"] == state for item in records)
         for state in ("active", "historical_non_active", "review_required")
     }
     return {
         "schema_version": 2,
+        "roots": root_manifest,
         "scanned_file_count": scanned_files,
         "record_count": len(records),
         "state_counts": state_counts,
@@ -578,6 +586,189 @@ def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
         "references_digest": canonical_digest(records),
         "truncated": False,
     }
+
+
+def _reference_snapshot(
+    report: Mapping[str, Any],
+    *,
+    require_complete_scope: bool = True,
+) -> dict[str, Any]:
+    roots = report.get("roots")
+    state_counts = report.get("state_counts")
+    if (
+        report.get("schema_version") != 2
+        or report.get("truncated") is not False
+        or not isinstance(roots, list)
+        or not isinstance(state_counts, Mapping)
+    ):
+        raise ValueError("TASK07_REFERENCE_REPORT_INVALID")
+    normalized_roots: list[dict[str, str]] = []
+    for item in roots:
+        if not isinstance(item, Mapping):
+            raise ValueError("TASK07_REFERENCE_REPORT_INVALID")
+        kind = item.get("root_kind")
+        path = item.get("path")
+        if (
+            kind not in {"checkout", "detached_runtime"}
+            or not isinstance(path, str)
+            or not Path(path).is_absolute()
+        ):
+            raise ValueError("TASK07_REFERENCE_REPORT_INVALID")
+        normalized_roots.append({"root_kind": str(kind), "path": path})
+    if normalized_roots != sorted(
+        normalized_roots,
+        key=lambda item: (item["root_kind"], item["path"]),
+    ) or len({(item["root_kind"], item["path"]) for item in normalized_roots}) != len(
+        normalized_roots
+    ):
+        raise ValueError("TASK07_REFERENCE_REPORT_INVALID")
+    kinds = {item["root_kind"] for item in normalized_roots}
+    scope_complete = kinds == {"checkout", "detached_runtime"}
+    if require_complete_scope and not scope_complete:
+        raise ValueError("TASK07_REFERENCE_SCOPE_INCOMPLETE")
+    counts: dict[str, int] = {}
+    for state in ("active", "historical_non_active", "review_required"):
+        value = state_counts.get(state)
+        if type(value) is not int or value < 0:
+            raise ValueError("TASK07_REFERENCE_REPORT_INVALID")
+        counts[state] = value
+    record_count = report.get("record_count")
+    scanned_file_count = report.get("scanned_file_count")
+    references_digest = report.get("references_digest")
+    if (
+        type(record_count) is not int
+        or record_count < 0
+        or sum(counts.values()) != record_count
+        or type(scanned_file_count) is not int
+        or scanned_file_count < 0
+        or not isinstance(references_digest, str)
+        or not _SHA256.fullmatch(references_digest)
+    ):
+        raise ValueError("TASK07_REFERENCE_REPORT_INVALID")
+    records = report.get("records")
+    if records is not None and (
+        not isinstance(records, list)
+        or len(records) != record_count
+        or canonical_digest(records) != references_digest
+    ):
+        raise ValueError("TASK07_REFERENCE_REPORT_INVALID")
+    return {
+        "schema_version": 2,
+        "roots": normalized_roots,
+        "scope_complete": scope_complete,
+        "scanned_file_count": scanned_file_count,
+        "record_count": record_count,
+        "state_counts": counts,
+        "references_digest": references_digest,
+        "truncated": False,
+    }
+
+
+def task07_reference_roots(
+    reference_snapshot: Mapping[str, Any],
+) -> tuple[tuple[str, Path], ...]:
+    snapshot = _reference_snapshot(reference_snapshot)
+    return tuple(
+        (item["root_kind"], Path(item["path"])) for item in snapshot["roots"]
+    )
+
+
+def build_migration_envelope(
+    batches: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    manifest: list[dict[str, str]] = []
+    for batch in batches:
+        batch_key = batch.get("batch_key")
+        batch_digest = batch.get("batch_digest")
+        if (
+            not isinstance(batch_key, str)
+            or not batch_key
+            or "\x00" in batch_key
+            or not isinstance(batch_digest, str)
+            or not _SHA256.fullmatch(batch_digest)
+        ):
+            raise ValueError("TASK07_MIGRATION_ENVELOPE_INVALID")
+        manifest.append(
+            {"batch_key": batch_key, "batch_digest": batch_digest}
+        )
+    manifest.sort(key=lambda item: item["batch_key"])
+    if len({item["batch_key"] for item in manifest}) != len(manifest):
+        raise ValueError("TASK07_MIGRATION_ENVELOPE_INVALID")
+    level = [
+        sha256(
+            b"\x00"
+            + item["batch_key"].encode("utf-8")
+            + b"\x00"
+            + bytes.fromhex(item["batch_digest"])
+        ).digest()
+        for item in manifest
+    ]
+    while len(level) > 1:
+        if len(level) % 2:
+            level.append(level[-1])
+        level = [
+            sha256(b"\x01" + level[index] + level[index + 1]).digest()
+            for index in range(0, len(level), 2)
+        ]
+    body = {
+        "schema_version": 1,
+        "hash_algorithm": "sha256",
+        "leaf_domain": "00",
+        "node_domain": "01",
+        "odd_leaf_rule": "duplicate",
+        "batch_count": len(manifest),
+        "batch_manifest": manifest,
+        "merkle_root": level[0].hex() if level else None,
+    }
+    return {**body, "envelope_digest": canonical_digest(body)}
+
+
+def _migration_write_targets_valid(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    if set(value) != {
+        "staging_root",
+        "canonical_root",
+        "postgresql_target",
+        "protected_roots",
+    }:
+        return False
+    staging_text = value.get("staging_root")
+    canonical_text = value.get("canonical_root")
+    database = value.get("postgresql_target")
+    protected = value.get("protected_roots")
+    if (
+        not isinstance(staging_text, str)
+        or not Path(staging_text).is_absolute()
+        or not isinstance(canonical_text, str)
+        or not Path(canonical_text).is_absolute()
+        or not isinstance(database, Mapping)
+        or not isinstance(protected, list)
+        or not all(isinstance(item, str) and Path(item).is_absolute() for item in protected)
+    ):
+        return False
+    if set(database) != {"drivername", "username", "host", "port", "database"}:
+        return False
+    if (
+        database.get("drivername") != "postgresql+psycopg"
+        or not all(
+            isinstance(database.get(key), str) and bool(database.get(key))
+            for key in ("username", "host", "database")
+        )
+        or type(database.get("port")) is not int
+        or not 1 <= int(database["port"]) <= 65535
+    ):
+        return False
+    staging = Path(staging_text)
+    canonical = Path(canonical_text)
+    if _paths_overlap(staging, canonical):
+        return False
+    protected_paths = [Path(item) for item in protected]
+    return not any(
+        _paths_overlap(target, root)
+        for target in (staging, canonical)
+        for root in protected_paths
+    )
 
 
 def _reference_classification(
@@ -873,12 +1064,21 @@ def build_migration_plan(
             "coverage_end": max(str(item["coverage_end"]) for item in rows),
         }
         batches.append({**body, "batch_digest": canonical_digest(body)})
+    migration_envelope = build_migration_envelope(batches)
     disposition_counts = dict(index.get("disposition_counts", {}))
     blocked = int(disposition_counts.get(AssetDisposition.CONFLICT_BLOCKED.value, 0))
     protected = int(disposition_counts.get(AssetDisposition.PROTECTED_EVIDENCE_SOURCE.value, 0))
     gap_count = int(disposition_counts.get(AssetDisposition.REGISTER_DATA_GAP.value, 0))
     retirement_count = int(disposition_counts.get(AssetDisposition.RETIREMENT_CANDIDATE.value, 0))
-    reference_counts = (index.get("reference_index") or {}).get("state_counts", {})
+    reference_index = index.get("reference_index")
+    reference_snapshot = (
+        _reference_snapshot(reference_index, require_complete_scope=False)
+        if isinstance(reference_index, Mapping)
+        else None
+    )
+    reference_counts = (
+        reference_snapshot["state_counts"] if reference_snapshot is not None else {}
+    )
     active_reference_count = int(reference_counts.get("active", 0))
     review_reference_count = int(reference_counts.get("review_required", 0))
     provider_request_proposal = {
@@ -897,22 +1097,32 @@ def build_migration_plan(
         provider_request_proposal
     )
     active_reference_gate = (
-        "zero_active_references"
+        "BLOCKED_REFERENCE_EVIDENCE_INCOMPLETE"
+        if reference_snapshot is None
+        or reference_snapshot["scope_complete"] is not True
+        else "zero_active_references"
         if active_reference_count == 0 and review_reference_count == 0
         else "BLOCKED_ACTIVE_REFERENCE"
     )
+    write_targets_value = dict(write_targets or {})
+    target_valid = _migration_write_targets_valid(write_targets_value)
     approval_eligible = (
         blocked == 0
-        and active_reference_count == 0
-        and review_reference_count == 0
+        and migration_envelope["batch_count"] > 0
+        and target_valid
     )
     gate_status = (
-        "BLOCKED_ACTIVE_REFERENCE"
-        if active_reference_count or review_reference_count
-        else "exact_owner_approval_required"
+        "exact_owner_approval_required"
         if approval_eligible
         else "BLOCKED_AT_KLINE_DATA_GATE"
+        if blocked != 0
+        else "BLOCKED_MIGRATION_BATCH_EMPTY"
+        if migration_envelope["batch_count"] == 0
+        else "BLOCKED_MIGRATION_WRITE_TARGET"
+        if not target_valid
+        else "BLOCKED_AT_KLINE_DATA_GATE"
     )
+    reference_eligible = active_reference_gate == "zero_active_references"
     deletion_candidate_manifest = {
         "inventory_digest": index["assets_digest"],
         "count": retirement_count,
@@ -926,9 +1136,10 @@ def build_migration_plan(
         "references_digest": (index.get("reference_index") or {}).get(
             "references_digest"
         ),
-        "write_targets": dict(write_targets or {}),
+        "write_targets": write_targets_value,
         "provider_requests": provider_requests,
         "batches": batches,
+        "migration_envelope": migration_envelope,
         "disposition_counts": disposition_counts,
         "blocked_asset_count": blocked,
         "protected_evidence_count": protected,
@@ -936,10 +1147,24 @@ def build_migration_plan(
         "deletion_candidate_count": retirement_count,
         "active_reference_count": active_reference_count,
         "review_reference_count": review_reference_count,
+        "reference_snapshot": reference_snapshot,
         "active_reference_gate": active_reference_gate,
         "deletion_candidate_manifest": deletion_candidate_manifest,
+        "migration_target_gate": (
+            "exact_write_targets_bound"
+            if target_valid
+            else "BLOCKED_MIGRATION_WRITE_TARGET"
+        ),
+        "migration_approval_eligible": approval_eligible,
         "approval_eligible": approval_eligible,
+        "migration_gate_status": gate_status,
         "gate_status": gate_status,
+        "retirement_eligible": reference_eligible,
+        "deletion_eligible": reference_eligible,
+        "retirement_gate_status": active_reference_gate,
+        "deletion_gate_status": active_reference_gate,
+        "runtime_cutover_eligible": False,
+        "migration_verification_gate": "pending_all_batch_verification",
         "calls_rqdata": False,
         "writes_authorized": False,
         "deletion_authorized": False,
@@ -1005,7 +1230,6 @@ def build_approval_packet(
     plan: Mapping[str, Any],
     *,
     command: str,
-    batch_key: str | None = None,
 ) -> dict[str, Any]:
     if command not in {"data.task07.apply", "data.task07.retirement-apply"}:
         raise ValueError("TASK07_APPROVAL_COMMAND_INVALID")
@@ -1015,28 +1239,71 @@ def build_approval_packet(
         _validate_retirement_plan_integrity(plan)
     if command == "data.task07.apply" and plan.get("approval_eligible") is not True:
         raise ValueError("TASK07_KLINE_GATE_BLOCKED")
-    facts = {
-        "base_sha": plan["base_sha"],
-        "database_revision": plan["database_revision"],
-        "plan_digest": plan["plan_digest"],
-    }
-    if "inventory_digest" in plan:
-        facts["inventory_digest"] = plan["inventory_digest"]
     if command == "data.task07.apply":
-        batch = _task07_batch(plan, batch_key)
-        if not plan.get("write_targets"):
-            raise ValueError("TASK07_WRITE_TARGETS_REQUIRED")
-        facts["batch_key"] = batch["batch_key"]
-        facts["batch_digest"] = batch["batch_digest"]
-        facts["write_targets"] = plan["write_targets"]
-    if "before_image_digest" in plan:
-        facts["before_image_digest"] = plan["before_image_digest"]
+        facts = build_migration_approval_facts(
+            plan,
+            current_base_sha=str(plan["base_sha"]),
+            current_database_revision=str(plan["database_revision"]),
+            current_write_targets=plan.get("write_targets", {}),
+        )
+    else:
+        if plan.get("retirement_eligible") is not True:
+            raise ValueError("TASK07_RETIREMENT_REFERENCE_GATE_BLOCKED")
+        facts = _retirement_approval_facts(
+            plan,
+            current_base_sha=str(plan["base_sha"]),
+            current_database_revision=str(plan["database_revision"]),
+            current_reference_snapshot=plan.get("reference_snapshot"),
+        )
     return {
         "schema_version": 1,
         "command": command,
         "writes_authorized": True,
         "deletion_authorized": False,
         "bound_facts": facts,
+    }
+
+
+def build_migration_approval_facts(
+    plan: Mapping[str, Any],
+    *,
+    current_base_sha: str,
+    current_database_revision: str,
+    current_write_targets: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not _migration_write_targets_valid(current_write_targets):
+        raise ValueError("TASK07_WRITE_TARGETS_REQUIRED")
+    return {
+        "base_sha": current_base_sha,
+        "database_revision": current_database_revision,
+        "plan_digest": plan.get("plan_digest"),
+        "inventory_digest": plan.get("inventory_digest"),
+        "migration_envelope": plan.get("migration_envelope"),
+        "write_targets": dict(current_write_targets),
+    }
+
+
+def build_migration_batch_facts(
+    plan: Mapping[str, Any],
+    batch: Mapping[str, Any],
+    *,
+    migration_approval_hash: str,
+    current_base_sha: str,
+    current_database_revision: str,
+    current_write_targets: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not _SHA256.fullmatch(migration_approval_hash):
+        raise ValueError("TASK07_APPROVAL_HASH_INVALID")
+    return {
+        **build_migration_approval_facts(
+            plan,
+            current_base_sha=current_base_sha,
+            current_database_revision=current_database_revision,
+            current_write_targets=current_write_targets,
+        ),
+        "migration_approval_hash": migration_approval_hash,
+        "batch_key": batch["batch_key"],
+        "batch_digest": batch["batch_digest"],
     }
 
 
@@ -1052,20 +1319,25 @@ def build_preflight_receipt(
 ) -> dict[str, Any]:
     _validate_migration_plan_integrity(plan)
     batch = _task07_batch(plan, batch_key)
-    facts = {
-        "base_sha": current_base_sha,
-        "database_revision": current_database_revision,
-        "plan_digest": plan.get("plan_digest"),
-        "inventory_digest": plan.get("inventory_digest"),
-        "batch_key": batch["batch_key"],
-        "batch_digest": batch["batch_digest"],
-        "write_targets": dict(current_write_targets),
-    }
+    approval_facts = build_migration_approval_facts(
+        plan,
+        current_base_sha=current_base_sha,
+        current_database_revision=current_database_revision,
+        current_write_targets=current_write_targets,
+    )
     verify_exact_approval(
         packet_path,
         approval_hash=approval_hash,
         expected_command="data.task07.apply",
-        current_facts=facts,
+        current_facts=approval_facts,
+    )
+    facts = build_migration_batch_facts(
+        plan,
+        batch,
+        migration_approval_hash=approval_hash,
+        current_base_sha=current_base_sha,
+        current_database_revision=current_database_revision,
+        current_write_targets=current_write_targets,
     )
     sources = list(batch.get("sources", []))
     for source in sources:
@@ -1079,6 +1351,10 @@ def build_preflight_receipt(
         "readonly": True,
         "bound_facts": facts,
         "source_count": len(sources),
+        "migration_envelope_digest": plan["migration_envelope"][
+            "envelope_digest"
+        ],
+        "migration_approval_hash": approval_hash,
         "batch_key": batch["batch_key"],
         "batch_digest": batch["batch_digest"],
         "calls_rqdata": False,
@@ -1107,15 +1383,17 @@ def verify_task07_preflight_receipt(
     stored_digest = receipt.get("preflight_digest")
     body = {key: value for key, value in receipt.items() if key != "preflight_digest"}
     batch = _task07_batch(plan, batch_key)
-    expected_facts = {
-        "base_sha": current_base_sha,
-        "database_revision": current_database_revision,
-        "plan_digest": plan.get("plan_digest"),
-        "inventory_digest": plan.get("inventory_digest"),
-        "batch_key": batch["batch_key"],
-        "batch_digest": batch["batch_digest"],
-        "write_targets": dict(current_write_targets),
-    }
+    migration_approval_hash = receipt.get("migration_approval_hash")
+    if not isinstance(migration_approval_hash, str):
+        raise ValueError("TASK07_PREFLIGHT_RECEIPT_DRIFT")
+    expected_facts = build_migration_batch_facts(
+        plan,
+        batch,
+        migration_approval_hash=migration_approval_hash,
+        current_base_sha=current_base_sha,
+        current_database_revision=current_database_revision,
+        current_write_targets=current_write_targets,
+    )
     if (
         stored_digest != canonical_digest(body)
         or receipt.get("command") != "data.task07.preflight"
@@ -1123,6 +1401,8 @@ def verify_task07_preflight_receipt(
         or receipt.get("readonly") is not True
         or receipt.get("bound_facts") != expected_facts
         or receipt.get("source_count") != len(batch.get("sources", []))
+        or receipt.get("migration_envelope_digest")
+        != plan["migration_envelope"]["envelope_digest"]
         or receipt.get("batch_key") != batch["batch_key"]
         or receipt.get("batch_digest") != batch["batch_digest"]
         or receipt.get("calls_rqdata") is not False
@@ -1156,6 +1436,18 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         body = {key: value for key, value in batch.items() if key != "batch_digest"}
         if batch.get("batch_digest") != canonical_digest(body):
             raise ValueError("TASK07_BATCH_DIGEST_MISMATCH")
+    batch_manifest = [
+        {"batch_key": batch["batch_key"], "batch_digest": batch["batch_digest"]}
+        for batch in batches
+    ]
+    if batch_manifest != sorted(
+        batch_manifest,
+        key=lambda item: item["batch_key"],
+    ):
+        raise ValueError("TASK07_BATCH_ORDER_INVALID")
+    expected_envelope = build_migration_envelope(batches)
+    if plan.get("migration_envelope") != expected_envelope:
+        raise ValueError("TASK07_MIGRATION_ENVELOPE_MISMATCH")
     requests = plan.get("provider_requests")
     proposal = plan.get("provider_request_proposal")
     if not isinstance(requests, list) or not isinstance(proposal, Mapping):
@@ -1191,23 +1483,52 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
     review_count = plan.get("review_reference_count")
     if type(active_count) is not int or type(review_count) is not int:
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    reference_snapshot = plan.get("reference_snapshot")
+    if reference_snapshot is not None:
+        if not isinstance(reference_snapshot, Mapping):
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+        expected_reference_snapshot = _reference_snapshot(
+            reference_snapshot,
+            require_complete_scope=False,
+        )
+        reference_counts = expected_reference_snapshot["state_counts"]
+        if (
+            active_count != reference_counts["active"]
+            or review_count != reference_counts["review_required"]
+            or plan.get("references_digest")
+            != expected_reference_snapshot["references_digest"]
+        ):
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    else:
+        expected_reference_snapshot = None
+        if active_count != 0 or review_count != 0 or plan.get("references_digest") is not None:
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     expected_active_gate = (
-        "zero_active_references"
+        "BLOCKED_REFERENCE_EVIDENCE_INCOMPLETE"
+        if expected_reference_snapshot is None
+        or expected_reference_snapshot["scope_complete"] is not True
+        else "zero_active_references"
         if active_count == 0 and review_count == 0
         else "BLOCKED_ACTIVE_REFERENCE"
     )
+    target_valid = _migration_write_targets_valid(plan.get("write_targets"))
     expected_eligible = (
         expected_controls["blocked_asset_count"] == 0
-        and active_count == 0
-        and review_count == 0
+        and expected_envelope["batch_count"] > 0
+        and target_valid
     )
     expected_gate = (
-        "BLOCKED_ACTIVE_REFERENCE"
-        if active_count or review_count
-        else "exact_owner_approval_required"
+        "exact_owner_approval_required"
         if expected_eligible
         else "BLOCKED_AT_KLINE_DATA_GATE"
+        if expected_controls["blocked_asset_count"] != 0
+        else "BLOCKED_MIGRATION_BATCH_EMPTY"
+        if expected_envelope["batch_count"] == 0
+        else "BLOCKED_MIGRATION_WRITE_TARGET"
+        if not target_valid
+        else "BLOCKED_AT_KLINE_DATA_GATE"
     )
+    expected_reference_eligible = expected_active_gate == "zero_active_references"
     expected_manifest = {
         "inventory_digest": plan.get("assets_digest"),
         "count": expected_controls["deletion_candidate_count"],
@@ -1215,8 +1536,23 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
     }
     if (
         plan.get("active_reference_gate") != expected_active_gate
+        or plan.get("migration_target_gate")
+        != (
+            "exact_write_targets_bound"
+            if target_valid
+            else "BLOCKED_MIGRATION_WRITE_TARGET"
+        )
+        or plan.get("migration_approval_eligible") is not expected_eligible
         or plan.get("approval_eligible") is not expected_eligible
+        or plan.get("migration_gate_status") != expected_gate
         or plan.get("gate_status") != expected_gate
+        or plan.get("retirement_eligible") is not expected_reference_eligible
+        or plan.get("deletion_eligible") is not expected_reference_eligible
+        or plan.get("retirement_gate_status") != expected_active_gate
+        or plan.get("deletion_gate_status") != expected_active_gate
+        or plan.get("runtime_cutover_eligible") is not False
+        or plan.get("migration_verification_gate")
+        != "pending_all_batch_verification"
         or plan.get("deletion_candidate_manifest") != expected_manifest
         or plan.get("calls_rqdata") is not False
         or plan.get("writes_authorized") is not False
@@ -1232,20 +1568,127 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         "write_targets": plan.get("write_targets"),
         "provider_requests": requests,
         "batches": batches,
+        "migration_envelope": expected_envelope,
         "disposition_counts": dict(disposition_counts),
         **expected_controls,
         "active_reference_count": active_count,
         "review_reference_count": review_count,
+        "reference_snapshot": expected_reference_snapshot,
         "active_reference_gate": expected_active_gate,
         "deletion_candidate_manifest": expected_manifest,
+        "migration_target_gate": (
+            "exact_write_targets_bound"
+            if target_valid
+            else "BLOCKED_MIGRATION_WRITE_TARGET"
+        ),
+        "migration_approval_eligible": expected_eligible,
         "approval_eligible": expected_eligible,
+        "migration_gate_status": expected_gate,
         "gate_status": expected_gate,
+        "retirement_eligible": expected_reference_eligible,
+        "deletion_eligible": expected_reference_eligible,
+        "retirement_gate_status": expected_active_gate,
+        "deletion_gate_status": expected_active_gate,
+        "runtime_cutover_eligible": False,
+        "migration_verification_gate": "pending_all_batch_verification",
         "calls_rqdata": False,
         "writes_authorized": False,
         "deletion_authorized": False,
     }
     if plan.get("plan_digest") != canonical_digest(facts):
         raise ValueError("TASK07_PLAN_DIGEST_MISMATCH")
+
+
+def build_migration_verification_receipt(
+    plan: Mapping[str, Any],
+    receipts: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    _validate_migration_plan_integrity(plan)
+    batches = list(plan["batches"])
+    verify_receipts = list(receipts)
+    if len(verify_receipts) != len(batches) or not batches:
+        raise ValueError("TASK07_MIGRATION_VERIFY_SET_INCOMPLETE")
+    if any(not isinstance(receipt, Mapping) for receipt in verify_receipts):
+        raise ValueError("TASK07_MIGRATION_VERIFY_RECEIPT_DRIFT")
+    expected_manifest = plan["migration_envelope"]["batch_manifest"]
+    actual_manifest = [
+        {
+            "batch_key": receipt.get("batch_key"),
+            "batch_digest": receipt.get("batch_digest"),
+        }
+        for receipt in verify_receipts
+    ]
+    if actual_manifest != expected_manifest:
+        if sorted(
+            actual_manifest,
+            key=lambda item: str(item["batch_key"]),
+        ) == expected_manifest:
+            raise ValueError("TASK07_MIGRATION_VERIFY_ORDER_INVALID")
+        raise ValueError("TASK07_MIGRATION_VERIFY_SET_INCOMPLETE")
+    approval_hashes: set[str] = set()
+    verification_manifest: list[dict[str, Any]] = []
+    for batch, receipt in zip(batches, verify_receipts, strict=True):
+        if receipt.get("status") != "passed":
+            raise ValueError("TASK07_MIGRATION_BATCH_VERIFY_FAILED")
+        verify_digest = receipt.get("verify_digest")
+        body = {
+            key: value for key, value in receipt.items() if key != "verify_digest"
+        }
+        source_verify_digests = receipt.get("source_verify_digests")
+        approval_hash = receipt.get("migration_approval_hash")
+        apply_receipt_digest = receipt.get("receipt_digest")
+        if (
+            not isinstance(verify_digest, str)
+            or verify_digest != canonical_digest(body)
+            or receipt.get("schema_version") != 1
+            or receipt.get("command") != "data.task07.verify"
+            or receipt.get("readonly") is not True
+            or receipt.get("plan_digest") != plan.get("plan_digest")
+            or receipt.get("migration_envelope_digest")
+            != plan["migration_envelope"]["envelope_digest"]
+            or not isinstance(approval_hash, str)
+            or not _SHA256.fullmatch(approval_hash)
+            or receipt.get("batch_key") != batch["batch_key"]
+            or receipt.get("batch_digest") != batch["batch_digest"]
+            or not isinstance(apply_receipt_digest, str)
+            or not _SHA256.fullmatch(apply_receipt_digest)
+            or receipt.get("verified_source_count")
+            != len(batch.get("sources", []))
+            or not isinstance(source_verify_digests, list)
+            or len(source_verify_digests) != len(batch.get("sources", []))
+            or any(
+                not isinstance(item, str) or not _SHA256.fullmatch(item)
+                for item in source_verify_digests
+            )
+        ):
+            raise ValueError("TASK07_MIGRATION_VERIFY_RECEIPT_DRIFT")
+        approval_hashes.add(approval_hash)
+        verification_manifest.append(
+            {
+                "batch_key": batch["batch_key"],
+                "batch_digest": batch["batch_digest"],
+                "verify_digest": verify_digest,
+            }
+        )
+    if len(approval_hashes) != 1:
+        raise ValueError("TASK07_MIGRATION_APPROVAL_HASH_DRIFT")
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.migration-verification",
+        "status": "passed",
+        "readonly": True,
+        "plan_digest": plan["plan_digest"],
+        "migration_envelope_digest": plan["migration_envelope"][
+            "envelope_digest"
+        ],
+        "migration_approval_hash": next(iter(approval_hashes)),
+        "batch_manifest": expected_manifest,
+        "batches_merkle_root": plan["migration_envelope"]["merkle_root"],
+        "verified_batch_count": len(verification_manifest),
+        "verification_manifest": verification_manifest,
+        "runtime_cutover_eligible": True,
+    }
+    return {**body, "verification_digest": canonical_digest(body)}
 
 
 def build_write_targets(
@@ -1302,11 +1745,22 @@ def build_retirement_plan(
     *,
     base_sha: str,
     database_revision: str,
+    reference_report: Mapping[str, Any],
     relations: Iterable[Mapping[str, Any]],
     retirement_at: str | datetime | None = None,
 ) -> dict[str, Any]:
     if not _TASK_HEAD.fullmatch(base_sha):
         raise ValueError("TASK07_BASE_SHA_INVALID")
+    reference_snapshot = _reference_snapshot(reference_report)
+    state_counts = reference_snapshot["state_counts"]
+    retirement_eligible = (
+        state_counts["active"] == 0 and state_counts["review_required"] == 0
+    )
+    reference_gate = (
+        "zero_active_references"
+        if retirement_eligible
+        else "BLOCKED_ACTIVE_REFERENCE"
+    )
     retirement_timestamp = _retirement_timestamp(retirement_at)
     before = sorted((dict(item) for item in relations), key=lambda item: (str(item["table"]), int(item["id"])))
     updates: list[dict[str, Any]] = []
@@ -1332,6 +1786,9 @@ def build_retirement_plan(
     facts = {
         "base_sha": base_sha,
         "database_revision": database_revision,
+        "reference_snapshot": reference_snapshot,
+        "reference_gate": reference_gate,
+        "retirement_eligible": retirement_eligible,
         "retirement_at": retirement_timestamp,
         "before_image": before,
         "before_image_digest": canonical_digest(before),
@@ -1344,6 +1801,11 @@ def build_retirement_plan(
         **facts,
         "plan_digest": canonical_digest(facts),
         "historical_non_active_count": historical,
+        "gate_status": (
+            "exact_owner_approval_required"
+            if retirement_eligible
+            else reference_gate
+        ),
         "deletes": [],
         "writes_authorized": False,
         "deletion_authorized": False,
@@ -1419,23 +1881,30 @@ def apply_retirement_plan(
     approval_hash: str,
     current_base_sha: str,
     current_database_revision: str,
+    current_reference_report: Mapping[str, Any],
 ) -> dict[str, Any]:
     begin_task07_serializable_apply(session)
     _validate_retirement_plan_integrity(plan)
+    current_reference_snapshot = _reference_snapshot(current_reference_report)
+    if current_reference_snapshot != plan.get("reference_snapshot"):
+        raise ValueError("TASK07_RETIREMENT_REFERENCE_DRIFT")
+    if plan.get("retirement_eligible") is not True:
+        raise ValueError("TASK07_RETIREMENT_REFERENCE_GATE_BLOCKED")
     current_plan = build_retirement_plan(
         base_sha=current_base_sha,
         database_revision=current_database_revision,
+        reference_report=current_reference_report,
         relations=collect_retirement_relations(session, readonly=False),
         retirement_at=plan.get("retirement_at"),
     )
     if current_plan["plan_digest"] != plan.get("plan_digest"):
         raise ValueError("TASK07_RETIREMENT_ROW_SET_DRIFT")
-    facts = {
-        "base_sha": current_base_sha,
-        "database_revision": current_database_revision,
-        "plan_digest": plan.get("plan_digest"),
-        "before_image_digest": plan.get("before_image_digest"),
-    }
+    facts = _retirement_approval_facts(
+        plan,
+        current_base_sha=current_base_sha,
+        current_database_revision=current_database_revision,
+        current_reference_snapshot=current_reference_snapshot,
+    )
     verify_exact_approval(
         packet_path,
         approval_hash=approval_hash,
@@ -1538,9 +2007,30 @@ def _validate_retirement_plan_integrity(plan: Mapping[str, Any]) -> None:
     before_digest = canonical_digest(before)
     if before_digest != plan.get("before_image_digest"):
         raise ValueError("TASK07_RETIREMENT_BEFORE_IMAGE_MISMATCH")
+    reference_snapshot = plan.get("reference_snapshot")
+    if not isinstance(reference_snapshot, Mapping):
+        raise ValueError("TASK07_RETIREMENT_PLAN_INVALID")
+    expected_reference_snapshot = _reference_snapshot(reference_snapshot)
+    counts = expected_reference_snapshot["state_counts"]
+    expected_eligible = (
+        counts["active"] == 0 and counts["review_required"] == 0
+    )
+    expected_reference_gate = (
+        "zero_active_references"
+        if expected_eligible
+        else "BLOCKED_ACTIVE_REFERENCE"
+    )
+    if (
+        plan.get("retirement_eligible") is not expected_eligible
+        or plan.get("reference_gate") != expected_reference_gate
+    ):
+        raise ValueError("TASK07_RETIREMENT_REFERENCE_GATE_DRIFT")
     facts = {
         "base_sha": plan.get("base_sha"),
         "database_revision": plan.get("database_revision"),
+        "reference_snapshot": expected_reference_snapshot,
+        "reference_gate": expected_reference_gate,
+        "retirement_eligible": expected_eligible,
         "retirement_at": plan.get("retirement_at"),
         "before_image": before,
         "before_image_digest": before_digest,
@@ -1548,6 +2038,24 @@ def _validate_retirement_plan_integrity(plan: Mapping[str, Any]) -> None:
     }
     if plan.get("plan_digest") != canonical_digest(facts):
         raise ValueError("TASK07_RETIREMENT_PLAN_DIGEST_MISMATCH")
+
+
+def _retirement_approval_facts(
+    plan: Mapping[str, Any],
+    *,
+    current_base_sha: str,
+    current_database_revision: str,
+    current_reference_snapshot: object,
+) -> dict[str, Any]:
+    if current_reference_snapshot != plan.get("reference_snapshot"):
+        raise ValueError("TASK07_RETIREMENT_REFERENCE_DRIFT")
+    return {
+        "base_sha": current_base_sha,
+        "database_revision": current_database_revision,
+        "plan_digest": plan.get("plan_digest"),
+        "before_image_digest": plan.get("before_image_digest"),
+        "reference_snapshot": current_reference_snapshot,
+    }
 
 
 def _retirement_timestamp(value: str | datetime | None) -> str:
