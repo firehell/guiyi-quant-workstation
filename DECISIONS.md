@@ -16,7 +16,7 @@
 | 真实写入 | 按业务域使用 hash-bound、scope-bound approval packet/Gate | Issue 或测试通过均不能替代专用 Gate |
 | worktree | canonical、集成、task 与 detached Runtime 物理隔离 | `main` 为 canonical/release，`develop` 为长期集成主干；task 经 PR/CI/独立 Review 后可自动 merge commit 合入 develop，只有 clean 且已合入才可清理 |
 | task 自动集成 | Lane 1/2 与 code/test/dry-run/隔离 migration/disabled-only Lane 3 满足验收、CI、独立 Review、exact head 后由 Codex 编排层合入 `develop` | 不直推 develop；不授权生产 migration、真实数据写入、删除、main/release/tag、Runtime/live 或通知 |
-| release | `release-flow.sh` 以精确 SHA 受控发布 | 用户批准、main/develop clean 且同 SHA 才可 apply；task→develop 自动集成不授权发布、tag 或 Runtime |
+| release | `release-flow.sh prepare/publish/tag` 以精确 current/target/rollback SHA 受控完成本地 fast-forward、远端 refs 与 annotated tags | 三动作默认 dry-run；用户对 exact packet 批准后才可逐项 apply；task→develop 自动集成不授权 release、tag 或 Runtime |
 | 数据核心 V2 active target | RQData 是唯一上游；Canonical 持久化 provider-direct `1m/1d/1w` 与 preaggregated `5m/15m/30m/60m`，再经 Catalog/Manifest/Gap/MainContractMap 由 `MarketDataService` 同频读取 | canonical Parquet 是受治理存储而非第二上游；缺少同频 dataset/partition 必须 DataGap，不做历史跨频 fallback |
 | Canonical 数据准入 | 只依赖自身 schema、coverage、Manifest digest、物理 checksum、Catalog、DataGap、MainContractMap 与代表性统一读取验证 | legacy 与 Canonical 全历史逐条一致不是正式准入条件；legacy Shadow 仅为可选诊断或 frozen compatibility，不是 Task 04 或 Task 05 前置 Gate |
 | 数据身份 | `DatasetKey` 唯一定位；正式历史 allowlist 唯一为 `1m/5m/15m/30m/60m/1d/1w`；`continuous` 与 `actual_dominant` 显式且不可互换 | 新 active BarsResult 的 request/source/bars 必须同频且 `derived_frequency=null`；actual-dominant `1w` 使用该周最后交易日 rank=1 合约 |

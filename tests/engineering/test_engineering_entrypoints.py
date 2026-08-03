@@ -236,6 +236,76 @@ def test_release_flow_is_hash_bound_and_dry_run_by_default(tmp_path: Path) -> No
     assert subprocess.run(["git", "--git-dir", str(remote), "show-ref"], capture_output=True, text=True).returncode != 0
 
 
+def test_release_flow_prepare_fast_forwards_only_the_approved_main(tmp_path: Path) -> None:
+    repo, _remote, develop_tree, current_main_sha = _release_fixture(tmp_path)
+    (develop_tree / "CHANGELOG.md").write_text("release candidate\n", encoding="utf-8")
+    subprocess.run(["git", "add", "CHANGELOG.md"], cwd=develop_tree, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "release candidate"],
+        cwd=develop_tree,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    expected_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=develop_tree,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "push", "origin", f"{current_main_sha}:refs/heads/main", f"{expected_sha}:refs/heads/develop"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    dry_run = subprocess.run(
+        [
+            "bash",
+            str(repo / "scripts" / "engineering" / "release-flow.sh"),
+            "prepare",
+            "--current-main-sha",
+            current_main_sha,
+            "--expected-sha",
+            expected_sha,
+            "--json",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert dry_run.returncode == 0, dry_run.stderr + dry_run.stdout
+    assert json.loads(dry_run.stdout)["mode"] == "dry-run"
+    assert subprocess.run(
+        ["git", "rev-parse", "main"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip() == current_main_sha
+
+    applied = subprocess.run(
+        [
+            "bash",
+            str(repo / "scripts" / "engineering" / "release-flow.sh"),
+            "prepare",
+            "--current-main-sha",
+            current_main_sha,
+            "--expected-sha",
+            expected_sha,
+            "--apply",
+            "--json",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert applied.returncode == 0, applied.stderr + applied.stdout
+    assert json.loads(applied.stdout)["mode"] == "apply"
+    assert subprocess.run(
+        ["git", "rev-parse", "main"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip() == expected_sha
+
+
 def test_release_flow_atomically_publishes_matching_main_and_develop(tmp_path: Path) -> None:
     repo, remote, _develop_tree, sha = _release_fixture(tmp_path)
     result = subprocess.run(
@@ -258,6 +328,67 @@ def test_release_flow_atomically_publishes_matching_main_and_develop(tmp_path: P
     assert subprocess.run(
         ["git", "config", "--get", "branch.develop.merge"], cwd=repo, check=True, capture_output=True, text=True
     ).stdout.strip() == "refs/heads/develop"
+
+
+def test_release_flow_atomically_publishes_annotated_release_and_rollback_tags(tmp_path: Path) -> None:
+    repo, remote, _develop_tree, sha = _release_fixture(tmp_path)
+    publish = subprocess.run(
+        [
+            "bash",
+            str(repo / "scripts" / "engineering" / "release-flow.sh"),
+            "publish",
+            "--expected-sha",
+            sha,
+            "--apply",
+            "--json",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert publish.returncode == 0, publish.stderr + publish.stdout
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(repo / "scripts" / "engineering" / "release-flow.sh"),
+            "tag",
+            "--expected-sha",
+            sha,
+            "--release-tag",
+            "runtime-20260803-release",
+            "--release-message",
+            "Runtime release test",
+            "--rollback-sha",
+            sha,
+            "--rollback-tag",
+            "runtime-rollback-20260803-test",
+            "--rollback-message",
+            "Runtime rollback test",
+            "--apply",
+            "--json",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(result.stdout)["mode"] == "apply"
+    assert subprocess.run(
+        ["git", "cat-file", "-t", "refs/tags/runtime-20260803-release"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip() == "tag"
+    refs = subprocess.run(
+        ["git", "--git-dir", str(remote), "show-ref", "--tags", "-d"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert f"{sha} refs/tags/runtime-20260803-release^{{}}" in refs
+    assert f"{sha} refs/tags/runtime-rollback-20260803-test^{{}}" in refs
 
 
 def test_release_flow_rejects_divergent_protected_branches(tmp_path: Path) -> None:
