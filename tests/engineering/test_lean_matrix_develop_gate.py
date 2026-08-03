@@ -7,6 +7,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -208,7 +209,7 @@ def test_strict_contracts_reject_unknown_keys_and_tampered_facts_fail_closed() -
     malformed = _assert_decision(extra, "BLOCKED", "FACTS_MALFORMED")
     digest_mismatch = _assert_decision(tampered, "BLOCKED", "FACTS_DIGEST_MISMATCH")
 
-    assert "INVALID_CONTRACT_KEYS" in malformed["reason_codes"]
+    assert malformed["reason_codes"] == ["FACTS_MALFORMED"]
     assert digest_mismatch["reason_codes"] == ["FACTS_DIGEST_MISMATCH"]
 
 
@@ -223,6 +224,64 @@ def test_facts_expire_at_exactly_five_minutes_but_not_one_second_before() -> Non
         now=NOW + timedelta(minutes=4, seconds=59),
     )
     _assert_decision(facts, "BLOCKED", "FACTS_EXPIRED", now=NOW + timedelta(minutes=5))
+
+
+def test_preconstructed_facts_are_revalidated_before_evaluation() -> None:
+    """A replaced frozen instance must not bypass digest and exact five-minute expiry validation."""
+    module = _module()
+    validated = module.GitHubGateFactsV1.from_mapping(_facts())
+    unchecked = replace(
+        validated,
+        expires_at=(NOW + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+
+    result = module.evaluate_develop_gate(
+        _plan(), unchecked, now=NOW + timedelta(minutes=6),
+    ).to_dict()
+
+    assert result["decision"] == "BLOCKED"
+    assert result["reason_codes"] == ["FACTS_DIGEST_MISMATCH"]
+
+
+@pytest.mark.parametrize(
+    ("stage", "decision", "reason", "error_type"),
+    [
+        ("pre_merge", "WAIT_CI", "FREE_TEXT", "invalid_reason_code"),
+        (
+            "pre_merge",
+            "WAIT_CI",
+            "DEVELOP_MERGE_ALLOWED",
+            "invalid_decision_reason_combination",
+        ),
+        (
+            "cleanup",
+            "ALLOW_DEVELOP_MERGE",
+            "DEVELOP_MERGE_ALLOWED",
+            "invalid_decision_reason_combination",
+        ),
+    ],
+)
+def test_decision_contract_rejects_unknown_or_invalid_stage_decision_reason_combinations(
+    stage: str,
+    decision: str,
+    reason: str,
+    error_type: str,
+) -> None:
+    """Reason text cannot invent authority or be paired with an unrelated decision/stage."""
+    module = _module()
+
+    with pytest.raises(module.LeanMatrixError) as captured:
+        module.DevelopGateDecisionV1.from_mapping({
+            "schema_version": 1,
+            "stage": stage,
+            "decision": decision,
+            "reason_codes": [reason],
+            "plan_digest": "sha256:" + "1" * 64,
+            "facts_digest": "sha256:" + "2" * 64,
+            "evaluated_at": "2026-08-03T04:00:00Z",
+        })
+
+    assert captured.value.error_type == error_type
 
 
 @pytest.mark.parametrize(

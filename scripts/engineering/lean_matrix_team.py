@@ -78,6 +78,64 @@ GITHUB_REVIEW_STATES = frozenset({"MISSING", "PENDING", "APPROVED", "CHANGES_REQ
 GITHUB_PR_STATES = frozenset({"OPEN", "CLOSED", "MERGED"})
 GITHUB_MERGEABILITY_STATES = frozenset({"MERGEABLE", "CONFLICTING", "UNKNOWN"})
 DEVELOP_GATE_STAGES = frozenset({"pre_merge", "merge_readback", "cleanup"})
+_ALL_DEVELOP_GATE_STAGES = DEVELOP_GATE_STAGES
+_PRE_MERGE_STAGE = frozenset({"pre_merge"})
+_MERGE_READBACK_STAGE = frozenset({"merge_readback"})
+_CLEANUP_STAGE = frozenset({"cleanup"})
+DEVELOP_GATE_REASON_RULES: dict[str, tuple[str, frozenset[str]]] = {
+    "DEVELOP_MERGE_ALLOWED": ("ALLOW_DEVELOP_MERGE", _PRE_MERGE_STAGE),
+    "READY_TRANSITION_REQUIRED": ("ALLOW_DEVELOP_MERGE", _PRE_MERGE_STAGE),
+    "ALREADY_MERGED": ("ALLOW_DEVELOP_MERGE", _PRE_MERGE_STAGE),
+    "MERGE_READBACK_CONFIRMED": ("ALLOW_DEVELOP_MERGE", _MERGE_READBACK_STAGE),
+    "CLEANUP_ALLOWED": ("ALLOW_DEVELOP_MERGE", _CLEANUP_STAGE),
+    "CI_PENDING": ("WAIT_CI", _PRE_MERGE_STAGE),
+    "REVIEW_PENDING": ("WAIT_REVIEW", _PRE_MERGE_STAGE),
+    "REPOSITORY_ID_MISMATCH": ("BLOCKED_PR_IDENTITY", _ALL_DEVELOP_GATE_STAGES),
+    "REPOSITORY_NAME_MISMATCH": ("BLOCKED_PR_IDENTITY", _ALL_DEVELOP_GATE_STAGES),
+    "PR_BASE_REF_MISMATCH": ("BLOCKED_PR_IDENTITY", _ALL_DEVELOP_GATE_STAGES),
+    "PR_HEAD_REF_MISMATCH": ("BLOCKED_PR_IDENTITY", _ALL_DEVELOP_GATE_STAGES),
+    "PR_CLOSED_UNMERGED": ("BLOCKED_PR_IDENTITY", _ALL_DEVELOP_GATE_STAGES),
+    "TASK_HEAD_DRIFT": ("BLOCKED_HEAD_DRIFT", _ALL_DEVELOP_GATE_STAGES),
+    "CI_HEAD_DRIFT": ("BLOCKED_HEAD_DRIFT", _ALL_DEVELOP_GATE_STAGES),
+    "REVIEW_HEAD_DRIFT": ("BLOCKED_HEAD_DRIFT", _ALL_DEVELOP_GATE_STAGES),
+    "PR_BASE_SHA_DRIFT": ("BLOCKED_BASE_DRIFT", _ALL_DEVELOP_GATE_STAGES),
+    "REVIEW_BASE_DRIFT": ("BLOCKED_BASE_DRIFT", _ALL_DEVELOP_GATE_STAGES),
+    "CURRENT_DEVELOP_DRIFT": ("BLOCKED_BASE_DRIFT", frozenset({"pre_merge", "merge_readback"})),
+    "CHANGED_PATH_FORBIDDEN": ("BLOCKED_SCOPE_DRIFT", _ALL_DEVELOP_GATE_STAGES),
+    "CHANGED_PATH_OUTSIDE_SCOPE": ("BLOCKED_SCOPE_DRIFT", _ALL_DEVELOP_GATE_STAGES),
+    "WORKFLOW_CLASSIFICATION_BLOCKED": ("BLOCKED_SCOPE_DRIFT", _ALL_DEVELOP_GATE_STAGES),
+    "CI_CHECK_MISSING": ("BLOCKED_CI", _PRE_MERGE_STAGE),
+    "CI_FAILURE": ("BLOCKED_CI", _PRE_MERGE_STAGE),
+    "CI_CANCELLED": ("BLOCKED_CI", _PRE_MERGE_STAGE),
+    "CI_SKIPPED": ("BLOCKED_CI", _PRE_MERGE_STAGE),
+    "CI_TIMED_OUT": ("BLOCKED_CI", _PRE_MERGE_STAGE),
+    "CI_STALE": ("BLOCKED_CI", _PRE_MERGE_STAGE),
+    "CI_MISSING": ("BLOCKED_CI", _PRE_MERGE_STAGE),
+    "INDEPENDENT_REVIEW_REQUIRED": ("BLOCKED_REVIEW", _PRE_MERGE_STAGE),
+    "REVIEW_CHANGES_REQUESTED": ("BLOCKED_REVIEW", _PRE_MERGE_STAGE),
+    "CRITICAL_FINDINGS": ("BLOCKED_REVIEW", _PRE_MERGE_STAGE),
+    "IMPORTANT_FINDINGS": ("BLOCKED_REVIEW", _PRE_MERGE_STAGE),
+    "BLOCKING_THREADS_OPEN": ("BLOCKED_THREADS", _PRE_MERGE_STAGE),
+    "MERGEABILITY_CONFLICTING": ("BLOCKED_MERGEABILITY", _PRE_MERGE_STAGE),
+    "MERGEABILITY_UNKNOWN": ("BLOCKED_MERGEABILITY", _PRE_MERGE_STAGE),
+    "EXTERNAL_GATE_REQUIRED": ("MANUAL_GATE_REQUIRED", _ALL_DEVELOP_GATE_STAGES),
+    "SENSITIVE_OPERATION_REQUESTED": ("MANUAL_GATE_REQUIRED", _ALL_DEVELOP_GATE_STAGES),
+    "WORKFLOW_MANUAL_GATE_REQUIRED": ("MANUAL_GATE_REQUIRED", _ALL_DEVELOP_GATE_STAGES),
+    "FACTS_DIGEST_MISMATCH": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "FACTS_MALFORMED": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "FACTS_EXPIRED": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "FACTS_FROM_FUTURE": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "PLAN_DIGEST_MISMATCH": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "CHARTER_DIGEST_MISMATCH": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "PLAN_CHARTER_BINDING_MISMATCH": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "UNKNOWN_EXTERNAL_GATE": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "UNKNOWN_REQUESTED_OPERATION": ("BLOCKED", _ALL_DEVELOP_GATE_STAGES),
+    "MERGE_RESULT_UNCONFIRMED": ("BLOCKED", _MERGE_READBACK_STAGE),
+    "MERGE_NOT_CONFIRMED": ("BLOCKED", _CLEANUP_STAGE),
+    "WORKTREE_NOT_CLEAN": ("BLOCKED", _CLEANUP_STAGE),
+    "LOCAL_DEVELOP_MISSING_TASK_HEAD": ("BLOCKED", _CLEANUP_STAGE),
+    "REMOTE_DEVELOP_MISSING_TASK_HEAD": ("BLOCKED", _CLEANUP_STAGE),
+}
 _GATE_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _GATE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _GATE_RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
@@ -485,10 +543,20 @@ class DevelopGateDecisionV1:
         reasons = _gate_strings(data["reason_codes"], "reason_codes")
         if not reasons:
             raise LeanMatrixError("missing_reason_code", "reason_codes must not be empty")
+        if len(reasons) != 1 or reasons[0] not in DEVELOP_GATE_REASON_RULES:
+            raise LeanMatrixError("invalid_reason_code", "reason_codes must contain one closed V1 reason code")
+        stage = _gate_status(data["stage"], "stage", DEVELOP_GATE_STAGES)
+        decision = _gate_status(data["decision"], "decision", DEVELOP_GATE_DECISIONS)
+        expected_decision, allowed_stages = DEVELOP_GATE_REASON_RULES[reasons[0]]
+        if decision != expected_decision or stage not in allowed_stages:
+            raise LeanMatrixError(
+                "invalid_decision_reason_combination",
+                "decision, stage, and reason code must form an allowed V1 combination",
+            )
         return cls(
             schema_version=_gate_schema_version(data["schema_version"], "develop Gate decision"),
-            stage=_gate_status(data["stage"], "stage", DEVELOP_GATE_STAGES),
-            decision=_gate_status(data["decision"], "decision", DEVELOP_GATE_DECISIONS),
+            stage=stage,
+            decision=decision,
             reason_codes=reasons,
             plan_digest=_gate_digest(data["plan_digest"], "plan_digest"),
             facts_digest=_gate_digest(data["facts_digest"], "facts_digest"),
@@ -580,8 +648,8 @@ def _manual_or_scope_decision(
             )
     except WorkflowError as exc:
         if exc.error_type == "manual_gate_required":
-            return "MANUAL_GATE_REQUIRED", exc.error_type.upper()
-        return "BLOCKED_SCOPE_DRIFT", exc.error_type.upper()
+            return "MANUAL_GATE_REQUIRED", "WORKFLOW_MANUAL_GATE_REQUIRED"
+        return "BLOCKED_SCOPE_DRIFT", "WORKFLOW_CLASSIFICATION_BLOCKED"
     return None
 
 
@@ -596,25 +664,20 @@ def evaluate_develop_gate(
     plan_digest_value = semantic_digest(plan_contract.to_dict())
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() != timedelta(0):
         raise LeanMatrixError("invalid_now", "now must be an aware UTC datetime")
-    if isinstance(facts, GitHubGateFactsV1):
-        facts_contract = facts
-    else:
-        try:
-            facts_contract = GitHubGateFactsV1.from_mapping(facts)
-        except LeanMatrixError as exc:
-            stage, facts_digest = _fallback_facts_identity(facts)
-            if exc.error_type == "facts_digest_mismatch":
-                reasons = ("FACTS_DIGEST_MISMATCH",)
-            else:
-                reasons = ("FACTS_MALFORMED", exc.error_type.upper())
-            return _develop_decision(
-                stage=stage,
-                decision="BLOCKED",
-                reasons=reasons,
-                plan_digest_value=plan_digest_value,
-                facts_digest=facts_digest,
-                now=now,
-            )
+    raw_facts = facts.to_dict() if isinstance(facts, GitHubGateFactsV1) else facts
+    try:
+        facts_contract = GitHubGateFactsV1.from_mapping(raw_facts)
+    except LeanMatrixError as exc:
+        stage, facts_digest = _fallback_facts_identity(raw_facts)
+        reason = "FACTS_DIGEST_MISMATCH" if exc.error_type == "facts_digest_mismatch" else "FACTS_MALFORMED"
+        return _develop_decision(
+            stage=stage,
+            decision="BLOCKED",
+            reasons=(reason,),
+            plan_digest_value=plan_digest_value,
+            facts_digest=facts_digest,
+            now=now,
+        )
     decision_args = {
         "stage": facts_contract.stage,
         "plan_digest_value": plan_digest_value,
