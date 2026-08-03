@@ -29,7 +29,6 @@ from app.data_core.contracts import (
     DERIVED_FREQUENCIES,
     BarFrequency,
     BarsResult,
-    DataCoreError,
     DatasetKey,
     DatasetKind,
     DatasetOrigin,
@@ -353,13 +352,10 @@ def execute_task07_repair_target(
         else:
             raise Task07MigrationError("TASK07_REPAIR_OPERATION_INVALID")
         validate_provider_batch(batch)
-    except (
-        DataCoreError,
-        Task07MigrationError,
-        RuntimeError,
-        TimeoutError,
-        ConnectionError,
-    ) as exc:
+    # RQData and Parquet readers may surface vendor exceptions without a
+    # stable domain base class. This is the packet-bound terminal boundary:
+    # ordinary failures become an explicit DataGap; BaseException still exits.
+    except Exception as exc:
         reason = (
             "task07_rqdata_redownload_failed"
             if calls_rqdata
@@ -373,7 +369,9 @@ def execute_task07_repair_target(
         )
     try:
         publication = dict(publish(batch, lineage))
-    except (DataCoreError, Task07MigrationError, RuntimeError, OSError, ValueError) as exc:
+    # Publication failures are only downgraded to DataGap after an exact
+    # Catalog readback proves that the approved target state did not change.
+    except Exception as exc:
         if not publication_state_unchanged(target):
             raise Task07MigrationError(
                 "TASK07_REPAIR_PUBLICATION_STATE_AMBIGUOUS"

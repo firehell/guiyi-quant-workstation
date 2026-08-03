@@ -169,7 +169,7 @@ def test_direct_repair_failure_records_gap_without_publishing() -> None:
         target,
         sessions=(_friday_night_session(),),
         fetch_direct=lambda _request: (_ for _ in ()).throw(
-            RuntimeError("provider unavailable")
+            Exception("untyped provider SDK failure")
         ),
         read_canonical_1m=lambda _target: pytest.fail("direct repair must not read canonical 1m"),
         publish=lambda _batch, _lineage: pytest.fail("failed repair must not publish"),

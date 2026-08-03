@@ -22,7 +22,6 @@ from app.data_core.catalog import CatalogError, GapWindow, HistoricalCatalog
 from app.data_core.contracts import (
     BarFrequency,
     BarQuery,
-    DataCoreError,
     DatasetKey,
     DatasetKind,
 )
@@ -1275,7 +1274,9 @@ def _execute_task07_repair_apply(
             )
             if not sessions:
                 raise ValueError("TASK07_REPAIR_SESSION_COVERAGE_MISSING")
-    except (DataCoreError, RuntimeError, OSError, TypeError, ValueError) as exc:
+    # Session/mapping providers also expose untyped vendor exceptions. At this
+    # packet-bound boundary they become a terminal DataGap, never a success.
+    except Exception as exc:
         reason = (
             "task07_rqdata_redownload_preparation_failed"
             if target.operation == "rqdata_redownload"
