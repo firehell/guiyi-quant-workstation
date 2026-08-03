@@ -145,6 +145,30 @@ _OFFLINE_DATA_TOOL_PREFIXES = (
     "services/quant-api/app/services/rqdata_ingest/",
     "services/quant-api/scripts/",
 )
+_EXACT_HISTORICAL_SCRIPT_PATHS = frozenset(
+    {
+        "scripts/consumer_contract_final_closeout_006.py",
+        "scripts/jm_htdy_s6_08_schema_v3_gate.py",
+        "scripts/profile_binding_rollout_closeout_008b.py",
+        "scripts/rqdata_full_history_residual_closure_apply.py",
+        "scripts/s607_database_recovery_gate.py",
+        "scripts/signal_review_lineage_gate_003.py",
+    }
+)
+_EXACT_OFFLINE_ADMIN_SCRIPT_PATHS = frozenset(
+    {
+        "scripts/backup/core.py",
+        "scripts/full_history_audit_v2_closure.py",
+        "scripts/restore/core.py",
+        "scripts/rqdata_audit.py",
+        "scripts/rqdata_backfill_1w_pre2020_listing.sh",
+        "scripts/rqdata_coverage_audit.py",
+        "scripts/rqdata_field_audit.py",
+        "scripts/rqdata_full_history_residual_closure.py",
+        "scripts/rqdata_full_universe_download.sh",
+        "scripts/rqdata_v1b_jm_asset.py",
+    }
+)
 
 
 class AssetDisposition(StrEnum):
@@ -1617,8 +1641,6 @@ def _reference_classification(
         return "historical_non_active", "immutable_schema_history"
     if parts[:1] in {(".agents",), ("configs",), ("docs",), ("experiments",)}:
         return "historical_non_active", "documentation_or_frozen_evidence"
-    if parts[:1] == ("scripts",) and not path.startswith("scripts/engineering/"):
-        return "historical_non_active", "manual_historical_script_not_runtime_wired"
     if root_kind == "detached_runtime" and parts[:1] in {
         ("services",),
         ("packages",),
@@ -1633,6 +1655,10 @@ def _reference_classification(
         return "historical_non_active", "offline_data_tool_not_runtime_wired"
     if path.startswith(_FROZEN_OBSERVATION_PREFIXES):
         return "historical_non_active", "task06_frozen_observation_lineage_not_data_selection"
+    if root_kind == "checkout" and path in _EXACT_HISTORICAL_SCRIPT_PATHS:
+        return "historical_non_active", "exact_historical_gate_script"
+    if root_kind == "checkout" and path in _EXACT_OFFLINE_ADMIN_SCRIPT_PATHS:
+        return "historical_non_active", "exact_offline_admin_script"
     if path in _READONLY_LINEAGE_PATHS:
         return "historical_non_active", "readonly_historical_lineage_or_retired_cli"
     if path.startswith("services/quant-api/app/models/") or path.startswith(

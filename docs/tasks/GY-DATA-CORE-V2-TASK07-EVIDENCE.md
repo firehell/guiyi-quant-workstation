@@ -26,14 +26,16 @@ catalog page cache RED: cache contained 1000 dataset partitions for a small page
 catalog page cache GREEN: exact current-page file_uri binding; included in Task 07 orchestration pass
 seven-frequency residual RED: actual targets only 1m/1d; vn.py rejected 30m/1w and accepted aliases; Indicator Registry included 1h
 seven-frequency residual GREEN: 55 passed; actual target/indicator/vn.py adapters use exact seven-frequency contract
+operational-script scanner RED: unlisted scripts/ selector + Parquet glob were both classified historical
+operational-script scanner GREEN: blanket scripts rule removed; unlisted script is review-required; only exact checkout historical/offline script manifests remain
 ```
 
 当前 code-only 验证 checkpoint：
 
 ```text
-task07_orchestration=66 passed
+task07_orchestration=67 passed
 historical_migration_and_inventory=64 passed
-backend=2695 passed / 44 skipped
+backend=2696 passed / 44 skipped
 frontend=191 passed / 1 skipped
 frontend_build=passed
 ruff=passed
@@ -69,7 +71,7 @@ Web Profile selector 和 queued legacy batch worker 已退出 active path。
 checkout 引用分类逐条保存 classification reason；detached Runtime 的可执行 services/packages/apps
 引用优先判 active/review，不能被 retired/frozen/read-only 分类提前隐藏。当前 worktree 的
 checkout-only 开发扫描为 `active=0 / review_required=0 / historical_non_active=2111 / truncated=false`，
-digest=`895b2335d27f4a5d9b26d2dfc68339600b84121ece23bf211aa060b9336b1e81`。detached Runtime 和 production DB
+digest=`2f5ea548c6f6a9cf849d2715201436da892e347c0708d686eb47a4ab30bb3a97`。detached Runtime 和 production DB
 的 v9 blocker diagnosis 已重采。项目所有者已确认删除的 GuiyiApprovals root 不再是必需范围；
 v9 不是最终 approval inventory，是因为其 base SHA 已被后续 hardening supersede 且 Runtime
 active-reference Gate 尚未关闭。

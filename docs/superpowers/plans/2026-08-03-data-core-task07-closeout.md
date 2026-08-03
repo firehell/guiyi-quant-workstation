@@ -79,14 +79,9 @@
 - Bind exact target/previous tags and SHAs, DB `20260803_0032`, all feature flags disabled, health/smoke passed, rollback-ready, and checkout/Runtime reference zero.
 - Do not add PID, environment/Web bundle, generic row-set digest, or multi-stage lineage fields; a fixture receipt never unlocks retirement/deletion.
 
-- Bind source/develop merge SHA, current detached Runtime SHA, target tree, verified aggregate migration receipt, DB revision `0032`, exact service parents/labels, flags, environment digest, Web bundle digest, active-row-set digest, rollback SHA, and approval hash.
-- Preflight requires all migration receipts verified, flags disabled, no unexpected live/SignalEvent increments, and clean exact source/runtime state.
-- Stop the exact API/scheduler/worker/Web service set, switch detached Runtime, restart the same set, run disabled smoke and active-reference scan, and rollback on failure.
-- Never enable live/EOD/notification/trading.
+### Future production closeout (not part of this code-only PR)
 
-### Task 7: Final repository and production Gate execution
-
-- Run full backend, frontend, Ruff, engineering all-safe, secret scan, docs links, diff check, and independent whole-branch review.
+- Run full backend, frontend, Ruff, engineering all-safe, secret scan, the repository docs profile, diff check, and independent whole-branch review.
 - Merge the reviewed task branch into develop through the normal protected flow; do not touch main/release/tag.
 - From the clean develop merge SHA, collect final production inventory and produce the single exact migration packet.
 - After owner approval, apply and verify every eligible direct and aggregate batch; record explicit DataGap/blocked dispositions for all remaining K-lines and preserve all source K-lines.

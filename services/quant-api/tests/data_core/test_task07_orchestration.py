@@ -587,6 +587,28 @@ def test_reference_scan_keeps_real_executable_selector_and_parquet_glob_active(
     }
 
 
+def test_reference_scan_does_not_blanket_hide_unlisted_operational_script(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "scripts" / "new_operational_consumer.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        'profile_id = request.profile_id\nfiles = root.glob("*.parquet")\n',
+        encoding="utf-8",
+    )
+
+    report = scan_task07_references([("checkout", tmp_path)])
+
+    assert report["state_counts"] == {
+        "active": 0,
+        "historical_non_active": 0,
+        "review_required": 2,
+    }
+    assert {
+        item["classification_reason"] for item in report["records"]
+    } == {"unclassified_reference", "selector_requires_manual_reachability_review"}
+
+
 def test_detached_runtime_executable_reference_is_not_hidden_as_history(
     tmp_path: Path,
 ) -> None:
