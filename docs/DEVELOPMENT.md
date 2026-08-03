@@ -1,6 +1,6 @@
 # 开发、Review 与集成流程
 
-更新时间：2026-07-30
+更新时间：2026-08-03
 
 本文只定义协作 Lane、会话、worktree、PR 与人工 Gate。产品、数据、回测、信号和 Runtime
 业务语义分别由 `PROJECT_SOURCE.md`、`DECISIONS.md` 和对应 deep canonical 定义。
@@ -53,6 +53,36 @@ Runtime promotion、live enable、真实通知和 GitHub 规则变更始终保�
 只有 task worktree clean、task HEAD 已被 `develop` 包含且远端回读一致时，才可自动移除
 task worktree/branch。Draft PR 创建后保留 worktree 以处理 Review；merge 失败或 head 漂移
 时保留全部状态并 fail-closed。
+
+### V07 develop Gate 评估器
+
+`python3 scripts/engineering/lean_matrix_team.py develop-gate --plan <plan.json> --facts <facts.json>
+--format json` 只是确定性、无副作用评估器。它消费 trusted `ExecutionPlanV1` 与 Connector/Codex
+已归一化的 GitHub/Git 事实，输出带稳定 reason code 的 `DevelopGateDecisionV1`；不读 GitHub，
+不调用 `gh`，不持有 token，不轮询 CI，不 ready/合并/清理，也不写 merge receipt。
+
+事实只有三个阶段：`pre_merge`、`merge_readback`、`cleanup`。每份 facts 使用 semantic SHA-256
+绑定全字段，`observed_at` 到 `expires_at` 必须恰好 5 分钟；到期、head/base 漂移、范围漂移或人工
+Gate 均 fail-closed。未合并 PR 的 current `develop` 偏离 frozen base 是严格 base drift，必须重新
+intake、exact-head Review 和 CI。Lane 3 仅接受 digest-bound `code` / `test` / `dry_run` /
+`disabled_feature` / `isolated_migration` 类别与保守的 path 绑定；真实操作仍需原有人工 Gate。
+
+Connector/Codex 编排层负责真实读取和修改：
+
+1. 对 fresh `pre_merge` facts 评估；Draft 只能得到 ready transition 许可。
+2. ready 后立即重读 PR head/base、CI、Review、threads、mergeability 和 current `develop`，生成新 facts
+   再评估。
+3. 仅对重读后仍允许的 exact head 发出一次 expected-head merge-commit 请求。超时或结果不确定
+   时禁止重试，改用 fresh `merge_readback` facts 回读。
+4. 仅 exact PR head 已 merge、存在 merge SHA 且 `develop` 包含 task head 时，才由外部编排层写入
+   digest-bound merge receipt。
+5. worktree/branch 清理是独立 transition；必须使用 fresh `cleanup` facts 再评估，确认 merge、
+   worktree clean，以及本地与 remote-tracking `develop` 都包含 task head。
+
+`ALLOW_DEVELOP_MERGE` 只表示当前 stage 可向前一步，不证明外部操作已发生。仓库不含 GitHub
+client/token/poller/merge daemon。`main`/release/tag、Runtime、生产 migration apply、真实数据/DB、
+策略/回测语义、live、通知、删除、candidate promotion 和 GitHub rules 的人工 Gate 全部保留。
+AI-TEAM-007 自身不得使用新 evaluator 批准自己，仍使用既有 Connector/Codex 集成流程。
 
 ## 验证与停止
 

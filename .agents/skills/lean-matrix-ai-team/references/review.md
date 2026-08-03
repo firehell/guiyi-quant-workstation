@@ -28,3 +28,18 @@ Minor findings alone do not create a repair round. Every repair returns to the f
 implementer context and binds the preceding final-decision digest. An approved exact-head decision
 may be handed to the existing Codex/GitHub flow, but V06 performs no network, PR, CI polling, merge,
 release, Runtime, real-write, notification, or trading action.
+
+## V07 exact-head handoff
+
+The independent `FinalDecisionV1` is necessary evidence but is not a live GitHub observation. Before every
+`pre_merge` evaluation, Connector/Codex re-reads the exact PR head/base, current `develop`, CI checks, review
+identity/findings, blocking threads, changed paths, and mergeability into `GitHubGateFactsV1`. The reviewed
+head/base in `GitHubReviewEvidenceV1` must equal the PR head and frozen expected base. Strict base drift or
+head drift invalidates the prior package; fresh intake, exact-head review, and CI are required.
+
+The ready transition never inherits merge authority. If `DevelopGateDecisionV1` returns
+`READY_TRANSITION_REQUIRED`, Connector/Codex may mark only that exact PR ready, then must re-read and
+re-evaluate before an expected head SHA merge request. The external flow binds the resulting decision and
+facts digests into its digest-bound merge receipt after confirmed `merge_readback`. Review approval does not
+authorize a separate cleanup transition, main/release/tag, Runtime, real data/DB, strategy/backtest semantics,
+notifications, live, deletion, candidate promotion, or GitHub rules.

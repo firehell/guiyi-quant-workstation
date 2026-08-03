@@ -89,3 +89,22 @@ Receipt or Git drift blocks recovery. Restoring the exact trusted bytes and exac
 fresh read-only validation; missing evidence never implies success. Recovery cannot reset a round,
 replace the original implementer, reuse a reviewer context for implementation, add a fourth round,
 or authorize Owner Gate, merge, release, Runtime, data/DB, notification, or trading work.
+
+## V07 merge-result and cleanup recovery
+
+V07 does not resume from a remembered action or a previous allow decision. Its recovery state is one of the
+freshly observed stages `pre_merge`, `merge_readback`, or `cleanup`; every `GitHubGateFactsV1` observation is
+digest-bound and valid for exactly five minutes.
+
+If an expected-head merge request times out, disconnects, or returns an uncertain result, Connector/Codex must
+not retry. It re-reads the exact PR and `develop`, emits fresh `merge_readback` facts, and runs the pure
+evaluator. Recovery advances only when the exact task head is the merged PR head, a merge SHA exists, and
+`develop` contains that task head. Otherwise `MERGE_RESULT_UNCONFIRMED` blocks without inferring either success
+or safe retry. A still-unmerged PR whose current `develop` no longer equals the frozen base is strict base
+drift and requires fresh intake, exact-head Review, and CI.
+
+After confirmed readback, Connector/Codex writes the external digest-bound merge receipt described in
+[execution.md](execution.md). Receipt identity or digest drift blocks cleanup. Worktree/branch removal remains a
+separate cleanup transition: re-read a fresh `cleanup` facts object and require confirmed exact-head merge, a
+clean task worktree, and both local and remote-tracking `develop` ancestry. An interrupted cleanup is observed
+again; it is never completed from conversation memory or merely from the prior merge decision.

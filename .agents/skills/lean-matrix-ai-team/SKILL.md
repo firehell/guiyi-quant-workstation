@@ -15,7 +15,9 @@ This Skill does not replace canonical sources or Gatekeepers. It does not merge 
 does not write real data, and does not send real notifications. Its authority boundary is:
 no daemon, no Codex App API wrapper, no GitHub integration, no V06 network or merge implementation,
 no Runtime authority, no data/DB write authority, no notification authority, no release authority, and
-no trading authority. V06 performs no network, PR, CI polling, merge, or Runtime operation.
+no trading authority. V06 performs no network, PR, CI polling, merge, or Runtime operation. V07 adds a
+pure evaluator, not a repository GitHub integration: there is no repository GitHub client, no `gh`, no token,
+no poller, and no merge daemon.
 
 ## Existing V04/V05 compatibility
 
@@ -158,6 +160,45 @@ existing fixed adapter. Runtime evidence remains under `.ai/lean-matrix/<plan-di
     that existing flow still govern each operation; V06 neither performs nor fakes them. `main`,
     release/tag, Runtime, real data/DB, strategy/backtest semantics, notifications, live, deletion,
     candidate promotion, and GitHub rules remain outside V06 and keep their own Gates.
+
+## V07 develop Gate evaluator
+
+V07 is a pure evaluator over a trusted `ExecutionPlanV1` and normalized, digest-bound Connector facts:
+
+```bash
+python3 scripts/engineering/lean_matrix_team.py develop-gate --plan <approved-execution-plan.json> --facts <github-gate-facts.json> --format json
+```
+
+The strict V1 wire contracts are `GitHubCheckV1`, `GitHubReviewEvidenceV1`, `GitHubGateFactsV1`, and
+`DevelopGateDecisionV1`. `GitHubGateFactsV1` includes the full digest-bound `TaskCharterV1`, exact
+repository/PR/base/head identity, sorted changed paths, required checks, independent review and finding counts,
+pending external Gates, requested operation, `change_categories`, mergeability, and stage readback fields. Its
+`observed_at` and `expires_at` are RFC3339 UTC and exactly five minutes apart; evaluation blocks at expiry.
+Facts and decisions use semantic SHA-256. The CLI only reads the two input files and writes the decision to
+stdout; it does not observe GitHub, mutate Git, write a receipt, or execute an allowed transition.
+
+The only stages are `pre_merge`, `merge_readback`, and `cleanup`. The strict base drift rule applies before an
+unconfirmed merge: any current `develop`, PR base, or reviewed base drift requires fresh intake, exact-head
+Review, and CI. Lane comes from the full Charter, never model routing. The shared classifier keeps four
+positional arguments and the compatible keyword-only `change_categories=()` input. Its closed categories are
+`code`, `test`, `dry_run`, `disabled_feature`, and `isolated_migration`; Lane 3 requires a non-empty,
+digest-bound category set and conservative category/path binding.
+
+Connector/Codex owns PR, CI, Review, thread, mergeability, Git, and ancestry reads, plus every mutation. Follow
+[execution.md](references/execution.md): evaluate fresh `pre_merge` facts; if the reason is
+`READY_TRANSITION_REQUIRED`, perform only the ready transition, re-read all exact-head facts, and evaluate
+again. Only then may the external flow request a merge commit with the expected head SHA. A timeout or
+uncertain result must not retry the merge. It creates fresh `merge_readback` facts and accepts success only when
+the exact PR head is merged, a merge SHA exists, and `develop` contains the task head. Connector/Codex then
+writes its digest-bound merge receipt. Worktree/branch removal is a separate cleanup transition with fresh
+`cleanup` facts; it requires confirmed merge, a clean worktree, and both local and remote-tracking `develop`
+ancestry.
+
+`ALLOW_DEVELOP_MERGE` is only a stage-qualified evaluation result. It does not prove that ready, merge,
+readback, receipt, or cleanup occurred. `main/release/tag`, Runtime, real data/DB, strategy/backtest semantics,
+notifications, live, deletion, candidate promotion, GitHub rules, and all business-specific Gates remain
+manual and unchanged. AI-TEAM-007 self-bootstrap uses the existing Connector/Codex flow and its independent
+exact-head review; it cannot use its own new gate as approval.
 
 ## Output discipline
 
