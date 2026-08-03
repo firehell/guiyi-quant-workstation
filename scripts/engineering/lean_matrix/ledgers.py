@@ -185,6 +185,7 @@ def recover_review_ledger(
         raise LeanMatrixError("review_chain_incomplete", "review ledger requires at least round zero")
     current_head = observe_current_head(repo_root)
     decisions: list[FinalDecisionV1] = []
+    packages: list[ReviewPackageV1] = []
     implementation_contexts: set[str] = set()
     reviewer_contexts: set[str] = set()
     previous_head: str | None = None
@@ -299,6 +300,18 @@ def recover_review_ledger(
             raise LeanMatrixError(
                 "review_head_rewritten", "repair round HEAD must descend from prior reviewed HEAD",
             )
+        if round_number > 0:
+            predecessor_package = packages[-1]
+            if (
+                package.specialist_evidence_digests
+                != predecessor_package.specialist_evidence_digests
+                or package.specialist_reviewed_head_sha
+                != predecessor_package.specialist_reviewed_head_sha
+            ):
+                raise LeanMatrixError(
+                    "specialist_predecessor_mismatch",
+                    "repair package must retain the predecessor specialist evidence and reviewed HEAD",
+                )
         previous_head = package.exact_head_sha
         decision_path, raw_decision = _artifact(
             repo_root, workspace, entry["final_decision"], "final decision",
@@ -330,6 +343,7 @@ def recover_review_ledger(
                 "context_reuse", "historical implementation and reviewer context sets must be disjoint",
             )
         decisions.append(decision)
+        packages.append(package)
         if decision.decision == "阻塞" and round_number != len(raw_rounds) - 1:
             raise LeanMatrixError(
                 "round_three_review_blocked", "a blocked round-three decision terminates recovery",

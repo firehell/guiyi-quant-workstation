@@ -15,7 +15,12 @@ from .contracts import (
 )
 from .digests import semantic_digest
 from .errors import LeanMatrixError
-from .review_git import observe_current_head, observe_exact_diff, validate_worktree_clean
+from .review_git import (
+    observe_current_head,
+    observe_exact_diff,
+    validate_stored_package_git,
+    validate_worktree_clean,
+)
 from .workspace import intake_workspace
 
 
@@ -58,6 +63,9 @@ def build_review_package(
         "specialist_evidence_digests": [
             semantic_digest(report.to_dict()) for _, report in specialist_evidence
         ],
+        "specialist_reviewed_head_sha": (
+            specialist_evidence[0][1].exact_head_sha if specialist_evidence else None
+        ),
     }
     return ReviewPackageV1.from_mapping(
         payload,
@@ -90,6 +98,20 @@ def build_final_decision(
         raise LeanMatrixError(
             "invalid_document_intake", "decision builder requires the trusted document intake",
         )
+    if (
+        review_package.execution_plan_digest != document_intake.execution_plan_digest
+        or review_package.intake_digest != intake_digest(document_intake)
+        or review_package.exact_base_sha != document_intake.develop_sha
+    ):
+        raise LeanMatrixError(
+            "decision_intake_mismatch",
+            "decision package must bind the supplied trusted document intake",
+        )
+    if review_package.exact_head_sha != observe_current_head(repo_root):
+        raise LeanMatrixError(
+            "stale_decision_head", "decision package must bind the current local exact HEAD",
+        )
+    validate_stored_package_git(repo_root, review_package)
     validate_worktree_clean(repo_root, intake_workspace(repo_root, document_intake))
     payload: dict[str, object] = {
         "schema_version": 1,

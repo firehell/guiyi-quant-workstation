@@ -702,6 +702,110 @@ def test_repair_round_keeps_original_implementer_and_disjoint_history(tmp_path: 
     assert raised.value.error_type in {"role_identity_collision", "context_reuse"}
 
 
+@pytest.mark.parametrize(
+    "specialists",
+    [
+        ("quant-research",),
+        ("quant-research", "backtest-audit"),
+    ],
+)
+def test_repair_reuses_round_zero_specialist_evidence_without_claiming_new_head_review(
+    tmp_path: Path, specialists: tuple[str, ...],
+) -> None:
+    """Repair recovery binds immutable round-zero advice without relabeling it as new-HEAD review."""
+    state = _round_zero(tmp_path, specialists=specialists)
+    round_zero_package = _package(state)
+    round_zero_decision = _decision(
+        state,
+        round_zero_package,
+        spec="FAIL",
+        quality="CHANGES_REQUIRED",
+        findings=[{"severity": "Important", "summary": "repair required"}],
+        decision="要求修正后再集成",
+    )
+    entry_zero = _persist_round(state, round_zero_package, round_zero_decision)
+    predecessor = _digest(round_zero_decision.to_dict())
+    specialist_contexts = dict(state["implementer"].specialist_contexts)
+    repair_head = _commit(state["repo"], "src/feature.py", "value = 2\n")
+    repair_implementer = _brief(
+        state["api"], state["intake"], role="implementer", context_id="implementer-0",
+        round_number=1, predecessor=predecessor, round_zero_brief=state["implementer"],
+        specialist_contexts=specialist_contexts,
+    )
+    repair_reviewer = _brief(
+        state["api"], state["intake"], role="reviewer", context_id="reviewer-0",
+        round_number=1, predecessor=predecessor, round_zero_brief=state["implementer"],
+        specialist_contexts=specialist_contexts,
+    )
+    repair_handoff = _handoff(
+        state["api"], repair_implementer, head=repair_head,
+        changed_paths=["src/feature.py"],
+        test_evidence=_receipts(
+            state["api"], state["repo"], state["intake"],
+            head=repair_head, prefix="repair-round-1",
+        ),
+        advisory=list(round_zero_package.specialist_evidence_digests),
+    )
+    repair_state = {
+        **state,
+        "head": repair_head,
+        "implementer": repair_implementer,
+        "reviewer": repair_reviewer,
+        "handoff": repair_handoff,
+    }
+    repair_package = _package(repair_state)
+
+    assert repair_package.exact_head_sha == repair_head
+    assert repair_package.specialist_reviewed_head_sha == state["head"]
+    assert repair_package.specialist_evidence_digests == (
+        round_zero_package.specialist_evidence_digests
+    )
+
+    repair_decision = _decision(repair_state, repair_package, round_number=1)
+    entry_one = _persist_round(repair_state, repair_package, repair_decision)
+    ledger = _ledger(state["repo"], state["intake"], [entry_zero, entry_one])
+
+    recovered = state["api"]["recover_review_ledger"](
+        state["repo"], state["intake"], ledger,
+        round_zero_brief=state["implementer"],
+    )
+    assert [decision.decision for decision in recovered] == [
+        "要求修正后再集成",
+        "允许集成 develop",
+    ]
+
+
+def test_direct_decision_builder_rejects_clean_later_head(tmp_path: Path) -> None:
+    """A clean commit after packaging cannot inherit an older package's approval decision."""
+    state = _round_zero(tmp_path)
+    package = _package(state)
+    _commit(state["repo"], "src/later.py", "later = True\n")
+
+    with pytest.raises(state["api"]["LeanMatrixError"]) as raised:
+        _decision(state, package)
+    assert raised.value.error_type == "stale_decision_head"
+
+
+def test_direct_decision_builder_rejects_cross_intake_package(tmp_path: Path) -> None:
+    """A trusted package cannot be combined with a different trusted document intake."""
+    state = _round_zero(tmp_path / "package")
+    package = _package(state)
+    other = _round_zero(tmp_path / "other", specialists=("quant-research",))
+
+    with pytest.raises(state["api"]["LeanMatrixError"]) as raised:
+        state["api"]["build_final_decision"](
+            package,
+            repo_root=state["repo"],
+            document_intake=other["intake"],
+            spec_verdict="PASS",
+            quality_verdict="APPROVED",
+            findings=[],
+            round_number=0,
+            decision="允许集成 develop",
+        )
+    assert raised.value.error_type == "decision_intake_mismatch"
+
+
 def test_obsolete_review_contract_names_are_not_public() -> None:
     """Reintroducing the retired second vocabulary would create two active review protocols."""
     sys.path.insert(0, str(ENGINEERING))
@@ -887,6 +991,7 @@ def test_recovery_rejects_legacy_destination_only_forbidden_rename(tmp_path: Pat
         ],
         "implementer_handoff_digest": _digest(handoff.to_dict()),
         "specialist_evidence_digests": [],
+        "specialist_reviewed_head_sha": None,
     }
     decision_payload = {
         "schema_version": 1,

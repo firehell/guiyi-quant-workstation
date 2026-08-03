@@ -1227,12 +1227,14 @@ class ReviewPackageV1:
     test_receipts: tuple[_ArtifactReceiptV1, ...]
     implementer_handoff_digest: str
     specialist_evidence_digests: tuple[str, ...]
+    specialist_reviewed_head_sha: str | None
 
     KEYS: ClassVar[frozenset[str]] = frozenset({
         "schema_version", "execution_plan_digest", "intake_digest", "task_brief_digest",
         "exact_base_sha", "exact_head_sha", "round", "implementer_context_id",
         "reviewer_context_id", "changed_paths", "diff_digest", "test_receipts",
         "implementer_handoff_digest", "specialist_evidence_digests",
+        "specialist_reviewed_head_sha",
     })
 
     @classmethod
@@ -1327,6 +1329,11 @@ class ReviewPackageV1:
         specialist_digests = _digests(
             data["specialist_evidence_digests"], "specialist_evidence_digests",
         )
+        specialist_reviewed_head = _sha(
+            data["specialist_reviewed_head_sha"],
+            "specialist_reviewed_head_sha",
+            allow_none=True,
+        )
         implementer_context = _identifier(
             data["implementer_context_id"], "implementer_context_id",
         )
@@ -1393,7 +1400,9 @@ class ReviewPackageV1:
                 or brief.intake_digest != supplied_intake_digest
                 or report.intake_digest != supplied_intake_digest
                 or report.brief_digest != semantic_digest(brief.to_dict())
-                or report.exact_head_sha != exact_head
+                or brief.round != 0
+                or report.round != 0
+                or report.exact_head_sha != specialist_reviewed_head
                 or report.changed_paths
                 or report.status not in {"DONE", "DONE_WITH_CONCERNS"}
             ):
@@ -1402,7 +1411,10 @@ class ReviewPackageV1:
                 )
             assert brief.specialist_domain is not None
             validate_handoff_test_receipts(
-                repo_root, document_intake, report, exact_head_sha=exact_head,
+                repo_root,
+                document_intake,
+                report,
+                exact_head_sha=report.exact_head_sha,
             )
             actual_domains.append(brief.specialist_domain)
             implementation_contexts.add(brief.context_id)
@@ -1411,6 +1423,12 @@ class ReviewPackageV1:
             tuple(actual_domains) != expected_domains
             or specialist_digests != tuple(expected_specialist_digests)
             or implementer_handoff.advisory_evidence_digests != specialist_digests
+            or (not specialist_evidence and specialist_reviewed_head is not None)
+            or (
+                round_number == 0
+                and specialist_evidence
+                and specialist_reviewed_head != exact_head
+            )
         ):
             raise LeanMatrixError(
                 "specialist_evidence_mismatch", "package must bind every specialist in trusted order",
@@ -1435,6 +1453,7 @@ class ReviewPackageV1:
             "test_receipts": receipts,
             "implementer_handoff_digest": implementer_digest,
             "specialist_evidence_digests": specialist_digests,
+            "specialist_reviewed_head_sha": specialist_reviewed_head,
         }
         for field, value in values.items():
             object.__setattr__(provisional, field, value)
@@ -1456,6 +1475,7 @@ class ReviewPackageV1:
             "test_receipts": [receipt.to_dict() for receipt in self.test_receipts],
             "implementer_handoff_digest": self.implementer_handoff_digest,
             "specialist_evidence_digests": list(self.specialist_evidence_digests),
+            "specialist_reviewed_head_sha": self.specialist_reviewed_head_sha,
         }
 
 
