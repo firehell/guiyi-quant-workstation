@@ -15,10 +15,21 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.data_core.canonical_store import CanonicalStore
+from app.data_core.bar_schema import CanonicalBar
 from app.data_core.catalog import HistoricalCatalog
-from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
-from app.data_core.rqdata_adapter import TradingSessionCoverage
+from app.data_core.contracts import (
+    BarFrequency,
+    BarsResult,
+    DatasetKey,
+    DatasetKind,
+)
+from app.data_core.rqdata_adapter import (
+    ProviderBarBatch,
+    ProviderBarRequest,
+    TradingSessionCoverage,
+)
 from app.data_core.task07_migration import (
+    Task07RepairTarget,
     Task07MigrationError,
     execute_task07_prepared_batch,
     prepare_legacy_parquet_batch,
@@ -78,6 +89,285 @@ def _friday_night_session() -> TradingSessionCoverage:
         end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
         expected_bar_ends=(datetime(2026, 7, 31, 13, 1, tzinfo=UTC),),
     )
+
+
+def _repair_bar() -> CanonicalBar:
+    return CanonicalBar(
+        provider="rqdata",
+        dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+        symbol="jm",
+        contract_or_series="JM2609",
+        frequency=BarFrequency.M1,
+        bar_end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+        trading_day=date(2026, 8, 3),
+        open=Decimal("100.1"),
+        high=Decimal("101.2"),
+        low=Decimal("99.8"),
+        close=Decimal("100.7"),
+        volume=Decimal("12"),
+        turnover=Decimal("1208.4"),
+        open_interest=Decimal("30"),
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+
+
+def _direct_repair_target() -> Task07RepairTarget:
+    return Task07RepairTarget(
+        operation="rqdata_redownload",
+        dataset=_dataset(),
+        start=datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+        source_action_ids=(1,),
+        source_action_digests=("1" * 64,),
+        target_digest="2" * 64,
+    )
+
+
+def test_direct_repair_fetches_exact_window_and_publishes_once() -> None:
+    target = _direct_repair_target()
+    session = _friday_night_session()
+    observed: dict[str, object] = {}
+
+    def fetch(request: ProviderBarRequest) -> ProviderBarBatch:
+        observed["request"] = request
+        return ProviderBarBatch(
+            request=request,
+            bars=(_repair_bar(),),
+            data_version="rqdata-test-repair-v1",
+        )
+
+    def publish(batch: ProviderBarBatch, lineage: object) -> dict[str, object]:
+        observed["batch"] = batch
+        observed["lineage"] = lineage
+        return {"publication_status": "published", "receipt_digest": "3" * 64}
+
+    receipt = migration_module.execute_task07_repair_target(
+        target,
+        sessions=(session,),
+        fetch_direct=fetch,
+        read_canonical_1m=lambda _target: pytest.fail("direct repair must not read canonical 1m"),
+        publish=publish,
+        record_gap=lambda *_args, **_kwargs: pytest.fail("successful repair must not record a gap"),
+        publication_state_unchanged=lambda _target: True,
+    )
+
+    request = observed["request"]
+    assert isinstance(request, ProviderBarRequest)
+    assert request.dataset == target.dataset
+    assert (request.start, request.end) == (target.start, target.end)
+    assert observed["lineage"] is None
+    assert receipt["status"] == "passed"
+    assert receipt["calls_rqdata"] is True
+
+
+def test_direct_repair_failure_records_gap_without_publishing() -> None:
+    target = _direct_repair_target()
+    recorded: list[tuple[Task07RepairTarget, str]] = []
+
+    receipt = migration_module.execute_task07_repair_target(
+        target,
+        sessions=(_friday_night_session(),),
+        fetch_direct=lambda _request: (_ for _ in ()).throw(
+            Exception("untyped provider SDK failure")
+        ),
+        read_canonical_1m=lambda _target: pytest.fail("direct repair must not read canonical 1m"),
+        publish=lambda _batch, _lineage: pytest.fail("failed repair must not publish"),
+        record_gap=lambda repair_target, reason: recorded.append((repair_target, reason)),
+        publication_state_unchanged=lambda _target: True,
+    )
+
+    assert recorded == [(target, "task07_rqdata_redownload_failed")]
+    assert receipt["status"] == "data_gap"
+    assert receipt["calls_rqdata"] is True
+    assert receipt["publication"] is None
+
+
+def test_repair_publish_failure_records_gap_only_when_state_is_unchanged() -> None:
+    target = _direct_repair_target()
+    recorded: list[tuple[Task07RepairTarget, str]] = []
+
+    def fetch(request: ProviderBarRequest) -> ProviderBarBatch:
+        return ProviderBarBatch(
+            request=request,
+            bars=(_repair_bar(),),
+            data_version="rqdata-test-repair-v1",
+        )
+
+    receipt = migration_module.execute_task07_repair_target(
+        target,
+        sessions=(_friday_night_session(),),
+        fetch_direct=fetch,
+        read_canonical_1m=lambda _target: pytest.fail(
+            "direct repair must not read canonical 1m"
+        ),
+        publish=lambda _batch, _lineage: (_ for _ in ()).throw(
+            OSError("publish failed before catalog commit")
+        ),
+        record_gap=lambda repair_target, reason: recorded.append(
+            (repair_target, reason)
+        ),
+        publication_state_unchanged=lambda _target: True,
+    )
+
+    assert recorded == [(target, "task07_rqdata_redownload_publish_failed")]
+    assert receipt["status"] == "data_gap"
+
+    with pytest.raises(
+        migration_module.Task07MigrationError,
+        match="TASK07_REPAIR_PUBLICATION_STATE_AMBIGUOUS",
+    ):
+        migration_module.execute_task07_repair_target(
+            target,
+            sessions=(_friday_night_session(),),
+            fetch_direct=fetch,
+            read_canonical_1m=lambda _target: pytest.fail(
+                "direct repair must not read canonical 1m"
+            ),
+            publish=lambda _batch, _lineage: (_ for _ in ()).throw(
+                OSError("publish failed after catalog commit")
+            ),
+            record_gap=lambda *_args: pytest.fail(
+                "ambiguous publication must not record a gap"
+            ),
+            publication_state_unchanged=lambda _target: False,
+        )
+
+
+def test_aggregate_repair_reads_only_canonical_1m_and_publishes_lineage() -> None:
+    target_dataset = _aggregate_dataset()
+    target = Task07RepairTarget(
+        operation="canonical_1m_reaggregate",
+        dataset=target_dataset,
+        start=datetime(2026, 3, 31, 13, 0, tzinfo=UTC),
+        end=datetime(2026, 3, 31, 13, 5, tzinfo=UTC),
+        source_action_ids=(2,),
+        source_action_digests=("4" * 64,),
+        target_digest="5" * 64,
+    )
+    source_dataset = DatasetKey(
+        provider="rqdata",
+        dataset_kind=DatasetKind.CONTINUOUS,
+        symbol="a",
+        contract_or_series="A.MAIN",
+        frequency=BarFrequency.M1,
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+    session = TradingSessionCoverage(
+        trading_day=date(2026, 4, 1),
+        start=target.start,
+        end=target.end,
+        expected_bar_ends=(target.end,),
+    )
+    source_bars = tuple(
+        CanonicalBar(
+            provider="rqdata",
+            dataset_kind=DatasetKind.CONTINUOUS,
+            symbol="a",
+            contract_or_series="A.MAIN",
+            frequency=BarFrequency.M1,
+            bar_end=datetime(2026, 3, 31, 13, minute, tzinfo=UTC),
+            trading_day=date(2026, 4, 1),
+            open=Decimal(str(100 + minute)),
+            high=Decimal(str(101 + minute)),
+            low=Decimal(str(99 + minute)),
+            close=Decimal(str(100.5 + minute)),
+            volume=Decimal("1"),
+            turnover=Decimal("100"),
+            open_interest=Decimal("10"),
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        )
+        for minute in range(1, 6)
+    )
+    source = BarsResult(
+        bars=source_bars,
+        source_datasets=(source_dataset,),
+        manifest_digests=("6" * 64,),
+        requested_window=(target.start, target.end),
+        data_type=DatasetKind.CONTINUOUS,
+        derived_frequency=None,
+        source_data_versions=("rqdata-source-v1",),
+    )
+    observed: dict[str, object] = {}
+
+    def publish(batch: ProviderBarBatch, lineage: object) -> dict[str, object]:
+        observed["batch"] = batch
+        observed["lineage"] = lineage
+        return {"publication_status": "published", "receipt_digest": "7" * 64}
+
+    receipt = migration_module.execute_task07_repair_target(
+        target,
+        sessions=(session,),
+        fetch_direct=lambda _request: pytest.fail("aggregate repair must not call RQData"),
+        read_canonical_1m=lambda observed_target: (
+            source
+            if observed_target == target
+            else pytest.fail("aggregate repair target drift")
+        ),
+        publish=publish,
+        record_gap=lambda *_args, **_kwargs: pytest.fail("successful repair must not record a gap"),
+        publication_state_unchanged=lambda _target: True,
+    )
+
+    batch = observed["batch"]
+    assert isinstance(batch, ProviderBarBatch)
+    assert batch.request.dataset == target_dataset
+    assert len(tuple(batch.bars)) == 1
+    lineage = observed["lineage"]
+    assert lineage is not None
+    assert lineage.as_payload()["origin"] == "preaggregated_from_1m"
+    assert lineage.as_payload()["source_frequency"] == "1m"
+    assert receipt["status"] == "passed"
+    assert receipt["calls_rqdata"] is False
+
+
+def test_repair_publication_is_append_only_and_verifiable(tmp_path: Path) -> None:
+    target = _direct_repair_target()
+    request = ProviderBarRequest(
+        dataset=target.dataset,
+        start=target.start,
+        end=target.end,
+        sessions=(_friday_night_session(),),
+    )
+    batch = ProviderBarBatch(
+        request=request,
+        bars=(_repair_bar(),),
+        data_version="rqdata-test-repair-v1",
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    canonical_root = tmp_path / "canonical"
+    store = CanonicalStore(
+        staging_root=tmp_path / "staging",
+        canonical_root=canonical_root,
+        metadata_session_factory=lambda: Session(engine),
+    )
+
+    with Session(engine) as session:
+        publication = migration_module.publish_task07_repair_batch(
+            batch,
+            lineage=None,
+            target=target,
+            store=store,
+            catalog=HistoricalCatalog(session),
+            batch_key="repair:rqdata_redownload:jm:actual_dominant:1m:1",
+            plan_digest="8" * 64,
+            batch_digest="9" * 64,
+            source_market_data_file_id=1,
+            canonical_root=canonical_root,
+        )
+
+    assert publication["publication_status"] == "published"
+    assert publication["overlap_reason"] == "version_replacement"
+    with Session(engine) as session:
+        verified = verify_task07_published_batch(
+            publication,
+            catalog=HistoricalCatalog(session),
+            canonical_root=canonical_root,
+        )
+    assert verified["status"] == "passed"
 
 
 def _aggregate_dataset(

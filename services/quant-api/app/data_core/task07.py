@@ -50,6 +50,7 @@ _DERIVED_FREQUENCIES = {"5m", "15m", "30m", "60m"}
 _SUPPORTED_FREQUENCIES = _DIRECT_FREQUENCIES | _DERIVED_FREQUENCIES
 _KLINE_DATA_TYPES = {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}
 _ACTUAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
+_UNADJUSTED_CONTINUOUS = re.compile(r"([A-Z]+)88\Z")
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _TASK07_AGGREGATE_MANIFEST_VERSION = "task07-aggregate-migration-v1"
 _TASK07_PLAN_RECORD_LIMIT = 50_000
@@ -237,6 +238,8 @@ class Task07Asset:
     coverage_end: str | None
     row_count: int | None = None
     data_version: str | None = None
+    registration_symbol: str | None = None
+    registration_contract_or_series: str | None = None
     physical_is_symlink: bool = False
     physical_row_count: int | None = None
     physical_min_datetime: str | None = None
@@ -521,8 +524,13 @@ def collect_task07_assets(
                     else (False, None)
                 )
                 hash_cache[path_text] = physical
-            symbol = str(row["instrument_symbol"] or "").lower()
-            contract = str(row["contract_code"] or "").upper()
+            identity = _normalize_legacy_dataset_identity(
+                str(row["instrument_symbol"] or ""),
+                str(row["contract_code"] or ""),
+            )
+            if identity is None:
+                continue
+            symbol, contract, dataset_kind = identity
             frequency = str(row["period"] or "")
             content_gate_status = "not_applicable"
             physical_inspection: dict[str, Any] = {}
@@ -587,7 +595,6 @@ def collect_task07_assets(
             )
             matches = catalog_matches.get(match_key, ())
             catalog_checksum: str | None = None
-            dataset_kind = _dataset_kind(contract)
             if matches:
                 kinds = {item[0] for item in matches}
                 if len(kinds) == 1:
@@ -617,6 +624,12 @@ def collect_task07_assets(
                 coverage_end=_iso(row["end_time"]),
                 row_count=(int(row["row_count"]) if row["row_count"] is not None else None),
                 data_version=(str(row["data_version"]) if row["data_version"] else None),
+                registration_symbol=str(
+                    row["instrument_symbol"] or ""
+                ).strip().lower(),
+                registration_contract_or_series=str(
+                    row["contract_code"] or ""
+                ).strip().upper(),
                 physical_is_symlink=registered_path.is_symlink(),
                 physical_row_count=physical_inspection.get("physical_row_count"),
                 physical_min_datetime=physical_inspection.get("physical_min_datetime"),
@@ -858,6 +871,36 @@ def _dataset_kind(contract: str) -> str | None:
         return "continuous"
     if _ACTUAL_CONTRACT.fullmatch(contract):
         return "actual_dominant"
+    return None
+
+
+def _normalize_legacy_dataset_identity(
+    symbol: str,
+    contract: str,
+) -> tuple[str, str, str] | None:
+    """Map only exact V2 target identities; unsupported legacy series stay out."""
+
+    normalized_symbol = str(symbol or "").strip().lower()
+    normalized_contract = str(contract or "").strip().upper()
+    actual = _ACTUAL_CONTRACT.fullmatch(normalized_contract)
+    if actual is not None:
+        derived_symbol = actual.group(1).lower()
+        if normalized_symbol and normalized_symbol != derived_symbol:
+            return None
+        return derived_symbol, normalized_contract, "actual_dominant"
+    if normalized_contract.endswith(".MAIN"):
+        derived_symbol = normalized_contract[: -len(".MAIN")].lower()
+        if not derived_symbol or (
+            normalized_symbol and normalized_symbol != derived_symbol
+        ):
+            return None
+        return derived_symbol, normalized_contract, "continuous"
+    continuous = _UNADJUSTED_CONTINUOUS.fullmatch(normalized_contract)
+    if continuous is not None:
+        derived_symbol = continuous.group(1).lower()
+        if normalized_symbol and normalized_symbol != derived_symbol:
+            return None
+        return derived_symbol, f"{derived_symbol.upper()}.MAIN", "continuous"
     return None
 
 
@@ -2247,6 +2290,26 @@ def build_migration_plan(
     for raw in _iter_inventory_assets(index):
         if raw.get("disposition") == AssetDisposition.CONFLICT_BLOCKED.value:
             aggregate = raw.get("frequency") in _DERIVED_FREQUENCIES
+            registration_snapshot = {
+                "id": int(raw["market_data_file_id"]),
+                "provider": raw["provider"],
+                "data_type": raw["data_type"],
+                "symbol": raw.get("registration_symbol") or raw["symbol"],
+                "contract_or_series": raw.get(
+                    "registration_contract_or_series"
+                )
+                or raw["contract_or_series"],
+                "frequency": raw["frequency"],
+                "data_role": raw["data_role"],
+                "quality_status": raw["quality_status"],
+                "file_path": raw["file_path"],
+                "file_size_bytes": raw.get("file_size_bytes"),
+                "checksum": raw.get("checksum"),
+                "coverage_start": raw["coverage_start"],
+                "coverage_end": raw["coverage_end"],
+                "row_count": raw.get("row_count"),
+                "data_version": raw.get("data_version"),
+            }
             identity = {
                 "provider": "rqdata",
                 "dataset_kind": raw["dataset_kind"],
@@ -2266,6 +2329,15 @@ def build_migration_plan(
                 "window": {
                     "start": raw["coverage_start"],
                     "end": raw["coverage_end"],
+                },
+                "source_evidence": {
+                    "registration_snapshot": registration_snapshot,
+                    "registration_snapshot_digest": canonical_digest(
+                        registration_snapshot
+                    ),
+                    "observed_checksum": raw["physical_checksum"],
+                    "physical_exists": raw["physical_exists"],
+                    "source_scope": raw["source_scope"],
                 },
                 "base_sha": index["base_sha"],
                 "manifest_digest": manifest_digest,
@@ -2337,7 +2409,7 @@ def build_migration_plan(
             int(item["market_data_file_id"]),
         )
     )
-    batches = []
+    migration_batches = []
     for key in sorted(grouped):
         aggregate = key[2] in _DERIVED_FREQUENCIES
         rows = sorted(grouped[key], key=lambda item: (str(item.get("coverage_start")), int(item["market_data_file_id"])))
@@ -2357,6 +2429,7 @@ def build_migration_plan(
         ]
         body = {
             "batch_key": ":".join(key),
+            "operation": "migrate_same_frequency",
             "symbol": key[0],
             "dataset_kind": key[1],
             "frequency": key[2],
@@ -2381,7 +2454,56 @@ def build_migration_plan(
             "coverage_start": min(str(item["coverage_start"]) for item in rows),
             "coverage_end": max(str(item["coverage_end"]) for item in rows),
         }
-        batches.append({**body, "batch_digest": canonical_digest(body)})
+        migration_batches.append({**body, "batch_digest": canonical_digest(body)})
+    repair_groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    for action in repair_actions:
+        key = (
+            str(action["action"]),
+            str(action["symbol"]),
+            str(action["dataset_kind"]),
+            str(action["frequency"]),
+        )
+        repair_groups.setdefault(key, []).append(action)
+    repair_batches: list[dict[str, Any]] = []
+    for key in sorted(repair_groups):
+        operation, symbol, dataset_kind, frequency = key
+        actions = repair_groups[key]
+        aggregate = frequency in _DERIVED_FREQUENCIES
+        body = {
+            "batch_key": ":".join(("repair", *key)),
+            "operation": operation,
+            "symbol": symbol,
+            "dataset_kind": dataset_kind,
+            "frequency": frequency,
+            "dataset_origin": (
+                "preaggregated_from_1m" if aggregate else "provider_direct"
+            ),
+            "required_database_revision": (
+                "20260803_0032" if aggregate else index["database_revision"]
+            ),
+            "source_ids": [],
+            "source_checksums": [],
+            "sources": [],
+            "verified_partition_ids": [],
+            "verified_partitions": [],
+            "repair_action_ids": [
+                int(action["market_data_file_id"]) for action in actions
+            ],
+            "repair_action_digests": [
+                str(action["action_digest"]) for action in actions
+            ],
+            "coverage_start": min(
+                str(action["window"]["start"]) for action in actions
+            ),
+            "coverage_end": max(
+                str(action["window"]["end"]) for action in actions
+            ),
+        }
+        repair_batches.append({**body, "batch_digest": canonical_digest(body)})
+    batches = sorted(
+        [*migration_batches, *repair_batches],
+        key=lambda item: str(item["batch_key"]),
+    )
     migration_envelope = build_migration_envelope(batches)
     disposition_counts = dict(
         index.get("classification_counts")
@@ -2434,6 +2556,7 @@ def build_migration_plan(
         "write_targets": write_targets_value,
         "provider_requests": provider_requests,
         "repair_actions": repair_actions,
+        "repair_batch_count": len(repair_batches),
         "batches": batches,
         "migration_envelope": migration_envelope,
         "classification_counts": disposition_counts,
@@ -2802,6 +2925,7 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
     batches = plan.get("batches")
     if not isinstance(batches, list):
         raise ValueError("TASK07_PLAN_INVALID")
+    repair_batches: list[Mapping[str, Any]] = []
     for batch in batches:
         if not isinstance(batch, Mapping):
             raise ValueError("TASK07_PLAN_INVALID")
@@ -2815,11 +2939,47 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         expected_revision = (
             "20260803_0032" if aggregate else plan.get("database_revision")
         )
+        operation = batch.get("operation")
         if (
             batch.get("dataset_origin") != expected_origin
             or batch.get("required_database_revision") != expected_revision
         ):
             raise ValueError("TASK07_BATCH_ORIGIN_INVALID")
+        if operation != "migrate_same_frequency":
+            expected_operation = (
+                "canonical_1m_reaggregate" if aggregate else "rqdata_redownload"
+            )
+            action_ids = batch.get("repair_action_ids")
+            action_digests = batch.get("repair_action_digests")
+            if (
+                operation != expected_operation
+                or batch.get("batch_key")
+                != ":".join(
+                    (
+                        "repair",
+                        expected_operation,
+                        str(batch.get("symbol")),
+                        str(batch.get("dataset_kind")),
+                        str(batch.get("frequency")),
+                    )
+                )
+                or batch.get("dataset_kind")
+                not in {"continuous", "actual_dominant"}
+                or not isinstance(batch.get("symbol"), str)
+                or not batch.get("symbol")
+                or not isinstance(action_ids, list)
+                or not isinstance(action_digests, list)
+                or not action_ids
+                or len(action_ids) != len(action_digests)
+                or batch.get("sources") != []
+                or batch.get("source_ids") != []
+                or batch.get("source_checksums") != []
+                or batch.get("verified_partitions") != []
+                or batch.get("verified_partition_ids") != []
+            ):
+                raise ValueError("TASK07_REPAIR_BATCH_INVALID")
+            repair_batches.append(batch)
+            continue
         for source in batch.get("sources", []):
             if not isinstance(source, Mapping) or source.get(
                 "dataset_origin"
@@ -2936,6 +3096,7 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             if aggregate
             else None
         )
+        source_evidence = action.get("source_evidence")
         if (
             frequency not in _SUPPORTED_FREQUENCIES
             or action.get("action") != expected_action
@@ -2947,6 +3108,30 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             or action.get("authorized") is not False
             or action.get("action_digest") != canonical_digest(action_body)
             or source_dataset != expected_source_dataset
+            or not isinstance(source_evidence, Mapping)
+            or set(source_evidence)
+            != {
+                "registration_snapshot",
+                "registration_snapshot_digest",
+                "observed_checksum",
+                "physical_exists",
+                "source_scope",
+            }
+            or not isinstance(source_evidence.get("registration_snapshot"), Mapping)
+            or source_evidence.get("registration_snapshot_digest")
+            != canonical_digest(source_evidence.get("registration_snapshot"))
+            or not isinstance(
+                source_evidence.get("registration_snapshot", {}).get("file_path"),
+                str,
+            )
+            or not Path(
+                str(
+                    source_evidence.get("registration_snapshot", {}).get(
+                        "file_path"
+                    )
+                )
+            ).is_absolute()
+            or type(source_evidence.get("physical_exists")) is not bool
         ):
             raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     action_by_id = {
@@ -2954,6 +3139,30 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
     }
     if len(action_by_id) != len(repair_actions):
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    bound_repair_actions = [
+        (identifier, digest)
+        for batch in repair_batches
+        for identifier, digest in zip(
+            batch["repair_action_ids"],
+            batch["repair_action_digests"],
+            strict=True,
+        )
+    ]
+    if (
+        len(bound_repair_actions) != len(repair_actions)
+        or len({int(identifier) for identifier, _digest in bound_repair_actions})
+        != len(bound_repair_actions)
+        or {
+            (int(identifier), str(digest))
+            for identifier, digest in bound_repair_actions
+        }
+        != {
+            (identifier, str(action["action_digest"]))
+            for identifier, action in action_by_id.items()
+        }
+        or plan.get("repair_batch_count") != len(repair_batches)
+    ):
+        raise ValueError("TASK07_REPAIR_BATCH_INVALID")
     request_ids: set[int] = set()
     request_action_identity_fields = (
         "provider",
@@ -3095,6 +3304,7 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         "write_targets": plan.get("write_targets"),
         "provider_requests": requests,
         "repair_actions": repair_actions,
+        "repair_batch_count": len(repair_batches),
         "batches": batches,
         "migration_envelope": expected_envelope,
         "classification_counts": dict(disposition_counts),

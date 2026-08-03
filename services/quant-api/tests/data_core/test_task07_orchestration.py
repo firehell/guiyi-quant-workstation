@@ -34,6 +34,7 @@ from app.data_core.task07 import (
     write_kline_manifest_evidence,
 )
 from app.data_core.cli_service import run_data_core_command
+from app.data_core import task07_migration
 from app.db.base import Base
 from app.guiyi_cli.main import main
 from app.models.data_center import (
@@ -1235,6 +1236,433 @@ def test_conflicts_emit_only_exact_unauthorized_repair_actions() -> None:
         "register_data_gap": True,
         "delete_existing": False,
     }
+
+
+def test_conflict_repairs_are_materialized_in_the_migration_envelope() -> None:
+    index = build_inventory_index(
+        [
+            _asset(
+                market_data_file_id=1,
+                physical_checksum="b" * 64,
+                catalog_checksum=None,
+            ),
+            _aggregate_asset(
+                market_data_file_id=2,
+                physical_checksum="c" * 64,
+                catalog_checksum=None,
+            ),
+        ],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    assert plan["repair_batch_count"] == 2
+    assert [item["operation"] for item in plan["batches"]] == [
+        "canonical_1m_reaggregate",
+        "rqdata_redownload",
+    ]
+    assert plan["migration_envelope"]["batch_count"] == 2
+    assert {
+        digest
+        for batch in plan["batches"]
+        for digest in batch["repair_action_digests"]
+    } == {item["action_digest"] for item in plan["repair_actions"]}
+    assert all(batch["sources"] == [] for batch in plan["batches"])
+    assert all(batch["verified_partitions"] == [] for batch in plan["batches"])
+    assert plan["approval_eligible"] is True
+    task07._validate_migration_plan_integrity(plan)
+
+
+def test_legacy_identity_normalization_is_deterministic_and_excludes_non_targets() -> None:
+    assert task07._normalize_legacy_dataset_identity("", "AG1209") == (
+        "ag",
+        "AG1209",
+        "actual_dominant",
+    )
+    assert task07._normalize_legacy_dataset_identity("", "AG88") == (
+        "ag",
+        "AG.MAIN",
+        "continuous",
+    )
+    assert task07._normalize_legacy_dataset_identity("", "AG88A2") is None
+    assert task07._normalize_legacy_dataset_identity("", "AG99") is None
+
+
+def test_repair_targets_coalesce_only_overlapping_windows_for_one_dataset() -> None:
+    index = build_inventory_index(
+        [
+            _asset(
+                market_data_file_id=1,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                coverage_start="2026-01-01T00:00:00+00:00",
+                coverage_end="2026-02-01T00:00:00+00:00",
+                physical_checksum="b" * 64,
+                catalog_checksum=None,
+            ),
+            _asset(
+                market_data_file_id=2,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                coverage_start="2026-01-15T00:00:00+00:00",
+                coverage_end="2026-03-01T00:00:00+00:00",
+                physical_checksum="c" * 64,
+                catalog_checksum=None,
+            ),
+        ],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+    plan = build_migration_plan(index, write_targets=_write_targets())
+    batch = plan["batches"][0]
+
+    targets = task07_migration.build_task07_repair_targets(plan, batch)
+
+    assert len(targets) == 1
+    assert targets[0].dataset.contract_or_series == "JM2609"
+    assert targets[0].start == datetime(2026, 1, 1, tzinfo=UTC)
+    assert targets[0].end == datetime(2026, 3, 1, tzinfo=UTC)
+    assert targets[0].source_action_ids == (1, 2)
+    assert len(targets[0].target_digest) == 64
+
+
+def test_repair_preflight_rechecks_registration_and_physical_evidence(
+    tmp_path: Path,
+) -> None:
+    import app.data_core.cli_service as cli_module
+
+    source = tmp_path / "damaged.parquet"
+    source.write_bytes(b"current damaged bytes")
+    observed_checksum = sha256(source.read_bytes()).hexdigest()
+    asset = _asset(
+        market_data_file_id=1,
+        contract_or_series="JM2609",
+        dataset_kind="actual_dominant",
+        file_path=str(source),
+        coverage_start="2026-07-31T13:00:00+00:00",
+        coverage_end="2026-07-31T13:01:00+00:00",
+        checksum="a" * 64,
+        file_size_bytes=source.stat().st_size,
+        physical_checksum=observed_checksum,
+        catalog_checksum=None,
+        row_count=1,
+    )
+    plan = build_migration_plan(
+        build_inventory_index(
+            [asset],
+            base_sha="1" * 40,
+            database_revision="20260803_0032",
+        ),
+        write_targets=_write_targets(tmp_path),
+    )
+    batch = plan["batches"][0]
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            MarketDataFile(
+                id=1,
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period="1m",
+                start_time=datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+                end_time=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+                file_path=str(source),
+                file_size_bytes=source.stat().st_size,
+                checksum="a" * 64,
+                data_version="legacy-v1",
+                row_count=1,
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
+        session.commit()
+    with Session(engine) as session:
+        validation, targets = cli_module._task07_validate_batch_readonly(
+            session,
+            plan=plan,
+            batch=batch,
+            canonical_root=tmp_path / "canonical",
+        )
+
+    assert len(targets) == 1
+    assert validation[0]["operation"] == "rqdata_redownload"
+    assert validation[0]["target_digest"] == targets[0].target_digest
+    assert validation[0]["calls_rqdata"] is False
+    assert validation[0]["writes_canonical"] is False
+
+    with Session(engine) as session:
+        registered = session.get(MarketDataFile, 1)
+        assert registered is not None
+        registered.contract_code = "JM99"
+        session.commit()
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_REPAIR_ACTION_DRIFT",
+    ):
+        cli_module._task07_validate_batch_readonly(
+            session,
+            plan=plan,
+            batch=batch,
+            canonical_root=tmp_path / "canonical",
+        )
+
+
+def test_task07_apply_executes_packet_bound_direct_repair(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "damaged.parquet"
+    source.write_bytes(b"current damaged bytes")
+    observed_checksum = sha256(source.read_bytes()).hexdigest()
+    asset = _asset(
+        market_data_file_id=1,
+        file_path=str(source),
+        coverage_start="2026-07-31T13:00:00+00:00",
+        coverage_end="2026-07-31T13:01:00+00:00",
+        checksum="a" * 64,
+        file_size_bytes=source.stat().st_size,
+        physical_checksum=observed_checksum,
+        catalog_checksum=None,
+        row_count=1,
+    )
+    write_targets = _write_targets(tmp_path)
+    plan = build_migration_plan(
+        build_inventory_index(
+            [asset],
+            base_sha="1" * 40,
+            database_revision="20260803_0032",
+        ),
+        write_targets=write_targets,
+    )
+    packet = build_approval_packet(plan, command="data.task07.apply")
+    approval_hash = canonical_digest(packet)
+    plan_path = tmp_path / "plan.json"
+    packet_path = tmp_path / "approval.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE alembic_version (version_num TEXT NOT NULL)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO alembic_version VALUES ('20260803_0032')"
+        )
+    with Session(engine) as session:
+        session.add_all(
+            [
+                MarketDataFile(
+                    id=1,
+                    provider="rqdata",
+                    data_type="bars",
+                    instrument_symbol="jm",
+                    contract_code="JM.MAIN",
+                    period="1m",
+                    start_time=datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+                    file_path=str(source),
+                    file_size_bytes=source.stat().st_size,
+                    checksum="a" * 64,
+                    data_version="legacy-v1",
+                    row_count=1,
+                    data_role="primary",
+                    quality_status="passed",
+                ),
+                Instrument(symbol="jm", name="焦煤", exchange_code="DCE"),
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=date(2026, 7, 31),
+                    is_trading_day=True,
+                    has_night_session=True,
+                ),
+                TradingSession(
+                    exchange_code="DCE",
+                    instrument_symbol="jm",
+                    session_name="night",
+                    start_time=time(21, 0),
+                    end_time=time(21, 1),
+                    crosses_midnight=False,
+                    is_active=True,
+                ),
+            ]
+        )
+        session.commit()
+    monkeypatch.setattr(
+        "app.data_core.cli_service._git_state",
+        lambda _root: {"head": "1" * 40, "clean": True},
+    )
+    monkeypatch.setattr(
+        "app.data_core.cli_service._postgresql_target",
+        lambda _session: write_targets["postgresql_target"],
+    )
+    monkeypatch.setattr(
+        "app.data_core.cli_service.resolve_task07_provider_sessions",
+        lambda *_args, **_kwargs: (
+            task07_migration.TradingSessionCoverage(
+                trading_day=date(2026, 7, 31),
+                start=datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+                end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+                expected_bar_ends=(
+                    datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+                ),
+            ),
+        ),
+    )
+    preflight_args = SimpleNamespace(
+        plan=plan_path,
+        approval_packet=packet_path,
+        approval_hash=approval_hash,
+        batch_key=plan["batches"][0]["batch_key"],
+        staging_root=tmp_path / "staging",
+        canonical_root=tmp_path / "canonical",
+    )
+    with Session(engine) as session:
+        preflight = run_data_core_command(
+            "task07.preflight",
+            session,
+            preflight_args,
+        )
+    preflight_path = tmp_path / "preflight.json"
+    preflight_path.write_text(json.dumps(preflight), encoding="utf-8")
+
+    class FakeAdapter:
+        def fetch_bars(self, request):
+            return task07_migration.ProviderBarBatch(
+                request=request,
+                bars=(
+                    task07_migration.CanonicalBar(
+                        provider="rqdata",
+                        dataset_kind=task07_migration.DatasetKind.CONTINUOUS,
+                        symbol="jm",
+                        contract_or_series="JM.MAIN",
+                        frequency=task07_migration.BarFrequency.M1,
+                        bar_end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+                        trading_day=date(2026, 7, 31),
+                        open=100,
+                        high=101,
+                        low=99,
+                        close=100,
+                        volume=1,
+                        turnover=100,
+                        open_interest=10,
+                        adjustment="none",
+                        schema_version="canonical-bar-v1",
+                    ),
+                ),
+                data_version="rqdata-test-repair-v1",
+            )
+
+    monkeypatch.setattr(
+        "app.data_core.cli_service.RqDataClient",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "app.data_core.cli_service.CanonicalRQDataAdapter",
+        lambda _client: FakeAdapter(),
+    )
+    apply_args = SimpleNamespace(
+        **vars(preflight_args),
+        preflight_receipt=preflight_path,
+        preflight_hash=canonical_digest(preflight),
+    )
+    with Session(engine) as session:
+        receipt = run_data_core_command("task07.apply", session, apply_args)
+
+    assert receipt["status"] == "passed"
+    assert receipt["repair_target_count"] == 1
+    assert receipt["calls_rqdata"] is True
+    assert receipt["published_source_count"] == 1
+    receipt_path = tmp_path / "apply-receipt.json"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    verify_args = SimpleNamespace(
+        plan=plan_path,
+        batch_key=plan["batches"][0]["batch_key"],
+        receipt=receipt_path,
+        canonical_root=tmp_path / "canonical",
+    )
+    with Session(engine) as session:
+        verified = run_data_core_command("task07.verify", session, verify_args)
+    assert verified["status"] == "passed"
+    assert verified["verified_source_count"] == 1
+
+    forged_body = {
+        key: value for key, value in receipt.items() if key != "receipt_digest"
+    }
+    forged_body["calls_rqdata"] = False
+    forged = {**forged_body, "receipt_digest": canonical_digest(forged_body)}
+    receipt_path.write_text(json.dumps(forged), encoding="utf-8")
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_APPLY_RECEIPT_DRIFT",
+    ):
+        run_data_core_command("task07.verify", session, verify_args)
+
+
+def test_repair_preparation_failure_records_terminal_data_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.data_core.cli_service as cli_module
+
+    target = task07_migration.Task07RepairTarget(
+        operation="rqdata_redownload",
+        dataset=task07_migration.DatasetKey(
+            provider="rqdata",
+            dataset_kind=task07_migration.DatasetKind.CONTINUOUS,
+            symbol="jm",
+            contract_or_series="JM.MAIN",
+            frequency=task07_migration.BarFrequency.M1,
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        ),
+        start=datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+        source_action_ids=(1,),
+        source_action_digests=("a" * 64,),
+        target_digest="b" * 64,
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = cli_module.sessionmaker(bind=engine, expire_on_commit=False)
+    store = cli_module.CanonicalStore(
+        staging_root=tmp_path / "staging",
+        canonical_root=tmp_path / "canonical",
+        metadata_session_factory=factory,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_task07_provider_sessions",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("session metadata unavailable")
+        ),
+    )
+
+    receipt = cli_module._execute_task07_repair_apply(
+        target,
+        session_factory=factory,
+        store=store,
+        canonical_root=(tmp_path / "canonical").absolute(),
+        batch_key="repair:test:1",
+        plan_digest="c" * 64,
+        batch_digest="d" * 64,
+        source_market_data_file_id=1,
+        expected_target_state=[],
+    )
+
+    assert receipt["status"] == "data_gap"
+    assert receipt["data_gap"]["reason_code"] == (
+        "task07_rqdata_redownload_preparation_failed"
+    )
+    with factory() as session:
+        gaps = cli_module.HistoricalCatalog(session).list_gaps(target.dataset)
+    assert len(gaps) == 1
+    assert gaps[0].reason_code == "task07_rqdata_redownload_preparation_failed"
 
 
 def test_runtime_cutover_minimal_plan_and_receipt_fail_closed_on_drift() -> None:
@@ -2487,7 +2915,7 @@ def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
     )
     monkeypatch.setattr(
         "app.data_core.cli_service._task07_validate_batch_readonly",
-        lambda _session, *, batch, canonical_root=None: (
+        lambda _session, *, plan=None, batch, canonical_root=None: (
             validation,
             [
                 (
@@ -2596,6 +3024,7 @@ def test_batch_journal_fsyncs_file_and_directory_and_rejects_forged_source_set(
     journal = cli_module._load_or_initialize_task07_batch_journal(
         path,
         bound_facts=bound_facts,
+        preflight_digest="d" * 64,
         source_ids=[1, 2],
         verified_partition_readbacks=[],
     )
@@ -2625,6 +3054,7 @@ def test_batch_journal_fsyncs_file_and_directory_and_rejects_forged_source_set(
         cli_module._load_or_initialize_task07_batch_journal(
             path,
             bound_facts=bound_facts,
+            preflight_digest="d" * 64,
             source_ids=[1, 2],
             verified_partition_readbacks=[],
         )

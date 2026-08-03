@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.data_core.canonical_store import CanonicalStore, canonical_json_digest
 from app.data_core.aggregation import aggregate_bars
 from app.data_core.bar_schema import CanonicalBar
-from app.data_core.catalog import CatalogError, HistoricalCatalog
+from app.data_core.catalog import CatalogError, GapWindow, HistoricalCatalog
 from app.data_core.contracts import (
     BarFrequency,
     BarQuery,
@@ -58,7 +58,7 @@ from app.data_core.historical_migration import (
     inventory_jm_legacy_assets,
 )
 from app.data_core.historical_reader import CanonicalHistoricalReader
-from app.data_core.historical_sessions import jm_provider_sessions
+from app.data_core.historical_sessions import jm_provider_sessions, product_sessions
 from app.data_core.historical_sync import (
     CanonicalBatchPublisher,
     HistoricalSynchronizer,
@@ -66,6 +66,7 @@ from app.data_core.historical_sync import (
 )
 from app.data_core.task07 import (
     _aggregate_parquet_content_gate,
+    _normalize_legacy_dataset_identity,
     build_approval_packet as build_task07_approval_packet,
     build_migration_approval_facts as build_task07_migration_approval_facts,
     build_migration_batch_facts as build_task07_migration_batch_facts,
@@ -84,10 +85,15 @@ from app.data_core.task07 import (
 )
 from app.data_core.task07_migration import (
     TASK07_AGGREGATE_MANIFEST_VERSION,
+    Task07RepairTarget,
+    build_task07_repair_gap_receipt,
+    build_task07_repair_targets,
+    execute_task07_repair_target,
     execute_task07_prepared_batch,
     load_task07_rank1_map,
     prepare_legacy_aggregate_parquet_batch,
     prepare_legacy_parquet_batch,
+    publish_task07_repair_batch,
     read_legacy_aggregate_trading_days,
     resolve_task07_provider_sessions,
     verify_task07_published_batch,
@@ -196,6 +202,7 @@ def run_data_core_command(
         batch = _task07_plan_batch(plan, args.batch_key)
         validation, _prepared = _task07_validate_batch_readonly(
             session,
+            plan=plan,
             batch=batch,
             canonical_root=Path(write_targets["canonical_root"]),
         )
@@ -262,6 +269,7 @@ def run_data_core_command(
         )
         validation, prepared_sources = _task07_validate_batch_readonly(
             session,
+            plan=plan,
             batch=batch,
             canonical_root=canonical_root,
         )
@@ -270,13 +278,23 @@ def run_data_core_command(
             for item in validation
             if item.get("asset_kind") == "verified_partition"
         ]
+        repair_batch = batch.get("operation") in {
+            "rqdata_redownload",
+            "canonical_1m_reaggregate",
+        }
+        source_ids = (
+            [int(item.source_action_ids[0]) for item in prepared_sources]
+            if repair_batch
+            else [
+                int(item["market_data_file_id"])
+                for item in batch.get("sources", [])
+            ]
+        )
         journal = _load_or_initialize_task07_batch_journal(
             journal_path,
             bound_facts=facts,
-            source_ids=[
-                int(item["market_data_file_id"])
-                for item in batch.get("sources", [])
-            ],
+            preflight_digest=str(preflight["preflight_digest"]),
+            source_ids=source_ids,
             verified_partition_readbacks=verified_partition_readbacks,
         )
         factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
@@ -295,19 +313,40 @@ def run_data_core_command(
             recovery_source_id=journal.get("current_source_id"),
         )
         for item in completed_receipts:
-            verify_task07_published_batch(
-                item,
-                catalog=HistoricalCatalog(session),
-                canonical_root=canonical_root,
-            )
+            if repair_batch:
+                target_by_source_id = {
+                    int(target.source_action_ids[0]): target
+                    for target in prepared_sources
+                }
+                _verify_task07_repair_receipt_binding(
+                    item,
+                    target_by_source_id[int(item["market_data_file_id"])],
+                )
+                _verify_task07_repair_terminal_receipt(
+                    item,
+                    catalog=HistoricalCatalog(session),
+                    canonical_root=canonical_root,
+                )
+            else:
+                verify_task07_published_batch(
+                    item,
+                    catalog=HistoricalCatalog(session),
+                    canonical_root=canonical_root,
+                )
         store = CanonicalStore(
             staging_root=staging_root,
             canonical_root=canonical_root,
             metadata_session_factory=factory,
         )
         source_receipts: list[dict[str, object]] = completed_receipts
-        for source, prepared in prepared_sources:
-            source_id = int(source["market_data_file_id"])
+        for prepared_item in prepared_sources:
+            if repair_batch:
+                if not isinstance(prepared_item, Task07RepairTarget):
+                    raise ValueError("TASK07_REPAIR_TARGET_INVALID")
+                source_id = int(prepared_item.source_action_ids[0])
+            else:
+                source, prepared = prepared_item
+                source_id = int(source["market_data_file_id"])
             if source_id in completed_ids:
                 continue
             try:
@@ -320,22 +359,40 @@ def run_data_core_command(
                         "failure": None,
                     },
                 )
-                with factory() as catalog_session:
-                    source_receipt = execute_task07_prepared_batch(
-                        prepared,
+                if repair_batch:
+                    source_receipt = _execute_task07_repair_apply(
+                        prepared_item,
+                        session_factory=factory,
                         store=store,
-                        catalog=HistoricalCatalog(catalog_session),
-                        manifest_version=(
-                            TASK07_AGGREGATE_MANIFEST_VERSION
-                            if prepared.lineage is not None
-                            else "task07-canonical-migration-v1"
-                        ),
+                        canonical_root=canonical_root,
                         batch_key=f"{batch['batch_key']}:{source_id}",
                         plan_digest=str(plan["plan_digest"]),
                         batch_digest=str(batch["batch_digest"]),
                         source_market_data_file_id=source_id,
-                        canonical_root=canonical_root,
+                        expected_target_state=next(
+                            item["target_state"]
+                            for item in validation
+                            if int(item["market_data_file_id"])
+                            == source_id
+                        ),
                     )
+                else:
+                    with factory() as catalog_session:
+                        source_receipt = execute_task07_prepared_batch(
+                            prepared,
+                            store=store,
+                            catalog=HistoricalCatalog(catalog_session),
+                            manifest_version=(
+                                TASK07_AGGREGATE_MANIFEST_VERSION
+                                if prepared.lineage is not None
+                                else "task07-canonical-migration-v1"
+                            ),
+                            batch_key=f"{batch['batch_key']}:{source_id}",
+                            plan_digest=str(plan["plan_digest"]),
+                            batch_digest=str(batch["batch_digest"]),
+                            source_market_data_file_id=source_id,
+                            canonical_root=canonical_root,
+                        )
                 source_receipts.append(source_receipt)
                 completed_ids.add(source_id)
                 journal = _write_task07_batch_journal(
@@ -393,12 +450,20 @@ def run_data_core_command(
             "preflight_digest": preflight["preflight_digest"],
             "source_receipts": source_receipts,
             "source_receipt_digests": [item["receipt_digest"] for item in source_receipts],
-            "published_source_count": len(source_receipts),
+            "published_source_count": sum(
+                item.get("status") == "passed" for item in source_receipts
+            ),
+            "data_gap_count": sum(
+                item.get("status") == "data_gap" for item in source_receipts
+            ),
             "verified_partition_readbacks": verified_partition_readbacks,
             "verified_partition_count": len(verified_partition_readbacks),
             "batch_journal_path": str(journal_path),
             "batch_journal_digest": journal["journal_digest"],
-            "calls_rqdata": False,
+            "repair_target_count": len(prepared_sources) if repair_batch else 0,
+            "calls_rqdata": any(
+                bool(item.get("calls_rqdata")) for item in source_receipts
+            ),
             "deletion_authorized": False,
         }
         return {**body, "receipt_digest": canonical_json_digest(body)}
@@ -501,6 +566,10 @@ def run_data_core_command(
                     "batch_digest": batch["batch_digest"],
                     "apply_receipt_digest": verified["receipt_digest"],
                     "batch_verify_digest": verified["verify_digest"],
+                    "published_source_count": verified[
+                        "verified_published_source_count"
+                    ],
+                    "data_gap_count": verified["verified_data_gap_count"],
                 }
             )
         body = {
@@ -517,6 +586,14 @@ def run_data_core_command(
             "batch_manifest": plan["migration_envelope"]["batch_manifest"],
             "batches_merkle_root": plan["migration_envelope"]["merkle_root"],
             "verified_batch_count": len(verification_manifest),
+            "published_source_count": sum(
+                int(item["published_source_count"])
+                for item in verification_manifest
+            ),
+            "data_gap_count": sum(
+                int(item["data_gap_count"])
+                for item in verification_manifest
+            ),
             "verification_manifest": verification_manifest,
             "runtime_cutover_eligible": True,
         }
@@ -787,9 +864,22 @@ def _task07_require_quality_identity(
 def _task07_validate_batch_readonly(
     session: Session,
     *,
+    plan: Mapping[str, Any] | None = None,
     batch: Mapping[str, Any],
     canonical_root: Path | None = None,
-) -> tuple[list[dict[str, Any]], list[tuple[Mapping[str, Any], Any]]]:
+) -> tuple[list[dict[str, Any]], list[Any]]:
+    if batch.get("operation") in {
+        "rqdata_redownload",
+        "canonical_1m_reaggregate",
+    }:
+        if plan is None:
+            raise ValueError("TASK07_REPAIR_PLAN_REQUIRED")
+        return _task07_validate_repair_batch_readonly(
+            session,
+            plan=plan,
+            batch=batch,
+            canonical_root=canonical_root,
+        )
     evidence: list[dict[str, Any]] = []
     prepared_sources: list[tuple[Mapping[str, Any], Any]] = []
     verified_partitions = batch.get("verified_partitions", [])
@@ -1002,6 +1092,371 @@ def _task07_validate_batch_readonly(
     return evidence, prepared_sources
 
 
+def _task07_validate_repair_batch_readonly(
+    session: Session,
+    *,
+    plan: Mapping[str, Any],
+    batch: Mapping[str, Any],
+    canonical_root: Path | None,
+) -> tuple[list[dict[str, Any]], list[Task07RepairTarget]]:
+    targets = list(build_task07_repair_targets(plan, batch))
+    action_by_id = {
+        int(item["market_data_file_id"]): item
+        for item in plan.get("repair_actions", [])
+        if isinstance(item, Mapping)
+    }
+    evidence_digests: dict[int, str] = {}
+    for identifier in batch.get("repair_action_ids", []):
+        action = action_by_id.get(int(identifier))
+        if not isinstance(action, Mapping):
+            raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
+        source_evidence = action.get("source_evidence")
+        if not isinstance(source_evidence, Mapping):
+            raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
+        approved_registration = source_evidence.get("registration_snapshot")
+        if (
+            not isinstance(approved_registration, Mapping)
+            or source_evidence.get("registration_snapshot_digest")
+            != task07_canonical_digest(approved_registration)
+        ):
+            raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
+        expected_registration = _task07_normalize_registration_snapshot(
+            approved_registration
+        )
+        current = _task07_current_registration_snapshot(
+            session,
+            market_data_file_id=int(identifier),
+        )
+        if (
+            current != expected_registration
+            or current["provider"] != str(action["original_provider"]).lower()
+            or current["frequency"] != action.get("frequency")
+            or current["coverage_start"] != action.get("window", {}).get("start")
+            or current["coverage_end"] != action.get("window", {}).get("end")
+        ):
+            raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
+        normalized_identity = _normalize_legacy_dataset_identity(
+            current["symbol"],
+            current["contract_or_series"],
+        )
+        if normalized_identity != (
+            action.get("symbol"),
+            action.get("contract_or_series"),
+            action.get("dataset_kind"),
+        ):
+            raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
+        source_path = Path(current["file_path"])
+        physical_exists = source_path.is_file() and not source_path.is_symlink()
+        if physical_exists != source_evidence.get("physical_exists"):
+            raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
+        observed_checksum = (
+            _sha256_file(source_path) if physical_exists else None
+        )
+        if observed_checksum != source_evidence.get("observed_checksum"):
+            raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
+        evidence_digests[int(identifier)] = task07_canonical_digest(
+            {
+                "registration": current,
+                "physical_exists": physical_exists,
+                "observed_checksum": observed_checksum,
+            }
+        )
+    catalog = HistoricalCatalog(session)
+    validation: list[dict[str, Any]] = []
+    for target in targets:
+        target_state = [
+            {
+                "id": int(item.id),
+                "coverage_start": _as_utc_iso(item.coverage_start),
+                "coverage_end": _as_utc_iso(item.coverage_end),
+                "checksum": item.checksum,
+                "manifest_digest": item.manifest_digest,
+                "overlap_reason": item.overlap_reason,
+            }
+            for item in catalog.list_partitions(target.dataset)
+            if _aware_utc(item.coverage_start) < target.end
+            and target.start < _aware_utc(item.coverage_end)
+        ]
+        body = {
+            "market_data_file_id": int(target.source_action_ids[0]),
+            "operation": target.operation,
+            "target_digest": target.target_digest,
+            "dataset": _dataset_identity_dict(target.dataset),
+            "coverage_start": target.start.isoformat(),
+            "coverage_end": target.end.isoformat(),
+            "source_action_ids": list(target.source_action_ids),
+            "source_action_digests": list(target.source_action_digests),
+            "source_evidence_digests": [
+                evidence_digests[item] for item in target.source_action_ids
+            ],
+            "target_state": target_state,
+            "target_state_digest": task07_canonical_digest(target_state),
+            "calls_rqdata": False,
+            "writes_postgresql": False,
+            "writes_canonical": False,
+        }
+        validation.append(
+            {**body, "validation_digest": task07_canonical_digest(body)}
+        )
+    return validation, targets
+
+
+def _execute_task07_repair_apply(
+    target: Task07RepairTarget,
+    *,
+    session_factory: sessionmaker,
+    store: CanonicalStore,
+    canonical_root: Path,
+    batch_key: str,
+    plan_digest: str,
+    batch_digest: str,
+    source_market_data_file_id: int,
+    expected_target_state: object,
+) -> dict[str, object]:
+    def record_gap(current: Task07RepairTarget, reason_code: str) -> None:
+        with session_factory() as gap_session:
+            HistoricalCatalog(gap_session).record_gap(
+                current.dataset,
+                GapWindow(
+                    gap_start=current.start,
+                    gap_end=current.end,
+                    reason_code=reason_code,
+                    details={
+                        "target_digest": current.target_digest,
+                        "source_action_ids": list(current.source_action_ids),
+                        "source_action_digests": list(
+                            current.source_action_digests
+                        ),
+                    },
+                ),
+            )
+            gap_session.commit()
+
+    def current_target_state() -> list[dict[str, object]]:
+        with session_factory() as state_session:
+            return [
+                {
+                    "id": int(item.id),
+                    "coverage_start": _as_utc_iso(item.coverage_start),
+                    "coverage_end": _as_utc_iso(item.coverage_end),
+                    "checksum": item.checksum,
+                    "manifest_digest": item.manifest_digest,
+                    "overlap_reason": item.overlap_reason,
+                }
+                for item in HistoricalCatalog(state_session).list_partitions(
+                    target.dataset
+                )
+                if _aware_utc(item.coverage_start) < target.end
+                and target.start < _aware_utc(item.coverage_end)
+            ]
+
+    if not isinstance(expected_target_state, list):
+        raise ValueError("TASK07_REPAIR_TARGET_STATE_INVALID")
+
+    try:
+        with session_factory() as read_session:
+            sessions = resolve_task07_provider_sessions(
+                read_session,
+                dataset=target.dataset,
+                start=target.start,
+                end=target.end,
+            )
+            rank1 = load_task07_rank1_map(
+                read_session,
+                dataset=target.dataset,
+                trading_days=tuple(item.trading_day for item in sessions),
+            )
+        if rank1:
+            sessions = filter_actual_dominant_sessions(
+                target.dataset,
+                sessions,
+                actual_contract_for_day=rank1.__getitem__,
+            )
+            if not sessions:
+                raise ValueError("TASK07_REPAIR_SESSION_COVERAGE_MISSING")
+    # Session/mapping providers also expose untyped vendor exceptions. At this
+    # packet-bound boundary they become a terminal DataGap, never a success.
+    except Exception as exc:
+        reason = (
+            "task07_rqdata_redownload_preparation_failed"
+            if target.operation == "rqdata_redownload"
+            else "task07_canonical_1m_reaggregate_preparation_failed"
+        )
+        receipt = build_task07_repair_gap_receipt(
+            target,
+            reason_code=reason,
+            error=exc,
+            record_gap=record_gap,
+        )
+    else:
+        adapter: CanonicalRQDataAdapter | None = None
+
+        def fetch_direct(request: object):
+            nonlocal adapter
+            if target.operation != "rqdata_redownload":
+                raise ValueError("TASK07_REPAIR_RQDATA_NOT_AUTHORIZED")
+            if adapter is None:
+                adapter = CanonicalRQDataAdapter(
+                    RqDataClient(load_env_file=True)
+                )
+            return adapter.fetch_bars(request)
+
+        def read_canonical_1m(current: Task07RepairTarget):
+            with session_factory() as source_session:
+                reader = CanonicalHistoricalReader(
+                    catalog=HistoricalCatalog(source_session),
+                    canonical_root=canonical_root,
+                    session_provider=lambda symbol, start, end: product_sessions(
+                        source_session,
+                        symbol=symbol,
+                        start=start,
+                        end=end,
+                    ),
+                )
+                return reader.get_bars(
+                    BarQuery(
+                        dataset_kind=current.dataset.dataset_kind,
+                        symbol=current.dataset.symbol,
+                        contract_or_series=current.dataset.contract_or_series,
+                        frequency=BarFrequency.M1,
+                        start=current.start,
+                        end=current.end,
+                    )
+                )
+
+        def publish(batch: object, lineage: object):
+            with session_factory() as catalog_session:
+                publication = publish_task07_repair_batch(
+                    batch,
+                    lineage=lineage,
+                    target=target,
+                    store=store,
+                    catalog=HistoricalCatalog(catalog_session),
+                    batch_key=batch_key,
+                    plan_digest=plan_digest,
+                    batch_digest=batch_digest,
+                    source_market_data_file_id=source_market_data_file_id,
+                    canonical_root=canonical_root,
+                )
+                catalog_session.commit()
+                return publication
+
+        receipt = execute_task07_repair_target(
+            target,
+            sessions=sessions,
+            fetch_direct=fetch_direct,
+            read_canonical_1m=read_canonical_1m,
+            publish=publish,
+            record_gap=record_gap,
+            publication_state_unchanged=lambda _target: (
+                current_target_state() == expected_target_state
+            ),
+        )
+    body = {
+        key: value for key, value in receipt.items() if key != "receipt_digest"
+    }
+    body.update(
+        {
+            "market_data_file_id": source_market_data_file_id,
+            "batch_key": batch_key,
+            "plan_digest": plan_digest,
+            "batch_digest": batch_digest,
+            "dataset": _dataset_identity_dict(target.dataset),
+            "coverage_start": target.start.isoformat(),
+            "coverage_end": target.end.isoformat(),
+            "deletion_authorized": False,
+        }
+    )
+    return {**body, "receipt_digest": canonical_json_digest(body)}
+
+
+def _verify_task07_repair_receipt_binding(
+    receipt: Mapping[str, Any],
+    target: Task07RepairTarget,
+) -> None:
+    if (
+        receipt.get("operation") != target.operation
+        or receipt.get("target_digest") != target.target_digest
+        or receipt.get("source_action_ids") != list(target.source_action_ids)
+        or receipt.get("source_action_digests")
+        != list(target.source_action_digests)
+        or receipt.get("dataset") != _dataset_identity_dict(target.dataset)
+        or receipt.get("coverage_start") != target.start.isoformat()
+        or receipt.get("coverage_end") != target.end.isoformat()
+        or int(receipt.get("market_data_file_id", -1))
+        != int(target.source_action_ids[0])
+        or receipt.get("calls_rqdata")
+        is not (target.operation == "rqdata_redownload")
+        or receipt.get("deletion_authorized") is not False
+    ):
+        raise ValueError("TASK07_REPAIR_RECEIPT_DRIFT")
+
+
+def _verify_task07_repair_terminal_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    catalog: HistoricalCatalog,
+    canonical_root: Path,
+) -> dict[str, object]:
+    body = {
+        key: value for key, value in receipt.items() if key != "receipt_digest"
+    }
+    if receipt.get("receipt_digest") != canonical_json_digest(body):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    publication = receipt.get("publication")
+    if receipt.get("status") == "passed" and isinstance(publication, Mapping):
+        if (
+            publication.get("calls_rqdata")
+            is not (receipt.get("operation") == "rqdata_redownload")
+            or publication.get("deletion_authorized") is not False
+        ):
+            raise ValueError("TASK07_REPAIR_RECEIPT_INVALID")
+        return verify_task07_published_batch(
+            publication,
+            catalog=catalog,
+            canonical_root=canonical_root,
+        )
+    if receipt.get("status") != "data_gap" or publication is not None:
+        raise ValueError("TASK07_REPAIR_RECEIPT_INVALID")
+    dataset = receipt.get("dataset")
+    gap = receipt.get("data_gap")
+    if not isinstance(dataset, Mapping) or not isinstance(gap, Mapping):
+        raise ValueError("TASK07_REPAIR_RECEIPT_INVALID")
+    key = DatasetKey(
+        provider=str(dataset["provider"]),
+        dataset_kind=DatasetKind(str(dataset["dataset_kind"])),
+        symbol=str(dataset["symbol"]),
+        contract_or_series=str(dataset["contract_or_series"]),
+        frequency=BarFrequency(str(dataset["frequency"])),
+        adjustment=str(dataset["adjustment"]),
+        schema_version=str(dataset["schema_version"]),
+    )
+    matches = [
+        item
+        for item in catalog.list_gaps(key)
+        if _aware_utc(item.gap_start).isoformat() == receipt.get("coverage_start")
+        and _aware_utc(item.gap_end).isoformat() == receipt.get("coverage_end")
+        and item.reason_code == gap.get("reason_code")
+        and dict(item.details or {})
+        == {
+            "target_digest": receipt.get("target_digest"),
+            "source_action_ids": receipt.get("source_action_ids"),
+            "source_action_digests": receipt.get("source_action_digests"),
+        }
+    ]
+    if len(matches) != 1:
+        raise ValueError("TASK07_DATA_GAP_READBACK_MISMATCH")
+    verify_body = {
+        "schema_version": 1,
+        "command": "data.task07.verify",
+        "status": "data_gap",
+        "target_digest": receipt.get("target_digest"),
+        "reason_code": gap.get("reason_code"),
+        "readonly": True,
+    }
+    return {**verify_body, "verify_digest": task07_canonical_digest(verify_body)}
+
+
 def _task07_verify_planned_partition(
     session: Session,
     *,
@@ -1120,6 +1575,7 @@ def _load_or_initialize_task07_batch_journal(
     path: Path,
     *,
     bound_facts: Mapping[str, Any],
+    preflight_digest: str,
     source_ids: list[int],
     verified_partition_readbacks: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -1135,6 +1591,7 @@ def _load_or_initialize_task07_batch_journal(
         _validate_task07_batch_journal(
             journal,
             bound_facts=bound_facts,
+            preflight_digest=preflight_digest,
             source_ids=source_ids,
             verified_partition_readbacks=verified_partition_readbacks,
         )
@@ -1146,6 +1603,7 @@ def _load_or_initialize_task07_batch_journal(
             "command": "data.task07.batch-journal",
             "status": "in_progress",
             "bound_facts": dict(bound_facts),
+            "preflight_digest": preflight_digest,
             "source_ids": source_ids,
             "completed_source_ids": [],
             "source_receipts": [],
@@ -1185,6 +1643,7 @@ def _verify_task07_batch_journal(
     path: Path,
     *,
     bound_facts: Mapping[str, Any],
+    preflight_digest: str,
     source_ids: list[int],
     verified_partition_readbacks: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -1200,6 +1659,7 @@ def _verify_task07_batch_journal(
     _validate_task07_batch_journal(
         journal,
         bound_facts=bound_facts,
+        preflight_digest=preflight_digest,
         source_ids=source_ids,
         verified_partition_readbacks=verified_partition_readbacks,
     )
@@ -1210,6 +1670,7 @@ def _validate_task07_batch_journal(
     journal: Mapping[str, Any],
     *,
     bound_facts: Mapping[str, Any],
+    preflight_digest: str,
     source_ids: list[int],
     verified_partition_readbacks: list[dict[str, Any]],
 ) -> None:
@@ -1225,6 +1686,7 @@ def _validate_task07_batch_journal(
     if (
         journal.get("command") != "data.task07.batch-journal"
         or journal.get("bound_facts") != dict(bound_facts)
+        or journal.get("preflight_digest") != preflight_digest
         or journal.get("source_ids") != source_ids
         or journal.get("verified_partition_readbacks")
         != verified_partition_readbacks
@@ -1293,6 +1755,41 @@ def _verify_task07_apply_receipt(
     source_receipts = receipt.get("source_receipts")
     if not isinstance(source_receipts, list):
         raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    published_count = sum(
+        item.get("status") == "passed" for item in source_receipts
+    )
+    data_gap_count = sum(
+        item.get("status") == "data_gap" for item in source_receipts
+    )
+    expected_source_digests = [
+        item.get("receipt_digest") for item in source_receipts
+    ]
+    expected_calls_rqdata = any(
+        item.get("calls_rqdata") is True for item in source_receipts
+    )
+    if (
+        receipt.get("published_source_count") != published_count
+        or receipt.get("data_gap_count", 0) != data_gap_count
+        or receipt.get("source_receipt_digests") != expected_source_digests
+        or receipt.get("calls_rqdata") is not expected_calls_rqdata
+        or receipt.get("deletion_authorized") is not False
+    ):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    repair_batch = batch.get("operation") in {
+        "rqdata_redownload",
+        "canonical_1m_reaggregate",
+    }
+    repair_targets = (
+        list(build_task07_repair_targets(plan, batch)) if repair_batch else []
+    )
+    if receipt.get("repair_target_count", 0) != len(repair_targets):
+        raise ValueError("TASK07_REPAIR_RECEIPT_DRIFT")
+    if not repair_batch and any(
+        item.get("calls_rqdata") is not False
+        or item.get("deletion_authorized") is not False
+        for item in source_receipts
+    ):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
     expected_journal_path = _task07_batch_journal_path(
         Path(str(approved_targets["staging_root"])),
         plan_digest=str(plan["plan_digest"]),
@@ -1324,10 +1821,15 @@ def _verify_task07_apply_receipt(
             current_database_revision=database_revision,
             current_write_targets=approved_targets,
         ),
-        source_ids=[
-            int(item["market_data_file_id"])
-            for item in batch.get("sources", [])
-        ],
+        preflight_digest=str(receipt.get("preflight_digest")),
+        source_ids=(
+            [int(item.source_action_ids[0]) for item in repair_targets]
+            if repair_batch
+            else [
+                int(item["market_data_file_id"])
+                for item in batch.get("sources", [])
+            ]
+        ),
         verified_partition_readbacks=verified_partition_readbacks,
     )
     if (
@@ -1338,11 +1840,28 @@ def _verify_task07_apply_receipt(
     ):
         raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
     catalog = HistoricalCatalog(session)
+    if repair_batch:
+        if len(source_receipts) != len(repair_targets):
+            raise ValueError("TASK07_REPAIR_RECEIPT_DRIFT")
+        for terminal, target in zip(
+            source_receipts,
+            repair_targets,
+            strict=True,
+        ):
+            _verify_task07_repair_receipt_binding(terminal, target)
     verified = [
-        verify_task07_published_batch(
-            item,
-            catalog=catalog,
-            canonical_root=canonical_root,
+        (
+            _verify_task07_repair_terminal_receipt(
+                item,
+                catalog=catalog,
+                canonical_root=canonical_root,
+            )
+            if repair_batch
+            else verify_task07_published_batch(
+                item,
+                catalog=catalog,
+                canonical_root=canonical_root,
+            )
         )
         for item in source_receipts
     ]
@@ -1361,6 +1880,8 @@ def _verify_task07_apply_receipt(
         "receipt_digest": canonical_json_digest(receipt),
         "batch_digest": batch["batch_digest"],
         "verified_source_count": len(verified),
+        "verified_published_source_count": published_count,
+        "verified_data_gap_count": data_gap_count,
         "verified_partition_count": len(verified_partition_readbacks),
         "verified_partition_digests": [
             item["validation_digest"]
