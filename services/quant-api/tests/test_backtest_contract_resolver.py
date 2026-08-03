@@ -144,10 +144,10 @@ def test_resolves_jm_actual_contract_and_trading_parameters_for_normal_day() -> 
     assert resolved.contract_month == "2024-05"
     assert resolved.exchange == "DCE"
     assert resolved.contract_multiplier == 60
-    assert resolved.price_tick == 0.5
-    assert resolved.margin_ratio == 0.13
-    assert resolved.commission_rule.open_fee == 0.0001
-    assert resolved.commission_rule.close_fee == 0.00011
+    assert resolved.price_tick == Decimal("0.5")
+    assert resolved.margin_ratio == Decimal("0.13")
+    assert resolved.commission_rule.open_fee == Decimal("0.0001")
+    assert resolved.commission_rule.close_fee == Decimal("0.00011")
     assert resolved.parameter_source == "futures_trading_parameters"
     assert resolved.main_contract_source.provider == "rqdata"
     assert resolved.last_allowed_holding_date == date(2024, 4, 30)
@@ -221,9 +221,9 @@ def test_resolves_from_fee_margin_rules_when_futures_trading_parameters_missing(
 
     assert resolved.actual_contract == "JM2405"
     assert resolved.contract_multiplier == 60
-    assert resolved.price_tick == 0.5
-    assert resolved.margin_ratio == 0.14
-    assert resolved.commission_rule.open_fee == 0.00012
+    assert resolved.price_tick == Decimal("0.5")
+    assert resolved.margin_ratio == Decimal("0.14")
+    assert resolved.commission_rule.open_fee == Decimal("0.00012")
     assert resolved.parameter_source == "fee_margin_rules"
 
 
@@ -239,9 +239,9 @@ def test_resolves_mixed_parameters_when_trading_parameter_has_missing_fields() -
         resolved = resolve_jm_contract(session, trading_day=date(2024, 4, 17))
 
     assert resolved.contract_multiplier == 60
-    assert resolved.price_tick == 0.5
-    assert resolved.margin_ratio == 0.13
-    assert resolved.commission_rule.open_fee == 0.0001
+    assert resolved.price_tick == Decimal("0.5")
+    assert resolved.margin_ratio == Decimal("0.13")
+    assert resolved.commission_rule.open_fee == Decimal("0.0001")
     assert resolved.parameter_source == "mixed"
 
 

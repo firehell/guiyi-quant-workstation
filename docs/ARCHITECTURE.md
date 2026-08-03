@@ -1,36 +1,191 @@
 # 归一量化系统架构
 
-更新时间：2026-07-26
+更新时间：2026-07-31
 
 ## 1. 定位
 
 归一量化是单用户、本地优先的国内期货研究工作站。V1 服务“数据 → 回测 → 报告 → 复盘 → 信号提醒 → 人工观察”，不做自动交易。
 
-## 2. 主链路
+## 2. Active target（设计已冻结，尚未完成）
 
 ```text
-RQData 1m
--> raw parquet
--> standard 1m parquet + quality Gate
--> local aggregation 5m / 15m / 30m / 60m / 1d
--> manifest / checksum / PostgreSQL metadata
--> DuckDB read_parquet
--> vn.py CTA / FastAPI
--> PostgreSQL report / trade / order / signal / review facts
--> Vue Web
+RQData
+-> temporary staging
+-> schema/session/duplicate/OHLCV/coverage validation
+-> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> PostgreSQL Catalog / Manifest / Gap / MainContractMap
+-> MarketDataService (exact DatasetKey + deterministic aggregation)
+-> Web / Indicator / Backtest / Signal / Review
 ```
 
-live 数据是独立观察层：
+`continuous` 与 `actual_dominant` 是显式且不可互换的数据类型。前者主要用于长周期展示、
+指标研究和明确标注的数据类型回测；后者用于实际主力监听、信号和真实换月回测。
+direct 数据矩阵仅为 continuous `1m/1d/1w` 和 actual-dominant `1m/1d`；
+actual-dominant 的 coverage/read 必须按 rank=1 mapping 有效分段计算。
+5m/15m/30m/60m 只从 canonical 1m 按 TradingSession 确定性聚合，不形成新的 canonical
+身份。任何缺口相交请求必须 fail-closed。
+
+live 目标仍是独立 observation 层：
 
 ```text
-RQData live 1m -> live_minute_bars
--> confirmed 5m/15m/30m/60m/1d/1w
--> preview (zero write)
--> optional formal live_confirmed event
--> optional guiyi-notifications queue -> observation-only WeCom
+RQData live 1m -> PostgreSQL live observation
+-> confirmed aggregation -> immutable SignalDecision
+-> optional SignalEvent -> Notification Gate -> observation-only WeCom
+-> EOD re-download RQData final -> input/result reconciliation
 ```
 
-单 APScheduler 由 Redis singleton lock 防重复，交易 session clock 控制夜盘、午休、节假日和 close grace。live 表不自动登记为 historical active，不进入可信回测；formal event、盘后归档和企业微信分别由默认关闭的独立 Gate 控制，永不生成订单。
+EOD 不把 live bar 复制为 historical canonical；修复、补数、replay 与 EOD 重算不得补发通知。
+
+Task 06 branch-local candidate 使用 additive `20260802_0028`、identity correction
+`20260802_0029`、create-only trigger `20260802_0030` 与 provider lineage `20260802_0031`
+建立唯一 V2 active candidate：
+`live_observation_bars -> signal_decisions -> signal_decision_reconciliations -> ReviewNote ->
+research_samples`。新路径仅接受 `jm + rank=1 actual contract + confirmed 1m/15m`；15m 必须是
+同一 TradingSession 内完整 15 根 confirmed 1m。同自然键相同内容幂等复用，revision、identity
+或 OHLCV 漂移 fail-closed。旧 partial-first-seen 与旧 live 表保持 frozen compatibility，不导入、
+不双写；Task 07 前不删除。
+
+`StrategyInputSchema v1` 以 canonical JSON 固定 Decimal、UTC 时间、DatasetKey/manifest、策略、
+indicator、policy、recipe、历史 15m 输入与有序 live 1m；trusted builder 固定唯一合同
+`jm_data_core_v2_ema21_direction_observation/v1.0 + ema21/v1 + ema_sma_window_v1 +
+jm_ema21_confirmed_close_direction_v1` 及 `period=21 / sma_window / round_digits=6 /
+confirmed_close_vs_ema21 / equal=no_signal`，不接受调用方注入 identity、parameters 或 digest。该合同固定
+`observation_only=true / future_looking=false / repainting_accepted=false /
+historical_backtest_allowed=false / auto_order=false`，并显式拒绝既有 centered-XMA original
+strategy/indicator/policy identity。历史输入窗口精确 128 根。
+RQData provider-final loader 通过 data-core adapter 与 `validate_provider_batch` 重新获取 exact 1m
+window，持久化 provider data version/request digest。固定 evaluator 只消费 128 根 confirmed
+historical 15m 与当前 confirmed decision bar，复用 quant-core EMA21 registry/policy/kernel；close
+大于/小于 EMA 分别记录 long/short，等于记录 no_signal。`LiveReviewRuntime` 不提供 evaluator 注入点，
+EOD 也必须复用同一 evaluator。
+SignalDecision create-only；有信号和无信号均记录。Task 06 不创建 SignalEvent 或 notification；
+future first-seen 双时间语义必须另走既有 frozen Event 合同与独立 Gate。
+
+所有可执行入口集中在 `LiveReviewRuntime`，live/EOD/retention 与人工 Review 分别由默认
+false 的 flag fail-closed；SignalEvent/notification flag 继续保留为健康状态读回项但 Task 06 无写入器。
+底层纯 domain service 只供编排与测试复用，不是 Runtime 入口。
+
+以上是默认 disabled 的基础设施；`/api/runtime/health` 的
+`data_core_v2_live_review` 必须回读 disabled、observation_only 与 auto_order=false。生产 migration、
+已在 exact backup/approval 后升级到 `0031` 并通过 empty/disabled smoke。真实 provider-final 读取、
+scheduler、Runtime 与通知仍需后续独立 Gate；schema ready 不等于 Runtime ready。
+
+### 2.0 Task 04 Gate 前实现边界
+
+`feature/data-core-v2-historical-loop` 已实现候选 historical 读链：
+
+```text
+Catalog / Manifest / Gap / MainContractMap
+-> CanonicalHistoricalReader
+-> MarketDataService.get_bars(BarQuery)
+-> canonical bars / EMA / MACD API
+-> default-disabled JM Web consumer
+```
+
+响应 identity 分为不随请求窗口变化的 source DatasetKey/manifest/provider-version
+lineage token，以及单独绑定 exact query window 的 `request_identity_token`。derived frequency
+只读取 canonical 1m 并复用 TradingSession 聚合；读取路径不
+补数、不缩窗、不写数据。JM Web 仅在 `VITE_JM_DATA_CORE_V2_ENABLED=true` 时使用 canonical
+Catalog coverage 与上述 API；默认 false，非 JM 保持 legacy compatibility。
+
+该实现当前为 `BLOCKED_AT_JM_REAL_DATA_GATE`：生产 revision 已在精确 Gate 下升级到
+`20260730_0027`。绑定 `develop@e29c2940` 的第三次真实 apply 已完成任务窗口 rank=1 mapping
+以及 continuous `JM.MAIN` 的 1m/1d canonical/metadata 发布，随后在 continuous direct 1w
+写入前因 RQData 不输出 `2013-03-22` 上市残周 bar 而以
+`CANONICAL_QUALITY_COVERAGE_MISMATCH` fail-closed。receipt 保持 `in_progress`，已发布 partition
+必须在后续 exact-head Gate 中用 manifest digest 与物理 checksum 重验后才可 skip。
+
+当前 TDD 修复保留 packet-bound 首交易日作为 RQData weekly query anchor，但从 expected weekly
+endpoints 排除该非周一起始残周；通用 coverage validator、M1/D1 与 actual-dominant 路径均未
+放宽。修复已通过真实 RQData 只读 `684 expected = 684 actual`、Data Core/后端全量与独立
+Review，但尚未取得新 merge SHA/CI/packet/批准，因此不得续跑 apply，也未执行 historical
+Shadow。这不能解释为消费者已正式切换、Runtime Ready 或任务 04 已验收。
+
+### 2.0 Legacy compatibility（迁移期，禁止扩展为第二套 active）
+
+当前已实现链路仍包含 standard Parquet、Profile/ActiveBinding、workbench/reader 与既有 live
+服务。它们只作为迁移期兼容与历史 Gate 事实保留，必须按消费者逐个切换、Shadow/rollback、
+引用清除的顺序退出；不得与 active target 竞争长期权威。
+
+### 2.0.1 JM Active Dataset compatibility Facade
+
+`GY-CORE-02` 新增的 `ActiveDatasetResolver`、`MarketDataService`、
+`DatasetDescriptor` 与 `BarsResult` 是 **仅限 JM 的兼容 Facade**。historical selection
+仍委托既有 Profile / workbench / reader 链：Facade 只冻结并校验该链的结果，不能成为第二套
+active selector。
+
+- Browser historical 可以绑定有序的多个合法资产；research 必须固定一个 `passed` 资产。
+- 冻结的 file ID 与 evidence 把 bars、quality、conflicts、coverage 和 lineage 绑定到同一组文件；
+  historical lineage token 继续使用既有 token，不改写其语义。
+- dominant `rank=1` 请求以 exact-date 的 strict / effective identity 比较处理；同一请求存在歧义
+  时 fail-closed，不静默择一。
+- 唯一迁移调用方是 JM 分支的 `GET /api/v1/market/bars`。非 JM 请求保持既有 workbench
+  路径以维持兼容性；coverage、live API routes、indicator/MACD、`/api/klines`、backtest、
+  signal 与 review 均未迁移。
+
+Facade 的 live 分支仅供 browser/read-only observation：只接受实际 JM 合约、显式且唯一的
+provider/source mode 及 `tail=false`。strict/research live 尚不支持；`live-response-snapshot-v1`
+只证明一个返回 response window，不能证明持久化 source-mode DB/schema identity。live
+source-mode schema、upsert 与 aggregation 的 P0 是独立 Lane 3 任务，必须在 `GY-CORE-05`
+Shadow 前完成，是旧路线当时的约束。该 future reference 已 superseded；新路线由
+`GY-DATA-CORE-V2` 任务 11 收口，并在任务 19 前接受独立 Gate。本 Facade 不授权
+Runtime、notification、trading 或 release。
+
+### 2.0.2 Unified CLI 编排边界
+
+`GY-CORE-03` 新增独立 Python package/entrypoint `guiyi`，不重命名或扩展旧
+`app/cli.py` 为新的权威入口。CLI 只负责参数解析、共享 service 调用、稳定 JSON 与退出码：
+
+```text
+guiyi data verify
+  -> core_cli.verify_active_dataset
+  -> JM: GY-CORE-02 MarketDataService Facade
+
+guiyi runtime status
+  -> runtime_health.build_runtime_health
+
+guiyi runtime plan
+  -> runtime_scheduler.dry_run_payload
+```
+
+`runtime plan` 不打开数据库、不连接 Redis、不构造 RQData client，也不写 live/historical、
+SignalEvent 或 notification。`runtime status` 只读取既有 health 聚合，不启动或切换服务。
+`data verify` 的新入口仅接受 GY-CORE-02 支持的 JM historical contract；非 JM 只在旧
+`guiyi-data check-bars` 兼容 Shim 中继续走 legacy reader，不建立第二套 active selector。
+
+首轮保留两个旧入口：`guiyi-data check-bars` 与
+`scripts/rqdata_reference_metadata_gap_apply_plan.py`。它们保持参数和人类可读输出，
+但编排改为调用 `app/services/core_cli.py`；后者仍会在调用者指定目录生成原有 plan report，
+不会写 DB、Parquet、manifest 或调用 RQData。不得据此删除其他旧脚本或推断 data sync、
+EOD、Runtime once/run、notification、backup 已迁移。
+
+### 2.0.3 ObservationPlan 与只读 StrategyAdapter（legacy compatibility）
+
+`GY-CORE-04` 已将首个观察计划冻结在版本化文件
+`config/observation_plans.yaml`。`ObservationPlanRegistry` 对原始文件计算 SHA-256，并严格
+校验 schema、字段、重复 ID 和 active 数量；当前唯一 active contract 是：
+
+```text
+jm + dominant_rank1 + 15m
+-> htdy_original_realtime_first_seen/v1.0
+-> realtime_first_seen
+-> observation_only
+-> notification.enabled=false
+```
+
+disabled 占位不会被 Adapter 执行；任何第二 active plan、非 JM/15m、通知开启、策略版本或
+purpose 漂移均 fail-closed。当前没有实现苏冰策略，也没有扩展多品种或多周期。
+
+`StrategyAdapter` 只定义 `StrategyContext -> StrategyEvaluation` 的内存合同。
+`HtDyStrategyAdapter` 固定调用既有 `HtDyRealtimeCandidateEvaluator`，保留原生 candidate、
+blocked observation、observation key、方向和 policy identity；返回对象的
+`writes_enabled`、`signal_event_enabled`、`notification_enabled` 始终为 false。该边界没有
+Session/writer 依赖，不创建 `StrategySignal` / `SignalEvent` / notification，不改变 HTDY
+original indicator、partial、repainting、first-seen、no-retraction、`signal_changed` 禁止或
+Stage 5 `REJECTED_RESEARCH_CANDIDATE`。旧 GY-CORE-04～08 路线现已
+`superseded / paused`；本段只记录已合入代码事实，不授权继续旧 Shadow/Runtime 路线。
+Adapter 在调用 evaluator 前还会要求 realtime
+first-seen snapshot 的 `partial_allowed=true`，防止 confirmed-only snapshot 静默收缩语义。
 
 ### 2.1 HTDY 原版 XMA 精确实时观察支路
 
@@ -116,7 +271,12 @@ Step 4 的纯函数 Gate 分为 bounded parent、exact daily child 和 execution
   bundle path/hash，通过原子目录交换安装精确 source bundle，失败恢复旧 bundle，并在
   deployment receipt 中记录 before/after/synced。只切换 Git commit 不足以满足 service parent。
 
-Step 5 在 daily child 之前增加 exact mapping freeze：
+> 2026-07-30 Owner 覆盖：以下 Step 5 与 S6-10 schema-v4～v7 均为
+> `superseded / frozen historical`。它们保留架构 lineage，但不得再生成 authorization、
+> mapping、daily child、部署或 Runtime/notification 写入。恢复入口仅为
+> `GY-S6-10-R2` 单交易日合同。
+
+Step 5 在旧 daily child 之前增加 exact mapping freeze：
 
 ```text
 首个 schema-v7 完整日：
@@ -151,7 +311,7 @@ activation-ready 与 Runtime switch 阶段不得提前依赖尚未生成的 rece
 纯 contract 模块仍不访问外部状态；独立 collector/CLI 负责 fail-closed 重采 facts 与 create-only
 证据。真实 packet 发布、批准、部署和单日自然事件属于外部 Gate。
 
-### S6-10 schema-v4 five-day stability boundary
+### S6-10 schema-v4 five-day stability boundary（frozen historical）
 
 > 历史状态：`superseded`。保留全部 schema-v4 证据，但 active Runtime 不得再以旧
 > Approval C 启动新窗口。
@@ -191,7 +351,7 @@ append/seal/finalize 均重验完整 hash chain，finalize 只能接受 parent �
 五日运行仍分别受 Approval C 的精确 hash/slot/target 约束。代码和 fake test 通过不等于
 `LONG_RUNNING_READY / JM_RUNTIME_READY`。
 
-### S6-10 schema-v5 one-day close-only boundary
+### S6-10 schema-v5 one-day close-only boundary（frozen historical）
 
 active 路径为：
 
@@ -218,7 +378,7 @@ parent 所绑定的两个 packet 文件哈希及 target commit，避免 after-ma
 继续使用旧 commit-bound enable packet，也避免 parent/rebind 之间形成哈希循环。
 backup/restore 不属于 schema-v5 前置，故 `disaster_recovery_ready=false`。
 
-### S6-10 schema-v6 activation-bound remainder boundary
+### S6-10 schema-v6 activation-bound remainder boundary（frozen historical）
 
 schema-v6 不把 21:00 后才部署的窗口伪装成完整一交易日。parent 绑定目标交易日、
 activation deadline、EOD、目标 commit/tree、DB/Profile baseline、S6-07 rebind/enable
@@ -250,7 +410,7 @@ SignalEvent/SignalNotification 审计记录。最终 Gate 只允许
 `REMAINING_TRADING_DAY_STABILITY_PASSED[_NATURAL_SIGNAL_PENDING]`，且
 `complete_trading_day_passed=false / disaster_recovery_ready=false / auto_order=false`。
 
-### S6-10 schema-v7 decision-close and no-code promotion boundary
+### S6-10 schema-v7 decision-close and no-code promotion boundary（frozen historical）
 
 schema-v7 修复 centered-XMA 重绘观察的双时间语义。`SignalEvent.bar_end` 永久表示原始
 observation 所在 K 线；`formal_lineage.live_detection_snapshot.decision_bucket_end`
@@ -296,8 +456,9 @@ C2、Approval D 签名、干净 Runtime 与真实部署/运行验收缺一不可
 | 单次历史 smoke | Stage 9-B2 historical replay single-send smoke 已通过 |
 | 单次真实 live / archive Gate | `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED` 与 `JM_EOD_INCREMENTAL_AUTOMATION_READY` 均已达成；不自动继承到 SignalEvent、通知或长稳 |
 | S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 immutable writer/完整 lineage v2/Stage 9 preview-only 例外已完成，delivery 与通知仍禁止；最终 Approval A 已将 code-only Runtime/Web bundle 部署到 `f63b3636`，S6-07 rebind receipt 与 production service-parent 零漂移验证均通过。SignalEvent flags 仍关闭，daily child、自然事件、幂等探测与长稳仍 pending |
-| S6-10 长稳 | schema-v4 packet/child/ledger/observer/Runtime route/CLI 已在独立 worktree 实现；`/Volumes/GuiyiBackup` 未挂载，真实 backup/restore、Approval C、故障注入和五日 Ledger 均 pending |
-| 长期运行 Gate | `JM_RUNTIME_READY` / `LONG_RUNNING_READY` 未达成 |
+| 旧 S6-10 | schema-v4～v7 owner-paused / frozen historical；旧授权、mapping、部署和运行均禁止 |
+| 新版 JM Runtime Gate | `GY-S6-10-R2` 待设计：一个完整 DCE 交易日自然运行 + 同一 exact release 独立恢复证据 + 独立 Review + 用户最终批准 |
+| Ready 兼容字段 | `JM_RUNTIME_READY` 未达成；`LONG_RUNNING_READY=false` 固定为 deprecated/not_applicable，单日 Gate 永不设 true |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |
 
@@ -371,7 +532,9 @@ Backtest API
   `/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime`）。开发主仓库仍在
   `/Volumes/扩展盘/guiyi-quant-workstation`；task/develop worktree 不得被服务引用。
 - optional scheduler/notification 只有对应 flag 开启且人工 `--confirm-load` 才加载。
-- 当前已完成单次真实 T3 live Gate 与单交易日 T4 provider-final 归档 Gate，但仍不能宣称 `JM_RUNTIME_READY`、`LONG_RUNNING_READY`、SignalEvent 或通知 Ready。
+- 当前已完成单次真实 T3 live Gate 与单交易日 T4 provider-final 归档 Gate，但仍不能宣称
+  `JM_RUNTIME_READY`、SignalEvent 或通知 Ready；`LONG_RUNNING_READY=false` 仅为
+  deprecated/not_applicable 兼容字段。
 
 ### 公网入口
 
@@ -383,7 +546,8 @@ Backtest API
 ## 7. 当前未完成
 
 - Audit V2 全历史 residual 治理：处理保留的 provider/calendar/session/asset 证据边界，不得把它等同于已通过的消费者准入。
-- live/after-market/formal event/notification 的真实 smoke 和 5 日长稳。
+- live/after-market/formal event/notification 的新版单交易日 Runtime 验收：夜盘、三段日盘、
+  23 个 confirmed 15m 桶、EOD、幂等、零非法写入，以及同一 exact release 的独立恢复证据。
 - API/Web/backtest/signal worker 的实际 launchd kill/restart 验收。
 - 样本外 / walk-forward 验证。
 - 真实公网部署验收。

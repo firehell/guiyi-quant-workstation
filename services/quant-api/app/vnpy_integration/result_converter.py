@@ -36,6 +36,10 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
     orders = lineage["orders"]
     signal_candidates = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "signal_candidates"))]
     rejected_signals = [_normalize_mapping(item) for item in _as_sequence(_pick(payload, "rejected_signals"))]
+    contract_roll_cancellations = [
+        _normalize_mapping(item)
+        for item in _as_sequence(_pick(payload, "contract_roll_cancellations"))
+    ]
     initial_capital = _initial_capital(statistics, prepared)
     equity_curve = generate_equity_curve(trades, initial_capital=initial_capital)
     drawdown_result = generate_drawdown_curve(equity_curve)
@@ -54,7 +58,7 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
     report["lineage_summary"] = lineage["lineage_summary"]
     generated_at = datetime.now(UTC).isoformat()
 
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": generated_at,
         "engine": "vnpy_cta_backtesting",
@@ -67,6 +71,7 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
         "strategy_execution_events": strategy_execution_events,
         "signal_candidates": signal_candidates,
         "rejected_signals": rejected_signals,
+        "contract_roll_cancellations": contract_roll_cancellations,
         "equity_curve": equity_curve,
         "drawdown_curve": drawdown_curve,
         "warnings": list(_as_sequence(_pick(payload, "warnings"))) or [],
@@ -79,6 +84,18 @@ def convert_vnpy_result(raw_result: Any) -> dict[str, Any]:
             "ignored_raw_curve_fields": [key for key in DERIVED_CURVE_KEYS if key in payload],
         },
     }
+    return _json_numeric_boundary(result)
+
+
+def _json_numeric_boundary(value: Any) -> Any:
+    """Serialize exact derived numerics only after all metric derivation is complete."""
+    if isinstance(value, dict):
+        return {str(key): _json_numeric_boundary(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_numeric_boundary(item) for item in value]
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 def _normalize_trade_list(raw_trades: list[dict[str, Any]], *, prepared: dict[str, Any]) -> list[dict[str, Any]]:

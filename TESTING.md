@@ -1,524 +1,244 @@
 # 测试与验证入口
 
-更新时间：2026-07-20
+只记录当前可运行的命令。历史通过数量和一次性 Gate 结果以相应 receipt、报告与 Git 提交为准。
 
-## 文档任务必跑
+## 快速检查
 
 ```bash
-git status --short --branch
 git diff --check
-git diff --stat
-git diff --name-only
+bash scripts/engineering/check-secrets.sh
+bash scripts/engineering/test.sh engineering
+bash scripts/engineering/test.sh docs
 ```
 
-状态词扫描：
+`preflight.sh` 适用于新会话、高风险任务或环境诊断；它不是每个普通改动的业务 Gate。
 
-```bash
-rg -n "2020|2023|82/90|8 partial|metadata_gap|READY|PARTIAL|PENDING|阿里云|腾讯云|JM2609|report_id=14|Stage 9|五个交易日" \
-  README.md PROJECT_SOURCE.md STATUS.md DECISIONS.md TESTING.md docs --glob '*.md'
-```
-
-Stage 6 / Gate 关键词扫描：
-
-```bash
-rg -n "DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL|DATA_LAYER_REAUDIT_REQUIRED|D4-00|HTDY|OOS|Stage 6|S6-|JM Data Continuity|T3_REAL|JM_ARCHIVE|LIVE_SIGNAL_EVENT|LIVE_WECOM|JM_RUNTIME_READY|LONG_RUNNING" \
-  PROJECT_SOURCE.md STATUS.md DECISIONS.md TESTING.md docs --glob '*.md'
-```
-
-敏感信息扫描：
-
-```bash
-rg -n -i "password|passwd|token|secret|webhook|api[_-]?key|authorization|cookie" \
-  README.md PROJECT_SOURCE.md STATUS.md DECISIONS.md TESTING.md docs/*.md --glob '*.md'
-```
-
-说明：上述扫描会命中文档中的安全规则、环境变量名和脱敏说明。验收时需确认没有真实密钥值、真实 webhook URL、账号或 cookie。
-
-## WEB-V1-13 品牌与个人研究操控台
-
-代码与 mock 浏览器矩阵：
-
-```bash
-cd apps/quant-web
-npm test
-npm run build
-PLAYWRIGHT_BASE_URL=http://127.0.0.1:5177 npm run test:e2e
-```
-
-当前结果：Web `119 passed / 1 skipped`，build passed，mock browser `14 passed`。
-
-后端兼容式只读接口回归：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_backtest_task_api.py \
-  services/quant-api/tests/test_signal_events.py \
-  services/quant-api/tests/test_review_center_api.py \
-  services/quant-api/tests/test_signal_review_profile_lineage.py
-```
-
-当前结果：`41 passed`；覆盖 Dashboard/Signal/Review/Backtest 只读补差、旧数组与新分页兼容、event/source/trade 精确查询和无写入边界。
-
-真实只读 Gate 不使用 `dev-up.sh`，不执行 Alembic，不启动 worker/scheduler。候选 API 必须以 PostgreSQL `PGOPTIONS='-c default_transaction_read_only=on'` 启动，并在运行前确认 `transaction_read_only=on`：
-
-```bash
-cd apps/quant-web
-PLAYWRIGHT_API_BASE=http://127.0.0.1:8010 \
-PLAYWRIGHT_BASE_URL=http://127.0.0.1:5177 \
-npm run test:e2e:readonly
-```
-
-当前结果：10 项真实 API/浏览器检查通过，网络仅 GET/HEAD/OPTIONS，console error=0。report `15` / trade `3199` / review `9` 真实往返通过；真实库 `event_review_pairs=[]`，所以 SignalEvent 只验收“尚无复盘”降级往返，最终状态为 `WEB_V1_13_PARTIAL`，不得发布 Signal round-trip Ready。
-
-## S6-03 JM 历史追平
-
-代码回归：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_jm_historical_catchup_execution.py \
-  services/quant-api/tests/test_jm_historical_catchup.py \
-  services/quant-api/tests/test_live_target_freshness.py \
-  services/quant-api/tests/test_market_data_api.py \
-  services/quant-api/tests/test_after_market_archive.py \
-  services/quant-api/tests/test_actual_contract_bars_pilot.py \
-  services/quant-api/tests/test_live_runtime_scheduler.py \
-  services/quant-api/tests/test_runtime_health.py
-```
-
-当前结果：`75 passed`。真实 apply 后还必须核对 completion receipt、14 行 manifest/checksum、19 个 MarketDataFile、14 个 quality report、18 个 active Profile binding、旧 binding 文件 checksum、consumer latest bar、live target required-date freshness 和重复 apply `already_completed`。
-
-## S6-04 historical/live context
-
-定向回归：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_live_market_reader.py \
-  services/quant-api/tests/test_live_signal_context.py \
-  services/quant-api/tests/test_live_signal_evaluator.py \
-  services/quant-api/tests/test_signal_review_profile_lineage.py \
-  services/quant-api/tests/test_notification_worker.py
-```
-
-当前结果：`51 passed`。合并后端全量为 `1089 passed, 3 skipped`；Web tests 为 `76 passed, 1 skipped`，production build passed。该矩阵覆盖冷启动、仅一根 live、重启、exact duplicate、OHLCV conflict、主力切换、historical stale/calendar missing/file drift、confirmed passed trigger 和双来源 lineage；全程只使用临时 SQLite/Parquet，不运行真实 live 或写 canonical 数据。
-
-## S6-05 T3 单次真实 JM live Gate
-
-Provider readiness 与 T3/T4 解阻回归：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_provider_readiness.py \
-  services/quant-api/tests/test_rqdata_client.py \
-  services/quant-api/tests/test_jm_historical_catchup.py \
-  services/quant-api/tests/test_jm_historical_catchup_execution.py \
-  services/quant-api/tests/test_after_market_archive_gate.py \
-  services/quant-api/tests/test_after_market_archive_cli.py \
-  services/quant-api/tests/test_after_market_archive.py \
-  services/quant-api/tests/test_live_t3_gate.py
-```
-
-当前结果：`54 passed`；真实 RQData 只读 smoke 验证 `rqdatac 3.5.6.1` 与 pandas 3.0.3 可调用 `is_data_ready`。S6-05 已在 `2026-07-21 / JM2609` 完成两次真实 bounded run，最终 receipt 为 `T3_REAL_PASSED`；该结论来自真实 receipt，不来自代码测试通过数。
-
-代码回归：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_live_1m_ingest.py \
-  services/quant-api/tests/test_live_multi_tf_aggregation.py \
-  services/quant-api/tests/test_live_target_freshness.py \
-  services/quant-api/tests/test_live_runtime_scheduler.py \
-  services/quant-api/tests/test_runtime_health.py \
-  services/quant-api/tests/test_trading_session_clock.py \
-  services/quant-api/tests/test_live_t3_gate.py
-```
-
-当前代码结果：`47 passed`；审计覆盖两次 bounded `--once`、confirmed 1m、六周期 checkpoint、幂等 unchanged、historical/Profile/signal/notification 零增量和命令级开关恢复。真实 evidence 位于 `data/reports/jm_live_t3_s6_05/main_28d667e6_20260720/t3_receipt.json`。
-
-## S6-06 T4 单交易日盘后归档 Gate
-
-代码回归：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_after_market_archive_gate.py \
-  services/quant-api/tests/test_after_market_archive.py \
-  services/quant-api/tests/test_jm_historical_catchup_execution.py \
-  services/quant-api/tests/test_jm_historical_catchup.py \
-  services/quant-api/tests/test_actual_contract_bars_pilot.py \
-  services/quant-api/tests/test_live_target_freshness.py
-```
-
-当前代码结果：`71 passed`；后端全量为 `1130 passed, 3 skipped`。该矩阵覆盖 bounded preflight 状态、actual-only 版本计划、completed-week-only 1w、精确分钟 key、两次 provider hash 稳定性、Profile candidate/consumer smoke、旧 active 资产 checksum、provider/live 缺失/重复/revision/OHLCV reconciliation、commit 后 receipt 恢复、旧 archive 幂等与失败证据，以及 S6-03 registration/materialization 回归。真实 `JM_ARCHIVE_PASSED` 仍要求已关闭交易日 provider-final 数据、独立 packet hash 批准、Profile apply、consumer smoke、旧资产审计和重复执行。
-
-## X4-06 指标契约验收
-
-```bash
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_indicator_kernel.py \
-  services/quant-api/tests/test_indicator_kernel_v1b_diff.py \
-  services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
-  services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py \
-  services/quant-api/tests/test_indicator_registry_v1.py \
-  services/quant-api/tests/test_strategy_indicator_policy_c404.py \
-  services/quant-api/tests/test_htdy_strict_core.py \
-  services/quant-api/tests/test_tdx_xma_indicator_risk.py \
-  services/quant-api/tests/test_htdy_formal_backtest_candidate.py \
-  services/quant-api/tests/test_backtest_profile_contract.py \
-  services/quant-api/tests/test_htdy_validation_protocol_c501.py \
-  services/quant-api/tests/test_v1b_jm_fixed_backtest_tasks.py
-
-cd apps/quant-web && npm run test:indicators
-```
-
-该组测试只使用临时 Parquet 与内存 SQLite；不写 canonical DB、Parquet、Profile binding、正式报告、OOS 或 live。
-
-## R45-05 阶段 4/5 最终验收
-
-阶段 4 affected tests 使用本文件的 X4-06 矩阵。阶段 5 与 R45 closeout 回归：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_htdy_stage5_acceptance_v2_r4504.py \
-  services/quant-api/tests/test_htdy_trusted_candidate_x503.py \
-  services/quant-api/tests/test_htdy_oos_validation_x504.py \
-  services/quant-api/tests/test_htdy_rolling_oos_x505.py \
-  services/quant-api/tests/test_htdy_strategy_review_x506b.py \
-  services/quant-api/tests/test_htdy_stage5_acceptance_x507.py \
-  services/quant-api/tests/test_htdy_frozen_data_completion_r4501b.py \
-  services/quant-api/tests/test_htdy_sample_end_audit_r4502.py \
-  services/quant-api/tests/test_htdy_rolling_decision_r4503.py
-```
-
-Review exact-bars / trust audit 与 Web Review/Market：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_htdy_strategy_review_x506b.py \
-  services/quant-api/tests/test_review_foundation_c506a.py \
-  services/quant-api/tests/test_review_center_api.py \
-  services/quant-api/tests/test_backtest_trust_audit.py
-
-pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web build
-```
-
-正式验收还必须用 PostgreSQL `REPEATABLE READ READ ONLY` 前后快照复核 report 14、report 15 / task 23、active binding 和绑定 Parquet 实体 SHA256，并对全部 X5/R45 packet、protocol、parameters 和策略 source 做执行前后哈希对账。通过证据固定在 `data/reports/stage45_final_acceptance_r4505/`。
-
-## 后端常用验证
-
-V1 全历史数据契约：
-
-```bash
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_full_history_contract.py \
-  services/quant-api/tests/test_target_coverage_audit.py \
-  services/quant-api/tests/test_data_layer_final_audit.py \
-  services/quant-api/tests/test_schema_contract.py
-```
-
-该命令只运行纯契约与 legacy 回归测试，不需要 RQData 凭据或真实 PostgreSQL。
-
-Audit V2 定向与回归：
-
-```bash
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_full_history_contract.py \
-  services/quant-api/tests/test_full_history_reference_metadata.py \
-  services/quant-api/tests/test_full_history_audit_v2.py \
-  services/quant-api/tests/test_full_history_physical_inventory.py \
-  services/quant-api/tests/test_target_coverage_audit.py \
-  services/quant-api/tests/test_data_layer_final_audit.py \
-  services/quant-api/tests/test_schema_contract.py \
-  services/quant-api/tests/test_multi_primary_rulebook.py
-```
-
-正式 CLI 只读运行需要 direct PostgreSQL；`--product` 过滤只能产生 smoke 状态，正式输出不得覆盖已有 V2 文件：
-
-```bash
-uv run --project services/quant-api python scripts/rqdata_full_history_audit_v2.py \
-  --project-root /Volumes/扩展盘/guiyi-quant-workstation \
-  --inventory-dir data/reports/full_history_audit_v2_20260710 \
-  --audit-end 2026-07-10 \
-  --output-dir data/reports/full_history_audit_v2_20260710
-```
+## 后端
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q services/quant-api/tests
-```
 
-```bash
 uv run --project services/quant-api ruff check \
   services/quant-api/app services/quant-api/tests scripts packages/quant-core/guiyi_quant
 ```
 
-Alembic：
+定向修改优先运行相关测试文件；需要数据库的测试必须使用仓库规定的隔离环境，禁止对 Runtime 数据库执行 destructive migration。
 
-```bash
-cd services/quant-api
-uv run python -m alembic current
-uv run python -m alembic heads
-```
+### GY-CORE-02 active dataset Facade
 
-## 前端常用验证
-
-```bash
-for f in apps/quant-web/tests/*.test.ts; do node --test "$f" || exit 1; done
-npm --prefix apps/quant-web run build
-```
-
-## 数据与回测只读验证
-
-数据层 final audit 只读运行示例：
+下列命令使用受控 SQLite/`tmp_path` fixtures，验证 JM compatibility Facade 的 response
+equivalence、冻结 lineage 及 zero-write 边界；它们不构成真实 PostgreSQL、canonical
+Parquet、RQData 或 Runtime Gate。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api python scripts/rqdata_data_layer_final_audit.py \
-  --project-root /Volumes/扩展盘/guiyi-quant-workstation \
-  --output-dir data/reports/data_layer_final_audit_manual
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_active_dataset_resolver.py \
+  services/quant-api/tests/test_market_data_service.py \
+  services/quant-api/tests/test_market_data_facade_equivalence.py
 ```
 
-回测 trust audit：
+Market/Profile 回归：
 
 ```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_actual_contract_semantics.py \
+  services/quant-api/tests/test_data_profile_registry.py \
+  services/quant-api/tests/test_profile_target_resolver.py \
+  services/quant-api/tests/test_market_data_reader.py \
+  services/quant-api/tests/test_market_data_api.py \
+  services/quant-api/tests/test_market_dual_mode_contract.py \
+  services/quant-api/tests/test_market_indicators_api.py \
+  services/quant-api/tests/test_market_macd_indicator_api.py \
+  services/quant-api/tests/test_live_market_reader.py \
+  services/quant-api/tests/test_live_target_freshness.py
+```
+
+legacy Profile/lineage compatibility 回归（不证明 active selector）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_backtest_profile_contract.py \
+  services/quant-api/tests/test_signal_review_profile_lineage.py \
+  services/quant-api/tests/test_review_center.py
+```
+
+### GY-CORE-03 unified CLI 与兼容 Shim
+
+`guiyi` 由 `services/quant-api` package 提供。首轮命令均为只读或 dry-run；
+`runtime plan` 不打开 DB/Redis/RQData，`runtime status` 只读取既有 health service，
+`data verify` 的 JM 请求复用 GY-CORE-02 Facade。
+
+```bash
+uv run --project services/quant-api guiyi --help
+uv run --project services/quant-api guiyi runtime plan --product jm
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_guiyi_cli.py \
+  services/quant-api/tests/test_core_cli_service.py \
+  services/quant-api/tests/test_guiyi_legacy_shims.py
+```
+
+旧 `guiyi-data check-bars` 与
+`scripts/rqdata_reference_metadata_gap_apply_plan.py` 仍是兼容入口；等价性测试只证明参数、
+stdout/stderr、退出码和共享 service 转调，不授权运行真实数据、Runtime 或通知写入。
+
+### GY-CORE-04 ObservationPlanRegistry 与 StrategyAdapter
+
+定向合同、真实 HTDY evaluator 对照与零写入边界：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_observation_plan_registry.py \
+  services/quant-api/tests/test_strategy_adapter.py \
+  services/quant-api/tests/test_htdy_realtime_evaluator.py \
+  services/quant-api/tests/test_htdy_production_kernel_policy.py \
+  services/quant-api/tests/test_htdy_golden_sample.py
+```
+
+该组测试不打开正式数据库、不写 SignalEvent/notification、不调用 Runtime 或企业微信。
+
+## Web
+
+```bash
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web build
+```
+
+涉及页面交互时，再运行对应 mock 或只读浏览器 smoke，并检查 console error。
+
+### GY-DATA-CORE-V2 新任务 04（Gate 前）
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q services/quant-api/tests/data_core
+
+# 获准的 Task 04 临时库实测结果：35 passed；库在 finally 中删除。
+# GUIYI_ISOLATED_MIGRATION_DATABASE_URL 必须指向与 DATABASE_URL 不同 OID 的
+# PostgreSQL 16 isolated/test database。
+PYTHONPATH=services/quant-api \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/alembic/test_data_core_migration.py
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_guiyi_cli.py \
+  services/quant-api/tests/test_market_data_service.py \
+  services/quant-api/tests/test_market_canonical_api.py \
+  services/quant-api/tests/test_market_indicators_api.py \
+  services/quant-api/tests/test_market_macd_indicator_api.py \
+  services/quant-api/tests/test_market_data_api.py \
+  services/quant-api/tests/test_market_data_facade_equivalence.py \
+  services/quant-api/tests/test_market_data_reader.py \
+  services/quant-api/tests/test_market_dual_mode_contract.py
+
+VITE_JM_DATA_CORE_V2_ENABLED=true pnpm --dir apps/quant-web dev \
+  --host 127.0.0.1 --port 5174
+EXPECT_CANONICAL_MARKET=1 pnpm --dir apps/quant-web test:e2e
+```
+
+`guiyi data migrate inventory/plan` 为零写入命令；plan 必须同时显式传入 task worktree
+`--project-root`、旧资产 `--legacy-root`、新 `--canonical-root/--staging-root` 与 exact window。
+worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval packet。
+
+### Task 05 derived/reference inventory
+
+下列 CLI 只输出稳定 JSON；不加载 RQData、不含 delete/apply/repair mode。真实 DB 只允许通过
+显式 `--database-url-env NAME` 外部只读 Gate 注入，绝不输出 URL；PostgreSQL 精确使用
+`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`。`--max-files` 限制文件、匹配和输出记录，
+`--max-directories` 单独限制目录；`--max-file-bytes`、`--max-total-bytes` 与 `--max-ids` 均有安全默认值。任何预算、
+symlink、非 UTF-8、TOCTOU、缺表/缺列或读取错误都会返回 incomplete diagnostics，绝不把截断
+或猜测结果当作完整 inventory。`market_data_files.file_path` 必须为绝对路径、containment 于显式
+`--canonical-root`（默认 data root）后转为 POSIX 相对 URI，并与唯一 `Catalog partition.file_uri`
+精确一致；provider、symbol、contract、period、checksum、manifest/version 证据任一漂移或 URI
+歧义均为 REVIEW_REQUIRED。legacy `bars` 的 5m/15m/30m/60m 和明确 derived 均为 REBUILD_ONLY。
+Task 05 inventory 当前未实现对 manifest/Parquet 的完整物理 proof reader；因此即使 Catalog
+字段一致的 direct candidate 也必须保持 REVIEW_REQUIRED 并输出
+`PHYSICAL_KEEP_PROOF_REQUIRED`，绝不产生弱 `KEEP_TRUSTED_CANONICAL`。
+Catalog 表中没有可与 `MarketDataFile.data_version` 直接对照的 source-data-version 字段；
+`manifest_version` 不是 data version，故 inventory 只可标记
+`metadata_aligned_partial_data_version_unverified`，不能声称 data version 已对齐。
+
+Task 07 的 zero-reference eligibility 同时要求 repository active/review references 为零，且
+27 条显式数据库 relation rule 的 active/review count 为零。规则覆盖 active/unknown Profile
+Binding、quality report→file、file→download task、active/unknown download task、Backtest
+task/report/trade/order、StrategySignal/SignalEvent/scan/notification、Review note/attachment/tag
+与 live/EOD 表；每条输出 `table/predicate/count/row_ids/target_ids/status/reason`。查询只使用固定
+allowlist、参数化 predicate、精确 count 和受 `--max-ids` 限制的 identifier read；缺表、缺列、
+未知状态或 identifier 超限均 fail-closed，不能产生 zero-reference 资格。
+
+repository source/doc scan 包含 `.mjs/.mts/.cjs` 及 Makefile/GNUmakefile、extensionless README、
+Dockerfile。其他未知无扩展名 regular file 会输出 `REPO_UNKNOWN_EXTENSIONLESS_FILE`，未知 suffix
+输出 `REPO_UNKNOWN_FILE_TYPE`，并令结果 incomplete；CSV、binary/data、compiled/cache 类型只可按
+`explicit_file_type_exclusions` 中的显式理由跳过，不能静默漏掉潜在 consumer reference。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_derived_reference_inventory.py
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api python scripts/derived_reference_inventory.py \
+  --repo-root /path/to/fixture-repo --data-root /path/to/fixture-data
+```
+
+真实 PostgreSQL/data root 只读盘点是 external Gate；它不授权重建、迁移、删除、Runtime、通知或交易。
+
+生产 migration、真实 RQData/Parquet/PostgreSQL apply 与创建/删除隔离 PostgreSQL 数据库
+都需要精确授权。Task 04 的专用临时库已在用户授权后完成测试并删除；这不授权生产 apply，
+也不得用未设置 isolated URL 时的 skipped 用例冒充 upgrade/downgrade/upgrade 通过。
+
+### GY-DATA-CORE-V2 Task 06 clean-start live/review loop
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_live_review_loop_models.py \
+  services/quant-api/tests/test_live_review_loop_contracts.py \
+  services/quant-api/tests/test_live_review_loop_eod_sample_retention.py \
+  services/quant-api/tests/test_live_review_loop_api_and_event_gate.py \
+  services/quant-api/tests/test_runtime_health.py
+
+PYTHONPATH=services/quant-api \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/alembic/test_live_review_loop_migration.py
+```
+
+迁移测试必须提供 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，并由 safety guard 证明与 Runtime
+`DATABASE_URL` 的 database/OID 均不同；实际完成 `0027 -> head(0031) -> 0027 -> head(0031)`。
+未配置时的
+skip 只证明 offline SQL/head tests，不满足 Task 06 migration 验收。所有 Task 06 flags 默认 false；
+disabled smoke 不读取 RQData、不写业务表、不启动 scheduler、不创建 SignalEvent/notification。
+合同测试同时冻结 trusted builder 的 EMA21 identity/parameters/digest/fingerprint golden vector、
+long/short/equal 三态，以及 Runtime/EOD 不允许注入其他 evaluator 的边界。
+
+## 数据、回测与运行时只读验证
+
+```bash
+bash scripts/engineering/runtime-health.sh --json
+
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api python scripts/backtest_trust_audit.py \
   --report-id 14 --format markdown
 ```
 
-阶段 5 candidate 只读 trust audit 使用同一命令的 `--report-id 15`；两个报告都通过只代表报告事实可信，不代表候选盈利或可实盘。
+真实数据、RQData、PostgreSQL、Runtime 或企业微信操作只能使用对应任务合同与专项 Gate；通用测试、health 或 receipt 文件存在均不构成授权。
 
-## Gate 说明
+## 专项 Gate 定位
 
-- 文档验证通过不等于代码测试通过。
-- 单元测试通过不等于真实运行 Gate 通过。
-- Stage 9-B2 historical replay single-send smoke 不等于 live-confirmed smoke。
-- `report_id=14` trust audit passed 不等于策略盈利、稳定或可实盘。
-- `REJECTED_RESEARCH_CANDIDATE` 是阶段 5 验证管道的合法终态，不等于工程失败，也不允许自动调参或重跑翻转。
-- `DATA-PART-TARGET-CLOSURE DELIVERY_READY` 不等于 `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。
-- C2-05 final Gate 的可复查证据固定在 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`：12/12 Golden Query 样本、49 条消费者矩阵、13/13 hard gate、direct PostgreSQL read-only snapshot；其报告中的 `174 passed / 0 failed / 0 skipped` 与 Web `59 passed / 0 failed / 1 existing optional skip` 是该 Gate 的测试记录。该证据不替代 live runtime、真实通知或长稳验证。
-- `DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 是 strict formal consumer Gate；`DATA_LAYER_REAUDIT_REQUIRED` 是全历史 residual 维护 backlog。两者可并存，且都不替代 OOS、T3/T4、live signal、企业微信或长稳 Gate。
-- D4-00 证据落盘不等于 `HTDY_XMA_SEMANTICS_AUDITED`；仓库最终 Gate 为 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`。`CURSOR_CANONICAL_SYNC_PREPARED` 只表示历史文档入口曾对齐，不宣布指标契约、策略管道或 JM live Ready。
-- Stage 6 当前下一入口为 `S6-06` T4；`T3_REAL_PASSED` 已有真实 receipt，`JM_ARCHIVE_PASSED` 仍必须由已关闭交易日的独立审批和真实 archive receipt 证明。
+- 数据、quality、profile、manifest：`docs/DATA_CENTER.md` 与对应受控任务/receipt。
+- 回测口径与报告可信度：`docs/BACKTEST_ENGINE.md`。
+- SignalEvent、通知与 HTDY exact policy：`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md`。
+- S6-10：`docs/tasks/JM-LIVE-STABILITY-S6-10.md`。
+- worktree/release：`docs/WORKTREE_RELEASE_WORKFLOW.md` 与现行 ADR。
 
-## 工程入口验证
+## 解释规则
 
-正式工程 Gate 使用固定 profiles 与 Makefile 目标：
-
-```bash
-# profiles（scripts/engineering/test.sh；禁止自由 shell 字符串）
-bash scripts/engineering/test.sh engineering
-bash scripts/engineering/test.sh docs
-bash scripts/engineering/test.sh backend-health
-bash scripts/engineering/test.sh all-safe
-
-# Makefile
-make engineering-preflight
-make engineering-test                              # 默认 ENGINEERING_TEST_PROFILE=engineering
-make engineering-test ENGINEERING_TEST_PROFILE=docs
-make engineering-test ENGINEERING_TEST_PROFILE=backend-health
-make engineering-test ENGINEERING_TEST_PROFILE=all-safe
-make engineering-secrets
-make engineering-ci                                # preflight --ci + engineering + fail-closed secrets
-
-# 等价显式调用
-bash scripts/engineering/preflight.sh
-bash scripts/engineering/preflight.sh --ci
-bash scripts/engineering/check-secrets.sh
-bash scripts/engineering/runtime-health.sh --json
-git diff --check
-```
-
-Runtime/Web 部署修复的定向回归：
-
-```bash
-PYTHONPATH="$PWD/services/quant-api:$PWD/packages/quant-core" \
-  uv run --project services/quant-api pytest -q \
-  tests/engineering/test_after_market_service_scripts.py \
-  tests/engineering/test_engineering_entrypoints.py \
-  services/quant-api/tests/test_jm_eod_automation_gate_cli.py \
-  services/quant-api/tests/test_after_market_scheduler.py \
-  services/quant-api/tests/test_runtime_health.py
-
-pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web build
-```
-
-Web production build 会自动执行 `checkProductionBundleTopology.mjs`，阻断 ECharts/ZRender vendor chunks 的静态循环依赖。服务 runner 测试同时约束 launchd 直接监管 Runtime venv Python，并验证解释器缺失时 fail-closed。
-
-S6-08 live-confirmed SignalEvent Gate 定向回归（不执行真实 T5）：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests -k "live_signal_event or live_signal or signal_event or stage9"
-
-uv run --project services/quant-api pytest -q \
-  tests/engineering/test_live_signal_event_service_scripts.py
-```
-
-CI workflow：`.github/workflows/engineering-test.yml`。已删除：`make workstation-doctor` / `make workstation-test`、通用 `production-write-check.sh`。
-
-Worktree lifecycle 定向回归（使用临时 Git 仓库，不操作本机 Runtime、远端或业务数据）：
-
-```bash
-python3 -m pytest -q tests/engineering/test_engineering_entrypoints.py
-python3 -m pytest -q tests/engineering/test_codex_automation_policy.py
-python3 scripts/engineering/worktree_flow.py audit --json
-
-# Codex 五层策略：直接 protected push 必须 forbidden，受控 task 入口必须 allow。
-codex execpolicy check --rules .codex/rules/workflow.rules -- git push origin main
-codex execpolicy check --rules .codex/rules/workflow.rules -- \
-  bash scripts/engineering/task-worktree.sh integrate --lane 1 --issue 123 \
-  --test-profile engineering --commit-message safe
-
-# Runtime wrapper 仅校验绑定；不执行真实 Runtime Gate。
-bash scripts/engineering/runtime-promotion.sh verify \
-  --runtime-root <detached-runtime> --expected-tag <annotated-tag> \
-  --approval-packet <packet.json> --approval-hash <64位sha256> --json
-```
-
-`lane-pr-gate.yml` 与 Lane 1/2 双 Pilot 是外部启用 Gate；本地测试通过不代表已创建或合并 PR。
-PR 的 ready-for-review 与 merge 始终由用户手动执行。Runtime 真实切换仍只能由对应的业务专用 hash-bound
-Gate 执行。
-
-W7 local backup 定向回归（不执行真实 backup/restore）：
-
-```bash
-PYTHONPATH=services/quant-api:. \
-uv run --project services/quant-api pytest -q tests/backup
-```
-
-HTDY S6-10 schema-v4 / ledger / Runtime route / CLI 定向回归（不执行真实
-backup/restore、calendar write、fault injection、reboot 或五日 Gate）：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core:. \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_htdy_s6_10_stability.py \
-  services/quant-api/tests/test_htdy_s6_10_gate_cli.py \
-  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
-
-bash -n \
-  scripts/run-htdy-s610-observer.sh \
-  scripts/install-htdy-s610-observer.sh \
-  scripts/configure-htdy-s610-runtime.sh
-plutil -lint \
-  deploy/launchd/com.guiyi.quant-htdy-s610-observer.plist.template
-```
-
-HTDY S6-10 schema-v5 一日/15m 收盘/受限企微定向回归（不部署、不写真实 DB、
-不发送企微）：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_htdy_realtime_snapshot.py \
-  services/quant-api/tests/test_htdy_realtime_evaluator.py \
-  services/quant-api/tests/test_htdy_first_seen_events.py \
-  services/quant-api/tests/test_live_runtime_scheduler.py \
-  services/quant-api/tests/test_htdy_s6_10_one_day.py \
-  services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py \
-  services/quant-api/tests/test_s607_code_rebind.py \
-  services/quant-api/tests/test_jm_eod_automation_gate_cli.py
-
-python -m py_compile \
-  scripts/jm_htdy_s6_10_one_day_gate.py \
-  scripts/jm_htdy_s6_10_one_day_dispatch.py \
-  scripts/jm_eod_automation_gate.py
-
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
-bash -n \
-  scripts/configure-htdy-s610-one-day-runtime.sh \
-  scripts/install-htdy-s610-one-day-services.sh \
-  scripts/run-htdy-s610-one-day-observer.sh \
-  scripts/run-htdy-s610-one-day-dispatcher.sh
-plutil -lint \
-  deploy/launchd/com.guiyi.quant-htdy-s610-one-day-observer.plist.template \
-  deploy/launchd/com.guiyi.quant-htdy-s610-one-day-dispatcher.plist.template
-```
-
-Approval D 长期每日 child / scheduler / observer / bounded dispatcher / health
-定向回归（不生成真实批准、不写生产 DB、不发送企微、不部署）：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core:. \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_htdy_s6_10_daily_mapping.py \
-  services/quant-api/tests/test_htdy_s6_10_long_running.py \
-  services/quant-api/tests/test_live_runtime_scheduler.py \
-  services/quant-api/tests/test_runtime_health.py \
-  services/quant-api/tests/test_htdy_s6_10_service_scripts.py
-
-python -m py_compile \
-  services/quant-api/app/services/htdy_s6_10_long_running_runtime_gate.py \
-  scripts/jm_htdy_s6_10_one_day_gate.py \
-  scripts/jm_htdy_s6_10_one_day_dispatch.py
-
-bash -n \
-  scripts/configure-htdy-s610-long-running-runtime.sh \
-  scripts/run-htdy-s610-one-day-observer.sh \
-  scripts/run-htdy-s610-one-day-dispatcher.sh
-```
-
-schema-v7 完整交易日、C2 初始 mapping、activation allowlist 与单一部署状态机回归：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_htdy_s6_10_daily_mapping.py \
-  services/quant-api/tests/test_htdy_s6_10_remaining_window.py \
-  services/quant-api/tests/test_htdy_s6_10_remaining_deployment.py \
-  services/quant-api/tests/test_htdy_s6_10_one_day_notifications.py \
-  services/quant-api/tests/test_htdy_s6_10_service_scripts.py \
-  services/quant-api/tests/test_s607_code_rebind.py \
-  services/quant-api/tests/test_after_market_scheduler.py \
-  services/quant-api/tests/test_runtime_health.py \
-  services/quant-api/tests/test_live_runtime_scheduler.py
-
-python -m py_compile \
-  scripts/jm_htdy_s6_10_remaining_window_gate.py \
-  scripts/jm_htdy_s6_10_remaining_deploy.py
-```
-
-上述命令不生成 Approval C2、不切换 Runtime、不启用真实企微。真实部署必须另行使用
-新 commit 对应的 schema-v7 parent 和精确签名 C2。
-`test_htdy_s6_10_remaining_deployment.py` 还固定验证 S6-07 恢复不会删除 Redis
-singleton lock、会先 bootout 再等 lease 自然释放、直接组合 Redis heartbeat owner 与
-launchd PID，并兼容不含 heartbeat PID 的旧 Runtime health payload；组合失败时还必须
-生成 create-only 脱敏 diagnostic，指出 env/API/heartbeat 中具体未通过的字段。恢复
-顺序还固定要求 configure 后、scheduler install 前重启 API，并由同一 monotonic deadline
-约束，避免 Runtime health 永久持有旧 env。
-
-`jm_htdy_s6_10_one_day_gate.py refresh-bindings` 是生成新 C2 parent 前的只读预检：它在
-PostgreSQL read-only transaction 内刷新 DB revision、profile 与 database baseline，输出必须
-是 create-only；不得复用旧 packet 的这些动态字段，也不得借此启用 Runtime、写 DB 或发送企微。
-
-`prepare` 必须先确认 `/Volumes/扩展盘/GuiyiBackup` 是当前扩展盘上的精确
-same-volume snapshot root，并读取本次真实 full snapshot 与 isolated restore receipts。
-缺目录时预期返回 `backup_root_missing`，不得创建 packet 或 evidence。同盘路径只允许
-`--full --retention-class milestone --same-device-milestone-snapshot` 且不得包含 raw；
-manifest 必须明确 `disaster_recovery_ready=false`。
-
-W8 isolated restore 复用同一测试目录；默认仅运行 fake runtime 和 temporary root 测试，不构成真实
-`ISOLATED_RESTORE_SMOKE_PASSED`。真实 smoke 必须提供已验证的 W7 full artifact，并使用显式
-`--isolated --confirm-isolated-restore`。
-
-验收口径：
-
-- 旧多入口控制面脚本已退出 active tree，不得作为正式架构入口。
-- 工程验证唯一入口：`scripts/engineering/*` 与 `tests/engineering`。
-- `test.sh` 仅接受固定 profile（`engineering` / `docs` / `backend-health` / `all-safe`）；其它套件由 Codex 直接跑 pytest/npm。
-- `check-secrets.sh` 默认 fail-closed；`--warn-only` 仅本地排障，CI 禁用。
-- 高风险真实写入必须使用业务专用、hash-bound、scope-bound approval packet / Gate；没有专用 Gate 就禁止真实写入，先独立设计 Gate。Issue 中用户批准是决策记录，但不能替代代码层 hash 校验。
+- 文档或单元测试通过不等于真实外部 Gate 通过。
+- 单次 historical replay、通知或 health smoke 不等于 long-running、策略盈利或自动交易 Ready。
+- 任何真实写入前必须重新核对 commit、数据/Runtime 身份、packet/hash、scope 与 receipt。

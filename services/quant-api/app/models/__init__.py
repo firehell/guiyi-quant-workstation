@@ -31,12 +31,21 @@ from app.models.data_center import (
     TradingCalendar,
     TradingSession,
 )
-from app.models.signal import SignalEvent, SignalNotification, SignalScanTask, StrategySignal
+from app.models.data_core import DataGap, MarketDataset, MarketPartition
+from app.models.live_review_loop import (
+    LiveObservationBar,
+    ResearchSample,
+    RetentionRun,
+    SignalDecision,
+    SignalDecisionReconciliation,
+)
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
+from app.models.signal import SignalEvent, SignalNotification, SignalScanTask, StrategySignal
 
 __all__ = [
     "Contract",
     "DataDownloadTask",
+    "DataGap",
     "DataQualityReport",
     "DataSource",
     "Exchange",
@@ -54,8 +63,11 @@ __all__ = [
     "LiveAggregationCheckpoint",
     "LiveIngestCheckpoint",
     "LiveMinuteBar",
+    "LiveObservationBar",
     "MainContractMap",
+    "MarketDataset",
     "MarketDataFile",
+    "MarketPartition",
     "TradingCalendar",
     "TradingSession",
     "Watchlist",
@@ -68,6 +80,10 @@ __all__ = [
     "StrategySignal",
     "SignalNotification",
     "SignalEvent",
+    "SignalDecision",
+    "SignalDecisionReconciliation",
+    "ResearchSample",
+    "RetentionRun",
     "ReviewNote",
     "ReviewTag",
     "ReviewAttachment",

@@ -653,7 +653,11 @@ export async function installMockApi(page) {
       return
     }
 
-    if (path.includes('/market/workbench/coverage') || path.includes('/market/live/coverage')) {
+    if (
+      path.includes('/market/workbench/coverage')
+      || path.includes('/market/coverage/canonical')
+      || path.includes('/market/live/coverage')
+    ) {
       await fulfillJson(WORKBENCH_COVERAGE)(route)
       return
     }

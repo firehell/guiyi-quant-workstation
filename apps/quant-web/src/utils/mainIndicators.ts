@@ -34,6 +34,7 @@ export interface MainIndicatorModeContext {
 
 /** 主图指标 API 请求参数 */
 export interface MainIndicatorRequestParams {
+  dataset_kind?: 'continuous' | 'actual_dominant'
   symbol: string
   contract: string
   period: string
@@ -272,6 +273,7 @@ export function defaultMainChartPreferences(): MainChartPreferences {
  * 根据当前 bars 与可见指标构建主图指标 API 请求参数；条件不足时返回 null。
  */
 export function buildMainIndicatorRequestParams(input: {
+  datasetKind?: 'continuous' | 'actual_dominant'
   symbol: string | null
   contract: string | null
   period: string | null
@@ -303,6 +305,7 @@ export function buildMainIndicatorRequestParams(input: {
     allow_continuous: Boolean(input.allowContinuous),
     access_mode: input.accessMode || 'browser',
   }
+  if (input.datasetKind) params.dataset_kind = input.datasetKind
   if (input.profileId) params.profile_id = input.profileId
   if (input.expectedMarketDataFileId) params.expected_market_data_file_id = input.expectedMarketDataFileId
   if (input.expectedLineageToken) params.expected_lineage_token = input.expectedLineageToken

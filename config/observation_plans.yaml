@@ -1,0 +1,14 @@
+schema_version: 1
+plans:
+  - plan_id: jm_htdy_original_realtime_first_seen_v1
+    enabled: true
+    product: jm
+    contract_selector: dominant_rank1
+    period: 15m
+    strategy:
+      code: htdy_original_realtime_first_seen
+      version: v1.0
+    trigger_policy: realtime_first_seen
+    purpose: observation_only
+    notification:
+      enabled: false

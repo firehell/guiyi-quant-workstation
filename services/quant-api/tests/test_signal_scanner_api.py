@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 import pandas as pd
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -11,7 +11,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.data_center import DataQualityReport, LiveAggregatedBar, MarketDataFile
-from app.models.signal import SignalNotification, StrategySignal
+from app.models.signal import SignalNotification, SignalScanTask, StrategySignal
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
 
@@ -252,7 +252,7 @@ def test_signal_scan_inline_creates_latest_signals_and_skips_missing(tmp_path) -
         app.dependency_overrides.clear()
 
 
-def test_jm_v1b_signal_scan_records_15m_5m_or_no_signal_reason(tmp_path) -> None:
+def test_jm_v1b_legacy_historical_scan_is_retired_without_writes(tmp_path) -> None:
     TestingSessionLocal = _setup_jm_v1b_bars(tmp_path)
 
     def override_get_db():
@@ -264,46 +264,12 @@ def test_jm_v1b_signal_scan_records_15m_5m_or_no_signal_reason(tmp_path) -> None
         client = TestClient(app)
         response = client.post("/api/signals/v1b/jm/scan", params={"run_inline": True})
 
-        assert response.status_code == 200
-        task = response.json()
-        assert task["status"] == "completed"
-        assert task["watchlist_code"] == "jm_v1b"
-        assert task["periods"] == ["15m", "5m"]
-        assert task["completed_items"] == 2
-
-        task_signals = client.get(f"/api/signals/tasks/{task['task_no']}/signals")
-        assert task_signals.status_code == 200
-        signals = task_signals.json()
-        assert {signal["entry_interval"] for signal in signals} == {"15m", "5m"}
-        assert all(signal["symbol"] == "jm" for signal in signals)
-        assert all(signal["strategy_code"] == "jm_v1b_daily_direction_fast_entry" for signal in signals)
-        assert all(signal["strategy_id"] == "jm_v1b_daily_direction_fast_entry" for signal in signals)
-        assert all(signal["signal_price"] == signal["price"] for signal in signals)
-        assert all(signal["max_hold_bars"] == 8 for signal in signals)
-        assert all(signal["open_volume"] == 0 for signal in signals)
-        for signal in signals:
-            assert signal["daily_direction"] in {"long", "short", "neutral", "unavailable"}
-            assert signal["strategy_status"] in {"entry_signal", "no_signal"}
-            if signal["strategy_status"] == "no_signal":
-                assert signal["no_signal_reason"]
-                assert any("no_signal" in reason for reason in signal["reasons"])
-
-        latest = client.get("/api/signals/latest", params={"watchlist_code": "jm_v1b"})
-        assert latest.status_code == 200
-        assert {signal["entry_interval"] for signal in latest.json()} == {"15m", "5m"}
-        filtered_latest = client.get("/api/signals/latest", params={"watchlist_code": "jm_v1b", "product": "jm", "provider": "rqdata"})
-        assert filtered_latest.status_code == 200
-        assert {signal["entry_interval"] for signal in filtered_latest.json()} == {"15m", "5m"}
+        assert response.status_code == 410
+        assert response.json()["detail"] == "SIGNAL_JM_V1B_HISTORICAL_SCAN_RETIRED"
 
         with TestingSessionLocal() as session:
-            rows = list(session.scalars(select(StrategySignal).where(StrategySignal.watchlist_code == "jm_v1b")))
-            assert len(rows) == 2
-            assert {row.period for row in rows} == {"15m", "5m"}
-            assert {row.product for row in rows} == {"jm"}
-            assert {row.continuous_contract for row in rows} == {"jm.MAIN"}
-            assert {row.actual_contract for row in rows} == {None}
-            assert {row.provider for row in rows} == {"rqdata"}
-            assert {row.source for row in rows} == {"historical_standard_parquet"}
+            assert session.scalar(select(func.count()).select_from(SignalScanTask)) == 0
+            assert session.scalar(select(func.count()).select_from(StrategySignal)) == 0
     finally:
         app.dependency_overrides.clear()
 
@@ -336,7 +302,7 @@ def test_repeated_signal_scan_does_not_duplicate_signal_or_notification(tmp_path
         app.dependency_overrides.clear()
 
 
-def test_signal_scan_defaults_to_primary_data_role_and_rejects_auto_order(tmp_path) -> None:
+def test_signal_scan_rejects_legacy_identity_and_auto_order(tmp_path) -> None:
     TestingSessionLocal = _setup_imported_bars(tmp_path)
 
     def override_get_db():
@@ -351,10 +317,8 @@ def test_signal_scan_defaults_to_primary_data_role_and_rejects_auto_order(tmp_pa
             json={"watchlist_code": "black", "symbols": ["rb"], "periods": ["5m"], "run_inline": True, "min_score_bucket": 0},
         )
 
-        assert response.status_code == 200
-        task = response.json()
-        assert task["data_role"] == "primary"
-        assert task["research_only"] is False
+        assert response.status_code == 422
+        assert "signal_formal_data_selection_forbidden" in response.text
 
         blocked_response = client.post(
             "/api/signals/scan",

@@ -1,6 +1,7 @@
 /** C5-06A 复盘基础上下文 — 仅展示用，不做策略计算 */
 
 import type { BacktestValidationContext } from './backtestValidation'
+import type { CanonicalInputIdentity } from './backtest'
 
 /** 基础字段可用性状态 */
 export type FoundationFieldStatus = 'available' | 'unavailable' | 'warning'
@@ -34,8 +35,8 @@ export interface ReviewFoundationContext {
   strategy_version: FoundationField
   indicator_policy_status: FoundationField
   indicator_policy_summary: FoundationField
-  profile_id: FoundationField
-  binding_snapshot_present: FoundationField<'yes' | 'no'>
+  canonical_input_identity: FoundationField
+  canonical_input_digest: FoundationField
   signal_bar: FoundationField
   next_bar_fill: FoundationField
   cost_model: FoundationField
@@ -58,8 +59,7 @@ export interface ReviewFoundationContext {
 export interface ReviewFoundationReportLike {
   strategy_code?: string | null
   strategy_version?: string | null
-  profile_id?: string | null
-  binding_snapshot?: Record<string, unknown> | null
+  input_identity?: CanonicalInputIdentity | null
   indicator_policy_status?: string | null
   indicator_policy_snapshot?: Record<string, unknown> | null
   indicator_policy_reason?: string | null
@@ -81,15 +81,9 @@ export interface ReviewFoundationTradeLike {
 
 /** 构建复盘基础上下文所需的 lineage 字段子集 */
 export interface ReviewFoundationLineageLike {
-  primary?: {
-    profile_id?: string | null
-    market_data_file_id?: number
-    quality_status?: string
-  }
-  bar?: {
-    bar_start?: string
-    bar_end?: string
-  }
+  schema_version?: string
+  input_identity?: CanonicalInputIdentity | null
+  input_digest?: string | null
 }
 
 /** 复盘基础上下文组装输入 */
@@ -99,6 +93,8 @@ export interface ReviewFoundationInput {
   lineage?: ReviewFoundationLineageLike | null
   lineage_error?: string | null
   lineage_status_hint?: LineageDisplayStatus | null
+  /** Canonical identity extracted only from a successful `/api/reviews/{id}/bars` response. */
+  exact_bars_identity?: CanonicalInputIdentity | null
   validation_context?: BacktestValidationContext | null
   validation_error?: string | null
 }

@@ -1,0 +1,29 @@
+{
+  "identity": {
+    "provider": "rqdata",
+    "dataset_kind": "actual_dominant",
+    "symbol": "jm",
+    "contract_or_series": "JM2609",
+    "frequency": "1m",
+    "adjustment": "none",
+    "schema_version": "canonical-bar-v1"
+  },
+  "target_frequency": "5m",
+  "sessions": [
+    {"trading_day": "2026-07-30", "name": "afternoon_close", "start": "2026-07-30T14:52:00+08:00", "end": "2026-07-30T15:00:00+08:00"}
+  ],
+  "bars": [
+    {"bar_end": "2026-07-30T14:53:00+08:00", "trading_day": "2026-07-30", "open": "100", "high": "102", "low": "99", "close": "101", "volume": "1", "turnover": "10", "open_interest": "10"},
+    {"bar_end": "2026-07-30T14:54:00+08:00", "trading_day": "2026-07-30", "open": "101", "high": "103", "low": "100", "close": "102", "volume": "1", "turnover": "20", "open_interest": "11"},
+    {"bar_end": "2026-07-30T14:55:00+08:00", "trading_day": "2026-07-30", "open": "102", "high": "104", "low": "101", "close": "103", "volume": "1", "turnover": "30", "open_interest": "12"},
+    {"bar_end": "2026-07-30T14:56:00+08:00", "trading_day": "2026-07-30", "open": "103", "high": "105", "low": "102", "close": "104", "volume": "1", "turnover": "40", "open_interest": "13"},
+    {"bar_end": "2026-07-30T14:57:00+08:00", "trading_day": "2026-07-30", "open": "104", "high": "106", "low": "103", "close": "105", "volume": "1", "turnover": "50", "open_interest": "14"},
+    {"bar_end": "2026-07-30T14:58:00+08:00", "trading_day": "2026-07-30", "open": "105", "high": "107", "low": "104", "close": "106", "volume": "1", "turnover": "60", "open_interest": "15"},
+    {"bar_end": "2026-07-30T14:59:00+08:00", "trading_day": "2026-07-30", "open": "106", "high": "108", "low": "105", "close": "107", "volume": "1", "turnover": "70", "open_interest": "16"},
+    {"bar_end": "2026-07-30T15:00:00+08:00", "trading_day": "2026-07-30", "open": "107", "high": "109", "low": "106", "close": "108", "volume": "1", "turnover": "80", "open_interest": "17"}
+  ],
+  "expected": [
+    {"bar_end": "2026-07-30T06:57:00+00:00", "trading_day": "2026-07-30", "open": "100", "high": "106", "low": "99", "close": "105", "volume": "5", "turnover": "150", "open_interest": "14"},
+    {"bar_end": "2026-07-30T07:00:00+00:00", "trading_day": "2026-07-30", "open": "105", "high": "109", "low": "104", "close": "108", "volume": "3", "turnover": "210", "open_interest": "17"}
+  ]
+}

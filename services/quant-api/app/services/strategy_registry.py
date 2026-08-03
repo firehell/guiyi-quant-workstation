@@ -12,6 +12,10 @@ from app.backtest.v1b_jm_tasks import (
     SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_VERSION,
 )
 from app.core.env import PROJECT_ROOT
+from app.schemas.signal import (
+    FORMAL_SIGNAL_STRATEGY_CODE,
+    FORMAL_SIGNAL_STRATEGY_VERSION,
+)
 
 
 def list_strategy_registry() -> list[dict[str, Any]]:
@@ -25,14 +29,14 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "product": "jm",
             "periods": ["1d", "15m", "5m"],
             "is_v1b": True,
-            "capability_classes": ["formal_historical_backtest", "historical_scan"],
+            "capability_classes": ["formal_historical_backtest"],
             "validation_outcome": None,
             "live_observation": False,
             "backtest_endpoints": [
                 {"label": "15m 入场", "path": "/api/backtests/v1b/jm/15m/tasks", "method": "POST"},
                 {"label": "5m 入场", "path": "/api/backtests/v1b/jm/5m/tasks", "method": "POST"},
             ],
-            "scan_endpoint": "/api/signals/v1b/jm/scan",
+            "scan_endpoint": None,
             "strategy_version": JM_V1B_STRATEGY_VERSION,
             "spec_doc_path": "docs/strategy_specs/su_bing_jm_v1b_short_hold/STRATEGY_SPEC.md",
         },
@@ -106,16 +110,16 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "product": "jm",
             "periods": ["1d", "15m", "5m"],
             "is_v1b": True,
-            "capability_classes": ["historical_scan", "research_only"],
+            "capability_classes": ["research_only"],
             "validation_outcome": None,
             "live_observation": False,
             "backtest_endpoints": [],
-            "scan_endpoint": "/api/signals/v1b/jm/scan",
+            "scan_endpoint": None,
             "strategy_version": SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_VERSION,
             "spec_doc_path": "docs/strategy_specs/su_bing_jm_v1b_short_hold/STRATEGY_SPEC.md",
         },
         {
-            "strategy_code": "su_bing_ema21",
+            "strategy_code": FORMAL_SIGNAL_STRATEGY_CODE,
             "name": "苏冰 EMA21 趋势系统",
             "description": "通用 EMA21 趋势策略模板，可用于多品种回测。",
             "symbol": None,
@@ -127,7 +131,7 @@ def list_strategy_registry() -> list[dict[str, Any]]:
             "live_observation": False,
             "backtest_endpoints": [],
             "scan_endpoint": "/api/signals/scan",
-            "strategy_version": "demo-0.1.0",
+            "strategy_version": FORMAL_SIGNAL_STRATEGY_VERSION,
             "spec_doc_path": None,
         },
     ]

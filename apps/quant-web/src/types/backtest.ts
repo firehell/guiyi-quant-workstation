@@ -11,11 +11,11 @@ export type BacktestReportStatus = 'pending' | 'running' | 'success' | 'complete
 export interface BacktestTaskCreateRequest {
   engine_type?: BacktestEngineType
   task_type?: string
+  dataset_kind: 'continuous' | 'actual_dominant'
   instrument_symbol: string
-  contract_code: string
+  contract_or_series: string
   exchange: string
   interval: string
-  profile_id?: string | null
   auxiliary_periods?: string[]
   start: string
   end: string
@@ -58,6 +58,12 @@ export interface BacktestTask {
   finished_at?: string | null
   result_payload?: Record<string, unknown>
   disclaimer?: string
+  input_identity?: CanonicalInputIdentity | null
+  contract_semantics?: string | null
+  observation_only?: boolean
+  not_trading_instruction?: boolean
+  auto_order?: boolean
+  risk_control_scope?: Record<string, unknown>
 }
 
 /** 回测报告 summary 区块（兼容多引擎字段名） */
@@ -206,6 +212,12 @@ export interface BacktestReport {
   started_at?: string | null
   finished_at?: string | null
   disclaimer?: string
+  input_identity?: CanonicalInputIdentity | null
+  contract_semantics?: string | null
+  observation_only?: boolean
+  not_trading_instruction?: boolean
+  auto_order?: boolean
+  risk_control_scope?: Record<string, unknown>
   trades?: BacktestTrade[]
   orders?: BacktestOrder[]
   fills?: BacktestFill[]
@@ -325,9 +337,9 @@ export interface BacktestTaskForm {
   strategy_code: string
   strategy_version: string
   engine_type: BacktestEngineType
+  dataset_kind: 'continuous' | 'actual_dominant'
   instrument_symbol: string
-  contract_code: string
-  profile_id: string
+  contract_or_series: string
   exchange: string
   interval: string
   start: number
@@ -339,4 +351,35 @@ export interface BacktestTaskForm {
   pricetick: number
   margin_rate: number
   strategy_params: string
+}
+
+/** Immutable DatasetKey as reported by a canonical consumer input. */
+export interface CanonicalDatasetKey {
+  provider: string
+  dataset_kind: 'continuous' | 'actual_dominant' | string
+  symbol: string
+  contract_or_series: string
+  frequency: string
+  adjustment: string
+  schema_version: string
+}
+
+/** Exact canonical read identity persisted by formal Backtest / Signal / Review consumers. */
+export interface CanonicalInputIdentity {
+  schema_version: 'canonical_consumer_input_v1' | string
+  request: {
+    dataset_kind: 'continuous' | 'actual_dominant' | string
+    symbol: string
+    contract_or_series: string | null
+    frequency: string
+    start: string
+    end: string
+    strict: boolean
+  }
+  source_datasets: CanonicalDatasetKey[]
+  manifest_digests: string[]
+  source_data_versions: string[]
+  derived_frequency: string | null
+  strategy_input_version: string
+  digest: string
 }

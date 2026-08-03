@@ -31,6 +31,7 @@ from app.services.htdy_s6_10_service_heartbeat import (
     OBSERVER_HEARTBEAT_KEY,
 )
 from app.services.trading_session_clock import TradingSessionClock
+from app.live_review_loop.gates import build_live_review_health
 from app.signal.stage9_wechat import CHANNEL as STAGE9_WECHAT_CHANNEL
 
 RUNTIME_STATUS_OK = "ok"
@@ -92,6 +93,7 @@ def build_runtime_health(
         market_phase=live_market_phase,
     )
     components: dict[str, Any] = {}
+    components["data_core_v2_live_review"] = build_live_review_health(os.environ)
 
     components["db"] = _collect_db_health(session)
     redis_connection, redis_health = _collect_redis_health(redis_factory or get_redis_connection)

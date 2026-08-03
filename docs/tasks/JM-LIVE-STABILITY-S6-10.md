@@ -1,6 +1,36 @@
 # HTDY 15m 收盘观察与长期晋级 Gate（S6-10）
 
-更新时间：2026-07-29
+更新时间：2026-07-30
+
+## Owner 暂停覆盖声明
+
+```text
+S6-10_PAUSED_BY_OWNER_FOR_CORE_CONVERGENCE
+OLD_SCHEMA_V4_TO_V7_CONTRACTS=SUPERSEDED_FROZEN_HISTORICAL
+FRESH_S6_10_AUTHORIZATION_FORBIDDEN=true
+OLD_S6_10_EXECUTION_FORBIDDEN=true
+LONG_RUNNING_READY=false
+LONG_RUNNING_READY_SEMANTICS=deprecated_not_applicable
+```
+
+本声明覆盖本文后续任何旧“active”“pending”“晋级”措辞：schema-v4、schema-v5、
+schema-v6、schema-v7 的合同、packet、receipt、snapshot、Ledger、restore、observer、
+dispatcher、C2、Approval D、daily child、mapping 与失败/通过 evidence 全部冻结为历史。
+旧正文、receipt、evidence 与 Git 历史保持原文，不覆盖、不删除、不补写、不复用，也不再
+执行。禁止基于旧合同生成 fresh C2/Approval D/daily child，禁止执行 mapping 写入、部署、
+Runtime 切换、SignalEvent/notification/企微或真实验收。
+
+恢复入口仅为 `GY-S6-10-R2`：核心收口完成后设计新的单交易日合同，并由
+`GY-S6-10-R2-RUN` 在 exact release 上执行。新合同必须覆盖一个完整 DCE 交易日的夜盘、
+三段日盘、23 个 confirmed 15m 桶、EOD、幂等与零非法写入；任一失败整日重启，单日 Ledger
+append-only。Runtime、RQData/网络和 Mac 恢复由同一 exact release 的独立 evidence 验证，
+不要求全部塞入同一交易日。
+
+`LONG_RUNNING_READY=false` 仅作为 deprecated/not_applicable 兼容字段保留，任何单日 Gate
+不得设置为 true。只有单日自然运行、同一 exact release 独立恢复证据、独立 Review 均通过，
+且用户最终批准后，才可发布 `JM_RUNTIME_READY`。
+
+以下正文为 frozen historical，不再是执行合同。
 
 ## 状态
 

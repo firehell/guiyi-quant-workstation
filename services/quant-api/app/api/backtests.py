@@ -4,7 +4,8 @@ import csv
 from io import StringIO
 import json
 from datetime import UTC, date, datetime, time
-from typing import Any, Literal, cast
+from decimal import Decimal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,21 +13,18 @@ from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.backtest.errors import BacktestContractError
+from app.data_core.contracts import DataCoreError
 from app.backtest.service import BacktestService
-from app.backtest.engine import BacktestConfig, run_su_bing_backtest
-from app.backtest.specs import load_contract_spec
 from app.backtest.v1b_jm_tasks import (
-    available_jm_v1b_entry_intervals,
-    build_jm_daily_ema21_macd_volume_task_config,
-    build_jm_daily_score2of4_task_config,
-    build_jm_daily_trend_cross_score2_task_config,
-    build_jm_v1b_task_config,
+    build_jm_daily_ema21_macd_volume_formal_request,
+    build_jm_daily_score2of4_formal_request,
+    build_jm_daily_trend_cross_score2_formal_request,
+    build_jm_v1b_formal_request,
 )
 from app.db.session import PROJECT_ROOT, get_db
 from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist
 from app.queue import get_backtest_queue
 from app.schemas.backtest import (
-    BacktestTaskConfig,
     BacktestValidationContext,
     BacktestValidationContextObservation,
     FormalBacktestTaskRequest,
@@ -36,16 +34,11 @@ from app.services.backtest_validation_context import (
     build_backtest_validation_context,
 )
 from app.services.batch_backtest import (
-    BatchBacktestRunner,
-    create_batch_task,
-    enqueue_batch_task,
     ensure_default_watchlists,
     report_payload,
     task_snapshot,
 )
 from app.services.market_data_reader import MarketDataReader
-from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE
-from app.strategy.su_bing_ema21 import SuBingParams
 from app.tasks.backtests import run_backtest_task
 from app.vnpy_integration.errors import BacktestConfigurationError
 
@@ -185,31 +178,6 @@ def enqueue_backtest_task(task_id: int) -> str:
     return queued.id
 
 
-def _fixed_jm_formal_request(config: BacktestTaskConfig) -> FormalBacktestTaskRequest:
-    return FormalBacktestTaskRequest(
-        engine_type=config.engine_type,
-        task_type=config.task_type,
-        instrument_symbol="jm",
-        contract_code=config.symbol,
-        exchange=config.exchange,
-        interval=config.interval,
-        auxiliary_periods=sorted(config.auxiliary_bar_data_paths),
-        profile_id=INTRADAY_RESEARCH_PROFILE,
-        start=config.start,
-        end=config.end,
-        strategy_class_path=config.strategy_class_path,
-        strategy_code=config.strategy_code,
-        strategy_version=config.strategy_version,
-        strategy_parameters=config.strategy_parameters,
-        rate=config.rate,
-        slippage=config.slippage,
-        size=config.size,
-        pricetick=config.pricetick,
-        capital=config.capital,
-        execution_timing=config.execution_timing,
-    )
-
-
 @router.post("/tasks")
 def create_backtest_task(request: FormalBacktestTaskRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
     service = BacktestService(session)
@@ -219,6 +187,11 @@ def create_backtest_task(request: FormalBacktestTaskRequest, session: Session = 
         raise _contract_http_exception(exc) from exc
     except BacktestConfigurationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DataCoreError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
     session.commit()
 
     try:
@@ -242,9 +215,9 @@ def create_backtest_task(request: FormalBacktestTaskRequest, session: Session = 
 def create_jm_daily_ema21_macd_volume_backtest_task(session: Session = Depends(get_db)) -> dict[str, Any]:
     service = BacktestService(session)
     try:
-        spec = build_jm_daily_ema21_macd_volume_task_config(session)
+        spec = build_jm_daily_ema21_macd_volume_formal_request(session)
         task = service.create_formal_task(
-            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+            spec.request, server_context=spec.server_context
         )
         session.commit()
     except BacktestContractError as exc:
@@ -273,9 +246,8 @@ def create_jm_daily_ema21_macd_volume_backtest_task(session: Session = Depends(g
     payload["fixed_task"] = {
         "name": "JM V1-B daily EMA21 MACD volume",
         "interval": "1d",
-        "strategy_code": spec.config.strategy_code,
-        "strategy_version": spec.config.strategy_version,
-        "data_availability": available_jm_v1b_entry_intervals(session),
+        "strategy_code": spec.request.strategy_code,
+        "strategy_version": spec.request.strategy_version,
         "result_report_id_path": "result_payload.report_id",
     }
     return _sanitize_api_payload(payload)
@@ -285,9 +257,9 @@ def create_jm_daily_ema21_macd_volume_backtest_task(session: Session = Depends(g
 def create_jm_daily_score2of4_backtest_task(session: Session = Depends(get_db)) -> dict[str, Any]:
     service = BacktestService(session)
     try:
-        spec = build_jm_daily_score2of4_task_config(session)
+        spec = build_jm_daily_score2of4_formal_request(session)
         task = service.create_formal_task(
-            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+            spec.request, server_context=spec.server_context
         )
         session.commit()
     except BacktestContractError as exc:
@@ -316,9 +288,8 @@ def create_jm_daily_score2of4_backtest_task(session: Session = Depends(get_db)) 
     payload["fixed_task"] = {
         "name": "JM V1-B daily score2of4",
         "interval": "1d",
-        "strategy_code": spec.config.strategy_code,
-        "strategy_version": spec.config.strategy_version,
-        "data_availability": available_jm_v1b_entry_intervals(session),
+        "strategy_code": spec.request.strategy_code,
+        "strategy_version": spec.request.strategy_version,
         "result_report_id_path": "result_payload.report_id",
     }
     return payload
@@ -328,9 +299,9 @@ def create_jm_daily_score2of4_backtest_task(session: Session = Depends(get_db)) 
 def create_jm_daily_trend_cross_score2_backtest_task(session: Session = Depends(get_db)) -> dict[str, Any]:
     service = BacktestService(session)
     try:
-        spec = build_jm_daily_trend_cross_score2_task_config(session)
+        spec = build_jm_daily_trend_cross_score2_formal_request(session)
         task = service.create_formal_task(
-            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+            spec.request, server_context=spec.server_context
         )
         session.commit()
     except BacktestContractError as exc:
@@ -359,9 +330,8 @@ def create_jm_daily_trend_cross_score2_backtest_task(session: Session = Depends(
     payload["fixed_task"] = {
         "name": "JM V1-B daily trend cross score2",
         "interval": "1d",
-        "strategy_code": spec.config.strategy_code,
-        "strategy_version": spec.config.strategy_version,
-        "data_availability": available_jm_v1b_entry_intervals(session),
+        "strategy_code": spec.request.strategy_code,
+        "strategy_version": spec.request.strategy_version,
         "result_report_id_path": "result_payload.report_id",
     }
     return payload
@@ -374,9 +344,9 @@ def create_jm_v1b_backtest_task(entry_interval: str, session: Session = Depends(
 
     service = BacktestService(session)
     try:
-        spec = build_jm_v1b_task_config(session, cast(Literal["15m", "5m"], entry_interval))
+        spec = build_jm_v1b_formal_request(entry_interval)  # type: ignore[arg-type]
         task = service.create_formal_task(
-            _fixed_jm_formal_request(spec.config), server_context=spec.config.request_payload
+            spec.request, server_context=spec.server_context
         )
         session.commit()
     except BacktestContractError as exc:
@@ -405,163 +375,34 @@ def create_jm_v1b_backtest_task(entry_interval: str, session: Session = Depends(
     payload["fixed_task"] = {
         "name": f"JM V1-B {entry_interval} entry",
         "entry_interval": entry_interval,
-        "strategy_code": spec.config.strategy_code,
-        "strategy_version": spec.config.strategy_version,
-        "data_availability": available_jm_v1b_entry_intervals(session),
+        "strategy_code": spec.request.strategy_code,
+        "strategy_version": spec.request.strategy_version,
     }
     return payload
 
 
 @router.post("/run")
 def run_backtest(request: BacktestRunRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    start = _parse_query_datetime(request.start, end_of_day=False)
-    end = _parse_query_datetime(request.end, end_of_day=True)
-    if start >= end:
-        raise HTTPException(status_code=422, detail="start must be before end")
-
-    reader = MarketDataReader(session)
-    service = BacktestService(session)
-    try:
-        lineage, asset = service.resolve_formal_asset(
-            instrument_symbol=request.symbol,
-            contract_code=request.contract,
-            period=request.period,
-            profile_id=request.profile_id,
-        )
-        service._validate_requested_window(asset, start=start, end=end)
-    except BacktestContractError as exc:
-        raise _contract_http_exception(exc) from exc
-    except BacktestConfigurationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    bars = reader.load_bars(
-        symbol=request.symbol,
-        contract=request.contract,
-        period=request.period,
-        start=start,
-        end=end,
-        provider=str(asset["provider"]),
-        data_role="primary",
-        passed_only=True,
-        profile_id=lineage.profile_id,
+    del request, session
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "BACKTEST_LEGACY_INLINE_DISABLED",
+            "message": "legacy Profile/file inline backtest is disabled; use POST /api/backtests/tasks",
+        },
     )
-    if not bars:
-        raise HTTPException(status_code=422, detail="no bars found for backtest")
-    if {str(bar.get("provider")) for bar in bars} != {str(asset["provider"])} or {
-        str(bar.get("data_version")) for bar in bars
-    } != {str(asset["data_version"])}:
-        raise _contract_http_exception(
-            BacktestContractError(
-                "BACKTEST_PROFILE_IDENTITY_MISMATCH",
-                "resolved backtest bars do not match the pinned binding snapshot",
-                context=service._lineage_context(
-                    profile_id=lineage.profile_id,
-                    instrument_symbol=request.symbol,
-                    contract_code=request.contract,
-                    period=request.period,
-                ),
-                status_code=409,
-            )
-        )
-    try:
-        confirmed_lineage, _ = service.resolve_formal_asset(
-            instrument_symbol=request.symbol,
-            contract_code=request.contract,
-            period=request.period,
-            profile_id=lineage.profile_id,
-        )
-    except BacktestConfigurationError as exc:
-        raise _contract_http_exception(
-            BacktestContractError(
-                "BACKTEST_PROFILE_BINDING_CHANGED",
-                "Profile binding changed while loading inline backtest bars",
-                context=service._lineage_context(
-                    profile_id=lineage.profile_id,
-                    instrument_symbol=request.symbol,
-                    contract_code=request.contract,
-                    period=request.period,
-                ),
-                status_code=409,
-            )
-        ) from exc
-    if confirmed_lineage.market_data_file_id != lineage.market_data_file_id:
-        raise _contract_http_exception(
-            BacktestContractError(
-                "BACKTEST_PROFILE_BINDING_CHANGED",
-                "Profile binding changed while loading inline backtest bars",
-                context=service._lineage_context(
-                    profile_id=lineage.profile_id,
-                    instrument_symbol=request.symbol,
-                    contract_code=request.contract,
-                    period=request.period,
-                ),
-                status_code=409,
-            )
-        )
-
-    try:
-        config = BacktestConfig(
-            initial_capital=request.initial_capital,
-            risk_per_trade_pct=request.risk_per_trade_pct,
-            max_margin_usage_pct=request.max_margin_usage_pct,
-            slippage_ticks=request.slippage_ticks,
-            take_profit_r=request.take_profit_r,
-            enable_take_profit=request.enable_take_profit,
-            strategy_params=SuBingParams(**request.strategy_params),
-        )
-        report = run_su_bing_backtest(
-            bars=bars,
-            config=config,
-            contract_spec=load_contract_spec(session, request.symbol, request.contract),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    payload = report.to_dict()
-    payload["quality_status"] = {"status": "passed", "market_data_file_id": lineage.market_data_file_id}
-    payload["profile_id"] = lineage.profile_id
-    payload["market_data_file_id"] = lineage.market_data_file_id
-    payload["binding_snapshot"] = asset
-    return _sanitize_api_payload(payload)
 
 
 @router.post("/run-batch")
 def run_batch_backtest(request: BatchBacktestRunRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    start = _parse_query_datetime(request.start, end_of_day=False)
-    end = _parse_query_datetime(request.end, end_of_day=True)
-    if start >= end:
-        raise HTTPException(status_code=422, detail="start must be before end")
-
-    payload = request.model_dump()
-    payload["start"] = start.isoformat()
-    payload["end"] = end.isoformat()
-    try:
-        task = create_batch_task(session, payload)
-    except BacktestContractError as exc:
-        session.rollback()
-        raise _contract_http_exception(exc) from exc
-    except (BacktestConfigurationError, ValueError) as exc:
-        session.rollback()
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    session.commit()
-
-    if request.run_inline:
-        BatchBacktestRunner(session).run(task.id)
-        session.refresh(task)
-        return task_snapshot(task)
-
-    try:
-        job_id = enqueue_batch_task(task.id)
-    except Exception as exc:
-        task.status = "failed"
-        task.error_message = f"failed to enqueue RQ task: {exc}"
-        task.finished_at = datetime.now(UTC)
-        session.commit()
-        raise HTTPException(status_code=503, detail="Redis/RQ is unavailable; batch task was not queued") from exc
-
-    task.result_payload = {"rq_job_id": job_id}
-    session.commit()
-    return task_snapshot(task)
+    del request, session
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "BACKTEST_LEGACY_BATCH_DISABLED",
+            "message": "legacy Profile/file batch backtest is disabled pending canonical batch cutover",
+        },
+    )
 
 
 @router.get("/tasks")
@@ -904,6 +745,12 @@ def _get_task_by_ref(session: Session, task_ref: str) -> BacktestTask | None:
 
 def task_api_payload(task: BacktestTask) -> dict[str, Any]:
     payload = task_snapshot(task)
+    input_identity = _canonical_input_identity(task.binding_snapshot)
+    if input_identity is not None:
+        payload.pop("profile_id", None)
+        payload.pop("market_data_file_id", None)
+        payload.pop("binding_snapshot", None)
+        payload["input_identity"] = input_identity
     payload.update(
         {
             "engine_type": task.engine_type,
@@ -917,11 +764,20 @@ def task_api_payload(task: BacktestTask) -> dict[str, Any]:
             "disclaimer": BACKTEST_DISCLAIMER,
         }
     )
+    if input_identity is not None:
+        payload.update(_formal_safety_payload((task.request_payload or {}).get("request_payload")))
+        payload = _without_legacy_input_identity(payload)
     return _sanitize_api_payload(payload)
 
 
 def report_api_payload(report: BacktestReportModel, include_detail: bool = False) -> dict[str, Any]:
     payload = report_payload(report, include_detail=include_detail)
+    input_identity = _canonical_input_identity(report.binding_snapshot)
+    if input_identity is not None:
+        payload.pop("profile_id", None)
+        payload.pop("market_data_file_id", None)
+        payload.pop("binding_snapshot", None)
+        payload["input_identity"] = input_identity
     from guiyi_quant.strategies.indicator_policy import resolve_report_indicator_policy
 
     policy = resolve_report_indicator_policy(report.summary or {})
@@ -940,7 +796,52 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
             **foundation,
         }
     )
+    if input_identity is not None:
+        metadata = (report.summary or {}).get("report_metadata")
+        payload.update(_formal_safety_payload(metadata))
+        payload = _without_legacy_input_identity(payload)
     return _sanitize_api_payload(payload)
+
+
+def _canonical_input_identity(
+    snapshot: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(snapshot, dict):
+        return None
+    if snapshot.get("schema_version") != "backtest_canonical_inputs_v1":
+        return None
+    identity = snapshot.get("input_identity")
+    return dict(identity) if isinstance(identity, dict) else None
+
+
+def _formal_safety_payload(value: Any) -> dict[str, Any]:
+    metadata = value if isinstance(value, dict) else {}
+    return {
+        "contract_semantics": metadata.get("contract_semantics"),
+        "observation_only": metadata.get("observation_only") is True,
+        "not_trading_instruction": metadata.get("not_trading_instruction") is True,
+        "auto_order": False,
+        "risk_control_scope": metadata.get("risk_control_scope") or {},
+    }
+
+
+def _without_legacy_input_identity(value: Any) -> Any:
+    forbidden = {
+        "profile_id",
+        "market_data_file_id",
+        "binding_snapshot",
+        "resolver_name",
+        "resolver_contract_version",
+    }
+    if isinstance(value, dict):
+        return {
+            key: _without_legacy_input_identity(item)
+            for key, item in value.items()
+            if key not in forbidden
+        }
+    if isinstance(value, list):
+        return [_without_legacy_input_identity(item) for item in value]
+    return value
 
 
 def _review_foundation_passthrough(summary: dict[str, Any]) -> dict[str, Any | None]:
@@ -1264,6 +1165,8 @@ def _sanitize_api_payload(value: Any) -> Any:
         }
     if isinstance(value, list):
         return [_sanitize_api_payload(item) for item in value]
+    if isinstance(value, Decimal):
+        return float(value)
     if isinstance(value, str) and any(marker in value for marker in LOCAL_PATH_MARKERS):
         return "<redacted>"
     return value

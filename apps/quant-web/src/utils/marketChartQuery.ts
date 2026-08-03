@@ -63,8 +63,14 @@ export function isResearchProfileRequired(
   accessMode: MarketAccessMode,
   dataMode: MarketDataMode,
   profileId: string | null | undefined,
+  canonicalHistorical = false,
 ): boolean {
-  return dataMode === 'historical' && accessMode === 'research' && !profileId?.trim()
+  return (
+    !canonicalHistorical
+    && dataMode === 'historical'
+    && accessMode === 'research'
+    && !profileId?.trim()
+  )
 }
 
 export const RESEARCH_PROFILE_REQUIRED_MESSAGE = '严格研究模式必须选择 Profile'
@@ -76,6 +82,12 @@ export function qualityFailedObservationText(): string {
 
 /** 将 API 错误转为安全单行文案，供 chart / list 共用。 */
 export function safeMarketApiError(err: unknown, fallback: string): string {
+  const detail = (err as {
+    response?: { data?: { detail?: { code?: unknown } } }
+  })?.response?.data?.detail
+  if (detail?.code === 'DATA_GAP') {
+    return '请求窗口存在 DataGap，canonical 读取已失败关闭并拒绝回退到 legacy 数据。'
+  }
   return toSafeApiError(err, fallback)
 }
 

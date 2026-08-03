@@ -23,6 +23,7 @@ from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTrade
 from app.models.data_center import MarketDataFile
 from app.queue import get_redis_connection
 from app.strategy.su_bing_ema21 import SuBingParams
+from app.vnpy_integration.errors import BacktestConfigurationError
 
 WATCHLIST_DEFINITIONS = {
     "black": {
@@ -125,6 +126,16 @@ def ensure_default_watchlists(session: Session) -> None:
 
 
 def create_batch_task(session: Session, request_payload: dict[str, Any]) -> BacktestTask:
+    del session, request_payload
+    raise BacktestConfigurationError(
+        "BACKTEST_LEGACY_BATCH_DISABLED: legacy Profile/file batch execution "
+        "is disabled pending canonical batch cutover"
+    )
+
+
+def _create_legacy_research_batch_task(
+    session: Session, request_payload: dict[str, Any]
+) -> BacktestTask:
     ensure_default_watchlists(session)
     templates = _templates(request_payload)
     start = datetime.fromisoformat(str(request_payload["start"]))
@@ -178,7 +189,7 @@ def create_batch_task(session: Session, request_payload: dict[str, Any]) -> Back
             "profile_id": selected_profile_id,
             "assets": assets,
         },
-        research_only=False,
+        research_only=True,
         status="pending",
         progress=0.0,
         total_items=item_count * len(templates),
@@ -213,6 +224,10 @@ class BatchBacktestRunner:
         task = self.session.get(BacktestTask, task_id)
         if task is None:
             raise ValueError(f"backtest task not found: {task_id}")
+        if not task.research_only:
+            raise BacktestConfigurationError(
+                "BACKTEST_LEGACY_BATCH_DISABLED: non-research Profile/file batch task cannot execute"
+            )
 
         task.status = "running"
         task.started_at = utc_now()
@@ -316,7 +331,7 @@ class BatchBacktestRunner:
             profile_id=task.profile_id,
             market_data_file_id=int(target.asset["market_data_file_id"]),
             binding_snapshot=dict(target.asset),
-            research_only=False,
+            research_only=True,
             status="running",
             started_at=started_at,
         )

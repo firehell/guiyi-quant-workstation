@@ -22,6 +22,11 @@ SUCCESS_GATE = "HTDY_TRUSTED_BACKTEST_CANDIDATE"
 FAILURE_GATE = "HTDY_TRUST_AUDIT_FAILED_REVIEW_REQUIRED"
 REPORT14_ID = 14
 X502_GATE = "HTDY_TRUSTED_REPORT_APPLY_PACKET_READY"
+RETIRED_GATE = "HTDY_X503_HISTORICAL_GATE_RETIRED"
+RETIRED_MESSAGE = (
+    "HTDY_X503_HISTORICAL_GATE_RETIRED: X5-03 is a frozen historical Gate and "
+    "is not an active formal backtest creation path"
+)
 
 _ARTIFACT_FILES = {
     "execution_snapshot": "execution_input_snapshot.json",
@@ -141,6 +146,44 @@ def apply_candidate_transaction(
     source_commit: str,
     report14_id: int = REPORT14_ID,
 ) -> dict[str, Any]:
+    del session_factory, repo_root, bundle, source_commit, report14_id
+    raise CandidateApplyError(
+        RETIRED_MESSAGE,
+        failure={
+            "schema_version": "htdy_x503_historical_retired_v1",
+            "task_id": TASK_ID,
+            "gate": RETIRED_GATE,
+            "status": "retired",
+            "transaction": {"status": "not_started"},
+            "database_accessed": False,
+            "historical_evidence_mutated": False,
+            "reason": RETIRED_MESSAGE,
+        },
+    )
+
+
+def _retired_historical_apply_implementation(
+    session_factory: Callable[[], Session],
+    *,
+    repo_root: Path,
+    bundle: Mapping[str, Any],
+    source_commit: str,
+    report14_id: int = REPORT14_ID,
+) -> dict[str, Any]:
+    """Unreachable historical implementation retained only for evidence review."""
+    raise CandidateApplyError(
+        RETIRED_MESSAGE,
+        failure={
+            "schema_version": "htdy_x503_historical_retired_v1",
+            "task_id": TASK_ID,
+            "gate": RETIRED_GATE,
+            "status": "retired",
+            "transaction": {"status": "not_started"},
+            "database_accessed": False,
+            "historical_evidence_mutated": False,
+            "reason": RETIRED_MESSAGE,
+        },
+    )
     before_counts: dict[str, int] = {}
     candidate_task_no: str | None = None
     report14_before: dict[str, Any] | None = None
@@ -745,6 +788,7 @@ __all__ = [
     "CandidateApplyError",
     "FAILURE_GATE",
     "REPORT14_ID",
+    "RETIRED_GATE",
     "SUCCESS_GATE",
     "TASK_ID",
     "apply_candidate_transaction",

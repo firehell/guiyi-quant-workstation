@@ -1,8 +1,200 @@
 # DATA_CENTER.md
 
-更新时间：2026-07-21
+更新时间：2026-08-02
 
-## 0. 当前 canonical 结论
+## 0. Active target 与迁移状态
+
+数据核心 V2 的 active target 已冻结。Task 04 closeout commit 经 exact-head CI、独立 Review 和
+GitHub merge commit 合入 `develop` 后，historical canonical 与普通 Web/API/指标消费者迁移完成；
+Backtest/Signal/Review 可信消费者切换留给 Task 05：
+
+```text
+RQData
+-> temporary staging
+-> validation
+-> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> PostgreSQL Catalog / Manifest / Gap / MainContractMap
+-> MarketDataService
+-> consumers
+```
+
+- 数据集由不可歧义的 `DatasetKey` 定位；`continuous` 与 `actual_dominant` 显式且不可互换。
+- direct 矩阵仅为 continuous `1m/1d/1w` 和 actual-dominant `1m/1d`；actual-dominant
+  覆盖与读取必须按 rank=1 mapping 有效分段计算，不存在 actual-dominant `1w`。
+- 5m/15m/30m/60m 只从 canonical 1m 按交易时段确定性聚合；缓存不是新的真相源。
+- PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
+- 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
+- 旧 Profile/ActiveBinding/复杂 lineage 仅为 legacy compatibility，不再扩展为 active selector。
+- V2 migration asset 只有 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap
+  metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、permanent derived
+  period、重复 raw/standard/canonical bar layer 和 Profile/Binding/legacy lineage 均为 rebuild-only
+  或 compatibility-only，不迁移为新的 active input。
+- report 14/15 是 Git-traceable historical snapshots，不是 active Gate 或 regression；保留其
+  历史结论和证据，不做重写或删除。
+- Task 04 完成不表示 Task 05、release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
+  residual 为零。
+
+### 0.0 Task 04 closeout 正式准入
+
+RQData 是唯一上游行情数据源；canonical Parquet 是受治理的正式历史存储，不是第二上游来源。
+Canonical 准入依赖自身 schema、coverage、Manifest digest、物理 checksum、Catalog、DataGap、
+MainContractMap 与代表性 `MarketDataService` 读取。legacy 与 Canonical 全历史逐条一致不是正式
+准入条件；legacy historical Shadow 仅保留为可选诊断或 frozen compatibility，不是 Task 04 或
+Task 05 前置 Gate。
+
+2026-08-02 只读现场复验：PostgreSQL revision `20260730_0027`；Catalog
+`85 datasets / 85 partitions / 0 gaps`；物理目录为 `85 Parquet + 85 Manifest + 85 prepared =
+255 canonical files`，staging 0；85/85 partitions 的 checksum、Manifest digest、Catalog identity、
+coverage 与 row count 一致。MainContractMap 在 `2013-03-22..2026-07-30` 的 3395 条保留版本
+物理 rows 解析为 3245/3245 个唯一 DCE 交易日，缺失 0、歧义 0。
+
+正常窗口 `2026-07-06T00:00:00Z..2026-07-10T15:00:00Z` 已通过 continuous `JM.MAIN`
+的 direct `1m/1d/1w`、derived `5m/15m/30m/60m`，以及 actual_dominant `JM2609` 的 direct
+`1m/1d`、derived `5m/15m/30m/60m`；无显式合约的 actual_dominant resolver 也解析为 JM2609。
+读取不调用 RQData、不写 PostgreSQL/Parquet。DataGap 相交请求继续 fail-closed，不得填充、
+缩短或忽略缺口；in-memory Catalog gap fixture 已返回 `DataGapError(reason=catalog_gap)`，coverage
+缺失与 derived source minute 缺失回归也通过。
+
+旧行情、旧 Profile/Binding、旧 Parquet、PR #90～#94 实现、packet、receipt、report 与 evidence
+均保留，不删除、不改写。PR #92 identity 修复以及 PR #93/#94 session compatibility 可以继续作为
+可选诊断或 frozen legacy compatibility；本 closeout 不生成新 packet，不执行 preflight、apply、
+replacement 或生产 legacy Shadow。
+
+### 0.0.1 Task 04 read-only plan 与 Gate 历史快照（已冻结）
+
+本节至 0.0.3 保留 closeout 决策前的实现、失败与当时 Gate，不再提供当前执行授权；其中所有
+新 packet、preflight/apply、replacement 和 13 项 legacy Shadow 的将来式要求均已取消。
+
+2026-07-31 候选分支完成了 historical sync/reader、JM inventory/plan/Shadow query set、
+MarketDataService 与默认关闭的 JM Web/API/公共指标切换。当时的 `07:00Z` read-only plan 对
+915 个 JM legacy 资产分类为 1 个可复用 direct RQData 1d 资产和 914 个排除项；exact window
+为 `(2013-03-21T07:00:00Z, 2026-07-29T15:00:00Z]`，plan digest 为
+`fbb18529684914b268cbc020d589856aaf44097389b2a670c65c6b1ab6ca1358`。plan 命令本身没有调用
+RQData，也没有写 PostgreSQL 或 Parquet。
+
+拟议新根与旧 `data/parquet/canonical` 分离：
+
+```text
+canonical=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/canonical
+staging=/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/data-core-v2/staging
+```
+
+生产 PostgreSQL 已在 Task 04 精确 Gate 下升级并现场核验为 `20260730_0027`。Task 04 临时
+隔离 PostgreSQL 已完成完整 migration 往返（`35 passed`）并删除。CLI 在数据库打开前先
+自校验 packet/hash，打开只读 session 后重算 inventory、plan、git head、roots 与 PostgreSQL
+target，并要求 clean exact head 和 revision `20260730_0027`，之后才构造 RQData/CanonicalStore。
+packet/current facts 绑定 Catalog/partition/gap/mapping、calendar/session 和 exact
+per-DatasetKey write plan 摘要；apply 以原子持久 partial receipt 支持按 dataset 对账恢复。
+
+绑定 `develop@e29c2940` 的第三次真实 apply 已完成任务窗口 rank=1 mapping `3245 rows`，并发布
+continuous `JM.MAIN` 1m `830820 rows` 与 1d `3244 rows`；当前 Catalog 为 `2 datasets / 2
+partitions / 0 gaps`。continuous direct 1w 随后在写入前以
+`CANONICAL_QUALITY_COVERAGE_MISMATCH` fail-closed：`2013-03-22` 是 RQData 查询锚点，但 provider
+不输出该上市残周 bar。当前 TDD 修复保留 anchor session、仅从 expected endpoints 排除该
+packet-bound 残周，真实只读验证为 `684 expected = 684 actual`；通用 quality Gate 未放宽。
+该修复在当时尚待新 merge SHA/CI/packet/批准，完整 apply 与 historical Shadow 尚未完成，
+当时状态为 `BLOCKED_AT_JM_REAL_DATA_GATE`。此状态已被 0.0 closeout 正式准入取代。
+
+### 0.0.2 Task 04 resume/preflight/terminal receipt hardening 历史快照（已冻结）
+
+resume 修复已经进入 `develop@e3e03a9d`。再次真实 apply 前的仓库审计把执行合同继续收紧：
+
+- partial receipt 路径由 exact HEAD 与 approval basis digest 共同决定；scope、plan、initial
+  state、PostgreSQL target、roots 或 rollback 任一变化都会生成不同路径；caller-selected 路径
+  在 packet 构造/校验阶段拒绝；
+- receipt schema v2 同时绑定 approval basis digest 与 packet hash，并校验自身 digest；状态仅为
+  `in_progress -> blocked -> in_progress` 或 `in_progress -> passed`，passed 后不可修改；只有 mapping
+  精确全集、85 个 dataset 精确全集、零 gap、非空 partition evidence 与最终 current-state digest
+  全部成立才能终态 passed；
+- current-state/packet write plan 新增 `execution_runs`。continuous 使用 exact scope；
+  actual-dominant 按 rank=1 连续主导日合并，M1 使用对应 session 边界，D1 使用交易日午夜微窗口，
+  apply/preflight 均消费经过 progress Gate 重算验证的 current-state runs；
+- `guiyi data migrate preflight` 是 RQData read-only Gate：不构造 CanonicalStore/publisher，不写 DB、
+  Parquet、gap 或 apply receipt；它对 `3 continuous + 41*2 actual = 85` 个 direct DatasetKey 完成
+  provider batch quality 与 Arrow/Parquet physical representability 验证，并输出 hash-bound receipt；
+  `migrate apply` 必须消费同 packet、同 approval basis、同 current-state digest 的精确 85/85 receipt；
+- historical Shadow 不再接受 caller-supplied legacy/canonical 整包 JSON；启动时重算 packet-bound
+  legacy inventory/plan；migration `eligible_assets` 只用于 direct reuse，独立 `shadow_assets` 冻结
+  passed/primary/rqdata baseline exact IDs、DB evidence、resolved path 与物理 SHA256，月块只读
+  该集合；canonical 从 Catalog/manifest 读取。两侧按 `(start, end]` 和 `query x calendar month`
+  分块比较，周线只扩日历上下文而不扩查询窗口；derived expected keys 独立由 session 生成。
+  13 项矩阵必须精确；apply passed receipt/current-state、source lineage、chunk rows/expected-key digest
+  和 exception digest 均进入 Shadow receipt。结束前重新构造 current state 并逐 partition 重验
+  canonical manifest/checksum/row count。任一侧为空、共同遗漏 expected bar、缺块、实际差异、
+  范围外 query、同 key 冲突或未消费 declared exception 均 fail-closed。
+
+生产只读复核为 `revision=20260730_0027`、`contracts=41`、`trading_days=3245`、
+`mapping_rows=3245`、`dataset_plans=85`、`execution_runs=85`、`empty_execution_runs=0`。
+该复核没有调用 RQData，也没有写 PostgreSQL、Parquet 或 receipt；这是 PR #89 hardening
+合入后、PR #90 real Gate 前的历史快照，后续实况如下。
+
+多 session Gate 修复合入 `develop@48d05fe680d3b2a2f78187b97975d5ccfca5e6a4` 后，真实
+85/85 preflight 与完整 resume apply 已通过：Catalog 为 85 datasets / 85 partitions / 0 gaps，
+canonical 为 255 files 且 staging 为空。生产 Shadow 随后在比较前以
+`shadow_legacy_continuous_ambiguous` fail-closed；根因是 1 个 direct-reuse `eligible_asset` 被误当成
+13 项矩阵的 legacy baseline。当前修复将两类集合分开，生产只读冻结 110 个 approval-plan-bound
+baseline exact IDs，完整覆盖 JM.MAIN 1m/1d/1w 与 41 个 actual 合约 1m/1d。该修改改变 plan digest
+和 source HEAD，也改变 packet-bound receipt path / approval basis；旧批准与旧 passed receipt
+均不可复用。当时拟议由新 exact SHA 依次完成 85/85 preflight、reconcile/resume apply 和 13 项
+Shadow；该顺序现已取消，不再是 Task 04 或 Task 05 Gate。
+
+Shadow baseline 修复合入 `develop@7b2568ff01752e72ffca9ebfccf4499064915aa2` 后，同一
+exact SHA 的新 packet 已完成 85/85 reconciled preflight 与 packet-bound terminal apply receipt；
+Catalog/physical 保持 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0。生产 Shadow
+随后在第一个 continuous 1m 月块进入 exact-ID reader 时以
+`market_data_file_identity_mismatch` fail-closed。根因不是 bar 差异，而是 canonical plan identity
+`JM.MAIN` 被同时用于读取 legacy DB 原始 identity `jm.MAIN`。当前修复从 inventory 起分别冻结
+规范化 canonical identity 与 exact DB reader identity，并将两者纳入 approval plan digest 与
+Shadow lineage：前者用于 dataset 选择/Shadow 比较，后者仅用于 exact-ID 物理读取且在读取前后
+逐字复验；生产只读首月诊断已成功读取 4 个 frozen assets / 4050 rows。
+该 source change 使旧 packet/approval/passed receipt 失效。当时拟议的新 exact SHA
+preflight -> reconcile apply receipt -> 13 项 Shadow 链路现为 frozen historical，不再执行。
+
+上述 hardening 后续由 PR #89 合入 `develop@ca7125a2`，post-merge CI 成功。首次绑定该 merge
+SHA 的真实 preflight 在 provider 初始化前以 `approval_facts_changed` fail-closed：progress Gate
+用单个 session 覆盖同一 trading day 的多段 DCE session，导致 actual-dominant 1m execution run
+重算缺失夜盘和上午段。当前 TDD 修复仅将同一连续主导日 run 的全部 session 合并为最早 start /
+最晚 end；不放宽 mapping、coverage、partition、manifest 或 checksum Gate。修复合入并取得新的
+exact-SHA packet 批准前，当时仍禁止真实 preflight/apply/Shadow；closeout 决策进一步取消了
+该后续执行链。
+
+### 0.0.3 JM 历史 session 与 append-only canonical replacement 历史快照（已冻结）
+
+PR #92/#93 已依次将 exact legacy reader identity 与初始残周 Shadow anchor 修复合入
+`develop@6dfbb7a5`。随后生产 Shadow 的只读失败不允许通过 exception 或裁剪 legacy 制造通过；
+根因收敛为同一历史语义漂移：
+
+- 2014-12 起 JM 夜盘存在 effective-dated 变化：`21:00-02:30`、`21:00-23:30`、
+  `21:00-23:00`，并在 2020-02 至 2020-05 暂停；2023 前生产 calendar flags 不能表达这些历史事实；
+- legacy 1m 的 trading_day 是自然日启发式字段，周五或节前夜盘不能作为 rank=1 mapping 的
+  权威过滤键，必须按共享 session membership 重算，零匹配/多匹配 fail-closed；
+- frozen legacy Parquet datetime 是上海本地 naive 值，UTC 查询窗口下推 DuckDB 前必须先转换为
+  `Asia/Shanghai` 的 naive 边界，随后仍按精确 UTC 语义过滤。
+
+修复合同冻结为 `jm-dce-effective-session-v1`，其完整 policy document 与 digest 进入
+current state、approval packet 和 resume progress 校验。受旧 session policy 影响的 existing
+JM 1m 数据集不能因 coverage 非空而被视为完成；`replacement_required` 必须根据
+legacy-affected approved repair windows 是否已被 `canonical-manifest-v2-jm-session` +
+`version_replacement` 完整覆盖独立重算。后续扩展出来的非 legacy tail 不得误走 replacement。
+
+canonical 修复只允许 append-only：只有 replacement publisher 为 RQData 1m data version 增加
+`jm-session-v1` 后缀，并写入 `overlap_reason=version_replacement`；Task 04 fresh JM 1m 使用
+session-v2 manifest 但不增加 replacement suffix，D1/W1 与通用 RQData adapter 保持原口径。
+旧 Parquet/manifest/metadata 全部保留。Catalog 的审计接口返回全部分区；effective reader
+屏蔽被 replacement 区间并集完整覆盖的旧分区，部分相交但未完整覆盖时 fail-closed；已发布的
+v2 replacement execution run 在 resume 时不得重写。发布仍使用既有 journal + DB commit
+recovery；wrong-manifest replacement、部分 replacement 或 policy drift 不得从 receipt 恢复为完成。
+
+这是当时的 L3 数据语义与 canonical 写入修复。PR #94 候选 head `fa19e269` 后续以 merge commit
+`1e3a0edd` 合入 `develop`，但没有执行真实 1m replacement。其代码保留为 frozen compatibility；
+当时拟议的 85/85 preflight、reconcile/replacement apply、terminal receipt 与 13 项 Shadow 已由
+0.0 closeout 决策取消。旧 packet、批准与 terminal receipt 仅作历史 evidence，不授权删除、
+Task 05、Runtime、通知或交易。
+
+active 合同与任务顺序见 `docs/tasks/GY-DATA-CORE-V2.md`。以下既有 Gate 与实现事实继续有效，
+但分类为 `legacy compatibility` 或 `frozen historical`；不得用它们覆盖 active target。
+
+### 0.1 Legacy compatibility 与 frozen historical 结论
 
 当前数据层最终状态已进入全历史重审口径：
 
@@ -73,17 +265,17 @@ key 固定为 `(actual_contract, period, bar_datetime)`。同 key OHLCV 标准�
 
 ## 1. 定位
 
-数据中心把 RQData 变成本地可信、可追溯、可复算的数据资产：
+active target 把唯一 provider RQData 变成本地可信、可追溯、可复算的数据资产：
 
 ```text
-RQData -> raw parquet -> standard parquet -> quality
--> manifest/checksum -> PostgreSQL metadata -> DuckDB
+RQData -> staging -> validation -> one canonical parquet root
+-> Catalog/Manifest/Gap/MainContractMap -> MarketDataService
 -> Market / Backtest / Signal / Review
 ```
 
 PostgreSQL 只保存元数据、任务、质量和业务事实，不保存全量历史分钟线。
 
-## 2. active 入口
+## 2. Legacy compatibility active 入口（迁移期）
 
 ```text
 provider in ("rqdata", "local_parquet")
@@ -93,7 +285,7 @@ quality_status != "failed"
 
 严格研究使用 `quality_status=passed`。validation、legacy_reference、candidate、旧 TqSdk / 天勤和交易练习者数据不得进入默认读取。
 
-当前主周期规则：
+迁移期既有主周期规则：
 
 ```text
 passed 1m standard parquet
@@ -102,7 +294,8 @@ passed 1m standard parquet
 -> active metadata registration
 ```
 
-不允许从 RQData 直接拉取 5m/15m/30m/60m 作为新的正式主链路。
+新 active target 同样不允许从 RQData 直接拉取 5m/15m/30m/60m 形成 canonical；
+目标 1d/1w 则保留 provider 直接序列，不再把旧 derived 1d 与 provider direct 1d 混为一谈。
 
 ## 2.1 quality_warning 消费边界
 
@@ -129,7 +322,7 @@ strict 入口（Backtest / Signal / Market Research）
   上述条件 + quality_status = passed
 ```
 
-任务单：`docs/tasks/archive/TASK-2026-07-12-010-quality-warning-consumption-boundary.md`
+该质量消费边界已纳入本节；历史实施过程由 Git 追溯。
 
 ## 2.1.1 Market / Indicator 双模式契约
 
@@ -147,6 +340,29 @@ data_mode = historical | live
 - Web route 保存 `access_mode/profile_id/data_mode`；Live 强制 Browser observation 并清除严格研究 Profile，不与 historical bars 静默合并。
 
 状态：`COMPLETED / MARKET_RESEARCH_MODE_READY / INDICATOR_BINDING_CONSISTENT`。本契约不改变全局 `DATA_LAYER_REAUDIT_REQUIRED`，也不代表 live runtime ready。
+
+## 2.1.2 GY-CORE-02 JM active dataset compatibility Facade（可复用 legacy）
+
+`ActiveDatasetResolver`、`MarketDataService`、`DatasetDescriptor` 和 `BarsResult` 现构成
+JM-only compatibility Facade。它仍委托既有 Profile / workbench / reader historical 链，
+只对一次读取的选择结果执行冻结和校验；不得据此新增 active 数据选择规则。
+
+- Browser historical 的 `assets[]` 可含有序的多个合法 `rqdata/local_parquet + primary +
+  quality != failed` 资产；research 只能使用一个已固定的 `passed` 资产。
+- 同一 frozen file set 的 IDs/evidence 必须共同绑定 bars、quality、cross-file conflicts、
+  coverage 与 lineage；historical lineage token 保持既有 token。
+- actual dominant `rank=1` 以 exact-date strict/effective identity 比较；mapping 歧义必须
+  fail-closed。pinned file 缺失或 fallback 无/多候选也不得静默选择。
+- 仅 JM 的 `GET /api/v1/market/bars` historical 分支已使用 Facade；非 JM 继续既有
+  workbench path。coverage、live API routes、indicator/MACD、`/api/klines`、backtest、
+  signal、review 均未迁移。
+
+live 仅提供 browser/read-only 的实际 JM 合约读取，要求显式且唯一 provider/source mode 和
+`tail=false`；strict/research live 明确不支持。live snapshot token 仅标识本次 response window，
+不是持久化 source-mode DB/schema identity。source-mode schema/upsert/aggregation P0 仍是独立
+Lane 3；“须在 `GY-CORE-05` Shadow 前完成”是旧路线的 frozen historical 约束。新路线由
+`GY-DATA-CORE-V2` 任务 11 收口，并在任务 19 前接受独立 Gate。本项不产生数据、Profile
+binding、migration、Runtime、notification、trading 或 release 授权。
 
 ## 2.2 V1 全历史数据契约
 
@@ -208,7 +424,7 @@ historical `confirmed` 同时要求：目标 bucket 已完成、数据来自盘�
 
 周线完成需满足：交易日历完整、该周最后实际交易日已收盘、provider completed bar 存在。live 聚合的 confirmed bar 仍不自动成为 historical canonical。
 
-### 2.2.5 五层状态与 Profile eligibility
+### 2.2.5 五层状态与 legacy Profile eligibility（冻结历史）
 
 以下状态必须独立记录，禁止用一层成功替代另一层：
 
@@ -220,18 +436,23 @@ reference_metadata: passed / warning / missing / not_applicable / unavailable
 profile_eligibility: eligible / blocked / unresolved / not_applicable
 ```
 
-Profile eligibility 至少要求 physical covered、registration registered、reference metadata passed/not-applicable、identity 在 Profile target 内、bar confirmed，并满足 Profile quality policy。当前 Profile JSON 不在本任务修改；target-aware 选优属于 B2-07。
+Profile eligibility 是 legacy compatibility 的历史口径，不能作为 Backtest、Signal 或 Review 的
+active selector。V2 formal consumer 必须只通过 `MarketDataService` 消费
+`canonical_consumer_input_v1` 所固定的 DatasetKey、manifest digest、query window、mapping 与
+quality/Gap 证据。
 
 ### 2.2.6 formal consumer 准入
 
 | Consumer | 默认准入 | warning 边界 |
 |---|---|---|
 | Market | 五层完整、confirmed、quality passed/warning | 允许展示，必须返回并显示 warning |
-| Backtest | confirmed、passed、Profile eligible | 显式 opt-in 仅为 research warning run，不计入最终 Ready Gate |
-| Signal | confirmed、passed、reference/Profile 完整 | warning、partial、failed、unchecked 全部阻断 |
+| Backtest | confirmed、passed、`canonical_consumer_input_v1` + MarketDataService | 显式 opt-in 仅为 research warning run，不计入最终 Ready Gate |
+| Signal | confirmed、passed、`canonical_consumer_input_v1` + MarketDataService | warning、partial、failed、unchecked 全部阻断 |
 | Review | passed 可作正式证据 | warning 只可带标签展示，不可作信号证据 |
 
-所有 formal consumers 均阻断 registration missing、reference metadata gap、Profile ineligible 和 historical partial。`report_id=14` 是冻结历史基线，只能读取和引用，禁止更新、回填、重算覆盖或替换 lineage。
+所有 formal consumers 均阻断 registration missing、reference metadata gap、historical partial 与
+canonical identity/manifest/mapping drift。report 14/15 只能读取和引用为 Git-traceable historical
+snapshots，不是 active Gate/regression；禁止更新、回填、重算覆盖、替换 lineage 或删除证据。
 
 ## 2.2.7 Audit V2（2026-07-17）
 

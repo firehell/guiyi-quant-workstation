@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -12,7 +14,11 @@ from app.backtest.contract_resolver import CommissionRule, resolve_jm_contract
 from app.backtest.service import BacktestService
 from app.core.env import PROJECT_ROOT
 from app.models.data_center import MarketDataFile
-from app.schemas.backtest import BacktestDataRole, BacktestTaskConfig
+from app.schemas.backtest import (
+    BacktestDataRole,
+    BacktestTaskConfig,
+    FormalBacktestTaskRequest,
+)
 from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE, ProfileLineageResolver
 
 
@@ -50,6 +56,8 @@ JM_DAILY_SCORE2OF4_SPEC_START = datetime(2023, 1, 3, tzinfo=UTC)
 JM_DAILY_SCORE2OF4_SPEC_END = datetime(2025, 12, 31, 15, 0, tzinfo=UTC)
 JM_DAILY_TREND_CROSS_SCORE2_SPEC_START = datetime(2023, 1, 3, tzinfo=UTC)
 JM_DAILY_TREND_CROSS_SCORE2_SPEC_END = datetime(2025, 12, 31, 15, 0, tzinfo=UTC)
+JM_V1B_FORMAL_SPEC_START = datetime(2023, 6, 28, tzinfo=UTC)
+JM_V1B_FORMAL_SPEC_END = datetime(2026, 6, 28, tzinfo=UTC)
 
 SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_CLASS_PATH = (
     "guiyi_quant.strategies.su_bing_jm_v1b_short_hold.vnpy_strategy."
@@ -73,6 +81,12 @@ class JmV1bTaskSpec:
 class JmDailyEma21MacdVolumeTaskSpec:
     config: BacktestTaskConfig
     daily_file: MarketDataFile
+
+
+@dataclass(frozen=True)
+class JmCanonicalFormalTaskSpec:
+    request: FormalBacktestTaskRequest
+    server_context: dict[str, object]
 
 
 def build_jm_v1b_task_config(session: Session, entry_interval: Literal["15m", "5m"]) -> JmV1bTaskSpec:
@@ -317,6 +331,134 @@ def available_jm_v1b_entry_intervals(session: Session) -> dict[str, bool]:
     return {interval: _maybe_profile_bound_formal_file(session, interval) is not None for interval in ("15m", "5m", "1d")}
 
 
+def build_jm_v1b_formal_request(
+    entry_interval: Literal["15m", "5m"],
+) -> JmCanonicalFormalTaskSpec:
+    if entry_interval not in {"15m", "5m"}:
+        raise ValueError("entry_interval must be one of: 15m, 5m")
+    fixed_task = f"JM V1-B {entry_interval} entry"
+    return JmCanonicalFormalTaskSpec(
+        request=FormalBacktestTaskRequest(
+            task_type=f"v1b_jm_{entry_interval}_entry",
+            dataset_kind="continuous",
+            instrument_symbol="jm",
+            contract_or_series=JM_V1B_SYMBOL,
+            exchange=JM_V1B_EXCHANGE,
+            interval=entry_interval,
+            auxiliary_periods=["1d"],
+            start=JM_V1B_FORMAL_SPEC_START,
+            end=JM_V1B_FORMAL_SPEC_END,
+            strategy_class_path=JM_V1B_STRATEGY_CLASS_PATH,
+            strategy_code=JM_V1B_STRATEGY_CODE,
+            strategy_version=JM_V1B_STRATEGY_VERSION,
+            strategy_parameters=_strategy_parameters(entry_interval),
+            rate=0.0001,
+            slippage=1.0,
+            size=60,
+            pricetick=0.5,
+            capital=100000.0,
+            execution_timing="next_bar_open",
+        ),
+        server_context={
+            "fixed_task": fixed_task,
+            "data_provider": JM_V1B_DATA_SOURCE,
+        },
+    )
+
+
+def build_jm_daily_ema21_macd_volume_formal_request(
+    session: Session,
+) -> JmCanonicalFormalTaskSpec:
+    return _build_jm_daily_formal_request(
+        session,
+        task_type=JM_DAILY_EMA21_MACD_VOLUME_TASK_TYPE,
+        fixed_task="JM V1-B daily EMA21 MACD volume",
+        strategy_class_path=JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CLASS_PATH,
+        strategy_version=JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_VERSION,
+        start=JM_DAILY_EMA21_MACD_VOLUME_SPEC_START,
+        end=JM_DAILY_EMA21_MACD_VOLUME_SPEC_END,
+        strategy_parameter_builder=_daily_ema21_macd_volume_strategy_parameters,
+        strategy_review_context=_daily_strategy_review_context(),
+    )
+
+
+def build_jm_daily_score2of4_formal_request(
+    session: Session,
+) -> JmCanonicalFormalTaskSpec:
+    return _build_jm_daily_formal_request(
+        session,
+        task_type=JM_DAILY_SCORE2OF4_TASK_TYPE,
+        fixed_task="JM V1-B daily score2of4",
+        strategy_class_path=JM_DAILY_SCORE2OF4_STRATEGY_CLASS_PATH,
+        strategy_version=JM_DAILY_SCORE2OF4_STRATEGY_VERSION,
+        start=JM_DAILY_SCORE2OF4_SPEC_START,
+        end=JM_DAILY_SCORE2OF4_SPEC_END,
+        strategy_parameter_builder=_daily_score2of4_strategy_parameters,
+        strategy_review_context=_daily_score2of4_review_context(),
+    )
+
+
+def build_jm_daily_trend_cross_score2_formal_request(
+    session: Session,
+) -> JmCanonicalFormalTaskSpec:
+    return _build_jm_daily_formal_request(
+        session,
+        task_type=JM_DAILY_TREND_CROSS_SCORE2_TASK_TYPE,
+        fixed_task="JM V1-B daily trend cross score2",
+        strategy_class_path=JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_CLASS_PATH,
+        strategy_version=JM_DAILY_TREND_CROSS_SCORE2_STRATEGY_VERSION,
+        start=JM_DAILY_TREND_CROSS_SCORE2_SPEC_START,
+        end=JM_DAILY_TREND_CROSS_SCORE2_SPEC_END,
+        strategy_parameter_builder=_daily_trend_cross_score2_strategy_parameters,
+        strategy_review_context=_daily_trend_cross_score2_review_context(),
+    )
+
+
+def _build_jm_daily_formal_request(
+    session: Session,
+    *,
+    task_type: str,
+    fixed_task: str,
+    strategy_class_path: str,
+    strategy_version: str,
+    start: datetime,
+    end: datetime,
+    strategy_parameter_builder: Callable[
+        [dict[str, float | int]], dict[str, object]
+    ],
+    strategy_review_context: dict[str, object],
+) -> JmCanonicalFormalTaskSpec:
+    trade_params = _daily_strategy_trade_params(session, start)
+    strategy_parameters = strategy_parameter_builder(trade_params)
+    return JmCanonicalFormalTaskSpec(
+        request=FormalBacktestTaskRequest(
+            task_type=task_type,
+            dataset_kind="continuous",
+            instrument_symbol="jm",
+            contract_or_series=JM_V1B_SYMBOL,
+            exchange=JM_V1B_EXCHANGE,
+            interval="1d",
+            start=start,
+            end=end,
+            strategy_class_path=strategy_class_path,
+            strategy_code=JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE,
+            strategy_version=strategy_version,
+            strategy_parameters=strategy_parameters,
+            rate=0.0001,
+            slippage=1.0,
+            size=int(trade_params["contract_multiplier"]),
+            pricetick=float(trade_params["price_tick"]),
+            capital=100000.0,
+            execution_timing="next_bar_open",
+        ),
+        server_context={
+            "fixed_task": fixed_task,
+            "data_provider": JM_V1B_DATA_SOURCE,
+            "strategy_review_context": strategy_review_context,
+        },
+    )
+
+
 def _strategy_parameters(entry_interval: str) -> dict[str, object]:
     return {
         "entry_interval": entry_interval,
@@ -457,14 +599,14 @@ def _daily_strategy_trade_params(session: Session, start: datetime) -> dict[str,
         raise ValueError(f"JM daily EMA21 MACD volume trading parameters cannot be resolved: {exc}") from exc
 
     params: dict[str, float | int] = {
-        "price_tick": resolved.price_tick,
+        "price_tick": float(resolved.price_tick),
         "contract_multiplier": resolved.contract_multiplier,
-        "margin_rate": resolved.margin_ratio,
+        "margin_rate": float(resolved.margin_ratio),
     }
     if resolved.commission_rule.fee_type == "rate":
-        params["commission_rate"] = resolved.commission_rule.open_fee
+        params["commission_rate"] = float(resolved.commission_rule.open_fee)
     else:
-        params["commission_per_contract"] = resolved.commission_rule.open_fee
+        params["commission_per_contract"] = float(resolved.commission_rule.open_fee)
     return params
 
 
@@ -656,13 +798,13 @@ def _enriched_su_bing_entry_file(
         resolved_by_day[pd.Timestamp(value).date()].actual_contract for value in windowed["trading_day"]
     ]
     windowed["price_tick"] = [
-        resolved_by_day[pd.Timestamp(value).date()].price_tick for value in windowed["trading_day"]
+        float(resolved_by_day[pd.Timestamp(value).date()].price_tick) for value in windowed["trading_day"]
     ]
     windowed["contract_multiplier"] = [
         resolved_by_day[pd.Timestamp(value).date()].contract_multiplier for value in windowed["trading_day"]
     ]
     windowed["margin_rate"] = [
-        resolved_by_day[pd.Timestamp(value).date()].margin_ratio for value in windowed["trading_day"]
+        float(resolved_by_day[pd.Timestamp(value).date()].margin_ratio) for value in windowed["trading_day"]
     ]
     windowed["commission_rate"] = [
         _commission_rate(resolved_by_day[pd.Timestamp(value).date()].commission_rule) for value in windowed["trading_day"]
@@ -678,11 +820,11 @@ def _enriched_su_bing_entry_file(
 
 
 def _commission_rate(rule: CommissionRule) -> float | None:
-    return rule.open_fee if rule.fee_type == "rate" else None
+    return float(rule.open_fee) if rule.fee_type == "rate" else None
 
 
 def _commission_per_contract(rule: CommissionRule) -> float | None:
-    return max(value for value in (rule.open_fee, rule.close_fee, rule.close_today_fee or 0.0) if value is not None) if rule.fee_type == "fixed" else None
+    return float(max(value for value in (rule.open_fee, rule.close_fee, rule.close_today_fee or Decimal("0")) if value is not None)) if rule.fee_type == "fixed" else None
 
 
 def _merged_data_version(entry_file: MarketDataFile, daily_file: MarketDataFile) -> str:

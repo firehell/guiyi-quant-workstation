@@ -11,6 +11,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.data_core.consumer_identity import build_canonical_consumer_input
+from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
 from app.backtest.drawdown_curve_generator import generate_drawdown_curve
 from app.backtest.equity_curve_generator import generate_equity_curve
 from app.backtest.errors import BacktestContractError
@@ -25,6 +27,8 @@ from app.schemas.backtest import (
     FormalBacktestTaskRequest,
 )
 from app.services.profile_lineage import PASSED_ONLY_POLICY, ProfileLineage, ProfileLineageResolver
+from app.services.canonical_market_data import build_canonical_reader
+from app.services.market_data_service import MarketDataService
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
 from app.vnpy_integration.result_converter import apply_backtest_lineage_mapping
@@ -68,8 +72,17 @@ _BLOCKED_LINEAGE_ERRORS: dict[str, tuple[str, str]] = {
 
 
 class BacktestService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, market_data: Any | None = None) -> None:
         self.session = session
+        self._market_data = market_data
+
+    def canonical_market_data(self) -> Any:
+        if self._market_data is None:
+            self._market_data = MarketDataService(
+                self.session,
+                canonical_reader=build_canonical_reader(self.session),
+            )
+        return self._market_data
 
     def create_task_config(self, payload: BacktestTaskConfig | dict[str, Any]) -> BacktestTaskConfig:
         return payload if isinstance(payload, BacktestTaskConfig) else BacktestTaskConfig.model_validate(payload)
@@ -98,41 +111,43 @@ class BacktestService:
         formal_request = (
             request if isinstance(request, FormalBacktestTaskRequest) else FormalBacktestTaskRequest.model_validate(request)
         )
-        resolver = ProfileLineageResolver(self.session)
-        primary, primary_asset = self.resolve_formal_asset(
-            instrument_symbol=formal_request.instrument_symbol,
-            contract_code=formal_request.contract_code,
-            period=formal_request.interval,
-            profile_id=formal_request.profile_id,
-            resolver=resolver,
+        primary_query = BarQuery(
+            dataset_kind=formal_request.dataset_kind,
+            symbol=formal_request.instrument_symbol,
+            contract_or_series=formal_request.contract_or_series,
+            frequency=BarFrequency(formal_request.interval),
+            start=formal_request.start,
+            end=formal_request.end,
         )
-        self._validate_requested_window(primary_asset, start=formal_request.start, end=formal_request.end)
-        selected_profile_id = primary.profile_id
-        if not selected_profile_id:
-            raise BacktestConfigurationError("formal backtest profile resolution returned no profile_id")
+        primary_result = self.canonical_market_data().get_bars(primary_query)
+        strategy_input_version = _strategy_input_version(formal_request)
+        primary_identity = build_canonical_consumer_input(
+            primary_query,
+            primary_result,
+            strategy_input_version=strategy_input_version,
+        )
 
-        auxiliary_assets: dict[str, dict[str, Any]] = {}
-        auxiliary_paths: dict[str, str] = {}
+        auxiliary_identities: dict[str, dict[str, object]] = {}
         for period in formal_request.auxiliary_periods:
-            _, asset = self.resolve_formal_asset(
-                instrument_symbol=formal_request.instrument_symbol,
-                contract_code=formal_request.contract_code,
-                period=period,
-                profile_id=selected_profile_id,
-                resolver=resolver,
+            auxiliary_query = BarQuery(
+                dataset_kind=formal_request.dataset_kind,
+                symbol=formal_request.instrument_symbol,
+                contract_or_series=formal_request.contract_or_series,
+                frequency=BarFrequency(period),
+                start=formal_request.start,
+                end=formal_request.end,
             )
-            self._validate_requested_window(asset, start=formal_request.start, end=formal_request.end)
-            auxiliary_assets[period] = asset
-            auxiliary_paths[period] = str(asset["file_path"])
+            auxiliary_result = self.canonical_market_data().get_bars(auxiliary_query)
+            auxiliary_identities[period] = build_canonical_consumer_input(
+                auxiliary_query,
+                auxiliary_result,
+                strategy_input_version=strategy_input_version,
+            ).to_snapshot()
 
         binding_snapshot = {
-            "schema_version": "backtest_binding_snapshot_v1",
-            "resolver_name": BACKTEST_RESOLVER_NAME,
-            "resolver_contract_version": BACKTEST_RESOLVER_CONTRACT_VERSION,
-            "quality_policy": PASSED_ONLY_POLICY,
-            "profile_id": selected_profile_id,
-            "primary": primary_asset,
-            "auxiliary": auxiliary_assets,
+            "schema_version": "backtest_canonical_inputs_v1",
+            "input_identity": primary_identity.to_snapshot(),
+            "auxiliary_input_identities": auxiliary_identities,
         }
         cost_parameters = {
             "rate": formal_request.rate,
@@ -147,7 +162,7 @@ class BacktestService:
             indicator_policy = build_formal_strategy_indicator_policy(
                 strategy_code=formal_request.strategy_code,
                 strategy_version=formal_request.strategy_version,
-                profile_id=selected_profile_id,
+                profile_id=f"canonical:{primary_identity.digest}",
                 execution_timing=formal_request.execution_timing,
                 strategy_parameters=formal_request.strategy_parameters,
                 cost_parameters=cost_parameters,
@@ -161,10 +176,11 @@ class BacktestService:
             raise BacktestConfigurationError(str(exc)) from exc
         indicator_policy_snapshot = indicator_policy.to_dict()
         binding_snapshot["indicator_policy_snapshot"] = indicator_policy_snapshot
+        continuous_research = formal_request.dataset_kind is DatasetKind.CONTINUOUS
         task_config = BacktestTaskConfig(
             engine_type=formal_request.engine_type,
             task_type=formal_request.task_type,
-            symbol=formal_request.contract_code,
+            symbol=formal_request.contract_or_series or formal_request.instrument_symbol,
             exchange=formal_request.exchange,
             interval=formal_request.interval,
             start=formal_request.start,
@@ -179,26 +195,45 @@ class BacktestService:
             pricetick=formal_request.pricetick,
             capital=formal_request.capital,
             execution_timing=formal_request.execution_timing,
-            data_source=str(primary_asset["provider"]),
+            data_source="rqdata",
             data_role=BacktestDataRole.PRIMARY,
-            data_version=primary.data_version,
-            research_only=False,
+            # BacktestTask.data_version is VARCHAR(64); the canonical digest is
+            # already a self-describing sha256 identity in the frozen snapshot.
+            data_version=primary_identity.digest,
+            research_only=continuous_research,
             quality_status="passed",
-            bar_data_path=str(primary_asset["file_path"]),
-            auxiliary_bar_data_paths=auxiliary_paths,
+            bar_data_path=None,
+            auxiliary_bar_data_paths={},
             request_payload={
                 **deepcopy(server_context or {}),
                 "formal_consumer": True,
+                "dataset_kind": formal_request.dataset_kind.value,
                 "instrument_symbol": formal_request.instrument_symbol,
-                "contract_code": formal_request.contract_code,
-                "profile_id": selected_profile_id,
+                "contract_or_series": formal_request.contract_or_series,
+                "auxiliary_periods": list(formal_request.auxiliary_periods),
+                "contract_semantics": (
+                    "research_contract_only"
+                    if formal_request.dataset_kind is DatasetKind.CONTINUOUS
+                    else "actual_dominant_rank1"
+                ),
+                "observation_only": True,
+                "not_trading_instruction": True,
+                "auto_order": False,
+                "risk_control_scope": {
+                    "live_pre_order_risk_gate": "NOT_APPLICABLE_HISTORICAL_RESEARCH_NO_ORDER",
+                    "drawdown_pause": "NOT_APPLICABLE_FROZEN_STRATEGY_SEMANTICS",
+                    "consecutive_loss_pause": "NOT_APPLICABLE_FROZEN_STRATEGY_SEMANTICS",
+                    "maximum_position": formal_request.strategy_parameters.get(
+                        "maximum_position"
+                    ),
+                },
                 "indicator_policy_snapshot": indicator_policy_snapshot,
             },
         )
         return self._persist_task(
             task_config,
-            profile_id=selected_profile_id,
-            market_data_file_id=primary.market_data_file_id,
+            profile_id=None,
+            market_data_file_id=None,
             binding_snapshot=binding_snapshot,
         )
 
@@ -440,17 +475,22 @@ class BacktestService:
         self.session.commit()
 
     def mark_success(self, task: BacktestTask, result: dict[str, Any]) -> None:
-        self.persist_result(task, result)
-        task.status = "success"
-        task.progress = 100.0
-        task.completed_items = 1
-        task.failed_items = 0
-        task.finished_at = utc_now()
-        task.error_type = None
-        task.error_message = None
-        task.traceback = None
-        self.sanitize_task_local_paths(task)
-        self.session.commit()
+        try:
+            with self.session.begin_nested():
+                self.persist_result(task, result)
+                task.status = "success"
+                task.progress = 100.0
+                task.completed_items = 1
+                task.failed_items = 0
+                task.finished_at = utc_now()
+                task.error_type = None
+                task.error_message = None
+                task.traceback = None
+                self.sanitize_task_local_paths(task)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
 
     def mark_failed(self, task: BacktestTask, error_type: str, error_message: str, traceback_text: str | None = None) -> None:
         task.status = "failed"
@@ -465,10 +505,18 @@ class BacktestService:
 
     def persist_result(self, task: BacktestTask, normalized_result: dict[str, Any]) -> None:
         config = self.config_from_task(task)
-        if not task.research_only and (
-            task.profile_id is None or task.market_data_file_id is None or task.binding_snapshot is None
-        ):
-            raise BacktestConfigurationError("formal backtest result requires immutable profile binding lineage")
+        if not task.research_only or _is_canonical_formal_task(task):
+            snapshot = task.binding_snapshot
+            if (
+                task.profile_id is not None
+                or task.market_data_file_id is not None
+                or not isinstance(snapshot, dict)
+                or snapshot.get("schema_version")
+                != "backtest_canonical_inputs_v1"
+            ):
+                raise BacktestConfigurationError(
+                    "formal backtest result requires immutable canonical input identity"
+                )
         if config.data_role is not BacktestDataRole.PRIMARY:
             raise BacktestConfigurationError("only primary RQData/local parquet data is active for backtest results")
         if config.quality_status.strip().lower() == "failed":
@@ -492,12 +540,14 @@ class BacktestService:
         trades = lineage["trades"]
         orders = lineage["orders"]
         summary["lineage_summary"] = lineage["lineage_summary"]
-        initial_capital = _float_metric(summary, "initial_capital", "capital", default=config.capital)
+        initial_capital = _decimal_metric(
+            summary, "initial_capital", "capital", default=Decimal(str(config.capital))
+        )
         equity_curve = generate_equity_curve(trades, initial_capital=initial_capital)
         drawdown_result = generate_drawdown_curve(equity_curve)
         drawdown_curve = drawdown_result["drawdown_curve"]
         metrics = compute_report_metrics(
-            summary=summary,
+            summary=_json_safe_value(summary),
             trades=trades,
             equity_curve=equity_curve,
             drawdown_curve=drawdown_curve,
@@ -533,7 +583,7 @@ class BacktestService:
             suitability_label="数据不足",
             suitability_score=0.0,
             consistency_hash=consistency_hash,
-            summary=summary,
+            summary=_json_safe_value(summary),
             warnings=list(normalized_result.get("warnings") or []),
             started_at=task.started_at,
             finished_at=now,
@@ -564,6 +614,46 @@ class BacktestService:
             ],
         }
 
+    def recompute_result_facts(
+        self,
+        task: BacktestTask,
+        normalized_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        config = self.config_from_task(task)
+        result = dict(normalized_result)
+        trades = _standardize_trade_sequence(list(result.get("trades") or []))
+        prior_summary = dict(result.get("summary") or {})
+        initial_capital = _decimal_metric(
+            prior_summary,
+            "initial_capital",
+            "capital",
+            default=Decimal(str(config.capital)),
+        )
+        equity_curve = generate_equity_curve(
+            trades, initial_capital=initial_capital
+        )
+        drawdown_result = generate_drawdown_curve(equity_curve)
+        metrics = compute_report_metrics(
+            summary={"initial_capital": initial_capital},
+            trades=trades,
+            equity_curve=equity_curve,
+            drawdown_curve=drawdown_result["drawdown_curve"],
+            start=config.start,
+            end=config.end,
+            default_initial_capital=initial_capital,
+        )
+        summary = {**prior_summary, **metrics}
+        result.update(
+            {
+                "trades": trades,
+                "summary": summary,
+                "report": dict(summary),
+                "equity_curve": equity_curve,
+                "drawdown_curve": drawdown_result["drawdown_curve"],
+            }
+        )
+        return result
+
     def report_metadata(self, task: BacktestTask, config: BacktestTaskConfig) -> dict[str, Any]:
         metadata = {
             "engine_type": config.engine_type.value,
@@ -585,9 +675,38 @@ class BacktestService:
             "size": config.size,
             "pricetick": config.pricetick,
             "execution_timing": config.execution_timing,
-            "auxiliary_intervals": sorted(config.auxiliary_bar_data_paths),
+            "auxiliary_intervals": sorted(
+                config.request_payload.get("auxiliary_periods")
+                or config.auxiliary_bar_data_paths
+            ),
             "task_no": task.task_no,
         }
+        if config.request_payload.get("formal_consumer"):
+            metadata.update(
+                {
+                    "dataset_kind": config.request_payload.get("dataset_kind"),
+                    "contract_or_series": config.request_payload.get(
+                        "contract_or_series"
+                    ),
+                    "contract_semantics": config.request_payload.get(
+                        "contract_semantics"
+                    ),
+                    "input_identity": deepcopy(
+                        (task.binding_snapshot or {}).get("input_identity")
+                    ),
+                    "research_only": task.research_only,
+                    "observation_only": bool(
+                        config.request_payload.get("observation_only")
+                    ),
+                    "not_trading_instruction": bool(
+                        config.request_payload.get("not_trading_instruction")
+                    ),
+                    "auto_order": False,
+                    "risk_control_scope": deepcopy(
+                        config.request_payload.get("risk_control_scope") or {}
+                    ),
+                }
+            )
         strategy_review_context = config.request_payload.get("strategy_review_context")
         if isinstance(strategy_review_context, dict):
             metadata["strategy_review_context"] = strategy_review_context
@@ -717,7 +836,7 @@ def _order_model(report_id: int, order: dict[str, Any], *, config: BacktestTaskC
         traded=_safe_float(order.get("traded")),
         lineage_source=_optional_str(order.get("lineage_source")),
         mapping_status=_optional_str(order.get("mapping_status")),
-        raw_payload=dict(order),
+        raw_payload=_json_safe_value(dict(order)),
     )
 
 
@@ -738,6 +857,14 @@ def _strategy_code_from_path(class_path: str) -> str:
     return class_path.rsplit(".", 1)[-1].rsplit(":", 1)[-1]
 
 
+def _strategy_input_version(request: FormalBacktestTaskRequest) -> str:
+    strategy_code = request.strategy_code or _strategy_code_from_path(
+        request.strategy_class_path
+    )
+    strategy_version = request.strategy_version or "unversioned"
+    return f"{strategy_code}@{strategy_version}"
+
+
 def _symbol_root(symbol: str) -> str:
     normalized = symbol.split(".", 1)[0]
     return "".join(char for char in normalized if not char.isdigit()) or normalized
@@ -747,6 +874,18 @@ def _float_metric(summary: dict[str, Any], *keys: str, default: float = 0.0) -> 
     for key in keys:
         if key in summary and summary[key] is not None:
             return _safe_float(summary[key], default)
+    return default
+
+
+def _decimal_metric(
+    summary: dict[str, Any],
+    *keys: str,
+    default: Decimal = Decimal("0"),
+) -> Decimal:
+    for key in keys:
+        if key in summary and summary[key] is not None:
+            value = summary[key]
+            return value if isinstance(value, Decimal) else Decimal(str(value))
     return default
 
 
@@ -875,7 +1014,7 @@ def _canonical_hash_value(value: Any) -> Any:
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, Decimal):
-        return float(value)
+        return str(value)
     return value
 
 
@@ -883,7 +1022,7 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, datetime | date):
         return value.isoformat()
     if isinstance(value, Decimal):
-        return float(value)
+        return str(value)
     return str(value)
 
 
@@ -897,19 +1036,34 @@ def _trade_hash_sort_key(trade: dict[str, Any]) -> tuple[datetime, int, str]:
 
 
 def _trade_raw_payload(trade: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return _json_safe_value({
         str(key): value
         for key, value in dict(trade).items()
         if str(key) not in _CURVE_FACT_KEYS
-    }
+    })
 
 
 def _result_fact_payload(normalized_result: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return _json_safe_value({
         str(key): value
         for key, value in normalized_result.items()
         if str(key) not in _CURVE_FACT_KEYS
-    }
+    })
+
+
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_value(item) for item in value]
+    if isinstance(value, Decimal):
+        # SQLAlchemy JSON is an explicit external serialization boundary.
+        # Keep Decimal throughout accounting and metrics, then preserve the
+        # established numeric JSON contract here.
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -943,7 +1097,7 @@ def _optional_str(value: Any) -> str | None:
 
 
 def _optional_dict(value: Any) -> dict[str, Any] | None:
-    return value if isinstance(value, dict) else None
+    return _json_safe_value(value) if isinstance(value, dict) else None
 
 
 def _gross_pnl(direction: str, open_price: float, close_price: float, volume: int, size: int) -> float:
@@ -968,3 +1122,11 @@ def _parse_optional_time(value: Any) -> datetime | None:
         return datetime.combine(value, time.min, tzinfo=UTC)
     parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _is_canonical_formal_task(task: BacktestTask) -> bool:
+    snapshot = task.binding_snapshot
+    return bool(
+        isinstance(snapshot, dict)
+        and snapshot.get("schema_version") == "backtest_canonical_inputs_v1"
+    )

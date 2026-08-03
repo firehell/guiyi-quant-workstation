@@ -1,6 +1,6 @@
 # Signal Events
 
-更新时间：2026-07-26
+更新时间：2026-07-30
 
 ## 1. 定位
 
@@ -28,11 +28,26 @@ signal_events 已完成 Stage 8.5-3 schema 最小实现，并在 Stage 8.5-9 新
 
 - Stage 9-B2 是 historical replay single-send smoke，不是 live-confirmed smoke。
 - notification worker / scheduler 具备代码和测试基础，但长期自动发送 Gate 未通过。
-- live-confirmed event、真实企业微信 autosend、5 个交易日长稳和故障恢复均仍是外部 Gate。
+- live-confirmed event、真实企业微信 autosend，以及新版单交易日 Runtime 验收和同一
+  exact release 独立恢复证据均仍是外部 Gate。
+- 旧 S6-10 schema-v4～v7 控制面已 owner-paused / frozen historical；不得生成新 C2、
+  Approval D、daily child、mapping、部署、事件或通知授权。
+- `LONG_RUNNING_READY=false` 仅为 deprecated/not_applicable 兼容字段；单日 Gate 永不设
+  true。`JM_RUNTIME_READY` 只可在单日自然运行、独立恢复 evidence、独立 Review 通过并由
+  用户最终批准后发布。
 - 本文不授权自动交易、订单草稿或无人值守发送。
-- `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 已完成代码与 canonical Gate 收口：JM2609 actual `2026-07-08..2026-07-10` 的 `5m/15m` 已从 passed 1m 派生、登记为 primary/passed，并绑定到 `intraday_research_v1` / `live_observation_v1`；当前状态是 `COMPLETED / SIGNAL_REVIEW_LINEAGE_READY`。
-- C2-05 direct PostgreSQL read-only Golden Query rerun 已验证 formal Signal source 与 Market、Backtest、Review 使用一致的 Profile/file/version/binding lineage；`CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过，但这不构成 live-confirmed 或企业微信 autosend Gate。
+- `SIGNAL-REVIEW-PROFILE-LINEAGE-003` 与 C2-05 是 historical compatibility evidence：其中的
+  Profile/file/version/binding 与固定 file/path 结论不构成当前 canonical Signal 输入或 Stage 9
+  准入。它们不得被重写，也不得被解释为 `SIGNAL_REVIEW_LINEAGE_READY` 的现行授权。
 - S6-04 live evaluator preview 已使用 `historical_live_context_v1`，将 current actual-contract passed historical warm-up 与 latest live trading day confirmed/passed bars 只读拼接；该 Gate 为 `JM_LIVE_CONTEXT_READY`，不写 `strategy_signals`、`signal_events` 或 `signal_notifications`。
+- GY-CORE-04 的文件型 `ObservationPlanRegistry` 与 `HtDyStrategyAdapter` 仍是候选生成前的
+  只读边界：唯一 active plan 固定为 JM dominant-rank1 15m HTDY realtime first-seen，
+  `notification.enabled=false`；Adapter 不导入 Session/writer，不创建或修改本节任何表。
+- Task 06 clean-start candidate 新增 immutable `SignalDecision` 作为 confirmed 15m 判断账本，但明确
+  不创建 `SignalEvent` 或 `SignalNotification`。`signal_events.decision_id` 只是 additive/reserved
+  schema，不构成 writer 授权；其唯一 evaluator 固定为 JM confirmed 15m close 对因果 EMA21 的
+  observation-only 判断，且 `auto_order=false`。EOD、repair、replay、recompute 均无事件服务，
+  因此不得补发。
 
 ## 2. 数据边界
 
@@ -44,11 +59,14 @@ Stage 8 只记录观察 / 提醒事件：
 - Stage 9-B1 受控发送框架已具备真实发送能力，但默认 dry-run 不读 webhook、不写 DB、不发送；真实发送需 CLI 显式执行。
 - 不读取或打印 `QYWX_WEBHOOK_URL`（除 Stage 9-B 真实发送 CLI 显式授权时）。
 - 不把 live evaluator preview 自动持久化为正式信号事件。
+- 不把 `StrategyAdapter` 返回的 `SignalCandidate` 自动持久化；它只保留现有 HTDY evaluator
+  的 observation key 与原生 candidate，后续 writer 仍须经过独立 Gate。
 - 不把原始 XMA PoC 或任意 XMA 派生信号写入 `signal_events`；只有
   `htdy_original_xma_15m_first_seen_v1` 精确 realtime observation policy 在后续独立
   schema-v3 Gate 中可复用既有 `StrategySignal -> SignalEvent`，且只允许 `signal_created`。
 
-新 formal historical Signal 只读取服务端 Profile binding 解析的严格资产：
+以下是后续 canonical formal Signal 的候选合同；在 Task 05 受控切换前不是当前 Stage 9 的 active
+输入。届时只读取由 `MarketDataService` 验证的严格 `canonical_consumer_input_v1` assets：
 
 ```text
 provider/source in ("rqdata", "local_parquet")
@@ -58,7 +76,13 @@ actual_contract != "*.MAIN"
 target bar window covered
 ```
 
-旧路径/警告研究能力只保留在显式 `research_only` 边界，可展示但不创建 formal `SignalEvent`、Stage 9 evidence 或通知。
+Profile/Binding/legacy lineage 只保留在显式 `research_only` compatibility 边界，可展示但不创建
+formal `SignalEvent`、Stage 9 evidence 或通知，也不作为 active selector。
+
+上述 canonical formal Signal/Review contract 不把现有 Stage 9 运行 Gate 改写为已切换。Stage 9
+当前仍是 legacy Profile/file compatibility 的历史 Gate，对新的 canonical event 保持 blocked，直到
+后续任务完成受控切换或明确退役；其中固定 file/path 叙述只属于 historical legacy snapshot，不能
+作为 active `MarketDataService` input。
 
 ## 3. 表结构
 
@@ -86,7 +110,8 @@ signal_events
 - `provider` / `source`：数据提供方和数据来源层。
 - `data_role`、`quality_status`：保留数据边界和质量信息。
 - `payload`：事件快照，已过滤 `webhook`、`token`、`password`、`secret`、`cookie` 等敏感键。
-- `profile_id` / `market_data_file_id`：migration `0023` 已有 nullable 列，新 formal task/signal/event 写入，旧记录保持 `NULL`。
+- `profile_id` / `market_data_file_id`：legacy compatibility nullable fields；formal task/signal/event 的
+  active identity 是 immutable `canonical_consumer_input_v1`，旧记录保持历史值或 `NULL`，不回填。
 - `payload.formal_lineage`：不可变 `signal_review_lineage_v1` snapshot，包含 resolver/version、passed-only policy、primary/context assets、continuous/actual contract、mapping date、bar window 和 historical/live confirmation proof。live path 另含 `context_contract_version=historical_live_context_v1`、`historical_context` 与 `live_trigger`；两侧 identity/hash 分别验证，任一缺失或漂移均不能形成可持久化 entry signal。
 
 去重口径：
@@ -165,14 +190,20 @@ Stage 8.5-9 新增 `services/quant-api/app/signal/stage9_gate.py`，以只读 he
 - `data_role` 必须是 `primary`。
 - `quality_status.status` 必须是 `passed`。
 - payload basis 必须表达 `observation_only` 和 `not_trading_instruction`，并过滤 webhook / token / password / cookie / secret。
-- `profile_id` / `market_data_file_id` 必须与 `payload.formal_lineage.primary` 一致，snapshot 必须标记 `ProfileLineageResolver / signal_profile_v1 / passed_only`。
+- active formal identity 必须与 immutable `canonical_consumer_input_v1` 一致，并由 `MarketDataService`
+  重构验证 DatasetKey、manifest digest、window、mapping 与 quality/Gap；旧 `profile_id` /
+  `market_data_file_id` 与 `ProfileLineageResolver` 标记仅用于 historical compatibility，不得作 active selector。
 - live-confirmed event 必须回链 `live_bar_id + revision + confirmed_at`，并且 `trigger_price` 与该 actual-contract confirmed row close 相等；historical event 必须从 snapshot 固定的 canonical file 读取该 bar。
 
 旧 JM V1-B path-mode scan 保留为 `research_only`；缺 actual mapping 或 formal lineage 的旧事件会被 Stage 9 Gate 标记 `formal_lineage_missing` 并阻断，不能进入企业微信提醒。
 
 ## 6.1 Review exact lineage
 
-Review 支持 `backtest_report / backtest_trade / strategy_signal / signal_event` 来源。新 ReviewNote 在创建时深拷贝 source snapshot 到 `extra.formal_lineage`，后续编辑不重新解析当前 binding。`GET /api/reviews/{review_id}/bars` 只按冻结 file ID 和 bar window 读取，校验 identity、provider、role、quality、data version、checksum、coverage 和物理文件，不返回物理路径。旧 source 缺 snapshot 时返回 `lineage_unavailable`，不使用 `.MAIN`、provider 或 latest binding 回退。
+Review 支持 `backtest_report / backtest_trade / strategy_signal / signal_event` 来源。新 ReviewNote 在创建时深拷贝
+`canonical_consumer_input_v1` 到 lineage，后续编辑不重新解析当前 binding。`GET /api/reviews/{review_id}/bars`
+只按冻结 DatasetKey/manifest digest/window 经 `MarketDataService` 重构并验证 exact bars，不返回物理路径。
+旧 source 缺 canonical snapshot 时返回 `lineage_unavailable`，不使用 `.MAIN`、provider、legacy file ID 或
+latest binding 回退。
 
 ## 7. Stage 9-A 企业微信 preview adapter
 
@@ -391,7 +422,8 @@ Step 3 code/test checkpoint 已新增 `HtDyFirstSeenEventService`：
 - Review 保留完整 frozen lineage v2/observed OHLCV/source 1m collection hash，不按
   当前 HTDY 重算事件。
 
-Step 4 code/test checkpoint 新增 schema-v3 纯离线 Gate：
+Step 4 code/test checkpoint 新增 S6-08 schema-v3 纯离线 Gate。以下保留其既有事实语义与
+lineage，不属于 2026-07-30 冻结的 S6-10 schema-v4～v7 控制面：
 
 - bounded parent 最多允许五个明确交易日；
 - exact child 绑定一个交易日、实际主力 mapping hash 和执行前表计数；
@@ -417,7 +449,7 @@ production parent collector 对全部 schema-v3 bindings 验证为零漂移。Si
 `RUNTIME_CHANGESET_DEPLOYED / S6_08_NATURAL_EVENT_GATE_PENDING`，不构成 Runtime、通知、交易
 或长稳 Ready。
 
-### Step 5 自然事件执行边界
+### Step 5 自然事件执行边界（旧 S6-10 部分 frozen historical）
 
 Step 5 仍使用 `jm + 当日 rank=1 实际主力 + 15m`，不是 1m 或其他周期。1m 只作为
 confirmed/passed 实时源聚合成 session-aware 15m snapshot。schema-v4 历史观察允许
@@ -463,3 +495,10 @@ RQData 精确读取下一交易日 rank=1。DB
 Web 或 launchd 任一事实变化都会使旧 Approval A 失效。执行期间
 `GUIYI_WECHAT_AUTOSEND_ENABLED=false`，自然事件之后只允许一次同 observation key 幂等探测，
 随后必须关闭 SignalEvent 并清空 packet/hash。
+
+2026-07-30 起，上述 schema-v7 “active S6-10”措辞仅保留历史语义，不再授权执行。后续
+`GY-S6-10-R2` 仍必须保持同一 JM/actual rank=1/15m/confirmed-close、first-seen、
+no-retraction、`signal_changed` 禁止和 observation-only 边界，但验收窗口改为一个完整
+DCE 交易日：夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等和零非法写入。任一失败
+整日重启，单日 Ledger append-only；Runtime/RQData/网络/Mac 恢复由同一 exact release
+独立 evidence 验证。

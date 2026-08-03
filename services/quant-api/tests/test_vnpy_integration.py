@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import importlib
 import importlib.util
@@ -94,6 +94,49 @@ class FixtureRoundTripStrategy(CtaTemplate):
             self.sell(bar.close_price - 20, abs(self.pos))
 
 
+class ContractRollPendingOrderStrategy(CtaTemplate):
+    parameters: list[str] = []
+    variables: list[str] = ["bar_count"]
+
+    def __init__(self, cta_engine, strategy_name: str, vt_symbol: str, setting: dict) -> None:
+        super().__init__(cta_engine, strategy_name, vt_symbol, setting)
+        self.bar_count = 0
+        self.execution_events: list[dict] = []
+
+    def on_init(self) -> None:
+        return None
+
+    def on_start(self) -> None:
+        return None
+
+    def on_stop(self) -> None:
+        return None
+
+    def on_bar(self, bar) -> None:
+        self.bar_count += 1
+        self.execution_events.append(
+            {
+                "event": "bar",
+                "bar_count": self.bar_count,
+                "symbol": bar.symbol,
+                "active_orders": len(self.cta_engine.active_limit_orders),
+            }
+        )
+        if self.bar_count == 1:
+            self.buy(Decimal("1"), 2)
+
+    def on_order(self, order) -> None:
+        self.execution_events.append(
+            {
+                "event": "order",
+                "symbol": order.symbol,
+                "status": order.status.value,
+                "traded": order.traded,
+                "volume": order.volume,
+            }
+        )
+
+
 def _ensure_fixture() -> Path:
     return fixture_generator.write_fixture(FIXTURE_PATH)
 
@@ -115,6 +158,113 @@ def _fixture_request(*, strategy_class_path: str, prepared_only: bool = False) -
         bar_data_path=_ensure_fixture(),
         prepared_only=prepared_only,
     )
+
+
+def test_actual_contract_transition_cancels_old_order_before_new_bar_crossing() -> None:
+    bars = [
+        {
+            "symbol": "jm",
+            "contract": "JM2405",
+            "actual_contract": "JM2405",
+            "exchange": "DCE",
+            "datetime": datetime(2024, 4, 29, 9, 15),
+            "trading_day": date(2024, 4, 29),
+            "interval": "15m",
+            "open": Decimal("100"),
+            "high": Decimal("101"),
+            "low": Decimal("99"),
+            "close": Decimal("100"),
+            "volume": Decimal("10"),
+            "turnover": Decimal("1000"),
+            "open_interest": Decimal("100"),
+            "data_role": "primary",
+            "quality_status": "passed",
+        },
+        {
+            "symbol": "jm",
+            "contract": "JM2409",
+            "actual_contract": "JM2409",
+            "exchange": "DCE",
+            "datetime": datetime(2024, 5, 6, 9, 30),
+            "trading_day": date(2024, 5, 6),
+            "interval": "15m",
+            "open": Decimal("110"),
+            "high": Decimal("111"),
+            "low": Decimal("109"),
+            "close": Decimal("110"),
+            "volume": Decimal("10"),
+            "turnover": Decimal("1100"),
+            "open_interest": Decimal("100"),
+            "data_role": "primary",
+            "quality_status": "passed",
+        },
+    ]
+    request = GuiyiBacktestRequest(
+        symbol="jm",
+        exchange="DCE",
+        interval="15m",
+        start=datetime(2024, 4, 29, 9, 0),
+        end=datetime(2024, 5, 6, 10, 0),
+        rate=0,
+        slippage=0,
+        size=60,
+        pricetick=Decimal("0.5"),
+        capital=100000,
+        strategy_class_path=(
+            "tests.test_vnpy_integration:ContractRollPendingOrderStrategy"
+        ),
+        bars=bars,
+    )
+
+    result = VnpyBacktestRunner().run(request)
+
+    events = result["strategy_execution_events"]
+    assert events[0] == {
+        "event": "bar",
+        "bar_count": 1,
+        "symbol": "JM2405",
+        "active_orders": 0,
+    }
+    assert events[-1] == {
+        "event": "bar",
+        "bar_count": 2,
+        "symbol": "JM2409",
+        "active_orders": 0,
+    }
+    assert result["contract_roll_cancellations"] == [
+        {
+            "order_no": "BACKTESTING.1",
+            "old_contract": "JM2405",
+            "new_contract": "JM2409",
+            "reason": "contract_roll_boundary",
+            "volume": 2.0,
+            "traded": 0.0,
+            "cancelled_volume": 2.0,
+        }
+    ]
+
+
+def test_vnpy_boundary_converts_aware_window_to_naive_utc() -> None:
+    china = timezone(timedelta(hours=8))
+    request = GuiyiBacktestRequest(
+        symbol="JM2405",
+        exchange="DCE",
+        interval="15m",
+        start=datetime(2024, 1, 2, 8, 0, tzinfo=china),
+        end=datetime(2024, 1, 2, 16, 0, tzinfo=china),
+        rate=0,
+        slippage=0,
+        size=60,
+        pricetick=0.5,
+        capital=100000,
+        strategy_class_path="tests.test_vnpy_integration:FixtureRoundTripStrategy",
+        bars=[],
+    )
+
+    prepared = VnpyBacktestRunner().prepare(request)
+
+    assert prepared.settings.start == datetime(2024, 1, 2, 0, 0)
+    assert prepared.settings.end == datetime(2024, 1, 2, 8, 0)
 
 
 def test_require_vnpy_raises_clear_error_when_import_fails(monkeypatch: pytest.MonkeyPatch) -> None:

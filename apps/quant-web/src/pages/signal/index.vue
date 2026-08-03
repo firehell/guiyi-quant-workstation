@@ -8,6 +8,7 @@ import {
   NCollapse,
   NCollapseItem,
   NDataTable,
+  NDatePicker,
   NDescriptions,
   NDescriptionsItem,
   NDrawer,
@@ -15,10 +16,10 @@ import {
   NDropdown,
   NForm,
   NFormItem,
+  NInput,
   NInputNumber,
   NProgress,
   NSelect,
-  NSwitch,
   NTag,
   NTabs,
   NTabPane,
@@ -32,13 +33,10 @@ import {
   getStage9WechatPreview,
   getTaskStrategySignals,
   listSignalEvents,
-  scanJmV1bSignals,
   scanStrategySignals,
   updateStrategySignalStatus,
 } from '@/api/signal'
-import { getWatchlistItems, getWatchlists } from '@/api/strategy'
 import type { SignalLifecycleStatus, SignalScanTask, SignalEventRecord, StrategySignalRecord } from '@/types/signal'
-import type { WatchlistInfo, WatchlistItemInfo } from '@/types/strategy'
 import SignalEventsPanel from '@/components/signal/SignalEventsPanel.vue'
 import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import DirectionTag from '@/components/common/DirectionTag.vue'
@@ -57,19 +55,21 @@ import {
   sourceModeBadge,
 } from '@/utils/signalSourceMode'
 import { buildReviewResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
+import {
+  buildFormalSignalScanRequest,
+  normalizeFormalSignalDateRange,
+  presentCanonicalInputIdentity,
+  validateFormalSignalScanInput,
+} from '@/utils/dataCoreV2Consumer'
 import { WsClient } from '@/websocket/WsClient'
 import { signalWsUrl } from '@/websocket'
 
 const message = useMessage()
 const router = useRouter()
 const route = useRoute()
-const JM_V1B_WATCHLIST = 'jm_v1b'
-const loadingMeta = ref(false)
 const loadingSignals = ref(false)
 const scanning = ref(false)
 const error = ref<string | null>(null)
-const watchlists = ref<WatchlistInfo[]>([])
-const watchlistItems = ref<WatchlistItemInfo[]>([])
 const signals = ref<StrategySignalRecord[]>([])
 const signalTotal = ref(0)
 const signalPage = ref(1)
@@ -84,15 +84,15 @@ const signalTableDensity = ref<'small' | 'medium'>(
   window.localStorage.getItem('guiyi.signal.table-density') === 'medium' ? 'medium' : 'small',
 )
 
-const selectedWatchlist = ref('black')
-const selectedSymbols = ref<string[]>([])
-const selectedPeriods = ref(['5m'])
+const selectedPeriods = ref(['15m'])
+const formalContract = ref('')
+const formalStart = ref<number | null>(Date.now() - 90 * 24 * 60 * 60 * 1000)
+const formalEnd = ref<number | null>(Date.now())
 const selectedBucket = ref('all')
 const accountEquity = ref(100000)
 const riskPerTradePct = ref(1)
 const maxMarginUsagePct = ref(35)
 const minScoreBucket = ref(51)
-const allowWarningQuality = ref(false)
 const selectedMainTab = ref(route.query.tab === 'events' || route.query.tab === 'notification' ? String(route.query.tab) : 'latest')
 const signalPagination = computed(() => ({
   page: signalPage.value,
@@ -111,14 +111,9 @@ let pollInFlight = false
 let activePollTaskNo: string | null = null
 let signalListController: AbortController | null = null
 
-const watchlistOptions = computed(() => {
-  const options = watchlists.value.map((item) => ({ label: `${item.name} (${item.item_count})`, value: item.code }))
-  return options.some((item) => item.value === JM_V1B_WATCHLIST)
-    ? options
-    : [{ label: 'JM V1-B 焦煤样板', value: JM_V1B_WATCHLIST }, ...options]
-})
-const symbolOptions = computed(() => watchlistItems.value.map((item) => ({ label: `${item.name || item.symbol} (${item.symbol})`, value: item.symbol })))
-const periodOptions = PERIODS.map((item) => ({ label: item.label, value: item.value }))
+const periodOptions = PERIODS
+  .filter((item) => item.value !== '1w')
+  .map((item) => ({ label: item.label, value: item.value }))
 const bucketOptions = [
   { label: '全部', value: 'all' },
   { label: '51 观察', value: '51' },
@@ -158,6 +153,22 @@ const selectedQualification = computed(() =>
 const selectedHtDyEvidence = computed(() =>
   selectedSignal.value ? buildHtDyFirstSeenPresentation(selectedSignal.value) : null,
 )
+const selectedInputIdentity = computed(() => {
+  const value = selectedSignal.value?.input_identity ?? selectedSignal.value?.features?.input_identity
+  return presentCanonicalInputIdentity(value, { expectedDatasetKind: 'actual_dominant' })
+})
+const scanDateRangeValue = computed<[number, number] | null>({
+  get: (): [number, number] | null => (
+    formalStart.value === null || formalEnd.value === null
+      ? null
+      : [formalStart.value, formalEnd.value]
+  ),
+  set: (value: [number, number] | null) => {
+    const normalized = normalizeFormalSignalDateRange(value)
+    formalStart.value = normalized.startMs
+    formalEnd.value = normalized.endMs
+  },
+})
 
 const signalColumns: DataTableColumns<StrategySignalRecord> = [
   {
@@ -242,7 +253,6 @@ function handleSignalAction(row: StrategySignalRecord, key: string) {
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', handlePollingVisibility)
-  await loadMeta()
   await refreshSignals()
   connectSignals()
 })
@@ -270,66 +280,44 @@ onUnmounted(() => {
   signalListController?.abort()
 })
 
-async function loadMeta() {
-  loadingMeta.value = true
+/** 启动 canonical actual-dominant 正式历史扫描，创建任务后进入 watchTask。 */
+async function startScan() {
   error.value = null
-  try {
-    watchlists.value = await getWatchlists()
-    await loadWatchlistItems()
-  } catch (err) {
-    error.value = toSafeApiError(err, '加载信号元数据失败')
-  } finally {
-    loadingMeta.value = false
-  }
-}
-
-async function loadWatchlistItems() {
-  if (selectedWatchlist.value === JM_V1B_WATCHLIST) {
-    watchlistItems.value = [{ symbol: 'jm', name: '焦煤', exchange_code: 'DCE', default_contract: 'jm.MAIN', available_periods: ['15m', '5m'] }]
-    selectedSymbols.value = ['jm']
-    selectedPeriods.value = ['15m', '5m']
+  const startMs = formalStart.value
+  const endMs = formalEnd.value
+  const requestError = validateFormalSignalScanInput({
+    contractOrSeries: formalContract.value,
+    periods: selectedPeriods.value,
+    startMs,
+    endMs,
+    riskPerTradePercent: riskPerTradePct.value,
+    maxMarginUsagePercent: maxMarginUsagePct.value,
+  })
+  if (requestError) {
+    error.value = requestError
     return
   }
-  watchlistItems.value = await getWatchlistItems(selectedWatchlist.value)
-  selectedSymbols.value = watchlistItems.value.filter((item) => item.available_periods.some((period) => selectedPeriods.value.includes(period))).map((item) => item.symbol)
-}
-
-/** 启动通用品种池信号扫描，创建任务后进入 watchTask。 */
-async function startScan() {
+  if (startMs === null || endMs === null) return
   scanning.value = true
-  error.value = null
   try {
-    const task = await scanStrategySignals({
-      profile_id: 'intraday_research_v1',
-      watchlist_code: selectedWatchlist.value,
+    const task = await scanStrategySignals(buildFormalSignalScanRequest({
+      dataset_kind: 'actual_dominant',
+      instrument_symbol: 'jm',
+      contract_or_series: formalContract.value,
+      watchlist_code: 'black',
       periods: selectedPeriods.value,
-      symbols: selectedSymbols.value.length ? selectedSymbols.value : undefined,
+      start: new Date(startMs).toISOString(),
+      end: new Date(endMs).toISOString(),
+      mode: 'scan',
       account_equity: accountEquity.value,
       risk_per_trade_pct: riskPerTradePct.value / 100,
       max_margin_usage_pct: maxMarginUsagePct.value / 100,
       min_score_bucket: minScoreBucket.value,
-    })
+    }))
     currentTask.value = task
     watchTask(task.task_no)
   } catch (err) {
     error.value = toSafeApiError(err, '启动信号扫描失败')
-    scanning.value = false
-  }
-}
-
-async function startJmV1bScan() {
-  scanning.value = true
-  error.value = null
-  selectedWatchlist.value = JM_V1B_WATCHLIST
-  await loadWatchlistItems()
-  try {
-    const task = await scanJmV1bSignals(true)
-    currentTask.value = task
-    await refreshTaskSignals(task.task_no)
-    await refreshSignals()
-  } catch (err) {
-    error.value = toSafeApiError(err, '启动历史研究扫描失败')
-  } finally {
     scanning.value = false
   }
 }
@@ -406,7 +394,6 @@ async function refreshSignals() {
   loadingSignals.value = true
   try {
     const page = await getLatestStrategySignals({
-      watchlist_code: selectedWatchlist.value,
       score_bucket: selectedBucket.value === 'all' ? undefined : Number(selectedBucket.value),
       limit: signalPageSize,
       offset: (signalPage.value - 1) * signalPageSize,
@@ -621,7 +608,7 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
           <div class="panel__header">
             <div>
               <h2>最新信号</h2>
-              <p>苏冰 EMA21 多品种多周期研究提醒；source_mode 标签区分历史扫描 / replay / live</p>
+              <p>苏冰 EMA21 canonical 历史扫描；只接受实际主力 DatasetKey，source_mode 标签区分历史 / preview / live</p>
             </div>
             <div class="actions">
               <span class="density-control" aria-label="信号表格密度">
@@ -629,26 +616,31 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
                 <NButton size="tiny" :type="signalTableDensity === 'medium' ? 'primary' : 'default'" @click="signalTableDensity = 'medium'">舒适</NButton>
               </span>
               <NButton :loading="loadingSignals" @click="refreshSignals">刷新</NButton>
-              <NButton :loading="scanning" @click="startJmV1bScan">历史研究扫描（JM）</NButton>
-              <NButton type="primary" :loading="scanning" @click="startScan">开始历史扫描</NButton>
+              <NButton type="primary" :loading="scanning" @click="startScan">开始 canonical 扫描</NButton>
             </div>
           </div>
 
           <NAlert type="warning" :bordered="false" class="observe-alert">
-            信号仅供观察，不构成交易指令；无真实发送按钮，系统不自动下单。
+            信号仅供观察，不构成交易指令；无真实发送按钮，系统不自动下单。正式 scan 仅供研究，preview 模式零写入。
           </NAlert>
 
           <NCollapse v-model:expanded-names="scanPanelExpanded" arrow-placement="right" class="scan-config-collapse">
-            <NCollapseItem name="config" title="扫描参数（次级）">
+            <NCollapseItem name="config" title="Canonical 扫描参数（次级）">
               <NForm class="toolbar" label-placement="top">
-                <NFormItem label="品种池">
-                  <NSelect v-model:value="selectedWatchlist" :options="watchlistOptions" :loading="loadingMeta" @update:value="loadWatchlistItems" />
+                <NFormItem label="数据集类型">
+                  <NInput value="actual_dominant" disabled />
                 </NFormItem>
                 <NFormItem label="品种">
-                  <NSelect v-model:value="selectedSymbols" multiple filterable :options="symbolOptions" :max-tag-count="2" />
+                  <NInput value="jm" disabled />
+                </NFormItem>
+                <NFormItem label="实际主力合约">
+                  <NInput v-model:value="formalContract" placeholder="如 JM2609；不可使用 JM.MAIN" />
                 </NFormItem>
                 <NFormItem label="周期">
                   <NSelect v-model:value="selectedPeriods" multiple :options="periodOptions" />
+                </NFormItem>
+                <NFormItem label="请求时间窗口">
+                  <NDatePicker v-model:value="scanDateRangeValue" type="datetimerange" clearable />
                 </NFormItem>
                 <NFormItem label="最小分层">
                   <NSelect v-model:value="minScoreBucket" :options="bucketOptions.filter((item) => item.value !== 'all')" />
@@ -657,13 +649,10 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
                   <NInputNumber v-model:value="accountEquity" :min="10000" :step="10000" />
                 </NFormItem>
                 <NFormItem label="单笔风险%">
-                  <NInputNumber v-model:value="riskPerTradePct" :min="0.1" :max="10" :step="0.1" />
+                  <NInputNumber v-model:value="riskPerTradePct" :min="0.1" :max="1" :step="0.1" />
                 </NFormItem>
                 <NFormItem label="保证金上限%">
-                  <NInputNumber v-model:value="maxMarginUsagePct" :min="1" :max="100" :step="1" />
-                </NFormItem>
-                <NFormItem label="允许警告数据">
-                  <NSwitch v-model:value="allowWarningQuality" />
+                  <NInputNumber v-model:value="maxMarginUsagePct" :min="1" :max="35" :step="1" />
                 </NFormItem>
               </NForm>
             </NCollapseItem>
@@ -761,6 +750,16 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
             <strong>HTDY first-seen 安全边界</strong> · 仅供观察，不是交易指令；重绘、反向、消失或
             revision 不撤回首次事件。
           </NAlert>
+          <NAlert
+            v-if="selectedInputIdentity.status === 'unavailable'"
+            type="warning"
+            :bordered="false"
+          >
+            <strong>Canonical input unavailable</strong> · {{ selectedInputIdentity.warning }}；该信号不能按 canonical history 解释。
+          </NAlert>
+          <NAlert v-else type="info" :bordered="false">
+            <strong>Canonical input structurally valid</strong> · {{ selectedInputIdentity.warning }}。
+          </NAlert>
           <NDescriptions :column="2" bordered size="small">
             <NDescriptionsItem label="品种">{{ selectedSignal.symbol }}</NDescriptionsItem>
             <NDescriptionsItem label="合约">{{ selectedSignal.contract }}</NDescriptionsItem>
@@ -772,7 +771,11 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
             <NDescriptionsItem label="exact source_mode"><code>{{ selectedIdentity?.observation }}</code></NDescriptionsItem>
             <NDescriptionsItem label="策略身份"><code>{{ selectedIdentity?.strategy }}</code></NDescriptionsItem>
             <NDescriptionsItem label="策略阶段">{{ selectedSignal.strategy_status }}</NDescriptionsItem>
-            <NDescriptionsItem label="Profile"><code>{{ selectedSignal.profile_id || '未绑定' }}</code></NDescriptionsItem>
+            <NDescriptionsItem label="Canonical request" :span="2"><code>{{ selectedInputIdentity.request }}</code></NDescriptionsItem>
+            <NDescriptionsItem label="Source DatasetKey" :span="2"><code>{{ selectedInputIdentity.sourceDatasets }}</code></NDescriptionsItem>
+            <NDescriptionsItem label="Manifest digests" :span="2"><code>{{ selectedInputIdentity.manifestDigests }}</code></NDescriptionsItem>
+            <NDescriptionsItem label="Requested window" :span="2"><code>{{ selectedInputIdentity.requestedWindow }}</code></NDescriptionsItem>
+            <NDescriptionsItem label="Input digest" :span="2"><code>{{ selectedInputIdentity.digest }}</code></NDescriptionsItem>
             <NDescriptionsItem label="数据质量"><StatusTag :status="String(selectedSignal.quality_status?.status || 'unknown')" domain="quality" /></NDescriptionsItem>
             <NDescriptionsItem label="日线方向">{{ selectedSignal.daily_direction || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="方向"><DirectionTag :direction="selectedSignal.direction" /></NDescriptionsItem>

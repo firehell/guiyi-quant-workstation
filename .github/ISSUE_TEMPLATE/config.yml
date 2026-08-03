@@ -1,8 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Development guide
-    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/docs/DEVELOPMENT.md
-    about: Engineering entrypoints, fail-closed rules, and local workflow
   - name: AGENTS.md
     url: https://github.com/firehell/guiyi-quant-workstation/blob/main/AGENTS.md
-    about: Project boundary, stack, and hard engineering rules
+    about: Project boundary, development modes, and engineering rules

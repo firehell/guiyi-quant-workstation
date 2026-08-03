@@ -145,8 +145,14 @@ async function run() {
       'market list and chart expose historical/live and contract view controls',
       async (page) => {
         const chartDataCalls = []
+        const marketCoverageCalls = []
+        const dataProfileCalls = []
         page.on('request', (req) => {
           if (/\/market\/(bars|indicators)/.test(req.url())) chartDataCalls.push(req.url())
+          if (/\/market\/(workbench\/coverage|coverage\/canonical)/.test(req.url())) {
+            marketCoverageCalls.push(req.url())
+          }
+          if (req.url().includes('/data/profiles')) dataProfileCalls.push(req.url())
         })
         await page.goto('/market')
         await expect(page.getByText('期货主力行情').first()).toBeVisible({ timeout: 15_000 })
@@ -158,6 +164,12 @@ async function run() {
         await expect(page.getByText('主连研究').first()).toBeVisible()
         await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('严格研究').first()).toBeVisible()
+        if (process.env.EXPECT_CANONICAL_MARKET === '1') {
+          await expect.poll(() => chartDataCalls.some((url) => url.includes('/bars/canonical'))).toBeTruthy()
+          expect(marketCoverageCalls.some((url) => url.includes('/coverage/canonical'))).toBeTruthy()
+          expect(marketCoverageCalls.some((url) => url.includes('/workbench/coverage'))).toBeFalsy()
+          expect(dataProfileCalls).toEqual([])
+        }
         for (const tabName of ['盘面', '信号', '复盘', '运行']) {
           await expect(page.getByRole('tab', { name: tabName })).toBeVisible()
         }

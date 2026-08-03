@@ -110,7 +110,33 @@ def test_main_plan_only_does_not_run_backtests(tmp_path: Path) -> None:
     assert payload["windows"][0]["status"] == "plan_only"
 
 
-def test_main_run_writes_gpt_review_package_without_sensitive_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_run_is_disabled_before_profile_file_builder(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = tmp_path / "frozen.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "windows": [
+                    {
+                        "id": "oos_fixed",
+                        "start": "2026-01-01T00:00:00",
+                        "end": "2026-07-10T15:00:00",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    exit_code = oos.main(["--config", str(config_path), "--run"])
+
+    assert exit_code == 2
+    assert json.loads(capsys.readouterr().out)["error"] == (
+        "BACKTEST_LEGACY_OOS_EXECUTION_DISABLED"
+    )
+
+
+def test_main_run_no_longer_writes_legacy_review_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "frozen.json"
     config_path.write_text(
         json.dumps(
@@ -148,7 +174,6 @@ def test_main_run_writes_gpt_review_package_without_sensitive_paths(tmp_path: Pa
     fake_config.quality_status = "passed"
     fake_config.strategy_code = "jm_v1b_daily_direction_fast_entry"
 
-    fake_spec = MagicMock(config=fake_config)
     fake_session = MagicMock()
     fake_session.__enter__.return_value = fake_session
     fake_session.__exit__.return_value = False
@@ -193,14 +218,9 @@ def test_main_run_writes_gpt_review_package_without_sensitive_paths(tmp_path: Pa
         "quality_status": "passed",
     }
 
-    monkeypatch.setattr(oos, "SessionLocal", lambda: fake_session)
-    monkeypatch.setattr(oos, "build_jm_v1b_task_config", lambda session, entry_interval: fake_spec)
-    monkeypatch.setattr(oos, "VnpyBacktestRunner", lambda: MagicMock())
     monkeypatch.setattr(oos, "_run_window", lambda session, runner, config, window: window_result)
 
     exit_code = oos.main(["--config", str(config_path), "--run", "--format", "json", "--output-dir", str(output_dir)])
 
-    assert exit_code == 0
-    review = (output_dir / "oos_validation.json").read_text(encoding="utf-8")
-    assert '"persist_to_db": false' in review
-    assert "/Volumes/" not in review
+    assert exit_code == 2
+    assert not (output_dir / "oos_validation.json").exists()

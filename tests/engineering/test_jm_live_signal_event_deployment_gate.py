@@ -3012,7 +3012,12 @@ def test_real_main_source_and_linked_runtime_worktree_collect_without_fetch(
     source_runner_sha = hashlib.sha256(
         (source / "scripts/run-local-service.sh").read_bytes()
     ).hexdigest()
-    launchd = _launchd()
+    launchd = _managed_launchd_identity(tmp_path, runtime_root=runtime)
+    managed_runner = Path(launchd["runner_path"])
+    managed_runner.write_bytes(
+        (source / "scripts/run-local-service.sh").read_bytes()
+    )
+    assert Path(launchd["runner_path"]).is_relative_to(tmp_path)
     launchd.update(
         project_root=str(runtime.resolve()),
         runner_sha256=source_runner_sha,

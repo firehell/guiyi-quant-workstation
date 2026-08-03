@@ -105,4 +105,22 @@ describe('buildMarketQualityImpact', () => {
       null,
     )
   })
+
+  it('does not request a legacy Profile for canonical identity', () => {
+    assert.equal(
+      buildMarketQualityImpact({
+        qualityStatus: 'passed',
+        warningReasons: [],
+        crossFileConflicts: 0,
+        accessMode: 'research',
+        profileId: null,
+        canonicalIdentity: true,
+        strictResearchReady: true,
+        contractView: 'actual',
+        lineageReady: true,
+        dataMode: 'historical',
+      }),
+      null,
+    )
+  })
 })

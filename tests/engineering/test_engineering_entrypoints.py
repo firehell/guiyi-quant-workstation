@@ -1,4 +1,4 @@
-"""Engineering entrypoint tests — no WorkBuddy/dispatcher dependency."""
+"""Engineering entrypoint tests without retired orchestration dependencies."""
 
 from __future__ import annotations
 

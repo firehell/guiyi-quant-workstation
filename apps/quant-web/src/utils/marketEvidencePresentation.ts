@@ -7,6 +7,7 @@ export interface MarketQualificationInput {
   strictResearchReady: boolean
   qualityStatus: string | null | undefined
   profileId: string | null | undefined
+  canonicalIdentity?: boolean
 }
 
 export interface MarketQualificationPresentation {
@@ -78,7 +79,7 @@ export function buildMarketQualificationPresentation(
       summary: '数据质量未通过，不能用于当前研究。',
     }
   }
-  if (input.accessMode === 'research' && !input.profileId) {
+  if (input.accessMode === 'research' && !input.profileId && !input.canonicalIdentity) {
     return {
       label: '缺少 Profile',
       tone: 'warning',
@@ -89,7 +90,9 @@ export function buildMarketQualificationPresentation(
     return {
       label: '可严格研究',
       tone: 'success',
-      summary: 'Profile 与 lineage 已通过严格研究资格校验。',
+      summary: input.canonicalIdentity
+        ? 'DatasetKey、manifest 与 exact window 已通过严格研究资格校验。'
+        : 'Profile 与 lineage 已通过严格研究资格校验。',
     }
   }
   if (qualityStatus === 'warning') {
@@ -112,6 +115,8 @@ export function buildMarketQualificationPresentation(
   return {
     label: '资格待确认',
     tone: 'info',
-    summary: '等待 Profile、质量与 lineage 资格证据。',
+    summary: input.canonicalIdentity
+      ? '等待 DatasetKey、manifest、质量与 exact window 资格证据。'
+      : '等待 Profile、质量与 lineage 资格证据。',
   }
 }

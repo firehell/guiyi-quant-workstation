@@ -20,6 +20,25 @@ function loadFixture(name: string): ReviewFoundationInput & { fixture_id?: strin
   }
 }
 
+function canonicalInputIdentity(digest = 'b'.repeat(64)) {
+  return {
+    schema_version: 'canonical_consumer_input_v1',
+    request: {
+      dataset_kind: 'actual_dominant', symbol: 'jm', contract_or_series: 'JM2609', frequency: '15m',
+      start: '2026-07-01T00:00:00+00:00', end: '2026-07-31T00:00:00+00:00', strict: true,
+    },
+    source_datasets: [{
+      provider: 'rqdata', dataset_kind: 'actual_dominant', symbol: 'jm', contract_or_series: 'JM2609',
+      frequency: '1m', adjustment: 'none', schema_version: 'canonical-bar-v1',
+    }],
+    manifest_digests: ['a'.repeat(64)],
+    source_data_versions: [],
+    derived_frequency: '15m',
+    strategy_input_version: 'review:test:v1',
+    digest,
+  }
+}
+
 describe('reviewFoundation', () => {
   it('builds validated fixture without inventing ids', () => {
     const fixture = loadFixture('validated.json')
@@ -54,7 +73,7 @@ describe('reviewFoundation', () => {
     assert.equal(ctx.review_skip_status.value, 'SKIPPED_BY_FROZEN_HARD_REJECT')
     assert.equal(ctx.lineage_status.status, 'unavailable')
     assert.equal(ctx.signal_bar.status, 'unavailable')
-    assert.equal(ctx.binding_snapshot_present.status, 'unavailable')
+    assert.equal(ctx.canonical_input_identity.status, 'unavailable')
   })
 
   it('marks empty input fields unavailable without inventing values', () => {
@@ -64,6 +83,65 @@ describe('reviewFoundation', () => {
     assert.equal(ctx.oos_window_id.status, 'unavailable')
     assert.equal(ctx.candidate_status.status, 'unavailable')
     assert.equal(ctx.review_skip_status.status, 'unavailable')
+    assert.equal(ctx.lineage_status.status, 'unavailable')
+  })
+
+  it('does not dereference or mark malformed canonical input as ready', () => {
+    const ctx = buildReviewFoundationContext({
+      report: {
+        input_identity: {
+          schema_version: 'canonical_consumer_input_v1',
+          digest: 'a'.repeat(64),
+        } as never,
+      },
+    })
+    assert.equal(ctx.canonical_input_identity.status, 'unavailable')
+    assert.equal(ctx.canonical_input_digest.status, 'unavailable')
+    assert.equal(ctx.lineage_status.status, 'unavailable')
+  })
+
+  it('keeps report-payload canonical identity shape-valid but digest-unverified, even when its legal digest changes', () => {
+    for (const digest of ['b'.repeat(64), 'c'.repeat(64)]) {
+      const ctx = buildReviewFoundationContext({ report: { input_identity: canonicalInputIdentity(digest) } as never })
+      assert.equal(ctx.canonical_input_identity.status, 'warning')
+      assert.equal(ctx.canonical_input_digest.status, 'warning')
+      assert.equal(ctx.canonical_input_digest.value, digest)
+      assert.match(String(ctx.canonical_input_digest.reason), /digest unverified/i)
+      assert.equal(ctx.lineage_status.status, 'warning')
+      assert.notEqual(ctx.lineage_status.value, 'ready')
+    }
+  })
+
+  it('marks ready only when report identity fully equals the exact-bars identity', () => {
+    const ctx = buildReviewFoundationContext({
+      report: { input_identity: canonicalInputIdentity() } as never,
+      exact_bars_identity: canonicalInputIdentity(),
+    })
+    assert.equal(ctx.canonical_input_identity.status, 'available')
+    assert.equal(ctx.canonical_input_digest.status, 'available')
+    assert.equal(ctx.lineage_status.status, 'available')
+    assert.equal(ctx.lineage_status.value, 'ready')
+    assert.match(String(ctx.lineage_status.reason), /exact-bars/i)
+  })
+
+  it('does not let exact-bars digest B verify report digest C', () => {
+    const ctx = buildReviewFoundationContext({
+      report: { input_identity: canonicalInputIdentity('c'.repeat(64)) } as never,
+      exact_bars_identity: canonicalInputIdentity('b'.repeat(64)),
+    })
+    assert.equal(ctx.canonical_input_identity.status, 'warning')
+    assert.equal(ctx.canonical_input_digest.status, 'warning')
+    assert.equal(ctx.lineage_status.status, 'warning')
+    assert.notEqual(ctx.lineage_status.value, 'ready')
+    assert.match(String(ctx.lineage_status.reason), /does not match/i)
+  })
+
+  it('keeps malformed exact-bars evidence unavailable and never ready', () => {
+    const ctx = buildReviewFoundationContext({
+      exact_bars_identity: { schema_version: 'canonical_consumer_input_v1', digest: 'b'.repeat(64) } as never,
+    })
+    assert.equal(ctx.canonical_input_identity.status, 'unavailable')
+    assert.equal(ctx.canonical_input_digest.status, 'unavailable')
     assert.equal(ctx.lineage_status.status, 'unavailable')
   })
 

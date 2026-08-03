@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 import importlib
 import importlib.util
 from pathlib import Path
@@ -516,3 +517,34 @@ def test_persist_result_recomputes_report_metrics_from_trades_and_equity_curve()
         assert report.max_margin_required == pytest.approx(max(trade.margin_required or 0 for trade in trades))
         assert report.consistency_hash
         assert "equity_curve" not in task.result_payload["normalized_result"]
+
+
+def test_report_margin_peak_is_concurrent_decimal_exposure_not_largest_trade() -> None:
+    from app.backtest.report_metrics import compute_report_metrics
+
+    metrics = compute_report_metrics(
+        summary={"initial_capital": Decimal("100000")},
+        trades=[
+            {
+                "entry_datetime": "2024-01-02T09:00:00+00:00",
+                "exit_datetime": "2024-01-02T11:00:00+00:00",
+                "margin_required": Decimal("30000.01"),
+                "net_pnl": Decimal("0"),
+            },
+            {
+                "entry_datetime": "2024-01-02T10:00:00+00:00",
+                "exit_datetime": "2024-01-02T12:00:00+00:00",
+                "margin_required": Decimal("25000.02"),
+                "net_pnl": Decimal("0"),
+            },
+        ],
+        equity_curve=[],
+        drawdown_curve=[],
+        start=datetime(2024, 1, 2, tzinfo=UTC),
+        end=datetime(2024, 1, 3, tzinfo=UTC),
+        default_initial_capital=Decimal("100000"),
+    )
+
+    assert metrics["max_margin_required"] == Decimal("55000.03")
+    assert metrics["max_margin_usage_pct"] == Decimal("0.5500003")
+    assert metrics["margin_peak_method"] == "concurrent_trade_event_sweep_v1"

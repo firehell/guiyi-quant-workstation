@@ -4,6 +4,7 @@ import type {
   SignalLifecycleStatus,
   SignalRecord,
   SignalScanRequest,
+  SignalScanPreview,
   SignalScanTask,
   Stage9WechatNotification,
   Stage9WechatPreview,
@@ -34,9 +35,9 @@ export function scanStrategySignals(data: SignalScanRequest) {
   return request.post<any, SignalScanTask>('/api/signals/scan', data)
 }
 
-/** 触发 JM V1-B 专用信号扫描 */
-export function scanJmV1bSignals(runInline = true) {
-  return request.post<any, SignalScanTask>('/api/signals/v1b/jm/scan', null, { params: { run_inline: runInline } })
+/** Formal non-scan modes use the same endpoint and return a zero-write preview. */
+export function previewFormalSignalScan(data: SignalScanRequest & { mode: Exclude<import('@/types/signal').SignalScanMode, 'scan'> }) {
+  return request.post<any, SignalScanPreview>('/api/signals/scan', data)
 }
 
 /** 查询信号扫描任务状态 */

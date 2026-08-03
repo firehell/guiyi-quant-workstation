@@ -14,6 +14,11 @@ import type {
   MarketWorkbenchCoverage,
   SymbolInfo,
 } from '@/types/market'
+import type { MainIndicatorRequestParams } from '@/utils/mainIndicators'
+import {
+  toCanonicalBarsRequest,
+  toCanonicalIndicatorsRequest,
+} from '@/utils/dataCoreV2Market'
 
 const BACKTEST_KLINE_PADDING_DAYS = 5
 
@@ -64,50 +69,40 @@ export function getMarketWorkbenchCoverage(params?: MarketWorkbenchCoverageParam
   return request.get<any, MarketWorkbenchCoverage>('/market/workbench/coverage', { params })
 }
 
+/** 获取 Data Core V2 Catalog coverage，不读取 legacy Profile/Binding。 */
+export function getCanonicalMarketCoverage(symbol = 'jm') {
+  return request.get<any, MarketWorkbenchCoverage>('/market/coverage/canonical', {
+    params: { symbol },
+  })
+}
+
 /** 获取 K线工作台 bars 和质量摘要 */
-export function getMarketBars(params: {
-  symbol: string
-  contract: string
-  period: string
-  start?: string
-  end?: string
-  provider?: string | null
-  data_role?: string | null
-  profile_id?: string | null
-  access_mode?: 'browser' | 'research'
-  expected_market_data_file_id?: number | null
-  expected_lineage_token?: string | null
-  quote_mode?: boolean
-  allow_continuous?: boolean
-  tail?: boolean
-  limit?: number
-}) {
+export function getMarketBars(params: MarketBarsRequestParams) {
+  if (params.dataset_kind) {
+    return request.get<any, MarketBarsResponse>('/market/bars/canonical', {
+      params: toCanonicalBarsRequest(params),
+    })
+  }
   return request.get<any, MarketBarsResponse>('/market/bars', { params })
 }
 
 /** 获取 K 线叠加指标序列 */
-export function getMarketIndicators(params: {
-  symbol: string
-  contract: string
-  period: string
-  indicator_codes: string
-  display_start?: string
-  display_end?: string
-  display_bar_count: number
-  provider?: string | null
-  data_role?: string | null
-  profile_id?: string | null
-  access_mode?: 'browser' | 'research'
-  expected_market_data_file_id?: number | null
-  expected_lineage_token?: string | null
-  quote_mode?: boolean
-  allow_continuous?: boolean
-}) {
+export function getMarketIndicators(params: MainIndicatorRequestParams) {
+  if (params.dataset_kind) {
+    return request.get<any, MarketIndicatorsResponse>('/market/indicators/canonical', {
+      params: toCanonicalIndicatorsRequest(params),
+    })
+  }
   return request.get<any, MarketIndicatorsResponse>('/market/indicators', { params })
 }
 
 /** 获取 MACD 指标（Web 兼容策略 web_macd_legacy_v1） */
 export function getMarketMacdIndicator(params: MarketBarsRequestParams & { policy?: 'web_macd_legacy_v1' }) {
+  if (params.dataset_kind) {
+    return request.get<any, MarketMacdIndicatorResponse>('/market/indicators/macd/canonical', {
+      params: toCanonicalBarsRequest(params),
+    })
+  }
   return request.get<any, MarketMacdIndicatorResponse>('/market/indicators/macd', {
     params: { policy: 'web_macd_legacy_v1', ...params },
   })
