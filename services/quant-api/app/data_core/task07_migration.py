@@ -68,8 +68,6 @@ class Task07CorrectionEvidence:
     original_trading_day_digest: str
     corrected_trading_day_digest: str
     main_map_digest: str | None
-    raw_checksum: str | None
-    raw_comparison_digest: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,15 +500,11 @@ def prepare_legacy_parquet_batch(
     *,
     path: Path,
     source_checksum: str,
-    raw_path: Path | None = None,
-    raw_checksum: str | None = None,
     dataset: DatasetKey,
     sessions: Sequence[TradingSessionCoverage],
     data_version: str,
     rank1_contract_by_day: Mapping[date, str] | None = None,
 ) -> PreparedLegacyBatch:
-    if (raw_path is None) != (raw_checksum is None):
-        raise Task07MigrationError("TASK07_RAW_EVIDENCE_INCOMPLETE")
     physical_checksum = _file_checksum(path)
     if physical_checksum != source_checksum:
         raise Task07MigrationError("TASK07_SOURCE_DRIFT")
@@ -530,7 +524,6 @@ def prepare_legacy_parquet_batch(
     bars: list[CanonicalBar] = []
     original_days: list[str] = []
     corrected_days: list[str] = []
-    corrected_by_bar_end: dict[datetime, date] = {}
     for row in frame:
         bar_end = _bar_end(row.get("datetime"), dataset.frequency)
         trading_day = expected_days.get(bar_end)
@@ -538,7 +531,6 @@ def prepare_legacy_parquet_batch(
             raise Task07MigrationError("TASK07_SESSION_COVERAGE_MISMATCH")
         original_days.append(_day_text(row.get("trading_day", row.get("trading_date"))))
         corrected_days.append(trading_day.isoformat())
-        corrected_by_bar_end[bar_end] = trading_day
         if dataset.dataset_kind is DatasetKind.ACTUAL_DOMINANT:
             if rank1_contract_by_day is None:
                 raise Task07MigrationError("TASK07_MAIN_MAP_MISSING")
@@ -592,16 +584,6 @@ def prepare_legacy_parquet_batch(
                 for day, contract in sorted(rank1_contract_by_day.items())
             ]
         )
-    raw_comparison_digest = None
-    if raw_path is not None and raw_checksum is not None:
-        if _file_checksum(raw_path) != raw_checksum:
-            raise Task07MigrationError("TASK07_RAW_SOURCE_DRIFT")
-        raw_comparison_digest = _compare_raw_rows(
-            source_rows=frame,
-            raw_rows=_read_legacy_rows(raw_path),
-            frequency=dataset.frequency,
-            corrected_by_bar_end=corrected_by_bar_end,
-        )
     return PreparedLegacyBatch(
         batch=normalized,
         evidence=Task07CorrectionEvidence(
@@ -615,58 +597,8 @@ def prepare_legacy_parquet_batch(
             original_trading_day_digest=_digest(original_days),
             corrected_trading_day_digest=_digest(corrected_days),
             main_map_digest=main_map_digest,
-            raw_checksum=raw_checksum,
-            raw_comparison_digest=raw_comparison_digest,
         ),
     )
-
-
-def _compare_raw_rows(
-    *,
-    source_rows: Sequence[Mapping[str, object]],
-    raw_rows: Sequence[Mapping[str, object]],
-    frequency: BarFrequency,
-    corrected_by_bar_end: Mapping[datetime, date],
-) -> str:
-    source = _comparison_rows(source_rows, frequency)
-    raw = _comparison_rows(raw_rows, frequency)
-    if set(source) != set(raw):
-        raise Task07MigrationError("TASK07_RAW_COVERAGE_CONFLICT")
-    evidence: list[dict[str, object]] = []
-    for bar_end in sorted(source):
-        if source[bar_end] != raw[bar_end]:
-            raise Task07MigrationError("TASK07_RAW_VALUE_CONFLICT")
-        raw_day = _day_text(raw_rows[raw[bar_end]["row_index"]].get("trading_day"))
-        corrected_day = corrected_by_bar_end.get(bar_end)
-        if corrected_day is None or raw_day != corrected_day.isoformat():
-            raise Task07MigrationError("TASK07_RAW_TRADING_DAY_CONFLICT")
-        evidence.append(
-            {
-                "bar_end": bar_end.isoformat(),
-                "trading_day": corrected_day.isoformat(),
-                "values": [str(source[bar_end][field]) for field in _VALUE_COLUMNS],
-            }
-        )
-    return _digest(evidence)
-
-
-def _comparison_rows(
-    rows: Sequence[Mapping[str, object]],
-    frequency: BarFrequency,
-) -> dict[datetime, dict[str, object]]:
-    result: dict[datetime, dict[str, object]] = {}
-    for index, row in enumerate(rows):
-        bar_end = _bar_end(row.get("datetime"), frequency)
-        values = {
-            field: _decimal(row, field, optional=field in {"turnover", "open_interest"})
-            for field in _VALUE_COLUMNS
-        }
-        if bar_end in result and any(
-            result[bar_end][field] != value for field, value in values.items()
-        ):
-            raise Task07MigrationError("TASK07_RAW_VALUE_CONFLICT")
-        result[bar_end] = {**values, "row_index": index}
-    return result
 
 
 def _read_legacy_rows(path: Path) -> tuple[dict[str, object], ...]:

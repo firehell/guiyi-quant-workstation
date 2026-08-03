@@ -10,6 +10,33 @@ Task 07 HEAD `e01784ff` 的 v9 已重采，并证明 active-reference Gate 仍�
 
 ## 0. Current implementation checkpoint
 
+### 0.0 Permanent-contract remediation candidate
+
+2026-08-03 生产收口 preflight 发现原 code-only closeout 超出最终永久合同。已从
+`develop@672877a8343a2bfc2cf9777e691fef38aa2a6717` 建立新 Lane 3 code-only worktree，
+收窄为七周期 K 线 manifest，并删除公共 retirement/deletion/quarantine 入口及
+quarantine 实现。Direct migration 不再接受 raw 文件作逐行比较。当前只是
+task-branch candidate；须经独立 Review、PR/CI 与 develop ancestry 回读后才能成为新
+release candidate 事实。
+
+```text
+public_manifest=data.task07.kline-manifest
+supported_frequencies=1m,5m,15m,30m,60m,1d,1w
+generic_inventory_public=false
+runtime_reference_inventory_public=false
+retirement_apply_public=false
+file_quarantine_public=false
+raw_row_comparison=false
+focused_regression=89 passed
+production_reads=false
+production_writes=false
+runtime_changes=false
+main_or_tag_changes=false
+```
+
+本 checkpoint 不改写下文 v8/v9 历史数字，不把 smoke 写成日常数据闭环，也不
+解锁 PostgreSQL 0032、真实 K 线、Runtime promotion 或旧派生数据删除。
+
 ### 0.1 2026-08-03 code-only closeout evidence
 
 本轮仅修改仓库代码、fixture、测试与 canonical 文档，base 为
@@ -66,6 +93,7 @@ deletion_unlocked=false
 生产 v9 inventory/Runtime/retirement 数字在本轮没有重采，下文仍作 historical blocker
 evidence 保留，不能被本轮 fixture 或 code-only Runtime receipt 解锁。
 
+下段描述为原 closeout 的 superseded historical implementation，不再是现行 CLI。当时
 Task 07 CLI 的 inventory/plan/preflight/apply/verify/retirement plan/apply 已实现。Canonical apply
 绑定 clean HEAD、DB revision、source/plan/batch digest、staging/canonical roots、脱敏 PostgreSQL
 target 和 protected roots；多来源 batch 使用 fsync durable intent/partial journal，崩溃恢复只允许

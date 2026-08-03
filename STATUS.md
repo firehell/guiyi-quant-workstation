@@ -71,14 +71,15 @@ SignalEvent 仍 6 行且 decision link 全空、六个 flags 全 false、health 
 `develop` 后 Task 06 完成状态生效；本次仍不授权真实 RQData、scheduler、Runtime、
 SignalEvent、通知、删除或交易。
 
-Task 07 生产 Gate 仍为 `BLOCKED_ACTIVE_REFERENCE`；本轮 code-only closeout 已收敛七周期
-同频历史读取、inventory TOCTOU、Catalog page cache、checkout scanner、冲突 repair action 与
-最小 Runtime cutover plan/verify，当前为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。可扩展 inventory、exact-target plan/preflight、Canonical
-apply/verify、fsync durable partial journal/resume、retirement before-image/rollback、canonical
-consumer 收口与 Web selector/legacy batch worker 退出均已落地。checkout-only 开发扫描当前为
-active/review-required 零；detached Runtime 可执行引用优先判 active/review，不能被 frozen/retired
-分类隐藏。旧 v8 生产只读 snapshot 的 103,481 assets、2,791 conflicts、4,297 retirement
-candidates 与引用数字均为 dirty-worktree 历史诊断，已被代码修改 supersede，不能用于 approval。
+Task 07 仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`，且任何生产写入均未授权。生产收口
+preflight 发现原 code-only closeout 的 generic inventory、retirement apply 与文件 quarantine
+超出永久合同；当前 Lane 3 修复 candidate 从 `develop@672877a8` 建立，收窄为
+七周期 K 线 `kline-manifest -> plan/preflight/apply/verify`，取消 checkout/Runtime 通用
+reference inventory、retirement/deletion/quarantine 公共入口和 raw 逐行比较。该 candidate
+定向回归为 89 passed，仍须独立 Review、PR/CI 与 develop ancestry 回读。
+
+旧 v8 生产只读 snapshot 的 103,481 assets、2,791 conflicts、4,297 retirement candidates
+与引用数字均为 superseded 历史诊断，不能用于任何 approval。
 绑定 clean `e01784ff` 与 production `20260802_0031` 的 v9 诊断已采集：103,481 assets
 未截断，内容冲突为零，2,817 项显式进入 DataGap；但正在提供 API 的 detached Runtime
 `10351ccd` 仍有 300 active 与 1,581 review-required 命中，因此 migration plan 正确返回
@@ -116,7 +117,7 @@ Gate 进一步直接识别出 2,791 个文件至少包含一个周末 trading da
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
 | Task 05 可信消费者切换 | independent Review passed；develop integration pending | `CLEAN_FOR_INTEGRATION`；仍须 task PR、post-merge CI 与 ancestry readback，不是 release 或 Runtime Gate |
-| Task 07 code-only closeout | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | 七周期同频合同、两个 Important、checkout scanner 及最小 Runtime code-only Gate 已实现；仍须独立 Review、PR/CI 与 develop 集成 |
+| Task 07 code-only closeout | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | 七周期 K 线 manifest 永久合同修复 candidate 已实现；通用 inventory/retirement/quarantine 已退出；仍须独立 Review、PR/CI 与 develop 集成 |
 | Task 07 K-line data Gate | blocked by prerequisite | v9 内容冲突为零、7,232 trusted sources / 411 batches，但该 snapshot 已被代码变更 supersede，且未取得 exact apply approval，不得写入 |
 | Task 07 active-reference Gate | `BLOCKED_ACTIVE_REFERENCE` | 当前 checkout active=0 / review-required=0；旧 v9 detached Runtime 300/1,581 与 DB before-image 4,297 未在本轮重采，仍不得据此执行 retirement |
 | Task 06 live/EOD contract | passed | 已冻结并验证单一 EMA21 confirmed-close observation 合同；不得注入其他 evaluator，且不扩展 centered-XMA 白名单 |

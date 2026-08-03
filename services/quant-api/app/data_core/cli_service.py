@@ -72,18 +72,15 @@ from app.data_core.task07 import (
     build_migration_plan as build_task07_migration_plan,
     build_preflight_receipt as build_task07_preflight_receipt,
     build_write_targets as build_task07_write_targets,
-    build_retirement_plan as build_task07_retirement_plan,
     canonical_digest as task07_canonical_digest,
     begin_task07_readonly_snapshot,
     begin_task07_serializable_apply,
-    collect_retirement_relations,
     collect_task07_assets,
-    load_inventory_evidence,
+    load_kline_manifest_evidence,
     read_task07_quality_evidence,
-    scan_task07_references,
     verify_exact_approval as verify_task07_exact_approval,
     verify_task07_preflight_receipt,
-    write_inventory_evidence,
+    write_kline_manifest_evidence,
 )
 from app.data_core.task07_migration import (
     TASK07_AGGREGATE_MANIFEST_VERSION,
@@ -94,11 +91,6 @@ from app.data_core.task07_migration import (
     read_legacy_aggregate_trading_days,
     resolve_task07_provider_sessions,
     verify_task07_published_batch,
-)
-from app.data_core.task07_deletion import (
-    _validate_plan as validate_task07_deletion_plan,
-    build_deletion_plan as build_task07_deletion_plan,
-    verify_deletion_apply as verify_task07_deletion_apply,
 )
 from app.data_core.rqdata_provider import CanonicalRQDataAdapter
 from app.services.rqdata_ingest.client import RqDataClient
@@ -119,51 +111,27 @@ def run_data_core_command(
     session: Session,
     args: Any,
 ) -> dict[str, Any]:
-    if command == "task07.inventory":
+    if command == "task07.kline-manifest":
         project_root = _absolute_path(args.project_root, "project_root")
         evidence_root = _absolute_path(args.evidence_root, "evidence_root")
-        additional_protected_roots = getattr(args, "protected_root", None) or []
-        protected_roots = tuple(
-            dict.fromkeys(
-                [
-                    *(
-                        _absolute_path(path, "protected_root")
-                        for path in additional_protected_roots
-                    ),
-                    evidence_root,
-                ]
-            )
-        )
         _require_loaded_source_checkout(project_root)
         git_state = _git_state(project_root)
         begin_task07_readonly_snapshot(session)
         revision = _data_core_revision(session)
         if args.database_revision and args.database_revision != revision:
             raise ValueError("TASK07_DATABASE_REVISION_DRIFT")
-        reference_roots = [("checkout", project_root)]
-        reference_roots.extend(
-            ("detached_runtime", _absolute_path(path, "runtime_root"))
-            for path in args.runtime_root
-        )
-        index = write_inventory_evidence(
+        index = write_kline_manifest_evidence(
             collect_task07_assets(
                 session,
                 data_root=_absolute_path(args.data_root, "data_root"),
                 canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
-                protected_roots=protected_roots,
             ),
             evidence_root=evidence_root,
             base_sha=git_state["head"],
             database_revision=revision,
-            reference_report=scan_task07_references(reference_roots),
-            inventory_scope={
+            manifest_scope={
                 "data_root": str(_absolute_path(args.data_root, "data_root").resolve(strict=False)),
                 "canonical_root": str(_absolute_path(args.canonical_root, "canonical_root").resolve(strict=False)),
-                "protected_roots": sorted(
-                    {
-                        str(path.resolve(strict=False)) for path in protected_roots
-                    }
-                ),
             },
         )
         return {
@@ -174,12 +142,14 @@ def run_data_core_command(
             "git_state": git_state,
         }
     if command == "task07.plan":
-        inventory = load_inventory_evidence(_absolute_path(args.inventory, "inventory"))
+        inventory = load_kline_manifest_evidence(
+            _absolute_path(args.manifest, "manifest")
+        )
         write_targets = build_task07_write_targets(
             staging_root=_absolute_path(args.staging_root, "staging_root"),
             canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
             postgresql_target=_postgresql_target(session),
-            inventory_scope=inventory.get("inventory_scope") or {},
+            inventory_scope=inventory.get("manifest_scope") or {},
         )
         plan = build_task07_migration_plan(inventory, write_targets=write_targets)
         packet = (
@@ -550,127 +520,6 @@ def run_data_core_command(
             "runtime_cutover_eligible": True,
         }
         return {**body, "verification_digest": task07_canonical_digest(body)}
-    if command == "task07.deletion-plan":
-        project_root = _absolute_path(args.project_root, "project_root")
-        _require_loaded_source_checkout(project_root)
-        git_state = _git_state(project_root)
-        _require_clean_task07_git_state(git_state)
-        begin_task07_readonly_snapshot(session)
-        revision = _data_core_revision(session)
-        inventory = load_inventory_evidence(
-            _absolute_path(args.inventory, "inventory")
-        )
-        if (
-            inventory.get("base_sha") != git_state["head"]
-            or inventory.get("database_revision") != revision
-        ):
-            raise ValueError("TASK07_DELETION_INVENTORY_FACTS_DRIFT")
-        reference_digest, active_row_set_digest, snapshot_digest = (
-            _task07_current_deletion_snapshot(session, project_root)
-        )
-        plan = build_task07_deletion_plan(
-            assets=_task07_deletion_candidates(inventory["assets"]),
-            approved_roots=tuple(
-                _absolute_path(path, "approved_root")
-                for path in args.approved_root
-            ),
-            quarantine_root=_absolute_path(
-                args.quarantine_root, "quarantine_root"
-            ),
-            base_sha=str(git_state["head"]),
-            database_revision=revision,
-            reference_digest=reference_digest,
-            active_row_set_digest=active_row_set_digest,
-            reference_snapshot_digest=snapshot_digest,
-            inventory_digest=str(inventory["inventory_digest"]),
-        )
-        return {
-            "schema_version": 1,
-            "command": "data.task07.deletion-plan-envelope",
-            "status": "planned",
-            "readonly": True,
-            "effects": _readonly_effects(),
-            "plan": plan,
-            "approval_packet": None,
-            "approval_packet_hash": None,
-        }
-    if command in {
-        "task07.deletion-preflight",
-        "task07.deletion-apply",
-        "task07.deletion-verify",
-    }:
-        project_root = _absolute_path(args.project_root, "project_root")
-        _require_loaded_source_checkout(project_root)
-        git_state = _git_state(project_root)
-        _require_clean_task07_git_state(git_state)
-        begin_task07_readonly_snapshot(session)
-        revision = _data_core_revision(session)
-        plan = _load_task07_deletion_plan_document(
-            _absolute_path(args.plan, "plan")
-        )
-        reference_digest, active_row_set_digest, snapshot_digest = (
-            _task07_current_deletion_snapshot(session, project_root)
-        )
-        if (
-            plan.get("active_row_set_digest") != active_row_set_digest
-            or plan.get("reference_snapshot_digest") != snapshot_digest
-        ):
-            raise ValueError("TASK07_DELETION_REFERENCE_DRIFT")
-        common = {
-            "current_base_sha": str(git_state["head"]),
-            "current_database_revision": revision,
-            "current_reference_digest": reference_digest,
-        }
-        if command == "task07.deletion-preflight":
-            raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
-        if command == "task07.deletion-apply":
-            raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
-        receipt = _load_task07_document(
-            _absolute_path(args.receipt, "receipt"),
-            expected_command="data.task07.deletion-apply",
-        )
-        result = verify_task07_deletion_apply(
-            plan,
-            receipt,
-            **common,
-        )
-        return {**result, "effects": _readonly_effects()}
-    if command == "task07.retirement-plan":
-        project_root = _absolute_path(args.project_root, "project_root")
-        _require_loaded_source_checkout(project_root)
-        git_state = _git_state(project_root)
-        _require_clean_task07_git_state(git_state)
-        begin_task07_readonly_snapshot(session)
-        revision = _data_core_revision(session)
-        if args.database_revision and args.database_revision != revision:
-            raise ValueError("TASK07_DATABASE_REVISION_DRIFT")
-        plan = build_task07_retirement_plan(
-            base_sha=git_state["head"],
-            database_revision=revision,
-            reference_report=scan_task07_references(
-                [("checkout", project_root)]
-            ),
-            relations=collect_retirement_relations(session),
-        )
-        packet = (
-            build_task07_approval_packet(
-                plan,
-                command="data.task07.retirement-apply",
-            )
-            if plan["retirement_eligible"]
-            else None
-        )
-        return {
-            **plan,
-            "readonly": True,
-            "effects": _readonly_effects(),
-            "approval_packet": packet,
-            "approval_packet_hash": (
-                task07_canonical_digest(packet) if packet else None
-            ),
-        }
-    if command == "task07.retirement-apply":
-        raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
     if command == "verify":
         return _verify(session, args)
     if command in {"plan", "sync"} and not bool(getattr(args, "apply", False)):
@@ -763,95 +612,6 @@ def _load_task07_document(path: Path, *, expected_command: str) -> dict[str, Any
     if not isinstance(payload, dict) or payload.get("command") != expected_command:
         raise ValueError("TASK07_DOCUMENT_SCOPE_INVALID")
     return payload
-
-
-def _load_task07_deletion_plan_document(path: Path) -> dict[str, Any]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID") from exc
-    if not isinstance(payload, dict):
-        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID")
-    if payload.get("command") == "data.task07.deletion-plan":
-        plan = payload
-    else:
-        expected_keys = {
-            "schema_version",
-            "command",
-            "status",
-            "readonly",
-            "effects",
-            "plan",
-            "approval_packet",
-            "approval_packet_hash",
-        }
-        if (
-            set(payload) != expected_keys
-            or payload.get("schema_version") != 1
-            or payload.get("command")
-            != "data.task07.deletion-plan-envelope"
-            or payload.get("status") != "planned"
-            or payload.get("readonly") is not True
-            or payload.get("effects") != _readonly_effects()
-            or payload.get("approval_packet") is not None
-            or payload.get("approval_packet_hash") is not None
-            or not isinstance(payload.get("plan"), dict)
-        ):
-            raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID")
-        plan = payload["plan"]
-    try:
-        validate_task07_deletion_plan(plan)
-    except ValueError as exc:
-        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID") from exc
-    return plan
-
-
-def _task07_current_deletion_snapshot(
-    session: Session, project_root: Path
-) -> tuple[str, str, str]:
-    report = scan_task07_references([("checkout", project_root)])
-    if report.get("truncated") is not False:
-        raise ValueError("TASK07_DELETION_REFERENCE_SCAN_INCOMPLETE")
-    reference_digest = task07_canonical_digest(report)
-    active_rows = collect_retirement_relations(session)
-    active_row_set_digest = task07_canonical_digest(active_rows)
-    snapshot_digest = task07_canonical_digest(
-        {
-            "reference_digest": reference_digest,
-            "active_row_set_digest": active_row_set_digest,
-        }
-    )
-    return reference_digest, active_row_set_digest, snapshot_digest
-
-
-def _task07_deletion_candidates(
-    assets: list[Mapping[str, Any]],
-) -> list[Mapping[str, Any]]:
-    candidates: list[Mapping[str, Any]] = []
-    for asset in assets:
-        source_path = Path(str(asset.get("file_path") or ""))
-        path_parts = {part.lower() for part in source_path.parts}
-        source_name = source_path.name.lower()
-        if (
-            asset.get("source_scope") != "approved_data_root"
-            or asset.get("frequency") in {"5m", "15m", "30m", "60m"}
-            or path_parts & {"evidence", "reports", "receipts"}
-            or "receipt" in source_name
-            or any(
-                marker in source_name
-                for marker in ("report-14", "report-15", "report_14", "report_15")
-            )
-        ):
-            continue
-        if (
-            asset.get("frequency") in {"1m", "1d", "1w"}
-            or asset.get("data_type")
-            in {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}
-        ):
-            continue
-        if asset.get("disposition") == "RETIREMENT_CANDIDATE":
-            candidates.append(asset)
-    return candidates
 
 
 def _task07_plan_batch(plan: Mapping[str, Any], batch_key: str) -> dict[str, Any]:

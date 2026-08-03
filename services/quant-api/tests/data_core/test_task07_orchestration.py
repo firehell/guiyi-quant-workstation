@@ -19,11 +19,9 @@ from app.data_core import task07
 from app.data_core.task07 import (
     AssetDisposition,
     Task07Asset,
-    apply_retirement_plan,
     build_approval_packet,
     build_inventory_index,
     build_migration_plan,
-    build_retirement_plan,
     build_write_targets,
     canonical_digest,
     classify_asset,
@@ -33,6 +31,7 @@ from app.data_core.task07 import (
     verify_exact_approval,
     verify_task07_preflight_receipt,
     write_inventory_evidence,
+    write_kline_manifest_evidence,
 )
 from app.data_core.cli_service import run_data_core_command
 from app.db.base import Base
@@ -191,17 +190,17 @@ def test_inventory_classifies_only_passed_rqdata_direct_bars_as_trusted() -> Non
 
     assert [item["disposition"] for item in index["assets"]] == [
         AssetDisposition.KEEP_CANONICAL_VERIFIED,
+        AssetDisposition.CONFLICT_BLOCKED,
         AssetDisposition.REGISTER_DATA_GAP,
-        AssetDisposition.REGISTER_DATA_GAP,
-        AssetDisposition.RETIREMENT_CANDIDATE,
+        AssetDisposition.CONFLICT_BLOCKED,
         AssetDisposition.PROTECTED_EVIDENCE_SOURCE,
         AssetDisposition.CONFLICT_BLOCKED,
-        AssetDisposition.RETIREMENT_CANDIDATE,
+        AssetDisposition.CONFLICT_BLOCKED,
         AssetDisposition.CONFLICT_BLOCKED,
         AssetDisposition.REGISTER_DATA_GAP,
     ]
     assert index["eligible_asset_count"] == 1
-    assert index["blocked_asset_count"] == 2
+    assert index["blocked_asset_count"] == 5
     assert index["deletion_authorized"] is False
 
 
@@ -257,28 +256,6 @@ def test_protected_evidence_never_becomes_a_retirement_candidate() -> None:
     assert classify_asset(protected) == AssetDisposition.PROTECTED_EVIDENCE_SOURCE
 
 
-def test_protected_evidence_never_enters_a_migration_batch() -> None:
-    index = build_inventory_index(
-        [
-            _asset(market_data_file_id=1, catalog_checksum=None),
-            _asset(
-                market_data_file_id=2,
-                file_path="/Volumes/扩展盘/GuiyiApprovals/task/file.parquet",
-                source_scope="protected_evidence_root",
-                catalog_checksum=None,
-            ),
-        ],
-        base_sha="1" * 40,
-        database_revision="20260802_0031",
-    )
-
-    plan = build_migration_plan(index, write_targets=_write_targets())
-
-    assert plan["protected_evidence_count"] == 1
-    assert plan["batches"][0]["source_ids"] == [1]
-    assert plan["batches"][0]["protected_evidence_ids"] == []
-
-
 def test_source_outside_approved_roots_is_not_hashed_or_migrated(tmp_path: Path) -> None:
     approved = tmp_path / "approved"
     approved.mkdir()
@@ -328,7 +305,7 @@ def test_source_outside_approved_roots_is_not_hashed_or_migrated(tmp_path: Path)
     assert len(assets) == 1
     assert assets[0].source_scope == "outside_approved_roots"
     assert assets[0].physical_checksum is None
-    assert classify_asset(assets[0]) == AssetDisposition.RETIREMENT_CANDIDATE
+    assert classify_asset(assets[0]) == AssetDisposition.CONFLICT_BLOCKED
 
 
 def test_symlink_inside_protected_root_cannot_become_a_migration_source(
@@ -1386,7 +1363,7 @@ def test_task07_plan_schema_v1_is_rejected_instead_of_silently_reinterpreted() -
         build_approval_packet(old_shape, command="data.task07.apply")
 
 
-def test_migration_eligibility_is_independent_of_active_references_but_retirement_is_not(
+def test_migration_plan_has_no_reference_retirement_or_deletion_inventory(
     tmp_path: Path,
 ) -> None:
     index = build_inventory_index(
@@ -1403,9 +1380,13 @@ def test_migration_eligibility_is_independent_of_active_references_but_retiremen
 
     assert plan["approval_eligible"] is True
     assert plan["gate_status"] == "exact_owner_approval_required"
-    assert plan["active_reference_gate"] == "BLOCKED_ACTIVE_REFERENCE"
-    assert plan["retirement_eligible"] is False
-    assert plan["deletion_eligible"] is False
+    assert not {
+        "active_reference_gate",
+        "reference_snapshot",
+        "retirement_eligible",
+        "deletion_eligible",
+        "deletion_candidate_manifest",
+    } & plan.keys()
     assert build_approval_packet(plan, command="data.task07.apply")[
         "bound_facts"
     ]["migration_envelope"] == plan["migration_envelope"]
@@ -1625,69 +1606,6 @@ def test_batch_approval_rejects_tampered_kline_gate_controls() -> None:
         raise AssertionError("tampered K-line gate must fail")
 
 
-def test_retirement_plan_treats_completed_history_as_non_active_and_binds_before_image(
-    tmp_path: Path,
-) -> None:
-    references = _reference_report(tmp_path)
-    plan = build_retirement_plan(
-        base_sha="4" * 40,
-        database_revision="20260802_0031",
-        reference_report=references,
-        relations=[
-            {"table": "backtest_tasks", "id": 1, "status": "success"},
-            {
-                "table": "profile_active_bindings",
-                "id": 2,
-                "binding_status": "active",
-                "superseded_at": None,
-            },
-            {"table": "signal_scan_tasks", "id": 3, "status": "pending"},
-            {"table": "strategy_signals", "id": 4, "status": "entry_signal", "is_active": True},
-        ],
-    )
-
-    assert plan["historical_non_active_count"] == 1
-    assert [item["table"] for item in plan["updates"]] == [
-        "profile_active_bindings",
-        "signal_scan_tasks",
-        "strategy_signals",
-    ]
-    assert plan["deletes"] == []
-    assert plan["deletion_authorized"] is False
-    assert plan["schema_version"] == 2
-    assert plan["reference_gate"] == "zero_active_references"
-    assert plan["runtime_cutover_gate"] == "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
-    assert plan["runtime_cutover_receipt_contract"]["command"] == (
-        "data.task07.runtime-cutover"
-    )
-    assert plan["retirement_eligible"] is False
-    assert plan["gate_status"] == "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
-    assert len(plan["before_image_digest"]) == 64
-    with pytest.raises(ValueError, match="TASK07_RUNTIME_CUTOVER_GATE_REQUIRED"):
-        build_approval_packet(plan, command="data.task07.retirement-apply")
-
-    old_shape = deepcopy(plan)
-    old_shape["schema_version"] = 1
-    with pytest.raises(ValueError, match="TASK07_RETIREMENT_PLAN_SCHEMA_INVALID"):
-        build_approval_packet(old_shape, command="data.task07.retirement-apply")
-
-
-def test_retirement_approval_is_blocked_by_checkout_or_runtime_reference(
-    tmp_path: Path,
-) -> None:
-    plan = build_retirement_plan(
-        base_sha="4" * 40,
-        database_revision="20260802_0031",
-        reference_report=_reference_report(tmp_path, active=True),
-        relations=[],
-    )
-
-    assert plan["retirement_eligible"] is False
-    assert plan["reference_gate"] == "BLOCKED_ACTIVE_REFERENCE"
-    with pytest.raises(ValueError, match="TASK07_RETIREMENT_REFERENCE_GATE_BLOCKED"):
-        build_approval_packet(plan, command="data.task07.retirement-apply")
-
-
 def test_exact_approval_fails_on_any_bound_fact_drift(tmp_path: Path) -> None:
     packet = {
         "schema_version": 1,
@@ -1771,71 +1689,6 @@ def test_apply_gate_rejects_tampered_preflight_receipt(tmp_path: Path) -> None:
         )
 
 
-def test_retirement_apply_cannot_write_before_task6_runtime_cutover_gate(
-    tmp_path: Path,
-) -> None:
-    references = _reference_report(tmp_path)
-    engine = create_engine("sqlite://")
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "CREATE TABLE profile_active_bindings "
-            "(id INTEGER PRIMARY KEY, binding_status TEXT, superseded_at TEXT)"
-        )
-        connection.exec_driver_sql("CREATE TABLE signal_scan_tasks (id INTEGER PRIMARY KEY, status TEXT)")
-        connection.exec_driver_sql("CREATE TABLE data_download_tasks (id INTEGER PRIMARY KEY, status TEXT)")
-        connection.exec_driver_sql("CREATE TABLE strategy_signals (id INTEGER PRIMARY KEY, status TEXT, is_active BOOLEAN)")
-        connection.exec_driver_sql(
-            "INSERT INTO profile_active_bindings VALUES (2,'active',NULL)"
-        )
-        connection.exec_driver_sql("INSERT INTO signal_scan_tasks VALUES (3,'pending')")
-        connection.exec_driver_sql("INSERT INTO strategy_signals VALUES (4,'entry_signal',1)")
-    plan = build_retirement_plan(
-        base_sha="6" * 40,
-        database_revision="20260802_0031",
-        reference_report=references,
-        relations=[
-            {
-                "table": "profile_active_bindings",
-                "id": 2,
-                "binding_status": "active",
-                "superseded_at": None,
-            },
-            {"table": "signal_scan_tasks", "id": 3, "status": "pending"},
-            {"table": "strategy_signals", "id": 4, "status": "entry_signal", "is_active": True},
-        ],
-    )
-    packet_path = tmp_path / "retirement-approval.json"
-    packet_path.write_text("{}", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="TASK07_RUNTIME_CUTOVER_GATE_REQUIRED"):
-        build_approval_packet(plan, command="data.task07.retirement-apply")
-
-    with Session(engine) as session, pytest.raises(
-        ValueError,
-        match="TASK07_RUNTIME_CUTOVER_GATE_REQUIRED",
-    ):
-        apply_retirement_plan(
-            session,
-            plan,
-            packet_path=packet_path,
-            approval_hash="a" * 64,
-            current_base_sha="6" * 40,
-            current_database_revision="20260802_0031",
-            current_reference_report=references,
-        )
-
-    with Session(engine) as session:
-        assert session.execute(
-            text("SELECT binding_status FROM profile_active_bindings WHERE id=2")
-        ).scalar_one() == "active"
-        assert session.execute(
-            text("SELECT status FROM signal_scan_tasks WHERE id=3")
-        ).scalar_one() == "pending"
-        assert session.execute(
-            text("SELECT is_active FROM strategy_signals WHERE id=4")
-        ).scalar_one() == 1
-
-
 def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() -> None:
     stdout = StringIO()
     stderr = StringIO()
@@ -1852,7 +1705,7 @@ def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() ->
     assert json.loads(stderr.getvalue())["error"]["code"] == "TASK07_EXACT_APPROVAL_REQUIRED"
 
 
-def test_task07_inventory_allows_omitted_external_protected_root() -> None:
+def test_task07_kline_manifest_has_no_external_protected_root_argument() -> None:
     stdout = StringIO()
     stderr = StringIO()
     engine = create_engine("sqlite://")
@@ -1861,7 +1714,7 @@ def test_task07_inventory_allows_omitted_external_protected_root() -> None:
         [
             "data",
             "task07",
-            "inventory",
+            "kline-manifest",
             "--project-root",
             "/tmp/project",
             "--data-root",
@@ -1875,7 +1728,7 @@ def test_task07_inventory_allows_omitted_external_protected_root() -> None:
         data_core_runner=lambda command, _session, args: {
             "status": "passed",
             "command": command,
-            "protected_roots": [str(path) for path in args.protected_root],
+            "has_protected_root": hasattr(args, "protected_root"),
         },
         stdout=stdout,
         stderr=stderr,
@@ -1884,8 +1737,8 @@ def test_task07_inventory_allows_omitted_external_protected_root() -> None:
     assert exit_code == 0
     assert stderr.getvalue() == ""
     assert json.loads(stdout.getvalue()) == {
-        "command": "task07.inventory",
-        "protected_roots": [],
+        "command": "task07.kline-manifest",
+        "has_protected_root": False,
         "status": "passed",
     }
 
@@ -1929,13 +1782,49 @@ def _task07_service_args(
         data_root=data_root,
         canonical_root=canonical_root,
         evidence_root=evidence_root,
-        runtime_root=[],
-        protected_root=[],
         database_revision=None,
     )
 
 
-def test_task07_inventory_service_creates_fresh_evidence_root_before_collecting_assets(
+def test_task07_collection_reads_only_seven_frequency_kline_rows(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    canonical_root = tmp_path / "canonical"
+    data_root.mkdir()
+    canonical_root.mkdir()
+    source = data_root / "source.parquet"
+    source.write_bytes(b"bars")
+    checksum = sha256(source.read_bytes()).hexdigest()
+    engine = create_engine("sqlite://")
+    _task07_inventory_schema(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO market_data_files VALUES "
+                "(1,'rqdata','bars','jm','JM.MAIN','1m','2026-01-01','2026-01-02',:path,4,:checksum,'v1',1,'primary','passed'),"
+                "(2,'rqdata','bars','jm','JM.MAIN','4h','2026-01-01','2026-01-02',:path,4,:checksum,'v1',1,'primary','passed'),"
+                "(3,'rqdata','indicator','jm','JM.MAIN','1m','2026-01-01','2026-01-02',:path,4,:checksum,'v1',1,'primary','passed')"
+            ),
+            {"path": str(source), "checksum": checksum},
+        )
+
+    with Session(engine) as session:
+        assets = list(
+            collect_task07_assets(
+                session,
+                data_root=data_root,
+                canonical_root=canonical_root,
+                inspect_content=False,
+            )
+        )
+
+    assert [asset.market_data_file_id for asset in assets] == [1]
+    assert assets[0].frequency == "1m"
+    assert assets[0].data_type == "bars"
+
+
+def test_task07_kline_manifest_service_creates_fresh_evidence_root(
     tmp_path: Path,
 ) -> None:
     data_root = tmp_path / "data"
@@ -1948,7 +1837,7 @@ def test_task07_inventory_service_creates_fresh_evidence_root_before_collecting_
 
     with Session(engine) as session:
         result = run_data_core_command(
-            "task07.inventory",
+            "task07.kline-manifest",
             session,
             _task07_service_args(
                 data_root=data_root,
@@ -1958,12 +1847,15 @@ def test_task07_inventory_service_creates_fresh_evidence_root_before_collecting_
         )
 
     assert evidence_root.is_dir()
-    assert (evidence_root / "inventory-index.json").is_file()
+    assert (evidence_root / "kline-manifest-index.json").is_file()
     assert result["asset_count"] == 0
-    assert result["inventory_scope"]["protected_roots"] == [str(evidence_root)]
+    assert result["manifest_scope"] == {
+        "data_root": str(data_root),
+        "canonical_root": str(canonical_root),
+    }
 
 
-def test_task07_inventory_service_classifies_automatic_evidence_symlink_as_protected(
+def test_task07_kline_manifest_blocks_registered_path_outside_data_roots(
     tmp_path: Path,
 ) -> None:
     data_root = tmp_path / "data"
@@ -1994,7 +1886,7 @@ def test_task07_inventory_service_classifies_automatic_evidence_symlink_as_prote
 
     with Session(engine) as session:
         result = run_data_core_command(
-            "task07.inventory",
+            "task07.kline-manifest",
             session,
             _task07_service_args(
                 data_root=data_root,
@@ -2004,9 +1896,10 @@ def test_task07_inventory_service_classifies_automatic_evidence_symlink_as_prote
         )
 
     asset = json.loads((evidence_root / "assets-000001.jsonl").read_text())
-    assert asset["source_scope"] == "protected_evidence_root"
-    assert asset["disposition"] == AssetDisposition.PROTECTED_EVIDENCE_SOURCE
-    assert result["disposition_counts"][AssetDisposition.PROTECTED_EVIDENCE_SOURCE] == 1
+    assert asset["source_scope"] == "approved_data_root"
+    assert asset["physical_is_symlink"] is True
+    assert asset["disposition"] == AssetDisposition.CONFLICT_BLOCKED
+    assert result["disposition_counts"][AssetDisposition.CONFLICT_BLOCKED] == 1
 
 
 def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
@@ -2017,14 +1910,13 @@ def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
     evidence_root = tmp_path / "evidence"
     staging_root = tmp_path / "staging"
     canonical_root.mkdir()
-    index = write_inventory_evidence(
+    index = write_kline_manifest_evidence(
         [_asset(catalog_checksum=None)],
         evidence_root=evidence_root,
         base_sha="9" * 40,
         database_revision="20260802_0031",
-        inventory_scope={
+        manifest_scope={
             "canonical_root": str(canonical_root),
-            "protected_roots": [str(evidence_root)],
         },
     )
     monkeypatch.setattr(
@@ -2037,7 +1929,7 @@ def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
             "task07.plan",
             session,
             SimpleNamespace(
-                inventory=evidence_root / "inventory-index.json",
+                manifest=evidence_root / "kline-manifest-index.json",
                 staging_root=staging_root,
                 canonical_root=canonical_root,
             ),
@@ -2055,57 +1947,6 @@ def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
         expected_command="data.task07.apply",
         current_facts=packet["bound_facts"],
     ) == packet
-
-
-def test_retirement_plan_service_ignores_arbitrary_runtime_root_and_emits_no_packet(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    engine = create_engine("sqlite://")
-    _task07_inventory_schema(engine)
-    checkout = Path(__file__).resolve().parents[4]
-    arbitrary_runtime = tmp_path / "arbitrary-runtime"
-    arbitrary_runtime.mkdir()
-    observed_roots: list[tuple[str, Path]] = []
-
-    def scan_checkout_only(roots):
-        observed_roots.extend(roots)
-        report_root = tmp_path / "reported-checkout"
-        report_root.mkdir()
-        return task07.scan_task07_references([("checkout", report_root)])
-
-    monkeypatch.setattr(
-        "app.data_core.cli_service._git_state",
-        lambda _root: {"head": "9" * 40, "clean": True},
-    )
-    monkeypatch.setattr(
-        "app.data_core.cli_service.scan_task07_references",
-        scan_checkout_only,
-    )
-    monkeypatch.setattr(
-        "app.data_core.cli_service.collect_retirement_relations",
-        lambda _session: [],
-    )
-
-    with Session(engine) as session:
-        result = run_data_core_command(
-            "task07.retirement-plan",
-            session,
-            SimpleNamespace(
-                project_root=checkout,
-                database_revision=None,
-                runtime_root=[arbitrary_runtime],
-            ),
-        )
-
-    assert observed_roots == [("checkout", checkout)]
-    assert result["schema_version"] == 2
-    assert result["runtime_cutover_receipt_contract"]["command"] == (
-        "data.task07.runtime-cutover"
-    )
-    assert result["retirement_eligible"] is False
-    assert result["approval_packet"] is None
-    assert result["approval_packet_hash"] is None
 
 
 def test_task07_apply_requires_hash_bound_preflight_before_opening_database() -> None:
@@ -2127,37 +1968,6 @@ def test_task07_apply_requires_hash_bound_preflight_before_opening_database() ->
 
     assert exit_code == 78
     assert json.loads(stderr.getvalue())["error"]["code"] == "TASK07_EXACT_APPROVAL_REQUIRED"
-
-
-def test_task07_retirement_apply_does_not_require_kline_preflight_arguments() -> None:
-    stdout = StringIO()
-    stderr = StringIO()
-    engine = create_engine("sqlite://")
-
-    exit_code = main(
-        [
-            "data",
-            "task07",
-            "retirement-apply",
-            "--plan",
-            "/tmp/task07-retirement-plan.json",
-            "--approval-packet",
-            "/tmp/approval.json",
-            "--approval-hash",
-            "a" * 64,
-        ],
-        session_factory=lambda: Session(engine),
-        data_core_runner=lambda command, _session, _args: {
-            "status": "passed",
-            "command": command,
-        },
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    assert exit_code == 0
-    assert stderr.getvalue() == ""
-    assert json.loads(stdout.getvalue())["command"] == "task07.retirement-apply"
 
 
 def test_task07_migration_verify_cli_forwards_exact_ordered_apply_receipts(
