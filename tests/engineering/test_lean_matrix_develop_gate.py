@@ -136,6 +136,7 @@ def _facts(
         "checks": [
             {"schema_version": 1, "name": name, "status": "SUCCESS", "head_sha": HEAD_SHA}
             for name in sorted(plan_payload["validation"]["required_checks"])
+            if name == "exact-head-ci"
         ],
         "review": _review(),
         "pending_external_gates": [],

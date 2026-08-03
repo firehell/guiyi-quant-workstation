@@ -176,8 +176,8 @@ def test_lane_three_plan_preserves_sol_routing_and_the_required_external_gate() 
     assert plan.dispatch.model == "Sol"
     assert plan.dispatch.reasoning_effort == "high"
     assert plan.dispatch.specialists == (
-        "quant-research-specialist",
-        "backtest-audit-specialist",
+        "quant-research",
+        "backtest-audit",
     )
     assert plan.external_gates == ("User approves formal strategy semantics.",)
 
