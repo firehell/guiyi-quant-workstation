@@ -78,8 +78,8 @@ preflight 发现原 code-only closeout 的 generic inventory、retirement apply 
 reference inventory、retirement/deletion/quarantine 公共入口和 raw 逐行比较。该 candidate
 现使用专用 manifest schema 与 sibling-directory atomic bundle publish；evidence root 与
 project/data/canonical root（含 symlink 解析）重叠即 fail-closed，四类 Direct trading-day
-conflict 均只形成未授权的 RQData 重下动作。验证为 focused 122 passed、backend
-2684 passed / 44 skipped、frontend 191 passed / 1 skipped、frontend build、Ruff、secret scan
+conflict 均只形成未授权的 RQData 重下动作。验证为 focused 123 passed、backend
+2685 passed / 44 skipped、frontend 191 passed / 1 skipped、frontend build、Ruff、secret scan
 和 engineering all-safe 385 + health 6 全通过。独立 Review round 1 为
 `0 Critical / 4 Important`，原四项均已修复；round 2 确认原四项关闭，但发现非 RQData
 Direct 冲突 provider mismatch 与遗漏 bounded WeCom 真实发送开关两个新 Important。当前修复将
@@ -87,8 +87,10 @@ Direct 冲突 provider mismatch 与遗漏 bounded WeCom 真实发送开关两个
 `GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED=false` 纳入 Runtime receipt 强制合同；仍须
 对新 exact head 复审。第三轮随后发现 action/request 只绑定 provider 而未绑定完整身份这一
 Important；当前已将 symbol、contract、dataset kind、frequency、adjustment、schema、window 与
-provider/original provider 全部逐字段绑定，并增加 forged identity/window 拒绝测试。仍须第四轮
-exact-head Review、PR/CI 与 develop ancestry 回读，未通过复审前不得形成 release candidate。
+provider/original provider 全部逐字段绑定，并增加 forged identity/window 拒绝测试。第四轮又
+发现 `1d + source_intervals=1m` Direct conflict 被错误跳过 provider request；该特判已删除，1d
+现在与 1m/1w 一致形成 RQData request。仍须第五轮 exact-head Review、PR/CI 与 develop ancestry
+回读，未通过复审前不得形成 release candidate。
 
 旧 v8 生产只读 snapshot 的 103,481 assets、2,791 conflicts、4,297 retirement candidates
 与引用数字均为 superseded 历史诊断，不能用于任何 approval。
@@ -129,7 +131,7 @@ Gate 进一步直接识别出 2,791 个文件至少包含一个周末 trading da
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
 | Task 05 可信消费者切换 | independent Review passed；develop integration pending | `CLEAN_FOR_INTEGRATION`；仍须 task PR、post-merge CI 与 ancestry readback，不是 release 或 Runtime Gate |
-| Task 07 code-only closeout | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | 七周期专用、atomic K 线 manifest candidate 已验证；round 1 的 4 Important、round 2 的 2 Important、round 3 的完整 request/action identity Important 均已修复，fourth exact-head review、PR/CI 与 develop 集成仍 pending |
+| Task 07 code-only closeout | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | 七周期专用、atomic K 线 manifest candidate 已验证；round 1 的 4 Important、round 2 的 2 Important、round 3 的 2 Important、round 4 的 1d Direct request Important 均已修复，fifth exact-head review、PR/CI 与 develop 集成仍 pending |
 | Task 07 K-line data Gate | blocked by prerequisite | v9 内容冲突为零、7,232 trusted sources / 411 batches，但该 snapshot 已被代码变更 supersede，且未取得 exact apply approval，不得写入 |
 | Task 07 active-reference Gate | `BLOCKED_ACTIVE_REFERENCE` | 当前 checkout active=0 / review-required=0；旧 v9 detached Runtime 300/1,581 与 DB before-image 4,297 未在本轮重采，仍不得据此执行 retirement |
 | Task 06 live/EOD contract | passed | 已冻结并验证单一 EMA21 confirmed-close observation 合同；不得注入其他 evaluator，且不扩展 centered-XMA 白名单 |

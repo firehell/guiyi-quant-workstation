@@ -2289,10 +2289,7 @@ def build_migration_plan(
             repair_actions.append(
                 {**action_body, "action_digest": canonical_digest(action_body)}
             )
-        if raw.get("frequency") in _DERIVED_FREQUENCIES or (
-            raw.get("frequency") == "1d"
-            and tuple(raw.get("source_intervals", ())) == ("1m",)
-        ):
+        if raw.get("frequency") in _DERIVED_FREQUENCIES:
             continue
         disposition = raw.get("disposition")
         if disposition == AssetDisposition.CONFLICT_BLOCKED.value or (

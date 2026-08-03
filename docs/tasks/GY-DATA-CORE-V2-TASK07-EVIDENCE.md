@@ -31,8 +31,8 @@ manifest_schema=dedicated_kline_manifest_v1
 manifest_bundle_publish=sibling_staging_fsync_atomic_rename
 evidence_scope_overlap=fail_closed_including_symlink_parent
 direct_trading_day_conflict=rqdata_redownload_proposal_only
-focused_regression=122 passed
-backend=2684 passed / 44 skipped
+focused_regression=123 passed
+backend=2685 passed / 44 skipped
 frontend=191 passed / 1 skipped
 frontend_build=passed
 engineering_all_safe=385 passed / health 6 passed
@@ -42,9 +42,11 @@ independent_review_round_1=0 Critical / 4 Important
 independent_review_round_1_fixes=implemented / round 2 confirmed closed
 independent_review_round_2=0 Critical / 2 Important provider mismatch + bounded WeCom flag omission
 independent_review_round_2_fix=provider request rqdata-only + integrity consistency + bounded WeCom forced false
-independent_review_round_3=0 Critical / 1 Important incomplete request-action identity binding
+independent_review_round_3=0 Critical / 2 Important identity binding + 1d provider request omission
 independent_review_round_3_fix=full direct identity and window equality + forged drift rejection
-independent_review_round_4=pending exact-head re-review
+independent_review_round_4=0 Critical / 1 Important confirmed 1d provider request omission
+independent_review_round_4_fix=removed 1d-from-1m skip; all direct conflicts emit rqdata request
+independent_review_round_5=pending exact-head re-review
 production_reads=false
 production_writes=false
 runtime_changes=false
@@ -289,7 +291,7 @@ retirement apply 只允许 hash-bound packet manifest 中的逐表主键和 befo
 Task_07=CODE_COMPLETE_EXTERNAL_GATE_PENDING
 Kline_Gate=NOT_OPENED_NO_EXACT_PRODUCTION_MANIFEST
 Active_Reference_Gate=NOT_RESCANNED_OLD_V9_BLOCKER_EVIDENCE_ONLY
-Review_Gate=ROUND_3_BLOCKED_1_IMPORTANT_FIX_PENDING_EXACT_HEAD_REREVIEW
+Review_Gate=ROUND_4_BLOCKED_1_IMPORTANT_FIX_PENDING_EXACT_HEAD_REREVIEW
 READY_FOR_TASK_08=false
 ```
 

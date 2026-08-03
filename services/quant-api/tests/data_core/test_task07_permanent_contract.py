@@ -278,6 +278,28 @@ def test_non_rqdata_direct_conflict_proposes_only_rqdata_redownload() -> None:
             task07._validate_migration_plan_integrity(forged)
 
 
+def test_daily_from_minute_conflict_still_emits_rqdata_provider_request() -> None:
+    manifest = build_kline_manifest_index(
+        [_asset(frequency="1d", source_intervals=("1m",))],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(manifest)
+
+    assert [item["action"] for item in plan["repair_actions"]] == [
+        "rqdata_redownload"
+    ]
+    assert plan["provider_request_proposal"]["request_count"] == 1
+    request = plan["provider_requests"][0]
+    assert request["provider"] == "rqdata"
+    assert request["frequency"] == "1d"
+    assert request["market_data_file_id"] == plan["repair_actions"][0][
+        "market_data_file_id"
+    ]
+    task07._validate_migration_plan_integrity(plan)
+
+
 def _manifest_scope(tmp_path: Path) -> dict[str, str]:
     roots = {
         "project_root": tmp_path / "project",
