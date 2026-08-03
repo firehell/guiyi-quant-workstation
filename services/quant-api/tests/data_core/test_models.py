@@ -50,3 +50,23 @@ def test_market_dataset_model_check_rejects_unknown_frequency() -> None:
         session.add(_dataset("2m"))
         with pytest.raises(IntegrityError):
             session.commit()
+
+
+def test_market_dataset_model_check_rejects_actual_dominant_weekly() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(
+            MarketDataset(
+                provider="rqdata",
+                dataset_kind="actual_dominant",
+                symbol="jm",
+                contract_or_series="JM2609",
+                frequency="1w",
+                adjustment="none",
+                schema_version="canonical-bar-v1",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()

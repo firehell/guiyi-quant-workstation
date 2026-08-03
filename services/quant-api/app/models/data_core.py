@@ -59,6 +59,10 @@ class MarketDataset(Base):
             name="ck_market_datasets_frequency",
         ),
         CheckConstraint(
+            "NOT (dataset_kind = 'actual_dominant' AND frequency = '1w')",
+            name="ck_market_datasets_actual_dominant_weekly",
+        ),
+        CheckConstraint(
             "length(trim(provider)) > 0"
             " AND length(trim(dataset_kind)) > 0"
             " AND length(trim(symbol)) > 0"

@@ -220,6 +220,7 @@ class PublishExpectation:
     row_count: int
     data_version: str
     manifest_version: str
+    manifest_format: str = CANONICAL_MANIFEST_FORMAT_V1
     file_checksum: str | None = None
     canonical_logical_fingerprint: str | None = None
     manifest_digest: str | None = None
@@ -264,7 +265,14 @@ class PublishExpectation:
             raise CanonicalPublishError(
                 "CANONICAL_PUBLISH_EXPECTATION_INVALID"
             )
-        is_v2 = self.manifest_version == CANONICAL_MANIFEST_FORMAT_V2
+        if self.manifest_format not in {
+            CANONICAL_MANIFEST_FORMAT_V1,
+            CANONICAL_MANIFEST_FORMAT_V2,
+        }:
+            raise CanonicalPublishError(
+                "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+            )
+        is_v2 = self.manifest_format == CANONICAL_MANIFEST_FORMAT_V2
         if is_v2:
             if not isinstance(self.lineage, ManifestLineage):
                 raise CanonicalPublishError(
@@ -287,6 +295,7 @@ class PublishExpectation:
         validation: ValidationResult,
         *,
         manifest_version: str,
+        manifest_format: str = CANONICAL_MANIFEST_FORMAT_V1,
         overlap_reason: str | None = None,
         lineage: ManifestLineage | None = None,
     ) -> PublishExpectation:
@@ -301,6 +310,7 @@ class PublishExpectation:
             row_count=validation.row_count,
             data_version=validation.data_version,
             manifest_version=manifest_version,
+            manifest_format=manifest_format,
             file_checksum=validation.file_checksum,
             canonical_logical_fingerprint=(
                 validation.canonical_logical_fingerprint
@@ -2841,16 +2851,14 @@ def _validate_stored_manifest_document(
     }
     if manifest_format == CANONICAL_MANIFEST_FORMAT_V1:
         if (
-            manifest_version == CANONICAL_MANIFEST_FORMAT_V2
-            or dataset.frequency not in DIRECT_FREQUENCIES
+            dataset.frequency not in DIRECT_FREQUENCIES
             or set(document) != v1_fields
         ):
             raise ValueError
         lineage: ManifestLineage | None = None
     elif manifest_format == CANONICAL_MANIFEST_FORMAT_V2:
         if (
-            manifest_version != CANONICAL_MANIFEST_FORMAT_V2
-            or set(document) != v1_fields | {"source_lineage"}
+            set(document) != v1_fields | {"source_lineage"}
         ):
             raise ValueError
         try:
@@ -2953,13 +2961,9 @@ def _manifest_payload(
     }
     if expected.overlap_reason is not None:
         partition["overlap_reason"] = expected.overlap_reason
-    is_v2 = expected.manifest_version == CANONICAL_MANIFEST_FORMAT_V2
+    is_v2 = expected.manifest_format == CANONICAL_MANIFEST_FORMAT_V2
     payload: dict[str, object] = {
-        "manifest_format": (
-            CANONICAL_MANIFEST_FORMAT_V2
-            if is_v2
-            else CANONICAL_MANIFEST_FORMAT_V1
-        ),
+        "manifest_format": expected.manifest_format,
         "manifest_version": expected.manifest_version,
         "profile_id": CANONICAL_PARQUET_PROFILE_ID,
         "dataset_key": _dataset_payload(validation.dataset),

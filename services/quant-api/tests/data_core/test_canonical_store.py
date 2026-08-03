@@ -29,7 +29,6 @@ from app.data_core.canonical_store import (
     CanonicalStore,
     CanonicalStoreError,
     PublishExpectation,
-    canonical_json_digest,
 )
 from app.data_core.catalog import HistoricalCatalog
 from app.data_core.contracts import (
@@ -56,6 +55,20 @@ START = datetime(2026, 7, 1, 1, 0, tzinfo=UTC)
 FIRST = datetime(2026, 7, 1, 1, 1, tzinfo=UTC)
 SECOND = datetime(2026, 7, 1, 1, 2, tzinfo=UTC)
 TRADING_DAY = date(2026, 7, 1)
+
+
+def _independent_canonical_json_digest(value: object) -> str:
+    encoded = (
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 @pytest.fixture
@@ -194,11 +207,26 @@ def _expectation(validation) -> PublishExpectation:
     )
 
 
+def _aggregate_expectation(validation) -> PublishExpectation:
+    return PublishExpectation.from_validation(
+        validation,
+        manifest_version="task07-aggregate-migration-v1",
+        manifest_format="canonical-manifest-v2",
+        lineage=ManifestLineage(
+            origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+            source_frequency=BarFrequency.M1,
+            legacy_source_checksum="a" * 64,
+            quality_evidence_digest="b" * 64,
+        ),
+    )
+
+
 def _crash_publish_worker(
     staging_root: str,
     canonical_root: str,
     database_path: str,
     fault_point: str,
+    aggregate: bool = False,
 ) -> None:
     engine = create_engine(f"sqlite+pysqlite:///{database_path}")
     factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -213,8 +241,13 @@ def _crash_publish_worker(
         metadata_session_factory=factory,
         fault_injector=crash,
     )
-    staged, validation = _stage_and_validate(store)
-    store.publish(staged, _expectation(validation))
+    if aggregate:
+        staged, validation = _stage_and_validate_aggregate(store)
+        expectation = _aggregate_expectation(validation)
+    else:
+        staged, validation = _stage_and_validate(store)
+        expectation = _expectation(validation)
+    store.publish(staged, expectation)
 
 
 def _crash_replacement_worker(
@@ -263,6 +296,8 @@ def _crash_replacement_worker(
 def _spawn_crashed_publish(
     tmp_path: Path,
     fault_point: str,
+    *,
+    aggregate: bool = False,
 ) -> tuple[Path, Path, Path]:
     database_path = tmp_path / "metadata.sqlite"
     engine = create_engine(f"sqlite+pysqlite:///{database_path}")
@@ -277,6 +312,7 @@ def _spawn_crashed_publish(
             str(canonical_root),
             str(database_path),
             fault_point,
+            aggregate,
         ),
     )
     process.start()
@@ -320,6 +356,21 @@ def test_publish_expectation_rejects_inexact_types_and_invalid_facts(
 
     with pytest.raises(CanonicalPublishError) as error:
         PublishExpectation(**values)  # type: ignore[arg-type]
+
+    assert error.value.code == "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+
+
+def test_publish_expectation_rejects_unknown_manifest_format() -> None:
+    with pytest.raises(CanonicalPublishError) as error:
+        PublishExpectation(
+            dataset=_key(),
+            coverage_start=START,
+            coverage_end=SECOND,
+            row_count=2,
+            data_version="provider-final-20260701",
+            manifest_version="provider-business-v7",
+            manifest_format="canonical-manifest-v3",
+        )
 
     assert error.value.code == "CANONICAL_PUBLISH_EXPECTATION_INVALID"
 
@@ -620,7 +671,8 @@ def test_v2_direct_manifest_has_exact_nonaggregate_lineage(
         staged,
         PublishExpectation.from_validation(
             validation,
-            manifest_version="canonical-manifest-v2",
+            manifest_version="provider-final-manifest-business-v7",
+            manifest_format="canonical-manifest-v2",
             lineage=ManifestLineage(origin=DatasetOrigin.PROVIDER_DIRECT),
         ),
     )
@@ -628,7 +680,7 @@ def test_v2_direct_manifest_has_exact_nonaggregate_lineage(
     manifest = json.loads(published.manifest_path.read_text())
     assert manifest["manifest_format"] == "canonical-manifest-v2"
     assert manifest["source_lineage"] == {"origin": "provider_direct"}
-    assert manifest["manifest_digest"] == canonical_json_digest(
+    assert manifest["manifest_digest"] == _independent_canonical_json_digest(
         {key: value for key, value in manifest.items() if key != "manifest_digest"}
     )
 
@@ -644,7 +696,8 @@ def test_v2_aggregate_manifest_binds_legacy_and_quality_lineage(
         staged,
         PublishExpectation.from_validation(
             validation,
-            manifest_version="canonical-manifest-v2",
+            manifest_version="task07-aggregate-migration-v1",
+            manifest_format="canonical-manifest-v2",
             lineage=ManifestLineage(
                 origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
                 source_frequency=BarFrequency.M1,
@@ -662,7 +715,7 @@ def test_v2_aggregate_manifest_binds_legacy_and_quality_lineage(
         "legacy_source_checksum": "a" * 64,
         "quality_evidence_digest": "b" * 64,
     }
-    assert manifest["manifest_digest"] == canonical_json_digest(
+    assert manifest["manifest_digest"] == _independent_canonical_json_digest(
         {key: value for key, value in manifest.items() if key != "manifest_digest"}
     )
 
@@ -677,7 +730,8 @@ def test_aggregate_publish_requires_explicit_digest_bound_lineage(
     with pytest.raises(CanonicalPublishError) as error:
         PublishExpectation.from_validation(
             validation,
-            manifest_version="canonical-manifest-v2",
+            manifest_version="task07-aggregate-migration-v1",
+            manifest_format="canonical-manifest-v2",
         )
 
     assert error.value.code == "CANONICAL_PUBLISH_EXPECTATION_INVALID"
@@ -703,7 +757,8 @@ def test_v2_manifest_lineage_schema_and_digest_fail_closed(
         staged,
         PublishExpectation.from_validation(
             validation,
-            manifest_version="canonical-manifest-v2",
+            manifest_version="task07-aggregate-migration-v1",
+            manifest_format="canonical-manifest-v2",
             lineage=ManifestLineage(
                 origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
                 source_frequency=BarFrequency.M1,
@@ -724,7 +779,7 @@ def test_v2_manifest_lineage_schema_and_digest_fail_closed(
     else:
         raise AssertionError(tamper)
     if tamper != "lineage_digest_tamper":
-        document["manifest_digest"] = canonical_json_digest(
+        document["manifest_digest"] = _independent_canonical_json_digest(
             {
                 key: value
                 for key, value in document.items()
@@ -740,7 +795,7 @@ def test_v2_manifest_lineage_schema_and_digest_fail_closed(
             coverage_end=validation.coverage_end,
             row_count=validation.row_count,
             data_version=validation.data_version,
-            manifest_version="canonical-manifest-v2",
+            manifest_version="task07-aggregate-migration-v1",
             file_uri=published.partition_manifest.file_uri,
             manifest_uri=published.partition_manifest.manifest_uri,
             file_checksum=published.file_checksum,
@@ -748,6 +803,27 @@ def test_v2_manifest_lineage_schema_and_digest_fail_closed(
                 published.canonical_logical_fingerprint
             ),
         )
+
+
+def test_manifest_format_defaults_to_v1_independent_of_business_version(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate(store)
+
+    published = store.publish(
+        staged,
+        PublishExpectation.from_validation(
+            validation,
+            manifest_version="canonical-manifest-v2",
+        ),
+    )
+
+    document = json.loads(published.manifest_path.read_text())
+    assert document["manifest_format"] == "canonical-manifest-v1"
+    assert document["manifest_version"] == "canonical-manifest-v2"
+    assert "source_lineage" not in document
 
 
 def test_publish_appends_version_replacement_without_deleting_original(
@@ -1798,6 +1874,167 @@ def test_force_exit_is_reconciled_to_absent_or_fully_committed_state(
         assert _tree_snapshot(staging_root) == {
             "canonical-cleanup-quarantine": ("dir", ""),
         }
+
+
+def test_v2_aggregate_post_commit_recovery_preserves_exact_catalog_manifest(
+    tmp_path: Path,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_metadata_commit",
+        aggregate=True,
+    )
+    journal = next(
+        (canonical_root / "canonical-publish-journal").glob("txn-*.json")
+    )
+    intent = json.loads(journal.read_text(encoding="utf-8"))
+    manifest_document = intent["manifest_document"]
+    manifest_facts = intent["partition_manifest"]
+    assert manifest_document["manifest_format"] == "canonical-manifest-v2"
+    assert manifest_document["manifest_version"] == (
+        "task07-aggregate-migration-v1"
+    )
+    assert manifest_document["source_lineage"] == {
+        "origin": "preaggregated_from_1m",
+        "source_frequency": "1m",
+        "legacy_source_checksum": "a" * 64,
+        "quality_evidence_digest": "b" * 64,
+    }
+    factory = sessionmaker(
+        bind=create_engine(f"sqlite+pysqlite:///{database_path}"),
+        expire_on_commit=False,
+    )
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=factory,
+    )
+
+    with factory() as recovered_session:
+        partitions = HistoricalCatalog(recovered_session).list_partitions(
+            _key(frequency=BarFrequency.M5)
+        )
+    assert len(partitions) == 1
+    partition = partitions[0]
+    assert partition.manifest_version == manifest_facts["manifest_version"]
+    assert partition.manifest_digest == manifest_facts["manifest_digest"]
+    assert partition.file_uri == manifest_facts["file_uri"]
+    assert partition.manifest_uri == manifest_facts["manifest_uri"]
+    assert partition.checksum == manifest_facts["checksum"]
+    assert partition.row_count == manifest_facts["row_count"]
+    manifest_path = canonical_root / partition.manifest_uri
+    file_path = canonical_root / partition.file_uri
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == (
+        manifest_document
+    )
+    assert hashlib.sha256(file_path.read_bytes()).hexdigest() == (
+        partition.checksum
+    )
+    assert _independent_canonical_json_digest(
+        {
+            key: value
+            for key, value in manifest_document.items()
+            if key != "manifest_digest"
+        }
+    ) == partition.manifest_digest
+    assert not list(
+        (canonical_root / "canonical-publish-journal").iterdir()
+    )
+
+
+def test_v2_aggregate_critical_precommit_crash_recovers_to_absent(
+    tmp_path: Path,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_manifest_link",
+        aggregate=True,
+    )
+    journal = next(
+        (canonical_root / "canonical-publish-journal").glob("txn-*.json")
+    )
+    intent = json.loads(journal.read_text(encoding="utf-8"))
+    assert intent["manifest_document"]["source_lineage"]["origin"] == (
+        "preaggregated_from_1m"
+    )
+    factory = sessionmaker(
+        bind=create_engine(f"sqlite+pysqlite:///{database_path}"),
+        expire_on_commit=False,
+    )
+
+    CanonicalStore(
+        staging_root=staging_root,
+        canonical_root=canonical_root,
+        metadata_session_factory=factory,
+    )
+
+    with factory() as recovered_session:
+        assert recovered_session.scalars(select(MarketDataset)).all() == []
+        assert recovered_session.scalars(select(MarketPartition)).all() == []
+    assert _all_files(staging_root) == []
+    assert _all_files(canonical_root) == []
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "missing_lineage_field",
+        "extra_lineage_field",
+        "lineage_digest_tamper",
+    ],
+)
+def test_v2_aggregate_journal_lineage_tamper_fails_closed_before_mutation(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    database_path, staging_root, canonical_root = _spawn_crashed_publish(
+        tmp_path,
+        "after_journal_fsync",
+        aggregate=True,
+    )
+    journal = next(
+        (canonical_root / "canonical-publish-journal").glob("txn-*.json")
+    )
+    payload = json.loads(journal.read_text(encoding="utf-8"))
+    lineage = payload["manifest_document"]["source_lineage"]
+    if tamper == "missing_lineage_field":
+        del lineage["quality_evidence_digest"]
+    elif tamper == "extra_lineage_field":
+        lineage["unexpected"] = True
+    elif tamper == "lineage_digest_tamper":
+        lineage["legacy_source_checksum"] = "c" * 64
+    else:
+        raise AssertionError(tamper)
+    if tamper != "lineage_digest_tamper":
+        manifest_document = payload["manifest_document"]
+        repaired_digest = _independent_canonical_json_digest(
+            {
+                key: value
+                for key, value in manifest_document.items()
+                if key != "manifest_digest"
+            }
+        )
+        manifest_document["manifest_digest"] = repaired_digest
+        payload["partition_manifest"]["manifest_digest"] = repaired_digest
+    journal.write_text(json.dumps(payload), encoding="utf-8")
+    canonical_before = _tree_snapshot(canonical_root)
+    staging_before = _tree_snapshot(staging_root)
+    factory = sessionmaker(
+        bind=create_engine(f"sqlite+pysqlite:///{database_path}"),
+        expire_on_commit=False,
+    )
+
+    with pytest.raises(CanonicalPublishError) as error:
+        CanonicalStore(
+            staging_root=staging_root,
+            canonical_root=canonical_root,
+            metadata_session_factory=factory,
+        )
+
+    assert error.value.code == "CANONICAL_JOURNAL_INVALID"
+    assert _tree_snapshot(canonical_root) == canonical_before
+    assert _tree_snapshot(staging_root) == staging_before
 
 
 @pytest.mark.parametrize(
