@@ -38,14 +38,17 @@ RQData
 
 Task 07 新 inventory 对 PostgreSQL 使用 `REPEATABLE READ READ ONLY` 与稳定 keyset，asset/partition
 全量进入 SHA-256 分片 JSONL；checkout 与 detached Runtime 引用扫描同样不使用命中数截断。
-approved data/canonical root 以外的文件不会作为 migration source 读取；`GuiyiApprovals`/Runtime
-等 protected evidence 不进入 migration 或 retirement 写范围。旧 v8 的 103,481 数字来自 dirty
-worktree，现仅为 superseded 诊断。clean `e01784ff` / production `20260802_0031` 的 v9
-已完成 103,481 个 asset 与 5,018 条 reference 的不截断扫描；但必需的
-`/Volumes/扩展盘/GuiyiApprovals` protected root 当前不存在，显式纳入它时 inventory
-fail-closed，因此该 v9 仅为完整 blocker diagnosis，不是最终 approval inventory。
-Task 07 CLI 现要求至少一个显式 `--protected-root`；缺省时在打开数据库前拒绝，
-service 层也会以 `TASK07_PROTECTED_ROOT_REQUIRED` fail-closed，防止通过漏传参数产生假完整 inventory。
+approved data/canonical root 以外的文件不会作为 migration source 读取；inventory 自身的
+evidence root 永久自动归入 protected evidence，额外证据目录可通过可重复的
+`--protected-root` 显式加入；所有 protected evidence 均不进入 migration 或 retirement 写范围。
+路径分类同时检查登记的 lexical path 与解析后的 physical path，因此 protected root 内的
+symbolic link 不能借由指向 approved data/canonical root 而成为 migration source。
+旧 v8 的 103,481 数字来自 dirty worktree，现仅为 superseded 诊断。clean `e01784ff` /
+production `20260802_0031` 的 v9 已完成 103,481 个 asset 与 5,018 条 reference 的不截断扫描。
+项目所有者于 2026-08-03 确认已删除的 `/Volumes/扩展盘/GuiyiApprovals` 不再是必需 protected
+root，仓库不会恢复或依赖它。v9 仍仅为 blocker diagnosis，因为其 base SHA 已被后续 hardening
+supersede，且 Runtime active reference Gate 仍未关闭；最终 approval inventory 必须绑定新的
+clean exact HEAD。
 
 实现已覆盖 exact write-target binding、generic source validation、Canonical staging/publish/readback、
 fsync durable batch journal/crash resume 和 exact retirement rollback，并通过第六轮独立 Review。
