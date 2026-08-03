@@ -165,15 +165,20 @@ def build_parser() -> argparse.ArgumentParser:
     task07_verify.add_argument("--receipt", type=Path, required=True)
     task07_verify.add_argument("--batch-key", required=True)
     task07_verify.add_argument("--canonical-root", type=Path, required=True)
-    retirement_plan = task07_commands.add_parser("retirement-plan")
-    retirement_plan.add_argument("--project-root", type=Path, required=True)
-    retirement_plan.add_argument(
-        "--runtime-root",
+    migration_verify = task07_commands.add_parser("migration-verify")
+    migration_verify.add_argument("--plan", type=Path, required=True)
+    migration_verify.add_argument("--approval-packet", type=Path, required=True)
+    migration_verify.add_argument("--approval-hash", required=True)
+    migration_verify.add_argument("--canonical-root", type=Path, required=True)
+    migration_verify.add_argument(
+        "--apply-receipt",
         type=Path,
         action="append",
         required=True,
-        help="Detached Runtime root to scan read-only; repeat for multiple roots.",
+        help="Exact apply receipt in migration-envelope order; repeat once per batch.",
     )
+    retirement_plan = task07_commands.add_parser("retirement-plan")
+    retirement_plan.add_argument("--project-root", type=Path, required=True)
     retirement_plan.add_argument("--database-revision")
     retirement_apply = task07_commands.add_parser("retirement-apply")
     retirement_apply.add_argument("--plan", type=Path, required=True)

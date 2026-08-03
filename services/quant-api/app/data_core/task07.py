@@ -664,15 +664,6 @@ def _reference_snapshot(
     }
 
 
-def task07_reference_roots(
-    reference_snapshot: Mapping[str, Any],
-) -> tuple[tuple[str, Path], ...]:
-    snapshot = _reference_snapshot(reference_snapshot)
-    return tuple(
-        (item["root_kind"], Path(item["path"])) for item in snapshot["roots"]
-    )
-
-
 def build_migration_envelope(
     batches: Iterable[Mapping[str, Any]],
 ) -> dict[str, Any]:
@@ -711,14 +702,15 @@ def build_migration_envelope(
             for index in range(0, len(level), 2)
         ]
     body = {
-        "schema_version": 1,
+        "schema_version": 2,
         "hash_algorithm": "sha256",
         "leaf_domain": "00",
         "node_domain": "01",
-        "odd_leaf_rule": "duplicate",
+        "empty_domain": "02",
+        "odd_leaf_rule": "duplicate_last_at_each_level",
         "batch_count": len(manifest),
         "batch_manifest": manifest,
-        "merkle_root": level[0].hex() if level else None,
+        "merkle_root": level[0].hex() if level else sha256(b"\x02").hexdigest(),
     }
     return {**body, "envelope_digest": canonical_digest(body)}
 
@@ -1123,6 +1115,11 @@ def build_migration_plan(
         else "BLOCKED_AT_KLINE_DATA_GATE"
     )
     reference_eligible = active_reference_gate == "zero_active_references"
+    retirement_gate = (
+        "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
+        if reference_eligible
+        else active_reference_gate
+    )
     deletion_candidate_manifest = {
         "inventory_digest": index["assets_digest"],
         "count": retirement_count,
@@ -1159,10 +1156,10 @@ def build_migration_plan(
         "approval_eligible": approval_eligible,
         "migration_gate_status": gate_status,
         "gate_status": gate_status,
-        "retirement_eligible": reference_eligible,
-        "deletion_eligible": reference_eligible,
-        "retirement_gate_status": active_reference_gate,
-        "deletion_gate_status": active_reference_gate,
+        "retirement_eligible": False,
+        "deletion_eligible": False,
+        "retirement_gate_status": retirement_gate,
+        "deletion_gate_status": retirement_gate,
         "runtime_cutover_eligible": False,
         "migration_verification_gate": "pending_all_batch_verification",
         "calls_rqdata": False,
@@ -1170,7 +1167,7 @@ def build_migration_plan(
         "deletion_authorized": False,
     }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "command": "data.task07.plan",
         "status": "planned",
         **facts,
@@ -1248,6 +1245,8 @@ def build_approval_packet(
         )
     else:
         if plan.get("retirement_eligible") is not True:
+            if plan.get("reference_gate") == "zero_active_references":
+                raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
             raise ValueError("TASK07_RETIREMENT_REFERENCE_GATE_BLOCKED")
         facts = _retirement_approval_facts(
             plan,
@@ -1427,6 +1426,12 @@ def _task07_batch(plan: Mapping[str, Any], batch_key: str | None) -> Mapping[str
 
 
 def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
+    if (
+        plan.get("schema_version") != 2
+        or plan.get("command") != "data.task07.plan"
+        or plan.get("status") != "planned"
+    ):
+        raise ValueError("TASK07_PLAN_SCHEMA_INVALID")
     batches = plan.get("batches")
     if not isinstance(batches, list):
         raise ValueError("TASK07_PLAN_INVALID")
@@ -1529,6 +1534,11 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         else "BLOCKED_AT_KLINE_DATA_GATE"
     )
     expected_reference_eligible = expected_active_gate == "zero_active_references"
+    expected_retirement_gate = (
+        "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
+        if expected_reference_eligible
+        else expected_active_gate
+    )
     expected_manifest = {
         "inventory_digest": plan.get("assets_digest"),
         "count": expected_controls["deletion_candidate_count"],
@@ -1546,10 +1556,10 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         or plan.get("approval_eligible") is not expected_eligible
         or plan.get("migration_gate_status") != expected_gate
         or plan.get("gate_status") != expected_gate
-        or plan.get("retirement_eligible") is not expected_reference_eligible
-        or plan.get("deletion_eligible") is not expected_reference_eligible
-        or plan.get("retirement_gate_status") != expected_active_gate
-        or plan.get("deletion_gate_status") != expected_active_gate
+        or plan.get("retirement_eligible") is not False
+        or plan.get("deletion_eligible") is not False
+        or plan.get("retirement_gate_status") != expected_retirement_gate
+        or plan.get("deletion_gate_status") != expected_retirement_gate
         or plan.get("runtime_cutover_eligible") is not False
         or plan.get("migration_verification_gate")
         != "pending_all_batch_verification"
@@ -1585,10 +1595,10 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         "approval_eligible": expected_eligible,
         "migration_gate_status": expected_gate,
         "gate_status": expected_gate,
-        "retirement_eligible": expected_reference_eligible,
-        "deletion_eligible": expected_reference_eligible,
-        "retirement_gate_status": expected_active_gate,
-        "deletion_gate_status": expected_active_gate,
+        "retirement_eligible": False,
+        "deletion_eligible": False,
+        "retirement_gate_status": expected_retirement_gate,
+        "deletion_gate_status": expected_retirement_gate,
         "runtime_cutover_eligible": False,
         "migration_verification_gate": "pending_all_batch_verification",
         "calls_rqdata": False,
@@ -1597,98 +1607,6 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
     }
     if plan.get("plan_digest") != canonical_digest(facts):
         raise ValueError("TASK07_PLAN_DIGEST_MISMATCH")
-
-
-def build_migration_verification_receipt(
-    plan: Mapping[str, Any],
-    receipts: Iterable[Mapping[str, Any]],
-) -> dict[str, Any]:
-    _validate_migration_plan_integrity(plan)
-    batches = list(plan["batches"])
-    verify_receipts = list(receipts)
-    if len(verify_receipts) != len(batches) or not batches:
-        raise ValueError("TASK07_MIGRATION_VERIFY_SET_INCOMPLETE")
-    if any(not isinstance(receipt, Mapping) for receipt in verify_receipts):
-        raise ValueError("TASK07_MIGRATION_VERIFY_RECEIPT_DRIFT")
-    expected_manifest = plan["migration_envelope"]["batch_manifest"]
-    actual_manifest = [
-        {
-            "batch_key": receipt.get("batch_key"),
-            "batch_digest": receipt.get("batch_digest"),
-        }
-        for receipt in verify_receipts
-    ]
-    if actual_manifest != expected_manifest:
-        if sorted(
-            actual_manifest,
-            key=lambda item: str(item["batch_key"]),
-        ) == expected_manifest:
-            raise ValueError("TASK07_MIGRATION_VERIFY_ORDER_INVALID")
-        raise ValueError("TASK07_MIGRATION_VERIFY_SET_INCOMPLETE")
-    approval_hashes: set[str] = set()
-    verification_manifest: list[dict[str, Any]] = []
-    for batch, receipt in zip(batches, verify_receipts, strict=True):
-        if receipt.get("status") != "passed":
-            raise ValueError("TASK07_MIGRATION_BATCH_VERIFY_FAILED")
-        verify_digest = receipt.get("verify_digest")
-        body = {
-            key: value for key, value in receipt.items() if key != "verify_digest"
-        }
-        source_verify_digests = receipt.get("source_verify_digests")
-        approval_hash = receipt.get("migration_approval_hash")
-        apply_receipt_digest = receipt.get("receipt_digest")
-        if (
-            not isinstance(verify_digest, str)
-            or verify_digest != canonical_digest(body)
-            or receipt.get("schema_version") != 1
-            or receipt.get("command") != "data.task07.verify"
-            or receipt.get("readonly") is not True
-            or receipt.get("plan_digest") != plan.get("plan_digest")
-            or receipt.get("migration_envelope_digest")
-            != plan["migration_envelope"]["envelope_digest"]
-            or not isinstance(approval_hash, str)
-            or not _SHA256.fullmatch(approval_hash)
-            or receipt.get("batch_key") != batch["batch_key"]
-            or receipt.get("batch_digest") != batch["batch_digest"]
-            or not isinstance(apply_receipt_digest, str)
-            or not _SHA256.fullmatch(apply_receipt_digest)
-            or receipt.get("verified_source_count")
-            != len(batch.get("sources", []))
-            or not isinstance(source_verify_digests, list)
-            or len(source_verify_digests) != len(batch.get("sources", []))
-            or any(
-                not isinstance(item, str) or not _SHA256.fullmatch(item)
-                for item in source_verify_digests
-            )
-        ):
-            raise ValueError("TASK07_MIGRATION_VERIFY_RECEIPT_DRIFT")
-        approval_hashes.add(approval_hash)
-        verification_manifest.append(
-            {
-                "batch_key": batch["batch_key"],
-                "batch_digest": batch["batch_digest"],
-                "verify_digest": verify_digest,
-            }
-        )
-    if len(approval_hashes) != 1:
-        raise ValueError("TASK07_MIGRATION_APPROVAL_HASH_DRIFT")
-    body = {
-        "schema_version": 1,
-        "command": "data.task07.migration-verification",
-        "status": "passed",
-        "readonly": True,
-        "plan_digest": plan["plan_digest"],
-        "migration_envelope_digest": plan["migration_envelope"][
-            "envelope_digest"
-        ],
-        "migration_approval_hash": next(iter(approval_hashes)),
-        "batch_manifest": expected_manifest,
-        "batches_merkle_root": plan["migration_envelope"]["merkle_root"],
-        "verified_batch_count": len(verification_manifest),
-        "verification_manifest": verification_manifest,
-        "runtime_cutover_eligible": True,
-    }
-    return {**body, "verification_digest": canonical_digest(body)}
 
 
 def build_write_targets(
@@ -1741,6 +1659,23 @@ def _load_json(path: Path, code: str) -> dict[str, Any]:
     return value
 
 
+_TASK07_RUNTIME_CUTOVER_RECEIPT_CONTRACT = {
+    "schema_version": 1,
+    "command": "data.task07.runtime-cutover",
+    "required_fields": [
+        "schema_version",
+        "command",
+        "status",
+        "source_base_sha",
+        "migration_verification_digest",
+        "trusted_runtime_scope",
+        "runtime_cutover_receipt_digest",
+    ],
+    "trusted_runtime_scope_required": True,
+    "validation_owner": "task07_guarded_runtime_cutover",
+}
+
+
 def build_retirement_plan(
     *,
     base_sha: str,
@@ -1751,15 +1686,28 @@ def build_retirement_plan(
 ) -> dict[str, Any]:
     if not _TASK_HEAD.fullmatch(base_sha):
         raise ValueError("TASK07_BASE_SHA_INVALID")
-    reference_snapshot = _reference_snapshot(reference_report)
+    reference_snapshot = _reference_snapshot(
+        reference_report,
+        require_complete_scope=False,
+    )
     state_counts = reference_snapshot["state_counts"]
-    retirement_eligible = (
-        state_counts["active"] == 0 and state_counts["review_required"] == 0
+    reference_eligible = (
+        reference_snapshot["scope_complete"] is True
+        and state_counts["active"] == 0
+        and state_counts["review_required"] == 0
     )
     reference_gate = (
-        "zero_active_references"
-        if retirement_eligible
+        "BLOCKED_REFERENCE_EVIDENCE_INCOMPLETE"
+        if reference_snapshot["scope_complete"] is not True
+        else "zero_active_references"
+        if reference_eligible
         else "BLOCKED_ACTIVE_REFERENCE"
+    )
+    runtime_cutover_gate = "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
+    runtime_cutover_validated = False
+    retirement_eligible = (
+        reference_eligible
+        and runtime_cutover_validated
     )
     retirement_timestamp = _retirement_timestamp(retirement_at)
     before = sorted((dict(item) for item in relations), key=lambda item: (str(item["table"]), int(item["id"])))
@@ -1788,6 +1736,12 @@ def build_retirement_plan(
         "database_revision": database_revision,
         "reference_snapshot": reference_snapshot,
         "reference_gate": reference_gate,
+        "runtime_cutover_receipt_contract": dict(
+            _TASK07_RUNTIME_CUTOVER_RECEIPT_CONTRACT
+        ),
+        "runtime_cutover_receipt_digest": None,
+        "runtime_cutover_validated": runtime_cutover_validated,
+        "runtime_cutover_gate": runtime_cutover_gate,
         "retirement_eligible": retirement_eligible,
         "retirement_at": retirement_timestamp,
         "before_image": before,
@@ -1795,16 +1749,16 @@ def build_retirement_plan(
         "updates": updates,
     }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "command": "data.task07.retirement-plan",
         "status": "planned",
         **facts,
         "plan_digest": canonical_digest(facts),
         "historical_non_active_count": historical,
         "gate_status": (
-            "exact_owner_approval_required"
-            if retirement_eligible
-            else reference_gate
+            reference_gate
+            if not reference_eligible
+            else runtime_cutover_gate
         ),
         "deletes": [],
         "writes_authorized": False,
@@ -1889,6 +1843,8 @@ def apply_retirement_plan(
     if current_reference_snapshot != plan.get("reference_snapshot"):
         raise ValueError("TASK07_RETIREMENT_REFERENCE_DRIFT")
     if plan.get("retirement_eligible") is not True:
+        if plan.get("reference_gate") == "zero_active_references":
+            raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
         raise ValueError("TASK07_RETIREMENT_REFERENCE_GATE_BLOCKED")
     current_plan = build_retirement_plan(
         base_sha=current_base_sha,
@@ -2000,6 +1956,12 @@ def apply_retirement_plan(
 
 
 def _validate_retirement_plan_integrity(plan: Mapping[str, Any]) -> None:
+    if (
+        plan.get("schema_version") != 2
+        or plan.get("command") != "data.task07.retirement-plan"
+        or plan.get("status") != "planned"
+    ):
+        raise ValueError("TASK07_RETIREMENT_PLAN_SCHEMA_INVALID")
     before = plan.get("before_image")
     updates = plan.get("updates")
     if not isinstance(before, list) or not isinstance(updates, list):
@@ -2010,19 +1972,39 @@ def _validate_retirement_plan_integrity(plan: Mapping[str, Any]) -> None:
     reference_snapshot = plan.get("reference_snapshot")
     if not isinstance(reference_snapshot, Mapping):
         raise ValueError("TASK07_RETIREMENT_PLAN_INVALID")
-    expected_reference_snapshot = _reference_snapshot(reference_snapshot)
+    expected_reference_snapshot = _reference_snapshot(
+        reference_snapshot,
+        require_complete_scope=False,
+    )
     counts = expected_reference_snapshot["state_counts"]
-    expected_eligible = (
-        counts["active"] == 0 and counts["review_required"] == 0
+    expected_reference_eligible = (
+        expected_reference_snapshot["scope_complete"] is True
+        and counts["active"] == 0
+        and counts["review_required"] == 0
     )
     expected_reference_gate = (
-        "zero_active_references"
-        if expected_eligible
+        "BLOCKED_REFERENCE_EVIDENCE_INCOMPLETE"
+        if expected_reference_snapshot["scope_complete"] is not True
+        else "zero_active_references"
+        if expected_reference_eligible
         else "BLOCKED_ACTIVE_REFERENCE"
     )
+    expected_runtime_gate = "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
+    expected_eligible = False
     if (
         plan.get("retirement_eligible") is not expected_eligible
         or plan.get("reference_gate") != expected_reference_gate
+        or plan.get("runtime_cutover_receipt_contract")
+        != _TASK07_RUNTIME_CUTOVER_RECEIPT_CONTRACT
+        or plan.get("runtime_cutover_receipt_digest") is not None
+        or plan.get("runtime_cutover_validated") is not False
+        or plan.get("runtime_cutover_gate") != expected_runtime_gate
+        or plan.get("gate_status")
+        != (
+            expected_reference_gate
+            if not expected_reference_eligible
+            else expected_runtime_gate
+        )
     ):
         raise ValueError("TASK07_RETIREMENT_REFERENCE_GATE_DRIFT")
     facts = {
@@ -2030,6 +2012,12 @@ def _validate_retirement_plan_integrity(plan: Mapping[str, Any]) -> None:
         "database_revision": plan.get("database_revision"),
         "reference_snapshot": expected_reference_snapshot,
         "reference_gate": expected_reference_gate,
+        "runtime_cutover_receipt_contract": dict(
+            _TASK07_RUNTIME_CUTOVER_RECEIPT_CONTRACT
+        ),
+        "runtime_cutover_receipt_digest": None,
+        "runtime_cutover_validated": False,
+        "runtime_cutover_gate": expected_runtime_gate,
         "retirement_eligible": expected_eligible,
         "retirement_at": plan.get("retirement_at"),
         "before_image": before,

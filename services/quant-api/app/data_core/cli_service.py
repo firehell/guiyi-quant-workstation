@@ -65,7 +65,6 @@ from app.data_core.historical_sync import (
     plan_missing_windows,
 )
 from app.data_core.task07 import (
-    apply_retirement_plan as apply_task07_retirement_plan,
     build_approval_packet as build_task07_approval_packet,
     build_migration_approval_facts as build_task07_migration_approval_facts,
     build_migration_batch_facts as build_task07_migration_batch_facts,
@@ -80,7 +79,6 @@ from app.data_core.task07 import (
     collect_task07_assets,
     load_inventory_evidence,
     scan_task07_references,
-    task07_reference_roots,
     verify_exact_approval as verify_task07_exact_approval,
     verify_task07_preflight_receipt,
     write_inventory_evidence,
@@ -187,7 +185,7 @@ def run_data_core_command(
             "readonly": True,
             "effects": _readonly_effects(),
             "approval_packet": packet,
-            "approval_packet_hash": canonical_json_digest(packet) if packet else None,
+            "approval_packet_hash": task07_canonical_digest(packet) if packet else None,
         }
     if command == "task07.preflight":
         plan = _load_task07_document(args.plan, expected_command="data.task07.plan")
@@ -426,62 +424,89 @@ def run_data_core_command(
             or current_target != approved_targets.get("postgresql_target")
         ):
             raise ValueError("TASK07_WRITE_TARGET_DRIFT")
-        receipt = _load_task07_document(args.receipt, expected_command="data.task07.apply")
-        receipt_body = {
-            key: value for key, value in receipt.items() if key != "receipt_digest"
-        }
-        if receipt.get("receipt_digest") != canonical_json_digest(receipt_body):
-            raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
-        if receipt.get("plan_digest") != plan.get("plan_digest"):
-            raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
-        migration_approval_hash = receipt.get("migration_approval_hash")
-        if (
-            not isinstance(migration_approval_hash, str)
-            or receipt.get("migration_envelope_digest")
-            != plan.get("migration_envelope", {}).get("envelope_digest")
-        ):
-            raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
-        if receipt.get("batch_key") != args.batch_key:
-            raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
         batch = _task07_plan_batch(plan, args.batch_key)
-        source_receipts = receipt.get("source_receipts")
-        if not isinstance(source_receipts, list):
-            raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
-        expected_journal_path = _task07_batch_journal_path(
-            Path(str(approved_targets["staging_root"])),
-            plan_digest=str(plan["plan_digest"]),
-            batch_key=str(batch["batch_key"]),
+        return _verify_task07_apply_receipt(
+            session,
+            plan=plan,
+            batch=batch,
+            receipt_path=_absolute_path(args.receipt, "receipt"),
+            canonical_root=canonical_root,
+            git_state=git_state,
+            database_revision=revision,
+            approved_targets=approved_targets,
         )
-        journal = _verify_task07_batch_journal(
-            expected_journal_path,
-            bound_facts=build_task07_migration_batch_facts(
-                plan,
-                batch,
-                migration_approval_hash=migration_approval_hash,
-                current_base_sha=git_state["head"],
-                current_database_revision=revision,
-                current_write_targets=approved_targets,
-            ),
-            source_ids=[int(item["market_data_file_id"]) for item in batch.get("sources", [])],
+    if command == "task07.migration-verify":
+        plan = _load_task07_document(args.plan, expected_command="data.task07.plan")
+        expected_packet = build_task07_approval_packet(
+            plan,
+            command="data.task07.apply",
         )
+        project_root = _loaded_source_root()
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
         if (
-            receipt.get("batch_journal_path") != str(expected_journal_path)
-            or receipt.get("batch_journal_digest") != journal.get("journal_digest")
-            or journal.get("status") != "completed"
-            or journal.get("source_receipts") != source_receipts
+            git_state["head"] != plan.get("base_sha")
+            or revision != plan.get("database_revision")
         ):
-            raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
-        verified = [
-            verify_task07_published_batch(
-                item,
-                catalog=HistoricalCatalog(session),
+            raise ValueError("TASK07_VERIFY_STATE_DRIFT")
+        current_target = _postgresql_target(session)
+        approved_targets = plan.get("write_targets")
+        canonical_root = _absolute_path(
+            args.canonical_root,
+            "canonical_root",
+        ).resolve(strict=False)
+        if (
+            not isinstance(approved_targets, Mapping)
+            or str(canonical_root) != approved_targets.get("canonical_root")
+            or current_target != approved_targets.get("postgresql_target")
+        ):
+            raise ValueError("TASK07_WRITE_TARGET_DRIFT")
+        approval_facts = build_task07_migration_approval_facts(
+            plan,
+            current_base_sha=git_state["head"],
+            current_database_revision=revision,
+            current_write_targets=approved_targets,
+        )
+        verified_packet = verify_task07_exact_approval(
+            _absolute_path(args.approval_packet, "approval_packet"),
+            approval_hash=args.approval_hash,
+            expected_command="data.task07.apply",
+            current_facts=approval_facts,
+        )
+        if verified_packet != expected_packet:
+            raise ValueError("TASK07_APPROVAL_FACTS_DRIFT")
+        batches = list(plan.get("batches", []))
+        receipt_paths = list(args.apply_receipt)
+        if not batches or len(receipt_paths) != len(batches):
+            raise ValueError("TASK07_MIGRATION_APPLY_RECEIPT_SET_INVALID")
+        verification_manifest: list[dict[str, Any]] = []
+        for batch, receipt_path in zip(batches, receipt_paths, strict=True):
+            if not isinstance(batch, Mapping):
+                raise ValueError("TASK07_PLAN_INVALID")
+            verified = _verify_task07_apply_receipt(
+                session,
+                plan=plan,
+                batch=batch,
+                receipt_path=_absolute_path(receipt_path, "apply_receipt"),
                 canonical_root=canonical_root,
+                git_state=git_state,
+                database_revision=revision,
+                approved_targets=approved_targets,
+                expected_approval_hash=args.approval_hash,
             )
-            for item in source_receipts
-        ]
+            verification_manifest.append(
+                {
+                    "batch_key": batch["batch_key"],
+                    "batch_digest": batch["batch_digest"],
+                    "apply_receipt_digest": verified["receipt_digest"],
+                    "batch_verify_digest": verified["verify_digest"],
+                }
+            )
         body = {
             "schema_version": 1,
-            "command": "data.task07.verify",
+            "command": "data.task07.migration-verify",
             "status": "passed",
             "readonly": True,
             "effects": _readonly_effects(),
@@ -489,14 +514,14 @@ def run_data_core_command(
             "migration_envelope_digest": plan["migration_envelope"][
                 "envelope_digest"
             ],
-            "migration_approval_hash": migration_approval_hash,
-            "batch_key": batch["batch_key"],
-            "receipt_digest": canonical_json_digest(receipt),
-            "batch_digest": batch["batch_digest"],
-            "verified_source_count": len(verified),
-            "source_verify_digests": [item["verify_digest"] for item in verified],
+            "migration_approval_hash": args.approval_hash,
+            "batch_manifest": plan["migration_envelope"]["batch_manifest"],
+            "batches_merkle_root": plan["migration_envelope"]["merkle_root"],
+            "verified_batch_count": len(verification_manifest),
+            "verification_manifest": verification_manifest,
+            "runtime_cutover_eligible": True,
         }
-        return {**body, "verify_digest": task07_canonical_digest(body)}
+        return {**body, "verification_digest": task07_canonical_digest(body)}
     if command == "task07.retirement-plan":
         project_root = _absolute_path(args.project_root, "project_root")
         _require_loaded_source_checkout(project_root)
@@ -510,16 +535,7 @@ def run_data_core_command(
             base_sha=git_state["head"],
             database_revision=revision,
             reference_report=scan_task07_references(
-                [
-                    ("checkout", project_root),
-                    *[
-                        (
-                            "detached_runtime",
-                            _absolute_path(path, "runtime_root"),
-                        )
-                        for path in args.runtime_root
-                    ],
-                ]
+                [("checkout", project_root)]
             ),
             relations=collect_retirement_relations(session),
         )
@@ -537,31 +553,11 @@ def run_data_core_command(
             "effects": _readonly_effects(),
             "approval_packet": packet,
             "approval_packet_hash": (
-                canonical_json_digest(packet) if packet else None
+                task07_canonical_digest(packet) if packet else None
             ),
         }
     if command == "task07.retirement-apply":
-        plan = _load_task07_document(
-            args.plan,
-            expected_command="data.task07.retirement-plan",
-        )
-        project_root = _loaded_source_root()
-        git_state = _git_state(project_root)
-        _require_clean_task07_git_state(git_state)
-        begin_task07_serializable_apply(session)
-        revision = _data_core_revision(session)
-        current_reference_report = scan_task07_references(
-            task07_reference_roots(plan.get("reference_snapshot", {}))
-        )
-        return apply_task07_retirement_plan(
-            session,
-            plan,
-            packet_path=_absolute_path(args.approval_packet, "approval_packet"),
-            approval_hash=args.approval_hash,
-            current_base_sha=git_state["head"],
-            current_database_revision=revision,
-            current_reference_report=current_reference_report,
-        )
+        raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
     if command == "verify":
         return _verify(session, args)
     if command in {"plan", "sync"} and not bool(getattr(args, "apply", False)):
@@ -910,6 +906,103 @@ def _validate_task07_batch_journal(
             raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
     elif current_source_id is not None and current_source_id != next_source_id:
         raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+
+
+def _verify_task07_apply_receipt(
+    session: Session,
+    *,
+    plan: Mapping[str, Any],
+    batch: Mapping[str, Any],
+    receipt_path: Path,
+    canonical_root: Path,
+    git_state: Mapping[str, Any],
+    database_revision: str,
+    approved_targets: Mapping[str, Any],
+    expected_approval_hash: str | None = None,
+) -> dict[str, Any]:
+    """Re-read an apply journal and current Catalog/Manifest/Parquet state."""
+
+    receipt = _load_task07_document(
+        receipt_path,
+        expected_command="data.task07.apply",
+    )
+    receipt_body = {
+        key: value for key, value in receipt.items() if key != "receipt_digest"
+    }
+    if receipt.get("receipt_digest") != canonical_json_digest(receipt_body):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    migration_approval_hash = receipt.get("migration_approval_hash")
+    if (
+        receipt.get("status") != "passed"
+        or receipt.get("plan_digest") != plan.get("plan_digest")
+        or receipt.get("migration_envelope_digest")
+        != plan.get("migration_envelope", {}).get("envelope_digest")
+        or not isinstance(migration_approval_hash, str)
+        or (
+            expected_approval_hash is not None
+            and migration_approval_hash != expected_approval_hash
+        )
+        or receipt.get("batch_key") != batch.get("batch_key")
+        or receipt.get("batch_digest") != batch.get("batch_digest")
+    ):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    source_receipts = receipt.get("source_receipts")
+    if not isinstance(source_receipts, list):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    expected_journal_path = _task07_batch_journal_path(
+        Path(str(approved_targets["staging_root"])),
+        plan_digest=str(plan["plan_digest"]),
+        batch_key=str(batch["batch_key"]),
+    )
+    journal = _verify_task07_batch_journal(
+        expected_journal_path,
+        bound_facts=build_task07_migration_batch_facts(
+            plan,
+            batch,
+            migration_approval_hash=migration_approval_hash,
+            current_base_sha=str(git_state["head"]),
+            current_database_revision=database_revision,
+            current_write_targets=approved_targets,
+        ),
+        source_ids=[
+            int(item["market_data_file_id"])
+            for item in batch.get("sources", [])
+        ],
+    )
+    if (
+        receipt.get("batch_journal_path") != str(expected_journal_path)
+        or receipt.get("batch_journal_digest") != journal.get("journal_digest")
+        or journal.get("status") != "completed"
+        or journal.get("source_receipts") != source_receipts
+    ):
+        raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+    catalog = HistoricalCatalog(session)
+    verified = [
+        verify_task07_published_batch(
+            item,
+            catalog=catalog,
+            canonical_root=canonical_root,
+        )
+        for item in source_receipts
+    ]
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.verify",
+        "status": "passed",
+        "readonly": True,
+        "effects": _readonly_effects(),
+        "plan_digest": plan["plan_digest"],
+        "migration_envelope_digest": plan["migration_envelope"][
+            "envelope_digest"
+        ],
+        "migration_approval_hash": migration_approval_hash,
+        "batch_key": batch["batch_key"],
+        "receipt_digest": canonical_json_digest(receipt),
+        "batch_digest": batch["batch_digest"],
+        "verified_source_count": len(verified),
+        "source_verify_digests": [item["verify_digest"] for item in verified],
+    }
+    return {**body, "verify_digest": task07_canonical_digest(body)}
 
 
 def _verify_task07_resume_state(

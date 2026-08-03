@@ -616,26 +616,51 @@ def test_migration_plan_batches_deterministically_and_never_requests_rqdata() ->
     assert len(plan["plan_digest"]) == 64
 
 
-def test_migration_merkle_root_uses_domain_separation_and_duplicates_odd_leaf() -> None:
-    envelope = task07.build_migration_envelope(
-        [
-            {"batch_key": "gamma", "batch_digest": "33" * 32},
-            {"batch_key": "alpha", "batch_digest": "11" * 32},
-            {"batch_key": "beta", "batch_digest": "22" * 32},
-        ]
+@pytest.mark.parametrize(
+    ("leaf_count", "expected_root"),
+    [
+        (0, "dbc1b4c900ffe48d575b5da5c638040125f65db0fe3e24494b76ea986457d986"),
+        (1, "3b3841f61f68dcf28bb8d6da61ae30591d0324adcad1b0d407f993775e2c4a4e"),
+        (2, "6aa46e222f8efb47e12d21a24f2a84c2bf7a0b333f4efa6addc0b9a5bd61b6da"),
+        (5, "ec069e5739ef49b8e9cd614118d3ba77d2fbbe3af7ad7a04ca22359b98acfbbd"),
+    ],
+)
+def test_migration_merkle_literal_vectors_define_empty_and_odd_leaf_semantics(
+    leaf_count: int,
+    expected_root: str,
+) -> None:
+    leaves = [
+        {"batch_key": key, "batch_digest": digest * 32}
+        for key, digest in zip("abcde", ("11", "22", "33", "44", "55"), strict=True)
+    ]
+
+    envelope = task07.build_migration_envelope(reversed(leaves[:leaf_count]))
+
+    assert envelope["schema_version"] == 2
+    assert envelope["empty_domain"] == "02"
+    assert envelope["odd_leaf_rule"] == "duplicate_last_at_each_level"
+    assert envelope["batch_manifest"] == leaves[:leaf_count]
+    assert envelope["batch_count"] == leaf_count
+    assert envelope["merkle_root"] == expected_root
+    assert len(envelope["envelope_digest"]) == 64
+
+
+def test_task07_plan_schema_v1_is_rejected_instead_of_silently_reinterpreted() -> None:
+    plan = build_migration_plan(
+        build_inventory_index(
+            [_asset(catalog_checksum=None)],
+            base_sha="3" * 40,
+            database_revision="20260802_0031",
+        ),
+        write_targets=_write_targets(),
     )
 
-    assert envelope["batch_manifest"] == [
-        {"batch_key": "alpha", "batch_digest": "11" * 32},
-        {"batch_key": "beta", "batch_digest": "22" * 32},
-        {"batch_key": "gamma", "batch_digest": "33" * 32},
-    ]
-    assert envelope["batch_count"] == 3
-    assert (
-        envelope["merkle_root"]
-        == "b871be998c6fc1744eec77b437bb0b5018d87044bcf2c1d71d07ed43a2d45ded"
-    )
-    assert len(envelope["envelope_digest"]) == 64
+    assert plan["schema_version"] == 2
+    assert plan["migration_envelope"]["schema_version"] == 2
+    old_shape = deepcopy(plan)
+    old_shape["schema_version"] = 1
+    with pytest.raises(ValueError, match="TASK07_PLAN_SCHEMA_INVALID"):
+        build_approval_packet(old_shape, command="data.task07.apply")
 
 
 def test_migration_eligibility_is_independent_of_active_references_but_retirement_is_not(
@@ -839,95 +864,8 @@ def test_same_migration_envelope_hash_preflights_every_exact_member_batch(
     }
 
 
-def _batch_verify_receipt(
-    plan: dict[str, object],
-    batch: dict[str, object],
-    *,
-    approval_hash: str = "f" * 64,
-    status: str = "passed",
-) -> dict[str, object]:
-    body = {
-        "schema_version": 1,
-        "command": "data.task07.verify",
-        "status": status,
-        "readonly": True,
-        "plan_digest": plan["plan_digest"],
-        "migration_envelope_digest": plan["migration_envelope"][
-            "envelope_digest"
-        ],
-        "migration_approval_hash": approval_hash,
-        "batch_key": batch["batch_key"],
-        "batch_digest": batch["batch_digest"],
-        "receipt_digest": "d" * 64,
-        "verified_source_count": len(batch["sources"]),
-        "source_verify_digests": ["e" * 64 for _item in batch["sources"]],
-    }
-    return {**body, "verify_digest": canonical_digest(body)}
-
-
-def test_runtime_cutover_requires_every_batch_verify_receipt_in_manifest_order(
-    tmp_path: Path,
-) -> None:
-    plan = build_migration_plan(
-        build_inventory_index(
-            [
-                _asset(market_data_file_id=1, catalog_checksum=None),
-                _asset(
-                    market_data_file_id=2,
-                    symbol="rb",
-                    contract_or_series="RB.MAIN",
-                    catalog_checksum=None,
-                ),
-            ],
-            base_sha="3" * 40,
-            database_revision="20260802_0031",
-        ),
-        write_targets=_write_targets(tmp_path),
-    )
-    receipts = [
-        _batch_verify_receipt(plan, batch) for batch in plan["batches"]
-    ]
-
-    completion = task07.build_migration_verification_receipt(plan, receipts)
-
-    assert completion["runtime_cutover_eligible"] is True
-    assert completion["verified_batch_count"] == 2
-    assert completion["batch_manifest"] == plan["migration_envelope"][
-        "batch_manifest"
-    ]
-
-    with pytest.raises(ValueError, match="TASK07_MIGRATION_VERIFY_SET_INCOMPLETE"):
-        task07.build_migration_verification_receipt(plan, receipts[:-1])
-    with pytest.raises(ValueError, match="TASK07_MIGRATION_VERIFY_ORDER_INVALID"):
-        task07.build_migration_verification_receipt(plan, list(reversed(receipts)))
-    failed = deepcopy(receipts)
-    failed[1] = _batch_verify_receipt(plan, plan["batches"][1], status="failed")
-    with pytest.raises(ValueError, match="TASK07_MIGRATION_BATCH_VERIFY_FAILED"):
-        task07.build_migration_verification_receipt(plan, failed)
-    approval_drift = deepcopy(receipts)
-    approval_drift[1] = _batch_verify_receipt(
-        plan,
-        plan["batches"][1],
-        approval_hash="a" * 64,
-    )
-    with pytest.raises(ValueError, match="TASK07_MIGRATION_APPROVAL_HASH_DRIFT"):
-        task07.build_migration_verification_receipt(plan, approval_drift)
-    tampered = deepcopy(receipts)
-    tampered[0]["verified_source_count"] = 99
-    with pytest.raises(ValueError, match="TASK07_MIGRATION_VERIFY_RECEIPT_DRIFT"):
-        task07.build_migration_verification_receipt(plan, tampered)
-    incomplete = deepcopy(receipts)
-    incomplete_body = {
-        key: value
-        for key, value in incomplete[0].items()
-        if key not in {"verify_digest", "receipt_digest"}
-    }
-    incomplete[0] = {
-        **incomplete_body,
-        "verify_digest": canonical_digest(incomplete_body),
-    }
-    with pytest.raises(ValueError, match="TASK07_MIGRATION_VERIFY_RECEIPT_DRIFT"):
-        task07.build_migration_verification_receipt(plan, incomplete)
+def test_runtime_cutover_receipt_has_no_public_synthetic_claim_builder() -> None:
+    assert not hasattr(task07, "build_migration_verification_receipt")
 
 
 def test_batch_approval_rejects_tampered_kline_gate_controls() -> None:
@@ -989,8 +927,22 @@ def test_retirement_plan_treats_completed_history_as_non_active_and_binds_before
     ]
     assert plan["deletes"] == []
     assert plan["deletion_authorized"] is False
-    assert plan["retirement_eligible"] is True
+    assert plan["schema_version"] == 2
+    assert plan["reference_gate"] == "zero_active_references"
+    assert plan["runtime_cutover_gate"] == "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
+    assert plan["runtime_cutover_receipt_contract"]["command"] == (
+        "data.task07.runtime-cutover"
+    )
+    assert plan["retirement_eligible"] is False
+    assert plan["gate_status"] == "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
     assert len(plan["before_image_digest"]) == 64
+    with pytest.raises(ValueError, match="TASK07_RUNTIME_CUTOVER_GATE_REQUIRED"):
+        build_approval_packet(plan, command="data.task07.retirement-apply")
+
+    old_shape = deepcopy(plan)
+    old_shape["schema_version"] = 1
+    with pytest.raises(ValueError, match="TASK07_RETIREMENT_PLAN_SCHEMA_INVALID"):
+        build_approval_packet(old_shape, command="data.task07.retirement-apply")
 
 
 def test_retirement_approval_is_blocked_by_checkout_or_runtime_reference(
@@ -1092,7 +1044,9 @@ def test_apply_gate_rejects_tampered_preflight_receipt(tmp_path: Path) -> None:
         )
 
 
-def test_retirement_apply_updates_only_exact_rows_and_preserves_history(tmp_path: Path) -> None:
+def test_retirement_apply_cannot_write_before_task6_runtime_cutover_gate(
+    tmp_path: Path,
+) -> None:
     references = _reference_report(tmp_path)
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
@@ -1123,129 +1077,36 @@ def test_retirement_apply_updates_only_exact_rows_and_preserves_history(tmp_path
             {"table": "strategy_signals", "id": 4, "status": "entry_signal", "is_active": True},
         ],
     )
-    packet = build_approval_packet(plan, command="data.task07.retirement-apply")
     packet_path = tmp_path / "retirement-approval.json"
-    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    packet_path.write_text("{}", encoding="utf-8")
 
-    with Session(engine) as session:
-        receipt = apply_retirement_plan(
+    with pytest.raises(ValueError, match="TASK07_RUNTIME_CUTOVER_GATE_REQUIRED"):
+        build_approval_packet(plan, command="data.task07.retirement-apply")
+
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_RUNTIME_CUTOVER_GATE_REQUIRED",
+    ):
+        apply_retirement_plan(
             session,
             plan,
             packet_path=packet_path,
-            approval_hash=verify_exact_approval.digest_packet(packet),
+            approval_hash="a" * 64,
             current_base_sha="6" * 40,
             current_database_revision="20260802_0031",
             current_reference_report=references,
         )
-        assert session.execute(text("SELECT binding_status FROM profile_active_bindings WHERE id=2")).scalar_one() == "superseded"
-        assert session.execute(text("SELECT status FROM signal_scan_tasks WHERE id=3")).scalar_one() == "cancelled"
-        assert session.execute(text("SELECT is_active FROM strategy_signals WHERE id=4")).scalar_one() == 0
-        assert session.execute(text("SELECT COUNT(*) FROM strategy_signals")).scalar_one() == 1
-
-    assert receipt["updated_row_count"] == 3
-    assert receipt["deleted_row_count"] == 0
-    assert receipt["deletion_authorized"] is False
-
-
-def test_retirement_apply_rolls_back_every_update_when_one_row_drifted(tmp_path: Path) -> None:
-    references = _reference_report(tmp_path)
-    engine = create_engine("sqlite://")
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "CREATE TABLE profile_active_bindings "
-            "(id INTEGER PRIMARY KEY, binding_status TEXT, superseded_at TEXT)"
-        )
-        connection.exec_driver_sql("CREATE TABLE signal_scan_tasks (id INTEGER PRIMARY KEY, status TEXT)")
-        connection.exec_driver_sql("CREATE TABLE data_download_tasks (id INTEGER PRIMARY KEY, status TEXT)")
-        connection.exec_driver_sql("CREATE TABLE strategy_signals (id INTEGER PRIMARY KEY, status TEXT, is_active BOOLEAN)")
-        connection.exec_driver_sql(
-            "INSERT INTO profile_active_bindings VALUES (1,'active',NULL)"
-        )
-        connection.exec_driver_sql("INSERT INTO signal_scan_tasks VALUES (2,'completed')")
-    plan = build_retirement_plan(
-        base_sha="7" * 40,
-        database_revision="20260802_0031",
-        reference_report=references,
-        relations=[
-            {
-                "table": "profile_active_bindings",
-                "id": 1,
-                "binding_status": "active",
-                "superseded_at": None,
-            },
-            {"table": "signal_scan_tasks", "id": 2, "status": "pending"},
-        ],
-    )
-    packet = build_approval_packet(plan, command="data.task07.retirement-apply")
-    packet_path = tmp_path / "approval.json"
-    packet_path.write_text(json.dumps(packet), encoding="utf-8")
 
     with Session(engine) as session:
-        try:
-            apply_retirement_plan(
-                session, plan, packet_path=packet_path,
-                approval_hash=verify_exact_approval.digest_packet(packet),
-                current_base_sha="7" * 40, current_database_revision="20260802_0031",
-                current_reference_report=references,
-            )
-        except ValueError as exc:
-            assert str(exc) == "TASK07_RETIREMENT_ROW_SET_DRIFT"
-        else:  # pragma: no cover
-            raise AssertionError("drift must fail")
-        assert session.execute(text("SELECT binding_status FROM profile_active_bindings WHERE id=1")).scalar_one() == "active"
-
-
-def test_retirement_apply_rejects_new_active_row_outside_approved_row_set(tmp_path: Path) -> None:
-    references = _reference_report(tmp_path)
-    engine = create_engine("sqlite://")
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "CREATE TABLE profile_active_bindings "
-            "(id INTEGER PRIMARY KEY, binding_status TEXT, superseded_at TEXT)"
-        )
-        connection.exec_driver_sql("CREATE TABLE signal_scan_tasks (id INTEGER PRIMARY KEY, status TEXT)")
-        connection.exec_driver_sql("CREATE TABLE data_download_tasks (id INTEGER PRIMARY KEY, status TEXT)")
-        connection.exec_driver_sql("CREATE TABLE strategy_signals (id INTEGER PRIMARY KEY, status TEXT, is_active BOOLEAN)")
-        connection.exec_driver_sql(
-            "INSERT INTO profile_active_bindings VALUES (1,'active',NULL)"
-        )
-    plan = build_retirement_plan(
-        base_sha="8" * 40,
-        database_revision="20260802_0031",
-        reference_report=references,
-        relations=[
-            {
-                "table": "profile_active_bindings",
-                "id": 1,
-                "binding_status": "active",
-                "superseded_at": None,
-            }
-        ],
-    )
-    packet = build_approval_packet(plan, command="data.task07.retirement-apply")
-    packet_path = tmp_path / "approval.json"
-    packet_path.write_text(json.dumps(packet), encoding="utf-8")
-    with engine.begin() as connection:
-        connection.exec_driver_sql(
-            "INSERT INTO profile_active_bindings VALUES (2,'active',NULL)"
-        )
-
-    with Session(engine) as session:
-        try:
-            apply_retirement_plan(
-                session,
-                plan,
-                packet_path=packet_path,
-                approval_hash=verify_exact_approval.digest_packet(packet),
-                current_base_sha="8" * 40,
-                current_database_revision="20260802_0031",
-                current_reference_report=references,
-            )
-        except ValueError as exc:
-            assert str(exc) == "TASK07_RETIREMENT_ROW_SET_DRIFT"
-        else:  # pragma: no cover
-            raise AssertionError("new active row must fail")
-        assert session.execute(text("SELECT COUNT(*) FROM profile_active_bindings WHERE binding_status='active'")).scalar_one() == 2
+        assert session.execute(
+            text("SELECT binding_status FROM profile_active_bindings WHERE id=2")
+        ).scalar_one() == "active"
+        assert session.execute(
+            text("SELECT status FROM signal_scan_tasks WHERE id=3")
+        ).scalar_one() == "pending"
+        assert session.execute(
+            text("SELECT is_active FROM strategy_signals WHERE id=4")
+        ).scalar_one() == 1
 
 
 def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() -> None:
@@ -1414,6 +1275,105 @@ def test_task07_inventory_service_classifies_automatic_evidence_symlink_as_prote
     assert result["disposition_counts"][AssetDisposition.PROTECTED_EVIDENCE_SOURCE] == 1
 
 
+def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical_root = tmp_path / "canonical"
+    evidence_root = tmp_path / "evidence"
+    staging_root = tmp_path / "staging"
+    canonical_root.mkdir()
+    index = write_inventory_evidence(
+        [_asset(catalog_checksum=None)],
+        evidence_root=evidence_root,
+        base_sha="9" * 40,
+        database_revision="20260802_0031",
+        inventory_scope={
+            "canonical_root": str(canonical_root),
+            "protected_roots": [str(evidence_root)],
+        },
+    )
+    monkeypatch.setattr(
+        "app.data_core.cli_service._postgresql_target",
+        lambda _session: _write_targets(tmp_path)["postgresql_target"],
+    )
+
+    with Session(create_engine("sqlite://")) as session:
+        result = run_data_core_command(
+            "task07.plan",
+            session,
+            SimpleNamespace(
+                inventory=evidence_root / "inventory-index.json",
+                staging_root=staging_root,
+                canonical_root=canonical_root,
+            ),
+        )
+
+    packet = result["approval_packet"]
+    assert index["status"] == "complete"
+    assert packet is not None
+    assert result["approval_packet_hash"] == canonical_digest(packet)
+    packet_path = tmp_path / "approval.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    assert verify_exact_approval(
+        packet_path,
+        approval_hash=result["approval_packet_hash"],
+        expected_command="data.task07.apply",
+        current_facts=packet["bound_facts"],
+    ) == packet
+
+
+def test_retirement_plan_service_ignores_arbitrary_runtime_root_and_emits_no_packet(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_engine("sqlite://")
+    _task07_inventory_schema(engine)
+    checkout = Path(__file__).resolve().parents[4]
+    arbitrary_runtime = tmp_path / "arbitrary-runtime"
+    arbitrary_runtime.mkdir()
+    observed_roots: list[tuple[str, Path]] = []
+
+    def scan_checkout_only(roots):
+        observed_roots.extend(roots)
+        report_root = tmp_path / "reported-checkout"
+        report_root.mkdir()
+        return task07.scan_task07_references([("checkout", report_root)])
+
+    monkeypatch.setattr(
+        "app.data_core.cli_service._git_state",
+        lambda _root: {"head": "9" * 40, "clean": True},
+    )
+    monkeypatch.setattr(
+        "app.data_core.cli_service.scan_task07_references",
+        scan_checkout_only,
+    )
+    monkeypatch.setattr(
+        "app.data_core.cli_service.collect_retirement_relations",
+        lambda _session: [],
+    )
+
+    with Session(engine) as session:
+        result = run_data_core_command(
+            "task07.retirement-plan",
+            session,
+            SimpleNamespace(
+                project_root=checkout,
+                database_revision=None,
+                runtime_root=[arbitrary_runtime],
+            ),
+        )
+
+    assert observed_roots == [("checkout", checkout)]
+    assert result["schema_version"] == 2
+    assert result["runtime_cutover_receipt_contract"]["command"] == (
+        "data.task07.runtime-cutover"
+    )
+    assert result["retirement_eligible"] is False
+    assert result["approval_packet"] is None
+    assert result["approval_packet_hash"] is None
+
+
 def test_task07_apply_requires_hash_bound_preflight_before_opening_database() -> None:
     stdout = StringIO()
     stderr = StringIO()
@@ -1464,6 +1424,81 @@ def test_task07_retirement_apply_does_not_require_kline_preflight_arguments() ->
     assert exit_code == 0
     assert stderr.getvalue() == ""
     assert json.loads(stdout.getvalue())["command"] == "task07.retirement-apply"
+
+
+def test_task07_migration_verify_cli_forwards_exact_ordered_apply_receipts(
+    tmp_path: Path,
+) -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+    engine = create_engine("sqlite://")
+    observed: dict[str, object] = {}
+
+    def runner(command, _session, args):
+        observed["command"] = command
+        observed["apply_receipt"] = args.apply_receipt
+        return {"status": "passed", "command": command}
+
+    receipt_one = tmp_path / "batch-1.json"
+    receipt_two = tmp_path / "batch-2.json"
+    exit_code = main(
+        [
+            "data",
+            "task07",
+            "migration-verify",
+            "--plan",
+            str(tmp_path / "plan.json"),
+            "--approval-packet",
+            str(tmp_path / "approval.json"),
+            "--approval-hash",
+            "a" * 64,
+            "--canonical-root",
+            str(tmp_path / "canonical"),
+            "--apply-receipt",
+            str(receipt_one),
+            "--apply-receipt",
+            str(receipt_two),
+        ],
+        session_factory=lambda: Session(engine),
+        data_core_runner=runner,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 0
+    assert stderr.getvalue() == ""
+    assert observed == {
+        "command": "task07.migration-verify",
+        "apply_receipt": [receipt_one, receipt_two],
+    }
+
+
+def test_retirement_plan_cli_rejects_arbitrary_runtime_root_argument(
+    tmp_path: Path,
+) -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "data",
+            "task07",
+            "retirement-plan",
+            "--project-root",
+            str(tmp_path),
+            "--runtime-root",
+            str(tmp_path / "arbitrary-runtime"),
+        ],
+        session_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("invalid CLI must not open database")
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
 def test_task07_preflight_apply_and_verify_use_real_canonical_pipeline(
@@ -1595,6 +1630,38 @@ def test_task07_preflight_apply_and_verify_use_real_canonical_pipeline(
         verified = run_data_core_command("task07.verify", session, verify_args)
     assert verified["status"] == "passed"
     assert verified["verified_source_count"] == 1
+
+    migration_verify_args = SimpleNamespace(
+        plan=plan_path,
+        approval_packet=packet_path,
+        approval_hash=approval_hash,
+        canonical_root=tmp_path / "canonical",
+        apply_receipt=[receipt_path],
+    )
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_MIGRATION_APPLY_RECEIPT_SET_INVALID",
+    ):
+        run_data_core_command(
+            "task07.migration-verify",
+            session,
+            SimpleNamespace(
+                **{
+                    **vars(migration_verify_args),
+                    "apply_receipt": [receipt_path, receipt_path],
+                }
+            ),
+        )
+    with Session(engine) as session:
+        migration_verified = run_data_core_command(
+            "task07.migration-verify",
+            session,
+            migration_verify_args,
+        )
+    assert migration_verified["status"] == "passed"
+    assert migration_verified["verified_batch_count"] == 1
+    assert migration_verified["runtime_cutover_eligible"] is True
+    assert migration_verified["migration_approval_hash"] == approval_hash
 
 
 def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
