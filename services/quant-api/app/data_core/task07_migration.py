@@ -225,6 +225,7 @@ def execute_task07_prepared_batch(
     plan_digest: str,
     batch_digest: str,
     source_market_data_file_id: int,
+    canonical_root: Path,
 ) -> dict[str, object]:
     if not isinstance(prepared, PreparedLegacyBatch):
         raise Task07MigrationError("TASK07_PREPARED_BATCH_INVALID")
@@ -319,7 +320,13 @@ def execute_task07_prepared_batch(
                 "source_lineage": prepared.lineage.as_payload(),
             }
         )
-    return {**body, "receipt_digest": _digest(body)}
+    receipt = {**body, "receipt_digest": _digest(body)}
+    verify_task07_published_batch(
+        receipt,
+        catalog=catalog,
+        canonical_root=canonical_root,
+    )
+    return receipt
 
 
 def verify_task07_published_batch(

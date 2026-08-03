@@ -23,7 +23,18 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.data_core.bar_schema import CanonicalBar
-from app.data_core.contracts import BarFrequency, DatasetKind
+from app.data_core.canonical_store import (
+    CANONICAL_MANIFEST_FORMAT_V2,
+    CANONICAL_PARQUET_SCHEMA,
+    _validate_stored_manifest_document,
+)
+from app.data_core.contracts import (
+    BarFrequency,
+    DatasetKey,
+    DatasetKind,
+    DatasetOrigin,
+    ManifestLineage,
+)
 from app.data_core.quality import decimal_profile_reason
 
 
@@ -33,6 +44,7 @@ _DIRECT_FREQUENCIES = {"1m", "1d", "1w"}
 _DERIVED_FREQUENCIES = {"5m", "15m", "30m", "60m"}
 _ACTUAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
+_TASK07_AGGREGATE_MANIFEST_VERSION = "task07-aggregate-migration-v1"
 _REFERENCE_PATTERNS = {
     "profile_active_binding": re.compile(r"\b(?:ProfileActiveBinding|profile_active_bindings)\b"),
     "legacy_reader": re.compile(r"\bMarketDataReader\b"),
@@ -164,6 +176,16 @@ class Task07Asset:
     quality_evidence_count: int = 0
     quality_evidence_statuses: tuple[str, ...] = ()
     main_map_digest: str | None = None
+    canonical_partition_id: int | None = None
+    manifest_format: str | None = None
+    manifest_version: str | None = None
+    manifest_uri: str | None = None
+    manifest_digest: str | None = None
+    source_lineage: Mapping[str, str] | None = None
+    canonical_readback_status: str | None = None
+    canonical_file_uri: str | None = None
+    adjustment: str = "none"
+    schema_version: str = "canonical-bar-v1"
 
 
 def canonical_digest(value: Any) -> str:
@@ -201,6 +223,16 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
             and asset.checksum == asset.physical_checksum
             and asset.catalog_checksum == asset.physical_checksum
             and asset.content_gate_status in {"passed", "not_inspected"}
+            and (
+                asset.frequency not in _DERIVED_FREQUENCIES
+                or (
+                    asset.canonical_readback_status == "passed_aggregate_v2"
+                    and asset.manifest_format == CANONICAL_MANIFEST_FORMAT_V2
+                    and asset.manifest_version
+                    == _TASK07_AGGREGATE_MANIFEST_VERSION
+                    and asset.source_lineage is not None
+                )
+            )
         ):
             return AssetDisposition.KEEP_CANONICAL_VERIFIED
         return AssetDisposition.CONFLICT_BLOCKED
@@ -308,7 +340,8 @@ def collect_task07_assets(
     catalog_rows = session.execute(
         text(
             "SELECT p.id, d.provider, d.dataset_kind, d.symbol, d.contract_or_series, d.frequency, "
-            "p.file_uri, p.checksum, p.coverage_start, p.coverage_end, p.row_count "
+            "d.adjustment, d.schema_version, p.file_uri, p.checksum, p.coverage_start, "
+            "p.coverage_end, p.row_count, p.manifest_version, p.manifest_uri, p.manifest_digest "
             "FROM market_datasets d JOIN market_partitions p ON p.dataset_id = d.id "
             "ORDER BY d.id, p.id"
         )
@@ -316,7 +349,24 @@ def collect_task07_assets(
     catalog: dict[tuple[str, str, str, str], list[tuple[str, str, str]]] = {}
     data = data_root.absolute()
     canonical = canonical_root.absolute()
-    for _partition_id, provider, kind, symbol, contract, frequency, file_uri, checksum, _start, _end, _row_count in catalog_rows:
+    for (
+        _partition_id,
+        provider,
+        kind,
+        symbol,
+        contract,
+        frequency,
+        _adjustment,
+        _schema_version,
+        file_uri,
+        checksum,
+        _start,
+        _end,
+        _row_count,
+        _manifest_version,
+        _manifest_uri,
+        _manifest_digest,
+    ) in catalog_rows:
         relative = Path(str(file_uri))
         if relative.is_absolute() or ".." in relative.parts:
             continue
@@ -469,7 +519,24 @@ def collect_task07_assets(
                 quality_evidence_statuses=quality_statuses,
                 main_map_digest=physical_inspection.get("main_map_digest"),
             )
-    for partition_id, provider, kind, symbol, contract, frequency, file_uri, checksum, start, end, row_count in catalog_rows:
+    for (
+        partition_id,
+        provider,
+        kind,
+        symbol,
+        contract,
+        frequency,
+        adjustment,
+        schema_version,
+        file_uri,
+        checksum,
+        start,
+        end,
+        row_count,
+        manifest_version,
+        manifest_uri,
+        manifest_digest,
+    ) in catalog_rows:
         relative = Path(str(file_uri))
         if relative.is_absolute() or ".." in relative.parts:
             continue
@@ -479,6 +546,23 @@ def collect_task07_assets(
             size = physical_path.stat().st_size if exists else None
         except OSError:
             size = None
+        canonical_readback = _canonical_partition_readback(
+            canonical_root=canonical,
+            dataset_kind=str(kind),
+            symbol=str(symbol).lower(),
+            contract=str(contract).upper(),
+            frequency=str(frequency),
+            adjustment=str(adjustment),
+            schema_version=str(schema_version),
+            file_uri=str(file_uri),
+            checksum=str(checksum),
+            coverage_start=start,
+            coverage_end=end,
+            row_count=int(row_count),
+            manifest_version=str(manifest_version),
+            manifest_uri=str(manifest_uri),
+            manifest_digest=str(manifest_digest),
+        )
         yield Task07Asset(
             market_data_file_id=2_000_000_000 + int(partition_id),
             provider=str(provider),
@@ -491,12 +575,8 @@ def collect_task07_assets(
             file_path=str(physical_path.absolute()),
             source_scope="approved_canonical_root",
             content_gate_status=(
-                _parquet_content_gate(
-                    physical_path,
-                    data_type="v2_canonical",
-                    frequency=str(frequency),
-                )
-                if inspect_content and exists
+                str(canonical_readback["content_gate_status"])
+                if inspect_content
                 else "not_inspected"
             ),
             checksum=str(checksum),
@@ -509,6 +589,16 @@ def collect_task07_assets(
             coverage_end=_iso(end),
             row_count=int(row_count),
             data_version=None,
+            canonical_partition_id=int(partition_id),
+            manifest_format=canonical_readback.get("manifest_format"),
+            manifest_version=str(manifest_version),
+            manifest_uri=str(manifest_uri),
+            manifest_digest=str(manifest_digest),
+            source_lineage=canonical_readback.get("source_lineage"),
+            canonical_readback_status=canonical_readback.get("status"),
+            canonical_file_uri=str(file_uri),
+            adjustment=str(adjustment),
+            schema_version=str(schema_version),
         )
 
 
@@ -642,6 +732,135 @@ def _parquet_content_gate(path: Path, *, data_type: str, frequency: str) -> str:
         if 3 <= local.hour < 21 and trading_day != local_day:
             return "day_session_trading_day_conflict"
     return "passed"
+
+
+def _canonical_partition_readback(
+    *,
+    canonical_root: Path,
+    dataset_kind: str,
+    symbol: str,
+    contract: str,
+    frequency: str,
+    adjustment: str,
+    schema_version: str,
+    file_uri: str,
+    checksum: str,
+    coverage_start: object,
+    coverage_end: object,
+    row_count: int,
+    manifest_version: str,
+    manifest_uri: str,
+    manifest_digest: str,
+) -> dict[str, Any]:
+    failed = {
+        "status": "canonical_readback_conflict",
+        "content_gate_status": "canonical_readback_conflict",
+        "manifest_format": None,
+        "source_lineage": None,
+    }
+    try:
+        dataset = DatasetKey(
+            provider="rqdata",
+            dataset_kind=DatasetKind(dataset_kind),
+            symbol=symbol,
+            contract_or_series=contract,
+            frequency=BarFrequency(frequency),
+            adjustment=adjustment,
+            schema_version=schema_version,
+        )
+        root = canonical_root.resolve(strict=True)
+        relative_file = Path(file_uri)
+        relative_manifest = Path(manifest_uri)
+        if (
+            relative_file.is_absolute()
+            or relative_manifest.is_absolute()
+            or ".." in relative_file.parts
+            or ".." in relative_manifest.parts
+        ):
+            return failed
+        file_path = root / relative_file
+        manifest_path = root / relative_manifest
+        if (
+            not file_path.is_file()
+            or file_path.is_symlink()
+            or not manifest_path.is_file()
+            or manifest_path.is_symlink()
+            or _physical_identity(file_path) != (True, checksum)
+        ):
+            return failed
+        parquet = pq.ParquetFile(file_path)
+        if (
+            parquet.schema_arrow != CANONICAL_PARQUET_SCHEMA
+            or int(parquet.metadata.num_rows) != row_count
+        ):
+            return failed
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(document, dict):
+            return failed
+        partition = document.get("partition")
+        if not isinstance(partition, Mapping):
+            return failed
+        validated_document = _validate_stored_manifest_document(
+            document,
+            dataset=dataset,
+            coverage_start=_catalog_utc_datetime(coverage_start),
+            coverage_end=_catalog_utc_datetime(coverage_end),
+            row_count=row_count,
+            data_version=str(partition["data_version"]),
+            manifest_version=manifest_version,
+            file_uri=file_uri,
+            manifest_uri=manifest_uri,
+            file_checksum=checksum,
+            canonical_logical_fingerprint=str(
+                document["canonical_logical_fingerprint"]
+            ),
+            overlap_reason=(
+                str(partition["overlap_reason"])
+                if partition.get("overlap_reason") is not None
+                else None
+            ),
+        )
+        if validated_document.get("manifest_digest") != manifest_digest:
+            return failed
+        manifest_format = document.get("manifest_format")
+        lineage_payload = document.get("source_lineage")
+        if dataset.frequency.value in _DERIVED_FREQUENCIES:
+            if (
+                manifest_format != CANONICAL_MANIFEST_FORMAT_V2
+                or manifest_version != _TASK07_AGGREGATE_MANIFEST_VERSION
+            ):
+                return failed
+            lineage = ManifestLineage.from_payload(lineage_payload)
+            lineage.validate_dataset(dataset)
+            if (
+                lineage.origin is not DatasetOrigin.PREAGGREGATED_FROM_1M
+                or lineage.source_frequency is not BarFrequency.M1
+            ):
+                return failed
+            status = "passed_aggregate_v2"
+        else:
+            status = "passed_direct"
+            lineage_payload = None
+        return {
+            "status": status,
+            "content_gate_status": "passed",
+            "manifest_format": str(manifest_format),
+            "source_lineage": lineage_payload,
+        }
+    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+        return failed
+
+
+def _catalog_utc_datetime(value: object) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    else:
+        raise TypeError("datetime required")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _quality_evidence_for_file_range(
@@ -1492,6 +1711,23 @@ def _migration_source_record(
     *,
     aggregate: bool,
 ) -> dict[str, Any]:
+    registration_snapshot = {
+        "id": int(item["market_data_file_id"]),
+        "provider": item["provider"],
+        "data_type": item["data_type"],
+        "symbol": item["symbol"],
+        "contract_or_series": item["contract_or_series"],
+        "frequency": item["frequency"],
+        "data_role": item["data_role"],
+        "quality_status": item["quality_status"],
+        "file_path": item["file_path"],
+        "file_size_bytes": item.get("file_size_bytes"),
+        "checksum": item.get("checksum"),
+        "coverage_start": item["coverage_start"],
+        "coverage_end": item["coverage_end"],
+        "row_count": item.get("row_count"),
+        "data_version": item.get("data_version"),
+    }
     record = {
         "market_data_file_id": int(item["market_data_file_id"]),
         "contract_or_series": item["contract_or_series"],
@@ -1504,6 +1740,10 @@ def _migration_source_record(
         "data_version": item.get("data_version"),
         "dataset_origin": (
             "preaggregated_from_1m" if aggregate else "provider_direct"
+        ),
+        "registration_snapshot": registration_snapshot,
+        "registration_snapshot_digest": canonical_digest(
+            registration_snapshot
         ),
     }
     if not aggregate:
@@ -1529,6 +1769,45 @@ def _migration_source_record(
     }
 
 
+def _verified_partition_record(item: Mapping[str, Any]) -> dict[str, Any]:
+    required = (
+        "canonical_partition_id",
+        "canonical_file_uri",
+        "manifest_format",
+        "manifest_version",
+        "manifest_uri",
+        "manifest_digest",
+    )
+    if any(item.get(key) is None for key in required) or (
+        item.get("frequency") in _DERIVED_FREQUENCIES
+        and item.get("source_lineage") is None
+    ):
+        raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+    body = {
+        "inventory_asset_id": int(item["market_data_file_id"]),
+        "partition_id": int(item["canonical_partition_id"]),
+        "provider": item["provider"],
+        "dataset_kind": item["dataset_kind"],
+        "symbol": item["symbol"],
+        "contract_or_series": item["contract_or_series"],
+        "frequency": item["frequency"],
+        "adjustment": item.get("adjustment"),
+        "schema_version": item.get("schema_version"),
+        "file_path": item["file_path"],
+        "file_uri": item["canonical_file_uri"],
+        "physical_checksum": item["physical_checksum"],
+        "coverage_start": item["coverage_start"],
+        "coverage_end": item["coverage_end"],
+        "row_count": item["row_count"],
+        "manifest_format": item["manifest_format"],
+        "manifest_version": item["manifest_version"],
+        "manifest_uri": item["manifest_uri"],
+        "manifest_digest": item["manifest_digest"],
+        "source_lineage": item["source_lineage"],
+    }
+    return {**body, "record_digest": canonical_digest(body)}
+
+
 def build_migration_plan(
     index: Mapping[str, Any],
     *,
@@ -1544,6 +1823,12 @@ def build_migration_plan(
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for raw in index.get("assets", []):
         if raw.get("disposition") not in eligible:
+            continue
+        if (
+            raw.get("disposition")
+            == AssetDisposition.KEEP_CANONICAL_VERIFIED.value
+            and raw.get("data_type") != "v2_canonical"
+        ):
             continue
         key = (str(raw["symbol"]).lower(), str(raw["dataset_kind"]), str(raw["frequency"]))
         grouped.setdefault(key, []).append(dict(raw))
@@ -1622,6 +1907,9 @@ def build_migration_plan(
             ],
             "verified_partition_ids": [
                 int(item["market_data_file_id"]) for item in verified_rows
+            ],
+            "verified_partitions": [
+                _verified_partition_record(item) for item in verified_rows
             ],
             "protected_evidence_ids": [],
             "coverage_start": min(str(item["coverage_start"]) for item in rows),
@@ -2039,17 +2327,71 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
                 "dataset_origin"
             ) != expected_origin:
                 raise ValueError("TASK07_BATCH_ORIGIN_INVALID")
+            registration = source.get("registration_snapshot")
+            if (
+                not isinstance(registration, Mapping)
+                or source.get("registration_snapshot_digest")
+                != canonical_digest(registration)
+            ):
+                raise ValueError("TASK07_SOURCE_REGISTRATION_INVALID")
             if aggregate and (
                 source.get("source_frequency") != "1m"
-                or source.get("manifest_format") != "canonical-manifest-v2"
+                or source.get("manifest_format")
+                != CANONICAL_MANIFEST_FORMAT_V2
                 or source.get("manifest_version")
-                != "task07-aggregate-migration-v1"
+                != _TASK07_AGGREGATE_MANIFEST_VERSION
                 or not _SHA256.fullmatch(
                     str(source.get("quality_evidence_digest") or "")
                 )
                 or source.get("registration_wall_clock_matches") is not True
             ):
                 raise ValueError("TASK07_BATCH_ORIGIN_INVALID")
+        verified_partitions = batch.get("verified_partitions", [])
+        if not isinstance(verified_partitions, list):
+            raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+        verified_ids: list[int] = []
+        for partition in verified_partitions:
+            if not isinstance(partition, Mapping):
+                raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+            record_body = {
+                key: value
+                for key, value in partition.items()
+                if key != "record_digest"
+            }
+            try:
+                partition_id = int(partition["partition_id"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    "TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID"
+                ) from exc
+            if (
+                partition_id < 1
+                or partition.get("record_digest") != canonical_digest(record_body)
+                or partition.get("provider") != "rqdata"
+                or partition.get("dataset_kind") != batch.get("dataset_kind")
+                or partition.get("symbol") != batch.get("symbol")
+                or partition.get("frequency") != batch.get("frequency")
+                or (
+                    aggregate
+                    and (
+                        partition.get("manifest_format")
+                        != CANONICAL_MANIFEST_FORMAT_V2
+                        or partition.get("manifest_version")
+                        != _TASK07_AGGREGATE_MANIFEST_VERSION
+                        or not isinstance(
+                            partition.get("source_lineage"), Mapping
+                        )
+                    )
+                )
+            ):
+                raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+            verified_ids.append(
+                int(partition.get("inventory_asset_id", -1))
+            )
+        if verified_ids != list(batch.get("verified_partition_ids", [])) or (
+            not batch.get("sources") and not verified_partitions
+        ):
+            raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
     batch_manifest = [
         {"batch_key": batch["batch_key"], "batch_digest": batch["batch_digest"]}
         for batch in batches

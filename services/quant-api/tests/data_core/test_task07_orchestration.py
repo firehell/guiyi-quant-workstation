@@ -40,6 +40,7 @@ from app.guiyi_cli.main import main
 from app.models.data_center import (
     DataQualityReport,
     Instrument,
+    MarketDataFile,
     TradingCalendar,
     TradingSession,
 )
@@ -103,6 +104,28 @@ def _aggregate_asset(**overrides: object) -> Task07Asset:
     }
     values.update(overrides)
     return _asset(**values)
+
+
+def _registered_file_from_plan_source(source: dict[str, object]) -> MarketDataFile:
+    snapshot = source["registration_snapshot"]
+    assert isinstance(snapshot, dict)
+    return MarketDataFile(
+        id=int(snapshot["id"]),
+        provider=str(snapshot["provider"]),
+        data_type=str(snapshot["data_type"]),
+        instrument_symbol=str(snapshot["symbol"]),
+        contract_code=str(snapshot["contract_or_series"]),
+        period=str(snapshot["frequency"]),
+        start_time=datetime.fromisoformat(str(snapshot["coverage_start"])),
+        end_time=datetime.fromisoformat(str(snapshot["coverage_end"])),
+        file_path=str(snapshot["file_path"]),
+        row_count=int(snapshot["row_count"]),
+        file_size_bytes=int(snapshot["file_size_bytes"]),
+        checksum=str(snapshot["checksum"]),
+        data_version=str(snapshot["data_version"]),
+        data_role=str(snapshot["data_role"]),
+        quality_status=str(snapshot["quality_status"]),
+    )
 
 
 def _reference_report(tmp_path: Path, *, active: bool = False) -> dict[str, object]:
@@ -199,7 +222,7 @@ def test_inventory_keeps_verified_canonical_aggregate_partition() -> None:
         catalog_checksum="a" * 64,
     )
 
-    assert classify_asset(canonical) == AssetDisposition.KEEP_CANONICAL_VERIFIED
+    assert classify_asset(canonical) == AssetDisposition.CONFLICT_BLOCKED
 
 
 def test_protected_evidence_stays_protected_when_physical_content_is_missing() -> None:
@@ -275,7 +298,8 @@ def test_source_outside_approved_roots_is_not_hashed_or_migrated(tmp_path: Path)
         )
         connection.exec_driver_sql(
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
-            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER, manifest_version TEXT DEFAULT 'legacy-v1', "
+            "manifest_uri TEXT DEFAULT 'missing.manifest.json', manifest_digest TEXT DEFAULT '0000000000000000000000000000000000000000000000000000000000000000')"
         )
         connection.exec_driver_sql(
             "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
@@ -335,7 +359,8 @@ def test_symlink_inside_protected_root_cannot_become_a_migration_source(
         )
         connection.exec_driver_sql(
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
-            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER, manifest_version TEXT DEFAULT 'legacy-v1', "
+            "manifest_uri TEXT DEFAULT 'missing.manifest.json', manifest_digest TEXT DEFAULT '0000000000000000000000000000000000000000000000000000000000000000')"
         )
         connection.exec_driver_sql(
             "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
@@ -518,7 +543,8 @@ def test_database_inventory_uses_stable_keyset_and_physical_checksum(tmp_path: P
         )
         connection.exec_driver_sql(
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
-            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER, manifest_version TEXT DEFAULT 'legacy-v1', "
+            "manifest_uri TEXT DEFAULT 'missing.manifest.json', manifest_digest TEXT DEFAULT '0000000000000000000000000000000000000000000000000000000000000000')"
         )
         connection.exec_driver_sql(
             "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
@@ -538,9 +564,24 @@ def test_database_inventory_uses_stable_keyset_and_physical_checksum(tmp_path: P
             "INSERT INTO market_datasets VALUES (1,'rqdata','continuous','jm','JM.MAIN','1m','none','canonical-bar-v1')"
         )
         connection.execute(
-            text("INSERT INTO market_partitions VALUES (1,1,'source.parquet',:checksum,'2026-01-01','2026-01-02',1)"),
+            text(
+                "INSERT INTO market_partitions "
+                "(id,dataset_id,file_uri,checksum,coverage_start,coverage_end,row_count) "
+                "VALUES (1,1,'source.parquet',:checksum,'2026-01-01','2026-01-02',1)"
+            ),
             {"checksum": checksum},
         )
+
+    catalog_page_queries = 0
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def count_catalog_keyset_queries(
+        _conn, _cursor, statement, _parameters, _context, _many
+    ) -> None:
+        nonlocal catalog_page_queries
+        if "FROM market_datasets d JOIN market_partitions p" in statement:
+            assert "p.id >" in statement
+            catalog_page_queries += 1
 
     with Session(engine) as session:
         assets = list(
@@ -557,7 +598,8 @@ def test_database_inventory_uses_stable_keyset_and_physical_checksum(tmp_path: P
     assert assets[0].catalog_checksum == checksum
     assert assets[1].catalog_checksum is None
     assert all(item.physical_checksum == checksum for item in assets)
-    assert classify_asset(assets[2]) == AssetDisposition.KEEP_CANONICAL_VERIFIED
+    assert classify_asset(assets[2]) == AssetDisposition.CONFLICT_BLOCKED
+    assert catalog_page_queries >= 2
 
 
 def test_database_inventory_promotes_only_physically_verified_aggregate_with_quality_evidence(
@@ -714,7 +756,8 @@ def test_inventory_keyset_jsonl_reload_and_plan_digest_are_stable_above_six_hund
         )
         connection.exec_driver_sql(
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
-            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER, manifest_version TEXT DEFAULT 'legacy-v1', "
+            "manifest_uri TEXT DEFAULT 'missing.manifest.json', manifest_digest TEXT DEFAULT '0000000000000000000000000000000000000000000000000000000000000000')"
         )
         connection.exec_driver_sql(
             "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
@@ -766,6 +809,7 @@ def test_inventory_keyset_jsonl_reload_and_plan_digest_are_stable_above_six_hund
                 shard_size=50_000,
             )
         loaded = load_inventory_evidence(tmp_path / name / "inventory-index.json")
+        assert "assets" not in loaded
         plans.append(build_migration_plan(loaded, write_targets=_write_targets(tmp_path)))
         assert index["asset_count"] == 600_001
         assert loaded["asset_count"] == 600_001
@@ -796,7 +840,6 @@ def test_migration_plan_batches_deterministically_and_never_requests_rqdata() ->
 
     assert [batch["batch_key"] for batch in plan["batches"]] == [
         "jm:continuous:1m",
-        "rb:continuous:1m",
     ]
     assert plan["batches"][0]["sources"][0]["row_count"] == 10
     assert plan["batches"][0]["sources"][0]["data_version"] == "legacy-v1"
@@ -810,7 +853,7 @@ def test_migration_plan_batches_deterministically_and_never_requests_rqdata() ->
         }
         for batch in plan["batches"]
     ]
-    assert plan["migration_envelope"]["batch_count"] == 2
+    assert plan["migration_envelope"]["batch_count"] == 1
     assert len(plan["plan_digest"]) == 64
 
 
@@ -832,6 +875,41 @@ def test_migration_plan_binds_verified_aggregate_origin_and_quality_lineage() ->
     assert plan["batches"][0]["sources"][0]["source_frequency"] == "1m"
     assert plan["batches"][0]["sources"][0]["manifest_format"] == "canonical-manifest-v2"
     assert plan["batches"][0]["sources"][0]["dataset_origin"] == "preaggregated_from_1m"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("quality_evidence_digest", "c" * 63),
+        ("registration_wall_clock_matches", False),
+        ("manifest_version", "tampered-v1"),
+    ],
+)
+def test_aggregate_plan_integrity_rejects_tampered_source_gate_fields(
+    field: str,
+    value: object,
+) -> None:
+    plan = build_migration_plan(
+        build_inventory_index(
+            [_aggregate_asset()],
+            base_sha="3" * 40,
+            database_revision="20260803_0032",
+        ),
+        write_targets=_write_targets(),
+    )
+    plan["batches"][0]["sources"][0][field] = value
+    batch_body = {
+        key: item
+        for key, item in plan["batches"][0].items()
+        if key != "batch_digest"
+    }
+    plan["batches"][0]["batch_digest"] = canonical_digest(batch_body)
+    plan["migration_envelope"] = task07.build_migration_envelope(
+        plan["batches"]
+    )
+
+    with pytest.raises(ValueError, match="TASK07_BATCH_ORIGIN_INVALID"):
+        task07._validate_migration_plan_integrity(plan)
 
 
 def test_aggregate_gap_or_conflict_never_emits_provider_request_proposal() -> None:
@@ -1428,7 +1506,8 @@ def _task07_inventory_schema(engine: Engine) -> None:
         )
         connection.exec_driver_sql(
             "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
-            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER, manifest_version TEXT DEFAULT 'legacy-v1', "
+            "manifest_uri TEXT DEFAULT 'missing.manifest.json', manifest_digest TEXT DEFAULT '0000000000000000000000000000000000000000000000000000000000000000')"
         )
         connection.exec_driver_sql(
             "CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER, "
@@ -1812,6 +1891,9 @@ def test_task07_preflight_apply_and_verify_use_real_canonical_pipeline(
         connection.exec_driver_sql("INSERT INTO alembic_version VALUES ('20260802_0031')")
     with Session(engine) as session:
         session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE"))
+        session.add(
+            _registered_file_from_plan_source(plan["batches"][0]["sources"][0])
+        )
         session.add_all(
             [
                 TradingCalendar(exchange_code="DCE", trade_date=date(2026, 7, 31), is_trading_day=True, has_night_session=True),
@@ -1948,6 +2030,25 @@ def test_task07_aggregate_preflight_uses_schema_only_converter_without_provider_
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         session.add(
+            MarketDataFile(
+                id=1,
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="a",
+                contract_code="A.MAIN",
+                period="5m",
+                start_time=datetime(2026, 3, 31, 21, 5, tzinfo=UTC),
+                end_time=datetime(2026, 3, 31, 21, 5, tzinfo=UTC),
+                file_path=str(source),
+                row_count=1,
+                file_size_bytes=source.stat().st_size,
+                checksum=checksum,
+                data_version="legacy-aggregate-v1",
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
+        session.add(
             DataQualityReport(
                 id=11,
                 file_id=1,
@@ -1973,6 +2074,23 @@ def test_task07_aggregate_preflight_uses_schema_only_converter_without_provider_
             market_data_file_id=1,
         )
     quality_digest = canonical_digest(quality_records)
+    registration_snapshot = {
+        "id": 1,
+        "provider": "rqdata",
+        "data_type": "bars",
+        "symbol": "a",
+        "contract_or_series": "A.MAIN",
+        "frequency": "5m",
+        "data_role": "primary",
+        "quality_status": "passed",
+        "file_path": str(source),
+        "file_size_bytes": source.stat().st_size,
+        "checksum": checksum,
+        "coverage_start": "2026-03-31T21:05:00+00:00",
+        "coverage_end": "2026-03-31T21:05:00+00:00",
+        "row_count": 1,
+        "data_version": "legacy-aggregate-v1",
+    }
     batch = {
         "batch_key": "a:continuous:5m",
         "dataset_kind": "continuous",
@@ -2002,6 +2120,11 @@ def test_task07_aggregate_preflight_uses_schema_only_converter_without_provider_
                 "physical_max_datetime": "2026-03-31T21:05:00",
                 "declared_periods": ["5m"],
                 "source_intervals": ["1m"],
+                "registration_wall_clock_matches": True,
+                "registration_snapshot": registration_snapshot,
+                "registration_snapshot_digest": canonical_digest(
+                    registration_snapshot
+                ),
             }
         ],
     }
@@ -2021,6 +2144,37 @@ def test_task07_aggregate_preflight_uses_schema_only_converter_without_provider_
     assert validation[0]["dataset_origin"] == "preaggregated_from_1m"
     assert validation[0]["quality_evidence_digest"] == quality_digest
     assert prepared[0][1].evidence.schema_conversion_only is True
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE market_data_files SET data_role = 'candidate' WHERE id = 1")
+        )
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_SOURCE_REGISTRATION_DRIFT",
+    ):
+        cli_module._task07_validate_batch_readonly(session, batch=batch)
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE market_data_files SET data_role = 'primary' WHERE id = 1")
+        )
+        connection.execute(
+            text("UPDATE data_quality_reports SET missing_bars = 1 WHERE id = 11")
+        )
+    with Session(engine) as session:
+        invalid_quality = task07.read_task07_quality_evidence(
+            session,
+            market_data_file_id=1,
+        )
+    batch["sources"][0]["quality_evidence_digest"] = canonical_digest(
+        invalid_quality
+    )
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_QUALITY_EVIDENCE_INVALID",
+    ):
+        cli_module._task07_validate_batch_readonly(session, batch=batch)
 
 
 def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
@@ -2097,7 +2251,7 @@ def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
     )
     monkeypatch.setattr(
         "app.data_core.cli_service._task07_validate_batch_readonly",
-        lambda _session, *, batch: (
+        lambda _session, *, batch, canonical_root=None: (
             validation,
             [
                 (
@@ -2207,6 +2361,7 @@ def test_batch_journal_fsyncs_file_and_directory_and_rejects_forged_source_set(
         path,
         bound_facts=bound_facts,
         source_ids=[1, 2],
+        verified_partition_readbacks=[],
     )
     assert len(fsync_calls) == 2
 
@@ -2235,6 +2390,7 @@ def test_batch_journal_fsyncs_file_and_directory_and_rejects_forged_source_set(
             path,
             bound_facts=bound_facts,
             source_ids=[1, 2],
+            verified_partition_readbacks=[],
         )
 
 
@@ -2299,6 +2455,12 @@ def test_multisource_real_canonical_commit_then_journal_crash_resumes_as_exact_r
         connection.exec_driver_sql("INSERT INTO alembic_version VALUES ('20260802_0031')")
     with Session(engine) as session:
         session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE"))
+        session.add_all(
+            [
+                _registered_file_from_plan_source(source)
+                for source in plan["batches"][0]["sources"]
+            ]
+        )
         session.add_all(
             [
                 TradingCalendar(

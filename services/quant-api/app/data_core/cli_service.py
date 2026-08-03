@@ -226,6 +226,7 @@ def run_data_core_command(
         validation, _prepared = _task07_validate_batch_readonly(
             session,
             batch=batch,
+            canonical_root=Path(write_targets["canonical_root"]),
         )
         body = {key: value for key, value in receipt.items() if key != "preflight_digest"}
         body["validation"] = validation
@@ -288,14 +289,24 @@ def run_data_core_command(
             plan_digest=str(plan["plan_digest"]),
             batch_key=str(batch["batch_key"]),
         )
-        journal = _load_or_initialize_task07_batch_journal(
-            journal_path,
-            bound_facts=facts,
-            source_ids=[int(item["market_data_file_id"]) for item in batch.get("sources", [])],
-        )
         validation, prepared_sources = _task07_validate_batch_readonly(
             session,
             batch=batch,
+            canonical_root=canonical_root,
+        )
+        verified_partition_readbacks = [
+            item
+            for item in validation
+            if item.get("asset_kind") == "verified_partition"
+        ]
+        journal = _load_or_initialize_task07_batch_journal(
+            journal_path,
+            bound_facts=facts,
+            source_ids=[
+                int(item["market_data_file_id"])
+                for item in batch.get("sources", [])
+            ],
+            verified_partition_readbacks=verified_partition_readbacks,
         )
         factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
         completed_receipts = list(journal["source_receipts"])
@@ -352,6 +363,7 @@ def run_data_core_command(
                         plan_digest=str(plan["plan_digest"]),
                         batch_digest=str(batch["batch_digest"]),
                         source_market_data_file_id=source_id,
+                        canonical_root=canonical_root,
                     )
                 source_receipts.append(source_receipt)
                 completed_ids.add(source_id)
@@ -411,6 +423,8 @@ def run_data_core_command(
             "source_receipts": source_receipts,
             "source_receipt_digests": [item["receipt_digest"] for item in source_receipts],
             "published_source_count": len(source_receipts),
+            "verified_partition_readbacks": verified_partition_readbacks,
+            "verified_partition_count": len(verified_partition_readbacks),
             "batch_journal_path": str(journal_path),
             "batch_journal_digest": journal["journal_digest"],
             "calls_rqdata": False,
@@ -872,16 +886,186 @@ def _require_clean_task07_git_state(git_state: Mapping[str, Any]) -> None:
         raise ValueError("TASK07_TASK_HEAD_NOT_CLEAN")
 
 
+def _task07_current_registration_snapshot(
+    session: Session,
+    *,
+    market_data_file_id: int,
+) -> dict[str, Any]:
+    rows = session.execute(
+        text(
+            "SELECT id, provider, data_type, instrument_symbol, contract_code, "
+            "period, start_time, end_time, file_path, file_size_bytes, checksum, "
+            "data_version, row_count, data_role, quality_status "
+            "FROM market_data_files WHERE id = :source_id"
+        ),
+        {"source_id": market_data_file_id},
+    ).mappings().all()
+    if len(rows) != 1:
+        raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT")
+    row = rows[0]
+    return {
+        "id": int(row["id"]),
+        "provider": str(row["provider"] or "").strip().lower(),
+        "data_type": str(row["data_type"] or "").strip().lower(),
+        "symbol": str(row["instrument_symbol"] or "").strip().lower(),
+        "contract_or_series": str(row["contract_code"] or "").strip().upper(),
+        "frequency": str(row["period"] or "").strip().lower(),
+        "data_role": str(row["data_role"] or "").strip().lower(),
+        "quality_status": str(row["quality_status"] or "").strip().lower(),
+        "file_path": str(row["file_path"]),
+        "file_size_bytes": (
+            int(row["file_size_bytes"])
+            if row["file_size_bytes"] is not None
+            else None
+        ),
+        "checksum": str(row["checksum"]).strip().lower()
+        if row["checksum"]
+        else None,
+        "coverage_start": _task07_registration_datetime(row["start_time"]),
+        "coverage_end": _task07_registration_datetime(row["end_time"]),
+        "row_count": int(row["row_count"])
+        if row["row_count"] is not None
+        else None,
+        "data_version": str(row["data_version"])
+        if row["data_version"] is not None
+        else None,
+    }
+
+
+def _task07_normalize_registration_snapshot(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    try:
+        return {
+            "id": int(value["id"]),
+            "provider": str(value["provider"]).strip().lower(),
+            "data_type": str(value["data_type"]).strip().lower(),
+            "symbol": str(value["symbol"]).strip().lower(),
+            "contract_or_series": str(value["contract_or_series"]).strip().upper(),
+            "frequency": str(value["frequency"]).strip().lower(),
+            "data_role": str(value["data_role"]).strip().lower(),
+            "quality_status": str(value["quality_status"]).strip().lower(),
+            "file_path": str(value["file_path"]),
+            "file_size_bytes": (
+                int(value["file_size_bytes"])
+                if value.get("file_size_bytes") is not None
+                else None
+            ),
+            "checksum": str(value["checksum"]).strip().lower()
+            if value.get("checksum")
+            else None,
+            "coverage_start": _task07_registration_datetime(
+                value["coverage_start"]
+            ),
+            "coverage_end": _task07_registration_datetime(
+                value["coverage_end"]
+            ),
+            "row_count": int(value["row_count"])
+            if value.get("row_count") is not None
+            else None,
+            "data_version": str(value["data_version"])
+            if value.get("data_version") is not None
+            else None,
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT") from exc
+
+
+def _task07_registration_datetime(value: object) -> str:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    else:
+        raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
+
+
+def _task07_require_quality_identity(
+    records: tuple[dict[str, Any], ...],
+    *,
+    registration: Mapping[str, Any],
+) -> None:
+    for record in records:
+        try:
+            valid = (
+                int(record["file_id"]) == int(registration["id"])
+                and str(record["provider"]).strip().lower()
+                == registration["provider"]
+                and str(record["data_type"]).strip().lower()
+                == registration["data_type"]
+                and str(record["instrument_symbol"]).strip().lower()
+                == registration["symbol"]
+                and str(record["contract_code"]).strip().upper()
+                == registration["contract_or_series"]
+                and str(record["period"]).strip().lower()
+                == registration["frequency"]
+                and _task07_registration_datetime(record["start_time"])
+                == registration["coverage_start"]
+                and _task07_registration_datetime(record["end_time"])
+                == registration["coverage_end"]
+                and str(record["status"]).strip().lower() == "passed"
+                and all(
+                    int(record[field]) == 0
+                    for field in (
+                        "missing_bars",
+                        "duplicated_bars",
+                        "abnormal_price_count",
+                        "abnormal_volume_count",
+                    )
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("TASK07_QUALITY_EVIDENCE_INVALID") from exc
+        if not valid:
+            raise ValueError("TASK07_QUALITY_EVIDENCE_INVALID")
+
+
 def _task07_validate_batch_readonly(
     session: Session,
     *,
     batch: Mapping[str, Any],
+    canonical_root: Path | None = None,
 ) -> tuple[list[dict[str, Any]], list[tuple[Mapping[str, Any], Any]]]:
     evidence: list[dict[str, Any]] = []
     prepared_sources: list[tuple[Mapping[str, Any], Any]] = []
+    verified_partitions = batch.get("verified_partitions", [])
+    if not isinstance(verified_partitions, list):
+        raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+    if verified_partitions and canonical_root is None:
+        raise ValueError("TASK07_CANONICAL_ROOT_REQUIRED")
+    for partition in verified_partitions:
+        if not isinstance(partition, Mapping):
+            raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+        assert canonical_root is not None
+        evidence.append(
+            _task07_verify_planned_partition(
+                session,
+                partition=partition,
+                canonical_root=canonical_root,
+            )
+        )
     for source in batch.get("sources", []):
         if not isinstance(source, Mapping):
             raise ValueError("TASK07_PLAN_INVALID")
+        registration = source.get("registration_snapshot")
+        if (
+            not isinstance(registration, Mapping)
+            or source.get("registration_snapshot_digest")
+            != task07_canonical_digest(registration)
+        ):
+            raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT")
+        expected_registration = _task07_normalize_registration_snapshot(
+            registration
+        )
+        current_registration = _task07_current_registration_snapshot(
+            session,
+            market_data_file_id=int(source["market_data_file_id"]),
+        )
+        if current_registration != expected_registration:
+            raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT")
         dataset = DatasetKey(
             provider="rqdata",
             dataset_kind=DatasetKind(str(batch["dataset_kind"])),
@@ -915,6 +1099,10 @@ def _task07_validate_batch_readonly(
                 market_data_file_id=int(source["market_data_file_id"]),
             )
             quality_evidence_digest = task07_canonical_digest(quality_records)
+            _task07_require_quality_identity(
+                quality_records,
+                registration=current_registration,
+            )
             if (
                 not quality_records
                 or {item["status"] for item in quality_records} != {"passed"}
@@ -1053,6 +1241,110 @@ def _task07_validate_batch_readonly(
     return evidence, prepared_sources
 
 
+def _task07_verify_planned_partition(
+    session: Session,
+    *,
+    partition: Mapping[str, Any],
+    canonical_root: Path,
+) -> dict[str, Any]:
+    record_body = {
+        key: value for key, value in partition.items() if key != "record_digest"
+    }
+    if partition.get("record_digest") != task07_canonical_digest(record_body):
+        raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+    rows = session.execute(
+        text(
+            "SELECT p.id, d.provider, d.dataset_kind, d.symbol, "
+            "d.contract_or_series, d.frequency, d.adjustment, d.schema_version, "
+            "p.coverage_start, p.coverage_end, p.row_count, p.file_uri, p.checksum, "
+            "p.manifest_version, p.manifest_uri, p.manifest_digest "
+            "FROM market_partitions p JOIN market_datasets d ON d.id = p.dataset_id "
+            "WHERE p.id = :partition_id"
+        ),
+        {"partition_id": int(partition["partition_id"])},
+    ).mappings().all()
+    if len(rows) != 1:
+        raise ValueError("TASK07_VERIFIED_PARTITION_DRIFT")
+    row = rows[0]
+    current = {
+        "partition_id": int(row["id"]),
+        "provider": str(row["provider"]),
+        "dataset_kind": str(row["dataset_kind"]),
+        "symbol": str(row["symbol"]),
+        "contract_or_series": str(row["contract_or_series"]),
+        "frequency": str(row["frequency"]),
+        "adjustment": str(row["adjustment"]),
+        "schema_version": str(row["schema_version"]),
+        "coverage_start": _task07_registration_datetime(row["coverage_start"]),
+        "coverage_end": _task07_registration_datetime(row["coverage_end"]),
+        "row_count": int(row["row_count"]),
+        "file_uri": str(row["file_uri"]),
+        "physical_checksum": str(row["checksum"]),
+        "manifest_version": str(row["manifest_version"]),
+        "manifest_uri": str(row["manifest_uri"]),
+        "manifest_digest": str(row["manifest_digest"]),
+    }
+    expected = {
+        key: (
+            _task07_registration_datetime(partition[key])
+            if key in {"coverage_start", "coverage_end"}
+            else partition.get(key)
+        )
+        for key in current
+    }
+    if current != expected or partition.get("file_path") != str(
+        canonical_root / str(row["file_uri"])
+    ):
+        raise ValueError("TASK07_VERIFIED_PARTITION_DRIFT")
+    receipt_body: dict[str, Any] = {
+        "dataset": {
+            "provider": current["provider"],
+            "dataset_kind": current["dataset_kind"],
+            "symbol": current["symbol"],
+            "contract_or_series": current["contract_or_series"],
+            "frequency": current["frequency"],
+            "adjustment": current["adjustment"],
+            "schema_version": current["schema_version"],
+        },
+        "coverage_start": current["coverage_start"],
+        "coverage_end": current["coverage_end"],
+        "row_count": current["row_count"],
+        "file_uri": current["file_uri"],
+        "physical_checksum": current["physical_checksum"],
+        "manifest_uri": current["manifest_uri"],
+        "manifest_digest": current["manifest_digest"],
+        "manifest_version": current["manifest_version"],
+    }
+    if partition.get("manifest_format") == "canonical-manifest-v2":
+        receipt_body.update(
+            {
+                "manifest_format": partition["manifest_format"],
+                "source_lineage": partition["source_lineage"],
+            }
+        )
+    synthetic_receipt = {
+        **receipt_body,
+        "receipt_digest": task07_canonical_digest(receipt_body),
+    }
+    verified = verify_task07_published_batch(
+        synthetic_receipt,
+        catalog=HistoricalCatalog(session),
+        canonical_root=canonical_root,
+    )
+    body = {
+        "asset_kind": "verified_partition",
+        "inventory_asset_id": int(partition["inventory_asset_id"]),
+        "partition_id": int(partition["partition_id"]),
+        "record_digest": partition["record_digest"],
+        "physical_checksum": current["physical_checksum"],
+        "manifest_digest": current["manifest_digest"],
+        "manifest_format": partition.get("manifest_format"),
+        "source_lineage": partition.get("source_lineage"),
+        "readback_verify_digest": verified["verify_digest"],
+    }
+    return {**body, "validation_digest": canonical_json_digest(body)}
+
+
 def _task07_batch_journal_path(
     staging_root: Path,
     *,
@@ -1068,6 +1360,7 @@ def _load_or_initialize_task07_batch_journal(
     *,
     bound_facts: Mapping[str, Any],
     source_ids: list[int],
+    verified_partition_readbacks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     if path.exists():
         try:
@@ -1082,6 +1375,7 @@ def _load_or_initialize_task07_batch_journal(
             journal,
             bound_facts=bound_facts,
             source_ids=source_ids,
+            verified_partition_readbacks=verified_partition_readbacks,
         )
         return journal
     return _write_task07_batch_journal(
@@ -1094,6 +1388,7 @@ def _load_or_initialize_task07_batch_journal(
             "source_ids": source_ids,
             "completed_source_ids": [],
             "source_receipts": [],
+            "verified_partition_readbacks": verified_partition_readbacks,
             "current_source_id": None,
             "failure": None,
             "deletion_authorized": False,
@@ -1130,6 +1425,7 @@ def _verify_task07_batch_journal(
     *,
     bound_facts: Mapping[str, Any],
     source_ids: list[int],
+    verified_partition_readbacks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     try:
         journal = json.loads(path.read_text(encoding="utf-8"))
@@ -1144,6 +1440,7 @@ def _verify_task07_batch_journal(
         journal,
         bound_facts=bound_facts,
         source_ids=source_ids,
+        verified_partition_readbacks=verified_partition_readbacks,
     )
     return journal
 
@@ -1153,6 +1450,7 @@ def _validate_task07_batch_journal(
     *,
     bound_facts: Mapping[str, Any],
     source_ids: list[int],
+    verified_partition_readbacks: list[dict[str, Any]],
 ) -> None:
     receipts = journal.get("source_receipts")
     completed = journal.get("completed_source_ids")
@@ -1167,6 +1465,8 @@ def _validate_task07_batch_journal(
         journal.get("command") != "data.task07.batch-journal"
         or journal.get("bound_facts") != dict(bound_facts)
         or journal.get("source_ids") != source_ids
+        or journal.get("verified_partition_readbacks")
+        != verified_partition_readbacks
         or receipt_ids != completed_ids
         or completed_ids != source_ids[: len(completed_ids)]
         or len(set(completed_ids)) != len(completed_ids)
@@ -1237,6 +1537,22 @@ def _verify_task07_apply_receipt(
         plan_digest=str(plan["plan_digest"]),
         batch_key=str(batch["batch_key"]),
     )
+    verified_partition_readbacks = [
+        _task07_verify_planned_partition(
+            session,
+            partition=item,
+            canonical_root=canonical_root,
+        )
+        for item in batch.get("verified_partitions", [])
+        if isinstance(item, Mapping)
+    ]
+    if (
+        receipt.get("verified_partition_readbacks")
+        != verified_partition_readbacks
+        or receipt.get("verified_partition_count")
+        != len(verified_partition_readbacks)
+    ):
+        raise ValueError("TASK07_VERIFIED_PARTITION_DRIFT")
     journal = _verify_task07_batch_journal(
         expected_journal_path,
         bound_facts=build_task07_migration_batch_facts(
@@ -1251,6 +1567,7 @@ def _verify_task07_apply_receipt(
             int(item["market_data_file_id"])
             for item in batch.get("sources", [])
         ],
+        verified_partition_readbacks=verified_partition_readbacks,
     )
     if (
         receipt.get("batch_journal_path") != str(expected_journal_path)
@@ -1283,6 +1600,11 @@ def _verify_task07_apply_receipt(
         "receipt_digest": canonical_json_digest(receipt),
         "batch_digest": batch["batch_digest"],
         "verified_source_count": len(verified),
+        "verified_partition_count": len(verified_partition_readbacks),
+        "verified_partition_digests": [
+            item["validation_digest"]
+            for item in verified_partition_readbacks
+        ],
         "source_verify_digests": [item["verify_digest"] for item in verified],
     }
     return {**body, "verify_digest": task07_canonical_digest(body)}
@@ -1295,12 +1617,17 @@ def _verify_task07_resume_state(
     completed_ids: set[int],
     recovery_source_id: int | None,
 ) -> None:
-    current_by_id = {int(item["market_data_file_id"]): item for item in validation}
-    expected_by_id = {int(item["market_data_file_id"]): item for item in expected_validation}
+    def evidence_key(item: Mapping[str, Any]) -> tuple[str, int]:
+        if item.get("asset_kind") == "verified_partition":
+            return ("verified_partition", int(item["partition_id"]))
+        return ("source", int(item["market_data_file_id"]))
+
+    current_by_id = {evidence_key(item): item for item in validation}
+    expected_by_id = {evidence_key(item): item for item in expected_validation}
     if current_by_id.keys() != expected_by_id.keys():
         raise ValueError("TASK07_PREFLIGHT_STATE_DRIFT")
-    for source_id, expected in expected_by_id.items():
-        current = current_by_id[source_id]
+    for evidence_id, expected in expected_by_id.items():
+        current = current_by_id[evidence_id]
         current_identity = {
             key: value
             for key, value in current.items()
@@ -1313,6 +1640,11 @@ def _verify_task07_resume_state(
         }
         if current_identity != expected_identity:
             raise ValueError("TASK07_PREFLIGHT_STATE_DRIFT")
+        if evidence_id[0] == "verified_partition":
+            if current != expected:
+                raise ValueError("TASK07_PREFLIGHT_STATE_DRIFT")
+            continue
+        source_id = evidence_id[1]
         if (
             source_id not in completed_ids
             and source_id != recovery_source_id
