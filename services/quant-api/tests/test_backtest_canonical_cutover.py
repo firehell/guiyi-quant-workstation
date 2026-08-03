@@ -78,13 +78,12 @@ def _session_factory() -> sessionmaker[Session]:
 
 
 def _canonical_result(query: BarQuery) -> BarsResult:
-    source_frequency = BarFrequency.M1 if query.frequency is BarFrequency.M15 else query.frequency
     source = DatasetKey(
         provider="rqdata",
         dataset_kind=query.dataset_kind,
         symbol=query.symbol,
         contract_or_series=(query.contract_or_series or "JM2405"),
-        frequency=source_frequency,
+        frequency=query.frequency,
         adjustment="none",
         schema_version=CANONICAL_BAR_SCHEMA_VERSION,
     )
@@ -113,7 +112,7 @@ def _canonical_result(query: BarQuery) -> BarsResult:
         source_data_versions=(("canonical-15m" if query.frequency is BarFrequency.M15 else "canonical-1d"),),
         requested_window=(query.start, query.end),
         data_type=query.dataset_kind,
-        derived_frequency=(BarFrequency.M15 if query.frequency is BarFrequency.M15 else None),
+        derived_frequency=None,
     )
 
 
@@ -193,8 +192,14 @@ def test_formal_request_requires_series_only_for_continuous_and_timezone_aware_w
         FormalBacktestTaskRequest.model_validate(
             _formal_payload(start=datetime(2024, 1, 2))
         )
-    with pytest.raises(ValidationError):
-        FormalBacktestTaskRequest.model_validate(_formal_payload(interval="2m"))
+    for frequency in ("2m", "4h", "1D"):
+        with pytest.raises(ValidationError) as raised:
+            FormalBacktestTaskRequest.model_validate(
+                _formal_payload(interval=frequency)
+            )
+        assert raised.value.errors()[0]["ctx"]["code"] == (
+            "UNSUPPORTED_FREQUENCY"
+        )
 
 
 def test_actual_dominant_non_jm_is_rejected_with_stable_code() -> None:

@@ -8,7 +8,6 @@ import re
 from typing import Mapping
 
 from app.data_core.contracts import (
-    DERIVED_FREQUENCIES,
     BarFrequency,
     BarQuery,
     BarsResult,
@@ -340,17 +339,12 @@ def _parse_versions(value: object) -> tuple[str, ...]:
 def _parse_derived_frequency(value: object) -> BarFrequency | None:
     if value is None:
         return None
-    try:
-        frequency = BarFrequency(value)
-    except (TypeError, ValueError) as exc:
-        raise ContractValidationError(
-            facts={"field": "derived_frequency", "reason": "invalid"}
-        ) from exc
-    if frequency not in DERIVED_FREQUENCIES:
-        raise ContractValidationError(
-            facts={"field": "derived_frequency", "reason": "invalid"}
-        )
-    return frequency
+    raise ContractValidationError(
+        facts={
+            "field": "derived_frequency",
+            "reason": "historical_lineage_not_active",
+        }
+    )
 
 
 def _parse_strategy_input_version(value: object) -> str:
@@ -410,14 +404,15 @@ def _validate_request_result_identity(
             facts={"field": "source_datasets", "reason": "query_result_mismatch"}
         )
     if derived_frequency is not None:
-        valid_frequency = (
-            query.frequency is derived_frequency
-            and all(source.frequency is BarFrequency.M1 for source in source_datasets)
+        raise ContractValidationError(
+            facts={
+                "field": "derived_frequency",
+                "reason": "historical_lineage_not_active",
+            }
         )
-    else:
-        valid_frequency = all(
-            source.frequency is query.frequency for source in source_datasets
-        )
+    valid_frequency = all(
+        source.frequency is query.frequency for source in source_datasets
+    )
     if not valid_frequency:
         raise ContractValidationError(
             facts={"field": "frequency", "reason": "query_result_mismatch"}

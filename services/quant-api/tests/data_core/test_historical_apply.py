@@ -392,7 +392,7 @@ def test_shadow_uses_exact_rank1_mapping_across_roll_days() -> None:
     )
 
     assert result["status"] == "passed"
-    assert result["query_count"] == 13
+    assert result["query_count"] == 14
 
 
 def test_shadow_matrix_cannot_pass_when_both_sides_are_empty() -> None:
@@ -408,7 +408,7 @@ def test_shadow_matrix_cannot_pass_when_both_sides_are_empty() -> None:
     )
 
     assert result["status"] == "blocked"
-    assert result["blocked_query_count"] == 13
+    assert result["blocked_query_count"] == 14
     assert all(
         item["differences"][0]["reason"] == "empty_shadow_side"
         for item in result["results"]
@@ -467,7 +467,7 @@ def test_shadow_blocks_rows_that_disagree_with_rank1_mapping() -> None:
     )
 
     assert result["status"] == "blocked"
-    assert result["blocked_query_count"] == 6
+    assert result["blocked_query_count"] == 7
 
 
 def test_shadow_missing_rank1_evidence_blocks_actual_queries() -> None:
@@ -482,7 +482,7 @@ def test_shadow_missing_rank1_evidence_blocks_actual_queries() -> None:
         canonical_reader=lambda query: bundle[f"{query.dataset_kind}:{query.frequency}"],
         expected_actual_contract_by_day={"2026-07-01": "JM2609"},
     )
-    assert result["blocked_query_count"] == 6
+    assert result["blocked_query_count"] == 7
 
 
 def test_shadow_rejects_exception_query_outside_frozen_matrix() -> None:
@@ -496,7 +496,7 @@ def test_shadow_rejects_exception_query_outside_frozen_matrix() -> None:
             legacy_reader=lambda _query: (),
             canonical_reader=lambda _query: (),
             allowed_exceptions={
-                "actual_dominant:1w": (
+                "actual_dominant:2m": (
                     historical_migration.ShadowException(
                         bar_end="2026-07-01T01:01:00+00:00",
                         reason="outside-matrix",

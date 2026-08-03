@@ -26,6 +26,14 @@ class BarFrequency(StrEnum):
     W1 = "1w"
 
 
+BAR_FREQUENCY_VALUES = tuple(frequency.value for frequency in BarFrequency)
+
+
+def parse_bar_frequency(value: object, *, field: str = "frequency") -> BarFrequency:
+    """Parse only the exact seven-frequency historical contract."""
+    return _normalize_frequency(value, field=field)
+
+
 class DatasetOrigin(StrEnum):
     PROVIDER_DIRECT = "provider_direct"
     PREAGGREGATED_FROM_1M = "preaggregated_from_1m"
@@ -66,6 +74,10 @@ class DataCoreError(ValueError):
 
 class ContractValidationError(DataCoreError):
     error_code = "DATA_CONTRACT_INVALID"
+
+
+class UnsupportedFrequencyError(ContractValidationError):
+    error_code = "UNSUPPORTED_FREQUENCY"
 
 
 class DataGapError(DataCoreError):
@@ -242,14 +254,6 @@ class DatasetKey:
             symbol=symbol,
             contract_or_series=contract_or_series,
         )
-        if dataset_kind is DatasetKind.ACTUAL_DOMINANT and frequency is BarFrequency.W1:
-            raise ContractValidationError(
-                facts={
-                    "field": "frequency",
-                    "reason": "actual_dominant_weekly_not_supported",
-                    "value": frequency.value,
-                }
-            )
         object.__setattr__(self, "dataset_kind", dataset_kind)
         object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "contract_or_series", contract_or_series)
@@ -298,14 +302,6 @@ class BarQuery:
             allow_resolved_actual=True,
         )
         frequency = _normalize_frequency(self.frequency, field="frequency")
-        if dataset_kind is DatasetKind.ACTUAL_DOMINANT and frequency is BarFrequency.W1:
-            raise ContractValidationError(
-                facts={
-                    "field": "frequency",
-                    "reason": "actual_dominant_weekly_not_supported",
-                    "value": frequency.value,
-                }
-            )
         object.__setattr__(self, "dataset_kind", dataset_kind)
         object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "contract_or_series", contract_or_series)
@@ -409,27 +405,12 @@ class BarsResult:
         start, end = _normalize_window(*self.requested_window)
         derived_frequency = self.derived_frequency
         if derived_frequency is not None:
-            derived_frequency = _normalize_frequency(
-                derived_frequency,
-                field="derived_frequency",
+            raise ContractValidationError(
+                facts={
+                    "field": "derived_frequency",
+                    "reason": "active_result_requires_null",
+                }
             )
-            if derived_frequency not in DERIVED_FREQUENCIES:
-                raise ContractValidationError(
-                    facts={
-                        "field": "derived_frequency",
-                        "value": derived_frequency.value,
-                    }
-                )
-            if any(
-                source.frequency is not BarFrequency.M1
-                for source in source_datasets
-            ):
-                raise ContractValidationError(
-                    facts={
-                        "field": "source_datasets",
-                        "reason": "derived_source_frequency_must_be_1m",
-                    }
-                )
         for previous, current in zip(bars, bars[1:], strict=False):
             if previous.bar_end >= current.bar_end:
                 raise ContractValidationError(
@@ -468,46 +449,17 @@ class BarsResult:
                         "bar_end": bar.bar_end.isoformat(),
                     }
                 )
-            if derived_frequency is not None:
-                if bar.frequency is not derived_frequency:
-                    raise ContractValidationError(
-                        facts={
-                            "field": "bars",
-                            "reason": "derived_bar_frequency_mismatch",
-                            "expected": derived_frequency.value,
-                            "actual": bar.frequency.value,
-                        }
-                    )
-                if not any(
-                    source.frequency is BarFrequency.M1
-                    for source in matching_sources
-                ):
-                    raise ContractValidationError(
-                        facts={
-                            "field": "source_datasets",
-                            "reason": "derived_source_frequency_must_be_1m",
-                        }
-                    )
-            else:
-                if bar.frequency not in DIRECT_FREQUENCIES:
-                    raise ContractValidationError(
-                        facts={
-                            "field": "bars",
-                            "reason": "direct_bar_frequency_required",
-                            "actual": bar.frequency.value,
-                        }
-                    )
-                if not any(
-                    source.frequency is bar.frequency
-                    for source in matching_sources
-                ):
-                    raise ContractValidationError(
-                        facts={
-                            "field": "bars",
-                            "reason": "direct_source_frequency_mismatch",
-                            "bar_end": bar.bar_end.isoformat(),
-                        }
-                    )
+            if not any(
+                source.frequency is bar.frequency
+                for source in matching_sources
+            ):
+                raise ContractValidationError(
+                    facts={
+                        "field": "bars",
+                        "reason": "source_frequency_mismatch",
+                        "bar_end": bar.bar_end.isoformat(),
+                    }
+                )
         object.__setattr__(self, "bars", bars)
         object.__setattr__(self, "source_datasets", source_datasets)
         object.__setattr__(self, "manifest_digests", manifest_digests)
@@ -610,8 +562,12 @@ def _normalize_frequency(value: object, *, field: str) -> BarFrequency:
     try:
         return BarFrequency(value)
     except (TypeError, ValueError) as exc:
-        raise ContractValidationError(
-            facts={"field": field, "value": str(value)}
+        raise UnsupportedFrequencyError(
+            facts={
+                "field": field,
+                "value": str(value),
+                "allowed": BAR_FREQUENCY_VALUES,
+            }
         ) from exc
 
 

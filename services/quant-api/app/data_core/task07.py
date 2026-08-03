@@ -15,7 +15,8 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
-from typing import Any, Iterable, Mapping, Sequence
+import subprocess
+from typing import Any, Callable, Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 import pyarrow.parquet as pq
@@ -46,13 +47,27 @@ _ACTUAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _TASK07_AGGREGATE_MANIFEST_VERSION = "task07-aggregate-migration-v1"
 _TASK07_PLAN_RECORD_LIMIT = 50_000
+_TASK07_RUNTIME_DATABASE_REVISION = "20260803_0032"
+_TASK07_DISABLED_FEATURE_FLAGS = (
+    "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
+    "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED",
+    "GUIYI_DATA_CORE_V2_EOD_ENABLED",
+    "GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED",
+    "GUIYI_DATA_CORE_V2_RETENTION_SCHEDULER_ENABLED",
+    "GUIYI_DATA_CORE_V2_REVIEW_ENABLED",
+    "GUIYI_LIVE_RUNTIME_ENABLED",
+    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+    "GUIYI_WECHAT_AUTOSEND_ENABLED",
+)
 _REFERENCE_PATTERNS = {
     "profile_active_binding": re.compile(r"\b(?:ProfileActiveBinding|profile_active_bindings)\b"),
     "legacy_reader": re.compile(r"\bMarketDataReader\b"),
     "legacy_active_switch": re.compile(r"\bswitch_profile_active_binding\b"),
     "legacy_selector": re.compile(r"\b(?:profile_id|market_data_file_id)\b"),
     "legacy_bar_path": re.compile(r"(?:data/parquet/canonical/bars|data/raw/rqdata)"),
-    "parquet_glob": re.compile(r"(?:glob|rglob)\([^\n]*(?:parquet|\*\.)"),
+    "parquet_glob": re.compile(
+        r"(?:glob|rglob)\(\s*(?:[rubfRUBF]{0,2})?[\"'][^\"'\n]*\*[^\"'\n]*\.parquet[\"']"
+    ),
 }
 _REFERENCE_SUFFIXES = {
     ".cjs", ".conf", ".html", ".ini", ".js", ".json", ".md", ".mjs",
@@ -211,10 +226,6 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
                 asset.dataset_kind != "continuous"
                 or asset.contract_or_series == f"{asset.symbol.upper()}.MAIN"
             )
-            and not (
-                asset.dataset_kind == "actual_dominant"
-                and asset.frequency == "1w"
-            )
         )
         if (
             identity_valid
@@ -275,8 +286,6 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
     if asset.frequency not in _DIRECT_FREQUENCIES:
         return AssetDisposition.RETIREMENT_CANDIDATE
     if not asset.symbol or not asset.contract_or_series:
-        return AssetDisposition.RETIREMENT_CANDIDATE
-    if asset.dataset_kind == "actual_dominant" and asset.frequency == "1w":
         return AssetDisposition.RETIREMENT_CANDIDATE
     if asset.dataset_kind not in {"continuous", "actual_dominant"}:
         return AssetDisposition.RETIREMENT_CANDIDATE
@@ -626,6 +635,7 @@ def _catalog_matches_for_market_page(
     canonical_root: Path,
     page_size: int,
 ) -> dict[tuple[str, str, str, str, str], tuple[tuple[str, str], ...]]:
+    canonical = canonical_root.absolute()
     keys = sorted(
         {
             (
@@ -633,8 +643,10 @@ def _catalog_matches_for_market_page(
                 str(row["instrument_symbol"] or "").lower(),
                 str(row["contract_code"] or "").upper(),
                 str(row["period"] or ""),
+                Path(str(row["file_path"])).absolute().relative_to(canonical).as_posix(),
             )
             for row in rows
+            if Path(str(row["file_path"])).absolute().is_relative_to(canonical)
         }
     )
     matches: dict[
@@ -644,11 +656,12 @@ def _catalog_matches_for_market_page(
         chunk = keys[offset : offset + 100]
         clauses: list[str] = []
         parameters: dict[str, Any] = {"page_size": page_size}
-        for index, (provider, symbol, contract, frequency) in enumerate(chunk):
+        for index, (provider, symbol, contract, frequency, file_uri) in enumerate(chunk):
             clauses.append(
                 "(d.provider = :provider_{0} AND lower(d.symbol) = :symbol_{0} "
                 "AND upper(d.contract_or_series) = :contract_{0} "
-                "AND d.frequency = :frequency_{0})".format(index)
+                "AND d.frequency = :frequency_{0} "
+                "AND p.file_uri = :file_uri_{0})".format(index)
             )
             parameters.update(
                 {
@@ -656,6 +669,7 @@ def _catalog_matches_for_market_page(
                     f"symbol_{index}": symbol,
                     f"contract_{index}": contract,
                     f"frequency_{index}": frequency,
+                    f"file_uri_{index}": file_uri,
                 }
             )
         cursor = 0
@@ -1592,6 +1606,11 @@ def _reference_classification(
 ) -> tuple[str, str]:
     parts = relative.parts
     path = relative.as_posix()
+    if (
+        parts[:2] == (".superpowers", "sdd")
+        and re.fullmatch(r"task-[0-9]+-(?:brief|report)\.md", relative.name)
+    ):
+        return "historical_non_active", "sdd_task_evidence"
     if "tests" in parts or "e2e" in parts:
         return "historical_non_active", "test_or_fixture_reference"
     if path.startswith("services/quant-api/alembic/") or "migrations" in parts:
@@ -1902,6 +1921,7 @@ def build_migration_plan(
         AssetDisposition.REUSE_VERIFIED_AGGREGATE.value,
     }
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    repair_actions: list[dict[str, Any]] = []
     eligible_record_count = 0
     for raw in _iter_inventory_assets(index):
         if raw.get("disposition") not in eligible:
@@ -1919,6 +1939,51 @@ def build_migration_plan(
         grouped.setdefault(key, []).append(dict(raw))
     provider_requests = []
     for raw in _iter_inventory_assets(index):
+        if raw.get("disposition") == AssetDisposition.CONFLICT_BLOCKED.value:
+            aggregate = raw.get("frequency") in _DERIVED_FREQUENCIES
+            identity = {
+                "provider": "rqdata",
+                "dataset_kind": raw["dataset_kind"],
+                "symbol": raw["symbol"],
+                "contract_or_series": raw["contract_or_series"],
+                "frequency": raw["frequency"],
+                "adjustment": raw.get("adjustment") or "none",
+                "schema_version": raw.get("schema_version") or "canonical-bar-v1",
+            }
+            action_body: dict[str, Any] = {
+                "market_data_file_id": int(raw["market_data_file_id"]),
+                "action": (
+                    "canonical_1m_reaggregate" if aggregate else "rqdata_redownload"
+                ),
+                **identity,
+                "window": {
+                    "start": raw["coverage_start"],
+                    "end": raw["coverage_end"],
+                },
+                "base_sha": index["base_sha"],
+                "inventory_digest": index.get(
+                    "inventory_digest", index["assets_digest"]
+                ),
+                "source_dataset": (
+                    {**identity, "frequency": "1m"} if aggregate else None
+                ),
+                "validation_gates": [
+                    "schema",
+                    "bar_end_strictly_increasing",
+                    "duplicate_identity",
+                    "trading_session",
+                    "partition_readability",
+                ],
+                "failure_policy": {
+                    "preserve_existing_canonical": True,
+                    "register_data_gap": True,
+                    "delete_existing": False,
+                },
+                "authorized": False,
+            }
+            repair_actions.append(
+                {**action_body, "action_digest": canonical_digest(action_body)}
+            )
         if raw.get("frequency") in _DERIVED_FREQUENCIES or (
             raw.get("frequency") == "1d"
             and tuple(raw.get("source_intervals", ())) == ("1m",)
@@ -1949,6 +2014,15 @@ def build_migration_plan(
                 }
             )
     provider_requests.sort(
+        key=lambda item: (
+            str(item["symbol"]),
+            str(item["dataset_kind"]),
+            str(item["frequency"]),
+            str(item["window"]["start"]),
+            int(item["market_data_file_id"]),
+        )
+    )
+    repair_actions.sort(
         key=lambda item: (
             str(item["symbol"]),
             str(item["dataset_kind"]),
@@ -2086,6 +2160,7 @@ def build_migration_plan(
         ),
         "write_targets": write_targets_value,
         "provider_requests": provider_requests,
+        "repair_actions": repair_actions,
         "batches": batches,
         "migration_envelope": migration_envelope,
         "disposition_counts": disposition_counts,
@@ -2196,12 +2271,20 @@ def _iter_inventory_assets(index: Mapping[str, Any]) -> Iterable[dict[str, Any]]
     if not isinstance(index_path_value, str):
         raise ValueError("TASK07_INVENTORY_ASSETS_MISSING")
     index_path = Path(index_path_value)
+    asset_count = 0
+    assets_digest = sha256()
     for shard in index.get("shards", []):
         name = shard.get("path")
         if not isinstance(name, str) or Path(name).name != name:
             raise ValueError("TASK07_INVENTORY_SHARD_PATH_INVALID")
+        shard_count = 0
+        shard_digest = sha256()
         with (index_path.parent / name).open("rb") as handle:
             for line in handle:
+                shard_digest.update(line)
+                assets_digest.update(line)
+                shard_count += 1
+                asset_count += 1
                 try:
                     item = json.loads(line)
                 except json.JSONDecodeError as exc:
@@ -2211,6 +2294,15 @@ def _iter_inventory_assets(index: Mapping[str, Any]) -> Iterable[dict[str, Any]]
                 if not isinstance(item, dict):
                     raise ValueError("TASK07_INVENTORY_SHARD_JSON_INVALID")
                 yield item
+        if shard_digest.hexdigest() != shard.get("sha256"):
+            raise ValueError("TASK07_INVENTORY_SHARD_HASH_MISMATCH")
+        if shard_count != shard.get("row_count"):
+            raise ValueError("TASK07_INVENTORY_SHARD_COUNT_MISMATCH")
+    if (
+        asset_count != index.get("asset_count")
+        or assets_digest.hexdigest() != index.get("assets_digest")
+    ):
+        raise ValueError("TASK07_INVENTORY_ASSETS_MISMATCH")
 
 
 def build_approval_packet(
@@ -2526,9 +2618,34 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
     if plan.get("migration_envelope") != expected_envelope:
         raise ValueError("TASK07_MIGRATION_ENVELOPE_MISMATCH")
     requests = plan.get("provider_requests")
+    repair_actions = plan.get("repair_actions")
     proposal = plan.get("provider_request_proposal")
-    if not isinstance(requests, list) or not isinstance(proposal, Mapping):
+    if (
+        not isinstance(requests, list)
+        or not isinstance(repair_actions, list)
+        or not isinstance(proposal, Mapping)
+    ):
         raise ValueError("TASK07_PLAN_INVALID")
+    for action in repair_actions:
+        if not isinstance(action, Mapping):
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+        action_body = {
+            key: value for key, value in action.items() if key != "action_digest"
+        }
+        if (
+            action.get("action")
+            not in {"rqdata_redownload", "canonical_1m_reaggregate"}
+            or action.get("authorized") is not False
+            or action.get("action_digest") != canonical_digest(action_body)
+            or (
+                action.get("action") == "canonical_1m_reaggregate"
+                and (
+                    not isinstance(action.get("source_dataset"), Mapping)
+                    or action["source_dataset"].get("frequency") != "1m"
+                )
+            )
+        ):
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     proposal_body = {
         key: value for key, value in proposal.items() if key != "proposal_digest"
     }
@@ -2659,6 +2776,7 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         "references_digest": plan.get("references_digest"),
         "write_targets": plan.get("write_targets"),
         "provider_requests": requests,
+        "repair_actions": repair_actions,
         "batches": batches,
         "migration_envelope": expected_envelope,
         "disposition_counts": dict(disposition_counts),
@@ -2746,6 +2864,167 @@ def _load_json(path: Path, code: str) -> dict[str, Any]:
     return value
 
 
+def resolve_git_tag(project_root: Path, tag: str) -> str:
+    if (
+        not isinstance(tag, str)
+        or not tag
+        or tag.startswith("-")
+        or ".." in tag
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}", tag)
+    ):
+        raise ValueError("TASK07_RUNTIME_CUTOVER_TAG_INVALID")
+    root = project_root.resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("TASK07_RUNTIME_CUTOVER_PROJECT_ROOT_INVALID")
+    check = subprocess.run(
+        ["git", "check-ref-format", f"refs/tags/{tag}"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if check.returncode != 0:
+        raise ValueError("TASK07_RUNTIME_CUTOVER_TAG_INVALID")
+    resolved = subprocess.run(
+        ["git", "rev-list", "-n", "1", f"refs/tags/{tag}^{{}}"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    sha = resolved.stdout.strip()
+    if resolved.returncode != 0 or not _TASK_HEAD.fullmatch(sha):
+        raise ValueError("TASK07_RUNTIME_CUTOVER_TAG_UNRESOLVED")
+    return sha
+
+
+def build_runtime_cutover_plan(
+    *,
+    target_release_tag: str,
+    previous_release_tag: str,
+    tag_resolver: Callable[[str], str],
+) -> dict[str, Any]:
+    target_sha = tag_resolver(target_release_tag)
+    previous_sha = tag_resolver(previous_release_tag)
+    if (
+        not _TASK_HEAD.fullmatch(str(target_sha))
+        or not _TASK_HEAD.fullmatch(str(previous_sha))
+        or target_release_tag == previous_release_tag
+        or target_sha == previous_sha
+    ):
+        raise ValueError("TASK07_RUNTIME_CUTOVER_TAG_DRIFT")
+    facts = {
+        "target_release": {"tag": target_release_tag, "sha": target_sha},
+        "previous_release": {"tag": previous_release_tag, "sha": previous_sha},
+        "required_database_revision": _TASK07_RUNTIME_DATABASE_REVISION,
+        "required_feature_flags": {
+            name: False for name in _TASK07_DISABLED_FEATURE_FLAGS
+        },
+        "required_auto_order": False,
+        "required_health_status": "passed",
+        "required_smoke_status": "passed",
+        "required_reference_scan": {
+            "scope": "checkout_and_runtime",
+            "complete": True,
+            "active": 0,
+            "review_required": 0,
+        },
+        "calls_rqdata": False,
+        "writes_canonical": False,
+        "writes_database": False,
+        "switches_runtime": False,
+        "apply_available": False,
+    }
+    return {
+        "schema_version": 1,
+        "command": "data.task07.runtime-cutover-plan",
+        "status": "planned",
+        "readonly": True,
+        **facts,
+        "plan_digest": canonical_digest(facts),
+    }
+
+
+def verify_runtime_cutover_receipt(
+    plan: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    *,
+    tag_resolver: Callable[[str], str],
+) -> dict[str, Any]:
+    try:
+        target = plan["target_release"]
+        previous = plan["previous_release"]
+        expected_plan = build_runtime_cutover_plan(
+            target_release_tag=str(target["tag"]),
+            previous_release_tag=str(previous["tag"]),
+            tag_resolver=tag_resolver,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("TASK07_RUNTIME_CUTOVER_PLAN_DRIFT") from exc
+    if dict(plan) != expected_plan:
+        raise ValueError("TASK07_RUNTIME_CUTOVER_PLAN_DRIFT")
+    expected_fields = {
+        "schema_version",
+        "command",
+        "status",
+        "target_release",
+        "database_revision",
+        "feature_flags",
+        "auto_order",
+        "health",
+        "smoke",
+        "rollback",
+        "reference_scan",
+        "plan_digest",
+        "canonical_receipt_digest",
+    }
+    if set(receipt) != expected_fields:
+        raise ValueError("TASK07_RUNTIME_CUTOVER_RECEIPT_DRIFT")
+    body = {
+        key: value
+        for key, value in receipt.items()
+        if key != "canonical_receipt_digest"
+    }
+    rollback = receipt.get("rollback")
+    if (
+        receipt.get("canonical_receipt_digest") != canonical_digest(body)
+        or receipt.get("schema_version") != 1
+        or receipt.get("command") != "data.task07.runtime-cutover"
+        or receipt.get("status") != "passed"
+        or receipt.get("target_release") != expected_plan["target_release"]
+        or receipt.get("database_revision")
+        != expected_plan["required_database_revision"]
+        or receipt.get("feature_flags")
+        != expected_plan["required_feature_flags"]
+        or receipt.get("auto_order") is not False
+        or receipt.get("health") != {"status": "passed"}
+        or receipt.get("smoke") != {"status": "passed"}
+        or not isinstance(rollback, Mapping)
+        or dict(rollback)
+        != {
+            **expected_plan["previous_release"],
+            "ready": True,
+        }
+        or receipt.get("reference_scan")
+        != expected_plan["required_reference_scan"]
+        or receipt.get("plan_digest") != expected_plan["plan_digest"]
+    ):
+        raise ValueError("TASK07_RUNTIME_CUTOVER_RECEIPT_DRIFT")
+    verification = {
+        "schema_version": 1,
+        "command": "data.task07.runtime-cutover-verify",
+        "status": "passed",
+        "readonly": True,
+        "plan_digest": expected_plan["plan_digest"],
+        "runtime_cutover_receipt_digest": receipt[
+            "canonical_receipt_digest"
+        ],
+        "retirement_unlocked": False,
+        "deletion_unlocked": False,
+    }
+    return {**verification, "verification_digest": canonical_digest(verification)}
+
+
 _TASK07_RUNTIME_CUTOVER_RECEIPT_CONTRACT = {
     "schema_version": 1,
     "command": "data.task07.runtime-cutover",
@@ -2753,13 +3032,20 @@ _TASK07_RUNTIME_CUTOVER_RECEIPT_CONTRACT = {
         "schema_version",
         "command",
         "status",
-        "source_base_sha",
-        "migration_verification_digest",
-        "trusted_runtime_scope",
-        "runtime_cutover_receipt_digest",
+        "target_release",
+        "database_revision",
+        "feature_flags",
+        "auto_order",
+        "health",
+        "smoke",
+        "rollback",
+        "reference_scan",
+        "plan_digest",
+        "canonical_receipt_digest",
     ],
-    "trusted_runtime_scope_required": True,
-    "validation_owner": "task07_guarded_runtime_cutover",
+    "database_revision": _TASK07_RUNTIME_DATABASE_REVISION,
+    "all_features_disabled": True,
+    "apply_available": False,
 }
 
 

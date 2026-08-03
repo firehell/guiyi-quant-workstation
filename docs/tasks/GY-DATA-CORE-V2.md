@@ -175,6 +175,27 @@ disabled/empty smoke receipt，不授权后续 Runtime、live、scheduler 或通
 
 ### 4.0.0 Task 07 当前执行快照
 
+2026-08-03 closeout 代码合同已取消两项旧设计：actual-dominant `1w` 禁用与
+历史 `1m -> 5m/15m/30m/60m` 动态 fallback。当前正式历史只支持
+`1m/5m/15m/30m/60m/1d/1w`；每个请求只读同频 Catalog/Canonical partition，缺失时
+DataGap。actual-dominant `1w` 使用该周最后交易日的 rank=1 具体合约。新
+BarsResult 必须 request/source/bars 同频且 `derived_frequency=null`。
+
+closeout 同时修复 inventory shard TOCTOU 与 Catalog page cache 无界累积：plan 每次
+流式消费 shard 时重算 shard SHA-256、行数与全局 assets digest；Catalog cache 的 SQL 同时绑定
+dataset identity 与当前 page 的 exact `file_uri`。reference scanner 只识别真实
+`.parquet` glob，并对精确 SDD task brief/report 作 historical 分类，不忽略整个目录或扩展名。
+
+冲突处理只生成默认未授权的 exact repair action：direct `1m/1d/1w` 为
+`rqdata_redownload`，aggregate `5m/15m/30m/60m` 为 `canonical_1m_reaggregate`。失败时保留
+旧有效 Canonical 并登记 DataGap，不执行 legacy/new 逐行比较或多源仲裁。
+
+本 closeout 仅新增 read-only `runtime-cutover-plan` / `runtime-cutover-verify`；最小合同绑定
+exact target/previous tag+SHA、DB `20260803_0032`、全部真实功能 disabled、health/smoke passed、
+rollback-ready 与 checkout/Runtime reference zero。它不提供 apply/stop/switch/restart，不解锁
+retirement/deletion。本任务未读取生产数据、未执行 0032/RQData/Canonical/DB/Runtime 写入，
+不写入 `READY_FOR_TASK_08`。
+
 Task 07 从 clean `develop@39d1002d` 建立独立 task branch/worktree。专用
 `guiyi data task07` 合同覆盖 `inventory / plan / preflight / apply / verify /
 retirement-plan / retirement-apply`；只有两个 apply 命令是潜在写入口，且在 CLI 打开数据库前

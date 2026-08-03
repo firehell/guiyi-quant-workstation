@@ -62,7 +62,7 @@ def _reader(query) -> ShadowReadResult:
     )
 
 
-def test_chunked_shadow_passes_exact_13_query_coverage_and_binds_lineage() -> None:
+def test_chunked_shadow_passes_exact_14_query_coverage_and_binds_lineage() -> None:
     result = run_chunked_historical_shadow_query_set(
         _queries(),
         legacy_reader=_reader,
@@ -74,7 +74,7 @@ def test_chunked_shadow_passes_exact_13_query_coverage_and_binds_lineage() -> No
     )
 
     assert result["status"] == "passed"
-    assert result["query_count"] == result["chunk_count"] == 13
+    assert result["query_count"] == result["chunk_count"] == 14
     assert result["blocked_query_count"] == 0
     assert len(result["legacy_source_lineage_digest"]) == 64
     assert len(result["canonical_source_lineage_digest"]) == 64
@@ -96,7 +96,7 @@ def test_chunked_shadow_blocks_mutual_omission_against_expected_coverage() -> No
     )
 
     assert result["status"] == "blocked"
-    assert result["blocked_query_count"] == 13
+    assert result["blocked_query_count"] == 14
     assert all(
         {difference["fields"][0] for difference in item["chunks"][0]["differences"]}
         == {"legacy", "canonical"}
@@ -165,10 +165,14 @@ def test_expected_keys_keep_cross_month_week_in_its_actual_week_end_chunk() -> N
         )
         for trading_day in (date(2026, 4, 30), date(2026, 5, 1))
     )
-    first_month = build_jm_shadow_query_set(
-        start=datetime(2026, 4, 1, tzinfo=UTC),
-        end=datetime(2026, 5, 1, tzinfo=UTC),
-    )[-1]
+    first_month = next(
+        item
+        for item in build_jm_shadow_query_set(
+            start=datetime(2026, 4, 1, tzinfo=UTC),
+            end=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+        if item.dataset_kind == "actual_dominant" and item.frequency == "1d"
+    )
     second_month = type(first_month)(
         dataset_kind=first_month.dataset_kind,
         contract_or_series=first_month.contract_or_series,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+from app.data_core.contracts import BAR_FREQUENCY_VALUES
 from app.services.rqdata_ingest.full_history_contract import (
     ACTUAL_REQUIRED_PERIODS,
     V1_AUDIT_END,
@@ -217,7 +218,8 @@ def test_actual_targets_only_cover_rank1_ranges_and_required_periods() -> None:
         ]
     )
 
-    assert {row.period for row in rows} == ACTUAL_REQUIRED_PERIODS
+    assert tuple(sorted(ACTUAL_REQUIRED_PERIODS)) == tuple(sorted(BAR_FREQUENCY_VALUES))
+    assert {row.period for row in rows} == set(BAR_FREQUENCY_VALUES)
     assert {row.contract for row in rows} == {"JM2609"}
     assert {row.expected_start for row in rows} == {date(2026, 7, 1)}
     assert {row.expected_end for row in rows} == {V1_AUDIT_END}
@@ -239,8 +241,13 @@ def test_actual_targets_clip_to_supported_period_start_and_deduplicate() -> None
     )
 
     assert [(row.period, row.expected_start) for row in rows] == [
+        ("15m", date(2013, 3, 1)),
         ("1d", date(2013, 3, 20)),
         ("1m", date(2013, 3, 22)),
+        ("1w", date(2013, 3, 1)),
+        ("30m", date(2013, 3, 1)),
+        ("5m", date(2013, 3, 1)),
+        ("60m", date(2013, 3, 1)),
     ]
 
 
@@ -248,7 +255,10 @@ def test_actual_targets_omit_ranges_before_supported_period_start() -> None:
     rows = build_actual_rank1_targets(
         [ActualRank1Range(product="jm", contract="JM1305", start=date(2013, 3, 1), end=date(2013, 3, 10))],
         audit_end=date(2013, 3, 25),
-        supported_starts={("jm", "1m"): date(2013, 3, 22), ("jm", "1d"): date(2013, 3, 20)},
+        supported_starts={
+            ("jm", period): date(2013, 3, 20)
+            for period in BAR_FREQUENCY_VALUES
+        },
     )
 
     assert rows == ()

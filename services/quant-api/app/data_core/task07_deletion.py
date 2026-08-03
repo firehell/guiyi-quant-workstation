@@ -15,10 +15,11 @@ import stat
 from typing import Any, Iterable, Mapping
 
 from app.data_core.canonical_store import _atomic_rename_no_replace_at
+from app.data_core.contracts import BAR_FREQUENCY_VALUES
 from app.data_core.task07 import canonical_digest
 
 
-_KLINE_FREQUENCIES = {"1m", "5m", "15m", "30m", "60m", "1d", "1w"}
+_KLINE_FREQUENCIES = frozenset(BAR_FREQUENCY_VALUES)
 _SHA256 = frozenset("0123456789abcdef")
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
 _FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)

@@ -46,7 +46,7 @@
 
 - Converge Market/Web/Indicator/Backtest/Signal/Review active paths on `MarketDataService + DatasetKey/BarsResult`.
 - Remove active `profile_id`/`market_data_file_id` request selection; historical response lineage remains read-only.
-- Ensure direct `1m/1d/1w` and deterministic `5m/15m/30m/60m` behavior, with actual-dominant `1w` prohibited.
+- Freeze `1m/5m/15m/30m/60m/1d/1w` as persisted same-frequency historical datasets; actual-dominant `1w` uses the last trading day's rank=1 concrete contract.
 - Run focused API/service/frontend tests and build.
 
 ### Task 5: Add exact deletion orchestration
@@ -59,7 +59,7 @@
 
 ### Task 5A: Persist verified aggregate-minute datasets
 
-- Extend `DatasetKey` and PostgreSQL dataset constraints to accept stored `5m/15m/30m/60m`, while retaining direct-provider `1m/1d/1w`, prohibiting actual-dominant `1w`, and rejecting old derived `1d` imports.
+- Extend `DatasetKey` and PostgreSQL dataset constraints to accept all seven stored frequencies, retain direct-provider `1m/1d/1w`, and reject old derived `1d` imports as direct sources.
 - Add Alembic `0032` with a fail-closed downgrade when persisted aggregate datasets exist.
 - Add digest-bound manifest lineage distinguishing `provider_direct` from `preaggregated_from_1m`, including legacy source checksum and quality-evidence digest.
 - Classify an aggregate as reusable only when it is primary/passed, physically present and readable, its registered checksum/row count/min/max/frequency match, `source_interval=1m`, and every value is representable by the canonical writer.
@@ -74,6 +74,10 @@
 - Run focused Market/Web/Indicator/Backtest/Signal/Review regressions and update canonical data documentation.
 
 ### Task 6: Add Task 07 code-only Runtime cutover Gate
+
+- Provide only read-only `runtime-cutover-plan` and `runtime-cutover-verify`; no apply/stop/switch/restart path.
+- Bind exact target/previous tags and SHAs, DB `20260803_0032`, all feature flags disabled, health/smoke passed, rollback-ready, and checkout/Runtime reference zero.
+- Do not add PID, environment/Web bundle, generic row-set digest, or multi-stage lineage fields; a fixture receipt never unlocks retirement/deletion.
 
 - Bind source/develop merge SHA, current detached Runtime SHA, target tree, verified aggregate migration receipt, DB revision `0032`, exact service parents/labels, flags, environment digest, Web bundle digest, active-row-set digest, rollback SHA, and approval hash.
 - Preflight requires all migration receipts verified, flags disabled, no unexpected live/SignalEvent increments, and clean exact source/runtime state.

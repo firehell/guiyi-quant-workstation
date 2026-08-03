@@ -29,6 +29,7 @@ from app.vnpy_integration import (
     to_vt_symbol,
     validate_execution_timing,
 )
+from app.vnpy_integration.backtest_runner import _to_vnpy_interval
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -65,6 +66,27 @@ class FakeRawResult:
 
 class DemoStrategy:
     pass
+
+
+def test_vnpy_interval_adapter_accepts_only_exact_historical_frequencies() -> None:
+    from vnpy.trader.constant import Interval
+
+    expected = {
+        "1m": Interval.MINUTE,
+        "5m": Interval.MINUTE,
+        "15m": Interval.MINUTE,
+        "30m": Interval.MINUTE,
+        "60m": Interval.HOUR,
+        "1d": Interval.DAILY,
+        "1w": Interval.WEEKLY,
+    }
+    assert {
+        frequency: _to_vnpy_interval(frequency, Interval)
+        for frequency in expected
+    } == expected
+    for unsupported in ("1h", "hour", "d", "day", "w", "week", "1D"):
+        with pytest.raises(BacktestConfigurationError, match="unsupported"):
+            _to_vnpy_interval(unsupported, Interval)
 
 
 class FixtureRoundTripStrategy(CtaTemplate):

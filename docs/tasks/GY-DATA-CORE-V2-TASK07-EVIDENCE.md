@@ -10,6 +10,56 @@ Task 07 HEAD `e01784ff` 的 v9 已重采，并证明 active-reference Gate 仍�
 
 ## 0. Current implementation checkpoint
 
+### 0.1 2026-08-03 code-only closeout evidence
+
+本轮仅修改仓库代码、fixture、测试与 canonical 文档，base 为
+`develop@fbd3d60617560e77517dfe5ed79275cf4d473725`。未读取生产 PostgreSQL/生产数据根/
+detached Runtime，未执行 0032 upgrade、RQData 下载、Canonical/DB 写入、Runtime 切换、
+retirement、quarantine 或删除。
+
+RED/GREEN 证据：
+
+```text
+inventory shard replacement RED: DID NOT RAISE
+inventory shard replacement GREEN: included in Task 07 orchestration pass
+catalog page cache RED: cache contained 1000 dataset partitions for a small page
+catalog page cache GREEN: exact current-page file_uri binding; included in Task 07 orchestration pass
+seven-frequency residual RED: actual targets only 1m/1d; vn.py rejected 30m/1w and accepted aliases; Indicator Registry included 1h
+seven-frequency residual GREEN: 55 passed; actual target/indicator/vn.py adapters use exact seven-frequency contract
+```
+
+当前 code-only 验证 checkpoint：
+
+```text
+task07_orchestration=66 passed
+historical_migration_and_inventory=64 passed
+backend=2695 passed / 44 skipped
+frontend=191 passed / 1 skipped
+frontend_build=passed
+ruff=passed
+engineering_all_safe=passed (engineering 307 / health 6)
+```
+
+上述数字来自当前 code-only diff；最终独立 Review、PR/CI 与 merge SHA 将在本分支 closeout 后
+回读，不把本 checkpoint 写成生产完成。
+
+代码合同结果：
+
+```text
+historical frequencies=1m,5m,15m,30m,60m,1d,1w
+historical read=request frequency == Catalog frequency == Canonical bar frequency
+historical cross-frequency fallback=false
+new active derived_frequency=null
+actual_dominant_1w=last trading day rank=1 concrete contract
+runtime_cutover_apply_available=false
+runtime_cutover_database_revision=20260803_0032
+retirement_unlocked=false
+deletion_unlocked=false
+```
+
+生产 v9 inventory/Runtime/retirement 数字在本轮没有重采，下文仍作 historical blocker
+evidence 保留，不能被本轮 fixture 或 code-only Runtime receipt 解锁。
+
 Task 07 CLI 的 inventory/plan/preflight/apply/verify/retirement plan/apply 已实现。Canonical apply
 绑定 clean HEAD、DB revision、source/plan/batch digest、staging/canonical roots、脱敏 PostgreSQL
 target 和 protected roots；多来源 batch 使用 fsync durable intent/partial journal，崩溃恢复只允许
@@ -18,7 +68,8 @@ Web Profile selector 和 queued legacy batch worker 已退出 active path。
 
 checkout 引用分类逐条保存 classification reason；detached Runtime 的可执行 services/packages/apps
 引用优先判 active/review，不能被 retired/frozen/read-only 分类提前隐藏。当前 worktree 的
-checkout-only 开发扫描为 `active=0 / review_required=0`。detached Runtime 和 production DB
+checkout-only 开发扫描为 `active=0 / review_required=0 / historical_non_active=2111 / truncated=false`，
+digest=`895b2335d27f4a5d9b26d2dfc68339600b84121ece23bf211aa060b9336b1e81`。detached Runtime 和 production DB
 的 v9 blocker diagnosis 已重采。项目所有者已确认删除的 GuiyiApprovals root 不再是必需范围；
 v9 不是最终 approval inventory，是因为其 base SHA 已被后续 hardening supersede 且 Runtime
 active-reference Gate 尚未关闭。

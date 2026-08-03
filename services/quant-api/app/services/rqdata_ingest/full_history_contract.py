@@ -4,13 +4,15 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Iterable, Mapping, Sequence
 
+from app.data_core.contracts import BAR_FREQUENCY_VALUES
+
 
 V1_AUDIT_END = date(2026, 7, 10)
 V1_TIMEZONE = "Asia/Shanghai"
 
 DIRECT_PERIODS = frozenset({"1m", "1d", "1w"})
 DERIVED_FROM_1M_PERIODS = frozenset({"5m", "15m", "30m", "60m", "1d"})
-ACTUAL_REQUIRED_PERIODS = frozenset({"1m", "1d"})
+ACTUAL_REQUIRED_PERIODS = frozenset(BAR_FREQUENCY_VALUES)
 FROZEN_REPORT_IDS = frozenset({14})
 
 PROVIDER_EARLIEST_EVIDENCE_PRIORITY = (

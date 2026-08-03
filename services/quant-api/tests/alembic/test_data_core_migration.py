@@ -123,16 +123,11 @@ def test_0032_offline_sql_replaces_frequency_check_with_fail_closed_guard(
     generated_sql = output.getvalue()
     assert "LOCK TABLE market_datasets IN ACCESS EXCLUSIVE MODE" in generated_sql
     assert "ck_market_datasets_frequency" in generated_sql
-    assert "ck_market_datasets_actual_dominant_weekly" in generated_sql
+    assert "ck_market_datasets_actual_dominant_weekly" not in generated_sql
     if direction == "upgrade":
         assert "'5m', '15m', '30m', '60m'" in generated_sql
     else:
         assert "persisted aggregate market_datasets block 20260803_0032 downgrade" in generated_sql
-        assert generated_sql.index(
-            "persisted aggregate market_datasets block 20260803_0032 downgrade"
-        ) < generated_sql.index(
-            "DROP CONSTRAINT ck_market_datasets_actual_dominant_weekly"
-        )
 
 
 @pytest.mark.parametrize("direction", ["upgrade", "downgrade"])
@@ -1012,9 +1007,7 @@ def test_schema_introspection_has_named_constraints_trigger_and_function(
     assert dataset_constraints["ck_market_datasets_provider_rqdata"] == "CHECK"
     assert dataset_constraints["ck_market_datasets_kind"] == "CHECK"
     assert dataset_constraints["ck_market_datasets_frequency"] == "CHECK"
-    assert dataset_constraints[
-        "ck_market_datasets_actual_dominant_weekly"
-    ] == "CHECK"
+    assert "ck_market_datasets_actual_dominant_weekly" not in dataset_constraints
     assert dataset_constraints["ck_market_datasets_identity_nonempty"] == "CHECK"
     assert dataset_constraints["ck_market_datasets_identity_canonical"] == "CHECK"
     partition_constraints = _constraint_map(engine, "market_partitions")

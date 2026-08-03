@@ -71,8 +71,9 @@ SignalEvent 仍 6 行且 decision link 全空、六个 flags 全 false、health 
 `develop` 后 Task 06 完成状态生效；本次仍不授权真实 RQData、scheduler、Runtime、
 SignalEvent、通知、删除或交易。
 
-Task 07 已完成代码实现并通过第六轮独立 Review，当前为
-`BLOCKED_ACTIVE_REFERENCE`：可扩展 inventory、exact-target plan/preflight、Canonical
+Task 07 生产 Gate 仍为 `BLOCKED_ACTIVE_REFERENCE`；本轮 code-only closeout 已收敛七周期
+同频历史读取、inventory TOCTOU、Catalog page cache、checkout scanner、冲突 repair action 与
+最小 Runtime cutover plan/verify，当前为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。可扩展 inventory、exact-target plan/preflight、Canonical
 apply/verify、fsync durable partial journal/resume、retirement before-image/rollback、canonical
 consumer 收口与 Web selector/legacy batch worker 退出均已落地。checkout-only 开发扫描当前为
 active/review-required 零；detached Runtime 可执行引用优先判 active/review，不能被 frozen/retired
@@ -104,7 +105,7 @@ Gate 进一步直接识别出 2,791 个文件至少包含一个周末 trading da
 | GY-DATA-CORE-V2 Task 04 | completed on develop（本 closeout commit 可从 develop 到达时生效） | Canonical 自身 Gate、统一读取与普通消费者回归；legacy Shadow 不再是准入 Gate |
 | GY-DATA-CORE-V2 Task 05 | completed on develop（本 task PR merge 后生效） | canonical trusted consumers、synthetic/golden tests、fail-closed derived/reference inventory；不含真实删除或外部 DB/data-root inventory |
 | GY-DATA-CORE-V2 Task 06 | completed on develop（PR #105 merge 后生效） | 固定 EMA21 evaluator + `0028..0031` + live/decision/EOD/Review/Sample/retention；production=`0031`，empty/disabled smoke passed |
-| GY-DATA-CORE-V2 Task 07 | `BLOCKED_ACTIVE_REFERENCE` | clean-head v9 已证明 detached Runtime 存在 300 active / 1,581 review-required；旧 GuiyiApprovals root 已退出必需范围；无生产写入/删除 |
+| GY-DATA-CORE-V2 Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` / production `BLOCKED_ACTIVE_REFERENCE` | code-only closeout 的 checkout scan=0/0；旧 v9 detached Runtime 300/1,581 仅为未重采 blocker evidence；无生产读取、写入或删除 |
 | GY-DATA-CORE-V2 Task 08 | pending | 仅在 Task 07=`READY_FOR_TASK_08` 后进入 release/Runtime Gate |
 
 ## 未关闭 Gate
@@ -115,8 +116,9 @@ Gate 进一步直接识别出 2,791 个文件至少包含一个周末 trading da
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
 | Task 05 可信消费者切换 | independent Review passed；develop integration pending | `CLEAN_FOR_INTEGRATION`；仍须 task PR、post-merge CI 与 ancestry readback，不是 release 或 Runtime Gate |
-| Task 07 K-line data Gate | blocked by prerequisite | v9 内容冲突为零、7,232 trusted sources / 411 batches，但 active-reference Gate 非零且未取得 exact apply approval，不得写入 |
-| Task 07 active-reference Gate | `BLOCKED_ACTIVE_REFERENCE` | checkout active=0 / review-required=0 / historical=2,170；正在运行的 detached Runtime `10351ccd`=300 active + 1,581 review-required；DB retirement before-image=4,297 rows，未获批准 |
+| Task 07 code-only closeout | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | 七周期同频合同、两个 Important、checkout scanner 及最小 Runtime code-only Gate 已实现；仍须独立 Review、PR/CI 与 develop 集成 |
+| Task 07 K-line data Gate | blocked by prerequisite | v9 内容冲突为零、7,232 trusted sources / 411 batches，但该 snapshot 已被代码变更 supersede，且未取得 exact apply approval，不得写入 |
+| Task 07 active-reference Gate | `BLOCKED_ACTIVE_REFERENCE` | 当前 checkout active=0 / review-required=0；旧 v9 detached Runtime 300/1,581 与 DB before-image 4,297 未在本轮重采，仍不得据此执行 retirement |
 | Task 06 live/EOD contract | passed | 已冻结并验证单一 EMA21 confirmed-close observation 合同；不得注入其他 evaluator，且不扩展 centered-XMA 白名单 |
 | Task 06 production migration | passed | exact backup + approval 后完成 `0028 -> 0031`；empty/disabled smoke passed，不授权 Runtime/live enable |
 | 旧行情与 legacy 工件删除 | not authorized | 旧行情只读保留；任何删除需独立 exact deletion Gate |
@@ -141,7 +143,7 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 | legacy compatibility | PR #90～#94 实现与历史 evidence 保留；不再扩展或作为准入 Gate | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
 | Task 05 | completed on develop（本 task PR merge 后生效） | trusted consumers and fail-closed inventory complete；real DB/data-root inventory remains a Task 07 external Gate |
-| Task 07 | `BLOCKED_ACTIVE_REFERENCE` | v9 绑定 `e01784ff/0031`；Runtime active/review 非零；旧 GuiyiApprovals root 已退出必需范围；owner approvals、production apply/readback、retirement DML 与 develop integration 未完成；`READY_FOR_TASK_08=false` |
+| Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` / production `BLOCKED_ACTIVE_REFERENCE` | code-only closeout 基于 `develop@fbd3d606`；v9 生产数字未重采；旧 GuiyiApprovals root 已退出必需范围；production apply/readback、Runtime cutover、retirement DML 未执行；`READY_FOR_TASK_08=false` |
 
 ## 不可宣称
 

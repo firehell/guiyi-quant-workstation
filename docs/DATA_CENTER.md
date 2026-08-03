@@ -12,16 +12,22 @@ Backtest/Signal/Review 可信消费者切换留给 Task 05：
 RQData
 -> temporary staging
 -> validation
--> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> one historical canonical Parquet root
+   (provider-direct 1m/1d/1w + persisted preaggregated 5m/15m/30m/60m)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
 -> consumers
 ```
 
 - 数据集由不可歧义的 `DatasetKey` 定位；`continuous` 与 `actual_dominant` 显式且不可互换。
-- direct 矩阵仅为 continuous `1m/1d/1w` 和 actual-dominant `1m/1d`；actual-dominant
-  覆盖与读取必须按 rank=1 mapping 有效分段计算，不存在 actual-dominant `1w`。
-- 5m/15m/30m/60m 只从 canonical 1m 按交易时段确定性聚合；缓存不是新的真相源。
+- 正式历史合同仅支持 `1m/5m/15m/30m/60m/1d/1w`；其他值以
+  `UNSUPPORTED_FREQUENCY` 拒绝，不接受别名或大小写转换。
+- source role 固定为 `1m/1d/1w=provider_direct` 与
+  `5m/15m/30m/60m=preaggregated_from_1m`；七者都是持久化 Canonical dataset。
+- 请求只读同频 Catalog/partition；缺 dataset、partition、coverage 或显式 gap 都返回
+  DataGap，不从 1m 或其他周期动态聚合。live confirmed-bar 聚合不属于该禁止范围。
+- actual-dominant 覆盖按 rank=1 mapping 有效分段计算；`1w` 使用该周最后交易日
+  的 rank=1 具体合约。
 - PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
 - 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
 - 旧 Profile/ActiveBinding/复杂 lineage 仅为 legacy compatibility，不再扩展为 active selector。
@@ -445,8 +451,8 @@ provider earliest evidence 优先级：
 | derived 5m/15m/30m/60m | 只允许从 passed 1m 本地聚合 |
 | direct 1d | 长周期研究和 provider reference；通过 Profile/quality Gate 后可消费 |
 | derived 1d | 日内研究的日线方向上下文，只允许从 passed 1m 聚合 |
-| direct 1w | 长周期研究、Market 展示和 provider reference；不作为 actual 或分钟 Signal 默认要求 |
-| actual dominant | 只覆盖 `MainContractMap.rank=1` 有效日期段的 1m/1d，不要求所有挂牌合约全量分钟数据 |
+| direct 1w | 长周期研究、Market 展示和 provider reference；actual-dominant 使用该周最后交易日的 rank=1 具体合约 |
+| actual dominant | 七种正式历史周期均可查询，只覆盖 `MainContractMap.rank=1` 有效日期段；5m/15m/30m/60m 使用持久化同频 partition，不要求所有挂牌合约全量分钟数据 |
 | live | 只存在 live DB 观察层；盘后重新获取 provider 最终历史数据并通过完整 Gate 后才能进入 historical canonical |
 
 ### 2.2.4 partial / confirmed

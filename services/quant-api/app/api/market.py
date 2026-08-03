@@ -5,11 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.data_core.contracts import (
+    BAR_FREQUENCY_VALUES,
     BarFrequency,
     BarQuery,
     ContractValidationError,
     DataCoreError,
     DatasetKind,
+    UnsupportedFrequencyError,
+    parse_bar_frequency,
 )
 from app.db.session import get_db
 from app.schemas.market import (
@@ -38,11 +41,28 @@ from app.services.market_indicators import (
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 
 
+def _historical_frequency(frequency: str = Query(...)) -> BarFrequency:
+    try:
+        return parse_bar_frequency(frequency)
+    except UnsupportedFrequencyError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UNSUPPORTED_FREQUENCY",
+                "facts": {
+                    "field": "frequency",
+                    "value": str(frequency),
+                    "allowed": BAR_FREQUENCY_VALUES,
+                },
+            },
+        ) from exc
+
+
 @router.get("/bars/canonical", response_model=CanonicalBarsResponse)
 def canonical_market_bars(
     dataset_kind: DatasetKind = Query(...),
     symbol: str = Query(...),
-    frequency: BarFrequency = Query(...),
+    frequency: BarFrequency = Depends(_historical_frequency),
     start: str = Query(...),
     end: str = Query(...),
     contract_or_series: str | None = None,
@@ -81,7 +101,7 @@ def canonical_market_bars(
 def canonical_market_indicators(
     dataset_kind: DatasetKind = Query(...),
     symbol: str = Query(...),
-    frequency: BarFrequency = Query(...),
+    frequency: BarFrequency = Depends(_historical_frequency),
     start: str = Query(...),
     end: str = Query(...),
     contract_or_series: str | None = None,
@@ -137,7 +157,7 @@ def canonical_market_indicators(
 def canonical_market_macd_indicator(
     dataset_kind: DatasetKind = Query(...),
     symbol: str = Query(...),
-    frequency: BarFrequency = Query(...),
+    frequency: BarFrequency = Depends(_historical_frequency),
     start: str = Query(...),
     end: str = Query(...),
     contract_or_series: str | None = None,
@@ -276,7 +296,7 @@ def live_market_bars(
 def market_bars(
     dataset_kind: DatasetKind = Query(...),
     symbol: str = Query(...),
-    frequency: BarFrequency = Query(...),
+    frequency: BarFrequency = Depends(_historical_frequency),
     start: str = Query(...),
     end: str = Query(...),
     contract_or_series: str | None = None,
@@ -297,7 +317,7 @@ def market_bars(
 def market_indicators(
     dataset_kind: DatasetKind = Query(...),
     symbol: str = Query(...),
-    frequency: BarFrequency = Query(...),
+    frequency: BarFrequency = Depends(_historical_frequency),
     start: str = Query(...),
     end: str = Query(...),
     contract_or_series: str | None = None,
@@ -322,7 +342,7 @@ def market_indicators(
 def market_macd_indicator(
     dataset_kind: DatasetKind = Query(...),
     symbol: str = Query(...),
-    frequency: BarFrequency = Query(...),
+    frequency: BarFrequency = Depends(_historical_frequency),
     start: str = Query(...),
     end: str = Query(...),
     contract_or_series: str | None = None,

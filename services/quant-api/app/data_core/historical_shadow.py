@@ -106,7 +106,7 @@ def run_chunked_historical_shadow_query_set(
     if query_tuple != expected_queries:
         raise ValueError("shadow query set must contain exact JM matrix")
     query_ids = [f"{item.dataset_kind}:{item.frequency}" for item in query_tuple]
-    if len(set(query_ids)) != 13:
+    if len(set(query_ids)) != len(expected_queries):
         raise ValueError("shadow query set must contain exact JM matrix")
     exceptions = dict(allowed_exceptions or {})
     if set(exceptions) - set(query_ids):

@@ -28,11 +28,6 @@ def upgrade() -> None:
         "market_datasets",
         "frequency IN ('1m', '5m', '15m', '30m', '60m', '1d', '1w')",
     )
-    op.create_check_constraint(
-        "ck_market_datasets_actual_dominant_weekly",
-        "market_datasets",
-        "NOT (dataset_kind = 'actual_dominant' AND frequency = '1w')",
-    )
 
 
 def downgrade() -> None:
@@ -51,11 +46,6 @@ def downgrade() -> None:
         END
         $$;
         """
-    )
-    op.drop_constraint(
-        "ck_market_datasets_actual_dominant_weekly",
-        "market_datasets",
-        type_="check",
     )
     op.drop_constraint(
         "ck_market_datasets_frequency",

@@ -134,7 +134,7 @@ def test_catalog_identity_supports_only_valid_actual_or_continuous_direct_contra
 @pytest.mark.parametrize(
     ("dataset_kind", "period", "expected"),
     [
-        ("actual_dominant", "1m", True), ("actual_dominant", "1d", True), ("actual_dominant", "1w", False),
+        ("actual_dominant", "1m", True), ("actual_dominant", "1d", True), ("actual_dominant", "1w", True),
         ("continuous", "1m", True), ("continuous", "1d", True), ("continuous", "1w", True),
     ],
 )

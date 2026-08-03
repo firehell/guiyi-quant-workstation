@@ -102,9 +102,12 @@ def test_inventory_and_plan_reuse_only_direct_jm_assets(tmp_path: Path) -> None:
         {"market_data_file_id": 3, "reason": "derived_daily_not_rqdata_direct"},
         {
             "market_data_file_id": 4,
-            "reason": "actual_dominant_weekly_identity_not_supported",
+            "reason": "direct_provenance_unproven",
         },
-        {"market_data_file_id": 2, "reason": "derived_frequency_not_persisted"},
+        {
+            "market_data_file_id": 2,
+            "reason": "preaggregated_source_not_direct_reuse_eligible",
+        },
     ]
     assert len(plan["plan_digest"]) == 64
     assert plan["writes"] == {
@@ -258,7 +261,7 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
         end=datetime(2026, 7, 2, tzinfo=UTC),
     )
 
-    assert len(queries) == 13
+    assert len(queries) == 14
     assert {item.dataset_kind for item in queries} == {
         "continuous",
         "actual_dominant",
@@ -272,7 +275,7 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
         "1d",
         "1w",
     }
-    assert not any(
+    assert any(
         item.dataset_kind == "actual_dominant" and item.frequency == "1w"
         for item in queries
     )
@@ -330,7 +333,7 @@ def test_shadow_query_set_covers_both_identities_and_all_supported_periods() -> 
     )
 
     assert result["status"] == "passed"
-    assert result["query_count"] == 13
+    assert result["query_count"] == 14
     assert len(result["query_set_digest"]) == 64
     assert len(result["receipt_digest"]) == 64
 

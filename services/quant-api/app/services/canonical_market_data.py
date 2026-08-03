@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.data_core.aggregation import AggregationSession
 from app.data_core.catalog import HistoricalCatalog
 from app.data_core.contracts import (
+    BAR_FREQUENCY_VALUES,
     BarFrequency,
     BarQuery,
     BarsResult,
@@ -126,21 +127,6 @@ def get_canonical_coverage(
                 ),
             )
         )
-        if dataset.frequency is BarFrequency.M1:
-            for period in ("5m", "15m", "30m", "60m"):
-                items.append(
-                    _coverage_item(
-                        dataset,
-                        period=period,
-                        start=min(item.coverage_start for item in partitions),
-                        end=max(item.coverage_end for item in partitions),
-                        row_count=0,
-                        exchange=exchange,
-                        quality_status=(
-                            "gap" if has_gap else "catalog_only_unverified"
-                        ),
-                    )
-                )
     ordered = sorted(
         items,
         key=lambda item: (item.contract, _period_order(item.period)),
@@ -233,7 +219,7 @@ def _coverage_item(
 
 
 def _period_order(period: str) -> int:
-    return ("1m", "5m", "15m", "30m", "60m", "1d", "1w").index(period)
+    return BAR_FREQUENCY_VALUES.index(period)
 
 
 def jm_sessions(
@@ -287,9 +273,7 @@ def _response(query: BarQuery, result: BarsResult) -> CanonicalBarsResponse:
                 or f"{query.symbol.upper()}.ACTUAL_DOMINANT"
             ),
             "frequency": query.frequency.value,
-            "source_frequency": (
-                "1m" if result.derived_frequency is not None else query.frequency.value
-            ),
+            "source_frequency": query.frequency.value,
             "adjustment": "none",
             "schema_version": "canonical-bar-v1",
         }
@@ -358,12 +342,8 @@ def _response(query: BarQuery, result: BarsResult) -> CanonicalBarsResponse:
             provider="rqdata",
             data_role="primary",
             quality_status="passed",
-            source_interval=(
-                "1m" if result.derived_frequency is not None else query.frequency.value
-            ),
-            source_intervals=[
-                "1m" if result.derived_frequency is not None else query.frequency.value
-            ],
+            source_interval=query.frequency.value,
+            source_intervals=[query.frequency.value],
             source_interval_basis="canonical_dataset_key",
             binding_snapshot=None,
             lineage_token=lineage_token,

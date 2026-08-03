@@ -115,8 +115,20 @@ def build_provider_sessions(
         )
     window_start, window_end = _window(start, end)
     ordered = tuple(sorted(sessions, key=lambda item: (item.start, item.end)))
-    if dataset.frequency is BarFrequency.M1:
-        return _minute_sessions(ordered, window_start, window_end)
+    minute_steps = {
+        BarFrequency.M1: 1,
+        BarFrequency.M5: 5,
+        BarFrequency.M15: 15,
+        BarFrequency.M30: 30,
+        BarFrequency.H1: 60,
+    }
+    if dataset.frequency in minute_steps:
+        return _minute_sessions(
+            ordered,
+            window_start,
+            window_end,
+            minutes=minute_steps[dataset.frequency],
+        )
     trading_days = sorted({item.trading_day for item in ordered})
     if dataset.frequency is BarFrequency.D1:
         selected_days = trading_days
@@ -126,10 +138,8 @@ def build_provider_sessions(
             iso = trading_day.isocalendar()
             by_week[(iso.year, iso.week)].append(trading_day)
         selected_days = [max(days) for _, days in sorted(by_week.items())]
-    else:
-        raise ContractValidationError(
-            facts={"field": "frequency", "reason": "direct_required"}
-        )
+    else:  # pragma: no cover - DatasetKey owns the closed frequency allowlist.
+        raise ContractValidationError(facts={"field": "frequency"})
     result: list[TradingSessionCoverage] = []
     for trading_day in selected_days:
         bar_end = datetime.combine(trading_day, time.min, tzinfo=UTC)
@@ -150,16 +160,20 @@ def _minute_sessions(
     sessions: Sequence[AggregationSession],
     start: datetime,
     end: datetime,
+    *,
+    minutes: int,
 ) -> tuple[TradingSessionCoverage, ...]:
     result: list[TradingSessionCoverage] = []
-    step = timedelta(minutes=1)
+    step = timedelta(minutes=minutes)
     for session in sessions:
         expected: list[datetime] = []
-        bar_end = session.start + step
+        bar_end = min(session.start + step, session.end)
         while bar_end <= session.end:
             if start < bar_end <= end:
                 expected.append(bar_end)
-            bar_end += step
+            if bar_end == session.end:
+                break
+            bar_end = min(bar_end + step, session.end)
         if not expected:
             continue
         result.append(

@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.data_core.contracts import BAR_FREQUENCY_VALUES
 from app.models.data_center import Exchange, Instrument, MainContractMap, MarketDataFile
 from app.schemas.market import (
     DominantBarsCoveragePeriod,
@@ -35,7 +36,7 @@ __all__ = [
 from app.services.market_data_reader import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
 
 DEFAULT_QUOTE_PERIOD = "15m"
-SUPPORTED_QUOTE_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+SUPPORTED_QUOTE_PERIODS = BAR_FREQUENCY_VALUES
 logger = logging.getLogger(__name__)
 
 

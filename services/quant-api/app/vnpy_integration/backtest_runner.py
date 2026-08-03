@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.data_core.contracts import BarFrequency, ContractValidationError, parse_bar_frequency
 from app.vnpy_integration.errors import BacktestConfigurationError
 from app.vnpy_integration.execution_policy import DEFAULT_EXECUTION_TIMING, validate_execution_timing
 from app.vnpy_integration.settings import VnpyBacktestSettings, require_vnpy
@@ -422,14 +423,26 @@ def _attach_standard_row_metadata(bar: Any, row: dict[str, Any]) -> None:
 
 
 def _to_vnpy_interval(interval: str, interval_enum: Any) -> Any:
-    normalized = interval.strip().lower()
-    if normalized in {"1m", "5m", "15m", "minute"}:
+    try:
+        frequency = parse_bar_frequency(interval, field="interval")
+    except ContractValidationError as exc:
+        raise BacktestConfigurationError(
+            f"unsupported vn.py backtest interval: {interval}"
+        ) from exc
+    if frequency in {
+        BarFrequency.M1,
+        BarFrequency.M5,
+        BarFrequency.M15,
+        BarFrequency.M30,
+    }:
         return interval_enum.MINUTE
-    if normalized in {"60m", "1h", "hour"}:
+    if frequency is BarFrequency.H1:
         return interval_enum.HOUR
-    if normalized in {"d", "1d", "day", "daily"}:
+    if frequency is BarFrequency.D1:
         return interval_enum.DAILY
-    raise BacktestConfigurationError(f"unsupported vn.py backtest interval: {interval}")
+    if frequency is BarFrequency.W1:
+        return interval_enum.WEEKLY
+    raise AssertionError(f"unhandled canonical bar frequency: {frequency.value}")
 
 
 def _to_vnpy_runtime_symbol(symbol: str) -> str:

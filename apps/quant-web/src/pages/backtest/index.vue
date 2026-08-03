@@ -62,6 +62,7 @@ import { useBacktestStore } from '@/stores/backtest'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { buildBacktestReportPresentation } from '@/utils/backtestReportPresentation'
+import { PERIODS } from '@/utils/constants'
 import { buildFormalBacktestRequest } from '@/utils/dataCoreV2Consumer'
 import { buildChartResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
@@ -179,14 +180,7 @@ const datasetKindOptions = [
   { label: '实际主力合约（actual_dominant）', value: 'actual_dominant' },
   { label: '连续序列（continuous）', value: 'continuous' },
 ]
-const intervalOptions = [
-  { label: '1分钟', value: '1m' },
-  { label: '5分钟', value: '5m' },
-  { label: '15分钟', value: '15m' },
-  { label: '30分钟', value: '30m' },
-  { label: '60分钟', value: '60m' },
-  { label: '日线', value: '1d' },
-]
+const intervalOptions = PERIODS
 const tradeSortOptions: Array<{ label: string; value: BacktestTradeSortBy }> = [
   { label: '开仓时间', value: 'open_time' },
   { label: '平仓时间', value: 'close_time' },

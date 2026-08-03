@@ -74,14 +74,12 @@ class FakeCanonicalMarketData:
             )
         else:
             bars = ()
-        direct_frequency = query.frequency in {BarFrequency.M1, BarFrequency.D1}
-        source_frequency = query.frequency if direct_frequency else BarFrequency.M1
         source = DatasetKey(
             provider="rqdata",
             dataset_kind=query.dataset_kind,
             symbol=query.symbol,
             contract_or_series=query.contract_or_series or "JM2609",
-            frequency=source_frequency,
+            frequency=query.frequency,
             adjustment="none",
             schema_version="canonical-bar-v1",
         )
@@ -97,7 +95,7 @@ class FakeCanonicalMarketData:
             ),
             requested_window=(query.start, query.end),
             data_type=query.dataset_kind,
-            derived_frequency=None if direct_frequency else query.frequency,
+            derived_frequency=None,
             source_data_versions=("canonical-source-v1",),
         )
 
@@ -118,6 +116,12 @@ def test_formal_signal_request_requires_explicit_actual_dominant_identity() -> N
         )
     with pytest.raises(ValidationError):
         SignalScanRequest.model_validate({**_formal_request(), "profile_id": "legacy"})
+
+    for frequency in ("2m", "4h", "1D"):
+        with pytest.raises(ValidationError, match="UNSUPPORTED_FREQUENCY"):
+            SignalScanRequest.model_validate(
+                {**_formal_request(), "periods": [frequency]}
+            )
 
 
 @pytest.mark.parametrize(
@@ -751,7 +755,6 @@ def test_event_writer_rejects_forged_canonical_signal_identity(forgery: str) -> 
         "window_drift",
         "symbol_drift",
         "contract_drift",
-        "source_manifest_drift",
         "digest_drift",
     ],
 )
@@ -817,12 +820,6 @@ def test_event_writer_requires_exact_auxiliary_canonical_identity_set(
                 BarFrequency.M15,
                 strategy_input_version=strategy_input_version,
                 contract="JM2611",
-            )
-        elif malformed_auxiliary == "source_manifest_drift":
-            auxiliary["15m"] = _canonical_identity(
-                FakeCanonicalMarketData(manifest_suffix="f"),
-                BarFrequency.M15,
-                strategy_input_version=strategy_input_version,
             )
         elif malformed_auxiliary == "digest_drift":
             auxiliary["15m"] = {**expected, "digest": "f" * 64}

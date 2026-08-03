@@ -52,7 +52,7 @@ def test_market_dataset_model_check_rejects_unknown_frequency() -> None:
             session.commit()
 
 
-def test_market_dataset_model_check_rejects_actual_dominant_weekly() -> None:
+def test_market_dataset_model_check_accepts_actual_dominant_weekly() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
 
@@ -68,5 +68,5 @@ def test_market_dataset_model_check_rejects_actual_dominant_weekly() -> None:
                 schema_version="canonical-bar-v1",
             )
         )
-        with pytest.raises(IntegrityError):
-            session.commit()
+        session.commit()
+        assert session.query(MarketDataset).one().frequency == "1w"

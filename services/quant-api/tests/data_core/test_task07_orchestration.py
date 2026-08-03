@@ -410,6 +410,92 @@ def test_inventory_evidence_is_sharded_with_recomputable_index(tmp_path: Path) -
     assert sum(1 for path in tmp_path.glob("assets-*.jsonl")) == 3
 
 
+def test_plan_revalidates_inventory_shard_after_initial_load(tmp_path: Path) -> None:
+    write_inventory_evidence(
+        [_asset(catalog_checksum=None)],
+        evidence_root=tmp_path,
+        base_sha="1" * 40,
+        database_revision="20260802_0031",
+        shard_size=1,
+    )
+    loaded = load_inventory_evidence(tmp_path / "inventory-index.json")
+    shard_path = tmp_path / str(loaded["shards"][0]["path"])
+    replacement = json.loads(shard_path.read_text(encoding="utf-8"))
+    replacement["symbol"] = "rb"
+    shard_path.write_text(
+        json.dumps(
+            replacement,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="TASK07_INVENTORY_SHARD_HASH_MISMATCH"):
+        build_migration_plan(loaded, write_targets=_write_targets(tmp_path))
+
+
+def test_catalog_page_cache_only_contains_exact_current_page_paths(
+    tmp_path: Path,
+) -> None:
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE market_datasets ("
+            "id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, symbol TEXT, "
+            "contract_or_series TEXT, frequency TEXT)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE market_partitions ("
+            "id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO market_datasets VALUES "
+            "(1, 'rqdata', 'continuous', 'jm', 'JM.MAIN', '1m')"
+        )
+        connection.execute(
+            text(
+                "WITH RECURSIVE seq(id) AS ("
+                "VALUES(1) UNION ALL SELECT id + 1 FROM seq WHERE id < 1000) "
+                "INSERT INTO market_partitions "
+                "SELECT id, 1, printf('jm/part-%04d.parquet', id), :checksum FROM seq"
+            ),
+            {"checksum": "a" * 64},
+        )
+    requested = canonical_root / "jm" / "part-0500.parquet"
+    rows = [
+        {
+            "provider": "rqdata",
+            "instrument_symbol": "jm",
+            "contract_code": "JM.MAIN",
+            "period": "1m",
+            "file_path": str(requested),
+        }
+    ]
+
+    with Session(engine) as session:
+        matches = task07._catalog_matches_for_market_page(
+            session,
+            rows=rows,
+            canonical_root=canonical_root,
+            page_size=25,
+        )
+
+    assert matches == {
+        (
+            "rqdata",
+            "jm",
+            "JM.MAIN",
+            "1m",
+            str(requested.absolute()),
+        ): (("continuous", "a" * 64),)
+    }
+
+
 def test_reference_scan_separates_runtime_tests_and_historical_docs(tmp_path: Path) -> None:
     (tmp_path / "services").mkdir()
     (tmp_path / "services" / "consumer.py").write_text(
@@ -438,6 +524,67 @@ def test_reference_scan_separates_runtime_tests_and_historical_docs(tmp_path: Pa
     assert len(report["references_digest"]) == 64
     assert all("line_text" not in item for item in report["records"])
     assert all(item["classification_reason"] for item in report["records"])
+
+
+def test_reference_scan_classifies_exact_sdd_task_evidence_as_historical(
+    tmp_path: Path,
+) -> None:
+    evidence = tmp_path / ".superpowers" / "sdd" / "task07"
+    evidence.mkdir(parents=True)
+    (evidence / "task-4-brief.md").write_text(
+        "Remove profile_id from the active request.\n",
+        encoding="utf-8",
+    )
+    (evidence / "task-4-report.md").write_text(
+        "Verified market_data_file_id is historical only.\n",
+        encoding="utf-8",
+    )
+
+    report = scan_task07_references([("checkout", tmp_path)])
+
+    assert report["state_counts"] == {
+        "active": 0,
+        "historical_non_active": 2,
+        "review_required": 0,
+    }
+    assert {
+        item["classification_reason"] for item in report["records"]
+    } == {"sdd_task_evidence"}
+
+
+def test_reference_scan_does_not_treat_non_parquet_glob_as_market_data_glob(
+    tmp_path: Path,
+) -> None:
+    script = tmp_path / "scripts" / "engineering" / "lean_matrix" / "workspace.py"
+    script.parent.mkdir(parents=True)
+    script.write_text('files = directory.glob("*.json")\n', encoding="utf-8")
+
+    report = scan_task07_references([("checkout", tmp_path)])
+
+    assert report["record_count"] == 0
+
+
+def test_reference_scan_keeps_real_executable_selector_and_parquet_glob_active(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "services" / "quant-api" / "app" / "consumer.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        'profile_id = request.profile_id\nfiles = root.glob("*.parquet")\n',
+        encoding="utf-8",
+    )
+
+    report = scan_task07_references([("checkout", tmp_path)])
+
+    assert report["state_counts"] == {
+        "active": 1,
+        "historical_non_active": 0,
+        "review_required": 1,
+    }
+    assert {item["marker"] for item in report["records"]} == {
+        "legacy_selector",
+        "parquet_glob",
+    }
 
 
 def test_detached_runtime_executable_reference_is_not_hidden_as_history(
@@ -968,6 +1115,133 @@ def test_aggregate_gap_or_conflict_never_emits_provider_request_proposal() -> No
     assert plan["disposition_counts"]["REGISTER_DATA_GAP"] == 1
     assert plan["disposition_counts"]["CONFLICT_BLOCKED"] == 1
     assert plan["provider_request_proposal"]["request_count"] == 0
+
+
+def test_conflicts_emit_only_exact_unauthorized_repair_actions() -> None:
+    index = build_inventory_index(
+        [
+            _asset(
+                market_data_file_id=1,
+                physical_checksum="b" * 64,
+                catalog_checksum=None,
+            ),
+            _aggregate_asset(
+                market_data_file_id=2,
+                physical_checksum="c" * 64,
+                catalog_checksum=None,
+            ),
+        ],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    assert [item["action"] for item in plan["repair_actions"]] == [
+        "rqdata_redownload",
+        "canonical_1m_reaggregate",
+    ]
+    assert all(item["authorized"] is False for item in plan["repair_actions"])
+    assert plan["repair_actions"][0]["frequency"] == "1m"
+    assert plan["repair_actions"][1]["source_dataset"]["frequency"] == "1m"
+    assert plan["repair_actions"][1]["frequency"] == "5m"
+    assert plan["repair_actions"][0]["inventory_digest"] == index["assets_digest"]
+    assert plan["repair_actions"][0]["validation_gates"] == [
+        "schema",
+        "bar_end_strictly_increasing",
+        "duplicate_identity",
+        "trading_session",
+        "partition_readability",
+    ]
+    assert plan["repair_actions"][1]["failure_policy"] == {
+        "preserve_existing_canonical": True,
+        "register_data_gap": True,
+        "delete_existing": False,
+    }
+
+
+def test_runtime_cutover_minimal_plan_and_receipt_fail_closed_on_drift() -> None:
+    tags = {"v1.0.0": "1" * 40, "v0.9.0": "2" * 40}
+    plan = task07.build_runtime_cutover_plan(
+        target_release_tag="v1.0.0",
+        previous_release_tag="v0.9.0",
+        tag_resolver=tags.__getitem__,
+    )
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.runtime-cutover",
+        "status": "passed",
+        "target_release": {"tag": "v1.0.0", "sha": "1" * 40},
+        "database_revision": "20260803_0032",
+        "feature_flags": dict(plan["required_feature_flags"]),
+        "auto_order": False,
+        "health": {"status": "passed"},
+        "smoke": {"status": "passed"},
+        "rollback": {"tag": "v0.9.0", "sha": "2" * 40, "ready": True},
+        "reference_scan": {
+            "scope": "checkout_and_runtime",
+            "complete": True,
+            "active": 0,
+            "review_required": 0,
+        },
+        "plan_digest": plan["plan_digest"],
+    }
+    receipt = {**body, "canonical_receipt_digest": canonical_digest(body)}
+
+    verified = task07.verify_runtime_cutover_receipt(
+        plan,
+        receipt,
+        tag_resolver=tags.__getitem__,
+    )
+
+    assert verified["status"] == "passed"
+    assert set(receipt).isdisjoint(
+        {"pid", "environment_digest", "web_bundle_digest", "active_row_set_digest"}
+    )
+    drifted = deepcopy(receipt)
+    drifted["feature_flags"]["GUIYI_LIVE_RUNTIME_ENABLED"] = True
+    drift_cases = [
+        drifted,
+        {**deepcopy(receipt), "database_revision": "20260802_0031"},
+        {**deepcopy(receipt), "health": {"status": "failed"}},
+        {**deepcopy(receipt), "smoke": {"status": "failed"}},
+        {
+            **deepcopy(receipt),
+            "rollback": {"tag": "v0.9.0", "sha": "2" * 40, "ready": False},
+        },
+        {
+            **deepcopy(receipt),
+            "reference_scan": {
+                "scope": "checkout_and_runtime",
+                "complete": True,
+                "active": 1,
+                "review_required": 0,
+            },
+        },
+    ]
+    for drift_case in drift_cases:
+        drift_body = {
+            key: value
+            for key, value in drift_case.items()
+            if key != "canonical_receipt_digest"
+        }
+        drift_case["canonical_receipt_digest"] = canonical_digest(drift_body)
+        with pytest.raises(
+            ValueError,
+            match="TASK07_RUNTIME_CUTOVER_RECEIPT_DRIFT",
+        ):
+            task07.verify_runtime_cutover_receipt(
+                plan,
+                drift_case,
+                tag_resolver=tags.__getitem__,
+            )
+    moved_tags = {**tags, "v1.0.0": "3" * 40}
+    with pytest.raises(ValueError, match="TASK07_RUNTIME_CUTOVER_PLAN_DRIFT"):
+        task07.verify_runtime_cutover_receipt(
+            plan,
+            receipt,
+            tag_resolver=moved_tags.__getitem__,
+        )
     assert plan["calls_rqdata"] is False
 
 
