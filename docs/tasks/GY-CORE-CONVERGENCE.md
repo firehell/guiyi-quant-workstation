@@ -1,19 +1,31 @@
 # 归一量化：暂停 S6-10 后的渐进式核心收口 Codex 顺序执行手册
 
-> 文档状态：用户决策已确认，作为后续 Codex 串行执行依据  
-> 决策日期：2026-07-30  
-> 项目：`firehell/guiyi-quant-workstation`  
-> 实施方案：方案 B——渐进式核心收口  
-> 当前业务范围：只保留焦煤 `jm`，不扩展全品种  
-> 当前策略范围：保持 HTDY 既有精确实时观察语义，不接入苏冰新策略  
-> 当前 S6-10 决策：暂停旧 S6-10 的后续外部 Gate、部署和真实验收；核心架构收口完成后重新设计并重启 S6-10  
+> **SUPERSEDED / FROZEN HISTORICAL**
+>
+> 自 2026-07-30 起，本文不再是 active 顺序执行手册。新的 active target、任务 00～19、
+> 迁移/删除顺序与 Stop Gates 以 `docs/tasks/GY-DATA-CORE-V2.md` 为准。
+> 旧 `GY-CORE-04～08` 已暂停并被替代；不得按本文继续 Shadow、release、Runtime promotion
+> 或删除。`GY-CORE-02` Facade 与 `GY-CORE-03` CLI 壳可复用，已合入的 `GY-CORE-04`
+> 代码保留为 legacy compatibility。本文余下的“当前”“唯一”“下一入口”和完成状态均是
+> 当时的历史快照，不得解释为当前授权。
+
+> 文档状态：superseded / frozen historical，仅供迁移来源与审计
+> 决策日期：2026-07-30
+> 项目：`firehell/guiyi-quant-workstation`
+> 实施方案：方案 B——渐进式核心收口
+> 当前业务范围：只保留焦煤 `jm`，不扩展全品种
+> 当前策略范围：保持 HTDY 既有精确实时观察语义，不接入苏冰新策略
+> 当前 S6-10 决策：暂停旧 S6-10 的后续外部 Gate、部署和真实验收；核心架构收口完成后重新设计并重启 S6-10
+> 当前验收时长：后续 Shadow 与新版 S6-10 均只要求一个完整 DCE 交易日
 > 事实源要求：Codex 每次执行前必须重新读取当前 GitHub HEAD，不得把本文中的日期、SHA 或阶段描述当作永久事实
 
 ---
 
 # 0. 本文用途
 
-本文是后续 Codex 开发的唯一顺序执行手册，用于把当前较复杂的 JM Runtime、数据读取、HTDY、SignalEvent、企微和阶段性 Gate 收口为更适合个人项目长期维护的核心架构。
+本文曾是后续 Codex 开发的顺序执行手册，用于把当时较复杂的 JM Runtime、数据读取、HTDY、
+SignalEvent、企微和阶段性 Gate 收口为更适合个人项目长期维护的核心架构。其 active 角色
+现已由 `GY-DATA-CORE-V2.md` 接替。
 
 本文不是让 Codex 在一个会话里完成全部任务。固定规则为：
 
@@ -25,6 +37,32 @@
 ```
 
 任何任务完成后，Codex 必须停止。只有用户明确给出下一步结论，才允许进入后续任务。
+
+后续单交易日验收的统一定义为：
+
+```text
+一个完整 DCE 交易日
+= 夜盘 + 三段日盘
++ 23 个权威 confirmed 15m 收线桶
++ EOD passed
++ SignalEvent/notification identity 幂等
++ 正式写入 allowlist 外零写入
+```
+
+验收窗口中任何代码、policy、schema、ObservationPlan、ReleaseManifest、Runtime deployment
+或配置发生变化，或者任一必需桶、EOD、幂等或零非法写入检查失败，整日窗口立即失败。必须
+停止、保留失败 evidence、完成修复及新的 release/promotion 后，从下一个完整 DCE 交易日
+重新开始；禁止现场热修后继续累计。单日 Ledger 和失败记录只能 append-only，不得删除、
+覆盖或改写。
+
+恢复能力使用“单日自然运行 + 同一 exact release 的独立恢复证据”验证。Runtime 进程重启、
+RQData/网络短暂故障和 Mac 重启可在验收日前后按获批矩阵单独执行，不要求全部塞入同一个
+交易日；所有恢复证据必须与该单日验收绑定同一 exact release、配置和 DB revision。
+
+`LONG_RUNNING_READY=false` 仅作为兼容字段保留，状态固定为
+`deprecated / not_applicable`，任何单交易日 Gate 都不得将其设为 true。只有单日自然运行、
+同一 exact release 的独立恢复证据、独立 Review 均通过，且用户最终批准后，才可发布
+`JM_RUNTIME_READY`；该状态仍不代表盈利、自动通知或自动交易。
 
 允许使用的用户结论固定为：
 
@@ -113,7 +151,7 @@ GY-CORE-04  ObservationPlanRegistry + StrategyAdapter
     ↓
 GY-CORE-05  JM 新 Runtime 只读 Shadow 实现
     ↓
-GY-CORE-06  五交易日 Shadow 执行与独立 Review
+GY-CORE-06  单交易日 Shadow 执行与独立 Review
     ↓
 GY-CORE-07  ReleaseManifest、正式切换与 Runtime promotion
     ↓
@@ -121,7 +159,7 @@ GY-CORE-08  旧入口归档、删除候选和 canonical 收口
     ↓
 GY-S6-10-R2  基于新架构重新设计 S6-10
     ↓
-GY-S6-10-R2-RUN  新版 S6-10 五交易日真实验收
+GY-S6-10-R2-RUN  新版 S6-10 单交易日真实验收
 ```
 
 禁止并行开发以下高冲突路径：
@@ -139,17 +177,17 @@ GY-S6-10-R2-RUN  新版 S6-10 五交易日真实验收
 
 | 顺序 | 任务 ID | 任务 | Lane | 执行入口 | 模型 | 推理等级 | 会话 | Plan | 人工 Gate | 当前状态 |
 |---:|---|---|---|---|---|---|---|---|---|---|
-| 0 | `GY-CORE-00` | 暂停 S6-10 与事实冻结 | Lane 2 | Codex App | **Sol** | **高** | 新会话 | **Plan-then-execute** | 文档/状态 Review | **现在执行** |
-| 1 | `GY-CORE-01` | 全仓架构与 scripts 只读盘点 | Lane 2 | Codex App | **Sol** | **高** | 新会话 + 独立 Review | **Plan-only** | Plan 批准 / 独立 Review | 等 00 集成 |
-| 2 | `GY-CORE-02` | 数据选择与统一 MarketData Facade | Lane 2 | Codex App | **Sol** | **高** | 新会话 + 独立 Review | **Plan-then-execute** | 独立 Review | 等 01 批准 |
-| 3 | `GY-CORE-03` | 统一 CLI 和兼容 Shim | Lane 2 | Codex App | **Terra** | **中** | 新会话 | **Plan-then-execute** | 正常 Review | 等 02 集成 |
-| 4 | `GY-CORE-04` | ObservationPlan 与 StrategyAdapter | Lane 2 | Codex App | **Terra** | **中** | 新会话；HTDY 专项 Review | **Plan-then-execute** | HTDY 边界 Review | 等 03 集成 |
-| 5 | `GY-CORE-05` | JM 新 Runtime 只读 Shadow 实现 | Lane 3 设计 / Lane 2 只读实现 | Codex App | **Sol** | **高** | 新 Plan 会话 + 实现会话 | **Plan-only → 批准后实现** | Plan 批准 / 独立 Review | 等 04 集成 |
-| 6 | `GY-CORE-06` | 五交易日 Shadow 执行和分析 | 受控只读运行 | Codex App + CLI automation | **Terra（日常执行）/ Sol（最终 Review）** | **中 / 高** | 日常执行会话 + 独立 Review | **Plan-then-execute** | 真实 Shadow 运行批准 | 等 05 集成 |
+| 0 | `GY-CORE-00` | 暂停 S6-10 与事实冻结 | Lane 2 | Codex App | **Sol** | **高** | 新会话 | **Plan-then-execute** | 文档/状态 Review | **已完成（PR #65）** |
+| 1 | `GY-CORE-01` | 全仓架构与 scripts 只读盘点 | Lane 2 | Codex App | **Sol** | **高** | 新会话 + 独立 Review | **Plan-only** | Plan 批准 / 独立 Review | **已完成（PR #66）** |
+| 2 | `GY-CORE-02` | 数据选择与统一 MarketData Facade | Lane 3 | Codex App | **Sol** | **高** | 新 Plan 会话 + 实现会话 + 独立 Review | **Plan-only → 批准后实现** | Plan 批准 / 独立 Review | **已合入 develop（PR #68）；CODE_COMPLETE_EXTERNAL_GATE_PENDING** |
+| 3 | `GY-CORE-03` | 统一 CLI 和兼容 Shim | Lane 2 | Codex App | **Terra** | **中** | 新会话 | **Plan-then-execute** | 正常 Review | **已合入 develop（PR #69）；CODE_COMPLETE_EXTERNAL_GATE_PENDING** |
+| 4 | `GY-CORE-04` | ObservationPlan 与 StrategyAdapter | Lane 2 | Codex App | **Terra** | **中** | 新会话；HTDY 专项 Review | **Plan-then-execute** | HTDY 边界 Review | **已合入 develop（PR #70）；CODE_COMPLETE_EXTERNAL_GATE_PENDING** |
+| 5 | `GY-CORE-05` | JM 新 Runtime 只读 Shadow 实现 | Lane 3 设计 / Lane 2 只读实现 | Codex App | **Sol** | **高** | 新 Plan 会话 + 实现会话 | **Plan-only → 批准后实现** | Plan 批准 / 独立 Review | **下一入口：Plan-only** |
+| 6 | `GY-CORE-06` | 单交易日 Shadow 执行和分析 | 受控只读运行 | Codex App + CLI automation | **Terra（日常执行）/ Sol（最终 Review）** | **中 / 高** | 日常执行会话 + 独立 Review | **Plan-then-execute** | 真实 Shadow 运行批准 | 等 05 集成 |
 | 7 | `GY-CORE-07` | 正式切换与 Runtime promotion | Lane 3 | Codex App + CLI automation | **Sol** | **高** | 新实现会话 + 独立 Review | **Plan-only** | Plan / release / Runtime / 写入批准 | 等 06 通过 |
 | 8 | `GY-CORE-08` | 旧入口归档和 canonical 收口 | Lane 2 | Codex App | **Terra 执行 / Sol Review** | **中 / 高** | 新会话 + 独立 Review | **Plan-then-execute** | 删除范围 Review | 等 07 稳定 |
 | 9 | `GY-S6-10-R2` | 新版 S6-10 设计与代码 | Lane 3 | Codex App | **Sol** | **高** | 新 Plan 会话 + 独立 Review | **Plan-only → 批准后实现** | Plan 批准 | 等 08 集成 |
-| 10 | `GY-S6-10-R2-RUN` | 新版五交易日真实验收 | Lane 3 | Codex App + CLI automation | **Sol** | **高** | 新执行会话 + 独立 Review | **Plan-then-execute** | 真实运行 / 故障注入 / 最终批准 | 等 R2 代码批准 |
+| 10 | `GY-S6-10-R2-RUN` | 新版单交易日真实验收 | Lane 3 | Codex App + CLI automation | **Sol** | **高** | 新执行会话 + 独立 Review | **Plan-then-execute** | 真实运行 / 故障注入 / 最终批准 | 等 R2 代码批准 |
 
 模型升级规则：
 
@@ -170,7 +208,7 @@ Terra 连续两轮仍未解决
 ```text
 1. 读取 STATUS.md
 2. 读取 AGENTS.md
-3. 读取 docs/DEVELOPMENT.md
+3. 读取 README.md 和 TESTING.md
 4. 读取 PROJECT_SOURCE.md
 5. 读取 DECISIONS.md
 6. 读取本手册
@@ -213,7 +251,9 @@ task branch/worktree
 - worktree 是目录，branch 才是合并对象；
 - 不在 main/develop worktree 直接开发；
 - 先运行 `scripts/engineering/worktree_flow.py` dry-run；
-- 不自动 push、merge、deploy、tag；
+- GitHub 私有仓库规则 API 为 403 时，合规 Lane 1/2 task 可自动完成测试、commit、push 和
+  draft PR；用户手动转 ready 并 merge；
+- 不自动 merge、deploy、tag；
 - release 批准与 Runtime promotion 批准必须分开；
 - 任何真实写入均不得继承旧 S6-10 授权。
 
@@ -253,8 +293,11 @@ worktree/branch 清理状态
 
 - `STATUS.md`
 - `DECISIONS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SIGNAL_EVENTS.md`
 - `docs/tasks/JM-LIVE-STABILITY-S6-10.md`
 - `docs/tasks/README.md`
+- `docs/tasks/V1-FINAL-ACCEPTANCE-S6-11.md`
 - 新增一个核心收口总任务契约，例如：
   `docs/tasks/GY-CORE-CONVERGENCE.md`
 
@@ -268,6 +311,11 @@ LONG_RUNNING_READY=false
 不执行 S6-10 mapping/deployment/notification
 旧证据保留且不可改写
 恢复入口为 GY-S6-10-R2，而不是继续旧合同
+新版验收只需一个完整 DCE 交易日
+覆盖夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等和零非法写入
+单日失败整日重启；Ledger append-only
+LONG_RUNNING_READY=false 是 deprecated/not_applicable 兼容字段
+JM_RUNTIME_READY 只在独立恢复证据、独立 Review 和用户最终批准后发布
 ```
 
 ### 禁止
@@ -284,6 +332,7 @@ LONG_RUNNING_READY=false
 ### 验收
 
 - `STATUS.md`、`DECISIONS.md`、task contract 三者一致；
+- 架构、Signal 与 S6-11 active canonical 已同步单交易日和 Ready 语义；
 - 原失败证据和旧历史状态未改写；
 - 明确下一步唯一入口为 `GY-CORE-01`；
 - 文档扫描没有同时出现“继续旧 S6-10”和“暂停”两个 active 结论；
@@ -292,7 +341,7 @@ LONG_RUNNING_READY=false
 ### 可复制 Codex Prompt
 
 ```text
-请先阅读 STATUS.md、AGENTS.md、docs/DEVELOPMENT.md、PROJECT_SOURCE.md、
+请先阅读 STATUS.md、AGENTS.md、README.md、TESTING.md、PROJECT_SOURCE.md、
 DECISIONS.md、docs/tasks/JM-LIVE-STABILITY-S6-10.md、docs/tasks/README.md，
 以及《归一量化：暂停 S6-10 后的渐进式核心收口 Codex 顺序执行手册》。
 
@@ -311,9 +360,16 @@ DECISIONS.md、docs/tasks/JM-LIVE-STABILITY-S6-10.md、docs/tasks/README.md，
 - 已有失败/通过 evidence、receipt、Git 历史保持不变；
 - 下一唯一执行入口为 GY-CORE-01；
 - 后续以 GY-S6-10-R2 重启，而不是继续旧合同。
+- 新版只验收一个完整 DCE 交易日，覆盖夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、
+  幂等和零非法写入；
+- 单日失败整日重启，Ledger append-only；
+- 恢复由同一 exact release 独立 evidence 验证；
+- LONG_RUNNING_READY=false 固定为 deprecated/not_applicable；
+- JM_RUNTIME_READY 仅在独立 Review 与用户最终批准后发布。
 
 允许修改：
-STATUS.md、DECISIONS.md、docs/tasks/JM-LIVE-STABILITY-S6-10.md、
+STATUS.md、DECISIONS.md、docs/ARCHITECTURE.md、docs/SIGNAL_EVENTS.md、
+docs/tasks/JM-LIVE-STABILITY-S6-10.md、docs/tasks/V1-FINAL-ACCEPTANCE-S6-11.md、
 docs/tasks/README.md，并可新增 docs/tasks/GY-CORE-CONVERGENCE.md。
 
 禁止修改产品代码、migration、DB、Parquet、.env、Runtime、企微、main/tag。
@@ -428,14 +484,14 @@ docs/tasks/README.md，并可新增 docs/tasks/GY-CORE-CONVERGENCE.md。
 
 ## Codex 调度建议
 
-- 任务车道：Lane 2
+- 任务车道：Lane 3（active 数据选择）
 - 执行入口：Codex App
 - 推荐模型：**Sol**
 - 推理强度：**高**
-- 会话：**新开会话 + 新开独立 Review 会话**
-- Plan：**Plan-then-execute**
+- 会话：**新 Plan 会话 + 新实现会话 + 新开独立 Review 会话**
+- Plan：**Plan-only → 用户批准后实现**
 - 工作区：**新 task worktree**
-- 人工 Gate：**独立 Review**
+- 人工 Gate：**Plan 批准 / 独立 Review**
 
 ### 目标
 
@@ -500,7 +556,8 @@ BarsResult
 ```text
 请阅读 GY-CORE-01 最终 inventory、当前 canonical 和本顺序执行手册。
 
-本任务为 GY-CORE-02，Lane 2，Sol 高推理，Plan-then-execute。
+本任务为 GY-CORE-02，Lane 3，Sol 高推理。第一阶段只输出 Plan，用户批准后再在独立实现
+会话执行。
 
 目标：
 在不改变现有数据选择和 lineage 语义的前提下，实现：
@@ -523,6 +580,14 @@ BarsResult
 ```
 
 ### 用户通过结论
+
+Plan 后：
+
+```text
+允许继续实现
+```
+
+实现和独立 Review 后：
 
 ```text
 允许集成 develop
@@ -828,7 +893,7 @@ match_status
 - 支持重启后继续只读对照。
 
 Plan 必须包含进程边界、资源冲突防护、输出 schema、测试矩阵、
-启动/停止方式、五交易日执行方案和回滚方式。
+启动/停止方式、一个完整 DCE 交易日执行方案和回滚方式。
 ```
 
 ### 用户通过结论
@@ -847,7 +912,7 @@ Plan 后：
 
 ---
 
-# 11. `GY-CORE-06`：五交易日 Shadow 执行与独立 Review
+# 11. `GY-CORE-06`：单交易日 Shadow 执行与独立 Review
 
 ## Codex 调度建议
 
@@ -863,45 +928,51 @@ Plan 后：
 
 ### 目标
 
-在不写正式数据的前提下，对比 legacy 和新 Runtime 至少五个真实 DCE 交易日，包含夜盘。
+在不写正式数据的前提下，对比 legacy 和新 Runtime 一个完整 DCE 交易日，覆盖夜盘、
+三段日盘、23 个 confirmed 15m 收线桶与 EOD。
 
-### 每日执行
+### 单日执行
 
-日常执行只做：
+单日执行只做：
 
 - 启动/确认 Shadow read-only；
 - 采集 JSONL；
 - 运行零写入 verifier；
-- 生成当日 summary；
+- 生成单日 summary；
 - 记录 Runtime restart、数据缺失或差异；
 - 不自动修代码。
 
-日常执行可使用 Terra 中推理，因为命令和核对规则已经冻结。
+单日执行可使用 Terra 中推理，因为命令和核对规则已经冻结。
 
 ### 最终 Review
 
-五日结束后，新开 Sol 高推理独立 Review，会审：
+单日结束后，新开 Sol 高推理独立 Review，会审：
 
 - trading day；
 - actual contract；
 - source 1m identity/revision；
-- 15m bucket；
+- 夜盘、三段日盘与全部 23 个 confirmed 15m bucket；
+- EOD；
 - snapshot hash；
 - candidate direction；
 - observation key；
 - blocked reason；
 - 零写入；
-- restart 后恢复；
+- 幂等复跑；
 - 所有差异的根因。
+
+Runtime、RQData/网络与 Mac 恢复由同一 exact release 的独立恢复 evidence 会审，不要求在
+Shadow 单日内全部注入。
 
 ### 通过标准
 
-- 五个真实交易日完整；
-- 夜盘覆盖；
+- 一个完整 DCE 交易日；
+- 夜盘、三段日盘、23 个 confirmed 15m 桶和 EOD 全部覆盖；
 - Shadow 零正式写入；
 - legacy/shadow 关键 identity 一致；
 - 不存在无法解释的差异；
-- restart 后继续一致；
+- 同桶复跑幂等；
+- 同一 exact release 的独立恢复证据通过；
 - 没有重复信号和通知风险；
 - 独立 Review 明确允许进入 release candidate 设计。
 
@@ -910,19 +981,23 @@ Plan 后：
 ```text
 请阅读 GY-CORE-05 Shadow contract、启动命令、verifier、当前 canonical 和本手册。
 
-本任务为 GY-CORE-06，执行五个真实 DCE 交易日的 JM read-only Shadow。
-日常执行使用 Terra 中推理；最终分析必须新开 Sol 高推理独立 Review 会话。
+本任务为 GY-CORE-06，执行一个完整 DCE 交易日的 JM read-only Shadow。
+单日执行使用 Terra 中推理；最终分析必须新开 Sol 高推理独立 Review 会话。
 
 硬规则：
 - legacy Runtime 是唯一正式写入者；
 - Shadow 不写 live/SignalEvent/notification/checkpoint/Parquet/DB；
 - 不发送企微；
-- 每日只采集版本化 JSONL 和 summary；
+- 单日只采集版本化 JSONL 和 summary；
+- 必须覆盖夜盘、三段日盘、23 个 confirmed 15m 桶和 EOD；
+- 同桶复跑必须幂等，正式写入 allowlist 外必须零写入；
 - 发现差异先记录，不在运行现场随手修代码；
+- 任一失败整日作废，保留 append-only Ledger，不允许热修后继续累计；
 - 任何真实写入立即阻塞。
 
 最终输出：
-五日矩阵、零写入证明、所有差异、restart 结果、风险和是否允许进入 GY-CORE-07。
+单日矩阵、零写入证明、所有差异、同一 exact release 的独立恢复结果、风险和是否允许进入
+GY-CORE-07。
 ```
 
 ### 用户通过结论
@@ -1111,8 +1186,8 @@ DELETE_CANDIDATE
 但保留所有历史 evidence、report 14/15、数据资产、Git 历史和 legacy rollback bundle。
 
 必须逐项检查：
-launchd、Makefile、CI、shell、Python import、tests、TESTING.md、AGENTS.md、
-DEVELOPMENT.md、STATUS.md、DECISIONS.md 和业务 canonical。
+launchd、Makefile、CI、shell、Python import、tests、AGENTS.md、README.md、
+TESTING.md、STATUS.md、DECISIONS.md 和业务 canonical。
 
 禁止凭文件名猜测删除；UNKNOWN 一律保留。
 禁止触及 Runtime、DB、Parquet、企微、main/tag。
@@ -1144,22 +1219,26 @@ DEVELOPMENT.md、STATUS.md、DECISIONS.md 和业务 canonical。
 
 ### 目标
 
-不继续旧 schema-v6/v7、C2、Approval D、daily child 控制链；基于新 ReleaseManifest、ObservationPlan、统一 Runtime 和 checkpoint/dedupe 重新设计简化版五交易日长稳。
+不继续旧 schema-v6/v7、C2、Approval D、daily child 控制链；基于新 ReleaseManifest、
+ObservationPlan、统一 Runtime 和 checkpoint/dedupe 重新设计简化版单交易日 Runtime 验收。
 
 ### 新 S6-10 只验证
 
-1. 五个真实 DCE 交易日，包含夜盘；
+1. 一个完整 DCE 交易日，包含夜盘、三段日盘和 23 个 confirmed 15m 桶；
 2. live 1m 持续更新；
 3. 15m 边界和 HTDY first-seen 正确；
 4. 同一 event 不重复；
 5. notification identity 不重复；
 6. EOD 自动追平；
-7. 一次 Runtime 进程重启恢复；
-8. 一次 RQData/网络短暂故障恢复；
-9. 一次 Mac 重启恢复；
+7. 同一 exact release 的一次 Runtime 进程重启恢复证据；
+8. 同一 exact release 的一次 RQData/网络短暂故障恢复证据；
+9. 同一 exact release 的一次 Mac 重启恢复证据；
 10. autosend=false 时绝不发送；
 11. ReleaseManifest/config/DB revision 无漂移；
-12. 每日生成简洁 Ledger。
+12. 单日生成 append-only 简洁 Ledger，任何失败整日重启且失败记录不改写。
+
+第 7～9 项可在单日自然运行前后按获批矩阵独立执行，不要求全部塞入同一交易日；必须绑定
+相同 exact release、ObservationPlan、ReleaseManifest 和 DB revision。
 
 ### 不再要求
 
@@ -1193,20 +1272,21 @@ DEVELOPMENT.md、STATUS.md、DECISIONS.md 和业务 canonical。
 
 目标：
 基于新 ReleaseManifest、ObservationPlan、统一 JM Runtime、checkpoint 和幂等机制，
-重新设计简化版五交易日长稳。
+重新设计简化版单交易日 Runtime 验收。
 
 禁止继续旧 C2、Approval D、daily child、每事件授权和 23-close task-specific 控制面。
 旧 evidence 保留，不改写。
 
 新版只验证：
-- 五个真实交易日/夜盘；
+- 一个完整 DCE 交易日，覆盖夜盘、三段日盘、23 个 confirmed 15m 桶和 EOD；
 - live/EOD 连续性；
 - 15m/HTDY first-seen；
 - 信号与通知幂等；
-- Runtime/RQData/Mac 恢复；
+- 同一 exact release 的 Runtime/RQData/Mac 独立恢复证据；
 - autosend=false；
 - release/config/DB 无漂移；
-- 每日简洁 Ledger。
+- 单日 append-only Ledger；
+- 任一失败整日重启，不允许热修后继续累计。
 
 第一阶段只输出设计、任务合同、测试、故障注入矩阵、运行命令、停止条件和回滚。
 用户批准前不得实现或运行。
@@ -1226,7 +1306,7 @@ DEVELOPMENT.md、STATUS.md、DECISIONS.md 和业务 canonical。
 
 ---
 
-# 15. `GY-S6-10-R2-RUN`：新版五交易日真实验收
+# 15. `GY-S6-10-R2-RUN`：新版单交易日真实验收
 
 ## Codex 调度建议
 
@@ -1243,17 +1323,21 @@ DEVELOPMENT.md、STATUS.md、DECISIONS.md 和业务 canonical。
 
 - Runtime 必须是 exact approved tag；
 - 不在运行窗口改代码、policy、schema 或配置；
-- 必须修改时，停止窗口、修复、重新 release/promotion，然后重新开始五日窗口；
-- 每日 Ledger 只追加，不改写失败记录；
+- 必须修改时，停止窗口、保留失败 evidence、修复、重新 release/promotion，然后从下一个
+  完整 DCE 交易日重新开始；禁止热修后继续累计；
+- 单日 Ledger 只追加，不改写失败记录；
 - 故障注入按批准矩阵执行；
+- Runtime/RQData/网络/Mac 恢复可在单日自然运行前后独立执行，但必须绑定同一 exact release；
 - 企微 autosend 是否启用按新版合同单独决定，默认 false；
-- 不自动发布 `LONG_RUNNING_READY`。
+- `LONG_RUNNING_READY=false` 作为 `deprecated / not_applicable` 兼容字段保留，单日 Gate
+  永不将其设为 true；
+- 不自动发布 `JM_RUNTIME_READY`。
 
 ### 最终 Review
 
 独立 Sol 高推理会话必须核对：
 
-- 五日完整性；
+- 单日夜盘、三段日盘、23 个 confirmed 15m 桶和 EOD 完整性；
 - Runtime/tag/config/DB identity；
 - live 和 EOD 连续性；
 - 信号/通知幂等；
@@ -1270,16 +1354,17 @@ Runtime health、每日 Ledger、故障注入矩阵和本手册。
 
 本任务为 GY-S6-10-R2-RUN，Lane 3，Sol 高推理。
 
-执行五个真实 DCE 交易日长稳。
+执行一个完整 DCE 交易日 Runtime 验收。
 运行窗口内禁止修改代码、policy、schema、ObservationPlan 或 ReleaseManifest。
-发现必须修改的问题时立即停止并标记窗口失败，不允许现场热修后继续累计天数。
+发现必须修改的问题时立即停止并标记整日窗口失败，不允许现场热修后继续累计。
 
-每日追加 Ledger，覆盖 live、15m、HTDY、SignalEvent、notification identity、EOD、
+单日追加 Ledger，覆盖夜盘、三段日盘、23 个 confirmed 15m 桶、live、HTDY、SignalEvent、
+notification identity、EOD、
 Runtime/tag/config/DB identity、错误和恢复。
 故障注入必须使用已批准矩阵。
 
 完成后新开独立 Review，会审所有 evidence，并只提出是否允许发布
-LONG_RUNNING_READY / JM_RUNTIME_READY 的建议，不自动更新状态。
+JM_RUNTIME_READY 的建议，不自动更新状态。`LONG_RUNNING_READY` 不适用于该 Gate。
 ```
 
 ### 最终用户结论
@@ -1287,7 +1372,7 @@ LONG_RUNNING_READY / JM_RUNTIME_READY 的建议，不自动更新状态。
 通过全部 Gate 后才可：
 
 ```text
-允许发布 LONG_RUNNING_READY / JM_RUNTIME_READY
+允许发布 JM_RUNTIME_READY
 ```
 
 否则：
@@ -1316,7 +1401,7 @@ LONG_RUNNING_READY / JM_RUNTIME_READY 的建议，不自动更新状态。
 
 - Shadow 完全只读；
 - legacy 是唯一正式 writer；
-- 五日关键 identity 一致；
+- 单日关键 identity 一致；
 - 所有差异可解释；
 - 独立 Review 通过。
 
@@ -1346,7 +1431,7 @@ LONG_RUNNING_READY / JM_RUNTIME_READY 的建议，不自动更新状态。
 必须满足：
 
 - 不再依赖旧 task-specific 控制面；
-- 五日真实运行和恢复通过；
+- 单日真实运行与同一 exact release 的独立恢复证据通过；
 - 失败证据未改写；
 - 用户最终批准 Ready 状态。
 
@@ -1424,12 +1509,12 @@ JM 新版 S6-10
 
 ---
 
-# 18. 现在立即执行的任务
+# 18. 当前执行入口
 
-现在只执行：
+下一任务只允许执行：
 
 ```text
-GY-CORE-00：暂停 S6-10 与事实冻结
+GY-CORE-05：JM 新 Runtime 只读 Shadow 的设计 Plan
 ```
 
 配置：
@@ -1438,12 +1523,11 @@ GY-CORE-00：暂停 S6-10 与事实冻结
 Codex App
 Sol
 高推理
-新开会话
-Plan-then-execute
-新 docs task worktree
-只修改 canonical/task docs
-不修改代码、Runtime、DB、Parquet 或企微
+新 Plan 会话
+Plan-only
+先复核 GY-CORE-01～04 已集成结果和当前 Runtime 身份
+不修改代码、Runtime、DB、Parquet、mapping、SignalEvent 或企微
 ```
 
-`GY-CORE-00` 经用户审查并集成 `develop` 之前，其他任务全部阻塞。
-
+`GY-CORE-05` 的 Shadow 实现仍须独立 Plan 批准，并显式处理 `STATUS.md` 中未关闭的
+live source-mode schema/upsert/aggregation P0；Plan 批准前不得进入实现或真实运行。
