@@ -1344,8 +1344,10 @@ def test_repair_preflight_rechecks_registration_and_physical_evidence(
         coverage_start="2026-07-31T13:00:00+00:00",
         coverage_end="2026-07-31T13:01:00+00:00",
         checksum="a" * 64,
+        file_size_bytes=source.stat().st_size,
         physical_checksum=observed_checksum,
         catalog_checksum=None,
+        row_count=1,
     )
     plan = build_migration_plan(
         build_inventory_index(
@@ -1393,6 +1395,22 @@ def test_repair_preflight_rechecks_registration_and_physical_evidence(
     assert validation[0]["calls_rqdata"] is False
     assert validation[0]["writes_canonical"] is False
 
+    with Session(engine) as session:
+        registered = session.get(MarketDataFile, 1)
+        assert registered is not None
+        registered.contract_code = "JM99"
+        session.commit()
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_REPAIR_ACTION_DRIFT",
+    ):
+        cli_module._task07_validate_batch_readonly(
+            session,
+            plan=plan,
+            batch=batch,
+            canonical_root=tmp_path / "canonical",
+        )
+
 
 def test_task07_apply_executes_packet_bound_direct_repair(
     tmp_path: Path,
@@ -1407,8 +1425,10 @@ def test_task07_apply_executes_packet_bound_direct_repair(
         coverage_start="2026-07-31T13:00:00+00:00",
         coverage_end="2026-07-31T13:01:00+00:00",
         checksum="a" * 64,
+        file_size_bytes=source.stat().st_size,
         physical_checksum=observed_checksum,
         catalog_checksum=None,
+        row_count=1,
     )
     write_targets = _write_targets(tmp_path)
     plan = build_migration_plan(
@@ -1570,6 +1590,79 @@ def test_task07_apply_executes_packet_bound_direct_repair(
         verified = run_data_core_command("task07.verify", session, verify_args)
     assert verified["status"] == "passed"
     assert verified["verified_source_count"] == 1
+
+    forged_body = {
+        key: value for key, value in receipt.items() if key != "receipt_digest"
+    }
+    forged_body["calls_rqdata"] = False
+    forged = {**forged_body, "receipt_digest": canonical_digest(forged_body)}
+    receipt_path.write_text(json.dumps(forged), encoding="utf-8")
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_APPLY_RECEIPT_DRIFT",
+    ):
+        run_data_core_command("task07.verify", session, verify_args)
+
+
+def test_repair_preparation_failure_records_terminal_data_gap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.data_core.cli_service as cli_module
+
+    target = task07_migration.Task07RepairTarget(
+        operation="rqdata_redownload",
+        dataset=task07_migration.DatasetKey(
+            provider="rqdata",
+            dataset_kind=task07_migration.DatasetKind.CONTINUOUS,
+            symbol="jm",
+            contract_or_series="JM.MAIN",
+            frequency=task07_migration.BarFrequency.M1,
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        ),
+        start=datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 31, 13, 1, tzinfo=UTC),
+        source_action_ids=(1,),
+        source_action_digests=("a" * 64,),
+        target_digest="b" * 64,
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = cli_module.sessionmaker(bind=engine, expire_on_commit=False)
+    store = cli_module.CanonicalStore(
+        staging_root=tmp_path / "staging",
+        canonical_root=tmp_path / "canonical",
+        metadata_session_factory=factory,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_task07_provider_sessions",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("session metadata unavailable")
+        ),
+    )
+
+    receipt = cli_module._execute_task07_repair_apply(
+        target,
+        session_factory=factory,
+        store=store,
+        canonical_root=(tmp_path / "canonical").absolute(),
+        batch_key="repair:test:1",
+        plan_digest="c" * 64,
+        batch_digest="d" * 64,
+        source_market_data_file_id=1,
+        expected_target_state=[],
+    )
+
+    assert receipt["status"] == "data_gap"
+    assert receipt["data_gap"]["reason_code"] == (
+        "task07_rqdata_redownload_preparation_failed"
+    )
+    with factory() as session:
+        gaps = cli_module.HistoricalCatalog(session).list_gaps(target.dataset)
+    assert len(gaps) == 1
+    assert gaps[0].reason_code == "task07_rqdata_redownload_preparation_failed"
 
 
 def test_runtime_cutover_minimal_plan_and_receipt_fail_closed_on_drift() -> None:
@@ -2931,6 +3024,7 @@ def test_batch_journal_fsyncs_file_and_directory_and_rejects_forged_source_set(
     journal = cli_module._load_or_initialize_task07_batch_journal(
         path,
         bound_facts=bound_facts,
+        preflight_digest="d" * 64,
         source_ids=[1, 2],
         verified_partition_readbacks=[],
     )
@@ -2960,6 +3054,7 @@ def test_batch_journal_fsyncs_file_and_directory_and_rejects_forged_source_set(
         cli_module._load_or_initialize_task07_batch_journal(
             path,
             bound_facts=bound_facts,
+            preflight_digest="d" * 64,
             source_ids=[1, 2],
             verified_partition_readbacks=[],
         )

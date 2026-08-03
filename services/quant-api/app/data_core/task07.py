@@ -238,6 +238,8 @@ class Task07Asset:
     coverage_end: str | None
     row_count: int | None = None
     data_version: str | None = None
+    registration_symbol: str | None = None
+    registration_contract_or_series: str | None = None
     physical_is_symlink: bool = False
     physical_row_count: int | None = None
     physical_min_datetime: str | None = None
@@ -622,6 +624,12 @@ def collect_task07_assets(
                 coverage_end=_iso(row["end_time"]),
                 row_count=(int(row["row_count"]) if row["row_count"] is not None else None),
                 data_version=(str(row["data_version"]) if row["data_version"] else None),
+                registration_symbol=str(
+                    row["instrument_symbol"] or ""
+                ).strip().lower(),
+                registration_contract_or_series=str(
+                    row["contract_code"] or ""
+                ).strip().upper(),
                 physical_is_symlink=registered_path.is_symlink(),
                 physical_row_count=physical_inspection.get("physical_row_count"),
                 physical_min_datetime=physical_inspection.get("physical_min_datetime"),
@@ -2282,6 +2290,26 @@ def build_migration_plan(
     for raw in _iter_inventory_assets(index):
         if raw.get("disposition") == AssetDisposition.CONFLICT_BLOCKED.value:
             aggregate = raw.get("frequency") in _DERIVED_FREQUENCIES
+            registration_snapshot = {
+                "id": int(raw["market_data_file_id"]),
+                "provider": raw["provider"],
+                "data_type": raw["data_type"],
+                "symbol": raw.get("registration_symbol") or raw["symbol"],
+                "contract_or_series": raw.get(
+                    "registration_contract_or_series"
+                )
+                or raw["contract_or_series"],
+                "frequency": raw["frequency"],
+                "data_role": raw["data_role"],
+                "quality_status": raw["quality_status"],
+                "file_path": raw["file_path"],
+                "file_size_bytes": raw.get("file_size_bytes"),
+                "checksum": raw.get("checksum"),
+                "coverage_start": raw["coverage_start"],
+                "coverage_end": raw["coverage_end"],
+                "row_count": raw.get("row_count"),
+                "data_version": raw.get("data_version"),
+            }
             identity = {
                 "provider": "rqdata",
                 "dataset_kind": raw["dataset_kind"],
@@ -2303,9 +2331,10 @@ def build_migration_plan(
                     "end": raw["coverage_end"],
                 },
                 "source_evidence": {
-                    "data_type": raw["data_type"],
-                    "file_path": raw["file_path"],
-                    "registered_checksum": raw["checksum"],
+                    "registration_snapshot": registration_snapshot,
+                    "registration_snapshot_digest": canonical_digest(
+                        registration_snapshot
+                    ),
                     "observed_checksum": raw["physical_checksum"],
                     "physical_exists": raw["physical_exists"],
                     "source_scope": raw["source_scope"],
@@ -3082,15 +3111,26 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             or not isinstance(source_evidence, Mapping)
             or set(source_evidence)
             != {
-                "data_type",
-                "file_path",
-                "registered_checksum",
+                "registration_snapshot",
+                "registration_snapshot_digest",
                 "observed_checksum",
                 "physical_exists",
                 "source_scope",
             }
-            or not isinstance(source_evidence.get("file_path"), str)
-            or not Path(str(source_evidence.get("file_path"))).is_absolute()
+            or not isinstance(source_evidence.get("registration_snapshot"), Mapping)
+            or source_evidence.get("registration_snapshot_digest")
+            != canonical_digest(source_evidence.get("registration_snapshot"))
+            or not isinstance(
+                source_evidence.get("registration_snapshot", {}).get("file_path"),
+                str,
+            )
+            or not Path(
+                str(
+                    source_evidence.get("registration_snapshot", {}).get(
+                        "file_path"
+                    )
+                )
+            ).is_absolute()
             or type(source_evidence.get("physical_exists")) is not bool
         ):
             raise ValueError("TASK07_PLAN_CONTROL_DRIFT")

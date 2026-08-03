@@ -149,6 +149,7 @@ def test_direct_repair_fetches_exact_window_and_publishes_once() -> None:
         read_canonical_1m=lambda _target: pytest.fail("direct repair must not read canonical 1m"),
         publish=publish,
         record_gap=lambda *_args, **_kwargs: pytest.fail("successful repair must not record a gap"),
+        publication_state_unchanged=lambda _target: True,
     )
 
     request = observed["request"]
@@ -173,12 +174,64 @@ def test_direct_repair_failure_records_gap_without_publishing() -> None:
         read_canonical_1m=lambda _target: pytest.fail("direct repair must not read canonical 1m"),
         publish=lambda _batch, _lineage: pytest.fail("failed repair must not publish"),
         record_gap=lambda repair_target, reason: recorded.append((repair_target, reason)),
+        publication_state_unchanged=lambda _target: True,
     )
 
     assert recorded == [(target, "task07_rqdata_redownload_failed")]
     assert receipt["status"] == "data_gap"
     assert receipt["calls_rqdata"] is True
     assert receipt["publication"] is None
+
+
+def test_repair_publish_failure_records_gap_only_when_state_is_unchanged() -> None:
+    target = _direct_repair_target()
+    recorded: list[tuple[Task07RepairTarget, str]] = []
+
+    def fetch(request: ProviderBarRequest) -> ProviderBarBatch:
+        return ProviderBarBatch(
+            request=request,
+            bars=(_repair_bar(),),
+            data_version="rqdata-test-repair-v1",
+        )
+
+    receipt = migration_module.execute_task07_repair_target(
+        target,
+        sessions=(_friday_night_session(),),
+        fetch_direct=fetch,
+        read_canonical_1m=lambda _target: pytest.fail(
+            "direct repair must not read canonical 1m"
+        ),
+        publish=lambda _batch, _lineage: (_ for _ in ()).throw(
+            OSError("publish failed before catalog commit")
+        ),
+        record_gap=lambda repair_target, reason: recorded.append(
+            (repair_target, reason)
+        ),
+        publication_state_unchanged=lambda _target: True,
+    )
+
+    assert recorded == [(target, "task07_rqdata_redownload_publish_failed")]
+    assert receipt["status"] == "data_gap"
+
+    with pytest.raises(
+        migration_module.Task07MigrationError,
+        match="TASK07_REPAIR_PUBLICATION_STATE_AMBIGUOUS",
+    ):
+        migration_module.execute_task07_repair_target(
+            target,
+            sessions=(_friday_night_session(),),
+            fetch_direct=fetch,
+            read_canonical_1m=lambda _target: pytest.fail(
+                "direct repair must not read canonical 1m"
+            ),
+            publish=lambda _batch, _lineage: (_ for _ in ()).throw(
+                OSError("publish failed after catalog commit")
+            ),
+            record_gap=lambda *_args: pytest.fail(
+                "ambiguous publication must not record a gap"
+            ),
+            publication_state_unchanged=lambda _target: False,
+        )
 
 
 def test_aggregate_repair_reads_only_canonical_1m_and_publishes_lineage() -> None:
@@ -255,6 +308,7 @@ def test_aggregate_repair_reads_only_canonical_1m_and_publishes_lineage() -> Non
         ),
         publish=publish,
         record_gap=lambda *_args, **_kwargs: pytest.fail("successful repair must not record a gap"),
+        publication_state_unchanged=lambda _target: True,
     )
 
     batch = observed["batch"]

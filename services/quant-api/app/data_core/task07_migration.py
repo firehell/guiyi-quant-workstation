@@ -260,6 +260,7 @@ def execute_task07_repair_target(
     read_canonical_1m: Callable[[Task07RepairTarget], object],
     publish: Callable[[ProviderBarBatch, ManifestLineage | None], Mapping[str, object]],
     record_gap: Callable[[Task07RepairTarget, str], object],
+    publication_state_unchanged: Callable[[Task07RepairTarget], bool],
 ) -> dict[str, object]:
     if not isinstance(target, Task07RepairTarget):
         raise Task07MigrationError("TASK07_REPAIR_TARGET_INVALID")
@@ -364,24 +365,30 @@ def execute_task07_repair_target(
             if calls_rqdata
             else "task07_canonical_1m_reaggregate_failed"
         )
-        record_gap(target, reason)
-        body = {
-            "schema_version": 1,
-            "command": "data.task07.repair",
-            "status": "data_gap",
-            "operation": target.operation,
-            "target_digest": target.target_digest,
-            "source_action_ids": list(target.source_action_ids),
-            "source_action_digests": list(target.source_action_digests),
-            "calls_rqdata": calls_rqdata,
-            "publication": None,
-            "data_gap": {
-                "reason_code": reason,
-                "error_type": type(exc).__name__,
-            },
-        }
-        return {**body, "receipt_digest": canonical_json_digest(body)}
-    publication = dict(publish(batch, lineage))
+        return build_task07_repair_gap_receipt(
+            target,
+            reason_code=reason,
+            error=exc,
+            record_gap=record_gap,
+        )
+    try:
+        publication = dict(publish(batch, lineage))
+    except (DataCoreError, Task07MigrationError, RuntimeError, OSError, ValueError) as exc:
+        if not publication_state_unchanged(target):
+            raise Task07MigrationError(
+                "TASK07_REPAIR_PUBLICATION_STATE_AMBIGUOUS"
+            ) from exc
+        reason = (
+            "task07_rqdata_redownload_publish_failed"
+            if calls_rqdata
+            else "task07_canonical_1m_reaggregate_publish_failed"
+        )
+        return build_task07_repair_gap_receipt(
+            target,
+            reason_code=reason,
+            error=exc,
+            record_gap=record_gap,
+        )
     body = {
         "schema_version": 1,
         "command": "data.task07.repair",
@@ -393,6 +400,32 @@ def execute_task07_repair_target(
         "calls_rqdata": calls_rqdata,
         "publication": publication,
         "data_gap": None,
+    }
+    return {**body, "receipt_digest": canonical_json_digest(body)}
+
+
+def build_task07_repair_gap_receipt(
+    target: Task07RepairTarget,
+    *,
+    reason_code: str,
+    error: Exception,
+    record_gap: Callable[[Task07RepairTarget, str], object],
+) -> dict[str, object]:
+    record_gap(target, reason_code)
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.repair",
+        "status": "data_gap",
+        "operation": target.operation,
+        "target_digest": target.target_digest,
+        "source_action_ids": list(target.source_action_ids),
+        "source_action_digests": list(target.source_action_digests),
+        "calls_rqdata": target.operation == "rqdata_redownload",
+        "publication": None,
+        "data_gap": {
+            "reason_code": reason_code,
+            "error_type": type(error).__name__,
+        },
     }
     return {**body, "receipt_digest": canonical_json_digest(body)}
 
