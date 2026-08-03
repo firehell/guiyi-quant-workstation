@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from inspect import signature
 from io import StringIO
 import json
@@ -223,6 +224,40 @@ def test_direct_trading_day_conflict_requires_rqdata_redownload(
     assert plan["provider_request_proposal"]["request_count"] == 1
     assert plan["provider_request_proposal"]["provider_call_authorized"] is False
     assert plan["repair_actions"][0]["authorized"] is False
+
+
+def test_non_rqdata_direct_conflict_proposes_only_rqdata_redownload() -> None:
+    manifest = build_kline_manifest_index(
+        [_asset(provider="tqsdk")],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(manifest)
+
+    action = plan["repair_actions"][0]
+    request = plan["provider_requests"][0]
+    assert action["action"] == "rqdata_redownload"
+    assert action["provider"] == "rqdata"
+    assert action["original_provider"] == "tqsdk"
+    assert request["provider"] == "rqdata"
+    assert request["original_provider"] == "tqsdk"
+    assert request["market_data_file_id"] == action["market_data_file_id"]
+    task07._validate_migration_plan_integrity(plan)
+
+    forged = deepcopy(plan)
+    forged["provider_requests"][0]["provider"] = "tqsdk"
+    forged["provider_request_proposal"]["requests"][0]["provider"] = "tqsdk"
+    proposal_body = {
+        key: value
+        for key, value in forged["provider_request_proposal"].items()
+        if key != "proposal_digest"
+    }
+    forged["provider_request_proposal"]["proposal_digest"] = (
+        task07.canonical_digest(proposal_body)
+    )
+    with pytest.raises(ValueError, match="TASK07_PLAN_CONTROL_DRIFT"):
+        task07._validate_migration_plan_integrity(forged)
 
 
 def _manifest_scope(tmp_path: Path) -> dict[str, str]:

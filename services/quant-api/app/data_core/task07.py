@@ -61,6 +61,7 @@ _TASK07_DISABLED_FEATURE_FLAGS = (
     "GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED",
     "GUIYI_DATA_CORE_V2_RETENTION_SCHEDULER_ENABLED",
     "GUIYI_DATA_CORE_V2_REVIEW_ENABLED",
+    "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED",
     "GUIYI_LIVE_RUNTIME_ENABLED",
     "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
     "GUIYI_WECHAT_AUTOSEND_ENABLED",
@@ -2260,6 +2261,7 @@ def build_migration_plan(
                 "action": (
                     "canonical_1m_reaggregate" if aggregate else "rqdata_redownload"
                 ),
+                "original_provider": raw["provider"],
                 **identity,
                 "window": {
                     "start": raw["coverage_start"],
@@ -2302,7 +2304,8 @@ def build_migration_plan(
             provider_requests.append(
                 {
                     "market_data_file_id": int(raw["market_data_file_id"]),
-                    "provider": raw["provider"],
+                    "provider": "rqdata",
+                    "original_provider": raw["provider"],
                     "symbol": raw["symbol"],
                     "contract_or_series": raw["contract_or_series"],
                     "dataset_kind": raw["dataset_kind"],
@@ -2917,6 +2920,9 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         if (
             action.get("action")
             not in {"rqdata_redownload", "canonical_1m_reaggregate"}
+            or action.get("provider") != "rqdata"
+            or not isinstance(action.get("original_provider"), str)
+            or not action.get("original_provider")
             or action.get("authorized") is not False
             or action.get("action_digest") != canonical_digest(action_body)
             or (
@@ -2928,12 +2934,53 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             )
         ):
             raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    action_by_id = {
+        int(action["market_data_file_id"]): action for action in repair_actions
+    }
+    if len(action_by_id) != len(repair_actions):
+        raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    request_ids: set[int] = set()
+    for request in requests:
+        if not isinstance(request, Mapping):
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+        identifier = request.get("market_data_file_id")
+        if type(identifier) is not int or identifier in request_ids:
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+        request_ids.add(identifier)
+        action = action_by_id.get(identifier)
+        if (
+            request.get("provider") != "rqdata"
+            or not isinstance(request.get("original_provider"), str)
+            or not request.get("original_provider")
+            or request.get("frequency") not in _DIRECT_FREQUENCIES
+            or request.get("reason")
+            not in {
+                AssetDisposition.CONFLICT_BLOCKED.value,
+                AssetDisposition.REGISTER_DATA_GAP.value,
+            }
+            or (
+                request.get("reason") == AssetDisposition.CONFLICT_BLOCKED.value
+                and (
+                    not isinstance(action, Mapping)
+                    or action.get("action") != "rqdata_redownload"
+                    or action.get("provider") != request.get("provider")
+                    or action.get("original_provider")
+                    != request.get("original_provider")
+                )
+            )
+        ):
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     proposal_body = {
         key: value for key, value in proposal.items() if key != "proposal_digest"
     }
     if (
         proposal.get("proposal_digest") != canonical_digest(proposal_body)
         or proposal.get("requests") != requests
+        or proposal.get("request_count") != len(requests)
+        or proposal.get("provider_call_authorized") is not False
+        or proposal.get("writes_authorized") is not False
+        or proposal.get("calls_rqdata") is not False
+        or proposal.get("manifest_digest") != plan.get("manifest_digest")
     ):
         raise ValueError("TASK07_PROVIDER_PROPOSAL_DIGEST_MISMATCH")
     disposition_counts = plan.get("classification_counts")
