@@ -609,6 +609,56 @@ def test_reference_scan_does_not_blanket_hide_unlisted_operational_script(
     } == {"unclassified_reference", "selector_requires_manual_reachability_review"}
 
 
+def test_reference_scan_operational_backup_rule_cannot_hide_new_active_reference(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "scripts" / "backup" / "core.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "reader = MarketDataReader()\nprofile_id = historical_row.profile_id\n",
+        encoding="utf-8",
+    )
+
+    report = scan_task07_references([("checkout", tmp_path)])
+
+    assert report["state_counts"] == {
+        "active": 0,
+        "historical_non_active": 0,
+        "review_required": 2,
+    }
+    assert {
+        item["marker"]: item["reference_state"] for item in report["records"]
+    } == {
+        "legacy_reader": "review_required",
+        "legacy_selector": "review_required",
+    }
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "scripts/consumer_contract_final_closeout_006.py",
+        "scripts/rqdata_v1b_jm_asset.py",
+        "scripts/signal_review_lineage_gate_003.py",
+    ],
+)
+def test_reference_scan_exact_script_manifest_never_hides_detached_runtime(
+    tmp_path: Path,
+    relative: str,
+) -> None:
+    source = tmp_path / relative
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("profile_id = request.profile_id\n", encoding="utf-8")
+
+    report = scan_task07_references([("detached_runtime", tmp_path)])
+
+    assert report["state_counts"] == {
+        "active": 0,
+        "historical_non_active": 0,
+        "review_required": 1,
+    }
+
+
 def test_detached_runtime_executable_reference_is_not_hidden_as_history(
     tmp_path: Path,
 ) -> None:

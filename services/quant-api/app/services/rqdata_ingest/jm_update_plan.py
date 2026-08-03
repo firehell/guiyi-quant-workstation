@@ -160,8 +160,6 @@ def _recommended_commands(start_date: date, end_date: date, contracts: list[str]
         f"uv run python scripts/rqdata_contract_universe_sync.py run --product jm --start-date {start_date} --end-date {end_date}",
         f"uv run python scripts/rqdata_daily_baseline_sync.py run {contract_args} --start-date {start_date} --end-date {end_date}",
         f"uv run python scripts/rqdata_trading_params_sync.py run {contract_args} --start-date {start_date} --end-date {end_date}",
-        "uv run python scripts/rqdata_v1b_jm_asset.py --start-date "
-        f"{start_date} --end-date {end_date} --force",
     ]
 
 

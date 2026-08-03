@@ -157,9 +157,7 @@ _EXACT_HISTORICAL_SCRIPT_PATHS = frozenset(
 )
 _EXACT_OFFLINE_ADMIN_SCRIPT_PATHS = frozenset(
     {
-        "scripts/backup/core.py",
         "scripts/full_history_audit_v2_closure.py",
-        "scripts/restore/core.py",
         "scripts/rqdata_audit.py",
         "scripts/rqdata_backfill_1w_pre2020_listing.sh",
         "scripts/rqdata_coverage_audit.py",
@@ -169,6 +167,35 @@ _EXACT_OFFLINE_ADMIN_SCRIPT_PATHS = frozenset(
         "scripts/rqdata_v1b_jm_asset.py",
     }
 )
+_OPERATIONAL_HISTORICAL_SCHEMA_LINES = {
+    "scripts/backup/core.py": frozenset(
+        {
+            ("legacy_selector", "66baf50d803c3f21011c390184e208c2a2c5aade825b1bef63742f446bc4dc98"),
+            ("legacy_selector", "fc7acb70303fa4bc316cca1d4dfd45afcc6f35070671ac4973e078b442ac4de7"),
+            ("legacy_selector", "ac6979634231292735b28ff31c47d87e25474415b47bf1483bd7faddaab215ef"),
+            ("legacy_selector", "76a46700a203fad8683cacf6be8e5eb89fe29a1ae83bd312c2920540edc08e3d"),
+            ("legacy_selector", "aed0896a1c3ef2c992e288c49be3e9b195a81b93f984f005e396cd421774f08b"),
+            ("legacy_selector", "3e20ca5fc3ae014ebd3c4e40640a019c361c2d2ebd806357bbdbad778f455d49"),
+            ("legacy_selector", "a0980f1264acf5c03e2f4d5f99d196f2c0f0a47386675aff46a9de9c15ca9710"),
+            ("profile_active_binding", "ac1d284335e8205f755cf8906cc97c039bef6a984be2d32f6c001e93358108f5"),
+            ("legacy_selector", "3f58cab2e78f89a071a5c4f943a0f9d447038adcccff8fe6f77b649eae786193"),
+            ("legacy_selector", "3355a84e4b9fadaf9b077352daae5db59ad53c4ee54ba938dca324f1b9f84bc8"),
+            ("legacy_selector", "58cc18f6dfc525c99be8c2c8a8051f1eab34ea56f786bfcc2bacdb1a4a180355"),
+        }
+    ),
+    "scripts/restore/core.py": frozenset(
+        {
+            ("profile_active_binding", "f94a9a8a44e7a635bb04f23741f4af00f2848f78c5df8e697e57c10a52d86898"),
+            ("legacy_selector", "7765ace4d5b1d55a9b720e5f40e4dca37a69ab9e405d8b03f3363fcb7403e2d6"),
+            ("profile_active_binding", "53cefda05f629aa15ec9ee90d49700f918a09d7b4dd6c2bb1c1926c3fb49949d"),
+            ("legacy_selector", "4118886f5b42fcef17dc1c883a44438bba75a9f621f27603cd8720fddc35f4de"),
+            ("legacy_selector", "43be53e81e731d3db3be81fc55950efbcd32ab56ed1b0ff501db4e34d48a1748"),
+            ("legacy_selector", "e216d8bd684a87db18556c9ea00987145ea5a490ee8a465ebe9f9214143e2818"),
+            ("legacy_selector", "1290dc1422575e8198dfe104ef7e0fe851d5b6386407833a3d9c39c15b901140"),
+            ("legacy_selector", "fa5b631dab7293be21db75d1007f8fd1b9a5ada16b7bb93c04da7e008ff9c5a9"),
+        }
+    ),
+}
 
 
 class AssetDisposition(StrEnum):
@@ -1406,12 +1433,14 @@ def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
             try:
                 with path.open("r", encoding="utf-8", errors="replace") as handle:
                     for line_number, line in enumerate(handle, 1):
+                        line_digest = sha256(line.encode()).hexdigest()
                         for marker, pattern in _REFERENCE_PATTERNS.items():
                             if pattern.search(line):
                                 state, reason = _reference_classification(
                                     root_kind,
                                     relative,
                                     marker,
+                                    line_digest,
                                 )
                                 records.append(
                                     {
@@ -1421,7 +1450,7 @@ def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
                                         "marker": marker,
                                         "reference_state": state,
                                         "classification_reason": reason,
-                                        "line_sha256": sha256(line.encode()).hexdigest(),
+                                        "line_sha256": line_digest,
                                     }
                                 )
             except OSError as exc:
@@ -1627,6 +1656,7 @@ def _reference_classification(
     root_kind: str,
     relative: Path,
     marker: str,
+    line_digest: str,
 ) -> tuple[str, str]:
     parts = relative.parts
     path = relative.as_posix()
@@ -1659,6 +1689,12 @@ def _reference_classification(
         return "historical_non_active", "exact_historical_gate_script"
     if root_kind == "checkout" and path in _EXACT_OFFLINE_ADMIN_SCRIPT_PATHS:
         return "historical_non_active", "exact_offline_admin_script"
+    if (
+        root_kind == "checkout"
+        and (marker, line_digest)
+        in _OPERATIONAL_HISTORICAL_SCHEMA_LINES.get(path, frozenset())
+    ):
+        return "historical_non_active", "exact_operational_historical_schema_line"
     if path in _READONLY_LINEAGE_PATHS:
         return "historical_non_active", "readonly_historical_lineage_or_retired_cli"
     if path.startswith("services/quant-api/app/models/") or path.startswith(
