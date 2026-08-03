@@ -9,6 +9,7 @@ from .contracts import ExecutionPlanV1, TransitionProposalV1
 from .digests import semantic_digest
 from .errors import LeanMatrixError
 from .observing import ObservedExecution
+from .scope import scope_allows, validate_scope_patterns
 
 
 CONTROL_PLANE_PATHS = frozenset({
@@ -50,35 +51,19 @@ def _proposal(
 
 
 def _validate_scope(plan: ExecutionPlanV1, changed_paths: tuple[str, ...]) -> None:
-    exact = frozenset(entry for entry in plan.scope.allowed_paths if not entry.endswith("/**"))
-    recursive = tuple(entry.removesuffix("**") for entry in plan.scope.allowed_paths if entry.endswith("/**"))
-    unsupported = [entry for entry in plan.scope.allowed_paths if "*" in entry and not entry.endswith("/**")]
-    if unsupported:
-        raise LeanMatrixError("unsupported_allowlist_pattern", f"unsupported allowlist pattern: {unsupported[0]}")
-    forbidden_exact = frozenset(entry for entry in plan.scope.forbidden_paths if "*" not in entry)
-    forbidden_recursive = tuple(
-        entry.removesuffix("**") for entry in plan.scope.forbidden_paths if entry.endswith("/**")
-    )
-    forbidden_unsupported = [
-        entry for entry in plan.scope.forbidden_paths if "*" in entry and not entry.endswith("/**")
-    ]
-    if forbidden_unsupported:
-        raise LeanMatrixError(
-            "unsupported_forbidden_pattern",
-            f"unsupported forbidden pattern: {forbidden_unsupported[0]}",
-        )
+    validate_scope_patterns(plan.scope.allowed_paths, plan.scope.forbidden_paths)
     for path in changed_paths:
         if path in CONTROL_PLANE_PATHS or path.startswith(CONTROL_PLANE_PREFIXES):
             raise LeanMatrixError(
                 "controller_path_requires_manual_integration",
                 f"generic apply cannot integrate a change to its own controller: {path}",
             )
-        if path in forbidden_exact or any(path.startswith(prefix) for prefix in forbidden_recursive):
+        if scope_allows(path, plan.scope.forbidden_paths):
             raise LeanMatrixError(
                 "changed_path_forbidden",
                 f"changed path is explicitly forbidden by the frozen plan: {path}",
             )
-        if path not in exact and not any(path.startswith(prefix) for prefix in recursive):
+        if not scope_allows(path, plan.scope.allowed_paths):
             raise LeanMatrixError(
                 "changed_path_out_of_scope",
                 f"changed path is outside the frozen plan allowlist: {path}",
