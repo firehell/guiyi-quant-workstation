@@ -16,8 +16,9 @@ does not write real data, and does not send real notifications. Its authority bo
 no daemon, no Codex App API wrapper, no GitHub integration, no V06 network or merge implementation,
 no Runtime authority, no data/DB write authority, no notification authority, no release authority, and
 no trading authority. V06 performs no network, PR, CI polling, merge, or Runtime operation. V07 adds a
-pure evaluator, not a repository GitHub integration: there is no repository GitHub client, no `gh`, no token,
-no poller, and no merge daemon.
+pure evaluator, not a repository GitHub integration. V07 adds and uses no GitHub client. V07 uses no `gh` and
+V07 uses no token; V07 runs no poller and V07 runs no merge daemon; V07 has no merge executor. The
+pre-existing Draft-PR adapter remains outside V07 and retains its existing bounded behavior.
 
 ## Existing V04/V05 compatibility
 

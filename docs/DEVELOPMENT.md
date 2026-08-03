@@ -59,7 +59,8 @@ task worktree/branch。Draft PR 创建后保留 worktree 以处理 Review；merg
 `python3 scripts/engineering/lean_matrix_team.py develop-gate --plan <plan.json> --facts <facts.json>
 --format json` 只是确定性、无副作用评估器。它消费 trusted `ExecutionPlanV1` 与 Connector/Codex
 已归一化的 GitHub/Git 事实，输出带稳定 reason code 的 `DevelopGateDecisionV1`；不读 GitHub，
-不调用 `gh`，不持有 token，不轮询 CI，不 ready/合并/清理，也不写 merge receipt。
+V07 自身不调用 `gh`、不持有 token、不轮询 CI、不 ready/合并/清理，也不写 merge receipt。
+仓库既有 `task-worktree.sh` Draft-PR adapter 仍在 V07 之外，其原有受控行为未被 evaluator 扩张。
 
 事实只有三个阶段：`pre_merge`、`merge_readback`、`cleanup`。每份 facts 使用 semantic SHA-256
 绑定全字段，`observed_at` 到 `expires_at` 必须恰好 5 分钟；到期、head/base 漂移、范围漂移或人工
@@ -79,8 +80,8 @@ Connector/Codex 编排层负责真实读取和修改：
 5. worktree/branch 清理是独立 transition；必须使用 fresh `cleanup` facts 再评估，确认 merge、
    worktree clean，以及本地与 remote-tracking `develop` 都包含 task head。
 
-`ALLOW_DEVELOP_MERGE` 只表示当前 stage 可向前一步，不证明外部操作已发生。仓库不含 GitHub
-client/token/poller/merge daemon。`main`/release/tag、Runtime、生产 migration apply、真实数据/DB、
+`ALLOW_DEVELOP_MERGE` 只表示当前 stage 可向前一步，不证明外部操作已发生。V07 不新增或使用 GitHub
+client/token/poller/merge daemon/merge executor。`main`/release/tag、Runtime、生产 migration apply、真实数据/DB、
 策略/回测语义、live、通知、删除、candidate promotion 和 GitHub rules 的人工 Gate 全部保留。
 AI-TEAM-007 自身不得使用新 evaluator 批准自己，仍使用既有 Connector/Codex 集成流程。
 

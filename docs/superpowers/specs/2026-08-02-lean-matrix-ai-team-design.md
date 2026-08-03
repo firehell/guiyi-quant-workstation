@@ -63,8 +63,9 @@ Fast Path（Lane 1）与普通 Team Path（Lane 2）在 intake 成立后自动�
 
 ### 1.2 V07 GitHub develop Gate 评估器
 
-V07 将“是否可以进入下一个 develop 集成 transition”收敛为仓库内纯函数，而不在仓库中
-新增 GitHub 客户端、`gh`、token、CI poller、merge daemon 或常驻控制面。它只消费 trusted
+V07 将“是否可以进入下一个 develop 集成 transition”收敛为仓库内纯函数。V07 自身不新增也不使用
+GitHub 客户端、`gh`、token、CI poller、merge daemon、merge executor 或常驻控制面。仓库既有
+`task-worktree.sh` Draft-PR adapter 仍在 V07 之外，其受控职责未被扩张。V07 只消费 trusted
 `ExecutionPlanV1` 和 Connector/Codex 归一化的 `GitHubGateFactsV1`，输出闭集
 `DevelopGateDecisionV1`；真实 PR/CI/Review/Git 读取、ready、expected-head merge、不确定结果回读、
 merge receipt 和 cleanup 均由既有 Connector/Codex 编排层负责。

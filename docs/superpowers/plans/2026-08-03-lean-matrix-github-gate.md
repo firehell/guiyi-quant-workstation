@@ -17,8 +17,9 @@ python3 scripts/engineering/lean_matrix_team.py develop-gate \
   --format json
 ```
 
-该命令只读取两个输入文件并向 stdout 输出决策。仓库不新增 GitHub client、`gh`、token 管理、
-CI/Review poller、ready/merge 客户端、merge daemon、receipt writer 或 cleanup executor。不实现 `main`、tag、
+该命令只读取两个输入文件并向 stdout 输出决策。V07 自身不新增或使用 GitHub client、`gh`、token 管理、
+CI/Review poller、ready/merge 客户端、merge daemon、merge executor、receipt writer 或 cleanup executor。仓库既有
+`task-worktree.sh` Draft-PR adapter 仍在 V07 之外，其原有边界未变。V07 不实现 `main`、tag、
 release、Runtime、live、通知、真实数据/DB、删除、GitHub rules 或任何自动交易操作。
 
 ## 2. 权威分工

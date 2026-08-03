@@ -48,8 +48,9 @@ Round 3 with any non-approved verdict or Critical/Important finding derives `阻
 V07 is a pure evaluator. `GitHubCheckV1`, `GitHubReviewEvidenceV1`, `GitHubGateFactsV1`, and
 `DevelopGateDecisionV1` normalize and evaluate evidence; they do not acquire it or execute a transition.
 Connector/Codex owns every PR, CI, Review, blocking-thread, mergeability, local/remote Git, and ancestry read,
-plus ready, expected-head merge, receipt writing, and cleanup mutations. The repository contains no repository
-GitHub client, no `gh`, no token, no poller, and no merge daemon.
+plus ready, expected-head merge, receipt writing, and cleanup mutations. V07 itself adds or uses no GitHub
+client, `gh`, token, poller, merge daemon, or merge executor. The pre-existing `task-worktree.sh` Draft-PR
+adapter remains outside V07 and is not widened or replaced by this evaluator.
 
 Use exactly this sequence for an already-authorized ordinary develop integration:
 
