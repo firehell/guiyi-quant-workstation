@@ -10,6 +10,56 @@ Task 07 HEAD `e01784ff` 的 v9 已重采，并证明 active-reference Gate 仍�
 
 ## 0. Current implementation checkpoint
 
+### 0.0 Permanent-contract remediation candidate
+
+2026-08-03 生产收口 preflight 发现原 code-only closeout 超出最终永久合同。已从
+`develop@672877a8343a2bfc2cf9777e691fef38aa2a6717` 建立新 Lane 3 code-only worktree，
+收窄为七周期 K 线 manifest，并删除公共 retirement/deletion/quarantine 入口及
+quarantine 实现。Direct migration 不再接受 raw 文件作逐行比较。当前只是
+task-branch candidate；须经独立 Review、PR/CI 与 develop ancestry 回读后才能成为新
+release candidate 事实。
+
+```text
+public_manifest=data.task07.kline-manifest
+supported_frequencies=1m,5m,15m,30m,60m,1d,1w
+generic_inventory_public=false
+runtime_reference_inventory_public=false
+retirement_apply_public=false
+file_quarantine_public=false
+raw_row_comparison=false
+manifest_schema=dedicated_kline_manifest_v1
+manifest_bundle_publish=sibling_staging_fsync_atomic_rename
+evidence_scope_overlap=fail_closed_including_symlink_parent
+direct_trading_day_conflict=rqdata_redownload_proposal_only
+focused_regression=123 passed
+backend=2685 passed / 44 skipped
+frontend=191 passed / 1 skipped
+frontend_build=passed
+engineering_all_safe=385 passed / health 6 passed
+ruff=passed
+secret_scan=9421 files / no high-confidence secrets
+independent_review_round_1=0 Critical / 4 Important
+independent_review_round_1_fixes=implemented / round 2 confirmed closed
+independent_review_round_2=0 Critical / 2 Important provider mismatch + bounded WeCom flag omission
+independent_review_round_2_fix=provider request rqdata-only + integrity consistency + bounded WeCom forced false
+independent_review_round_3=0 Critical / 2 Important identity binding + 1d provider request omission
+independent_review_round_3_fix=full direct identity and window equality + forged drift rejection
+independent_review_round_4=0 Critical / 1 Important confirmed 1d provider request omission
+independent_review_round_4_fix=removed 1d-from-1m skip; all direct conflicts emit rqdata request
+independent_review_round_5=0 Critical / 1 Important missing reverse action-request completeness
+independent_review_round_5_fix=bidirectional IDs + action count/type/source/proposal integrity + forged removal rejection
+independent_review_round_6=de69faec / 0 Critical / 0 Important / CLEAN_FOR_INTEGRATION
+independent_review_round_6_validation=focused 123 + backend 2685/44 + Ruff + diff-check + clean status
+independent_review_final_docs_head=pending exact-head readback
+production_reads=false
+production_writes=false
+runtime_changes=false
+main_or_tag_changes=false
+```
+
+本 checkpoint 不改写下文 v8/v9 历史数字，不把 smoke 写成日常数据闭环，也不
+解锁 PostgreSQL 0032、真实 K 线、Runtime promotion 或旧派生数据删除。
+
 ### 0.1 2026-08-03 code-only closeout evidence
 
 本轮仅修改仓库代码、fixture、测试与 canonical 文档，base 为
@@ -66,6 +116,7 @@ deletion_unlocked=false
 生产 v9 inventory/Runtime/retirement 数字在本轮没有重采，下文仍作 historical blocker
 evidence 保留，不能被本轮 fixture 或 code-only Runtime receipt 解锁。
 
+下段描述为原 closeout 的 superseded historical implementation，不再是现行 CLI。当时
 Task 07 CLI 的 inventory/plan/preflight/apply/verify/retirement plan/apply 已实现。Canonical apply
 绑定 clean HEAD、DB revision、source/plan/batch digest、staging/canonical roots、脱敏 PostgreSQL
 target 和 protected roots；多来源 batch 使用 fsync durable intent/partial journal，崩溃恢复只允许
@@ -241,16 +292,17 @@ retirement apply 只允许 hash-bound packet manifest 中的逐表主键和 befo
 ## 7. Current result
 
 ```text
-Task_07=BLOCKED_ACTIVE_REFERENCE
-Kline_Gate=BLOCKED_BY_ACTIVE_REFERENCE_AND_EXACT_APPROVAL
-Active_Reference_Gate=RUNTIME_300_ACTIVE_1581_REVIEW_DB_4297_PENDING
-Review_Gate=CODE_REVIEW_PASS
+Task_07=CODE_COMPLETE_EXTERNAL_GATE_PENDING
+Kline_Gate=NOT_OPENED_NO_EXACT_PRODUCTION_MANIFEST
+Active_Reference_Gate=NOT_RESCANNED_OLD_V9_BLOCKER_EVIDENCE_ONLY
+Review_Gate=CODE_HEAD_PASS_FINAL_DOCS_HEAD_PENDING
 READY_FOR_TASK_08=false
 ```
 
-只有冲突资产获得逐项 disposition、重新在 clean exact task HEAD 采集 inventory、每个 batch
-分别通过 exact approval/preflight/apply/readback、legacy active code/DB reference 归零且独立
-Review 无阻塞后，才能改为 `READY_FOR_TASK_08`。
+当前永久合同 candidate 的代码测试已通过，但 Review round 1 不是通过结论。只有修复后的 exact
+head 获得独立 Review `0 Critical / 0 Important`、PR/CI 通过并成为 develop 祖先，才能进入新的
+只读 Stage A release preflight。其后仍必须分别取得 release、PostgreSQL 0032、真实 K 线迁移、
+Runtime promotion 与旧派生数据删除的独立 exact approval；任一阶段不得继承前一阶段批准。
 
 K-line `apply/verify` 已实现 staging、Decimal/UTC、duplicate、OHLCV、coverage、MainContractMap
 rank=1、overlap、Catalog/Manifest publish、durable partial journal/resume 与 readback；但未获得任何

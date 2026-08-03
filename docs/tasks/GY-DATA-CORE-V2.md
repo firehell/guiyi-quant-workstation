@@ -196,14 +196,20 @@ rollback-ready 与 checkout/Runtime reference zero。它不提供 apply/stop/swi
 retirement/deletion。本任务未读取生产数据、未执行 0032/RQData/Canonical/DB/Runtime 写入，
 不写入 `READY_FOR_TASK_08`。
 
-Task 07 从 clean `develop@39d1002d` 建立独立 task branch/worktree。专用
-`guiyi data task07` 合同覆盖 `inventory / plan / preflight / apply / verify /
-retirement-plan / retirement-apply`；只有两个 apply 命令是潜在写入口，且在 CLI 打开数据库前
-要求 exact approval 参数。inventory 使用 PostgreSQL `REPEATABLE READ READ ONLY`、稳定 keyset、
-SHA-256 分片 JSONL，并扫描 checkout 与 detached Runtime；不调用 RQData。
-`inventory` 的必填 `--evidence-root` 永久自动进入 protected scope；可重复的
-`--protected-root` 只用于额外存在的受保护目录，可以省略。这样即使旧外部 approval 目录退出，
-inventory evidence 本身仍不会成为 migration source 或 retirement candidate。
+2026-08-03 生产收口会话再次收窄 Task 07 永久合同：原 generic inventory、
+checkout/Runtime reference inventory、retirement apply 与文件 quarantine/deletion orchestration
+不再是现行入口。`guiyi data task07` 的生产数据准备入口改为
+`kline-manifest / plan / preflight / apply / verify / migration-verify`；manifest 只允许
+`1m/5m/15m/30m/60m/1d/1w` 与 K 线/Canonical 记录，不接受 Runtime root、
+protected root、quarantine root 或七周期外资产。`plan --manifest` 只消费该受限
+manifest。Direct 冲突只产生 RQData 重下提案，Aggregate 冲突只产生 Canonical
+1m 重聚合提案；不执行 raw/legacy 或 legacy/new 逐行比较。所有 K 线均不进入
+retirement/deletion 分类。
+
+旧派生业务数据删除不再通过通用文件 inventory/quarantine 建模。只能在 exact-tag
+Runtime 验收后，依当时真实 PostgreSQL schema/FK 生成精确 table/row manifest 与 SQL
+digest，且对该 exact scope 重新获得 Owner 批准。K 线、Catalog、Manifest、
+MainContractMap、release receipt 与正式证据永不在删除范围。
 
 2026-08-02 首轮生产只读 v8 snapshot：103,481 个资产，85 个
 `KEEP_CANONICAL_VERIFIED`、7,232 个 `REUSE_TRUSTED_SOURCE`、26 个
@@ -213,9 +219,8 @@ actual-dominant direct bars 且至少包含一个周末 `trading_day`；411-batc
 `approval_eligible=false`。该 snapshot 来自 dirty worktree，现为 superseded 历史诊断，不得生成
 apply packet。
 
-当前实现已补齐 generic migration、exact write-target binding、fsync durable batch journal/crash
-resume、consumer cutover 与 exact retirement rollback，并通过第六轮独立 Review。checkout-only
-开发扫描为 active/review-required 零；detached Runtime 的可执行源码优先判 active/review。
+以下 v8/v9 generic inventory、reference scan 与 retirement 数字只保留为 superseded 历史诊断，
+不再代表现行 CLI 或可执行生产 packet。
 后续 clean `e01784ff` / production `20260802_0031` v9 已稳定输出 103,481 assets：
 85 canonical verified、7,232 trusted reuse、2,817 DataGap、0 conflict、14,402 derived 与
 78,945 retirement candidates；411-batch plan digest 为

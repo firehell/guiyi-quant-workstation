@@ -1,5 +1,11 @@
 # GY-DATA-CORE-V2 Task 07 Closeout Implementation Plan
 
+> **Superseded historical plan:** 本文中 generic inventory、retirement apply 与
+> deletion quarantine 设计已被同日生产收口的永久数据合同取代。现行事实源为
+> `docs/tasks/GY-DATA-CORE-V2.md`：只有七周期 K 线 manifest；Direct 冲突重下、
+> Aggregate 冲突从 Canonical 1m 重聚合；不做逐行比较；不建文件 quarantine。
+> 本文仅作为当时已实现方案的历史记录，不授权任何生产操作。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Every behavior change follows red-green-refactor.
 
 **Goal:** Complete Task 07 with trusted direct K-line migration, direct reuse of already verified aggregate-minute K-lines, zero legacy active references, exact retirement/deletion evidence, a disabled code-only Runtime cutover, and develop integration.
@@ -49,7 +55,7 @@
 - Freeze `1m/5m/15m/30m/60m/1d/1w` as persisted same-frequency historical datasets; actual-dominant `1w` uses the last trading day's rank=1 concrete contract.
 - Run focused API/service/frontend tests and build.
 
-### Task 5: Add exact deletion orchestration
+### Task 5: Add exact deletion orchestration (superseded; removed)
 
 - Add `deletion-plan`, `deletion-preflight`, `deletion-apply`, and `deletion-verify` Task 07 CLI commands.
 - Freeze absolute path, approved root, device/inode, size, mtime, SHA-256, disposition, canonical replacement receipt, and recoverability per file.
@@ -83,7 +89,7 @@
 
 - Run full backend, frontend, Ruff, engineering all-safe, secret scan, the repository docs profile, diff check, and independent whole-branch review.
 - Merge the reviewed task branch into develop through the normal protected flow; do not touch main/release/tag.
-- From the clean develop merge SHA, collect final production inventory and produce the single exact migration packet.
+- From the clean develop merge SHA, collect the exact seven-frequency K-line manifest and produce the single exact migration packet.
 - After owner approval, apply and verify every eligible direct and aggregate batch; record explicit DataGap/blocked dispositions for all remaining K-lines and preserve all source K-lines.
 - Generate and obtain approval for the Runtime packet, perform code-only cutover, and verify checkout/develop/Runtime legacy active/review references are zero.
-- Generate and obtain approval for exact retirement plus deletion packets, apply/verify them, confirm Canonical checksums unchanged, and update Task 07 evidence/status to `READY_FOR_TASK_08` only if every Gate passes.
+- After exact-tag Runtime verification, derive an exact PostgreSQL table/row deletion manifest from current schema/FKs, obtain a fresh exact-scope approval, apply the minimal transaction, confirm preserved K-line/Catalog/Manifest evidence and update Task 07 status only if every Gate passes.

@@ -28,7 +28,7 @@ from app.data_core.task07_migration import (
 )
 from app.data_core.task07 import (
     AssetDisposition,
-    build_inventory_index,
+    _build_inventory_index as build_inventory_index,
     build_migration_plan,
     classify_asset,
     collect_task07_assets,
@@ -49,26 +49,6 @@ def _write_legacy_minute(path: Path, *, trading_day: date) -> str:
                 "high": [Decimal("101.2")],
                 "low": [Decimal("99.8")],
                 "close": [Decimal("100.7")],
-                "volume": [Decimal("12")],
-                "turnover": [Decimal("1208.4")],
-                "open_interest": [Decimal("30")],
-            }
-        ),
-        path,
-    )
-    return sha256(path.read_bytes()).hexdigest()
-
-
-def _write_raw_minute(path: Path, *, close: Decimal = Decimal("100.7")) -> str:
-    pq.write_table(
-        pa.table(
-            {
-                "datetime": [datetime(2026, 7, 31, 21, 1)],
-                "trading_date": [date(2026, 8, 3)],
-                "open": [Decimal("100.1")],
-                "high": [Decimal("101.2")],
-                "low": [Decimal("99.8")],
-                "close": [close],
                 "volume": [Decimal("12")],
                 "turnover": [Decimal("1208.4")],
                 "open_interest": [Decimal("30")],
@@ -504,46 +484,6 @@ def test_prepare_legacy_batch_rejects_source_checksum_drift(tmp_path: Path) -> N
         prepare_legacy_parquet_batch(
             path=source,
             source_checksum="0" * 64,
-            dataset=_dataset(),
-            sessions=(_friday_night_session(),),
-            data_version="rqdata-legacy-corrected-20260731",
-            rank1_contract_by_day={date(2026, 8, 3): "JM2609"},
-        )
-
-
-def test_prepare_legacy_batch_binds_identical_raw_comparison(tmp_path: Path) -> None:
-    source = tmp_path / "bars.parquet"
-    raw = tmp_path / "raw.parquet"
-    checksum = _write_legacy_minute(source, trading_day=date(2026, 8, 1))
-    raw_checksum = _write_raw_minute(raw)
-
-    prepared = prepare_legacy_parquet_batch(
-        path=source,
-        source_checksum=checksum,
-        raw_path=raw,
-        raw_checksum=raw_checksum,
-        dataset=_dataset(),
-        sessions=(_friday_night_session(),),
-        data_version="rqdata-legacy-corrected-20260731",
-        rank1_contract_by_day={date(2026, 8, 3): "JM2609"},
-    )
-
-    assert prepared.evidence.raw_comparison_digest is not None
-    assert prepared.evidence.raw_checksum == raw_checksum
-
-
-def test_prepare_legacy_batch_rejects_raw_value_conflict(tmp_path: Path) -> None:
-    source = tmp_path / "bars.parquet"
-    raw = tmp_path / "raw.parquet"
-    checksum = _write_legacy_minute(source, trading_day=date(2026, 8, 1))
-    raw_checksum = _write_raw_minute(raw, close=Decimal("100.8"))
-
-    with pytest.raises(Task07MigrationError, match="TASK07_RAW_VALUE_CONFLICT"):
-        prepare_legacy_parquet_batch(
-            path=source,
-            source_checksum=checksum,
-            raw_path=raw,
-            raw_checksum=raw_checksum,
             dataset=_dataset(),
             sessions=(_friday_night_session(),),
             data_version="rqdata-legacy-corrected-20260731",

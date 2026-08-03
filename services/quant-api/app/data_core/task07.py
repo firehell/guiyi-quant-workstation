@@ -1,8 +1,8 @@
-"""Fail-closed Task 07 inventory, planning, and exact retirement contracts.
+"""Fail-closed Task 07 K-line manifest, migration, and Runtime contracts.
 
-Inventory and planning never call a provider or mutate business data.  The only
-mutation implemented here is the separately approved, exact-row retirement DML;
-it never deletes rows or files.
+The public Task 07 data path is limited to the exact seven historical bar
+frequencies. Manifest and planning never call a provider or mutate business
+data. Production writes remain separately approval-gated.
 """
 
 from __future__ import annotations
@@ -14,9 +14,12 @@ from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import tempfile
 from typing import Any, Callable, Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
@@ -44,6 +47,8 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TASK_HEAD = re.compile(r"[0-9a-f]{40}\Z")
 _DIRECT_FREQUENCIES = {"1m", "1d", "1w"}
 _DERIVED_FREQUENCIES = {"5m", "15m", "30m", "60m"}
+_SUPPORTED_FREQUENCIES = _DIRECT_FREQUENCIES | _DERIVED_FREQUENCIES
+_KLINE_DATA_TYPES = {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}
 _ACTUAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _TASK07_AGGREGATE_MANIFEST_VERSION = "task07-aggregate-migration-v1"
@@ -56,6 +61,7 @@ _TASK07_DISABLED_FEATURE_FLAGS = (
     "GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED",
     "GUIYI_DATA_CORE_V2_RETENTION_SCHEDULER_ENABLED",
     "GUIYI_DATA_CORE_V2_REVIEW_ENABLED",
+    "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED",
     "GUIYI_LIVE_RUNTIME_ENABLED",
     "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
     "GUIYI_WECHAT_AUTOSEND_ENABLED",
@@ -82,10 +88,8 @@ _REFERENCE_IGNORED_DIRS = {
 _REFERENCE_SELF_PATHS = {
     "services/quant-api/app/data_core/task07.py",
     "services/quant-api/app/data_core/task07_migration.py",
-    "services/quant-api/app/data_core/task07_deletion.py",
     "services/quant-api/app/services/derived_reference_inventory.py",
     "services/quant-api/tests/data_core/test_task07_orchestration.py",
-    "services/quant-api/tests/data_core/test_task07_deletion.py",
     "services/quant-api/tests/test_derived_reference_inventory.py",
 }
 _RETIRED_LEGACY_MODULES = {
@@ -268,7 +272,7 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
     if asset.source_scope == "protected_evidence_root":
         return AssetDisposition.PROTECTED_EVIDENCE_SOURCE
     if asset.source_scope == "outside_approved_roots":
-        return AssetDisposition.RETIREMENT_CANDIDATE
+        return AssetDisposition.CONFLICT_BLOCKED
     if asset.data_type == "v2_canonical":
         identity_valid = (
             asset.provider == "rqdata"
@@ -302,9 +306,9 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
         return AssetDisposition.CONFLICT_BLOCKED
     if asset.frequency in _DERIVED_FREQUENCIES:
         if asset.provider != "rqdata" or asset.data_type != "bars":
-            return AssetDisposition.RETIREMENT_CANDIDATE
+            return AssetDisposition.CONFLICT_BLOCKED
         if asset.data_role != "primary" or asset.quality_status != "passed":
-            return AssetDisposition.REGISTER_DATA_GAP
+            return AssetDisposition.CONFLICT_BLOCKED
         if not asset.physical_exists or asset.quality_evidence_count < 1:
             return AssetDisposition.REGISTER_DATA_GAP
         if asset.quality_evidence_statuses != ("passed",):
@@ -330,17 +334,17 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
             return AssetDisposition.REUSE_VERIFIED_AGGREGATE
         return AssetDisposition.CONFLICT_BLOCKED
     if asset.frequency == "1d" and asset.source_intervals == ("1m",):
-        return AssetDisposition.EXCLUDE_DERIVED
-    if asset.provider != "rqdata" or asset.data_type not in {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}:
-        return AssetDisposition.RETIREMENT_CANDIDATE
+        return AssetDisposition.CONFLICT_BLOCKED
+    if asset.provider != "rqdata" or asset.data_type not in _KLINE_DATA_TYPES:
+        return AssetDisposition.CONFLICT_BLOCKED
     if asset.data_role != "primary":
-        return AssetDisposition.RETIREMENT_CANDIDATE
+        return AssetDisposition.CONFLICT_BLOCKED
     if asset.frequency not in _DIRECT_FREQUENCIES:
-        return AssetDisposition.RETIREMENT_CANDIDATE
+        return AssetDisposition.CONFLICT_BLOCKED
     if not asset.symbol or not asset.contract_or_series:
-        return AssetDisposition.RETIREMENT_CANDIDATE
+        return AssetDisposition.CONFLICT_BLOCKED
     if asset.dataset_kind not in {"continuous", "actual_dominant"}:
-        return AssetDisposition.RETIREMENT_CANDIDATE
+        return AssetDisposition.CONFLICT_BLOCKED
     if asset.dataset_kind == "continuous" and asset.contract_or_series != f"{asset.symbol.upper()}.MAIN":
         return AssetDisposition.CONFLICT_BLOCKED
     if asset.dataset_kind == "actual_dominant":
@@ -353,10 +357,12 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
         "night_session_trading_day_conflict",
         "day_session_trading_day_conflict",
     }:
-        return AssetDisposition.REGISTER_DATA_GAP
+        return AssetDisposition.CONFLICT_BLOCKED
     if asset.content_gate_status.endswith("_conflict"):
         return AssetDisposition.CONFLICT_BLOCKED
-    if asset.quality_status != "passed" or not asset.physical_exists:
+    if asset.quality_status != "passed":
+        return AssetDisposition.CONFLICT_BLOCKED
+    if not asset.physical_exists:
         return AssetDisposition.REGISTER_DATA_GAP
     if (
         not asset.checksum
@@ -375,6 +381,71 @@ def _asset_record(asset: Task07Asset) -> dict[str, Any]:
     record = asdict(asset)
     record["disposition"] = classify_asset(asset).value
     return record
+
+
+def _validated_kline_assets(assets: Iterable[Task07Asset]) -> Iterable[Task07Asset]:
+    for asset in assets:
+        disposition = classify_asset(asset)
+        if (
+            asset.frequency not in _SUPPORTED_FREQUENCIES
+            or asset.data_type not in _KLINE_DATA_TYPES
+            or disposition
+            in {
+                AssetDisposition.PROTECTED_EVIDENCE_SOURCE,
+                AssetDisposition.RETIREMENT_CANDIDATE,
+                AssetDisposition.EXCLUDE_DERIVED,
+            }
+        ):
+            raise ValueError("TASK07_KLINE_MANIFEST_SCOPE_INVALID")
+        yield asset
+
+
+def build_kline_manifest_index(
+    assets: Iterable[Task07Asset],
+    *,
+    base_sha: str,
+    database_revision: str,
+    include_assets: bool = True,
+) -> dict[str, Any]:
+    """Build the exact seven-frequency K-line-only manifest."""
+
+    if not _TASK_HEAD.fullmatch(base_sha):
+        raise ValueError("TASK07_BASE_SHA_INVALID")
+    digest = sha256()
+    records: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    previous_id = 0
+    for asset in _validated_kline_assets(assets):
+        if asset.market_data_file_id <= previous_id:
+            raise ValueError("TASK07_KLINE_MANIFEST_ORDER_INVALID")
+        previous_id = asset.market_data_file_id
+        record = _asset_record(asset)
+        line = json.dumps(
+            record,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode() + b"\n"
+        digest.update(line)
+        counts[str(record["disposition"])] += 1
+        if include_assets:
+            records.append(record)
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.kline-manifest",
+        "status": "complete",
+        "readonly_business_data": True,
+        "base_sha": base_sha,
+        "database_revision": database_revision,
+        "supported_frequencies": sorted(_SUPPORTED_FREQUENCIES),
+        "asset_count": sum(counts.values()),
+        "assets_digest": digest.hexdigest(),
+        "classification_counts": dict(sorted(counts.items())),
+        "assets": records,
+        "truncated": False,
+        "calls_rqdata": False,
+    }
+    return {**body, "manifest_digest": canonical_digest(body)}
 
 
 def collect_task07_assets(
@@ -408,7 +479,10 @@ def collect_task07_assets(
             text(
                 "SELECT id, provider, data_type, instrument_symbol, contract_code, period, start_time, end_time, "
                 "file_path, file_size_bytes, checksum, data_version, row_count, data_role, quality_status "
-                "FROM market_data_files WHERE id > :cursor ORDER BY id LIMIT :page_size"
+                "FROM market_data_files WHERE id > :cursor "
+                "AND data_type IN ('bars', 'contract_bars_raw', 'daily_baseline') "
+                "AND period IN ('1m', '5m', '15m', '30m', '60m', '1d', '1w') "
+                "ORDER BY id LIMIT :page_size"
             ),
             {"cursor": cursor, "page_size": page_size},
         ).mappings().all()
@@ -669,6 +743,7 @@ def _iter_task07_catalog_rows(
                 "p.manifest_uri, p.manifest_digest "
                 "FROM market_datasets d JOIN market_partitions p "
                 "ON p.dataset_id = d.id WHERE p.id > :cursor "
+                "AND d.frequency IN ('1m', '5m', '15m', '30m', '60m', '1d', '1w') "
                 "ORDER BY p.id LIMIT :page_size"
             ),
             {"cursor": cursor, "page_size": page_size},
@@ -1403,7 +1478,7 @@ def _aggregate_main_map_digest(
     return canonical_digest(records)
 
 
-def scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
+def _scan_task07_references(roots: Iterable[tuple[str, Path]]) -> dict[str, Any]:
     """Scan checkout/runtime text surfaces without file-count or finding truncation."""
 
     records: list[dict[str, Any]] = []
@@ -1736,7 +1811,7 @@ def _reference_classification(
     return "review_required", "unclassified_reference"
 
 
-def build_inventory_index(
+def _build_inventory_index(
     assets: Iterable[Task07Asset],
     *,
     base_sha: str,
@@ -1785,7 +1860,7 @@ def build_inventory_index(
     }
 
 
-def write_inventory_evidence(
+def _write_inventory_evidence(
     assets: Iterable[Task07Asset],
     *,
     evidence_root: Path,
@@ -1794,6 +1869,10 @@ def write_inventory_evidence(
     shard_size: int = 10_000,
     reference_report: Mapping[str, Any] | None = None,
     inventory_scope: Mapping[str, Any] | None = None,
+    evidence_command: str = "data.task07.inventory",
+    index_name: str = "inventory-index.json",
+    scope_name: str = "inventory_scope",
+    supported_frequencies: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Create exact, chunked evidence without modifying business data."""
 
@@ -1803,7 +1882,12 @@ def write_inventory_evidence(
     if root.exists() and root.is_symlink():
         raise ValueError("TASK07_EVIDENCE_ROOT_SYMLINK")
     root.mkdir(parents=True, exist_ok=True)
-    index_path = root / "inventory-index.json"
+    if Path(index_name).name != index_name or scope_name not in {
+        "inventory_scope",
+        "manifest_scope",
+    }:
+        raise ValueError("TASK07_EVIDENCE_CONTRACT_INVALID")
+    index_path = root / index_name
     if index_path.exists():
         raise ValueError("TASK07_EVIDENCE_ALREADY_EXISTS")
 
@@ -1867,7 +1951,7 @@ def write_inventory_evidence(
         )
     body = {
         "schema_version": 1,
-        "command": "data.task07.inventory",
+        "command": evidence_command,
         "status": "complete",
         "readonly_business_data": True,
         "base_sha": base_sha,
@@ -1880,16 +1964,147 @@ def write_inventory_evidence(
         "calls_rqdata": False,
         "deletion_authorized": False,
         "reference_index": reference_index,
-        "inventory_scope": dict(inventory_scope or {}),
+        scope_name: dict(inventory_scope or {}),
     }
+    if supported_frequencies is not None:
+        body["supported_frequencies"] = list(supported_frequencies)
     index = {**body, "inventory_digest": canonical_digest(body)}
-    temporary = root / ".inventory-index.json.tmp"
+    temporary = root / f".{index_name}.tmp"
     temporary.write_text(
         json.dumps(index, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
         encoding="utf-8",
     )
     temporary.replace(index_path)
     return index
+
+
+def write_kline_manifest_evidence(
+    assets: Iterable[Task07Asset],
+    *,
+    evidence_root: Path,
+    base_sha: str,
+    database_revision: str,
+    shard_size: int = 10_000,
+    manifest_scope: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Atomically publish an exact K-line-only evidence bundle."""
+
+    if shard_size < 1 or not _TASK_HEAD.fullmatch(base_sha):
+        raise ValueError("TASK07_KLINE_MANIFEST_CONTRACT_INVALID")
+    requested_root = evidence_root.absolute()
+    if requested_root.exists() or requested_root.is_symlink():
+        raise ValueError("TASK07_KLINE_MANIFEST_EVIDENCE_ROOT_INVALID")
+    parent = requested_root.parent.resolve(strict=True)
+    root = parent / requested_root.name
+    scope = dict(manifest_scope or {})
+    scope_paths: list[Path] = []
+    for key in ("project_root", "data_root", "canonical_root"):
+        value = scope.get(key)
+        if not isinstance(value, str) or not Path(value).is_absolute():
+            raise ValueError("TASK07_KLINE_MANIFEST_SCOPE_INVALID")
+        scope_paths.append(Path(value).resolve(strict=False))
+    if (
+        any(_paths_overlap(root, path) for path in scope_paths)
+    ):
+        raise ValueError("TASK07_KLINE_MANIFEST_EVIDENCE_ROOT_INVALID")
+    staging = Path(
+        tempfile.mkdtemp(prefix=f".{root.name}.tmp-", dir=parent)
+    )
+    published = False
+    try:
+        asset_digest = sha256()
+        classification_counts: Counter[str] = Counter()
+        shards: list[dict[str, Any]] = []
+        rows: list[bytes] = []
+        row_count = 0
+        previous_id = 0
+
+        def flush() -> None:
+            nonlocal rows
+            if not rows:
+                return
+            name = f"kline-assets-{len(shards) + 1:06d}.jsonl"
+            payload = b"".join(rows)
+            _write_fsync_file(staging / name, payload)
+            shards.append(
+                {
+                    "path": name,
+                    "row_count": len(rows),
+                    "sha256": sha256(payload).hexdigest(),
+                }
+            )
+            rows = []
+
+        for asset in _validated_kline_assets(assets):
+            if asset.market_data_file_id <= previous_id:
+                raise ValueError("TASK07_KLINE_MANIFEST_ORDER_INVALID")
+            previous_id = asset.market_data_file_id
+            record = _asset_record(asset)
+            line = (
+                json.dumps(
+                    record,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+                + b"\n"
+            )
+            asset_digest.update(line)
+            classification_counts[str(record["disposition"])] += 1
+            row_count += 1
+            rows.append(line)
+            if len(rows) == shard_size:
+                flush()
+        flush()
+        body = {
+            "schema_version": 1,
+            "command": "data.task07.kline-manifest",
+            "status": "complete",
+            "readonly_business_data": True,
+            "base_sha": base_sha,
+            "database_revision": database_revision,
+            "supported_frequencies": sorted(_SUPPORTED_FREQUENCIES),
+            "asset_count": row_count,
+            "assets_digest": asset_digest.hexdigest(),
+            "classification_counts": dict(sorted(classification_counts.items())),
+            "shards": shards,
+            "truncated": False,
+            "calls_rqdata": False,
+            "manifest_scope": scope,
+        }
+        manifest = {**body, "manifest_digest": canonical_digest(body)}
+        _write_fsync_file(
+            staging / "kline-manifest-index.json",
+            json.dumps(
+                manifest,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode(),
+        )
+        _fsync_directory(staging)
+        staging.replace(root)
+        published = True
+        _fsync_directory(parent)
+        return manifest
+    finally:
+        if not published and staging.exists():
+            shutil.rmtree(staging)
+
+
+def _write_fsync_file(path: Path, payload: bytes) -> None:
+    with path.open("xb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _migration_source_record(
@@ -2006,6 +2221,11 @@ def build_migration_plan(
         AssetDisposition.REUSE_TRUSTED_SOURCE.value,
         AssetDisposition.REUSE_VERIFIED_AGGREGATE.value,
     }
+    manifest_digest = str(
+        index.get("manifest_digest")
+        or index.get("inventory_digest")
+        or index["assets_digest"]
+    )
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     repair_actions: list[dict[str, Any]] = []
     eligible_record_count = 0
@@ -2041,15 +2261,14 @@ def build_migration_plan(
                 "action": (
                     "canonical_1m_reaggregate" if aggregate else "rqdata_redownload"
                 ),
+                "original_provider": raw["provider"],
                 **identity,
                 "window": {
                     "start": raw["coverage_start"],
                     "end": raw["coverage_end"],
                 },
                 "base_sha": index["base_sha"],
-                "inventory_digest": index.get(
-                    "inventory_digest", index["assets_digest"]
-                ),
+                "manifest_digest": manifest_digest,
                 "source_dataset": (
                     {**identity, "frequency": "1m"} if aggregate else None
                 ),
@@ -2070,10 +2289,7 @@ def build_migration_plan(
             repair_actions.append(
                 {**action_body, "action_digest": canonical_digest(action_body)}
             )
-        if raw.get("frequency") in _DERIVED_FREQUENCIES or (
-            raw.get("frequency") == "1d"
-            and tuple(raw.get("source_intervals", ())) == ("1m",)
-        ):
+        if raw.get("frequency") in _DERIVED_FREQUENCIES:
             continue
         disposition = raw.get("disposition")
         if disposition == AssetDisposition.CONFLICT_BLOCKED.value or (
@@ -2085,11 +2301,15 @@ def build_migration_plan(
             provider_requests.append(
                 {
                     "market_data_file_id": int(raw["market_data_file_id"]),
-                    "provider": raw["provider"],
+                    "provider": "rqdata",
+                    "original_provider": raw["provider"],
                     "symbol": raw["symbol"],
                     "contract_or_series": raw["contract_or_series"],
                     "dataset_kind": raw["dataset_kind"],
                     "frequency": raw["frequency"],
+                    "adjustment": raw.get("adjustment") or "none",
+                    "schema_version": raw.get("schema_version")
+                    or "canonical-bar-v1",
                     "window": {
                         "start": raw["coverage_start"],
                         "end": raw["coverage_end"],
@@ -2158,34 +2378,23 @@ def build_migration_plan(
             "verified_partitions": [
                 _verified_partition_record(item) for item in verified_rows
             ],
-            "protected_evidence_ids": [],
             "coverage_start": min(str(item["coverage_start"]) for item in rows),
             "coverage_end": max(str(item["coverage_end"]) for item in rows),
         }
         batches.append({**body, "batch_digest": canonical_digest(body)})
     migration_envelope = build_migration_envelope(batches)
-    disposition_counts = dict(index.get("disposition_counts", {}))
+    disposition_counts = dict(
+        index.get("classification_counts")
+        or index.get("disposition_counts", {})
+    )
     blocked = int(disposition_counts.get(AssetDisposition.CONFLICT_BLOCKED.value, 0))
-    protected = int(disposition_counts.get(AssetDisposition.PROTECTED_EVIDENCE_SOURCE.value, 0))
     gap_count = int(disposition_counts.get(AssetDisposition.REGISTER_DATA_GAP.value, 0))
-    retirement_count = int(disposition_counts.get(AssetDisposition.RETIREMENT_CANDIDATE.value, 0))
-    reference_index = index.get("reference_index")
-    reference_snapshot = (
-        _reference_snapshot(reference_index, require_complete_scope=False)
-        if isinstance(reference_index, Mapping)
-        else None
-    )
-    reference_counts = (
-        reference_snapshot["state_counts"] if reference_snapshot is not None else {}
-    )
-    active_reference_count = int(reference_counts.get("active", 0))
-    review_reference_count = int(reference_counts.get("review_required", 0))
     provider_request_proposal = {
         "schema_version": 1,
         "command": "data.task07.provider-request",
         "base_sha": index["base_sha"],
         "database_revision": index["database_revision"],
-        "inventory_digest": index.get("inventory_digest", index["assets_digest"]),
+        "manifest_digest": manifest_digest,
         "request_count": len(provider_requests),
         "requests": provider_requests,
         "calls_rqdata": False,
@@ -2194,14 +2403,6 @@ def build_migration_plan(
     }
     provider_request_proposal["proposal_digest"] = canonical_digest(
         provider_request_proposal
-    )
-    active_reference_gate = (
-        "BLOCKED_REFERENCE_EVIDENCE_INCOMPLETE"
-        if reference_snapshot is None
-        or reference_snapshot["scope_complete"] is not True
-        else "zero_active_references"
-        if active_reference_count == 0 and review_reference_count == 0
-        else "BLOCKED_ACTIVE_REFERENCE"
     )
     write_targets_value = dict(write_targets or {})
     target_valid = _migration_write_targets_valid(write_targets_value)
@@ -2225,40 +2426,19 @@ def build_migration_plan(
         if not revision_ready
         else "BLOCKED_AT_KLINE_DATA_GATE"
     )
-    reference_eligible = active_reference_gate == "zero_active_references"
-    retirement_gate = (
-        "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
-        if reference_eligible
-        else active_reference_gate
-    )
-    deletion_candidate_manifest = {
-        "inventory_digest": index["assets_digest"],
-        "count": retirement_count,
-        "deletion_authorized": False,
-    }
     facts = {
         "base_sha": index["base_sha"],
         "database_revision": index["database_revision"],
-        "inventory_digest": index.get("inventory_digest", index["assets_digest"]),
+        "manifest_digest": manifest_digest,
         "assets_digest": index["assets_digest"],
-        "references_digest": (index.get("reference_index") or {}).get(
-            "references_digest"
-        ),
         "write_targets": write_targets_value,
         "provider_requests": provider_requests,
         "repair_actions": repair_actions,
         "batches": batches,
         "migration_envelope": migration_envelope,
-        "disposition_counts": disposition_counts,
+        "classification_counts": disposition_counts,
         "blocked_asset_count": blocked,
-        "protected_evidence_count": protected,
         "data_gap_count": gap_count,
-        "deletion_candidate_count": retirement_count,
-        "active_reference_count": active_reference_count,
-        "review_reference_count": review_reference_count,
-        "reference_snapshot": reference_snapshot,
-        "active_reference_gate": active_reference_gate,
-        "deletion_candidate_manifest": deletion_candidate_manifest,
         "migration_target_gate": (
             "exact_write_targets_bound"
             if target_valid
@@ -2273,10 +2453,6 @@ def build_migration_plan(
         "approval_eligible": approval_eligible,
         "migration_gate_status": gate_status,
         "gate_status": gate_status,
-        "retirement_eligible": False,
-        "deletion_eligible": False,
-        "retirement_gate_status": retirement_gate,
-        "deletion_gate_status": retirement_gate,
         "runtime_cutover_eligible": False,
         "migration_verification_gate": "pending_all_batch_verification",
         "calls_rqdata": False,
@@ -2293,7 +2469,7 @@ def build_migration_plan(
     }
 
 
-def load_inventory_evidence(index_path: Path) -> dict[str, Any]:
+def _load_inventory_evidence(index_path: Path) -> dict[str, Any]:
     index = _load_json(index_path, "TASK07_INVENTORY_INDEX_INVALID")
     stored_digest = index.get("inventory_digest")
     body = {key: value for key, value in index.items() if key != "inventory_digest"}
@@ -2343,6 +2519,42 @@ def load_inventory_evidence(index_path: Path) -> dict[str, Any]:
     return {**index, "_inventory_index_path": str(index_path.resolve(strict=True))}
 
 
+def load_kline_manifest_evidence(index_path: Path) -> dict[str, Any]:
+    manifest = _load_json(index_path, "TASK07_KLINE_MANIFEST_INDEX_INVALID")
+    stored_digest = manifest.get("manifest_digest")
+    body = {
+        key: value for key, value in manifest.items() if key != "manifest_digest"
+    }
+    if (
+        stored_digest != canonical_digest(body)
+        or manifest.get("command") != "data.task07.kline-manifest"
+        or manifest.get("status") != "complete"
+        or manifest.get("truncated") is not False
+        or manifest.get("supported_frequencies") != sorted(_SUPPORTED_FREQUENCIES)
+        or "inventory_digest" in manifest
+        or "reference_index" in manifest
+        or "deletion_authorized" in manifest
+    ):
+        raise ValueError("TASK07_KLINE_MANIFEST_SCOPE_INVALID")
+    loaded = {
+        **manifest,
+        "_manifest_index_path": str(index_path.resolve(strict=True)),
+    }
+    for asset in _iter_inventory_assets(loaded):
+        if (
+            asset.get("frequency") not in _SUPPORTED_FREQUENCIES
+            or asset.get("data_type") not in _KLINE_DATA_TYPES
+            or asset.get("disposition")
+            in {
+                AssetDisposition.PROTECTED_EVIDENCE_SOURCE.value,
+                AssetDisposition.RETIREMENT_CANDIDATE.value,
+                AssetDisposition.EXCLUDE_DERIVED.value,
+            }
+        ):
+            raise ValueError("TASK07_KLINE_MANIFEST_SCOPE_INVALID")
+    return loaded
+
+
 def _iter_inventory_assets(index: Mapping[str, Any]) -> Iterable[dict[str, Any]]:
     inline = index.get("assets")
     if inline is not None:
@@ -2353,7 +2565,9 @@ def _iter_inventory_assets(index: Mapping[str, Any]) -> Iterable[dict[str, Any]]
                 raise ValueError("TASK07_INVENTORY_SHARD_JSON_INVALID")
             yield item
         return
-    index_path_value = index.get("_inventory_index_path")
+    index_path_value = index.get("_manifest_index_path") or index.get(
+        "_inventory_index_path"
+    )
     if not isinstance(index_path_value, str):
         raise ValueError("TASK07_INVENTORY_ASSETS_MISSING")
     index_path = Path(index_path_value)
@@ -2396,32 +2610,17 @@ def build_approval_packet(
     *,
     command: str,
 ) -> dict[str, Any]:
-    if command not in {"data.task07.apply", "data.task07.retirement-apply"}:
+    if command != "data.task07.apply":
         raise ValueError("TASK07_APPROVAL_COMMAND_INVALID")
-    if command == "data.task07.apply":
-        _validate_migration_plan_integrity(plan)
-    else:
-        _validate_retirement_plan_integrity(plan)
-    if command == "data.task07.apply" and plan.get("approval_eligible") is not True:
+    _validate_migration_plan_integrity(plan)
+    if plan.get("approval_eligible") is not True:
         raise ValueError("TASK07_KLINE_GATE_BLOCKED")
-    if command == "data.task07.apply":
-        facts = build_migration_approval_facts(
-            plan,
-            current_base_sha=str(plan["base_sha"]),
-            current_database_revision=str(plan["database_revision"]),
-            current_write_targets=plan.get("write_targets", {}),
-        )
-    else:
-        if plan.get("retirement_eligible") is not True:
-            if plan.get("reference_gate") == "zero_active_references":
-                raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
-            raise ValueError("TASK07_RETIREMENT_REFERENCE_GATE_BLOCKED")
-        facts = _retirement_approval_facts(
-            plan,
-            current_base_sha=str(plan["base_sha"]),
-            current_database_revision=str(plan["database_revision"]),
-            current_reference_snapshot=plan.get("reference_snapshot"),
-        )
+    facts = build_migration_approval_facts(
+        plan,
+        current_base_sha=str(plan["base_sha"]),
+        current_database_revision=str(plan["database_revision"]),
+        current_write_targets=plan.get("write_targets", {}),
+    )
     return {
         "schema_version": 1,
         "command": command,
@@ -2444,7 +2643,7 @@ def build_migration_approval_facts(
         "base_sha": current_base_sha,
         "database_revision": current_database_revision,
         "plan_digest": plan.get("plan_digest"),
-        "inventory_digest": plan.get("inventory_digest"),
+        "manifest_digest": plan.get("manifest_digest"),
         "migration_envelope": plan.get("migration_envelope"),
         "write_targets": dict(current_write_targets),
     }
@@ -2718,79 +2917,130 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         action_body = {
             key: value for key, value in action.items() if key != "action_digest"
         }
+        frequency = action.get("frequency")
+        aggregate = frequency in _DERIVED_FREQUENCIES
+        expected_action = (
+            "canonical_1m_reaggregate" if aggregate else "rqdata_redownload"
+        )
+        source_dataset = action.get("source_dataset")
+        expected_source_dataset = (
+            {
+                "provider": action.get("provider"),
+                "dataset_kind": action.get("dataset_kind"),
+                "symbol": action.get("symbol"),
+                "contract_or_series": action.get("contract_or_series"),
+                "frequency": "1m",
+                "adjustment": action.get("adjustment"),
+                "schema_version": action.get("schema_version"),
+            }
+            if aggregate
+            else None
+        )
         if (
-            action.get("action")
-            not in {"rqdata_redownload", "canonical_1m_reaggregate"}
+            frequency not in _SUPPORTED_FREQUENCIES
+            or action.get("action") != expected_action
+            or action.get("provider") != "rqdata"
+            or not isinstance(action.get("original_provider"), str)
+            or not action.get("original_provider")
+            or action.get("base_sha") != plan.get("base_sha")
+            or action.get("manifest_digest") != plan.get("manifest_digest")
             or action.get("authorized") is not False
             or action.get("action_digest") != canonical_digest(action_body)
+            or source_dataset != expected_source_dataset
+        ):
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    action_by_id = {
+        int(action["market_data_file_id"]): action for action in repair_actions
+    }
+    if len(action_by_id) != len(repair_actions):
+        raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    request_ids: set[int] = set()
+    request_action_identity_fields = (
+        "provider",
+        "original_provider",
+        "symbol",
+        "contract_or_series",
+        "dataset_kind",
+        "frequency",
+        "adjustment",
+        "schema_version",
+        "window",
+    )
+    for request in requests:
+        if not isinstance(request, Mapping):
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+        identifier = request.get("market_data_file_id")
+        if type(identifier) is not int or identifier in request_ids:
+            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+        request_ids.add(identifier)
+        action = action_by_id.get(identifier)
+        if (
+            request.get("provider") != "rqdata"
+            or not isinstance(request.get("original_provider"), str)
+            or not request.get("original_provider")
+            or request.get("frequency") not in _DIRECT_FREQUENCIES
+            or request.get("reason")
+            not in {
+                AssetDisposition.CONFLICT_BLOCKED.value,
+                AssetDisposition.REGISTER_DATA_GAP.value,
+            }
             or (
-                action.get("action") == "canonical_1m_reaggregate"
+                request.get("reason") == AssetDisposition.CONFLICT_BLOCKED.value
                 and (
-                    not isinstance(action.get("source_dataset"), Mapping)
-                    or action["source_dataset"].get("frequency") != "1m"
+                    not isinstance(action, Mapping)
+                    or action.get("action") != "rqdata_redownload"
+                    or any(
+                        action.get(field) != request.get(field)
+                        for field in request_action_identity_fields
+                    )
                 )
             )
         ):
             raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
+    redownload_action_ids = {
+        identifier
+        for identifier, action in action_by_id.items()
+        if action.get("action") == "rqdata_redownload"
+    }
+    conflict_request_ids = {
+        int(request["market_data_file_id"])
+        for request in requests
+        if request.get("reason") == AssetDisposition.CONFLICT_BLOCKED.value
+    }
+    if redownload_action_ids != conflict_request_ids:
+        raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     proposal_body = {
         key: value for key, value in proposal.items() if key != "proposal_digest"
     }
     if (
         proposal.get("proposal_digest") != canonical_digest(proposal_body)
         or proposal.get("requests") != requests
+        or proposal.get("schema_version") != 1
+        or proposal.get("command") != "data.task07.provider-request"
+        or proposal.get("base_sha") != plan.get("base_sha")
+        or proposal.get("database_revision") != plan.get("database_revision")
+        or proposal.get("request_count") != len(requests)
+        or proposal.get("provider_call_authorized") is not False
+        or proposal.get("writes_authorized") is not False
+        or proposal.get("calls_rqdata") is not False
+        or proposal.get("manifest_digest") != plan.get("manifest_digest")
     ):
         raise ValueError("TASK07_PROVIDER_PROPOSAL_DIGEST_MISMATCH")
-    disposition_counts = plan.get("disposition_counts")
+    disposition_counts = plan.get("classification_counts")
     if not isinstance(disposition_counts, Mapping):
         raise ValueError("TASK07_PLAN_INVALID")
     expected_controls = {
         "blocked_asset_count": int(
             disposition_counts.get(AssetDisposition.CONFLICT_BLOCKED.value, 0)
         ),
-        "protected_evidence_count": int(
-            disposition_counts.get(AssetDisposition.PROTECTED_EVIDENCE_SOURCE.value, 0)
-        ),
         "data_gap_count": int(
             disposition_counts.get(AssetDisposition.REGISTER_DATA_GAP.value, 0)
-        ),
-        "deletion_candidate_count": int(
-            disposition_counts.get(AssetDisposition.RETIREMENT_CANDIDATE.value, 0)
         ),
     }
     if any(plan.get(key) != value for key, value in expected_controls.items()):
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
-    active_count = plan.get("active_reference_count")
-    review_count = plan.get("review_reference_count")
-    if type(active_count) is not int or type(review_count) is not int:
+    if len(repair_actions) != expected_controls["blocked_asset_count"]:
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
-    reference_snapshot = plan.get("reference_snapshot")
-    if reference_snapshot is not None:
-        if not isinstance(reference_snapshot, Mapping):
-            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
-        expected_reference_snapshot = _reference_snapshot(
-            reference_snapshot,
-            require_complete_scope=False,
-        )
-        reference_counts = expected_reference_snapshot["state_counts"]
-        if (
-            active_count != reference_counts["active"]
-            or review_count != reference_counts["review_required"]
-            or plan.get("references_digest")
-            != expected_reference_snapshot["references_digest"]
-        ):
-            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
-    else:
-        expected_reference_snapshot = None
-        if active_count != 0 or review_count != 0 or plan.get("references_digest") is not None:
-            raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
-    expected_active_gate = (
-        "BLOCKED_REFERENCE_EVIDENCE_INCOMPLETE"
-        if expected_reference_snapshot is None
-        or expected_reference_snapshot["scope_complete"] is not True
-        else "zero_active_references"
-        if active_count == 0 and review_count == 0
-        else "BLOCKED_ACTIVE_REFERENCE"
-    )
     target_valid = _migration_write_targets_valid(plan.get("write_targets"))
     revision_ready = all(
         batch.get("required_database_revision") == plan.get("database_revision")
@@ -2812,20 +3062,8 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         if not revision_ready
         else "BLOCKED_AT_KLINE_DATA_GATE"
     )
-    expected_reference_eligible = expected_active_gate == "zero_active_references"
-    expected_retirement_gate = (
-        "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
-        if expected_reference_eligible
-        else expected_active_gate
-    )
-    expected_manifest = {
-        "inventory_digest": plan.get("assets_digest"),
-        "count": expected_controls["deletion_candidate_count"],
-        "deletion_authorized": False,
-    }
     if (
-        plan.get("active_reference_gate") != expected_active_gate
-        or plan.get("migration_target_gate")
+        plan.get("migration_target_gate")
         != (
             "exact_write_targets_bound"
             if target_valid
@@ -2841,14 +3079,9 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         or plan.get("approval_eligible") is not expected_eligible
         or plan.get("migration_gate_status") != expected_gate
         or plan.get("gate_status") != expected_gate
-        or plan.get("retirement_eligible") is not False
-        or plan.get("deletion_eligible") is not False
-        or plan.get("retirement_gate_status") != expected_retirement_gate
-        or plan.get("deletion_gate_status") != expected_retirement_gate
         or plan.get("runtime_cutover_eligible") is not False
         or plan.get("migration_verification_gate")
         != "pending_all_batch_verification"
-        or plan.get("deletion_candidate_manifest") != expected_manifest
         or plan.get("calls_rqdata") is not False
         or plan.get("writes_authorized") is not False
         or plan.get("deletion_authorized") is not False
@@ -2857,21 +3090,15 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
     facts = {
         "base_sha": plan.get("base_sha"),
         "database_revision": plan.get("database_revision"),
-        "inventory_digest": plan.get("inventory_digest"),
+        "manifest_digest": plan.get("manifest_digest"),
         "assets_digest": plan.get("assets_digest"),
-        "references_digest": plan.get("references_digest"),
         "write_targets": plan.get("write_targets"),
         "provider_requests": requests,
         "repair_actions": repair_actions,
         "batches": batches,
         "migration_envelope": expected_envelope,
-        "disposition_counts": dict(disposition_counts),
+        "classification_counts": dict(disposition_counts),
         **expected_controls,
-        "active_reference_count": active_count,
-        "review_reference_count": review_count,
-        "reference_snapshot": expected_reference_snapshot,
-        "active_reference_gate": expected_active_gate,
-        "deletion_candidate_manifest": expected_manifest,
         "migration_target_gate": (
             "exact_write_targets_bound"
             if target_valid
@@ -2886,10 +3113,6 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         "approval_eligible": expected_eligible,
         "migration_gate_status": expected_gate,
         "gate_status": expected_gate,
-        "retirement_eligible": False,
-        "deletion_eligible": False,
-        "retirement_gate_status": expected_retirement_gate,
-        "deletion_gate_status": expected_retirement_gate,
         "runtime_cutover_eligible": False,
         "migration_verification_gate": "pending_all_batch_verification",
         "calls_rqdata": False,
@@ -2914,7 +3137,7 @@ def build_write_targets(
     approved_canonical = inventory_scope.get("canonical_root")
     if not isinstance(approved_canonical, str) or canonical != Path(approved_canonical).resolve(strict=False):
         raise ValueError("TASK07_CANONICAL_ROOT_SCOPE_DRIFT")
-    protected_values = inventory_scope.get("protected_roots")
+    protected_values = inventory_scope.get("protected_roots", [])
     if not isinstance(protected_values, list):
         raise ValueError("TASK07_PROTECTED_ROOT_SCOPE_INVALID")
     protected = sorted({str(Path(value).resolve(strict=False)) for value in protected_values})
@@ -3009,7 +3232,7 @@ def build_runtime_cutover_plan(
         "required_auto_order": False,
         "required_health_status": "passed",
         "required_smoke_status": "passed",
-        "required_reference_scan": {
+        "required_post_cutover_reference_assertion": {
             "scope": "checkout_and_runtime",
             "complete": True,
             "active": 0,
@@ -3060,7 +3283,7 @@ def verify_runtime_cutover_receipt(
         "health",
         "smoke",
         "rollback",
-        "reference_scan",
+        "post_cutover_reference_assertion",
         "plan_digest",
         "canonical_receipt_digest",
     }
@@ -3091,8 +3314,8 @@ def verify_runtime_cutover_receipt(
             **expected_plan["previous_release"],
             "ready": True,
         }
-        or receipt.get("reference_scan")
-        != expected_plan["required_reference_scan"]
+        or receipt.get("post_cutover_reference_assertion")
+        != expected_plan["required_post_cutover_reference_assertion"]
         or receipt.get("plan_digest") != expected_plan["plan_digest"]
     ):
         raise ValueError("TASK07_RUNTIME_CUTOVER_RECEIPT_DRIFT")
@@ -3135,7 +3358,7 @@ _TASK07_RUNTIME_CUTOVER_RECEIPT_CONTRACT = {
 }
 
 
-def build_retirement_plan(
+def _build_retirement_plan(
     *,
     base_sha: str,
     database_revision: str,
@@ -3225,7 +3448,7 @@ def build_retirement_plan(
     }
 
 
-def collect_retirement_relations(
+def _collect_retirement_relations(
     session: Session,
     *,
     readonly: bool = True,
@@ -3286,7 +3509,7 @@ _RETIREMENT_COLUMNS = {
 }
 
 
-def apply_retirement_plan(
+def _apply_retirement_plan(
     session: Session,
     plan: Mapping[str, Any],
     *,
@@ -3305,11 +3528,11 @@ def apply_retirement_plan(
         if plan.get("reference_gate") == "zero_active_references":
             raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
         raise ValueError("TASK07_RETIREMENT_REFERENCE_GATE_BLOCKED")
-    current_plan = build_retirement_plan(
+    current_plan = _build_retirement_plan(
         base_sha=current_base_sha,
         database_revision=current_database_revision,
         reference_report=current_reference_report,
-        relations=collect_retirement_relations(session, readonly=False),
+        relations=_collect_retirement_relations(session, readonly=False),
         retirement_at=plan.get("retirement_at"),
     )
     if current_plan["plan_digest"] != plan.get("plan_digest"):
