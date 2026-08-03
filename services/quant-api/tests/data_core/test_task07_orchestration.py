@@ -598,7 +598,7 @@ def test_database_inventory_uses_stable_keyset_and_physical_checksum(tmp_path: P
     assert assets[0].catalog_checksum == checksum
     assert assets[1].catalog_checksum is None
     assert all(item.physical_checksum == checksum for item in assets)
-    assert classify_asset(assets[2]) == AssetDisposition.CONFLICT_BLOCKED
+    assert classify_asset(assets[2]) == AssetDisposition.KEEP_CANONICAL_VERIFIED
     assert catalog_page_queries >= 2
 
 
@@ -819,6 +819,39 @@ def test_inventory_keyset_jsonl_reload_and_plan_digest_are_stable_above_six_hund
     assert page_queries == 28
     assert plans[0]["assets_digest"] == plans[1]["assets_digest"]
     assert plans[0]["plan_digest"] == plans[1]["plan_digest"]
+
+
+@pytest.mark.parametrize("record_kind", ["eligible", "provider_request"])
+def test_migration_plan_fails_closed_before_unbounded_record_growth(
+    monkeypatch: pytest.MonkeyPatch,
+    record_kind: str,
+) -> None:
+    asset = (
+        _asset(catalog_checksum=None)
+        if record_kind == "eligible"
+        else _asset(physical_checksum="b" * 64, catalog_checksum=None)
+    )
+    template = task07._asset_record(asset)
+    index = build_inventory_index(
+        [],
+        base_sha="2" * 40,
+        database_revision="20260802_0031",
+    )
+
+    monkeypatch.setattr(
+        task07,
+        "_iter_inventory_assets",
+        lambda _index: (
+            {**template, "market_data_file_id": value}
+            for value in range(1, task07._TASK07_PLAN_RECORD_LIMIT + 2)
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="TASK07_PLAN_SOURCE_SHARDING_REQUIRED",
+    ):
+        build_migration_plan(index, write_targets=_write_targets())
 
 
 def test_migration_plan_batches_deterministically_and_never_requests_rqdata() -> None:

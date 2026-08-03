@@ -15,7 +15,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 import pyarrow.parquet as pq
@@ -45,6 +45,7 @@ _DERIVED_FREQUENCIES = {"5m", "15m", "30m", "60m"}
 _ACTUAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _TASK07_AGGREGATE_MANIFEST_VERSION = "task07-aggregate-migration-v1"
+_TASK07_PLAN_RECORD_LIMIT = 50_000
 _REFERENCE_PATTERNS = {
     "profile_active_binding": re.compile(r"\b(?:ProfileActiveBinding|profile_active_bindings)\b"),
     "legacy_reader": re.compile(r"\bMarketDataReader\b"),
@@ -337,46 +338,10 @@ def collect_task07_assets(
         )
     protected = tuple(dict.fromkeys(protected_aliases))
     begin_task07_readonly_snapshot(session)
-    catalog_rows = session.execute(
-        text(
-            "SELECT p.id, d.provider, d.dataset_kind, d.symbol, d.contract_or_series, d.frequency, "
-            "d.adjustment, d.schema_version, p.file_uri, p.checksum, p.coverage_start, "
-            "p.coverage_end, p.row_count, p.manifest_version, p.manifest_uri, p.manifest_digest "
-            "FROM market_datasets d JOIN market_partitions p ON p.dataset_id = d.id "
-            "ORDER BY d.id, p.id"
-        )
-    ).all()
-    catalog: dict[tuple[str, str, str, str], list[tuple[str, str, str]]] = {}
     data = data_root.absolute()
     canonical = canonical_root.absolute()
-    for (
-        _partition_id,
-        provider,
-        kind,
-        symbol,
-        contract,
-        frequency,
-        _adjustment,
-        _schema_version,
-        file_uri,
-        checksum,
-        _start,
-        _end,
-        _row_count,
-        _manifest_version,
-        _manifest_uri,
-        _manifest_digest,
-    ) in catalog_rows:
-        relative = Path(str(file_uri))
-        if relative.is_absolute() or ".." in relative.parts:
-            continue
-        catalog.setdefault(
-            (str(provider), str(symbol).lower(), str(contract).upper(), str(frequency)), []
-        ).append((str(kind), str(checksum), str((canonical / relative).absolute())))
 
     cursor = 0
-    hash_cache: dict[str, tuple[bool, str | None]] = {}
-    content_cache: dict[str, str] = {}
     while True:
         rows = session.execute(
             text(
@@ -388,6 +353,13 @@ def collect_task07_assets(
         ).mappings().all()
         if not rows:
             break
+        catalog_matches = _catalog_matches_for_market_page(
+            session,
+            rows=rows,
+            canonical_root=canonical,
+            page_size=page_size,
+        )
+        hash_cache: dict[str, tuple[bool, str | None]] = {}
         quality_evidence = _quality_evidence_for_file_range(
             session,
             first_file_id=int(rows[0]["id"]),
@@ -466,21 +438,26 @@ def collect_task07_assets(
                         data_type=str(row["data_type"]),
                         frequency=frequency,
                     )
-                content_cache[path_text] = content_gate_status
             reports = quality_evidence.get(cursor, ())
             quality_digest = canonical_digest(reports) if reports else None
             quality_statuses = tuple(
                 sorted({str(item["status"]).strip().lower() for item in reports})
             )
-            key = (str(row["provider"]), symbol, contract, frequency)
-            matches = catalog.get(key, [])
+            match_key = (
+                str(row["provider"]),
+                symbol,
+                contract,
+                frequency,
+                str(Path(path_text).absolute()),
+            )
+            matches = catalog_matches.get(match_key, ())
             catalog_checksum: str | None = None
             dataset_kind = _dataset_kind(contract)
             if matches:
                 kinds = {item[0] for item in matches}
                 if len(kinds) == 1:
                     dataset_kind = next(iter(kinds))
-                path_checksums = {item[1] for item in matches if item[2] == str(Path(path_text).absolute())}
+                path_checksums = {item[1] for item in matches}
                 if path_checksums:
                     catalog_checksum = next(iter(path_checksums)) if len(path_checksums) == 1 else "CATALOG_CONFLICT"
             yield Task07Asset(
@@ -519,24 +496,23 @@ def collect_task07_assets(
                 quality_evidence_statuses=quality_statuses,
                 main_map_digest=physical_inspection.get("main_map_digest"),
             )
-    for (
-        partition_id,
-        provider,
-        kind,
-        symbol,
-        contract,
-        frequency,
-        adjustment,
-        schema_version,
-        file_uri,
-        checksum,
-        start,
-        end,
-        row_count,
-        manifest_version,
-        manifest_uri,
-        manifest_digest,
-    ) in catalog_rows:
+    for catalog_row in _iter_task07_catalog_rows(session, page_size=page_size):
+        partition_id = catalog_row["id"]
+        provider = catalog_row["provider"]
+        kind = catalog_row["dataset_kind"]
+        symbol = catalog_row["symbol"]
+        contract = catalog_row["contract_or_series"]
+        frequency = catalog_row["frequency"]
+        adjustment = catalog_row["adjustment"]
+        schema_version = catalog_row["schema_version"]
+        file_uri = catalog_row["file_uri"]
+        checksum = catalog_row["checksum"]
+        start = catalog_row["coverage_start"]
+        end = catalog_row["coverage_end"]
+        row_count = catalog_row["row_count"]
+        manifest_version = catalog_row["manifest_version"]
+        manifest_uri = catalog_row["manifest_uri"]
+        manifest_digest = catalog_row["manifest_digest"]
         relative = Path(str(file_uri))
         if relative.is_absolute() or ".." in relative.parts:
             continue
@@ -614,6 +590,111 @@ def begin_task07_readonly_snapshot(session: Session) -> None:
             text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         )
     session.info["task07_readonly_snapshot"] = True
+
+
+def _iter_task07_catalog_rows(
+    session: Session,
+    *,
+    page_size: int,
+) -> Iterable[Mapping[str, Any]]:
+    cursor = 0
+    while True:
+        rows = session.execute(
+            text(
+                "SELECT p.id, d.provider, d.dataset_kind, d.symbol, "
+                "d.contract_or_series, d.frequency, d.adjustment, "
+                "d.schema_version, p.file_uri, p.checksum, p.coverage_start, "
+                "p.coverage_end, p.row_count, p.manifest_version, "
+                "p.manifest_uri, p.manifest_digest "
+                "FROM market_datasets d JOIN market_partitions p "
+                "ON p.dataset_id = d.id WHERE p.id > :cursor "
+                "ORDER BY p.id LIMIT :page_size"
+            ),
+            {"cursor": cursor, "page_size": page_size},
+        ).mappings().all()
+        if not rows:
+            return
+        for row in rows:
+            cursor = int(row["id"])
+            yield row
+
+
+def _catalog_matches_for_market_page(
+    session: Session,
+    *,
+    rows: Sequence[Mapping[str, Any]],
+    canonical_root: Path,
+    page_size: int,
+) -> dict[tuple[str, str, str, str, str], tuple[tuple[str, str], ...]]:
+    keys = sorted(
+        {
+            (
+                str(row["provider"]),
+                str(row["instrument_symbol"] or "").lower(),
+                str(row["contract_code"] or "").upper(),
+                str(row["period"] or ""),
+            )
+            for row in rows
+        }
+    )
+    matches: dict[
+        tuple[str, str, str, str, str], set[tuple[str, str]]
+    ] = {}
+    for offset in range(0, len(keys), 100):
+        chunk = keys[offset : offset + 100]
+        clauses: list[str] = []
+        parameters: dict[str, Any] = {"page_size": page_size}
+        for index, (provider, symbol, contract, frequency) in enumerate(chunk):
+            clauses.append(
+                "(d.provider = :provider_{0} AND lower(d.symbol) = :symbol_{0} "
+                "AND upper(d.contract_or_series) = :contract_{0} "
+                "AND d.frequency = :frequency_{0})".format(index)
+            )
+            parameters.update(
+                {
+                    f"provider_{index}": provider,
+                    f"symbol_{index}": symbol,
+                    f"contract_{index}": contract,
+                    f"frequency_{index}": frequency,
+                }
+            )
+        cursor = 0
+        while clauses:
+            parameters["cursor"] = cursor
+            catalog_rows = session.execute(
+                text(
+                    "SELECT p.id, d.provider, d.dataset_kind, d.symbol, "
+                    "d.contract_or_series, d.frequency, p.file_uri, p.checksum "
+                    "FROM market_datasets d JOIN market_partitions p "
+                    "ON p.dataset_id = d.id WHERE p.id > :cursor AND ("
+                    + " OR ".join(clauses)
+                    + ") ORDER BY p.id LIMIT :page_size"
+                ),
+                parameters,
+            ).mappings().all()
+            if not catalog_rows:
+                break
+            for catalog_row in catalog_rows:
+                cursor = int(catalog_row["id"])
+                relative = Path(str(catalog_row["file_uri"]))
+                if relative.is_absolute() or ".." in relative.parts:
+                    continue
+                key = (
+                    str(catalog_row["provider"]),
+                    str(catalog_row["symbol"]).lower(),
+                    str(catalog_row["contract_or_series"]).upper(),
+                    str(catalog_row["frequency"]),
+                    str((canonical_root / relative).absolute()),
+                )
+                matches.setdefault(key, set()).add(
+                    (
+                        str(catalog_row["dataset_kind"]),
+                        str(catalog_row["checksum"]),
+                    )
+                )
+    return {
+        key: tuple(sorted(values)) for key, values in matches.items()
+    }
 
 
 def begin_task07_serializable_apply(session: Session) -> None:
@@ -1821,7 +1902,8 @@ def build_migration_plan(
         AssetDisposition.REUSE_VERIFIED_AGGREGATE.value,
     }
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-    for raw in index.get("assets", []):
+    eligible_record_count = 0
+    for raw in _iter_inventory_assets(index):
         if raw.get("disposition") not in eligible:
             continue
         if (
@@ -1830,10 +1912,13 @@ def build_migration_plan(
             and raw.get("data_type") != "v2_canonical"
         ):
             continue
+        if eligible_record_count >= _TASK07_PLAN_RECORD_LIMIT:
+            raise ValueError("TASK07_PLAN_SOURCE_SHARDING_REQUIRED")
+        eligible_record_count += 1
         key = (str(raw["symbol"]).lower(), str(raw["dataset_kind"]), str(raw["frequency"]))
         grouped.setdefault(key, []).append(dict(raw))
     provider_requests = []
-    for raw in index.get("assets", []):
+    for raw in _iter_inventory_assets(index):
         if raw.get("frequency") in _DERIVED_FREQUENCIES or (
             raw.get("frequency") == "1d"
             and tuple(raw.get("source_intervals", ())) == ("1m",)
@@ -1844,6 +1929,8 @@ def build_migration_plan(
             disposition == AssetDisposition.REGISTER_DATA_GAP.value
             and raw.get("physical_exists") is False
         ):
+            if len(provider_requests) >= _TASK07_PLAN_RECORD_LIMIT:
+                raise ValueError("TASK07_PLAN_SOURCE_SHARDING_REQUIRED")
             provider_requests.append(
                 {
                     "market_data_file_id": int(raw["market_data_file_id"]),
@@ -2051,7 +2138,7 @@ def load_inventory_evidence(index_path: Path) -> dict[str, Any]:
     body = {key: value for key, value in index.items() if key != "inventory_digest"}
     if stored_digest != canonical_digest(body) or index.get("status") != "complete" or index.get("truncated") is not False:
         raise ValueError("TASK07_INVENTORY_INDEX_MISMATCH")
-    assets: list[dict[str, Any]] = []
+    asset_count = 0
     asset_digest = sha256()
     for shard in index.get("shards", []):
         name = shard.get("path")
@@ -2066,10 +2153,13 @@ def load_inventory_evidence(index_path: Path) -> dict[str, Any]:
         for line in lines:
             asset_digest.update(line)
             try:
-                assets.append(json.loads(line))
+                value = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError("TASK07_INVENTORY_SHARD_JSON_INVALID") from exc
-    if len(assets) != index.get("asset_count") or asset_digest.hexdigest() != index.get("assets_digest"):
+            if not isinstance(value, dict):
+                raise ValueError("TASK07_INVENTORY_SHARD_JSON_INVALID")
+            asset_count += 1
+    if asset_count != index.get("asset_count") or asset_digest.hexdigest() != index.get("assets_digest"):
         raise ValueError("TASK07_INVENTORY_ASSETS_MISMATCH")
     reference_index = index.get("reference_index")
     if reference_index is not None:
@@ -2089,7 +2179,38 @@ def load_inventory_evidence(index_path: Path) -> dict[str, Any]:
         ):
             raise ValueError("TASK07_REFERENCE_CONTENT_MISMATCH")
         index = {**index, "references": references}
-    return {**index, "assets": assets}
+    return {**index, "_inventory_index_path": str(index_path.resolve(strict=True))}
+
+
+def _iter_inventory_assets(index: Mapping[str, Any]) -> Iterable[dict[str, Any]]:
+    inline = index.get("assets")
+    if inline is not None:
+        if not isinstance(inline, list):
+            raise ValueError("TASK07_INVENTORY_ASSETS_MISMATCH")
+        for item in inline:
+            if not isinstance(item, dict):
+                raise ValueError("TASK07_INVENTORY_SHARD_JSON_INVALID")
+            yield item
+        return
+    index_path_value = index.get("_inventory_index_path")
+    if not isinstance(index_path_value, str):
+        raise ValueError("TASK07_INVENTORY_ASSETS_MISSING")
+    index_path = Path(index_path_value)
+    for shard in index.get("shards", []):
+        name = shard.get("path")
+        if not isinstance(name, str) or Path(name).name != name:
+            raise ValueError("TASK07_INVENTORY_SHARD_PATH_INVALID")
+        with (index_path.parent / name).open("rb") as handle:
+            for line in handle:
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "TASK07_INVENTORY_SHARD_JSON_INVALID"
+                    ) from exc
+                if not isinstance(item, dict):
+                    raise ValueError("TASK07_INVENTORY_SHARD_JSON_INVALID")
+                yield item
 
 
 def build_approval_packet(
