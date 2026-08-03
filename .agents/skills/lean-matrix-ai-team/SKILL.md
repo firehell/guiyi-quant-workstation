@@ -116,6 +116,11 @@ existing fixed adapter. Runtime evidence remains under `.ai/lean-matrix/<plan-di
 7. Create the separate reviewer brief with the same roster and `--role reviewer`, then build the
    exact-head package read-only:
 
+   The required-check stage ownership is fixed: implementer/specialist Handoffs supply only local
+   pre-review checks, independent review comes from the independent final decision, and exact-head
+   CI comes only from fresh V07 GitHub facts. Never copy a check into another stage to satisfy a
+   missing receipt, review, or CI result. Unknown check literals block instead of inheriting an owner.
+
    ```bash
    python3 scripts/engineering/lean_matrix_team.py review-package \
      --intake <document-intake.json> \

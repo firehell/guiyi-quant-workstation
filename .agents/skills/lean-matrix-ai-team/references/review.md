@@ -20,6 +20,10 @@ The reviewer records both Spec `PASS/FAIL` and Quality `APPROVED/CHANGES_REQUIRE
 severity `Critical`, `Important`, or `Minor`. `Critical` and `Important` are load-bearing. A caller
 cannot request a more permissive decision than the verdicts, findings, and round derive:
 
+The independent `FinalDecisionV1` is the only evidence that satisfies `independent-review`. An
+implementer Handoff receipt and a GitHub CI check cannot substitute for that decision, just as the
+decision cannot substitute for fresh `exact-head-ci` facts.
+
 - `允许集成 develop`: both verdicts approve and no load-bearing finding remains;
 - `要求修正后再集成`: approval failed before round 3;
 - `阻塞`: approval failed at round 3.

@@ -89,6 +89,8 @@ Receipt or Git drift blocks recovery. Restoring the exact trusted bytes and exac
 fresh read-only validation; missing evidence never implies success. Recovery cannot reset a round,
 replace the original implementer, reuse a reviewer context for implementation, add a fourth round,
 or authorize Owner Gate, merge, release, Runtime, data/DB, notification, or trading work.
+Recovery does not backfill missing stage evidence: local Handoff receipts, independent FinalDecision
+review evidence, and fresh exact-head CI facts must each be restored and validated by their owner.
 
 ## V07 merge-result and cleanup recovery
 
