@@ -29,6 +29,34 @@ REVIEW_PHASES = frozenset({"task", "final"})
 FINDING_SEVERITIES = frozenset({"Critical", "Important", "Minor"})
 SPEC_VERDICTS = frozenset({"PASS", "FAIL"})
 QUALITY_VERDICTS = frozenset({"APPROVED", "CHANGES_REQUIRED"})
+CHECK_OWNERS = frozenset({"implementer", "review", "ci"})
+CHECK_OWNER_BY_NAME = {
+    "independent-review": "review",
+    "exact-head-ci": "ci",
+    "diff-check": "implementer",
+    "secret-scan": "implementer",
+    "pytest focused": "implementer",
+    "git diff --check": "implementer",
+}
+
+
+def required_checks_for_owner(
+    required_checks: tuple[str, ...], owner: str,
+) -> tuple[str, ...]:
+    """Return stage-owned checks and reject literals without frozen ownership."""
+    if owner not in CHECK_OWNERS:
+        raise LeanMatrixError("invalid_check_owner", "required check owner is not recognized")
+    unknown = tuple(check for check in required_checks if check not in CHECK_OWNER_BY_NAME)
+    if unknown:
+        raise LeanMatrixError(
+            "unknown_required_check",
+            f"required check has no recognized stage owner: {unknown[0]}",
+        )
+    return tuple(
+        check
+        for check in required_checks
+        if CHECK_OWNER_BY_NAME[check] == owner
+    )
 
 
 def _require_keys(raw: Mapping[str, object], expected: frozenset[str], name: str) -> None:
@@ -1127,15 +1155,20 @@ def validate_handoff_test_receipts(
 
     repo = repo_root.resolve()
     workspace = intake_workspace(repo, document_intake)
-    required_checks = document_intake.execution_plan.validation.required_checks
-    if not required_checks or len(required_checks) != len(set(required_checks)):
+    plan_required_checks = document_intake.execution_plan.validation.required_checks
+    if not plan_required_checks or len(plan_required_checks) != len(set(plan_required_checks)):
         raise LeanMatrixError(
             "invalid_required_checks", "trusted required checks must be non-empty and unique",
+        )
+    required_checks = required_checks_for_owner(plan_required_checks, "implementer")
+    if not required_checks:
+        raise LeanMatrixError(
+            "invalid_required_checks", "trusted plan must require pre-review implementer checks",
         )
     if len(handoff.test_evidence) != len(required_checks):
         raise LeanMatrixError(
             "required_check_coverage_missing",
-            "every handoff must provide exactly one receipt for each trusted required check",
+            "every handoff must provide one receipt for each pre-review implementer check",
         )
     receipts: list[_ArtifactReceiptV1] = []
     observed_checks: list[str] = []

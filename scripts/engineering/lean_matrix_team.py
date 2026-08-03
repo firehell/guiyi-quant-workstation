@@ -28,6 +28,7 @@ from lean_matrix.contracts import (  # noqa: E402
     RoleBriefV1,
     TaskCharterV1,
     TransitionReceiptV1,
+    required_checks_for_owner,
 )
 from lean_matrix.errors import LeanMatrixError  # noqa: E402
 from lean_matrix.digests import semantic_digest  # noqa: E402
@@ -785,7 +786,10 @@ def evaluate_develop_gate(
     if merge_confirmed:
         return decide("ALLOW_DEVELOP_MERGE", "ALREADY_MERGED")
 
-    required = set(plan_contract.validation.required_checks)
+    required = set(required_checks_for_owner(
+        plan_contract.validation.required_checks,
+        "ci",
+    ))
     observed_checks = {check.name: check for check in facts_contract.checks}
     if not required.issubset(observed_checks):
         return decide("BLOCKED_CI", "CI_CHECK_MISSING")

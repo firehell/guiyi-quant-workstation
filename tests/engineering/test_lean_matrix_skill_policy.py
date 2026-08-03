@@ -324,6 +324,34 @@ def test_subagent_protocol_links_execution_review_recovery_and_frozen_boundaries
         assert boundary in combined
 
 
+def test_required_check_stage_ownership_matches_the_executable_contract() -> None:
+    """Protocol must not ask local roles or GitHub CI to fabricate another stage's evidence."""
+    skill = _read("SKILL.md")
+    execution = _read("references/execution.md")
+    review = _read("references/review.md")
+    recovery = _read("references/recovery.md")
+    ownership = _section(execution, "Required-check stage ownership")
+
+    for local_check in ("`diff-check`", "`secret-scan`"):
+        assert local_check in ownership
+    assert "pre-review implementer Handoff evidence" in ownership
+    assert "`independent-review`" in ownership
+    assert "independent `FinalDecisionV1`" in ownership
+    assert "never an implementer receipt or a GitHub CI check" in ownership
+    assert "`exact-head-ci`" in ownership
+    assert "fresh exact-head `GitHubGateFactsV1.checks`" in ownership
+    assert "never a local Handoff receipt" in ownership
+    assert "unknown required-check literal" in ownership
+    assert "fails closed" in ownership
+    assert "Charter domain literal" in ownership
+    assert "`security`" in ownership
+    assert "not `security-specialist`" in ownership
+
+    assert "required-check stage ownership" in skill
+    assert "independent `FinalDecisionV1`" in review
+    assert "does not backfill missing stage evidence" in recovery
+
+
 def test_subagent_protocol_documents_brief_bound_roles_and_full_ledger_recovery() -> None:
     """The written protocol must not permit role swaps or advisory/implementer ambiguity."""
     skill = _read("SKILL.md")

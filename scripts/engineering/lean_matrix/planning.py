@@ -5,7 +5,7 @@ from __future__ import annotations
 from .charter import WORKTREE_ROOT
 from .contracts import ExecutionPlanV1, TaskCharterV1
 from .digests import charter_digest
-from .routing import BASE_ROLES, DOMAIN_SPECIALISTS, LANE_DISPATCH
+from .routing import BASE_ROLES, LANE_DISPATCH
 
 
 REQUIRED_CHECKS = (
@@ -29,7 +29,7 @@ def build_execution_plan(
 ) -> ExecutionPlanV1:
     """Build a deterministic plan from validated inputs without observing external state."""
     model, reasoning_effort, _mode, _sessions = LANE_DISPATCH[charter.lane]
-    specialists = tuple(DOMAIN_SPECIALISTS[domain] for domain in charter.domains)
+    specialists = charter.domains
     independence = ["implementer and independent-quality-reviewer use separate contexts"]
     if {"quant-research", "backtest-audit"}.issubset(charter.domains):
         independence.append("quant-research-specialist and backtest-audit-specialist use separate contexts")

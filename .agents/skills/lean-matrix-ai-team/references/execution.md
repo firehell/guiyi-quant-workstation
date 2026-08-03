@@ -43,6 +43,23 @@ workspace, canonical path, symlink, traversal, or tracked artifact is permitted.
 Initial implementation is round 0. Repair rounds are rounds 1, 2, and 3. No fourth round exists.
 Round 3 with any non-approved verdict or Critical/Important finding derives `阻塞`.
 
+## Required-check stage ownership
+
+- `diff-check` and `secret-scan` are pre-review implementer Handoff evidence. Specialists use the
+  same local-check subset for advisory Handoffs. Neither role may issue review-owned or CI-owned
+  receipts.
+- `independent-review` is satisfied only by an independent `FinalDecisionV1` and its validated review
+  evidence, never an implementer receipt or a GitHub CI check.
+- `exact-head-ci` is satisfied only by fresh exact-head `GitHubGateFactsV1.checks` evaluated by V07,
+  never a local Handoff receipt or remembered result.
+- Any unknown required-check literal fails closed when ownership is evaluated; it does not silently
+  fall back to an implementer, review, or CI owner.
+
+New Execution Plans and RoleBrief rosters use each Charter domain literal, for example `security`,
+not `security-specialist`. A specialist implementation context may still be named descriptively, but
+the `--specialist-domain` and `--specialist-context DOMAIN=CONTEXT` domain key remain the literal
+declared by the Charter.
+
 ## V07 develop integration handoff
 
 V07 is a pure evaluator. `GitHubCheckV1`, `GitHubReviewEvidenceV1`, `GitHubGateFactsV1`, and
