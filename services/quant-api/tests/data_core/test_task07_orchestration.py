@@ -191,7 +191,7 @@ def test_inventory_classifies_only_passed_rqdata_direct_bars_as_trusted() -> Non
     assert [item["disposition"] for item in index["assets"]] == [
         AssetDisposition.KEEP_CANONICAL_VERIFIED,
         AssetDisposition.CONFLICT_BLOCKED,
-        AssetDisposition.REGISTER_DATA_GAP,
+        AssetDisposition.CONFLICT_BLOCKED,
         AssetDisposition.CONFLICT_BLOCKED,
         AssetDisposition.PROTECTED_EVIDENCE_SOURCE,
         AssetDisposition.CONFLICT_BLOCKED,
@@ -200,7 +200,7 @@ def test_inventory_classifies_only_passed_rqdata_direct_bars_as_trusted() -> Non
         AssetDisposition.CONFLICT_BLOCKED,
     ]
     assert index["eligible_asset_count"] == 1
-    assert index["blocked_asset_count"] == 6
+    assert index["blocked_asset_count"] == 7
     assert index["deletion_authorized"] is False
 
 
@@ -1163,7 +1163,7 @@ def test_aggregate_plan_integrity_rejects_tampered_source_gate_fields(
         task07._validate_migration_plan_integrity(plan)
 
 
-def test_aggregate_gap_or_conflict_never_emits_provider_request_proposal() -> None:
+def test_aggregate_damage_emits_only_exact_reaggregate_actions() -> None:
     index = build_inventory_index(
         [
             _aggregate_asset(
@@ -1183,9 +1183,15 @@ def test_aggregate_gap_or_conflict_never_emits_provider_request_proposal() -> No
 
     plan = build_migration_plan(index, write_targets=_write_targets())
 
-    assert plan["classification_counts"]["REGISTER_DATA_GAP"] == 1
-    assert plan["classification_counts"]["CONFLICT_BLOCKED"] == 1
+    assert plan["classification_counts"].get("REGISTER_DATA_GAP", 0) == 0
+    assert plan["classification_counts"]["CONFLICT_BLOCKED"] == 2
     assert plan["provider_request_proposal"]["request_count"] == 0
+    assert [item["action"] for item in plan["repair_actions"]] == [
+        "canonical_1m_reaggregate",
+        "canonical_1m_reaggregate",
+    ]
+    assert all(item["source_dataset"]["frequency"] == "1m" for item in plan["repair_actions"])
+    assert all(item["authorized"] is False for item in plan["repair_actions"])
 
 
 def test_conflicts_emit_only_exact_unauthorized_repair_actions() -> None:

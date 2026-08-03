@@ -310,9 +310,9 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
         if asset.data_role != "primary" or asset.quality_status != "passed":
             return AssetDisposition.CONFLICT_BLOCKED
         if not asset.physical_exists or asset.quality_evidence_count < 1:
-            return AssetDisposition.REGISTER_DATA_GAP
+            return AssetDisposition.CONFLICT_BLOCKED
         if asset.quality_evidence_statuses != ("passed",):
-            return AssetDisposition.REGISTER_DATA_GAP
+            return AssetDisposition.CONFLICT_BLOCKED
         if asset.physical_is_symlink:
             return AssetDisposition.CONFLICT_BLOCKED
         if (
