@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared fail-closed policy for Lane 1/2 task automation.
+"""Shared fail-closed policy for task automation and develop integration.
 
 This module classifies a proposed task diff.  It deliberately does not run
 GitHub, merge branches, or perform production writes; those side effects stay
@@ -59,6 +59,27 @@ LANE_TWO_FORBIDDEN_PATHS = {
     "PROJECT_SOURCE.md",
 }
 
+DEVELOP_TRANSITION_OPERATIONS = frozenset({
+    "develop_merge",
+    "merge_readback",
+    "cleanup",
+})
+
+MANUAL_GATE_OPERATIONS = frozenset({
+    "main",
+    "tag",
+    "release",
+    "runtime",
+    "live",
+    "notification",
+    "data_write",
+    "db_write",
+    "delete",
+    "github_rules",
+    "apply",
+    "write",
+    "enable",
+})
 
 def _validate_paths(paths: Sequence[str]) -> list[str]:
     normalized = list(paths)
@@ -89,6 +110,45 @@ def classify_paths(lane: int, paths: Sequence[str]) -> str:
                 )
         return "ok"
     raise WorkflowError("invalid_lane", "lane must be 1 or 2")
+
+
+def classify_develop_merge(
+    lane: int,
+    paths: Sequence[str],
+    requested_operations: Sequence[str],
+    external_gates: Sequence[str],
+) -> str:
+    """Return ``ok`` only for a side-effect-free develop transition.
+
+    Lane 1/2 retain their existing path policy. Lane 3 code, tests, dry-run,
+    disabled features, and isolated migrations may be integrated as code, but
+    the corresponding real operation remains behind its dedicated manual Gate.
+    """
+    if external_gates:
+        raise WorkflowError(
+            "manual_gate_required",
+            "develop automation cannot consume a pending external Gate",
+        )
+    operations = list(requested_operations)
+    if any(operation in MANUAL_GATE_OPERATIONS for operation in operations):
+        raise WorkflowError(
+            "manual_gate_required",
+            "requested operation requires a dedicated manual Gate",
+        )
+    if len(operations) != 1 or any(
+        not isinstance(operation, str) or operation not in DEVELOP_TRANSITION_OPERATIONS
+        for operation in operations
+    ):
+        raise WorkflowError(
+            "unknown_requested_operation",
+            "requested operations must be known develop transition operations",
+        )
+    if lane in (1, 2):
+        return classify_paths(lane, paths)
+    if lane == 3:
+        _validate_paths(paths)
+        return "ok"
+    raise WorkflowError("invalid_lane", "lane must be 1, 2, or 3")
 
 
 def main() -> int:

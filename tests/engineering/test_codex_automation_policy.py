@@ -51,6 +51,124 @@ def test_lane_two_rejects_real_write_and_runtime_paths() -> None:
         policy.classify_paths(2, ["scripts/configure-live-signal-events.sh"])
 
 
+def test_develop_merge_classifier_reuses_lane_one_and_two_path_policy() -> None:
+    """Bypassing classify_paths for ordinary lanes must let a forbidden path merge."""
+    policy = _module(POLICY_PATH, "task_workflow_develop_lane_one_two")
+
+    assert policy.classify_develop_merge(
+        1,
+        ["experiments/example/research.py", "tests/example.py"],
+        ["develop_merge"],
+        [],
+    ) == "ok"
+    assert policy.classify_develop_merge(
+        2,
+        ["apps/quant-web/src/example.ts"],
+        ["develop_merge"],
+        [],
+    ) == "ok"
+    with pytest.raises(policy.WorkflowError) as lane_one:
+        policy.classify_develop_merge(
+            1,
+            ["services/quant-api/app/strategies/formal.py"],
+            ["develop_merge"],
+            [],
+        )
+    with pytest.raises(policy.WorkflowError) as lane_two:
+        policy.classify_develop_merge(
+            2,
+            ["services/quant-api/alembic/versions/20260729_new.py"],
+            ["develop_merge"],
+            [],
+        )
+
+    assert lane_one.value.error_type == "lane_one_path_forbidden"
+    assert lane_two.value.error_type == "lane_two_path_forbidden"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "services/quant-api/app/services/disabled_feature.py",
+        "tests/engineering/test_disabled_feature.py",
+        "scripts/engineering/example_dry_run.py",
+        "services/quant-api/alembic/versions/20260803_isolated.py",
+    ],
+)
+def test_lane_three_allows_side_effect_free_changes_for_develop_integration(path: str) -> None:
+    """Rejecting a scoped code-only Lane 3 PR would prevent its safe develop integration."""
+    policy = _module(POLICY_PATH, f"task_workflow_develop_lane_three_{path.rsplit('/', 1)[-1]}")
+
+    assert policy.classify_develop_merge(3, [path], ["develop_merge"], []) == "ok"
+
+
+@pytest.mark.parametrize("operation", ["develop_merge", "merge_readback", "cleanup"])
+def test_develop_merge_classifier_accepts_only_known_develop_transition_operations(
+    operation: str,
+) -> None:
+    """Dropping a stage operation from the allowlist must block its safe transition."""
+    policy = _module(POLICY_PATH, f"task_workflow_develop_safe_{operation}")
+
+    assert policy.classify_develop_merge(3, ["tests/example.py"], [operation], []) == "ok"
+
+
+def test_pending_external_gate_requires_manual_gate_for_every_lane() -> None:
+    """Ignoring a pending owner Gate must permit code integration beyond its approved boundary."""
+    policy = _module(POLICY_PATH, "task_workflow_develop_external_gate")
+
+    for lane in (1, 2, 3):
+        with pytest.raises(policy.WorkflowError) as raised:
+            policy.classify_develop_merge(
+                lane,
+                ["tests/example.py"],
+                ["develop_merge"],
+                ["owner approves production apply"],
+            )
+        assert raised.value.error_type == "manual_gate_required"
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "main",
+        "tag",
+        "release",
+        "runtime",
+        "live",
+        "notification",
+        "data_write",
+        "db_write",
+        "delete",
+        "github_rules",
+        "apply",
+        "write",
+        "enable",
+    ],
+)
+def test_sensitive_real_operation_requires_manual_gate(operation: str) -> None:
+    """Removing a sensitive operation from the manual set must authorize a real side effect."""
+    policy = _module(POLICY_PATH, f"task_workflow_develop_sensitive_{operation}")
+
+    with pytest.raises(policy.WorkflowError) as raised:
+        policy.classify_develop_merge(3, ["tests/example.py"], [operation], [])
+
+    assert raised.value.error_type == "manual_gate_required"
+
+
+@pytest.mark.parametrize(
+    "operations",
+    [[], ["unknown_operation"], ["develop_merge", "cleanup"]],
+)
+def test_unknown_or_missing_requested_operation_fails_closed(operations: list[str]) -> None:
+    """Treating an absent or unknown operation as safe must let ambiguous authority advance."""
+    policy = _module(POLICY_PATH, "task_workflow_develop_unknown_operation")
+
+    with pytest.raises(policy.WorkflowError) as raised:
+        policy.classify_develop_merge(3, ["tests/example.py"], operations, [])
+
+    assert raised.value.error_type == "unknown_requested_operation"
+
+
 def test_policy_cli_reads_newline_delimited_paths_without_splitting_spaces(tmp_path: Path) -> None:
     """CI must classify the actual filename even when it includes spaces."""
     path_file = tmp_path / "changed_paths.txt"

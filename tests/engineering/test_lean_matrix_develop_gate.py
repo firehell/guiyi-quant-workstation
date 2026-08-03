@@ -354,6 +354,22 @@ def test_external_gate_or_sensitive_requested_operation_requires_manual_gate() -
     _assert_decision(sensitive, "MANUAL_GATE_REQUIRED", "SENSITIVE_OPERATION_REQUESTED")
 
 
+def test_lane_three_code_only_pr_uses_shared_workflow_policy() -> None:
+    """Falling back to the Lane 1/2 classifier must block a safe Lane 3 code integration."""
+    charter = _charter()
+    charter["lane"] = 3
+    charter["external_gates"] = ["owner approves any later real operation"]
+    plan = _plan(charter)
+    facts = _facts(charter=charter, plan=plan)
+
+    _assert_decision(
+        facts,
+        "ALLOW_DEVELOP_MERGE",
+        "DEVELOP_MERGE_ALLOWED",
+        plan=plan,
+    )
+
+
 def test_changed_paths_must_remain_sorted_exact_and_within_frozen_scope() -> None:
     """An out-of-scope PR path must fail even if every remote status is green."""
     facts = _mutated(
