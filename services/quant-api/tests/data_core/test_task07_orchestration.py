@@ -12,9 +12,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from app.data_core import cli_service as cli_service_module
 from app.data_core import task07
 from app.data_core.task07 import (
     AssetDisposition,
@@ -1031,74 +1031,116 @@ def test_task07_inventory_allows_omitted_external_protected_root() -> None:
     }
 
 
-def test_task07_inventory_service_automatically_protects_evidence_root(
+def _task07_inventory_schema(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE alembic_version (version_num TEXT PRIMARY KEY)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE market_data_files (id INTEGER PRIMARY KEY, provider TEXT, data_type TEXT, "
+            "instrument_symbol TEXT, contract_code TEXT, period TEXT, start_time TEXT, end_time TEXT, "
+            "file_path TEXT, file_size_bytes INTEGER, checksum TEXT, data_version TEXT, row_count INTEGER, "
+            "data_role TEXT, quality_status TEXT)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, provider TEXT, dataset_kind TEXT, symbol TEXT, "
+            "contract_or_series TEXT, frequency TEXT, adjustment TEXT, schema_version TEXT)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, dataset_id INTEGER, file_uri TEXT, checksum TEXT, "
+            "coverage_start TEXT, coverage_end TEXT, row_count INTEGER)"
+        )
+        connection.execute(
+            text("INSERT INTO alembic_version VALUES ('20260802_0031')")
+        )
+
+
+def _task07_service_args(
+    *, data_root: Path, canonical_root: Path, evidence_root: Path
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        project_root=Path(__file__).resolve().parents[4],
+        data_root=data_root,
+        canonical_root=canonical_root,
+        evidence_root=evidence_root,
+        runtime_root=[],
+        protected_root=[],
+        database_revision=None,
+    )
+
+
+def test_task07_inventory_service_creates_fresh_evidence_root_before_collecting_assets(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    project_root = tmp_path / "project"
+    data_root = tmp_path / "data"
+    canonical_root = tmp_path / "canonical"
+    evidence_root = tmp_path / "fresh-evidence"
+    data_root.mkdir()
+    canonical_root.mkdir()
+    engine = create_engine("sqlite://")
+    _task07_inventory_schema(engine)
+
+    with Session(engine) as session:
+        result = run_data_core_command(
+            "task07.inventory",
+            session,
+            _task07_service_args(
+                data_root=data_root,
+                canonical_root=canonical_root,
+                evidence_root=evidence_root,
+            ),
+        )
+
+    assert evidence_root.is_dir()
+    assert (evidence_root / "inventory-index.json").is_file()
+    assert result["asset_count"] == 0
+    assert result["inventory_scope"]["protected_roots"] == [str(evidence_root)]
+
+
+def test_task07_inventory_service_classifies_automatic_evidence_symlink_as_protected(
+    tmp_path: Path,
+) -> None:
     data_root = tmp_path / "data"
     canonical_root = tmp_path / "canonical"
     evidence_root = tmp_path / "evidence"
-    for path in (project_root, data_root, canonical_root):
+    for path in (data_root, canonical_root, evidence_root):
         path.mkdir()
-    captured: dict[str, tuple[Path, ...]] = {}
+    payload = b"trusted-looking-bars"
+    target = data_root / "bars.parquet"
+    target.write_bytes(payload)
+    registered = evidence_root / "linked.parquet"
+    registered.symlink_to(target)
+    engine = create_engine("sqlite://")
+    _task07_inventory_schema(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO market_data_files VALUES "
+                "(1,'rqdata','bars','jm','JM.MAIN','1m','2026-01-01','2026-01-02',"
+                ":path,:size,:checksum,'legacy-v1',1,'primary','passed')"
+            ),
+            {
+                "path": str(registered),
+                "size": len(payload),
+                "checksum": sha256(payload).hexdigest(),
+            },
+        )
 
-    monkeypatch.setattr(
-        cli_service_module,
-        "_require_loaded_source_checkout",
-        lambda _project_root: None,
-    )
-    monkeypatch.setattr(
-        cli_service_module,
-        "_git_state",
-        lambda _project_root: {"head": "8" * 40, "clean": True},
-    )
-    monkeypatch.setattr(
-        cli_service_module,
-        "begin_task07_readonly_snapshot",
-        lambda _session: None,
-    )
-    monkeypatch.setattr(
-        cli_service_module,
-        "_data_core_revision",
-        lambda _session: "20260802_0031",
-    )
-    monkeypatch.setattr(
-        cli_service_module,
-        "scan_task07_references",
-        lambda _roots: {"records": [], "truncated": False},
-    )
+    with Session(engine) as session:
+        result = run_data_core_command(
+            "task07.inventory",
+            session,
+            _task07_service_args(
+                data_root=data_root,
+                canonical_root=canonical_root,
+                evidence_root=evidence_root,
+            ),
+        )
 
-    def collect_assets(
-        _session: object,
-        *,
-        data_root: Path,
-        canonical_root: Path,
-        protected_roots: object,
-    ) -> list[Task07Asset]:
-        del data_root, canonical_root
-        captured["protected_roots"] = tuple(protected_roots)
-        return []
-
-    monkeypatch.setattr(cli_service_module, "collect_task07_assets", collect_assets)
-
-    result = run_data_core_command(
-        "task07.inventory",
-        object(),
-        SimpleNamespace(
-            project_root=project_root,
-            data_root=data_root,
-            canonical_root=canonical_root,
-            evidence_root=evidence_root,
-            runtime_root=[],
-            protected_root=[],
-            database_revision=None,
-        ),
-    )
-
-    expected = evidence_root.resolve(strict=False)
-    assert captured["protected_roots"] == (expected,)
-    assert result["inventory_scope"]["protected_roots"] == [str(expected)]
+    asset = json.loads((evidence_root / "assets-000001.jsonl").read_text())
+    assert asset["source_scope"] == "protected_evidence_root"
+    assert asset["disposition"] == AssetDisposition.PROTECTED_EVIDENCE_SOURCE
+    assert result["disposition_counts"][AssetDisposition.PROTECTED_EVIDENCE_SOURCE] == 1
 
 
 def test_task07_apply_requires_hash_bound_preflight_before_opening_database() -> None:
