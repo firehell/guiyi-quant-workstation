@@ -48,7 +48,9 @@ independent_review_round_4=0 Critical / 1 Important confirmed 1d provider reques
 independent_review_round_4_fix=removed 1d-from-1m skip; all direct conflicts emit rqdata request
 independent_review_round_5=0 Critical / 1 Important missing reverse action-request completeness
 independent_review_round_5_fix=bidirectional IDs + action count/type/source/proposal integrity + forged removal rejection
-independent_review_round_6=pending exact-head re-review
+independent_review_round_6=de69faec / 0 Critical / 0 Important / CLEAN_FOR_INTEGRATION
+independent_review_round_6_validation=focused 123 + backend 2685/44 + Ruff + diff-check + clean status
+independent_review_final_docs_head=pending exact-head readback
 production_reads=false
 production_writes=false
 runtime_changes=false
@@ -293,7 +295,7 @@ retirement apply 只允许 hash-bound packet manifest 中的逐表主键和 befo
 Task_07=CODE_COMPLETE_EXTERNAL_GATE_PENDING
 Kline_Gate=NOT_OPENED_NO_EXACT_PRODUCTION_MANIFEST
 Active_Reference_Gate=NOT_RESCANNED_OLD_V9_BLOCKER_EVIDENCE_ONLY
-Review_Gate=ROUND_5_BLOCKED_1_IMPORTANT_FIX_PENDING_EXACT_HEAD_REREVIEW
+Review_Gate=CODE_HEAD_PASS_FINAL_DOCS_HEAD_PENDING
 READY_FOR_TASK_08=false
 ```
 
