@@ -3,37 +3,48 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / ".agents" / "skills" / "lean-matrix-ai-team"
-CLI_PATH = ROOT / "scripts" / "engineering" / "lean_matrix_team.py"
 ENGINEERING = ROOT / "scripts" / "engineering"
-CHARTER_HEADINGS = (
-    "Identity",
-    "Value",
-    "Goal",
-    "Current facts",
-    "Lane and dispatch",
-    "Dynamic team",
-    "Allowed changes",
-    "Forbidden changes",
-    "Acceptance",
-    "External Gates",
-    "Completion flow",
+PROTOCOL_RESOURCES = (
+    "assets/role-brief.md",
+    "assets/handoff-report.md",
+    "assets/review-package.md",
+    "assets/final-decision.md",
+    "references/execution.md",
+    "references/review.md",
+    "references/recovery.md",
 )
-TRIAL_REPORT_HEADINGS = (
-    "Identity",
-    "Sample classification",
-    "Routing prediction",
-    "Observed execution",
-    "Metrics",
-    "Gate preservation",
-    "Findings",
-    "Decision",
-)
+PROTOCOL_TEMPLATE_FIELDS = {
+    "assets/role-brief.md": (
+        "schema_version", "intake_digest", "execution_plan_digest", "role",
+        "specialist_domain", "context_id", "implementer_context_id",
+        "reviewer_context_id", "original_implementer_context_id", "specialist_contexts",
+        "round", "selected_context", "trusted_allowed_paths", "trusted_forbidden_paths",
+        "acceptance_criteria", "report_path", "predecessor_decision_digest",
+    ),
+    "assets/handoff-report.md": (
+        "schema_version", "report_kind", "specialist_domain", "intake_digest",
+        "brief_digest", "context_id", "round", "report_path", "exact_head_sha",
+        "changed_paths", "test_evidence", "advisory_evidence_digests", "status",
+        "concerns", "predecessor_decision_digest",
+    ),
+    "assets/review-package.md": (
+        "schema_version", "execution_plan_digest", "intake_digest", "task_brief_digest",
+        "exact_base_sha", "exact_head_sha", "round", "implementer_context_id",
+        "reviewer_context_id", "changed_paths", "diff_digest", "test_receipts",
+        "implementer_handoff_digest", "specialist_evidence_digests",
+    ),
+    "assets/final-decision.md": (
+        "schema_version", "review_package_digest", "exact_head_sha", "implementer_context_id",
+        "reviewer_context_id", "round", "spec_verdict", "quality_verdict", "findings", "decision",
+    ),
+}
+INTAKE_WORKSPACE_PATH = ".ai/lean-matrix/<execution-plan-digest>/<intake-digest>/"
+REVIEW_LEDGER_PATH = f"{INTAKE_WORKSPACE_PATH}review-ledger.json"
 
 
 def _read(relative_path: str) -> str:
@@ -65,9 +76,7 @@ def test_required_resources_are_complete() -> None:
         "agents/openai.yaml",
         "references/roles.md",
         "references/routing.md",
-        "assets/task-charter.md",
-        "assets/stage-report.md",
-        "assets/trial-report.md",
+        *PROTOCOL_RESOURCES,
     )
 
     for relative_path in required_paths:
@@ -76,6 +85,10 @@ def test_required_resources_are_complete() -> None:
         assert "TODO" not in text
         assert "TBD" not in text
         assert "[placeholder]" not in text.lower()
+
+    assert {path.name for path in (SKILL / "assets").glob("*.md")} == {
+        "role-brief.md", "handoff-report.md", "review-package.md", "final-decision.md",
+    }
 
 
 def test_frontmatter_and_agent_interface_are_exact() -> None:
@@ -87,9 +100,9 @@ def test_frontmatter_and_agent_interface_are_exact() -> None:
     assert frontmatter == {
         "name": "lean-matrix-ai-team",
         "description": (
-            "Route Guiyi tasks into a minimal reviewed AI team. Use only when a user asks "
-            "to use the lean matrix team, generate a Task Charter, select or route experts, "
-            "coordinate implementation and independent review, or organize a Guiyi task through this model."
+            "Lead user-started Guiyi AI delivery from approved design and implementation plans "
+            "through minimal implementation, independent exact-head review, and evidence handoff. "
+            "Use only when the user explicitly asks to start or continue Lean Matrix AI delivery."
         ),
     }
     assert interface == {
@@ -104,52 +117,42 @@ def test_roles_define_the_minimum_team_and_context_separation() -> None:
     roles = _read("references/roles.md")
 
     for role in (
-        "AI project lead",
-        "Technical lead",
+        "AI delivery lead",
         "Implementer",
-        "Independent quality reviewer",
-        "Generic specialist overlay",
+        "Independent reviewer",
+        "Specialist",
     ):
         assert role in roles
-    assert "may combine with the technical lead" in roles
-    assert "never final reviewer" in roles
-    assert "always separate contexts" in roles
-    assert "quant-research-specialist and backtest-audit-specialist use separate contexts" in roles
+    assert "AI project lead" not in roles
+    assert "Technical lead" not in roles
+    assert "sole global delivery role" in roles
+    assert "globally disjoint" in roles
+    assert "quant-research and backtest-audit use separate contexts" in roles
 
 
 def test_role_prompts_preserve_required_outputs_and_boundaries() -> None:
     """Each executable role prompt must retain its design-baseline deliverables."""
     roles = _read("references/roles.md")
     requirements = {
-        "AI project lead": (
-            "STATUS.md", "PROJECT_SOURCE.md", "AGENTS.md", "docs/DEVELOPMENT.md",
-            "task canonical", "Issue", "PR", "local-first", "single-user", "long-term maintenance",
-            "Current judgment", "User value and whether to do it now", "Minimum task boundary",
-            "Lane, model, Plan, sessions, and workspace", "Minimum expert team",
-            "Prerequisites, risks, and acceptance", "Whether a human Gate is required",
-            "Do not change the active target", "long-term goal", "formal strategy semantics",
-        ),
-        "Technical lead": (
-            "Reuse", "Change", "Explicitly do not change", "Why no more complex architecture is needed",
-            "Risks, tests, and rollback", "Lane 3 or a human Gate", "modular monolith",
-            "single source of truth", "deterministic flow",
+        "AI delivery lead": (
+            "approved design spec", "approved implementation plan", "trusted ExecutionPlanV1",
+            "minimum team", "Lane 1/2", "Lane 3", "product-direction change",
+            "active-canonical conflict", "scope expansion", "Owner Gate",
+            "does not implement code", "does not review its own implementation",
         ),
         "Implementer": (
-            "independent task branch/worktree", "Task Charter", "active canonical", "allowed paths",
-            "targeted tests", "TDD", "Change summary", "test commands and actual results",
-            "PR and exact HEAD", "Risks and incomplete work", "external Gate",
-            "Do not expand scope", "main", "Runtime", "unapproved real operation",
+            "RoleBriefV1", "HandoffReportV1", "TDD", "exact HEAD", "test receipts",
+            "trusted allowed paths", "trusted forbidden paths", "original round-zero context",
+            "does not widen scope", "Runtime", "real operation",
         ),
-        "Independent quality reviewer": (
-            "separate context", "exact task HEAD", "Goal and scope", "Canonical compliance",
-            "Correctness and regression risk", "Test gaps", "Complexity and over-design",
-            "Data, strategy, backtest, Runtime, and Gate boundaries", "Critical", "Important", "Minor",
-            "Explicit verdict", "Do not lower the original acceptance criteria",
+        "Independent reviewer": (
+            "separate context", "ReviewPackageV1", "exact HEAD", "Spec", "Quality",
+            "Critical", "Important", "Minor", "read-only", "do not fix code",
+            "do not lower acceptance",
         ),
-        "Generic specialist overlay": (
-            "Domain constraints", "Recommended approach", "Main risks", "Required tests",
-            "Forbidden scope", "Do not redefine the project", "expand the task",
-            "replace the task lead's final decision",
+        "Specialist": (
+            "RoleBriefV1", "advisory", "specialist domain", "test receipts",
+            "does not implement task code", "does not replace the independent reviewer",
         ),
     }
 
@@ -189,10 +192,14 @@ def test_routing_matches_the_cli_and_limits_specialists() -> None:
     assert "Terra" in routing
     assert "Sol" in routing
     assert "plan-only-start" in routing
+    assert "AI delivery lead" in routing
+    assert "implementer" in routing
+    assert "independent reviewer" in routing
+    assert "four base roles" not in routing
 
 
-def test_workflow_preserves_read_only_planning_guarded_local_apply_and_human_gates() -> None:
-    """The skill must expose AI-TEAM-005 without widening Lane 3 or merge authority."""
+def test_workflow_preserves_existing_flow_and_v06_owner_gate_boundaries() -> None:
+    """V06 starts from approved documents and cannot widen product or runtime authority."""
     skill = _read("SKILL.md")
     routing = _read("references/routing.md")
     combined = f"{skill}\n{routing}"
@@ -216,6 +223,22 @@ def test_workflow_preserves_read_only_planning_guarded_local_apply_and_human_gat
     assert "does not fetch" in skill
     assert "does not call GitHub" in skill
     assert "three failed implementation-validation-review rounds" in skill
+    for phrase in (
+        "user explicitly starts AI delivery",
+        "AI delivery lead",
+        "approved design spec",
+        "approved implementation plan",
+        "Lane 1/2 Charter freezes automatically",
+        "Lane 3",
+        "product-direction change",
+        "active-canonical conflict",
+        "scope expansion",
+        "exact-head decision",
+        "existing Codex/GitHub flow",
+        "merge commit",
+        "V06 performs no network, PR, CI polling, merge, or Runtime operation",
+    ):
+        assert phrase in combined
     for gate in (
         "real data/DB",
         "strategy/backtest semantics",
@@ -230,95 +253,138 @@ def test_workflow_preserves_read_only_planning_guarded_local_apply_and_human_gat
         assert gate in combined
 
 
-def test_templates_match_the_charter_and_stage_reporting_contracts() -> None:
-    """A charter and report remain reviewable across code and external Gate states."""
-    charter = _read("assets/task-charter.md")
-    report = _read("assets/stage-report.md")
+def test_subagent_templates_match_the_strict_json_contract_fields() -> None:
+    """Removing or inventing a template field must fail before an agent writes invalid evidence."""
+    for relative_path, expected_fields in PROTOCOL_TEMPLATE_FIELDS.items():
+        headings = tuple(
+            line.removeprefix("## ")
+            for line in _read(relative_path).splitlines()
+            if line.startswith("## ")
+        )
+        assert headings == expected_fields, relative_path
 
-    assert tuple(line.removeprefix("## ") for line in charter.splitlines() if line.startswith("## ")) == CHARTER_HEADINGS
-    for identity_field in (
-        "Title:", "Issue:", "Task ID:", "Kind:", "Planned branch:", "Planned worktree:",
+
+def test_subagent_protocol_links_execution_review_recovery_and_frozen_boundaries() -> None:
+    """The Skill must expose the executable protocol without claiming new controller authority."""
+    skill = _read("SKILL.md")
+    execution = _read("references/execution.md")
+    review = _read("references/review.md")
+    recovery = _read("references/recovery.md")
+    combined = "\n".join((skill, execution, review, recovery))
+
+    for resource in PROTOCOL_RESOURCES:
+        assert resource in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py intake" in skill
+    assert "--approved-plan" in skill
+    assert "--intake" in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py brief" in skill
+    assert "--role implementer" in skill
+    assert "--context-id" in skill
+    assert "--implementer-context-id" in skill
+    assert "--reviewer-context-id" in skill
+    assert "--round 0" in skill
+    assert "--output" in skill
+    assert "--role specialist" in skill
+    assert "--specialist-domain" in skill
+    assert "--specialist-context" in skill
+    assert "--context-id <specialist-context>" in skill
+    assert "Use this complete specialist command; do not append specialist flags" in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py review-package" in skill
+    assert "--implementer-brief" in skill
+    assert "--implementer-handoff" in skill
+    assert "--reviewer-brief" in skill
+    assert "python3 scripts/engineering/lean_matrix_team.py decision" in skill
+    assert "direct-written" in combined
+    assert "read-only" in combined
+    assert "round 0" in combined
+    assert "rounds 1, 2, and 3" in combined
+    assert "No fourth round" in combined
+    assert "at most two specialists" in combined
+    assert "Spec `PASS/FAIL`" in combined
+    assert "Quality `APPROVED/CHANGES_REQUIRED`" in combined
+    for severity in ("Critical", "Important", "Minor"):
+        assert severity in review
+    assert "never selects evidence by modification time" in recovery
+    assert "reconstructed from Git/PR facts" in recovery
+    for boundary in (
+        "no daemon",
+        "no Codex App API wrapper",
+        "no GitHub integration",
+        "no V06 network or merge implementation",
+        "no Runtime authority",
+        "no data/DB write authority",
+        "no notification authority",
+        "no release authority",
+        "no trading authority",
     ):
-        assert identity_field in _section(charter, "Identity")
+        assert boundary in combined
 
-    cli_input = {
-        "schema_version": 1,
-        "issue_number": 97,
-        "task_id": "AI-TEAM-001",
-        "kind": "feature",
-        "slug": "lean-matrix-team",
-        "title": "Render a charter",
-        "value": "Keep routing deterministic.",
-        "goal": "Render one Task Charter.",
-        "current_facts": ["Current policy exists."],
-        "lane": 2,
-        "domains": [],
-        "allowed_paths": ["scripts/engineering/lean_matrix_team.py"],
-        "forbidden_paths": ["Runtime is out of scope."],
-        "acceptance": ["The Charter renders."],
-        "external_gates": [],
-    }
-    rendered = subprocess.run(
-        [sys.executable, str(CLI_PATH), "charter", "--input", "-", "--format", "markdown"],
-        input=json.dumps(cli_input),
-        text=True,
-        capture_output=True,
-        check=False,
+
+def test_subagent_protocol_documents_brief_bound_roles_and_full_ledger_recovery() -> None:
+    """The written protocol must not permit role swaps or advisory/implementer ambiguity."""
+    skill = _read("SKILL.md")
+    execution = _read("references/execution.md")
+    review = _read("references/review.md")
+    recovery = _read("references/recovery.md")
+    role_brief = _read("assets/role-brief.md")
+    handoff_report = _read("assets/handoff-report.md")
+    review_package = _read("assets/review-package.md")
+    combined = " ".join(
+        "\n".join(
+            (skill, execution, review, recovery, role_brief, handoff_report, review_package)
+        ).split()
     )
 
-    assert rendered.returncode == 0, rendered.stderr
-    assert tuple(
-        line.removeprefix("## ") for line in rendered.stdout.splitlines() if line.startswith("## ")
-    ) == CHARTER_HEADINGS
-    for identity_field in (
-        "Title:", "Issue:", "Task ID:", "Kind:", "Planned branch:", "Planned worktree:",
+    for phrase in (
+        "round-zero implementer context",
+        "globally disjoint",
+        "handoffs/specialists/<domain>/<context-id>/round-0/handoff-report.json",
+        "exactly one brief-bound implementer handoff per round",
+        "specialist domain, context, brief digest, and test receipts",
+        "specialist evidence digests",
+        "recomputes Git facts and artifact bindings",
     ):
-        assert identity_field in rendered.stdout.split("## Value", 1)[0]
-    for section in (
-        "Current status",
-        "Completed",
-        "Verification evidence",
-        "Remaining risks",
-        "User action required",
-        "Automatic next step",
-    ):
-        assert f"## {section}" in report
-    for distinction in ("Code", "Tests", "CI", "Independent review", "Real Gate", "Release", "Runtime"):
-        assert distinction in report
+        assert phrase in combined
 
 
-def test_controlled_trial_report_contract_preserves_provenance_and_gate_boundaries() -> None:
-    """Missing trial fields could make retrospective evidence appear Gate-authoritative."""
-    trial_report = _read("assets/trial-report.md")
+def test_review_protocol_documents_the_executable_ledger_contract() -> None:
+    """A controller following the public protocol must write exactly where the loader reads."""
     skill = _read("SKILL.md")
+    execution = _read("references/execution.md")
+    review = _read("references/review.md")
+    recovery = _read("references/recovery.md")
+    package_template = _read("assets/review-package.md")
+    decision_template = _read("assets/final-decision.md")
 
-    assert tuple(
-        line.removeprefix("## ") for line in trial_report.splitlines() if line.startswith("## ")
-    ) == TRIAL_REPORT_HEADINGS
-    for field in (
-        "Issue:", "PR:", "Base SHA:", "Task HEAD:", "Merge SHA:",
-        "Source type:", "Source references:",
-        "Classification: historical_retrospective / controlled_trial",
-        "Predicted base roles:", "Observed base roles:",
-        "Predicted specialists:", "Observed specialists:",
-        "Predicted specialist count:", "Observed specialist count:",
-        "Predicted context separation:", "Observed context separation:",
-        "Start timestamp:", "Merge timestamp:", "Review-fix rounds:",
-        "Total agent sessions:",
-        "User interruption count:", "CI:", "External Gates:",
-        "Evidence limitations:", "No-authority statement:",
-        "MEASURED", "MANUALLY_RECORDED", "NOT_MEASURABLE",
-        "canonical repository or GitHub source",
-        "explicitly named human observation",
-        "cannot satisfy or drive a Gate",
-        "mandatory when neither source exists",
-        "must never be estimated or inferred from conversation memory",
+    for protocol in (skill, execution, review, recovery):
+        assert INTAKE_WORKSPACE_PATH in protocol
+    assert REVIEW_LEDGER_PATH in recovery
+    assert "review-package.json" in package_template
+    assert "final-decision.json" in decision_template
+    combined = "\n".join(
+        (skill, execution, review, recovery, package_template, decision_template)
+    )
+    assert "validates package digest, exact HEAD, and implementer/reviewer contexts" in combined
+    assert "fixed derived paths" in combined
+    assert "never uses a caller-supplied recovery path" in combined
+    for phrase in (
+        '"schema_version": 1',
+        '"intake_digest": "sha256:..."',
+        '"rounds"',
+        '"implementer_brief"',
+        '"implementer_handoff"',
+        '"reviewer_brief"',
+        '"review_package"',
+        '"final_decision"',
+        '"specialist_evidence"',
+        '"path": "<repo-relative-path>"',
+        '"digest": "sha256:..."',
+        "AI delivery lead writes",
+        "after each final decision",
+        "recover_review_ledger(repo_root, intake, ledger_path, round_zero_brief=round_zero_brief)",
+        "conversation_memory",
     ):
-        assert field in trial_report
-
-    assert "assets/trial-report.md" in skill
-    assert "controlled trials and historical retrospectives" in skill
-    assert "must never be estimated or inferred from conversation memory" in skill
+        assert phrase in recovery
 
 
 def test_skill_does_not_claim_control_plane_or_gatekeeper_authority() -> None:
@@ -327,9 +393,9 @@ def test_skill_does_not_claim_control_plane_or_gatekeeper_authority() -> None:
         "SKILL.md",
         "references/roles.md",
         "references/routing.md",
-        "assets/task-charter.md",
-        "assets/stage-report.md",
-        "assets/trial-report.md",
+        "references/execution.md",
+        "references/review.md",
+        "references/recovery.md",
     ))
     lowered = combined.lower()
 

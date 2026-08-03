@@ -14,10 +14,9 @@
 ```text
 项目所有者
     ↓
-AI 项目负责人
+AI 交付负责人
     ↓
 最小动态任务小队
-├── 技术负责人
 ├── 实现负责人
 ├── 独立质量负责人
 └── 最多两个按需专项专家
@@ -35,6 +34,32 @@ GitHub / develop / 外部人工 Gate
 4. GitHub、active canonical、测试、CI、独立 Review 和 receipt 保持事实源地位；
 5. 真实数据写入、删除、正式策略口径、release 和 Runtime promotion 继续保留人工 Gate；
 6. 不建立新的多代理平台、任务数据库、状态控制台或第二套事实源。
+
+### 1.1 V06 最终交付方向
+
+V06 将原“AI 项目负责人 / 技术负责人”的日常任务职责收敛为一个 **AI 交付负责人**。用户在浏览器
+GPT 完成产品设计与实现计划后主动启动团队交付；AI 交付负责人使用 Codex App / Superpowers
+组织真实专家上下文，Lean Matrix 只作为 thin Harness 验证合同、scope、身份、Git 事实和 evidence。
+
+Harness 不运行 agent，不保存完整对话，不建设 registry、message bus、session database、daemon 或
+第二控制面。它只把 design 与 implementation plan 的仓库相对路径和 SHA-256 digest 绑定到一个
+trusted `ExecutionPlanV1`；文档正文不能修改 task、Lane、scope、external Gates、Owner Gate 条件或
+`origin/develop` exact SHA。
+
+V06 公共合同冻结为：
+
+```text
+DocumentIntakeV1
+RoleBriefV1
+HandoffReportV1
+ReviewPackageV1
+FinalDecisionV1
+```
+
+Fast Path（Lane 1）与普通 Team Path（Lane 2）在 intake 成立后自动冻结 Charter；Lane 3、产品方向
+变化、active canonical 冲突或 frozen scope 扩张必须回到 Owner Gate。最终“允许集成 `develop`”
+只是 evidence 结论，PR/CI/merge/readback/cleanup 仍由既有 Codex/GitHub 流程执行，不扩大 Runtime、
+真实写入、通知、release 或 `main` 权限。
 
 ## 2. 项目上下文与设计约束
 
@@ -132,10 +157,10 @@ GitHub / develop / 外部人工 Gate
 
 ### 4.3 最小小队
 
-默认只使用：
+V06 默认只使用：
 
 ```text
-AI 项目负责人 / 技术负责人
+AI 交付负责人
 + 实现负责人
 + 独立质量负责人
 ```
@@ -161,7 +186,7 @@ active canonical
 
 ### 4.6 复杂度需要证明
 
-新增服务、数据库、后台进程、基础框架或抽象层时，技术负责人必须说明：
+新增服务、数据库、后台进程、基础框架或抽象层时，AI 交付负责人必须说明：
 
 1. 当前真实问题；
 2. 现有方案为何无法解决；
@@ -188,9 +213,9 @@ active canonical
 
 项目所有者不负责普通 bugfix、测试修复、Review 往返、PR 创建、`develop` 集成或 worktree 清理。
 
-### 5.2 AI 项目负责人
+### 5.2 AI 交付负责人
 
-该角色合并产品经理、项目经理、软件开发经理和需求分析师。
+该角色合并原 AI 项目负责人、技术负责人、产品经理、项目经理、软件开发经理和需求分析师的交付职责。
 
 职责：
 
@@ -201,6 +226,9 @@ active canonical
 - 判断 Lane、模型、Plan、会话和 worktree；
 - 选择最小专家小队；
 - 管理前置依赖和任务状态；
+- 选择最小可维护技术方案并明确复用、修改与禁止修改边界；
+- 审查并发、幂等、恢复、兼容、安全、测试和回滚；
+- 阻止平行系统、不必要抽象与 scope 扩张；
 - 汇总结果；
 - 只在定义好的升级条件发生时通知用户。
 
@@ -223,9 +251,9 @@ active canonical
 - 把建议写成已批准事实；
 - 以流程完整为由增加低价值工作。
 
-### 5.3 技术负责人
+### 5.3 AI 交付负责人的技术检查清单
 
-该角色合并软件架构师、技术负责人和高级工程师。
+这是 AI 交付负责人内部必须完成的检查清单，不再要求创建一个独立常驻“技术负责人”上下文。
 
 职责：
 
@@ -439,9 +467,9 @@ UI 和 UX 合并为一个角色。普通文案、表格列调整和小型 CRUD �
 
 | 任务规模 | 建议实际会话 | 角色安排 |
 |---|---:|---|
-| 小型 Lane 1 | 2 | 项目/技术/实现合并；独立 Reviewer |
-| 普通 Lane 2 | 3 | 项目+技术；实现；独立质量 |
-| 中型跨模块 | 4 | 项目；技术；实现；独立质量 |
+| 小型 Lane 1 | 2 | AI 交付负责人兼实现；独立 Reviewer |
+| 普通 Lane 2 | 3 | AI 交付负责人；实现；独立质量 |
+| 中型跨模块 | 3～4 | AI 交付负责人；实现；独立质量；按需专家 |
 | Lane 3 或复杂研究 | 4～6 | 基础角色加 1～2 个专项专家 |
 
 默认规则：
@@ -450,11 +478,11 @@ UI 和 UX 合并为一个角色。普通文案、表格列调整和小型 CRUD �
 - 超过六个有效上下文时先拆任务；
 - 不为“角色看起来完整”创建额外会话；
 - 同一任务的 Review 和实现不得共用上下文；
-- 项目负责人可以兼任技术负责人，但不能兼任最终 Reviewer。
+- AI 交付负责人在 Lane 1 可兼任实现，但不能兼任最终 Reviewer。
 
 ## 8. 专家路由规则
 
-AI 项目负责人按任务内容选择最小小队：
+AI 交付负责人按任务内容选择最小小队：
 
 ```text
 普通文档、小修复、低风险测试
@@ -497,7 +525,7 @@ Research Memory、训练、评分模型
 
 ## 9. Task Charter
 
-每个独立任务开始前，由 AI 项目负责人生成最小 Task Charter。普通任务可保存在 Codex 会话或 GitHub Issue 中，不强制新增仓库文档。
+每个独立任务开始前，由 AI 交付负责人生成最小 Task Charter。普通任务可保存在 Codex 会话或 GitHub Issue 中，不强制新增仓库文档。
 
 ```markdown
 # Task Charter
@@ -520,8 +548,7 @@ STATUS、active canonical、Issue、PR、前置任务和已知约束。
 - 工作区：
 
 ## 动态小队
-- AI 项目负责人：
-- 技术负责人：
+- AI 交付负责人：
 - 实现负责人：
 - 专项专家：
 - 独立质量负责人：
@@ -650,7 +677,7 @@ Direct 或短 Plan
 Terra + 中推理
 Plan-then-execute
 独立 task worktree
-项目/技术会话 + 实现会话 + Review 会话
+AI 交付负责人会话 + 实现会话 + Review 会话
 通过后可自动集成 develop
 ```
 
@@ -715,7 +742,7 @@ Plan-only 起步
 
 ## 13. 个人项目复杂度 Gate
 
-AI 项目负责人和技术负责人必须共同回答：
+AI 交付负责人必须回答：
 
 | 问题 | 默认处理 |
 |---|---|
@@ -743,10 +770,10 @@ AI 项目负责人和技术负责人必须共同回答：
 
 ## 14. 角色 Prompt 基线
 
-### 14.1 AI 项目负责人
+### 14.1 AI 交付负责人
 
 ```text
-你是归一量化的 AI 项目负责人。
+你是归一量化的 AI 交付负责人。
 
 先读取 STATUS.md、PROJECT_SOURCE.md、AGENTS.md、
 docs/DEVELOPMENT.md，以及当前任务相关 canonical、Issue 和 PR。
@@ -766,10 +793,10 @@ docs/DEVELOPMENT.md，以及当前任务相关 canonical、Issue 和 PR。
 不得自行改变 active target、长期目标或正式策略口径。
 ```
 
-### 14.2 技术负责人
+### 14.2 AI 交付负责人技术检查补充
 
 ```text
-你是归一量化的技术负责人。
+你是归一量化的 AI 交付负责人，以下是不可省略的技术检查。
 
 优先复用现有模块，选择最小可维护方案。
 默认采用模块化单体、单一事实源和确定性流程。
@@ -887,7 +914,7 @@ docs/DEVELOPMENT.md，以及当前任务相关 canonical、Issue 和 PR。
 active canonical
 > 任务合同
 > 可复现测试和事实
-> 技术负责人综合判断
+> AI 交付负责人综合判断
 > 项目所有者决策
 ```
 
@@ -900,8 +927,7 @@ active canonical
 以下内容仅记录 Task 04 当时的团队路由与 Gate 边界，属于已完成工作的历史复盘，不构成新的执行授权、恢复 legacy historical Shadow 的授权，或对任何后续任务的前置条件声明。
 
 ```text
-AI 项目负责人
-+ 技术负责人
+AI 交付负责人
 + 数据与数据库专家
 + 实现负责人
 + 独立质量负责人
@@ -918,8 +944,7 @@ Task 04 已完成于 `develop`；legacy historical Shadow 现为可选/冻结历
 Task 05 的实现属于独立 worktree；AI-TEAM-001 不采纳或修改该 worktree，以下仅是未来同类任务的角色路由示例。
 
 ```text
-AI 项目负责人
-+ 技术负责人
+AI 交付负责人
 + 实现负责人
 + 回测可信性审计专家（涉及回测时）
 + 量化研究专家（涉及信号语义时）
@@ -931,9 +956,8 @@ AI 项目负责人
 ### 17.3 Web 工作台改版
 
 ```text
-AI 项目负责人
+AI 交付负责人
 + 产品与交互专家
-+ 技术负责人
 + 全栈/前端实现负责人
 + 独立质量负责人
 ```
@@ -943,9 +967,8 @@ AI 项目负责人
 ### 17.4 苏冰策略研究
 
 ```text
-AI 项目负责人
+AI 交付负责人
 + 量化研究专家
-+ 技术负责人
 + 实现负责人
 + 回测可信性审计专家
 + 独立质量负责人
@@ -1114,11 +1137,10 @@ result 关系，command digest 同时绑定 argv/cwd，并拒绝 workspace 任�
 采用“归一量化精简矩阵式 AI 研发团队”：
 
 ```text
-四个基础角色提供完整研发视角
+AI 交付负责人提供统一交付视角
 + 专项专家按需加入
 + 实际会话保持最少
-+ 产品负责人负责做减法
-+ 技术负责人负责控制复杂度
++ AI 交付负责人同时负责做减法和控制复杂度
 + 实现与 Review 上下文独立
 + GitHub 与 canonical 提供事实
 + 可逆开发自动完成

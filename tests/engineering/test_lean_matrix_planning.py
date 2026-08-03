@@ -388,4 +388,9 @@ def test_production_modules_limit_process_network_and_write_capabilities_to_fixe
             assert not (call_names & forbidden_writes), path.name
 
     process_importers = {name for name, imports in imports_by_file.items() if "subprocess" in imports}
-    assert process_importers == {"adapters.py", "git_readonly.py", "observing.py"}
+    assert process_importers == {
+        "adapters.py",
+        "git_readonly.py",
+        "observing.py",
+        "review_git.py",
+    }
