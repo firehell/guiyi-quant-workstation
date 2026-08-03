@@ -508,6 +508,64 @@ def test_release_flow_atomically_publishes_annotated_release_and_rollback_tags(t
     assert "existing release tags do not match the approved packet" in changed_message.stderr
 
 
+def test_release_flow_rejects_failed_remote_tag_read_without_local_writes(tmp_path: Path) -> None:
+    repo, _remote, _develop_tree, sha = _release_fixture(tmp_path)
+    subprocess.run(
+        ["git", "push", "origin", f"{sha}:refs/heads/main", f"{sha}:refs/heads/develop"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    wrapper_dir = tmp_path / "bin"
+    wrapper_dir.mkdir()
+    git_wrapper = wrapper_dir / "git"
+    real_git = shutil.which("git")
+    assert real_git is not None
+    git_wrapper.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$1\" == \"ls-remote\" && \"$2\" == \"--tags\" ]]; then exit 71; fi\n"
+        f'exec "{real_git}" "$@"\n',
+        encoding="utf-8",
+    )
+    git_wrapper.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{wrapper_dir}{os.pathsep}{env['PATH']}"
+    common_args = [
+        "bash",
+        str(repo / "scripts" / "engineering" / "release-flow.sh"),
+        "tag",
+        "--expected-sha",
+        sha,
+        "--release-tag",
+        "runtime-20260803-release",
+        "--release-message",
+        "Runtime release test",
+        "--rollback-sha",
+        sha,
+        "--rollback-tag",
+        "runtime-rollback-20260803-test",
+        "--rollback-message",
+        "Runtime rollback test",
+        "--json",
+    ]
+
+    for extra_args in ([], ["--apply"]):
+        result = subprocess.run(
+            [*common_args, *extra_args], cwd=repo, env=env, capture_output=True, text=True
+        )
+        assert result.returncode == 2
+        assert "remote tag read failed" in result.stderr
+        assert subprocess.run(
+            [real_git, "show-ref", "--verify", "--quiet", "refs/tags/runtime-20260803-release"],
+            cwd=repo,
+        ).returncode != 0
+        assert subprocess.run(
+            [real_git, "show-ref", "--verify", "--quiet", "refs/tags/runtime-rollback-20260803-test"],
+            cwd=repo,
+        ).returncode != 0
+
+
 def test_release_flow_rejects_divergent_protected_branches(tmp_path: Path) -> None:
     repo, remote, develop_tree, sha = _release_fixture(tmp_path)
     (develop_tree / "CHANGELOG.md").write_text("diverged\n", encoding="utf-8")

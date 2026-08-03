@@ -85,14 +85,16 @@ require_clean_worktree() {
 }
 
 read_remote_release_refs() {
+  local output=""
   remote_main=""
   remote_develop=""
+  output="$(git ls-remote --heads origin main develop)" || fail "remote release ref read failed"
   while IFS=$'\t' read -r sha ref; do
     case "$ref" in
       refs/heads/main) remote_main="$sha" ;;
       refs/heads/develop) remote_develop="$sha" ;;
     esac
-  done < <(git ls-remote --heads origin main develop)
+  done <<< "$output"
 }
 
 require_safe_tag_name() {
@@ -102,14 +104,17 @@ require_safe_tag_name() {
 
 read_remote_tag() {
   local value="$1"
+  local output=""
   remote_tag_object=""
   remote_tag_target=""
+  output="$(git ls-remote --tags origin "refs/tags/${value}" "refs/tags/${value}^{}")" \
+    || fail "remote tag read failed: ${value}"
   while IFS=$'\t' read -r sha ref; do
     case "$ref" in
       "refs/tags/${value}") remote_tag_object="$sha" ;;
       "refs/tags/${value}^{}") remote_tag_target="$sha" ;;
     esac
-  done < <(git ls-remote --tags origin "refs/tags/${value}" "refs/tags/${value}^{}")
+  done <<< "$output"
 }
 
 existing_tag_matches() {
