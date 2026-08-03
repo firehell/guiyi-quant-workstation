@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.backtest.errors import BacktestContractError
 from app.data_core.contracts import DataCoreError
+from app.data_core.consumer_identity import CanonicalConsumerInput
 from app.backtest.service import BacktestService
 from app.backtest.v1b_jm_tasks import (
     build_jm_daily_ema21_macd_volume_formal_request,
@@ -743,10 +744,11 @@ def _get_task_by_ref(session: Session, task_ref: str) -> BacktestTask | None:
 def task_api_payload(task: BacktestTask) -> dict[str, Any]:
     payload = task_snapshot(task)
     input_identity = _canonical_input_identity(task.binding_snapshot)
-    if input_identity is not None:
+    if _is_canonical_input_snapshot(task.binding_snapshot):
         payload.pop("profile_id", None)
         payload.pop("market_data_file_id", None)
         payload.pop("binding_snapshot", None)
+    if input_identity is not None:
         payload["input_identity"] = input_identity
     payload.update(
         {
@@ -770,11 +772,17 @@ def task_api_payload(task: BacktestTask) -> dict[str, Any]:
 def report_api_payload(report: BacktestReportModel, include_detail: bool = False) -> dict[str, Any]:
     payload = report_payload(report, include_detail=include_detail)
     input_identity = _canonical_input_identity(report.binding_snapshot)
-    if input_identity is not None:
+    if _is_canonical_input_snapshot(report.binding_snapshot):
         payload.pop("profile_id", None)
         payload.pop("market_data_file_id", None)
         payload.pop("binding_snapshot", None)
+    if input_identity is not None:
         payload["input_identity"] = input_identity
+        payload["input_identity_attestation"] = {
+            "schema_version": "canonical_consumer_input_attestation_v1",
+            "status": "server_verified",
+            "digest": input_identity["digest"],
+        }
     from guiyi_quant.strategies.indicator_policy import resolve_report_indicator_policy
 
     policy = resolve_report_indicator_policy(report.summary or {})
@@ -803,12 +811,22 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
 def _canonical_input_identity(
     snapshot: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    if not isinstance(snapshot, dict):
-        return None
-    if snapshot.get("schema_version") != "backtest_canonical_inputs_v1":
+    if not _is_canonical_input_snapshot(snapshot):
         return None
     identity = snapshot.get("input_identity")
-    return dict(identity) if isinstance(identity, dict) else None
+    if not isinstance(identity, dict):
+        return None
+    try:
+        return CanonicalConsumerInput.from_snapshot(identity).to_snapshot()
+    except DataCoreError:
+        return None
+
+
+def _is_canonical_input_snapshot(snapshot: dict[str, Any] | None) -> bool:
+    return (
+        isinstance(snapshot, dict)
+        and snapshot.get("schema_version") == "backtest_canonical_inputs_v1"
+    )
 
 
 def _formal_safety_payload(value: Any) -> dict[str, Any]:

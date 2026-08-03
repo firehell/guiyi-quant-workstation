@@ -213,6 +213,7 @@ export interface BacktestReport {
   finished_at?: string | null
   disclaimer?: string
   input_identity?: CanonicalInputIdentity | null
+  input_identity_attestation?: CanonicalInputIdentityAttestation | null
   contract_semantics?: string | null
   observation_only?: boolean
   not_trading_instruction?: boolean
@@ -223,6 +224,12 @@ export interface BacktestReport {
   fills?: BacktestFill[]
   equity_curve?: BacktestEquityPoint[]
   drawdown_curve?: BacktestDrawdownPoint[]
+}
+
+export interface CanonicalInputIdentityAttestation {
+  schema_version: 'canonical_consumer_input_attestation_v1'
+  status: 'server_verified'
+  digest: string
 }
 
 /** 回测成交方向 */

@@ -1,7 +1,6 @@
 import request from './request'
-import type { BacktestReport, BacktestTrade } from '@/types/backtest'
+import type { BacktestReport } from '@/types/backtest'
 import type {
-  BacktestMarketBarsQueryDebug,
   BacktestMarketBarsResult,
   BarData,
   DataProfileSummary,
@@ -16,16 +15,10 @@ import type {
 } from '@/types/market'
 import type { MainIndicatorRequestParams } from '@/utils/mainIndicators'
 import {
+  getMarketBarsForBacktestReport as loadCanonicalReportBars,
   toCanonicalBarsRequest,
   toCanonicalIndicatorsRequest,
-  toCanonicalReportBarsQuery,
 } from '@/utils/dataCoreV2Market'
-
-interface BacktestKlineQueryOptions {
-  limit?: number
-  preferTradeWindow?: boolean
-  paddingDays?: number
-}
 
 /** 获取合约列表 */
 export function getSymbols(exchange?: string) {
@@ -123,24 +116,14 @@ export function getDataProfiles() {
   return request.get<any, DataProfileSummary[]>('/data/profiles')
 }
 
-/** Use only the report's frozen canonical identity; legacy report fields stay display-only. */
-export function normalizeMarketQueryFromReport(
-  report: BacktestReport,
-  _trades: BacktestTrade[],
-  _options: BacktestKlineQueryOptions = {},
-): BacktestMarketBarsQueryDebug {
-  return toCanonicalReportBarsQuery(report)
-}
-
 /** Read report bars once from the exact immutable canonical input identity. */
 export async function getMarketBarsForBacktestReport(
   report: BacktestReport,
-  trades: BacktestTrade[],
-  options: BacktestKlineQueryOptions = {},
 ): Promise<BacktestMarketBarsResult> {
-  const query = normalizeMarketQueryFromReport(report, trades, options)
-  const response = await getMarketBars(query.attempted[0])
-  return { response, query }
+  return loadCanonicalReportBars(
+    report,
+    (path, params) => request.get<any, MarketBarsResponse>(path, { params }),
+  )
 }
 
 /** @deprecated 后端暂无 /api/quote，请使用 dominants / bars API */

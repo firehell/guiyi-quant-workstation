@@ -376,7 +376,15 @@ def test_runner_rereads_identity_and_injects_canonical_rows_in_memory() -> None:
 
         report = session.query(BacktestReportModel).one()
         assert report.research_only is True
-        for payload in (task_api_payload(task), report_api_payload(report)):
+        task_payload = task_api_payload(task)
+        report_payload = report_api_payload(report)
+        assert "input_identity_attestation" not in task_payload
+        assert report_payload["input_identity_attestation"] == {
+            "schema_version": "canonical_consumer_input_attestation_v1",
+            "status": "server_verified",
+            "digest": report_payload["input_identity"]["digest"],
+        }
+        for payload in (task_payload, report_payload):
             assert payload["input_identity"]["schema_version"] == "canonical_consumer_input_v1"
             assert payload["research_only"] is True
             assert payload["contract_semantics"] == "research_contract_only"
@@ -390,6 +398,52 @@ def test_runner_rereads_identity_and_injects_canonical_rows_in_memory() -> None:
             assert '"profile_id"' not in encoded
             assert '"market_data_file_id"' not in encoded
             assert '"binding_snapshot"' not in encoded
+
+
+def test_report_api_withholds_replay_identity_when_stored_digest_is_forged() -> None:
+    SessionLocal = _session_factory()
+    market_data = FakeMarketDataService()
+    with SessionLocal() as session:
+        service = BacktestService(session, market_data=market_data)
+        task = service.create_formal_task(_formal_payload())
+        report = BacktestReportModel(
+            task_id=task.id,
+            task_no=task.task_no,
+            report_no="RPT-FORGED-DIGEST",
+            template_name="vnpy",
+            engine_type="vnpy",
+            symbol="jm",
+            contract="jm.MAIN",
+            period="15m",
+            status="success",
+            binding_snapshot=task.binding_snapshot,
+            summary={},
+            warnings=[],
+        )
+        session.add(report)
+        session.flush()
+        forged = dict(report.binding_snapshot or {})
+        identity = dict(forged["input_identity"])
+        identity["digest"] = "f" * 64
+        forged["input_identity"] = identity
+        report.binding_snapshot = forged
+        session.commit()
+        report_id = report.id
+
+    def override_get_db():
+        with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).get(f"/api/backtests/reports/{report_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        assert "input_identity" not in payload
+        assert "input_identity_attestation" not in payload
+        assert "binding_snapshot" not in payload
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_asia_shanghai_window_is_stored_and_executed_as_utc() -> None:

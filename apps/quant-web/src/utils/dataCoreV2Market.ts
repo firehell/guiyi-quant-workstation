@@ -1,7 +1,9 @@
 import type { BacktestReport } from '@/types/backtest'
 import type {
   BacktestMarketBarsQueryDebug,
+  BacktestMarketBarsResult,
   MarketBarsRequestParams,
+  MarketBarsResponse,
 } from '@/types/market'
 import { parseCanonicalInputIdentity } from './dataCoreV2Consumer.ts'
 import type { MainIndicatorRequestParams } from './mainIndicators.ts'
@@ -86,13 +88,19 @@ export function toCanonicalIndicatorsRequest(
 
 /** Replay a formal report only from its immutable canonical input identity. */
 export function toCanonicalReportBarsQuery(
-  report: Pick<BacktestReport, 'input_identity'>,
+  report: Pick<BacktestReport, 'input_identity' | 'input_identity_attestation'>,
 ): BacktestMarketBarsQueryDebug {
   const parsed = parseCanonicalInputIdentity(report.input_identity)
   if (parsed.identity === null) {
     throw new Error(
       `DATA_CORE_V2_REQUEST_INVALID: canonical_report_input_identity_required (${parsed.reason})`,
     )
+  }
+  const attestation = report.input_identity_attestation
+  if (attestation?.schema_version !== 'canonical_consumer_input_attestation_v1'
+    || attestation.status !== 'server_verified'
+    || attestation.digest !== parsed.identity.digest) {
+    throw new Error('DATA_CORE_V2_REQUEST_INVALID: canonical_report_input_identity_attestation_required')
   }
   const request = parsed.identity.request
   const candidate: MarketBarsRequestParams = {
@@ -112,4 +120,20 @@ export function toCanonicalReportBarsQuery(
     end: candidate.end,
     attempted: [candidate],
   }
+}
+
+type CanonicalReportBarsRequester = (
+  path: '/market/bars/canonical',
+  params: CanonicalBarsRequestParams,
+) => Promise<MarketBarsResponse>
+
+/** Execute the report's server-attested canonical request exactly once. */
+export async function getMarketBarsForBacktestReport(
+  report: Pick<BacktestReport, 'input_identity' | 'input_identity_attestation'>,
+  requester: CanonicalReportBarsRequester,
+): Promise<BacktestMarketBarsResult> {
+  const query = toCanonicalReportBarsQuery(report)
+  const params = toCanonicalBarsRequest(query.attempted[0])
+  const response = await requester('/market/bars/canonical', params)
+  return { response, query }
 }

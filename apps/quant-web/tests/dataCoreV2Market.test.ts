@@ -2,10 +2,52 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  getMarketBarsForBacktestReport,
   toCanonicalBarsRequest,
   toCanonicalIndicatorsRequest,
   toCanonicalReportBarsQuery,
 } from '../src/utils/dataCoreV2Market.ts'
+
+const verifiedIdentity = {
+  schema_version: 'canonical_consumer_input_v1' as const,
+  request: {
+    dataset_kind: 'actual_dominant' as const,
+    symbol: 'jm',
+    contract_or_series: null,
+    frequency: '15m',
+    start: '2026-07-01T00:00:00+00:00',
+    end: '2026-07-31T00:00:00+00:00',
+    strict: true,
+  },
+  source_datasets: [{
+    provider: 'rqdata',
+    dataset_kind: 'actual_dominant' as const,
+    symbol: 'jm',
+    contract_or_series: 'JM2609',
+    frequency: '1m',
+    adjustment: 'none',
+    schema_version: 'canonical-bar-v1',
+  }],
+  manifest_digests: ['a'.repeat(64)],
+  source_data_versions: ['rqdata-20260731'],
+  derived_frequency: '15m',
+  strategy_input_version: 'backtest:su_bing_ema21:v0',
+  digest: 'a5389cfe5965b623f00ff3c68fd896e3fb6c36aeba8027a89e4a7212672b8d3a',
+}
+
+const serverAttestation = {
+  schema_version: 'canonical_consumer_input_attestation_v1' as const,
+  status: 'server_verified' as const,
+  digest: verifiedIdentity.digest,
+}
+
+function verifiedReport(overrides: Record<string, unknown> = {}) {
+  return {
+    input_identity: verifiedIdentity,
+    input_identity_attestation: serverAttestation,
+    ...overrides,
+  } as never
+}
 
 describe('dataCoreV2Market', () => {
   it('builds an explicit continuous canonical bars request without legacy selectors', () => {
@@ -108,34 +150,7 @@ describe('dataCoreV2Market', () => {
   })
 
   it('replays a canonical backtest report from its frozen input identity without legacy fallback', () => {
-    const query = toCanonicalReportBarsQuery({
-      input_identity: {
-        schema_version: 'canonical_consumer_input_v1',
-        request: {
-          dataset_kind: 'actual_dominant',
-          symbol: 'jm',
-          contract_or_series: null,
-          frequency: '15m',
-          start: '2026-07-01T00:00:00+00:00',
-          end: '2026-07-31T00:00:00+00:00',
-          strict: true,
-        },
-        source_datasets: [{
-          provider: 'rqdata',
-          dataset_kind: 'actual_dominant',
-          symbol: 'jm',
-          contract_or_series: 'JM2609',
-          frequency: '1m',
-          adjustment: 'none',
-          schema_version: 'canonical-bar-v1',
-        }],
-        manifest_digests: ['a'.repeat(64)],
-        source_data_versions: ['rqdata-20260731'],
-        derived_frequency: '15m',
-        strategy_input_version: 'backtest:su_bing_ema21:v0',
-        digest: 'b'.repeat(64),
-      },
-    })
+    const query = toCanonicalReportBarsQuery(verifiedReport())
 
     assert.deepEqual(query.attempted, [{
       dataset_kind: 'actual_dominant',
@@ -160,5 +175,76 @@ describe('dataCoreV2Market', () => {
       } as never),
       /canonical_report_input_identity_required/,
     )
+  })
+
+  it('requests canonical report bars exactly once with the attested request', async () => {
+    const calls: Array<{ path: string; params: unknown }> = []
+    const result = await getMarketBarsForBacktestReport(
+      verifiedReport(),
+      async (path, params) => {
+        calls.push({ path, params })
+        return { bars: [{ close: 1001 }] } as never
+      },
+    )
+
+    assert.deepEqual(calls, [{
+      path: '/market/bars/canonical',
+      params: {
+        dataset_kind: 'actual_dominant',
+        symbol: 'jm',
+        contract_or_series: null,
+        frequency: '15m',
+        start: '2026-07-01T00:00:00+00:00',
+        end: '2026-07-31T00:00:00+00:00',
+      },
+    }])
+    assert.equal(result.response.bars.length, 1)
+  })
+
+  it('does not retry an empty canonical report bars response', async () => {
+    let calls = 0
+    const result = await getMarketBarsForBacktestReport(
+      verifiedReport(),
+      async () => {
+        calls += 1
+        return { bars: [] } as never
+      },
+    )
+    assert.equal(calls, 1)
+    assert.deepEqual(result.response.bars, [])
+  })
+
+  it('does not retry a canonical report bars error', async () => {
+    let calls = 0
+    await assert.rejects(
+      getMarketBarsForBacktestReport(verifiedReport(), async () => {
+        calls += 1
+        throw new Error('canonical read failed')
+      }),
+      /canonical read failed/,
+    )
+    assert.equal(calls, 1)
+  })
+
+  it('makes zero requests for malformed, legacy, or digest-mismatched report identities', async () => {
+    let calls = 0
+    const requester = async () => {
+      calls += 1
+      return { bars: [] } as never
+    }
+    const cases = [
+      verifiedReport({ input_identity: { ...verifiedIdentity, request: null } }),
+      { input_identity: null, input_identity_attestation: null },
+      verifiedReport({
+        input_identity_attestation: { ...serverAttestation, digest: 'f'.repeat(64) },
+      }),
+    ]
+    for (const report of cases) {
+      await assert.rejects(
+        getMarketBarsForBacktestReport(report as never, requester),
+        /canonical_report_input_identity_(?:required|attestation_required)/,
+      )
+    }
+    assert.equal(calls, 0)
   })
 })
