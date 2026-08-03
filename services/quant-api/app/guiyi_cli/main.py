@@ -191,22 +191,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--approved-root", type=Path, action="append", required=True
     )
     deletion_plan.add_argument("--quarantine-root", type=Path, required=True)
-    deletion_plan.add_argument("--canonical-root", type=Path, required=True)
-    deletion_plan.add_argument(
-        "--replacement-receipt", type=Path, action="append", default=[]
-    )
-    deletion_plan.add_argument(
-        "--runtime-root", type=Path, action="append", default=[]
-    )
     deletion_preflight = task07_commands.add_parser("deletion-preflight")
     deletion_preflight.add_argument("--project-root", type=Path, required=True)
     deletion_preflight.add_argument("--plan", type=Path, required=True)
     deletion_preflight.add_argument("--approval-packet", type=Path, required=True)
     deletion_preflight.add_argument("--approval-hash", required=True)
-    deletion_preflight.add_argument("--canonical-root", type=Path, required=True)
-    deletion_preflight.add_argument(
-        "--runtime-root", type=Path, action="append", default=[]
-    )
     deletion_apply = task07_commands.add_parser("deletion-apply")
     deletion_apply.add_argument("--project-root", type=Path)
     deletion_apply.add_argument("--plan", type=Path, required=True)
@@ -214,18 +203,10 @@ def build_parser() -> argparse.ArgumentParser:
     deletion_apply.add_argument("--approval-hash")
     deletion_apply.add_argument("--preflight-receipt", type=Path)
     deletion_apply.add_argument("--preflight-hash")
-    deletion_apply.add_argument("--canonical-root", type=Path)
-    deletion_apply.add_argument(
-        "--runtime-root", type=Path, action="append", default=[]
-    )
     deletion_verify = task07_commands.add_parser("deletion-verify")
     deletion_verify.add_argument("--project-root", type=Path, required=True)
     deletion_verify.add_argument("--plan", type=Path, required=True)
     deletion_verify.add_argument("--receipt", type=Path, required=True)
-    deletion_verify.add_argument("--canonical-root", type=Path, required=True)
-    deletion_verify.add_argument(
-        "--runtime-root", type=Path, action="append", default=[]
-    )
 
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(
@@ -271,14 +252,7 @@ def main(
         return 2
     data_core_command = _data_core_command(args)
     if data_core_command is not None:
-        if _is_task07_deletion_apply(args) and (
-            args.project_root is None
-            or args.approval_packet is None
-            or not args.approval_hash
-            or args.preflight_receipt is None
-            or not args.preflight_hash
-            or args.canonical_root is None
-        ):
+        if _is_task07_deletion_apply(args):
             _print_json(
                 {
                     "schema_version": 1,
@@ -286,7 +260,7 @@ def main(
                     "status": "blocked",
                     "readonly": True,
                     "error": {
-                        "code": "TASK07_DELETION_EXACT_APPROVAL_REQUIRED",
+                        "code": "TASK07_RUNTIME_CUTOVER_GATE_REQUIRED",
                         "type": "Task07DeletionApprovalError",
                     },
                 },

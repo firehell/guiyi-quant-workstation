@@ -18,15 +18,15 @@ from app.data_core.canonical_store import _atomic_rename_no_replace_at
 from app.data_core.task07 import canonical_digest
 
 
-_DIRECT = {"1m", "1d", "1w"}
-_DERIVED = {"5m", "15m", "30m", "60m"}
+_KLINE_FREQUENCIES = {"1m", "5m", "15m", "30m", "60m", "1d", "1w"}
 _SHA256 = frozenset("0123456789abcdef")
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
 _FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
 _JOURNAL_FLAGS = (
-    os.O_WRONLY
+    os.O_RDWR
     | os.O_APPEND
     | os.O_CREAT
+    | os.O_EXCL
     | getattr(os, "O_NOFOLLOW", 0)
 )
 _HISTORICAL_EVIDENCE_PARTS = {"evidence", "reports", "receipts"}
@@ -54,6 +54,14 @@ def _file_checksum_fd(file_fd: int) -> str:
     while chunk := os.read(file_fd, 1024 * 1024):
         digest.update(chunk)
     return digest.hexdigest()
+
+
+def _read_all_fd(file_fd: int) -> bytes:
+    chunks: list[bytes] = []
+    os.lseek(file_fd, 0, os.SEEK_SET)
+    while chunk := os.read(file_fd, 1024 * 1024):
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _file_checksum(path: Path) -> str:
@@ -105,35 +113,24 @@ def _validate_replacement(receipt: Mapping[str, Any]) -> None:
 
 def _classify_candidate(
     asset: Mapping[str, Any],
-    replacement: Mapping[str, Any] | None,
-    verified_replacement_ids: set[int],
 ) -> None:
     if asset.get("source_scope") == "protected_evidence_root":
         raise Task07DeletionError("TASK07_DELETION_PROTECTED")
     frequency = str(asset.get("frequency") or "")
-    if frequency in _DERIVED:
-        raise Task07DeletionError("TASK07_DELETION_COLD_DERIVED")
+    if frequency in _KLINE_FREQUENCIES or asset.get("data_type") in {
+        "bars",
+        "contract_bars_raw",
+        "daily_baseline",
+        "v2_canonical",
+    }:
+        raise Task07DeletionError("TASK07_DELETION_KLINE_PRESERVED")
     disposition = asset.get("disposition")
-    is_direct_kline = (
-        asset.get("provider") == "rqdata"
-        and asset.get("data_type")
-        in {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}
-        and frequency in _DIRECT
-    )
-    if is_direct_kline:
-        source_id = asset.get("market_data_file_id")
-        if replacement is None or source_id not in verified_replacement_ids:
-            raise Task07DeletionError("TASK07_DELETION_REPLACEMENT_REQUIRED")
-        _validate_replacement(replacement)
-        if (
-            replacement.get("market_data_file_id") != source_id
-            or _replacement_source_checksum(replacement)
-            != asset.get("physical_checksum")
-        ):
-            raise Task07DeletionError("TASK07_DELETION_REPLACEMENT_DRIFT")
-        return
     if disposition != "RETIREMENT_CANDIDATE":
         raise Task07DeletionError("TASK07_DELETION_DISPOSITION_BLOCKED")
+    if asset.get("provider") in {"rqdata", "local_parquet"} and asset.get(
+        "data_role"
+    ) == "primary":
+        raise Task07DeletionError("TASK07_DELETION_CLASSIFICATION_INVALID")
 
 
 def build_deletion_plan(
@@ -144,28 +141,57 @@ def build_deletion_plan(
     base_sha: str,
     database_revision: str,
     reference_digest: str,
-    canonical_replacements: Iterable[Mapping[str, Any]],
-    verified_replacement_ids: set[int] | None = None,
+    active_row_set_digest: str | None = None,
+    reference_snapshot_digest: str | None = None,
+    inventory_digest: str | None = None,
 ) -> dict[str, Any]:
     roots = tuple(Path(root) for root in approved_roots)
     if not roots or not all(root.is_absolute() and root.is_dir() for root in roots):
         raise Task07DeletionError("TASK07_DELETION_APPROVED_ROOT_INVALID")
-    if any(root.is_symlink() for root in roots):
-        raise Task07DeletionError("TASK07_DELETION_APPROVED_ROOT_SYMLINK")
+    for root in roots:
+        try:
+            _reject_symlink_components(root, Path(root.anchor))
+        except Task07DeletionError as exc:
+            raise Task07DeletionError(
+                "TASK07_DELETION_APPROVED_ROOT_SYMLINK"
+            ) from exc
     quarantine = Path(quarantine_root)
     if not quarantine.is_absolute() or ".." in quarantine.parts:
         raise Task07DeletionError("TASK07_DELETION_QUARANTINE_INVALID")
     quarantine_matches = [root for root in roots if _path_under(quarantine, root)]
     if len(quarantine_matches) != 1:
         raise Task07DeletionError("TASK07_DELETION_QUARANTINE_INVALID")
-    if len(base_sha) != 40 or not _is_sha256(reference_digest):
+    if (
+        len(base_sha) != 40
+        or set(base_sha) - _SHA256
+        or not _is_sha256(reference_digest)
+    ):
         raise Task07DeletionError("TASK07_DELETION_FACTS_INVALID")
-    replacements = {
-        int(item["market_data_file_id"]): dict(item)
-        for item in canonical_replacements
-        if type(item.get("market_data_file_id")) is int
-    }
-    verified = set(verified_replacement_ids or ())
+    if not quarantine.is_dir():
+        raise Task07DeletionError("TASK07_DELETION_QUARANTINE_MISSING")
+    try:
+        _reject_symlink_components(quarantine, quarantine_matches[0])
+    except Task07DeletionError as exc:
+        raise Task07DeletionError("TASK07_DELETION_QUARANTINE_SYMLINK") from exc
+    quarantine_stat = os.stat(quarantine, follow_symlinks=False)
+    if (
+        stat.S_IMODE(quarantine_stat.st_mode) != 0o700
+        or quarantine_stat.st_uid != os.getuid()
+    ):
+        raise Task07DeletionError("TASK07_DELETION_QUARANTINE_NOT_PRIVATE")
+    active_digest = active_row_set_digest or _digest(
+        "guiyi.task07.deletion-active-rows.empty.v1", []
+    )
+    snapshot_digest = reference_snapshot_digest or _digest(
+        "guiyi.task07.deletion-reference-snapshot.v1",
+        {"reference_digest": reference_digest, "active_row_set_digest": active_digest},
+    )
+    frozen_inventory_digest = inventory_digest or _digest(
+        "guiyi.task07.deletion-test-inventory.v1",
+        {"base_sha": base_sha, "reference_digest": reference_digest},
+    )
+    if not _is_sha256(frozen_inventory_digest):
+        raise Task07DeletionError("TASK07_DELETION_INVENTORY_DIGEST_INVALID")
     files: list[dict[str, Any]] = []
     seen_paths: set[str] = set()
     seen_ids: set[int] = set()
@@ -174,7 +200,7 @@ def build_deletion_plan(
         if type(source_id) is not int or source_id < 1 or source_id in seen_ids:
             raise Task07DeletionError("TASK07_DELETION_ASSET_ID_INVALID")
         seen_ids.add(source_id)
-        _classify_candidate(asset, replacements.get(source_id), verified)
+        _classify_candidate(asset)
         lexical = Path(str(asset.get("file_path") or ""))
         if not lexical.is_absolute() or ".." in lexical.parts:
             raise Task07DeletionError("TASK07_DELETION_PATH_INVALID")
@@ -215,7 +241,6 @@ def build_deletion_plan(
             or asset.get("file_size_bytes") not in {None, value.st_size}
         ):
             raise Task07DeletionError("TASK07_DELETION_FILE_DRIFT")
-        replacement = replacements.get(source_id)
         files.append(
             {
                 "market_data_file_id": source_id,
@@ -231,12 +256,15 @@ def build_deletion_plan(
                 "mtime_ns": value.st_mtime_ns,
                 "sha256": checksum,
                 "disposition": asset.get("disposition"),
-                "canonical_replacement_receipt_digest": (
-                    replacement.get("receipt_digest") if replacement else None
-                ),
-                "canonical_replacement_receipt": (
-                    dict(replacement) if replacement else None
-                ),
+                "asset_classification": {
+                    "provider": asset.get("provider"),
+                    "data_type": asset.get("data_type"),
+                    "frequency": asset.get("frequency"),
+                    "data_role": asset.get("data_role"),
+                    "quality_status": asset.get("quality_status"),
+                    "source_scope": asset.get("source_scope"),
+                    "disposition": asset.get("disposition"),
+                },
                 "recoverability": "atomic_quarantine_restore",
             }
         )
@@ -244,6 +272,9 @@ def build_deletion_plan(
         "base_sha": base_sha,
         "database_revision": database_revision,
         "reference_digest": reference_digest,
+        "active_row_set_digest": active_digest,
+        "reference_snapshot_digest": snapshot_digest,
+        "inventory_digest": frozen_inventory_digest,
         "approved_roots": [
             {
                 "lexical": str(root.absolute()),
@@ -254,9 +285,17 @@ def build_deletion_plan(
             for root in sorted(roots, key=str)
         ],
         "quarantine_root": str(quarantine.absolute()),
+        "quarantine_root_lexical": str(quarantine.absolute()),
+        "quarantine_root_resolved": str(quarantine.resolve(strict=True)),
+        "quarantine_dev": quarantine_stat.st_dev,
+        "quarantine_inode": quarantine_stat.st_ino,
         "files": files,
         "market_data_files_preserved": True,
         "permanent_unlink_authorized": False,
+        "runtime_cutover_receipt_digest": None,
+        "runtime_cutover_validated": False,
+        "runtime_cutover_gate": "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED",
+        "deletion_eligible": False,
     }
     return {
         "schema_version": 1,
@@ -269,14 +308,51 @@ def build_deletion_plan(
 
 
 def _validate_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
+    core_keys = {
+        "schema_version", "command", "status", "base_sha",
+        "database_revision", "reference_digest", "active_row_set_digest",
+        "reference_snapshot_digest", "approved_roots", "quarantine_root",
+        "inventory_digest",
+        "quarantine_root_lexical", "quarantine_root_resolved",
+        "quarantine_dev", "quarantine_inode", "files",
+        "market_data_files_preserved", "permanent_unlink_authorized",
+        "runtime_cutover_receipt_digest", "runtime_cutover_validated",
+        "runtime_cutover_gate", "deletion_eligible", "plan_digest",
+        "deletion_authorized",
+    }
+    annotation_keys = {"readonly", "effects", "approval_packet", "approval_packet_hash"}
+    unknown = set(plan) - core_keys - annotation_keys
+    present_annotations = set(plan) & annotation_keys
     if (
-        plan.get("schema_version") != 1
+        unknown
+        or plan.get("schema_version") != 1
         or plan.get("command") != "data.task07.deletion-plan"
         or plan.get("status") != "planned"
         or plan.get("market_data_files_preserved") is not True
         or plan.get("permanent_unlink_authorized") is not False
         or plan.get("deletion_authorized") is not False
         or not isinstance(plan.get("files"), list)
+        or plan.get("runtime_cutover_receipt_digest") is not None
+        or plan.get("runtime_cutover_validated") is not False
+        or plan.get("runtime_cutover_gate")
+        != "BLOCKED_TASK07_RUNTIME_CUTOVER_REQUIRED"
+        or plan.get("deletion_eligible") is not False
+        or not _is_sha256(plan.get("inventory_digest"))
+        or (
+            present_annotations
+            and (
+                present_annotations != annotation_keys
+                or plan.get("readonly") is not True
+                or plan.get("effects")
+                != {
+                    "calls_rqdata": False,
+                    "writes_postgresql": False,
+                    "writes_parquet": False,
+                }
+                or plan.get("approval_packet") is not None
+                or plan.get("approval_packet_hash") is not None
+            )
+        )
     ):
         raise Task07DeletionError("TASK07_DELETION_PLAN_INVALID")
     excluded = {
@@ -293,18 +369,53 @@ def _validate_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
     facts = {key: value for key, value in plan.items() if key not in excluded}
     if plan.get("plan_digest") != _digest("guiyi.task07.deletion-plan.v1", facts):
         raise Task07DeletionError("TASK07_DELETION_PLAN_DIGEST_MISMATCH")
+    for item in plan["files"]:
+        if not isinstance(item, Mapping) or set(item) != {
+            "market_data_file_id", "lexical_path", "resolved_path",
+            "approved_root_lexical", "approved_root_resolved", "root_dev",
+            "root_inode", "file_dev", "file_inode", "size", "mtime_ns",
+            "sha256", "disposition", "asset_classification", "recoverability",
+        }:
+            raise Task07DeletionError("TASK07_DELETION_PLAN_INVALID")
+        classification = item["asset_classification"]
+        if not isinstance(classification, Mapping) or set(classification) != {
+            "provider", "data_type", "frequency", "data_role", "quality_status",
+            "source_scope", "disposition",
+        }:
+            raise Task07DeletionError("TASK07_DELETION_PLAN_INVALID")
+        _classify_candidate(
+            {
+                **classification,
+                "market_data_file_id": item["market_data_file_id"],
+            }
+        )
+        if item["disposition"] != classification["disposition"]:
+            raise Task07DeletionError("TASK07_DELETION_CLASSIFICATION_INVALID")
     return facts
 
 
 def build_deletion_approval_packet(plan: Mapping[str, Any]) -> dict[str, Any]:
+    _validate_plan(plan)
+    raise Task07DeletionError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
+
+
+def _build_unlocked_deletion_approval_packet(
+    plan: Mapping[str, Any],
+) -> dict[str, Any]:
     _validate_plan(plan)
     facts = {
         "plan_digest": plan["plan_digest"],
         "base_sha": plan["base_sha"],
         "database_revision": plan["database_revision"],
         "reference_digest": plan["reference_digest"],
+        "active_row_set_digest": plan["active_row_set_digest"],
+        "reference_snapshot_digest": plan["reference_snapshot_digest"],
+        "inventory_digest": plan["inventory_digest"],
         "approved_roots": plan["approved_roots"],
         "quarantine_root": plan["quarantine_root"],
+        "quarantine_root_resolved": plan["quarantine_root_resolved"],
+        "quarantine_dev": plan["quarantine_dev"],
+        "quarantine_inode": plan["quarantine_inode"],
         "file_manifest_digest": _digest(
             "guiyi.task07.deletion-files.v1", plan["files"]
         ),
@@ -335,14 +446,14 @@ def _verify_facts(
         raise Task07DeletionError("TASK07_DELETION_REFERENCE_DRIFT")
 
 
-def _verify_packet(
+def _verify_unlocked_packet(
     plan: Mapping[str, Any], packet_path: Path, approval_hash: str
 ) -> None:
     try:
         packet = json.loads(Path(packet_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise Task07DeletionError("TASK07_DELETION_APPROVAL_INVALID") from exc
-    expected = build_deletion_approval_packet(plan)
+    expected = _build_unlocked_deletion_approval_packet(plan)
     if canonical_digest(packet) != approval_hash:
         raise Task07DeletionError("TASK07_DELETION_APPROVAL_HASH_MISMATCH")
     if packet != expected:
@@ -390,13 +501,26 @@ def build_deletion_preflight(
     current_reference_digest: str,
 ) -> dict[str, Any]:
     _validate_plan(plan)
+    raise Task07DeletionError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
+
+
+def _build_unlocked_deletion_preflight(
+    plan: Mapping[str, Any],
+    *,
+    packet_path: Path,
+    approval_hash: str,
+    current_base_sha: str,
+    current_database_revision: str,
+    current_reference_digest: str,
+) -> dict[str, Any]:
+    _validate_plan(plan)
     _verify_facts(
         plan,
         current_base_sha=current_base_sha,
         current_database_revision=current_database_revision,
         current_reference_digest=current_reference_digest,
     )
-    _verify_packet(plan, packet_path, approval_hash)
+    _verify_unlocked_packet(plan, packet_path, approval_hash)
     for item in plan["files"]:
         _verify_source(item)
     facts = {
@@ -446,39 +570,75 @@ def _validate_preflight(
         raise Task07DeletionError("TASK07_DELETION_PREFLIGHT_DRIFT")
 
 
-def _ensure_private_quarantine(path: Path) -> None:
-    parent = path.parent
-    if path.exists():
-        if path.is_symlink() or not path.is_dir():
-            raise Task07DeletionError("TASK07_DELETION_QUARANTINE_INVALID")
-    else:
-        os.mkdir(path, 0o700)
-        parent_fd = os.open(parent, _DIR_FLAGS)
-        try:
-            os.fsync(parent_fd)
-        finally:
-            os.close(parent_fd)
-    value = os.stat(path, follow_symlinks=False)
-    if stat.S_IMODE(value.st_mode) != 0o700 or value.st_uid != os.getuid():
-        raise Task07DeletionError("TASK07_DELETION_QUARANTINE_NOT_PRIVATE")
+def _write_all(fd: int, payload: bytes) -> None:
+    offset = 0
+    while offset < len(payload):
+        written = os.write(fd, payload[offset:])
+        if written <= 0:
+            raise OSError("TASK07_DELETION_JOURNAL_SHORT_WRITE")
+        offset += written
 
 
-def _append_journal(path: Path, entry: Mapping[str, Any]) -> None:
+def _append_journal_fd(fd: int, entry: Mapping[str, Any]) -> None:
     payload = (
         json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         + "\n"
     ).encode()
-    fd = os.open(path, _JOURNAL_FLAGS, 0o600)
+    _write_all(fd, payload)
+    os.fsync(fd)
+
+
+def _open_plan_quarantine(plan: Mapping[str, Any]) -> int:
+    quarantine = Path(str(plan["quarantine_root_lexical"]))
+    matches = [
+        item
+        for item in plan["approved_roots"]
+        if _path_under(quarantine, Path(str(item["lexical"])))
+    ]
+    if len(matches) != 1:
+        raise Task07DeletionError("TASK07_DELETION_QUARANTINE_INVALID")
+    root = Path(str(matches[0]["lexical"]))
+    root_fd = os.open(root, _DIR_FLAGS)
+    current_fd = os.dup(root_fd)
     try:
-        os.write(fd, payload)
-        os.fsync(fd)
+        root_value = os.fstat(root_fd)
+        if (root_value.st_dev, root_value.st_ino) != (
+            matches[0]["dev"],
+            matches[0]["inode"],
+        ):
+            raise Task07DeletionError("TASK07_DELETION_ROOT_DRIFT")
+        for component in quarantine.relative_to(root).parts:
+            next_fd = os.open(component, _DIR_FLAGS, dir_fd=current_fd)
+            os.close(current_fd)
+            current_fd = next_fd
+        value = os.fstat(current_fd)
+        if (
+            value.st_dev != plan["quarantine_dev"]
+            or value.st_ino != plan["quarantine_inode"]
+            or stat.S_IMODE(value.st_mode) != 0o700
+            or value.st_uid != os.getuid()
+        ):
+            raise Task07DeletionError("TASK07_DELETION_QUARANTINE_DRIFT")
+        return current_fd
+    except Exception:
+        os.close(current_fd)
+        raise
     finally:
-        os.close(fd)
-    directory_fd = os.open(path.parent, _DIR_FLAGS)
+        os.close(root_fd)
+
+
+def _create_journal_fd(quarantine_fd: int, journal_name: str) -> int:
     try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
+        return os.open(
+            journal_name,
+            _JOURNAL_FLAGS,
+            0o600,
+            dir_fd=quarantine_fd,
+        )
+    except FileExistsError as exc:
+        raise Task07DeletionError(
+            "TASK07_DELETION_JOURNAL_ALREADY_EXISTS"
+        ) from exc
 
 
 def _rename_no_replace(
@@ -539,31 +699,54 @@ def apply_deletion_plan(
     current_reference_digest: str,
 ) -> dict[str, Any]:
     _validate_plan(plan)
+    raise Task07DeletionError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
+
+
+def _apply_unlocked_deletion_plan(
+    plan: Mapping[str, Any],
+    *,
+    packet_path: Path,
+    approval_hash: str,
+    preflight: Mapping[str, Any],
+    current_base_sha: str,
+    current_database_revision: str,
+    current_reference_digest: str,
+) -> dict[str, Any]:
+    _validate_plan(plan)
     _verify_facts(
         plan,
         current_base_sha=current_base_sha,
         current_database_revision=current_database_revision,
         current_reference_digest=current_reference_digest,
     )
-    _verify_packet(plan, packet_path, approval_hash)
+    _verify_unlocked_packet(plan, packet_path, approval_hash)
     _validate_preflight(plan, preflight, approval_hash)
     for item in plan["files"]:
         _verify_source(item)
     quarantine = Path(str(plan["quarantine_root"]))
-    _ensure_private_quarantine(quarantine)
     journal = quarantine / f"{plan['plan_digest']}.jsonl"
-    if journal.exists() or journal.is_symlink():
-        raise Task07DeletionError("TASK07_DELETION_JOURNAL_ALREADY_EXISTS")
-    _append_journal(
-        journal,
-        {
-            "event": "intent",
-            "plan_digest": plan["plan_digest"],
-            "file_count": len(plan["files"]),
-            "permanent_unlink_authorized": False,
-        },
-    )
-    quarantine_fd = os.open(quarantine, _DIR_FLAGS)
+    quarantine_fd = _open_plan_quarantine(plan)
+    journal_fd: int | None = None
+    try:
+        journal_fd = _create_journal_fd(quarantine_fd, journal.name)
+        os.fsync(quarantine_fd)
+    except Exception:
+        os.close(quarantine_fd)
+        raise
+    try:
+        _append_journal_fd(
+            journal_fd,
+            {
+                "event": "intent",
+                "plan_digest": plan["plan_digest"],
+                "file_count": len(plan["files"]),
+                "permanent_unlink_authorized": False,
+            },
+        )
+    except Exception as exc:
+        os.close(journal_fd)
+        os.close(quarantine_fd)
+        raise Task07DeletionError("TASK07_DELETION_JOURNAL_FAILURE") from exc
     moved: list[dict[str, Any]] = []
     open_parents: list[tuple[int, int]] = []
     try:
@@ -588,25 +771,13 @@ def apply_deletion_plan(
             ):
                 raise Task07DeletionError("TASK07_DELETION_FILE_DRIFT")
             _verify_pinned_source(parent_fd, source.name, item)
-            target_name = (
-                f"{item['market_data_file_id']}-{item['sha256'][:16]}-"
-                f"{source.name}"
-            )
-            moved_item = {
-                "market_data_file_id": item["market_data_file_id"],
-                "source_path": str(source),
-                "quarantine_path": str(quarantine / target_name),
-                "target_name": target_name,
-                "sha256": item["sha256"],
-                "file_dev": item["file_dev"],
-                "file_inode": item["file_inode"],
-                "size": item["size"],
-            }
+            moved_item = _expected_moved_item(plan, item)
+            target_name = str(moved_item["target_name"])
             _rename_no_replace(parent_fd, source.name, quarantine_fd, target_name)
             moved.append(moved_item)
             os.fsync(parent_fd)
             os.fsync(quarantine_fd)
-            _append_journal(journal, {"event": "moved", **moved_item})
+            _append_journal_fd(journal_fd, {"event": "moved", **moved_item})
             quarantine_file_fd = os.open(
                 target_name, _FILE_FLAGS, dir_fd=quarantine_fd
             )
@@ -622,8 +793,8 @@ def apply_deletion_plan(
                 or quarantine_checksum != item["sha256"]
             ):
                 raise Task07DeletionError("TASK07_DELETION_QUARANTINE_DRIFT")
-        _append_journal(
-            journal,
+        _append_journal_fd(
+            journal_fd,
             {
                 "event": "committed",
                 "plan_digest": plan["plan_digest"],
@@ -648,19 +819,25 @@ def apply_deletion_plan(
                 )
                 os.fsync(parent_fd)
                 os.fsync(quarantine_fd)
-                _append_journal(
-                    journal, {"event": "compensated", **moved_item}
-                )
+                try:
+                    _append_journal_fd(
+                        journal_fd, {"event": "compensated", **moved_item}
+                    )
+                except Exception:
+                    pass
             except Exception as compensation_error:
                 compensation_failed = True
-                _append_journal(
-                    journal,
-                    {
-                        "event": "recovery_required",
-                        "market_data_file_id": moved_item["market_data_file_id"],
-                        "error_type": type(compensation_error).__name__,
-                    },
-                )
+                try:
+                    _append_journal_fd(
+                        journal_fd,
+                        {
+                            "event": "recovery_required",
+                            "market_data_file_id": moved_item["market_data_file_id"],
+                            "error_type": type(compensation_error).__name__,
+                        },
+                    )
+                except Exception:
+                    pass
         code = (
             "TASK07_DELETION_RECOVERY_REQUIRED"
             if compensation_failed
@@ -672,6 +849,8 @@ def apply_deletion_plan(
             os.close(parent_fd)
             os.close(root_fd)
         os.close(quarantine_fd)
+        if journal_fd is not None:
+            os.close(journal_fd)
     journal_checksum = _file_checksum(journal)
     facts = {
         "plan_digest": plan["plan_digest"],
@@ -700,7 +879,6 @@ def verify_deletion_apply(
     current_base_sha: str,
     current_database_revision: str,
     current_reference_digest: str,
-    verified_replacement_ids: set[int] | None = None,
 ) -> dict[str, Any]:
     _validate_plan(plan)
     _verify_facts(
@@ -709,6 +887,12 @@ def verify_deletion_apply(
         current_database_revision=current_database_revision,
         current_reference_digest=current_reference_digest,
     )
+    core_receipt_keys = {
+        "schema_version", "command", "status", "plan_digest", "approval_hash",
+        "preflight_digest", "files", "journal_path", "journal_sha256",
+        "quarantined_count", "deleted_row_count", "permanent_unlink_authorized",
+        "receipt_digest",
+    }
     excluded = {
         "schema_version",
         "command",
@@ -718,7 +902,8 @@ def verify_deletion_apply(
     }
     facts = {key: value for key, value in receipt.items() if key not in excluded}
     if (
-        receipt.get("schema_version") != 1
+        set(receipt) - {"effects"} != core_receipt_keys
+        or receipt.get("schema_version") != 1
         or receipt.get("command") != "data.task07.deletion-apply"
         or receipt.get("status") != "passed"
         or receipt.get("plan_digest") != plan.get("plan_digest")
@@ -731,29 +916,65 @@ def verify_deletion_apply(
     files = receipt.get("files")
     if not isinstance(files, list) or len(files) != len(plan["files"]):
         raise Task07DeletionError("TASK07_DELETION_RECEIPT_DRIFT")
-    verified_ids = set(verified_replacement_ids or ())
-    for planned, moved in zip(plan["files"], files, strict=True):
-        source = Path(str(moved["source_path"]))
-        quarantine = Path(str(moved["quarantine_path"]))
-        if source.exists() or source.is_symlink():
-            raise Task07DeletionError("TASK07_DELETION_SOURCE_REAPPEARED")
-        if quarantine.is_symlink() or not quarantine.is_file():
-            raise Task07DeletionError("TASK07_DELETION_QUARANTINE_DRIFT")
-        value = os.stat(quarantine, follow_symlinks=False)
-        if (
-            value.st_dev != planned["file_dev"]
-            or value.st_ino != planned["file_inode"]
-            or value.st_size != planned["size"]
-            or _file_checksum(quarantine) != planned["sha256"]
-        ):
-            raise Task07DeletionError("TASK07_DELETION_QUARANTINE_DRIFT")
-        if (
-            planned.get("canonical_replacement_receipt_digest") is not None
-            and planned["market_data_file_id"] not in verified_ids
-        ):
-            raise Task07DeletionError("TASK07_DELETION_REPLACEMENT_VERIFY_REQUIRED")
-    journal = Path(str(receipt["journal_path"]))
-    if journal.is_symlink() or _file_checksum(journal) != receipt.get("journal_sha256"):
+    expected_files = [_expected_moved_item(plan, item) for item in plan["files"]]
+    if files != expected_files:
+        raise Task07DeletionError("TASK07_DELETION_RECEIPT_DRIFT")
+    quarantine_fd = _open_plan_quarantine(plan)
+    try:
+        for planned, moved in zip(plan["files"], files, strict=True):
+            source = Path(str(planned["lexical_path"]))
+            if source.exists() or source.is_symlink():
+                raise Task07DeletionError("TASK07_DELETION_SOURCE_REAPPEARED")
+            file_fd = os.open(str(moved["target_name"]), _FILE_FLAGS, dir_fd=quarantine_fd)
+            try:
+                value = os.fstat(file_fd)
+                checksum = _file_checksum_fd(file_fd)
+            finally:
+                os.close(file_fd)
+            if (
+                value.st_dev != planned["file_dev"]
+                or value.st_ino != planned["file_inode"]
+                or value.st_size != planned["size"]
+                or checksum != planned["sha256"]
+            ):
+                raise Task07DeletionError("TASK07_DELETION_QUARANTINE_DRIFT")
+        journal_fd = os.open(
+            f"{plan['plan_digest']}.jsonl", _FILE_FLAGS, dir_fd=quarantine_fd
+        )
+        try:
+            payload = _read_all_fd(journal_fd)
+        finally:
+            os.close(journal_fd)
+    except OSError as exc:
+        raise Task07DeletionError("TASK07_DELETION_QUARANTINE_DRIFT") from exc
+    finally:
+        os.close(quarantine_fd)
+    journal = Path(str(plan["quarantine_root"])) / f"{plan['plan_digest']}.jsonl"
+    if receipt.get("journal_path") != str(journal):
+        raise Task07DeletionError("TASK07_DELETION_JOURNAL_DRIFT")
+    try:
+        events = [json.loads(line) for line in payload.splitlines()]
+    except json.JSONDecodeError as exc:
+        raise Task07DeletionError("TASK07_DELETION_JOURNAL_DRIFT") from exc
+    expected_events = [
+        {
+            "event": "intent",
+            "plan_digest": plan["plan_digest"],
+            "file_count": len(plan["files"]),
+            "permanent_unlink_authorized": False,
+        },
+        *({"event": "moved", **item} for item in expected_files),
+        {
+            "event": "committed",
+            "plan_digest": plan["plan_digest"],
+            "moved_count": len(plan["files"]),
+            "permanent_unlink_authorized": False,
+        },
+    ]
+    if (
+        events != expected_events
+        or sha256(payload).hexdigest() != receipt.get("journal_sha256")
+    ):
         raise Task07DeletionError("TASK07_DELETION_JOURNAL_DRIFT")
     body = {
         "schema_version": 1,
@@ -766,3 +987,22 @@ def verify_deletion_apply(
         "permanent_unlink_authorized": False,
     }
     return {**body, "verify_digest": _digest("guiyi.task07.deletion-verify.v1", body)}
+
+
+def _expected_moved_item(
+    plan: Mapping[str, Any], item: Mapping[str, Any]
+) -> dict[str, Any]:
+    source = Path(str(item["lexical_path"]))
+    target_name = (
+        f"{item['market_data_file_id']}-{str(item['sha256'])[:16]}-{source.name}"
+    )
+    return {
+        "market_data_file_id": item["market_data_file_id"],
+        "source_path": str(source),
+        "quarantine_path": str(Path(str(plan["quarantine_root"])) / target_name),
+        "target_name": target_name,
+        "sha256": item["sha256"],
+        "file_dev": item["file_dev"],
+        "file_inode": item["file_inode"],
+        "size": item["size"],
+    }
