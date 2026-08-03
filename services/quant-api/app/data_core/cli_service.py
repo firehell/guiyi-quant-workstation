@@ -91,6 +91,7 @@ from app.data_core.task07_migration import (
     verify_task07_published_batch,
 )
 from app.data_core.task07_deletion import (
+    _validate_plan as validate_task07_deletion_plan,
     build_deletion_plan as build_task07_deletion_plan,
     verify_deletion_apply as verify_task07_deletion_apply,
 )
@@ -581,9 +582,8 @@ def run_data_core_command(
         _require_clean_task07_git_state(git_state)
         begin_task07_readonly_snapshot(session)
         revision = _data_core_revision(session)
-        plan = _load_task07_document(
-            _absolute_path(args.plan, "plan"),
-            expected_command="data.task07.deletion-plan",
+        plan = _load_task07_deletion_plan_document(
+            _absolute_path(args.plan, "plan")
         )
         reference_digest, active_row_set_digest, snapshot_digest = (
             _task07_current_deletion_snapshot(session, project_root)
@@ -740,6 +740,47 @@ def _load_task07_document(path: Path, *, expected_command: str) -> dict[str, Any
     if not isinstance(payload, dict) or payload.get("command") != expected_command:
         raise ValueError("TASK07_DOCUMENT_SCOPE_INVALID")
     return payload
+
+
+def _load_task07_deletion_plan_document(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID")
+    if payload.get("command") == "data.task07.deletion-plan":
+        plan = payload
+    else:
+        expected_keys = {
+            "schema_version",
+            "command",
+            "status",
+            "readonly",
+            "effects",
+            "plan",
+            "approval_packet",
+            "approval_packet_hash",
+        }
+        if (
+            set(payload) != expected_keys
+            or payload.get("schema_version") != 1
+            or payload.get("command")
+            != "data.task07.deletion-plan-envelope"
+            or payload.get("status") != "planned"
+            or payload.get("readonly") is not True
+            or payload.get("effects") != _readonly_effects()
+            or payload.get("approval_packet") is not None
+            or payload.get("approval_packet_hash") is not None
+            or not isinstance(payload.get("plan"), dict)
+        ):
+            raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID")
+        plan = payload["plan"]
+    try:
+        validate_task07_deletion_plan(plan)
+    except ValueError as exc:
+        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID") from exc
+    return plan
 
 
 def _task07_current_deletion_snapshot(

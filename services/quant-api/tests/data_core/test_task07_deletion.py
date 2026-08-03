@@ -1139,3 +1139,46 @@ def test_internal_documents_reject_all_display_annotations(tmp_path: Path) -> No
             current_database_revision=REVISION,
             current_reference_digest="a" * 64,
         )
+
+
+def test_saved_cli_plan_envelope_exactly_unwraps_for_downstream_commands(
+    tmp_path: Path,
+) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    source = approved / "old.bin"
+    source.write_bytes(b"old")
+    plan = _plan(tmp_path, [_asset(source)])
+    envelope = {
+        "schema_version": 1,
+        "command": "data.task07.deletion-plan-envelope",
+        "status": "planned",
+        "readonly": True,
+        "effects": {
+            "calls_rqdata": False,
+            "writes_postgresql": False,
+            "writes_parquet": False,
+        },
+        "plan": plan,
+        "approval_packet": None,
+        "approval_packet_hash": None,
+    }
+    path = tmp_path / "deletion-plan-envelope.json"
+    path.write_text(json.dumps(envelope), encoding="utf-8")
+    import app.data_core.cli_service as cli_service
+
+    loader = getattr(cli_service, "_load_task07_deletion_plan_document", None)
+    assert callable(loader), "downstream exact envelope loader is missing"
+    assert loader(path) == plan
+
+    invalid_documents = [
+        {**envelope, "command": "data.task07.plan-envelope"},
+        {**envelope, "attacker_annotation": True},
+        {**envelope, "readonly": False},
+        {**envelope, "plan": {**plan, "deletion_eligible": True}},
+    ]
+    for index, document in enumerate(invalid_documents):
+        invalid_path = tmp_path / f"invalid-envelope-{index}.json"
+        invalid_path.write_text(json.dumps(document), encoding="utf-8")
+        with pytest.raises(ValueError, match="TASK07_DELETION_PLAN_ENVELOPE_INVALID"):
+            loader(invalid_path)
