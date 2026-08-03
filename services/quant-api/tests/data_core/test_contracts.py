@@ -13,8 +13,10 @@ from app.data_core.contracts import (
     BarsResult,
     DataGapError,
     DatasetAmbiguousError,
+    DatasetOrigin,
     DatasetKey,
     DatasetKind,
+    ManifestLineage,
     ManifestMismatchError,
 )
 
@@ -103,11 +105,17 @@ def test_dataset_key_keeps_continuous_and_actual_dominant_distinct() -> None:
     assert {actual, continuous} == {actual, continuous}
 
 
-@pytest.mark.parametrize("frequency", [BarFrequency.M1, BarFrequency.D1])
-def test_dataset_key_accepts_only_provider_direct_frequencies(
+@pytest.mark.parametrize("frequency", tuple(BarFrequency))
+def test_dataset_key_accepts_all_persisted_frequencies(
     frequency: BarFrequency,
 ) -> None:
-    assert _key(frequency=frequency).frequency is frequency
+    overrides: dict[str, object] = {"frequency": frequency}
+    if frequency is BarFrequency.W1:
+        overrides.update(
+            dataset_kind=DatasetKind.CONTINUOUS,
+            contract_or_series="JM.MAIN",
+        )
+    assert _key(**overrides).frequency is frequency
 
 
 def test_direct_frequency_matrix_keeps_weekly_continuous_only() -> None:
@@ -154,8 +162,7 @@ def test_dataset_key_rejects_semantically_incompatible_contract_identity(
     ("overrides", "reason"),
     [
         ({"provider": "local_parquet"}, "provider"),
-        ({"frequency": BarFrequency.M5}, "frequency"),
-        ({"frequency": BarFrequency.H1}, "frequency"),
+        ({"frequency": "2m"}, "frequency"),
         ({"symbol": " "}, "symbol"),
         ({"contract_or_series": ""}, "contract_or_series"),
         ({"adjustment": "\t"}, "adjustment"),
@@ -170,6 +177,105 @@ def test_dataset_key_rejects_noncanonical_identity(
         _key(**overrides)
 
     assert getattr(error.value, "facts")["field"] == reason
+
+
+def test_manifest_lineage_accepts_exact_direct_and_aggregate_shapes() -> None:
+    direct = ManifestLineage(origin=DatasetOrigin.PROVIDER_DIRECT)
+    aggregate = ManifestLineage(
+        origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+        source_frequency=BarFrequency.M1,
+        legacy_source_checksum="a" * 64,
+        quality_evidence_digest="b" * 64,
+    )
+
+    direct.validate_dataset(_key(frequency=BarFrequency.D1))
+    aggregate.validate_dataset(_key(frequency=BarFrequency.M15))
+    assert direct.as_payload() == {"origin": "provider_direct"}
+    assert aggregate.as_payload() == {
+        "origin": "preaggregated_from_1m",
+        "source_frequency": "1m",
+        "legacy_source_checksum": "a" * 64,
+        "quality_evidence_digest": "b" * 64,
+    }
+
+
+@pytest.mark.parametrize(
+    ("lineage", "frequency", "reason"),
+    [
+        (
+            ManifestLineage(origin=DatasetOrigin.PROVIDER_DIRECT),
+            BarFrequency.M5,
+            "provider_direct_frequency_invalid",
+        ),
+        (
+            ManifestLineage(
+                origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+                source_frequency=BarFrequency.M1,
+                legacy_source_checksum="a" * 64,
+                quality_evidence_digest="b" * 64,
+            ),
+            BarFrequency.D1,
+            "preaggregated_target_frequency_invalid",
+        ),
+    ],
+)
+def test_manifest_lineage_rejects_origin_frequency_mismatch_and_derived_daily(
+    lineage: ManifestLineage,
+    frequency: BarFrequency,
+    reason: str,
+) -> None:
+    with pytest.raises(ValueError) as error:
+        lineage.validate_dataset(_key(frequency=frequency))
+
+    assert error.value.facts == {
+        "field": "lineage",
+        "reason": reason,
+        "frequency": frequency.value,
+    }
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"source_frequency": BarFrequency.M1},
+        {"legacy_source_checksum": "a" * 64},
+        {"quality_evidence_digest": "b" * 64},
+    ],
+)
+def test_direct_lineage_rejects_fabricated_aggregate_fields(
+    overrides: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        ManifestLineage(
+            origin=DatasetOrigin.PROVIDER_DIRECT,
+            **overrides,
+        )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"source_frequency": None},
+        {"source_frequency": BarFrequency.M5},
+        {"legacy_source_checksum": None},
+        {"legacy_source_checksum": "A" * 64},
+        {"quality_evidence_digest": None},
+        {"quality_evidence_digest": "short"},
+    ],
+)
+def test_aggregate_lineage_requires_exact_m1_digest_bound_evidence(
+    overrides: dict[str, object],
+) -> None:
+    values: dict[str, object] = {
+        "origin": DatasetOrigin.PREAGGREGATED_FROM_1M,
+        "source_frequency": BarFrequency.M1,
+        "legacy_source_checksum": "a" * 64,
+        "quality_evidence_digest": "b" * 64,
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValueError):
+        ManifestLineage(**values)  # type: ignore[arg-type]
 
 
 def test_bar_query_normalizes_identity_and_window_to_utc() -> None:

@@ -26,6 +26,11 @@ class BarFrequency(StrEnum):
     W1 = "1w"
 
 
+class DatasetOrigin(StrEnum):
+    PROVIDER_DIRECT = "provider_direct"
+    PREAGGREGATED_FROM_1M = "preaggregated_from_1m"
+
+
 DIRECT_FREQUENCIES = frozenset(
     {
         BarFrequency.M1,
@@ -41,6 +46,7 @@ DERIVED_FREQUENCIES = frozenset(
         BarFrequency.H1,
     }
 )
+PERSISTED_FREQUENCIES = DIRECT_FREQUENCIES | DERIVED_FREQUENCIES
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _CONCRETE_CONTRACT_PATTERN = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 
@@ -75,6 +81,134 @@ class ManifestMismatchError(DataCoreError):
 
 
 @dataclass(frozen=True, slots=True)
+class ManifestLineage:
+    origin: DatasetOrigin
+    source_frequency: BarFrequency | None = None
+    legacy_source_checksum: str | None = None
+    quality_evidence_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        try:
+            origin = DatasetOrigin(self.origin)
+        except (TypeError, ValueError) as exc:
+            raise ContractValidationError(
+                facts={"field": "lineage", "reason": "origin_invalid"}
+            ) from exc
+        object.__setattr__(self, "origin", origin)
+        if origin is DatasetOrigin.PROVIDER_DIRECT:
+            if any(
+                value is not None
+                for value in (
+                    self.source_frequency,
+                    self.legacy_source_checksum,
+                    self.quality_evidence_digest,
+                )
+            ):
+                raise ContractValidationError(
+                    facts={
+                        "field": "lineage",
+                        "reason": "provider_direct_fields_invalid",
+                    }
+                )
+            return
+        try:
+            source_frequency = BarFrequency(self.source_frequency)
+        except (TypeError, ValueError) as exc:
+            raise ContractValidationError(
+                facts={
+                    "field": "lineage",
+                    "reason": "aggregate_source_frequency_invalid",
+                }
+            ) from exc
+        if source_frequency is not BarFrequency.M1:
+            raise ContractValidationError(
+                facts={
+                    "field": "lineage",
+                    "reason": "aggregate_source_frequency_invalid",
+                }
+            )
+        object.__setattr__(self, "source_frequency", source_frequency)
+        object.__setattr__(
+            self,
+            "legacy_source_checksum",
+            _normalize_sha256(
+                self.legacy_source_checksum,
+                field="legacy_source_checksum",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "quality_evidence_digest",
+            _normalize_sha256(
+                self.quality_evidence_digest,
+                field="quality_evidence_digest",
+            ),
+        )
+
+    @classmethod
+    def from_payload(cls, payload: object) -> ManifestLineage:
+        if not isinstance(payload, Mapping):
+            raise ContractValidationError(
+                facts={"field": "lineage", "reason": "schema_invalid"}
+            )
+        if payload.get("origin") == DatasetOrigin.PROVIDER_DIRECT.value:
+            if set(payload) != {"origin"}:
+                raise ContractValidationError(
+                    facts={"field": "lineage", "reason": "schema_invalid"}
+                )
+            return cls(origin=DatasetOrigin.PROVIDER_DIRECT)
+        aggregate_fields = {
+            "origin",
+            "source_frequency",
+            "legacy_source_checksum",
+            "quality_evidence_digest",
+        }
+        if set(payload) != aggregate_fields:
+            raise ContractValidationError(
+                facts={"field": "lineage", "reason": "schema_invalid"}
+            )
+        return cls(
+            origin=payload["origin"],  # type: ignore[arg-type]
+            source_frequency=payload["source_frequency"],  # type: ignore[arg-type]
+            legacy_source_checksum=payload["legacy_source_checksum"],  # type: ignore[arg-type]
+            quality_evidence_digest=payload["quality_evidence_digest"],  # type: ignore[arg-type]
+        )
+
+    def validate_dataset(self, dataset: DatasetKey) -> None:
+        if not isinstance(dataset, DatasetKey):
+            raise ContractValidationError(
+                facts={"field": "lineage", "reason": "dataset_invalid"}
+            )
+        if self.origin is DatasetOrigin.PROVIDER_DIRECT:
+            allowed = DIRECT_FREQUENCIES
+            reason = "provider_direct_frequency_invalid"
+        else:
+            allowed = DERIVED_FREQUENCIES
+            reason = "preaggregated_target_frequency_invalid"
+        if dataset.frequency not in allowed:
+            raise ContractValidationError(
+                facts={
+                    "field": "lineage",
+                    "reason": reason,
+                    "frequency": dataset.frequency.value,
+                }
+            )
+
+    def as_payload(self) -> dict[str, str]:
+        if self.origin is DatasetOrigin.PROVIDER_DIRECT:
+            return {"origin": self.origin.value}
+        assert self.source_frequency is not None
+        assert self.legacy_source_checksum is not None
+        assert self.quality_evidence_digest is not None
+        return {
+            "origin": self.origin.value,
+            "source_frequency": self.source_frequency.value,
+            "legacy_source_checksum": self.legacy_source_checksum,
+            "quality_evidence_digest": self.quality_evidence_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class DatasetKey:
     provider: str
     dataset_kind: DatasetKind
@@ -91,7 +225,7 @@ class DatasetKey:
                 facts={"field": "provider", "value": provider}
             )
         frequency = _normalize_frequency(self.frequency, field="frequency")
-        if frequency not in DIRECT_FREQUENCIES:
+        if frequency not in PERSISTED_FREQUENCIES:
             raise ContractValidationError(
                 facts={"field": "frequency", "value": frequency.value}
             )
@@ -420,6 +554,14 @@ def _normalize_manifest_digests(values: tuple[object, ...]) -> tuple[str, ...]:
             facts={"reason": "invalid_manifest_digest"}
         )
     return tuple(sorted({value.strip().lower() for value in values}))
+
+
+def _normalize_sha256(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or _SHA256_PATTERN.fullmatch(value) is None:
+        raise ContractValidationError(
+            facts={"field": "lineage", "reason": f"{field}_invalid"}
+        )
+    return value
 
 
 def _bar_matches_dataset_identity(

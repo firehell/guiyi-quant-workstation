@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Every behavior change follows red-green-refactor.
 
-**Goal:** Complete Task 07 with trusted direct K-line migration, on-demand derived minutes, zero legacy active references, exact retirement/deletion evidence, a disabled code-only Runtime cutover, and develop integration.
+**Goal:** Complete Task 07 with trusted direct K-line migration, direct reuse of already verified aggregate-minute K-lines, zero legacy active references, exact retirement/deletion evidence, a disabled code-only Runtime cutover, and develop integration.
 
-**Architecture:** Active historical data is canonical RQData direct `1m/1d/1w` through `MarketDataService`; `5m/15m/30m/60m` is deterministically derived from canonical `1m`. Existing derived files remain cold and inactive. Migration is create-only and precedes Runtime cutover; retirement and deletion require zero checkout/Runtime active references.
+**Architecture:** Active historical data is canonical RQData direct `1m/1d/1w` plus already verified aggregate `5m/15m/30m/60m`, all read at the requested frequency through `MarketDataService`. Aggregate migration performs deterministic canonical schema conversion only: it does not reaggregate from `1m`, compare bars bucket-by-bucket, call RQData, or fall back to on-demand historical aggregation. Old derived `1d` is not migrated. Migration is create-only and precedes Runtime cutover; retirement and deletion require zero checkout/Runtime active references.
 
 **Tech Stack:** Python, FastAPI, SQLAlchemy/PostgreSQL, PyArrow/Parquet, Vue/Vite/TypeScript, shell-based engineering Gates.
 
@@ -12,9 +12,9 @@
 
 - Do not restore or require `/Volumes/扩展盘/GuiyiApprovals`; the mandatory inventory evidence root is always protected.
 - Never delete Canonical, Catalog, Manifest, DataGap, MainContractMap, reports 14/15, receipts, task evidence, ResearchSample, Git history, or historical business rows.
-- Preserve legacy `5m/15m/30m/60m` files as cold inactive data; active derived bars are computed only from canonical `1m`.
-- Unique, warning, damaged, or conflicting K-line files are quarantined/registered as DataGap and are not deleted without an exact canonical replacement receipt.
-- Deletion may cover non-K-line retirement candidates and direct K-line sources with exact verified canonical replacement receipts only.
+- Preserve every K-line source file. Eligible passed aggregate `5m/15m/30m/60m` files are imported as same-frequency canonical datasets; warning, damaged, missing-evidence, or conflicting files remain preserved and receive an explicit DataGap/blocked disposition.
+- No K-line file is a deletion candidate, including direct, aggregate, warning, damaged, conflicting, and unique files.
+- Deletion may cover only exact non-K-line retirement candidates after the trusted Runtime and retirement receipts exist.
 - Runtime work is code-only and must keep live/EOD/notification/trading disabled and `auto_order=false`.
 - Do not enter `main`, create a release/tag, call RQData by default, send notifications, or enable trading.
 - Real Canonical/PostgreSQL, Runtime, and deletion apply each require a freshly generated exact-hash owner approval packet.
@@ -53,13 +53,29 @@
 
 - Add `deletion-plan`, `deletion-preflight`, `deletion-apply`, and `deletion-verify` Task 07 CLI commands.
 - Freeze absolute path, approved root, device/inode, size, mtime, SHA-256, disposition, canonical replacement receipt, and recoverability per file.
-- Exclude protected evidence, cold derived minutes, DataGap/conflict/unique K-lines, Canonical and historical evidence.
+- Exclude protected evidence, every K-line file, Canonical and historical evidence.
 - Apply via same-filesystem atomic quarantine plus fsync journal; verify all invariants before permanent unlink. Any path, mount, stat, checksum, reference, or canonical drift fails closed.
 - Preserve `market_data_files` and historical business metadata; retirement DML only supersedes/cancels/deactivates exact active rows.
 
+### Task 5A: Persist verified aggregate-minute datasets
+
+- Extend `DatasetKey` and PostgreSQL dataset constraints to accept stored `5m/15m/30m/60m`, while retaining direct-provider `1m/1d/1w`, prohibiting actual-dominant `1w`, and rejecting old derived `1d` imports.
+- Add Alembic `0032` with a fail-closed downgrade when persisted aggregate datasets exist.
+- Add digest-bound manifest lineage distinguishing `provider_direct` from `preaggregated_from_1m`, including legacy source checksum and quality-evidence digest.
+- Classify an aggregate as reusable only when it is primary/passed, physically present and readable, its registered checksum/row count/min/max/frequency match, `source_interval=1m`, and every value is representable by the canonical writer.
+- Convert the existing aggregate rows to canonical Decimal/UTC schema without changing bar values or computing new bars. Never call RQData or perform bucket-by-bucket comparison.
+- Include direct and aggregate batches in the same exact migration approval envelope. Preserve every source K-line after successful import.
+
+### Task 5B: Remove historical on-demand aggregation
+
+- Read `1m/5m/15m/30m/60m/1d/1w` from the same-frequency canonical Catalog partition through `MarketDataService`.
+- Remove the historical `1m -> 5m/15m/30m/60m` fallback. A missing same-frequency dataset returns a DataGap and never silently reaggregates.
+- Keep confirmed live aggregation unchanged and keep all consumers on `DatasetKey/BarsResult`.
+- Run focused Market/Web/Indicator/Backtest/Signal/Review regressions and update canonical data documentation.
+
 ### Task 6: Add Task 07 code-only Runtime cutover Gate
 
-- Bind source/develop merge SHA, current detached Runtime SHA, target tree, service parents, flags, environment digest, Web bundle digest, rollback SHA, and approval hash.
+- Bind source/develop merge SHA, current detached Runtime SHA, target tree, verified aggregate migration receipt, DB revision `0032`, exact service parents/labels, flags, environment digest, Web bundle digest, active-row-set digest, rollback SHA, and approval hash.
 - Preflight requires all migration receipts verified, flags disabled, no unexpected live/SignalEvent increments, and clean exact source/runtime state.
 - Stop the exact API/scheduler/worker/Web service set, switch detached Runtime, restart the same set, run disabled smoke and active-reference scan, and rollback on failure.
 - Never enable live/EOD/notification/trading.
@@ -69,6 +85,6 @@
 - Run full backend, frontend, Ruff, engineering all-safe, secret scan, docs links, diff check, and independent whole-branch review.
 - Merge the reviewed task branch into develop through the normal protected flow; do not touch main/release/tag.
 - From the clean develop merge SHA, collect final production inventory and produce the single exact migration packet.
-- After owner approval, apply and verify every eligible batch; record explicit DataGap/quarantine dispositions for all remaining K-lines.
+- After owner approval, apply and verify every eligible direct and aggregate batch; record explicit DataGap/blocked dispositions for all remaining K-lines and preserve all source K-lines.
 - Generate and obtain approval for the Runtime packet, perform code-only cutover, and verify checkout/develop/Runtime legacy active/review references are zero.
 - Generate and obtain approval for exact retirement plus deletion packets, apply/verify them, confirm Canonical checksums unchanged, and update Task 07 evidence/status to `READY_FOR_TASK_08` only if every Gate passes.

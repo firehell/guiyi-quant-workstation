@@ -29,6 +29,7 @@ from app.data_core.canonical_store import (
     CanonicalStore,
     CanonicalStoreError,
     PublishExpectation,
+    canonical_json_digest,
 )
 from app.data_core.catalog import HistoricalCatalog
 from app.data_core.contracts import (
@@ -36,6 +37,8 @@ from app.data_core.contracts import (
     ContractValidationError,
     DatasetKey,
     DatasetKind,
+    DatasetOrigin,
+    ManifestLineage,
 )
 from app.data_core.quality import QualityValidationError
 from app.data_core.rqdata_adapter import (
@@ -165,6 +168,21 @@ def _stage_and_validate(
     bars: Sequence[CanonicalBar] | object = None,
 ):
     batch = FakeAdapter(bars).fetch_bars(_request())
+    staged = store.stage(batch)
+    return staged, store.validate(staged)
+
+
+def _stage_and_validate_aggregate(store: CanonicalStore):
+    dataset = _key(frequency=BarFrequency.M5)
+    bars = tuple(
+        replace(bar, frequency=BarFrequency.M5)
+        for bar in (_bar(FIRST, "101.125"), _bar(SECOND, "101.25"))
+    )
+    batch = ProviderBarBatch(
+        request=_request(dataset),
+        bars=bars,
+        data_version="legacy-aggregate-20260701",
+    )
     staged = store.stage(batch)
     return staged, store.validate(staged)
 
@@ -553,6 +571,8 @@ def test_stage_validate_publish_round_trip_with_exact_schema_and_values(
         == published.partition_manifest.checksum
     )
     manifest = json.loads(published.manifest_path.read_text())
+    assert manifest["manifest_format"] == "canonical-manifest-v1"
+    assert "source_lineage" not in manifest
     manifest_without_digest = {
         key: value
         for key, value in manifest.items()
@@ -587,6 +607,147 @@ def test_stage_validate_publish_round_trip_with_exact_schema_and_values(
     assert manifest["manifest_digest"] == independently_computed_manifest_digest
     assert session.scalars(select(MarketDataset)).all()
     assert session.scalars(select(MarketPartition)).all()
+
+
+def test_v2_direct_manifest_has_exact_nonaggregate_lineage(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate(store)
+
+    published = store.publish(
+        staged,
+        PublishExpectation.from_validation(
+            validation,
+            manifest_version="canonical-manifest-v2",
+            lineage=ManifestLineage(origin=DatasetOrigin.PROVIDER_DIRECT),
+        ),
+    )
+
+    manifest = json.loads(published.manifest_path.read_text())
+    assert manifest["manifest_format"] == "canonical-manifest-v2"
+    assert manifest["source_lineage"] == {"origin": "provider_direct"}
+    assert manifest["manifest_digest"] == canonical_json_digest(
+        {key: value for key, value in manifest.items() if key != "manifest_digest"}
+    )
+
+
+def test_v2_aggregate_manifest_binds_legacy_and_quality_lineage(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate_aggregate(store)
+
+    published = store.publish(
+        staged,
+        PublishExpectation.from_validation(
+            validation,
+            manifest_version="canonical-manifest-v2",
+            lineage=ManifestLineage(
+                origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+                source_frequency=BarFrequency.M1,
+                legacy_source_checksum="a" * 64,
+                quality_evidence_digest="b" * 64,
+            ),
+        ),
+    )
+
+    manifest = json.loads(published.manifest_path.read_text())
+    assert manifest["manifest_format"] == "canonical-manifest-v2"
+    assert manifest["source_lineage"] == {
+        "origin": "preaggregated_from_1m",
+        "source_frequency": "1m",
+        "legacy_source_checksum": "a" * 64,
+        "quality_evidence_digest": "b" * 64,
+    }
+    assert manifest["manifest_digest"] == canonical_json_digest(
+        {key: value for key, value in manifest.items() if key != "manifest_digest"}
+    )
+
+
+def test_aggregate_publish_requires_explicit_digest_bound_lineage(
+    tmp_path: Path,
+    session: Session,
+) -> None:
+    store = _store(tmp_path, session)
+    _, validation = _stage_and_validate_aggregate(store)
+
+    with pytest.raises(CanonicalPublishError) as error:
+        PublishExpectation.from_validation(
+            validation,
+            manifest_version="canonical-manifest-v2",
+        )
+
+    assert error.value.code == "CANONICAL_PUBLISH_EXPECTATION_INVALID"
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "missing_lineage_field",
+        "extra_top_level_field",
+        "forged_source_frequency",
+        "lineage_digest_tamper",
+    ],
+)
+def test_v2_manifest_lineage_schema_and_digest_fail_closed(
+    tmp_path: Path,
+    session: Session,
+    tamper: str,
+) -> None:
+    store = _store(tmp_path, session)
+    staged, validation = _stage_and_validate_aggregate(store)
+    published = store.publish(
+        staged,
+        PublishExpectation.from_validation(
+            validation,
+            manifest_version="canonical-manifest-v2",
+            lineage=ManifestLineage(
+                origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
+                source_frequency=BarFrequency.M1,
+                legacy_source_checksum="a" * 64,
+                quality_evidence_digest="b" * 64,
+            ),
+        ),
+    )
+    document = json.loads(published.manifest_path.read_text())
+    if tamper == "missing_lineage_field":
+        del document["source_lineage"]["quality_evidence_digest"]
+    elif tamper == "extra_top_level_field":
+        document["unexpected"] = True
+    elif tamper == "forged_source_frequency":
+        document["source_lineage"]["source_frequency"] = "5m"
+    elif tamper == "lineage_digest_tamper":
+        document["source_lineage"]["legacy_source_checksum"] = "c" * 64
+    else:
+        raise AssertionError(tamper)
+    if tamper != "lineage_digest_tamper":
+        document["manifest_digest"] = canonical_json_digest(
+            {
+                key: value
+                for key, value in document.items()
+                if key != "manifest_digest"
+            }
+        )
+
+    with pytest.raises(ValueError):
+        canonical_store_module._validate_stored_manifest_document(
+            document,
+            dataset=validation.dataset,
+            coverage_start=validation.coverage_start,
+            coverage_end=validation.coverage_end,
+            row_count=validation.row_count,
+            data_version=validation.data_version,
+            manifest_version="canonical-manifest-v2",
+            file_uri=published.partition_manifest.file_uri,
+            manifest_uri=published.partition_manifest.manifest_uri,
+            file_checksum=published.file_checksum,
+            canonical_logical_fingerprint=(
+                published.canonical_logical_fingerprint
+            ),
+        )
 
 
 def test_publish_appends_version_replacement_without_deleting_original(
