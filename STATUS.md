@@ -76,7 +76,13 @@ preflight 发现原 code-only closeout 的 generic inventory、retirement apply 
 超出永久合同；当前 Lane 3 修复 candidate 从 `develop@672877a8` 建立，收窄为
 七周期 K 线 `kline-manifest -> plan/preflight/apply/verify`，取消 checkout/Runtime 通用
 reference inventory、retirement/deletion/quarantine 公共入口和 raw 逐行比较。该 candidate
-定向回归为 89 passed，仍须独立 Review、PR/CI 与 develop ancestry 回读。
+现使用专用 manifest schema 与 sibling-directory atomic bundle publish；evidence root 与
+project/data/canonical root（含 symlink 解析）重叠即 fail-closed，四类 Direct trading-day
+conflict 均只形成未授权的 RQData 重下动作。验证为 focused 121 passed、backend
+2683 passed / 44 skipped、frontend 191 passed / 1 skipped、frontend build、Ruff、secret scan
+和 engineering all-safe 385 + health 6 全通过。独立 Review round 1 为
+`0 Critical / 4 Important`，四项均已修复，仍须对新 exact head 复审、PR/CI 与 develop ancestry
+回读；未通过复审前不得形成 release candidate。
 
 旧 v8 生产只读 snapshot 的 103,481 assets、2,791 conflicts、4,297 retirement candidates
 与引用数字均为 superseded 历史诊断，不能用于任何 approval。
@@ -117,7 +123,7 @@ Gate 进一步直接识别出 2,791 个文件至少包含一个周末 trading da
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
 | Task 05 可信消费者切换 | independent Review passed；develop integration pending | `CLEAN_FOR_INTEGRATION`；仍须 task PR、post-merge CI 与 ancestry readback，不是 release 或 Runtime Gate |
-| Task 07 code-only closeout | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | 七周期 K 线 manifest 永久合同修复 candidate 已实现；通用 inventory/retirement/quarantine 已退出；仍须独立 Review、PR/CI 与 develop 集成 |
+| Task 07 code-only closeout | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | 七周期专用、atomic K 线 manifest candidate 已验证；Review round 1 的 4 Important 已修复，exact-head re-review、PR/CI 与 develop 集成仍 pending |
 | Task 07 K-line data Gate | blocked by prerequisite | v9 内容冲突为零、7,232 trusted sources / 411 batches，但该 snapshot 已被代码变更 supersede，且未取得 exact apply approval，不得写入 |
 | Task 07 active-reference Gate | `BLOCKED_ACTIVE_REFERENCE` | 当前 checkout active=0 / review-required=0；旧 v9 detached Runtime 300/1,581 与 DB before-image 4,297 未在本轮重采，仍不得据此执行 retirement |
 | Task 06 live/EOD contract | passed | 已冻结并验证单一 EMA21 confirmed-close observation 合同；不得注入其他 evaluator，且不扩展 centered-XMA 白名单 |
@@ -144,7 +150,7 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 | legacy compatibility | PR #90～#94 实现与历史 evidence 保留；不再扩展或作为准入 Gate | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
 | Task 05 | completed on develop（本 task PR merge 后生效） | trusted consumers and fail-closed inventory complete；real DB/data-root inventory remains a Task 07 external Gate |
-| Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` / production `BLOCKED_ACTIVE_REFERENCE` | code-only closeout 基于 `develop@fbd3d606`；v9 生产数字未重采；旧 GuiyiApprovals root 已退出必需范围；production apply/readback、Runtime cutover、retirement DML 未执行；`READY_FOR_TASK_08=false` |
+| Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` / production Gate 未重开 | permanent-contract remediation 基于 `develop@672877a8`；Review round 1 未通过且修复后复审 pending；v9 生产数字未重采；production apply/readback、Runtime cutover、retirement/deletion 未执行；`READY_FOR_TASK_08=false` |
 
 ## 不可宣称
 

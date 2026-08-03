@@ -647,7 +647,9 @@ def test_task07_runtime_cutover_verify_is_readonly_and_fail_closed(
         "health": {"status": "passed"},
         "smoke": {"status": "passed"},
         "rollback": {**plan["previous_release"], "ready": True},
-        "reference_scan": plan["required_reference_scan"],
+        "post_cutover_reference_assertion": plan[
+            "required_post_cutover_reference_assertion"
+        ],
         "plan_digest": plan["plan_digest"],
     }
     receipt = {**body, "canonical_receipt_digest": canonical_digest(body)}

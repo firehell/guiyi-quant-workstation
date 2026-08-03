@@ -7,10 +7,14 @@ from pathlib import Path
 
 import pytest
 
+from app.data_core import task07
 from app.data_core.task07 import (
     AssetDisposition,
     Task07Asset,
     build_kline_manifest_index,
+    build_migration_plan,
+    load_kline_manifest_evidence,
+    write_kline_manifest_evidence,
 )
 from app.data_core.task07_migration import prepare_legacy_parquet_batch
 from app.guiyi_cli.main import main
@@ -173,6 +177,164 @@ def test_kline_manifest_never_classifies_kline_for_retirement_or_exclusion() -> 
     assert AssetDisposition.EXCLUDE_DERIVED.value not in dispositions
     assert manifest["command"] == "data.task07.kline-manifest"
     assert manifest["supported_frequencies"] == sorted(SUPPORTED_FREQUENCIES)
+    assert "inventory_digest" not in manifest
+    assert "disposition_counts" not in manifest
+    assert "reference_index" not in manifest
+    assert "deletion_authorized" not in manifest
+
+
+def test_generic_inventory_reference_and_retirement_apis_are_not_public() -> None:
+    for name in (
+        "scan_task07_references",
+        "build_inventory_index",
+        "write_inventory_evidence",
+        "load_inventory_evidence",
+        "build_retirement_plan",
+        "collect_retirement_relations",
+        "apply_retirement_plan",
+    ):
+        assert not hasattr(task07, name)
+
+
+@pytest.mark.parametrize(
+    "content_gate_status",
+    (
+        "trading_day_null_conflict",
+        "trading_day_weekend_conflict",
+        "night_session_trading_day_conflict",
+        "day_session_trading_day_conflict",
+    ),
+)
+def test_direct_trading_day_conflict_requires_rqdata_redownload(
+    content_gate_status: str,
+) -> None:
+    manifest = build_kline_manifest_index(
+        [_asset(content_gate_status=content_gate_status)],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(manifest)
+
+    assert manifest["classification_counts"] == {"CONFLICT_BLOCKED": 1}
+    assert [item["action"] for item in plan["repair_actions"]] == [
+        "rqdata_redownload"
+    ]
+    assert plan["provider_request_proposal"]["request_count"] == 1
+    assert plan["provider_request_proposal"]["provider_call_authorized"] is False
+    assert plan["repair_actions"][0]["authorized"] is False
+
+
+def _manifest_scope(tmp_path: Path) -> dict[str, str]:
+    roots = {
+        "project_root": tmp_path / "project",
+        "data_root": tmp_path / "data",
+        "canonical_root": tmp_path / "canonical",
+    }
+    for root in roots.values():
+        root.mkdir()
+    return {key: str(value.resolve()) for key, value in roots.items()}
+
+
+def test_kline_manifest_bundle_is_dedicated_and_loadable(tmp_path: Path) -> None:
+    scope = _manifest_scope(tmp_path)
+    evidence_root = tmp_path / "evidence"
+
+    manifest = write_kline_manifest_evidence(
+        [_asset()],
+        evidence_root=evidence_root,
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+        manifest_scope=scope,
+    )
+    loaded = load_kline_manifest_evidence(
+        evidence_root / "kline-manifest-index.json"
+    )
+
+    assert manifest["manifest_digest"] == loaded["manifest_digest"]
+    assert manifest["classification_counts"] == {"REUSE_TRUSTED_SOURCE": 1}
+    assert set(manifest).isdisjoint(
+        {
+            "inventory_digest",
+            "disposition_counts",
+            "reference_index",
+            "deletion_authorized",
+        }
+    )
+    assert (evidence_root / "kline-assets-000001.jsonl").is_file()
+
+
+def test_kline_manifest_rejects_evidence_overlap_with_data_scope(
+    tmp_path: Path,
+) -> None:
+    scope = _manifest_scope(tmp_path)
+    evidence_root = Path(scope["data_root"]) / "evidence"
+
+    with pytest.raises(
+        ValueError, match="TASK07_KLINE_MANIFEST_EVIDENCE_ROOT_INVALID"
+    ):
+        write_kline_manifest_evidence(
+            [_asset()],
+            evidence_root=evidence_root,
+            base_sha="1" * 40,
+            database_revision="20260803_0032",
+            manifest_scope=scope,
+        )
+
+    assert not evidence_root.exists()
+
+
+def test_kline_manifest_rejects_overlap_through_symlinked_parent(
+    tmp_path: Path,
+) -> None:
+    scope = _manifest_scope(tmp_path)
+    alias = tmp_path / "data-alias"
+    alias.symlink_to(Path(scope["data_root"]), target_is_directory=True)
+    evidence_root = alias / "evidence"
+
+    with pytest.raises(
+        ValueError, match="TASK07_KLINE_MANIFEST_EVIDENCE_ROOT_INVALID"
+    ):
+        write_kline_manifest_evidence(
+            [_asset()],
+            evidence_root=evidence_root,
+            base_sha="1" * 40,
+            database_revision="20260803_0032",
+            manifest_scope=scope,
+        )
+
+    assert not evidence_root.exists()
+
+
+def test_kline_manifest_failure_leaves_no_partial_bundle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = _manifest_scope(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    original = task07._write_fsync_file
+    calls = 0
+
+    def fail_on_index(path: Path, payload: bytes) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected index write failure")
+        original(path, payload)
+
+    monkeypatch.setattr(task07, "_write_fsync_file", fail_on_index)
+
+    with pytest.raises(OSError, match="injected index write failure"):
+        write_kline_manifest_evidence(
+            [_asset()],
+            evidence_root=evidence_root,
+            base_sha="1" * 40,
+            database_revision="20260803_0032",
+            manifest_scope=scope,
+        )
+
+    assert not evidence_root.exists()
+    assert list(tmp_path.glob(".evidence.tmp-*")) == []
 
 
 def test_direct_migration_has_no_raw_row_comparison_interface() -> None:

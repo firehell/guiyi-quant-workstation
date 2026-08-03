@@ -130,6 +130,7 @@ def run_data_core_command(
             base_sha=git_state["head"],
             database_revision=revision,
             manifest_scope={
+                "project_root": str(project_root.resolve(strict=True)),
                 "data_root": str(_absolute_path(args.data_root, "data_root").resolve(strict=False)),
                 "canonical_root": str(_absolute_path(args.canonical_root, "canonical_root").resolve(strict=False)),
             },

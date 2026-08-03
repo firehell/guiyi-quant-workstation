@@ -28,7 +28,7 @@ from app.data_core.task07_migration import (
 )
 from app.data_core.task07 import (
     AssetDisposition,
-    build_inventory_index,
+    _build_inventory_index as build_inventory_index,
     build_migration_plan,
     classify_asset,
     collect_task07_assets,

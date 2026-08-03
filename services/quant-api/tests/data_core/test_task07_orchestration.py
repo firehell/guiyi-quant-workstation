@@ -20,17 +20,17 @@ from app.data_core.task07 import (
     AssetDisposition,
     Task07Asset,
     build_approval_packet,
-    build_inventory_index,
+    _build_inventory_index as build_inventory_index,
     build_migration_plan,
     build_write_targets,
     canonical_digest,
     classify_asset,
     collect_task07_assets,
-    load_inventory_evidence,
-    scan_task07_references,
+    _load_inventory_evidence as load_inventory_evidence,
+    _scan_task07_references as scan_task07_references,
     verify_exact_approval,
     verify_task07_preflight_receipt,
-    write_inventory_evidence,
+    _write_inventory_evidence as write_inventory_evidence,
     write_kline_manifest_evidence,
 )
 from app.data_core.cli_service import run_data_core_command
@@ -197,10 +197,10 @@ def test_inventory_classifies_only_passed_rqdata_direct_bars_as_trusted() -> Non
         AssetDisposition.CONFLICT_BLOCKED,
         AssetDisposition.CONFLICT_BLOCKED,
         AssetDisposition.CONFLICT_BLOCKED,
-        AssetDisposition.REGISTER_DATA_GAP,
+        AssetDisposition.CONFLICT_BLOCKED,
     ]
     assert index["eligible_asset_count"] == 1
-    assert index["blocked_asset_count"] == 5
+    assert index["blocked_asset_count"] == 6
     assert index["deletion_authorized"] is False
 
 
@@ -1183,8 +1183,8 @@ def test_aggregate_gap_or_conflict_never_emits_provider_request_proposal() -> No
 
     plan = build_migration_plan(index, write_targets=_write_targets())
 
-    assert plan["disposition_counts"]["REGISTER_DATA_GAP"] == 1
-    assert plan["disposition_counts"]["CONFLICT_BLOCKED"] == 1
+    assert plan["classification_counts"]["REGISTER_DATA_GAP"] == 1
+    assert plan["classification_counts"]["CONFLICT_BLOCKED"] == 1
     assert plan["provider_request_proposal"]["request_count"] == 0
 
 
@@ -1216,7 +1216,7 @@ def test_conflicts_emit_only_exact_unauthorized_repair_actions() -> None:
     assert plan["repair_actions"][0]["frequency"] == "1m"
     assert plan["repair_actions"][1]["source_dataset"]["frequency"] == "1m"
     assert plan["repair_actions"][1]["frequency"] == "5m"
-    assert plan["repair_actions"][0]["inventory_digest"] == index["assets_digest"]
+    assert plan["repair_actions"][0]["manifest_digest"] == index["assets_digest"]
     assert plan["repair_actions"][0]["validation_gates"] == [
         "schema",
         "bar_end_strictly_increasing",
@@ -1249,7 +1249,7 @@ def test_runtime_cutover_minimal_plan_and_receipt_fail_closed_on_drift() -> None
         "health": {"status": "passed"},
         "smoke": {"status": "passed"},
         "rollback": {"tag": "v0.9.0", "sha": "2" * 40, "ready": True},
-        "reference_scan": {
+        "post_cutover_reference_assertion": {
             "scope": "checkout_and_runtime",
             "complete": True,
             "active": 0,
@@ -1282,7 +1282,7 @@ def test_runtime_cutover_minimal_plan_and_receipt_fail_closed_on_drift() -> None
         },
         {
             **deepcopy(receipt),
-            "reference_scan": {
+            "post_cutover_reference_assertion": {
                 "scope": "checkout_and_runtime",
                 "complete": True,
                 "active": 1,
@@ -1850,6 +1850,7 @@ def test_task07_kline_manifest_service_creates_fresh_evidence_root(
     assert (evidence_root / "kline-manifest-index.json").is_file()
     assert result["asset_count"] == 0
     assert result["manifest_scope"] == {
+        "project_root": str(Path(__file__).resolve().parents[4]),
         "data_root": str(data_root),
         "canonical_root": str(canonical_root),
     }
@@ -1860,13 +1861,14 @@ def test_task07_kline_manifest_blocks_registered_path_outside_data_roots(
 ) -> None:
     data_root = tmp_path / "data"
     canonical_root = tmp_path / "canonical"
+    registered_root = tmp_path / "registered"
     evidence_root = tmp_path / "evidence"
-    for path in (data_root, canonical_root, evidence_root):
+    for path in (data_root, canonical_root, registered_root):
         path.mkdir()
     payload = b"trusted-looking-bars"
     target = data_root / "bars.parquet"
     target.write_bytes(payload)
-    registered = evidence_root / "linked.parquet"
+    registered = registered_root / "linked.parquet"
     registered.symlink_to(target)
     engine = create_engine("sqlite://")
     _task07_inventory_schema(engine)
@@ -1895,11 +1897,11 @@ def test_task07_kline_manifest_blocks_registered_path_outside_data_roots(
             ),
         )
 
-    asset = json.loads((evidence_root / "assets-000001.jsonl").read_text())
+    asset = json.loads((evidence_root / "kline-assets-000001.jsonl").read_text())
     assert asset["source_scope"] == "approved_data_root"
     assert asset["physical_is_symlink"] is True
     assert asset["disposition"] == AssetDisposition.CONFLICT_BLOCKED
-    assert result["disposition_counts"][AssetDisposition.CONFLICT_BLOCKED] == 1
+    assert result["classification_counts"][AssetDisposition.CONFLICT_BLOCKED] == 1
 
 
 def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
@@ -1909,13 +1911,19 @@ def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
     canonical_root = tmp_path / "canonical"
     evidence_root = tmp_path / "evidence"
     staging_root = tmp_path / "staging"
+    project_root = tmp_path / "project"
+    data_root = tmp_path / "data"
     canonical_root.mkdir()
+    project_root.mkdir()
+    data_root.mkdir()
     index = write_kline_manifest_evidence(
         [_asset(catalog_checksum=None)],
         evidence_root=evidence_root,
         base_sha="9" * 40,
         database_revision="20260802_0031",
         manifest_scope={
+            "project_root": str(project_root),
+            "data_root": str(data_root),
             "canonical_root": str(canonical_root),
         },
     )

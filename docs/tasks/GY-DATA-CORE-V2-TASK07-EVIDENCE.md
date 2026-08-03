@@ -27,7 +27,19 @@ runtime_reference_inventory_public=false
 retirement_apply_public=false
 file_quarantine_public=false
 raw_row_comparison=false
-focused_regression=89 passed
+manifest_schema=dedicated_kline_manifest_v1
+manifest_bundle_publish=sibling_staging_fsync_atomic_rename
+evidence_scope_overlap=fail_closed_including_symlink_parent
+direct_trading_day_conflict=rqdata_redownload_proposal_only
+focused_regression=121 passed
+backend=2683 passed / 44 skipped
+frontend=191 passed / 1 skipped
+frontend_build=passed
+engineering_all_safe=385 passed / health 6 passed
+ruff=passed
+secret_scan=9421 files / no high-confidence secrets
+independent_review_round_1=0 Critical / 4 Important
+independent_review_round_1_fixes=implemented / exact-head re-review pending
 production_reads=false
 production_writes=false
 runtime_changes=false
@@ -269,16 +281,17 @@ retirement apply 只允许 hash-bound packet manifest 中的逐表主键和 befo
 ## 7. Current result
 
 ```text
-Task_07=BLOCKED_ACTIVE_REFERENCE
-Kline_Gate=BLOCKED_BY_ACTIVE_REFERENCE_AND_EXACT_APPROVAL
-Active_Reference_Gate=RUNTIME_300_ACTIVE_1581_REVIEW_DB_4297_PENDING
-Review_Gate=CODE_REVIEW_PASS
+Task_07=CODE_COMPLETE_EXTERNAL_GATE_PENDING
+Kline_Gate=NOT_OPENED_NO_EXACT_PRODUCTION_MANIFEST
+Active_Reference_Gate=NOT_RESCANNED_OLD_V9_BLOCKER_EVIDENCE_ONLY
+Review_Gate=ROUND_1_BLOCKED_4_IMPORTANT_FIXES_PENDING_EXACT_HEAD_REREVIEW
 READY_FOR_TASK_08=false
 ```
 
-只有冲突资产获得逐项 disposition、重新在 clean exact task HEAD 采集 inventory、每个 batch
-分别通过 exact approval/preflight/apply/readback、legacy active code/DB reference 归零且独立
-Review 无阻塞后，才能改为 `READY_FOR_TASK_08`。
+当前永久合同 candidate 的代码测试已通过，但 Review round 1 不是通过结论。只有修复后的 exact
+head 获得独立 Review `0 Critical / 0 Important`、PR/CI 通过并成为 develop 祖先，才能进入新的
+只读 Stage A release preflight。其后仍必须分别取得 release、PostgreSQL 0032、真实 K 线迁移、
+Runtime promotion 与旧派生数据删除的独立 exact approval；任一阶段不得继承前一阶段批准。
 
 K-line `apply/verify` 已实现 staging、Decimal/UTC、duplicate、OHLCV、coverage、MainContractMap
 rank=1、overlap、Catalog/Manifest publish、durable partial journal/resume 与 readback；但未获得任何
