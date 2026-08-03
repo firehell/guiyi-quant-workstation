@@ -81,6 +81,8 @@ MANUAL_GATE_OPERATIONS = frozenset({
     "enable",
 })
 
+LANE_THREE_ISOLATED_MIGRATION_PREFIX = "services/quant-api/alembic/versions/"
+
 def _validate_paths(paths: Sequence[str]) -> list[str]:
     normalized = list(paths)
     if not normalized:
@@ -146,7 +148,14 @@ def classify_develop_merge(
     if lane in (1, 2):
         return classify_paths(lane, paths)
     if lane == 3:
-        _validate_paths(paths)
+        normalized = _validate_paths(paths)
+        lane_two_surface = [
+            path
+            for path in normalized
+            if not path.startswith(LANE_THREE_ISOLATED_MIGRATION_PREFIX)
+        ]
+        if lane_two_surface:
+            classify_paths(2, lane_two_surface)
         return "ok"
     raise WorkflowError("invalid_lane", "lane must be 1, 2, or 3")
 

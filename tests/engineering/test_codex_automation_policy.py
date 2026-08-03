@@ -89,8 +89,8 @@ def test_develop_merge_classifier_reuses_lane_one_and_two_path_policy() -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "services/quant-api/app/services/disabled_feature.py",
-        "tests/engineering/test_disabled_feature.py",
+        "services/quant-api/app/services/ordinary_service.py",
+        "tests/engineering/test_ordinary_service.py",
         "scripts/engineering/example_dry_run.py",
         "services/quant-api/alembic/versions/20260803_isolated.py",
     ],
@@ -100,6 +100,46 @@ def test_lane_three_allows_side_effect_free_changes_for_develop_integration(path
     policy = _module(POLICY_PATH, f"task_workflow_develop_lane_three_{path.rsplit('/', 1)[-1]}")
 
     assert policy.classify_develop_merge(3, [path], ["develop_merge"], []) == "ok"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".codex/hooks/pre_tool_use_policy.py",
+        ".github/workflows/change-rules.yml",
+        "data/raw/authoritative-bars.parquet",
+        "data/parquet/active-bars.parquet",
+        "deploy/launchd/com.guiyi.quant-runtime.plist.template",
+        "docs/decisions/ADR-unsafe.md",
+        "services/quant-api/alembic/env.py",
+        "services/quant-api/app/signal/events.py",
+        "services/quant-api/app/tasks/live_worker.py",
+        "services/quant-api/app/websocket/live_feed.py",
+        "services/quant-api/app/runtime.py",
+        "services/quant-api/app/after_market.py",
+        "services/quant-api/app/services/live_ingest.py",
+        "services/quant-api/app/services/notification_dispatch.py",
+        "services/quant-api/app/services/signal_evaluator.py",
+        "scripts/configure-live-signal-events.sh",
+        "scripts/jm_live_signal.py",
+        "scripts/jm_htdy_apply.py",
+        "scripts/rqdata_live_ingest.py",
+        "scripts/run-runtime.sh",
+        "scripts/install-runtime.sh",
+        ".env.production",
+        "AGENTS.md",
+        "DECISIONS.md",
+        "PROJECT_SOURCE.md",
+    ],
+)
+def test_lane_three_rejects_every_existing_sensitive_path_surface(path: str) -> None:
+    """Treating a Lane 2-forbidden path as code-only must reopen a protected surface."""
+    policy = _module(POLICY_PATH, f"task_workflow_develop_lane_three_block_{path.rsplit('/', 1)[-1]}")
+
+    with pytest.raises(policy.WorkflowError) as raised:
+        policy.classify_develop_merge(3, [path], ["develop_merge"], [])
+
+    assert raised.value.error_type == "lane_two_path_forbidden"
 
 
 @pytest.mark.parametrize("operation", ["develop_merge", "merge_readback", "cleanup"])
