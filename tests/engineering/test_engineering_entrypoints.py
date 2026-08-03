@@ -298,6 +298,8 @@ def test_release_flow_prepare_fast_forwards_only_the_approved_main(tmp_path: Pat
             "bash",
             str(repo / "scripts" / "engineering" / "release-flow.sh"),
             "prepare",
+            "--local-main-sha",
+            current_main_sha,
             "--current-main-sha",
             current_main_sha,
             "--expected-sha",
@@ -319,6 +321,8 @@ def test_release_flow_prepare_fast_forwards_only_the_approved_main(tmp_path: Pat
             "bash",
             str(repo / "scripts" / "engineering" / "release-flow.sh"),
             "prepare",
+            "--local-main-sha",
+            current_main_sha,
             "--current-main-sha",
             current_main_sha,
             "--expected-sha",
@@ -332,6 +336,66 @@ def test_release_flow_prepare_fast_forwards_only_the_approved_main(tmp_path: Pat
     )
     assert applied.returncode == 0, applied.stderr + applied.stdout
     assert json.loads(applied.stdout)["mode"] == "apply"
+    assert subprocess.run(
+        ["git", "rev-parse", "main"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip() == expected_sha
+
+
+def test_release_flow_prepare_binds_and_fast_forwards_a_stale_local_main(tmp_path: Path) -> None:
+    repo, _remote, develop_tree, local_main_sha = _release_fixture(tmp_path)
+    (develop_tree / "REMOTE_MAIN.md").write_text("already released\n", encoding="utf-8")
+    subprocess.run(["git", "add", "REMOTE_MAIN.md"], cwd=develop_tree, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remote main"], cwd=develop_tree, check=True, capture_output=True, text=True
+    )
+    current_main_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=develop_tree, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (develop_tree / "RELEASE.md").write_text("next release\n", encoding="utf-8")
+    subprocess.run(["git", "add", "RELEASE.md"], cwd=develop_tree, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "next release"], cwd=develop_tree, check=True, capture_output=True, text=True
+    )
+    expected_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=develop_tree, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "push", "origin", f"{current_main_sha}:refs/heads/main", f"{expected_sha}:refs/heads/develop"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    common_args = [
+        "bash",
+        str(repo / "scripts" / "engineering" / "release-flow.sh"),
+        "prepare",
+        "--local-main-sha",
+        local_main_sha,
+        "--current-main-sha",
+        current_main_sha,
+        "--expected-sha",
+        expected_sha,
+        "--json",
+    ]
+    dry_run = subprocess.run(common_args, cwd=repo, capture_output=True, text=True)
+    assert dry_run.returncode == 0, dry_run.stderr + dry_run.stdout
+    payload = json.loads(dry_run.stdout)
+    assert payload["bound_facts"]["local_main_sha"] == local_main_sha
+    assert payload["bound_facts"]["current_main_sha"] == current_main_sha
+    assert subprocess.run(
+        ["git", "rev-parse", "main"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip() == local_main_sha
+
+    wrong_local_args = list(common_args)
+    wrong_local_args[wrong_local_args.index(local_main_sha)] = current_main_sha
+    wrong_local = subprocess.run(wrong_local_args, cwd=repo, capture_output=True, text=True)
+    assert wrong_local.returncode == 2
+    assert "main does not match --local-main-sha" in wrong_local.stderr
+
+    applied = subprocess.run([*common_args, "--apply"], cwd=repo, capture_output=True, text=True)
+    assert applied.returncode == 0, applied.stderr + applied.stdout
     assert subprocess.run(
         ["git", "rev-parse", "main"], cwd=repo, check=True, capture_output=True, text=True
     ).stdout.strip() == expected_sha

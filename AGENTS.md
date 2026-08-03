@@ -93,6 +93,7 @@
 task→`develop` merge。只有 task clean 且其 HEAD 已被 `develop` 包含时，才可移除 task
 worktree 与本地分支。`worktree_flow.py` 默认 dry-run；`task-worktree.sh` 仍只负责到 Draft PR，
 后续 merge 由 Codex 编排层执行。`release-flow.sh prepare/publish/tag` 仍只在用户批准 exact packet、
-current/target/rollback SHA、clean worktree 与远端 refs 精确匹配时逐项执行；publish 必须绑定批准时
+local/current/target/rollback SHA、clean worktree 与远端 refs 精确匹配时逐项执行；prepare 仅允许
+显式绑定的 stale local main 经当前远端 main fast-forward 到 target；publish 必须绑定批准时
 的远端 main 且不得隐式修改 upstream，tag 重试只接受 annotated object、target 与 message 全部精确
 一致的原 packet；task 自动集成不授权 release、tag 或 Runtime。
