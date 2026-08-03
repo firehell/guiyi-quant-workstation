@@ -223,8 +223,30 @@ def _release_fixture(tmp_path: Path) -> tuple[Path, Path, Path, str]:
 
 def test_release_flow_is_hash_bound_and_dry_run_by_default(tmp_path: Path) -> None:
     repo, remote, _develop_tree, sha = _release_fixture(tmp_path)
+    subprocess.run(
+        ["git", "push", "origin", f"{sha}:refs/heads/main", f"{sha}:refs/heads/develop"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    refs_before = subprocess.run(
+        ["git", "--git-dir", str(remote), "show-ref", "--heads"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
     result = subprocess.run(
-        ["bash", str(repo / "scripts" / "engineering" / "release-flow.sh"), "publish", "--expected-sha", sha, "--json"],
+        [
+            "bash",
+            str(repo / "scripts" / "engineering" / "release-flow.sh"),
+            "publish",
+            "--previous-main-sha",
+            sha,
+            "--expected-sha",
+            sha,
+            "--json",
+        ],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -233,7 +255,16 @@ def test_release_flow_is_hash_bound_and_dry_run_by_default(tmp_path: Path) -> No
     payload = json.loads(result.stdout)
     assert payload["mode"] == "dry-run"
     assert payload["bound_facts"]["expected_sha"] == sha
-    assert subprocess.run(["git", "--git-dir", str(remote), "show-ref"], capture_output=True, text=True).returncode != 0
+    assert payload["bound_facts"]["previous_main_sha"] == sha
+    assert payload["bound_facts"]["remote_main_sha"] == sha
+    assert payload["bound_facts"]["remote_develop_sha"] == sha
+    refs_after = subprocess.run(
+        ["git", "--git-dir", str(remote), "show-ref", "--heads"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert refs_after == refs_before
 
 
 def test_release_flow_prepare_fast_forwards_only_the_approved_main(tmp_path: Path) -> None:
@@ -308,8 +339,25 @@ def test_release_flow_prepare_fast_forwards_only_the_approved_main(tmp_path: Pat
 
 def test_release_flow_atomically_publishes_matching_main_and_develop(tmp_path: Path) -> None:
     repo, remote, _develop_tree, sha = _release_fixture(tmp_path)
+    subprocess.run(
+        ["git", "push", "origin", f"{sha}:refs/heads/main", f"{sha}:refs/heads/develop"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     result = subprocess.run(
-        ["bash", str(repo / "scripts" / "engineering" / "release-flow.sh"), "publish", "--expected-sha", sha, "--apply", "--json"],
+        [
+            "bash",
+            str(repo / "scripts" / "engineering" / "release-flow.sh"),
+            "publish",
+            "--previous-main-sha",
+            sha,
+            "--expected-sha",
+            sha,
+            "--apply",
+            "--json",
+        ],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -326,17 +374,74 @@ def test_release_flow_atomically_publishes_matching_main_and_develop(tmp_path: P
     assert f"{sha} refs/heads/main" in refs
     assert f"{sha} refs/heads/develop" in refs
     assert subprocess.run(
-        ["git", "config", "--get", "branch.develop.merge"], cwd=repo, check=True, capture_output=True, text=True
-    ).stdout.strip() == "refs/heads/develop"
+        ["git", "config", "--get", "branch.develop.merge"], cwd=repo, capture_output=True, text=True
+    ).returncode != 0
+
+
+def test_release_flow_rejects_remote_main_drift_before_publish(tmp_path: Path) -> None:
+    repo, remote, _develop_tree, sha = _release_fixture(tmp_path)
+    tree = subprocess.run(
+        ["git", "rev-parse", f"{sha}^{{tree}}"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    drift_sha = subprocess.run(
+        ["git", "commit-tree", tree, "-p", sha, "-m", "remote drift"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "push", "origin", f"{drift_sha}:refs/heads/main", f"{sha}:refs/heads/develop"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(repo / "scripts" / "engineering" / "release-flow.sh"),
+            "publish",
+            "--previous-main-sha",
+            sha,
+            "--expected-sha",
+            sha,
+            "--apply",
+            "--json",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "remote main does not match --previous-main-sha" in result.stderr
+    refs = subprocess.run(
+        ["git", "--git-dir", str(remote), "show-ref", "--heads"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert f"{drift_sha} refs/heads/main" in refs
+    assert f"{sha} refs/heads/develop" in refs
 
 
 def test_release_flow_atomically_publishes_annotated_release_and_rollback_tags(tmp_path: Path) -> None:
     repo, remote, _develop_tree, sha = _release_fixture(tmp_path)
+    subprocess.run(
+        ["git", "push", "origin", f"{sha}:refs/heads/main", f"{sha}:refs/heads/develop"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     publish = subprocess.run(
         [
             "bash",
             str(repo / "scripts" / "engineering" / "release-flow.sh"),
             "publish",
+            "--previous-main-sha",
+            sha,
             "--expected-sha",
             sha,
             "--apply",
@@ -390,6 +495,18 @@ def test_release_flow_atomically_publishes_annotated_release_and_rollback_tags(t
     assert f"{sha} refs/tags/runtime-20260803-release^{{}}" in refs
     assert f"{sha} refs/tags/runtime-rollback-20260803-test^{{}}" in refs
 
+    identical_retry = subprocess.run(result.args, cwd=repo, capture_output=True, text=True)
+    assert identical_retry.returncode == 0, identical_retry.stderr + identical_retry.stdout
+    retry_payload = json.loads(identical_retry.stdout)
+    assert retry_payload["status"] == "already_published"
+    assert retry_payload["planned_commands"] == []
+
+    changed_message_args = list(result.args)
+    changed_message_args[changed_message_args.index("Runtime release test")] = "Changed release message"
+    changed_message = subprocess.run(changed_message_args, cwd=repo, capture_output=True, text=True)
+    assert changed_message.returncode == 2
+    assert "existing release tags do not match the approved packet" in changed_message.stderr
+
 
 def test_release_flow_rejects_divergent_protected_branches(tmp_path: Path) -> None:
     repo, remote, develop_tree, sha = _release_fixture(tmp_path)
@@ -397,7 +514,16 @@ def test_release_flow_rejects_divergent_protected_branches(tmp_path: Path) -> No
     subprocess.run(["git", "add", "CHANGELOG.md"], cwd=develop_tree, check=True, capture_output=True, text=True)
     subprocess.run(["git", "commit", "-m", "diverge"], cwd=develop_tree, check=True, capture_output=True, text=True)
     result = subprocess.run(
-        ["bash", str(repo / "scripts" / "engineering" / "release-flow.sh"), "publish", "--expected-sha", sha, "--apply"],
+        [
+            "bash",
+            str(repo / "scripts" / "engineering" / "release-flow.sh"),
+            "publish",
+            "--previous-main-sha",
+            sha,
+            "--expected-sha",
+            sha,
+            "--apply",
+        ],
         cwd=repo,
         capture_output=True,
         text=True,

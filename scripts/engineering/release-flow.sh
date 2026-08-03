@@ -7,7 +7,7 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/engineering/release-flow.sh prepare --current-main-sha <sha> --expected-sha <sha> [--apply] [--json]
-  scripts/engineering/release-flow.sh publish --expected-sha <sha> [--apply] [--json]
+  scripts/engineering/release-flow.sh publish --previous-main-sha <sha> --expected-sha <sha> [--apply] [--json]
   scripts/engineering/release-flow.sh tag --expected-sha <sha> \
     --release-tag <runtime-tag> --release-message <message> \
     --rollback-sha <sha> --rollback-tag <runtime-tag> \
@@ -38,12 +38,20 @@ json_prepare_report() {
 
 json_publish_report() {
   local mode="$1"
-  printf '{"action":"publish","mode":"%s","status":"ok","bound_facts":{"expected_sha":"%s","main_sha":"%s","develop_sha":"%s"},"planned_commands":[["git","push","--atomic","origin","%s:refs/heads/main","%s:refs/heads/develop"]]}\n' \
-    "$mode" "$expected_sha" "$main_sha" "$develop_sha" "$expected_sha" "$expected_sha"
+  printf '{"action":"publish","mode":"%s","status":"ok","bound_facts":{"previous_main_sha":"%s","expected_sha":"%s","main_sha":"%s","develop_sha":"%s","remote_main_sha":"%s","remote_develop_sha":"%s"},"planned_commands":[["git","push","--atomic","origin","%s:refs/heads/main","%s:refs/heads/develop"]]}\n' \
+    "$mode" "$previous_main_sha" "$expected_sha" "$main_sha" "$develop_sha" \
+    "$remote_main" "$remote_develop" "$expected_sha" "$expected_sha"
 }
 
 json_tag_report() {
   local mode="$1"
+  local status="$2"
+  if [[ "$status" == "already_published" ]]; then
+    printf '{"action":"tag","mode":"%s","status":"already_published","bound_facts":{"expected_sha":"%s","release_tag":"%s","release_message_sha256":"%s","rollback_sha":"%s","rollback_tag":"%s","rollback_message_sha256":"%s"},"planned_commands":[]}\n' \
+      "$mode" "$expected_sha" "$release_tag" "$(digest_text "$release_message")" \
+      "$rollback_sha" "$rollback_tag" "$(digest_text "$rollback_message")"
+    return
+  fi
   printf '{"action":"tag","mode":"%s","status":"ok","bound_facts":{"expected_sha":"%s","release_tag":"%s","release_message_sha256":"%s","rollback_sha":"%s","rollback_tag":"%s","rollback_message_sha256":"%s"},"planned_commands":[["git","tag","-a","%s","%s","-m","<approved-release-message>"],["git","tag","-a","%s","%s","-m","<approved-rollback-message>"],["git","push","--atomic","origin","refs/tags/%s","refs/tags/%s"]]}\n' \
     "$mode" "$expected_sha" "$release_tag" "$(digest_text "$release_message")" \
     "$rollback_sha" "$rollback_tag" "$(digest_text "$rollback_message")" \
@@ -92,11 +100,62 @@ require_safe_tag_name() {
   [[ "$value" =~ ^runtime-[0-9A-Za-z._-]+$ ]] || fail "tag names must use the runtime-* contract"
 }
 
-require_tag_absent() {
+read_remote_tag() {
   local value="$1"
-  git show-ref --verify --quiet "refs/tags/${value}" && fail "local tag already exists: ${value}"
-  [[ -z "$(git ls-remote --tags origin "refs/tags/${value}" "refs/tags/${value}^{}")" ]] \
-    || fail "remote tag already exists: ${value}"
+  remote_tag_object=""
+  remote_tag_target=""
+  while IFS=$'\t' read -r sha ref; do
+    case "$ref" in
+      "refs/tags/${value}") remote_tag_object="$sha" ;;
+      "refs/tags/${value}^{}") remote_tag_target="$sha" ;;
+    esac
+  done < <(git ls-remote --tags origin "refs/tags/${value}" "refs/tags/${value}^{}")
+}
+
+existing_tag_matches() {
+  local value="$1"
+  local target="$2"
+  local message="$3"
+  local expected_remote_object="$4"
+  local expected_remote_target="$5"
+  local local_object=""
+  git show-ref --verify --quiet "refs/tags/${value}" || return 1
+  [[ "$(git cat-file -t "refs/tags/${value}" 2>/dev/null)" == "tag" ]] || return 1
+  local_object="$(git rev-parse "refs/tags/${value}")"
+  [[ "$local_object" == "$expected_remote_object" ]] || return 1
+  [[ "$(git rev-parse "refs/tags/${value}^{}")" == "$target" ]] || return 1
+  [[ "$expected_remote_target" == "$target" ]] || return 1
+  [[ "$(git for-each-ref --format='%(contents)' "refs/tags/${value}")" == "$message" ]] || return 1
+}
+
+classify_tag_packet() {
+  local release_remote_object=""
+  local release_remote_target=""
+  local rollback_remote_object=""
+  local rollback_remote_target=""
+  read_remote_tag "$release_tag"
+  release_remote_object="$remote_tag_object"
+  release_remote_target="$remote_tag_target"
+  read_remote_tag "$rollback_tag"
+  rollback_remote_object="$remote_tag_object"
+  rollback_remote_target="$remote_tag_target"
+
+  if ! git show-ref --verify --quiet "refs/tags/${release_tag}" \
+    && ! git show-ref --verify --quiet "refs/tags/${rollback_tag}" \
+    && [[ -z "$release_remote_object" && -z "$release_remote_target" \
+      && -z "$rollback_remote_object" && -z "$rollback_remote_target" ]]; then
+    tag_packet_state="absent"
+    return
+  fi
+
+  if existing_tag_matches "$release_tag" "$expected_sha" "$release_message" \
+      "$release_remote_object" "$release_remote_target" \
+    && existing_tag_matches "$rollback_tag" "$rollback_sha" "$rollback_message" \
+      "$rollback_remote_object" "$rollback_remote_target"; then
+    tag_packet_state="exact"
+    return
+  fi
+  fail "existing release tags do not match the approved packet"
 }
 
 [[ $# -ge 1 ]] || { usage >&2; exit 2; }
@@ -106,6 +165,7 @@ shift
 
 expected_sha=""
 current_main_sha=""
+previous_main_sha=""
 release_tag=""
 release_message=""
 rollback_sha=""
@@ -117,6 +177,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --expected-sha) [[ $# -ge 2 ]] || fail "--expected-sha requires a value"; expected_sha="$2"; shift 2 ;;
     --current-main-sha) [[ $# -ge 2 ]] || fail "--current-main-sha requires a value"; current_main_sha="$2"; shift 2 ;;
+    --previous-main-sha) [[ $# -ge 2 ]] || fail "--previous-main-sha requires a value"; previous_main_sha="$2"; shift 2 ;;
     --release-tag) [[ $# -ge 2 ]] || fail "--release-tag requires a value"; release_tag="$2"; shift 2 ;;
     --release-message) [[ $# -ge 2 ]] || fail "--release-message requires a value"; release_message="$2"; shift 2 ;;
     --rollback-sha) [[ $# -ge 2 ]] || fail "--rollback-sha requires a value"; rollback_sha="$2"; shift 2 ;;
@@ -168,13 +229,16 @@ fi
 [[ "$develop_sha" == "$expected_sha" ]] || fail "develop does not match --expected-sha"
 
 if [[ "$action" == "publish" ]]; then
+  [[ "$previous_main_sha" =~ ^[0-9a-f]{40}$ ]] || fail "--previous-main-sha must be exactly 40 lowercase hexadecimal characters"
+  read_remote_release_refs
+  [[ "$remote_main" == "$previous_main_sha" ]] || fail "remote main does not match --previous-main-sha"
+  [[ "$remote_develop" == "$expected_sha" ]] || fail "remote develop does not match --expected-sha"
   if [[ "$apply" != true ]]; then
     [[ "$json" == true ]] && json_publish_report "dry-run" \
       || echo "[PLAN] git push --atomic origin ${expected_sha}:refs/heads/main ${expected_sha}:refs/heads/develop"
     exit 0
   fi
   git push --atomic origin "${expected_sha}:refs/heads/main" "${expected_sha}:refs/heads/develop"
-  git branch --set-upstream-to=origin/develop develop >/dev/null
   read_remote_release_refs
   [[ "$remote_main" == "$expected_sha" ]] || fail "remote main does not match --expected-sha after publish"
   [[ "$remote_develop" == "$expected_sha" ]] || fail "remote develop does not match --expected-sha after publish"
@@ -193,11 +257,15 @@ git cat-file -e "${rollback_sha}^{commit}" 2>/dev/null || fail "rollback commit 
 read_remote_release_refs
 [[ "$remote_main" == "$expected_sha" ]] || fail "remote main does not match --expected-sha"
 [[ "$remote_develop" == "$expected_sha" ]] || fail "remote develop does not match --expected-sha"
-require_tag_absent "$release_tag"
-require_tag_absent "$rollback_tag"
+classify_tag_packet
+if [[ "$tag_packet_state" == "exact" ]]; then
+  [[ "$json" == true ]] && json_tag_report "$(if [[ "$apply" == true ]]; then printf apply; else printf dry-run; fi)" "already_published" \
+    || echo "[OK] approved annotated release and rollback tags are already published"
+  exit 0
+fi
 
 if [[ "$apply" != true ]]; then
-  [[ "$json" == true ]] && json_tag_report "dry-run" \
+  [[ "$json" == true ]] && json_tag_report "dry-run" "ok" \
     || echo "[PLAN] create and atomically push annotated tags ${release_tag} ${rollback_tag}"
   exit 0
 fi
@@ -212,12 +280,6 @@ if ! git push --atomic origin "refs/tags/${release_tag}" "refs/tags/${rollback_t
   fail "failed to atomically publish release tags"
 fi
 
-[[ "$(git cat-file -t "refs/tags/${release_tag}")" == "tag" ]] || fail "release tag is not annotated"
-[[ "$(git cat-file -t "refs/tags/${rollback_tag}")" == "tag" ]] || fail "rollback tag is not annotated"
-[[ "$(git rev-parse "refs/tags/${release_tag}^{}")" == "$expected_sha" ]] || fail "release tag target mismatch"
-[[ "$(git rev-parse "refs/tags/${rollback_tag}^{}")" == "$rollback_sha" ]] || fail "rollback tag target mismatch"
-[[ "$(git ls-remote --tags origin "refs/tags/${release_tag}^{}" | awk '{print $1}')" == "$expected_sha" ]] \
-  || fail "remote release tag target mismatch"
-[[ "$(git ls-remote --tags origin "refs/tags/${rollback_tag}^{}" | awk '{print $1}')" == "$rollback_sha" ]] \
-  || fail "remote rollback tag target mismatch"
-[[ "$json" == true ]] && json_tag_report "apply" || echo "[OK] published annotated release and rollback tags"
+classify_tag_packet
+[[ "$tag_packet_state" == "exact" ]] || fail "published release tags failed exact readback"
+[[ "$json" == true ]] && json_tag_report "apply" "ok" || echo "[OK] published annotated release and rollback tags"
