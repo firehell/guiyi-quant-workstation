@@ -20,7 +20,12 @@ from app.data_core.catalog import (
     HistoricalCatalog,
     canonical_main_contract_mapping_from_rows,
 )
-from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
+from app.data_core.contracts import (
+    BAR_FREQUENCY_VALUES,
+    BarFrequency,
+    DatasetKey,
+    DatasetKind,
+)
 from app.data_core.historical_sessions import jm_provider_sessions
 from app.data_core.historical_sync import plan_missing_windows
 from app.data_core.rqdata_adapter import TradingSessionCoverage
@@ -32,7 +37,7 @@ from app.services.jm_session_contract import (
 
 
 _DIRECT_FREQUENCIES = frozenset({"1m", "1d", "1w"})
-_BAR_FREQUENCIES = frozenset({"1m", "5m", "15m", "30m", "60m", "1d", "1w"})
+_BAR_FREQUENCIES = frozenset(BAR_FREQUENCY_VALUES)
 _IDENTITY_FIELDS = (
     "provider",
     "dataset_kind",
@@ -120,8 +125,8 @@ def build_jm_shadow_query_set(
     if window_start >= window_end:
         raise ValueError("shadow window must be increasing")
     matrix = {
-        "continuous": ("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
-        "actual_dominant": ("1m", "5m", "15m", "30m", "60m", "1d"),
+        "continuous": BAR_FREQUENCY_VALUES,
+        "actual_dominant": BAR_FREQUENCY_VALUES,
     }
     return tuple(
         HistoricalShadowQuery(
@@ -901,10 +906,8 @@ def _exclusion_reason(item: LegacyAssetInventory) -> str | None:
         return "data_role_not_primary"
     if item.quality_status != "passed":
         return "quality_not_passed"
-    if item.dataset_kind == "actual_dominant" and item.period == "1w":
-        return "actual_dominant_weekly_identity_not_supported"
     if item.period not in _DIRECT_FREQUENCIES:
-        return "derived_frequency_not_persisted"
+        return "preaggregated_source_not_direct_reuse_eligible"
     if item.period == "1d" and "1m" in item.source_intervals:
         return "derived_daily_not_rqdata_direct"
     if item.period in {"1d", "1w"} and not item.source_intervals:
@@ -930,10 +933,8 @@ def _shadow_exclusion_reason(item: LegacyAssetInventory) -> str | None:
         return "data_role_not_primary"
     if item.quality_status != "passed":
         return "quality_not_passed"
-    if item.dataset_kind == "actual_dominant" and item.period == "1w":
-        return "actual_dominant_weekly_identity_not_supported"
     if item.period not in _DIRECT_FREQUENCIES:
-        return "derived_frequency_not_used_as_shadow_source"
+        return "preaggregated_source_not_selected_for_legacy_shadow"
     if not item.contract_or_series:
         return "contract_identity_missing"
     if (

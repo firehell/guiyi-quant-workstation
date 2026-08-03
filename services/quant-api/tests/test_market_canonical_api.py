@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -13,6 +14,7 @@ from app.data_core.catalog import HistoricalCatalog, PartitionManifest
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.data_center import Instrument
 from app.services.canonical_market_data import get_canonical_coverage
 
 
@@ -161,6 +163,47 @@ def test_canonical_market_bars_requires_explicit_v2_identity_and_window(
     assert observed["query"].contract_or_series is None
 
 
+@pytest.mark.parametrize("frequency", ["2m", "4h", "1D"])
+def test_canonical_market_bars_rejects_frequency_aliases_before_reading(
+    monkeypatch,
+    frequency: str,
+) -> None:
+    monkeypatch.setattr(
+        market_api,
+        "_canonical_reader",
+        lambda _session: (_ for _ in ()).throw(
+            AssertionError("unsupported frequency must not read data")
+        ),
+    )
+    app.dependency_overrides[get_db] = lambda: iter((object(),))
+    try:
+        response = TestClient(app).get(
+            "/api/v1/market/bars/canonical",
+            params={
+                "dataset_kind": "actual_dominant",
+                "symbol": "jm",
+                "frequency": frequency,
+                "start": "2026-07-01T01:00:00Z",
+                "end": "2026-07-01T01:01:00Z",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "UNSUPPORTED_FREQUENCY"
+    assert detail["facts"]["allowed"] == [
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "1d",
+        "1w",
+    ]
+
+
 def test_canonical_coverage_comes_from_catalog_without_legacy_profile() -> None:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -169,6 +212,8 @@ def test_canonical_coverage_comes_from_catalog_without_legacy_profile() -> None:
     )
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine)() as session:
+        session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE"))
+        session.flush()
         dataset = _result().source_datasets[0]
         HistoricalCatalog(session).register_partition(
             dataset,
@@ -185,13 +230,7 @@ def test_canonical_coverage_comes_from_catalog_without_legacy_profile() -> None:
         )
         coverage = get_canonical_coverage(session, symbol="jm")
 
-    assert [item.period for item in coverage.items] == [
-        "1m",
-        "5m",
-        "15m",
-        "30m",
-        "60m",
-    ]
+    assert [item.period for item in coverage.items] == ["1m"]
     assert {item.profile_id for item in coverage.items} == {None}
     assert {item.quality_status for item in coverage.items} == {
         "catalog_only_unverified"

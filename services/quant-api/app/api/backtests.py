@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.backtest.errors import BacktestContractError
 from app.data_core.contracts import DataCoreError
+from app.data_core.consumer_identity import CanonicalConsumerInput
 from app.backtest.service import BacktestService
 from app.backtest.v1b_jm_tasks import (
     build_jm_daily_ema21_macd_volume_formal_request,
@@ -38,7 +39,7 @@ from app.services.batch_backtest import (
     report_payload,
     task_snapshot,
 )
-from app.services.market_data_reader import MarketDataReader
+from app.data_core.catalog import HistoricalCatalog
 from app.tasks.backtests import run_backtest_task
 from app.vnpy_integration.errors import BacktestConfigurationError
 
@@ -134,7 +135,6 @@ class BacktestRunRequest(BaseModel):
     symbol: str
     contract: str
     period: str
-    profile_id: str | None = None
     start: str
     end: str
     initial_capital: float = Field(default=100000.0, gt=0)
@@ -160,7 +160,6 @@ class BatchBacktestRunRequest(BaseModel):
     period: str
     start: str
     end: str
-    profile_id: str | None = None
     symbols: list[str] | None = None
     initial_capital: float = Field(default=100000.0, gt=0)
     risk_per_trade_pct: float = Field(default=0.01, gt=0, le=1)
@@ -710,14 +709,13 @@ def list_watchlist_items(code: str, session: Session = Depends(get_db)) -> list[
     watchlist = session.scalar(select(Watchlist).where(Watchlist.code == code, Watchlist.is_active.is_(True)))
     if watchlist is None:
         raise HTTPException(status_code=404, detail="watchlist not found")
-    reader = MarketDataReader(session)
     return [
         {
             "symbol": item.symbol,
             "name": item.name,
             "exchange_code": item.exchange_code,
             "default_contract": item.default_contract,
-            "available_periods": sorted({row.period for row in reader.get_coverage(symbol=item.symbol) if row.period}),
+            "available_periods": sorted({row.frequency for row in HistoricalCatalog(session).list_datasets(symbol=item.symbol)}),
         }
         for item in sorted([item for item in watchlist.items if item.is_active], key=lambda row: (row.sort_order, row.symbol))
     ]
@@ -746,10 +744,11 @@ def _get_task_by_ref(session: Session, task_ref: str) -> BacktestTask | None:
 def task_api_payload(task: BacktestTask) -> dict[str, Any]:
     payload = task_snapshot(task)
     input_identity = _canonical_input_identity(task.binding_snapshot)
-    if input_identity is not None:
+    if _is_canonical_input_snapshot(task.binding_snapshot):
         payload.pop("profile_id", None)
         payload.pop("market_data_file_id", None)
         payload.pop("binding_snapshot", None)
+    if input_identity is not None:
         payload["input_identity"] = input_identity
     payload.update(
         {
@@ -773,11 +772,17 @@ def task_api_payload(task: BacktestTask) -> dict[str, Any]:
 def report_api_payload(report: BacktestReportModel, include_detail: bool = False) -> dict[str, Any]:
     payload = report_payload(report, include_detail=include_detail)
     input_identity = _canonical_input_identity(report.binding_snapshot)
-    if input_identity is not None:
+    if _is_canonical_input_snapshot(report.binding_snapshot):
         payload.pop("profile_id", None)
         payload.pop("market_data_file_id", None)
         payload.pop("binding_snapshot", None)
+    if input_identity is not None:
         payload["input_identity"] = input_identity
+        payload["input_identity_attestation"] = {
+            "schema_version": "canonical_consumer_input_attestation_v1",
+            "status": "server_verified",
+            "digest": input_identity["digest"],
+        }
     from guiyi_quant.strategies.indicator_policy import resolve_report_indicator_policy
 
     policy = resolve_report_indicator_policy(report.summary or {})
@@ -806,12 +811,22 @@ def report_api_payload(report: BacktestReportModel, include_detail: bool = False
 def _canonical_input_identity(
     snapshot: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    if not isinstance(snapshot, dict):
-        return None
-    if snapshot.get("schema_version") != "backtest_canonical_inputs_v1":
+    if not _is_canonical_input_snapshot(snapshot):
         return None
     identity = snapshot.get("input_identity")
-    return dict(identity) if isinstance(identity, dict) else None
+    if not isinstance(identity, dict):
+        return None
+    try:
+        return CanonicalConsumerInput.from_snapshot(identity).to_snapshot()
+    except DataCoreError:
+        return None
+
+
+def _is_canonical_input_snapshot(snapshot: dict[str, Any] | None) -> bool:
+    return (
+        isinstance(snapshot, dict)
+        and snapshot.get("schema_version") == "backtest_canonical_inputs_v1"
+    )
 
 
 def _formal_safety_payload(value: Any) -> dict[str, Any]:

@@ -12,7 +12,8 @@
 RQData
 -> temporary staging
 -> schema/session/duplicate/OHLCV/coverage validation
--> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> one historical canonical Parquet root
+   (provider-direct 1m/1d/1w + persisted preaggregated 5m/15m/30m/60m)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
 -> Market / Web / Indicator / Backtest / Signal / Review
@@ -20,7 +21,11 @@ RQData
 
 这是已冻结的目标，不表示迁移或消费者切换已经完成。目标数据身份使用不可歧义的
 `DatasetKey`；`continuous` 与 `actual_dominant` 必须由消费者显式声明，禁止静默互换。
-5m/15m/30m/60m 只从 canonical 1m 按交易时段确定性聚合，缓存不形成新的数据真相。
+正式历史周期永久固定为 `1m/5m/15m/30m/60m/1d/1w`。`1m/1d/1w`
+的来源角色为 `provider_direct`，`5m/15m/30m/60m` 的来源角色为
+`preaggregated_from_1m`；七者都是可持久化、可查询的 Canonical DatasetKey。历史读取只查请求
+同频的 Catalog/partition，缺失时返回 DataGap，不从其他周期动态聚合或回退。
+`actual_dominant 1w` 按该周最后交易日的 `MainContractMap.rank=1` 选择具体合约。
 
 迁移期间既有 Profile/ActiveBinding/复杂 lineage 只作为 legacy compatibility。旧
 `GY-CORE-02` Facade 与 `GY-CORE-03` CLI 壳允许复用，但不得继续扩展旧 active selector；

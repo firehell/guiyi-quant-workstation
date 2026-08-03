@@ -420,10 +420,7 @@ def _build_profile_matrix(
                 source_role = "direct"
                 layer = layers.get((product, period, source_role)) or layers.get((product, period, "derived_from_1m"))
                 role_supported = any(role in {"dominant", "dominant_main", "actual", "actual_contract"} for role in (profile.contract_roles or []))
-                if period == "1w" and "actual" in (profile.contract_roles or []):
-                    status = "not_applicable"
-                    reason = "profile_scope_not_in_v1_contract"
-                elif not layer or not role_supported:
+                if not layer or not role_supported:
                     status = "not_applicable"
                     reason = "profile_scope_not_applicable"
                 elif (

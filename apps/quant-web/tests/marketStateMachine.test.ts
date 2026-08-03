@@ -4,10 +4,8 @@ import { describe, it } from 'node:test'
 import {
   buildEmaObservationStatus,
   buildMarketChartRouteQuery,
-  isResearchProfileRequired,
   LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE,
   qualityFailedObservationText,
-  RESEARCH_PROFILE_REQUIRED_MESSAGE,
   safeMarketApiError,
   TECHNICAL_OBSERVATION_PREFIX,
 } from '../src/utils/marketChartQuery.ts'
@@ -20,7 +18,6 @@ describe('marketStateMachine', () => {
         actualContract: 'JM2609',
         period: '15m',
         contractView: 'actual',
-        profileId: 'intraday_research_v1',
         accessMode: 'research',
         dataMode: 'historical',
       },
@@ -37,7 +34,7 @@ describe('marketStateMachine', () => {
     assert.equal(query.contract, 'JM2609')
     assert.equal(query.period, '15m')
     assert.equal(query.contract_view, undefined)
-    assert.equal(query.profile_id, 'intraday_research_v1')
+    assert.equal(query.profile_id, undefined)
     assert.equal(query.access_mode, 'research')
     assert.equal(query.data_mode, undefined)
     assert.equal(query.report_id, '42')
@@ -64,17 +61,6 @@ describe('marketStateMachine', () => {
     assert.equal(query.contract_view, 'continuous')
     assert.equal(query.data_mode, 'live')
     assert.equal(query.access_mode, undefined)
-    assert.equal(query.profile_id, undefined)
-  })
-
-  it('fail-closed when research mode lacks profile', () => {
-    assert.equal(isResearchProfileRequired('research', 'historical', null), true)
-    assert.equal(isResearchProfileRequired('research', 'historical', ''), true)
-    assert.equal(isResearchProfileRequired('research', 'historical', 'profile_v1'), false)
-    assert.equal(isResearchProfileRequired('research', 'live', null), false)
-    assert.equal(isResearchProfileRequired('browser', 'historical', null), false)
-    assert.equal(isResearchProfileRequired('research', 'historical', null, true), false)
-    assert.equal(RESEARCH_PROFILE_REQUIRED_MESSAGE.includes('Profile'), true)
   })
 
   it('shows DataGap as an explicit fail-closed message', () => {

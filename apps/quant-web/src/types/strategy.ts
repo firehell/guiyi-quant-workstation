@@ -61,7 +61,6 @@ export interface BacktestRunRequest {
   symbol: string
   contract: string
   period: string
-  profile_id?: string | null
   start: string
   end: string
   initial_capital: number
@@ -209,7 +208,6 @@ export interface BatchBacktestRunRequest {
   period: string
   start: string
   end: string
-  profile_id?: string | null
   symbols?: string[]
   initial_capital: number
   risk_per_trade_pct: number

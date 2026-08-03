@@ -62,6 +62,7 @@ import { useBacktestStore } from '@/stores/backtest'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { buildBacktestReportPresentation } from '@/utils/backtestReportPresentation'
+import { PERIODS } from '@/utils/constants'
 import { buildFormalBacktestRequest } from '@/utils/dataCoreV2Consumer'
 import { buildChartResearchQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
@@ -179,14 +180,7 @@ const datasetKindOptions = [
   { label: '实际主力合约（actual_dominant）', value: 'actual_dominant' },
   { label: '连续序列（continuous）', value: 'continuous' },
 ]
-const intervalOptions = [
-  { label: '1分钟', value: '1m' },
-  { label: '5分钟', value: '5m' },
-  { label: '15分钟', value: '15m' },
-  { label: '30分钟', value: '30m' },
-  { label: '60分钟', value: '60m' },
-  { label: '日线', value: '1d' },
-]
+const intervalOptions = PERIODS
 const tradeSortOptions: Array<{ label: string; value: BacktestTradeSortBy }> = [
   { label: '开仓时间', value: 'open_time' },
   { label: '平仓时间', value: 'close_time' },
@@ -681,7 +675,7 @@ async function loadReportDetail(reportId: number, options: { force?: boolean } =
 
     await loadReviewSources(reportId, requestId)
     await loadReportOrders(reportId)
-    await loadReportBars(report, klineTrades, requestId)
+    await loadReportBars(report, requestId)
   } catch (err) {
     if (!isCurrentReportRequest(requestId)) return
     clearReportDetailState()
@@ -789,19 +783,17 @@ async function loadReviewSources(reportId: number, requestId = reportDetailReque
 }
 
 /** 为报告窗口拉取 K 线；空结果保留交易明细供复盘检查。 */
-async function loadReportBars(report: BacktestReport, trades: BacktestTrade[], requestId = reportDetailRequestId) {
+async function loadReportBars(report: BacktestReport, requestId = reportDetailRequestId) {
   loadingKline.value = true
   bars.value = []
   klineError.value = null
+  klineQueryItems.value = []
   try {
-    const result = await getMarketBarsForBacktestReport(report, trades, { limit: 10000 })
+    const result = await getMarketBarsForBacktestReport(report)
     if (!isCurrentReportRequest(requestId)) return
     const response = result.response
     klineQueryItems.value = klineDebugItems(result.query)
     bars.value = response.bars || []
-    if (bars.value.length === 0) {
-      klineError.value = '未返回K线数据，交易明细仍可用于复盘检查。'
-    }
   } catch (err) {
     if (!isCurrentReportRequest(requestId)) return
     klineError.value = apiError(err, 'K线数据暂不可用，交易明细仍可用于复盘检查。')
@@ -1025,16 +1017,23 @@ function tradeSceneTags(trade: BacktestTrade) {
 
 function klineDebugItems(query: BacktestMarketBarsQueryDebug) {
   return [
+    { label: 'dataset_kind', value: query.dataset_kind || '-' },
     { label: 'symbol', value: query.symbol || '-' },
     { label: 'vt_symbol', value: query.vt_symbol || '-' },
-    { label: 'contract', value: query.contract || '-' },
+    {
+      label: 'contract',
+      value: query.contract ?? (query.dataset_kind === 'actual_dominant' ? 'server_resolver(null)' : '-'),
+    },
     { label: 'exchange', value: query.exchange || '-' },
     { label: 'interval', value: query.interval || '-' },
     { label: 'start', value: query.start || '-' },
     { label: 'end', value: query.end || '-' },
     { label: 'provider', value: query.provider || '-' },
     { label: 'data_role', value: query.data_role || '-' },
-    { label: 'attempts', value: query.attempted.map((item) => `${item.contract}/${item.period}/${item.provider || '*'}`).join(' → ') },
+    {
+      label: 'attempts',
+      value: query.attempted.map((item) => `${item.contract ?? 'server_resolver(null)'}/${item.period}`).join(' → '),
+    },
   ]
 }
 
@@ -1639,7 +1638,7 @@ function directionLabel(direction: string) {
           :loading="loadingKline"
           :error="klineError"
         />
-        <div v-if="!loadingKline && bars.length === 0" class="kline-query-state">
+        <div v-if="!loadingKline && bars.length === 0 && !klineError" class="kline-query-state">
           <strong>当前 K线查询未返回数据</strong>
           <span v-for="item in klineQueryItems" :key="item.label">{{ item.label }}={{ item.value }}</span>
         </div>

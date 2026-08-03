@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 from typing import Any, Mapping
@@ -63,6 +64,42 @@ from app.data_core.historical_sync import (
     HistoricalSynchronizer,
     plan_missing_windows,
 )
+from app.data_core.task07 import (
+    _aggregate_parquet_content_gate,
+    build_approval_packet as build_task07_approval_packet,
+    build_migration_approval_facts as build_task07_migration_approval_facts,
+    build_migration_batch_facts as build_task07_migration_batch_facts,
+    build_migration_plan as build_task07_migration_plan,
+    build_preflight_receipt as build_task07_preflight_receipt,
+    build_write_targets as build_task07_write_targets,
+    build_retirement_plan as build_task07_retirement_plan,
+    canonical_digest as task07_canonical_digest,
+    begin_task07_readonly_snapshot,
+    begin_task07_serializable_apply,
+    collect_retirement_relations,
+    collect_task07_assets,
+    load_inventory_evidence,
+    read_task07_quality_evidence,
+    scan_task07_references,
+    verify_exact_approval as verify_task07_exact_approval,
+    verify_task07_preflight_receipt,
+    write_inventory_evidence,
+)
+from app.data_core.task07_migration import (
+    TASK07_AGGREGATE_MANIFEST_VERSION,
+    execute_task07_prepared_batch,
+    load_task07_rank1_map,
+    prepare_legacy_aggregate_parquet_batch,
+    prepare_legacy_parquet_batch,
+    read_legacy_aggregate_trading_days,
+    resolve_task07_provider_sessions,
+    verify_task07_published_batch,
+)
+from app.data_core.task07_deletion import (
+    _validate_plan as validate_task07_deletion_plan,
+    build_deletion_plan as build_task07_deletion_plan,
+    verify_deletion_apply as verify_task07_deletion_apply,
+)
 from app.data_core.rqdata_provider import CanonicalRQDataAdapter
 from app.services.rqdata_ingest.client import RqDataClient
 from app.services.market_data_reader import MarketDataReader
@@ -82,6 +119,558 @@ def run_data_core_command(
     session: Session,
     args: Any,
 ) -> dict[str, Any]:
+    if command == "task07.inventory":
+        project_root = _absolute_path(args.project_root, "project_root")
+        evidence_root = _absolute_path(args.evidence_root, "evidence_root")
+        additional_protected_roots = getattr(args, "protected_root", None) or []
+        protected_roots = tuple(
+            dict.fromkeys(
+                [
+                    *(
+                        _absolute_path(path, "protected_root")
+                        for path in additional_protected_roots
+                    ),
+                    evidence_root,
+                ]
+            )
+        )
+        _require_loaded_source_checkout(project_root)
+        git_state = _git_state(project_root)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        if args.database_revision and args.database_revision != revision:
+            raise ValueError("TASK07_DATABASE_REVISION_DRIFT")
+        reference_roots = [("checkout", project_root)]
+        reference_roots.extend(
+            ("detached_runtime", _absolute_path(path, "runtime_root"))
+            for path in args.runtime_root
+        )
+        index = write_inventory_evidence(
+            collect_task07_assets(
+                session,
+                data_root=_absolute_path(args.data_root, "data_root"),
+                canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+                protected_roots=protected_roots,
+            ),
+            evidence_root=evidence_root,
+            base_sha=git_state["head"],
+            database_revision=revision,
+            reference_report=scan_task07_references(reference_roots),
+            inventory_scope={
+                "data_root": str(_absolute_path(args.data_root, "data_root").resolve(strict=False)),
+                "canonical_root": str(_absolute_path(args.canonical_root, "canonical_root").resolve(strict=False)),
+                "protected_roots": sorted(
+                    {
+                        str(path.resolve(strict=False)) for path in protected_roots
+                    }
+                ),
+            },
+        )
+        return {
+            **index,
+            "status": "passed",
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "git_state": git_state,
+        }
+    if command == "task07.plan":
+        inventory = load_inventory_evidence(_absolute_path(args.inventory, "inventory"))
+        write_targets = build_task07_write_targets(
+            staging_root=_absolute_path(args.staging_root, "staging_root"),
+            canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+            postgresql_target=_postgresql_target(session),
+            inventory_scope=inventory.get("inventory_scope") or {},
+        )
+        plan = build_task07_migration_plan(inventory, write_targets=write_targets)
+        packet = (
+            build_task07_approval_packet(
+                plan,
+                command="data.task07.apply",
+            )
+            if plan["approval_eligible"]
+            else None
+        )
+        return {
+            **plan,
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "approval_packet": packet,
+            "approval_packet_hash": task07_canonical_digest(packet) if packet else None,
+        }
+    if command == "task07.preflight":
+        plan = _load_task07_document(args.plan, expected_command="data.task07.plan")
+        project_root = _loaded_source_root()
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        write_targets = build_task07_write_targets(
+            staging_root=_absolute_path(args.staging_root, "staging_root"),
+            canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+            postgresql_target=_postgresql_target(session),
+            inventory_scope={
+                "canonical_root": plan.get("write_targets", {}).get("canonical_root"),
+                "protected_roots": plan.get("write_targets", {}).get("protected_roots"),
+            },
+        )
+        receipt = build_task07_preflight_receipt(
+            plan,
+            packet_path=_absolute_path(args.approval_packet, "approval_packet"),
+            approval_hash=args.approval_hash,
+            current_base_sha=git_state["head"],
+            current_database_revision=revision,
+            batch_key=args.batch_key,
+            current_write_targets=write_targets,
+        )
+        batch = _task07_plan_batch(plan, args.batch_key)
+        validation, _prepared = _task07_validate_batch_readonly(
+            session,
+            batch=batch,
+            canonical_root=Path(write_targets["canonical_root"]),
+        )
+        body = {key: value for key, value in receipt.items() if key != "preflight_digest"}
+        body["validation"] = validation
+        body["validation_digest"] = canonical_json_digest(validation)
+        return {**body, "preflight_digest": task07_canonical_digest(body)}
+    if command == "task07.apply":
+        plan = _load_task07_document(args.plan, expected_command="data.task07.plan")
+        if plan.get("approval_eligible") is not True:
+            raise ValueError("TASK07_KLINE_GATE_BLOCKED")
+        project_root = _loaded_source_root()
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_serializable_apply(session)
+        revision = _data_core_revision(session)
+        batch = _task07_plan_batch(plan, args.batch_key)
+        write_targets = build_task07_write_targets(
+            staging_root=_absolute_path(args.staging_root, "staging_root"),
+            canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+            postgresql_target=_postgresql_target(session),
+            inventory_scope={
+                "canonical_root": plan.get("write_targets", {}).get("canonical_root"),
+                "protected_roots": plan.get("write_targets", {}).get("protected_roots"),
+            },
+        )
+        approval_facts = build_task07_migration_approval_facts(
+            plan,
+            current_base_sha=git_state["head"],
+            current_database_revision=revision,
+            current_write_targets=write_targets,
+        )
+        verify_task07_exact_approval(
+            _absolute_path(args.approval_packet, "approval_packet"),
+            approval_hash=args.approval_hash,
+            expected_command="data.task07.apply",
+            current_facts=approval_facts,
+        )
+        preflight = verify_task07_preflight_receipt(
+            _absolute_path(args.preflight_receipt, "preflight_receipt"),
+            receipt_hash=args.preflight_hash,
+            plan=plan,
+            batch_key=args.batch_key,
+            current_base_sha=git_state["head"],
+            current_database_revision=revision,
+            current_write_targets=write_targets,
+        )
+        if preflight.get("migration_approval_hash") != args.approval_hash:
+            raise ValueError("TASK07_PREFLIGHT_RECEIPT_DRIFT")
+        facts = build_task07_migration_batch_facts(
+            plan,
+            batch,
+            migration_approval_hash=args.approval_hash,
+            current_base_sha=git_state["head"],
+            current_database_revision=revision,
+            current_write_targets=write_targets,
+        )
+        staging_root = Path(write_targets["staging_root"])
+        canonical_root = Path(write_targets["canonical_root"])
+        journal_path = _task07_batch_journal_path(
+            staging_root,
+            plan_digest=str(plan["plan_digest"]),
+            batch_key=str(batch["batch_key"]),
+        )
+        validation, prepared_sources = _task07_validate_batch_readonly(
+            session,
+            batch=batch,
+            canonical_root=canonical_root,
+        )
+        verified_partition_readbacks = [
+            item
+            for item in validation
+            if item.get("asset_kind") == "verified_partition"
+        ]
+        journal = _load_or_initialize_task07_batch_journal(
+            journal_path,
+            bound_facts=facts,
+            source_ids=[
+                int(item["market_data_file_id"])
+                for item in batch.get("sources", [])
+            ],
+            verified_partition_readbacks=verified_partition_readbacks,
+        )
+        factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+        completed_receipts = list(journal["source_receipts"])
+        completed_ids = {
+            int(item["market_data_file_id"])
+            for item in completed_receipts
+        }
+        expected_validation = preflight.get("validation")
+        if not isinstance(expected_validation, list):
+            raise ValueError("TASK07_PREFLIGHT_STATE_DRIFT")
+        _verify_task07_resume_state(
+            validation=validation,
+            expected_validation=expected_validation,
+            completed_ids=completed_ids,
+            recovery_source_id=journal.get("current_source_id"),
+        )
+        for item in completed_receipts:
+            verify_task07_published_batch(
+                item,
+                catalog=HistoricalCatalog(session),
+                canonical_root=canonical_root,
+            )
+        store = CanonicalStore(
+            staging_root=staging_root,
+            canonical_root=canonical_root,
+            metadata_session_factory=factory,
+        )
+        source_receipts: list[dict[str, object]] = completed_receipts
+        for source, prepared in prepared_sources:
+            source_id = int(source["market_data_file_id"])
+            if source_id in completed_ids:
+                continue
+            try:
+                journal = _write_task07_batch_journal(
+                    journal_path,
+                    {
+                        **journal,
+                        "status": "publishing",
+                        "current_source_id": source_id,
+                        "failure": None,
+                    },
+                )
+                with factory() as catalog_session:
+                    source_receipt = execute_task07_prepared_batch(
+                        prepared,
+                        store=store,
+                        catalog=HistoricalCatalog(catalog_session),
+                        manifest_version=(
+                            TASK07_AGGREGATE_MANIFEST_VERSION
+                            if prepared.lineage is not None
+                            else "task07-canonical-migration-v1"
+                        ),
+                        batch_key=f"{batch['batch_key']}:{source_id}",
+                        plan_digest=str(plan["plan_digest"]),
+                        batch_digest=str(batch["batch_digest"]),
+                        source_market_data_file_id=source_id,
+                        canonical_root=canonical_root,
+                    )
+                source_receipts.append(source_receipt)
+                completed_ids.add(source_id)
+                journal = _write_task07_batch_journal(
+                    journal_path,
+                    {
+                        **journal,
+                        "status": "in_progress",
+                        "source_receipts": source_receipts,
+                        "completed_source_ids": sorted(completed_ids),
+                        "current_source_id": None,
+                        "failure": None,
+                    },
+                )
+            except Exception as exc:
+                journal = _write_task07_batch_journal(
+                    journal_path,
+                    {
+                        **journal,
+                        "status": "partial_failed",
+                        "source_receipts": source_receipts,
+                        "completed_source_ids": sorted(completed_ids),
+                        "current_source_id": source_id,
+                        "failure": {
+                            "source_id": source_id,
+                            "error_type": type(exc).__name__,
+                            "error_message_sha256": hashlib.sha256(str(exc).encode()).hexdigest(),
+                        },
+                    },
+                )
+                raise ValueError(
+                    f"TASK07_BATCH_PARTIAL:{journal_path}:{journal['journal_digest']}"
+                ) from exc
+        journal = _write_task07_batch_journal(
+            journal_path,
+            {
+                **journal,
+                "status": "completed",
+                "source_receipts": source_receipts,
+                "completed_source_ids": sorted(completed_ids),
+                "current_source_id": None,
+                "failure": None,
+            },
+        )
+        body = {
+            "schema_version": 1,
+            "command": "data.task07.apply",
+            "status": "passed",
+            "batch_key": batch["batch_key"],
+            "plan_digest": plan["plan_digest"],
+            "batch_digest": batch["batch_digest"],
+            "migration_envelope_digest": plan["migration_envelope"][
+                "envelope_digest"
+            ],
+            "migration_approval_hash": args.approval_hash,
+            "preflight_digest": preflight["preflight_digest"],
+            "source_receipts": source_receipts,
+            "source_receipt_digests": [item["receipt_digest"] for item in source_receipts],
+            "published_source_count": len(source_receipts),
+            "verified_partition_readbacks": verified_partition_readbacks,
+            "verified_partition_count": len(verified_partition_readbacks),
+            "batch_journal_path": str(journal_path),
+            "batch_journal_digest": journal["journal_digest"],
+            "calls_rqdata": False,
+            "deletion_authorized": False,
+        }
+        return {**body, "receipt_digest": canonical_json_digest(body)}
+    if command == "task07.verify":
+        plan = _load_task07_document(args.plan, expected_command="data.task07.plan")
+        project_root = _loaded_source_root()
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        if (
+            git_state["head"] != plan.get("base_sha")
+            or revision != plan.get("database_revision")
+        ):
+            raise ValueError("TASK07_VERIFY_STATE_DRIFT")
+        current_target = _postgresql_target(session)
+        approved_targets = plan.get("write_targets")
+        canonical_root = _absolute_path(args.canonical_root, "canonical_root").resolve(strict=False)
+        if (
+            not isinstance(approved_targets, Mapping)
+            or str(canonical_root) != approved_targets.get("canonical_root")
+            or current_target != approved_targets.get("postgresql_target")
+        ):
+            raise ValueError("TASK07_WRITE_TARGET_DRIFT")
+        batch = _task07_plan_batch(plan, args.batch_key)
+        return _verify_task07_apply_receipt(
+            session,
+            plan=plan,
+            batch=batch,
+            receipt_path=_absolute_path(args.receipt, "receipt"),
+            canonical_root=canonical_root,
+            git_state=git_state,
+            database_revision=revision,
+            approved_targets=approved_targets,
+        )
+    if command == "task07.migration-verify":
+        plan = _load_task07_document(args.plan, expected_command="data.task07.plan")
+        expected_packet = build_task07_approval_packet(
+            plan,
+            command="data.task07.apply",
+        )
+        project_root = _loaded_source_root()
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        if (
+            git_state["head"] != plan.get("base_sha")
+            or revision != plan.get("database_revision")
+        ):
+            raise ValueError("TASK07_VERIFY_STATE_DRIFT")
+        current_target = _postgresql_target(session)
+        approved_targets = plan.get("write_targets")
+        canonical_root = _absolute_path(
+            args.canonical_root,
+            "canonical_root",
+        ).resolve(strict=False)
+        if (
+            not isinstance(approved_targets, Mapping)
+            or str(canonical_root) != approved_targets.get("canonical_root")
+            or current_target != approved_targets.get("postgresql_target")
+        ):
+            raise ValueError("TASK07_WRITE_TARGET_DRIFT")
+        approval_facts = build_task07_migration_approval_facts(
+            plan,
+            current_base_sha=git_state["head"],
+            current_database_revision=revision,
+            current_write_targets=approved_targets,
+        )
+        verified_packet = verify_task07_exact_approval(
+            _absolute_path(args.approval_packet, "approval_packet"),
+            approval_hash=args.approval_hash,
+            expected_command="data.task07.apply",
+            current_facts=approval_facts,
+        )
+        if verified_packet != expected_packet:
+            raise ValueError("TASK07_APPROVAL_FACTS_DRIFT")
+        batches = list(plan.get("batches", []))
+        receipt_paths = list(args.apply_receipt)
+        if not batches or len(receipt_paths) != len(batches):
+            raise ValueError("TASK07_MIGRATION_APPLY_RECEIPT_SET_INVALID")
+        verification_manifest: list[dict[str, Any]] = []
+        for batch, receipt_path in zip(batches, receipt_paths, strict=True):
+            if not isinstance(batch, Mapping):
+                raise ValueError("TASK07_PLAN_INVALID")
+            verified = _verify_task07_apply_receipt(
+                session,
+                plan=plan,
+                batch=batch,
+                receipt_path=_absolute_path(receipt_path, "apply_receipt"),
+                canonical_root=canonical_root,
+                git_state=git_state,
+                database_revision=revision,
+                approved_targets=approved_targets,
+                expected_approval_hash=args.approval_hash,
+            )
+            verification_manifest.append(
+                {
+                    "batch_key": batch["batch_key"],
+                    "batch_digest": batch["batch_digest"],
+                    "apply_receipt_digest": verified["receipt_digest"],
+                    "batch_verify_digest": verified["verify_digest"],
+                }
+            )
+        body = {
+            "schema_version": 1,
+            "command": "data.task07.migration-verify",
+            "status": "passed",
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "plan_digest": plan["plan_digest"],
+            "migration_envelope_digest": plan["migration_envelope"][
+                "envelope_digest"
+            ],
+            "migration_approval_hash": args.approval_hash,
+            "batch_manifest": plan["migration_envelope"]["batch_manifest"],
+            "batches_merkle_root": plan["migration_envelope"]["merkle_root"],
+            "verified_batch_count": len(verification_manifest),
+            "verification_manifest": verification_manifest,
+            "runtime_cutover_eligible": True,
+        }
+        return {**body, "verification_digest": task07_canonical_digest(body)}
+    if command == "task07.deletion-plan":
+        project_root = _absolute_path(args.project_root, "project_root")
+        _require_loaded_source_checkout(project_root)
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        inventory = load_inventory_evidence(
+            _absolute_path(args.inventory, "inventory")
+        )
+        if (
+            inventory.get("base_sha") != git_state["head"]
+            or inventory.get("database_revision") != revision
+        ):
+            raise ValueError("TASK07_DELETION_INVENTORY_FACTS_DRIFT")
+        reference_digest, active_row_set_digest, snapshot_digest = (
+            _task07_current_deletion_snapshot(session, project_root)
+        )
+        plan = build_task07_deletion_plan(
+            assets=_task07_deletion_candidates(inventory["assets"]),
+            approved_roots=tuple(
+                _absolute_path(path, "approved_root")
+                for path in args.approved_root
+            ),
+            quarantine_root=_absolute_path(
+                args.quarantine_root, "quarantine_root"
+            ),
+            base_sha=str(git_state["head"]),
+            database_revision=revision,
+            reference_digest=reference_digest,
+            active_row_set_digest=active_row_set_digest,
+            reference_snapshot_digest=snapshot_digest,
+            inventory_digest=str(inventory["inventory_digest"]),
+        )
+        return {
+            "schema_version": 1,
+            "command": "data.task07.deletion-plan-envelope",
+            "status": "planned",
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "plan": plan,
+            "approval_packet": None,
+            "approval_packet_hash": None,
+        }
+    if command in {
+        "task07.deletion-preflight",
+        "task07.deletion-apply",
+        "task07.deletion-verify",
+    }:
+        project_root = _absolute_path(args.project_root, "project_root")
+        _require_loaded_source_checkout(project_root)
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        plan = _load_task07_deletion_plan_document(
+            _absolute_path(args.plan, "plan")
+        )
+        reference_digest, active_row_set_digest, snapshot_digest = (
+            _task07_current_deletion_snapshot(session, project_root)
+        )
+        if (
+            plan.get("active_row_set_digest") != active_row_set_digest
+            or plan.get("reference_snapshot_digest") != snapshot_digest
+        ):
+            raise ValueError("TASK07_DELETION_REFERENCE_DRIFT")
+        common = {
+            "current_base_sha": str(git_state["head"]),
+            "current_database_revision": revision,
+            "current_reference_digest": reference_digest,
+        }
+        if command == "task07.deletion-preflight":
+            raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
+        if command == "task07.deletion-apply":
+            raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
+        receipt = _load_task07_document(
+            _absolute_path(args.receipt, "receipt"),
+            expected_command="data.task07.deletion-apply",
+        )
+        result = verify_task07_deletion_apply(
+            plan,
+            receipt,
+            **common,
+        )
+        return {**result, "effects": _readonly_effects()}
+    if command == "task07.retirement-plan":
+        project_root = _absolute_path(args.project_root, "project_root")
+        _require_loaded_source_checkout(project_root)
+        git_state = _git_state(project_root)
+        _require_clean_task07_git_state(git_state)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        if args.database_revision and args.database_revision != revision:
+            raise ValueError("TASK07_DATABASE_REVISION_DRIFT")
+        plan = build_task07_retirement_plan(
+            base_sha=git_state["head"],
+            database_revision=revision,
+            reference_report=scan_task07_references(
+                [("checkout", project_root)]
+            ),
+            relations=collect_retirement_relations(session),
+        )
+        packet = (
+            build_task07_approval_packet(
+                plan,
+                command="data.task07.retirement-apply",
+            )
+            if plan["retirement_eligible"]
+            else None
+        )
+        return {
+            **plan,
+            "readonly": True,
+            "effects": _readonly_effects(),
+            "approval_packet": packet,
+            "approval_packet_hash": (
+                task07_canonical_digest(packet) if packet else None
+            ),
+        }
+    if command == "task07.retirement-apply":
+        raise ValueError("TASK07_RUNTIME_CUTOVER_GATE_REQUIRED")
     if command == "verify":
         return _verify(session, args)
     if command in {"plan", "sync"} and not bool(getattr(args, "apply", False)):
@@ -164,6 +753,914 @@ def run_data_core_command(
     if command == "migrate.apply":
         return _apply_jm_migration(session, args)
     raise ValueError("data_core_command_not_implemented")
+
+
+def _load_task07_document(path: Path, *, expected_command: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("TASK07_DOCUMENT_INVALID") from exc
+    if not isinstance(payload, dict) or payload.get("command") != expected_command:
+        raise ValueError("TASK07_DOCUMENT_SCOPE_INVALID")
+    return payload
+
+
+def _load_task07_deletion_plan_document(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID")
+    if payload.get("command") == "data.task07.deletion-plan":
+        plan = payload
+    else:
+        expected_keys = {
+            "schema_version",
+            "command",
+            "status",
+            "readonly",
+            "effects",
+            "plan",
+            "approval_packet",
+            "approval_packet_hash",
+        }
+        if (
+            set(payload) != expected_keys
+            or payload.get("schema_version") != 1
+            or payload.get("command")
+            != "data.task07.deletion-plan-envelope"
+            or payload.get("status") != "planned"
+            or payload.get("readonly") is not True
+            or payload.get("effects") != _readonly_effects()
+            or payload.get("approval_packet") is not None
+            or payload.get("approval_packet_hash") is not None
+            or not isinstance(payload.get("plan"), dict)
+        ):
+            raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID")
+        plan = payload["plan"]
+    try:
+        validate_task07_deletion_plan(plan)
+    except ValueError as exc:
+        raise ValueError("TASK07_DELETION_PLAN_ENVELOPE_INVALID") from exc
+    return plan
+
+
+def _task07_current_deletion_snapshot(
+    session: Session, project_root: Path
+) -> tuple[str, str, str]:
+    report = scan_task07_references([("checkout", project_root)])
+    if report.get("truncated") is not False:
+        raise ValueError("TASK07_DELETION_REFERENCE_SCAN_INCOMPLETE")
+    reference_digest = task07_canonical_digest(report)
+    active_rows = collect_retirement_relations(session)
+    active_row_set_digest = task07_canonical_digest(active_rows)
+    snapshot_digest = task07_canonical_digest(
+        {
+            "reference_digest": reference_digest,
+            "active_row_set_digest": active_row_set_digest,
+        }
+    )
+    return reference_digest, active_row_set_digest, snapshot_digest
+
+
+def _task07_deletion_candidates(
+    assets: list[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    candidates: list[Mapping[str, Any]] = []
+    for asset in assets:
+        source_path = Path(str(asset.get("file_path") or ""))
+        path_parts = {part.lower() for part in source_path.parts}
+        source_name = source_path.name.lower()
+        if (
+            asset.get("source_scope") != "approved_data_root"
+            or asset.get("frequency") in {"5m", "15m", "30m", "60m"}
+            or path_parts & {"evidence", "reports", "receipts"}
+            or "receipt" in source_name
+            or any(
+                marker in source_name
+                for marker in ("report-14", "report-15", "report_14", "report_15")
+            )
+        ):
+            continue
+        if (
+            asset.get("frequency") in {"1m", "1d", "1w"}
+            or asset.get("data_type")
+            in {"bars", "contract_bars_raw", "daily_baseline", "v2_canonical"}
+        ):
+            continue
+        if asset.get("disposition") == "RETIREMENT_CANDIDATE":
+            candidates.append(asset)
+    return candidates
+
+
+def _task07_plan_batch(plan: Mapping[str, Any], batch_key: str) -> dict[str, Any]:
+    batches = plan.get("batches")
+    if not isinstance(batches, list):
+        raise ValueError("TASK07_PLAN_INVALID")
+    matches = [
+        item
+        for item in batches
+        if isinstance(item, dict) and item.get("batch_key") == batch_key
+    ]
+    if len(matches) != 1:
+        raise ValueError("TASK07_BATCH_NOT_FOUND")
+    body = {key: value for key, value in matches[0].items() if key != "batch_digest"}
+    if matches[0].get("batch_digest") != task07_canonical_digest(body):
+        raise ValueError("TASK07_BATCH_DIGEST_MISMATCH")
+    return matches[0]
+
+
+def _task07_source_contract(
+    plan: Mapping[str, Any], source: Mapping[str, Any]
+) -> str:
+    del plan  # The source identity is independently covered by the batch digest.
+    value = source.get("contract_or_series")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("TASK07_SOURCE_IDENTITY_INVALID")
+    return value.strip().upper()
+
+
+def _require_clean_task07_git_state(git_state: Mapping[str, Any]) -> None:
+    if git_state.get("clean") is not True:
+        raise ValueError("TASK07_TASK_HEAD_NOT_CLEAN")
+
+
+def _task07_current_registration_snapshot(
+    session: Session,
+    *,
+    market_data_file_id: int,
+) -> dict[str, Any]:
+    rows = session.execute(
+        text(
+            "SELECT id, provider, data_type, instrument_symbol, contract_code, "
+            "period, start_time, end_time, file_path, file_size_bytes, checksum, "
+            "data_version, row_count, data_role, quality_status "
+            "FROM market_data_files WHERE id = :source_id"
+        ),
+        {"source_id": market_data_file_id},
+    ).mappings().all()
+    if len(rows) != 1:
+        raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT")
+    row = rows[0]
+    return {
+        "id": int(row["id"]),
+        "provider": str(row["provider"] or "").strip().lower(),
+        "data_type": str(row["data_type"] or "").strip().lower(),
+        "symbol": str(row["instrument_symbol"] or "").strip().lower(),
+        "contract_or_series": str(row["contract_code"] or "").strip().upper(),
+        "frequency": str(row["period"] or "").strip().lower(),
+        "data_role": str(row["data_role"] or "").strip().lower(),
+        "quality_status": str(row["quality_status"] or "").strip().lower(),
+        "file_path": str(row["file_path"]),
+        "file_size_bytes": (
+            int(row["file_size_bytes"])
+            if row["file_size_bytes"] is not None
+            else None
+        ),
+        "checksum": str(row["checksum"]).strip().lower()
+        if row["checksum"]
+        else None,
+        "coverage_start": _task07_registration_datetime(row["start_time"]),
+        "coverage_end": _task07_registration_datetime(row["end_time"]),
+        "row_count": int(row["row_count"])
+        if row["row_count"] is not None
+        else None,
+        "data_version": str(row["data_version"])
+        if row["data_version"] is not None
+        else None,
+    }
+
+
+def _task07_normalize_registration_snapshot(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    try:
+        return {
+            "id": int(value["id"]),
+            "provider": str(value["provider"]).strip().lower(),
+            "data_type": str(value["data_type"]).strip().lower(),
+            "symbol": str(value["symbol"]).strip().lower(),
+            "contract_or_series": str(value["contract_or_series"]).strip().upper(),
+            "frequency": str(value["frequency"]).strip().lower(),
+            "data_role": str(value["data_role"]).strip().lower(),
+            "quality_status": str(value["quality_status"]).strip().lower(),
+            "file_path": str(value["file_path"]),
+            "file_size_bytes": (
+                int(value["file_size_bytes"])
+                if value.get("file_size_bytes") is not None
+                else None
+            ),
+            "checksum": str(value["checksum"]).strip().lower()
+            if value.get("checksum")
+            else None,
+            "coverage_start": _task07_registration_datetime(
+                value["coverage_start"]
+            ),
+            "coverage_end": _task07_registration_datetime(
+                value["coverage_end"]
+            ),
+            "row_count": int(value["row_count"])
+            if value.get("row_count") is not None
+            else None,
+            "data_version": str(value["data_version"])
+            if value.get("data_version") is not None
+            else None,
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT") from exc
+
+
+def _task07_registration_datetime(value: object) -> str:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    else:
+        raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
+
+
+def _task07_require_quality_identity(
+    records: tuple[dict[str, Any], ...],
+    *,
+    registration: Mapping[str, Any],
+) -> None:
+    for record in records:
+        try:
+            valid = (
+                int(record["file_id"]) == int(registration["id"])
+                and str(record["provider"]).strip().lower()
+                == registration["provider"]
+                and str(record["data_type"]).strip().lower()
+                == registration["data_type"]
+                and str(record["instrument_symbol"]).strip().lower()
+                == registration["symbol"]
+                and str(record["contract_code"]).strip().upper()
+                == registration["contract_or_series"]
+                and str(record["period"]).strip().lower()
+                == registration["frequency"]
+                and _task07_registration_datetime(record["start_time"])
+                == registration["coverage_start"]
+                and _task07_registration_datetime(record["end_time"])
+                == registration["coverage_end"]
+                and str(record["status"]).strip().lower() == "passed"
+                and all(
+                    int(record[field]) == 0
+                    for field in (
+                        "missing_bars",
+                        "duplicated_bars",
+                        "abnormal_price_count",
+                        "abnormal_volume_count",
+                    )
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("TASK07_QUALITY_EVIDENCE_INVALID") from exc
+        if not valid:
+            raise ValueError("TASK07_QUALITY_EVIDENCE_INVALID")
+
+
+def _task07_validate_batch_readonly(
+    session: Session,
+    *,
+    batch: Mapping[str, Any],
+    canonical_root: Path | None = None,
+) -> tuple[list[dict[str, Any]], list[tuple[Mapping[str, Any], Any]]]:
+    evidence: list[dict[str, Any]] = []
+    prepared_sources: list[tuple[Mapping[str, Any], Any]] = []
+    verified_partitions = batch.get("verified_partitions", [])
+    if not isinstance(verified_partitions, list):
+        raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+    if verified_partitions and canonical_root is None:
+        raise ValueError("TASK07_CANONICAL_ROOT_REQUIRED")
+    for partition in verified_partitions:
+        if not isinstance(partition, Mapping):
+            raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+        assert canonical_root is not None
+        evidence.append(
+            _task07_verify_planned_partition(
+                session,
+                partition=partition,
+                canonical_root=canonical_root,
+            )
+        )
+    for source in batch.get("sources", []):
+        if not isinstance(source, Mapping):
+            raise ValueError("TASK07_PLAN_INVALID")
+        registration = source.get("registration_snapshot")
+        if (
+            not isinstance(registration, Mapping)
+            or source.get("registration_snapshot_digest")
+            != task07_canonical_digest(registration)
+        ):
+            raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT")
+        expected_registration = _task07_normalize_registration_snapshot(
+            registration
+        )
+        current_registration = _task07_current_registration_snapshot(
+            session,
+            market_data_file_id=int(source["market_data_file_id"]),
+        )
+        if current_registration != expected_registration:
+            raise ValueError("TASK07_SOURCE_REGISTRATION_DRIFT")
+        dataset = DatasetKey(
+            provider="rqdata",
+            dataset_kind=DatasetKind(str(batch["dataset_kind"])),
+            symbol=str(batch["symbol"]),
+            contract_or_series=_task07_source_contract({}, source),
+            frequency=BarFrequency(str(batch["frequency"])),
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        )
+        start = _aware_datetime(source["coverage_start"])
+        end = _aware_datetime(source["coverage_end"])
+        data_version = (
+            str(source.get("data_version"))
+            if source.get("data_version")
+            else f"task07-legacy-{int(source['market_data_file_id'])}"
+        )
+        aggregate_source = (
+            source.get("disposition") == "REUSE_VERIFIED_AGGREGATE"
+        )
+        if aggregate_source:
+            if (
+                batch.get("dataset_origin") != "preaggregated_from_1m"
+                or source.get("source_frequency") != "1m"
+                or source.get("manifest_format") != "canonical-manifest-v2"
+                or source.get("manifest_version")
+                != TASK07_AGGREGATE_MANIFEST_VERSION
+            ):
+                raise ValueError("TASK07_AGGREGATE_ORIGIN_INVALID")
+            quality_records = read_task07_quality_evidence(
+                session,
+                market_data_file_id=int(source["market_data_file_id"]),
+            )
+            quality_evidence_digest = task07_canonical_digest(quality_records)
+            _task07_require_quality_identity(
+                quality_records,
+                registration=current_registration,
+            )
+            if (
+                not quality_records
+                or {item["status"] for item in quality_records} != {"passed"}
+                or quality_evidence_digest
+                != source.get("quality_evidence_digest")
+            ):
+                raise ValueError("TASK07_QUALITY_EVIDENCE_DRIFT")
+            source_path = Path(str(source["file_path"]))
+            inspection = _aggregate_parquet_content_gate(
+                session,
+                registered_path=source_path,
+                physical_path=source_path.resolve(strict=False),
+                frequency=dataset.frequency.value,
+                registered_row_count=(
+                    int(source["row_count"])
+                    if source.get("row_count") is not None
+                    else None
+                ),
+                registered_start=source["coverage_start"],
+                registered_end=source["coverage_end"],
+                dataset_kind=dataset.dataset_kind.value,
+                symbol=dataset.symbol,
+                contract=dataset.contract_or_series,
+            )
+            planned_inspection = {
+                "physical_row_count": source.get("physical_row_count"),
+                "physical_min_datetime": source.get("physical_min_datetime"),
+                "physical_max_datetime": source.get("physical_max_datetime"),
+                "declared_periods": tuple(source.get("declared_periods", ())),
+                "source_intervals": tuple(source.get("source_intervals", ())),
+                "registration_wall_clock_matches": True,
+                "main_map_digest": source.get("main_map_digest"),
+            }
+            current_inspection = {
+                key: inspection.get(key) for key in planned_inspection
+            }
+            if (
+                inspection.get("status") != "passed"
+                or current_inspection != planned_inspection
+            ):
+                raise ValueError("TASK07_AGGREGATE_SOURCE_DRIFT")
+            trading_days = read_legacy_aggregate_trading_days(
+                source_path,
+                source_checksum=str(source["physical_checksum"]),
+            )
+            rank1 = load_task07_rank1_map(
+                session,
+                dataset=dataset,
+                trading_days=trading_days,
+            )
+            prepared = prepare_legacy_aggregate_parquet_batch(
+                path=source_path,
+                source_checksum=str(source["physical_checksum"]),
+                dataset=dataset,
+                data_version=data_version,
+                quality_evidence_digest=quality_evidence_digest,
+                rank1_contract_by_day=(rank1 if rank1 else None),
+            )
+            target_start = prepared.batch.request.start
+            target_end = prepared.batch.request.end
+        else:
+            sessions = resolve_task07_provider_sessions(
+                session,
+                dataset=dataset,
+                start=start,
+                end=end,
+            )
+            rank1 = load_task07_rank1_map(
+                session,
+                dataset=dataset,
+                trading_days=tuple(item.trading_day for item in sessions),
+            )
+            prepared = prepare_legacy_parquet_batch(
+                path=Path(str(source["file_path"])),
+                source_checksum=str(source["physical_checksum"]),
+                dataset=dataset,
+                sessions=sessions,
+                data_version=data_version,
+                rank1_contract_by_day=(rank1 if rank1 else None),
+            )
+            target_start = start
+            target_end = end
+        partitions = HistoricalCatalog(session).list_partitions(dataset)
+        target_state = [
+            {
+                "id": int(item.id),
+                "coverage_start": _as_utc_iso(item.coverage_start),
+                "coverage_end": _as_utc_iso(item.coverage_end),
+                "row_count": int(item.row_count),
+                "checksum": item.checksum,
+                "manifest_digest": item.manifest_digest,
+                "file_uri": item.file_uri,
+                "manifest_uri": item.manifest_uri,
+            }
+            for item in partitions
+            if _aware_utc(item.coverage_start) < target_end
+            and target_start < _aware_utc(item.coverage_end)
+        ]
+        correction = asdict(prepared.evidence)
+        validation_record = {
+                "market_data_file_id": int(source["market_data_file_id"]),
+                "dataset": {
+                    "provider": dataset.provider,
+                    "dataset_kind": dataset.dataset_kind.value,
+                    "symbol": dataset.symbol,
+                    "contract_or_series": dataset.contract_or_series,
+                    "frequency": dataset.frequency.value,
+                    "adjustment": dataset.adjustment,
+                    "schema_version": dataset.schema_version,
+                },
+                "coverage_start": prepared.batch.request.start.isoformat(),
+                "coverage_end": prepared.batch.request.end.isoformat(),
+                "row_count": len(tuple(prepared.batch.bars)),
+                "correction_evidence": correction,
+                "correction_evidence_digest": canonical_json_digest(correction),
+                "target_state": target_state,
+                "target_state_digest": canonical_json_digest(target_state),
+            }
+        if aggregate_source:
+            assert prepared.lineage is not None
+            validation_record.update(
+                {
+                    "dataset_origin": "preaggregated_from_1m",
+                    "quality_evidence_digest": source[
+                        "quality_evidence_digest"
+                    ],
+                    "manifest_format": "canonical-manifest-v2",
+                    "manifest_version": source.get("manifest_version"),
+                    "manifest_lineage": prepared.lineage.as_payload(),
+                    "coverage_basis": "exact_source_rows_only",
+                    "session_completeness_validated": False,
+                }
+            )
+        evidence.append(validation_record)
+        prepared_sources.append((source, prepared))
+    return evidence, prepared_sources
+
+
+def _task07_verify_planned_partition(
+    session: Session,
+    *,
+    partition: Mapping[str, Any],
+    canonical_root: Path,
+) -> dict[str, Any]:
+    record_body = {
+        key: value for key, value in partition.items() if key != "record_digest"
+    }
+    if partition.get("record_digest") != task07_canonical_digest(record_body):
+        raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+    rows = session.execute(
+        text(
+            "SELECT p.id, d.provider, d.dataset_kind, d.symbol, "
+            "d.contract_or_series, d.frequency, d.adjustment, d.schema_version, "
+            "p.coverage_start, p.coverage_end, p.row_count, p.file_uri, p.checksum, "
+            "p.manifest_version, p.manifest_uri, p.manifest_digest "
+            "FROM market_partitions p JOIN market_datasets d ON d.id = p.dataset_id "
+            "WHERE p.id = :partition_id"
+        ),
+        {"partition_id": int(partition["partition_id"])},
+    ).mappings().all()
+    if len(rows) != 1:
+        raise ValueError("TASK07_VERIFIED_PARTITION_DRIFT")
+    row = rows[0]
+    current = {
+        "partition_id": int(row["id"]),
+        "provider": str(row["provider"]),
+        "dataset_kind": str(row["dataset_kind"]),
+        "symbol": str(row["symbol"]),
+        "contract_or_series": str(row["contract_or_series"]),
+        "frequency": str(row["frequency"]),
+        "adjustment": str(row["adjustment"]),
+        "schema_version": str(row["schema_version"]),
+        "coverage_start": _task07_registration_datetime(row["coverage_start"]),
+        "coverage_end": _task07_registration_datetime(row["coverage_end"]),
+        "row_count": int(row["row_count"]),
+        "file_uri": str(row["file_uri"]),
+        "physical_checksum": str(row["checksum"]),
+        "manifest_version": str(row["manifest_version"]),
+        "manifest_uri": str(row["manifest_uri"]),
+        "manifest_digest": str(row["manifest_digest"]),
+    }
+    expected = {
+        key: (
+            _task07_registration_datetime(partition[key])
+            if key in {"coverage_start", "coverage_end"}
+            else partition.get(key)
+        )
+        for key in current
+    }
+    if current != expected or partition.get("file_path") != str(
+        canonical_root / str(row["file_uri"])
+    ):
+        raise ValueError("TASK07_VERIFIED_PARTITION_DRIFT")
+    receipt_body: dict[str, Any] = {
+        "dataset": {
+            "provider": current["provider"],
+            "dataset_kind": current["dataset_kind"],
+            "symbol": current["symbol"],
+            "contract_or_series": current["contract_or_series"],
+            "frequency": current["frequency"],
+            "adjustment": current["adjustment"],
+            "schema_version": current["schema_version"],
+        },
+        "coverage_start": current["coverage_start"],
+        "coverage_end": current["coverage_end"],
+        "row_count": current["row_count"],
+        "file_uri": current["file_uri"],
+        "physical_checksum": current["physical_checksum"],
+        "manifest_uri": current["manifest_uri"],
+        "manifest_digest": current["manifest_digest"],
+        "manifest_version": current["manifest_version"],
+    }
+    if partition.get("manifest_format") == "canonical-manifest-v2":
+        receipt_body.update(
+            {
+                "manifest_format": partition["manifest_format"],
+                "source_lineage": partition["source_lineage"],
+            }
+        )
+    synthetic_receipt = {
+        **receipt_body,
+        "receipt_digest": task07_canonical_digest(receipt_body),
+    }
+    verified = verify_task07_published_batch(
+        synthetic_receipt,
+        catalog=HistoricalCatalog(session),
+        canonical_root=canonical_root,
+    )
+    body = {
+        "asset_kind": "verified_partition",
+        "inventory_asset_id": int(partition["inventory_asset_id"]),
+        "partition_id": int(partition["partition_id"]),
+        "record_digest": partition["record_digest"],
+        "physical_checksum": current["physical_checksum"],
+        "manifest_digest": current["manifest_digest"],
+        "manifest_format": partition.get("manifest_format"),
+        "source_lineage": partition.get("source_lineage"),
+        "readback_verify_digest": verified["verify_digest"],
+    }
+    return {**body, "validation_digest": canonical_json_digest(body)}
+
+
+def _task07_batch_journal_path(
+    staging_root: Path,
+    *,
+    plan_digest: str,
+    batch_key: str,
+) -> Path:
+    safe_key = batch_key.replace(":", "_")
+    return staging_root / "task07-batch-journals" / plan_digest / f"{safe_key}.json"
+
+
+def _load_or_initialize_task07_batch_journal(
+    path: Path,
+    *,
+    bound_facts: Mapping[str, Any],
+    source_ids: list[int],
+    verified_partition_readbacks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if path.exists():
+        try:
+            journal = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("TASK07_BATCH_JOURNAL_INVALID") from exc
+        digest = journal.get("journal_digest")
+        body = {key: value for key, value in journal.items() if key != "journal_digest"}
+        if digest != task07_canonical_digest(body):
+            raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+        _validate_task07_batch_journal(
+            journal,
+            bound_facts=bound_facts,
+            source_ids=source_ids,
+            verified_partition_readbacks=verified_partition_readbacks,
+        )
+        return journal
+    return _write_task07_batch_journal(
+        path,
+        {
+            "schema_version": 1,
+            "command": "data.task07.batch-journal",
+            "status": "in_progress",
+            "bound_facts": dict(bound_facts),
+            "source_ids": source_ids,
+            "completed_source_ids": [],
+            "source_receipts": [],
+            "verified_partition_readbacks": verified_partition_readbacks,
+            "current_source_id": None,
+            "failure": None,
+            "deletion_authorized": False,
+        },
+    )
+
+
+def _write_task07_batch_journal(path: Path, value: Mapping[str, Any]) -> dict[str, Any]:
+    body = {key: item for key, item in value.items() if key != "journal_digest"}
+    journal = {**body, "journal_digest": task07_canonical_digest(body)}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".json.tmp")
+    payload = json.dumps(
+        journal,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+    directory_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+    return journal
+
+
+def _verify_task07_batch_journal(
+    path: Path,
+    *,
+    bound_facts: Mapping[str, Any],
+    source_ids: list[int],
+    verified_partition_readbacks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    try:
+        journal = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("TASK07_BATCH_JOURNAL_INVALID") from exc
+    if not isinstance(journal, dict):
+        raise ValueError("TASK07_BATCH_JOURNAL_INVALID")
+    body = {key: value for key, value in journal.items() if key != "journal_digest"}
+    if journal.get("journal_digest") != task07_canonical_digest(body):
+        raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+    _validate_task07_batch_journal(
+        journal,
+        bound_facts=bound_facts,
+        source_ids=source_ids,
+        verified_partition_readbacks=verified_partition_readbacks,
+    )
+    return journal
+
+
+def _validate_task07_batch_journal(
+    journal: Mapping[str, Any],
+    *,
+    bound_facts: Mapping[str, Any],
+    source_ids: list[int],
+    verified_partition_readbacks: list[dict[str, Any]],
+) -> None:
+    receipts = journal.get("source_receipts")
+    completed = journal.get("completed_source_ids")
+    if not isinstance(receipts, list) or not isinstance(completed, list):
+        raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+    try:
+        receipt_ids = [int(item["market_data_file_id"]) for item in receipts]
+        completed_ids = [int(item) for item in completed]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("TASK07_BATCH_JOURNAL_DRIFT") from exc
+    if (
+        journal.get("command") != "data.task07.batch-journal"
+        or journal.get("bound_facts") != dict(bound_facts)
+        or journal.get("source_ids") != source_ids
+        or journal.get("verified_partition_readbacks")
+        != verified_partition_readbacks
+        or receipt_ids != completed_ids
+        or completed_ids != source_ids[: len(completed_ids)]
+        or len(set(completed_ids)) != len(completed_ids)
+    ):
+        raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+    for source_id, receipt in zip(completed_ids, receipts, strict=True):
+        if (
+            receipt.get("batch_key") != f"{bound_facts['batch_key']}:{source_id}"
+            or receipt.get("plan_digest") != bound_facts["plan_digest"]
+            or receipt.get("batch_digest") != bound_facts["batch_digest"]
+        ):
+            raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+    status = journal.get("status")
+    current_source_id = journal.get("current_source_id")
+    next_source_id = source_ids[len(completed_ids)] if len(completed_ids) < len(source_ids) else None
+    if status not in {"in_progress", "publishing", "partial_failed", "completed"}:
+        raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+    if status == "completed":
+        if completed_ids != source_ids or current_source_id is not None:
+            raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+    elif current_source_id is not None and current_source_id != next_source_id:
+        raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+
+
+def _verify_task07_apply_receipt(
+    session: Session,
+    *,
+    plan: Mapping[str, Any],
+    batch: Mapping[str, Any],
+    receipt_path: Path,
+    canonical_root: Path,
+    git_state: Mapping[str, Any],
+    database_revision: str,
+    approved_targets: Mapping[str, Any],
+    expected_approval_hash: str | None = None,
+) -> dict[str, Any]:
+    """Re-read an apply journal and current Catalog/Manifest/Parquet state."""
+
+    receipt = _load_task07_document(
+        receipt_path,
+        expected_command="data.task07.apply",
+    )
+    receipt_body = {
+        key: value for key, value in receipt.items() if key != "receipt_digest"
+    }
+    if receipt.get("receipt_digest") != canonical_json_digest(receipt_body):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    migration_approval_hash = receipt.get("migration_approval_hash")
+    if (
+        receipt.get("status") != "passed"
+        or receipt.get("plan_digest") != plan.get("plan_digest")
+        or receipt.get("migration_envelope_digest")
+        != plan.get("migration_envelope", {}).get("envelope_digest")
+        or not isinstance(migration_approval_hash, str)
+        or (
+            expected_approval_hash is not None
+            and migration_approval_hash != expected_approval_hash
+        )
+        or receipt.get("batch_key") != batch.get("batch_key")
+        or receipt.get("batch_digest") != batch.get("batch_digest")
+    ):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    source_receipts = receipt.get("source_receipts")
+    if not isinstance(source_receipts, list):
+        raise ValueError("TASK07_APPLY_RECEIPT_DRIFT")
+    expected_journal_path = _task07_batch_journal_path(
+        Path(str(approved_targets["staging_root"])),
+        plan_digest=str(plan["plan_digest"]),
+        batch_key=str(batch["batch_key"]),
+    )
+    verified_partition_readbacks = [
+        _task07_verify_planned_partition(
+            session,
+            partition=item,
+            canonical_root=canonical_root,
+        )
+        for item in batch.get("verified_partitions", [])
+        if isinstance(item, Mapping)
+    ]
+    if (
+        receipt.get("verified_partition_readbacks")
+        != verified_partition_readbacks
+        or receipt.get("verified_partition_count")
+        != len(verified_partition_readbacks)
+    ):
+        raise ValueError("TASK07_VERIFIED_PARTITION_DRIFT")
+    journal = _verify_task07_batch_journal(
+        expected_journal_path,
+        bound_facts=build_task07_migration_batch_facts(
+            plan,
+            batch,
+            migration_approval_hash=migration_approval_hash,
+            current_base_sha=str(git_state["head"]),
+            current_database_revision=database_revision,
+            current_write_targets=approved_targets,
+        ),
+        source_ids=[
+            int(item["market_data_file_id"])
+            for item in batch.get("sources", [])
+        ],
+        verified_partition_readbacks=verified_partition_readbacks,
+    )
+    if (
+        receipt.get("batch_journal_path") != str(expected_journal_path)
+        or receipt.get("batch_journal_digest") != journal.get("journal_digest")
+        or journal.get("status") != "completed"
+        or journal.get("source_receipts") != source_receipts
+    ):
+        raise ValueError("TASK07_BATCH_JOURNAL_DRIFT")
+    catalog = HistoricalCatalog(session)
+    verified = [
+        verify_task07_published_batch(
+            item,
+            catalog=catalog,
+            canonical_root=canonical_root,
+        )
+        for item in source_receipts
+    ]
+    body = {
+        "schema_version": 1,
+        "command": "data.task07.verify",
+        "status": "passed",
+        "readonly": True,
+        "effects": _readonly_effects(),
+        "plan_digest": plan["plan_digest"],
+        "migration_envelope_digest": plan["migration_envelope"][
+            "envelope_digest"
+        ],
+        "migration_approval_hash": migration_approval_hash,
+        "batch_key": batch["batch_key"],
+        "receipt_digest": canonical_json_digest(receipt),
+        "batch_digest": batch["batch_digest"],
+        "verified_source_count": len(verified),
+        "verified_partition_count": len(verified_partition_readbacks),
+        "verified_partition_digests": [
+            item["validation_digest"]
+            for item in verified_partition_readbacks
+        ],
+        "source_verify_digests": [item["verify_digest"] for item in verified],
+    }
+    return {**body, "verify_digest": task07_canonical_digest(body)}
+
+
+def _verify_task07_resume_state(
+    *,
+    validation: list[dict[str, Any]],
+    expected_validation: list[dict[str, Any]],
+    completed_ids: set[int],
+    recovery_source_id: int | None,
+) -> None:
+    def evidence_key(item: Mapping[str, Any]) -> tuple[str, int]:
+        if item.get("asset_kind") == "verified_partition":
+            return ("verified_partition", int(item["partition_id"]))
+        return ("source", int(item["market_data_file_id"]))
+
+    current_by_id = {evidence_key(item): item for item in validation}
+    expected_by_id = {evidence_key(item): item for item in expected_validation}
+    if current_by_id.keys() != expected_by_id.keys():
+        raise ValueError("TASK07_PREFLIGHT_STATE_DRIFT")
+    for evidence_id, expected in expected_by_id.items():
+        current = current_by_id[evidence_id]
+        current_identity = {
+            key: value
+            for key, value in current.items()
+            if key not in {"target_state", "target_state_digest"}
+        }
+        expected_identity = {
+            key: value
+            for key, value in expected.items()
+            if key not in {"target_state", "target_state_digest"}
+        }
+        if current_identity != expected_identity:
+            raise ValueError("TASK07_PREFLIGHT_STATE_DRIFT")
+        if evidence_id[0] == "verified_partition":
+            if current != expected:
+                raise ValueError("TASK07_PREFLIGHT_STATE_DRIFT")
+            continue
+        source_id = evidence_id[1]
+        if (
+            source_id not in completed_ids
+            and source_id != recovery_source_id
+            and current != expected
+        ):
+            raise ValueError("TASK07_PREFLIGHT_STATE_DRIFT")
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _as_utc_iso(value: datetime) -> str:
+    return _aware_utc(value).isoformat()
 
 
 def _apply_jm_migration(session: Session, args: Any) -> dict[str, Any]:

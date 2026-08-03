@@ -22,7 +22,7 @@ from app.backtest.contract_resolver import (
 )
 from app.backtest.equity_curve_generator import generate_equity_curve
 from app.data_core.bar_schema import CANONICAL_BAR_SCHEMA_VERSION, CanonicalBar
-from app.data_core.contracts import BarFrequency, BarQuery, BarsResult, DatasetKey
+from app.data_core.contracts import BarQuery, BarsResult, DatasetKey
 from app.db.base import Base
 from app.models.data_center import (
     Contract,
@@ -237,7 +237,7 @@ def _canonical_roll_result(query: BarQuery) -> BarsResult:
             dataset_kind=query.dataset_kind,
             symbol="jm",
             contract_or_series=contract,
-            frequency=BarFrequency.M1,
+            frequency=query.frequency,
             adjustment="none",
             schema_version=CANONICAL_BAR_SCHEMA_VERSION,
         )
@@ -250,7 +250,7 @@ def _canonical_roll_result(query: BarQuery) -> BarsResult:
         source_data_versions=("roll-v1",),
         requested_window=(query.start, query.end),
         data_type=query.dataset_kind,
-        derived_frequency=BarFrequency.M15,
+        derived_frequency=None,
     )
 
 
@@ -343,6 +343,19 @@ def test_roll_reopen_time_is_bar_open_for_intraday_frequency(
     interval: str, bar_end: datetime, expected: datetime
 ) -> None:
     assert bar_open_time({"datetime": bar_end, "interval": interval}) == expected
+
+
+@pytest.mark.parametrize("interval", ["1h", "hour", "d", "day", "w", "week", "1D"])
+def test_roll_bar_open_time_rejects_noncanonical_frequency_aliases(
+    interval: str,
+) -> None:
+    with pytest.raises(ContractResolutionError, match="frequency"):
+        bar_open_time(
+            {
+                "datetime": datetime(2024, 5, 6, 9, 15, tzinfo=UTC),
+                "interval": interval,
+            }
+        )
 
 
 def test_mapping_requires_explicit_known_at_no_later_than_first_bar_open() -> None:

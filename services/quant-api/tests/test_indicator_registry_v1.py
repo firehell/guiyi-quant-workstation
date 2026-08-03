@@ -55,6 +55,16 @@ def test_observation_only_cannot_enable_formal_capabilities() -> None:
         )
 
 
+def test_registry_uses_exact_seven_frequency_historical_contract() -> None:
+    from guiyi_quant.indicators import indicator_registry
+
+    expected = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+    assert indicator_registry
+    assert {
+        definition.supported_intervals for definition in indicator_registry.values()
+    } == {expected}
+
+
 def test_strategy_candidate_cannot_enable_live_or_alert() -> None:
     from guiyi_quant.indicators import build_indicator_definition
 

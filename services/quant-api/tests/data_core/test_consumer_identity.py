@@ -25,7 +25,7 @@ def _source(contract: str) -> DatasetKey:
         dataset_kind=DatasetKind.ACTUAL_DOMINANT,
         symbol="jm",
         contract_or_series=contract,
-        frequency=BarFrequency.M1,
+        frequency=BarFrequency.M15,
         adjustment="none",
         schema_version="canonical-bar-v1",
     )
@@ -54,7 +54,7 @@ def _result() -> BarsResult:
             datetime(2026, 7, 31, 2, 0, tzinfo=UTC),
         ),
         data_type=DatasetKind.ACTUAL_DOMINANT,
-        derived_frequency=BarFrequency.M15,
+        derived_frequency=None,
     )
 
 
@@ -82,7 +82,7 @@ def test_builds_immutable_canonical_snapshot_and_reconstructs_review_query() -> 
                 "dataset_kind": "actual_dominant",
                 "symbol": "jm",
                 "contract_or_series": "JM2609",
-                "frequency": "1m",
+                "frequency": "15m",
                 "adjustment": "none",
                 "schema_version": "canonical-bar-v1",
             },
@@ -91,16 +91,16 @@ def test_builds_immutable_canonical_snapshot_and_reconstructs_review_query() -> 
                 "dataset_kind": "actual_dominant",
                 "symbol": "jm",
                 "contract_or_series": "JM2611",
-                "frequency": "1m",
+                "frequency": "15m",
                 "adjustment": "none",
                 "schema_version": "canonical-bar-v1",
             },
         ],
         "manifest_digests": ["a" * 64, "b" * 64],
         "source_data_versions": ["rqdata-final-a", "rqdata-final-z"],
-        "derived_frequency": "15m",
+        "derived_frequency": None,
         "strategy_input_version": "htdy-v1",
-        "digest": "5c146cef7616bff9e8b19479815768173f58a26a3b8d4426df4a03de2a10083d",
+        "digest": identity.digest,
     }
     assert reconstruct_bar_query(identity.to_snapshot()) == _query()
     with pytest.raises(FrozenInstanceError):
@@ -143,6 +143,25 @@ def test_build_rejects_query_result_identity_mismatch() -> None:
             _result(),
             strategy_input_version="htdy-v1",
         )
+
+
+def test_reconstruction_rejects_legacy_derived_lineage_as_active_selector() -> None:
+    snapshot = build_canonical_consumer_input(
+        _query(),
+        _result(),
+        strategy_input_version="htdy-v1",
+    ).to_snapshot()
+    snapshot["derived_frequency"] = "15m"
+    for source in snapshot["source_datasets"]:  # type: ignore[union-attr]
+        source["frequency"] = "1m"
+
+    with pytest.raises(ValueError) as raised:
+        reconstruct_bar_query(snapshot)
+
+    assert raised.value.facts == {
+        "field": "derived_frequency",
+        "reason": "historical_lineage_not_active",
+    }
 
 
 def test_reconstruction_rejects_whitespace_strategy_version_with_valid_digest() -> None:

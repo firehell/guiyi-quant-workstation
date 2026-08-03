@@ -66,6 +66,10 @@ def test_build_jm_history_update_plan_segments_dominant_contracts() -> None:
         "dry_run_only": True,
         "do_not_use_continuous_contract_as_tradable_contract": True,
     }
+    assert all(
+        "rqdata_v1b_jm_asset.py" not in command
+        for command in plan["commands"]
+    )
 
 
 def test_build_jm_history_update_plan_reports_up_to_date_when_no_trading_dates() -> None:

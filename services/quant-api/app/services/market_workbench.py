@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.data_core.contracts import BAR_FREQUENCY_VALUES
 from app.models.data_center import Contract, DataQualityReport, MarketDataFile
 from app.schemas.market import (
     MarketMacdIndicatorPoint,
@@ -38,7 +39,7 @@ QUANT_CORE_ROOT = Path(__file__).resolve().parents[4] / "packages" / "quant-core
 if QUANT_CORE_ROOT.exists() and str(QUANT_CORE_ROOT) not in sys.path:
     sys.path.insert(0, str(QUANT_CORE_ROOT))
 
-PERIOD_ORDER = {"1m": 0, "5m": 1, "15m": 2, "30m": 3, "60m": 4, "1d": 5, "1w": 6}
+PERIOD_ORDER = {period: index for index, period in enumerate(BAR_FREQUENCY_VALUES)}
 WEB_MACD_LEGACY_V1_POLICY = "web_macd_legacy_v1"
 logger = logging.getLogger(__name__)
 

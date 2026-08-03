@@ -568,7 +568,7 @@ def _verify_active_profile_bindings(
     external_path_map: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     if not bindings:
-        raise BackupError("active_profile_bindings_missing")
+        return []
     verified: list[dict[str, Any]] = []
     for binding in bindings:
         binding_id = binding.get("binding_id")

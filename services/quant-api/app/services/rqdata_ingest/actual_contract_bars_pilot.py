@@ -10,6 +10,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.data_core.contracts import BAR_FREQUENCY_VALUES
 from app.models.data_center import (
     Contract,
     DataQualityReport,
@@ -39,7 +40,7 @@ from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
 PROVIDER = "rqdata"
 CONTINUOUS_SUFFIX = ".MAIN"
 SOURCE_PERIOD = "1m"
-SUPPORTED_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+SUPPORTED_PERIODS = BAR_FREQUENCY_VALUES
 MINUTE_BUNDLE_PERIODS = ("1m", "5m", "15m", "30m", "60m")
 RQDATA_ONLY_PERIODS = ("1d", "1w")
 

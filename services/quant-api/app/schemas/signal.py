@@ -9,7 +9,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
+from app.data_core.contracts import (
+    BarFrequency,
+    BarQuery,
+    DatasetKind,
+    UnsupportedFrequencyError,
+    parse_bar_frequency,
+)
 
 
 FORMAL_SIGNAL_STRATEGY_CODE = "su_bing_ema21"
@@ -64,7 +70,7 @@ class SignalScanRequest(BaseModel):
     dataset_kind: DatasetKind
     instrument_symbol: str
     contract_or_series: str
-    periods: list[str] = Field(default_factory=lambda: ["15m"])
+    periods: list[BarFrequency] = Field(default_factory=lambda: [BarFrequency.M15])
     start: datetime
     end: datetime
     mode: SignalScanMode = SignalScanMode.SCAN
@@ -119,12 +125,17 @@ class SignalScanRequest(BaseModel):
             raise ValueError("contract_or_series cannot be blank")
         return normalized
 
-    @field_validator("periods")
+    @field_validator("periods", mode="before")
     @classmethod
-    def validate_formal_periods(cls, value: list[str]) -> list[str]:
-        normalized = [item.strip() for item in value]
-        if not normalized or any(not item for item in normalized):
-            raise ValueError("periods cannot be empty or contain blank values")
+    def validate_formal_periods(cls, value: Any) -> list[BarFrequency]:
+        if not isinstance(value, list) or not value:
+            raise ValueError("periods cannot be empty")
+        try:
+            normalized = [
+                parse_bar_frequency(item, field="periods") for item in value
+            ]
+        except UnsupportedFrequencyError as exc:
+            raise ValueError(exc.code) from exc
         if len(set(normalized)) != len(normalized):
             raise ValueError("periods cannot contain duplicates")
         if any(period not in FORMAL_SIGNAL_PERIODS for period in normalized):
@@ -158,7 +169,7 @@ class SignalScanRequest(BaseModel):
                 dataset_kind=self.dataset_kind,
                 symbol=self.instrument_symbol,
                 contract_or_series=self.contract_or_series,
-                frequency=BarFrequency(period),
+                frequency=period,
                 start=self.start,
                 end=self.end,
             )

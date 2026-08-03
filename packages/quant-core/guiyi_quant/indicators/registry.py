@@ -5,7 +5,7 @@ from types import MappingProxyType
 from .models import IndicatorDefinition, build_indicator_definition
 
 
-_ALL_INTERVALS = ("1m", "5m", "15m", "30m", "60m", "1h", "1d", "1w")
+_ALL_INTERVALS = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
 
 _INDICATOR_ALIASES = {
     "huo_tian_da_you": "huotian_dayou_original_v0",

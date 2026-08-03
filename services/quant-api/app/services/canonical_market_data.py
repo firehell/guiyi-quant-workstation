@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 import hashlib
 import json
 import os
 from pathlib import Path
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.data_core.aggregation import AggregationSession
 from app.data_core.catalog import HistoricalCatalog
 from app.data_core.contracts import (
+    BAR_FREQUENCY_VALUES,
     BarFrequency,
     BarQuery,
     BarsResult,
@@ -21,7 +22,8 @@ from app.data_core.contracts import (
     DatasetKind,
 )
 from app.data_core.historical_reader import CanonicalHistoricalReader
-from app.models.data_center import TradingCalendar
+from app.data_core.historical_sessions import product_sessions
+from app.models.data_center import Instrument
 from app.schemas.market import (
     CanonicalBarsRequest,
     CanonicalBarsResponse,
@@ -37,7 +39,6 @@ from app.schemas.market import (
     MarketWorkbenchSelection,
 )
 from app.services.market_data_service import MarketDataService
-from app.services.trading_session_clock import SHANGHAI, TradingSessionClock
 
 
 class CanonicalReader(Protocol):
@@ -66,7 +67,7 @@ def build_canonical_reader(session: Session) -> CanonicalHistoricalReader:
     return CanonicalHistoricalReader(
         catalog=HistoricalCatalog(session),
         canonical_root=canonical_root,
-        session_provider=lambda symbol, start, end: jm_sessions(
+        session_provider=lambda symbol, start, end: product_sessions(
             session,
             symbol=symbol,
             start=start,
@@ -81,8 +82,22 @@ def get_canonical_coverage(
     symbol: str,
 ) -> MarketWorkbenchCoverage:
     normalized_symbol = symbol.strip().lower()
-    if normalized_symbol != "jm":
-        raise DataCoreError(facts={"reason": "canonical_coverage_jm_only"})
+    exchanges = tuple(
+        sorted(
+            {
+                str(value).strip().upper()
+                for value in session.scalars(
+                    select(Instrument.exchange_code).where(
+                        func.lower(Instrument.symbol) == normalized_symbol
+                    )
+                )
+                if str(value or "").strip()
+            }
+        )
+    )
+    if len(exchanges) != 1:
+        raise DataCoreError(facts={"reason": "instrument_exchange_missing_or_ambiguous"})
+    exchange = exchanges[0]
     catalog = HistoricalCatalog(session)
     items: list[MarketCoverageItem] = []
     for row in catalog.list_datasets(symbol=normalized_symbol):
@@ -106,25 +121,12 @@ def get_canonical_coverage(
                 start=min(item.coverage_start for item in partitions),
                 end=max(item.coverage_end for item in partitions),
                 row_count=sum(item.row_count for item in partitions),
+                exchange=exchange,
                 quality_status=(
                     "gap" if has_gap else "catalog_only_unverified"
                 ),
             )
         )
-        if dataset.frequency is BarFrequency.M1:
-            for period in ("5m", "15m", "30m", "60m"):
-                items.append(
-                    _coverage_item(
-                        dataset,
-                        period=period,
-                        start=min(item.coverage_start for item in partitions),
-                        end=max(item.coverage_end for item in partitions),
-                        row_count=0,
-                        quality_status=(
-                            "gap" if has_gap else "catalog_only_unverified"
-                        ),
-                    )
-                )
     ordered = sorted(
         items,
         key=lambda item: (item.contract, _period_order(item.period)),
@@ -150,7 +152,7 @@ def get_canonical_coverage(
         (
             item
             for item in ordered
-            if item.contract == "JM.MAIN" and item.period == "15m"
+            if item.contract == f"{normalized_symbol.upper()}.MAIN" and item.period == "15m"
         ),
         ordered[0] if ordered else None,
     )
@@ -158,8 +160,8 @@ def get_canonical_coverage(
         instruments=(
             [
                 MarketCoverageInstrument(
-                    symbol="jm",
-                    exchange="DCE",
+                    symbol=normalized_symbol,
+                    exchange=exchange,
                     contracts=contracts,
                 )
             ]
@@ -190,6 +192,7 @@ def _coverage_item(
     start: datetime,
     end: datetime,
     row_count: int,
+    exchange: str,
     quality_status: str,
 ) -> MarketCoverageItem:
     continuous = dataset.dataset_kind is DatasetKind.CONTINUOUS
@@ -201,11 +204,9 @@ def _coverage_item(
         data_type=dataset.dataset_kind.value,
         source_mode="historical",
         view_role=dataset.dataset_kind.value,
-        continuous_contract=(
-            dataset.contract_or_series if continuous else "JM.MAIN"
-        ),
+        continuous_contract=(dataset.contract_or_series if continuous else f"{dataset.symbol.upper()}.MAIN"),
         actual_contract=(None if continuous else dataset.contract_or_series),
-        exchange="DCE",
+        exchange=exchange,
         start_time=start,
         end_time=end,
         latest_bar_time=end,
@@ -218,7 +219,7 @@ def _coverage_item(
 
 
 def _period_order(period: str) -> int:
-    return ("1m", "5m", "15m", "30m", "60m", "1d", "1w").index(period)
+    return BAR_FREQUENCY_VALUES.index(period)
 
 
 def jm_sessions(
@@ -228,36 +229,9 @@ def jm_sessions(
     start: datetime,
     end: datetime,
 ) -> tuple[AggregationSession, ...]:
-    if symbol.strip().lower() != "jm":
-        return ()
-    local_start = start.astimezone(SHANGHAI).date() - timedelta(days=3)
-    local_end = end.astimezone(SHANGHAI).date() + timedelta(days=3)
-    trading_days = list(
-        session.scalars(
-            select(TradingCalendar.trade_date).where(
-                TradingCalendar.exchange_code == "DCE",
-                TradingCalendar.is_trading_day.is_(True),
-                TradingCalendar.trade_date >= local_start,
-                TradingCalendar.trade_date <= local_end,
-            )
-        )
-    )
-    windows = TradingSessionClock(session).windows_for_trading_days(
-        trading_days,
-        product="jm",
-        exchange="DCE",
-    )
-    result: list[AggregationSession] = []
-    for window in windows:
-        session_window = AggregationSession(
-            trading_day=window.trading_day,
-            name=window.name,
-            start=window.start.replace(tzinfo=SHANGHAI).astimezone(UTC),
-            end=window.end.replace(tzinfo=SHANGHAI).astimezone(UTC),
-        )
-        if session_window.start < end and start < session_window.end:
-            result.append(session_window)
-    return tuple(result)
+    """Compatibility name; canonical session resolution is product-generic."""
+
+    return product_sessions(session, symbol=symbol, start=start, end=end)
 
 
 def _response(query: BarQuery, result: BarsResult) -> CanonicalBarsResponse:
@@ -299,9 +273,7 @@ def _response(query: BarQuery, result: BarsResult) -> CanonicalBarsResponse:
                 or f"{query.symbol.upper()}.ACTUAL_DOMINANT"
             ),
             "frequency": query.frequency.value,
-            "source_frequency": (
-                "1m" if result.derived_frequency is not None else query.frequency.value
-            ),
+            "source_frequency": query.frequency.value,
             "adjustment": "none",
             "schema_version": "canonical-bar-v1",
         }
@@ -370,12 +342,8 @@ def _response(query: BarQuery, result: BarsResult) -> CanonicalBarsResponse:
             provider="rqdata",
             data_role="primary",
             quality_status="passed",
-            source_interval=(
-                "1m" if result.derived_frequency is not None else query.frequency.value
-            ),
-            source_intervals=[
-                "1m" if result.derived_frequency is not None else query.frequency.value
-            ],
+            source_interval=query.frequency.value,
+            source_intervals=[query.frequency.value],
             source_interval_basis="canonical_dataset_key",
             binding_snapshot=None,
             lineage_token=lineage_token,

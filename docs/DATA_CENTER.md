@@ -12,16 +12,22 @@ Backtest/Signal/Review 可信消费者切换留给 Task 05：
 RQData
 -> temporary staging
 -> validation
--> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> one historical canonical Parquet root
+   (provider-direct 1m/1d/1w + persisted preaggregated 5m/15m/30m/60m)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
 -> consumers
 ```
 
 - 数据集由不可歧义的 `DatasetKey` 定位；`continuous` 与 `actual_dominant` 显式且不可互换。
-- direct 矩阵仅为 continuous `1m/1d/1w` 和 actual-dominant `1m/1d`；actual-dominant
-  覆盖与读取必须按 rank=1 mapping 有效分段计算，不存在 actual-dominant `1w`。
-- 5m/15m/30m/60m 只从 canonical 1m 按交易时段确定性聚合；缓存不是新的真相源。
+- 正式历史合同仅支持 `1m/5m/15m/30m/60m/1d/1w`；其他值以
+  `UNSUPPORTED_FREQUENCY` 拒绝，不接受别名或大小写转换。
+- source role 固定为 `1m/1d/1w=provider_direct` 与
+  `5m/15m/30m/60m=preaggregated_from_1m`；七者都是持久化 Canonical dataset。
+- 请求只读同频 Catalog/partition；缺 dataset、partition、coverage 或显式 gap 都返回
+  DataGap，不从 1m 或其他周期动态聚合。live confirmed-bar 聚合不属于该禁止范围。
+- actual-dominant 覆盖按 rank=1 mapping 有效分段计算；`1w` 使用该周最后交易日
+  的 rank=1 具体合约。
 - PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
 - 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
 - 旧 Profile/ActiveBinding/复杂 lineage 仅为 legacy compatibility，不再扩展为 active selector。
@@ -33,6 +39,37 @@ RQData
   历史结论和证据，不做重写或删除。
 - Task 04 完成不表示 Task 05、release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
   residual 为零。
+
+### Task 07 scalable inventory 与 external Gate（2026-08-02）
+
+Task 07 新 inventory 对 PostgreSQL 使用 `REPEATABLE READ READ ONLY` 与稳定 keyset，asset/partition
+全量进入 SHA-256 分片 JSONL；checkout 与 detached Runtime 引用扫描同样不使用命中数截断。
+approved data/canonical root 以外的文件不会作为 migration source 读取；inventory 自身的
+evidence root 永久自动归入 protected evidence，额外证据目录可通过可重复的
+`--protected-root` 显式加入；所有 protected evidence 均不进入 migration 或 retirement 写范围。
+路径分类同时检查登记的 lexical path 与解析后的 physical path，因此 protected root 内的
+symbolic link 不能借由指向 approved data/canonical root 而成为 migration source。
+旧 v8 的 103,481 数字来自 dirty worktree，现仅为 superseded 诊断。clean `e01784ff` /
+production `20260802_0031` 的 v9 已完成 103,481 个 asset 与 5,018 条 reference 的不截断扫描。
+项目所有者于 2026-08-03 确认已删除的 `/Volumes/扩展盘/GuiyiApprovals` 不再是必需 protected
+root，仓库不会恢复或依赖它。v9 仍仅为 blocker diagnosis，因为其 base SHA 已被后续 hardening
+supersede，且 Runtime active reference Gate 仍未关闭；最终 approval inventory 必须绑定新的
+clean exact HEAD。
+
+实现已覆盖 exact write-target binding、generic source validation、Canonical staging/publish/readback、
+fsync durable batch journal/crash resume 和 exact retirement rollback，并通过第六轮独立 Review。
+checkout-only 开发扫描已为 active/review-required 零；detached Runtime 的可执行
+services/packages/apps 引用优先判 active/review。v9 确认正在提供 API 的 detached
+Runtime `10351ccd` 为 300 active / 1,581 review-required，因此 K-line 与 active-reference
+Gate 保持阻断；不生成 K-line migration apply approval packet、不调用 RQData、
+不写 Canonical/Catalog。
+
+retirement before-image 只包含当前 4,279 active bindings、8 个 active download tasks、2 个 active
+scan tasks 与 8 个 active signals；历史 Backtest/Signal/Review/Live/EOD 行继续保留。DML 必须逐行
+compare-and-update、任一漂移整事务回滚；当前未获批准且未执行。78,945 个 deletion candidates
+仅形成 `deletion_authorized=false` manifest，实际删除继续属于 Task 08
+之后的独立 exact Gate。
+证据 digest 见 `docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。
 
 ### 0.0 Task 04 closeout 正式准入
 
@@ -414,8 +451,8 @@ provider earliest evidence 优先级：
 | derived 5m/15m/30m/60m | 只允许从 passed 1m 本地聚合 |
 | direct 1d | 长周期研究和 provider reference；通过 Profile/quality Gate 后可消费 |
 | derived 1d | 日内研究的日线方向上下文，只允许从 passed 1m 聚合 |
-| direct 1w | 长周期研究、Market 展示和 provider reference；不作为 actual 或分钟 Signal 默认要求 |
-| actual dominant | 只覆盖 `MainContractMap.rank=1` 有效日期段的 1m/1d，不要求所有挂牌合约全量分钟数据 |
+| direct 1w | 长周期研究、Market 展示和 provider reference；actual-dominant 使用该周最后交易日的 rank=1 具体合约 |
+| actual dominant | 七种正式历史周期均可查询，只覆盖 `MainContractMap.rank=1` 有效日期段；5m/15m/30m/60m 使用持久化同频 partition，不要求所有挂牌合约全量分钟数据 |
 | live | 只存在 live DB 观察层；盘后重新获取 provider 最终历史数据并通过完整 Gate 后才能进入 historical canonical |
 
 ### 2.2.4 partial / confirmed

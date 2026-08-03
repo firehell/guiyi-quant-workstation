@@ -741,9 +741,18 @@ def verify_restored_database(database_url: str, artifact: VerifiedBackupArtifact
             client: TestClient | None = None
             try:
                 client = TestClient(app)
-                candidate = (database.get("active_profile_bindings") or [])[0]
+                legacy_bindings = database.get("active_profile_bindings") or []
+                market_symbol = (
+                    str(legacy_bindings[0]["instrument_symbol"])
+                    if legacy_bindings
+                    else "jm"
+                )
                 requests = [
-                    ("market", "/api/v1/market/bars", {"symbol": candidate["instrument_symbol"], "contract": candidate["contract_code"], "period": candidate["period"], "profile_id": candidate["profile_id"], "access_mode": "research", "tail": "true", "limit": 1}),
+                    (
+                        "market",
+                        "/api/v1/market/coverage/canonical",
+                        {"symbol": market_symbol},
+                    ),
                     ("backtest", "/api/backtests/reports/14", None),
                     ("signal_latest", "/api/signals/latest", {"limit": 1}),
                     ("signal_events", "/api/signals/events", {"limit": 1}),
@@ -753,17 +762,16 @@ def verify_restored_database(database_url: str, artifact: VerifiedBackupArtifact
                     methods.append("GET")
                     body = response.json()
                     market_invalid = name == "market" and (
-                        not body.get("bars")
-                        or body.get("strict_research_ready") is not True
-                        or (body.get("lineage") or {}).get("market_data_file_id") != candidate["market_data_file_id"]
+                        not isinstance(body.get("instruments"), list)
+                        or not isinstance(body.get("items"), list)
                     )
                     if response.status_code != 200 or market_invalid:
                         raise RestoreError(f"consumer_smoke_failed:{name}")
                     details: dict[str, Any] = {}
                     if name == "market":
                         details = {
-                            "row_count": len(body["bars"]),
-                            "market_data_file_id": body["lineage"]["market_data_file_id"],
+                            "instrument_count": len(body["instruments"]),
+                            "item_count": len(body["items"]),
                         }
                     elif name == "backtest":
                         if body.get("id") != 14:
@@ -807,7 +815,7 @@ def verify_restored_database(database_url: str, artifact: VerifiedBackupArtifact
             after = _database_snapshot(session, sorted(required))
             unchanged = _session_unchanged(session, before, after)
             session.rollback()
-            return {"alembic_revision": revision, "table_counts": counts, "report14": report14, "transaction_read_only": True, "database_unchanged": unchanged, "profile_verified": bool(retained), "consumer_methods": methods, "consumer_smoke": smoke}
+            return {"alembic_revision": revision, "table_counts": counts, "report14": report14, "transaction_read_only": True, "database_unchanged": unchanged, "profile_verified": len(retained) == 2 * len(database.get("active_profile_bindings") or []), "consumer_methods": methods, "consumer_smoke": smoke}
     finally:
         engine.dispose()
 

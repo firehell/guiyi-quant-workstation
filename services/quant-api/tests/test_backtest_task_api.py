@@ -96,7 +96,31 @@ def _install_fake_formal_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
                 "schema_version": "backtest_canonical_inputs_v1",
                 "input_identity": {
                     "schema_version": "canonical_consumer_input_v1",
-                    "digest": "a" * 64,
+                    "request": {
+                        "dataset_kind": "continuous",
+                        "symbol": "rb",
+                        "contract_or_series": "RB.MAIN",
+                        "frequency": "1m",
+                        "start": "2024-01-02T09:00:00+00:00",
+                        "end": "2024-01-02T15:00:00+00:00",
+                        "strict": True,
+                    },
+                    "source_datasets": [
+                        {
+                            "provider": "rqdata",
+                            "dataset_kind": "continuous",
+                            "symbol": "rb",
+                            "contract_or_series": "RB.MAIN",
+                            "frequency": "1m",
+                            "adjustment": "none",
+                            "schema_version": "canonical-bar-v1",
+                        }
+                    ],
+                    "manifest_digests": ["a" * 64],
+                    "source_data_versions": ["test-v1"],
+                    "derived_frequency": None,
+                    "strategy_input_version": "backtest:api_test:v1",
+                    "digest": "33c19cf270303abe56af214a52343a2befec757b4ed342fd41ded375da43b94f",
                 },
                 "auxiliary_input_identities": {},
             },
@@ -216,7 +240,7 @@ def test_create_task_fails_closed_when_canonical_reader_is_unconfigured() -> Non
         app.dependency_overrides.clear()
 
 
-def test_inline_profile_backtest_is_disabled_instead_of_resolving_legacy_binding() -> None:
+def test_inline_profile_selector_is_rejected_before_legacy_route_handler() -> None:
     response = TestClient(app).post(
         "/api/backtests/run",
         json={
@@ -229,8 +253,11 @@ def test_inline_profile_backtest_is_disabled_instead_of_resolving_legacy_binding
         },
     )
 
-    assert response.status_code == 410
-    assert response.json()["detail"]["code"] == "BACKTEST_LEGACY_INLINE_DISABLED"
+    assert response.status_code == 422
+    assert any(
+        item["type"] == "extra_forbidden" and item["loc"][-1] == "profile_id"
+        for item in response.json()["detail"]
+    )
 
 
 def test_create_task_rejects_inactive_validation_and_legacy_roles_even_for_research(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -12,6 +12,7 @@ import pandas as pd
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.data_core.contracts import BAR_FREQUENCY_VALUES
 from app.models.data_center import Contract, DataDownloadTask, DataQualityReport, DataSource, Exchange, Instrument, MarketDataFile, utc_now
 from app.services.rqdata_ingest.parquet import sha256_file, write_parquet_atomic
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
@@ -21,7 +22,7 @@ PROVIDER = "rqdata"
 RAW_DATA_TYPE = "contract_bars_raw"
 CANONICAL_DATA_TYPE = "bars"
 DATA_VERSION_PREFIX = "rqdata_sample_bars"
-SUPPORTED_FREQUENCIES = {"1m", "5m", "15m", "30m", "60m", "1d", "1w"}
+SUPPORTED_FREQUENCIES = frozenset(BAR_FREQUENCY_VALUES)
 CREDENTIAL_MESSAGE = (
     "RQData credentials not configured. Set RQDATAC2_CONF, RQDATAC_CONF, "
     "RQDATA_LICENSE_KEY, or RQDATA_USERNAME/RQDATA_PASSWORD in environment variables."

@@ -580,6 +580,14 @@ def test_review_smoke_selects_only_event_with_frozen_lineage() -> None:
         )
 
 
+def test_restore_market_smoke_uses_canonical_coverage_without_profile_selector() -> None:
+    source = Path(__file__).resolve().parents[2] / "scripts" / "restore" / "core.py"
+    text = source.read_text(encoding="utf-8")
+
+    assert '"/api/v1/market/coverage/canonical"' in text
+    assert '"profile_id": candidate' not in text
+
+
 @pytest.mark.parametrize(
     "field,value,error",
     [
