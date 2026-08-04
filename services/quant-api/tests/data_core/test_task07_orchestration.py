@@ -678,7 +678,7 @@ def test_reference_scan_classifies_exact_sdd_task_evidence_as_historical(
 def test_reference_scan_does_not_treat_non_parquet_glob_as_market_data_glob(
     tmp_path: Path,
 ) -> None:
-    script = tmp_path / "scripts" / "engineering" / "lean_matrix" / "workspace.py"
+    script = tmp_path / "scripts" / "engineering" / "reference_probe" / "workspace.py"
     script.parent.mkdir(parents=True)
     script.write_text('files = directory.glob("*.json")\n', encoding="utf-8")
 

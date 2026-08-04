@@ -1,4 +1,0 @@
-interface:
-  display_name: "Lean Matrix AI Team"
-  short_description: "Route Guiyi tasks into a minimal reviewed AI team"
-  default_prompt: "Use $lean-matrix-ai-team to create a Task Charter and route the minimum team for this Guiyi task."
