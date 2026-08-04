@@ -12,6 +12,7 @@ from app.data_core.contracts import (
     BarsResult,
     DataGapError,
     DatasetKind,
+    ManifestMismatchError,
 )
 from app.data_core.task07_target_canonical import (
     MainContractTarget,
@@ -411,6 +412,47 @@ def test_market_data_probe_treats_catalog_gap_as_exact_direct_redownload() -> No
     result = assess_target_specs((spec,), probe=probe)
     assert result["targets"][0]["status"] == "REDOWNLOAD_DIRECT"
     assert result["repair_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "unexpected_error",
+    [
+        OSError("permission denied"),
+        ValueError("bug"),
+        ManifestMismatchError(facts={"reason": "canonical_path_escape"}),
+    ],
+)
+def test_market_data_probe_propagates_non_data_failures(
+    unexpected_error: Exception,
+) -> None:
+    contract = TargetContract(
+        symbol="jm",
+        continuous_series="JM.MAIN",
+        frequencies=(BarFrequency.D1,),
+        start_trading_day=date(2013, 3, 22),
+    )
+    spec = build_target_specs(
+        contract,
+        mappings=(MainContractTarget(date(2026, 7, 30), "JM2609"),),
+        sessions=(
+            TargetSession(
+                date(2026, 7, 30),
+                _dt("2026-07-29T13:00:00+00:00"),
+                _dt("2026-07-30T07:00:00+00:00"),
+            ),
+        ),
+    )[0]
+
+    class Reader:
+        def get_bars(self, _query):
+            raise unexpected_error
+
+    probe = market_data_probe(
+        MarketDataService(object(), canonical_reader=Reader())  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(type(unexpected_error), match=str(unexpected_error)):
+        probe(spec)
 
 
 def _bar(dataset, bar_end: datetime) -> CanonicalBar:
