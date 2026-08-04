@@ -125,9 +125,15 @@ class CanonicalHistoricalReader:
                     ):
                         continue
                     existing = bars_by_identity.get(bar.identity)
-                    if existing is not None and existing != bar:
+                    if existing is not None:
                         raise DatasetAmbiguousError(
-                            facts={"reason": "same_key_value_conflict"}
+                            facts={
+                                "reason": (
+                                    "same_key_value_conflict"
+                                    if existing != bar
+                                    else "duplicate_primary_key"
+                                )
+                            }
                         )
                     bars_by_identity[bar.identity] = bar
 
@@ -380,13 +386,30 @@ class CanonicalHistoricalReader:
             raise ManifestMismatchError(facts={"reason": "manifest_digest_mismatch"})
         if _sha256(file_path) != _partition_value(partition, "checksum"):
             raise ManifestMismatchError(facts={"reason": "file_checksum_mismatch"})
+        expected_row_count = int(_partition_value(partition, "row_count"))
         try:
-            table = pq.ParquetFile(file_path).read()
+            parquet = pq.ParquetFile(file_path)
+        except Exception as exc:
+            raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
+        if int(parquet.metadata.num_rows) != expected_row_count:
+            raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
+        try:
+            table = parquet.read()
         except Exception as exc:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if table.schema != CANONICAL_PARQUET_SCHEMA:
             raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
-        return _bars_from_table(table), data_version
+        if table.num_rows != expected_row_count:
+            raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
+        bars = _bars_from_table(table)
+        if any(
+            previous.bar_end >= current.bar_end
+            for previous, current in zip(bars, bars[1:], strict=False)
+        ):
+            raise ManifestMismatchError(
+                facts={"reason": "parquet_primary_key_order_invalid"}
+            )
+        return bars, data_version
 
 
 def _partition_value(partition: object, field: str) -> object:

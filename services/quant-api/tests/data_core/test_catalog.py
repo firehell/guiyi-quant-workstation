@@ -147,6 +147,46 @@ def test_dataset_key_normalizes_identity_and_is_frozen() -> None:
         key.provider = "other"  # type: ignore[misc]
 
 
+def test_list_main_contract_mappings_returns_only_explicit_symbol_window(
+    session: Session,
+) -> None:
+    rows = (
+        MainMapRow(
+            symbol="jm",
+            trading_day=date(2026, 7, 29),
+            rank=1,
+            actual_contract="JM2609",
+            data_version="map-v1",
+        ),
+        MainMapRow(
+            symbol="jm",
+            trading_day=date(2026, 7, 30),
+            rank=1,
+            actual_contract="JM2701",
+            data_version="map-v1",
+        ),
+        MainMapRow(
+            symbol="rb",
+            trading_day=date(2026, 7, 30),
+            rank=1,
+            actual_contract="RB2610",
+            data_version="map-v1",
+        ),
+    )
+    catalog = HistoricalCatalog(session)
+    for row in rows:
+        catalog.register_main_contract_mapping(row)
+
+    mappings = catalog.list_main_contract_mappings(
+        instrument_symbol="JM",
+        start_date=date(2026, 7, 30),
+    )
+
+    assert [(item.trading_day, item.actual_contract) for item in mappings] == [
+        (date(2026, 7, 30), "JM2701")
+    ]
+
+
 @pytest.mark.parametrize(
     "field",
     [

@@ -99,6 +99,7 @@ from app.data_core.task07_migration import (
     resolve_task07_provider_sessions,
     verify_task07_published_batch,
 )
+from app.data_core.task07_target_canonical import run_target_canonical_assessment
 from app.data_core.rqdata_provider import CanonicalRQDataAdapter
 from app.services.rqdata_ingest.client import RqDataClient
 from app.services.market_data_reader import MarketDataReader
@@ -113,11 +114,53 @@ from app.services.canonical_market_data import (
 )
 
 
+_SUPERSEDED_TASK07_COMMANDS = frozenset(
+    {
+        "task07.kline-manifest",
+        "task07.plan",
+        "task07.preflight",
+        "task07.apply",
+        "task07.verify",
+        "task07.migration-verify",
+    }
+)
+
+
 def run_data_core_command(
     command: str,
     session: Session,
     args: Any,
 ) -> dict[str, Any]:
+    if command in _SUPERSEDED_TASK07_COMMANDS:
+        raise ValueError("TASK07_LEGACY_WIDE_COMMAND_SUPERSEDED")
+    return _run_data_core_command_unchecked(command, session, args)
+
+
+def _run_data_core_command_unchecked(
+    command: str,
+    session: Session,
+    args: Any,
+) -> dict[str, Any]:
+    if command == "task07.assess":
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        if revision != "20260803_0032":
+            raise ValueError("TASK07_DATABASE_REVISION_DRIFT")
+        result = run_target_canonical_assessment(
+            session,
+            target_config=_absolute_path(args.target_config, "target_config"),
+            canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+        )
+        return {
+            "schema_version": 1,
+            "command": "data.task07.assess",
+            "status": "passed",
+            "readonly": True,
+            "production_writes": False,
+            "effects": _readonly_effects(),
+            "database_revision": revision,
+            **result,
+        }
     if command == "task07.kline-manifest":
         project_root = _absolute_path(args.project_root, "project_root")
         evidence_root = _absolute_path(args.evidence_root, "evidence_root")

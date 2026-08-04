@@ -45,7 +45,9 @@ from app.data_core.task07 import (
     collect_task07_assets,
 )
 from app.data_core import task07 as task07_module
-from app.data_core.cli_service import run_data_core_command
+from app.data_core.cli_service import (
+    _run_data_core_command_unchecked as run_data_core_command,
+)
 from app.models.data_center import Instrument, MainContractMap, TradingCalendar, TradingSession
 from app.data_core import task07_migration as migration_module
 

@@ -40,36 +40,33 @@ RQData
 - Task 04 完成不表示 Task 05、release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
   residual 为零。
 
-### Task 07 scalable inventory 与 external Gate（2026-08-02）
+### Task 07 JM 目标 Canonical 验收与精确缺口计划（2026-08-04）
 
-Task 07 新 inventory 对 PostgreSQL 使用 `REPEATABLE READ READ ONLY` 与稳定 keyset，asset/partition
-全量进入 SHA-256 分片 JSONL；checkout 与 detached Runtime 引用扫描同样不使用命中数截断。
-approved data/canonical root 以外的文件不会作为 migration source 读取；inventory 自身的
-evidence root 永久自动归入 protected evidence，额外证据目录可通过可重复的
-`--protected-root` 显式加入；所有 protected evidence 均不进入 migration 或 retirement 写范围。
-路径分类同时检查登记的 lexical path 与解析后的 physical path，因此 protected root 内的
-symbolic link 不能借由指向 approved data/canonical root 而成为 migration source。
-旧 v8 的 103,481 数字来自 dirty worktree，现仅为 superseded 诊断。clean `e01784ff` /
-production `20260802_0031` 的 v9 已完成 103,481 个 asset 与 5,018 条 reference 的不截断扫描。
-项目所有者于 2026-08-03 确认已删除的 `/Volumes/扩展盘/GuiyiApprovals` 不再是必需 protected
-root，仓库不会恢复或依赖它。v9 仍仅为 blocker diagnosis，因为其 base SHA 已被后续 hardening
-supersede，且 Runtime active reference Gate 仍未关闭；最终 approval inventory 必须绑定新的
-clean exact HEAD。
+Task 07 Stage C 不再扫描或迁移全量 legacy 资产。目标集合只由
+`config/data_core_v2_targets.yaml`、Catalog 与 MainContractMap 生成：
 
-实现已覆盖 exact write-target binding、generic source validation、Canonical staging/publish/readback、
-fsync durable batch journal/crash resume 和 exact retirement rollback，并通过第六轮独立 Review。
-checkout-only 开发扫描已为 active/review-required 零；detached Runtime 的可执行
-services/packages/apps 引用优先判 active/review。v9 确认正在提供 API 的 detached
-Runtime `10351ccd` 为 300 active / 1,581 review-required，因此 K-line 与 active-reference
-Gate 保持阻断；不生成 K-line migration apply approval packet、不调用 RQData、
-不写 Canonical/Catalog。
+- `continuous / JM.MAIN`；
+- `actual_dominant / rank=1 volume_open_interest`；
+- `1m/5m/15m/30m/60m/1d/1w`；
+- `2013-03-22` 至当前完整 MainContractMap 最后交易日的精确窗口。
 
-retirement before-image 只包含当前 4,279 active bindings、8 个 active download tasks、2 个 active
-scan tasks 与 8 个 active signals；历史 Backtest/Signal/Review/Live/EOD 行继续保留。DML 必须逐行
-compare-and-update、任一漂移整事务回滚；当前未获批准且未执行。78,945 个 deletion candidates
-仅形成 `deletion_authorized=false` manifest，实际删除继续属于 Task 08
-之后的独立 exact Gate。
-证据 digest 见 `docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。
+`guiyi data task07 assess` 首先开启 `REPEATABLE READ READ ONLY` 快照并要求 revision
+精确为 `20260803_0032`，然后只通过 `HistoricalCatalog` / `CanonicalHistoricalReader` /
+`MarketDataService` 验证目标 DatasetKey、schema、Manifest、checksum、row count、分区可读性、
+窗口/session/trading-day 覆盖、主键唯一、时间单调和七周期同频读取。
+actual-dominant `1w` 按 ISO 周最后交易日的 MainContractMap 归属。
+
+Direct `1m/1d/1w` 失败只输出 exact-window `REDOWNLOAD_DIRECT`；aggregate
+`5m/15m/30m/60m` 失败只在同身份与同窗口 Canonical 1m 验证可信时输出
+`REBUILD_AGGREGATE`，否则 `REGISTER_DATA_GAP`。这些都只是精确缺口计划，
+`writes_authorized=false / production_writes=false`，不实施修复。目标全部通过时
+固定为 `Stage_C=NO_DATA_WRITE_REQUIRED / repair_count=0`，不为了 receipt/manifest 重写有效数据。
+
+旧 legacy-wide inventory、packet、repair/batch 数字、Runtime reference 和 retirement 路线
+都是 superseded historical evidence；旧 evidence 保持原事实，但不再提供 active apply
+入口。Task 07 不以 Profile/Binding retirement、Runtime legacy reference=0、legacy 文件数
+或旧派生数据删除为完成条件。Runtime promotion 属于 Task 08；旧派生数据清理
+是后续独立可选任务。
 
 ### 0.0 Task 04 closeout 正式准入
 
