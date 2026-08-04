@@ -36,7 +36,7 @@
 
 ### Task 2: Synchronize latest develop and restore a clean baseline
 
-- Merge current `develop` into the task branch without reverting AI-TEAM-004/005 or unrelated user work.
+- Merge current `develop` into the task branch without reverting unrelated merged or user work.
 - Resolve Status/Data Center/task documentation conflicts using current develop as the general project state and Task 07 ledger as task-specific evidence.
 - Run focused backend/frontend consumer tests and establish a clean committed baseline.
 

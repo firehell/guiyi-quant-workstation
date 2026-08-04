@@ -50,40 +50,28 @@ Codex 编排层只在任务验收、CI、独立 Review 均通过且 PR head SHA 
 生产 PostgreSQL migration apply、真实 RQData/canonical/DB 写入、删除、`main`/release/tag、
 Runtime promotion、live enable、真实通知和 GitHub 规则变更始终保留人工 Gate。
 
-只有 task worktree clean、task HEAD 已被 `develop` 包含且远端回读一致时，才可自动移除
-task worktree/branch。Draft PR 创建后保留 worktree 以处理 Review；merge 失败或 head 漂移
-时保留全部状态并 fail-closed。
+只有以下条件同时满足时，Codex/GitHub Connector 才可对 exact PR head 执行一次
+expected-head merge commit：
 
-### V07 develop Gate 评估器
+```text
+任务验收通过
++ 独立 exact-head Review 通过
++ required CI 全部成功
++ PR head 与 reviewed head 一致
++ mergeability 明确
++ 无人工 Gate
+```
 
-`python3 scripts/engineering/lean_matrix_team.py develop-gate --plan <plan.json> --facts <facts.json>
---format json` 只是确定性、无副作用评估器。它消费 trusted `ExecutionPlanV1` 与 Connector/Codex
-已归一化的 GitHub/Git 事实，输出带稳定 reason code 的 `DevelopGateDecisionV1`；不读 GitHub，
-V07 自身不调用 `gh`、不持有 token、不轮询 CI、不 ready/合并/清理，也不写 merge receipt。
-仓库既有 `task-worktree.sh` Draft-PR adapter 仍在 V07 之外，其原有受控行为未被 evaluator 扩张。
+合并后必须回读 merge SHA 和 `develop` ancestry。只有 task worktree clean、task HEAD
+已被本地和 remote-tracking `develop` 包含且远端回读一致时，才可清理 task
+worktree/branch。Draft PR 创建后保留 worktree 以处理 Review；merge 失败、结果不确定
+或 head/base 漂移时保留全部状态并 fail-closed。
 
-事实只有三个阶段：`pre_merge`、`merge_readback`、`cleanup`。每份 facts 使用 semantic SHA-256
-绑定全字段，`observed_at` 到 `expires_at` 必须恰好 5 分钟；到期、head/base 漂移、范围漂移或人工
-Gate 均 fail-closed。未合并 PR 的 current `develop` 偏离 frozen base 是严格 base drift，必须重新
-intake、exact-head Review 和 CI。Lane 3 仅接受 digest-bound `code` / `test` / `dry_run` /
-`disabled_feature` / `isolated_migration` 类别与保守的 path 绑定；真实操作仍需原有人工 Gate。
-
-Connector/Codex 编排层负责真实读取和修改：
-
-1. 对 fresh `pre_merge` facts 评估；Draft 只能得到 ready transition 许可。
-2. ready 后立即重读 PR head/base、CI、Review、threads、mergeability 和 current `develop`，生成新 facts
-   再评估。
-3. 仅对重读后仍允许的 exact head 发出一次 expected-head merge-commit 请求。超时或结果不确定
-   时禁止重试，改用 fresh `merge_readback` facts 回读。
-4. 仅 exact PR head 已 merge、存在 merge SHA 且 `develop` 包含 task head 时，才由外部编排层写入
-   digest-bound merge receipt。
-5. worktree/branch 清理是独立 transition；必须使用 fresh `cleanup` facts 再评估，确认 merge、
-   worktree clean，以及本地与 remote-tracking `develop` 都包含 task head。
-
-`ALLOW_DEVELOP_MERGE` 只表示当前 stage 可向前一步，不证明外部操作已发生。V07 不新增或使用 GitHub
-client/token/poller/merge daemon/merge executor。`main`/release/tag、Runtime、生产 migration apply、真实数据/DB、
-策略/回测语义、live、通知、删除、candidate promotion 和 GitHub rules 的人工 Gate 全部保留。
-AI-TEAM-007 自身不得使用新 evaluator 批准自己，仍使用既有 Connector/Codex 集成流程。
+Lane 1/2 不需重复请求用户批准 task→`develop` merge。Lane 3 只有代码、测试、
+dry-run、隔离 migration 和默认 disabled 功能可使用同一自动集成流程。生产
+PostgreSQL migration apply、真实 RQData/canonical/DB 写入、删除、`main`/release/tag、
+Runtime promotion、live enable、真实通知、策略/回测正式语义和 GitHub 规则变更仍保留人工
+Gate。
 
 ## 验证与停止
 
