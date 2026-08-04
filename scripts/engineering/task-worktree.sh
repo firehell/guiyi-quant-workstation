@@ -84,7 +84,7 @@ case "$action" in
       git add --all
       git commit -m "$message"
       git push -u origin "$branch"
-      gh pr create --draft --base develop --head "$branch" --title "[Lane ${lane}] #${issue}: ${message}" --body "Lane ${lane} task for Issue #${issue}. Automated checks passed locally; merge remains manual."
+      gh pr create --draft --base develop --head "$branch" --title "[Lane ${lane}] #${issue}: ${message}" --body "Lane ${lane} task for Issue #${issue}. Automated checks passed locally. Draft PR does not authorize merge. After task acceptance, independent exact-head Review, required CI, PR head and reviewed head match, mergeability is explicit, and no manual Gate remains, Codex/GitHub Connector may perform an expected-head merge commit into develop. main/release/tag/Runtime and real side effects remain behind manual Gates."
     fi
     if [[ "$json" == true ]]; then
       python3 -c 'import json,sys; print(json.dumps({"schema_version":1,"tool":"scripts/engineering/task-worktree.sh","action":"integrate","mode":sys.argv[1],"status":"ok","bound_facts":{"branch":sys.argv[2],"lane":int(sys.argv[3]),"issue":int(sys.argv[4]),"base_ref":sys.argv[5]},"planned_commands":json.loads(sys.argv[6])},ensure_ascii=False))' "$mode" "$branch" "$lane" "$issue" "$base_ref" "$planned_json"
