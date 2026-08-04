@@ -2313,7 +2313,11 @@ def _migration_source_record(
         ),
     }
     if not aggregate:
-        return record
+        return {
+            **record,
+            "physical_min_datetime": item.get("physical_min_datetime"),
+            "physical_max_datetime": item.get("physical_max_datetime"),
+        }
     return {
         **record,
         "source_frequency": "1m",
