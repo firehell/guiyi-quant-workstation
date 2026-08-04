@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -26,6 +29,7 @@ from app.data_core.contracts import (
     DatasetKey,
     DatasetKind,
     ManifestLineage,
+    ManifestMismatchError,
 )
 from app.data_core.historical_reader import CanonicalHistoricalReader
 from app.data_core.rqdata_adapter import (
@@ -326,6 +330,91 @@ def test_reader_rejects_identical_duplicate_primary_keys(
                     end=SECOND,
                 )
             )
+
+
+def test_reader_rejects_physical_row_count_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+
+        class FakeParquet:
+            metadata = SimpleNamespace(num_rows=1)
+
+            def read(self):  # pragma: no cover - row-count Gate rejects first.
+                raise AssertionError("must not read drifted parquet")
+
+        monkeypatch.setattr(
+            "app.data_core.historical_reader.pq.ParquetFile",
+            lambda _path: FakeParquet(),
+        )
+        with pytest.raises(ManifestMismatchError) as error:
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+    assert error.value.facts["reason"] == "parquet_row_count_mismatch"
+
+
+def test_reader_rejects_physical_rows_that_are_not_strictly_ordered(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+        partition = HistoricalCatalog(session).list_effective_partitions(_dataset())[0]
+        table = pq.ParquetFile(tmp_path / "canonical" / partition.file_uri).read()
+        reversed_table = table.take(pa.array([1, 0]))
+
+        class FakeParquet:
+            metadata = SimpleNamespace(num_rows=2)
+
+            def read(self):
+                return reversed_table
+
+        monkeypatch.setattr(
+            "app.data_core.historical_reader.pq.ParquetFile",
+            lambda _path: FakeParquet(),
+        )
+        with pytest.raises(ManifestMismatchError) as error:
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+    assert error.value.facts["reason"] == "parquet_primary_key_order_invalid"
 
 
 def test_weekly_reader_uses_padded_calendar_without_partial_month_end_week(

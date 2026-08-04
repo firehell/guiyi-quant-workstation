@@ -161,6 +161,7 @@ def run_target_canonical_assessment(
     )
     if not mappings:
         raise ValueError("TASK07_MAIN_CONTRACT_MAP_INCOMPLETE")
+    require_complete_mapping_window(contract, mappings)
     sessions = _target_sessions(session, contract=contract, mappings=mappings)
     specs = build_target_specs(contract, mappings=mappings, sessions=sessions)
     reader = CanonicalHistoricalReader(
@@ -208,7 +209,7 @@ def market_data_probe(service: MarketDataService) -> TargetProbe:
             return TargetValidation(
                 valid=False,
                 reason=reason,
-                explicit_gap=reason == "catalog_gap",
+                explicit_gap=False,
             )
         if not isinstance(result, BarsResult):
             return TargetValidation(valid=False, reason="market_data_result_invalid")
@@ -223,6 +224,18 @@ def market_data_probe(service: MarketDataService) -> TargetProbe:
         return TargetValidation(valid=True, reason="canonical_validated")
 
     return probe
+
+
+def require_complete_mapping_window(
+    contract: TargetContract,
+    mappings: Sequence[MainContractTarget],
+) -> None:
+    mapping_rows = tuple(mappings)
+    if (
+        not mapping_rows
+        or mapping_rows[0].trading_day != contract.start_trading_day
+    ):
+        raise ValueError("TASK07_MAIN_CONTRACT_MAP_INCOMPLETE")
 
 
 def load_target_contract(path: Path) -> TargetContract:

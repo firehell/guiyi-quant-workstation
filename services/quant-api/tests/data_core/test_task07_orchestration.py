@@ -34,7 +34,9 @@ from app.data_core.task07 import (
     _write_inventory_evidence as write_inventory_evidence,
     write_kline_manifest_evidence,
 )
-from app.data_core.cli_service import run_data_core_command
+from app.data_core.cli_service import (
+    _run_data_core_command_unchecked as run_data_core_command,
+)
 from app.data_core.historical_sessions import build_provider_sessions
 from app.data_core import task07_migration
 from app.db.base import Base

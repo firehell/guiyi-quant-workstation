@@ -23,6 +23,7 @@ from app.data_core.task07_target_canonical import (
     build_target_specs,
     load_target_contract,
     market_data_probe,
+    require_complete_mapping_window,
 )
 from app.services.market_data_service import MarketDataService
 
@@ -97,6 +98,21 @@ def test_repository_target_contract_is_the_frozen_jm_scope() -> None:
         frequencies=tuple(BarFrequency),
         start_trading_day=date(2013, 3, 22),
     )
+
+
+def test_target_window_rejects_main_map_that_starts_after_config() -> None:
+    contract = TargetContract(
+        symbol="jm",
+        continuous_series="JM.MAIN",
+        frequencies=tuple(BarFrequency),
+        start_trading_day=date(2013, 3, 22),
+    )
+
+    with pytest.raises(ValueError, match="TASK07_MAIN_CONTRACT_MAP_INCOMPLETE"):
+        require_complete_mapping_window(
+            contract,
+            (MainContractTarget(date(2013, 3, 25), "JM1309"),),
+        )
 
 
 def test_target_specs_come_only_from_config_and_explicit_main_map_segments(
@@ -359,7 +375,7 @@ def test_market_data_probe_reads_all_seven_targets_at_the_same_frequency(
     assert observed == list(contract.frequencies)
 
 
-def test_market_data_probe_marks_catalog_gap_without_writing() -> None:
+def test_market_data_probe_treats_catalog_gap_as_exact_direct_redownload() -> None:
     contract = TargetContract(
         symbol="jm",
         continuous_series="JM.MAIN",
@@ -382,15 +398,19 @@ def test_market_data_probe_marks_catalog_gap_without_writing() -> None:
         def get_bars(self, _query):
             raise DataGapError(facts={"reason": "catalog_gap"})
 
-    validation = market_data_probe(
+    probe = market_data_probe(
         MarketDataService(object(), canonical_reader=Reader())  # type: ignore[arg-type]
-    )(spec)
+    )
+    validation = probe(spec)
 
     assert validation == TargetValidation(
         valid=False,
         reason="catalog_gap",
-        explicit_gap=True,
+        explicit_gap=False,
     )
+    result = assess_target_specs((spec,), probe=probe)
+    assert result["targets"][0]["status"] == "REDOWNLOAD_DIRECT"
+    assert result["repair_count"] == 1
 
 
 def _bar(dataset, bar_end: datetime) -> CanonicalBar:

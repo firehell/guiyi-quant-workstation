@@ -83,3 +83,21 @@ def test_task07_assess_is_readonly_and_requires_the_stage_c_revision(
                 canonical_root=canonical_root,
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "command",
+    sorted(cli_service._SUPERSEDED_TASK07_COMMANDS),
+)
+def test_public_runner_rejects_superseded_legacy_wide_commands(
+    command: str,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="TASK07_LEGACY_WIDE_COMMAND_SUPERSEDED",
+    ):
+        cli_service.run_data_core_command(
+            command,
+            object(),  # type: ignore[arg-type]
+            SimpleNamespace(),
+        )

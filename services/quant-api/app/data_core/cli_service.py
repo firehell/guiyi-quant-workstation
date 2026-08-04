@@ -114,7 +114,29 @@ from app.services.canonical_market_data import (
 )
 
 
+_SUPERSEDED_TASK07_COMMANDS = frozenset(
+    {
+        "task07.kline-manifest",
+        "task07.plan",
+        "task07.preflight",
+        "task07.apply",
+        "task07.verify",
+        "task07.migration-verify",
+    }
+)
+
+
 def run_data_core_command(
+    command: str,
+    session: Session,
+    args: Any,
+) -> dict[str, Any]:
+    if command in _SUPERSEDED_TASK07_COMMANDS:
+        raise ValueError("TASK07_LEGACY_WIDE_COMMAND_SUPERSEDED")
+    return _run_data_core_command_unchecked(command, session, args)
+
+
+def _run_data_core_command_unchecked(
     command: str,
     session: Session,
     args: Any,
