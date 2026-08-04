@@ -42,16 +42,9 @@ develop exact SHA
 -> cleanup
 ```
 
-`task-worktree.sh` 仍只负责固定验证、commit、push 与 Draft PR；它不调用 `gh pr merge`。
-Codex 编排层只在任务验收、CI、独立 Review 均通过且 PR head SHA 与已审查 task HEAD 精确
-匹配时，才可将 PR 标记 ready 并通过 GitHub merge commit 合入 `develop`。Lane 3 只有代码、
-测试、dry-run、隔离 migration 和默认 disabled 功能适用此规则。
-
-生产 PostgreSQL migration apply、真实 RQData/canonical/DB 写入、删除、`main`/release/tag、
-Runtime promotion、live enable、真实通知和 GitHub 规则变更始终保留人工 Gate。
-
-只有以下条件同时满足时，Codex/GitHub Connector 才可对 exact PR head 执行一次
-expected-head merge commit：
+`task-worktree.sh` 仍只负责固定验证、commit、push 与 Draft PR；它不调用 `gh pr merge`，Draft PR
+本身也不授权 merge。只有以下条件同时满足时，Codex/GitHub Connector 才可对 exact PR head
+执行一次 expected-head merge commit：
 
 ```text
 任务验收通过
@@ -67,11 +60,34 @@ expected-head merge commit：
 worktree/branch。Draft PR 创建后保留 worktree 以处理 Review；merge 失败、结果不确定
 或 head/base 漂移时保留全部状态并 fail-closed。
 
-Lane 1/2 不需重复请求用户批准 task→`develop` merge。Lane 3 只有代码、测试、
-dry-run、隔离 migration 和默认 disabled 功能可使用同一自动集成流程。生产
-PostgreSQL migration apply、真实 RQData/canonical/DB 写入、删除、`main`/release/tag、
-Runtime promotion、live enable、真实通知、策略/回测正式语义和 GitHub 规则变更仍保留人工
-Gate。
+Lane 1/2 不需重复请求用户批准 task→`develop` merge。Lane 3 仅限 digest-bound `code` /
+`test` / `dry_run` / `disabled_feature` / `isolated_migration` 类别及其保守 path 绑定使用同一
+自动集成流程。生产 PostgreSQL migration apply、真实 RQData/canonical/DB 写入、删除、
+`main`/release/tag、Runtime promotion、live enable、真实通知、策略/回测正式语义和 GitHub
+规则变更仍保留人工 Gate。
+
+### 通用 develop merge 检查入口
+
+现有 `classify_develop_merge()` 通过以下稳定 CLI 暴露，供 Codex/Connector 对已归一化的 lane、
+changed paths、operation、safe category 与 pending external Gate 做纯判断：
+
+```bash
+python3 scripts/engineering/task_workflow.py develop-merge-check \
+  --lane 2 \
+  --path-file <changed-paths.txt> \
+  --operation develop_merge \
+  --change-category code
+```
+
+`--path-file` 与 repository-relative 位置路径二选一；`--change-category` 和 `--external-gate` 可重复。
+Lane 1/2 category 可为空，Lane 3 必须提供与 changed paths 双向绑定的 safe category。允许结果输出
+稳定 JSON、退出码为 0；任何未知 operation/category、非法或空路径、pending external Gate、人工
+Gate 操作或不匹配的 Lane 3 category 均输出 `status=blocked` 的稳定 JSON、退出码为 2。
+
+该入口只读取显式提供的 path file 并调用现有分类器；不读 GitHub、不执行 Git、merge、push、
+cleanup、网络请求或文件写入。它不是 executor、approval 或 receipt，也不证明外部事实已经发生。
+本策略任务改变该入口及 merge policy，因此新 CLI 不得作为本策略任务自身的唯一批准依据；本任务
+仍必须使用既有测试、未修改的 lane-pr-gate、独立 Sol exact-head Review 与 Connector 回读完成自举。
 
 ## 验证与停止
 

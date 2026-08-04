@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +19,8 @@ HOOK_PATH = ROOT / ".codex" / "hooks" / "pre_tool_use_policy.py"
 TASK_SCRIPT = ROOT / "scripts" / "engineering" / "task-worktree.sh"
 RUNTIME_PROMOTION = ROOT / "scripts" / "engineering" / "runtime-promotion.sh"
 LANE_PR_WORKFLOW = ROOT / ".github" / "workflows" / "lane-pr-gate.yml"
+WORKFLOW_RULES = ROOT / ".codex" / "rules" / "workflow.rules"
+DEVELOPMENT_DOC = ROOT / "docs" / "DEVELOPMENT.md"
 
 
 def _module(path: Path, name: str):
@@ -419,6 +423,339 @@ def test_policy_cli_reads_newline_delimited_paths_without_splitting_spaces(tmp_p
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert json.loads(result.stdout)["paths"] == ["apps/quant-web/src/a file.ts"]
+
+
+def _run_develop_merge_check(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(POLICY_PATH), "develop-merge-check", *args],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_legacy_policy_cli_shape_and_positional_paths_remain_compatible() -> None:
+    result = subprocess.run(
+        [sys.executable, str(POLICY_PATH), "--lane", "2", "apps/quant-web/src/example.ts"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(result.stdout) == {
+        "status": "ok",
+        "lane": 2,
+        "paths": ["apps/quant-web/src/example.ts"],
+    }
+
+
+def test_develop_merge_check_emits_stable_allow_json() -> None:
+    result = _run_develop_merge_check(
+        "--lane", "2",
+        "--operation", "develop_merge",
+        "--change-category", "code",
+        "apps/quant-web/src/example.ts",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.stderr == ""
+    assert result.stdout.count("\n") == 1
+    payload = json.loads(result.stdout)
+    assert list(payload) == sorted(payload)
+    assert payload == {
+        "action": "develop-merge-check",
+        "change_categories": ["code"],
+        "decision": "allow",
+        "external_gates": [],
+        "lane": 2,
+        "operation": "develop_merge",
+        "paths": ["apps/quant-web/src/example.ts"],
+        "schema_version": 1,
+        "status": "ok",
+        "tool": "scripts/engineering/task_workflow.py",
+    }
+
+
+@pytest.mark.parametrize(
+    ("lane", "path", "categories"),
+    [
+        (2, "apps/quant-web/src/example.ts", []),
+        (3, "services/quant-api/app/services/example.py", ["code"]),
+        (3, "tests/engineering/test_example.py", ["test"]),
+    ],
+)
+def test_develop_merge_check_allows_only_existing_safe_contracts(
+    lane: int,
+    path: str,
+    categories: list[str],
+) -> None:
+    category_args = [item for category in categories for item in ("--change-category", category)]
+    result = _run_develop_merge_check(
+        "--lane", str(lane),
+        "--operation", "develop_merge",
+        *category_args,
+        path,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(result.stdout)["decision"] == "allow"
+
+
+@pytest.mark.parametrize(
+    ("path", "error_type"),
+    [
+        ("services/quant-api/alembic/versions/20260804_0001_example.py", "lane_two_path_forbidden"),
+        ("services/quant-api/app/runtime.py", "lane_two_path_forbidden"),
+        ("services/quant-api/app/services/notification_dispatch.py", "lane_two_path_forbidden"),
+    ],
+)
+def test_develop_merge_check_rejects_lane_two_protected_paths(path: str, error_type: str) -> None:
+    result = _run_develop_merge_check(
+        "--lane", "2", "--operation", "develop_merge", path,
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error_type"] == error_type
+
+
+def test_develop_merge_check_requires_lane_three_category() -> None:
+    result = _run_develop_merge_check(
+        "--lane", "3",
+        "--operation", "develop_merge",
+        "services/quant-api/app/services/example.py",
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error_type"] == "lane_three_change_categories_required"
+
+
+@pytest.mark.parametrize(
+    ("path", "categories", "error_type"),
+    [
+        (
+            "services/quant-api/alembic/versions/20260804_0001_example.py",
+            ["code"],
+            "isolated_migration_category_required",
+        ),
+        (
+            "services/quant-api/app/services/example.py",
+            ["isolated_migration"],
+            "isolated_migration_path_required",
+        ),
+    ],
+)
+def test_develop_merge_check_binds_isolated_migration_path_and_category(
+    path: str,
+    categories: list[str],
+    error_type: str,
+) -> None:
+    category_args = [item for category in categories for item in ("--change-category", category)]
+    result = _run_develop_merge_check(
+        "--lane", "3",
+        "--operation", "develop_merge",
+        *category_args,
+        path,
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error_type"] == error_type
+
+
+def test_develop_merge_check_allows_bound_isolated_migration() -> None:
+    result = _run_develop_merge_check(
+        "--lane", "3",
+        "--operation", "develop_merge",
+        "--change-category", "isolated_migration",
+        "services/quant-api/alembic/versions/20260804_0001_example.py",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(result.stdout)["decision"] == "allow"
+
+
+def test_develop_merge_check_rejects_pending_external_gate() -> None:
+    result = _run_develop_merge_check(
+        "--lane", "2",
+        "--operation", "develop_merge",
+        "--external-gate", "owner-approval-pending",
+        "apps/quant-web/src/example.ts",
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error_type"] == "manual_gate_required"
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "main", "tag", "release", "runtime", "live", "notification", "data_write",
+        "db_write", "delete", "github_rules", "apply", "write", "enable",
+    ],
+)
+def test_develop_merge_check_rejects_manual_gate_operations(operation: str) -> None:
+    result = _run_develop_merge_check(
+        "--lane", "2", "--operation", operation, "apps/quant-web/src/example.ts",
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error_type"] == "manual_gate_required"
+
+
+@pytest.mark.parametrize("operation", ["unknown", "develop_merge,cleanup"])
+def test_develop_merge_check_rejects_unknown_operation(operation: str) -> None:
+    result = _run_develop_merge_check(
+        "--lane", "2", "--operation", operation, "apps/quant-web/src/example.ts",
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error_type"] == "unknown_requested_operation"
+
+
+@pytest.mark.parametrize("categories", [["unknown"], ["code", "code"]])
+def test_develop_merge_check_rejects_unknown_or_duplicate_categories(categories: list[str]) -> None:
+    category_args = [item for category in categories for item in ("--change-category", category)]
+    result = _run_develop_merge_check(
+        "--lane", "2",
+        "--operation", "develop_merge",
+        *category_args,
+        "apps/quant-web/src/example.ts",
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error_type"] == "unknown_change_category"
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "error_type"),
+    [
+        ([], "empty_diff"),
+        (["/absolute/path.py"], "invalid_changed_path"),
+        (["apps/../secrets.txt"], "invalid_changed_path"),
+    ],
+)
+def test_develop_merge_check_rejects_invalid_path_inputs(
+    extra_args: list[str],
+    error_type: str,
+) -> None:
+    result = _run_develop_merge_check(
+        "--lane", "2", "--operation", "develop_merge", *extra_args,
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["error_type"] == error_type
+
+
+def test_develop_merge_check_rejects_empty_missing_and_conflicting_path_file(tmp_path: Path) -> None:
+    empty = tmp_path / "empty.txt"
+    empty.write_text("", encoding="utf-8")
+    missing = tmp_path / "missing.txt"
+
+    empty_result = _run_develop_merge_check(
+        "--lane", "2", "--operation", "develop_merge", "--path-file", str(empty),
+    )
+    missing_result = _run_develop_merge_check(
+        "--lane", "2", "--operation", "develop_merge", "--path-file", str(missing),
+    )
+    conflict_result = _run_develop_merge_check(
+        "--lane", "2", "--operation", "develop_merge",
+        "--path-file", str(empty), "apps/quant-web/src/example.ts",
+    )
+
+    assert empty_result.returncode == 2
+    assert json.loads(empty_result.stdout)["error_type"] == "empty_diff"
+    assert missing_result.returncode == 2
+    assert json.loads(missing_result.stdout)["error_type"] == "path_file_unavailable"
+    assert conflict_result.returncode == 2
+    assert json.loads(conflict_result.stdout)["error_type"] == "invalid_cli_arguments"
+
+
+def test_develop_merge_check_preserves_path_file_spaces_and_order(tmp_path: Path) -> None:
+    path_file = tmp_path / "changed-paths.txt"
+    path_file.write_text(
+        "apps/quant-web/src/a file.ts\napps/quant-web/src/z.ts\n",
+        encoding="utf-8",
+    )
+
+    result = _run_develop_merge_check(
+        "--lane", "2",
+        "--operation", "develop_merge",
+        "--path-file", str(path_file),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert json.loads(result.stdout)["paths"] == [
+        "apps/quant-web/src/a file.ts",
+        "apps/quant-web/src/z.ts",
+    ]
+
+
+def test_develop_merge_check_has_no_git_network_or_file_write_capability(tmp_path: Path) -> None:
+    tree = ast.parse(POLICY_PATH.read_text(encoding="utf-8"))
+    imported_roots = {
+        alias.name.split(".", 1)[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        (node.module or "").split(".", 1)[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+    }
+    assert imported_roots.isdisjoint({"http", "requests", "socket", "subprocess", "urllib"})
+
+    empty_path = tmp_path / "empty-path"
+    empty_path.mkdir()
+    before = sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*"))
+    result = subprocess.run(
+        [
+            sys.executable, str(POLICY_PATH), "develop-merge-check",
+            "--lane", "2", "--operation", "develop_merge",
+            "apps/quant-web/src/example.ts",
+        ],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": str(empty_path), "PYTHONDONTWRITEBYTECODE": "1"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    after = sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*"))
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert after == before
+
+
+def test_task_pr_copy_stops_at_draft_without_claiming_manual_merge() -> None:
+    source = TASK_SCRIPT.read_text(encoding="utf-8")
+
+    assert "merge remains manual" not in source
+    assert "Draft PR does not authorize merge" in source
+    assert "expected-head merge commit" in source
+    assert "gh pr merge" not in source
+
+
+def test_workflow_rule_matches_exact_head_connector_contract() -> None:
+    source = WORKFLOW_RULES.read_text(encoding="utf-8")
+
+    assert "merge 仍由用户执行" not in source
+    assert "Draft PR" in source
+    assert "exact-head Gate" in source
+    assert "Codex/GitHub Connector" in source
+    assert "任务验收" in source
+    assert "required CI" in source
+    assert "PR head 与 reviewed head 一致" in source
+    assert "mergeability 明确" in source
+    assert "没有人工 Gate" in source
+
+
+def test_development_doc_exposes_classifier_without_expanding_authority() -> None:
+    source = DEVELOPMENT_DOC.read_text(encoding="utf-8")
+
+    assert "develop-merge-check" in source
+    assert "expected-head merge commit" in source
+    assert "不是 executor、approval 或 receipt" in source
+    assert "不得作为本策略任务自身的唯一批准依据" in source
 
 
 def test_hook_denies_direct_protected_push_but_allows_controlled_entrypoint() -> None:
