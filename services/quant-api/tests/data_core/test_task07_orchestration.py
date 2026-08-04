@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from io import StringIO
 import json
@@ -2777,6 +2777,103 @@ def test_retirement_plan_cli_rejects_arbitrary_runtime_root_argument(
     assert exit_code == 2
     assert stdout.getvalue() == ""
     assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
+
+
+def test_direct_daily_reuse_preflight_includes_physical_first_bar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.data_core.cli_service as cli_module
+
+    source = tmp_path / "direct-daily.parquet"
+    bar_ends = [
+        datetime(2026, 1, 4, tzinfo=UTC),
+        datetime(2026, 1, 5, tzinfo=UTC),
+    ]
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": bar_ends,
+                "trading_day": [date(2026, 1, 4), date(2026, 1, 5)],
+                "open": ["100", "101"],
+                "high": ["101", "102"],
+                "low": ["99", "100"],
+                "close": ["100.5", "101.5"],
+                "volume": ["10", "11"],
+                "turnover": ["1000", "1111"],
+                "open_interest": ["20", "21"],
+            }
+        ),
+        source,
+    )
+    checksum = sha256(source.read_bytes()).hexdigest()
+    plan = build_migration_plan(
+        build_inventory_index(
+            [
+                _asset(
+                    frequency="1d",
+                    catalog_checksum=None,
+                    file_path=str(source),
+                    checksum=checksum,
+                    physical_checksum=checksum,
+                    coverage_start="2026-01-04T00:00:00+00:00",
+                    coverage_end="2026-01-05T00:00:00+00:00",
+                    physical_row_count=2,
+                    physical_min_datetime="2026-01-04T00:00:00",
+                    physical_max_datetime="2026-01-05T00:00:00",
+                    row_count=2,
+                )
+            ],
+            base_sha="8" * 40,
+            database_revision="20260803_0032",
+        ),
+        write_targets=_write_targets(tmp_path),
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            _registered_file_from_plan_source(plan["batches"][0]["sources"][0])
+        )
+        session.commit()
+
+    def provider_sessions(
+        _session: Session,
+        *,
+        dataset: object,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[task07_migration.TradingSessionCoverage, ...]:
+        del dataset
+        return tuple(
+            task07_migration.TradingSessionCoverage(
+                trading_day=bar_end.date(),
+                start=bar_end - timedelta(days=1),
+                end=bar_end,
+                expected_bar_ends=(bar_end,),
+            )
+            for bar_end in bar_ends
+            if start < bar_end <= end
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_task07_provider_sessions",
+        provider_sessions,
+    )
+    with Session(engine) as session:
+        validation, prepared = cli_module._task07_validate_batch_readonly(
+            session,
+            batch=plan["batches"][0],
+        )
+
+    assert validation[0]["row_count"] == 2
+    assert prepared[0][1].batch.request.start == datetime(
+        2026, 1, 3, tzinfo=UTC
+    )
+    assert prepared[0][1].batch.request.end == datetime(
+        2026, 1, 5, tzinfo=UTC
+    )
 
 
 def test_task07_preflight_apply_and_verify_use_real_canonical_pipeline(

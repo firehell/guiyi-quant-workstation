@@ -1016,11 +1016,25 @@ def _task07_validate_batch_readonly(
             target_start = prepared.batch.request.start
             target_end = prepared.batch.request.end
         else:
+            physical_start = source.get("physical_min_datetime")
+            physical_end = source.get("physical_max_datetime")
+            if physical_start is not None and physical_end is not None:
+                source_window = _task07_repair_window(
+                    coverage_start=physical_start,
+                    coverage_end=physical_end,
+                    frequency=dataset.frequency.value,
+                    coverage_start_is_first_bar=True,
+                )
+                session_start = _aware_datetime(source_window["start"])
+                session_end = _aware_datetime(source_window["end"])
+            else:
+                session_start = start
+                session_end = end
             sessions = resolve_task07_provider_sessions(
                 session,
                 dataset=dataset,
-                start=start,
-                end=end,
+                start=session_start,
+                end=session_end,
             )
             rank1 = load_task07_rank1_map(
                 session,
@@ -1035,8 +1049,8 @@ def _task07_validate_batch_readonly(
                 data_version=data_version,
                 rank1_contract_by_day=(rank1 if rank1 else None),
             )
-            target_start = start
-            target_end = end
+            target_start = prepared.batch.request.start
+            target_end = prepared.batch.request.end
         partitions = HistoricalCatalog(session).list_partitions(dataset)
         target_state = [
             {
