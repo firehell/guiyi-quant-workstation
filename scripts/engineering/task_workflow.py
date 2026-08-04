@@ -147,8 +147,18 @@ def _validate_paths(paths: Sequence[str]) -> list[str]:
     normalized = list(paths)
     if not normalized:
         raise WorkflowError("empty_diff", "automation requires at least one changed path")
-    if any(not path or path.startswith("/") or ".." in path.split("/") for path in normalized):
-        raise WorkflowError("invalid_changed_path", "changed paths must be non-empty repository-relative paths")
+    if any(
+        not path
+        or path.startswith("/")
+        or "\\" in path
+        or "\x00" in path
+        or any(part in {"", ".", ".."} for part in path.split("/"))
+        for path in normalized
+    ):
+        raise WorkflowError(
+            "invalid_changed_path",
+            "changed paths must be canonical non-empty repository-relative POSIX paths",
+        )
     return normalized
 
 
@@ -411,7 +421,7 @@ def _develop_merge_check_main(argv: Sequence[str]) -> int:
         if args.path_file:
             try:
                 paths = args.path_file.read_text(encoding="utf-8").splitlines()
-            except OSError as exc:
+            except (OSError, UnicodeError) as exc:
                 raise WorkflowError("path_file_unavailable", str(exc)) from exc
             payload["paths"] = paths
         classify_develop_merge(

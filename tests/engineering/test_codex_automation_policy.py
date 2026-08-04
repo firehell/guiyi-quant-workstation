@@ -633,6 +633,10 @@ def test_develop_merge_check_rejects_unknown_or_duplicate_categories(categories:
         ([], "empty_diff"),
         (["/absolute/path.py"], "invalid_changed_path"),
         (["apps/../secrets.txt"], "invalid_changed_path"),
+        (["./.env"], "invalid_changed_path"),
+        (["./deploy/runtime.sh"], "invalid_changed_path"),
+        ([r"deploy\runtime.sh"], "invalid_changed_path"),
+        (["apps//quant-web/example.ts"], "invalid_changed_path"),
     ],
 )
 def test_develop_merge_check_rejects_invalid_path_inputs(
@@ -669,6 +673,27 @@ def test_develop_merge_check_rejects_empty_missing_and_conflicting_path_file(tmp
     assert json.loads(missing_result.stdout)["error_type"] == "path_file_unavailable"
     assert conflict_result.returncode == 2
     assert json.loads(conflict_result.stdout)["error_type"] == "invalid_cli_arguments"
+
+
+def test_develop_merge_check_rejects_non_utf8_and_nul_path_files(tmp_path: Path) -> None:
+    non_utf8 = tmp_path / "non-utf8.txt"
+    non_utf8.write_bytes(b"\xff\n")
+    nul_path = tmp_path / "nul-path.txt"
+    nul_path.write_text("apps/quant-web/src/\x00example.ts\n", encoding="utf-8")
+
+    non_utf8_result = _run_develop_merge_check(
+        "--lane", "2", "--operation", "develop_merge", "--path-file", str(non_utf8),
+    )
+    nul_result = _run_develop_merge_check(
+        "--lane", "2", "--operation", "develop_merge", "--path-file", str(nul_path),
+    )
+
+    assert non_utf8_result.returncode == 2
+    assert non_utf8_result.stderr == ""
+    assert non_utf8_result.stdout.count("\n") == 1
+    assert json.loads(non_utf8_result.stdout)["error_type"] == "path_file_unavailable"
+    assert nul_result.returncode == 2
+    assert json.loads(nul_result.stdout)["error_type"] == "invalid_changed_path"
 
 
 def test_develop_merge_check_preserves_path_file_spaces_and_order(tmp_path: Path) -> None:
