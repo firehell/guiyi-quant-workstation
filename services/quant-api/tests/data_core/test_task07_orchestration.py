@@ -16,6 +16,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.data_core import task07
+from app.data_core.aggregation import AggregationSession
 from app.data_core.task07 import (
     AssetDisposition,
     Task07Asset,
@@ -34,6 +35,7 @@ from app.data_core.task07 import (
     write_kline_manifest_evidence,
 )
 from app.data_core.cli_service import run_data_core_command
+from app.data_core.historical_sessions import build_provider_sessions
 from app.data_core import task07_migration
 from app.db.base import Base
 from app.guiyi_cli.main import main
@@ -1329,15 +1331,15 @@ def test_repair_targets_coalesce_only_overlapping_windows_for_one_dataset() -> N
 
 
 @pytest.mark.parametrize(
-    ("frequency", "expected_end"),
+    ("frequency", "expected_start"),
     [
-        ("1d", datetime(2026, 8, 1, tzinfo=UTC)),
-        ("1w", datetime(2026, 8, 7, tzinfo=UTC)),
+        ("1d", datetime(2026, 7, 30, tzinfo=UTC)),
+        ("1w", datetime(2026, 7, 24, tzinfo=UTC)),
     ],
 )
-def test_single_bar_direct_repair_window_expands_to_exclusive_period_end(
+def test_single_bar_direct_repair_window_includes_only_registered_bar_end(
     frequency: str,
-    expected_end: datetime,
+    expected_start: datetime,
 ) -> None:
     index = build_inventory_index(
         [
@@ -1364,11 +1366,35 @@ def test_single_bar_direct_repair_window_expands_to_exclusive_period_end(
     )[0]
 
     assert plan["repair_actions"][0]["window"] == {
-        "start": "2026-07-31T00:00:00+00:00",
-        "end": expected_end.isoformat(),
+        "start": expected_start.isoformat(),
+        "end": "2026-07-31T00:00:00+00:00",
     }
-    assert target.start == datetime(2026, 7, 31, tzinfo=UTC)
-    assert target.end == expected_end
+    assert target.start == expected_start
+    assert target.end == datetime(2026, 7, 31, tzinfo=UTC)
+    provider_sessions = build_provider_sessions(
+        target.dataset,
+        start=target.start,
+        end=target.end,
+        sessions=(
+            AggregationSession(
+                trading_day=date(2026, 7, 31),
+                name="registered",
+                start=datetime(2026, 7, 31, 1, tzinfo=UTC),
+                end=datetime(2026, 7, 31, 7, tzinfo=UTC),
+            ),
+            AggregationSession(
+                trading_day=date(2026, 8, 7),
+                name="next",
+                start=datetime(2026, 8, 7, 1, tzinfo=UTC),
+                end=datetime(2026, 8, 7, 7, tzinfo=UTC),
+            ),
+        ),
+    )
+    assert [
+        bar_end
+        for session in provider_sessions
+        for bar_end in session.expected_bar_ends
+    ] == [datetime(2026, 7, 31, tzinfo=UTC)]
 
 
 def test_single_bar_repair_preflight_binds_original_registration_window(
@@ -1436,8 +1462,8 @@ def test_single_bar_repair_preflight_binds_original_registration_window(
 
     assert len(validation) == 1
     assert len(targets) == 1
-    assert targets[0].start == datetime(2026, 7, 31, tzinfo=UTC)
-    assert targets[0].end == datetime(2026, 8, 1, tzinfo=UTC)
+    assert targets[0].start == datetime(2026, 7, 30, tzinfo=UTC)
+    assert targets[0].end == datetime(2026, 7, 31, tzinfo=UTC)
 
 
 def test_repair_preflight_rechecks_registration_and_physical_evidence(

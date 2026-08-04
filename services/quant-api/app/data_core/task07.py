@@ -1150,7 +1150,7 @@ def _task07_repair_window(
         }.get(str(frequency))
         if period is None:
             raise ValueError("TASK07_REPAIR_WINDOW_INVALID")
-        end = start + period
+        start = end - period
     return {"start": start.isoformat(), "end": end.isoformat()}
 
 
