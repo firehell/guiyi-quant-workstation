@@ -67,6 +67,7 @@ from app.data_core.historical_sync import (
 from app.data_core.task07 import (
     _aggregate_parquet_content_gate,
     _normalize_legacy_dataset_identity,
+    _task07_repair_window,
     build_approval_packet as build_task07_approval_packet,
     build_migration_approval_facts as build_task07_migration_approval_facts,
     build_migration_batch_facts as build_task07_migration_batch_facts,
@@ -1131,8 +1132,12 @@ def _task07_validate_repair_batch_readonly(
             current != expected_registration
             or current["provider"] != str(action["original_provider"]).lower()
             or current["frequency"] != action.get("frequency")
-            or current["coverage_start"] != action.get("window", {}).get("start")
-            or current["coverage_end"] != action.get("window", {}).get("end")
+            or _task07_repair_window(
+                coverage_start=current["coverage_start"],
+                coverage_end=current["coverage_end"],
+                frequency=current["frequency"],
+            )
+            != action.get("window")
         ):
             raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
         normalized_identity = _normalize_legacy_dataset_identity(

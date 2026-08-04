@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
@@ -1126,6 +1126,32 @@ def _catalog_utc_datetime(value: object) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _task07_repair_window(
+    *,
+    coverage_start: object,
+    coverage_end: object,
+    frequency: object,
+) -> dict[str, str]:
+    start = _catalog_utc_datetime(coverage_start)
+    end = _catalog_utc_datetime(coverage_end)
+    if end < start:
+        raise ValueError("TASK07_REPAIR_WINDOW_INVALID")
+    if end == start:
+        period = {
+            "1m": timedelta(minutes=1),
+            "5m": timedelta(minutes=5),
+            "15m": timedelta(minutes=15),
+            "30m": timedelta(minutes=30),
+            "60m": timedelta(minutes=60),
+            "1d": timedelta(days=1),
+            "1w": timedelta(days=7),
+        }.get(str(frequency))
+        if period is None:
+            raise ValueError("TASK07_REPAIR_WINDOW_INVALID")
+        end = start + period
+    return {"start": start.isoformat(), "end": end.isoformat()}
 
 
 def _quality_evidence_for_file_range(
@@ -2290,6 +2316,11 @@ def build_migration_plan(
     for raw in _iter_inventory_assets(index):
         if raw.get("disposition") == AssetDisposition.CONFLICT_BLOCKED.value:
             aggregate = raw.get("frequency") in _DERIVED_FREQUENCIES
+            repair_window = _task07_repair_window(
+                coverage_start=raw["coverage_start"],
+                coverage_end=raw["coverage_end"],
+                frequency=raw["frequency"],
+            )
             registration_snapshot = {
                 "id": int(raw["market_data_file_id"]),
                 "provider": raw["provider"],
@@ -2326,10 +2357,7 @@ def build_migration_plan(
                 ),
                 "original_provider": raw["provider"],
                 **identity,
-                "window": {
-                    "start": raw["coverage_start"],
-                    "end": raw["coverage_end"],
-                },
+                "window": repair_window,
                 "source_evidence": {
                     "registration_snapshot": registration_snapshot,
                     "registration_snapshot_digest": canonical_digest(
@@ -2382,10 +2410,11 @@ def build_migration_plan(
                     "adjustment": raw.get("adjustment") or "none",
                     "schema_version": raw.get("schema_version")
                     or "canonical-bar-v1",
-                    "window": {
-                        "start": raw["coverage_start"],
-                        "end": raw["coverage_end"],
-                    },
+                    "window": _task07_repair_window(
+                        coverage_start=raw["coverage_start"],
+                        coverage_end=raw["coverage_end"],
+                        frequency=raw["frequency"],
+                    ),
                     "reason": disposition,
                     "registered_checksum": raw["checksum"],
                     "observed_checksum": raw["physical_checksum"],
