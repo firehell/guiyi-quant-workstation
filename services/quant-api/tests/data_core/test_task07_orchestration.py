@@ -1347,6 +1347,8 @@ def test_conflicts_emit_only_exact_unauthorized_repair_actions() -> None:
                 market_data_file_id=1,
                 physical_checksum="b" * 64,
                 catalog_checksum=None,
+                registration_symbol="",
+                registration_contract_or_series="JM2609",
             ),
             _aggregate_asset(
                 market_data_file_id=2,
@@ -1366,6 +1368,11 @@ def test_conflicts_emit_only_exact_unauthorized_repair_actions() -> None:
     ]
     assert all(item["authorized"] is False for item in plan["repair_actions"])
     assert plan["repair_actions"][0]["frequency"] == "1m"
+    registration = plan["repair_actions"][0]["source_evidence"][
+        "registration_snapshot"
+    ]
+    assert registration["symbol"] == ""
+    assert registration["contract_or_series"] == "JM2609"
     assert plan["repair_actions"][1]["source_dataset"]["frequency"] == "1m"
     assert plan["repair_actions"][1]["frequency"] == "5m"
     assert plan["repair_actions"][0]["manifest_digest"] == index["assets_digest"]
@@ -2876,6 +2883,66 @@ def test_direct_daily_reuse_preflight_includes_first_bar_and_fills_map_gap(
     assert prepared[0][1].batch.request.end == datetime(
         2026, 1, 5, tzinfo=UTC
     )
+
+
+def test_direct_weekly_reuse_uses_exact_provider_bar_coverage(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "direct-weekly.parquet"
+    bar_ends = [
+        datetime(2023, 6, 21, tzinfo=UTC),
+        datetime(2023, 6, 30, tzinfo=UTC),
+    ]
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": bar_ends,
+                "trading_day": [date(2023, 6, 21), date(2023, 6, 30)],
+                "open": ["100", "101"],
+                "high": ["101", "102"],
+                "low": ["99", "100"],
+                "close": ["100.5", "101.5"],
+                "volume": ["10", "11"],
+                "turnover": ["1000", "1111"],
+                "open_interest": ["20", "21"],
+            }
+        ),
+        source,
+    )
+    dataset = task07_migration.DatasetKey(
+        provider="rqdata",
+        dataset_kind=task07_migration.DatasetKind.ACTUAL_DOMINANT,
+        symbol="a",
+        contract_or_series="A2309",
+        frequency=task07_migration.BarFrequency.W1,
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+    prepared = task07_migration.prepare_legacy_parquet_batch(
+        path=source,
+        source_checksum=sha256(source.read_bytes()).hexdigest(),
+        dataset=dataset,
+        sessions=(
+            task07_migration.TradingSessionCoverage(
+                trading_day=date(2023, 6, 16),
+                start=datetime(2023, 6, 9, tzinfo=UTC),
+                end=datetime(2023, 6, 16, tzinfo=UTC),
+                expected_bar_ends=(datetime(2023, 6, 16, tzinfo=UTC),),
+            ),
+            task07_migration.TradingSessionCoverage(
+                trading_day=date(2023, 6, 30),
+                start=datetime(2023, 6, 23, tzinfo=UTC),
+                end=datetime(2023, 6, 30, tzinfo=UTC),
+                expected_bar_ends=(datetime(2023, 6, 30, tzinfo=UTC),),
+            ),
+        ),
+        data_version="rqdata-weekly-v1",
+        rank1_contract_by_day={date(2023, 6, 30): "A2309"},
+    )
+
+    assert [item.bar_end for item in prepared.batch.bars] == bar_ends
+    assert prepared.batch.request.start == datetime(2023, 6, 14, tzinfo=UTC)
+    assert prepared.batch.request.end == datetime(2023, 6, 30, tzinfo=UTC)
 
 
 def test_task07_preflight_apply_and_verify_use_real_canonical_pipeline(
