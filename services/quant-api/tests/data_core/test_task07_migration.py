@@ -885,6 +885,20 @@ def test_load_rank1_map_rejects_missing_day() -> None:
             )
 
 
+def test_load_rank1_map_fills_missing_direct_day_with_bound_contract() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        mapping = load_task07_rank1_map(
+            session,
+            dataset=_dataset(),
+            trading_days=(date(2026, 8, 3),),
+            missing_contract="JM2609",
+        )
+
+    assert mapping == {date(2026, 8, 3): "JM2609"}
+
+
 def test_execute_prepared_batch_publishes_create_only_catalog_and_manifest(
     tmp_path: Path,
 ) -> None:

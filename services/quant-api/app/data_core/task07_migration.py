@@ -876,6 +876,7 @@ def load_task07_rank1_map(
     *,
     dataset: DatasetKey,
     trading_days: Sequence[date],
+    missing_contract: str | None = None,
 ) -> dict[date, str]:
     if dataset.dataset_kind is not DatasetKind.ACTUAL_DOMINANT:
         return {}
@@ -909,8 +910,17 @@ def load_task07_rank1_map(
         if not normalized or normalized.endswith(".MAIN"):
             raise Task07MigrationError("TASK07_MAIN_MAP_INVALID")
         by_day[trading_day].add(normalized)
-    if any(not contracts for contracts in by_day.values()):
-        raise Task07MigrationError("TASK07_MAIN_MAP_MISSING")
+    missing_normalized = str(missing_contract or "").strip().upper()
+    if missing_contract is not None and (
+        not missing_normalized or missing_normalized.endswith(".MAIN")
+    ):
+        raise Task07MigrationError("TASK07_MAIN_MAP_INVALID")
+    for contracts in by_day.values():
+        if contracts:
+            continue
+        if missing_contract is None:
+            raise Task07MigrationError("TASK07_MAIN_MAP_MISSING")
+        contracts.add(missing_normalized)
     if any(len(contracts) != 1 for contracts in by_day.values()):
         raise Task07MigrationError("TASK07_MAIN_MAP_CONFLICT")
     return {day: next(iter(by_day[day])) for day in requested}

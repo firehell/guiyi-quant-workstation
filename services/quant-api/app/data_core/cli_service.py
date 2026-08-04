@@ -1040,6 +1040,7 @@ def _task07_validate_batch_readonly(
                 session,
                 dataset=dataset,
                 trading_days=tuple(item.trading_day for item in sessions),
+                missing_contract=dataset.contract_or_series,
             )
             prepared = prepare_legacy_parquet_batch(
                 path=Path(str(source["file_path"])),
@@ -1300,6 +1301,11 @@ def _execute_task07_repair_apply(
                 read_session,
                 dataset=target.dataset,
                 trading_days=tuple(item.trading_day for item in sessions),
+                missing_contract=(
+                    target.dataset.contract_or_series
+                    if target.operation == "rqdata_redownload"
+                    else None
+                ),
             )
         if rank1:
             sessions = filter_actual_dominant_sessions(

@@ -2779,7 +2779,7 @@ def test_retirement_plan_cli_rejects_arbitrary_runtime_root_argument(
     assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
-def test_direct_daily_reuse_preflight_includes_physical_first_bar(
+def test_direct_daily_reuse_preflight_includes_first_bar_and_fills_map_gap(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2812,6 +2812,8 @@ def test_direct_daily_reuse_preflight_includes_physical_first_bar(
             [
                 _asset(
                     frequency="1d",
+                    dataset_kind="actual_dominant",
+                    contract_or_series="JM2609",
                     catalog_checksum=None,
                     file_path=str(source),
                     checksum=checksum,
