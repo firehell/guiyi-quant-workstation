@@ -49,7 +49,6 @@ _REPAIRABLE_DATA_CORE_REASONS = frozenset(
         "catalog_coverage_missing",
         "catalog_datetime_invalid",
         "catalog_gap",
-        "catalog_partition_invalid",
         "duplicate_primary_key",
         "file_checksum_mismatch",
         "file_unreadable",

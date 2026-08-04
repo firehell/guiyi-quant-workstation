@@ -31,7 +31,7 @@ from app.data_core.contracts import (
     ManifestLineage,
     ManifestMismatchError,
 )
-from app.data_core.historical_reader import CanonicalHistoricalReader
+from app.data_core.historical_reader import CanonicalHistoricalReader, _partition_value
 from app.data_core.rqdata_adapter import (
     ProviderBarBatch,
     ProviderBarRequest,
@@ -465,6 +465,103 @@ def test_reader_propagates_canonical_permission_error(
                     end=SECOND,
                 )
             )
+
+
+@pytest.mark.parametrize("failure_stage", ["open", "read"])
+def test_reader_propagates_non_data_parquet_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure_stage: str,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+
+        if failure_stage == "open":
+            def fail_parquet_open(_path: Path):
+                raise RuntimeError("parquet implementation failure")
+
+            monkeypatch.setattr(pq, "ParquetFile", fail_parquet_open)
+        else:
+            class FailingParquet:
+                metadata = SimpleNamespace(num_rows=2)
+
+                def read(self):
+                    raise RuntimeError("parquet implementation failure")
+
+            monkeypatch.setattr(pq, "ParquetFile", lambda _path: FailingParquet())
+
+        with pytest.raises(RuntimeError, match="parquet implementation failure"):
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+
+@pytest.mark.parametrize("failure_stage", ["open", "read"])
+def test_reader_wraps_parquet_content_error_as_data_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure_stage: str,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+
+        if failure_stage == "open":
+            def fail_parquet_open(_path: Path):
+                raise pa.ArrowInvalid("corrupt parquet content")
+
+            monkeypatch.setattr(pq, "ParquetFile", fail_parquet_open)
+        else:
+            class CorruptParquet:
+                metadata = SimpleNamespace(num_rows=2)
+
+                def read(self):
+                    raise pa.ArrowInvalid("corrupt parquet content")
+
+            monkeypatch.setattr(pq, "ParquetFile", lambda _path: CorruptParquet())
+
+        with pytest.raises(ManifestMismatchError) as error:
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+    assert error.value.facts["reason"] == "parquet_unreadable"
+
+
+def test_partition_value_propagates_missing_attribute() -> None:
+    with pytest.raises(AttributeError):
+        _partition_value(SimpleNamespace(), "file_uri")
 
 
 def test_reader_rejects_physical_rows_that_are_not_strictly_ordered(

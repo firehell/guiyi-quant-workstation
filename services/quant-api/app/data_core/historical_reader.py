@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Callable, Sequence
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 from app.data_core.canonical_store import (
@@ -389,17 +390,13 @@ class CanonicalHistoricalReader:
         expected_row_count = int(_partition_value(partition, "row_count"))
         try:
             parquet = pq.ParquetFile(file_path)
-        except OSError:
-            raise
-        except Exception as exc:
+        except pa.ArrowInvalid as exc:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if int(parquet.metadata.num_rows) != expected_row_count:
             raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
         try:
             table = parquet.read()
-        except OSError:
-            raise
-        except Exception as exc:
+        except pa.ArrowInvalid as exc:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if table.schema != CANONICAL_PARQUET_SCHEMA:
             raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
@@ -417,12 +414,7 @@ class CanonicalHistoricalReader:
 
 
 def _partition_value(partition: object, field: str) -> object:
-    try:
-        return getattr(partition, field)
-    except AttributeError as exc:
-        raise ManifestMismatchError(
-            facts={"reason": "catalog_partition_invalid"}
-        ) from exc
+    return getattr(partition, field)
 
 
 def _safe_child(root: Path, relative_path: str) -> Path:
