@@ -21,6 +21,7 @@ from app.data_core.contracts import (
     BarFrequency,
     BarQuery,
     DataGapError,
+    DatasetAmbiguousError,
     DatasetOrigin,
     DatasetKey,
     DatasetKind,
@@ -287,6 +288,44 @@ def test_reader_selects_replacement_partition_without_reading_original(
         "provider-final-20260701-jm-session-v1",
     )
     assert len(result.manifest_digests) == 1
+
+
+def test_reader_rejects_identical_duplicate_primary_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with Session(engine) as session:
+        reader = CanonicalHistoricalReader(
+            catalog=HistoricalCatalog(session),
+            canonical_root=(tmp_path / "canonical").resolve(),
+        )
+        duplicate = _bar(FIRST, "101")
+        monkeypatch.setattr(
+            reader,
+            "_read_direct_dataset",
+            lambda *_args, **_kwargs: (
+                (duplicate, duplicate),
+                ("a" * 64,),
+                ("provider-final-20260701",),
+            ),
+        )
+        monkeypatch.setattr(reader, "_require_direct_coverage", lambda *_args, **_kwargs: None)
+
+        with pytest.raises(
+            DatasetAmbiguousError,
+            match="DATASET_AMBIGUOUS",
+        ):
+            reader.get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
 
 
 def test_weekly_reader_uses_padded_calendar_without_partial_month_end_week(

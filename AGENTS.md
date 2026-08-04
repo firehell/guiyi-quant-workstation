@@ -61,8 +61,9 @@
 - 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata。
   旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 bar
   layer 与 Profile/Binding/legacy lineage 均为 rebuild-only 或 compatibility-only，不得迁移为
-  新 active 输入。Task 07 的删除前置条件固定为 exact deletion manifest、zero active refs、
-  independent Sol Review 与 owner 对 exact scope 的批准。
+  新 active 输入。Task 07 Stage C 只验收 active config + Catalog + MainContractMap 生成的
+  JM 目标 Canonical 并输出精确缺口计划；不执行修复、Runtime promotion 或删除。
+  Runtime promotion 属于 Task 08；旧派生数据清理只能是后续独立可选任务。
 
 协作 Lane、worktree、PR 与人工 Gate 见 `docs/DEVELOPMENT.md`；业务目标与迁移顺序不得复制到
 该工作流文档中另行解释。

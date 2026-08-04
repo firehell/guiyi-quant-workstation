@@ -2587,7 +2587,7 @@ def test_apply_gate_rejects_tampered_preflight_receipt(tmp_path: Path) -> None:
         )
 
 
-def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() -> None:
+def test_superseded_task07_apply_is_rejected_before_opening_database() -> None:
     stdout = StringIO()
     stderr = StringIO()
 
@@ -2598,16 +2598,14 @@ def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() ->
         stderr=stderr,
     )
 
-    assert exit_code == 78
+    assert exit_code == 2
     assert stdout.getvalue() == ""
-    assert json.loads(stderr.getvalue())["error"]["code"] == "TASK07_EXACT_APPROVAL_REQUIRED"
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
-def test_task07_kline_manifest_has_no_external_protected_root_argument() -> None:
+def test_superseded_task07_kline_manifest_does_not_dispatch() -> None:
     stdout = StringIO()
     stderr = StringIO()
-    engine = create_engine("sqlite://")
-
     exit_code = main(
         [
             "data",
@@ -2622,23 +2620,14 @@ def test_task07_kline_manifest_has_no_external_protected_root_argument() -> None
             "--evidence-root",
             "/tmp/evidence",
         ],
-        session_factory=lambda: Session(engine),
-        data_core_runner=lambda command, _session, args: {
-            "status": "passed",
-            "command": command,
-            "has_protected_root": hasattr(args, "protected_root"),
-        },
+        session_factory=lambda: (_ for _ in ()).throw(AssertionError("must not open database")),
         stdout=stdout,
         stderr=stderr,
     )
 
-    assert exit_code == 0
-    assert stderr.getvalue() == ""
-    assert json.loads(stdout.getvalue()) == {
-        "command": "task07.kline-manifest",
-        "has_protected_root": False,
-        "status": "passed",
-    }
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
 def _task07_inventory_schema(engine: Engine) -> None:
@@ -2855,7 +2844,7 @@ def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
     ) == packet
 
 
-def test_task07_apply_requires_hash_bound_preflight_before_opening_database() -> None:
+def test_superseded_task07_apply_rejects_even_historical_gate_arguments() -> None:
     stdout = StringIO()
     stderr = StringIO()
 
@@ -2872,23 +2861,15 @@ def test_task07_apply_requires_hash_bound_preflight_before_opening_database() ->
         stderr=stderr,
     )
 
-    assert exit_code == 78
-    assert json.loads(stderr.getvalue())["error"]["code"] == "TASK07_EXACT_APPROVAL_REQUIRED"
+    assert exit_code == 2
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
-def test_task07_migration_verify_cli_forwards_exact_ordered_apply_receipts(
+def test_superseded_task07_migration_verify_does_not_dispatch(
     tmp_path: Path,
 ) -> None:
     stdout = StringIO()
     stderr = StringIO()
-    engine = create_engine("sqlite://")
-    observed: dict[str, object] = {}
-
-    def runner(command, _session, args):
-        observed["command"] = command
-        observed["apply_receipt"] = args.apply_receipt
-        return {"status": "passed", "command": command}
-
     receipt_one = tmp_path / "batch-1.json"
     receipt_two = tmp_path / "batch-2.json"
     exit_code = main(
@@ -2909,18 +2890,14 @@ def test_task07_migration_verify_cli_forwards_exact_ordered_apply_receipts(
             "--apply-receipt",
             str(receipt_two),
         ],
-        session_factory=lambda: Session(engine),
-        data_core_runner=runner,
+        session_factory=lambda: (_ for _ in ()).throw(AssertionError("must not open database")),
         stdout=stdout,
         stderr=stderr,
     )
 
-    assert exit_code == 0
-    assert stderr.getvalue() == ""
-    assert observed == {
-        "command": "task07.migration-verify",
-        "apply_receipt": [receipt_one, receipt_two],
-    }
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
 def test_retirement_plan_cli_rejects_arbitrary_runtime_root_argument(

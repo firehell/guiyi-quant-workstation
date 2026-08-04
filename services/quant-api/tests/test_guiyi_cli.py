@@ -13,7 +13,6 @@ from app.data_core.historical_apply_gate import (
     build_apply_approval_packet,
     expected_partial_apply_receipt_path,
 )
-from app.data_core.task07 import build_runtime_cutover_plan, canonical_digest
 from app.guiyi_cli.main import main
 
 
@@ -592,25 +591,45 @@ def test_runtime_plan_is_existing_scheduler_dry_run_without_side_effects() -> No
     }
 
 
-def test_task07_runtime_cutover_plan_is_code_only_and_does_not_open_database() -> None:
+def test_task07_assess_dispatches_only_the_explicit_target_contract_and_root() -> None:
     stdout = StringIO()
     stderr = StringIO()
-    tags = {"v1.0.0": "1" * 40, "v0.9.0": "2" * 40}
+    observed: dict[str, object] = {}
+
+    def run(command, _session, args):
+        observed.update(
+            command=command,
+            target_config=args.target_config,
+            canonical_root=args.canonical_root,
+        )
+        return {
+            "schema_version": 1,
+            "command": "data.task07.assess",
+            "status": "passed",
+            "readonly": True,
+            "effects": {
+                "calls_rqdata": False,
+                "writes_postgresql": False,
+                "writes_parquet": False,
+            },
+            "Stage_C": "NO_DATA_WRITE_REQUIRED",
+            "writes_authorized": False,
+            "repair_count": 0,
+            "targets": [],
+        }
 
     exit_code = main(
         [
             "data",
             "task07",
-            "runtime-cutover-plan",
-            "--project-root",
-            "/tmp/guiyi-checkout",
-            "--target-release-tag",
-            "v1.0.0",
-            "--previous-release-tag",
-            "v0.9.0",
+            "assess",
+            "--target-config",
+            "/tmp/data-core-v2-targets.yaml",
+            "--canonical-root",
+            "/tmp/canonical",
         ],
-        session_factory=_NoSessionFactory(),
-        git_tag_resolver=lambda _root, tag: tags[tag],
+        session_factory=lambda: nullcontext(object()),
+        data_core_runner=run,
         stdout=stdout,
         stderr=stderr,
     )
@@ -618,96 +637,47 @@ def test_task07_runtime_cutover_plan_is_code_only_and_does_not_open_database() -
     assert exit_code == 0
     assert stderr.getvalue() == ""
     payload = json.loads(stdout.getvalue())
-    assert payload["command"] == "data.task07.runtime-cutover-plan"
-    assert payload["required_database_revision"] == "20260803_0032"
-    assert payload["apply_available"] is False
-    assert payload["calls_rqdata"] is False
-    assert payload["switches_runtime"] is False
+    assert payload["Stage_C"] == "NO_DATA_WRITE_REQUIRED"
+    assert payload["writes_authorized"] is False
+    assert observed == {
+        "command": "task07.assess",
+        "target_config": Path("/tmp/data-core-v2-targets.yaml"),
+        "canonical_root": Path("/tmp/canonical"),
+    }
 
 
-def test_task07_runtime_cutover_verify_is_readonly_and_fail_closed(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "legacy_command",
+    [
+        "kline-manifest",
+        "plan",
+        "preflight",
+        "apply",
+        "verify",
+        "migration-verify",
+        "runtime-cutover-plan",
+        "runtime-cutover-verify",
+    ],
+)
+def test_task07_legacy_stage_c_commands_are_not_active_cli_routes(
+    legacy_command: str,
 ) -> None:
     stdout = StringIO()
     stderr = StringIO()
-    tags = {"v1.0.0": "1" * 40, "v0.9.0": "2" * 40}
-    plan = build_runtime_cutover_plan(
-        target_release_tag="v1.0.0",
-        previous_release_tag="v0.9.0",
-        tag_resolver=tags.__getitem__,
-    )
-    body = {
-        "schema_version": 1,
-        "command": "data.task07.runtime-cutover",
-        "status": "passed",
-        "target_release": plan["target_release"],
-        "database_revision": "20260803_0032",
-        "feature_flags": plan["required_feature_flags"],
-        "auto_order": False,
-        "health": {"status": "passed"},
-        "smoke": {"status": "passed"},
-        "rollback": {**plan["previous_release"], "ready": True},
-        "post_cutover_reference_assertion": plan[
-            "required_post_cutover_reference_assertion"
-        ],
-        "plan_digest": plan["plan_digest"],
-    }
-    receipt = {**body, "canonical_receipt_digest": canonical_digest(body)}
-    plan_path = tmp_path / "plan.json"
-    receipt_path = tmp_path / "receipt.json"
-    plan_path.write_text(json.dumps(plan), encoding="utf-8")
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
 
     exit_code = main(
-        [
-            "data",
-            "task07",
-            "runtime-cutover-verify",
-            "--project-root",
-            str(tmp_path),
-            "--plan",
-            str(plan_path),
-            "--receipt",
-            str(receipt_path),
-        ],
+        ["data", "task07", legacy_command],
         session_factory=_NoSessionFactory(),
-        git_tag_resolver=lambda _root, tag: tags[tag],
+        data_core_runner=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("superseded command must not dispatch")
+        ),
         stdout=stdout,
         stderr=stderr,
     )
 
-    assert exit_code == 0
-    assert stderr.getvalue() == ""
-    payload = json.loads(stdout.getvalue())
-    assert payload["status"] == "passed"
-    assert payload["retirement_unlocked"] is False
-    assert payload["deletion_unlocked"] is False
-
-    receipt["health"] = {"status": "failed"}
-    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
-    stdout = StringIO()
-    stderr = StringIO()
-    exit_code = main(
-        [
-            "data",
-            "task07",
-            "runtime-cutover-verify",
-            "--project-root",
-            str(tmp_path),
-            "--plan",
-            str(plan_path),
-            "--receipt",
-            str(receipt_path),
-        ],
-        session_factory=_NoSessionFactory(),
-        git_tag_resolver=lambda _root, tag: tags[tag],
-        stdout=stdout,
-        stderr=stderr,
-    )
-    assert exit_code == 1
-    assert json.loads(stderr.getvalue())["error"]["code"] == (
-        "TASK07_RUNTIME_CUTOVER_RECEIPT_DRIFT"
-    )
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
 def test_runtime_status_returns_health_payload_and_nonzero_for_failed_runtime() -> None:

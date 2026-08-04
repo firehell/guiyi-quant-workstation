@@ -16,11 +16,6 @@ from app.data_core.historical_apply_gate import (
     load_apply_approval_packet,
 )
 from app.data_core.cli_service import run_data_core_command
-from app.data_core.task07 import (
-    build_runtime_cutover_plan,
-    resolve_git_tag,
-    verify_runtime_cutover_receipt,
-)
 from app.db.session import SessionLocal
 from app.services.active_dataset import ActiveDatasetDomainError
 from app.services.core_cli import verify_active_dataset
@@ -33,7 +28,6 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 DataVerifier = Callable[..., dict[str, Any]]
 RuntimeHealthBuilder = Callable[[Any], dict[str, Any]]
 DataCoreRunner = Callable[[str, Any, argparse.Namespace], dict[str, Any]]
-GitTagResolver = Callable[[Path, str], str]
 
 
 class CliUsageError(ValueError):
@@ -127,57 +121,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     task07 = data_commands.add_parser("task07")
     task07_commands = task07.add_subparsers(dest="task07_command", required=True)
-    task07_manifest = task07_commands.add_parser("kline-manifest")
-    task07_manifest.add_argument("--project-root", type=Path, required=True)
-    task07_manifest.add_argument("--data-root", type=Path, required=True)
-    task07_manifest.add_argument("--canonical-root", type=Path, required=True)
-    task07_manifest.add_argument("--evidence-root", type=Path, required=True)
-    task07_manifest.add_argument("--database-revision")
-    task07_plan = task07_commands.add_parser("plan")
-    task07_plan.add_argument("--manifest", type=Path, required=True)
-    task07_plan.add_argument("--staging-root", type=Path, required=True)
-    task07_plan.add_argument("--canonical-root", type=Path, required=True)
-    task07_preflight = task07_commands.add_parser("preflight")
-    task07_preflight.add_argument("--plan", type=Path, required=True)
-    task07_preflight.add_argument("--approval-packet", type=Path, required=True)
-    task07_preflight.add_argument("--approval-hash", required=True)
-    task07_preflight.add_argument("--batch-key", required=True)
-    task07_preflight.add_argument("--staging-root", type=Path, required=True)
-    task07_preflight.add_argument("--canonical-root", type=Path, required=True)
-    task07_apply = task07_commands.add_parser("apply")
-    task07_apply.add_argument("--plan", type=Path, required=True)
-    task07_apply.add_argument("--approval-packet", type=Path)
-    task07_apply.add_argument("--approval-hash")
-    task07_apply.add_argument("--preflight-receipt", type=Path)
-    task07_apply.add_argument("--preflight-hash")
-    task07_apply.add_argument("--batch-key")
-    task07_apply.add_argument("--staging-root", type=Path)
-    task07_apply.add_argument("--canonical-root", type=Path)
-    task07_verify = task07_commands.add_parser("verify")
-    task07_verify.add_argument("--plan", type=Path, required=True)
-    task07_verify.add_argument("--receipt", type=Path, required=True)
-    task07_verify.add_argument("--batch-key", required=True)
-    task07_verify.add_argument("--canonical-root", type=Path, required=True)
-    migration_verify = task07_commands.add_parser("migration-verify")
-    migration_verify.add_argument("--plan", type=Path, required=True)
-    migration_verify.add_argument("--approval-packet", type=Path, required=True)
-    migration_verify.add_argument("--approval-hash", required=True)
-    migration_verify.add_argument("--canonical-root", type=Path, required=True)
-    migration_verify.add_argument(
-        "--apply-receipt",
-        type=Path,
-        action="append",
-        required=True,
-        help="Exact apply receipt in migration-envelope order; repeat once per batch.",
-    )
-    runtime_cutover_plan = task07_commands.add_parser("runtime-cutover-plan")
-    runtime_cutover_plan.add_argument("--project-root", type=Path, required=True)
-    runtime_cutover_plan.add_argument("--target-release-tag", required=True)
-    runtime_cutover_plan.add_argument("--previous-release-tag", required=True)
-    runtime_cutover_verify = task07_commands.add_parser("runtime-cutover-verify")
-    runtime_cutover_verify.add_argument("--project-root", type=Path, required=True)
-    runtime_cutover_verify.add_argument("--plan", type=Path, required=True)
-    runtime_cutover_verify.add_argument("--receipt", type=Path, required=True)
+    task07_assess = task07_commands.add_parser("assess")
+    task07_assess.add_argument("--target-config", type=Path, required=True)
+    task07_assess.add_argument("--canonical-root", type=Path, required=True)
 
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(
@@ -199,10 +145,6 @@ def main(
     data_verifier: DataVerifier = verify_active_dataset,
     data_core_runner: DataCoreRunner = run_data_core_command,
     runtime_health_builder: RuntimeHealthBuilder = build_runtime_health,
-    git_tag_resolver: GitTagResolver = lambda root, tag: resolve_git_tag(
-        project_root=root,
-        tag=tag,
-    ),
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -225,68 +167,8 @@ def main(
             stderr,
         )
         return 2
-    if _is_task07_runtime_cutover_command(args):
-        try:
-            def resolver(tag: str) -> str:
-                return git_tag_resolver(args.project_root, tag)
-
-            if args.task07_command == "runtime-cutover-plan":
-                payload = build_runtime_cutover_plan(
-                    target_release_tag=args.target_release_tag,
-                    previous_release_tag=args.previous_release_tag,
-                    tag_resolver=resolver,
-                )
-            else:
-                payload = verify_runtime_cutover_receipt(
-                    _load_json_object(args.plan),
-                    _load_json_object(args.receipt),
-                    tag_resolver=resolver,
-                )
-        except Exception as exc:  # noqa: BLE001 - bounded read-only CLI boundary.
-            raw_code = str(exc)
-            code = (
-                raw_code
-                if raw_code.startswith("TASK07_RUNTIME_CUTOVER_")
-                else "TASK07_RUNTIME_CUTOVER_VERIFY_FAILED"
-            )
-            _print_json(
-                {
-                    "schema_version": 1,
-                    "command": f"data.task07.{args.task07_command}",
-                    "status": "error",
-                    "readonly": True,
-                    "error": {"code": code, "type": type(exc).__name__},
-                },
-                stderr,
-            )
-            return 1
-        _print_json(payload, stdout)
-        return 0
     data_core_command = _data_core_command(args)
     if data_core_command is not None:
-        if _is_task07_apply(args) and (
-            args.approval_packet is None
-            or not args.approval_hash
-            or args.preflight_receipt is None
-            or not args.preflight_hash
-            or not args.batch_key
-            or args.staging_root is None
-            or args.canonical_root is None
-        ):
-            _print_json(
-                {
-                    "schema_version": 1,
-                    "command": f"data.{data_core_command}",
-                    "status": "blocked",
-                    "readonly": True,
-                    "error": {
-                        "code": "TASK07_EXACT_APPROVAL_REQUIRED",
-                        "type": "Task07ApprovalError",
-                    },
-                },
-                stderr,
-            )
-            return 78
         if _is_data_core_apply(args) and (
             args.approval_packet is None
             or not args.approval_hash
@@ -588,34 +470,7 @@ def _is_data_core_apply(args: argparse.Namespace) -> bool:
             args.data_command == "migrate"
             and args.migrate_command == "apply"
         )
-        or _is_task07_apply(args)
     )
-
-
-def _is_task07_apply(args: argparse.Namespace) -> bool:
-    return bool(
-        args.data_command == "task07"
-        and args.task07_command == "apply"
-    )
-
-
-def _is_task07_runtime_cutover_command(args: argparse.Namespace) -> bool:
-    return bool(
-        args.domain == "data"
-        and args.data_command == "task07"
-        and args.task07_command
-        in {"runtime-cutover-plan", "runtime-cutover-verify"}
-    )
-
-
-def _load_json_object(path: Path) -> dict[str, Any]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError("TASK07_RUNTIME_CUTOVER_DOCUMENT_INVALID") from exc
-    if not isinstance(payload, dict):
-        raise ValueError("TASK07_RUNTIME_CUTOVER_DOCUMENT_INVALID")
-    return payload
 
 
 def _is_migrate_apply(args: argparse.Namespace) -> bool:
