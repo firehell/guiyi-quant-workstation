@@ -16,6 +16,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from app.data_core import task07
+from app.data_core.aggregation import AggregationSession
 from app.data_core.task07 import (
     AssetDisposition,
     Task07Asset,
@@ -34,6 +35,7 @@ from app.data_core.task07 import (
     write_kline_manifest_evidence,
 )
 from app.data_core.cli_service import run_data_core_command
+from app.data_core.historical_sessions import build_provider_sessions
 from app.data_core import task07_migration
 from app.db.base import Base
 from app.guiyi_cli.main import main
@@ -1326,6 +1328,142 @@ def test_repair_targets_coalesce_only_overlapping_windows_for_one_dataset() -> N
     assert targets[0].end == datetime(2026, 3, 1, tzinfo=UTC)
     assert targets[0].source_action_ids == (1, 2)
     assert len(targets[0].target_digest) == 64
+
+
+@pytest.mark.parametrize(
+    ("frequency", "expected_start"),
+    [
+        ("1d", datetime(2026, 7, 30, tzinfo=UTC)),
+        ("1w", datetime(2026, 7, 24, tzinfo=UTC)),
+    ],
+)
+def test_single_bar_direct_repair_window_includes_only_registered_bar_end(
+    frequency: str,
+    expected_start: datetime,
+) -> None:
+    index = build_inventory_index(
+        [
+            _asset(
+                market_data_file_id=1,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                frequency=frequency,
+                coverage_start="2026-07-31T00:00:00+00:00",
+                coverage_end="2026-07-31T00:00:00+00:00",
+                physical_checksum="b" * 64,
+                catalog_checksum=None,
+                row_count=1,
+            )
+        ],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+    target = task07_migration.build_task07_repair_targets(
+        plan,
+        plan["batches"][0],
+    )[0]
+
+    assert plan["repair_actions"][0]["window"] == {
+        "start": expected_start.isoformat(),
+        "end": "2026-07-31T00:00:00+00:00",
+    }
+    assert target.start == expected_start
+    assert target.end == datetime(2026, 7, 31, tzinfo=UTC)
+    provider_sessions = build_provider_sessions(
+        target.dataset,
+        start=target.start,
+        end=target.end,
+        sessions=(
+            AggregationSession(
+                trading_day=date(2026, 7, 31),
+                name="registered",
+                start=datetime(2026, 7, 31, 1, tzinfo=UTC),
+                end=datetime(2026, 7, 31, 7, tzinfo=UTC),
+            ),
+            AggregationSession(
+                trading_day=date(2026, 8, 7),
+                name="next",
+                start=datetime(2026, 8, 7, 1, tzinfo=UTC),
+                end=datetime(2026, 8, 7, 7, tzinfo=UTC),
+            ),
+        ),
+    )
+    assert [
+        bar_end
+        for session in provider_sessions
+        for bar_end in session.expected_bar_ends
+    ] == [datetime(2026, 7, 31, tzinfo=UTC)]
+
+
+def test_single_bar_repair_preflight_binds_original_registration_window(
+    tmp_path: Path,
+) -> None:
+    import app.data_core.cli_service as cli_module
+
+    source = tmp_path / "damaged-single-bar.parquet"
+    source.write_bytes(b"current damaged bytes")
+    observed_checksum = sha256(source.read_bytes()).hexdigest()
+    asset = _asset(
+        market_data_file_id=1,
+        contract_or_series="JM2609",
+        dataset_kind="actual_dominant",
+        frequency="1d",
+        file_path=str(source),
+        coverage_start="2026-07-31T00:00:00+00:00",
+        coverage_end="2026-07-31T00:00:00+00:00",
+        checksum="a" * 64,
+        file_size_bytes=source.stat().st_size,
+        physical_checksum=observed_checksum,
+        catalog_checksum=None,
+        row_count=1,
+    )
+    plan = build_migration_plan(
+        build_inventory_index(
+            [asset],
+            base_sha="1" * 40,
+            database_revision="20260803_0032",
+        ),
+        write_targets=_write_targets(tmp_path),
+    )
+    batch = plan["batches"][0]
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            MarketDataFile(
+                id=1,
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="JM2609",
+                period="1d",
+                start_time=datetime(2026, 7, 31, tzinfo=UTC),
+                end_time=datetime(2026, 7, 31, tzinfo=UTC),
+                file_path=str(source),
+                file_size_bytes=source.stat().st_size,
+                checksum="a" * 64,
+                data_version="legacy-v1",
+                row_count=1,
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        validation, targets = cli_module._task07_validate_batch_readonly(
+            session,
+            plan=plan,
+            batch=batch,
+            canonical_root=tmp_path / "canonical",
+        )
+
+    assert len(validation) == 1
+    assert len(targets) == 1
+    assert targets[0].start == datetime(2026, 7, 30, tzinfo=UTC)
+    assert targets[0].end == datetime(2026, 7, 31, tzinfo=UTC)
 
 
 def test_repair_preflight_rechecks_registration_and_physical_evidence(
