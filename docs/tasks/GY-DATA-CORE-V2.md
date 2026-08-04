@@ -175,6 +175,20 @@ disabled/empty smoke receipt，不授权后续 Runtime、live、scheduler 或通
 
 ### 4.0.0 Task 07 当前执行快照
 
+2026-08-04 最新快照：Stage A release 已完成到 `main/develop@aac4006f`，annotated tag 为
+`runtime-20260804-aac4006f`；Stage B production PostgreSQL 已升级并回读为
+`20260803_0032`。随后绑定该 SHA/revision 的 Stage C exact packet 在首个 batch 的只读 preflight
+以 `TASK07_SESSION_COVERAGE_MISMATCH` fail-closed，未获真实迁移批准，也未调用 RQData 或写入
+Canonical。
+
+只读诊断将问题限定为 6,871 个错误 Direct 复用候选：2,200 个 1m 登记 coverage 与物理 datetime
+不一致，4,671 个 1d 文件缺少 migration reader 所需的 `datetime`。按永久合同不做 legacy
+逐行仲裁：这些资产直接改判为 `CONFLICT_BLOCKED -> rqdata_redownload`，且 repair window 绑定
+物理 min/max。当前 code-only remediation 基于 `develop@aac4006f`，旧 Stage C packet 已
+supersede；在 exact-head Review、PR/CI、develop ancestry、新 release approval 和新 migration
+approval 前不得 apply。准确 digest、数量与 writes=false 证据见
+`docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md` 第 8 节。
+
 2026-08-03 closeout 代码合同已取消两项旧设计：actual-dominant `1w` 禁用与
 历史 `1m -> 5m/15m/30m/60m` 动态 fallback。当前正式历史只支持
 `1m/5m/15m/30m/60m/1d/1w`；每个请求只读同频 Catalog/Canonical partition，缺失时

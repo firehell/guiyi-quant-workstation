@@ -1,9 +1,17 @@
 # 当前状态
 
-更新时间：2026-08-02
+更新时间：2026-08-04
 
 本文件是项目当前状态仪表盘：只列当前任务、未关闭 Gate、必要事实锚点与防过度宣称红线。
 历史过程由 Git、任务合同及既有 receipt/report/evidence 追溯。
+
+> 2026-08-04 最新更正：Task 07 Stage A release 已完成到
+> `main/develop@aac4006f`，annotated tag 为 `runtime-20260804-aac4006f`；production
+> PostgreSQL 已升级并回读为 `20260803_0032`。Stage C 的 `aac4006f` exact packet 在首批只读
+> preflight 因 `TASK07_SESSION_COVERAGE_MISMATCH` 阻断，未获真实迁移批准、未调用 RQData、未写
+> Canonical。当前 code-only remediation 将 2,200 个 Direct 1m coverage mismatch 与 4,671 个
+> Direct 1d datetime-missing 资产直接改判为 RQData 重下，不做 legacy reconciliation。下文较早的
+> `0031`、release pending 和 v9 数字均为历史快照，以本更正及 Task 07 evidence 第 8 节为准。
 
 ## 当前在做什么
 
@@ -124,7 +132,7 @@ Gate 进一步直接识别出 2,791 个文件至少包含一个周末 trading da
 | GY-DATA-CORE-V2 Task 04 | completed on develop（本 closeout commit 可从 develop 到达时生效） | Canonical 自身 Gate、统一读取与普通消费者回归；legacy Shadow 不再是准入 Gate |
 | GY-DATA-CORE-V2 Task 05 | completed on develop（本 task PR merge 后生效） | canonical trusted consumers、synthetic/golden tests、fail-closed derived/reference inventory；不含真实删除或外部 DB/data-root inventory |
 | GY-DATA-CORE-V2 Task 06 | completed on develop（PR #105 merge 后生效） | 固定 EMA21 evaluator + `0028..0031` + live/decision/EOD/Review/Sample/retention；production=`0031`，empty/disabled smoke passed |
-| GY-DATA-CORE-V2 Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` / production `BLOCKED_ACTIVE_REFERENCE` | code-only closeout 的 checkout scan=0/0；旧 v9 detached Runtime 300/1,581 仅为未重采 blocker evidence；无生产读取、写入或删除 |
+| GY-DATA-CORE-V2 Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` / Stage C `BLOCKED_PREFLIGHT` | release 与 0032 已完成；`aac4006f` packet 因 6,871 个 Direct 误分类阻断，当前 code-only remediation 待 Review/PR/CI/develop 集成后重发 release 与 migration packet；无 Stage C 写入或删除 |
 | GY-DATA-CORE-V2 Task 08 | pending | 仅在 Task 07=`READY_FOR_TASK_08` 后进入 release/Runtime Gate |
 
 ## 未关闭 Gate
@@ -135,8 +143,8 @@ Gate 进一步直接识别出 2,791 个文件至少包含一个周末 trading da
 | Audit V2 residual triage | pending | 解释 calendar/session/physical/quality residual 后再决定受控任务 |
 | 全历史 residual triage | pending | 不得将消费者 Ready 扩写为所有历史资产 residual 为零 |
 | Task 05 可信消费者切换 | independent Review passed；develop integration pending | `CLEAN_FOR_INTEGRATION`；仍须 task PR、post-merge CI 与 ancestry readback，不是 release 或 Runtime Gate |
-| Task 07 code-only closeout | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` | rounds 1～5 findings 均已修复；code head `de69faec` independent Review=`0 Critical / 0 Important / CLEAN_FOR_INTEGRATION`；final docs-only exact-head check、PR/CI 与 develop 集成 pending |
-| Task 07 K-line data Gate | blocked by prerequisite | v9 内容冲突为零、7,232 trusted sources / 411 batches，但该 snapshot 已被代码变更 supersede，且未取得 exact apply approval，不得写入 |
+| Task 07 code-only closeout | remediation in progress | `aac4006f` Stage C preflight 暴露 Direct coverage/datetime 分类缺口；TDD 修复已通过 focused 116、data-core 641、backend 2701/44，仍待 exact-head Review、PR/CI 与 develop ancestry |
+| Task 07 K-line data Gate | `BLOCKED_PREFLIGHT` | 旧 packet manifest=`c813bd41...` / plan=`6bc09627...` 已 supersede；6,871 项须按永久合同直接 RQData 重下；不得使用旧 packet 写入 |
 | Task 07 active-reference Gate | `BLOCKED_ACTIVE_REFERENCE` | 当前 checkout active=0 / review-required=0；旧 v9 detached Runtime 300/1,581 与 DB before-image 4,297 未在本轮重采，仍不得据此执行 retirement |
 | Task 06 live/EOD contract | passed | 已冻结并验证单一 EMA21 confirmed-close observation 合同；不得注入其他 evaluator，且不扩展 centered-XMA 白名单 |
 | Task 06 production migration | passed | exact backup + approval 后完成 `0028 -> 0031`；empty/disabled smoke passed，不授权 Runtime/live enable |
@@ -156,13 +164,13 @@ task 自动集成只适用于通过验收、CI、独立 Review 且 exact head �
 
 | 事实 | 当前值 | 证据 |
 |---|---|---|
-| PostgreSQL revision | `20260802_0031`（Task 06 exact Gate；五张新表全空、flags false） | backup、migration 与 disabled smoke 见 Task 06 approval/receipt packet |
+| PostgreSQL revision | `20260803_0032` | Task 07 Stage B exact Gate 后 upgrade/readback；Stage C 尚未写入 |
 | Canonical current state | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 closeout DB、Manifest 与物理 checksum 只读复验 |
 | MainContractMap | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 closeout 只读 mapping audit |
 | legacy compatibility | PR #90～#94 实现与历史 evidence 保留；不再扩展或作为准入 Gate | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | `docs/tasks/JM-LIVE-STABILITY-S6-10.md` |
 | Task 05 | completed on develop（本 task PR merge 后生效） | trusted consumers and fail-closed inventory complete；real DB/data-root inventory remains a Task 07 external Gate |
-| Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` / production Gate 未重开 | permanent-contract remediation 基于 `develop@672877a8`；Review round 1 未通过且修复后复审 pending；v9 生产数字未重采；production apply/readback、Runtime cutover、retirement/deletion 未执行；`READY_FOR_TASK_08=false` |
+| Task 07 | `CODE_COMPLETE_EXTERNAL_GATE_PENDING` / Stage C `BLOCKED_PREFLIGHT` | release=`aac4006f`、production=`0032`；旧 exact packet 只读 preflight 失败；Direct reclassification candidate 基于 `develop@aac4006f`，真实迁移、Runtime cutover、retirement/deletion 未执行；`READY_FOR_TASK_08=false` |
 
 ## 不可宣称
 
