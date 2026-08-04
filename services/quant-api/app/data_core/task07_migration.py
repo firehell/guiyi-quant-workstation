@@ -971,6 +971,11 @@ def prepare_legacy_parquet_batch(
     if not session_tuple:
         raise Task07MigrationError("TASK07_SESSION_COVERAGE_MISSING")
     frame = _read_legacy_rows(path)
+    if dataset.frequency in {BarFrequency.D1, BarFrequency.W1}:
+        session_tuple = _exact_direct_coarse_sessions(
+            frame,
+            dataset.frequency,
+        )
     expected_days = {
         bar_end: session.trading_day
         for session in session_tuple
@@ -994,9 +999,14 @@ def prepare_legacy_parquet_batch(
             if rank1_contract_by_day is None:
                 raise Task07MigrationError("TASK07_MAIN_MAP_MISSING")
             mapped = rank1_contract_by_day.get(trading_day)
-            if mapped is None:
+            if mapped is None and dataset.frequency not in {
+                BarFrequency.D1,
+                BarFrequency.W1,
+            }:
                 raise Task07MigrationError("TASK07_MAIN_MAP_MISSING")
-            if str(mapped).strip().upper() != dataset.contract_or_series:
+            if mapped is not None and (
+                str(mapped).strip().upper() != dataset.contract_or_series
+            ):
                 raise Task07MigrationError("TASK07_MAIN_MAP_MISMATCH")
         bars.append(
             CanonicalBar(
@@ -1194,6 +1204,34 @@ def _exact_source_coverage_sessions(
     if not sessions:
         raise Task07MigrationError("TASK07_SESSION_COVERAGE_MISSING")
     return sessions
+
+
+def _exact_direct_coarse_sessions(
+    rows: Sequence[Mapping[str, object]],
+    frequency: BarFrequency,
+) -> tuple[TradingSessionCoverage, ...]:
+    step = {
+        BarFrequency.D1: timedelta(days=1),
+        BarFrequency.W1: timedelta(days=7),
+    }.get(frequency)
+    if step is None:
+        raise Task07MigrationError("TASK07_DIRECT_FREQUENCY_INVALID")
+    sessions = tuple(
+        TradingSessionCoverage(
+            trading_day=_source_day(row.get("trading_day")),
+            start=_bar_end(row.get("datetime"), frequency) - step,
+            end=_bar_end(row.get("datetime"), frequency),
+            expected_bar_ends=(
+                _bar_end(row.get("datetime"), frequency),
+            ),
+        )
+        for row in rows
+    )
+    if not sessions:
+        raise Task07MigrationError("TASK07_SESSION_COVERAGE_MISSING")
+    return tuple(
+        sorted(sessions, key=lambda item: (item.end, item.trading_day))
+    )
 
 
 def _bar_end(value: object, frequency: BarFrequency) -> datetime:

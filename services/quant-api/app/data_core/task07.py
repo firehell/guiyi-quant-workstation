@@ -2421,11 +2421,16 @@ def build_migration_plan(
                 "id": int(raw["market_data_file_id"]),
                 "provider": raw["provider"],
                 "data_type": raw["data_type"],
-                "symbol": raw.get("registration_symbol") or raw["symbol"],
-                "contract_or_series": raw.get(
-                    "registration_contract_or_series"
-                )
-                or raw["contract_or_series"],
+                "symbol": (
+                    raw["registration_symbol"]
+                    if raw.get("registration_symbol") is not None
+                    else raw["symbol"]
+                ),
+                "contract_or_series": (
+                    raw["registration_contract_or_series"]
+                    if raw.get("registration_contract_or_series") is not None
+                    else raw["contract_or_series"]
+                ),
                 "frequency": raw["frequency"],
                 "data_role": raw["data_role"],
                 "quality_status": raw["quality_status"],
