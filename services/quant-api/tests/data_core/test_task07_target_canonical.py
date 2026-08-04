@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,6 +11,7 @@ from app.data_core.contracts import (
     BarFrequency,
     BarsResult,
     DataGapError,
+    DatasetKey,
     DatasetKind,
     ManifestMismatchError,
 )
@@ -453,6 +454,90 @@ def test_market_data_probe_propagates_non_data_failures(
 
     with pytest.raises(type(unexpected_error), match=str(unexpected_error)):
         probe(spec)
+
+
+def test_market_data_probe_rejects_invalid_service_result_type() -> None:
+    spec = _single_direct_spec()
+
+    class Reader:
+        def get_bars(self, _query):
+            return object()
+
+    probe = market_data_probe(
+        MarketDataService(object(), canonical_reader=Reader())  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(TypeError, match="TASK07_MARKET_DATA_RESULT_INVALID"):
+        probe(spec)
+
+
+@pytest.mark.parametrize("mismatch", ["window", "identity", "frequency"])
+def test_market_data_probe_rejects_result_mismatch(mismatch: str) -> None:
+    spec = _single_direct_spec()
+    result_dataset = spec.dataset
+    requested_window = (spec.start, spec.end)
+    if mismatch == "window":
+        requested_window = (spec.start - timedelta(minutes=1), spec.end)
+    elif mismatch == "identity":
+        result_dataset = DatasetKey(
+            provider=spec.dataset.provider,
+            dataset_kind=spec.dataset.dataset_kind,
+            symbol="i",
+            contract_or_series="I.MAIN",
+            frequency=spec.dataset.frequency,
+            adjustment=spec.dataset.adjustment,
+            schema_version=spec.dataset.schema_version,
+        )
+    else:
+        result_dataset = DatasetKey(
+            provider=spec.dataset.provider,
+            dataset_kind=spec.dataset.dataset_kind,
+            symbol=spec.dataset.symbol,
+            contract_or_series=spec.dataset.contract_or_series,
+            frequency=BarFrequency.M1,
+            adjustment=spec.dataset.adjustment,
+            schema_version=spec.dataset.schema_version,
+        )
+    mismatched_result = BarsResult(
+        bars=(_bar(result_dataset, spec.end),),
+        source_datasets=(result_dataset,),
+        manifest_digests=("a" * 64,),
+        requested_window=requested_window,
+        data_type=spec.dataset.dataset_kind,
+        derived_frequency=None,
+        source_data_versions=("canonical-v1",),
+    )
+
+    class Reader:
+        def get_bars(self, _query):
+            return mismatched_result
+
+    probe = market_data_probe(
+        MarketDataService(object(), canonical_reader=Reader())  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match="TASK07_MARKET_DATA_RESULT_MISMATCH"):
+        probe(spec)
+
+
+def _single_direct_spec():
+    contract = TargetContract(
+        symbol="jm",
+        continuous_series="JM.MAIN",
+        frequencies=(BarFrequency.D1,),
+        start_trading_day=date(2013, 3, 22),
+    )
+    return build_target_specs(
+        contract,
+        mappings=(MainContractTarget(date(2026, 7, 30), "JM2609"),),
+        sessions=(
+            TargetSession(
+                date(2026, 7, 30),
+                _dt("2026-07-29T13:00:00+00:00"),
+                _dt("2026-07-30T07:00:00+00:00"),
+            ),
+        ),
+    )[0]
 
 
 def _bar(dataset, bar_end: datetime) -> CanonicalBar:

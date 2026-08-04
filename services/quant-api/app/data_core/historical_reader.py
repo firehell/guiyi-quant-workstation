@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Callable, Sequence
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 from app.data_core.canonical_store import (
@@ -389,13 +390,13 @@ class CanonicalHistoricalReader:
         expected_row_count = int(_partition_value(partition, "row_count"))
         try:
             parquet = pq.ParquetFile(file_path)
-        except Exception as exc:
+        except pa.ArrowInvalid as exc:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if int(parquet.metadata.num_rows) != expected_row_count:
             raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
         try:
             table = parquet.read()
-        except Exception as exc:
+        except pa.ArrowInvalid as exc:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if table.schema != CANONICAL_PARQUET_SCHEMA:
             raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
@@ -413,12 +414,7 @@ class CanonicalHistoricalReader:
 
 
 def _partition_value(partition: object, field: str) -> object:
-    try:
-        return getattr(partition, field)
-    except AttributeError as exc:
-        raise ManifestMismatchError(
-            facts={"reason": "catalog_partition_invalid"}
-        ) from exc
+    return getattr(partition, field)
 
 
 def _safe_child(root: Path, relative_path: str) -> Path:
@@ -434,7 +430,9 @@ def _safe_child(root: Path, relative_path: str) -> Path:
 def _read_manifest(path: Path) -> dict[str, object]:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except FileNotFoundError as exc:
+        raise ManifestMismatchError(facts={"reason": "manifest_unreadable"}) from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ManifestMismatchError(facts={"reason": "manifest_unreadable"}) from exc
     if not isinstance(parsed, dict):
         raise ManifestMismatchError(facts={"reason": "manifest_invalid"})
@@ -447,7 +445,7 @@ def _sha256(path: Path) -> str:
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
-    except OSError as exc:
+    except FileNotFoundError as exc:
         raise ManifestMismatchError(facts={"reason": "file_unreadable"}) from exc
     return digest.hexdigest()
 
