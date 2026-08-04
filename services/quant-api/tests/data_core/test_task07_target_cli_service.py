@@ -36,6 +36,8 @@ def test_task07_assess_is_readonly_and_requires_the_stage_c_revision(
     monkeypatch.setattr(cli_service, "run_target_canonical_assessment", assess)
     target_config = (tmp_path / "targets.yaml").resolve()
     canonical_root = (tmp_path / "canonical").resolve()
+    canonical_root.mkdir()
+    monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(canonical_root))
     with Session(engine) as session:
         result = cli_service.run_data_core_command(
             "task07.assess",
@@ -81,6 +83,45 @@ def test_task07_assess_is_readonly_and_requires_the_stage_c_revision(
             SimpleNamespace(
                 target_config=target_config,
                 canonical_root=canonical_root,
+            ),
+        )
+
+
+def test_task07_assess_rejects_root_not_bound_to_configured_production_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num TEXT NOT NULL)"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('20260803_0032')"))
+
+    production_root = tmp_path / "production-canonical"
+    alternate_root = tmp_path / "alternate-canonical"
+    production_root.mkdir()
+    alternate_root.mkdir()
+    monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(production_root))
+    monkeypatch.setattr(
+        cli_service,
+        "run_target_canonical_assessment",
+        lambda *_args, **_kwargs: {
+            "Stage_C": "NO_DATA_WRITE_REQUIRED",
+            "writes_authorized": False,
+            "repair_count": 0,
+            "targets": [],
+        },
+    )
+
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_CANONICAL_ROOT_DRIFT",
+    ):
+        cli_service.run_data_core_command(
+            "task07.assess",
+            session,
+            SimpleNamespace(
+                target_config=(tmp_path / "targets.yaml").resolve(),
+                canonical_root=alternate_root.resolve(),
             ),
         )
 

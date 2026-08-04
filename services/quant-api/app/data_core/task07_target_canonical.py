@@ -42,6 +42,33 @@ _TARGET_FIELDS = {
 }
 _MAIN_CONTRACT_FIELDS = {"provider", "rank", "rule"}
 _FREQUENCY_ORDER = {value: index for index, value in enumerate(BAR_FREQUENCY_VALUES)}
+_REPAIRABLE_DATA_CORE_REASONS = frozenset(
+    {
+        "canonical_bar_coverage_missing",
+        "canonical_bars_missing",
+        "catalog_coverage_missing",
+        "catalog_datetime_invalid",
+        "catalog_gap",
+        "catalog_partition_invalid",
+        "duplicate_primary_key",
+        "file_checksum_mismatch",
+        "file_unreadable",
+        "manifest_content_mismatch",
+        "manifest_data_version_invalid",
+        "manifest_digest_mismatch",
+        "manifest_invalid",
+        "manifest_partition_invalid",
+        "manifest_unreadable",
+        "parquet_primary_key_order_invalid",
+        "parquet_row_count_mismatch",
+        "parquet_schema_mismatch",
+        "parquet_unreadable",
+        "same_key_value_conflict",
+    }
+)
+_REPAIRABLE_CATALOG_CODES = frozenset(
+    {"CATALOG_PARTITION_REPLACEMENT_PARTIAL_OVERLAP"}
+)
 
 
 class TargetCanonicalStatus(StrEnum):
@@ -204,7 +231,9 @@ def market_data_probe(service: MarketDataService) -> TargetProbe:
         )
         try:
             result = service.get_bars(query)
-        except (DataCoreError, CatalogError, OSError, ValueError) as exc:
+        except (DataCoreError, CatalogError) as exc:
+            if not _is_repairable_canonical_failure(exc):
+                raise
             reason = _validation_failure_reason(exc)
             return TargetValidation(
                 valid=False,
@@ -224,6 +253,14 @@ def market_data_probe(service: MarketDataService) -> TargetProbe:
         return TargetValidation(valid=True, reason="canonical_validated")
 
     return probe
+
+
+def _is_repairable_canonical_failure(exc: Exception) -> bool:
+    if isinstance(exc, DataCoreError):
+        return exc.facts.get("reason") in _REPAIRABLE_DATA_CORE_REASONS
+    if isinstance(exc, CatalogError):
+        return exc.code in _REPAIRABLE_CATALOG_CODES
+    return False
 
 
 def require_complete_mapping_window(

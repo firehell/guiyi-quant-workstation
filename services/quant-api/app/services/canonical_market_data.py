@@ -57,13 +57,18 @@ class CanonicalMarketDataService:
         return _response(query, result)
 
 
-def build_canonical_reader(session: Session) -> CanonicalHistoricalReader:
+def configured_canonical_root() -> Path:
     root_value = os.getenv("GUIYI_CANONICAL_DATA_ROOT", "").strip()
     if not root_value:
         raise DataCoreError(facts={"reason": "canonical_data_root_not_configured"})
     canonical_root = Path(root_value)
     if not canonical_root.is_absolute():
         raise DataCoreError(facts={"reason": "canonical_data_root_not_absolute"})
+    return canonical_root
+
+
+def build_canonical_reader(session: Session) -> CanonicalHistoricalReader:
+    canonical_root = configured_canonical_root()
     return CanonicalHistoricalReader(
         catalog=HistoricalCatalog(session),
         canonical_root=canonical_root,

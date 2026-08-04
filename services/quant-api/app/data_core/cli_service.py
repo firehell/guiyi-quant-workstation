@@ -110,6 +110,7 @@ from app.services.jm_session_contract import (
 from app.models.data_center import MarketDataFile
 from app.services.canonical_market_data import (
     CanonicalMarketDataService,
+    configured_canonical_root,
     jm_sessions,
 )
 
@@ -142,6 +143,7 @@ def _run_data_core_command_unchecked(
     args: Any,
 ) -> dict[str, Any]:
     if command == "task07.assess":
+        canonical_root = _task07_canonical_root(args.canonical_root)
         begin_task07_readonly_snapshot(session)
         revision = _data_core_revision(session)
         if revision != "20260803_0032":
@@ -149,7 +151,7 @@ def _run_data_core_command_unchecked(
         result = run_target_canonical_assessment(
             session,
             target_config=_absolute_path(args.target_config, "target_config"),
-            canonical_root=_absolute_path(args.canonical_root, "canonical_root"),
+            canonical_root=canonical_root,
         )
         return {
             "schema_version": 1,
@@ -3266,6 +3268,21 @@ def _absolute_path(value: object, field: str) -> Path:
     if not isinstance(value, Path) or not value.is_absolute():
         raise ValueError(f"{field}_must_be_absolute")
     return value
+
+
+def _task07_canonical_root(value: object) -> Path:
+    requested = _absolute_path(value, "canonical_root")
+    configured = configured_canonical_root()
+    try:
+        requested_physical = requested.resolve(strict=True)
+        configured_physical = configured.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("TASK07_CANONICAL_ROOT_INVALID") from exc
+    if not requested_physical.is_dir() or not configured_physical.is_dir():
+        raise ValueError("TASK07_CANONICAL_ROOT_INVALID")
+    if requested_physical != configured_physical:
+        raise ValueError("TASK07_CANONICAL_ROOT_DRIFT")
+    return requested_physical
 
 
 def _loaded_source_root() -> Path:
