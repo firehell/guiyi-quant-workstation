@@ -3273,11 +3273,15 @@ def _absolute_path(value: object, field: str) -> Path:
 def _task07_canonical_root(value: object) -> Path:
     requested = _absolute_path(value, "canonical_root")
     configured = configured_canonical_root()
+    if requested.is_symlink() or configured.is_symlink():
+        raise ValueError("TASK07_CANONICAL_ROOT_INVALID")
     try:
         requested_physical = requested.resolve(strict=True)
         configured_physical = configured.resolve(strict=True)
     except OSError as exc:
         raise ValueError("TASK07_CANONICAL_ROOT_INVALID") from exc
+    if requested != requested_physical or configured != configured_physical:
+        raise ValueError("TASK07_CANONICAL_ROOT_INVALID")
     if not requested_physical.is_dir() or not configured_physical.is_dir():
         raise ValueError("TASK07_CANONICAL_ROOT_INVALID")
     if requested_physical != configured_physical:

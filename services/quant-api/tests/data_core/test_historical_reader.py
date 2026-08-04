@@ -373,6 +373,100 @@ def test_reader_rejects_physical_row_count_drift(
     assert error.value.facts["reason"] == "parquet_row_count_mismatch"
 
 
+def test_reader_rejects_child_symlink_escape(tmp_path: Path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+        outside_manifest = tmp_path / "outside-manifest.json"
+        outside_manifest.write_text("{}", encoding="utf-8")
+        escaped_manifest = tmp_path / "canonical" / "escaped-manifest.json"
+        escaped_manifest.symlink_to(outside_manifest)
+        partition = HistoricalCatalog(session).list_effective_partitions(_dataset())[0]
+        partition.manifest_uri = escaped_manifest.name
+        session.commit()
+
+        with pytest.raises(ManifestMismatchError) as error:
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+    assert error.value.facts["reason"] == "canonical_path_escape"
+
+
+@pytest.mark.parametrize("permission_target", ["manifest", "file", "parquet"])
+def test_reader_propagates_canonical_permission_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    permission_target: str,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+        partition = HistoricalCatalog(session).list_effective_partitions(_dataset())[0]
+        manifest_path = (tmp_path / "canonical" / partition.manifest_uri).resolve()
+        file_path = (tmp_path / "canonical" / partition.file_uri).resolve()
+        original_read_text = Path.read_text
+        original_open = Path.open
+        original_parquet_file = pq.ParquetFile
+
+        if permission_target == "manifest":
+            def denied_read_text(path: Path, *args, **kwargs):
+                if path.resolve() == manifest_path:
+                    raise PermissionError("manifest permission denied")
+                return original_read_text(path, *args, **kwargs)
+
+            monkeypatch.setattr(Path, "read_text", denied_read_text)
+        elif permission_target == "file":
+            def denied_open(path: Path, *args, **kwargs):
+                if path.resolve() == file_path:
+                    raise PermissionError("file permission denied")
+                return original_open(path, *args, **kwargs)
+
+            monkeypatch.setattr(Path, "open", denied_open)
+        else:
+            def denied_parquet_file(path: Path, *args, **kwargs):
+                if Path(path).resolve() == file_path:
+                    raise PermissionError("parquet permission denied")
+                return original_parquet_file(path, *args, **kwargs)
+
+            monkeypatch.setattr(pq, "ParquetFile", denied_parquet_file)
+
+        with pytest.raises(PermissionError, match="permission denied"):
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+
 def test_reader_rejects_physical_rows_that_are_not_strictly_ordered(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

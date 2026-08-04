@@ -241,7 +241,7 @@ def market_data_probe(service: MarketDataService) -> TargetProbe:
                 explicit_gap=False,
             )
         if not isinstance(result, BarsResult):
-            return TargetValidation(valid=False, reason="market_data_result_invalid")
+            raise TypeError("TASK07_MARKET_DATA_RESULT_INVALID")
         if (
             result.requested_window != (spec.start, spec.end)
             or result.data_type is not spec.dataset.dataset_kind
@@ -249,7 +249,7 @@ def market_data_probe(service: MarketDataService) -> TargetProbe:
             or result.source_datasets != (spec.dataset,)
             or any(bar.frequency is not spec.dataset.frequency for bar in result.bars)
         ):
-            return TargetValidation(valid=False, reason="market_data_frequency_mismatch")
+            raise ValueError("TASK07_MARKET_DATA_RESULT_MISMATCH")
         return TargetValidation(valid=True, reason="canonical_validated")
 
     return probe

@@ -389,12 +389,16 @@ class CanonicalHistoricalReader:
         expected_row_count = int(_partition_value(partition, "row_count"))
         try:
             parquet = pq.ParquetFile(file_path)
+        except OSError:
+            raise
         except Exception as exc:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if int(parquet.metadata.num_rows) != expected_row_count:
             raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
         try:
             table = parquet.read()
+        except OSError:
+            raise
         except Exception as exc:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if table.schema != CANONICAL_PARQUET_SCHEMA:
@@ -434,7 +438,9 @@ def _safe_child(root: Path, relative_path: str) -> Path:
 def _read_manifest(path: Path) -> dict[str, object]:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except FileNotFoundError as exc:
+        raise ManifestMismatchError(facts={"reason": "manifest_unreadable"}) from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ManifestMismatchError(facts={"reason": "manifest_unreadable"}) from exc
     if not isinstance(parsed, dict):
         raise ManifestMismatchError(facts={"reason": "manifest_invalid"})
@@ -447,7 +453,7 @@ def _sha256(path: Path) -> str:
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
-    except OSError as exc:
+    except FileNotFoundError as exc:
         raise ManifestMismatchError(facts={"reason": "file_unreadable"}) from exc
     return digest.hexdigest()
 

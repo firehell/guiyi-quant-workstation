@@ -126,6 +126,81 @@ def test_task07_assess_rejects_root_not_bound_to_configured_production_root(
         )
 
 
+@pytest.mark.parametrize("configured_is_symlink", [False, True])
+@pytest.mark.parametrize("symlink_kind", ["root", "parent"])
+def test_task07_assess_rejects_canonical_root_symlink(
+    monkeypatch,
+    tmp_path: Path,
+    configured_is_symlink: bool,
+    symlink_kind: str,
+) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num TEXT NOT NULL)"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('20260803_0032')"))
+
+    if symlink_kind == "root":
+        physical_root = tmp_path / "production-canonical"
+        symlink_root = tmp_path / "production-canonical-link"
+        physical_root.mkdir()
+        symlink_root.symlink_to(physical_root, target_is_directory=True)
+    else:
+        physical_parent = tmp_path / "production-parent"
+        symlink_parent = tmp_path / "production-parent-link"
+        physical_parent.mkdir()
+        symlink_parent.symlink_to(physical_parent, target_is_directory=True)
+        physical_root = physical_parent / "canonical"
+        symlink_root = symlink_parent / "canonical"
+        physical_root.mkdir()
+    configured_root = symlink_root if configured_is_symlink else physical_root
+    requested_root = physical_root if configured_is_symlink else symlink_root
+    monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(configured_root))
+    monkeypatch.setattr(
+        cli_service,
+        "run_target_canonical_assessment",
+        lambda *_args, **_kwargs: {
+            "Stage_C": "NO_DATA_WRITE_REQUIRED",
+            "writes_authorized": False,
+            "repair_count": 0,
+            "targets": [],
+        },
+    )
+
+    with Session(engine) as session, pytest.raises(
+        ValueError,
+        match="TASK07_CANONICAL_ROOT_INVALID",
+    ):
+        cli_service.run_data_core_command(
+            "task07.assess",
+            session,
+            SimpleNamespace(
+                target_config=(tmp_path / "targets.yaml").resolve(),
+                canonical_root=requested_root,
+            ),
+        )
+
+
+def test_task07_assess_rejects_missing_canonical_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    missing_root = tmp_path / "missing-canonical"
+    monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(missing_root))
+
+    with Session(create_engine("sqlite+pysqlite:///:memory:")) as session, pytest.raises(
+        ValueError,
+        match="TASK07_CANONICAL_ROOT_INVALID",
+    ):
+        cli_service.run_data_core_command(
+            "task07.assess",
+            session,
+            SimpleNamespace(
+                target_config=(tmp_path / "targets.yaml").resolve(),
+                canonical_root=missing_root,
+            ),
+        )
+
+
 @pytest.mark.parametrize(
     "command",
     sorted(cli_service._SUPERSEDED_TASK07_COMMANDS),
