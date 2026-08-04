@@ -1250,6 +1250,92 @@ def _task07_asset_repair_window(asset: Mapping[str, Any]) -> dict[str, str]:
     )
 
 
+_TASK07_OVERLAP_REPAIR_REASON = "intra_dataset_coverage_overlap"
+
+
+def _task07_dataset_identity(asset: Mapping[str, Any]) -> tuple[str, ...]:
+    return (
+        str(asset["provider"]),
+        str(asset["dataset_kind"]),
+        str(asset["symbol"]),
+        str(asset["contract_or_series"]),
+        str(asset["frequency"]),
+        str(asset.get("adjustment") or "none"),
+        str(asset.get("schema_version") or "canonical-bar-v1"),
+    )
+
+
+def _task07_planned_migration_window(
+    asset: Mapping[str, Any],
+) -> tuple[datetime, datetime]:
+    if asset.get("disposition") == AssetDisposition.KEEP_CANONICAL_VERIFIED.value:
+        start = _catalog_utc_datetime(asset["coverage_start"])
+        end = _catalog_utc_datetime(asset["coverage_end"])
+    else:
+        physical_start = asset.get("physical_min_datetime")
+        physical_end = asset.get("physical_max_datetime")
+        if physical_start is not None and physical_end is not None:
+            window = _task07_repair_window(
+                coverage_start=physical_start,
+                coverage_end=physical_end,
+                frequency=asset["frequency"],
+                coverage_start_is_first_bar=True,
+            )
+            start = _catalog_utc_datetime(window["start"])
+            end = _catalog_utc_datetime(window["end"])
+        else:
+            start = _catalog_utc_datetime(asset["coverage_start"])
+            end = _catalog_utc_datetime(asset["coverage_end"])
+    if start >= end:
+        raise ValueError("TASK07_MIGRATION_WINDOW_INVALID")
+    return start, end
+
+
+def _task07_overlap_reroute_ids(
+    grouped: Mapping[tuple[str, str, str], Sequence[Mapping[str, Any]]],
+) -> set[int]:
+    by_dataset: dict[
+        tuple[str, ...],
+        list[tuple[datetime, datetime, int, bool]],
+    ] = {}
+    for rows in grouped.values():
+        for item in rows:
+            start, end = _task07_planned_migration_window(item)
+            by_dataset.setdefault(_task07_dataset_identity(item), []).append(
+                (
+                    start,
+                    end,
+                    int(item["market_data_file_id"]),
+                    item.get("disposition")
+                    != AssetDisposition.KEEP_CANONICAL_VERIFIED.value,
+                )
+            )
+    rerouted: set[int] = set()
+    for entries in by_dataset.values():
+        ordered = sorted(entries, key=lambda item: (item[0], item[1], item[2]))
+        component: list[tuple[datetime, datetime, int, bool]] = []
+        component_end: datetime | None = None
+
+        def finish_component() -> None:
+            if len(component) > 1:
+                rerouted.update(
+                    identifier
+                    for _start, _end, identifier, migrates in component
+                    if migrates
+                )
+
+        for entry in ordered:
+            start, end, _identifier, _migrates = entry
+            if component and component_end is not None and start >= component_end:
+                finish_component()
+                component = []
+                component_end = None
+            component.append(entry)
+            component_end = end if component_end is None else max(component_end, end)
+        finish_component()
+    return rerouted
+
+
 def _quality_evidence_for_file_range(
     session: Session,
     *,
@@ -2277,6 +2363,7 @@ def _migration_source_record(
     *,
     aggregate: bool,
 ) -> dict[str, Any]:
+    planned_start, planned_end = _task07_planned_migration_window(item)
     registration_snapshot = {
         "id": int(item["market_data_file_id"]),
         "provider": item["provider"],
@@ -2302,6 +2389,8 @@ def _migration_source_record(
         "disposition": item["disposition"],
         "coverage_start": item["coverage_start"],
         "coverage_end": item["coverage_end"],
+        "planned_coverage_start": planned_start.isoformat(),
+        "planned_coverage_end": planned_end.isoformat(),
         "row_count": item.get("row_count"),
         "data_version": item.get("data_version"),
         "dataset_origin": (
@@ -2337,6 +2426,44 @@ def _migration_source_record(
             "registration_wall_clock_matches"
         ),
     }
+
+
+def _validate_task07_migration_batch_nonoverlap(
+    batch: Mapping[str, Any],
+) -> None:
+    grouped: dict[str, list[tuple[datetime, datetime, bool]]] = {}
+    for source in batch.get("sources", []):
+        if not isinstance(source, Mapping):
+            raise ValueError("TASK07_PLAN_INVALID")
+        try:
+            start = _catalog_utc_datetime(source["planned_coverage_start"])
+            end = _catalog_utc_datetime(source["planned_coverage_end"])
+            contract = str(source["contract_or_series"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("TASK07_MIGRATION_WINDOW_INVALID") from exc
+        if start >= end:
+            raise ValueError("TASK07_MIGRATION_WINDOW_INVALID")
+        grouped.setdefault(contract, []).append((start, end, True))
+    for partition in batch.get("verified_partitions", []):
+        if not isinstance(partition, Mapping):
+            raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+        try:
+            start = _catalog_utc_datetime(partition["coverage_start"])
+            end = _catalog_utc_datetime(partition["coverage_end"])
+            contract = str(partition["contract_or_series"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID") from exc
+        if start >= end:
+            raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+        grouped.setdefault(contract, []).append((start, end, False))
+    for entries in grouped.values():
+        ordered = sorted(entries, key=lambda item: (item[0], item[1], item[2]))
+        for index, (start, end, is_source) in enumerate(ordered):
+            for other_start, other_end, other_is_source in ordered[index + 1 :]:
+                if other_start >= end:
+                    break
+                if start < other_end and (is_source or other_is_source):
+                    raise ValueError("TASK07_MIGRATION_SOURCE_OVERLAP")
 
 
 def _verified_partition_record(item: Mapping[str, Any]) -> dict[str, Any]:
@@ -2412,9 +2539,17 @@ def build_migration_plan(
         eligible_record_count += 1
         key = (str(raw["symbol"]).lower(), str(raw["dataset_kind"]), str(raw["frequency"]))
         grouped.setdefault(key, []).append(dict(raw))
+    overlap_reroute_ids = _task07_overlap_reroute_ids(grouped)
     provider_requests = []
     for raw in _iter_inventory_assets(index):
-        if raw.get("disposition") == AssetDisposition.CONFLICT_BLOCKED.value:
+        repair_reason = (
+            AssetDisposition.CONFLICT_BLOCKED.value
+            if raw.get("disposition") == AssetDisposition.CONFLICT_BLOCKED.value
+            else _TASK07_OVERLAP_REPAIR_REASON
+            if int(raw["market_data_file_id"]) in overlap_reroute_ids
+            else None
+        )
+        if repair_reason is not None:
             aggregate = raw.get("frequency") in _DERIVED_FREQUENCIES
             repair_window = _task07_asset_repair_window(raw)
             registration_snapshot = {
@@ -2456,6 +2591,7 @@ def build_migration_plan(
                 "action": (
                     "canonical_1m_reaggregate" if aggregate else "rqdata_redownload"
                 ),
+                "repair_reason": repair_reason,
                 "original_provider": raw["provider"],
                 **identity,
                 "window": repair_window,
@@ -2496,7 +2632,7 @@ def build_migration_plan(
         if raw.get("frequency") in _DERIVED_FREQUENCIES:
             continue
         disposition = raw.get("disposition")
-        if disposition == AssetDisposition.CONFLICT_BLOCKED.value or (
+        if repair_reason is not None or (
             disposition == AssetDisposition.REGISTER_DATA_GAP.value
             and raw.get("physical_exists") is False
         ):
@@ -2515,7 +2651,7 @@ def build_migration_plan(
                     "schema_version": raw.get("schema_version")
                     or "canonical-bar-v1",
                     "window": _task07_asset_repair_window(raw),
-                    "reason": disposition,
+                    "reason": repair_reason or disposition,
                     "registered_checksum": raw["checksum"],
                     "observed_checksum": raw["physical_checksum"],
                 }
@@ -2550,6 +2686,7 @@ def build_migration_plan(
                 AssetDisposition.REUSE_TRUSTED_SOURCE.value,
                 AssetDisposition.REUSE_VERIFIED_AGGREGATE.value,
             }
+            and int(item["market_data_file_id"]) not in overlap_reroute_ids
         ]
         verified_rows = [
             item
@@ -2583,7 +2720,10 @@ def build_migration_plan(
             "coverage_start": min(str(item["coverage_start"]) for item in rows),
             "coverage_end": max(str(item["coverage_end"]) for item in rows),
         }
-        migration_batches.append({**body, "batch_digest": canonical_digest(body)})
+        if migration_rows or verified_rows:
+            migration_batches.append(
+                {**body, "batch_digest": canonical_digest(body)}
+            )
     repair_groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
     for action in repair_actions:
         key = (
@@ -2639,6 +2779,7 @@ def build_migration_plan(
         or index.get("disposition_counts", {})
     )
     blocked = int(disposition_counts.get(AssetDisposition.CONFLICT_BLOCKED.value, 0))
+    overlap_reroute_count = len(overlap_reroute_ids)
     gap_count = int(disposition_counts.get(AssetDisposition.REGISTER_DATA_GAP.value, 0))
     provider_request_proposal = {
         "schema_version": 1,
@@ -2690,6 +2831,8 @@ def build_migration_plan(
         "migration_envelope": migration_envelope,
         "classification_counts": disposition_counts,
         "blocked_asset_count": blocked,
+        "overlap_reroute_asset_count": overlap_reroute_count,
+        "repair_asset_count": len(repair_actions),
         "data_gap_count": gap_count,
         "migration_target_gate": (
             "exact_write_targets_bound"
@@ -3179,6 +3322,7 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             not batch.get("sources") and not verified_partitions
         ):
             raise ValueError("TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID")
+        _validate_task07_migration_batch_nonoverlap(batch)
     batch_manifest = [
         {"batch_key": batch["batch_key"], "batch_digest": batch["batch_digest"]}
         for batch in batches
@@ -3229,6 +3373,11 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         if (
             frequency not in _SUPPORTED_FREQUENCIES
             or action.get("action") != expected_action
+            or action.get("repair_reason")
+            not in {
+                AssetDisposition.CONFLICT_BLOCKED.value,
+                _TASK07_OVERLAP_REPAIR_REASON,
+            }
             or action.get("provider") != "rqdata"
             or not isinstance(action.get("original_provider"), str)
             or not action.get("original_provider")
@@ -3324,12 +3473,18 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
             not in {
                 AssetDisposition.CONFLICT_BLOCKED.value,
                 AssetDisposition.REGISTER_DATA_GAP.value,
+                _TASK07_OVERLAP_REPAIR_REASON,
             }
             or (
-                request.get("reason") == AssetDisposition.CONFLICT_BLOCKED.value
+                request.get("reason")
+                in {
+                    AssetDisposition.CONFLICT_BLOCKED.value,
+                    _TASK07_OVERLAP_REPAIR_REASON,
+                }
                 and (
                     not isinstance(action, Mapping)
                     or action.get("action") != "rqdata_redownload"
+                    or action.get("repair_reason") != request.get("reason")
                     or any(
                         action.get(field) != request.get(field)
                         for field in request_action_identity_fields
@@ -3343,12 +3498,16 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         for identifier, action in action_by_id.items()
         if action.get("action") == "rqdata_redownload"
     }
-    conflict_request_ids = {
+    repair_request_ids = {
         int(request["market_data_file_id"])
         for request in requests
-        if request.get("reason") == AssetDisposition.CONFLICT_BLOCKED.value
+        if request.get("reason")
+        in {
+            AssetDisposition.CONFLICT_BLOCKED.value,
+            _TASK07_OVERLAP_REPAIR_REASON,
+        }
     }
-    if redownload_action_ids != conflict_request_ids:
+    if redownload_action_ids != repair_request_ids:
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     proposal_body = {
         key: value for key, value in proposal.items() if key != "proposal_digest"
@@ -3374,13 +3533,21 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
         "blocked_asset_count": int(
             disposition_counts.get(AssetDisposition.CONFLICT_BLOCKED.value, 0)
         ),
+        "overlap_reroute_asset_count": sum(
+            action.get("repair_reason") == _TASK07_OVERLAP_REPAIR_REASON
+            for action in repair_actions
+        ),
+        "repair_asset_count": len(repair_actions),
         "data_gap_count": int(
             disposition_counts.get(AssetDisposition.REGISTER_DATA_GAP.value, 0)
         ),
     }
     if any(plan.get(key) != value for key, value in expected_controls.items()):
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
-    if len(repair_actions) != expected_controls["blocked_asset_count"]:
+    if len(repair_actions) != (
+        expected_controls["blocked_asset_count"]
+        + expected_controls["overlap_reroute_asset_count"]
+    ):
         raise ValueError("TASK07_PLAN_CONTROL_DRIFT")
     target_valid = _migration_write_targets_valid(plan.get("write_targets"))
     revision_ready = all(

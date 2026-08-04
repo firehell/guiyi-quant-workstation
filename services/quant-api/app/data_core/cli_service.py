@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 import pyarrow.parquet as pq
@@ -1105,7 +1105,72 @@ def _task07_validate_batch_readonly(
             )
         evidence.append(validation_record)
         prepared_sources.append((source, prepared))
+    _task07_require_nonoverlapping_prepared_targets(
+        verified_partitions=verified_partitions,
+        prepared_sources=prepared_sources,
+    )
     return evidence, prepared_sources
+
+
+def _task07_require_nonoverlapping_prepared_targets(
+    *,
+    verified_partitions: Sequence[Mapping[str, Any]],
+    prepared_sources: Sequence[tuple[Mapping[str, Any], Any]],
+) -> None:
+    if not prepared_sources:
+        return
+    grouped: dict[
+        tuple[str, ...],
+        list[tuple[datetime, datetime, bool]],
+    ] = {}
+    for _source, prepared in prepared_sources:
+        dataset = prepared.batch.request.dataset
+        identity = (
+            dataset.provider,
+            dataset.dataset_kind.value,
+            dataset.symbol,
+            dataset.contract_or_series,
+            dataset.frequency.value,
+            dataset.adjustment,
+            dataset.schema_version,
+        )
+        grouped.setdefault(identity, []).append(
+            (
+                prepared.batch.request.start,
+                prepared.batch.request.end,
+                True,
+            )
+        )
+    for partition in verified_partitions:
+        try:
+            identity = (
+                str(partition["provider"]),
+                str(partition["dataset_kind"]),
+                str(partition["symbol"]),
+                str(partition["contract_or_series"]),
+                str(partition["frequency"]),
+                str(partition["adjustment"]),
+                str(partition["schema_version"]),
+            )
+            start = _aware_datetime(
+                _task07_registration_datetime(partition["coverage_start"])
+            )
+            end = _aware_datetime(
+                _task07_registration_datetime(partition["coverage_end"])
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID"
+            ) from exc
+        grouped.setdefault(identity, []).append((start, end, False))
+    for entries in grouped.values():
+        ordered = sorted(entries, key=lambda item: (item[0], item[1], item[2]))
+        for index, (start, end, is_source) in enumerate(ordered):
+            for other_start, other_end, other_is_source in ordered[index + 1 :]:
+                if other_start >= end:
+                    break
+                if start < other_end and (is_source or other_is_source):
+                    raise ValueError("TASK07_PREFLIGHT_TARGET_OVERLAP")
 
 
 def _task07_validate_repair_batch_readonly(

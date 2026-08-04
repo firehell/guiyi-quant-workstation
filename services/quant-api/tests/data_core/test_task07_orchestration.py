@@ -1390,6 +1390,171 @@ def test_conflicts_emit_only_exact_unauthorized_repair_actions() -> None:
     }
 
 
+def test_overlapping_direct_sources_are_all_routed_to_rqdata_redownload() -> None:
+    index = build_inventory_index(
+        [
+            _asset(
+                market_data_file_id=1,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                catalog_checksum=None,
+                coverage_start="2026-01-01T00:00:00+00:00",
+                coverage_end="2026-04-01T00:00:00+00:00",
+            ),
+            _asset(
+                market_data_file_id=2,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                catalog_checksum=None,
+                coverage_start="2026-03-01T00:00:00+00:00",
+                coverage_end="2026-06-01T00:00:00+00:00",
+            ),
+        ],
+        base_sha="3" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    assert plan["overlap_reroute_asset_count"] == 2
+    assert plan["repair_asset_count"] == 2
+    assert [item["action"] for item in plan["repair_actions"]] == [
+        "rqdata_redownload",
+        "rqdata_redownload",
+    ]
+    assert {
+        item["repair_reason"] for item in plan["repair_actions"]
+    } == {"intra_dataset_coverage_overlap"}
+    assert plan["provider_request_proposal"]["request_count"] == 2
+    assert {
+        item["reason"] for item in plan["provider_requests"]
+    } == {"intra_dataset_coverage_overlap"}
+    assert all(
+        batch["operation"] == "rqdata_redownload"
+        for batch in plan["batches"]
+    )
+    task07._validate_migration_plan_integrity(plan)
+
+
+def test_overlapping_aggregate_sources_are_all_routed_to_1m_reaggregation() -> None:
+    index = build_inventory_index(
+        [
+            _aggregate_asset(
+                market_data_file_id=1,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                coverage_start="2026-01-01T00:00:00+00:00",
+                coverage_end="2026-04-01T00:00:00+00:00",
+                main_map_digest="c" * 64,
+            ),
+            _aggregate_asset(
+                market_data_file_id=2,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                coverage_start="2026-03-01T00:00:00+00:00",
+                coverage_end="2026-06-01T00:00:00+00:00",
+                main_map_digest="d" * 64,
+            ),
+        ],
+        base_sha="3" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    assert plan["overlap_reroute_asset_count"] == 2
+    assert plan["provider_request_proposal"]["request_count"] == 0
+    assert [item["action"] for item in plan["repair_actions"]] == [
+        "canonical_1m_reaggregate",
+        "canonical_1m_reaggregate",
+    ]
+    assert all(
+        batch["operation"] == "canonical_1m_reaggregate"
+        for batch in plan["batches"]
+    )
+    task07._validate_migration_plan_integrity(plan)
+
+
+def test_trusted_source_overlapping_verified_canonical_is_routed_to_repair() -> None:
+    verified = _asset(
+        market_data_file_id=1,
+        data_type="v2_canonical",
+        contract_or_series="JM2609",
+        dataset_kind="actual_dominant",
+        source_scope="approved_canonical_root",
+        file_path="/tmp/task07-test/canonical/verified.parquet",
+        coverage_start="2026-01-01T00:00:00+00:00",
+        coverage_end="2026-04-01T00:00:00+00:00",
+        canonical_partition_id=101,
+        canonical_file_uri="verified.parquet",
+        manifest_format="canonical-manifest-v1",
+        manifest_version="task07-direct-migration-v1",
+        manifest_uri="verified.manifest.json",
+        manifest_digest="b" * 64,
+    )
+    source = _asset(
+        market_data_file_id=2,
+        contract_or_series="JM2609",
+        dataset_kind="actual_dominant",
+        catalog_checksum=None,
+        coverage_start="2026-03-01T00:00:00+00:00",
+        coverage_end="2026-06-01T00:00:00+00:00",
+    )
+    index = build_inventory_index(
+        [verified, source],
+        base_sha="3" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    migrate = next(
+        batch
+        for batch in plan["batches"]
+        if batch["operation"] == "migrate_same_frequency"
+    )
+    assert migrate["source_ids"] == []
+    assert migrate["verified_partition_ids"] == [1]
+    assert plan["overlap_reroute_asset_count"] == 1
+    assert [item["market_data_file_id"] for item in plan["repair_actions"]] == [2]
+    task07._validate_migration_plan_integrity(plan)
+
+
+def test_preflight_rejects_exact_prepared_target_overlap() -> None:
+    from app.data_core import cli_service as cli_module
+
+    dataset = SimpleNamespace(
+        provider="rqdata",
+        dataset_kind=SimpleNamespace(value="actual_dominant"),
+        symbol="jm",
+        contract_or_series="JM2609",
+        frequency=SimpleNamespace(value="1d"),
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+
+    def prepared(start: datetime, end: datetime) -> SimpleNamespace:
+        request = SimpleNamespace(dataset=dataset, start=start, end=end)
+        return SimpleNamespace(batch=SimpleNamespace(request=request))
+
+    with pytest.raises(ValueError, match="TASK07_PREFLIGHT_TARGET_OVERLAP"):
+        cli_module._task07_require_nonoverlapping_prepared_targets(
+            verified_partitions=[],
+            prepared_sources=[
+                ({}, prepared(datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 4, 1, tzinfo=UTC))),
+                ({}, prepared(datetime(2026, 3, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC))),
+            ],
+        )
+
+    cli_module._task07_require_nonoverlapping_prepared_targets(
+        verified_partitions=[],
+        prepared_sources=[
+            ({}, prepared(datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 4, 1, tzinfo=UTC))),
+            ({}, prepared(datetime(2026, 4, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC))),
+        ],
+    )
+
+
 def test_conflict_repairs_are_materialized_in_the_migration_envelope() -> None:
     index = build_inventory_index(
         [
@@ -3304,6 +3469,8 @@ def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
                 file_path=str(path),
                 checksum=checksum,
                 physical_checksum=checksum,
+                coverage_start=f"2026-01-0{source_id}T00:00:00+00:00",
+                coverage_end=f"2026-01-0{source_id + 1}T00:00:00+00:00",
             )
         )
     plan = build_migration_plan(
