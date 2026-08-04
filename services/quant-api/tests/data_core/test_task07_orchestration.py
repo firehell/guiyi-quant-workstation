@@ -167,6 +167,149 @@ def test_parquet_content_gate_reads_file_inside_hive_style_directories(
     )
 
 
+def test_direct_1m_registration_coverage_mismatch_becomes_rqdata_repair(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "direct-1m.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "datetime": [datetime(2026, 7, 31, 9, 1)],
+                "trading_day": [date(2026, 7, 31)],
+                "open": ["100.1"],
+                "high": ["101.0"],
+                "low": ["99.8"],
+                "close": ["100.5"],
+                "volume": ["12"],
+            }
+        ),
+        source,
+    )
+    checksum = sha256(source.read_bytes()).hexdigest()
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            MarketDataFile(
+                id=1,
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="a",
+                contract_code="A.MAIN",
+                period="1m",
+                start_time=datetime(2026, 7, 31, 9, 1, tzinfo=UTC),
+                end_time=datetime(2026, 7, 31, 9, 1, tzinfo=UTC),
+                file_path=str(source),
+                file_size_bytes=source.stat().st_size,
+                checksum=checksum,
+                data_version="legacy-v1",
+                row_count=1,
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        asset = next(
+            iter(
+                collect_task07_assets(
+                    session,
+                    data_root=tmp_path,
+                    canonical_root=tmp_path,
+                )
+            )
+        )
+
+    assert asset.content_gate_status == "coverage_mismatch"
+    assert classify_asset(asset) == AssetDisposition.CONFLICT_BLOCKED
+    index = task07.build_kline_manifest_index(
+        [asset],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+    plan = build_migration_plan(index, write_targets=_write_targets(tmp_path))
+    action = plan["repair_actions"][0]
+    assert action["action"] == "rqdata_redownload"
+    assert action["window"] == {
+        "start": "2026-07-31T01:00:00+00:00",
+        "end": "2026-07-31T01:01:00+00:00",
+    }
+    import app.data_core.cli_service as cli_module
+
+    with Session(engine) as session:
+        validation, targets = cli_module._task07_validate_batch_readonly(
+            session,
+            plan=plan,
+            batch=plan["batches"][0],
+            canonical_root=tmp_path,
+        )
+    assert validation[0]["operation"] == "rqdata_redownload"
+    assert targets[0].start == datetime(2026, 7, 31, 1, 0, tzinfo=UTC)
+    assert targets[0].end == datetime(2026, 7, 31, 1, 1, tzinfo=UTC)
+
+
+def test_direct_1d_without_datetime_becomes_rqdata_repair(tmp_path: Path) -> None:
+    source = tmp_path / "direct-1d.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "date": [date(2026, 7, 30), date(2026, 7, 31)],
+                "trading_day": [date(2026, 7, 30), date(2026, 7, 31)],
+                "open": ["100.1", "100.5"],
+                "high": ["101.0", "101.2"],
+                "low": ["99.8", "100.0"],
+                "close": ["100.5", "100.8"],
+                "volume": ["12", "15"],
+            }
+        ),
+        source,
+    )
+    checksum = sha256(source.read_bytes()).hexdigest()
+    engine = create_engine("sqlite://")
+    _task07_inventory_schema(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO market_data_files VALUES "
+                "(1,'rqdata','bars','a','A.MAIN','1d',"
+                "'2026-07-30 00:00:00+00:00','2026-07-31 00:00:00+00:00',"
+                ":path,:size,:checksum,'legacy-v1',2,'primary','passed')"
+            ),
+            {
+                "path": str(source),
+                "size": source.stat().st_size,
+                "checksum": checksum,
+            },
+        )
+
+    with Session(engine) as session:
+        asset = next(
+            iter(
+                collect_task07_assets(
+                    session,
+                    data_root=tmp_path,
+                    canonical_root=tmp_path,
+                )
+            )
+        )
+
+    assert asset.content_gate_status == "datetime_missing"
+    assert classify_asset(asset) == AssetDisposition.CONFLICT_BLOCKED
+    index = task07.build_kline_manifest_index(
+        [asset],
+        base_sha="1" * 40,
+        database_revision="20260803_0032",
+    )
+    plan = build_migration_plan(index, write_targets=_write_targets(tmp_path))
+    action = plan["repair_actions"][0]
+    assert action["action"] == "rqdata_redownload"
+    assert action["window"] == {
+        "start": "2026-07-29T00:00:00+00:00",
+        "end": "2026-07-31T00:00:00+00:00",
+    }
+
+
 def test_inventory_classifies_only_passed_rqdata_direct_bars_as_trusted() -> None:
     assets = [
         _asset(market_data_file_id=1),

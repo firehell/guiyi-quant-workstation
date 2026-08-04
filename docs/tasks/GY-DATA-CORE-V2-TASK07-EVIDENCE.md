@@ -308,3 +308,74 @@ K-line `apply/verify` 已实现 staging、Decimal/UTC、duplicate、OHLCV、cove
 rank=1、overlap、Catalog/Manifest publish、durable partial journal/resume 与 readback；但未获得任何
 production exact approval，未执行 Canonical/PostgreSQL 写入。代码与测试完成不能替代 v9 inventory、
 逐 batch owner approval、生产 readback、retirement approval 或 develop integration。
+
+## 8. 2026-08-04 Stage C read-only preflight blocker and code-only remediation
+
+本节是当前最新事实，替代上文关于 production revision、release prerequisite 和“尚未生成 exact
+manifest”的旧快照；上文仍作为历史诊断保留。
+
+Stage A/B 已在独立 exact Gate 下完成并回读：
+
+```text
+develop_sha=aac4006f
+main_sha=aac4006f
+release_tag=runtime-20260804-aac4006f
+rollback_tag=runtime-rollback-20260804-10351ccd-aac4006f
+postgresql_revision=20260803_0032
+```
+
+随后只读生成的 Stage C packet 位于外部 evidence root
+`/Volumes/扩展盘/GuiyiTask07Evidence-aac4006f`，其冻结摘要为：
+
+```text
+asset_count=49885
+manifest_digest=c813bd4132913d0bfb2b2b03ab826e77051c63c5963ec28c06d9865748c31d86
+plan_digest=6bc09627bad1a6d8bcc1dd1e16056fe0e73c5b2fa1fa34de87d4ceb96ea3da3e
+approval_packet_hash=b0ab8aeab51ad8760029514f2e9b65eecf25495b07e43dbbbf5368543839d924
+batch_count=2186
+repair_action_count=30536
+provider_request_count=24178
+calls_rqdata=false
+writes_postgresql=false
+writes_canonical=false
+writes_runtime=false
+```
+
+该 packet 未进入 owner approval，因为首个 `a:actual_dominant:1m` batch 的只读 preflight 即以
+`TASK07_SESSION_COVERAGE_MISMATCH` fail-closed。完整诊断没有逐行或逐 bucket 比较，而是按永久
+合同把 6,871 个错误复用候选判为需要 Direct 重下：
+
+```text
+1m actual_dominant coverage_mismatch=2046
+1m continuous coverage_mismatch=154
+1d actual_dominant datetime_missing=4671
+affected_symbols=90
+required_disposition=rqdata_redownload
+approval_request_allowed=false
+```
+
+根因是 inventory 内容 Gate 只验证 trading-day/session 关系，却没有验证 Direct Parquet 的物理
+datetime coverage 是否与登记 coverage 一致；同时 `1d` 的 `date` 列被 inventory 接受，而实际
+migration reader 要求 `datetime`。因此旧 manifest 将这些资产误记为
+`REUSE_TRUSTED_SOURCE`，直到 batch preflight 才失败。
+
+当前 code-only remediation 从 `develop@aac4006f` 建立，只改变只读分类、repair window 绑定和
+防 drift preflight：`coverage_mismatch` / `datetime_missing` 直接进入
+`CONFLICT_BLOCKED -> rqdata_redownload`，窗口绑定物理 min/max；不引入 legacy reconciliation，
+不调用 RQData，不写 Canonical/PostgreSQL/Runtime，也不覆盖旧有效 Canonical。候选验证：
+
+```text
+Task07 focused=116 passed
+data_core full=641 passed
+backend full=2701 passed / 44 skipped
+engineering all-safe=533 passed / health 6 passed
+ruff=passed
+diff_check=passed
+secret_scan=passed
+production_writes=false
+READY_FOR_TASK_08=false
+```
+
+该代码仍须 exact-head independent Review、PR/CI 和 develop ancestry 回读。合入后必须重新生成
+release packet，并分别取得新的 main/tag 与真实 K 线迁移批准；`aac4006f` 的 Stage C packet已被
+本修复 supersede，永远不得用于 apply。

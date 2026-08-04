@@ -355,6 +355,8 @@ def classify_asset(asset: Task07Asset) -> AssetDisposition:
         if match is None or match.group(1) != asset.symbol.upper():
             return AssetDisposition.CONFLICT_BLOCKED
     if asset.content_gate_status in {
+        "coverage_mismatch",
+        "datetime_missing",
         "trading_day_null_conflict",
         "trading_day_weekend_conflict",
         "night_session_trading_day_conflict",
@@ -541,7 +543,8 @@ def collect_task07_assets(
                 and str(row["data_role"]) == "primary"
                 and str(row["quality_status"]) == "passed"
                 and frequency in _DIRECT_FREQUENCIES | _DERIVED_FREQUENCIES
-                and str(row["data_type"]) in {"bars", "contract_bars_raw"}
+                and str(row["data_type"])
+                in {"bars", "contract_bars_raw", "daily_baseline"}
             ):
                 if frequency in _DERIVED_FREQUENCIES and str(row["data_type"]) == "bars":
                     physical_inspection = _aggregate_parquet_content_gate(
@@ -570,17 +573,26 @@ def collect_task07_assets(
                     if source_intervals == ("1m",):
                         content_gate_status = "derived_daily_source_interval_1m"
                     else:
-                        content_gate_status = _parquet_content_gate(
-                            source_path,
-                            data_type=str(row["data_type"]),
-                            frequency=frequency,
+                        physical_inspection.update(
+                            _direct_parquet_content_inspection(
+                                source_path,
+                                data_type=str(row["data_type"]),
+                                frequency=frequency,
+                                registered_start=row["start_time"],
+                                registered_end=row["end_time"],
+                            )
                         )
+                        physical_inspection["source_intervals"] = source_intervals
+                        content_gate_status = str(physical_inspection["status"])
                 else:
-                    content_gate_status = _parquet_content_gate(
+                    physical_inspection = _direct_parquet_content_inspection(
                         source_path,
                         data_type=str(row["data_type"]),
                         frequency=frequency,
+                        registered_start=row["start_time"],
+                        registered_end=row["end_time"],
                     )
+                    content_gate_status = str(physical_inspection["status"])
             reports = quality_evidence.get(cursor, ())
             quality_digest = canonical_digest(reports) if reports else None
             quality_statuses = tuple(
@@ -955,6 +967,31 @@ def _physical_identity(path: Path) -> tuple[bool, str | None]:
 
 
 def _parquet_content_gate(path: Path, *, data_type: str, frequency: str) -> str:
+    return str(
+        _direct_parquet_content_inspection(
+            path,
+            data_type=data_type,
+            frequency=frequency,
+            registered_start=None,
+            registered_end=None,
+        )["status"]
+    )
+
+
+def _direct_parquet_content_inspection(
+    path: Path,
+    *,
+    data_type: str,
+    frequency: str,
+    registered_start: object,
+    registered_end: object,
+) -> dict[str, Any]:
+    failed = {
+        "status": "schema_conflict",
+        "physical_min_datetime": None,
+        "physical_max_datetime": None,
+        "registration_wall_clock_matches": None,
+    }
     try:
         # Read the physical file directly. ``pq.read_table(path)`` treats a file
         # below Hive-style directories as a dataset and can merge inferred
@@ -970,33 +1007,67 @@ def _parquet_content_gate(path: Path, *, data_type: str, frequency: str) -> str:
             else "date"
         )
         if day_column not in schema_names or time_column not in schema_names:
-            return "schema_conflict"
+            return failed
         table = parquet_file.read(columns=[time_column, day_column])
         times = table.column(time_column).to_pylist()
         days = table.column(day_column).to_pylist()
     except (OSError, ValueError, TypeError):
-        return "schema_conflict"
+        return failed
     if not times or len(times) != len(days):
-        return "schema_conflict"
+        return failed
+    status = "passed"
     for timestamp, raw_day in zip(times, days, strict=True):
         if timestamp is None or raw_day is None:
-            return "trading_day_null_conflict"
+            return {**failed, "status": "trading_day_null_conflict"}
         trading_day = raw_day.date() if hasattr(raw_day, "date") else raw_day
         if not hasattr(trading_day, "weekday") or trading_day.weekday() >= 5:
-            return "trading_day_weekend_conflict"
+            return {**failed, "status": "trading_day_weekend_conflict"}
         if frequency != "1m":
             continue
         if not hasattr(timestamp, "hour"):
-            return "schema_conflict"
+            return failed
         local = timestamp
         if getattr(timestamp, "tzinfo", None) is not None:
             local = timestamp.astimezone(_SHANGHAI)
         local_day = local.date()
         if local.hour >= 21 and trading_day <= local_day:
-            return "night_session_trading_day_conflict"
+            return {**failed, "status": "night_session_trading_day_conflict"}
         if 3 <= local.hour < 21 and trading_day != local_day:
-            return "day_session_trading_day_conflict"
-    return "passed"
+            return {**failed, "status": "day_session_trading_day_conflict"}
+    normalized_times: list[datetime] = []
+    for value in times:
+        if isinstance(value, datetime):
+            if value.tzinfo is None or value.utcoffset() is None:
+                timezone = _SHANGHAI if frequency == "1m" else UTC
+                value = value.replace(tzinfo=timezone)
+            normalized_times.append(value.astimezone(UTC))
+        elif isinstance(value, date) and frequency in {"1d", "1w"}:
+            normalized_times.append(
+                datetime.combine(value, datetime.min.time(), tzinfo=UTC)
+            )
+        else:
+            return failed
+    physical_start = min(normalized_times)
+    physical_end = max(normalized_times)
+    if time_column == "date":
+        status = "datetime_missing"
+    registration_matches: bool | None = None
+    if registered_start is not None and registered_end is not None:
+        try:
+            registration_matches = (
+                _catalog_utc_datetime(registered_start) == physical_start
+                and _catalog_utc_datetime(registered_end) == physical_end
+            )
+        except (TypeError, ValueError):
+            registration_matches = False
+        if status == "passed" and not registration_matches:
+            status = "coverage_mismatch"
+    return {
+        "status": status,
+        "physical_min_datetime": physical_start.isoformat(),
+        "physical_max_datetime": physical_end.isoformat(),
+        "registration_wall_clock_matches": registration_matches,
+    }
 
 
 def _canonical_partition_readback(
@@ -1133,12 +1204,13 @@ def _task07_repair_window(
     coverage_start: object,
     coverage_end: object,
     frequency: object,
+    coverage_start_is_first_bar: bool = False,
 ) -> dict[str, str]:
     start = _catalog_utc_datetime(coverage_start)
     end = _catalog_utc_datetime(coverage_end)
     if end < start:
         raise ValueError("TASK07_REPAIR_WINDOW_INVALID")
-    if end == start:
+    if coverage_start_is_first_bar or end == start:
         period = {
             "1m": timedelta(minutes=1),
             "5m": timedelta(minutes=5),
@@ -1150,8 +1222,32 @@ def _task07_repair_window(
         }.get(str(frequency))
         if period is None:
             raise ValueError("TASK07_REPAIR_WINDOW_INVALID")
-        start = end - period
+        start -= period
     return {"start": start.isoformat(), "end": end.isoformat()}
+
+
+def _task07_asset_repair_window(asset: Mapping[str, Any]) -> dict[str, str]:
+    use_physical_window = (
+        asset.get("frequency") in _DIRECT_FREQUENCIES
+        and asset.get("content_gate_status")
+        in {"coverage_mismatch", "datetime_missing"}
+        and asset.get("physical_min_datetime") is not None
+        and asset.get("physical_max_datetime") is not None
+    )
+    return _task07_repair_window(
+        coverage_start=(
+            asset["physical_min_datetime"]
+            if use_physical_window
+            else asset["coverage_start"]
+        ),
+        coverage_end=(
+            asset["physical_max_datetime"]
+            if use_physical_window
+            else asset["coverage_end"]
+        ),
+        frequency=asset["frequency"],
+        coverage_start_is_first_bar=use_physical_window,
+    )
 
 
 def _quality_evidence_for_file_range(
@@ -2316,11 +2412,7 @@ def build_migration_plan(
     for raw in _iter_inventory_assets(index):
         if raw.get("disposition") == AssetDisposition.CONFLICT_BLOCKED.value:
             aggregate = raw.get("frequency") in _DERIVED_FREQUENCIES
-            repair_window = _task07_repair_window(
-                coverage_start=raw["coverage_start"],
-                coverage_end=raw["coverage_end"],
-                frequency=raw["frequency"],
-            )
+            repair_window = _task07_asset_repair_window(raw)
             registration_snapshot = {
                 "id": int(raw["market_data_file_id"]),
                 "provider": raw["provider"],
@@ -2366,6 +2458,9 @@ def build_migration_plan(
                     "observed_checksum": raw["physical_checksum"],
                     "physical_exists": raw["physical_exists"],
                     "source_scope": raw["source_scope"],
+                    "content_gate_status": raw.get("content_gate_status"),
+                    "physical_min_datetime": raw.get("physical_min_datetime"),
+                    "physical_max_datetime": raw.get("physical_max_datetime"),
                 },
                 "base_sha": index["base_sha"],
                 "manifest_digest": manifest_digest,
@@ -2410,11 +2505,7 @@ def build_migration_plan(
                     "adjustment": raw.get("adjustment") or "none",
                     "schema_version": raw.get("schema_version")
                     or "canonical-bar-v1",
-                    "window": _task07_repair_window(
-                        coverage_start=raw["coverage_start"],
-                        coverage_end=raw["coverage_end"],
-                        frequency=raw["frequency"],
-                    ),
+                    "window": _task07_asset_repair_window(raw),
                     "reason": disposition,
                     "registered_checksum": raw["checksum"],
                     "observed_checksum": raw["physical_checksum"],
@@ -3145,6 +3236,9 @@ def _validate_migration_plan_integrity(plan: Mapping[str, Any]) -> None:
                 "observed_checksum",
                 "physical_exists",
                 "source_scope",
+                "content_gate_status",
+                "physical_min_datetime",
+                "physical_max_datetime",
             }
             or not isinstance(source_evidence.get("registration_snapshot"), Mapping)
             or source_evidence.get("registration_snapshot_digest")

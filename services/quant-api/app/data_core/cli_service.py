@@ -1128,16 +1128,32 @@ def _task07_validate_repair_batch_readonly(
             session,
             market_data_file_id=int(identifier),
         )
+        use_physical_window = (
+            action.get("frequency") in {"1m", "1d", "1w"}
+            and source_evidence.get("content_gate_status")
+            in {"coverage_mismatch", "datetime_missing"}
+            and source_evidence.get("physical_min_datetime") is not None
+            and source_evidence.get("physical_max_datetime") is not None
+        )
+        expected_window = _task07_repair_window(
+            coverage_start=(
+                source_evidence["physical_min_datetime"]
+                if use_physical_window
+                else current["coverage_start"]
+            ),
+            coverage_end=(
+                source_evidence["physical_max_datetime"]
+                if use_physical_window
+                else current["coverage_end"]
+            ),
+            frequency=current["frequency"],
+            coverage_start_is_first_bar=use_physical_window,
+        )
         if (
             current != expected_registration
             or current["provider"] != str(action["original_provider"]).lower()
             or current["frequency"] != action.get("frequency")
-            or _task07_repair_window(
-                coverage_start=current["coverage_start"],
-                coverage_end=current["coverage_end"],
-                frequency=current["frequency"],
-            )
-            != action.get("window")
+            or expected_window != action.get("window")
         ):
             raise ValueError("TASK07_REPAIR_ACTION_DRIFT")
         normalized_identity = _normalize_legacy_dataset_identity(
