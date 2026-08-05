@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from importlib.metadata import version
 import os
 from typing import Any
@@ -255,7 +255,19 @@ class RqDataClient:
 
     def contract_bars(self, contract: str, start_date: date, end_date: date, frequency: str) -> pd.DataFrame:
         rq_contract = self.order_book_id(contract)
-        return self._frame(self.rqdatac.get_price(rq_contract, start_date=start_date, end_date=end_date, frequency=frequency))
+        provider_start = (
+            start_date - timedelta(days=start_date.weekday())
+            if frequency == "1w"
+            else start_date
+        )
+        return self._frame(
+            self.rqdatac.get_price(
+                rq_contract,
+                start_date=provider_start,
+                end_date=end_date,
+                frequency=frequency,
+            )
+        )
 
     def market_data_readiness(
         self,

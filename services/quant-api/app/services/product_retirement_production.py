@@ -132,6 +132,7 @@ class ProductionRetainedUniverseRefresher:
         self._weekly_ends: dict[str, datetime] = {}
         self._executor: RetainedUniverseRefreshExecutor | None = None
         self._store: CanonicalStore | None = None
+        self._removed_stale_partition_count = 0
 
     def preflight(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
         products = load_active_products(request.active_products_path)
@@ -262,6 +263,7 @@ class ProductionRetainedUniverseRefresher:
             "calendar_end": self._now().astimezone(SHANGHAI).date().isoformat(),
             "mapping_overlap_trading_days": 10,
             "missing_only": True,
+            "removed_stale_partition_count": self._removed_stale_partition_count,
         }
 
     def aggregate(
@@ -388,6 +390,7 @@ class ProductionRetainedUniverseRefresher:
                     end_day=selected[-1],
                     start=start,
                     end=end,
+                    weekly_end_day=weekly_day,
                 )
                 weekly_ends[symbol] = max(item.end for item in weekly_sessions)
                 sessions_by_product[symbol] = sessions
@@ -441,6 +444,17 @@ class ProductionRetainedUniverseRefresher:
         with self._session_factory() as session:
             catalog = HistoricalCatalog(session)
             store = self._canonical_store()
+            removed_stale = _remove_missing_physical_partitions(
+                session,
+                catalog,
+                dataset,
+                canonical_root=self._canonical_root,
+                start=bounded.start,
+                end=bounded.end,
+            )
+            if removed_stale:
+                session.commit()
+                self._removed_stale_partition_count += removed_stale
 
             def sessions(
                 key: DatasetKey, start: datetime, end: datetime
@@ -712,15 +726,31 @@ def _target_sessions(
 ) -> tuple[Any, ...]:
     selected = tuple(item for item in sessions if item.start < end and start < item.end)
     if dataset.dataset_kind is DatasetKind.ACTUAL_DOMINANT:
-        selected = tuple(
-            item
-            for item in selected
-            if catalog.get_main_contract_mapping(
-                instrument_symbol=dataset.symbol,
-                trade_date=item.trading_day,
-            ).actual_contract
-            == dataset.contract_or_series
-        )
+        if dataset.frequency is BarFrequency.W1:
+            by_week: dict[tuple[int, int], list[AggregationSession]] = {}
+            for item in selected:
+                iso = item.trading_day.isocalendar()
+                by_week.setdefault((iso.year, iso.week), []).append(item)
+            selected = tuple(
+                item
+                for weekly_sessions in by_week.values()
+                if catalog.get_main_contract_mapping(
+                    instrument_symbol=dataset.symbol,
+                    trade_date=max(session.trading_day for session in weekly_sessions),
+                ).actual_contract
+                == dataset.contract_or_series
+                for item in weekly_sessions
+            )
+        else:
+            selected = tuple(
+                item
+                for item in selected
+                if catalog.get_main_contract_mapping(
+                    instrument_symbol=dataset.symbol,
+                    trade_date=item.trading_day,
+                ).actual_contract
+                == dataset.contract_or_series
+            )
     if not selected:
         raise ProductRetirementProductionError(
             "PRODUCT_RETIREMENT_TARGET_SESSION_MISSING"
@@ -803,6 +833,62 @@ def build_rqdata_aggregation_sessions(
                 )
             )
     return tuple(sorted(result, key=lambda item: (item.start, item.end)))
+
+
+def _remove_missing_physical_partitions(
+    session: Any,
+    catalog: HistoricalCatalog,
+    dataset: DatasetKey,
+    *,
+    canonical_root: Path,
+    start: datetime,
+    end: datetime,
+) -> int:
+    root = canonical_root.resolve(strict=True)
+    removed = 0
+    for partition in catalog.list_partitions(dataset):
+        coverage_start = _utc_datetime_value(partition.coverage_start)
+        coverage_end = _utc_datetime_value(partition.coverage_end)
+        if not (coverage_start < end and start < coverage_end):
+            continue
+        manifest_path = _safe_catalog_asset(root, partition.manifest_uri)
+        file_path = _safe_catalog_asset(root, partition.file_uri)
+        if manifest_path.is_file() and file_path.is_file():
+            continue
+        session.delete(partition)
+        removed += 1
+    if removed:
+        session.flush()
+    return removed
+
+
+def _safe_catalog_asset(root: Path, value: object) -> Path:
+    relative = str(value or "")
+    candidate = Path(relative)
+    unresolved = root / candidate
+    if (
+        not relative
+        or "\\" in relative
+        or candidate.is_absolute()
+        or unresolved.is_symlink()
+    ):
+        raise ProductRetirementProductionError(
+            "PRODUCT_RETIREMENT_CATALOG_ASSET_PATH_INVALID"
+        )
+    resolved = unresolved.resolve()
+    if root != resolved and root not in resolved.parents:
+        raise ProductRetirementProductionError(
+            "PRODUCT_RETIREMENT_CATALOG_ASSET_PATH_INVALID"
+        )
+    return resolved
+
+
+def _utc_datetime_value(value: datetime) -> datetime:
+    if not isinstance(value, datetime):
+        raise ProductRetirementProductionError(
+            "PRODUCT_RETIREMENT_CATALOG_COVERAGE_INVALID"
+        )
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def _require_window_covered(
