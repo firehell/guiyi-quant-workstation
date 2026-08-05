@@ -256,11 +256,16 @@ class ProductRetirementRuntimeGate:
                     rollback_tag=request.rollback_tag,
                 )
             )
-            if (
-                journal.get("release_tag") != request.release_tag
-                or journal.get("runtime_sha") != runtime_preflight.get("runtime_sha")
-                or journal.get("runtime_sha") != runtime_preflight.get("release_sha")
-            ):
+            journal_runtime_sha = _required_journal_text(journal, "runtime_sha")
+            journal_release_tag = _required_journal_text(journal, "release_tag")
+            current_runtime_sha = runtime_preflight.get("runtime_sha")
+            release_sha = runtime_preflight.get("release_sha")
+            matches_journal = current_runtime_sha == journal_runtime_sha
+            already_promoted = (
+                current_runtime_sha == release_sha
+                and journal_release_tag != request.release_tag
+            )
+            if not (matches_journal or already_promoted):
                 raise ProductRetirementRuntimeGateError(
                     "PRODUCT_RETIREMENT_RESUME_RUNTIME_DRIFT"
                 )
@@ -274,6 +279,28 @@ class ProductRetirementRuntimeGate:
         target_states = _validated_service_states(journal["prior_service_states"])
         runtime_operator.stop_writer_services()
         _require_all_stopped(runtime_operator.writer_states())
+        if current_runtime_sha != release_sha:
+            try:
+                promoted_sha = runtime_operator.checkout_detached(
+                    request.runtime_root,
+                    request.release_tag,
+                )
+                if promoted_sha != release_sha:
+                    raise ProductRetirementRuntimeGateError(
+                        "PRODUCT_RETIREMENT_RESUME_PROMOTION_MISMATCH"
+                    )
+                _require_all_stopped(runtime_operator.writer_states())
+            except Exception as exc:  # noqa: BLE001 - DB is already committed
+                return {
+                    "command": "runtime.product-retirement.resume",
+                    "status": "db_committed_purge_pending",
+                    "phase": "postcommit_runtime_promotion",
+                    "receipt": dict(journal["receipt"]),
+                    "error": {
+                        "code": "PRODUCT_RETIREMENT_RESUME_PROMOTION_FAILED",
+                        "type": type(exc).__name__,
+                    },
+                }
         if journal["receipt"].get("status") == "applied":
             receipt = journal["receipt"]
         else:
