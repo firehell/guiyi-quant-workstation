@@ -29,6 +29,18 @@ from app.data_core.product_retirement import (
 from app.services.product_retirement_runtime_gate import append_journal
 
 
+class RetainedUniverseRefresher:
+    """The narrow post-retirement data update boundary."""
+
+    def sync_direct(
+        self, products: tuple[str, ...], frequencies: tuple[str, ...]
+    ) -> None: ...
+
+    def aggregate(
+        self, products: tuple[str, ...], frequencies: tuple[str, ...]
+    ) -> None: ...
+
+
 class ProductRetirementDataOperator:
     """Run exact retirement DML only after the Runtime Gate precommit phase."""
 
@@ -40,12 +52,14 @@ class ProductRetirementDataOperator:
         protected_root: Path,
         database_revision: str,
         now: Callable[[], str] | None = None,
+        refresher: RetainedUniverseRefresher | None = None,
     ) -> None:
         self._connection_factory = connection_factory
         self._roots = dict(roots)
         self._protected_root = protected_root
         self._database_revision = database_revision
         self._now = now or _now_iso
+        self._refresher = refresher
 
     def inventory(self, *, runtime_sha: str) -> dict[str, Any]:
         """Capture the exact data scope while the approved Runtime is stopped."""
@@ -138,6 +152,18 @@ class ProductRetirementDataOperator:
         with self._connection_factory() as connection:
             return verify_retirement_scope(connection, roots=self._roots)
 
+    def sync_direct(
+        self, products: tuple[str, ...], frequencies: tuple[str, ...]
+    ) -> None:
+        _require_exact_periods(frequencies, ("1m", "1d", "1w"))
+        _require_refresher(self._refresher).sync_direct(products, frequencies)
+
+    def aggregate(
+        self, products: tuple[str, ...], frequencies: tuple[str, ...]
+    ) -> None:
+        _require_exact_periods(frequencies, ("5m", "15m", "30m", "60m"))
+        _require_refresher(self._refresher).aggregate(products, frequencies)
+
 
 def _inventory_packet(inventory: Mapping[str, Any]) -> tuple[Mapping[str, Any], str]:
     packet = inventory.get("packet")
@@ -183,3 +209,16 @@ def _expires_at(now: str) -> str:
     if value.tzinfo is None:
         raise ValueError("PRODUCT_RETIREMENT_EXECUTION_NOW_INVALID")
     return (value.astimezone(UTC) + timedelta(hours=1)).isoformat()
+
+
+def _require_refresher(
+    refresher: RetainedUniverseRefresher | None,
+) -> RetainedUniverseRefresher:
+    if refresher is None:
+        raise ValueError("PRODUCT_RETIREMENT_RETAINED_REFRESHER_NOT_CONFIGURED")
+    return refresher
+
+
+def _require_exact_periods(actual: tuple[str, ...], expected: tuple[str, ...]) -> None:
+    if actual != expected:
+        raise ValueError("PRODUCT_RETIREMENT_REFRESH_FREQUENCIES_INVALID")
