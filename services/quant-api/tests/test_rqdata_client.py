@@ -112,6 +112,27 @@ def test_contract_trading_periods_preserves_contract_and_trading_day() -> None:
     ]
 
 
+def test_weekly_contract_bars_widen_provider_start_to_iso_week() -> None:
+    client = object.__new__(RqDataClient)
+    calls = []
+
+    class FakeRqData:
+        @staticmethod
+        def get_price(order_book_id, *, start_date, end_date, frequency):
+            calls.append((order_book_id, start_date, end_date, frequency))
+            return pd.DataFrame()
+
+    client.rqdatac = FakeRqData()
+
+    client.contract_bars("a88", date(2026, 7, 24), date(2026, 7, 31), "1w")
+    client.contract_bars("a88", date(2026, 7, 24), date(2026, 7, 31), "1d")
+
+    assert calls == [
+        ("A88", date(2026, 7, 20), date(2026, 7, 31), "1w"),
+        ("A88", date(2026, 7, 24), date(2026, 7, 31), "1d"),
+    ]
+
+
 def test_market_data_readiness_normalizes_official_response() -> None:
     client = object.__new__(RqDataClient)
 

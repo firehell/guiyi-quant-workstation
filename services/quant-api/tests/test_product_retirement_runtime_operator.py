@@ -54,3 +54,33 @@ def test_launchd_operator_stops_exact_services_and_reports_readonly_states(
     assert [
         Path(command[-1]).stem for command in calls if command[1] == "bootstrap"
     ] == [running_label]
+
+
+def test_launchd_operator_checks_exact_git_ancestry(tmp_path: Path) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def runner(command: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    plists = {}
+    for label in REQUIRED_WRITER_SERVICES:
+        plist = tmp_path / f"{label}.plist"
+        plist.write_text("<plist/>", encoding="utf-8")
+        plists[label] = plist
+    operator = LaunchdRuntimeOperator(service_plists=plists, runner=runner)
+    ancestor = "a" * 40
+    descendant = "b" * 40
+
+    assert operator.is_ancestor(tmp_path, ancestor, descendant) is True
+    assert calls == [
+        (
+            "git",
+            "-C",
+            str(tmp_path),
+            "merge-base",
+            "--is-ancestor",
+            ancestor,
+            descendant,
+        )
+    ]

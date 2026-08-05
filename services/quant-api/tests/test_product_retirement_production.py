@@ -17,8 +17,12 @@ from app.models.data_center import (
 from app.services.product_retirement_production import (
     EXPECTED_DATABASE_REVISION,
     ProductionRetainedUniverseRefresher,
+    _target_sessions,
+    _remove_missing_physical_partitions,
     build_rqdata_aggregation_sessions,
 )
+from app.data_core.aggregation import AggregationSession
+from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
 from app.services.product_retirement_runtime_gate import RetirementRuntimeRequest
 
 
@@ -82,6 +86,120 @@ def test_rqdata_periods_keep_cross_midnight_night_session() -> None:
     assert sessions[0].start == datetime(2026, 7, 31, 13, 0, tzinfo=UTC)
     assert sessions[0].end == datetime(2026, 7, 31, 18, 30, tzinfo=UTC)
     assert sessions[0].trading_day == date(2026, 8, 3)
+
+
+def test_actual_dominant_weekly_sessions_follow_week_end_rank1_contract() -> None:
+    days = (
+        date(2026, 7, 23),
+        date(2026, 7, 24),
+        date(2026, 7, 27),
+        date(2026, 7, 28),
+        date(2026, 7, 29),
+        date(2026, 7, 30),
+        date(2026, 7, 31),
+    )
+    sessions = tuple(
+        AggregationSession(
+            trading_day=day,
+            name="day",
+            start=datetime.combine(day, time(9), tzinfo=UTC),
+            end=datetime.combine(day, time(15), tzinfo=UTC),
+        )
+        for day in days
+    )
+    mappings = {day: "EC2608" if day <= date(2026, 7, 28) else "EC2610" for day in days}
+
+    class Catalog:
+        @staticmethod
+        def get_main_contract_mapping(*, instrument_symbol, trade_date):
+            assert instrument_symbol == "ec"
+            return type("Mapping", (), {"actual_contract": mappings[trade_date]})()
+
+    def dataset(contract: str, frequency: BarFrequency) -> DatasetKey:
+        return DatasetKey(
+            provider="rqdata",
+            dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+            symbol="ec",
+            contract_or_series=contract,
+            frequency=frequency,
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        )
+
+    start = datetime(2026, 7, 22, tzinfo=UTC)
+    end = datetime(2026, 8, 1, tzinfo=UTC)
+    weekly_2608 = _target_sessions(
+        Catalog(), dataset("EC2608", BarFrequency.W1), start, end, sessions=sessions
+    )
+    weekly_2610 = _target_sessions(
+        Catalog(), dataset("EC2610", BarFrequency.W1), start, end, sessions=sessions
+    )
+    minute_2608 = _target_sessions(
+        Catalog(), dataset("EC2608", BarFrequency.M1), start, end, sessions=sessions
+    )
+
+    assert [item.trading_day for item in weekly_2608] == list(days[:2])
+    assert [item.trading_day for item in weekly_2610] == list(days[2:])
+    assert [item.trading_day for item in minute_2608] == list(days[:4])
+
+
+def test_missing_physical_partition_is_removed_from_catalog_coverage(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "canonical"
+    root.mkdir()
+    present_manifest = root / "present.manifest.json"
+    present_file = root / "present.parquet"
+    present_manifest.write_text("{}", encoding="utf-8")
+    present_file.write_bytes(b"parquet")
+    missing = type(
+        "Partition",
+        (),
+        {
+            "coverage_start": datetime(2026, 7, 1, tzinfo=UTC),
+            "coverage_end": datetime(2026, 8, 1, tzinfo=UTC),
+            "manifest_uri": "missing.manifest.json",
+            "file_uri": "missing.parquet",
+        },
+    )()
+    present = type(
+        "Partition",
+        (),
+        {
+            "coverage_start": datetime(2026, 7, 1, tzinfo=UTC),
+            "coverage_end": datetime(2026, 8, 1, tzinfo=UTC),
+            "manifest_uri": present_manifest.name,
+            "file_uri": present_file.name,
+        },
+    )()
+
+    class Catalog:
+        @staticmethod
+        def list_partitions(_dataset):
+            return [missing, present]
+
+    class Session:
+        deleted = []
+
+        @classmethod
+        def delete(cls, partition):
+            cls.deleted.append(partition)
+
+        @staticmethod
+        def flush():
+            return None
+
+    removed = _remove_missing_physical_partitions(
+        Session(),
+        Catalog(),
+        object(),
+        canonical_root=root,
+        start=datetime(2026, 7, 20, tzinfo=UTC),
+        end=datetime(2026, 8, 5, tzinfo=UTC),
+    )
+
+    assert removed == 1
+    assert Session.deleted == [missing]
 
 
 def test_production_preflight_checks_rqdata_without_writing_calendar_or_staging(

@@ -40,6 +40,48 @@ def test_refresh_targets_cover_continuous_and_actual_dominant_direct_periods() -
     }
 
 
+def test_actual_dominant_weekly_targets_use_only_complete_week_end_mapping() -> None:
+    mappings = tuple(
+        CanonicalMainContractMapping(
+            id=index,
+            symbol="br",
+            trading_day=trading_day,
+            actual_contract=contract,
+            data_version="rqdata-rank1",
+            created_at=None,
+        )
+        for index, (trading_day, contract) in enumerate(
+            (
+                (date(2026, 7, 31), "BR2609"),
+                (date(2026, 8, 3), "BR2610"),
+                (date(2026, 8, 4), "BR2610"),
+            ),
+            start=1,
+        )
+    )
+
+    targets = build_refresh_targets(
+        products=("br",),
+        mappings=mappings,
+        start=datetime(2026, 7, 31, tzinfo=UTC),
+        end=datetime(2026, 8, 5, tzinfo=UTC),
+        weekly_end_day=date(2026, 7, 31),
+    )
+
+    actual = {
+        (item.contract_or_series, item.frequency)
+        for item in targets
+        if item.dataset_kind == "actual_dominant"
+    }
+    assert actual == {
+        ("BR2609", "1m"),
+        ("BR2609", "1d"),
+        ("BR2609", "1w"),
+        ("BR2610", "1m"),
+        ("BR2610", "1d"),
+    }
+
+
 def test_refresh_executor_replaces_rank1_window_then_syncs_and_aggregates() -> None:
     calls: list[tuple[object, ...]] = []
     window = RefreshWindow(

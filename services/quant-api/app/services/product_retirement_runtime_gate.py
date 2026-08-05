@@ -54,6 +54,8 @@ class RuntimeOperator(Protocol):
 
     def checkout_detached(self, root: Path, ref: str) -> str: ...
 
+    def is_ancestor(self, root: Path, ancestor: str, descendant: str) -> bool: ...
+
     def restart_services(
         self, target_states: Mapping[str, str]
     ) -> Mapping[str, str]: ...
@@ -265,7 +267,22 @@ class ProductRetirementRuntimeGate:
                 current_runtime_sha == release_sha
                 and journal_release_tag != request.release_tag
             )
-            if not (matches_journal or already_promoted):
+            chained_repair = (
+                journal_release_tag != request.release_tag
+                and isinstance(current_runtime_sha, str)
+                and isinstance(release_sha, str)
+                and runtime_operator.is_ancestor(
+                    request.runtime_root,
+                    journal_runtime_sha,
+                    current_runtime_sha,
+                )
+                and runtime_operator.is_ancestor(
+                    request.runtime_root,
+                    current_runtime_sha,
+                    release_sha,
+                )
+            )
+            if not (matches_journal or already_promoted or chained_repair):
                 raise ProductRetirementRuntimeGateError(
                     "PRODUCT_RETIREMENT_RESUME_RUNTIME_DRIFT"
                 )
