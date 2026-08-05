@@ -1,7 +1,6 @@
 # 任务合同分类
 
-本目录保存业务/受控任务合同。恢复只使用 Git history，不创建 backup、隔离副本、rollback tag、
-approval packet 或删除 receipt。
+本目录保存业务/受控任务合同。恢复只使用 Git history（见 `AGENTS.md` / `DECISIONS.md`）。
 
 ## 四种 disposition
 
@@ -37,8 +36,7 @@ Gate/hash-path 不再作为授权。
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`
 - `GY-DATA-CORE-V2-TASK07-EVIDENCE.md`
 
-普通开发不强制创建任务合同。生产 DB/正式数据删除、Runtime/live、真实通知、release/tag
-或 GitHub rules 变更属于受控外部操作，只接受范围明确的一次性执行意图。
+普通开发不强制创建任务合同。受控外部操作边界见 `AGENTS.md`。
 
 工程规则见 `AGENTS.md`；当前状态见 `STATUS.md`；个人开发流程见
 `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`。

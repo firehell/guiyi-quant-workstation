@@ -8,11 +8,16 @@
 
 ## 个人开发与执行边界
 
-`develop` 是日常开发分支。普通源码、测试、普通配置、研究实验与文档可以直接在 `develop` 编辑、按影响范围本地验证、提交并推送。Issue、任务分支/worktree、PR、独立 Review、required CI、exact-head、merge readback、approval packet/hash 和 receipt 均不是普通工作的前置条件；自愿使用时只作为可选协作工具。本地必要验证是完成声明依据，CI 仅作补充，且所有工作必须保留无关 dirty changes。
+日常在 `develop` 上编辑、按影响本地验证、可选 commit/push。协作门禁与可选工具边界见
+`AGENTS.md`「个人开发工作流」与 `DECISIONS.md`「个人开发」。本地必要验证是完成声明依据；须保留
+无关 dirty changes。
 
-Git 跟踪的过期源码、测试、工程流程、hook/rule/workflow、ADR 和文档属于普通仓库删除：同一变更关闭 active references，以 Git history 恢复，不创建备份、rollback tag、packet 或 receipt。生产 DB、正式市场数据、仓库外文件、Runtime state、远端 refs、Git history、live 配置、真实通知和 GitHub rules 的真实 mutation 属于受控外部操作。
+普通仓库删除：关闭 active references，以 Git history 恢复。生产 DB、正式市场数据、仓库外文件、
+Runtime state、远端 refs、Git history、live 配置、真实通知和 GitHub rules 的真实 mutation 属于
+受控外部操作，细则见 `AGENTS.md`「受控外部操作」。
 
-受控外部操作只接受用户在执行前给出的一个范围明确、单次使用的请求。该请求必须标识操作类别、目标环境/资源和边界，只授权紧随其后的一次匹配尝试；成功、失败、重试、scope 变化或跨会话继续都需要新请求。dry-run、旧审批材料和历史执行记录不授权 mutation。数据质量、安全、default-off 与 no-order 约束不能被任何执行意图覆盖。
+受控外部操作只接受范围明确、单次使用的用户请求；dry-run 与历史材料不授权 mutation。数据质量、
+安全、default-off 与 no-order 约束不能被任何执行意图覆盖。
 
 ## Active target 与数据边界
 
@@ -73,7 +78,7 @@ V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainCo
 | `docs/INDICATOR_KERNEL.md` | 指标版本、契约与 HTDY policy |
 | `docs/tasks/GY-DATA-CORE-V2.md` | 数据核心 V2 active 业务合同与任务顺序 |
 
-`docs/tasks/` 可以包含 active business contract、historical fact、仍被 Runtime 消费的 frozen 文件或已 superseded 的历史来源。旧 PR、Review、CI、hash、packet 和 receipt 描述仅保留事实含义或由 Git history 追溯，不构成当前开发或执行授权。删除仓库内历史文件时关闭 active references；删除正式数据或其他仓库外资源时使用精确范围的一次性执行意图。
+`docs/tasks/` 可以包含 active business contract、historical fact、仍被 Runtime 消费的 frozen 文件或已 superseded 的历史来源。历史协作材料只保留事实含义或由 Git history 追溯，不构成当前授权（见 `AGENTS.md` / `DECISIONS.md`）。删除仓库内历史文件时关闭 active references；删除正式数据或其他仓库外资源时使用精确范围的一次性执行意图。
 
 ## 不做事项
 

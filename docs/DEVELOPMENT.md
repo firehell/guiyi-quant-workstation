@@ -1,6 +1,6 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-03
+更新时间：2026-08-05
 
 本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
 `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、回测、信号和 Runtime 语义仍由
@@ -20,10 +20,7 @@ develop
 ```
 
 普通源码、测试、普通配置、研究实验和文档变更可以直接在 `develop` 编辑、验证、提交和推送。
-GitHub Issue、每任务 branch/worktree、PR、独立 Review、required CI、exact-head、merge readback、
-ancestry/cleanup evidence、approval packet/hash 或 receipt 都不是普通开发的授权前置。开发者仍可
-自愿使用 branch、worktree、PR、Review 或 CI，但它们只是可选工具，不改变本地验证结论，也不授予
-任何真实外部副作用权限。
+协作门禁与可选工具边界见 `AGENTS.md`「个人开发工作流」与 `DECISIONS.md`「个人开发」；本文不重复罗列。
 
 开始修改前记录现有 dirty paths；不覆盖、不还原、不暂存与当前任务无关的改动。提交时只选择当前
 任务文件，不使用会意外纳入无关改动的全量暂存方式。
@@ -43,11 +40,8 @@ commit 或 push 的前置授权。
 
 ## 普通仓库删除
 
-删除 Git 跟踪的过期源码、测试、普通配置、工程流程、hook/rule、CI、ADR 或文档属于普通仓库删除，
-不需要协作 Gate 或外部执行意图。删除前扫描引用，并在同一变更中更新或删除 active references。
-恢复只依赖 Git 历史：未提交删除可从 index/HEAD 恢复，已提交删除可从删除前提交恢复或创建普通
-revert。不要为普通删除创建 backup、quarantine、archive copy、rollback tag、deletion packet 或
-receipt。
+删除 Git 跟踪的过期源码、测试、普通配置、工程流程、hook/rule、CI、ADR 或文档属于普通仓库删除：
+扫描并关闭 active references，以 Git 历史恢复。细则见 `AGENTS.md` / `DECISIONS.md`。
 
 生产数据库记录、正式市场数据、Runtime 状态、live 配置、remote refs 或 Git 历史不属于普通仓库
 删除；它们必须按受控外部操作处理。
@@ -59,10 +53,9 @@ receipt。
 该请求只授权紧随其后的一个匹配执行尝试；完成、失败、重试、范围变化或后续会话都需要新的明确
 请求。
 
-Dry-run 只验证计划，绝不转化为 mutation authorization。不得从 dry-run、旧 packet/hash、
-exact-head、历史 receipt、先前执行结果或先前会话推断当前外部变更权限。执行前仍须校验输入、
-范围、认证、质量和安全开关；业务正确性约束优先于任何执行意图。操作结束只报告尝试范围和观察到
-的结果，不生成授权 receipt。
+Dry-run 只验证计划，绝不转化为 mutation authorization。授权模型与禁止从历史材料推断权限的细则见
+`AGENTS.md`「受控外部操作」与 `DECISIONS.md`。执行前仍须校验输入、范围、认证、质量和安全开关；
+业务正确性约束优先于任何执行意图。
 
 Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub 规则修改；每个类别和范围必须
 分别请求。普通 `git push origin develop` 仍属于上述日常开发流，不继承为 release/tag 或其他

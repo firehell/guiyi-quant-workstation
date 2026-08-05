@@ -34,12 +34,7 @@ START
 END
 ```
 
-普通工作不依赖 Issue、task branch/worktree、Draft PR、PR、独立 Review、required CI、exact-head、
-merge readback、ancestry cleanup、approval packet/hash、签名或 receipt。缺少这些协作元数据不能
-阻止编辑、验证、commit 或正常 push `develop`。
-
-Branch、worktree、PR、Review 和 CI 可以按个人偏好使用。它们不改变验证标准，不是授权条件，也
-不能为 release、tag、Runtime、live、数据写入、通知或其他真实副作用提供权限。
+协作门禁与可选工具边界见 `AGENTS.md`「个人开发工作流」与 `DECISIONS.md`「个人开发」；本文不重复罗列。
 
 ### 2.1 保护已有改动
 
@@ -72,8 +67,8 @@ CI 是可选补充。CI 成功不能代替本地验证，CI 缺失也不能单�
 -> 需要时从 Git 历史恢复
 ```
 
-普通删除无需 Issue、worktree、PR、Review、packet、hash、签名、第二次批准或 receipt。不得创建
-backup directory、quarantine copy、archive、rollback tag 或删除凭据来替代 Git。
+普通删除的协作边界与恢复方式见 `AGENTS.md` / `DECISIONS.md`：关闭 active references，仅用 Git
+历史恢复。
 
 恢复方式：
 
@@ -107,10 +102,10 @@ release/tag 请求不能授权 Runtime/live、通知、数据写入或 GitHub ru
 - target、environment、resource boundary 或 operation category 改变；
 - 进入后续会话；
 - 先前只请求或执行了 dry-run；
-- 仅存在旧 packet/hash、exact-head、签名、receipt、历史批准或过去执行结果。
+- 仅存在旧审批材料或过去执行结果（细则见 `AGENTS.md`「受控外部操作」）。
 
-Dry-run 展示或验证计划，但 **绝不授权 mutation**。不得从 dry-run 输出、之前的会话、之前的失败或
-成功、历史文档及缓存状态推断当前权限。意图不写入仓库、配置、packet 或 receipt 供以后复用。
+Dry-run 展示或验证计划，但 **绝不授权 mutation**。不得从 dry-run、先前会话或历史结果推断当前
+权限。意图不落盘复用。
 
 ### 5.3 安全优先级与结果
 
@@ -122,8 +117,8 @@ Dry-run 展示或验证计划，但 **绝不授权 mutation**。不得从 dry-ru
 ```
 
 任何意图都不能绕过 failed quality、DataGap、未来函数保护、secret 保护、默认关闭状态、禁止订单
-或超范围资源。执行后只报告非秘密的 attempted scope、success/failed/blocked 状态和有界错误；
-不要求或生成 final receipt。失败不自动回滚、force、扩大范围或再次执行。
+或超范围资源。执行后只报告非秘密的 attempted scope、success/failed/blocked 状态和有界错误。
+失败不自动回滚、force、扩大范围或再次执行。
 
 ## 6. 保留的项目边界
 
@@ -142,5 +137,5 @@ Dry-run 展示或验证计划，但 **绝不授权 mutation**。不得从 dry-ru
 ## 7. 完成报告
 
 任务完成时说明：变更文件、实际运行的命令与结果、未运行或不可用检查、剩余风险，以及是否发生
-外部操作。普通开发报告不得把 PR、Review、CI、packet、hash 或 receipt 描述为授权证据；受控操作
-报告不得把一次结果扩展解释为交易、盈利、long-running 或 production readiness。
+外部操作。完成报告不得把协作材料写成授权证据，也不得把一次受控操作结果扩写为交易、盈利、
+long-running 或 production readiness（见 `AGENTS.md` / `DECISIONS.md`）。

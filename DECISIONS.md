@@ -1,6 +1,6 @@
 # 架构决策记录
 
-本文件只记录长期影响代码、数据口径或运行边界的有效决策；当前状态见 `STATUS.md`，已完成过程由 Git 与保留的 historical facts 追溯。旧 PR、CI、Review、packet、hash、signature 或 receipt 可以作为事实存在，但不构成当前授权。
+本文件只记录长期影响代码、数据口径或运行边界的有效决策；当前状态见 `STATUS.md`。历史协作材料可作为事实存在，但不构成当前授权（协作门禁边界见「个人开发」与 `AGENTS.md`）。
 
 ## 当前有效决策
 
@@ -41,15 +41,13 @@
 
 - 数据质量、lineage 与可复算性优先于产品扩展和性能优化。
 - 任一验证或真实执行只证明其精确范围；不得由数据、回测、release、Runtime、单次通知或 smoke 推导盈利、长稳、交易或生产 Ready。
-- GitHub Issue、branch/worktree、PR、Review 和 CI 可用于 backlog、隔离或额外审查，但普通工作不依赖这些机制，存在与否也不改变本地授权结论。
+- 协作门禁与可选工具边界以上表「个人开发」与 `AGENTS.md` 为准，本文不另列清单。
 - 当前树保留 canonical、active business contracts、Runtime 仍消费的 frozen 文件和必要历史事实；已完成协作过程由文本或 Git history 追溯，不提供可复用授权。
 - `docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互收口的 active 业务合同；`docs/tasks/GY-CORE-CONVERGENCE.md` 只作为 superseded/frozen historical 来源保留。
 - Runtime 进程重启、RQData/网络短故障恢复和主机重启验证与单日自然运行分离；实际 Runtime/live/通知动作分别使用自己的精确 scope 意图，且默认保持关闭。
 
 ## 已取代的工作流 ADR
 
-- ADR-WS-003（develop/release worktree lifecycle）已被“直接在 `develop` 普通开发 + 本地影响匹配验证 + 可选协作工具”决策取代，不再约束开发位置或授权。
-- ADR-WS-004（five-layer manual PR/Codex integration）已被“普通开发无需协作门禁；受控外部操作只使用 scoped one-shot execution intent”决策取代，不再授权或阻止任何操作。
-- 两份 ADR 的旧文件与历史文本可以由 Git history 追溯；其中的 PR、Review、CI、exact-head、packet/hash、merge/readback/cleanup 描述均不再是 active prerequisite。
+- ADR-WS-003 / ADR-WS-004 已被「个人开发」决策与 `AGENTS.md` 取代；旧文可由 Git history 追溯，其中的协作门禁描述不再是 active prerequisite。
 
 未来涉及产品边界、数据/回测口径、live/通知或个人开发/发布模型的长期变化，先在此处或对应 deep canonical 固化；普通实现细节不新增 ADR。
