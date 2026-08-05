@@ -428,17 +428,120 @@ All CLI and file inputs are untrusted. Batch and root paths are normalized and c
 
 No new runtime dependency is required. Reuse Python/argparse, existing FastAPI service modules, SQLAlchemy repositories, RQData adapter, Parquet/canonical store, `MarketDataService`, and Hypothesis already used by the backend test suite. Dependency versions remain governed by `services/quant-api/uv.lock`.
 
-## Correctness Properties (Provisional)
+## Correctness Properties
 
-These candidates are finalized and mapped to EARS requirements after requirements derivation.
+*A property is a behavior that must hold across all valid generated inputs. These properties complement example, integration and smoke tests for fixed command surfaces, external wiring, repository layout and execution gates.*
 
-1. For any accepted command request, target expansion produces only unique, deterministic targets inside the declared identity/window and never infers dataset kind.
-2. For any direct download request, every provider request frequency is one of `1m/1d/1w` and every published partition has the requested DatasetKey.
-3. For any requested historical window, planning returns exactly the uncovered sub-windows regardless of whether dates are before or after 2020.
-4. For any aggregate request, output equals deterministic session-based aggregation of the trusted canonical 1m source and provider call count remains zero.
-5. For any aggregate source with a missing required minute or intersecting DataGap, publication does not occur.
-6. For any live observation input, resulting writes are confined to the live observation repository and historical canonical writes remain zero.
-7. For any metadata sync scope, CLI results equal delegated service results and no CLI-owned provider/mapping algorithm executes.
-8. For any audit request, all effects remain read-only and each detected inconsistency is represented by a stable scope/finding code.
-9. For any invalid or ambiguous input, the command fails before provider/session/mutating store construction.
-10. For the tracked 145-script baseline, ordered disposition rules classify every path exactly once with totals 9 keep, 14 move and 122 replace/delete.
+### Property 1: Explicit and Deterministic Target Expansion
+
+For any valid single-target or batch request, expansion produces the same ordered, duplicate-free Data_Target sequence on every run, every target remains inside the supplied identity/window, and every target contains the explicitly supplied Dataset_Kind.
+
+**Validates: Requirements 1.2, 1.3, 1.4, 8.1**
+
+### Property 2: Invalid Input Has No Effects
+
+For any request containing an invalid selector combination, enum, time/window, manifest size/schema, or path, command evaluation fails before database/provider/mutating-store construction and reports no mutating effect.
+
+**Validates: Requirements 1.5, 1.6**
+
+### Property 3: Result Envelope Is Total
+
+For any planned, passed, partial, blocked, or error outcome, the serialized result contains the version, command, status, readonly flag, complete Effect_Summary, per-target outcomes, and an optional schema-valid Stable_Error_Code.
+
+**Validates: Requirements 1.7**
+
+### Property 4: Exact Date-Agnostic Missing-Window Planning
+
+For any valid requested historical window and any set of canonical covered intervals, download planning returns exactly the interval difference between the request and coverage, uses the same rule before and after 2020, and performs no provider or write effect in plan mode.
+
+**Validates: Requirements 2.1, 3.1, 3.5**
+
+### Property 5: Frequency Sets Are Disjoint and Closed
+
+For any requested frequency, download accepts the request if and only if the frequency is `1m`, `1d`, or `1w`, while aggregate accepts the request if and only if the frequency is `5m`, `15m`, `30m`, or `60m`.
+
+**Validates: Requirements 2.3, 3.2, 4.5**
+
+### Property 6: Download Preserves Dataset Identity
+
+For any valid direct Data_Target and provider result that passes validation, every provider request and published partition retains the requested provider, Dataset_Kind, symbol, contract-or-series, frequency, adjustment, schema version, and window without cross-kind fallback.
+
+**Validates: Requirements 2.2, 2.4, 2.8**
+
+### Property 7: Batch Outcome Confluence
+
+For any ordered batch of target outcomes, the command preserves exactly one outcome per target independent of execution grouping, and the overall status is non-success if at least one target failed.
+
+**Validates: Requirements 2.7**
+
+### Property 8: Unavailable Historical Prefix Is Explicit
+
+For any request whose start precedes an instrument listing date or provider-supported start, the unavailable interval is represented exactly as DataGap and is not removed by clamping or silent truncation.
+
+**Validates: Requirements 3.3**
+
+### Property 9: Trusted Aggregation Is Deterministic and Identity-Preserving
+
+For any complete Trusted_Canonical_1m source and valid session set, aggregation equals the reference session-bucket OHLCV model and preserves provider, Dataset_Kind, symbol, contract-or-series, adjustment, schema version, and requested window in every derived result.
+
+**Validates: Requirements 4.1, 4.2, 4.6, 4.7**
+
+### Property 10: Aggregation Never Uses RQData
+
+For any valid or invalid aggregate request, RQData client construction and RQData call counts remain zero.
+
+**Validates: Requirements 4.3**
+
+### Property 11: Incomplete Aggregate Source Cannot Publish
+
+For any otherwise valid aggregate source, removing or ambiguating any required source minute, session mapping, quality proof, or coverage interval causes publication count to remain zero and returns a DataGap error.
+
+**Validates: Requirements 4.4, 4.7**
+
+### Property 12: Live Writes Remain Observation-Only
+
+For any accepted live target and any sequence of received 1m bars, writes are confined to the Live_Observation repository; Historical_Canonical, Runtime promotion, notification, and order effects remain zero/false in both execution and Effect_Summary.
+
+**Validates: Requirements 5.1, 5.2, 5.3, 5.6**
+
+### Property 13: Metadata Plan Is Read-Only Delegation
+
+For any valid metadata scope and filter set, plan mode performs no provider or PostgreSQL write, and applied orchestration with service fakes returns the same normalized per-scope results as the delegated `app.services.rqdata_ingest` services.
+
+**Validates: Requirements 6.2, 6.3, 6.4**
+
+### Property 14: Audit Is Read-Only and Complete
+
+For any audit scope, filters, and generated set of Catalog/Manifest/physical/schema/coverage/gap inconsistencies, every detected inconsistency produces one bounded stable finding while all RQData and mutation effects remain zero; `all` preserves every component scope exactly once.
+
+**Validates: Requirements 7.2, 7.3, 7.4, 7.6**
+
+### Property 15: Ambiguous or Untrusted Data Fails Closed
+
+For any actual-dominant request with missing/duplicate rank=1 mappings or any request intersecting DataGap/failed-quality coverage, the target fails without continuous/concrete-contract substitution, fill, shortening, or cross-frequency fallback.
+
+**Validates: Requirements 8.2, 8.3**
+
+### Property 16: Errors Are Redacted and Orders Stay Disabled
+
+For any exception type/message containing credentials, SQL, stack text, internal URLs, or absolute paths and for any command outcome, the public result contains only stable error metadata and `auto_order=false`.
+
+**Validates: Requirements 8.4, 8.6**
+
+### Property 17: Disposition Manifest Is a Total Partition
+
+For the 145-path design baseline, every path matches exactly one ordered disposition rule and totals are 9 keep, 14 move, and 122 replace/delete; for any added, removed, overlapping, or unmatched path mutation, the disposition validator fails.
+
+**Validates: Requirements 9.1, 9.2, 9.3**
+
+### Property 18: Replacement Gate Permits No Early Deletion
+
+For any combination of replacement-test results, active-reference state, and required validation results, deletion is permitted if and only if all replacement tests pass, active non-historical references are zero, and all required validations pass.
+
+**Validates: Requirements 9.4, 9.5, 12.6**
+
+### Property 19: Protected Resources Never Enter Repository Deletion
+
+For any generated migration/deletion plan, formal data, production database state, Runtime state, receipts, reports, evidence, repository-external resources, and `.kiro/specs/personal-development-mode` are absent from the deletion set.
+
+**Validates: Requirements 11.2, 11.5**

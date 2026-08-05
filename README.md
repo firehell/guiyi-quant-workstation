@@ -32,7 +32,7 @@ RQData / Local Standard Parquet
 
 ```bash
 cp .env.example .env
-./scripts/dev-up.sh
+./scripts/dev/dev-up.sh
 ```
 
 ```text
@@ -40,17 +40,34 @@ Web: http://127.0.0.1:5173
 API: http://127.0.0.1:8000/docs
 ```
 
-## 统一 CLI（首轮只读）
+## 统一 CLI
 
 ```bash
+# 只读校验（保留）
 uv run --project services/quant-api guiyi data verify \
   --symbol jm --contract jm.MAIN --period 15m --provider rqdata
+
+# 直接历史下载（默认 plan；--apply 才写入）
+uv run --project services/quant-api guiyi data download \
+  --symbol jm --dataset-kind continuous --contract-or-series JM.MAIN \
+  --frequency 1m --start 2018-01-01T00:00:00Z --end 2018-01-08T00:00:00Z
+
+# 仅从 trusted canonical 1m 聚合
+uv run --project services/quant-api guiyi data aggregate \
+  --symbol jm --dataset-kind continuous --contract-or-series JM.MAIN \
+  --frequency 15m --start 2018-01-01T00:00:00Z --end 2018-01-08T00:00:00Z
+
+# 元数据同步（默认 plan）
+uv run --project services/quant-api guiyi data sync --scope instruments
+
+# 只读 Audit V2
+uv run --project services/quant-api guiyi data audit --scope catalog
+
 uv run --project services/quant-api guiyi runtime status
 uv run --project services/quant-api guiyi runtime plan --product jm
 ```
 
-首轮 `guiyi` 只提供验证、状态和 dry-run plan；不包含 data sync、EOD、Runtime 执行、
-通知、backup 或任何真实写入。旧 CLI/脚本仅按任务范围逐个保留兼容 Shim。
+`download/aggregate/sync` 默认只读 plan；`--apply` 与 `--confirm-observation-write` 只是本地效果选择器，不构成正式数据/生产环境授权。旧 `data plan/migrate/task07/backfill` 与 `scripts/rqdata_*` 入口已移除，不保留 compatibility shim。
 
 ## 工程入口（Windows）
 

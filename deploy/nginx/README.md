@@ -38,12 +38,12 @@ sudo systemctl reload nginx
 
 ```bash
 # Mac mini
-./scripts/local-services-status.sh
-./scripts/local-tunnel-healthcheck.sh
-./scripts/server-recover.sh --confirm-production-restart
+./scripts/ops/macos/local-services-status.sh
+./scripts/ops/network/local-tunnel-healthcheck.sh
+./scripts/ops/macos/server-recover.sh --confirm-production-restart
 
 # Tencent ECS
-./scripts/tunnel-healthcheck.sh
+./scripts/ops/network/tunnel-healthcheck.sh
 sudo tail -30 /var/log/nginx/error.log
 ```
 
@@ -54,9 +54,9 @@ FRPC 配置模板：[`deploy/frp/frpc.toml.example`](../frp/frpc.toml.example)
 未认证请求必须返回 401，认证后才允许 200：
 
 ```bash
-PUBLIC_BASE_URL=https://<your_domain> ./scripts/public-healthcheck.sh
+PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.sh
 BASIC_AUTH_USER=<user> BASIC_AUTH_PASS=<pass> \
-PUBLIC_BASE_URL=https://<your_domain> ./scripts/public-healthcheck.sh
+PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.sh
 ```
 
 未完成有效 TLS、401/200 验证和公网端口核验前，禁止把公网入口标记为已验收。

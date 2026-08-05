@@ -43,7 +43,7 @@ localIP = "0.0.0.0" # 不推荐，用 127.0.0.1 即可
 Mac mini：
 
 ```bash
-./scripts/local-tunnel-healthcheck.sh
+./scripts/ops/network/local-tunnel-healthcheck.sh
 curl -i http://127.0.0.1:5173/
 curl -i http://127.0.0.1:8000/api/health
 ```
@@ -51,11 +51,11 @@ curl -i http://127.0.0.1:8000/api/health
 如受监督服务未加载，只能在明确确认后运行：
 
 ```bash
-./scripts/server-recover.sh --confirm-production-restart
+./scripts/ops/macos/server-recover.sh --confirm-production-restart
 ```
 
 腾讯云 ECS：
 
 ```bash
-./scripts/tunnel-healthcheck.sh
+./scripts/ops/network/tunnel-healthcheck.sh
 ```

@@ -193,7 +193,7 @@ def _validate_bound_facts(facts: dict[str, Any]) -> None:
     }
     if (
         set(api_runner) != expected_api_runner_keys
-        or api_runner.get("source_relative_path") != "scripts/run-local-service.sh"
+        or api_runner.get("source_relative_path") != "scripts/ops/macos/run-local-service.sh"
         or any(
             len(str(api_runner.get(key) or "")) != 64
             for key in ("source_sha256", "destination_sha256", "launchd_plist_sha256")

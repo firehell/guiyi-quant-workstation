@@ -45,6 +45,7 @@ production_writes=false
 | GY-DATA-CORE-V2 Task 07 Stage C | implementation candidate | 按当前代码运行本地定向与领域验证；生产只读验收未执行 |
 | GY-DATA-CORE-V2 Task 08 | pending | Stage D Runtime promotion 的独立业务任务；任何真实切换需新的精确范围执行意图 |
 | 旧派生数据清理 | optional / separate | 不阻塞 Task 07；仓库内删除与生产/正式数据删除必须分别分类 |
+| scripts-cli-consolidation | implementation on develop | 统一 `guiyi data download/aggregate/live/sync/audit`；旧 scripts/rqdata_* 与 plan/migrate/task07 已移除；正式数据/RQData/Runtime 未执行 |
 
 ## 未完成事项与执行边界
 

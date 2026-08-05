@@ -27,6 +27,18 @@
 - **External_Mutation_Gate**: 对正式数据、生产数据库、Runtime/live、receipt/report/evidence 或仓库外资源执行真实变更前所需的独立、精确、单次人工执行意图。
 - **Task_Worktree**: 后续实现本规格时使用的独立 Git worktree；不得是 `develop` 的主工作区。
 - **Stable_Error_Code**: 不包含秘密、SQL、stack trace、内部 URL 或敏感绝对路径的机器可读错误代码。
+- **historical synchronization service**: 规划缺失窗口并编排 RQData、staging、质量校验、canonical 发布和 DataGap 的 V2 服务。
+- **Historical_Canonical publisher**: 仅在完整质量与物理证据通过后原子发布 Historical_Canonical 分区及 metadata 的组件。
+- **aggregation service**: 只从 Trusted_Canonical_1m 生成 Derived_Frequency 数据的应用服务。
+- **live observation service**: 将实时 bar 限定写入 Live_Observation 层的应用服务。
+- **repository**: 本规格实施时的 Git tracked 源码、测试、配置和 active 文档集合，不包含正式数据或仓库外资源。
+- **disposition validator**: 校验 Disposition_Manifest 对 tracked scripts 完整、无重叠分类的工具。
+- **reference-closure validator**: 校验被删除路径和命令不再被 active 非历史内容引用的工具。
+- **migration implementation**: 按本规格新增、移动或删除 repository 文件的后续代码变更。
+- **developer workflow**: 约束后续实现 worktree、分支和验证步骤的执行流程。
+- **test suite**: 覆盖具体示例、边界和集成行为的自动化测试集合。
+- **property test suite**: 使用生成输入验证 design correctness properties 的自动化测试集合。
+- **validation suite**: 在删除和完成声明前运行的全部适用自动化检查集合。
 
 ## Requirements
 
