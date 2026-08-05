@@ -4,7 +4,7 @@
 
 ## 1. 目标与精确范围
 
-本任务将当前活动品种池从 90 个收口为 69 个，并在独立真实删除 Gate 后退役以下 21 个品种：
+本任务已将活动品种池从 90 个收口为 69 个，并退役以下 21 个品种：
 
 | 中文名 | 代码 | 中文名 | 代码 |
 |---|---:|---|---:|
@@ -47,54 +47,21 @@ flowchart LR
 `data/universe/active_products.txt` 是唯一活动品种文件。退役集合由
 `app.data_core.product_retirement` 冻结；下载入口和 `MarketDataService` 在外部调用前拒绝目标品种。
 
-## 3. 工具与执行边界
+## 3. 生产执行结果
 
-受控入口为 `scripts/rqdata_product_retirement.py`。
+受控入口为 `guiyi runtime product-retirement execute/resume`。本次以
+`runtime-20260805-b81a9d99` 完成断点恢复和最终验收：
 
-真实删除属于 Controlled_External_Action：用户必须给出**命名操作与精确删除范围**的一次性
-执行意图。inventory/apply/finalize/verify 的技术校验（精确匹配、blocker、事务、digest、
-默认 disabled）仍然强制；它们是业务正确性边界，不是协作授权，也不得用 backup、packet、
-hash、receipt 或二次确认冒充意图。
+- 删除 8,625 个文件，合计 1,466,729,156 bytes；
+- 删除 PostgreSQL 1,141,643 条精确目标记录；
+- packet SHA-256 为 `fee133a5015ab2fb0ea5929a232eb6f3110bc8b61aca56cfed79c1a46c0b29ec`；
+- 残留数据库记录 0，残留数据文件 0；
+- 69 个保留品种的 443 个直供目标和 608 个聚合目标全部通过；
+- 仓库内 1,035 个仅属于退役品种的历史 manifest 已删除；混合品种审计报告不整文件删除。
 
-所有 inventory/journal/verify 工件若落盘，必须位于操作员显式传入且与代码/Runtime/三个数据
-root 完全分离的 `--protected-root`；工具不会从 Runtime `.run/approvals` 或其他默认目录猜测授权。
-protected root 只提供范围隔离，不能代替用户对该次删除的明确意图。
+数据删除已提交，`runtime-rollback-20260805-9e816720` 只能回退代码。如需恢复退役品种，
+必须从 RQData 重新下载并按 Git 历史重建 Catalog/Manifest。
 
-- `inventory`：只读扫描显式传入的 bounded raw/canonical/processed roots 与当前 PostgreSQL，生成
-  逐文件 SHA-256、逐表主键/identity digest 和 blocker；数据库清单按表切分为 JSONL 分片。
-  不调用 RQData。缺少、改名或跨仓库的 root 一律拒绝。
-- `apply`：必须绑定用户意图所声明的精确范围，并在执行前重新盘点目标文件和数据库全集；
-  数据库校验与分批删除在同一个 `SERIALIZABLE` 事务中完成。任一新增、缺失或内容漂移均零写入。
-  writer 作业必须已停用。dry-run 不授权真实 apply。
-- `finalize`：apply 前先原子写 durable journal；若 DB commit 后文件物理清理中断，状态固定为
-  `db_committed_purge_pending`。finalize 只使用同一范围工件继续清理，不保留长期隔离区或备份。
-- `verify`：重新扫描全部显式 root 和 PostgreSQL，要求目标残留为零。
+## 4. 历史事实边界
 
-建议顺序：本地验证合入 `develop` →（可选）release/tag 的独立 scoped intent → Runtime 切换的
-独立 scoped intent → 停服与 inventory → 用户对该次删除的一次性意图 → apply → verify →
-观察。若 inventory 仍有 `pending/queued/running/retrying` 或未知状态目标任务，必须先安全终止
-并重新 inventory；不得忽略 blocker 或手改清单。
-
-成功后的恢复只能从 RQData 和 Git 历史重建。
-
-## 4. 当前状态
-
-当前仅授权并实施代码、测试、活动品种配置、只读 inventory 与文档合同。尚未授权或执行：
-
-2026-08-05 只读测量为 8,625 个目标文件、1,466,729,156 bytes；PostgreSQL 目标记录
-1,141,643 行。当前 6 个 `data_download_tasks` 仍为 `running`，所以状态必须是 `blocked`，上述数字
-会在 Runtime 升级、停服和任务终止后重新生成，不能作为删除授权。
-
-当前 Git 仅按文件名初筛出 1,248 个目标品种专属历史候选（`data/manifests` 1,035、
-`data/reports` 213）；删除前仍须完成只读扫描、说明影响，并取得用户对该次删除的
-一次性执行意图；不得重写 Git 历史。
-
-- 删除当前 Git 中的历史 manifest/report/receipt；
-- `main`/release/tag；
-- Runtime promotion 或停服；
-- 真实 PostgreSQL DML；
-- Raw/Canonical/聚合/processed 文件删除；
-- 任何 RQData 下载或重建。
-
-最小最终退役 receipt 必须保留中文名/代码、packet SHA-256、实际文件/行数、验证结果及精确
-release/Runtime/DB revision；它是唯一新增的长期退役凭证。
+本文档现为 `historical_fact`，不授权任何后续删除、RQData 写入、release、Runtime、live 或通知操作。

@@ -6,7 +6,7 @@
 
 归一量化是单用户、本地优先的国内期货研究工作站。V1 服务“数据 → 回测 → 报告 → 复盘 → 信号提醒 → 人工观察”，不做自动交易。
 
-## 2. Active target（设计已冻结，尚未完成）
+## 2. Active target（品种收口已落地）
 
 ```text
 69 个 active products -> RQData
@@ -20,12 +20,38 @@
 ```
 
 JR、PM、RI、WH、ZC、WR、BB、FB、PP_F、L_F、V_F、BC、CY、LG、AD、OP、RR、T、TF、TS、TL
-已从 active universe 移除，并在 RQData adapter 与 MarketDataService 入口 fail-closed；真实历史资产
-删除仍等待 `GY-DATA-PRODUCT-RETIREMENT-21` 的 release、Runtime、停服和用户明确批准。
+已从 active universe 移除，并在 RQData adapter 与 MarketDataService 入口 fail-closed。
+2026-08-05 生产删除和零残留复验已完成，69 个保留品种的七种正式周期已更新。
+
+```plantuml
+@startuml
+left to right direction
+cloud "RQData\n唯一外部事实源" as RQ
+component "增量同步\n1m / 1d / 1w" as Sync
+component "Schema + Session + OHLCV\nCoverage 质量校验" as Quality
+database "Canonical Parquet\n历史事实" as Parquet
+component "1m 确定性聚合\n5m / 15m / 30m / 60m" as Aggregate
+database "PostgreSQL\nCatalog / Manifest / Gap\nMainContractMap" as Catalog
+component "MarketDataService\n唯一行情入口" as Market
+component "Web / Indicator / Backtest\nSignal / Review" as Consumer
+component "Live Observation\n与历史 Canonical 分离" as Live
+
+RQ --> Sync
+Sync --> Quality
+Quality --> Parquet
+Parquet --> Aggregate
+Parquet --> Catalog
+Aggregate --> Catalog
+Catalog --> Market
+Market --> Consumer
+RQ --> Live
+Live --> Consumer : preview / confirmed observation
+@enduml
+```
 
 `continuous` 与 `actual_dominant` 是显式且不可互换的数据类型。前者主要用于长周期展示、
 指标研究和明确标注的数据类型回测；后者用于实际主力监听、信号和真实换月回测。
-direct 数据矩阵仅为 continuous `1m/1d/1w` 和 actual-dominant `1m/1d`；
+direct 数据矩阵为 continuous 与 actual-dominant 的 `1m/1d/1w`；
 actual-dominant 的 coverage/read 必须按 rank=1 mapping 有效分段计算。
 5m/15m/30m/60m 只从质量通过的 canonical 1m 按 TradingSession 确定性聚合，并作为显式同频
 Canonical DatasetKey 持久化；任何缺口相交请求必须 fail-closed。
