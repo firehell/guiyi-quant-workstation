@@ -4,13 +4,26 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import JSON, Column, ForeignKey, Integer, MetaData, String, Table, create_engine, func, select, text
+from sqlalchemy import (
+    JSON,
+    Column,
+    ForeignKey,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    create_engine,
+    func,
+    select,
+    text,
+)
 
 from app.data_core.product_retirement import (
     RETIRED_PRODUCTS,
     ProductRetirementError,
     apply_retirement_packet,
     build_inventory_packet,
+    build_runtime_gate_attestation,
     contract_product,
     database_rows_digest,
     externalize_database_rows,
@@ -81,19 +94,25 @@ def test_active_universe_contains_69_products_disjoint_from_retired_set() -> Non
 
     subset = {
         line.strip()
-        for line in (project_root / "data/universe/products_pre2020_active.txt").read_text(encoding="utf-8").splitlines()
+        for line in (project_root / "data/universe/products_pre2020_active.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     }
     weekly_rows = {
         line.split(",", maxsplit=1)[0]
-        for line in (project_root / "data/universe/product_1w_start_from_listing.csv").read_text(encoding="utf-8").splitlines()[1:]
+        for line in (project_root / "data/universe/product_1w_start_from_listing.csv")
+        .read_text(encoding="utf-8")
+        .splitlines()[1:]
         if line.strip()
     }
     assert subset == weekly_rows
     assert subset < set(products)
 
 
-def test_file_inventory_matches_structured_target_paths_without_prefix_false_positives(tmp_path: Path) -> None:
+def test_file_inventory_matches_structured_target_paths_without_prefix_false_positives(
+    tmp_path: Path,
+) -> None:
     data_root = tmp_path / "data"
     target_paths = [
         data_root / "raw/rqdata/contract_universe/product=pp_f/pp_f_2025.parquet",
@@ -116,7 +135,9 @@ def test_file_inventory_matches_structured_target_paths_without_prefix_false_pos
     assert all(entry.sha256 for entry in entries)
 
 
-def test_file_inventory_accepts_v1b_directory_as_the_explicit_processed_root(tmp_path: Path) -> None:
+def test_file_inventory_accepts_v1b_directory_as_the_explicit_processed_root(
+    tmp_path: Path,
+) -> None:
     processed_root = tmp_path / "v1b"
     target = processed_root / "jr/jr.MAIN_5m.parquet"
     retained = processed_root / "pp/pp.MAIN_5m.parquet"
@@ -133,7 +154,9 @@ def test_file_inventory_accepts_v1b_directory_as_the_explicit_processed_root(tmp
 def test_database_inventory_expands_only_reverse_foreign_key_dependents() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     metadata = MetaData()
-    profiles = Table("data_profiles", metadata, Column("profile_id", String, primary_key=True))
+    profiles = Table(
+        "data_profiles", metadata, Column("profile_id", String, primary_key=True)
+    )
     files = Table(
         "market_data_files",
         metadata,
@@ -161,11 +184,23 @@ def test_database_inventory_expands_only_reverse_foreign_key_dependents() -> Non
         connection.execute(
             files.insert(),
             [
-                {"id": 10, "instrument_symbol": "PP_F", "contract_code": "PP_F.MAIN", "file_path": "/data/product=pp_f/a.parquet"},
-                {"id": 11, "instrument_symbol": "PP", "contract_code": "PP2609", "file_path": "/data/product=pp/b.parquet"},
+                {
+                    "id": 10,
+                    "instrument_symbol": "PP_F",
+                    "contract_code": "PP_F.MAIN",
+                    "file_path": "/data/product=pp_f/a.parquet",
+                },
+                {
+                    "id": 11,
+                    "instrument_symbol": "PP",
+                    "contract_code": "PP2609",
+                    "file_path": "/data/product=pp/b.parquet",
+                },
             ],
         )
-        connection.execute(quality.insert(), [{"id": 20, "file_id": 10}, {"id": 21, "file_id": 11}])
+        connection.execute(
+            quality.insert(), [{"id": 20, "file_id": 10}, {"id": 21, "file_id": 11}]
+        )
         connection.execute(
             bindings.insert(),
             [
@@ -200,14 +235,26 @@ def test_database_inventory_blocks_active_target_task() -> None:
         connection.execute(
             tasks.insert(),
             [
-                {"id": 1, "instrument_symbol": "JR", "contract_code": "JR.MAIN", "status": "running"},
-                {"id": 2, "instrument_symbol": "PP", "contract_code": "PP.MAIN", "status": "running"},
+                {
+                    "id": 1,
+                    "instrument_symbol": "JR",
+                    "contract_code": "JR.MAIN",
+                    "status": "running",
+                },
+                {
+                    "id": 2,
+                    "instrument_symbol": "PP",
+                    "contract_code": "PP.MAIN",
+                    "status": "running",
+                },
             ],
         )
     with engine.connect() as connection:
         rows, blockers = inventory_database(connection)
 
-    assert [(row.table, row.primary_key[0][1]) for row in rows] == [("data_download_tasks", 1)]
+    assert [(row.table, row.primary_key[0][1]) for row in rows] == [
+        ("data_download_tasks", 1)
+    ]
     assert blockers == ("active_task:data_download_tasks:id=1:running",)
 
 
@@ -233,7 +280,9 @@ def test_database_inventory_blocks_queued_target_task() -> None:
     assert blockers == ("active_task:backtest_tasks:id=1:queued",)
 
 
-def test_database_inventory_expands_explicit_logical_dependencies_without_foreign_keys() -> None:
+def test_database_inventory_expands_explicit_logical_dependencies_without_foreign_keys() -> (
+    None
+):
     engine = create_engine("sqlite+pysqlite:///:memory:")
     metadata = MetaData()
     signals = Table(
@@ -293,12 +342,25 @@ def test_database_inventory_expands_explicit_logical_dependencies_without_foreig
     metadata.create_all(engine)
     with engine.begin() as connection:
         connection.execute(signals.insert(), {"id": 1, "product": "JR"})
-        connection.execute(decisions.insert(), {"id": 2, "decision_key": "decision-jr", "actual_contract": "JR2609"})
+        connection.execute(
+            decisions.insert(),
+            {"id": 2, "decision_key": "decision-jr", "actual_contract": "JR2609"},
+        )
         connection.execute(events.insert(), {"id": 3, "signal_id": 1, "decision_id": 2})
-        connection.execute(notifications.insert(), {"id": 4, "event_id": 3, "signal_id": 1})
-        connection.execute(reconciliations.insert(), {"id": 5, "decision_id": 2, "provider_final_snapshot": {}})
-        connection.execute(reviews.insert(), {"id": 6, "source_type": "signal_decision", "source_id": 2})
-        connection.execute(samples.insert(), {"id": 7, "decision_key": "decision-jr", "review_id": 6})
+        connection.execute(
+            notifications.insert(), {"id": 4, "event_id": 3, "signal_id": 1}
+        )
+        connection.execute(
+            reconciliations.insert(),
+            {"id": 5, "decision_id": 2, "provider_final_snapshot": {}},
+        )
+        connection.execute(
+            reviews.insert(),
+            {"id": 6, "source_type": "signal_decision", "source_id": 2},
+        )
+        connection.execute(
+            samples.insert(), {"id": 7, "decision_key": "decision-jr", "review_id": 6}
+        )
         connection.execute(attachments.insert(), {"id": 8, "review_id": 6})
     with engine.connect() as connection:
         rows, blockers = inventory_database(connection)
@@ -316,7 +378,9 @@ def test_database_inventory_expands_explicit_logical_dependencies_without_foreig
     }
 
 
-def test_database_inventory_finds_retired_identity_in_json_without_exposing_payload() -> None:
+def test_database_inventory_finds_retired_identity_in_json_without_exposing_payload() -> (
+    None
+):
     engine = create_engine("sqlite+pysqlite:///:memory:")
     metadata = MetaData()
     signals = Table(
@@ -330,20 +394,37 @@ def test_database_inventory_finds_retired_identity_in_json_without_exposing_payl
         connection.execute(
             signals.insert(),
             [
-                {"id": 1, "binding_snapshot": {"dataset": {"symbol": "JR", "contract_or_series": "JR.MAIN"}, "secret": "do-not-copy"}},
-                {"id": 2, "binding_snapshot": {"dataset": {"symbol": "TA", "contract_or_series": "TA.MAIN"}}},
+                {
+                    "id": 1,
+                    "binding_snapshot": {
+                        "dataset": {"symbol": "JR", "contract_or_series": "JR.MAIN"},
+                        "secret": "do-not-copy",
+                    },
+                },
+                {
+                    "id": 2,
+                    "binding_snapshot": {
+                        "dataset": {"symbol": "TA", "contract_or_series": "TA.MAIN"}
+                    },
+                },
             ],
         )
     with engine.connect() as connection:
         rows, blockers = inventory_database(connection)
 
     assert blockers == ()
-    assert [(row.table, row.primary_key[0][1]) for row in rows] == [("strategy_signals", 1)]
+    assert [(row.table, row.primary_key[0][1]) for row in rows] == [
+        ("strategy_signals", 1)
+    ]
     assert rows[0].identity_columns == ("binding_snapshot",)
-    assert "do-not-copy" not in json.dumps(rows[0].__dict__, ensure_ascii=False, default=str)
+    assert "do-not-copy" not in json.dumps(
+        rows[0].__dict__, ensure_ascii=False, default=str
+    )
 
 
-def test_inventory_packet_digest_is_repeatable_and_bound_to_scope(tmp_path: Path) -> None:
+def test_inventory_packet_digest_is_repeatable_and_bound_to_scope(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "data/raw/rqdata/product=jr/jr.parquet"
     path.parent.mkdir(parents=True)
     path.write_bytes(b"jr")
@@ -381,7 +462,90 @@ def test_inventory_packet_digest_is_repeatable_and_bound_to_scope(tmp_path: Path
     assert len(first["summary"]["files_sha256"]) == 64
 
 
-def test_large_database_manifest_is_sharded_by_table_and_digest_bound(tmp_path: Path) -> None:
+def test_runtime_gate_attestation_is_bound_to_one_packet_and_run(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    packet = build_inventory_packet(
+        files=(),
+        database_rows=(),
+        blockers=(),
+        code_sha="a" * 40,
+        runtime_sha="b" * 40,
+        database_revision="revision-1",
+        generated_at="2026-08-05T12:00:00+08:00",
+        roots={"data": data_root},
+    )
+
+    attestation = build_runtime_gate_attestation(
+        packet,
+        shutdown_receipt_digest="c" * 64,
+        run_id="retire-001",
+        release_tag="runtime-20260805-c9de1cdf",
+        expires_at="2026-08-05T13:00:00+08:00",
+    )
+
+    assert attestation["decision"] == "runtime_gate_attested"
+    assert attestation["packet_sha256"] == packet_digest(packet)
+    assert attestation["run_id"] == "retire-001"
+    assert (
+        attestation["retired_products_digest"]
+        == packet["scope"]["retired_products_digest"]
+    )
+
+
+def test_apply_accepts_only_a_matching_runtime_gate_attestation(tmp_path: Path) -> None:
+    engine, tables = _retirement_database(include_dependents=False)
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    with engine.connect() as connection:
+        rows, blockers = inventory_database(connection)
+        packet = build_inventory_packet(
+            files=(),
+            database_rows=rows,
+            blockers=blockers,
+            code_sha="a" * 40,
+            runtime_sha="b" * 40,
+            database_revision="revision-1",
+            generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
+        )
+        digest = packet_digest(packet)
+        attestation = build_runtime_gate_attestation(
+            packet,
+            shutdown_receipt_digest="c" * 64,
+            run_id="retire-001",
+            release_tag="runtime-20260805-c9de1cdf",
+            expires_at="2026-08-05T13:00:00+08:00",
+        )
+
+        receipt = apply_retirement_packet(
+            connection,
+            packet=packet,
+            expected_packet_digest=digest,
+            approval=attestation,
+            roots={"data": data_root},
+            code_sha="a" * 40,
+            runtime_sha="b" * 40,
+            database_revision="revision-1",
+            shutdown_receipt_digest="c" * 64,
+            now="2026-08-05T12:30:00+08:00",
+            approval_digest=packet_digest(attestation),
+        )
+
+        assert receipt["status"] == "applied"
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["market_data_files"])
+            )
+            == 1
+        )
+
+
+def test_large_database_manifest_is_sharded_by_table_and_digest_bound(
+    tmp_path: Path,
+) -> None:
     engine, _ = _retirement_database()
     with engine.connect() as connection:
         rows, blockers = inventory_database(connection)
@@ -417,7 +581,9 @@ def test_large_database_manifest_is_sharded_by_table_and_digest_bound(tmp_path: 
         list(read_database_row_shards(sharded, packet_root=tmp_path))
 
 
-def test_apply_requires_exact_approval_and_deletes_only_packet_objects(tmp_path: Path) -> None:
+def test_apply_requires_exact_approval_and_deletes_only_packet_objects(
+    tmp_path: Path,
+) -> None:
     engine, tables = _retirement_database()
     data_root = tmp_path / "data"
     target = data_root / "raw/rqdata/contract_universe/product=jr/jr.parquet"
@@ -459,10 +625,28 @@ def test_apply_requires_exact_approval_and_deletes_only_packet_objects(tmp_path:
         assert receipt["status"] == "applied"
         assert receipt["deleted_file_count"] == 1
         assert receipt["deleted_database_row_count"] == 3
-        assert connection.scalar(select(func.count()).select_from(tables["market_data_files"])) == 1
-        assert connection.scalar(select(func.count()).select_from(tables["data_quality_reports"])) == 1
-        assert connection.scalar(select(func.count()).select_from(tables["profile_active_bindings"])) == 1
-        assert connection.scalar(select(func.count()).select_from(tables["data_profiles"])) == 1
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["market_data_files"])
+            )
+            == 1
+        )
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["data_quality_reports"])
+            )
+            == 1
+        )
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["profile_active_bindings"])
+            )
+            == 1
+        )
+        assert (
+            connection.scalar(select(func.count()).select_from(tables["data_profiles"]))
+            == 1
+        )
         verification = verify_retirement_scope(connection, roots={"data": data_root})
 
     assert not target.exists()
@@ -508,10 +692,17 @@ def test_externalized_database_manifest_can_be_applied(tmp_path: Path) -> None:
         )
 
         assert receipt["deleted_database_row_count"] == 3
-        assert connection.scalar(select(func.count()).select_from(tables["market_data_files"])) == 1
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["market_data_files"])
+            )
+            == 1
+        )
 
 
-def test_apply_rejects_new_target_database_row_not_in_approved_packet(tmp_path: Path) -> None:
+def test_apply_rejects_new_target_database_row_not_in_approved_packet(
+    tmp_path: Path,
+) -> None:
     engine, tables = _retirement_database(include_dependents=False)
     data_root = tmp_path / "data"
     data_root.mkdir()
@@ -530,7 +721,12 @@ def test_apply_rejects_new_target_database_row_not_in_approved_packet(tmp_path: 
         digest = packet_digest(packet)
         connection.execute(
             tables["market_data_files"].insert(),
-            {"id": 12, "instrument_symbol": "JR", "contract_code": "JR2609", "file_path": "/data/product=jr/new.parquet"},
+            {
+                "id": 12,
+                "instrument_symbol": "JR",
+                "contract_code": "JR2609",
+                "file_path": "/data/product=jr/new.parquet",
+            },
         )
         connection.commit()
 
@@ -549,7 +745,12 @@ def test_apply_rejects_new_target_database_row_not_in_approved_packet(tmp_path: 
                 approval_digest="d" * 64,
             )
 
-        assert connection.scalar(select(func.count()).select_from(tables["market_data_files"])) == 3
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["market_data_files"])
+            )
+            == 3
+        )
 
 
 def test_apply_rejects_new_target_file_not_in_approved_packet(tmp_path: Path) -> None:
@@ -594,7 +795,9 @@ def test_apply_rejects_new_target_file_not_in_approved_packet(tmp_path: Path) ->
     assert added.exists()
 
 
-def test_apply_rejects_packet_file_list_not_matching_its_summary(tmp_path: Path) -> None:
+def test_apply_rejects_packet_file_list_not_matching_its_summary(
+    tmp_path: Path,
+) -> None:
     engine, _ = _retirement_database(include_dependents=False)
     data_root = tmp_path / "data"
     target = data_root / "raw/rqdata/product=jr/target.parquet"
@@ -616,7 +819,9 @@ def test_apply_rejects_packet_file_list_not_matching_its_summary(tmp_path: Path)
         packet["files"] = []
         digest = packet_digest(packet)
 
-        with pytest.raises(ProductRetirementError, match="FILE_MANIFEST_DIGEST_MISMATCH"):
+        with pytest.raises(
+            ProductRetirementError, match="FILE_MANIFEST_DIGEST_MISMATCH"
+        ):
             apply_retirement_packet(
                 connection,
                 packet=packet,
@@ -634,7 +839,9 @@ def test_apply_rejects_packet_file_list_not_matching_its_summary(tmp_path: Path)
     assert target.exists()
 
 
-def test_apply_restores_staged_file_when_database_transaction_fails(tmp_path: Path) -> None:
+def test_apply_restores_staged_file_when_database_transaction_fails(
+    tmp_path: Path,
+) -> None:
     engine, _ = _retirement_database(include_dependents=False)
     data_root = tmp_path / "data"
     target = data_root / "raw/rqdata/contract_universe/product=jr/jr.parquet"
@@ -679,7 +886,14 @@ def test_apply_restores_staged_file_when_database_transaction_fails(tmp_path: Pa
             )
 
         assert target.exists()
-        assert connection.scalar(select(func.count()).select_from(Table("market_data_files", MetaData(), autoload_with=connection))) == 2
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(
+                    Table("market_data_files", MetaData(), autoload_with=connection)
+                )
+            )
+            == 2
+        )
 
 
 def test_finalize_resumes_file_purge_after_database_commit(
@@ -733,7 +947,12 @@ def test_finalize_resumes_file_purge_after_database_commit(
 
         assert partial["status"] == "db_committed_purge_pending"
         assert partial["remaining_staged_files"]
-        assert connection.scalar(select(func.count()).select_from(tables["market_data_files"])) == 1
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["market_data_files"])
+            )
+            == 1
+        )
         finalized = finalize_retirement_files(
             connection,
             packet=packet,
@@ -785,13 +1004,20 @@ def test_apply_rejects_file_drift_before_database_write(tmp_path: Path) -> None:
                 approval_digest="d" * 64,
             )
 
-        assert connection.scalar(select(func.count()).select_from(tables["market_data_files"])) == 2
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["market_data_files"])
+            )
+            == 2
+        )
 
 
 def _retirement_database(*, include_dependents: bool = True):
     engine = create_engine("sqlite+pysqlite:///:memory:")
     metadata = MetaData()
-    profiles = Table("data_profiles", metadata, Column("profile_id", String, primary_key=True))
+    profiles = Table(
+        "data_profiles", metadata, Column("profile_id", String, primary_key=True)
+    )
     files = Table(
         "market_data_files",
         metadata,
@@ -819,12 +1045,24 @@ def _retirement_database(*, include_dependents: bool = True):
         connection.execute(
             files.insert(),
             [
-                {"id": 10, "instrument_symbol": "JR", "contract_code": "JR.MAIN", "file_path": "/data/product=jr/a.parquet"},
-                {"id": 11, "instrument_symbol": "PP", "contract_code": "PP2609", "file_path": "/data/product=pp/b.parquet"},
+                {
+                    "id": 10,
+                    "instrument_symbol": "JR",
+                    "contract_code": "JR.MAIN",
+                    "file_path": "/data/product=jr/a.parquet",
+                },
+                {
+                    "id": 11,
+                    "instrument_symbol": "PP",
+                    "contract_code": "PP2609",
+                    "file_path": "/data/product=pp/b.parquet",
+                },
             ],
         )
         if include_dependents:
-            connection.execute(quality.insert(), [{"id": 20, "file_id": 10}, {"id": 21, "file_id": 11}])
+            connection.execute(
+                quality.insert(), [{"id": 20, "file_id": 10}, {"id": 21, "file_id": 11}]
+            )
             connection.execute(
                 bindings.insert(),
                 [

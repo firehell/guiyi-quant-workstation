@@ -32,6 +32,10 @@ from app.services.core_cli import verify_active_dataset
 from app.services.data_operations.contracts import CliArgumentInvalid
 from app.services.market_workbench import MarketAccessError
 from app.services.runtime_health import build_runtime_health
+from app.services.product_retirement_runtime_gate import (
+    ProductRetirementExecutionService,
+    RetirementRuntimeRequest,
+)
 from app.runtime_scheduler import dry_run_payload
 
 
@@ -39,6 +43,7 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 DataVerifier = Callable[..., dict[str, Any]]
 RuntimeHealthBuilder = Callable[[Any], dict[str, Any]]
 DataCoreRunner = Callable[[str, Any, argparse.Namespace], dict[str, Any]]
+RetirementExecutionFactory = Callable[[], ProductRetirementExecutionService]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +63,21 @@ def build_parser() -> argparse.ArgumentParser:
     plan = runtime_commands.add_parser("plan")
     plan.add_argument("--product", choices=("jm",), default="jm")
     plan.add_argument("--poll-seconds", type=_positive_int, default=20)
+    retirement = runtime_commands.add_parser("product-retirement")
+    retirement_commands = retirement.add_subparsers(
+        dest="retirement_command",
+        required=True,
+    )
+    for command in ("plan", "execute", "resume"):
+        child = retirement_commands.add_parser(command)
+        child.add_argument("--release-tag", required=True)
+        child.add_argument("--rollback-tag", required=True)
+        child.add_argument("--runtime-root", type=Path, required=True)
+        child.add_argument("--protected-root", type=Path, required=True)
+        child.add_argument("--active-products-path", type=Path, required=True)
+        child.add_argument("--data-root", action="append", required=True)
+        if command == "resume":
+            child.add_argument("--journal", type=Path, required=True)
     return parser
 
 
@@ -69,6 +89,7 @@ def main(
     data_verifier: DataVerifier = verify_active_dataset,
     data_core_runner: DataCoreRunner = run_data_core_command,
     runtime_health_builder: RuntimeHealthBuilder = build_runtime_health,
+    retirement_execution_factory: RetirementExecutionFactory | None = None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -158,6 +179,29 @@ def main(
             stdout,
         )
         return 0
+
+    if args.domain == "runtime" and args.runtime_command == "product-retirement":
+        try:
+            request = RetirementRuntimeRequest(
+                release_tag=args.release_tag,
+                rollback_tag=args.rollback_tag,
+                runtime_root=args.runtime_root,
+                protected_root=args.protected_root,
+                active_products_path=args.active_products_path,
+                roots=_parse_retirement_roots(args.data_root),
+            )
+            factory = (
+                retirement_execution_factory or _default_retirement_execution_service
+            )
+            executor = factory()
+            if args.retirement_command == "plan":
+                payload = dict(executor.plan(request))
+                print_json(payload, stdout)
+                return 0 if payload.get("status") == "planned" else 1
+            raise CliUsageError("retirement execute requires runtime operators")
+        except (CliUsageError, ValueError):
+            print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
+            return 2
 
     if args.domain == "runtime" and args.runtime_command == "status":
         try:
@@ -323,6 +367,31 @@ def _command_hint(argv: Sequence[str]) -> str:
     if argv:
         return str(argv[0])
     return "guiyi"
+
+
+def _parse_retirement_roots(values: Sequence[str]) -> dict[str, Path]:
+    result: dict[str, Path] = {}
+    for raw in values:
+        if "=" not in raw:
+            raise CliUsageError("retirement data root requires label=path")
+        label, value = raw.split("=", maxsplit=1)
+        normalized = label.strip().lower()
+        path = Path(value).expanduser()
+        if normalized in result or not path.is_absolute():
+            raise CliUsageError("retirement data root invalid")
+        result[normalized] = path
+    if set(result) != {"raw", "canonical", "processed"}:
+        raise CliUsageError("retirement data root labels invalid")
+    return result
+
+
+def _default_retirement_execution_service() -> ProductRetirementExecutionService:
+    def unavailable_inventory(
+        _request: RetirementRuntimeRequest, _runtime_sha: str
+    ) -> Mapping[str, Any]:
+        raise RuntimeError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
+
+    return ProductRetirementExecutionService(inventory=unavailable_inventory)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,6 @@ from datetime import datetime
 from io import StringIO
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -50,7 +49,9 @@ def test_download_plan_rejects_derived_frequency_before_session() -> None:
     assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
-def test_download_plan_returns_readonly_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_download_plan_returns_readonly_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.services.data_operations.download import DownloadApplicationService
     from app.services.data_operations.contracts import DownloadRequest
 
@@ -245,6 +246,61 @@ def test_runtime_plan_is_existing_scheduler_dry_run_without_side_effects() -> No
             "enabled": True,
         },
     }
+
+
+def test_product_retirement_runtime_plan_delegates_without_opening_database(
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    protected_root = tmp_path / "audit"
+    raw = tmp_path / "raw"
+    canonical = tmp_path / "canonical"
+    processed = tmp_path / "processed"
+    for path in (runtime_root, protected_root, raw, canonical, processed):
+        path.mkdir()
+    active_products = tmp_path / "active_products.txt"
+    active_products.write_text("jm\n", encoding="utf-8")
+    stdout = StringIO()
+
+    class Executor:
+        def plan(self, request):
+            assert request.runtime_root == runtime_root
+            return {
+                "command": "runtime.product-retirement.plan",
+                "status": "planned",
+                "readonly": True,
+            }
+
+    exit_code = main(
+        [
+            "runtime",
+            "product-retirement",
+            "plan",
+            "--release-tag",
+            "runtime-20260805-c9de1cdf",
+            "--rollback-tag",
+            "runtime-rollback-20260805-9e816720",
+            "--runtime-root",
+            str(runtime_root),
+            "--protected-root",
+            str(protected_root),
+            "--active-products-path",
+            str(active_products),
+            "--data-root",
+            f"raw={raw}",
+            "--data-root",
+            f"canonical={canonical}",
+            "--data-root",
+            f"processed={processed}",
+        ],
+        session_factory=_NoSessionFactory(),
+        retirement_execution_factory=lambda: Executor(),
+        stdout=stdout,
+        stderr=StringIO(),
+    )
+
+    assert exit_code == 0
+    assert json.loads(stdout.getvalue())["command"] == "runtime.product-retirement.plan"
 
 
 def test_runtime_status_returns_health_payload_and_nonzero_for_failed_runtime() -> None:
