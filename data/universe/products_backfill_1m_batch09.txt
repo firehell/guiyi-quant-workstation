@@ -1,4 +1,0 @@
-pg
-lu
-pf
-ic

@@ -1,8 +1,0 @@
-pg
-pk
-pl
-pp
-pr
-ps
-pt
-px

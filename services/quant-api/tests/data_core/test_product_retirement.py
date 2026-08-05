@@ -92,7 +92,7 @@ def test_active_universe_contains_69_products_disjoint_from_retired_set() -> Non
     assert "v" in products
     assert "ta" in products
 
-    subset = {
+    window_rows = [
         line.strip()
         for line in (project_root / "data/universe/products_pre2020_active.txt")
         .read_text(encoding="utf-8")

@@ -1,5 +1,0 @@
-sp
-sr
-ta
-v
-y
