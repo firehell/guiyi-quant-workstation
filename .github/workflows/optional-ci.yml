@@ -1,0 +1,52 @@
+name: optional-ci
+
+# Supplementary-only engineering checks. Local validation remains authoritative.
+# This workflow does not authorize release, Runtime, live, notification, or
+# GitHub ruleset changes.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop]
+    paths:
+      - "scripts/engineering/**"
+      - "tests/engineering/**"
+      - ".codex/**"
+      - ".github/workflows/optional-ci.yml"
+      - "AGENTS.md"
+      - "DECISIONS.md"
+      - "PROJECT_SOURCE.md"
+      - "README.md"
+      - "STATUS.md"
+      - "TESTING.md"
+      - "docs/DEVELOPMENT.md"
+      - "docs/PERSONAL_DEVELOPMENT_WORKFLOW.md"
+
+jobs:
+  optional-engineering:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync quant-api project
+        run: uv sync --project services/quant-api
+
+      - name: Preflight
+        shell: pwsh
+        run: pwsh -NoProfile -File .\scripts\engineering\preflight.ps1 -Json
+
+      - name: Validate Engineering
+        shell: pwsh
+        run: pwsh -NoProfile -File .\scripts\engineering\validate.ps1 -Profile Engineering -Json
+
+      - name: Secret scan
+        shell: pwsh
+        run: pwsh -NoProfile -File .\scripts\engineering\secret-scan.ps1 -Json

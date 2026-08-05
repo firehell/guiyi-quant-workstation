@@ -748,14 +748,10 @@ def test_scheduler_startup_verifies_gate_without_daily_write_phase(
 
 
 @pytest.mark.parametrize("schema_version", (6, 7))
-def test_scheduler_routes_remaining_window_gate(
-    monkeypatch,
+def test_scheduler_rejects_superseded_remaining_window_gate(
     tmp_path,
     schema_version,
 ) -> None:
-    import sys
-    from types import SimpleNamespace
-
     from app.runtime_scheduler import _build_signal_gate
 
     packet = tmp_path / "remaining_parent.json"
@@ -770,30 +766,17 @@ def test_scheduler_routes_remaining_window_gate(
         ),
         encoding="utf-8",
     )
-    expected = object()
-    monkeypatch.setitem(
-        sys.modules,
-        "app.services.htdy_s6_10_remaining_window_runtime_gate",
-        SimpleNamespace(build_runtime_gate=lambda **_kwargs: expected),
-    )
-
-    assert (
+    with pytest.raises(ValueError, match="superseded_runtime_gate_disabled"):
         _build_signal_gate(
             approval_packet=packet,
             approval_hash="a" * 64,
             environ={},
         )
-        is expected
-    )
 
 
-def test_scheduler_routes_approval_d_long_running_gate(
-    monkeypatch,
+def test_scheduler_rejects_superseded_approval_d_long_running_gate(
     tmp_path,
 ) -> None:
-    import sys
-    from types import SimpleNamespace
-
     from app.runtime_scheduler import _build_signal_gate
 
     packet = tmp_path / "approval-d-request.json"
@@ -808,21 +791,12 @@ def test_scheduler_routes_approval_d_long_running_gate(
         ),
         encoding="utf-8",
     )
-    expected = object()
-    monkeypatch.setitem(
-        sys.modules,
-        "app.services.htdy_s6_10_long_running_runtime_gate",
-        SimpleNamespace(build_runtime_gate=lambda **_kwargs: expected),
-    )
-
-    assert (
+    with pytest.raises(ValueError, match="superseded_runtime_gate_disabled"):
         _build_signal_gate(
             approval_packet=packet,
             approval_hash="a" * 64,
             environ={},
         )
-        is expected
-    )
 
 
 def test_signal_gate_blocks_wrong_open_trading_day_before_runtime_cycle() -> None:

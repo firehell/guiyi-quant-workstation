@@ -1,95 +1,20 @@
-# 允许普通任务的确定性入口
-
-prefix_rule(
-    pattern = [
-        "bash",
-        "scripts/engineering/task-worktree.sh",
-        "create"
-    ],
-    decision = "allow",
-    justification = "允许创建 develop 派生的临时任务 worktree",
-)
-
-prefix_rule(
-    pattern = [
-        "bash",
-        "scripts/engineering/task-worktree.sh",
-        "integrate"
-    ],
-    decision = "allow",
-    justification = "允许通过受控 Gate 创建 Lane 1/2 Draft PR；Draft PR 不授权 merge，仅在任务验收、独立 exact-head Gate、required CI、PR head 与 reviewed head 一致、mergeability 明确且没有人工 Gate 时，由 Codex/GitHub Connector expected-head merge commit 到 develop",
-)
-
-prefix_rule(
-    pattern = [
-        "bash",
-        "scripts/engineering/task-worktree.sh",
-        "cleanup"
-    ],
-    decision = "allow",
-    justification = "仅允许清理已验证合并的临时 worktree",
-)
-
-# 发布和 Runtime 始终提示批准
-
-prefix_rule(
-    pattern = [
-        "bash",
-        "scripts/engineering/release-flow.sh",
-        "prepare"
-    ],
-    decision = "prompt",
-    justification = "本地 main fast-forward 需要用户 exact release 批准",
-)
-
-prefix_rule(
-    pattern = [
-        "bash",
-        "scripts/engineering/release-flow.sh",
-        "publish"
-    ],
-    decision = "prompt",
-    justification = "发布 main/develop release refs 需要用户 exact release 批准",
-)
-
-prefix_rule(
-    pattern = [
-        "bash",
-        "scripts/engineering/release-flow.sh",
-        "tag"
-    ],
-    decision = "prompt",
-    justification = "创建并发布 annotated release tags 需要用户 exact release 批准",
-)
-
-prefix_rule(
-    pattern = [
-        "bash",
-        "scripts/engineering/runtime-promotion.sh",
-        "promote"
-    ],
-    decision = "prompt",
-    justification = "Runtime promotion 是独立 Lane 3 操作",
-)
-
-# 明确禁止危险 Git 命令
+# Personal development mode: retain only narrow destructive Git protections.
+# Ordinary develop push/edit is allowed. Collaboration entrypoints are not required.
 
 prefix_rule(
     pattern = ["git", "push", "--force"],
     decision = "forbidden",
-    justification = "禁止 force push；使用受控发布或集成脚本",
+    justification = "禁止 force push；历史重写属于受控外部操作，需单独明确意图",
 )
 
 prefix_rule(
-    pattern = ["git", "push", "origin", "main"],
+    pattern = ["git", "push", "--force-with-lease"],
     decision = "forbidden",
-    justification = "禁止直接 push main；使用 release-flow.sh",
+    justification = "禁止 force-with-lease push；属于受控外部操作",
 )
 
 prefix_rule(
-    pattern = ["git", "push", "origin", "develop"],
+    pattern = ["git", "push", "-f"],
     decision = "forbidden",
-    justification = "禁止直接 push develop；使用 task-worktree.sh integrate",
-    match = ["git push origin develop"],
-    not_match = ["git push origin feature/example"],
+    justification = "禁止 -f force push；属于受控外部操作",
 )

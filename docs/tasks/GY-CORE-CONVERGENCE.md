@@ -1079,7 +1079,7 @@ rollback bundle identity
 ### 可复制 Codex Prompt
 
 ```text
-请阅读 GY-CORE-06 最终 Shadow Review、当前 release/worktree canonical、
+请阅读 GY-CORE-06 最终 Shadow Review、`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`、
 Runtime/deployment/backup/recovery 代码和本顺序执行手册。
 
 本任务为 GY-CORE-07，Lane 3，Sol 高推理，Plan-only。

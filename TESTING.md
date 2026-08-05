@@ -4,14 +4,19 @@
 
 ## 快速检查
 
-```bash
+Windows / PowerShell 7 为当前工程入口（canonical）：
+
+```powershell
 git diff --check
-bash scripts/engineering/check-secrets.sh
-bash scripts/engineering/test.sh engineering
-bash scripts/engineering/test.sh docs
+pwsh -NoProfile -File .\scripts\engineering\preflight.ps1
+pwsh -NoProfile -File .\scripts\engineering\secret-scan.ps1
+pwsh -NoProfile -File .\scripts\engineering\validate.ps1 -Profile Engineering
+pwsh -NoProfile -File .\scripts\engineering\validate.ps1 -Profile Docs
 ```
 
-`preflight.sh` 适用于新会话、高风险任务或环境诊断；它不是每个普通改动的业务 Gate。
+`preflight.ps1` 适用于新会话、高风险任务或环境诊断；它不是每个普通改动的业务 Gate。`develop` 是日常开发分支，默认允许。脏工作区默认警告；release/tag 使用 `-RequireClean`。
+
+专用套件仍可直接使用项目原生命令，例如 `uv run --project services/quant-api pytest ...` 与 `pnpm --dir apps/quant-web ...`。CI（`.github/workflows/optional-ci.yml`）仅作补充，不授权本地完成声明。
 
 ## 后端
 
@@ -260,18 +265,18 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
   --report-id 14 --format markdown
 ```
 
-真实数据、RQData、PostgreSQL、Runtime 或企业微信操作只能使用对应任务合同与专项 Gate；通用测试、health 或 receipt 文件存在均不构成授权。
+真实数据、RQData、PostgreSQL、Runtime 或企业微信操作在执行前必须由用户的一次明确请求标识操作类别和精确范围，并通过对应业务合同的质量与安全检查。通用测试、health、dry-run、旧 packet/hash 或 historical receipt 均不构成 mutation 授权，也不能跨会话复用。
 
-## 专项 Gate 定位
+## 专项业务边界定位
 
-- 数据、quality、profile、manifest：`docs/DATA_CENTER.md` 与对应受控任务/receipt。
+- 数据、quality、profile、manifest：`docs/DATA_CENTER.md` 与对应 active business contract。
 - 回测口径与报告可信度：`docs/BACKTEST_ENGINE.md`。
 - SignalEvent、通知与 HTDY exact policy：`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md`。
-- S6-10：`docs/tasks/JM-LIVE-STABILITY-S6-10.md`。
-- worktree/release：`docs/WORKTREE_RELEASE_WORKFLOW.md` 与现行 ADR。
+- S6-10 historical/runtime contract：`docs/tasks/JM-LIVE-STABILITY-S6-10.md`。
+- 个人开发、普通删除与外部操作边界：`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`。
 
 ## 解释规则
 
-- 文档或单元测试通过不等于真实外部 Gate 通过。
+- 文档、单元测试、CI 或 dry-run 通过不等于真实外部操作已经执行或获得授权。
 - 单次 historical replay、通知或 health smoke 不等于 long-running、策略盈利或自动交易 Ready。
-- 任何真实写入前必须重新核对 commit、数据/Runtime 身份、packet/hash、scope 与 receipt。
+- 任何真实 mutation 前重新校验当前输入、认证、质量、安全开关及精确 scope；完成、失败、重试、scope 变化或后续会话均需要新的明确请求。

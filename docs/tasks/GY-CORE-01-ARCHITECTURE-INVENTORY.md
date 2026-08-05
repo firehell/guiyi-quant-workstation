@@ -552,7 +552,7 @@ EOD、差异根因与独立 Review。未解释差异即阻塞。
 已确定的现有影响面：
 
 - `scripts/engineering/{release-flow,runtime-promotion,runtime-health,worktree_flow}*`；
-- `docs/WORKTREE_RELEASE_WORKFLOW.md` 与 ADR-WS-003/004；
+- 当时现行、现已删除并由 Git 历史保留的 worktree workflow 与两份关联 ADR；
 - `scripts/{run-local-service,install-local-services,local-services-status}.sh`；
 - runtime launchd template；
 - `app/runtime_scheduler.py`、`app/after_market_scheduler.py`；
