@@ -23,11 +23,14 @@ Gate/hash-path 不再作为授权。
 
 ## Frozen Runtime-consumed（Phase E 前不可删）
 
-- `JM-LIVE-STABILITY-S6-10.md`
-- `JM-LIVE-SIGNAL-EVENT-S6-08.md`
 - `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`
 
-## Historical facts（无现行授权）
+已删除但仍由代码 task_id 引用的旧 S6-08 / S6-10 合同文本，仅能从 Git history 追溯；
+不得再当作现存路径或当前授权。
+
+## Historical facts（已删，仅 Git history）
+
+下列文件已从本目录移除，事实含义仅以 Git history 追溯，不构成当前授权：
 
 - `GY-CORE-01-ARCHITECTURE-INVENTORY.md`
 - `GY-CORE-02-ACTIVE-DATASET-FACADE-PLAN.md`
@@ -35,6 +38,8 @@ Gate/hash-path 不再作为授权。
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`
 - `GY-DATA-CORE-V2-TASK07-EVIDENCE.md`
+- `JM-LIVE-SIGNAL-EVENT-S6-08.md`
+- `JM-LIVE-STABILITY-S6-10.md`
 
 普通开发不强制创建任务合同。受控外部操作边界见 `AGENTS.md`。
 

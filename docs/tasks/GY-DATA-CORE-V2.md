@@ -102,15 +102,14 @@ historical evidence/report/receipt 默认保护。任何受控删除均须先完
 - `GY-CORE-03` CLI：可复用只读/编排壳；不得把 Shim 解释为新数据核心已完成。
 - `GY-CORE-04`：代码已合入但旧路线 superseded；仅保留 legacy compatibility。
 - `GY-CORE-05～08`：paused/superseded，禁止继续旧 Shadow、release、Runtime 与删除路线。
-- `docs/tasks/GY-CORE-CONVERGENCE.md`：frozen historical，不再提供 active 授权。
-- `docs/tasks/GY-CORE-01-ARCHITECTURE-INVENTORY.md` 与
-  `docs/tasks/GY-CORE-02-ACTIVE-DATASET-FACADE-PLAN.md`：旧路线盘点/计划快照，
-  其中 future references 全部 frozen historical。
+- 已删除的 `GY-CORE-CONVERGENCE.md`、`GY-CORE-01-ARCHITECTURE-INVENTORY.md`、
+  `GY-CORE-02-ACTIVE-DATASET-FACADE-PLAN.md`：旧路线收敛/盘点/计划快照，仅 Git history
+  可追溯，不再提供 active 授权，也不得当作现存路径。
 - `TESTING.md` 与 `docs/SIGNAL_EVENTS.md` 中对已合入 GY-CORE-04 的测试或实现描述：
   legacy implementation facts，不是继续旧 GY-CORE-05～08 的授权。
-- `JM-LIVE-STABILITY-S6-10.md`、`V1-FINAL-ACCEPTANCE-S6-11.md` 中的
+- 已删除的 `JM-LIVE-STABILITY-S6-10.md` 与现存 `V1-FINAL-ACCEPTANCE-S6-11.md` 中的
   `GY-S6-10-R2` 只保留旧 S6-10 paused/frozen historical 与未来 Runtime Gate 边界；
-  实际恢复入口必须服从本合同任务 19 及新的专用批准。
+  实际恢复入口必须服从本合同任务 08/相关条款及新的 scoped intent。
 
 Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 
@@ -152,15 +151,16 @@ Task 04 已批准的生产 migration 和 canonical apply 已完成；本 closeou
 
 Task 06 首次隔离 migration 测试发生 URL 覆盖 incident，项目数据库已意外到 empty/disabled
 `20260802_0028`。该操作没有事前 Gate，不是合规 acceptance。根因、空表/flags 证据、隔离库复测
-和 downgrade/保留选项见 `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`；Owner 已选择保留并追认
-当前 empty/disabled `0028`，但该 ratification 不改写事故性质，也不授权继续生产 schema、真实
-live/EOD、scheduler、Runtime 或通知操作。
+和 downgrade/保留选项见 Git history 中已删除的
+`GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`；Owner 已选择保留并追认当前 empty/disabled
+`0028`，但该 ratification 不改写事故性质，也不授权继续生产 schema、真实 live/EOD、
+scheduler、Runtime 或通知操作。
 branch-local candidate 后续新增 `20260802_0029`，把 `revision + confirmed` 纳入 immutable live
 identity；`20260802_0030` 再以 PostgreSQL trigger 拒绝 SignalDecision UPDATE；`20260802_0031`
 持久化 provider-final data version/request digest。Owner 对 PR #105 exact head `300cccbd` 批准
 database-only backup 与 `0028 -> 0031` 后，production 已到 `0031`；五张新表全空、既有
 SignalEvent 无 decision link、六个 flags 全 false，health 为 disabled。
-生产 schema exact scope、备份/回滚与 disabled smoke 见
+生产 schema exact scope、备份/回滚与 disabled smoke 见 Git history 中已删除的
 `GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`；该 packet 现记录已执行的 backup、migration 与
 disabled/empty smoke receipt，不授权后续 Runtime、live、scheduler 或通知操作。
 
@@ -212,7 +212,7 @@ Canonical。
 物理 min/max。当前 code-only remediation 基于 `develop@aac4006f`，旧 Stage C packet 已
 supersede；该 apply 阻塞在当时要求 exact-head Review/PR/CI/ancestry 与新 migration
 approval（现为 frozen historical，不再是当前授权条件）。准确 digest、数量与 writes=false 证据见
-`docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md` 第 8 节。
+Git history 中已删除的 `GY-DATA-CORE-V2-TASK07-EVIDENCE.md` 第 8 节。
 
 2026-08-03 closeout 代码合同已取消两项旧设计：actual-dominant `1w` 禁用与
 历史 `1m -> 5m/15m/30m/60m` 动态 fallback。当前正式历史只支持
@@ -273,8 +273,8 @@ apply packet。
 8 download tasks + 2 scan tasks + 8 active signals），plan digest 为
 `4d8fc15fd312b199361f57244cb6ab636889ea84e370d294db53601ac5a00af4`。没有 owner exact approval，所以未
 supersede binding、未 cancel task、未 deactivate signal，也没有文件/数据库删除。
-完整脱敏摘要、plan/before-image/候选 digest 与 rollback 边界见
-`docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。该段只是历史快照，不建立当前 Gate。
+完整脱敏摘要、plan/before-image/候选 digest 与 rollback 边界见 Git history 中已删除的
+`GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。该段只是历史快照，不建立当前 Gate。
 
 ### 4.0 Task 04 closeout Owner 决策与正式验收（2026-08-02）
 
@@ -607,7 +607,7 @@ DECISIONS.md
 docs/ARCHITECTURE.md
 docs/DATA_CENTER.md
 docs/DEVELOPMENT.md
-docs/tasks/GY-CORE-CONVERGENCE.md
+docs/tasks/GY-CORE-CONVERGENCE.md   # 已删除；仅 Git history
 docs/tasks/GY-DATA-CORE-V2.md
 ```
 

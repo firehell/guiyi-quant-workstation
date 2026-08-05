@@ -543,11 +543,10 @@ class TaskDisposition(StrEnum):
     SUPERSEDED_UNREFERENCED = "superseded_unreferenced"
 
 
-# Explicit disposition seeds; inventory fails closed if a task file lacks one.
+# Explicit disposition seeds for files still present under docs/tasks/.
+# Deleted historical contracts are recovered only via Git history.
 _FROZEN_RUNTIME_TASKS = frozenset(
     {
-        "JM-LIVE-STABILITY-S6-10.md",
-        "JM-LIVE-SIGNAL-EVENT-S6-08.md",
         "S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md",
     }
 )
@@ -558,16 +557,7 @@ _ACTIVE_CONTRACT_TASKS = frozenset(
         "V1-FINAL-ACCEPTANCE-S6-11.md",
     }
 )
-_HISTORICAL_FACT_TASKS = frozenset(
-    {
-        "GY-CORE-01-ARCHITECTURE-INVENTORY.md",
-        "GY-CORE-02-ACTIVE-DATASET-FACADE-PLAN.md",
-        "GY-CORE-CONVERGENCE.md",
-        "GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md",
-        "GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md",
-        "GY-DATA-CORE-V2-TASK07-EVIDENCE.md",
-    }
-)
+_HISTORICAL_FACT_TASKS = frozenset()
 
 
 @dataclass(frozen=True, slots=True)

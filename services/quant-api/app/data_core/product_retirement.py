@@ -16,7 +16,19 @@ from pathlib import Path
 import re
 from typing import Any, Mapping, Sequence
 
-from sqlalchemy import JSON, MetaData, Table, delete, inspect, select, tuple_
+from sqlalchemy import (
+    JSON,
+    MetaData,
+    String,
+    Table,
+    cast,
+    delete,
+    func,
+    inspect,
+    or_,
+    select,
+    tuple_,
+)
 from sqlalchemy.engine import Connection
 
 
@@ -116,6 +128,32 @@ _LOGICAL_RELATIONS = (
     ("research_samples", "signal_decisions", (("decision_key", "decision_key"),), None),
     ("research_samples", "review_notes", (("review_id", "id"),), None),
     ("review_attachments", "review_notes", (("review_id", "id"),), None),
+)
+
+# PostgreSQL production holds several million rows of reference metadata.  The
+# inventory must let PostgreSQL narrow those rows before they cross the driver
+# boundary; the final Python matcher below remains the authority, so the SQL
+# clauses are deliberately allowed to be a safe superset.
+_RETIRED_CODE_PATTERN = "|".join(
+    re.escape(code.upper()) for code in sorted(RETIRED_PRODUCTS, key=len, reverse=True)
+)
+_PRODUCT_NAME_PATTERN = "|".join(re.escape(name) for name in sorted(_PRODUCT_COLUMNS))
+_CONTRACT_NAME_PATTERN = "|".join(re.escape(name) for name in sorted(_CONTRACT_COLUMNS))
+_PATH_NAME_PATTERN = "|".join(re.escape(name) for name in sorted(_PATH_COLUMNS))
+_CONTRACT_VALUE_PATTERN = (
+    rf"(?:^|\.)(?:{_RETIRED_CODE_PATTERN})(?:[0-9]{{2,4}})?(?:\.MAIN)?$"
+)
+_JSON_PRODUCT_PATTERN = (
+    rf'"(?:{_PRODUCT_NAME_PATTERN})"\s*:\s*"(?:{_RETIRED_CODE_PATTERN})"'
+)
+_JSON_CONTRACT_PATTERN = (
+    rf'"(?:{_CONTRACT_NAME_PATTERN})"\s*:\s*"(?:[^"]*\.)?'
+    rf"(?:{_RETIRED_CODE_PATTERN})(?:[0-9]{{2,4}})?(?:\.MAIN)?\""
+)
+_JSON_PATH_PATTERN = (
+    rf'"(?:{_PATH_NAME_PATTERN})"\s*:\s*"[^"]*'
+    rf"(?:/(?:v1b|products)/(?:{_RETIRED_CODE_PATTERN})(?:/|\")"
+    rf"|/(?:product|symbol|instrument_symbol)=(?:{_RETIRED_CODE_PATTERN})(?:/|\"))"
 )
 
 
@@ -292,6 +330,14 @@ def inventory_database(
         statement = select(
             *(table.c[name] for name in (*primary_names, *identity_names))
         )
+        candidate_filter = _database_candidate_filter(
+            connection,
+            table,
+            scalar_candidate_names,
+            json_names,
+        )
+        if candidate_filter is not None:
+            statement = statement.where(candidate_filter)
         for row in _stream_mappings(connection, statement):
             reasons = _database_match_reasons(
                 row,
@@ -335,6 +381,11 @@ def inventory_database(
                     not parent_keys
                     or not constrained
                     or len(constrained) != len(referred)
+                    or any(
+                        name not in dict(primary_key)
+                        for primary_key in parent_keys
+                        for name in referred
+                    )
                 ):
                     continue
                 columns = tuple(
@@ -343,6 +394,15 @@ def inventory_database(
                     )
                 )
                 statement = select(*(table.c[name] for name in columns))
+                parent_values = tuple(
+                    tuple(dict(primary_key)[name] for name in referred)
+                    for primary_key in sorted(parent_keys)
+                )
+                statement = statement.where(
+                    _tuple_values_filter(
+                        tuple(table.c[name] for name in constrained), parent_values
+                    )
+                )
                 for row in _stream_mappings(connection, statement):
                     parent_key = tuple(
                         (name, row[child])
@@ -919,6 +979,58 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _database_candidate_filter(
+    connection: Connection,
+    table: Table,
+    scalar_names: Sequence[str],
+    json_names: Sequence[str],
+):
+    """Return a PostgreSQL-only, safe-superset filter for retirement rows."""
+
+    if connection.dialect.name != "postgresql":
+        return None
+    clauses = []
+    for name in scalar_names:
+        column = table.c[name]
+        text_column = cast(column, String)
+        if name in _PRODUCT_COLUMNS:
+            clauses.append(func.lower(func.trim(text_column)).in_(RETIRED_PRODUCTS))
+        elif name in _CONTRACT_COLUMNS:
+            clauses.append(
+                func.upper(func.trim(text_column)).op("~")(_CONTRACT_VALUE_PATTERN)
+            )
+        elif name in _PATH_COLUMNS:
+            clauses.append(
+                text_column.op("~*")(
+                    rf"(?:^|/)(?:v1b|products)/(?:{_RETIRED_CODE_PATTERN})(?:/|$)"
+                    rf"|(?:^|/)(?:product|symbol|instrument_symbol)=(?:{_RETIRED_CODE_PATTERN})(?:/|$)"
+                )
+            )
+    # A table with an explicit product/contract/path column has that column as
+    # its canonical identity.  Searching an unindexed JSON payload as well
+    # would force a multi-million-row sequential scan of duplicated provider
+    # payloads.  JSON-only tables still receive the recursive JSON filter.
+    if not scalar_names:
+        for name in json_names:
+            text_column = cast(table.c[name], String)
+            clauses.extend(
+                (
+                    text_column.op("~*")(_JSON_PRODUCT_PATTERN),
+                    text_column.op("~*")(_JSON_CONTRACT_PATTERN),
+                    text_column.op("~*")(_JSON_PATH_PATTERN),
+                )
+            )
+    return or_(*clauses) if clauses else None
+
+
+def _tuple_values_filter(columns: Sequence[Any], values: Sequence[tuple[Any, ...]]):
+    if not values:
+        raise ProductRetirementError("PRODUCT_RETIREMENT_EMPTY_DEPENDENCY_VALUES")
+    if len(columns) == 1:
+        return columns[0].in_(tuple(value[0] for value in values))
+    return tuple_(*columns).in_(tuple(values))
+
+
 def _database_match_reasons(
     row: Mapping[str, Any],
     columns: Sequence[str],
@@ -1035,10 +1147,18 @@ def _expand_logical_dependencies(
                 for name in dict.fromkeys((*parent_primary, *parent_columns))
             )
         )
+        parent_statement = parent_statement.where(
+            _tuple_values_filter(
+                tuple(parent.c[name] for name in parent_primary),
+                tuple(
+                    tuple(dict(primary_key)[name] for name in parent_primary)
+                    for primary_key in sorted(parent_keys)
+                ),
+            )
+        )
         parent_values = {
             tuple(row[name] for name in parent_columns)
             for row in _stream_mappings(connection, parent_statement)
-            if tuple((name, row[name]) for name in parent_primary) in parent_keys
         }
         if not parent_values:
             continue
@@ -1066,6 +1186,12 @@ def _expand_logical_dependencies(
             )
         )
         child_statement = select(*(child.c[name] for name in selected_columns))
+        child_statement = child_statement.where(
+            _tuple_values_filter(
+                tuple(child.c[name] for name in child_columns),
+                tuple(sorted(parent_values)),
+            )
+        )
         for row in _stream_mappings(connection, child_statement):
             if discriminator is not None and row[discriminator[0]] != discriminator[1]:
                 continue
