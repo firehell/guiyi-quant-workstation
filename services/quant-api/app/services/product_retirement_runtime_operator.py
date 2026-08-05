@@ -41,9 +41,17 @@ class LaunchdRuntimeOperator:
         self._domain = domain or f"gui/{os.getuid()}"
 
     def stop_writer_services(self) -> Mapping[str, str]:
+        prior = self.writer_states()
         for label in REQUIRED_WRITER_SERVICES:
+            if prior[label] != "running":
+                continue
             self._runner(("launchctl", "bootout", f"{self._domain}/{label}"))
-        return self.writer_states()
+        states = self.writer_states()
+        if any(value != "stopped" for value in states.values()):
+            raise ProductRetirementRuntimeOperatorError(
+                "PRODUCT_RETIREMENT_SERVICE_STOP_FAILED"
+            )
+        return states
 
     def writer_states(self) -> Mapping[str, str]:
         return {
@@ -76,8 +84,20 @@ class LaunchdRuntimeOperator:
             )
         return current
 
-    def restart_services(self) -> Mapping[str, str]:
+    def restart_services(self, target_states: Mapping[str, str]) -> Mapping[str, str]:
+        if set(target_states) != set(REQUIRED_WRITER_SERVICES) or any(
+            value not in {"running", "stopped"} for value in target_states.values()
+        ):
+            raise ProductRetirementRuntimeOperatorError(
+                "PRODUCT_RETIREMENT_SERVICE_STATES_INVALID"
+            )
+        if any(value != "stopped" for value in self.writer_states().values()):
+            raise ProductRetirementRuntimeOperatorError(
+                "PRODUCT_RETIREMENT_SERVICE_RESTART_REQUIRES_STOPPED"
+            )
         for label in REQUIRED_WRITER_SERVICES:
+            if target_states[label] != "running":
+                continue
             plist = self._service_plists[label]
             if not plist.is_absolute() or plist.is_symlink() or not plist.is_file():
                 raise ProductRetirementRuntimeOperatorError(
@@ -88,7 +108,12 @@ class LaunchdRuntimeOperator:
                 raise ProductRetirementRuntimeOperatorError(
                     "PRODUCT_RETIREMENT_SERVICE_BOOTSTRAP_FAILED"
                 )
-        return self.writer_states()
+        states = self.writer_states()
+        if dict(states) != dict(target_states):
+            raise ProductRetirementRuntimeOperatorError(
+                "PRODUCT_RETIREMENT_SERVICE_RESTORE_MISMATCH"
+            )
+        return states
 
     def preflight(
         self, *, root: Path, release_tag: str, rollback_tag: str

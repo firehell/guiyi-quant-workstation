@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from app.data_core.catalog import CanonicalMainContractMapping
 from app.data_core.rqdata_adapter import MainMapRow
@@ -94,10 +94,63 @@ def test_refresh_executor_replaces_rank1_window_then_syncs_and_aggregates() -> N
         ),
     )
 
-    executor.sync_direct(("jm",), ("1m", "1d", "1w"))
-    executor.aggregate(("jm",), ("5m", "15m", "30m", "60m"))
+    direct_receipt = executor.sync_direct(("jm",), ("1m", "1d", "1w"))
+    aggregate_receipt = executor.aggregate(("jm",), ("5m", "15m", "30m", "60m"))
 
     assert calls[0] == ("fetch", "jm", date(2026, 8, 3), date(2026, 8, 3))
     assert calls[1][0] == "replace"
     assert {call[0] for call in calls[2:8]} == {"direct"}
     assert {call[0] for call in calls[8:]} == {"aggregate"}
+    aggregate_calls = tuple(call for call in calls if call[0] == "aggregate")
+    assert len(aggregate_calls) == 8
+    assert {(call[1], call[2], call[3]) for call in aggregate_calls} == {
+        ("continuous", "JM.MAIN", "5m"),
+        ("continuous", "JM.MAIN", "15m"),
+        ("continuous", "JM.MAIN", "30m"),
+        ("continuous", "JM.MAIN", "60m"),
+        ("actual_dominant", "JM2609", "5m"),
+        ("actual_dominant", "JM2609", "15m"),
+        ("actual_dominant", "JM2609", "30m"),
+        ("actual_dominant", "JM2609", "60m"),
+    }
+    assert direct_receipt == {
+        "status": "passed",
+        "product_count": 1,
+        "target_count": 6,
+        "frequencies": ["1m", "1d", "1w"],
+    }
+    assert aggregate_receipt == {
+        "status": "passed",
+        "product_count": 1,
+        "target_count": 8,
+        "source_frequency": "1m",
+        "frequencies": ["5m", "15m", "30m", "60m"],
+    }
+
+
+def test_production_refresh_selects_ten_days_and_excludes_partial_week() -> None:
+    from app.services.product_retirement_production import select_refresh_days
+
+    trading_days = tuple(
+        date(2026, 7, 20) + timedelta(days=offset) for offset in range(17)
+    )
+
+    selected, weekly_end = select_refresh_days(
+        trading_days=trading_days,
+        latest_completed=date(2026, 8, 5),
+        today=date(2026, 8, 5),
+    )
+
+    assert selected == tuple(
+        date(2026, 7, 27) + timedelta(days=offset) for offset in range(10)
+    )
+    assert weekly_end == date(2026, 8, 2)
+
+
+def test_calendar_refresh_bounds_include_nontrading_current_date() -> None:
+    from app.services.product_retirement_production import calendar_refresh_bounds
+
+    assert calendar_refresh_bounds(
+        provider_days=(date(2026, 7, 31), date(2026, 8, 3)),
+        today=date(2026, 8, 5),
+    ) == (date(2026, 7, 31), date(2026, 8, 5))

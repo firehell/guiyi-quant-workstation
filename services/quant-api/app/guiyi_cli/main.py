@@ -204,9 +204,19 @@ def main(
                 payload = dict(executor.resume(request, journal_path=args.journal))
             print_json(payload, stdout)
             return 0 if payload.get("status") == "completed" else 1
-        except (CliUsageError, ValueError):
+        except CliUsageError:
             print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
             return 2
+        except Exception as exc:  # noqa: BLE001 - bounded production CLI boundary
+            print_json(
+                exception_error_payload(
+                    command=_command_hint(raw_argv),
+                    exc=exc,
+                    readonly=args.retirement_command == "plan",
+                ),
+                stderr,
+            )
+            return 1
 
     if args.domain == "runtime" and args.runtime_command == "status":
         try:
@@ -390,8 +400,8 @@ def _parse_retirement_roots(values: Sequence[str]) -> dict[str, Path]:
     return result
 
 
-class _UnavailableRetirementExecutionService:
-    """Expose planning without silently constructing production operators."""
+class _LazyProductionRetirementExecutionService:
+    """Keep plan read-only and construct RQData/DB adapters only for writes."""
 
     def __init__(self, service: ProductRetirementExecutionService) -> None:
         self._service = service
@@ -400,8 +410,11 @@ class _UnavailableRetirementExecutionService:
         return self._service.plan(request)
 
     def execute(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
-        del request
-        raise ValueError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
+        from app.services.product_retirement_production import (
+            build_product_retirement_executor,
+        )
+
+        return build_product_retirement_executor(request).execute(request)
 
     def resume(
         self,
@@ -409,17 +422,25 @@ class _UnavailableRetirementExecutionService:
         *,
         journal_path: Path,
     ) -> Mapping[str, Any]:
-        del request, journal_path
-        raise ValueError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
+        from app.services.product_retirement_production import (
+            build_product_retirement_executor,
+        )
+
+        return build_product_retirement_executor(request).resume(
+            request,
+            journal_path=journal_path,
+        )
 
 
-def _default_retirement_execution_service() -> _UnavailableRetirementExecutionService:
+def _default_retirement_execution_service() -> (
+    _LazyProductionRetirementExecutionService
+):
     def unavailable_inventory(
         _request: RetirementRuntimeRequest, _runtime_sha: str
     ) -> Mapping[str, Any]:
         raise RuntimeError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
 
-    return _UnavailableRetirementExecutionService(
+    return _LazyProductionRetirementExecutionService(
         ProductRetirementExecutionService(inventory=unavailable_inventory)
     )
 

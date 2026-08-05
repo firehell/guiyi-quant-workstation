@@ -11,11 +11,28 @@ def test_launchd_operator_stops_exact_services_and_reports_readonly_states(
     tmp_path: Path,
 ) -> None:
     calls: list[tuple[str, ...]] = []
+    running_label = REQUIRED_WRITER_SERVICES[-1]
+    service_states = {
+        label: ("running" if label == running_label else "stopped")
+        for label in REQUIRED_WRITER_SERVICES
+    }
 
     def runner(command: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
         calls.append(command)
         if command[1] == "print":
-            return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
+            label = command[-1].rsplit("/", maxsplit=1)[-1]
+            return subprocess.CompletedProcess(
+                command,
+                0 if service_states[label] == "running" else 1,
+                stdout="",
+                stderr="",
+            )
+        if command[1] == "bootout":
+            label = command[-1].rsplit("/", maxsplit=1)[-1]
+            service_states[label] = "stopped"
+        if command[1] == "bootstrap":
+            plist_name = Path(command[-1]).stem
+            service_states[plist_name] = "running"
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
     plists = {}
@@ -25,12 +42,15 @@ def test_launchd_operator_stops_exact_services_and_reports_readonly_states(
         plists[label] = plist
     operator = LaunchdRuntimeOperator(service_plists=plists, runner=runner)
 
-    states = operator.stop_writer_services()
+    prior_states = operator.writer_states()
+    stopped = operator.stop_writer_services()
+    restored = operator.restart_services(prior_states)
 
-    assert states == {label: "stopped" for label in REQUIRED_WRITER_SERVICES}
-    assert [command[1] for command in calls].count("bootout") == len(
-        REQUIRED_WRITER_SERVICES
-    )
-    assert [command[1] for command in calls].count("print") == len(
-        REQUIRED_WRITER_SERVICES
-    )
+    assert stopped == {label: "stopped" for label in REQUIRED_WRITER_SERVICES}
+    assert restored == prior_states
+    assert [command[-1] for command in calls if command[1] == "bootout"] == [
+        f"gui/501/{running_label}"
+    ]
+    assert [
+        Path(command[-1]).stem for command in calls if command[1] == "bootstrap"
+    ] == [running_label]

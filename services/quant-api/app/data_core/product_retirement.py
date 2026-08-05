@@ -788,7 +788,13 @@ def apply_retirement_packet(
             purge_errors.append(f"{staged_path}:{type(exc).__name__}")
             if staged_path.exists():
                 remaining_staged_files.append(str(staged_path))
-    verification = verify_retirement_scope(connection, roots=roots)
+    try:
+        verification = verify_retirement_scope(connection, roots=roots)
+    except Exception as exc:  # noqa: BLE001 - the database commit already succeeded
+        verification = {
+            "status": "rejected",
+            "error_type": type(exc).__name__,
+        }
     complete = not purge_errors and verification["status"] == "passed"
     return {
         "schema_version": 1,
