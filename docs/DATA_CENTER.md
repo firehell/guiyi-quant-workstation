@@ -11,6 +11,12 @@
 国债期货。历史文件和数据库 DML 尚未执行，必须等待
 `docs/tasks/GY-DATA-PRODUCT-RETIREMENT-21.md` 的只读扫描、影响与回滚说明及用户明确批准。
 
+活动品种窗口口径见 `data/universe/product_window_starts.csv`（`window_start` =
+米筐可提供/上市日起，日线与周线不再使用 2020 截断补数清单）。2026-08-05 Wave A/B
+清理已从工作树移除空 `data/sample/`、过期 universe 分批队列，以及仅作历史叙述引用的
+DOC_ONLY `data/reports/*` 审计快照；结论仍以下文与 Git history 为准，不再要求工作树保留
+这些目录。
+
 数据核心 V2 的 active target 已冻结。Task 04 closeout commit 经 exact-head CI、独立 Review 和
 GitHub merge commit 合入 `develop` 后，historical canonical 与普通 Web/API/指标消费者迁移完成；
 Backtest/Signal/Review 可信消费者切换留给 Task 05：
@@ -255,7 +261,7 @@ JM_LIVE_TARGET_FRESHNESS_READY
 JM_LIVE_CONTEXT_READY
 ```
 
-2026-07-18 的 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前 `consumer_golden_query_final_gate_20260718/` 保留为修复前失败快照。
+2026-07-18 的 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 已从合入后的主干独立复跑。direct PostgreSQL `READ ONLY` snapshot、真实 Parquet、49 条消费者矩阵和 13 个 Hard Gate 全部通过，状态为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`。通过证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`（工作树已移除，见 Git history）；先前 `consumer_golden_query_final_gate_20260718/`（工作树已移除，见 Git history）为修复前失败快照。
 
 `DATA_ASSET_PROFILE_READY_FOR_CONSUMER_CONTRACT` 与阶段 C 消费者契约 Gate 均已通过。全局 `DATA_LAYER_REAUDIT_REQUIRED` 仍用于 Audit V2 的更广泛 residual，不能用本次 Ready 隐去历史资产 warning/failed/partial 边界。
 
@@ -535,7 +541,7 @@ DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL  # 尚未通过
 data/reports/data_stage_closure/
 ```
 
-Phase 3 DB 口径事实源为 `data/reports/data_layer_final_audit_phase3_20260712/`。A2-01 后，该口径改为历史审计模型快照，不再作为当前确定下载缺口：
+Phase 3 DB 口径事实源为 `data/reports/data_layer_final_audit_phase3_20260712/`（工作树已移除，见 Git history）。A2-01 后，该口径改为历史审计模型快照，不再作为当前确定下载缺口：
 
 | 指标 | 数值 |
 |---|---:|
@@ -614,7 +620,7 @@ Phase 3 DB 口径事实源为 `data/reports/data_layer_final_audit_phase3_202607
 - `bb/rs/wh/wr/zc` 主连 1d：`accepted_warning`（abnormal price，不升级 passed）。
 - `L2609F/PP2609F/V2609F` actual-contract 1d：`registration_not_needed`（snapshot product=l/pp/v 误报；`l_f/pp_f/v_f` 已 active_passed）。
 
-证据：`data/reports/stage8_6_pending_reconcile_20260712/STAGE8_6_PENDING_RECONCILE.md`
+证据：`data/reports/stage8_6_pending_reconcile_20260712/STAGE8_6_PENDING_RECONCILE.md`（工作树已移除，见 Git history）
 
 ### JM 最新主连 `jm_main_six_period_latest`
 
@@ -721,7 +727,7 @@ Issue 类型：
 
 2026-07-12 `TASK-2026-07-12-005-source-interval-provenance-repair-apply` 对 `source_interval_unverified` 做受控 Parquet/metadata 修复：
 
-- 输入：`data/reports/source_interval_provenance_repair_dry_run_20260712/candidate_files.csv`。
+- 输入：`data/reports/source_interval_provenance_repair_dry_run_20260712/candidate_files.csv`（工作树已移除，见 Git history）。
 - Pilot：5 files applied，`source_interval_unverified` 1039 -> 1019。
 - Full：276 selected / 271 applied / 5 skipped / 0 blocked。
 - 写入范围：canonical Parquet 新增 `source_interval=1m`，同步 manifest checksum、DB `market_data_files.checksum/file_size_bytes`，并同步 61 个已有 processed summary checksum。
@@ -729,7 +735,7 @@ Issue 类型：
 
 source interval 修复后目标覆盖矩阵：
 
-- 输出目录：`data/reports/target_coverage_audit_20260712_after_source_interval_full/`。
+- 输出目录：`data/reports/target_coverage_audit_20260712_after_source_interval_full/`（工作树已移除，见 Git history）。
 - `target_asset_catalog.csv`：17689 rows。
 - `asset_physical_inventory.csv`：15164 rows。
 - `issue_register.csv`：1044 rows。
@@ -769,7 +775,7 @@ source interval 修复后 Issue 类型：
 
 LPV reconcile 后权威 target coverage 复跑（分支修复代码 + 主工程完整数据目录）：
 
-- 输出：`data/reports/target_coverage_audit_20260712_after_lpv_reconcile/`。
+- 输出：`data/reports/target_coverage_audit_20260712_after_lpv_reconcile/`（工作树已移除，见 Git history）。
 - `target_asset_catalog_rows: 17689 -> 17581`；删除的 108 行是 `l_f/pp_f/v_f` 被错分到 `l/pp/v` 后产生的 phantom targets，不是新增 covered assets。
 - `physical_inventory_rows=15056`。
 - `covered_passed=17203`，`metadata_gap=105`，`not_applicable=273`。
@@ -793,10 +799,10 @@ LPV reconcile 后权威 target coverage 复跑（分支修复代码 + 主工程�
 - `duplicate_path_version_reconcile` 输入 6 条 `L2609F` 同路径多版本，全部分类为 `duplicate_path_versions`，仅输出 current/superseded 对照，不删除、不归档、不合并、不改 DB。
 - `reference_metadata_gap_reconcile` 历史输入 831 rows：`needs_contract_universe_sync: 285`，`needs_continuous_contract_sync: 546`，`partial_year_rows: 0`。
 - 输出目录：
-  - `data/reports/quality_failed_root_cause_audit_20260712/`
-  - `data/reports/duplicate_path_version_reconcile_20260712/`
-  - `data/reports/reference_metadata_gap_reconcile_20260712/`
-  - `data/reports/target_coverage_audit_20260712_after_residual_closeout/`
+  - `data/reports/quality_failed_root_cause_audit_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/duplicate_path_version_reconcile_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/reference_metadata_gap_reconcile_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/target_coverage_audit_20260712_after_residual_closeout/`（工作树已移除，见 Git history）
 - 本任务未写 DB、Parquet 或 manifest，未调用 RQData，未修改 `data_version/data_role/quality_status/checksum`。
 
 Residual closeout 后权威 target coverage 复跑：
@@ -814,8 +820,8 @@ Residual closeout 后权威 target coverage 复跑：
 
 2026-07-12 `TASK-2026-07-12-008-reference-metadata-gap-apply-plan` 已将 reference metadata gaps 转成 no-write apply plan：
 
-- 输入：`data/reports/reference_metadata_gap_reconcile_20260712/reference_metadata_gap_ledger.csv`。
-- 输出目录：`data/reports/reference_metadata_gap_apply_plan_20260712/`。
+- 输入：`data/reports/reference_metadata_gap_reconcile_20260712/reference_metadata_gap_ledger.csv`（工作树已移除，见 Git history）。
+- 输出目录：`data/reports/reference_metadata_gap_apply_plan_20260712/`（工作树已移除，见 Git history）。
 - `candidate_rows=831`：
   - `needs_contract_universe_sync=285`。
   - `needs_continuous_contract_sync: 546`。
@@ -862,13 +868,13 @@ Residual closeout 后权威 target coverage 复跑：
   - Issue 类型：105 `quality_warning`。
 - Stage 5-B reference metadata gap 已收口；105 条 `quality_warning` 是独立后续 Gate，不属于 reference metadata gap 失败项。
 - 输出目录：
-  - `data/reports/reference_metadata_gap_apply_batch_01_contract_universe_2020_20260712/`
-  - `data/reports/reference_metadata_gap_apply_batch_02_contract_universe_2021_20260712/`
-  - `data/reports/reference_metadata_gap_apply_batch_03_contract_universe_2022_20260712/`
-  - `data/reports/reference_metadata_gap_apply_batch_04_contract_universe_2023_20260712/`
-  - `data/reports/reference_metadata_gap_apply_derived_continuous_contract_map_20260712/`
-  - `data/reports/reference_metadata_gap_reconcile_after_continuous_contract_map_derived_20260712/`
-  - `data/reports/target_coverage_audit_after_reference_metadata_apply_full_20260712/`
+  - `data/reports/reference_metadata_gap_apply_batch_01_contract_universe_2020_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/reference_metadata_gap_apply_batch_02_contract_universe_2021_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/reference_metadata_gap_apply_batch_03_contract_universe_2022_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/reference_metadata_gap_apply_batch_04_contract_universe_2023_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/reference_metadata_gap_apply_derived_continuous_contract_map_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/reference_metadata_gap_reconcile_after_continuous_contract_map_derived_20260712/`（工作树已移除，见 Git history）
+  - `data/reports/target_coverage_audit_after_reference_metadata_apply_full_20260712/`（工作树已移除，见 Git history）
 
 ## 5. 真实合约与 live 边界
 
@@ -1070,6 +1076,6 @@ MarketDataFile、DataQualityReport、DataProfile、四个 live 表和 report 14 
 
 `CONSUMER-GOLDEN-QUERY-FINAL-GATE-005` 从合入后的 `main@f7f8ad2b`、阶段 B 同一 data root 和 direct PostgreSQL read-only snapshot 独立复跑。12 组固定 Golden Query 在 Market research bars/indicator、Backtest resolver、Signal source 和 Review exact-bars 中核对 Profile、file ID、data version、immutable binding snapshot、quality policy、OHLCV hash、actual/continuous mapping 与 source interval。
 
-49 条消费者矩阵与 13 个 hard gate 全部通过：strict consumer escape path、arbitrary formal path、warning 进入 Backtest/Signal、`.MAIN` 作为 actual、bars/indicator binding mismatch、daily duplicate、静默吞掉不同值冲突和 duplicate active binding 均为 0；`report_id=14` MD5、155 trades 与 239 orders 未变化。正式结论为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`，证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`；先前非 rerun 目录仍为不可改写的失败历史快照。
+49 条消费者矩阵与 13 个 hard gate 全部通过：strict consumer escape path、arbitrary formal path、warning 进入 Backtest/Signal、`.MAIN` 作为 actual、bars/indicator binding mismatch、daily duplicate、静默吞掉不同值冲突和 duplicate active binding 均为 0；`report_id=14` MD5、155 trades 与 239 orders 未变化。正式结论为 `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL`，证据位于 `data/reports/consumer_golden_query_final_gate_20260718_rerun/`（工作树已移除，见 Git history）；先前非 rerun 目录亦已从工作树移除，结论以 Git history 为准。
 
 本 Gate 不改写数据库、Parquet、manifest、Profile binding、report 14、历史 Signal/Review 或 live runtime，也不调用 RQData。`DATA_LAYER_REAUDIT_REQUIRED` 仅继续约束全历史 residual 治理，不能用来否定已通过的严格消费者准入，也不能被此 Ready 标记扩写为全历史零 residual 或 live/notification Ready。

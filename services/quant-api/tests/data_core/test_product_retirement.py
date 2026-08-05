@@ -79,18 +79,14 @@ def test_active_universe_contains_69_products_disjoint_from_retired_set() -> Non
     assert "v" in products
     assert "ta" in products
 
-    subset = {
+    window_rows = [
         line.strip()
-        for line in (project_root / "data/universe/products_pre2020_active.txt").read_text(encoding="utf-8").splitlines()
+        for line in (project_root / "data/universe/product_window_starts.csv").read_text(encoding="utf-8").splitlines()[1:]
         if line.strip()
-    }
-    weekly_rows = {
-        line.split(",", maxsplit=1)[0]
-        for line in (project_root / "data/universe/product_1w_start_from_listing.csv").read_text(encoding="utf-8").splitlines()[1:]
-        if line.strip()
-    }
-    assert subset == weekly_rows
-    assert subset < set(products)
+    ]
+    window_products = {row.split(",", maxsplit=1)[0] for row in window_rows}
+    assert window_products == set(products)
+    assert all(len(row.split(",")) >= 2 and row.split(",")[1] for row in window_rows)
 
 
 def test_file_inventory_matches_structured_target_paths_without_prefix_false_positives(tmp_path: Path) -> None:
