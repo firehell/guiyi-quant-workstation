@@ -113,6 +113,39 @@ class RqDataClient:
                 rows.append({"product": product, "raw": periods})
         return pd.DataFrame(rows)
 
+    def contract_trading_periods(
+        self,
+        contracts: tuple[str, ...],
+        *,
+        start_date: date,
+        end_date: date,
+    ) -> pd.DataFrame:
+        normalized = [self.order_book_id(contract) for contract in contracts]
+        if not normalized or start_date > end_date:
+            raise ValueError("rqdatac_contract_trading_periods_scope_invalid")
+        frame = self._frame(
+            self.rqdatac.get_trading_periods(
+                normalized,
+                start_date=start_date,
+                end_date=end_date,
+                frequency="1m",
+                market="cn",
+            )
+        )
+        if not isinstance(frame.index, pd.RangeIndex):
+            frame = frame.reset_index()
+        required = {"order_book_id", "date", "trading_hours"}
+        if not required.issubset(frame.columns):
+            missing = sorted(required.difference(frame.columns))
+            raise RuntimeError(
+                "rqdatac_contract_trading_periods_invalid_response:"
+                + ",".join(missing)
+            )
+        result = frame.loc[:, ["order_book_id", "date", "trading_hours"]].copy()
+        result["order_book_id"] = result["order_book_id"].astype(str).str.upper()
+        result["date"] = pd.to_datetime(result["date"]).dt.date
+        return result.reset_index(drop=True)
+
     def dominant_contracts(self, product: str, start_date: date, end_date: date, rank: int) -> pd.DataFrame:
         rq_product = self.underlying_symbol(product)
         result = self.rqdatac.futures.get_dominant(rq_product, start_date=start_date, end_date=end_date, rank=rank)

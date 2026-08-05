@@ -63,6 +63,55 @@ def test_order_book_id_uppercases_contract() -> None:
     assert RqDataClient.order_book_id("rb2501") == "RB2501"
 
 
+def test_contract_trading_periods_preserves_contract_and_trading_day() -> None:
+    client = object.__new__(RqDataClient)
+
+    class FakeRqData:
+        @staticmethod
+        def get_trading_periods(
+            order_book_ids, *, start_date, end_date, frequency, market
+        ):
+            assert order_book_ids == ["A88", "IF88"]
+            assert start_date == date(2026, 8, 4)
+            assert end_date == date(2026, 8, 5)
+            assert frequency == "1m"
+            assert market == "cn"
+            index = pd.MultiIndex.from_tuples(
+                [("A88", date(2026, 8, 4)), ("IF88", date(2026, 8, 4))],
+                names=["order_book_id", "date"],
+            )
+            return pd.DataFrame(
+                {
+                    "trading_hours": [
+                        "21:01-23:00,09:01-10:15,10:31-11:30,13:31-15:00",
+                        "09:31-11:30,13:01-15:00",
+                    ]
+                },
+                index=index,
+            )
+
+    client.rqdatac = FakeRqData()
+
+    result = client.contract_trading_periods(
+        ("a88", "if88"),
+        start_date=date(2026, 8, 4),
+        end_date=date(2026, 8, 5),
+    )
+
+    assert result.to_dict("records") == [
+        {
+            "order_book_id": "A88",
+            "date": date(2026, 8, 4),
+            "trading_hours": "21:01-23:00,09:01-10:15,10:31-11:30,13:31-15:00",
+        },
+        {
+            "order_book_id": "IF88",
+            "date": date(2026, 8, 4),
+            "trading_hours": "09:31-11:30,13:01-15:00",
+        },
+    ]
+
+
 def test_market_data_readiness_normalizes_official_response() -> None:
     client = object.__new__(RqDataClient)
 

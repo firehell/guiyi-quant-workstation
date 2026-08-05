@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
+import pandas as pd
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 
@@ -16,8 +17,71 @@ from app.models.data_center import (
 from app.services.product_retirement_production import (
     EXPECTED_DATABASE_REVISION,
     ProductionRetainedUniverseRefresher,
+    build_rqdata_aggregation_sessions,
 )
 from app.services.product_retirement_runtime_gate import RetirementRuntimeRequest
+
+
+def test_rqdata_periods_become_break_aware_aggregation_sessions() -> None:
+    provider_days = (
+        date(2026, 7, 31),
+        date(2026, 8, 3),
+        date(2026, 8, 4),
+    )
+    sessions = build_rqdata_aggregation_sessions(
+        product="a",
+        rows=(
+            {
+                "order_book_id": "A88",
+                "date": date(2026, 8, 3),
+                "trading_hours": ("21:01-23:00,09:01-10:15,10:31-11:30,13:31-15:00"),
+            },
+        ),
+        trading_days=(date(2026, 8, 3),),
+        provider_days=provider_days,
+    )
+
+    assert [(item.name, item.start, item.end) for item in sessions] == [
+        (
+            "rqdata_01",
+            datetime(2026, 7, 31, 13, 0, tzinfo=UTC),
+            datetime(2026, 7, 31, 15, 0, tzinfo=UTC),
+        ),
+        (
+            "rqdata_02",
+            datetime(2026, 8, 3, 1, 0, tzinfo=UTC),
+            datetime(2026, 8, 3, 2, 15, tzinfo=UTC),
+        ),
+        (
+            "rqdata_03",
+            datetime(2026, 8, 3, 2, 30, tzinfo=UTC),
+            datetime(2026, 8, 3, 3, 30, tzinfo=UTC),
+        ),
+        (
+            "rqdata_04",
+            datetime(2026, 8, 3, 5, 30, tzinfo=UTC),
+            datetime(2026, 8, 3, 7, 0, tzinfo=UTC),
+        ),
+    ]
+
+
+def test_rqdata_periods_keep_cross_midnight_night_session() -> None:
+    sessions = build_rqdata_aggregation_sessions(
+        product="au",
+        rows=(
+            {
+                "order_book_id": "AU88",
+                "date": date(2026, 8, 3),
+                "trading_hours": "21:01-02:30,09:01-10:15",
+            },
+        ),
+        trading_days=(date(2026, 8, 3),),
+        provider_days=(date(2026, 7, 31), date(2026, 8, 3)),
+    )
+
+    assert sessions[0].start == datetime(2026, 7, 31, 13, 0, tzinfo=UTC)
+    assert sessions[0].end == datetime(2026, 7, 31, 18, 30, tzinfo=UTC)
+    assert sessions[0].trading_day == date(2026, 8, 3)
 
 
 def test_production_preflight_checks_rqdata_without_writing_calendar_or_staging(
@@ -89,6 +153,7 @@ def test_production_preflight_checks_rqdata_without_writing_calendar_or_staging(
     )
     calls: list[tuple[date, date]] = []
     readiness_calls: list[tuple[date, tuple[str, ...]]] = []
+    period_calls: list[tuple[tuple[str, ...], date, date]] = []
 
     class Client:
         def trading_dates(self, start_date: date, end_date: date):
@@ -104,6 +169,21 @@ def test_production_preflight_checks_rqdata_without_writing_calendar_or_staging(
                 }
                 for category in categories
             }
+
+        def contract_trading_periods(
+            self, contracts, *, start_date: date, end_date: date
+        ):
+            period_calls.append((tuple(contracts), start_date, end_date))
+            return pd.DataFrame(
+                [
+                    {
+                        "order_book_id": contract,
+                        "date": end_date,
+                        "trading_hours": "09:01-10:15",
+                    }
+                    for contract in contracts
+                ]
+            )
 
     staging = tmp_path / "staging"
     refresher = ProductionRetainedUniverseRefresher(
@@ -124,5 +204,8 @@ def test_production_preflight_checks_rqdata_without_writing_calendar_or_staging(
     assert result["active_product_count"] == 69
     assert len(calls) == 1
     assert readiness_calls == [(date(2026, 8, 5), ("future_minbar", "future_daybar"))]
+    assert len(period_calls) == 1
+    assert len(period_calls[0][0]) == 69
+    assert result["provider_session_product_count"] == 69
     assert calendar_count == 0
     assert not staging.exists()
