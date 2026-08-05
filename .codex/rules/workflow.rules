@@ -93,9 +93,3 @@ prefix_rule(
     match = ["git push origin develop"],
     not_match = ["git push origin feature/example"],
 )
-
-prefix_rule(
-    pattern = ["git", "tag"],
-    decision = "forbidden",
-    justification = "禁止直接创建或删除 tag；release tag 需要单独批准流程",
-)
