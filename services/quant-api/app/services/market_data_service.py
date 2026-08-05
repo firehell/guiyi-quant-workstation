@@ -7,6 +7,7 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from app.data_core.contracts import BarQuery, BarsResult, DataCoreError
+from app.data_core.product_retirement import is_retired_identity
 
 
 class CanonicalHistoricalReader(Protocol):
@@ -37,6 +38,13 @@ class MarketDataService:
     def get_bars(self, request: BarQuery) -> BarsResult:
         if not isinstance(request, BarQuery):
             raise DataCoreError(facts={"reason": "canonical_bar_query_required"})
+        if is_retired_identity(
+            product=request.symbol,
+            contract=request.contract_or_series,
+        ):
+            raise DataCoreError(
+                facts={"reason": "product_retired", "symbol": request.symbol}
+            )
         if self._canonical_reader is None:
             raise DataCoreError(facts={"reason": "canonical_reader_unavailable"})
         return self._canonical_reader.get_bars(request)

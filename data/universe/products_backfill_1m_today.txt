@@ -15,7 +15,6 @@ bu
 c
 cf
 cs
-cy
 eb
 eg
 fg
@@ -32,7 +31,6 @@ p
 pp
 rb
 rm
-rr
 ru
 sa
 sp
@@ -40,8 +38,6 @@ sr
 ta
 v
 y
-zc
-bc
 pg
 ap
 si

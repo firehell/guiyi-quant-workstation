@@ -53,7 +53,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     run.add_argument("--end-date", type=date.fromisoformat, default=date.today())
     run.add_argument("--period", action="append", choices=DEFAULT_PERIODS, dest="periods")
     run.add_argument("--product", action="append", dest="products")
-    run.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/full_products_90.txt")
+    run.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/active_products.txt")
     run.add_argument("--exchange", default=None)
     run.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "data")
     run.add_argument("--dry-run", action="store_true")

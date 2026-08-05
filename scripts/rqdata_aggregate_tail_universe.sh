@@ -12,7 +12,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-PRODUCTS_FILE="${PRODUCTS_FILE:-data/universe/full_products_90.txt}"
+PRODUCTS_FILE="${PRODUCTS_FILE:-data/universe/active_products.txt}"
 PERIODS="${PERIODS:-5m,15m,30m,60m}"
 DRY_RUN="${DRY_RUN:-0}"
 FORCE="${FORCE:-0}"

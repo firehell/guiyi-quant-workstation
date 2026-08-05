@@ -41,7 +41,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """解析回填参数：品种池、周期、全球截止日、dry-run / run-write / register。"""
     parser = argparse.ArgumentParser(description="Backfill dominant MAIN 1d/1w prefix data toward 2020 without re-downloading existing tail.")
     parser.add_argument("--product", action="append", dest="products")
-    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "full_products_90.txt")
+    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "active_products.txt")
     parser.add_argument("--starts-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "product_1d_start_from_2020.csv")
     parser.add_argument("--periods", default="1d,1w")
     parser.add_argument("--global-end", type=date.fromisoformat, default=DEFAULT_GLOBAL_END)

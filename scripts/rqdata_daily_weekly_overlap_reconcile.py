@@ -39,7 +39,7 @@ def main() -> None:
     parser.add_argument("--direct-path", type=Path)
     parser.add_argument("--product", default="jm")
     parser.add_argument("--contract", default="jm.MAIN")
-    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/full_products_90.txt")
+    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/active_products.txt")
     parser.add_argument(
         "--sealing-dir",
         type=Path,

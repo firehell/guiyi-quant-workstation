@@ -52,3 +52,22 @@ def test_market_data_service_rejects_legacy_constructor_options() -> None:
         MarketDataService(object(), resolver=object())  # type: ignore[arg-type]
 
     assert error.value.facts["reason"] == "legacy_market_options_retired"
+
+
+def test_market_data_service_rejects_retired_product_before_reader_access() -> None:
+    reader = _Reader(object())
+    service = MarketDataService(object(), canonical_reader=reader)  # type: ignore[arg-type]
+    query = BarQuery(
+        dataset_kind=DatasetKind.CONTINUOUS,
+        symbol="jr",
+        contract_or_series="JR.MAIN",
+        frequency=BarFrequency.M1,
+        start=datetime(2026, 7, 1, tzinfo=UTC),
+        end=datetime(2026, 7, 2, tzinfo=UTC),
+    )
+
+    with pytest.raises(DataCoreError) as error:
+        service.get_bars(query)
+
+    assert error.value.facts == {"reason": "product_retired", "symbol": "jr"}
+    assert reader.queries == []

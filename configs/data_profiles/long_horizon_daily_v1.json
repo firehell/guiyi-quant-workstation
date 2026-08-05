@@ -9,7 +9,7 @@
   "provider": "rqdata",
   "pilots": [],
   "binding_scope": {
-    "products_file": "data/universe/full_products_90.txt",
+    "products_file": "data/universe/active_products.txt",
     "contract_scope": "dominant_main_and_actual_contract"
   },
   "excluded_paths": ["experiments/"],

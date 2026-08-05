@@ -9,6 +9,7 @@ import pandas as pd
 
 from app.data_core.bar_schema import CanonicalBar
 from app.data_core.contracts import ContractValidationError, DatasetKind
+from app.data_core.product_retirement import ProductRetirementError, is_retired_identity
 from app.data_core.rqdata_adapter import (
     MainMapRequest,
     MainMapRow,
@@ -52,6 +53,13 @@ class CanonicalRQDataAdapter:
             raise ContractValidationError(
                 facts={"field": "request", "reason": "invalid"}
             )
+        if is_retired_identity(
+            product=request.dataset.symbol,
+            contract=request.dataset.contract_or_series,
+        ):
+            raise ProductRetirementError(
+                f"PRODUCT_RETIREMENT_PRODUCT_RETIRED:{request.dataset.symbol}"
+            )
         trading_days = tuple(session.trading_day for session in request.sessions)
         frame = self._client.contract_bars(
             _provider_order_book_id(request),
@@ -91,6 +99,10 @@ class CanonicalRQDataAdapter:
         if not isinstance(request, MainMapRequest):
             raise ContractValidationError(
                 facts={"field": "request", "reason": "invalid"}
+            )
+        if is_retired_identity(product=request.symbol):
+            raise ProductRetirementError(
+                f"PRODUCT_RETIREMENT_PRODUCT_RETIRED:{request.symbol}"
             )
         frame = self._client.dominant_contracts(
             request.symbol,

@@ -35,7 +35,7 @@ echo "=== register dominant quality ==="
 
 echo "=== Stage 8.6 full-universe 1d audit ==="
 "${UV[@]}" scripts/rqdata_full_universe_active_gate_audit.py \
-  --products-file data/universe/full_products_90.txt \
+  --products-file data/universe/active_products.txt \
   --profile stage8_6_1d_first \
   --output-dir data/reports
 

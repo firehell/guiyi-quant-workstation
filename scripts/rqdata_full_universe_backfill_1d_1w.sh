@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 UV=(uv run --project services/quant-api python)
-PRODUCTS_FILE="${PRODUCTS_FILE:-data/universe/full_products_90.txt}"
+PRODUCTS_FILE="${PRODUCTS_FILE:-data/universe/active_products.txt}"
 STARTS_FILE="${STARTS_FILE:-data/universe/product_1d_start_from_2020.csv}"
 START_DATE="${START_DATE:-2020-01-02}"
 GAP_END_DATE="${GAP_END_DATE:-2023-01-02}"

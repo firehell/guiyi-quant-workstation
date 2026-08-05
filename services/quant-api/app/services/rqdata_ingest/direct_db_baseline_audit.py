@@ -71,6 +71,7 @@ PHASE3_METRICS = {
     "pre_2020_weekly_missing": 34,
 }
 DERIVED_FROM_1M_PERIODS = frozenset({"5m", "15m", "30m", "60m", "1d"})
+ACTIVE_PRODUCT_COUNT = 69
 
 
 class DirectDatabaseGateError(RuntimeError):
@@ -97,8 +98,11 @@ def validate_full_universe_scope(
             "products must match canonical full universe "
             f"missing={sorted(canonical_set - product_set)} extra={sorted(product_set - canonical_set)}"
         )
-    if len(canonical_products) != 90 or len(canonical_set) != 90:
-        raise AuditInputGateError(f"canonical full universe must contain exactly 90 unique products, got {len(canonical_set)}")
+    if len(canonical_products) != ACTIVE_PRODUCT_COUNT or len(canonical_set) != ACTIVE_PRODUCT_COUNT:
+        raise AuditInputGateError(
+            "canonical full universe must contain exactly "
+            f"{ACTIVE_PRODUCT_COUNT} unique products, got {len(canonical_set)}"
+        )
     if window_products != product_set:
         raise AuditInputGateError(
             f"product windows mismatch missing={sorted(product_set - window_products)} extra={sorted(window_products - product_set)}"

@@ -1,7 +1,5 @@
 rb
-ri
 rm
-rr
 rs
 ru
 sa

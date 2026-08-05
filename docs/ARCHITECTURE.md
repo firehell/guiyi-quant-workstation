@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-07-31
+更新时间：2026-08-05
 
 ## 1. 定位
 
@@ -9,21 +9,26 @@
 ## 2. Active target（设计已冻结，尚未完成）
 
 ```text
-RQData
+69 个 active products -> RQData
 -> temporary staging
 -> schema/session/duplicate/OHLCV/coverage validation
--> one historical canonical Parquet root (provider 1m / 1d / 1w)
+-> one historical canonical Parquet root
+   (provider-direct 1m/1d/1w + persisted 5m/15m/30m/60m from canonical 1m)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
--> MarketDataService (exact DatasetKey + deterministic aggregation)
+-> MarketDataService (exact same-frequency DatasetKey)
 -> Web / Indicator / Backtest / Signal / Review
 ```
+
+JR、PM、RI、WH、ZC、WR、BB、FB、PP_F、L_F、V_F、BC、CY、LG、AD、OP、RR、T、TF、TS、TL
+已从 active universe 移除，并在 RQData adapter 与 MarketDataService 入口 fail-closed；真实历史资产
+删除仍等待 `GY-DATA-PRODUCT-RETIREMENT-21` 的 release、Runtime、停服和 exact deletion Gate。
 
 `continuous` 与 `actual_dominant` 是显式且不可互换的数据类型。前者主要用于长周期展示、
 指标研究和明确标注的数据类型回测；后者用于实际主力监听、信号和真实换月回测。
 direct 数据矩阵仅为 continuous `1m/1d/1w` 和 actual-dominant `1m/1d`；
 actual-dominant 的 coverage/read 必须按 rank=1 mapping 有效分段计算。
-5m/15m/30m/60m 只从 canonical 1m 按 TradingSession 确定性聚合，不形成新的 canonical
-身份。任何缺口相交请求必须 fail-closed。
+5m/15m/30m/60m 只从质量通过的 canonical 1m 按 TradingSession 确定性聚合，并作为显式同频
+Canonical DatasetKey 持久化；任何缺口相交请求必须 fail-closed。
 
 live 目标仍是独立 observation 层：
 

@@ -4,19 +4,19 @@
 
 `effective_1d_start = max(2020-01-02, product_listed_date)`
 
-品种池：`data/universe/full_products_90.txt`（90 个）
+品种池：`data/universe/active_products.txt`（69 个）
 
 ## 汇总
 
 | 分类 | 数量 |
 |------|------|
-| 从 2020-01-02 全窗可拉 | 63 |
-| 上市日晚于 2020，需从上市日开始 | 27 |
+| 从 2020-01-02 全窗可拉 | 50 |
+| 上市日晚于 2020，需从上市日开始 | 19 |
 | 未匹配 instrument，暂按 2020-01-02 | 0 |
 
 ## 从 2020-01-02 开始的品种
 
-a, ag, al, ap, au, b, bb, bu, c, cf, cj, cs, cu, cy, eb, eg, fb, fg, fu, hc, i, ic, if, ih, j, jd, jm, jr, l, m, ma, ni, nr, oi, p, pb, pm, pp, rb, ri, rm, rr, rs, ru, sa, sc, sf, sm, sn, sp, sr, ss, t, ta, tf, ts, ur, v, wh, wr, y, zc, zn
+a, ag, al, ap, au, b, bu, c, cf, cj, cs, cu, eb, eg, fg, fu, hc, i, ic, if, ih, j, jd, jm, l, m, ma, ni, nr, oi, p, pb, pp, rb, rm, rs, ru, sa, sc, sf, sm, sn, sp, sr, ss, ta, ur, v, y, zn
 
 ## 需从更晚日期开始的品种
 
@@ -25,12 +25,10 @@ a, ag, al, ap, au, b, bb, bu, c, cf, cj, cs, cu, cy, eb, eg, fb, fg, fu, hc, i, 
 | pg | 2020-03-30 | 2020-03-30 |
 | lu | 2020-06-22 | 2020-06-22 |
 | pf | 2020-10-12 | 2020-10-12 |
-| bc | 2020-11-19 | 2020-11-19 |
 | lh | 2021-01-08 | 2021-01-08 |
 | pk | 2021-02-01 | 2021-02-01 |
 | im | 2022-07-22 | 2022-07-22 |
 | si | 2022-12-22 | 2022-12-22 |
-| tl | 2023-04-21 | 2023-04-21 |
 | ao | 2023-06-19 | 2023-06-19 |
 | lc | 2023-07-21 | 2023-07-21 |
 | br | 2023-07-28 | 2023-07-28 |
@@ -38,15 +36,9 @@ a, ag, al, ap, au, b, bb, bu, c, cf, cj, cs, cu, cy, eb, eg, fb, fg, fu, hc, i, 
 | px | 2023-09-15 | 2023-09-15 |
 | sh | 2023-09-15 | 2023-09-15 |
 | pr | 2024-08-30 | 2024-08-30 |
-| lg | 2024-11-18 | 2024-11-18 |
 | ps | 2024-12-26 | 2024-12-26 |
-| ad | 2025-06-10 | 2025-06-10 |
 | bz | 2025-07-08 | 2025-07-08 |
 | pl | 2025-07-22 | 2025-07-22 |
-| op | 2025-09-10 | 2025-09-10 |
-| l_f | 2025-10-29 | 2025-10-29 |
-| pp_f | 2025-10-29 | 2025-10-29 |
-| v_f | 2025-10-29 | 2025-10-29 |
 | pd | 2025-11-27 | 2025-11-27 |
 | pt | 2025-11-27 | 2025-11-27 |
 
@@ -60,17 +52,14 @@ a, ag, al, ap, au, b, bb, bu, c, cf, cj, cs, cu, cy, eb, eg, fb, fg, fu, hc, i, 
 | ap | 2017-12-22 | 2020-01-02 | full_window_from_2020 |
 | au | 2008-01-09 | 2020-01-02 | full_window_from_2020 |
 | b | 2004-12-22 | 2020-01-02 | full_window_from_2020 |
-| bb | 2013-12-06 | 2020-01-02 | full_window_from_2020 |
 | bu | 2013-10-09 | 2020-01-02 | full_window_from_2020 |
 | c | 2004-09-22 | 2020-01-02 | full_window_from_2020 |
 | cf | 2004-06-01 | 2020-01-02 | full_window_from_2020 |
 | cj | 2019-04-30 | 2020-01-02 | full_window_from_2020 |
 | cs | 2014-12-19 | 2020-01-02 | full_window_from_2020 |
 | cu | 1999-01-04 | 2020-01-02 | full_window_from_2020 |
-| cy | 2017-08-18 | 2020-01-02 | full_window_from_2020 |
 | eb | 2019-09-26 | 2020-01-02 | full_window_from_2020 |
 | eg | 2018-12-10 | 2020-01-02 | full_window_from_2020 |
-| fb | 2013-12-06 | 2020-01-02 | full_window_from_2020 |
 | fg | 2012-12-03 | 2020-01-02 | full_window_from_2020 |
 | fu | 2004-08-25 | 2020-01-02 | full_window_from_2020 |
 | hc | 2014-03-21 | 2020-01-02 | full_window_from_2020 |
@@ -81,7 +70,6 @@ a, ag, al, ap, au, b, bb, bu, c, cf, cj, cs, cu, cy, eb, eg, fb, fg, fu, hc, i, 
 | j | 2011-04-15 | 2020-01-02 | full_window_from_2020 |
 | jd | 2013-11-08 | 2020-01-02 | full_window_from_2020 |
 | jm | 2013-03-22 | 2020-01-02 | full_window_from_2020 |
-| jr | 2013-11-18 | 2020-01-02 | full_window_from_2020 |
 | l | 2007-07-31 | 2020-01-02 | full_window_from_2020 |
 | m | 2000-07-17 | 2020-01-02 | full_window_from_2020 |
 | ma | 2014-06-17 | 2020-01-02 | full_window_from_2020 |
@@ -90,12 +78,9 @@ a, ag, al, ap, au, b, bb, bu, c, cf, cj, cs, cu, cy, eb, eg, fb, fg, fu, hc, i, 
 | oi | 2012-07-16 | 2020-01-02 | full_window_from_2020 |
 | p | 2007-10-29 | 2020-01-02 | full_window_from_2020 |
 | pb | 2011-03-24 | 2020-01-02 | full_window_from_2020 |
-| pm | 2012-01-17 | 2020-01-02 | full_window_from_2020 |
 | pp | 2014-02-28 | 2020-01-02 | full_window_from_2020 |
 | rb | 2009-03-27 | 2020-01-02 | full_window_from_2020 |
-| ri | 2012-07-24 | 2020-01-02 | full_window_from_2020 |
 | rm | 2012-12-28 | 2020-01-02 | full_window_from_2020 |
-| rr | 2019-08-16 | 2020-01-02 | full_window_from_2020 |
 | rs | 2012-12-28 | 2020-01-02 | full_window_from_2020 |
 | ru | 1999-01-04 | 2020-01-02 | full_window_from_2020 |
 | sa | 2019-12-06 | 2020-01-02 | full_window_from_2020 |
@@ -106,26 +91,18 @@ a, ag, al, ap, au, b, bb, bu, c, cf, cj, cs, cu, cy, eb, eg, fb, fg, fu, hc, i, 
 | sp | 2018-11-27 | 2020-01-02 | full_window_from_2020 |
 | sr | 2006-01-06 | 2020-01-02 | full_window_from_2020 |
 | ss | 2019-09-25 | 2020-01-02 | full_window_from_2020 |
-| t | 2015-03-20 | 2020-01-02 | full_window_from_2020 |
 | ta | 2006-12-18 | 2020-01-02 | full_window_from_2020 |
-| tf | 2013-09-06 | 2020-01-02 | full_window_from_2020 |
-| ts | 2018-08-17 | 2020-01-02 | full_window_from_2020 |
 | ur | 2019-08-09 | 2020-01-02 | full_window_from_2020 |
 | v | 2009-05-25 | 2020-01-02 | full_window_from_2020 |
-| wh | 2012-07-24 | 2020-01-02 | full_window_from_2020 |
-| wr | 2009-03-27 | 2020-01-02 | full_window_from_2020 |
 | y | 2006-01-09 | 2020-01-02 | full_window_from_2020 |
-| zc | 2015-05-18 | 2020-01-02 | full_window_from_2020 |
 | zn | 2007-03-26 | 2020-01-02 | full_window_from_2020 |
 | pg | 2020-03-30 | 2020-03-30 | product_listed_after_2020 |
 | lu | 2020-06-22 | 2020-06-22 | product_listed_after_2020 |
 | pf | 2020-10-12 | 2020-10-12 | product_listed_after_2020 |
-| bc | 2020-11-19 | 2020-11-19 | product_listed_after_2020 |
 | lh | 2021-01-08 | 2021-01-08 | product_listed_after_2020 |
 | pk | 2021-02-01 | 2021-02-01 | product_listed_after_2020 |
 | im | 2022-07-22 | 2022-07-22 | product_listed_after_2020 |
 | si | 2022-12-22 | 2022-12-22 | product_listed_after_2020 |
-| tl | 2023-04-21 | 2023-04-21 | product_listed_after_2020 |
 | ao | 2023-06-19 | 2023-06-19 | product_listed_after_2020 |
 | lc | 2023-07-21 | 2023-07-21 | product_listed_after_2020 |
 | br | 2023-07-28 | 2023-07-28 | product_listed_after_2020 |
@@ -133,15 +110,9 @@ a, ag, al, ap, au, b, bb, bu, c, cf, cj, cs, cu, cy, eb, eg, fb, fg, fu, hc, i, 
 | px | 2023-09-15 | 2023-09-15 | product_listed_after_2020 |
 | sh | 2023-09-15 | 2023-09-15 | product_listed_after_2020 |
 | pr | 2024-08-30 | 2024-08-30 | product_listed_after_2020 |
-| lg | 2024-11-18 | 2024-11-18 | product_listed_after_2020 |
 | ps | 2024-12-26 | 2024-12-26 | product_listed_after_2020 |
-| ad | 2025-06-10 | 2025-06-10 | product_listed_after_2020 |
 | bz | 2025-07-08 | 2025-07-08 | product_listed_after_2020 |
 | pl | 2025-07-22 | 2025-07-22 | product_listed_after_2020 |
-| op | 2025-09-10 | 2025-09-10 | product_listed_after_2020 |
-| l_f | 2025-10-29 | 2025-10-29 | product_listed_after_2020 |
-| pp_f | 2025-10-29 | 2025-10-29 | product_listed_after_2020 |
-| v_f | 2025-10-29 | 2025-10-29 | product_listed_after_2020 |
 | pd | 2025-11-27 | 2025-11-27 | product_listed_after_2020 |
 | pt | 2025-11-27 | 2025-11-27 | product_listed_after_2020 |
 

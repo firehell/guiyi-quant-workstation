@@ -16,7 +16,7 @@ LOG_DIR="$STAGE1_LOG" \
 echo "===== STAGE1 done $(date -u +%Y-%m-%dT%H:%M:%SZ) =====" | tee -a "$STAGE1_LOG/runner.log"
 
 echo "===== STAGE2 start roll 1m all 90 $(date -u +%Y-%m-%dT%H:%M:%SZ) =====" | tee -a "$STAGE2_LOG/runner.log"
-PRODUCTS_FILE=data/universe/full_products_90.txt \
+PRODUCTS_FILE=data/universe/active_products.txt \
 PERIODS=1m \
 LOG_DIR="$STAGE2_LOG" \
 ./scripts/rqdata_roll_incremental.sh 2>&1 | tee -a "$STAGE2_LOG/runner.log"
