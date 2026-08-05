@@ -51,11 +51,8 @@ def test_active_and_frozen_dispositions() -> None:
         is consistency.TaskDisposition.ACTIVE_CONTRACT
     )
     assert (
-        inventory["JM-LIVE-STABILITY-S6-10.md"]
+        inventory["S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md"]
         is consistency.TaskDisposition.FROZEN_RUNTIME_CONSUMED
-    )
-    assert (
-        inventory["GY-CORE-CONVERGENCE.md"] is consistency.TaskDisposition.HISTORICAL_FACT
     )
 
 

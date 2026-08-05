@@ -259,7 +259,7 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 - 数据、quality、profile、manifest：`docs/DATA_CENTER.md` 与对应 active business contract。
 - 回测口径与报告可信度：`docs/BACKTEST_ENGINE.md`。
 - SignalEvent、通知与 HTDY exact policy：`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md`。
-- S6-10 historical/runtime contract：`docs/tasks/JM-LIVE-STABILITY-S6-10.md`。
+- S6-10 旧合同文本已删除：事实见 Git history；未来 Runtime/验收边界见 `docs/tasks/V1-FINAL-ACCEPTANCE-S6-11.md` 与 `STATUS.md`。
 - 个人开发、普通删除与外部操作边界：`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`。
 
 ## 解释规则
