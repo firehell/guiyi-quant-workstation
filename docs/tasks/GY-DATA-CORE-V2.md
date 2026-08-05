@@ -91,18 +91,13 @@ evidence。人工复盘只有在 market phase、system compliance、rule tag 和
 reconciliation 完成后才能幂等提取精简 `ResearchSample`。scheduler 默认 disabled；生产 migration、
 真实运行与 Task 07 legacy 删除均未授权。
 
-historical evidence/report/receipt 默认保护。任何受控删除只允许在以下条件全部满足后，由独立任务执行：
-
-1. 精确逐文件 deletion manifest；
-2. zero active references（active canonical、测试、Gate、文档和 Runtime 引用扫描为零）；
-3. independent Sol Review 允许删除；
-4. owner 批准 exact scope；
-5. 删除后全仓验证与引用扫描。
+historical evidence/report/receipt 默认保护。任何受控删除均须先完成只读扫描、说明影响范围与
+回滚方式，并取得用户对该次删除的明确批准；删除后执行全仓验证与引用扫描。
 
 本合同和任务 00 均不授权删除任何文件、Git 历史、数据库记录、Parquet、evidence、report
 或 receipt。2026-08-05 新建的 `GY-DATA-PRODUCT-RETIREMENT-21` 是唯一精确品种退役例外：
-只有其 exact packet、独立 Review、owner exact-hash approval、69 品种 Runtime 和停服 receipt
-全部成立后，才允许删除 packet 中列出的当前版本目标对象；Git 历史不重写，并保留最小最终
+只有其独立 Review、用户对该次删除的明确批准、69 品种 Runtime 和停服 receipt
+全部成立后，才允许删除当前版本目标对象；Git 历史不重写，并保留最小最终
 退役 receipt。该例外当前仍处于 code/dry-run 阶段，不授权 apply。
 
 ## 3. Legacy compatibility 与替换关系

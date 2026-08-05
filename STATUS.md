@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-04
+更新时间：2026-08-05
 
 本文件是项目当前状态仪表盘；历史过程由 Git、任务合同与既有
 receipt/report/evidence 追溯。
@@ -60,10 +60,10 @@ CLI packet/plan/preflight/apply/verify 路由已从 active parser 移除并 fail
 | Task 07 production read-only acceptance | pending | 重新回读 PostgreSQL `20260803_0032` 并验收 JM 目标 Canonical；本任务未执行 |
 | Task 06 live/EOD contract | passed | 已冻结单一 EMA21 confirmed-close observation 合同；不扩展 centered-XMA 白名单 |
 | Task 06 production migration | passed | `0028 -> 0031` empty/disabled smoke 已通过；不授权 Runtime/live enable |
-| 旧行情与 legacy 工件删除 | not authorized | 旧行情只读保留；任何删除需独立 exact deletion Gate |
+| 旧行情与 legacy 工件删除 | not authorized | 旧行情只读保留；任何删除仍需用户明确批准 |
 | release / main / tag | not authorized | 本任务只允许 task -> develop 可逆集成 |
 | Task 08 Runtime promotion | pending / not authorized | Runtime 保持独立 detached；health/smoke/rollback 为后续专用 Gate |
-| JM Runtime 验收 | pending redesign | 单日自然运行、同一 exact release 恢复证据、独立 Review 与用户最终批准 |
+| JM Runtime 验收 | pending redesign | 单日自然运行、恢复证据、独立 Review 与用户最终批准 |
 | 长稳 / 通知 / 交易就绪 | not ready | 本任务不启用 live、不发送通知、不授权订单或自动交易 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达与 FRP/Nginx 重启恢复 |
 | V1 最终验收 | pending | 仅在各独立 receipt 与新版 JM Runtime Gate 完成后进行 |

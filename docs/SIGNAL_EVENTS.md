@@ -500,5 +500,4 @@ Web 或 launchd 任一事实变化都会使旧 Approval A 失效。执行期间
 `GY-S6-10-R2` 仍必须保持同一 JM/actual rank=1/15m/confirmed-close、first-seen、
 no-retraction、`signal_changed` 禁止和 observation-only 边界，但验收窗口改为一个完整
 DCE 交易日：夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等和零非法写入。任一失败
-整日重启，单日 Ledger append-only；Runtime/RQData/网络/Mac 恢复由同一 exact release
-独立 evidence 验证。
+整日重启，单日 Ledger append-only；Runtime/RQData/网络/Mac 恢复由独立 evidence 验证。

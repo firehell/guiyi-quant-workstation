@@ -55,9 +55,9 @@
 - 旧 `GY-CORE-04～08` 执行路线已 superseded/paused。`GY-CORE-02` Facade 与
   `GY-CORE-03` CLI 壳允许复用；已合入的 `GY-CORE-04` 代码保留为 legacy compatibility，
   但不得据此继续旧 Shadow/Runtime 路线。
-- historical evidence/report/receipt 默认保护。只有逐文件 deletion manifest、替代回归证据、
-  active 引用扫描、独立 Review 和用户对 exact scope 的批准全部具备时，才可执行受控删除；
-  本规则本身不授权删除任何文件、Git 历史、数据库记录、Parquet、report 或 receipt。
+- historical evidence/report/receipt 默认保护。删除前必须完成只读扫描、说明影响与回滚方式，
+  并取得用户对该次删除的明确批准；本规则本身不授权删除任何文件、Git 历史、数据库记录、
+  Parquet、report 或 receipt。
 - 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata。
   旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 bar
   layer 与 Profile/Binding/legacy lineage 均为 rebuild-only 或 compatibility-only，不得迁移为
@@ -93,8 +93,8 @@
 通过 PR、CI 与独立 Review 集成；满足上述可逆集成条件时无需重复请求用户批准 Plan 或
 task→`develop` merge。只有 task clean 且其 HEAD 已被 `develop` 包含时，才可移除 task
 worktree 与本地分支。`worktree_flow.py` 默认 dry-run；`task-worktree.sh` 仍只负责到 Draft PR，
-后续 merge 由 Codex 编排层执行。`release-flow.sh prepare/publish/tag` 仍只在用户批准 exact packet、
-local/current/target/rollback SHA、clean worktree 与远端 refs 精确匹配时逐项执行；prepare 仅允许
+后续 merge 由 Codex 编排层执行。`release-flow.sh prepare/publish/tag` 仍只在用户明确批准该次
+release，且 local/current/target/rollback SHA、clean worktree 与远端 refs 精确匹配时逐项执行；prepare 仅允许
 显式绑定的 stale local main 经当前远端 main fast-forward 到 target；publish 必须绑定批准时
 的远端 main 且不得隐式修改 upstream，tag 重试只接受 annotated object、target 与 message 全部精确
-一致的原 packet；task 自动集成不授权 release、tag 或 Runtime。
+一致；task 自动集成不授权 release、tag 或 Runtime。

@@ -21,7 +21,7 @@
 
 JR、PM、RI、WH、ZC、WR、BB、FB、PP_F、L_F、V_F、BC、CY、LG、AD、OP、RR、T、TF、TS、TL
 已从 active universe 移除，并在 RQData adapter 与 MarketDataService 入口 fail-closed；真实历史资产
-删除仍等待 `GY-DATA-PRODUCT-RETIREMENT-21` 的 release、Runtime、停服和 exact deletion Gate。
+删除仍等待 `GY-DATA-PRODUCT-RETIREMENT-21` 的 release、Runtime、停服和用户明确批准。
 
 `continuous` 与 `actual_dominant` 是显式且不可互换的数据类型。前者主要用于长周期展示、
 指标研究和明确标注的数据类型回测；后者用于实际主力监听、信号和真实换月回测。
@@ -462,7 +462,7 @@ C2、Approval D 签名、干净 Runtime 与真实部署/运行验收缺一不可
 | 单次真实 live / archive Gate | `T3_REAL_PASSED`、`JM_ARCHIVE_PASSED` 与 `JM_EOD_INCREMENTAL_AUTOMATION_READY` 均已达成；不自动继承到 SignalEvent、通知或长稳 |
 | S6-08 SignalEvent | 旧 JM V1-B schema-v2 代码与 packet 仅作 superseded 历史；HTDY Step 3 immutable writer/完整 lineage v2/Stage 9 preview-only 例外已完成，delivery 与通知仍禁止；最终 Approval A 已将 code-only Runtime/Web bundle 部署到 `f63b3636`，S6-07 rebind receipt 与 production service-parent 零漂移验证均通过。SignalEvent flags 仍关闭，daily child、自然事件、幂等探测与长稳仍 pending |
 | 旧 S6-10 | schema-v4～v7 owner-paused / frozen historical；旧授权、mapping、部署和运行均禁止 |
-| 新版 JM Runtime Gate | `GY-S6-10-R2` 待设计：一个完整 DCE 交易日自然运行 + 同一 exact release 独立恢复证据 + 独立 Review + 用户最终批准 |
+| 新版 JM Runtime Gate | `GY-S6-10-R2` 待设计：一个完整 DCE 交易日自然运行 + 独立恢复证据 + 独立 Review + 用户最终批准 |
 | Ready 兼容字段 | `JM_RUNTIME_READY` 未达成；`LONG_RUNNING_READY=false` 固定为 deprecated/not_applicable，单日 Gate 永不设 true |
 | 消费者数据层 Gate | `CONSUMER_DATA_CONTRACT_READY / DATA_LAYER_READY_FOR_MARKET_BACKTEST_SIGNAL` 已通过；`DATA_LAYER_REAUDIT_REQUIRED` 仍是全历史 residual 治理，不是消费者契约阻断 |
 | 全历史契约 | `V1_DATA_CONTRACT_FROZEN`；只冻结目标与消费语义，不代表 Audit V2 或 Profile rollout 已通过 |
@@ -552,7 +552,7 @@ Backtest API
 
 - Audit V2 全历史 residual 治理：处理保留的 provider/calendar/session/asset 证据边界，不得把它等同于已通过的消费者准入。
 - live/after-market/formal event/notification 的新版单交易日 Runtime 验收：夜盘、三段日盘、
-  23 个 confirmed 15m 桶、EOD、幂等、零非法写入，以及同一 exact release 的独立恢复证据。
+  23 个 confirmed 15m 桶、EOD、幂等、零非法写入，以及独立恢复证据。
 - API/Web/backtest/signal worker 的实际 launchd kill/restart 验收。
 - 样本外 / walk-forward 验证。
 - 真实公网部署验收。
