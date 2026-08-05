@@ -303,6 +303,66 @@ def test_product_retirement_runtime_plan_delegates_without_opening_database(
     assert json.loads(stdout.getvalue())["command"] == "runtime.product-retirement.plan"
 
 
+def test_product_retirement_runtime_execute_delegates_to_bound_executor(
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    protected_root = tmp_path / "audit"
+    raw = tmp_path / "raw"
+    canonical = tmp_path / "canonical"
+    processed = tmp_path / "processed"
+    for path in (runtime_root, protected_root, raw, canonical, processed):
+        path.mkdir()
+    active_products = tmp_path / "active_products.txt"
+    active_products.write_text("jm\n", encoding="utf-8")
+    stdout = StringIO()
+
+    class Executor:
+        def plan(self, _request):
+            raise AssertionError("execute must not call plan")
+
+        def execute(self, request):
+            assert request.release_tag == "runtime-20260805-c9de1cdf"
+            return {
+                "command": "runtime.product-retirement.execute",
+                "status": "completed",
+            }
+
+        def resume(self, _request, *, journal_path):
+            raise AssertionError(journal_path)
+
+    exit_code = main(
+        [
+            "runtime",
+            "product-retirement",
+            "execute",
+            "--release-tag",
+            "runtime-20260805-c9de1cdf",
+            "--rollback-tag",
+            "runtime-rollback-20260805-9e816720",
+            "--runtime-root",
+            str(runtime_root),
+            "--protected-root",
+            str(protected_root),
+            "--active-products-path",
+            str(active_products),
+            "--data-root",
+            f"raw={raw}",
+            "--data-root",
+            f"canonical={canonical}",
+            "--data-root",
+            f"processed={processed}",
+        ],
+        session_factory=_NoSessionFactory(),
+        retirement_execution_factory=lambda: Executor(),
+        stdout=stdout,
+        stderr=StringIO(),
+    )
+
+    assert exit_code == 0
+    assert json.loads(stdout.getvalue())["status"] == "completed"
+
+
 def test_runtime_status_returns_health_payload_and_nonzero_for_failed_runtime() -> None:
     stdout = StringIO()
     stderr = StringIO()

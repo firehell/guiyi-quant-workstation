@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.services.product_retirement_runtime_gate import (
+    BoundProductRetirementCommandExecutor,
     ProductRetirementExecutionService,
     ProductRetirementPrecommitError,
     ProductRetirementRuntimeGate,
@@ -210,6 +211,45 @@ def test_postcommit_purge_failure_keeps_services_stopped(tmp_path: Path) -> None
     assert result["status"] == "db_committed_purge_pending"
     assert data.calls == [("apply",)]
     assert runtime.restart_calls == 0
+
+
+def test_bound_command_executor_owns_runtime_and_data_operators(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    protected_root = tmp_path / "audit"
+    roots = {
+        label: tmp_path / f"data/{label}" for label in ("raw", "canonical", "processed")
+    }
+    for path in (runtime_root, protected_root, *roots.values()):
+        path.mkdir(parents=True, exist_ok=True)
+    active_products_path = tmp_path / "active_products.txt"
+    active_products_path.write_text(
+        "\n".join(f"keep_{index}" for index in range(69)) + "\n"
+    )
+    request = RetirementRuntimeRequest(
+        release_tag="runtime-20260805-c9de1cdf",
+        rollback_tag="runtime-rollback-20260805-9e816720",
+        runtime_root=runtime_root,
+        protected_root=protected_root,
+        active_products_path=active_products_path,
+        roots=roots,
+    )
+    runtime = _RuntimeOperator()
+    data = _DataOperator(apply_status="applied")
+    executor = BoundProductRetirementCommandExecutor(
+        inventory=lambda _request, _runtime_sha: {"packet": "fresh"},
+        runtime_operator=runtime,
+        data_operator=data,
+    )
+
+    result = executor.execute(request)
+
+    assert result["status"] == "completed"
+    assert data.calls == [
+        ("apply",),
+        ("verify",),
+        ("sync_direct", ("1m", "1d", "1w")),
+        ("aggregate", ("5m", "15m", "30m", "60m")),
+    ]
 
 
 def test_database_apply_failure_rolls_runtime_back_and_keeps_services_stopped(

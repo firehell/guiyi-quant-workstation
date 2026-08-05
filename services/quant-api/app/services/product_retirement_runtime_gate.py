@@ -312,6 +312,44 @@ class ProductRetirementExecutionService:
         )
 
 
+class BoundProductRetirementCommandExecutor:
+    """Bind the two real operators once, leaving the CLI free of infra details."""
+
+    def __init__(
+        self,
+        *,
+        inventory: Callable[[RetirementRuntimeRequest, str], Mapping[str, Any]],
+        runtime_operator: RuntimeOperator,
+        data_operator: RetirementDataOperator,
+    ) -> None:
+        self._service = ProductRetirementExecutionService(inventory=inventory)
+        self._runtime_operator = runtime_operator
+        self._data_operator = data_operator
+
+    def plan(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
+        return self._service.plan(request)
+
+    def execute(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
+        return self._service.execute(
+            request,
+            runtime_operator=self._runtime_operator,
+            data_operator=self._data_operator,
+        )
+
+    def resume(
+        self,
+        request: RetirementRuntimeRequest,
+        *,
+        journal_path: Path,
+    ) -> Mapping[str, Any]:
+        return self._service.resume(
+            request,
+            journal_path=journal_path,
+            runtime_operator=self._runtime_operator,
+            data_operator=self._data_operator,
+        )
+
+
 def validate_runtime_request(request: RetirementRuntimeRequest) -> None:
     """Validate bounded, real paths before any Runtime or data operation."""
 

@@ -43,7 +43,7 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 DataVerifier = Callable[..., dict[str, Any]]
 RuntimeHealthBuilder = Callable[[Any], dict[str, Any]]
 DataCoreRunner = Callable[[str, Any, argparse.Namespace], dict[str, Any]]
-RetirementExecutionFactory = Callable[[], ProductRetirementExecutionService]
+RetirementExecutionFactory = Callable[[], Any]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -198,7 +198,12 @@ def main(
                 payload = dict(executor.plan(request))
                 print_json(payload, stdout)
                 return 0 if payload.get("status") == "planned" else 1
-            raise CliUsageError("retirement execute requires runtime operators")
+            if args.retirement_command == "execute":
+                payload = dict(executor.execute(request))
+            else:
+                payload = dict(executor.resume(request, journal_path=args.journal))
+            print_json(payload, stdout)
+            return 0 if payload.get("status") == "completed" else 1
         except (CliUsageError, ValueError):
             print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
             return 2
@@ -385,13 +390,38 @@ def _parse_retirement_roots(values: Sequence[str]) -> dict[str, Path]:
     return result
 
 
-def _default_retirement_execution_service() -> ProductRetirementExecutionService:
+class _UnavailableRetirementExecutionService:
+    """Expose planning without silently constructing production operators."""
+
+    def __init__(self, service: ProductRetirementExecutionService) -> None:
+        self._service = service
+
+    def plan(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
+        return self._service.plan(request)
+
+    def execute(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
+        del request
+        raise ValueError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
+
+    def resume(
+        self,
+        request: RetirementRuntimeRequest,
+        *,
+        journal_path: Path,
+    ) -> Mapping[str, Any]:
+        del request, journal_path
+        raise ValueError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
+
+
+def _default_retirement_execution_service() -> _UnavailableRetirementExecutionService:
     def unavailable_inventory(
         _request: RetirementRuntimeRequest, _runtime_sha: str
     ) -> Mapping[str, Any]:
         raise RuntimeError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
 
-    return ProductRetirementExecutionService(inventory=unavailable_inventory)
+    return _UnavailableRetirementExecutionService(
+        ProductRetirementExecutionService(inventory=unavailable_inventory)
+    )
 
 
 if __name__ == "__main__":
