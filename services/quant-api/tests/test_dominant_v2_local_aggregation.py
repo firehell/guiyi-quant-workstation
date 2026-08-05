@@ -83,3 +83,16 @@ def test_build_aggregates_rejects_missing_local_1m(tmp_path) -> None:
             end_date=date(2026, 7, 10),
             periods=("5m",),
         )
+
+
+def test_build_aggregates_rejects_retired_product_before_file_access(tmp_path) -> None:
+    with pytest.raises(ValueError, match="PRODUCT_RETIREMENT_PRODUCT_RETIRED"):
+        build_dominant_v2_parquet_assets(
+            client=ExplodingClient(),
+            output_root=tmp_path,
+            product="jr",
+            exchange="CZCE",
+            start_date=date(2026, 7, 10),
+            end_date=date(2026, 7, 10),
+            periods=("5m",),
+        )

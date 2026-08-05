@@ -420,6 +420,24 @@ def test_full_universe_scope_rejects_subset() -> None:
         )
 
 
+def test_full_universe_scope_accepts_only_the_69_product_active_contract() -> None:
+    module = _module()
+    products = [f"p{index:02d}" for index in range(69)]
+
+    module.validate_full_universe_scope(
+        products=products,
+        canonical_products=products,
+        window_products=set(products),
+    )
+
+    with pytest.raises(module.AuditInputGateError, match="exactly 69"):
+        module.validate_full_universe_scope(
+            products=products[:-1],
+            canonical_products=products[:-1],
+            window_products=set(products[:-1]),
+        )
+
+
 def _coverage(*, status: str, quality_status: str, year: int = 2026) -> dict:
     return {
         "product": "jm",

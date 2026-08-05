@@ -27,7 +27,7 @@ from app.services.rqdata_ingest.full_universe_active_gate import (  # noqa: E402
 def main() -> None:
     """按 profile 审计 active 宇宙覆盖，并落盘 Stage 8.6 报告。"""
     parser = argparse.ArgumentParser(description="Stage 8.6 read-only full-universe active gate audit.")
-    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "full_products_90.txt")
+    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "active_products.txt")
     parser.add_argument("--product", action="append", dest="products", help="Limit audit to one or more products.")
     parser.add_argument(
         "--profile",

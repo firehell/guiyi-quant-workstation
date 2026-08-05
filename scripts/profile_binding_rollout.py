@@ -48,7 +48,7 @@ def main() -> None:
     parser.add_argument("--project-root", type=Path, default=APP_PROJECT_ROOT)
     parser.add_argument("--profiles", default="all", help="Comma-separated profile ids or 'all'.")
     parser.add_argument("--products", default="", help="Comma-separated product symbols.")
-    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/full_products_90.txt")
+    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/active_products.txt")
     parser.add_argument(
         "--sealing-dir",
         type=Path,

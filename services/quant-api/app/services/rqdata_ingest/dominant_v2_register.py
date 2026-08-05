@@ -9,6 +9,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.data_core.product_retirement import assert_products_active
 from app.models.data_center import DataQualityReport, utc_now
 from app.services.rqdata_ingest.bar_sample import BarQuality, _ensure_reference_rows, _record_canonical_file_and_quality, _start_task
 from app.services.rqdata_ingest.jm_v2_parquet import evaluate_standard_dominant_quality
@@ -26,7 +27,7 @@ def register_dominant_v2_quality(
     if data_role not in {"primary", "candidate"}:
         raise ValueError(f"unsupported data_role: {data_role}")
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    symbol = str(summary.get("symbol") or "").lower()
+    symbol = assert_products_active((str(summary.get("symbol") or ""),))[0]
     contract = str(summary.get("contract") or f"{symbol}.MAIN")
     exchange = str(summary.get("exchange") or "DCE").upper()
     periods = summary.get("periods") or {}

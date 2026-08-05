@@ -31,7 +31,7 @@ from app.services.rqdata_ingest.target_coverage_audit import (  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Read-only data layer final audit orchestrator.")
-    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "full_products_90.txt")
+    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "active_products.txt")
     parser.add_argument("--product-windows", type=Path, default=PROJECT_ROOT / "data" / "universe" / "product_1d_start_from_2020.csv")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--audit-end", type=date.fromisoformat, default=DEFAULT_AUDIT_END)

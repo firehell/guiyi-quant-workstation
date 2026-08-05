@@ -688,7 +688,7 @@ def render_download_queue_commands(result: dict[str, Any]) -> str:
         f"Products with any roll segment gap ({len(roll_gap_products)}): `{', '.join(roll_gap_products[:40])}{'...' if len(roll_gap_products) > 40 else ''}`",
         "",
         "```bash",
-        "PRODUCTS_FILE=data/universe/full_products_90.txt \\",
+        "PRODUCTS_FILE=data/universe/active_products.txt \\",
         f"START_DATE=2020-01-02 END_DATE={audit_end} BAR_PERIODS=1m,1d,1w LAYER=layer2 \\",
         "./scripts/rqdata_full_universe_download.sh",
         "```",

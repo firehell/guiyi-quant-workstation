@@ -175,7 +175,7 @@ def run_derived_period_verification(
 
     products = tuple(sorted({item.strip().lower() for item in config.products if item.strip()}))
     if not products:
-        products = _load_products(root / "data/universe/full_products_90.txt")
+        products = _load_products(root / "data/universe/active_products.txt")
     targets = build_consumer_targets(products, audit_end=config.audit_end)
     files = list(
         session.scalars(

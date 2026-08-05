@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 
 from app.core.env import load_project_env
+from app.data_core.product_retirement import ProductRetirementError, is_retired_identity
 
 MIN_DOMINANT_PRICE_START = date(2010, 1, 4)
 
@@ -49,10 +50,14 @@ class RqDataClient:
     @staticmethod
     def underlying_symbol(product: str) -> str:
         """RQData futures APIs expect uppercase underlying symbols (RB, HC, TA)."""
+        if is_retired_identity(product=product):
+            raise ProductRetirementError(f"PRODUCT_RETIREMENT_PRODUCT_RETIRED:{str(product).strip().lower()}")
         return str(product or "").upper()
 
     @staticmethod
     def order_book_id(contract: str) -> str:
+        if is_retired_identity(contract=contract):
+            raise ProductRetirementError(f"PRODUCT_RETIREMENT_PRODUCT_RETIRED:{str(contract).strip().upper()}")
         return str(contract or "").upper()
 
     @staticmethod
@@ -60,7 +65,18 @@ class RqDataClient:
         return version("rqdatac")
 
     def all_future_instruments(self) -> pd.DataFrame:
-        return self._frame(self.rqdatac.all_instruments(type="Future"))
+        frame = self._frame(self.rqdatac.all_instruments(type="Future"))
+        if frame.empty:
+            return frame
+        return frame[
+            ~frame.apply(
+                lambda row: is_retired_identity(
+                    product=row.get("underlying_symbol", row.get("product")),
+                    contract=row.get("order_book_id", row.get("contract")),
+                ),
+                axis=1,
+            )
+        ].reset_index(drop=True)
 
     def trading_dates(self, start_date: date, end_date: date) -> list[date]:
         dates = self.rqdatac.get_trading_dates(start_date=start_date, end_date=end_date)

@@ -5,12 +5,9 @@ cu
 ss
 sf
 si
-pm
 c
 lh
 ec
-t
-tl
 sh
 cf
 hc
@@ -18,5 +15,4 @@ l
 p
 ru
 v
-l_f
 pl

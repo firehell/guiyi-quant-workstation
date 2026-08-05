@@ -116,14 +116,14 @@ def main() -> int:
             }
         )
         database_gate_passed = True
-        products_file = args.products_file or args.data_project_root / "data" / "universe" / "full_products_90.txt"
+        products_file = args.products_file or args.data_project_root / "data" / "universe" / "active_products.txt"
         product_windows_file = args.product_windows or args.data_project_root / "data" / "universe" / "product_1d_start_from_2020.csv"
         products = [
             line.strip().lower()
             for line in products_file.read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.strip().startswith("#")
         ]
-        canonical_products_file = args.data_project_root / "data" / "universe" / "full_products_90.txt"
+        canonical_products_file = args.data_project_root / "data" / "universe" / "active_products.txt"
         canonical_products = [
             line.strip().lower()
             for line in canonical_products_file.read_text(encoding="utf-8").splitlines()

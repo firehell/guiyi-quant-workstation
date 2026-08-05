@@ -44,7 +44,7 @@ def resolve_exchange(product: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Backfill dominant MAIN 1m prefix to listed_date for pre-2020 minute coverage.")
-    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "full_products_90.txt")
+    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "active_products.txt")
     parser.add_argument("--product-windows", type=Path, default=PROJECT_ROOT / "data" / "universe" / "product_1d_start_from_2020.csv")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument(

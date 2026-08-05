@@ -91,7 +91,7 @@ evidence。人工复盘只有在 market phase、system compliance、rule tag 和
 reconciliation 完成后才能幂等提取精简 `ResearchSample`。scheduler 默认 disabled；生产 migration、
 真实运行与 Task 07 legacy 删除均未授权。
 
-historical evidence/report/receipt 默认保护。Task 07 只允许在以下条件全部满足后，由独立任务执行：
+historical evidence/report/receipt 默认保护。任何受控删除只允许在以下条件全部满足后，由独立任务执行：
 
 1. 精确逐文件 deletion manifest；
 2. zero active references（active canonical、测试、Gate、文档和 Runtime 引用扫描为零）；
@@ -100,8 +100,10 @@ historical evidence/report/receipt 默认保护。Task 07 只允许在以下条�
 5. 删除后全仓验证与引用扫描。
 
 本合同和任务 00 均不授权删除任何文件、Git 历史、数据库记录、Parquet、evidence、report
-或 receipt。report 14/15 是 Git-traceable historical snapshots，不是 active Gate/regression；
-不得改写其历史结论或删除历史证据。
+或 receipt。2026-08-05 新建的 `GY-DATA-PRODUCT-RETIREMENT-21` 是唯一精确品种退役例外：
+只有其 exact packet、独立 Review、owner exact-hash approval、69 品种 Runtime 和停服 receipt
+全部成立后，才允许删除 packet 中列出的当前版本目标对象；Git 历史不重写，并保留最小最终
+退役 receipt。该例外当前仍处于 code/dry-run 阶段，不授权 apply。
 
 ## 3. Legacy compatibility 与替换关系
 
@@ -253,10 +255,11 @@ manifest。Direct 冲突只产生 RQData 重下提案，Aggregate 冲突只产�
 1m 重聚合提案；不执行 raw/legacy 或 legacy/new 逐行比较。所有 K 线均不进入
 retirement/deletion 分类。
 
-旧派生业务数据删除不再通过通用文件 inventory/quarantine 建模。只能在 exact-tag
+旧派生业务数据删除不再通过 Task 07 通用文件 inventory/quarantine 建模。只能在 exact-tag
 Runtime 验收后，依当时真实 PostgreSQL schema/FK 生成精确 table/row manifest 与 SQL
-digest，且对该 exact scope 重新获得 Owner 批准。K 线、Catalog、Manifest、
-MainContractMap、release receipt 与正式证据永不在删除范围。
+digest，且对该 exact scope 重新获得 Owner 批准。除独立合同
+`GY-DATA-PRODUCT-RETIREMENT-21` 在未来 exact Gate 下明确列出的 21 品种对象外，K 线、Catalog、
+Manifest、MainContractMap、release receipt 与正式证据永不在删除范围。
 
 2026-08-02 首轮生产只读 v8 snapshot：103,481 个资产，85 个
 `KEEP_CANONICAL_VERIFIED`、7,232 个 `REUSE_TRUSTED_SOURCE`、26 个

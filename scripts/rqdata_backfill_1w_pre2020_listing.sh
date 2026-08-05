@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 UV=(uv run --project services/quant-api python)
-PRODUCTS_FILE="${PRODUCTS_FILE:-data/universe/products_pre2020_listed_63.txt}"
+PRODUCTS_FILE="${PRODUCTS_FILE:-data/universe/products_pre2020_active.txt}"
 STARTS_FILE="${STARTS_FILE:-data/universe/product_1w_start_from_listing.csv}"
 GAP_END_DATE="${GAP_END_DATE:-2020-01-02}"
 GLOBAL_END="${GLOBAL_END:-2026-07-10}"
@@ -81,7 +81,7 @@ run_layer2_batch() {
 }
 
 run_dry_run() {
-  echo "=== dry-run dominant MAIN 1w prepend (63 products) ==="
+  echo "=== dry-run dominant MAIN 1w prepend (current pre-2020 active subset) ==="
   "${UV[@]}" scripts/rqdata_dominant_v2_backfill.py \
     --products-file "$PRODUCTS_FILE" \
     --starts-file "$STARTS_FILE" \

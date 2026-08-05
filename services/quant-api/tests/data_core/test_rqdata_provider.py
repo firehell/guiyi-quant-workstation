@@ -3,8 +3,10 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 
 from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
+from app.data_core.product_retirement import ProductRetirementError
 from app.data_core.rqdata_adapter import (
     MainMapRequest,
     ProviderBarRequest,
@@ -104,6 +106,28 @@ def test_rqdata_adapter_normalizes_provider_rows_to_exact_canonical_bars() -> No
     assert batch.bars[0].open == Decimal("100.1")
     assert batch.bars[0].turnover == Decimal("1206.0")
     assert batch.bars[1].open_interest == Decimal("101")
+
+
+def test_rqdata_adapter_rejects_retired_dataset_before_provider_access() -> None:
+    class Client(FakeClient):
+        def contract_bars(self, *_args):
+            raise AssertionError("provider must not be called")
+
+    request = replace(
+        _request(),
+        dataset=DatasetKey(
+            provider="rqdata",
+            dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+            symbol="jr",
+            contract_or_series="JR2609",
+            frequency=BarFrequency.M1,
+            adjustment="none",
+            schema_version="canonical-bar-v1",
+        ),
+    )
+
+    with pytest.raises(ProductRetirementError, match="PRODUCT_RETIRED"):
+        CanonicalRQDataAdapter(Client()).fetch_bars(request)
 
 
 def test_rqdata_adapter_normalizes_rank_one_mapping_without_local_derivation() -> None:
