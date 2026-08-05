@@ -94,7 +94,7 @@ historical evidence/report/receipt 默认保护。任何受控删除均须先完
 本合同和任务 00 均不授权删除任何文件、Git 历史、数据库记录、Parquet、evidence、report
 或 receipt。`GY-DATA-PRODUCT-RETIREMENT-21` 是唯一精确品种退役例外：只有用户给出命名操作与
 精确删除范围的一次性意图，且精确匹配、blocker、事务与数据完整性检查全部通过后，才允许删除
-当前版本目标对象；Git 历史不重写。该例外当前仍处于 code/dry-run 阶段，不授权 apply。
+当前版本目标对象；Git 历史不重写。该例外已于 2026-08-05 执行完成，不再是 active apply 授权。
 
 ## 3. Legacy compatibility 与替换关系
 
@@ -247,7 +247,7 @@ retirement/deletion 分类。
 旧派生业务数据删除不再通过 Task 07 通用文件 inventory/quarantine 建模。只能在 exact-tag
 Runtime 验收后，依当时真实 PostgreSQL schema/FK 生成精确 table/row manifest 与 SQL
 digest，且对该 exact scope 重新获得 Owner 批准。除独立合同
-`GY-DATA-PRODUCT-RETIREMENT-21` 在未来 exact Gate 下明确列出的 21 品种对象外，K 线、Catalog、
+`GY-DATA-PRODUCT-RETIREMENT-21` 已完成的 21 品种精确对象外，K 线、Catalog、
 Manifest、MainContractMap、release receipt 与正式证据永不在删除范围。
 
 2026-08-02 首轮生产只读 v8 snapshot：103,481 个资产，85 个
