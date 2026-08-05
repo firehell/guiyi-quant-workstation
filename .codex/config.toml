@@ -26,9 +26,10 @@ matcher = "^Bash$"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = '/usr/bin/python3 "$(git rev-parse --show-toplevel)/.codex/hooks/pre_tool_use_policy.py"'
+# Prefer Windows-available `python` on PATH; fall back is host-specific.
+command = 'python "$(git rev-parse --show-toplevel)/.codex/hooks/pre_tool_use_policy.py"'
 timeout = 5
-statusMessage = "Checking controlled workflow policy"
+statusMessage = "Checking destructive Git policy"
 
 # git push、gh pr、依赖安装等需要网络。
 [sandbox_workspace_write]

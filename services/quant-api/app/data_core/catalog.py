@@ -4,9 +4,19 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from math import isfinite
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
-from sqlalchemy import Date, DateTime, Integer, String, column, func, select, table
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Integer,
+    String,
+    column,
+    delete,
+    func,
+    select,
+    table,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -270,11 +280,7 @@ class HistoricalCatalog:
         rows = self.list_partitions(key)
         selected_replacements: list[MarketPartition] = []
         for replacement in sorted(
-            (
-                row
-                for row in rows
-                if row.overlap_reason == "version_replacement"
-            ),
+            (row for row in rows if row.overlap_reason == "version_replacement"),
             key=lambda row: row.id,
             reverse=True,
         ):
@@ -285,9 +291,7 @@ class HistoricalCatalog:
             if _window_fully_covered(window, replacement_windows):
                 continue
             if any(_windows_intersect(window, item) for item in replacement_windows):
-                raise CatalogError(
-                    "CATALOG_PARTITION_REPLACEMENT_PARTIAL_OVERLAP"
-                )
+                raise CatalogError("CATALOG_PARTITION_REPLACEMENT_PARTIAL_OVERLAP")
             selected_replacements.append(replacement)
         replacement_windows = tuple(
             _partition_window(row) for row in selected_replacements
@@ -300,9 +304,7 @@ class HistoricalCatalog:
             if _window_fully_covered(window, replacement_windows):
                 continue
             if any(_windows_intersect(window, item) for item in replacement_windows):
-                raise CatalogError(
-                    "CATALOG_PARTITION_REPLACEMENT_PARTIAL_OVERLAP"
-                )
+                raise CatalogError("CATALOG_PARTITION_REPLACEMENT_PARTIAL_OVERLAP")
             effective.append(row)
         return sorted(
             effective,
@@ -458,6 +460,64 @@ class HistoricalCatalog:
             if collision.contract_code.strip().upper() != row.actual_contract:
                 raise CatalogError("CATALOG_MAIN_CONTRACT_MAPPING_CONFLICT")
             return collision
+
+    def replace_rank1_mapping_window(
+        self,
+        *,
+        symbol: str,
+        start_day: date,
+        end_day: date,
+        rows: Sequence[MainMapRow],
+    ) -> int:
+        """Replace the exact RQData rank-1 mapping window, leaving all other days intact."""
+
+        normalized = str(symbol or "").strip().lower()
+        selected = tuple(rows)
+        if (
+            not normalized
+            or not isinstance(start_day, date)
+            or isinstance(start_day, datetime)
+            or not isinstance(end_day, date)
+            or isinstance(end_day, datetime)
+            or start_day > end_day
+            or not selected
+            or any(
+                not isinstance(row, MainMapRow)
+                or row.symbol != normalized
+                or row.rank != 1
+                or not start_day <= row.trading_day <= end_day
+                for row in selected
+            )
+        ):
+            raise CatalogError("CATALOG_MAIN_CONTRACT_REPLACEMENT_INVALID")
+        days = [row.trading_day for row in selected]
+        if len(days) != len(set(days)):
+            raise CatalogError("CATALOG_MAIN_CONTRACT_REPLACEMENT_DUPLICATE")
+        self._session.execute(
+            delete(MainContractMap).where(
+                func.lower(MainContractMap.instrument_symbol) == normalized,
+                MainContractMap.trade_date >= start_day,
+                MainContractMap.trade_date <= end_day,
+                MainContractMap.rank == 1,
+                MainContractMap.rule == "volume_open_interest",
+                MainContractMap.provider == "rqdata",
+            )
+        )
+        for row in selected:
+            self._session.add(
+                MainContractMap(
+                    instrument_symbol=row.symbol,
+                    trade_date=row.trading_day,
+                    rank=1,
+                    contract_code=row.actual_contract,
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version=row.data_version,
+                    raw_payload={},
+                )
+            )
+        self._session.flush()
+        return len(selected)
 
     def _find_dataset(self, key: DatasetKey) -> MarketDataset | None:
         return self._session.scalar(
@@ -688,10 +748,8 @@ def _partition_matches(
     manifest: PartitionManifest,
 ) -> bool:
     return (
-        _as_utc_naive(row.coverage_start)
-        == _as_utc_naive(manifest.coverage_start)
-        and _as_utc_naive(row.coverage_end)
-        == _as_utc_naive(manifest.coverage_end)
+        _as_utc_naive(row.coverage_start) == _as_utc_naive(manifest.coverage_start)
+        and _as_utc_naive(row.coverage_end) == _as_utc_naive(manifest.coverage_end)
         and row.manifest_version == manifest.manifest_version
         and row.manifest_uri == manifest.manifest_uri
         and row.manifest_digest == manifest.manifest_digest

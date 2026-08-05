@@ -120,8 +120,7 @@ def _miss_one_entity_query(
     def scalar_with_one_stale_read(statement: Any, *args: Any, **kwargs: Any) -> Any:
         nonlocal missed
         entities = {
-            description.get("entity")
-            for description in statement.column_descriptions
+            description.get("entity") for description in statement.column_descriptions
         }
         if not missed and entity in entities:
             missed = True
@@ -210,9 +209,7 @@ def test_get_or_create_dataset_is_idempotent_for_one_logical_key(
 ) -> None:
     catalog = HistoricalCatalog(session)
 
-    first = catalog.get_or_create_dataset(
-        _key(provider=" RQDATA ", symbol=" JM ")
-    )
+    first = catalog.get_or_create_dataset(_key(provider=" RQDATA ", symbol=" JM "))
     second = catalog.get_or_create_dataset(_key())
 
     assert first.id == second.id
@@ -231,9 +228,7 @@ def test_get_or_create_dataset_is_idempotent_for_one_logical_key(
 def test_list_datasets_returns_only_the_requested_symbol(session: Session) -> None:
     catalog = HistoricalCatalog(session)
     jm = catalog.get_or_create_dataset(_key())
-    catalog.get_or_create_dataset(
-        _key(symbol="rb", contract_or_series="RB2609")
-    )
+    catalog.get_or_create_dataset(_key(symbol="rb", contract_or_series="RB2609"))
 
     rows = catalog.list_datasets(symbol="JM")
 
@@ -1052,3 +1047,56 @@ def test_register_rank1_mapping_is_idempotent_but_rejects_same_version_conflict(
         )
 
     assert error.value.code == "CATALOG_MAIN_CONTRACT_MAPPING_CONFLICT"
+
+
+def test_replace_rank1_mapping_window_overwrites_only_the_requested_days(
+    session: Session,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    first = MainMapRow(
+        symbol="jm",
+        trading_day=date(2026, 7, 28),
+        actual_contract="JM2609",
+        rank=1,
+        data_version="rqdata-rank1-old",
+    )
+    target = MainMapRow(
+        symbol="jm",
+        trading_day=date(2026, 7, 29),
+        actual_contract="JM2609",
+        rank=1,
+        data_version="rqdata-rank1-old",
+    )
+    catalog.register_main_contract_mapping(first)
+    catalog.register_main_contract_mapping(target)
+    session.commit()
+
+    changed = catalog.replace_rank1_mapping_window(
+        symbol="jm",
+        start_day=date(2026, 7, 29),
+        end_day=date(2026, 7, 29),
+        rows=(
+            MainMapRow(
+                symbol="jm",
+                trading_day=date(2026, 7, 29),
+                actual_contract="JM2611",
+                rank=1,
+                data_version="rqdata-rank1-new",
+            ),
+        ),
+    )
+    session.commit()
+
+    assert changed == 1
+    assert (
+        catalog.get_main_contract_mapping(
+            instrument_symbol="jm", trade_date=date(2026, 7, 28)
+        ).actual_contract
+        == "JM2609"
+    )
+    assert (
+        catalog.get_main_contract_mapping(
+            instrument_symbol="jm", trade_date=date(2026, 7, 29)
+        ).actual_contract
+        == "JM2611"
+    )

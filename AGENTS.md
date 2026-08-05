@@ -10,91 +10,66 @@
 
 技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis/RQ、RQData → Parquet → DuckDB，以及不修改源码的 vn.py 回测引擎。
 
-## 日常开发与保护模式
+## 个人开发工作流
 
-普通开发适用于 Web、普通 API、只读查询、测试、非业务语义重构、文档与研究实验。直接说明目标和边界，在非 protected 的开发 worktree 实现、运行定向测试并交付 diff/风险即可。默认不要求 Issue、PR、任务合同、状态更新或每任务新建 worktree。
+`develop` 是日常开发分支。普通仓库变更可以直接在当前 `develop` 工作区编辑、测试、提交并推送；不要求 GitHub Issue、任务分支、额外 worktree、PR、独立 Review、required CI、exact-head、merge readback、ancestry/cleanup evidence、approval packet、hash 或 receipt。分支、worktree、PR、Review 和 CI 可以按需使用，但只是协作工具，不是开发授权条件，也不授予任何真实外部操作权限。
 
-保护模式适用于策略或信号语义、回测成交/成本/换月/资金口径、migration、正式数据或 Profile 写入、live 表、Runtime、密钥与生产配置、真实企业微信发送及任何自动交易路径。必须保留 Issue/受控任务合同（如适用）、Plan、专项测试、业务专用 approval packet/Gate、用户明确的真实执行批准与 final receipt。
+开始前检查分支、工作区、最近提交、相关实现与测试。工作区存在其他任务或用户的未提交变更时，保留其内容与 index 状态，只修改、验证和暂存本任务明确范围；不得用批量清理、覆盖或全量暂存处理无关变更。
 
-普通工作仍不得直接在 `main`、`develop` 或 Runtime checkout 修改。按当前 worktree 生命周期在受控开发或 task worktree 进行；Runtime 保持独立 detached。不要为了文档或小修复改变数据、策略、Runtime 或 Gate。
+本地验证是普通变更完成声明的依据：
 
-## 工程硬规则
+- 可执行行为按影响范围运行定向测试，并在需要时补充模块测试、lint、类型检查、构建和 CLI/API/browser smoke；
+- 纯文档或非执行注释只运行适用的引用、格式和 diff 检查；
+- 数据身份/质量、策略、回测、信号、migration、Runtime、live 或通知语义变化必须运行对应领域测试；
+- 任一必要检查失败时，只报告失败，不声明完成；CI 若存在仅作补充。
 
-1. 先检查分支、工作区、最近提交、相关实现与测试；不覆盖用户或其他会话的改动。
-2. 迁移期 legacy compatibility 读取仍仅可来自
-   `rqdata/local_parquet + primary + quality_status != failed`；严格研究默认 `passed`。
-   这是旧消费者的保护约束，不是 V2 active selector。V2 active target 由
-   `DatasetKey + Catalog/Manifest/Gap/MainContractMap + MarketDataService` 定义；上层不得
-   自行 glob、选 active、判主力或绕过 quality。
-3. historical canonical 与 live observation 分离；live 不得直接提升为正式历史 active。
-4. 策略、回测和正式历史信号禁止未来函数、泄漏和重绘；所有交易相关计算使用 `Decimal`。HTDY original 仅可使用 `docs/INDICATOR_KERNEL.md` 与 `docs/SIGNAL_EVENTS.md` 所定义的精确 observation-only 白名单。
-5. 信号链路保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；默认关闭 autosend，永不产生订单。
-6. 禁止读取、显示、提交或记录凭据；不修改 `.env`，不破坏 `data/raw/`、历史报告或冻结任务事实。
-7. 真实数据、DB、Runtime、通知或部署写入必须使用业务专用、hash-bound、scope-bound Gate。没有专用 Gate 即禁止写入；Issue 批准不能代替代码哈希验证。
-8. task 不得直推 `develop`。符合 ADR-WS-004 的 Lane 1/2 task，以及只包含代码、测试、
-   dry-run、隔离 migration 或默认 disabled 功能的 Lane 3 task，在任务验收、CI、独立 Review
-   全部通过且 PR head SHA 精确匹配后，可由 Codex 编排层通过 GitHub merge commit 自动合入
-   `develop`；合入回读成功后可自动清理。生产 migration apply、真实数据/DB 写入、删除、
-   `main`/release/tag、Runtime/live enable、真实通知和 GitHub 规则变更仍须人工 Gate。
-   发现环境、挂载、数据源、review、CI 或身份漂移时 fail-closed。
-9. 输入、CLI、文件、网络和数据库值先验证类型、格式、范围和关联字段；SQL 使用参数化查询或既有 ORM。
+普通仓库删除包括 Git 跟踪的源码、测试、普通配置、旧工程流程、hook/rule/CI、ADR 和过期文档。此类删除不需要协作门禁或额外执行意图，但必须在同一变更中关闭 active references 并运行受影响验证；恢复只使用 Git history，不创建备份目录、隔离副本、rollback tag、packet 或删除 receipt。
+
+详细流程见 `docs/DEVELOPMENT.md` 与 `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；当前可执行命令以 `TESTING.md` 为准。
+
+## 受控外部操作
+
+会改变仓库外真实状态或远端发布状态的操作是受控外部操作，包括：生产 DB 或正式数据的不可逆写入/删除、仓库外数据删除、远端 release/tag、Git 历史重写或 force update、Runtime/live 启用或切换、真实通知发送以及 GitHub rules 修改。普通源码修改、普通 `develop` commit/push 和仓库内普通删除不属于此类操作。
+
+受控外部操作唯一的授权模型是用户在执行前给出的**范围明确、单次使用的执行意图**：请求必须能识别操作类别、目标环境/资源和操作边界，并只授权紧随其后的一次匹配尝试。缺少意图、范围不明、目标变化、超出范围、重试、执行成功或失败、跨会话继续时，都必须在第一次外部 mutation 前停止并取得新的明确请求。不得把 backup、rollback artifact、approval packet、content hash、exact-head、签名、receipt、dry-run approval 或第二次确认设为额外授权前置；dry-run 只授权 dry-run，不能转换或复用为真实 mutation 权限，意图也不落盘。
+
+执行前仍须完成输入、身份、质量、状态和安全校验。业务正确性与安全边界优先于执行意图，任何请求都不能绕过失败的数据质量、DataGap、未来函数防护、密钥保护、默认关闭状态或无订单边界。执行结果只报告非敏感的尝试范围与观察到的成功、失败或阻止状态，不把结果扩写成盈利、长稳、交易或生产就绪。
+
+## 工程与业务硬规则
+
+1. 外部输入在敏感操作前校验类型、格式、范围、允许值与关联字段；系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM，输入派生路径规范化后必须仍在允许根目录内。
+2. 禁止读取、显示、提交或记录凭据；不修改 `.env`，不在代码、文档、测试、日志或错误输出中暴露 webhook、token、密码、cookie、license、私钥、内部地址、SQL 或 stack trace。认证、质量配置或安全开关缺失/异常时 fail-closed。
+3. 迁移期 legacy compatibility 读取仍仅可来自 `rqdata/local_parquet + primary + quality_status != failed`；严格研究默认 `quality_status=passed`。这不是 V2 active selector。
+4. V2 active target 由 `DatasetKey + Catalog/Manifest/Gap/MainContractMap + MarketDataService` 定义；消费者不得自行 glob、选择 active、判断主力或绕过 quality。`continuous` 与 `actual_dominant` 必须显式且不可互换。
+5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、Manifest digest、checksum 与 row-count 校验后才能发布；失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
+6. DataGap 或 failed-quality 区间必须显式失败，不得静默填充、缩短、替换或跨频回退。
+7. 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 只允许 `docs/INDICATOR_KERNEL.md` 与 `docs/SIGNAL_EVENTS.md` 定义的 realtime first-seen observation-only 白名单。
+8. 回测保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。信号链路保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；输出必须标注研究观察、非交易指令。
+9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
+10. `auto_order=false` 适用于所有信号和 Runtime 模式。任何创建或提交订单的流程都必须拒绝；本项目不实现自动交易。
+11. 数据、策略、回测、信号或通知语义变化时，同一变更更新相应 deep canonical；普通 bugfix、UI 调整和测试增加不自动改写项目状态。
 
 ## 数据核心 V2 迁移治理
 
-`docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互核心收口的 active 执行合同。其目标架构已经冻结，
-但除文档明确列出的已合入代码外，数据迁移、消费者切换、live/EOD 收口、删除和 Runtime 验收
-均不得写成已经完成。
+`docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互核心收口的 active 业务合同。目标架构已经冻结，但除文档明确列出的已完成事实外，不得把数据迁移、消费者切换、live/EOD 收口、删除或 Runtime 验收写成已完成。
 
-- active target 只有一个：RQData → 临时 staging → 校验 → 单一 historical canonical
-  Parquet（provider 直接提供的 1m/1d/1w）→ 轻量 Catalog/Manifest/Gap/MainContractMap
-  → `MarketDataService` → consumers。
-- `continuous` 与 `actual_dominant` 是显式、不可互换的数据类型；消费者不得静默回退、
-  替换或自行判断主力。
-- 旧 Profile/ActiveBinding/复杂 lineage 只作为迁移期 legacy compatibility；不得继续扩展
-  为新的 active selector。删除只能在消费者完成切换、Shadow/rollback 通过并获得独立批准后进行。
-- 旧 `GY-CORE-04～08` 执行路线已 superseded/paused。`GY-CORE-02` Facade 与
-  `GY-CORE-03` CLI 壳允许复用；已合入的 `GY-CORE-04` 代码保留为 legacy compatibility，
-  但不得据此继续旧 Shadow/Runtime 路线。
-- historical evidence/report/receipt 默认保护。删除前必须完成只读扫描、说明影响与回滚方式，
-  并取得用户对该次删除的明确批准；本规则本身不授权删除任何文件、Git 历史、数据库记录、
-  Parquet、report 或 receipt。
-- 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata。
-  旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 bar
-  layer 与 Profile/Binding/legacy lineage 均为 rebuild-only 或 compatibility-only，不得迁移为
-  新 active 输入。Task 07 Stage C 只验收 active config + Catalog + MainContractMap 生成的
-  JM 目标 Canonical 并输出精确缺口计划；不执行修复、Runtime promotion 或删除。
-  Runtime promotion 属于 Task 08；旧派生数据清理只能是后续独立可选任务。
+- active target：RQData → 临时 staging → 校验 → 单一 historical canonical Parquet（provider 直接提供 `1m/1d/1w`）→ Catalog/Manifest/Gap/MainContractMap → `MarketDataService` → consumers。
+- 旧 Profile/ActiveBinding/复杂 lineage 只作 legacy compatibility，不得扩展成新 active selector。移除 referenced compatibility 代码前先完成消费者迁移与回归；生产 DB、正式数据或仓库外文件的实际变更另需精确范围的一次性执行意图。
+- 旧 `GY-CORE-04～08` 路线已 superseded/paused；`GY-CORE-02` Facade 与 `GY-CORE-03` CLI 壳可复用，已合入的 `GY-CORE-04` 代码仅作 legacy compatibility，不据此恢复旧 Shadow/Runtime 路线。
+- 已发生的 PR、CI、Review、packet、hash、receipt、report 和 evidence 只作为历史事实或完整性信息，不是当前授权。仓库内过期工件可按普通删除处理；生产数据、正式 Parquet、DB、Runtime 或其他外部资源必须按受控外部操作处理。
+- 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 bar layer 与 Profile/Binding/legacy lineage 均为 rebuild-only 或 compatibility-only。
+- Task 07 Stage C 只验收 active config + Catalog + MainContractMap 生成的 JM 目标 Canonical 并输出精确缺口计划，不执行修复、Runtime promotion 或删除。Runtime promotion 属于 Task 08；旧派生数据清理是后续独立可选任务。
 
-协作 Lane、worktree、PR 与人工 Gate 见 `docs/DEVELOPMENT.md`；业务目标与迁移顺序不得复制到
-该工作流文档中另行解释。
+## 文档与交付
 
-## 文档与验证
-
-- 只在事实变化时更新对应 canonical：Gate/阶段更新 `STATUS.md`；长期边界更新 `PROJECT_SOURCE.md`；长期决策更新 `DECISIONS.md`；命令更新 README/`TESTING.md`；数据、回测、信号语义更新对应 deep canonical。
-- 普通 bugfix、UI 调整和测试增加默认不更新项目状态文档。临时分析和会话 Plan 不入仓库。
-- 修改后优先运行定向单测，再运行模块测试、CLI smoke、lint/type/build、API/browser smoke；真实 Gate 与代码测试分开陈述。
-- 完成交付必须说明变更、实际测试命令和结果、风险/外部 Gate、文档更新及一个最小下一步。测试或真实 Gate 未运行时明确标记。
+- 事实变化时更新对应 canonical：阶段更新 `STATUS.md`；长期边界更新 `PROJECT_SOURCE.md`；长期决策更新 `DECISIONS.md`；命令更新 README/`TESTING.md`；业务语义更新对应 deep canonical。
+- 临时分析和会话 Plan 不入仓库。已完成执行事实可以保留其历史 PR/hash/receipt 等描述，但这些描述不能成为未来执行条件。
+- 交付说明变更范围、实际验证命令与结果、剩余风险、未执行的受控外部操作和最小下一步；未运行的验证明确标记。
 
 ## 接手最小阅读
 
 1. `AGENTS.md`
 2. `STATUS.md`
-3. 与任务相关的 deep canonical、受控任务合同、Issue 或 receipt
+3. 与任务相关的 deep canonical 或 active business contract
 
-工程入口：`scripts/engineering/preflight.sh`、`test.sh`、`check-secrets.sh`、`runtime-health.sh`；
-首轮统一业务 CLI 入口为 `uv run --project services/quant-api guiyi`，当前只允许
-`data verify`、`runtime status` 与 `runtime plan` 的只读/dry-run 合同。详细运行/发布边界见
-`docs/WORKTREE_RELEASE_WORKFLOW.md` 与现行 ADR。
-
-## Worktree 与发布生命周期
-
-`main`、`develop` 与 Runtime checkout 均不得直接开发；`main` 是 canonical/release，`develop`
-是长期集成主干，Runtime 保持 detached。task 从 `develop` 在 `GuiyiWorktrees/tasks/` 创建，
-通过 PR、CI 与独立 Review 集成；满足上述可逆集成条件时无需重复请求用户批准 Plan 或
-task→`develop` merge。只有 task clean 且其 HEAD 已被 `develop` 包含时，才可移除 task
-worktree 与本地分支。`worktree_flow.py` 默认 dry-run；`task-worktree.sh` 仍只负责到 Draft PR，
-后续 merge 由 Codex 编排层执行。`release-flow.sh prepare/publish/tag` 仍只在用户明确批准该次
-release，且 local/current/target/rollback SHA、clean worktree 与远端 refs 精确匹配时逐项执行；prepare 仅允许
-显式绑定的 stale local main 经当前远端 main fast-forward 到 target；publish 必须绑定批准时
-的远端 main 且不得隐式修改 upstream，tag 重试只接受 annotated object、target 与 message 全部精确
-一致；task 自动集成不授权 release、tag 或 Runtime。
+首轮统一业务 CLI 入口为 `uv run --project services/quant-api guiyi`。`data verify`、`runtime status` 等只读命令不授权后续写入；任何 dry-run 也不授权真实执行。`main` 仍用于 canonical/release，Runtime checkout 可保持隔离和 detached，但它们都不是普通 `develop` 开发的前置流程。

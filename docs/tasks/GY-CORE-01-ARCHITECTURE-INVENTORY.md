@@ -216,8 +216,8 @@ Vue page/component
 
 ```text
 deploy/launchd/com.guiyi.quant-runtime-scheduler.plist.template
-  → scripts/install-local-services.sh
-  → scripts/run-local-service.sh runtime
+  → scripts/ops/macos/install-local-services.sh
+  → scripts/ops/macos/run-local-service.sh runtime
   → app.runtime_scheduler --run --confirm-live-write
   → Redis singleton + heartbeat
   → LiveRuntimeCycleService
@@ -272,13 +272,13 @@ scripts/engineering/{check-secrets,preflight,release-flow,runtime-health,runtime
                      task-worktree,test}.sh
 scripts/engineering/{task_workflow,worktree_flow}.py
 scripts/install-after-market-scheduler.sh
-scripts/install-local-services.sh
+scripts/ops/macos/install-local-services.sh
 scripts/jm_eod_automation_gate.py
-scripts/local-services-status.sh
+scripts/ops/macos/local-services-status.sh
 scripts/regenerate_jm_aggregated_bars.sh
-scripts/rotate-local-service-logs.sh
+scripts/ops/macos/rotate-local-service-logs.sh
 scripts/run-after-market-scheduler.sh
-scripts/run-local-service.sh
+scripts/ops/macos/run-local-service.sh
 scripts/rqdata_{catalog_sync,continuous_contracts_sync,contract_universe_sync,
                 daily_baseline_sync,ex_factor_sync,jm_update_plan,live_1m_ingest,
                 live_multi_tf_aggregate,main_mapping_sync,member_rank_sync,
@@ -381,14 +381,14 @@ scripts/configure-after-market-automation.sh
 scripts/export_su_bing_daily_score2of4_package.py
 scripts/export_su_bing_daily_trend_cross_score2_package.py
 scripts/export_su_bing_report_10_review_package.py
-scripts/local-tunnel-healthcheck.sh
+scripts/ops/network/local-tunnel-healthcheck.sh
 scripts/oos_validation_run.py
-scripts/post-reboot-verify.sh
-scripts/public-healthcheck.sh
+scripts/ops/macos/post-reboot-verify.sh
+scripts/ops/network/public-healthcheck.sh
 scripts/rqdata_reference_metadata_gap_apply.py
-scripts/server-recover.sh
-scripts/server-status.sh
-scripts/tunnel-healthcheck.sh
+scripts/ops/macos/server-recover.sh
+scripts/ops/linux/server-status.sh
+scripts/ops/network/tunnel-healthcheck.sh
 ```
 
 ### 3.6 DELETE_CANDIDATE（0）
@@ -552,7 +552,7 @@ EOD、差异根因与独立 Review。未解释差异即阻塞。
 已确定的现有影响面：
 
 - `scripts/engineering/{release-flow,runtime-promotion,runtime-health,worktree_flow}*`；
-- `docs/WORKTREE_RELEASE_WORKFLOW.md` 与 ADR-WS-003/004；
+- 当时现行、现已删除并由 Git 历史保留的 worktree workflow 与两份关联 ADR；
 - `scripts/{run-local-service,install-local-services,local-services-status}.sh`；
 - runtime launchd template；
 - `app/runtime_scheduler.py`、`app/after_market_scheduler.py`；

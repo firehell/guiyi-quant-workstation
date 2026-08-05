@@ -47,38 +47,34 @@ flowchart LR
 `data/universe/active_products.txt` 是唯一活动品种文件。退役集合由
 `app.data_core.product_retirement` 冻结；下载入口和 `MarketDataService` 在外部调用前拒绝目标品种。
 
-## 3. 工具与 Gate
+## 3. 工具与执行边界
 
-受控入口为 `scripts/rqdata_product_retirement.py`：
+受控入口为 `scripts/rqdata_product_retirement.py`。
 
-所有 packet、approval、停服 receipt、apply journal 和最终 receipt 必须位于操作员显式传入且与
-代码/Runtime/三个数据 root 完全分离的 `--protected-root`；工具不会从 Runtime `.run/approvals`
-或其他默认目录猜测批准。protected root 只提供范围隔离，不能代替用户对该次删除的明确批准。
+真实删除属于 Controlled_External_Action：用户必须给出**命名操作与精确删除范围**的一次性
+执行意图。inventory/apply/finalize/verify 的技术校验（精确匹配、blocker、事务、digest、
+默认 disabled）仍然强制；它们是业务正确性边界，不是协作授权，也不得用 backup、packet、
+hash、receipt 或二次确认冒充意图。
+
+所有 inventory/journal/verify 工件若落盘，必须位于操作员显式传入且与代码/Runtime/三个数据
+root 完全分离的 `--protected-root`；工具不会从 Runtime `.run/approvals` 或其他默认目录猜测授权。
+protected root 只提供范围隔离，不能代替用户对该次删除的明确意图。
 
 - `inventory`：只读扫描显式传入的 bounded raw/canonical/processed roots 与当前 PostgreSQL，生成
-  逐文件 SHA-256、逐表主键/identity digest 和 blocker；数据库清单按表切分为 packet 旁的
-  hash-bound JSONL 分片，避免百万行全部内嵌在单个 JSON；不调用 RQData。代码与 Runtime
-  worktree 必须 clean，否则拒绝生成可审批 packet。`raw/canonical/processed` 三个 label、共同 Git
-  数据仓库、目录后缀和绝对路径都是冻结 scope 并进入 packet digest；缺少、改名或跨仓库一律拒绝。
-- `apply`：必须同时绑定 packet 文件 SHA-256、approval 文件 SHA-256、代码 SHA、Runtime SHA、
-  DB revision、21 品种摘要、停服 receipt SHA-256 和 expiry；全部 writer 的 launchd job 必须已经
-  unload。执行前重新盘点目标文件和数据库全集并匹配 packet 摘要，数据库校验与分批删除在同一个
-  `SERIALIZABLE` 事务中完成，PostgreSQL 同时锁定全部相关表。任一新增、缺失或内容漂移均零写入。
-  实际脚本、导入模块、当前目录与 `--project-root` 必须来自同一个 clean exact checkout。
+  逐文件 SHA-256、逐表主键/identity digest 和 blocker；数据库清单按表切分为 JSONL 分片。
+  不调用 RQData。缺少、改名或跨仓库的 root 一律拒绝。
+- `apply`：必须绑定用户意图所声明的精确范围，并在执行前重新盘点目标文件和数据库全集；
+  数据库校验与分批删除在同一个 `SERIALIZABLE` 事务中完成。任一新增、缺失或内容漂移均零写入。
+  writer 作业必须已停用。dry-run 不授权真实 apply。
 - `finalize`：apply 前先原子写 durable journal；若 DB commit 后文件物理清理中断，状态固定为
-  `db_committed_purge_pending`。finalize 只使用同一 packet/receipt：DB 未提交时恢复 staging；DB
-  已提交且目标行为零时继续清除 checksum 通过的 staging，并合并 verify 结果生成最终 receipt。
+  `db_committed_purge_pending`。finalize 只使用同一范围工件继续清理，不保留长期隔离区或备份。
 - `verify`：重新扫描全部显式 root 和 PostgreSQL，要求目标残留为零。
 
-真实执行顺序固定为：代码/测试/Review/CI 合入 `develop` → 独立 release Gate → 独立 Runtime
-promotion Gate → 新 Runtime 验证 69 品种且无回灌 → unload 全部 writer 并生成停服 receipt →
-生成当前生产 inventory packet → 用户明确批准该次删除 → apply → verify →
-重启和一个增量周期观察。若 inventory 报告仍有 `pending/queued/running/retrying` 或未知状态目标
-任务，必须先在独立
-DB 写入 Gate 下将其安全终止，再重新生成 packet；不得忽略 blocker 或手改清单。
+建议顺序：本地验证合入 `develop` →（可选）release/tag 的独立 scoped intent → Runtime 切换的
+独立 scoped intent → 停服与 inventory → 用户对该次删除的一次性意图 → apply → verify →
+观察。若 inventory 仍有 `pending/queued/running/retrying` 或未知状态目标任务，必须先安全终止
+并重新 inventory；不得忽略 blocker 或手改清单。
 
-文件在 apply 同一窗口内先按 packet digest 原子移入各 root 内部 staging；DB 事务失败则原路恢复，
-提交成功立即物理销毁 staging；若中断则由 durable journal 驱动 finalize，不保留长期隔离区或备份。
 成功后的恢复只能从 RQData 和 Git 历史重建。
 
 ## 4. 当前状态
@@ -87,11 +83,11 @@ DB 写入 Gate 下将其安全终止，再重新生成 packet；不得忽略 blo
 
 2026-08-05 只读测量为 8,625 个目标文件、1,466,729,156 bytes；PostgreSQL 目标记录
 1,141,643 行。当前 6 个 `data_download_tasks` 仍为 `running`，所以状态必须是 `blocked`，上述数字
-会在 Runtime 升级、停服和任务终止后重新生成，不能作为删除审批包。
+会在 Runtime 升级、停服和任务终止后重新生成，不能作为删除授权。
 
 当前 Git 仅按文件名初筛出 1,248 个目标品种专属历史候选（`data/manifests` 1,035、
-`data/reports` 213）；删除前仍须完成只读扫描、说明影响与回滚方式，并取得用户对该次删除的
-明确批准；不得重写 Git 历史。
+`data/reports` 213）；删除前仍须完成只读扫描、说明影响，并取得用户对该次删除的
+一次性执行意图；不得重写 Git 历史。
 
 - 删除当前 Git 中的历史 manifest/report/receipt；
 - `main`/release/tag；

@@ -4,14 +4,19 @@
 
 ## 快速检查
 
-```bash
+Windows / PowerShell 7 为当前工程入口（canonical）：
+
+```powershell
 git diff --check
-bash scripts/engineering/check-secrets.sh
-bash scripts/engineering/test.sh engineering
-bash scripts/engineering/test.sh docs
+pwsh -NoProfile -File .\scripts\engineering\preflight.ps1
+pwsh -NoProfile -File .\scripts\engineering\secret-scan.ps1
+pwsh -NoProfile -File .\scripts\engineering\validate.ps1 -Profile Engineering
+pwsh -NoProfile -File .\scripts\engineering\validate.ps1 -Profile Docs
 ```
 
-`preflight.sh` 适用于新会话、高风险任务或环境诊断；它不是每个普通改动的业务 Gate。
+`preflight.ps1` 适用于新会话、高风险任务或环境诊断；它不是每个普通改动的业务 Gate。`develop` 是日常开发分支，默认允许。脏工作区默认警告；release/tag 使用 `-RequireClean`。
+
+专用套件仍可直接使用项目原生命令，例如 `uv run --project services/quant-api pytest ...` 与 `pnpm --dir apps/quant-web ...`。CI（`.github/workflows/optional-ci.yml`）仅作补充，不授权本地完成声明。
 
 ## 后端
 
@@ -142,9 +147,9 @@ VITE_JM_DATA_CORE_V2_ENABLED=true pnpm --dir apps/quant-web dev \
 EXPECT_CANONICAL_MARKET=1 pnpm --dir apps/quant-web test:e2e
 ```
 
-`guiyi data migrate inventory/plan` 为零写入命令；plan 必须同时显式传入 task worktree
-`--project-root`、旧资产 `--legacy-root`、新 `--canonical-root/--staging-root` 与 exact window。
-worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval packet。
+`guiyi data migrate` / `task07` 旧路由已从 active CLI 移除。历史迁移验收改走
+`guiyi data download|aggregate|audit` 与 Data Core V2 服务测试；receipt/report/evidence
+仅作历史事实，不再作为执行授权。
 
 ### GY-DATA-CORE-V2 Task 07 Stage C 精简验收
 
@@ -152,30 +157,19 @@ worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval p
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
   services/quant-api/tests/data_core/test_task07_target_canonical.py \
-  services/quant-api/tests/data_core/test_task07_target_cli_service.py \
   services/quant-api/tests/data_core/test_catalog.py \
   services/quant-api/tests/test_market_data_service.py \
-  services/quant-api/tests/test_guiyi_cli.py
+  services/quant-api/tests/test_guiyi_cli.py \
+  services/quant-api/tests/test_scripts_cli_consolidation_properties.py
 ```
 
-该组验证 JM target config 严格闭集、MainContractMap 分段与周线最后交易日归属、
-四种精确状态、全部 KEEP 时的 `NO_DATA_WRITE_REQUIRED`、Aggregate 只允许同身份/
-窗口 Canonical 1m 来源、七周期 MarketDataService 严格同频，以及旧 Stage C
-packet/apply 命令在 active CLI 的 fail-closed 拒绝。测试不调用 RQData，不写
-Parquet/PostgreSQL。
+该组验证 JM target config、MainContractMap、七周期 MarketDataService，以及统一
+`guiyi data download|aggregate|sync|audit|live|verify` 合同。测试不调用 RQData，
+不写正式 Parquet/PostgreSQL。
 
-生产只读 Gate 只允许在精确 task/develop head、PostgreSQL revision
-`20260803_0032` 和显式 absolute canonical root 下运行：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api guiyi data task07 assess \
-  --target-config /absolute/project/config/data_core_v2_targets.yaml \
-  --canonical-root /absolute/canonical/root
-```
-
-本命令的合同固定为 `calls_rqdata=false / writes_postgresql=false /
-writes_parquet=false / production_writes=false`。未获独立生产只读验收批准时不得运行。
+旧 `guiyi data task07 assess` 生产只读 Gate 已从 active CLI 移除；如需对正式
+canonical root 做只读验收，应另开精确范围的一次性执行意图，并通过
+`guiyi data audit` / Data Core 服务测试路径完成。
 
 ### Task 05 derived/reference inventory
 
@@ -214,13 +208,11 @@ Dockerfile。其他未知无扩展名 regular file 会输出 `REPO_UNKNOWN_EXTEN
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_derived_reference_inventory.py
-
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api python scripts/derived_reference_inventory.py \
-  --repo-root /path/to/fixture-repo --data-root /path/to/fixture-data
 ```
 
-真实 PostgreSQL/data root 只读盘点是 external Gate；它不授权重建、迁移、删除、Runtime、通知或交易。
+`scripts/derived_reference_inventory.py` 已按 scripts-cli-consolidation 从仓库移除；
+inventory 行为由对应服务测试与 `guiyi data audit` 覆盖。真实 PostgreSQL/data root
+只读盘点仍是 external Gate，不授权重建、迁移、删除、Runtime、通知或交易。
 
 生产 migration、真实 RQData/Parquet/PostgreSQL apply 与创建/删除隔离 PostgreSQL 数据库
 都需要精确授权。Task 04 的专用临时库已在用户授权后完成测试并删除；这不授权生产 apply，
@@ -260,18 +252,18 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
   --report-id 14 --format markdown
 ```
 
-真实数据、RQData、PostgreSQL、Runtime 或企业微信操作只能使用对应任务合同与专项 Gate；通用测试、health 或 receipt 文件存在均不构成授权。
+真实数据、RQData、PostgreSQL、Runtime 或企业微信操作在执行前必须由用户的一次明确请求标识操作类别和精确范围，并通过对应业务合同的质量与安全检查。通用测试、health、dry-run、旧 packet/hash 或 historical receipt 均不构成 mutation 授权，也不能跨会话复用。
 
-## 专项 Gate 定位
+## 专项业务边界定位
 
-- 数据、quality、profile、manifest：`docs/DATA_CENTER.md` 与对应受控任务/receipt。
+- 数据、quality、profile、manifest：`docs/DATA_CENTER.md` 与对应 active business contract。
 - 回测口径与报告可信度：`docs/BACKTEST_ENGINE.md`。
 - SignalEvent、通知与 HTDY exact policy：`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md`。
-- S6-10：`docs/tasks/JM-LIVE-STABILITY-S6-10.md`。
-- worktree/release：`docs/WORKTREE_RELEASE_WORKFLOW.md` 与现行 ADR。
+- S6-10 historical/runtime contract：`docs/tasks/JM-LIVE-STABILITY-S6-10.md`。
+- 个人开发、普通删除与外部操作边界：`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`。
 
 ## 解释规则
 
-- 文档或单元测试通过不等于真实外部 Gate 通过。
+- 文档、单元测试、CI 或 dry-run 通过不等于真实外部操作已经执行或获得授权。
 - 单次 historical replay、通知或 health smoke 不等于 long-running、策略盈利或自动交易 Ready。
-- 任何真实写入前必须重新核对 commit、数据/Runtime 身份、packet/hash、scope 与 receipt。
+- 任何真实 mutation 前重新校验当前输入、认证、质量、安全开关及精确 scope；完成、失败、重试、scope 变化或后续会话均需要新的明确请求。

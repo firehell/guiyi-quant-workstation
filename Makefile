@@ -1,28 +1,25 @@
-.PHONY: engineering-preflight engineering-test engineering-secrets engineering-ci engineering-worktree-audit
+# OPTIONAL / NON-CANONICAL
+#
+# Windows PowerShell 7 scripts under scripts/engineering/*.ps1 are the
+# canonical engineering entrypoints. This Makefile is retained only as an
+# optional non-Windows convenience and must not be treated as authorization
+# or as the documented developer workflow.
+#
+# Prefer:
+#   pwsh -NoProfile -File ./scripts/engineering/preflight.ps1
+#   pwsh -NoProfile -File ./scripts/engineering/validate.ps1 -Profile Engineering
+#   pwsh -NoProfile -File ./scripts/engineering/secret-scan.ps1
 
-# Local default: ordinary preflight (branch warn on main, dirty warn).
-# CI: make engineering-preflight ENGINEERING_PREFLIGHT_ARGS=--ci
-ENGINEERING_PREFLIGHT_ARGS ?=
-
-# Default profile is CI-safe (no uv/fastapi). Local full suite:
-#   make engineering-test ENGINEERING_TEST_PROFILE=all-safe
-ENGINEERING_TEST_PROFILE ?= engineering
+.PHONY: engineering-preflight engineering-test engineering-secrets
 
 engineering-preflight:
-	bash scripts/engineering/preflight.sh $(ENGINEERING_PREFLIGHT_ARGS)
+	@echo "DEPRECATED: use pwsh scripts/engineering/preflight.ps1" >&2
+	pwsh -NoProfile -File scripts/engineering/preflight.ps1
 
 engineering-test:
-	bash scripts/engineering/test.sh $(ENGINEERING_TEST_PROFILE)
+	@echo "DEPRECATED: use pwsh scripts/engineering/validate.ps1 -Profile Engineering" >&2
+	pwsh -NoProfile -File scripts/engineering/validate.ps1 -Profile Engineering
 
-# Fail-closed secret scan — never pass --warn-only here.
 engineering-secrets:
-	bash scripts/engineering/check-secrets.sh
-
-engineering-worktree-audit:
-	python3 scripts/engineering/worktree_flow.py audit --json
-
-# CI convenience: preflight --ci + engineering profile + strict secrets.
-engineering-ci:
-	bash scripts/engineering/preflight.sh --ci
-	bash scripts/engineering/test.sh engineering
-	bash scripts/engineering/check-secrets.sh
+	@echo "DEPRECATED: use pwsh scripts/engineering/secret-scan.ps1" >&2
+	pwsh -NoProfile -File scripts/engineering/secret-scan.ps1

@@ -1,8 +1,0 @@
-{
-  "event_id": 4,
-  "packet_hash": "46d7c1317e1e83205cf1ef4b8516af9a2a30e354f69799cbf8ff6d18f913ee5b",
-  "retry_deadline": "2026-07-27T15:16:47.253686+00:00",
-  "schema_version": 1,
-  "started_at": "2026-07-27T15:01:47.253686+00:00",
-  "task_id": "JM-LIVE-WECOM-SINGLE-S6-09"
-}

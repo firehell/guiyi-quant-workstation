@@ -4,23 +4,38 @@ import argparse
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import date, datetime, time
-import json
 import os
 from pathlib import Path
 import sys
 from typing import Any, TextIO
 
-from app.data_core.contracts import BAR_FREQUENCY_VALUES
-from app.data_core.historical_apply_gate import (
-    HistoricalApplyGateError,
-    load_apply_approval_packet,
-)
 from app.data_core.cli_service import run_data_core_command
 from app.db.session import SessionLocal
+from app.guiyi_cli.data_commands import (
+    build_data_operation_request,
+    is_new_data_operation,
+    run_data_operation,
+)
+from app.guiyi_cli.data_parser import (
+    CliUsageError,
+    JsonArgumentParser,
+    add_data_commands,
+    reject_legacy_backfill_alias,
+)
+from app.guiyi_cli.output import (
+    argument_error_payload,
+    exception_error_payload,
+    print_json,
+)
 from app.services.active_dataset import ActiveDatasetDomainError
 from app.services.core_cli import verify_active_dataset
+from app.services.data_operations.contracts import CliArgumentInvalid
 from app.services.market_workbench import MarketAccessError
 from app.services.runtime_health import build_runtime_health
+from app.services.product_retirement_runtime_gate import (
+    ProductRetirementExecutionService,
+    RetirementRuntimeRequest,
+)
 from app.runtime_scheduler import dry_run_payload
 
 
@@ -28,15 +43,7 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 DataVerifier = Callable[..., dict[str, Any]]
 RuntimeHealthBuilder = Callable[[Any], dict[str, Any]]
 DataCoreRunner = Callable[[str, Any, argparse.Namespace], dict[str, Any]]
-
-
-class CliUsageError(ValueError):
-    pass
-
-
-class JsonArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
-        raise CliUsageError(message)
+RetirementExecutionFactory = Callable[[], Any]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,85 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     data = domains.add_parser("data")
     data_commands = data.add_subparsers(dest="data_command", required=True)
-    verify = data_commands.add_parser("verify")
-    verify.add_argument("--symbol", required=True)
-    verify.add_argument("--contract")
-    verify.add_argument("--period")
-    verify.add_argument(
-        "--dataset-kind",
-        choices=("continuous", "actual_dominant"),
-    )
-    verify.add_argument("--contract-or-series")
-    verify.add_argument(
-        "--frequency",
-        choices=BAR_FREQUENCY_VALUES,
-    )
-    verify.add_argument("--canonical-root", type=Path)
-    verify.add_argument("--start")
-    verify.add_argument("--end")
-    verify.add_argument("--provider")
-    verify.add_argument("--profile-id")
-    verify.add_argument("--access-mode", choices=("browser", "research"), default="browser")
-    verify.add_argument("--limit", type=_positive_int, default=5000)
-    plan = data_commands.add_parser("plan")
-    _add_data_core_query_arguments(plan)
-    sync = data_commands.add_parser("sync")
-    _add_data_core_query_arguments(sync)
-    sync.add_argument("--apply", action="store_true")
-    sync.add_argument("--approval-packet", type=Path)
-    sync.add_argument("--approval-hash")
-
-    migrate = data_commands.add_parser("migrate")
-    migrate_commands = migrate.add_subparsers(
-        dest="migrate_command",
-        required=True,
-    )
-    inventory = migrate_commands.add_parser("inventory")
-    inventory.add_argument("--project-root", type=Path, required=True)
-    plan_migration = migrate_commands.add_parser("plan")
-    plan_migration.add_argument("--project-root", type=Path, required=True)
-    plan_migration.add_argument("--legacy-root", type=Path, required=True)
-    plan_migration.add_argument("--canonical-root", type=Path, required=True)
-    plan_migration.add_argument("--staging-root", type=Path, required=True)
-    plan_migration.add_argument("--start", required=True)
-    plan_migration.add_argument("--end", required=True)
-    shadow = migrate_commands.add_parser("shadow")
-    shadow.add_argument("--project-root", type=Path, required=True)
-    shadow.add_argument("--legacy-root", type=Path, required=True)
-    shadow.add_argument("--canonical-root", type=Path, required=True)
-    shadow.add_argument("--start", required=True)
-    shadow.add_argument("--end", required=True)
-    shadow.add_argument("--exception-json", type=Path)
-    shadow.add_argument("--approval-packet", type=Path, required=True)
-    shadow.add_argument("--approval-hash", required=True)
-    shadow.add_argument("--apply-receipt", type=Path, required=True)
-    shadow.add_argument("--apply-receipt-hash", required=True)
-    preflight = migrate_commands.add_parser("preflight")
-    preflight.add_argument("--project-root", type=Path, required=True)
-    preflight.add_argument("--legacy-root", type=Path, required=True)
-    preflight.add_argument("--canonical-root", type=Path, required=True)
-    preflight.add_argument("--staging-root", type=Path, required=True)
-    preflight.add_argument("--start", required=True)
-    preflight.add_argument("--end", required=True)
-    preflight.add_argument("--approval-packet", type=Path, required=True)
-    preflight.add_argument("--approval-hash", required=True)
-    apply = migrate_commands.add_parser("apply")
-    apply.add_argument("--project-root", type=Path, required=True)
-    apply.add_argument("--legacy-root", type=Path, required=True)
-    apply.add_argument("--canonical-root", type=Path, required=True)
-    apply.add_argument("--staging-root", type=Path, required=True)
-    apply.add_argument("--start", required=True)
-    apply.add_argument("--end", required=True)
-    apply.add_argument("--approval-packet", type=Path)
-    apply.add_argument("--approval-hash")
-    apply.add_argument("--preflight-receipt", type=Path)
-    apply.add_argument("--preflight-hash")
-
-    task07 = data_commands.add_parser("task07")
-    task07_commands = task07.add_subparsers(dest="task07_command", required=True)
-    task07_assess = task07_commands.add_parser("assess")
-    task07_assess.add_argument("--target-config", type=Path, required=True)
-    task07_assess.add_argument("--canonical-root", type=Path, required=True)
+    add_data_commands(data_commands)
 
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(
@@ -134,6 +63,21 @@ def build_parser() -> argparse.ArgumentParser:
     plan = runtime_commands.add_parser("plan")
     plan.add_argument("--product", choices=("jm",), default="jm")
     plan.add_argument("--poll-seconds", type=_positive_int, default=20)
+    retirement = runtime_commands.add_parser("product-retirement")
+    retirement_commands = retirement.add_subparsers(
+        dest="retirement_command",
+        required=True,
+    )
+    for command in ("plan", "execute", "resume"):
+        child = retirement_commands.add_parser(command)
+        child.add_argument("--release-tag", required=True)
+        child.add_argument("--rollback-tag", required=True)
+        child.add_argument("--runtime-root", type=Path, required=True)
+        child.add_argument("--protected-root", type=Path, required=True)
+        child.add_argument("--active-products-path", type=Path, required=True)
+        child.add_argument("--data-root", action="append", required=True)
+        if command == "resume":
+            child.add_argument("--journal", type=Path, required=True)
     return parser
 
 
@@ -145,108 +89,70 @@ def main(
     data_verifier: DataVerifier = verify_active_dataset,
     data_core_runner: DataCoreRunner = run_data_core_command,
     runtime_health_builder: RuntimeHealthBuilder = build_runtime_health,
+    retirement_execution_factory: RetirementExecutionFactory | None = None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
     try:
+        reject_legacy_backfill_alias(raw_argv)
         args = build_parser().parse_args(raw_argv)
         _validate_conditional_arguments(args)
-    except CliUsageError as exc:
-        _print_json(
-            {
-                "schema_version": 1,
-                "command": _command_hint(raw_argv),
-                "status": "error",
-                "readonly": True,
-                "error": {
-                    "code": "CLI_ARGUMENT_INVALID",
-                    "type": type(exc).__name__,
-                },
-            },
-            stderr,
-        )
+    except (CliUsageError, CliArgumentInvalid):
+        print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
         return 2
-    data_core_command = _data_core_command(args)
-    if data_core_command is not None:
-        if _is_data_core_apply(args) and (
-            args.approval_packet is None
-            or not args.approval_hash
-            or _is_migrate_apply(args)
-            and (args.preflight_receipt is None or not args.preflight_hash)
-        ):
-            _print_json(
-                {
-                    "schema_version": 1,
-                    "command": f"data.{data_core_command}",
-                    "status": "blocked",
-                    "readonly": True,
-                    "error": {
-                        "code": "JM_REAL_DATA_GATE_REQUIRED",
-                        "type": "HistoricalApplyGateError",
-                    },
-                },
+
+    if is_new_data_operation(args):
+        try:
+            build_data_operation_request(args)
+            with session_factory() as session:
+                payload = run_data_operation(args, session=session)
+        except (CliUsageError, CliArgumentInvalid):
+            print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
+            return 2
+        except Exception as exc:  # noqa: BLE001 - bounded CLI boundary
+            print_json(
+                exception_error_payload(
+                    command=_command_hint(raw_argv),
+                    exc=exc,
+                    readonly=not bool(getattr(args, "apply", False)),
+                ),
                 stderr,
             )
-            return 78
-        if args.data_command == "sync" and args.apply:
-            _print_json(
-                {
-                    "schema_version": 1,
-                    "command": f"data.{data_core_command}",
-                    "status": "blocked",
-                    "readonly": True,
-                    "error": {
-                        "code": "JM_REAL_DATA_APPLY_NOT_AUTHORIZED",
-                        "type": "HistoricalApplyGateError",
-                    },
-                },
-                stderr,
-            )
-            return 78
-        if _is_migrate_packet_command(args):
-            try:
-                load_apply_approval_packet(
-                    args.approval_packet,
-                    approval_hash=args.approval_hash,
-                )
-            except HistoricalApplyGateError as exc:
-                _print_json(
-                    {
-                        "schema_version": 1,
-                        "command": f"data.{data_core_command}",
-                        "status": "blocked",
-                        "readonly": True,
-                        "error": {"code": exc.code, "type": type(exc).__name__},
-                    },
-                    stderr,
-                )
-                return 78
+            return 1
+        print_json(payload, stdout)
+        status = payload.get("status")
+        return 0 if status in {"passed", "planned"} else 1
+
+    if (
+        args.domain == "data"
+        and args.data_command == "verify"
+        and args.dataset_kind is not None
+    ):
         try:
             with session_factory() as session:
-                payload = data_core_runner(data_core_command, session, args)
-        except Exception as exc:  # noqa: BLE001 - bounded CLI boundary.
+                payload = data_core_runner("verify", session, args)
+        except Exception as exc:  # noqa: BLE001 - bounded CLI boundary
             code = getattr(exc, "code", "DATA_CORE_COMMAND_FAILED")
-            _print_json(
+            print_json(
                 {
                     "schema_version": 1,
-                    "command": f"data.{data_core_command}",
+                    "command": "data.verify",
                     "status": "error",
-                    "readonly": not _is_data_core_apply(args),
+                    "readonly": True,
                     "error": {"code": code, "type": type(exc).__name__},
                 },
                 stderr,
             )
             return 1
-        _print_json(payload, stdout)
-        return 0 if payload.get("status") in {
-            "passed",
-            "planned",
-            "passed_with_declared_boundaries",
-        } else 1
+        print_json(payload, stdout)
+        return 0 if payload.get("status") in {"passed", "planned"} else 1
+
     if args.domain == "runtime" and args.runtime_command == "plan":
-        scheduler_plan = dry_run_payload(args, environ if environ is not None else os.environ)
-        _print_json(
+        scheduler_plan = dry_run_payload(
+            args, environ if environ is not None else os.environ
+        )
+        print_json(
             {
                 "schema_version": 1,
                 "command": "runtime.plan",
@@ -274,12 +180,40 @@ def main(
         )
         return 0
 
+    if args.domain == "runtime" and args.runtime_command == "product-retirement":
+        try:
+            request = RetirementRuntimeRequest(
+                release_tag=args.release_tag,
+                rollback_tag=args.rollback_tag,
+                runtime_root=args.runtime_root,
+                protected_root=args.protected_root,
+                active_products_path=args.active_products_path,
+                roots=_parse_retirement_roots(args.data_root),
+            )
+            factory = (
+                retirement_execution_factory or _default_retirement_execution_service
+            )
+            executor = factory()
+            if args.retirement_command == "plan":
+                payload = dict(executor.plan(request))
+                print_json(payload, stdout)
+                return 0 if payload.get("status") == "planned" else 1
+            if args.retirement_command == "execute":
+                payload = dict(executor.execute(request))
+            else:
+                payload = dict(executor.resume(request, journal_path=args.journal))
+            print_json(payload, stdout)
+            return 0 if payload.get("status") == "completed" else 1
+        except (CliUsageError, ValueError):
+            print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
+            return 2
+
     if args.domain == "runtime" and args.runtime_command == "status":
         try:
             with session_factory() as session:
                 health = runtime_health_builder(session)
         except Exception as exc:  # noqa: BLE001 - never emit health exception text.
-            _print_json(
+            print_json(
                 {
                     "schema_version": 1,
                     "command": "runtime.status",
@@ -308,15 +242,19 @@ def main(
             },
             "runtime": health,
         }
-        _print_json(payload, stdout)
+        print_json(payload, stdout)
         return 0 if health.get("status") == "ok" else 1
 
+    # Retained read-only legacy verify path.
     command = "data.verify"
+    if args.domain != "data" or args.data_command != "verify":
+        print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
+        return 2
     try:
         start = _parse_datetime(args.start, end_of_day=False)
         end = _parse_datetime(args.end, end_of_day=True)
     except ValueError as exc:
-        _print_json(
+        print_json(
             {
                 "schema_version": 1,
                 "command": command,
@@ -346,31 +284,19 @@ def main(
                 legacy_compat=False,
             )
     except ActiveDatasetDomainError as exc:
-        _print_json(
-            {
-                "schema_version": 1,
-                "command": command,
-                "status": "error",
-                "readonly": True,
-                "error": {"code": exc.code, "type": type(exc).__name__},
-            },
+        print_json(
+            exception_error_payload(command=command, exc=exc, readonly=True),
             stderr,
         )
         return 1
     except MarketAccessError as exc:
-        _print_json(
-            {
-                "schema_version": 1,
-                "command": command,
-                "status": "error",
-                "readonly": True,
-                "error": {"code": exc.code, "type": type(exc).__name__},
-            },
+        print_json(
+            exception_error_payload(command=command, exc=exc, readonly=True),
             stderr,
         )
         return 1
     except Exception as exc:  # noqa: BLE001 - CLI boundary emits no exception text.
-        _print_json(
+        print_json(
             {
                 "schema_version": 1,
                 "command": command,
@@ -381,7 +307,7 @@ def main(
             stderr,
         )
         return 1
-    _print_json(payload, stdout)
+    print_json(payload, stdout)
     return 0 if payload.get("status") == "passed" else 1
 
 
@@ -411,39 +337,14 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
-def _add_data_core_query_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--dataset-kind",
-        choices=("continuous", "actual_dominant"),
-        required=True,
-    )
-    parser.add_argument("--symbol", choices=("jm",), required=True)
-    parser.add_argument("--contract-or-series", required=True)
-    parser.add_argument(
-        "--frequency",
-        choices=BAR_FREQUENCY_VALUES,
-        required=True,
-    )
-    parser.add_argument("--start", required=True)
-    parser.add_argument("--end", required=True)
-
-
-def _data_core_command(args: argparse.Namespace) -> str | None:
-    if args.domain != "data":
-        return None
-    if args.data_command in {"plan", "sync"}:
-        return str(args.data_command)
-    if args.data_command == "verify" and args.dataset_kind is not None:
-        return "verify"
-    if args.data_command == "migrate":
-        return f"migrate.{args.migrate_command}"
-    if args.data_command == "task07":
-        return f"task07.{args.task07_command}"
-    return None
-
-
 def _validate_conditional_arguments(args: argparse.Namespace) -> None:
-    if args.domain != "data" or args.data_command != "verify":
+    if args.domain != "data":
+        return
+    if args.data_command in {"download", "aggregate", "live"}:
+        if args.symbol is not None and not args.contract_or_series:
+            raise CliUsageError("single target requires --contract-or-series")
+        return
+    if args.data_command != "verify":
         return
     if args.dataset_kind is not None:
         required = (
@@ -457,53 +358,12 @@ def _validate_conditional_arguments(args: argparse.Namespace) -> None:
             value is None or (isinstance(value, str) and not value.strip())
             for value in required
         ):
-            raise CliUsageError("canonical verify requires exact JM identity/window/root")
+            raise CliUsageError(
+                "canonical verify requires exact JM identity/window/root"
+            )
         return
     if not args.contract or not args.period:
         raise CliUsageError("legacy verify requires contract and period")
-
-
-def _is_data_core_apply(args: argparse.Namespace) -> bool:
-    return bool(
-        (args.data_command == "sync" and args.apply)
-        or (
-            args.data_command == "migrate"
-            and args.migrate_command == "apply"
-        )
-    )
-
-
-def _is_migrate_apply(args: argparse.Namespace) -> bool:
-    return bool(
-        args.data_command == "migrate"
-        and args.migrate_command == "apply"
-    )
-
-
-def _is_migrate_packet_command(args: argparse.Namespace) -> bool:
-    return bool(
-        args.data_command == "migrate"
-        and args.migrate_command in {"preflight", "apply", "shadow"}
-    )
-
-
-def _print_json(payload: Mapping[str, Any], stream: TextIO) -> None:
-    print(
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-            default=_json_default,
-        ),
-        file=stream,
-    )
-
-
-def _json_default(value: Any) -> str:
-    if isinstance(value, (date, datetime)):
-        return value.isoformat()
-    return str(value)
 
 
 def _command_hint(argv: Sequence[str]) -> str:
@@ -512,6 +372,56 @@ def _command_hint(argv: Sequence[str]) -> str:
     if argv:
         return str(argv[0])
     return "guiyi"
+
+
+def _parse_retirement_roots(values: Sequence[str]) -> dict[str, Path]:
+    result: dict[str, Path] = {}
+    for raw in values:
+        if "=" not in raw:
+            raise CliUsageError("retirement data root requires label=path")
+        label, value = raw.split("=", maxsplit=1)
+        normalized = label.strip().lower()
+        path = Path(value).expanduser()
+        if normalized in result or not path.is_absolute():
+            raise CliUsageError("retirement data root invalid")
+        result[normalized] = path
+    if set(result) != {"raw", "canonical", "processed"}:
+        raise CliUsageError("retirement data root labels invalid")
+    return result
+
+
+class _UnavailableRetirementExecutionService:
+    """Expose planning without silently constructing production operators."""
+
+    def __init__(self, service: ProductRetirementExecutionService) -> None:
+        self._service = service
+
+    def plan(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
+        return self._service.plan(request)
+
+    def execute(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
+        del request
+        raise ValueError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
+
+    def resume(
+        self,
+        request: RetirementRuntimeRequest,
+        *,
+        journal_path: Path,
+    ) -> Mapping[str, Any]:
+        del request, journal_path
+        raise ValueError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
+
+
+def _default_retirement_execution_service() -> _UnavailableRetirementExecutionService:
+    def unavailable_inventory(
+        _request: RetirementRuntimeRequest, _runtime_sha: str
+    ) -> Mapping[str, Any]:
+        raise RuntimeError("PRODUCT_RETIREMENT_EXECUTION_OPERATOR_NOT_CONFIGURED")
+
+    return _UnavailableRetirementExecutionService(
+        ProductRetirementExecutionService(inventory=unavailable_inventory)
+    )
 
 
 if __name__ == "__main__":

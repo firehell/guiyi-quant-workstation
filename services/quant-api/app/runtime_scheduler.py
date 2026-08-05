@@ -263,24 +263,9 @@ def execute_guarded_cycle(
                     pre_gate_metadata.get("after_commit_required")
                 )
                 if after_commit_requested:
-                    from app.services.htdy_s6_10_long_running_runtime_gate import (
-                        HtDyS610LongRunningRuntimeGate,
-                    )
-
-                    if not (
-                        type(signal_gate)
-                        is HtDyS610LongRunningRuntimeGate
-                        and pre_gate_metadata.get("gate_schema")
-                        == "s6_10_approval_d_daily_child_v1"
-                        and pre_gate_metadata.get("gate_status")
-                        == "waiting"
-                        and pre_gate_metadata.get("mapping_prepared")
-                        is True
-                    ):
-                        raise RuntimeError(
-                            "signal_gate_after_commit_scope_invalid"
-                        )
-                gate_after_commit_required = after_commit_requested
+                    # Long-running S6-10 Approval D after-commit path is superseded.
+                    raise RuntimeError("superseded_runtime_gate_disabled")
+                gate_after_commit_required = False
                 signal_write_authorized = signal_event_handler is not None
                 if (
                     not signal_write_authorized
@@ -439,73 +424,22 @@ def _build_signal_gate(
         raise ValueError("approval_packet_invalid") from exc
     if not isinstance(packet, dict):
         raise ValueError("approval_packet_invalid")
+
+    schema_version = packet.get("schema_version")
+    request_type = packet.get("request_type")
+    packet_type = packet.get("packet_type")
+
+    # Superseded S6-10 / Approval D gates fail closed before importing frozen modules.
     if (
-        packet.get("schema_version") == 1
-        and packet.get("request_type")
-        == "htdy_s6_10_approval_d_no_code_promotion"
-    ):
-        from app.services.htdy_s6_10_long_running_runtime_gate import (
-            build_runtime_gate as build_s610_long_running_runtime_gate,
-        )
-
-        return build_s610_long_running_runtime_gate(
-            approval_packet_path=approval_packet,
-            approval_hash=approval_hash,
-            environ=environ,
-        )
-    if packet.get("schema_version") in {6, 7}:
-        if (
-            packet.get("packet_type")
-            != "htdy_s6_10_remaining_trading_day_parent"
-        ):
-            from app.services.htdy_s6_10_remaining_window import (
-                HtDyS610RemainingWindowError,
-            )
-
-            raise HtDyS610RemainingWindowError(
-                "s6_10_packet_type_invalid"
-            )
-        from app.services.htdy_s6_10_remaining_window_runtime_gate import (
-            build_runtime_gate as build_s610_remaining_runtime_gate,
-        )
-
-        return build_s610_remaining_runtime_gate(
-            parent_packet_path=approval_packet,
-            approval_hash=approval_hash,
-            environ=environ,
-        )
-    if packet.get("schema_version") == 5:
-        if packet.get("packet_type") != "htdy_s6_10_one_day_parent":
-            from app.services.htdy_s6_10_one_day import HtDyS610OneDayError
-
-            raise HtDyS610OneDayError("s6_10_packet_type_invalid")
-        from app.services.htdy_s6_10_one_day_runtime_gate import (
-            build_runtime_gate as build_s610_one_day_runtime_gate,
-        )
-
-        return build_s610_one_day_runtime_gate(
-            parent_packet_path=approval_packet,
-            approval_hash=approval_hash,
-            environ=environ,
-        )
-    if packet.get("schema_version") == 4:
-        if packet.get("packet_type") != "htdy_s6_10_five_day_parent":
-            from app.services.htdy_s6_10_stability import HtDyS610Error
-
-            raise HtDyS610Error("s6_10_packet_type_invalid")
-        from app.services.htdy_s6_10_runtime_gate import (
-            build_runtime_gate as build_s610_runtime_gate,
-        )
-
-        return build_s610_runtime_gate(
-            parent_packet_path=approval_packet,
-            approval_hash=approval_hash,
-            environ=environ,
-        )
+        schema_version == 1
+        and request_type == "htdy_s6_10_approval_d_no_code_promotion"
+    ) or schema_version in {4, 5, 6, 7}:
+        raise ValueError("superseded_runtime_gate_disabled")
     if _enabled(environ, "GUIYI_HTDY_S610_REQUIRED"):
-        from app.services.htdy_s6_10_stability import HtDyS610Error
+        raise ValueError("superseded_runtime_gate_disabled")
+    if isinstance(packet_type, str) and packet_type.startswith("htdy_s6_10_"):
+        raise ValueError("superseded_runtime_gate_disabled")
 
-        raise HtDyS610Error("legacy_packet_not_s610")
     from app.services.htdy_s6_08_runtime_gate import build_runtime_gate
 
     return build_runtime_gate(

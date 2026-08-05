@@ -1,108 +1,82 @@
-# 开发、Review 与集成流程
+# 个人开发与本地验证
 
-更新时间：2026-08-03
+更新时间：2026-08-05
 
-本文只定义协作 Lane、会话、worktree、PR 与人工 Gate。产品、数据、回测、信号和 Runtime
-业务语义分别由 `PROJECT_SOURCE.md`、`DECISIONS.md` 和对应 deep canonical 定义。
+本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
+`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、回测、信号和 Runtime 语义仍由
+`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。
 
-## Lane
+## 唯一日常流程
 
-| Lane | 适用范围 | 默认执行 |
-|---|---|---|
-| Lane 1 | typo、低风险测试与不改变行为的小修 | task worktree、验证、独立 Review、可自动集成 develop |
-| Lane 2 | 文档、普通 API/Web、只读服务与局部工程实现 | Plan-then-execute、task worktree、测试、独立 Review、可自动集成 develop |
-| Lane 3 | migration、正式数据/live 写入、策略/回测口径、通知、删除、release、Runtime | 代码/dry-run/隔离 migration/disabled 功能可自动集成；真实操作另需人工 Gate |
-
-Lane 2 与 Lane 3 可以出现在同一长期流水线，但一个 task/PR 只执行一个明确任务。不得用
-Lane 2 的代码或文档批准替代 Lane 3 的真实写入、删除、release 或 Runtime Gate。
-冻结设计或总计划已经获得用户一次性预批准时，不再重复请求任务内 Plan、普通代码修改、
-Review 修复或通过 Gate 后的 task→`develop` 集成批准。
-
-## 会话与 worktree
-
-1. 从刷新后的 `develop` exact SHA 创建独立 task branch/worktree。
-2. `main`、`develop` 与 detached Runtime checkout 均不得直接修改。
-3. 开始时记录 branch、worktree、base SHA、status 与最近提交；发现 base 漂移、相关并发修改
-   或 active canonical 冲突时停止。
-4. task worktree 位于 `/Volumes/扩展盘/GuiyiWorktrees/tasks/`。不得覆盖其他会话改动。
-5. 每个可独立 Review 的任务使用独立实现上下文；独立 Review 不能由实现者自审代替。
-
-## PR 与集成
+普通仓库变更直接使用：
 
 ```text
-develop exact SHA
--> task branch/worktree
--> validation
--> commit
--> Draft PR to develop
--> independent Review
--> exact-head CI recheck
--> Codex GitHub merge commit to develop
--> ancestor/readback verification
--> cleanup
+develop
+-> 检查 branch/status/最近提交并识别已有改动
+-> 只修改当前任务范围
+-> 按影响运行本地验证
+-> 可选 commit
+-> 可选 git push origin develop
 ```
 
-`task-worktree.sh` 仍只负责固定验证、commit、push 与 Draft PR；它不调用 `gh pr merge`，Draft PR
-本身也不授权 merge。只有以下条件同时满足时，Codex/GitHub Connector 才可对 exact PR head
-执行一次 expected-head merge commit：
+普通源码、测试、普通配置、研究实验和文档变更可以直接在 `develop` 编辑、验证、提交和推送。
+协作门禁与可选工具边界见 `AGENTS.md`「个人开发工作流」与 `DECISIONS.md`「个人开发」；本文不重复罗列。
 
-```text
-任务验收通过
-+ 独立 exact-head Review 通过
-+ required CI 全部成功
-+ PR head 与 reviewed head 一致
-+ mergeability 明确
-+ 无人工 Gate
-```
+开始修改前记录现有 dirty paths；不覆盖、不还原、不暂存与当前任务无关的改动。提交时只选择当前
+任务文件，不使用会意外纳入无关改动的全量暂存方式。
 
-合并后必须回读 merge SHA 和 `develop` ancestry。只有 task worktree clean、task HEAD
-已被本地和 remote-tracking `develop` 包含且远端回读一致时，才可清理 task
-worktree/branch。Draft PR 创建后保留 worktree 以处理 Review；merge 失败、结果不确定
-或 head/base 漂移时保留全部状态并 fail-closed。
+## 本地验证
 
-Lane 1/2 不需重复请求用户批准 task→`develop` merge。Lane 3 仅限 digest-bound `code` /
-`test` / `dry_run` / `disabled_feature` / `isolated_migration` 类别及其保守 path 绑定使用同一
-自动集成流程。生产 PostgreSQL migration apply、真实 RQData/canonical/DB 写入、删除、
-`main`/release/tag、Runtime promotion、live enable、真实通知、策略/回测正式语义和 GitHub
-规则变更仍保留人工 Gate。
+本地验证是完成声明的依据，按影响选择：
 
-### 通用 develop merge 检查入口
+- 仅文档或非执行注释：运行适用的引用、格式和 diff 检查。
+- 可执行行为：运行覆盖所改行为的定向测试，并按需要补充模块测试、lint、类型检查或构建。
+- 数据身份/质量、策略、回测、信号、migration、Runtime、live 或通知：运行对应领域专项测试，
+  且保留 deep canonical 的业务约束。
+- tracked 内容发生变化时运行适用的 secret scan；输出不得包含命中的秘密值。
 
-现有 `classify_develop_merge()` 通过以下稳定 CLI 暴露，供 Codex/Connector 对已归一化的 lane、
-changed paths、operation、safe category 与 pending external Gate 做纯判断：
+任何必需检查失败时，明确报告失败，不宣称任务完成。CI 如存在，只是补充结果，不是本地开发、
+commit 或 push 的前置授权。
 
-```bash
-python3 scripts/engineering/task_workflow.py develop-merge-check \
-  --lane 2 \
-  --path-file <changed-paths.txt> \
-  --operation develop_merge \
-  --change-category code
-```
+## 普通仓库删除
 
-`--path-file` 与 repository-relative 位置路径二选一；`--change-category` 和 `--external-gate` 可重复。
-Lane 1/2 category 可为空，Lane 3 必须提供与 changed paths 双向绑定的 safe category。允许结果输出
-稳定 JSON、退出码为 0；任何未知 operation/category、非法或空路径、pending external Gate、人工
-Gate 操作或不匹配的 Lane 3 category 均输出 `status=blocked` 的稳定 JSON、退出码为 2。
+删除 Git 跟踪的过期源码、测试、普通配置、工程流程、hook/rule、CI、ADR 或文档属于普通仓库删除：
+扫描并关闭 active references，以 Git 历史恢复。细则见 `AGENTS.md` / `DECISIONS.md`。
 
-该入口只读取显式提供的 path file 并调用现有分类器；不读 GitHub、不执行 Git、merge、push、
-cleanup、网络请求或文件写入。它不是 executor、approval 或 receipt，也不证明外部事实已经发生。
-本策略任务改变该入口及 merge policy，因此新 CLI 不得作为本策略任务自身的唯一批准依据；本任务
-仍必须使用既有测试、未修改的 lane-pr-gate、独立 Sol exact-head Review 与 Connector 回读完成自举。
+生产数据库记录、正式市场数据、Runtime 状态、live 配置、remote refs 或 Git 历史不属于普通仓库
+删除；它们必须按受控外部操作处理。
 
-## 验证与停止
+## 受控外部操作
 
-每个任务先运行定向检查，再运行任务合同指定的模块/工程 Gate、引用扫描和
-`git diff --check`。测试、代码完成与外部 Gate 必须分别陈述。
+生产 DB/正式数据不可逆写入或删除、远端 release/tag、force update 或历史重写、Runtime/live
+切换、真实通知及 GitHub 规则修改，在执行前需要用户一次明确请求，并给出操作类别和可识别范围。
+该请求只授权紧随其后的一个匹配执行尝试；完成、失败、重试、范围变化或后续会话都需要新的明确
+请求。
 
-出现以下任一情况立即停止：范围需要扩大、需要新架构选择、三轮后验证仍失败、需要凭据、
-真实数据/DB/通知/删除/release/Runtime 但缺少专用批准，或 base/active canonical 发生漂移。
+Dry-run 只验证计划，绝不转化为 mutation authorization。授权模型与禁止从历史材料推断权限的细则见
+`AGENTS.md`「受控外部操作」与 `DECISIONS.md`。执行前仍须校验输入、范围、认证、质量和安全开关；
+业务正确性约束优先于任何执行意图。
+
+Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub 规则修改；每个类别和范围必须
+分别请求。普通 `git push origin develop` 仍属于上述日常开发流，不继承为 release/tag 或其他
+外部操作权限。
+
+## 不可放宽的业务边界
+
+- 正式历史数据继续遵守 DatasetKey、Catalog/Manifest/Gap/MainContractMap、quality 和
+  MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
+- 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
+- 保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`，live、Runtime promotion、
+  真实通知/autosend 默认关闭，历史处理不回放真实通知。
+- 所有输出都是研究观察，不是交易指令；`auto_order=false`，拒绝创建或提交订单。
+- 不读取、显示、提交或记录凭据；外部输入在命令、文件、网络或数据库敏感操作前完成校验。
 
 ## 权威边界
 
+- 工程执行规则：`AGENTS.md`
+- 详细个人开发流程：`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`
 - 当前状态：`STATUS.md`
 - 长期产品与数据边界：`PROJECT_SOURCE.md`、`DECISIONS.md`
-- 工程执行规则：`AGENTS.md`
 - 数据核心 V2 active 合同：`docs/tasks/GY-DATA-CORE-V2.md`
-- worktree/release 细节：`docs/WORKTREE_RELEASE_WORKFLOW.md`
 
 本文不得复制或重新解释业务 canonical。

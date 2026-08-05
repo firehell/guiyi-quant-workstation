@@ -533,7 +533,7 @@ Backtest API
 
 - `deploy/launchd` 提供 API、Web preview、backtest/signal worker、JM scheduler、notification worker 和日志轮转模板。
 - Runtime 是独立 detached checkout；当前实际根目录由 launchd 的 `GUIYI_PROJECT_ROOT` 与
-  `scripts/local-services-status.sh` 共同核对（当前外置盘部署为
+  `scripts/ops/macos/local-services-status.sh` 共同核对（当前外置盘部署为
   `/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime`）。开发主仓库仍在
   `/Volumes/扩展盘/guiyi-quant-workstation`；task/develop worktree 不得被服务引用。
 - optional scheduler/notification 只有对应 flag 开启且人工 `--confirm-load` 才加载。

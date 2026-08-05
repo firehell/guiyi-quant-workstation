@@ -1,3 +1,0 @@
-product,period,layer,mode,status,detail,gap_start,gap_end
-jm,1d,layer1,prepend,planned,prepend historical prefix before existing asset,2020-01-02,2023-01-02
-jm,1w,layer1,prepend,planned,prepend historical prefix before existing asset,2020-01-02,2023-01-05

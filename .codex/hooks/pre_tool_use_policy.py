@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Fail-closed local guard for commands that bypass the workflow entrypoints."""
+"""Fail-closed local guard for destructive Git only.
+
+Ordinary develop edit/test/commit/push is allowed. Collaboration metadata is
+never consulted. Output reasons are bounded and non-secret.
+"""
 
 from __future__ import annotations
 
@@ -9,28 +13,14 @@ import sys
 from typing import Any
 
 
-PROTECTED_REFS = {"main", "master", "develop"}
-CONTROLLED_ACTIONS = {"create", "integrate", "cleanup"}
-
-
 def deny(reason: str) -> dict[str, Any]:
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
+            "permissionDecisionReason": reason[:240],
         }
     }
-
-
-def _is_controlled_entrypoint(tokens: list[str]) -> bool:
-    if len(tokens) < 3:
-        return False
-    return (
-        tokens[0] in {"bash", "/bin/bash"}
-        and tokens[1] == "scripts/engineering/task-worktree.sh"
-        and tokens[2] in CONTROLLED_ACTIONS
-    )
 
 
 def decision(payload: dict[str, Any]) -> dict[str, Any]:
@@ -38,26 +28,30 @@ def decision(payload: dict[str, Any]) -> dict[str, Any]:
         return {}
     command = payload.get("tool_input", {}).get("command")
     if not isinstance(command, str) or not command.strip():
-        return deny("Empty or malformed shell command blocked by workflow policy.")
+        return deny("Empty or malformed shell command blocked.")
     try:
         tokens = shlex.split(command)
     except ValueError:
-        return deny("Unparseable shell command blocked by workflow policy.")
-    if _is_controlled_entrypoint(tokens):
-        return {}
+        return deny("Unparseable shell command blocked.")
     if not tokens:
-        return deny("Empty shell command blocked by workflow policy.")
-    if tokens[0] == "git":
-        tail = tokens[1:]
-        if "push" in tail:
-            if any(flag in tail for flag in ("--force", "--force-with-lease", "-f")):
-                return deny("Force push is forbidden; use the controlled task workflow.")
-            if any(ref in {"main", "master", "develop"} or ref.endswith(":main") or ref.endswith(":master") or ref.endswith(":develop") for ref in tail):
-                return deny("Direct protected-branch push is forbidden; use the controlled task workflow.")
-        if any(action in tail for action in ("merge", "rebase")):
-            return deny("Direct merge and rebase operations are forbidden by workflow policy.")
-        if "worktree" in tail and "remove" in tail:
-            return deny("Direct worktree removal is forbidden; use task-worktree.sh cleanup.")
+        return deny("Empty shell command blocked.")
+
+    if tokens[0] != "git":
+        return {}
+
+    tail = tokens[1:]
+    if "push" in tail and any(flag in tail for flag in ("--force", "--force-with-lease", "-f")):
+        return deny("Force push is forbidden without a separate scoped execution intent.")
+    if any(action in tail for action in ("filter-branch", "filter-repo")):
+        return deny("History rewrite tooling is forbidden without a separate scoped execution intent.")
+    if "rebase" in tail and any(flag in tail for flag in ("--onto",)):
+        # Keep ordinary rebase available; block only clearly rewrite-oriented forms later if needed.
+        return {}
+    if len(tail) >= 2 and tail[0] == "reset" and "--hard" in tail and any(
+        ref in {"main", "master", "origin/main", "origin/master"} for ref in tail
+    ):
+        return deny("Hard reset of protected release refs is forbidden.")
+    # Direct push to develop/main is allowed in personal mode; not denied by branch alone.
     return {}
 
 
@@ -65,10 +59,10 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except json.JSONDecodeError:
-        print(json.dumps(deny("Malformed Hook input blocked by workflow policy.")))
+        print(json.dumps(deny("Malformed Hook input blocked.")))
         return 0
     if not isinstance(payload, dict):
-        print(json.dumps(deny("Malformed Hook input blocked by workflow policy.")))
+        print(json.dumps(deny("Malformed Hook input blocked.")))
         return 0
     print(json.dumps(decision(payload)))
     return 0

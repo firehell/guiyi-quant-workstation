@@ -674,37 +674,27 @@ def test_runtime_gate_waits_without_handler_before_first_night_session(
     assert "signal_event_handler" not in pre
 
 
-def test_runtime_scheduler_routes_schema_v4_without_accepting_schema_v3(
+def test_runtime_scheduler_rejects_superseded_s610_schemas_before_import(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app import runtime_scheduler
-    from app.services import htdy_s6_10_runtime_gate
 
     parent = _parent()
     packet_path = tmp_path / "parent.json"
     packet_path.write_text(json.dumps(parent), encoding="utf-8")
-    sentinel = object()
-    monkeypatch.setattr(
-        htdy_s6_10_runtime_gate,
-        "build_runtime_gate",
-        lambda **_kwargs: sentinel,
-    )
-    assert (
+    with pytest.raises(ValueError, match="superseded_runtime_gate_disabled"):
         runtime_scheduler._build_signal_gate(
             approval_packet=packet_path,
             approval_hash=str(parent["packet_hash"]),
             environ={},
         )
-        is sentinel
-    )
 
     legacy = deepcopy(parent)
     legacy["schema_version"] = 3
     legacy["packet_type"] = "htdy_s6_08_bounded_parent"
     legacy["packet_hash"] = canonical_hash(legacy)
     packet_path.write_text(json.dumps(legacy), encoding="utf-8")
-    with pytest.raises(HtDyS610Error, match="legacy_packet_not_s610"):
+    with pytest.raises(ValueError, match="superseded_runtime_gate_disabled"):
         runtime_scheduler._build_signal_gate(
             approval_packet=packet_path,
             approval_hash=str(legacy["packet_hash"]),

@@ -1,32 +1,19 @@
 # GY-DATA-CORE-V2：数据交互核心收口 active 合同
 
-更新时间：2026-08-02
+更新时间：2026-08-05
+
+## 0. 授权模型（个人开发）
+
+本合同是业务边界合同，不是协作门禁。普通 `develop` 编辑/测试/提交不要求 GitHub Issue、
+task worktree、Draft PR、独立 Review、required CI、exact-head、approval packet、hash 或 receipt。
+已发生的 PR/CI/Review/SHA 段落只作为 Historical_Fact。生产 DB、正式 Parquet、Runtime/live、
+真实通知、release/tag 或仓库外删除仍需**范围明确的一次性执行意图**；dry-run 不授权 mutation。
 
 ## 1. 状态与边界
 
 本文是数据交互核心收口的 active 执行合同。目标设计和任务 00～19 已获一次性预批准。
-任务 00 已通过测试、CI 与独立 Codex Review，并由 PR #76 以 merge commit
-`2266d7f7d285b137a2375aeb78f2c4305684b8e0` 合入 `develop`；该 Review 不是人类或 Runtime
-evidence。任务 01 已通过测试、三轮独立 Codex Review 与 exact-head CI，由 PR #78 以 task
-HEAD `997d978f40245c8967530471aff0c2471c3478d5`、merge commit
-`12f5dbc5447f2bc7ed35ffb3fcf18daabb145bee` 合入 `develop`。任务 02 已通过测试、独立
-Codex Review 与 exact-head CI，由 PR #80 以 task HEAD
-`9614710c2e70e7c544642d7688146231df49853c`、merge commit
-`59c14ffd7e97c39814576f16dc2c413c8fafb5db` 合入 `develop`。该任务只完成七字段 Catalog
-合同、schema-only `0027`、非破坏性 canonical MainContractMap view 与隔离 PostgreSQL
-migration 验证。生产 schema 后续已在 Task 04 精确 Gate 下升级到 `0027`；Task 04 的已批准
-真实数据写入已经完成，closeout 不再执行任何生产写入。任务 03
-staging、quality 与 canonical writer 已通过本地测试和独立 Codex Review，并由 PR #82
-以 task HEAD `8a892a5a55d7b29b1ca036c89d8d3972bd7ed32a`、merge commit
-`3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 合入 `develop`。CI module detector 修复 PR #83
-以 task HEAD `882bd64b6b4ee7f31d115c350f13e4cd95df5278`、merge commit
-`b03d5e98f50d9ada4364a524ca78c92d1e0bbb42` 先行合入。PR #82 的两次 Linux run 都在修复
-生效前启动并跳过 Backend verification；随后已对合入后的 exact commit
-`3ceb57bd0661d1fd3c35401a68f2b4345eca3ae1` 使用 official Swift Ubuntu `linux/amd64`
-容器、GitHub runner 目录形态、complete Git bundle、clean detached checkout、真实
-`plutil` 与 uv-managed Python 3.13 完成等价补验。Ruff 与后端全量通过：
-`2186 passed, 36 skipped, 0 failed`；独立 Codex Review 批准。因此任务 03 已完成验收，
-任务 04 成为下一项。
+任务 00～06 的合入与验收结果以下文 Historical_Fact 为准；除文档明确列出的已完成事实外，
+不得把数据迁移、消费者切换、live/EOD 收口、删除或 Runtime 验收写成已完成。
 
 ```text
 ACTIVE_TARGET_FROZEN
@@ -39,6 +26,15 @@ RUNTIME_NOT_AUTHORIZED
 ```
 
 本合同不改变 V1 的 observation-only、`auto_order=false`、真实通知默认关闭与禁止自动交易边界。
+
+### 1.1 Historical_Fact（已完成，不构成未来授权）
+
+任务 00 已通过测试与 Review，并由 PR #76 merge `2266d7f7…` 合入 `develop`。
+任务 01 由 PR #78 merge `12f5dbc5…` 合入。任务 02 由 PR #80 merge `59c14ffd…` 合入，
+完成七字段 Catalog、schema-only `0027` 与隔离 migration 验证。生产 schema 后续已在
+Task 04 升级到 `0027`；Task 04 已批准真实数据写入已经完成，closeout 不再执行任何生产写入。
+任务 03 由 PR #82 merge `3ceb57bd…` 合入。上述 PR/Review/CI/SHA 只记录历史，不授权新的
+外部 mutation。
 
 ## 2. Active target
 
@@ -91,14 +87,14 @@ evidence。人工复盘只有在 market phase、system compliance、rule tag 和
 reconciliation 完成后才能幂等提取精简 `ResearchSample`。scheduler 默认 disabled；生产 migration、
 真实运行与 Task 07 legacy 删除均未授权。
 
-historical evidence/report/receipt 默认保护。任何受控删除均须先完成只读扫描、说明影响范围与
-回滚方式，并取得用户对该次删除的明确批准；删除后执行全仓验证与引用扫描。
+historical evidence/report/receipt 默认保护。任何受控删除均须先完成只读扫描、说明影响范围，
+并取得用户对该次删除的**范围明确、一次性执行意图**；删除后执行受影响验证与引用扫描。
+不得用 backup、packet、hash、receipt 或二次确认冒充授权。
 
 本合同和任务 00 均不授权删除任何文件、Git 历史、数据库记录、Parquet、evidence、report
-或 receipt。2026-08-05 新建的 `GY-DATA-PRODUCT-RETIREMENT-21` 是唯一精确品种退役例外：
-只有其独立 Review、用户对该次删除的明确批准、69 品种 Runtime 和停服 receipt
-全部成立后，才允许删除当前版本目标对象；Git 历史不重写，并保留最小最终
-退役 receipt。该例外当前仍处于 code/dry-run 阶段，不授权 apply。
+或 receipt。`GY-DATA-PRODUCT-RETIREMENT-21` 是唯一精确品种退役例外：只有用户给出命名操作与
+精确删除范围的一次性意图，且精确匹配、blocker、事务与数据完整性检查全部通过后，才允许删除
+当前版本目标对象；Git 历史不重写。该例外当前仍处于 code/dry-run 阶段，不授权 apply。
 
 ## 3. Legacy compatibility 与替换关系
 
@@ -143,18 +139,16 @@ lineage，不再逐项调度。
 | 01 | 数据合同与 golden vectors | completed on develop；PR #78；task HEAD `997d978f`；merge `12f5dbc5`；116 tests；无真实写入 |
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 schema 已在 Task 04 Gate 下升级到 0027 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
-| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
-| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（本 task PR merge 后生效）；exact-head independent Review=`CLEAN_FOR_INTEGRATION`；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 external Gate |
+| 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop`（Historical_Fact：当时经 exact-head CI、独立 Review 与 merge）；正式业务 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
+| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（Historical_Fact）；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 受控外部操作 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | completed on develop（PR #105 merge 后生效）；固定 EMA21 evaluator；production=`0031`，empty/disabled smoke passed；Runtime/live 未启用 |
-| 07（原 15～18） | JM 目标 Canonical 验收与精确缺口计划 | Stage C 精简实现 candidate；待 exact-head CI、独立 Review、develop 集成与生产只读验收；无 production write/delete |
-| 08（原 19） | release candidate、JM Runtime promotion 与验收 | pending / 独立 release + Runtime Gate |
+| 07（原 15～18） | JM 目标 Canonical 验收与精确缺口计划 | Stage C 精简实现 candidate；待本地/生产只读验收；无 production write/delete；不要求 Issue/worktree/PR/Review/exact-head/packet |
+| 08（原 19） | release candidate、JM Runtime promotion 与验收 | pending；release 与 Runtime 分属不同 scoped intent |
 
-任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
-集成 `develop`。Task 04 已批准的生产 migration 和 canonical apply 已完成；本 closeout 只允许
-只读复验和文档收口，不授权新的 RQData、Parquet、PostgreSQL、packet、apply、Shadow、删除、
-release 或 Runtime 副作用。Task 05 只能在本 closeout PR 合入后另起任务。
+任务必须串行。任务 00～06 的合入事实见 Historical_Fact，不构成新的外部 mutation 授权。
+Task 04 已批准的生产 migration 和 canonical apply 已完成；本 closeout 只允许只读复验和文档收口。
 后续边界为：`Task 07 target Canonical assessment -> Task 08 release/Runtime`。旧派生
-数据清理不是 Task 07 完成条件，如需执行必须单独建任务并获得 deletion Gate。
+数据清理不是 Task 07 完成条件；如需执行必须单独请求并给出精确删除范围的一次性意图。
 
 Task 06 首次隔离 migration 测试发生 URL 覆盖 incident，项目数据库已意外到 empty/disabled
 `20260802_0028`。该操作没有事前 Gate，不是合规 acceptance。根因、空表/flags 证据、隔离库复测
@@ -216,8 +210,8 @@ Canonical。
 不一致，4,671 个 1d 文件缺少 migration reader 所需的 `datetime`。按永久合同不做 legacy
 逐行仲裁：这些资产直接改判为 `CONFLICT_BLOCKED -> rqdata_redownload`，且 repair window 绑定
 物理 min/max。当前 code-only remediation 基于 `develop@aac4006f`，旧 Stage C packet 已
-supersede；在 exact-head Review、PR/CI、develop ancestry、新 release approval 和新 migration
-approval 前不得 apply。准确 digest、数量与 writes=false 证据见
+supersede；该 apply 阻塞在当时要求 exact-head Review/PR/CI/ancestry 与新 migration
+approval（现为 frozen historical，不再是当前授权条件）。准确 digest、数量与 writes=false 证据见
 `docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md` 第 8 节。
 
 2026-08-03 closeout 代码合同已取消两项旧设计：actual-dominant `1w` 禁用与
@@ -300,8 +294,8 @@ supersede binding、未 cancel task、未 deactivate signal，也没有文件/�
 Task 04 正式验收口径为：Canonical schema/coverage 完整并可物理复验；Catalog、Manifest digest、
 checksum 与文件 row count 一致；DataGap 相交请求 fail-closed；MainContractMap 无缺失/歧义；
 `MarketDataService` 能统一读取 continuous、actual_dominant、provider-direct 与 derived 周期；普通
-Web/API/指标消费者切换和回归通过。本 closeout commit 经 Draft PR exact-head CI、独立 Review
-并由 GitHub merge commit 合入 `develop` 后，Task 04 才是 `completed on develop`。
+Web/API/指标消费者切换和回归通过。Task 04 已作为 Historical_Fact 合入 `develop`
+（当时经 Draft PR exact-head CI、独立 Review 与 merge commit；这些事实不构成未来授权）。
 
 本次只读现场对账结果：
 
@@ -328,7 +322,8 @@ derived source minute 缺失测试也通过，确认不会填充、缩短或忽�
 closeout 本地验证：docs Gate 通过；engineering `192 passed`；secrets scan `9330 files`、零
 high-confidence secret；Data Core `459 passed`；普通 Market/API/指标消费者定向 `123 passed`；
 Web unit `169 passed / 1 skipped / 0 failed`；Web build `3616 modules`；canonical-enabled mock
-E2E `18 passed` 且无 console error；`git diff --check` 通过。独立 Review、Draft PR exact-head CI
+E2E `18 passed` 且无 console error；`git diff --check` 通过。当时的独立 Review、Draft PR exact-head CI
+结果仅作 Historical_Fact。
 与 merge ancestry 仍必须在本 closeout head 上完成，不能由上述本地证据替代。
 
 ### 4.1 新任务 04 历史验收快照（已冻结）
@@ -374,7 +369,7 @@ state=BLOCKED_AT_JM_REAL_DATA_GATE
   `N * 自然时间频率` 当作 N 根交易 bar；
 - lineage 返回稳定的 source DatasetKey/manifest/data-version identity，并以独立
   `request_identity_token` 绑定 exact request window；
-- apply approval packet 绑定 exact task head、0026/0027、JM scope、plan digest、canonical/staging
+- apply 当时的 approval packet 绑定（Historical_Fact）exact task head、0026/0027、JM scope、plan digest、canonical/staging
   root、脱敏 PostgreSQL target、四张目标表、rollback、禁止写 legacy 资产，以及
   exact rank=1 mapping acquisition/write plan（交易日、时间窗、allowed contracts）。
 - plan 在生产 0025 直接按 0027 canonical view 的相同 `DISTINCT` 字段、过滤条件和共享
@@ -382,7 +377,7 @@ state=BLOCKED_AT_JM_REAL_DATA_GATE
   0026 中间态 fail-closed，0027 才读取新 Catalog/view。`apply` 在 inventory、receipt、root、
   RQData 和 writer 前先要求 exact 0027。标准 CLI pretty packet 可在 8 MiB 有界预解析上限内
   load/self-verify，超过上限在 JSON parse 前拒绝。
-- hash-bound `migrate apply` 执行器先后执行 packet preflight、current-facts 重算、clean exact
+- 当时的 hash-bound `migrate apply` 执行器（Historical_Fact，非当前授权）先后执行 packet preflight、current-facts 重算、clean exact
   head 与 0027 revision 检查；全部通过后才允许创建 `data-core-v2` 根、初始化 RQData/writer。
   direct dataset 矩阵为 continuous `1m/1d/1w`、actual-dominant `1m/1d`，actual sessions
   必须消费 dataset write plan 中的 rank=1 mapping 有效分段，不得发布全局窗口
@@ -479,21 +474,20 @@ GitHub post-merge engineering-test for e29c2940: run 30678204745, success
 - receipt 保持 `in_progress`，其中 mapping、continuous 1m/1d 均有可重验 partition evidence；
   现场未删除已发布文件或 metadata，historical Shadow 未执行；
 - 该修复改变 source HEAD，因此所有 `e29c2940` packet/hash/approval 已失效，不得复用；
-- approval packet 只允许由提交后的 clean exact head 生成；packet/hash 属于仓库外 Gate 证据，
-  不反向写入提交造成 self-drift；
-- 当前生产 Gate follow-up fix 尚待新的 clean exact HEAD、GitHub CI、packet 与用户批准；
-- canonical 文档不追踪 packet 的瞬时存在状态或具体 hash；生产 Gate 必须现场用 loader 核对
-  packet 绑定当前 clean exact head，且不得复用任何旧 packet/hash。
+- 当时规定 approval packet 只允许由提交后的 clean exact head 生成（Historical_Fact）；packet/hash 属于仓库外证据，
+  不反向写入提交造成 self-drift，也不是当前个人开发授权；
+- 当时生产 Gate follow-up 曾要求新的 clean exact HEAD、GitHub CI、packet 与用户批准（现已 superseded）；
+- 当前正式数据/生产 DB mutation 只接受范围明确的一次性执行意图，不得复用任何旧 packet/hash。
 
 以上是当时不能标记完成、不能进入任务 05 的原因及当时拟议下一动作；该 packet/apply/Shadow
 顺序现已由 4.0 Owner 决策取消，不得作为当前执行指令。
 
 ### 4.2 Resume Gate 综合复盘历史快照（已冻结，2026-08-01）
 
-PR #88 已把 resume 修复合入 `develop@e3e03a9d`。在复用 production partial state 前完成的
-综合复盘新增以下强制验收项：
+PR #88 已把 resume 修复合入 `develop@e3e03a9d`。以下条目是当时的 Historical_Fact /
+技术验收记录，不是当前个人开发或外部 mutation 的授权条件：
 
-1. approval-basis receipt identity：同一 HEAD 的不同 initial state 不得碰撞；receipt v2 必须绑定
+1. approval-basis receipt identity（历史）：同一 HEAD 的不同 initial state 不得碰撞；receipt v2 必须绑定
    basis digest、packet hash 和自身 digest，篡改拒绝，passed 终态不可变；
 2. packet/current-state execution runs：actual-dominant M1/D1 不得共享时间口径；连续主导交易日
    合并为有界 provider run，85 个 dataset plan 必须各有非空且可重算的 run；
@@ -617,7 +611,7 @@ docs/tasks/GY-CORE-CONVERGENCE.md
 docs/tasks/GY-DATA-CORE-V2.md
 ```
 
-2026-07-30 owner-approved 治理修订允许修改以下 9 个文件：
+2026-07-30 owner-approved 治理修订当时允许修改 9 个文件，其中当前仍存在的 6 个文件为：
 
 ```text
 AGENTS.md
@@ -625,11 +619,12 @@ PROJECT_SOURCE.md
 DECISIONS.md
 STATUS.md
 docs/DEVELOPMENT.md
-docs/WORKTREE_RELEASE_WORKFLOW.md
 docs/tasks/GY-DATA-CORE-V2.md
-docs/decisions/ADR-WS-003-develop-release-worktree-lifecycle.md
-docs/decisions/ADR-WS-004-five-layer-manual-pr.md
 ```
+
+另外 3 个文件是当时现行的 worktree workflow 与两份关联 ADR；它们现已由
+`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md` 取代并从 active tree 删除，原始名称和内容保留在 Git
+历史中。
 
 因此任务 00 最终允许范围是以上两份清单的并集（12 个文件）；治理修订本身必须严格限于
 第二份 9 文件清单。任何其他文件仍触发 Stop Gate。
@@ -641,12 +636,13 @@ docs/decisions/ADR-WS-004-five-layer-manual-pr.md
 - 旧 GY-CORE-04～08 明确 superseded/paused；
 - 6B 只定义受控机制，不授权或执行删除；
 - 文档检查、引用扫描与 `git diff --check` 通过；
-- 独立 Review 无阻塞、CI 通过且 PR head SHA 精确匹配后，才可自动合入 `develop`。
-- 自动集成不授权生产 migration、真实写入、删除、main/release/tag、Runtime/live 或通知。
+- 本地验证通过即可在 `develop` 继续；可选 PR/CI/Review 不构成授权。
+- 任何生产 migration、真实写入、删除、main/release/tag、Runtime/live 或通知仍需
+  范围明确的一次性执行意图。
 
 ## 6. Stop Gates
 
-需要新架构选择、修改冻结口径、超出允许文件、base/并发漂移、三轮后检查仍失败，或需要
-凭据、生产环境、真实写入、删除、release、tag、main、Runtime、通知时立即停止。
+需要新架构选择、修改冻结口径、超出允许文件、base/并发漂移，或需要
+凭据、生产环境、真实写入、删除、release、tag、main、Runtime、通知时立即停止并取得新意图。
 
-自审只能发现和修复本任务内问题，不能代替独立 Review。
+自审只能发现和修复本任务内问题；它不创造外部 mutation 权限。

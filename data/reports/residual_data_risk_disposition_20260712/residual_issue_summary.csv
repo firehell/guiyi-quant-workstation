@@ -1,6 +1,0 @@
-issue_group,rows,unique_assets,current_status,disposition,next_gate
-source_interval_unverified,1039,276,derived assets are quality passed but missing source_interval parquet column,do not mark failed; repair provenance through controlled parquet/checksum/manifest/processed-summary/DB-checksum sync,source_interval_provenance_repair_dry_run
-missing_db_registration,108,93,manifest and physical assets exist as candidate-only records,do not write DB yet; generate controlled registration dry-run and require manual confirm before apply,lpv_actual_contract_registration_dry_run
-quality_failed,105,15,active assets preserve failed quality status,do not upgrade status for coverage; run readonly root-cause audit before rebuild or redownload,quality_failed_root_cause_audit
-metadata_reference_gaps,831,0,contract universe and continuous contract map metadata gaps,do not patch upper layers; run reference metadata sync/backfill dry-run,reference_metadata_gap_dry_run
-workspace_external_changes,0,0,previously observed README/local-services-status/post-reboot-verify items are not active in current git status,leave untouched; handle separately only if they reappear,manual_git_checkpoint_or_separate_task
