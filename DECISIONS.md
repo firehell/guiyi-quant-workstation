@@ -45,7 +45,6 @@
 - 当前树保留 canonical、active business contracts、Runtime 仍消费的 frozen 文件和必要历史事实；已完成协作过程由文本或 Git history 追溯，不提供可复用授权。
 - `docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互收口的 active 业务合同；`docs/tasks/GY-CORE-CONVERGENCE.md` 只作为 superseded/frozen historical 来源保留。
 - Runtime 进程重启、RQData/网络短故障恢复和主机重启验证与单日自然运行分离；实际 Runtime/live/通知动作分别使用自己的精确 scope 意图，且默认保持关闭。
-- Lean Matrix AI 专家团已从 active tree 完整删除。该完成事实不建立 independent exact-head Review、required CI、automatic merge、ancestry/readback 或 cleanup 的当前要求。
 
 ## 已取代的工作流 ADR
 

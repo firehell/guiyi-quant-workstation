@@ -1,6 +1,6 @@
 ---
 name: High-risk change
-about: Data, DB, strategy formula, live write, Runtime, or real notification change requiring a dedicated Gate.
+about: Optional backlog note for data, DB, strategy, Runtime, live, or real notification work. Not an authorization Gate.
 title: "[High-risk]: "
 labels: []
 ---
@@ -9,16 +9,20 @@ labels: []
 
 ## Scope and non-goals
 
-## Data / DB / strategy / Runtime impact
+## Impact
 
-## Rollback plan
+Data / DB / strategy / Runtime / live / notification / remote refs — what changes, what stays off.
 
-## Dedicated approval Gate
+## Validation
 
-Describe the business-specific, hash-bound, scope-bound approval packet or Gate. Issue approval alone does not replace code-level hash checks. If no dedicated Gate exists, stop and design it before writing.
+Local checks planned (domain tests, dry-run if any). Issue/PR/CI/packet/hash/receipt are not authorization.
+
+## External mutation (if any)
+
+Controlled external ops need a separate, scope-clear, one-shot user intent at execution time. This Issue does not authorize production writes, Runtime/live enable, real notifications, release/tag, or GitHub rules changes. Dry-run does not authorize mutation.
 
 ## Done when
 
 ## Risks
 
-Do not paste secrets or authorize automatic merge/deploy.
+Do not paste secrets. `auto_order=false`; no order creation. Business correctness (quality, DataGap, default-off) overrides any intent.

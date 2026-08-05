@@ -1,2 +1,0 @@
-classification,dataset,target_table,product,year,candidate_start_date,candidate_end_date,writes_parquet,writes_market_data_files,writes_quality_status,before_count,status,after_count,rows_fetched,rows_upsert_attempted,error_type,error_message
-needs_contract_universe_sync,contract_universe,futures_contract_universe,a,2020,2020-01-01,2020-12-31,False,False,False,0,success,1458,1458,1458,,
