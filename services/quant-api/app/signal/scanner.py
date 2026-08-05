@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.data_core.consumer_identity import build_canonical_consumer_input
 from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
-from app.models.backtest import WatchlistItem
+from app.models.watchlist import WatchlistItem
 from app.models.signal import SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
 from app.schemas.signal import (

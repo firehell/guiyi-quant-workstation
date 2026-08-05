@@ -1,2 +1,0 @@
-"""Bar-level backtest engine."""
-

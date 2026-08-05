@@ -8,7 +8,6 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.backtest import BacktestReportModel, BacktestTask
 from app.models.data_center import LiveIngestCheckpoint, MarketDataFile
 from app.models.review import ReviewNote
 from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
@@ -45,19 +44,6 @@ def test_dashboard_summary_returns_live_aggregates() -> None:
                 status="entry_signal",
                 direction="long",
                 current_price=1200.0,
-            )
-        )
-        session.add(BacktestTask(task_no="bt-dash-1", status="success"))
-        session.add(
-            BacktestReportModel(
-                task_id=1,
-                task_no="bt-dash-1",
-                report_no="rpt-dash-1",
-                template_name="vnpy",
-                symbol="jm.MAIN",
-                contract="jm.MAIN",
-                period="15m",
-                status="success",
             )
         )
         session.add(
@@ -130,11 +116,8 @@ def test_dashboard_summary_returns_live_aggregates() -> None:
         assert payload["data_status"] == "live"
         assert payload["risk_status"] == "research_only"
         assert payload["signals_today"] == 1
-        assert payload["backtests"] == 1
-        assert payload["backtest_reports"] == 1
         assert payload["strategies"] >= 5
         assert payload["latest_scan_task"]["task_no"] == "scan-dash-1"
-        assert payload["latest_jm_report"]["report_id"] == 1
         assert payload["latest_data_time"] is not None
         assert payload["latest_confirmed_bar_time"] is not None
         assert payload["latest_live_signal_event"]["event_id"] == 1
@@ -159,9 +142,8 @@ def test_strategy_registry_lists_v1b_entries() -> None:
     assert "jm_v1b_daily_direction_fast_entry" in codes
     assert "su_bing_jm_daily_ema21_macd_volume" in codes
     jm_v1b = next(item for item in payload["items"] if item["strategy_code"] == "jm_v1b_daily_direction_fast_entry")
-    assert len(jm_v1b["backtest_endpoints"]) == 2
-    assert jm_v1b["scan_endpoint"] is None
-    assert "historical_scan" not in jm_v1b["capability_classes"]
+    assert jm_v1b["scan_endpoint"] == "/api/signals/scan"
+    assert "historical_scan" in jm_v1b["capability_classes"]
     assert all(
         item.get("scan_endpoint") != "/api/signals/v1b/jm/scan"
         for item in payload["items"]

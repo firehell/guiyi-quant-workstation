@@ -2,15 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy.orm import Session
-
 from app.models.review import ReviewNote, ReviewTag
 from app.schemas.review import DEFAULT_MISTAKE_TAGS
 from app.services.review_center import review_payload, tag_payload
 
 
 def apply_review_fields(note: ReviewNote, data: dict[str, Any]) -> None:
-    for key in ("entry_reason", "exit_reason", "market_phase", "is_system_compliant", "mistake_tags", "emotion_tags", "review_score", "ai_summary"):
+    for key in (
+        "entry_reason",
+        "exit_reason",
+        "market_phase",
+        "is_system_compliant",
+        "mistake_tags",
+        "emotion_tags",
+        "review_score",
+        "ai_summary",
+    ):
         if key in data:
             setattr(note, key, data[key])
     if "setup_tags" in data:
@@ -31,8 +38,9 @@ def apply_review_fields(note: ReviewNote, data: dict[str, Any]) -> None:
         note.screenshot_paths = data["screenshot_paths"]
 
 
-def review_response(note: ReviewNote, *, include_source: bool = False, session: Session | None = None) -> dict[str, Any]:
-    payload = review_payload(note, include_source=include_source, session=session)
+def review_response(note: ReviewNote, *, include_source: bool = False) -> dict[str, Any]:
+    del include_source
+    payload = review_payload(note)
     screenshot_paths = list(payload.get("screenshot_paths") or [])
     extra = dict(payload.get("extra") or {})
     payload.update(
@@ -67,8 +75,4 @@ def default_mistake_tag_payloads(existing_names: set[str]) -> list[dict[str, Any
 
 
 def _review_object_type(source_type: str) -> str:
-    if source_type == "backtest_trade":
-        return "backtest_trade"
-    if source_type == "manual_trade":
-        return "manual_trade"
-    return source_type
+    return "manual_trade" if source_type == "manual_trade" else source_type

@@ -1,0 +1,11 @@
+"""Shared JM V1-B strategy identity used by signal observation code."""
+
+JM_V1B_STRATEGY_CODE = "jm_v1b_daily_direction_fast_entry"
+JM_V1B_STRATEGY_VERSION = "v1b.0"
+JM_V1B_SYMBOL = "jm.MAIN"
+JM_V1B_EXCHANGE = "DCE"
+JM_V1B_DATA_SOURCE = "rqdata"
+JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_CODE = "su_bing_jm_daily_ema21_macd_volume"
+JM_DAILY_EMA21_MACD_VOLUME_STRATEGY_VERSION = "v0.2.0-daily"
+SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_CODE = "su_bing_jm_v1b_short_hold"
+SU_BING_JM_V1B_SHORT_HOLD_STRATEGY_VERSION = "v0.1.1-spec"

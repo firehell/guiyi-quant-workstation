@@ -29,8 +29,6 @@ dependencies = [
     "ruff>=0.15.18",
     "sqlalchemy>=2.0.51",
     "uvicorn[standard]>=0.49.0",
-    "vnpy>=4.4.0",
-    "vnpy-ctastrategy==1.4.1",
 ]
 
 [project.scripts]

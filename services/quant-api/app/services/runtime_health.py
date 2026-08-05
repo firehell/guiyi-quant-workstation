@@ -22,7 +22,7 @@ from app.models.data_center import (
     ProfileActiveBinding,
 )
 from app.models.signal import SignalNotification
-from app.queue import BACKTEST_QUEUE_NAME, NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
+from app.queue import NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
 from app.runtime_scheduler import SCHEDULER_HEARTBEAT_KEY
 from app.after_market_scheduler import HEARTBEAT_KEY as AFTER_MARKET_HEARTBEAT_KEY
 from app.services.after_market_automation import discover_eligible_trading_days
@@ -40,7 +40,7 @@ RUNTIME_STATUS_FAILED = "failed"
 RUNTIME_STATUS_UNKNOWN = "unknown"
 RUNTIME_STATUS_DISABLED = "disabled"
 
-RUNTIME_QUEUE_NAMES = (BACKTEST_QUEUE_NAME, SIGNAL_QUEUE_NAME)
+RUNTIME_QUEUE_NAMES = (SIGNAL_QUEUE_NAME,)
 SENSITIVE_TEXT_PARTS = (
     "password",
     "passwd",

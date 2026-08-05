@@ -1,5 +1,4 @@
 import argparse
-import json
 from datetime import date, datetime, time
 import sys
 from typing import Any, Callable, Sequence, TextIO
@@ -25,18 +24,6 @@ def main(
     check_parser.add_argument("--start")
     check_parser.add_argument("--end")
     check_parser.add_argument("--provider")
-
-    backtest_parser = subparsers.add_parser("run-su-bing-backtest")
-    backtest_parser.add_argument("--symbol", required=True)
-    backtest_parser.add_argument("--contract", required=True)
-    backtest_parser.add_argument("--period", required=True)
-    backtest_parser.add_argument("--start", required=True)
-    backtest_parser.add_argument("--end", required=True)
-    backtest_parser.add_argument("--profile-id")
-    backtest_parser.add_argument("--initial-capital", type=float, default=100000.0)
-    backtest_parser.add_argument("--risk-per-trade-pct", type=float, default=0.01)
-    backtest_parser.add_argument("--max-margin-usage-pct", type=float, default=0.35)
-    backtest_parser.add_argument("--slippage-ticks", type=int, default=1)
 
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -66,24 +53,6 @@ def main(
                 file=stdout,
             )
         return 0
-    elif args.command == "run-su-bing-backtest":
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "code": "BACKTEST_LEGACY_CLI_DISABLED",
-                    "message": (
-                        "run-su-bing-backtest is retired because it used legacy Profile/file data; "
-                        "create a canonical formal task through POST /api/backtests/tasks"
-                    ),
-                    "writes_database": False,
-                    "auto_order": False,
-                },
-                ensure_ascii=False,
-            ),
-            file=stdout,
-        )
-        return 2
     return 2
 
 

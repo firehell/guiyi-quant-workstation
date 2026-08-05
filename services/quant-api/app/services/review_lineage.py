@@ -14,7 +14,6 @@ from app.data_core.consumer_identity import (
 )
 from app.data_core.contracts import DataCoreError
 from app.db.session import PROJECT_ROOT
-from app.models.backtest import BacktestReportModel, BacktestTradeModel
 from app.models.review import ReviewNote
 from app.models.signal import SignalEvent, StrategySignal
 from app.services.canonical_market_data import build_canonical_reader
@@ -38,25 +37,7 @@ def resolve_review_source_lineage(session: Session, *, source_type: str, source_
     bar_start: datetime | str | None = None
     bar_end: datetime | str | None = None
     strategy_version: str | None = None
-    if source_type == "backtest_report":
-        report = session.get(BacktestReportModel, source_id)
-        if report is None:
-            raise _error("REVIEW_SOURCE_NOT_FOUND", source_type, source_id)
-        raw_snapshot = report.binding_snapshot if isinstance(report.binding_snapshot, dict) else None
-        strategy_version = report.strategy_version
-        metadata = (report.summary or {}).get("report_metadata")
-        if isinstance(metadata, dict):
-            bar_start = metadata.get("start")
-            bar_end = metadata.get("end")
-    elif source_type == "backtest_trade":
-        trade = session.get(BacktestTradeModel, source_id)
-        if trade is None:
-            raise _error("REVIEW_SOURCE_NOT_FOUND", source_type, source_id)
-        report = session.get(BacktestReportModel, trade.report_id)
-        raw_snapshot = report.binding_snapshot if report and isinstance(report.binding_snapshot, dict) else None
-        strategy_version = report.strategy_version if report is not None else None
-        bar_start, bar_end = trade.open_time, trade.close_time
-    elif source_type == "strategy_signal":
+    if source_type == "strategy_signal":
         signal = session.get(StrategySignal, source_id)
         if signal is None:
             raise _error("REVIEW_SOURCE_NOT_FOUND", source_type, source_id)
@@ -335,10 +316,7 @@ def _datetime(value: Any) -> datetime:
 
 
 def _canonical_input_snapshot(snapshot: dict[str, Any]) -> dict[str, Any] | None:
-    if snapshot.get("schema_version") in {
-        "backtest_canonical_inputs_v1",
-        "signal_canonical_inputs_v1",
-    }:
+    if snapshot.get("schema_version") == "signal_canonical_inputs_v1":
         value = snapshot.get("input_identity")
         return value if isinstance(value, dict) else None
     return None

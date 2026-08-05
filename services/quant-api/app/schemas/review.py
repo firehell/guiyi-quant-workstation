@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 DEFAULT_MISTAKE_TAGS = ["追价", "震荡区", "逆势", "过早进场", "过早止损", "未按系统执行"]
 
 
-class ReviewFromBacktestTradeRequest(BaseModel):
+class ReviewSourceUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     entry_reason: str | None = None

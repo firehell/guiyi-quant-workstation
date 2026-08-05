@@ -90,7 +90,7 @@ _PATH_COLUMNS = frozenset(
 )
 _STATE_COLUMNS = frozenset({"status", "binding_status", "is_active"})
 _ACTIVE_TASK_TABLES = frozenset(
-    {"backtest_tasks", "data_download_tasks", "signal_scan_tasks"}
+    {"data_download_tasks", "signal_scan_tasks"}
 )
 _ACTIVE_TASK_STATUSES = frozenset({"pending", "queued", "running", "retrying"})
 _TERMINAL_TASK_STATUSES = frozenset(

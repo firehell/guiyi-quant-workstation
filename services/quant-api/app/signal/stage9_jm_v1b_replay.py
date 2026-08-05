@@ -8,7 +8,6 @@ from typing import Any, Literal
 
 from sqlalchemy.orm import Session
 
-from app.backtest.v1b_jm_tasks import JM_V1B_DATA_SOURCE, JM_V1B_EXCHANGE, JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION, JM_V1B_SYMBOL
 from app.core.env import PROJECT_ROOT
 from app.models.signal import SignalEvent
 from app.services.live_target_contracts import LiveTargetContractResolver
@@ -17,6 +16,13 @@ from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE, LONG_HORIZON
 from app.services.signal_lineage import SignalFormalLineageResolver
 from app.signal.events import SIGNAL_CREATED
 from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
+from app.strategy.jm_v1b_identity import (
+    JM_V1B_DATA_SOURCE,
+    JM_V1B_EXCHANGE,
+    JM_V1B_STRATEGY_CODE,
+    JM_V1B_STRATEGY_VERSION,
+    JM_V1B_SYMBOL,
+)
 
 ENTRY_STATUS = "entry_signal"
 REPLAY_SOURCE_MODE = "jm_v1b_historical_replay"
