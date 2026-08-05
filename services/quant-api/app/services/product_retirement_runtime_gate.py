@@ -5,10 +5,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Protocol
 
 
 _REQUIRED_ROOTS = frozenset({"raw", "canonical", "processed"})
+REQUIRED_WRITER_SERVICES = (
+    "com.guiyi.quant-api",
+    "com.guiyi.quant-worker-backtests",
+    "com.guiyi.quant-worker-signals",
+    "com.guiyi.quant-worker-notifications",
+    "com.guiyi.quant-notification-worker",
+    "com.guiyi.quant-runtime-scheduler",
+    "com.guiyi.quant-after-market-scheduler",
+    "com.guiyi.quant-htdy-s610-one-day-observer",
+    "com.guiyi.quant-htdy-s610-one-day-dispatcher",
+    "com.guiyi.quant-htdy-s610-observer",
+)
 
 
 class ProductRetirementRuntimeGateError(ValueError):
@@ -23,6 +35,68 @@ class RetirementRuntimeRequest:
     protected_root: Path
     active_products_path: Path
     roots: Mapping[str, Path]
+
+
+class RuntimeOperator(Protocol):
+    def stop_writer_services(self) -> Mapping[str, str]: ...
+
+    def writer_states(self) -> Mapping[str, str]: ...
+
+    def runtime_identity(self, root: Path) -> str: ...
+
+    def checkout_detached(self, root: Path, ref: str) -> str: ...
+
+    def restart_services(self) -> Mapping[str, str]: ...
+
+
+class ProductRetirementRuntimeGate:
+    """Coordinates the reversible Runtime phase before retirement DML."""
+
+    def __init__(
+        self,
+        *,
+        inventory: Callable[[RetirementRuntimeRequest, str], Mapping[str, Any]],
+    ) -> None:
+        self._inventory = inventory
+
+    def execute_precommit(
+        self,
+        request: RetirementRuntimeRequest,
+        *,
+        operator: RuntimeOperator,
+    ) -> Mapping[str, Any]:
+        validate_runtime_request(request)
+        operator.stop_writer_services()
+        _require_all_stopped(operator.writer_states())
+        previous_sha = operator.runtime_identity(request.runtime_root)
+        try:
+            runtime_sha = operator.checkout_detached(
+                request.runtime_root,
+                request.release_tag,
+            )
+            inventory = self._inventory(request, runtime_sha)
+        except Exception as exc:  # noqa: BLE001 - return a bounded Gate result
+            rollback_sha = operator.checkout_detached(
+                request.runtime_root,
+                request.rollback_tag,
+            )
+            _require_all_stopped(operator.writer_states())
+            return {
+                "command": "runtime.product-retirement.execute",
+                "status": "rejected",
+                "phase": "precommit",
+                "previous_runtime_sha": previous_sha,
+                "rollback_runtime_sha": rollback_sha,
+                "error": {"code": "PRODUCT_RETIREMENT_PRECOMMIT_FAILED", "type": type(exc).__name__},
+            }
+        return {
+            "command": "runtime.product-retirement.execute",
+            "status": "inventory_ready",
+            "phase": "precommit",
+            "previous_runtime_sha": previous_sha,
+            "runtime_sha": runtime_sha,
+            "inventory": dict(inventory),
+        }
 
 
 def validate_runtime_request(request: RetirementRuntimeRequest) -> None:
@@ -70,3 +144,11 @@ def _contains(parent: Path, child: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _require_all_stopped(states: Mapping[str, str]) -> None:
+    for service in REQUIRED_WRITER_SERVICES:
+        if states.get(service) != "stopped":
+            raise ProductRetirementRuntimeGateError(
+                f"PRODUCT_RETIREMENT_SERVICE_NOT_STOPPED:{service}"
+            )
