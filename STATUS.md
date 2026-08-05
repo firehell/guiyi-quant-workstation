@@ -12,6 +12,12 @@
 
 ## 当前执行线
 
+21 品种退役已完成生产执行：活动品种池为 69，目标品种的 8,625 个文件
+（1,466,729,156 bytes）和 1,141,643 条 PostgreSQL 记录已删除，复验残留文件/记录均为 0。
+保留品种已完成 443 个 RQData 直供目标与 608 个 Canonical 聚合目标刷新；
+生产 Runtime 为 `runtime-20260805-b81a9d99` / `b81a9d9941f0cca74ea2a0c73b449861b121d139`。
+通知、live 及退役 HTDY label 保持关闭，自动交易仍不在项目范围。
+
 Task 07 Stage A/B 的最新仓库证据记录 release/main/tag 已收口，且生产 PostgreSQL revision 曾回读为 `20260803_0032`。本次个人开发模式迁移未重新连接生产环境，因此该 revision 仍需在后续生产只读验收中再次精确回读。
 
 Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划”。历史 candidate 基于 `develop@364753e72458641e226280e326841919539c1354`，仅从 `config/data_core_v2_targets.yaml`、Catalog 和 MainContractMap 生成 JM 显式目标，再通过既有 Canonical reader 和 `MarketDataService` 只读验收。该 commit 与既有协作记录是历史定位信息，不是继续开发的前置授权。
@@ -44,6 +50,7 @@ production_writes=false
 | GY-DATA-CORE-V2 Task 06 | completed on develop | 固定 EMA21 evaluator + `0028..0031` + live/decision/EOD/Review/Sample/retention；Runtime/live 未启用 |
 | GY-DATA-CORE-V2 Task 07 Stage C | implementation candidate | 按当前代码运行本地定向与领域验证；生产只读验收未执行 |
 | GY-DATA-CORE-V2 Task 08 | pending | Stage D Runtime promotion 的独立业务任务；任何真实切换需新的精确范围执行意图 |
+| GY-DATA-PRODUCT-RETIREMENT-21 | completed / released | 21 品种全链路删除、69 品种七周期刷新、Runtime 发布与残留验证完成 |
 | 旧派生数据清理 | optional / separate | 不阻塞 Task 07；仓库内删除与生产/正式数据删除必须分别分类 |
 | scripts-cli-consolidation | implementation on develop | 统一 `guiyi data download/aggregate/live/sync/audit`；旧 scripts/rqdata_* 与 plan/migrate/task07 已移除；正式数据/RQData/Runtime 未执行 |
 
@@ -58,8 +65,8 @@ production_writes=false
 | Task 07 production read-only acceptance | pending | 重新回读 PostgreSQL `20260803_0032` 并验收 JM 目标 Canonical；本次未执行 |
 | Task 06 live/EOD contract | passed | 已冻结单一 EMA21 confirmed-close observation 合同；不扩展 centered-XMA 白名单 |
 | Task 06 production migration | passed | `0028 -> 0031` empty/disabled smoke 已通过；该事实不授权 Runtime/live enable |
-| 旧行情与 legacy 工件删除 | no current execution intent | Git 跟踪的过期代码/文档可按普通仓库删除；生产 DB、正式行情或仓库外工件删除需精确对象范围的新意图 |
-| release / main / tag | no current execution intent | 本次不发布；未来每次远端 branch/tag mutation 均需新的 remote/ref/commit 范围意图 |
+| 21 品种行情与 legacy 工件删除 | passed | 生产 DB/三个数据 root 残留为 0；仓库内 1,035 个专属历史 manifest 已删除，混合审计报告不作整文件删除 |
+| release / main / tag | released | PR #155 合入 develop，PR #156 合入 main；Runtime tag 为 `runtime-20260805-b81a9d99` |
 | Task 08 Runtime promotion | pending / default off | Runtime 保持关闭；未来切换必须满足业务检查并取得该次 scope 的独立意图 |
 | JM Runtime 验收 | pending redesign | 保留单日自然运行、恢复和零非法写入等业务验证；协作材料不是授权条件（见 `AGENTS.md`） |
 | 长稳 / 通知 / 交易就绪 | not ready | 本次不启用 live、不发送通知；自动订单始终不在项目范围内 |
@@ -70,7 +77,8 @@ production_writes=false
 
 | 事实 | 当前证据值 | 边界 |
 |---|---|---|
-| PostgreSQL revision | `20260803_0032` | Stage B 曾回读；本次未实时重验 |
+| PostgreSQL revision | `20260803_0032` | 本次退役 preflight、删除和刷新均实时回读 |
+| 21 品种退役 receipt | packet `fee133a5…`; residual DB/files `0/0` | 删除已提交，rollback tag 只回退代码，数据恢复需从 RQData 重建 |
 | Canonical closeout snapshot | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 历史只读证据；Stage C 将重新验收明确目标 |
 | MainContractMap closeout snapshot | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 历史只读证据；不代替 Stage C 重验 |
 | legacy compatibility | PR #90～#94 与历史 evidence 保留 | 不再扩展，也不作为 Task 07 准入或执行授权 |

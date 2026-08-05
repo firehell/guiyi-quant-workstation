@@ -8,8 +8,9 @@
 `data/universe/active_products.txt`。以下 21 个品种已禁止新增下载、Canonical 写入和统一行情读取：
 粳稻、普麦、早籼稻、强麦、动力煤、线材、胶合板、纤维板、聚丙烯月均价、聚乙烯月均价、
 聚氯乙烯月均价、国际铜、棉纱、原木、铸造铝合金、胶版印刷纸、粳米，以及 2/5/10/30 年期
-国债期货。历史文件和数据库 DML 尚未执行，必须等待
-`docs/tasks/GY-DATA-PRODUCT-RETIREMENT-21.md` 的只读扫描、影响与回滚说明及用户明确批准。
+国债期货。2026-08-05 已删除它们在 raw/canonical/processed 和 PostgreSQL 中的精确记录，
+复验残留为 0。保留品种同步完成：直供 `1m/1d/1w` 443 个目标，由 1m 聚合的
+`5m/15m/30m/60m` 608 个目标，全部通过。
 
 活动品种窗口口径见 `data/universe/product_window_starts.csv`（`window_start` =
 米筐可提供/上市日起，日线与周线不再使用 2020 截断补数清单）。2026-08-05 Wave A/B
