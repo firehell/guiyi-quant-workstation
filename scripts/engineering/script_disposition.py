@@ -22,6 +22,33 @@ DESIGN_KEEP = 9
 DESIGN_MOVE = 14
 DESIGN_DELETE_OR_REPLACE = 122
 
+FINAL_LAYOUT = (
+    "scripts/dev/dev-down.sh",
+    "scripts/dev/dev-healthcheck.sh",
+    "scripts/dev/dev-status.sh",
+    "scripts/dev/dev-up.sh",
+    "scripts/engineering/personal_workflow.py",
+    "scripts/engineering/preflight.ps1",
+    "scripts/engineering/reference_closure.py",
+    "scripts/engineering/release-tag.ps1",
+    "scripts/engineering/replacement_gate.py",
+    "scripts/engineering/repository_consistency.py",
+    "scripts/engineering/runtime_dependency_inventory.py",
+    "scripts/engineering/script_disposition.py",
+    "scripts/engineering/secret-scan.ps1",
+    "scripts/engineering/validate.ps1",
+    "scripts/ops/linux/server-status.sh",
+    "scripts/ops/macos/install-local-services.sh",
+    "scripts/ops/macos/local-services-status.sh",
+    "scripts/ops/macos/post-reboot-verify.sh",
+    "scripts/ops/macos/rotate-local-service-logs.sh",
+    "scripts/ops/macos/run-local-service.sh",
+    "scripts/ops/macos/server-recover.sh",
+    "scripts/ops/network/local-tunnel-healthcheck.sh",
+    "scripts/ops/network/public-healthcheck.sh",
+    "scripts/ops/network/tunnel-healthcheck.sh",
+)
+
 PROTECTED_PREFIXES = (
     ".kiro/specs/personal-development-mode",
     "data/",
@@ -324,6 +351,21 @@ def classify_inventory(
     )
 
 
+def validate_final_layout(inventory: Sequence[str]) -> DispositionReport:
+    """Validate the tracked scripts left after the consolidation cutover."""
+    actual = tuple(sorted(inventory))
+    expected = tuple(sorted(FINAL_LAYOUT))
+    missing = sorted(set(expected) - set(actual))
+    unexpected = sorted(set(actual) - set(expected))
+    errors = tuple(
+        [
+            *(f"final_layout_missing:{path}" for path in missing),
+            *(f"final_layout_unexpected:{path}" for path in unexpected),
+        ]
+    )
+    return DispositionReport(inventory=actual, assignments=(), errors=errors)
+
+
 def repository_deletion_plan(
     assignments: Sequence[DispositionAssignment],
 ) -> tuple[str, ...]:
@@ -381,15 +423,11 @@ def _matches_rule(path: str, rule: DispositionRule) -> bool:
 
 
 def main() -> int:
-    report = classify_inventory(list_tracked_scripts())
+    report = validate_final_layout(list_tracked_scripts())
     for error in report.errors:
         print(error)
     if report.ok:
-        print(
-            f"ok keep={sum(1 for a in report.assignments if a.disposition is Disposition.KEEP_IN_PLACE)} "
-            f"move={sum(1 for a in report.assignments if a.disposition is Disposition.MOVE)} "
-            f"delete_or_replace={sum(1 for a in report.assignments if a.disposition is not Disposition.KEEP_IN_PLACE and a.disposition is not Disposition.MOVE)}"
-        )
+        print(f"ok final_layout={len(report.inventory)}")
         return 0
     return 1
 

@@ -394,6 +394,8 @@ def test_data_verify_maps_domain_error_to_bounded_json_stderr() -> None:
         "command": "data.verify",
         "status": "error",
         "readonly": True,
+        "effects": empty_effects().as_payload(),
+        "targets": [],
         "error": {
             "code": "DATASET_ASSET_MISSING",
             "type": "ActiveDatasetDomainError",
@@ -561,5 +563,7 @@ def test_parser_error_uses_bounded_json_and_exit_two() -> None:
         "command": "data.verify",
         "status": "error",
         "readonly": True,
+        "effects": empty_effects().as_payload(),
+        "targets": [],
         "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
     }

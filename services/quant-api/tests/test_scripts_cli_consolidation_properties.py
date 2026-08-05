@@ -9,9 +9,10 @@ from typing import Any
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from app.data_core.contracts import BarFrequency, DatasetKind
+from app.data_core.contracts import BarFrequency, DatasetKind, DatasetKey
+from app.data_core.historical_sync import plan_missing_windows
 from app.guiyi_cli.output import command_result_payload, redact_text
-from app.services.data_operations.aggregate import supports_aggregate_frequency
+from app.services.data_operations.aggregate import AggregateApplicationService, supports_aggregate_frequency
 from app.services.data_operations.contracts import (
     CommandResult,
     CommandStatus,
@@ -22,7 +23,8 @@ from app.services.data_operations.contracts import (
     empty_effects,
     overall_batch_status,
 )
-from app.services.data_operations.download import supports_download_frequency
+from app.services.data_operations.download import DownloadApplicationService, supports_download_frequency
+from app.services.data_operations.guards import refuse_cross_kind_fallback, to_dataset_key
 from app.services.data_operations.target_expander import TargetExpander, expand_targets
 from app.services.data_operations.contracts import (
     BatchTargetRequest,
@@ -30,8 +32,6 @@ from app.services.data_operations.contracts import (
     SingleTargetRequest,
 )
 
-
-pytestmark = pytest.mark.usefixtures()
 
 FEATURE = "scripts-cli-consolidation"
 
@@ -281,3 +281,55 @@ def test_property_16_errors_are_redacted_and_orders_stay_disabled(secret: str) -
     assert payload["effects"]["auto_order"] is False
     rendered = str(payload)
     assert "super-secret" not in rendered
+
+
+def _target(*, frequency: BarFrequency = BarFrequency.M1, kind: DatasetKind = DatasetKind.CONTINUOUS) -> DataTarget:
+    contract = "JM.MAIN" if kind is DatasetKind.CONTINUOUS else "JM2409"
+    return DataTarget("rqdata", kind, "jm", contract, frequency, "none", "canonical-bar-v1", _aware(), _aware(24))
+
+
+@settings(max_examples=100)
+@given(covered_start=st.integers(1, 10), covered_width=st.integers(1, 10))
+def test_property_4_exact_date_agnostic_missing_window_planning(covered_start: int, covered_width: int) -> None:
+    """Feature: scripts-cli-consolidation, Property 4: Exact Date-Agnostic Missing-Window Planning"""
+    key = to_dataset_key(_target())
+    start, end = _aware(), _aware(24)
+    covered = ((start + timedelta(hours=covered_start), min(end, start + timedelta(hours=covered_start + covered_width))),)
+    windows = plan_missing_windows(dataset=key, start=start, end=end, covered_windows=covered)
+    assert all(start <= left < right <= end for left, right in windows)
+
+
+@settings(max_examples=100)
+@given(kind=_kinds, frequency=_direct)
+def test_property_6_download_preserves_dataset_identity(kind: DatasetKind, frequency: BarFrequency) -> None:
+    """Feature: scripts-cli-consolidation, Property 6: Download Preserves Dataset Identity"""
+    target = _target(frequency=frequency, kind=kind)
+    key = to_dataset_key(target)
+    assert (key.provider, key.dataset_kind, key.symbol, key.contract_or_series, key.frequency, key.adjustment, key.schema_version) == (target.provider, target.dataset_kind, target.symbol, target.contract_or_series, target.frequency, target.adjustment, target.schema_version)
+
+
+@settings(max_examples=100)
+@given(lower_hour=st.integers(1, 30))
+def test_property_8_unavailable_historical_prefix_is_explicit(lower_hour: int) -> None:
+    """Feature: scripts-cli-consolidation, Property 8: Unavailable Historical Prefix Is Explicit"""
+    target = _target()
+    service = DownloadApplicationService(synchronizer_factory=lambda: None, covered_windows=lambda _key: (), listing_lower_bound=lambda _target: _aware(lower_hour))
+    windows = service.plan(__import__("app.services.data_operations.contracts", fromlist=["DownloadRequest"]).DownloadRequest(targets=(target,))).windows_by_target[0][1]
+    assert windows[0][0] == target.start
+
+
+@settings(max_examples=100)
+@given(frequency=_derived)
+def test_property_10_aggregation_never_accepts_rqdata_factory(frequency: BarFrequency) -> None:
+    """Feature: scripts-cli-consolidation, Property 10: Aggregation Never Uses RQData"""
+    with pytest.raises(RuntimeError, match="AGGREGATE_RQDATA_CLIENT_FORBIDDEN"):
+        AggregateApplicationService(market_data=object(), session_provider=lambda *_: (), rqdata_client_factory=object)
+
+
+@settings(max_examples=100)
+@given(kind=_kinds)
+def test_property_15_untrusted_cross_kind_data_fails_closed(kind: DatasetKind) -> None:
+    """Feature: scripts-cli-consolidation, Property 15: Ambiguous or Untrusted Data Fails Closed"""
+    other = DatasetKind.ACTUAL_DOMINANT if kind is DatasetKind.CONTINUOUS else DatasetKind.CONTINUOUS
+    with pytest.raises(Exception):
+        refuse_cross_kind_fallback(requested=kind, resolved=other)

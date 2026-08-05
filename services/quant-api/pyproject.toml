@@ -10,6 +10,7 @@ dependencies = [
     "duckdb>=1.5.4",
     "fastapi>=0.138.0",
     "httpx2>=2.4.0",
+    "hypothesis>=6.100.0",
     "mypy>=2.1.0",
     "pandas>=3.0.3",
     "polars>=1.41.2",
