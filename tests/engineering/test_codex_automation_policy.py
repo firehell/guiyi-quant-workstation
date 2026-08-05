@@ -816,7 +816,13 @@ def test_hook_denies_direct_protected_push_but_allows_controlled_entrypoint() ->
 
 def test_hook_allows_tag_but_retains_merge_and_rebase_protection() -> None:
     """Tag approval is handled by release policy, while unsafe history edits stay blocked."""
-    for command in ("git merge topic", "git rebase origin/develop"):
+    for command in (
+        "git merge topic",
+        "git rebase origin/develop",
+        "git push --force origin topic",
+        "git push --force-with-lease origin topic",
+        "git push -f origin topic",
+    ):
         result = subprocess.run(
             [sys.executable, str(HOOK_PATH)],
             input=json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}),
@@ -842,6 +848,9 @@ def test_workflow_rules_do_not_forbid_git_tag() -> None:
     source = WORKFLOW_RULES.read_text(encoding="utf-8")
 
     assert 'pattern = ["git", "tag"]' not in source
+    assert 'pattern = ["git", "push", "--force"]' in source
+    assert 'pattern = ["git", "push", "origin", "main"]' in source
+    assert 'pattern = ["git", "push", "origin", "develop"]' in source
 
 
 def _task_fixture(tmp_path: Path, branch: str) -> Path:
