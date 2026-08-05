@@ -20,10 +20,6 @@ Gate/hash-path 不再作为授权。
 - `GY-DATA-CORE-V2.md` — 数据交互核心收口 active 业务合同
 - `V1-FINAL-ACCEPTANCE-S6-11.md` — 未来 Runtime/只读验收边界；release 与 Runtime 分属不同意图
 
-## Completed historical facts
-
-- `GY-DATA-PRODUCT-RETIREMENT-21.md` — 21 品种生产退役、69 品种刷新与 Runtime 收口已完成
-
 ## Frozen Runtime-consumed（Phase E 前不可删）
 
 - `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`
@@ -41,6 +37,7 @@ Gate/hash-path 不再作为授权。
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`
 - `GY-DATA-CORE-V2-TASK07-EVIDENCE.md`
+- `GY-DATA-PRODUCT-RETIREMENT-21.md`（21 品种退役已完成；当前事实见 `STATUS.md` / `DATA_CENTER.md`）
 - `JM-LIVE-SIGNAL-EVENT-S6-08.md`
 - `JM-LIVE-STABILITY-S6-10.md`
 
