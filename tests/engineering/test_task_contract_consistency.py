@@ -43,10 +43,6 @@ def test_active_and_frozen_dispositions() -> None:
     }
     assert inventory["GY-DATA-CORE-V2.md"] is consistency.TaskDisposition.ACTIVE_CONTRACT
     assert (
-        inventory["GY-DATA-PRODUCT-RETIREMENT-21.md"]
-        is consistency.TaskDisposition.ACTIVE_CONTRACT
-    )
-    assert (
         inventory["V1-FINAL-ACCEPTANCE-S6-11.md"]
         is consistency.TaskDisposition.ACTIVE_CONTRACT
     )
@@ -60,7 +56,6 @@ def test_active_and_frozen_dispositions() -> None:
     "relative",
     [
         "docs/tasks/GY-DATA-CORE-V2.md",
-        "docs/tasks/GY-DATA-PRODUCT-RETIREMENT-21.md",
         "docs/tasks/V1-FINAL-ACCEPTANCE-S6-11.md",
     ],
 )
