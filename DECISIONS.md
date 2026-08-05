@@ -17,20 +17,21 @@
 | worktree | canonical、集成、task 与 detached Runtime 物理隔离 | `main` 为 canonical/release，`develop` 为长期集成主干；task 经 PR/CI/独立 Review 后可自动 merge commit 合入 develop，只有 clean 且已合入才可清理 |
 | task 自动集成 | Lane 1/2 与 code/test/dry-run/隔离 migration/disabled-only Lane 3 满足验收、CI、独立 Review、exact head 后由 Codex 编排层合入 `develop` | 不直推 develop；不授权生产 migration、真实数据写入、删除、main/release/tag、Runtime/live 或通知 |
 | Lean Matrix AI 专家团退役 | 已从 active tree 完整删除；默认方式为 Direct Codex Delivery + independent exact-head Review + required CI + automatic merge commit to `develop` + ancestry/readback and cleanup | 不保留仓库内归档入口；生产写入、删除、release、Runtime、live、真实通知及其他 Lane 3 真实操作继续需要人工 Gate |
-| release | `release-flow.sh prepare/publish/tag` 以精确 local/current/target/rollback SHA 受控完成本地 fast-forward、远端 refs 与 annotated tags | 三动作默认 dry-run；prepare 允许显式绑定的 stale local main 经当前远端 main 一次 fast-forward 到 target；publish 绑定批准时的远端 main 且不改 upstream；tag 仅对 object/target/message 全匹配的相同 packet 幂等；用户批准 exact packet 后才可逐项 apply；task→develop 自动集成不授权 release、tag 或 Runtime |
+| release | `release-flow.sh prepare/publish/tag` 以精确 local/current/target/rollback SHA 受控完成本地 fast-forward、远端 refs 与 annotated tags | 三动作默认 dry-run；prepare 允许显式绑定的 stale local main 经当前远端 main 一次 fast-forward 到 target；publish 绑定批准时的远端 main 且不改 upstream；tag 仅对 object/target/message 全匹配的相同发布输入幂等；用户明确批准该次 release 后才可逐项 apply；task→develop 自动集成不授权 release、tag 或 Runtime |
 | 数据核心 V2 active target | RQData 是唯一上游；Canonical 持久化 provider-direct `1m/1d/1w` 与 preaggregated `5m/15m/30m/60m`，再经 Catalog/Manifest/Gap/MainContractMap 由 `MarketDataService` 同频读取 | canonical Parquet 是受治理存储而非第二上游；缺少同频 dataset/partition 必须 DataGap，不做历史跨频 fallback |
 | Canonical 数据准入 | 只依赖自身 schema、coverage、Manifest digest、物理 checksum、Catalog、DataGap、MainContractMap 与代表性统一读取验证 | legacy 与 Canonical 全历史逐条一致不是正式准入条件；legacy Shadow 仅为可选诊断或 frozen compatibility，不是 Task 04 或 Task 05 前置 Gate |
 | 数据身份 | `DatasetKey` 唯一定位；正式历史 allowlist 唯一为 `1m/5m/15m/30m/60m/1d/1w`；`continuous` 与 `actual_dominant` 显式且不可互换 | 新 active BarsResult 的 request/source/bars 必须同频且 `derived_frequency=null`；actual-dominant `1w` 使用该周最后交易日 rank=1 合约 |
-| Task 07 冲突修复 | direct `1m/1d/1w` 只生成 exact-window `rqdata_redownload`；aggregate `5m/15m/30m/60m` 只生成 exact-window `canonical_1m_reaggregate` | 两类 action 默认未授权；不建 legacy/new 逐行对比、reconciliation 或多源仲裁；失败保留旧有效 Canonical 并登记 DataGap |
-| Task 07 Runtime cutover | 代码仅提供 read-only plan/verify；最小 Gate 为 exact target/previous tag+SHA、DB `20260803_0032`、全部功能默认 disabled、health/smoke passed、rollback-ready 和 checkout/Runtime reference zero | 不提供 stop/switch/restart/apply；该 code-only 合同不解锁 retirement/deletion，本 PR 不执行 Runtime 或生产写入 |
+| 21 品种精确退役 | 活动品种池收口为 69 个；JR/PM/RI/WH/ZC/WR/BB/FB/PP_F/L_F/V_F/BC/CY/LG/AD/OP/RR/T/TF/TS/TL 进入一次性全链路退役 | 只允许在 `GY-DATA-PRODUCT-RETIREMENT-21` 独立 Review、用户明确批准该次删除、69 品种 Runtime 与停服 receipt 完成后执行；当前代码/计划不授权真实 DML、文件删除、release 或 Runtime |
+| Task 07 Stage C | 只验收 active config + Catalog + MainContractMap 生成的 JM 目标 Canonical；目标结果闭集为 `KEEP_CANONICAL/REDOWNLOAD_DIRECT/REBUILD_AGGREGATE/REGISTER_DATA_GAP` | 不扫描全量 legacy；Direct 只允许 `1m/1d/1w`，Aggregate 只允许从同 DatasetKey 身份和窗口 Canonical 1m 重建；仅生成未授权缺口计划，失败不覆盖旧有效 Canonical |
+| Task 07/08 分工 | Task 07 不以 Profile/Binding retirement、Runtime legacy reference=0、legacy 文件数或旧派生数据删除为完成条件；Runtime promotion 属于 Task 08 | 旧派生数据清理为后续独立可选任务；legacy-wide packet/inventory/retirement 数字仅作 superseded historical evidence |
 | V2 迁移资产 | 只迁移 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata | 旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、permanent derived period、重复 bar layer 与 Profile/Binding/legacy lineage 均为 rebuild-only 或 compatibility-only，不得提升为 active migration asset |
 | Profile/Binding 迁移 | 既有 Profile/ActiveBinding/复杂 lineage 仅作 legacy compatibility，按消费者切换、rollback、引用清除后再决定受控退出 | GY-CORE-02 Facade 与 GY-CORE-03 CLI 壳可复用；旧 active selector 不再扩展；退出不以 legacy Shadow 为前置条件 |
 | GY-CORE 路线替换 | 旧 GY-CORE-04～08 superseded/paused；04 已合入代码保留为 legacy compatibility | 不按旧路线进入 Shadow、release、Runtime 或删除 |
 | 运行明细留存 | live/decision/event/notification/reconciliation/snapshot/fingerprint 目标为统一 30 天；人工复盘后仅提取精简 ResearchSample | 目标未实现；清理需要独立 deletion Gate，修复/replay 永不补发通知 |
-| 历史工件受控删除 | evidence/report/receipt 默认保护；只允许 exact deletion manifest + zero active references + independent Sol Review + owner exact-scope approval 后的受控删除 | 决策不直接授权任何删除；report 14/15 为 Git-traceable historical snapshots，不是 active Gate/regression，也不改写或删除历史证据 |
-| Task 04 legacy 保留 | 已下载旧行情只读保留；PR #90～#94 的 Shadow/identity/session 实现可保留为可选诊断或 frozen compatibility | 不授权删除旧行情、Profile、Binding、Parquet、receipt、report、evidence 或 legacy reader；不授权继续生产 Shadow、重新生成 packet 或执行 apply |
+| 历史工件受控删除 | evidence/report/receipt 默认保护；删除前完成只读扫描、影响与回滚说明，并取得用户明确批准 | Git 历史不重写；本决策本身不授权 apply |
+| Task 04 legacy 保留 | 已下载旧行情只读保留；PR #90～#94 的 Shadow/identity/session 实现可保留为可选诊断或 frozen compatibility | 除 `GY-DATA-PRODUCT-RETIREMENT-21` 在未来 exact Gate 下列出的对象外，不授权删除旧行情、Profile、Binding、Parquet、receipt、report、evidence 或 legacy reader |
 | S6-10 收口 | 旧 schema-v4～v7 合同暂停并冻结为历史；恢复入口为 `GY-S6-10-R2` | 不生成新 C2/Approval D/daily child，不执行旧 mapping/deployment/Runtime/notification |
-| JM Runtime 验收时长 | 一个完整 DCE 交易日 + 同一 exact release 独立恢复证据 | 单日覆盖夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等与零非法写入；失败整日重启，Ledger append-only |
+| JM Runtime 验收时长 | 一个完整 DCE 交易日 + 独立恢复证据 | 单日覆盖夜盘、三段日盘、23 个 confirmed 15m 桶、EOD、幂等与零非法写入；失败整日重启，Ledger append-only |
 | Ready 语义 | 只允许用户最终批准 `JM_RUNTIME_READY` | `LONG_RUNNING_READY=false` 固定为 deprecated/not_applicable，单日 Gate 永不发布该状态 |
 | ObservationPlan 首轮合同 | 文件型 Registry 只允许一个 JM dominant-rank1 15m HTDY realtime first-seen active plan | notification=false；disabled 不执行；非 JM/15m、第二 active plan 或合同漂移 fail-closed |
 | StrategyAdapter 首轮边界 | 只包装既有 HTDY 纯 evaluator 并保留 observation identity | 不含 Session/writer，不写 SignalEvent/notification，不实现苏冰，不改变 HTDY policy/公式 |
@@ -47,7 +48,7 @@
   CI、独立 Review 和 exact head Gate 后可自动 merge commit 到 `develop`。Lane 3 只有代码、
   测试、dry-run、隔离 migration 与默认 disabled 功能可自动集成；真实副作用仍停在人工 Gate。
 - 恢复验证与单日自然运行分离：Runtime 进程重启、RQData/网络短故障和 Mac 重启可以在
-  验收日前后受控执行，但必须绑定同一 exact release、配置与 DB revision 并经独立 Review。
+  验收日前后受控执行，但必须核对 release、配置与 DB revision 并经独立 Review。
 
 ## 现行 ADR
 

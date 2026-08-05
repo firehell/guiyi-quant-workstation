@@ -32,7 +32,7 @@ _resolve_products_file() {
       echo "${ROOT}/data/universe/products_backfill_1m_remainder.txt"
       ;;
     all)
-      echo "${ROOT}/data/universe/full_products_90.txt"
+      echo "${ROOT}/data/universe/active_products.txt"
       ;;
     0*)
       echo "${ROOT}/data/universe/products_backfill_1m_batch${batch}.txt"
@@ -164,7 +164,7 @@ case "$LAYER" in
     run_aggregate_batch
     ;;
   all)
-    PRODUCTS_FILE="${ROOT}/data/universe/full_products_90.txt"
+    PRODUCTS_FILE="${ROOT}/data/universe/active_products.txt"
     run_layer1
     run_aggregate_batch
     ;;

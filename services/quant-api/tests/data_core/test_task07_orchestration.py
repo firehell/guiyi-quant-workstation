@@ -34,7 +34,9 @@ from app.data_core.task07 import (
     _write_inventory_evidence as write_inventory_evidence,
     write_kline_manifest_evidence,
 )
-from app.data_core.cli_service import run_data_core_command
+from app.data_core.cli_service import (
+    _run_data_core_command_unchecked as run_data_core_command,
+)
 from app.data_core.historical_sessions import build_provider_sessions
 from app.data_core import task07_migration
 from app.db.base import Base
@@ -1390,6 +1392,171 @@ def test_conflicts_emit_only_exact_unauthorized_repair_actions() -> None:
     }
 
 
+def test_overlapping_direct_sources_are_all_routed_to_rqdata_redownload() -> None:
+    index = build_inventory_index(
+        [
+            _asset(
+                market_data_file_id=1,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                catalog_checksum=None,
+                coverage_start="2026-01-01T00:00:00+00:00",
+                coverage_end="2026-04-01T00:00:00+00:00",
+            ),
+            _asset(
+                market_data_file_id=2,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                catalog_checksum=None,
+                coverage_start="2026-03-01T00:00:00+00:00",
+                coverage_end="2026-06-01T00:00:00+00:00",
+            ),
+        ],
+        base_sha="3" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    assert plan["overlap_reroute_asset_count"] == 2
+    assert plan["repair_asset_count"] == 2
+    assert [item["action"] for item in plan["repair_actions"]] == [
+        "rqdata_redownload",
+        "rqdata_redownload",
+    ]
+    assert {
+        item["repair_reason"] for item in plan["repair_actions"]
+    } == {"intra_dataset_coverage_overlap"}
+    assert plan["provider_request_proposal"]["request_count"] == 2
+    assert {
+        item["reason"] for item in plan["provider_requests"]
+    } == {"intra_dataset_coverage_overlap"}
+    assert all(
+        batch["operation"] == "rqdata_redownload"
+        for batch in plan["batches"]
+    )
+    task07._validate_migration_plan_integrity(plan)
+
+
+def test_overlapping_aggregate_sources_are_all_routed_to_1m_reaggregation() -> None:
+    index = build_inventory_index(
+        [
+            _aggregate_asset(
+                market_data_file_id=1,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                coverage_start="2026-01-01T00:00:00+00:00",
+                coverage_end="2026-04-01T00:00:00+00:00",
+                main_map_digest="c" * 64,
+            ),
+            _aggregate_asset(
+                market_data_file_id=2,
+                contract_or_series="JM2609",
+                dataset_kind="actual_dominant",
+                coverage_start="2026-03-01T00:00:00+00:00",
+                coverage_end="2026-06-01T00:00:00+00:00",
+                main_map_digest="d" * 64,
+            ),
+        ],
+        base_sha="3" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    assert plan["overlap_reroute_asset_count"] == 2
+    assert plan["provider_request_proposal"]["request_count"] == 0
+    assert [item["action"] for item in plan["repair_actions"]] == [
+        "canonical_1m_reaggregate",
+        "canonical_1m_reaggregate",
+    ]
+    assert all(
+        batch["operation"] == "canonical_1m_reaggregate"
+        for batch in plan["batches"]
+    )
+    task07._validate_migration_plan_integrity(plan)
+
+
+def test_trusted_source_overlapping_verified_canonical_is_routed_to_repair() -> None:
+    verified = _asset(
+        market_data_file_id=1,
+        data_type="v2_canonical",
+        contract_or_series="JM2609",
+        dataset_kind="actual_dominant",
+        source_scope="approved_canonical_root",
+        file_path="/tmp/task07-test/canonical/verified.parquet",
+        coverage_start="2026-01-01T00:00:00+00:00",
+        coverage_end="2026-04-01T00:00:00+00:00",
+        canonical_partition_id=101,
+        canonical_file_uri="verified.parquet",
+        manifest_format="canonical-manifest-v1",
+        manifest_version="task07-direct-migration-v1",
+        manifest_uri="verified.manifest.json",
+        manifest_digest="b" * 64,
+    )
+    source = _asset(
+        market_data_file_id=2,
+        contract_or_series="JM2609",
+        dataset_kind="actual_dominant",
+        catalog_checksum=None,
+        coverage_start="2026-03-01T00:00:00+00:00",
+        coverage_end="2026-06-01T00:00:00+00:00",
+    )
+    index = build_inventory_index(
+        [verified, source],
+        base_sha="3" * 40,
+        database_revision="20260803_0032",
+    )
+
+    plan = build_migration_plan(index, write_targets=_write_targets())
+
+    migrate = next(
+        batch
+        for batch in plan["batches"]
+        if batch["operation"] == "migrate_same_frequency"
+    )
+    assert migrate["source_ids"] == []
+    assert migrate["verified_partition_ids"] == [1]
+    assert plan["overlap_reroute_asset_count"] == 1
+    assert [item["market_data_file_id"] for item in plan["repair_actions"]] == [2]
+    task07._validate_migration_plan_integrity(plan)
+
+
+def test_preflight_rejects_exact_prepared_target_overlap() -> None:
+    from app.data_core import cli_service as cli_module
+
+    dataset = SimpleNamespace(
+        provider="rqdata",
+        dataset_kind=SimpleNamespace(value="actual_dominant"),
+        symbol="jm",
+        contract_or_series="JM2609",
+        frequency=SimpleNamespace(value="1d"),
+        adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+
+    def prepared(start: datetime, end: datetime) -> SimpleNamespace:
+        request = SimpleNamespace(dataset=dataset, start=start, end=end)
+        return SimpleNamespace(batch=SimpleNamespace(request=request))
+
+    with pytest.raises(ValueError, match="TASK07_PREFLIGHT_TARGET_OVERLAP"):
+        cli_module._task07_require_nonoverlapping_prepared_targets(
+            verified_partitions=[],
+            prepared_sources=[
+                ({}, prepared(datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 4, 1, tzinfo=UTC))),
+                ({}, prepared(datetime(2026, 3, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC))),
+            ],
+        )
+
+    cli_module._task07_require_nonoverlapping_prepared_targets(
+        verified_partitions=[],
+        prepared_sources=[
+            ({}, prepared(datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 4, 1, tzinfo=UTC))),
+            ({}, prepared(datetime(2026, 4, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC))),
+        ],
+    )
+
+
 def test_conflict_repairs_are_materialized_in_the_migration_envelope() -> None:
     index = build_inventory_index(
         [
@@ -2422,7 +2589,7 @@ def test_apply_gate_rejects_tampered_preflight_receipt(tmp_path: Path) -> None:
         )
 
 
-def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() -> None:
+def test_superseded_task07_apply_is_rejected_before_opening_database() -> None:
     stdout = StringIO()
     stderr = StringIO()
 
@@ -2433,16 +2600,14 @@ def test_task07_apply_is_blocked_before_opening_database_without_exact_gate() ->
         stderr=stderr,
     )
 
-    assert exit_code == 78
+    assert exit_code == 2
     assert stdout.getvalue() == ""
-    assert json.loads(stderr.getvalue())["error"]["code"] == "TASK07_EXACT_APPROVAL_REQUIRED"
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
-def test_task07_kline_manifest_has_no_external_protected_root_argument() -> None:
+def test_superseded_task07_kline_manifest_does_not_dispatch() -> None:
     stdout = StringIO()
     stderr = StringIO()
-    engine = create_engine("sqlite://")
-
     exit_code = main(
         [
             "data",
@@ -2457,23 +2622,14 @@ def test_task07_kline_manifest_has_no_external_protected_root_argument() -> None
             "--evidence-root",
             "/tmp/evidence",
         ],
-        session_factory=lambda: Session(engine),
-        data_core_runner=lambda command, _session, args: {
-            "status": "passed",
-            "command": command,
-            "has_protected_root": hasattr(args, "protected_root"),
-        },
+        session_factory=lambda: (_ for _ in ()).throw(AssertionError("must not open database")),
         stdout=stdout,
         stderr=stderr,
     )
 
-    assert exit_code == 0
-    assert stderr.getvalue() == ""
-    assert json.loads(stdout.getvalue()) == {
-        "command": "task07.kline-manifest",
-        "has_protected_root": False,
-        "status": "passed",
-    }
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
 def _task07_inventory_schema(engine: Engine) -> None:
@@ -2690,7 +2846,7 @@ def test_task07_plan_service_emits_the_exact_hash_verified_by_owner_gate(
     ) == packet
 
 
-def test_task07_apply_requires_hash_bound_preflight_before_opening_database() -> None:
+def test_superseded_task07_apply_rejects_even_historical_gate_arguments() -> None:
     stdout = StringIO()
     stderr = StringIO()
 
@@ -2707,23 +2863,15 @@ def test_task07_apply_requires_hash_bound_preflight_before_opening_database() ->
         stderr=stderr,
     )
 
-    assert exit_code == 78
-    assert json.loads(stderr.getvalue())["error"]["code"] == "TASK07_EXACT_APPROVAL_REQUIRED"
+    assert exit_code == 2
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
-def test_task07_migration_verify_cli_forwards_exact_ordered_apply_receipts(
+def test_superseded_task07_migration_verify_does_not_dispatch(
     tmp_path: Path,
 ) -> None:
     stdout = StringIO()
     stderr = StringIO()
-    engine = create_engine("sqlite://")
-    observed: dict[str, object] = {}
-
-    def runner(command, _session, args):
-        observed["command"] = command
-        observed["apply_receipt"] = args.apply_receipt
-        return {"status": "passed", "command": command}
-
     receipt_one = tmp_path / "batch-1.json"
     receipt_two = tmp_path / "batch-2.json"
     exit_code = main(
@@ -2744,18 +2892,14 @@ def test_task07_migration_verify_cli_forwards_exact_ordered_apply_receipts(
             "--apply-receipt",
             str(receipt_two),
         ],
-        session_factory=lambda: Session(engine),
-        data_core_runner=runner,
+        session_factory=lambda: (_ for _ in ()).throw(AssertionError("must not open database")),
         stdout=stdout,
         stderr=stderr,
     )
 
-    assert exit_code == 0
-    assert stderr.getvalue() == ""
-    assert observed == {
-        "command": "task07.migration-verify",
-        "apply_receipt": [receipt_one, receipt_two],
-    }
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
 def test_retirement_plan_cli_rejects_arbitrary_runtime_root_argument(
@@ -3304,6 +3448,8 @@ def test_multisource_batch_failure_writes_partial_journal_and_resumes_exactly(
                 file_path=str(path),
                 checksum=checksum,
                 physical_checksum=checksum,
+                coverage_start=f"2026-01-0{source_id}T00:00:00+00:00",
+                coverage_end=f"2026-01-0{source_id + 1}T00:00:00+00:00",
             )
         )
     plan = build_migration_plan(

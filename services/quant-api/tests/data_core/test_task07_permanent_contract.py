@@ -79,14 +79,7 @@ def test_removed_generic_task07_commands_fail_before_database_open(command: str)
     assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
-def test_kline_manifest_cli_has_no_runtime_protected_or_quarantine_scope() -> None:
-    observed: dict[str, object] = {}
-
-    def runner(command, _session, args):
-        observed["command"] = command
-        observed["arguments"] = vars(args)
-        return {"status": "passed", "command": command}
-
+def test_kline_manifest_cli_is_superseded_and_unreachable() -> None:
     exit_code = main(
         [
             "data",
@@ -102,27 +95,17 @@ def test_kline_manifest_cli_has_no_runtime_protected_or_quarantine_scope() -> No
             "/tmp/evidence",
         ],
         session_factory=lambda: _NullSession(),
-        data_core_runner=runner,
+        data_core_runner=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("superseded command must not dispatch")
+        ),
         stdout=StringIO(),
         stderr=StringIO(),
     )
 
-    assert exit_code == 0
-    assert observed["command"] == "task07.kline-manifest"
-    arguments = observed["arguments"]
-    assert isinstance(arguments, dict)
-    assert not ({"runtime_root", "protected_root", "quarantine_root"} & arguments.keys())
+    assert exit_code == 2
 
 
-def test_task07_plan_consumes_manifest_not_generic_inventory() -> None:
-    observed: dict[str, object] = {}
-
-    def runner(command, _session, args):
-        observed["command"] = command
-        observed["manifest"] = args.manifest
-        assert not hasattr(args, "inventory")
-        return {"status": "planned", "command": command}
-
+def test_task07_legacy_plan_is_superseded_and_unreachable() -> None:
     exit_code = main(
         [
             "data",
@@ -136,16 +119,14 @@ def test_task07_plan_consumes_manifest_not_generic_inventory() -> None:
             "/tmp/canonical",
         ],
         session_factory=lambda: _NullSession(),
-        data_core_runner=runner,
+        data_core_runner=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("superseded command must not dispatch")
+        ),
         stdout=StringIO(),
         stderr=StringIO(),
     )
 
-    assert exit_code == 0
-    assert observed == {
-        "command": "task07.plan",
-        "manifest": Path("/tmp/kline-manifest-index.json"),
-    }
+    assert exit_code == 2
 
 
 def test_kline_manifest_rejects_non_kline_and_unsupported_frequency() -> None:

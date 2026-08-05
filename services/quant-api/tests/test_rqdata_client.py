@@ -3,6 +3,7 @@ from datetime import date, datetime
 import pandas as pd
 import pytest
 
+from app.data_core.product_retirement import ProductRetirementError
 from app.services.rqdata_ingest.client import RqDataClient
 
 
@@ -10,6 +11,36 @@ def test_underlying_symbol_uppercases_for_rqdata() -> None:
     assert RqDataClient.underlying_symbol("rb") == "RB"
     assert RqDataClient.underlying_symbol("TA") == "TA"
     assert RqDataClient.underlying_symbol("pp") == "PP"
+
+
+def test_retired_products_are_rejected_before_any_rqdata_call() -> None:
+    with pytest.raises(ProductRetirementError, match="PRODUCT_RETIRED"):
+        RqDataClient.underlying_symbol("jr")
+    with pytest.raises(ProductRetirementError, match="PRODUCT_RETIRED"):
+        RqDataClient.order_book_id("T2609")
+
+    assert RqDataClient.underlying_symbol("pp") == "PP"
+    assert RqDataClient.underlying_symbol("ta") == "TA"
+
+
+def test_all_future_instruments_excludes_retired_products() -> None:
+    client = object.__new__(RqDataClient)
+
+    class FakeRqdatac:
+        @staticmethod
+        def all_instruments(type: str) -> pd.DataFrame:
+            assert type == "Future"
+            return pd.DataFrame(
+                [
+                    {"order_book_id": "RB2609", "underlying_symbol": "RB"},
+                    {"order_book_id": "JR2609", "underlying_symbol": "JR"},
+                    {"order_book_id": "TA609", "underlying_symbol": "TA"},
+                ]
+            )
+
+    client.rqdatac = FakeRqdatac()
+
+    assert client.all_future_instruments()["order_book_id"].tolist() == ["RB2609", "TA609"]
 
 
 def test_clamp_dominant_price_start() -> None:

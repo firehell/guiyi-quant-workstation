@@ -390,6 +390,41 @@ class HistoricalCatalog:
         )
         return canonical_main_contract_mapping_from_rows(rows)
 
+    def list_main_contract_mappings(
+        self,
+        *,
+        instrument_symbol: str,
+        start_date: date,
+    ) -> tuple[CanonicalMainContractMapping, ...]:
+        """Return the unambiguous rank-1 canonical map from ``start_date``."""
+
+        if not isinstance(instrument_symbol, str) or not instrument_symbol.strip():
+            raise CatalogError("CATALOG_INSTRUMENT_SYMBOL_INVALID")
+        if not isinstance(start_date, date):
+            raise CatalogError("CATALOG_TRADE_DATE_INVALID")
+        rows = list(
+            self._session.execute(
+                select(_CANONICAL_MAIN_CONTRACT_VIEW)
+                .where(
+                    func.lower(_CANONICAL_MAIN_CONTRACT_VIEW.c.symbol)
+                    == instrument_symbol.strip().lower(),
+                    _CANONICAL_MAIN_CONTRACT_VIEW.c.trading_day >= start_date,
+                )
+                .order_by(
+                    _CANONICAL_MAIN_CONTRACT_VIEW.c.trading_day.asc(),
+                    _CANONICAL_MAIN_CONTRACT_VIEW.c.data_version.asc(),
+                    _CANONICAL_MAIN_CONTRACT_VIEW.c.id.asc(),
+                )
+            ).mappings()
+        )
+        grouped: dict[date, list[Mapping[str, Any]]] = {}
+        for row in rows:
+            grouped.setdefault(row["trading_day"], []).append(row)
+        return tuple(
+            canonical_main_contract_mapping_from_rows(grouped[trading_day])
+            for trading_day in sorted(grouped)
+        )
+
     def register_main_contract_mapping(
         self,
         row: MainMapRow,

@@ -23,6 +23,7 @@ if str(API_ROOT) not in sys.path:
 from sqlalchemy import select  # noqa: E402
 
 from app.db.session import SessionLocal  # noqa: E402
+from app.data_core.product_retirement import assert_products_active  # noqa: E402
 from app.models.data_center import Instrument  # noqa: E402
 from app.services.rqdata_ingest.dominant_v2_incremental import find_latest_main_canonical  # noqa: E402
 from app.services.rqdata_ingest.dominant_v2_parquet import build_dominant_v2_parquet_assets  # noqa: E402
@@ -86,7 +87,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     run.add_argument("--start-date", type=date.fromisoformat, default=None, help="Optional override; default follows latest 1m window.")
     run.add_argument("--period", action="append", choices=DEFAULT_AGG_PERIODS, dest="periods")
     run.add_argument("--product", action="append", dest="products")
-    run.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/full_products_90.txt")
+    run.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data/universe/active_products.txt")
     run.add_argument("--exchange", default=None)
     run.add_argument("--output-root", type=Path, default=PROJECT_ROOT / "data")
     run.add_argument("--dry-run", action="store_true")
@@ -106,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command != "run":
         raise SystemExit(f"unsupported command: {args.command}")
 
-    products = args.products or products_from_file(args.products_file)
+    products = assert_products_active(args.products or products_from_file(args.products_file))
     periods = tuple(args.periods or DEFAULT_AGG_PERIODS)
     output_root = args.output_root.resolve()
 

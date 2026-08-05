@@ -50,7 +50,7 @@ def load_products(args: argparse.Namespace, product_windows: dict) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Backfill dominant MAIN 1d prefix to listed_date for pre-2020 daily coverage.")
-    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "full_products_90.txt")
+    parser.add_argument("--products-file", type=Path, default=PROJECT_ROOT / "data" / "universe" / "active_products.txt")
     parser.add_argument("--product-windows", type=Path, default=PROJECT_ROOT / "data" / "universe" / "product_1d_start_from_2020.csv")
     parser.add_argument(
         "--weekly-history-csv",

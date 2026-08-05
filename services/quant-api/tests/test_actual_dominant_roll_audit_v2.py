@@ -993,11 +993,11 @@ def test_semantic_audit_passes_only_equivalent_mapping_and_actual_confirmed_trig
 
 
 def test_formal_gate_requires_direct_full_unfiltered_canonical_scope_and_no_blockers(tmp_path: Path) -> None:
-    universe = tmp_path / "data" / "universe" / "full_products_90.txt"
+    universe = tmp_path / "data" / "universe" / "active_products.txt"
     universe.parent.mkdir(parents=True)
-    universe.write_text("\n".join(["jm", *[f"p{index:02d}" for index in range(89)]]) + "\n", encoding="utf-8")
+    universe.write_text("\n".join(["jm", *[f"p{index:02d}" for index in range(68)]]) + "\n", encoding="utf-8")
     products, scope = _resolve_scope(ActualDominantRollAuditConfig(project_root=tmp_path))
-    assert len(products) == 90
+    assert len(products) == 69
     assert scope["canonical_product_scope"] is True
 
     ready, eligibility = determine_formal_gate(

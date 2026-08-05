@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
@@ -21,6 +22,13 @@ class WorkflowError(RuntimeError):
     def __init__(self, error_type: str, message: str) -> None:
         self.error_type = error_type
         super().__init__(f"{error_type}: {message}")
+
+
+class _JsonArgumentParser(argparse.ArgumentParser):
+    """Convert new-CLI syntax failures into the stable blocked JSON contract."""
+
+    def error(self, message: str) -> None:
+        raise WorkflowError("invalid_cli_arguments", message)
 
 
 LANE_ONE_ALLOWED_PREFIXES = (
@@ -139,8 +147,18 @@ def _validate_paths(paths: Sequence[str]) -> list[str]:
     normalized = list(paths)
     if not normalized:
         raise WorkflowError("empty_diff", "automation requires at least one changed path")
-    if any(not path or path.startswith("/") or ".." in path.split("/") for path in normalized):
-        raise WorkflowError("invalid_changed_path", "changed paths must be non-empty repository-relative paths")
+    if any(
+        not path
+        or path.startswith("/")
+        or "\\" in path
+        or "\x00" in path
+        or any(part in {"", ".", ".."} for part in path.split("/"))
+        for path in normalized
+    ):
+        raise WorkflowError(
+            "invalid_changed_path",
+            "changed paths must be canonical non-empty repository-relative POSIX paths",
+        )
     return normalized
 
 
@@ -308,12 +326,12 @@ def classify_develop_merge(
     raise WorkflowError("invalid_lane", "lane must be 1, 2, or 3")
 
 
-def main() -> int:
+def _legacy_main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lane", required=True, type=int)
     parser.add_argument("--path-file", type=Path)
     parser.add_argument("paths", nargs="*")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.path_file and args.paths:
         parser.error("paths and --path-file cannot be used together")
     if args.path_file:
@@ -331,6 +349,107 @@ def main() -> int:
         return 2
     print(json.dumps({"status": status, "lane": args.lane, "paths": paths}))
     return 0
+
+
+def _develop_merge_payload(
+    *,
+    lane: int | None,
+    operation: str | None,
+    paths: Sequence[str],
+    change_categories: Sequence[str],
+    external_gates: Sequence[str],
+) -> dict[str, object]:
+    return {
+        "action": "develop-merge-check",
+        "change_categories": list(change_categories),
+        "external_gates": list(external_gates),
+        "lane": lane,
+        "operation": operation,
+        "paths": list(paths),
+        "schema_version": 1,
+        "tool": "scripts/engineering/task_workflow.py",
+    }
+
+
+def _print_develop_merge_payload(payload: dict[str, object]) -> None:
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _develop_merge_check_main(argv: Sequence[str]) -> int:
+    parser = _JsonArgumentParser(description=__doc__)
+    parser.add_argument("--lane", required=True, type=int)
+    parser.add_argument("--path-file", type=Path)
+    parser.add_argument("--operation", action="append", required=True)
+    parser.add_argument("--change-category", action="append", default=[])
+    parser.add_argument("--external-gate", action="append", default=[])
+    parser.add_argument("paths", nargs="*")
+    try:
+        args = parser.parse_args(argv)
+    except WorkflowError as exc:
+        payload = _develop_merge_payload(
+            lane=None,
+            operation=None,
+            paths=[],
+            change_categories=[],
+            external_gates=[],
+        )
+        payload.update({
+            "decision": "block",
+            "detail": str(exc),
+            "error_type": exc.error_type,
+            "status": "blocked",
+        })
+        _print_develop_merge_payload(payload)
+        return 2
+
+    operations = list(args.operation)
+    operation = operations[0] if len(operations) == 1 else None
+    paths = list(args.paths)
+    payload = _develop_merge_payload(
+        lane=args.lane,
+        operation=operation,
+        paths=paths,
+        change_categories=args.change_category,
+        external_gates=args.external_gate,
+    )
+    try:
+        if args.path_file and paths:
+            raise WorkflowError(
+                "invalid_cli_arguments",
+                "paths and --path-file cannot be used together",
+            )
+        if args.path_file:
+            try:
+                paths = args.path_file.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeError) as exc:
+                raise WorkflowError("path_file_unavailable", str(exc)) from exc
+            payload["paths"] = paths
+        classify_develop_merge(
+            args.lane,
+            paths,
+            operations,
+            args.external_gate,
+            change_categories=args.change_category,
+        )
+    except WorkflowError as exc:
+        payload.update({
+            "decision": "block",
+            "detail": str(exc),
+            "error_type": exc.error_type,
+            "status": "blocked",
+        })
+        _print_develop_merge_payload(payload)
+        return 2
+    payload.update({"decision": "allow", "status": "ok"})
+    _print_develop_merge_payload(payload)
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["develop-merge-check"]:
+        return _develop_merge_check_main(arguments[1:])
+    return _legacy_main(arguments)
 
 
 if __name__ == "__main__":

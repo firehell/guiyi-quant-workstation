@@ -91,17 +91,14 @@ evidence。人工复盘只有在 market phase、system compliance、rule tag 和
 reconciliation 完成后才能幂等提取精简 `ResearchSample`。scheduler 默认 disabled；生产 migration、
 真实运行与 Task 07 legacy 删除均未授权。
 
-historical evidence/report/receipt 默认保护。Task 07 只允许在以下条件全部满足后，由独立任务执行：
-
-1. 精确逐文件 deletion manifest；
-2. zero active references（active canonical、测试、Gate、文档和 Runtime 引用扫描为零）；
-3. independent Sol Review 允许删除；
-4. owner 批准 exact scope；
-5. 删除后全仓验证与引用扫描。
+historical evidence/report/receipt 默认保护。任何受控删除均须先完成只读扫描、说明影响范围与
+回滚方式，并取得用户对该次删除的明确批准；删除后执行全仓验证与引用扫描。
 
 本合同和任务 00 均不授权删除任何文件、Git 历史、数据库记录、Parquet、evidence、report
-或 receipt。report 14/15 是 Git-traceable historical snapshots，不是 active Gate/regression；
-不得改写其历史结论或删除历史证据。
+或 receipt。2026-08-05 新建的 `GY-DATA-PRODUCT-RETIREMENT-21` 是唯一精确品种退役例外：
+只有其独立 Review、用户对该次删除的明确批准、69 品种 Runtime 和停服 receipt
+全部成立后，才允许删除当前版本目标对象；Git 历史不重写，并保留最小最终
+退役 receipt。该例外当前仍处于 code/dry-run 阶段，不授权 apply。
 
 ## 3. Legacy compatibility 与替换关系
 
@@ -130,9 +127,9 @@ Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 -> Task 04 closeout merge
 -> Task 05 trusted-consumer switch and read-only derived/reference inventory
 -> Task 06 live/EOD 收口
--> Task 07 其他已有品种迁移、legacy 引用为零 + rollback 证据
--> Task 08 release candidate 与 Runtime 验收
--> 独立删除任务
+-> Task 07 JM 目标 Canonical 验收与精确缺口计划
+-> Task 08 release candidate 与 Runtime promotion/验收
+-> 可选的独立旧派生数据清理任务
 ```
 
 ## 4. 压缩后的串行任务与当前状态
@@ -149,15 +146,15 @@ lineage，不再逐项调度。
 | 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop` 在本 closeout commit 经 exact-head CI、独立 Review 并由 merge commit 合入 `develop` 时生效；正式 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
 | 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（本 task PR merge 后生效）；exact-head independent Review=`CLEAN_FOR_INTEGRATION`；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 external Gate |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | completed on develop（PR #105 merge 后生效）；固定 EMA21 evaluator；production=`0031`，empty/disabled smoke passed；Runtime/live 未启用 |
-| 07（原 15～18） | 其他已有品种迁移、legacy 与历史工件受控清理 | `BLOCKED_ACTIVE_REFERENCE`；v9 确认 Runtime active/review 非零；旧 GuiyiApprovals root 已由 owner 退出必需范围；无 production write/delete |
-| 08（原 19） | release candidate、JM 单交易日 Shadow 与 Runtime 验收 | pending / release + Runtime Gate |
+| 07（原 15～18） | JM 目标 Canonical 验收与精确缺口计划 | Stage C 精简实现 candidate；待 exact-head CI、独立 Review、develop 集成与生产只读验收；无 production write/delete |
+| 08（原 19） | release candidate、JM Runtime promotion 与验收 | pending / 独立 release + Runtime Gate |
 
 任务必须串行。任务 00～03 均已通过各自测试、独立 Review 与适用 CI/等价 Linux Gate，并
 集成 `develop`。Task 04 已批准的生产 migration 和 canonical apply 已完成；本 closeout 只允许
 只读复验和文档收口，不授权新的 RQData、Parquet、PostgreSQL、packet、apply、Shadow、删除、
 release 或 Runtime 副作用。Task 05 只能在本 closeout PR 合入后另起任务。
-后续编号不得跳过：`Task 04 closeout -> Task 05 trusted consumers/inventory -> Task 06 live/EOD ->
-Task 07 migration/legacy evidence -> Task 08 release/Runtime`；任何受控删除仍另需独立 Gate。
+后续边界为：`Task 07 target Canonical assessment -> Task 08 release/Runtime`。旧派生
+数据清理不是 Task 07 完成条件，如需执行必须单独建任务并获得 deletion Gate。
 
 Task 06 首次隔离 migration 测试发生 URL 覆盖 incident，项目数据库已意外到 empty/disabled
 `20260802_0028`。该操作没有事前 Gate，不是合规 acceptance。根因、空表/flags 证据、隔离库复测
@@ -174,6 +171,40 @@ SignalEvent 无 decision link、六个 flags 全 false，health 为 disabled。
 disabled/empty smoke receipt，不授权后续 Runtime、live、scheduler 或通知操作。
 
 ### 4.0.0 Task 07 当前执行快照
+
+> 2026-08-04 active 合同更正：本节下方的 legacy-wide inventory/packet/preflight/
+> apply、Runtime reference 与 retirement 叙述仅为 superseded historical evidence。
+> 它们不再是 Stage C 执行路线或完成条件，不得继续执行旧 packet。
+
+Stage C 的 active 定位唯一为：
+
+```text
+从 active target config + Catalog + MainContractMap 生成 JM 显式目标
+-> 通过 Canonical reader / MarketDataService 只读验证
+-> 已有且有效：KEEP_CANONICAL
+-> direct 1m/1d/1w 缺失或损坏：REDOWNLOAD_DIRECT
+-> aggregate 5m/15m/30m/60m 缺失或损坏且同身份/窗口 1m 可信：REBUILD_AGGREGATE
+-> direct 不可用或 aggregate 的同身份/窗口 1m 不可信：REGISTER_DATA_GAP
+```
+
+目标配置为 `config/data_core_v2_targets.yaml`，仅允许 `JM.MAIN`、MainContractMap
+rank=1 `volume_open_interest` 解析的 actual dominant，以及
+`1m/5m/15m/30m/60m/1d/1w`。`DatasetKey` 严格固定 provider、dataset_kind、symbol、
+contract_or_series、frequency、adjustment 和 schema_version。actual-dominant `1w` 按 ISO 周
+最后交易日的 MainContractMap 合约归属。窗口起点固定为 `2013-03-22`，
+终点为当前完整 MainContractMap 的最后交易日；无映射、缺失或歧义均 fail-closed。
+
+active CLI 唯一入口是 `guiyi data task07 assess --target-config ... --canonical-root ...`。
+dry-run 不遍历 legacy root，不调用 RQData，不写 Parquet/PostgreSQL，不产生可执行
+repair packet。旧 `kline-manifest/plan/preflight/apply/verify/migration-verify/runtime-cutover-*`
+已从 active parser 移除并 fail-closed。全部目标有效时结果必须为
+`Stage_C=NO_DATA_WRITE_REQUIRED / writes_authorized=false / repair_count=0`。
+
+Task 07 不以 Profile/Binding retirement、Runtime legacy reference=0、旧派生数据删除
+或 legacy 文件总数为完成条件。Stage D Runtime promotion 属于 Task 08；Stage E 旧派生
+数据清理是后续独立可选任务。`production_writes=false`。
+
+#### Superseded historical evidence
 
 2026-08-04 最新快照：Stage A release 已完成到 `main/develop@aac4006f`，annotated tag 为
 `runtime-20260804-aac4006f`；Stage B production PostgreSQL 已升级并回读为
@@ -207,8 +238,7 @@ dataset identity 与当前 page 的 exact `file_uri`。reference scanner 只识�
 本 closeout 仅新增 read-only `runtime-cutover-plan` / `runtime-cutover-verify`；最小合同绑定
 exact target/previous tag+SHA、DB `20260803_0032`、全部真实功能 disabled、health/smoke passed、
 rollback-ready 与 checkout/Runtime reference zero。它不提供 apply/stop/switch/restart，不解锁
-retirement/deletion。本任务未读取生产数据、未执行 0032/RQData/Canonical/DB/Runtime 写入，
-不写入 `READY_FOR_TASK_08`。
+retirement/deletion。本任务未读取生产数据、未执行 0032/RQData/Canonical/DB/Runtime 写入。
 
 2026-08-03 生产收口会话再次收窄 Task 07 永久合同：原 generic inventory、
 checkout/Runtime reference inventory、retirement apply 与文件 quarantine/deletion orchestration
@@ -220,10 +250,11 @@ manifest。Direct 冲突只产生 RQData 重下提案，Aggregate 冲突只产�
 1m 重聚合提案；不执行 raw/legacy 或 legacy/new 逐行比较。所有 K 线均不进入
 retirement/deletion 分类。
 
-旧派生业务数据删除不再通过通用文件 inventory/quarantine 建模。只能在 exact-tag
+旧派生业务数据删除不再通过 Task 07 通用文件 inventory/quarantine 建模。只能在 exact-tag
 Runtime 验收后，依当时真实 PostgreSQL schema/FK 生成精确 table/row manifest 与 SQL
-digest，且对该 exact scope 重新获得 Owner 批准。K 线、Catalog、Manifest、
-MainContractMap、release receipt 与正式证据永不在删除范围。
+digest，且对该 exact scope 重新获得 Owner 批准。除独立合同
+`GY-DATA-PRODUCT-RETIREMENT-21` 在未来 exact Gate 下明确列出的 21 品种对象外，K 线、Catalog、
+Manifest、MainContractMap、release receipt 与正式证据永不在删除范围。
 
 2026-08-02 首轮生产只读 v8 snapshot：103,481 个资产，85 个
 `KEEP_CANONICAL_VERIFIED`、7,232 个 `REUSE_TRUSTED_SOURCE`、26 个
@@ -249,8 +280,7 @@ apply packet。
 `4d8fc15fd312b199361f57244cb6ab636889ea84e370d294db53601ac5a00af4`。没有 owner exact approval，所以未
 supersede binding、未 cancel task、未 deactivate signal，也没有文件/数据库删除。
 完整脱敏摘要、plan/before-image/候选 digest 与 rollback 边界见
-`docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。Task 07 当前不是完成态，且
-`READY_FOR_TASK_08=false`。
+`docs/tasks/GY-DATA-CORE-V2-TASK07-EVIDENCE.md`。该段只是历史快照，不建立当前 Gate。
 
 ### 4.0 Task 04 closeout Owner 决策与正式验收（2026-08-02）
 

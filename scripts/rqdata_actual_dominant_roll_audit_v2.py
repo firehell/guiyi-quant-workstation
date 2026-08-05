@@ -19,7 +19,7 @@ if str(API_ROOT) not in sys.path:
 ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED = "ACTUAL_DOMINANT_ROLL_REPAIR_REQUIRED"
 ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED = "ACTUAL_DOMINANT_ROLL_TARGETS_VERIFIED"
 FIXED_AUDIT_END = date(2026, 7, 10)
-CANONICAL_UNIVERSE_PATH = Path("data/universe/full_products_90.txt")
+CANONICAL_UNIVERSE_PATH = Path("data/universe/active_products.txt")
 DEFAULT_OUTPUT_DIR = Path(
     "data/reports/full_history_audit_v2_20260710/actual_dominant_roll_006"
 )

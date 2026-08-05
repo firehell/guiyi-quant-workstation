@@ -1,16 +1,12 @@
 if
 nr
-zc
 ni
 pg
 br
 ao
 cs
-ri
 sm
-cy
 pr
-wr
 sr
 cj
 i
@@ -18,5 +14,4 @@ lc
 pp
 sa
 y
-lg
 bz

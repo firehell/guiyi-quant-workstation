@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.data_core.product_retirement import assert_products_active
 from app.services.rqdata_ingest.bar_aggregation import (
     AGGREGATED_PERIODS,
     RQDATA_DIRECT_PERIODS,
@@ -33,7 +34,7 @@ def build_dominant_v2_parquet_assets(
     periods: tuple[str, ...] = PERIODS,
     force: bool = False,
 ) -> dict[str, Any]:
-    symbol = _normalize_product(product)
+    symbol = assert_products_active((product,))[0]
     contract = f"{symbol}.MAIN"
     exchange_code = str(exchange or "DCE").upper()
     if end_date < start_date:

@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 import pyarrow.parquet as pq
@@ -99,6 +99,7 @@ from app.data_core.task07_migration import (
     resolve_task07_provider_sessions,
     verify_task07_published_batch,
 )
+from app.data_core.task07_target_canonical import run_target_canonical_assessment
 from app.data_core.rqdata_provider import CanonicalRQDataAdapter
 from app.services.rqdata_ingest.client import RqDataClient
 from app.services.market_data_reader import MarketDataReader
@@ -109,7 +110,20 @@ from app.services.jm_session_contract import (
 from app.models.data_center import MarketDataFile
 from app.services.canonical_market_data import (
     CanonicalMarketDataService,
+    configured_canonical_root,
     jm_sessions,
+)
+
+
+_SUPERSEDED_TASK07_COMMANDS = frozenset(
+    {
+        "task07.kline-manifest",
+        "task07.plan",
+        "task07.preflight",
+        "task07.apply",
+        "task07.verify",
+        "task07.migration-verify",
+    }
 )
 
 
@@ -118,6 +132,37 @@ def run_data_core_command(
     session: Session,
     args: Any,
 ) -> dict[str, Any]:
+    if command in _SUPERSEDED_TASK07_COMMANDS:
+        raise ValueError("TASK07_LEGACY_WIDE_COMMAND_SUPERSEDED")
+    return _run_data_core_command_unchecked(command, session, args)
+
+
+def _run_data_core_command_unchecked(
+    command: str,
+    session: Session,
+    args: Any,
+) -> dict[str, Any]:
+    if command == "task07.assess":
+        canonical_root = _task07_canonical_root(args.canonical_root)
+        begin_task07_readonly_snapshot(session)
+        revision = _data_core_revision(session)
+        if revision != "20260803_0032":
+            raise ValueError("TASK07_DATABASE_REVISION_DRIFT")
+        result = run_target_canonical_assessment(
+            session,
+            target_config=_absolute_path(args.target_config, "target_config"),
+            canonical_root=canonical_root,
+        )
+        return {
+            "schema_version": 1,
+            "command": "data.task07.assess",
+            "status": "passed",
+            "readonly": True,
+            "production_writes": False,
+            "effects": _readonly_effects(),
+            "database_revision": revision,
+            **result,
+        }
     if command == "task07.kline-manifest":
         project_root = _absolute_path(args.project_root, "project_root")
         evidence_root = _absolute_path(args.evidence_root, "evidence_root")
@@ -1105,7 +1150,72 @@ def _task07_validate_batch_readonly(
             )
         evidence.append(validation_record)
         prepared_sources.append((source, prepared))
+    _task07_require_nonoverlapping_prepared_targets(
+        verified_partitions=verified_partitions,
+        prepared_sources=prepared_sources,
+    )
     return evidence, prepared_sources
+
+
+def _task07_require_nonoverlapping_prepared_targets(
+    *,
+    verified_partitions: Sequence[Mapping[str, Any]],
+    prepared_sources: Sequence[tuple[Mapping[str, Any], Any]],
+) -> None:
+    if not prepared_sources:
+        return
+    grouped: dict[
+        tuple[str, ...],
+        list[tuple[datetime, datetime, bool]],
+    ] = {}
+    for _source, prepared in prepared_sources:
+        dataset = prepared.batch.request.dataset
+        identity = (
+            dataset.provider,
+            dataset.dataset_kind.value,
+            dataset.symbol,
+            dataset.contract_or_series,
+            dataset.frequency.value,
+            dataset.adjustment,
+            dataset.schema_version,
+        )
+        grouped.setdefault(identity, []).append(
+            (
+                prepared.batch.request.start,
+                prepared.batch.request.end,
+                True,
+            )
+        )
+    for partition in verified_partitions:
+        try:
+            identity = (
+                str(partition["provider"]),
+                str(partition["dataset_kind"]),
+                str(partition["symbol"]),
+                str(partition["contract_or_series"]),
+                str(partition["frequency"]),
+                str(partition["adjustment"]),
+                str(partition["schema_version"]),
+            )
+            start = _aware_datetime(
+                _task07_registration_datetime(partition["coverage_start"])
+            )
+            end = _aware_datetime(
+                _task07_registration_datetime(partition["coverage_end"])
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "TASK07_VERIFIED_PARTITION_EVIDENCE_INVALID"
+            ) from exc
+        grouped.setdefault(identity, []).append((start, end, False))
+    for entries in grouped.values():
+        ordered = sorted(entries, key=lambda item: (item[0], item[1], item[2]))
+        for index, (start, end, is_source) in enumerate(ordered):
+            for other_start, other_end, other_is_source in ordered[index + 1 :]:
+                if other_start >= end:
+                    break
+                if start < other_end and (is_source or other_is_source):
+                    raise ValueError("TASK07_PREFLIGHT_TARGET_OVERLAP")
 
 
 def _task07_validate_repair_batch_readonly(
@@ -3158,6 +3268,25 @@ def _absolute_path(value: object, field: str) -> Path:
     if not isinstance(value, Path) or not value.is_absolute():
         raise ValueError(f"{field}_must_be_absolute")
     return value
+
+
+def _task07_canonical_root(value: object) -> Path:
+    requested = _absolute_path(value, "canonical_root")
+    configured = configured_canonical_root()
+    if requested.is_symlink() or configured.is_symlink():
+        raise ValueError("TASK07_CANONICAL_ROOT_INVALID")
+    try:
+        requested_physical = requested.resolve(strict=True)
+        configured_physical = configured.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("TASK07_CANONICAL_ROOT_INVALID") from exc
+    if requested != requested_physical or configured != configured_physical:
+        raise ValueError("TASK07_CANONICAL_ROOT_INVALID")
+    if not requested_physical.is_dir() or not configured_physical.is_dir():
+        raise ValueError("TASK07_CANONICAL_ROOT_INVALID")
+    if requested_physical != configured_physical:
+        raise ValueError("TASK07_CANONICAL_ROOT_DRIFT")
+    return requested_physical
 
 
 def _loaded_source_root() -> Path:

@@ -146,6 +146,37 @@ EXPECT_CANONICAL_MARKET=1 pnpm --dir apps/quant-web test:e2e
 `--project-root`、旧资产 `--legacy-root`、新 `--canonical-root/--staging-root` 与 exact window。
 worktree 不 clean 时只返回 `task_worktree_not_clean`，不生成 approval packet。
 
+### GY-DATA-CORE-V2 Task 07 Stage C 精简验收
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_core/test_task07_target_canonical.py \
+  services/quant-api/tests/data_core/test_task07_target_cli_service.py \
+  services/quant-api/tests/data_core/test_catalog.py \
+  services/quant-api/tests/test_market_data_service.py \
+  services/quant-api/tests/test_guiyi_cli.py
+```
+
+该组验证 JM target config 严格闭集、MainContractMap 分段与周线最后交易日归属、
+四种精确状态、全部 KEEP 时的 `NO_DATA_WRITE_REQUIRED`、Aggregate 只允许同身份/
+窗口 Canonical 1m 来源、七周期 MarketDataService 严格同频，以及旧 Stage C
+packet/apply 命令在 active CLI 的 fail-closed 拒绝。测试不调用 RQData，不写
+Parquet/PostgreSQL。
+
+生产只读 Gate 只允许在精确 task/develop head、PostgreSQL revision
+`20260803_0032` 和显式 absolute canonical root 下运行：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api guiyi data task07 assess \
+  --target-config /absolute/project/config/data_core_v2_targets.yaml \
+  --canonical-root /absolute/canonical/root
+```
+
+本命令的合同固定为 `calls_rqdata=false / writes_postgresql=false /
+writes_parquet=false / production_writes=false`。未获独立生产只读验收批准时不得运行。
+
 ### Task 05 derived/reference inventory
 
 下列 CLI 只输出稳定 JSON；不加载 RQData、不含 delete/apply/repair mode。真实 DB 只允许通过
@@ -164,7 +195,9 @@ Catalog 表中没有可与 `MarketDataFile.data_version` 直接对照的 source-
 `manifest_version` 不是 data version，故 inventory 只可标记
 `metadata_aligned_partial_data_version_unverified`，不能声称 data version 已对齐。
 
-Task 07 的 zero-reference eligibility 同时要求 repository active/review references 为零，且
+以下 zero-reference 描述仅保留为 superseded historical Task 07 inventory 测试说明，
+不再是 active Stage C 验收或完成条件。旧 Task 07 曾要求 repository active/review
+references 为零，且
 27 条显式数据库 relation rule 的 active/review count 为零。规则覆盖 active/unknown Profile
 Binding、quality report→file、file→download task、active/unknown download task、Backtest
 task/report/trade/order、StrategySignal/SignalEvent/scan/notification、Review note/attachment/tag

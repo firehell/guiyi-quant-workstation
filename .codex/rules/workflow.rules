@@ -17,7 +17,7 @@ prefix_rule(
         "integrate"
     ],
     decision = "allow",
-    justification = "允许通过受控 Gate 提交 Lane 1/2 draft PR，merge 仍由用户执行",
+    justification = "允许通过受控 Gate 创建 Lane 1/2 Draft PR；Draft PR 不授权 merge，仅在任务验收、独立 exact-head Gate、required CI、PR head 与 reviewed head 一致、mergeability 明确且没有人工 Gate 时，由 Codex/GitHub Connector expected-head merge commit 到 develop",
 )
 
 prefix_rule(

@@ -379,3 +379,36 @@ READY_FOR_TASK_08=false
 该代码仍须 exact-head independent Review、PR/CI 和 develop ancestry 回读。合入后必须重新生成
 release packet，并分别取得新的 main/tag 与真实 K 线迁移批准；`aac4006f` 的 Stage C packet已被
 本修复 supersede，永远不得用于 apply。
+
+## 9. 2026-08-04 Stage C target-Canonical contract supersession
+
+本节只记录 active 合同的收窄，不修改第 1～8 节已经发生过的证据事实。
+第 8 节的 49,885 assets、30,536 repair actions、24,178 provider requests 和
+2,186 batches 及其 digest 现统一标记为：
+
+```text
+superseded_historical_evidence=true
+active_stage_c_input=false
+apply_authorized=false
+```
+
+Stage C 新 active 范围只由 `config/data_core_v2_targets.yaml`、Catalog 和
+MainContractMap 生成 JM `continuous/JM.MAIN` 与显式 actual-dominant 目标，周期只有
+`1m/5m/15m/30m/60m/1d/1w`。新 active CLI 只有 `guiyi data task07 assess`；旧
+packet/manifest/plan/preflight/apply/verify/runtime-cutover 路由不再可达。该命令仅输出
+`KEEP_CANONICAL`、`REDOWNLOAD_DIRECT`、`REBUILD_AGGREGATE` 或
+`REGISTER_DATA_GAP`，不产生可执行 repair packet。
+
+```text
+production_writes=false
+calls_rqdata=false
+writes_postgresql=false
+writes_parquet=false
+writes_authorized=false
+runtime_promotion_scope=Task_08
+derived_cleanup_scope=separate_optional_task
+```
+
+本 candidate 仍需 exact-head CI、独立 Sol Review、develop 集成和后续生产只读验收。
+本节不证明生产 Canonical 目标已通过，不授权任何真实修复、删除、Runtime
+或通知操作。

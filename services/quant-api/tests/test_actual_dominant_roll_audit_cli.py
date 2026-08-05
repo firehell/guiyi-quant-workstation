@@ -160,7 +160,7 @@ def test_parser_exposes_only_verify_with_frozen_defaults() -> None:
     assert args.project_root == SCRIPT_PATH.parents[1]
     assert args.audit_end == date(2026, 7, 10)
     assert args.scan_mode == "quick"
-    assert args.products_file == Path("data/universe/full_products_90.txt")
+    assert args.products_file == Path("data/universe/active_products.txt")
     assert args.product == []
     assert args.max_workers == 4
     assert args.output_dir == Path(

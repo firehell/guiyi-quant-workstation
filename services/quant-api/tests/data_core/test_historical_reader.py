@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -21,12 +24,14 @@ from app.data_core.contracts import (
     BarFrequency,
     BarQuery,
     DataGapError,
+    DatasetAmbiguousError,
     DatasetOrigin,
     DatasetKey,
     DatasetKind,
     ManifestLineage,
+    ManifestMismatchError,
 )
-from app.data_core.historical_reader import CanonicalHistoricalReader
+from app.data_core.historical_reader import CanonicalHistoricalReader, _partition_value
 from app.data_core.rqdata_adapter import (
     ProviderBarBatch,
     ProviderBarRequest,
@@ -287,6 +292,320 @@ def test_reader_selects_replacement_partition_without_reading_original(
         "provider-final-20260701-jm-session-v1",
     )
     assert len(result.manifest_digests) == 1
+
+
+def test_reader_rejects_identical_duplicate_primary_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with Session(engine) as session:
+        reader = CanonicalHistoricalReader(
+            catalog=HistoricalCatalog(session),
+            canonical_root=(tmp_path / "canonical").resolve(),
+        )
+        duplicate = _bar(FIRST, "101")
+        monkeypatch.setattr(
+            reader,
+            "_read_direct_dataset",
+            lambda *_args, **_kwargs: (
+                (duplicate, duplicate),
+                ("a" * 64,),
+                ("provider-final-20260701",),
+            ),
+        )
+        monkeypatch.setattr(reader, "_require_direct_coverage", lambda *_args, **_kwargs: None)
+
+        with pytest.raises(
+            DatasetAmbiguousError,
+            match="DATASET_AMBIGUOUS",
+        ):
+            reader.get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+
+def test_reader_rejects_physical_row_count_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+
+        class FakeParquet:
+            metadata = SimpleNamespace(num_rows=1)
+
+            def read(self):  # pragma: no cover - row-count Gate rejects first.
+                raise AssertionError("must not read drifted parquet")
+
+        monkeypatch.setattr(
+            "app.data_core.historical_reader.pq.ParquetFile",
+            lambda _path: FakeParquet(),
+        )
+        with pytest.raises(ManifestMismatchError) as error:
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+    assert error.value.facts["reason"] == "parquet_row_count_mismatch"
+
+
+def test_reader_rejects_child_symlink_escape(tmp_path: Path) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+        outside_manifest = tmp_path / "outside-manifest.json"
+        outside_manifest.write_text("{}", encoding="utf-8")
+        escaped_manifest = tmp_path / "canonical" / "escaped-manifest.json"
+        escaped_manifest.symlink_to(outside_manifest)
+        partition = HistoricalCatalog(session).list_effective_partitions(_dataset())[0]
+        partition.manifest_uri = escaped_manifest.name
+        session.commit()
+
+        with pytest.raises(ManifestMismatchError) as error:
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+    assert error.value.facts["reason"] == "canonical_path_escape"
+
+
+@pytest.mark.parametrize("permission_target", ["manifest", "file", "parquet"])
+def test_reader_propagates_canonical_permission_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    permission_target: str,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+        partition = HistoricalCatalog(session).list_effective_partitions(_dataset())[0]
+        manifest_path = (tmp_path / "canonical" / partition.manifest_uri).resolve()
+        file_path = (tmp_path / "canonical" / partition.file_uri).resolve()
+        original_read_text = Path.read_text
+        original_open = Path.open
+        original_parquet_file = pq.ParquetFile
+
+        if permission_target == "manifest":
+            def denied_read_text(path: Path, *args, **kwargs):
+                if path.resolve() == manifest_path:
+                    raise PermissionError("manifest permission denied")
+                return original_read_text(path, *args, **kwargs)
+
+            monkeypatch.setattr(Path, "read_text", denied_read_text)
+        elif permission_target == "file":
+            def denied_open(path: Path, *args, **kwargs):
+                if path.resolve() == file_path:
+                    raise PermissionError("file permission denied")
+                return original_open(path, *args, **kwargs)
+
+            monkeypatch.setattr(Path, "open", denied_open)
+        else:
+            def denied_parquet_file(path: Path, *args, **kwargs):
+                if Path(path).resolve() == file_path:
+                    raise PermissionError("parquet permission denied")
+                return original_parquet_file(path, *args, **kwargs)
+
+            monkeypatch.setattr(pq, "ParquetFile", denied_parquet_file)
+
+        with pytest.raises(PermissionError, match="permission denied"):
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+
+@pytest.mark.parametrize("failure_stage", ["open", "read"])
+def test_reader_propagates_non_data_parquet_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure_stage: str,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+
+        if failure_stage == "open":
+            def fail_parquet_open(_path: Path):
+                raise RuntimeError("parquet implementation failure")
+
+            monkeypatch.setattr(pq, "ParquetFile", fail_parquet_open)
+        else:
+            class FailingParquet:
+                metadata = SimpleNamespace(num_rows=2)
+
+                def read(self):
+                    raise RuntimeError("parquet implementation failure")
+
+            monkeypatch.setattr(pq, "ParquetFile", lambda _path: FailingParquet())
+
+        with pytest.raises(RuntimeError, match="parquet implementation failure"):
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+
+@pytest.mark.parametrize("failure_stage", ["open", "read"])
+def test_reader_wraps_parquet_content_error_as_data_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure_stage: str,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+
+        if failure_stage == "open":
+            def fail_parquet_open(_path: Path):
+                raise pa.ArrowInvalid("corrupt parquet content")
+
+            monkeypatch.setattr(pq, "ParquetFile", fail_parquet_open)
+        else:
+            class CorruptParquet:
+                metadata = SimpleNamespace(num_rows=2)
+
+                def read(self):
+                    raise pa.ArrowInvalid("corrupt parquet content")
+
+            monkeypatch.setattr(pq, "ParquetFile", lambda _path: CorruptParquet())
+
+        with pytest.raises(ManifestMismatchError) as error:
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+    assert error.value.facts["reason"] == "parquet_unreadable"
+
+
+def test_partition_value_propagates_missing_attribute() -> None:
+    with pytest.raises(AttributeError):
+        _partition_value(SimpleNamespace(), "file_uri")
+
+
+def test_reader_rejects_physical_rows_that_are_not_strictly_ordered(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+        partition = HistoricalCatalog(session).list_effective_partitions(_dataset())[0]
+        table = pq.ParquetFile(tmp_path / "canonical" / partition.file_uri).read()
+        reversed_table = table.take(pa.array([1, 0]))
+
+        class FakeParquet:
+            metadata = SimpleNamespace(num_rows=2)
+
+            def read(self):
+                return reversed_table
+
+        monkeypatch.setattr(
+            "app.data_core.historical_reader.pq.ParquetFile",
+            lambda _path: FakeParquet(),
+        )
+        with pytest.raises(ManifestMismatchError) as error:
+            CanonicalHistoricalReader(
+                catalog=HistoricalCatalog(session),
+                canonical_root=tmp_path / "canonical",
+            ).get_bars(
+                BarQuery(
+                    dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+                    symbol="jm",
+                    contract_or_series="JM2609",
+                    frequency=BarFrequency.M1,
+                    start=START,
+                    end=SECOND,
+                )
+            )
+
+    assert error.value.facts["reason"] == "parquet_primary_key_order_invalid"
 
 
 def test_weekly_reader_uses_padded_calendar_without_partial_month_end_week(
