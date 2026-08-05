@@ -949,6 +949,62 @@ def test_finalize_resumes_file_purge_after_database_commit(
     assert not target.exists()
 
 
+def test_apply_reports_pending_when_postcommit_verification_raises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine, tables = _retirement_database(include_dependents=False)
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+
+    def fail_verification(*_args, **_kwargs):
+        raise RuntimeError("fault injection after commit")
+
+    with engine.connect() as connection:
+        rows, blockers = inventory_database(connection)
+        packet = build_inventory_packet(
+            files=(),
+            database_rows=rows,
+            blockers=blockers,
+            code_sha="a" * 40,
+            runtime_sha="b" * 40,
+            database_revision="revision-1",
+            generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
+        )
+        digest = packet_digest(packet)
+        monkeypatch.setattr(
+            "app.data_core.product_retirement.verify_retirement_scope",
+            fail_verification,
+        )
+
+        receipt = apply_retirement_packet(
+            connection,
+            packet=packet,
+            expected_packet_digest=digest,
+            approval=_approval(packet, digest),
+            roots={"data": data_root},
+            code_sha="a" * 40,
+            runtime_sha="b" * 40,
+            database_revision="revision-1",
+            shutdown_receipt_digest="c" * 64,
+            now="2026-08-05T12:30:00+08:00",
+            approval_digest="d" * 64,
+        )
+
+        assert receipt["status"] == "db_committed_purge_pending"
+        assert receipt["verification"] == {
+            "status": "rejected",
+            "error_type": "RuntimeError",
+        }
+        assert (
+            connection.scalar(
+                select(func.count()).select_from(tables["market_data_files"])
+            )
+            == 1
+        )
+
+
 def test_apply_rejects_file_drift_before_database_write(tmp_path: Path) -> None:
     engine, tables = _retirement_database(include_dependents=False)
     data_root = tmp_path / "data"

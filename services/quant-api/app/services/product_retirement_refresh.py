@@ -73,7 +73,7 @@ class RetainedUniverseRefreshExecutor:
 
     def sync_direct(
         self, products: tuple[str, ...], frequencies: tuple[str, ...]
-    ) -> None:
+    ) -> dict[str, object]:
         if frequencies != DIRECT_FREQUENCIES:
             raise ValueError("PRODUCT_RETIREMENT_REFRESH_FREQUENCIES_INVALID")
         active = assert_products_active(products)
@@ -105,17 +105,26 @@ class RetainedUniverseRefreshExecutor:
                 self._sync_direct_target(target)
             refreshed[symbol] = targets
         self._direct_targets = refreshed
+        return {
+            "status": "passed",
+            "product_count": len(active),
+            "target_count": sum(len(items) for items in refreshed.values()),
+            "frequencies": list(DIRECT_FREQUENCIES),
+        }
 
     def aggregate(
         self, products: tuple[str, ...], frequencies: tuple[str, ...]
-    ) -> None:
+    ) -> dict[str, object]:
         if frequencies != DERIVED_FREQUENCIES:
             raise ValueError("PRODUCT_RETIREMENT_REFRESH_FREQUENCIES_INVALID")
         active = assert_products_active(products)
         if tuple(self._direct_targets) != active:
             raise ValueError("PRODUCT_RETIREMENT_REFRESH_DIRECT_PHASE_REQUIRED")
+        target_count = 0
         for symbol in active:
             for direct_target in self._direct_targets[symbol]:
+                if direct_target.frequency != "1m":
+                    continue
                 for frequency in DERIVED_FREQUENCIES:
                     self._aggregate_target(
                         RefreshTarget(
@@ -127,6 +136,14 @@ class RetainedUniverseRefreshExecutor:
                             end=direct_target.end,
                         )
                     )
+                    target_count += 1
+        return {
+            "status": "passed",
+            "product_count": len(active),
+            "target_count": target_count,
+            "source_frequency": "1m",
+            "frequencies": list(DERIVED_FREQUENCIES),
+        }
 
 
 def build_refresh_targets(
