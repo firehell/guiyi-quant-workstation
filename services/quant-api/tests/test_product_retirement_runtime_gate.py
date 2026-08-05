@@ -20,7 +20,11 @@ from app.services.product_retirement_runtime_gate import (
 
 class _RuntimeOperator:
     def __init__(
-        self, *, running: tuple[str, ...] = (), runtime_sha: str = "b" * 40
+        self,
+        *,
+        running: tuple[str, ...] = (),
+        runtime_sha: str = "b" * 40,
+        ancestor_pairs: tuple[tuple[str, str], ...] = (),
     ) -> None:
         self.checkout_calls: list[str] = []
         self.restart_calls = 0
@@ -30,6 +34,7 @@ class _RuntimeOperator:
             for service in REQUIRED_WRITER_SERVICES
         }
         self.current_sha = runtime_sha
+        self.ancestor_pairs = set(ancestor_pairs)
 
     def preflight(self, *, root, release_tag, rollback_tag):
         return {
@@ -55,6 +60,9 @@ class _RuntimeOperator:
         self.checkout_calls.append(ref)
         self.current_sha = "c" * 40
         return self.current_sha
+
+    def is_ancestor(self, _root: Path, ancestor: str, descendant: str) -> bool:
+        return (ancestor, descendant) in self.ancestor_pairs
 
     def restart_services(self, target_states):
         self.restart_calls += 1
@@ -520,6 +528,73 @@ def test_resume_promotes_stopped_runtime_to_exact_repair_release(
         ("sync_direct", ("1m", "1d", "1w")),
         ("aggregate", ("5m", "15m", "30m", "60m")),
     ]
+
+
+def test_resume_promotes_exact_ancestor_chain_to_next_repair_release(
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    protected_root = tmp_path / "audit"
+    roots = {
+        label: tmp_path / f"data/{label}" for label in ("raw", "canonical", "processed")
+    }
+    for path in (runtime_root, protected_root, *roots.values()):
+        path.mkdir(parents=True, exist_ok=True)
+    active_products_path = tmp_path / "active_products.txt"
+    active_products_path.write_text(
+        "\n".join(f"keep_{index}" for index in range(69)) + "\n",
+        encoding="utf-8",
+    )
+    request = RetirementRuntimeRequest(
+        release_tag="runtime-20260805-repair-2",
+        rollback_tag="runtime-rollback-20260805-9e816720",
+        runtime_root=runtime_root,
+        protected_root=protected_root,
+        active_products_path=active_products_path,
+        roots=roots,
+    )
+    journal_sha = "b" * 40
+    intermediate_sha = "e" * 40
+    release_sha = "c" * 40
+    journal = protected_root / "pending.jsonl"
+    journal.write_text(
+        json.dumps(
+            {
+                "status": "db_committed_purge_pending",
+                "run_id": "run-repair-chain",
+                "release_tag": "runtime-20260805-original",
+                "runtime_sha": journal_sha,
+                "shutdown_receipt_sha256": "d" * 64,
+                "inventory": {"packet": "fresh"},
+                "receipt": {"status": "applied"},
+                "prior_service_states": {
+                    service: "stopped" for service in REQUIRED_WRITER_SERVICES
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runtime = _RuntimeOperator(
+        runtime_sha=intermediate_sha,
+        ancestor_pairs=(
+            (journal_sha, intermediate_sha),
+            (intermediate_sha, release_sha),
+        ),
+    )
+
+    result = ProductRetirementRuntimeGate(
+        inventory=lambda _request, _runtime_sha: {"packet": "fresh"}
+    ).resume(
+        request,
+        journal_path=journal,
+        runtime_operator=runtime,
+        data_operator=_DataOperator(apply_status="applied"),
+    )
+
+    assert result["status"] == "completed"
+    assert runtime.checkout_calls == [request.release_tag]
+    assert runtime.current_sha == release_sha
 
 
 def test_execute_preflights_before_stopping_and_restores_exact_prior_states(

@@ -84,6 +84,24 @@ class LaunchdRuntimeOperator:
             )
         return current
 
+    def is_ancestor(self, root: Path, ancestor: str, descendant: str) -> bool:
+        if not _is_sha(ancestor) or not _is_sha(descendant):
+            raise ProductRetirementRuntimeOperatorError(
+                "PRODUCT_RETIREMENT_RUNTIME_SHA_INVALID"
+            )
+        result = self._git_result(
+            root,
+            "merge-base",
+            "--is-ancestor",
+            ancestor,
+            descendant,
+        )
+        if result.returncode not in {0, 1}:
+            raise ProductRetirementRuntimeOperatorError(
+                "PRODUCT_RETIREMENT_RUNTIME_GIT_COMMAND_FAILED"
+            )
+        return result.returncode == 0
+
     def restart_services(self, target_states: Mapping[str, str]) -> Mapping[str, str]:
         if set(target_states) != set(REQUIRED_WRITER_SERVICES) or any(
             value not in {"running", "stopped"} for value in target_states.values()
@@ -186,3 +204,9 @@ class LaunchdRuntimeOperator:
 
 def _run(command: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, check=False, text=True, capture_output=True)
+
+
+def _is_sha(value: str) -> bool:
+    return len(value) == 40 and all(
+        character in "0123456789abcdef" for character in value
+    )

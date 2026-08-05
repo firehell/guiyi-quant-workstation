@@ -33,6 +33,7 @@ class RefreshWindow:
     end_day: date
     start: datetime
     end: datetime
+    weekly_end_day: date | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -40,6 +41,10 @@ class RefreshWindow:
             or self.start.tzinfo is None
             or self.end.tzinfo is None
             or self.start >= self.end
+            or (
+                self.weekly_end_day is not None
+                and not self.start_day <= self.weekly_end_day <= self.end_day
+            )
         ):
             raise ValueError("PRODUCT_RETIREMENT_REFRESH_WINDOW_INVALID")
 
@@ -100,6 +105,7 @@ class RetainedUniverseRefreshExecutor:
                 mappings=mappings,
                 start=window.start,
                 end=window.end,
+                weekly_end_day=window.weekly_end_day,
             )
             for target in targets:
                 self._sync_direct_target(target)
@@ -152,15 +158,20 @@ def build_refresh_targets(
     mappings: Sequence[CanonicalMainContractMapping],
     start: datetime,
     end: datetime,
+    weekly_end_day: date | None = None,
 ) -> tuple[RefreshTarget, ...]:
     active = assert_products_active(products)
     if start.tzinfo is None or end.tzinfo is None or start >= end:
         raise ValueError("PRODUCT_RETIREMENT_REFRESH_WINDOW_INVALID")
     mapping_by_symbol: dict[str, set[str]] = {symbol: set() for symbol in active}
+    rows_by_symbol: dict[str, list[CanonicalMainContractMapping]] = {
+        symbol: [] for symbol in active
+    }
     for row in mappings:
         if row.symbol not in mapping_by_symbol:
             raise ValueError("PRODUCT_RETIREMENT_REFRESH_MAPPING_OUTSIDE_UNIVERSE")
         mapping_by_symbol[row.symbol].add(row.actual_contract)
+        rows_by_symbol[row.symbol].append(row)
     missing = tuple(
         symbol for symbol, contracts in mapping_by_symbol.items() if not contracts
     )
@@ -170,6 +181,18 @@ def build_refresh_targets(
         )
     targets: list[RefreshTarget] = []
     for symbol in active:
+        weekly_contracts = mapping_by_symbol[symbol]
+        if weekly_end_day is not None:
+            by_week: dict[tuple[int, int], list[CanonicalMainContractMapping]] = {}
+            for row in rows_by_symbol[symbol]:
+                if row.trading_day > weekly_end_day:
+                    continue
+                iso = row.trading_day.isocalendar()
+                by_week.setdefault((iso.year, iso.week), []).append(row)
+            weekly_contracts = {
+                max(rows, key=lambda item: item.trading_day).actual_contract
+                for rows in by_week.values()
+            }
         for frequency in DIRECT_FREQUENCIES:
             targets.append(
                 RefreshTarget(
@@ -183,6 +206,8 @@ def build_refresh_targets(
             )
         for contract in sorted(mapping_by_symbol[symbol]):
             for frequency in DIRECT_FREQUENCIES:
+                if frequency == "1w" and contract not in weekly_contracts:
+                    continue
                 targets.append(
                     RefreshTarget(
                         "actual_dominant", symbol, contract, frequency, start, end
