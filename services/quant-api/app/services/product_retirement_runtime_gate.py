@@ -15,8 +15,6 @@ REQUIRED_WRITER_SERVICES = (
     "com.guiyi.quant-api",
     "com.guiyi.quant-worker-backtests",
     "com.guiyi.quant-worker-signals",
-    "com.guiyi.quant-worker-notifications",
-    "com.guiyi.quant-notification-worker",
     "com.guiyi.quant-runtime-scheduler",
     "com.guiyi.quant-after-market-scheduler",
     "com.guiyi.quant-htdy-s610-one-day-observer",

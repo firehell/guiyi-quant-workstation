@@ -66,6 +66,13 @@ class _DataOperator:
         self.calls.append(("aggregate", tuple(frequencies)))
 
 
+def test_runtime_gate_does_not_require_disabled_or_legacy_notification_services() -> (
+    None
+):
+    assert "com.guiyi.quant-worker-notifications" not in REQUIRED_WRITER_SERVICES
+    assert "com.guiyi.quant-notification-worker" not in REQUIRED_WRITER_SERVICES
+
+
 def test_validate_runtime_request_rejects_protected_root_inside_runtime(
     tmp_path: Path,
 ) -> None:
