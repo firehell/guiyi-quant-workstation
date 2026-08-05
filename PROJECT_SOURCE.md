@@ -54,8 +54,8 @@ V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainCo
 旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 raw/
 standard/canonical bar layer，以及 Profile/Binding/legacy lineage 都是 rebuild-only 或
 compatibility-only，不是新的 active migration asset。report 14/15 是可由 Git 追溯的历史快照，
-不作为 active Gate 或回归基线。除 `GY-DATA-PRODUCT-RETIREMENT-21` 经独立 exact deletion Gate
-批准的当前版本目标行/文件外，不改写其历史结论，也不删除历史证据。Task 07
+不作为 active Gate 或回归基线。除 `GY-DATA-PRODUCT-RETIREMENT-21` 经用户明确批准的
+当前版本目标对象外，不改写其历史结论，也不删除历史证据。Task 07
 Stage C 只验收当前 JM 目标 Canonical 并生成精确缺口计划。Runtime promotion 属于
 Task 08；旧派生数据删除是后续独立可选任务，不是 Task 07 完成条件。
 

@@ -25,7 +25,7 @@
 全链路范围包括 RQData raw、provider-direct `1m/1d/1w`、Canonical、由 1m 生成的
 `5m/15m/30m/60m`、processed、Catalog/quality/task/mapping/contract/parameter/Profile Binding
 等精确数据库记录，以及当前 Git 版本中仅属于目标品种的清单和证据。混合 Profile 只删除目标
-Binding，不删除 Profile；混合文本证据只允许在独立 Git deletion manifest 中删除目标行。
+Binding，不删除 Profile；混合文本证据按目标品种匹配规则处理，不重写 Git 历史。
 
 ## 2. 目标链路
 
@@ -53,7 +53,7 @@ flowchart LR
 
 所有 packet、approval、停服 receipt、apply journal 和最终 receipt 必须位于操作员显式传入且与
 代码/Runtime/三个数据 root 完全分离的 `--protected-root`；工具不会从 Runtime `.run/approvals`
-或其他默认目录猜测批准。protected root 只提供范围隔离，不能代替 owner 对 exact hash 的批准。
+或其他默认目录猜测批准。protected root 只提供范围隔离，不能代替用户对该次删除的明确批准。
 
 - `inventory`：只读扫描显式传入的 bounded raw/canonical/processed roots 与当前 PostgreSQL，生成
   逐文件 SHA-256、逐表主键/identity digest 和 blocker；数据库清单按表切分为 packet 旁的
@@ -72,7 +72,7 @@ flowchart LR
 
 真实执行顺序固定为：代码/测试/Review/CI 合入 `develop` → 独立 release Gate → 独立 Runtime
 promotion Gate → 新 Runtime 验证 69 品种且无回灌 → unload 全部 writer 并生成停服 receipt →
-生成当时生产 exact packet → owner 同时批准 packet 与停服 receipt 的 exact hash → apply → verify →
+生成当前生产 inventory packet → 用户明确批准该次删除 → apply → verify →
 重启和一个增量周期观察。若 inventory 报告仍有 `pending/queued/running/retrying` 或未知状态目标
 任务，必须先在独立
 DB 写入 Gate 下将其安全终止，再重新生成 packet；不得忽略 blocker 或手改清单。
@@ -90,8 +90,8 @@ DB 写入 Gate 下将其安全终止，再重新生成 packet；不得忽略 blo
 会在 Runtime 升级、停服和任务终止后重新生成，不能作为删除审批包。
 
 当前 Git 仅按文件名初筛出 1,248 个目标品种专属历史候选（`data/manifests` 1,035、
-`data/reports` 213）；这不是 exact deletion manifest。必须继续逐文件验证“仅含目标品种”、对混合
-文件生成逐行变更清单并取得 exact-scope approval，才能从当前 Git 版本删除；不得重写 Git 历史。
+`data/reports` 213）；删除前仍须完成只读扫描、说明影响与回滚方式，并取得用户对该次删除的
+明确批准；不得重写 Git 历史。
 
 - 删除当前 Git 中的历史 manifest/report/receipt；
 - `main`/release/tag；

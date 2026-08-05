@@ -9,7 +9,7 @@
 粳稻、普麦、早籼稻、强麦、动力煤、线材、胶合板、纤维板、聚丙烯月均价、聚乙烯月均价、
 聚氯乙烯月均价、国际铜、棉纱、原木、铸造铝合金、胶版印刷纸、粳米，以及 2/5/10/30 年期
 国债期货。历史文件和数据库 DML 尚未执行，必须等待
-`docs/tasks/GY-DATA-PRODUCT-RETIREMENT-21.md` 的 exact deletion Gate。
+`docs/tasks/GY-DATA-PRODUCT-RETIREMENT-21.md` 的只读扫描、影响与回滚说明及用户明确批准。
 
 数据核心 V2 的 active target 已冻结。Task 04 closeout commit 经 exact-head CI、独立 Review 和
 GitHub merge commit 合入 `develop` 后，historical canonical 与普通 Web/API/指标消费者迁移完成；
