@@ -54,8 +54,8 @@ def decision(payload: dict[str, Any]) -> dict[str, Any]:
                 return deny("Force push is forbidden; use the controlled task workflow.")
             if any(ref in {"main", "master", "develop"} or ref.endswith(":main") or ref.endswith(":master") or ref.endswith(":develop") for ref in tail):
                 return deny("Direct protected-branch push is forbidden; use the controlled task workflow.")
-        if any(action in tail for action in ("merge", "rebase", "tag")):
-            return deny("Direct merge, rebase, and tag operations are forbidden by workflow policy.")
+        if any(action in tail for action in ("merge", "rebase")):
+            return deny("Direct merge and rebase operations are forbidden by workflow policy.")
         if "worktree" in tail and "remove" in tail:
             return deny("Direct worktree removal is forbidden; use task-worktree.sh cleanup.")
     return {}

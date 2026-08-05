@@ -814,6 +814,36 @@ def test_hook_denies_direct_protected_push_but_allows_controlled_entrypoint() ->
     assert json.loads(allowed.stdout) == {}
 
 
+def test_hook_allows_tag_but_retains_merge_and_rebase_protection() -> None:
+    """Tag approval is handled by release policy, while unsafe history edits stay blocked."""
+    for command in ("git merge topic", "git rebase origin/develop"):
+        result = subprocess.run(
+            [sys.executable, str(HOOK_PATH)],
+            input=json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    tag = subprocess.run(
+        [sys.executable, str(HOOK_PATH)],
+        input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "git tag -a release -m approved"}}),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert tag.returncode == 0, tag.stderr
+    assert json.loads(tag.stdout) == {}
+
+
+def test_workflow_rules_do_not_forbid_git_tag() -> None:
+    source = WORKFLOW_RULES.read_text(encoding="utf-8")
+
+    assert 'pattern = ["git", "tag"]' not in source
+
+
 def _task_fixture(tmp_path: Path, branch: str) -> Path:
     repo = tmp_path / "repo"
     engineering = repo / "scripts" / "engineering"
