@@ -13,7 +13,7 @@ from typing import Any, Callable, Mapping, Sequence
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.data_core.aggregation import aggregate_bars
+from app.data_core.aggregation import AggregationSession, aggregate_bars
 from app.data_core.canonical_store import (
     CANONICAL_MANIFEST_FORMAT_V2,
     CanonicalStore,
@@ -29,10 +29,7 @@ from app.data_core.contracts import (
     ManifestLineage,
 )
 from app.data_core.historical_reader import CanonicalHistoricalReader
-from app.data_core.historical_sessions import (
-    build_provider_sessions,
-    product_sessions,
-)
+from app.data_core.historical_sessions import build_provider_sessions
 from app.data_core.historical_sync import (
     CanonicalBatchPublisher,
     HistoricalSynchronizer,
@@ -129,6 +126,8 @@ class ProductionRetainedUniverseRefresher:
         self._products: tuple[str, ...] = ()
         self._exchanges: dict[str, str] = {}
         self._provider_days: tuple[date, ...] = ()
+        self._period_rows: dict[str, tuple[Mapping[str, Any], ...]] = {}
+        self._sessions: dict[str, tuple[AggregationSession, ...]] = {}
         self._windows: dict[str, RefreshWindow] = {}
         self._weekly_ends: dict[str, datetime] = {}
         self._executor: RetainedUniverseRefreshExecutor | None = None
@@ -198,9 +197,33 @@ class ProductionRetainedUniverseRefresher:
                 raise ProductRetirementProductionError(
                     f"PRODUCT_RETIREMENT_RQDATA_NOT_READY:{category}"
                 )
+        contracts = tuple(f"{product.upper()}88" for product in products)
+        period_frame = self._client.contract_trading_periods(
+            contracts,
+            start_date=provider_days[0],
+            end_date=provider_days[-1],
+        )
+        period_rows: dict[str, list[Mapping[str, Any]]] = {
+            product: [] for product in products
+        }
+        contract_to_product = dict(zip(contracts, products, strict=True))
+        for row in period_frame.to_dict("records"):
+            product = contract_to_product.get(str(row.get("order_book_id", "")).upper())
+            if product is None:
+                raise ProductRetirementProductionError(
+                    "PRODUCT_RETIREMENT_RQDATA_SESSION_OUTSIDE_SCOPE"
+                )
+            period_rows[product].append(dict(row))
+        if any(not rows for rows in period_rows.values()):
+            raise ProductRetirementProductionError(
+                "PRODUCT_RETIREMENT_RQDATA_SESSION_MISSING"
+            )
         self._products = products
         self._exchanges = exchanges
         self._provider_days = provider_days
+        self._period_rows = {
+            product: tuple(rows) for product, rows in period_rows.items()
+        }
         return {
             "status": "passed",
             "active_product_count": len(products),
@@ -208,6 +231,7 @@ class ProductionRetainedUniverseRefresher:
             "database_revision": revision,
             "provider_latest_trading_day": provider_days[-1].isoformat(),
             "provider_readiness_day": readiness_day.isoformat(),
+            "provider_session_product_count": len(self._period_rows),
             "calls_rqdata": True,
             "writes_postgresql": False,
             "writes_canonical": False,
@@ -312,6 +336,7 @@ class ProductionRetainedUniverseRefresher:
         current = self._now().astimezone(SHANGHAI)
         windows: dict[str, RefreshWindow] = {}
         weekly_ends: dict[str, datetime] = {}
+        sessions_by_product: dict[str, tuple[AggregationSession, ...]] = {}
         with self._session_factory() as session:
             clock = TradingSessionClock(session)
             for symbol in self._products:
@@ -337,19 +362,11 @@ class ProductionRetainedUniverseRefresher:
                     latest_completed=latest,
                     today=current.date(),
                 )
-                sessions = tuple(
-                    item
-                    for item in product_sessions(
-                        session,
-                        symbol=symbol,
-                        start=datetime.combine(
-                            selected[0] - timedelta(days=2), time.min, tzinfo=UTC
-                        ),
-                        end=datetime.combine(
-                            selected[-1] + timedelta(days=2), time.max, tzinfo=UTC
-                        ),
-                    )
-                    if item.trading_day in selected
+                sessions = build_rqdata_aggregation_sessions(
+                    product=symbol,
+                    rows=self._period_rows.get(symbol, ()),
+                    trading_days=selected,
+                    provider_days=self._provider_days,
                 )
                 if not sessions or {item.trading_day for item in sessions} != set(
                     selected
@@ -373,8 +390,10 @@ class ProductionRetainedUniverseRefresher:
                     end=end,
                 )
                 weekly_ends[symbol] = max(item.end for item in weekly_sessions)
+                sessions_by_product[symbol] = sessions
         self._windows = windows
         self._weekly_ends = weekly_ends
+        self._sessions = sessions_by_product
 
     def _replace_mapping(
         self,
@@ -426,7 +445,13 @@ class ProductionRetainedUniverseRefresher:
             def sessions(
                 key: DatasetKey, start: datetime, end: datetime
             ) -> Sequence[Any]:
-                values = _target_sessions(session, catalog, key, start, end)
+                values = _target_sessions(
+                    catalog,
+                    key,
+                    start,
+                    end,
+                    sessions=self._sessions[key.symbol],
+                )
                 return build_provider_sessions(
                     key,
                     start=start,
@@ -469,17 +494,23 @@ class ProductionRetainedUniverseRefresher:
                 ),
             )
             for start, end in missing:
-                sessions = _target_sessions(session, catalog, source_key, start, end)
+                sessions = _target_sessions(
+                    catalog,
+                    source_key,
+                    start,
+                    end,
+                    sessions=self._sessions[source_key.symbol],
+                )
                 reader = CanonicalHistoricalReader(
                     catalog=catalog,
                     canonical_root=self._canonical_root,
                     session_provider=lambda _symbol, window_start, window_end: (
                         _target_sessions(
-                            session,
                             catalog,
                             source_key,
                             window_start,
                             window_end,
+                            sessions=self._sessions[source_key.symbol],
                         )
                     ),
                 )
@@ -672,33 +703,106 @@ def _dataset_for_target(target: RefreshTarget) -> DatasetKey:
 
 
 def _target_sessions(
-    session: Session,
     catalog: HistoricalCatalog,
     dataset: DatasetKey,
     start: datetime,
     end: datetime,
+    *,
+    sessions: Sequence[AggregationSession],
 ) -> tuple[Any, ...]:
-    sessions = product_sessions(
-        session,
-        symbol=dataset.symbol,
-        start=start,
-        end=end,
-    )
+    selected = tuple(item for item in sessions if item.start < end and start < item.end)
     if dataset.dataset_kind is DatasetKind.ACTUAL_DOMINANT:
-        sessions = tuple(
+        selected = tuple(
             item
-            for item in sessions
+            for item in selected
             if catalog.get_main_contract_mapping(
                 instrument_symbol=dataset.symbol,
                 trade_date=item.trading_day,
             ).actual_contract
             == dataset.contract_or_series
         )
-    if not sessions:
+    if not selected:
         raise ProductRetirementProductionError(
             "PRODUCT_RETIREMENT_TARGET_SESSION_MISSING"
         )
-    return tuple(sessions)
+    return selected
+
+
+def build_rqdata_aggregation_sessions(
+    *,
+    product: str,
+    rows: Sequence[Mapping[str, Any]],
+    trading_days: Sequence[date],
+    provider_days: Sequence[date],
+) -> tuple[AggregationSession, ...]:
+    requested = tuple(sorted(set(trading_days)))
+    available = tuple(sorted(set(provider_days)))
+    if not product.strip() or not requested or not available:
+        raise ProductRetirementProductionError(
+            "PRODUCT_RETIREMENT_RQDATA_SESSION_SCOPE_INVALID"
+        )
+    hours_by_day: dict[date, str] = {}
+    for row in rows:
+        raw_day = row.get("date")
+        trading_day = (
+            raw_day.date()
+            if isinstance(raw_day, datetime)
+            else raw_day
+            if isinstance(raw_day, date)
+            else date.fromisoformat(str(raw_day))
+        )
+        hours = str(row.get("trading_hours", "")).strip()
+        existing = hours_by_day.get(trading_day)
+        if existing is not None and existing != hours:
+            raise ProductRetirementProductionError(
+                "PRODUCT_RETIREMENT_RQDATA_SESSION_CONFLICT"
+            )
+        hours_by_day[trading_day] = hours
+    if set(hours_by_day).intersection(requested) != set(requested):
+        raise ProductRetirementProductionError(
+            "PRODUCT_RETIREMENT_RQDATA_SESSION_COVERAGE_MISSING"
+        )
+    result: list[AggregationSession] = []
+    for trading_day in requested:
+        prior = tuple(item for item in available if item < trading_day)
+        if not prior:
+            raise ProductRetirementProductionError(
+                "PRODUCT_RETIREMENT_RQDATA_SESSION_PREVIOUS_DAY_MISSING"
+            )
+        previous_day = prior[-1]
+        periods = tuple(
+            item.strip()
+            for item in hours_by_day[trading_day].split(",")
+            if item.strip()
+        )
+        if not periods:
+            raise ProductRetirementProductionError(
+                "PRODUCT_RETIREMENT_RQDATA_SESSION_EMPTY"
+            )
+        for index, period in enumerate(periods, start=1):
+            try:
+                raw_start, raw_end = period.split("-", maxsplit=1)
+                first_bar = time.fromisoformat(raw_start)
+                last_bar = time.fromisoformat(raw_end)
+            except ValueError as exc:
+                raise ProductRetirementProductionError(
+                    "PRODUCT_RETIREMENT_RQDATA_SESSION_FORMAT_INVALID"
+                ) from exc
+            anchor = previous_day if first_bar >= time(20) else trading_day
+            first_end = datetime.combine(anchor, first_bar, tzinfo=SHANGHAI)
+            session_start = first_end - timedelta(minutes=1)
+            session_end = datetime.combine(anchor, last_bar, tzinfo=SHANGHAI)
+            if last_bar < first_bar:
+                session_end += timedelta(days=1)
+            result.append(
+                AggregationSession(
+                    trading_day=trading_day,
+                    name=f"rqdata_{index:02d}",
+                    start=session_start.astimezone(UTC),
+                    end=session_end.astimezone(UTC),
+                )
+            )
+    return tuple(sorted(result, key=lambda item: (item.start, item.end)))
 
 
 def _require_window_covered(
@@ -737,6 +841,7 @@ __all__ = [
     "ProductRetirementProductionError",
     "ProductionRetainedUniverseRefresher",
     "build_product_retirement_executor",
+    "build_rqdata_aggregation_sessions",
     "calendar_refresh_bounds",
     "select_refresh_days",
 ]

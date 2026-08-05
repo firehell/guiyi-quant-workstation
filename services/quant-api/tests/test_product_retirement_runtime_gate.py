@@ -457,6 +457,71 @@ def test_resume_rejects_journal_runtime_drift_before_stop(tmp_path: Path) -> Non
     assert runtime.checkout_calls == []
 
 
+def test_resume_promotes_stopped_runtime_to_exact_repair_release(
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    protected_root = tmp_path / "audit"
+    roots = {
+        label: tmp_path / f"data/{label}" for label in ("raw", "canonical", "processed")
+    }
+    for path in (runtime_root, protected_root, *roots.values()):
+        path.mkdir(parents=True, exist_ok=True)
+    active_products_path = tmp_path / "active_products.txt"
+    active_products_path.write_text(
+        "\n".join(f"keep_{index}" for index in range(69)) + "\n",
+        encoding="utf-8",
+    )
+    request = RetirementRuntimeRequest(
+        release_tag="runtime-20260805-repair",
+        rollback_tag="runtime-rollback-20260805-9e816720",
+        runtime_root=runtime_root,
+        protected_root=protected_root,
+        active_products_path=active_products_path,
+        roots=roots,
+    )
+    journal = protected_root / "pending.jsonl"
+    journal.write_text(
+        json.dumps(
+            {
+                "status": "db_committed_purge_pending",
+                "run_id": "run-repair",
+                "release_tag": "runtime-20260805-original",
+                "runtime_sha": "b" * 40,
+                "shutdown_receipt_sha256": "d" * 64,
+                "inventory": {"packet": "fresh"},
+                "receipt": {"status": "applied"},
+                "prior_service_states": {
+                    service: "stopped" for service in REQUIRED_WRITER_SERVICES
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runtime = _RuntimeOperator(runtime_sha="b" * 40)
+    data = _DataOperator(apply_status="applied")
+
+    result = ProductRetirementRuntimeGate(
+        inventory=lambda _request, _runtime_sha: {"packet": "fresh"}
+    ).resume(
+        request,
+        journal_path=journal,
+        runtime_operator=runtime,
+        data_operator=data,
+    )
+
+    assert result["status"] == "completed"
+    assert runtime.checkout_calls == [request.release_tag]
+    assert runtime.current_sha == "c" * 40
+    assert data.calls == [
+        ("preflight",),
+        ("verify",),
+        ("sync_direct", ("1m", "1d", "1w")),
+        ("aggregate", ("5m", "15m", "30m", "60m")),
+    ]
+
+
 def test_execute_preflights_before_stopping_and_restores_exact_prior_states(
     tmp_path: Path,
 ) -> None:
