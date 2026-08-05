@@ -42,6 +42,10 @@ class RetirementRuntimeRequest:
 
 
 class RuntimeOperator(Protocol):
+    def preflight(
+        self, *, root: Path, release_tag: str, rollback_tag: str
+    ) -> Mapping[str, Any]: ...
+
     def stop_writer_services(self) -> Mapping[str, str]: ...
 
     def writer_states(self) -> Mapping[str, str]: ...
@@ -50,10 +54,14 @@ class RuntimeOperator(Protocol):
 
     def checkout_detached(self, root: Path, ref: str) -> str: ...
 
-    def restart_services(self) -> Mapping[str, str]: ...
+    def restart_services(
+        self, target_states: Mapping[str, str]
+    ) -> Mapping[str, str]: ...
 
 
 class RetirementDataOperator(Protocol):
+    def preflight(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]: ...
+
     def apply(
         self,
         inventory: Mapping[str, Any],
@@ -70,11 +78,11 @@ class RetirementDataOperator(Protocol):
 
     def sync_direct(
         self, products: tuple[str, ...], frequencies: tuple[str, ...]
-    ) -> None: ...
+    ) -> Mapping[str, Any]: ...
 
     def aggregate(
         self, products: tuple[str, ...], frequencies: tuple[str, ...]
-    ) -> None: ...
+    ) -> Mapping[str, Any]: ...
 
 
 class ProductRetirementRuntimeGate:
@@ -94,12 +102,17 @@ class ProductRetirementRuntimeGate:
         request: RetirementRuntimeRequest,
         *,
         operator: RuntimeOperator,
+        prior_service_states: Mapping[str, str] | None = None,
+        preflight: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         validate_runtime_request(request)
+        prior_states = _validated_service_states(
+            prior_service_states or operator.writer_states()
+        )
+        previous_sha = operator.runtime_identity(request.runtime_root)
         operator.stop_writer_services()
         stopped_states = operator.writer_states()
         _require_all_stopped(stopped_states)
-        previous_sha = operator.runtime_identity(request.runtime_root)
         try:
             runtime_sha = operator.checkout_detached(
                 request.runtime_root,
@@ -135,6 +148,7 @@ class ProductRetirementRuntimeGate:
             "writer_states": {
                 key: stopped_states[key] for key in REQUIRED_WRITER_SERVICES
             },
+            "prior_service_states": dict(prior_states),
         }
         return {
             "command": "runtime.product-retirement.execute",
@@ -145,6 +159,8 @@ class ProductRetirementRuntimeGate:
             "run_id": run_id.strip(),
             "release_tag": request.release_tag,
             "shutdown_receipt_sha256": _json_sha256(shutdown_receipt),
+            "prior_service_states": dict(prior_states),
+            "preflight": dict(preflight or {}),
             "inventory": dict(inventory),
         }
 
@@ -155,7 +171,30 @@ class ProductRetirementRuntimeGate:
         runtime_operator: RuntimeOperator,
         data_operator: RetirementDataOperator,
     ) -> Mapping[str, Any]:
-        precommit = self.execute_precommit(request, operator=runtime_operator)
+        try:
+            runtime_preflight = dict(
+                runtime_operator.preflight(
+                    root=request.runtime_root,
+                    release_tag=request.release_tag,
+                    rollback_tag=request.rollback_tag,
+                )
+            )
+            prior_states = _validated_service_states(
+                runtime_preflight.get("writer_states", {})
+            )
+            data_preflight = dict(data_operator.preflight(request))
+            if data_preflight.get("status") != "passed":
+                raise ProductRetirementRuntimeGateError(
+                    "PRODUCT_RETIREMENT_DATA_PREFLIGHT_FAILED"
+                )
+        except Exception as exc:  # noqa: BLE001 - pre-stop fail closed
+            return _rejected_preflight(exc)
+        precommit = self.execute_precommit(
+            request,
+            operator=runtime_operator,
+            prior_service_states=prior_states,
+            preflight={"runtime": runtime_preflight, "data": data_preflight},
+        )
         if precommit["status"] == "rejected":
             return precommit
         try:
@@ -177,6 +216,12 @@ class ProductRetirementRuntimeGate:
                 },
             }
         if receipt.get("status") == "db_committed_purge_pending":
+            _write_pending_journal(
+                request,
+                precommit=precommit,
+                receipt=receipt,
+                phase="postcommit_purge",
+            )
             return {
                 "command": "runtime.product-retirement.execute",
                 "status": "db_committed_purge_pending",
@@ -186,6 +231,9 @@ class ProductRetirementRuntimeGate:
         return self._complete_after_database_commit(
             request,
             receipt,
+            target_service_states=prior_states,
+            precommit=precommit,
+            write_journal=True,
             runtime_operator=runtime_operator,
             data_operator=data_operator,
         )
@@ -200,9 +248,36 @@ class ProductRetirementRuntimeGate:
     ) -> Mapping[str, Any]:
         validate_runtime_request(request)
         journal = _read_pending_journal(journal_path, request.protected_root)
+        try:
+            runtime_preflight = dict(
+                runtime_operator.preflight(
+                    root=request.runtime_root,
+                    release_tag=request.release_tag,
+                    rollback_tag=request.rollback_tag,
+                )
+            )
+            if (
+                journal.get("release_tag") != request.release_tag
+                or journal.get("runtime_sha") != runtime_preflight.get("runtime_sha")
+                or journal.get("runtime_sha") != runtime_preflight.get("release_sha")
+            ):
+                raise ProductRetirementRuntimeGateError(
+                    "PRODUCT_RETIREMENT_RESUME_RUNTIME_DRIFT"
+                )
+            data_preflight = dict(data_operator.preflight(request))
+            if data_preflight.get("status") != "passed":
+                raise ProductRetirementRuntimeGateError(
+                    "PRODUCT_RETIREMENT_DATA_PREFLIGHT_FAILED"
+                )
+        except Exception as exc:  # noqa: BLE001 - pre-stop fail closed
+            return _rejected_preflight(exc, command="runtime.product-retirement.resume")
+        target_states = _validated_service_states(journal["prior_service_states"])
         runtime_operator.stop_writer_services()
         _require_all_stopped(runtime_operator.writer_states())
-        receipt = data_operator.finalize(journal["inventory"], journal["receipt"])
+        if journal["receipt"].get("status") == "applied":
+            receipt = journal["receipt"]
+        else:
+            receipt = data_operator.finalize(journal["inventory"], journal["receipt"])
         if receipt.get("status") == "db_committed_purge_pending":
             return {
                 "command": "runtime.product-retirement.resume",
@@ -213,6 +288,9 @@ class ProductRetirementRuntimeGate:
         completed = self._complete_after_database_commit(
             request,
             receipt,
+            target_service_states=target_states,
+            precommit=journal,
+            write_journal=False,
             runtime_operator=runtime_operator,
             data_operator=data_operator,
         )
@@ -223,11 +301,21 @@ class ProductRetirementRuntimeGate:
         request: RetirementRuntimeRequest,
         receipt: Mapping[str, Any],
         *,
+        target_service_states: Mapping[str, str],
+        precommit: Mapping[str, Any],
+        write_journal: bool,
         runtime_operator: RuntimeOperator,
         data_operator: RetirementDataOperator,
     ) -> Mapping[str, Any]:
         verification = data_operator.verify()
         if verification.get("status") != "passed":
+            if write_journal:
+                _write_pending_journal(
+                    request,
+                    precommit=precommit,
+                    receipt=receipt,
+                    phase="postcommit_verify",
+                )
             return {
                 "command": "runtime.product-retirement.execute",
                 "status": "db_committed_purge_pending",
@@ -238,15 +326,53 @@ class ProductRetirementRuntimeGate:
         from app.data_core.product_retirement import load_active_products
 
         products = load_active_products(request.active_products_path)
-        data_operator.sync_direct(products, ("1m", "1d", "1w"))
-        data_operator.aggregate(products, ("5m", "15m", "30m", "60m"))
-        runtime_operator.restart_services()
+        try:
+            direct_receipt = dict(
+                data_operator.sync_direct(products, ("1m", "1d", "1w"))
+            )
+            if direct_receipt.get("status") != "passed":
+                raise ProductRetirementRuntimeGateError(
+                    "PRODUCT_RETIREMENT_DIRECT_REFRESH_FAILED"
+                )
+            aggregate_receipt = dict(
+                data_operator.aggregate(products, ("5m", "15m", "30m", "60m"))
+            )
+            if aggregate_receipt.get("status") != "passed":
+                raise ProductRetirementRuntimeGateError(
+                    "PRODUCT_RETIREMENT_AGGREGATE_REFRESH_FAILED"
+                )
+            service_states = dict(
+                runtime_operator.restart_services(target_service_states)
+            )
+            _require_exact_service_states(service_states, target_service_states)
+        except Exception as exc:  # noqa: BLE001 - keep Runtime stopped/pending
+            if write_journal:
+                _write_pending_journal(
+                    request,
+                    precommit=precommit,
+                    receipt=receipt,
+                    phase="postcommit_refresh",
+                )
+            return {
+                "command": "runtime.product-retirement.execute",
+                "status": "db_committed_purge_pending",
+                "phase": "postcommit_refresh",
+                "receipt": dict(receipt),
+                "verification": dict(verification),
+                "error": {
+                    "code": "PRODUCT_RETIREMENT_POSTCOMMIT_REFRESH_FAILED",
+                    "type": type(exc).__name__,
+                },
+            }
         return {
             "command": "runtime.product-retirement.execute",
             "status": "completed",
             "phase": "restarted",
             "receipt": dict(receipt),
             "verification": dict(verification),
+            "direct_refresh": direct_receipt,
+            "aggregate_refresh": aggregate_receipt,
+            "service_states": service_states,
         }
 
 
@@ -398,6 +524,43 @@ def append_journal(protected_root: Path, payload: Mapping[str, Any]) -> Path:
     return target
 
 
+def _write_pending_journal(
+    request: RetirementRuntimeRequest,
+    *,
+    precommit: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    phase: str,
+) -> Path:
+    return append_journal(
+        request.protected_root,
+        {
+            "schema_version": 1,
+            "status": "db_committed_purge_pending",
+            "phase": phase,
+            "run_id": _required_journal_text(precommit, "run_id"),
+            "release_tag": _required_journal_text(precommit, "release_tag"),
+            "runtime_sha": _required_journal_text(precommit, "runtime_sha"),
+            "shutdown_receipt_sha256": _required_journal_text(
+                precommit, "shutdown_receipt_sha256"
+            ),
+            "prior_service_states": _validated_service_states(
+                precommit["prior_service_states"]
+            ),
+            "inventory": dict(precommit["inventory"]),
+            "receipt": dict(receipt),
+        },
+    )
+
+
+def _required_journal_text(payload: Mapping[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ProductRetirementRuntimeGateError(
+            f"PRODUCT_RETIREMENT_JOURNAL_{key.upper()}_INVALID"
+        )
+    return value.strip()
+
+
 def _validated_directory(path: Path, label: str) -> Path:
     if not path.is_absolute() or path.is_symlink() or not path.is_dir():
         raise ProductRetirementRuntimeGateError(f"PRODUCT_RETIREMENT_{label}_INVALID")
@@ -418,6 +581,45 @@ def _require_all_stopped(states: Mapping[str, str]) -> None:
             raise ProductRetirementRuntimeGateError(
                 f"PRODUCT_RETIREMENT_SERVICE_NOT_STOPPED:{service}"
             )
+
+
+def _validated_service_states(states: object) -> dict[str, str]:
+    if not isinstance(states, Mapping) or set(states) != set(REQUIRED_WRITER_SERVICES):
+        raise ProductRetirementRuntimeGateError(
+            "PRODUCT_RETIREMENT_SERVICE_STATES_INVALID"
+        )
+    normalized = {str(key): str(value) for key, value in states.items()}
+    if any(value not in {"running", "stopped"} for value in normalized.values()):
+        raise ProductRetirementRuntimeGateError(
+            "PRODUCT_RETIREMENT_SERVICE_STATES_INVALID"
+        )
+    return normalized
+
+
+def _require_exact_service_states(
+    actual: Mapping[str, str], expected: Mapping[str, str]
+) -> None:
+    if _validated_service_states(actual) != _validated_service_states(expected):
+        raise ProductRetirementRuntimeGateError(
+            "PRODUCT_RETIREMENT_SERVICE_RESTORE_MISMATCH"
+        )
+
+
+def _rejected_preflight(
+    exc: Exception,
+    *,
+    command: str = "runtime.product-retirement.execute",
+) -> dict[str, Any]:
+    return {
+        "command": command,
+        "status": "rejected",
+        "phase": "preflight",
+        "services_stopped": False,
+        "error": {
+            "code": "PRODUCT_RETIREMENT_PREFLIGHT_FAILED",
+            "type": type(exc).__name__,
+        },
+    }
 
 
 def _read_pending_journal(path: Path, protected_root: Path) -> Mapping[str, Any]:
@@ -445,6 +647,7 @@ def _read_pending_journal(path: Path, protected_root: Path) -> Mapping[str, Any]
         or payload.get("status") != "db_committed_purge_pending"
         or not isinstance(payload.get("inventory"), dict)
         or not isinstance(payload.get("receipt"), dict)
+        or not isinstance(payload.get("prior_service_states"), dict)
     ):
         raise ProductRetirementRuntimeGateError(
             "PRODUCT_RETIREMENT_JOURNAL_PENDING_INVALID"

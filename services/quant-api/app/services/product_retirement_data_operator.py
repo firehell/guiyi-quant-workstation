@@ -20,13 +20,18 @@ from app.data_core.product_retirement import (
     apply_retirement_packet,
     build_inventory_packet,
     build_runtime_gate_attestation,
+    externalize_database_rows,
     finalize_retirement_files,
     inventory_database,
     inventory_files,
     packet_digest,
+    remove_database_row_assets,
     verify_retirement_scope,
 )
-from app.services.product_retirement_runtime_gate import append_journal
+from app.services.product_retirement_runtime_gate import (
+    ProductRetirementPrecommitError,
+    RetirementRuntimeRequest,
+)
 
 
 class RetainedUniverseRefresher:
@@ -34,11 +39,13 @@ class RetainedUniverseRefresher:
 
     def sync_direct(
         self, products: tuple[str, ...], frequencies: tuple[str, ...]
-    ) -> None: ...
+    ) -> Mapping[str, Any]: ...
 
     def aggregate(
         self, products: tuple[str, ...], frequencies: tuple[str, ...]
-    ) -> None: ...
+    ) -> Mapping[str, Any]: ...
+
+    def preflight(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]: ...
 
 
 class ProductRetirementDataOperator:
@@ -77,13 +84,48 @@ class ProductRetirementDataOperator:
             generated_at=self._now(),
             roots=self._roots,
         )
+        packet_path = self._protected_root.resolve(strict=True) / (
+            f"product-retirement-inventory-{packet_digest(packet)[:16]}.json"
+        )
+        packet = externalize_database_rows(packet, packet_path=packet_path)
+        try:
+            with packet_path.open("x", encoding="utf-8") as handle:
+                json.dump(
+                    packet,
+                    handle,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                handle.write("\n")
+        except Exception:
+            remove_database_row_assets(packet_path)
+            raise
         return {
             "packet": packet,
             "packet_sha256": packet_digest(packet),
             "packet_root": str(self._protected_root.resolve(strict=True)),
+            "inventory_path": str(packet_path),
         }
 
+    def preflight(self, request: RetirementRuntimeRequest) -> Mapping[str, Any]:
+        return dict(_require_refresher(self._refresher).preflight(request))
+
     def apply(
+        self,
+        inventory: Mapping[str, Any],
+        precommit: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        try:
+            return self._apply_once(inventory, precommit)
+        except ProductRetirementPrecommitError:
+            raise
+        except Exception as exc:
+            raise ProductRetirementPrecommitError(
+                "PRODUCT_RETIREMENT_DATABASE_PRECOMMIT_FAILED"
+            ) from exc
+
+    def _apply_once(
         self,
         inventory: Mapping[str, Any],
         precommit: Mapping[str, Any],
@@ -116,20 +158,6 @@ class ProductRetirementDataOperator:
                 approval_digest=approval_digest,
                 packet_root=Path(str(inventory["packet_root"])),
             )
-        if receipt.get("status") == "db_committed_purge_pending":
-            append_journal(
-                self._protected_root,
-                {
-                    "schema_version": 1,
-                    "status": "db_committed_purge_pending",
-                    "run_id": run_id,
-                    "release_tag": release_tag,
-                    "runtime_sha": runtime_sha,
-                    "shutdown_receipt_sha256": shutdown_digest,
-                    "inventory": dict(inventory),
-                    "receipt": dict(receipt),
-                },
-            )
         return receipt
 
     def finalize(
@@ -154,15 +182,19 @@ class ProductRetirementDataOperator:
 
     def sync_direct(
         self, products: tuple[str, ...], frequencies: tuple[str, ...]
-    ) -> None:
+    ) -> Mapping[str, Any]:
         _require_exact_periods(frequencies, ("1m", "1d", "1w"))
-        _require_refresher(self._refresher).sync_direct(products, frequencies)
+        return dict(
+            _require_refresher(self._refresher).sync_direct(products, frequencies)
+        )
 
     def aggregate(
         self, products: tuple[str, ...], frequencies: tuple[str, ...]
-    ) -> None:
+    ) -> Mapping[str, Any]:
         _require_exact_periods(frequencies, ("5m", "15m", "30m", "60m"))
-        _require_refresher(self._refresher).aggregate(products, frequencies)
+        return dict(
+            _require_refresher(self._refresher).aggregate(products, frequencies)
+        )
 
 
 def _inventory_packet(inventory: Mapping[str, Any]) -> tuple[Mapping[str, Any], str]:
