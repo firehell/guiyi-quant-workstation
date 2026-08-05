@@ -23,6 +23,7 @@ if str(API_ROOT) not in sys.path:
 from sqlalchemy import select  # noqa: E402
 
 from app.db.session import SessionLocal  # noqa: E402
+from app.data_core.product_retirement import assert_products_active  # noqa: E402
 from app.models.data_center import Instrument  # noqa: E402
 from app.services.rqdata_ingest.dominant_v2_incremental import find_latest_main_canonical  # noqa: E402
 from app.services.rqdata_ingest.dominant_v2_parquet import build_dominant_v2_parquet_assets  # noqa: E402
@@ -106,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command != "run":
         raise SystemExit(f"unsupported command: {args.command}")
 
-    products = args.products or products_from_file(args.products_file)
+    products = assert_products_active(args.products or products_from_file(args.products_file))
     periods = tuple(args.periods or DEFAULT_AGG_PERIODS)
     output_root = args.output_root.resolve()
 

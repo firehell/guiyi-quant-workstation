@@ -60,6 +60,8 @@ _CONTRACT_COLUMNS = frozenset(
         "contract",
         "contract_code",
         "contract_or_series",
+        "actual_contract",
+        "continuous_contract",
         "dominant_contract",
         "instrument_id",
         "main_contract",
@@ -78,7 +80,23 @@ _STATE_COLUMNS = frozenset({"status", "binding_status", "is_active"})
 _ACTIVE_TASK_TABLES = frozenset(
     {"backtest_tasks", "data_download_tasks", "signal_scan_tasks"}
 )
-_ACTIVE_TASK_STATUSES = frozenset({"pending", "running", "retrying"})
+_ACTIVE_TASK_STATUSES = frozenset({"pending", "queued", "running", "retrying"})
+_TERMINAL_TASK_STATUSES = frozenset(
+    {"success", "completed", "partial_failed", "failed", "cancelled", "canceled"}
+)
+_LOGICAL_RELATIONS = (
+    ("signal_events", "strategy_signals", (("signal_id", "id"),), None),
+    ("signal_events", "signal_decisions", (("decision_id", "id"),), None),
+    ("signal_notifications", "signal_events", (("event_id", "id"),), None),
+    ("signal_notifications", "strategy_signals", (("signal_id", "id"),), None),
+    ("signal_decision_reconciliations", "signal_decisions", (("decision_id", "id"),), None),
+    ("review_notes", "strategy_signals", (("source_id", "id"),), ("source_type", "strategy_signal")),
+    ("review_notes", "signal_events", (("source_id", "id"),), ("source_type", "signal_event")),
+    ("review_notes", "signal_decisions", (("source_id", "id"),), ("source_type", "signal_decision")),
+    ("research_samples", "signal_decisions", (("decision_key", "decision_key"),), None),
+    ("research_samples", "review_notes", (("review_id", "id"),), None),
+    ("review_attachments", "review_notes", (("review_id", "id"),), None),
+)
 
 
 @dataclass(frozen=True)
@@ -134,6 +152,16 @@ def is_retired_identity(
         (product_key is not None and product_key in RETIRED_PRODUCTS)
         or (contract_key is not None and contract_key in RETIRED_PRODUCTS)
     )
+
+
+def assert_products_active(products: Sequence[str]) -> tuple[str, ...]:
+    normalized = tuple(str(product).strip().lower() for product in products)
+    retired = tuple(product for product in normalized if is_retired_identity(product=product))
+    if retired:
+        raise ProductRetirementError(
+            "PRODUCT_RETIREMENT_PRODUCT_RETIRED:" + ",".join(sorted(set(retired)))
+        )
+    return normalized
 
 
 def load_active_products(path: Path) -> tuple[str, ...]:
@@ -239,7 +267,7 @@ def inventory_database(
             )
         )
         statement = select(*(table.c[name] for name in (*primary_names, *identity_names)))
-        for row in connection.execute(statement).mappings():
+        for row in _stream_mappings(connection, statement):
             reasons = _database_match_reasons(
                 row,
                 scalar_candidate_names,
@@ -276,7 +304,7 @@ def inventory_database(
                     continue
                 columns = tuple(dict.fromkeys((*primary_names, *candidate_names, *state_names, *constrained)))
                 statement = select(*(table.c[name] for name in columns))
-                for row in connection.execute(statement).mappings():
+                for row in _stream_mappings(connection, statement):
                     parent_key = tuple((name, row[child]) for child, name in zip(constrained, referred, strict=True))
                     if parent_key not in parent_keys:
                         continue
@@ -292,12 +320,17 @@ def inventory_database(
                     if key not in selected:
                         selected[key] = item
                         changed = True
+        if _expand_logical_dependencies(connection, reflected, selected):
+            changed = True
 
     for item in selected.values():
         status = str(item.status or "").strip().lower()
         if item.table in _ACTIVE_TASK_TABLES and status in _ACTIVE_TASK_STATUSES:
             primary = ",".join(f"{name}={value}" for name, value in item.primary_key)
             blockers.add(f"active_task:{item.table}:{primary}:{status}")
+        elif item.table in _ACTIVE_TASK_TABLES and status not in _TERMINAL_TASK_STATUSES:
+            primary = ",".join(f"{name}={value}" for name, value in item.primary_key)
+            blockers.add(f"unknown_task_status:{item.table}:{primary}:{status or 'empty'}")
 
     return (
         tuple(sorted(selected.values(), key=_database_row_sort_key)),
@@ -314,6 +347,7 @@ def build_inventory_packet(
     runtime_sha: str,
     database_revision: str,
     generated_at: str,
+    roots: Mapping[str, Path] | None = None,
 ) -> dict[str, Any]:
     _require_sha(code_sha, "code")
     _require_sha(runtime_sha, "runtime")
@@ -336,6 +370,7 @@ def build_inventory_packet(
             "retired_products": product_rows,
             "retired_products_digest": product_digest,
             "active_product_count": ACTIVE_PRODUCT_COUNT,
+            "data_roots": _resolved_root_scope(roots or {}),
         },
         "bound_facts": {
             "code_sha": code_sha,
@@ -387,8 +422,7 @@ def externalize_database_rows(
     raw_rows = packet.get("database_rows")
     if not isinstance(raw_rows, list):
         raise ProductRetirementError("PRODUCT_RETIREMENT_DATABASE_ROWS_INVALID")
-    rows = tuple(_database_row_from_payload(raw) for raw in raw_rows)
-    if not rows:
+    if not raw_rows:
         result = dict(packet)
         result["database_row_shards"] = []
         return result
@@ -399,29 +433,52 @@ def externalize_database_rows(
     database_root.mkdir(parents=True)
     descriptors: list[dict[str, Any]] = []
     try:
-        by_table: dict[str, list[RetirementDatabaseRow]] = {}
-        for row in rows:
-            by_table.setdefault(row.table, []).append(row)
-        for table, table_rows in sorted(by_table.items()):
-            ordered = sorted(table_rows, key=_database_row_sort_key)
-            for index, offset in enumerate(range(0, len(ordered), shard_size), start=1):
-                batch = ordered[offset : offset + shard_size]
-                relative = Path(f"{packet_path.name}.assets") / "database" / f"{table}-{index:05d}.jsonl"
-                path = packet_path.absolute().parent / relative
-                data = b"".join(_canonical_json(asdict(row)) + b"\n" for row in batch)
-                with path.open("xb") as handle:
-                    handle.write(data)
-                    handle.flush()
-                descriptors.append(
-                    {
-                        "table": table,
-                        "relative_path": relative.as_posix(),
-                        "row_count": len(batch),
-                        "sha256": sha256(data).hexdigest(),
-                        "first_primary_key": asdict(batch[0])["primary_key"],
-                        "last_primary_key": asdict(batch[-1])["primary_key"],
-                    }
-                )
+        current_table: str | None = None
+        table_index = 0
+        batch: list[RetirementDatabaseRow] = []
+        previous_key: tuple[str, str] | None = None
+
+        def write_batch() -> None:
+            nonlocal table_index
+            if not batch or current_table is None:
+                return
+            table_index += 1
+            relative = (
+                Path(f"{packet_path.name}.assets")
+                / "database"
+                / f"{current_table}-{table_index:05d}.jsonl"
+            )
+            path = packet_path.absolute().parent / relative
+            data = b"".join(_canonical_json(asdict(row)) + b"\n" for row in batch)
+            with path.open("xb") as handle:
+                handle.write(data)
+                handle.flush()
+            descriptors.append(
+                {
+                    "table": current_table,
+                    "relative_path": relative.as_posix(),
+                    "row_count": len(batch),
+                    "sha256": sha256(data).hexdigest(),
+                    "first_primary_key": asdict(batch[0])["primary_key"],
+                    "last_primary_key": asdict(batch[-1])["primary_key"],
+                }
+            )
+            batch.clear()
+
+        for raw in raw_rows:
+            row = _database_row_from_payload(raw)
+            key = _database_row_sort_key(row)
+            if previous_key is not None and key < previous_key:
+                raise ProductRetirementError("PRODUCT_RETIREMENT_DATABASE_ROWS_NOT_SORTED")
+            previous_key = key
+            if current_table is not None and row.table != current_table:
+                write_batch()
+                table_index = 0
+            current_table = row.table
+            batch.append(row)
+            if len(batch) >= shard_size:
+                write_batch()
+        write_batch()
     except Exception:
         _remove_created_tree(assets_root)
         raise
@@ -500,6 +557,7 @@ def apply_retirement_packet(
     database_revision: str,
     shutdown_receipt_digest: str,
     now: str,
+    approval_digest: str,
     packet_root: Path | None = None,
 ) -> dict[str, Any]:
     _validate_apply_contract(
@@ -511,7 +569,10 @@ def apply_retirement_packet(
         database_revision=database_revision,
         shutdown_receipt_digest=shutdown_receipt_digest,
         now=now,
+        roots=roots,
     )
+    if re.fullmatch(r"[0-9a-f]{64}", approval_digest) is None:
+        raise ProductRetirementError("PRODUCT_RETIREMENT_APPROVAL_DIGEST_INVALID")
     file_pairs = _preflight_packet_files(packet, roots)
     manifest_root = (packet_root or Path.cwd()).absolute()
     target_tables = _packet_database_tables(packet)
@@ -526,6 +587,7 @@ def apply_retirement_packet(
             original.replace(staged_path)
             staged.append((original, staged_path))
         with connection.begin():
+            _lock_inventory_tables(connection, extra_tables=target_tables)
             _preflight_packet_database(
                 connection,
                 packet,
@@ -550,25 +612,118 @@ def apply_retirement_packet(
         raise
 
     purge_errors: list[str] = []
+    remaining_staged_files: list[str] = []
     for _, staged_path in staged:
         try:
             staged_path.unlink()
             _remove_empty_parents(staged_path.parent, stop=Path(roots[_root_label_for_staged(staged_path, roots)]).resolve(strict=True))
         except OSError as exc:
             purge_errors.append(f"{staged_path}:{type(exc).__name__}")
-    if purge_errors:
-        raise ProductRetirementError(
-            "PRODUCT_RETIREMENT_FILE_PURGE_INCOMPLETE:" + ",".join(sorted(purge_errors))
-        )
+            if staged_path.exists():
+                remaining_staged_files.append(str(staged_path))
+    verification = verify_retirement_scope(connection, roots=roots)
+    complete = not purge_errors and verification["status"] == "passed"
     return {
         "schema_version": 1,
         "command": "product-retirement.apply",
-        "status": "applied",
+        "status": "applied" if complete else "db_committed_purge_pending",
+        "phase": "complete" if complete else "db_committed",
         "packet_sha256": expected_packet_digest,
-        "deleted_file_count": len(file_pairs),
+        "approval_sha256": approval_digest,
+        "shutdown_receipt_sha256": shutdown_receipt_digest,
+        "bound_facts": dict(packet["bound_facts"]),
+        "retired_products": list(packet["scope"]["retired_products"]),
+        "staged_file_count": len(file_pairs),
+        "purged_file_count": len(file_pairs) - len(remaining_staged_files),
+        "deleted_file_count": len(file_pairs) - len(remaining_staged_files),
         "deleted_file_bytes": sum(int(item["size_bytes"]) for item in packet["files"]),
         "deleted_database_row_count": int(packet["summary"]["database_row_count"]),
         "retired_products_digest": packet["scope"]["retired_products_digest"],
+        "purge_errors": sorted(purge_errors),
+        "remaining_staged_files": sorted(remaining_staged_files),
+        "verification": verification,
+    }
+
+
+def finalize_retirement_files(
+    connection: Connection,
+    *,
+    packet: Mapping[str, Any],
+    expected_packet_digest: str,
+    prior_receipt: Mapping[str, Any],
+    roots: Mapping[str, Path],
+    packet_root: Path | None = None,
+) -> dict[str, Any]:
+    if packet_digest(packet) != expected_packet_digest:
+        raise ProductRetirementError("PRODUCT_RETIREMENT_PACKET_DIGEST_MISMATCH")
+    if prior_receipt.get("packet_sha256") != expected_packet_digest:
+        raise ProductRetirementError("PRODUCT_RETIREMENT_FINALIZE_RECEIPT_PACKET_MISMATCH")
+    if prior_receipt.get("status") not in {
+        "apply_started",
+        "apply_interrupted_state_unknown",
+        "db_committed_purge_pending",
+    }:
+        raise ProductRetirementError("PRODUCT_RETIREMENT_FINALIZE_RECEIPT_STATUS_INVALID")
+    if packet.get("scope", {}).get("data_roots") != _resolved_root_scope(roots):
+        raise ProductRetirementError("PRODUCT_RETIREMENT_DATA_ROOT_SCOPE_DRIFT")
+    current_rows, blockers = inventory_database(connection)
+    if blockers:
+        raise ProductRetirementError(
+            "PRODUCT_RETIREMENT_FINALIZE_DATABASE_BLOCKED:" + ",".join(blockers)
+        )
+    manifest_root = (packet_root or Path.cwd()).absolute()
+    packet_row_count = sum(
+        1 for _ in read_database_row_shards(packet, packet_root=manifest_root)
+    )
+    database_committed = not current_rows
+    database_unchanged = (
+        len(current_rows) == int(packet["summary"]["database_row_count"])
+        and database_rows_digest(current_rows) == packet["summary"]["database_rows_sha256"]
+    )
+    if not database_committed and not database_unchanged:
+        raise ProductRetirementError("PRODUCT_RETIREMENT_FINALIZE_DATABASE_STATE_AMBIGUOUS")
+    if packet_row_count != int(packet["summary"]["database_row_count"]):
+        raise ProductRetirementError("PRODUCT_RETIREMENT_DATABASE_MANIFEST_COUNT_MISMATCH")
+    file_pairs = _packet_file_locations(packet, roots)
+    if database_unchanged:
+        if any(original.exists() and staged_path.exists() for original, staged_path in file_pairs):
+            raise ProductRetirementError("PRODUCT_RETIREMENT_FINALIZE_FILE_STATE_AMBIGUOUS")
+        staged = [(original, staged_path) for original, staged_path in file_pairs if staged_path.exists()]
+        _restore_staged_files(staged)
+        return {
+            "schema_version": 1,
+            "command": "product-retirement.finalize",
+            "status": "rolled_back_before_database_commit",
+            "packet_sha256": expected_packet_digest,
+            "restored_file_count": len(staged),
+        }
+    purge_errors: list[str] = []
+    purged = 0
+    for raw, (original, staged_path) in zip(packet.get("files", []), file_pairs, strict=True):
+        if original.exists():
+            raise ProductRetirementError("PRODUCT_RETIREMENT_FINALIZE_ORIGINAL_FILE_PRESENT")
+        if not staged_path.exists():
+            continue
+        if staged_path.is_symlink() or not staged_path.is_file():
+            raise ProductRetirementError("PRODUCT_RETIREMENT_FINALIZE_STAGED_FILE_INVALID")
+        if staged_path.stat().st_size != int(raw["size_bytes"]) or _file_sha256(staged_path) != raw["sha256"]:
+            raise ProductRetirementError("PRODUCT_RETIREMENT_FINALIZE_STAGED_FILE_DRIFT")
+        try:
+            staged_path.unlink()
+            purged += 1
+        except OSError as exc:
+            purge_errors.append(f"{staged_path}:{type(exc).__name__}")
+    verification = verify_retirement_scope(connection, roots=roots)
+    return {
+        "schema_version": 1,
+        "command": "product-retirement.finalize",
+        "status": "applied" if not purge_errors and verification["status"] == "passed" else "db_committed_purge_pending",
+        "packet_sha256": expected_packet_digest,
+        "purged_file_count": purged,
+        "purge_errors": sorted(purge_errors),
+        "verification": verification,
+        "retired_products": list(packet["scope"]["retired_products"]),
+        "bound_facts": dict(packet["bound_facts"]),
     }
 
 
@@ -698,6 +853,94 @@ def _targeted_primary_keys(
     return result
 
 
+def _expand_logical_dependencies(
+    connection: Connection,
+    reflected: Mapping[str, Table],
+    selected: dict[tuple[str, tuple[tuple[str, Any], ...]], RetirementDatabaseRow],
+) -> bool:
+    changed = False
+    targeted_primary_keys = _targeted_primary_keys(selected)
+    for child_name, parent_name, column_pairs, discriminator in _LOGICAL_RELATIONS:
+        child = reflected.get(child_name)
+        parent = reflected.get(parent_name)
+        parent_keys = targeted_primary_keys.get(parent_name, set())
+        if child is None or parent is None or not parent_keys:
+            continue
+        child_columns = tuple(child_column for child_column, _ in column_pairs)
+        parent_columns = tuple(parent_column for _, parent_column in column_pairs)
+        required_child = set(child_columns)
+        if discriminator is not None:
+            required_child.add(discriminator[0])
+        if any(name not in child.c for name in required_child) or any(
+            name not in parent.c for name in parent_columns
+        ):
+            raise ProductRetirementError(
+                f"PRODUCT_RETIREMENT_LOGICAL_RELATION_SCHEMA_DRIFT:{child_name}->{parent_name}"
+            )
+        parent_primary = tuple(column.name for column in parent.primary_key.columns)
+        child_primary = tuple(column.name for column in child.primary_key.columns)
+        if not parent_primary or not child_primary:
+            raise ProductRetirementError(
+                f"PRODUCT_RETIREMENT_LOGICAL_RELATION_PRIMARY_KEY_MISSING:{child_name}->{parent_name}"
+            )
+        parent_statement = select(
+            *(parent.c[name] for name in dict.fromkeys((*parent_primary, *parent_columns)))
+        )
+        parent_values = {
+            tuple(row[name] for name in parent_columns)
+            for row in _stream_mappings(connection, parent_statement)
+            if tuple((name, row[name]) for name in parent_primary) in parent_keys
+        }
+        if not parent_values:
+            continue
+        scalar_candidates = tuple(
+            name
+            for name in child.c.keys()
+            if name in _PRODUCT_COLUMNS | _CONTRACT_COLUMNS | _PATH_COLUMNS
+        )
+        json_names = tuple(
+            column.name for column in child.c if isinstance(column.type, JSON)
+        )
+        state_names = tuple(name for name in child.c.keys() if name in _STATE_COLUMNS)
+        identity_names = tuple(
+            dict.fromkeys((*scalar_candidates, *json_names, *state_names, *child_columns))
+        )
+        selected_columns = tuple(
+            dict.fromkeys(
+                (
+                    *child_primary,
+                    *identity_names,
+                    *((discriminator[0],) if discriminator is not None else ()),
+                )
+            )
+        )
+        child_statement = select(*(child.c[name] for name in selected_columns))
+        for row in _stream_mappings(connection, child_statement):
+            if discriminator is not None and row[discriminator[0]] != discriminator[1]:
+                continue
+            if tuple(row[name] for name in child_columns) not in parent_values:
+                continue
+            item = _database_row(
+                child_name,
+                child_primary,
+                identity_names,
+                row,
+                (f"logical_reference:{child_name}->{parent_name}",),
+            )
+            key = (item.table, item.primary_key)
+            if key not in selected:
+                selected[key] = item
+                changed = True
+    return changed
+
+
+def _resolved_root_scope(roots: Mapping[str, Path]) -> dict[str, str]:
+    return {
+        label: str(path.absolute().resolve(strict=True))
+        for label, path in sorted(roots.items())
+    }
+
+
 def _database_row_sort_key(row: RetirementDatabaseRow) -> tuple[str, str]:
     return row.table, json.dumps(row.primary_key, ensure_ascii=False, sort_keys=True, default=str)
 
@@ -768,6 +1011,7 @@ def _validate_apply_contract(
     database_revision: str,
     shutdown_receipt_digest: str,
     now: str,
+    roots: Mapping[str, Path],
 ) -> None:
     if packet_digest(packet) != expected_packet_digest:
         raise ProductRetirementError("PRODUCT_RETIREMENT_PACKET_DIGEST_MISMATCH")
@@ -792,6 +1036,8 @@ def _validate_apply_contract(
         "database_revision": database_revision,
     }:
         raise ProductRetirementError("PRODUCT_RETIREMENT_BOUND_FACT_DRIFT")
+    if packet.get("scope", {}).get("data_roots") != _resolved_root_scope(roots):
+        raise ProductRetirementError("PRODUCT_RETIREMENT_DATA_ROOT_SCOPE_DRIFT")
     if re.fullmatch(r"[0-9a-f]{64}", shutdown_receipt_digest) is None:
         raise ProductRetirementError("PRODUCT_RETIREMENT_SHUTDOWN_RECEIPT_DIGEST_INVALID")
     try:
@@ -819,6 +1065,39 @@ def _preflight_packet_files(
         or retirement_files_digest(current_files) != summary.get("files_sha256")
     ):
         raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_SCOPE_DRIFT")
+    result = _packet_file_locations(packet, roots)
+    packet_files = tuple(
+        RetirementFile(
+            root=str(raw["root"]),
+            relative_path=str(raw["relative_path"]),
+            absolute_path=str(raw["absolute_path"]),
+            size_bytes=int(raw["size_bytes"]),
+            sha256=str(raw["sha256"]),
+        )
+        for raw in packet.get("files", [])
+    )
+    if (
+        len(packet_files) != int(summary.get("file_count", -1))
+        or retirement_files_digest(packet_files) != summary.get("files_sha256")
+    ):
+        raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_MANIFEST_DIGEST_MISMATCH")
+    for raw, (original, staged) in zip(packet.get("files", []), result, strict=True):
+        if original.is_symlink() or not original.is_file():
+            raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_MISSING")
+        stat_result = original.stat()
+        if stat_result.st_nlink != 1:
+            raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_SHARED_INODE")
+        if stat_result.st_size != int(raw["size_bytes"]) or _file_sha256(original) != raw["sha256"]:
+            raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_DRIFT")
+        if staged.exists() or staged.is_symlink():
+            raise ProductRetirementError("PRODUCT_RETIREMENT_STAGING_COLLISION")
+    return result
+
+
+def _packet_file_locations(
+    packet: Mapping[str, Any],
+    roots: Mapping[str, Path],
+) -> list[tuple[Path, Path]]:
     result: list[tuple[Path, Path]] = []
     digest = packet_digest(packet)
     for raw in packet.get("files", []):
@@ -835,16 +1114,7 @@ def _preflight_packet_files(
         original = resolved_root / relative
         if str(original) != str(raw["absolute_path"]):
             raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_ROOT_DRIFT")
-        if original.is_symlink() or not original.is_file():
-            raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_MISSING")
-        stat_result = original.stat()
-        if stat_result.st_nlink != 1:
-            raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_SHARED_INODE")
-        if stat_result.st_size != int(raw["size_bytes"]) or _file_sha256(original) != raw["sha256"]:
-            raise ProductRetirementError("PRODUCT_RETIREMENT_FILE_DRIFT")
         staged = resolved_root / ".product-retirement-staging" / digest / relative
-        if staged.exists() or staged.is_symlink():
-            raise ProductRetirementError("PRODUCT_RETIREMENT_STAGING_COLLISION")
         result.append((original, staged))
     return result
 
@@ -946,6 +1216,47 @@ def _reflect_tables(connection: Connection) -> dict[str, Table]:
     }
 
 
+def _stream_mappings(connection: Connection, statement):
+    return connection.execute(
+        statement.execution_options(stream_results=True, yield_per=10_000)
+    ).mappings()
+
+
+def _lock_inventory_tables(
+    connection: Connection,
+    *,
+    extra_tables: set[str],
+) -> None:
+    if connection.dialect.name != "postgresql":
+        return
+    reflected = _reflect_tables(connection)
+    names = sorted(
+        name
+        for name, table in reflected.items()
+        if any(
+            column.name in _PRODUCT_COLUMNS | _CONTRACT_COLUMNS | _PATH_COLUMNS
+            or isinstance(column.type, JSON)
+            for column in table.c
+        )
+        or name in _packet_related_tables()
+        or name in extra_tables
+    )
+    if not names:
+        return
+    quote = connection.dialect.identifier_preparer.quote
+    connection.exec_driver_sql(
+        "LOCK TABLE " + ", ".join(quote(name) for name in names) + " IN ACCESS EXCLUSIVE MODE"
+    )
+
+
+def _packet_related_tables() -> set[str]:
+    return {
+        name
+        for child, parent, _, _ in _LOGICAL_RELATIONS
+        for name in (child, parent)
+    }
+
+
 def _deletion_table_order(connection: Connection, targets: set[str]) -> tuple[str, ...]:
     inspector = inspect(connection)
     parents: dict[str, set[str]] = {name: set() for name in targets}
@@ -973,6 +1284,9 @@ def _restore_staged_files(staged: Sequence[tuple[Path, Path]]) -> None:
     errors: list[str] = []
     for original, staged_path in reversed(staged):
         try:
+            if original.exists() or original.is_symlink():
+                errors.append(f"{original}:destination_collision")
+                continue
             original.parent.mkdir(parents=True, exist_ok=True)
             staged_path.replace(original)
         except OSError as exc:
@@ -1011,10 +1325,12 @@ __all__ = [
     "RetirementDatabaseRow",
     "RetirementFile",
     "apply_retirement_packet",
+    "assert_products_active",
     "build_inventory_packet",
     "contract_product",
     "database_rows_digest",
     "externalize_database_rows",
+    "finalize_retirement_files",
     "inventory_database",
     "inventory_files",
     "is_retired_identity",

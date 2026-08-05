@@ -14,6 +14,7 @@ from app.data_core.product_retirement import (
     contract_product,
     database_rows_digest,
     externalize_database_rows,
+    finalize_retirement_files,
     inventory_database,
     inventory_files,
     is_retired_identity,
@@ -77,6 +78,19 @@ def test_active_universe_contains_69_products_disjoint_from_retired_set() -> Non
     assert "l" in products
     assert "v" in products
     assert "ta" in products
+
+    subset = {
+        line.strip()
+        for line in (project_root / "data/universe/products_pre2020_active.txt").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+    weekly_rows = {
+        line.split(",", maxsplit=1)[0]
+        for line in (project_root / "data/universe/product_1w_start_from_listing.csv").read_text(encoding="utf-8").splitlines()[1:]
+        if line.strip()
+    }
+    assert subset == weekly_rows
+    assert subset < set(products)
 
 
 def test_file_inventory_matches_structured_target_paths_without_prefix_false_positives(tmp_path: Path) -> None:
@@ -197,6 +211,111 @@ def test_database_inventory_blocks_active_target_task() -> None:
     assert blockers == ("active_task:data_download_tasks:id=1:running",)
 
 
+def test_database_inventory_blocks_queued_target_task() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    metadata = MetaData()
+    tasks = Table(
+        "backtest_tasks",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("binding_snapshot", JSON),
+        Column("status", String),
+    )
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            tasks.insert(),
+            {"id": 1, "binding_snapshot": {"symbol": "JR"}, "status": "queued"},
+        )
+    with engine.connect() as connection:
+        _, blockers = inventory_database(connection)
+
+    assert blockers == ("active_task:backtest_tasks:id=1:queued",)
+
+
+def test_database_inventory_expands_explicit_logical_dependencies_without_foreign_keys() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    metadata = MetaData()
+    signals = Table(
+        "strategy_signals",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("product", String),
+    )
+    decisions = Table(
+        "signal_decisions",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("decision_key", String),
+        Column("actual_contract", String),
+    )
+    events = Table(
+        "signal_events",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("signal_id", Integer),
+        Column("decision_id", Integer),
+    )
+    notifications = Table(
+        "signal_notifications",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("event_id", Integer),
+        Column("signal_id", Integer),
+    )
+    reconciliations = Table(
+        "signal_decision_reconciliations",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("decision_id", Integer),
+        Column("provider_final_snapshot", JSON),
+    )
+    reviews = Table(
+        "review_notes",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("source_type", String),
+        Column("source_id", Integer),
+    )
+    samples = Table(
+        "research_samples",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("decision_key", String),
+        Column("review_id", Integer),
+    )
+    attachments = Table(
+        "review_attachments",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("review_id", Integer),
+    )
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(signals.insert(), {"id": 1, "product": "JR"})
+        connection.execute(decisions.insert(), {"id": 2, "decision_key": "decision-jr", "actual_contract": "JR2609"})
+        connection.execute(events.insert(), {"id": 3, "signal_id": 1, "decision_id": 2})
+        connection.execute(notifications.insert(), {"id": 4, "event_id": 3, "signal_id": 1})
+        connection.execute(reconciliations.insert(), {"id": 5, "decision_id": 2, "provider_final_snapshot": {}})
+        connection.execute(reviews.insert(), {"id": 6, "source_type": "signal_decision", "source_id": 2})
+        connection.execute(samples.insert(), {"id": 7, "decision_key": "decision-jr", "review_id": 6})
+        connection.execute(attachments.insert(), {"id": 8, "review_id": 6})
+    with engine.connect() as connection:
+        rows, blockers = inventory_database(connection)
+
+    assert blockers == ()
+    assert {(row.table, row.primary_key[0][1]) for row in rows} == {
+        ("strategy_signals", 1),
+        ("signal_decisions", 2),
+        ("signal_events", 3),
+        ("signal_notifications", 4),
+        ("signal_decision_reconciliations", 5),
+        ("review_notes", 6),
+        ("research_samples", 7),
+        ("review_attachments", 8),
+    }
+
+
 def test_database_inventory_finds_retired_identity_in_json_without_exposing_payload() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     metadata = MetaData()
@@ -238,6 +357,7 @@ def test_inventory_packet_digest_is_repeatable_and_bound_to_scope(tmp_path: Path
         runtime_sha="b" * 40,
         database_revision="20260803_0032",
         generated_at="2026-08-05T12:00:00+08:00",
+        roots={"data": tmp_path / "data"},
     )
     second = build_inventory_packet(
         files=files,
@@ -247,6 +367,7 @@ def test_inventory_packet_digest_is_repeatable_and_bound_to_scope(tmp_path: Path
         runtime_sha="b" * 40,
         database_revision="20260803_0032",
         generated_at="2026-08-05T12:00:00+08:00",
+        roots={"data": tmp_path / "data"},
     )
 
     assert first == second
@@ -316,6 +437,7 @@ def test_apply_requires_exact_approval_and_deletes_only_packet_objects(tmp_path:
             runtime_sha="b" * 40,
             database_revision="revision-1",
             generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
         )
         digest = packet_digest(packet)
         approval = _approval(packet, digest)
@@ -331,6 +453,7 @@ def test_apply_requires_exact_approval_and_deletes_only_packet_objects(tmp_path:
             database_revision="revision-1",
             shutdown_receipt_digest="c" * 64,
             now="2026-08-05T12:30:00+08:00",
+            approval_digest="d" * 64,
         )
 
         assert receipt["status"] == "applied"
@@ -360,6 +483,7 @@ def test_externalized_database_manifest_can_be_applied(tmp_path: Path) -> None:
             runtime_sha="b" * 40,
             database_revision="revision-1",
             generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": tmp_path / "data"},
         )
         packet = externalize_database_rows(
             packet,
@@ -379,6 +503,7 @@ def test_externalized_database_manifest_can_be_applied(tmp_path: Path) -> None:
             database_revision="revision-1",
             shutdown_receipt_digest="c" * 64,
             now="2026-08-05T12:30:00+08:00",
+            approval_digest="d" * 64,
             packet_root=tmp_path,
         )
 
@@ -400,6 +525,7 @@ def test_apply_rejects_new_target_database_row_not_in_approved_packet(tmp_path: 
             runtime_sha="b" * 40,
             database_revision="revision-1",
             generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
         )
         digest = packet_digest(packet)
         connection.execute(
@@ -420,6 +546,7 @@ def test_apply_rejects_new_target_database_row_not_in_approved_packet(tmp_path: 
                 database_revision="revision-1",
                 shutdown_receipt_digest="c" * 64,
                 now="2026-08-05T12:30:00+08:00",
+                approval_digest="d" * 64,
             )
 
         assert connection.scalar(select(func.count()).select_from(tables["market_data_files"])) == 3
@@ -442,6 +569,7 @@ def test_apply_rejects_new_target_file_not_in_approved_packet(tmp_path: Path) ->
             runtime_sha="b" * 40,
             database_revision="revision-1",
             generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
         )
         digest = packet_digest(packet)
         added = target.parent / "added.parquet"
@@ -459,10 +587,51 @@ def test_apply_rejects_new_target_file_not_in_approved_packet(tmp_path: Path) ->
                 database_revision="revision-1",
                 shutdown_receipt_digest="c" * 64,
                 now="2026-08-05T12:30:00+08:00",
+                approval_digest="d" * 64,
             )
 
     assert target.exists()
     assert added.exists()
+
+
+def test_apply_rejects_packet_file_list_not_matching_its_summary(tmp_path: Path) -> None:
+    engine, _ = _retirement_database(include_dependents=False)
+    data_root = tmp_path / "data"
+    target = data_root / "raw/rqdata/product=jr/target.parquet"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"target")
+    with engine.connect() as connection:
+        files, file_blockers = inventory_files({"data": data_root})
+        rows, database_blockers = inventory_database(connection)
+        packet = build_inventory_packet(
+            files=files,
+            database_rows=rows,
+            blockers=(*file_blockers, *database_blockers),
+            code_sha="a" * 40,
+            runtime_sha="b" * 40,
+            database_revision="revision-1",
+            generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
+        )
+        packet["files"] = []
+        digest = packet_digest(packet)
+
+        with pytest.raises(ProductRetirementError, match="FILE_MANIFEST_DIGEST_MISMATCH"):
+            apply_retirement_packet(
+                connection,
+                packet=packet,
+                expected_packet_digest=digest,
+                approval=_approval(packet, digest),
+                roots={"data": data_root},
+                code_sha="a" * 40,
+                runtime_sha="b" * 40,
+                database_revision="revision-1",
+                shutdown_receipt_digest="c" * 64,
+                now="2026-08-05T12:30:00+08:00",
+                approval_digest="d" * 64,
+            )
+
+    assert target.exists()
 
 
 def test_apply_restores_staged_file_when_database_transaction_fails(tmp_path: Path) -> None:
@@ -490,6 +659,7 @@ def test_apply_restores_staged_file_when_database_transaction_fails(tmp_path: Pa
             runtime_sha="b" * 40,
             database_revision="revision-1",
             generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
         )
         digest = packet_digest(packet)
 
@@ -505,10 +675,76 @@ def test_apply_restores_staged_file_when_database_transaction_fails(tmp_path: Pa
                 database_revision="revision-1",
                 shutdown_receipt_digest="c" * 64,
                 now="2026-08-05T12:30:00+08:00",
+                approval_digest="d" * 64,
             )
 
         assert target.exists()
         assert connection.scalar(select(func.count()).select_from(Table("market_data_files", MetaData(), autoload_with=connection))) == 2
+
+
+def test_finalize_resumes_file_purge_after_database_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine, tables = _retirement_database(include_dependents=False)
+    data_root = tmp_path / "data"
+    target = data_root / "raw/rqdata/product=jr/jr.parquet"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"jr")
+    original_unlink = Path.unlink
+    failed_once = False
+
+    def fail_staging_unlink(path: Path, *args, **kwargs):
+        nonlocal failed_once
+        if ".product-retirement-staging" in path.parts and not failed_once:
+            failed_once = True
+            raise PermissionError("fault injection")
+        return original_unlink(path, *args, **kwargs)
+
+    with engine.connect() as connection:
+        files, file_blockers = inventory_files({"data": data_root})
+        rows, database_blockers = inventory_database(connection)
+        packet = build_inventory_packet(
+            files=files,
+            database_rows=rows,
+            blockers=(*file_blockers, *database_blockers),
+            code_sha="a" * 40,
+            runtime_sha="b" * 40,
+            database_revision="revision-1",
+            generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
+        )
+        digest = packet_digest(packet)
+        monkeypatch.setattr(Path, "unlink", fail_staging_unlink)
+        partial = apply_retirement_packet(
+            connection,
+            packet=packet,
+            expected_packet_digest=digest,
+            approval=_approval(packet, digest),
+            roots={"data": data_root},
+            code_sha="a" * 40,
+            runtime_sha="b" * 40,
+            database_revision="revision-1",
+            shutdown_receipt_digest="c" * 64,
+            now="2026-08-05T12:30:00+08:00",
+            approval_digest="d" * 64,
+        )
+        monkeypatch.setattr(Path, "unlink", original_unlink)
+
+        assert partial["status"] == "db_committed_purge_pending"
+        assert partial["remaining_staged_files"]
+        assert connection.scalar(select(func.count()).select_from(tables["market_data_files"])) == 1
+        finalized = finalize_retirement_files(
+            connection,
+            packet=packet,
+            expected_packet_digest=digest,
+            prior_receipt=partial,
+            roots={"data": data_root},
+        )
+
+    assert finalized["status"] == "applied"
+    assert finalized["verification"]["status"] == "passed"
+    assert not target.exists()
 
 
 def test_apply_rejects_file_drift_before_database_write(tmp_path: Path) -> None:
@@ -529,6 +765,7 @@ def test_apply_rejects_file_drift_before_database_write(tmp_path: Path) -> None:
             runtime_sha="b" * 40,
             database_revision="revision-1",
             generated_at="2026-08-05T12:00:00+08:00",
+            roots={"data": data_root},
         )
         digest = packet_digest(packet)
         target.write_bytes(b"changed")
@@ -545,6 +782,7 @@ def test_apply_rejects_file_drift_before_database_write(tmp_path: Path) -> None:
                 database_revision="revision-1",
                 shutdown_receipt_digest="c" * 64,
                 now="2026-08-05T12:30:00+08:00",
+                approval_digest="d" * 64,
             )
 
         assert connection.scalar(select(func.count()).select_from(tables["market_data_files"])) == 2
