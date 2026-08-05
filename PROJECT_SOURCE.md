@@ -21,7 +21,7 @@ Runtime state、远端 refs、Git history、live 配置、真实通知和 GitHub
 
 ## Active target 与数据边界
 
-当前长期活动品种池固定为 69 个，唯一文件为 `data/universe/active_products.txt`。21 个退役品种及精确业务边界见 `docs/tasks/GY-DATA-PRODUCT-RETIREMENT-21.md`；它们在入口层不得重新下载、读取、聚合、注册或重建。未来对生产 DB、正式数据或仓库外工件执行不可逆清理时，必须由一次新请求明确列出操作类别与精确删除范围。
+当前长期活动品种池固定为 69 个，唯一文件为 `data/universe/active_products.txt`。21 个退役品种由 `app.data_core.product_retirement` 精确冻结，当前执行事实见 `STATUS.md` 与 `docs/DATA_CENTER.md`；它们在入口层不得重新下载、读取、聚合、注册或重建。未来对生产 DB、正式数据或仓库外工件执行不可逆清理时，必须由一次新请求明确列出操作类别与精确删除范围。
 
 ```text
 RQData

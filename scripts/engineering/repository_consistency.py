@@ -553,7 +553,6 @@ _FROZEN_RUNTIME_TASKS = frozenset(
 _ACTIVE_CONTRACT_TASKS = frozenset(
     {
         "GY-DATA-CORE-V2.md",
-        "GY-DATA-PRODUCT-RETIREMENT-21.md",
         "V1-FINAL-ACCEPTANCE-S6-11.md",
     }
 )
