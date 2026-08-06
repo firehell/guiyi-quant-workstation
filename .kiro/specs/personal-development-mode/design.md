@@ -11,7 +11,8 @@
 
 仓库主语言按现有源码构成确定为 **Python**。工程入口因 Windows 目标环境使用 **PowerShell 7**；应用与依赖分析仍复用 Python/pytest 生态，不引入 Bash、WSL、macOS 路径或 launchd 依赖。
 
-本设计只描述后续实现，不表示当前 canonical、脚本、Runtime Gate 或任务合同已完成迁移。
+本文保留设计约束与已完成的迁移记录；当前可执行事实以 `AGENTS.md`、`STATUS.md`
+和仓库实现为准，不得从历史设计步骤恢复已退役 Runtime Gate 或兼容入口。
 
 ## 2. Goals and Non-Goals
 
@@ -42,7 +43,10 @@
 - `scripts/engineering/preflight.sh --strict` 拒绝 `develop`；`task-worktree.sh`、`task_workflow.py`、`worktree_flow.py` 以 Issue/Lane/worktree/PR 为中心；`release-flow.sh` 要求 prepare/publish/tag 与多 SHA 绑定。
 - `.github/workflows/lane-pr-gate.yml` 只服务 PR Gate；`engineering-test.yml` 仍调用 Bash/Makefile。
 - `docs/tasks/GY-DATA-CORE-V2.md` 等 active 合同混合了业务安全约束、未来执行前置和已完成 PR/CI/Review 历史事实。
-- frozen S6-10 代码不能按文件名直接删除。`services/quant-api/app/runtime_scheduler.py` 仍按 packet schema 动态导入 `htdy_s6_10_*_runtime_gate`，并直接类型检查 `HtDyS610LongRunningRuntimeGate`；直接删除会在启用相关路径时触发 `ImportError`，并可能让 Runtime 启动或调度失败。
+- 设计启动时曾发现 frozen S6-10 代码不能按文件名直接删除：当时
+  `services/quant-api/app/runtime_scheduler.py` 会按 packet schema 动态导入 `htdy_s6_10_*_runtime_gate`，
+  并直接类型检查 `HtDyS610LongRunningRuntimeGate`。后续已按 caller-first 顺序解除引用，
+  再删除旧 scheduler 和 S6-10 Gate，避免了 `ImportError`、部分启动或意外解锁路径。
 
 ## 4. Target Architecture
 
@@ -340,7 +344,7 @@ Force-push/history rewrite is not a switch on this command. It is a separate con
 | Frozen S6 docs | `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md` | Keep only the still-consumed recovery contract; S6-08/S6-10 contracts are Git-only | Active Runtime bindings were removed before deletion |
 | Legacy task snapshots | `GY-CORE-01-*`, `GY-CORE-02-*`, `GY-CORE-CONVERGENCE.md`, completed approval/evidence docs | Delete when not Runtime/code referenced, or retain explicitly as historical with no active authorization | Recovery is Git history; no archive copy |
 | Runtime scheduler | retired | The old scheduler and plan CLI are removed; after-market scheduling remains separate and default-off | Runtime status stays read-only |
-| Frozen Gate modules/scripts/tests | `app/services/htdy_s6_10_*`, `scripts/jm_htdy_s6_10_*`, corresponding tests | Delete in dependency-ordered batches only after zero active references | No direct bulk deletion |
+| Frozen Gate modules/scripts/tests | retired | Dependency-ordered caller-first migration completed before deletion | No direct bulk deletion; Git history retains the prior implementation |
 
 ## 9. Task Contract Migration Model
 
@@ -387,24 +391,24 @@ class RemovalCandidate:
 
 A candidate with `RUNTIME_IMPORT`, `DYNAMIC_IMPORT`, `CLI_CALL` or `CONFIG_REFERENCE` cannot be marked `delete`.
 
-### 10.2 Runtime Migration Sequence
+### 10.2 Completed Runtime Migration Sequence
 
-1. Freeze the deletion candidate list; do not delete files yet.
-2. Scan AST, string imports, subprocess calls, env/config keys, service templates and entrypoint registration.
-3. Trace Runtime startup roots: FastAPI app import, scheduler main, queue workers, CLI runtime commands and health routes.
-4. Change callers first. For current S6-10 schemas 4/5/6/7 and Approval D packet types, return a bounded `superseded_runtime_gate_disabled` error before importing old modules.
-5. Keep live, signal write, Runtime switch and autosend defaults false during and after migration.
-6. Run import, startup, disabled scheduler, CLI help, health and targeted Runtime tests.
-7. Re-run the reference inventory. Only candidates with zero active references may be deleted; test/doc references are removed in the same change.
-8. Run the same smoke tests after deletion.
+1. The deletion candidate list was frozen before file deletion.
+2. AST, string imports, subprocess calls, env/config keys, service templates and entrypoint registration were scanned.
+3. Runtime startup roots were traced through FastAPI app import, the old scheduler main, queue workers, CLI runtime commands and health routes.
+4. Callers were changed first; the then-current S6-10 schemas and Approval D packet types failed closed before old modules were removed.
+5. Live, signal write, Runtime switch and autosend defaults remained false during and after migration.
+6. Import, startup, CLI help, health and targeted Runtime tests ran around the deletion.
+7. Reference inventory reached zero active references before the old scheduler/Gate modules and their test/doc references were removed.
+8. Post-deletion smoke retained runtime status and the after-market scheduler without reviving the retired control plane.
 
 This sequence avoids replacing a safe fail-closed Gate with `ImportError`, partial startup or an accidentally unguarded path.
 
 ### 10.3 Compatibility Strategy
 
 - **No active authorization compatibility**: old packet/hash/signature mechanics do not remain valid execution authorization.
-- **Read-only historical compatibility**: parsers may retain enough schema recognition to return `superseded_runtime_gate_disabled` without importing old execution modules.
-- **Configuration compatibility**: old env/config keys are accepted only to fail closed with a bounded migration error; absent or malformed values keep features disabled.
+- **No Runtime scheduler/S6-10 compatibility entrypoint**: the old scheduler, schemas, Gate modules and configuration path are removed; history remains in Git only.
+- **Default-off configuration**: absent or malformed live/notification configuration still keeps features disabled.
 - **Data compatibility**: existing DB rows, SignalEvent history, ledgers and historical reports are not rewritten by this workflow migration.
 - **API compatibility**: Runtime health remains available through the existing application CLI/API; engineering script deletion does not remove application health contracts.
 

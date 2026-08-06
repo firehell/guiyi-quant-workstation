@@ -34,7 +34,7 @@ class RealtimeRepaintingObservationPolicy:
 
 @dataclass(frozen=True)
 class ClosedBarRealtimeObservationPolicy:
-    """Frozen S6-10 v1.1 policy: evaluate only a confirmed 15m close."""
+    """Closed-bar observation policy: evaluate only a confirmed 15m close."""
 
     policy_id: str = "htdy_original_xma_15m_close_first_seen_v1"
     strategy_code: str = "htdy_original_realtime_first_seen"

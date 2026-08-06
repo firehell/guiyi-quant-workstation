@@ -85,9 +85,9 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_core_cli_service.py
 ```
 
-旧 `guiyi-data check-bars` 与
-`scripts/rqdata_reference_metadata_gap_apply_plan.py` 仍是兼容入口；等价性测试只证明参数、
+旧 `guiyi-data check-bars` 仍是兼容入口；等价性测试只证明参数、
 stdout/stderr、退出码和共享 service 转调，不授权运行真实数据、Runtime 或通知写入。
+`scripts/rqdata_reference_metadata_gap_apply_plan.py` 已删除，仅可从 Git 历史追溯，不再是兼容入口。
 
 ### GY-CORE-04 ObservationPlanRegistry 与 StrategyAdapter
 
@@ -201,9 +201,11 @@ Dockerfile。其他未知无扩展名 regular file 会输出 `REPO_UNKNOWN_EXTEN
 输出 `REPO_UNKNOWN_FILE_TYPE`，并令结果 incomplete；CSV、binary/data、compiled/cache 类型只可按
 `explicit_file_type_exclusions` 中的显式理由跳过，不能静默漏掉潜在 consumer reference。
 
-`scripts/derived_reference_inventory.py`、对应服务与专用测试已随旧 Backtest/派生资产
-兼容入口退役。当前统一只读入口为 `guiyi data audit`；真实 PostgreSQL/data root
-只读盘点仍是 external Gate，不授权重建、迁移、删除、Runtime、通知或交易。
+CLI 脚本 `scripts/derived_reference_inventory.py` 已退役，不再是兼容入口。
+`app.services.derived_reference_inventory` 及其专用测试仍保留，供 Task 07 的仓库引用闭包和只读
+inventory 语义使用；它们不是面向用户的 CLI 入口。当前统一用户只读入口为
+`guiyi data audit`；真实 PostgreSQL/data root 只读盘点仍是 external Gate，不授权重建、
+迁移、删除、Runtime、通知或交易。
 
 生产 migration、真实 RQData/Parquet/PostgreSQL apply 与创建/删除隔离 PostgreSQL 数据库
 都需要精确授权。Task 04 的专用临时库已在用户授权后完成测试并删除；这不授权生产 apply，

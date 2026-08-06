@@ -26,8 +26,10 @@ Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划�
 `/api/backtests/**`、`/ws/backtests/**`、`/backtest`、`/backtest/batch`、`/settings`、
 `guiyi-backtests` worker/queue、`guiyi runtime plan` 或 runtime health scheduler component。
 Market、watchlists、runtime status、Signal/Data/Review 非回测路径、Task 06、盘后 scheduler 与
-Canonical data 保留。此处只描述 `develop` 仓库事实，不代表 release、Runtime promotion、生产 DB/
-正式数据删除、host output 清理或服务停止已经发生。
+Canonical data 保留。tracked legacy evidence 以及主工程被 Git 忽略的
+`/Volumes/扩展盘/guiyi-quant-workstation/backtests/`（87 个文件，约 50 MB）已精确清理。
+此处不代表 release、Runtime promotion、生产 DB/正式数据删除、launchd/Redis/其他 host 清理
+或服务停止已经发生。
 
 唯一目标范围为：
 
@@ -60,7 +62,7 @@ production_writes=false
 | GY-DATA-PRODUCT-RETIREMENT-21 | completed / released | 21 品种全链路删除、69 品种七周期刷新、Runtime 发布与残留验证完成 |
 | 旧派生数据清理 | optional / separate | 不阻塞 Task 07；仓库内删除与生产/正式数据删除必须分别分类 |
 | scripts-cli-consolidation | implementation on develop | 统一 `guiyi data download/aggregate/live/sync/audit`；旧 scripts/rqdata_* 与 plan/migrate/task07 已移除；正式数据/RQData/Runtime 未执行 |
-| Backtest/S6 repository retirement | implementation on develop | 旧 API/Web/worker/queue/CLI、S6-08/09/10 control plane 与 tracked legacy evidence 已退出；完整 backend/frontend 验证与任何外部清理由后续任务负责 |
+| Backtest/S6 repository retirement | implementation on develop | 旧 API/Web/worker/queue/CLI、S6-08/09/10 control plane、tracked legacy evidence 与精确 ignored `backtests/` host output 已退出；完整 backend/frontend 验证与 launchd/Redis/Runtime/生产数据等其余外部清理由后续任务负责 |
 
 ## 未完成事项与执行边界
 
