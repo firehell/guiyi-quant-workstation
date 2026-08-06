@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  filterSupportedReviewPage,
   filterSupportedReviewNotes,
   reviewResourcePaths,
   supportedReviewOrNull,
@@ -36,6 +37,18 @@ describe('review source policy', () => {
       filterSupportedReviewNotes(rows).map((row) => row.source_type),
       ['strategy_signal', 'signal_event', 'signal_decision', 'manual_trade'],
     )
+  })
+
+  it('preserves the backend-filtered paged total instead of replacing it with page length', () => {
+    const page = filterSupportedReviewPage({
+      items: [review(1, 'strategy_signal'), review(2, 'signal_event')],
+      total: 120,
+      limit: 100,
+      offset: 0,
+    })
+
+    assert.equal(page.items.length, 2)
+    assert.equal(page.total, 120)
   })
 
   it('fails closed for direct backtest and unknown review ids before bars can load', () => {

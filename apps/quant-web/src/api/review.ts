@@ -3,7 +3,7 @@ import type { ReviewBarsResponse, ReviewNote, ReviewStats, ReviewTag, ReviewUpda
 import type { ReviewSourceType } from '@/types/review'
 import type { PagedResponse } from '@/types/pagination'
 import {
-  filterSupportedReviewNotes,
+  filterSupportedReviewPage,
   reviewResourcePaths,
   supportedReviewOrNull,
   type ReviewNotePayload,
@@ -39,8 +39,7 @@ export async function getReviews(params: {
   offset?: number
 } = {}) {
   const response = await request.get<any, PagedResponse<ReviewNotePayload>>('/api/reviews', { params: { paged: true, ...params } })
-  const items = filterSupportedReviewNotes(response.items || [])
-  return { ...response, items, total: items.length }
+  return filterSupportedReviewPage(response)
 }
 
 /** 获取单条复盘详情 */

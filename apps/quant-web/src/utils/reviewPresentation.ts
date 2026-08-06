@@ -33,6 +33,15 @@ export function filterSupportedReviewNotes(rows: ReviewNotePayload[]): ReviewNot
   })
 }
 
+export function filterSupportedReviewPage<T extends {
+  items: ReviewNotePayload[]
+  total: number
+  limit: number
+  offset: number
+}>(page: T) {
+  return { ...page, items: filterSupportedReviewNotes(page.items || []) }
+}
+
 export function reviewResourcePaths(review: Pick<ReviewNote, 'id'>) {
   const root = `/api/reviews/${review.id}`
   return {
