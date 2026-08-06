@@ -118,6 +118,7 @@ def test_retired_review_sources_are_hidden_and_rejected_without_writes() -> None
         assert {item["source_type"] for item in paged.json()["items"]} == set(supported_source_types)
 
         assert client.get("/api/reviews", params={"source_type": "backtest_trade"}).status_code == 404
+        assert client.get("/api/reviews", params={"source_type": ""}).status_code == 404
         assert client.get(f"/api/reviews/{retired_id}").status_code == 404
         assert client.put(f"/api/reviews/{retired_id}", json={"lesson": "must not persist"}).status_code == 404
         assert client.get(f"/api/reviews/{retired_id}/bars").status_code == 404

@@ -151,7 +151,7 @@ def list_reviews(
     session: Session = Depends(get_db),
 ) -> list[dict[str, Any]] | dict[str, Any]:
     query = select(ReviewNote).where(supported_review_source_clause(ReviewNote.source_type))
-    if source_type:
+    if source_type is not None:
         _require_supported_source_type(source_type)
         query = query.where(ReviewNote.source_type == source_type)
     if source_id is not None:

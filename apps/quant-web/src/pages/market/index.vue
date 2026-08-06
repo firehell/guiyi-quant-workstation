@@ -232,7 +232,7 @@ function openChart(row: DominantContractItem) {
         style="height: calc(100vh - 260px); min-height: 480px"
       />
       <p class="table-hint">
-        行情 K 线使用 rank=1 真实主力合约；主连用于连续序列研究与信号复核，不在此列表展示。
+        行情 K 线使用 rank=1 真实主力合约；主连仅用于连续序列研究，不在此列表展示。
       </p>
     </NCard>
   </div>
