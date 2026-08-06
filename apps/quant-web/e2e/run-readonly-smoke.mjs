@@ -19,7 +19,6 @@ async function run() {
   const context = await playwrightRequest.newContext({ baseURL: apiBase })
   const failures = []
   let eventCandidate = null
-  let reviewCandidate = null
 
   async function check(name, fn) {
     process.stdout.write(`› ${name} ... `)
@@ -70,17 +69,6 @@ async function run() {
     expect(anyOk).toBeTruthy()
   })
 
-  await check('report 14 is readable or explicitly absent', async () => {
-    const res = await context.get('/api/backtests/reports/14')
-    if (res.status() === 404) {
-      console.log('(residual: report 14 absent)')
-      return
-    }
-    expect(res.ok()).toBeTruthy()
-    const body = await res.json()
-    expect(body.id ?? body.report_id).toBeTruthy()
-  })
-
   await check('signals and events list endpoints are readable', async () => {
     const latest = await context.get('/api/signals/latest?limit=5')
     expect([200, 404].includes(latest.status())).toBeTruthy()
@@ -108,15 +96,10 @@ async function run() {
     const paged = await context.get('/api/reviews?paged=true&limit=5&offset=0')
     expect(paged.ok()).toBeTruthy()
     expect(await paged.json()).toHaveProperty('items')
-    const reviewNine = await context.get('/api/reviews/9')
-    if (reviewNine.ok()) reviewCandidate = await reviewNine.json()
   })
 
-  await check('new paged list contracts remain readable alongside legacy arrays', async () => {
+  await check('paged signal list contract remains readable alongside legacy arrays', async () => {
     const urls = [
-      '/api/backtests/tasks?paged=true&limit=5&offset=0',
-      '/api/backtests/reports?paged=true&limit=5&offset=0',
-      '/api/reviews/sources/backtest-trades?paged=true&limit=5&offset=0',
       '/api/signals/latest?paged=true&limit=5&offset=0',
     ]
     for (const url of urls) {
@@ -156,20 +139,14 @@ async function run() {
       '/market',
       '/market/chart?symbol=jm&contract=JM2609&period=15m',
       '/strategy',
-      '/backtest?report_id=14',
-      '/backtest/batch',
       '/signal',
-      '/review?review_id=9&trade_id=3199&report_id=15',
+      '/review',
       '/runtime',
-      '/settings',
     ]
     try {
       for (const path of routes) {
         await page.goto(`${webBase}${path}`, { waitUntil: 'domcontentloaded' })
         await expect(page.locator('.main-layout, .page-shell, .n-layout').first()).toBeVisible({ timeout: 30_000 })
-        if (path.startsWith('/review?')) {
-          await expect(page.getByText('报告：#15 / 交易：#3199').first()).toBeVisible({ timeout: 30_000 })
-        }
         const bodyText = await page.locator('body').innerText()
         expect(bodyText).not.toMatch(/\/Volumes\//)
         expect(bodyText).not.toMatch(/\/Users\/[^/\s]+\/\.env/)
@@ -214,24 +191,6 @@ async function run() {
       await expect(page.getByText(/严格研究模式必须选择 Profile/).first()).toBeVisible()
       for (const tab of ['盘面', '信号', '复盘', '运行']) {
         await expect(page.getByRole('tab', { name: tab })).toBeVisible()
-      }
-
-      if (reviewCandidate?.report_id && reviewCandidate?.trade_id && reviewCandidate?.trade_no) {
-        await page.goto(`${webBase}/backtest?report_id=${reviewCandidate.report_id}&trade_id=${reviewCandidate.trade_id}`)
-        const tradeRow = page.locator('tr').filter({ hasText: reviewCandidate.trade_no }).first()
-        await expect(tradeRow).toBeVisible({ timeout: 30_000 })
-        await tradeRow.getByRole('button', { name: '查看K线' }).click()
-        await expect(page).toHaveURL(new RegExp(`/market/chart\\?.*report_id=${reviewCandidate.report_id}.*trade_id=${reviewCandidate.trade_id}`))
-        await page.getByRole('button', { name: '返回交易复盘' }).click()
-        await expect(page).toHaveURL(new RegExp(`/review\\?.*report_id=${reviewCandidate.report_id}.*trade_id=${reviewCandidate.trade_id}`))
-        await page.reload()
-        await expect(page.getByText('复盘卡').first()).toBeVisible()
-        await page.goBack()
-        await expect(page).toHaveURL(/\/market\/chart/)
-        await page.goForward()
-        await expect(page.getByText('复盘卡').first()).toBeVisible()
-        await page.getByRole('button', { name: '返回来源' }).click()
-        await expect(page).toHaveURL(new RegExp(`/backtest\\?report_id=${reviewCandidate.report_id}`))
       }
 
       if (eventCandidate) {

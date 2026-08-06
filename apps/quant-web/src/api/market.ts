@@ -1,7 +1,5 @@
 import request from './request'
-import type { BacktestReport } from '@/types/backtest'
 import type {
-  BacktestMarketBarsResult,
   BarData,
   DataProfileSummary,
   DominantContractListResponse,
@@ -15,7 +13,6 @@ import type {
 } from '@/types/market'
 import type { MainIndicatorRequestParams } from '@/utils/mainIndicators'
 import {
-  getMarketBarsForBacktestReport as loadCanonicalReportBars,
   toCanonicalBarsRequest,
   toCanonicalIndicatorsRequest,
 } from '@/utils/dataCoreV2Market'
@@ -114,16 +111,6 @@ export function getLiveTargets() {
 /** 获取数据 profile 摘要列表 */
 export function getDataProfiles() {
   return request.get<any, DataProfileSummary[]>('/data/profiles')
-}
-
-/** Read report bars once from the exact immutable canonical input identity. */
-export async function getMarketBarsForBacktestReport(
-  report: BacktestReport,
-): Promise<BacktestMarketBarsResult> {
-  return loadCanonicalReportBars(
-    report,
-    (path, params) => request.get<any, MarketBarsResponse>(path, { params }),
-  )
 }
 
 /** @deprecated 后端暂无 /api/quote，请使用 dominants / bars API */

@@ -84,4 +84,28 @@ describe('runtimeHealth helpers', () => {
     assert.equal(summary.error, 'heartbeat_missing')
     assert.match(summary.recovery, /有限重试/)
   })
+
+  it('does not fall back to the retired runtime scheduler component', () => {
+    const summary = buildRuntimeRecoverySummary({
+      status: 'degraded',
+      components: {
+        scheduler: {
+          status: 'ok',
+          heartbeat_at: '2026-07-25T15:01:00Z',
+          heartbeat_age_seconds: 70,
+        },
+        live_checkpoints: {
+          recent_ingest: [],
+          recent_aggregation: [],
+        },
+        rq: {},
+        db: {},
+        redis: {},
+        notification_retry: {},
+      },
+    } as never)
+
+    assert.equal(summary.heartbeat, null)
+    assert.equal(summary.heartbeatAge, '-')
+  })
 })

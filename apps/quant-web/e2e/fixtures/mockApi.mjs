@@ -91,9 +91,6 @@ const DASHBOARD_SUMMARY = {
   v1b_strategies: 1,
   signals_today: 0,
   signals_week: 0,
-  backtests: 1,
-  backtest_reports: 1,
-  backtest_reports_success: 1,
   data_contracts: 1,
   jm_primary_passed_assets: 6,
   live_target_readiness: 'ready',
@@ -109,13 +106,6 @@ const DASHBOARD_SUMMARY = {
     period: '15m',
     direction: 'long',
     signal_time: '2026-07-27T01:04:00Z',
-  },
-  latest_jm_report: {
-    report_id: 14,
-    report_no: 'R14',
-    strategy_code: 'jm_v1b',
-    status: 'completed',
-    created_at: '2026-07-01T00:00:00Z',
   },
   generated_at: '2026-07-21T12:00:00Z',
 }
@@ -300,79 +290,6 @@ const BARS_RESPONSE = {
   lineage: MARKET_LINEAGE,
   strict_research_ready: false,
   message: '浏览模式发现跨文件冲突，仅供观察。',
-}
-
-const REPORT_14 = {
-  id: 14,
-  strategy_code: 'jm_v1b',
-  strategy_version: '0.1.0',
-  symbol: 'jm',
-  contract: 'JM2609',
-  period: '15m',
-  status: 'completed',
-  started_at: '2026-01-01T00:00:00Z',
-  created_at: '2026-01-02T00:00:00Z',
-  summary: { start_date: '2026-01-01', end_date: '2026-06-01', report_metadata: {} },
-}
-
-const TRADE_3199 = {
-  id: 3199,
-  report_id: 14,
-  trade_no: 'TRD-3199',
-  symbol: 'jm',
-  contract: 'JM2609',
-  direction: 'long',
-  open_time: '2026-05-08T09:15:00',
-  close_time: '2026-05-08T10:15:00',
-  open_price: 1200,
-  close_price: 1212,
-  volume: 1,
-  net_pnl: 118,
-  commission: 2,
-  slippage: 0,
-  holding_bars: 4,
-  entry_reason: 'mock entry',
-  exit_reason: 'mock exit',
-  raw_payload: { entry_interval: '15m' },
-}
-
-const REVIEW_SOURCE_3199 = {
-  ...TRADE_3199,
-  source_type: 'backtest_trade',
-  source_id: 3199,
-  trade_id: 3199,
-  period: '15m',
-  entry_interval: '15m',
-  reviewed: true,
-  review_id: 9,
-}
-
-const REVIEW_9 = {
-  id: 9,
-  source_type: 'backtest_trade',
-  source_id: 3199,
-  report_id: 14,
-  trade_id: 3199,
-  trade_no: 'TRD-3199',
-  symbol: 'jm',
-  contract: 'JM2609',
-  period: '15m',
-  entry_interval: '15m',
-  direction: 'long',
-  open_time: TRADE_3199.open_time,
-  close_time: TRADE_3199.close_time,
-  open_price: 1200,
-  close_price: 1212,
-  volume: 1,
-  net_pnl: 118,
-  mistake_tags: [],
-  setup_tags: [],
-  rule_tags: [],
-  emotion_tags: [],
-  screenshot_paths: [],
-  ai_status: 'reserved',
-  extra: { report_id: 14, trade_id: 3199 },
-  source: REVIEW_SOURCE_3199,
 }
 
 const HTDY_REVIEW_10 = {
@@ -636,7 +553,6 @@ export async function installMockApi(page) {
             periods: ['5m'],
             is_v1b: true,
             capability_classes: ['research_only', 'historical_scan'],
-            backtest_endpoints: [],
             scan_endpoint: null,
             spec_doc_path: null,
             spec_doc_exists: false,
@@ -708,31 +624,6 @@ export async function installMockApi(page) {
         strict_research_ready: false,
         message: null,
       })(route)
-      return
-    }
-
-    if (path.includes('/backtests/reports/14/trades')) {
-      await fulfillJson({ items: [TRADE_3199], total: 1, limit: 50, offset: 0 })(route)
-      return
-    }
-
-    if (path.includes('/backtests/reports/14/validation-context/observation')) {
-      await fulfillJson({
-        available: false,
-        context: null,
-        error_type: 'BACKTEST_VALIDATION_EVIDENCE_INVALID',
-        error_message: 'validation evidence is unavailable or invalid',
-      })(route)
-      return
-    }
-
-    if (path.includes('/backtests/reports/14')) {
-      await fulfillJson(REPORT_14)(route)
-      return
-    }
-
-    if (path.includes('/backtests/reports') || path.includes('/backtests/tasks')) {
-      await fulfillJson(pagedPayload(url, path.includes('/backtests/reports') ? [REPORT_14] : []))(route)
       return
     }
 
@@ -856,11 +747,6 @@ export async function installMockApi(page) {
       return
     }
 
-    if (path.includes('/reviews/sources/backtest-trades')) {
-      await fulfillJson(pagedPayload(url, [REVIEW_SOURCE_3199]))(route)
-      return
-    }
-
     if (path.includes('/reviews/tags')) {
       await fulfillJson([])(route)
       return
@@ -874,11 +760,6 @@ export async function installMockApi(page) {
         market_phase: [],
         system_compliance: [],
       })(route)
-      return
-    }
-
-    if (path.endsWith('/reviews/9/bars')) {
-      await fulfillJson({ lineage: { schema_version: 'review_source_lineage_v1', source_type: 'backtest_trade', source_id: 3199, primary: MARKET_LINEAGE, bar: { bar_start: TRADE_3199.open_time, bar_end: TRADE_3199.close_time } }, bars: BARS_RESPONSE.bars })(route)
       return
     }
 
@@ -903,11 +784,6 @@ export async function installMockApi(page) {
       return
     }
 
-    if (path.endsWith('/reviews/9')) {
-      await fulfillJson(REVIEW_9)(route)
-      return
-    }
-
     if (path.endsWith('/reviews/10')) {
       await fulfillJson(HTDY_REVIEW_10)(route)
       return
@@ -922,7 +798,7 @@ export async function installMockApi(page) {
           ? []
           : sourceType === 'signal_event' && sourceId === '8'
             ? [HTDY_REVIEW_10]
-            : [REVIEW_9]
+            : [HTDY_REVIEW_10]
       await fulfillJson(pagedPayload(url, rows))(route)
       return
     }
@@ -949,10 +825,7 @@ export const MAIN_ROUTES = [
   '/market',
   '/market/chart',
   '/strategy',
-  '/backtest',
-  '/backtest/batch',
   '/signal',
   '/runtime',
   '/review',
-  '/settings',
 ]

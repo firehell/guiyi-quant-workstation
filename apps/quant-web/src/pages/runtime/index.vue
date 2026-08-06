@@ -263,24 +263,6 @@ onMounted(() => {
       </NCard>
 
       <div class="runtime-grid runtime-grid--two">
-        <NCard title="Scheduler" size="small">
-          <template v-if="health.components.scheduler">
-            <NDescriptions :column="1" size="small" label-placement="left">
-              <NDescriptionsItem label="Status">
-                <NTag size="small" :type="runtimeStatusType(health.components.scheduler.status)">
-                  {{ health.components.scheduler.status }}
-                </NTag>
-              </NDescriptionsItem>
-              <NDescriptionsItem label="Enabled">{{ health.components.scheduler.enabled ?? '-' }}</NDescriptionsItem>
-              <NDescriptionsItem label="Heartbeat">{{ formatDateTime(health.components.scheduler.heartbeat_at) }}</NDescriptionsItem>
-              <NDescriptionsItem label="Age (s)">{{ health.components.scheduler.heartbeat_age_seconds ?? '-' }}</NDescriptionsItem>
-              <NDescriptionsItem label="Last Cycle">{{ health.components.scheduler.last_cycle_status || '-' }}</NDescriptionsItem>
-              <NDescriptionsItem label="Error Type">{{ health.components.scheduler.error_type || '-' }}</NDescriptionsItem>
-            </NDescriptions>
-          </template>
-          <NEmpty v-else description="runtime health 未返回 scheduler 组件。" />
-        </NCard>
-
         <NCard title="After-Market Archive" size="small">
           <template v-if="health.components.archive">
             <NDescriptions :column="1" size="small" label-placement="left">

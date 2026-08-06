@@ -70,15 +70,6 @@ const menuOptions: MenuOption[] = [
     key: 'research-group',
     children: [
       { label: '策略中心', key: 'strategy', icon: renderIcon('strategy') },
-      {
-        label: '回测中心',
-        key: 'backtest-group',
-        icon: renderIcon('backtest'),
-        children: [
-          { label: '任务与报告', key: 'backtest' },
-          { label: '批量回测', key: 'backtest-batch' },
-        ],
-      },
     ],
   },
   {
@@ -88,7 +79,6 @@ const menuOptions: MenuOption[] = [
     children: [
       { label: '数据中心', key: 'data', icon: renderIcon('data') },
       { label: '运行状态', key: 'runtime', icon: renderIcon('runtime') },
-      { label: '系统设置', key: 'settings', icon: renderIcon('settings') },
     ],
   },
 ]
@@ -105,7 +95,6 @@ const activeKey = computed(() => {
 
 const breadcrumbItems = computed(() => {
   if (route.name === 'market-chart') return ['行情看板', '品种行情']
-  if (route.name === 'backtest-batch') return ['回测中心', '批量回测']
   if (route.name === 'not-found') return ['页面不存在']
   return [String(route.meta.title || '归一量化工作站')]
 })
@@ -211,14 +200,6 @@ onUnmounted(() => {
                 </NButton>
               </template>
               信号监控
-            </NTooltip>
-            <NTooltip placement="bottom">
-              <template #trigger>
-                <NButton quaternary circle aria-label="打开回测中心" @click="router.push({ name: 'backtest' })">
-                  <template #icon><UiIcon name="backtest" :size="17" /></template>
-                </NButton>
-              </template>
-              回测中心
             </NTooltip>
             <NTooltip placement="bottom">
               <template #trigger>

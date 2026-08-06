@@ -17,9 +17,6 @@ export interface MarketChartQueryState {
 /** 保留在 URL 中的 deep-link 字段 */
 export interface MarketChartDeepLink {
   strategy?: string | null
-  report_id?: string | null
-  trade_id?: string | null
-  trade_no?: string | null
   time?: string | null
   datetime?: string | null
   signal_layer?: string | null
@@ -45,9 +42,6 @@ export function buildMarketChartRouteQuery(
     access_mode: state.accessMode === 'research' ? 'research' : undefined,
     data_mode: state.dataMode === 'live' ? 'live' : undefined,
     strategy: deepLink.strategy?.trim() || undefined,
-    report_id: deepLink.report_id?.trim() || undefined,
-    trade_id: deepLink.trade_id?.trim() || undefined,
-    trade_no: deepLink.trade_no?.trim() || undefined,
     time: deepLink.time?.trim() || deepLink.datetime?.trim() || undefined,
     signal_layer: deepLink.signal_layer?.trim() || undefined,
     signal_id: deepLink.signal_id?.trim() || undefined,

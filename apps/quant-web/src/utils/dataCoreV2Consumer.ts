@@ -1,4 +1,4 @@
-import type { BacktestTaskCreateRequest, CanonicalInputIdentity } from '@/types/backtest'
+import type { CanonicalInputIdentity } from '@/types/canonical'
 import { isHistoricalBarFrequency } from '../types/historicalBarFrequency.ts'
 import type { SignalScanRequest } from '@/types/signal'
 
@@ -243,32 +243,6 @@ export function parseCanonicalInputIdentity(
     status: 'unverified' as const,
     reason: 'valid canonical shape; digest unverified because the browser does not recompute it',
     identity,
-  }
-}
-
-/** Serialize only the backend's formal canonical backtest contract. */
-export function buildFormalBacktestRequest(input: BacktestTaskCreateRequest): BacktestTaskCreateRequest {
-  return {
-    engine_type: input.engine_type,
-    task_type: input.task_type,
-    dataset_kind: input.dataset_kind,
-    instrument_symbol: compact(input.instrument_symbol).toLowerCase(),
-    contract_or_series: compact(input.contract_or_series).toUpperCase(),
-    exchange: compact(input.exchange).toUpperCase(),
-    interval: input.interval,
-    ...(input.auxiliary_periods ? { auxiliary_periods: [...input.auxiliary_periods] } : {}),
-    start: input.start,
-    end: input.end,
-    strategy_class_path: compact(input.strategy_class_path),
-    strategy_code: input.strategy_code,
-    strategy_version: input.strategy_version,
-    strategy_parameters: input.strategy_parameters,
-    rate: input.rate,
-    slippage: input.slippage,
-    size: input.size,
-    pricetick: input.pricetick,
-    capital: input.capital,
-    ...(input.execution_timing ? { execution_timing: input.execution_timing } : {}),
   }
 }
 

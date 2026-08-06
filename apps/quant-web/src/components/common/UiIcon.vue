@@ -28,7 +28,7 @@ withDefaults(
       <rect x="3" y="14" width="7" height="7" rx="1" />
       <rect x="14" y="14" width="7" height="7" rx="1" />
     </template>
-    <template v-else-if="name === 'market' || name === 'backtest'">
+    <template v-else-if="name === 'market'">
       <path d="M3 17l5-5 4 3 7-9" />
       <path d="M16 6h3v3" />
     </template>
@@ -51,10 +51,6 @@ withDefaults(
     <template v-else-if="name === 'runtime'">
       <circle cx="12" cy="12" r="8" />
       <path d="M8 12h2l1.3-3 2.1 6 1.3-3H17" />
-    </template>
-    <template v-else-if="name === 'settings'">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" />
     </template>
     <template v-else-if="name === 'refresh'">
       <path d="M20 11a8 8 0 10-2.3 5.7" />

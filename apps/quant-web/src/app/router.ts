@@ -38,18 +38,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '策略管理', icon: 'strategy' },
       },
       {
-        path: 'backtest',
-        name: 'backtest',
-        component: () => import('@/pages/backtest/index.vue'),
-        meta: { title: '回测中心', icon: 'backtest' },
-      },
-      {
-        path: 'backtest/batch',
-        name: 'backtest-batch',
-        component: () => import('@/pages/backtest/batch.vue'),
-        meta: { title: '批量回测', icon: 'backtest' },
-      },
-      {
         path: 'signal',
         name: 'signal',
         component: () => import('@/pages/signal/index.vue'),
@@ -68,16 +56,10 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '复盘分析', icon: 'review' },
       },
       {
-        path: 'settings',
-        name: 'settings',
-        component: () => import('@/pages/settings/index.vue'),
-        meta: { title: '系统设置', icon: 'settings' },
-      },
-      {
         path: ':pathMatch(.*)*',
         name: 'not-found',
         component: () => import('@/pages/NotFound.vue'),
-        meta: { title: '页面不存在', icon: 'settings' },
+        meta: { title: '页面不存在', icon: 'shield' },
       },
     ],
   },

@@ -4,7 +4,6 @@ export type DashboardActionKind =
   | 'live_signal'
   | 'htdy_observation'
   | 'review'
-  | 'report'
   | 'jm_15m'
 
 export interface DashboardActionRoute {
@@ -29,7 +28,6 @@ export interface DashboardActionFacts {
     lifecycle_status: string
   } | null
   unfinishedReviewCount: number
-  latestReportId?: number | null
 }
 
 const EXPLICIT_FAILURE = new Set(['failed', 'blocked'])
@@ -104,13 +102,6 @@ export function buildDashboardActions(facts: DashboardActionFacts): DashboardAct
       title: `继续待复盘（${facts.unfinishedReviewCount}）`,
       detail: '完善已有 ReviewNote，不自动创建或写入复盘。',
       to: { name: 'review' },
-    })
-  } else if (facts.latestReportId) {
-    actions.push({
-      kind: 'report',
-      title: `继续最近报告 #${facts.latestReportId}`,
-      detail: '进入现有历史研究报告，不推断盈利或 live 能力。',
-      to: { name: 'backtest', query: { report_id: String(facts.latestReportId) } },
     })
   }
   actions.push({

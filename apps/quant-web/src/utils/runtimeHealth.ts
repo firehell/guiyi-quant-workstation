@@ -92,7 +92,7 @@ export function buildRuntimeRecoverySummary(
 ) {
   const components = payload.components
   const afterMarket = components.after_market_scheduler
-  const scheduler = afterMarket?.scheduler_heartbeat || components.scheduler
+  const scheduler = afterMarket?.scheduler_heartbeat
   const checkpoints = [
     ...(components.live_checkpoints.recent_ingest || []),
     ...(components.live_checkpoints.recent_aggregation || []),

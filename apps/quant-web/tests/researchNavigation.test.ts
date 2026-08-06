@@ -10,7 +10,7 @@ import {
 } from '../src/utils/researchNavigation.ts'
 
 describe('researchNavigation', () => {
-  it('builds report trade chart and review context without losing return route', () => {
+  it('ignores retired report/trade context and rejects a backtest return route', () => {
     const chart = buildChartResearchQuery({
       reportId: 14,
       tradeId: 3199,
@@ -23,15 +23,9 @@ describe('researchNavigation', () => {
       symbol: 'jm',
       contract: 'JM2609',
       period: '15m',
-      report_id: '14',
-      trade_id: '3199',
-      return_route: '/backtest?report_id=14',
     })
-    assert.deepEqual(buildReviewResearchQuery(parseResearchContext(chart)), {
-      report_id: '14',
-      trade_id: '3199',
-      return_route: '/backtest?report_id=14',
-    })
+    assert.deepEqual(buildReviewResearchQuery(parseResearchContext(chart)), {})
+    assert.equal(safeReturnRoute('/backtest?report_id=14'), null)
   })
 
   it('keeps signal event context separate from historical report context', () => {

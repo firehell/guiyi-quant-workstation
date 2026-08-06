@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
-  buildFormalBacktestRequest,
   buildFormalSignalScanRequest,
   normalizeFormalSignalDateRange,
   parseCanonicalInputIdentity,
@@ -34,56 +33,6 @@ describe('data core v2 trusted consumers', () => {
     derived_frequency: null,
     strategy_input_version: 'signal:su_bing_ema21:v0',
     digest: 'b'.repeat(64),
-  })
-
-  it('serializes a formal backtest with DatasetKey identity and no legacy Profile fields', () => {
-    const request = buildFormalBacktestRequest({
-      engine_type: 'vnpy',
-      task_type: 'single',
-      dataset_kind: 'actual_dominant',
-      instrument_symbol: ' jm ',
-      contract_or_series: ' jm2609 ',
-      exchange: 'DCE',
-      interval: '15m',
-      start: '2026-07-01T00:00:00.000Z',
-      end: '2026-07-31T00:00:00.000Z',
-      strategy_class_path: 'guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy',
-      strategy_code: 'su_bing_ema21',
-      strategy_version: 'v0',
-      strategy_parameters: { ema_period: 21 },
-      rate: 0.0001,
-      slippage: 1,
-      size: 10,
-      pricetick: 1,
-      capital: 100000,
-      profile_id: 'legacy-profile',
-      market_data_file_id: 7,
-      binding_snapshot: { legacy: true },
-    } as never)
-
-    assert.deepEqual(request, {
-      engine_type: 'vnpy',
-      task_type: 'single',
-      dataset_kind: 'actual_dominant',
-      instrument_symbol: 'jm',
-      contract_or_series: 'JM2609',
-      exchange: 'DCE',
-      interval: '15m',
-      start: '2026-07-01T00:00:00.000Z',
-      end: '2026-07-31T00:00:00.000Z',
-      strategy_class_path: 'guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21VnpyStrategy',
-      strategy_code: 'su_bing_ema21',
-      strategy_version: 'v0',
-      strategy_parameters: { ema_period: 21 },
-      rate: 0.0001,
-      slippage: 1,
-      size: 10,
-      pricetick: 1,
-      capital: 100000,
-    })
-    assert.equal('profile_id' in request, false)
-    assert.equal('market_data_file_id' in request, false)
-    assert.equal('binding_snapshot' in request, false)
   })
 
   it('serializes non-scan formal signal modes for the zero-write preview contract', () => {

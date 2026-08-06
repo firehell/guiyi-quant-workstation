@@ -10,7 +10,7 @@ describe('market right rail tab', () => {
     assert.equal(resolveMarketRightRailTab({ preferred: 'strategy', hasSignalContext: true }), 'signal')
   })
 
-  it('opens review for report or trade context when signal context is absent', () => {
+  it('opens review for an explicit review context when signal context is absent', () => {
     assert.equal(resolveMarketRightRailTab({ preferred: 'strategy', hasReviewContext: true }), 'review')
   })
 

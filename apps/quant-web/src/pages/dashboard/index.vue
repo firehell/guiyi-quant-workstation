@@ -33,7 +33,6 @@ const actions = computed(() =>
     dataStatus: summary.value?.data_status,
     latestLiveSignalEvent: summary.value?.latest_live_signal_event,
     unfinishedReviewCount: summary.value?.unfinished_review_count ?? 0,
-    latestReportId: summary.value?.latest_jm_report?.report_id,
   }),
 )
 
@@ -131,15 +130,7 @@ onMounted(() => {
               </div>
               <NTag size="small" type="warning">待复盘 {{ summary.unfinished_review_count || 0 }}</NTag>
             </div>
-            <div v-if="summary.latest_jm_report" class="recent-item">
-              <div>
-                <span class="recent-item__label">最新 JM 研究报告</span>
-                <strong>#{{ summary.latest_jm_report.report_id }} · {{ summary.latest_jm_report.report_no }}</strong>
-                <small>{{ formatDashboardTimestamp(summary.latest_jm_report.created_at) }}</small>
-              </div>
-              <StatusTag :status="summary.latest_jm_report.status" domain="task" />
-            </div>
-            <div v-if="!summary.latest_live_signal_event && !summary.latest_review && !summary.latest_jm_report"
+            <div v-if="!summary.latest_live_signal_event && !summary.latest_review"
               class="recent-empty" role="status">
               暂无最近研究事实；可从 JM 15m 快捷入口开始浏览。
             </div>
@@ -154,7 +145,6 @@ onMounted(() => {
             <CapabilityBadge kind="research-only" label="Registry≠validated" size="small" />
           </template>
         </MetricCard>
-        <MetricCard label="回测报告" :value="summary.backtest_reports" :meta="`成功 ${summary.backtest_reports_success}`" />
         <MetricCard label="Primary 合约" :value="summary.data_contracts"
           :meta="`JM passed 资产 ${summary.jm_primary_passed_assets}`" />
       </section>
@@ -184,7 +174,7 @@ onMounted(() => {
 
 .dashboard-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--gy-space-4);
   margin-top: var(--gy-space-4);
 }

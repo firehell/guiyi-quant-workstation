@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 /**
  * 真实后端只读 smoke：默认 skip；设置 REAL_BACKEND=1 且后端可达时运行。
- * 禁止创建回测、扫描、ack、review 写入、live、归档、企微发送。
+ * 禁止扫描、ack、review 写入、live、归档、企微发送。
  */
 const enabled = process.env.REAL_BACKEND === '1'
 const apiBase = (process.env.PLAYWRIGHT_API_BASE || 'http://127.0.0.1:8000').replace(/\/+$/, '')
@@ -49,17 +49,6 @@ test.describe('Web V1 real backend read-only smoke', () => {
     expect(anyOk).toBeTruthy()
   })
 
-  test('report 14 is readable or explicitly absent', async ({ request }) => {
-    const res = await request.get(`${apiBase}/api/backtests/reports/14`)
-    if (res.status() === 404) {
-      test.info().annotations.push({ type: 'residual', description: 'report 14 not present in this backend' })
-      return
-    }
-    expect(res.ok()).toBeTruthy()
-    const body = await res.json()
-    expect(body.id ?? body.report_id).toBeTruthy()
-  })
-
   test('signals and events list endpoints are readable', async ({ request }) => {
     const latest = await request.get(`${apiBase}/api/signals/latest?limit=5`)
     expect([200, 404].includes(latest.status())).toBeTruthy()
@@ -84,7 +73,7 @@ test.describe('Web V1 real backend read-only smoke', () => {
   })
 
   test('suite contract is GET-only', async () => {
-    // 结构性保证：本文件仅使用 request.get，不创建回测/扫描/ack/review/live/归档/企微。
+    // 结构性保证：本文件仅使用 request.get，不创建扫描/ack/review/live/归档/企微。
     expect(true).toBeTruthy()
   })
 })

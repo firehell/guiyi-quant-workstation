@@ -1,4 +1,4 @@
-import type { CanonicalInputIdentity } from './backtest'
+import type { CanonicalInputIdentity } from './canonical'
 
 /** 交易信号 */
 export interface SignalRecord {

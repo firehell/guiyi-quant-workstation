@@ -43,7 +43,7 @@ test.describe('Web V1 mock smoke', () => {
 
     await page.goto('/dashboard')
     await expect(page.getByText('今日工作台').first()).toBeVisible()
-    await expect(page.getByLabel('建议动作')).toContainText('继续最近报告')
+    await expect(page.getByLabel('建议动作')).toContainText('打开 JM 15m 工作台')
     await page.getByRole('button', { name: '打开 JM 15m 工作台' }).click()
     await expect(page).toHaveURL(/\/market\/chart\?.*symbol=jm.*period=15m.*contract_view=actual.*data_mode=historical/)
 
@@ -99,6 +99,18 @@ test.describe('Web V1 mock smoke', () => {
     await expect(context).toContainText('actual')
   })
 
+  test('retired backtest and settings URLs fall through to not-found without navigation entries', async ({ page }) => {
+    await page.goto('/dashboard')
+    await expect(page.getByRole('menuitem', { name: /回测|批量回测|系统设置/ })).toHaveCount(0)
+    await expect(page.getByLabel('打开回测中心')).toHaveCount(0)
+
+    for (const path of ['/backtest', '/backtest/batch', '/settings']) {
+      await page.goto(path)
+      await expect(page.getByRole('heading', { name: '页面不存在' })).toBeVisible()
+      await expect(page).toHaveURL(path)
+    }
+  })
+
   test('market list and chart expose historical/live and contract view controls', async ({ page }) => {
     const chartDataCalls = []
     page.on('request', (req) => {
@@ -127,12 +139,12 @@ test.describe('Web V1 mock smoke', () => {
     await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  test('runtime shows live scheduler, archive, and after-market scheduler sections', async ({ page }) => {
+  test('runtime shows archive and after-market scheduler sections without the retired scheduler', async ({ page }) => {
     await page.goto('/runtime')
     await expect(page.getByText('运行状态').first()).toBeVisible()
-    await expect(page.getByText('Scheduler').first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('After-Market Archive').first()).toBeVisible()
     await expect(page.getByText('After-Market Scheduler').first()).toBeVisible()
+    await expect(page.getByText('Scheduler', { exact: true })).toHaveCount(0)
     await expect(page.getByText('Archive Lag (trading days)').first()).toBeVisible()
     await expect(page.getByText('Lock Status').first()).toBeVisible()
   })
@@ -160,57 +172,6 @@ test.describe('Web V1 mock smoke', () => {
     expect(body).toMatch(/非自动下单|仅供观察|不构成交易指令/)
   })
 
-  test('settings connection validation stays read-only health', async ({ page }) => {
-    const methods = []
-    page.on('request', (req) => {
-      if (req.url().includes('/api/')) methods.push(`${req.method()} ${req.url()}`)
-    })
-    await page.goto('/settings')
-    const testBtn = page.getByRole('button', { name: '测试连接' })
-    await expect(testBtn).toBeVisible()
-    await testBtn.click()
-    await page.waitForTimeout(500)
-    expect(methods.some((m) => /^(POST|PUT|PATCH|DELETE)\b/.test(m))).toBeFalsy()
-  })
-
-  test('batch page remains research-only without start enabled by default', async ({ page }) => {
-    await page.goto('/backtest/batch')
-    const body = await page.locator('body').innerText()
-    expect(body).toMatch(/BATCH_BACKTEST_RESEARCH_ONLY|research-only|Legacy|默认禁用/i)
-    const startBtn = page.getByRole('button', { name: /启动批量/ })
-    if (await startBtn.count()) {
-      await expect(startBtn.first()).toBeDisabled()
-    }
-  })
-
-  test('review and backtest deep-link routes open', async ({ page }) => {
-    await page.goto('/review?report_id=14')
-    await expect(page.locator('.main-layout, .page-shell, .n-layout').first()).toBeVisible({
-      timeout: 15_000,
-    })
-    await page.goto('/market/chart?report_id=14&symbol=jm&period=15m')
-    await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')
-  })
-
-  test('report trade chart review report round-trip stays read-only', async ({ page }) => {
-    const writes = []
-    page.on('request', (request) => {
-      if (/^(POST|PUT|PATCH|DELETE)$/.test(request.method())) writes.push(`${request.method()} ${request.url()}`)
-    })
-    await page.goto('/backtest?report_id=14')
-    await expect(page.getByText('TRD-3199').first()).toBeVisible({ timeout: 15_000 })
-    await page.getByRole('button', { name: '查看K线' }).first().click()
-    await expect(page).toHaveURL(/\/market\/chart\?.*report_id=14.*trade_id=3199/)
-    await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')
-    await page.getByRole('button', { name: '返回交易复盘' }).click()
-    await expect(page).toHaveURL(/\/review\?.*report_id=14.*trade_id=3199/)
-    await expect(page.getByText('复盘卡').first()).toBeVisible()
-    await page.getByRole('button', { name: '返回来源' }).click()
-    await expect(page).toHaveURL(/\/backtest\?report_id=14/)
-    expect(writes).toEqual([])
-  })
-
   test('signal event chart review event round-trip restores empty review without writes', async ({ page }) => {
     const writes = []
     page.on('request', (request) => {
@@ -235,7 +196,11 @@ test.describe('Web V1 mock smoke', () => {
   })
 
   test('security storage, keyboard tabs, focus, and responsive baselines', async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem('token', 'legacy-browser-secret'))
+    await page.addInitScript(() => {
+      localStorage.setItem('token', 'legacy-browser-secret')
+      localStorage.setItem('guiyi_app_settings', '{"apiBaseUrl":"http://legacy.invalid"}')
+      sessionStorage.setItem('guiyi_connection_overrides', '{"wsUrl":"ws://legacy.invalid"}')
+    })
     const authorizationHeaders = []
     page.on('request', (request) => {
       const authorization = request.headers().authorization
@@ -245,19 +210,10 @@ test.describe('Web V1 mock smoke', () => {
     await page.setViewportSize({ width: 1280, height: 720 })
     await page.goto('/dashboard')
     expect(await page.evaluate(() => localStorage.getItem('token'))).toBeNull()
+    expect(await page.evaluate(() => localStorage.getItem('guiyi_app_settings'))).toBeNull()
+    expect(await page.evaluate(() => sessionStorage.getItem('guiyi_connection_overrides'))).toBeNull()
     expect(authorizationHeaders).toEqual([])
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
-
-    await page.goto('/settings')
-    await page.getByPlaceholder('留空则使用 Vite 代理 / 环境变量').fill('http://127.0.0.1:8010')
-    await page.getByPlaceholder('留空则自动推断 ws(s)://host/ws').fill('ws://127.0.0.1:8010/ws')
-    await page.getByRole('button', { name: '保存设置' }).click()
-    const storage = await page.evaluate(() => ({
-      local: localStorage.getItem('guiyi_app_settings') || '',
-      session: sessionStorage.getItem('guiyi_connection_overrides') || '',
-    }))
-    expect(storage.local).not.toMatch(/8010|apiBaseUrl|wsUrl/)
-    expect(storage.session).toMatch(/8010/)
 
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')

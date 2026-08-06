@@ -5,7 +5,7 @@ import {
   toSafeErrorInfo,
 } from '@/utils/errorRedaction'
 import { normalizeApiBaseURL } from '@/utils/network'
-import { loadAppSettings, purgeLegacyWebCredentials } from '@/utils/settings'
+import { purgeLegacyWebCredentials } from '@/utils/settings'
 
 interface RequestMetadata {
   startTime: number
@@ -15,11 +15,9 @@ type TimedAxiosRequestConfig = InternalAxiosRequestConfig & {
   metadata?: RequestMetadata
 }
 
-/** 解析 API 根地址：优先本地设置，其次 Vite 环境变量 */
+/** 解析 API 根地址：只接受 Vite 环境变量，否则使用同源默认值。 */
 function resolveBaseURL() {
-  const settings = loadAppSettings()
-  const configured = settings.apiBaseUrl.trim() || import.meta.env.VITE_API_BASE_URL?.trim()
-  return normalizeApiBaseURL(configured)
+  return normalizeApiBaseURL(import.meta.env.VITE_API_BASE_URL?.trim())
 }
 
 /** 提取请求方法与路径（不含 query/body），供安全摘要日志使用 */

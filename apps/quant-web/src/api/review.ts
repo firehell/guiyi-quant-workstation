@@ -1,23 +1,6 @@
 import request from './request'
-import type { ReviewBarsResponse, ReviewNote, ReviewSourceTrade, ReviewStats, ReviewTag, ReviewUpdateRequest } from '@/types/review'
+import type { ReviewBarsResponse, ReviewNote, ReviewStats, ReviewTag, ReviewUpdateRequest } from '@/types/review'
 import type { PagedResponse } from '@/types/pagination'
-
-/** 从回测成交拉取可复盘源交易列表 */
-export function getReviewBacktestTrades(params: {
-  symbol?: string
-  period?: string
-  report_id?: number
-  reviewed?: boolean
-  limit?: number
-  offset?: number
-} = {}) {
-  return request.get<any, PagedResponse<ReviewSourceTrade>>('/api/reviews/sources/backtest-trades', { params: { paged: true, ...params } })
-}
-
-/** 基于回测成交创建复盘笔记 */
-export function createReviewFromBacktestTrade(tradeId: number, data?: Partial<ReviewUpdateRequest>) {
-  return request.post<any, ReviewNote>(`/api/reviews/from-backtest-trade/${tradeId}`, data || {})
-}
 
 /** 用户显式确认后，基于 StrategySignal 创建或恢复复盘。 */
 export function createReviewFromStrategySignal(signalId: number, data?: Partial<ReviewUpdateRequest>) {
