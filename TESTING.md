@@ -61,31 +61,28 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_live_target_freshness.py
 ```
 
-legacy Profile/lineage compatibility 回归（不证明 active selector）：
+Profile/lineage compatibility 回归（不证明 active selector）：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_backtest_profile_contract.py \
   services/quant-api/tests/test_signal_review_profile_lineage.py \
   services/quant-api/tests/test_review_center.py
 ```
 
-### GY-CORE-03 unified CLI 与兼容 Shim
+### GY-CORE-03 unified CLI
 
-`guiyi` 由 `services/quant-api` package 提供。首轮命令均为只读或 dry-run；
-`runtime plan` 不打开 DB/Redis/RQData，`runtime status` 只读取既有 health service，
+`guiyi` 由 `services/quant-api` package 提供。`runtime status` 只读取既有 health service，
 `data verify` 的 JM 请求复用 GY-CORE-02 Facade。
 
 ```bash
 uv run --project services/quant-api guiyi --help
-uv run --project services/quant-api guiyi runtime plan --product jm
+uv run --project services/quant-api guiyi runtime status
 
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_guiyi_cli.py \
-  services/quant-api/tests/test_core_cli_service.py \
-  services/quant-api/tests/test_guiyi_legacy_shims.py
+  services/quant-api/tests/test_core_cli_service.py
 ```
 
 旧 `guiyi-data check-bars` 与
@@ -171,7 +168,7 @@ uv run --project services/quant-api pytest -q \
 canonical root 做只读验收，应另开精确范围的一次性执行意图，并通过
 `guiyi data audit` / Data Core 服务测试路径完成。
 
-### Task 05 derived/reference inventory
+### Task 05 historical derived/reference inventory
 
 下列 CLI 只输出稳定 JSON；不加载 RQData、不含 delete/apply/repair mode。真实 DB 只允许通过
 显式 `--database-url-env NAME` 外部只读 Gate 注入，绝不输出 URL；PostgreSQL 精确使用
@@ -204,14 +201,8 @@ Dockerfile。其他未知无扩展名 regular file 会输出 `REPO_UNKNOWN_EXTEN
 输出 `REPO_UNKNOWN_FILE_TYPE`，并令结果 incomplete；CSV、binary/data、compiled/cache 类型只可按
 `explicit_file_type_exclusions` 中的显式理由跳过，不能静默漏掉潜在 consumer reference。
 
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_derived_reference_inventory.py
-```
-
-`scripts/derived_reference_inventory.py` 已按 scripts-cli-consolidation 从仓库移除；
-inventory 行为由对应服务测试与 `guiyi data audit` 覆盖。真实 PostgreSQL/data root
+`scripts/derived_reference_inventory.py`、对应服务与专用测试已随旧 Backtest/派生资产
+兼容入口退役。当前统一只读入口为 `guiyi data audit`；真实 PostgreSQL/data root
 只读盘点仍是 external Gate，不授权重建、迁移、删除、Runtime、通知或交易。
 
 生产 migration、真实 RQData/Parquet/PostgreSQL apply 与创建/删除隔离 PostgreSQL 数据库
@@ -242,14 +233,11 @@ disabled smoke 不读取 RQData、不写业务表、不启动 scheduler、不创
 合同测试同时冻结 trusted builder 的 EMA21 identity/parameters/digest/fingerprint golden vector、
 long/short/equal 三态，以及 Runtime/EOD 不允许注入其他 evaluator 的边界。
 
-## 数据、回测与运行时只读验证
+## 数据与运行时只读验证
 
 ```bash
-bash scripts/engineering/runtime-health.sh --json
-
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api python scripts/backtest_trust_audit.py \
-  --report-id 14 --format markdown
+uv run --project services/quant-api guiyi runtime status
+uv run --project services/quant-api guiyi data audit --help
 ```
 
 真实数据、RQData、PostgreSQL、Runtime 或企业微信操作在执行前必须由用户的一次明确请求标识操作类别和精确范围，并通过对应业务合同的质量与安全检查。通用测试、health、dry-run、旧 packet/hash 或 historical receipt 均不构成 mutation 授权，也不能跨会话复用。
@@ -257,9 +245,9 @@ uv run --project services/quant-api python scripts/backtest_trust_audit.py \
 ## 专项业务边界定位
 
 - 数据、quality、profile、manifest：`docs/DATA_CENTER.md` 与对应 active business contract。
-- 回测口径与报告可信度：`docs/BACKTEST_ENGINE.md`。
 - SignalEvent、通知与 HTDY exact policy：`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md`。
-- S6-10 旧合同文本已删除：事实见 Git history；未来 Runtime/验收边界见 `docs/tasks/V1-FINAL-ACCEPTANCE-S6-11.md` 与 `STATUS.md`。
+- 回测、OOS、旧 S6 合同与报告只在 Git history 中保留；未来重建必须新建任务，
+  不复用旧入口、packet 或验收合同。
 - 个人开发、普通删除与外部操作边界：`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`。
 
 ## 解释规则

@@ -21,7 +21,6 @@ CANONICAL_DOCS = {
     "TESTING.md",
     "docs/ARCHITECTURE.md",
     "docs/DATA_CENTER.md",
-    "docs/BACKTEST_ENGINE.md",
     "docs/SIGNAL_EVENTS.md",
     "docs/INDICATOR_KERNEL.md",
 }

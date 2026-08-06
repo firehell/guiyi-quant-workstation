@@ -111,7 +111,6 @@ def test_runtime_gate_does_not_require_disabled_or_legacy_notification_services(
 def test_runtime_gate_uses_only_current_writer_services() -> None:
     assert REQUIRED_WRITER_SERVICES == (
         "com.guiyi.quant-api",
-        "com.guiyi.quant-worker-backtests",
         "com.guiyi.quant-worker-signals",
         "com.guiyi.quant-after-market-scheduler",
     )

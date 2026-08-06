@@ -43,10 +43,6 @@ def test_active_and_frozen_dispositions() -> None:
     }
     assert inventory["GY-DATA-CORE-V2.md"] is consistency.TaskDisposition.ACTIVE_CONTRACT
     assert (
-        inventory["V1-FINAL-ACCEPTANCE-S6-11.md"]
-        is consistency.TaskDisposition.ACTIVE_CONTRACT
-    )
-    assert (
         inventory["S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md"]
         is consistency.TaskDisposition.FROZEN_RUNTIME_CONSUMED
     )
@@ -56,7 +52,6 @@ def test_active_and_frozen_dispositions() -> None:
     "relative",
     [
         "docs/tasks/GY-DATA-CORE-V2.md",
-        "docs/tasks/V1-FINAL-ACCEPTANCE-S6-11.md",
     ],
 )
 def test_active_contracts_reject_collaboration_authorization_predicates(relative: str) -> None:

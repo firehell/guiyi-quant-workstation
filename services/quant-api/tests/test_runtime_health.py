@@ -223,8 +223,8 @@ def test_runtime_health_does_not_mark_old_checkpoints_stale_while_market_is_clos
 
 
 def test_worker_coverage_requires_each_expected_queue() -> None:
-    queues = [{"name": "guiyi-backtests", "status": "ok"}, {"name": "guiyi-signals", "status": "ok"}]
-    workers = [{"name": "worker-1", "queues": ["guiyi-backtests"]}]
+    queues = [{"name": "guiyi-signals", "status": "ok"}, {"name": "guiyi-notifications", "status": "ok"}]
+    workers = [{"name": "worker-1", "queues": ["guiyi-signals"]}]
 
     missing = _apply_worker_coverage(queues, workers)
 
@@ -486,7 +486,7 @@ def _rq_ok() -> dict:
         "status": "ok",
         "queues": [
             {
-                "name": "guiyi-backtests",
+                "name": "guiyi-signals",
                 "status": "ok",
                 "queued_count": 0,
                 "started_count": 0,
@@ -497,7 +497,7 @@ def _rq_ok() -> dict:
             }
         ],
         "worker_count": 1,
-        "workers": [{"name": "worker-1", "state": "idle", "queues": ["guiyi-backtests"]}],
+        "workers": [{"name": "worker-1", "state": "idle", "queues": ["guiyi-signals"]}],
         "error_type": None,
         "error_message": None,
     }

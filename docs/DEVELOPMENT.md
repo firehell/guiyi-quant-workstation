@@ -1,9 +1,9 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-05
+更新时间：2026-08-06
 
 本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
-`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、回测、信号和 Runtime 语义仍由
+`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、信号和 Runtime 语义仍由
 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。
 
 ## 唯一日常流程
@@ -34,6 +34,10 @@ develop
 - 数据身份/质量、策略、回测、信号、migration、Runtime、live 或通知：运行对应领域专项测试，
   且保留 deep canonical 的业务约束。
 - tracked 内容发生变化时运行适用的 secret scan；输出不得包含命中的秘密值。
+
+当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 runtime health
+scheduler component。不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建
+必须单独立项并从 Canonical/MarketDataService 合同开始。
 
 任何必需检查失败时，明确报告失败，不宣称任务完成。CI 如存在，只是补充结果，不是本地开发、
 commit 或 push 的前置授权。

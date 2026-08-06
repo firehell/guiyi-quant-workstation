@@ -18,14 +18,14 @@ Gate/hash-path 不再作为授权。
 ## Active contracts
 
 - `GY-DATA-CORE-V2.md` — 数据交互核心收口 active 业务合同
-- `V1-FINAL-ACCEPTANCE-S6-11.md` — 未来 Runtime/只读验收边界；release 与 Runtime 分属不同意图
 
 ## Frozen Runtime-consumed（Phase E 前不可删）
 
 - `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`
 
-已删除但仍由代码 task_id 引用的旧 S6-08 / S6-10 合同文本，仅能从 Git history 追溯；
-不得再当作现存路径或当前授权。
+已退役的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据仅能从 Git history 追溯；
+不得再当作现存路径、兼容入口或当前授权。未来重建回测或 Runtime 验收必须新建任务，
+重新定义当前代码与数据边界。
 
 ## Historical facts（已删，仅 Git history）
 
@@ -40,6 +40,7 @@ Gate/hash-path 不再作为授权。
 - `GY-DATA-PRODUCT-RETIREMENT-21.md`（21 品种退役已完成；当前事实见 `STATUS.md` / `DATA_CENTER.md`）
 - `JM-LIVE-SIGNAL-EVENT-S6-08.md`
 - `JM-LIVE-STABILITY-S6-10.md`
+- `V1-FINAL-ACCEPTANCE-S6-11.md`
 
 普通开发不强制创建任务合同。受控外部操作边界见 `AGENTS.md`。
 

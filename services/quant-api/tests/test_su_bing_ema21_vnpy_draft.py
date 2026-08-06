@@ -334,18 +334,6 @@ def test_future_bar_does_not_change_prior_decision() -> None:
     ) == prior_state
 
 
-def test_strategy_class_alias_loads_via_strategy_loader() -> None:
-    from app.vnpy_integration.strategy_loader import load_strategy_class
-    from guiyi_quant.strategies.su_bing_ema21 import STRATEGY_CLASS_PATH, SuBingEma21Strategy, SuBingEma21VnpyStrategy
-
-    canonical = load_strategy_class(STRATEGY_CLASS_PATH)
-    legacy_alias = load_strategy_class("guiyi_quant.strategies.su_bing_ema21.vnpy_strategy.SuBingEma21Strategy")
-
-    assert canonical is SuBingEma21VnpyStrategy
-    assert legacy_alias is SuBingEma21Strategy
-    assert legacy_alias is canonical
-
-
 def test_strategy_directory_avoids_broker_and_secret_keywords() -> None:
     forbidden = [
         "CTP",

@@ -416,6 +416,7 @@ def is_collaboration_blocker(clause: str) -> bool:
 
 def _iter_active_surface_files(repo_root: Path) -> list[Path]:
     surfaces: list[Path] = []
+    scanner_path = (repo_root / "scripts" / "engineering" / "repository_consistency.py").resolve()
     for relative in ACTIVE_CANONICAL_PATHS:
         surfaces.append(repo_root / relative)
     for relative in (
@@ -449,6 +450,8 @@ def _iter_active_surface_files(repo_root: Path) -> list[Path]:
                 ".toml",
                 ".rules",
             }:
+                if path.resolve() == scanner_path:
+                    continue
                 surfaces.append(path)
     return surfaces
 
@@ -553,7 +556,6 @@ _FROZEN_RUNTIME_TASKS = frozenset(
 _ACTIVE_CONTRACT_TASKS = frozenset(
     {
         "GY-DATA-CORE-V2.md",
-        "V1-FINAL-ACCEPTANCE-S6-11.md",
     }
 )
 _HISTORICAL_FACT_TASKS = frozenset()

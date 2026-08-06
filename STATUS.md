@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-05
+更新时间：2026-08-06
 
 本文件是项目当前状态仪表盘；历史过程由 Git、任务合同与既有证据追溯。历史协作材料不构成当前授权（见 `AGENTS.md` / `DECISIONS.md`）。
 
@@ -21,6 +21,13 @@
 Task 07 Stage A/B 的最新仓库证据记录 release/main/tag 已收口，且生产 PostgreSQL revision 曾回读为 `20260803_0032`。本次个人开发模式迁移未重新连接生产环境，因此该 revision 仍需在后续生产只读验收中再次精确回读。
 
 Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划”。历史 candidate 基于 `develop@364753e72458641e226280e326841919539c1354`，仅从 `config/data_core_v2_targets.yaml`、Catalog 和 MainContractMap 生成 JM 显式目标，再通过既有 Canonical reader 和 `MarketDataService` 只读验收。该 commit 与既有协作记录是历史定位信息，不是继续开发的前置授权。
+
+仓库当前已移除旧 Web/backend backtest 子系统与 S6-08/S6-09/S6-10 控制面：不再提供
+`/api/backtests/**`、`/ws/backtests/**`、`/backtest`、`/backtest/batch`、`/settings`、
+`guiyi-backtests` worker/queue、`guiyi runtime plan` 或 runtime health scheduler component。
+Market、watchlists、runtime status、Signal/Data/Review 非回测路径、Task 06、盘后 scheduler 与
+Canonical data 保留。此处只描述 `develop` 仓库事实，不代表 release、Runtime promotion、生产 DB/
+正式数据删除、host output 清理或服务停止已经发生。
 
 唯一目标范围为：
 
@@ -53,6 +60,7 @@ production_writes=false
 | GY-DATA-PRODUCT-RETIREMENT-21 | completed / released | 21 品种全链路删除、69 品种七周期刷新、Runtime 发布与残留验证完成 |
 | 旧派生数据清理 | optional / separate | 不阻塞 Task 07；仓库内删除与生产/正式数据删除必须分别分类 |
 | scripts-cli-consolidation | implementation on develop | 统一 `guiyi data download/aggregate/live/sync/audit`；旧 scripts/rqdata_* 与 plan/migrate/task07 已移除；正式数据/RQData/Runtime 未执行 |
+| Backtest/S6 repository retirement | implementation on develop | 旧 API/Web/worker/queue/CLI、S6-08/09/10 control plane 与 tracked legacy evidence 已退出；完整 backend/frontend 验证与任何外部清理由后续任务负责 |
 
 ## 未完成事项与执行边界
 
@@ -82,7 +90,7 @@ production_writes=false
 | Canonical closeout snapshot | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 历史只读证据；Stage C 将重新验收明确目标 |
 | MainContractMap closeout snapshot | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 历史只读证据；不代替 Stage C 重验 |
 | legacy compatibility | PR #90～#94 与历史 evidence 保留 | 不再扩展，也不作为 Task 07 准入或执行授权 |
-| 旧 S6-10 | owner-paused；schema-v4～v7 frozen historical | 不由本次迁移恢复 |
+| 旧 backtest/S6 控制面 | retired from repository | 历史事实仅由 Git 追溯，不保留 compatibility 或恢复入口 |
 
 ## 不可宣称
 
@@ -90,7 +98,7 @@ production_writes=false
 - 不可将 Task 07 完成条件绑定到 Profile/Binding retirement、Runtime legacy reference=0、旧派生数据删除、legacy 文件总数或协作审批材料。
 - 不可将 Stage C 扩写为 Runtime、scheduler/live、长稳、通知或交易就绪。
 - 不可修改或重解释旧 evidence 中已经发生的事实，也不可把旧审批材料用作当前授权。
-- 不可宣称所有历史资产 residual 为零，也不可把 backtest 或单次 smoke 写成策略盈利、实盘或自动交易准入。
+- 不可宣称所有历史资产 residual 为零，也不可把历史 backtest 或单次 smoke 写成策略盈利、实盘或自动交易准入。
 - 不可从 release/tag 意图推导 Runtime/live/通知权限，也不可从任何意图推导订单权限。
 
-相关定义见 `docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md` 与 `docs/INDICATOR_KERNEL.md`。
+相关定义见 `docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/SIGNAL_EVENTS.md` 与 `docs/INDICATOR_KERNEL.md`。

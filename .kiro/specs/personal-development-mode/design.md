@@ -336,10 +336,10 @@ Force-push/history rewrite is not a switch on this command. It is a separate con
 | Task index | `docs/tasks/README.md` | Replace Gate/hash-path retention policy with active/frozen/historical classification | Runtime-consumed files remain until call sites migrate |
 | Active data contract | `docs/tasks/GY-DATA-CORE-V2.md` | Remove future Issue/worktree/PR/Review/CI/exact-head/packet/receipt prerequisites; keep canonical/data/live safety and completed facts | Completed PR/CI/Review/SHA passages stay historical or are removed with Git history available |
 | Product retirement | `docs/tasks/GY-DATA-PRODUCT-RETIREMENT-21.md` | Replace collaboration and backup/packet authorization prerequisites with one scoped deletion intent; retain exact product matching, blockers, transactional/data-integrity checks and default disabled state | Existing measured counts and incident facts remain historical facts |
-| Future Runtime acceptance | `docs/tasks/V1-FINAL-ACCEPTANCE-S6-11.md` | Remove repeated approval/exact-release/receipt prerequisites as authorization; preserve safety checks and historical input facts where still needed for reproducibility | Release and Runtime still require separate scoped intents |
-| Frozen S6 docs | `JM-LIVE-STABILITY-S6-10.md`, `JM-LIVE-SIGNAL-EVENT-S6-08.md`, `S6-07-*.md` | Do not blanket-edit or delete in phase 1; classify Runtime consumption first | Historical facts remain; active Runtime bindings must be removed before deletion |
+| Future Runtime acceptance | retired | Old acceptance contracts are Git-only; any future Runtime validation starts as a new task | Release and Runtime still require separate scoped intents |
+| Frozen S6 docs | `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md` | Keep only the still-consumed recovery contract; S6-08/S6-10 contracts are Git-only | Active Runtime bindings were removed before deletion |
 | Legacy task snapshots | `GY-CORE-01-*`, `GY-CORE-02-*`, `GY-CORE-CONVERGENCE.md`, completed approval/evidence docs | Delete when not Runtime/code referenced, or retain explicitly as historical with no active authorization | Recovery is Git history; no archive copy |
-| Runtime scheduler | `services/quant-api/app/runtime_scheduler.py` | Replace superseded schema dynamic imports with deterministic disabled/superseded rejection; keep default-off behavior | Must pass import/startup/scheduler-disabled smoke before deleting Gate modules |
+| Runtime scheduler | retired | The old scheduler and plan CLI are removed; after-market scheduling remains separate and default-off | Runtime status stays read-only |
 | Frozen Gate modules/scripts/tests | `app/services/htdy_s6_10_*`, `scripts/jm_htdy_s6_10_*`, corresponding tests | Delete in dependency-ordered batches only after zero active references | No direct bulk deletion |
 
 ## 9. Task Contract Migration Model
@@ -715,12 +715,11 @@ Run `pwsh -NoProfile -File` from Python subprocess tests against temporary repos
 
 ### 18.3 Runtime Safety Tests
 
-Before and after each Gate deletion batch:
+Retained Runtime safety checks cover:
 
-- import `app.main` and `app.runtime_scheduler`;
+- import `app.main` and the retained runtime health/after-market modules;
 - FastAPI startup/lifespan smoke with external services mocked;
-- scheduler with signal/live flags disabled;
-- old schema inputs return `superseded_runtime_gate_disabled`, not `ImportError`;
+- signal/live/notification flags disabled;
 - `guiyi runtime status` help/read-only path;
 - Runtime health contract;
 - no SignalEvent, notification, order or Runtime mutation calls.

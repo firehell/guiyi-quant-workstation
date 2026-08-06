@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Fast-forward-only branch publication and annotated tag push.
-  No force flags, rollback tags, packets, or hash authorization options.
+  No force flags, no rollback tags, packets, or hash authorization options.
   -WhatIf never mutates and never authorizes a later mutation.
 
 .EXITCODES

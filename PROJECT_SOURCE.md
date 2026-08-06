@@ -2,7 +2,7 @@
 
 ## 定位
 
-归一量化是本地运行、单用户使用的国内期货量化研究工作站。它支持数据治理、K 线与指标、策略研究、历史回测、报告、复盘、信号观察与前向验证。
+归一量化是本地运行、单用户使用的国内期货量化研究工作站。当前仓库支持数据治理、K 线与指标、策略研究、复盘、信号观察与前向验证。历史回测将来可以重建，但当前没有可用的 backtest 子系统或兼容入口。
 
 项目不是 SaaS、不是无人值守自动交易机器人、不连接实盘账户自动下单，也不把预警或回测结论表达成交易指令。
 
@@ -31,7 +31,7 @@ RQData
    (provider-direct 1m/1d/1w + persisted preaggregated 5m/15m/30m/60m)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
--> Market / Web / Indicator / Backtest / Signal / Review
+-> Market / Web / Indicator / Signal / Review
 ```
 
 这是已冻结的目标，不表示迁移或消费者切换已经完成。目标数据身份使用不可歧义的 `DatasetKey`；`continuous` 与 `actual_dominant` 必须由消费者显式声明，禁止静默互换。正式历史周期永久固定为 `1m/5m/15m/30m/60m/1d/1w`。`1m/1d/1w` 的来源角色为 `provider_direct`，`5m/15m/30m/60m` 的来源角色为 `preaggregated_from_1m`；七者都是可持久化、可查询的 Canonical DatasetKey。历史读取只查请求同频的 Catalog/partition，缺失时返回 DataGap，不从其他周期动态聚合或回退。`actual_dominant 1w` 按该周最后交易日的 `MainContractMap.rank=1` 选择具体合约。
@@ -50,12 +50,12 @@ quality_status != "failed"
 
 historical canonical 与 live observation 分离。live 只能用于观察、confirmed bar 聚合、前向判断和盘后核对，不能复制或晋升为 historical canonical；EOD 必须重新获取 RQData provider-final 数据，并在发布前校验 identity、coverage、Manifest digest、checksum 和 row count。staging 或 canonical 校验失败时保留最后有效 canonical 并显式暴露失败。
 
-V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainContractMap metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 raw/standard/canonical bar layer，以及 Profile/Binding/legacy lineage 都是 rebuild-only 或 compatibility-only，不是新的 active migration asset。report 14/15 是可由 Git 追溯的历史快照，不作为 active authorization 或回归基线。Task 07 Stage C 只验收当前 JM 目标 Canonical 并生成精确缺口计划；Runtime promotion 属于 Task 08；旧派生数据删除是后续独立可选任务，不是 Task 07 完成条件。
+V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainContractMap metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 raw/standard/canonical bar layer，以及 Profile/Binding/legacy lineage 都不是新的 active migration asset。旧 backtest 与其 report/OOS evidence 已退出仓库，不保留 compatibility；历史事实仅由 Git 追溯。Task 07 Stage C 只验收当前 JM 目标 Canonical 并生成精确缺口计划；Runtime promotion 属于 Task 08；旧派生数据删除是后续独立可选任务，不是 Task 07 完成条件。
 
-## 策略、回测、信号与运行边界
+## 策略、信号与运行边界
 
-- 策略、回测和正式历史信号禁止未来数据泄漏、look-ahead bias 与未记录重绘；交易相关数值使用 `Decimal`。
-- 回测结果保留策略、参数、数据、订单、trade、equity 与 lineage，以支持复算；历史报告不因新结果被覆盖。
+- 策略研究、未来重建的回测和正式历史信号禁止未来数据泄漏、look-ahead bias 与未记录重绘；交易相关数值使用 `Decimal`。
+- 当前仓库不提供 `/api/backtests/**`、`/ws/backtests/**`、backtest Web 页面、worker/queue、CLI 或报告兼容入口。未来回测必须是基于 Canonical/MarketDataService 的新任务，并重新定义可复算的策略、参数、数据、订单、trade、equity 与 lineage 合同。
 - HTDY original 只允许 `docs/INDICATOR_KERNEL.md` 和 `docs/SIGNAL_EVENTS.md` 定义的 realtime first-seen observation-only 语义。
 - 信号链路固定为 `Strategy -> SignalEvent -> Notification Gate -> Channel`。信号、回测和通知均是研究观察，不是交易指令。
 - live、Runtime promotion/switch、真实通知和企业微信 autosend 默认关闭；缺失、异常、过期或不一致的配置保持关闭。repair/replay/backfill/migration/EOD recalculation 不补发历史通知。
@@ -67,13 +67,12 @@ V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainCo
 |---|---|
 | `AGENTS.md` | 唯一开发执行规则、个人工作流与风险边界 |
 | `STATUS.md` | 当前阶段、未完成事项、必要锚点与执行边界 |
-| `DECISIONS.md` | 长期架构、数据、回测、工作流与运行决策 |
+| `DECISIONS.md` | 长期架构、数据、工作流与运行决策 |
 | `TESTING.md` | 当前可执行的本地验证入口 |
 | `docs/DEVELOPMENT.md` | direct-`develop` 工作流、影响匹配验证与外部操作边界 |
 | `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md` | 个人开发 canonical 流程与 Git 恢复方式 |
 | `docs/DATA_CENTER.md` | 数据资产、quality、profile 与 lineage |
 | `docs/ARCHITECTURE.md` | 运行架构与组件边界 |
-| `docs/BACKTEST_ENGINE.md` | 回测口径与可复算要求 |
 | `docs/SIGNAL_EVENTS.md` | SignalEvent、通知与观察边界 |
 | `docs/INDICATOR_KERNEL.md` | 指标版本、契约与 HTDY policy |
 | `docs/tasks/GY-DATA-CORE-V2.md` | 数据核心 V2 active 业务合同与任务顺序 |

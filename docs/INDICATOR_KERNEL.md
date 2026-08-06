@@ -4,7 +4,7 @@
 
 ## 1. 定位
 
-`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，V1-A 冻结 EMA 和指标注册表，V1-B 完成 MACD / ATR 差异审计，V1-C 新增可复刻多口径的 MACD / ATR 公共函数，V1-D 完成逐调用方迁移设计和 golden vector 对照。X4-06 已补全 Registry V1 全生命周期 capability invariant 和 formal consumer allow/block；R45-05 最终只读复核确认阶段 4 为 `STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`，并保持 `INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY / HTDY_STRICT_FORMAL_REPORT_READY / STRATEGY_VALIDATION_PROTOCOL_FROZEN`。
+`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，冻结 EMA、MACD、ATR、指标注册表、能力矩阵与 golden vector。旧 formal report/OOS Gate 已退役；当前只保留指标合同、因果策略研究资格和 observation-only 风险边界。
 
 本阶段目标：
 
@@ -18,7 +18,7 @@
 - 不改 PostgreSQL / Alembic / DuckDB / Parquet。
 - 不迁移 `jm_v1b_daily_direction_fast_entry`。
 - 不接入 `signal_events`、企业微信、live scheduler 或自动交易。
-- 不把火天大有 original 普通升级为正式回测、live 或提醒指标；strict 仅允许 formal historical backtest/report 输入。original 只保留 2026-07-26 冻结的精确 realtime repainting observation policy 例外。
+- 不把火天大有 original 普通升级为历史验证、live 或提醒指标；strict 只表示独立 causal 策略研究资格。original 只保留 2026-07-26 冻结的精确 realtime repainting observation policy 例外。
 
 ## 2. 代码位置
 
@@ -104,7 +104,7 @@ retired
 
 - `huo_tian_da_you` 仅为 alias，解析到 `huotian_dayou_original_v0`；不得与 strict 共用含混 code/version。
 - MACD/ATR 的 `compatibility_validated` 不等于可进 formal strategy/signal；Market EMA API 仍只服务 `validated` EMA。
-- JM V1-B / report 14 冻结 policy：`jm_v1b_report14_frozen_v1`（`frozen_legacy=True`）。
+- 旧 JM V1-B / report 14 policy 只作为 Git history 中的退役事实，不是 active consumer。
 - `definition_to_metadata()` 可供未来报告 metadata 持久化；C4-02 不写 DB。
 - X4-06 正式 Gate：`INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY`。
 - R45-05 canonical closeout：`STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`；该结论不改变 original observation-only 或 strict historical-only 边界。
@@ -113,7 +113,7 @@ retired
 
 - Web 观察层基于 XMA 风格居中窗口，存在未来函数和重绘风险。
 - original 默认不得写入 `StrategySignal`、`strategy_signals`、`signal_events`、正式报告或通知链路；只有精确 `htdy_original_xma_15m_first_seen_v1` realtime observation policy 可在后续独立 Gate 中复用既有事件表。
-- strict 已具 formal historical backtest/report 输入资格，但不得接历史扫描、live evaluator、alert 或企业微信。
+- strict 只具独立 causal 历史策略研究资格，不得据此恢复回测、历史扫描、live evaluator、alert 或企业微信入口。
 - 原始公式已归档到 `docs/strategy_specs/htdy/INDICATOR_SPEC.md`，公式级风险审查见 `docs/strategy_specs/htdy/INDICATOR_RISK_REVIEW.md`。
 - `huotian_dayou_original_v0` 的普通 capability 仍只能 observation-only；历史回测仍必须使用独立 causal strict 版本。精确实时重绘观察例外不改变这条 Registry 规则。
 
@@ -166,12 +166,9 @@ double-XMA 的 exact future dependency horizon 是 24 根；买卖 observation �
 使用 sorted-key、compact、UTF-8、`ensure_ascii=False` 的 canonical JSON。普通 formal policy 和
 `require_formal_strategy_indicator_policy()` 未改变，仍拒绝 original。
 
-Step 3/4 没有扩大该 indicator capability：first-seen writer 只冻结实时观察事件，
-Stage 9 仅允许 preview 且 `delivery_allowed=false`；schema-v3 Runtime Gate 只接受上述 exact
-identity，并在第一个自然事件和一次同 key 幂等探测后消费授权。任何 schema-v2、historical
-replay、其他品种/周期/source mode、通知或普通 formal consumer 仍拒绝。代码接线不等于 Runtime
-授权，真实 deployment/service packet hash 获批前仍为
-`CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
+旧 Step 3/4、Stage 9 与 schema-v3 Runtime Gate 控制面已经退役，只能从 Git history 追溯。
+当前 first-seen policy 仍拒绝 historical replay、其他品种/周期/source mode、通知和普通 consumer；
+指标合同存在不等于 Runtime、live 或通知获得授权。
 
 共享 golden：`data/reports/indicator_contract_v1/htdy_original_realtime_v1_golden.json`。Python 与 Web
 比较可解析时间、布尔值、null 位置、12 位规范化数值和 canonical payload hash；fixture 必须同时覆盖
@@ -243,8 +240,8 @@ data/reports/indicator_contract_v1/htdy_original_vs_strict_diff.md
 
 - source freeze、original/strict boundary、XMA(25) 对称窗口偏移与仓库 off-by-one 等仅为 evidence，不是 pass Gate。
 - 不得宣称 `HTDY_XMA_SEMANTICS_AUDITED` 或 original formal 化。
-- original 继续 `observation_only`；该 unresolved Gate 不再阻断独立 causal strict 的 formal historical backtest/report 输入资格。
-- strict Gate 为 `HTDY_STRICT_FORMAL_REPORT_READY`；这不创建报告、不证明策略有效，也不授权 live/alert。
+- original 继续 `observation_only`；该 unresolved Gate 不阻断独立 causal strict 的策略研究。
+- strict 的因果研究资格不创建报告、不证明策略有效，也不授权回测、live 或 alert。
 
 ## 6. V1-B MACD / ATR 差异审计
 
@@ -349,7 +346,7 @@ V1-E 只迁移 Market 页面 MACD 展示调用方：
 - 固定 policy 为 `web_macd_legacy_v1`。
 - policy 口径为 `fast=12`、`slow=26`、`signal=9`、`ema_seed_policy=sma_window`、`histogram_scale=2`、`round_digits=6`。
 - 后端 `/api/v1/market/indicators/macd` 复用 `/api/v1/market/bars` 同一批 bars，再调用 `macd_series()` 返回只读 DIF / DEA / histogram。
-- `apps/quant-web/src/pages/market/chart.vue` 仅向共享 `KlineChart` 传入 `macdOverride`，Backtest / Review 不传该字段，继续使用原 TypeScript `calculateMACD()`。
+- `apps/quant-web/src/pages/market/chart.vue` 仅向共享 `KlineChart` 传入 `macdOverride`，Review 不传该字段，继续使用原 TypeScript `calculateMACD()`。
 - 请求失败时 Market 页面回退前端展示计算；不写 DB，不写 `strategy_signals` / `signal_events`，不发送企业微信。
 
 V1-E 不迁移：

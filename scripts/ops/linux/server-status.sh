@@ -4,7 +4,7 @@ set -euo pipefail
 OUTPUT_JSON=0
 [[ "${1:-}" == "--json" ]] && OUTPUT_JSON=1
 
-units=(guiyi-quant-api guiyi-quant-worker-backtests guiyi-quant-worker-signals nginx)
+units=(guiyi-quant-api guiyi-quant-worker-signals nginx)
 
 unit_state() {
   systemctl is-active "$1" 2>/dev/null || printf 'unknown'
