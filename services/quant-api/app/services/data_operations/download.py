@@ -127,19 +127,34 @@ class DownloadApplicationService:
                 targets=tuple(results),
             )
 
-        synchronizer = self._synchronizer_factory()
+        synchronizer: _Synchronizer | None = None
         results: list[TargetResult] = []
-        for target, _planned in plan.windows_by_target:
+        attempted = 0
+        published = 0
+        gap_recorded = 0
+        for target, planned in plan.windows_by_target:
             require_direct_frequency(target.frequency)
             dataset = to_dataset_key(target)
-            if self._catalog is not None:
-                assert_no_gap_intersection(
-                    self._catalog,
-                    dataset=dataset,
-                    start=target.start,
-                    end=target.end,
-                )
             try:
+                if not planned:
+                    results.append(
+                        TargetResult(
+                            target=target,
+                            status=CommandStatus.PASSED,
+                            detail={"action": "no_op", "published_windows": []},
+                        )
+                    )
+                    continue
+                if self._catalog is not None:
+                    assert_no_gap_intersection(
+                        self._catalog,
+                        dataset=dataset,
+                        start=target.start,
+                        end=target.end,
+                    )
+                if synchronizer is None:
+                    synchronizer = self._synchronizer_factory()
+                attempted += 1
                 sync_result = synchronizer.sync(
                     dataset=dataset,
                     start=target.start,
@@ -158,6 +173,8 @@ class DownloadApplicationService:
                     )
                 )
                 continue
+            published += len(sync_result.published_windows)
+            gap_recorded += len(sync_result.gap_windows)
             if sync_result.gap_windows and not sync_result.published_windows:
                 status = CommandStatus.ERROR
             elif sync_result.gap_windows:
@@ -189,10 +206,11 @@ class DownloadApplicationService:
             status=overall_batch_status(results),
             readonly=False,
             effects=EffectSummary(
-                calls_rqdata=True,
-                writes_staging=True,
-                writes_canonical=True,
-                writes_postgresql=True,
+                calls_rqdata=attempted > 0,
+                writes_staging=published > 0,
+                writes_canonical=published > 0,
+                writes_postgresql=published > 0 or gap_recorded > 0,
+                writes_historical_active=published > 0,
             ),
             targets=tuple(results),
         )

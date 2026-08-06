@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Mapping
 
 from app.data_core.contracts import BarFrequency
 from app.services.data_operations.aggregate import AggregateApplicationService
@@ -123,24 +123,49 @@ class HistoricalUpdateWorkflow:
                 ),
             )
 
+        stage_effects: list[EffectSummary] = []
         if deps.metadata is not None and plan.windows:
-            meta = deps.metadata.run(
-                MetadataSyncRequest(
-                    scope=MetadataSyncScope.MAIN_CONTRACT_MAP,
-                    apply=True,
-                    symbols=plan.products,
-                    start=_as_datetime(plan.windows[0].since_day),
-                    end=_as_datetime(plan.windows[0].through_day),
+            start_day = min(item.since_day for item in plan.windows)
+            through_day = max(item.through_day for item in plan.windows)
+            for scope in (
+                MetadataSyncScope.CALENDAR,
+                MetadataSyncScope.SESSIONS,
+                MetadataSyncScope.MAIN_CONTRACT_MAP,
+            ):
+                meta = deps.metadata.run(
+                    MetadataSyncRequest(
+                        scope=scope,
+                        apply=True,
+                        symbols=plan.products,
+                        start=_as_datetime(start_day),
+                        end=_as_datetime(through_day),
+                    )
                 )
-            )
-            if meta.status is CommandStatus.ERROR:
-                raise HistoricalUpdateAbort(
-                    meta.error.code if meta.error else "METADATA_SYNC_FAILED"
+                if meta.status is not CommandStatus.PASSED:
+                    raise HistoricalUpdateAbort(
+                        meta.error.code if meta.error else "METADATA_SYNC_FAILED"
+                    )
+                stage_effects.append(meta.effects)
+            plan = self._planner.plan(plan.request)
+            if not plan.direct_targets and not plan.aggregate_targets:
+                return CommandResult(
+                    command="data.update",
+                    status=CommandStatus.PASSED,
+                    readonly=False,
+                    effects=_merged_effects(stage_effects),
+                    targets=(),
+                    extras=_extras(
+                        plan,
+                        changed_count=0,
+                        blocked_count=0,
+                        publication_count=0,
+                    ),
                 )
 
         direct_result = deps.download.run(
             DownloadRequest(targets=plan.direct_targets, apply=True)
         )
+        stage_effects.append(direct_result.effects)
         direct_by_key = {
             _target_key(item.target): item for item in direct_result.targets
         }
@@ -186,6 +211,7 @@ class HistoricalUpdateWorkflow:
                     type_name=type(exc).__name__,
                 ) from exc
             results.extend(aggregate_result.targets)
+            stage_effects.append(aggregate_result.effects)
             publication_count += sum(
                 1
                 for item in aggregate_result.targets
@@ -207,19 +233,11 @@ class HistoricalUpdateWorkflow:
                 merged.append(replacement if replacement is not None else item)
             results = merged
 
-        write_effects = publication_count > 0
         return CommandResult(
             command="data.update",
             status=overall_batch_status(results),
             readonly=False,
-            effects=EffectSummary(
-                calls_rqdata=bool(plan.direct_targets) and write_effects,
-                writes_staging=write_effects,
-                writes_canonical=write_effects,
-                writes_postgresql=write_effects,
-            )
-            if write_effects
-            else empty_effects(),
+            effects=_merged_effects(stage_effects),
             targets=tuple(results),
             extras=_extras(
                 plan,
@@ -314,3 +332,20 @@ def _as_datetime(value: object) -> object:
     if isinstance(value, date):
         return datetime.combine(value, time.min, tzinfo=SHANGHAI)
     return value
+
+
+def _merged_effects(values: list[EffectSummary]) -> EffectSummary:
+    if not values:
+        return empty_effects()
+    return EffectSummary(
+        calls_rqdata=any(item.calls_rqdata for item in values),
+        writes_provider_raw=any(item.writes_provider_raw for item in values),
+        writes_staging=any(item.writes_staging for item in values),
+        writes_canonical=any(item.writes_canonical for item in values),
+        writes_postgresql=any(item.writes_postgresql for item in values),
+        writes_live_observation=any(item.writes_live_observation for item in values),
+        writes_historical_active=any(
+            item.writes_historical_active for item in values
+        ),
+        sends_notification=any(item.sends_notification for item in values),
+    )

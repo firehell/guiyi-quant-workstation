@@ -27,6 +27,16 @@ RUNTIME_NOT_AUTHORIZED
 
 本合同不改变 V1 的 observation-only、`auto_order=false`、真实通知默认关闭与禁止自动交易边界。
 
+### 1.0.1 M1 generic historical update（仓库代码事实）
+
+`guiyi data update` 是保留品种的统一历史更新编排入口：默认只读规划；apply 在
+Calendar、Session、MainContractMap 同步后重新计算 Direct `1m/1d/1w` 与由 Canonical `1m`
+聚合的 `5m/15m/30m/60m` exact windows。空 Dataset 必须显式 `--since`，既有 Dataset 从
+Catalog 的最早覆盖边界规划；actual-dominant 仅按 rank=1 映射有效区间生成。DataGap、failed
+quality、部分窗口覆盖、writer 或 reader 不可用全部 fail-closed。该代码事实不授权 RQData、
+PostgreSQL、Canonical、Runtime 或 live 外部操作。已完成的 product-retirement Runtime CLI/
+production control-plane 已从仓库移除，active/retired identity 守卫仍保留。
+
 ### 1.1 Historical_Fact（已完成，不构成未来授权）
 
 任务 00 已通过测试与 Review，并由 PR #76 merge `2266d7f7…` 合入 `develop`。

@@ -169,7 +169,7 @@ def test_property_3_result_envelope_is_total(
         else None,
     )
     payload = command_result_payload(result)
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["command"] == "data.download"
     assert payload["status"] == status.value
     assert payload["readonly"] is readonly

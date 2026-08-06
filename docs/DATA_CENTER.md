@@ -73,6 +73,10 @@ DatasetKey、schema、Manifest、checksum、row count、分区可读性、窗口
 专家命令仍为 `download|aggregate|sync|audit|live|verify`。不得恢复 task07 parser。
 actual-dominant `1w` 按 ISO 周最后交易日的 MainContractMap 归属。
 
+M1 apply 仅在执行时惰性构造 RQData、Canonical writer 与严格 reader；先同步
+Calendar、Session、MainContractMap，再重新物化 exact targets。DataGap、failed quality 和
+部分窗口覆盖均 fail-closed；这不构成真实数据写入、Runtime 或 live 授权。
+
 Direct `1m/1d/1w` 失败只输出 exact-window `REDOWNLOAD_DIRECT`；aggregate
 `5m/15m/30m/60m` 失败只在同身份与同窗口 Canonical 1m 验证可信时输出
 `REBUILD_AGGREGATE`，否则 `REGISTER_DATA_GAP`。这些都只是精确缺口计划，

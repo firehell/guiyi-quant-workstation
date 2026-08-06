@@ -155,8 +155,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_historical_update_workflow.py \
   services/quant-api/tests/test_historical_update_verifier.py \
   services/quant-api/tests/test_data_audit_default_fail_closed.py \
-  services/quant-api/tests/test_product_retirement_refresh.py \
-  services/quant-api/tests/test_product_retirement_production.py \
+  services/quant-api/tests/data_operations \
   services/quant-api/tests/test_guiyi_cli.py \
   services/quant-api/tests/test_scripts_cli_consolidation_properties.py \
   services/quant-api/tests/data_core/test_historical_sync.py \

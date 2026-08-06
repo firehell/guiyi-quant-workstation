@@ -4,9 +4,6 @@ from contextlib import nullcontext
 from datetime import datetime
 from io import StringIO
 import json
-import sys
-from types import ModuleType
-from pathlib import Path
 
 import pytest
 
@@ -268,234 +265,6 @@ def test_runtime_plan_is_rejected_after_scheduler_retirement() -> None:
     )
 
 
-def test_product_retirement_runtime_plan_delegates_without_opening_database(
-    tmp_path: Path,
-) -> None:
-    runtime_root = tmp_path / "runtime"
-    protected_root = tmp_path / "audit"
-    raw = tmp_path / "raw"
-    canonical = tmp_path / "canonical"
-    processed = tmp_path / "processed"
-    for path in (runtime_root, protected_root, raw, canonical, processed):
-        path.mkdir()
-    active_products = tmp_path / "active_products.txt"
-    active_products.write_text("jm\n", encoding="utf-8")
-    stdout = StringIO()
-
-    class Executor:
-        def plan(self, request):
-            assert request.runtime_root == runtime_root
-            return {
-                "command": "runtime.product-retirement.plan",
-                "status": "planned",
-                "readonly": True,
-            }
-
-    exit_code = main(
-        [
-            "runtime",
-            "product-retirement",
-            "plan",
-            "--release-tag",
-            "runtime-20260805-c9de1cdf",
-            "--rollback-tag",
-            "runtime-rollback-20260805-9e816720",
-            "--runtime-root",
-            str(runtime_root),
-            "--protected-root",
-            str(protected_root),
-            "--active-products-path",
-            str(active_products),
-            "--data-root",
-            f"raw={raw}",
-            "--data-root",
-            f"canonical={canonical}",
-            "--data-root",
-            f"processed={processed}",
-        ],
-        session_factory=_NoSessionFactory(),
-        retirement_execution_factory=lambda: Executor(),
-        stdout=stdout,
-        stderr=StringIO(),
-    )
-
-    assert exit_code == 0
-    assert json.loads(stdout.getvalue())["command"] == "runtime.product-retirement.plan"
-
-
-def test_product_retirement_runtime_execute_delegates_to_bound_executor(
-    tmp_path: Path,
-) -> None:
-    runtime_root = tmp_path / "runtime"
-    protected_root = tmp_path / "audit"
-    raw = tmp_path / "raw"
-    canonical = tmp_path / "canonical"
-    processed = tmp_path / "processed"
-    for path in (runtime_root, protected_root, raw, canonical, processed):
-        path.mkdir()
-    active_products = tmp_path / "active_products.txt"
-    active_products.write_text("jm\n", encoding="utf-8")
-    stdout = StringIO()
-
-    class Executor:
-        def plan(self, _request):
-            raise AssertionError("execute must not call plan")
-
-        def execute(self, request):
-            assert request.release_tag == "runtime-20260805-c9de1cdf"
-            return {
-                "command": "runtime.product-retirement.execute",
-                "status": "completed",
-            }
-
-        def resume(self, _request, *, journal_path):
-            raise AssertionError(journal_path)
-
-    exit_code = main(
-        [
-            "runtime",
-            "product-retirement",
-            "execute",
-            "--release-tag",
-            "runtime-20260805-c9de1cdf",
-            "--rollback-tag",
-            "runtime-rollback-20260805-9e816720",
-            "--runtime-root",
-            str(runtime_root),
-            "--protected-root",
-            str(protected_root),
-            "--active-products-path",
-            str(active_products),
-            "--data-root",
-            f"raw={raw}",
-            "--data-root",
-            f"canonical={canonical}",
-            "--data-root",
-            f"processed={processed}",
-        ],
-        session_factory=_NoSessionFactory(),
-        retirement_execution_factory=lambda: Executor(),
-        stdout=stdout,
-        stderr=StringIO(),
-    )
-
-    assert exit_code == 0
-    assert json.loads(stdout.getvalue())["status"] == "completed"
-
-
-def test_product_retirement_default_execute_lazily_builds_production_executor(
-    tmp_path: Path, monkeypatch
-) -> None:
-    runtime_root = tmp_path / "runtime"
-    protected_root = tmp_path / "audit"
-    roots = {label: tmp_path / label for label in ("raw", "canonical", "processed")}
-    for path in (runtime_root, protected_root, *roots.values()):
-        path.mkdir()
-    active_products = tmp_path / "active_products.txt"
-    active_products.write_text("jm\n", encoding="utf-8")
-    calls: list[str] = []
-
-    class Executor:
-        def execute(self, request):
-            calls.append(request.release_tag)
-            return {
-                "command": "runtime.product-retirement.execute",
-                "status": "completed",
-            }
-
-    production = ModuleType("app.services.product_retirement_production")
-    production.build_product_retirement_executor = lambda request: Executor()
-    monkeypatch.setitem(
-        sys.modules, "app.services.product_retirement_production", production
-    )
-    stdout = StringIO()
-
-    exit_code = main(
-        [
-            "runtime",
-            "product-retirement",
-            "execute",
-            "--release-tag",
-            "runtime-20260805-c9de1cdf",
-            "--rollback-tag",
-            "runtime-rollback-20260805-9e816720",
-            "--runtime-root",
-            str(runtime_root),
-            "--protected-root",
-            str(protected_root),
-            "--active-products-path",
-            str(active_products),
-            *(
-                item
-                for label, path in roots.items()
-                for item in ("--data-root", f"{label}={path}")
-            ),
-        ],
-        session_factory=_NoSessionFactory(),
-        stdout=stdout,
-        stderr=StringIO(),
-    )
-
-    assert exit_code == 0
-    assert calls == ["runtime-20260805-c9de1cdf"]
-
-
-def test_product_retirement_default_execute_sanitizes_production_preflight_error(
-    tmp_path: Path, monkeypatch
-) -> None:
-    runtime_root = tmp_path / "runtime"
-    protected_root = tmp_path / "audit"
-    roots = {label: tmp_path / label for label in ("raw", "canonical", "processed")}
-    for path in (runtime_root, protected_root, *roots.values()):
-        path.mkdir()
-    active_products = tmp_path / "active_products.txt"
-    active_products.write_text("jm\n", encoding="utf-8")
-    production = ModuleType("app.services.product_retirement_production")
-
-    def fail(_request):
-        raise RuntimeError("credential detail must not leak")
-
-    production.build_product_retirement_executor = fail
-    monkeypatch.setitem(
-        sys.modules, "app.services.product_retirement_production", production
-    )
-    stderr = StringIO()
-
-    exit_code = main(
-        [
-            "runtime",
-            "product-retirement",
-            "execute",
-            "--release-tag",
-            "runtime-20260805-c9de1cdf",
-            "--rollback-tag",
-            "runtime-rollback-20260805-9e816720",
-            "--runtime-root",
-            str(runtime_root),
-            "--protected-root",
-            str(protected_root),
-            "--active-products-path",
-            str(active_products),
-            *(
-                item
-                for label, path in roots.items()
-                for item in ("--data-root", f"{label}={path}")
-            ),
-        ],
-        session_factory=_NoSessionFactory(),
-        stdout=StringIO(),
-        stderr=stderr,
-    )
-
-    payload = json.loads(stderr.getvalue())
-    assert exit_code == 1
-    assert payload["error"] == {
-        "code": "CLI_INTERNAL_ERROR",
-        "type": "RuntimeError",
-    }
-    assert "credential detail" not in stderr.getvalue()
-
-
 def test_runtime_status_returns_health_payload_and_nonzero_for_failed_runtime() -> None:
     stdout = StringIO()
     stderr = StringIO()
@@ -541,7 +310,7 @@ def test_data_verify_emits_stable_json_from_shared_service() -> None:
     def verify(_session, **kwargs):
         observed.update(kwargs)
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "command": "data.verify",
             "kind": "active-dataset",
             "status": "passed",
@@ -639,7 +408,7 @@ def test_data_verify_maps_domain_error_to_bounded_json_stderr() -> None:
     assert exit_code == 1
     assert stdout.getvalue() == ""
     assert json.loads(stderr.getvalue()) == {
-        "schema_version": 1,
+        "schema_version": 2,
         "command": "data.verify",
         "status": "error",
         "readonly": True,
@@ -808,7 +577,7 @@ def test_parser_error_uses_bounded_json_and_exit_two() -> None:
     assert exit_code == 2
     assert stdout.getvalue() == ""
     assert json.loads(stderr.getvalue()) == {
-        "schema_version": 1,
+        "schema_version": 2,
         "command": "data.verify",
         "status": "error",
         "readonly": True,

@@ -18,7 +18,7 @@ from app.data_core.contracts import (
 )
 
 
-ResultSchemaVersion = 1
+ResultSchemaVersion = 2
 DEFAULT_PROVIDER = "rqdata"
 DEFAULT_ADJUSTMENT = "none"
 DEFAULT_SCHEMA_VERSION = CANONICAL_BAR_SCHEMA_VERSION
@@ -95,6 +95,7 @@ class PublicError:
 @dataclass(frozen=True, slots=True)
 class EffectSummary:
     calls_rqdata: bool = False
+    writes_provider_raw: bool = False
     writes_staging: bool = False
     writes_canonical: bool = False
     writes_postgresql: bool = False
@@ -119,6 +120,7 @@ class EffectSummary:
         return any(
             (
                 self.calls_rqdata,
+                self.writes_provider_raw,
                 self.writes_staging,
                 self.writes_canonical,
                 self.writes_postgresql,
@@ -298,6 +300,34 @@ class HistoricalUpdateRequest:
     through: date | None = None
     since: date | None = None
     apply: bool = False
+
+    def __post_init__(self) -> None:
+        normalized = tuple(
+            str(product).strip().lower() for product in self.products
+        )
+        if not normalized or any(not product for product in normalized):
+            raise CliArgumentInvalid(
+                code="HISTORICAL_UPDATE_PRODUCTS_REQUIRED"
+            )
+        if len(set(normalized)) != len(normalized):
+            raise CliArgumentInvalid(
+                code="HISTORICAL_UPDATE_PRODUCTS_DUPLICATE"
+            )
+        if any(
+            not isinstance(value, date) or isinstance(value, datetime)
+            for value in (self.since, self.through)
+            if value is not None
+        ):
+            raise CliArgumentInvalid(code="HISTORICAL_UPDATE_DATE_INVALID")
+        if (
+            self.since is not None
+            and self.through is not None
+            and self.since > self.through
+        ):
+            raise CliArgumentInvalid(code="HISTORICAL_UPDATE_WINDOW_INVALID")
+        if not isinstance(self.apply, bool):
+            raise CliArgumentInvalid(code="HISTORICAL_UPDATE_APPLY_INVALID")
+        object.__setattr__(self, "products", normalized)
 
 
 DIRECT_FREQUENCY_VALUES = frozenset(item.value for item in DirectFrequency)

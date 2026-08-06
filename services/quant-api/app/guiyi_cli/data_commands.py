@@ -320,8 +320,7 @@ def _default_metadata_service(session: Session) -> MetadataSyncApplicationServic
 
 
 def _default_audit_service(session: Session) -> AuditV2ApplicationService:
-    del session
-    return build_default_audit_service()
+    return build_default_audit_service(session)
 
 
 def _default_update_workflow(

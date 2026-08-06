@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
+
+import pytest
 
 from app.data_core.catalog import CanonicalMainContractMapping
 from app.data_core.contracts import BarFrequency
@@ -13,6 +16,8 @@ from app.services.data_operations.contracts import (
     DownloadRequest,
     EffectSummary,
     HistoricalUpdateRequest,
+    MetadataSyncRequest,
+    MetadataSyncScope,
     PublicError,
     ResultSchemaVersion,
     TargetResult,
@@ -98,10 +103,24 @@ def test_dry_run_has_no_mutation_effects_and_schema_v1() -> None:
     assert result.schema_version == ResultSchemaVersion
     assert result.readonly is True
     assert result.effects == empty_effects()
-    assert "writes_provider_raw" not in result.effects.as_payload()
+    assert result.schema_version == 2
+    assert result.effects.as_payload()["writes_provider_raw"] is False
     assert "plan_summary" in result.extras
     assert "direct_targets" not in result.extras
     assert result.status is CommandStatus.PLANNED
+
+
+def test_update_request_rejects_empty_duplicate_and_inverted_products_or_dates() -> None:
+    with pytest.raises(ValueError):
+        HistoricalUpdateRequest(products=())
+    with pytest.raises(ValueError):
+        HistoricalUpdateRequest(products=("jm", "JM"))
+    with pytest.raises(ValueError):
+        HistoricalUpdateRequest(
+            products=("jm",),
+            since=date(2026, 8, 4),
+            through=date(2026, 8, 3),
+        )
 
 
 def test_apply_noop_reports_all_write_effects_false() -> None:
@@ -224,3 +243,90 @@ def test_global_composition_error_stops_immediately() -> None:
     assert result.error is not None
     assert result.error.code == "PUBLISHER_SCHEMA_INVALID"
     assert result.effects == empty_effects()
+
+
+def test_apply_runs_global_metadata_then_replans_before_direct_publish() -> None:
+    request = HistoricalUpdateRequest(
+        products=("jm",),
+        since=date(2026, 8, 3),
+        through=date(2026, 8, 3),
+        apply=True,
+    )
+    initial = replace(_plan(apply=True), request=request)
+    refreshed_target = replace(
+        initial.direct_targets[0],
+        contract_or_series="JM2610",
+    )
+    refreshed = replace(
+        initial,
+        direct_targets=(refreshed_target,),
+        aggregate_targets=(),
+    )
+    planner_calls: list[HistoricalUpdateRequest] = []
+
+    class Planner:
+        def plan(self, received: HistoricalUpdateRequest) -> HistoricalUpdatePlan:
+            planner_calls.append(received)
+            return initial if len(planner_calls) == 1 else refreshed
+
+    scopes: list[MetadataSyncScope] = []
+
+    class Metadata:
+        def run(self, received: MetadataSyncRequest) -> CommandResult:
+            scopes.append(received.scope)
+            return CommandResult(
+                command="data.sync",
+                status=CommandStatus.PASSED,
+                readonly=False,
+                effects=empty_effects(),
+            )
+
+    downloaded: list[DataTarget] = []
+
+    class Download:
+        def run(self, received: DownloadRequest) -> CommandResult:
+            downloaded.extend(received.targets)
+            return CommandResult(
+                command="data.download",
+                status=CommandStatus.PASSED,
+                readonly=False,
+                effects=EffectSummary(
+                    calls_rqdata=True,
+                    writes_provider_raw=True,
+                    writes_staging=True,
+                    writes_canonical=True,
+                    writes_postgresql=True,
+                    writes_historical_active=True,
+                ),
+                targets=(
+                    TargetResult(
+                        target=refreshed_target,
+                        status=CommandStatus.PASSED,
+                        detail={"published_windows": [{"start": "a", "end": "b"}]},
+                    ),
+                ),
+            )
+
+    class Aggregate:
+        def run(self, _received: object) -> CommandResult:
+            raise AssertionError("no aggregate target in this fixture")
+
+    workflow = HistoricalUpdateWorkflow(
+        planner=Planner(),  # type: ignore[arg-type]
+        apply_deps_factory=lambda: build_apply_deps(
+            download=Download(),  # type: ignore[arg-type]
+            aggregate=Aggregate(),  # type: ignore[arg-type]
+            metadata=Metadata(),  # type: ignore[arg-type]
+        ),
+    )
+
+    result = workflow.run(request)
+
+    assert result.status is CommandStatus.PASSED
+    assert planner_calls == [request, request]
+    assert scopes == [
+        MetadataSyncScope.CALENDAR,
+        MetadataSyncScope.SESSIONS,
+        MetadataSyncScope.MAIN_CONTRACT_MAP,
+    ]
+    assert downloaded == [refreshed_target]

@@ -93,11 +93,13 @@ class HistoricalUpdateTargetPlanner:
             [_CoverageProbe], Sequence[tuple[datetime, datetime]]
         ]
         | None = None,
+        list_gaps: Callable[[_CoverageProbe], Sequence[object]] | None = None,
         latest_completed_day: Callable[[str], date] | None = None,
         mapping_overlap_trading_days: int = MAPPING_OVERLAP_TRADING_DAYS,
     ) -> None:
         self._list_mappings = list_mappings
         self._covered_windows = covered_windows
+        self._list_gaps = list_gaps or (lambda _probe: ())
         self._latest_completed_day = latest_completed_day
         self._mapping_overlap_trading_days = mapping_overlap_trading_days
 
@@ -142,6 +144,7 @@ class HistoricalUpdateTargetPlanner:
                 end=end,
                 weekly_end_day=weekly_end_day,
             )
+            self._reject_gap_intersections(identity)
             missing_direct = self._filter_missing(identity)
             if not missing_direct and request.since is None:
                 # Fully covered catch-up: keep empty product contribution.
@@ -181,9 +184,6 @@ class HistoricalUpdateTargetPlanner:
     def _resolve_catchup_since(self, *, symbol: str, through_day: date) -> date:
         """Earliest Catalog coverage hole, with mapping overlap (never fixed 10d)."""
         probe_end = inclusive_trading_days_to_half_open(through_day, through_day)[1]
-        # Look back far enough that long outages are not truncated.
-        probe_start_day = through_day - timedelta(days=370)
-        probe_start, _ = inclusive_trading_days_to_half_open(probe_start_day, through_day)
         continuous = _CoverageProbe(
             provider=DEFAULT_PROVIDER,
             dataset_kind=DatasetKind.CONTINUOUS,
@@ -196,6 +196,11 @@ class HistoricalUpdateTargetPlanner:
         covered = ()
         if self._covered_windows is not None:
             covered = tuple(self._covered_windows(continuous))
+        if not covered:
+            raise CliArgumentInvalid(code="HISTORICAL_UPDATE_START_REQUIRED")
+        # Existing datasets are planned from the first known Catalog coverage,
+        # never from an arbitrary lookback that could hide an older backlog.
+        probe_start = min(window[0] for window in covered)
         missing = plan_missing_windows(
             dataset=_probe_to_key(continuous),
             start=probe_start,
@@ -207,6 +212,26 @@ class HistoricalUpdateTargetPlanner:
         earliest = min(window[0] for window in missing).astimezone(SHANGHAI).date()
         overlap = max(0, self._mapping_overlap_trading_days)
         return earliest - timedelta(days=overlap)
+
+    def _reject_gap_intersections(self, targets: Sequence[DataTarget]) -> None:
+        for target in targets:
+            probe = _probe_from_target(target)
+            for gap in self._list_gaps(probe):
+                gap_start = getattr(gap, "gap_start", None)
+                gap_end = getattr(gap, "gap_end", None)
+                if (
+                    isinstance(gap_start, datetime)
+                    and isinstance(gap_end, datetime)
+                    and gap_start < target.end
+                    and target.start < gap_end
+                ):
+                    raise CliArgumentInvalid(
+                        code="HISTORICAL_UPDATE_DATA_GAP",
+                        facts={
+                            "symbol": target.symbol,
+                            "frequency": target.frequency.value,
+                        },
+                    )
 
     def _filter_missing(self, targets: Sequence[DataTarget]) -> tuple[DataTarget, ...]:
         if self._covered_windows is None:
@@ -245,18 +270,16 @@ def build_identity_targets(
     active = _normalize_products(products)
     if start.tzinfo is None or end.tzinfo is None or start >= end:
         raise CliArgumentInvalid(facts={"field": "window", "reason": "invalid"})
-    mapping_by_symbol: dict[str, set[str]] = {symbol: set() for symbol in active}
     rows_by_symbol: dict[str, list[_MappingRow]] = {symbol: [] for symbol in active}
     for row in mappings:
         symbol = str(row.symbol).strip().lower()
-        if symbol not in mapping_by_symbol:
+        if symbol not in rows_by_symbol:
             raise CliArgumentInvalid(
                 facts={"field": "main_contract_map", "reason": "outside_universe"}
             )
-        mapping_by_symbol[symbol].add(str(row.actual_contract).strip().upper())
         rows_by_symbol[symbol].append(row)
     missing = tuple(
-        symbol for symbol, contracts in mapping_by_symbol.items() if not contracts
+        symbol for symbol, rows in rows_by_symbol.items() if not rows
     )
     if missing:
         raise CliArgumentInvalid(
@@ -268,18 +291,6 @@ def build_identity_targets(
         )
     targets: list[DataTarget] = []
     for symbol in active:
-        weekly_contracts = mapping_by_symbol[symbol]
-        if weekly_end_day is not None:
-            by_week: dict[tuple[int, int], list[_MappingRow]] = {}
-            for row in rows_by_symbol[symbol]:
-                if row.trading_day > weekly_end_day:
-                    continue
-                iso = row.trading_day.isocalendar()
-                by_week.setdefault((iso.year, iso.week), []).append(row)
-            weekly_contracts = {
-                str(max(rows, key=lambda item: item.trading_day).actual_contract).upper()
-                for rows in by_week.values()
-            }
         for frequency in DIRECT_FREQUENCIES:
             targets.append(
                 _data_target(
@@ -291,9 +302,16 @@ def build_identity_targets(
                     end=end,
                 )
             )
-        for contract in sorted(mapping_by_symbol[symbol]):
+        actual_windows = _actual_dominant_windows(
+            rows_by_symbol[symbol], start=start, end=end
+        )
+        for contract, actual_start, actual_end in actual_windows:
             for frequency in DIRECT_FREQUENCIES:
-                if frequency is BarFrequency.W1 and contract not in weekly_contracts:
+                if (
+                    frequency is BarFrequency.W1
+                    and weekly_end_day is not None
+                    and actual_start >= _trading_day_start(weekly_end_day + timedelta(days=1))
+                ):
                     continue
                 targets.append(
                     _data_target(
@@ -301,11 +319,48 @@ def build_identity_targets(
                         symbol=symbol,
                         contract_or_series=contract,
                         frequency=frequency,
-                        start=start,
-                        end=end,
+                        start=actual_start,
+                        end=actual_end,
                     )
                 )
     return tuple(targets)
+
+
+def _actual_dominant_windows(
+    rows: Sequence[_MappingRow], *, start: datetime, end: datetime
+) -> tuple[tuple[str, datetime, datetime], ...]:
+    """Split actual-dominant targets at every rank-1 mapping transition."""
+    ordered = sorted(rows, key=lambda item: item.trading_day)
+    windows: list[tuple[str, datetime, datetime]] = []
+    for index, row in enumerate(ordered):
+        contract = str(row.actual_contract).strip().upper()
+        if not contract:
+            raise CliArgumentInvalid(
+                facts={"field": "main_contract_map", "reason": "blank_contract"}
+            )
+        candidate_start = max(start, _trading_day_start(row.trading_day))
+        next_start = (
+            _trading_day_start(ordered[index + 1].trading_day)
+            if index + 1 < len(ordered)
+            else end
+        )
+        candidate_end = min(end, next_start)
+        if candidate_start >= candidate_end:
+            continue
+        if windows and windows[-1][0] == contract and windows[-1][2] == candidate_start:
+            prior = windows.pop()
+            windows.append((contract, prior[1], candidate_end))
+        else:
+            windows.append((contract, candidate_start, candidate_end))
+    if not windows:
+        raise CliArgumentInvalid(
+            facts={"field": "main_contract_map", "reason": "no_rank_one_window"}
+        )
+    return tuple(windows)
+
+
+def _trading_day_start(value: date) -> datetime:
+    return datetime.combine(value, time.min, tzinfo=SHANGHAI).astimezone(UTC)
 
 
 def derive_aggregate_targets(
@@ -420,4 +475,16 @@ def _probe_to_key(probe: _CoverageProbe) -> object:
         frequency=probe.frequency,
         adjustment=probe.adjustment,
         schema_version=probe.schema_version,
+    )
+
+
+def _probe_from_target(target: DataTarget) -> _CoverageProbe:
+    return _CoverageProbe(
+        provider=target.provider,
+        dataset_kind=target.dataset_kind,
+        symbol=target.symbol,
+        contract_or_series=target.contract_or_series,
+        frequency=target.frequency,
+        adjustment=target.adjustment,
+        schema_version=target.schema_version,
     )

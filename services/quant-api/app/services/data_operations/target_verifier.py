@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol, Sequence
 
 from app.data_core.contracts import DatasetKey
+from app.data_core.historical_sync import plan_missing_windows
 from app.services.data_operations.contracts import (
     CommandStatus,
     DataTarget,
@@ -88,16 +89,17 @@ class TargetWindowVerifier:
                 )
             )
             return tuple(findings)
-        covered = False
-        for partition in partitions:
-            start = partition.coverage_start
-            end = partition.coverage_end
-            if start <= target.start and end >= target.end:
-                covered = True
-                break
-            if start < target.end and target.start < end:
-                covered = True
-        if not covered:
+        coverage = tuple(
+            (partition.coverage_start, partition.coverage_end)
+            for partition in partitions
+            if partition.coverage_start < partition.coverage_end
+        )
+        if plan_missing_windows(
+            dataset=dataset,
+            start=target.start,
+            end=target.end,
+            covered_windows=coverage,
+        ):
             findings.append(
                 VerifyFinding(
                     code="UPDATE_COVERAGE_MISSING",
@@ -105,7 +107,11 @@ class TargetWindowVerifier:
                     facts={"reason": "window_not_covered"},
                 )
             )
-        gaps = tuple(self._catalog.list_gaps(dataset))
+        gaps = tuple(
+            gap
+            for gap in self._catalog.list_gaps(dataset)
+            if _gap_intersects_target(gap, target)
+        )
         if gaps:
             findings.append(
                 VerifyFinding(
@@ -135,3 +141,9 @@ class TargetWindowVerifier:
                         )
                     )
         return tuple(findings)
+
+
+def _gap_intersects_target(gap: object, target: DataTarget) -> bool:
+    start = getattr(gap, "gap_start", None)
+    end = getattr(gap, "gap_end", None)
+    return bool(start is not None and end is not None and start < target.end and target.start < end)
