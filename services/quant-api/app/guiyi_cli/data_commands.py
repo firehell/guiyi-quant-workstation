@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from sqlalchemy.orm import Session
 
@@ -18,24 +18,34 @@ from app.guiyi_cli.data_parser import (
     require_paired_window,
 )
 from app.services.data_operations.aggregate import AggregateApplicationService
-from app.services.data_operations.audit_v2 import AuditFinding, AuditV2ApplicationService
+from app.services.data_operations.audit_v2 import AuditV2ApplicationService
+from app.services.data_operations.composition import (
+    build_default_audit_service,
+    build_historical_update_workflow,
+    build_partial_metadata_service,
+    build_readonly_aggregate_service,
+    build_readonly_download_service,
+    load_universe_products,
+)
 from app.services.data_operations.contracts import (
     AggregateRequest,
     AuditRequest,
     AuditScope,
     CliArgumentInvalid,
     DownloadRequest,
+    HistoricalUpdateRequest,
     LiveRequest,
     MetadataSyncRequest,
     MetadataSyncScope,
 )
 from app.services.data_operations.download import DownloadApplicationService
+from app.services.data_operations.historical_update import HistoricalUpdateWorkflow
 from app.services.data_operations.live import LiveConfig, LiveObservationApplicationService
 from app.services.data_operations.metadata_sync import MetadataSyncApplicationService
 from app.services.data_operations.target_expander import expand_targets
 
 
-NEW_DATA_COMMANDS = frozenset({"download", "aggregate", "live", "audit"})
+NEW_DATA_COMMANDS = frozenset({"download", "aggregate", "live", "audit", "update"})
 METADATA_SYNC_COMMAND = "sync"
 
 
@@ -68,6 +78,8 @@ def build_data_operation_request(
         return _metadata_request(args, allowed_roots=allowed_roots)
     if command == "audit":
         return _audit_request(args, allowed_roots=allowed_roots)
+    if command == "update":
+        return _update_request(args)
     raise CliUsageError(f"unsupported data operation: {command}")
 
 
@@ -80,6 +92,7 @@ def run_data_operation(
     live_service: LiveObservationApplicationService | None = None,
     metadata_service: MetadataSyncApplicationService | None = None,
     audit_service: AuditV2ApplicationService | None = None,
+    update_workflow: HistoricalUpdateWorkflow | None = None,
     allowed_roots: Sequence[Path] = (),
 ) -> dict[str, Any]:
     command = args.data_command
@@ -99,6 +112,12 @@ def run_data_operation(
     if command == "audit":
         service = audit_service or _default_audit_service(session)
         return service.run(request).as_payload()  # type: ignore[arg-type]
+    if command == "update":
+        workflow = update_workflow or _default_update_workflow(
+            session,
+            apply=bool(getattr(args, "apply", False)),
+        )
+        return workflow.run(request).as_payload()  # type: ignore[arg-type]
     raise CliUsageError(f"unsupported data operation: {command}")
 
 
@@ -245,42 +264,40 @@ def _audit_request(
     )
 
 
-def _default_download_service(session: Session) -> DownloadApplicationService:
-    from app.data_core.catalog import HistoricalCatalog
-    from app.data_core.historical_sync import HistoricalSynchronizer
-
-    catalog = HistoricalCatalog(session)
-
-    def factory() -> HistoricalSynchronizer:
-        raise CliArgumentInvalid(
-            facts={
-                "reason": "download_apply_requires_injected_synchronizer",
-            }
-        )
-
-    return DownloadApplicationService(
-        synchronizer_factory=factory,
-        catalog=catalog,
+def _update_request(args: argparse.Namespace) -> HistoricalUpdateRequest:
+    products = load_universe_products(
+        symbol=getattr(args, "symbol", None),
+        universe=getattr(args, "universe", None),
     )
+    since = _optional_trading_day(getattr(args, "since", None), field_name="since")
+    through = _optional_trading_day(getattr(args, "through", None), field_name="through")
+    if since is not None and through is not None and since > through:
+        raise CliArgumentInvalid(facts={"field": "window", "reason": "inverted"})
+    return HistoricalUpdateRequest(
+        products=products,
+        since=since,
+        through=through,
+        apply=bool(getattr(args, "apply", False)),
+    )
+
+
+def _optional_trading_day(value: str | None, *, field_name: str) -> date | None:
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise CliArgumentInvalid(
+            facts={"field": field_name, "reason": "malformed"}
+        ) from exc
+
+
+def _default_download_service(session: Session) -> DownloadApplicationService:
+    return build_readonly_download_service(session)
 
 
 def _default_aggregate_service(session: Session) -> AggregateApplicationService:
-    from app.data_core.catalog import HistoricalCatalog
-
-    catalog = HistoricalCatalog(session)
-
-    class _UnavailableMarket:
-        def get_bars(self, request: object) -> object:
-            raise CliArgumentInvalid(
-                facts={"reason": "aggregate_requires_injected_market_data"}
-            )
-
-    return AggregateApplicationService(
-        market_data=_UnavailableMarket(),
-        session_provider=lambda *_args, **_kwargs: (),
-        catalog=catalog,
-        publisher=None,
-    )
+    return build_readonly_aggregate_service(session)
 
 
 def _default_live_service(session: Session) -> LiveObservationApplicationService:
@@ -299,30 +316,18 @@ def _default_live_service(session: Session) -> LiveObservationApplicationService
 
 
 def _default_metadata_service(session: Session) -> MetadataSyncApplicationService:
-    class _ReadonlyStub:
-        def plan(self, **kwargs: Any) -> Mapping[str, Any]:
-            return {"dry_run": True, **kwargs}
-
-        def apply(self, **kwargs: Any) -> Mapping[str, Any]:
-            raise CliArgumentInvalid(
-                facts={"reason": "metadata_apply_requires_injected_services"}
-            )
-
-    stub = _ReadonlyStub()
-    return MetadataSyncApplicationService(
-        services={scope: stub for scope in MetadataSyncScope if scope is not MetadataSyncScope.ALL},
-        begin_transaction=session.begin,
-        commit=session.commit,
-        rollback=session.rollback,
-    )
+    return build_partial_metadata_service(session)
 
 
 def _default_audit_service(session: Session) -> AuditV2ApplicationService:
     del session
+    return build_default_audit_service()
 
-    def _empty(_request: AuditRequest) -> Sequence[AuditFinding]:
-        return ()
 
-    return AuditV2ApplicationService(
-        checkers={scope: _empty for scope in AuditScope if scope is not AuditScope.ALL}
-    )
+def _default_update_workflow(
+    session: Session,
+    *,
+    apply: bool,
+) -> HistoricalUpdateWorkflow:
+    # Dry-run uses Catalog planner only. Apply remains fail-closed without injected deps.
+    return build_historical_update_workflow(session=session, apply=apply)

@@ -189,11 +189,13 @@ contract_or_series、frequency、adjustment 和 schema_version。actual-dominant
 最后交易日的 MainContractMap 合约归属。窗口起点固定为 `2013-03-22`，
 终点为当前完整 MainContractMap 的最后交易日；无映射、缺失或歧义均 fail-closed。
 
-active CLI 唯一入口是 `guiyi data task07 assess --target-config ... --canonical-root ...`。
-dry-run 不遍历 legacy root，不调用 RQData，不写 Parquet/PostgreSQL，不产生可执行
-repair packet。旧 `kline-manifest/plan/preflight/apply/verify/migration-verify/runtime-cutover-*`
-已从 active parser 移除并 fail-closed。全部目标有效时结果必须为
-`Stage_C=NO_DATA_WRITE_REQUIRED / writes_authorized=false / repair_count=0`。
+旧 active CLI `guiyi data task07 assess --target-config ... --canonical-root ...`
+**已移除**。现行高层历史更新入口是 `guiyi data update`（`--universe active` 或
+`--symbol`；默认 dry-run；`--apply` 才允许写路径依赖）。专家命令保留
+`download|aggregate|sync|audit|live|verify`。dry-run 不调用 RQData，不写
+Parquet/PostgreSQL。旧 `kline-manifest/plan/preflight/apply/verify/migration-verify/runtime-cutover-*`
+已从 active parser 移除并 fail-closed。不得恢复 task07 CLI，也不得把
+`task07_target_canonical` 重新接入日常更新路径。
 
 Task 07 不以 Profile/Binding retirement、Runtime legacy reference=0、旧派生数据删除
 或 legacy 文件总数为完成条件。Stage D Runtime promotion 属于 Task 08；Stage E 旧派生
@@ -237,10 +239,11 @@ retirement/deletion。本任务未读取生产数据、未执行 0032/RQData/Can
 
 2026-08-03 生产收口会话再次收窄 Task 07 永久合同：原 generic inventory、
 checkout/Runtime reference inventory、retirement apply 与文件 quarantine/deletion orchestration
-不再是现行入口。`guiyi data task07` 的生产数据准备入口改为
-`kline-manifest / plan / preflight / apply / verify / migration-verify`；manifest 只允许
+不再是现行入口。`guiyi data task07` 的历史生产数据准备入口（已全部从 active parser
+移除）曾为 `kline-manifest / plan / preflight / apply / verify / migration-verify`；manifest 只允许
 `1m/5m/15m/30m/60m/1d/1w` 与 K 线/Canonical 记录，不接受 Runtime root、
-protected root、quarantine root 或七周期外资产。`plan --manifest` 只消费该受限
+protected root、quarantine root 或七周期外资产。现行日常补齐请使用
+`guiyi data update`；不得恢复 task07 控制面。`plan --manifest` 曾只消费该受限
 manifest。Direct 冲突只产生 RQData 重下提案，Aggregate 冲突只产生 Canonical
 1m 重聚合提案；不执行 raw/legacy 或 legacy/new 逐行比较。所有 K 线均不进入
 retirement/deletion 分类。

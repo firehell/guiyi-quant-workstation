@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
@@ -284,6 +284,20 @@ class AuditRequest:
     frequency: BarFrequency | None = None
     start: datetime | None = None
     end: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalUpdateRequest:
+    """High-level retained-universe historical catch-up request.
+
+    ``since`` / ``through`` are inclusive trading days. They are materialized to
+    timezone-aware half-open ``[start, end)`` windows on ``DataTarget``.
+    """
+
+    products: tuple[str, ...]
+    through: date | None = None
+    since: date | None = None
+    apply: bool = False
 
 
 DIRECT_FREQUENCY_VALUES = frozenset(item.value for item in DirectFrequency)

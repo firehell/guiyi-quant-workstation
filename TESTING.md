@@ -144,8 +144,37 @@ EXPECT_CANONICAL_MARKET=1 pnpm --dir apps/quant-web test:e2e
 ```
 
 `guiyi data migrate` / `task07` 旧路由已从 active CLI 移除。历史迁移验收改走
-`guiyi data download|aggregate|audit` 与 Data Core V2 服务测试；receipt/report/evidence
+`guiyi data update|download|aggregate|audit` 与 Data Core V2 服务测试；receipt/report/evidence
 仅作历史事实，不再作为执行授权。
+
+### M1 historical update（通用历史更新）
+
+```bash
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_historical_update_planner.py \
+  services/quant-api/tests/test_historical_update_workflow.py \
+  services/quant-api/tests/test_historical_update_verifier.py \
+  services/quant-api/tests/test_data_audit_default_fail_closed.py \
+  services/quant-api/tests/test_product_retirement_refresh.py \
+  services/quant-api/tests/test_product_retirement_production.py \
+  services/quant-api/tests/test_guiyi_cli.py \
+  services/quant-api/tests/test_scripts_cli_consolidation_properties.py \
+  services/quant-api/tests/data_core/test_historical_sync.py \
+  services/quant-api/tests/data_core/test_historical_reader.py
+
+uv run --project services/quant-api ruff check \
+  services/quant-api/app/services/data_operations \
+  services/quant-api/app/guiyi_cli \
+  services/quant-api/tests
+
+uv run --project services/quant-api guiyi data update --help
+uv run --project services/quant-api guiyi data audit --help
+# task07 必须继续 fail-closed：
+uv run --project services/quant-api guiyi data task07 assess ; echo $?
+```
+
+`guiyi data update` 默认 dry-run；`--apply` 只是本地副作用选择器，不构成真实数据写入授权。
+默认 audit 未接线 scope 必须返回 `AUDIT_SCOPE_UNAVAILABLE`，禁止空 finding 虚假 passed。
 
 ### GY-DATA-CORE-V2 Task 07 Stage C 精简验收
 
@@ -160,7 +189,7 @@ uv run --project services/quant-api pytest -q \
 ```
 
 该组验证 JM target config、MainContractMap、七周期 MarketDataService，以及统一
-`guiyi data download|aggregate|sync|audit|live|verify` 合同。测试不调用 RQData，
+`guiyi data update|download|aggregate|sync|audit|live|verify` 合同。测试不调用 RQData，
 不写正式 Parquet/PostgreSQL。
 
 旧 `guiyi data task07 assess` 生产只读 Gate 已从 active CLI 移除；如需对正式

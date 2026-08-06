@@ -92,6 +92,22 @@ def add_data_commands(data_commands: argparse._SubParsersAction[argparse.Argumen
     audit.add_argument("--start")
     audit.add_argument("--end")
 
+    update = data_commands.add_parser("update")
+    update_selector = update.add_mutually_exclusive_group(required=True)
+    update_selector.add_argument("--symbol")
+    update_selector.add_argument(
+        "--universe",
+        choices=("active",),
+        help="Update the retained active universe.",
+    )
+    update.add_argument("--since", help="Inclusive trading-day start (YYYY-MM-DD).")
+    update.add_argument("--through", help="Inclusive trading-day end (YYYY-MM-DD).")
+    update.add_argument(
+        "--apply",
+        action="store_true",
+        help="Local effect selector only; not external authorization.",
+    )
+
     # Legacy plan/migrate/task07 routes intentionally omitted after replacement cutover.
 
 

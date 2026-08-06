@@ -23,6 +23,43 @@ class _NoSessionFactory:
         raise AssertionError("must not open a database session")
 
 
+def test_update_dry_run_uses_injected_workflow_without_session_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.data_operations.historical_update import HistoricalUpdateWorkflow
+    from app.services.data_operations.contracts import HistoricalUpdateRequest
+
+    stdout = StringIO()
+    stderr = StringIO()
+    seen: dict[str, object] = {}
+
+    def fake_run(self, request: HistoricalUpdateRequest) -> CommandResult:
+        seen["apply"] = request.apply
+        seen["products"] = request.products
+        return CommandResult(
+            command="data.update",
+            status=CommandStatus.PLANNED,
+            readonly=True,
+            effects=empty_effects(),
+            extras={"plan_summary": {"product_count": 1}},
+        )
+
+    monkeypatch.setattr(HistoricalUpdateWorkflow, "run", fake_run)
+    exit_code = main(
+        ["data", "update", "--symbol", "jm"],
+        session_factory=lambda: nullcontext(object()),
+        stdout=stdout,
+        stderr=stderr,
+    )
+    assert exit_code == 0
+    assert stderr.getvalue() == ""
+    payload = json.loads(stdout.getvalue())
+    assert payload["command"] == "data.update"
+    assert payload["readonly"] is True
+    assert seen["apply"] is False
+    assert seen["products"] == ("jm",)
+
+
 def test_download_plan_rejects_derived_frequency_before_session() -> None:
     stdout = StringIO()
     stderr = StringIO()

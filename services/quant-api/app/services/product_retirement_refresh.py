@@ -1,4 +1,8 @@
-"""Build the fixed direct-data refresh targets for the retained universe."""
+"""Build the fixed direct-data refresh targets for the retained universe.
+
+Identity expansion is owned by ``data_operations.target_planner``. This module
+keeps the retirement executor boundary during M1-A and delegates target building.
+"""
 
 from __future__ import annotations
 
@@ -9,10 +13,15 @@ from typing import Callable, Protocol, Sequence
 from app.data_core.catalog import CanonicalMainContractMapping
 from app.data_core.product_retirement import assert_products_active
 from app.data_core.rqdata_adapter import MainMapRequest, MainMapRow
+from app.services.data_operations.target_planner import (
+    DERIVED_FREQUENCIES as _PLANNER_DERIVED,
+    DIRECT_FREQUENCIES as _PLANNER_DIRECT,
+    build_identity_targets,
+)
 
 
-DIRECT_FREQUENCIES = ("1m", "1d", "1w")
-DERIVED_FREQUENCIES = ("5m", "15m", "30m", "60m")
+DIRECT_FREQUENCIES = tuple(item.value for item in _PLANNER_DIRECT)
+DERIVED_FREQUENCIES = tuple(item.value for item in _PLANNER_DERIVED)
 
 
 @dataclass(frozen=True)
@@ -27,7 +36,7 @@ class RefreshTarget:
 
 @dataclass(frozen=True)
 class RefreshWindow:
-    """A calendar-derived, exact ten-trading-day refresh window."""
+    """A calendar-derived refresh window (legacy retirement executor)."""
 
     start_day: date
     end_day: date
@@ -160,57 +169,23 @@ def build_refresh_targets(
     end: datetime,
     weekly_end_day: date | None = None,
 ) -> tuple[RefreshTarget, ...]:
+    """Thin adapter over the shared identity planner (no parallel planning semantics)."""
     active = assert_products_active(products)
-    if start.tzinfo is None or end.tzinfo is None or start >= end:
-        raise ValueError("PRODUCT_RETIREMENT_REFRESH_WINDOW_INVALID")
-    mapping_by_symbol: dict[str, set[str]] = {symbol: set() for symbol in active}
-    rows_by_symbol: dict[str, list[CanonicalMainContractMapping]] = {
-        symbol: [] for symbol in active
-    }
-    for row in mappings:
-        if row.symbol not in mapping_by_symbol:
-            raise ValueError("PRODUCT_RETIREMENT_REFRESH_MAPPING_OUTSIDE_UNIVERSE")
-        mapping_by_symbol[row.symbol].add(row.actual_contract)
-        rows_by_symbol[row.symbol].append(row)
-    missing = tuple(
-        symbol for symbol, contracts in mapping_by_symbol.items() if not contracts
+    targets = build_identity_targets(
+        products=active,
+        mappings=mappings,
+        start=start,
+        end=end,
+        weekly_end_day=weekly_end_day,
     )
-    if missing:
-        raise ValueError(
-            "PRODUCT_RETIREMENT_REFRESH_MAPPING_MISSING:" + ",".join(missing)
+    return tuple(
+        RefreshTarget(
+            dataset_kind=item.dataset_kind.value,
+            symbol=item.symbol,
+            contract_or_series=item.contract_or_series,
+            frequency=item.frequency.value,
+            start=item.start,
+            end=item.end,
         )
-    targets: list[RefreshTarget] = []
-    for symbol in active:
-        weekly_contracts = mapping_by_symbol[symbol]
-        if weekly_end_day is not None:
-            by_week: dict[tuple[int, int], list[CanonicalMainContractMapping]] = {}
-            for row in rows_by_symbol[symbol]:
-                if row.trading_day > weekly_end_day:
-                    continue
-                iso = row.trading_day.isocalendar()
-                by_week.setdefault((iso.year, iso.week), []).append(row)
-            weekly_contracts = {
-                max(rows, key=lambda item: item.trading_day).actual_contract
-                for rows in by_week.values()
-            }
-        for frequency in DIRECT_FREQUENCIES:
-            targets.append(
-                RefreshTarget(
-                    "continuous",
-                    symbol,
-                    f"{symbol.upper()}.MAIN",
-                    frequency,
-                    start,
-                    end,
-                )
-            )
-        for contract in sorted(mapping_by_symbol[symbol]):
-            for frequency in DIRECT_FREQUENCIES:
-                if frequency == "1w" and contract not in weekly_contracts:
-                    continue
-                targets.append(
-                    RefreshTarget(
-                        "actual_dominant", symbol, contract, frequency, start, end
-                    )
-                )
-    return tuple(targets)
+        for item in targets
+    )

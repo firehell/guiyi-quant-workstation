@@ -64,10 +64,13 @@ Task 07 Stage C 不再扫描或迁移全量 legacy 资产。目标集合只由
 - `1m/5m/15m/30m/60m/1d/1w`；
 - `2013-03-22` 至当前完整 MainContractMap 最后交易日的精确窗口。
 
-`guiyi data task07 assess` 首先开启 `REPEATABLE READ READ ONLY` 快照并要求 revision
-精确为 `20260803_0032`，然后只通过 `HistoricalCatalog` / `CanonicalHistoricalReader` /
-`MarketDataService` 验证目标 DatasetKey、schema、Manifest、checksum、row count、分区可读性、
-窗口/session/trading-day 覆盖、主键唯一、时间单调和七周期同频读取。
+`guiyi data task07 assess` **已从 active CLI 移除**（见 `STATUS.md` / `TESTING.md` /
+`data_parser.py`）。Task 07 Stage C 的目标验收语义仍可作为历史合同参考：只通过
+`HistoricalCatalog` / `CanonicalHistoricalReader` / `MarketDataService` 验证目标
+DatasetKey、schema、Manifest、checksum、row count、分区可读性、窗口/session/trading-day
+覆盖、主键唯一、时间单调和七周期同频读取。现行高层历史更新入口为
+`guiyi data update`（默认 dry-run；`--apply` 仅本地副作用选择器，不构成外部授权），
+专家命令仍为 `download|aggregate|sync|audit|live|verify`。不得恢复 task07 parser。
 actual-dominant `1w` 按 ISO 周最后交易日的 MainContractMap 归属。
 
 Direct `1m/1d/1w` 失败只输出 exact-window `REDOWNLOAD_DIRECT`；aggregate
