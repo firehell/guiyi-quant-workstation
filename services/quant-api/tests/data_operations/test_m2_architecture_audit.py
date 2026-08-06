@@ -150,7 +150,7 @@ def test_m2_audit_passes_when_all_required_identities_are_verified() -> None:
             AuditScope.M2: build_m2_audit_checker(
                 catalog=Catalog(),
                 verify_partition=verify_partition,
-                market_data_readable=lambda _key, _start, _end: True,
+                market_data_readable=lambda _key, _start, _end, _position: True,
             )
         }
     )
@@ -234,7 +234,7 @@ def test_m2_audit_fails_when_a_derived_dataset_has_noncanonical_lineage() -> Non
                 verify_partition=lambda _key, _partition: SimpleNamespace(
                     lineage=SimpleNamespace(origin="provider_direct", source_frequency=None)
                 ),
-                market_data_readable=lambda _key, _start, _end: True,
+                market_data_readable=lambda _key, _start, _end, _position: True,
             )
         }
     )
@@ -283,7 +283,7 @@ def test_m2_audit_requires_all_actual_dominant_frequencies() -> None:
                         origin="provider_direct", source_frequency=None
                     )
                 ),
-                market_data_readable=lambda _key, _start, _end: True,
+                market_data_readable=lambda _key, _start, _end, _position: True,
             )
         }
     )
@@ -328,7 +328,7 @@ def test_m2_audit_fails_closed_when_a_retired_product_guard_is_missing() -> None
             AuditScope.M2: build_m2_audit_checker(
                 catalog=Catalog(),
                 verify_partition=lambda _key, _partition: object(),
-                market_data_readable=lambda _key, _start, _end: True,
+                market_data_readable=lambda _key, _start, _end, _position: True,
                 retired_identity_rejected=lambda product: product != "ad",
             )
         }
@@ -371,7 +371,7 @@ def test_m2_audit_reports_invalid_catalog_identity_without_crashing() -> None:
             AuditScope.M2: build_m2_audit_checker(
                 catalog=Catalog(),
                 verify_partition=lambda _key, _partition: object(),
-                market_data_readable=lambda _key, _start, _end: True,
+                market_data_readable=lambda _key, _start, _end, _position: True,
             )
         }
     )

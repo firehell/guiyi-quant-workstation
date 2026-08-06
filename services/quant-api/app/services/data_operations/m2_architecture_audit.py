@@ -12,9 +12,10 @@ from app.data_core.contracts import (
     DatasetKind,
     DatasetOrigin,
 )
-from app.data_core.product_retirement import RETIRED_PRODUCTS, is_retired_identity
+from app.data_core.product_universe import RETIRED_PRODUCTS, is_retired_identity
 from app.services.data_operations.audit_v2 import AuditFinding
 from app.services.data_operations.contracts import AuditRequest, AuditScope
+from app.services.data_operations.market_data_probe import ProbePosition
 
 
 class _Catalog(Protocol):
@@ -33,7 +34,7 @@ def build_m2_audit_checker(
     *,
     catalog: _Catalog,
     verify_partition: Callable[[DatasetKey, object], object],
-    market_data_readable: Callable[[DatasetKey, datetime, datetime], bool],
+    market_data_readable: Callable[[DatasetKey, datetime, datetime, ProbePosition], bool],
     retired_identity_rejected: Callable[[str], bool] = lambda product: is_retired_identity(
         product=product
     ),
@@ -82,7 +83,7 @@ def _audit_product(
     catalog: _Catalog,
     symbol: str,
     verify_partition: Callable[[DatasetKey, object], object],
-    market_data_readable: Callable[[DatasetKey, datetime, datetime], bool],
+    market_data_readable: Callable[[DatasetKey, datetime, datetime, ProbePosition], bool],
     summary: dict[str, int],
 ) -> list[AuditFinding]:
     findings: list[AuditFinding] = []
@@ -241,12 +242,12 @@ def _mapping_findings(
 def _probe_findings(
     symbol: str,
     partitions: dict[DatasetKey, tuple[object, ...]],
-    market_data_readable: Callable[[DatasetKey, datetime, datetime], bool],
+    market_data_readable: Callable[[DatasetKey, datetime, datetime, ProbePosition], bool],
     findings: list[AuditFinding],
     summary: dict[str, int],
 ) -> None:
     unreadable_frequencies: set[tuple[DatasetKind, BarFrequency]] = set()
-    for dataset, partition in _limited_probe_targets(partitions):
+    for dataset, partition, position in _limited_probe_targets(partitions):
         identity = (dataset.dataset_kind, dataset.frequency)
         if identity in unreadable_frequencies:
             continue
@@ -256,6 +257,7 @@ def _probe_findings(
                 dataset,
                 getattr(partition, "coverage_start"),
                 getattr(partition, "coverage_end"),
+                position,
             )
         except Exception:  # noqa: BLE001
             readable = False
@@ -268,7 +270,7 @@ def _probe_findings(
 
 def _limited_probe_targets(
     partitions: dict[DatasetKey, tuple[object, ...]],
-) -> tuple[tuple[DatasetKey, object], ...]:
+) -> tuple[tuple[DatasetKey, object, ProbePosition], ...]:
     """Select a fixed audit sample, never one MarketData read per contract.
 
     Every partition still receives physical metadata/checksum/schema/row-count
@@ -277,9 +279,9 @@ def _limited_probe_targets(
     dominant data.  The selection is bounded per product even when its contract
     history is very long.
     """
-    selected: list[tuple[DatasetKey, object]] = []
+    selected: list[tuple[DatasetKey, object, ProbePosition]] = []
 
-    def add(dataset: DatasetKey, partition: object) -> None:
+    def add(dataset: DatasetKey, partition: object, position: ProbePosition) -> None:
         identity = (
             dataset,
             getattr(partition, "coverage_start"),
@@ -294,9 +296,9 @@ def _limited_probe_targets(
                 getattr(existing_partition, "coverage_end"),
                 getattr(existing_partition, "manifest_uri", None),
             )
-            for existing_dataset, existing_partition in selected
+            for existing_dataset, existing_partition, _existing_position in selected
         ):
-            selected.append((dataset, partition))
+            selected.append((dataset, partition, position))
 
     actual_by_frequency: dict[BarFrequency, list[tuple[DatasetKey, object]]] = {}
     for dataset, rows in partitions.items():
@@ -306,8 +308,8 @@ def _limited_probe_targets(
             sorted(rows, key=lambda row: (getattr(row, "coverage_start"), getattr(row, "coverage_end")))
         )
         if dataset.dataset_kind is DatasetKind.CONTINUOUS:
-            add(dataset, ordered_rows[0])
-            add(dataset, ordered_rows[-1])
+            add(dataset, ordered_rows[0], ProbePosition.FIRST)
+            add(dataset, ordered_rows[-1], ProbePosition.LAST)
         elif dataset.dataset_kind is DatasetKind.ACTUAL_DOMINANT:
             actual_by_frequency.setdefault(dataset.frequency, []).extend(
                 (dataset, row) for row in ordered_rows
@@ -324,13 +326,13 @@ def _limited_probe_targets(
                 ),
             )
         )
-        add(*ordered[0])
-        add(*ordered[-1])
+        add(*ordered[0], ProbePosition.FIRST)
+        add(*ordered[-1], ProbePosition.LAST)
         if frequency is BarFrequency.M1:
             for before, after in zip(ordered, ordered[1:]):
                 if before[0].contract_or_series != after[0].contract_or_series:
-                    add(*before)
-                    add(*after)
+                    add(*before, ProbePosition.LAST)
+                    add(*after, ProbePosition.FIRST)
                     break
     return tuple(selected)
 

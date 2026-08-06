@@ -14,6 +14,7 @@ from app.services.data_operations.contracts import (
     CommandResult,
     CommandStatus,
     DownloadRequest,
+    DataTarget,
     EffectSummary,
     HistoricalUpdateRequest,
     MetadataSyncRequest,

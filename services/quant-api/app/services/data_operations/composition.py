@@ -16,7 +16,7 @@ from app.data_core.aggregation import AggregationSession
 from app.data_core.catalog import HistoricalCatalog
 from app.data_core.contracts import DatasetKey
 from app.data_core.historical_sessions import build_provider_sessions, product_sessions
-from app.data_core.product_retirement import load_active_products
+from app.data_core.product_universe import assert_products_active, load_active_products
 from app.services.data_operations.aggregate import AggregateApplicationService
 from app.services.data_operations.audit_v2 import (
     AuditV2ApplicationService,
@@ -92,8 +92,6 @@ def load_universe_products(
     universe: str | None,
     active_products_path: Path = DEFAULT_ACTIVE_PRODUCTS_PATH,
 ) -> tuple[str, ...]:
-    from app.data_core.product_retirement import assert_products_active
-
     if (symbol is None) == (universe is None):
         raise CliArgumentInvalid(
             facts={
@@ -250,13 +248,29 @@ class _LazyM2AuditChecker:
 
     def __call__(self, request: object) -> Sequence[object]:
         from app.data_core.contracts import BarQuery
+        from app.data_core.historical_sessions import product_sessions
         from app.services.canonical_market_data import build_canonical_reader
+        from app.services.data_operations.market_data_probe import (
+            ProbePosition,
+            SessionAlignedMarketDataProbe,
+        )
         from app.services.market_data_service import MarketDataService
 
         reader = build_canonical_reader(self._session)
         market_data = MarketDataService(self._session, canonical_reader=reader)
+        probe = SessionAlignedMarketDataProbe(
+            session_provider=lambda dataset, start, end: product_sessions(
+                self._session, symbol=dataset.symbol, start=start, end=end
+            )
+        )
 
-        def readable(dataset: DatasetKey, start: datetime, end: datetime) -> bool:
+        def readable(
+            dataset: DatasetKey,
+            start: datetime,
+            end: datetime,
+            position: ProbePosition,
+        ) -> bool:
+            window = probe.plan(dataset, start=start, end=end, position=position)
             result = market_data.get_bars(
                 BarQuery(
                     dataset_kind=dataset.dataset_kind,
@@ -266,8 +280,8 @@ class _LazyM2AuditChecker:
                     # rematerialize every actual contract for every boundary.
                     contract_or_series=dataset.contract_or_series,
                     frequency=dataset.frequency,
-                    start=start,
-                    end=end,
+                    start=window.start,
+                    end=window.end,
                 )
             )
             return bool(result.bars)
@@ -411,6 +425,28 @@ class DataOperationsComposition:
 
     def _market_data_readable(self, target: object) -> bool:
         from app.data_core.contracts import BarQuery
+        from app.services.data_operations.market_data_probe import (
+            ProbePosition,
+            SessionAlignedMarketDataProbe,
+        )
+
+        dataset = DatasetKey(
+            provider=getattr(target, "provider"),
+            dataset_kind=getattr(target, "dataset_kind"),
+            symbol=getattr(target, "symbol"),
+            contract_or_series=getattr(target, "contract_or_series"),
+            frequency=getattr(target, "frequency"),
+            adjustment=getattr(target, "adjustment"),
+            schema_version=getattr(target, "schema_version"),
+        )
+        window = SessionAlignedMarketDataProbe(
+            session_provider=self._default_aggregation_sessions
+        ).plan(
+            dataset,
+            start=getattr(target, "start"),
+            end=getattr(target, "end"),
+            position=ProbePosition.FIRST,
+        )
 
         result = self._market_data.get_bars(
             BarQuery(
@@ -418,8 +454,8 @@ class DataOperationsComposition:
                 symbol=getattr(target, "symbol"),
                 contract_or_series=getattr(target, "contract_or_series"),
                 frequency=getattr(target, "frequency"),
-                start=getattr(target, "start"),
-                end=getattr(target, "end"),
+                start=window.start,
+                end=window.end,
             )
         )
         return bool(getattr(result, "bars", ()))
