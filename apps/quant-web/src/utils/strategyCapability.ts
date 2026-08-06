@@ -3,7 +3,6 @@ import type { StrategyRegistryItem } from '@/types/dashboard'
 
 /** Registry 能力分类（与 WEB-V1-05 Gate 对齐） */
 export type StrategyCapabilityCategory =
-  | 'formal_historical_backtest'
   | 'research_only'
   | 'historical_scan'
   | 'live_observation'
@@ -15,11 +14,6 @@ export const STRATEGY_CAPABILITY_SECTIONS: Array<{
   title: string
   hint: string
 }> = [
-  {
-    key: 'formal_historical_backtest',
-    title: '正式历史回测',
-    hint: '走 Profile / quality / lineage 契约的历史回测入口；Registry ≠ validated',
-  },
   {
     key: 'research_only',
     title: '仅研究',
@@ -51,7 +45,6 @@ const CATEGORY_BADGE: Record<
   StrategyCapabilityCategory,
   { kind: CapabilityKind; label: string }
 > = {
-  formal_historical_backtest: { kind: 'formal-research', label: '历史回测' },
   research_only: { kind: 'research-only', label: '仅研究' },
   historical_scan: { kind: 'research-only', label: '历史研究扫描' },
   live_observation: { kind: 'observation-only', label: 'Live 观察' },
@@ -60,7 +53,12 @@ const CATEGORY_BADGE: Record<
 }
 
 function machineCapabilityClasses(item: StrategyRegistryItem): StrategyCapabilityCategory[] {
-  const fromApi = item.capability_classes?.filter(Boolean) as StrategyCapabilityCategory[] | undefined
+  const supported = new Set<StrategyCapabilityCategory>([
+    'research_only', 'historical_scan', 'live_observation', 'rejected', 'unavailable',
+  ])
+  const fromApi = item.capability_classes?.filter(
+    (value): value is StrategyCapabilityCategory => supported.has(value as StrategyCapabilityCategory),
+  )
   if (fromApi?.length) return [...new Set(fromApi)]
   return []
 }
@@ -73,7 +71,6 @@ export function resolveStrategyCapabilityCategories(item: StrategyRegistryItem):
   if (machine.length) return machine
 
   const derived: StrategyCapabilityCategory[] = []
-  if (item.backtest_endpoints?.length) derived.push('formal_historical_backtest')
   if (item.scan_endpoint) derived.push('historical_scan')
   if (item.live_observation) derived.push('live_observation')
   if (!derived.length) {

@@ -15,11 +15,14 @@
 
 ## 2. 文件范围
 
-本次审查覆盖：
+本次历史审查当时覆盖：
 
-- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
-- `experiments/rqalpha_tdx_xma_bands/tdx_xma_bands_strategy.py`
-- `experiments/rqalpha_tdx_xma_bands/README.md`
+- 原 `experiments/rqalpha_tdx_xma_bands/xma_core.py`
+- 原 `experiments/rqalpha_tdx_xma_bands/tdx_xma_bands_strategy.py`
+- 原 `experiments/rqalpha_tdx_xma_bands/README.md`
+
+这些 PoC 文件当前仅可从 Git history 查阅；active 的原始 XMA 风险边界由
+`packages/quant-core/guiyi_quant/indicators/htdy_original.py` 和指标 registry 维护。
 
 本次不覆盖：
 
@@ -64,18 +67,21 @@
 
 ## 5. 验证
 
-新增测试：
+当前验证：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_production_kernel_policy.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  services/quant-api/tests/test_indicator_kernel.py
 ```
 
 测试覆盖：
 
-- `indicator_risk_catalog()` 明确标记 `XMA` 及派生信号风险。
-- `xma()` 会读取未来 bar。
-- 修改未来尾部数据会改变历史位置的 `XMA` 结果。
-- `REF`、`MA`、`EMA` 不被误标为未来函数。
+- 原始 XMA25/XMA6 的对称依赖窗口、双层依赖范围和非有限值处理。
+- 修改未来尾部或修订尾部数据会改变既有历史观察，并受 24-bar future horizon 与 27-bar repaint scan zone 约束。
+- 指标 registry 将原始 HTDY 标为 `repainting_risk=known`，并把 strict 因果实现保持为独立身份。
+- realtime repainting policy 只接受冻结身份，因果 EMA 的未来尾部不改变既有前缀。
 
 ## 6. 下一步
 

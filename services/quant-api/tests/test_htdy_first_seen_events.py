@@ -15,8 +15,8 @@ from app.models.signal import SignalEvent, SignalNotification, StrategySignal
 from app.signal.events import signal_event_payload
 from app.signal.stage9_wechat import build_stage9_wechat_payload_from_basis
 from app.signal.stage9_wechat_delivery import SenderResult
-from app.services.htdy_s6_09_wecom_gate import (
-    HtDyS609Authorization,
+from app.services.notification_authorization import (
+    ObservationNotificationAuthorization,
     canonical_hash,
 )
 from app.services.htdy_realtime_models import (
@@ -240,7 +240,7 @@ def test_closed_bar_v11_writer_freezes_confirmed_only_contract() -> None:
     )
 
 
-def test_s6_09_exact_authorization_sends_once_and_freezes_htdy_message() -> None:
+def test_exact_authorization_sends_once_and_freezes_htdy_message() -> None:
     from app.services.htdy_first_seen_events import HtDyFirstSeenEventService
     from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
     from app.signal.stage9_wechat_delivery import Stage9WechatDeliveryService
@@ -263,11 +263,10 @@ def test_s6_09_exact_authorization_sends_once_and_freezes_htdy_message() -> None
         assert sender.calls == 0
         assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
 
-        authorization = HtDyS609Authorization(
+        authorization = ObservationNotificationAuthorization(
             event_id=event.id,
             signal_id=event.signal_id,
             event_sha256=canonical_hash(signal_event_payload(event)),
-            packet_hash="9" * 64,
             dedupe_key=f"enterprise_wechat:signal_event:{event.id}",
             max_attempts=3,
             retry_deadline=datetime(2026, 7, 27, 1, 19, tzinfo=UTC),

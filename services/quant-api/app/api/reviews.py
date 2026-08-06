@@ -4,25 +4,23 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.backtest import BacktestReportModel, BacktestTradeModel
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
 from app.models.live_review_loop import SignalDecision
-from app.review.backtest_trade import apply_review_fields, default_mistake_tag_payloads, review_response, tag_response
+from app.review.policy import is_supported_review_source_type, supported_review_source_clause
+from app.review.payloads import apply_review_fields, default_mistake_tag_payloads, review_response, tag_response
 from app.schemas.review import (
     ReviewAttachmentRequest,
     ReviewExactBarsResponse,
-    ReviewFromBacktestTradeRequest,
+    ReviewSourceUpdateRequest,
     ReviewLineageResponse,
     ReviewUpdateRequest,
 )
 from app.services.review_center import (
     attachment_payload,
-    backtest_trade_source_payload,
-    create_or_get_backtest_trade_review,
     create_or_get_signal_review,
     review_stats,
 )
@@ -42,67 +40,6 @@ from app.live_review_loop.gates import (
 )
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
-
-
-@router.get("/sources/backtest-trades")
-def list_backtest_trade_sources(
-    symbol: str | None = None,
-    period: str | None = None,
-    report_id: int | None = None,
-    reviewed: bool | None = None,
-    paged: bool = Query(False),
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
-    session: Session = Depends(get_db),
-) -> list[dict[str, Any]] | dict[str, Any]:
-    if paged:
-        paged_query = (
-            select(BacktestTradeModel)
-            .join(BacktestReportModel, BacktestReportModel.id == BacktestTradeModel.report_id)
-            .outerjoin(
-                ReviewNote,
-                and_(
-                    ReviewNote.source_type == "backtest_trade",
-                    ReviewNote.source_id == BacktestTradeModel.id,
-                ),
-            )
-        )
-        if symbol:
-            paged_query = paged_query.where(BacktestTradeModel.symbol == symbol)
-        if period:
-            paged_query = paged_query.where(BacktestReportModel.period == period)
-        if report_id is not None:
-            paged_query = paged_query.where(BacktestTradeModel.report_id == report_id)
-        if reviewed is True:
-            paged_query = paged_query.where(ReviewNote.id.is_not(None))
-        if reviewed is False:
-            paged_query = paged_query.where(ReviewNote.id.is_(None))
-        total = int(session.scalar(select(func.count()).select_from(paged_query.subquery())) or 0)
-        trades = session.scalars(
-            paged_query.order_by(BacktestTradeModel.close_time.desc()).limit(limit).offset(offset)
-        )
-        return {
-            "items": [backtest_trade_source_payload(session, trade) for trade in trades],
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        }
-    query = select(BacktestTradeModel).order_by(BacktestTradeModel.close_time.desc())
-    if symbol:
-        query = query.where(BacktestTradeModel.symbol == symbol)
-    if report_id is not None:
-        query = query.where(BacktestTradeModel.report_id == report_id)
-    trades = list(session.scalars(query))
-    rows = []
-    for trade in trades:
-        report = session.get(BacktestReportModel, trade.report_id)
-        if period and report and report.period != period:
-            continue
-        payload = backtest_trade_source_payload(session, trade)
-        if reviewed is not None and payload["reviewed"] != reviewed:
-            continue
-        rows.append(payload)
-    return rows
 
 
 @router.get("/sources/paper-trades")
@@ -150,6 +87,7 @@ def get_source_lineage(
     source_id: int,
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_supported_source_type(source_type)
     try:
         return resolve_review_source_lineage(session, source_type=source_type, source_id=source_id)
     except ReviewLineageError as exc:
@@ -159,7 +97,7 @@ def get_source_lineage(
 @router.post("/from-strategy-signal/{signal_id}")
 def create_review_from_strategy_signal(
     signal_id: int,
-    request: ReviewFromBacktestTradeRequest | None = Body(default=None),
+    request: ReviewSourceUpdateRequest | None = Body(default=None),
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return _create_signal_review(
@@ -173,7 +111,7 @@ def create_review_from_strategy_signal(
 @router.post("/from-signal-event/{event_id}")
 def create_review_from_signal_event(
     event_id: int,
-    request: ReviewFromBacktestTradeRequest | None = Body(default=None),
+    request: ReviewSourceUpdateRequest | None = Body(default=None),
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return _create_signal_review(
@@ -196,24 +134,7 @@ def create_review_from_signal_decision(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     session.commit()
     session.refresh(note)
-    return review_response(note, include_source=False, session=session)
-
-
-@router.post("/from-backtest-trade/{trade_id}")
-def create_review_from_backtest_trade(
-    trade_id: int,
-    request: ReviewFromBacktestTradeRequest | None = Body(default=None),
-    session: Session = Depends(get_db),
-) -> dict[str, Any]:
-    try:
-        note = create_or_get_backtest_trade_review(session, trade_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if request is not None:
-        apply_review_fields(note, request.model_dump(exclude_unset=True))
-    session.commit()
-    session.refresh(note)
-    return review_response(note, include_source=True, session=session)
+    return review_response(note, include_source=False)
 
 
 @router.get("")
@@ -229,8 +150,9 @@ def list_reviews(
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_db),
 ) -> list[dict[str, Any]] | dict[str, Any]:
-    query = select(ReviewNote)
-    if source_type:
+    query = select(ReviewNote).where(supported_review_source_clause(ReviewNote.source_type))
+    if source_type is not None:
+        _require_supported_source_type(source_type)
         query = query.where(ReviewNote.source_type == source_type)
     if source_id is not None:
         query = query.where(ReviewNote.source_id == source_id)
@@ -269,9 +191,7 @@ def get_review_stats(session: Session = Depends(get_db)) -> dict[str, Any]:
 
 @router.get("/{review_id}/bars", response_model=ReviewExactBarsResponse)
 def get_review_exact_bars(review_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
-    note = session.get(ReviewNote, review_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="review not found")
+    note = _get_supported_review_or_404(session, review_id)
     try:
         return load_review_bars(session, note)
     except ReviewLineageError as exc:
@@ -280,24 +200,20 @@ def get_review_exact_bars(review_id: int, session: Session = Depends(get_db)) ->
 
 @router.get("/{review_id}")
 def get_review(review_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
-    note = session.get(ReviewNote, review_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="review not found")
-    return review_response(note, include_source=True, session=session)
+    note = _get_supported_review_or_404(session, review_id)
+    return review_response(note, include_source=True)
 
 
 @router.put("/{review_id}")
 def update_review(review_id: int, request: ReviewUpdateRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    note = session.get(ReviewNote, review_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="review not found")
+    note = _get_supported_review_or_404(session, review_id)
     if note.source_type == "signal_decision":
         _require_live_review_enabled()
     data = request.model_dump(exclude_unset=True)
     apply_review_fields(note, data)
     session.commit()
     session.refresh(note)
-    return review_response(note, include_source=True, session=session)
+    return review_response(note, include_source=True)
 
 
 @router.post("/{review_id}/research-sample")
@@ -305,6 +221,7 @@ def create_research_sample(
     review_id: int,
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _get_supported_review_or_404(session, review_id)
     _require_live_review_enabled()
     try:
         sample = extract_research_sample(session, review_id)
@@ -336,9 +253,7 @@ def _require_live_review_enabled() -> None:
 
 @router.post("/{review_id}/attachments")
 def add_review_attachment(review_id: int, request: ReviewAttachmentRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    note = session.get(ReviewNote, review_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="review not found")
+    note = _get_supported_review_or_404(session, review_id)
     if note.source_type == "signal_decision":
         _require_live_review_enabled()
     attachment = ReviewAttachment(
@@ -363,7 +278,7 @@ def _create_signal_review(
     *,
     source_type: str,
     source_id: int,
-    request: ReviewFromBacktestTradeRequest | None,
+    request: ReviewSourceUpdateRequest | None,
 ) -> dict[str, Any]:
     try:
         note = create_or_get_signal_review(session, source_type=source_type, source_id=source_id)
@@ -373,7 +288,19 @@ def _create_signal_review(
         apply_review_fields(note, request.model_dump(exclude_unset=True))
     session.commit()
     session.refresh(note)
-    return review_response(note, include_source=True, session=session)
+    return review_response(note, include_source=True)
+
+
+def _get_supported_review_or_404(session: Session, review_id: int) -> ReviewNote:
+    note = session.get(ReviewNote, review_id)
+    if note is None or not is_supported_review_source_type(note.source_type):
+        raise HTTPException(status_code=404, detail="review not found")
+    return note
+
+
+def _require_supported_source_type(source_type: str) -> None:
+    if not is_supported_review_source_type(source_type):
+        raise HTTPException(status_code=404, detail="review source not found")
 
 
 def _lineage_http_error(exc: ReviewLineageError) -> HTTPException:

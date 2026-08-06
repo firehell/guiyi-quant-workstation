@@ -7,7 +7,7 @@ describe('review lineage presentation', () => {
   it('renders canonical lineage from exact input identity', () => {
     const result = presentReviewLineage({
       schema_version: 'review_canonical_lineage_v1',
-      source_type: 'backtest_trade',
+      source_type: 'strategy_signal',
       source_id: 7,
       input_digest: 'b'.repeat(64),
       dataset_keys: [
@@ -31,7 +31,7 @@ describe('review lineage presentation', () => {
             frequency: '15m', adjustment: 'none', schema_version: 'canonical-bar-v1',
           },
         ], manifest_digests: ['a'.repeat(64)], source_data_versions: [],
-        derived_frequency: null, strategy_input_version: 'backtest:su_bing_ema21:v0', digest: 'b'.repeat(64),
+        derived_frequency: null, strategy_input_version: 'signal:su_bing_ema21:v0', digest: 'b'.repeat(64),
       },
     })
 

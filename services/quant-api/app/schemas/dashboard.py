@@ -11,14 +11,6 @@ class DashboardScanTaskSummary(BaseModel):
     created_at: str | None = None
 
 
-class DashboardLatestReportSummary(BaseModel):
-    report_id: int
-    report_no: str
-    strategy_code: str | None = None
-    status: str
-    created_at: str | None = None
-
-
 class DashboardLatestSignalEventSummary(BaseModel):
     event_id: int
     event_type: str
@@ -49,27 +41,17 @@ class DashboardSummaryOut(BaseModel):
     v1b_strategies: int = 0
     signals_today: int
     signals_week: int = 0
-    backtests: int
-    backtest_reports: int = 0
-    backtest_reports_success: int = 0
     data_contracts: int = 0
     jm_primary_passed_assets: int = 0
     live_target_readiness: str | None = None
     live_targets_preview_only: bool = True
     latest_scan_task: DashboardScanTaskSummary | None = None
-    latest_jm_report: DashboardLatestReportSummary | None = None
     latest_data_time: str | None = None
     latest_confirmed_bar_time: str | None = None
     latest_live_signal_event: DashboardLatestSignalEventSummary | None = None
     latest_review: DashboardLatestReviewSummary | None = None
     unfinished_review_count: int = 0
     generated_at: str | None = None
-
-
-class StrategyBacktestEndpointOut(BaseModel):
-    label: str
-    path: str
-    method: str = "POST"
 
 
 class StrategyRegistryItemOut(BaseModel):
@@ -80,7 +62,6 @@ class StrategyRegistryItemOut(BaseModel):
     product: str | None = None
     periods: list[str] = Field(default_factory=list)
     is_v1b: bool = False
-    backtest_endpoints: list[StrategyBacktestEndpointOut] = Field(default_factory=list)
     scan_endpoint: str | None = None
     strategy_version: str | None = None
     spec_doc_path: str | None = None

@@ -22,24 +22,24 @@ describe('settings storage security', () => {
     delete (globalThis as { sessionStorage?: Storage }).sessionStorage
   })
 
-  it('keeps connection overrides in sessionStorage and display preferences in localStorage', async () => {
-    const { loadAppSettings, saveAppSettings } = await import('../src/utils/settings.ts')
-    saveAppSettings({
-      apiBaseUrl: 'http://127.0.0.1:8010',
-      wsUrl: 'ws://127.0.0.1:8010/ws',
-      defaultExchange: 'DCE',
-      redUpGreenDown: true,
-    })
-    assert.doesNotMatch(localStorage.getItem('guiyi_app_settings') || '', /8010|apiBaseUrl|wsUrl/)
-    assert.match(sessionStorage.getItem('guiyi_connection_overrides') || '', /8010/)
-    assert.equal(loadAppSettings().apiBaseUrl, 'http://127.0.0.1:8010')
+  it('does not expose browser-persisted application or connection settings', async () => {
+    const settings = await import('../src/utils/settings.ts')
+
+    assert.equal('loadAppSettings' in settings, false)
+    assert.equal('saveAppSettings' in settings, false)
+    assert.equal('resolvedApiBaseUrl' in settings, false)
+    assert.equal('resolvedWsUrl' in settings, false)
   })
 
-  it('purges legacy bearer token and never migrates it', async () => {
+  it('purges legacy bearer token and application/connection storage keys', async () => {
     localStorage.setItem('token', 'legacy-secret')
+    localStorage.setItem('guiyi_app_settings', '{"apiBaseUrl":"http://legacy.invalid"}')
+    sessionStorage.setItem('guiyi_connection_overrides', '{"wsUrl":"ws://legacy.invalid"}')
     const { purgeLegacyWebCredentials } = await import('../src/utils/settings.ts')
     purgeLegacyWebCredentials()
     assert.equal(localStorage.getItem('token'), null)
     assert.equal(sessionStorage.getItem('token'), null)
+    assert.equal(localStorage.getItem('guiyi_app_settings'), null)
+    assert.equal(sessionStorage.getItem('guiyi_connection_overrides'), null)
   })
 })

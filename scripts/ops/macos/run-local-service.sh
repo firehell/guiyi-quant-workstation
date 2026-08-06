@@ -28,7 +28,7 @@ fi
 export PYTHONPATH="$PROJECT_ROOT/services/quant-api:$PROJECT_ROOT/packages/quant-core${PYTHONPATH:+:$PYTHONPATH}"
 
 case "$SERVICE" in
-  api|worker-backtests|worker-signals|worker-notifications|scheduler)
+  api|worker-signals|worker-notifications)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     ;;
 esac
@@ -36,10 +36,6 @@ esac
 case "$SERVICE" in
   api)
     exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$PROJECT_ROOT/services/quant-api" --host 127.0.0.1 --port 8000 --workers 2 --no-access-log
-    ;;
-  worker-backtests)
-    cd "$PROJECT_ROOT/services/quant-api"
-    exec "$PYTHON_BIN" -m app.worker backtests
     ;;
   worker-signals)
     cd "$PROJECT_ROOT/services/quant-api"
@@ -49,30 +45,6 @@ case "$SERVICE" in
     [[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || { printf '[run-local-service] notification autosend is disabled\n' >&2; exit 78; }
     cd "$PROJECT_ROOT/services/quant-api"
     exec "$PYTHON_BIN" -m app.worker notifications
-    ;;
-  scheduler)
-    [[ "${GUIYI_LIVE_RUNTIME_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || { printf '[run-local-service] live runtime is disabled\n' >&2; exit 78; }
-    cd "$PROJECT_ROOT/services/quant-api"
-    scheduler_args=(--run --confirm-live-write)
-    if [[ "${GUIYI_LIVE_SIGNAL_EVENTS_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]]; then
-      [[ ! "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || {
-        printf '[run-local-service] signal events require notification autosend disabled\n' >&2
-        exit 78
-      }
-      [[ -f "${GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET:-}" ]] || {
-        printf '[run-local-service] signal event approval packet unavailable\n' >&2
-        exit 78
-      }
-      [[ "${GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH:-}" =~ ^[0-9a-f]{64}$ ]] || {
-        printf '[run-local-service] signal event approval hash invalid\n' >&2
-        exit 78
-      }
-      scheduler_args+=(
-        --approval-packet "$GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET"
-        --approval-hash "$GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH"
-      )
-    fi
-    exec "$PYTHON_BIN" -m app.runtime_scheduler "${scheduler_args[@]}"
     ;;
   web)
     [[ -f "$PROJECT_ROOT/apps/quant-web/dist/index.html" ]] || { printf '[run-local-service] frontend dist missing; run pnpm --dir apps/quant-web build\n' >&2; exit 2; }

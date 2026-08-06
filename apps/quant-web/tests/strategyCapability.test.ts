@@ -14,7 +14,6 @@ const baseItem = (overrides: Partial<StrategyRegistryItem> = {}): StrategyRegist
   description: 'demo',
   periods: [],
   is_v1b: false,
-  backtest_endpoints: [],
   spec_doc_exists: false,
   ...overrides,
 })
@@ -24,14 +23,11 @@ describe('strategyCapability', () => {
     assert.deepEqual(resolveStrategyCapabilityCategories(baseItem()), ['research_only'])
   })
 
-  it('uses machine capability_classes when provided', () => {
+  it('filters the retired backtest capability while preserving non-backtest research', () => {
     const item = baseItem({
       capability_classes: ['formal_historical_backtest', 'historical_scan'],
-    })
-    assert.deepEqual(resolveStrategyCapabilityCategories(item), [
-      'formal_historical_backtest',
-      'historical_scan',
-    ])
+    } as never)
+    assert.deepEqual(resolveStrategyCapabilityCategories(item), ['historical_scan'])
   })
 
   it('marks rejected strategies and blocks live actions', () => {
@@ -49,11 +45,11 @@ describe('strategyCapability', () => {
     const grouped = groupRegistryByCapability([
       baseItem({
         strategy_code: 'jm',
-        capability_classes: ['formal_historical_backtest'],
+        capability_classes: ['historical_scan'],
       }),
       baseItem({ strategy_code: 'generic' }),
     ])
-    assert.equal(grouped.formal_historical_backtest.length, 1)
+    assert.equal(grouped.historical_scan.length, 1)
     assert.equal(grouped.research_only.length, 1)
   })
 })

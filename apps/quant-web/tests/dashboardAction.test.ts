@@ -41,7 +41,7 @@ describe('dashboard actions', () => {
       unfinishedReviewCount: 0,
       latestReportId: 15,
     })
-    assert.deepEqual(actions.map((item) => item.kind), ['report', 'jm_15m'])
+    assert.deepEqual(actions.map((item) => item.kind), ['jm_15m'])
   })
 
   it('presents a new HTDY repainting event as observation rather than a live trading signal', () => {

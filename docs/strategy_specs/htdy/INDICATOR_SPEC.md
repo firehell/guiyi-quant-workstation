@@ -234,8 +234,9 @@ XG2 = C>O AND DY2<0.02 AND MA(C,5)>MA(C,60)
 第 3 步产物：
 
 - `docs/strategy_specs/htdy/STRICT_V1_SPEC.md`
-- `experiments/htdy_indicator/htdy_strict_core.py`
-- `services/quant-api/tests/test_htdy_strict_core.py`
+- `packages/quant-core/guiyi_quant/strategies/huotian_dayou_strict/vnpy_strategy.py`
+- `services/quant-api/tests/test_htdy_strict_kernel.py`
+- `services/quant-api/tests/test_strategy_indicator_policy_c404.py`
 
 `huotian_dayou_strict_v1` 的指标层仍是 `strict_research_candidate`，不是可信定级指标或正式策略。
 

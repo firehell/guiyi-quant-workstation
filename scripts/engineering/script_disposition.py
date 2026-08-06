@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from fnmatch import fnmatch
 from pathlib import Path
-import re
 import subprocess
 from typing import Iterable, Sequence
 
@@ -33,7 +32,6 @@ FINAL_LAYOUT = (
     "scripts/engineering/release-tag.ps1",
     "scripts/engineering/replacement_gate.py",
     "scripts/engineering/repository_consistency.py",
-    "scripts/engineering/runtime_dependency_inventory.py",
     "scripts/engineering/script_disposition.py",
     "scripts/engineering/secret-scan.ps1",
     "scripts/engineering/validate.ps1",
@@ -98,10 +96,6 @@ RUNTIME_HISTORY_PATTERNS = (
     "*after_market*",
     "*htdy*",
     "*s607*",
-    "*s6_08*",
-    "*s6_09*",
-    "*s6_10*",
-    "*s610*",
     "*live_signal*",
     "*live_t3*",
     "stage9_*",

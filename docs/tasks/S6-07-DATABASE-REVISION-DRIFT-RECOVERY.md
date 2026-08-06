@@ -1,6 +1,6 @@
 # S6-07 数据库 revision 漂移事故与恢复边界
 
-更新时间：2026-07-26
+更新时间：2026-08-06
 
 ## 当前结论
 
@@ -20,7 +20,8 @@ Alembic downgrade/upgrade roundtrip。后续外部流程已把 schema 恢复到 
 
 - `profile_active_bindings=5124`，比 Step 0 冻结证据少 7 行；
 - `after_market_scheduler_checkpoints=0`；
-- HTDY trusted backtest task/report 23/15 的 0023/0024 lineage 字段为空；
+- 事故时点旧 HTDY task/report 23/15 的 0023/0024 lineage 字段为空；该对象及其证据现已退役，
+  仅作为已消费 Historical_Fact，不是 active dependency；
 - SignalEvent、SignalNotification、StrategySignal 和 market data file 计数未发现新增漂移。
 
 ## 已封堵路径
@@ -53,17 +54,20 @@ Alembic downgrade/upgrade roundtrip。后续外部流程已把 schema 恢复到 
   synthesized audit field；
 - checkpoint 业务状态来自 D2 completion snapshot；`last_result` 只记录 semantic provenance，
   `created_at/updated_at` 绑定 packet 的 `recovered_at`；
-- task 23/report 15 不写数据库，继续绑定外部 trusted-report evidence；
+- 事故时点 task 23/report 15 未写数据库；对应 trusted-report evidence 已退役，仅可从 Git
+  history 追溯；
 - 只允许插入 7 条 superseded binding 和 1 条 scheduler checkpoint；禁止 migration、Runtime
   deployment、backtest task/report、SignalEvent、通知、订单和成交写入；
 - Approval R 前必须完成 database-only logical backup 与真实 Docker 隔离恢复演练，且恢复后清理
   本轮 ownership label 资源。
 
-实现入口：
+当前保留的合同与测试入口：
 
 - `services/quant-api/app/services/s607_database_recovery.py`
-- `scripts/backup/database_only_drill.py`
-- `scripts/s607_database_recovery_gate.py`
+- `services/quant-api/tests/test_s607_database_recovery.py`
+
+旧 backup/restore、report 14 与 recovery gate 脚本已不再是现存入口；Approval R 的相关描述只记录
+事故恢复 Historical_Fact，不授权重建脚本、生成 packet 或再次执行恢复。
 
 ## Approval R 执行结果
 
@@ -80,8 +84,8 @@ Alembic downgrade/upgrade roundtrip。后续外部流程已把 schema 恢复到 
 - `after_market_scheduler_checkpoints: 0 -> 1`；
 - 5240–5246 均按冻结合同恢复为 `superseded`；
 - checkpoint 为 `jm/DCE/idle`，watermark=`2026-07-24`，retry=0；
-- active Profile hash、report 14（155 trades / 239 orders）、task 23、report 15、SignalEvent、
+- active Profile hash、事故时点 report 14、task 23、report 15、SignalEvent、
   SignalNotification、StrategySignal、orders、trades 全部零漂移。
 
-该 Approval R 已消费，不授权重复恢复、migration、部署或任何 HTDY SignalEvent 写入。HTDY
-schema-v3 后续 packet 必须绑定上述 recovery receipt hash，并重新采集当前 DB facts。
+该 Approval R 已消费，不授权重复恢复、migration、部署或任何 HTDY SignalEvent 写入。旧 HTDY
+schema-v3 控制面已经退役，不再生成新的 packet、receipt 或 rebind 记录。

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 行情 K 线工作台：历史/Live 模式、viewport 懒加载、回测/信号 deep-link、
+ * 行情 K 线工作台：历史/Live 模式、viewport 懒加载、信号 deep-link、
  * 主图指标与 Live 20s 轮询刷新。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -17,9 +17,7 @@ import MarketRightRail from '@/components/market/MarketRightRail.vue'
 import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
 import { getLatestStrategySignals, getSignalEvent, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
 import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
-import { describeBacktestApiError, fetchAllBacktestReportTrades, getBacktestReport } from '@/api/backtestApi'
 import { getCanonicalMarketCoverage, getLiveMarketBars, getLiveMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator, getMarketWorkbenchCoverage } from '@/api/market'
-import type { BacktestReport, BacktestTrade } from '@/types/backtest'
 import type {
   BarData,
   ChartOverlay,
@@ -40,7 +38,7 @@ import type {
   MainIndicatorSeries,
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
-import { buildReviewResearchQuery, parseResearchContext } from '@/utils/researchNavigation'
+import { buildReviewResearchQuery, parseResearchContext, safeReturnRoute } from '@/utils/researchNavigation'
 import {
   activeIndicatorCodes,
   buildMainIndicatorRequestParams,
@@ -78,7 +76,6 @@ import { buildMarketQualificationPresentation } from '@/utils/marketEvidencePres
 import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
 import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
 import { signalSourceDataMode } from '@/utils/signalSourceMode'
-import { formatTradeMarkerText } from '@/utils/tradeMarker'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
 import {
@@ -129,7 +126,6 @@ const loadingMeta = ref(false)
 const loadingDominants = ref(false)
 const loadingBars = ref(false)
 const loadingIndicators = ref(false)
-const loadingLinkedReport = ref(false)
 const barsError = ref<string | null>(null)
 const indicatorError = ref<string | null>(null)
 const metaWarning = ref<string | null>(null)
@@ -165,8 +161,6 @@ const chartFitContent = ref(true)
 const viewportLoadEnabled = ref(false)
 const klineChartRef = ref<KlineChartExpose | null>(null)
 const qualityCardRef = ref<MarketDataQualityCardExpose | null>(null)
-const linkedReport = ref<BacktestReport | null>(null)
-const linkedTrades = ref<BacktestTrade[]>([])
 const activeMarkerId = ref<string | null>(null)
 const showSignalLayer = ref(route.query.signal_layer !== '0')
 const latestSignals = ref<StrategySignalRecord[]>([])
@@ -181,7 +175,7 @@ const activeRightRailTab = ref<MarketRightRailTab>(
   resolveMarketRightRailTab({
     preferred: loadMarketRightRailTab(),
     hasSignalContext: Boolean(route.query.signal_id || route.query.signal_event_id),
-    hasReviewContext: Boolean(route.query.report_id || route.query.trade_id || route.query.trade_no),
+    hasReviewContext: Boolean(route.query.review_id),
   }),
 )
 /** 路由/K 线请求序号，丢弃过期异步结果 */
@@ -202,9 +196,8 @@ const canonicalDatasetKind = computed<'continuous' | 'actual_dominant' | undefin
   return isContinuousView.value ? 'continuous' : 'actual_dominant'
 })
 const chartControlsBusy = computed(
-  () => loadingBars.value || loadingMeta.value || loadingDominants.value || loadingIndicators.value || loadingLinkedReport.value,
+  () => loadingBars.value || loadingMeta.value || loadingDominants.value || loadingIndicators.value,
 )
-const isBacktestDeepLink = computed(() => Number(route.query.report_id) > 0)
 const selectedContract = computed(() => {
   if (!selectedSymbol.value || !selectedActualContract.value) return null
   return resolveContractForView(selectedSymbol.value, selectedActualContract.value, contractView.value)
@@ -251,14 +244,6 @@ const chartPeriodOptions = computed(() => {
 
 const latestBar = computed(() => bars.value.at(-1) || null)
 const previousBar = computed(() => (bars.value.length >= 2 ? bars.value.at(-2) || null : null))
-const linkedTrade = computed(() => {
-  const tradeNo = stringQuery(route.query.trade_no)
-  const tradeId = numericQuery(route.query.trade_id)
-  if (tradeNo) return linkedTrades.value.find((trade) => trade.trade_no === tradeNo) || null
-  if (tradeId) return linkedTrades.value.find((trade) => trade.id === tradeId) || null
-  return null
-})
-const backtestMarkers = computed<KlineMarker[]>(() => linkedTrades.value.flatMap((trade) => tradeToMarkers(trade)))
 const matchedSignals = computed(() => latestSignals.value.filter((signal) => signalMatchesCurrentChart(signal)))
 const signalMarkers = computed<KlineMarker[]>(() => {
   if (!showSignalLayer.value || isContinuousView.value) return []
@@ -273,7 +258,7 @@ const signalMarkers = computed<KlineMarker[]>(() => {
       shape: 'circle' as const,
     }))
 })
-const chartMarkers = computed(() => [...backtestMarkers.value, ...signalMarkers.value])
+const chartMarkers = computed(() => signalMarkers.value)
 const priceChange = computed(() => (latestBar.value && previousBar.value ? latestBar.value.close - previousBar.value.close : null))
 const priceChangePercent = computed(() => {
   if (!latestBar.value || !previousBar.value || previousBar.value.close === 0) return null
@@ -465,12 +450,12 @@ watch(
 )
 
 watch(
-  () => [route.query.report_id, route.query.trade_id, route.query.trade_no, route.query.signal_id, route.query.signal_event_id],
+  () => [route.query.review_id, route.query.signal_id, route.query.signal_event_id],
   () => {
     activeRightRailTab.value = resolveMarketRightRailTab({
       preferred: loadMarketRightRailTab(),
       hasSignalContext: Boolean(route.query.signal_id || route.query.signal_event_id),
-      hasReviewContext: Boolean(route.query.report_id || route.query.trade_id || route.query.trade_no),
+      hasReviewContext: Boolean(route.query.review_id),
     })
   },
 )
@@ -531,7 +516,7 @@ watch(
   { flush: 'post' },
 )
 
-/** 页面初始化：并行拉元数据，按 route 或回测 deep-link 选定品种并 loadBars。 */
+/** 页面初始化：并行拉元数据，按 route 选定品种并 loadBars。 */
 async function initializeChartPage() {
   const requestId = ++marketRouteRequestId
   applyRouteSelectionFromQueryToState()
@@ -539,12 +524,8 @@ async function initializeChartPage() {
   const results = await Promise.allSettled([loadDominants(), loadScopedCoverage()])
   if (!isCurrentMarketRoute(requestId)) return
   const dominantsResult = results[0]
-  if (dominantsResult.status === 'fulfilled' && !selectionMatchesRoute() && !isBacktestDeepLink.value) {
+  if (dominantsResult.status === 'fulfilled' && !selectionMatchesRoute()) {
     applyInitialSelection()
-  }
-  if (Number(route.query.report_id) > 0) {
-    await applyRouteSelectionAndLoad(requestId)
-    return
   }
   await loadBars(requestId)
 }
@@ -620,9 +601,6 @@ async function loadDominants() {
 
 watch(
   () => [
-    route.query.report_id,
-    route.query.trade_id,
-    route.query.trade_no,
     route.query.symbol,
     route.query.contract,
     route.query.period,
@@ -678,15 +656,13 @@ async function loadScopedCoverage() {
 
 async function applyRouteSelectionAndLoad(requestId = ++marketRouteRequestId) {
   viewportLoadEnabled.value = false
-  const linkedSelectionApplied = await applyLinkedReportSelection(requestId)
-  if (!isCurrentMarketRoute(requestId)) return
-  if (!linkedSelectionApplied) applyInitialSelection()
+  if (!selectionMatchesRoute()) applyInitialSelection()
   await loadBars(requestId)
 }
 
 /**
  * 核心 K 线加载：支持 viewport 合并、Live 增量、lineage 冲突 fail-closed；
- * 成功后联动指标、信号与回测 marker 定位。
+ * 成功后联动指标与信号 marker 定位。
  */
 async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptions = {}) {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
@@ -770,7 +746,6 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
       syncQuery()
       await loadLatestSignals(requestId)
       await restoreSignalEventFromRoute(requestId)
-      await focusLinkedTradeMarker()
     }
     if (response.bars.length === 0 && !options.merge) {
       message.warning(response.message || '当前选择没有可展示的 K 线')
@@ -822,6 +797,11 @@ async function restoreSignalEventFromRoute(requestId: number) {
 
 function openReviewFromChart() {
   const context = parseResearchContext(route.query as Record<string, string | string[] | null | undefined>)
+  const exactReturnRoute = context.reviewId ? safeReturnRoute(context.returnRoute) : null
+  if (exactReturnRoute) {
+    void router.push(exactReturnRoute)
+    return
+  }
   void router.push({ name: 'review', query: buildReviewResearchQuery(context) })
 }
 
@@ -863,9 +843,7 @@ function handleLiveVisibilityChange() {
 
 function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsRequestParams | null {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return null
-  const isContinuousRequest = isBacktestDeepLink.value
-    ? isSyntheticFuturesContract(selectedContract.value || '')
-    : isContinuousView.value
+  const isContinuousRequest = isContinuousView.value
   const base = {
     dataset_kind: canonicalDatasetKind.value,
     symbol: selectedSymbol.value,
@@ -874,8 +852,8 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
     provider: selectedItem.value?.provider,
     data_role: selectedItem.value?.data_role,
     access_mode: accessMode.value,
-    quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
-    allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
+    quote_mode: !isContinuousRequest,
+    allow_continuous: isContinuousRequest,
   }
   if (viewportWindow) {
     return {
@@ -887,15 +865,6 @@ function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsReque
     }
   }
   if (barsLoadMode.value === 'explicit' && dateRange.value) {
-    return {
-      ...base,
-      start: formatBarsRequestTime(dateRange.value[0]),
-      end: formatBarsRequestTime(dateRange.value[1]),
-      tail: false,
-      limit: MAX_BARS_PER_REQUEST,
-    }
-  }
-  if (isBacktestDeepLink.value && dateRange.value) {
     return {
       ...base,
       start: formatBarsRequestTime(dateRange.value[0]),
@@ -940,9 +909,7 @@ function buildMacdRequestParams(): MarketBarsRequestParams | null {
   if (!extent || !selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
     return buildBarsRequest()
   }
-  const isContinuousRequest = isBacktestDeepLink.value
-    ? isSyntheticFuturesContract(selectedContract.value || '')
-    : isContinuousView.value
+  const isContinuousRequest = isContinuousView.value
   return {
     dataset_kind: canonicalDatasetKind.value,
     symbol: selectedSymbol.value,
@@ -953,8 +920,8 @@ function buildMacdRequestParams(): MarketBarsRequestParams | null {
     access_mode: accessMode.value,
     start: formatBarsRequestTime(extent.startMs),
     end: formatBarsRequestTime(extent.endMs),
-    quote_mode: !isBacktestDeepLink.value && !isContinuousRequest,
-    allow_continuous: isBacktestDeepLink.value || isContinuousRequest,
+    quote_mode: !isContinuousRequest,
+    allow_continuous: isContinuousRequest,
     tail: false,
     limit: Math.min(MAX_BARS_PER_REQUEST, bars.value.length),
   }
@@ -1005,9 +972,7 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
     mainIndicatorSeries.value = []
     return
   }
-  const isContinuousRequest = isBacktestDeepLink.value
-    ? isSyntheticFuturesContract(selectedContract.value || '')
-    : isContinuousView.value
+  const isContinuousRequest = isContinuousView.value
   const params = buildMainIndicatorRequestParams({
     datasetKind: canonicalDatasetKind.value,
     symbol: selectedSymbol.value,
@@ -1020,8 +985,8 @@ async function loadMarketIndicators(requestId = marketRouteRequestId) {
     accessMode: accessMode.value,
     expectedMarketDataFileId: null,
     expectedLineageToken: null,
-    quoteMode: !isBacktestDeepLink.value && !isContinuousRequest,
-    allowContinuous: isBacktestDeepLink.value || isContinuousRequest,
+    quoteMode: !isContinuousRequest,
+    allowContinuous: isContinuousRequest,
   })
   if (!params) {
     mainIndicatorSeries.value = []
@@ -1113,69 +1078,7 @@ function handleAccessModeUpdate(value: MarketAccessMode) {
   void syncQuery().then(() => reloadChartPage())
 }
 
-/** report_id deep-link：拉报告与 trades，收窄 dateRange 并定位 marker。 */
-async function applyLinkedReportSelection(requestId = marketRouteRequestId) {
-  const reportId = Number(route.query.report_id)
-  if (!Number.isFinite(reportId) || reportId <= 0) {
-    linkedReport.value = null
-    linkedTrades.value = []
-    activeMarkerId.value = null
-    return false
-  }
-  loadingLinkedReport.value = true
-  try {
-    const [report, trades] = await Promise.all([getBacktestReport(reportId), fetchAllBacktestReportTrades(reportId)])
-    if (!isCurrentMarketRoute(requestId)) return false
-    linkedReport.value = report
-    linkedTrades.value = trades
-    selectedSymbol.value = report.symbol
-    selectedActualContract.value = resolveActualContract(report.symbol, report.contract, dominants.value)
-    if (isSyntheticFuturesContract(report.contract)) {
-      contractView.value = 'continuous'
-    }
-    selectedPeriod.value = queryPeriod() || selectedTradeInterval(trades) || report.period
-    const focusTime = queryTime() || linkedTrade.value?.open_time || trades[0]?.open_time || report.started_at || report.created_at
-    if (focusTime) {
-      const focus = new Date(focusTime).getTime()
-      if (!Number.isNaN(focus)) dateRange.value = [focus - 5 * dayMs(), focus + 5 * dayMs()]
-    } else {
-      syncDateRange(selectedItem.value)
-    }
-    activeMarkerId.value = linkedTrade.value ? markerId(linkedTrade.value, 'open') : null
-    return true
-  } catch (err) {
-    if (!isCurrentMarketRoute(requestId)) return false
-    linkedReport.value = null
-    linkedTrades.value = []
-    message.warning(describeBacktestApiError(err, '加载回测复盘标记失败'))
-    return false
-  } finally {
-    if (isCurrentMarketRoute(requestId)) loadingLinkedReport.value = false
-  }
-}
-
 function applyInitialSelection() {
-  if (isBacktestDeepLink.value) {
-    const routeProduct = stringQuery(route.query.symbol)
-    const resolvedContract = resolveActualContract(routeProduct, stringQuery(route.query.contract), dominants.value)
-    const querySelection = findCoverageItem(routeProduct, resolvedContract, queryPeriod())
-    const defaults = coverage.value?.default_selection
-    const fallback = defaults ? findCoverageItem(defaults.symbol, defaults.contract, defaults.period) : coverageItems.value[0]
-    const selected = querySelection || fallback
-    if (!selected) return
-    selectedSymbol.value = selected.symbol
-    selectedActualContract.value = resolveActualContract(selected.symbol, selected.contract, dominants.value)
-    contractView.value = defaultContractViewForPeriod(selected.period)
-    selectedPeriod.value = selected.period
-    syncDateRange(selected)
-    const focusTime = queryTime()
-    if (focusTime) {
-      const focus = new Date(focusTime).getTime()
-      if (!Number.isNaN(focus)) dateRange.value = [focus - 3 * dayMs(), focus + 3 * dayMs()]
-    }
-    return
-  }
-
   const routeProduct = stringQuery(route.query.symbol) || stringQuery(route.query.product)
   const routeContract = resolveActualContract(routeProduct, stringQuery(route.query.contract), dominants.value)
   const routeDominant = routeProduct
@@ -1294,13 +1197,6 @@ function handlePeriodUpdate(value: string) {
 
 function goBackToList() {
   void router.push({ name: 'market' })
-}
-
-async function focusLinkedTradeMarker() {
-  if (!linkedTrade.value) return
-  activeMarkerId.value = markerId(linkedTrade.value, 'open')
-  await nextTick()
-  klineChartRef.value?.focusTime(nearestBarTime(linkedTrade.value.open_time))
 }
 
 function refreshBars() {
@@ -1439,7 +1335,6 @@ function queryPeriod() {
 }
 
 function selectionMatchesRoute() {
-  if (Number(route.query.report_id) > 0) return false
   const routeProduct = stringQuery(route.query.symbol) || stringQuery(route.query.product)
   const routeContract = resolveActualContract(routeProduct, stringQuery(route.query.contract), dominants.value)
   const routeView = stringQuery(route.query.contract_view)
@@ -1451,43 +1346,6 @@ function selectionMatchesRoute() {
     (routeView === contractView.value || (!routeView && contractView.value === defaultContractViewForPeriod(selectedPeriod.value || ''))) &&
     queryPeriod() === selectedPeriod.value
   )
-}
-
-function queryTime() {
-  return stringQuery(route.query.time) || stringQuery(route.query.datetime)
-}
-
-function selectedTradeInterval(trades: BacktestTrade[]) {
-  const tradeNo = stringQuery(route.query.trade_no)
-  const tradeId = numericQuery(route.query.trade_id)
-  const trade = tradeNo ? trades.find((item) => item.trade_no === tradeNo) : tradeId ? trades.find((item) => item.id === tradeId) : trades[0]
-  return trade ? tradeEntryInterval(trade) : ''
-}
-
-function tradeToMarkers(trade: BacktestTrade): KlineMarker[] {
-  const isLong = tradeDirectionSide(trade.direction) === 'long'
-  const interval = tradeEntryInterval(trade)
-  const exitStyle = exitMarkerStyle(trade)
-  return [
-    {
-      id: markerId(trade, 'open'),
-      time: nearestBarTime(trade.open_time),
-      label: formatTradeMarkerText(trade, 'open'),
-      tooltip: `${isLong ? '开多' : '开空'} ${trade.trade_no}${interval ? ` ${interval}` : ''}${tradeScoreTooltip(trade)} @ ${formatNumber(trade.open_price)} / ${trade.entry_reason || tradeRawString(trade, 'entry_reason') || '-'}`,
-      color: isLong ? chartTheme.up : chartTheme.down,
-      position: isLong ? 'belowBar' : 'aboveBar',
-      shape: isLong ? 'arrowUp' : 'arrowDown',
-    },
-    {
-      id: markerId(trade, 'close'),
-      time: nearestBarTime(trade.close_time),
-      label: formatTradeMarkerText(trade, 'close'),
-      tooltip: `${exitStyle.label} ${isLong ? '平多' : '平空'} ${trade.trade_no} ${tradeHoldBars(trade)}K @ ${formatNumber(trade.close_price)} / ${rawExitReason(trade)}`,
-      color: exitStyle.color,
-      position: isLong ? 'aboveBar' : 'belowBar',
-      shape: exitStyle.shape,
-    },
-  ]
 }
 
 function signalMatchesCurrentChart(signal: StrategySignalRecord) {
@@ -1513,111 +1371,6 @@ function signalMarkerColor(signal: StrategySignalRecord) {
   if (signal.direction === 'long') return chartTheme.up
   if (signal.direction === 'short') return chartTheme.down
   return chartTheme.textMuted
-}
-
-function markerId(trade: BacktestTrade, side: 'open' | 'close') {
-  return `trade-${trade.trade_no}-${side}`
-}
-
-function tradeEntryInterval(trade: BacktestTrade) {
-  return tradeRawString(trade, 'entry_interval')
-}
-
-function tradeEntryScore(trade: BacktestTrade) {
-  return numberFrom(tradeRawValue(trade, 'entry_score'), Number.NaN)
-}
-
-function tradeScoreLabel(trade: BacktestTrade | null) {
-  if (!trade) return '-'
-  const score = tradeEntryScore(trade)
-  if (!Number.isFinite(score)) return '-'
-  const grade = tradeRawString(trade, 'entry_grade')
-  return grade ? `score ${score} / ${grade}` : `score ${score}`
-}
-
-function tradeScoreTooltip(trade: BacktestTrade) {
-  const score = tradeEntryScore(trade)
-  const scenes = tradeSceneTags(trade).slice(0, 2).join(',')
-  const scorePart = Number.isFinite(score) ? ` score:${score}` : ''
-  const scenePart = scenes ? ` tags:${scenes}` : ''
-  return `${scorePart}${scenePart}`
-}
-
-function tradeConditionLabel(trade: BacktestTrade | null) {
-  if (!trade) return '-'
-  const satisfied = tradeRawList(trade, 'satisfied_conditions')
-  const failed = tradeRawList(trade, 'failed_conditions').map((item) => `!${item}`)
-  return [...satisfied, ...failed].join(' / ') || '-'
-}
-
-function tradeSceneLabel(trade: BacktestTrade | null) {
-  if (!trade) return '-'
-  return tradeSceneTags(trade).join(' / ') || '-'
-}
-
-function tradeSceneTags(trade: BacktestTrade) {
-  return tradeRawList(trade, 'scene_tags')
-}
-
-function tradeHoldBars(trade: BacktestTrade) {
-  return numberFrom(trade.holding_bars ?? trade.raw_payload?.hold_bars ?? trade.raw_payload?.holding_bars)
-}
-
-function exitMarkerStyle(trade: BacktestTrade) {
-  const kind = tradeExitKind(trade)
-  if (kind === 'delivery') return { label: '交割风险退出', color: '#f59e0b', shape: 'square' as const }
-  if (kind === 'rollover') return { label: '换月退出', color: '#8b5cf6', shape: 'square' as const }
-  if (kind === 'stop') return { label: '止损退出', color: '#f97316', shape: 'circle' as const }
-  if (kind === 'time') return { label: '时间退出', color: '#38bdf8', shape: 'circle' as const }
-  return { label: '普通退出', color: tradeDirectionSide(trade.direction) === 'long' ? chartTheme.down : chartTheme.up, shape: tradeDirectionSide(trade.direction) === 'long' ? 'arrowDown' as const : 'arrowUp' as const }
-}
-
-function tradeExitKind(trade: BacktestTrade) {
-  const reason = `${trade.exit_reason || ''} ${tradeRawString(trade, 'exit_reason')} ${trade.rollover_reason || ''}`.toLowerCase()
-  if (trade.delivery_risk_exit || reason.includes('delivery_risk_exit') || reason.includes('交割')) return 'delivery'
-  if (trade.rollover_forced_exit || reason.includes('main_contract_roll_exit') || reason.includes('rollover') || reason.includes('换月')) return 'rollover'
-  if (reason.includes('stop') || reason.includes('止损')) return 'stop'
-  if (reason.includes('time') || reason.includes('max_hold') || reason.includes('hold_bars') || reason.includes('时间')) return 'time'
-  return 'normal'
-}
-
-function rawExitReason(trade: BacktestTrade) {
-  return trade.exit_reason || tradeRawString(trade, 'exit_reason') || '-'
-}
-
-function tradeRawString(trade: BacktestTrade, key: string) {
-  const value = tradeRawValue(trade, key)
-  return value === undefined || value === null ? '' : String(value)
-}
-
-function tradeRawValue(trade: BacktestTrade, key: string) {
-  const direct = (trade as unknown as Record<string, unknown>)[key]
-  return direct === undefined || direct === null || direct === '' ? trade.raw_payload?.[key] : direct
-}
-
-function tradeRawList(trade: BacktestTrade, key: string) {
-  const value = tradeRawValue(trade, key)
-  if (value === undefined || value === null || value === '') return []
-  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean)
-  if (typeof value === 'string') {
-    const stripped = value.trim()
-    if (!stripped) return []
-    try {
-      const parsed = JSON.parse(stripped) as unknown
-      if (Array.isArray(parsed)) return parsed.map((item) => String(item)).filter(Boolean)
-    } catch {
-      return stripped.split(/[;,]/).map((item) => item.trim()).filter(Boolean)
-    }
-    return [stripped]
-  }
-  return [String(value)]
-}
-
-function tradeDirectionSide(direction: string) {
-  const normalized = String(direction).trim().toLowerCase()
-  if (['long', 'buy', '多'].includes(normalized)) return 'long'
-  if (['short', 'sell', '空'].includes(normalized)) return 'short'
-  return normalized.includes('空') || normalized.includes('short') || normalized.includes('sell') ? 'short' : 'long'
 }
 
 function nearestBarTime(value: string) {
@@ -1659,14 +1412,12 @@ function syncQuery(): Promise<void> {
       },
       {
         strategy: stringQuery(route.query.strategy),
-        report_id: stringQuery(route.query.report_id),
-        trade_id: stringQuery(route.query.trade_id),
-        trade_no: stringQuery(route.query.trade_no),
         time: stringQuery(route.query.time),
         datetime: stringQuery(route.query.datetime),
         signal_layer: stringQuery(route.query.signal_layer),
         signal_id: stringQuery(route.query.signal_id),
         signal_event_id: stringQuery(route.query.signal_event_id),
+        review_id: stringQuery(route.query.review_id),
         return_route: stringQuery(route.query.return_route),
       },
     ),
@@ -1688,15 +1439,6 @@ function stringQuery(value: unknown) {
 function numericQuery(value: unknown) {
   const numeric = Number(value)
   return Number.isFinite(numeric) && numeric > 0 ? numeric : null
-}
-
-function numberFrom(value: unknown, fallback = 0) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : fallback
-}
-
-function dayMs() {
-  return 24 * 60 * 60 * 1000
 }
 
 function formatDate(value: number) {
@@ -1866,7 +1608,7 @@ function isNotFoundApiError(err: unknown) {
           :overlays="chartOverlays"
           :main-indicators="visibleMainIndicators"
           :main-indicator-series="mainIndicatorSeries"
-          :loading="loadingBars || loadingLinkedReport"
+          :loading="loadingBars"
           :error="barsError"
           :indicator-panels="['macd']"
           :macd-override="macdOverride"
@@ -1994,37 +1736,16 @@ function isNotFoundApiError(err: unknown) {
       </template>
 
       <template #review>
-        <section v-if="linkedReport" class="side-panel">
-          <div class="side-panel__title">
-            <span>报告 / 交易 / Review</span>
-            <NTag size="small" type="info">#{{ linkedReport.id }}</NTag>
-          </div>
-          <div class="snapshot-grid">
-            <span>策略</span><strong>{{ linkedReport.strategy_code || '-' }}</strong>
-            <span>周期</span><strong>{{ linkedReport.period }} / {{ selectedPeriod }}</strong>
-            <span>交易数</span><strong>{{ linkedTrades.length.toLocaleString('zh-CN') }}</strong>
-            <span>选中交易</span><strong>{{ linkedTrade?.trade_no || '-' }}</strong>
-            <span>评分</span><strong>{{ tradeScoreLabel(linkedTrade) }}</strong>
-            <span>条件</span><strong>{{ tradeConditionLabel(linkedTrade) }}</strong>
-            <span>场景</span><strong>{{ tradeSceneLabel(linkedTrade) }}</strong>
-            <span>入场原因</span><strong>{{ linkedTrade?.entry_reason || (linkedTrade ? tradeRawString(linkedTrade, 'entry_reason') : '-') }}</strong>
-            <span>退出原因</span><strong>{{ linkedTrade?.exit_reason || (linkedTrade ? tradeRawString(linkedTrade, 'exit_reason') : '-') }}</strong>
-          </div>
-          <NButton size="small" secondary block @click="router.push({ name: 'backtest', query: { report_id: String(linkedReport.id) } })">返回报告详情</NButton>
-          <NButton
-            v-if="linkedTrade?.id"
-            size="small"
-            secondary
-            block
-            @click="openReviewFromChart"
-          >
-            返回交易复盘
+        <section class="side-panel">
+          <div class="side-panel__title">Signal Review</div>
+          <div class="empty-note">复盘仅关联 StrategySignal / SignalEvent；行情页不加载回测报告或成交。</div>
+          <NButton v-if="route.query.review_id" size="small" secondary block @click="openReviewFromChart">
+            返回复盘
           </NButton>
-        </section>
-        <section v-else class="side-panel">
-          <div class="side-panel__title">报告 / 交易 / Review</div>
-          <div class="empty-note">当前 URL 没有 report/trade 上下文，不伪造复盘关联。</div>
-          <NButton size="small" secondary block @click="router.push({ name: 'review' })">打开复盘中心</NButton>
+          <NButton v-else-if="selectedSignalEvent || route.query.signal_event_id" size="small" secondary block @click="openReviewFromChart">
+            打开事件复盘
+          </NButton>
+          <NButton v-else size="small" secondary block @click="router.push({ name: 'review' })">打开复盘中心</NButton>
         </section>
       </template>
 

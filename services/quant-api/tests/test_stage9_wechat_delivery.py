@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 import json
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -18,6 +19,46 @@ from app.signal.stage9_wechat_delivery import (
     Stage9WechatDeliveryService,
     retry_pending_notifications,
 )
+
+
+def test_notification_payload_drops_retired_authorization_metadata() -> None:
+    notification = SimpleNamespace(
+        status="skipped",
+        attempt_count=0,
+        max_attempts=3,
+        payload=None,
+    )
+    authorization = SimpleNamespace(
+        authorization_scope="retired_scope",
+        authorization_hash="a" * 64,
+        event_id=1,
+        dedupe_key="dedupe",
+        event_sha256="b" * 64,
+        rendered_message_sha256="c" * 64,
+    )
+
+    Stage9WechatDeliveryService._set_base_payload(
+        notification,
+        {
+            "allowed": False,
+            "blocked_reasons": ["default_off"],
+            "delivery_allowed": False,
+            "delivery_blocked_reasons": ["default_off"],
+            "payload_basis": {},
+        },
+        None,
+        authorization=authorization,
+    )
+
+    assert set(notification.payload) == {
+        "allowed",
+        "blocked_reasons",
+        "delivery_allowed",
+        "delivery_blocked_reasons",
+        "payload_basis",
+        "wechat_payload",
+        "delivery",
+    }
 
 
 def test_allowed_event_fake_success_writes_sent_notification_without_secret() -> None:

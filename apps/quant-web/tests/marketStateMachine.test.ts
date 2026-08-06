@@ -22,11 +22,10 @@ describe('marketStateMachine', () => {
         dataMode: 'historical',
       },
       {
-        report_id: '42',
-        trade_no: 'T-001',
         strategy: 'su_bing_v1',
         signal_id: '11',
         signal_event_id: '12',
+        review_id: '13',
         return_route: '/signal?tab=events',
       },
     )
@@ -37,11 +36,10 @@ describe('marketStateMachine', () => {
     assert.equal(query.profile_id, undefined)
     assert.equal(query.access_mode, 'research')
     assert.equal(query.data_mode, undefined)
-    assert.equal(query.report_id, '42')
-    assert.equal(query.trade_no, 'T-001')
     assert.equal(query.strategy, 'su_bing_v1')
     assert.equal(query.signal_id, '11')
     assert.equal(query.signal_event_id, '12')
+    assert.equal(query.review_id, '13')
     assert.equal(query.return_route, '/signal?tab=events')
   })
 

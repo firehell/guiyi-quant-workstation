@@ -47,10 +47,11 @@ RQData (only provider)
 -> one canonical Parquet root (provider 1m / 1d / 1w)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
--> Web / Indicator / Backtest / Signal / Review
+-> Web / Indicator / Signal / Review
 ```
 
 - staging 或校验失败数据不长期保留；精确窗口最多自动重试三次，之后登记 DataGap。
+- 严格研究读取要求字面状态 `quality_status=passed`；其他状态不得冒充正式历史输入。
 - 与 DataGap 相交的读取失败关闭；无关且连续、验证通过的数据可继续使用。
 - 5m/15m/30m/60m 只从 canonical 1m 按 TradingSession 确定性聚合。
 - `continuous` 与 `actual_dominant` 显式且不可互换。
@@ -107,9 +108,9 @@ historical evidence/report/receipt 默认保护。任何受控删除均须先完
   可追溯，不再提供 active 授权，也不得当作现存路径。
 - `TESTING.md` 与 `docs/SIGNAL_EVENTS.md` 中对已合入 GY-CORE-04 的测试或实现描述：
   legacy implementation facts，不是继续旧 GY-CORE-05～08 的授权。
-- 已删除的 `JM-LIVE-STABILITY-S6-10.md` 与现存 `V1-FINAL-ACCEPTANCE-S6-11.md` 中的
-  `GY-S6-10-R2` 只保留旧 S6-10 paused/frozen historical 与未来 Runtime Gate 边界；
-  实际恢复入口必须服从本合同任务 08/相关条款及新的 scoped intent。
+- 已删除的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据只保留在 Git history，
+  不再提供 active 兼容入口或 Runtime Gate。未来如需重建回测或 Runtime 验收，
+  必须新建任务并取得对应外部操作的 scoped intent。
 
 Profile/ActiveBinding/复杂 lineage 的退出顺序固定为：
 
@@ -139,7 +140,7 @@ lineage，不再逐项调度。
 | 02 | Catalog/Manifest/Gap migration | code + isolated migration validation completed on develop；PR #80；task HEAD `9614710c`；merge `59c14ffd`；35 PG16 tests；生产 schema 已在 Task 04 Gate 下升级到 0027 |
 | 03 | staging、quality、canonical writer | completed on develop；PR #82；task HEAD `8a892a5a`；merge `3ceb57bd`；本地 142 targeted、319 data_core、191 engineering tests；post-merge exact Linux backend 2186 passed / 36 skipped / 0 failed；Ruff 与独立 Review 通过；真实 RQData/Parquet/DB 写入未授权 |
 | 04（原 04～08） | 历史数据闭环、JM 基线迁移、普通消费者切换 | `completed on develop`（Historical_Fact：当时经 exact-head CI、独立 Review 与 merge）；正式业务 Gate 为 Canonical 自身物理/Catalog/Gap/统一读取与普通消费者回归，详见 4.0 |
-| 05（原 09～10） | Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | completed on develop（Historical_Fact）；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 受控外部操作 |
+| 05（原 09～10） | 历史 Backtest、Signal、Review 可信消费者切换；derived/reference 只读 inventory | Historical_Fact；Backtest 消费者现已退役，Signal/Review 非回测路径保留；inventory 不授权 rebuild/delete，真实 DB/data-root inventory 留作 Task 07 受控外部操作 |
 | 06（原 11～14） | live、SignalDecision、EOD、ResearchSample/retention | completed on develop（PR #105 merge 后生效）；固定 EMA21 evaluator；production=`0031`，empty/disabled smoke passed；Runtime/live 未启用 |
 | 07（原 15～18） | JM 目标 Canonical 验收与精确缺口计划 | Stage C 精简实现 candidate；待本地/生产只读验收；无 production write/delete；不要求 Issue/worktree/PR/Review/exact-head/packet |
 | 08（原 19） | release candidate、JM Runtime promotion 与验收 | pending；release 与 Runtime 分属不同 scoped intent |
@@ -210,8 +211,8 @@ Canonical。
 不一致，4,671 个 1d 文件缺少 migration reader 所需的 `datetime`。按永久合同不做 legacy
 逐行仲裁：这些资产直接改判为 `CONFLICT_BLOCKED -> rqdata_redownload`，且 repair window 绑定
 物理 min/max。当前 code-only remediation 基于 `develop@aac4006f`，旧 Stage C packet 已
-supersede；该 apply 阻塞在当时要求 exact-head Review/PR/CI/ancestry 与新 migration
-approval（现为 frozen historical，不再是当前授权条件）。准确 digest、数量与 writes=false 证据见
+supersede；该 apply 因当时旧协作流程未完成而停止，该流程现已退役。准确 digest、数量与
+writes=false 证据见
 Git history 中已删除的 `GY-DATA-CORE-V2-TASK07-EVIDENCE.md` 第 8 节。
 
 2026-08-03 closeout 代码合同已取消两项旧设计：actual-dominant `1w` 禁用与
@@ -267,7 +268,7 @@ apply packet。
 的 detached Runtime `10351ccd` 扫描为 300 active / 1,581 review-required，plan 因此
 `approval_eligible=false / writes_authorized=false`。项目所有者于 2026-08-03 确认已删除的
 `/Volumes/扩展盘/GuiyiApprovals` 不再是必需 protected root；该项不再构成 Gate。v9 的 base SHA
-已被后续 hardening supersede，最终 approval inventory 仍须绑定新的 clean exact HEAD。
+已被后续 hardening supersede，对应 approval inventory 也已失效且不再是 active 输入。
 
 生产 DB v9 retirement before-image 仍为 4,297 行精确 update candidates（4,279 bindings +
 8 download tasks + 2 scan tasks + 8 active signals），plan digest 为
@@ -377,8 +378,9 @@ state=BLOCKED_AT_JM_REAL_DATA_GATE
   0026 中间态 fail-closed，0027 才读取新 Catalog/view。`apply` 在 inventory、receipt、root、
   RQData 和 writer 前先要求 exact 0027。标准 CLI pretty packet 可在 8 MiB 有界预解析上限内
   load/self-verify，超过上限在 JSON parse 前拒绝。
-- 当时的 hash-bound `migrate apply` 执行器（Historical_Fact，非当前授权）先后执行 packet preflight、current-facts 重算、clean exact
-  head 与 0027 revision 检查；全部通过后才允许创建 `data-core-v2` 根、初始化 RQData/writer。
+- 当时的 `migrate apply` 执行器（Historical_Fact，非当前授权）记录了 packet preflight、
+  current-facts、source revision 与 0027 revision 检查，之后才创建 `data-core-v2` 根并初始化
+  RQData/writer。
   direct dataset 矩阵为 continuous `1m/1d/1w`、actual-dominant `1m/1d`，actual sessions
   必须消费 dataset write plan 中的 rank=1 mapping 有效分段，不得发布全局窗口
   coverage；gap 可提交并阻断
@@ -476,7 +478,7 @@ GitHub post-merge engineering-test for e29c2940: run 30678204745, success
 - 该修复改变 source HEAD，因此所有 `e29c2940` packet/hash/approval 已失效，不得复用；
 - 当时规定 approval packet 只允许由提交后的 clean exact head 生成（Historical_Fact）；packet/hash 属于仓库外证据，
   不反向写入提交造成 self-drift，也不是当前个人开发授权；
-- 当时生产 Gate follow-up 曾要求新的 clean exact HEAD、GitHub CI、packet 与用户批准（现已 superseded）；
+- 当时生产 follow-up 未继续执行，其协作流程现已 superseded；
 - 当前正式数据/生产 DB mutation 只接受范围明确的一次性执行意图，不得复用任何旧 packet/hash。
 
 以上是当时不能标记完成、不能进入任务 05 的原因及当时拟议下一动作；该 packet/apply/Shadow
@@ -487,8 +489,8 @@ GitHub post-merge engineering-test for e29c2940: run 30678204745, success
 PR #88 已把 resume 修复合入 `develop@e3e03a9d`。以下条目是当时的 Historical_Fact /
 技术验收记录，不是当前个人开发或外部 mutation 的授权条件：
 
-1. approval-basis receipt identity（历史）：同一 HEAD 的不同 initial state 不得碰撞；receipt v2 必须绑定
-   basis digest、packet hash 和自身 digest，篡改拒绝，passed 终态不可变；
+1. approval-basis receipt identity（历史）：同一 HEAD 的不同 initial state 不得碰撞；旧 receipt v2
+   记录 basis digest、packet hash 和自身 digest，并拒绝篡改，passed 终态不可变；
 2. packet/current-state execution runs：actual-dominant M1/D1 不得共享时间口径；连续主导交易日
    合并为有界 provider run，85 个 dataset plan 必须各有非空且可重算的 run；
 3. real-provider readonly preflight：apply 前必须以同 packet/current-state 对 85 个 direct DatasetKey

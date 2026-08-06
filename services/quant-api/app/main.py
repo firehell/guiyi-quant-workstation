@@ -3,8 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
 
-from app.api.backtests import router as backtests_router
-from app.api.backtests import watchlists_router
 from app.api.dashboard import router as dashboard_router
 from app.api.data_center import compat_router, router as data_center_router
 from app.api.futures_research import router as futures_research_router
@@ -13,7 +11,7 @@ from app.api.reviews import router as reviews_router
 from app.api.runtime import router as runtime_router
 from app.api.signals import router as signals_router
 from app.api.strategies import router as strategies_router
-from app.websocket.backtests import router as backtest_ws_router
+from app.api.watchlists import router as watchlists_router
 from app.websocket.signals import router as signal_ws_router
 from app.middleware.request_timing import RequestTimingMiddleware
 
@@ -50,14 +48,12 @@ app.include_router(data_center_router)
 app.include_router(compat_router)
 app.include_router(market_router)
 app.include_router(futures_research_router)
-app.include_router(backtests_router)
 app.include_router(watchlists_router)
 app.include_router(signals_router)
 app.include_router(reviews_router)
 app.include_router(dashboard_router)
 app.include_router(strategies_router)
 app.include_router(runtime_router)
-app.include_router(backtest_ws_router)
 app.include_router(signal_ws_router)
 
 @app.get("/health")
@@ -78,4 +74,3 @@ def healthz_check():
         "service": "local-workstation",
         "readonly": True,
     }
-

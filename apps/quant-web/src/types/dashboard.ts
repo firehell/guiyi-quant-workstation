@@ -7,15 +7,6 @@ export interface DashboardScanTaskSummary {
   created_at?: string | null
 }
 
-/** 仪表盘最近 JM 回测报告摘要 */
-export interface DashboardLatestReportSummary {
-  report_id: number
-  report_no: string
-  strategy_code?: string | null
-  status: string
-  created_at?: string | null
-}
-
 export interface DashboardLatestSignalEventSummary {
   event_id: number
   event_type: string
@@ -39,7 +30,7 @@ export interface DashboardLatestReviewSummary {
   updated_at?: string | null
 }
 
-/** 仪表盘总览统计（数据、风险、策略、信号、回测等） */
+/** 仪表盘总览统计（数据、风险、策略与信号等） */
 export interface DashboardSummary {
   data_status: string
   risk_status: string
@@ -47,15 +38,11 @@ export interface DashboardSummary {
   v1b_strategies: number
   signals_today: number
   signals_week: number
-  backtests: number
-  backtest_reports: number
-  backtest_reports_success: number
   data_contracts: number
   jm_primary_passed_assets: number
   live_target_readiness?: string | null
   live_targets_preview_only: boolean
   latest_scan_task?: DashboardScanTaskSummary | null
-  latest_jm_report?: DashboardLatestReportSummary | null
   latest_data_time?: string | null
   latest_confirmed_bar_time?: string | null
   latest_live_signal_event?: DashboardLatestSignalEventSummary | null
@@ -64,16 +51,8 @@ export interface DashboardSummary {
   generated_at?: string | null
 }
 
-/** 策略注册表中的回测 API 端点描述 */
-export interface StrategyBacktestEndpoint {
-  label: string
-  path: string
-  method: string
-}
-
 /** 策略 registry 能力分类（machine source 优先） */
 export type StrategyRegistryCapabilityClass =
-  | 'formal_historical_backtest'
   | 'research_only'
   | 'historical_scan'
   | 'live_observation'
@@ -89,7 +68,6 @@ export interface StrategyRegistryItem {
   product?: string | null
   periods: string[]
   is_v1b: boolean
-  backtest_endpoints: StrategyBacktestEndpoint[]
   scan_endpoint?: string | null
   strategy_version?: string | null
   spec_doc_path?: string | null

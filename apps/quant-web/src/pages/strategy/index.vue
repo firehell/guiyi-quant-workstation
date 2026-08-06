@@ -41,13 +41,6 @@ async function load() {
   }
 }
 
-function goBacktest(item: StrategyRegistryItem) {
-  void router.push({
-    name: 'backtest',
-    query: item.product ? { symbol: item.product } : undefined,
-  })
-}
-
 function itemBadges(item: StrategyRegistryItem) {
   return resolveStrategyCapabilityCategories(item).map((category) => ({
     category,
@@ -86,7 +79,7 @@ onMounted(() => {
     </template>
 
     <NAlert type="warning" :bordered="false" class="strategy-boundary">
-      能力徽章区分历史回测 / 历史扫描 / Live 观察 / 已拒绝候选。无 machine capability 的条目默认「仅研究」。
+      能力徽章区分历史扫描 / Live 观察 / 已拒绝候选。无 machine capability 的条目默认「仅研究」。
     </NAlert>
 
     <section
@@ -124,14 +117,6 @@ onMounted(() => {
             <span v-if="item.strategy_version">版本 {{ item.strategy_version }}</span>
           </div>
           <div class="strategy-card__actions">
-            <NButton
-              v-if="item.backtest_endpoints.length && !isRejectedStrategy(item)"
-              size="small"
-              type="primary"
-              @click="goBacktest(item)"
-            >
-              去回测中心
-            </NButton>
             <NButton
               v-if="item.scan_endpoint && !isRejectedStrategy(item)"
               size="small"

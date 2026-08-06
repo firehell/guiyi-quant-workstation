@@ -7,7 +7,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.backtest.v1b_jm_tasks import JM_V1B_DATA_SOURCE, JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION, JM_V1B_SYMBOL
 from app.core.env import PROJECT_ROOT
 from app.schemas.signal import LiveSignalContextOut, LiveSignalEvaluationItem, LiveSignalEvaluationRequest, LiveSignalEvaluationResponse
 from app.services.live_signal_context import HistoricalLiveContext, HistoricalLiveContextError, HistoricalLiveContextResolver
@@ -15,6 +14,12 @@ from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.market_data_reader import MarketDataReader
 from app.services.profile_lineage import LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
 from app.services.signal_lineage import SignalFormalLineageResolver
+from app.strategy.jm_v1b_identity import (
+    JM_V1B_DATA_SOURCE,
+    JM_V1B_STRATEGY_CODE,
+    JM_V1B_STRATEGY_VERSION,
+    JM_V1B_SYMBOL,
+)
 
 ENTRY_STATUS = "entry_signal"
 NO_SIGNAL_STATUS = "no_signal"

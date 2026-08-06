@@ -108,6 +108,14 @@ def test_runtime_gate_does_not_require_disabled_or_legacy_notification_services(
     assert "com.guiyi.quant-notification-worker" not in REQUIRED_WRITER_SERVICES
 
 
+def test_runtime_gate_uses_only_current_writer_services() -> None:
+    assert REQUIRED_WRITER_SERVICES == (
+        "com.guiyi.quant-api",
+        "com.guiyi.quant-worker-signals",
+        "com.guiyi.quant-after-market-scheduler",
+    )
+
+
 def test_validate_runtime_request_rejects_protected_root_inside_runtime(
     tmp_path: Path,
 ) -> None:
@@ -621,8 +629,8 @@ def test_execute_preflights_before_stopping_and_restores_exact_prior_states(
         roots=roots,
     )
     running = (
-        "com.guiyi.quant-htdy-s610-one-day-observer",
-        "com.guiyi.quant-htdy-s610-observer",
+        "com.guiyi.quant-api",
+        "com.guiyi.quant-after-market-scheduler",
     )
     runtime = _RuntimeOperator(running=running)
     data = _DataOperator(apply_status="applied")
@@ -725,7 +733,9 @@ def test_postcommit_refresh_failure_writes_resumable_journal_and_keeps_stopped(
         def sync_direct(self, _products, _frequencies):
             raise RuntimeError("provider failed")
 
-    runtime = _RuntimeOperator(running=("com.guiyi.quant-htdy-s610-observer",))
+    runtime = _RuntimeOperator(
+        running=("com.guiyi.quant-after-market-scheduler",)
+    )
     result = ProductRetirementRuntimeGate(
         inventory=lambda _request, _runtime_sha: {"packet": "fresh"},
         run_id_factory=lambda: "run-refresh-failed",
@@ -743,7 +753,9 @@ def test_postcommit_refresh_failure_writes_resumable_journal_and_keeps_stopped(
     assert payload["phase"] == "postcommit_refresh"
     assert payload["receipt"]["status"] == "applied"
     assert (
-        payload["prior_service_states"]["com.guiyi.quant-htdy-s610-observer"]
+        payload["prior_service_states"][
+            "com.guiyi.quant-after-market-scheduler"
+        ]
         == "running"
     )
     assert runtime.writer_states() == {

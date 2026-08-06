@@ -13,7 +13,7 @@ from app.models.data_center import DataProfile, DataQualityReport, MarketDataFil
 from app.services.data_profile_registry import ACTIVE_BINDING_STATUS, DataProfileRegistry
 from app.services.rqdata_ingest.quality import RQDATA_CANONICAL_CHECK_RULE_VERSION
 
-ConsumerName = Literal["market", "backtest", "signal", "review"]
+ConsumerName = Literal["market", "signal", "review"]
 
 INTRADAY_RESEARCH_PROFILE = "intraday_research_v1"
 LONG_HORIZON_DAILY_PROFILE = "long_horizon_daily_v1"
@@ -201,8 +201,6 @@ class ProfileLineageResolver:
             return None
         policy = profile.quality_policy or PASSED_ONLY_POLICY
         if policy == PASSED_ONLY_POLICY and status != "passed":
-            if consumer == "backtest" and status == "warning" and allow_warning_quality:
-                return None
             return "profile_quality_policy_blocked"
         if consumer == "signal" and status != "passed":
             return "signal_requires_passed_quality"

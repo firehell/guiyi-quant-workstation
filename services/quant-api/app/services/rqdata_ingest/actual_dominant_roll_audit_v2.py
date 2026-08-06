@@ -651,93 +651,132 @@ def resolve_trading_parameters(
 def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     root = project_root.resolve(strict=False)
     sources = {
-        "historical": _read_source(root / "services/quant-api/app/backtest/contract_resolver.py"),
+        "semantics": _read_source(root / "services/quant-api/app/services/actual_contract_semantics.py"),
+        "historical": _read_source(root / "services/quant-api/app/services/active_dataset_resolver.py"),
         "live": _read_source(root / "services/quant-api/app/services/live_target_contracts.py"),
         "reader": _read_source(root / "services/quant-api/app/services/live_market_reader.py"),
         "evaluator": _read_source(root / "services/quant-api/app/services/live_signal_evaluator.py"),
         "events": _read_source(root / "services/quant-api/app/services/live_signal_events.py"),
     }
     targets = {
-        "historical_mapping": _ast_target_source(sources["historical"], "_load_main_contract_mapping"),
-        "historical_actual": _ast_target_source(sources["historical"], "resolve_jm_contract"),
-        "historical_parameters": _ast_target_source(sources["historical"], "_load_trading_parameters"),
-        "historical_fee": _ast_target_source(sources["historical"], "_load_fee_margin_rule"),
+        "effective_mapping_helper": _ast_target_source(
+            sources["semantics"], "load_effective_main_contract_mapping"
+        ),
+        "strict_mapping_helper": _ast_target_source(
+            sources["semantics"], "load_strict_main_contract_mapping"
+        ),
+        "trading_parameter_helper": _ast_target_source(
+            sources["semantics"], "load_effective_trading_parameters"
+        ),
+        "fee_margin_helper": _ast_target_source(
+            sources["semantics"], "load_effective_fee_margin_rule"
+        ),
+        "historical_init": _ast_target_source(sources["historical"], "ActiveDatasetResolver.__init__"),
+        "historical_resolve": _ast_target_source(
+            sources["historical"], "ActiveDatasetResolver._resolve_contract"
+        ),
         "live_mapping": _ast_target_source(sources["live"], "LiveTargetContractResolver._mapping"),
         "live_actual": _ast_target_source(sources["live"], "_actual_contract_or_none"),
         "live_parameters": _ast_target_source(sources["live"], "LiveTargetContractResolver._parameter_gate"),
         "reader": _ast_target_source(sources["reader"], "LiveMarketReader.get_bars"),
         "evaluator_preview": _ast_target_source(sources["evaluator"], "LiveSignalEvaluator.preview"),
         "evaluator_interval": _ast_target_source(sources["evaluator"], "LiveSignalEvaluator._evaluate_interval"),
-        "event_eligible": _ast_target_source(sources["events"], "_is_eligible"),
+        "event_eligibility": _ast_target_source(
+            sources["events"], "_eligibility_blocked_reasons"
+        ),
         "event_features": _ast_target_source(sources["events"], "_features"),
     }
     compact = {key: re.sub(r"\s+", "", value) for key, value in targets.items()}
+    neutral_mapping_checks = {
+        "effective_provider": "MainContractMap.provider==provider" in compact["effective_mapping_helper"],
+        "effective_rule": "MainContractMap.rule==rule" in compact["effective_mapping_helper"],
+        "effective_rank": "MainContractMap.rank==rank" in compact["effective_mapping_helper"],
+        "effective_trade_date": (
+            "MainContractMap.trade_date==trade_date" in compact["effective_mapping_helper"]
+        ),
+        "strict_provider": "MainContractMap.provider==provider" in compact["strict_mapping_helper"],
+        "strict_rule": "MainContractMap.rule==rule" in compact["strict_mapping_helper"],
+        "strict_rank": "MainContractMap.rank==rank" in compact["strict_mapping_helper"],
+        "strict_trade_date": "MainContractMap.trade_date==trade_date" in compact["strict_mapping_helper"],
+        "strict_actual_contract": ".MAIN" in targets["strict_mapping_helper"],
+    }
     historical_checks = {
-        "provider": "MainContractMap.provider==provider" in compact["historical_mapping"],
-        "rule": "MainContractMap.rule==rule" in compact["historical_mapping"],
-        "rank": "MainContractMap.rank==rank" in compact["historical_mapping"],
-        "trade_date": "MainContractMap.trade_date==trading_day" in compact["historical_mapping"],
-        "actual_contract": ".MAIN" in targets["historical_actual"] or ".main" in targets["historical_actual"],
+        "strict_helper_default": (
+            "load_strict_main_contract_mapping" in targets["historical_init"]
+            and "self._strict_mapping_loader=strict_mapping_loader" in compact["historical_init"]
+        ),
+        "effective_helper_default": (
+            "load_effective_main_contract_mapping" in targets["historical_init"]
+            and "self._effective_mapping_loader=effective_mapping_loader" in compact["historical_init"]
+        ),
+        "strict_helper_usage": (
+            "self._strict_mapping_loader(" in targets["historical_resolve"]
+            and "instrument_symbol=request.symbol" in compact["historical_resolve"]
+            and "trade_date=mapping_date" in compact["historical_resolve"]
+        ),
+        "effective_helper_usage": (
+            "self._effective_mapping_loader(" in targets["historical_resolve"]
+            and "instrument_symbol=request.symbol" in compact["historical_resolve"]
+            and "trade_date=mapping_date" in compact["historical_resolve"]
+        ),
     }
     live_checks = {
-        "provider": "MainContractMap.provider==PROVIDER" in compact["live_mapping"],
-        "rule": (
-            "MainContractMap.rule==RULE" in compact["live_mapping"]
-            or "MainContractMap.rule=='volume_open_interest'" in compact["live_mapping"]
-            or 'MainContractMap.rule=="volume_open_interest"' in compact["live_mapping"]
+        "shared_helper_usage": "load_effective_main_contract_mapping" in targets["live_mapping"],
+        "provider": "provider=PROVIDER" in compact["live_mapping"],
+        "rule": "rule=RULE" in compact["live_mapping"],
+        "rank": "rank=1" in compact["live_mapping"],
+        "trade_date": "trade_date=trade_date" in compact["live_mapping"],
+        "instrument_symbol": (
+            "instrument_symbol=product" in compact["live_mapping"]
         ),
-        "rank": "MainContractMap.rank==1" in compact["live_mapping"],
-        "trade_date": "MainContractMap.trade_date==trade_date" in compact["live_mapping"],
         "actual_contract": (
             ".MAIN" in targets["live_actual"]
             or ".main" in targets["live_actual"]
             or "is_continuous_contract" in targets["live_actual"]
         ),
     }
-    shared_mapping = all(
-        "load_effective_main_contract_mapping" in targets[name]
-        for name in ("historical_mapping", "live_mapping")
+    shared_mapping = (
+        all(neutral_mapping_checks.values())
+        and all(historical_checks.values())
+        and all(live_checks.values())
     )
-    mapping_passed = shared_mapping or (
-        all(historical_checks.values()) and all(live_checks.values())
-    )
-    historical_parameter_checks = {
+    mapping_passed = shared_mapping
+    neutral_parameter_checks = {
         "exact_created_id_order": _tokens_in_order(
-            compact["historical_parameters"],
+            compact["trading_parameter_helper"],
             "FuturesTradingParameter.created_at.desc()",
             "FuturesTradingParameter.id.desc()",
         ),
-        "contract_fee": "FeeMarginRule.contract_code==contract_code" in compact["historical_fee"],
-        "product_fee": "FeeMarginRule.instrument_symbol==instrument_symbol" in compact["historical_fee"],
-        "nullable_effective": "FeeMarginRule.effective_date.is_(None)" in compact["historical_fee"],
+        "contract_fee": "FeeMarginRule.contract_code==contract_code" in compact["fee_margin_helper"],
+        "product_fee": (
+            "FeeMarginRule.instrument_symbol)==instrument_symbol.strip().lower()"
+            in compact["fee_margin_helper"]
+            or "FeeMarginRule.instrument_symbol==instrument_symbol" in compact["fee_margin_helper"]
+        ),
+        "nullable_effective": "FeeMarginRule.effective_date.is_(None)" in compact["fee_margin_helper"],
+        "bounded_effective": "FeeMarginRule.effective_date<=trade_date" in compact["fee_margin_helper"],
     }
     live_parameter_checks = {
-        "exact_created_id_order": _tokens_in_order(
-            compact["live_parameters"],
-            "FuturesTradingParameter.created_at.desc()",
-            "FuturesTradingParameter.id.desc()",
+        "trading_helper": (
+            "load_effective_trading_parameters" in targets["live_parameters"]
+            and "contract_code=contract" in compact["live_parameters"]
+            and "trade_date=trade_date" in compact["live_parameters"]
+            and "provider=PROVIDER" in compact["live_parameters"]
         ),
-        "contract_fee": (
-            "FeeMarginRule.contract_code==contract" in compact["live_parameters"]
-            or "FeeMarginRule.contract_code==contract_code" in compact["live_parameters"]
+        "fee_helper": (
+            "load_effective_fee_margin_rule" in targets["live_parameters"]
+            and "contract_code=contract" in compact["live_parameters"]
+            and "instrument_symbol=product" in compact["live_parameters"]
+            and "exchange_code=exchange_code" in compact["live_parameters"]
+            and "trade_date=trade_date" in compact["live_parameters"]
+            and "provider=PROVIDER" in compact["live_parameters"]
         ),
-        "product_fee": (
-            "FeeMarginRule.instrument_symbol==product" in compact["live_parameters"]
-            or "FeeMarginRule.instrument_symbol==instrument_symbol" in compact["live_parameters"]
-        ),
-        "nullable_effective": "FeeMarginRule.effective_date.is_(None)" in compact["live_parameters"],
     }
     shared_parameters = (
-        "load_effective_trading_parameters" in targets["historical_parameters"]
-        and "load_effective_trading_parameters" in targets["live_parameters"]
-        and "load_effective_fee_margin_rule" in targets["historical_fee"]
-        and "load_effective_fee_margin_rule" in targets["live_parameters"]
-    )
-    parameter_passed = shared_parameters or (
-        all(historical_parameter_checks.values())
+        all(neutral_parameter_checks.values())
         and all(live_parameter_checks.values())
-        and historical_parameter_checks == live_parameter_checks
     )
+    parameter_passed = shared_parameters
     confirmed_filter = (
         "bar_status=='confirmed'" in compact["reader"] or 'bar_status=="confirmed"' in compact["reader"]
     )
@@ -745,9 +784,9 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
     evaluator_actual = (
         "resolve_ready_actual_contract" in evaluator_source
         and ("target['actual_contract']" in evaluator_source or 'target["actual_contract"]' in evaluator_source)
-        and "last_bar.get('close')" in evaluator_source.replace('"', "'")
+        and "live_trigger.get('close')" in evaluator_source.replace('"', "'")
     )
-    event_source = targets["event_eligible"] + targets["event_features"]
+    event_source = targets["event_eligibility"] + targets["event_features"]
     compact_event_source = re.sub(r"\s+", "", event_source)
     event_actual_confirmed = (
         "actual_contract" in event_source
@@ -755,7 +794,11 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
         and (
             "confirmed_bar=True" in compact_event_source
             or '"confirmed_bar":True' in compact_event_source
-            or "bar_status" in event_source and "confirmed" in event_source
+            or (
+                "bar_status" in event_source
+                and "confirmed" in event_source
+                and "SIGNAL_BAR_NOT_CONFIRMED" in event_source
+            )
         )
     )
     trigger_passed = confirmed_filter and evaluator_actual and event_actual_confirmed
@@ -763,10 +806,11 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
         "mapping_semantics_status": "passed" if mapping_passed else "mismatch",
         "trigger_semantics_status": "passed" if trigger_passed else "mismatch",
         "parameter_semantics_status": "passed" if parameter_passed else "mismatch",
+        "neutral_mapping_checks": neutral_mapping_checks,
         "historical_mapping_checks": historical_checks,
         "live_mapping_checks": live_checks,
         "shared_mapping_helper": shared_mapping,
-        "historical_parameter_checks": historical_parameter_checks,
+        "neutral_parameter_checks": neutral_parameter_checks,
         "live_parameter_checks": live_parameter_checks,
         "shared_parameter_helpers": shared_parameters,
         "confirmed_bar_filter": confirmed_filter,
@@ -782,8 +826,8 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
                 "historical_live_mapping_semantics",
                 "jm",
                 None,
-                "historical and live rank1 provider/rule/rank/date/actual filters are not equivalent",
-                "align consumer resolver filters in a separately approved task",
+                "surviving historical and live consumers do not prove shared rank1 provider/rule/rank/date/actual semantics",
+                "restore neutral mapping helper reuse without bypassing consumer boundaries",
                 scope="formal",
             )
         )
@@ -801,11 +845,11 @@ def audit_consumer_semantics(project_root: Path) -> tuple[dict[str, Any], list[d
     if not parameter_passed:
         residuals.append(
             _residual(
-                "historical_live_parameter_semantics",
+                "actual_parameter_semantics",
                 "jm",
                 None,
-                "historical and live exact/fee parameter precedence semantics are not equivalent",
-                "align exact ordering and contract/product/nullable fee fallback semantics",
+                "neutral exact/fee parameter semantics or live helper usage is incomplete",
+                "restore neutral parameter helper semantics and live consumer reuse",
                 scope="formal",
             )
         )

@@ -127,16 +127,6 @@ def test_default_params_json_is_valid_and_frozen_to_v011_spec() -> None:
     assert params.macd_usage == "record_only_not_filter"
 
 
-def test_strategy_class_loads_via_strategy_loader() -> None:
-    from app.vnpy_integration.strategy_loader import load_strategy_class
-    from guiyi_quant.strategies.su_bing_jm_v1b_short_hold import (
-        STRATEGY_CLASS_PATH,
-        SuBingJmV1bShortHoldStrategy,
-    )
-
-    assert load_strategy_class(STRATEGY_CLASS_PATH) is SuBingJmV1bShortHoldStrategy
-
-
 def test_daily_direction_filter_uses_only_prior_confirmed_daily_bar() -> None:
     from guiyi_quant.strategies.su_bing_jm_v1b_short_hold import (
         confirmed_daily_direction_snapshot,

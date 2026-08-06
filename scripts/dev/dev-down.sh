@@ -159,7 +159,6 @@ main() {
 
   stop_pid_file "前端" "${PID_DIR}/web.pid" "pnpm dev"
   stop_pid_file "Worker(signals)" "${PID_DIR}/worker-signals.pid" "app.worker signals"
-  stop_pid_file "Worker(backtests)" "${PID_DIR}/worker-backtests.pid" "app.worker backtests"
   stop_pid_file "API" "${PID_DIR}/api.pid" "uvicorn app.main:app"
 
   if [[ "$KEEP_DOCKER" -eq 1 ]]; then

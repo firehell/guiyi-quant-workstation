@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-import importlib.util
 import json
 from pathlib import Path
 
@@ -34,9 +33,6 @@ from app.services.rqdata_ingest.full_history_derived_periods import (
 from app.services.rqdata_ingest.full_history_contract import resolve_first_completed_week
 from app.services.trading_session_clock import SessionWindow
 from app.services.rqdata_ingest.parquet import sha256_file
-
-
-SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts/rqdata_full_history_derived_periods.py"
 
 
 def _session(tmp_path: Path) -> Session:
@@ -817,77 +813,3 @@ def test_direct_postgresql_is_required_by_default(tmp_path: Path) -> None:
             DerivedPeriodVerificationConfig(project_root=tmp_path, products=("jm",)),
             session,
         )
-
-
-def test_cli_plan_repair_freezes_only_hard_residuals(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    verification = tmp_path / "verification"
-    verification.mkdir()
-    pd.DataFrame(
-        [
-                {
-                    "target_id": "hard-jm-1d",
-                    "requirement_level": "hard",
-                    "product": "jm",
-                    "period": "1d",
-                    "source_1m_file_id": 1,
-                    "source_1m_path": "/tmp/source.parquet",
-                    "source_1m_version": "v1",
-                    "source_1m_checksum": "abc",
-                },
-            {"target_id": "eligible-a-1d", "requirement_level": "profile_eligible", "product": "a", "period": "1d"},
-        ]
-    ).to_csv(verification / "lineage_residuals.csv", index=False)
-    module = _load_script()
-
-    exit_code = module.main(
-        [
-            "plan-repair",
-            "--project-root",
-            str(tmp_path),
-            "--verification-dir",
-            str(verification),
-            "--batch-id",
-            "derived-period-hard-001",
-            "--output-dir",
-            str(tmp_path / "plan"),
-        ]
-    )
-
-    payload = json.loads(capsys.readouterr().out)
-    plan = json.loads((tmp_path / "plan/repair_plan.json").read_text(encoding="utf-8"))
-    assert exit_code == 0
-    assert payload["status"] == "DRY_RUN_APPROVAL_REQUIRED"
-    assert len(plan["operations"]) == 1
-    assert plan["operations"][0]["product"] == "jm"
-    assert payload["writes_database"] is False
-    assert payload["calls_rqdata"] is False
-
-
-def test_cli_exposes_separate_session_plan_and_apply_commands() -> None:
-    module = _load_script()
-
-    planned = module.build_parser().parse_args(
-        ["plan-session-repair", "--output-dir", "/tmp/session-plan"]
-    )
-    applied = module.build_parser().parse_args(
-        [
-            "apply-session-repair",
-            "--plan-dir",
-            "/tmp/session-plan",
-            "--approval-statement",
-            "approved",
-        ]
-    )
-
-    assert planned.command == "plan-session-repair"
-    assert planned.batch_id == "jm-session-reference-005-001"
-    assert applied.command == "apply-session-repair"
-
-
-def _load_script():
-    spec = importlib.util.spec_from_file_location("rqdata_full_history_derived_periods", SCRIPT_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module

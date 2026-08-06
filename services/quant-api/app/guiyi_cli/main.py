@@ -4,7 +4,6 @@ import argparse
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import date, datetime, time
-import os
 from pathlib import Path
 import sys
 from typing import Any, TextIO
@@ -36,7 +35,6 @@ from app.services.product_retirement_runtime_gate import (
     ProductRetirementExecutionService,
     RetirementRuntimeRequest,
 )
-from app.runtime_scheduler import dry_run_payload
 
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
@@ -60,9 +58,6 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     runtime_commands.add_parser("status")
-    plan = runtime_commands.add_parser("plan")
-    plan.add_argument("--product", choices=("jm",), default="jm")
-    plan.add_argument("--poll-seconds", type=_positive_int, default=20)
     retirement = runtime_commands.add_parser("product-retirement")
     retirement_commands = retirement.add_subparsers(
         dest="retirement_command",
@@ -147,38 +142,6 @@ def main(
             return 1
         print_json(payload, stdout)
         return 0 if payload.get("status") in {"passed", "planned"} else 1
-
-    if args.domain == "runtime" and args.runtime_command == "plan":
-        scheduler_plan = dry_run_payload(
-            args, environ if environ is not None else os.environ
-        )
-        print_json(
-            {
-                "schema_version": 1,
-                "command": "runtime.plan",
-                "status": "planned",
-                "readonly": True,
-                "effects": {
-                    key: scheduler_plan[key]
-                    for key in (
-                        "would_open_database",
-                        "would_connect_redis",
-                        "would_construct_rqdata_client",
-                        "would_write_live_tables",
-                        "would_write_historical_active",
-                        "would_write_signal_event",
-                        "would_send_notification",
-                        "auto_order",
-                    )
-                },
-                "plan": {
-                    key: scheduler_plan[key]
-                    for key in ("mode", "product", "poll_seconds", "enabled")
-                },
-            },
-            stdout,
-        )
-        return 0
 
     if args.domain == "runtime" and args.runtime_command == "product-retirement":
         try:

@@ -38,11 +38,11 @@
   - [x] 4.16 Checkpoint (deferred host validation)
 
 - [x] 5. Phase E — Inventory, Decouple, and Remove Frozen Gate Code
-  - [x] 5.1 `runtime_dependency_inventory.py`
-  - [x] 5.2 Disposition set (retain while test/doc/runtime refs remain)
-  - [x] 5.3–5.4 `runtime_scheduler.py` rejects superseded S6-10/Approval D before import
-  - [x] 5.5 Runtime safety smoke tests
-  - [x] 5.6–5.8 Deletion batches blocked by active refs (correct fail-closed); inventory+smoke remain
+  - [x] 5.1 Historical Runtime dependency inventory completed before deletion
+  - [x] 5.2 Disposition set retained candidates while test/doc/runtime refs remained
+  - [x] 5.3–5.4 Old `runtime_scheduler.py` callers were decoupled before S6-10/Approval D removal
+  - [x] 5.5 Runtime safety smoke tests passed around the migration
+  - [x] 5.6–5.8 Zero-reference deletion batches removed the old scheduler/Gates; Git history retains migration evidence
   - [x] 5.9–5.12 Property tests 10, 23–25
   - [x] 5.13 Checkpoint (deferred host validation)
 

@@ -490,27 +490,6 @@ export interface MarketBarsRequestParams {
   limit?: number
 }
 
-/** 回测报告映射到行情查询的调试信息 */
-export interface BacktestMarketBarsQueryDebug {
-  dataset_kind?: 'continuous' | 'actual_dominant'
-  symbol: string
-  vt_symbol?: string | null
-  contract: string | null
-  exchange?: string | null
-  interval: string
-  start?: string
-  end?: string
-  provider?: string | null
-  data_role?: string | null
-  attempted: MarketBarsRequestParams[]
-}
-
-/** 回测报告拉 K 线的最终结果 */
-export interface BacktestMarketBarsResult {
-  response: MarketBarsResponse
-  query: BacktestMarketBarsQueryDebug
-}
-
 /** 合约信息 */
 export interface SymbolInfo {
   symbol: string

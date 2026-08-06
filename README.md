@@ -1,6 +1,6 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站：治理数据、查看 K 线、研究策略、回测与复盘、观察信号。它不提供无人值守自动实盘或自动下单。
+本地、单用户的国内期货量化研究工作站：治理数据、查看 K 线、研究策略、复盘与观察信号。它不提供无人值守自动实盘或自动下单。
 
 ## 快速导航
 
@@ -12,18 +12,18 @@
 | 长期决策 | `DECISIONS.md` |
 | 测试入口 | `TESTING.md` |
 | 个人开发工作流 | `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md` |
-| 数据、架构、回测、信号、指标 | `docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/BACKTEST_ENGINE.md`、`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md` |
+| 数据、架构、信号、指标 | `docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md` |
 
 接手时先读 `AGENTS.md` 和 `STATUS.md`，再按任务读取对应 deep canonical 或受控任务合同。
 
 ## 主链路
 
 ```text
-RQData / Local Standard Parquet
--> DuckDB
--> PostgreSQL metadata / facts
--> FastAPI / vn.py / Vue Web
--> Market / Backtest / Signal / Review / Runtime
+RQData
+-> Canonical Parquet
+-> PostgreSQL Catalog / Manifest / Gap / MainContractMap
+-> MarketDataService
+-> Market / Signal / Review / Runtime status / Vue Web
 ```
 
 正式 active 数据仅限 `rqdata/local_parquet + primary + quality_status != failed`；严格研究默认 `quality_status=passed`。
@@ -64,10 +64,13 @@ uv run --project services/quant-api guiyi data sync --scope instruments
 uv run --project services/quant-api guiyi data audit --scope catalog
 
 uv run --project services/quant-api guiyi runtime status
-uv run --project services/quant-api guiyi runtime plan --product jm
 ```
 
 `download/aggregate/sync` 默认只读 plan；`--apply` 与 `--confirm-observation-write` 只是本地效果选择器，不构成正式数据/生产环境授权。旧 `data plan/migrate/task07/backfill` 与 `scripts/rqdata_*` 入口已移除，不保留 compatibility shim。
+
+当前仓库没有 `/api/backtests/**`、`/ws/backtests/**`、`/backtest`、`/backtest/batch`、
+`/settings`、`guiyi-backtests` worker/queue 或 `guiyi runtime plan`。未来重建回测必须作为新任务从
+Canonical/MarketDataService 合同重新设计，不提供旧 API、页面、队列、脚本或报告兼容入口。
 
 ## 工程入口（Windows）
 

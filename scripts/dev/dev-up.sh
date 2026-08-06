@@ -221,9 +221,6 @@ main() {
   start_background "API" "${PID_DIR}/api.pid" "${LOG_DIR}/api.log" \
     bash -lc "cd '${API_DIR}' && uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
 
-  start_background "Worker(backtests)" "${PID_DIR}/worker-backtests.pid" "${LOG_DIR}/worker-backtests.log" \
-    bash -lc "cd '${API_DIR}' && uv run python -m app.worker backtests"
-
   start_background "Worker(signals)" "${PID_DIR}/worker-signals.pid" "${LOG_DIR}/worker-signals.log" \
     bash -lc "cd '${API_DIR}' && uv run python -m app.worker signals"
 
@@ -255,7 +252,6 @@ main() {
   printf '\n'
   printf '  进程 PID:\n'
   printf '    API:              %s\n' "$(read_pid "${PID_DIR}/api.pid")"
-  printf '    Worker(backtests): %s\n' "$(read_pid "${PID_DIR}/worker-backtests.pid")"
   printf '    Worker(signals):   %s\n' "$(read_pid "${PID_DIR}/worker-signals.pid")"
   printf '    前端:              %s\n' "$(read_pid "${PID_DIR}/web.pid")"
   printf '\n'

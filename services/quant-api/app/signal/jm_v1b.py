@@ -8,11 +8,17 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.backtest.v1b_jm_tasks import JM_V1B_DATA_SOURCE, JM_V1B_EXCHANGE, JM_V1B_STRATEGY_CODE, JM_V1B_STRATEGY_VERSION, JM_V1B_SYMBOL
 from app.core.env import PROJECT_ROOT
 from app.models.signal import SignalScanTask, StrategySignal
 from app.signal.contract_context import apply_signal_contract_context, build_signal_contract_context
 from app.services.market_data_reader import MarketDataReader
+from app.strategy.jm_v1b_identity import (
+    JM_V1B_DATA_SOURCE,
+    JM_V1B_EXCHANGE,
+    JM_V1B_STRATEGY_CODE,
+    JM_V1B_STRATEGY_VERSION,
+    JM_V1B_SYMBOL,
+)
 
 QUANT_CORE_ROOT = PROJECT_ROOT / "packages" / "quant-core"
 JM_V1B_WATCHLIST_CODE = "jm_v1b"

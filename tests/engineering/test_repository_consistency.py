@@ -37,7 +37,7 @@ consistency = _load_module()
         ("apps/quant-web/src/pages/market/chart.vue", {"Web"}),
         ("services/quant-api/app/services/data_core/reader.py", {"Backend", "DataCore"}),
         ("services/quant-api/app/strategies/signal.py", {"Backend", "Strategy"}),
-        ("services/quant-api/app/runtime_scheduler.py", {"Backend", "Runtime"}),
+        ("services/quant-api/app/services/runtime_health.py", {"Backend", "Runtime"}),
         ("services/quant-api/alembic/versions/0001_init.py", {"Backend", "Migration"}),
     ],
 )
@@ -90,6 +90,17 @@ def test_preserve_unrelated_dirty_paths_stable_when_scope_only_changes() -> None
         task_scope=["task/b.py", "task/c.py"],
     )
     assert drift == ()
+
+
+def test_active_surface_scan_excludes_its_own_rule_source(tmp_path: Path) -> None:
+    scanner = tmp_path / "scripts" / "engineering" / "repository_consistency.py"
+    scanner.parent.mkdir(parents=True)
+    scanner.write_text(
+        'RETIRED_PATHS = ("docs/WORKTREE_RELEASE_WORKFLOW.md",)\n',
+        encoding="utf-8",
+    )
+
+    assert scanner not in consistency._iter_active_surface_files(tmp_path)
 
 
 @pytest.mark.parametrize(

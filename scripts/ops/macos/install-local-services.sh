@@ -8,12 +8,11 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
-base_labels=(com.guiyi.quant-api com.guiyi.quant-worker-backtests com.guiyi.quant-worker-signals com.guiyi.quant-web com.guiyi.quant-log-rotate)
-optional_labels=(com.guiyi.quant-runtime-scheduler com.guiyi.quant-worker-notifications)
+base_labels=(com.guiyi.quant-api com.guiyi.quant-worker-signals com.guiyi.quant-web com.guiyi.quant-log-rotate)
+optional_labels=(com.guiyi.quant-worker-notifications)
 render_labels=("${base_labels[@]}" "${optional_labels[@]}")
 load_labels=("${base_labels[@]}")
 
-[[ "${GUIYI_LIVE_RUNTIME_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && load_labels+=(com.guiyi.quant-runtime-scheduler)
 [[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && load_labels+=(com.guiyi.quant-worker-notifications)
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" ]] || { printf 'usage: %s [--render-only|--confirm-load]\n' "$0" >&2; exit 2; }

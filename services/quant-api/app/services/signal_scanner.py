@@ -10,11 +10,11 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.backtest.specs import load_contract_spec
-from app.models.backtest import WatchlistItem
+from app.models.watchlist import WatchlistItem
 from app.models.signal import SignalNotification, SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
-from app.services.batch_backtest import ensure_default_watchlists
+from app.services.contract_specs import load_contract_spec
+from app.services.watchlists import ensure_default_watchlists
 from app.services.market_data_reader import MarketDataReader
 from app.signal.contract_context import apply_signal_contract_context, build_signal_contract_context, signal_contract_context_payload
 from app.strategy.su_bing_ema21 import SignalSnapshot, SuBingParams, generate_signals

@@ -212,7 +212,7 @@ def test_data_canonical_verify_dispatches_shared_data_core_reader() -> None:
     assert observed["args"]["dataset_kind"] == "continuous"
 
 
-def test_runtime_plan_is_existing_scheduler_dry_run_without_side_effects() -> None:
+def test_runtime_plan_is_rejected_after_scheduler_retirement() -> None:
     stdout = StringIO()
     stderr = StringIO()
 
@@ -224,30 +224,11 @@ def test_runtime_plan_is_existing_scheduler_dry_run_without_side_effects() -> No
         stderr=stderr,
     )
 
-    assert exit_code == 0
-    assert stderr.getvalue() == ""
-    assert json.loads(stdout.getvalue()) == {
-        "schema_version": 1,
-        "command": "runtime.plan",
-        "status": "planned",
-        "readonly": True,
-        "effects": {
-            "would_open_database": False,
-            "would_connect_redis": False,
-            "would_construct_rqdata_client": False,
-            "would_write_live_tables": False,
-            "would_write_historical_active": False,
-            "would_write_signal_event": False,
-            "would_send_notification": False,
-            "auto_order": False,
-        },
-        "plan": {
-            "mode": "dry-run",
-            "product": "jm",
-            "poll_seconds": 5,
-            "enabled": True,
-        },
-    }
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == (
+        "CLI_ARGUMENT_INVALID"
+    )
 
 
 def test_product_retirement_runtime_plan_delegates_without_opening_database(

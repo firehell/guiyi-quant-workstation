@@ -4,11 +4,12 @@
 
 ## 项目边界
 
-- 做：数据治理、K 线、策略研究、回测、报告、复盘、信号提醒与人工观察。
+- 做：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
-技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis/RQ、RQData → Parquet → DuckDB，以及不修改源码的 vn.py 回测引擎。
+技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis/RQ 与
+RQData → Parquet → DuckDB；`quant-core` 仅保留 vn.py-compatible 策略研究代码，当前不存在回测引擎或适配层。
 
 ## 个人开发工作流
 
@@ -43,8 +44,8 @@
 4. V2 active target 由 `DatasetKey + Catalog/Manifest/Gap/MainContractMap + MarketDataService` 定义；消费者不得自行 glob、选择 active、判断主力或绕过 quality。`continuous` 与 `actual_dominant` 必须显式且不可互换。
 5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、Manifest digest、checksum 与 row-count 校验后才能发布；失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
 6. DataGap 或 failed-quality 区间必须显式失败，不得静默填充、缩短、替换或跨频回退。
-7. 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 只允许 `docs/INDICATOR_KERNEL.md` 与 `docs/SIGNAL_EVENTS.md` 定义的 realtime first-seen observation-only 白名单。
-8. 回测保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。信号链路保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；输出必须标注研究观察、非交易指令。
+7. 策略研究、未来重建的回测和正式历史信号禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 只允许 `docs/INDICATOR_KERNEL.md` 与 `docs/SIGNAL_EVENTS.md` 定义的 realtime first-seen observation-only 白名单。
+8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。信号链路保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；输出必须标注研究观察、非交易指令。
 9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
 10. `auto_order=false` 适用于所有信号和 Runtime 模式。任何创建或提交订单的流程都必须拒绝；本项目不实现自动交易。
 11. 数据、策略、回测、信号或通知语义变化时，同一变更更新相应 deep canonical；普通 bugfix、UI 调整和测试增加不自动改写项目状态。
@@ -57,7 +58,7 @@
 - 旧 Profile/ActiveBinding/复杂 lineage 只作 legacy compatibility，不得扩展成新 active selector。移除 referenced compatibility 代码前先完成消费者迁移与回归；生产 DB、正式数据或仓库外文件的实际变更另需精确范围的一次性执行意图。
 - 旧 `GY-CORE-04～08` 路线已 superseded/paused；`GY-CORE-02` Facade 与 `GY-CORE-03` CLI 壳可复用，已合入的 `GY-CORE-04` 代码仅作 legacy compatibility，不据此恢复旧 Shadow/Runtime 路线。
 - 已发生的 PR、CI、Review、packet、hash、receipt、report 和 evidence 只作为历史事实或完整性信息，不是当前授权。仓库内过期工件可按普通删除处理；生产数据、正式 Parquet、DB、Runtime 或其他外部资源必须按受控外部操作处理。
-- 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 bar layer 与 Profile/Binding/legacy lineage 均为 rebuild-only 或 compatibility-only。
+- 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 bar layer 与 Profile/Binding/legacy lineage 均不属于 active migration asset；已退役 backtest 不保留 compatibility 入口。
 - Task 07 Stage C 只验收 active config + Catalog + MainContractMap 生成的 JM 目标 Canonical 并输出精确缺口计划，不执行修复、Runtime promotion 或删除。Runtime promotion 属于 Task 08；旧派生数据清理是后续独立可选任务。
 
 ## 文档与交付

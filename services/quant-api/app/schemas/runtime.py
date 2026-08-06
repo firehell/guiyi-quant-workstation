@@ -93,26 +93,6 @@ class RuntimeNotificationRetryHealth(BaseModel):
     error_message: str | None = None
 
 
-class RuntimeSchedulerHealth(BaseModel):
-    status: str
-    enabled: bool = False
-    heartbeat_at: str | None = None
-    heartbeat_age_seconds: int | None = None
-    last_cycle_status: str | None = None
-    signal_events_enabled: bool = False
-    signal_event_gate_status: str = "disabled"
-    signal_event_gate_schema: str | None = None
-    signal_event_authorization_hash: str | None = None
-    signal_event_target_trading_day: str | None = None
-    signal_event_last_decision_bucket_end: str | None = None
-    signal_event_expected_last_due: str | None = None
-    signal_event_result: dict[str, Any] | None = None
-    s610_observer: dict[str, Any] | None = None
-    s610_dispatcher: dict[str, Any] | None = None
-    error_type: str | None = None
-    error_message: str | None = None
-
-
 class RuntimeArchiveHealth(BaseModel):
     status: str
     enabled: bool = False
@@ -161,7 +141,6 @@ class RuntimeHealthComponents(BaseModel):
     db: RuntimeComponentHealth
     redis: RuntimeComponentHealth
     rq: RuntimeRqHealth
-    scheduler: RuntimeSchedulerHealth
     live_checkpoints: RuntimeLiveCheckpointsHealth
     archive: RuntimeArchiveHealth
     after_market_scheduler: RuntimeAfterMarketSchedulerHealth

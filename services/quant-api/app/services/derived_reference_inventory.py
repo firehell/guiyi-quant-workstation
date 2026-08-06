@@ -16,7 +16,6 @@ SCHEMA_VERSION = 1
 COMMAND = "derived-reference-inventory"
 CATEGORY_ORDER = (
     "indicator_cache",
-    "backtest",
     "signal_review",
     "live_eod_sample",
     "permanent_derived_periods",
@@ -32,7 +31,6 @@ DEFAULT_MAX_IDS = 1_000
 
 _CATEGORY_REASONS = {
     "indicator_cache": "indicator and cache outputs are rebuild-only derived artifacts",
-    "backtest": "backtest tasks, reports, trades, and orders are rebuild-only consumer outputs",
     "signal_review": "signal and review records are consumer evidence, not historical canonical bars",
     "live_eod_sample": "live, EOD, and research-sample surfaces remain isolated observation outputs",
     "permanent_derived_periods": "derived periods are regenerated from provider-direct canonical 1m bars",
@@ -42,7 +40,6 @@ _CATEGORY_REASONS = {
 }
 _CATEGORY_TABLES = {
     "indicator_cache": (),
-    "backtest": ("backtest_orders", "backtest_reports", "backtest_tasks", "backtest_trades"),
     "signal_review": (
         "review_attachments", "review_notes", "review_tags", "signal_events", "signal_notifications",
         "signal_scan_tasks", "strategy_signals",
@@ -133,7 +130,6 @@ class _RelationRule:
 
 _REFERENCE_RULES = {
     "indicator_cache": (_ReferenceRule(re.compile(r"\b(?:indicator|cache)\b", re.IGNORECASE), "active indicator/cache reference"),),
-    "backtest": (_ReferenceRule(re.compile(r"\b(?:backtest|BacktestService)\b", re.IGNORECASE), "active backtest reference"),),
     "signal_review": (_ReferenceRule(re.compile(r"\b(?:signal|review|SignalEvent|ReviewNote)\b", re.IGNORECASE), "active signal/review reference"),),
     "live_eod_sample": (_ReferenceRule(re.compile(r"\b(?:live|eod|after[_ -]?market|ResearchSample)\b", re.IGNORECASE), "active live/EOD/sample reference"),),
     "permanent_derived_periods": (_ReferenceRule(re.compile(r"\b(?:derived|5m|15m|30m|60m)\b", re.IGNORECASE), "derived-period reference"),),
@@ -180,36 +176,6 @@ _RELATION_RULES = (
         "status is null or outside known active/inactive values",
         ("pending", "running", "retrying", "completed", "success", "failed", "cancelled"), (), "review_required",
         "unrecognized download status cannot prove the task inactive",
-    ),
-    *tuple(
-        _RelationRule(
-            f"{table.removesuffix('s')}_legacy_relation", table,
-            ("id", "profile_id", "market_data_file_id", "binding_snapshot", "status"),
-            '("profile_id" IS NOT NULL OR "market_data_file_id" IS NOT NULL OR "binding_snapshot" IS NOT NULL '
-            'OR "status" IN ({p}, {p}, {p}))',
-            "legacy profile/file/binding reference or active status", ("pending", "running", "retrying"),
-            ("profile_id", "market_data_file_id"), "review_required",
-            "backtest lineage or active execution still references legacy surfaces",
-        )
-        for table in ("backtest_tasks", "backtest_reports")
-    ),
-    *tuple(
-        _RelationRule(
-            f"unknown_{table.removesuffix('s')}_status", table, ("id", "status"),
-            '("status" IS NULL OR "status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}))',
-            "status is null or outside known active/inactive values",
-            ("pending", "running", "retrying", "success", "completed", "partial_failed", "failed", "cancelled"),
-            (), "review_required", "unrecognized backtest status cannot prove the row inactive",
-        )
-        for table in ("backtest_tasks", "backtest_reports")
-    ),
-    *tuple(
-        _RelationRule(
-            f"{table.removesuffix('s')}_report_reference", table, ("id", "report_id"),
-            '"report_id" IS NOT NULL', "report_id is not null", (), ("report_id",), "review_required",
-            "backtest child evidence still references a report row",
-        )
-        for table in ("backtest_trades", "backtest_orders")
     ),
     _RelationRule(
         "strategy_signal_legacy_or_active", "strategy_signals",
@@ -1254,8 +1220,6 @@ def _matches_path_category(category: str, relative: str) -> bool:
     parts = set(normalized.split("/"))
     if category == "indicator_cache":
         return "indicator" in normalized or "cache" in normalized
-    if category == "backtest":
-        return "backtest" in normalized
     if category == "signal_review":
         return "signal" in normalized or "review" in normalized
     if category == "live_eod_sample":

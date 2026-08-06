@@ -772,6 +772,8 @@ def compute_strict_fields(
     channel_period: int = 25,
     var23_period: int = 6,
 ) -> dict[str, np.ndarray]:
+    _require_positive_period("channel_period", channel_period)
+    _require_positive_period("var23_period", var23_period)
     o = np.asarray(open_, dtype=float)
     h = np.asarray(high, dtype=float)
     low_arr = np.asarray(low, dtype=float)
@@ -971,6 +973,11 @@ def _require_same_length(**arrays: Sequence[Any]) -> None:
     lengths = {name: len(value) for name, value in arrays.items()}
     if len(set(lengths.values())) != 1:
         raise ValueError(f"input lengths must match: {lengths}")
+
+
+def _require_positive_period(name: str, value: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
 
 
 def _has_any_candidate(snapshot: dict[str, Any]) -> bool:

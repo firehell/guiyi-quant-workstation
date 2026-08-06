@@ -6,9 +6,9 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models.backtest import BacktestReportModel, BacktestTask
 from app.models.data_center import LiveAggregationCheckpoint, LiveIngestCheckpoint, MarketDataFile
 from app.models.review import ReviewNote
+from app.review.policy import supported_review_source_clause
 from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.strategy_registry import list_strategy_registry
@@ -28,14 +28,6 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
     ) or 0
     signals_week = session.scalar(
         select(func.count()).select_from(StrategySignal).where(StrategySignal.created_at >= week_start)
-    ) or 0
-
-    backtest_tasks = session.scalar(select(func.count()).select_from(BacktestTask)) or 0
-    backtest_reports = session.scalar(select(func.count()).select_from(BacktestReportModel)) or 0
-    backtest_reports_success = session.scalar(
-        select(func.count())
-        .select_from(BacktestReportModel)
-        .where(BacktestReportModel.status.in_(("success", "completed")))
     ) or 0
 
     jm_primary_passed = session.scalar(
@@ -85,22 +77,6 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
 
     live_targets = LiveTargetContractResolver(session).list_targets()
 
-    latest_jm_report = session.scalar(
-        select(BacktestReportModel)
-        .where(BacktestReportModel.symbol.ilike("jm%"))
-        .order_by(BacktestReportModel.created_at.desc())
-        .limit(1)
-    )
-    latest_jm_report_payload: dict[str, Any] | None = None
-    if latest_jm_report is not None:
-        latest_jm_report_payload = {
-            "report_id": latest_jm_report.id,
-            "report_no": latest_jm_report.report_no,
-            "strategy_code": latest_jm_report.strategy_code,
-            "status": latest_jm_report.status,
-            "created_at": latest_jm_report.created_at.isoformat() if latest_jm_report.created_at else None,
-        }
-
     latest_live_signal_event = session.scalar(
         select(SignalEvent)
         .where(SignalEvent.source_mode == "live_confirmed")
@@ -124,7 +100,10 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
         }
 
     latest_review = session.scalar(
-        select(ReviewNote).order_by(ReviewNote.updated_at.desc(), ReviewNote.id.desc()).limit(1)
+        select(ReviewNote)
+        .where(supported_review_source_clause(ReviewNote.source_type))
+        .order_by(ReviewNote.updated_at.desc(), ReviewNote.id.desc())
+        .limit(1)
     )
     latest_review_payload: dict[str, Any] | None = None
     if latest_review is not None:
@@ -141,6 +120,7 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
     unfinished_review_count = session.scalar(
         select(func.count())
         .select_from(ReviewNote)
+        .where(supported_review_source_clause(ReviewNote.source_type))
         .where(or_(ReviewNote.lesson.is_(None), func.trim(ReviewNote.lesson) == ""))
     ) or 0
 
@@ -151,15 +131,11 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
         "v1b_strategies": v1b_strategies,
         "signals_today": signals_today,
         "signals_week": signals_week,
-        "backtests": backtest_tasks,
-        "backtest_reports": backtest_reports,
-        "backtest_reports_success": backtest_reports_success,
         "data_contracts": data_contracts,
         "jm_primary_passed_assets": jm_primary_passed,
         "live_target_readiness": live_targets.get("readiness_status"),
         "live_targets_preview_only": live_targets.get("preview_only", True),
         "latest_scan_task": latest_scan_payload,
-        "latest_jm_report": latest_jm_report_payload,
         "latest_data_time": latest_data_time.isoformat() if latest_data_time else None,
         "latest_confirmed_bar_time": latest_confirmed_bar_time.isoformat()
         if latest_confirmed_bar_time

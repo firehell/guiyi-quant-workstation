@@ -13,13 +13,8 @@ from uuid import uuid4
 _REQUIRED_ROOTS = frozenset({"raw", "canonical", "processed"})
 REQUIRED_WRITER_SERVICES = (
     "com.guiyi.quant-api",
-    "com.guiyi.quant-worker-backtests",
     "com.guiyi.quant-worker-signals",
-    "com.guiyi.quant-runtime-scheduler",
     "com.guiyi.quant-after-market-scheduler",
-    "com.guiyi.quant-htdy-s610-one-day-observer",
-    "com.guiyi.quant-htdy-s610-one-day-dispatcher",
-    "com.guiyi.quant-htdy-s610-observer",
 )
 
 

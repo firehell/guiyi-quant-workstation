@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-import importlib.util
-from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import create_engine, select
@@ -12,9 +10,6 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.models.data_center import LiveIngestCheckpoint, LiveMinuteBar, MarketDataFile
 from app.services.live_1m_ingest import LiveIngestConfig, LiveMinuteIngestService
-
-
-SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "rqdata_live_1m_ingest.py"
 
 
 class FakeClient:
@@ -323,38 +318,3 @@ def test_live_tables_do_not_register_market_data_files() -> None:
         market_file_count = len(list(session.scalars(select(MarketDataFile))))
 
     assert market_file_count == 0
-
-
-def test_cli_dry_run_does_not_construct_client_or_session_and_redacts(capsys, monkeypatch) -> None:
-    module = _load_script()
-    monkeypatch.setenv("RQDATA_PASSWORD", "secret-password")
-    monkeypatch.setenv("QYWX_WEBHOOK_URL", "https://example.invalid/token")
-
-    def fail_client():
-        raise AssertionError("dry-run must not construct RQData client")
-
-    def fail_session():
-        raise AssertionError("dry-run must not open DB session")
-
-    exit_code = module.main(
-        ["--contract", "JM2609", "--symbol", "jm", "--exchange", "DCE", "--once", "--dry-run"],
-        client_factory=fail_client,
-        session_factory=fail_session,
-        environ=dict(module.os.environ),
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "secret-password" not in output
-    assert "https://example.invalid/token" not in output
-    assert '"would_write_database": false' in output
-    assert '"would_trigger_strategy": false' in output
-
-
-def _load_script():
-    spec = importlib.util.spec_from_file_location("rqdata_live_1m_ingest", SCRIPT_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module

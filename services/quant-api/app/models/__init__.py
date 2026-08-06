@@ -1,11 +1,4 @@
-from app.models.backtest import (
-    BacktestOrderModel,
-    BacktestReportModel,
-    BacktestTask,
-    BacktestTradeModel,
-    Watchlist,
-    WatchlistItem,
-)
+from app.models.watchlist import Watchlist, WatchlistItem
 from app.models.data_center import (
     Contract,
     DataDownloadTask,
@@ -72,10 +65,6 @@ __all__ = [
     "TradingSession",
     "Watchlist",
     "WatchlistItem",
-    "BacktestTask",
-    "BacktestReportModel",
-    "BacktestTradeModel",
-    "BacktestOrderModel",
     "SignalScanTask",
     "StrategySignal",
     "SignalNotification",

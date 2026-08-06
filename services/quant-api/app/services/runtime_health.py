@@ -22,14 +22,9 @@ from app.models.data_center import (
     ProfileActiveBinding,
 )
 from app.models.signal import SignalNotification
-from app.queue import BACKTEST_QUEUE_NAME, NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
-from app.runtime_scheduler import SCHEDULER_HEARTBEAT_KEY
+from app.queue import NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
 from app.after_market_scheduler import HEARTBEAT_KEY as AFTER_MARKET_HEARTBEAT_KEY
 from app.services.after_market_automation import discover_eligible_trading_days
-from app.services.htdy_s6_10_service_heartbeat import (
-    DISPATCHER_HEARTBEAT_KEY,
-    OBSERVER_HEARTBEAT_KEY,
-)
 from app.services.trading_session_clock import TradingSessionClock
 from app.live_review_loop.gates import build_live_review_health
 from app.signal.stage9_wechat import CHANNEL as STAGE9_WECHAT_CHANNEL
@@ -40,7 +35,7 @@ RUNTIME_STATUS_FAILED = "failed"
 RUNTIME_STATUS_UNKNOWN = "unknown"
 RUNTIME_STATUS_DISABLED = "disabled"
 
-RUNTIME_QUEUE_NAMES = (BACKTEST_QUEUE_NAME, SIGNAL_QUEUE_NAME)
+RUNTIME_QUEUE_NAMES = (SIGNAL_QUEUE_NAME,)
 SENSITIVE_TEXT_PARTS = (
     "password",
     "passwd",
@@ -114,8 +109,6 @@ def build_runtime_health(
         else:
             queue_names = RUNTIME_QUEUE_NAMES + ((NOTIFICATION_QUEUE_NAME,) if notification_enabled else ())
             components["rq"] = _collect_rq_health(redis_connection, queue_names=queue_names)
-    components["scheduler"] = _collect_scheduler_health(redis_connection, current_time, enabled=live_enabled)
-
     if components["db"]["status"] == RUNTIME_STATUS_FAILED:
         db_error = {
             "status": RUNTIME_STATUS_FAILED,
@@ -299,225 +292,6 @@ def _collect_queue_health(queue: Queue) -> dict[str, Any]:
             payload["status"] = RUNTIME_STATUS_DEGRADED
             payload["error_type"] = exc.__class__.__name__
     return payload
-
-
-def _collect_scheduler_health(connection: Redis | None, now: datetime, *, enabled: bool) -> dict[str, Any]:
-    if not enabled:
-        return {
-            "status": RUNTIME_STATUS_DISABLED,
-            "enabled": False,
-            "heartbeat_at": None,
-            "heartbeat_age_seconds": None,
-            "last_cycle_status": None,
-            **_empty_signal_event_health(),
-            "error_type": None,
-            "error_message": None,
-        }
-    if connection is None:
-        return {
-            "status": RUNTIME_STATUS_FAILED,
-            "enabled": True,
-            "heartbeat_at": None,
-            "heartbeat_age_seconds": None,
-            "last_cycle_status": None,
-            **_empty_signal_event_health(),
-            "error_type": "redis_unavailable",
-            "error_message": None,
-        }
-    try:
-        raw = connection.get(SCHEDULER_HEARTBEAT_KEY)
-        if raw is None:
-            return {
-                "status": RUNTIME_STATUS_DEGRADED,
-                "enabled": True,
-                "heartbeat_at": None,
-                "heartbeat_age_seconds": None,
-                "last_cycle_status": None,
-                **_empty_signal_event_health(),
-                "error_type": "heartbeat_missing",
-                "error_message": None,
-            }
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", errors="replace")
-        payload = json.loads(str(raw))
-        heartbeat = datetime.fromisoformat(str(payload["generated_at"]))
-        age = _age_seconds(now, heartbeat)
-        last_status = str(payload.get("status") or "unknown")
-        status = RUNTIME_STATUS_OK if age <= 180 and last_status != "failed" else RUNTIME_STATUS_DEGRADED
-        result = {
-            "status": status,
-            "enabled": True,
-            "heartbeat_at": _iso(heartbeat),
-            "heartbeat_age_seconds": age,
-            "last_cycle_status": last_status,
-            "signal_events_enabled": payload.get("signal_events_enabled") is True,
-            "signal_event_gate_status": str(payload.get("signal_event_gate_status") or "disabled"),
-            "signal_event_gate_schema": payload.get("signal_event_gate_schema"),
-            "signal_event_authorization_hash": payload.get("signal_event_authorization_hash"),
-            "signal_event_target_trading_day": payload.get("signal_event_target_trading_day"),
-            "signal_event_mapping_prepared": (
-                payload.get("signal_event_mapping_prepared") is True
-            ),
-            "signal_event_last_decision_bucket_end": payload.get(
-                "signal_event_last_decision_bucket_end"
-            ),
-            "signal_event_expected_last_due": _expected_last_due(
-                payload.get("signal_event_expected_bucket_ends"),
-                now=now,
-            ),
-            "signal_event_result": _bounded_signal_event_result(payload.get("signal_event_result")),
-            "error_type": payload.get("error_type"),
-            "error_message": None,
-        }
-        if (
-            result["signal_events_enabled"]
-            and result["signal_event_gate_status"] == "authorized"
-            and result["signal_event_gate_schema"]
-            in {
-                "s6_10_schema_v7",
-                "s6_10_approval_d_daily_child_v1",
-            }
-        ):
-            result["s610_observer"] = _collect_s610_service_heartbeat(
-                connection,
-                OBSERVER_HEARTBEAT_KEY,
-                now,
-                expected_service="observer",
-                expected_hash=result["signal_event_authorization_hash"],
-                expected_day=result["signal_event_target_trading_day"],
-            )
-            result["s610_dispatcher"] = _collect_s610_service_heartbeat(
-                connection,
-                DISPATCHER_HEARTBEAT_KEY,
-                now,
-                expected_service="dispatcher",
-                expected_hash=result["signal_event_authorization_hash"],
-                expected_day=result["signal_event_target_trading_day"],
-            )
-            if any(
-                item["status"] != RUNTIME_STATUS_OK
-                for item in (
-                    result["s610_observer"],
-                    result["s610_dispatcher"],
-                )
-            ):
-                result["status"] = RUNTIME_STATUS_DEGRADED
-            if (
-                result["signal_event_expected_last_due"] is not None
-                and result["signal_event_last_decision_bucket_end"]
-                != result["signal_event_expected_last_due"]
-            ):
-                result["status"] = RUNTIME_STATUS_DEGRADED
-        else:
-            result["s610_observer"] = None
-            result["s610_dispatcher"] = None
-        return result
-    except Exception as exc:  # noqa: BLE001 - malformed heartbeat must degrade safely.
-        return {
-            "status": RUNTIME_STATUS_DEGRADED,
-            "enabled": True,
-            "heartbeat_at": None,
-            "heartbeat_age_seconds": None,
-            "last_cycle_status": None,
-            **_empty_signal_event_health(),
-            **_error_fields(exc),
-        }
-
-
-def _empty_signal_event_health() -> dict[str, Any]:
-    return {
-        "signal_events_enabled": False,
-        "signal_event_gate_status": "disabled",
-        "signal_event_gate_schema": None,
-        "signal_event_authorization_hash": None,
-        "signal_event_target_trading_day": None,
-        "signal_event_mapping_prepared": False,
-        "signal_event_last_decision_bucket_end": None,
-        "signal_event_expected_last_due": None,
-        "signal_event_result": None,
-        "s610_observer": None,
-        "s610_dispatcher": None,
-    }
-
-
-def _collect_s610_service_heartbeat(
-    connection: Redis,
-    key: str,
-    now: datetime,
-    *,
-    expected_service: str,
-    expected_hash: Any,
-    expected_day: Any,
-) -> dict[str, Any]:
-    try:
-        raw = connection.get(key)
-        if raw is None:
-            raise ValueError("heartbeat_missing")
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", errors="replace")
-        payload = json.loads(str(raw))
-        heartbeat = datetime.fromisoformat(str(payload["generated_at"]))
-        age = _age_seconds(now, heartbeat)
-        exact = (
-            payload.get("status") == "ok"
-            and payload.get("service") == expected_service
-            and payload.get("authorization_hash") == expected_hash
-            and payload.get("target_trading_day") == expected_day
-            and age <= 180
-        )
-        return {
-            "status": RUNTIME_STATUS_OK if exact else RUNTIME_STATUS_DEGRADED,
-            "heartbeat_at": _iso(heartbeat),
-            "heartbeat_age_seconds": age,
-            "service": expected_service,
-            "authorization_hash": payload.get("authorization_hash"),
-            "target_trading_day": payload.get("target_trading_day"),
-            "details": (
-                dict(payload.get("details") or {})
-                if isinstance(payload.get("details"), dict)
-                else {}
-            ),
-            "error_type": None if exact else "heartbeat_binding_drift",
-        }
-    except Exception as exc:  # noqa: BLE001 - health must degrade safely.
-        return {
-            "status": RUNTIME_STATUS_DEGRADED,
-            "heartbeat_at": None,
-            "heartbeat_age_seconds": None,
-            "service": expected_service,
-            "authorization_hash": None,
-            "target_trading_day": None,
-            "details": {},
-            "error_type": type(exc).__name__,
-        }
-
-
-def _expected_last_due(value: Any, *, now: datetime) -> str | None:
-    if not isinstance(value, list):
-        return None
-    due: list[datetime] = []
-    for item in value:
-        try:
-            parsed = datetime.fromisoformat(str(item))
-        except ValueError:
-            return None
-        if parsed.tzinfo is None:
-            return None
-        if (now - parsed).total_seconds() >= 180:
-            due.append(parsed)
-    return max(due).isoformat() if due else None
-
-
-def _bounded_signal_event_result(value: Any) -> dict[str, Any] | None:
-    if not isinstance(value, dict):
-        return None
-    return {
-        "created": int(value.get("created") or 0),
-        "changed": int(value.get("changed") or 0),
-        "unchanged": int(value.get("unchanged") or 0),
-        "blocked": int(value.get("blocked") or 0),
-        "event_ids": [int(item) for item in list(value.get("event_ids") or [])[:20] if isinstance(item, int)],
-    }
 
 
 def _apply_worker_coverage(queue_results: list[dict[str, Any]], worker_results: list[dict[str, Any]]) -> bool:

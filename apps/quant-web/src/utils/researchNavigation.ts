@@ -1,8 +1,6 @@
 export type ResearchSourceType = 'strategy_signal' | 'signal_event'
 
 export interface ResearchContext {
-  reportId?: number | null
-  tradeId?: number | null
   reviewId?: number | null
   signalId?: number | null
   signalEventId?: number | null
@@ -32,6 +30,7 @@ export function safeReturnRoute(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const route = value.trim()
   if (!route.startsWith('/') || route.startsWith('//') || route.includes('\\')) return null
+  if (route.split(/[/?]/).filter(Boolean)[0] === 'backtest') return null
   return route
 }
 
@@ -52,8 +51,6 @@ export function parseResearchContext(query: Record<string, QueryValue>): Researc
     : null
   const dataModeValue = first(query.data_mode)
   return {
-    reportId: positiveId(query.report_id),
-    tradeId: positiveId(query.trade_id),
     reviewId: positiveId(query.review_id),
     signalId: positiveId(query.signal_id),
     signalEventId: positiveId(query.signal_event_id),
@@ -75,12 +72,21 @@ export function buildChartResearchQuery(context: ResearchContext): Record<string
     period: context.period || undefined,
     time: context.time || undefined,
     data_mode: context.dataMode || undefined,
-    report_id: context.reportId ? String(context.reportId) : undefined,
-    trade_id: context.tradeId ? String(context.tradeId) : undefined,
+    review_id: context.reviewId ? String(context.reviewId) : undefined,
     signal_id: context.signalId ? String(context.signalId) : undefined,
     signal_event_id: context.signalEventId ? String(context.signalEventId) : undefined,
     return_route: safeReturnRoute(context.returnRoute) || undefined,
   })
+}
+
+export function buildCreatedReviewRouteQuery(
+  reviewId: number,
+  context: ResearchContext,
+): Record<string, string | undefined> {
+  return {
+    ...buildReviewResearchQuery(context),
+    review_id: String(reviewId),
+  }
 }
 
 export function buildReviewResearchQuery(context: ResearchContext): Record<string, string | undefined> {
@@ -105,8 +111,6 @@ export function buildReviewResearchQuery(context: ResearchContext): Record<strin
   }
   return compactQuery({
     review_id: context.reviewId ? String(context.reviewId) : undefined,
-    report_id: context.reportId ? String(context.reportId) : undefined,
-    trade_id: context.tradeId ? String(context.tradeId) : undefined,
     return_route: safeReturnRoute(context.returnRoute) || undefined,
   })
 }
