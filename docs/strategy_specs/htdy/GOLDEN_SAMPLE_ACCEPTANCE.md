@@ -113,17 +113,16 @@ strict v1 不要求与 original v0 数值一致；二者是不同版本和不同
 ## 6. 复验命令
 
 ```bash
-uv run --project services/quant-api python experiments/htdy_indicator/golden_sample.py \
-  --export-web-bundle /tmp/htdy_golden_web_bundle.json
-
-HTDY_GOLDEN_BUNDLE=/tmp/htdy_golden_web_bundle.json \
-  pnpm --dir apps/quant-web exec node --test tests/htdyGoldenSample.test.ts
-
 uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_htdy_golden_sample.py
+  services/quant-api/tests/test_htdy_production_kernel_policy.py
+
+pnpm --dir apps/quant-web exec node --test \
+  tests/htdyProductionGolden.test.ts
 ```
 
-工具只读现有 Parquet；不会下载、覆盖或注册数据。可用 `GUIYI_HTDY_GOLDEN_SOURCE` 显式指定同一 checksum 文件，或用 `GUIYI_DATA_ROOT` 指定数据仓根目录。
+当前复验使用 tracked production golden 与现行 quant-core kernel，不下载、覆盖或注册数据。
+原 `experiments/htdy_indicator/golden_sample.py` 和动态 bundle 测试已随一次性验收工具退役，
+只可从 Git history 追溯；上面的历史 checksum 和视觉结论保持不变。
 
 ## 7. 后续 Gate
 

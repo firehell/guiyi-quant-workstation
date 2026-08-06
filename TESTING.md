@@ -99,8 +99,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_observation_plan_registry.py \
   services/quant-api/tests/test_strategy_adapter.py \
   services/quant-api/tests/test_htdy_realtime_evaluator.py \
-  services/quant-api/tests/test_htdy_production_kernel_policy.py \
-  services/quant-api/tests/test_htdy_golden_sample.py
+  services/quant-api/tests/test_htdy_production_kernel_policy.py
 ```
 
 该组测试不打开正式数据库、不写 SignalEvent/notification、不调用 Runtime 或企业微信。

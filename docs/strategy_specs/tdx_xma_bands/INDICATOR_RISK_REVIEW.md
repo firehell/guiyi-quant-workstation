@@ -15,11 +15,14 @@
 
 ## 2. 文件范围
 
-本次审查覆盖：
+本次历史审查当时覆盖：
 
-- `experiments/rqalpha_tdx_xma_bands/xma_core.py`
-- `experiments/rqalpha_tdx_xma_bands/tdx_xma_bands_strategy.py`
-- `experiments/rqalpha_tdx_xma_bands/README.md`
+- 原 `experiments/rqalpha_tdx_xma_bands/xma_core.py`
+- 原 `experiments/rqalpha_tdx_xma_bands/tdx_xma_bands_strategy.py`
+- 原 `experiments/rqalpha_tdx_xma_bands/README.md`
+
+这些 PoC 文件当前仅可从 Git history 查阅；active 的原始 XMA 风险边界由
+`packages/quant-core/guiyi_quant/indicators/htdy_original.py` 和指标 registry 维护。
 
 本次不覆盖：
 
@@ -64,10 +67,10 @@
 
 ## 5. 验证
 
-新增测试：
+当前验证：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_production_kernel_policy.py services/quant-api/tests/test_indicator_kernel.py
 ```
 
 测试覆盖：

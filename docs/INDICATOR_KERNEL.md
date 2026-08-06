@@ -194,7 +194,7 @@ block，不写任何 signal/event/notification，也不构成 formal backtest、
 ```bash
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_production_kernel_policy.py
 git diff --check
 ```
 
@@ -304,7 +304,7 @@ uv run --project services/quant-api pytest -q services/quant-api/tests/test_indi
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1b_diff.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_tdx_xma_indicator_risk.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_production_kernel_policy.py
 git diff --check
 uv run --project services/quant-api ruff check packages/quant-core/guiyi_quant/indicators services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py
 ```

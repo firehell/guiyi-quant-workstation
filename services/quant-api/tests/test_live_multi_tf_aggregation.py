@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-import importlib.util
-from pathlib import Path
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -12,9 +10,6 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.models.data_center import LiveAggregatedBar, LiveAggregationCheckpoint, LiveMinuteBar, MarketDataFile
 from app.services.live_multi_tf_aggregation import LiveAggregationConfig, LiveMultiTfAggregationService, _values_equal
-
-
-SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "rqdata_live_multi_tf_aggregate.py"
 
 
 def _session() -> Session:
@@ -239,33 +234,3 @@ def test_dry_run_does_not_write_aggregation_tables_or_market_data_files() -> Non
     assert aggregated_count == 0
     assert checkpoint_count == 0
     assert market_file_count == 0
-
-
-def test_cli_dry_run_does_not_open_database_or_send_wechat(capsys, monkeypatch) -> None:
-    module = _load_script()
-    monkeypatch.setenv("QYWX_WEBHOOK_URL", "https://example.invalid/token")
-
-    def fail_session():
-        raise AssertionError("dry-run must not open DB session")
-
-    exit_code = module.main(
-        ["--contract", "JM2609", "--symbol", "jm", "--exchange", "DCE", "--periods", "5m,15m,30m,60m", "--once", "--dry-run"],
-        session_factory=fail_session,
-        environ=dict(module.os.environ),
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "https://example.invalid/token" not in output
-    assert '"would_open_database_session": false' in output
-    assert '"would_send_wechat": false' in output
-    assert '"periods": [' in output
-
-
-def _load_script():
-    spec = importlib.util.spec_from_file_location("rqdata_live_multi_tf_aggregate", SCRIPT_PATH)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module

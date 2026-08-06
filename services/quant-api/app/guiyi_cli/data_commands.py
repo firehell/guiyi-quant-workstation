@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from sqlalchemy.orm import Session
 
@@ -24,12 +24,10 @@ from app.services.data_operations.contracts import (
     AuditRequest,
     AuditScope,
     CliArgumentInvalid,
-    CommandResult,
     DownloadRequest,
     LiveRequest,
     MetadataSyncRequest,
     MetadataSyncScope,
-    empty_effects,
 )
 from app.services.data_operations.download import DownloadApplicationService
 from app.services.data_operations.live import LiveConfig, LiveObservationApplicationService

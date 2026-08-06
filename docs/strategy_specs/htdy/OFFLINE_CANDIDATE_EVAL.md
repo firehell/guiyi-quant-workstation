@@ -65,23 +65,10 @@ symbol/contract/period = jm / jm.MAIN / 15m
 
 信号时点固定为当前 bar 收盘确认；若后续做收益对照，只能使用下一根 bar open 作为拟成交时点。本阶段默认不计算可信 PnL，不生成可信回测报告。
 
-## 5. Runner
+## 5. 历史 Runner 状态
 
-只读 JSON 输出：
-
-```bash
-uv run --project services/quant-api python experiments/htdy_indicator/offline_candidate_eval.py
-```
-
-可选导出：
-
-```bash
-uv run --project services/quant-api python experiments/htdy_indicator/offline_candidate_eval.py \
-  --output-json /tmp/htdy_strict_offline_candidate.json \
-  --output-markdown /tmp/htdy_strict_offline_candidate.md
-```
-
-可通过 `GUIYI_HTDY_OFFLINE_SOURCE` 指定 parquet 文件，或通过 `GUIYI_DATA_ROOT` 指定数据仓根目录。
+原 `experiments/htdy_indicator/offline_candidate_eval.py` 是一次性只读研究工具，当前仓库已不保留可执行入口。
+本节仅记录当时的候选事件口径；未来若重做离线候选评估，必须作为新任务接入统一行情入口，不能恢复旧兼容脚本。
 
 ## 6. 验收标准
 
@@ -94,7 +81,7 @@ uv run --project services/quant-api python experiments/htdy_indicator/offline_ca
 
 ## 7. 后续 Gate
 
-若离线候选评估值得继续，下一步必须另开正式回测候选 Plan，至少补齐：
+若离线候选评估值得继续，下一步必须另开全新研究任务，至少补齐：
 
 - 独立正式策略实现或 adapter；
 - 参数 schema 与默认参数；

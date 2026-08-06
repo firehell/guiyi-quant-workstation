@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from app.data_core.contracts import BarFrequency, DatasetKind, DatasetKey
+from app.data_core.contracts import BarFrequency, DatasetKind
 from app.data_core.historical_sync import plan_missing_windows
 from app.guiyi_cli.output import command_result_payload, redact_text
 from app.services.data_operations.aggregate import AggregateApplicationService, supports_aggregate_frequency
@@ -27,7 +26,6 @@ from app.services.data_operations.download import DownloadApplicationService, su
 from app.services.data_operations.guards import refuse_cross_kind_fallback, to_dataset_key
 from app.services.data_operations.target_expander import TargetExpander, expand_targets
 from app.services.data_operations.contracts import (
-    BatchTargetRequest,
     CliArgumentInvalid,
     SingleTargetRequest,
 )
