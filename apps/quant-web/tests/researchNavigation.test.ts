@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 
 import {
   buildChartResearchQuery,
+  buildCreatedReviewRouteQuery,
   buildReviewResearchQuery,
   buildSignalEventReviewQuery,
   parseResearchContext,
@@ -62,5 +63,39 @@ describe('researchNavigation', () => {
     assert.equal(safeReturnRoute('https://evil.example/path'), null)
     assert.equal(safeReturnRoute('//evil.example/path'), null)
     assert.equal(safeReturnRoute('/signal?tab=events'), '/signal?tab=events')
+  })
+
+  it('preserves safe signal context and return route after creating a review', () => {
+    assert.deepEqual(buildCreatedReviewRouteQuery(21, {
+      sourceType: 'signal_event',
+      sourceId: 7,
+      signalId: 6,
+      signalEventId: 7,
+      returnRoute: '/signal?tab=events&event_id=7',
+    }), {
+      review_id: '21',
+      source_type: 'signal_event',
+      source_id: '7',
+      signal_id: '6',
+      signal_event_id: '7',
+      return_route: '/signal?tab=events&event_id=7',
+    })
+  })
+
+  it('round-trips a manual review through Market with its exact safe return route', () => {
+    const returnRoute = '/review?review_id=44'
+    const chart = buildChartResearchQuery({
+      reviewId: 44,
+      symbol: 'jm',
+      contract: 'JM2609',
+      period: '15m',
+      returnRoute,
+    })
+    assert.equal(chart.review_id, '44')
+    assert.equal(chart.return_route, returnRoute)
+    assert.deepEqual(buildReviewResearchQuery(parseResearchContext(chart)), {
+      review_id: '44',
+      return_route: returnRoute,
+    })
   })
 })

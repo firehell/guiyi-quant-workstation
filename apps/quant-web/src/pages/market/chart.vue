@@ -38,7 +38,7 @@ import type {
   MainIndicatorSeries,
 } from '@/types/market'
 import { calculateATR, calculateEMA } from '@/utils/indicators'
-import { buildReviewResearchQuery, parseResearchContext } from '@/utils/researchNavigation'
+import { buildReviewResearchQuery, parseResearchContext, safeReturnRoute } from '@/utils/researchNavigation'
 import {
   activeIndicatorCodes,
   buildMainIndicatorRequestParams,
@@ -797,6 +797,11 @@ async function restoreSignalEventFromRoute(requestId: number) {
 
 function openReviewFromChart() {
   const context = parseResearchContext(route.query as Record<string, string | string[] | null | undefined>)
+  const exactReturnRoute = context.reviewId ? safeReturnRoute(context.returnRoute) : null
+  if (exactReturnRoute) {
+    void router.push(exactReturnRoute)
+    return
+  }
   void router.push({ name: 'review', query: buildReviewResearchQuery(context) })
 }
 
@@ -1412,6 +1417,7 @@ function syncQuery(): Promise<void> {
         signal_layer: stringQuery(route.query.signal_layer),
         signal_id: stringQuery(route.query.signal_id),
         signal_event_id: stringQuery(route.query.signal_event_id),
+        review_id: stringQuery(route.query.review_id),
         return_route: stringQuery(route.query.return_route),
       },
     ),
@@ -1733,7 +1739,10 @@ function isNotFoundApiError(err: unknown) {
         <section class="side-panel">
           <div class="side-panel__title">Signal Review</div>
           <div class="empty-note">复盘仅关联 StrategySignal / SignalEvent；行情页不加载回测报告或成交。</div>
-          <NButton v-if="selectedSignalEvent || route.query.signal_event_id" size="small" secondary block @click="openReviewFromChart">
+          <NButton v-if="route.query.review_id" size="small" secondary block @click="openReviewFromChart">
+            返回复盘
+          </NButton>
+          <NButton v-else-if="selectedSignalEvent || route.query.signal_event_id" size="small" secondary block @click="openReviewFromChart">
             打开事件复盘
           </NButton>
           <NButton v-else size="small" secondary block @click="router.push({ name: 'review' })">打开复盘中心</NButton>

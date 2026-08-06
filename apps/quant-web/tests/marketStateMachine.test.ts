@@ -25,6 +25,7 @@ describe('marketStateMachine', () => {
         strategy: 'su_bing_v1',
         signal_id: '11',
         signal_event_id: '12',
+        review_id: '13',
         return_route: '/signal?tab=events',
       },
     )
@@ -38,6 +39,7 @@ describe('marketStateMachine', () => {
     assert.equal(query.strategy, 'su_bing_v1')
     assert.equal(query.signal_id, '11')
     assert.equal(query.signal_event_id, '12')
+    assert.equal(query.review_id, '13')
     assert.equal(query.return_route, '/signal?tab=events')
   })
 

@@ -41,6 +41,7 @@ import { parseReviewDeepLinkQuery, reviewSourceIdentity } from '@/utils/reviewPr
 import { signalSourceDataMode } from '@/utils/signalSourceMode'
 import {
   buildChartResearchQuery,
+  buildCreatedReviewRouteQuery,
   parseResearchContext,
   safeReturnRoute,
   type ResearchSourceType,
@@ -160,6 +161,8 @@ async function applyRouteSelection() {
 }
 
 async function openReviewById(reviewId: number, requestId = ++selectionRequestId) {
+  clearSelection()
+  error.value = null
   try {
     const review = normalizeReview(await getReview(reviewId))
     if (requestId !== selectionRequestId) return
@@ -201,6 +204,9 @@ async function openSignalSource(sourceType: ResearchSourceType, sourceId: number
 
 async function createPendingReview() {
   if (!pendingSourceType.value || !pendingSourceId.value) return
+  const researchContext = parseResearchContext(
+    route.query as Record<string, string | string[] | null | undefined>,
+  )
   saving.value = true
   try {
     const review = pendingSourceType.value === 'signal_event'
@@ -211,7 +217,9 @@ async function createPendingReview() {
     pendingSourceId.value = null
     markReviewSaved(selectedReview.value)
     await Promise.all([loadBars(selectedReview.value), loadAll()])
-    void router.replace({ query: { review_id: String(selectedReview.value.id) } })
+    void router.replace({
+      query: buildCreatedReviewRouteQuery(selectedReview.value.id, researchContext),
+    })
   } catch (err) {
     error.value = toSafeApiError(err, '创建复盘失败')
   } finally {
@@ -283,6 +291,7 @@ function openMarket() {
   void router.push({
     name: 'market-chart',
     query: buildChartResearchQuery({
+      reviewId: review.id,
       symbol: review.symbol,
       contract: review.contract,
       period: review.entry_interval || review.period,

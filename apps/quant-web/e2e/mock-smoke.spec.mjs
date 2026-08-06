@@ -195,6 +195,105 @@ test.describe('Web V1 mock smoke', () => {
     expect(writes).toEqual([])
   })
 
+  test('neutral reviews save, attach, hide retired sources, and round-trip through Market', async ({ page }) => {
+    const writes = []
+    let retiredBarsCalls = 0
+    const record = (id, sourceType) => ({
+      id,
+      source_type: sourceType,
+      source_id: id + 100,
+      symbol: 'jm',
+      contract: 'JM2609',
+      period: '15m',
+      entry_interval: '15m',
+      open_time: '2026-07-21T09:00:00',
+      mistake_tags: [],
+      setup_tags: [],
+      rule_tags: [],
+      emotion_tags: [],
+      screenshot_paths: [],
+      ai_status: 'reserved',
+      extra: {},
+    })
+    const rows = {
+      41: record(41, 'strategy_signal'),
+      44: record(44, 'manual_trade'),
+      99: record(99, 'backtest_trade'),
+    }
+
+    await page.route((url) => url.pathname.startsWith('/api/reviews'), async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      const method = request.method()
+      if (path === '/api/reviews' && method === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: Object.values(rows), total: 3, limit: 100, offset: 0 }),
+        })
+        return
+      }
+      const match = path.match(/^\/api\/reviews\/(41|44|99)(\/bars|\/attachments)?$/)
+      if (!match) {
+        await route.fallback()
+        return
+      }
+      const id = Number(match[1])
+      const suffix = match[2] || ''
+      if (suffix === '/bars') {
+        if (id === 99) retiredBarsCalls += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            lineage: { schema_version: 'review_source_lineage_v1', source_type: rows[id].source_type, source_id: rows[id].source_id },
+            bars: [],
+          }),
+        })
+        return
+      }
+      if (method === 'PUT' || suffix === '/attachments') writes.push(`${method} ${path}`)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(suffix === '/attachments' ? {} : rows[id]),
+      })
+    })
+
+    await page.goto('/review?review_id=41')
+    await expect(page.getByText('strategy_signal #141').first()).toBeVisible({ timeout: 15_000 })
+    await page.locator('.n-form-item').filter({ hasText: '执行备注' }).locator('textarea').fill('strategy note')
+    await page.getByRole('button', { name: /保存/ }).click()
+    await page.getByPlaceholder('文件名或相对路径').fill('strategy.png')
+    await page.getByRole('button', { name: '登记' }).click()
+
+    await page.goto('/review?review_id=44')
+    await expect(page.getByText('manual_trade #144').first()).toBeVisible({ timeout: 15_000 })
+    await page.locator('.n-form-item').filter({ hasText: '执行备注' }).locator('textarea').fill('manual note')
+    await page.getByRole('button', { name: /保存/ }).click()
+    await page.getByPlaceholder('文件名或相对路径').fill('manual.png')
+    await page.getByRole('button', { name: '登记' }).click()
+    await expect(page.getByText('backtest_trade')).toHaveCount(0)
+
+    await page.getByRole('button', { name: '行情 K 线' }).click()
+    await expect(page).toHaveURL((url) => url.pathname === '/market/chart'
+      && url.searchParams.get('review_id') === '44'
+      && url.searchParams.get('return_route') === '/review?review_id=44')
+    await expect(page.getByRole('tab', { name: '复盘' })).toHaveAttribute('aria-selected', 'true')
+    await page.getByRole('button', { name: '返回复盘' }).click()
+    await expect(page).toHaveURL('/review?review_id=44')
+
+    await page.goto('/review?review_id=99')
+    await expect(page.getByText(/UNSUPPORTED_REVIEW_SOURCE/)).toBeVisible({ timeout: 15_000 })
+    expect(retiredBarsCalls).toBe(0)
+    expect(writes).toEqual([
+      'PUT /api/reviews/41',
+      'POST /api/reviews/41/attachments',
+      'PUT /api/reviews/44',
+      'POST /api/reviews/44/attachments',
+    ])
+  })
+
   test('security storage, keyboard tabs, focus, and responsive baselines', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('token', 'legacy-browser-secret')

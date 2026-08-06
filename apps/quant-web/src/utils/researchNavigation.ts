@@ -72,10 +72,21 @@ export function buildChartResearchQuery(context: ResearchContext): Record<string
     period: context.period || undefined,
     time: context.time || undefined,
     data_mode: context.dataMode || undefined,
+    review_id: context.reviewId ? String(context.reviewId) : undefined,
     signal_id: context.signalId ? String(context.signalId) : undefined,
     signal_event_id: context.signalEventId ? String(context.signalEventId) : undefined,
     return_route: safeReturnRoute(context.returnRoute) || undefined,
   })
+}
+
+export function buildCreatedReviewRouteQuery(
+  reviewId: number,
+  context: ResearchContext,
+): Record<string, string | undefined> {
+  return {
+    ...buildReviewResearchQuery(context),
+    review_id: String(reviewId),
+  }
 }
 
 export function buildReviewResearchQuery(context: ResearchContext): Record<string, string | undefined> {

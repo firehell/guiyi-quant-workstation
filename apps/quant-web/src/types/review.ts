@@ -1,7 +1,7 @@
 import type { CanonicalDatasetKey, CanonicalInputIdentity } from './canonical'
 import type { BarData } from './market'
 
-export type ReviewSourceType = 'strategy_signal' | 'signal_event' | 'signal_decision' | 'manual_trade' | string
+export type ReviewSourceType = 'strategy_signal' | 'signal_event' | 'signal_decision' | 'manual_trade'
 
 /** 单笔复盘笔记；来源仅使用独立 source_type/source_id 合同。 */
 export interface ReviewNote {
@@ -85,7 +85,7 @@ export interface ReviewStats {
 
 export interface ReviewCanonicalLineage {
   schema_version: 'review_canonical_lineage_v1'
-  source_type: string
+  source_type: ReviewSourceType
   source_id: number
   strategy_version?: string | null
   input_digest: string
@@ -99,7 +99,7 @@ export interface ReviewCanonicalLineage {
 
 export interface ReviewObservationLineage {
   schema_version: 'review_source_lineage_v1'
-  source_type: string
+  source_type: ReviewSourceType
   source_id: number
   source_snapshot_schema_version?: string | null
   source_mode?: string | null
