@@ -30,6 +30,7 @@ LIVE_IDENTITY_REVISION = "20260802_0029"
 LIVE_IMMUTABLE_REVISION = "20260802_0030"
 EOD_LINEAGE_REVISION = "20260802_0031"
 HEAD_REVISION = "20260803_0032"
+RETIREMENT_REVISION = "20260805_0033"
 NEW_TABLES = {"market_datasets", "market_partitions", "data_gaps"}
 CANONICAL_VIEW = "data_core_main_contract_map"
 QUANT_API_ROOT = Path(__file__).resolve().parents[2]
@@ -87,13 +88,14 @@ def test_contract_alignment_revision_precedes_live_review_loop_head() -> None:
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == [HEAD_REVISION]
+    assert scripts.get_heads() == [RETIREMENT_REVISION]
     assert scripts.get_revision(REVISION).down_revision == PARENT_REVISION
     assert scripts.get_revision(LIVE_REVIEW_REVISION).down_revision == REVISION
     assert scripts.get_revision(LIVE_IDENTITY_REVISION).down_revision == LIVE_REVIEW_REVISION
     assert scripts.get_revision(LIVE_IMMUTABLE_REVISION).down_revision == LIVE_IDENTITY_REVISION
     assert scripts.get_revision(EOD_LINEAGE_REVISION).down_revision == LIVE_IMMUTABLE_REVISION
     assert scripts.get_revision(HEAD_REVISION).down_revision == EOD_LINEAGE_REVISION
+    assert scripts.get_revision(RETIREMENT_REVISION).down_revision == HEAD_REVISION
 
 
 @pytest.mark.parametrize("direction", ["upgrade", "downgrade"])

@@ -26,6 +26,7 @@ IDENTITY_REVISION = "20260802_0029"
 IMMUTABLE_REVISION = "20260802_0030"
 HEAD_REVISION = "20260802_0031"
 DATA_CORE_REVISION = "20260803_0032"
+RETIREMENT_REVISION = "20260805_0033"
 QUANT_API_ROOT = Path(__file__).resolve().parents[2]
 NEW_TABLES = {
     "live_observation_bars",
@@ -41,12 +42,13 @@ def test_live_review_loop_revisions_form_the_declared_head() -> None:
     config.set_main_option("script_location", "services/quant-api/alembic")
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == [DATA_CORE_REVISION]
+    assert scripts.get_heads() == [RETIREMENT_REVISION]
     assert scripts.get_revision(REVISION).down_revision == PARENT_REVISION
     assert scripts.get_revision(IDENTITY_REVISION).down_revision == REVISION
     assert scripts.get_revision(IMMUTABLE_REVISION).down_revision == IDENTITY_REVISION
     assert scripts.get_revision(HEAD_REVISION).down_revision == IMMUTABLE_REVISION
     assert scripts.get_revision(DATA_CORE_REVISION).down_revision == HEAD_REVISION
+    assert scripts.get_revision(RETIREMENT_REVISION).down_revision == DATA_CORE_REVISION
 
 
 def test_live_review_loop_offline_sql_contains_additive_schema_and_downgrade_guard() -> None:

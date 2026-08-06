@@ -17,11 +17,13 @@ depends_on = None
 def upgrade() -> None:
     """Retire only the frozen production baseline or an all-empty installation."""
 
+    op.execute("SET LOCAL lock_timeout = '5s'")
     op.execute(
         """
         DO $$
         DECLARE
             review_count bigint;
+            review_identity_count bigint;
             review_attachment_count bigint;
             research_sample_count bigint;
             notification_count bigint;
@@ -30,6 +32,9 @@ def upgrade() -> None:
             signal_identity_count bigint;
             event_identity_count bigint;
             notification_identity_count bigint;
+            dependent_event_count bigint;
+            dependent_notification_count bigint;
+            dependent_review_count bigint;
             task_count bigint;
             report_count bigint;
             trade_count bigint;
@@ -44,6 +49,10 @@ def upgrade() -> None:
             SELECT count(*) INTO review_count
             FROM review_notes
             WHERE source_type = 'backtest_trade';
+            SELECT count(*) INTO review_identity_count
+            FROM review_notes AS review
+            JOIN backtest_trades AS trade ON trade.id = review.source_id
+            WHERE review.source_type = 'backtest_trade';
             SELECT count(*) INTO review_attachment_count
             FROM review_attachments AS attachment
             JOIN review_notes AS review ON review.id = attachment.review_id
@@ -100,7 +109,7 @@ def upgrade() -> None:
             SELECT count(*) INTO event_identity_count
             FROM signal_events AS event
             JOIN strategy_signals AS signal ON signal.id = event.signal_id
-            WHERE event.event_key = 'signal_created:' || signal.dedupe_key || ':created'
+            WHERE event.event_key = 'signal_created:' || signal.dedupe_key || chr(58) || 'created'
               AND signal.dedupe_key = ANY (ARRAY[
                   'htdy-first-seen:15d699aaeaf52f28ed2098e82d0cf23574f150af32a82fe213fc032ed397619f',
                   'htdy-first-seen:b153ac90ad2de288eac5d31de352cada0e3adfdc1d72eaee6ad6315b452e88f5',
@@ -136,6 +145,58 @@ def upgrade() -> None:
               AND notification.channel = 'enterprise_wechat'
               AND notification.status = 'sent';
 
+            SELECT count(*) INTO dependent_event_count
+            FROM signal_events AS event
+            JOIN strategy_signals AS signal ON signal.id = event.signal_id
+            WHERE signal.dedupe_key = ANY (ARRAY[
+                'htdy-first-seen:15d699aaeaf52f28ed2098e82d0cf23574f150af32a82fe213fc032ed397619f',
+                'htdy-first-seen:b153ac90ad2de288eac5d31de352cada0e3adfdc1d72eaee6ad6315b452e88f5',
+                'htdy-first-seen:7baac25bf5fecd8af83fa7ff798f7da64c6c479e50cda3fca259148e3520acee'
+            ])
+              AND event.event_key != 'signal_created:' || signal.dedupe_key || chr(58) || 'created';
+
+            SELECT count(*) INTO dependent_notification_count
+            FROM signal_notifications AS notification
+            LEFT JOIN signal_events AS event ON event.id = notification.event_id
+            LEFT JOIN strategy_signals AS signal ON signal.id = notification.signal_id
+            WHERE (
+                event.event_key = ANY (ARRAY[
+                    'signal_created:htdy-first-seen:15d699aaeaf52f28ed2098e82d0cf23574f150af32a82fe213fc032ed397619f:created',
+                    'signal_created:htdy-first-seen:b153ac90ad2de288eac5d31de352cada0e3adfdc1d72eaee6ad6315b452e88f5:created',
+                    'signal_created:htdy-first-seen:7baac25bf5fecd8af83fa7ff798f7da64c6c479e50cda3fca259148e3520acee:created'
+                ])
+                OR signal.dedupe_key = ANY (ARRAY[
+                    'htdy-first-seen:15d699aaeaf52f28ed2098e82d0cf23574f150af32a82fe213fc032ed397619f',
+                    'htdy-first-seen:b153ac90ad2de288eac5d31de352cada0e3adfdc1d72eaee6ad6315b452e88f5',
+                    'htdy-first-seen:7baac25bf5fecd8af83fa7ff798f7da64c6c479e50cda3fca259148e3520acee'
+                ])
+            )
+              AND notification.dedupe_key != 'enterprise_wechat:signal_event:4';
+
+            SELECT count(*) INTO dependent_review_count
+            FROM review_notes AS review
+            WHERE (
+                review.source_type = 'strategy_signal'
+                AND review.source_id IN (
+                    SELECT id FROM strategy_signals
+                    WHERE dedupe_key = ANY (ARRAY[
+                        'htdy-first-seen:15d699aaeaf52f28ed2098e82d0cf23574f150af32a82fe213fc032ed397619f',
+                        'htdy-first-seen:b153ac90ad2de288eac5d31de352cada0e3adfdc1d72eaee6ad6315b452e88f5',
+                        'htdy-first-seen:7baac25bf5fecd8af83fa7ff798f7da64c6c479e50cda3fca259148e3520acee'
+                    ])
+                )
+            ) OR (
+                review.source_type = 'signal_event'
+                AND review.source_id IN (
+                    SELECT id FROM signal_events
+                    WHERE event_key = ANY (ARRAY[
+                        'signal_created:htdy-first-seen:15d699aaeaf52f28ed2098e82d0cf23574f150af32a82fe213fc032ed397619f:created',
+                        'signal_created:htdy-first-seen:b153ac90ad2de288eac5d31de352cada0e3adfdc1d72eaee6ad6315b452e88f5:created',
+                        'signal_created:htdy-first-seen:7baac25bf5fecd8af83fa7ff798f7da64c6c479e50cda3fca259148e3520acee:created'
+                    ])
+                )
+            );
+
             SELECT count(*) INTO task_count FROM backtest_tasks;
             SELECT count(*) INTO report_count FROM backtest_reports;
             SELECT count(*) INTO trade_count FROM backtest_trades;
@@ -154,13 +215,20 @@ def upgrade() -> None:
                     'backtest retirement requires exact baseline review/notification/event/signal/tasks/reports/trades/orders=7/1/3/3/23/15/4361/4225 or all zero';
             END IF;
 
-            IF review_attachment_count != 0 OR research_sample_count != 0 THEN
+            IF review_identity_count != review_count
+               OR review_attachment_count != 0
+               OR research_sample_count != 0 THEN
                 RAISE EXCEPTION 'backtest retirement linked review data drift';
             END IF;
             IF signal_identity_count != signal_count
                OR event_identity_count != event_count
                OR notification_identity_count != notification_count THEN
                 RAISE EXCEPTION 'legacy S6 retirement identity mismatch';
+            END IF;
+            IF dependent_event_count != 0
+               OR dependent_notification_count != 0
+               OR dependent_review_count != 0 THEN
+                RAISE EXCEPTION 'legacy S6 retirement logical dependency drift';
             END IF;
 
             DELETE FROM review_notes WHERE source_type = 'backtest_trade';
