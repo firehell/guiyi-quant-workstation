@@ -80,11 +80,12 @@ class CanonicalHistoricalReader:
         dataset: DatasetKey,
         partition: object,
     ) -> CanonicalPartitionVerification:
-        """Read and validate one Catalog partition without any write capability."""
-        rows, data_version = self._read_partition(dataset, partition)
-        document = _read_manifest(
-            _safe_child(self._canonical_root, _partition_value(partition, "manifest_uri"))
+        """Validate a partition's physical metadata without decoding every bar."""
+        parquet, data_version, document = self._verify_partition_metadata(
+            dataset, partition
         )
+        if parquet.schema_arrow != CANONICAL_PARQUET_SCHEMA:
+            raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
         lineage_payload = document.get("source_lineage")
         lineage = (
             ManifestLineage.from_payload(lineage_payload)
@@ -93,7 +94,7 @@ class CanonicalHistoricalReader:
         )
         lineage.validate_dataset(dataset)
         return CanonicalPartitionVerification(
-            row_count=len(rows),
+            row_count=int(_partition_value(partition, "row_count")),
             data_version=data_version,
             lineage=lineage,
         )
@@ -382,6 +383,33 @@ class CanonicalHistoricalReader:
         dataset: DatasetKey,
         partition: object,
     ) -> tuple[tuple[object, ...], str]:
+        parquet, data_version, _document = self._verify_partition_metadata(
+            dataset, partition
+        )
+        expected_row_count = int(_partition_value(partition, "row_count"))
+        try:
+            table = parquet.read()
+        except pa.ArrowInvalid as exc:
+            raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
+        if table.schema != CANONICAL_PARQUET_SCHEMA:
+            raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
+        if table.num_rows != expected_row_count:
+            raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
+        bars = _bars_from_table(table)
+        if any(
+            previous.bar_end >= current.bar_end
+            for previous, current in zip(bars, bars[1:], strict=False)
+        ):
+            raise ManifestMismatchError(
+                facts={"reason": "parquet_primary_key_order_invalid"}
+            )
+        return bars, data_version
+
+    def _verify_partition_metadata(
+        self,
+        dataset: DatasetKey,
+        partition: object,
+    ) -> tuple[pq.ParquetFile, str, dict[str, object]]:
         manifest_uri = _partition_value(partition, "manifest_uri")
         file_uri = _partition_value(partition, "file_uri")
         manifest_path = _safe_child(self._canonical_root, manifest_uri)
@@ -427,23 +455,7 @@ class CanonicalHistoricalReader:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if int(parquet.metadata.num_rows) != expected_row_count:
             raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
-        try:
-            table = parquet.read()
-        except pa.ArrowInvalid as exc:
-            raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
-        if table.schema != CANONICAL_PARQUET_SCHEMA:
-            raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
-        if table.num_rows != expected_row_count:
-            raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
-        bars = _bars_from_table(table)
-        if any(
-            previous.bar_end >= current.bar_end
-            for previous, current in zip(bars, bars[1:], strict=False)
-        ):
-            raise ManifestMismatchError(
-                facts={"reason": "parquet_primary_key_order_invalid"}
-            )
-        return bars, data_version
+        return parquet, data_version, document
 
 
 def _partition_value(partition: object, field: str) -> object:

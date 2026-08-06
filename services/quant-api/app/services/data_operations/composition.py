@@ -261,14 +261,10 @@ class _LazyM2AuditChecker:
                 BarQuery(
                     dataset_kind=dataset.dataset_kind,
                     symbol=dataset.symbol,
-                    # A resolved actual target must still prove its rank-1 map
-                    # across the requested boundary, rather than bypassing it
-                    # through a concrete-contract query.
-                    contract_or_series=(
-                        None
-                        if dataset.dataset_kind.value == "actual_dominant"
-                        else dataset.contract_or_series
-                    ),
+                    # M2 validates rank-1 mappings independently. The reader
+                    # probe stays on this concrete target so it does not
+                    # rematerialize every actual contract for every boundary.
+                    contract_or_series=dataset.contract_or_series,
                     frequency=dataset.frequency,
                     start=start,
                     end=end,

@@ -170,6 +170,40 @@ def test_m2_audit_passes_when_all_required_identities_are_verified() -> None:
     }
 
 
+def test_m2_market_data_probes_are_bounded_to_first_last_and_one_rollover() -> None:
+    """Actual-contract probes must not grow with the historical contract count."""
+    from app.services.data_operations.m2_architecture_audit import _limited_probe_targets
+
+    continuous = DatasetKey(
+        provider="rqdata", dataset_kind=DatasetKind.CONTINUOUS, symbol="jm",
+        contract_or_series="JM.MAIN", frequency=BarFrequency.M1, adjustment="none",
+        schema_version="canonical-bar-v1",
+    )
+    actual = [
+        DatasetKey(
+            provider="rqdata", dataset_kind=DatasetKind.ACTUAL_DOMINANT, symbol="jm",
+            contract_or_series=f"JM{2601 + index}", frequency=BarFrequency.M1,
+            adjustment="none", schema_version="canonical-bar-v1",
+        )
+        for index in range(42)
+    ]
+    partitions = {continuous: (_partition(),)}
+    for index, dataset in enumerate(actual):
+        start = START + timedelta(days=index)
+        partitions[dataset] = (
+            SimpleNamespace(coverage_start=start, coverage_end=start + timedelta(hours=1)),
+        )
+
+    targets = _limited_probe_targets(partitions)
+    actual_targets = [item for item in targets if item[0].dataset_kind is DatasetKind.ACTUAL_DOMINANT]
+
+    assert len(actual_targets) == 3
+    assert {item[0].contract_or_series for item in actual_targets} == {
+        "JM2601", "JM2602", "JM2642"
+    }
+    assert len(targets) == 4
+
+
 def test_m2_audit_fails_when_a_derived_dataset_has_noncanonical_lineage() -> None:
     from app.services.data_operations.m2_architecture_audit import (
         build_m2_audit_checker,

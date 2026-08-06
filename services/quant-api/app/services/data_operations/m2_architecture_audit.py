@@ -245,25 +245,94 @@ def _probe_findings(
     findings: list[AuditFinding],
     summary: dict[str, int],
 ) -> None:
+    unreadable_frequencies: set[tuple[DatasetKind, BarFrequency]] = set()
+    for dataset, partition in _limited_probe_targets(partitions):
+        identity = (dataset.dataset_kind, dataset.frequency)
+        if identity in unreadable_frequencies:
+            continue
+        try:
+            summary["reader_probe_count"] += 1
+            readable = market_data_readable(
+                dataset,
+                getattr(partition, "coverage_start"),
+                getattr(partition, "coverage_end"),
+            )
+        except Exception:  # noqa: BLE001
+            readable = False
+        if not readable:
+            unreadable_frequencies.add(identity)
+            findings.append(
+                _finding("M2_MARKET_DATA_UNREADABLE", symbol, dataset.frequency)
+            )
+
+
+def _limited_probe_targets(
+    partitions: dict[DatasetKey, tuple[object, ...]],
+) -> tuple[tuple[DatasetKey, object], ...]:
+    """Select a fixed audit sample, never one MarketData read per contract.
+
+    Every partition still receives physical metadata/checksum/schema/row-count
+    validation.  Reader probes instead establish that the unified reader can
+    resolve the two edge windows, with one explicit M1 rollover pair for actual
+    dominant data.  The selection is bounded per product even when its contract
+    history is very long.
+    """
+    selected: list[tuple[DatasetKey, object]] = []
+
+    def add(dataset: DatasetKey, partition: object) -> None:
+        identity = (
+            dataset,
+            getattr(partition, "coverage_start"),
+            getattr(partition, "coverage_end"),
+            getattr(partition, "manifest_uri", None),
+        )
+        if not any(
+            identity
+            == (
+                existing_dataset,
+                getattr(existing_partition, "coverage_start"),
+                getattr(existing_partition, "coverage_end"),
+                getattr(existing_partition, "manifest_uri", None),
+            )
+            for existing_dataset, existing_partition in selected
+        ):
+            selected.append((dataset, partition))
+
+    actual_by_frequency: dict[BarFrequency, list[tuple[DatasetKey, object]]] = {}
     for dataset, rows in partitions.items():
         if not rows:
             continue
-        probe_rows = (rows[0],) if len(rows) == 1 else (rows[0], rows[-1])
-        for partition in probe_rows:
-            try:
-                summary["reader_probe_count"] += 1
-                readable = market_data_readable(
-                    dataset,
-                    getattr(partition, "coverage_start"),
-                    getattr(partition, "coverage_end"),
-                )
-            except Exception:  # noqa: BLE001
-                readable = False
-            if not readable:
-                findings.append(
-                    _finding("M2_MARKET_DATA_UNREADABLE", symbol, dataset.frequency)
-                )
-                break
+        ordered_rows = tuple(
+            sorted(rows, key=lambda row: (getattr(row, "coverage_start"), getattr(row, "coverage_end")))
+        )
+        if dataset.dataset_kind is DatasetKind.CONTINUOUS:
+            add(dataset, ordered_rows[0])
+            add(dataset, ordered_rows[-1])
+        elif dataset.dataset_kind is DatasetKind.ACTUAL_DOMINANT:
+            actual_by_frequency.setdefault(dataset.frequency, []).extend(
+                (dataset, row) for row in ordered_rows
+            )
+
+    for frequency, candidates in actual_by_frequency.items():
+        ordered = tuple(
+            sorted(
+                candidates,
+                key=lambda item: (
+                    getattr(item[1], "coverage_start"),
+                    getattr(item[1], "coverage_end"),
+                    item[0].contract_or_series,
+                ),
+            )
+        )
+        add(*ordered[0])
+        add(*ordered[-1])
+        if frequency is BarFrequency.M1:
+            for before, after in zip(ordered, ordered[1:]):
+                if before[0].contract_or_series != after[0].contract_or_series:
+                    add(*before)
+                    add(*after)
+                    break
+    return tuple(selected)
 
 
 def _finding(
