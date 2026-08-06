@@ -227,6 +227,148 @@ def test_drift_is_rejected_and_transaction_rolls_back(
         assert connection.execute(text("SELECT count(*) FROM shared_sentinel")).scalar_one() == 1
 
 
+def test_extra_notification_targeting_retired_event_and_signal_blocks_unscoped_delete(
+    retirement_schema: tuple[Engine, str],
+) -> None:
+    """A differently keyed notification must not be orphaned by scoped S6 deletion."""
+
+    engine, schema = retirement_schema
+    _seed_exact_production_baseline(engine, schema)
+    with engine.begin() as connection:
+        _set_search_path(connection, schema)
+        connection.execute(
+            text(
+                """
+                INSERT INTO signal_notifications
+                    (id, event_id, signal_id, dedupe_key, event_type, channel, status)
+                VALUES
+                    (100, 4, 1, 'external:signal-event:4',
+                     'signal_created', 'websocket', 'pending')
+                """
+            )
+        )
+
+    with pytest.raises(
+        SQLAlchemyError,
+        match="legacy S6 retirement logical dependency drift",
+    ):
+        _run_retirement_upgrade(engine, schema)
+
+    _assert_exact_baseline_preserved(
+        engine,
+        schema,
+        expected_notification_count=3,
+        expected_review_count=8,
+    )
+    with engine.begin() as connection:
+        _set_search_path(connection, schema)
+        assert connection.execute(
+            text("SELECT count(*) FROM signal_notifications WHERE id = 100")
+        ).scalar_one() == 1
+
+
+def test_strategy_signal_review_targeting_retired_signal_blocks_unscoped_delete(
+    retirement_schema: tuple[Engine, str],
+) -> None:
+    """A strategy-signal review must not survive with its target silently deleted."""
+
+    engine, schema = retirement_schema
+    _seed_exact_production_baseline(engine, schema)
+    with engine.begin() as connection:
+        _set_search_path(connection, schema)
+        connection.execute(
+            text(
+                "INSERT INTO review_notes (id, source_type, source_id) "
+                "VALUES (100, 'strategy_signal', 1)"
+            )
+        )
+
+    with pytest.raises(
+        SQLAlchemyError,
+        match="legacy S6 retirement logical dependency drift",
+    ):
+        _run_retirement_upgrade(engine, schema)
+
+    _assert_exact_baseline_preserved(
+        engine,
+        schema,
+        expected_notification_count=2,
+        expected_review_count=9,
+    )
+    with engine.begin() as connection:
+        _set_search_path(connection, schema)
+        assert connection.execute(
+            text("SELECT count(*) FROM review_notes WHERE id = 100")
+        ).scalar_one() == 1
+
+
+def test_signal_event_review_targeting_retired_event_blocks_unscoped_delete(
+    retirement_schema: tuple[Engine, str],
+) -> None:
+    """A signal-event review must not survive with its target silently deleted."""
+
+    engine, schema = retirement_schema
+    _seed_exact_production_baseline(engine, schema)
+    with engine.begin() as connection:
+        _set_search_path(connection, schema)
+        connection.execute(
+            text(
+                "INSERT INTO review_notes (id, source_type, source_id) "
+                "VALUES (100, 'signal_event', 4)"
+            )
+        )
+
+    with pytest.raises(
+        SQLAlchemyError,
+        match="legacy S6 retirement logical dependency drift",
+    ):
+        _run_retirement_upgrade(engine, schema)
+
+    _assert_exact_baseline_preserved(
+        engine,
+        schema,
+        expected_notification_count=2,
+        expected_review_count=9,
+    )
+    with engine.begin() as connection:
+        _set_search_path(connection, schema)
+        assert connection.execute(
+            text("SELECT count(*) FROM review_notes WHERE id = 100")
+        ).scalar_one() == 1
+
+
+def test_drop_failure_after_successful_dml_and_first_ddl_rolls_back_everything(
+    retirement_schema: tuple[Engine, str],
+) -> None:
+    """A late FK failure must restore deleted rows and the already-dropped orders table."""
+
+    engine, schema = retirement_schema
+    _seed_exact_production_baseline(engine, schema)
+    with engine.begin() as connection:
+        _set_search_path(connection, schema)
+        connection.execute(
+            text(
+                """
+                CREATE TABLE external_trade_ref (
+                    id bigint PRIMARY KEY,
+                    trade_id bigint REFERENCES backtest_trades(id)
+                )
+                """
+            )
+        )
+
+    with pytest.raises(SQLAlchemyError, match="cannot drop table backtest_trades"):
+        _run_retirement_upgrade(engine, schema)
+
+    _assert_exact_baseline_preserved(
+        engine,
+        schema,
+        expected_notification_count=2,
+        expected_review_count=8,
+    )
+    assert "external_trade_ref" in inspect(engine).get_table_names(schema=schema)
+
+
 def _load_retirement_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location(
         f"retirement_migration_{uuid4().hex}",
@@ -271,6 +413,57 @@ def _shared_counts(engine: Engine, schema: str) -> tuple[int, int, int, int, int
                 "shared_sentinel",
             )
         )
+
+
+def _assert_exact_baseline_preserved(
+    engine: Engine,
+    schema: str,
+    *,
+    expected_notification_count: int,
+    expected_review_count: int,
+) -> None:
+    assert _backtest_tables(engine, schema) == {
+        "backtest_orders",
+        "backtest_reports",
+        "backtest_tasks",
+        "backtest_trades",
+    }
+    with engine.begin() as connection:
+        _set_search_path(connection, schema)
+        assert tuple(
+            int(connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar_one())
+            for table in (
+                "backtest_tasks",
+                "backtest_reports",
+                "backtest_trades",
+                "backtest_orders",
+            )
+        ) == (23, 15, 4361, 4225)
+        assert connection.execute(
+            text("SELECT count(*) FROM review_notes WHERE source_type = 'backtest_trade'")
+        ).scalar_one() == 7
+        assert tuple(
+            int(connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar_one())
+            for table in (
+                "strategy_signals",
+                "signal_events",
+                "signal_notifications",
+                "review_notes",
+                "shared_sentinel",
+            )
+        ) == (4, 4, expected_notification_count, expected_review_count, 1)
+        assert connection.execute(
+            text("SELECT count(*) FROM strategy_signals WHERE id BETWEEN 1 AND 3")
+        ).scalar_one() == 3
+        assert connection.execute(
+            text("SELECT count(*) FROM signal_events WHERE id BETWEEN 4 AND 6")
+        ).scalar_one() == 3
+        assert connection.execute(
+            text(
+                "SELECT count(*) FROM signal_notifications "
+                "WHERE dedupe_key = 'enterprise_wechat:signal_event:4'"
+            )
+        ).scalar_one() == 1
 
 
 def _create_pre_retirement_schema(connection: Connection) -> None:
