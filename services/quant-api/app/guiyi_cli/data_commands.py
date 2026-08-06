@@ -247,11 +247,25 @@ def _audit_request(
 ) -> AuditRequest:
     del allowed_roots
     window = optional_paired_window(args.start, args.end)
+    scope = AuditScope(args.scope)
+    if scope is AuditScope.M2:
+        if (
+            getattr(args, "universe", None) != "active"
+            or args.symbol is not None
+            or args.symbols_file is not None
+        ):
+            raise CliArgumentInvalid(code="M2_ACTIVE_UNIVERSE_REQUIRED")
+        if window is not None or args.dataset_kind or args.frequency:
+            raise CliArgumentInvalid(code="M2_FILTERS_FORBIDDEN")
+        symbols = load_universe_products(symbol=None, universe="active")
+        return AuditRequest(scope=scope, symbols=symbols)
+    if getattr(args, "universe", None) is not None:
+        raise CliArgumentInvalid(code="AUDIT_UNIVERSE_SCOPE_INVALID")
     symbols: list[str] = []
     if args.symbol:
         symbols.append(str(args.symbol).strip().lower())
     return AuditRequest(
-        scope=AuditScope(args.scope),
+        scope=scope,
         symbols=tuple(symbols),
         dataset_kind=(
             parse_dataset_kind(args.dataset_kind)

@@ -175,6 +175,23 @@ uv run --project services/quant-api guiyi data task07 assess ; echo $?
 `guiyi data update` 默认 dry-run；`--apply` 只是本地副作用选择器，不构成真实数据写入授权。
 默认 audit 未接线 scope 必须返回 `AUDIT_SCOPE_UNAVAILABLE`，禁止空 finding 虚假 passed。
 
+### M2 retained-universe architecture audit
+
+```bash
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_operations/test_m2_architecture_audit.py \
+  services/quant-api/tests/data_core/test_historical_reader.py \
+  services/quant-api/tests/test_market_data_service.py \
+  services/quant-api/tests/data_core/test_product_retirement.py
+
+uv run --project services/quant-api guiyi data audit --scope m2 --universe active --help
+```
+
+`data audit --scope m2 --universe active` 是唯一的 M2 审计请求形态：固定 69 个保留品种，
+禁止缩小到单品种、频率或窗口。它只读 Catalog、Manifest/Parquet 与
+`MarketDataService`；不构造 RQData client、writer、scheduler 或 live 依赖。对生产
+PostgreSQL/Canonical root 的实际只读验收，仍须先给出明确环境与资源范围的一次性执行意图。
+
 ### GY-DATA-CORE-V2 Task 07 Stage C 精简验收
 
 ```bash

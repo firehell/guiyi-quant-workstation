@@ -63,6 +63,7 @@ production_writes=false
 | 旧派生数据清理 | optional / separate | 不阻塞 Task 07；仓库内删除与生产/正式数据删除必须分别分类 |
 | scripts-cli-consolidation | implementation on develop | 统一 `guiyi data update/download/aggregate/live/sync/audit`；`HistoricalUpdateWorkflow` 已从退役刷新提取；旧 scripts/rqdata_* 与 plan/migrate/task07 已移除；正式数据/RQData/Runtime 未执行；本地定向测试待 Mac Mini 验证 |
 | M1 historical update | implementation on develop | `data update` 默认 dry-run；apply 采用惰性组合、Calendar/Session/MainContractMap 后重规划、Direct→Aggregate→严格窗口校验。未执行真实 RQData、DB、Canonical 或 Runtime 操作。 |
+| M2 retained-universe audit | implementation on develop | `data audit --scope m2 --universe active` 固定审计 69 个保留品种的 seven-frequency Catalog/Gap/Manifest/Parquet、lineage、rank=1 mapping 与确定性 `MarketDataService` probes；生产只读验收尚未执行。 |
 | Backtest/S6 repository retirement | implementation on develop | 旧 API/Web/worker/queue/CLI、S6-08/09/10 control plane、tracked legacy evidence 与精确 ignored `backtests/` host output 已退出；完整 backend/frontend 验证与 launchd/Redis/Runtime/生产数据等其余外部清理由后续任务负责 |
 
 ## 未完成事项与执行边界

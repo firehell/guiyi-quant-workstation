@@ -37,6 +37,18 @@ quality、部分窗口覆盖、writer 或 reader 不可用全部 fail-closed。�
 PostgreSQL、Canonical、Runtime 或 live 外部操作。已完成的 product-retirement Runtime CLI/
 production control-plane 已从仓库移除，active/retired identity 守卫仍保留。
 
+### 1.0.2 M2 retained-universe architecture audit（仓库代码事实）
+
+`guiyi data audit --scope m2 --universe active` 是 M2 唯一的只读审计形态，固定加载
+69 个保留品种；禁止单品种、频率、数据集类型或窗口筛选。每个品种检查 continuous
+`SYMBOL.MAIN` 与 actual_dominant 各自的七周期 DatasetKey、有效分区、DataGap、每个
+partition 的 Manifest/Parquet checksum/schema/row-count/lineage，rank=1
+`volume_open_interest` MainContractMap，以及每 Dataset 首尾确定性
+`MarketDataService` 读取。direct 仅允许 provider-direct 的 `1m/1d/1w`；派生周期仅允许
+从同身份 canonical `1m` 聚合。retired identity guard 缺失、Catalog identity 无效、映射或
+任一物理/读取检查失败均 fail-closed。该命令不调用 RQData、不创建 writer、不写
+PostgreSQL/Canonical，也不触及 Runtime/live；实际生产只读验收仍需要明确环境范围的单次意图。
+
 ### 1.1 Historical_Fact（已完成，不构成未来授权）
 
 任务 00 已通过测试与 Review，并由 PR #76 merge `2266d7f7…` 合入 `develop`。

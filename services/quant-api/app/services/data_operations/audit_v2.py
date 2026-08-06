@@ -80,19 +80,25 @@ class AuditV2ApplicationService:
             component_results[scope.value] = [item.as_payload() for item in scoped]
             findings.extend(scoped)
 
+        extras = {
+            "scope": request.scope.value,
+            "components": list(component_results),
+            "findings": [item.as_payload() for item in findings],
+            "component_results": component_results,
+            "repair_calls": self._repair_calls,
+        }
+        if request.scope is AuditScope.M2:
+            summary = getattr(self._checkers[AuditScope.M2], "m2_summary", None)
+            if isinstance(summary, Mapping):
+                extras["m2_summary"] = dict(summary)
+
         status = CommandStatus.PASSED if not findings else CommandStatus.ERROR
         return CommandResult(
             command="data.audit",
             status=status,
             readonly=True,
             effects=empty_effects(),
-            extras={
-                "scope": request.scope.value,
-                "components": list(component_results),
-                "findings": [item.as_payload() for item in findings],
-                "component_results": component_results,
-                "repair_calls": self._repair_calls,
-            },
+            extras=extras,
         )
 
     def repair(self, *_args: object, **_kwargs: object) -> None:

@@ -40,6 +40,7 @@ class DerivedFrequency(StrEnum):
 
 
 class AuditScope(StrEnum):
+    M2 = "m2"
     CATALOG = "catalog"
     COVERAGE = "coverage"
     SCHEMA = "schema"

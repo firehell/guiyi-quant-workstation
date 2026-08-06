@@ -23,6 +23,7 @@ from app.services.data_operations.audit_v2 import (
     build_catalog_audit_checkers,
 )
 from app.services.data_operations.contracts import (
+    AuditScope,
     CliArgumentInvalid,
     MetadataSyncScope,
 )
@@ -34,6 +35,7 @@ from app.services.data_operations.historical_update import (
 )
 from app.services.data_operations.metadata_sync import MetadataSyncApplicationService
 from app.services.data_operations.metadata_sync import default_rqdata_ingest_service_map
+from app.services.data_operations.m2_architecture_audit import build_m2_audit_checker
 from app.services.data_operations.publisher import DerivedCanonicalPublisher
 from app.services.data_operations.target_planner import (
     HistoricalUpdateTargetPlanner,
@@ -116,9 +118,12 @@ def build_default_audit_service(
         return AuditV2ApplicationService(checkers={})
     composition = DataOperationsComposition(session=session)
     return AuditV2ApplicationService(
-        checkers=build_catalog_audit_checkers(
+        checkers={
+            **build_catalog_audit_checkers(
             catalog=HistoricalCatalog(session), strict_probe=composition._market_data_readable
-        )
+            ),
+            AuditScope.M2: _LazyM2AuditChecker(session),
+        },
     )
 
 
@@ -234,6 +239,51 @@ class _LazyMarketData:
 
     def get_bars(self, request: object) -> object:
         return self._factory().get_bars(request)  # type: ignore[attr-defined]
+
+
+class _LazyM2AuditChecker:
+    """Construct filesystem reader only for the explicit M2 read-only command."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self.m2_summary: Mapping[str, int] = {}
+
+    def __call__(self, request: object) -> Sequence[object]:
+        from app.data_core.contracts import BarQuery
+        from app.services.canonical_market_data import build_canonical_reader
+        from app.services.market_data_service import MarketDataService
+
+        reader = build_canonical_reader(self._session)
+        market_data = MarketDataService(self._session, canonical_reader=reader)
+
+        def readable(dataset: DatasetKey, start: datetime, end: datetime) -> bool:
+            result = market_data.get_bars(
+                BarQuery(
+                    dataset_kind=dataset.dataset_kind,
+                    symbol=dataset.symbol,
+                    # A resolved actual target must still prove its rank-1 map
+                    # across the requested boundary, rather than bypassing it
+                    # through a concrete-contract query.
+                    contract_or_series=(
+                        None
+                        if dataset.dataset_kind.value == "actual_dominant"
+                        else dataset.contract_or_series
+                    ),
+                    frequency=dataset.frequency,
+                    start=start,
+                    end=end,
+                )
+            )
+            return bool(result.bars)
+
+        checker = build_m2_audit_checker(
+            catalog=HistoricalCatalog(self._session),
+            verify_partition=reader.verify_partition,
+            market_data_readable=readable,
+        )
+        findings = checker(request)  # type: ignore[arg-type]
+        self.m2_summary = dict(getattr(checker, "m2_summary", {}))
+        return findings
 
 
 class DataOperationsComposition:

@@ -77,6 +77,11 @@ M1 apply 仅在执行时惰性构造 RQData、Canonical writer 与严格 reader�
 Calendar、Session、MainContractMap，再重新物化 exact targets。DataGap、failed quality 和
 部分窗口覆盖均 fail-closed；这不构成真实数据写入、Runtime 或 live 授权。
 
+M2 只读架构审计固定使用 `guiyi data audit --scope m2 --universe active` 覆盖 69 个保留品种：
+它验证 seven-frequency Catalog/Gap/Manifest/Parquet/lineage、rank=1 MainContractMap 及
+`MarketDataService` 的确定性首尾读取；不允许缩小审计范围，也不构造 RQData、writer、
+Runtime 或 live 依赖。生产 Canonical root/数据库的真实只读审计需要另行明确范围授权。
+
 Direct `1m/1d/1w` 失败只输出 exact-window `REDOWNLOAD_DIRECT`；aggregate
 `5m/15m/30m/60m` 失败只在同身份与同窗口 Canonical 1m 验证可信时输出
 `REBUILD_AGGREGATE`，否则 `REGISTER_DATA_GAP`。这些都只是精确缺口计划，

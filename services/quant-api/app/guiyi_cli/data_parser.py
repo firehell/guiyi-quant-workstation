@@ -84,6 +84,7 @@ def add_data_commands(data_commands: argparse._SubParsersAction[argparse.Argumen
     )
     audit.add_argument("--symbol")
     audit.add_argument("--symbols-file", type=Path)
+    audit.add_argument("--universe", choices=("active",))
     audit.add_argument(
         "--dataset-kind",
         choices=("continuous", "actual_dominant"),

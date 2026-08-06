@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
 import json
@@ -25,10 +26,19 @@ from app.data_core.contracts import (
     DatasetAmbiguousError,
     DatasetKind,
     DatasetKey,
+    DatasetOrigin,
+    ManifestLineage,
     ManifestMismatchError,
 )
 from app.data_core.historical_sessions import build_provider_sessions
 from app.data_core.historical_sync import plan_missing_windows
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalPartitionVerification:
+    row_count: int
+    data_version: str
+    lineage: ManifestLineage
 
 
 class CanonicalHistoricalReader:
@@ -64,6 +74,29 @@ class CanonicalHistoricalReader:
                 facts={"field": "contract_or_series", "reason": "required"}
             )
         return self._get_direct_bars(query)
+
+    def verify_partition(
+        self,
+        dataset: DatasetKey,
+        partition: object,
+    ) -> CanonicalPartitionVerification:
+        """Read and validate one Catalog partition without any write capability."""
+        rows, data_version = self._read_partition(dataset, partition)
+        document = _read_manifest(
+            _safe_child(self._canonical_root, _partition_value(partition, "manifest_uri"))
+        )
+        lineage_payload = document.get("source_lineage")
+        lineage = (
+            ManifestLineage.from_payload(lineage_payload)
+            if lineage_payload is not None
+            else ManifestLineage(origin=DatasetOrigin.PROVIDER_DIRECT)
+        )
+        lineage.validate_dataset(dataset)
+        return CanonicalPartitionVerification(
+            row_count=len(rows),
+            data_version=data_version,
+            lineage=lineage,
+        )
 
     def _get_direct_bars(self, query: BarQuery) -> BarsResult:
         datasets: tuple[DatasetKey, ...]
