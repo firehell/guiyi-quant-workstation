@@ -142,28 +142,61 @@ def _quality(
 
 def _write_semantic_sources(root: Path, *, valid: bool) -> None:
     if valid:
+        semantics = '''
+def load_effective_main_contract_mapping(session, *, instrument_symbol, trade_date, provider=PROVIDER, rule=RULE, rank=RANK):
+    query = select(MainContractMap).where(
+        MainContractMap.provider == provider,
+        MainContractMap.rule == rule,
+        MainContractMap.rank == rank,
+    )
+    if trade_date is not None:
+        query = query.where(MainContractMap.trade_date == trade_date)
+    return session.scalar(query)
+
+def load_strict_main_contract_mapping(session, *, instrument_symbol, trade_date, provider=PROVIDER, rule=RULE, rank=RANK):
+    if contract.endswith(".MAIN"):
+        raise ValueError("ACTUAL_CONTRACT_MAPPING_INVALID")
+    return session.scalar(select(MainContractMap).where(
+        MainContractMap.provider == provider,
+        MainContractMap.rule == rule,
+        MainContractMap.rank == rank,
+        MainContractMap.trade_date == trade_date,
+    ))
+
+def load_effective_trading_parameters(session, *, contract_code, trade_date, provider=PROVIDER):
+    return session.scalar(query.order_by(FuturesTradingParameter.created_at.desc(), FuturesTradingParameter.id.desc()))
+
+def load_effective_fee_margin_rule(session, *, contract_code, instrument_symbol, exchange_code, trade_date, provider=PROVIDER):
+    return session.scalars(select(FeeMarginRule).where(
+        (FeeMarginRule.contract_code == contract_code) | (FeeMarginRule.contract_code.is_(None) & (FeeMarginRule.instrument_symbol == instrument_symbol)),
+        FeeMarginRule.effective_date.is_(None) | (FeeMarginRule.effective_date <= trade_date),
+    ))
+'''
         historical = '''
-def _load_main_contract_mapping():
-    return (MainContractMap.provider == provider, MainContractMap.rule == rule, MainContractMap.rank == rank, MainContractMap.trade_date == trading_day)
+from app.services.actual_contract_semantics import load_effective_main_contract_mapping, load_strict_main_contract_mapping
 
-def resolve_jm_contract():
-    if actual_contract.endswith(".MAIN"):
-        raise ValueError
+class ActiveDatasetResolver:
+    def __init__(self, strict_mapping_loader=load_strict_main_contract_mapping, effective_mapping_loader=load_effective_main_contract_mapping):
+        self._strict_mapping_loader = strict_mapping_loader
+        self._effective_mapping_loader = effective_mapping_loader
 
-def _load_trading_parameters():
-    return query.order_by(FuturesTradingParameter.created_at.desc(), FuturesTradingParameter.id.desc())
-
-def _load_fee_margin_rule():
-    return ((FeeMarginRule.contract_code == contract_code) | (FeeMarginRule.contract_code.is_(None) & (FeeMarginRule.instrument_symbol == instrument_symbol)), FeeMarginRule.effective_date.is_(None))
+    def _resolve_contract(self, request):
+        mapping_date = request.mapping_date
+        strict = self._strict_mapping_loader(self._session, instrument_symbol=request.symbol, trade_date=mapping_date)
+        effective = self._effective_mapping_loader(self._session, instrument_symbol=request.symbol, trade_date=mapping_date)
+        return strict, effective
 '''
         live = '''
-class LiveTargetContractResolver:
-    def _mapping(self):
-        return (MainContractMap.provider == PROVIDER, MainContractMap.rule == RULE, MainContractMap.rank == 1, MainContractMap.trade_date == trade_date)
+from app.services.actual_contract_semantics import RULE, load_effective_fee_margin_rule, load_effective_main_contract_mapping, load_effective_trading_parameters
 
-    def _parameter_gate(self):
-        params = query.order_by(FuturesTradingParameter.created_at.desc(), FuturesTradingParameter.id.desc())
-        fee = ((FeeMarginRule.contract_code == contract) | (FeeMarginRule.contract_code.is_(None) & (FeeMarginRule.instrument_symbol == product)), FeeMarginRule.effective_date.is_(None))
+class LiveTargetContractResolver:
+    def _mapping(self, product, trade_date):
+        return load_effective_main_contract_mapping(self.session, instrument_symbol=product, trade_date=trade_date, provider=PROVIDER, rule=RULE, rank=1)
+
+    def _parameter_gate(self, product, contract, trade_date):
+        params = load_effective_trading_parameters(self.session, contract_code=contract, trade_date=trade_date, provider=PROVIDER)
+        exchange_code = "DCE"
+        fee = load_effective_fee_margin_rule(self.session, contract_code=contract, instrument_symbol=product, exchange_code=exchange_code, trade_date=trade_date, provider=PROVIDER)
         return params, fee
 
 def _actual_contract_or_none(value):
@@ -178,14 +211,20 @@ class LiveMarketReader:
 '''
         evaluator = '''
 class LiveSignalEvaluator:
-    def _evaluate_interval(self, last_bar):
+    def preview(self):
         target = resolve_ready_actual_contract()
-        return target["actual_contract"], last_bar.get("close")
+        return target["actual_contract"]
+    def _evaluate_interval(self, live_trigger, target):
+        return target["actual_contract"], live_trigger.get("close")
 '''
         events = '''
 def _is_eligible(item):
+    return not _eligibility_blocked_reasons(item)
+
+def _eligibility_blocked_reasons(item):
     actual_contract = item.actual_contract
-    return not actual_contract.endswith(".MAIN")
+    source = item.source
+    return [] if not actual_contract.endswith(".MAIN") and source.get("bar_status") == "confirmed" else ["SIGNAL_BAR_NOT_CONFIRMED"]
 
 def _features():
     return {"confirmed_bar": True}
@@ -195,15 +234,22 @@ def _features():
 def unrelated_decoy():
     return (MainContractMap.provider == provider, MainContractMap.rule == rule, MainContractMap.rank == rank, MainContractMap.trade_date == trading_day, MainContractMap.provider == PROVIDER, MainContractMap.rule == RULE, MainContractMap.rank == 1, MainContractMap.trade_date == trade_date, FuturesTradingParameter.created_at.desc(), FuturesTradingParameter.id.desc(), FeeMarginRule.contract_code == contract_code, FeeMarginRule.instrument_symbol == instrument_symbol, FeeMarginRule.effective_date.is_(None), bar_status == "confirmed", target["actual_contract"], last_bar.get("close"), ".MAIN", True)
 '''
+        semantics = decoy + '''
+def load_effective_main_contract_mapping(session, *, instrument_symbol, trade_date, provider=None, rule=None, rank=None):
+    return None
+def load_strict_main_contract_mapping(session, *, instrument_symbol, trade_date, provider=None, rule=None, rank=None):
+    return None
+def load_effective_trading_parameters(session, *, contract_code, trade_date, provider=None):
+    return None
+def load_effective_fee_margin_rule(session, *, contract_code, instrument_symbol, exchange_code, trade_date, provider=None):
+    return None
+'''
         historical = decoy + '''
-def _load_main_contract_mapping():
-    return None
-def resolve_jm_contract():
-    return None
-def _load_trading_parameters():
-    return None
-def _load_fee_margin_rule():
-    return None
+class ActiveDatasetResolver:
+    def __init__(self):
+        pass
+    def _resolve_contract(self, request):
+        return None
 '''
         live = decoy + '''
 class LiveTargetContractResolver:
@@ -227,11 +273,14 @@ class LiveSignalEvaluator:
         events = decoy + '''
 def _is_eligible(item):
     return True
+def _eligibility_blocked_reasons(item):
+    return []
 def _features():
     return {}
 '''
     files = {
-        "services/quant-api/app/backtest/contract_resolver.py": historical,
+        "services/quant-api/app/services/actual_contract_semantics.py": semantics,
+        "services/quant-api/app/services/active_dataset_resolver.py": historical,
         "services/quant-api/app/services/live_target_contracts.py": live,
         "services/quant-api/app/services/live_market_reader.py": reader,
         "services/quant-api/app/services/live_signal_evaluator.py": evaluator,
@@ -977,7 +1026,7 @@ def test_semantic_audit_detects_live_rule_and_confirmed_bar_mismatch(tmp_path: P
     assert {row["category"] for row in residuals} == {
         "historical_live_mapping_semantics",
         "actual_confirmed_trigger_semantics",
-        "historical_live_parameter_semantics",
+        "actual_parameter_semantics",
     }
     assert all(row["scope"] == "formal" for row in residuals)
 
@@ -986,6 +1035,17 @@ def test_semantic_audit_passes_only_equivalent_mapping_and_actual_confirmed_trig
     _write_semantic_sources(tmp_path, valid=True)
 
     evidence, residuals = audit_consumer_semantics(tmp_path)
+    assert evidence["mapping_semantics_status"] == "passed"
+    assert evidence["trigger_semantics_status"] == "passed"
+    assert evidence["parameter_semantics_status"] == "passed"
+    assert residuals == []
+
+
+def test_semantic_audit_passes_against_current_repository_consumers() -> None:
+    project_root = Path(__file__).resolve().parents[3]
+
+    evidence, residuals = audit_consumer_semantics(project_root)
+
     assert evidence["mapping_semantics_status"] == "passed"
     assert evidence["trigger_semantics_status"] == "passed"
     assert evidence["parameter_semantics_status"] == "passed"
@@ -1367,7 +1427,7 @@ def test_run_orchestrates_bounded_read_only_loaders_semantics_summary_and_rollba
 
     monkeypatch.setattr(audit_module, "_parameter_lineage", parameter_lineage)
     semantic_residual = _residual(
-        "historical_live_parameter_semantics",
+        "actual_parameter_semantics",
         "jm",
         None,
         "consumer parameter semantics differ",
@@ -1426,7 +1486,7 @@ def test_run_orchestrates_bounded_read_only_loaders_semantics_summary_and_rollba
         "data_environment": data_git,
         "audit_engine": engine_git,
     }
-    assert "historical_live_parameter_semantics" in {row["category"] for row in result.actual_residuals}
+    assert "actual_parameter_semantics" in {row["category"] for row in result.actual_residuals}
 
 
 def test_run_rolls_back_when_a_bounded_loader_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

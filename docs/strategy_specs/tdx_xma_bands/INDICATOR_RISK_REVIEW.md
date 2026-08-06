@@ -70,15 +70,18 @@
 当前验证：
 
 ```bash
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_production_kernel_policy.py services/quant-api/tests/test_indicator_kernel.py
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_htdy_production_kernel_policy.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  services/quant-api/tests/test_indicator_kernel.py
 ```
 
 测试覆盖：
 
-- `indicator_risk_catalog()` 明确标记 `XMA` 及派生信号风险。
-- `xma()` 会读取未来 bar。
-- 修改未来尾部数据会改变历史位置的 `XMA` 结果。
-- `REF`、`MA`、`EMA` 不被误标为未来函数。
+- 原始 XMA25/XMA6 的对称依赖窗口、双层依赖范围和非有限值处理。
+- 修改未来尾部或修订尾部数据会改变既有历史观察，并受 24-bar future horizon 与 27-bar repaint scan zone 约束。
+- 指标 registry 将原始 HTDY 标为 `repainting_risk=known`，并把 strict 因果实现保持为独立身份。
+- realtime repainting policy 只接受冻结身份，因果 EMA 的未来尾部不改变既有前缀。
 
 ## 6. 下一步
 
