@@ -2158,21 +2158,21 @@ def test_runtime_cutover_minimal_plan_and_receipt_fail_closed_on_drift() -> None
     assert set(receipt).isdisjoint(
         {"pid", "environment_digest", "web_bundle_digest", "active_row_set_digest"}
     )
-    assert (
-        plan["required_feature_flags"][
-            "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED"
-        ]
-        is False
-    )
+    assert plan["required_feature_flags"] == {
+        "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED": False,
+        "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED": False,
+        "GUIYI_DATA_CORE_V2_EOD_ENABLED": False,
+        "GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED": False,
+        "GUIYI_DATA_CORE_V2_RETENTION_SCHEDULER_ENABLED": False,
+        "GUIYI_DATA_CORE_V2_REVIEW_ENABLED": False,
+        "GUIYI_LIVE_RUNTIME_ENABLED": False,
+        "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED": False,
+        "GUIYI_WECHAT_AUTOSEND_ENABLED": False,
+    }
     drifted = deepcopy(receipt)
     drifted["feature_flags"]["GUIYI_LIVE_RUNTIME_ENABLED"] = True
-    bounded_wecom_enabled = deepcopy(receipt)
-    bounded_wecom_enabled["feature_flags"][
-        "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED"
-    ] = True
     drift_cases = [
         drifted,
-        bounded_wecom_enabled,
         {**deepcopy(receipt), "database_revision": "20260802_0031"},
         {**deepcopy(receipt), "health": {"status": "failed"}},
         {**deepcopy(receipt), "smoke": {"status": "failed"}},

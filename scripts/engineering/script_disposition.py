@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from fnmatch import fnmatch
 from pathlib import Path
-import re
 import subprocess
 from typing import Iterable, Sequence
 
@@ -98,10 +97,6 @@ RUNTIME_HISTORY_PATTERNS = (
     "*after_market*",
     "*htdy*",
     "*s607*",
-    "*s6_08*",
-    "*s6_09*",
-    "*s6_10*",
-    "*s610*",
     "*live_signal*",
     "*live_t3*",
     "stage9_*",

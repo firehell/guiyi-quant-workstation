@@ -16,8 +16,8 @@ from app.models.signal import SignalEvent, SignalNotification
 from app.signal.events import signal_event_payload
 from app.signal.stage9_gate import SENSITIVE_KEY_PARTS, evaluate_stage9_signal_event_gate
 from app.signal.stage9_wechat import CHANNEL, build_stage9_wechat_payload_from_basis
-from app.services.htdy_s6_09_wecom_gate import (
-    HtDyS609Authorization,
+from app.services.notification_authorization import (
+    ObservationNotificationAuthorization,
     canonical_hash,
 )
 
@@ -131,7 +131,7 @@ class Stage9WechatDeliveryService:
         self,
         event_id: int,
         *,
-        authorization: HtDyS609Authorization | Any | None = None,
+        authorization: ObservationNotificationAuthorization | Any | None = None,
     ) -> DeliveryResult:
         event = self.session.get(SignalEvent, event_id)
         if event is None:
@@ -270,20 +270,6 @@ class Stage9WechatDeliveryService:
                     "attempt_count": notification.attempt_count,
                     "max_attempts": notification.max_attempts,
                 },
-            }
-        if (
-            getattr(authorization, "authorization_scope", None)
-            == "s6_10_one_day_bounded"
-        ):
-            payload["s6_10_authorization"] = {
-                "parent_hash": getattr(authorization, "packet_hash", None),
-                "scope": authorization.authorization_scope,
-                "event_id": authorization.event_id,
-                "dedupe_key": authorization.dedupe_key,
-                "event_sha256": authorization.event_sha256,
-                "rendered_message_sha256": (
-                    authorization.rendered_message_sha256
-                ),
             }
         notification.payload = _sanitize(payload)
 
@@ -437,14 +423,13 @@ def _is_after(left: datetime, right: datetime) -> bool:
 def _htdy_authorization_blocked_reasons(
     *,
     event: SignalEvent,
-    authorization: HtDyS609Authorization | Any | None,
+    authorization: ObservationNotificationAuthorization | Any | None,
     wechat_payload: dict[str, Any],
     now: datetime,
 ) -> list[str]:
     if authorization is None:
         return ["htdy_observation_delivery_requires_separate_gate"]
     expected_dedupe_key = stage9_wechat_dedupe_key(event.id)
-    scope = getattr(authorization, "authorization_scope", "")
     if (
         authorization.event_id != event.id
         or authorization.signal_id != event.signal_id
@@ -455,17 +440,9 @@ def _htdy_authorization_blocked_reasons(
         or authorization.rendered_message_sha256
         != canonical_hash(wechat_payload)
     ):
-        return [
-            "htdy_s6_10_authorization_mismatch"
-            if scope == "s6_10_one_day_bounded"
-            else "htdy_s6_09_authorization_mismatch"
-        ]
+        return ["observation_notification_authorization_mismatch"]
     if _is_after(now, authorization.retry_deadline):
-        return [
-            "htdy_s6_10_authorization_expired"
-            if scope == "s6_10_one_day_bounded"
-            else "htdy_s6_09_authorization_expired"
-        ]
+        return ["observation_notification_authorization_expired"]
     return []
 
 

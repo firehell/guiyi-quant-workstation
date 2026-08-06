@@ -37,7 +37,7 @@ consistency = _load_module()
         ("apps/quant-web/src/pages/market/chart.vue", {"Web"}),
         ("services/quant-api/app/services/data_core/reader.py", {"Backend", "DataCore"}),
         ("services/quant-api/app/strategies/signal.py", {"Backend", "Strategy"}),
-        ("services/quant-api/app/runtime_scheduler.py", {"Backend", "Runtime"}),
+        ("services/quant-api/app/services/runtime_health.py", {"Backend", "Runtime"}),
         ("services/quant-api/alembic/versions/0001_init.py", {"Backend", "Migration"}),
     ],
 )

@@ -62,7 +62,6 @@ _TASK07_DISABLED_FEATURE_FLAGS = (
     "GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED",
     "GUIYI_DATA_CORE_V2_RETENTION_SCHEDULER_ENABLED",
     "GUIYI_DATA_CORE_V2_REVIEW_ENABLED",
-    "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED",
     "GUIYI_LIVE_RUNTIME_ENABLED",
     "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
     "GUIYI_WECHAT_AUTOSEND_ENABLED",
@@ -154,7 +153,6 @@ _OFFLINE_DATA_TOOL_PREFIXES = (
 _EXACT_HISTORICAL_SCRIPT_PATHS = frozenset(
     {
         "scripts/consumer_contract_final_closeout_006.py",
-        "scripts/jm_htdy_s6_08_schema_v3_gate.py",
         "scripts/profile_binding_rollout_closeout_008b.py",
         "scripts/rqdata_full_history_residual_closure_apply.py",
         "scripts/s607_database_recovery_gate.py",
