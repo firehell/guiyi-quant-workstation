@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
 from app.models.signal import SignalEvent, StrategySignal
+from app.review.policy import supported_review_source_clause
 from app.services.review_lineage import ReviewLineageError, resolve_review_source_lineage
 
 
@@ -162,7 +163,11 @@ def attachment_payload(attachment: ReviewAttachment) -> dict[str, Any]:
 
 
 def review_stats(session: Session) -> dict[str, Any]:
-    notes = list(session.scalars(select(ReviewNote)))
+    notes = list(
+        session.scalars(
+            select(ReviewNote).where(supported_review_source_clause(ReviewNote.source_type))
+        )
+    )
     mistake_counts = Counter(tag for note in notes for tag in note.mistake_tags)
     rule_stats: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"count": 0, "net_pnl": 0.0, "wins": 0}

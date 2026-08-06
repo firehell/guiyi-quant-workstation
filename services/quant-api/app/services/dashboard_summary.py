@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.data_center import LiveAggregationCheckpoint, LiveIngestCheckpoint, MarketDataFile
 from app.models.review import ReviewNote
+from app.review.policy import supported_review_source_clause
 from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
 from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.strategy_registry import list_strategy_registry
@@ -99,7 +100,10 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
         }
 
     latest_review = session.scalar(
-        select(ReviewNote).order_by(ReviewNote.updated_at.desc(), ReviewNote.id.desc()).limit(1)
+        select(ReviewNote)
+        .where(supported_review_source_clause(ReviewNote.source_type))
+        .order_by(ReviewNote.updated_at.desc(), ReviewNote.id.desc())
+        .limit(1)
     )
     latest_review_payload: dict[str, Any] | None = None
     if latest_review is not None:
@@ -116,6 +120,7 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
     unfinished_review_count = session.scalar(
         select(func.count())
         .select_from(ReviewNote)
+        .where(supported_review_source_clause(ReviewNote.source_type))
         .where(or_(ReviewNote.lesson.is_(None), func.trim(ReviewNote.lesson) == ""))
     ) or 0
 

@@ -46,7 +46,7 @@ class QuoteContractError(ValueError):
 
 def validate_quote_contract(contract: str) -> None:
     if is_continuous_contract(contract):
-        raise QuoteContractError("行情页请使用 actual_contract，主连 *.MAIN 仅用于回测")
+        raise QuoteContractError("行情页请使用 actual_contract，主连 *.MAIN 仅用于连续序列研究")
 
 
 class DominantContractReader:

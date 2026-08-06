@@ -35,7 +35,7 @@ def list_strategy_registry() -> list[dict[str, Any]]:
         {
             "strategy_code": FORMAL_SIGNAL_STRATEGY_CODE,
             "name": "苏冰 EMA21 趋势系统",
-            "description": "通用 EMA21 趋势策略模板，可用于多品种回测。",
+            "description": "通用 EMA21 趋势策略模板，用于多品种历史研究与信号复核。",
             "symbol": None,
             "product": None,
             "periods": ["15m", "60m", "1d"],

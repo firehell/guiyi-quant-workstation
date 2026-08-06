@@ -80,7 +80,7 @@ export function buildEmaObservationStatus(close: number, ema21: number) {
     return {
       label: 'EMA21 上方',
       type: 'error' as const,
-      text: `${TECHNICAL_OBSERVATION_PREFIX} · 收盘价位于 EMA21 上方，可结合 MACD 与回测成交继续验证。`,
+      text: `${TECHNICAL_OBSERVATION_PREFIX} · 收盘价位于 EMA21 上方，可结合 MACD 与信号复核继续验证。`,
     }
   }
   return {

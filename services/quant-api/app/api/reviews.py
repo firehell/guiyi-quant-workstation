@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
 from app.models.live_review_loop import SignalDecision
+from app.review.policy import is_supported_review_source_type, supported_review_source_clause
 from app.review.payloads import apply_review_fields, default_mistake_tag_payloads, review_response, tag_response
 from app.schemas.review import (
     ReviewAttachmentRequest,
@@ -86,6 +87,7 @@ def get_source_lineage(
     source_id: int,
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_supported_source_type(source_type)
     try:
         return resolve_review_source_lineage(session, source_type=source_type, source_id=source_id)
     except ReviewLineageError as exc:
@@ -148,8 +150,9 @@ def list_reviews(
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_db),
 ) -> list[dict[str, Any]] | dict[str, Any]:
-    query = select(ReviewNote)
+    query = select(ReviewNote).where(supported_review_source_clause(ReviewNote.source_type))
     if source_type:
+        _require_supported_source_type(source_type)
         query = query.where(ReviewNote.source_type == source_type)
     if source_id is not None:
         query = query.where(ReviewNote.source_id == source_id)
@@ -188,9 +191,7 @@ def get_review_stats(session: Session = Depends(get_db)) -> dict[str, Any]:
 
 @router.get("/{review_id}/bars", response_model=ReviewExactBarsResponse)
 def get_review_exact_bars(review_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
-    note = session.get(ReviewNote, review_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="review not found")
+    note = _get_supported_review_or_404(session, review_id)
     try:
         return load_review_bars(session, note)
     except ReviewLineageError as exc:
@@ -199,17 +200,13 @@ def get_review_exact_bars(review_id: int, session: Session = Depends(get_db)) ->
 
 @router.get("/{review_id}")
 def get_review(review_id: int, session: Session = Depends(get_db)) -> dict[str, Any]:
-    note = session.get(ReviewNote, review_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="review not found")
+    note = _get_supported_review_or_404(session, review_id)
     return review_response(note, include_source=True)
 
 
 @router.put("/{review_id}")
 def update_review(review_id: int, request: ReviewUpdateRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    note = session.get(ReviewNote, review_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="review not found")
+    note = _get_supported_review_or_404(session, review_id)
     if note.source_type == "signal_decision":
         _require_live_review_enabled()
     data = request.model_dump(exclude_unset=True)
@@ -224,6 +221,7 @@ def create_research_sample(
     review_id: int,
     session: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _get_supported_review_or_404(session, review_id)
     _require_live_review_enabled()
     try:
         sample = extract_research_sample(session, review_id)
@@ -255,9 +253,7 @@ def _require_live_review_enabled() -> None:
 
 @router.post("/{review_id}/attachments")
 def add_review_attachment(review_id: int, request: ReviewAttachmentRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    note = session.get(ReviewNote, review_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="review not found")
+    note = _get_supported_review_or_404(session, review_id)
     if note.source_type == "signal_decision":
         _require_live_review_enabled()
     attachment = ReviewAttachment(
@@ -293,6 +289,18 @@ def _create_signal_review(
     session.commit()
     session.refresh(note)
     return review_response(note, include_source=True)
+
+
+def _get_supported_review_or_404(session: Session, review_id: int) -> ReviewNote:
+    note = session.get(ReviewNote, review_id)
+    if note is None or not is_supported_review_source_type(note.source_type):
+        raise HTTPException(status_code=404, detail="review not found")
+    return note
+
+
+def _require_supported_source_type(source_type: str) -> None:
+    if not is_supported_review_source_type(source_type):
+        raise HTTPException(status_code=404, detail="review source not found")
 
 
 def _lineage_http_error(exc: ReviewLineageError) -> HTTPException:
