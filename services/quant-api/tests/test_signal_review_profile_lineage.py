@@ -17,7 +17,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models.signal import SignalEvent, SignalNotification, StrategySignal
 from app.models.data_center import DataProfile, LiveAggregatedBar, MainContractMap, MarketDataFile, ProfileActiveBinding
-from app.models.backtest import BacktestReportModel, BacktestTask, BacktestTradeModel, Watchlist, WatchlistItem
+from app.models.watchlist import Watchlist, WatchlistItem
 from app.schemas.signal import LiveSignalEvaluationItem, LiveSignalEvaluationResponse, SignalScanRequest
 from app.services.live_signal_events import LiveSignalEventService
 from app.services.live_market_reader import LiveMarketReader
@@ -503,24 +503,6 @@ def test_live_reader_exposes_server_bar_identity_for_lineage() -> None:
         assert response.bars[0]["confirmed_at"] == "2026-07-10T01:30:01"
 
 
-def test_review_marks_legacy_backtest_trade_lineage_unavailable(tmp_path: Path) -> None:
-    from app.services.review_center import create_or_get_backtest_trade_review
-    from app.services.review_lineage import load_review_bars
-
-    factory = _session_factory()
-    bar_end = datetime(2026, 7, 10, 1, 30, tzinfo=UTC)
-    with factory() as session:
-        market_file = _seed_profile_asset(session, tmp_path, bar_end=bar_end)
-        trade = _seed_backtest_trade(session, market_file=market_file, bar_end=bar_end)
-        session.commit()
-
-        note = create_or_get_backtest_trade_review(session, trade.id)
-        assert note.extra["lineage_status"] == "unavailable"
-        assert note.extra["lineage_blocked_reason"] == "REVIEW_LINEAGE_UNAVAILABLE"
-        with pytest.raises(ValueError, match="REVIEW_LINEAGE_UNAVAILABLE"):
-            load_review_bars(session, note, project_root=tmp_path)
-
-
 @pytest.mark.parametrize("source_type", ["strategy_signal", "signal_event"])
 def test_review_supports_formal_signal_and_event_sources(source_type: str) -> None:
     from app.services.review_center import create_or_get_signal_review
@@ -542,37 +524,6 @@ def test_review_supports_formal_signal_and_event_sources(source_type: str) -> No
         assert note.extra["formal_lineage"]["primary"]["market_data_file_id"] == 42
         duplicate = create_or_get_signal_review(session, source_type=source_type, source_id=source_id)
         assert duplicate.id == note.id
-
-
-def test_review_api_exposes_source_lineage_and_exact_bars(tmp_path: Path) -> None:
-    factory = _session_factory()
-    bar_end = datetime(2026, 7, 10, 1, 30, tzinfo=UTC)
-    with factory() as session:
-        market_file = _seed_profile_asset(session, tmp_path, bar_end=bar_end)
-        trade = _seed_backtest_trade(session, market_file=market_file, bar_end=bar_end)
-        trade_id = trade.id
-        session.commit()
-
-    def override_get_db():
-        with factory() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        client = TestClient(app)
-        created = client.post(f"/api/reviews/from-backtest-trade/{trade_id}")
-        assert created.status_code == 200
-        review_id = created.json()["id"]
-
-        lineage = client.get(f"/api/reviews/lineage/backtest_trade/{trade_id}")
-        assert lineage.status_code == 422
-        assert lineage.json()["detail"]["code"] == "REVIEW_LINEAGE_UNAVAILABLE"
-
-        bars = client.get(f"/api/reviews/{review_id}/bars")
-        assert bars.status_code == 422
-        assert bars.json()["detail"]["code"] == "REVIEW_LINEAGE_UNAVAILABLE"
-    finally:
-        app.dependency_overrides.clear()
 
 
 def test_review_api_creates_signal_and_event_reviews() -> None:
@@ -601,88 +552,6 @@ def test_review_api_creates_signal_and_event_reviews() -> None:
         assert event_response.json()["source_type"] == "signal_event"
     finally:
         app.dependency_overrides.clear()
-
-
-def _seed_backtest_trade(
-    session: Session,
-    *,
-    market_file: MarketDataFile,
-    bar_end: datetime,
-) -> BacktestTradeModel:
-    task = BacktestTask(
-        task_no="BT-review-lineage",
-        profile_id="intraday_research_v1",
-        market_data_file_id=market_file.id,
-        binding_snapshot={},
-        request_payload={},
-        result_payload={},
-    )
-    session.add(task)
-    session.flush()
-    binding_snapshot = {
-        "schema_version": "backtest_binding_snapshot_v1",
-        "resolver_name": "ProfileLineageResolver",
-        "resolver_contract_version": "backtest_profile_v1",
-        "quality_policy": "passed_only",
-        "primary": {
-            "profile_id": "intraday_research_v1",
-            "market_data_file_id": market_file.id,
-            "instrument_symbol": "jm",
-            "contract_code": "JM2609",
-            "period": "15m",
-            "data_version": market_file.data_version,
-            "provider": "rqdata",
-            "data_role": "primary",
-            "quality_status": "passed",
-            "coverage_start": market_file.start_time.isoformat(),
-            "coverage_end": market_file.end_time.isoformat(),
-            "checksum": market_file.checksum,
-        },
-        "auxiliary": {},
-    }
-    report = BacktestReportModel(
-        task_id=task.id,
-        task_no=task.task_no,
-        report_no="RPT-review-lineage",
-        template_name="default",
-        strategy_code="jm_v1b_daily_direction_fast_entry",
-        strategy_version="v1b.0",
-        symbol="jm",
-        contract="JM2609",
-        period="15m",
-        profile_id="intraday_research_v1",
-        market_data_file_id=market_file.id,
-        binding_snapshot=deepcopy(binding_snapshot),
-        status="completed",
-        summary={"quality_status": {"status": "passed"}},
-    )
-    session.add(report)
-    session.flush()
-    trade = BacktestTradeModel(
-        report_id=report.id,
-        trade_no="TRD-review-lineage",
-        symbol="jm",
-        contract="JM2609",
-        direction="long",
-        open_time=bar_end,
-        open_price=1234.5,
-        close_time=bar_end,
-        close_price=1234.5,
-        volume=1,
-        turnover=1234.5,
-        commission=0,
-        slippage=0,
-        gross_pnl=0,
-        net_pnl=0,
-        return_pct=0,
-        holding_bars=1,
-        entry_reason="formal entry",
-        exit_reason="formal exit",
-        raw_payload={"entry_interval": "15m"},
-    )
-    session.add(trade)
-    session.flush()
-    return trade
 
 
 def _research_task(session: Session):

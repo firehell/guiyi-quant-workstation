@@ -116,7 +116,7 @@ def test_dashboard_summary_returns_live_aggregates() -> None:
         assert payload["data_status"] == "live"
         assert payload["risk_status"] == "research_only"
         assert payload["signals_today"] == 1
-        assert payload["strategies"] >= 5
+        assert payload["strategies"] == 2
         assert payload["latest_scan_task"]["task_no"] == "scan-dash-1"
         assert payload["latest_data_time"] is not None
         assert payload["latest_confirmed_bar_time"] is not None
@@ -129,30 +129,25 @@ def test_dashboard_summary_returns_live_aggregates() -> None:
         app.dependency_overrides.clear()
 
 
-def test_strategy_registry_lists_v1b_entries() -> None:
+def test_strategy_registry_exposes_formal_scan_and_non_executable_knowledge_entry() -> None:
     from app.schemas.signal import SignalScanRequest
 
     client = TestClient(app)
     response = client.get("/api/v1/strategies/registry")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["total"] >= 5
-    assert payload["v1b_count"] >= 4
-    codes = {item["strategy_code"] for item in payload["items"]}
-    assert "jm_v1b_daily_direction_fast_entry" in codes
-    assert "su_bing_jm_daily_ema21_macd_volume" in codes
-    jm_v1b = next(item for item in payload["items"] if item["strategy_code"] == "jm_v1b_daily_direction_fast_entry")
-    assert jm_v1b["scan_endpoint"] == "/api/signals/scan"
-    assert "historical_scan" in jm_v1b["capability_classes"]
-    assert all(
-        item.get("scan_endpoint") != "/api/signals/v1b/jm/scan"
-        for item in payload["items"]
-    )
+    assert payload["total"] == 2
+    assert payload["v1b_count"] == 1
     formal_scan = next(
         item for item in payload["items"] if item["strategy_code"] == "su_bing_ema21"
     )
     assert formal_scan["scan_endpoint"] == "/api/signals/scan"
     assert "historical_scan" in formal_scan["capability_classes"]
+    knowledge_entry = next(
+        item for item in payload["items"] if item["strategy_code"] == "su_bing_jm_v1b_short_hold"
+    )
+    assert knowledge_entry["scan_endpoint"] is None
+    assert knowledge_entry["capability_classes"] == ["research_only"]
     request = SignalScanRequest.model_validate(
         {
             "dataset_kind": "actual_dominant",

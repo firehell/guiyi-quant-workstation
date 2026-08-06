@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import sqlite3
-import subprocess
-import sys
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -11,7 +8,6 @@ import pytest
 from sqlalchemy import create_engine
 
 from app.db.base import Base
-from app.models import backtest as _backtest_models  # noqa: F401
 from app.models import review as _review_models  # noqa: F401
 from app.models import signal as _signal_models  # noqa: F401
 from app.models.data_center import MarketDataFile
@@ -51,7 +47,6 @@ def test_inventory_is_deterministic_and_classifies_read_only_surfaces(tmp_path: 
     }
     assert [item["category"] for item in first["categories"]] == [
         "indicator_cache",
-        "backtest",
         "signal_review",
         "live_eod_sample",
         "permanent_derived_periods",
@@ -65,9 +60,6 @@ def test_inventory_is_deterministic_and_classifies_read_only_surfaces(tmp_path: 
         item["database_tables"] or item["filesystem_paths"] or item["reference_locations"]
         for item in categories.values()
     )
-    assert categories["backtest"]["database_tables"] == [
-        {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["7"], "table": "backtest_reports"}
-    ]
     assert categories["profile_binding_legacy_lineage"]["database_tables"] == [
         {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["8"], "table": "data_profiles"},
         {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["9"], "table": "profile_active_bindings"},
@@ -167,43 +159,6 @@ def test_inventory_uses_sqlite_query_only_and_never_emits_write_statement(tmp_pa
     )
 
 
-def test_cli_emits_stable_json_without_database_configuration(tmp_path: Path) -> None:
-    repo_root = tmp_path / "repo"
-    data_root = tmp_path / "data"
-    _write_fixture_files(repo_root, data_root)
-    script = Path(__file__).resolve().parents[3] / "scripts" / "derived_reference_inventory.py"
-    command = [sys.executable, str(script), "--repo-root", str(repo_root), "--data-root", str(data_root)]
-
-    first = subprocess.run(command, check=False, capture_output=True, text=True)
-    second = subprocess.run(command, check=False, capture_output=True, text=True)
-
-    assert first.returncode == 0
-    assert second.returncode == 0
-    assert first.stderr == second.stderr == ""
-    assert first.stdout == second.stdout
-    payload = json.loads(first.stdout)
-    assert payload["database"]["available"] is False
-    assert payload["readonly"] is True
-
-
-def test_cli_rejects_delete_and_redacts_injected_database_url(tmp_path: Path) -> None:
-    script = Path(__file__).resolve().parents[3] / "scripts" / "derived_reference_inventory.py"
-    secret_url = "postgresql://inventory_user:do-not-print@db.example.invalid/inventory"
-
-    delete_attempt = subprocess.run([sys.executable, str(script), "--delete"], check=False, capture_output=True, text=True)
-    invalid_database = subprocess.run(
-        [sys.executable, str(script), "--database-url", secret_url, "--repo-root", str(tmp_path)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert delete_attempt.returncode == 2
-    assert invalid_database.returncode == 2
-    assert secret_url not in invalid_database.stdout + invalid_database.stderr
-    assert json.loads(invalid_database.stderr)["command"] == "derived-reference-inventory"
-
-
 def test_postgresql_collector_sets_read_only_transaction_without_commit(tmp_path: Path) -> None:
     connection = _FakePostgresConnection()
 
@@ -215,7 +170,7 @@ def test_postgresql_collector_sets_read_only_transaction_without_commit(tmp_path
     assert result["database"]["available"] is True
     assert result["database"]["dialect"] == "postgresql"
     assert result["database"]["tables"] == [
-        {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["14"], "table": "backtest_reports"}
+        {"count": 1, "disposition": "REBUILD_ONLY", "id_status": "complete", "ids": ["14"], "table": "review_notes"}
     ]
     assert connection.statements[:1] == ["BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"]
     assert connection.rollback_count == 1
@@ -248,7 +203,7 @@ def test_reference_scan_classifies_every_category_without_inventory_self_referen
         for item in categories.values()
         for location in item["reference_locations"]
     )
-    assert any(location["path"] == "config.toml" for location in categories["backtest"]["reference_locations"])
+    assert any(location["path"] == "config.toml" for location in categories["indicator_cache"]["reference_locations"])
 
 
 def test_filesystem_rejects_external_symlink_and_reports_stable_budget_truncation(tmp_path: Path) -> None:
@@ -293,7 +248,7 @@ def test_database_uses_allowlist_reports_missing_and_fails_closed_on_id_limit(tm
     connection = _fixture_connection()
     connection.execute("CREATE TABLE secrets (id INTEGER PRIMARY KEY, token TEXT)")
     connection.execute("INSERT INTO secrets VALUES (99, 'never-read')")
-    connection.execute("INSERT INTO backtest_reports VALUES (70, 'second-report')")
+    connection.execute("INSERT INTO review_notes VALUES (70, 'second-note')")
     connection.commit()
 
     result = build_derived_reference_inventory(
@@ -302,8 +257,8 @@ def test_database_uses_allowlist_reports_missing_and_fails_closed_on_id_limit(tm
     )
 
     assert "secrets" not in {item["table"] for item in result["database"]["tables"]}
-    backtest = next(item for item in result["database"]["tables"] if item["table"] == "backtest_reports")
-    assert backtest == {"table": "backtest_reports", "count": 2, "ids": [], "id_status": "limit_exceeded", "disposition": "REBUILD_ONLY"}
+    review = next(item for item in result["database"]["tables"] if item["table"] == "review_notes")
+    assert review == {"table": "review_notes", "count": 2, "ids": [], "id_status": "limit_exceeded", "disposition": "REBUILD_ONLY"}
     assert {item["code"] for item in result["database"]["diagnostics"]} >= {
         "ID_LIMIT_EXCEEDED",
         "TABLE_MISSING",
@@ -331,8 +286,8 @@ def test_database_missing_table_forces_incomplete_even_with_existing_roots(tmp_p
 def test_real_sqlalchemy_sqlite_connection_uses_readonly_inventory_path(tmp_path: Path) -> None:
     engine = create_engine("sqlite:///:memory:")
     with engine.connect() as connection:
-        connection.exec_driver_sql("CREATE TABLE backtest_reports (id INTEGER PRIMARY KEY, name TEXT)")
-        connection.exec_driver_sql("INSERT INTO backtest_reports VALUES (14, 'fixture')")
+        connection.exec_driver_sql("CREATE TABLE review_notes (id INTEGER PRIMARY KEY, name TEXT)")
+        connection.exec_driver_sql("INSERT INTO review_notes VALUES (14, 'fixture')")
         result = build_derived_reference_inventory(
             DerivedReferenceInventoryConfig(repo_root=tmp_path / "repo", data_root=tmp_path / "data"),
             connection=connection,
@@ -341,7 +296,7 @@ def test_real_sqlalchemy_sqlite_connection_uses_readonly_inventory_path(tmp_path
     assert result["database"]["available"] is True
     assert result["database"]["dialect"] == "sqlite"
     assert result["database"]["tables"] == [
-        {"table": "backtest_reports", "count": 1, "ids": ["14"], "id_status": "complete", "disposition": "REBUILD_ONLY"}
+        {"table": "review_notes", "count": 1, "ids": ["14"], "id_status": "complete", "disposition": "REBUILD_ONLY"}
     ]
 
 
@@ -387,7 +342,7 @@ def test_reference_state_excludes_historical_and_non_active_sections_from_task07
     (repo_root / "docs" / "archive").mkdir(parents=True)
     data_root.mkdir()
     (repo_root / "docs" / "historical.md").write_text(
-        "## Historical snapshot; not active Gate: archived evidence\nreport 14 backtest legacy lineage\n",
+        "## Historical snapshot; not active Gate: archived evidence\nreport 14 retired legacy lineage\n",
         encoding="utf-8",
     )
     (repo_root / "docs" / "archive" / "old.md").write_text("signal review\n", encoding="utf-8")
@@ -491,7 +446,6 @@ def test_inactive_rows_are_not_counted_but_uncertain_status_blocks(tmp_path: Pat
         "INSERT INTO data_download_tasks (id, status) VALUES (?, ?)",
         [(61, "success"), (62, "provider_specific_unknown")],
     )
-    connection.execute("INSERT INTO backtest_tasks (id, status) VALUES (?, ?)", (63, "success"))
     connection.execute("INSERT INTO signal_events (id, lifecycle_status) VALUES (?, ?)", (64, "archived"))
     connection.commit()
 
@@ -503,8 +457,6 @@ def test_inactive_rows_are_not_counted_but_uncertain_status_blocks(tmp_path: Pat
     relations = {rule["rule"]: rule for rule in result["database"]["relation_references"]}
     assert relations["active_download_task"]["count"] == 0
     assert relations["unknown_download_task_status"]["row_ids"] == ["62"]
-    assert relations["backtest_task_legacy_relation"]["count"] == 0
-    assert relations["unknown_backtest_task_status"]["count"] == 0
     assert relations["signal_event_legacy_or_active"]["count"] == 0
     assert relations["unknown_signal_event_lifecycle"]["count"] == 0
     assert result["database"]["active_relation_reference_count"] == 1
@@ -517,15 +469,15 @@ def test_reference_scan_includes_extended_javascript_suffixes(tmp_path: Path, su
     data_root = tmp_path / "data"
     repo_root.mkdir()
     data_root.mkdir()
-    (repo_root / f"consumer{suffix}").write_text("backtest = true\n", encoding="utf-8")
+    (repo_root / f"consumer{suffix}").write_text("signal = true\n", encoding="utf-8")
 
     result = build_derived_reference_inventory(
         DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
         connection=_complete_empty_connection(),
     )
 
-    backtest = next(category for category in result["categories"] if category["category"] == "backtest")
-    assert backtest["reference_locations"][0]["path"] == f"consumer{suffix}"
+    signal_review = next(category for category in result["categories"] if category["category"] == "signal_review")
+    assert signal_review["reference_locations"][0]["path"] == f"consumer{suffix}"
     assert result["task07_zero_active_reference_eligible"] is False
 
 
@@ -534,7 +486,7 @@ def test_reference_scan_includes_makefile_and_fails_closed_for_unknown_extension
     data_root = tmp_path / "data"
     repo_root.mkdir()
     data_root.mkdir()
-    (repo_root / "Makefile").write_text("backtest:\n\t@true\n", encoding="utf-8")
+    (repo_root / "Makefile").write_text("signal:\n\t@true\n", encoding="utf-8")
     (repo_root / "consumer_config").write_text("signal = enabled\n", encoding="utf-8")
 
     result = build_derived_reference_inventory(
@@ -542,8 +494,8 @@ def test_reference_scan_includes_makefile_and_fails_closed_for_unknown_extension
         connection=_complete_empty_connection(),
     )
 
-    backtest = next(category for category in result["categories"] if category["category"] == "backtest")
-    assert backtest["reference_locations"][0]["path"] == "Makefile"
+    signal_review = next(category for category in result["categories"] if category["category"] == "signal_review")
+    assert signal_review["reference_locations"][0]["path"] == "Makefile"
     assert {item["code"] for item in result["reference_scan"]["diagnostics"]} >= {
         "REPO_UNKNOWN_EXTENSIONLESS_FILE"
     }
@@ -555,7 +507,7 @@ def test_reference_scan_fails_closed_for_unknown_suffix_and_explains_data_exclus
     data_root = tmp_path / "data"
     repo_root.mkdir()
     data_root.mkdir()
-    (repo_root / "consumer.custom").write_text("backtest = enabled\n", encoding="utf-8")
+    (repo_root / "consumer.custom").write_text("signal = enabled\n", encoding="utf-8")
     (repo_root / "fixture.csv").write_text("signal\n", encoding="utf-8")
 
     result = build_derived_reference_inventory(
@@ -580,10 +532,14 @@ def test_reference_scan_fails_closed_for_non_utf8_symlink_and_match_budget(tmp_p
     repo_root.mkdir()
     data_root.mkdir()
     outside = tmp_path / "outside.py"
-    outside.write_text("backtest", encoding="utf-8")
+    outside.write_text("signal", encoding="utf-8")
     (repo_root / "0-link.py").symlink_to(outside)
     (repo_root / "1-invalid.py").write_bytes(bytes([255]))
-    (repo_root / "2-many.py").write_text("backtest signal review live eod derived 15m", encoding="utf-8")
+    (repo_root / "2-many.py").write_text(
+        "indicator cache signal review live eod derived 15m raw standard canonical "
+        "DataProfile ActiveBinding legacy lineage report 14",
+        encoding="utf-8",
+    )
 
     result = build_derived_reference_inventory(
         DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, max_files=3),
@@ -603,7 +559,7 @@ def test_reference_scan_fails_closed_when_directory_budget_is_exhausted(tmp_path
     data_root = tmp_path / "data"
     (repo_root / "a" / "b").mkdir(parents=True)
     data_root.mkdir()
-    (repo_root / "a" / "b" / "consumer.py").write_text("backtest", encoding="utf-8")
+    (repo_root / "a" / "b" / "consumer.py").write_text("signal", encoding="utf-8")
 
     result = build_derived_reference_inventory(
         DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root, max_directories=2),
@@ -626,42 +582,42 @@ def test_database_scan_error_is_structured_and_ineligible(tmp_path: Path) -> Non
     assert result["task07_zero_active_reference_eligible"] is False
 
 
-def test_reference_scan_keeps_legacy_consumer_tests_and_fails_closed_on_ambiguous_status(tmp_path: Path) -> None:
+def test_reference_scan_keeps_signal_consumer_tests_and_fails_closed_on_ambiguous_status(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     data_root = tmp_path / "data"
     (repo_root / "services" / "quant-api" / "tests").mkdir(parents=True)
     data_root.mkdir()
     (repo_root / "services" / "quant-api" / "tests" / "test_legacy_consumer.py").write_text(
-        "def test_legacy_consumer():\n    backtest = canonical\n",
+        "def test_legacy_consumer():\n    signal = canonical\n",
         encoding="utf-8",
     )
     (repo_root / "docs").mkdir()
-    (repo_root / "docs" / "ambiguous.md").write_text("historical canonical backtest\n", encoding="utf-8")
+    (repo_root / "docs" / "ambiguous.md").write_text("historical canonical signal\n", encoding="utf-8")
 
     result = build_derived_reference_inventory(
         DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
         connection=_complete_empty_connection(),
     )
 
-    backtest = next(item for item in result["categories"] if item["category"] == "backtest")
-    states = {(item["path"], item["reference_state"]) for item in backtest["reference_locations"]}
+    signal_review = next(item for item in result["categories"] if item["category"] == "signal_review")
+    states = {(item["path"], item["reference_state"]) for item in signal_review["reference_locations"]}
     assert ("services/quant-api/tests/test_legacy_consumer.py", "active") in states
     assert ("docs/ambiguous.md", "review_required") in states
-    assert backtest["active_reference_status"] == "present"
+    assert signal_review["active_reference_status"] == "present"
     assert result["task07_zero_active_reference_eligible"] is False
 
 
 @pytest.mark.parametrize(
     ("text", "expected_state"),
     [
-        ("frozen backtest reference", "review_required"),
-        ("compatibility-only backtest is still used", "review_required"),
-        ("historical snapshot; not active Gate: backtest", "historical"),
-        ("superseded and unused backtest", "review_required"),
-        ("历史快照且非 active Gate：backtest", "historical"),
-        ("仅历史引用：backtest", "historical"),
-        ("不再 active：backtest", "active"),
-        ("已归档：backtest", "historical"),
+        ("frozen signal reference", "review_required"),
+        ("compatibility-only signal is still used", "review_required"),
+        ("historical snapshot; not active Gate: signal", "historical"),
+        ("superseded and unused signal", "review_required"),
+        ("历史快照且非 active Gate：signal", "historical"),
+        ("仅历史引用：signal", "historical"),
+        ("不再 active：signal", "active"),
+        ("已归档：signal", "historical"),
     ],
 )
 def test_reference_state_requires_explicit_non_active_evidence(tmp_path: Path, text: str, expected_state: str) -> None:
@@ -676,18 +632,18 @@ def test_reference_state_requires_explicit_non_active_evidence(tmp_path: Path, t
         connection=_complete_empty_connection(),
     )
 
-    backtest = next(item for item in result["categories"] if item["category"] == "backtest")
-    assert backtest["reference_locations"][0]["reference_state"] == expected_state
+    signal_review = next(item for item in result["categories"] if item["category"] == "signal_review")
+    assert signal_review["reference_locations"][0]["reference_state"] == expected_state
     assert result["task07_zero_active_reference_eligible"] is (expected_state in {"historical", "non_active"})
 
 
 @pytest.mark.parametrize(
     ("relative", "text"),
     [
-        ("docs/negated.md", "backtest is not merely historical reference"),
-        ("docs/negated.md", "backtest must not be treated as not active"),
-        ("services/quant-api/app/legacy.py", "historical snapshot; not active Gate: backtest"),
-        ("services/quant-api/tests/test_legacy.py", "仅历史引用：backtest"),
+        ("docs/negated.md", "signal is not merely historical reference"),
+        ("docs/negated.md", "signal must not be treated as not active"),
+        ("services/quant-api/app/legacy.py", "historical snapshot; not active Gate: signal"),
+        ("services/quant-api/tests/test_legacy.py", "仅历史引用：signal"),
     ],
 )
 def test_reference_state_never_downgrades_negated_or_code_test_text(tmp_path: Path, relative: str, text: str) -> None:
@@ -703,7 +659,7 @@ def test_reference_state_never_downgrades_negated_or_code_test_text(tmp_path: Pa
         connection=_complete_empty_connection(),
     )
 
-    location = next(item for item in next(category for category in result["categories"] if category["category"] == "backtest")["reference_locations"])
+    location = next(item for item in next(category for category in result["categories"] if category["category"] == "signal_review")["reference_locations"])
     assert location["reference_state"] in {"active", "review_required"}
     assert location["disposition"] != "HISTORICAL_SNAPSHOT"
     assert result["task07_zero_active_reference_eligible"] is False
@@ -714,10 +670,10 @@ def test_archive_code_and_active_override_inside_historical_section_still_block_
     data_root = tmp_path / "data"
     (repo_root / "archive").mkdir(parents=True)
     data_root.mkdir()
-    (repo_root / "archive" / "legacy.py").write_text("historical snapshot; not active Gate: backtest", encoding="utf-8")
+    (repo_root / "archive" / "legacy.py").write_text("historical snapshot; not active Gate: signal", encoding="utf-8")
     (repo_root / "docs").mkdir()
     (repo_root / "docs" / "history.md").write_text(
-        "## Historical snapshot; not active Gate: legacy\ncurrent active backtest\n",
+        "## Historical snapshot; not active Gate: legacy\ncurrent active signal\n",
         encoding="utf-8",
     )
 
@@ -726,7 +682,7 @@ def test_archive_code_and_active_override_inside_historical_section_still_block_
         connection=_complete_empty_connection(),
     )
 
-    locations = next(category for category in result["categories"] if category["category"] == "backtest")["reference_locations"]
+    locations = next(category for category in result["categories"] if category["category"] == "signal_review")["reference_locations"]
     assert {item["reference_state"] for item in locations} >= {"active"}
     assert result["task07_zero_active_reference_eligible"] is False
 
@@ -734,8 +690,8 @@ def test_archive_code_and_active_override_inside_historical_section_still_block_
 @pytest.mark.parametrize(
     "text",
     [
-        "仅历史引用：old backtest; current signal remains active",
-        "Historical snapshot; not active Gate: old backtest; current signal is active",
+        "仅历史引用：old signal; current signal remains active",
+        "Historical snapshot; not active Gate: old signal; current signal is active",
     ],
 )
 def test_mixed_historical_marker_with_current_active_text_blocks_task07(tmp_path: Path, text: str) -> None:
@@ -748,7 +704,7 @@ def test_mixed_historical_marker_with_current_active_text_blocks_task07(tmp_path
         DerivedReferenceInventoryConfig(repo_root=repo_root, data_root=data_root),
         connection=_complete_empty_connection(),
     )
-    location = next(category for category in result["categories"] if category["category"] == "backtest")["reference_locations"][0]
+    location = next(category for category in result["categories"] if category["category"] == "signal_review")["reference_locations"][0]
     assert location["reference_state"] in {"active", "review_required"}
     assert result["task07_zero_active_reference_eligible"] is False
 
@@ -809,7 +765,6 @@ def _fixture_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     connection.executescript(
         """
-        CREATE TABLE backtest_reports (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE strategy_signals (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE review_notes (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE data_profiles (id INTEGER PRIMARY KEY, name TEXT);
@@ -820,7 +775,6 @@ def _fixture_connection() -> sqlite3.Connection:
         CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE market_data_files (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE data_gaps (id INTEGER PRIMARY KEY, name TEXT);
-        INSERT INTO backtest_reports VALUES (7, 'report');
         INSERT INTO strategy_signals VALUES (3, 'signal');
         INSERT INTO review_notes VALUES (4, 'note');
         INSERT INTO data_profiles VALUES (8, 'profile');
@@ -919,16 +873,6 @@ def _complete_empty_connection() -> sqlite3.Connection:
     connection.execute("CREATE TABLE data_quality_reports (id INTEGER PRIMARY KEY, file_id INTEGER, task_id INTEGER)")
     connection.execute("CREATE TABLE data_download_tasks (id INTEGER PRIMARY KEY, status TEXT)")
     connection.execute(
-        "CREATE TABLE backtest_tasks (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, "
-        "binding_snapshot TEXT, status TEXT)"
-    )
-    connection.execute(
-        "CREATE TABLE backtest_reports (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, "
-        "binding_snapshot TEXT, status TEXT)"
-    )
-    connection.execute("CREATE TABLE backtest_trades (id INTEGER PRIMARY KEY, report_id INTEGER)")
-    connection.execute("CREATE TABLE backtest_orders (id INTEGER PRIMARY KEY, report_id INTEGER)")
-    connection.execute(
         "CREATE TABLE strategy_signals (id INTEGER PRIMARY KEY, profile_id INTEGER, market_data_file_id INTEGER, "
         "status TEXT, is_active INTEGER)"
     )
@@ -973,7 +917,6 @@ def _write_fixture_files(repo_root: Path, data_root: Path) -> None:
         ("parquet/canonical/jm/part-000.parquet", b"abc"),
         ("derived/indicators/cache.json", b"{}"),
         ("derived/15m/part.parquet", b"derived"),
-        ("backtest/run.json", b"{}"),
         ("signals/event.json", b"{}"),
         ("reviews/note.json", b"{}"),
         ("live/bar.json", b"{}"),
@@ -991,7 +934,7 @@ def _write_active_reference_files(repo_root: Path) -> None:
     (repo_root / "docs").mkdir(parents=True)
     (repo_root / "services" / "quant-api" / "app" / "services").mkdir(parents=True)
     (repo_root / "docs" / "active.md").write_text(
-        "indicator cache\nbacktest\nsignal review\nlive eod ResearchSample\nderived 15m\n"
+        "indicator cache\nsignal review\nlive eod ResearchSample\nderived 15m\n"
         "raw standard canonical\nDataProfile ActiveBinding legacy lineage\nreport 14 backup runtime gate\n",
         encoding="utf-8",
     )
@@ -999,7 +942,7 @@ def _write_active_reference_files(repo_root: Path) -> None:
         "MarketDataService canonical_consumer_input_v1\n",
         encoding="utf-8",
     )
-    (repo_root / "config.toml").write_text("backtest = true\n", encoding="utf-8")
+    (repo_root / "config.toml").write_text("indicator = true\n", encoding="utf-8")
 
 
 class _FakePostgresConnection:
@@ -1012,9 +955,9 @@ class _FakePostgresConnection:
     def exec_driver_sql(self, statement: str, parameters: tuple[object, ...] = ()) -> _FakePostgresResult:
         self.statements.append(statement + (f" {parameters!r}" if parameters else ""))
         if statement == "SELECT to_regclass(%s)":
-            return _FakePostgresResult([(parameters[0].split(".")[-1],)] if parameters == ("public.backtest_reports",) else [(None,)])
+            return _FakePostgresResult([(parameters[0].split(".")[-1],)] if parameters == ("public.review_notes",) else [(None,)])
         if "information_schema.columns" in statement:
-            return _FakePostgresResult([("id",)] if parameters == ("public", "backtest_reports") else [])
+            return _FakePostgresResult([("id",)] if parameters == ("public", "review_notes") else [])
         if "COUNT(*)" in statement:
             return _FakePostgresResult([(1,)])
         if "SELECT id" in statement:

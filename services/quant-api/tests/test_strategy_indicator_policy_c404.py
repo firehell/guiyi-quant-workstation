@@ -5,10 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from app.api.backtests import report_api_payload
-from app.vnpy_integration.errors import BacktestConfigurationError
-
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 QUANT_CORE_ROOT = REPO_ROOT / "packages" / "quant-core"
 
@@ -64,7 +60,6 @@ def test_frozen_jm_v1b_builds_catalog_snapshot_without_mutating_params() -> None
 
 
 def test_htdy_strict_snapshot_binds_strict_v1_and_rejects_original() -> None:
-    from guiyi_quant.strategies.huotian_dayou_strict import validate_params
     from guiyi_quant.strategies.indicator_policy import (
         HTDY_STRICT_INDICATOR,
         HTDY_STRICT_STRATEGY_CODE,
@@ -72,7 +67,11 @@ def test_htdy_strict_snapshot_binds_strict_v1_and_rejects_original() -> None:
         build_formal_strategy_indicator_policy,
     )
 
-    params = validate_params().to_dict()
+    params = {
+        "indicator_versions": [HTDY_STRICT_INDICATOR],
+        "formal_policy_ids": [HTDY_STRICT_INDICATOR],
+        "research_status": "backtest_candidate",
+    }
     snapshot = build_formal_strategy_indicator_policy(
         strategy_code=HTDY_STRICT_STRATEGY_CODE,
         strategy_version=HTDY_STRICT_STRATEGY_VERSION,
@@ -95,10 +94,6 @@ def test_htdy_strict_snapshot_binds_strict_v1_and_rejects_original() -> None:
             execution_timing="next_bar_open",
             strategy_parameters=bad,
         )
-
-    with pytest.raises(ValueError, match="original_v0|indicator_versions"):
-        validate_params({"indicator_versions": ["huotian_dayou_original_v0"]})
-
 
 def test_unknown_indicator_version_and_formal_policy_id_are_blocked() -> None:
     from guiyi_quant.strategies.indicator_policy import require_formal_strategy_indicator_policy
@@ -279,8 +274,6 @@ def test_htdy_strict_snapshot_rejects_timing_version_and_context_drift() -> None
         )
 
 def test_report_without_snapshot_returns_legacy_policy_unavailable() -> None:
-    from types import SimpleNamespace
-
     from guiyi_quant.strategies.indicator_policy import (
         STATUS_AVAILABLE,
         STATUS_LEGACY_UNAVAILABLE,
@@ -291,62 +284,6 @@ def test_report_without_snapshot_returns_legacy_policy_unavailable() -> None:
     assert resolved["status"] == STATUS_LEGACY_UNAVAILABLE
     assert resolved["snapshot"] is None
     assert "do not infer" in str(resolved["reason"])
-
-    report = SimpleNamespace(
-        id=None,
-        task_id=1,
-        task_no="BT-TEST",
-        report_no="RPT-TEST",
-        template_name="vnpy",
-        template_label=None,
-        engine_type="vnpy_cta",
-        engine_version=None,
-        strategy_code="jm_v1b_daily_direction_fast_entry",
-        strategy_version="v1b.0",
-        symbol="jm",
-        contract="jm.MAIN",
-        period="15m",
-        data_source="local_parquet",
-        data_role="primary",
-        data_version=None,
-        profile_id=None,
-        market_data_file_id=None,
-        binding_snapshot=None,
-        research_only=False,
-        status="success",
-        suitability_label="research",
-        suitability_score=0.0,
-        consistency_hash=None,
-        initial_capital=0.0,
-        final_equity=0.0,
-        total_return=0.0,
-        annual_return=0.0,
-        max_drawdown=0.0,
-        max_drawdown_amount=0.0,
-        max_drawdown_pct=0.0,
-        win_rate=0.0,
-        profit_loss_ratio=0.0,
-        trade_count=0,
-        max_consecutive_losses=0,
-        total_commission=0.0,
-        total_slippage=0.0,
-        max_margin_required=0.0,
-        max_margin_usage_pct=0.0,
-        rollover_exit_count=0,
-        delivery_risk_exit_count=0,
-        quality_status={},
-        summary={"report_metadata": {"profile_id": "legacy"}},
-        warnings=[],
-        error_message=None,
-        created_at=None,
-        started_at=None,
-        finished_at=None,
-        trades=[],
-        order_rows=[],
-    )
-    payload = report_api_payload(report)  # type: ignore[arg-type]
-    assert payload["indicator_policy_status"] == STATUS_LEGACY_UNAVAILABLE
-    assert payload["indicator_policy_snapshot"] is None
 
     with_snapshot = resolve_report_indicator_policy(
         {
@@ -381,34 +318,6 @@ def test_report_without_snapshot_returns_legacy_policy_unavailable() -> None:
     )
     assert invalid["status"] == "invalid_policy_snapshot"
     assert invalid["snapshot"] is None
-
-
-def test_create_formal_task_missing_policy_raises_configuration_error() -> None:
-    """Guard the service wrapper without touching canonical PostgreSQL."""
-
-    class _FakeService:
-        def create_formal_task(self, request):  # noqa: ANN001
-            from guiyi_quant.strategies.indicator_policy import build_formal_strategy_indicator_policy
-
-            try:
-                build_formal_strategy_indicator_policy(
-                    strategy_code=request["strategy_code"],
-                    strategy_version=request.get("strategy_version"),
-                    profile_id="intraday_research_v1",
-                    execution_timing="next_bar_open",
-                    strategy_parameters=request.get("strategy_parameters") or {},
-                )
-            except ValueError as exc:
-                raise BacktestConfigurationError(str(exc)) from exc
-
-    with pytest.raises(BacktestConfigurationError, match="STRATEGY_INDICATOR_POLICY_REQUIRED"):
-        _FakeService().create_formal_task(
-            {
-                "strategy_code": "unknown_formal",
-                "strategy_version": "v9",
-                "strategy_parameters": {},
-            }
-        )
 
 
 def test_report14_style_read_path_does_not_invent_registry_policy() -> None:
