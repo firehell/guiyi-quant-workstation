@@ -32,7 +32,6 @@ FINAL_LAYOUT = (
     "scripts/engineering/release-tag.ps1",
     "scripts/engineering/replacement_gate.py",
     "scripts/engineering/repository_consistency.py",
-    "scripts/engineering/runtime_dependency_inventory.py",
     "scripts/engineering/script_disposition.py",
     "scripts/engineering/secret-scan.ps1",
     "scripts/engineering/validate.ps1",
