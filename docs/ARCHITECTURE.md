@@ -106,9 +106,13 @@ EOD --> PG
 
 - `/api/watchlists`；
 - `guiyi runtime status`；
-- Market、Indicator、Signal、Review 的非回测能力；
-- Task 06 的 confirmed observation、SignalDecision、EOD 与 ResearchSample 研究链；
-- after-market scheduler health 与 live checkpoint 只读信息。
+- Market、Indicator、Signal、Review 的非回测能力（行情读为 Canonical）；
+- after-market scheduler health（不再依赖 live checkpoint / LiveMinuteBar 对照）。
+
+已从应用代码退役（勿恢复为 active 路径）：
+
+- poll 盘中 Live K 线（`/market/live/*`、LiveMinuteBar/AggregatedBar、live signal/HTDY realtime）；
+- Task 06 `guiyi data live` / observation / SignalDecision / ResearchSample 链。
 
 ## 5. 信号与复盘边界
 

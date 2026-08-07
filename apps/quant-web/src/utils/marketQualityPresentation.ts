@@ -13,7 +13,7 @@ export interface MarketQualityImpactInput {
   canonicalIdentity?: boolean
   strictResearchReady: boolean
   contractView: ContractViewMode
-  dataMode: 'historical' | 'live'
+  dataMode: 'historical'
   /** null 表示尚未完成 lineage 读取，不应提前制造告警。 */
   lineageReady: boolean | null
 }

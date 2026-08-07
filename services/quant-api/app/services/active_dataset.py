@@ -16,10 +16,6 @@ AccessMode = Literal["browser", "research"]
 ContractSelector = Literal["explicit", "dominant_rank1"]
 
 HISTORICAL_PERIODS = frozenset(BAR_FREQUENCY_VALUES)
-LIVE_PERIOD_SOURCE_MODES = {
-    "1m": "poll_get_price_1m",
-    "15m": "live_1m_sequential_bucket",
-}
 DESCRIPTOR_SNAPSHOT_TOKEN_VERSION = "dataset-descriptor-snapshot-v1"
 ACTIVE_DATASET_DOMAIN_ERROR_CODES = frozenset(
     {
@@ -28,10 +24,7 @@ ACTIVE_DATASET_DOMAIN_ERROR_CODES = frozenset(
         "DATASET_ASSET_AMBIGUOUS",
         "DATASET_LINEAGE_CHANGED",
         "DATASET_ACTUAL_CONTRACT_MISMATCH",
-        "LIVE_ACTUAL_CONTRACT_REQUIRED",
-        "LIVE_SOURCE_MODE_REQUIRED",
-        "LIVE_SOURCE_MODE_MISMATCH",
-        "LIVE_SOURCE_MODE_IDENTITY_UNSUPPORTED",
+        "LIVE_CONTEXT_RETIRED",
     }
 )
 
@@ -162,9 +155,9 @@ def validate_dataset_request(request: DatasetRequest) -> DatasetRequest:
     if symbol != "jm":
         raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
 
-    if request.data_context == "historical":
-        return _validate_historical_request(request, symbol=symbol)
-    return _validate_live_request(request, symbol=symbol)
+    if request.data_context == "live":
+        raise ActiveDatasetDomainError("LIVE_CONTEXT_RETIRED")
+    return _validate_historical_request(request, symbol=symbol)
 
 
 def snapshot_token(snapshot: Mapping[str, Any]) -> str:
@@ -189,29 +182,6 @@ def _validate_historical_request(request: DatasetRequest, *, symbol: str) -> Dat
             raise ActiveDatasetDomainError("DATASET_ACTUAL_CONTRACT_MISMATCH")
 
     if request.contract is not None and contract is None:
-        raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
-
-    return replace(request, symbol=symbol, contract=contract)
-
-
-def _validate_live_request(request: DatasetRequest, *, symbol: str) -> DatasetRequest:
-    if request.contract_selector != "explicit":
-        raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
-    if request.period not in LIVE_PERIOD_SOURCE_MODES:
-        raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
-    if request.provider != "rqdata":
-        raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
-
-    contract = _normalize_jm_contract(request.contract)
-    if contract is None or not _ACTUAL_JM_CONTRACT.fullmatch(contract):
-        raise ActiveDatasetDomainError("LIVE_ACTUAL_CONTRACT_REQUIRED")
-    if request.access_mode == "research":
-        raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_IDENTITY_UNSUPPORTED")
-    if request.live_source_mode is None:
-        raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_REQUIRED")
-    if request.live_source_mode != LIVE_PERIOD_SOURCE_MODES[request.period]:
-        raise ActiveDatasetDomainError("LIVE_SOURCE_MODE_MISMATCH")
-    if request.mapping_date is not None:
         raise ActiveDatasetDomainError("DATASET_REQUEST_UNSUPPORTED")
 
     return replace(request, symbol=symbol, contract=contract)

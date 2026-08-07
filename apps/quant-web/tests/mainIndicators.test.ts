@@ -59,10 +59,6 @@ test('normalizeVisibleMainIndicators keeps HTDY only in historical browser mode'
     normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'research' }),
     ['ema_60', 'ema_10'],
   )
-  assert.deepEqual(
-    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'live', accessMode: 'browser' }),
-    ['ema_60', 'ema_10'],
-  )
   assert.deepEqual(normalizeVisibleMainIndicators([]), [])
   assert.deepEqual(normalizeVisibleMainIndicators('bad'), ['ema_21'])
 })
@@ -71,8 +67,7 @@ test('mode helpers disable HTDY outside browser historical observation', () => {
   const htdy = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'htdy')!
   assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'browser' }), true)
   assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'research' }), false)
-  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'live', accessMode: 'browser' }), false)
-  assert.deepEqual(filterVisibleMainIndicatorsForMode(['ema_21', 'htdy'], { dataMode: 'live', accessMode: 'browser' }), ['ema_21'])
+  assert.deepEqual(filterVisibleMainIndicatorsForMode(['ema_21', 'htdy'], { dataMode: 'historical', accessMode: 'research' }), ['ema_21'])
 })
 
 test('loadMainChartPreferences recovers from corrupt storage and saves only UI preferences', () => {
@@ -97,8 +92,8 @@ test('loadMainChartPreferences recovers from corrupt storage and saves only UI p
   const loaded = loadMainChartPreferences(storage)
   assert.deepEqual(loaded.visibleMainIndicators, ['ema_10', 'htdy', 'ema_60'])
   assert.deepEqual(
-    normalizeVisibleMainIndicators(loaded.visibleMainIndicators, { dataMode: 'live', accessMode: 'browser' }),
-    ['ema_10', 'ema_60'],
+    normalizeVisibleMainIndicators(loaded.visibleMainIndicators, { dataMode: 'historical', accessMode: 'browser' }),
+    ['ema_10', 'htdy', 'ema_60'],
   )
   assert.equal(loaded.period, '15m')
   assert.equal(loaded.realtimeFollow, true)

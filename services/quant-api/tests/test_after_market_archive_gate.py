@@ -16,7 +16,6 @@ from app.models.data_center import (
     DataDownloadTask,
     DataProfile,
     DataQualityReport,
-    LiveMinuteBar,
     MarketDataFile,
     ProfileActiveBinding,
 )
@@ -26,7 +25,6 @@ from app.services.after_market_archive_gate import (
     _collect_stable_provider_final,
     _consumer_profile_smoke,
     _registered_asset_smoke,
-    _reconcile_provider_live_rows,
     _record_failure,
     _recover_committed_archive,
     _stage_json,
@@ -307,22 +305,6 @@ def test_provider_final_collection_assigns_query_trading_day_across_weekend_nigh
     assert list(selected["datetime"]) == list(expected)
     assert set(selected["trading_day"]) == {trading_day}
     assert evidence["expected_minute_count"] == 2
-
-
-def test_reconciliation_reports_duplicate_live_keys_without_collapsing_them() -> None:
-    provider = pd.DataFrame([_bar("2026-07-17 09:01:00", 100)])
-    live = [
-        _live_row("2026-07-17 09:01:00", 100, revision=0),
-        _live_row("2026-07-17 09:01:00", 100, revision=1),
-    ]
-
-    result = _reconcile_provider_live_rows(provider, live)
-
-    assert result["status"] == "differences_observed"
-    assert result["live_row_count"] == 2
-    assert result["live_unique_bar_count"] == 1
-    assert result["live_duplicate_count"] == 1
-    assert result["revision_row_count"] == 1
 
 
 def test_immutable_active_asset_verification_detects_physical_file_drift(tmp_path: Path) -> None:
@@ -848,7 +830,7 @@ def test_committed_archive_recovers_staged_receipt_without_repeating_writes(tmp_
     assert not (audit_root / "completion_receipt.json.staged").exists()
 
 
-def test_reconciliation_reports_missing_and_revision_without_mutating_history(tmp_path: Path) -> None:
+def test_reconciliation_reports_live_bars_as_retired(tmp_path: Path) -> None:
     path = tmp_path / "actual_1m.parquet"
     pd.DataFrame(
         [
@@ -857,28 +839,6 @@ def test_reconciliation_reports_missing_and_revision_without_mutating_history(tm
         ]
     ).to_parquet(path, index=False)
     with _session() as session:
-        session.add(
-            LiveMinuteBar(
-                provider="rqdata",
-                instrument_symbol="jm",
-                contract_code="JM2609",
-                exchange_code="DCE",
-                period="1m",
-                bar_datetime=datetime(2026, 7, 17, 9, 1),
-                trading_day=date(2026, 7, 17),
-                open=100,
-                high=101,
-                low=99,
-                close=100,
-                volume=10,
-                open_interest=20,
-                bar_status="confirmed",
-                quality_status="passed",
-                revision=1,
-            )
-        )
-        session.flush()
-
         result = reconcile_live_provider(
             session,
             actual_contract="JM2609",
@@ -886,12 +846,11 @@ def test_reconciliation_reports_missing_and_revision_without_mutating_history(tm
             canonical_1m=path,
         )
 
-    assert result["status"] == "differences_observed"
+    assert result["status"] == "retired"
     assert result["live_reference_only"] is True
-    assert result["exact_match_count"] == 1
-    assert result["live_missing_count"] == 1
-    assert result["revision_row_count"] == 1
-    assert result["ohlcv_mismatch_count"] == 0
+    assert result["live_row_count"] == 0
+    assert result["provider_row_count"] == 2
+    assert result["mismatches"] == []
 
 
 def test_archive_failure_evidence_commits_without_claiming_binding_change() -> None:
@@ -1091,14 +1050,12 @@ def _stub_successful_archive_dependencies(monkeypatch, registration: dict, *, sw
     monkeypatch.setattr(
         gate,
         "reconcile_live_provider",
-        lambda *_args, **_kwargs: {"status": "differences_observed", "live_reference_only": True},
+        lambda *_args, **_kwargs: {"status": "retired", "live_reference_only": True, "live_row_count": 0, "mismatches": []},
     )
     monkeypatch.setattr(
         gate,
-        "LiveTargetContractResolver",
-        lambda _session: SimpleNamespace(
-            resolve_ready_actual_contract=lambda **_kwargs: {"status": "ready", "actual_contract": "JM2609"}
-        ),
+        "_resolve_consumer_target",
+        lambda *_args, **_kwargs: {"status": "ready", "actual_contract": "JM2609", "readiness_status": "ready"},
     )
 
 
@@ -1117,19 +1074,6 @@ def _bar(value: str, price: int) -> dict:
 
 def _bar_for_day(value: str, price: int, trading_day: date) -> dict:
     return {**_bar(value, price), "trading_day": trading_day}
-
-
-def _live_row(value: str, price: int, *, revision: int) -> SimpleNamespace:
-    return SimpleNamespace(
-        bar_datetime=datetime.fromisoformat(value),
-        open=price,
-        high=price + 1,
-        low=price - 1,
-        close=price,
-        volume=10,
-        open_interest=20,
-        revision=revision,
-    )
 
 
 def _counted_frame(client: SimpleNamespace, frame: pd.DataFrame) -> pd.DataFrame:

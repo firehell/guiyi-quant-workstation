@@ -7,7 +7,6 @@ SUPPORTED_REVIEW_SOURCE_TYPES = frozenset(
     {
         "strategy_signal",
         "signal_event",
-        "signal_decision",
         "manual_trade",
     }
 )

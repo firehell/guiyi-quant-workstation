@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.db.session import SessionLocal
 from app.models.signal import StrategySignal
 from app.queue import REDIS_URL
-from app.services.signal_scanner import signal_payload
+from app.signal.scanner import signal_payload
 
 router = APIRouter(tags=["signal-websocket"])
 

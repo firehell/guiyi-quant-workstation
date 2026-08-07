@@ -77,7 +77,7 @@ def test_web_macd_legacy_policy_vectors_and_prefix_invariance() -> None:
 
 def test_public_macd_alias_has_only_canonical_selection_parameters() -> None:
     operation = TestClient(app).get("/openapi.json").json()["paths"][
-        "/api/v1/market/indicators/macd"
+        "/api/v1/market/indicators/macd/canonical"
     ]["get"]
     names = {item["name"] for item in operation["parameters"]}
 

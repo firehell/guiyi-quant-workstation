@@ -11,18 +11,6 @@ class DashboardScanTaskSummary(BaseModel):
     created_at: str | None = None
 
 
-class DashboardLatestSignalEventSummary(BaseModel):
-    event_id: int
-    event_type: str
-    source_mode: str
-    lifecycle_status: str
-    symbol: str
-    contract: str
-    period: str
-    direction: str
-    signal_time: str | None = None
-
-
 class DashboardLatestReviewSummary(BaseModel):
     review_id: int
     source_type: str
@@ -43,12 +31,8 @@ class DashboardSummaryOut(BaseModel):
     signals_week: int = 0
     data_contracts: int = 0
     jm_primary_passed_assets: int = 0
-    live_target_readiness: str | None = None
-    live_targets_preview_only: bool = True
     latest_scan_task: DashboardScanTaskSummary | None = None
     latest_data_time: str | None = None
-    latest_confirmed_bar_time: str | None = None
-    latest_live_signal_event: DashboardLatestSignalEventSummary | None = None
     latest_review: DashboardLatestReviewSummary | None = None
     unfinished_review_count: int = 0
     generated_at: str | None = None

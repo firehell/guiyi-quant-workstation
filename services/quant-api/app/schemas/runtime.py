@@ -59,6 +59,7 @@ class RuntimeCheckpointRow(BaseModel):
 class RuntimeLiveCheckpointsHealth(BaseModel):
     status: str
     enabled: bool = False
+    retired: bool = False
     freshness_seconds: int = 300
     stale: bool = False
     polling_expected: bool = False
@@ -126,17 +127,6 @@ class RuntimeAfterMarketSchedulerHealth(BaseModel):
     error_message: str | None = None
 
 
-class RuntimeDataCoreV2LiveReviewHealth(BaseModel):
-    status: str = "disabled"
-    live_decision_enabled: bool = False
-    eod_enabled: bool = False
-    retention_scheduler_enabled: bool = False
-    notification_enabled: bool = False
-    review_enabled: bool = False
-    auto_order: bool = False
-    observation_only: bool = True
-
-
 class RuntimeHealthComponents(BaseModel):
     db: RuntimeComponentHealth
     redis: RuntimeComponentHealth
@@ -145,7 +135,6 @@ class RuntimeHealthComponents(BaseModel):
     archive: RuntimeArchiveHealth
     after_market_scheduler: RuntimeAfterMarketSchedulerHealth
     notification_retry: RuntimeNotificationRetryHealth
-    data_core_v2_live_review: RuntimeDataCoreV2LiveReviewHealth
 
 
 class RuntimeHealthOut(BaseModel):

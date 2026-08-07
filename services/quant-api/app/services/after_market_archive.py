@@ -4,10 +4,9 @@ from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import DataDownloadTask, LiveMinuteBar, utc_now
+from app.models.data_center import DataDownloadTask, utc_now
 from app.services.rqdata_ingest.actual_contract_bars_pilot import resolve_main_mapping, run_actual_contract_bars_pilot_write
 from app.services.trading_session_clock import TradingSessionClock
 
@@ -15,7 +14,7 @@ ARCHIVE_PERIODS = ("1m", "5m", "15m", "30m", "60m", "1d")
 
 
 class AfterMarketArchiveService:
-    """Controlled JM archive orchestrator; live rows are comparison evidence only."""
+    """Controlled JM archive orchestrator without poll-live bar对照."""
 
     def __init__(
         self,
@@ -59,6 +58,8 @@ class AfterMarketArchiveService:
         ):
             return _blocked_payload(normalized_product, trading_day, "trading day is not closed")
 
+        from sqlalchemy import select
+
         task_no = f"archive:{normalized_product}:{actual_contract}:{trading_day.isoformat()}"
         task = self.session.scalar(select(DataDownloadTask).where(DataDownloadTask.task_no == task_no))
         if task is not None and task.status == "success":
@@ -86,7 +87,6 @@ class AfterMarketArchiveService:
             task.finished_at = None
         self.session.flush()
 
-        live_reference = self._live_reference(actual_contract, trading_day)
         expected_rows = self.trading_clock.expected_minute_count(
             trading_day,
             product=normalized_product,
@@ -113,8 +113,6 @@ class AfterMarketArchiveService:
             task.result = {
                 "quality_gate": "failed",
                 "error_type": type(exc).__name__,
-                "live_reference": live_reference,
-                "live_reference_only": True,
             }
             self.session.flush()
             return {"status": "failed", "task_no": task_no, "result": task.result}
@@ -126,33 +124,10 @@ class AfterMarketArchiveService:
             "quality_gate": archive["quality_gate"],
             "manifest_path": archive["manifest_path"],
             "periods": archive["periods"],
-            "live_reference": live_reference,
-            "live_reference_only": True,
             "historical_active_source": "rqdata_after_market_direct",
         }
         self.session.flush()
         return {"status": "success", "task_no": task_no, "result": task.result}
-
-    def _live_reference(self, contract: str, trading_day: date) -> dict[str, Any]:
-        row = self.session.execute(
-            select(
-                func.count(LiveMinuteBar.id),
-                func.min(LiveMinuteBar.bar_datetime),
-                func.max(LiveMinuteBar.bar_datetime),
-            ).where(
-                LiveMinuteBar.provider == "rqdata",
-                LiveMinuteBar.contract_code == contract,
-                LiveMinuteBar.period == "1m",
-                LiveMinuteBar.trading_day == trading_day,
-                LiveMinuteBar.bar_status == "confirmed",
-                LiveMinuteBar.quality_status != "failed",
-            )
-        ).one()
-        return {
-            "row_count": int(row[0] or 0),
-            "min_datetime": None if row[1] is None else row[1].isoformat(),
-            "max_datetime": None if row[2] is None else row[2].isoformat(),
-        }
 
 
 def _blocked_payload(product: str, trading_day: date, reason: str) -> dict[str, Any]:

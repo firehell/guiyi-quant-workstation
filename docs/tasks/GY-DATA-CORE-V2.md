@@ -27,6 +27,28 @@ RUNTIME_NOT_AUTHORIZED
 
 本合同不改变 V1 的 observation-only、`auto_order=false`、真实通知默认关闭与禁止自动交易边界。
 
+### 1.0.1 M1 generic historical update（仓库代码事实）
+
+`guiyi data update` 是保留品种的统一历史更新编排入口：默认只读规划；apply 在
+Calendar、Session、MainContractMap 同步后重新计算 Direct `1m/1d/1w` 与由 Canonical `1m`
+聚合的 `5m/15m/30m/60m` exact windows。空 Dataset 必须显式 `--since`，既有 Dataset 从
+Catalog 的最早覆盖边界规划；actual-dominant 仅按 rank=1 映射有效区间生成。DataGap、failed
+quality、部分窗口覆盖、writer 或 reader 不可用全部 fail-closed。该代码事实不授权 RQData、
+PostgreSQL、Canonical、Runtime 或 live 外部操作。已完成的 product-retirement Runtime CLI/
+production control-plane 已从仓库移除，active/retired identity 守卫仍保留。
+
+### 1.0.2 M2 retained-universe architecture audit（仓库代码事实）
+
+`guiyi data audit --scope m2 --universe active` 是 M2 唯一的只读审计形态，固定加载
+69 个保留品种；禁止单品种、频率、数据集类型或窗口筛选。每个品种检查 continuous
+`SYMBOL.MAIN` 与 actual_dominant 各自的七周期 DatasetKey、有效分区、DataGap、每个
+partition 的 Manifest/Parquet checksum/schema/row-count/lineage，rank=1
+`volume_open_interest` MainContractMap，以及每 Dataset 首尾确定性
+`MarketDataService` 读取。direct 仅允许 provider-direct 的 `1m/1d/1w`；派生周期仅允许
+从同身份 canonical `1m` 聚合。retired identity guard 缺失、Catalog identity 无效、映射或
+任一物理/读取检查失败均 fail-closed。该命令不调用 RQData、不创建 writer、不写
+PostgreSQL/Canonical，也不触及 Runtime/live；实际生产只读验收仍需要明确环境范围的单次意图。
+
 ### 1.1 Historical_Fact（已完成，不构成未来授权）
 
 任务 00 已通过测试与 Review，并由 PR #76 merge `2266d7f7…` 合入 `develop`。
@@ -189,11 +211,13 @@ contract_or_series、frequency、adjustment 和 schema_version。actual-dominant
 最后交易日的 MainContractMap 合约归属。窗口起点固定为 `2013-03-22`，
 终点为当前完整 MainContractMap 的最后交易日；无映射、缺失或歧义均 fail-closed。
 
-active CLI 唯一入口是 `guiyi data task07 assess --target-config ... --canonical-root ...`。
-dry-run 不遍历 legacy root，不调用 RQData，不写 Parquet/PostgreSQL，不产生可执行
-repair packet。旧 `kline-manifest/plan/preflight/apply/verify/migration-verify/runtime-cutover-*`
-已从 active parser 移除并 fail-closed。全部目标有效时结果必须为
-`Stage_C=NO_DATA_WRITE_REQUIRED / writes_authorized=false / repair_count=0`。
+旧 active CLI `guiyi data task07 assess --target-config ... --canonical-root ...`
+**已移除**。现行高层历史更新入口是 `guiyi data update`（`--universe active` 或
+`--symbol`；默认 dry-run；`--apply` 才允许写路径依赖）。专家命令保留
+`download|aggregate|sync|audit|live|verify`。dry-run 不调用 RQData，不写
+Parquet/PostgreSQL。旧 `kline-manifest/plan/preflight/apply/verify/migration-verify/runtime-cutover-*`
+已从 active parser 移除并 fail-closed。不得恢复 task07 CLI，也不得把
+`task07_target_canonical` 重新接入日常更新路径。
 
 Task 07 不以 Profile/Binding retirement、Runtime legacy reference=0、旧派生数据删除
 或 legacy 文件总数为完成条件。Stage D Runtime promotion 属于 Task 08；Stage E 旧派生
@@ -237,10 +261,11 @@ retirement/deletion。本任务未读取生产数据、未执行 0032/RQData/Can
 
 2026-08-03 生产收口会话再次收窄 Task 07 永久合同：原 generic inventory、
 checkout/Runtime reference inventory、retirement apply 与文件 quarantine/deletion orchestration
-不再是现行入口。`guiyi data task07` 的生产数据准备入口改为
-`kline-manifest / plan / preflight / apply / verify / migration-verify`；manifest 只允许
+不再是现行入口。`guiyi data task07` 的历史生产数据准备入口（已全部从 active parser
+移除）曾为 `kline-manifest / plan / preflight / apply / verify / migration-verify`；manifest 只允许
 `1m/5m/15m/30m/60m/1d/1w` 与 K 线/Canonical 记录，不接受 Runtime root、
-protected root、quarantine root 或七周期外资产。`plan --manifest` 只消费该受限
+protected root、quarantine root 或七周期外资产。现行日常补齐请使用
+`guiyi data update`；不得恢复 task07 控制面。`plan --manifest` 曾只消费该受限
 manifest。Direct 冲突只产生 RQData 重下提案，Aggregate 冲突只产生 Canonical
 1m 重聚合提案；不执行 raw/legacy 或 legacy/new 逐行比较。所有 K 线均不进入
 retirement/deletion 分类。

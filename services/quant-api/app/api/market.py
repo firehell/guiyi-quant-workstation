@@ -20,13 +20,9 @@ from app.schemas.market import (
     CanonicalMarketIndicatorsResponse,
     CanonicalMarketMacdIndicatorResponse,
     DominantContractListResponse,
-    LiveMarketBarsResponse,
-    LiveTargetContractsResponse,
     MarketCoverageSummary,
     MarketWorkbenchCoverage,
 )
-from app.services.live_market_reader import LiveMarketReader, SUPPORTED_LIVE_PERIODS
-from app.services.live_target_contracts import LiveTargetContractResolver
 from app.services.canonical_market_data import (
     CanonicalMarketDataService,
     build_canonical_reader as _canonical_reader,
@@ -233,129 +229,6 @@ def market_dominants(
         quote_ready=quote_ready,
         search=search,
         symbol=symbol,
-    )
-
-
-@router.get("/live/targets", response_model=LiveTargetContractsResponse)
-def live_market_targets(
-    trade_date: date | None = None,
-    required_date: date | None = None,
-    session: Session = Depends(get_db),
-) -> dict:
-    return LiveTargetContractResolver(session).list_targets(
-        trade_date=trade_date,
-        required_date=required_date,
-    )
-
-
-@router.get("/live/coverage", response_model=Union[MarketWorkbenchCoverage, MarketCoverageSummary])
-def live_market_coverage(
-    symbol: str | None = None,
-    contract: str | None = None,
-    period: str | None = None,
-    include_paths: bool = False,
-    summary: bool = False,
-    session: Session = Depends(get_db),
-) -> MarketWorkbenchCoverage | MarketCoverageSummary:
-    return LiveMarketReader(session).get_coverage(
-        symbol=symbol,
-        contract=contract,
-        period=period,
-        include_paths=include_paths,
-        summary=summary,
-    )
-
-
-@router.get("/live/bars", response_model=LiveMarketBarsResponse)
-def live_market_bars(
-    symbol: str = Query(...),
-    contract: str = Query(...),
-    period: str = Query(...),
-    start: str | None = None,
-    end: str | None = None,
-    provider: str | None = None,
-    source_mode: str | None = None,
-    limit: int = Query(default=10000, ge=1, le=10000),
-    session: Session = Depends(get_db),
-) -> LiveMarketBarsResponse:
-    if period not in SUPPORTED_LIVE_PERIODS:
-        raise HTTPException(status_code=422, detail=f"unsupported live market period: {period}")
-    return LiveMarketReader(session).get_bars(
-        symbol=symbol,
-        contract=contract,
-        period=period,
-        start=_parse_query_datetime(start, end_of_day=False) if start else None,
-        end=_parse_query_datetime(end, end_of_day=True) if end else None,
-        provider=provider,
-        source_mode=source_mode,
-        limit=limit,
-    )
-
-
-@router.get("/bars", response_model=CanonicalBarsResponse, deprecated=True)
-def market_bars(
-    dataset_kind: DatasetKind = Query(...),
-    symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
-    start: str = Query(...),
-    end: str = Query(...),
-    contract_or_series: str | None = None,
-    session: Session = Depends(get_db),
-) -> CanonicalBarsResponse:
-    return canonical_market_bars(
-        dataset_kind=dataset_kind,
-        symbol=symbol,
-        frequency=frequency,
-        start=start,
-        end=end,
-        contract_or_series=contract_or_series,
-        session=session,
-    )
-
-
-@router.get("/indicators", response_model=CanonicalMarketIndicatorsResponse, deprecated=True)
-def market_indicators(
-    dataset_kind: DatasetKind = Query(...),
-    symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
-    start: str = Query(...),
-    end: str = Query(...),
-    contract_or_series: str | None = None,
-    indicator_codes: str = Query(default="ema21"),
-    display_bar_count: int = Query(default=10000, ge=1, le=10000),
-    session: Session = Depends(get_db),
-) -> CanonicalMarketIndicatorsResponse:
-    return canonical_market_indicators(
-        dataset_kind=dataset_kind,
-        symbol=symbol,
-        frequency=frequency,
-        start=start,
-        end=end,
-        contract_or_series=contract_or_series,
-        indicator_codes=indicator_codes,
-        display_bar_count=display_bar_count,
-        session=session,
-    )
-
-
-@router.get("/indicators/macd", response_model=CanonicalMarketMacdIndicatorResponse, deprecated=True)
-def market_macd_indicator(
-    dataset_kind: DatasetKind = Query(...),
-    symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
-    start: str = Query(...),
-    end: str = Query(...),
-    contract_or_series: str | None = None,
-    session: Session = Depends(get_db),
-) -> CanonicalMarketMacdIndicatorResponse:
-    return canonical_market_macd_indicator(
-        dataset_kind=dataset_kind,
-        symbol=symbol,
-        frequency=frequency,
-        start=start,
-        end=end,
-        contract_or_series=contract_or_series,
-        session=session,
     )
 
 

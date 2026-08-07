@@ -439,12 +439,6 @@ def build_profile_binding_plan(artifacts: Mapping[str, Any]) -> list[dict[str, A
             *((CONTINUOUS_CONTRACT, period, "derived_from_1m") for period in CONTINUOUS_DERIVED_PERIODS),
             *(("actual", period, role) for period, role in (("1m", "direct"), ("5m", "derived_from_1m"), ("15m", "derived_from_1m"))),
         },
-        "live_observation_v1": {
-            (CONTINUOUS_CONTRACT, "1m", "direct"),
-            (CONTINUOUS_CONTRACT, "5m", "derived_from_1m"),
-            (CONTINUOUS_CONTRACT, "15m", "derived_from_1m"),
-            *(("actual", period, role) for period, role in (("1m", "direct"), ("5m", "derived_from_1m"), ("15m", "derived_from_1m"))),
-        },
         "long_horizon_daily_v1": {
             (CONTINUOUS_CONTRACT, "1d", "direct"),
             (CONTINUOUS_CONTRACT, "1w", "direct"),

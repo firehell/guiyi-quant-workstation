@@ -169,7 +169,7 @@ def test_property_3_result_envelope_is_total(
         else None,
     )
     payload = command_result_payload(result)
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["command"] == "data.download"
     assert payload["status"] == status.value
     assert payload["readonly"] is readonly
@@ -178,7 +178,6 @@ def test_property_3_result_envelope_is_total(
         "writes_staging",
         "writes_canonical",
         "writes_postgresql",
-        "writes_live_observation",
         "writes_historical_active",
         "sends_notification",
         "creates_order",

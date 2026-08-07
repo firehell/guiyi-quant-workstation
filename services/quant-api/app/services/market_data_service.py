@@ -7,7 +7,7 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from app.data_core.contracts import BarQuery, BarsResult, DataCoreError
-from app.data_core.product_retirement import is_retired_identity
+from app.data_core.product_universe import is_retired_identity
 
 
 class CanonicalHistoricalReader(Protocol):

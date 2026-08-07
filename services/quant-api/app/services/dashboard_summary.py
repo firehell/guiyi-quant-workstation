@@ -6,11 +6,10 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import LiveAggregationCheckpoint, LiveIngestCheckpoint, MarketDataFile
+from app.models.data_center import MarketDataFile
 from app.models.review import ReviewNote
 from app.review.policy import supported_review_source_clause
-from app.models.signal import SignalEvent, SignalScanTask, StrategySignal
-from app.services.live_target_contracts import LiveTargetContractResolver
+from app.models.signal import SignalScanTask, StrategySignal
 from app.services.strategy_registry import list_strategy_registry
 
 
@@ -55,12 +54,6 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
             MarketDataFile.provider.in_(("rqdata", "local_parquet")),
         )
     )
-    latest_ingest_bar = session.scalar(select(func.max(LiveIngestCheckpoint.last_confirmed_bar_at)))
-    latest_aggregation_bar = session.scalar(select(func.max(LiveAggregationCheckpoint.last_aggregated_bar_at)))
-    latest_confirmed_bar_time = max(
-        (item for item in (latest_ingest_bar, latest_aggregation_bar) if item is not None),
-        default=None,
-    )
 
     latest_scan = session.scalar(
         select(SignalScanTask).order_by(SignalScanTask.created_at.desc()).limit(1)
@@ -73,30 +66,6 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
             "progress": latest_scan.progress,
             "watchlist_code": latest_scan.watchlist_code,
             "created_at": latest_scan.created_at.isoformat() if latest_scan.created_at else None,
-        }
-
-    live_targets = LiveTargetContractResolver(session).list_targets()
-
-    latest_live_signal_event = session.scalar(
-        select(SignalEvent)
-        .where(SignalEvent.source_mode == "live_confirmed")
-        .order_by(SignalEvent.signal_time.desc(), SignalEvent.id.desc())
-        .limit(1)
-    )
-    latest_live_signal_event_payload: dict[str, Any] | None = None
-    if latest_live_signal_event is not None:
-        latest_live_signal_event_payload = {
-            "event_id": latest_live_signal_event.id,
-            "event_type": latest_live_signal_event.event_type,
-            "source_mode": latest_live_signal_event.source_mode,
-            "lifecycle_status": latest_live_signal_event.lifecycle_status,
-            "symbol": latest_live_signal_event.symbol,
-            "contract": latest_live_signal_event.contract,
-            "period": latest_live_signal_event.period,
-            "direction": latest_live_signal_event.direction,
-            "signal_time": latest_live_signal_event.signal_time.isoformat()
-            if latest_live_signal_event.signal_time
-            else None,
         }
 
     latest_review = session.scalar(
@@ -133,14 +102,8 @@ def build_dashboard_summary(session: Session) -> dict[str, Any]:
         "signals_week": signals_week,
         "data_contracts": data_contracts,
         "jm_primary_passed_assets": jm_primary_passed,
-        "live_target_readiness": live_targets.get("readiness_status"),
-        "live_targets_preview_only": live_targets.get("preview_only", True),
         "latest_scan_task": latest_scan_payload,
         "latest_data_time": latest_data_time.isoformat() if latest_data_time else None,
-        "latest_confirmed_bar_time": latest_confirmed_bar_time.isoformat()
-        if latest_confirmed_bar_time
-        else None,
-        "latest_live_signal_event": latest_live_signal_event_payload,
         "latest_review": latest_review_payload,
         "unfinished_review_count": unfinished_review_count,
         "generated_at": now.isoformat(),

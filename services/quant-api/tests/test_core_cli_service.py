@@ -1,71 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
-from app.services.active_dataset import BarsResult, DatasetAsset, DatasetDescriptor
+from app.data_core.contracts import BarQuery, DatasetKind
 from app.services.core_cli import verify_active_dataset
-
-
-def _result() -> BarsResult:
-    descriptor = DatasetDescriptor(
-        data_context="historical",
-        access_mode="browser",
-        symbol="jm",
-        contract_selector="explicit",
-        requested_contract="jm.MAIN",
-        resolved_contract="jm.MAIN",
-        contract_role="continuous",
-        continuous_contract="jm.MAIN",
-        actual_contract=None,
-        period="15m",
-        provider="rqdata",
-        data_role="primary",
-        live_source_mode=None,
-        quality_status="passed",
-        strict_research_ready=False,
-        profile_id=None,
-        quality_policy=None,
-        binding_snapshot=None,
-        assets=(
-            DatasetAsset(
-                market_data_file_id=7,
-                provider="rqdata",
-                data_role="primary",
-                quality_status="passed",
-                data_version="v1",
-                checksum="a" * 64,
-                coverage_start=datetime(2026, 7, 29),
-                coverage_end=datetime(2026, 7, 29, 23, 59),
-                source_interval="15m",
-                source_interval_basis="direct",
-            ),
-        ),
-        mapping_identity=None,
-        coverage_start=datetime(2026, 7, 29),
-        coverage_end=datetime(2026, 7, 29, 23, 59),
-        source_coverage_row_count=23,
-        source_max_bar=datetime(2026, 7, 29, 15),
-        source_revision_hash=None,
-        lineage_kind="historical_asset",
-        lineage_token="lineage-v1:test",
-        warnings=(),
-    )
-    return BarsResult(
-        descriptor=descriptor,
-        bars=(),
-        response_bar_count=23,
-        quality={
-            "status": "passed",
-            "missing_bars": 0,
-            "duplicated_bars": 0,
-            "abnormal_price_count": 0,
-            "abnormal_volume_count": 0,
-            "report_count": 1,
-        },
-        coverage=None,
-        response_request={},
-        message=None,
-    )
 
 
 def test_verify_active_dataset_delegates_to_facade_and_returns_no_write_contract() -> None:
@@ -75,32 +14,45 @@ def test_verify_active_dataset_delegates_to_facade_and_returns_no_write_contract
         def __init__(self, session) -> None:
             observed["session"] = session
 
-        def get_bars(self, request, **kwargs):
+        def get_bars(self, request: BarQuery):
             observed["request"] = request
-            observed["read"] = kwargs
-            return _result()
+            return SimpleNamespace(
+                bars=(
+                    SimpleNamespace(
+                        symbol="jm",
+                        contract_or_series="JM.MAIN",
+                        bar_end=datetime(2026, 7, 29, 15, tzinfo=UTC),
+                        trading_day=datetime(2026, 7, 29).date(),
+                        open=1,
+                        high=1,
+                        low=1,
+                        close=1,
+                        volume=1,
+                        turnover=None,
+                        open_interest=None,
+                        frequency=request.frequency,
+                        provider="rqdata",
+                    ),
+                )
+            )
 
     payload = verify_active_dataset(
         object(),
         symbol="jm",
         contract="jm.MAIN",
         period="15m",
-        start=datetime(2026, 7, 29),
-        end=datetime(2026, 7, 29, 23, 59, 59),
-        provider="rqdata",
-        profile_id=None,
-        access_mode="browser",
+        start=datetime(2026, 7, 29, tzinfo=UTC),
+        end=datetime(2026, 7, 29, 23, 59, 59, tzinfo=UTC),
         limit=5000,
         service_factory=Facade,
+        gap_lister=lambda _key: [],
     )
 
-    assert observed["request"].data_context == "historical"
-    assert observed["read"] == {
-        "start": datetime(2026, 7, 29),
-        "end": datetime(2026, 7, 29, 23, 59, 59),
-        "limit": 5000,
-        "tail": False,
-    }
+    request = observed["request"]
+    assert isinstance(request, BarQuery)
+    assert request.dataset_kind is DatasetKind.CONTINUOUS
+    assert request.symbol == "jm"
+    assert request.contract_or_series == "JM.MAIN"
     assert payload["status"] == "passed"
     assert payload["readonly"] is True
     assert payload["effects"] == {
@@ -109,5 +61,6 @@ def test_verify_active_dataset_delegates_to_facade_and_returns_no_write_contract
         "writes_manifest": False,
         "calls_rqdata": False,
     }
-    assert payload["result"]["response_bar_count"] == 23
-    assert payload["result"]["descriptor"]["assets"][0]["market_data_file_id"] == 7
+    assert payload["result"]["response_bar_count"] == 1
+    assert payload["result"]["selection_mode"] == "market_data_service_bar_query"
+    assert payload["result"]["descriptor"]["dataset_kind"] == "continuous"

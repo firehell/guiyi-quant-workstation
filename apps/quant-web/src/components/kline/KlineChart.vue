@@ -35,7 +35,6 @@ import type {
   HoverKlineContext,
   IndicatorPanelType,
   KlineMarker,
-  LiveMarketBarsQuality,
   MainIndicatorDefinition,
   MainIndicatorId,
   MainIndicatorSeries,
@@ -115,7 +114,7 @@ const props = withDefaults(
     periodOptions?: { label: string; value: string; disabled?: boolean }[]
     showPeriodToolbar?: boolean
     fitContent?: boolean
-    quality?: MarketBarsQuality | LiveMarketBarsQuality | null
+    quality?: MarketBarsQuality | null
   }>(),
   {
     indicatorPanels: () => ['macd', 'atr'],

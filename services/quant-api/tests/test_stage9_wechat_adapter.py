@@ -51,85 +51,10 @@ def test_stage9_wechat_preview_blocks_event_without_send_payload() -> None:
     assert _contains_no_secret_words(preview)
 
 
-def test_stage9_wechat_preview_api_returns_allowed_payload_and_does_not_record_notification() -> None:
-    TestingSessionLocal = _session_factory()
-    with TestingSessionLocal() as session:
-        event = _event()
-        session.add(event)
-        session.commit()
-        event_id = event.id
-
-    def override_get_db():
-        with TestingSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        client = TestClient(app)
-        response = client.get(f"/api/signals/events/{event_id}/stage9-wechat/preview")
-
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["allowed"] is True
-        assert payload["would_send"] is False
-        assert payload["notification_recorded"] is False
-        assert payload["wechat_payload"]["msgtype"] == "markdown"
-        assert "JM2609" in payload["wechat_payload"]["markdown"]["content"]
-        assert _contains_no_secret_words(payload)
-
-        with TestingSessionLocal() as session:
-            assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_stage9_wechat_preview_api_returns_blocked_reasons() -> None:
-    TestingSessionLocal = _session_factory()
-    with TestingSessionLocal() as session:
-        event = _event(actual_contract=None, contract="jm.MAIN")
-        session.add(event)
-        session.commit()
-        event_id = event.id
-
-    def override_get_db():
-        with TestingSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        client = TestClient(app)
-        response = client.get(f"/api/signals/events/{event_id}/stage9-wechat/preview")
-
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["allowed"] is False
-        assert "actual_contract_missing" in payload["blocked_reasons"]
-        assert payload["would_send"] is False
-        assert payload["notification_recorded"] is False
-        assert payload["wechat_payload"] is None
-
-        with TestingSessionLocal() as session:
-            assert session.scalar(select(func.count()).select_from(SignalNotification)) == 0
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_stage9_wechat_preview_api_returns_404_for_missing_event() -> None:
-    TestingSessionLocal = _session_factory()
-
-    def override_get_db():
-        with TestingSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        client = TestClient(app)
-        response = client.get("/api/signals/events/999/stage9-wechat/preview")
-
-        assert response.status_code == 404
-        assert response.json()["detail"] == "signal event not found"
-    finally:
-        app.dependency_overrides.clear()
+def test_stage9_wechat_preview_api_is_unmounted() -> None:
+    client = TestClient(app)
+    response = client.get("/api/signals/events/1/stage9-wechat/preview")
+    assert response.status_code == 404
 
 
 def _session_factory():

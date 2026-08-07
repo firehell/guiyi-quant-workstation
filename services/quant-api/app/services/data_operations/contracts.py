@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
@@ -18,7 +18,7 @@ from app.data_core.contracts import (
 )
 
 
-ResultSchemaVersion = 1
+ResultSchemaVersion = 2
 DEFAULT_PROVIDER = "rqdata"
 DEFAULT_ADJUSTMENT = "none"
 DEFAULT_SCHEMA_VERSION = CANONICAL_BAR_SCHEMA_VERSION
@@ -40,6 +40,7 @@ class DerivedFrequency(StrEnum):
 
 
 class AuditScope(StrEnum):
+    M2 = "m2"
     CATALOG = "catalog"
     COVERAGE = "coverage"
     SCHEMA = "schema"
@@ -95,10 +96,10 @@ class PublicError:
 @dataclass(frozen=True, slots=True)
 class EffectSummary:
     calls_rqdata: bool = False
+    writes_provider_raw: bool = False
     writes_staging: bool = False
     writes_canonical: bool = False
     writes_postgresql: bool = False
-    writes_live_observation: bool = False
     writes_historical_active: bool = False
     sends_notification: bool = False
     creates_order: bool = False
@@ -119,10 +120,10 @@ class EffectSummary:
         return any(
             (
                 self.calls_rqdata,
+                self.writes_provider_raw,
                 self.writes_staging,
                 self.writes_canonical,
                 self.writes_postgresql,
-                self.writes_live_observation,
                 self.writes_historical_active,
                 self.sends_notification,
                 self.creates_order,
@@ -262,12 +263,6 @@ class AggregateRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class LiveRequest:
-    targets: Sequence[DataTarget]
-    confirm_observation_write: bool = False
-
-
-@dataclass(frozen=True, slots=True)
 class MetadataSyncRequest:
     scope: MetadataSyncScope
     apply: bool = False
@@ -284,6 +279,48 @@ class AuditRequest:
     frequency: BarFrequency | None = None
     start: datetime | None = None
     end: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalUpdateRequest:
+    """High-level retained-universe historical catch-up request.
+
+    ``since`` / ``through`` are inclusive trading days. They are materialized to
+    timezone-aware half-open ``[start, end)`` windows on ``DataTarget``.
+    """
+
+    products: tuple[str, ...]
+    through: date | None = None
+    since: date | None = None
+    apply: bool = False
+
+    def __post_init__(self) -> None:
+        normalized = tuple(
+            str(product).strip().lower() for product in self.products
+        )
+        if not normalized or any(not product for product in normalized):
+            raise CliArgumentInvalid(
+                code="HISTORICAL_UPDATE_PRODUCTS_REQUIRED"
+            )
+        if len(set(normalized)) != len(normalized):
+            raise CliArgumentInvalid(
+                code="HISTORICAL_UPDATE_PRODUCTS_DUPLICATE"
+            )
+        if any(
+            not isinstance(value, date) or isinstance(value, datetime)
+            for value in (self.since, self.through)
+            if value is not None
+        ):
+            raise CliArgumentInvalid(code="HISTORICAL_UPDATE_DATE_INVALID")
+        if (
+            self.since is not None
+            and self.through is not None
+            and self.since > self.through
+        ):
+            raise CliArgumentInvalid(code="HISTORICAL_UPDATE_WINDOW_INVALID")
+        if not isinstance(self.apply, bool):
+            raise CliArgumentInvalid(code="HISTORICAL_UPDATE_APPLY_INVALID")
+        object.__setattr__(self, "products", normalized)
 
 
 DIRECT_FREQUENCY_VALUES = frozenset(item.value for item in DirectFrequency)

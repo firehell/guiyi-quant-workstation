@@ -9,9 +9,11 @@ from typing import Any, Literal
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
+from app.data_core.contracts import DataCoreError
 from app.models.signal import SignalEvent
-from app.services.live_target_contracts import LiveTargetContractResolver
-from app.services.market_data_reader import MarketDataReader
+from app.services.actual_contract_semantics import load_effective_main_contract_mapping
+from app.services.canonical_bar_loader import CanonicalBarLoader
+from app.services.market_dominant_reader import continuous_contract_for, is_continuous_contract
 from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE, LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
 from app.services.signal_lineage import SignalFormalLineageResolver
 from app.signal.events import SIGNAL_CREATED
@@ -81,7 +83,7 @@ class Stage9JmV1bReplayService:
 
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.reader = MarketDataReader(session)
+        self.reader = CanonicalBarLoader(session)
 
     def run(
         self,
@@ -148,7 +150,7 @@ class Stage9JmV1bReplayService:
         limit: int,
     ) -> ReplayCandidate | None:
         _ensure_quant_core_path()
-        target = LiveTargetContractResolver(self.session).resolve_ready_actual_contract(product="jm")
+        target = _resolve_replay_actual_contract(self.session, product="jm")
         periods = REPLAY_PERIODS if period == "auto" else (period,)
         candidates: list[ReplayCandidate] = []
         for item_period in periods:
@@ -289,21 +291,16 @@ class Stage9JmV1bReplayService:
         if lineage.blocked or market_file is None or market_file.quality_status != "passed" or market_file.data_role != "primary":
             return [], None
         try:
-            bars = self.reader.load_bars_from_market_file(
-                market_data_file_id=market_file.id,
-                symbol="jm",
-                contract=contract,
-                period=period,
+            bars = self.reader.load_bars(
+                "jm",
+                contract,
+                period,
                 start=market_file.start_time,
                 end=market_file.end_time,
-                passed_only=True,
-                expected_provider=market_file.provider,
-                expected_data_role="primary",
-                expected_quality_status="passed",
-                expected_data_version=market_file.data_version,
-                expected_checksum=market_file.checksum,
+                limit=limit,
+                tail=True,
             )
-        except ValueError:
+        except DataCoreError:
             return [], None
         asset = {
             **(lineage.binding_snapshot or {}),
@@ -404,6 +401,31 @@ def _period_delta(period: str) -> timedelta:
     if period == "5m":
         return timedelta(minutes=5)
     raise ValueError(f"unsupported replay period: {period}")
+
+
+def _resolve_replay_actual_contract(session: Session, *, product: str) -> dict[str, Any]:
+    normalized = product.strip().lower()
+    mapping = load_effective_main_contract_mapping(
+        session,
+        instrument_symbol=normalized,
+        trade_date=None,
+    )
+    if mapping is None:
+        raise ValueError("main_contract_map_rank1_missing")
+    actual = str(mapping.contract_code or "").strip().upper()
+    if not actual or is_continuous_contract(actual):
+        raise ValueError("main_contract_map_rank1_not_actual_contract")
+    if mapping.trade_date is None:
+        raise ValueError("dominant_mapping_date_missing")
+    return {
+        "product": normalized,
+        "continuous_contract": continuous_contract_for(normalized),
+        "actual_contract": actual,
+        "dominant_mapping_date": mapping.trade_date.isoformat(),
+        "provider": "rqdata",
+        "readiness_status": "ready",
+        "blocked_reasons": [],
+    }
 
 
 def _ensure_quant_core_path() -> None:

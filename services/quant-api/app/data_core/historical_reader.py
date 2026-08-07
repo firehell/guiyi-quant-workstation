@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -25,10 +26,19 @@ from app.data_core.contracts import (
     DatasetAmbiguousError,
     DatasetKind,
     DatasetKey,
+    DatasetOrigin,
+    ManifestLineage,
     ManifestMismatchError,
 )
 from app.data_core.historical_sessions import build_provider_sessions
 from app.data_core.historical_sync import plan_missing_windows
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalPartitionVerification:
+    row_count: int
+    data_version: str
+    lineage: ManifestLineage
 
 
 class CanonicalHistoricalReader:
@@ -65,11 +75,36 @@ class CanonicalHistoricalReader:
             )
         return self._get_direct_bars(query)
 
+    def verify_partition(
+        self,
+        dataset: DatasetKey,
+        partition: object,
+    ) -> CanonicalPartitionVerification:
+        """Validate a partition's physical metadata without decoding every bar."""
+        parquet, data_version, document = self._verify_partition_metadata(
+            dataset, partition
+        )
+        if parquet.schema_arrow != CANONICAL_PARQUET_SCHEMA:
+            raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
+        lineage_payload = document.get("source_lineage")
+        lineage = (
+            ManifestLineage.from_payload(lineage_payload)
+            if lineage_payload is not None
+            else ManifestLineage(origin=DatasetOrigin.PROVIDER_DIRECT)
+        )
+        lineage.validate_dataset(dataset)
+        return CanonicalPartitionVerification(
+            row_count=int(_partition_value(partition, "row_count")),
+            data_version=data_version,
+            lineage=lineage,
+        )
+
     def _get_direct_bars(self, query: BarQuery) -> BarsResult:
         datasets: tuple[DatasetKey, ...]
         expected_contract_by_day: dict[object, str] | None = None
         if (
             query.dataset_kind is DatasetKind.ACTUAL_DOMINANT
+            and query.contract_or_series is None
             and self._session_provider is not None
         ):
             expected_contract_by_day = self._resolve_actual_dominant_contracts(query)
@@ -166,9 +201,7 @@ class CanonicalHistoricalReader:
         mappings: dict[object, str] | None,
     ) -> None:
         if self._session_provider is not None:
-            sessions = tuple(
-                self._session_provider(query.symbol, query.start, query.end)
-            )
+            sessions = self._sessions_for_query(query)
             expected: set[datetime] = set()
             for dataset in datasets:
                 dataset_sessions = sessions
@@ -242,6 +275,23 @@ class CanonicalHistoricalReader:
                 start=query.start,
                 end=query.end,
                 sessions=sessions,
+            )
+        )
+
+    def _sessions_for_query(self, query: BarQuery) -> tuple[AggregationSession, ...]:
+        """Include sessions that own UTC-midnight daily/weekly bar endpoints."""
+        if self._session_provider is None:
+            return ()
+        padding = (
+            timedelta(days=7)
+            if query.frequency in {BarFrequency.D1, BarFrequency.W1}
+            else timedelta(0)
+        )
+        return tuple(
+            self._session_provider(
+                query.symbol,
+                query.start - padding,
+                query.end + padding,
             )
         )
 
@@ -349,6 +399,33 @@ class CanonicalHistoricalReader:
         dataset: DatasetKey,
         partition: object,
     ) -> tuple[tuple[object, ...], str]:
+        parquet, data_version, _document = self._verify_partition_metadata(
+            dataset, partition
+        )
+        expected_row_count = int(_partition_value(partition, "row_count"))
+        try:
+            table = parquet.read()
+        except pa.ArrowInvalid as exc:
+            raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
+        if table.schema != CANONICAL_PARQUET_SCHEMA:
+            raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
+        if table.num_rows != expected_row_count:
+            raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
+        bars = _bars_from_table(table)
+        if any(
+            previous.bar_end >= current.bar_end
+            for previous, current in zip(bars, bars[1:], strict=False)
+        ):
+            raise ManifestMismatchError(
+                facts={"reason": "parquet_primary_key_order_invalid"}
+            )
+        return bars, data_version
+
+    def _verify_partition_metadata(
+        self,
+        dataset: DatasetKey,
+        partition: object,
+    ) -> tuple[pq.ParquetFile, str, dict[str, object]]:
         manifest_uri = _partition_value(partition, "manifest_uri")
         file_uri = _partition_value(partition, "file_uri")
         manifest_path = _safe_child(self._canonical_root, manifest_uri)
@@ -394,23 +471,7 @@ class CanonicalHistoricalReader:
             raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
         if int(parquet.metadata.num_rows) != expected_row_count:
             raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
-        try:
-            table = parquet.read()
-        except pa.ArrowInvalid as exc:
-            raise ManifestMismatchError(facts={"reason": "parquet_unreadable"}) from exc
-        if table.schema != CANONICAL_PARQUET_SCHEMA:
-            raise ManifestMismatchError(facts={"reason": "parquet_schema_mismatch"})
-        if table.num_rows != expected_row_count:
-            raise ManifestMismatchError(facts={"reason": "parquet_row_count_mismatch"})
-        bars = _bars_from_table(table)
-        if any(
-            previous.bar_end >= current.bar_end
-            for previous, current in zip(bars, bars[1:], strict=False)
-        ):
-            raise ManifestMismatchError(
-                facts={"reason": "parquet_primary_key_order_invalid"}
-            )
-        return bars, data_version
+        return parquet, data_version, document
 
 
 def _partition_value(partition: object, field: str) -> object:

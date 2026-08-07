@@ -12,7 +12,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.data_center import DataDownloadTask, LiveAggregatedBar, MainContractMap, MarketDataFile, TradingCalendar, TradingSession
+from app.models.data_center import DataDownloadTask, MainContractMap, MarketDataFile, TradingCalendar, TradingSession
 from app.services.rqdata_ingest.target_coverage_audit import (
     DEFAULT_AUDIT_END,
     DEFAULT_MINUTE_START,
@@ -701,8 +701,8 @@ def build_partial_revision_policy(
     final_week_day = week_days[-1] if len(week_days) == 5 else None
     last_completed_week = final_week_day if final_week_day and last_completed_day and final_week_day <= last_completed_day else None
     archive_status = _archive_completion(session, product, contract_code, last_completed_day)
-    latest_revision = _latest_accepted_revision(session, product, contract_code)
-    quality_passed = archive_status == "success" and latest_revision is not None
+    latest_revision = None  # live aggregated bars retired; revision no longer tracked
+    quality_passed = archive_status == "success"
     confirmed = bool(last_completed_day and last_completed_week and quality_passed)
     return {
         "product": product,
@@ -714,6 +714,7 @@ def build_partial_revision_policy(
         "partial": not confirmed,
         "confirmed": confirmed,
         "latest_accepted_revision": latest_revision,
+        "live_revision_status": "retired",
         "status_reason": "confirmed_after_archive" if confirmed else "partial_until_calendar_close_archive_and_quality_pass",
     }
 
@@ -1295,15 +1296,9 @@ def _archive_completion(session: Session, product: str, contract_code: str, trad
 
 
 def _latest_accepted_revision(session: Session, product: str, contract_code: str) -> int | None:
-    row = session.scalar(
-        select(LiveAggregatedBar)
-        .where(LiveAggregatedBar.instrument_symbol == product)
-        .where(LiveAggregatedBar.contract_code == contract_code)
-        .where(LiveAggregatedBar.bar_status == "confirmed")
-        .where(LiveAggregatedBar.quality_status != "failed")
-        .order_by(LiveAggregatedBar.revision.desc(), LiveAggregatedBar.bar_datetime.desc())
-    )
-    return row.revision if row is not None else None
+    """Live aggregated bars are retired; revision lookup is a permanent no-op."""
+    del session, product, contract_code
+    return None
 
 
 def _manifest_for_product(project_root: Path, product: str, period: str) -> dict[str, Any]:

@@ -45,8 +45,7 @@ _CATEGORY_TABLES = {
         "signal_scan_tasks", "strategy_signals",
     ),
     "live_eod_sample": (
-        "after_market_scheduler_checkpoints", "live_aggregated_bars", "live_aggregation_checkpoints",
-        "live_ingest_checkpoints", "live_minute_bars",
+        "after_market_scheduler_checkpoints",
     ),
     "permanent_derived_periods": (),
     "duplicate_bar_layers": (),

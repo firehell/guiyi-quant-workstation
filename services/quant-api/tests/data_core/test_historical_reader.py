@@ -250,6 +250,35 @@ def test_reader_returns_verified_direct_bars_with_catalog_lineage(tmp_path: Path
     assert result.source_data_versions == ("provider-final-20260701",)
 
 
+def test_reader_verifies_one_partition_and_returns_manifest_lineage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, expire_on_commit=False)() as session:
+        _publish_sample(root=tmp_path, session=session)
+        catalog = HistoricalCatalog(session)
+        partition = catalog.list_effective_partitions(_dataset())[0]
+        monkeypatch.setattr(
+            pq.ParquetFile,
+            "read",
+            lambda *_args, **_kwargs: pytest.fail(
+                "metadata verification must not decode every bar"
+            ),
+        )
+        verified = CanonicalHistoricalReader(
+            catalog=catalog,
+            canonical_root=(tmp_path / "canonical").resolve(),
+        ).verify_partition(_dataset(), partition)
+
+    assert verified.row_count == 2
+    assert verified.lineage.origin is DatasetOrigin.PROVIDER_DIRECT
+
+
 def test_reader_selects_replacement_partition_without_reading_original(
     tmp_path: Path,
 ) -> None:

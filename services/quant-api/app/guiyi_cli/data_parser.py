@@ -41,9 +41,6 @@ def add_data_commands(data_commands: argparse._SubParsersAction[argparse.Argumen
     verify.add_argument("--canonical-root", type=Path)
     verify.add_argument("--start")
     verify.add_argument("--end")
-    verify.add_argument("--provider")
-    verify.add_argument("--profile-id")
-    verify.add_argument("--access-mode", choices=("browser", "research"), default="browser")
     verify.add_argument("--limit", type=_positive_int, default=5000)
 
     download = data_commands.add_parser("download")
@@ -55,14 +52,6 @@ def add_data_commands(data_commands: argparse._SubParsersAction[argparse.Argumen
     _add_target_arguments(aggregate, frequencies=sorted(DERIVED_FREQUENCY_VALUES))
     aggregate.add_argument("--batch-size", type=_positive_int)
     aggregate.add_argument("--apply", action="store_true")
-
-    live = data_commands.add_parser("live")
-    _add_target_arguments(live, frequencies=("1m",), require_window=False)
-    live.add_argument(
-        "--confirm-observation-write",
-        action="store_true",
-        help="Local effect selector only; not external authorization.",
-    )
 
     sync = data_commands.add_parser("sync")
     sync.add_argument(
@@ -84,6 +73,7 @@ def add_data_commands(data_commands: argparse._SubParsersAction[argparse.Argumen
     )
     audit.add_argument("--symbol")
     audit.add_argument("--symbols-file", type=Path)
+    audit.add_argument("--universe", choices=("active",))
     audit.add_argument(
         "--dataset-kind",
         choices=("continuous", "actual_dominant"),
@@ -91,6 +81,22 @@ def add_data_commands(data_commands: argparse._SubParsersAction[argparse.Argumen
     audit.add_argument("--frequency", choices=BAR_FREQUENCY_VALUES)
     audit.add_argument("--start")
     audit.add_argument("--end")
+
+    update = data_commands.add_parser("update")
+    update_selector = update.add_mutually_exclusive_group(required=True)
+    update_selector.add_argument("--symbol")
+    update_selector.add_argument(
+        "--universe",
+        choices=("active",),
+        help="Update the retained active universe.",
+    )
+    update.add_argument("--since", help="Inclusive trading-day start (YYYY-MM-DD).")
+    update.add_argument("--through", help="Inclusive trading-day end (YYYY-MM-DD).")
+    update.add_argument(
+        "--apply",
+        action="store_true",
+        help="Local effect selector only; not external authorization.",
+    )
 
     # Legacy plan/migrate/task07 routes intentionally omitted after replacement cutover.
 

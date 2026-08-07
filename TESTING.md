@@ -85,24 +85,23 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_core_cli_service.py
 ```
 
-旧 `guiyi-data check-bars` 仍是兼容入口；等价性测试只证明参数、
-stdout/stderr、退出码和共享 service 转调，不授权运行真实数据、Runtime 或通知写入。
+旧 `guiyi-data check-bars` 入口已移除；只使用 `guiyi data verify`（Canonical `BarQuery`，
+UTC-aware 窗口，Catalog Gap 相交即 fail-closed）。
 `scripts/rqdata_reference_metadata_gap_apply_plan.py` 已删除，仅可从 Git 历史追溯，不再是兼容入口。
 
 ### GY-CORE-04 ObservationPlanRegistry 与 StrategyAdapter
 
-定向合同、真实 HTDY evaluator 对照与零写入边界：
+定向合同与零写入边界：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_observation_plan_registry.py \
-  services/quant-api/tests/test_strategy_adapter.py \
-  services/quant-api/tests/test_htdy_realtime_evaluator.py \
   services/quant-api/tests/test_htdy_production_kernel_policy.py
 ```
 
 该组测试不打开正式数据库、不写 SignalEvent/notification、不调用 Runtime 或企业微信。
+（旧 HTDY realtime evaluator / strategy_adapter 测例已随盘中 Live 代码退役删除。）
 
 ## Web
 
@@ -144,8 +143,53 @@ EXPECT_CANONICAL_MARKET=1 pnpm --dir apps/quant-web test:e2e
 ```
 
 `guiyi data migrate` / `task07` 旧路由已从 active CLI 移除。历史迁移验收改走
-`guiyi data download|aggregate|audit` 与 Data Core V2 服务测试；receipt/report/evidence
+`guiyi data update|download|aggregate|audit` 与 Data Core V2 服务测试；receipt/report/evidence
 仅作历史事实，不再作为执行授权。
+
+### M1 historical update（通用历史更新）
+
+```bash
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_historical_update_planner.py \
+  services/quant-api/tests/test_historical_update_workflow.py \
+  services/quant-api/tests/test_historical_update_verifier.py \
+  services/quant-api/tests/test_data_audit_default_fail_closed.py \
+  services/quant-api/tests/data_operations \
+  services/quant-api/tests/test_guiyi_cli.py \
+  services/quant-api/tests/test_scripts_cli_consolidation_properties.py \
+  services/quant-api/tests/data_core/test_historical_sync.py \
+  services/quant-api/tests/data_core/test_historical_reader.py
+
+uv run --project services/quant-api ruff check \
+  services/quant-api/app/services/data_operations \
+  services/quant-api/app/guiyi_cli \
+  services/quant-api/tests
+
+uv run --project services/quant-api guiyi data update --help
+uv run --project services/quant-api guiyi data audit --help
+# task07 必须继续 fail-closed：
+uv run --project services/quant-api guiyi data task07 assess ; echo $?
+```
+
+`guiyi data update` 默认 dry-run；`--apply` 只是本地副作用选择器，不构成真实数据写入授权。
+默认 audit 未接线 scope 必须返回 `AUDIT_SCOPE_UNAVAILABLE`，禁止空 finding 虚假 passed。
+
+### M2 retained-universe architecture audit
+
+```bash
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_operations/test_m2_architecture_audit.py \
+  services/quant-api/tests/data_core/test_historical_reader.py \
+  services/quant-api/tests/test_market_data_service.py \
+  services/quant-api/tests/data_core/test_product_retirement.py
+
+uv run --project services/quant-api guiyi data audit --scope m2 --universe active --help
+```
+
+`data audit --scope m2 --universe active` 是唯一的 M2 审计请求形态：固定 69 个保留品种，
+禁止缩小到单品种、频率或窗口。它只读 Catalog、Manifest/Parquet 与
+`MarketDataService`；不构造 RQData client、writer、scheduler 或 live 依赖。对生产
+PostgreSQL/Canonical root 的实际只读验收，仍须先给出明确环境与资源范围的一次性执行意图。
 
 ### GY-DATA-CORE-V2 Task 07 Stage C 精简验收
 
@@ -160,7 +204,7 @@ uv run --project services/quant-api pytest -q \
 ```
 
 该组验证 JM target config、MainContractMap、七周期 MarketDataService，以及统一
-`guiyi data download|aggregate|sync|audit|live|verify` 合同。测试不调用 RQData，
+`guiyi data update|download|aggregate|sync|audit|live|verify` 合同。测试不调用 RQData，
 不写正式 Parquet/PostgreSQL。
 
 旧 `guiyi data task07 assess` 生产只读 Gate 已从 active CLI 移除；如需对正式
@@ -210,29 +254,11 @@ inventory 语义使用；它们不是面向用户的 CLI 入口。当前统一�
 都需要精确授权。Task 04 的专用临时库已在用户授权后完成测试并删除；这不授权生产 apply，
 也不得用未设置 isolated URL 时的 skipped 用例冒充 upgrade/downgrade/upgrade 通过。
 
-### GY-DATA-CORE-V2 Task 06 clean-start live/review loop
+### GY-DATA-CORE-V2 Task 06 live/review loop（已退役）
 
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_live_review_loop_models.py \
-  services/quant-api/tests/test_live_review_loop_contracts.py \
-  services/quant-api/tests/test_live_review_loop_eod_sample_retention.py \
-  services/quant-api/tests/test_live_review_loop_api_and_event_gate.py \
-  services/quant-api/tests/test_runtime_health.py
-
-PYTHONPATH=services/quant-api \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/alembic/test_live_review_loop_migration.py
-```
-
-迁移测试必须提供 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，并由 safety guard 证明与 Runtime
-`DATABASE_URL` 的 database/OID 均不同；实际完成 `0027 -> head(0031) -> 0027 -> head(0031)`。
-未配置时的
-skip 只证明 offline SQL/head tests，不满足 Task 06 migration 验收。所有 Task 06 flags 默认 false；
-disabled smoke 不读取 RQData、不写业务表、不启动 scheduler、不创建 SignalEvent/notification。
-合同测试同时冻结 trusted builder 的 EMA21 identity/parameters/digest/fingerprint golden vector、
-long/short/equal 三态，以及 Runtime/EOD 不允许注入其他 evaluator 的边界。
+Task 06 的 `guiyi data live`、`live_review_loop/`、observation/SignalDecision/EOD Sample
+应用代码与对应测试已从仓库移除。历史 Alembic `0028..0031` revision 文件保留；
+生产表物理 drop 需另给受控外部操作意图。勿再把 Task 06 测例或 `data live` 当作 active 验收入口。
 
 ## 数据与运行时只读验证
 

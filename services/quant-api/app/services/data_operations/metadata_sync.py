@@ -9,6 +9,7 @@ from typing import Any, Callable, Mapping, Protocol, Sequence
 from app.services.data_operations.contracts import (
     CommandResult,
     CommandStatus,
+    DataOperationsError,
     EffectSummary,
     MetadataSyncRequest,
     MetadataSyncScope,
@@ -32,6 +33,7 @@ class _IngestResult(Protocol):
 
 
 class _ScopedService(Protocol):
+    effect_profile: Mapping[str, bool]
     def plan(self, **kwargs: Any) -> Mapping[str, Any]: ...
 
     def apply(self, **kwargs: Any) -> Mapping[str, Any]: ...
@@ -94,31 +96,57 @@ class MetadataSyncApplicationService:
             )
 
         applied: list[dict[str, Any]] = []
-        self._begin()
-        try:
-            for scope in plan.scopes:
-                service = self._require_service(scope)
+        calls_rqdata = False
+        writes_provider_raw = False
+        writes_postgresql = False
+        for scope in plan.scopes:
+            service = self._require_service(scope)
+            profile = _effect_profile(service)
+            self._begin()
+            try:
                 result = dict(service.apply(**plan.filters))
-                applied.append({"scope": scope.value, "result": result})
-            self._commit()
-        except Exception as exc:  # noqa: BLE001 - transactional rollback
-            self._rollback()
-            return CommandResult(
-                command="data.sync",
-                status=CommandStatus.ERROR,
-                readonly=False,
-                effects=empty_effects(),
-                error=PublicError(
-                    code=getattr(exc, "code", "METADATA_SYNC_FAILED"),
-                    type=type(exc).__name__,
-                ),
-                extras={"scopes": [scope.value for scope in plan.scopes]},
+                self._commit()
+            except Exception as exc:  # noqa: BLE001 - scoped durable boundary
+                self._rollback()
+                observed = _exception_effects(exc, profile)
+                calls_rqdata = calls_rqdata or observed["calls_rqdata"]
+                writes_provider_raw = writes_provider_raw or observed[
+                    "writes_provider_raw"
+                ]
+                return CommandResult(
+                    command="data.sync",
+                    status=CommandStatus.PARTIAL if applied else CommandStatus.ERROR,
+                    readonly=False,
+                    effects=EffectSummary(
+                        calls_rqdata=calls_rqdata,
+                        writes_provider_raw=writes_provider_raw,
+                        writes_postgresql=writes_postgresql,
+                    ),
+                    error=PublicError(
+                        code=getattr(exc, "code", "METADATA_SYNC_FAILED"),
+                        type=type(exc).__name__,
+                    ),
+                    extras={
+                        "scopes": [item.value for item in plan.scopes],
+                        "completed_scopes": [item["scope"] for item in applied],
+                        "failed_scope": scope.value,
+                    },
+                )
+            calls_rqdata = calls_rqdata or profile["calls_rqdata"]
+            writes_provider_raw = writes_provider_raw or bool(result.get("files", 0))
+            writes_postgresql = writes_postgresql or (
+                profile["writes_postgresql"] and bool(result.get("rows", 0))
             )
+            applied.append({"scope": scope.value, "result": result})
         return CommandResult(
             command="data.sync",
             status=CommandStatus.PASSED,
             readonly=False,
-            effects=EffectSummary(calls_rqdata=True, writes_postgresql=True),
+            effects=EffectSummary(
+                calls_rqdata=calls_rqdata,
+                writes_provider_raw=writes_provider_raw,
+                writes_postgresql=writes_postgresql,
+            ),
             extras={
                 "scopes": [scope.value for scope in plan.scopes],
                 "applied": applied,
@@ -148,23 +176,30 @@ def default_rqdata_ingest_service_map(
     catalog_ingestor_factory: Callable[[], Any],
     contract_ingestor_factory: Callable[[], Any],
     main_mapping_ingestor_factory: Callable[[], Any],
-    start: date,
-    end: date,
+    start: date | None,
+    end: date | None,
     products: Sequence[str] | None = None,
 ) -> dict[MetadataSyncScope, _ScopedService]:
     """Build thin adapters around existing ingestors (no algorithm copy)."""
 
     class _Adapter:
-        def __init__(self, factory: Callable[[], Any], mode: str) -> None:
+        def __init__(
+            self, factory: Callable[[], Any], mode: str, *, writes_provider_raw: bool
+        ) -> None:
             self._factory = factory
             self._mode = mode
+            self.effect_profile = {
+                "calls_rqdata": True,
+                "writes_provider_raw": writes_provider_raw,
+                "writes_postgresql": True,
+            }
 
         def plan(self, **kwargs: Any) -> Mapping[str, Any]:
             return {
                 "mode": self._mode,
                 "dry_run": True,
-                "start": kwargs.get("start", start).isoformat(),
-                "end": kwargs.get("end", end).isoformat(),
+                "start": _optional_isoformat(kwargs.get("start", start)),
+                "end": _optional_isoformat(kwargs.get("end", end)),
                 "products": list(kwargs.get("symbols") or products or []),
             }
 
@@ -172,35 +207,43 @@ def default_rqdata_ingest_service_map(
             ingestor = self._factory()
             window_start = kwargs.get("start", start)
             window_end = kwargs.get("end", end)
+            if window_start is None or window_end is None:
+                raise DataOperationsError(code="METADATA_SYNC_WINDOW_REQUIRED")
             if isinstance(window_start, datetime):
                 window_start = window_start.date()
             if isinstance(window_end, datetime):
                 window_end = window_end.date()
             selected = list(kwargs.get("symbols") or products or [])
             if self._mode == "instruments":
-                result = ingestor.run(window_start, window_end, products=selected or None)
+                result = ingestor.run_catalog(
+                    window_start, window_end, products=selected or None
+                )
             elif self._mode == "contracts":
-                result = ingestor.run(window_start, window_end, products=selected or None)
-            elif self._mode in {"calendar", "sessions"}:
-                result = ingestor.run(window_start, window_end, products=selected or None)
+                result = ingestor.run(selected, window_start, window_end)
+            elif self._mode == "calendar":
+                result = ingestor.run_calendar(window_start, window_end)
+            elif self._mode == "sessions":
+                result = ingestor.run_sessions(
+                    window_start, window_end, products=selected or None
+                )
             else:
-                result = ingestor.run(window_start, window_end, products=selected or None)
+                if not selected:
+                    raise DataOperationsError(code="METADATA_SYNC_PRODUCTS_REQUIRED")
+                result = ingestor.run(selected, window_start, window_end, [1])
             return {
                 "mode": self._mode,
                 "rows": getattr(result, "rows", 0),
                 "files": getattr(result, "files", 0),
             }
 
-    catalog = _Adapter(catalog_ingestor_factory, "instruments")
-    contracts = _Adapter(contract_ingestor_factory, "contracts")
-    mapping = _Adapter(main_mapping_ingestor_factory, "main-contract-map")
-    # Calendar/sessions are produced by CatalogIngestor in existing ingest path.
+    catalog = _Adapter(catalog_ingestor_factory, "instruments", writes_provider_raw=True)
+    contracts = _Adapter(contract_ingestor_factory, "contracts", writes_provider_raw=True)
     return {
         MetadataSyncScope.INSTRUMENTS: catalog,
         MetadataSyncScope.CONTRACTS: contracts,
-        MetadataSyncScope.CALENDAR: _Adapter(catalog_ingestor_factory, "calendar"),
-        MetadataSyncScope.SESSIONS: _Adapter(catalog_ingestor_factory, "sessions"),
-        MetadataSyncScope.MAIN_CONTRACT_MAP: mapping,
+        MetadataSyncScope.CALENDAR: _Adapter(catalog_ingestor_factory, "calendar", writes_provider_raw=False),
+        MetadataSyncScope.SESSIONS: _Adapter(catalog_ingestor_factory, "sessions", writes_provider_raw=False),
+        MetadataSyncScope.MAIN_CONTRACT_MAP: _Adapter(main_mapping_ingestor_factory, "main-contract-map", writes_provider_raw=True),
     }
 
 
@@ -211,3 +254,26 @@ def _filters(request: MetadataSyncRequest) -> dict[str, Any]:
     if request.end is not None:
         payload["end"] = request.end
     return payload
+
+
+def _optional_isoformat(value: object) -> str | None:
+    return value.isoformat() if isinstance(value, (date, datetime)) else None
+
+
+def _effect_profile(service: object) -> dict[str, bool]:
+    raw = getattr(service, "effect_profile", {})
+    return {
+        "calls_rqdata": bool(raw.get("calls_rqdata", True)),
+        "writes_provider_raw": bool(raw.get("writes_provider_raw", False)),
+        "writes_postgresql": bool(raw.get("writes_postgresql", True)),
+    }
+
+
+def _exception_effects(exc: Exception, profile: Mapping[str, bool]) -> dict[str, bool]:
+    facts = getattr(exc, "facts", {})
+    return {
+        "calls_rqdata": bool(facts.get("calls_rqdata", profile["calls_rqdata"])),
+        "writes_provider_raw": bool(
+            facts.get("writes_provider_raw", profile["writes_provider_raw"])
+        ),
+    }

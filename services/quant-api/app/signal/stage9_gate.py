@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-import hashlib
-import json
 from typing import Any
 
 from app.models.signal import SignalEvent
@@ -13,29 +11,18 @@ REQUIRED_SIGNAL_STATUS = "entry_signal"
 REQUIRED_DATA_ROLE = "primary"
 REQUIRED_QUALITY_STATUS = "passed"
 SENSITIVE_KEY_PARTS = ("webhook", "token", "password", "passwd", "secret", "cookie")
-HTDY_STRATEGY_CODE = "htdy_original_realtime_first_seen"
-HTDY_STRATEGY_VERSION = "v1.0"
-HTDY_SOURCE_MODE = "live_realtime_repainting"
-HTDY_SIGNAL_POLICY = "htdy_original_xma_15m_first_seen_v1"
-HTDY_CLOSED_BAR_VERSION = "v1.1"
-HTDY_CLOSED_BAR_POLICY = "htdy_original_xma_15m_close_first_seen_v1"
-HTDY_DELIVERY_BLOCKED_REASON = "htdy_observation_delivery_requires_separate_gate"
+RETIRED_HTDY_STRATEGY_CODE = "htdy_original_realtime_first_seen"
+RETIRED_HTDY_SOURCE_MODE = "live_realtime_repainting"
 
 
 def evaluate_stage9_signal_event_gate(event: SignalEvent) -> dict[str, Any]:
     """Return the readonly Stage 9 notification gate decision for a signal event."""
     blocked_reasons = _blocked_reasons(event)
-    htdy_event = _is_htdy_event(event)
-    delivery_allowed = not blocked_reasons and not htdy_event
     return {
         "allowed": not blocked_reasons,
         "blocked_reasons": blocked_reasons,
-        "delivery_allowed": delivery_allowed,
-        "delivery_blocked_reasons": (
-            [HTDY_DELIVERY_BLOCKED_REASON]
-            if not blocked_reasons and htdy_event
-            else list(blocked_reasons)
-        ),
+        "delivery_allowed": not blocked_reasons,
+        "delivery_blocked_reasons": list(blocked_reasons),
         "payload_basis": _payload_basis(event),
     }
 
@@ -75,169 +62,22 @@ def _blocked_reasons(event: SignalEvent) -> list[str]:
     quality_status = _quality_status_value(event.quality_status)
     if quality_status != REQUIRED_QUALITY_STATUS:
         reasons.append(f"quality_status_not_passed:{quality_status}")
-    if _is_htdy_event(event):
-        reasons.extend(_htdy_lineage_blocked_reasons(event))
-    else:
-        signal = (event.payload or {}).get("signal")
-        features = signal.get("features") if isinstance(signal, dict) else None
-        if isinstance(features, dict) and (
-            features.get("future_looking") is True
-            or features.get("repainting_accepted") is True
-        ):
-            reasons.append("future_repainting_event_not_allowed")
-        reasons.extend(_formal_lineage_blocked_reasons(event))
+    if (
+        event.strategy_name == RETIRED_HTDY_STRATEGY_CODE
+        or event.source_mode == RETIRED_HTDY_SOURCE_MODE
+    ):
+        reasons.append("htdy_realtime_retired")
+        return reasons
+    signal = (event.payload or {}).get("signal")
+    features = signal.get("features") if isinstance(signal, dict) else None
+    if isinstance(features, dict) and (
+        features.get("future_looking") is True
+        or features.get("repainting_accepted") is True
+    ):
+        reasons.append("future_repainting_event_not_allowed")
+    reasons.extend(_formal_lineage_blocked_reasons(event))
     return reasons
 
-
-def _is_htdy_event(event: SignalEvent) -> bool:
-    return (
-        event.strategy_name == HTDY_STRATEGY_CODE
-        or event.source_mode == HTDY_SOURCE_MODE
-    )
-
-
-def _htdy_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
-    payload = event.payload or {}
-    lineage = payload.get("formal_lineage")
-    signal = payload.get("signal")
-    htdy = payload.get("htdy_first_seen")
-    if not isinstance(lineage, dict):
-        return ["htdy_lineage_missing"]
-    if not isinstance(signal, dict) or not isinstance(htdy, dict):
-        return ["htdy_payload_invalid"]
-    primary = lineage.get("primary")
-    contract = lineage.get("contract")
-    bar = lineage.get("bar")
-    detection = lineage.get("live_detection_snapshot")
-    indicator = lineage.get("indicator")
-    if not all(
-        isinstance(value, dict)
-        for value in (primary, contract, bar, detection, indicator)
-    ):
-        return ["htdy_lineage_invalid"]
-    reasons: list[str] = []
-    features = signal.get("features")
-    if not isinstance(features, dict):
-        features = {}
-    closed_bar = event.strategy_version == HTDY_CLOSED_BAR_VERSION
-    expected_version = (
-        HTDY_CLOSED_BAR_VERSION if closed_bar else HTDY_STRATEGY_VERSION
-    )
-    expected_policy = (
-        HTDY_CLOSED_BAR_POLICY if closed_bar else HTDY_SIGNAL_POLICY
-    )
-    if (
-        event.event_type != "signal_created"
-        or event.strategy_name != HTDY_STRATEGY_CODE
-        or event.strategy_version != expected_version
-        or event.source_mode != HTDY_SOURCE_MODE
-        or event.period != "15m"
-        or signal.get("spec_source") != expected_policy
-        or features.get("signal_policy") != expected_policy
-    ):
-        reasons.append("htdy_exact_identity_invalid")
-    if (
-        lineage.get("schema_version") != "signal_review_lineage_v2"
-        or lineage.get("resolver_name") != "HtDyRealtimeSnapshotResolver"
-        or lineage.get("resolver_contract_version")
-        != "htdy_realtime_snapshot_v1"
-        or lineage.get("source_mode") != HTDY_SOURCE_MODE
-    ):
-        reasons.append("htdy_lineage_contract_invalid")
-    if (
-        not event.profile_id
-        or event.market_data_file_id is None
-        or primary.get("profile_id") != event.profile_id
-        or primary.get("market_data_file_id") != event.market_data_file_id
-        or primary.get("provider") != event.provider
-        or primary.get("data_role") != event.data_role
-        or primary.get("quality_status") != "passed"
-    ):
-        reasons.append("htdy_lineage_asset_mismatch")
-    mapping_date = (
-        event.dominant_mapping_date.isoformat()
-        if event.dominant_mapping_date
-        else None
-    )
-    if (
-        contract.get("continuous_contract") != event.continuous_contract
-        or contract.get("actual_contract") != event.actual_contract
-        or contract.get("dominant_mapping_date") != mapping_date
-        or contract.get("contract_mode") != "actual_rank1"
-        or contract.get("main_contract_rank") != 1
-    ):
-        reasons.append("htdy_lineage_contract_mismatch")
-    observed = bar.get("observed_ohlcv")
-    source_1m = detection.get("source_1m")
-    decision_close = _aware_datetime(
-        detection.get("decision_bucket_end")
-    )
-    detected_at = _aware_datetime(detection.get("detected_at"))
-    if (
-        bar.get("confirmation_mode") != HTDY_SOURCE_MODE
-        or (
-            bar.get("bar_status") != "confirmed"
-            if closed_bar
-            else bar.get("bar_status") not in {"partial", "confirmed"}
-        )
-        or not isinstance(observed, dict)
-        or set(observed) != {"open", "high", "low", "close", "volume"}
-        or not isinstance(source_1m, list)
-        or not source_1m
-        or not _sha256(detection.get("source_1m_collection_sha256"))
-        or not _sha256(detection.get("snapshot_sha256"))
-        or not _sha256(detection.get("source_sha256"))
-        or not _sha256(detection.get("policy_sha256"))
-        or (
-            closed_bar
-            and (
-                decision_close is None
-                or detected_at is None
-                or decision_close > detected_at
-            )
-        )
-    ):
-        reasons.append("htdy_live_snapshot_invalid")
-    if bar.get("trigger_price") != event.trigger_price:
-        reasons.append("htdy_lineage_bar_mismatch")
-    if (
-        isinstance(source_1m, list)
-        and _canonical_hash(source_1m)
-        != detection.get("source_1m_collection_sha256")
-    ):
-        reasons.append("htdy_source_collection_hash_mismatch")
-    required_true = (
-        "observation_only",
-        "future_looking",
-        "repainting_accepted",
-        "first_seen_no_retraction",
-        "not_trading_instruction",
-    )
-    if (
-        any(features.get(key) is not True for key in required_true)
-        or any(htdy.get(key) is not True for key in required_true)
-        or features.get("historical_backtest_allowed") is not False
-        or features.get("notification_ready") is not False
-        or features.get("auto_order") is not False
-        or htdy.get("historical_backtest_allowed") is not False
-        or htdy.get("notification_ready") is not False
-        or htdy.get("auto_order") is not False
-        or indicator.get("future_looking") is not True
-        or indicator.get("repainting_accepted") is not True
-        or indicator.get("first_seen_no_retraction") is not True
-        or indicator.get("live_confirmed_required") is not closed_bar
-        or indicator.get("partial_allowed") is closed_bar
-        or indicator.get("confirmed_allowed") is not True
-        or indicator.get("historical_backtest_allowed") is not False
-        or (
-            closed_bar
-            and indicator.get("decision_trigger") != "confirmed_15m_close"
-        )
-    ):
-        reasons.append("htdy_risk_declaration_invalid")
-    if htdy.get("dual_direction_conflict") is True:
-        reasons.append("htdy_dual_direction_conflict")
-    return reasons
 
 
 def _formal_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
@@ -284,7 +124,7 @@ def _formal_lineage_blocked_reasons(event: SignalEvent) -> list[str]:
 
 
 def _payload_basis(event: SignalEvent) -> dict[str, Any]:
-    basis = {
+    return {
         "notice_scope": "observation_only",
         "trading_instruction": "not_trading_instruction",
         "auto_order": False,
@@ -309,26 +149,7 @@ def _payload_basis(event: SignalEvent) -> dict[str, Any]:
         "signal_status": event.signal_status,
         "score_bucket": event.score_bucket,
         "source_payload": _sanitize(event.payload or {}),
-        "htdy_realtime_observation": _is_htdy_event(event),
     }
-    if _is_htdy_event(event):
-        lineage = (event.payload or {}).get("formal_lineage") or {}
-        bar = lineage.get("bar") or {}
-        detection = lineage.get("live_detection_snapshot") or {}
-        basis.update(
-            {
-                "observed_bucket_start": bar.get("bar_start"),
-                "observed_bucket_end": bar.get("bar_end"),
-                "bar_status": bar.get("bar_status"),
-                "decision_bucket_end": detection.get(
-                    "decision_bucket_end"
-                ),
-                "detected_at": detection.get("detected_at"),
-                "detection_price": detection.get("detection_price"),
-                "observed_bar_close": bar.get("observed_bar_close"),
-            }
-        )
-    return basis
 
 
 def _quality_status_value(value: Any) -> str:
@@ -337,16 +158,6 @@ def _quality_status_value(value: Any) -> str:
     if value is None:
         return "missing"
     return str(value)
-
-
-def _aware_datetime(value: Any) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else None
 
 
 def _sanitize(value: Any) -> Any:
@@ -372,26 +183,6 @@ def _is_sensitive_text(value: str) -> bool:
 
 def _is_continuous_contract(value: str) -> bool:
     return value.strip().lower().endswith(".main")
-
-
-def _sha256(value: Any) -> bool:
-    if not isinstance(value, str) or len(value) != 64 or value != value.lower():
-        return False
-    try:
-        int(value, 16)
-    except ValueError:
-        return False
-    return True
-
-
-def _canonical_hash(value: Any) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
 
 
 def _string_value(value: Any) -> str | None:

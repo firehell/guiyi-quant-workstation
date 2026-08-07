@@ -1,18 +1,11 @@
 from __future__ import annotations
 
 from datetime import date
-import json
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.db.base import Base
-from app.models.data_center import DataQualityReport, MarketDataFile
 from app.services.rqdata_ingest.jm_v2_parquet import build_jm_v2_parquet_assets
-from app.services.rqdata_ingest.jm_v2_register import register_jm_v2_quality
 
 
 class FakeJmV2Client:
@@ -104,47 +97,3 @@ def test_build_jm_v2_parquet_assets_writes_raw_and_standard_without_db(tmp_path:
 
     aggregated_frame = pd.read_parquet(thirty_minute["standard"]["path"])
     assert aggregated_frame["source_interval"].unique().tolist() == ["1m"]
-
-
-def test_register_jm_v2_quality_records_market_files_reports_and_manifest(tmp_path: Path) -> None:
-    FakeJmV2Client.calls = []
-    summary = build_jm_v2_parquet_assets(
-        client=FakeJmV2Client(),
-        output_root=tmp_path,
-        start_date=date(2023, 1, 3),
-        end_date=date(2023, 1, 5),
-        periods=("1m", "30m"),
-    )
-    summary_path = tmp_path / "processed" / "v1b" / "jm" / "summary.json"
-    summary_path.parent.mkdir(parents=True)
-    summary_path.write_text(json.dumps(summary), encoding="utf-8")
-
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(bind=engine)
-    manifest_path = tmp_path / "manifests" / "rqdata_jm_v2_history_20230103_20230105.csv"
-
-    with TestingSessionLocal() as session:
-        result = register_jm_v2_quality(session=session, summary_path=summary_path, manifest_path=manifest_path)
-        session.commit()
-
-        files = list(session.scalars(select(MarketDataFile).order_by(MarketDataFile.period)))
-        reports = list(session.scalars(select(DataQualityReport).order_by(DataQualityReport.period)))
-
-    assert result["writes_database"] is True
-    assert manifest_path.exists()
-    manifest = pd.read_csv(manifest_path)
-    assert sorted(manifest["period"].tolist()) == ["1m", "30m"]
-    assert sorted(manifest["quality_status"].tolist()) == ["passed", "passed"]
-    assert len(files) == 2
-    assert len(reports) == 2
-    assert {item.period for item in files} == {"1m", "30m"}
-    assert {item.provider for item in files} == {"rqdata"}
-    assert {item.data_role for item in files} == {"primary"}
-    assert {item.quality_status for item in files} == {"passed"}
-    assert {item.status for item in reports} == {"passed"}
-    assert all(item.checksum and len(item.checksum) == 64 for item in files)

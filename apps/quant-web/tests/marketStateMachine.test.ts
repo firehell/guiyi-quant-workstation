@@ -4,14 +4,13 @@ import { describe, it } from 'node:test'
 import {
   buildEmaObservationStatus,
   buildMarketChartRouteQuery,
-  LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE,
   qualityFailedObservationText,
   safeMarketApiError,
   TECHNICAL_OBSERVATION_PREFIX,
 } from '../src/utils/marketChartQuery.ts'
 
 describe('marketStateMachine', () => {
-  it('builds route query with symbol/contract/period and deep-link fields', () => {
+  it('builds route query with symbol/contract/period and observation deep-link fields', () => {
     const query = buildMarketChartRouteQuery(
       {
         symbol: 'jm',
@@ -19,45 +18,38 @@ describe('marketStateMachine', () => {
         period: '15m',
         contractView: 'actual',
         accessMode: 'research',
-        dataMode: 'historical',
       },
       {
         strategy: 'su_bing_v1',
-        signal_id: '11',
-        signal_event_id: '12',
-        review_id: '13',
-        return_route: '/signal?tab=events',
+        time: '2026-07-10T09:15:00',
       },
     )
     assert.equal(query.symbol, 'jm')
     assert.equal(query.contract, 'JM2609')
     assert.equal(query.period, '15m')
     assert.equal(query.contract_view, undefined)
-    assert.equal(query.profile_id, undefined)
     assert.equal(query.access_mode, 'research')
-    assert.equal(query.data_mode, undefined)
     assert.equal(query.strategy, 'su_bing_v1')
-    assert.equal(query.signal_id, '11')
-    assert.equal(query.signal_event_id, '12')
-    assert.equal(query.review_id, '13')
-    assert.equal(query.return_route, '/signal?tab=events')
+    assert.equal(query.time, '2026-07-10T09:15:00')
+    assert.equal(query.signal_id, undefined)
+    assert.equal(query.signal_event_id, undefined)
+    assert.equal(query.review_id, undefined)
+    assert.equal(query.return_route, undefined)
   })
 
-  it('persists contract_view and live data_mode when non-default', () => {
+  it('persists contract_view when non-default', () => {
     const query = buildMarketChartRouteQuery(
       {
         symbol: 'jm',
         actualContract: 'JM2609',
         period: '15m',
         contractView: 'continuous',
-        profileId: null,
         accessMode: 'browser',
-        dataMode: 'live',
       },
       {},
     )
     assert.equal(query.contract_view, 'continuous')
-    assert.equal(query.data_mode, 'live')
+    assert.equal(query.data_mode, undefined)
     assert.equal(query.access_mode, undefined)
   })
 
@@ -111,10 +103,5 @@ describe('marketStateMachine', () => {
     const below = buildEmaObservationStatus(80, 90)
     assert.equal(below.label, 'EMA21 下方')
     assert.match(below.text, /非 StrategySignal/)
-  })
-
-  it('live indicator pending message avoids frontend merge claim', () => {
-    assert.match(LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE, /待服务端/)
-    assert.equal(LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE.includes('StrategySignal'), false)
   })
 })

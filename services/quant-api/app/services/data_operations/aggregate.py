@@ -15,8 +15,6 @@ from app.data_core.contracts import (
     BarsResult,
     DataGapError,
     DatasetKey,
-    DatasetOrigin,
-    ManifestLineage,
 )
 from app.services.data_operations.contracts import (
     AggregateRequest,
@@ -46,7 +44,14 @@ class _Catalog(Protocol):
 
 
 class _Publisher(Protocol):
-    def __call__(self, bars: Sequence[CanonicalBar], *, dataset: DatasetKey) -> object: ...
+    def __call__(
+        self,
+        bars: Sequence[CanonicalBar],
+        *,
+        dataset: DatasetKey,
+        source: BarsResult,
+        aggregation_sessions: Sequence[AggregationSession],
+    ) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +128,8 @@ class AggregateApplicationService:
                 schema_version=dataset.schema_version,
             )
             try:
+                if self._publisher is None:
+                    raise RuntimeError("AGGREGATE_PUBLISHER_UNAVAILABLE")
                 if self._catalog is not None:
                     assert_no_gap_intersection(
                         self._catalog,
@@ -151,18 +158,13 @@ class AggregateApplicationService:
                     sessions=sessions,
                     requested_window=(target.start, target.end),
                 )
-                if self._publisher is not None:
-                    lineage = ManifestLineage(
-                        origin=DatasetOrigin.PREAGGREGATED_FROM_1M,
-                        source_frequency=BarFrequency.M1,
-                        legacy_source_checksum=_digest_or_placeholder(source, "checksum"),
-                        quality_evidence_digest=_digest_or_placeholder(
-                            source, "quality_evidence_digest"
-                        ),
-                    )
-                    lineage.validate_dataset(dataset)
-                    self._publisher(bars, dataset=dataset)
-                    published += 1
+                self._publisher(
+                    bars,
+                    dataset=dataset,
+                    source=source,
+                    aggregation_sessions=sessions,
+                )
+                published += 1
                 results.append(
                     TargetResult(
                         target=target,
@@ -186,7 +188,11 @@ class AggregateApplicationService:
                         target=target,
                         status=CommandStatus.ERROR,
                         error=PublicError(
-                            code=getattr(exc, "code", "AGGREGATE_FAILED"),
+                            code=(
+                                str(exc)
+                                if str(exc) == "AGGREGATE_PUBLISHER_UNAVAILABLE"
+                                else getattr(exc, "code", "AGGREGATE_FAILED")
+                            ),
                             type=type(exc).__name__,
                         ),
                         detail={"published": False},
@@ -200,6 +206,7 @@ class AggregateApplicationService:
                 writes_staging=published > 0,
                 writes_canonical=published > 0,
                 writes_postgresql=published > 0,
+                writes_historical_active=published > 0,
             ),
             targets=tuple(results),
             extras={"publication_count": published, "calls_rqdata": False},
@@ -217,10 +224,3 @@ def supports_aggregate_frequency(value: object) -> bool:
     except (TypeError, ValueError):
         return False
     return parsed in DERIVED_FREQUENCIES
-
-
-def _digest_or_placeholder(source: object, field: str) -> str:
-    value = getattr(source, field, None)
-    if isinstance(value, str) and len(value) == 64:
-        return value
-    return "0" * 64
