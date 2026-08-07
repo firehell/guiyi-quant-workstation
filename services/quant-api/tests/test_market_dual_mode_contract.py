@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-def test_short_market_paths_are_retired() -> None:
+def test_short_market_paths_are_removed() -> None:
     client = TestClient(app)
     for path in (
         "/api/v1/market/bars",
@@ -11,8 +11,7 @@ def test_short_market_paths_are_retired() -> None:
         "/api/v1/market/indicators/macd",
     ):
         response = client.get(path)
-        assert response.status_code == 410
-        assert response.json()["detail"]["code"] == "MARKET_SHORT_PATH_RETIRED"
+        assert response.status_code == 404
 
 
 def test_historical_market_openapi_keeps_canonical_selection() -> None:

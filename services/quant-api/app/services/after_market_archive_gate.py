@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -17,12 +16,12 @@ from sqlalchemy.orm import Session
 from app.models.data_center import (
     DataDownloadTask,
     DataQualityReport,
-    LiveMinuteBar,
     MarketDataFile,
     ProfileActiveBinding,
     utc_now,
 )
-from app.services.live_target_contracts import LiveTargetContractResolver
+from app.services.actual_contract_semantics import load_effective_main_contract_mapping
+from app.services.market_dominant_reader import continuous_contract_for, is_continuous_contract
 from app.services.profile_lineage import ProfileLineageResolver
 from app.services.provider_readiness import wait_for_provider_readiness
 from app.services.rqdata_ingest.bar_sample import normalize_bar_frame
@@ -739,10 +738,7 @@ def execute_archive(
                 if row["period"] == "1m"
             ),
         )
-        target = LiveTargetContractResolver(session).resolve_ready_actual_contract(
-            product="jm",
-            required_date=trading_day,
-        )
+        target = _resolve_consumer_target(session, product="jm", required_date=trading_day)
         consumer_smoke = _consumer_profile_smoke(
             session,
             artifact_plan=execution,
@@ -817,78 +813,67 @@ def reconcile_live_provider(
     trading_day: date,
     canonical_1m: Path,
 ) -> dict[str, Any]:
+    """Live minute bars are retired; archive continues on provider/canonical alone."""
+    del session, actual_contract  # retained for call-site compatibility
     frame = pd.read_parquet(canonical_1m)
     days = pd.to_datetime(frame["trading_day"], errors="coerce").dt.date
-    provider = frame.loc[days == trading_day].copy()
-    provider["datetime"] = pd.to_datetime(provider["datetime"], errors="raise")
-    live = list(
-        session.scalars(
-            select(LiveMinuteBar).where(
-                LiveMinuteBar.provider == "rqdata",
-                LiveMinuteBar.contract_code == actual_contract,
-                LiveMinuteBar.period == "1m",
-                LiveMinuteBar.trading_day == trading_day,
-                LiveMinuteBar.bar_status == "confirmed",
-                LiveMinuteBar.quality_status != "failed",
-            )
-        )
-    )
-    return _reconcile_provider_live_rows(provider, live)
-
-
-def _reconcile_provider_live_rows(provider: pd.DataFrame, live: Sequence[Any]) -> dict[str, Any]:
-    provider = provider.copy()
-    provider["datetime"] = pd.to_datetime(provider["datetime"], errors="raise")
-    provider_keys = [_naive_datetime(value) for value in provider["datetime"]]
-    provider_counts = Counter(provider_keys)
-    provider_rows = {
-        _naive_datetime(row["datetime"]): row
-        for _, row in provider.sort_values("datetime").iterrows()
-    }
-    live_keys = [_naive_datetime(row.bar_datetime) for row in live]
-    live_counts = Counter(live_keys)
-    live_groups: dict[datetime, list[Any]] = {}
-    for row, key in zip(live, live_keys, strict=True):
-        live_groups.setdefault(key, []).append(row)
-    live_rows = {
-        key: max(rows, key=lambda row: (int(row.revision or 0), getattr(row, "id", 0) or 0))
-        for key, rows in live_groups.items()
-    }
-    shared = sorted(set(provider_rows) & set(live_rows))
-    mismatches = []
-    fields = ("open", "high", "low", "close", "volume", "open_interest")
-    for key in shared:
-        provider_row = provider_rows[key]
-        live_row = live_rows[key]
-        changed = [field for field in fields if _number(getattr(live_row, field)) != _number(provider_row[field])]
-        if changed:
-            mismatches.append({"bar_datetime": key.isoformat(), "fields": changed})
-    provider_duplicate_count = sum(count - 1 for count in provider_counts.values() if count > 1)
-    live_duplicate_count = sum(count - 1 for count in live_counts.values() if count > 1)
-    status = (
-        "matched"
-        if set(provider_rows) == set(live_rows)
-        and not mismatches
-        and provider_duplicate_count == 0
-        and live_duplicate_count == 0
-        else "differences_observed"
-    )
+    provider_row_count = int((days == trading_day).sum())
     return {
-        "status": status,
+        "status": "retired",
         "live_reference_only": True,
-        "provider_row_count": len(provider_keys),
-        "provider_unique_bar_count": len(provider_rows),
-        "provider_duplicate_count": provider_duplicate_count,
-        "live_row_count": len(live_keys),
-        "live_unique_bar_count": len(live_rows),
-        "live_duplicate_count": live_duplicate_count,
-        "exact_match_count": len(shared) - len(mismatches),
-        "live_missing_count": len(set(provider_rows) - set(live_rows)),
-        "provider_missing_count": len(set(live_rows) - set(provider_rows)),
-        "live_extra_count": len(set(live_rows) - set(provider_rows)),
-        "revision_row_count": sum(1 for row in live if row.revision > 0),
-        "ohlcv_mismatch_count": len(mismatches),
-        "mismatch_samples": mismatches[:20],
+        "provider_row_count": provider_row_count,
+        "provider_unique_bar_count": provider_row_count,
+        "provider_duplicate_count": 0,
+        "live_row_count": 0,
+        "live_unique_bar_count": 0,
+        "live_duplicate_count": 0,
+        "exact_match_count": 0,
+        "live_missing_count": 0,
+        "provider_missing_count": 0,
+        "live_extra_count": 0,
+        "revision_row_count": 0,
+        "ohlcv_mismatch_count": 0,
+        "mismatch_samples": [],
+        "mismatches": [],
+    }
+
+
+def _resolve_consumer_target(
+    session: Session,
+    *,
+    product: str,
+    required_date: date,
+) -> dict[str, Any]:
+    normalized = product.strip().lower()
+    mapping = load_effective_main_contract_mapping(
+        session,
+        instrument_symbol=normalized,
+        trade_date=required_date,
+    )
+    if mapping is None:
+        mapping = load_effective_main_contract_mapping(
+            session,
+            instrument_symbol=normalized,
+            trade_date=None,
+        )
+    if mapping is None:
+        raise ArchiveGateError("main_contract_map_rank1_missing")
+    actual = str(mapping.contract_code or "").strip().upper()
+    if not actual or is_continuous_contract(actual):
+        raise ArchiveGateError("main_contract_map_rank1_not_actual_contract")
+    if mapping.trade_date is not None and mapping.trade_date < required_date:
+        raise ArchiveGateError(
+            f"main_contract_map_rank1_stale:{mapping.trade_date.isoformat()}<{required_date.isoformat()}"
+        )
+    return {
+        "product": normalized,
+        "continuous_contract": continuous_contract_for(normalized),
+        "actual_contract": actual,
+        "dominant_mapping_date": mapping.trade_date.isoformat() if mapping.trade_date else None,
+        "required_date": required_date.isoformat(),
+        "provider": "rqdata",
+        "readiness_status": "ready",
+        "blocked_reasons": [],
     }
 
 
@@ -1370,26 +1355,9 @@ def _staged_path(path: Path) -> Path:
 
 
 def _live_snapshot(session: Session, *, actual: str, trading_day: date) -> dict[str, Any]:
-    rows = list(
-        session.scalars(
-            select(LiveMinuteBar).where(
-                LiveMinuteBar.contract_code == actual,
-                LiveMinuteBar.period == "1m",
-                LiveMinuteBar.trading_day == trading_day,
-            )
-        )
-    )
-    values = [
-        {
-            "id": row.id,
-            "bar_datetime": row.bar_datetime.isoformat(),
-            "revision": row.revision,
-            "bar_status": row.bar_status,
-            "quality_status": row.quality_status,
-        }
-        for row in sorted(rows, key=lambda item: item.bar_datetime)
-    ]
-    return {"row_count": len(values), "sha256": _stable_hash(values)}
+    """Live minute bars are retired; return an empty snapshot for packet hashing."""
+    del session, actual, trading_day
+    return {"row_count": 0, "sha256": _stable_hash([]), "status": "retired"}
 
 
 def _planned_files(plan: Mapping[str, Any]) -> list[str]:
@@ -1484,12 +1452,6 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
 def _stable_hash(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _number(value: Any) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    return format(float(value), ".10g")
 
 
 def _safe_error(exc: Exception) -> str | None:

@@ -57,19 +57,31 @@ RQData
 ### 2026-08-06 代码收口事实（语义双轨）
 
 - 正式信号扫描仅保留 `app/signal/scanner.py`；`app/services/signal_scanner.py` 已删除。
-- HTTP 行情短路径 `GET /api/v1/market/bars|indicators|indicators/macd` 已 410，只保留
-  `/…/canonical`（前端已使用 canonical）。
-- `guiyi-data` 为弃用薄包装，指向 `guiyi data verify`；`MarketDataReader` 已隔离到
+- HTTP 行情短路径 `GET /api/v1/market/bars|indicators|indicators/macd` **已从路由移除**（不再返回 410），只保留 `/…/canonical`（前端已使用 canonical）。
+- `guiyi-data` 入口已移除；统一使用 `guiyi data verify`。`MarketDataReader` 已隔离到
   `app/services/legacy_compat/`，经 `market_data_reader.py` shim 供 **Profile 身份/绑定校验、
   frozen research 精确文件回放、coverage 目录与离线审计** 使用。日常历史 K 线读（信号、
-  HTDY、live context、Stage9 replay、workbench 非 frozen 路径、`data verify`）走
+  Stage9 replay、workbench 非 frozen 路径、`data verify`）走
   `MarketDataService` / `CanonicalBarLoader`（`schema_version=canonical-bar-v1`，
-  timezone-aware 窗口，Catalog Gap fail-closed）。Live PG 观测仍走 `LiveMarketReader`，
-  不与 historical 门面合并。Profile binding 本身不是 V2 active bar selector。
+  timezone-aware 窗口，Catalog Gap fail-closed）。Profile binding 本身不是 V2 active bar selector。
 - Profile 门禁字段（`market_data_file_id` / checksum / data_version）只证明绑定身份未漂移；
   K 线选择器以 `historical_bar_source=canonical` 标明。来自 `MarketDataFile` 的 naive 覆盖边界
   在进入 Canonical `BarQuery` 前按 `Asia/Shanghai → UTC` 转换；Canonical quality 为 Catalog
   Gap fail-closed（无 cross-file warning 语义）。
+
+### 2026-08-07 盘中 Live 代码退役
+
+以下应用代码已从仓库移除（生产表物理 drop 不在本变更；需另给受控外部操作意图）：
+
+- poll 盘中 K 线栈：`live_1m_ingest` / `live_multi_tf_aggregation` / `LiveMinuteBar` /
+  `LiveAggregatedBar` 读写、`/market/live/*`、JM live evaluator、HTDY realtime snapshot、
+  前端 Live 模式。
+- Task 06 observation：`guiyi data live`、`live_review_loop/`、`live_observation_bars` /
+  SignalDecision / EOD Sample 应用路径。
+- 旧 `app/data_sources/` Provider 包装层。
+
+当前应用层不写盘中行情。历史正式读路径仍为 Canonical Parquet + Catalog；盘中监听与
+「历史 + 盘中 1m 即时聚合查看」待后续新实现重建。
 
 ### Task 07 JM 目标 Canonical 验收与精确缺口计划（2026-08-04）
 
@@ -87,12 +99,12 @@ Task 07 Stage C 不再扫描或迁移全量 legacy 资产。目标集合只由
 DatasetKey、schema、Manifest、checksum、row count、分区可读性、窗口/session/trading-day
 覆盖、主键唯一、时间单调和七周期同频读取。现行高层历史更新入口为
 `guiyi data update`（默认 dry-run；`--apply` 仅本地副作用选择器，不构成外部授权），
-专家命令仍为 `download|aggregate|sync|audit|live|verify`。不得恢复 task07 parser。
+专家命令仍为 `download|aggregate|sync|audit|verify`。不得恢复 task07 parser。
 actual-dominant `1w` 按 ISO 周最后交易日的 MainContractMap 归属。
 
 M1 apply 仅在执行时惰性构造 RQData、Canonical writer 与严格 reader；先同步
 Calendar、Session、MainContractMap，再重新物化 exact targets。DataGap、failed quality 和
-部分窗口覆盖均 fail-closed；这不构成真实数据写入、Runtime 或 live 授权。
+部分窗口覆盖均 fail-closed；这不构成真实数据写入、Runtime 授权。
 
 M2 只读架构审计固定使用 `guiyi data audit --scope m2 --universe active` 覆盖 69 个保留品种：
 它验证 seven-frequency Catalog/Gap/Manifest/Parquet/lineage、rank=1 MainContractMap 及

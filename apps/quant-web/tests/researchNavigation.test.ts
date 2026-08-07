@@ -36,12 +36,12 @@ describe('researchNavigation', () => {
       symbol: 'jm',
       contract: 'JM2609',
       period: '15m',
-      dataMode: 'live',
+      dataMode: 'historical',
       returnRoute: '/signal?tab=events&event_id=7',
     })
     assert.equal(query.signal_id, '6')
     assert.equal(query.signal_event_id, '7')
-    assert.equal(query.data_mode, 'live')
+    assert.equal(query.data_mode, 'historical')
     assert.equal(query.report_id, undefined)
     assert.deepEqual(buildReviewResearchQuery(parseResearchContext(query)), {
       source_type: 'signal_event',

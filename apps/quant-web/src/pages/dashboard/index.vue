@@ -1,11 +1,10 @@
 <script setup lang="ts">
-/** 仪表盘：聚合 V1-B 研究闭环指标、最近任务与 Live Target 只读状态。 */
+/** 仪表盘：聚合 V1-B 研究闭环指标与最近任务状态。 */
 import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NTag } from 'naive-ui'
 import { getDashboardSummary } from '@/api/dashboard'
-import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
 import PageShell from '@/components/common/PageShell.vue'
@@ -152,10 +151,6 @@ onMounted(() => {
       <NAlert type="info" :bordered="false" class="dashboard-note">
         unknown 不等于 failed；历史 replay 不参与 live 优先级；全部入口仅供研究与复盘。
       </NAlert>
-
-      <section class="dashboard-live">
-        <LiveTargetPanel compact />
-      </section>
     </template>
   </PageShell>
 </template>
@@ -280,10 +275,6 @@ onMounted(() => {
 
 .dashboard-note {
   margin-top: var(--gy-space-3);
-}
-
-.dashboard-live {
-  margin-top: var(--gy-space-4);
 }
 
 @media (max-width: 1199px) {

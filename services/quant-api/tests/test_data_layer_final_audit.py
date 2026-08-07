@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.models.data_center import DataDownloadTask, LiveAggregatedBar, MarketDataFile, TradingCalendar, TradingSession
+from app.models.data_center import DataDownloadTask, MarketDataFile, TradingCalendar, TradingSession
 from app.services.rqdata_ingest.data_layer_final_audit import (
     build_actual_consumer_matrix,
     build_claim_verdicts,
@@ -191,22 +191,6 @@ def test_partial_revision_policy_confirms_completed_friday_after_archive() -> No
                 result={"trading_day": "2026-07-10", "quality_status": "passed"},
             )
         )
-        session.add(
-            LiveAggregatedBar(
-                provider="rqdata",
-                instrument_symbol="jm",
-                contract_code="JM2609",
-                exchange_code="DCE",
-                period="1d",
-                source_period="1m",
-                source_mode="live_1m_sequential_bucket",
-                bar_datetime=datetime(2026, 7, 10, 15, 0, tzinfo=UTC),
-                trading_day=date(2026, 7, 10),
-                bar_status="confirmed",
-                quality_status="passed",
-                revision=2,
-            )
-        )
         session.commit()
 
         result = build_partial_revision_policy(
@@ -223,7 +207,8 @@ def test_partial_revision_policy_confirms_completed_friday_after_archive() -> No
     assert result["archive_completion"] == "success"
     assert result["confirmed"] is True
     assert result["partial"] is False
-    assert result["latest_accepted_revision"] == 2
+    assert result["latest_accepted_revision"] is None
+    assert result["live_revision_status"] == "retired"
 
 
 def test_partial_revision_policy_keeps_unfinished_week_partial() -> None:

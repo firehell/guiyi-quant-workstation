@@ -2,16 +2,13 @@ import type { MarketAccessMode } from './marketChartInit.ts'
 import { defaultContractViewForPeriod, type ContractViewMode } from './marketChartWindow.ts'
 import { toSafeApiError } from './errorRedaction.ts'
 
-export type MarketDataMode = 'historical' | 'live'
-
-/** 写回路由所需的 chart 选中状态 */
+/** 写回路由所需的 chart 选中状态（仅 historical/canonical） */
 export interface MarketChartQueryState {
   symbol: string
   actualContract: string
   period: string
   contractView: ContractViewMode
   accessMode: MarketAccessMode
-  dataMode: MarketDataMode
 }
 
 /** 保留在 URL 中的 deep-link 字段 */
@@ -28,7 +25,7 @@ export interface MarketChartDeepLink {
 
 /**
  * 将 chart 状态与 deep-link 合并为 route query。
- * 默认值（browser / historical / 默认 contract_view）省略以保持 URL 简洁。
+ * 默认值（browser / 默认 contract_view）省略以保持 URL 简洁。
  */
 export function buildMarketChartRouteQuery(
   state: MarketChartQueryState,
@@ -41,7 +38,6 @@ export function buildMarketChartRouteQuery(
     period: state.period,
     contract_view: state.contractView === defaultView ? undefined : state.contractView,
     access_mode: state.accessMode === 'research' ? 'research' : undefined,
-    data_mode: state.dataMode === 'live' ? 'live' : undefined,
     strategy: deepLink.strategy?.trim() || undefined,
     time: deepLink.time?.trim() || deepLink.datetime?.trim() || undefined,
     signal_layer: deepLink.signal_layer?.trim() || undefined,
@@ -67,10 +63,6 @@ export function safeMarketApiError(err: unknown, fallback: string): string {
   }
   return toSafeApiError(err, fallback)
 }
-
-/** Live 模式主图指标状态文案（不前端猜测 merge、不写 StrategySignal）。 */
-export const LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE =
-  'Live 指标上下文待服务端只读接口；当前不前端猜测 merge'
 
 /** 技术观察区 EMA 文案前缀 */
 export const TECHNICAL_OBSERVATION_PREFIX = '前端展示计算 · 技术观察 · 非 StrategySignal'

@@ -17,7 +17,6 @@ ConsumerName = Literal["market", "signal", "review"]
 
 INTRADAY_RESEARCH_PROFILE = "intraday_research_v1"
 LONG_HORIZON_DAILY_PROFILE = "long_horizon_daily_v1"
-LIVE_OBSERVATION_PROFILE = "live_observation_v1"
 PASSED_ONLY_POLICY = "passed_only"
 ACTIVE_ENTRY_POLICY = "active_entry"
 

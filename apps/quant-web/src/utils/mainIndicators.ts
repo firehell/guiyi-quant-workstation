@@ -26,9 +26,9 @@ export interface MainChartPreferences {
   realtimeFollow?: boolean
 }
 
-/** 主图指标模式上下文：数据模式与访问模式 */
+/** 主图指标模式上下文：访问模式（行情仅 historical/canonical） */
 export interface MainIndicatorModeContext {
-  dataMode: 'historical' | 'live'
+  dataMode: 'historical'
   accessMode: 'browser' | 'research'
 }
 

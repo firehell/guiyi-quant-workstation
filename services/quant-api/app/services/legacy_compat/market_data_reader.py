@@ -43,7 +43,7 @@ def _worst_quality_status(statuses: set[str]) -> str:
 #   1. direct 1d    — N/A (1d is NOT in RQDATA_DIRECT_PERIODS, always derived from 1m at ingest)
 #   2. historical   — Parquet files (data_role='primary'), queried via _find_files()
 #   3. derived 1d   — from 1m aggregation (bar_aggregation.py), only used at ingest to produce Parquet
-#   4. live 1d      — LiveAggregatedBar table, only for real-time path, NOT merged with historical
+#   4. live 1d      — retired (poll-live / Task06); not merged with historical
 #
 # Conclusion: API query for 1d only goes through historical Parquet path.
 #   Conflict detection only needs to operate within historical files.

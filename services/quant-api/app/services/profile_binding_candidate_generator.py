@@ -28,7 +28,6 @@ from app.services.profile_target_resolver import (
 DEFAULT_PROFILE_IDS = (
     "intraday_research_v1",
     "long_horizon_daily_v1",
-    "live_observation_v1",
 )
 
 
@@ -297,8 +296,7 @@ def _market_file_to_evidence(
 
 
 def _profile_product_scope(profile_id: str, products: set[str]) -> set[str] | None:
-    if profile_id == "live_observation_v1":
-        return {"jm"}
+    del profile_id
     return products
 
 

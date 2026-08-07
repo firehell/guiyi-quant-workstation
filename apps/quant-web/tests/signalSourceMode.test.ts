@@ -26,9 +26,9 @@ describe('signalSourceMode', () => {
     })
   })
 
-  it('opens confirmed live and HTDY first-seen observations in live market mode', () => {
-    assert.equal(signalSourceDataMode('live_confirmed'), 'live')
-    assert.equal(signalSourceDataMode('live_realtime_repainting'), 'live')
+  it('always opens chart navigation in historical mode (live APIs removed)', () => {
+    assert.equal(signalSourceDataMode('live_confirmed'), 'historical')
+    assert.equal(signalSourceDataMode('live_realtime_repainting'), 'historical')
     assert.equal(signalSourceDataMode('jm_v1b_historical_replay'), 'historical')
     assert.equal(signalSourceDataMode('unknown_mode'), 'historical')
   })

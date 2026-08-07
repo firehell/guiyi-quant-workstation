@@ -137,7 +137,7 @@ export interface MainIndicatorDefinition {
   lookbackBars: number
   alertCapable: boolean
   available: boolean
-  allowedDataModes?: Array<'historical' | 'live'>
+  allowedDataModes?: Array<'historical'>
   allowedAccessModes?: Array<'browser' | 'research'>
   repaintingRisk?: 'none' | 'known'
   riskMessages?: string[]
@@ -319,18 +319,6 @@ export interface MarketBarsQuality {
   }> | null
 }
 
-/** Live bars 质量计数摘要 */
-export interface LiveMarketBarsQuality {
-  status: string
-  row_count: number
-  chart_row_count: number
-  passed_count: number
-  warning_count: number
-  failed_count: number
-  rejected_count: number
-  partial_count: number
-}
-
 /** 当前 bars 请求对应的 coverage 片段 */
 export interface MarketBarsCoverage {
   symbol: string
@@ -454,24 +442,6 @@ export interface MarketMacdIndicatorResponse {
   data_identity?: CanonicalDataIdentity
 }
 
-/** Live 行情 bars 响应 */
-export interface LiveMarketBarsResponse {
-  bars: BarData[]
-  quality: LiveMarketBarsQuality
-  coverage?: MarketBarsCoverage | null
-  request: {
-    symbol: string
-    contract: string
-    period: string
-    start?: string | null
-    end?: string | null
-    provider?: string | null
-    source_mode?: string | null
-    limit: number
-  }
-  message?: string | null
-}
-
 /** 拉取 market bars 的请求参数 */
 export interface MarketBarsRequestParams {
   dataset_kind?: 'continuous' | 'actual_dominant'
@@ -516,40 +486,4 @@ export interface QuoteSnapshot {
   preClose: number
   preSettle: number
   timestamp: string
-}
-
-/** Live 目标合约某周期覆盖状态 */
-export interface LiveTargetCoveragePeriod {
-  available: boolean
-  row_count?: number
-  latest_bar_time?: string | null
-  quality_status?: string | null
-  data_role?: string | null
-}
-
-/** Live 目标合约就绪状态与阻塞原因 */
-export interface LiveTargetContractItem {
-  product: string
-  continuous_contract: string
-  actual_contract?: string | null
-  dominant_mapping_date?: string | null
-  readiness_status: string
-  blocked_reasons: string[]
-  historical_coverage: Record<string, LiveTargetCoveragePeriod>
-  live_coverage: Record<string, LiveTargetCoveragePeriod>
-  trading_parameter_gate?: Record<string, unknown>
-}
-
-/** Live 目标合约列表响应 */
-export interface LiveTargetContractsResponse {
-  provider: string
-  target_products: string[]
-  trade_date?: string | null
-  readiness_status: string
-  preview_only: boolean
-  writes_strategy_signal: boolean
-  writes_signal_event: boolean
-  sends_notification: boolean
-  auto_order: boolean
-  items: LiveTargetContractItem[]
 }

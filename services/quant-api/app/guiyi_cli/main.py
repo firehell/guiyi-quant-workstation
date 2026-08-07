@@ -190,11 +190,7 @@ def main(
                 period=args.period,
                 start=start,
                 end=end,
-                provider=args.provider,
-                profile_id=args.profile_id,
-                access_mode=args.access_mode,
                 limit=args.limit,
-                legacy_compat=False,
             )
     except ActiveDatasetDomainError as exc:
         print_json(
@@ -259,7 +255,7 @@ def _positive_int(value: str) -> int:
 def _validate_conditional_arguments(args: argparse.Namespace) -> None:
     if args.domain != "data":
         return
-    if args.data_command in {"download", "aggregate", "live"}:
+    if args.data_command in {"download", "aggregate"}:
         if args.symbol is not None and not args.contract_or_series:
             raise CliUsageError("single target requires --contract-or-series")
         return

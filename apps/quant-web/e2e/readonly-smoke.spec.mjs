@@ -34,6 +34,7 @@ test.describe('Web V1 real backend read-only smoke', () => {
 
   test('market bars read stays GET-only when available', async ({ request }) => {
     const candidates = [
+      `${apiBase}/api/v1/market/bars/canonical?symbol=jm&contract=JM2609&period=15m&limit=5`,
       `${apiBase}/api/v1/market/bars?symbol=jm&contract=JM2609&period=15m&limit=5`,
       `${apiBase}/api/v1/market/dominants`,
     ]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 信号事件列表：Stage9 企业微信 Preview（would_send=false）与 Live Evaluator 只读预览。 */
+/** 信号事件列表：Stage9 企业微信 Preview（would_send=false）。 */
 import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -10,14 +10,12 @@ import {
   NDescriptionsItem,
   NDrawer,
   NDrawerContent,
-  NTag,
-  useMessage,
   type DataTableColumns,
 } from 'naive-ui'
-import { getStage9WechatPreview, listSignalEvents, previewLiveEvaluator } from '@/api/signal'
+import { getStage9WechatPreview, listSignalEvents } from '@/api/signal'
 import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
-import type { LiveSignalEvaluationResponse, SignalEventRecord, Stage9WechatPreview } from '@/types/signal'
+import type { SignalEventRecord, Stage9WechatPreview } from '@/types/signal'
 import { toSafeApiError } from '@/utils/errorRedaction'
 import {
   buildHtDyFirstSeenPresentation,
@@ -26,12 +24,9 @@ import {
 import { resolveEventSourceMode, signalSourceDataMode, sourceModeBadge } from '@/utils/signalSourceMode'
 import { buildSignalEventReviewQuery, currentReturnRoute } from '@/utils/researchNavigation'
 
-const message = useMessage()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
-const loadingPreview = ref(false)
-const loadingEvaluator = ref(false)
 const error = ref<string | null>(null)
 const events = ref<SignalEventRecord[]>([])
 const eventTotal = ref(0)
@@ -39,8 +34,6 @@ const eventPage = ref(1)
 const eventPageSize = 10
 const expandedEventId = ref<number | null>(null)
 const previewByEventId = ref<Record<number, Stage9WechatPreview>>({})
-const evaluatorVisible = ref(false)
-const evaluatorResult = ref<LiveSignalEvaluationResponse | null>(null)
 const htdyEvidenceVisible = ref(false)
 const selectedHtDyEvidence = ref<HtDyFirstSeenPresentation | null>(null)
 let eventListController: AbortController | null = null
@@ -145,13 +138,10 @@ async function togglePreview(eventId: number) {
   expandedEventId.value = eventId
   void router.replace({ query: { ...route.query, tab: 'events', event_id: String(eventId) } })
   if (previewByEventId.value[eventId]) return
-  loadingPreview.value = true
   try {
     previewByEventId.value[eventId] = await getStage9WechatPreview(eventId)
   } catch (err) {
-    message.error(toSafeApiError(err, '加载 Stage9 preview 失败'))
-  } finally {
-    loadingPreview.value = false
+    error.value = toSafeApiError(err, '加载 Stage9 preview 失败')
   }
 }
 
@@ -195,18 +185,6 @@ function openHtDyEvidence(event: SignalEventRecord) {
   htdyEvidenceVisible.value = selectedHtDyEvidence.value !== null
 }
 
-async function openEvaluatorPreview() {
-  loadingEvaluator.value = true
-  try {
-    evaluatorResult.value = await previewLiveEvaluator()
-    evaluatorVisible.value = true
-  } catch (err) {
-    message.error(toSafeApiError(err, 'Live evaluator preview 失败'))
-  } finally {
-    loadingEvaluator.value = false
-  }
-}
-
 onMounted(() => {
   void loadEvents()
 })
@@ -222,7 +200,6 @@ function isCanceledRequest(err: unknown) {
   <div class="signal-events">
     <div class="signal-events__toolbar">
       <NButton size="small" :loading="loading" @click="loadEvents">刷新事件</NButton>
-      <NButton size="small" :loading="loadingEvaluator" @click="openEvaluatorPreview">Live Evaluator Preview</NButton>
     </div>
     <NAlert type="warning" :bordered="false">
       企业微信仅 Preview；would_send=false，非交易指令；jm_v1b_historical_replay 为测试/回放。
@@ -241,39 +218,6 @@ function isCanceledRequest(err: unknown) {
         <pre class="signal-events__markdown">{{ JSON.stringify(expandedPreview.wechat_payload, null, 2) }}</pre>
       </template>
     </div>
-
-    <NDrawer v-model:show="evaluatorVisible" width="640">
-      <NDrawerContent title="Live Evaluator Preview（只读）">
-        <NAlert type="info" :bordered="false">Preview only，不写 SignalEvent，不自动下单，不发送通知。</NAlert>
-        <div v-if="evaluatorResult" class="evaluator-body">
-          <div class="evaluator-meta">
-            <NTag size="small">{{ evaluatorResult.contract }}</NTag>
-            <span>actual {{ evaluatorResult.actual_contract || '—' }}</span>
-            <span>主连 {{ evaluatorResult.continuous_contract || '—' }}</span>
-          </div>
-          <div v-for="item in evaluatorResult.results" :key="item.entry_interval" class="evaluator-item">
-            <div class="evaluator-item__heading">
-              <strong>{{ item.entry_interval }}</strong>
-              <NTag size="small" :type="item.context?.status === 'ready' ? 'success' : 'error'">
-                context {{ item.context?.status || 'missing' }}
-              </NTag>
-            </div>
-            <span>{{ item.status }} / {{ item.direction }}</span>
-            <span v-if="item.trigger_price">触发价 {{ item.trigger_price }}</span>
-            <span v-if="item.no_signal_reason">{{ item.no_signal_reason }}</span>
-            <template v-if="item.context">
-              <span v-if="item.context.historical_context_file_id">
-                historical #{{ item.context.historical_context_file_id }} · {{ item.context.historical_context_data_version }}
-              </span>
-              <span v-if="item.context.live_bar_id">
-                live #{{ item.context.live_bar_id }} r{{ item.context.live_bar_revision }} · {{ item.context.confirmed_at }}
-              </span>
-              <span v-if="item.context.blocked_reason">{{ item.context.blocked_reason }}</span>
-            </template>
-          </div>
-        </div>
-      </NDrawerContent>
-    </NDrawer>
 
     <NDrawer v-model:show="htdyEvidenceVisible" width="680">
       <NDrawerContent title="HTDY first-seen 冻结证据">
@@ -326,36 +270,6 @@ function isCanceledRequest(err: unknown) {
   white-space: pre-wrap;
   font-size: 12px;
   color: var(--gy-text-muted);
-}
-
-.evaluator-body {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.evaluator-item__heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.evaluator-meta {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 13px;
-}
-
-.evaluator-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px;
-  border: 1px solid var(--gy-border);
-  border-radius: 8px;
 }
 
 .htdy-evidence {

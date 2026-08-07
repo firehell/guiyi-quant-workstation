@@ -769,7 +769,7 @@ def _fixture_connection() -> sqlite3.Connection:
         CREATE TABLE review_notes (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE data_profiles (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE profile_active_bindings (id INTEGER PRIMARY KEY, name TEXT);
-        CREATE TABLE live_minute_bars (id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE after_market_scheduler_checkpoints (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE indicator_cache (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE market_datasets (id INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE market_partitions (id INTEGER PRIMARY KEY, name TEXT);
@@ -779,7 +779,7 @@ def _fixture_connection() -> sqlite3.Connection:
         INSERT INTO review_notes VALUES (4, 'note');
         INSERT INTO data_profiles VALUES (8, 'profile');
         INSERT INTO profile_active_bindings VALUES (9, 'binding');
-        INSERT INTO live_minute_bars VALUES (2, 'live');
+        INSERT INTO after_market_scheduler_checkpoints VALUES (2, 'checkpoint');
         INSERT INTO indicator_cache VALUES (1, 'cache');
         INSERT INTO market_datasets VALUES (10, 'dataset');
         INSERT INTO market_partitions VALUES (11, 'partition');
@@ -862,8 +862,8 @@ def _complete_empty_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     for table in (
         "after_market_scheduler_checkpoints",
-        "data_gaps", "data_profiles", "live_aggregated_bars", "live_aggregation_checkpoints", "live_ingest_checkpoints",
-        "live_minute_bars", "main_contract_map", "market_datasets", "market_partitions",
+        "data_gaps", "data_profiles",
+        "main_contract_map", "market_datasets", "market_partitions",
     ):
         connection.execute(f'CREATE TABLE "{table}" (id INTEGER PRIMARY KEY)')
     connection.execute(

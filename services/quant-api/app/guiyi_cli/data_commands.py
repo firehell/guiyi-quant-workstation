@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -34,18 +34,16 @@ from app.services.data_operations.contracts import (
     CliArgumentInvalid,
     DownloadRequest,
     HistoricalUpdateRequest,
-    LiveRequest,
     MetadataSyncRequest,
     MetadataSyncScope,
 )
 from app.services.data_operations.download import DownloadApplicationService
 from app.services.data_operations.historical_update import HistoricalUpdateWorkflow
-from app.services.data_operations.live import LiveConfig, LiveObservationApplicationService
 from app.services.data_operations.metadata_sync import MetadataSyncApplicationService
 from app.services.data_operations.target_expander import expand_targets
 
 
-NEW_DATA_COMMANDS = frozenset({"download", "aggregate", "live", "audit", "update"})
+NEW_DATA_COMMANDS = frozenset({"download", "aggregate", "audit", "update"})
 METADATA_SYNC_COMMAND = "sync"
 
 
@@ -72,8 +70,6 @@ def build_data_operation_request(
         return _download_request(args, allowed_roots=allowed_roots)
     if command == "aggregate":
         return _aggregate_request(args, allowed_roots=allowed_roots)
-    if command == "live":
-        return _live_request(args, allowed_roots=allowed_roots)
     if command == "sync":
         return _metadata_request(args, allowed_roots=allowed_roots)
     if command == "audit":
@@ -89,7 +85,6 @@ def run_data_operation(
     session: Session,
     download_service: DownloadApplicationService | None = None,
     aggregate_service: AggregateApplicationService | None = None,
-    live_service: LiveObservationApplicationService | None = None,
     metadata_service: MetadataSyncApplicationService | None = None,
     audit_service: AuditV2ApplicationService | None = None,
     update_workflow: HistoricalUpdateWorkflow | None = None,
@@ -103,9 +98,6 @@ def run_data_operation(
     if command == "aggregate":
         service = aggregate_service or _default_aggregate_service(session)
         return service.run(request).as_payload()  # type: ignore[arg-type]
-    if command == "live":
-        service = live_service or _default_live_service(session)
-        return service.listen(request).as_payload()  # type: ignore[arg-type]
     if command == "sync":
         service = metadata_service or _default_metadata_service(session)
         return service.run(request).as_payload()  # type: ignore[arg-type]
@@ -170,35 +162,6 @@ def _aggregate_request(
         targets=targets,
         apply=bool(args.apply),
         batch_size=getattr(args, "batch_size", None),
-    )
-
-
-def _live_request(
-    args: argparse.Namespace,
-    *,
-    allowed_roots: Sequence[Path],
-) -> LiveRequest:
-    # Live uses an explicit identity window placeholder for expansion contracts.
-    from datetime import UTC, datetime
-
-    now = datetime.now(tz=UTC)
-    start = now
-    end = now.replace(microsecond=0) + timedelta(seconds=1)
-    if args.start or args.end:
-        start, end = require_paired_window(args.start, args.end)
-    targets = expand_targets(
-        symbol=args.symbol,
-        symbols_file=args.symbols_file,
-        dataset_kind=parse_dataset_kind(args.dataset_kind),
-        contract_or_series=args.contract_or_series,
-        frequency=parse_frequency(args.frequency),
-        start=start,
-        end=end,
-        allowed_roots=allowed_roots,
-    )
-    return LiveRequest(
-        targets=targets,
-        confirm_observation_write=bool(args.confirm_observation_write),
     )
 
 
@@ -312,21 +275,6 @@ def _default_download_service(session: Session) -> DownloadApplicationService:
 
 def _default_aggregate_service(session: Session) -> AggregateApplicationService:
     return build_readonly_aggregate_service(session)
-
-
-def _default_live_service(session: Session) -> LiveObservationApplicationService:
-    from app.live_review_loop.live import LiveObservationStore
-
-    store = LiveObservationStore(session)
-
-    def stream_factory(_targets: Sequence[Any]) -> list[Any]:
-        return []
-
-    return LiveObservationApplicationService(
-        store=store,
-        stream_factory=stream_factory,
-        config_provider=lambda: LiveConfig(enabled=False, missing=True),
-    )
 
 
 def _default_metadata_service(session: Session) -> MetadataSyncApplicationService:

@@ -178,7 +178,6 @@ def test_property_3_result_envelope_is_total(
         "writes_staging",
         "writes_canonical",
         "writes_postgresql",
-        "writes_live_observation",
         "writes_historical_active",
         "sends_notification",
         "creates_order",

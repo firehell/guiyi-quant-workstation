@@ -25,7 +25,9 @@ Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划�
 仓库当前已移除旧 Web/backend backtest 子系统与 S6-08/S6-09/S6-10 控制面：不再提供
 `/api/backtests/**`、`/ws/backtests/**`、`/backtest`、`/backtest/batch`、`/settings`、
 `guiyi-backtests` worker/queue、`guiyi runtime plan` 或 runtime health scheduler component。
-Market、watchlists、runtime status、Signal/Data/Review 非回测路径、Task 06、盘后 scheduler 与
+Market、watchlists、runtime status、Signal/Data/Review 非回测路径、盘后 scheduler 与
+Canonical 历史读路径继续保留。盘中 poll Live K 线与 Task 06 observation 应用代码已退役；
+盘中能力待后续新实现重建。
 Canonical data 保留。tracked legacy evidence 以及主工程被 Git 忽略的
 `/Volumes/扩展盘/guiyi-quant-workstation/backtests/`（87 个文件，约 50 MB）已精确清理。
 此处不代表 release、Runtime promotion、生产 DB/正式数据删除、launchd/Redis/其他 host 清理
@@ -56,15 +58,16 @@ production_writes=false
 | GY-DATA-CORE-V2 Task 00～03 | completed on develop | 完成事实可由历史证据追溯；不是后续授权 |
 | GY-DATA-CORE-V2 Task 04 | completed on develop | Canonical 自身质量准入、统一读取与普通消费者回归；legacy Shadow 不是准入条件 |
 | GY-DATA-CORE-V2 Task 05 | completed on develop | trusted consumers 与 fail-closed derived/reference inventory；不含真实删除 |
-| GY-DATA-CORE-V2 Task 06 | completed on develop | 固定 EMA21 evaluator + `0028..0031` + live/decision/EOD/Review/Sample/retention；Runtime/live 未启用 |
+| GY-DATA-CORE-V2 Task 06 | retired from application code | 历史合同曾合入 develop；`guiyi data live` / `live_review_loop` 应用路径已移除；表物理 drop 未做 |
 | GY-DATA-CORE-V2 Task 07 Stage C | implementation candidate | 按当前代码运行本地定向与领域验证；生产只读验收未执行 |
 | GY-DATA-CORE-V2 Task 08 | pending | Stage D Runtime promotion 的独立业务任务；任何真实切换需新的精确范围执行意图 |
 | GY-DATA-PRODUCT-RETIREMENT-21 | completed / released | 21 品种全链路删除、69 品种七周期刷新、Runtime 发布与残留验证完成 |
 | 旧派生数据清理 | optional / separate | 不阻塞 Task 07；仓库内删除与生产/正式数据删除必须分别分类 |
-| scripts-cli-consolidation | implementation on develop | 统一 `guiyi data update/download/aggregate/live/sync/audit`；`HistoricalUpdateWorkflow` 已从退役刷新提取；旧 scripts/rqdata_* 与 plan/migrate/task07 已移除；正式数据/RQData/Runtime 未执行；本地定向测试待 Mac Mini 验证 |
+| scripts-cli-consolidation | implementation on develop | 统一 `guiyi data update/download/aggregate/sync/audit/verify`；旧 `data live` 与 `guiyi-data` 已移除；正式数据/RQData/Runtime 未执行；本地定向测试待 Mac Mini 验证 |
 | M1 historical update | implementation on develop | `data update` 默认 dry-run；apply 采用惰性组合、Calendar/Session/MainContractMap 后重规划、Direct→Aggregate→严格窗口校验。未执行真实 RQData、DB、Canonical 或 Runtime 操作。 |
 | M2 retained-universe audit | implementation on develop | `data audit --scope m2 --universe active` 固定审计 69 个保留品种的 seven-frequency Catalog/Gap/Manifest/Parquet、lineage、rank=1 mapping 与确定性 `MarketDataService` probes；生产只读验收尚未执行。 |
 | Backtest/S6 repository retirement | implementation on develop | 旧 API/Web/worker/queue/CLI、S6-08/09/10 control plane、tracked legacy evidence 与精确 ignored `backtests/` host output 已退出；完整 backend/frontend 验证与 launchd/Redis/Runtime/生产数据等其余外部清理由后续任务负责 |
+| poll Live K 线栈退役 | implementation on develop | 盘中 poll ingest/聚合/`/market/live/*`/live signal/HTDY realtime/前端 Live 模式已删；盘中能力待重建；未 drop 生产表 |
 
 ## 未完成事项与执行边界
 
@@ -75,8 +78,8 @@ production_writes=false
 | 全历史 residual triage | pending | 不得将消费者验收扩写为所有历史资产 residual 为零 |
 | Task 07 Stage C | implementation candidate | 历史协作修正记录仅作事实保留；当前完成依据是适用的本地验证 |
 | Task 07 production read-only acceptance | pending | 重新回读 PostgreSQL `20260803_0032` 并验收 JM 目标 Canonical；本次未执行 |
-| Task 06 live/EOD contract | passed | 已冻结单一 EMA21 confirmed-close observation 合同；不扩展 centered-XMA 白名单 |
-| Task 06 production migration | passed | `0028 -> 0031` empty/disabled smoke 已通过；该事实不授权 Runtime/live enable |
+| Task 06 live/EOD contract | retired | 应用代码已移除；历史合同事实保留在 Git / Alembic |
+| Task 06 production migration | historical | `0028 -> 0031` 曾通过；不授权 Runtime enable，也不表示 observation 路径仍存在 |
 | 21 品种行情与 legacy 工件删除 | passed | 生产 DB/三个数据 root 残留为 0；仓库内 1,035 个专属历史 manifest 已删除，混合审计报告不作整文件删除 |
 | release / main / tag | released | PR #155 合入 develop，PR #156 合入 main；Runtime tag 为 `runtime-20260805-b81a9d99` |
 | Task 08 Runtime promotion | pending / default off | Runtime 保持关闭；未来切换必须满足业务检查并取得该次 scope 的独立意图 |

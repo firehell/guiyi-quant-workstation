@@ -1,8 +1,8 @@
 """Latest/window bar helper over MarketDataService for historical consumers.
 
-Live observation remains on LiveMarketReader. Profile/MarketDataFile selectors
-are not accepted as bar selectors; callers may still validate Profile identity
-separately, then read bars here by DatasetKey.
+Live observation paths were retired with poll-live / Task06 cleanup.
+Profile/MarketDataFile selectors are not accepted as bar selectors; callers may
+still validate Profile identity separately, then read bars here by DatasetKey.
 """
 
 from __future__ import annotations

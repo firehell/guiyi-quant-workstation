@@ -4,7 +4,6 @@ import { describe, it } from 'node:test'
 import {
   buildEmaObservationStatus,
   buildMarketChartRouteQuery,
-  LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE,
   qualityFailedObservationText,
   safeMarketApiError,
   TECHNICAL_OBSERVATION_PREFIX,
@@ -19,7 +18,6 @@ describe('marketStateMachine', () => {
         period: '15m',
         contractView: 'actual',
         accessMode: 'research',
-        dataMode: 'historical',
       },
       {
         strategy: 'su_bing_v1',
@@ -43,21 +41,19 @@ describe('marketStateMachine', () => {
     assert.equal(query.return_route, '/signal?tab=events')
   })
 
-  it('persists contract_view and live data_mode when non-default', () => {
+  it('persists contract_view when non-default', () => {
     const query = buildMarketChartRouteQuery(
       {
         symbol: 'jm',
         actualContract: 'JM2609',
         period: '15m',
         contractView: 'continuous',
-        profileId: null,
         accessMode: 'browser',
-        dataMode: 'live',
       },
       {},
     )
     assert.equal(query.contract_view, 'continuous')
-    assert.equal(query.data_mode, 'live')
+    assert.equal(query.data_mode, undefined)
     assert.equal(query.access_mode, undefined)
   })
 
@@ -111,10 +107,5 @@ describe('marketStateMachine', () => {
     const below = buildEmaObservationStatus(80, 90)
     assert.equal(below.label, 'EMA21 下方')
     assert.match(below.text, /非 StrategySignal/)
-  })
-
-  it('live indicator pending message avoids frontend merge claim', () => {
-    assert.match(LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE, /待服务端/)
-    assert.equal(LIVE_INDICATOR_CONTEXT_PENDING_MESSAGE.includes('StrategySignal'), false)
   })
 })

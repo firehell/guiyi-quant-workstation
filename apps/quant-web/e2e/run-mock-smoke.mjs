@@ -142,7 +142,7 @@ async function run() {
       },
     ],
     [
-      'market list and chart expose historical/live and contract view controls',
+      'market list and chart expose historical/canonical and contract view controls',
       async (page) => {
         const chartDataCalls = []
         const marketCoverageCalls = []
@@ -158,12 +158,11 @@ async function run() {
         await expect(page.getByText('期货主力行情').first()).toBeVisible({ timeout: 15_000 })
         await expect(page.getByRole('button', { name: '查看 K 线' }).first()).toBeVisible()
         await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
-        await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
-        await expect(page.getByText('Live', { exact: true }).first()).toBeVisible()
-        await expect(page.getByText('真实主力').first()).toBeVisible()
+        await expect(page.getByText('真实主力').first()).toBeVisible({ timeout: 20_000 })
         await expect(page.getByText('主连研究').first()).toBeVisible()
         await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
         await expect(page.getByText('严格研究').first()).toBeVisible()
+        await expect(page.getByText('Live', { exact: true })).toHaveCount(0)
         if (process.env.EXPECT_CANONICAL_MARKET === '1') {
           await expect.poll(() => chartDataCalls.some((url) => url.includes('/bars/canonical'))).toBeTruthy()
           expect(marketCoverageCalls.some((url) => url.includes('/coverage/canonical'))).toBeTruthy()
@@ -325,7 +324,7 @@ async function run() {
         await expect(page).toHaveURL((url) => (
           url.pathname === '/market/chart'
           && url.searchParams.get('signal_event_id') === '8'
-          && url.searchParams.get('data_mode') === 'live'
+          && url.searchParams.get('data_mode') === 'historical'
         ))
         await expect(page.getByText('#8 · signal_created')).toBeVisible({ timeout: 15_000 })
         await expect(page.getByText('live_realtime_repainting').first()).toBeVisible()
@@ -349,7 +348,7 @@ async function run() {
         await expect(page).toHaveURL((url) => (
           url.pathname === '/market/chart'
           && url.searchParams.get('signal_event_id') === '7'
-          && url.searchParams.get('data_mode') === 'live'
+          && url.searchParams.get('data_mode') === 'historical'
         ))
         await page.getByRole('button', { name: '打开事件复盘' }).click()
         await expect(page).toHaveURL(/\/review\?.*source_type=signal_event.*source_id=7/)

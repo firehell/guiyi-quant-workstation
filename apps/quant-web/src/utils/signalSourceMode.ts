@@ -69,10 +69,9 @@ export function sourceModeBadge(mode: string) {
   return meta
 }
 
-export function signalSourceDataMode(mode?: string | null): 'live' | 'historical' {
-  return mode === 'live_confirmed' || mode === 'live_realtime_repainting'
-    ? 'live'
-    : 'historical'
+/** Chart 仅保留 historical/canonical；live_confirmed 等仅作展示标签，不再导航到 live API。 */
+export function signalSourceDataMode(_mode?: string | null): 'historical' {
+  return 'historical'
 }
 
 export function signalResearchIdentity(

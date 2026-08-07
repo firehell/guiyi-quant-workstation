@@ -111,7 +111,7 @@ test.describe('Web V1 mock smoke', () => {
     }
   })
 
-  test('market list and chart expose historical/live and contract view controls', async ({ page }) => {
+  test('market list and chart expose historical/canonical and contract view controls', async ({ page }) => {
     const chartDataCalls = []
     page.on('request', (req) => {
       if (/\/market\/(bars|indicators)/.test(req.url())) chartDataCalls.push(req.url())
@@ -121,19 +121,18 @@ test.describe('Web V1 mock smoke', () => {
     await expect(page.getByRole('button', { name: '查看 K 线' }).first()).toBeVisible()
 
     await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
-    await expect(page.getByText('历史', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText('Live', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('真实主力').first()).toBeVisible()
+    await expect(page.getByText('真实主力').first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('主连研究').first()).toBeVisible()
     await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('严格研究').first()).toBeVisible()
-    for (const tabName of ['策略', '信号', '复盘', '运行']) {
+    await expect(page.getByText('Live', { exact: true })).toHaveCount(0)
+    for (const tabName of ['盘面', '信号', '复盘', '运行']) {
       await expect(page.getByRole('tab', { name: tabName })).toBeVisible()
     }
     await page.waitForTimeout(100)
     const beforeTabSwitch = chartDataCalls.length
     await page.getByRole('tab', { name: '运行' }).click()
-    await page.getByRole('tab', { name: '策略' }).click()
+    await page.getByRole('tab', { name: '盘面' }).click()
     expect(chartDataCalls).toHaveLength(beforeTabSwitch)
     await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m&signal_event_id=7')
     await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')
@@ -179,7 +178,7 @@ test.describe('Web V1 mock smoke', () => {
     })
     await page.goto('/signal?tab=events')
     await page.getByRole('button', { name: '打开K线' }).first().click()
-    await expect(page).toHaveURL(/\/market\/chart\?.*signal_event_id=7.*data_mode=live/)
+    await expect(page).toHaveURL(/\/market\/chart\?.*signal_event_id=7.*data_mode=historical/)
     await page.getByRole('button', { name: '打开事件复盘' }).click()
     await expect(page).toHaveURL(/\/review\?.*source_type=signal_event.*source_id=7/)
     await expect(page.getByText(/尚无复盘/).first()).toBeVisible()
@@ -316,7 +315,7 @@ test.describe('Web V1 mock smoke', () => {
 
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/market/chart?symbol=jm&contract=JM2609&period=15m')
-    const strategyTab = page.getByRole('tab', { name: '策略' })
+    const strategyTab = page.getByRole('tab', { name: '盘面' })
     await strategyTab.focus()
     await strategyTab.press('ArrowRight')
     await expect(page.getByRole('tab', { name: '信号' })).toHaveAttribute('aria-selected', 'true')

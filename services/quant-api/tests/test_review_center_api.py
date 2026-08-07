@@ -64,7 +64,6 @@ def test_retired_review_sources_are_hidden_and_rejected_without_writes() -> None
     supported_source_types = (
         "strategy_signal",
         "signal_event",
-        "signal_decision",
         "manual_trade",
     )
     with TestingSessionLocal() as session:
@@ -126,7 +125,6 @@ def test_retired_review_sources_are_hidden_and_rejected_without_writes() -> None
             f"/api/reviews/{retired_id}/attachments",
             json={"file_path": "/tmp/retired.png"},
         ).status_code == 404
-        assert client.post(f"/api/reviews/{retired_id}/research-sample").status_code == 404
         assert client.get("/api/reviews/lineage/backtest_trade/99").status_code == 404
 
         stats = client.get("/api/reviews/stats")

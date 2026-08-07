@@ -32,15 +32,10 @@ def verify_active_dataset(
     period: str,
     start: datetime | None,
     end: datetime | None,
-    provider: str | None,
-    profile_id: str | None,
-    access_mode: str,
     limit: int,
-    legacy_compat: bool = False,
     service_factory: Callable[..., MarketDataService] | None = None,
     gap_lister: Callable[[DatasetKey], list[Any]] | None = None,
 ) -> dict[str, Any]:
-    del legacy_compat, provider, profile_id, access_mode
     normalized_symbol = symbol.strip().lower()
     normalized_contract = contract.strip().upper()
     try:
@@ -93,9 +88,6 @@ def verify_active_dataset(
                 period=period,
                 start=start,
                 end=end,
-                provider=None,
-                profile_id=None,
-                access_mode="canonical",
                 limit=limit,
             ),
             result={
@@ -128,9 +120,6 @@ def verify_active_dataset(
                 period=period,
                 start=start,
                 end=end,
-                provider=None,
-                profile_id=None,
-                access_mode="canonical",
                 limit=limit,
             ),
             result={
@@ -156,9 +145,6 @@ def verify_active_dataset(
             period=period,
             start=start,
             end=end,
-            provider=None,
-            profile_id=None,
-            access_mode="canonical",
             limit=limit,
         ),
         result={
@@ -262,9 +248,6 @@ def _request_payload(
     period: str,
     start: datetime | None,
     end: datetime | None,
-    provider: str | None,
-    profile_id: str | None,
-    access_mode: str,
     limit: int,
 ) -> dict[str, Any]:
     return {
@@ -273,8 +256,5 @@ def _request_payload(
         "period": period,
         "start": start.isoformat() if start is not None else None,
         "end": end.isoformat() if end is not None else None,
-        "provider": provider,
-        "profile_id": profile_id,
-        "access_mode": access_mode,
         "limit": limit,
     }

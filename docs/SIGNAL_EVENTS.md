@@ -43,39 +43,17 @@ Strategy
 相同 event identity 和 payload 必须幂等；identity 相同但内容不同必须显式拒绝或创建新版本，
 不能静默覆盖。通知 dedupe identity 必须包含 event、signal、channel 与 rendered payload hash。
 
-## 4. Task 06 retained path
+## 4. Task 06 path（已退役）
 
-Task 06 保留 confirmed observation、SignalDecision、EOD reconciliation、ResearchSample 与人工 Review：
+Task 06 的 confirmed observation、SignalDecision、EOD reconciliation、ResearchSample 应用路径
+已从仓库移除（含 `guiyi data live` / `live_review_loop`）。历史 Alembic 与 Git 可追溯；
+不得再把它当作 active 信号或盘中观察入口。人工 Review 中心仍服务于正式 `SignalEvent` 复盘。
 
-```text
-RQData rank=1 actual contract
--> confirmed 1m / complete-session 15m
--> fixed EMA21 evaluator
--> immutable SignalDecision
--> EOD provider-final reconciliation
--> optional ResearchSample / Manual Review
-```
+## 5. HTDY original observation rule（盘中 realtime 已退役）
 
-- trusted builder 固定当前 canonical strategy/indicator/policy/recipe identity 并自行计算 digest；
-  不接受调用方注入 identity、参数或摘要。
-- `SignalDecision` create-only；有信号与无信号都记录，revision/identity/OHLCV 漂移 fail-closed。
-- live、EOD、retention 与通知开关默认 false。Task 06 不因 schema、测试或 health ready 自动创建
-  SignalEvent、通知或订单。
-
-## 5. HTDY original observation rule
-
-HTDY original 仅允许 canonical 指标合同定义的 realtime first-seen observation-only 白名单：
-
-- 品种为 JM；
-- 合约来自 RQData rank=1 actual dominant；
-- 周期为完整 confirmed `15m`；
-- 保存首次观察输入、时间和重绘风险快照；
-- `historical_backtest_allowed=false`；
-- `notification_allowed=false`，除非另有一次性、精确事件授权；
-- `auto_order=false`。
-
-centered/original 指标可能重绘，不能回填为历史首次出现，不能用最终形态替换当时观察，也不能
-据此声明历史收益、稳定盈利或交易 Ready。
+HTDY original 的盘中 realtime first-seen 应用路径已随 poll Live 栈移除。
+历史白名单语义仅作合同归档参考；当前不得再通过 LiveMinuteBar / HTDY realtime snapshot
+生成 observation 或通知。正式历史信号继续走 Canonical scanner。
 
 ## 6. Notification Gate
 

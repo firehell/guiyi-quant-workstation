@@ -34,7 +34,7 @@ class NotificationDispatchResult:
 
 
 class NotificationDispatchService:
-    """Enqueue eligible live events; never imports or reads the webhook."""
+    """Enqueue eligible stage9 events; never imports or reads the webhook."""
 
     def __init__(self, session: Session, queue: Any, *, now: datetime | None = None) -> None:
         self.session = session
@@ -56,7 +56,6 @@ class NotificationDispatchService:
         new_events = self.session.scalars(
             select(SignalEvent)
             .where(
-                SignalEvent.source_mode == "live_confirmed",
                 SignalEvent.event_type.in_(("signal_created", "signal_changed")),
                 ~notification_exists,
             )
@@ -76,7 +75,7 @@ class NotificationDispatchService:
                 event_type=event.event_type,
                 channel=CHANNEL,
                 status="pending",
-                payload={"dispatch": {"source_mode": "live_confirmed", "queued": True}},
+                payload={"dispatch": {"source_mode": event.source_mode, "queued": True}},
                 attempt_count=0,
                 max_attempts=3,
                 next_retry_at=None,
@@ -92,7 +91,6 @@ class NotificationDispatchService:
             select(SignalNotification)
             .join(SignalEvent, SignalEvent.id == SignalNotification.event_id)
             .where(
-                SignalEvent.source_mode == "live_confirmed",
                 SignalNotification.channel == CHANNEL,
                 SignalNotification.attempt_count < SignalNotification.max_attempts,
                 SignalNotification.event_id.is_not(None),

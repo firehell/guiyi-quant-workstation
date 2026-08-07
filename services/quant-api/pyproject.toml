@@ -33,7 +33,6 @@ dependencies = [
 
 [project.scripts]
 guiyi = "app.guiyi_cli.main:entrypoint"
-guiyi-data = "app.cli:entrypoint"
 
 [build-system]
 requires = ["hatchling"]

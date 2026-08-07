@@ -38,7 +38,6 @@ import {
 } from '@/api/signal'
 import type { SignalLifecycleStatus, SignalScanTask, SignalEventRecord, StrategySignalRecord } from '@/types/signal'
 import SignalEventsPanel from '@/components/signal/SignalEventsPanel.vue'
-import LiveTargetPanel from '@/components/market/LiveTargetPanel.vue'
 import DirectionTag from '@/components/common/DirectionTag.vue'
 import CapabilityBadge from '@/components/common/CapabilityBadge.vue'
 import MetricCard from '@/components/common/MetricCard.vue'
@@ -601,8 +600,6 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
       <CapabilityBadge kind="research-only" label="非自动下单" />
     </template>
 
-    <LiveTargetPanel compact class="signal-live-target" />
-
     <NTabs v-model:value="selectedMainTab" type="line">
       <NTabPane name="latest" tab="Latest 信号">
         <section class="panel toolbar-panel">
@@ -830,10 +827,6 @@ const notificationColumns: DataTableColumns<SignalEventRecord> = [
 </template>
 
 <style scoped>
-.signal-live-target {
-  margin-bottom: var(--gy-space-4);
-}
-
 .panel {
   min-width: 0;
   padding: var(--gy-panel-padding);

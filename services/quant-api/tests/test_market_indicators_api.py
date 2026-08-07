@@ -3,19 +3,17 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-def test_legacy_indicator_alias_is_retired() -> None:
+def test_legacy_indicator_alias_is_removed() -> None:
     response = TestClient(app).get(
         "/api/v1/market/indicators",
         params={
             "symbol": "jm",
             "contract": "JM2609",
             "period": "15m",
-            "profile_id": "intraday_research_v1",
         },
     )
 
-    assert response.status_code == 410
-    assert response.json()["detail"]["code"] == "MARKET_SHORT_PATH_RETIRED"
+    assert response.status_code == 404
 
 
 def test_public_canonical_indicator_has_no_profile_selector() -> None:

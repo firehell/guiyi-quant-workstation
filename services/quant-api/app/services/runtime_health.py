@@ -16,8 +16,6 @@ from sqlalchemy.orm import Session
 from app.models.data_center import (
     AfterMarketSchedulerCheckpoint,
     DataDownloadTask,
-    LiveAggregationCheckpoint,
-    LiveIngestCheckpoint,
     MarketDataFile,
     ProfileActiveBinding,
 )
@@ -26,7 +24,6 @@ from app.queue import NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_conn
 from app.after_market_scheduler import HEARTBEAT_KEY as AFTER_MARKET_HEARTBEAT_KEY
 from app.services.after_market_automation import discover_eligible_trading_days
 from app.services.trading_session_clock import TradingSessionClock
-from app.live_review_loop.gates import build_live_review_health
 from app.signal.stage9_wechat import CHANNEL as STAGE9_WECHAT_CHANNEL
 
 RUNTIME_STATUS_OK = "ok"
@@ -65,7 +62,8 @@ def build_runtime_health(
     live_market_phase: str | None = None,
 ) -> dict[str, Any]:
     current_time = now or datetime.now(UTC)
-    live_enabled = _env_enabled("GUIYI_LIVE_RUNTIME_ENABLED") if live_runtime_enabled is None else live_runtime_enabled
+    # Live polling / checkpoint runtime is permanently retired (Task06 cleanup).
+    del live_runtime_enabled, live_polling_expected, live_market_phase
     notification_enabled = (
         _env_enabled("GUIYI_WECHAT_AUTOSEND_ENABLED")
         if notification_autosend_enabled is None
@@ -80,16 +78,7 @@ def build_runtime_health(
         if after_market_automation_enabled is None
         else after_market_automation_enabled
     )
-    polling_expected, market_phase = _live_polling_state(
-        session,
-        now=current_time,
-        enabled=live_enabled,
-        polling_expected=live_polling_expected,
-        market_phase=live_market_phase,
-    )
     components: dict[str, Any] = {}
-    components["data_core_v2_live_review"] = build_live_review_health(os.environ)
-
     components["db"] = _collect_db_health(session)
     redis_connection, redis_health = _collect_redis_health(redis_factory or get_redis_connection)
     components["redis"] = redis_health
@@ -109,26 +98,12 @@ def build_runtime_health(
         else:
             queue_names = RUNTIME_QUEUE_NAMES + ((NOTIFICATION_QUEUE_NAME,) if notification_enabled else ())
             components["rq"] = _collect_rq_health(redis_connection, queue_names=queue_names)
+    components["live_checkpoints"] = _retired_live_checkpoint_health(freshness_seconds=freshness_seconds)
     if components["db"]["status"] == RUNTIME_STATUS_FAILED:
         db_error = {
             "status": RUNTIME_STATUS_FAILED,
             "error_type": "database_unavailable",
             "error_message": None,
-        }
-        components["live_checkpoints"] = {
-            **db_error,
-            "enabled": live_enabled,
-            "freshness_seconds": freshness_seconds,
-            "stale": live_enabled,
-            "polling_expected": polling_expected,
-            "market_phase": market_phase,
-            "ingest_count": 0,
-            "aggregation_count": 0,
-            "status_counts": {},
-            "latest_success_at": None,
-            "latest_error": None,
-            "recent_ingest": [],
-            "recent_aggregation": [],
         }
         components["notification_retry"] = {
             **db_error,
@@ -161,14 +136,6 @@ def build_runtime_health(
             error_type="database_unavailable",
         )
     else:
-        components["live_checkpoints"] = _collect_live_checkpoint_health(
-            session,
-            now=current_time,
-            enabled=live_enabled,
-            freshness_seconds=freshness_seconds,
-            polling_expected=polling_expected,
-            market_phase=market_phase,
-        )
         components["notification_retry"] = _collect_notification_retry_health(
             session,
             current_time,
@@ -190,6 +157,27 @@ def build_runtime_health(
         "would_enqueue_jobs": False,
         "would_send_notifications": False,
         "components": components,
+    }
+
+
+def _retired_live_checkpoint_health(*, freshness_seconds: int) -> dict[str, Any]:
+    return {
+        "status": RUNTIME_STATUS_DISABLED,
+        "enabled": False,
+        "retired": True,
+        "freshness_seconds": freshness_seconds,
+        "stale": False,
+        "polling_expected": False,
+        "market_phase": "retired",
+        "ingest_count": 0,
+        "aggregation_count": 0,
+        "status_counts": {},
+        "latest_success_at": None,
+        "latest_error": None,
+        "recent_ingest": [],
+        "recent_aggregation": [],
+        "error_type": None,
+        "error_message": None,
     }
 
 
@@ -304,86 +292,6 @@ def _apply_worker_coverage(queue_results: list[dict[str, Any]], worker_results: 
             queue_health["error_type"] = "worker_missing"
             missing = True
     return missing
-
-
-def _collect_live_checkpoint_health(
-    session: Session,
-    *,
-    now: datetime,
-    enabled: bool,
-    freshness_seconds: int,
-    polling_expected: bool,
-    market_phase: str,
-) -> dict[str, Any]:
-    try:
-        ingest_count = session.scalar(select(func.count()).select_from(LiveIngestCheckpoint)) or 0
-        aggregation_count = session.scalar(select(func.count()).select_from(LiveAggregationCheckpoint)) or 0
-        status_counts = _checkpoint_status_counts(session)
-        latest_success_at = _max_datetime(
-            session.scalar(select(func.max(LiveIngestCheckpoint.last_success_at))),
-            session.scalar(select(func.max(LiveAggregationCheckpoint.last_success_at))),
-        )
-        latest_error = _latest_checkpoint_error(session)
-        recent_ingest = [
-            _ingest_checkpoint_payload(row)
-            for row in session.scalars(select(LiveIngestCheckpoint).order_by(LiveIngestCheckpoint.updated_at.desc(), LiveIngestCheckpoint.id.desc()).limit(5))
-        ]
-        recent_aggregation = [
-            _aggregation_checkpoint_payload(row)
-            for row in session.scalars(
-                select(LiveAggregationCheckpoint).order_by(LiveAggregationCheckpoint.updated_at.desc(), LiveAggregationCheckpoint.id.desc()).limit(5)
-            )
-        ]
-    except Exception as exc:  # noqa: BLE001 - health endpoints must degrade instead of raising.
-        return {
-            "status": RUNTIME_STATUS_FAILED,
-            "enabled": enabled,
-            "freshness_seconds": freshness_seconds,
-            "stale": enabled,
-            "polling_expected": polling_expected,
-            "market_phase": market_phase,
-            "ingest_count": 0,
-            "aggregation_count": 0,
-            "status_counts": {},
-            "latest_success_at": None,
-            "latest_error": None,
-            "recent_ingest": [],
-            "recent_aggregation": [],
-            **_error_fields(exc),
-        }
-
-    total_count = ingest_count + aggregation_count
-    stale = False
-    if not enabled:
-        status = RUNTIME_STATUS_DISABLED
-    elif total_count == 0 or latest_success_at is None:
-        status = RUNTIME_STATUS_DEGRADED
-        stale = True
-    else:
-        stale = polling_expected and _age_seconds(now, latest_success_at) > freshness_seconds
-        status = RUNTIME_STATUS_DEGRADED if stale else RUNTIME_STATUS_OK
-    if enabled and market_phase == "blocked":
-        status = RUNTIME_STATUS_DEGRADED
-    if enabled and (status_counts.get("failed", 0) > 0 or status_counts.get("warning", 0) > 0):
-        status = RUNTIME_STATUS_DEGRADED
-
-    return {
-        "status": status,
-        "enabled": enabled,
-        "freshness_seconds": freshness_seconds,
-        "stale": stale,
-        "polling_expected": polling_expected,
-        "market_phase": market_phase,
-        "ingest_count": ingest_count,
-        "aggregation_count": aggregation_count,
-        "status_counts": status_counts,
-        "latest_success_at": _iso(latest_success_at),
-        "latest_error": latest_error,
-        "recent_ingest": recent_ingest,
-        "recent_aggregation": recent_aggregation,
-        "error_type": None,
-        "error_message": None,
-    }
 
 
 def _collect_notification_retry_health(session: Session, now: datetime, *, enabled: bool) -> dict[str, Any]:
@@ -705,122 +613,6 @@ def _date_iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def _checkpoint_status_counts(session: Session) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for status, count in session.execute(select(LiveIngestCheckpoint.status, func.count()).group_by(LiveIngestCheckpoint.status)):
-        key = status or RUNTIME_STATUS_UNKNOWN
-        counts[key] = counts.get(key, 0) + int(count)
-    for status, error_type in session.execute(select(LiveAggregationCheckpoint.status, LiveAggregationCheckpoint.last_error_type)):
-        key = _effective_aggregation_checkpoint_status(status, error_type)
-        counts[key] = counts.get(key, 0) + 1
-    return counts
-
-
-def _latest_checkpoint_error(session: Session) -> dict[str, Any] | None:
-    candidates: list[dict[str, Any]] = []
-    ingest_error = session.scalar(
-        select(LiveIngestCheckpoint)
-        .where(LiveIngestCheckpoint.last_error_type.is_not(None))
-        .order_by(LiveIngestCheckpoint.updated_at.desc(), LiveIngestCheckpoint.id.desc())
-        .limit(1)
-    )
-    aggregation_error = session.scalar(
-        select(LiveAggregationCheckpoint)
-        .where(
-            LiveAggregationCheckpoint.last_error_type.is_not(None),
-            LiveAggregationCheckpoint.last_error_type != "NoClosedBuckets",
-        )
-        .order_by(LiveAggregationCheckpoint.updated_at.desc(), LiveAggregationCheckpoint.id.desc())
-        .limit(1)
-    )
-    if ingest_error is not None:
-        candidates.append(_checkpoint_error_payload("ingest", ingest_error))
-    if aggregation_error is not None:
-        candidates.append(_checkpoint_error_payload("aggregation", aggregation_error))
-    if not candidates:
-        return None
-    return max(candidates, key=lambda item: item.get("updated_at") or "")
-
-
-def _checkpoint_error_payload(kind: str, checkpoint: LiveIngestCheckpoint | LiveAggregationCheckpoint) -> dict[str, Any]:
-    return {
-        "kind": kind,
-        "id": checkpoint.id,
-        "contract_code": checkpoint.contract_code,
-        "period": checkpoint.period,
-        "status": checkpoint.status,
-        "last_error_type": checkpoint.last_error_type,
-        "updated_at": _iso(checkpoint.updated_at),
-    }
-
-
-def _ingest_checkpoint_payload(checkpoint: LiveIngestCheckpoint) -> dict[str, Any]:
-    return {
-        "id": checkpoint.id,
-        "provider": checkpoint.provider,
-        "instrument_symbol": checkpoint.instrument_symbol,
-        "contract_code": checkpoint.contract_code,
-        "period": checkpoint.period,
-        "source_mode": checkpoint.source_mode,
-        "status": checkpoint.status,
-        "lag_seconds": checkpoint.lag_seconds,
-        "consecutive_error_count": checkpoint.consecutive_error_count,
-        "last_success_at": _iso(checkpoint.last_success_at),
-        "last_run_at": _iso(checkpoint.last_polled_at),
-        "last_bar_at": _iso(checkpoint.last_confirmed_bar_at),
-        "last_error_type": checkpoint.last_error_type,
-        "updated_at": _iso(checkpoint.updated_at),
-    }
-
-
-def _aggregation_checkpoint_payload(checkpoint: LiveAggregationCheckpoint) -> dict[str, Any]:
-    effective_status = _effective_aggregation_checkpoint_status(checkpoint.status, checkpoint.last_error_type)
-    legacy_idle = effective_status == "idle" and checkpoint.last_error_type == "NoClosedBuckets"
-    return {
-        "id": checkpoint.id,
-        "provider": checkpoint.provider,
-        "instrument_symbol": checkpoint.instrument_symbol,
-        "contract_code": checkpoint.contract_code,
-        "period": checkpoint.period,
-        "source_mode": checkpoint.source_mode,
-        "status": effective_status,
-        "lag_seconds": checkpoint.lag_seconds,
-        "consecutive_error_count": 0 if legacy_idle else checkpoint.consecutive_error_count,
-        "last_success_at": _iso(checkpoint.last_success_at),
-        "last_run_at": _iso(checkpoint.last_run_at),
-        "last_bar_at": _iso(checkpoint.last_aggregated_bar_at),
-        "last_error_type": None if legacy_idle else checkpoint.last_error_type,
-        "updated_at": _iso(checkpoint.updated_at),
-    }
-
-
-def _effective_aggregation_checkpoint_status(status: str | None, error_type: str | None) -> str:
-    if status == "warning" and error_type == "NoClosedBuckets":
-        return "idle"
-    return status or RUNTIME_STATUS_UNKNOWN
-
-
-def _live_polling_state(
-    session: Session,
-    *,
-    now: datetime,
-    enabled: bool,
-    polling_expected: bool | None,
-    market_phase: str | None,
-) -> tuple[bool, str]:
-    if not enabled:
-        return False, "disabled"
-    if polling_expected is not None and market_phase is not None:
-        return polling_expected, market_phase
-    try:
-        decision = TradingSessionClock(session).decision(product="jm", exchange="DCE", now=now)
-    except Exception:  # noqa: BLE001 - unknown session state must remain fail-closed.
-        return True, "blocked"
-    if decision.phase == "blocked":
-        return True, "blocked"
-    return decision.should_poll if polling_expected is None else polling_expected, market_phase or decision.phase
-
-
 def _worker_payload(worker: Worker) -> dict[str, Any]:
     queues = []
     for queue in getattr(worker, "queues", []) or []:
@@ -872,11 +664,6 @@ def _age_seconds(now: datetime, value: datetime) -> int:
 
 def _count_value(value: Any) -> int:
     return int(value() if callable(value) else value)
-
-
-def _max_datetime(*values: datetime | None) -> datetime | None:
-    present = [value for value in values if value is not None]
-    return max(present) if present else None
 
 
 def _elapsed_ms(started: float) -> float:

@@ -115,21 +115,3 @@ export function getStage9WechatPreview(eventId: number) {
 export function getStage9WechatNotification(eventId: number) {
   return request.get<any, Stage9WechatNotification>(`/api/signals/events/${eventId}/stage9-wechat/notification`)
 }
-
-/** 预览实盘信号评估器输出（不落库） */
-export function previewLiveEvaluator(params: {
-  symbol?: string
-  contract?: string
-  entry_intervals?: string[]
-  allow_warning_quality?: boolean
-} = {}) {
-  return request.post<any, import('@/types/signal').LiveSignalEvaluationResponse>(
-    '/api/signals/live-evaluator/preview',
-    {
-      symbol: params.symbol || 'jm',
-      contract: params.contract,
-      entry_intervals: params.entry_intervals || ['15m', '5m'],
-      allow_warning_quality: params.allow_warning_quality || false,
-    },
-  )
-}

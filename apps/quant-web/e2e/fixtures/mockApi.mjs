@@ -110,30 +110,6 @@ const DASHBOARD_SUMMARY = {
   generated_at: '2026-07-21T12:00:00Z',
 }
 
-const LIVE_TARGETS = {
-  provider: 'rqdata',
-  target_products: ['jm'],
-  trade_date: '2026-07-21',
-  readiness_status: 'ready',
-  preview_only: true,
-  writes_strategy_signal: false,
-  writes_signal_event: false,
-  sends_notification: false,
-  auto_order: false,
-  items: [
-    {
-      product: 'jm',
-      continuous_contract: 'jm.MAIN',
-      actual_contract: 'JM2609',
-      dominant_mapping_date: '2026-07-21',
-      readiness_status: 'ready',
-      blocked_reasons: [],
-      historical_coverage: {},
-      live_coverage: {},
-    },
-  ],
-}
-
 const MARKET_LINEAGE = {
   access_mode: 'browser',
   strict_research_ready: false,
@@ -572,18 +548,12 @@ export async function installMockApi(page) {
     if (
       path.includes('/market/workbench/coverage')
       || path.includes('/market/coverage/canonical')
-      || path.includes('/market/live/coverage')
     ) {
       await fulfillJson(WORKBENCH_COVERAGE)(route)
       return
     }
 
-    if (path.includes('/market/live/targets')) {
-      await fulfillJson(LIVE_TARGETS)(route)
-      return
-    }
-
-    if (path.includes('/market/live/bars') || path.includes('/market/bars')) {
+    if (path.includes('/market/bars')) {
       await fulfillJson(BARS_RESPONSE)(route)
       return
     }

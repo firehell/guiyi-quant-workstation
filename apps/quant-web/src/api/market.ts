@@ -3,7 +3,6 @@ import type {
   BarData,
   DataProfileSummary,
   DominantContractListResponse,
-  LiveMarketBarsResponse,
   MarketMacdIndicatorResponse,
   MarketBarsRequestParams,
   MarketBarsResponse,
@@ -82,30 +81,6 @@ export function getMarketMacdIndicator(params: MarketBarsRequestParams & { polic
   return request.get<any, MarketMacdIndicatorResponse>('/market/indicators/macd/canonical', {
     params: toCanonicalBarsRequest(params),
   })
-}
-
-/** 获取实时行情 coverage */
-export function getLiveMarketCoverage(params?: MarketWorkbenchCoverageParams) {
-  return request.get<any, MarketWorkbenchCoverage>('/market/live/coverage', { params })
-}
-
-/** 获取实时行情 K 线 bars */
-export function getLiveMarketBars(params: {
-  symbol: string
-  contract: string
-  period: string
-  start?: string
-  end?: string
-  provider?: string | null
-  source_mode?: string | null
-  limit?: number
-}) {
-  return request.get<any, LiveMarketBarsResponse>('/market/live/bars', { params })
-}
-
-/** 获取实时订阅目标合约列表 */
-export function getLiveTargets() {
-  return request.get<any, import('@/types/market').LiveTargetContractsResponse>('/market/live/targets')
 }
 
 /** 获取数据 profile 摘要列表 */

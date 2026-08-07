@@ -100,7 +100,6 @@ class EffectSummary:
     writes_staging: bool = False
     writes_canonical: bool = False
     writes_postgresql: bool = False
-    writes_live_observation: bool = False
     writes_historical_active: bool = False
     sends_notification: bool = False
     creates_order: bool = False
@@ -125,7 +124,6 @@ class EffectSummary:
                 self.writes_staging,
                 self.writes_canonical,
                 self.writes_postgresql,
-                self.writes_live_observation,
                 self.writes_historical_active,
                 self.sends_notification,
                 self.creates_order,
@@ -262,12 +260,6 @@ class AggregateRequest:
     targets: Sequence[DataTarget]
     apply: bool = False
     batch_size: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class LiveRequest:
-    targets: Sequence[DataTarget]
-    confirm_observation_write: bool = False
 
 
 @dataclass(frozen=True, slots=True)

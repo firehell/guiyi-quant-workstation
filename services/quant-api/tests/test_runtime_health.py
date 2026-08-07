@@ -14,8 +14,6 @@ from app.main import app
 from app.models.data_center import (
     AfterMarketSchedulerCheckpoint,
     DataDownloadTask,
-    LiveAggregationCheckpoint,
-    LiveIngestCheckpoint,
     MarketDataFile,
     ProfileActiveBinding,
 )
@@ -27,8 +25,6 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
     TestingSessionLocal = _session_factory()
     now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
     with TestingSessionLocal() as session:
-        session.add(_ingest_checkpoint(status="success", now=now))
-        session.add(_aggregation_checkpoint(status="success", now=now))
         session.add(_notification(status="sent", now=now, payload={"token": "should-not-leak"}))
         session.commit()
 
@@ -56,21 +52,12 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
     assert payload["components"]["redis"]["status"] == "ok"
     assert payload["components"]["rq"]["worker_count"] == 1
     assert "scheduler" not in payload["components"]
-    assert payload["components"]["live_checkpoints"]["ingest_count"] == 1
-    assert payload["components"]["live_checkpoints"]["aggregation_count"] == 1
-    assert payload["components"]["notification_retry"]["sent_count"] == 1
     assert payload["components"]["live_checkpoints"]["status"] == "disabled"
+    assert payload["components"]["live_checkpoints"]["retired"] is True
+    assert payload["components"]["live_checkpoints"]["ingest_count"] == 0
+    assert payload["components"]["notification_retry"]["sent_count"] == 1
     assert payload["components"]["notification_retry"]["status"] == "disabled"
-    assert payload["components"]["data_core_v2_live_review"] == {
-        "status": "disabled",
-        "live_decision_enabled": False,
-        "eod_enabled": False,
-        "retention_scheduler_enabled": False,
-        "notification_enabled": False,
-        "review_enabled": False,
-        "auto_order": False,
-        "observation_only": True,
-    }
+    assert "data_core_v2_live_review" not in payload["components"]
     after_market = payload["components"]["after_market_scheduler"]
     assert after_market["status"] == "disabled"
     assert after_market["enabled"] is False
@@ -130,11 +117,10 @@ def test_runtime_health_degrades_when_no_rq_workers() -> None:
     assert payload["components"]["notification_retry"]["status"] == "disabled"
 
 
-def test_runtime_health_degrades_for_failed_live_checkpoint_and_due_retry() -> None:
+def test_runtime_health_degrades_for_due_notification_retry() -> None:
     TestingSessionLocal = _session_factory()
     now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
     with TestingSessionLocal() as session:
-        session.add(_ingest_checkpoint(status="failed", now=now, last_error_type="NoConfirmedBars"))
         session.add(_notification(status="retry_pending", now=now, next_retry_at=now - timedelta(minutes=1), last_error_type="http_error"))
         session.commit()
 
@@ -149,77 +135,13 @@ def test_runtime_health_degrades_for_failed_live_checkpoint_and_due_retry() -> N
 
     assert payload["status"] == "degraded"
     live = payload["components"]["live_checkpoints"]
-    assert live["status"] == "degraded"
-    assert live["status_counts"]["failed"] == 1
-    assert live["latest_error"]["last_error_type"] == "NoConfirmedBars"
+    assert live["status"] == "disabled"
+    assert live["retired"] is True
     notification = payload["components"]["notification_retry"]
     assert notification["status"] == "degraded"
     assert notification["retry_pending_count"] == 1
     assert notification["due_retry_count"] == 1
     assert notification["last_error_type_counts"]["http_error"] == 1
-
-
-def test_runtime_health_degrades_when_enabled_checkpoint_is_missing_or_stale() -> None:
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        missing = build_runtime_health(
-            session,
-            redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
-            now=now,
-            live_runtime_enabled=True,
-            live_freshness_seconds=60,
-        )
-        session.add(_ingest_checkpoint(status="success", now=now - timedelta(minutes=5)))
-        session.commit()
-        stale = build_runtime_health(
-            session,
-            redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
-            now=now,
-            live_runtime_enabled=True,
-            live_freshness_seconds=60,
-        )
-
-    assert missing["status"] == "degraded"
-    assert missing["components"]["live_checkpoints"]["stale"] is True
-    assert stale["status"] == "degraded"
-    assert stale["components"]["live_checkpoints"]["stale"] is True
-
-
-def test_runtime_health_does_not_mark_old_checkpoints_stale_while_market_is_closed() -> None:
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(_ingest_checkpoint(status="success", now=now - timedelta(hours=2)))
-        legacy_idle = _aggregation_checkpoint(status="warning", now=now - timedelta(hours=2))
-        legacy_idle.period = "1w"
-        legacy_idle.last_error_type = "NoClosedBuckets"
-        legacy_idle.consecutive_error_count = 120
-        session.add(legacy_idle)
-        session.commit()
-
-        payload = build_runtime_health(
-            session,
-            redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
-            now=now,
-            live_runtime_enabled=True,
-            live_freshness_seconds=60,
-            live_polling_expected=False,
-            live_market_phase="closed",
-        )
-
-    live = payload["components"]["live_checkpoints"]
-    assert live["status"] == "ok"
-    assert live["polling_expected"] is False
-    assert live["market_phase"] == "closed"
-    assert live["stale"] is False
-    assert live["status_counts"] == {"success": 1, "idle": 1}
-    assert live["latest_error"] is None
-    assert live["recent_aggregation"][0]["status"] == "idle"
-    assert live["recent_aggregation"][0]["last_error_type"] is None
 
 
 def test_worker_coverage_requires_each_expected_queue() -> None:
@@ -512,42 +434,6 @@ def _rq_no_workers() -> dict:
         "error_type": None,
         "error_message": None,
     }
-
-
-def _ingest_checkpoint(*, status: str, now: datetime, last_error_type: str | None = None) -> LiveIngestCheckpoint:
-    return LiveIngestCheckpoint(
-        provider="rqdata",
-        instrument_symbol="jm",
-        contract_code="JM2609",
-        period="1m",
-        source_mode="poll_get_price_1m",
-        last_confirmed_bar_at=now,
-        last_polled_at=now,
-        last_success_at=now if status == "success" else None,
-        status=status,
-        lag_seconds=30,
-        consecutive_error_count=1 if status == "failed" else 0,
-        last_error_type=last_error_type,
-        last_error_message="secret token should not appear",
-    )
-
-
-def _aggregation_checkpoint(*, status: str, now: datetime) -> LiveAggregationCheckpoint:
-    return LiveAggregationCheckpoint(
-        provider="rqdata",
-        instrument_symbol="jm",
-        contract_code="JM2609",
-        period="15m",
-        source_period="1m",
-        source_mode="live_1m_sequential_bucket",
-        last_aggregated_bar_at=now,
-        last_source_bar_at=now,
-        last_run_at=now,
-        last_success_at=now if status == "success" else None,
-        status=status,
-        lag_seconds=45,
-        consecutive_error_count=0,
-    )
 
 
 def _notification(

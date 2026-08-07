@@ -18,7 +18,6 @@ from app.models.data_center import (
     DataProfile,
     DataQualityReport,
     FuturesTradingParameter,
-    LiveAggregatedBar,
     MainContractMap,
     MarketDataFile,
     ProfileActiveBinding,
@@ -169,31 +168,6 @@ def test_signal_status_changes_write_append_only_events_only_when_status_changes
         assert events[1].payload["status_change"] == {"old_status": "new", "new_status": "watching"}
         assert events[2].payload["status_change"] == {"old_status": "watching", "new_status": "ignored"}
         assert events[1].event_key != events[2].event_key
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_live_signal_evaluator_preview_does_not_write_signal_events(tmp_path: Path) -> None:
-    TestingSessionLocal = _session_factory(tmp_path)
-    with TestingSessionLocal() as session:
-        _add_live_bars(session, "15m", count=50)
-        session.commit()
-
-    def override_get_db():
-        with TestingSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        client = TestClient(app)
-        response = client.post(
-            "/api/signals/live-evaluator/preview",
-            json={"symbol": "jm", "contract": "JM2609", "entry_intervals": ["15m"], "limit": 100},
-        )
-        assert response.status_code == 200
-
-        with TestingSessionLocal() as session:
-            assert session.scalar(select(func.count()).select_from(SignalEvent)) == 0
     finally:
         app.dependency_overrides.clear()
 
@@ -629,41 +603,6 @@ def _write_market_file(session, path: Path, rows: list[dict], symbol: str, contr
         )
     )
     return market_file
-
-
-def _add_live_bars(session, period: str, *, count: int) -> None:
-    start = datetime(2026, 7, 7, 9, 0)
-    for index in range(count):
-        timestamp = start + timedelta(minutes=(index + 1) * 15)
-        close = 1000 + index
-        session.add(
-            LiveAggregatedBar(
-                provider="rqdata",
-                instrument_symbol="jm",
-                contract_code="JM2609",
-                exchange_code="DCE",
-                period=period,
-                source_period="1m",
-                source_mode="live_1m_sequential_bucket",
-                bar_datetime=timestamp,
-                trading_day=timestamp.date(),
-                source_start_datetime=timestamp - timedelta(minutes=14),
-                source_end_datetime=timestamp,
-                source_bar_count=15,
-                expected_bar_count=15,
-                open=close - 1,
-                high=close + 2,
-                low=close - 2,
-                close=close,
-                volume=100 + index,
-                open_interest=1000 + index,
-                turnover=close * 100,
-                bar_status="confirmed",
-                quality_status="passed",
-                confirmed_at=timestamp,
-                raw_payload={},
-            )
-        )
 
 
 def _contains_no_secret_words(payload: dict) -> bool:

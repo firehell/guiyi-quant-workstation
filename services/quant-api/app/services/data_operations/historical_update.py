@@ -343,7 +343,6 @@ def _merged_effects(values: list[EffectSummary]) -> EffectSummary:
         writes_staging=any(item.writes_staging for item in values),
         writes_canonical=any(item.writes_canonical for item in values),
         writes_postgresql=any(item.writes_postgresql for item in values),
-        writes_live_observation=any(item.writes_live_observation for item in values),
         writes_historical_active=any(
             item.writes_historical_active for item in values
         ),

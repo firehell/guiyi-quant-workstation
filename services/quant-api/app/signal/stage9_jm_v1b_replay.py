@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.env import PROJECT_ROOT
 from app.data_core.contracts import DataCoreError
 from app.models.signal import SignalEvent
-from app.services.live_target_contracts import LiveTargetContractResolver
+from app.services.actual_contract_semantics import load_effective_main_contract_mapping
 from app.services.canonical_bar_loader import CanonicalBarLoader
+from app.services.market_dominant_reader import continuous_contract_for, is_continuous_contract
 from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE, LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
 from app.services.signal_lineage import SignalFormalLineageResolver
 from app.signal.events import SIGNAL_CREATED
@@ -149,7 +150,7 @@ class Stage9JmV1bReplayService:
         limit: int,
     ) -> ReplayCandidate | None:
         _ensure_quant_core_path()
-        target = LiveTargetContractResolver(self.session).resolve_ready_actual_contract(product="jm")
+        target = _resolve_replay_actual_contract(self.session, product="jm")
         periods = REPLAY_PERIODS if period == "auto" else (period,)
         candidates: list[ReplayCandidate] = []
         for item_period in periods:
@@ -400,6 +401,31 @@ def _period_delta(period: str) -> timedelta:
     if period == "5m":
         return timedelta(minutes=5)
     raise ValueError(f"unsupported replay period: {period}")
+
+
+def _resolve_replay_actual_contract(session: Session, *, product: str) -> dict[str, Any]:
+    normalized = product.strip().lower()
+    mapping = load_effective_main_contract_mapping(
+        session,
+        instrument_symbol=normalized,
+        trade_date=None,
+    )
+    if mapping is None:
+        raise ValueError("main_contract_map_rank1_missing")
+    actual = str(mapping.contract_code or "").strip().upper()
+    if not actual or is_continuous_contract(actual):
+        raise ValueError("main_contract_map_rank1_not_actual_contract")
+    if mapping.trade_date is None:
+        raise ValueError("dominant_mapping_date_missing")
+    return {
+        "product": normalized,
+        "continuous_contract": continuous_contract_for(normalized),
+        "actual_contract": actual,
+        "dominant_mapping_date": mapping.trade_date.isoformat(),
+        "provider": "rqdata",
+        "readiness_status": "ready",
+        "blocked_reasons": [],
+    }
 
 
 def _ensure_quant_core_path() -> None:

@@ -327,9 +327,6 @@ def test_data_verify_emits_stable_json_from_shared_service() -> None:
                 "period": "15m",
                 "start": "2026-07-29T00:00:00",
                 "end": "2026-07-29T23:59:59.999999",
-                "provider": "rqdata",
-                "profile_id": None,
-                "access_mode": "browser",
                 "limit": 5000,
             },
             "result": {
@@ -353,8 +350,6 @@ def test_data_verify_emits_stable_json_from_shared_service() -> None:
             "2026-07-29",
             "--end",
             "2026-07-29",
-            "--provider",
-            "rqdata",
         ],
         session_factory=lambda: nullcontext(object()),
         data_verifier=verify,
@@ -371,11 +366,7 @@ def test_data_verify_emits_stable_json_from_shared_service() -> None:
         "period": "15m",
         "start": datetime(2026, 7, 29, 0, 0, tzinfo=UTC),
         "end": datetime(2026, 7, 29, 23, 59, 59, 999999, tzinfo=UTC),
-        "provider": "rqdata",
-        "profile_id": None,
-        "access_mode": "browser",
         "limit": 5000,
-        "legacy_compat": False,
     }
 
 

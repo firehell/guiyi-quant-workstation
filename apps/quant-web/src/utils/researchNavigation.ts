@@ -10,7 +10,7 @@ export interface ResearchContext {
   contract?: string | null
   period?: string | null
   time?: string | null
-  dataMode?: 'historical' | 'live' | null
+  dataMode?: 'historical' | null
   returnRoute?: string | null
 }
 
@@ -60,7 +60,7 @@ export function parseResearchContext(query: Record<string, QueryValue>): Researc
     contract: first(query.contract),
     period: first(query.period) || first(query.interval),
     time: first(query.time) || first(query.datetime),
-    dataMode: dataModeValue === 'live' ? 'live' : dataModeValue === 'historical' ? 'historical' : null,
+    dataMode: dataModeValue === 'historical' ? 'historical' : null,
     returnRoute: safeReturnRoute(first(query.return_route)),
   }
 }

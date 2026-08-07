@@ -6,10 +6,6 @@ from app.models.signal import SignalEvent
 from app.signal.stage9_gate import evaluate_stage9_signal_event_gate
 
 CHANNEL = "enterprise_wechat"
-HTDY_RISK_COPY = (
-    "火天大有实时观察 · XMA 未来函数 · 可能重绘 · 首次检测冻结 · "
-    "后续不撤回 · 仅供观察 · 不是交易指令 · 不自动下单"
-)
 
 
 def build_stage9_wechat_preview(event: SignalEvent) -> dict[str, Any]:
@@ -46,11 +42,7 @@ def _markdown_content(payload_basis: dict[str, Any]) -> str:
     quality_status = payload_basis.get("quality_status") or {}
     quality_text = quality_status.get("status") if isinstance(quality_status, dict) else quality_status
     lines = [
-        (
-            "## 火天大有实时观察"
-            if payload_basis.get("htdy_realtime_observation")
-            else "## 归一量化观察提醒"
-        ),
+        "## 归一量化观察提醒",
         "",
         "> observation_only / not_trading_instruction / auto_order=false",
         "",
@@ -62,28 +54,10 @@ def _markdown_content(payload_basis: dict[str, Any]) -> str:
         f"- 方向：{_text(payload_basis.get('direction'))}",
         f"- bar_end：{_text(payload_basis.get('bar_end'))}",
         f"- trigger_price：{_text(payload_basis.get('trigger_price'))}",
-        *(
-            [
-                f"- observed_bucket_start：{_text(payload_basis.get('observed_bucket_start'))}",
-                f"- observed_bucket_end：{_text(payload_basis.get('observed_bucket_end'))}",
-                f"- bar_status：{_text(payload_basis.get('bar_status'))}",
-                f"- decision_bucket_end：{_text(payload_basis.get('decision_bucket_end'))}",
-                f"- detected_at：{_text(payload_basis.get('detected_at'))}",
-                f"- detection_price：{_text(payload_basis.get('detection_price'))}",
-                f"- observed_bar_close：{_text(payload_basis.get('observed_bar_close'))}",
-            ]
-            if payload_basis.get("htdy_realtime_observation")
-            else []
-        ),
         f"- 数据源：{_text(payload_basis.get('provider'))} / {_text(payload_basis.get('source'))}",
         f"- data_role：{_text(payload_basis.get('data_role'))}",
         f"- quality_status：{_text(quality_text)}",
         "",
-        *(
-            [HTDY_RISK_COPY, ""]
-            if payload_basis.get("htdy_realtime_observation")
-            else []
-        ),
         "仅用于人工观察，不构成交易指令，不自动下单。",
     ]
     return "\n".join(lines)

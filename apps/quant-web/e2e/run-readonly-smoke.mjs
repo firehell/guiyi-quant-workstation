@@ -55,6 +55,7 @@ async function run() {
 
   await check('market bars/dominants read stays GET-only when available', async () => {
     const candidates = [
+      '/api/v1/market/bars/canonical?symbol=jm&contract=JM2609&period=15m&limit=5',
       '/api/v1/market/bars?symbol=jm&contract=JM2609&period=15m&limit=5',
       '/api/v1/market/dominants',
     ]
@@ -185,6 +186,7 @@ async function run() {
       await expect(page.getByText('主连研究').first()).toBeVisible()
       await expect(page.getByText('浏览', { exact: true }).first()).toBeVisible()
       await expect(page.getByText('严格研究').first()).toBeVisible()
+      await expect(page.getByText('Live', { exact: true })).toHaveCount(0)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
 
       await page.goto(`${webBase}/market/chart?symbol=jm&contract=JM2609&period=15m&access_mode=research&data_mode=historical`)
@@ -199,9 +201,7 @@ async function run() {
           contract: eventCandidate.actual_contract || eventCandidate.contract,
           period: eventCandidate.period,
           signal_event_id: String(eventCandidate.id),
-          data_mode: ['live_confirmed', 'live_realtime_repainting'].includes(eventCandidate.source_mode)
-            ? 'live'
-            : 'historical',
+          data_mode: 'historical',
           return_route: `/signal?tab=events&event_id=${eventCandidate.id}`,
         })
         if (eventCandidate.signal_id) eventQuery.set('signal_id', String(eventCandidate.signal_id))

@@ -196,65 +196,6 @@ def record_signal_status_change(
     )
 
 
-def record_live_signal_event(
-    session: Session,
-    signal: StrategySignal,
-    event_type: str,
-    *,
-    state_key: str,
-) -> SignalEvent | None:
-    """Append a live-confirmed event without creating a historical scan task."""
-    if event_type not in SIGNAL_SCAN_EVENT_TYPES:
-        return None
-    suffix = "created" if event_type == SIGNAL_CREATED else state_key
-    return _create_event_if_missing(
-        session,
-        signal=signal,
-        event_key=f"{event_type}:{signal.dedupe_key}:{suffix}",
-        event_type=event_type,
-        source_mode="live_confirmed",
-        task_no=None,
-        payload_extra={
-            "live_observation": {
-                "observation_only": True,
-                "not_trading_instruction": True,
-                "auto_order": False,
-                "state_key": state_key,
-            }
-        },
-    )
-
-
-def record_htdy_first_seen_event(
-    session: Session,
-    signal: StrategySignal,
-) -> SignalEvent | None:
-    """Append the single immutable HTDY first-seen event."""
-
-    if signal.strategy_name != "htdy_original_realtime_first_seen":
-        return None
-    return _create_event_if_missing(
-        session,
-        signal=signal,
-        event_key=f"{SIGNAL_CREATED}:{signal.dedupe_key}:created",
-        event_type=SIGNAL_CREATED,
-        source_mode="live_realtime_repainting",
-        task_no=None,
-        payload_extra={
-            "htdy_first_seen": {
-                "observation_only": True,
-                "future_looking": True,
-                "repainting_accepted": True,
-                "first_seen_no_retraction": True,
-                "historical_backtest_allowed": False,
-                "notification_ready": False,
-                "not_trading_instruction": True,
-                "auto_order": False,
-            }
-        },
-    )
-
-
 def list_signal_events(
     session: Session,
     *,
