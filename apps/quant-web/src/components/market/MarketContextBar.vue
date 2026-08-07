@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { NButton, NRadioButton, NRadioGroup } from 'naive-ui'
-import type { MarketAccessMode } from '@/types/market'
 import type { ContractViewMode } from '@/utils/marketChartWindow'
 
 defineProps<{
@@ -8,13 +7,11 @@ defineProps<{
   subtitle: string
   busy: boolean
   contractView: ContractViewMode
-  accessMode: MarketAccessMode
 }>()
 
 const emit = defineEmits<{
   back: []
   'update:contractView': [value: ContractViewMode]
-  'update:accessMode': [value: MarketAccessMode]
 }>()
 </script>
 
@@ -29,10 +26,6 @@ const emit = defineEmits<{
       <NRadioGroup aria-label="合约角色" :value="contractView" size="small" :disabled="busy" @update:value="(value) => emit('update:contractView', value)">
         <NRadioButton value="actual">真实主力</NRadioButton>
         <NRadioButton value="continuous">主连研究</NRadioButton>
-      </NRadioGroup>
-      <NRadioGroup aria-label="研究访问模式" :value="accessMode" size="small" :disabled="busy" @update:value="(value) => emit('update:accessMode', value)">
-        <NRadioButton value="browser">浏览</NRadioButton>
-        <NRadioButton value="research">严格研究</NRadioButton>
       </NRadioGroup>
     </div>
   </div>

@@ -371,14 +371,6 @@ watch(
   },
 )
 
-async function reloadChartPage() {
-  const requestId = ++marketRouteRequestId
-  applyRouteSelectionFromQueryToState()
-  viewportLoadEnabled.value = false
-  await Promise.allSettled([loadDominants(), loadScopedCoverage()])
-  await applyRouteSelectionAndLoad(requestId)
-}
-
 async function loadScopedCoverage() {
   loadingMeta.value = true
   metaWarning.value = null
@@ -665,18 +657,6 @@ function clearMarketMacd() {
   macdError.value = null
 }
 
-function handleAccessModeUpdate(value: MarketAccessMode) {
-  if (chartControlsBusy.value) return
-  if (value === accessMode.value) return
-  marketRouteRequestId += 1
-  accessMode.value = value
-  barsLineage.value = null
-  coverage.value = null
-  bars.value = []
-  mainIndicatorSeries.value = []
-  void syncQuery().then(() => reloadChartPage())
-}
-
 function applyInitialSelection() {
   const routeProduct = stringQuery(route.query.symbol) || stringQuery(route.query.product)
   const routeContract = resolveActualContract(routeProduct, stringQuery(route.query.contract), dominants.value)
@@ -934,10 +914,8 @@ function formatNumber(value: number | null | undefined, digits = 2) {
           :subtitle="`${contractViewLabel} · ${selectedDominant?.exchange_name || selectedDominant?.exchange || selectedContractInfo?.exchange || '-'}`"
           :busy="chartControlsBusy"
           :contract-view="contractView"
-          :access-mode="accessMode"
           @back="goBackToList"
           @update:contract-view="handleContractViewUpdate"
-          @update:access-mode="handleAccessModeUpdate"
         />
         <div class="chart-header__secondary">
           <MarketEvidenceStrip
