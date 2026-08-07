@@ -22,11 +22,16 @@ from sqlalchemy import text
 
 from app.data_core.catalog import HistoricalCatalog
 from app.data_core.contracts import BarQuery, DatasetKey
+from app.data_core.historical_sessions import product_sessions
 from app.data_core.product_retirement import load_active_products
 from app.db.session import SessionLocal
 from app.services.canonical_market_data import build_canonical_reader
 from app.services.data_operations.contracts import AuditRequest, AuditScope
 from app.services.data_operations.m2_architecture_audit import build_m2_audit_checker
+from app.services.data_operations.market_data_probe import (
+    ProbePosition,
+    SessionAlignedMarketDataProbe,
+)
 from app.services.market_data_service import MarketDataService
 
 
@@ -100,6 +105,11 @@ def main() -> int:
                 session.execute(text("SET TRANSACTION READ ONLY"))
                 reader = build_canonical_reader(session)
                 market_data = MarketDataService(session, canonical_reader=reader)
+                probe = SessionAlignedMarketDataProbe(
+                    session_provider=lambda dataset, start, end: product_sessions(
+                        session, symbol=dataset.symbol, start=start, end=end
+                    )
+                )
 
                 def verify(key: DatasetKey, partition: object) -> object:
                     progress(key, "physical_metadata_checksum_schema_row_count")
@@ -107,16 +117,22 @@ def main() -> int:
                     progress(key, "physical_verified")
                     return result
 
-                def readable(key: DatasetKey, start: datetime, end: datetime) -> bool:
+                def readable(
+                    key: DatasetKey,
+                    start: datetime,
+                    end: datetime,
+                    position: ProbePosition,
+                ) -> bool:
                     progress(key, "market_data_sample")
+                    window = probe.plan(key, start=start, end=end, position=position)
                     result = market_data.get_bars(
                         BarQuery(
                             dataset_kind=key.dataset_kind,
                             symbol=key.symbol,
                             contract_or_series=key.contract_or_series,
                             frequency=key.frequency,
-                            start=start,
-                            end=end,
+                            start=window.start,
+                            end=window.end,
                         )
                     )
                     progress(key, "market_data_sample_verified")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -104,6 +104,7 @@ class CanonicalHistoricalReader:
         expected_contract_by_day: dict[object, str] | None = None
         if (
             query.dataset_kind is DatasetKind.ACTUAL_DOMINANT
+            and query.contract_or_series is None
             and self._session_provider is not None
         ):
             expected_contract_by_day = self._resolve_actual_dominant_contracts(query)
@@ -200,9 +201,7 @@ class CanonicalHistoricalReader:
         mappings: dict[object, str] | None,
     ) -> None:
         if self._session_provider is not None:
-            sessions = tuple(
-                self._session_provider(query.symbol, query.start, query.end)
-            )
+            sessions = self._sessions_for_query(query)
             expected: set[datetime] = set()
             for dataset in datasets:
                 dataset_sessions = sessions
@@ -276,6 +275,23 @@ class CanonicalHistoricalReader:
                 start=query.start,
                 end=query.end,
                 sessions=sessions,
+            )
+        )
+
+    def _sessions_for_query(self, query: BarQuery) -> tuple[AggregationSession, ...]:
+        """Include sessions that own UTC-midnight daily/weekly bar endpoints."""
+        if self._session_provider is None:
+            return ()
+        padding = (
+            timedelta(days=7)
+            if query.frequency in {BarFrequency.D1, BarFrequency.W1}
+            else timedelta(0)
+        )
+        return tuple(
+            self._session_provider(
+                query.symbol,
+                query.start - padding,
+                query.end + padding,
             )
         )
 
