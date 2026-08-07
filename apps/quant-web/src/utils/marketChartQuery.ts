@@ -11,16 +11,11 @@ export interface MarketChartQueryState {
   accessMode: MarketAccessMode
 }
 
-/** 保留在 URL 中的 deep-link 字段 */
+/** 保留在 URL 中的 deep-link 字段（行情观察，不含 signal/review） */
 export interface MarketChartDeepLink {
   strategy?: string | null
   time?: string | null
   datetime?: string | null
-  signal_layer?: string | null
-  signal_id?: string | null
-  signal_event_id?: string | null
-  review_id?: string | null
-  return_route?: string | null
 }
 
 /**
@@ -40,11 +35,6 @@ export function buildMarketChartRouteQuery(
     access_mode: state.accessMode === 'research' ? 'research' : undefined,
     strategy: deepLink.strategy?.trim() || undefined,
     time: deepLink.time?.trim() || deepLink.datetime?.trim() || undefined,
-    signal_layer: deepLink.signal_layer?.trim() || undefined,
-    signal_id: deepLink.signal_id?.trim() || undefined,
-    signal_event_id: deepLink.signal_event_id?.trim() || undefined,
-    review_id: deepLink.review_id?.trim() || undefined,
-    return_route: deepLink.return_route?.trim() || undefined,
   }
 }
 
@@ -72,7 +62,7 @@ export function buildEmaObservationStatus(close: number, ema21: number) {
     return {
       label: 'EMA21 上方',
       type: 'error' as const,
-      text: `${TECHNICAL_OBSERVATION_PREFIX} · 收盘价位于 EMA21 上方，可结合 MACD 与信号复核继续验证。`,
+      text: `${TECHNICAL_OBSERVATION_PREFIX} · 收盘价位于 EMA21 上方，可结合 MACD 继续观察。`,
     }
   }
   return {

@@ -1,27 +1,20 @@
 <script setup lang="ts">
 /**
- * 行情 K 线工作台：canonical 历史模式、viewport 懒加载、信号 deep-link 与主图指标。
+ * 行情 K 线工作台：canonical 历史模式、viewport 懒加载与主图指标。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NCheckbox, NDatePicker, NPopover, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import FuturesResearchPanel from '@/components/research/FuturesResearchPanel.vue'
 import MarketContextBar from '@/components/market/MarketContextBar.vue'
 import MarketDataQualityCard from '@/components/market/MarketDataQualityCard.vue'
 import MarketEvidenceDrawer from '@/components/market/MarketEvidenceDrawer.vue'
 import MarketEvidenceStrip from '@/components/market/MarketEvidenceStrip.vue'
-import MarketRightRail from '@/components/market/MarketRightRail.vue'
-import MarketRuntimeObservationPanel from '@/components/market/MarketRuntimeObservationPanel.vue'
-import { getLatestStrategySignals, getSignalEvent, getSignalEvents, getStage9WechatNotification } from '@/api/signal'
-import type { SignalEventRecord, Stage9WechatNotification, StrategySignalRecord } from '@/types/signal'
 import { getCanonicalMarketCoverage, getMarketBars, getMarketDominants, getMarketIndicators, getMarketMacdIndicator } from '@/api/market'
 import type {
   BarData,
   ChartOverlay,
   DominantContractItem,
-  HoverKlineContext,
-  KlineMarker,
   MarketBarsRequestParams,
   MarketBarsCoverage,
   MarketBarsQuality,
@@ -34,8 +27,6 @@ import type {
   MainIndicatorId,
   MainIndicatorSeries,
 } from '@/types/market'
-import { calculateATR, calculateEMA } from '@/utils/indicators'
-import { buildReviewResearchQuery, parseResearchContext, safeReturnRoute } from '@/utils/researchNavigation'
 import {
   activeIndicatorCodes,
   buildMainIndicatorRequestParams,
@@ -67,37 +58,21 @@ import {
   type ViewportLoadRequest,
 } from '@/utils/marketChartWindow'
 import { applyRouteSelectionFromQuery } from '@/utils/marketChartInit'
-import { buildMarketQualificationPresentation } from '@/utils/marketEvidencePresentation'
-import { isSyntheticFuturesContract, resolveActualContract } from '@/utils/marketContract'
-import { selectSignalEventForChart, signalIdFromMarkerId, signalMarkerId } from '@/utils/marketSignalSelection'
-import { resolveChartTheme } from '@/styles/chartTheme'
-import { buildMarketRuntimeObservation } from '@/utils/marketRuntimeObservation'
 import {
   buildMarketQualityImpact,
   type MarketQualityAction,
 } from '@/utils/marketQualityPresentation'
-import type { MarketRuntimeObservationContext } from '@/types/marketRuntimeObservation'
+import { resolveActualContract } from '@/utils/marketContract'
+import { resolveChartTheme } from '@/styles/chartTheme'
 import {
-  buildEmaObservationStatus,
   buildMarketChartRouteQuery,
-  qualityFailedObservationText,
   safeMarketApiError,
 } from '@/utils/marketChartQuery'
-import {
-  loadMarketRightRailTab,
-  resolveMarketRightRailTab,
-  saveMarketRightRailTab,
-  type MarketRightRailTab,
-} from '@/utils/marketRightRail'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const chartTheme = resolveChartTheme()
-
-type KlineChartExpose = {
-  focusTime: (value: string) => void
-}
 
 type MarketDataQualityCardExpose = {
   focus: () => void
@@ -128,7 +103,6 @@ const barsCoverage = ref<MarketBarsCoverage | null>(null)
 const barsLineage = ref<MarketReadLineage | null>(null)
 const macdOverride = ref<MarketMacdIndicatorResponse | null>(null)
 const macdError = ref<string | null>(null)
-const hoverContext = ref<HoverKlineContext | null>(null)
 
 const selectedSymbol = ref<string | null>(null)
 const selectedActualContract = ref<string | null>(null)
@@ -148,29 +122,11 @@ const dateRange = ref<[number, number] | null>(null)
 const barsLoadMode = ref<BarsLoadMode>('viewport')
 const chartFitContent = ref(true)
 const viewportLoadEnabled = ref(false)
-const klineChartRef = ref<KlineChartExpose | null>(null)
 const qualityCardRef = ref<MarketDataQualityCardExpose | null>(null)
-const activeMarkerId = ref<string | null>(null)
-const showSignalLayer = ref(route.query.signal_layer !== '0')
-const latestSignals = ref<StrategySignalRecord[]>([])
-const selectedSignalId = ref<number | null>(null)
-const selectedSignalEvent = ref<SignalEventRecord | null>(null)
-const selectedNotification = ref<Stage9WechatNotification | null>(null)
-const loadingNotification = ref(false)
-const notificationError = ref<string | null>(null)
-const experimentalToolsOpen = ref(false)
 const evidenceDrawerOpen = ref(false)
-const activeRightRailTab = ref<MarketRightRailTab>(
-  resolveMarketRightRailTab({
-    preferred: loadMarketRightRailTab(),
-    hasSignalContext: Boolean(route.query.signal_id || route.query.signal_event_id),
-    hasReviewContext: Boolean(route.query.review_id),
-  }),
-)
 /** 路由/K 线请求序号，丢弃过期异步结果 */
 let marketRouteRequestId = 0
 let macdRequestId = 0
-let signalSelectionRequestId = 0
 let syncingQueryFromState = false
 let viewportLoadTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -226,39 +182,12 @@ const chartPeriodOptions = computed(() => {
 
 const latestBar = computed(() => bars.value.at(-1) || null)
 const previousBar = computed(() => (bars.value.length >= 2 ? bars.value.at(-2) || null : null))
-const matchedSignals = computed(() => latestSignals.value.filter((signal) => signalMatchesCurrentChart(signal)))
-const signalMarkers = computed<KlineMarker[]>(() => {
-  if (!showSignalLayer.value || isContinuousView.value) return []
-  return matchedSignals.value
-    .map((signal) => ({
-      id: signalMarkerId(signal),
-      time: signal.signal_time,
-      label: signalMarkerLabel(signal),
-      tooltip: signalMarkerTooltip(signal),
-      color: signalMarkerColor(signal),
-      position: signal.direction === 'long' ? 'belowBar' as const : 'aboveBar' as const,
-      shape: 'circle' as const,
-    }))
-})
-const chartMarkers = computed(() => signalMarkers.value)
+const chartMarkers = computed(() => [])
 const priceChange = computed(() => (latestBar.value && previousBar.value ? latestBar.value.close - previousBar.value.close : null))
 const priceChangePercent = computed(() => {
   if (!latestBar.value || !previousBar.value || previousBar.value.close === 0) return null
   return ((latestBar.value.close - previousBar.value.close) / previousBar.value.close) * 100
 })
-const runtimeObservationContext = computed<MarketRuntimeObservationContext>(() =>
-  buildMarketRuntimeObservation({
-    data_mode: 'historical',
-    confirmed_count: null,
-    partial_count: null,
-    chart_row_count: null,
-    quality_status: quality.value?.status || null,
-    profile_id: null,
-    active_data_version: barsCoverage.value?.data_version || selectedItem.value?.data_version || null,
-    actual_contract:
-      contractView.value === 'actual' ? selectedActualContract.value || selectedContract.value || null : selectedContract.value || null,
-  }),
-)
 const mainIndicatorDefinitions = MAIN_INDICATOR_DEFINITIONS
 const mainIndicatorLatestValues = computed(() => latestMainIndicatorValues(mainIndicatorSeries.value, visibleMainIndicators.value))
 const visibleMainIndicatorSet = computed(() => new Set(visibleMainIndicators.value))
@@ -272,15 +201,6 @@ const mainIndicatorStatusText = computed(() => {
   if (!visibleMainIndicators.value.length) return '主图指标已关闭'
   return '统一 EMA · 前端展示计算 · 非 StrategySignal'
 })
-const marketQualification = computed(() =>
-  buildMarketQualificationPresentation({
-    accessMode: accessMode.value,
-    strictResearchReady: Boolean(barsLineage.value?.strict_research_ready),
-    qualityStatus: barsCoverage.value?.quality_status || quality.value?.status || 'unknown',
-    profileId: null,
-    canonicalIdentity: true,
-  }),
-)
 const crossFileConflictCount = computed(() =>
   'cross_file_conflicts' in (quality.value || {})
     ? (quality.value as MarketBarsQuality).cross_file_conflicts || 0
@@ -319,77 +239,6 @@ const chartOverlays = computed<ChartOverlay[]>(() => {
   return overlays
 })
 
-function hoverMainIndicatorRows(context: HoverKlineContext | null) {
-  return context?.mainIndicators || []
-}
-
-const strategyStatus = computed(() => {
-  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
-    return { label: '等待选择', type: 'default' as const, text: '请选择品种与周期。' }
-  }
-  if (loadingBars.value || loadingMeta.value || loadingDominants.value) {
-    return { label: '加载中', type: 'default' as const, text: '正在加载 K 线数据…' }
-  }
-  if (!latestBar.value) {
-    if (dateRange.value) {
-      return {
-        label: '无数据',
-        type: 'warning' as const,
-        text: '当前日期范围内没有 K 线，请清空或调整日期窗口后刷新。',
-      }
-    }
-    if (barsCoverage.value?.quality_status === 'failed') {
-      return {
-        label: '质量未通过',
-        type: 'warning' as const,
-        text: qualityFailedObservationText(),
-      }
-    }
-    if (selectedDominant.value && !selectedDominant.value.quote_ready && !isContinuousView.value) {
-      return { label: '暂无K线', type: 'warning' as const, text: '该主力合约尚未入库本地 K 线数据。' }
-    }
-    if (isContinuousView.value && !selectedItem.value && selectedPeriod.value) {
-      return {
-        label: '主连无数据',
-        type: 'warning' as const,
-        text: `主连 ${selectedContract.value || '-'} 的 ${selectedPeriod.value} 周期暂无 coverage，请确认数据已登记。`,
-      }
-    }
-    if (!isContinuousView.value && isSyntheticFuturesContract(selectedActualContract.value)) {
-      return { label: '合约无效', type: 'warning' as const, text: '当前为主连/合成合约，请使用真实主力合约查看行情。' }
-    }
-    return {
-      label: '等待数据',
-      type: 'default' as const,
-      text: barsCoverage.value?.row_count
-        ? `coverage 有 ${barsCoverage.value.row_count} 行，但当前窗口内无 bar。`
-        : '当前选择暂无可展示 K 线。',
-    }
-  }
-  const ema21 = calculateEMA(bars.value, 21).at(-1)?.value
-  if (!ema21) {
-    return {
-      label: '预热中',
-      type: 'warning' as const,
-      text: 'K 线数量不足，EMA21/MACD 仍在预热（前端展示计算 · 非 StrategySignal）。',
-    }
-  }
-  return buildEmaObservationStatus(latestBar.value.close, ema21)
-})
-
-const riskDraft = computed(() => {
-  const atr = calculateATR(bars.value, 14).at(-1)?.value
-  if (!latestBar.value || !atr) return null
-  const accountEquity = 100000
-  const riskBudget = accountEquity * 0.01
-  return {
-    atr,
-    riskBudget,
-    stopLong: latestBar.value.close - atr,
-    stopShort: latestBar.value.close + atr,
-  }
-})
-
 watch(
   () => ({
     visibleMainIndicators: [...visibleMainIndicators.value],
@@ -413,22 +262,6 @@ watch(
   },
   { deep: true },
 )
-
-watch(
-  () => [route.query.review_id, route.query.signal_id, route.query.signal_event_id],
-  () => {
-    activeRightRailTab.value = resolveMarketRightRailTab({
-      preferred: loadMarketRightRailTab(),
-      hasSignalContext: Boolean(route.query.signal_id || route.query.signal_event_id),
-      hasReviewContext: Boolean(route.query.review_id),
-    })
-  },
-)
-
-function handleRightRailTab(value: MarketRightRailTab) {
-  activeRightRailTab.value = value
-  saveMarketRightRailTab(value)
-}
 
 function focusQualityCard() {
   qualityCardRef.value?.focus()
@@ -504,33 +337,6 @@ function applyRouteSelectionFromQueryToState() {
   contractView.value = selection.contractView
 }
 
-async function loadLatestSignals(requestId = marketRouteRequestId) {
-  if (!selectedSymbol.value || !selectedActualContract.value || !selectedPeriod.value) {
-    latestSignals.value = []
-    return
-  }
-  const contractKey = 'actual_contract'
-  try {
-    const page = await getLatestStrategySignals({
-      product: selectedSymbol.value,
-      [contractKey]: selectedActualContract.value,
-      period: selectedPeriod.value,
-      provider: 'rqdata',
-      data_role: 'primary',
-      limit: 50,
-    })
-    if (isCurrentMarketRoute(requestId)) {
-      latestSignals.value = page.items
-      if (selectedSignalId.value && !page.items.some((signal) => signal.id === selectedSignalId.value)) clearSignalSelection()
-    }
-  } catch {
-    if (isCurrentMarketRoute(requestId)) {
-      latestSignals.value = []
-      clearSignalSelection()
-    }
-  }
-}
-
 async function loadDominants() {
   loadingDominants.value = true
   try {
@@ -594,8 +400,7 @@ async function applyRouteSelectionAndLoad(requestId = ++marketRouteRequestId) {
 }
 
 /**
- * 核心 K 线加载：支持 viewport 合并、lineage 冲突 fail-closed；
- * 成功后联动指标与信号 marker 定位。
+ * 核心 K 线加载：支持 viewport 合并、lineage 冲突 fail-closed。
  */
 async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptions = {}) {
   if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) {
@@ -656,16 +461,8 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
         if (macdParams) await loadMarketMacdIndicator(requestId, macdParams)
       }
     }
-    hoverContext.value = bars.value.at(-1)
-      ? {
-          time: bars.value.at(-1)!.time,
-          bar: bars.value.at(-1)!,
-        }
-      : null
     if (!options.merge) {
       syncQuery()
-      await loadLatestSignals(requestId)
-      await restoreSignalEventFromRoute(requestId)
     }
     if (response.bars.length === 0 && !options.merge) {
       message.warning(response.message || '当前选择没有可展示的 K 线')
@@ -687,36 +484,10 @@ async function loadBars(requestId = marketRouteRequestId, options: LoadBarsOptio
       barsLineage.value = null
       qualityWarningMessage.value = null
       clearMarketMacd()
-      latestSignals.value = []
     }
   } finally {
     if (isCurrentMarketRoute(requestId)) loadingBars.value = false
   }
-}
-
-async function restoreSignalEventFromRoute(requestId: number) {
-  const eventId = numericQuery(route.query.signal_event_id)
-  if (!eventId) return
-  try {
-    const event = await getSignalEvent(eventId)
-    if (!isCurrentMarketRoute(requestId)) return
-    selectedSignalEvent.value = event
-    selectedSignalId.value = event.signal_id || numericQuery(route.query.signal_id)
-  } catch (err) {
-    if (!isCurrentMarketRoute(requestId)) return
-    selectedSignalEvent.value = null
-    notificationError.value = safeMarketApiError(err, '恢复信号事件失败')
-  }
-}
-
-function openReviewFromChart() {
-  const context = parseResearchContext(route.query as Record<string, string | string[] | null | undefined>)
-  const exactReturnRoute = context.reviewId ? safeReturnRoute(context.returnRoute) : null
-  if (exactReturnRoute) {
-    void router.push(exactReturnRoute)
-    return
-  }
-  void router.push({ name: 'review', query: buildReviewResearchQuery(context) })
 }
 
 function buildBarsRequest(viewportWindow?: ViewportLoadRequest): MarketBarsRequestParams | null {
@@ -998,7 +769,6 @@ function handleContractViewUpdate(value: ContractViewMode) {
   if (chartControlsBusy.value) return
   if (value === contractView.value) return
   marketRouteRequestId += 1
-  clearSignalSelection()
   barsLoadMode.value = 'viewport'
   chartFitContent.value = true
   viewportLoadEnabled.value = false
@@ -1012,7 +782,6 @@ function handlePeriodUpdate(value: string) {
   if (chartControlsBusy.value) return
   if (!value || value === selectedPeriod.value) return
   marketRouteRequestId += 1
-  clearSignalSelection()
   barsLoadMode.value = 'viewport'
   chartFitContent.value = true
   viewportLoadEnabled.value = false
@@ -1079,80 +848,6 @@ function enableTrendEmaIndicators() {
     .map((item) => item.id)
 }
 
-async function handleMarkerClick(marker: KlineMarker) {
-  const signalId = signalIdFromMarkerId(marker.id)
-  if (!signalId) return
-  const signal = matchedSignals.value.find((item) => item.id === signalId)
-  if (!signal) return
-  await selectSignal(signal, marker.id)
-}
-
-async function selectSignalFromList(signal: StrategySignalRecord) {
-  await selectSignal(signal, signalMarkerId(signal))
-  await nextTick()
-  klineChartRef.value?.focusTime(nearestBarTime(signal.signal_time))
-}
-
-/** 选中信号 marker 后拉 signal_events 与企业微信通知状态（只读）。 */
-async function selectSignal(signal: StrategySignalRecord, markerIdValue = signalMarkerId(signal)) {
-  handleRightRailTab('signal')
-  activeMarkerId.value = markerIdValue
-  selectedSignalId.value = signal.id
-  selectedSignalEvent.value = null
-  selectedNotification.value = null
-  notificationError.value = null
-  loadingNotification.value = true
-  const requestId = ++signalSelectionRequestId
-  try {
-    const events = await getSignalEvents(signal.id)
-    if (requestId !== signalSelectionRequestId) return
-    const event = selectSignalEventForChart(events, signal, {
-      product: selectedSymbol.value,
-      contract: selectedActualContract.value,
-      period: selectedPeriod.value,
-    })
-    selectedSignalEvent.value = event
-    if (!event) {
-      notificationError.value = '未找到关联 signal_events。'
-      return
-    }
-    try {
-      selectedNotification.value = await getStage9WechatNotification(event.id)
-      notificationError.value = null
-    } catch (err) {
-      selectedNotification.value = null
-      notificationError.value = isNotFoundApiError(err) ? '尚无企业微信通知记录。' : safeMarketApiError(err, '加载企业微信通知状态失败')
-    }
-  } catch (err) {
-    if (requestId !== signalSelectionRequestId) return
-    selectedSignalEvent.value = null
-    selectedNotification.value = null
-    notificationError.value = safeMarketApiError(err, '加载信号事件失败')
-  } finally {
-    if (requestId === signalSelectionRequestId) loadingNotification.value = false
-  }
-}
-
-function clearSignalSelection() {
-  signalSelectionRequestId += 1
-  selectedSignalId.value = null
-  selectedSignalEvent.value = null
-  selectedNotification.value = null
-  loadingNotification.value = false
-  notificationError.value = null
-  if (activeMarkerId.value?.startsWith('signal-')) activeMarkerId.value = null
-}
-
-function syncDateRange(item: MarketCoverageItem | null | undefined) {
-  if (!item?.end_time || !item.start_time) {
-    dateRange.value = null
-    return
-  }
-  const end = new Date(item.end_time).getTime()
-  const start = new Date(item.start_time).getTime()
-  dateRange.value = fullCoverageDateRangeMs(start, end)
-}
-
 function findCoverageItem(symbol?: string | null, contract?: string | null, period?: string | null) {
   if (!symbol || !contract || !period) return null
   return coverageItems.value.find((item) => item.symbol === symbol && item.contract === contract && item.period === period) || null
@@ -1175,51 +870,14 @@ function selectionMatchesRoute() {
   )
 }
 
-function signalMatchesCurrentChart(signal: StrategySignalRecord) {
-  if (!selectedSymbol.value || !selectedContract.value || !selectedPeriod.value) return false
-  const product = signal.product || signal.symbol
-  const period = signal.entry_interval || signal.interval || signal.period
-  const contract = signal.actual_contract || signal.contract
-  return product === selectedSymbol.value && contract === selectedActualContract.value && period === selectedPeriod.value
-}
-
-function signalMarkerLabel(signal: StrategySignalRecord) {
-  const side = signal.direction === 'long' ? '多' : signal.direction === 'short' ? '空' : '观'
-  return `${side}${signal.score_bucket || ''}`
-}
-
-function signalMarkerTooltip(signal: StrategySignalRecord) {
-  const version = signal.strategy_version_id || signal.strategy_version || '-'
-  const price = signal.signal_price ?? signal.price ?? signal.current_price
-  return `${signal.strategy_code || signal.strategy_id} ${version} ${signal.period} ${signal.strategy_status} @ ${formatNumber(price)}`
-}
-
-function signalMarkerColor(signal: StrategySignalRecord) {
-  if (signal.direction === 'long') return chartTheme.up
-  if (signal.direction === 'short') return chartTheme.down
-  return chartTheme.textMuted
-}
-
-function nearestBarTime(value: string) {
-  if (!bars.value.length) return value
-  const target = exchangeLocalTimeMs(value)
-  if (!Number.isFinite(target)) return value
-  let nearest = bars.value[0].time
-  let distance = Math.abs(exchangeLocalTimeMs(nearest) - target)
-  for (const bar of bars.value.slice(1)) {
-    const current = exchangeLocalTimeMs(bar.time)
-    if (!Number.isFinite(current)) continue
-    const currentDistance = Math.abs(current - target)
-    if (currentDistance < distance) {
-      nearest = bar.time
-      distance = currentDistance
-    }
+function syncDateRange(item: MarketCoverageItem | null | undefined) {
+  if (!item?.end_time || !item.start_time) {
+    dateRange.value = null
+    return
   }
-  return nearest
-}
-
-function exchangeLocalTimeMs(value: string) {
-  return new Date(String(value).replace(/(?:Z|[+-]\d{2}:\d{2})$/, '')).getTime()
+  const end = new Date(item.end_time).getTime()
+  const start = new Date(item.start_time).getTime()
+  dateRange.value = fullCoverageDateRangeMs(start, end)
 }
 
 /** 将当前选中状态写回 URL（避免 watch 循环用 syncingQueryFromState 守卫）。 */
@@ -1240,11 +898,6 @@ function syncQuery(): Promise<void> {
         strategy: stringQuery(route.query.strategy),
         time: stringQuery(route.query.time),
         datetime: stringQuery(route.query.datetime),
-        signal_layer: stringQuery(route.query.signal_layer),
-        signal_id: stringQuery(route.query.signal_id),
-        signal_event_id: stringQuery(route.query.signal_event_id),
-        review_id: stringQuery(route.query.review_id),
-        return_route: stringQuery(route.query.return_route),
       },
     ),
   })
@@ -1262,11 +915,6 @@ function stringQuery(value: unknown) {
   return typeof value === 'string' ? value : null
 }
 
-function numericQuery(value: unknown) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
-}
-
 function formatBarsRequestTime(value: number) {
   return new Date(value).toISOString()
 }
@@ -1274,15 +922,6 @@ function formatBarsRequestTime(value: number) {
 function formatNumber(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined) return '-'
   return value.toLocaleString('zh-CN', { maximumFractionDigits: digits, minimumFractionDigits: digits })
-}
-
-function isNotFoundApiError(err: unknown) {
-  return Boolean(
-    typeof err === 'object' &&
-      err !== null &&
-      'response' in err &&
-      (err as { response?: { status?: number } }).response?.status === 404,
-  )
 }
 </script>
 
@@ -1355,9 +994,6 @@ function isNotFoundApiError(err: unknown) {
                 </div>
               </div>
               </NPopover>
-              <NButton size="small" :type="showSignalLayer ? 'primary' : 'default'" :disabled="chartControlsBusy" @click="showSignalLayer = !showSignalLayer">
-                信号层
-              </NButton>
             </div>
             <div class="chart-control-group" aria-label="数据窗口">
               <span class="chart-control-group__label">窗口</span>
@@ -1407,10 +1043,8 @@ function isNotFoundApiError(err: unknown) {
 
       <div class="kline-chart-host">
         <KlineChart
-          ref="klineChartRef"
           :bars="bars"
           :markers="chartMarkers"
-          :active-marker-id="activeMarkerId"
           :overlays="chartOverlays"
           :main-indicators="visibleMainIndicators"
           :main-indicator-series="mainIndicatorSeries"
@@ -1424,141 +1058,11 @@ function isNotFoundApiError(err: unknown) {
           :quality="quality"
           show-period-toolbar
           @update:period="handlePeriodUpdate"
-          @hover="hoverContext = $event"
-          @marker-click="handleMarkerClick"
           @visible-range-change="handleVisibleRangeChange"
           @quality-details="focusQualityCard"
         />
       </div>
     </main>
-
-    <MarketRightRail :model-value="activeRightRailTab" @update:model-value="handleRightRailTab">
-      <template #strategy>
-        <section class="side-panel">
-          <div class="side-panel__title">
-            <span>当前盘面事实</span>
-            <NTag size="small">{{ strategyStatus.label }}</NTag>
-          </div>
-          <p>{{ strategyStatus.text }}</p>
-          <p>{{ mainIndicatorStatusText }}</p>
-          <div class="snapshot-grid">
-            <span>最新收盘</span><strong>{{ formatNumber(latestBar?.close) }}</strong>
-            <span>K线数量</span><strong>{{ bars.length.toLocaleString('zh-CN') }}</strong>
-            <span>合约 / 周期</span><strong>{{ selectedContract || '-' }} / {{ selectedPeriod || '-' }}</strong>
-            <span>匹配信号</span><strong>{{ matchedSignals.length }}</strong>
-          </div>
-          <NAlert type="warning" :bordered="false">指标仅供技术观察；HTDY/XMA 重绘边界不变，不进入严格研究或交易。</NAlert>
-        </section>
-
-        <section class="side-panel">
-          <div class="side-panel__title">
-            <span>数据资格</span>
-            <NTag size="small" :type="marketQualification.tone">{{ marketQualification.label }}</NTag>
-          </div>
-          <p>{{ marketQualification.summary }}</p>
-          <div class="snapshot-grid">
-            <span>访问模式</span><strong>{{ accessMode === 'research' ? '严格研究' : '浏览观察' }}</strong>
-            <span>质量</span><strong>{{ barsCoverage?.quality_status || quality?.status || 'unknown' }}</strong>
-            <span>数据身份</span><strong>Canonical DatasetKey</strong>
-            <span>lineage</span><strong>{{ barsLineage ? '已绑定' : '未证明' }}</strong>
-            <span>数据冲突</span><strong>{{ crossFileConflictCount.toLocaleString('zh-CN') }}</strong>
-          </div>
-          <NButton v-if="qualityImpact" size="small" secondary block @click="focusQualityCard">查看左侧质量影响</NButton>
-        </section>
-
-        <section class="side-panel">
-          <div class="side-panel__title">十字线快照</div>
-          <template v-if="hoverContext">
-            <div class="snapshot-grid">
-              <span>时间</span><strong>{{ hoverContext.time.replace('T', ' ').slice(0, 16) }}</strong>
-              <span>开高低收</span><strong>{{ formatNumber(hoverContext.bar.open) }} / {{ formatNumber(hoverContext.bar.high) }} / {{ formatNumber(hoverContext.bar.low) }} / {{ formatNumber(hoverContext.bar.close) }}</strong>
-              <template v-for="item in hoverMainIndicatorRows(hoverContext)" :key="item.id">
-                <span>{{ item.displayName }}</span><strong>{{ formatNumber(item.value) }}</strong>
-              </template>
-              <span>MACD</span><strong>{{ formatNumber(hoverContext.macd?.histogram, 4) }}</strong>
-              <span>ATR</span><strong>{{ formatNumber(hoverContext.atr, 4) }}</strong>
-            </div>
-          </template>
-          <div v-else class="empty-note">移动十字线查看主图和副图联动数据。</div>
-        </section>
-
-        <section class="side-panel experimental-tools">
-          <NButton size="small" secondary block @click="experimentalToolsOpen = !experimentalToolsOpen">
-            {{ experimentalToolsOpen ? '收起' : '展开' }}实验工具
-          </NButton>
-          <template v-if="experimentalToolsOpen">
-            <NAlert type="warning" :bordered="false">实验工具 · 非正式风控 · 不产生交易指令。</NAlert>
-            <FuturesResearchPanel :symbol="selectedSymbol" :contract="selectedContract" :date-range="dateRange" />
-            <div class="snapshot-grid">
-              <span>账户假设</span><strong>100,000（示例）</strong>
-              <span>单笔风险</span><strong>{{ riskDraft ? formatNumber(riskDraft.riskBudget) : '-' }}</strong>
-              <span>ATR</span><strong>{{ riskDraft ? formatNumber(riskDraft.atr) : '-' }}</strong>
-              <span>多 / 空止损</span><strong>{{ riskDraft ? `${formatNumber(riskDraft.stopLong)} / ${formatNumber(riskDraft.stopShort)}` : '-' }}</strong>
-            </div>
-          </template>
-        </section>
-      </template>
-
-      <template #signal>
-        <section class="side-panel signal-list-panel">
-          <div class="side-panel__title">
-            <span>StrategySignal</span>
-            <NTag size="small">{{ matchedSignals.length }}</NTag>
-          </div>
-          <button
-            v-for="signal in matchedSignals"
-            :key="signal.id"
-            class="signal-list-item"
-            :class="{ 'signal-list-item--active': selectedSignalId === signal.id }"
-            @click="selectSignalFromList(signal)"
-          >
-            <span><strong>{{ signalMarkerLabel(signal) }}</strong>{{ signal.strategy_code || signal.strategy_id }}</span>
-            <small>{{ signal.entry_interval || signal.interval || signal.period }} · {{ signal.strategy_status }} · {{ formatNumber(signal.signal_price ?? signal.price ?? signal.current_price) }}</small>
-          </button>
-          <div v-if="!matchedSignals.length" class="empty-note">当前合约与周期暂无匹配 StrategySignal。</div>
-        </section>
-
-        <section class="side-panel">
-          <div class="side-panel__title">
-            <span>SignalEvent / 通知</span>
-            <NTag size="small" :type="selectedNotification?.status === 'sent' ? 'success' : 'default'">
-              {{ loadingNotification ? 'loading' : selectedNotification?.status || 'readonly' }}
-            </NTag>
-          </div>
-          <div v-if="selectedSignalEvent" class="snapshot-grid">
-            <span>事件</span><strong>#{{ selectedSignalEvent.id }} · {{ selectedSignalEvent.event_type }}</strong>
-            <span>source_mode</span><strong>{{ selectedSignalEvent.source_mode }}</strong>
-            <span>lifecycle</span><strong>{{ selectedSignalEvent.lifecycle_status }}</strong>
-            <span>bar_end</span><strong>{{ (selectedSignalEvent.bar_end || selectedSignalEvent.signal_time || '-').replace('T', ' ').slice(0, 16) }}</strong>
-            <span>通知尝试</span><strong>{{ selectedNotification ? `${selectedNotification.attempt_count}/${selectedNotification.max_attempts}` : '-' }}</strong>
-          </div>
-          <div v-else class="empty-note">选择信号 marker 后显示关联事件。</div>
-          <NAlert v-if="notificationError" type="warning" :bordered="false">{{ notificationError }}</NAlert>
-          <NButton v-if="selectedSignalEvent || route.query.signal_event_id" size="small" secondary block @click="openReviewFromChart">
-            打开事件复盘
-          </NButton>
-          <NButton size="small" secondary block @click="router.push({ name: 'signal' })">打开信号中心</NButton>
-        </section>
-      </template>
-
-      <template #review>
-        <section class="side-panel">
-          <div class="side-panel__title">Signal Review</div>
-          <div class="empty-note">复盘仅关联 StrategySignal / SignalEvent；行情页不加载回测报告或成交。</div>
-          <NButton v-if="route.query.review_id" size="small" secondary block @click="openReviewFromChart">
-            返回复盘
-          </NButton>
-          <NButton v-else-if="selectedSignalEvent || route.query.signal_event_id" size="small" secondary block @click="openReviewFromChart">
-            打开事件复盘
-          </NButton>
-          <NButton v-else size="small" secondary block @click="router.push({ name: 'review' })">打开复盘中心</NButton>
-        </section>
-      </template>
-
-      <template #runtime>
-        <section class="side-panel"><MarketRuntimeObservationPanel :context="runtimeObservationContext" /></section>
-      </template>
-    </MarketRightRail>
 
     <MarketEvidenceDrawer
       v-model:show="evidenceDrawerOpen"
@@ -1572,12 +1076,11 @@ function isNotFoundApiError(err: unknown) {
 
 <style scoped>
 .market-chart-workbench {
-  display: grid;
-  grid-template-columns: minmax(680px, 1fr) 300px;
+  display: flex;
+  flex-direction: column;
   gap: var(--gy-space-3);
   min-width: 0;
   min-height: calc(100vh - var(--gy-header-height) - (var(--gy-content-padding) * 2));
-  align-items: stretch;
 }
 
 .chart-header {
@@ -1727,7 +1230,6 @@ function isNotFoundApiError(err: unknown) {
   min-height: 0;
 }
 
-.side-panel,
 .quote-strip {
   background: var(--gy-bg-panel);
   border: 1px solid var(--gy-border);
@@ -1740,10 +1242,7 @@ function isNotFoundApiError(err: unknown) {
   font-weight: 700;
 }
 
-.quote-strip__code,
-.side-panel p,
-.empty-note,
-.side-panel small {
+.quote-strip__code {
   color: var(--gy-text-muted);
 }
 
@@ -1793,115 +1292,13 @@ function isNotFoundApiError(err: unknown) {
   white-space: nowrap;
 }
 
-.side-panel {
-  padding: var(--gy-space-3);
-}
-
-.side-panel__title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gy-space-2);
-  margin-bottom: var(--gy-space-3);
-  color: var(--gy-text-primary);
-  font-weight: 700;
-}
-
-.side-panel__title::before {
-  content: '';
-  width: 3px;
-  height: 13px;
-  flex: 0 0 auto;
-  margin-right: 3px;
-  border-radius: 2px;
-  background: var(--gy-accent);
-}
-
-.side-panel__title > span:first-child {
-  margin-right: auto;
-}
-
-.signal-row,
-.snapshot-grid {
-  display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
-  gap: var(--gy-space-2);
-  color: var(--gy-text-muted);
-  font-size: var(--gy-font-size-sm);
-}
-
-.signal-row {
-  padding-top: 8px;
-}
-
-.snapshot-grid strong,
-.signal-row strong {
-  min-width: 0;
-  color: var(--gy-text-primary);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.signal-list-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gy-space-2);
-}
-
-.signal-list-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  padding: var(--gy-space-2);
-  color: var(--gy-text-secondary);
-  text-align: left;
-  background: var(--gy-bg-panel-strong);
-  border: 1px solid var(--gy-border);
-  border-radius: var(--gy-radius-md);
-  cursor: pointer;
-  transition: border-color var(--gy-transition-fast), background-color var(--gy-transition-fast);
-}
-
-.signal-list-item:hover,
-.signal-list-item--active {
-  color: var(--gy-text-primary);
-  background: var(--gy-bg-selected);
-  border-color: var(--gy-accent);
-}
-
-.signal-list-item span,
-.signal-list-item small {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.signal-list-item strong {
-  margin-right: 6px;
-  color: var(--gy-chart-ema);
-}
-
-.signal-list-item small {
-  color: var(--gy-text-muted);
-  font-size: var(--gy-font-size-sm);
-}
-
 @media (min-width: 1200px) and (max-width: 1439px) {
-  .market-chart-workbench {
-    grid-template-columns: minmax(680px, 1fr) 280px;
-  }
-
   .quote-strip {
     grid-template-columns: minmax(138px, 1fr) minmax(132px, auto) repeat(3, minmax(68px, auto));
   }
-
 }
 
 @media (max-width: 1199px) {
-  .market-chart-workbench {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .chart-header__secondary {
     align-items: stretch;
   }

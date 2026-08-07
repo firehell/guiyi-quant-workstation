@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-06
+更新时间：2026-08-07
 
 本文件是项目当前状态仪表盘；历史过程由 Git、任务合同与既有证据追溯。历史协作材料不构成当前授权（见 `AGENTS.md` / `DECISIONS.md`）。
 
@@ -25,10 +25,16 @@ Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划�
 仓库当前已移除旧 Web/backend backtest 子系统与 S6-08/S6-09/S6-10 控制面：不再提供
 `/api/backtests/**`、`/ws/backtests/**`、`/backtest`、`/backtest/batch`、`/settings`、
 `guiyi-backtests` worker/queue、`guiyi runtime plan` 或 runtime health scheduler component。
-Market、watchlists、runtime status、Signal/Data/Review 非回测路径、盘后 scheduler 与
-Canonical 历史读路径继续保留。盘中 poll Live K 线与 Task 06 observation 应用代码已退役；
-盘中能力待后续新实现重建。
-Canonical data 保留。tracked legacy evidence 以及主工程被 Git 忽略的
+
+Web 观察面已精简为 **Market 工作台 only**（`/` → `/market`；69 品种历史行情 + EMA10/21/60、火天大有、MACD）。
+今日工作台、信号监控、策略中心、复盘中心、数据中心、运行状态等 Web 入口已去掉；
+对应 `/api/signals`、`/ws/signals`、`/api/v1/strategies`、`/api/dashboard`、`/api/reviews`、
+watchlists / futures_research HTTP 路由已从应用卸载；signal/notification RQ worker 入口已退役。
+**保留**：`/api/v1/market` Canonical 历史读、`/api/v1/data` 与 `/api/runtime`（含 CLI
+`guiyi data *` / `guiyi runtime status`）、盘后 scheduler、Canonical data；
+signal/review 等 DB 表与 quant-core 策略研究源码本轮未删，供后续重搭。
+盘中 poll Live K 线与 Task 06 observation 应用代码已退役；盘中能力待后续新实现重建。
+tracked legacy evidence 以及主工程被 Git 忽略的
 `/Volumes/扩展盘/guiyi-quant-workstation/backtests/`（87 个文件，约 50 MB）已精确清理。
 此处不代表 release、Runtime promotion、生产 DB/正式数据删除、launchd/Redis/其他 host 清理
 或服务停止已经发生。
@@ -68,6 +74,7 @@ production_writes=false
 | M2 retained-universe audit | implementation on develop | `data audit --scope m2 --universe active` 固定审计 69 个保留品种的 seven-frequency Catalog/Gap/Manifest/Parquet、lineage、rank=1 mapping 与确定性 `MarketDataService` probes；生产只读验收尚未执行。 |
 | Backtest/S6 repository retirement | implementation on develop | 旧 API/Web/worker/queue/CLI、S6-08/09/10 control plane、tracked legacy evidence 与精确 ignored `backtests/` host output 已退出；完整 backend/frontend 验证与 launchd/Redis/Runtime/生产数据等其余外部清理由后续任务负责 |
 | poll Live K 线栈退役 | implementation on develop | 盘中 poll ingest/聚合/`/market/live/*`/live signal/HTDY realtime/前端 Live 模式已删；盘中能力待重建；未 drop 生产表 |
+| slim-web-to-market | implementation on develop | Web 仅 Market；卸掉 signal/strategy/dashboard/review/watchlists/futures_research 可执行面与 RQ worker；保留 market/data/runtime API+CLI；未 drop DB 表 |
 
 ## 未完成事项与执行边界
 

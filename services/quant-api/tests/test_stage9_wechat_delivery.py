@@ -254,34 +254,10 @@ def test_retry_pending_only_processes_due_notifications() -> None:
         assert session.get(SignalNotification, future_notification.id).status == "retry_pending"
 
 
-def test_notification_status_api_returns_latest_enterprise_wechat_record() -> None:
-    TestingSessionLocal = _session_factory()
-    with TestingSessionLocal() as session:
-        event = _event()
-        session.add(event)
-        session.commit()
-        notification = _notification(event)
-        session.add(notification)
-        session.commit()
-        event_id = event.id
-
-    def override_get_db():
-        with TestingSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        client = TestClient(app)
-        response = client.get(f"/api/signals/events/{event_id}/stage9-wechat/notification")
-
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["event_id"] == event_id
-        assert payload["status"] == "retry_pending"
-        assert payload["channel"] == "enterprise_wechat"
-        assert _contains_no_secret_words(payload)
-    finally:
-        app.dependency_overrides.clear()
+def test_notification_status_api_is_unmounted() -> None:
+    client = TestClient(app)
+    response = client.get("/api/signals/events/1/stage9-wechat/notification")
+    assert response.status_code == 404
 
 
 class FakeSender:

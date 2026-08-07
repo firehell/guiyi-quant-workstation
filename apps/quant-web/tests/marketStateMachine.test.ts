@@ -10,7 +10,7 @@ import {
 } from '../src/utils/marketChartQuery.ts'
 
 describe('marketStateMachine', () => {
-  it('builds route query with symbol/contract/period and deep-link fields', () => {
+  it('builds route query with symbol/contract/period and observation deep-link fields', () => {
     const query = buildMarketChartRouteQuery(
       {
         symbol: 'jm',
@@ -21,24 +21,20 @@ describe('marketStateMachine', () => {
       },
       {
         strategy: 'su_bing_v1',
-        signal_id: '11',
-        signal_event_id: '12',
-        review_id: '13',
-        return_route: '/signal?tab=events',
+        time: '2026-07-10T09:15:00',
       },
     )
     assert.equal(query.symbol, 'jm')
     assert.equal(query.contract, 'JM2609')
     assert.equal(query.period, '15m')
     assert.equal(query.contract_view, undefined)
-    assert.equal(query.profile_id, undefined)
     assert.equal(query.access_mode, 'research')
-    assert.equal(query.data_mode, undefined)
     assert.equal(query.strategy, 'su_bing_v1')
-    assert.equal(query.signal_id, '11')
-    assert.equal(query.signal_event_id, '12')
-    assert.equal(query.review_id, '13')
-    assert.equal(query.return_route, '/signal?tab=events')
+    assert.equal(query.time, '2026-07-10T09:15:00')
+    assert.equal(query.signal_id, undefined)
+    assert.equal(query.signal_event_id, undefined)
+    assert.equal(query.review_id, undefined)
+    assert.equal(query.return_route, undefined)
   })
 
   it('persists contract_view when non-default', () => {

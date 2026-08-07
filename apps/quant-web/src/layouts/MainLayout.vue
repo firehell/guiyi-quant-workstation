@@ -18,13 +18,10 @@ import BoundaryBadge from '@/components/common/BoundaryBadge.vue'
 import BrandLogo from '@/components/brand/BrandLogo.vue'
 import RouteErrorFallback from '@/components/common/RouteErrorFallback.vue'
 import UiIcon from '@/components/common/UiIcon.vue'
-import SystemPulse from '@/components/workspace/SystemPulse.vue'
 import WorkspaceContext from '@/components/workspace/WorkspaceContext.vue'
-import { useRuntimePulseStore } from '@/stores/runtimePulse'
 
 const route = useRoute()
 const router = useRouter()
-const runtimePulse = useRuntimePulseStore()
 const collapsed = ref(false)
 const userSetCollapsed = ref(false)
 const now = ref(new Date())
@@ -58,27 +55,7 @@ const menuOptions: MenuOption[] = [
     label: '工作',
     key: 'work-group',
     children: [
-      { label: '今日工作台', key: 'dashboard', icon: renderIcon('dashboard') },
       { label: 'Market 工作台', key: 'market', icon: renderIcon('market') },
-      { label: '信号监控', key: 'signal', icon: renderIcon('signal') },
-      { label: '复盘中心', key: 'review', icon: renderIcon('review') },
-    ],
-  },
-  {
-    type: 'group',
-    label: '研究',
-    key: 'research-group',
-    children: [
-      { label: '策略中心', key: 'strategy', icon: renderIcon('strategy') },
-    ],
-  },
-  {
-    type: 'group',
-    label: '系统保障',
-    key: 'system-group',
-    children: [
-      { label: '数据中心', key: 'data', icon: renderIcon('data') },
-      { label: '运行状态', key: 'runtime', icon: renderIcon('runtime') },
     ],
   },
 ]
@@ -129,7 +106,6 @@ function reloadPage() {
 }
 
 onMounted(() => {
-  runtimePulse.start()
   syncResponsiveCollapse()
   window.addEventListener('resize', syncResponsiveCollapse)
   clockTimer = window.setInterval(() => {
@@ -138,7 +114,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  runtimePulse.stop()
   window.removeEventListener('resize', syncResponsiveCollapse)
   if (clockTimer !== null) window.clearInterval(clockTimer)
 })
@@ -190,17 +165,8 @@ onUnmounted(() => {
         </NBreadcrumb>
         <div class="header__right">
           <WorkspaceContext />
-          <SystemPulse />
           <BoundaryBadge class="header__boundary" />
           <div class="header__actions">
-            <NTooltip placement="bottom">
-              <template #trigger>
-                <NButton quaternary circle aria-label="打开信号监控" @click="router.push({ name: 'signal' })">
-                  <template #icon><UiIcon name="signal" :size="17" /></template>
-                </NButton>
-              </template>
-              信号监控
-            </NTooltip>
             <NTooltip placement="bottom">
               <template #trigger>
                 <NButton quaternary circle aria-label="刷新当前页" @click="reloadPage">
