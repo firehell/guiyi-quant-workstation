@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import UTC, datetime
 from io import StringIO
 import json
 
@@ -369,8 +369,8 @@ def test_data_verify_emits_stable_json_from_shared_service() -> None:
         "symbol": "jm",
         "contract": "jm.MAIN",
         "period": "15m",
-        "start": datetime(2026, 7, 29, 0, 0),
-        "end": datetime(2026, 7, 29, 23, 59, 59, 999999),
+        "start": datetime(2026, 7, 29, 0, 0, tzinfo=UTC),
+        "end": datetime(2026, 7, 29, 23, 59, 59, 999999, tzinfo=UTC),
         "provider": "rqdata",
         "profile_id": None,
         "access_mode": "browser",

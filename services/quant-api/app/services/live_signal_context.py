@@ -12,8 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.data_center import TradingCalendar
+from app.data_core.contracts import DataCoreError
 from app.services.live_market_reader import LiveMarketReader
-from app.services.market_data_reader import MarketDataReader
+from app.services.canonical_bar_loader import (
+    HISTORICAL_BAR_SOURCE_CANONICAL,
+    CanonicalBarLoader,
+    shanghai_naive_bound_to_utc,
+)
 from app.services.profile_lineage import ProfileLineageResolver
 from app.services.rqdata_ingest.parquet import sha256_file
 
@@ -44,6 +49,7 @@ class HistoricalLiveContext:
     previous_trading_day: date
     exact_duplicate_count: int
     live_quality: dict[str, Any]
+    historical_bar_source: str = HISTORICAL_BAR_SOURCE_CANONICAL
 
 
 class HistoricalLiveContextResolver:
@@ -51,7 +57,7 @@ class HistoricalLiveContextResolver:
         self.session = session
         self.project_root = project_root
         self.live_reader = LiveMarketReader(session)
-        self.market_reader = MarketDataReader(session, project_root=project_root)
+        self.canonical_loader = CanonicalBarLoader(session)
 
     def resolve(
         self,
@@ -113,27 +119,22 @@ class HistoricalLiveContextResolver:
             raise HistoricalLiveContextError("historical_context_calendar_missing")
 
         trigger_time = _datetime_value(live_trigger.get("datetime"))
-        context_end = min(_naive(market_file.end_time), trigger_time)
-        if context_end < _naive(market_file.start_time):
+        file_start_naive = _naive(market_file.start_time)
+        file_end_naive = _naive(market_file.end_time)
+        context_end = min(file_end_naive, trigger_time)
+        if context_end < file_start_naive:
             raise HistoricalLiveContextError("historical_context_missing")
         try:
-            historical_bars = self.market_reader.load_bars_from_market_file(
-                market_data_file_id=market_file.id,
-                symbol=symbol,
-                contract=actual_contract,
-                period=period,
-                start=_naive(market_file.start_time),
-                end=context_end,
-                passed_only=True,
-                expected_provider=market_file.provider,
-                expected_data_role="primary",
-                expected_quality_status="passed",
-                expected_data_version=market_file.data_version,
-                expected_checksum=market_file.checksum,
+            historical_bars = self.canonical_loader.load_bars(
+                symbol,
+                actual_contract,
+                period,
+                start=shanghai_naive_bound_to_utc(file_start_naive),
+                end=shanghai_naive_bound_to_utc(context_end),
                 limit=limit,
                 tail=True,
             )
-        except ValueError as exc:
+        except DataCoreError as exc:
             raise HistoricalLiveContextError("historical_context_file_invalid") from exc
         historical_bars = [{**row, "context_source": "historical"} for row in historical_bars]
         if not historical_bars:
@@ -162,6 +163,7 @@ class HistoricalLiveContextResolver:
             previous_trading_day=previous_trading_day,
             exact_duplicate_count=merged.exact_duplicate_count,
             live_quality=live_response.quality.model_dump(),
+            historical_bar_source=HISTORICAL_BAR_SOURCE_CANONICAL,
         )
 
 

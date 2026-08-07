@@ -1,3 +1,11 @@
+"""Deprecated ``guiyi-data`` entrypoint.
+
+Use ``guiyi data verify`` instead. This thin wrapper remains for one deprecation
+window and only exposes check-bars compatibility.
+"""
+
+from __future__ import annotations
+
 import argparse
 from datetime import date, datetime, time
 import sys
@@ -7,17 +15,31 @@ from app.db.session import SessionLocal
 from app.services.core_cli import verify_active_dataset
 
 
+_DEPRECATION = (
+    "guiyi-data is deprecated; use `guiyi data verify` "
+    "(uv run --project services/quant-api guiyi data verify ...)."
+)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     session_factory: Callable[[], Any] = SessionLocal,
     data_verifier: Callable[..., dict[str, Any]] = verify_active_dataset,
     stdout: TextIO = sys.stdout,
+    stderr: TextIO = sys.stderr,
 ) -> int:
-    parser = argparse.ArgumentParser(prog="guiyi-data")
+    print(_DEPRECATION, file=stderr)
+    parser = argparse.ArgumentParser(
+        prog="guiyi-data",
+        description=_DEPRECATION,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    check_parser = subparsers.add_parser("check-bars")
+    check_parser = subparsers.add_parser(
+        "check-bars",
+        help="Deprecated alias of `guiyi data verify`",
+    )
     check_parser.add_argument("--symbol", required=True)
     check_parser.add_argument("--contract", required=True)
     check_parser.add_argument("--period", required=True)
@@ -34,22 +56,24 @@ def main(
                 symbol=args.symbol,
                 contract=args.contract,
                 period=args.period,
-                start=_parse_cli_datetime(args.start, end_of_day=False) if args.start else datetime.min,
-                end=_parse_cli_datetime(args.end, end_of_day=True) if args.end else datetime.max,
+                start=_parse_cli_datetime(args.start, end_of_day=False)
+                if args.start
+                else None,
+                end=_parse_cli_datetime(args.end, end_of_day=True)
+                if args.end
+                else None,
                 provider=args.provider,
                 profile_id=None,
-                access_mode="browser",
+                access_mode="canonical",
                 limit=5000,
                 legacy_compat=True,
             )
-            status = payload["result"]["quality"]
+            quality = payload["result"].get("quality") or {}
             print(
-                f"status={status['status']} "
-                f"missing_bars={status['missing_bars']} "
-                f"duplicated_bars={status['duplicated_bars']} "
-                f"abnormal_price_count={status['abnormal_price_count']} "
-                f"abnormal_volume_count={status['abnormal_volume_count']} "
-                f"report_count={status['report_count']}",
+                f"status={payload['status']} "
+                f"quality_status={quality.get('status')} "
+                f"response_bar_count={payload['result'].get('response_bar_count')} "
+                f"selection_mode={payload['result'].get('selection_mode')}",
                 file=stdout,
             )
         return 0
@@ -62,7 +86,9 @@ def entrypoint() -> None:
 
 def _parse_cli_datetime(value: str, end_of_day: bool) -> datetime:
     if len(value) == 10:
-        return datetime.combine(date.fromisoformat(value), time.max if end_of_day else time.min)
+        return datetime.combine(
+            date.fromisoformat(value), time.max if end_of_day else time.min
+        )
     return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
 
 

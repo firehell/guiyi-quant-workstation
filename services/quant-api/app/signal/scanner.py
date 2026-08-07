@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 import hashlib
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.data_core.consumer_identity import build_canonical_consumer_input
-from app.data_core.contracts import BarFrequency, BarQuery, DatasetKind
+from app.data_core.contracts import BarQuery, DatasetKind, parse_bar_frequency
 from app.models.watchlist import WatchlistItem
 from app.models.signal import SignalScanTask, StrategySignal
 from app.queue import get_redis_connection, get_signal_queue
@@ -27,12 +28,20 @@ from app.schemas.signal import (
     build_formal_signal_task_payload,
     validate_formal_signal_task_payload,
 )
-from app.services import signal_scanner as legacy
-from app.services.canonical_market_data import build_canonical_reader
-from app.services.market_data_service import MarketDataService
 from app.services.actual_contract_semantics import load_strict_main_contract_mapping
+from app.services.canonical_market_data import build_canonical_reader
+from app.services.contract_specs import load_contract_spec
+from app.services.market_data_service import MarketDataService
+from app.services.watchlists import ensure_default_watchlists
+from app.signal.contract_context import (
+    apply_signal_contract_context,
+    build_signal_contract_context,
+    signal_contract_context_payload,
+)
+from app.strategy.su_bing_ema21 import SignalSnapshot, SuBingParams, generate_signals
 
-DEFAULT_PERIODS = legacy.DEFAULT_PERIODS
+DEFAULT_PERIODS = ["5m", "15m", "30m", "60m", "1d"]
+SCAN_SIGNAL_VERSION = "su_bing_ema21:v0"
 SIGNAL_STATUS_VALUES = {item.value for item in SignalStatus}
 LEGACY_SIGNAL_EXECUTION_CONTRACT = "legacy_research_scan_v1"
 FORMAL_SIGNAL_ROUTING_MARKERS = frozenset(
@@ -52,7 +61,16 @@ FORMAL_SIGNAL_ROUTING_MARKERS = frozenset(
 )
 
 
-class SignalScanner(legacy.SignalScanner):
+@dataclass(frozen=True)
+class ScanTarget:
+    symbol: str
+    name: str | None
+    contract: str
+    exchange_code: str | None
+    period: str
+
+
+class SignalScanner:
     """Historical scanner with one canonical formal execution path."""
 
     def __init__(
@@ -77,8 +95,34 @@ class SignalScanner(legacy.SignalScanner):
             _validate_formal_task(task)
         if not self._formal_execution:
             raise ValueError("SIGNAL_LEGACY_EXECUTION_RETIRED")
+        task.status = "running"
+        task.started_at = utc_now()
+        self.session.commit()
+        self._publish("scan_started", {"task": task_snapshot(task)})
         try:
-            return super().run(task_id)
+            try:
+                result = self._run_task(task)
+                task.result_payload = result
+                task.status = (
+                    "partial_failed"
+                    if task.failed_items or task.skipped_items
+                    else "completed"
+                )
+                task.progress = 100.0
+                task.finished_at = utc_now()
+                self.session.commit()
+                self._publish("scan_completed", {"task": task_snapshot(task)})
+                return result
+            except Exception as exc:
+                task.status = "failed"
+                task.error_message = str(exc)
+                task.finished_at = utc_now()
+                self.session.commit()
+                self._publish(
+                    "scan_failed",
+                    {"task": task_snapshot(task), "error_message": str(exc)},
+                )
+                raise
         finally:
             self._formal_execution = False
 
@@ -125,73 +169,93 @@ class SignalScanner(legacy.SignalScanner):
     def _publish(self, event: str, payload: dict[str, Any]) -> None:
         if self._formal_execution:
             return
-        super()._publish(event, payload)
+        try:
+            get_redis_connection().publish(
+                "signals",
+                json.dumps(
+                    {"type": event, "data": payload},
+                    default=str,
+                    ensure_ascii=False,
+                ),
+            )
+        except Exception:
+            return
 
     def _run_task(self, task: SignalScanTask) -> dict[str, Any]:
         self._formal_blocked_items = []
         self._formal_evaluations = []
-        result = super()._run_task(task)
+        payload = task.request_payload or {}
+        targets = self._targets(payload)
+        task.total_items = max(1, len(targets))
+        self.session.commit()
+        created = changed = skipped = failed = 0
+        for target in targets:
+            try:
+                signal, event = self._scan_one(task, target)
+                if signal is None:
+                    skipped += 1
+                    task.skipped_items += 1
+                else:
+                    if event == "signal_created":
+                        created += 1
+                    elif event == "signal_changed":
+                        changed += 1
+                    if event:
+                        from app.signal.events import record_signal_scan_event
+
+                        record_signal_scan_event(self.session, signal, event, task)
+                    task.completed_items += 1
+            except Exception as exc:
+                failed += 1
+                task.failed_items += 1
+                self._publish(
+                    "scan_item_failed",
+                    {
+                        "task_no": task.task_no,
+                        "symbol": target.symbol,
+                        "period": target.period,
+                        "error_message": str(exc),
+                    },
+                )
+            done = task.completed_items + task.failed_items + task.skipped_items
+            task.progress = round(done / max(task.total_items, 1) * 100, 2)
+            self.session.commit()
         return {
-            **result,
-            "mode": str((task.request_payload or {}).get("mode") or SignalScanMode.SCAN.value),
+            "created": created,
+            "changed": changed,
+            "skipped": skipped,
+            "failed": failed,
+            "total": task.total_items,
+            "mode": str(payload.get("mode") or SignalScanMode.SCAN.value),
             "evaluations": deepcopy(self._formal_evaluations),
             "blocked_items": list(self._formal_blocked_items),
         }
 
-    def _targets(self, payload: dict[str, Any]) -> list[legacy.ScanTarget]:
-        if not payload.get("research_only"):
-            return [
-                legacy.ScanTarget(
-                    symbol=str(payload["instrument_symbol"]).lower(),
-                    name=None,
-                    contract=str(payload["contract_or_series"]).upper(),
-                    exchange_code="DCE",
-                    period=str(period),
-                )
-                for period in payload["periods"]
-            ]
-        watchlist_code = str(payload["watchlist_code"])
-        selected_symbols = payload.get("symbols")
-        periods = payload.get("periods") or DEFAULT_PERIODS
-        data_role = str(payload.get("data_role") or SignalDataRole.PRIMARY.value)
-        provider = payload.get("provider")
-        targets: list[legacy.ScanTarget] = []
-        for item in _watchlist_items(self.session, watchlist_code, selected_symbols):
-            for period in periods:
-                coverage = [
-                    row
-                    for row in self._research_reader().get_coverage(symbol=item.symbol, period=period)
-                    if row.data_role == data_role and row.quality_status != "failed" and (provider is None or row.provider == provider)
-                ]
-                if not coverage:
-                    targets.append(
-                        legacy.ScanTarget(
-                            symbol=item.symbol,
-                            name=item.name,
-                            contract=item.default_contract or f"{item.symbol}.MAIN",
-                            exchange_code=item.exchange_code,
-                            period=period,
-                        )
-                    )
-                    continue
-                preferred = next((row for row in coverage if row.contract_code == item.default_contract), coverage[-1])
-                targets.append(
-                    legacy.ScanTarget(
-                        symbol=item.symbol,
-                        name=item.name,
-                        contract=preferred.contract_code or item.default_contract or f"{item.symbol}.MAIN",
-                        exchange_code=item.exchange_code,
-                        period=period,
-                    )
-                )
-        return targets
+    def _targets(self, payload: dict[str, Any]) -> list[ScanTarget]:
+        if payload.get("research_only"):
+            raise ValueError("SIGNAL_LEGACY_EXECUTION_RETIRED")
+        return [
+            ScanTarget(
+                symbol=str(payload["instrument_symbol"]).lower(),
+                name=None,
+                contract=str(payload["contract_or_series"]).upper(),
+                exchange_code="DCE",
+                period=str(period),
+            )
+            for period in payload["periods"]
+        ]
 
-    def _scan_one(self, task: SignalScanTask, target: legacy.ScanTarget) -> tuple[StrategySignal | None, str | None]:
+    def _scan_one(
+        self, task: SignalScanTask, target: ScanTarget
+    ) -> tuple[StrategySignal | None, str | None]:
         payload = task.request_payload or {}
         if payload.get("research_only"):
-            return super()._scan_one(task, target)
+            raise ValueError("SIGNAL_LEGACY_EXECUTION_RETIRED")
         query, result, input_identity = self._canonical_bars(payload, target.period)
-        bars = [_canonical_bar_payload(item, exchange=target.exchange_code) for item in result.bars]
+        bars = [
+            _canonical_bar_payload(item, exchange=target.exchange_code)
+            for item in result.bars
+        ]
         if not bars:
             return None, None
         higher_bars: list[dict[str, Any]] = []
@@ -199,7 +263,9 @@ class SignalScanner(legacy.SignalScanner):
         canonical_results = [result]
         higher_period = FORMAL_SIGNAL_AUXILIARY_PERIOD.get(target.period)
         if higher_period is not None:
-            _, higher_result, higher_identity = self._canonical_bars(payload, higher_period)
+            _, higher_result, higher_identity = self._canonical_bars(
+                payload, higher_period
+            )
             canonical_results.append(higher_result)
             higher_bars = [
                 _canonical_bar_payload(item, exchange=target.exchange_code)
@@ -211,10 +277,10 @@ class SignalScanner(legacy.SignalScanner):
             self.session,
             canonical_results,
         )
-        snapshot = legacy.generate_signals(
+        snapshot = generate_signals(
             bars,
             higher_timeframe_bars=higher_bars,
-            params=legacy.SuBingParams(**(payload.get("strategy_params") or {})),
+            params=SuBingParams(**(payload.get("strategy_params") or {})),
         )[-1]
         last_bar = bars[-1]
         quality = {
@@ -227,7 +293,7 @@ class SignalScanner(legacy.SignalScanner):
             {**last_bar, "close": result.bars[-1].close},
             payload,
         )
-        score = legacy.score_signal(snapshot, risk)
+        score = score_signal(snapshot, risk)
         dedupe_key = _canonical_dedupe_key(
             target=target,
             signal_time=snapshot.datetime,
@@ -259,8 +325,8 @@ class SignalScanner(legacy.SignalScanner):
             event_type = "signal_created"
         else:
             signal = existing
-            changed = legacy._signal_changed(existing, snapshot, score, risk)
-            legacy._update_signal(existing, task, snapshot, last_bar, quality, risk, score)
+            changed = _signal_changed(existing, snapshot, score, risk)
+            _update_signal(existing, task, snapshot, last_bar, quality, risk, score)
             event_type = "signal_changed" if changed else None
         features = dict(signal.features or {})
         features["formal_lineage"] = deepcopy(formal_lineage)
@@ -306,8 +372,8 @@ class SignalScanner(legacy.SignalScanner):
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         if payload.get("research_only"):
-            return super()._risk_payload(snapshot, bar, payload)
-        spec = legacy.load_contract_spec(
+            raise ValueError("SIGNAL_LEGACY_EXECUTION_RETIRED")
+        spec = load_contract_spec(
             self.session,
             str(bar["symbol"]),
             str(bar["contract"]),
@@ -318,10 +384,18 @@ class SignalScanner(legacy.SignalScanner):
         prior_high = _decimal_or_none(snapshot.features.get("prior_high"))
         prior_low = _decimal_or_none(snapshot.features.get("prior_low"))
         if snapshot.direction == "long":
-            stop = prior_low if prior_low is not None else entry - max(Decimal("2") * atr, price_tick)
+            stop = (
+                prior_low
+                if prior_low is not None
+                else entry - max(Decimal("2") * atr, price_tick)
+            )
             target = entry + Decimal("2") * abs(entry - stop)
         elif snapshot.direction == "short":
-            stop = prior_high if prior_high is not None else entry + max(Decimal("2") * atr, price_tick)
+            stop = (
+                prior_high
+                if prior_high is not None
+                else entry + max(Decimal("2") * atr, price_tick)
+            )
             target = entry - Decimal("2") * abs(entry - stop)
         else:
             stop = None
@@ -341,8 +415,12 @@ class SignalScanner(legacy.SignalScanner):
         multiplier = Decimal(spec.volume_multiple)
         margin_rate = _decimal_value(spec.margin_rate, field="margin_rate")
         risk_budget = account_equity * risk_pct
-        risk_per_lot = abs(entry - stop) * multiplier if stop is not None else Decimal("0")
-        risk_volume = _floor_decimal(risk_budget / risk_per_lot) if risk_per_lot > 0 else 0
+        risk_per_lot = (
+            abs(entry - stop) * multiplier if stop is not None else Decimal("0")
+        )
+        risk_volume = (
+            _floor_decimal(risk_budget / risk_per_lot) if risk_per_lot > 0 else 0
+        )
         margin_per_lot = entry * multiplier * margin_rate
         margin_volume = (
             _floor_decimal(account_equity * max_margin_pct / margin_per_lot)
@@ -368,6 +446,56 @@ class SignalScanner(legacy.SignalScanner):
             "spec_source": spec.source,
         }
 
+    def _make_signal(
+        self,
+        task: SignalScanTask,
+        target: ScanTarget,
+        snapshot: SignalSnapshot,
+        bar: dict[str, Any],
+        quality: dict[str, Any],
+        risk: dict[str, Any],
+        score: dict[str, Any],
+        dedupe_key: str,
+    ) -> StrategySignal:
+        signal = StrategySignal(
+            task_no=task.task_no,
+            dedupe_key=dedupe_key,
+            watchlist_code=task.watchlist_code,
+            symbol=target.symbol,
+            contract=target.contract,
+            exchange=bar.get("exchange") or target.exchange_code,
+            period=target.period,
+            signal_time=snapshot.datetime,
+            status=snapshot.status,
+            direction=snapshot.direction,
+            signal_level=int(snapshot.signal_level),
+            score_bucket=score["bucket"],
+            bucket_label=score["label"],
+            current_price=float(bar["close"]),
+            target_price=risk["target_price"],
+            stop_loss_price=risk["stop_loss_price"],
+            risk_reward_ratio=risk["risk_reward_ratio"],
+            open_volume=risk["open_volume"],
+            margin_required=risk["margin_required"],
+            risk_amount=risk["risk_amount"],
+            account_equity=risk["account_equity"],
+            reasons=snapshot.reasons,
+            features=snapshot.features,
+            quality_status=quality,
+            research_contract=target.contract.lower().endswith(".main"),
+            spec_source=risk["spec_source"],
+        )
+        _apply_contract_context(
+            signal,
+            task,
+            target.period,
+            snapshot.datetime,
+            float(bar["close"]),
+            signal.features,
+            quality,
+        )
+        return signal
+
     def _canonical_bars(
         self,
         payload: dict[str, Any],
@@ -377,7 +505,7 @@ class SignalScanner(legacy.SignalScanner):
             dataset_kind=DatasetKind(str(payload["dataset_kind"])),
             symbol=str(payload["instrument_symbol"]),
             contract_or_series=str(payload["contract_or_series"]),
-            frequency=BarFrequency(period),
+            frequency=parse_bar_frequency(period),
             start=_aware_datetime(payload["start"]),
             end=_aware_datetime(payload["end"]),
         )
@@ -397,10 +525,8 @@ class SignalScanner(legacy.SignalScanner):
             )
         return self._canonical_market_data
 
-    def _research_reader(self):
-        raise ValueError("SIGNAL_LEGACY_EXECUTION_RETIRED")
-
-    def _block(self, task: SignalScanTask, target: legacy.ScanTarget, code: str) -> None:
+    def _block(self, task: SignalScanTask, target: ScanTarget, code: str) -> None:
+        del task
         self._formal_blocked_items.append(
             {
                 "code": code,
@@ -413,7 +539,9 @@ class SignalScanner(legacy.SignalScanner):
         )
 
 
-def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -> SignalScanTask:
+def create_signal_scan_task(
+    session: Session, request_payload: dict[str, Any]
+) -> SignalScanTask:
     research_only = bool(request_payload.get("research_only", False))
     if research_only:
         raise ValueError("SIGNAL_LEGACY_EXECUTION_RETIRED")
@@ -421,10 +549,27 @@ def create_signal_scan_task(session: Session, request_payload: dict[str, Any]) -
     if request.mode is not SignalScanMode.SCAN:
         raise ValueError("SIGNAL_NON_SCAN_MODE_IS_PREVIEW_ONLY")
     payload = build_formal_signal_task_payload(request)
-    task = legacy.create_signal_scan_task(session, payload)
-    task.request_payload = payload
-    task.profile_id = str(payload.get("profile_id")) if payload["research_only"] and payload.get("profile_id") else None
-    task.market_data_file_id = None
+    ensure_default_watchlists(session)
+    periods = payload.get("periods") or DEFAULT_PERIODS
+    item_count = len(
+        _watchlist_items(
+            session, str(payload["watchlist_code"]), payload.get("symbols")
+        )
+    )
+    task = SignalScanTask(
+        task_no=f"SIG-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}",
+        status="pending",
+        progress=0.0,
+        watchlist_code=str(payload["watchlist_code"]),
+        periods=periods,
+        total_items=max(1, item_count * len(periods)),
+        request_payload=payload,
+        result_payload={},
+        profile_id=None,
+        market_data_file_id=None,
+    )
+    session.add(task)
+    session.flush()
     return task
 
 
@@ -465,7 +610,9 @@ def _validate_formal_task(task: SignalScanTask) -> SignalScanRequest:
 def enqueue_signal_scan_task(task_id: int) -> str:
     redis = get_redis_connection()
     redis.ping()
-    queued = get_signal_queue().enqueue(run_signal_scan_task, task_id, job_timeout="2h", result_ttl=86400)
+    queued = get_signal_queue().enqueue(
+        run_signal_scan_task, task_id, job_timeout="2h", result_ttl=86400
+    )
     return queued.id
 
 
@@ -475,18 +622,74 @@ def run_signal_scan_task(task_id: int) -> dict[str, Any]:
 
 
 def task_snapshot(task: SignalScanTask) -> dict[str, Any]:
-    payload = legacy.task_snapshot(task)
     request_payload = task.request_payload or {}
-    payload["data_role"] = str(request_payload.get("data_role") or SignalDataRole.PRIMARY.value)
-    payload["research_only"] = bool(request_payload.get("research_only", False))
-    payload["mode"] = str(request_payload.get("mode") or SignalScanMode.SCAN.value)
-    payload["profile_id"] = task.profile_id
-    payload["market_data_file_id"] = task.market_data_file_id
-    return payload
+    return {
+        "id": task.id,
+        "task_no": task.task_no,
+        "status": task.status,
+        "progress": task.progress,
+        "watchlist_code": task.watchlist_code,
+        "periods": task.periods,
+        "total_items": task.total_items,
+        "completed_items": task.completed_items,
+        "failed_items": task.failed_items,
+        "skipped_items": task.skipped_items,
+        "error_message": task.error_message,
+        "created_at": task.created_at.isoformat() if task.created_at else None,
+        "started_at": task.started_at.isoformat() if task.started_at else None,
+        "finished_at": task.finished_at.isoformat() if task.finished_at else None,
+        "result_payload": task.result_payload,
+        "profile_id": task.profile_id,
+        "market_data_file_id": task.market_data_file_id,
+        "data_role": str(
+            request_payload.get("data_role") or SignalDataRole.PRIMARY.value
+        ),
+        "research_only": bool(request_payload.get("research_only", False)),
+        "mode": str(request_payload.get("mode") or SignalScanMode.SCAN.value),
+    }
+
+
+def _base_signal_payload(signal: StrategySignal) -> dict[str, Any]:
+    return {
+        "id": signal.id,
+        "task_no": signal.task_no,
+        "strategy_name": signal.strategy_name,
+        "strategy_version": signal.strategy_version,
+        "watchlist_code": signal.watchlist_code,
+        "symbol": signal.symbol,
+        "contract": signal.contract,
+        **signal_contract_context_payload(signal),
+        "exchange": signal.exchange,
+        "period": signal.period,
+        "signal_time": signal.signal_time.isoformat(),
+        "status": signal.status,
+        "direction": signal.direction,
+        "signal_level": signal.signal_level,
+        "score_bucket": signal.score_bucket,
+        "bucket_label": signal.bucket_label,
+        "current_price": signal.current_price,
+        "target_price": signal.target_price,
+        "stop_loss_price": signal.stop_loss_price,
+        "risk_reward_ratio": signal.risk_reward_ratio,
+        "open_volume": signal.open_volume,
+        "margin_required": signal.margin_required,
+        "risk_amount": signal.risk_amount,
+        "account_equity": signal.account_equity,
+        "reasons": signal.reasons,
+        "features": signal.features,
+        "quality_status": signal.quality_status,
+        "profile_id": signal.profile_id,
+        "market_data_file_id": signal.market_data_file_id,
+        "research_contract": signal.research_contract,
+        "spec_source": signal.spec_source,
+        "alert_status": signal.alert_status,
+        "created_at": signal.created_at.isoformat() if signal.created_at else None,
+        "updated_at": signal.updated_at.isoformat() if signal.updated_at else None,
+    }
 
 
 def signal_payload(signal: StrategySignal) -> dict[str, Any]:
-    payload = legacy.signal_payload(signal)
+    payload = _base_signal_payload(signal)
     for field in (
         "current_price",
         "target_price",
@@ -503,7 +706,9 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
     lifecycle_status = _lifecycle_status(signal)
     signal_type = _signal_type(strategy_status, signal.direction)
     reasons = list(signal.reasons or [])
-    data_role = str(signal.data_role or features.get("data_role") or SignalDataRole.PRIMARY.value)
+    data_role = str(
+        signal.data_role or features.get("data_role") or SignalDataRole.PRIMARY.value
+    )
     payload.update(
         {
             "strategy_id": signal.strategy_name,
@@ -516,7 +721,8 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
             "status": lifecycle_status,
             "strategy_status": strategy_status,
             "data_role": data_role,
-            "research_only": data_role != SignalDataRole.PRIMARY.value or bool(features.get("research_only", False)),
+            "research_only": data_role != SignalDataRole.PRIMARY.value
+            or bool(features.get("research_only", False)),
             "strategy_code": features.get("strategy_code") or signal.strategy_name,
             "entry_interval": features.get("entry_interval") or signal.period,
             "signal_price": features.get("signal_price") or signal.current_price,
@@ -526,13 +732,17 @@ def signal_payload(signal: StrategySignal) -> dict[str, Any]:
             "max_hold_bars": features.get("max_hold_bars"),
             "profile_id": signal.profile_id,
             "market_data_file_id": signal.market_data_file_id,
-            "input_identity": deepcopy(features.get("input_identity")) if isinstance(features.get("input_identity"), dict) else None,
+            "input_identity": deepcopy(features.get("input_identity"))
+            if isinstance(features.get("input_identity"), dict)
+            else None,
         }
     )
     return payload
 
 
-def update_signal_status(session: Session, signal_id: int, status: SignalStatus) -> StrategySignal:
+def update_signal_status(
+    session: Session, signal_id: int, status: SignalStatus
+) -> StrategySignal:
     signal = session.get(StrategySignal, signal_id)
     if signal is None:
         raise ValueError("signal not found")
@@ -543,13 +753,101 @@ def update_signal_status(session: Session, signal_id: int, status: SignalStatus)
     features = dict(signal.features or {})
     features["signal_status"] = new_status
     signal.features = features
-    signal.alert_status = "acknowledged" if status is SignalStatus.VIEWED else status.value
+    signal.alert_status = (
+        "acknowledged" if status is SignalStatus.VIEWED else status.value
+    )
     changed_at = datetime.now(UTC)
     signal.updated_at = changed_at
     record_signal_status_change(session, signal, old_status, new_status, changed_at)
     session.commit()
     session.refresh(signal)
     return signal
+
+
+def score_signal(snapshot: SignalSnapshot, risk: dict[str, Any]) -> dict[str, Any]:
+    score = int(snapshot.signal_level or 0)
+    features = snapshot.features
+    if features.get("volume_ratio") and float(features["volume_ratio"]) >= 1.5:
+        score += 5
+    if features.get("higher_timeframe_resonance") is True:
+        score += 8
+    if risk.get("risk_reward_ratio") and float(risk["risk_reward_ratio"]) >= 1.8:
+        score += 6
+    if snapshot.trade_intent.get("action") in {
+        "trial_entry",
+        "confirm_entry",
+        "add_watch",
+    }:
+        score += 4
+    if snapshot.direction == "neutral":
+        score = min(score, 50)
+    score = max(0, min(100, score))
+    bucket = (
+        80
+        if score >= 80
+        else 70
+        if score >= 70
+        else 60
+        if score >= 60
+        else 51
+        if score >= 51
+        else 0
+    )
+    label = {80: "重点关注", 70: "强信号", 60: "有效", 51: "观察", 0: "过滤"}[bucket]
+    return {"score": score, "bucket": bucket, "label": label}
+
+
+def _update_signal(
+    signal: StrategySignal,
+    task: SignalScanTask,
+    snapshot: SignalSnapshot,
+    bar: dict[str, Any],
+    quality: dict[str, Any],
+    risk: dict[str, Any],
+    score: dict[str, Any],
+) -> None:
+    signal.task_no = task.task_no
+    signal.status = snapshot.status
+    signal.direction = snapshot.direction
+    signal.signal_level = int(snapshot.signal_level)
+    signal.score_bucket = score["bucket"]
+    signal.bucket_label = score["label"]
+    signal.current_price = float(bar["close"])
+    signal.target_price = risk["target_price"]
+    signal.stop_loss_price = risk["stop_loss_price"]
+    signal.risk_reward_ratio = risk["risk_reward_ratio"]
+    signal.open_volume = risk["open_volume"]
+    signal.margin_required = risk["margin_required"]
+    signal.risk_amount = risk["risk_amount"]
+    signal.account_equity = risk["account_equity"]
+    signal.reasons = snapshot.reasons
+    signal.features = snapshot.features
+    signal.quality_status = quality
+    signal.spec_source = risk["spec_source"]
+    _apply_contract_context(
+        signal,
+        task,
+        signal.period,
+        snapshot.datetime,
+        float(bar["close"]),
+        snapshot.features,
+        quality,
+    )
+    signal.updated_at = utc_now()
+
+
+def _signal_changed(
+    existing: StrategySignal,
+    snapshot: SignalSnapshot,
+    score: dict[str, Any],
+    risk: dict[str, Any],
+) -> bool:
+    return (
+        existing.status != snapshot.status
+        or existing.direction != snapshot.direction
+        or existing.score_bucket != score["bucket"]
+        or existing.open_volume != risk["open_volume"]
+    )
 
 
 def _lifecycle_status(signal: StrategySignal) -> str:
@@ -576,15 +874,47 @@ def _signal_type(strategy_status: str, direction: str) -> str:
     return "neutral"
 
 
-def _watchlist_items(session: Session, watchlist_code: str, symbols: list[str] | None = None) -> list[WatchlistItem]:
+def _watchlist_items(
+    session: Session, watchlist_code: str, symbols: list[str] | None = None
+) -> list[WatchlistItem]:
     selected = set(symbols or [])
     query = (
         select(WatchlistItem)
-        .where(WatchlistItem.watchlist_code == watchlist_code, WatchlistItem.is_active.is_(True))
+        .where(
+            WatchlistItem.watchlist_code == watchlist_code,
+            WatchlistItem.is_active.is_(True),
+        )
         .order_by(WatchlistItem.sort_order, WatchlistItem.symbol)
     )
     rows = list(session.scalars(query))
     return [row for row in rows if not selected or row.symbol in selected]
+
+
+def _apply_contract_context(
+    signal: StrategySignal,
+    task: SignalScanTask,
+    period: str,
+    signal_time: datetime,
+    current_price: float,
+    features: dict[str, Any],
+    quality: dict[str, Any],
+) -> None:
+    payload = task.request_payload or {}
+    apply_signal_contract_context(
+        signal,
+        build_signal_contract_context(
+            symbol=signal.symbol,
+            contract=signal.contract,
+            period=period,
+            signal_time=signal_time,
+            current_price=current_price,
+            features=features,
+            quality_status=quality,
+            research_contract=signal.research_contract,
+            provider=payload.get("provider"),
+            data_role=payload.get("data_role"),
+        ),
+    )
 
 
 def _period_delta(period: str) -> timedelta:
@@ -610,7 +940,9 @@ def _canonical_bar_payload(bar: Any, *, exchange: str | None) -> dict[str, Any]:
         "close": float(bar.close),
         "volume": float(bar.volume),
         "turnover": None if bar.turnover is None else float(bar.turnover),
-        "open_interest": None if bar.open_interest is None else float(bar.open_interest),
+        "open_interest": None
+        if bar.open_interest is None
+        else float(bar.open_interest),
         "period": bar.frequency.value,
         "provider": bar.provider,
     }
@@ -630,12 +962,12 @@ def _strategy_input_version(payload: dict[str, Any]) -> str:
 
 def _canonical_dedupe_key(
     *,
-    target: legacy.ScanTarget,
+    target: ScanTarget,
     signal_time: datetime,
     input_digest: str,
 ) -> str:
     encoded = (
-        f"{legacy.SCAN_SIGNAL_VERSION}:{target.symbol}:{target.contract}:"
+        f"{SCAN_SIGNAL_VERSION}:{target.symbol}:{target.contract}:"
         f"{target.period}:{signal_time.isoformat()}:{input_digest}"
     ).encode("utf-8")
     return f"canonical:{hashlib.sha256(encoded).hexdigest()}"
@@ -666,6 +998,10 @@ def _decimal_or_none(value: Any) -> Decimal | None:
 
 def _floor_decimal(value: Decimal) -> int:
     return int(value.to_integral_value(rounding=ROUND_FLOOR))
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _validate_actual_dominant_mapping_provenance(

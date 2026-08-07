@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.env import PROJECT_ROOT
 from app.models.signal import SignalScanTask, StrategySignal
 from app.signal.contract_context import apply_signal_contract_context, build_signal_contract_context
-from app.services.market_data_reader import MarketDataReader
+from app.services.canonical_bar_loader import CanonicalBarLoader
 from app.strategy.jm_v1b_identity import (
     JM_V1B_DATA_SOURCE,
     JM_V1B_EXCHANGE,
@@ -30,7 +30,7 @@ NO_SIGNAL_STATUS = "no_signal"
 
 def scan_jm_v1b_signal(
     session: Session,
-    reader: MarketDataReader,
+    reader: CanonicalBarLoader,
     task: SignalScanTask,
     target_period: str,
 ) -> tuple[StrategySignal | None, str | None]:
@@ -178,7 +178,8 @@ def scan_jm_v1b_signal(
     return existing, "signal_changed" if changed else None
 
 
-def _quality(reader: MarketDataReader, period: str, bars: list[dict[str, Any]], provider: str | None, data_role: str) -> dict[str, Any]:
+def _quality(reader: CanonicalBarLoader, period: str, bars: list[dict[str, Any]], provider: str | None, data_role: str) -> dict[str, Any]:
+    del data_role
     if not bars:
         return {"status": "missing", "report_count": 0}
     return reader.get_quality_status(
@@ -188,7 +189,6 @@ def _quality(reader: MarketDataReader, period: str, bars: list[dict[str, Any]], 
         start=bars[0]["datetime"],
         end=bars[-1]["datetime"],
         provider=provider,
-        data_role=data_role,
     )
 
 

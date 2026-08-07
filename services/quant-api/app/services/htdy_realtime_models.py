@@ -83,6 +83,7 @@ class HistoricalWarmupIdentity:
     window_sha256: str
     previous_trading_day: date
     previous_trading_day_exchange: str = "DCE"
+    historical_bar_source: str = "canonical"
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -235,6 +236,7 @@ def _validate_historical_identity(identity: HistoricalWarmupIdentity) -> None:
     binding = identity.binding_snapshot
     if (
         identity.profile_id != "live_observation_v1"
+        or identity.historical_bar_source != "canonical"
         or not isinstance(identity.market_data_file_id, int)
         or isinstance(identity.market_data_file_id, bool)
         or identity.market_data_file_id <= 0

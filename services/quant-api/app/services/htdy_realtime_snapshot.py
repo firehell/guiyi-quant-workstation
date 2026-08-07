@@ -23,7 +23,11 @@ from app.services.actual_contract_semantics import (
     has_main_contract_mapping_before,
     load_strict_main_contract_mapping,
 )
-from app.services.market_data_reader import MarketDataReader
+from app.services.canonical_bar_loader import (
+    HISTORICAL_BAR_SOURCE_CANONICAL,
+    CanonicalBarLoader,
+    shanghai_naive_bound_to_utc,
+)
 from app.services.market_dominant_reader import continuous_contract_for
 from app.services.profile_lineage import ProfileLineageResolver
 from app.services.rqdata_ingest.parquet import sha256_file
@@ -55,7 +59,7 @@ class HtDyRealtimeSnapshotResolver:
         self.session = session
         self.project_root = Path(project_root)
         self.clock = TradingSessionClock(session)
-        self.reader = MarketDataReader(session, project_root=self.project_root)
+        self.reader = CanonicalBarLoader(session)
 
     def resolve(
         self,
@@ -291,20 +295,14 @@ class HtDyRealtimeSnapshotResolver:
             _market_naive(asset.end_time),
             _market_naive(first_session_start) - timedelta(minutes=1),
         )
-        rows = self.reader.load_bars_from_market_file(
-            market_data_file_id=asset.id,
-            symbol=PRODUCT,
-            contract=actual_contract,
-            period="15m",
-            start=_market_naive(asset.start_time),
-            end=end,
+        rows = self.reader.load_bars(
+            PRODUCT,
+            actual_contract,
+            "15m",
+            start=shanghai_naive_bound_to_utc(_market_naive(asset.start_time)),
+            end=shanghai_naive_bound_to_utc(end),
             tail=True,
             limit=128,
-            passed_only=True,
-            expected_provider="rqdata",
-            expected_data_role="primary",
-            expected_quality_status="passed",
-            expected_checksum=asset.checksum,
         )
         if len(rows) != 128:
             raise ValueError("HTDY_HISTORICAL_WARMUP_INSUFFICIENT")
@@ -339,6 +337,7 @@ class HtDyRealtimeSnapshotResolver:
             window_sha256=recompute_historical_window_sha256(normalized),
             previous_trading_day=previous_calendar.trade_date,
             previous_trading_day_exchange=previous_calendar.exchange_code,
+            historical_bar_source=HISTORICAL_BAR_SOURCE_CANONICAL,
         )
         return normalized, identity
 

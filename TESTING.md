@@ -85,8 +85,11 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_core_cli_service.py
 ```
 
-旧 `guiyi-data check-bars` 仍是兼容入口；等价性测试只证明参数、
+旧 `guiyi-data check-bars` 仍是**已弃用**薄包装：stderr 会提示改用
+`guiyi data verify`，并继续转调共享 `verify_active_dataset`（Canonical `BarQuery`，
+UTC-aware 窗口，Catalog Gap 相交即 fail-closed）。等价性测试只证明参数、
 stdout/stderr、退出码和共享 service 转调，不授权运行真实数据、Runtime 或通知写入。
+后续窗口可从 `pyproject.toml` scripts 移除 `guiyi-data`。
 `scripts/rqdata_reference_metadata_gap_apply_plan.py` 已删除，仅可从 Git 历史追溯，不再是兼容入口。
 
 ### GY-CORE-04 ObservationPlanRegistry 与 StrategyAdapter

@@ -235,12 +235,18 @@ def _parse_datetime(
 ) -> datetime | None:
     if value is None:
         return None
+    from datetime import UTC
+
     if len(value) == 10:
-        return datetime.combine(
+        parsed = datetime.combine(
             date.fromisoformat(value),
             time.max if end_of_day else time.min,
         )
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        return parsed.replace(tzinfo=UTC)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _positive_int(value: str) -> int:

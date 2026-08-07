@@ -8,10 +8,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
+from app.data_core.contracts import DataCoreError
 from app.schemas.signal import LiveSignalContextOut, LiveSignalEvaluationItem, LiveSignalEvaluationRequest, LiveSignalEvaluationResponse
+from app.services.canonical_bar_loader import (
+    HISTORICAL_BAR_SOURCE_CANONICAL,
+    CanonicalBarLoader,
+)
 from app.services.live_signal_context import HistoricalLiveContext, HistoricalLiveContextError, HistoricalLiveContextResolver
 from app.services.live_target_contracts import LiveTargetContractResolver
-from app.services.market_data_reader import MarketDataReader
 from app.services.profile_lineage import LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
 from app.services.signal_lineage import SignalFormalLineageResolver
 from app.strategy.jm_v1b_identity import (
@@ -31,7 +35,8 @@ class LiveSignalEvaluator:
 
     def __init__(self, session: Session, project_root: Path = PROJECT_ROOT) -> None:
         self.session = session
-        self.market_reader = MarketDataReader(session, project_root=project_root)
+        self.project_root = project_root
+        self.canonical_loader = CanonicalBarLoader(session)
         self.context_resolver = HistoricalLiveContextResolver(session, project_root=project_root)
 
     def preview(self, request: LiveSignalEvaluationRequest) -> LiveSignalEvaluationResponse:
@@ -123,7 +128,7 @@ class LiveSignalEvaluator:
             )
         entry_bars = resolved_context.merged_bars
         live_trigger = resolved_context.live_trigger
-        daily_bars = self.market_reader.load_latest_bars(
+        daily_bars = self.canonical_loader.load_latest_bars(
             request.symbol,
             JM_V1B_SYMBOL,
             "1d",
@@ -131,7 +136,7 @@ class LiveSignalEvaluator:
             provider=JM_V1B_DATA_SOURCE,
             data_role="primary",
         )
-        daily_quality = _daily_quality(self.market_reader, request.symbol, daily_bars)
+        daily_quality = _daily_quality(self.canonical_loader, request.symbol, daily_bars)
         live_quality = resolved_context.live_quality
         quality = {
             "status": _aggregate_status([live_quality.get("status"), daily_quality.get("status")]),
@@ -250,7 +255,7 @@ class LiveSignalEvaluator:
         trigger_price = _float_or_none(live_trigger.get("close"))
         context_asset, context_block = _daily_context_asset(
             self.session,
-            reader=self.market_reader,
+            reader=self.canonical_loader,
             symbol=request.symbol,
             continuous_contract=target["continuous_contract"],
             daily_bars=daily_bars,
@@ -425,6 +430,7 @@ def _ready_context(context: HistoricalLiveContext, *, target: dict[str, Any]) ->
         historical_context_start=historical_start,
         historical_context_end=historical_end,
         historical_context_max_trading_day=context.historical_context_max_trading_day.isoformat(),
+        historical_bar_source=context.historical_bar_source,
         live_bar_id=trigger.get("live_bar_id"),
         live_bar_revision=trigger.get("revision"),
         confirmed_at=trigger.get("confirmed_at"),
@@ -461,10 +467,12 @@ def _context_bar_datetime(row: dict[str, Any]) -> datetime:
         value = datetime.fromisoformat(value)
     if not isinstance(value, datetime):
         raise ValueError("historical_live_context_datetime_missing")
-    return value.replace(tzinfo=None)
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
-def _daily_quality(reader: MarketDataReader, symbol: str, daily_bars: list[dict[str, Any]]) -> dict[str, Any]:
+def _daily_quality(reader: CanonicalBarLoader, symbol: str, daily_bars: list[dict[str, Any]]) -> dict[str, Any]:
     if not daily_bars:
         return {"status": "missing", "report_count": 0}
     return reader.get_quality_status(
@@ -474,7 +482,6 @@ def _daily_quality(reader: MarketDataReader, symbol: str, daily_bars: list[dict[
         start=daily_bars[0]["datetime"],
         end=daily_bars[-1]["datetime"],
         provider=JM_V1B_DATA_SOURCE,
-        data_role="primary",
     )
 
 
@@ -530,7 +537,7 @@ def _period_delta(period: str) -> timedelta:
 def _daily_context_asset(
     session: Session,
     *,
-    reader: MarketDataReader,
+    reader: CanonicalBarLoader,
     symbol: str,
     continuous_contract: str,
     daily_bars: list[dict[str, Any]],
@@ -560,21 +567,14 @@ def _daily_context_asset(
         if market_file.start_time.replace(tzinfo=None) > start or market_file.end_time.replace(tzinfo=None) < end:
             return None, {"code": "SIGNAL_CONTEXT_RANGE_NOT_COVERED", "context": context}
         try:
-            bound_bars = reader.load_bars_from_market_file(
-                market_data_file_id=market_file.id,
-                symbol=symbol,
-                contract=continuous_contract,
-                period="1d",
+            bound_bars = reader.load_bars(
+                symbol,
+                continuous_contract,
+                "1d",
                 start=start,
                 end=end,
-                passed_only=True,
-                expected_provider=market_file.provider,
-                expected_data_role="primary",
-                expected_quality_status="passed",
-                expected_data_version=market_file.data_version,
-                expected_checksum=market_file.checksum,
             )
-        except ValueError:
+        except DataCoreError:
             return None, {"code": "SIGNAL_CONTEXT_FILE_INVALID", "context": context}
         if _bar_window_signature(bound_bars) != _bar_window_signature(daily_bars):
             return None, {"code": "SIGNAL_CONTEXT_BINDING_MISMATCH", "context": context}
@@ -593,6 +593,7 @@ def _daily_context_asset(
             "coverage_start": market_file.start_time.isoformat(),
             "coverage_end": market_file.end_time.isoformat(),
             "checksum": market_file.checksum,
+            "historical_bar_source": HISTORICAL_BAR_SOURCE_CANONICAL,
         },
         None,
     )

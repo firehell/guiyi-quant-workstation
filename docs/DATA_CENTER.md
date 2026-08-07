@@ -1,6 +1,6 @@
 # DATA_CENTER.md
 
-更新时间：2026-08-05
+更新时间：2026-08-07
 
 ## 0. Active target 与迁移状态
 
@@ -53,6 +53,23 @@ RQData
   历史结论和证据，不做重写或删除。
 - Task 04 完成不表示 Task 05、release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
   residual 为零。
+
+### 2026-08-06 代码收口事实（语义双轨）
+
+- 正式信号扫描仅保留 `app/signal/scanner.py`；`app/services/signal_scanner.py` 已删除。
+- HTTP 行情短路径 `GET /api/v1/market/bars|indicators|indicators/macd` 已 410，只保留
+  `/…/canonical`（前端已使用 canonical）。
+- `guiyi-data` 为弃用薄包装，指向 `guiyi data verify`；`MarketDataReader` 已隔离到
+  `app/services/legacy_compat/`，经 `market_data_reader.py` shim 供 **Profile 身份/绑定校验、
+  frozen research 精确文件回放、coverage 目录与离线审计** 使用。日常历史 K 线读（信号、
+  HTDY、live context、Stage9 replay、workbench 非 frozen 路径、`data verify`）走
+  `MarketDataService` / `CanonicalBarLoader`（`schema_version=canonical-bar-v1`，
+  timezone-aware 窗口，Catalog Gap fail-closed）。Live PG 观测仍走 `LiveMarketReader`，
+  不与 historical 门面合并。Profile binding 本身不是 V2 active bar selector。
+- Profile 门禁字段（`market_data_file_id` / checksum / data_version）只证明绑定身份未漂移；
+  K 线选择器以 `historical_bar_source=canonical` 标明。来自 `MarketDataFile` 的 naive 覆盖边界
+  在进入 Canonical `BarQuery` 前按 `Asia/Shanghai → UTC` 转换；Canonical quality 为 Catalog
+  Gap fail-closed（无 cross-file warning 语义）。
 
 ### Task 07 JM 目标 Canonical 验收与精确缺口计划（2026-08-04）
 

@@ -8,10 +8,15 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.db.session import PROJECT_ROOT
+from app.data_core.contracts import DataCoreError
 from app.models.data_center import LiveAggregatedBar
 from app.services.actual_contract_semantics import load_effective_main_contract_mapping
+from app.services.canonical_bar_loader import (
+    HISTORICAL_BAR_SOURCE_CANONICAL,
+    CanonicalBarLoader,
+    shanghai_naive_bound_to_utc,
+)
 from app.services.live_signal_context import historical_context_hash
-from app.services.market_data_reader import MarketDataReader
 from app.services.profile_lineage import ProfileLineageResolver
 from app.services.rqdata_ingest.parquet import sha256_file
 
@@ -49,7 +54,7 @@ class SignalFormalLineageResolver:
         self.session = session
         self.project_root = project_root
         self.profile_resolver = ProfileLineageResolver(session)
-        self.reader = MarketDataReader(session, project_root=project_root)
+        self.reader = CanonicalBarLoader(session)
 
     def resolve(
         self,
@@ -123,15 +128,14 @@ class SignalFormalLineageResolver:
             if _naive(market_file.start_time) > _naive(bar_start) or _naive(market_file.end_time) < _naive(bar_end):
                 return self._blocked("SIGNAL_PROFILE_RANGE_NOT_COVERED", context)
             try:
-                rows = self.reader.load_bars_from_market_file(
-                    market_data_file_id=market_file.id,
-                    symbol=symbol,
-                    contract=actual_contract,
-                    period=period,
-                    start=bar_end,
-                    end=bar_end,
+                rows = self.reader.load_bars(
+                    symbol,
+                    actual_contract,
+                    period,
+                    start=shanghai_naive_bound_to_utc(bar_start),
+                    end=shanghai_naive_bound_to_utc(bar_end),
                 )
-            except ValueError:
+            except DataCoreError:
                 return self._blocked("SIGNAL_CONFIRMED_BAR_MISSING", context)
             if len(rows) != 1:
                 return self._blocked("SIGNAL_CONFIRMED_BAR_MISSING", context)
@@ -255,6 +259,11 @@ class SignalFormalLineageResolver:
         }
         if any(context_payload.get(field) != value for field, value in expected.items()):
             return self._blocked("SIGNAL_HISTORICAL_CONTEXT_IDENTITY_MISMATCH", context)
+        if context_payload.get("historical_bar_source") not in {
+            None,
+            HISTORICAL_BAR_SOURCE_CANONICAL,
+        }:
+            return self._blocked("SIGNAL_HISTORICAL_CONTEXT_IDENTITY_MISMATCH", context)
         raw_path = Path(market_file.file_path)
         physical_path = raw_path if raw_path.is_absolute() else self.project_root / raw_path
         if not market_file.checksum or not physical_path.is_file() or sha256_file(physical_path) != market_file.checksum:
@@ -263,21 +272,14 @@ class SignalFormalLineageResolver:
             start = datetime.fromisoformat(str(context_payload["historical_context_start"]))
             end = datetime.fromisoformat(str(context_payload["historical_context_end"]))
             expected_count = int(context_payload["historical_context_bar_count"])
-            rows = self.reader.load_bars_from_market_file(
-                market_data_file_id=market_file.id,
-                symbol=symbol,
-                contract=actual_contract,
-                period=period,
+            rows = self.reader.load_bars(
+                symbol,
+                actual_contract,
+                period,
                 start=start,
                 end=end,
-                passed_only=True,
-                expected_provider=market_file.provider,
-                expected_data_role="primary",
-                expected_quality_status="passed",
-                expected_data_version=market_file.data_version,
-                expected_checksum=market_file.checksum,
             )
-        except (KeyError, TypeError, ValueError):
+        except (DataCoreError, KeyError, TypeError, ValueError):
             return self._blocked("SIGNAL_HISTORICAL_CONTEXT_INVALID", context)
         if len(rows) != expected_count or historical_context_hash(rows) != context_payload.get("historical_context_hash"):
             return self._blocked("SIGNAL_HISTORICAL_CONTEXT_HASH_MISMATCH", context)

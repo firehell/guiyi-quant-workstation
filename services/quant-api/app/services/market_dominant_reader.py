@@ -33,7 +33,7 @@ __all__ = [
     "normalize_product_name",
     "validate_quote_contract",
 ]
-from app.services.market_data_reader import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
+from app.services.market_data_roles import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
 
 DEFAULT_QUOTE_PERIOD = "15m"
 SUPPORTED_QUOTE_PERIODS = BAR_FREQUENCY_VALUES

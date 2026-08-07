@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.data_core.contracts import BAR_FREQUENCY_VALUES
+from app.data_core.contracts import BAR_FREQUENCY_VALUES, DataCoreError
 from app.models.data_center import Contract, DataQualityReport, MarketDataFile
 from app.schemas.market import (
     MarketMacdIndicatorPoint,
@@ -30,6 +30,7 @@ from app.schemas.market import (
     MarketWorkbenchCoverage,
     MarketWorkbenchSelection,
 )
+from app.services.canonical_bar_loader import CanonicalBarLoader, query_bound_to_utc
 from app.services.market_data_reader import MarketDataReader
 from app.services.futures_contract_utils import continuous_contract_for, is_continuous_contract
 from app.services.market_dominant_reader import DEFAULT_QUOTE_PERIOD, validate_quote_contract
@@ -312,6 +313,7 @@ def get_market_bars(
         if query_end.time() == datetime.max.time() and query_end.date() == _naive(research_file.end_time).date():
             query_end = _naive(research_file.end_time)
     reader = MarketDataReader(session)
+    canonical = CanonicalBarLoader(session)
     if frozen_read:
         assert frozen_market_data_file_ids is not None
         assert frozen_asset_evidence is not None
@@ -331,36 +333,28 @@ def get_market_bars(
             )
         except ValueError as exc:
             raise _lineage_changed(symbol, contract, period, profile_id) from exc
-    elif len(context.market_files) == 1 and profile_id:
-        market_file = context.market_files[0]
-        bars = reader.load_bars_from_market_file(
-            market_data_file_id=market_file.id,
-            symbol=symbol,
-            contract=contract,
-            period=period,
-            start=query_start,
-            end=query_end,
-            passed_only=access_mode == "research",
-            expected_provider=market_file.provider,
-            expected_data_role="primary",
-            expected_quality_status=market_file.quality_status,
-            expected_data_version=market_file.data_version,
-            expected_checksum=market_file.checksum,
-            limit=limit,
-            tail=tail,
-        )
     else:
-        bars = reader.load_bars(
-            symbol=symbol,
-            contract=contract,
-            period=period,
-            start=query_start,
-            end=query_end,
-            provider=provider,
-            data_role=data_role,
-            limit=limit,
-            tail=tail,
-        )
+        try:
+            canon_start = query_bound_to_utc(query_start)
+            canon_end = query_bound_to_utc(query_end)
+            bars = canonical.load_bars(
+                symbol,
+                contract,
+                period,
+                start=canon_start,
+                end=canon_end,
+                limit=limit,
+                tail=tail,
+                provider=provider,
+                data_role=data_role or "primary",
+            )
+        except DataCoreError as exc:
+            raise MarketAccessError(
+                "MARKET_CANONICAL_READ_FAILED",
+                "canonical market bar read failed",
+                status_code=422,
+                context={"symbol": symbol, "contract": contract, "period": period},
+            ) from exc
     if lineage:
         quality = _quality_for_lineage(session, lineage)
     elif frozen_read:
@@ -379,14 +373,13 @@ def get_market_bars(
         except ValueError as exc:
             raise _lineage_changed(symbol, contract, period, profile_id) from exc
     else:
-        quality = reader.get_quality_status(
+        quality = canonical.get_quality_status(
             symbol=symbol,
             contract=contract,
             period=period,
-            start=query_start,
-            end=query_end,
+            start=query_bound_to_utc(query_start),
+            end=query_bound_to_utc(query_end),
             provider=provider,
-            data_role=data_role,
         )
     message = None if bars else "当前选择没有可展示的 K 线"
     if lineage and lineage.blocked:

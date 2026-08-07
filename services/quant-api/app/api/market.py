@@ -292,70 +292,36 @@ def live_market_bars(
     )
 
 
-@router.get("/bars", response_model=CanonicalBarsResponse, deprecated=True)
-def market_bars(
-    dataset_kind: DatasetKind = Query(...),
-    symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
-    start: str = Query(...),
-    end: str = Query(...),
-    contract_or_series: str | None = None,
-    session: Session = Depends(get_db),
-) -> CanonicalBarsResponse:
-    return canonical_market_bars(
-        dataset_kind=dataset_kind,
-        symbol=symbol,
-        frequency=frequency,
-        start=start,
-        end=end,
-        contract_or_series=contract_or_series,
-        session=session,
+@router.get("/bars", deprecated=True)
+def market_bars_retired() -> None:
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "MARKET_SHORT_PATH_RETIRED",
+            "message": "Use GET /api/v1/market/bars/canonical",
+        },
     )
 
 
-@router.get("/indicators", response_model=CanonicalMarketIndicatorsResponse, deprecated=True)
-def market_indicators(
-    dataset_kind: DatasetKind = Query(...),
-    symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
-    start: str = Query(...),
-    end: str = Query(...),
-    contract_or_series: str | None = None,
-    indicator_codes: str = Query(default="ema21"),
-    display_bar_count: int = Query(default=10000, ge=1, le=10000),
-    session: Session = Depends(get_db),
-) -> CanonicalMarketIndicatorsResponse:
-    return canonical_market_indicators(
-        dataset_kind=dataset_kind,
-        symbol=symbol,
-        frequency=frequency,
-        start=start,
-        end=end,
-        contract_or_series=contract_or_series,
-        indicator_codes=indicator_codes,
-        display_bar_count=display_bar_count,
-        session=session,
+@router.get("/indicators", deprecated=True)
+def market_indicators_retired() -> None:
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "MARKET_SHORT_PATH_RETIRED",
+            "message": "Use GET /api/v1/market/indicators/canonical",
+        },
     )
 
 
-@router.get("/indicators/macd", response_model=CanonicalMarketMacdIndicatorResponse, deprecated=True)
-def market_macd_indicator(
-    dataset_kind: DatasetKind = Query(...),
-    symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
-    start: str = Query(...),
-    end: str = Query(...),
-    contract_or_series: str | None = None,
-    session: Session = Depends(get_db),
-) -> CanonicalMarketMacdIndicatorResponse:
-    return canonical_market_macd_indicator(
-        dataset_kind=dataset_kind,
-        symbol=symbol,
-        frequency=frequency,
-        start=start,
-        end=end,
-        contract_or_series=contract_or_series,
-        session=session,
+@router.get("/indicators/macd", deprecated=True)
+def market_macd_indicator_retired() -> None:
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "MARKET_SHORT_PATH_RETIRED",
+            "message": "Use GET /api/v1/market/indicators/macd/canonical",
+        },
     )
 
 

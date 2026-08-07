@@ -360,6 +360,7 @@ class LiveSignalContextOut(BaseModel):
     historical_context_start: str | None = None
     historical_context_end: str | None = None
     historical_context_max_trading_day: str | None = None
+    historical_bar_source: str | None = None
     live_bar_id: int | None = None
     live_bar_revision: int | None = None
     confirmed_at: str | None = None

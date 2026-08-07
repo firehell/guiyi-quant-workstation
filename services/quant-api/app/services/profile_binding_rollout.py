@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.models.data_center import ProfileActiveBinding
 from app.services.data_profile_registry import ACTIVE_BINDING_STATUS, DataProfileRegistry
-from app.services.market_data_reader import ACTIVE_PRIMARY_PROVIDERS, MarketDataReader
+from app.services.market_data_roles import ACTIVE_PRIMARY_PROVIDERS
+from app.services.market_data_reader import MarketDataReader
 from app.services.multi_primary_rulebook import infer_contract_role
 from app.services.profile_active_switch import rollback_profile_active_binding, switch_profile_active_binding
 from app.services.profile_binding_candidate_generator import (

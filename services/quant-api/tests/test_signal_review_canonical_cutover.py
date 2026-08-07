@@ -355,15 +355,8 @@ def test_formal_worker_never_routes_by_tampered_legacy_fk(
 ) -> None:
     from app.signal import scanner as scanner_module
 
-    legacy = scanner_module.legacy
     SignalScanner = scanner_module.SignalScanner
     create_signal_scan_task = scanner_module.create_signal_scan_task
-
-    legacy_run_calls: list[int] = []
-
-    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
-        legacy_run_calls.append(task_id)
-        return {"wrong_route": True}
 
     factory = _session_factory()
     canonical = FakeCanonicalMarketData()
@@ -382,13 +375,11 @@ def test_formal_worker_never_routes_by_tampered_legacy_fk(
             payload.pop("request_payload_sha256")
         task.request_payload = payload
         session.commit()
-        monkeypatch.setattr(legacy.SignalScanner, "run", legacy_run_spy)
 
         with pytest.raises(ValueError, match="SIGNAL_FORMAL_TASK_IDENTITY_INVALID"):
             SignalScanner(session, canonical_market_data=canonical).run(task.id)
 
         session.refresh(task)
-        assert legacy_run_calls == []
         assert canonical.queries == []
         assert task.status == "pending"
         assert task.started_at is None
@@ -440,12 +431,6 @@ def test_stripped_formal_payload_cannot_route_to_legacy_worker(
 ) -> None:
     from app.signal import scanner as scanner_module
 
-    legacy_run_calls: list[int] = []
-
-    def legacy_run_spy(_scanner: Any, task_id: int) -> dict[str, Any]:
-        legacy_run_calls.append(task_id)
-        return {"wrong_route": True}
-
     factory = _session_factory()
     canonical = FakeCanonicalMarketData()
     with factory() as session:
@@ -455,11 +440,6 @@ def test_stripped_formal_payload_cannot_route_to_legacy_worker(
             "research_only": True,
         }
         session.commit()
-        monkeypatch.setattr(
-            scanner_module.legacy.SignalScanner,
-            "run",
-            legacy_run_spy,
-        )
 
         with pytest.raises(ValueError, match="SIGNAL_LEGACY_EXECUTION_RETIRED"):
             scanner_module.SignalScanner(
@@ -468,7 +448,6 @@ def test_stripped_formal_payload_cannot_route_to_legacy_worker(
             ).run(task.id)
 
         session.refresh(task)
-        assert legacy_run_calls == []
         assert canonical.queries == []
         assert task.status == "pending"
         assert task.started_at is None

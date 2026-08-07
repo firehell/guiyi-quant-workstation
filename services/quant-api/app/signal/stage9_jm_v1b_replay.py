@@ -9,9 +9,10 @@ from typing import Any, Literal
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
+from app.data_core.contracts import DataCoreError
 from app.models.signal import SignalEvent
 from app.services.live_target_contracts import LiveTargetContractResolver
-from app.services.market_data_reader import MarketDataReader
+from app.services.canonical_bar_loader import CanonicalBarLoader
 from app.services.profile_lineage import INTRADAY_RESEARCH_PROFILE, LONG_HORIZON_DAILY_PROFILE, ProfileLineageResolver
 from app.services.signal_lineage import SignalFormalLineageResolver
 from app.signal.events import SIGNAL_CREATED
@@ -81,7 +82,7 @@ class Stage9JmV1bReplayService:
 
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.reader = MarketDataReader(session)
+        self.reader = CanonicalBarLoader(session)
 
     def run(
         self,
@@ -289,21 +290,16 @@ class Stage9JmV1bReplayService:
         if lineage.blocked or market_file is None or market_file.quality_status != "passed" or market_file.data_role != "primary":
             return [], None
         try:
-            bars = self.reader.load_bars_from_market_file(
-                market_data_file_id=market_file.id,
-                symbol="jm",
-                contract=contract,
-                period=period,
+            bars = self.reader.load_bars(
+                "jm",
+                contract,
+                period,
                 start=market_file.start_time,
                 end=market_file.end_time,
-                passed_only=True,
-                expected_provider=market_file.provider,
-                expected_data_role="primary",
-                expected_quality_status="passed",
-                expected_data_version=market_file.data_version,
-                expected_checksum=market_file.checksum,
+                limit=limit,
+                tail=True,
             )
-        except ValueError:
+        except DataCoreError:
             return [], None
         asset = {
             **(lineage.binding_snapshot or {}),

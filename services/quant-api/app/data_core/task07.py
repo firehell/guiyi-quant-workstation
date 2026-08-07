@@ -99,6 +99,8 @@ _RETIRED_LEGACY_MODULES = {
     "services/quant-api/app/services/active_dataset_resolver.py",
     "services/quant-api/app/services/data_profile_registry.py",
     "services/quant-api/app/services/market_data_reader.py",
+    "services/quant-api/app/services/legacy_compat/market_data_reader.py",
+    "services/quant-api/app/services/canonical_bar_loader.py",
     "services/quant-api/app/services/market_workbench.py",
     "services/quant-api/app/services/multi_primary_rulebook.py",
     "services/quant-api/app/services/profile_active_switch.py",
@@ -127,7 +129,6 @@ _READONLY_LINEAGE_PATHS = {
     "services/quant-api/app/services/review_lineage.py",
     "services/quant-api/app/services/runtime_health.py",
     "services/quant-api/app/services/signal_lineage.py",
-    "services/quant-api/app/services/signal_scanner.py",
     "services/quant-api/app/signal/events.py",
     "services/quant-api/app/signal/scanner.py",
 }

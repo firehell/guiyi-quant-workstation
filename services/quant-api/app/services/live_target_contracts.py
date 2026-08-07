@@ -13,7 +13,7 @@ from app.models.data_center import (
     MainContractMap,
     MarketDataFile,
 )
-from app.services.market_data_reader import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
+from app.services.market_data_roles import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
 from app.services.market_dominant_reader import continuous_contract_for, is_continuous_contract
 from app.services.actual_contract_semantics import (
     RULE,
