@@ -15,10 +15,14 @@
 21 品种退役已完成生产执行：活动品种池为 69，目标品种的 8,625 个文件
 （1,466,729,156 bytes）和 1,141,643 条 PostgreSQL 记录已删除，复验残留文件/记录均为 0。
 保留品种已完成 443 个 RQData 直供目标与 608 个 Canonical 聚合目标刷新；
-生产 Runtime 为 `runtime-20260805-b81a9d99` / `b81a9d9941f0cca74ea2a0c73b449861b121d139`。
-通知、live 及退役 HTDY label 保持关闭，自动交易仍不在项目范围。
+生产 Runtime 现为 `develop@1c810a9a6821f76a86776066767918cbc4d08856`
+（GuiyiRuntime worktree detached；api/web 已重载；`com.guiyi.quant-worker-signals` 已 bootout）。
+已配置 `GUIYI_CANONICAL_DATA_ROOT` 指向正式 Canonical 根，Market bars 只读恢复；
+行情页已去掉「浏览 / 严格研究」切换。通知、live 及退役 HTDY label 保持关闭，自动交易仍不在项目范围。
+前序 `v0.1` / `94f70c72…` 仍为 release 锚点；本次未执行正式行情写入或 alembic upgrade。
 
-Task 07 Stage A/B 的最新仓库证据记录 release/main/tag 已收口，且生产 PostgreSQL revision 曾回读为 `20260803_0032`。本次个人开发模式迁移未重新连接生产环境，因此该 revision 仍需在后续生产只读验收中再次精确回读。
+Task 07 Stage A/B 的最新仓库证据记录 release/main/tag 已收口；历史退役窗口曾回读
+`20260803_0032`，当前生产 head 为 `20260805_0033`。
 
 Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划”。历史 candidate 基于 `develop@364753e72458641e226280e326841919539c1354`，仅从 `config/data_core_v2_targets.yaml`、Catalog 和 MainContractMap 生成 JM 显式目标，再通过既有 Canonical reader 和 `MarketDataService` 只读验收。该 commit 与既有协作记录是历史定位信息，不是继续开发的前置授权。
 
@@ -88,8 +92,8 @@ production_writes=false
 | Task 06 live/EOD contract | retired | 应用代码已移除；历史合同事实保留在 Git / Alembic |
 | Task 06 production migration | historical | `0028 -> 0031` 曾通过；不授权 Runtime enable，也不表示 observation 路径仍存在 |
 | 21 品种行情与 legacy 工件删除 | passed | 生产 DB/三个数据 root 残留为 0；仓库内 1,035 个专属历史 manifest 已删除，混合审计报告不作整文件删除 |
-| release / main / tag | released | PR #155 合入 develop，PR #156 合入 main；Runtime tag 为 `runtime-20260805-b81a9d99` |
-| Task 08 Runtime promotion | pending / default off | Runtime 保持关闭；未来切换必须满足业务检查并取得该次 scope 的独立意图 |
+| release / main / tag | released | `main@94f70c72` annotated tag `v0.1` 已推送 origin；前序 Runtime tag `runtime-20260805-b81a9d99` 仍为历史锚点 |
+| Task 08 Runtime promotion | pending / default off | 代码 Runtime 已切到 `develop@1c810a9a` 观察面；live/通知/JM Runtime 业务验收仍关闭，需新的精确 scope 意图 |
 | JM Runtime 验收 | pending redesign | 保留单日自然运行、恢复和零非法写入等业务验证；协作材料不是授权条件（见 `AGENTS.md`） |
 | 长稳 / 通知 / 交易就绪 | not ready | 本次不启用 live、不发送通知；自动订单始终不在项目范围内 |
 | 真实公网安全 smoke | pending | TLS、Basic Auth、端口不可达与 FRP/Nginx 重启恢复 |
@@ -99,7 +103,8 @@ production_writes=false
 
 | 事实 | 当前证据值 | 边界 |
 |---|---|---|
-| PostgreSQL revision | `20260803_0032` | 本次退役 preflight、删除和刷新均实时回读 |
+| PostgreSQL revision | `20260805_0033` | 历史 `v0.1` 部署只读回读为 head；退役窗口曾为 `20260803_0032` |
+| 生产 Runtime checkout | `develop@1c810a9a…` | GuiyiRuntime detached；Canonical root 已配置；live/通知关闭；signal worker 已卸除 |
 | 21 品种退役 receipt | packet `fee133a5…`; residual DB/files `0/0` | 删除已提交，rollback tag 只回退代码，数据恢复需从 RQData 重建 |
 | Canonical closeout snapshot | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 历史只读证据；Stage C 将重新验收明确目标 |
 | MainContractMap closeout snapshot | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 历史只读证据；不代替 Stage C 重验 |
