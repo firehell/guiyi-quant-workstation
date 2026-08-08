@@ -26,8 +26,8 @@
 
 ## DFD-05：Update、Refresh 与 Quota Resume
 
-- [ ] 5.1 先完成 scoped implementation plan；实现三个 CLI、月度自然续传、quota 中止和 refresh。
-- [ ] 5.2 用 fixture/temporary root/isolated DB 证明 dry-run、same-T NOOP、partial quota、下次续传和
+- [x] 5.1 先完成 scoped implementation plan；实现三个 CLI、月度自然续传、quota 中止和 refresh。
+- [x] 5.2 用 fixture/temporary root/isolated DB 证明 dry-run、same-T NOOP、partial quota、下次续传和
   Direct→Derived 顺序；不调用真实 RQData。
 
 ## DFD-06：全量验证与死引用收口

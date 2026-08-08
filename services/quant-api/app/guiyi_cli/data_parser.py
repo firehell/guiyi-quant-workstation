@@ -24,5 +24,11 @@ def add_data_commands(
     update.add_argument("--through")
     update.add_argument("--apply", action="store_true")
 
+    refresh = commands.add_parser("refresh")
+    refresh.add_argument("--symbol", required=True)
+    refresh.add_argument("--since", required=True)
+    refresh.add_argument("--through", required=True)
+    refresh.add_argument("--apply", action="store_true")
+
     audit = commands.add_parser("audit")
     audit.add_argument("--universe", choices=("active",), required=True)

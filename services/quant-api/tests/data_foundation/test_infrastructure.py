@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 from app.db.base import Base
 from app.market_data.domain import DatasetKey
 from app.market_data import infrastructure
-from app.market_data.infrastructure import SHANGHAI, DatabaseCoverageSource, RQDataMarketAdapter
+from app.market_data.infrastructure import (
+    SHANGHAI,
+    DatabaseCoverageSource,
+    InfrastructureError,
+    RQDataMarketAdapter,
+)
 from app.models import (
     Contract,
     Exchange,
@@ -223,11 +228,28 @@ def test_metadata_complete_allows_history_before_first_provider_main_map(tmp_pat
                 rank=1,
                 rule="volume_open_interest",
             )
-        )
+            )
     session.commit()
     coverage = DatabaseCoverageSource(session, starts)
 
     assert coverage.metadata_complete(("jm",), date(2025, 1, 10)) is True
+    session.close()
+
+
+def test_rqdata_adapter_maps_only_explicit_quota_errors(tmp_path) -> None:
+    session, _ = _session(tmp_path)
+
+    class Client:
+        def price(self, *_args):
+            error = RuntimeError("daily download quota exceeded")
+            error.code = "RQDATA_DAILY_QUOTA_EXCEEDED"
+            raise error
+
+    adapter = RQDataMarketAdapter(session=session, client=Client())
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+
+    with pytest.raises(InfrastructureError, match="PROVIDER_QUOTA_EXHAUSTED"):
+        adapter.fetch(key, (datetime(2025, 1, 6, 7, tzinfo=UTC),))
     session.close()
 
 

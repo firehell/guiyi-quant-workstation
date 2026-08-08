@@ -21,6 +21,10 @@ class FakeManager:
         self.calls.append(("audit", request))
         return MaintenanceResult("audit", "passed", None, 0, 0, 0, 0, 0)
 
+    def refresh(self, request):
+        self.calls.append(("refresh", request))
+        return MaintenanceResult("refresh", "planned", request.through, 1, 0, 0, 0, 0)
+
 
 def _run(args, manager):
     stdout = io.StringIO()
@@ -52,7 +56,20 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         action for action in data_parser._actions if action.dest == "data_command"
     )
 
-    assert set(command_action.choices) == {"update", "audit"}
+    assert set(command_action.choices) == {"update", "refresh", "audit"}
+
+
+def test_refresh_requires_a_symbol_and_explicit_window() -> None:
+    manager = FakeManager()
+    code, payload = _run(
+        ["data", "refresh", "--symbol", "jm", "--since", "2025-01-01", "--through", "2025-01-03"],
+        manager,
+    )
+
+    assert code == 0 and payload["action"] == "refresh"
+    request = manager.calls[0][1]
+    assert request.symbol == "jm"
+    assert request.apply is False
 
 
 def test_update_parses_since_through_and_defaults_to_dry_run() -> None:

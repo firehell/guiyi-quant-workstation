@@ -4,9 +4,9 @@
 
 ## 结论
 
-Data Foundation 已完成 **DFD-01～DFD-04**：目标架构现在是本地、单用户、可从 RQData 重建的
+Data Foundation 已完成 **DFD-01～DFD-05**：目标架构现在是本地、单用户、可从 RQData 重建的
 历史行情底座；月度 storage、最小 Catalog/ORM、候选 migration 及最小 Market 查询/API/Web 合同已收口。
-此结论不表示 DFD-05～DFD-06 的代码收口、生产数据库迁移、正式 Canonical 重建或真实 RQData 下载已经发生。
+此结论不表示 DFD-06 的代码收口、生产数据库迁移、正式 Canonical 重建或真实 RQData 下载已经发生。
 
 ## 已冻结的目标合同
 
@@ -28,8 +28,9 @@ Data Foundation 已完成 **DFD-01～DFD-04**：目标架构现在是本地、�
 DFD-02 已删除 Candidate/Gate/Promotion、legacy importer、旧 CLI 入口及其生成工件。DFD-03 已将
 storage、Catalog、ORM 和候选 `20260808_0036` 收口为八表与单月 `part.parquet`，并仅在隔离 PostgreSQL
 中验证 migration。DFD-04 已验证三种查询、周线 rank1 owner 和 Derived physical partition 读取，并移除
-Market API/Web 的 digest 展示。当前仍保留 `update|audit` 的过渡维护面；DFD-05/06 分别完成维护面和
-全量验证。在这些任务完成前，不把最终 3 CLI 或 natural-resume 行为表述为已实现。
+Market API/Web 的 digest 展示。DFD-05 已实现 `update|refresh|audit`、完整月 refresh、quota partial
+自然续传和本地 Derived 优先重建；DFD-06 负责最终全量验证。在 DFD-06 完成前，不把所有 active 引用收口
+表述为已实现。
 
 ## 外部操作状态
 

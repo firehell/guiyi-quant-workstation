@@ -4,22 +4,23 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.catalog import MarketCatalog
-from app.market_data.domain import CanonicalBar, DatasetKey
+from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey
 from app.market_data.maintenance import (
     AuditRequest,
     BarBatch,
     HistoricalDataManager,
+    RefreshRequest,
     UpdateRequest,
 )
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
-from app.models import Exchange, Instrument
+from app.models import Exchange, Instrument, MarketPartition, TradingCalendar
 
 
 @pytest.fixture
@@ -105,13 +106,20 @@ class FakeProvider:
         self.bars = bars
         self.calls: list[tuple[DatasetKey, tuple[datetime, ...]]] = []
         self.fail_symbols: set[str] = set()
+        self.quota_after: int | None = None
 
     def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
         self.calls.append((key, expected))
+        if self.quota_after is not None and len(self.calls) > self.quota_after:
+            raise _QuotaExhausted()
         if key.symbol in self.fail_symbols:
             raise RuntimeError("provider failed")
         selected = tuple(bar for bar in self.bars.get(key.as_tuple(), ()) if bar.bar_end in expected)
         return BarBatch(selected)
+
+
+class _QuotaExhausted(RuntimeError):
+    code = "PROVIDER_QUOTA_EXHAUSTED"
 
 
 def _daily(day: int, close: int) -> CanonicalBar:
@@ -246,6 +254,28 @@ def test_derived_reads_canonical_1m_and_never_calls_provider(session, tmp_path) 
     assert manager.store.read_month(derived_key, 2025, 1)[0].close == Decimal("105")
 
 
+def test_existing_complete_1m_rebuilds_derived_before_provider_quota(session, tmp_path) -> None:
+    minute = DatasetKey("continuous", "jm", "MAIN", "1m")
+    derived = DatasetKey("continuous", "jm", "MAIN", "5m")
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    source = tuple(_minute(index) for index in range(1, 6))
+    coverage = FakeCoverage({
+        minute.as_tuple(): tuple(bar.bar_end for bar in source),
+        derived.as_tuple(): (source[-1].bar_end,),
+        daily.as_tuple(): (_daily(2, 100).bar_end,),
+    })
+    provider = FakeProvider({daily.as_tuple(): (_daily(2, 100),)})
+    provider.quota_after = 0
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(manager, minute, source)
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert result.status == "partial"
+    assert manager.store.read_month(derived, 2025, 1)[0].close == Decimal("105")
+    assert [call[0].frequency for call in provider.calls] == [BarFrequency.D1]
+
+
 def test_dry_run_plans_without_metadata_provider_or_writes(session, tmp_path) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     coverage = FakeCoverage({key.as_tuple(): (_daily(2, 100).bar_end,)})
@@ -270,6 +300,129 @@ def test_dry_run_plans_without_metadata_provider_or_writes(session, tmp_path) ->
             "missing_bar_count": 1,
         }
     ]
+
+
+def test_refresh_replaces_an_existing_direct_month(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    old = _daily(2, 100)
+    replacement = _daily(2, 200)
+    coverage = FakeCoverage({key.as_tuple(): (replacement.bar_end,)})
+    provider = FakeProvider({key.as_tuple(): (replacement,)})
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(manager, key, (old,))
+
+    result = manager.refresh(RefreshRequest("jm", date(2025, 1, 1), date(2025, 1, 3), True))
+
+    assert result.status == "passed"
+    assert result.provider_requests == 1
+    assert manager.store.read_month(key, 2025, 1) == (replacement,)
+
+
+def test_refresh_mid_month_rebuilds_the_complete_intersecting_month(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bars = (_daily(2, 200), _daily(3, 201))
+    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in bars)})
+    provider = FakeProvider({key.as_tuple(): bars})
+    manager = _manager(session, tmp_path, coverage, provider)
+
+    manager.refresh(RefreshRequest("jm", date(2025, 1, 3), date(2025, 1, 3), True))
+
+    assert provider.calls[0][1] == tuple(bar.bar_end for bar in bars)
+    assert manager.store.read_month(key, 2025, 1) == bars
+
+
+def test_update_rebuilds_a_partition_with_extra_bar(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    expected = (_daily(2, 200), _daily(3, 201))
+    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in expected)})
+    provider = FakeProvider({key.as_tuple(): expected})
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(manager, key, expected + (_daily(4, 999),))
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert result.status == "passed"
+    assert provider.calls[0][1] == tuple(bar.bar_end for bar in expected)
+    assert manager.store.read_month(key, 2025, 1) == expected
+
+
+def test_audit_and_update_rebuild_when_catalog_uri_is_stale(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bars = (_daily(2, 200),)
+    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in bars)})
+    provider = FakeProvider({key.as_tuple(): bars})
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(manager, key, bars)
+    row = session.scalar(select(MarketPartition))
+    assert row is not None
+    row.file_uri = "stale/part.parquet"
+    session.commit()
+
+    assert manager.audit(AuditRequest(("jm",))).status == "failed"
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert result.status == "passed"
+    assert provider.calls[0][1] == tuple(bar.bar_end for bar in bars)
+
+
+def test_quota_partial_preserves_completed_months_and_next_update_resumes(session, tmp_path) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    daily_bar = _daily(2, 100)
+    weekly_bar = _daily(3, 101)
+    coverage = FakeCoverage({
+        daily.as_tuple(): (daily_bar.bar_end,),
+        weekly.as_tuple(): (weekly_bar.bar_end,),
+    })
+    provider = FakeProvider({daily.as_tuple(): (daily_bar,), weekly.as_tuple(): (weekly_bar,)})
+    provider.quota_after = 1
+    manager = _manager(session, tmp_path, coverage, provider)
+
+    partial = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert partial.status == "partial"
+    assert partial.stop_reason == "provider_quota_exhausted"
+    assert partial.provider_requests == 2
+    assert partial.applied == 1
+    assert manager.store.read_month(daily, 2025, 1) == (daily_bar,)
+    assert not manager.catalog.all_partitions(weekly)
+    provider.quota_after = None
+    resumed = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert resumed.status == "passed"
+    assert [call[0].frequency for call in provider.calls] == [
+        BarFrequency.D1,
+        BarFrequency.W1,
+        BarFrequency.W1,
+    ]
+
+
+def test_update_since_rebuilds_an_unreadable_intersecting_month(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bars = (_daily(2, 200), _daily(3, 201))
+    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in bars)})
+    provider = FakeProvider({key.as_tuple(): bars})
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(manager, key, bars)
+    manager.catalog.all_partitions(key)[0].file_path.write_bytes(b"invalid")
+
+    result = manager.update(UpdateRequest(("jm",), date(2025, 1, 3), date(2025, 1, 3), True))
+
+    assert result.status == "passed"
+    assert provider.calls[0][1] == tuple(bar.bar_end for bar in bars)
+    assert manager.store.read_month(key, 2025, 1) == bars
+
+
+def test_refresh_apply_fails_closed_when_rank1_map_is_missing(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 200)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({key.as_tuple(): (bar,)}))
+    session.add(TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 2), is_trading_day=True))
+    session.commit()
+
+    with pytest.raises(ValueError, match="MAIN_CONTRACT_MAP_MISSING"):
+        manager.refresh(RefreshRequest("jm", date(2025, 1, 2), date(2025, 1, 2), True))
 
 
 def test_update_fails_before_provider_when_historical_session_facts_are_missing(

@@ -7,7 +7,7 @@ from typing import Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.market_data.aggregation import aggregate_from_1m
+from app.market_data.aggregation import AggregationError, aggregate_from_1m
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import (
     DERIVED_FREQUENCIES,
@@ -77,6 +77,14 @@ class UpdateRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class RefreshRequest:
+    symbol: str
+    since: date
+    through: date
+    apply: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class AuditRequest:
     products: tuple[str, ...]
 
@@ -99,6 +107,7 @@ class MaintenanceResult:
     blocked: int
     failed: int
     provider_requests: int
+    stop_reason: str | None = None
     findings: tuple[AuditFinding, ...] = ()
     failures: tuple[Mapping[str, object], ...] = ()
     target_windows: tuple[Mapping[str, object], ...] = ()
@@ -114,6 +123,7 @@ class MaintenanceResult:
             "blocked": self.blocked,
             "failed": self.failed,
             "provider_requests": self.provider_requests,
+            "stop_reason": self.stop_reason,
             "targets": [dict(item) for item in self.target_windows],
             "finding_count": len(self.findings),
             "findings": [
@@ -142,9 +152,9 @@ class _Target:
 
 
 _FREQUENCY_ORDER = (
-    BarFrequency.M1,
     BarFrequency.D1,
     BarFrequency.W1,
+    BarFrequency.M1,
     BarFrequency.M5,
     BarFrequency.M15,
     BarFrequency.M30,
@@ -197,6 +207,34 @@ class HistoricalDataManager:
         targets = self._plan(request.products, request.since, through)
         return self._execute("update", targets, through, apply=False)
 
+    def refresh(self, request: RefreshRequest) -> MaintenanceResult:
+        if request.since > request.through:
+            raise ValueError("REFRESH_WINDOW_INVALID")
+        products = (request.symbol.strip().lower(),)
+        if request.apply:
+            if not self.coverage.metadata_complete(products, request.through):
+                self.metadata.synchronize(
+                    products,
+                    request.through,
+                    {request.symbol: self.coverage.product_start(request.symbol)},
+                )
+            self.coverage.require_historical_session_facts(products, request.through)
+            if self.catalog.missing_main_map_days(
+                request.symbol,
+                request.since,
+                request.through,
+            ):
+                raise ValueError("MAIN_CONTRACT_MAP_MISSING")
+        targets = tuple(
+            self._iter_targets(
+                products,
+                request.since,
+                request.through,
+                force=True,
+            )
+        )
+        return self._execute("refresh", targets, request.through, apply=request.apply)
+
     def audit(self, request: AuditRequest) -> MaintenanceResult:
         through = self.coverage.latest_complete_day(request.products)
         findings: list[AuditFinding] = []
@@ -216,7 +254,12 @@ class HistoricalDataManager:
         for key, year, month, expected in self._desired_months(request.products, through):
             if not expected:
                 continue
-            existing = self._read_existing(key, year, month)
+            existing, corrupt = self._existing_partition(key, year, month)
+            if corrupt:
+                findings.append(
+                    AuditFinding("EXPECTED_PARTITION_MISSING", key.as_tuple(), year, month)
+                )
+                continue
             if tuple(bar.bar_end for bar in existing) != expected:
                 findings.append(
                     AuditFinding("EXPECTED_PARTITION_MISSING", key.as_tuple(), year, month)
@@ -248,6 +291,7 @@ class HistoricalDataManager:
         through: date,
         *,
         frequencies: frozenset[BarFrequency] | None = None,
+        force: bool = False,
     ):
         for key, year, month, expected in self._desired_months(
             products,
@@ -256,14 +300,22 @@ class HistoricalDataManager:
         ):
             if not expected:
                 continue
-            existing = self._read_existing(key, year, month)
+            existing, corrupt = self._existing_partition(key, year, month)
+            if corrupt:
+                yield _Target(key, year, month, expected, expected, ())
+                continue
             present = {bar.bar_end for bar in existing}
             missing = tuple(
                 item
                 for item in expected
                 if item not in present and (since is None or item.date() >= since)
             )
-            if missing:
+            if force:
+                if expected and (since is None or expected[-1].date() >= since):
+                    yield _Target(key, year, month, expected, expected, ())
+            elif not present <= set(expected) or len(present) != len(existing):
+                yield _Target(key, year, month, expected, expected, ())
+            elif missing:
                 yield _Target(key, year, month, expected, missing, existing)
 
     def _desired_months(
@@ -388,20 +440,62 @@ class HistoricalDataManager:
         derived,
         through: date | None,
     ) -> MaintenanceResult:
+        remaining_derived = list(derived)
         planned = 0
         applied = 0
         blocked = 0
         provider_requests = 0
         failures: list[Mapping[str, object]] = []
         failed_families: set[tuple[str, str, str]] = set()
+        for target in tuple(remaining_derived):
+            try:
+                self._publish_derived(target)
+            except (AggregationError, StorageError) as exc:
+                if getattr(exc, "code", "") in {
+                    "SOURCE_1M_INCOMPLETE",
+                    "SOURCE_1M_NOT_ORDERED",
+                    "TARGET_WINDOW_INCOMPLETE",
+                }:
+                    continue
+                raise
+            else:
+                remaining_derived.remove(target)
+                planned += 1
+                applied += 1
         for target in direct:
             planned += 1
             try:
-                batch = self.provider.fetch(target.key, target.missing)
                 provider_requests += 1
+                batch = self.provider.fetch(target.key, target.missing)
                 self._publish_direct(target, (batch,))
                 applied += 1
+                if target.key.frequency is BarFrequency.M1:
+                    ready = [
+                        item
+                        for item in remaining_derived
+                        if _family(item.key) == _family(target.key)
+                        and item.year == target.year
+                        and item.month == target.month
+                    ]
+                    for item in ready:
+                        remaining_derived.remove(item)
+                        planned += 1
+                        self._publish_derived(item)
+                        applied += 1
             except Exception as exc:  # noqa: BLE001 - isolate one product/dataset
+                if getattr(exc, "code", None) == "PROVIDER_QUOTA_EXHAUSTED":
+                    return MaintenanceResult(
+                        action,
+                        "partial",
+                        through,
+                        planned,
+                        applied,
+                        blocked,
+                        0,
+                        provider_requests,
+                        "provider_quota_exhausted",
+                        failures=(),
+                    )
                 if _is_global_failure(exc):
                     raise
                 failed_families.add(_family(target.key))
@@ -413,7 +507,7 @@ class HistoricalDataManager:
                     f"failed={len(failures)} provider_requests={provider_requests}",
                     flush=True,
                 )
-        for target in derived:
+        for target in remaining_derived:
             planned += 1
             if _family(target.key) in failed_families:
                 blocked += 1
@@ -546,6 +640,41 @@ class HistoricalDataManager:
             return self.store.read_month(key, year, month)
         except StorageError:
             return ()
+
+    def _existing_partition(
+        self,
+        key: DatasetKey,
+        year: int,
+        month: int,
+    ) -> tuple[tuple[CanonicalBar, ...], bool]:
+        rows = tuple(
+            item
+            for item in self.catalog.all_partitions(key)
+            if item.year == year and item.month == month
+        )
+        if not rows:
+            return (), False
+        expected_path = self.store.root.joinpath(
+            *key.relative_root.parts,
+            f"year={year:04d}",
+            f"month={month:02d}",
+            "part.parquet",
+        )
+        row = rows[0]
+        if len(rows) != 1 or row.file_path != expected_path or not row.file_path.is_file():
+            return (), True
+        try:
+            values = self.store.read_month(key, year, month)
+        except StorageError:
+            return (), True
+        if not values or row.row_count != len(values):
+            return (), True
+        if (
+            row.coverage_start != values[0].bar_end - _frequency_delta(key.frequency)
+            or row.coverage_end != values[-1].bar_end
+        ):
+            return (), True
+        return values, False
 
 
 def _months(start: date, end: date):

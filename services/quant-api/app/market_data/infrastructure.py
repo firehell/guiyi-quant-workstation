@@ -423,12 +423,17 @@ class RQDataMarketAdapter:
             order_book_ids = (key.series_or_contract,)
         rows: tuple[dict[str, Any], ...] = ()
         for order_book_id in order_book_ids:
-            frame = self.client.price(
-                order_book_id,
-                start_day,
-                end_day,
-                key.frequency.value,
-            )
+            try:
+                frame = self.client.price(
+                    order_book_id,
+                    start_day,
+                    end_day,
+                    key.frequency.value,
+                )
+            except Exception as exc:  # noqa: BLE001 - normalize provider boundary
+                if _is_rqdata_quota_error(exc):
+                    raise InfrastructureError("PROVIDER_QUOTA_EXHAUSTED") from exc
+                raise
             rows = _records(frame)
             if rows:
                 break
@@ -913,3 +918,13 @@ def _session_coverage_sample(symbol: str, start: date, end: date) -> Mapping[str
         "end": f"{end.isoformat()}T23:59:59Z",
         "reason_code": "HISTORICAL_SESSION_FACT_MISSING",
     }
+
+
+def _is_rqdata_quota_error(exc: Exception) -> bool:
+    code = str(getattr(exc, "code", "")).upper()
+    if code in {"RQDATA_QUOTA_EXCEEDED", "RQDATA_DAILY_QUOTA_EXCEEDED"}:
+        return True
+    if not type(exc).__module__.startswith("rqdatac"):
+        return False
+    text = str(exc).lower()
+    return "quota" in text or "rate limit" in text or "daily download limit" in text

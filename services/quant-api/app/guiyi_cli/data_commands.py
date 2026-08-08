@@ -7,6 +7,7 @@ from app.core.env import PROJECT_ROOT
 from app.market_data.maintenance import (
     AuditRequest,
     HistoricalDataManager,
+    RefreshRequest,
     UpdateRequest,
 )
 
@@ -21,6 +22,16 @@ def build_request(args: argparse.Namespace):
         )
     if args.data_command == "audit":
         return AuditRequest(_active_products())
+    if args.data_command == "refresh":
+        since = _day(args.since)
+        through = _day(args.through)
+        assert since is not None and through is not None
+        return RefreshRequest(
+            symbol=_products(args.symbol, None)[0],
+            since=since,
+            through=through,
+            apply=bool(args.apply),
+        )
     raise ValueError("CLI_DATA_COMMAND_INVALID")
 
 
