@@ -193,6 +193,33 @@ class CatalogIngestor(BaseIngestor):
         )
         return IngestResult(rows=len(contracts) + len(self.client.trading_dates(start_date, end_date)) + session_rows, files=1)
 
+    def run_calendar(self, start_date: date, end_date: date) -> IngestResult:
+        self._upsert_calendar(start_date, end_date)
+        return IngestResult(
+            rows=len(self.client.trading_dates(start_date, end_date)),
+            files=0,
+        )
+
+    def run_sessions(
+        self,
+        start_date: date,
+        end_date: date,
+        products: list[str] | None = None,
+    ) -> IngestResult:
+        del start_date, end_date  # session templates are product-scoped, not dated
+        contracts = _clean_frame(self.client.all_future_instruments())
+        if products:
+            allowed = {item.lower() for item in products}
+            contracts = contracts[
+                contracts.apply(
+                    lambda row: _symbol(_value(row, "underlying_symbol", "product"))
+                    in allowed,
+                    axis=1,
+                )
+            ]
+        session_rows = self._upsert_sessions(contracts)
+        return IngestResult(rows=session_rows, files=0)
+
     def _upsert_contract_catalog(self, contracts: pd.DataFrame) -> None:
         for record in contracts.to_dict("records"):
             product = _symbol(_value(record, "underlying_symbol", "product", "underlying_order_book_id"))

@@ -278,7 +278,9 @@ def _default_aggregate_service(session: Session) -> AggregateApplicationService:
 
 
 def _default_metadata_service(session: Session) -> MetadataSyncApplicationService:
-    return build_partial_metadata_service(session)
+    from app.services.data_operations.composition import DataOperationsComposition
+
+    return DataOperationsComposition(session=session).metadata_service()
 
 
 def _default_audit_service(session: Session) -> AuditV2ApplicationService:

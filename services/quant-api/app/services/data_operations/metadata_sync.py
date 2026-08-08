@@ -215,7 +215,7 @@ def default_rqdata_ingest_service_map(
                 window_end = window_end.date()
             selected = list(kwargs.get("symbols") or products or [])
             if self._mode == "instruments":
-                result = ingestor.run_catalog(
+                result = ingestor.run(
                     window_start, window_end, products=selected or None
                 )
             elif self._mode == "contracts":

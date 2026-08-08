@@ -57,6 +57,7 @@ def build_historical_update_workflow(
 ) -> HistoricalUpdateWorkflow:
     """Build workflow. Writable deps only when ``apply`` and factory provided."""
     catalog = HistoricalCatalog(session)
+    clock = latest_completed_day or _latest_completed_day_from_session(session)
 
     def list_mappings(symbol: str, start_day: date, end_day: date) -> Sequence[object]:
         return tuple(
@@ -74,7 +75,7 @@ def build_historical_update_workflow(
         list_gaps=lambda probe: catalog.list_gaps(
             _probe_to_dataset_key(probe)
         ),
-        latest_completed_day=latest_completed_day,
+        latest_completed_day=clock,
     )
     factory = apply_deps_factory
     if apply and factory is None:
@@ -211,6 +212,41 @@ def build_apply_deps(
     )
 
 
+def _latest_completed_day_from_session(session: Session) -> Callable[[str], date]:
+    from sqlalchemy import func, select
+
+    from app.models.data_center import Instrument
+    from app.services.trading_session_clock import SHANGHAI, TradingSessionClock
+
+    clock = TradingSessionClock(session)
+
+    def latest(symbol: str) -> date:
+        normalized = str(symbol).strip().lower()
+        instrument = session.scalar(
+            select(Instrument).where(func.lower(Instrument.symbol) == normalized)
+        )
+        if instrument is None or not instrument.exchange_code:
+            raise CliArgumentInvalid(
+                facts={"field": "symbol", "reason": "instrument_or_exchange_missing"}
+            )
+        try:
+            return clock.latest_completed_trading_day(
+                product=normalized,
+                exchange=str(instrument.exchange_code),
+                now=datetime.now(SHANGHAI),
+            )
+        except RuntimeError as exc:
+            raise CliArgumentInvalid(
+                facts={
+                    "field": "through",
+                    "reason": "completed_trading_day_unavailable",
+                    "detail": str(exc),
+                }
+            ) from exc
+
+    return latest
+
+
 def _probe_to_dataset_key(probe: object) -> DatasetKey:
     return DatasetKey(
         provider=getattr(probe, "provider"),
@@ -326,14 +362,13 @@ class DataOperationsComposition:
         return DownloadApplicationService(
             synchronizer_factory=self._build_historical_synchronizer,
             catalog=self._catalog,
-            commit_target=self._session.commit,
-            rollback_target=self._session.rollback,
+            covered_windows=lambda key: covered_windows_from_catalog(self._catalog, key),
         )
 
     def aggregate_service(self) -> AggregateApplicationService:
         return AggregateApplicationService(
             market_data=self._market_data,  # type: ignore[arg-type]
-            session_provider=self._session_provider,
+            session_provider=self._default_aggregation_sessions,
             catalog=self._catalog,
             publisher=_LazyDerivedPublisher(
                 lambda: DerivedCanonicalPublisher(self._canonical_store_factory())  # type: ignore[arg-type]
@@ -365,7 +400,8 @@ class DataOperationsComposition:
                 start=None,
                 end=None,
             ),
-            begin_transaction=self._session.begin,
+            # Outer CLI Session already has an open transaction; do not nest begin().
+            begin_transaction=lambda: None,
             commit=self._session.commit,
             rollback=self._session.rollback,
         )
