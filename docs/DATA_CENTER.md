@@ -140,12 +140,36 @@ guiyi data update (--symbol X | --universe active) [--since DATE] [--through DAT
 guiyi data bootstrap --universe active [--through DATE] [--apply]
 guiyi data repair --plan exact-plan.json [--apply]
 guiyi data audit --universe active
+
+# 仅隔离 Candidate；环境中提供 GUIYI_CANDIDATE_DATABASE_URL，不在命令或输出中提供其值
+guiyi data update (--symbol X | --universe active) --through DATE \
+  --candidate-root data/canonical-candidates/NAME --candidate-mode fresh|extend [--apply]
+guiyi data audit --universe active --candidate-root data/canonical-candidates/NAME
 ```
 
 新 Gate A 在隔离 Candidate DB/Root 上使用 RQData-only `update`（`legacy=None`）。既有
 migration-only legacy 白名单读取器进入 freeze，不参加新 Gate A；Gate C 通过后删除。
 最终重建为自 `active_history_floor` 起的 RQData 重建。旧 raw/processed 本次不删除，也不被
 active Catalog、MarketDataService 或日常更新引用。
+
+Candidate 不是默认 target：仅 `update` 与 `audit` 接受 `--candidate-root`；Candidate Catalog
+连接只从环境变量 `GUIYI_CANDIDATE_DATABASE_URL` 读取，必须与 active DB 不同，文档、诊断和
+CLI 输出不得打印 URL 或凭据。root 必须是非 symlink 的
+`data/canonical-candidates/*` 子目录，并与 active Canonical root 完全隔离；越界、symlink 或
+重叠 root 会在任何 provider 请求或写入前失败。
+
+Candidate 使用单一 `candidate.json` 保存不可变 identity（隔离 Catalog/Session、Canonical root、
+active-universe digest、history floor、`RQData-only/legacy=None` source policy 和 code SHA 的
+非敏感摘要）与唯一可变字段 `recorded_through`。`fresh` 只接受十张最小表和 root 都为空的 target；
+`extend` 只接受 identity 相同且 requested through 不小于 `recorded_through` 的 target，并只会单调
+推进该字段。没有 reset、resume、清空或自动恢复操作；缺 metadata、identity 漂移或 through 倒退均
+fail-closed。
+
+apply update 可先通过 metadata 同步取得 provider 事实，再验证 Candidate 历史 Calendar/Session 的
+provider date-range facts（含所需前置 context）；该验证发生在任何 Bar provider 请求或发布之前。缺失时
+返回有界原因码。direct `1w` 始终向 provider 发出 weekly 请求，按完整 ISO 周请求并按行所属 ISO week
+对齐，绝不从 `1d`/`1m` 替代或按返回位置猜测。
+上述是 repository-only 前置能力，不表示任何 Candidate 数据、RQData、DB 或 Canonical 已实际写入。
 
 ## 8. 当前迁移状态
 
