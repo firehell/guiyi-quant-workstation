@@ -506,6 +506,7 @@ class _RqdatacClient:
                     "name": str(row.get("symbol", contract)),
                     "contract_multiplier": _optional_int(row.get("contract_multiplier")),
                     "listed_date": listed,
+                    "expired_date": _optional_date(row.get("de_listed_date")),
                     "maturity_date": _optional_date(row.get("maturity_date")),
                     "trading_hours": _optional_text(row.get("trading_hours")),
                     "provider": "rqdata",
@@ -656,8 +657,8 @@ def _product_trading_days(
                     Contract.instrument_symbol == symbol.strip().lower(),
                     Contract.listed_date.is_not(None),
                     Contract.listed_date <= TradingCalendar.trade_date,
-                    Contract.maturity_date.is_not(None),
-                    Contract.maturity_date >= TradingCalendar.trade_date,
+                    Contract.expired_date.is_not(None),
+                    Contract.expired_date > TradingCalendar.trade_date,
                 ),
             )
             .order_by(TradingCalendar.trade_date)

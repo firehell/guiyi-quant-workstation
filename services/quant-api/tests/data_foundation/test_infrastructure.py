@@ -34,6 +34,7 @@ def _session(tmp_path):
             instrument_symbol="jm",
             exchange_code="DCE",
             listed_date=date(2025, 1, 1),
+            expired_date=date(2025, 1, 11),
             maturity_date=date(2025, 12, 31),
             provider="rqdata",
         )
@@ -145,6 +146,30 @@ def test_database_coverage_excludes_exchange_days_without_listed_contract(tmp_pa
         date(2025, 1, 8),
         date(2025, 1, 9),
         date(2025, 1, 10),
+    )
+    session.close()
+
+
+def test_database_coverage_excludes_days_on_or_after_contract_delisting(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.expired_date = date(2025, 1, 9)
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+
+    ends = coverage.expected_bar_ends(
+        DatasetKey("continuous", "jm", "MAIN", "1d"),
+        2025,
+        1,
+        date(2025, 1, 6),
+        date(2025, 1, 10),
+    )
+
+    assert tuple(value.astimezone(SHANGHAI).date() for value in ends) == (
+        date(2025, 1, 6),
+        date(2025, 1, 7),
+        date(2025, 1, 8),
     )
     session.close()
 
@@ -424,6 +449,7 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
                         "symbol": "JM2509",
                         "contract_multiplier": 60,
                         "listed_date": date(2025, 1, 1),
+                        "de_listed_date": date(2025, 9, 25),
                         "maturity_date": date(2025, 9, 30),
                         "trading_hours": "09:00-09:01",
                     }
@@ -439,10 +465,11 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
     client = object.__new__(infrastructure._RqdatacClient)
     client.api = Api()
 
-    client.metadata_snapshot(
+    snapshot = client.metadata_snapshot(
         ("jm",),
         date(2025, 1, 2),
         {"jm": date(2025, 1, 1)},
     )
 
     assert calls == [("JM", 2, 1)]
+    assert snapshot.contracts[0]["expired_date"] == date(2025, 9, 25)
