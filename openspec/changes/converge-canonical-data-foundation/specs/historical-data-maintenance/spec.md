@@ -63,6 +63,23 @@ contract Direct SHALL 只覆盖 MainContractMap rank1 的有效窗口，不得�
 - **WHEN** 新 Gate A 或日常 update 组装 HistoricalDataManager
 - **THEN** 生产与新 Candidate composition 的 `legacy` 为 None
 
+### Requirement: C2.5 Candidate target 前置检查与有界诊断
+Candidate SHALL 由一个明确的隔离 Catalog/Session、Canonical root、active universe、active_history_floor 和 fixed through 唯一标识。首次运行 MUST 通过 fresh 检查：Candidate 为空且不存在可被读取的 Catalog/Canonical 状态；后续运行 MUST 通过 extend 检查：既有状态与该唯一 target 一致，且 through 仅向前扩展。身份、floor、universe、root 或历史状态不一致时 MUST 在构造 RQData client 或写入前失败。公开 Candidate 操作 MUST NOT 提供 reset、resume、清空或自动恢复语义。
+
+Candidate 的失败结果 SHALL 只输出稳定 reason code、固定计数、target identity 摘要和受限数量的 Dataset/window 样本；MUST NOT 输出 provider raw payload、凭据、完整本地路径、完整异常堆栈或无界对象序列化。
+
+#### Scenario: fresh 检查拒绝非空 target
+- **WHEN** 声明 fresh Candidate 但隔离 Catalog 或 Canonical root 已含可读状态
+- **THEN** 系统在任何 provider 请求或写入前拒绝该调用，并返回有界诊断
+
+#### Scenario: extend 检查拒绝漂移 target
+- **WHEN** 声明 extend Candidate 但既有状态的 root、universe、floor 或 through 演进与请求不一致
+- **THEN** 系统在任何 provider 请求或写入前拒绝该调用，并返回稳定 reason code
+
+#### Scenario: 无 reset 或 resume 操作
+- **WHEN** 用户尝试调用 Candidate reset、resume、清空或自动恢复操作
+- **THEN** CLI 以参数错误非零退出且不触发 provider、数据库或 Canonical 副作用
+
 ### Requirement: repair 精确计划
 repair SHALL 只接受包含明确 DatasetKey、窗口、月份、原因和预期操作的 exact plan；成功发布并严格复验后 SHALL 删除对应 DataGap，失败 SHALL 保留最后有效分区和缺口。
 

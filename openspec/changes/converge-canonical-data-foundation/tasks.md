@@ -58,11 +58,12 @@
 ## 8. Recent Trusted Window、受控外部 Gates 与最终收口
 
 - [x] 8.1 Recent Trusted Window policy：新增 `data/universe/active_history_floor.txt`（`2023-01-01`），将 `product_start`/`effective_start` 收口为 `max(product_window_start, floor)`，并收口 Metadata Bars/Map/Spec 与 Calendar 最小前置窗；提供 RQData-only Candidate composition（`legacy=None`）；冻结 legacy Gate A 路径；完成本地全验证
-- [ ] 8.2 Gate A1：取得 JM、`floor→fixed T`、Candidate DB/Root 的单次执行意图后，用 RQData-only `update` 构建并验收 JM Candidate（七周期、map/spec、DataGap=0、换月/周线、same-T NOOP）
-- [ ] 8.3 Gate A2：在同一 Candidate 上对六个实际交易所各选一品种做 canary，并通过 same-T NOOP
-- [ ] 8.4 Gate A3/A4：取得 active-69、`floor→fixed T`、Candidate-only 的单次执行意图后完成 69 构建、`audit finding_count=0`、DataGap=0 与 same-T update NOOP（Gate A PASS）
-- [ ] 8.5 Gate B：取得生产表、候选根、正式根和服务范围的另一单次执行意图后完成 `0035→0036`、Catalog promotion 与短维护窗口原子切根
-- [ ] 8.6 Gate C：生产只读验收 DataGap=0、floor 后全部预期七周期、map/spec 完整、主力跨换月/周线、Market/MDS 可读、相同 fixed through NOOP，且 scheduler/live/notification/order 保持关闭
-- [ ] 8.7 Gate C 通过后删除 migration-only legacy adapter/测试与 legacy candidate composition，评估并收口 `data bootstrap`，运行最终完整验证
-- [ ] 8.8 archive `converge-canonical-data-foundation`；更新 `STATUS.md` 为 Data Foundation Frozen；不合并 main、不创建 release/tag、不切换 Runtime
-- [x] 8.9 按 develop 日常流程提交并推送普通仓库变更（历史完成项；后续 C2 实现另提交）
+- [ ] 8.2 C2.5 repository-only Candidate target 前置：实现并定向测试唯一 Candidate target（隔离 Catalog/Session、Canonical root、universe、floor、fixed through）；严格 fresh/extend 检查；不暴露 reset/resume/清空/自动恢复操作；`1w` direct 请求映射为 provider weekly；持久化并校验 historical Calendar/Session facts；失败仅输出有界、非敏感的结构化诊断。不得调用真实 RQData/DB/Canonical。
+- [ ] 8.3 Gate A1：取得 JM、`floor→fixed T`、Candidate DB/Root 的单次执行意图后，用 RQData-only `update` 构建并验收 JM Candidate（七周期、map/spec、DataGap=0、换月/周线、same-T NOOP）
+- [ ] 8.4 Gate A2：在同一 Candidate 上对六个实际交易所各选一品种做 canary，并通过 same-T NOOP
+- [ ] 8.5 Gate A3/A4：取得 active-69、`floor→fixed T`、Candidate-only 的单次执行意图后完成 69 构建、`audit finding_count=0`、DataGap=0 与 same-T update NOOP（Gate A PASS）
+- [ ] 8.6 Gate B：取得生产表、候选根、正式根和服务范围的另一单次执行意图后完成 `0035→0036`、Catalog promotion 与短维护窗口原子切根
+- [ ] 8.7 Gate C：生产只读验收 DataGap=0、floor 后全部预期七周期、map/spec 完整、主力跨换月/周线、Market/MDS 可读、相同 fixed through NOOP，且 scheduler/live/notification/order 保持关闭
+- [ ] 8.8 Gate C 通过后删除 migration-only legacy adapter/测试与 legacy candidate composition，评估并收口 `data bootstrap`，运行最终完整验证
+- [ ] 8.9 archive `converge-canonical-data-foundation`；更新 `STATUS.md` 为 Data Foundation Frozen；不合并 main、不创建 release/tag、不切换 Runtime
+- [x] 8.10 按 develop 日常流程提交并推送普通仓库变更（历史完成项；后续 C2 实现另提交）

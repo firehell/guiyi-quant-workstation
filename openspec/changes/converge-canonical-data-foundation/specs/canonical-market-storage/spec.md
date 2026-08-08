@@ -58,6 +58,10 @@ Parquet 行 SHALL 只包含 `bar_end`、`trading_day`、`open`、`high`、`low`�
 ### Requirement: Direct 与 Derived 来源边界
 `1m/1d/1w` SHALL 由 RQData direct 数据标准化；`5m/15m/30m/60m` SHALL 只从质量通过的 Canonical 1m 按实际 session 聚合，Derived MUST NOT 调用 RQData 或跨频回退。
 
+#### Scenario: direct 周线请求映射
+- **WHEN** Candidate 或日常维护为 `1w` Direct 目标请求 provider 数据
+- **THEN** 系统以 provider weekly frequency 发起请求，并且不得将该目标映射为 `1d`、`1m` 或任何 Derived 请求
+
 #### Scenario: 1m 失败阻断 Derived
 - **WHEN** 某目标窗口的 Canonical 1m 下载或校验失败
 - **THEN** 相依 Derived 标记 blocked 且不会发布或调用 provider

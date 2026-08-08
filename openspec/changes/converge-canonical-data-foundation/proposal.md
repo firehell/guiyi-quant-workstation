@@ -11,6 +11,7 @@
 - **BREAKING** 将用户 CLI 收敛为 `data update|bootstrap|repair|audit`，删除公开 `download|aggregate|sync|verify` 与 legacy migration/task/receipt 入口。
 - 新增 `MetadataSynchronizer`、`HistoricalDataManager` 与精简 `MarketDataService` 三个深模块，统一覆盖规划、标准化、六项硬校验、月分区发布、聚合、Gap 生命周期和严格读取。
 - **V1 Recent Trusted Window**：正式 `active_history_floor = 2023-01-01`；`effective_start(symbol) = max(product_window_start, floor)`。Gate A 改为隔离 Candidate 上的 **RQData-only `update`**，不再以 legacy 白名单作为新 Gate A 数据源。既有 migration-only legacy bootstrap 实现进入 freeze，Gate C 通过后删除；最终重建语义为自 floor 起的 RQData 重建，不是 1999+ 全历史。
+- **C2.5 Candidate target prerequisite**：Gate A 前将隔离 Candidate 收口为唯一可识别目标；仅允许严格 fresh 或 extend 校验后的 RQData-only update，禁止 reset/resume 操作。direct `1w` 请求显式映射为 provider weekly 请求；历史 Calendar/Session 事实与 Candidate 一起校验；诊断只输出有界、非敏感的结构化摘要。
 - 吸收 `m3-v2-production-correctness` 尚未完成的周线、精确缺口、固定水位幂等、实际交易所 session identity 与生产验收要求；旧 change 标记 superseded 后以 `--skip-specs` 归档，不把未完成任务记为完成。
 - 保持 daily scheduler、live、通知和订单能力关闭；本 change 不重建回测、Signal/Review 或交易能力。
 
@@ -20,7 +21,7 @@
 
 - `data-foundation-metadata`: active 69 品种的交易所、合约、日历、交易时段、rank1 主力映射、每日合约参数和最小 Catalog/Gap 数据模型。
 - `canonical-market-storage`: 四字段 DatasetKey、月分区 Canonical Parquet、Manifest、标准化、六项硬校验、原子发布与 1m 派生聚合。
-- `historical-data-maintenance`: update/bootstrap/repair/audit 四动作、精确历史缺口、固定水位幂等、故障隔离、DataGap 生命周期与 Recent Trusted Window 候选构建。
+- `historical-data-maintenance`: update/bootstrap/repair/audit 四动作、精确历史缺口、固定水位幂等、故障隔离、DataGap 生命周期与 Recent Trusted Window/C2.5 Candidate 构建。
 - `market-series-query`: continuous/contract/actual_dominant 统一查询、周线主力归属、严格缺口阻断和可复算查询 lineage。
 
 ### Modified Capabilities
