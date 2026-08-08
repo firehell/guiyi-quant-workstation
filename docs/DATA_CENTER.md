@@ -1,6 +1,6 @@
 # Canonical 数据基础
 
-更新时间：2026-08-08
+更新时间：2026-08-09
 
 ## 1. 唯一 active 数据语言
 
@@ -8,24 +8,15 @@
 DatasetKey
 MarketDataset
 MarketPartition
-Manifest
-DataGap
+TradingCalendar
+TradingSession
 MainContractMap
-ContractSpec
 MarketDataService
 ```
 
-一个物理 Dataset 由四字段唯一确定：
-
-```text
-(kind, symbol, series_or_contract, frequency)
-```
-
-- `kind`: `continuous | contract`
-- `series_or_contract`: 主连固定为 `MAIN`，真实合约为其 RQData 合约代码
-- `frequency`: `1m | 5m | 15m | 30m | 60m | 1d | 1w`
-
-provider、schema version 和 source digest 属于 Manifest，不是 Dataset 身份。
+物理 Dataset 由 `(kind, symbol, series_or_contract, frequency)` 唯一确定。`kind` 只允许
+`continuous|contract`；主连的 `series_or_contract=MAIN`；`actual_dominant` 是查询模式，不是物理
+Dataset。
 
 ## 2. Canonical 物理合同
 
@@ -38,24 +29,16 @@ canonical/
   year=YYYY/
   month=MM/
   part.parquet
-  manifest.json
 ```
 
-Parquet 行只保存：
+行字段为 `bar_end`、`trading_day`、`open`、`high`、`low`、`close`、`volume`、`turnover` 和
+`open_interest`。价格和金额用 Decimal，`bar_end` 是 UTC timestamp，identity 不在行内重复。
 
-```text
-bar_end, trading_day, open, high, low, close,
-volume, turnover, open_interest
-```
+发布前必须完成 schema、主键单调唯一、OHLCV、交易日/session/frequency、coverage 和物理可读性
+校验。发布成功的月通过 Catalog 的 `coverage_start`、`coverage_end`、`row_count` 与可读
+`file_uri` 表示；没有旁路的内容摘要、发布清单或缺口状态。
 
-OHLCV 和金额使用 Decimal；`bar_end` 是带时区的 UTC timestamp。Dataset 身份不在每行重复。
-
-每个自然月只保留一个当前分区。Manifest 保存 DatasetKey、schema version、source kind、
-coverage、row count、Parquet checksum 和 source digest；聚合分区另存 source 1m digest 与 session digest。
-
-## 3. PostgreSQL 最小目录
-
-active 数据表只有：
+## 3. 八表 Catalog
 
 ```text
 exchanges
@@ -64,58 +47,30 @@ contracts
 trading_calendars
 trading_sessions
 main_contract_map
-contract_specs
 market_datasets
 market_partitions
-data_gaps
 ```
 
-- `main_contract_map`: active 69、rank=1、`volume_open_interest`，`symbol + trade_date` 唯一。
-- `contract_specs`: 每个被映射真实合约每交易日一行。
-- `market_datasets`: 四字段 DatasetKey 唯一。
-- `market_partitions`: `dataset_id + year + month` 唯一，存 coverage、URI、row count、checksum 和 manifest digest。
-- `data_gaps`: 只存当前未解决缺口；repair 复验成功后删除。
+`main_contract_map` 以 `(symbol, trade_date)` 唯一保存 rank1 当前事实。`market_datasets` 以四字段
+identity 唯一；`market_partitions` 以 `(dataset_id, year, month)` 唯一，保存 coverage、URI、row count
+和创建时间。未来回测所需参数应由新的回测合同设计，不阻塞 K 线底座。
 
-Alembic `20260808_0036` 是不可逆的候选迁移，删除计划中的旧数据表。它尚未应用到
-生产数据库；执行需要新的、精确表范围的一次性意图。
+## 4. 更新、刷新与自然续传
 
-## 4. 增量与修复语义
+`effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
+`active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后
+优先完成 `1d/1w`，再补可本地生成的 Derived，最后按 active universe、Dataset、年月顺序续传 `1m`。
+每完成一个 1m dataset-month，立即生成四个 Derived 月。
 
-```text
-metadata current facts
--> latest complete trading day
--> continuous direct
--> rank1 contract direct
--> derived frequencies
--> strict read verification
-```
+既有月等于 expected bars 时跳过；合法子集只下载缺失 bars 并重写完整月；不可读、extra bar 或
+identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `PROVIDER_QUOTA_EXHAUSTED`：本轮
+立即停止 provider 调用，保留已发布月，不发布当前未完成月，并返回 `status=partial` 与
+`stop_reason=provider_quota_exhausted`。下一次完全相同命令从首个缺失目标续传。
 
-- `--since` 只限定检查下界，不授权覆盖已正确分区。
-- `--through` 是固定水位；缺省只选最新已完成交易日。
-- 空 Dataset 从 `effective_start = max(product_window_starts.csv, active_history_floor)` 起算；
-  V1 `active_history_floor` 为 `data/universe/active_history_floor.txt` 中的 `2023-01-01`。
-  `1m/5m/15m/30m/60m` 另受 RQData 日内历史下界 `2010-01-04` 约束（`RQDATA_INTRADAY_HISTORY_START`），
-  在 floor=2023 后通常无感。
-- 品种期望交易日是实际交易所开市日与该品种真实合约可交易期的交集：`listed_date ≤ trade_date < de_listed_date`；RQData 的 `maturity_date` 不作为交易边界。无可交易合约的交易所开市日不是数据缺口。
-- MainContractMap / ContractSpec 维护窗跟随 `effective_start → through`；Calendar 允许 floor 前一个自然月的最小前置 context。
-- MainContractMap 显式使用 RQData `rule=2`；effective_start 前可不存在 map，actual_dominant 在首个映射前保持 fail-closed。
-- 已有 Dataset 计算月度全窗口精确缺口，不只追加尾部。
-- 相同 fixed through 重跑必须零目标、零写入、零 RQData。
-- 真实合约只保存 `MainContractMap rank=1` 的有效窗口。
-- Derived 只读 Canonical 1m；source 1m 失败则对应 Derived blocked。
+`refresh --symbol --since --through --apply` 强制重建窗口相交月中的 continuous 与所涉 rank1
+contract 的 Direct，再由 1m 重建 Derived。它不接受 repair plan，也不产生额外进度或证据文件。
 
-## 5. 六项发布硬校验
-
-1. Canonical schema、Decimal 与 timestamp 正确。
-2. `bar_end` 严格单调且主键唯一。
-3. OHLCV 关系合法。
-4. trading day、session 和周期边界正确。
-5. 请求窗口覆盖完整。
-6. row count、checksum、Manifest 与原子发布一致。
-
-校验失败不覆盖最后有效分区，并建立当前 DataGap。
-
-## 6. 唯一查询入口
+## 5. 唯一查询入口
 
 ```text
 series_kind = continuous | actual_dominant | contract
@@ -126,58 +81,17 @@ start
 end
 ```
 
-- `continuous`: 读取 `SYMBOL.MAIN` 物理 Dataset。
-- `contract`: 读取指定真实合约 Dataset。
-- `actual_dominant`: 按 `MainContractMap` 查询时拼接；`1w` 使用完整 ISO 周最后交易日的 rank1 合约。
+`continuous` 读取 `SYMBOL.MAIN`；`contract` 读取指定真实合约；`actual_dominant` 由 rank1
+映射拼接，`1w` 按完整 ISO 周最后交易日的 rank1 合约取整周真实合约 bar。映射、日历、分区或
+coverage 缺失时 fail-closed；响应只返回请求、bars、coverage 和 resolved contract segments。
 
-返回 request identity、bars、coverage、partition digests、resolved contract segments 和 main-map digest。
-映射、Dataset、日历或分区缺失，以及 DataGap 相交时 fail-closed。
-
-## 7. CLI 与 Candidate 边界
+## 6. CLI 与外部操作
 
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
-guiyi data bootstrap --universe active [--through DATE] [--apply]
-guiyi data repair --plan exact-plan.json [--apply]
+guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data audit --universe active
-
-# 仅隔离 Candidate；环境中提供 GUIYI_CANDIDATE_DATABASE_URL，不在命令或输出中提供其值
-guiyi data update (--symbol X | --universe active) --through DATE \
-  --candidate-root data/canonical-candidates/NAME --candidate-mode fresh|extend [--apply]
-guiyi data audit --universe active --candidate-root data/canonical-candidates/NAME
 ```
 
-新 Gate A 在隔离 Candidate DB/Root 上使用 RQData-only `update`（`legacy=None`）。既有
-migration-only legacy 白名单读取器进入 freeze，不参加新 Gate A；Gate C 通过后删除。
-最终重建为自 `active_history_floor` 起的 RQData 重建。旧 raw/processed 本次不删除，也不被
-active Catalog、MarketDataService 或日常更新引用。
-
-Candidate 不是默认 target：仅 `update` 与 `audit` 接受 `--candidate-root`；Candidate Catalog
-连接只从环境变量 `GUIYI_CANDIDATE_DATABASE_URL` 读取，必须与 active DB 不同，文档、诊断和
-CLI 输出不得打印 URL 或凭据。root 必须是非 symlink 的
-`data/canonical-candidates/*` 子目录，并与 active Canonical root 完全隔离；越界、symlink 或
-重叠 root 会在任何 provider 请求或写入前失败。
-
-Candidate 使用单一 `candidate.json` 保存不可变 identity（隔离 Catalog/Session、Canonical root、
-active-universe digest、history floor、`RQData-only/legacy=None` source policy 和 code SHA 的
-非敏感摘要）与唯一可变字段 `recorded_through`。`fresh` 只接受十张最小表和 root 都为空的 target；
-`extend` 只接受 identity 相同且 requested through 不小于 `recorded_through` 的 target，并只会单调
-推进该字段。没有 reset、resume、清空或自动恢复操作；缺 metadata、identity 漂移或 through 倒退均
-fail-closed。
-
-apply update 可先通过 metadata 同步取得 provider 事实，再验证 Candidate 历史 Calendar/Session 的
-provider date-range facts（含所需前置 context）；该验证发生在任何 Bar provider 请求或发布之前。缺失时
-返回有界原因码。direct `1w` 始终向 provider 发出 weekly 请求，按完整 ISO 周请求并按行所属 ISO week
-对齐，绝不从 `1d`/`1m` 替代或按返回位置猜测。
-上述是 repository-only 前置能力，不表示任何 Candidate 数据、RQData、DB 或 Canonical 已实际写入。
-
-## 8. 当前迁移状态
-
-代码、schema 和本地 fixture 验证属于候选实现。合同已改为 Recent Trusted Window；下列外部
-Gate 尚未执行：
-
-- Gate A：JM → canary → 69 的 RQData-only Candidate 构建、audit 与 same-T NOOP。
-- Gate B：不可逆生产 schema/drop 与 Canonical 原子切换。
-- Gate C：floor 后 69 品种、七周期、DataGap=0 和 fixed-through NOOP 最终验收。
-
-日调度、live、通知和自动订单保持关闭。
+无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
+始终只读。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的单次意图。

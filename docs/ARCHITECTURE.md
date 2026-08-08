@@ -1,12 +1,11 @@
 # 归一量化系统架构
 
-更新时间：2026-08-08
+更新时间：2026-08-09
 
 ## 系统定位
 
-归一量化是本地优先、单用户的国内期货研究工作站。当前可执行面是 Market Web、Market API、
-`guiyi data *`、`guiyi runtime status` 与 Canonical 历史读取。不实现自动交易，
-`auto_order=false` 始终成立。
+归一量化是本地优先、单用户的国内期货研究工作站。当前目标应用面为 Market Web、Market API、
+三条数据 CLI 与 Canonical 历史读取；不实现自动交易，`auto_order=false` 始终成立。
 
 ## 分层设计
 
@@ -15,7 +14,7 @@ flowchart TB
     subgraph Access["接入层"]
       WEB["Market Web"]
       API["Market API"]
-      CLI["guiyi data update/bootstrap/repair/audit"]
+      CLI["guiyi data update/refresh/audit"]
     end
     subgraph Application["应用层：三个深模块"]
       MS["MetadataSynchronizer"]
@@ -24,12 +23,12 @@ flowchart TB
     end
     subgraph Domain["领域层"]
       DK["DatasetKey / SeriesQuery / CanonicalBar"]
-      CP["覆盖规划 / 月分区 / DataGap"]
-      MM["MainContractMap / ContractSpec"]
+      CP["月度 coverage / natural resume"]
+      MM["TradingCalendar / TradingSession / MainContractMap"]
     end
     subgraph Infra["基础设施层"]
       RQ["RQData adapter"]
-      PG["PostgreSQL Catalog adapter"]
+      PG["PostgreSQL catalog"]
       PQ["Parquet / PyArrow reader-writer"]
     end
     WEB --> API --> MQ
@@ -49,10 +48,10 @@ flowchart TB
     MQ --> PQ
 ```
 
-- 接入层只解析请求、输出结构化结果，不实现下载、聚合、文件选择或主力判断。
-- 应用层只保留三个深模块，共享规划、标准化、校验、发布和查询算法。
-- 领域层只表达本项目真实变化维度，不引入多数据源、插件或通用任务中心。
-- 基础设施层固定为 RQData、PostgreSQL 和 Parquet/PyArrow。
+- 接入层只解析请求和输出结果；不实现下载、聚合、文件选择或主力判断。
+- `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务。
+- PostgreSQL 保存八表 metadata/catalog，Parquet 保存 Bars；不引入多 provider、插件、任务中心或
+  在线多版本选择器。
 
 ## 数据架构
 
@@ -63,24 +62,18 @@ flowchart LR
     V --> DD["Canonical Direct<br/>1m / 1d / 1w"]
     DD --> AG["TradingSession 聚合"]
     AG --> DV["Canonical Derived<br/>5m / 15m / 30m / 60m"]
-    DD --> CAT["Catalog / Manifest / DataGap"]
+    DD --> CAT["八表 Catalog + 月度 Parquet"]
     DV --> CAT
     MAP["MainContractMap rank=1"] --> MDS["MarketDataService"]
     CAT --> MDS
     MDS --> CON["Market Web / 指标 / 未来研究"]
 ```
 
-- Canonical Parquet 是唯一 active 历史 Bar 存储；PostgreSQL 不保存 K 线。
-- 物理 Dataset 只有 `continuous` 和 `contract`；`actual_dominant` 由查询时的
-  `MainContractMap rank=1` 与真实合约 Dataset 拼接，不落重复 Parquet。
-- `1m/1d/1w` 只来自 RQData；`5m/15m/30m/60m` 只从同一 Canonical `1m`
-  按交易时段聚合，绝不调用 RQData。
-- 每个 Dataset 每个自然月只有一个当前分区，更新或 repair 原子替换目标月。
-- 与 DataGap 相交、映射缺失、分区缺失或完整性不一致时 fail-closed。
-- historical canonical 与 live observation 分离；当前无盘中 Live 应用路径。
+每 Dataset 每自然月只发布一个 `part.parquet`。文件不存在、不可读、identity 不符或 coverage 不完整
+时，查询 fail-closed，维护命令将该月作为待处理目标；不以第二套状态表保存这些事实。
 
 ## 运行与授权边界
 
-日常更新复用 `HistoricalDataManager.update`；bootstrap、repair 和 audit 不复制数据算法。
-代码、fixture、临时目录和隔离数据库验证是普通开发。真实 RQData 下载、正式 Canonical
-写入/切换、生产数据库 migration 与服务启停，必须分别获得范围明确的一次性执行意图。
+`update` 计划缺失或不完整月并自然续传；`refresh` 只重建用户指定的品种/窗口；`audit` 只读。
+代码、fixture、临时目录和隔离数据库验证是普通开发。真实 RQData、正式 Canonical、生产数据库
+migration 与服务启停，必须分别获得范围明确的一次性执行意图。

@@ -1,70 +1,32 @@
 ## Purpose
 
-定义个人量化工作站唯一 active 的期货元数据、主力映射与轻量行情目录，使历史数据维护和查询共享同一份当前事实并退出旧 Data Center 选择语言。
+定义历史维护和查询共享的八表 metadata/Catalog 当前事实。
 
 ## ADDED Requirements
 
-### Requirement: 最小 active 数据库模型
-系统 SHALL 仅以 `exchanges`、`instruments`、`contracts`、`trading_calendars`、`trading_sessions`、`main_contract_map`、`contract_specs`、`market_datasets`、`market_partitions` 和 `data_gaps` 作为 active 数据基础表，且 PostgreSQL MUST NOT 保存历史 K 线行。
+### Requirement: 八表 active 模型
+系统 SHALL 仅以 `exchanges`、`instruments`、`contracts`、`trading_calendars`、
+`trading_sessions`、`main_contract_map`、`market_datasets`、`market_partitions` 作为 active 数据基础表；
+PostgreSQL MUST NOT 保存 Bar 行、合约参数、内容摘要、发布清单或运行历史。
 
-#### Scenario: 新 schema 升级
-- **WHEN** 隔离数据库从既有 `20260808_0035` 或空数据库升级到新 head
-- **THEN** ORM metadata 与数据库只包含上述 active 数据基础表且不会建议重建已退出表
+#### Scenario: 0036 隔离升级
+- **WHEN** 空数据库或 `20260808_0035` 隔离数据库升级到最终 head
+- **THEN** ORM metadata 与数据库仅包含规定的 active 表，不创建退出表
 
-### Requirement: 当前主力映射
-系统 SHALL 显式使用 RQData `rule=2` 的 `volume_open_interest` 口径保存 active 69 品种的 rank1 当前事实，并 MUST 对每个 `symbol + trade_date` 保证唯一；RQData 修订 SHALL 在本次刷新窗口内替换当前事实而不是增加数据版本、保留已撤回事实或保存 raw payload。MainContractMap 与 ContractSpec 的维护窗 SHALL 为 `effective_start → fixed through`（`effective_start = max(product_window_start, active_history_floor)`），MUST NOT 仅为 bars 收口到 2023+ 却重新同步 1999+ 的 map/spec。effective_start 之前允许不存在 map；actual_dominant 查询在首个映射前仍须 fail-closed。
+### Requirement: 当前交易元数据和主力映射
+MetadataSynchronizer SHALL 维护 69 品种、真实 contract identity、实际交易所 Calendar、
+product-specific Session 和 RQData `rule=2` 的 rank1 MainContractMap；Map 对 `(symbol,trade_date)`
+唯一，维护范围为 `effective_start→fixed through`。
 
-#### Scenario: 重复同步同一交易日
-- **WHEN** 相同品种、交易日和主力合约再次同步
-- **THEN** 系统幂等保持一行且查询得到相同当前映射
+#### Scenario: 主力修订
+- **WHEN** 同一 symbol/trade_date 的 rank1 合约被 RQData 修订
+- **THEN** 系统替换该唯一当前事实并使后续查询使用修订值
 
-#### Scenario: RQData 修订主力合约
-- **WHEN** 同一品种和交易日的 rank1 合约被事实源修订
-- **THEN** 系统更新该唯一行并使后续查询使用修订后的当前事实
+### Requirement: 最小月度 Catalog
+`market_datasets` SHALL 对四字段 DatasetKey 唯一；`market_partitions` SHALL 对
+`(dataset_id,year,month)` 唯一，只保存 coverage、file URI、row count 和创建时间。查询和维护 MUST
+以 Catalog identity、coverage 与物理可读性判断可用月。
 
-#### Scenario: Map/Spec 不早于 effective_start
-- **WHEN** 对 active universe 执行 metadata 同步
-- **THEN** MainContractMap 与 ContractSpec 刷新请求不下探到 effective_start 之前
-
-### Requirement: 每日真实合约参数
-系统 SHALL 为被 rank1 映射使用的真实合约按交易日保存最小价格变动、合约乘数、保证金率、开仓费、平仓费、平今费及费用类型，并 MUST NOT 保存 provider raw payload。
-
-#### Scenario: 映射覆盖校验
-- **WHEN** 审计 active universe 的 MainContractMap
-- **THEN** 每个映射到的真实合约在对应交易日均存在唯一 contract_specs 记录
-
-### Requirement: 实际交易所日历和交易时段
-系统 SHALL 按合约所属实际交易所保存并解析交易日历和交易时段；某品种的期望交易日 SHALL 为实际交易所开市且至少一个该品种真实合约处于上市期的日期，不得把无上市合约的交易所开市日误判为数据缺口。Calendar 同步允许从 `month_start(active_history_floor) - 1 month` 起的最小前置 context，用于 previous trading day、night session 与首个完整 ISO week，MUST NOT 扩展为多年无关日历拉取。缺失或不一致时 MUST fail-closed，且 MUST NOT 回退到 CNFE、CZCE 或通用默认时段。
-
-#### Scenario: 交易时段缺失
-- **WHEN** 标准化或查询需要的实际交易所时段不存在
-- **THEN** 系统拒绝发布或读取并返回有界错误原因
-
-#### Scenario: Calendar 最小前置 context
-- **WHEN** `active_history_floor` 为 `2023-01-01` 且执行 metadata 同步
-- **THEN** calendar 请求起点不早于 `2022-12-01`（floor 所在月月初减一个月）对应的最小前置窗
-
-### Requirement: Candidate 历史 session 事实
-Candidate SHALL 将实际交易所 Calendar 与 TradingSession 作为历史事实，在任何 direct 或 derived 发布前校验其覆盖 `effective_start → fixed through` 和所需最小前置 context。Candidate MUST NOT 以当前默认时段、其他交易所或未持久化的 provider 临时结果替代缺失历史 session 事实。
-
-#### Scenario: Candidate session 事实缺失
-- **WHEN** Candidate 的某个目标窗口缺少实际交易所 Calendar 或 TradingSession 事实
-- **THEN** 系统在构造 provider 请求和写入前以稳定 reason code 失败
-
-### Requirement: 当前 Catalog 和 Gap
-`market_datasets` SHALL 对四字段 DatasetKey 唯一，`market_partitions` SHALL 对 `dataset_id + year + month` 唯一；`data_gaps` SHALL 只保存当前未解决缺口，并在 repair 成功且复验通过后删除相交的已修复记录。
-
-#### Scenario: 同月分区替换
-- **WHEN** 当前月更新或显式 repair 发布通过验证的新分区
-- **THEN** Catalog 原子指向该月唯一当前分区且不产生重叠 active 版本
-
-#### Scenario: 缺口修复
-- **WHEN** repair 覆盖一个已记录缺口且严格复验通过
-- **THEN** 对应当前 DataGap 被删除而不是转为 resolved 历史状态
-
-### Requirement: 旧表退出
-迁移 SHALL 不可逆 drop `data_sources`、`data_download_tasks`、`market_data_files`、`data_quality_reports`、`fee_margin_rules`、`futures_trading_parameters`、`futures_ex_factors`、`futures_warehouse_stocks`、`futures_roll_yields`、`futures_member_ranks`、`futures_basis`、`futures_contract_universe` 和 `futures_continuous_contract_map`，且 active 代码 MUST NOT 重新创建兼容表或数据库运行历史表。
-
-#### Scenario: 迁移完成后的模型扫描
-- **WHEN** 新 head 的数据库和 ORM metadata 被检查
-- **THEN** 所有列出的旧表均不存在且 active migrations 之后没有 recreation 建议
+#### Scenario: 原子月替换
+- **WHEN** 校验通过的新月文件发布
+- **THEN** Catalog 只发现该 Dataset 的唯一当前月分区

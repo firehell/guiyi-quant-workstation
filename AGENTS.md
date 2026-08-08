@@ -35,15 +35,15 @@ RQData → Parquet → DuckDB；`quant-core` 仅保留 vn.py-compatible 策略�
 
 受控外部操作唯一的授权模型是用户在执行前给出的**范围明确、单次使用的执行意图**：请求必须能识别操作类别、目标环境/资源和操作边界，并只授权紧随其后的一次匹配尝试。缺少意图、范围不明、目标变化、超出范围、重试、执行成功或失败、跨会话继续时，都必须在第一次外部 mutation 前停止并取得新的明确请求。不得把 backup、rollback artifact、approval packet、content hash、exact-head、签名、receipt、dry-run approval 或第二次确认设为额外授权前置；dry-run 只授权 dry-run，不能转换或复用为真实 mutation 权限，意图也不落盘。
 
-执行前仍须完成输入、身份、质量、状态和安全校验。业务正确性与安全边界优先于执行意图，任何请求都不能绕过失败的数据质量、DataGap、未来函数防护、密钥保护、默认关闭状态或无订单边界。执行结果只报告非敏感的尝试范围与观察到的成功、失败或阻止状态，不把结果扩写成盈利、长稳、交易或生产就绪。
+执行前仍须完成输入、身份、质量、覆盖和安全校验。业务正确性与安全边界优先于执行意图，任何请求都不能绕过失败的数据质量、分区覆盖/可读性、未来函数防护、密钥保护、默认关闭状态或无订单边界。执行结果只报告非敏感的尝试范围与观察到的成功、失败或阻止状态，不把结果扩写成盈利、长稳、交易或生产就绪。
 
 ## 工程与业务硬规则
 
 1. 外部输入在敏感操作前校验类型、格式、范围、允许值与关联字段；系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM，输入派生路径规范化后必须仍在允许根目录内。
 2. 禁止读取、显示、提交或记录凭据；不修改 `.env`，不在代码、文档、测试、日志或错误输出中暴露 webhook、token、密码、cookie、license、私钥、内部地址、SQL 或 stack trace。认证、质量配置或安全开关缺失/异常时 fail-closed。
-3. V2 active target 由四字段 `DatasetKey + Catalog/Manifest/Gap/MainContractMap + MarketDataService` 定义；消费者不得自行 glob、选择 active、判断主力或绕过完整性校验。物理 Dataset 只有 `continuous` 和 `contract`，`actual_dominant` 只是查询时拼接模式。
-5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、Manifest digest、checksum 与 row-count 校验后才能发布；失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
-6. DataGap 或物理完整性异常区间必须显式失败，不得静默填充、缩短、替换或跨频回退。
+3. V2 active target 由四字段 `DatasetKey + 八表 Catalog + MainContractMap + MarketDataService` 定义；消费者不得自行 glob、选择 active、判断主力或绕过完整性校验。物理 Dataset 只有 `continuous` 和 `contract`，`actual_dominant` 只是查询时拼接模式。
+5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后才能发布；失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
+6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
 8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。Signal/Review/Strategy HTTP·worker·DB 表与旧语义合同已退役；未来重建须新任务新合同，不以旧表/旧文档为兼容入口。
 9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。当前无盘中 Live 应用代码与相关生产表。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
@@ -54,11 +54,11 @@ RQData → Parquet → DuckDB；`quant-core` 仅保留 vn.py-compatible 策略�
 
 `docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互核心收口的 active 业务合同。目标架构已经冻结，但除文档明确列出的已完成事实外，不得把数据迁移、消费者切换、live/EOD 收口、删除或 Runtime 验收写成已完成。
 
-- active target：RQData → 临时 staging → 六项硬校验 → 单一 historical canonical Parquet（direct `1m/1d/1w` + derived `5m/15m/30m/60m`）→ Catalog/Manifest/Gap/MainContractMap → `MarketDataService` → consumers。
-- 候选 Alembic `20260808_0036` 将 active 数据 schema 收口为 10 张最小表；生产 DB、正式数据或仓库外文件的实际变更另需精确范围的一次性执行意图。
-- 已发生的 PR、CI、Review、packet、hash、receipt、report 和 evidence 只作为历史事实或完整性信息，不是当前授权。仓库内过期工件可按普通删除处理；生产数据、正式 Parquet、DB、Runtime 或其他外部资源必须按受控外部操作处理。
-- 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap/ContractSpec metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample 和重复 bar layer 均不属于 active migration asset。
-- active OpenSpec change 为 `converge-canonical-data-foundation`；生产构建、schema 切换与 69 品种验收分属 Gate A/B/C。
+- active target：RQData → 临时 staging → 六项硬校验 → 单一 historical canonical Parquet（direct `1m/1d/1w` + derived `5m/15m/30m/60m`）→ 八表 Catalog/MainContractMap → `MarketDataService` → consumers。
+- 候选 Alembic `20260808_0036` 最终将 active 数据 schema 收口为八表；生产 DB、正式数据或仓库外文件的实际变更另需精确范围的一次性执行意图。
+- 已发生的 PR、CI、Review、packet、hash、receipt、report 和 evidence 只作为历史事实，不是当前授权。仓库内过期工件可按普通删除处理；生产数据、正式 Parquet、DB、Runtime 或其他外部资源必须按受控外部操作处理。
+- 迁移资产只包括 trusted historical bars 及最小 Catalog/MainContractMap/Calendar/Session metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample 和重复 bar layer 均不属于 active migration asset。
+- active OpenSpec change 为 `converge-canonical-data-foundation`；DFD-02～DFD-06 是仓库收口任务，DFD-07 的生产 migration、正式数据清理和 RQData 重建各需新的单次执行意图。
 
 ## 文档与交付
 

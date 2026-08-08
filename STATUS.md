@@ -1,75 +1,39 @@
 # 当前状态
 
-更新时间：2026-08-08
+更新时间：2026-08-09
 
 ## 结论
 
-Canonical Data Foundation 新架构已进入本地候选实现阶段：四字段 DatasetKey、月度
-Canonical 分区、最小 Catalog、三个深模块、四个 data CLI 与新 Market 查询合同已实现。
+Data Foundation 已完成 **DFD-01 Canonical 合同重置**：目标架构现在是本地、单用户、可从
+RQData 重建的历史行情底座。此结论只改变 active 合同和后续实现方向；它不表示 DFD-02～DFD-06
+的代码收口、生产数据库迁移、正式 Canonical 重建或真实 RQData 下载已经发生。
 
-该结论仅表示仓库代码与本地 fixture 验证进度，不表示生产数据库、正式 Canonical、
-Runtime 或 69 品种真实数据已经切换。
+## 已冻结的目标合同
 
-## 当前可执行面
+- 物理 `DatasetKey=(kind, symbol, series_or_contract, frequency)`；物理 kind 只有
+  `continuous|contract`，`actual_dominant` 只在查询时由 `MainContractMap rank=1` 拼接。
+- Direct 周期是 `1m/1d/1w`；Derived 周期是 `5m/15m/30m/60m`，只从同 Dataset 的
+  Canonical `1m` 按实际交易 Session 聚合。
+- 每 Dataset 每自然月只有一个 `part.parquet`。发布前保留 schema、identity、OHLCV、
+  session/frequency、coverage 和物理可读性校验；Catalog coverage、row count 和可读文件共同
+  表示可用状态。
+- PostgreSQL active 数据模型最终为八表：`exchanges`、`instruments`、`contracts`、
+  `trading_calendars`、`trading_sessions`、`main_contract_map`、`market_datasets`、
+  `market_partitions`。
+- 最终公开 CLI 为 `guiyi data update|refresh|audit`。`update` 以数据库和已发布月度
+  Parquet 自然续传；`refresh` 按指定品种和日期范围强制重建相交月份；`audit` 只读。
 
-- Web：Market 工作台。
-- API：`/api/v1/market/*`、`/api/runtime/*`。
-- CLI：`guiyi data update/bootstrap/repair/audit`、`guiyi runtime status`。
-- 数据：RQData 唯一外部事实源，Canonical Parquet 唯一 active 历史 Bar 存储目标。
-- 品种：`data/universe/active_products.txt` 精确 69 个。
-- 周期：`1m/5m/15m/30m/60m/1d/1w`。
+## 当前实现差异
 
-当前不存在 backtest API/Web/worker、Signal/Review/Strategy 应用面或盘中 Live 路径。日调度、
-live、真实通知和自动订单保持关闭。
+当前 `develop` 仍含已退役合同的代码、测试和命令入口；这些内容不再是 active 设计，也不应被
+用于新的数据构建。DFD-02 删除 Candidate/legacy/generated artifacts，DFD-03 收口 storage、
+catalog、models 和候选 `20260808_0036`，DFD-04/05/06 分别完成查询面、维护面和全量验证。
+在这些任务完成前，不把最终 8 表、3 CLI 或 natural-resume 行为表述为已实现。
 
-## 数据基础候选实现
+## 外部操作状态
 
-- `MetadataSynchronizer`：幂等同步日历、session、rank1 MainContractMap 和 contract specs。
-- `HistoricalDataManager`：共享 update/bootstrap/repair/audit 的覆盖规划、标准化、
-  六项校验、月分区发布、1m 聚合和 DataGap 处理。
-- `MarketDataService`：唯一历史行情入口，支持 continuous、contract 和查询时
-  actual-dominant 拼接。
-- V1 Recent Trusted Window：`data/universe/active_history_floor.txt` = `2023-01-01`；
-  `effective_start = max(product_window_start, floor)`；RQData-only Candidate composition
-  已提供；legacy Gate A 路径已 freeze。
-- C2.5 repository-only Candidate target：既有 `guiyi data update/audit` 支持显式、隔离的
-  Candidate root；Candidate DB 仅由不回显的 `GUIYI_CANDIDATE_DATABASE_URL` 环境变量提供。
-  single metadata 固定 identity 并单调记录 `recorded_through`；fresh/extend、root containment、
-  provider historical Calendar/Session facts 与 direct `1w` ISO-week/provider-weekly 对齐均已
-  在 fixture 中验证。不存在 reset/resume/清空/自动恢复入口。
-- Alembic `20260808_0036`：候选不可逆最小 schema，未应用生产。
-- OpenSpec：`converge-canonical-data-foundation` active；旧 M3 已 superseded 归档。
+未执行真实 RQData 下载、正式 Canonical 写入/删除/重建、生产 PostgreSQL migration、服务切换、
+main/tag/release 或 Runtime promotion。DFD-07 才处理真实数据清理和重建，且每项外部 mutation
+都需要其目标、范围和时间窗明确的一次性执行意图。
 
-## 本地验证
-
-- 后端与工程完整回归：262 passed，13 skipped（含 data_foundation 91）。
-- ruff、mypy 与 OpenSpec strict validation 均通过。
-- Alembic `0035:0036 --sql` 通过；隔离 PostgreSQL 升级测试本轮未配置 URL，未重跑。
-- 前端：52 passed，1 skipped；生产 build（含 `vue-tsc`）通过。
-- 浏览器 smoke 与真实 RQData/Candidate 写入本轮未执行。
-
-本次 C2.5 worktree 验证：focused Candidate 52 passed、完整 `data_foundation` 95 passed、ruff、
-mypy、离线 Alembic SQL 和 OpenSpec strict 均通过；隔离 migration URL 未配置，故未运行会写入
-隔离 PostgreSQL 的测试。前端 unit/build 未完成：本 worktree 的 `apps/quant-web/node_modules` 缺少
-`vite` 与 `vue-tsc`，分别导致 bundle topology test 和 build 在工具启动前失败；未安装依赖或修改前端。
-本次未调用真实 RQData，未写入 Candidate/生产 DB、Canonical，也未执行 Gate A/B/C。
-
-## 已确认的现有生产事实
-
-以 2026-08-08 先前的只读回读为限：生产 Alembic head 为 `20260808_0035`，正式 Canonical
-根已配置，69 品种的实际交易所 Calendar/Session 元数据已存在，且当时 DataGap=0。
-这些是前序现场事实，不证明新数据合同已迁移或 Gate C 已通过。
-
-## 未完成的外部 Gate
-
-合同已改为 **RQData-only Recent Trusted Window**（`active_history_floor=2023-01-01`）；下列
-Gate 的真实 mutation 尚未执行：
-
-1. **Gate A**：JM → 六交易所 canary → active 69；隔离 Candidate；RQData-only update；audit=0；
-   DataGap=0；same-T NOOP。
-2. **Gate B**：维护窗口内应用 `20260808_0036`，写入候选 Catalog 并原子切换正式 Canonical。
-3. **Gate C**：验证 floor 后 69 品种七周期、DataGap=0、map/spec 完整、actual-dominant 换月/周线与
-   fixed-through NOOP。
-4. Gate C 通过后才删除 migration-only legacy 读取器并归档 OpenSpec change。
-
-以上每个真实 mutation Gate 都需要目标和范围明确的新一次性执行意图。
+日调度、live、真实通知和自动订单保持关闭，`auto_order=false`。

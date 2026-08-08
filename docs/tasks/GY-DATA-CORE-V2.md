@@ -1,98 +1,45 @@
 # GY-DATA-CORE-V2：Canonical Data Foundation active 合同
 
-更新时间：2026-08-08
+更新时间：2026-08-09
 
 ## 目标
 
-用一套 active 数据语言完成个人期货研究工作站的数据基础闭环：
+以 RQData → staging → 六项校验 → 月度 Canonical Parquet → 八表 Catalog →
+`MarketDataService` 完成个人期货研究工作站的数据底座。active universe 是
+`data/universe/active_products.txt` 的 69 品种，active 历史从 `2023-01-01` 开始。
 
-```text
-RQData
--> temporary staging
--> normalization + six hard validations
--> one Canonical Parquet root
--> PostgreSQL minimal Catalog
--> MarketDataService
--> Market Web / Indicator / future research
-```
+## 冻结合同
 
-active universe 精确为 `data/universe/active_products.txt` 中的 69 品种。只有七个周期：
-`1m/5m/15m/30m/60m/1d/1w`。
+- 物理 Dataset 是 `continuous|contract` 和四字段 `DatasetKey`；`actual_dominant` 只在查询时拼接。
+- Direct 是 `1m/1d/1w`，Derived 是 `5m/15m/30m/60m`，Derived 只从同 Dataset Canonical 1m 聚合。
+- 每 Dataset 每月只有一个 `part.parquet`。完整 coverage、row count、Catalog identity 与文件可读性
+  共同定义可用月；不存在额外发布/缺口/参数数据语言。
+- PostgreSQL active 数据表固定为八张，不保存 Bar 或运行历史。
+- `MetadataSynchronizer` 维护交易所、合约、Calendar、Session 和 rank1 map；
+  `HistoricalDataManager` 承担 update、refresh、audit；`MarketDataService` 是唯一读入口。
+- `update` 的 Catalog + Parquet 是唯一续传水位。相同 fixed through 完整重跑必须零目标、零写入、
+  零 provider 请求；明确的 provider 额度耗尽停止当前轮并由下次命令自然续传。
 
-V1 active 历史范围为 Recent Trusted Window：`active_history_floor = 2023-01-01`。
-
-## 已冻结的合同
-
-- 物理 Dataset 只有 `continuous | contract`。
-- DatasetKey 只有 `(kind, symbol, series_or_contract, frequency)` 四字段。
-- `actual_dominant` 只是查询模式，不存在物理 Parquet。
-- continuous、contract 和 actual_dominant 身份显式且不可互换。
-- RQData 是唯一外部事实源；Canonical Parquet 是唯一 active 历史 Bar 存储。
-- `1m/1d/1w` 为 direct；`5m/15m/30m/60m` 只从 Canonical 1m 聚合。
-- PostgreSQL 只保存 10 张最小数据表，不保存 Bar 或运行历史。
-- 每 Dataset 每月只有一个 active 分区；不保留 active overlay 或 data version 目录。
-- DataGap 只保存当前未解决缺口。
-- 所有历史消费者必须经过 MarketDataService。
-- `effective_start(symbol) = max(product_window_start, active_history_floor)`；不得改写 `product_window_starts.csv` 长期事实。
-
-## 应用模块
-
-1. `MetadataSynchronizer`: 交易所、合约、日历、session、rank1 map 和 contract specs 当前事实。
-2. `HistoricalDataManager`: `update/bootstrap/repair/audit` 四个动作，共享规划、下载、标准化、校验、发布与聚合算法。
-3. `MarketDataService`: 只通过 Catalog/Manifest 读取 continuous、contract 和 actual_dominant。
-
-## CLI
+## 公开 CLI
 
 ```text
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
-guiyi data bootstrap --universe active [--through DATE] [--apply]
-guiyi data repair --plan exact-plan.json [--apply]
+guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data audit --universe active
 ```
 
-无 `--apply` 的 update/bootstrap/repair 只计划、零 RQData、零写入。`audit` 只读。
+无 `--apply` 的 update/refresh 只计划，零 RQData、零写入；audit 只读。
 
-## Candidate 与 legacy
+## 实施顺序
 
-新 Gate A 在隔离 Candidate DB + Candidate Canonical Root 上使用 **RQData-only `update`**（`legacy=None`），复用正常 HistoricalDataManager，不新建重建引擎。
+1. DFD-01 已重置文档和 OpenSpec 合同。
+2. DFD-02 删除 Candidate、legacy 和生成工件。
+3. DFD-03 收口 Parquet storage、Catalog、ORM 和候选 `20260808_0036`。
+4. DFD-04 收口 MarketDataService、Market API 和 Market Web。
+5. DFD-05 实现最终 update/refresh/audit 与 quota natural resume。
+6. DFD-06 运行全量验证并清除 active 死引用。
+7. DFD-07 仅在获得单次外部执行意图后，确认生产 revision、执行正式数据清理/migration，并从
+   RQData 重建。
 
-repository-only C2.5 前置已实现于既有 `guiyi data update/audit`：Candidate root 必须是
-`data/canonical-candidates/*` 内的非 symlink 子目录，且与 active root 隔离；Candidate DB 只从
-环境变量 `GUIYI_CANDIDATE_DATABASE_URL` 读取并且必须不同于 active DB。该变量的值、URL 与任何
-凭据不属于 CLI、日志或诊断输出。
-
-Candidate metadata 只有一份：immutable identity（Catalog/Session、root、universe、floor、source
-policy、code SHA 的非敏感摘要）和唯一 mutable `recorded_through`。`fresh` 要求 root 与十张最小表
-皆为空；`extend` 要求 identity 相同且 requested through 不倒退，并单调推进 recorded through。没有
-reset/resume/清空/自动恢复入口。apply update 可先由 metadata 同步取得 provider 事实，随后在任何
-Bar provider 请求或发布前校验历史 Calendar/Session provider facts；direct `1w` 使用完整 ISO-week
-请求和 provider weekly 行的 ISO-week 对齐。所有失败仅输出字段白名单、固定 reason code 和最多
-20 项受限样本。
-
-这些只是在临时 root 和隔离测试数据库中的代码/fixture 验证，不是 Gate A 的 Candidate 构建，也未执行
-真实 RQData、Candidate/生产 DB、Canonical 写入或任何 Gate A/B/C。
-
-既有 migration-only legacy 白名单 bootstrap 实现进入 freeze：不新增能力、不参加新 Gate A。旧 raw/processed 本次不删除，也不得进入日常更新组装、active Catalog 或 MarketDataService。Gate C 通过后删除临时读取器；最终重建为自 `active_history_floor` 起的 RQData 重建。
-
-## 验收与 Gate
-
-### 普通代码验收
-
-- domain/storage/catalog/maintenance/service 定向测试通过。
-- 后端全套、ruff、mypy、前端 unit/build 通过。
-- Alembic offline SQL 通过；隔离 PostgreSQL 可用时跑实际升级测试。
-- active 代码、前端和 canonical 文档不依赖已退役数据语言。
-- Recent Trusted Window 与 RQData-only Candidate composition 的 C2.5 fresh/extend metadata、
-  root containment、historical session facts 和 direct-weekly ISO 对齐均有本地 fixture 验证。
-
-### 受控外部 Gate
-
-1. **Gate A**：JM → 六交易所 canary → active 69；隔离 Candidate；RQData-only；audit=0；DataGap=0；same-T NOOP。各写入步骤分别需要一次性意图。
-2. **Gate B**：给出确切生产表、候选根、正式根和服务范围；新意图后才 `0035→0036` 并原子切根。
-3. **Gate C**：floor 后 69 品种七周期可读、DataGap=0、map/spec 完整、actual-dominant 换月/周线正确、fixed-through NOOP。
-
-日调度、live、通知与自动订单始终不在本任务授权内；`auto_order=false`。
-
-## OpenSpec
-
-active change 为 `converge-canonical-data-foundation`。旧 M3 已以 superseded 历史归档，不再并行执行。
+当前代码与 DFD-01 target 仍有差异；只有已完成并经验证的 DFD 才能写入 `STATUS.md`。日调度、live、
+通知与自动订单不在本 change 授权内，`auto_order=false`。
