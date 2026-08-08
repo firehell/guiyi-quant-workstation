@@ -9,7 +9,6 @@ from app.market_data.aggregation import (
     AggregationError,
     SessionWindow,
     aggregate_from_1m,
-    session_digest,
 )
 from app.market_data.domain import CanonicalBar
 
@@ -86,14 +85,3 @@ def test_aggregate_rejects_missing_1m_inside_session() -> None:
             target_frequency="5m",
             sessions=(SessionWindow(start, start + timedelta(minutes=5)),),
         )
-
-
-def test_session_digest_is_ordered_and_stable() -> None:
-    start = datetime(2025, 1, 2, 1, 0, tzinfo=UTC)
-    sessions = (
-        SessionWindow(start, start + timedelta(hours=1)),
-        SessionWindow(start + timedelta(hours=2), start + timedelta(hours=3)),
-    )
-
-    assert session_digest(sessions) == session_digest(sessions)
-    assert session_digest(sessions) != session_digest(tuple(reversed(sessions)))

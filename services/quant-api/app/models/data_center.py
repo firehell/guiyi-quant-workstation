@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time
-from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -10,7 +9,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
-    Numeric,
     String,
     Text,
     Time,
@@ -148,24 +146,3 @@ class MainContractMap(Base, TimestampMixin):
     @property
     def instrument_symbol(self) -> str:
         return self.symbol
-
-
-class ContractSpec(Base, TimestampMixin):
-    __tablename__ = "contract_specs"
-    __table_args__ = (
-        UniqueConstraint("contract_code", "trade_date", name="uq_contract_specs_contract_date"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    contract_code: Mapped[str] = mapped_column(String(64), index=True)
-    symbol: Mapped[str] = mapped_column(String(32), index=True)
-    exchange_code: Mapped[str] = mapped_column(ForeignKey("exchanges.code"), index=True)
-    trade_date: Mapped[date] = mapped_column(Date, index=True)
-    price_tick: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    contract_multiplier: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    long_margin_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
-    short_margin_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
-    open_fee: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
-    close_fee: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
-    close_today_fee: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
-    fee_type: Mapped[str | None] = mapped_column(String(32))

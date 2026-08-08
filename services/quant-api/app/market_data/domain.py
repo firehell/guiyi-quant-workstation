@@ -275,15 +275,6 @@ class TargetWindow:
 
 
 @dataclass(frozen=True, slots=True)
-class PartitionDigest:
-    dataset: DatasetKey
-    year: int
-    month: int
-    checksum: str
-    manifest_digest: str
-
-
-@dataclass(frozen=True, slots=True)
 class ResolvedContractSegment:
     contract: str
     start_trading_day: date
@@ -295,6 +286,4 @@ class MarketSeriesResult:
     request_identity: Mapping[str, object]
     bars: tuple[CanonicalBar, ...]
     coverage: tuple[datetime, datetime] | None
-    partition_digests: tuple[PartitionDigest, ...]
     resolved_contract_segments: tuple[ResolvedContractSegment, ...]
-    main_map_digest: str | None

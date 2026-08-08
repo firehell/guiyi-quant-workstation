@@ -4,8 +4,6 @@ from collections.abc import Callable, Mapping
 import csv
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
-import hashlib
-import json
 import os
 from pathlib import Path
 import re
@@ -30,7 +28,6 @@ from app.market_data.maintenance import BarBatch
 from app.market_data.metadata import MetadataSnapshot
 from app.models import (
     Contract,
-    ContractSpec,
     Instrument,
     MainContractMap,
     TradingCalendar,
@@ -177,20 +174,6 @@ class DatabaseCoverageSource:
             ))
             if mapped_days != expected_days:
                 return False
-            missing_spec = self.session.scalar(
-                select(MainContractMap.id)
-                .where(
-                    MainContractMap.symbol == symbol,
-                    MainContractMap.trade_date <= through,
-                    ~exists().where(
-                        ContractSpec.contract_code == MainContractMap.contract_code,
-                        ContractSpec.trade_date == MainContractMap.trade_date,
-                    ),
-                )
-                .limit(1)
-            )
-            if missing_spec is not None:
-                return False
         return True
 
     def require_historical_session_facts(
@@ -242,7 +225,7 @@ class DatabaseCoverageSource:
                 samples.append(_session_coverage_sample(symbol, context_start, through))
         if samples:
             raise InfrastructureError(
-                "CANDIDATE_SESSION_FACT_MISSING", samples=tuple(samples)
+                "HISTORICAL_SESSION_FACT_MISSING", samples=tuple(samples)
             )
 
     def expected_bar_ends(
@@ -475,13 +458,7 @@ class RQDataMarketAdapter:
                     continue
             bars.append(_canonical_bar(row, bar_end, trading_day))
         bars.sort(key=lambda item: item.bar_end)
-        digest_payload = [
-            {field: str(value) for field, value in bar.as_record().items()} for bar in bars
-        ]
-        digest = hashlib.sha256(
-            json.dumps(digest_payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
-        return BarBatch(tuple(bars), digest, "rqdata")
+        return BarBatch(tuple(bars))
 
     def fetch_metadata(
         self,
@@ -527,19 +504,6 @@ class RQDataMarketAdapter:
                 missing_map = next((day for day in calendar_days if day not in mapped_days), None)
                 if missing_map is not None:
                     refresh_start = min(refresh_start, missing_map)
-            missing_spec = self.session.scalar(
-                select(func.min(MainContractMap.trade_date)).where(
-                    MainContractMap.symbol == symbol,
-                    MainContractMap.trade_date >= floor,
-                    MainContractMap.trade_date <= through,
-                    ~exists().where(
-                        ContractSpec.contract_code == MainContractMap.contract_code,
-                        ContractSpec.trade_date == MainContractMap.trade_date,
-                    ),
-                )
-            )
-            if missing_spec is not None:
-                refresh_start = min(refresh_start, missing_spec)
             requested_starts[symbol] = refresh_start
         return self.client.metadata_snapshot(products, through, requested_starts)
 
@@ -695,16 +659,6 @@ class _RqdatacClient:
             for exchange in exchanges
             for day in _days(calendar_start, calendar_end)
         )
-        contract_multipliers = {
-            str(values["contract_code"]): Decimal(str(values["contract_multiplier"]))
-            for values in contracts
-            if values.get("contract_multiplier") is not None
-        }
-        specs = self._contract_specs(
-            main_contracts,
-            symbol_exchanges,
-            contract_multipliers,
-        )
         return MetadataSnapshot(
             exchanges=tuple(exchanges.values()),
             instruments=tuple(instruments.values()),
@@ -712,58 +666,8 @@ class _RqdatacClient:
             calendars=calendars,
             sessions=sessions,
             main_contracts=tuple(main_contracts),
-            contract_specs=specs,
             main_contract_starts=dict(starts),
         )
-
-    def _contract_specs(
-        self,
-        mappings: list[tuple[str, date, str]],
-        symbol_exchanges: dict[str, str],
-        contract_multipliers: Mapping[str, Decimal],
-    ) -> tuple[dict[str, object], ...]:
-        result = []
-        by_contract: dict[str, list[tuple[str, date]]] = {}
-        for symbol, day, contract in mappings:
-            by_contract.setdefault(contract, []).append((symbol, day))
-        for contract, facts in by_contract.items():
-            start, end = min(day for _, day in facts), max(day for _, day in facts)
-            parameters = _frame(
-                self.api.futures.get_trading_parameters(
-                    contract, start_date=start, end_date=end
-                )
-            )
-            rows_by_day = {_row_date(row): row for row in parameters.to_dict("records")}
-            raw_tick = self.api.get_tick_size(contract)
-            if isinstance(raw_tick, pd.Series):
-                raw_tick = raw_tick.get(contract) if len(raw_tick) == 1 else None
-            tick = _optional_decimal(raw_tick)
-            multiplier = contract_multipliers.get(contract)
-            for symbol, day in facts:
-                row = rows_by_day.get(day, {})
-                exchange = symbol_exchanges.get(symbol)
-                if exchange is None or tick is None or multiplier is None:
-                    raise InfrastructureError("RQDATA_CONTRACT_SPEC_INCOMPLETE")
-                result.append(
-                    {
-                        "contract_code": contract,
-                        "symbol": symbol,
-                        "exchange_code": exchange,
-                        "trade_date": day,
-                        "price_tick": tick,
-                        "contract_multiplier": Decimal(str(multiplier)),
-                        "long_margin_rate": _optional_decimal(row.get("long_margin_ratio")),
-                        "short_margin_rate": _optional_decimal(row.get("short_margin_ratio")),
-                        "open_fee": _optional_decimal(row.get("open_commission")),
-                        "close_fee": _optional_decimal(row.get("close_commission")),
-                        "close_today_fee": _optional_decimal(
-                            row.get("close_commission_today", row.get("close_today_commission"))
-                        ),
-                        "fee_type": _optional_text(row.get("commission_type")),
-                    }
-                )
-        return tuple(result)
-
 
 def _product_trading_days(
     session: Session,

@@ -13,10 +13,10 @@
 
 ## DFD-03：Slim Storage、Catalog、Models 与 0036
 
-- [ ] 3.1 先只读确认所有正式环境仍处于 `20260808_0035`；若任一正式环境已应用 `0036`，停止
+- [x] 3.1 先只读确认所有正式环境仍处于 `20260808_0035`；若任一正式环境已应用 `0036`，停止
   rewrite 并改为后续 migration 计划。
-- [ ] 3.2 以 TDD 收口月度 storage、八表 ORM/Catalog 与最终不可逆 `0036`，删除退出模型和字段。
-- [ ] 3.3 运行 unit、offline SQL 和隔离 PostgreSQL migration 验证；不应用生产 migration。
+- [x] 3.2 以 TDD 收口月度 storage、八表 ORM/Catalog 与最终不可逆 `0036`，删除退出模型和字段。
+- [x] 3.3 运行 unit、offline SQL 和隔离 PostgreSQL migration 验证；不应用生产 migration。
 
 ## DFD-04：MarketDataService、API 与 Web 查询瘦身
 

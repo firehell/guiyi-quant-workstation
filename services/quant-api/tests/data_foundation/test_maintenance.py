@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -18,8 +18,8 @@ from app.market_data.maintenance import (
     HistoricalDataManager,
     UpdateRequest,
 )
-from app.market_data.storage import CanonicalMonthlyStore, PublishRequest, SourceMetadata
-from app.models import DataGap, Exchange, Instrument
+from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
+from app.models import Exchange, Instrument
 
 
 @pytest.fixture
@@ -111,7 +111,7 @@ class FakeProvider:
         if key.symbol in self.fail_symbols:
             raise RuntimeError("provider failed")
         selected = tuple(bar for bar in self.bars.get(key.as_tuple(), ()) if bar.bar_end in expected)
-        return BarBatch(selected, "a" * 64, "rqdata")
+        return BarBatch(selected)
 
 
 def _daily(day: int, close: int) -> CanonicalBar:
@@ -291,7 +291,7 @@ def test_update_fails_before_provider_when_historical_session_facts_are_missing(
     assert provider.calls == []
 
 
-def test_dataset_failure_is_isolated_and_creates_current_gap(session, tmp_path) -> None:
+def test_dataset_failure_is_isolated(session, tmp_path) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     coverage = FakeCoverage({key.as_tuple(): (_daily(2, 100).bar_end,)})
     provider = FakeProvider({})
@@ -302,10 +302,9 @@ def test_dataset_failure_is_isolated_and_creates_current_gap(session, tmp_path) 
 
     assert result.status == "failed"
     assert result.failed == 1
-    assert session.scalar(select(DataGap.id)) is not None
 
 
-def test_catalog_commit_failure_restores_last_valid_file_pair(
+def test_catalog_commit_failure_leaves_published_file_for_later_repair(
     session, tmp_path, monkeypatch
 ) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
@@ -317,7 +316,6 @@ def test_catalog_commit_failure_restores_last_valid_file_pair(
     _publish_existing(manager, key, (old_bar,))
     partition = manager.catalog.all_partitions(key)[0]
     old_parquet = partition.file_path.read_bytes()
-    old_manifest = partition.manifest_path.read_bytes()
 
     def fail_commit() -> None:
         raise SQLAlchemyError("injected")
@@ -326,13 +324,12 @@ def test_catalog_commit_failure_restores_last_valid_file_pair(
     with pytest.raises(SQLAlchemyError, match="injected"):
         manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
 
-    assert partition.file_path.read_bytes() == old_parquet
-    assert partition.manifest_path.read_bytes() == old_manifest
-    assert manager.store.read_month(key, 2025, 1) == (old_bar,)
+    assert partition.file_path.read_bytes() != old_parquet
+    assert manager.store.read_month(key, 2025, 1) == (old_bar, new_bar)
     assert not tuple(tmp_path.rglob("*.bak"))
 
 
-def test_strict_read_failure_rolls_back_staged_partition(
+def test_strict_read_failure_leaves_partition_for_next_update(
     session, tmp_path, monkeypatch
 ) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
@@ -350,31 +347,20 @@ def test_strict_read_failure_rolls_back_staged_partition(
 
     assert result.status == "failed"
     assert result.failures[0]["reason_code"] == "STRICT_READ_VERIFICATION_FAILED"
-    assert not tuple(tmp_path.rglob("part.parquet"))
+    assert tuple(tmp_path.rglob("part.parquet"))
     assert not tuple(tmp_path.rglob("manifest.json"))
     assert not tuple(tmp_path.rglob("*.bak"))
 
 
-def test_audit_reports_current_gap_without_remote_calls(session, tmp_path) -> None:
+def test_audit_reports_missing_partition_without_remote_calls(session, tmp_path) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     coverage = FakeCoverage({key.as_tuple(): (_daily(2, 100).bar_end,)})
     provider = FakeProvider({})
     manager = _manager(session, tmp_path, coverage, provider)
-    manager.catalog.add_gap(
-        key,
-        datetime(2025, 1, 1, tzinfo=UTC),
-        datetime(2025, 1, 3, tzinfo=UTC),
-        "COVERAGE_MISSING",
-    )
-    session.commit()
-
     result = manager.audit(AuditRequest(("jm",)))
 
     assert result.status == "failed"
-    assert {finding.code for finding in result.findings} >= {
-        "DATA_GAP_PRESENT",
-        "EXPECTED_PARTITION_MISSING",
-    }
+    assert {finding.code for finding in result.findings} == {"EXPECTED_PARTITION_MISSING"}
     assert provider.calls == []
 
 
@@ -389,7 +375,6 @@ def _publish_existing(
         1,
         bars,
         tuple(bar.bar_end for bar in bars),
-        SourceMetadata("rqdata", "c" * 64),
     ))
     manager.catalog.register_partition(published)
     manager.catalog.session.commit()

@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-import hashlib
-import json
 from math import ceil
 
 from app.market_data.domain import BarFrequency, CanonicalBar, DERIVED_FREQUENCIES
@@ -91,15 +89,6 @@ def aggregate_from_1m(
     if {bar.bar_end for bar in source} != assigned:
         raise AggregationError("SOURCE_1M_OUTSIDE_SESSION")
     return tuple(output)
-
-
-def session_digest(sessions: tuple[SessionWindow, ...]) -> str:
-    payload = [
-        {"start": item.start.isoformat(), "end": item.end.isoformat()}
-        for item in sessions
-    ]
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _validate_sessions(sessions: tuple[SessionWindow, ...]) -> None:

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-import hashlib
-import json
 from zoneinfo import ZoneInfo
 
 from app.market_data.catalog import CatalogPartition, MainMapFact, MarketCatalog
@@ -12,7 +10,6 @@ from app.market_data.domain import (
     DatasetKey,
     DatasetKind,
     MarketSeriesResult,
-    PartitionDigest,
     ResolvedContractSegment,
     SeriesKind,
     SeriesQuery,
@@ -38,8 +35,8 @@ class MarketDataService:
         if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
             return self._actual_dominant(request)
         assert request.physical_key is not None
-        bars, partitions = self._read_physical(request.physical_key, request)
-        return self._result(request, bars, partitions, (), None)
+        bars, _ = self._read_physical(request.physical_key, request)
+        return self._result(request, bars, (),)
 
     def _actual_dominant(self, request: SeriesQuery) -> MarketSeriesResult:
         start_day = _local_date(request.start)
@@ -71,7 +68,6 @@ class MarketDataService:
             selected = mappings
         segments = _segments(selected)
         bars: list[CanonicalBar] = []
-        partitions: list[CatalogPartition] = []
         mapping_by_day = {row.trade_date: row.contract for row in selected}
         for contract in dict.fromkeys(row.contract for row in selected):
             key = DatasetKey(
@@ -81,7 +77,7 @@ class MarketDataService:
                 request.frequency,
             )
             try:
-                contract_bars, contract_partitions = self._read_physical(key, request)
+                contract_bars, _ = self._read_physical(key, request)
             except MarketDataError as exc:
                 if exc.code == "DATASET_OR_PARTITION_MISSING":
                     raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING") from exc
@@ -91,17 +87,10 @@ class MarketDataService:
                 for bar in contract_bars
                 if mapping_by_day.get(bar.trading_day) == contract
             )
-            partitions.extend(contract_partitions)
         bars.sort(key=lambda item: item.bar_end)
         if not bars:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
-        return self._result(
-            request,
-            tuple(bars),
-            tuple(_dedupe_partitions(partitions)),
-            segments,
-            _map_digest(selected),
-        )
+        return self._result(request, tuple(bars), segments)
 
     def _weekly_mappings(
         self,
@@ -142,8 +131,6 @@ class MarketDataService:
         key: DatasetKey,
         request: SeriesQuery,
     ) -> tuple[tuple[CanonicalBar, ...], tuple[CatalogPartition, ...]]:
-        if self.catalog.has_gap(key, request.start, request.end):
-            raise MarketDataError("DATA_GAP_INTERSECTS_QUERY")
         partitions = self.catalog.partitions(key, request.start, request.end)
         if not partitions:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
@@ -153,11 +140,7 @@ class MarketDataService:
                 values = self.store.read_month(key, partition.year, partition.month)
             except StorageError as exc:
                 raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
-            if (
-                len(values) != partition.row_count
-                or _file_sha256(partition.file_path) != partition.checksum
-                or _file_sha256(partition.manifest_path) != partition.manifest_digest
-            ):
+            if len(values) != partition.row_count:
                 raise MarketDataError("PARTITION_INTEGRITY_INVALID")
             bars.extend(
                 bar for bar in values if request.start < bar.bar_end <= request.end
@@ -173,9 +156,7 @@ class MarketDataService:
         self,
         request: SeriesQuery,
         bars: tuple[CanonicalBar, ...],
-        partitions: tuple[CatalogPartition, ...],
         segments: tuple[ResolvedContractSegment, ...],
-        map_digest: str | None,
     ) -> MarketSeriesResult:
         identity = {
             "series_kind": request.series_kind.value,
@@ -189,18 +170,7 @@ class MarketDataService:
             request_identity=identity,
             bars=bars,
             coverage=(bars[0].bar_end, bars[-1].bar_end) if bars else None,
-            partition_digests=tuple(
-                PartitionDigest(
-                    dataset=item.dataset,
-                    year=item.year,
-                    month=item.month,
-                    checksum=item.checksum,
-                    manifest_digest=item.manifest_digest,
-                )
-                for item in partitions
-            ),
             resolved_contract_segments=segments,
-            main_map_digest=map_digest,
         )
 
 
@@ -219,33 +189,6 @@ def _segments(mappings: tuple[MainMapFact, ...]) -> tuple[ResolvedContractSegmen
         end = row.trade_date
     result.append(ResolvedContractSegment(contract, start, end))
     return tuple(result)
-
-
-def _map_digest(mappings: tuple[MainMapFact, ...]) -> str:
-    payload = [
-        [row.symbol, row.trade_date.isoformat(), row.contract] for row in mappings
-    ]
-    encoded = json.dumps(payload, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _dedupe_partitions(values: list[CatalogPartition]) -> tuple[CatalogPartition, ...]:
-    seen: set[tuple[tuple[str, str, str, str], int, int]] = set()
-    result: list[CatalogPartition] = []
-    for item in values:
-        identity = (item.dataset.as_tuple(), item.year, item.month)
-        if identity not in seen:
-            seen.add(identity)
-            result.append(item)
-    return tuple(result)
-
-
-def _file_sha256(path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _local_date(value: datetime) -> date:

@@ -3,13 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-import hashlib
-import json
 from typing import Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.market_data.aggregation import aggregate_from_1m, session_digest
+from app.market_data.aggregation import aggregate_from_1m
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import (
     DERIVED_FREQUENCIES,
@@ -25,8 +23,6 @@ from app.market_data.service import MarketDataService, MarketDataError
 from app.market_data.storage import (
     CanonicalMonthlyStore,
     PublishRequest,
-    SourceMetadata,
-    StagedPublication,
     StorageError,
 )
 
@@ -70,8 +66,6 @@ class BarSource(Protocol):
 @dataclass(frozen=True, slots=True)
 class BarBatch:
     bars: tuple[CanonicalBar, ...]
-    source_digest: str
-    source_kind: str = "rqdata"
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,26 +213,9 @@ class HistoricalDataManager:
                         first.month,
                     )
                 )
-            missing_specs = self.catalog.missing_contract_spec_days(symbol, start, through)
-            if missing_specs:
-                first = missing_specs[0]
-                findings.append(
-                    AuditFinding(
-                        "CONTRACT_SPEC_MISSING",
-                        ("metadata", symbol, "contract_specs", "1d"),
-                        first.year,
-                        first.month,
-                    )
-                )
         for key, year, month, expected in self._desired_months(request.products, through):
             if not expected:
                 continue
-            if self.catalog.has_gap(
-                key,
-                expected[0],
-                expected[-1],
-            ):
-                findings.append(AuditFinding("DATA_GAP_PRESENT", key.as_tuple(), year, month))
             existing = self._read_existing(key, year, month)
             if tuple(bar.bar_end for bar in existing) != expected:
                 findings.append(
@@ -430,7 +407,6 @@ class HistoricalDataManager:
                 failed_families.add(_family(target.key))
                 failures.append(_failure(target, exc))
                 self.catalog.session.rollback()
-                self._record_gap(target, exc)
             if planned == 1 or planned % 100 == 0:
                 print(
                     f"maintenance {action} direct planned={planned} applied={applied} "
@@ -441,7 +417,6 @@ class HistoricalDataManager:
             planned += 1
             if _family(target.key) in failed_families:
                 blocked += 1
-                self._record_gap(target, StorageError("SOURCE_1M_BLOCKED"))
                 continue
             try:
                 self._publish_derived(target)
@@ -451,7 +426,6 @@ class HistoricalDataManager:
                     raise
                 failures.append(_failure(target, exc))
                 self.catalog.session.rollback()
-                self._record_gap(target, exc)
             if planned % 100 == 0:
                 print(
                     f"maintenance {action} derived planned={planned} applied={applied} "
@@ -474,40 +448,24 @@ class HistoricalDataManager:
             failures=tuple(failures),
         )
 
-    def _record_gap(self, target: _Target, exc: Exception) -> None:
-        if not target.missing:
-            return
-        width = _frequency_delta(target.key.frequency)
-        self.catalog.add_gap(
-            target.key,
-            target.missing[0] - width,
-            target.missing[-1],
-            str(getattr(exc, "code", type(exc).__name__))[:64],
-        )
-        self.catalog.session.commit()
-
     def _publish_direct(self, target: _Target, batches: tuple[BarBatch, ...]) -> None:
         merged = {bar.bar_end: bar for bar in target.existing}
-        digests: list[str] = []
         for batch in batches:
-            digests.append(batch.source_digest)
             for bar in batch.bars:
                 merged[bar.bar_end] = bar
         bars = tuple(merged[item] for item in target.expected if item in merged)
         if tuple(bar.bar_end for bar in bars) != target.expected:
             raise StorageError("TARGET_WINDOW_INCOMPLETE")
-        digest = _combined_digest(digests or ["0" * 64])
-        staged = self.store.stage(
+        partition = self.store.publish(
             PublishRequest(
                 target.key,
                 target.year,
                 target.month,
                 bars,
                 target.expected,
-                SourceMetadata(source_kind="rqdata", source_digest=digest),
             )
         )
-        self._commit_staged(staged, target)
+        self._commit_partition(partition, target)
 
     def _publish_derived(self, target: _Target) -> None:
         source_key = DatasetKey(
@@ -533,45 +491,25 @@ class HistoricalDataManager:
         )
         if tuple(bar.bar_end for bar in bars) != target.expected:
             raise StorageError("TARGET_WINDOW_INCOMPLETE")
-        source_partitions = self.catalog.all_partitions(source_key)
-        digests = tuple(
-            item.manifest_digest
-            for item in source_partitions
-            if item.year == target.year and item.month == target.month
-        )
-        staged = self.store.stage(
+        partition = self.store.publish(
             PublishRequest(
                 target.key,
                 target.year,
                 target.month,
                 bars,
                 target.expected,
-                SourceMetadata(
-                    source_kind="derived_1m",
-                    source_digest=_combined_digest(digests),
-                    source_1m_digests=digests,
-                    session_digest=session_digest(sessions),
-                ),
             )
         )
-        self._commit_staged(staged, target)
+        self._commit_partition(partition, target)
 
-    def _commit_staged(self, staged: StagedPublication, target: _Target) -> None:
+    def _commit_partition(self, partition, target: _Target) -> None:
         try:
-            self.catalog.register_partition(staged.partition)
-            self.catalog.clear_gaps(
-                target.key,
-                target.gap_clear_start
-                or target.expected[0] - _frequency_delta(target.key.frequency),
-                target.gap_clear_end or target.expected[-1],
-            )
+            self.catalog.register_partition(partition)
             self._strict_verify(target)
             self.catalog.session.commit()
         except Exception:
             self.catalog.session.rollback()
-            self.store.rollback(staged)
             raise
-        self.store.finalize(staged)
 
     def _strict_verify(self, target: _Target) -> None:
         if target.key.kind is DatasetKind.CONTINUOUS:
@@ -666,8 +604,3 @@ def _frequency_delta(frequency: BarFrequency) -> timedelta:
         BarFrequency.D1: timedelta(days=1),
         BarFrequency.W1: timedelta(days=7),
     }[frequency]
-
-
-def _combined_digest(values) -> str:
-    encoded = json.dumps(sorted(values), separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()

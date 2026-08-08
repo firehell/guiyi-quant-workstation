@@ -4,9 +4,9 @@
 
 ## 结论
 
-Data Foundation 已完成 **DFD-01 Canonical 合同重置**：目标架构现在是本地、单用户、可从
-RQData 重建的历史行情底座。此结论只改变 active 合同和后续实现方向；它不表示 DFD-02～DFD-06
-的代码收口、生产数据库迁移、正式 Canonical 重建或真实 RQData 下载已经发生。
+Data Foundation 已完成 **DFD-01～DFD-03**：目标架构现在是本地、单用户、可从 RQData 重建的
+历史行情底座；月度 storage、最小 Catalog/ORM 及候选 migration 已收口。此结论不表示 DFD-04～
+DFD-06 的代码收口、生产数据库迁移、正式 Canonical 重建或真实 RQData 下载已经发生。
 
 ## 已冻结的目标合同
 
@@ -25,10 +25,10 @@ RQData 重建的历史行情底座。此结论只改变 active 合同和后续�
 
 ## 当前实现差异
 
-DFD-02 已删除 Candidate/Gate/Promotion、legacy importer、旧 CLI 入口及其生成工件；当前只保留
-`update|audit` 的过渡维护面。DFD-03 将收口 storage、catalog、models 和候选
-`20260808_0036`，DFD-04/05/06 分别完成查询面、维护面和全量验证。在这些任务完成前，不把最终
-8 表、3 CLI 或 natural-resume 行为表述为已实现。
+DFD-02 已删除 Candidate/Gate/Promotion、legacy importer、旧 CLI 入口及其生成工件。DFD-03 已将
+storage、Catalog、ORM 和候选 `20260808_0036` 收口为八表与单月 `part.parquet`，并仅在隔离 PostgreSQL
+中验证 migration。当前仍保留 `update|audit` 的过渡维护面；DFD-04/05/06 分别完成查询面、维护面和
+全量验证。在这些任务完成前，不把最终 3 CLI 或 natural-resume 行为表述为已实现。
 
 ## 外部操作状态
 

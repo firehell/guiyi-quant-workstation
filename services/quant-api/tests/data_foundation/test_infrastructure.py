@@ -14,7 +14,6 @@ from app.market_data import infrastructure
 from app.market_data.infrastructure import SHANGHAI, DatabaseCoverageSource, RQDataMarketAdapter
 from app.models import (
     Contract,
-    ContractSpec,
     Exchange,
     Instrument,
     MainContractMap,
@@ -225,16 +224,6 @@ def test_metadata_complete_allows_history_before_first_provider_main_map(tmp_pat
                 rule="volume_open_interest",
             )
         )
-        session.add(
-            ContractSpec(
-                contract_code="JM2509",
-                symbol="jm",
-                exchange_code="DCE",
-                trade_date=day,
-                price_tick=Decimal("0.5"),
-                contract_multiplier=Decimal("60"),
-            )
-        )
     session.commit()
     coverage = DatabaseCoverageSource(session, starts)
 
@@ -322,7 +311,6 @@ def test_rqdata_bar_adapter_normalizes_continuous_and_daily_bar_end(tmp_path) ->
     assert client.calls[0][0] == "JM88"
     assert batch.bars[0].bar_end == expected
     assert batch.bars[0].turnover == Decimal("1000")
-    assert len(batch.source_digest) == 64
     session.close()
 
 
@@ -403,7 +391,7 @@ def test_historical_session_coverage_rejects_missing_provider_context(tmp_path) 
     session, starts = _session(tmp_path)
     coverage = DatabaseCoverageSource(session, starts)
 
-    with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+    with pytest.raises(infrastructure.InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
         coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
 
     session.close()
@@ -415,7 +403,7 @@ def test_historical_session_coverage_rejects_open_ended_current_hours_row(tmp_pa
     session.commit()
     coverage = DatabaseCoverageSource(session, starts)
 
-    with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+    with pytest.raises(infrastructure.InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
         coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
 
     session.close()
@@ -428,7 +416,7 @@ def test_historical_session_coverage_requires_full_iso_week_calendar_context(tmp
     session.commit()
     coverage = DatabaseCoverageSource(session, starts)
 
-    with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+    with pytest.raises(infrastructure.InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
         coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
 
     _add_provider_calendar_facts(session, date(2025, 1, 11), date(2025, 1, 12))
@@ -498,16 +486,6 @@ def test_metadata_refresh_ignores_history_before_first_provider_main_map(tmp_pat
                     rule="volume_open_interest",
                 )
             )
-            session.add(
-                ContractSpec(
-                    contract_code="JM2509",
-                    symbol="jm",
-                    exchange_code="DCE",
-                    trade_date=date(2025, 1, day),
-                    price_tick=Decimal("0.5"),
-                    contract_multiplier=Decimal("60"),
-                )
-            )
         session.commit()
         requested = []
 
@@ -545,29 +523,6 @@ def test_rqdatac_client_requests_unadjusted_bars() -> None:
 
 def test_rqdata_zero_date_sentinel_normalizes_to_none() -> None:
     assert infrastructure._optional_date("0000-00-00") is None
-
-
-def test_rqdata_contract_specs_extract_tick_size_from_series() -> None:
-    class FuturesApi:
-        def get_trading_parameters(self, order_book_id, start_date, end_date):
-            return pd.DataFrame()
-
-    class Api:
-        futures = FuturesApi()
-
-        def get_tick_size(self, order_book_id):
-            return pd.Series({order_book_id: 0.5})
-
-    client = object.__new__(infrastructure._RqdatacClient)
-    client.api = Api()
-
-    specs = client._contract_specs(
-        [("jm", date(2025, 1, 2), "JM2509")],
-        {"jm": "DCE"},
-        {"JM2509": Decimal("60")},
-    )
-
-    assert specs[0]["price_tick"] == Decimal("0.5")
 
 
 def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:

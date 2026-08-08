@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from app.db.base import Base
 from app.models import (  # noqa: F401 - imports register metadata
-    ContractSpec,
-    DataGap,
     MainContractMap,
     MarketDataset,
     MarketPartition,
@@ -27,10 +25,8 @@ def test_active_metadata_contains_only_minimal_data_tables() -> None:
         "trading_calendars",
         "trading_sessions",
         "main_contract_map",
-        "contract_specs",
         "market_datasets",
         "market_partitions",
-        "data_gaps",
     }
     retired = {
         "data_sources",
@@ -58,17 +54,15 @@ def test_current_fact_and_month_partition_unique_keys() -> None:
     )
     assert ("dataset_id", "year", "month") in _unique_columns("market_partitions")
     assert ("symbol", "trade_date") in _unique_columns("main_contract_map")
-    assert ("contract_code", "trade_date") in _unique_columns("contract_specs")
 
 
 def test_retired_version_and_raw_columns_are_absent() -> None:
     main_columns = set(MainContractMap.__table__.columns.keys())
-    spec_columns = set(ContractSpec.__table__.columns.keys())
     dataset_columns = set(MarketDataset.__table__.columns.keys())
     partition_columns = set(MarketPartition.__table__.columns.keys())
 
     assert {"data_version", "raw_payload", "provider"}.isdisjoint(main_columns)
-    assert "raw_payload" not in spec_columns
     assert {"provider", "adjustment", "schema_version"}.isdisjoint(dataset_columns)
-    assert {"year", "month", "manifest_digest", "checksum"} <= partition_columns
-    assert "resolved_at" not in DataGap.__table__.columns
+    assert {"year", "month", "coverage_start", "coverage_end", "file_uri", "row_count"} <= partition_columns
+    assert {"manifest_uri", "checksum", "manifest_digest"}.isdisjoint(partition_columns)
+    assert {"contract_specs", "data_gaps"}.isdisjoint(Base.metadata.tables)

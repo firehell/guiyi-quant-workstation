@@ -38,7 +38,8 @@ def upgrade() -> None:
     for table in RETIRED_TABLES:
         op.drop_table(table)
 
-    op.drop_table("data_gaps")
+    op.execute("DROP TABLE IF EXISTS data_gaps")
+    op.execute("DROP TABLE IF EXISTS contract_specs")
     op.drop_table("market_partitions")
     op.drop_table("market_datasets")
     op.execute("DROP VIEW IF EXISTS data_core_main_contract_map")
@@ -115,38 +116,6 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "contract_specs",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("contract_code", sa.String(64), nullable=False),
-        sa.Column("symbol", sa.String(32), nullable=False),
-        sa.Column("exchange_code", sa.String(16), sa.ForeignKey("exchanges.code"), nullable=False),
-        sa.Column("trade_date", sa.Date(), nullable=False),
-        sa.Column("price_tick", sa.Numeric(18, 6), nullable=False),
-        sa.Column("contract_multiplier", sa.Numeric(18, 6), nullable=False),
-        sa.Column("long_margin_rate", sa.Numeric(18, 8)),
-        sa.Column("short_margin_rate", sa.Numeric(18, 8)),
-        sa.Column("open_fee", sa.Numeric(18, 8)),
-        sa.Column("close_fee", sa.Numeric(18, 8)),
-        sa.Column("close_today_fee", sa.Numeric(18, 8)),
-        sa.Column("fee_type", sa.String(32)),
-        sa.Column(
-            "created_at", sa.DateTime(timezone=True), nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-        ),
-        sa.Column(
-            "updated_at", sa.DateTime(timezone=True), nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-        ),
-        sa.UniqueConstraint(
-            "contract_code", "trade_date", name="uq_contract_specs_contract_date"
-        ),
-    )
-    op.create_index("ix_contract_specs_contract_code", "contract_specs", ["contract_code"])
-    op.create_index("ix_contract_specs_symbol", "contract_specs", ["symbol"])
-    op.create_index("ix_contract_specs_exchange_code", "contract_specs", ["exchange_code"])
-    op.create_index("ix_contract_specs_trade_date", "contract_specs", ["trade_date"])
-
-    op.create_table(
         "market_datasets",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("kind", sa.String(16), nullable=False),
@@ -188,10 +157,7 @@ def upgrade() -> None:
         sa.Column("coverage_start", sa.DateTime(timezone=True), nullable=False),
         sa.Column("coverage_end", sa.DateTime(timezone=True), nullable=False),
         sa.Column("file_uri", sa.Text(), nullable=False),
-        sa.Column("manifest_uri", sa.Text(), nullable=False),
         sa.Column("row_count", sa.Integer(), nullable=False),
-        sa.Column("checksum", sa.String(64), nullable=False),
-        sa.Column("manifest_digest", sa.String(64), nullable=False),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
@@ -204,29 +170,6 @@ def upgrade() -> None:
             "coverage_start < coverage_end", name="ck_market_partitions_window"
         ),
         sa.CheckConstraint("row_count >= 0", name="ck_market_partitions_row_count"),
-    )
-
-    op.create_table(
-        "data_gaps",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column(
-            "dataset_id",
-            sa.Integer(),
-            sa.ForeignKey("market_datasets.id"),
-            nullable=False,
-        ),
-        sa.Column("gap_start", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("gap_end", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("reason_code", sa.String(64), nullable=False),
-        sa.Column("details", sa.JSON(), nullable=False, server_default=sa.text("'{}'::json")),
-        sa.Column(
-            "observed_at", sa.DateTime(timezone=True), nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-        ),
-        sa.UniqueConstraint(
-            "dataset_id", "gap_start", "gap_end", name="uq_data_gaps_window"
-        ),
-        sa.CheckConstraint("gap_start < gap_end", name="ck_data_gaps_window"),
     )
 
 

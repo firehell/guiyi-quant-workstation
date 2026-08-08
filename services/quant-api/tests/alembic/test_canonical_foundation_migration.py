@@ -26,10 +26,8 @@ ACTIVE_DATA_TABLES = {
     "trading_calendars",
     "trading_sessions",
     "main_contract_map",
-    "contract_specs",
     "market_datasets",
     "market_partitions",
-    "data_gaps",
 }
 RETIRED_TABLES = {
     "data_sources",
@@ -61,7 +59,7 @@ def test_canonical_foundation_migration_is_new_irreversible_head() -> None:
     assert migration.revision == "20260808_0036"
     assert migration.down_revision == "20260808_0035"
     assert set(migration.RETIRED_TABLES) == RETIRED_TABLES
-    assert "contract_specs" in inspect.getsource(migration.upgrade)
+    assert "DROP TABLE IF EXISTS contract_specs" in inspect.getsource(migration.upgrade)
     assert "DROP VIEW IF EXISTS data_core_main_contract_map" in inspect.getsource(
         migration.upgrade
     )
@@ -121,6 +119,10 @@ def test_canonical_foundation_upgrades_empty_and_0035_databases(
         "series_or_contract",
         "frequency",
     } <= {column["name"] for column in inspector.get_columns("market_datasets")}
+    partition_columns = {column["name"] for column in inspector.get_columns("market_partitions")}
+    assert {"file_uri", "row_count", "coverage_start", "coverage_end"} <= partition_columns
+    assert {"manifest_uri", "checksum", "manifest_digest"}.isdisjoint(partition_columns)
+    assert {"contract_specs", "data_gaps"}.isdisjoint(tables)
     assert {
         "effective_from",
         "effective_to",

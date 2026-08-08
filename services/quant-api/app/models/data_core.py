@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
-
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.types import JSON
 
 from app.db.base import Base
 
@@ -52,24 +49,5 @@ class MarketPartition(Base):
     coverage_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     coverage_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     file_uri: Mapped[str] = mapped_column(Text, nullable=False)
-    manifest_uri: Mapped[str] = mapped_column(Text, nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
-    manifest_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-
-
-class DataGap(Base):
-    __tablename__ = "data_gaps"
-    __table_args__ = (
-        UniqueConstraint("dataset_id", "gap_start", "gap_end", name="uq_data_gaps_window"),
-        CheckConstraint("gap_start < gap_end", name="ck_data_gaps_window"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    dataset_id: Mapped[int] = mapped_column(ForeignKey("market_datasets.id"), nullable=False)
-    gap_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    gap_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
-    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

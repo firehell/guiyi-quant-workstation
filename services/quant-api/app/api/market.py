@@ -21,7 +21,6 @@ from app.schemas.market import (
     MarketBarOut,
     MarketBarsResponse,
     MarketCoverageResponse,
-    PartitionDigestOut,
 )
 
 
@@ -76,21 +75,6 @@ def canonical_market_bars(
             if result.coverage
             else None
         ),
-        partition_digests=[
-            PartitionDigestOut(
-                dataset={
-                    "kind": item.dataset.kind.value,
-                    "symbol": item.dataset.symbol,
-                    "series_or_contract": item.dataset.series_or_contract,
-                    "frequency": item.dataset.frequency.value,
-                },
-                year=item.year,
-                month=item.month,
-                checksum=item.checksum,
-                manifest_digest=item.manifest_digest,
-            )
-            for item in result.partition_digests
-        ],
         resolved_contract_segments=[
             ContractSegmentOut(
                 contract=item.contract,
@@ -99,7 +83,6 @@ def canonical_market_bars(
             )
             for item in result.resolved_contract_segments
         ],
-        main_map_digest=result.main_map_digest,
     )
 
 

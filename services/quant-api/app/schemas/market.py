@@ -23,14 +23,6 @@ class CoverageOut(BaseModel):
     end: datetime
 
 
-class PartitionDigestOut(BaseModel):
-    dataset: dict[str, str]
-    year: int
-    month: int
-    checksum: str
-    manifest_digest: str
-
-
 class ContractSegmentOut(BaseModel):
     contract: str
     start_trading_day: date
@@ -41,9 +33,7 @@ class MarketBarsResponse(BaseModel):
     request: dict[str, object]
     bars: list[MarketBarOut]
     coverage: CoverageOut | None
-    partition_digests: list[PartitionDigestOut]
     resolved_contract_segments: list[ContractSegmentOut]
-    main_map_digest: str | None
 
 
 class DominantContractOut(BaseModel):
