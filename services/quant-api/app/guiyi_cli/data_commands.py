@@ -18,6 +18,7 @@ from app.market_data.maintenance import (
 
 def build_request(args: argparse.Namespace):
     if args.data_command == "update":
+        _validate_candidate_update_args(args)
         return UpdateRequest(
             products=_products(args.symbol, args.universe),
             since=_day(args.since),
@@ -35,6 +36,15 @@ def build_request(args: argparse.Namespace):
     if args.data_command == "audit":
         return AuditRequest(_active_products())
     raise ValueError("CLI_DATA_COMMAND_INVALID")
+
+
+def _validate_candidate_update_args(args: argparse.Namespace) -> None:
+    root = getattr(args, "candidate_root", None)
+    mode = getattr(args, "candidate_mode", None)
+    if root is None and mode is None:
+        return
+    if root is None or mode is None or args.through is None:
+        raise ValueError("CLI_CANDIDATE_ARGUMENT_INVALID")
 
 
 def run_data_command(args: argparse.Namespace, manager: HistoricalDataManager):

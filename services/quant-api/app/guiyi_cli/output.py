@@ -50,6 +50,28 @@ def exception_error_payload(
     }
 
 
+def candidate_error_payload(
+    *,
+    reason_code: str,
+    mode: str | None,
+    requested_through: str | None,
+) -> dict[str, object]:
+    """Return the bounded Candidate precondition diagnostic contract."""
+    payload: dict[str, object] = {
+        "reason_code": reason_code,
+        "mode": mode,
+        "planned_count": 0,
+        "applied_count": 0,
+        "noop_count": 0,
+        "blocked_count": 0,
+        "failed_count": 1,
+        "samples": [],
+    }
+    if requested_through is not None:
+        payload["requested_through"] = requested_through
+    return payload
+
+
 def _redact(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(key): _redact(item) for key, item in value.items()}

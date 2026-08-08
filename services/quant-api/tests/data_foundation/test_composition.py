@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import date
+import json
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.market_data import composition
 from app.market_data.composition import (
     build_candidate_bootstrap_manager,
     build_candidate_historical_data_manager,
@@ -25,10 +29,11 @@ def _session() -> Session:
 
 
 def test_candidate_historical_manager_is_rqdata_only_and_isolated(tmp_path, monkeypatch) -> None:
-    production = tmp_path / "production_canonical"
-    production.mkdir()
-    candidate = tmp_path / "candidate_canonical"
-    candidate.mkdir()
+    monkeypatch.setattr(composition, "PROJECT_ROOT", tmp_path)
+    production = tmp_path / "data/parquet/canonical"
+    production.mkdir(parents=True)
+    candidate = tmp_path / "data/canonical-candidates/jm"
+    candidate.mkdir(parents=True)
     monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(production))
 
     session = _session()
@@ -41,12 +46,13 @@ def test_candidate_historical_manager_is_rqdata_only_and_isolated(tmp_path, monk
 
 
 def test_candidate_historical_manager_rejects_production_root(tmp_path, monkeypatch) -> None:
-    production = tmp_path / "production_canonical"
-    production.mkdir()
+    monkeypatch.setattr(composition, "PROJECT_ROOT", tmp_path)
+    production = tmp_path / "data/parquet/canonical"
+    production.mkdir(parents=True)
     monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(production))
     session = _session()
 
-    with pytest.raises(ValueError, match="CANDIDATE_ROOT_MUST_BE_ISOLATED"):
+    with pytest.raises(composition.CandidateTargetError, match="CANDIDATE_PRECONDITION_FAILED"):
         build_candidate_historical_data_manager(session, production)
     session.close()
 
@@ -64,10 +70,13 @@ def test_daily_composition_keeps_legacy_none(tmp_path, monkeypatch) -> None:
 
 
 def test_legacy_candidate_bootstrap_remains_frozen_migration_only(tmp_path, monkeypatch) -> None:
-    production = tmp_path / "production_canonical"
-    production.mkdir()
-    candidate = tmp_path / "candidate_canonical"
-    candidate.mkdir()
+    monkeypatch.setattr(composition, "PROJECT_ROOT", tmp_path)
+    production = tmp_path / "data/parquet/canonical"
+    production.mkdir(parents=True)
+    candidate = tmp_path / "data/canonical-candidates/jm"
+    candidate.mkdir(parents=True)
+    (tmp_path / "data/raw/rqdata/actual_contract_bars").mkdir(parents=True)
+    (tmp_path / "data/raw/rqdata/dominant_contract_bars").mkdir(parents=True)
     monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(production))
     session = _session()
 
@@ -79,13 +88,56 @@ def test_legacy_candidate_bootstrap_remains_frozen_migration_only(tmp_path, monk
 
 
 def test_candidate_root_rejects_nested_paths(tmp_path, monkeypatch) -> None:
-    production = tmp_path / "production_canonical"
-    production.mkdir()
+    monkeypatch.setattr(composition, "PROJECT_ROOT", tmp_path)
+    production = tmp_path / "data/parquet/canonical"
+    production.mkdir(parents=True)
     nested = production / "nested"
     nested.mkdir()
     monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(production))
     session = _session()
 
-    with pytest.raises(ValueError, match="CANDIDATE_ROOT_MUST_BE_ISOLATED"):
+    with pytest.raises(composition.CandidateTargetError, match="CANDIDATE_PRECONDITION_FAILED"):
         build_candidate_historical_data_manager(session, nested)
     session.close()
+
+
+def test_candidate_target_records_only_monotonic_non_sensitive_provenance(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(composition, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(composition, "_code_sha", lambda: "a" * 40)
+    active_root = tmp_path / "data/parquet/canonical"
+    active_root.mkdir(parents=True)
+    candidate_root = tmp_path / "data/canonical-candidates/jm"
+    monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(active_root))
+    monkeypatch.setenv("GUIYI_CANDIDATE_DATABASE_URL", "sqlite+pysqlite://")
+    (tmp_path / "data/universe").mkdir(parents=True)
+    (tmp_path / "data/universe/active_products.txt").write_text("jm\n", encoding="utf-8")
+    (tmp_path / "data/universe/active_history_floor.txt").write_text(
+        "2023-01-01\n", encoding="utf-8"
+    )
+
+    session = _session()
+    fresh = composition.HistoricalDataTarget.candidate(candidate_root, mode="fresh")
+    identity = fresh.validate_update(session, date(2026, 8, 7))
+    fresh.record_through(date(2026, 8, 7), identity)
+
+    metadata = json.loads((candidate_root / "candidate.json").read_text(encoding="utf-8"))
+    assert set(metadata) == {"identity", "recorded_through"}
+    assert metadata["recorded_through"] == "2026-08-07"
+    assert metadata["identity"]["source_policy"] == "RQData-only/legacy=None"
+    assert str(candidate_root) not in json.dumps(metadata)
+
+    extend = composition.HistoricalDataTarget.candidate(candidate_root, mode="extend")
+    assert extend.validate_update(session, date(2026, 8, 8)) == identity
+    with pytest.raises(composition.CandidateTargetError, match="CANDIDATE_THROUGH_REGRESSION"):
+        extend.validate_update(session, date(2026, 8, 6))
+    session.close()
+
+
+def test_candidate_target_rejects_roots_outside_the_candidate_parent(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(composition, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setenv("GUIYI_CANDIDATE_DATABASE_URL", "sqlite+pysqlite://")
+
+    with pytest.raises(composition.CandidateTargetError, match="CANDIDATE_PRECONDITION_FAILED"):
+        composition.HistoricalDataTarget.candidate(tmp_path / "outside", mode="fresh")
