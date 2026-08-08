@@ -27,53 +27,6 @@ class VnpyBar:
     volume: float
 
 
-def test_fastapi_su_bing_ema21_vectors_match_kernel_policies() -> None:
-    from app.strategy.su_bing_ema21 import StrategyBar, SuBingParams, _calculate_indicators
-    from guiyi_quant.indicators import atr_series, ema_series, macd_series
-
-    bars = [
-        StrategyBar(
-            symbol="jm",
-            contract="JM2609",
-            exchange="DCE",
-            datetime=datetime(2026, 7, 1, 9, 0) + timedelta(minutes=index * 15),
-            trading_day=date(2026, 7, 1),
-            open=bar.open,
-            high=bar.high,
-            low=bar.low,
-            close=bar.close,
-            volume=bar.volume,
-            period="15m",
-        )
-        for index, bar in enumerate(_synthetic_bars(36))
-    ]
-    params = SuBingParams(ema_period=5, macd_fast=3, macd_slow=6, macd_signal=4, atr_period=5)
-    legacy = _calculate_indicators(bars, params)
-    closes = [bar.close for bar in bars]
-
-    kernel_ema = ema_series(closes, params.ema_period, seed_policy="first_value")
-    kernel_macd = macd_series(
-        closes,
-        params.macd_fast,
-        params.macd_slow,
-        params.macd_signal,
-        ema_seed_policy="first_value",
-        histogram_scale=1,
-    )
-    kernel_atr = atr_series(
-        [bar.high for bar in bars],
-        [bar.low for bar in bars],
-        closes,
-        params.atr_period,
-        smoothing_policy="wilder_first_tr",
-    )
-
-    assert _round_series(legacy.ema) == _point_values(kernel_ema.points)
-    assert _round_series(legacy.macd_diff) == _point_values(kernel_macd.dif.points)
-    assert _round_series(legacy.macd_dea) == _point_values(kernel_macd.dea.points)
-    assert _round_series(legacy.macd_hist) == _point_values(kernel_macd.histogram.points)
-    assert _round_series(legacy.atr) == _point_values(kernel_atr.points)
-
 
 def test_quant_core_su_bing_ema21_vectors_match_kernel_policies() -> None:
     from guiyi_quant.indicators import atr_series, ema_series, macd_series

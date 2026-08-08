@@ -89,46 +89,12 @@ _PATH_COLUMNS = frozenset(
     }
 )
 _STATE_COLUMNS = frozenset({"status", "binding_status", "is_active"})
-_ACTIVE_TASK_TABLES = frozenset(
-    {"data_download_tasks", "signal_scan_tasks"}
-)
+_ACTIVE_TASK_TABLES = frozenset({"data_download_tasks"})
 _ACTIVE_TASK_STATUSES = frozenset({"pending", "queued", "running", "retrying"})
 _TERMINAL_TASK_STATUSES = frozenset(
     {"success", "completed", "partial_failed", "failed", "cancelled", "canceled"}
 )
-_LOGICAL_RELATIONS = (
-    ("signal_events", "strategy_signals", (("signal_id", "id"),), None),
-    ("signal_events", "signal_decisions", (("decision_id", "id"),), None),
-    ("signal_notifications", "signal_events", (("event_id", "id"),), None),
-    ("signal_notifications", "strategy_signals", (("signal_id", "id"),), None),
-    (
-        "signal_decision_reconciliations",
-        "signal_decisions",
-        (("decision_id", "id"),),
-        None,
-    ),
-    (
-        "review_notes",
-        "strategy_signals",
-        (("source_id", "id"),),
-        ("source_type", "strategy_signal"),
-    ),
-    (
-        "review_notes",
-        "signal_events",
-        (("source_id", "id"),),
-        ("source_type", "signal_event"),
-    ),
-    (
-        "review_notes",
-        "signal_decisions",
-        (("source_id", "id"),),
-        ("source_type", "signal_decision"),
-    ),
-    ("research_samples", "signal_decisions", (("decision_key", "decision_key"),), None),
-    ("research_samples", "review_notes", (("review_id", "id"),), None),
-    ("review_attachments", "review_notes", (("review_id", "id"),), None),
-)
+_LOGICAL_RELATIONS = ()
 
 # PostgreSQL production holds several million rows of reference metadata.  The
 # inventory must let PostgreSQL narrow those rows before they cross the driver

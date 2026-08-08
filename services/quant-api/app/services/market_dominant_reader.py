@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 import logging
+from pathlib import Path
 import time
 from typing import Any
 
@@ -9,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.data_core.contracts import BAR_FREQUENCY_VALUES
+from app.data_core.product_universe import load_active_products
 from app.models.data_center import Exchange, Instrument, MainContractMap
 from app.models.data_core import DataGap, MarketDataset, MarketPartition
 from app.schemas.market import (
@@ -22,6 +24,10 @@ from app.services.futures_contract_utils import (
     is_continuous_contract,
     is_synthetic_futures_contract,
     normalize_product_name,
+)
+
+DEFAULT_ACTIVE_PRODUCTS_PATH = (
+    Path(__file__).resolve().parents[4] / "data" / "universe" / "active_products.txt"
 )
 
 __all__ = [
@@ -50,8 +56,14 @@ def validate_quote_contract(contract: str) -> None:
 
 
 class DominantContractReader:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        active_products_path: Path | None = None,
+    ) -> None:
         self.session = session
+        self._active_products_path = active_products_path or DEFAULT_ACTIVE_PRODUCTS_PATH
 
     def list_dominants(
         self,
@@ -62,7 +74,8 @@ class DominantContractReader:
         symbol: str | None = None,
     ) -> DominantContractListResponse:
         started = time.perf_counter()
-        latest_mappings = self._latest_rank1_mappings(symbol=symbol)
+        active_products = set(load_active_products(self._active_products_path))
+        latest_mappings = self._latest_rank1_mappings(symbol=symbol, active_products=active_products)
         if not latest_mappings:
             return DominantContractListResponse(items=[], default_quote_period=DEFAULT_QUOTE_PERIOD)
 
@@ -84,6 +97,8 @@ class DominantContractReader:
         items: list[DominantContractItem] = []
         for mapping in sorted(latest_mappings, key=lambda row: row.instrument_symbol.lower()):
             product = mapping.instrument_symbol.lower()
+            if product not in active_products:
+                continue
             instrument = instruments.get(product)
             exchange_code = instrument.exchange_code if instrument else None
             if exchange and exchange_code and exchange_code.upper() != exchange.upper():
@@ -127,7 +142,12 @@ class DominantContractReader:
 
         return DominantContractListResponse(items=items, default_quote_period=DEFAULT_QUOTE_PERIOD)
 
-    def _latest_rank1_mappings(self, *, symbol: str | None = None) -> list[MainContractMap]:
+    def _latest_rank1_mappings(
+        self,
+        *,
+        symbol: str | None = None,
+        active_products: set[str] | None = None,
+    ) -> list[MainContractMap]:
         product_key = func.lower(MainContractMap.instrument_symbol)
         query = select(MainContractMap).where(
             MainContractMap.rank == 1,
@@ -146,6 +166,8 @@ class DominantContractReader:
         for row in rows:
             product = (row.instrument_symbol or "").lower()
             if product in seen_products:
+                continue
+            if active_products is not None and product not in active_products:
                 continue
             if not row.contract_code or is_synthetic_futures_contract(row.contract_code):
                 continue

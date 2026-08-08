@@ -1,10 +1,13 @@
-"""Assert retired research surfaces are unmounted from the slim Market-only API."""
+"""Assert retired research surfaces are removed from the Market-only API."""
+
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.main import app
 
 client = TestClient(app)
+APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 RETIRED_GET_PATHS = [
     "/api/dashboard/summary",
@@ -14,6 +17,21 @@ RETIRED_GET_PATHS = [
     "/api/reviews",
     "/api/watchlists",
     "/api/v1/market/research/panels",
+]
+
+RETIRED_MODULES = [
+    "api/signals.py",
+    "api/reviews.py",
+    "api/strategies.py",
+    "api/dashboard.py",
+    "api/watchlists.py",
+    "api/futures_research.py",
+    "models/signal.py",
+    "models/review.py",
+    "models/watchlist.py",
+    "signal",
+    "review",
+    "strategy",
 ]
 
 
@@ -29,6 +47,11 @@ def test_signal_websocket_route_unmounted() -> None:
     assert not any(path.startswith("/api/signals") for path in paths)
     assert "/api/dashboard/summary" not in paths
     assert "/api/reviews" not in paths
+
+
+def test_retired_application_modules_are_deleted() -> None:
+    for relative in RETIRED_MODULES:
+        assert not (APP_ROOT / relative).exists(), relative
 
 
 def test_retained_ops_surfaces_still_present() -> None:

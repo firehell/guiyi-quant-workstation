@@ -128,7 +128,7 @@ historical evidence/report/receipt 默认保护。任何受控删除均须先完
 - 已删除的 `GY-CORE-CONVERGENCE.md`、`GY-CORE-01-ARCHITECTURE-INVENTORY.md`、
   `GY-CORE-02-ACTIVE-DATASET-FACADE-PLAN.md`：旧路线收敛/盘点/计划快照，仅 Git history
   可追溯，不再提供 active 授权，也不得当作现存路径。
-- `TESTING.md` 与 `docs/SIGNAL_EVENTS.md` 中对已合入 GY-CORE-04 的测试或实现描述：
+- `TESTING.md` 与 Git history 中的 SIGNAL_EVENTS 中对已合入 GY-CORE-04 的测试或实现描述：
   legacy implementation facts，不是继续旧 GY-CORE-05～08 的授权。
 - 已删除的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据只保留在 Git history，
   不再提供 active 兼容入口或 Runtime Gate。未来如需重建回测或 Runtime 验收，

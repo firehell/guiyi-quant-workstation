@@ -171,8 +171,8 @@ def test_property_22_semantic_changes_require_canonical_companion(index: int) ->
     """Feature: personal-development-mode, Property 22: Semantic changes require their canonical companion"""
     mapping = (
         ("services/quant-api/app/services/data_core/x.py", "docs/tasks/GY-DATA-CORE-V2.md"),
-        ("packages/quant-core/guiyi_quant/strategies/y.py", "docs/SIGNAL_EVENTS.md"),
-        ("services/quant-api/app/services/notification_dispatch.py", "docs/SIGNAL_EVENTS.md"),
+        ("packages/quant-core/guiyi_quant/strategies/y.py", "docs/INDICATOR_KERNEL.md"),
+        ("services/quant-api/app/services/market_indicators.py", "docs/INDICATOR_KERNEL.md"),
     )
     changed, companion = mapping[index % len(mapping)]
     domains = consistency.classify_changed_paths([changed, companion])

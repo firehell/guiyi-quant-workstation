@@ -2,12 +2,11 @@
 /** 期货主力列表：展示 rank=1 真实主力合约，单击「查看 K 线」或双击行进入详情。 */
 import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NInput, NSelect, NStatistic, NTag, useMessage } from 'naive-ui'
+import { NButton, NCard, NDataTable, NStatistic, NTag, useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { getMarketDominants } from '@/api/market'
 import type { DominantContractItem } from '@/types/market'
-import { EXCHANGES } from '@/utils/constants'
-import { formatAvailablePeriodTags, preferredOpenPeriod } from '@/utils/marketChartWindow'
+import { preferredOpenPeriod } from '@/utils/marketChartWindow'
 import { isDominantMappingStale, safeMarketApiError, staleDominantMappingMessage } from '@/utils/marketChartQuery'
 
 const route = useRoute()
@@ -16,41 +15,6 @@ const message = useMessage()
 
 const loading = ref(false)
 const dominants = ref<DominantContractItem[]>([])
-const search = ref('')
-const exchange = ref<string | null>(null)
-
-const exchangeOptions = computed(() => {
-  const codes = [...new Set(dominants.value.map((item) => item.exchange).filter(Boolean))] as string[]
-  return codes.sort().map((code) => {
-    const match = dominants.value.find((item) => item.exchange === code)
-    const preset = EXCHANGES.find((item) => item.value === code)
-    return {
-      label: match?.exchange_name ? `${match.exchange_name} (${code})` : preset?.label || code,
-      value: code,
-    }
-  })
-})
-
-const filteredRows = computed(() => {
-  const needle = search.value.trim().toLowerCase()
-  return dominants.value.filter((item) => {
-    if (exchange.value && item.exchange !== exchange.value) return false
-    if (!needle) return true
-    return [
-      item.product,
-      item.product_name,
-      item.actual_contract,
-      item.continuous_contract,
-      item.exchange || '',
-      item.exchange_name || '',
-      item.sector || '',
-      item.category || '',
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(needle)
-  })
-})
 
 const quoteReadyCount = computed(() => dominants.value.filter((item) => item.quote_ready).length)
 
@@ -75,8 +39,6 @@ const columns: DataTableColumns<DominantContractItem> = [
     width: 120,
     render: (row) => row.exchange_name || row.exchange || '-',
   },
-  { title: '板块', key: 'sector', width: 100, render: (row) => row.sector || '-' },
-  { title: '类型', key: 'category', width: 100, render: (row) => row.category || '-' },
   {
     title: '状态',
     key: 'is_active',
@@ -101,31 +63,6 @@ const columns: DataTableColumns<DominantContractItem> = [
         h(NTag, { size: 'tiny', type: 'warning', style: { marginLeft: '6px' } }, { default: () => '可能过期' }),
       ])
     },
-  },
-  {
-    title: '可用周期',
-    key: 'bars_coverage',
-    width: 220,
-    render: (row) => {
-      const tags = formatAvailablePeriodTags(row.bars_coverage)
-      if (!tags.length) return '-'
-      return h(
-        'div',
-        { class: 'period-tag-list' },
-        tags.map((period) => h(NTag, { size: 'tiny', type: 'info', style: { marginRight: '4px' } }, { default: () => period })),
-      )
-    },
-  },
-  {
-    title: 'K线',
-    key: 'quote_ready',
-    width: 90,
-    render: (row) =>
-      h(
-        NTag,
-        { size: 'small', type: row.quote_ready ? 'success' : 'default' },
-        { default: () => (row.quote_ready ? '有K线' : '暂无') },
-      ),
   },
   {
     title: '操作',
@@ -212,42 +149,18 @@ function openChart(row: DominantContractItem) {
       </div>
     </section>
 
-    <NCard size="small" :bordered="false" class="toolbar-card">
-      <div class="toolbar">
-        <label class="toolbar-field">
-          <span class="toolbar-field__label">搜索</span>
-          <NInput
-            v-model:value="search"
-            clearable
-            :disabled="loading"
-            placeholder="品种代码 / 名称 / 合约 / 板块"
-          />
-        </label>
-        <label class="toolbar-field toolbar-field--exchange">
-          <span class="toolbar-field__label">交易所</span>
-          <NSelect
-            v-model:value="exchange"
-            :options="exchangeOptions"
-            clearable
-            :disabled="loading"
-            placeholder="全部交易所"
-          />
-        </label>
-      </div>
-    </NCard>
-
     <NCard size="small" :bordered="false" class="table-card">
       <NDataTable
         :columns="columns"
-        :data="filteredRows"
+        :data="dominants"
         :loading="loading"
         :row-key="rowKey"
         :row-props="rowProps"
-        :pagination="{ pageSize: 20 }"
+        :pagination="false"
         size="small"
         striped
         flex-height
-        style="height: calc(100vh - 260px); min-height: 480px"
+        style="height: calc(100vh - 200px); min-height: 480px"
       />
       <p class="table-hint">
         行情 K 线使用 rank=1 真实主力合约；主连仅用于连续序列研究，不在此列表展示。
@@ -290,33 +203,9 @@ function openChart(row: DominantContractItem) {
   gap: var(--gy-space-6);
 }
 
-.toolbar-card,
 .table-card {
   background: var(--gy-bg-panel);
   border: 1px solid var(--gy-border);
-}
-
-.toolbar {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) 220px;
-  gap: var(--gy-space-3);
-}
-
-.toolbar-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.toolbar-field--exchange {
-  width: 220px;
-}
-
-.toolbar-field__label {
-  color: var(--gy-text-muted);
-  font-size: var(--gy-font-size-xs);
-  font-weight: 600;
 }
 
 .table-hint {
@@ -330,10 +219,6 @@ function openChart(row: DominantContractItem) {
 @media (max-width: 1199px) {
   .page-header {
     flex-direction: column;
-  }
-
-  .toolbar {
-    grid-template-columns: 1fr;
   }
 }
 </style>

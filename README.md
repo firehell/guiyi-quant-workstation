@@ -6,7 +6,7 @@
 
 Web **仅 Market 工作台**（`/` → `/market`）：69 品种 Canonical 历史行情 + EMA/HTDY/MACD。  
 API/CLI 保留 `/api/v1/market`、`/api/v1/data`、`/api/runtime` 与 `guiyi data *` / `guiyi runtime status`。  
-Signal / Strategy / Review / Dashboard / Watchlist Web 与 HTTP、signal RQ worker、盘中 Live、backtest 子系统均已卸或退役；源码与部分 DB 表可保留供后续重搭。
+Signal / Strategy / Review / Dashboard / Watchlist HTTP·worker·DB 表、语义合同、strategy_knowledge/specs、盘中 Live 表与 backtest 子系统均已退役；`packages/quant-core` 策略研究源码保留。
 
 ## 快速导航
 
@@ -18,7 +18,7 @@ Signal / Strategy / Review / Dashboard / Watchlist Web 与 HTTP、signal RQ work
 | 长期决策 | `DECISIONS.md` |
 | 测试入口 | `TESTING.md` |
 | 个人开发工作流 | `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md` |
-| 数据、架构、信号、指标 | `docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md` |
+| 数据、架构、指标 | `docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/INDICATOR_KERNEL.md` |
 
 接手时先读 `AGENTS.md` 和 `STATUS.md`，再按任务读取对应 deep canonical 或受控任务合同。
 

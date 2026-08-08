@@ -112,10 +112,10 @@ retired
 火天大有当前只登记风险边界：
 
 - Web 观察层基于 XMA 风格居中窗口，存在未来函数和重绘风险。
-- original 默认不得写入 `StrategySignal`、`strategy_signals`、`signal_events`、正式报告或通知链路；只有精确 `htdy_original_xma_15m_first_seen_v1` realtime observation policy 可在后续独立 Gate 中复用既有事件表。
+- original 默认不得写入正式信号/通知链路；旧 `strategy_signals` / `signal_events` 表与应用路径已退役。
 - strict 只具独立 causal 历史策略研究资格，不得据此恢复回测、历史扫描、live evaluator、alert 或企业微信入口。
-- 原始公式已归档到 `docs/strategy_specs/htdy/INDICATOR_SPEC.md`；公式级风险审查见 Git history（原 `INDICATOR_RISK_REVIEW.md` 已删）。
-- `huotian_dayou_original_v0` 的普通 capability 仍只能 observation-only；历史回测仍必须使用独立 causal strict 版本。精确实时重绘观察例外不改变这条 Registry 规则。
+- 原始公式与风险审查文档已从工作树删除，见 Git history（原 `docs/strategy_specs/htdy/*`、`INDICATOR_RISK_REVIEW.md`）。
+- `huotian_dayou_original_v0` 的普通 capability 仍只能 observation-only；历史回测仍必须使用独立 causal strict 版本。
 
 ## 4.1 HTDY realtime repainting observation policy 冻结
 
@@ -212,18 +212,14 @@ git diff --check
 `TASK-2026-07-11-002-htdy-indicator-core` 已补齐火天大有原始通达信公式文档：
 
 ```text
-docs/strategy_specs/htdy/INDICATOR_SPEC.md
-docs/strategy_specs/htdy/STRATEGY_SPEC.md
-services/quant-api/tests/test_htdy_indicator_risk.py
-# INDICATOR_RISK_REVIEW.md 已删，见 Git history
+# 原 docs/strategy_specs/htdy/* 与 test_htdy_indicator_risk.py 已删，见 Git history
 ```
 
 结论：
 
-- “缺少原始公式”阻塞已解除。
+- 原始公式曾补齐并完成 Web 观察层对齐；相关 SPEC 已退出工作树。
 - “可回测 / 可 live / 可预警”阻塞未解除。
-- 原始 `买多预警` / `卖空预警` 只翻译为 observation 字段，不映射为 `signal_events`。
-- 后续剩余路径：原始 observation-only PoC -> Web 观察层对齐 -> strict backward-looking 方案 -> Golden Sample -> 正式候选接入评估。
+- 原始 `买多预警` / `卖空预警` 只作为 observation 字段；旧信号表已 drop。
 
 ## 5.2 D4-00 源码 / XMA 审计状态（2026-07-19）
 

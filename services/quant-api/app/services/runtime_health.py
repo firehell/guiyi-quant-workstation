@@ -10,7 +10,7 @@ from typing import Any
 from redis import Redis
 from rq import Queue, Worker
 from rq.registry import DeferredJobRegistry, FailedJobRegistry, ScheduledJobRegistry, StartedJobRegistry
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.models.data_center import (
@@ -19,12 +19,10 @@ from app.models.data_center import (
     MarketDataFile,
     ProfileActiveBinding,
 )
-from app.models.signal import SignalNotification
-from app.queue import NOTIFICATION_QUEUE_NAME, SIGNAL_QUEUE_NAME, get_redis_connection
+from app.queue import get_redis_connection
 from app.after_market_scheduler import HEARTBEAT_KEY as AFTER_MARKET_HEARTBEAT_KEY
 from app.services.after_market_automation import discover_eligible_trading_days
 from app.services.trading_session_clock import TradingSessionClock
-from app.signal.stage9_wechat import CHANNEL as STAGE9_WECHAT_CHANNEL
 
 RUNTIME_STATUS_OK = "ok"
 RUNTIME_STATUS_DEGRADED = "degraded"
@@ -32,7 +30,7 @@ RUNTIME_STATUS_FAILED = "failed"
 RUNTIME_STATUS_UNKNOWN = "unknown"
 RUNTIME_STATUS_DISABLED = "disabled"
 
-RUNTIME_QUEUE_NAMES = (SIGNAL_QUEUE_NAME,)
+RUNTIME_QUEUE_NAMES: tuple[str, ...] = ()
 SENSITIVE_TEXT_PARTS = (
     "password",
     "passwd",
@@ -62,13 +60,8 @@ def build_runtime_health(
     live_market_phase: str | None = None,
 ) -> dict[str, Any]:
     current_time = now or datetime.now(UTC)
-    # Live polling / checkpoint runtime is permanently retired (Task06 cleanup).
-    del live_runtime_enabled, live_polling_expected, live_market_phase
-    notification_enabled = (
-        _env_enabled("GUIYI_WECHAT_AUTOSEND_ENABLED")
-        if notification_autosend_enabled is None
-        else notification_autosend_enabled
-    )
+    # Live polling / notification RQ surfaces are permanently retired.
+    del live_runtime_enabled, live_polling_expected, live_market_phase, notification_autosend_enabled
     freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
     after_market_archive_enabled = (
         _env_enabled("GUIYI_AFTER_MARKET_ARCHIVE_ENABLED") if archive_enabled is None else archive_enabled
@@ -96,30 +89,14 @@ def build_runtime_health(
         if rq_collector is not None:
             components["rq"] = rq_collector(redis_connection)
         else:
-            queue_names = RUNTIME_QUEUE_NAMES + ((NOTIFICATION_QUEUE_NAME,) if notification_enabled else ())
-            components["rq"] = _collect_rq_health(redis_connection, queue_names=queue_names)
+            components["rq"] = _collect_rq_health(redis_connection, queue_names=RUNTIME_QUEUE_NAMES)
     components["live_checkpoints"] = _retired_live_checkpoint_health(freshness_seconds=freshness_seconds)
+    components["notification_retry"] = _retired_notification_retry_health()
     if components["db"]["status"] == RUNTIME_STATUS_FAILED:
         db_error = {
             "status": RUNTIME_STATUS_FAILED,
             "error_type": "database_unavailable",
             "error_message": None,
-        }
-        components["notification_retry"] = {
-            **db_error,
-            "enabled": notification_enabled,
-            "channel": STAGE9_WECHAT_CHANNEL,
-            "total_count": 0,
-            "retry_pending_count": 0,
-            "due_retry_count": 0,
-            "failed_count": 0,
-            "sent_count": 0,
-            "skipped_count": 0,
-            "pending_count": 0,
-            "next_retry_at": None,
-            "last_sent_at": None,
-            "last_failed_at": None,
-            "last_error_type_counts": {},
         }
         components["archive"] = {
             **db_error,
@@ -136,11 +113,6 @@ def build_runtime_health(
             error_type="database_unavailable",
         )
     else:
-        components["notification_retry"] = _collect_notification_retry_health(
-            session,
-            current_time,
-            enabled=notification_enabled,
-        )
         components["archive"] = _collect_archive_health(session, enabled=after_market_archive_enabled)
         components["after_market_scheduler"] = _collect_after_market_scheduler_health(
             session,
@@ -294,94 +266,23 @@ def _apply_worker_coverage(queue_results: list[dict[str, Any]], worker_results: 
     return missing
 
 
-def _collect_notification_retry_health(session: Session, now: datetime, *, enabled: bool) -> dict[str, Any]:
-    try:
-        status_counts = {
-            status: count
-            for status, count in session.execute(
-                select(SignalNotification.status, func.count())
-                .where(SignalNotification.channel == STAGE9_WECHAT_CHANNEL)
-                .group_by(SignalNotification.status)
-            )
-        }
-        total_count = sum(status_counts.values())
-        due_retry_count = session.scalar(
-            select(func.count())
-            .select_from(SignalNotification)
-            .where(
-                SignalNotification.channel == STAGE9_WECHAT_CHANNEL,
-                SignalNotification.status == "retry_pending",
-                SignalNotification.next_retry_at <= now,
-            )
-        ) or 0
-        next_retry_at = session.scalar(
-            select(func.min(SignalNotification.next_retry_at)).where(
-                SignalNotification.channel == STAGE9_WECHAT_CHANNEL,
-                SignalNotification.status == "retry_pending",
-                SignalNotification.next_retry_at.is_not(None),
-            )
-        )
-        last_sent_at = session.scalar(
-            select(func.max(SignalNotification.sent_at)).where(
-                SignalNotification.channel == STAGE9_WECHAT_CHANNEL,
-                SignalNotification.status == "sent",
-            )
-        )
-        last_failed_at = session.scalar(
-            select(func.max(SignalNotification.last_attempt_at)).where(
-                SignalNotification.channel == STAGE9_WECHAT_CHANNEL,
-                SignalNotification.status == "failed",
-            )
-        )
-        error_type_counts = {
-            error_type: count
-            for error_type, count in session.execute(
-                select(SignalNotification.last_error_type, func.count())
-                .where(
-                    SignalNotification.channel == STAGE9_WECHAT_CHANNEL,
-                    SignalNotification.last_error_type.is_not(None),
-                )
-                .group_by(SignalNotification.last_error_type)
-            )
-        }
-    except Exception as exc:  # noqa: BLE001 - health endpoints must degrade instead of raising.
-        return {
-            "status": RUNTIME_STATUS_FAILED,
-            "enabled": enabled,
-            "channel": STAGE9_WECHAT_CHANNEL,
-            "total_count": 0,
-            "retry_pending_count": 0,
-            "due_retry_count": 0,
-            "failed_count": 0,
-            "sent_count": 0,
-            "skipped_count": 0,
-            "pending_count": 0,
-            "next_retry_at": None,
-            "last_sent_at": None,
-            "last_failed_at": None,
-            "last_error_type_counts": {},
-            **_error_fields(exc),
-        }
-
-    status = RUNTIME_STATUS_DISABLED if not enabled else RUNTIME_STATUS_OK
-    if enabled and (due_retry_count > 0 or status_counts.get("failed", 0) > 0):
-        status = RUNTIME_STATUS_DEGRADED
-
+def _retired_notification_retry_health() -> dict[str, Any]:
     return {
-        "status": status,
-        "enabled": enabled,
-        "channel": STAGE9_WECHAT_CHANNEL,
-        "total_count": total_count,
-        "retry_pending_count": status_counts.get("retry_pending", 0),
-        "due_retry_count": due_retry_count,
-        "failed_count": status_counts.get("failed", 0),
-        "sent_count": status_counts.get("sent", 0),
-        "skipped_count": status_counts.get("skipped", 0),
-        "pending_count": status_counts.get("pending", 0),
-        "next_retry_at": _iso(next_retry_at),
-        "last_sent_at": _iso(last_sent_at),
-        "last_failed_at": _iso(last_failed_at),
-        "last_error_type_counts": error_type_counts,
+        "status": RUNTIME_STATUS_DISABLED,
+        "enabled": False,
+        "retired": True,
+        "channel": "retired",
+        "total_count": 0,
+        "retry_pending_count": 0,
+        "due_retry_count": 0,
+        "failed_count": 0,
+        "sent_count": 0,
+        "skipped_count": 0,
+        "pending_count": 0,
+        "next_retry_at": None,
+        "last_sent_at": None,
+        "last_failed_at": None,
+        "last_error_type_counts": {},
         "error_type": None,
         "error_message": None,
     }
@@ -565,9 +466,6 @@ def _after_market_active_binding_end(session: Session) -> tuple[str | None, list
         ("intraday_research_v1", "1m"),
         ("intraday_research_v1", "5m"),
         ("intraday_research_v1", "15m"),
-        ("live_observation_v1", "1m"),
-        ("live_observation_v1", "5m"),
-        ("live_observation_v1", "15m"),
         ("long_horizon_daily_v1", "1d"),
     }
     rows = session.execute(

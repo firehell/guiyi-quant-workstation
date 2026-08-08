@@ -17,17 +17,12 @@ from app.models.data_center import (
     MarketDataFile,
     ProfileActiveBinding,
 )
-from app.models.signal import SignalNotification
 from app.services.runtime_health import _apply_worker_coverage, build_runtime_health
 
 
 def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> None:
     TestingSessionLocal = _session_factory()
     now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(_notification(status="sent", now=now, payload={"token": "should-not-leak"}))
-        session.commit()
-
     def override_get_db():
         with TestingSessionLocal() as session:
             yield session
@@ -55,8 +50,9 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
     assert payload["components"]["live_checkpoints"]["status"] == "disabled"
     assert payload["components"]["live_checkpoints"]["retired"] is True
     assert payload["components"]["live_checkpoints"]["ingest_count"] == 0
-    assert payload["components"]["notification_retry"]["sent_count"] == 1
+    assert payload["components"]["notification_retry"]["sent_count"] == 0
     assert payload["components"]["notification_retry"]["status"] == "disabled"
+    assert payload["components"]["notification_retry"]["channel"] == "retired"
     assert "data_core_v2_live_review" not in payload["components"]
     after_market = payload["components"]["after_market_scheduler"]
     assert after_market["status"] == "disabled"
@@ -116,32 +112,6 @@ def test_runtime_health_degrades_when_no_rq_workers() -> None:
     assert payload["components"]["live_checkpoints"]["status"] == "disabled"
     assert payload["components"]["notification_retry"]["status"] == "disabled"
 
-
-def test_runtime_health_degrades_for_due_notification_retry() -> None:
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(_notification(status="retry_pending", now=now, next_retry_at=now - timedelta(minutes=1), last_error_type="http_error"))
-        session.commit()
-
-        payload = build_runtime_health(
-            session,
-            redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
-            now=now,
-            live_runtime_enabled=True,
-            notification_autosend_enabled=True,
-        )
-
-    assert payload["status"] == "degraded"
-    live = payload["components"]["live_checkpoints"]
-    assert live["status"] == "disabled"
-    assert live["retired"] is True
-    notification = payload["components"]["notification_retry"]
-    assert notification["status"] == "degraded"
-    assert notification["retry_pending_count"] == 1
-    assert notification["due_retry_count"] == 1
-    assert notification["last_error_type_counts"]["http_error"] == 1
 
 
 def test_worker_coverage_requires_each_expected_queue() -> None:
@@ -243,9 +213,6 @@ def test_after_market_active_binding_end_uses_latest_passed_file_per_required_id
         ("intraday_research_v1", "1m"),
         ("intraday_research_v1", "5m"),
         ("intraday_research_v1", "15m"),
-        ("live_observation_v1", "1m"),
-        ("live_observation_v1", "5m"),
-        ("live_observation_v1", "15m"),
         ("long_horizon_daily_v1", "1d"),
     )
     with TestingSessionLocal() as session:
@@ -312,7 +279,7 @@ def test_after_market_active_binding_end_uses_latest_passed_file_per_required_id
         active_end, details = _after_market_active_binding_end(session)
 
     assert active_end == "2026-07-21"
-    assert len(details) == 7
+    assert len(details) == 4
     assert all(row["contract"] == "JM2609" for row in details)
 
 
@@ -435,33 +402,6 @@ def _rq_no_workers() -> dict:
         "error_message": None,
     }
 
-
-def _notification(
-    *,
-    status: str,
-    now: datetime,
-    payload: dict | None = None,
-    next_retry_at: datetime | None = None,
-    last_error_type: str | None = None,
-) -> SignalNotification:
-    return SignalNotification(
-        event_id=1,
-        signal_id=1,
-        task_no="task-runtime-health",
-        dedupe_key=f"enterprise_wechat:runtime-health:{status}:{next_retry_at}",
-        event_type="signal_created",
-        channel="enterprise_wechat",
-        status=status,
-        payload=payload or {},
-        error_message="https://example.invalid/webhook-token",
-        attempt_count=1,
-        max_attempts=3,
-        last_attempt_at=now,
-        next_retry_at=next_retry_at,
-        last_error_type=last_error_type,
-        response_status_code=500 if last_error_type else 200,
-        sent_at=now if status == "sent" else None,
-    )
 
 
 def _contains_no_secret_words(payload: dict) -> bool:

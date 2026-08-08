@@ -61,8 +61,8 @@ V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainCo
 
 - 策略研究、未来重建的回测和正式历史信号禁止未来数据泄漏、look-ahead bias 与未记录重绘；交易相关数值使用 `Decimal`。
 - 当前仓库不提供 `/api/backtests/**`、`/ws/backtests/**`、backtest Web 页面、worker/queue、CLI 或报告兼容入口。未来回测必须是基于 Canonical/MarketDataService 的新任务，并重新定义可复算的策略、参数、数据、订单、trade、equity 与 lineage 合同。
-- HTDY original 的 realtime first-seen observation-only 白名单见 `docs/INDICATOR_KERNEL.md` / `docs/SIGNAL_EVENTS.md`；**盘中 realtime 应用路径已退役**，仅作合同归档。
-- 信号链路语义固定为 `Strategy -> SignalEvent -> Notification Gate -> Channel`。当前无 mounted signal/review surface；信号与通知均是研究观察，不是交易指令。
+- HTDY original 的 realtime first-seen observation-only 白名单见 `docs/INDICATOR_KERNEL.md`；**盘中 realtime / Signal / Review 应用路径与合同已退役**（Git history）。
+- 旧信号链路与 DB 表已删除；未来重建须新任务新合同。研究观察始终不是交易指令。
 - live、Runtime promotion/switch、真实通知和企业微信 autosend 默认关闭；缺失、异常、过期或不一致的配置保持关闭。repair/replay/backfill/migration/EOD recalculation 不补发历史通知。
 - 所有信号与 Runtime 模式保持 `auto_order=false`；任何订单创建或提交请求都必须拒绝。
 
@@ -78,7 +78,6 @@ V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainCo
 | `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md` | 个人开发 canonical 流程与 Git 恢复方式 |
 | `docs/DATA_CENTER.md` | 数据资产、quality、profile 与 lineage |
 | `docs/ARCHITECTURE.md` | 运行架构与组件边界 |
-| `docs/SIGNAL_EVENTS.md` | SignalEvent、通知与观察边界（语义合同） |
 | `docs/INDICATOR_KERNEL.md` | 指标版本、契约与 HTDY policy |
 | `docs/tasks/GY-DATA-CORE-V2.md` | 数据核心 V2 active 业务合同与任务顺序 |
 

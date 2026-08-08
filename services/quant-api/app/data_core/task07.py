@@ -125,20 +125,12 @@ _READONLY_LINEAGE_PATHS = {
     "services/quant-api/app/services/canonical_market_data.py",
     "services/quant-api/app/services/core_cli.py",
     "services/quant-api/app/services/market_indicators.py",
-    "services/quant-api/app/services/review_lineage.py",
     "services/quant-api/app/services/runtime_health.py",
-    "services/quant-api/app/services/signal_lineage.py",
-    "services/quant-api/app/signal/events.py",
-    "services/quant-api/app/signal/scanner.py",
 }
 _FROZEN_OBSERVATION_PREFIXES = (
-    "services/quant-api/app/backtest/htdy_",
     "services/quant-api/app/services/after_market_",
     "services/quant-api/app/services/htdy_",
-    "services/quant-api/app/services/live_",
     "services/quant-api/app/services/s607_",
-    "services/quant-api/app/signal/jm_",
-    "services/quant-api/app/signal/stage9_",
 )
 _OFFLINE_DATA_TOOL_PREFIXES = (
     "services/quant-api/app/services/rqdata_ingest/",

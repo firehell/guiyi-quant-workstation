@@ -315,8 +315,7 @@ def test_provider_pending_waits_without_advancing_watermark_or_consuming_retry()
         assert checkpoint.next_retry_at == datetime(2026, 7, 22, 18, 5)
 
 
-def test_scheduler_success_never_creates_signal_notification_scan_or_strategy_rows() -> None:
-    from app.models.signal import SignalEvent, SignalNotification, SignalScanTask, StrategySignal
+def test_scheduler_success_updates_checkpoint_without_side_channel_tables() -> None:
     from app.services.after_market_automation import AfterMarketAutomationService, DailyArchiveResult
 
     SessionLocal = _session_factory()
@@ -333,7 +332,7 @@ def test_scheduler_success_never_creates_signal_notification_scan_or_strategy_ro
         )
         session.add(checkpoint)
         session.commit()
-        AfterMarketAutomationService(
+        result = AfterMarketAutomationService(
             session=session,
             clock=FakeCalendarClock([trading_day]),
             daily_runner=lambda _day: DailyArchiveResult(
@@ -344,17 +343,10 @@ def test_scheduler_success_never_creates_signal_notification_scan_or_strategy_ro
             now=datetime(2026, 7, 22, 18, 0),
         ).run_once(checkpoint=checkpoint)
 
-        counts = {
-            model.__tablename__: session.scalar(select(func.count()).select_from(model))
-            for model in (SignalEvent, SignalNotification, SignalScanTask, StrategySignal)
-        }
-
-    assert counts == {
-        "signal_events": 0,
-        "signal_notifications": 0,
-        "signal_scan_tasks": 0,
-        "strategy_signals": 0,
-    }
+        session.refresh(checkpoint)
+        assert result["status"] == "success"
+        assert checkpoint.last_successful_trading_day == trading_day
+        assert checkpoint.status == "success"
 
 
 @pytest.mark.parametrize(

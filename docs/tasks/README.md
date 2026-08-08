@@ -7,11 +7,10 @@
 | 范围 | 约定 | 示例 |
 |---|---|---|
 | `docs/` 顶层文件 | `SCREAMING_SNAKE.md` | `DATA_CENTER.md` |
-| `docs/` 子目录 | `snake_case` | `strategy_knowledge/su_bing/` |
+| `docs/` 子目录 | `snake_case` | `tasks/` |
 | 本目录任务合同 | `TASK-ID-SLUG.md`（大写 ID + 连字符） | `GY-DATA-CORE-V2.md`、`S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md` |
 | `openspec/`、`.kiro/`、`prompts/` | kebab-case | `slim-web-to-market`、`code-review.md` |
-| 苏冰公开知识路径 | `su_bing`（underscore） | `docs/strategy_knowledge/su_bing/` |
-| Cursor skill 目录名 | 可保留 kebab（工具惯例） | `.agents/skills/su-bing-strategy/` |
+| Cursor skill 目录名 | 可保留 kebab（工具惯例） | `.agents/skills/futures-data/` |
 
 禁止：用 `*_latest` 目录名暗示 live 状态；在 `docs/` 顶层混用 kebab 文件名；在 skill 内复制 docs 已有的 SCREAMING 正文造成双轨。
 

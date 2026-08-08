@@ -67,13 +67,13 @@ RQData
 
 ### 2026-08-07 盘中 Live 代码退役
 
-以下应用代码已从仓库移除（生产表物理 drop 不在本变更；需另给受控外部操作意图）：
+以下应用代码与生产表已退役（表由 Alembic `20260808_0034` 物理 drop）：
 
-- poll 盘中 K 线栈：`live_1m_ingest` / `live_multi_tf_aggregation` / `LiveMinuteBar` /
-  `LiveAggregatedBar` 读写、`/market/live/*`、JM live evaluator、HTDY realtime snapshot、
-  前端 Live 模式。
-- Task 06 observation：`guiyi data live`、`live_review_loop/`、`live_observation_bars` /
-  SignalDecision / EOD Sample 应用路径。
+- poll 盘中 K 线栈：`live_minute_bars` / `live_aggregated_bars` 及 checkpoint 表、
+  `/market/live/*`、JM live evaluator、HTDY realtime snapshot、前端 Live 模式。
+- Task 06 observation：`live_observation_bars`、`signal_decisions*`、`research_samples`、
+  `retention_runs` 与相关应用路径。
+- Signal/Review/Watchlist 表与 HTTP 应用面。
 - 旧 `app/data_sources/` Provider 包装层。
 
 当前应用层不写盘中行情。历史正式读路径仍为 Canonical Parquet + Catalog；盘中监听与

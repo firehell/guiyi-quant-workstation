@@ -5,7 +5,7 @@
 ## Current surface vs long-term boundary
 
 - **Current surface**：Web 仅 Market（`/` → `/market`）；API 仅 `/api/v1/market`、`/api/v1/data`、`/api/runtime`；CLI `guiyi data *` / `guiyi runtime status`；盘后 scheduler；Canonical 历史读。
-- **Long-term boundary**：策略研究源码、Signal/Review 语义合同与 DB 表可保留供后续重搭；当前无 Signal/Review/Strategy/Dashboard Web 或 HTTP 入口，无 signal RQ worker，无盘中 Live 应用路径，无 backtest 子系统。
+- **Long-term boundary**：`packages/quant-core` 策略/指标研究源码可保留；Signal/Review/Strategy HTTP·worker·DB 表、旧语义合同与 strategy_knowledge/specs 已退役（见 Git history）。无盘中 Live 应用路径与相关生产表，无 backtest 子系统。
 
 ## 1. 系统定位
 
@@ -102,17 +102,16 @@ EOD --> PG
 - `/api/runtime` 与 `guiyi runtime status`；
 - after-market scheduler（默认关闭）。
 
-已从应用卸载（表/源码可保留，勿当 active surface）：
+已从仓库删除（勿当 active surface；恢复仅用 Git history）：
 
-- `/api/signals`、`/ws/signals`、`/api/v1/strategies`、`/api/dashboard`、`/api/reviews`、watchlists、futures_research；
-- signal/notification RQ worker；
-- poll 盘中 Live K 线与 Task 06 observation 应用路径。
+- Signal/Review/Strategy/Dashboard/Watchlist/futures_research HTTP、WS、服务、ORM 与相关测试；
+- signal/notification RQ worker 与队列入口；
+- `docs/SIGNAL_EVENTS.md`、`docs/strategy_knowledge/`、`docs/strategy_specs/`；
+- poll 盘中 Live / Task 06 observation 应用路径；生产表由 Alembic `20260808_0034` drop。
 
-## 5. 信号与复盘语义（非当前 Web）
+## 5. 信号与复盘（已退役）
 
-语义合同见 `docs/SIGNAL_EVENTS.md`。链路仍为
-`Strategy -> SignalEvent -> Notification Gate -> Channel`，默认关闭、无订单。
-当前仓库不提供 Signal/Review Web、HTTP 或 worker；重建时必须遵守该合同与 default-off 边界。
+旧 SignalEvent / 通知 / 复盘合同与表已删除。未来若重建，必须作为新任务定义新合同与新 schema，不得恢复旧兼容入口；`auto_order=false` 与无订单边界始终成立。
 
 ## 6. Runtime 与外部操作
 
@@ -128,4 +127,4 @@ EOD --> PG
 
 - 旧指标合同、S6-07 EOD、Audit V2 等一次性报告已从工作树删除，只可通过 Git history 追溯。
 - 旧回测、OOS、S6-08/S6-09/S6-10 packet、receipt 和验收证据同样只可通过 Git history 恢复。
-- Canonical、Catalog、MainContractMap 与未 drop 的 Signal/Review 表不属于本次仓库证据清理范围。
+- Canonical、Catalog 与 MainContractMap 不属于退役面清理范围；Signal/Review/Live 表由 `20260808_0034` 物理 drop。

@@ -323,3 +323,45 @@ def test_historical_jm_first_trading_day_after_holiday_has_no_night() -> None:
         "day_am_2",
         "day_pm",
     ]
+
+
+def test_czce_ignores_cnfe_product_continuous_day_and_uses_builtin_segments() -> None:
+    """Wrong CNFE continuous 09:00-15:00 must not drive CZCE/cj expected coverage."""
+    with _session() as session:
+        trading_day = date(2026, 7, 7)
+        session.add(
+            TradingCalendar(
+                exchange_code="CZCE",
+                trade_date=trading_day,
+                is_trading_day=True,
+                has_night_session=False,
+                provider="fixture",
+            )
+        )
+        session.add(
+            TradingSession(
+                exchange_code="CNFE",
+                instrument_symbol="cj",
+                session_name="regular",
+                start_time=time(9, 0),
+                end_time=time(15, 0),
+                crosses_midnight=False,
+                is_active=True,
+                provider="fixture_bad_cnfe",
+            )
+        )
+        session.commit()
+
+        clock = TradingSessionClock(session)
+        windows = clock.windows_for_trading_day(trading_day, product="cj", exchange="CZCE")
+        expected_minutes = clock.expected_minute_count(trading_day, product="cj", exchange="CZCE")
+
+    assert [item.name for item in windows] == ["day_am1", "day_am2", "day_pm"]
+    assert [(item.start.time(), item.end.time()) for item in windows] == [
+        (time(9, 0), time(10, 15)),
+        (time(10, 30), time(11, 30)),
+        (time(13, 30), time(15, 0)),
+    ]
+    # 75 + 60 + 90 = 225 minutes → 15 bars at 15m
+    assert expected_minutes == 225
+    assert expected_minutes // 15 == 15

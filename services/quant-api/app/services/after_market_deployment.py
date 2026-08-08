@@ -18,11 +18,11 @@ CHECKPOINT_RECOVERY_ONLY_MODE = "checkpoint_recovery_only"
 CODE_ONLY_MODE = "code_only"
 CLEAN_STATUS_SHA256 = hashlib.sha256(b"").hexdigest()
 ROW_COUNT_TABLES = (
-    "backtest_tasks",
-    "backtest_reports",
-    "signal_scan_tasks",
-    "strategy_signals",
-    "signal_events",
+    "data_download_tasks",
+    "after_market_scheduler_checkpoints",
+    "market_datasets",
+    "market_partitions",
+    "data_gaps",
 )
 COMMON_ALLOWED_OPERATIONS = (
     "runtime_fetch_approved_commit",

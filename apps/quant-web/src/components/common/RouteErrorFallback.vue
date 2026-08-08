@@ -10,8 +10,8 @@ const props = defineProps<{
 
 const router = useRouter()
 
-function goDashboard() {
-  void router.push({ name: 'dashboard' })
+function goMarket() {
+  void router.push({ name: 'market' })
 }
 
 function retry() {
@@ -29,7 +29,7 @@ function retry() {
       <template #footer>
         <div class="route-error-fallback__actions">
           <NButton type="primary" @click="retry">重试</NButton>
-          <NButton quaternary @click="goDashboard">返回仪表盘</NButton>
+          <NButton quaternary @click="goMarket">返回行情</NButton>
         </div>
       </template>
     </NResult>

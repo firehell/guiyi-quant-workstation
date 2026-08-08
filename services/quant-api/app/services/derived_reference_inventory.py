@@ -40,10 +40,7 @@ _CATEGORY_REASONS = {
 }
 _CATEGORY_TABLES = {
     "indicator_cache": (),
-    "signal_review": (
-        "review_attachments", "review_notes", "review_tags", "signal_events", "signal_notifications",
-        "signal_scan_tasks", "strategy_signals",
-    ),
+    "signal_review": (),
     "live_eod_sample": (
         "after_market_scheduler_checkpoints",
     ),
@@ -175,79 +172,6 @@ _RELATION_RULES = (
         "status is null or outside known active/inactive values",
         ("pending", "running", "retrying", "completed", "success", "failed", "cancelled"), (), "review_required",
         "unrecognized download status cannot prove the task inactive",
-    ),
-    _RelationRule(
-        "strategy_signal_legacy_or_active", "strategy_signals",
-        ("id", "profile_id", "market_data_file_id", "status", "is_active"),
-        '("profile_id" IS NOT NULL OR "market_data_file_id" IS NOT NULL OR "is_active" = {p} '
-        'OR "status" IN ({p}, {p}, {p}))',
-        "legacy profile/file reference or active signal status", (True, "pending", "active", "triggered"),
-        ("profile_id", "market_data_file_id"), "review_required",
-        "signal lineage or active status still references legacy surfaces",
-    ),
-    _RelationRule(
-        "unknown_strategy_signal_active_state", "strategy_signals", ("id", "is_active"),
-        '"is_active" IS NULL', "is_active is null", (), (), "review_required",
-        "missing active state cannot prove the signal inactive",
-    ),
-    _RelationRule(
-        "signal_event_legacy_or_active", "signal_events",
-        ("id", "profile_id", "market_data_file_id", "lifecycle_status"),
-        '("profile_id" IS NOT NULL OR "market_data_file_id" IS NOT NULL OR "lifecycle_status" IN ({p}, {p}, {p}, {p}))',
-        "legacy profile/file reference or active lifecycle", ("created", "pending", "active", "new"),
-        ("profile_id", "market_data_file_id"), "review_required",
-        "signal event lineage or lifecycle remains active",
-    ),
-    _RelationRule(
-        "unknown_signal_event_lifecycle", "signal_events", ("id", "lifecycle_status"),
-        '("lifecycle_status" IS NULL OR "lifecycle_status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}))',
-        "lifecycle is null or outside known active/inactive values",
-        ("created", "pending", "active", "new", "viewed", "closed", "archived"), (), "review_required",
-        "unrecognized signal event lifecycle cannot prove the event inactive",
-    ),
-    _RelationRule(
-        "review_note_source_reference", "review_notes", ("id", "source_type", "source_id"),
-        '"source_id" IS NOT NULL', "source_id is not null", (), ("source_type", "source_id"), "review_required",
-        "review evidence still references a consumer row",
-    ),
-    _RelationRule(
-        "review_attachment_reference", "review_attachments", ("id", "review_id"),
-        '"review_id" IS NOT NULL', "review_id is not null", (), ("review_id",), "review_required",
-        "review attachment still references a review row",
-    ),
-    _RelationRule(
-        "active_review_tag", "review_tags", ("id", "is_active"),
-        '"is_active" = {p}', "is_active = true", (True,), (), "review_required",
-        "active review tag remains a surviving consumer dependency",
-    ),
-    _RelationRule(
-        "signal_scan_legacy_or_active", "signal_scan_tasks",
-        ("id", "profile_id", "market_data_file_id", "status"),
-        '("profile_id" IS NOT NULL OR "market_data_file_id" IS NOT NULL OR "status" IN ({p}, {p}, {p}))',
-        "legacy profile/file reference or active scan status", ("pending", "running", "retrying"),
-        ("profile_id", "market_data_file_id"), "review_required",
-        "signal scan lineage or execution remains active",
-    ),
-    _RelationRule(
-        "unknown_signal_scan_status", "signal_scan_tasks", ("id", "status"),
-        '("status" IS NULL OR "status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}))',
-        "status is null or outside known active/inactive values",
-        ("pending", "running", "retrying", "completed", "partial_failed", "failed", "cancelled"),
-        (), "review_required", "unrecognized signal scan status cannot prove the task inactive",
-    ),
-    _RelationRule(
-        "signal_notification_reference", "signal_notifications", ("id", "event_id", "signal_id", "status"),
-        '("event_id" IS NOT NULL OR "signal_id" IS NOT NULL OR "status" IN ({p}, {p}, {p}, {p}))',
-        "event/signal reference or pending notification status", ("pending", "retrying", "retry_pending", "sending"),
-        ("event_id", "signal_id"), "review_required",
-        "notification evidence or delivery remains linked to signal consumers",
-    ),
-    _RelationRule(
-        "unknown_signal_notification_status", "signal_notifications", ("id", "status"),
-        '("status" IS NULL OR "status" NOT IN ({p}, {p}, {p}, {p}, {p}, {p}, {p}))',
-        "status is null or outside known active/inactive values",
-        ("pending", "retrying", "retry_pending", "sending", "sent", "failed", "cancelled"),
-        (), "review_required", "unrecognized notification status cannot prove delivery inactive",
     ),
     *tuple(
         _RelationRule(

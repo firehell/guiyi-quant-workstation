@@ -228,6 +228,59 @@ def test_list_dominants_dedupes_case_insensitive_product_keys() -> None:
         assert ap_items[0].sector == "agri"
 
 
+def test_list_dominants_keeps_only_active_universe_products(tmp_path) -> None:
+    active_path = tmp_path / "active_products.txt"
+    # Minimal valid universe file shape is enforced by load_active_products (count=69).
+    # Build a 69-product file that includes jm/rb/cj and excludes retired wr.
+    products = ["jm", "rb", "cj"] + [f"p{i:02d}" for i in range(66)]
+    active_path.write_text("\n".join(products) + "\n", encoding="utf-8")
+
+    factory = _session_factory()
+    with factory() as session:
+        session.add(Exchange(code="DCE", name="大连商品交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
+        session.add(Exchange(code="SHFE", name="上海期货交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
+        session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
+        session.add(Instrument(symbol="rb", name="螺纹钢", exchange_code="SHFE", is_active=True))
+        session.add(Instrument(symbol="wr", name="线材", exchange_code="SHFE", is_active=False))
+        session.add_all(
+            [
+                MainContractMap(
+                    instrument_symbol="jm",
+                    trade_date=date(2026, 7, 7),
+                    rank=1,
+                    contract_code="JM2609",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="map-jm",
+                ),
+                MainContractMap(
+                    instrument_symbol="rb",
+                    trade_date=date(2026, 7, 7),
+                    rank=1,
+                    contract_code="RB2510",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="map-rb",
+                ),
+                MainContractMap(
+                    instrument_symbol="wr",
+                    trade_date=date(2026, 7, 7),
+                    rank=1,
+                    contract_code="WR2510",
+                    rule="volume_open_interest",
+                    provider="rqdata",
+                    data_version="map-wr",
+                ),
+            ]
+        )
+        session.commit()
+
+        response = DominantContractReader(session, active_products_path=active_path).list_dominants()
+        products_out = {item.product for item in response.items}
+        assert products_out == {"jm", "rb"}
+        assert "wr" not in products_out
+
+
 def test_list_dominants_skips_synthetic_mapping_and_uses_previous_actual_contract() -> None:
     factory = _session_factory()
     with factory() as session:

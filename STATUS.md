@@ -19,10 +19,10 @@
 api/web 由 launchd 指向 `/Volumes/扩展盘/guiyi-quant-workstation`；`com.guiyi.quant-worker-signals` 保持 bootout。
 已配置 `GUIYI_CANONICAL_DATA_ROOT` 指向正式 Canonical 根，Market bars 只读恢复；
 行情页已去掉「浏览 / 严格研究」切换。通知、live 及退役 HTDY label 保持关闭，自动交易仍不在项目范围。
-前序 `v0.1` / `94f70c72…` 仍为 release 锚点；本次未执行正式行情写入或 alembic upgrade。
+前序 `v0.1` / `94f70c72…` 仍为 release 锚点。2026-08-08 已按用户意图执行生产 Alembic `20260805_0033 → 20260808_0034`（退役面表 drop）；未执行 RQData/Canonical 写入。
 
 Task 07 Stage A/B 的最新仓库证据记录 release/main/tag 已收口；历史退役窗口曾回读
-`20260803_0032`，当前生产 head 为 `20260805_0033`。
+`20260803_0032`，当前生产 head 为 `20260808_0034`。
 
 Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划”。历史 candidate 基于 `develop@364753e72458641e226280e326841919539c1354`，仅从 `config/data_core_v2_targets.yaml`、Catalog 和 MainContractMap 生成 JM 显式目标，再通过既有 Canonical reader 和 `MarketDataService` 只读验收。该 commit 与既有协作记录是历史定位信息，不是继续开发的前置授权。
 
@@ -32,20 +32,26 @@ Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划�
 
 Web 观察面已精简为 **Market 工作台 only**（`/` → `/market`；69 品种历史行情 + EMA10/21/60、火天大有、MACD）。
 今日工作台、信号监控、策略中心、复盘中心、数据中心、运行状态等 Web 入口已去掉；
-对应 `/api/signals`、`/ws/signals`、`/api/v1/strategies`、`/api/dashboard`、`/api/reviews`、
-watchlists / futures_research HTTP 路由已从应用卸载；signal/notification RQ worker 入口已退役。
+对应 Signal/Review/Strategy/Dashboard/Watchlist/futures_research HTTP、服务、ORM、RQ worker、
+语义合同与 strategy_knowledge/specs 已从仓库删除；生产相关表已由 `20260808_0034` drop。
 **保留**：`/api/v1/market` Canonical 历史读、`/api/v1/data` 与 `/api/runtime`（含 CLI
-`guiyi data *` / `guiyi runtime status`）、盘后 scheduler、Canonical data；
-signal/review 等 DB 表与 quant-core 策略研究源码本轮未删，供后续重搭。
-盘中 poll Live K 线与 Task 06 observation 应用代码已退役；盘中能力待后续新实现重建。
+`guiyi data *` / `guiyi runtime status`）、盘后 scheduler、Canonical data、`packages/quant-core`。
+盘中 Live / Task 06 应用路径与生产表均已退役；盘中能力待后续新实现重建。
 tracked legacy evidence 以及主工程被 Git 忽略的
 `/Volumes/扩展盘/guiyi-quant-workstation/backtests/`（87 个文件，约 50 MB）已精确清理。
 此处不代表 release、Runtime promotion、生产 DB/正式数据删除、launchd/Redis/其他 host 清理
 或服务停止已经发生。
 
+### 2026-08-08 退役面清理与生产表 Drop
+
+- 删除 Signal/Review/Strategy/Dashboard/Watchlist/notification 应用代码、ORM、schemas、worker 模板。
+- 按 1B 删除 `docs/SIGNAL_EVENTS.md`、`docs/strategy_knowledge/`、`docs/strategy_specs/` 与相关 skills。
+- 新增不可逆 Alembic `20260808_0034`；生产一次 upgrade：drop Live/Task06 + Signal/Review/Watchlist 共 18 表及 `reject_signal_decision_update`；复验 residual=0；Catalog 表保留。
+- backtest 表此前已由 `0033` drop；仓库残留引用已清理。
+
 ### 2026-08-08 文档卫生与 Market 双源修复
 
-- Canonical / deep docs 已收口为 Market-only current surface；Signal 等为语义合同。
+- Canonical / deep docs 已收口为 Market-only current surface；旧 Signal 合同已删（Git history）。
 - 一次性 `data/reports/**`、会话产物、已完成 OpenSpec/Kiro Spec、STRATEGY/GOLDEN/OFFLINE/RISK 验收文档已删或归档；引用改指 Git history。
 - `dominants` coverage / `quote_ready` 改为 Catalog `actual_dominant` 口径，与 `/bars/canonical` 对齐；前端提示过期 MainContractMap 与 DataGap reason 标签。
 - **未**执行 RQData / 正式 Canonical / 生产 DB 写入。若列表仍显示过期主力（如 JM2509）或 Chart DataGap，需另给 MainContractMap/Canonical 更新的精确范围执行意图。
@@ -76,7 +82,7 @@ production_writes=false
 | GY-DATA-CORE-V2 Task 00～03 | completed on develop | 完成事实可由历史证据追溯；不是后续授权 |
 | GY-DATA-CORE-V2 Task 04 | completed on develop | Canonical 自身质量准入、统一读取与普通消费者回归；legacy Shadow 不是准入条件 |
 | GY-DATA-CORE-V2 Task 05 | completed on develop | trusted consumers 与 fail-closed derived/reference inventory；不含真实删除 |
-| GY-DATA-CORE-V2 Task 06 | retired from application code | 历史合同曾合入 develop；`guiyi data live` / `live_review_loop` 应用路径已移除；表物理 drop 未做 |
+| GY-DATA-CORE-V2 Task 06 | retired + tables dropped | 应用路径已移除；生产表由 `20260808_0034` drop；residual=0 |
 | GY-DATA-CORE-V2 Task 07 Stage C | implementation candidate | 按当前代码运行本地定向与领域验证；生产只读验收未执行 |
 | GY-DATA-CORE-V2 Task 08 | pending | Stage D Runtime promotion 的独立业务任务；任何真实切换需新的精确范围执行意图 |
 | GY-DATA-PRODUCT-RETIREMENT-21 | completed / released | 21 品种全链路删除、69 品种七周期刷新、Runtime 发布与残留验证完成 |
@@ -85,8 +91,9 @@ production_writes=false
 | M1 historical update | implementation on develop | `data update` 默认 dry-run；apply 采用惰性组合、Calendar/Session/MainContractMap 后重规划、Direct→Aggregate→严格窗口校验。未执行真实 RQData、DB、Canonical 或 Runtime 操作。 |
 | M2 retained-universe audit | implementation on develop | `data audit --scope m2 --universe active` 固定审计 69 个保留品种的 seven-frequency Catalog/Gap/Manifest/Parquet、lineage、rank=1 mapping 与确定性 `MarketDataService` probes；生产只读验收尚未执行。 |
 | Backtest/S6 repository retirement | implementation on develop | 旧 API/Web/worker/queue/CLI、S6-08/09/10 control plane、tracked legacy evidence 与精确 ignored `backtests/` host output 已退出；完整 backend/frontend 验证与 launchd/Redis/Runtime/生产数据等其余外部清理由后续任务负责 |
-| poll Live K 线栈退役 | implementation on develop | 盘中 poll ingest/聚合/`/market/live/*`/live signal/HTDY realtime/前端 Live 模式已删；盘中能力待重建；未 drop 生产表 |
-| slim-web-to-market | implementation on develop | Web 仅 Market；卸掉 signal/strategy/dashboard/review/watchlists/futures_research 可执行面与 RQ worker；保留 market/data/runtime API+CLI；未 drop DB 表 |
+| poll Live K 线栈退役 | completed on develop + prod drop | 应用代码已删；生产 Live 表由 `20260808_0034` drop |
+| slim-web-to-market | completed on develop + prod drop | Web 仅 Market；应用面与 DB 表已删；保留 market/data/runtime API+CLI 与 quant-core |
+| retired-surface-drop-0034 | completed / production applied | `20260805_0033→20260808_0034`；18 表 + trigger drop；Catalog 保留 |
 | docs-hygiene + dominants Catalog | implementation on develop | Market-only 文档收口；删 reports/会话产物；dominants coverage 对齐 Catalog；未做正式补数 |
 
 ## 未完成事项与执行边界
@@ -112,13 +119,14 @@ production_writes=false
 
 | 事实 | 当前证据值 | 边界 |
 |---|---|---|
-| PostgreSQL revision | `20260805_0033` | 历史 `v0.1` 部署只读回读为 head；退役窗口曾为 `20260803_0032` |
+| PostgreSQL revision | `20260808_0034` | 2026-08-08 退役面 drop 后 head；先前为 `20260805_0033` / `20260803_0032` |
 | 生产 Runtime checkout | `develop` 工作树（非 GuiyiRuntime） | launchd api/web 指向本仓；live/通知关闭；signal worker bootout |
 | 21 品种退役 receipt | packet `fee133a5…`; residual DB/files `0/0` | 删除已提交，rollback tag 只回退代码，数据恢复需从 RQData 重建 |
 | Canonical closeout snapshot | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 历史只读证据；Stage C 将重新验收明确目标 |
 | MainContractMap closeout snapshot | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 历史只读证据；不代替 Stage C 重验 |
 | legacy compatibility | PR #90～#94 与历史 evidence 保留 | 不再扩展，也不作为 Task 07 准入或执行授权 |
 | 旧 backtest/S6 控制面 | retired from repository | 历史事实仅由 Git 追溯，不保留 compatibility 或恢复入口 |
+| Signal/Review/Live 表 | dropped on production | `20260808_0034`；information_schema residual=0；trigger/function 不存在 |
 
 ## 不可宣称
 
@@ -129,4 +137,4 @@ production_writes=false
 - 不可宣称所有历史资产 residual 为零，也不可把历史 backtest 或单次 smoke 写成策略盈利、实盘或自动交易准入。
 - 不可从 release/tag 意图推导 Runtime/live/通知权限，也不可从任何意图推导订单权限。
 
-相关定义见 `docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/SIGNAL_EVENTS.md` 与 `docs/INDICATOR_KERNEL.md`。
+相关定义见 `docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md` 与 `docs/INDICATOR_KERNEL.md`。

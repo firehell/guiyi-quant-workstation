@@ -17,6 +17,14 @@ from app.services.jm_session_contract import (
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 NIGHT_SESSION_CUTOFF = time(18, 0)
 
+# Zhengzhou day-session segments used when DB lacks CZCE templates.
+# 15m bar count: 5 + 4 + 6 = 15 (matches typical CZCE day-only products such as cj).
+_CZCE_DAY_SESSION_SPECS: tuple[tuple[str, time, time], ...] = (
+    ("day_am1", time(9, 0), time(10, 15)),
+    ("day_am2", time(10, 30), time(11, 30)),
+    ("day_pm", time(13, 30), time(15, 0)),
+)
+
 
 @dataclass(frozen=True)
 class SessionWindow:
@@ -300,9 +308,26 @@ class TradingSessionClock:
                 .order_by(TradingSession.instrument_symbol.desc(), TradingSession.start_time)
             )
         )
-        specific = [row for row in rows if (row.instrument_symbol or "").lower() == product and row.exchange_code == exchange]
+        specific = [
+            row
+            for row in rows
+            if (row.instrument_symbol or "").lower() == product and row.exchange_code == exchange
+        ]
         if specific:
             return specific
+        exchange_generic = [
+            row for row in rows if row.instrument_symbol is None and row.exchange_code == exchange
+        ]
+        if exchange_generic:
+            return exchange_generic
+        # Never let CNFE product-specific continuous day templates override a real exchange.
+        if exchange == "CZCE":
+            return _czce_day_session_defaults()
+        if exchange != "CNFE":
+            cnfe_generic = [
+                row for row in rows if row.instrument_symbol is None and row.exchange_code == "CNFE"
+            ]
+            return cnfe_generic
         product_rows = [row for row in rows if (row.instrument_symbol or "").lower() == product]
         return product_rows or [row for row in rows if row.instrument_symbol is None]
 
@@ -372,3 +397,20 @@ def _local_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
     return value.astimezone(SHANGHAI).replace(tzinfo=None)
+
+
+def _czce_day_session_defaults() -> list[TradingSession]:
+    """In-memory CZCE day segments; not persisted."""
+    return [
+        TradingSession(
+            exchange_code="CZCE",
+            instrument_symbol=None,
+            session_name=name,
+            start_time=start_time,
+            end_time=end_time,
+            crosses_midnight=False,
+            is_active=True,
+            provider="builtin_czce_day",
+        )
+        for name, start_time, end_time in _CZCE_DAY_SESSION_SPECS
+    ]

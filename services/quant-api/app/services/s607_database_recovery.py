@@ -96,11 +96,11 @@ def build_recovery_manifest(
         "unproven_fields": unresolved,
         "allowed_tables": [
             "profile_active_bindings",
-            "backtest_tasks",
-            "backtest_reports",
             "after_market_scheduler_checkpoints",
         ],
         "forbidden_tables": [
+            "backtest_tasks",
+            "backtest_reports",
             "signal_events",
             "signal_notifications",
             "strategy_signals",

@@ -67,26 +67,6 @@ def test_retirement_contract_uses_exact_21_product_chinese_mapping() -> None:
     assert RETIRED_PRODUCTS == EXPECTED_RETIRED_PRODUCTS
 
 
-def test_retired_backtest_strategies_have_no_signal_scan_entry() -> None:
-    from app.services.strategy_registry import list_strategy_registry
-
-    entries = list_strategy_registry()
-    retired_codes = {
-        "jm_v1b_daily_direction_fast_entry",
-        "su_bing_jm_daily_ema21_macd_volume",
-        "su_bing_jm_daily_score2of4",
-        "su_bing_jm_daily_trend_cross_score2",
-    }
-
-    assert retired_codes.isdisjoint({entry["strategy_code"] for entry in entries})
-    assert [entry["strategy_code"] for entry in entries if entry["scan_endpoint"] == "/api/signals/scan"] == [
-        "su_bing_ema21"
-    ]
-    assert any(
-        entry["strategy_code"] == "su_bing_jm_v1b_short_hold" and entry["scan_endpoint"] is None
-        for entry in entries
-    )
-
 
 def test_contract_product_parses_exact_product_without_prefix_matching() -> None:
     assert contract_product("PP_F.MAIN") == "pp_f"

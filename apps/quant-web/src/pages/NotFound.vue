@@ -14,7 +14,7 @@ const router = useRouter()
       <CapabilityBadge kind="unavailable" />
     </template>
     <template #actions>
-      <NButton type="primary" @click="router.push({ name: 'dashboard' })">返回仪表盘</NButton>
+      <NButton type="primary" @click="router.push({ name: 'market' })">返回行情</NButton>
     </template>
     <p class="not-found__hint">请从侧栏选择已注册页面。未知 URL 不会执行业务请求。</p>
   </PageShell>

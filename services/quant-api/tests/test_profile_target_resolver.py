@@ -171,14 +171,14 @@ def test_missing_target_boundary_is_reported_fail_closed() -> None:
     assert result.issues[0].reason == "missing_target_boundary"
 
 
-def test_profile_configs_freeze_full_history_and_live_semantics() -> None:
+def test_profile_configs_freeze_full_history_semantics() -> None:
     configs = {
         path.stem: json.loads(path.read_text(encoding="utf-8"))
         for path in (PROJECT_ROOT / "configs" / "data_profiles").glob("*.json")
     }
+    assert "live_observation_v1" not in configs
     intraday = configs["intraday_research_v1"]
     long_horizon = configs["long_horizon_daily_v1"]
-    live = configs["live_observation_v1"]
 
     assert intraday["semantic_version"] == "full_history_target_aware_v1"
     assert intraday["pilots"] == []
@@ -186,16 +186,9 @@ def test_profile_configs_freeze_full_history_and_live_semantics() -> None:
     intraday_actual = next(
         rule for rule in intraday["target_policy"]["rules"] if rule["contract_role"] == "actual_contract"
     )
-    live_actual = next(
-        rule for rule in live["target_policy"]["rules"] if rule["contract_role"] == "actual_contract"
-    )
     assert intraday_actual["periods"] == ["1m", "5m", "15m"]
-    assert live_actual["periods"] == ["1m", "5m", "15m"]
     assert "2020+" not in long_horizon["description"]
     assert any(
         rule["source"] == "actual_target_coverage"
         for rule in long_horizon["target_policy"]["rules"]
     )
-    assert live["trusted_backtest"] is False
-    assert live["live_historical_separated"] is True
-    assert live["live_tables_only_periods"] == ["30m", "60m", "1d", "1w"]

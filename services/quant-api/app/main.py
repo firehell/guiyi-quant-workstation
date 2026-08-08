@@ -38,7 +38,7 @@ app.add_middleware(
 )
 
 # Market-only Web surface: keep market + data/runtime ops APIs.
-# Signal/strategy/dashboard/review/watchlists/futures_research routers are unmounted.
+# Retired Signal/Review/Strategy/Dashboard/Watchlist surfaces were deleted (see Alembic 0034).
 app.include_router(data_center_router)
 app.include_router(compat_router)
 app.include_router(market_router)

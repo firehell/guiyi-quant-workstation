@@ -284,7 +284,7 @@ uv run --project services/quant-api guiyi data audit --help
 ## 专项业务边界定位
 
 - 数据、quality、profile、manifest：`docs/DATA_CENTER.md` 与对应 active business contract。
-- SignalEvent、通知与 HTDY exact policy：`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md`。
+- HTDY exact policy：`docs/INDICATOR_KERNEL.md`（Signal/Review 合同已退役，见 Git history）。
 - 回测、OOS、旧 S6 合同与报告只在 Git history 中保留；未来重建必须新建任务，
   不复用旧入口、packet 或验收合同。
 - 个人开发、普通删除与外部操作边界：`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`。
