@@ -727,6 +727,8 @@ def _row_text(row: dict[str, Any], *fields: Any) -> str:
 def _optional_date(value: Any) -> date | None:
     if value is None or pd.isna(value):
         return None
+    if isinstance(value, str) and value.strip().startswith("0000"):
+        return None
     return pd.Timestamp(value).date()
 
 

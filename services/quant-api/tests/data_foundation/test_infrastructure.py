@@ -224,3 +224,7 @@ def test_rqdatac_client_requests_unadjusted_bars() -> None:
     client.price("JM88", date(2025, 1, 2), date(2025, 1, 3), "1m")
 
     assert calls[0][1]["adjust_type"] == "none"
+
+
+def test_rqdata_zero_date_sentinel_normalizes_to_none() -> None:
+    assert infrastructure._optional_date("0000-00-00") is None
