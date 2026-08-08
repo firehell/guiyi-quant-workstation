@@ -225,8 +225,16 @@ class HistoricalDataManager:
                 {symbol: self.coverage.product_start(symbol) for symbol in request.products},
             )
             self._metadata_watermarks.add((request.products, through))
+        if request.apply:
+            return self._execute_streaming(
+                "update",
+                request.products,
+                request.since,
+                through,
+                use_legacy=False,
+            )
         targets = self._plan(request.products, request.since, through)
-        return self._execute("update", targets, through, apply=request.apply, use_legacy=False)
+        return self._execute("update", targets, through, apply=False, use_legacy=False)
 
     def bootstrap(self, request: BootstrapRequest) -> MaintenanceResult:
         through = request.through or self.coverage.latest_complete_day(request.products)
@@ -241,8 +249,16 @@ class HistoricalDataManager:
                 {symbol: self.coverage.product_start(symbol) for symbol in request.products},
             )
             self._metadata_watermarks.add((request.products, through))
+        if request.apply:
+            return self._execute_streaming(
+                "bootstrap",
+                request.products,
+                None,
+                through,
+                use_legacy=True,
+            )
         targets = self._plan(request.products, None, through)
-        return self._execute("bootstrap", targets, through, apply=request.apply, use_legacy=True)
+        return self._execute("bootstrap", targets, through, apply=False, use_legacy=True)
 
     def repair(self, request: RepairRequest) -> MaintenanceResult:
         targets: list[_Target] = []
@@ -342,8 +358,21 @@ class HistoricalDataManager:
         since: date | None,
         through: date,
     ) -> tuple[_Target, ...]:
-        targets: list[_Target] = []
-        for key, year, month, expected in self._desired_months(products, through):
+        return tuple(self._iter_targets(products, since, through))
+
+    def _iter_targets(
+        self,
+        products: tuple[str, ...],
+        since: date | None,
+        through: date,
+        *,
+        frequencies: frozenset[BarFrequency] | None = None,
+    ):
+        for key, year, month, expected in self._desired_months(
+            products,
+            through,
+            frequencies=frequencies,
+        ):
             if not expected:
                 continue
             existing = self._read_existing(key, year, month)
@@ -354,17 +383,23 @@ class HistoricalDataManager:
                 if item not in present and (since is None or item.date() >= since)
             )
             if missing:
-                targets.append(_Target(key, year, month, expected, missing, existing))
-        return tuple(targets)
+                yield _Target(key, year, month, expected, missing, existing)
 
     def _desired_months(
         self,
         products: tuple[str, ...],
         through: date,
+        *,
+        frequencies: frozenset[BarFrequency] | None = None,
     ):
+        selected_frequencies = tuple(
+            value
+            for value in _FREQUENCY_ORDER
+            if frequencies is None or value in frequencies
+        )
         for symbol in tuple(dict.fromkeys(item.strip().lower() for item in products)):
             start = self.coverage.product_start(symbol)
-            for frequency in _FREQUENCY_ORDER:
+            for frequency in selected_frequencies:
                 key = DatasetKey(DatasetKind.CONTINUOUS, symbol, "MAIN", frequency)
                 for year, month in _months(start, through):
                     yield (
@@ -385,7 +420,7 @@ class HistoricalDataManager:
                     (fact.contract, fact.trade_date.year, fact.trade_date.month), []
                 ).append(fact.trade_date)
             for (contract, year, month), mapped_days in days_by_contract_month.items():
-                for frequency in _FREQUENCY_ORDER:
+                for frequency in selected_frequencies:
                     key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
                     expected = self.coverage.expected_bar_ends_for_trading_days(
                         key,
@@ -421,14 +456,60 @@ class HistoricalDataManager:
                 0,
                 target_windows=tuple(_target_payload(item) for item in targets),
             )
+        direct = tuple(item for item in targets if item.key.frequency in DIRECT_FREQUENCIES)
+        derived = tuple(item for item in targets if item.key.frequency in DERIVED_FREQUENCIES)
+        return self._execute_apply(
+            action,
+            direct,
+            derived,
+            through,
+            use_legacy=use_legacy,
+        )
+
+    def _execute_streaming(
+        self,
+        action: str,
+        products: tuple[str, ...],
+        since: date | None,
+        through: date,
+        *,
+        use_legacy: bool,
+    ) -> MaintenanceResult:
+        return self._execute_apply(
+            action,
+            self._iter_targets(
+                products,
+                since,
+                through,
+                frequencies=DIRECT_FREQUENCIES,
+            ),
+            self._iter_targets(
+                products,
+                since,
+                through,
+                frequencies=DERIVED_FREQUENCIES,
+            ),
+            through,
+            use_legacy=use_legacy,
+        )
+
+    def _execute_apply(
+        self,
+        action: str,
+        direct,
+        derived,
+        through: date | None,
+        *,
+        use_legacy: bool,
+    ) -> MaintenanceResult:
+        planned = 0
         applied = 0
         blocked = 0
         provider_requests = 0
         failures: list[Mapping[str, object]] = []
-        direct = tuple(item for item in targets if item.key.frequency in DIRECT_FREQUENCIES)
-        derived = tuple(item for item in targets if item.key.frequency in DERIVED_FREQUENCIES)
         failed_families: set[tuple[str, str, str]] = set()
         for target in direct:
+            planned += 1
             try:
                 batches: list[BarBatch] = []
                 remaining = target.missing
@@ -452,6 +533,7 @@ class HistoricalDataManager:
                 self.catalog.session.rollback()
                 self._record_gap(target, exc)
         for target in derived:
+            planned += 1
             if _family(target.key) in failed_families:
                 blocked += 1
                 self._record_gap(target, StorageError("SOURCE_1M_BLOCKED"))
@@ -465,18 +547,20 @@ class HistoricalDataManager:
                 failures.append(_failure(target, exc))
                 self.catalog.session.rollback()
                 self._record_gap(target, exc)
-        status = "failed" if failures or blocked else "passed"
+        if planned == 0:
+            status = "noop"
+        else:
+            status = "failed" if failures or blocked else "passed"
         return MaintenanceResult(
             action,
             status,
             through,
-            len(targets),
+            planned,
             applied,
             blocked,
             len(failures),
             provider_requests,
             failures=tuple(failures),
-            target_windows=tuple(_target_payload(item) for item in targets),
         )
 
     def _record_gap(self, target: _Target, exc: Exception) -> None:

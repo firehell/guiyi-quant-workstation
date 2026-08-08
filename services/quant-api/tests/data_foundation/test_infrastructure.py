@@ -94,6 +94,19 @@ def test_latest_complete_day_excludes_open_session_and_accepts_closed_session(tm
     session.close()
 
 
+def test_metadata_complete_returns_false_before_candidate_metadata_bootstrap(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    instrument = session.scalar(select(Instrument).where(Instrument.symbol == "jm"))
+    assert instrument is not None
+    instrument.is_active = False
+    session.commit()
+
+    coverage = DatabaseCoverageSource(session, starts)
+
+    assert coverage.metadata_complete(("jm",), date(2025, 1, 10)) is False
+    session.close()
+
+
 def test_database_coverage_selects_only_session_regime_effective_on_trading_day(
     tmp_path,
 ) -> None:
@@ -195,3 +208,19 @@ def test_rqdata_adapter_does_not_initialize_client_until_provider_read(
     assert isinstance(adapter.client, LazyClient)
     assert calls == ["init"]
     session.close()
+
+
+def test_rqdatac_client_requests_unadjusted_bars() -> None:
+    calls = []
+
+    class Api:
+        def get_price(self, order_book_id, **kwargs):
+            calls.append((order_book_id, kwargs))
+            return pd.DataFrame()
+
+    client = object.__new__(infrastructure._RqdatacClient)
+    client.api = Api()
+
+    client.price("JM88", date(2025, 1, 2), date(2025, 1, 3), "1m")
+
+    assert calls[0][1]["adjust_type"] == "none"

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 import hashlib
 import json
@@ -50,6 +50,7 @@ class LegacyBootstrapAdapter:
         continuous_raw_root: Path,
         previous_canonical_root: Path,
         allowed_roots: tuple[Path, ...] | None = None,
+        exact_scope: Mapping[str, Any] | None = None,
     ) -> None:
         self.contract_root = contract_root.resolve()
         self.continuous_raw_root = continuous_raw_root.resolve()
@@ -62,6 +63,7 @@ class LegacyBootstrapAdapter:
         roots = (self.contract_root, self.continuous_raw_root, self.previous_canonical_root)
         if any(root not in approved or not root.is_dir() or root.is_symlink() for root in roots):
             raise LegacyBootstrapError("LEGACY_BOOTSTRAP_ROOT_INVALID")
+        self._selected = _selected_candidates(exact_scope or {})
 
     def fetch(
         self,
@@ -74,7 +76,8 @@ class LegacyBootstrapAdapter:
         if not expected_set:
             return None
         ranked: list[tuple[int, str, tuple[CanonicalBar, ...], Path]] = []
-        for path in self._candidates(key):
+        candidates = self._exact_candidates(key, expected)
+        for path in candidates:
             bars = self._read_candidate(path, expected)
             matches = tuple(bar for bar in bars if bar.bar_end in expected_set)
             if matches:
@@ -83,6 +86,25 @@ class LegacyBootstrapAdapter:
             return None
         _, _, bars, path = sorted(ranked, key=lambda item: (-item[0], item[1]))[0]
         return BarBatch(bars, _sha256(path), "legacy_staging")
+
+    def _exact_candidates(
+        self,
+        key: DatasetKey,
+        expected: tuple[datetime, ...],
+    ) -> tuple[Path, ...]:
+        if not self._selected:
+            return self._candidates(key)
+        logical_end = max(value.astimezone(SHANGHAI).date() for value in expected)
+        path = self._selected.get((*key.as_tuple(), logical_end.year, logical_end.month))
+        if path is None:
+            return ()
+        resolved = path.resolve()
+        roots = (self.contract_root, self.continuous_raw_root, self.previous_canonical_root)
+        if path.is_symlink() or not any(root in resolved.parents for root in roots):
+            raise LegacyBootstrapError("LEGACY_BOOTSTRAP_PATH_ESCAPE")
+        if not resolved.is_file():
+            raise LegacyBootstrapError("LEGACY_BOOTSTRAP_PARQUET_INVALID")
+        return (resolved,)
 
     def _candidates(self, key: DatasetKey) -> tuple[Path, ...]:
         roots: tuple[Path, ...]
@@ -173,6 +195,100 @@ class LegacyBootstrapAdapter:
         return tuple(bars[value] for value in sorted(bars))
 
 
+class ExactScopeProvider:
+    """Allow Gate A provider reads only inside the digest-bound dry-run windows."""
+
+    def __init__(self, delegate: Any, exact_scope: Mapping[str, Any]) -> None:
+        self.delegate = delegate
+        self._windows: dict[DatasetKey, list[tuple[int, date, date]]] = defaultdict(list)
+        raw_windows = exact_scope.get("rqdata_windows")
+        if not isinstance(raw_windows, list) or not raw_windows:
+            raise LegacyBootstrapError("GATE_A_PROVIDER_SCOPE_INVALID")
+        for index, item in enumerate(raw_windows):
+            try:
+                identity = item["dataset"]
+                key = DatasetKey(*identity)
+                start = date.fromisoformat(item["start"])
+                end = date.fromisoformat(item["end"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise LegacyBootstrapError("GATE_A_PROVIDER_SCOPE_INVALID") from exc
+            if key.frequency not in {BarFrequency.M1, BarFrequency.D1, BarFrequency.W1}:
+                raise LegacyBootstrapError("GATE_A_PROVIDER_SCOPE_INVALID")
+            if start > end:
+                raise LegacyBootstrapError("GATE_A_PROVIDER_SCOPE_INVALID")
+            self._windows[key].append((index, start, end))
+        self._used: set[int] = set()
+        self.request_count = 0
+
+    @property
+    def planned_window_count(self) -> int:
+        return sum(len(values) for values in self._windows.values())
+
+    @property
+    def unused_window_count(self) -> int:
+        return self.planned_window_count - len(self._used)
+
+    def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
+        groups: dict[int, list[datetime]] = defaultdict(list)
+        bounds = {index: (start, end) for index, start, end in self._windows.get(key, ())}
+        for value in expected:
+            local_value = value.astimezone(SHANGHAI)
+            local_day = local_value.date()
+            matches = [
+                index
+                for index, start, end in self._windows.get(key, ())
+                if (
+                    start <= local_day <= end
+                    or (
+                        key.frequency is BarFrequency.M1
+                        and local_value.time() >= time(18)
+                        and start.toordinal() - 1 <= local_day.toordinal() < start.toordinal()
+                    )
+                )
+            ]
+            if len(matches) != 1:
+                raise LegacyBootstrapError("GATE_A_PROVIDER_WINDOW_OUTSIDE_SCOPE")
+            groups[matches[0]].append(value)
+        bars: dict[datetime, CanonicalBar] = {}
+        digests: list[str] = []
+        for index in sorted(groups, key=lambda value: bounds[value]):
+            batch = self.delegate.fetch(key, tuple(groups[index]))
+            self.request_count += 1
+            self._used.add(index)
+            digests.append(batch.source_digest)
+            for bar in batch.bars:
+                previous = bars.get(bar.bar_end)
+                if previous is not None and previous != bar:
+                    raise LegacyBootstrapError("GATE_A_PROVIDER_DUPLICATE_CONFLICT")
+                bars[bar.bar_end] = bar
+        digest = hashlib.sha256(
+            json.dumps(sorted(digests), separators=(",", ":")).encode()
+        ).hexdigest()
+        return BarBatch(tuple(bars[value] for value in sorted(bars)), digest, "rqdata")
+
+
+def _selected_candidates(
+    exact_scope: Mapping[str, Any],
+) -> dict[tuple[str, str, str, str, int, int], Path]:
+    raw = exact_scope.get("legacy_selected_month_targets")
+    if raw is None:
+        return {}
+    if not isinstance(raw, list):
+        raise LegacyBootstrapError("GATE_A_LEGACY_SCOPE_INVALID")
+    result: dict[tuple[str, str, str, str, int, int], Path] = {}
+    for item in raw:
+        try:
+            key = DatasetKey(*item["dataset"])
+            identity = (*key.as_tuple(), int(item["year"]), int(item["month"]))
+            path = Path(item["path"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise LegacyBootstrapError("GATE_A_LEGACY_SCOPE_INVALID") from exc
+        if identity in result and result[identity] != path:
+            raise LegacyBootstrapError("GATE_A_LEGACY_SCOPE_CONFLICT")
+        result[identity] = path
+    return result
+
+
 def plan_gate_a_scope(
     *,
     products: tuple[str, ...],
@@ -216,11 +332,11 @@ def plan_gate_a_scope(
         if symbol not in days_by_product or fact.trade_date > through:
             continue
         identity = (symbol, fact.trade_date)
-        contract = fact.contract.strip().upper()
+        mapped_contract = fact.contract.strip().upper()
         previous = map_by_day.get(identity)
-        if previous is not None and previous != contract:
+        if previous is not None and previous != mapped_contract:
             raise LegacyBootstrapError("GATE_A_MAIN_MAP_CONFLICT")
-        map_by_day[identity] = contract
+        map_by_day[identity] = mapped_contract
 
     desired: dict[DatasetKey, set[date]] = defaultdict(set)
     for symbol in normalized_products:
@@ -228,34 +344,36 @@ def plan_gate_a_scope(
         all_days = days_by_product[symbol]
         direct_days = tuple(day for day in all_days if start <= day <= through)
         week_ends = _complete_week_ends(all_days, start=start, through=through)
-        for frequency, values in (
+        for frequency, direct_values in (
             (BarFrequency.M1, direct_days),
             (BarFrequency.D1, direct_days),
             (BarFrequency.W1, week_ends),
         ):
             desired[DatasetKey(DatasetKind.CONTINUOUS, symbol, "MAIN", frequency)].update(
-                values
+                direct_values
             )
         for day in direct_days:
-            contract = map_by_day.get((symbol, day))
-            if contract is None:
+            daily_contract = map_by_day.get((symbol, day))
+            if daily_contract is None:
                 continue
             for frequency in (BarFrequency.M1, BarFrequency.D1):
-                desired[DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)].add(day)
+                desired[
+                    DatasetKey(DatasetKind.CONTRACT, symbol, daily_contract, frequency)
+                ].add(day)
         for day in week_ends:
-            contract = map_by_day.get((symbol, day))
-            if contract is not None:
-                desired[DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency.W1)].add(
-                    day
-                )
+            weekly_contract = map_by_day.get((symbol, day))
+            if weekly_contract is not None:
+                desired[
+                    DatasetKey(DatasetKind.CONTRACT, symbol, weekly_contract, BarFrequency.W1)
+                ].add(day)
 
     month_targets: list[tuple[DatasetKey, int, int, tuple[date, ...]]] = []
-    for key, values in desired.items():
+    for key, desired_days in desired.items():
         by_month: dict[tuple[int, int], list[date]] = defaultdict(list)
-        for day in values:
+        for day in desired_days:
             by_month[(day.year, day.month)].append(day)
-        for (year, month), month_days in by_month.items():
-            month_targets.append((key, year, month, tuple(sorted(month_days))))
+        for (year, month), collected_days in by_month.items():
+            month_targets.append((key, year, month, tuple(sorted(collected_days))))
     month_targets.sort(key=lambda item: (*item[0].as_tuple(), item[1], item[2]))
 
     selected: list[dict[str, Any]] = []
@@ -265,28 +383,37 @@ def plan_gate_a_scope(
         desired_set = set(month_days)
         ranked: list[tuple[int, str, Path, set[date]]] = []
         for path, covered_days in legacy_coverages.get(key, ()):
-            covered = {
+            candidate_covered = {
                 day
                 for day in covered_days
                 if day.year == year and day.month == month and day in desired_set
             }
-            if covered:
-                ranked.append((len(covered), path.resolve().as_posix(), path.resolve(), covered))
+            if candidate_covered:
+                ranked.append(
+                    (
+                        len(candidate_covered),
+                        path.resolve().as_posix(),
+                        path.resolve(),
+                        candidate_covered,
+                    )
+                )
         chosen_path: Path | None = None
-        covered: set[date] = set()
+        selected_covered: set[date] = set()
         if ranked:
-            _, _, chosen_path, covered = sorted(ranked, key=lambda item: (-item[0], item[1]))[0]
+            _, _, chosen_path, selected_covered = sorted(
+                ranked, key=lambda item: (-item[0], item[1])
+            )[0]
             selected.append(
                 {
                     "dataset": list(key.as_tuple()),
                     "year": year,
                     "month": month,
                     "path": chosen_path.as_posix(),
-                    "covered_trading_days": len(covered),
+                    "covered_trading_days": len(selected_covered),
                     "desired_trading_days": len(month_days),
                 }
             )
-        missing = tuple(day for day in month_days if day not in covered)
+        missing = tuple(day for day in month_days if day not in selected_covered)
         if not missing:
             fully_covered += 1
         else:
@@ -425,15 +552,25 @@ def _legacy_identity(
             if "=" in part
         }
         symbol = values.get("product", "").lower()
-        frequency = values.get("frequency", "")
-        if symbol not in products or frequency not in {"1m", "1d", "1w"}:
+        raw_frequency = values.get("frequency", "")
+        if symbol not in products or raw_frequency not in {"1m", "1d", "1w"}:
             return None
         if root_index == 0:
             contract = values.get("contract", "").upper()
             if not contract:
                 return None
-            return DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
-        return DatasetKey(DatasetKind.CONTINUOUS, symbol, "MAIN", frequency)
+            return DatasetKey(
+                DatasetKind.CONTRACT,
+                symbol,
+                contract,
+                BarFrequency(raw_frequency),
+            )
+        return DatasetKey(
+            DatasetKind.CONTINUOUS,
+            symbol,
+            "MAIN",
+            BarFrequency(raw_frequency),
+        )
 
     def value_after(name: str) -> str | None:
         try:
@@ -444,17 +581,27 @@ def _legacy_identity(
     kind = value_after("dataset_kind")
     symbol = (value_after("symbol") or "").lower()
     series = value_after("contract_or_series")
-    frequency = value_after("frequency")
+    canonical_frequency = value_after("frequency")
     if (
         kind not in {"actual_dominant", "continuous"}
         or symbol not in products
         or series is None
-        or frequency not in {"1m", "1d", "1w"}
+        or canonical_frequency not in {"1m", "1d", "1w"}
     ):
         return None
     if kind == "continuous":
-        return DatasetKey(DatasetKind.CONTINUOUS, symbol, "MAIN", frequency)
-    return DatasetKey(DatasetKind.CONTRACT, symbol, series, frequency)
+        return DatasetKey(
+            DatasetKind.CONTINUOUS,
+            symbol,
+            "MAIN",
+            BarFrequency(canonical_frequency),
+        )
+    return DatasetKey(
+        DatasetKind.CONTRACT,
+        symbol,
+        series,
+        BarFrequency(canonical_frequency),
+    )
 
 
 def _complete_week_ends(

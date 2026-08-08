@@ -369,6 +369,30 @@ def test_bootstrap_prefers_valid_legacy_then_uses_provider_for_missing_window(
     assert manager.store.read_month(key, 2025, 1) == bars
 
 
+def test_bootstrap_apply_streams_targets_without_materializing_full_plan(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 100)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    manager = _manager(
+        session,
+        tmp_path,
+        coverage,
+        FakeProvider({key.as_tuple(): (bar,)}),
+    )
+
+    def materialized_plan_forbidden(*_args, **_kwargs):
+        raise AssertionError("full plan must not be materialized in apply mode")
+
+    monkeypatch.setattr(manager, "_plan", materialized_plan_forbidden)
+
+    result = manager.bootstrap(BootstrapRequest(("jm",), date(2025, 1, 3), True))
+
+    assert result.status == "passed"
+    assert result.planned == result.applied == 1
+
+
 def test_repair_replaces_exact_month_and_deletes_gap_after_verification(session, tmp_path) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     bars = (_daily(2, 100), _daily(3, 101))

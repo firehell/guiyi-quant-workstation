@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, Mapping
 
 from sqlalchemy.orm import Session
 
@@ -45,6 +46,8 @@ def build_historical_data_manager(session: Session) -> HistoricalDataManager:
 def build_candidate_bootstrap_manager(
     session: Session,
     candidate_root: Path,
+    *,
+    exact_scope: Mapping[str, Any] | None = None,
 ) -> HistoricalDataManager:
     """Compose the one-time Gate A candidate writer with allowlisted readers.
 
@@ -52,7 +55,7 @@ def build_candidate_bootstrap_manager(
     root. This function is intentionally not wired into the daily CLI factory.
     """
     from app.market_data.infrastructure import DatabaseCoverageSource, RQDataMarketAdapter
-    from app.market_data.legacy_bootstrap import LegacyBootstrapAdapter
+    from app.market_data.legacy_bootstrap import ExactScopeProvider, LegacyBootstrapAdapter
     from app.market_data.metadata import MetadataSynchronizer
 
     root = candidate_root.resolve()
@@ -67,17 +70,19 @@ def build_candidate_bootstrap_manager(
         PROJECT_ROOT / "data/universe/product_window_starts.csv",
     )
     adapter = RQDataMarketAdapter(session=session)
+    provider = ExactScopeProvider(adapter, exact_scope) if exact_scope is not None else adapter
     return HistoricalDataManager(
         catalog=catalog,
         store=CanonicalMonthlyStore(root, boundary_validator=coverage.valid_boundary),
         coverage=coverage,
         metadata=MetadataSynchronizer(adapter, catalog),
-        provider=adapter,
+        provider=provider,
         legacy=LegacyBootstrapAdapter(
             contract_root=contract_root,
             continuous_raw_root=continuous_raw_root,
             previous_canonical_root=previous,
             allowed_roots=(contract_root, continuous_raw_root, previous),
+            exact_scope=exact_scope,
         ),
     )
 

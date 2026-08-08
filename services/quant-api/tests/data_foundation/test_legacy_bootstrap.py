@@ -6,9 +6,10 @@ import pyarrow.parquet as pq
 import pytest
 
 from app.market_data.catalog import MainMapFact
-from app.market_data.domain import BarFrequency, DatasetKey, DatasetKind
+from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
 from app.market_data import legacy_bootstrap
 from app.market_data.legacy_bootstrap import LegacyBootstrapAdapter, LegacyBootstrapError
+from app.market_data.maintenance import BarBatch
 
 
 def _roots(tmp_path: Path):
@@ -208,6 +209,57 @@ def test_scan_legacy_coverages_recognizes_only_direct_allowlisted_identities(
     assert coverage[DatasetKey("contract", "jm", "JM2509", "1w")][0][1] == (
         date(2025, 1, 3),
     )
+
+
+def test_exact_scope_provider_splits_calls_and_rejects_days_outside_plan() -> None:
+    class Delegate:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def fetch(self, key, expected):
+            self.calls.append((key, expected))
+            bars = tuple(
+                CanonicalBar(
+                    value,
+                    value.date(),
+                    100,
+                    101,
+                    99,
+                    100,
+                    1,
+                    10,
+                    20,
+                )
+                for value in expected
+            )
+            return BarBatch(bars, "a" * 64, "rqdata")
+
+    key = DatasetKey("continuous", "jm", "MAIN", "1m")
+    delegate = Delegate()
+    provider_type = getattr(legacy_bootstrap, "ExactScopeProvider", None)
+    assert provider_type is not None
+    provider = provider_type(
+        delegate,
+        {
+            "rqdata_windows": [
+                {"dataset": list(key.as_tuple()), "start": "2025-01-02", "end": "2025-01-02"},
+                {"dataset": list(key.as_tuple()), "start": "2025-01-04", "end": "2025-01-04"},
+            ]
+        },
+    )
+    expected = (
+        datetime(2025, 1, 1, 13, 1, tzinfo=UTC),
+        datetime(2025, 1, 2, 7, tzinfo=UTC),
+        datetime(2025, 1, 4, 7, tzinfo=UTC),
+    )
+
+    batch = provider.fetch(key, expected)
+
+    assert batch.bars[0].bar_end == expected[0]
+    assert len(delegate.calls) == 2
+    assert provider.request_count == 2
+    with pytest.raises(LegacyBootstrapError, match="GATE_A_PROVIDER_WINDOW_OUTSIDE_SCOPE"):
+        provider.fetch(key, (datetime(2025, 1, 3, 7, tzinfo=UTC),))
 
 
 def _row(day: int, close: int) -> dict:

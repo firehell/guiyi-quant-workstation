@@ -86,7 +86,12 @@ class DatabaseCoverageSource:
 
     def metadata_complete(self, products: tuple[str, ...], through: date) -> bool:
         for symbol in products:
-            exchange = self._exchange(symbol)
+            try:
+                exchange = self._exchange(symbol)
+            except InfrastructureError as exc:
+                if exc.code == "INSTRUMENT_EXCHANGE_MISSING":
+                    return False
+                raise
             calendar_end = self.session.scalar(
                 select(func.max(TradingCalendar.trade_date)).where(
                     TradingCalendar.exchange_code == exchange,
@@ -453,6 +458,7 @@ class _RqdatacClient:
             start_date=start,
             end_date=end,
             frequency=frequency,
+            adjust_type="none",
         )
 
     def metadata_snapshot(
@@ -548,7 +554,16 @@ class _RqdatacClient:
             symbol: str(values["exchange_code"])
             for symbol, values in instruments.items()
         }
-        specs = self._contract_specs(main_contracts, symbol_exchanges)
+        contract_multipliers = {
+            str(values["contract_code"]): Decimal(str(values["contract_multiplier"]))
+            for values in contracts
+            if values.get("contract_multiplier") is not None
+        }
+        specs = self._contract_specs(
+            main_contracts,
+            symbol_exchanges,
+            contract_multipliers,
+        )
         return MetadataSnapshot(
             exchanges=tuple(exchanges.values()),
             instruments=tuple(instruments.values()),
@@ -563,6 +578,7 @@ class _RqdatacClient:
         self,
         mappings: list[tuple[str, date, str]],
         symbol_exchanges: dict[str, str],
+        contract_multipliers: Mapping[str, Decimal],
     ) -> tuple[dict[str, object], ...]:
         result = []
         by_contract: dict[str, list[tuple[str, date]]] = {}
@@ -577,7 +593,7 @@ class _RqdatacClient:
             )
             rows_by_day = {_row_date(row): row for row in parameters.to_dict("records")}
             tick = self.api.get_tick_size(contract)
-            multiplier = self.api.futures.get_contract_multiplier(contract)
+            multiplier = contract_multipliers.get(contract)
             for symbol, day in facts:
                 row = rows_by_day.get(day, {})
                 exchange = symbol_exchanges.get(symbol)
@@ -595,7 +611,9 @@ class _RqdatacClient:
                         "short_margin_rate": _optional_decimal(row.get("short_margin_ratio")),
                         "open_fee": _optional_decimal(row.get("open_commission")),
                         "close_fee": _optional_decimal(row.get("close_commission")),
-                        "close_today_fee": _optional_decimal(row.get("close_today_commission")),
+                        "close_today_fee": _optional_decimal(
+                            row.get("close_commission_today", row.get("close_today_commission"))
+                        ),
                         "fee_type": _optional_text(row.get("commission_type")),
                     }
                 )
