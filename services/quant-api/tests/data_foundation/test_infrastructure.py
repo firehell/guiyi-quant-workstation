@@ -228,3 +228,26 @@ def test_rqdatac_client_requests_unadjusted_bars() -> None:
 
 def test_rqdata_zero_date_sentinel_normalizes_to_none() -> None:
     assert infrastructure._optional_date("0000-00-00") is None
+
+
+def test_rqdata_contract_specs_extract_tick_size_from_series() -> None:
+    class FuturesApi:
+        def get_trading_parameters(self, order_book_id, start_date, end_date):
+            return pd.DataFrame()
+
+    class Api:
+        futures = FuturesApi()
+
+        def get_tick_size(self, order_book_id):
+            return pd.Series({order_book_id: 0.5})
+
+    client = object.__new__(infrastructure._RqdatacClient)
+    client.api = Api()
+
+    specs = client._contract_specs(
+        [("jm", date(2025, 1, 2), "JM2509")],
+        {"jm": "DCE"},
+        {"JM2509": Decimal("60")},
+    )
+
+    assert specs[0]["price_tick"] == Decimal("0.5")

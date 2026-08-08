@@ -592,7 +592,10 @@ class _RqdatacClient:
                 )
             )
             rows_by_day = {_row_date(row): row for row in parameters.to_dict("records")}
-            tick = self.api.get_tick_size(contract)
+            raw_tick = self.api.get_tick_size(contract)
+            if isinstance(raw_tick, pd.Series):
+                raw_tick = raw_tick.get(contract) if len(raw_tick) == 1 else None
+            tick = _optional_decimal(raw_tick)
             multiplier = contract_multipliers.get(contract)
             for symbol, day in facts:
                 row = rows_by_day.get(day, {})
@@ -605,7 +608,7 @@ class _RqdatacClient:
                         "symbol": symbol,
                         "exchange_code": exchange,
                         "trade_date": day,
-                        "price_tick": Decimal(str(tick)),
+                        "price_tick": tick,
                         "contract_multiplier": Decimal(str(multiplier)),
                         "long_margin_rate": _optional_decimal(row.get("long_margin_ratio")),
                         "short_margin_rate": _optional_decimal(row.get("short_margin_ratio")),
