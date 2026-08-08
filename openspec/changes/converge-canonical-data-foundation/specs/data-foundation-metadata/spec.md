@@ -12,7 +12,7 @@
 - **THEN** ORM metadata 与数据库只包含上述 active 数据基础表且不会建议重建已退出表
 
 ### Requirement: 当前主力映射
-系统 SHALL 以 `volume_open_interest` 口径保存 active 69 品种的 rank1 当前事实，并 MUST 对每个 `symbol + trade_date` 保证唯一；RQData 修订 SHALL 更新当前事实而不是增加数据版本或 raw payload。
+系统 SHALL 显式使用 RQData `rule=2` 的 `volume_open_interest` 口径保存 active 69 品种的 rank1 当前事实，并 MUST 对每个 `symbol + trade_date` 保证唯一；RQData 修订 SHALL 在本次刷新窗口内替换当前事实而不是增加数据版本、保留已撤回事实或保存 raw payload。首个 provider rank1 事实之前允许仅存在 continuous 历史，actual_dominant 查询仍须 fail-closed。
 
 #### Scenario: 重复同步同一交易日
 - **WHEN** 相同品种、交易日和主力合约再次同步
@@ -30,7 +30,7 @@
 - **THEN** 每个映射到的真实合约在对应交易日均存在唯一 contract_specs 记录
 
 ### Requirement: 实际交易所日历和交易时段
-系统 SHALL 按合约所属实际交易所保存并解析交易日历和交易时段；缺失或不一致时 MUST fail-closed，且 MUST NOT 回退到 CNFE、CZCE 或通用默认时段。
+系统 SHALL 按合约所属实际交易所保存并解析交易日历和交易时段；某品种的期望交易日 SHALL 为实际交易所开市且至少一个该品种真实合约处于上市期的日期，不得把无上市合约的交易所开市日误判为数据缺口。缺失或不一致时 MUST fail-closed，且 MUST NOT 回退到 CNFE、CZCE 或通用默认时段。
 
 #### Scenario: 交易时段缺失
 - **WHEN** 标准化或查询需要的实际交易所时段不存在

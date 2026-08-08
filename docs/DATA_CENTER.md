@@ -93,6 +93,8 @@ metadata current facts
 - `--since` 只限定检查下界，不授权覆盖已正确分区。
 - `--through` 是固定水位；缺省只选最新已完成交易日。
 - 空 Dataset 从 `data/universe/product_window_starts.csv` 起算。
+- 品种期望交易日是实际交易所开市日与该品种真实合约上市期的交集；无上市合约的交易所开市日不是数据缺口。
+- MainContractMap 显式使用 RQData `rule=2`；continuous 可早于首个 rank1 事实，actual_dominant 在首个映射前保持 fail-closed。
 - 已有 Dataset 计算月度全窗口精确缺口，不只追加尾部。
 - 相同 fixed through 重跑必须零目标、零写入、零 RQData。
 - 真实合约只保存 `MainContractMap rank=1` 的有效窗口。

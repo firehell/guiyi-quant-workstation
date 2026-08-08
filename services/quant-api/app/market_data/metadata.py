@@ -5,10 +5,18 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.market_data.catalog import MarketCatalog
-from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
+from app.models import (
+    Contract,
+    ContractSpec,
+    Exchange,
+    Instrument,
+    MainContractMap,
+    TradingCalendar,
+    TradingSession,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +28,7 @@ class MetadataSnapshot:
     sessions: tuple[Mapping[str, Any], ...]
     main_contracts: tuple[tuple[str, date, str], ...]
     contract_specs: tuple[Mapping[str, Any], ...]
+    main_contract_starts: Mapping[str, date]
 
 
 class MetadataAdapter(Protocol):
@@ -85,6 +94,24 @@ class MetadataSynchronizer:
                         "effective_from": values["effective_from"],
                     },
                     values,
+                )
+            for symbol in normalized:
+                refresh_start = snapshot.main_contract_starts.get(symbol)
+                if refresh_start is None or refresh_start > through:
+                    raise ValueError("MAIN_CONTRACT_REFRESH_WINDOW_INVALID")
+                session.execute(
+                    delete(ContractSpec).where(
+                        ContractSpec.symbol == symbol,
+                        ContractSpec.trade_date >= refresh_start,
+                        ContractSpec.trade_date <= through,
+                    )
+                )
+                session.execute(
+                    delete(MainContractMap).where(
+                        MainContractMap.symbol == symbol,
+                        MainContractMap.trade_date >= refresh_start,
+                        MainContractMap.trade_date <= through,
+                    )
                 )
             self.catalog.upsert_main_contracts(snapshot.main_contracts)
             self.catalog.upsert_contract_specs(snapshot.contract_specs)

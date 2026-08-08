@@ -11,7 +11,15 @@ from app.db.base import Base
 from app.market_data.domain import DatasetKey
 from app.market_data import infrastructure
 from app.market_data.infrastructure import SHANGHAI, DatabaseCoverageSource, RQDataMarketAdapter
-from app.models import Exchange, Instrument, TradingCalendar, TradingSession
+from app.models import (
+    Contract,
+    ContractSpec,
+    Exchange,
+    Instrument,
+    MainContractMap,
+    TradingCalendar,
+    TradingSession,
+)
 
 
 def _session(tmp_path):
@@ -20,6 +28,16 @@ def _session(tmp_path):
     session = Session(engine)
     session.add(Exchange(code="DCE", name="DCE"))
     session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 1),
+            maturity_date=date(2025, 12, 31),
+            provider="rqdata",
+        )
+    )
     for day in range(6, 11):
         session.add(
             TradingCalendar(
@@ -104,6 +122,59 @@ def test_metadata_complete_returns_false_before_candidate_metadata_bootstrap(tmp
     coverage = DatabaseCoverageSource(session, starts)
 
     assert coverage.metadata_complete(("jm",), date(2025, 1, 10)) is False
+    session.close()
+
+
+def test_database_coverage_excludes_exchange_days_without_listed_contract(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.listed_date = date(2025, 1, 8)
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+
+    ends = coverage.expected_bar_ends(
+        DatasetKey("continuous", "jm", "MAIN", "1d"),
+        2025,
+        1,
+        date(2025, 1, 6),
+        date(2025, 1, 10),
+    )
+
+    assert tuple(value.astimezone(SHANGHAI).date() for value in ends) == (
+        date(2025, 1, 8),
+        date(2025, 1, 9),
+        date(2025, 1, 10),
+    )
+    session.close()
+
+
+def test_metadata_complete_allows_history_before_first_provider_main_map(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    for day in (date(2025, 1, 8), date(2025, 1, 9), date(2025, 1, 10)):
+        session.add(
+            MainContractMap(
+                symbol="jm",
+                trade_date=day,
+                contract_code="JM2509",
+                rank=1,
+                rule="volume_open_interest",
+            )
+        )
+        session.add(
+            ContractSpec(
+                contract_code="JM2509",
+                symbol="jm",
+                exchange_code="DCE",
+                trade_date=day,
+                price_tick=Decimal("0.5"),
+                contract_multiplier=Decimal("60"),
+            )
+        )
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+
+    assert coverage.metadata_complete(("jm",), date(2025, 1, 10)) is True
     session.close()
 
 
@@ -210,6 +281,76 @@ def test_rqdata_adapter_does_not_initialize_client_until_provider_read(
     session.close()
 
 
+def test_metadata_refresh_ignores_history_before_first_provider_main_map(tmp_path) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Exchange(code="DCE", name="DCE"))
+        session.add(
+            Instrument(
+                symbol="jm",
+                name="焦煤",
+                exchange_code="DCE",
+                is_active=True,
+            )
+        )
+        session.add(
+            Contract(
+                contract_code="JM2509",
+                instrument_symbol="jm",
+                exchange_code="DCE",
+                listed_date=date(2025, 1, 20),
+                maturity_date=date(2025, 12, 31),
+                provider="rqdata",
+            )
+        )
+        for day in range(1, 32):
+            session.add(
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=date(2025, 1, day),
+                    is_trading_day=True,
+                )
+            )
+        for day in range(20, 32):
+            session.add(
+                MainContractMap(
+                    symbol="jm",
+                    trade_date=date(2025, 1, day),
+                    contract_code="JM2509",
+                    rank=1,
+                    rule="volume_open_interest",
+                )
+            )
+            session.add(
+                ContractSpec(
+                    contract_code="JM2509",
+                    symbol="jm",
+                    exchange_code="DCE",
+                    trade_date=date(2025, 1, day),
+                    price_tick=Decimal("0.5"),
+                    contract_multiplier=Decimal("60"),
+                )
+            )
+        session.commit()
+        requested = []
+
+        class Client:
+            def metadata_snapshot(self, products, through, starts):
+                requested.append(dict(starts))
+                return object()
+
+        adapter = RQDataMarketAdapter(session=session, client=Client())
+
+        adapter.fetch_metadata(
+            ("jm",),
+            date(2025, 1, 31),
+            {"jm": date(2025, 1, 1)},
+        )
+
+        assert requested == [{"jm": date(2025, 1, 17)}]
+
+
 def test_rqdatac_client_requests_unadjusted_bars() -> None:
     calls = []
 
@@ -251,3 +392,57 @@ def test_rqdata_contract_specs_extract_tick_size_from_series() -> None:
     )
 
     assert specs[0]["price_tick"] == Decimal("0.5")
+
+
+def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
+    calls = []
+
+    class FuturesApi:
+        def get_dominant(
+            self, underlying_symbol, start_date, end_date, rule=0, rank=1
+        ):
+            calls.append((underlying_symbol, rule, rank))
+            return pd.Series(
+                ["JM2509"],
+                index=pd.to_datetime(["2025-01-02"]),
+                name="dominant",
+            )
+
+        def get_trading_parameters(self, order_book_id, start_date, end_date):
+            return pd.DataFrame()
+
+    class Api:
+        futures = FuturesApi()
+
+        def all_instruments(self, type):
+            return pd.DataFrame(
+                [
+                    {
+                        "underlying_symbol": "JM",
+                        "exchange": "DCE",
+                        "order_book_id": "JM2509",
+                        "symbol": "JM2509",
+                        "contract_multiplier": 60,
+                        "listed_date": date(2025, 1, 1),
+                        "maturity_date": date(2025, 9, 30),
+                        "trading_hours": "09:00-09:01",
+                    }
+                ]
+            )
+
+        def get_trading_dates(self, start_date, end_date):
+            return (date(2025, 1, 2),)
+
+        def get_tick_size(self, order_book_id):
+            return pd.Series({order_book_id: 0.5})
+
+    client = object.__new__(infrastructure._RqdatacClient)
+    client.api = Api()
+
+    client.metadata_snapshot(
+        ("jm",),
+        date(2025, 1, 2),
+        {"jm": date(2025, 1, 1)},
+    )
+
+    assert calls == [("JM", 2, 1)]

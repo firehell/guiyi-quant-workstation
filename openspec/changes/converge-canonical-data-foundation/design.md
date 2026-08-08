@@ -54,7 +54,7 @@ RQData adapter 和一次性 legacy adapter 只负责把来源列映射为 `Provi
 
 ### D6 — 覆盖规划以交易日和月为最小持久化单位
 
-planner 用 Calendar/Session、product start、fixed through、Catalog partition coverage、DataGap 和 MainContractMap 得到 TargetWindow；可以在月内精确下载缺口，但发布时合并该月已有可信数据并原子重写整月。`--since` 只裁剪检查域，不刷新 covered 数据。closed month 仅显式 repair 可替换。
+planner 用 Calendar/Session、product start、fixed through、Catalog partition coverage、DataGap 和 MainContractMap 得到 TargetWindow；品种期望交易日是交易所开市日与真实合约上市期的交集。continuous 可从 product start 保存；contract/actual-dominant 从 provider 首个 rank1 事实开始，首个事实之后的内部映射洞仍严格失败。可以在月内精确下载缺口，但发布时合并该月已有可信数据并原子重写整月。`--since` 只裁剪检查域，不刷新 covered 数据。closed month 仅显式 repair 可替换。
 
 替代方案是每个洞一个 Parquet 或只看尾部水位；前者制造 overlay，后者遗漏中间洞，故拒绝。
 

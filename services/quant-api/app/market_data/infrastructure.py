@@ -21,7 +21,14 @@ from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
 from app.market_data.maintenance import BarBatch
 from app.market_data.metadata import MetadataSnapshot
-from app.models import ContractSpec, Instrument, MainContractMap, TradingCalendar, TradingSession
+from app.models import (
+    Contract,
+    ContractSpec,
+    Instrument,
+    MainContractMap,
+    TradingCalendar,
+    TradingSession,
+)
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -122,15 +129,20 @@ class DatabaseCoverageSource:
             )
             if last_trading_day is None:
                 return False
-            expected_days = self._trading_days(
-                symbol,
-                self.product_start(symbol),
-                through,
+            first_map_day = self.session.scalar(
+                select(func.min(MainContractMap.trade_date)).where(
+                    MainContractMap.symbol == symbol,
+                    MainContractMap.trade_date >= self.product_start(symbol),
+                    MainContractMap.trade_date <= through,
+                )
             )
+            if first_map_day is None:
+                return False
+            expected_days = self._trading_days(symbol, first_map_day, through)
             mapped_days = tuple(self.session.scalars(
                 select(MainContractMap.trade_date).where(
                     MainContractMap.symbol == symbol,
-                    MainContractMap.trade_date >= self.product_start(symbol),
+                    MainContractMap.trade_date >= first_map_day,
                     MainContractMap.trade_date <= through,
                 ).order_by(MainContractMap.trade_date)
             ))
@@ -259,19 +271,9 @@ class DatabaseCoverageSource:
         return value
 
     def _trading_days(self, symbol: str, start: date, end: date) -> tuple[date, ...]:
+        normalized = symbol.strip().lower()
         exchange = self._exchange(symbol)
-        return tuple(
-            self.session.scalars(
-                select(TradingCalendar.trade_date)
-                .where(
-                    TradingCalendar.exchange_code == exchange,
-                    TradingCalendar.trade_date >= start,
-                    TradingCalendar.trade_date <= end,
-                    TradingCalendar.is_trading_day.is_(True),
-                )
-                .order_by(TradingCalendar.trade_date)
-            )
-        )
+        return _product_trading_days(self.session, normalized, exchange, start, end)
 
     def _sessions_for_day(self, symbol: str, trading_day: date) -> tuple[SessionWindow, ...]:
         exchange = self._exchange(symbol)
@@ -392,18 +394,25 @@ class RQDataMarketAdapter:
                 select(Instrument.exchange_code).where(Instrument.symbol == symbol)
             )
             if exchange is not None:
-                calendar_days = tuple(self.session.scalars(
-                    select(TradingCalendar.trade_date).where(
-                        TradingCalendar.exchange_code == exchange,
-                        TradingCalendar.trade_date >= floor,
-                        TradingCalendar.trade_date <= through,
-                        TradingCalendar.is_trading_day.is_(True),
-                    ).order_by(TradingCalendar.trade_date)
-                ))
+                first_map_day = self.session.scalar(
+                    select(func.min(MainContractMap.trade_date)).where(
+                        MainContractMap.symbol == symbol,
+                        MainContractMap.trade_date >= floor,
+                        MainContractMap.trade_date <= through,
+                    )
+                )
+                map_floor = first_map_day or floor
+                calendar_days = _product_trading_days(
+                    self.session,
+                    symbol,
+                    exchange,
+                    map_floor,
+                    through,
+                )
                 mapped_days = set(self.session.scalars(
                     select(MainContractMap.trade_date).where(
                         MainContractMap.symbol == symbol,
-                        MainContractMap.trade_date >= floor,
+                        MainContractMap.trade_date >= map_floor,
                         MainContractMap.trade_date <= through,
                     )
                 ))
@@ -535,7 +544,11 @@ class _RqdatacClient:
         for symbol in products:
             values = _frame(
                 self.api.futures.get_dominant(
-                    symbol.upper(), start_date=starts[symbol], end_date=through, rank=1
+                    symbol.upper(),
+                    start_date=starts[symbol],
+                    end_date=through,
+                    rule=2,
+                    rank=1,
                 )
             )
             for row in values.to_dict("records"):
@@ -572,6 +585,7 @@ class _RqdatacClient:
             sessions=sessions,
             main_contracts=tuple(main_contracts),
             contract_specs=specs,
+            main_contract_starts=dict(starts),
         )
 
     def _contract_specs(
@@ -621,6 +635,34 @@ class _RqdatacClient:
                     }
                 )
         return tuple(result)
+
+
+def _product_trading_days(
+    session: Session,
+    symbol: str,
+    exchange: str,
+    start: date,
+    end: date,
+) -> tuple[date, ...]:
+    return tuple(
+        session.scalars(
+            select(TradingCalendar.trade_date)
+            .where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date >= start,
+                TradingCalendar.trade_date <= end,
+                TradingCalendar.is_trading_day.is_(True),
+                exists().where(
+                    Contract.instrument_symbol == symbol.strip().lower(),
+                    Contract.listed_date.is_not(None),
+                    Contract.listed_date <= TradingCalendar.trade_date,
+                    Contract.maturity_date.is_not(None),
+                    Contract.maturity_date >= TradingCalendar.trade_date,
+                ),
+            )
+            .order_by(TradingCalendar.trade_date)
+        )
+    )
 
 
 def _load_product_starts(path: Path) -> dict[str, date]:
