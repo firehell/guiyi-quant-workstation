@@ -123,21 +123,21 @@ PROTECTED_BOUNDARIES: Mapping[str, str] = {
     "9.1 canonical data pipeline": (
         r"RQData.{0,160}staging.{0,160}(?:validation|校验).{0,200}"
         r"(?:historical\s+canonical|Historical\s+Canonical).{0,220}"
-        r"Catalog/Manifest/Gap/MainContractMap.{0,160}MarketDataService"
+        r"(?:八表\s+Catalog|八表\s+Catalog/MainContractMap).{0,160}MarketDataService"
     ),
     "9.2 canonical read interface": r"MarketDataService",
     "9.3 explicit dataset identity": (
         r"DatasetKey.{0,240}continuous.{0,160}actual_dominant"
     ),
-    "9.4 DataGap fails visibly without fallback": (
-        r"DataGap.{0,180}(?:不得静默|不静默|不得.*回退|不.*回退|fail)"
+    "9.4 physical-integrity failures are explicit without fallback": (
+        r"(?:映射|分区|coverage|物理完整性).{0,180}(?:显式失败|不得静默|不静默|不得.*回退|不.*回退|fail)"
     ),
-    "9.5 six hard validations": r"(?:六项硬校验|six hard validations)",
+    "9.5 six validations": r"六项(?:硬)?校验",
     "9.7 historical/live separation": (
         r"historical\s+canonical.{0,120}live\s+observation.{0,120}(?:分离|separat|不能|不得)"
     ),
     "9.8 atomic publication integrity": (
-        r"(?=.*(?:原子|atomic))(?=.*(?:digest|checksum))(?=.*(?:row(?:-| )?count|row count))"
+        r"(?:原子|atomic).{0,260}(?:part\.parquet|发布)"
     ),
     "9.9 preserve last valid canonical": (
         r"(?:失败|fails?).{0,120}(?:保留|preserve).{0,100}(?:最后有效|last valid).{0,80}canonical"

@@ -40,8 +40,8 @@ def test_property_15_formal_historical_requests_preserve_identity_and_quality(in
         "MarketDataService",
         "continuous",
         "actual_dominant",
-        "DataGap",
-        "六项硬校验",
+        "八表 Catalog",
+        "六项校验",
         "contract",
     )
     marker = markers[index % len(markers)]

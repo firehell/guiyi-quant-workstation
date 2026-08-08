@@ -139,9 +139,9 @@ def test_scan_active_surfaces_reports_findings_for_synthetic_tree(tmp_path: Path
         path.write_text(
             "personal develop workflow\n"
             "MarketDataService DatasetKey continuous actual_dominant\n"
-            "DataGap 不得静默回退。六项硬校验\n"
+            "物理完整性异常显式失败，不得静默回退。六项校验\n"
             "historical canonical and live observation 分离\n"
-            "原子发布 digest checksum row-count\n"
+            "月分区以同文件系统临时文件原子替换 part.parquet\n"
             "失败时保留最后有效 canonical\n"
             "生产 DB 正式数据需要一次性执行意图\n"
             "auto_order=false 拒绝订单\n"
@@ -159,7 +159,7 @@ def test_scan_active_surfaces_reports_findings_for_synthetic_tree(tmp_path: Path
             "凭据 token webhook 不得进入仓库\n"
             "外部输入 类型 格式 范围 允许值\n"
             "RQData staging validation Historical Canonical "
-            "Catalog/Manifest/Gap/MainContractMap MarketDataService\n",
+            "八表 Catalog/MainContractMap MarketDataService\n",
             encoding="utf-8",
         )
     (tmp_path / "docs" / "WORKTREE_RELEASE_WORKFLOW.md").write_text("old", encoding="utf-8")

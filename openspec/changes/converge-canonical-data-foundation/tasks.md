@@ -5,10 +5,10 @@
 - [x] 1.2 明确当前代码仍待收口，未把 DFD-02～DFD-06 或真实外部操作记作完成。
 - [x] 1.3 严格验证 OpenSpec、引用一致性与独立 Review。
 
-## DFD-02：删除 Candidate、legacy 与生成工件
+## DFD-02：删除退出维护面、legacy 与生成工件
 
-- [x] 2.1 完成 scoped implementation plan；删除 Candidate/Gate/Promotion、legacy importer 和
-  已生成工件，并关闭代码、测试、CLI、文档引用。
+- [x] 2.1 完成 scoped implementation plan；删除退出的维护面、legacy importer 和已生成工件，并关闭
+  代码、测试、CLI、文档引用。
 - [x] 2.2 运行受影响定向测试和旧入口/死引用扫描。
 
 ## DFD-03：Slim Storage、Catalog、Models 与 0036
@@ -32,8 +32,8 @@
 
 ## DFD-06：全量验证与死引用收口
 
-- [ ] 6.1 删除剩余 active 死引用和过期测试/文档，保留仅必要的 Git/Alembic/OpenSpec 历史。
-- [ ] 6.2 运行后端、迁移、CLI、API、前端、OpenSpec、lint/type/build 和 diff/reference 全量验证。
+- [x] 6.1 删除剩余 active 死引用和过期测试/文档，保留仅必要的 Git/Alembic/OpenSpec 历史。
+- [x] 6.2 运行后端、迁移、CLI、API、前端、OpenSpec、lint/type/build 和 diff/reference 全量验证。
 
 ## DFD-07：真实数据清理与 RQData 重建（受控外部操作）
 

@@ -11,9 +11,12 @@
 ## 冻结合同
 
 - 物理 Dataset 是 `continuous|contract` 和四字段 `DatasetKey`；`actual_dominant` 只在查询时拼接。
+  `continuous`、`contract` 与 `actual_dominant` 是不同查询模式，不可互换。
 - Direct 是 `1m/1d/1w`，Derived 是 `5m/15m/30m/60m`，Derived 只从同 Dataset Canonical 1m 聚合。
 - 每 Dataset 每月只有一个 `part.parquet`。完整 coverage、row count、Catalog identity 与文件可读性
   共同定义可用月；不存在额外发布/缺口/参数数据语言。
+- 月分区先完成候选文件校验，再以同文件系统临时文件原子替换；任何失败保留最后一个有效
+  `part.parquet`。
 - PostgreSQL active 数据表固定为八张，不保存 Bar 或运行历史。
 - `MetadataSynchronizer` 维护交易所、合约、Calendar、Session 和 rank1 map；
   `HistoricalDataManager` 承担 update、refresh、audit；`MarketDataService` 是唯一读入口。
@@ -34,7 +37,7 @@ guiyi data audit --universe active
 ## 实施顺序
 
 1. DFD-01 已重置文档和 OpenSpec 合同。
-2. DFD-02 删除 Candidate、legacy 和生成工件。
+2. DFD-02 删除退出的维护面、legacy 和生成工件。
 3. DFD-03 收口 Parquet storage、Catalog、ORM 和候选 `20260808_0036`。
 4. DFD-04 收口 MarketDataService、Market API 和 Market Web。
 5. DFD-05 实现最终 update/refresh/audit 与 quota natural resume。

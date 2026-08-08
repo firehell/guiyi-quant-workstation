@@ -6,12 +6,10 @@
 
 ## What Changes
 
-- **BREAKING** active 数据模型固定为八表；退出 `contract_specs`、`data_gaps` 和所有发布清单/内容
-  摘要字段。
+- **BREAKING** active 数据模型固定为八表；退出旧参数、缺口和所有发布清单/内容摘要字段。
 - **BREAKING** 月分区只发布 `part.parquet`；可用性由 Catalog identity、coverage、row count 和文件
   可读性共同确定。
-- **BREAKING** CLI 最终仅保留 `data update|refresh|audit`，退出 bootstrap、exact-plan repair 及
-  Candidate/Gate/Promotion 操作面。
+- **BREAKING** CLI 最终仅保留 `data update|refresh|audit`，退出旧维护与发布操作面。
 - **BREAKING** Market 查询响应退出 partition/source/session/map digest，仅保留请求、bars、coverage
   与 resolved contract segments。
 - `update` 以 Catalog + 已发布月作为唯一 checkpoint，支持固定 through、1G/day quota 中止和自然续传；

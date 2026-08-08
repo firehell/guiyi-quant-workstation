@@ -24,7 +24,7 @@ URI 和可读文件即为发布状态；不保存内容清单、digest/checksum 
 
 active 表为 `exchanges`、`instruments`、`contracts`、`trading_calendars`、`trading_sessions`、
 `main_contract_map`、`market_datasets`、`market_partitions`。`contracts` 只维护真实上市/退市边界，
-不承担 fee、margin 或回测参数。`market_partitions` 不含 manifest URI、checksum 或 digest 字段。
+不承担 fee、margin 或回测参数。`market_partitions` 不含内容完整性摘要字段。
 
 ### D4 — 三个深模块和三个 CLI
 

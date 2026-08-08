@@ -4,9 +4,10 @@
 
 ## 结论
 
-Data Foundation 已完成 **DFD-01～DFD-05**：目标架构现在是本地、单用户、可从 RQData 重建的
-历史行情底座；月度 storage、最小 Catalog/ORM、候选 migration 及最小 Market 查询/API/Web 合同已收口。
-此结论不表示 DFD-06 的代码收口、生产数据库迁移、正式 Canonical 重建或真实 RQData 下载已经发生。
+Data Foundation 已完成 **DFD-01～DFD-06**：目标架构现在是本地、单用户、可从 RQData 重建的
+历史行情底座；月度 storage、最小 Catalog/ORM、候选 migration 及最小 Market 查询/API/Web 合同已收口，
+并已完成全量本地验证与 active 引用收口。此结论不表示生产数据库迁移、正式 Canonical 重建或真实
+RQData 下载已经发生。
 
 ## 已冻结的目标合同
 
@@ -25,12 +26,13 @@ Data Foundation 已完成 **DFD-01～DFD-05**：目标架构现在是本地、�
 
 ## 当前实现差异
 
-DFD-02 已删除 Candidate/Gate/Promotion、legacy importer、旧 CLI 入口及其生成工件。DFD-03 已将
+DFD-02 已删除退出的维护面、legacy importer、旧 CLI 入口及其生成工件。DFD-03 已将
 storage、Catalog、ORM 和候选 `20260808_0036` 收口为八表与单月 `part.parquet`，并仅在隔离 PostgreSQL
 中验证 migration。DFD-04 已验证三种查询、周线 rank1 owner 和 Derived physical partition 读取，并移除
 Market API/Web 的 digest 展示。DFD-05 已实现 `update|refresh|audit`、完整月 refresh、quota partial
-自然续传和本地 Derived 优先重建；DFD-06 负责最终全量验证。在 DFD-06 完成前，不把所有 active 引用收口
-表述为已实现。
+自然续传和本地 Derived 优先重建。DFD-06 已运行后端/工程全量、前端 test/build、Ruff、Mypy 和严格
+OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺口合同收口为八表、完整性和
+原子月分区发布合同。
 
 ## 外部操作状态
 

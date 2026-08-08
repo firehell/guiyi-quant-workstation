@@ -9,7 +9,7 @@
 不得构造 RQData client 或写 PostgreSQL/Parquet；audit MUST 只读。
 
 #### Scenario: 已退出动作
-- **WHEN** 用户调用 bootstrap、repair plan 或 Candidate/Gate 操作
+- **WHEN** 用户调用任何已退出的维护操作
 - **THEN** CLI 不暴露该入口
 
 ### Requirement: fixed through 和 natural resume

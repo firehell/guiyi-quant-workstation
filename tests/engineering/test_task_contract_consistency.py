@@ -67,10 +67,10 @@ def test_active_contracts_reject_collaboration_authorization_predicates(relative
         "MarketDataService",
         "continuous",
         "actual_dominant",
-        "DataGap",
-        "six hard validations",
+        "八表 Catalog",
+        "六项校验",
         "auto_order=false",
-        "一次性",
+        "单次外部执行意图",
     ],
 )
 def test_data_core_contract_keeps_business_boundaries(needle: str) -> None:

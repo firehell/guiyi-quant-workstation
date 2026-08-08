@@ -18,7 +18,7 @@
 | Catalog | PostgreSQL 只保留八张 active 数据表 | 不保留合约参数、内容摘要、运行历史或通用 lineage |
 | 查询 | MarketDataService 是唯一历史行情入口 | 消费者不得 glob、自选文件、自判主力或跨频回退 |
 | 增量 | `--since` 是检查下界，`--through` 是固定水位 | 已发布 Parquet + Catalog 是唯一自然续传水位；同 T 完整重跑零请求零写入 |
-| 修复 | `refresh` 重建指定品种/日期范围内相交月份的完整数据族 | 不接受 exact repair-plan JSON 或逐行裁决 |
+| 修复 | `refresh` 重建指定品种/日期范围内相交月份的完整数据族 | 不接受精确计划文件或逐行裁决 |
 | 额度 | 明确的 provider quota 耗尽立即停止本轮 | 保留已发布月，未完成月不发布；下次同命令从首个缺失目标续传 |
 | live | historical canonical 与 live observation 分离 | 当前无盘中 Live 应用路径；未确认 bar 不进正式历史资产 |
 | 交易安全 | `auto_order=false` 始终成立 | 任何研究结果、展示或通知都不是交易指令 |
