@@ -101,3 +101,52 @@ Result: Ruff passed; mypy passed (`16 source files`).
 - `get_trading_periods` malformed, duplicate, missing, or mismatched rank-1
   rows fail closed; no older `get_trading_hours` fallback is used.
 - No Candidate Gate A/B/C conclusion follows from this repository-only change.
+
+## P1 review amendment
+
+Two review findings were fixed without external operations.
+
+- Historical Session coverage now accepts only provider rows whose
+  `effective_from` **and** `effective_to` both equal the historical trading
+  day. An older open-ended `provider=rqdata` row, including one created from a
+  former current-hours approximation, cannot satisfy the check.
+- Calendar validation now extends to the Sunday ending `through`'s ISO week,
+  while Session facts remain required only through the historical `through`
+  date. Metadata already requests Calendar through `through + 7 days`; it now
+  persists that whole returned context instead of dropping the trailing days.
+
+### P1 RED
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  -k 'open_ended_current_hours_row or full_iso_week_calendar_context'
+```
+
+Result: `2 failed, 21 deselected`. The prior implementation accepted an
+open-ended current Session row and accepted Friday `through` without the
+provider's Saturday/Sunday Calendar facts.
+
+### P1 GREEN
+
+The same focused command passed: `2 passed, 21 deselected`.
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q services/quant-api/tests/data_foundation
+```
+
+Result: `95 passed`.
+
+```bash
+uv run --project services/quant-api ruff check \
+  services/quant-api/app/market_data/infrastructure.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py
+
+MYPYPATH=services/quant-api \
+uv run --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/market_data/infrastructure.py
+```
+
+Result: Ruff and mypy passed.

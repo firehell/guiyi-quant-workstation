@@ -207,13 +207,14 @@ class DatabaseCoverageSource:
         for symbol in tuple(dict.fromkeys(item.strip().lower() for item in products)):
             exchange = self._exchange(symbol)
             context_start = _calendar_context_start(self.product_start(symbol))
-            expected_calendar_days = (through - context_start).days + 1
+            calendar_through = _iso_week_end(through)
+            expected_calendar_days = (calendar_through - context_start).days + 1
             observed_calendar_days = int(
                 self.session.scalar(
                     select(func.count()).select_from(TradingCalendar).where(
                         TradingCalendar.exchange_code == exchange,
                         TradingCalendar.trade_date >= context_start,
-                        TradingCalendar.trade_date <= through,
+                        TradingCalendar.trade_date <= calendar_through,
                         TradingCalendar.provider == "rqdata",
                     )
                 )
@@ -230,11 +231,8 @@ class DatabaseCoverageSource:
                             TradingSession.instrument_symbol == symbol,
                             TradingSession.provider == "rqdata",
                             TradingSession.is_active.is_(True),
-                            TradingSession.effective_from <= trading_day,
-                            (
-                                TradingSession.effective_to.is_(None)
-                                | (TradingSession.effective_to >= trading_day)
-                            ),
+                            TradingSession.effective_from == trading_day,
+                            TradingSession.effective_to == trading_day,
                         ).limit(1)
                     )
                     if fact is None:
@@ -695,7 +693,7 @@ class _RqdatacClient:
                 "provider": "rqdata",
             }
             for exchange in exchanges
-            for day in _days(calendar_start, through)
+            for day in _days(calendar_start, calendar_end)
         )
         contract_multipliers = {
             str(values["contract_code"]): Decimal(str(values["contract_multiplier"]))
@@ -831,6 +829,10 @@ def _calendar_context_start(effective_start: date) -> date:
     if month_start.month == 1:
         return date(month_start.year - 1, 12, 1)
     return date(month_start.year, month_start.month - 1, 1)
+
+
+def _iso_week_end(day: date) -> date:
+    return day + timedelta(days=7 - day.isoweekday())
 
 
 def _month_end(year: int, month: int) -> date:

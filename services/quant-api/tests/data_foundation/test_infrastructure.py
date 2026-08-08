@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pandas as pd
@@ -65,6 +65,44 @@ def _session(tmp_path):
     starts = tmp_path / "starts.csv"
     starts.write_text("product,window_start,note\njm,2025-01-06,test\n")
     return session, starts
+
+
+def _add_provider_calendar_facts(session: Session, start: date, end: date) -> None:
+    existing = {
+        value
+        for value in session.scalars(
+            select(TradingCalendar.trade_date).where(TradingCalendar.exchange_code == "DCE")
+        )
+    }
+    for offset in range((end - start).days + 1):
+        day = start + timedelta(days=offset)
+        if day not in existing:
+            session.add(
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=day,
+                    is_trading_day=day.weekday() < 5,
+                    provider="rqdata",
+                )
+            )
+
+
+def _add_date_scoped_session_facts(session: Session, days: tuple[date, ...]) -> None:
+    for day in days:
+        session.add(
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name="provider_day",
+                start_time=time(9),
+                end_time=time(9, 5),
+                effective_from=day,
+                effective_to=day,
+                crosses_midnight=False,
+                is_active=True,
+                provider="rqdata",
+            )
+        )
 
 
 def test_database_coverage_uses_actual_exchange_sessions_and_complete_iso_week(tmp_path) -> None:
@@ -368,6 +406,35 @@ def test_historical_session_coverage_rejects_missing_provider_context(tmp_path) 
     with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
         coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
 
+    session.close()
+
+
+def test_historical_session_coverage_rejects_open_ended_current_hours_row(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    _add_provider_calendar_facts(session, date(2024, 12, 1), date(2025, 1, 12))
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+
+    with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+        coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
+
+    session.close()
+
+
+def test_historical_session_coverage_requires_full_iso_week_calendar_context(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    _add_provider_calendar_facts(session, date(2024, 12, 1), date(2025, 1, 10))
+    _add_date_scoped_session_facts(session, tuple(date(2025, 1, day) for day in range(6, 11)))
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+
+    with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+        coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
+
+    _add_provider_calendar_facts(session, date(2025, 1, 11), date(2025, 1, 12))
+    session.commit()
+
+    coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
     session.close()
 
 
