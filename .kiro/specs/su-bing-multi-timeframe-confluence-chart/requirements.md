@@ -1,5 +1,7 @@
 # Requirements Document
 
+> **未实施草稿**：本 Spec 仅有 requirements/design，无 tasks；不表示已实现。当前 Web 为 Market-only。
+
 ## Introduction
 
 本 Spec 定义“独立苏冰多周期共振策略 + 主图指标”的通用首版基线。目标是形成一个不绑定具体品种、版本化、可解释的苏冰策略族需求，以及服务人工观察和机会发现的主图指标需求。策略遵循“大周期定方向、中周期选图、小周期择时”的分层框架，并将周期共振与 EMA、MACD、BOLL、成交量、前区间突破组成的指标共振明确分开。

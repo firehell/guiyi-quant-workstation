@@ -2,6 +2,19 @@
 
 本目录保存业务/受控任务合同。恢复只使用 Git history（见 `AGENTS.md` / `DECISIONS.md`）。
 
+## 文档命名约定
+
+| 范围 | 约定 | 示例 |
+|---|---|---|
+| `docs/` 顶层文件 | `SCREAMING_SNAKE.md` | `DATA_CENTER.md` |
+| `docs/` 子目录 | `snake_case` | `strategy_knowledge/su_bing/` |
+| 本目录任务合同 | `TASK-ID-SLUG.md`（大写 ID + 连字符） | `GY-DATA-CORE-V2.md`、`S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md` |
+| `openspec/`、`.kiro/`、`prompts/` | kebab-case | `slim-web-to-market`、`code-review.md` |
+| 苏冰公开知识路径 | `su_bing`（underscore） | `docs/strategy_knowledge/su_bing/` |
+| Cursor skill 目录名 | 可保留 kebab（工具惯例） | `.agents/skills/su-bing-strategy/` |
+
+禁止：用 `*_latest` 目录名暗示 live 状态；在 `docs/` 顶层混用 kebab 文件名；在 skill 内复制 docs 已有的 SCREAMING 正文造成双轨。
+
 ## 四种 disposition
 
 | Disposition | 含义 | 处理 |
@@ -21,7 +34,7 @@ Gate/hash-path 不再作为授权。
 
 ## Frozen Runtime-consumed（Phase E 前不可删）
 
-- `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`
+- `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`（事故边界；非当前 schema 仪表盘，生产 head 见 `STATUS.md`）
 
 已退役的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据仅能从 Git history 追溯；
 不得再当作现存路径、兼容入口或当前授权。未来重建回测或 Runtime 验收必须新建任务，

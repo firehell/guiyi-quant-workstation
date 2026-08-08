@@ -44,7 +44,7 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_market_data_facade_equivalence.py
 ```
 
-Market/Profile 回归：
+Market / Canonical 回归（含 dominants Catalog coverage）：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -57,18 +57,30 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_market_dual_mode_contract.py \
   services/quant-api/tests/test_market_indicators_api.py \
   services/quant-api/tests/test_market_macd_indicator_api.py \
-  services/quant-api/tests/test_live_market_reader.py \
-  services/quant-api/tests/test_live_target_freshness.py
+  services/quant-api/tests/test_market_dominant_reader.py \
+  services/quant-api/tests/test_market_canonical_api.py \
+  services/quant-api/tests/test_market_data_service.py
 ```
 
-Profile/lineage compatibility 回归（不证明 active selector）：
+已随 Live 栈退役：`test_live_market_reader.py`、`test_live_target_freshness.py`（勿再运行）。
+
+Profile/lineage compatibility 与 Review 库测（非 mounted Web；可选）：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_signal_review_profile_lineage.py \
+  services/quant-api/tests/test_signal_review_canonical_cutover.py \
   services/quant-api/tests/test_review_center.py
 ```
+
+### Market-only Web smoke
+
+```bash
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web build
+```
+
+确认路由仅 Market；勿测 `/signals`、`/reviews`、`/dashboard`、`/strategies`、`/settings`、Live 模式。
 
 ### GY-CORE-03 unified CLI
 
@@ -204,7 +216,7 @@ uv run --project services/quant-api pytest -q \
 ```
 
 该组验证 JM target config、MainContractMap、七周期 MarketDataService，以及统一
-`guiyi data update|download|aggregate|sync|audit|live|verify` 合同。测试不调用 RQData，
+`guiyi data update|download|aggregate|sync|audit|verify` 合同。测试不调用 RQData，
 不写正式 Parquet/PostgreSQL。
 
 旧 `guiyi data task07 assess` 生产只读 Gate 已从 active CLI 移除；如需对正式

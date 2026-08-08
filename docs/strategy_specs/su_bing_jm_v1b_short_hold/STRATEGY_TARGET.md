@@ -19,7 +19,7 @@
 
 - `.agents/skills/su-bing-strategy/SKILL.md`
 - `.agents/skills/su-bing-strategy/references/STRATEGY_GENERATION_PROTOCOL.md`
-- `.agents/skills/su-bing-strategy/references/SU_BING_RULEBOOK.md`
+- `docs/strategy_knowledge/su_bing/SU_BING_RULEBOOK.md`
 - `.agents/skills/su-bing-strategy/references/SU_BING_REVIEW_TAGS.md`
 
 未发现 `docs/strategy_knowledge/su_bing/SKILL_ACCEPTANCE_REVIEW.md`，本文不补造该验收 review 的结论。

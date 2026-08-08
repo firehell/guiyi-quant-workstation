@@ -69,7 +69,7 @@ RQData (only provider)
 -> one canonical Parquet root (provider 1m / 1d / 1w)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
--> Web / Indicator / Signal / Review
+-> Market Web / Indicator / data+runtime API/CLI
 ```
 
 - staging 或校验失败数据不长期保留；精确窗口最多自动重试三次，之后登记 DataGap。

@@ -1,2 +1,0 @@
-product,actual_contracts,active_actual_periods,stage9_status,blocked_reasons
-jm,,,stage9_blocked,"missing_actual_contract_active_passed;missing_entry_periods:5m,15m;signal_event_gate_required_for_bar_end_and_trigger_price"

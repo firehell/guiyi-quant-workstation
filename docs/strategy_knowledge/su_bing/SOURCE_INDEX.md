@@ -29,11 +29,11 @@ transcribed into Skill, Rulebook, Review Tags, or Strategy Spec drafts.
 
 | source_id | notion_page_title | source_type | section_name | raw_topic_summary | extracted_rule_candidate | quantizable | target_doc | status |
 |---|---|---|---|---|---|---|---|---|
-| sbn-001 | 交易从此开始 | pdf | 交易从此开始 | 目录型入口，列出苏冰体系的理念、系统、原则、案例、资金、盯盘、心理、复盘、周期和反人性主题。 | 作为 Skill 导航与资料索引，不形成规则。 | no | NOTION_EXTRACTION_SUMMARY.md | extracted |
+| sbn-001 | 交易从此开始 | pdf | 交易从此开始 | 目录型入口，列出苏冰体系的理念、系统、原则、案例、资金、盯盘、心理、复盘、周期和反人性主题。 | 作为 Skill 导航与资料索引，不形成规则。 | no | SOURCE_INDEX.md | extracted |
 | sbn-002 | 交易理念 | pdf | 交易理念 | 聚焦常见错误、趋势前提、系统化交易、回测优化、震荡回避和纪律执行。 | 可抽象为理念边界、震荡过滤、系统验证和纪律约束候选。 | partial | SU_BING_SKILL.md; SU_BING_RULEBOOK.md | extracted |
 | sbn-003 | 交易系统 | pdf | 交易系统 | 围绕均线方向、MACD 确认、量能、震荡区间、突破有效性、持仓和退出约束组织系统框架。 | 可归入趋势过滤、指标确认、震荡过滤、退出管理和持仓管理候选。 | yes | SU_BING_RULEBOOK.md | extracted |
 | sbn-004 | 原则 | pdf | 原则 | 强调开仓克制、止损优先、趋势把握、仓位控制、等待确认和执行固定盈亏比框架。 | 可归入风控原则、执行纪律、等待确认和交易频率控制候选。 | partial | SU_BING_SKILL.md; SU_BING_RULEBOOK.md | extracted |
-| sbn-005 | 经典开仓案例 | pdf | 经典开仓案例 | PDF 文本层仅抽到案例标题，关键图形内容疑似在图片中。 | 需要人工看图或 OCR 后再判断是否能转为案例标签。 | needs_review | NOTION_EXTRACTION_SUMMARY.md | needs_manual_review |
+| sbn-005 | 经典开仓案例 | pdf | 经典开仓案例 | PDF 文本层仅抽到案例标题，关键图形内容疑似在图片中。 | 需要人工看图或 OCR 后再判断是否能转为案例标签。 | needs_review | SOURCE_INDEX.md | needs_manual_review |
 | sbn-006 | 资金管理 | pdf | 资金管理 | 聚焦最大可承受亏损、仓位轻重、隔夜风险、止损参照、趋势和震荡下的资金处理。 | 可归入仓位约束、单笔风险、隔夜风险和回撤控制候选。 | partial | SU_BING_RULEBOOK.md; SU_BING_REVIEW_TAGS.md | extracted |
 | sbn-007 | 盯盘需要关注的点 | pdf | 盯盘需要关注的点 | 覆盖复盘、盯盘、成交量、持仓量、涨跌幅、外盘、熟悉品种和多周期切换。 | 可归入盘前检查、盘中观察、品种筛选和复盘清单候选。 | partial | SU_BING_SKILL.md; SU_BING_REVIEW_TAGS.md | extracted |
 | sbn-008 | 执行力训练 | pdf | 执行力训练 | 聚焦按计划执行、止盈止损、假突破处理、等待机会、减少冲动和长期训练。 | 主要归入纪律训练、执行偏差和复盘标签，不转成交易触发。 | partial | SU_BING_SKILL.md; SU_BING_REVIEW_TAGS.md | extracted |

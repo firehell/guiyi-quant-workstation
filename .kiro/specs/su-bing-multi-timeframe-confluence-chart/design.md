@@ -1,5 +1,7 @@
 # Design Document: Su Bing Multi-Timeframe Confluence Chart
 
+> **未实施草稿**：无 tasks；不表示已实现。当前 Web 为 Market-only。
+
 ## Overview
 
 本设计定义一个新的、通用且不绑定品种的 `Su_Bing_Multi_Timeframe_Confluence_Strategy_Family` 首版工程基线，以及 Market K线页上的只读解释图层。首版固定使用 `1d` 定方向、`15m` 选图、`5m` 择时；每次观察绑定一个 `LogicalActualDominantObservationBinding`，固定 `provider=rqdata`、`kind=actual_dominant`、产品 symbol、adjustment/schema、`mapping_rule=volume_open_interest` 与 `rank=1`。三个周期分别由服务端解析具体合约 lineage；换月窗口内可合法消费多个具体合约。输出是可解释、可复算、前缀稳定的 `StrategyObservation`，不是订单、持仓、退出交易、建议手数、通知或交易指令。

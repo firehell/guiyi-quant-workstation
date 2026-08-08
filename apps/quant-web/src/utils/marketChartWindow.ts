@@ -17,10 +17,16 @@ export const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
 export const CHART_PERIOD_OPEN_ORDER = ['15m', '5m', '1d', '1w', '1m', '30m', '60m'] as const
 
 /**
- * 生成品种的连续主力合约代码（如 jm.main）。
+ * 生成品种的连续主力合约代码（如 jm.MAIN）。
  */
 export function continuousContractFor(product: string): string {
   return `${product.trim().toLowerCase()}.MAIN`
+}
+
+/** 合约代码大小写不敏感比较（Catalog 多为 JM.MAIN，前端可能写 jm.MAIN）。 */
+export function contractsEqual(left?: string | null, right?: string | null): boolean {
+  if (!left || !right) return false
+  return left.trim().toUpperCase() === right.trim().toUpperCase()
 }
 
 /**

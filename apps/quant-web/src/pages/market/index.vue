@@ -8,7 +8,7 @@ import { getMarketDominants } from '@/api/market'
 import type { DominantContractItem } from '@/types/market'
 import { EXCHANGES } from '@/utils/constants'
 import { formatAvailablePeriodTags, preferredOpenPeriod } from '@/utils/marketChartWindow'
-import { safeMarketApiError } from '@/utils/marketChartQuery'
+import { isDominantMappingStale, safeMarketApiError, staleDominantMappingMessage } from '@/utils/marketChartQuery'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,7 +89,19 @@ const columns: DataTableColumns<DominantContractItem> = [
       ),
   },
   { title: '主力合约', key: 'actual_contract', width: 110 },
-  { title: '映射日', key: 'dominant_mapping_date', width: 110 },
+  {
+    title: '映射日',
+    key: 'dominant_mapping_date',
+    width: 130,
+    render: (row) => {
+      const label = row.dominant_mapping_date || '-'
+      if (!isDominantMappingStale(row.dominant_mapping_date)) return label
+      return h('div', { class: 'mapping-date-cell' }, [
+        h('span', null, label),
+        h(NTag, { size: 'tiny', type: 'warning', style: { marginLeft: '6px' } }, { default: () => '可能过期' }),
+      ])
+    },
+  },
   {
     title: '可用周期',
     key: 'bars_coverage',
@@ -166,6 +178,12 @@ async function loadDominants() {
 
 /** 双击行：按 coverage 选首选周期，跳转 market-chart。 */
 function openChart(row: DominantContractItem) {
+  if (isDominantMappingStale(row.dominant_mapping_date)) {
+    message.warning(staleDominantMappingMessage())
+  }
+  if (!row.quote_ready) {
+    message.warning('该主力暂无 Canonical 覆盖，打开后可能 DataGap；可改用主连研究。')
+  }
   const period = preferredOpenPeriod(row.bars_coverage)
   const contractView = period === '1d' || period === '1w' ? 'continuous' : undefined
   void router.push({

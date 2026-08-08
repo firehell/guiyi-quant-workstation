@@ -38,10 +38,13 @@ Skill 的原始知识来源只能是苏冰课程 MD / Notion 导出内容，以�
 
 - `references/source-map.md`
 - `docs/strategy_knowledge/su_bing/SOURCE_INDEX.md`
-- `docs/strategy_knowledge/su_bing/NOTION_EXTRACTION_SUMMARY.md`
 - `docs/strategy_knowledge/su_bing/SU_BING_RULEBOOK.md`
 - `docs/strategy_knowledge/su_bing/SU_BING_REVIEW_TAGS.md`
+- `docs/strategy_knowledge/su_bing/SU_BING_SKILL.md`（pointer）
 - `references/STRATEGY_GENERATION_PROTOCOL.md`
+- `references/SU_BING_QUANT_SPEC_V0_1.md`（legacy reference only）
+
+已删除、仅 Git history：`NOTION_EXTRACTION_SUMMARY.md`；Skill 内不再复制 Rulebook/Review Tags。
 
 禁止把以下内容作为 Skill 规则来源：
 

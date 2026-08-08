@@ -2,7 +2,7 @@
 
 本文件是个人开发模式的详细 workflow canonical。日常入口见 `docs/DEVELOPMENT.md`。其目标是让
 单一项目所有者在 `develop` 上快速迭代，同时把业务正确性与真实外部副作用边界保持为不可绕过的
-约束。
+约束。当前可执行产品面以 `STATUS.md` 为准（Market-only）。
 
 ## 1. 操作分类
 

@@ -101,4 +101,4 @@ huotian_dayou_strict_v1 research candidate created and future-tail checked
 
 第 4 步自动数值验收已通过，用户提供的 `JM8 焦煤主连 15分钟` 通达信截图已关闭外部视觉 oracle Gate，当前状态为 `GOLDEN_SAMPLE_PASS_VISUAL_ORACLE`。未提供通达信数值导出，因此不能声明逐点数值 oracle pass。
 
-第 5 步已新增离线候选评估，详见 `OFFLINE_CANDIDATE_EVAL.md`。它只允许输出 candidate events 和安全边界证据，不授权正式策略、可信回测报告、scanner、live evaluator、数据库或企业微信接入。
+第 5 步离线候选评估见 Git history（原 `OFFLINE_CANDIDATE_EVAL.md`）。它只允许输出 candidate events 和安全边界证据，不授权正式策略、可信回测报告、scanner、live evaluator、数据库或企业微信接入。

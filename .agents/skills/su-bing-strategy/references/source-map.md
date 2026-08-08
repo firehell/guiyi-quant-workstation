@@ -1,23 +1,25 @@
-# Su Bing Strategy Source Map
+# Su Bing Strategy Skill — source map
 
-This reference maps the Su Bing strategy documents that Codex may read when using the `su-bing-strategy` skill.
+## Public knowledge（docs 为唯一真相）
 
-Private source files may exist locally or in the private repository. Do not copy private Notion exports, course text, long passages, screenshots, or image-only case content into Skill-facing documents.
+- `docs/strategy_knowledge/su_bing/SOURCE_INDEX.md`
+- `docs/strategy_knowledge/su_bing/SU_BING_RULEBOOK.md`
+- `docs/strategy_knowledge/su_bing/SU_BING_REVIEW_TAGS.md`
+- `docs/strategy_knowledge/su_bing/SU_BING_SKILL.md`（pointer → 本 Skill）
 
-## Public Documents
+## Skill-local references
 
-- `docs/strategy_knowledge/su_bing/SOURCE_INDEX.md`: source classification, extraction status, target documents, and quantization flags.
-- `docs/strategy_knowledge/su_bing/NOTION_EXTRACTION_SUMMARY.md`: short paraphrased summaries and classification decisions.
-- `docs/strategy_knowledge/su_bing/SU_BING_SKILL.md`: source-material boundary and allowed/disallowed work.
-- `docs/strategy_knowledge/su_bing/SU_BING_RULEBOOK.md`: rulebook section structure for trend, EMA21, MACD, entry, and exit.
-- `docs/strategy_knowledge/su_bing/SU_BING_REVIEW_TAGS.md`: placeholder structure for future review tags.
-- `docs/strategy_knowledge/su_bing/SU_BING_QUANT_SPEC_V0_1.md`: history draft, legacy reference, and engineering reference only; not a default Strategy Spec.
+- `references/SU_BING_QUANT_SPEC_V0_1.md`：history draft / legacy engineering reference only；不是默认 Strategy Spec。
+- 本目录不再复制 `SU_BING_RULEBOOK.md` / `SU_BING_REVIEW_TAGS.md`（避免双轨）。
 
-## Loading Guidance
+## Removed（Git history only）
 
-- Read `SOURCE_INDEX.md` first when deciding whether material is quantizable or needs manual review.
-- Read `NOTION_EXTRACTION_SUMMARY.md` when summarizing source coverage or deciding which topics belong in Skill, Rulebook, or review tags.
-- Read `SU_BING_RULEBOOK.md` when producing rule specifications.
-- Read `SU_BING_REVIEW_TAGS.md` when producing review-note or trade-review labels.
-- Read `SU_BING_SKILL.md` when checking source-use boundaries.
-- Read old Quant Spec material only when a task explicitly needs historical or engineering context, and label it as `history_draft`, `legacy_reference`, or `engineering_reference`.
+- `docs/strategy_knowledge/su_bing/NOTION_EXTRACTION_SUMMARY.md`
+- Skill 内曾复制的 Rulebook / Review Tags 副本
+
+## When to read
+
+- 索引与量化标记：读 `SOURCE_INDEX.md`
+- 规则候选：读 docs 下 `SU_BING_RULEBOOK.md`
+- 复盘标签：读 docs 下 `SU_BING_REVIEW_TAGS.md`
+- 执行边界：读本 Skill 的 `SKILL.md`

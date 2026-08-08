@@ -240,4 +240,4 @@ XG2 = C>O AND DY2<0.02 AND MA(C,5)>MA(C,60)
 
 `huotian_dayou_strict_v1` 的指标层仍是 `strict_research_candidate`，不是可信定级指标或正式策略。
 
-第 4 步固定样本、Python/Web 对照和浏览器检查见 `GOLDEN_SAMPLE_ACCEPTANCE.md`。第 5 步离线候选评估见 `OFFLINE_CANDIDATE_EVAL.md`，当前结果不授权正式回测接入。
+第 4 步固定样本、Python/Web 对照和浏览器检查见 Git history（原 `GOLDEN_SAMPLE_ACCEPTANCE.md`）。第 5 步离线候选评估见 Git history（原 `OFFLINE_CANDIDATE_EVAL.md`），当前结果不授权正式回测接入。

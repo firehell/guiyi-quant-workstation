@@ -1,10 +1,18 @@
 # SignalEvent、通知与复盘合同
 
-更新时间：2026-08-06
+更新时间：2026-08-08
 
-## 1. Active signal chain
+## Current surface vs contract
 
-SignalEvent 是研究观察事件，不是订单或交易指令。active 链路固定为：
+本文是 **长期语义合同**，不是当前可执行产品面说明。
+
+- **合同有效**：`Strategy -> SignalEvent -> Notification Gate -> Channel`、default-off、无订单、fail-closed。
+- **可执行面（2026-08）已卸**：Signal/Review/Strategy/Dashboard Web 与对应 HTTP、`/ws/signals`、signal/notification RQ worker、poll Live 与 Task 06 observation 应用路径。
+- **保留**：DB 表与 quant-core 策略研究源码供后续重搭；Market Canonical 读与 data/runtime 治理见 `STATUS.md` / `docs/ARCHITECTURE.md`。
+
+## 1. Active signal chain（语义）
+
+SignalEvent 是研究观察事件，不是订单或交易指令。语义链路固定为：
 
 ```text
 Strategy
@@ -47,13 +55,13 @@ Strategy
 
 Task 06 的 confirmed observation、SignalDecision、EOD reconciliation、ResearchSample 应用路径
 已从仓库移除（含 `guiyi data live` / `live_review_loop`）。历史 Alembic 与 Git 可追溯；
-不得再把它当作 active 信号或盘中观察入口。人工 Review 中心仍服务于正式 `SignalEvent` 复盘。
+不得再把它当作 active 信号或盘中观察入口。Review Web/API 亦已卸载；表未物理 drop。
 
 ## 5. HTDY original observation rule（盘中 realtime 已退役）
 
 HTDY original 的盘中 realtime first-seen 应用路径已随 poll Live 栈移除。
 历史白名单语义仅作合同归档参考；当前不得再通过 LiveMinuteBar / HTDY realtime snapshot
-生成 observation 或通知。正式历史信号继续走 Canonical scanner。
+生成 observation 或通知。未来正式历史信号须走 Canonical scanner（当前无 mounted scanner HTTP）。
 
 ## 6. Notification Gate
 
@@ -64,34 +72,36 @@ HTDY original 的盘中 realtime first-seen 应用路径已随 poll Live 栈移�
 - 企业微信文案必须包含研究观察、非交易指令和无自动下单边界。
 - 一次真实发送不启用 autosend、重复发送、live 或交易。
 
-## 7. Review contract
+## 7. Review contract（语义；Web 已卸）
 
-active Review source 只允许：
+语义上 Review source 只允许：
 
 - `strategy_signal`；
 - `signal_event`；
 - `signal_decision`；
 - `manual_trade`。
 
-Review 保留列表、显式创建、保存、附件、K 线与 lineage 展示。Web 在列表和 direct id 两条路径
-都必须拒绝旧 `backtest_trade` 或未知来源，并在请求 Review bars 前 fail-closed。
-
-Review -> Market -> Review 必须保留安全 `review_id` 与允许的 `return_route`，不得通过路由 query
-恢复已删除的 report/trade/backtest deep-link。
+当前无 Review Web/API。重建时必须拒绝旧 `backtest_trade` 或未知来源，并在请求 bars 前 fail-closed；
+不得通过路由 query 恢复已删除的 report/trade/backtest deep-link。
 
 ## 8. Public surfaces
 
-保留：
+当前 **不** 提供：
 
-- Signal 列表、事件与只读订阅；
-- Review 的四类非回测来源；
-- Market/Indicator/Watchlist；
-- Task 06 与 after-market scheduler 的默认关闭状态和只读 health。
+- Signal 列表、事件订阅或 `/api/signals` / `/ws/signals`；
+- Review Web/API；
+- Watchlist / Strategy / Dashboard HTTP；
+- signal/notification RQ worker。
+
+当前提供：
+
+- Market Canonical 读与 Indicator 展示计算；
+- `/api/v1/data`、`/api/runtime` 与对应 CLI；
+- after-market scheduler 默认关闭。
 
 已删除且不得兼容恢复：
 
-- `/api/backtests/**`；
-- `/ws/backtests/**`；
+- `/api/backtests/**`、`/ws/backtests/**`；
 - Web `/backtest`、`/backtest/batch`、`/settings`；
 - backtest report/trade Review source 与 Market markers；
 - `guiyi-backtests` queue/worker；

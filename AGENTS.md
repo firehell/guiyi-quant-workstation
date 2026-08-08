@@ -4,7 +4,8 @@
 
 ## 项目边界
 
-- 做：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
+- 做（长期）：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
+- 当前可执行面：Web 仅 Market；API/CLI 为 market / data / runtime；signal/review/strategy Web·HTTP·worker 与盘中 Live 已卸或退役。
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
@@ -44,9 +45,9 @@ RQData → Parquet → DuckDB；`quant-core` 仅保留 vn.py-compatible 策略�
 4. V2 active target 由 `DatasetKey + Catalog/Manifest/Gap/MainContractMap + MarketDataService` 定义；消费者不得自行 glob、选择 active、判断主力或绕过 quality。`continuous` 与 `actual_dominant` 必须显式且不可互换。
 5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、Manifest digest、checksum 与 row-count 校验后才能发布；失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
 6. DataGap 或 failed-quality 区间必须显式失败，不得静默填充、缩短、替换或跨频回退。
-7. 策略研究、未来重建的回测和正式历史信号禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 只允许 `docs/INDICATOR_KERNEL.md` 与 `docs/SIGNAL_EVENTS.md` 定义的 realtime first-seen observation-only 白名单。
-8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。信号链路保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；输出必须标注研究观察、非交易指令。
-9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
+7. 策略研究、未来重建的回测和正式历史信号禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 的 realtime first-seen observation-only 白名单见 `docs/INDICATOR_KERNEL.md` 与 `docs/SIGNAL_EVENTS.md`（盘中 realtime 应用路径已退役，仅合同归档）。
+8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。信号链路语义保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`（当前无 mounted signal/notification worker）；输出必须标注研究观察、非交易指令。
+9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。当前无盘中 Live 应用代码。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
 10. `auto_order=false` 适用于所有信号和 Runtime 模式。任何创建或提交订单的流程都必须拒绝；本项目不实现自动交易。
 11. 数据、策略、回测、信号或通知语义变化时，同一变更更新相应 deep canonical；普通 bugfix、UI 调整和测试增加不自动改写项目状态。
 

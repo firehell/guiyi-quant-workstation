@@ -1,12 +1,15 @@
 # 归一量化系统架构
 
-更新时间：2026-08-06
+更新时间：2026-08-08
+
+## Current surface vs long-term boundary
+
+- **Current surface**：Web 仅 Market（`/` → `/market`）；API 仅 `/api/v1/market`、`/api/v1/data`、`/api/runtime`；CLI `guiyi data *` / `guiyi runtime status`；盘后 scheduler；Canonical 历史读。
+- **Long-term boundary**：策略研究源码、Signal/Review 语义合同与 DB 表可保留供后续重搭；当前无 Signal/Review/Strategy/Dashboard Web 或 HTTP 入口，无 signal RQ worker，无盘中 Live 应用路径，无 backtest 子系统。
 
 ## 1. 系统定位
 
-归一量化是单用户、本地优先的国内期货研究工作站。当前闭环是：可信行情、指标与策略研究、
-信号观察、人工判断、盘后复盘和研究统计。系统不实现自动交易，所有信号、Web 展示和通知都
-是研究观察，不是交易指令，`auto_order=false` 始终成立。
+归一量化是单用户、本地优先的国内期货研究工作站。当前可执行闭环是：可信 Canonical 历史行情、Market 工作台指标观察、数据/Runtime 只读治理。系统不实现自动交易；任何信号、通知或未来 Web 展示都是研究观察，不是交易指令，`auto_order=false` 始终成立。
 
 旧 Web/后端回测子系统、`guiyi-backtests` 队列与 Worker、Runtime Scheduler，以及
 S6-08/S6-09/S6-10 控制面已经从仓库 active implementation 中退役。旧合同、报告和证据只可从
@@ -27,8 +30,7 @@ database "Canonical Parquet\n历史事实" as Canonical
 component "TradingSession 聚合\n5m / 15m / 30m / 60m" as Aggregate
 database "PostgreSQL 轻量目录\nCatalog / Manifest / Gap\nMainContractMap" as Catalog
 component "MarketDataService\n唯一行情入口" as Market
-component "Market / Indicator\nSignal / Review / Web" as Consumer
-database "Live Observation\n与历史 Canonical 分离" as Live
+component "Market Web +\ndata/runtime API/CLI" as Consumer
 
 RQ --> Sync
 Sync --> Quality
@@ -38,8 +40,6 @@ Canonical --> Catalog
 Aggregate --> Catalog
 Catalog --> Market
 Market --> Consumer
-RQ --> Live
-Live --> Consumer : preview / confirmed observation
 @enduml
 ```
 
@@ -47,13 +47,12 @@ Live --> Consumer : preview / confirmed observation
   Canonical `1m` 按 TradingSession 确定性聚合。
 - staging 校验失败不发布；schema、交易时段、重复、OHLCV、coverage、identity、checksum、
   row count 或 manifest digest 异常时保留最后有效 Canonical，并显式记录 DataGap。
-- 与 DataGap 相交的正式读取 fail-closed，不静默填充、缩窗、换源或跨频回退。
+- 与 DataGap 相交的正式读取 fail-closed，不静默填充、缩窗、换源或跨频回退，也不回退 legacy。
 - `continuous` 与 `actual_dominant` 显式且不可互换；actual dominant 只能在
   `MainContractMap rank=1` 的有效区间使用。
 - `DatasetKey + Catalog/Manifest/Gap/MainContractMap` 定义 active identity；消费者不得自行
   glob、选择 active 文件、判断主力或绕过质量状态。
-- historical canonical 与 live observation 分离。未确认 bar 只能用于 preview，不能进入正式
-  历史资产或正式信号。
+- historical canonical 与 live observation 在语义上分离；**当前无盘中 Live 应用路径**，盘中能力待后续重建。
 - EOD 从 RQData 重新获取 provider-final 数据并校验 input digest、checksum 与 row count；
   repair、replay、backfill、migration 和 EOD recalculation 不补发历史通知。
 
@@ -62,84 +61,58 @@ Live --> Consumer : preview / confirmed observation
 ```plantuml
 @startuml
 skinparam componentStyle rectangle
-component "quant-web\nVue 3 / Vite / TypeScript" as Web
+component "quant-web\nMarket only" as Web
 component "quant-api\nFastAPI / guiyi CLI" as API
-component "quant-core\n指标与策略语义" as Core
-component "signal worker\n默认关闭通知" as SignalWorker
+component "quant-core\n指标与策略研究源码" as Core
 component "after-market scheduler\n独立、默认关闭" as EOD
-database "PostgreSQL\nCatalog / Signal / Review metadata" as PG
-queue "Redis\nSignal queue / dedupe" as Redis
+database "PostgreSQL\nCatalog / metadata" as PG
 database "Canonical Parquet" as Parquet
 component "MarketDataService" as Market
 
-Web --> API : HTTP / Signal WS
+Web --> API : HTTP
 API --> Market
 Market --> Parquet
 Market --> PG
 API --> Core
-SignalWorker --> Redis
-SignalWorker --> PG
 EOD --> Market
-EOD --> Core
 EOD --> PG
 @enduml
 ```
 
-- `quant-api` 提供统一数据、信号、复盘、Watchlist 和只读 Runtime 状态入口。
-- `quant-web` 只从 Vite 环境变量或同源地址连接 API/WS，不持久化浏览器连接配置或凭据。
-- PostgreSQL 只承担轻量目录、质量、lineage、信号和复盘元数据，不作为重型行情仓库。
-- Redis 只服务保留的信号队列与去重；不存在 `guiyi-backtests` 队列或回测 Worker 类型。
+- `quant-api` 当前挂载 Market Canonical 读、data 治理与只读 Runtime 状态；Signal/Review/Watchlist/Strategy/Dashboard HTTP 已卸载。
+- `quant-web` 只从 Vite 环境变量或同源地址连接 API，不持久化浏览器连接配置或凭据；仅 Market 路由。
+- PostgreSQL 承担轻量目录、质量、lineage 与（未 drop 的）历史 signal/review 表；不是重型行情仓库。
+- Redis / signal RQ worker 入口已退役；不存在 `guiyi-backtests` 队列。
 - after-market scheduler 是独立盘后编排器，不是旧 `runtime_scheduler` 的替代别名。
 
 ## 4. 公开接口现状
 
 已删除且不得兼容恢复：
 
-- `/api/backtests/**`；
-- `/ws/backtests/**`；
+- `/api/backtests/**`、`/ws/backtests/**`；
 - Web `/backtest`、`/backtest/batch`、`/settings`；
 - `guiyi runtime plan`；
 - `/api/runtime/health` 的 `components.scheduler`；
-- 回测 report/trade marker、Review 的 `backtest_trade` active source、Dashboard/Strategy 回测入口。
+- 回测 report/trade marker 与旧 Dashboard/Strategy 回测入口。
 
-继续保留：
+当前挂载：
 
-- `/api/watchlists`；
-- `guiyi runtime status`；
-- Market、Indicator、Signal、Review 的非回测能力（行情读为 Canonical）；
-- after-market scheduler health（不再依赖 live checkpoint / LiveMinuteBar 对照）。
+- `/api/v1/market`（Canonical bars / coverage / dominants / indicators）；
+- `/api/v1/data` 与 `guiyi data *`；
+- `/api/runtime` 与 `guiyi runtime status`；
+- after-market scheduler（默认关闭）。
 
-已从应用代码退役（勿恢复为 active 路径）：
+已从应用卸载（表/源码可保留，勿当 active surface）：
 
-- poll 盘中 Live K 线（`/market/live/*`、LiveMinuteBar/AggregatedBar、live signal/HTDY realtime）；
-- Task 06 `guiyi data live` / observation / SignalDecision / ResearchSample 链。
+- `/api/signals`、`/ws/signals`、`/api/v1/strategies`、`/api/dashboard`、`/api/reviews`、watchlists、futures_research；
+- signal/notification RQ worker；
+- poll 盘中 Live K 线与 Task 06 observation 应用路径。
 
-## 5. 信号与复盘边界
+## 5. 信号与复盘语义（非当前 Web）
 
-```plantuml
-@startuml
-left to right direction
-component Strategy
-component SignalEvent
-component "Notification Gate\ndefault off" as Gate
-component "Channel\nobservation only" as Channel
-component "Manual Review" as Review
-
-Strategy --> SignalEvent
-SignalEvent --> Gate
-Gate --> Channel : explicit one-event authorization only
-SignalEvent --> Review
-Review --> Strategy : labels / research feedback
-@enduml
-```
-
-- 通知链固定为 `Strategy -> SignalEvent -> Notification Gate -> Channel`，默认关闭。
-- Task 06 保留 JM、RQData rank=1 actual contract、confirmed `1m/15m`、first-seen 与重绘风险合同。
-- centered/original 指标只允许 canonical 中明确列出的 realtime first-seen observation-only 白名单；
-  禁止把未确认或重绘结果冒充历史信号。
-- 正式边界固定 `observation_only=true`、`not_trading_instruction=true`、
-  `historical_backtest_allowed=false`、`auto_order=false`。
-- Review active source 仅允许 `strategy_signal`、`signal_event`、`signal_decision`、`manual_trade`。
+语义合同见 `docs/SIGNAL_EVENTS.md`。链路仍为
+`Strategy -> SignalEvent -> Notification Gate -> Channel`，默认关闭、无订单。
+当前仓库不提供 Signal/Review Web、HTTP 或 worker；重建时必须遵守该合同与 default-off 边界。
 
 ## 6. Runtime 与外部操作
 
@@ -153,9 +126,6 @@ Review --> Strategy : labels / research feedback
 
 ## 7. 证据与恢复
 
-- 当前指标合同保存在 `data/reports/indicator_contract_v1/`。
-- S6-07 EOD 数据证据保存在 `data/reports/jm_eod_incremental_automation_s6_07/`。
-- 旧回测、OOS、S6-08/S6-09/S6-10 packet、receipt 和验收证据已从 active repository 删除，
-  只可通过 Git history 恢复 tracked 内容。
-- Canonical、Catalog、MainContractMap、MarketDataFile、Task 06 与非回测 Signal/Review 数据不属于
-  本次仓库证据清理范围。
+- 旧指标合同、S6-07 EOD、Audit V2 等一次性报告已从工作树删除，只可通过 Git history 追溯。
+- 旧回测、OOS、S6-08/S6-09/S6-10 packet、receipt 和验收证据同样只可通过 Git history 恢复。
+- Canonical、Catalog、MainContractMap 与未 drop 的 Signal/Review 表不属于本次仓库证据清理范围。

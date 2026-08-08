@@ -47,6 +47,7 @@ import {
   barsTimeExtent,
   computeViewportLoadRequest,
   continuousContractFor,
+  contractsEqual,
   defaultContractViewForPeriod,
   fullCoverageDateRangeMs,
   MAX_BARS_PER_REQUEST,
@@ -66,7 +67,9 @@ import { resolveActualContract } from '@/utils/marketContract'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   buildMarketChartRouteQuery,
+  isDominantMappingStale,
   safeMarketApiError,
+  staleDominantMappingMessage,
 } from '@/utils/marketChartQuery'
 
 const route = useRoute()
@@ -153,11 +156,22 @@ const selectedDominant = computed(() =>
 )
 const selectedItem = computed(() =>
   coverageItems.value.find(
-    (item) => item.symbol === selectedSymbol.value && item.contract === selectedContract.value && item.period === selectedPeriod.value,
+    (item) =>
+      item.symbol === selectedSymbol.value &&
+      contractsEqual(item.contract, selectedContract.value) &&
+      item.period === selectedPeriod.value,
   ),
 )
 const selectedInstrument = computed(() => coverage.value?.instruments.find((item) => item.symbol === selectedSymbol.value))
-const selectedContractInfo = computed(() => selectedInstrument.value?.contracts.find((item) => item.contract === selectedContract.value))
+const selectedContractInfo = computed(() =>
+  selectedInstrument.value?.contracts.find((item) => contractsEqual(item.contract, selectedContract.value)),
+)
+const mappingStaleWarning = computed(() => {
+  if (contractView.value !== 'actual') return null
+  const mappingDate = selectedDominant.value?.dominant_mapping_date
+  if (!isDominantMappingStale(mappingDate)) return null
+  return staleDominantMappingMessage()
+})
 
 const chartPeriodOptions = computed(() => {
   const available = new Set(
@@ -830,7 +844,11 @@ function enableTrendEmaIndicators() {
 
 function findCoverageItem(symbol?: string | null, contract?: string | null, period?: string | null) {
   if (!symbol || !contract || !period) return null
-  return coverageItems.value.find((item) => item.symbol === symbol && item.contract === contract && item.period === period) || null
+  return (
+    coverageItems.value.find(
+      (item) => item.symbol === symbol && contractsEqual(item.contract, contract) && item.period === period,
+    ) || null
+  )
 }
 
 function queryPeriod() {
@@ -985,6 +1003,7 @@ function formatNumber(value: number | null | undefined, digits = 2) {
       </section>
 
       <NAlert v-if="metaWarning" type="warning" :bordered="false">{{ metaWarning }}</NAlert>
+      <NAlert v-if="mappingStaleWarning" type="warning" :bordered="false">{{ mappingStaleWarning }}</NAlert>
       <NAlert v-if="barsError" type="error" :bordered="false">{{ barsError }}</NAlert>
       <NAlert v-if="indicatorError" type="warning" :bordered="false">{{ indicatorError }}</NAlert>
       <NAlert v-if="macdError" type="warning" :bordered="false">{{ macdError }}</NAlert>

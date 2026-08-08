@@ -4,10 +4,13 @@ import { describe, it } from 'node:test'
 import {
   buildEmaObservationStatus,
   buildMarketChartRouteQuery,
+  isDominantMappingStale,
   qualityFailedObservationText,
   safeMarketApiError,
+  staleDominantMappingMessage,
   TECHNICAL_OBSERVATION_PREFIX,
 } from '../src/utils/marketChartQuery.ts'
+import { contractsEqual } from '../src/utils/marketChartWindow.ts'
 
 describe('marketStateMachine', () => {
   it('builds route query with symbol/contract/period and observation deep-link fields', () => {
@@ -53,7 +56,7 @@ describe('marketStateMachine', () => {
     assert.equal(query.access_mode, undefined)
   })
 
-  it('shows DataGap as an explicit fail-closed message', () => {
+  it('shows DataGap as an explicit fail-closed message with safe reason label', () => {
     const msg = safeMarketApiError(
       {
         response: {
@@ -70,7 +73,41 @@ describe('marketStateMachine', () => {
     )
     assert.match(msg, /DataGap/)
     assert.match(msg, /拒绝回退/)
+    assert.match(msg, /Catalog 覆盖缺失/)
     assert.equal(msg.includes('catalog_coverage_missing'), false)
+    assert.equal(msg.includes('/'), false)
+  })
+
+  it('treats unknown DataGap reason without leaking raw tokens', () => {
+    const msg = safeMarketApiError(
+      {
+        response: {
+          status: 409,
+          data: {
+            detail: {
+              code: 'DATA_GAP',
+              facts: { reason: 'weird_internal_path_/tmp/x' },
+            },
+          },
+        },
+      },
+      'K 线加载失败',
+    )
+    assert.match(msg, /DataGap/)
+    assert.equal(msg.includes('/tmp'), false)
+    assert.equal(msg.includes('weird_internal'), false)
+  })
+
+  it('detects stale dominant mapping dates', () => {
+    assert.equal(isDominantMappingStale('2025-08-01', { today: new Date('2026-08-08T00:00:00Z') }), true)
+    assert.equal(isDominantMappingStale('2026-08-07', { today: new Date('2026-08-08T00:00:00Z') }), false)
+    assert.match(staleDominantMappingMessage(), /MainContractMap/)
+  })
+
+  it('compares MAIN contracts case-insensitively', () => {
+    assert.equal(contractsEqual('jm.MAIN', 'JM.MAIN'), true)
+    assert.equal(contractsEqual('JM2509', 'jm2509'), true)
+    assert.equal(contractsEqual('JM2509', 'JM2609'), false)
   })
 
   it('quality failed text never includes file paths', () => {

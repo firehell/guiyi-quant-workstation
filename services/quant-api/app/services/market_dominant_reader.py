@@ -9,7 +9,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.data_core.contracts import BAR_FREQUENCY_VALUES
-from app.models.data_center import Exchange, Instrument, MainContractMap, MarketDataFile
+from app.models.data_center import Exchange, Instrument, MainContractMap
+from app.models.data_core import DataGap, MarketDataset, MarketPartition
 from app.schemas.market import (
     DominantBarsCoveragePeriod,
     DominantContractItem,
@@ -33,7 +34,6 @@ __all__ = [
     "normalize_product_name",
     "validate_quote_contract",
 ]
-from app.services.market_data_roles import ACTIVE_DATA_ROLE, ACTIVE_PRIMARY_PROVIDERS
 
 DEFAULT_QUOTE_PERIOD = "15m"
 SUPPORTED_QUOTE_PERIODS = BAR_FREQUENCY_VALUES
@@ -93,7 +93,7 @@ class DominantContractReader:
             if not actual_contract or is_synthetic_futures_contract(actual_contract):
                 continue
 
-            period_coverage = coverage_by_contract.get((product, actual_contract), {})
+            period_coverage = coverage_by_contract.get((product, actual_contract.upper()), {})
             quote_period = self._quote_period_coverage(period_coverage)
             item = DominantContractItem(
                 product=product,
@@ -158,42 +158,67 @@ class DominantContractReader:
         *,
         product_keys: set[str] | None = None,
     ) -> dict[tuple[str, str], dict[str, DominantBarsCoveragePeriod]]:
-        query = select(MarketDataFile).where(
-            MarketDataFile.data_type == "bars",
-            MarketDataFile.data_role == ACTIVE_DATA_ROLE,
-            MarketDataFile.provider.in_(tuple(ACTIVE_PRIMARY_PROVIDERS)),
-            MarketDataFile.quality_status != "failed",
-            MarketDataFile.instrument_symbol.is_not(None),
-            MarketDataFile.contract_code.is_not(None),
-            MarketDataFile.period.is_not(None),
+        """Build bars_coverage from Catalog actual_dominant partitions (not legacy MarketDataFile)."""
+        query = select(MarketDataset).where(
+            MarketDataset.provider == "rqdata",
+            MarketDataset.dataset_kind == "actual_dominant",
         )
         if product_keys:
-            query = query.where(func.lower(MarketDataFile.instrument_symbol).in_(product_keys))
-        files = self.session.scalars(query).all()
+            query = query.where(MarketDataset.symbol.in_(sorted(product_keys)))
+        datasets = list(self.session.scalars(query))
+        if not datasets:
+            return {}
+
+        dataset_ids = [row.id for row in datasets]
+        partitions = list(
+            self.session.scalars(
+                select(MarketPartition).where(MarketPartition.dataset_id.in_(dataset_ids))
+            )
+        )
+        gap_dataset_ids = {
+            dataset_id
+            for dataset_id in self.session.scalars(
+                select(DataGap.dataset_id).where(DataGap.dataset_id.in_(dataset_ids)).distinct()
+            )
+        }
+
+        partitions_by_dataset: dict[int, list[MarketPartition]] = defaultdict(list)
+        for partition in partitions:
+            partitions_by_dataset[partition.dataset_id].append(partition)
 
         grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
-        for file in files:
-            if is_synthetic_futures_contract(file.contract_code or ""):
+        for dataset in datasets:
+            if is_synthetic_futures_contract(dataset.contract_or_series):
                 continue
+            if dataset.frequency not in SUPPORTED_QUOTE_PERIODS:
+                continue
+            rows = partitions_by_dataset.get(dataset.id) or []
+            if not rows:
+                continue
+            has_gap = dataset.id in gap_dataset_ids
             key = (
-                (file.instrument_symbol or "").lower(),
-                file.contract_code or "",
-                file.period or "",
+                dataset.symbol.lower(),
+                dataset.contract_or_series.upper(),
+                dataset.frequency,
             )
+            start_time = min(row.coverage_start for row in rows)
+            end_time = max(row.coverage_end for row in rows)
+            row_count = sum(row.row_count or 0 for row in rows)
+            quality_status = "gap" if has_gap else "passed"
             record = grouped.setdefault(
                 key,
                 {
                     "available": True,
-                    "start_time": file.start_time,
-                    "end_time": file.end_time,
+                    "start_time": start_time,
+                    "end_time": end_time,
                     "row_count": 0,
-                    "quality_status": file.quality_status,
+                    "quality_status": quality_status,
                 },
             )
-            record["start_time"] = min(record["start_time"], file.start_time)
-            record["end_time"] = max(record["end_time"], file.end_time)
-            record["row_count"] += file.row_count or 0
-            record["quality_status"] = _aggregate_status(record["quality_status"], file.quality_status)
+            record["start_time"] = min(record["start_time"], start_time)
+            record["end_time"] = max(record["end_time"], end_time)
+            record["row_count"] += row_count
+            record["quality_status"] = _aggregate_status(record["quality_status"], quality_status)
 
         by_contract: dict[tuple[str, str], dict[str, DominantBarsCoveragePeriod]] = defaultdict(dict)
         for (product, contract, period), record in grouped.items():
@@ -235,9 +260,11 @@ class DominantContractReader:
 
 
 def _aggregate_status(current: str, incoming: str) -> str:
-    statuses = [current, incoming]
+    statuses = {current, incoming}
     if "failed" in statuses:
         return "failed"
+    if "gap" in statuses:
+        return "gap"
     if "warning" in statuses:
         return "warning"
     if "unchecked" in statuses:

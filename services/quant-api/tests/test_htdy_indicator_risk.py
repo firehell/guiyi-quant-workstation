@@ -26,32 +26,9 @@ def test_htdy_original_formula_is_documented_as_observation_only() -> None:
     assert "| live_capable | `false` |" in strategy
 
 
-def test_htdy_xma_and_derived_signals_are_forbidden_for_trusted_signals() -> None:
-    review = read_doc("INDICATOR_RISK_REVIEW.md")
-
-    for token in ("`XMA`", "`ZK1/ZD1/ZD2`", "`VAR23`"):
-        assert f"| {token} | `forbidden_for_backtest_signal`" in review
-
-    for token in ("`黄K/白K`", "`买多信号/卖空信号`", "`XG`", "`XG2`"):
-        assert f"| {token} | `observation_only`" in review
-
-    assert "不得写入 `signal_events`" in review
-    assert "不得进入企业微信提醒" in review
-
-
-def test_htdy_backward_helpers_are_only_rewrite_candidates() -> None:
-    review = read_doc("INDICATOR_RISK_REVIEW.md")
-
-    assert "| `DDX` | `candidate_after_rewrite` | 否 | 否 | 否 |" in review
-    assert "| `V2/V5/V10/V20` | `candidate_after_rewrite` | 否 | 否 | 否 |" in review
-    assert "| `REF/MA/EMA/SMA/LLV/COUNT/CROSS` | `candidate_after_rewrite` | 否 | 否 | 否 |" in review
-    assert "单独看可后向，但不得自动升级整个公式" in review
-
-
-def test_htdy_docs_cross_reference_web_alignment_and_remaining_gates() -> None:
+def test_htdy_docs_keep_active_specs_and_git_history_pointers() -> None:
     spec = read_doc("INDICATOR_SPEC.md")
     readme = read_doc("README.md")
-    acceptance = read_doc("GOLDEN_SAMPLE_ACCEPTANCE.md")
 
     assert "Web 观察层对齐状态" in spec
     assert "白K 按 `BODYH>ZK1 AND BODYH>OVERLOW` 判断" in spec
@@ -59,10 +36,12 @@ def test_htdy_docs_cross_reference_web_alignment_and_remaining_gates() -> None:
     assert "`XG2` 未在 Web 展示" in spec
     assert "2. [已完成] Web 观察层对齐" in spec
     assert "4. [已完成] Golden Sample 自动数值验收和外部通达信视觉 oracle 通过" in spec
-    assert "5. [已完成] Offline Candidate Eval" in spec
-    assert "GOLDEN_SAMPLE_PASS_VISUAL_ORACLE" in acceptance
-    assert "不授权策略、回测、scanner、live、数据库、`signal_events` 或企业微信接入" in acceptance
+    assert "GOLDEN_SAMPLE_PASS_VISUAL_ORACLE" in spec
+    assert "Git history" in spec
     assert "INDICATOR_SPEC.md" in readme
-    assert "INDICATOR_RISK_REVIEW.md" in readme
     assert "STRATEGY_SPEC.md" in readme
-    assert "OFFLINE_CANDIDATE_EVAL.md" in readme
+    assert "STRICT_V1_SPEC.md" in readme
+    # One-time acceptance docs removed from working tree
+    assert "INDICATOR_RISK_REVIEW.md" not in readme
+    assert "OFFLINE_CANDIDATE_EVAL.md" not in readme
+    assert "GOLDEN_SAMPLE_ACCEPTANCE.md" not in readme

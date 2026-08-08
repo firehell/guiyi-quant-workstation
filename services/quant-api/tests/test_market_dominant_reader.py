@@ -6,8 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.data_core.catalog import HistoricalCatalog, PartitionManifest
+from app.data_core.contracts import BarFrequency, DatasetKey, DatasetKind
 from app.db.base import Base
-from app.models.data_center import Exchange, Instrument, MainContractMap, MarketDataFile
+from app.models.data_center import Exchange, Instrument, MainContractMap
+from app.models import data_core as _data_core_models  # noqa: F401
 from app.services.market_dominant_reader import (
     DominantContractReader,
     QuoteContractError,
@@ -23,6 +26,40 @@ def _session_factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(bind=engine)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+def _register_actual_coverage(
+    session: Session,
+    *,
+    symbol: str,
+    contract: str,
+    frequency: BarFrequency = BarFrequency.M15,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    row_count: int = 100,
+) -> None:
+    catalog = HistoricalCatalog(session)
+    catalog.register_partition(
+        DatasetKey(
+            provider="rqdata",
+            dataset_kind=DatasetKind.ACTUAL_DOMINANT,
+            symbol=symbol,
+            contract_or_series=contract,
+            frequency=frequency,
+            adjustment="none",
+            schema_version="v1",
+        ),
+        PartitionManifest(
+            coverage_start=start or datetime(2026, 4, 1, 9, 15, tzinfo=UTC),
+            coverage_end=end or datetime(2026, 7, 7, 15, 0, tzinfo=UTC),
+            manifest_version="manifest-v1",
+            manifest_uri=f"manifests/{symbol}_{contract}_{frequency.value}.json",
+            manifest_digest="a" * 64,
+            file_uri=f"bars/{symbol}_{contract}_{frequency.value}.parquet",
+            checksum="b" * 64,
+            row_count=row_count,
+        ),
+    )
 
 
 def _seed(session: Session) -> None:
@@ -61,22 +98,8 @@ def _seed(session: Session) -> None:
             ),
         ]
     )
-    session.add(
-        MarketDataFile(
-            provider="rqdata",
-            data_type="bars",
-            instrument_symbol="jm",
-            contract_code="JM2609",
-            period="15m",
-            start_time=datetime(2026, 4, 1, 9, 15, tzinfo=UTC),
-            end_time=datetime(2026, 7, 7, 15, 0, tzinfo=UTC),
-            file_path="/tmp/jm2609_15m.parquet",
-            row_count=100,
-            data_version="jm2609_15m",
-            data_role="primary",
-            quality_status="passed",
-        )
-    )
+    session.flush()
+    _register_actual_coverage(session, symbol="jm", contract="JM2609")
     session.commit()
 
 
@@ -102,6 +125,7 @@ def test_list_dominants_uses_latest_mapping_and_coverage() -> None:
         assert jm.continuous_contract == "jm.MAIN"
         assert jm.quote_ready is True
         assert jm.bars_coverage["15m"].row_count == 100
+        assert jm.bars_coverage["15m"].quality_status == "passed"
         assert jm.sector == "black"
         assert jm.category == "future"
         assert jm.is_active is True
@@ -110,6 +134,50 @@ def test_list_dominants_uses_latest_mapping_and_coverage() -> None:
         rb = next(item for item in response.items if item.product == "rb")
         assert rb.actual_contract == "RB2510"
         assert rb.quote_ready is False
+
+
+def test_list_dominants_ignores_legacy_market_data_file_coverage() -> None:
+    """Legacy MarketDataFile must not make quote_ready true without Catalog partitions."""
+    from app.models.data_center import MarketDataFile
+
+    factory = _session_factory()
+    with factory() as session:
+        session.add(Exchange(code="DCE", name="大连商品交易所", country="CN", timezone="Asia/Shanghai", is_active=True))
+        session.add(Instrument(symbol="jm", name="焦煤", exchange_code="DCE", is_active=True))
+        session.add(
+            MainContractMap(
+                instrument_symbol="jm",
+                trade_date=date(2025, 8, 1),
+                rank=1,
+                contract_code="JM2509",
+                rule="volume_open_interest",
+                provider="rqdata",
+                data_version="map-stale",
+            )
+        )
+        session.add(
+            MarketDataFile(
+                provider="rqdata",
+                data_type="bars",
+                instrument_symbol="jm",
+                contract_code="JM2509",
+                period="15m",
+                start_time=datetime(2025, 7, 22, 9, 15, tzinfo=UTC),
+                end_time=datetime(2025, 8, 3, 15, 0, tzinfo=UTC),
+                file_path="/tmp/jm2509_15m.parquet",
+                row_count=100,
+                data_version="jm2509_legacy",
+                data_role="primary",
+                quality_status="passed",
+            )
+        )
+        session.commit()
+
+        response = DominantContractReader(session).list_dominants()
+        jm = next(item for item in response.items if item.product == "jm")
+        assert jm.actual_contract == "JM2509"
+        assert jm.quote_ready is False
+        assert jm.bars_coverage == {}
 
 
 def test_list_dominants_filters_quote_ready_and_search() -> None:

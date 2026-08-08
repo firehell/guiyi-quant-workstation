@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-07
+更新时间：2026-08-08
 
 本文件是项目当前状态仪表盘；历史过程由 Git、任务合同与既有证据追溯。历史协作材料不构成当前授权（见 `AGENTS.md` / `DECISIONS.md`）。
 
@@ -15,8 +15,8 @@
 21 品种退役已完成生产执行：活动品种池为 69，目标品种的 8,625 个文件
 （1,466,729,156 bytes）和 1,141,643 条 PostgreSQL 记录已删除，复验残留文件/记录均为 0。
 保留品种已完成 443 个 RQData 直供目标与 608 个 Canonical 聚合目标刷新；
-生产 Runtime 现为 `develop@1c810a9a6821f76a86776066767918cbc4d08856`
-（GuiyiRuntime worktree detached；api/web 已重载；`com.guiyi.quant-worker-signals` 已 bootout）。
+生产 Runtime 现为 `develop` 工作树本地部署（不再经 GuiyiRuntime detached）；
+api/web 由 launchd 指向 `/Volumes/扩展盘/guiyi-quant-workstation`；`com.guiyi.quant-worker-signals` 保持 bootout。
 已配置 `GUIYI_CANONICAL_DATA_ROOT` 指向正式 Canonical 根，Market bars 只读恢复；
 行情页已去掉「浏览 / 严格研究」切换。通知、live 及退役 HTDY label 保持关闭，自动交易仍不在项目范围。
 前序 `v0.1` / `94f70c72…` 仍为 release 锚点；本次未执行正式行情写入或 alembic upgrade。
@@ -42,6 +42,14 @@ tracked legacy evidence 以及主工程被 Git 忽略的
 `/Volumes/扩展盘/guiyi-quant-workstation/backtests/`（87 个文件，约 50 MB）已精确清理。
 此处不代表 release、Runtime promotion、生产 DB/正式数据删除、launchd/Redis/其他 host 清理
 或服务停止已经发生。
+
+### 2026-08-08 文档卫生与 Market 双源修复
+
+- Canonical / deep docs 已收口为 Market-only current surface；Signal 等为语义合同。
+- 一次性 `data/reports/**`、会话产物、已完成 OpenSpec/Kiro Spec、STRATEGY/GOLDEN/OFFLINE/RISK 验收文档已删或归档；引用改指 Git history。
+- `dominants` coverage / `quote_ready` 改为 Catalog `actual_dominant` 口径，与 `/bars/canonical` 对齐；前端提示过期 MainContractMap 与 DataGap reason 标签。
+- **未**执行 RQData / 正式 Canonical / 生产 DB 写入。若列表仍显示过期主力（如 JM2509）或 Chart DataGap，需另给 MainContractMap/Canonical 更新的精确范围执行意图。
+- 本地 api/web 部署改为直接使用 `develop` 工作树（`/Volumes/扩展盘/guiyi-quant-workstation`），**不再**经 GuiyiRuntime detached checkout；signal worker 保持 bootout。
 
 唯一目标范围为：
 
@@ -79,6 +87,7 @@ production_writes=false
 | Backtest/S6 repository retirement | implementation on develop | 旧 API/Web/worker/queue/CLI、S6-08/09/10 control plane、tracked legacy evidence 与精确 ignored `backtests/` host output 已退出；完整 backend/frontend 验证与 launchd/Redis/Runtime/生产数据等其余外部清理由后续任务负责 |
 | poll Live K 线栈退役 | implementation on develop | 盘中 poll ingest/聚合/`/market/live/*`/live signal/HTDY realtime/前端 Live 模式已删；盘中能力待重建；未 drop 生产表 |
 | slim-web-to-market | implementation on develop | Web 仅 Market；卸掉 signal/strategy/dashboard/review/watchlists/futures_research 可执行面与 RQ worker；保留 market/data/runtime API+CLI；未 drop DB 表 |
+| docs-hygiene + dominants Catalog | implementation on develop | Market-only 文档收口；删 reports/会话产物；dominants coverage 对齐 Catalog；未做正式补数 |
 
 ## 未完成事项与执行边界
 
@@ -104,7 +113,7 @@ production_writes=false
 | 事实 | 当前证据值 | 边界 |
 |---|---|---|
 | PostgreSQL revision | `20260805_0033` | 历史 `v0.1` 部署只读回读为 head；退役窗口曾为 `20260803_0032` |
-| 生产 Runtime checkout | `develop@1c810a9a…` | GuiyiRuntime detached；Canonical root 已配置；live/通知关闭；signal worker 已卸除 |
+| 生产 Runtime checkout | `develop` 工作树（非 GuiyiRuntime） | launchd api/web 指向本仓；live/通知关闭；signal worker bootout |
 | 21 品种退役 receipt | packet `fee133a5…`; residual DB/files `0/0` | 删除已提交，rollback tag 只回退代码，数据恢复需从 RQData 重建 |
 | Canonical closeout snapshot | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 历史只读证据；Stage C 将重新验收明确目标 |
 | MainContractMap closeout snapshot | 3245/3245 resolved trading days；0 missing；0 ambiguous | Task 04 历史只读证据；不代替 Stage C 重验 |

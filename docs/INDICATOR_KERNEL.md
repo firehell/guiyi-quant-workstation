@@ -1,24 +1,24 @@
 # Indicator Kernel V1-A
 
-更新时间：2026-07-26
+更新时间：2026-08-08
 
 ## 1. 定位
 
-`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，冻结 EMA、MACD、ATR、指标注册表、能力矩阵与 golden vector。旧 formal report/OOS Gate 已退役；当前只保留指标合同、因果策略研究资格和 observation-only 风险边界。
+`Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，冻结 EMA、MACD、ATR、指标注册表、能力矩阵与 golden vector。旧 formal report/OOS Gate 与工作树内 `data/reports/indicator_contract_v1/` 已退役；当前只保留指标合同、因果策略研究资格和 observation-only 风险边界（证据见 Git history）。
 
 本阶段目标：
 
-- 让 Web、回测、历史扫描和 live evaluator 后续可以复用同一套指标口径。
+- 让 Market Web、未来重建的历史扫描/回测库复用同一套指标口径（非当前 mounted signal/live surface）。
 - 先提供可测试、无副作用、无外部依赖的基础函数。
-- 保持现有 JM V1-B 策略、信号链和历史报告不变。
+- 保持现有策略研究源码与 observation-only 风险边界。
 
 本阶段不做：
 
-- 不改 FastAPI API。
+- 不改 FastAPI API（Market indicators 路径除外，由独立任务收口）。
 - 不改 PostgreSQL / Alembic / DuckDB / Parquet。
 - 不迁移 `jm_v1b_daily_direction_fast_entry`。
 - 不接入 `signal_events`、企业微信、live scheduler 或自动交易。
-- 不把火天大有 original 普通升级为历史验证、live 或提醒指标；strict 只表示独立 causal 策略研究资格。original 只保留 2026-07-26 冻结的精确 realtime repainting observation policy 例外。
+- 不把火天大有 original 普通升级为历史验证、live 或提醒指标；strict 只表示独立 causal 策略研究资格。original 只保留已归档的 realtime repainting observation policy 例外（盘中 realtime 应用路径已退役）。
 
 ## 2. 代码位置
 
@@ -114,7 +114,7 @@ retired
 - Web 观察层基于 XMA 风格居中窗口，存在未来函数和重绘风险。
 - original 默认不得写入 `StrategySignal`、`strategy_signals`、`signal_events`、正式报告或通知链路；只有精确 `htdy_original_xma_15m_first_seen_v1` realtime observation policy 可在后续独立 Gate 中复用既有事件表。
 - strict 只具独立 causal 历史策略研究资格，不得据此恢复回测、历史扫描、live evaluator、alert 或企业微信入口。
-- 原始公式已归档到 `docs/strategy_specs/htdy/INDICATOR_SPEC.md`，公式级风险审查见 `docs/strategy_specs/htdy/INDICATOR_RISK_REVIEW.md`。
+- 原始公式已归档到 `docs/strategy_specs/htdy/INDICATOR_SPEC.md`；公式级风险审查见 Git history（原 `INDICATOR_RISK_REVIEW.md` 已删）。
 - `huotian_dayou_original_v0` 的普通 capability 仍只能 observation-only；历史回测仍必须使用独立 causal strict 版本。精确实时重绘观察例外不改变这条 Registry 规则。
 
 ## 4.1 HTDY realtime repainting observation policy 冻结
@@ -170,7 +170,8 @@ double-XMA 的 exact future dependency horizon 是 24 根；买卖 observation �
 当前 first-seen policy 仍拒绝 historical replay、其他品种/周期/source mode、通知和普通 consumer；
 指标合同存在不等于 Runtime、live 或通知获得授权。
 
-共享 golden：`data/reports/indicator_contract_v1/htdy_original_realtime_v1_golden.json`。Python 与 Web
+共享 golden（测试夹具）：`apps/quant-web/tests/fixtures/htdy_original_realtime_v1_golden.json` 与
+`services/quant-api/tests/fixtures/htdy_original_realtime_v1_golden.json`。历史报告路径见 Git history。Python 与 Web
 比较可解析时间、布尔值、null 位置、12 位规范化数值和 canonical payload hash；fixture 必须同时覆盖
 yellow/white/buy/sell/conflict 各自的 true 与 false（含至少一个 buy、sell 与 conflict），防止
 恒 false 实现获得误通过。Web 保持 historical + browser-only、`alertCapable=false`，其
@@ -212,9 +213,9 @@ git diff --check
 
 ```text
 docs/strategy_specs/htdy/INDICATOR_SPEC.md
-docs/strategy_specs/htdy/INDICATOR_RISK_REVIEW.md
 docs/strategy_specs/htdy/STRATEGY_SPEC.md
 services/quant-api/tests/test_htdy_indicator_risk.py
+# INDICATOR_RISK_REVIEW.md 已删，见 Git history
 ```
 
 结论：
@@ -226,7 +227,7 @@ services/quant-api/tests/test_htdy_indicator_risk.py
 
 ## 5.2 D4-00 源码 / XMA 审计状态（2026-07-19）
 
-手册 D4-00 / `HTDY-SOURCE-XMA-AUDIT-400` 的审计产物已落盘，**不再重开**通达信源码或 XMA 公式审计：
+手册 D4-00 / `HTDY-SOURCE-XMA-AUDIT-400` 的审计产物曾落盘，**不再重开**通达信源码或 XMA 公式审计。工作树内路径已删除，证据见 Git history：
 
 ```text
 data/reports/indicator_contract_v1/htdy_source_formula_map.csv

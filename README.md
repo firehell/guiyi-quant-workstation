@@ -1,6 +1,12 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站：治理数据、查看 K 线、研究策略、复盘与观察信号。它不提供无人值守自动实盘或自动下单。
+本地、单用户的国内期货量化研究工作站：治理数据、查看 K 线、研究策略；长期可重建复盘与信号观察。它不提供无人值守自动实盘或自动下单。
+
+## Current surface
+
+Web **仅 Market 工作台**（`/` → `/market`）：69 品种 Canonical 历史行情 + EMA/HTDY/MACD。  
+API/CLI 保留 `/api/v1/market`、`/api/v1/data`、`/api/runtime` 与 `guiyi data *` / `guiyi runtime status`。  
+Signal / Strategy / Review / Dashboard / Watchlist Web 与 HTTP、signal RQ worker、盘中 Live、backtest 子系统均已卸或退役；源码与部分 DB 表可保留供后续重搭。
 
 ## 快速导航
 
@@ -23,10 +29,10 @@ RQData
 -> Canonical Parquet
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
--> Market / Signal / Review / Runtime status / Vue Web
+-> Market Web + data/runtime API/CLI
 ```
 
-正式 active 数据仅限 `rqdata/local_parquet + primary + quality_status != failed`；严格研究默认 `quality_status=passed`。
+正式 active 数据仅限 `rqdata/local_parquet + primary + quality_status != failed`（legacy compatibility）；严格研究默认 `quality_status=passed`。V2 读路径以 Catalog/Canonical 为准，DataGap fail-closed，不回退 legacy。
 
 ## 本地启动
 

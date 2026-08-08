@@ -5,9 +5,11 @@ description: 当任务涉及单笔交易复盘、错误标签、策略场景分�
 
 # Review Center Skill
 
+> **Current surface**：Review Web/API 已卸载；本 Skill 仅服务语义合同与未来重建，不是现行页面入口。见 `STATUS.md` / `docs/SIGNAL_EVENTS.md`。
+
 ## 目标
 
-复盘中心从 V1 开始做，用来区分策略问题、市场环境问题、执行问题、风控问题、数据问题和心理问题。
+复盘中心用于区分策略问题、市场环境问题、执行问题、风控问题、数据问题和心理问题（重建时适用）。
 
 ## 单笔复盘字段
 

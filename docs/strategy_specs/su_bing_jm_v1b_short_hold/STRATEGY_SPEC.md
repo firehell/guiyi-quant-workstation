@@ -33,7 +33,7 @@
 
 - skill: `.agents/skills/su-bing-strategy/SKILL.md`
 - generation_protocol: `.agents/skills/su-bing-strategy/references/STRATEGY_GENERATION_PROTOCOL.md`
-- rulebook: `.agents/skills/su-bing-strategy/references/SU_BING_RULEBOOK.md`
+- rulebook: `docs/strategy_knowledge/su_bing/SU_BING_RULEBOOK.md`
 - review_tags: `.agents/skills/su-bing-strategy/references/SU_BING_REVIEW_TAGS.md`
 - strategy_target: `docs/strategy_specs/su_bing_jm_v1b_short_hold/STRATEGY_TARGET.md`
 
@@ -625,6 +625,6 @@ Files not authorized by this spec-generation task:
 
 Implementation prerequisites:
 
-- Confirm `STRATEGY_SPEC_REVIEW.md` records a passing light review for `v0.1.1-spec`.
+- Confirm light review for `v0.1.1-spec`（原 `STRATEGY_SPEC_REVIEW.md` 已删，见 Git history）。
 - Use frozen v0.1.1 parameters exactly as written unless a later reviewed spec version changes them.
 - Obtain explicit user approval for allowed modification files before writing code.

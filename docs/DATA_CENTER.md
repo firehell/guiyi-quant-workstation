@@ -1,8 +1,15 @@
 # DATA_CENTER.md
 
-更新时间：2026-08-07
+更新时间：2026-08-08
 
 ## 0. Active target 与迁移状态
+
+### Current surface
+
+- Web 仅 Market；行情列表 `dominants.bars_coverage` / `quote_ready` 与 `/coverage/canonical` 同为 Catalog 口径；K 线只读 Canonical，DataGap fail-closed，不回退 legacy。
+- Task 05 已 completed on develop（trusted consumers / inventory）；Backtest 子系统已退役；Signal/Review HTTP 已卸。
+- 行情页已去掉「浏览 / 严格研究」切换；§2.1.1 双模式 browser|research + live 合同标 **superseded / UI 已精简**，勿当 current product。
+- `data/reports/**` 一次性审计快照已从工作树删除，结论以本文与 Git history 为准。下文历史章节若仍写出 `data/reports/...` 路径，一律视为 Git-history 定位，不是工作树现存文件。
 
 当前 active universe 已在代码合同中收口为 69 个，唯一入口为
 `data/universe/active_products.txt`。以下 21 个品种已禁止新增下载、Canonical 写入和统一行情读取：
@@ -13,14 +20,9 @@
 `5m/15m/30m/60m` 608 个目标，全部通过。
 
 活动品种窗口口径见 `data/universe/product_window_starts.csv`（`window_start` =
-米筐可提供/上市日起，日线与周线不再使用 2020 截断补数清单）。2026-08-05 Wave A/B
-清理已从工作树移除空 `data/sample/`、过期 universe 分批队列，以及仅作历史叙述引用的
-DOC_ONLY `data/reports/*` 审计快照；结论仍以下文与 Git history 为准，不再要求工作树保留
-这些目录。
+米筐可提供/上市日起，日线与周线不再使用 2020 截断补数清单）。
 
-数据核心 V2 的 active target 已冻结。Task 04 closeout commit 经 exact-head CI、独立 Review 和
-GitHub merge commit 合入 `develop` 后，historical canonical 与普通 Web/API/指标消费者迁移完成；
-Backtest/Signal/Review 可信消费者切换留给 Task 05：
+数据核心 V2 的 active target 已冻结。Task 04 closeout 合入 `develop` 后，historical canonical 与普通 Web/API/指标消费者迁移完成；Task 05 已完成 trusted consumers 与 fail-closed inventory（不含真实删除）。当前消费者主路径：
 
 ```text
 RQData
@@ -30,7 +32,7 @@ RQData
    (provider-direct 1m/1d/1w + persisted preaggregated 5m/15m/30m/60m)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
--> consumers
+-> Market Web / Indicator / data+runtime API/CLI
 ```
 
 - 数据集由不可歧义的 `DatasetKey` 定位；`continuous` 与 `actual_dominant` 显式且不可互换。
@@ -39,7 +41,7 @@ RQData
 - source role 固定为 `1m/1d/1w=provider_direct` 与
   `5m/15m/30m/60m=preaggregated_from_1m`；七者都是持久化 Canonical dataset。
 - 请求只读同频 Catalog/partition；缺 dataset、partition、coverage 或显式 gap 都返回
-  DataGap，不从 1m 或其他周期动态聚合。live confirmed-bar 聚合不属于该禁止范围。
+  DataGap，不从 1m 或其他周期动态聚合，也不回退 legacy。
 - actual-dominant 覆盖按 rank=1 mapping 有效分段计算；`1w` 使用该周最后交易日
   的 rank=1 具体合约。
 - PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
@@ -49,20 +51,14 @@ RQData
   metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、permanent derived
   period、重复 raw/standard/canonical bar layer 和 Profile/Binding/legacy lineage 均为 rebuild-only
   或 compatibility-only，不迁移为新的 active input。
-- report 14/15 是 Git-traceable historical snapshots，不是 active Gate 或 regression；保留其
-  历史结论和证据，不做重写或删除。
-- Task 04 完成不表示 Task 05、release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
+- 旧 report / Audit 快照是 Git-traceable historical evidence，不是 active Gate。
+- Task 04/05 完成不表示 release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
   residual 为零。
 
 ### 2026-08-06 代码收口事实（语义双轨）
 
-- 正式信号扫描仅保留 `app/signal/scanner.py`；`app/services/signal_scanner.py` 已删除。
-- HTTP 行情短路径 `GET /api/v1/market/bars|indicators|indicators/macd` **已从路由移除**（不再返回 410），只保留 `/…/canonical`（前端已使用 canonical）。
-- `guiyi-data` 入口已移除；统一使用 `guiyi data verify`。`MarketDataReader` 已隔离到
-  `app/services/legacy_compat/`，经 `market_data_reader.py` shim 供 **Profile 身份/绑定校验、
-  frozen research 精确文件回放、coverage 目录与离线审计** 使用。日常历史 K 线读（信号、
-  Stage9 replay、workbench 非 frozen 路径、`data verify`）走
-  `MarketDataService` / `CanonicalBarLoader`（`schema_version=canonical-bar-v1`，
+- 正式信号扫描库代码可能仍在；Signal HTTP/worker 已卸。日常历史 K 线读走
+  `MarketDataService` / Canonical（`schema_version=canonical-bar-v1`，
   timezone-aware 窗口，Catalog Gap fail-closed）。Profile binding 本身不是 V2 active bar selector。
 - Profile 门禁字段（`market_data_file_id` / checksum / data_version）只证明绑定身份未漂移；
   K 线选择器以 `historical_bar_source=canonical` 标明。来自 `MarketDataFile` 的 naive 覆盖边界

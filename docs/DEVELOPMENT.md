@@ -4,7 +4,7 @@
 
 本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
 `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、信号和 Runtime 语义仍由
-`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。
+`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only）。
 
 ## 唯一日常流程
 
