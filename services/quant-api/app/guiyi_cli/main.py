@@ -82,6 +82,20 @@ def main(
         )
         return 1
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
+        if (
+            getattr(args, "candidate_root", None) is not None
+            and getattr(exc, "code", None) == "CANDIDATE_SESSION_FACT_MISSING"
+        ):
+            print_json(
+                candidate_error_payload(
+                    reason_code="CANDIDATE_SESSION_FACT_MISSING",
+                    mode=getattr(args, "candidate_mode", None),
+                    requested_through=getattr(args, "through", None),
+                    samples=getattr(exc, "samples", ()),
+                ),
+                stderr,
+            )
+            return 1
         print_json(
             exception_error_payload(
                 command=command,

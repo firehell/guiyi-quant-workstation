@@ -39,6 +39,8 @@ def session() -> Session:
 class FakeCoverage:
     def __init__(self, ends: dict[tuple[str, str, str, str], tuple[datetime, ...]]) -> None:
         self.ends = ends
+        self.session_fact_error: Exception | None = None
+        self.session_fact_calls: list[tuple[tuple[str, ...], date]] = []
 
     def product_start(self, _symbol: str) -> date:
         return date(2025, 1, 1)
@@ -48,6 +50,13 @@ class FakeCoverage:
 
     def metadata_complete(self, _products: tuple[str, ...], _through: date) -> bool:
         return False
+
+    def require_historical_session_facts(
+        self, products: tuple[str, ...], through: date
+    ) -> None:
+        self.session_fact_calls.append((products, through))
+        if self.session_fact_error is not None:
+            raise self.session_fact_error
 
     def expected_bar_ends(
         self,
@@ -283,6 +292,25 @@ def test_dry_run_plans_without_metadata_provider_or_writes(session, tmp_path) ->
             "missing_bar_count": 1,
         }
     ]
+
+
+def test_update_fails_before_provider_when_historical_session_facts_are_missing(
+    session, tmp_path
+) -> None:
+    from app.market_data.infrastructure import InfrastructureError
+
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 100)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    coverage.session_fact_error = InfrastructureError("CANDIDATE_SESSION_FACT_MISSING")
+    provider = FakeProvider({key.as_tuple(): (bar,)})
+    manager = _manager(session, tmp_path, coverage, provider)
+
+    with pytest.raises(InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+        manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert coverage.session_fact_calls == [(("jm",), date(2025, 1, 3))]
+    assert provider.calls == []
 
 
 def test_dataset_failure_is_isolated_and_creates_current_gap(session, tmp_path) -> None:

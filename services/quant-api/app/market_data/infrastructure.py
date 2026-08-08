@@ -43,8 +43,9 @@ _SESSION = re.compile(r"(?P<start>\d{1,2}:\d{2})\s*[-~]\s*(?P<end>\d{1,2}:\d{2})
 
 
 class InfrastructureError(RuntimeError):
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, samples: tuple[Mapping[str, str], ...] = ()) -> None:
         self.code = code
+        self.samples = samples
         super().__init__(code)
 
 
@@ -191,6 +192,60 @@ class DatabaseCoverageSource:
             if missing_spec is not None:
                 return False
         return True
+
+    def require_historical_session_facts(
+        self, products: tuple[str, ...], through: date
+    ) -> None:
+        """Require provider-backed Calendar and Session facts for historical use.
+
+        The Calendar context starts one month before the effective window so
+        first-week and night-session calculations have a factual predecessor.
+        Session facts are per historical trading day; no current contract
+        ``trading_hours`` value is permitted to fill an older date.
+        """
+        samples: list[Mapping[str, str]] = []
+        for symbol in tuple(dict.fromkeys(item.strip().lower() for item in products)):
+            exchange = self._exchange(symbol)
+            context_start = _calendar_context_start(self.product_start(symbol))
+            expected_calendar_days = (through - context_start).days + 1
+            observed_calendar_days = int(
+                self.session.scalar(
+                    select(func.count()).select_from(TradingCalendar).where(
+                        TradingCalendar.exchange_code == exchange,
+                        TradingCalendar.trade_date >= context_start,
+                        TradingCalendar.trade_date <= through,
+                        TradingCalendar.provider == "rqdata",
+                    )
+                )
+                or 0
+            )
+            missing = observed_calendar_days != expected_calendar_days
+            if not missing:
+                for trading_day in self._trading_days(
+                    symbol, self.product_start(symbol), through
+                ):
+                    fact = self.session.scalar(
+                        select(TradingSession.id).where(
+                            TradingSession.exchange_code == exchange,
+                            TradingSession.instrument_symbol == symbol,
+                            TradingSession.provider == "rqdata",
+                            TradingSession.is_active.is_(True),
+                            TradingSession.effective_from <= trading_day,
+                            (
+                                TradingSession.effective_to.is_(None)
+                                | (TradingSession.effective_to >= trading_day)
+                            ),
+                        ).limit(1)
+                    )
+                    if fact is None:
+                        missing = True
+                        break
+            if missing and len(samples) < 20:
+                samples.append(_session_coverage_sample(symbol, context_start, through))
+        if samples:
+            raise InfrastructureError(
+                "CANDIDATE_SESSION_FACT_MISSING", samples=tuple(samples)
+            )
 
     def expected_bar_ends(
         self,
@@ -364,8 +419,19 @@ class RQDataMarketAdapter:
     def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
         if not expected:
             raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
-        start_day = min(expected).date()
-        end_day = max(expected).date()
+        if key.frequency is BarFrequency.W1:
+            iso_days = tuple(
+                value.astimezone(SHANGHAI).date() for value in expected
+            )
+            start_day = min(
+                item - timedelta(days=item.isoweekday() - 1) for item in iso_days
+            )
+            end_day = max(
+                item + timedelta(days=7 - item.isoweekday()) for item in iso_days
+            )
+        else:
+            start_day = min(expected).date()
+            end_day = max(expected).date()
         order_book_ids: tuple[str, ...]
         if key.kind is DatasetKind.CONTINUOUS:
             order_book_ids = (
@@ -386,15 +452,22 @@ class RQDataMarketAdapter:
             if rows:
                 break
         expected_by_day: dict[date, list[datetime]] = {}
+        expected_by_iso_week: dict[tuple[int, int], datetime] = {}
         for value in expected:
             expected_by_day.setdefault(value.astimezone(SHANGHAI).date(), []).append(value)
+            if key.frequency is BarFrequency.W1:
+                iso = value.astimezone(SHANGHAI).date().isocalendar()
+                expected_by_iso_week[(iso.year, iso.week)] = value
         bars: list[CanonicalBar] = []
-        for index, row in enumerate(rows):
+        for row in rows:
             trading_day = _row_date(row)
-            if key.frequency in {BarFrequency.D1, BarFrequency.W1}:
+            if key.frequency is BarFrequency.W1:
+                iso = trading_day.isocalendar()
+                bar_end = expected_by_iso_week.get((iso.year, iso.week))
+                if bar_end is None:
+                    continue
+            elif key.frequency is BarFrequency.D1:
                 candidates = expected_by_day.get(trading_day)
-                if not candidates and key.frequency is BarFrequency.W1 and index < len(expected):
-                    candidates = [expected[index]]
                 if not candidates:
                     continue
                 bar_end = candidates[-1]
@@ -563,27 +636,6 @@ class _RqdatacClient:
                 end_date=calendar_end,
             )
         )
-        sessions = _session_rows(contracts, starts)
-        night_exchanges = {
-            str(row["exchange_code"])
-            for row in sessions
-            if (
-                isinstance(row["start_time"], time)
-                and row["start_time"] >= time(18)
-            )
-            or bool(row["crosses_midnight"])
-        }
-        calendars = tuple(
-            {
-                "exchange_code": exchange,
-                "trade_date": day,
-                "is_trading_day": True,
-                "has_night_session": exchange in night_exchanges,
-                "provider": "rqdata",
-            }
-            for exchange in exchanges
-            for day in trading_dates
-        )
         main_contracts: list[tuple[str, date, str]] = []
         for symbol in products:
             values = _frame(
@@ -611,6 +663,40 @@ class _RqdatacClient:
             symbol: str(values["exchange_code"])
             for symbol, values in instruments.items()
         }
+        periods = _records(
+            self.api.get_trading_periods(
+                tuple(sorted({contract for _, _, contract in main_contracts})),
+                start_date=calendar_start,
+                end_date=through,
+                frequency="1m",
+            )
+        )
+        sessions = _historical_session_rows(
+            periods,
+            main_contracts,
+            symbol_exchanges,
+        )
+        night_exchanges = {
+            str(row["exchange_code"])
+            for row in sessions
+            if (
+                isinstance(row["start_time"], time)
+                and row["start_time"] >= time(18)
+            )
+            or bool(row["crosses_midnight"])
+        }
+        trading_day_set = set(trading_dates)
+        calendars = tuple(
+            {
+                "exchange_code": exchange,
+                "trade_date": day,
+                "is_trading_day": day in trading_day_set,
+                "has_night_session": exchange in night_exchanges and day in trading_day_set,
+                "provider": "rqdata",
+            }
+            for exchange in exchanges
+            for day in _days(calendar_start, through)
+        )
         contract_multipliers = {
             str(values["contract_code"]): Decimal(str(values["contract_multiplier"]))
             for values in contracts
@@ -858,38 +944,66 @@ def _optional_text(value: Any) -> str | None:
     return result or None
 
 
-def _session_rows(
-    contracts: list[dict[str, object]],
-    starts: Mapping[str, date],
+def _historical_session_rows(
+    periods: tuple[dict[str, Any], ...],
+    main_contracts: list[tuple[str, date, str]],
+    symbol_exchanges: Mapping[str, str],
 ) -> tuple[dict[str, object], ...]:
-    identities: dict[tuple[object, ...], dict[str, object]] = {}
-    for contract in contracts:
-        raw = _optional_text(contract.get("trading_hours"))
-        if raw is None:
+    expected = {(contract, day): symbol for symbol, day, contract in main_contracts}
+    values: dict[tuple[str, date], str] = {}
+    for row in periods:
+        contract = _row_text(row, "order_book_id", "level_0").upper()
+        trading_day = _row_date(row)
+        key = (contract, trading_day)
+        if key not in expected:
             continue
-        for index, match in enumerate(_SESSION.finditer(raw), start=1):
+        hours = _optional_text(row.get("trading_hours"))
+        if hours is None or key in values:
+            raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
+        values[key] = hours
+    if set(values) != set(expected):
+        raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
+    rows: list[dict[str, object]] = []
+    for contract, trading_day in sorted(values, key=lambda item: (item[1], item[0])):
+        symbol = expected[(contract, trading_day)]
+        exchange = symbol_exchanges.get(symbol)
+        if exchange is None:
+            raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
+        matches = tuple(_SESSION.finditer(values[(contract, trading_day)]))
+        if not matches:
+            raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
+        for index, match in enumerate(matches, start=1):
             start_time = time.fromisoformat(match.group("start"))
             end_time = time.fromisoformat(match.group("end"))
-            row = {
-                "exchange_code": contract["exchange_code"],
-                "instrument_symbol": contract["instrument_symbol"],
-                "session_name": f"session_{index}",
-                "start_time": start_time,
-                "end_time": end_time,
-                "effective_from": starts[str(contract["instrument_symbol"])],
-                "effective_to": None,
-                "crosses_midnight": end_time <= start_time,
-                "is_active": True,
-                "provider": "rqdata",
-            }
-            identity = (
-                row["exchange_code"],
-                row["instrument_symbol"],
-                start_time,
-                end_time,
-                row["effective_from"],
+            rows.append(
+                {
+                    "exchange_code": exchange,
+                    "instrument_symbol": symbol,
+                    "session_name": f"session_{index}",
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "effective_from": trading_day,
+                    "effective_to": trading_day,
+                    "crosses_midnight": end_time <= start_time,
+                    "is_active": True,
+                    "provider": "rqdata",
+                }
             )
-            identities[identity] = row
-    if not identities:
-        raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
-    return tuple(identities.values())
+    return tuple(rows)
+
+
+def _days(start: date, end: date):
+    for offset in range((end - start).days + 1):
+        yield start + timedelta(days=offset)
+
+
+def _session_coverage_sample(symbol: str, start: date, end: date) -> Mapping[str, str]:
+    return {
+        "kind": "continuous",
+        "symbol": symbol.upper(),
+        "series_or_contract": "MAIN",
+        "frequency": "1d",
+        "start": f"{start.isoformat()}T00:00:00Z",
+        "end": f"{end.isoformat()}T23:59:59Z",
+        "reason_code": "CANDIDATE_SESSION_FACT_MISSING",
+    }

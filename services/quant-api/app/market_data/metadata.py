@@ -81,6 +81,13 @@ class MetadataSynchronizer:
                     },
                     values,
                 )
+            # Historical periods are date-scoped facts. Replace prior templates
+            # so a former current-hours approximation cannot cover an older day.
+            session.execute(
+                delete(TradingSession).where(
+                    TradingSession.instrument_symbol.in_(normalized)
+                )
+            )
             for values in snapshot.sessions:
                 _upsert(
                     session,
