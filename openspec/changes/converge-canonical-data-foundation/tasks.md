@@ -3,7 +3,7 @@
 - [x] 1.1 将 active OpenSpec、项目事实源、长期决策、架构、数据合同和测试入口重置为八表、单月
   `part.parquet`、三个 CLI、Direct/Derived 与 1G/day natural resume。
 - [x] 1.2 明确当前代码仍待收口，未把 DFD-02～DFD-06 或真实外部操作记作完成。
-- [ ] 1.3 严格验证 OpenSpec、引用一致性与独立 Review。
+- [x] 1.3 严格验证 OpenSpec、引用一致性与独立 Review。
 
 ## DFD-02：删除 Candidate、legacy 与生成工件
 
