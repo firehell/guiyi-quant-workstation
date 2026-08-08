@@ -146,20 +146,11 @@ class HistoricalUpdateTargetPlanner:
             )
             self._reject_gap_intersections(identity)
             missing_direct = self._filter_missing(identity)
-            if not missing_direct and request.since is None:
-                # Fully covered catch-up: keep empty product contribution.
-                windows.append(
-                    PlannedProductWindow(
-                        symbol=symbol,
-                        since_day=since_day,
-                        through_day=through_day,
-                        start=start,
-                        end=end,
-                        weekly_end_day=weekly_end_day,
-                    )
-                )
-                continue
-            chosen = missing_direct or identity
+            # Derived missing is planned from full identity 1m windows, never from
+            # only this-round direct missing (1m complete + 15m hole must repair).
+            derived_identity = derive_aggregate_targets(identity)
+            self._reject_gap_intersections(derived_identity)
+            missing_derived = self._filter_missing(derived_identity)
             windows.append(
                 PlannedProductWindow(
                     symbol=symbol,
@@ -170,8 +161,16 @@ class HistoricalUpdateTargetPlanner:
                     weekly_end_day=weekly_end_day,
                 )
             )
-            direct.extend(chosen)
-            aggregate.extend(derive_aggregate_targets(chosen))
+            if not missing_direct and not missing_derived:
+                if request.since is None:
+                    # Fully covered catch-up: record window, schedule nothing.
+                    continue
+                # Explicit --since with full coverage: force-refresh the window.
+                direct.extend(identity)
+                aggregate.extend(derived_identity)
+                continue
+            direct.extend(missing_direct)
+            aggregate.extend(missing_derived)
         return HistoricalUpdatePlan(
             request=request,
             products=products,
@@ -182,7 +181,12 @@ class HistoricalUpdateTargetPlanner:
         )
 
     def _resolve_catchup_since(self, *, symbol: str, through_day: date) -> date:
-        """Earliest Catalog coverage hole, with mapping overlap (never fixed 10d)."""
+        """Earliest Catalog coverage hole, with mapping overlap (never fixed 10d).
+
+        Continuous 1m is the primary probe. When it has no hole, still return the
+        first known coverage day so independent derived / actual_dominant missing
+        can be discovered by later filters (empty filters → product NOOP).
+        """
         probe_end = inclusive_trading_days_to_half_open(through_day, through_day)[1]
         continuous = _CoverageProbe(
             provider=DEFAULT_PROVIDER,
@@ -207,9 +211,38 @@ class HistoricalUpdateTargetPlanner:
             end=probe_end,
             covered_windows=covered,
         )
-        if not missing:
+        earliest_candidates: list[datetime] = []
+        if missing:
+            earliest_candidates.append(min(window[0] for window in missing))
+        # Independent derived holes on continuous MAIN (1m may already be complete).
+        for frequency in DERIVED_FREQUENCIES:
+            derived_probe = _CoverageProbe(
+                provider=DEFAULT_PROVIDER,
+                dataset_kind=DatasetKind.CONTINUOUS,
+                symbol=symbol,
+                contract_or_series=f"{symbol.upper()}.MAIN",
+                frequency=frequency,
+                adjustment=DEFAULT_ADJUSTMENT,
+                schema_version=DEFAULT_SCHEMA_VERSION,
+            )
+            derived_covered = ()
+            if self._covered_windows is not None:
+                derived_covered = tuple(self._covered_windows(derived_probe))
+            derived_missing = plan_missing_windows(
+                dataset=_probe_to_key(derived_probe),
+                start=probe_start,
+                end=probe_end,
+                covered_windows=derived_covered,
+            )
+            if derived_missing:
+                earliest_candidates.append(min(window[0] for window in derived_missing))
+        if not earliest_candidates:
+            # Continuous MAIN (direct+derived) fully covered for [first, through].
+            # Returning through+1 makes the product NOOP; actual_dominant-only
+            # holes are out of scope for catch-up since resolution (explicit
+            # --since still plans full identity filters).
             return through_day + timedelta(days=1)
-        earliest = min(window[0] for window in missing).astimezone(SHANGHAI).date()
+        earliest = min(earliest_candidates).astimezone(SHANGHAI).date()
         overlap = max(0, self._mapping_overlap_trading_days)
         return earliest - timedelta(days=overlap)
 

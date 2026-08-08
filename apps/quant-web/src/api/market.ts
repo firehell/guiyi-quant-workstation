@@ -1,7 +1,6 @@
 import request from './request'
 import type {
   BarData,
-  DataProfileSummary,
   DominantContractListResponse,
   MarketMacdIndicatorResponse,
   MarketBarsRequestParams,
@@ -81,11 +80,6 @@ export function getMarketMacdIndicator(params: MarketBarsRequestParams & { polic
   return request.get<any, MarketMacdIndicatorResponse>('/market/indicators/macd/canonical', {
     params: toCanonicalBarsRequest(params),
   })
-}
-
-/** 获取数据 profile 摘要列表 */
-export function getDataProfiles() {
-  return request.get<any, DataProfileSummary[]>('/data/profiles')
 }
 
 /** @deprecated 后端暂无 /api/quote，请使用 dominants / bars API */

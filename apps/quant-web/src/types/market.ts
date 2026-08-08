@@ -72,18 +72,6 @@ export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score
 /** 行情读取模式：浏览器只读 / 研究严格模式 */
 export type MarketAccessMode = 'browser' | 'research'
 
-/** 数据 Profile 摘要（质量策略与可用周期） */
-export interface DataProfileSummary {
-  profile_id: string
-  label: string
-  description: string
-  contract_roles: string[]
-  periods: string[]
-  quality_policy: string
-  provider: string
-  is_active: boolean
-}
-
 /** 行情资产证据（文件 id / checksum / 区间） */
 export interface MarketAssetEvidence {
   market_data_file_id: number

@@ -30,12 +30,22 @@ RUNTIME_NOT_AUTHORIZED
 ### 1.0.1 M1 generic historical update（仓库代码事实）
 
 `guiyi data update` 是保留品种的统一历史更新编排入口：默认只读规划；apply 在
-Calendar、Session、MainContractMap 同步后重新计算 Direct `1m/1d/1w` 与由 Canonical `1m`
-聚合的 `5m/15m/30m/60m` exact windows。空 Dataset 必须显式 `--since`，既有 Dataset 从
-Catalog 的最早覆盖边界规划；actual-dominant 仅按 rank=1 映射有效区间生成。DataGap、failed
-quality、部分窗口覆盖、writer 或 reader 不可用全部 fail-closed。该代码事实不授权 RQData、
-PostgreSQL、Canonical、Runtime 或 live 外部操作。已完成的 product-retirement Runtime CLI/
-production control-plane 已从仓库移除，active/retired identity 守卫仍保留。
+Calendar、Session、MainContractMap 同步后重新计算 exact windows。空 Dataset 必须显式
+`--since`；既有 Dataset 从 Catalog **最早覆盖**起算 missing window（含 continuous
+derived 洞），不得用 `max(coverage_end)→today` 掩盖更早 backlog。
+
+Direct missing（`1m/1d/1w`）与 Derived missing（`5m/15m/30m/60m`）**分别规划**：
+canonical `1m` 已完整且 strict 可读时，允许只执行 aggregate，不要求本轮重下 `1m`；
+否则 `BLOCKED_BY_SOURCE_1M`。Catalog↔文件系统 consistency 检查为**只读**：可报告
+`MISSING_FILE` / `ORPHAN_FILE` / `MANIFEST_MISMATCH`，**禁止**把 orphan 扫盘注册进
+Catalog；唯一写入入口仍是 `CanonicalStore`（及既有 recovery）。显式 DataGap、
+failed quality、部分窗口覆盖、writer/reader 不可用全部 fail-closed；routine update
+不隐式自动修 Gap。actual-dominant 仅按 rank=1 映射有效区间生成。
+
+日常 SOP 只需 `guiyi data update --symbol …`（或 `--universe active`）；
+`download` / `aggregate` / `sync` / `audit` / `verify` 为专家工具。`verify` 仅接受
+DatasetKey/canonical 参数，不再保留 ActiveDataset / `--contract`/`--period` legacy 路径。
+该代码事实不授权 RQData、PostgreSQL、Canonical、Runtime 或 live 外部操作。
 
 ### 1.0.2 M2 retained-universe architecture audit（仓库代码事实）
 

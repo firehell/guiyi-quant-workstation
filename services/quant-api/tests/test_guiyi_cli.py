@@ -302,57 +302,53 @@ def test_runtime_status_returns_health_payload_and_nonzero_for_failed_runtime() 
     }
 
 
-def test_data_verify_emits_stable_json_from_shared_service() -> None:
+
+def _canonical_verify_argv(*, limit: str | None = None) -> list[str]:
+    argv = [
+        "data",
+        "verify",
+        "--symbol",
+        "jm",
+        "--dataset-kind",
+        "continuous",
+        "--contract-or-series",
+        "JM888",
+        "--frequency",
+        "15m",
+        "--canonical-root",
+        "/tmp/canonical",
+        "--start",
+        "2026-07-29T00:00:00Z",
+        "--end",
+        "2026-07-29T23:59:59Z",
+    ]
+    if limit is not None:
+        argv.extend(["--limit", limit])
+    return argv
+
+
+def test_data_verify_routes_to_data_core_runner() -> None:
     stdout = StringIO()
     stderr = StringIO()
     observed: dict[str, object] = {}
 
-    def verify(_session, **kwargs):
-        observed.update(kwargs)
+    def runner(command, _session, args):
+        observed["command"] = command
+        observed["dataset_kind"] = args.dataset_kind
+        observed["contract_or_series"] = args.contract_or_series
+        observed["frequency"] = args.frequency
         return {
-            "schema_version": 2,
+            "schema_version": 1,
             "command": "data.verify",
-            "kind": "active-dataset",
             "status": "passed",
             "readonly": True,
-            "effects": {
-                "writes_database": False,
-                "writes_parquet": False,
-                "writes_manifest": False,
-                "calls_rqdata": False,
-            },
-            "request": {
-                "symbol": "jm",
-                "contract": "jm.MAIN",
-                "period": "15m",
-                "start": "2026-07-29T00:00:00",
-                "end": "2026-07-29T23:59:59.999999",
-                "limit": 5000,
-            },
-            "result": {
-                "response_bar_count": 23,
-                "quality": {"status": "passed"},
-                "descriptor": {"lineage_token": "lineage-v1:test"},
-            },
+            "result": {"response_bar_count": 23},
         }
 
     exit_code = main(
-        [
-            "data",
-            "verify",
-            "--symbol",
-            "jm",
-            "--contract",
-            "jm.MAIN",
-            "--period",
-            "15m",
-            "--start",
-            "2026-07-29",
-            "--end",
-            "2026-07-29",
-        ],
+        _canonical_verify_argv(),
         session_factory=lambda: nullcontext(object()),
-        data_verifier=verify,
+        data_core_runner=runner,
         stdout=stdout,
         stderr=stderr,
     )
@@ -361,37 +357,27 @@ def test_data_verify_emits_stable_json_from_shared_service() -> None:
     assert stderr.getvalue() == ""
     assert json.loads(stdout.getvalue())["result"]["response_bar_count"] == 23
     assert observed == {
-        "symbol": "jm",
-        "contract": "jm.MAIN",
-        "period": "15m",
-        "start": datetime(2026, 7, 29, 0, 0, tzinfo=UTC),
-        "end": datetime(2026, 7, 29, 23, 59, 59, 999999, tzinfo=UTC),
-        "limit": 5000,
+        "command": "verify",
+        "dataset_kind": "continuous",
+        "contract_or_series": "JM888",
+        "frequency": "15m",
     }
 
 
-def test_data_verify_maps_domain_error_to_bounded_json_stderr() -> None:
-    from app.services.active_dataset import ActiveDatasetDomainError
-
+def test_data_verify_maps_runner_error_to_bounded_json_stderr() -> None:
     stdout = StringIO()
     stderr = StringIO()
 
-    def reject(_session, **_kwargs):
-        raise ActiveDatasetDomainError("DATASET_ASSET_MISSING")
+    class Boom(Exception):
+        code = "DATASET_ASSET_MISSING"
+
+    def reject(_command, _session, _args):
+        raise Boom("missing")
 
     exit_code = main(
-        [
-            "data",
-            "verify",
-            "--symbol",
-            "jm",
-            "--contract",
-            "jm.MAIN",
-            "--period",
-            "15m",
-        ],
+        _canonical_verify_argv(),
         session_factory=lambda: nullcontext(object()),
-        data_verifier=reject,
+        data_core_runner=reject,
         stdout=stdout,
         stderr=stderr,
     )
@@ -399,57 +385,15 @@ def test_data_verify_maps_domain_error_to_bounded_json_stderr() -> None:
     assert exit_code == 1
     assert stdout.getvalue() == ""
     assert json.loads(stderr.getvalue()) == {
-        "schema_version": 2,
+        "schema_version": 1,
         "command": "data.verify",
         "status": "error",
         "readonly": True,
-        "effects": empty_effects().as_payload(),
-        "targets": [],
-        "error": {
-            "code": "DATASET_ASSET_MISSING",
-            "type": "ActiveDatasetDomainError",
-        },
+        "error": {"code": "DATASET_ASSET_MISSING", "type": "Boom"},
     }
 
 
-def test_data_verify_preserves_legacy_market_error_code_without_message() -> None:
-    from app.services.market_workbench import MarketAccessError
-
-    stdout = StringIO()
-    stderr = StringIO()
-
-    def reject(_session, **_kwargs):
-        raise MarketAccessError(
-            "MARKET_DATA_NOT_FOUND",
-            "sensitive path must not reach stderr",
-        )
-
-    exit_code = main(
-        [
-            "data",
-            "verify",
-            "--symbol",
-            "jm",
-            "--contract",
-            "jm.MAIN",
-            "--period",
-            "15m",
-        ],
-        session_factory=lambda: nullcontext(object()),
-        data_verifier=reject,
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    assert exit_code == 1
-    assert stdout.getvalue() == ""
-    assert json.loads(stderr.getvalue())["error"] == {
-        "code": "MARKET_DATA_NOT_FOUND",
-        "type": "MarketAccessError",
-    }
-
-
-def test_data_verify_rejects_invalid_date_before_opening_database() -> None:
+def test_data_verify_rejects_legacy_contract_period_grammar() -> None:
     stdout = StringIO()
     stderr = StringIO()
 
@@ -463,8 +407,6 @@ def test_data_verify_rejects_invalid_date_before_opening_database() -> None:
             "jm.MAIN",
             "--period",
             "15m",
-            "--start",
-            "not-a-date",
         ],
         session_factory=_NoSessionFactory(),
         stdout=stdout,
@@ -473,13 +415,31 @@ def test_data_verify_rejects_invalid_date_before_opening_database() -> None:
 
     assert exit_code == 2
     assert stdout.getvalue() == ""
-    assert json.loads(stderr.getvalue()) == {
-        "schema_version": 1,
-        "command": "data.verify",
-        "status": "error",
-        "readonly": True,
-        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "ValueError"},
-    }
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
+
+
+def test_data_verify_requires_canonical_dataset_key_args() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+
+    exit_code = main(
+        [
+            "data",
+            "verify",
+            "--symbol",
+            "jm",
+            "--dataset-kind",
+            "continuous",
+        ],
+        session_factory=_NoSessionFactory(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
+
 
 
 def test_runtime_status_bounds_collector_error_without_traceback() -> None:
@@ -508,12 +468,11 @@ def test_runtime_status_bounds_collector_error_without_traceback() -> None:
     }
 
 
+
 def test_data_verify_warning_returns_nonzero() -> None:
     stdout = StringIO()
-    observed: dict[str, object] = {}
 
-    def warning(_session, **kwargs):
-        observed.update(kwargs)
+    def runner(_command, _session, _args):
         return {
             "schema_version": 1,
             "command": "data.verify",
@@ -522,25 +481,14 @@ def test_data_verify_warning_returns_nonzero() -> None:
         }
 
     exit_code = main(
-        [
-            "data",
-            "verify",
-            "--symbol",
-            "jm",
-            "--contract",
-            "jm.MAIN",
-            "--period",
-            "15m",
-        ],
+        _canonical_verify_argv(),
         session_factory=lambda: nullcontext(object()),
-        data_verifier=warning,
+        data_core_runner=runner,
         stdout=stdout,
         stderr=StringIO(),
     )
 
     assert exit_code == 1
-    assert observed["start"] is None
-    assert observed["end"] is None
 
 
 def test_parser_error_uses_bounded_json_and_exit_two() -> None:
@@ -548,18 +496,7 @@ def test_parser_error_uses_bounded_json_and_exit_two() -> None:
     stderr = StringIO()
 
     exit_code = main(
-        [
-            "data",
-            "verify",
-            "--symbol",
-            "jm",
-            "--contract",
-            "jm.MAIN",
-            "--period",
-            "15m",
-            "--limit",
-            "0",
-        ],
+        _canonical_verify_argv(limit="0"),
         session_factory=_NoSessionFactory(),
         stdout=stdout,
         stderr=stderr,
@@ -567,12 +504,5 @@ def test_parser_error_uses_bounded_json_and_exit_two() -> None:
 
     assert exit_code == 2
     assert stdout.getvalue() == ""
-    assert json.loads(stderr.getvalue()) == {
-        "schema_version": 2,
-        "command": "data.verify",
-        "status": "error",
-        "readonly": True,
-        "effects": empty_effects().as_payload(),
-        "targets": [],
-        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
-    }
+    assert json.loads(stderr.getvalue())["error"]["code"] == "CLI_ARGUMENT_INVALID"
+

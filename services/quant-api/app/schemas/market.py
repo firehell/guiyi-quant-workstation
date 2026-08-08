@@ -349,3 +349,16 @@ class MarketMacdIndicatorResponse(BaseModel):
 class CanonicalMarketMacdIndicatorResponse(MarketMacdIndicatorResponse):
     request: CanonicalMacdRequest
     data_identity: CanonicalDataIdentity
+
+
+class SymbolOut(BaseModel):
+    """Compat `/api/symbols` row used by the Market Web surface."""
+
+    symbol: str
+    name: str
+    exchange: str
+    productType: str = "futures"
+    multiplier: int | None = None
+    marginRatio: float | None = None
+    tickSize: float | None = None
+    tradingHours: str | None = None

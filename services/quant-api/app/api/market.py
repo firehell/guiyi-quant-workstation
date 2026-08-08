@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.data_core.contracts import (
@@ -15,6 +16,7 @@ from app.data_core.contracts import (
     parse_bar_frequency,
 )
 from app.db.session import get_db
+from app.models.data_center import Contract
 from app.schemas.market import (
     CanonicalBarsResponse,
     CanonicalMarketIndicatorsResponse,
@@ -22,6 +24,7 @@ from app.schemas.market import (
     DominantContractListResponse,
     MarketCoverageSummary,
     MarketWorkbenchCoverage,
+    SymbolOut,
 )
 from app.services.canonical_market_data import (
     CanonicalMarketDataService,
@@ -35,6 +38,29 @@ from app.services.market_indicators import (
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
+compat_router = APIRouter(tags=["compat"])
+
+
+@compat_router.get("/api/symbols", response_model=list[SymbolOut])
+def get_symbols(session: Session = Depends(get_db)) -> list[SymbolOut]:
+    """Compat contract list for Market Web; not a Profile/Binding selector."""
+    contracts = list(
+        session.scalars(
+            select(Contract).order_by(
+                Contract.exchange_code,
+                Contract.instrument_symbol,
+                Contract.contract_code,
+            )
+        )
+    )
+    return [
+        SymbolOut(
+            symbol=contract.contract_code,
+            name=contract.name or contract.contract_code,
+            exchange=contract.exchange_code,
+        )
+        for contract in contracts
+    ]
 
 
 def _historical_frequency(frequency: str = Query(...)) -> BarFrequency:

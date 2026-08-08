@@ -30,17 +30,16 @@ def add_data_commands(data_commands: argparse._SubParsersAction[argparse.Argumen
     """Register unified + retained legacy data commands on an existing subparser."""
     verify = data_commands.add_parser("verify")
     verify.add_argument("--symbol", required=True)
-    verify.add_argument("--contract")
-    verify.add_argument("--period")
     verify.add_argument(
         "--dataset-kind",
         choices=("continuous", "actual_dominant"),
+        required=True,
     )
-    verify.add_argument("--contract-or-series")
-    verify.add_argument("--frequency", choices=BAR_FREQUENCY_VALUES)
-    verify.add_argument("--canonical-root", type=Path)
-    verify.add_argument("--start")
-    verify.add_argument("--end")
+    verify.add_argument("--contract-or-series", required=True)
+    verify.add_argument("--frequency", choices=BAR_FREQUENCY_VALUES, required=True)
+    verify.add_argument("--canonical-root", type=Path, required=True)
+    verify.add_argument("--start", required=True)
+    verify.add_argument("--end", required=True)
     verify.add_argument("--limit", type=_positive_int, default=5000)
 
     download = data_commands.add_parser("download")

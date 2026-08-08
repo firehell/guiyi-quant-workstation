@@ -425,87 +425,15 @@ def test_semantic_recovery_receipt_is_exact_hash_and_delta_bound() -> None:
         verify_semantic_recovery_receipt(receipt)
 
 
-def test_semantic_recovery_inserts_only_bound_rows_and_is_idempotent() -> None:
-    from datetime import UTC, datetime
-
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    from app.db.base import Base
-    from app.models.data_center import (
-        AfterMarketSchedulerCheckpoint,
-        MarketDataFile,
-        ProfileActiveBinding,
-    )
-
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            MarketDataFile.__table__,
-            ProfileActiveBinding.__table__,
-            AfterMarketSchedulerCheckpoint.__table__,
-        ],
-    )
-    backup, drill = _backup_and_drill()
-    manifest = build_semantic_recovery_manifest(
-        current_facts=_current_facts(),
-        profile_active_bindings=_semantic_bindings(),
-        scheduler_checkpoint=_semantic_checkpoint(),
-        evidence=_semantic_evidence(),
-        backup=backup,
-        isolated_restore_drill=drill,
-        synthesized_fields={"checkpoint.created_at": "recovered_at"},
-        external_lineage_exception={
-            "task_id": 23,
-            "report_id": 15,
-            "database_write": False,
-            "evidence_sha256": "1" * 64,
-        },
-    )
-    packet = build_recovery_approval_packet(
-        manifest=manifest,
-        source={"commit": "1" * 40, "tree": "2" * 40},
-    )
-    with Session(engine) as session:
-        for file_id in {103980, 103981, 103982, 103984}:
-            session.add(
-                MarketDataFile(
-                    id=file_id,
-                    provider="rqdata",
-                    data_type="bar",
-                    instrument_symbol="jm",
-                    contract_code="JM2609",
-                    period="15m",
-                    start_time=datetime(2026, 6, 12, tzinfo=UTC),
-                    end_time=datetime(2026, 7, 22, tzinfo=UTC),
-                    data_version=f"file-{file_id}",
-                    file_path=f"/data/{file_id}.parquet",
-                    row_count=1,
-                    file_size_bytes=1,
-                    checksum=f"{file_id:064x}",
-                    data_role="primary",
-                    quality_status="passed",
-                )
-            )
-        session.flush()
-
-        first = apply_semantic_recovery(
-            session,
-            packet=packet,
-            approval_hash=str(packet["packet_hash"]),
-            current_facts=_current_facts(),
-            current_source={"commit": "1" * 40, "tree": "2" * 40},
+def test_semantic_recovery_apply_is_retired() -> None:
+    with pytest.raises(
+        S607DatabaseRecoveryError,
+        match="profile_binding_after_market_semantic_recovery_retired",
+    ):
+        apply_semantic_recovery(
+            object(),
+            packet={},
+            approval_hash="0" * 64,
+            current_facts={},
+            current_source={},
         )
-        second = apply_semantic_recovery(
-            session,
-            packet=packet,
-            approval_hash=str(packet["packet_hash"]),
-            current_facts=_current_facts(),
-            current_source={"commit": "1" * 40, "tree": "2" * 40},
-        )
-
-        assert first == {"created_bindings": 7, "created_checkpoints": 1, "unchanged": 0}
-        assert second == {"created_bindings": 0, "created_checkpoints": 0, "unchanged": 8}
-        assert session.query(ProfileActiveBinding).count() == 7
-        assert session.query(AfterMarketSchedulerCheckpoint).count() == 1

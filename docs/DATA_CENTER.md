@@ -7,6 +7,7 @@
 ### Current surface
 
 - Web 仅 Market；行情列表 `dominants.bars_coverage` / `quote_ready` 与 `/coverage/canonical` 同为 Catalog 口径；K 线只读 Canonical，DataGap fail-closed，不回退 legacy。
+- `/api/v1/data` data_center HTTP、Profile/Binding 选择器与旧 after-market archive 生产路径已卸；兼容 `/api/symbols` 挂在 market。日常历史更新入口为 `guiyi data update`（Direct/Derived 分算；Catalog↔FS consistency 只读；不扫盘注册 orphan）。
 - Task 05 已 completed on develop（trusted consumers / inventory）；Backtest 子系统已退役；Signal/Review HTTP 已卸。
 - 行情页已去掉「浏览 / 严格研究」切换；§2.1.1 双模式 browser|research + live 合同标 **superseded / UI 已精简**，勿当 current product。
 - `data/reports/**` 一次性审计快照已从工作树删除，结论以本文与 Git history 为准。下文历史章节若仍写出 `data/reports/...` 路径，一律视为 Git-history 定位，不是工作树现存文件。
@@ -32,7 +33,7 @@ RQData
    (provider-direct 1m/1d/1w + persisted preaggregated 5m/15m/30m/60m)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
--> Market Web / Indicator / data+runtime API/CLI
+-> Market Web / Indicator / data CLI + runtime API/CLI
 ```
 
 - 数据集由不可歧义的 `DatasetKey` 定位；`continuous` 与 `actual_dominant` 显式且不可互换。
@@ -46,24 +47,24 @@ RQData
   的 rank=1 具体合约。
 - PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
 - 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
-- 旧 Profile/ActiveBinding/复杂 lineage 仅为 legacy compatibility，不再扩展为 active selector。
+- Profile/ActiveBinding/`MarketDataFile` 选择器与 data_center HTTP **已退役**，不得恢复为
+  active selector；候选 migration `20260808_0035` 可 drop 相关表（生产 upgrade 另需意图）。
 - V2 migration asset 只有 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap
   metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、permanent derived
   period、重复 raw/standard/canonical bar layer 和 Profile/Binding/legacy lineage 均为 rebuild-only
-  或 compatibility-only，不迁移为新的 active input。
+  或 historical-only，不迁移为新的 active input。
 - 旧 report / Audit 快照是 Git-traceable historical evidence，不是 active Gate。
 - Task 04/05 完成不表示 release、Runtime、长稳、通知或交易 Ready，也不表示所有历史资产
   residual 为零。
 
-### 2026-08-06 代码收口事实（语义双轨）
+### 2026-08-08 单一 V2 语言收口（仓库代码事实）
 
-- 正式信号扫描库代码可能仍在；Signal HTTP/worker 已卸。日常历史 K 线读走
-  `MarketDataService` / Canonical（`schema_version=canonical-bar-v1`，
-  timezone-aware 窗口，Catalog Gap fail-closed）。Profile binding 本身不是 V2 active bar selector。
-- Profile 门禁字段（`market_data_file_id` / checksum / data_version）只证明绑定身份未漂移；
-  K 线选择器以 `historical_bar_source=canonical` 标明。来自 `MarketDataFile` 的 naive 覆盖边界
-  在进入 Canonical `BarQuery` 前按 `Asia/Shanghai → UTC` 转换；Canonical quality 为 Catalog
-  Gap fail-closed（无 cross-file warning 语义）。
+- 可执行面仅 DatasetKey + Catalog/Manifest/Gap/MainContractMap + MarketDataService。
+- `guiyi data update`：earliest-missing 规划；Direct/Derived 分算；trusted 1m 可只聚合；
+  consistency 只读（禁止 orphan 自动注册）。
+- `guiyi data verify` 仅 DatasetKey/canonical；M2 仍固定 `--universe active`。
+- 旧 Profile 服务、legacy MarketDataReader、Hive/JM catchup 写路径与 after-market archive
+  生产 caller 已卸或 fail-closed。
 
 ### 2026-08-07 盘中 Live 代码退役
 

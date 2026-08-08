@@ -85,20 +85,22 @@ pnpm --dir apps/quant-web build
 ### GY-CORE-03 unified CLI
 
 `guiyi` 由 `services/quant-api` package 提供。`runtime status` 只读取既有 health service，
-`data verify` 的 JM 请求复用 GY-CORE-02 Facade。
+`data verify` 仅接受 DatasetKey/canonical 参数；日常更新用 `guiyi data update`。
 
 ```bash
 uv run --project services/quant-api guiyi --help
 uv run --project services/quant-api guiyi runtime status
+uv run --project services/quant-api guiyi data update --symbol jm
 
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_guiyi_cli.py \
-  services/quant-api/tests/test_core_cli_service.py
+  services/quant-api/tests/test_historical_update_planner.py \
+  services/quant-api/tests/test_historical_update_workflow.py
 ```
 
-旧 `guiyi-data check-bars` 入口已移除；只使用 `guiyi data verify`（Canonical `BarQuery`，
-UTC-aware 窗口，Catalog Gap 相交即 fail-closed）。
+旧 `guiyi-data check-bars` 与 ActiveDataset/`--contract`/`--period` verify 入口已移除；
+只使用 `guiyi data verify`（Canonical DatasetKey，UTC-aware 窗口，Catalog Gap 相交即 fail-closed）。
 `scripts/rqdata_reference_metadata_gap_apply_plan.py` 已删除，仅可从 Git 历史追溯，不再是兼容入口。
 
 ### GY-CORE-04 ObservationPlanRegistry 与 StrategyAdapter

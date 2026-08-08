@@ -38,8 +38,6 @@ from app.services.rqdata_ingest.ingestors import (
     MemberRankIngestor,
     TradingParameterIngestor,
 )
-from app.services.rqdata_ingest.recovery import backfill_ex_factors_from_raw
-
 
 class FakeRqDataClient:
     def all_future_instruments(self) -> pd.DataFrame:
@@ -710,31 +708,3 @@ def test_market_file_index_keeps_same_type_different_products_separate(tmp_path)
         assert len(files) == 2
         assert {item.instrument_symbol for item in files} == {"rb", "hc"}
 
-
-def test_backfill_ex_factors_from_raw_uses_real_rqdata_fields(tmp_path) -> None:
-    raw_dir = tmp_path / "data/raw/rqdata/futures_ex_factor/product=rb"
-    raw_dir.mkdir(parents=True)
-    pd.DataFrame(
-        [
-            {
-                "ex_date": pd.Timestamp("2024-01-02"),
-                "ex_factor": 2.5,
-                "ex_end_date": pd.Timestamp("2024-03-01"),
-                "ex_cum_factor": 7.5,
-                "product": "rb",
-            }
-        ]
-    ).to_parquet(raw_dir / "rb_2005_2026.parquet")
-
-    with _session(tmp_path) as session:
-        rows, files = backfill_ex_factors_from_raw(session, tmp_path)
-        session.commit()
-
-        assert rows == 1
-        assert files == 1
-        factor = session.scalar(select(FuturesExFactor))
-        assert factor is not None
-        assert factor.instrument_symbol == "rb"
-        assert factor.trade_date == date(2024, 1, 2)
-        assert float(factor.prev_close_spread) == 2.5
-        assert float(factor.prev_close_ratio) == 7.5

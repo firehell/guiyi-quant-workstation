@@ -86,7 +86,8 @@ def test_planner_uses_catalog_gaps_not_fixed_ten_day_window() -> None:
     covered_end = datetime(2026, 7, 10, tzinfo=UTC)
 
     def covered_windows(probe):
-        if probe.frequency is BarFrequency.M1 and probe.dataset_kind is DatasetKind.CONTINUOUS:
+        if probe.dataset_kind is DatasetKind.CONTINUOUS:
+            # Mirror 1m coverage onto derived so catch-up since is driven by 1m hole.
             return (
                 (
                     datetime(2026, 3, 1, tzinfo=UTC),
@@ -130,7 +131,7 @@ def test_planner_uses_earliest_catalog_coverage_not_a_fixed_lookback() -> None:
             (datetime(2020, 1, 1, tzinfo=UTC), datetime(2024, 3, 1, tzinfo=UTC)),
             (datetime(2024, 3, 2, tzinfo=UTC), datetime(2026, 8, 4, tzinfo=UTC)),
         )
-        if probe.dataset_kind is DatasetKind.CONTINUOUS and probe.frequency is BarFrequency.M1
+        if probe.dataset_kind is DatasetKind.CONTINUOUS
         else (),
         latest_completed_day=lambda _symbol: date(2026, 8, 3),
         mapping_overlap_trading_days=0,
@@ -163,6 +164,59 @@ def test_actual_dominant_targets_are_limited_to_rank_one_validity_windows() -> N
         ("JM2609", start, datetime(2026, 8, 4, 16, tzinfo=UTC)),
         ("JM2701", datetime(2026, 8, 4, 16, tzinfo=UTC), end),
     ]
+
+
+def test_planner_schedules_derived_when_direct_complete_but_aggregate_missing() -> None:
+    """1m covered but 15m hole must still plan aggregate-only repair."""
+    start, end = inclusive_trading_days_to_half_open(date(2026, 8, 3), date(2026, 8, 3))
+    covered_direct = (start, end)
+
+    def covered_windows(probe):
+        if probe.frequency in {
+            BarFrequency.M5,
+            BarFrequency.M15,
+            BarFrequency.M30,
+            BarFrequency.H1,
+        }:
+            return ()
+        return (covered_direct,)
+
+    planner = HistoricalUpdateTargetPlanner(
+        list_mappings=lambda *_args: (
+            CanonicalMainContractMapping(
+                id=1,
+                symbol="jm",
+                trading_day=date(2026, 8, 3),
+                actual_contract="JM2609",
+                data_version="v",
+                created_at=None,
+            ),
+        ),
+        covered_windows=covered_windows,
+        latest_completed_day=lambda _symbol: date(2026, 8, 3),
+        mapping_overlap_trading_days=0,
+    )
+    plan = planner.plan(
+        HistoricalUpdateRequest(
+            products=("jm",),
+            since=date(2026, 8, 3),
+            through=date(2026, 8, 3),
+            apply=False,
+        )
+    )
+
+    assert plan.direct_targets == ()
+    assert plan.aggregate_targets
+    assert all(item.frequency in DERIVED_SET for item in plan.aggregate_targets)
+    assert {
+        (item.dataset_kind.value, item.contract_or_series, item.frequency.value)
+        for item in plan.aggregate_targets
+    } >= {
+        ("continuous", "JM.MAIN", "5m"),
+        ("continuous", "JM.MAIN", "15m"),
+        ("actual_dominant", "JM2609", "5m"),
+        ("actual_dominant", "JM2609", "15m"),
+    }
 
 
 def test_empty_dataset_requires_explicit_since() -> None:
@@ -220,3 +274,4 @@ def test_planner_blocks_any_target_window_with_catalog_gap() -> None:
 
 
 DIRECT_SET = {BarFrequency.M1, BarFrequency.D1, BarFrequency.W1}
+DERIVED_SET = {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}

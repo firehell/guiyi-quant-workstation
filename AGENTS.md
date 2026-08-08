@@ -5,7 +5,7 @@
 ## 项目边界
 
 - 做（长期）：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
-- 当前可执行面：Web 仅 Market；API/CLI 为 market / data / runtime；signal/review/strategy Web·HTTP·worker 与盘中 Live 已卸或退役。
+- 当前可执行面：Web 仅 Market；API/CLI 为 market / data CLI / runtime；signal/review/strategy Web·HTTP·worker、data_center HTTP、Profile/Binding 选择器与盘中 Live 已卸或退役。
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
@@ -56,7 +56,8 @@ RQData → Parquet → DuckDB；`quant-core` 仅保留 vn.py-compatible 策略�
 `docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互核心收口的 active 业务合同。目标架构已经冻结，但除文档明确列出的已完成事实外，不得把数据迁移、消费者切换、live/EOD 收口、删除或 Runtime 验收写成已完成。
 
 - active target：RQData → 临时 staging → 校验 → 单一 historical canonical Parquet（provider 直接提供 `1m/1d/1w`）→ Catalog/Manifest/Gap/MainContractMap → `MarketDataService` → consumers。
-- 旧 Profile/ActiveBinding/复杂 lineage 只作 legacy compatibility，不得扩展成新 active selector。移除 referenced compatibility 代码前先完成消费者迁移与回归；生产 DB、正式数据或仓库外文件的实际变更另需精确范围的一次性执行意图。
+- 旧 Profile/ActiveBinding/复杂 lineage 选择器已从可执行面卸除，不得恢复为 active selector。
+  候选 Alembic `20260808_0035` 可 drop 相关表；生产 DB、正式数据或仓库外文件的实际变更另需精确范围的一次性执行意图。
 - 旧 `GY-CORE-04～08` 路线已 superseded/paused；`GY-CORE-02` Facade 与 `GY-CORE-03` CLI 壳可复用，已合入的 `GY-CORE-04` 代码仅作 legacy compatibility，不据此恢复旧 Shadow/Runtime 路线。
 - 已发生的 PR、CI、Review、packet、hash、receipt、report 和 evidence 只作为历史事实或完整性信息，不是当前授权。仓库内过期工件可按普通删除处理；生产数据、正式 Parquet、DB、Runtime 或其他外部资源必须按受控外部操作处理。
 - 迁移资产只包括 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 bar layer 与 Profile/Binding/legacy lineage 均不属于 active migration asset；已退役 backtest 不保留 compatibility 入口。

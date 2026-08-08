@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
 
-from app.api.data_center import compat_router, router as data_center_router
+from app.api.market import compat_router as market_compat_router
 from app.api.market import router as market_router
 from app.api.runtime import router as runtime_router
 from app.middleware.request_timing import RequestTimingMiddleware
@@ -37,11 +37,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Market-only Web surface: keep market + data/runtime ops APIs.
-# Retired Signal/Review/Strategy/Dashboard/Watchlist surfaces were deleted (see Alembic 0034).
-app.include_router(data_center_router)
-app.include_router(compat_router)
+# Market-only Web surface: keep market + runtime ops APIs.
+# data_center HTTP and retired Signal/Review/Strategy surfaces are unmounted.
 app.include_router(market_router)
+app.include_router(market_compat_router)
 app.include_router(runtime_router)
 
 @app.get("/health")

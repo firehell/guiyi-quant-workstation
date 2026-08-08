@@ -157,6 +157,82 @@ def test_apply_noop_reports_all_write_effects_false() -> None:
     assert result.extras["publication_count"] == 0
 
 
+def test_aggregate_only_when_trusted_source_1m_already_covers() -> None:
+    start = datetime(2026, 8, 3, tzinfo=UTC)
+    end = datetime(2026, 8, 4, tzinfo=UTC)
+    derived = derive_aggregate_targets(
+        build_identity_targets(
+            products=("jm",),
+            mappings=(_mapping(),),
+            start=start,
+            end=end,
+            weekly_end_day=date(2026, 8, 2),
+        )
+    )
+    plan = HistoricalUpdatePlan(
+        request=HistoricalUpdateRequest(
+            products=("jm",),
+            since=date(2026, 8, 3),
+            through=date(2026, 8, 3),
+            apply=True,
+        ),
+        products=("jm",),
+        windows=(
+            PlannedProductWindow(
+                symbol="jm",
+                since_day=date(2026, 8, 3),
+                through_day=date(2026, 8, 3),
+                start=start,
+                end=end,
+                weekly_end_day=date(2026, 8, 2),
+            ),
+        ),
+        direct_targets=(),
+        aggregate_targets=derived,
+        apply=True,
+    )
+
+    class FakeDownload:
+        def run(self, request: DownloadRequest) -> CommandResult:
+            raise AssertionError("aggregate-only must not download")
+
+    aggregated: list[DataTarget] = []
+
+    class FakeAggregate:
+        def run(self, request: object) -> CommandResult:
+            aggregated.extend(getattr(request, "targets"))
+            return CommandResult(
+                command="data.aggregate",
+                status=CommandStatus.PASSED,
+                readonly=False,
+                effects=EffectSummary(writes_canonical=True, writes_postgresql=True),
+                targets=tuple(
+                    TargetResult(target=item, status=CommandStatus.PASSED)
+                    for item in getattr(request, "targets")
+                ),
+            )
+
+    class FakeVerifier:
+        def verify(self, targets: object) -> tuple[TargetResult, ...]:
+            return tuple(
+                TargetResult(target=item, status=CommandStatus.PASSED)
+                for item in targets  # type: ignore[union-attr]
+            )
+
+    workflow = HistoricalUpdateWorkflow(
+        planner=HistoricalUpdateTargetPlanner(list_mappings=lambda *_a: (_mapping(),)),
+        apply_deps_factory=lambda: build_apply_deps(
+            download=FakeDownload(),  # type: ignore[arg-type]
+            aggregate=FakeAggregate(),  # type: ignore[arg-type]
+            verifier=FakeVerifier(),  # type: ignore[arg-type]
+        ),
+    )
+    result = workflow.execute(plan)
+    assert result.status is CommandStatus.PASSED
+    assert aggregated == list(derived)
+    assert result.extras["blocked_count"] == 0
+
+
 def test_direct_1m_failure_blocks_only_matching_aggregate() -> None:
     plan = _plan(apply=True)
 

@@ -305,7 +305,6 @@ def test_shadow_production_weekly_reader_excludes_initial_partial_week(
         "_require_shadow_legacy_plan",
         lambda *_a, **_k: {"plan_digest": "plan-digest", "shadow_assets": [{}]},
     )
-    monkeypatch.setattr(cli_service, "MarketDataReader", lambda *_a, **_k: object())
     monkeypatch.setattr(
         cli_service,
         "_freeze_shadow_legacy_assets",
@@ -366,7 +365,7 @@ def test_shadow_production_weekly_reader_excludes_initial_partial_week(
         apply_receipt_hash="receipt-digest",
     )
 
-    with pytest.raises(DiagnosticComplete):
+    with pytest.raises(HistoricalApplyGateError, match="legacy_market_data_reader_retired"):
         cli_service._run_jm_historical_shadow(object(), args)
 
 

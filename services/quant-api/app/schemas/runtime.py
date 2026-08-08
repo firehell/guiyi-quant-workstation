@@ -78,6 +78,7 @@ class RuntimeLiveCheckpointsHealth(BaseModel):
 class RuntimeNotificationRetryHealth(BaseModel):
     status: str
     enabled: bool = False
+    retired: bool = False
     channel: str = "enterprise_wechat"
     total_count: int = 0
     retry_pending_count: int = 0
@@ -97,6 +98,7 @@ class RuntimeNotificationRetryHealth(BaseModel):
 class RuntimeArchiveHealth(BaseModel):
     status: str
     enabled: bool = False
+    retired: bool = False
     latest_task_no: str | None = None
     latest_task_status: str | None = None
     latest_contract: str | None = None
@@ -109,6 +111,7 @@ class RuntimeArchiveHealth(BaseModel):
 class RuntimeAfterMarketSchedulerHealth(BaseModel):
     status: str
     enabled: bool = False
+    retired: bool = False
     last_successful_trading_day: str | None = None
     latest_completed_trading_day: str | None = None
     latest_eligible_trading_day: str | None = None

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime
 import json
 
 from fastapi.testclient import TestClient
@@ -11,18 +11,11 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import (
-    AfterMarketSchedulerCheckpoint,
-    DataDownloadTask,
-    MarketDataFile,
-    ProfileActiveBinding,
-)
 from app.services.runtime_health import _apply_worker_coverage, build_runtime_health
 
 
 def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> None:
     TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
     def override_get_db():
         with TestingSessionLocal() as session:
             yield session
@@ -49,14 +42,15 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
     assert "scheduler" not in payload["components"]
     assert payload["components"]["live_checkpoints"]["status"] == "disabled"
     assert payload["components"]["live_checkpoints"]["retired"] is True
-    assert payload["components"]["live_checkpoints"]["ingest_count"] == 0
-    assert payload["components"]["notification_retry"]["sent_count"] == 0
     assert payload["components"]["notification_retry"]["status"] == "disabled"
     assert payload["components"]["notification_retry"]["channel"] == "retired"
-    assert "data_core_v2_live_review" not in payload["components"]
+    archive = payload["components"]["archive"]
+    assert archive["status"] == "disabled"
+    assert archive["retired"] is True
     after_market = payload["components"]["after_market_scheduler"]
     assert after_market["status"] == "disabled"
     assert after_market["enabled"] is False
+    assert after_market["retired"] is True
     assert {
         "last_successful_trading_day",
         "latest_completed_trading_day",
@@ -111,7 +105,8 @@ def test_runtime_health_degrades_when_no_rq_workers() -> None:
     assert payload["components"]["rq"]["worker_count"] == 0
     assert payload["components"]["live_checkpoints"]["status"] == "disabled"
     assert payload["components"]["notification_retry"]["status"] == "disabled"
-
+    assert payload["components"]["archive"]["retired"] is True
+    assert payload["components"]["after_market_scheduler"]["retired"] is True
 
 
 def test_worker_coverage_requires_each_expected_queue() -> None:
@@ -126,191 +121,23 @@ def test_worker_coverage_requires_each_expected_queue() -> None:
     assert queues[1]["error_type"] == "worker_missing"
 
 
-def test_enabled_archive_failure_is_visible_in_runtime_health() -> None:
+def test_archive_and_after_market_health_remain_retired_even_when_enabled_flags_passed() -> None:
     TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
     with TestingSessionLocal() as session:
-        session.add(
-            DataDownloadTask(
-                task_no="archive:jm:JM2609:2026-07-08",
-                provider="rqdata",
-                data_type="after_market_archive",
-                instrument_symbol="jm",
-                contract_code="JM2609",
-                period="1m_bundle",
-                start_time=now - timedelta(days=1),
-                end_time=now - timedelta(days=1),
-                status="failed",
-                progress=0,
-                result={"quality_gate": "failed", "error_type": "RowCountMismatch"},
-                finished_at=now - timedelta(hours=1),
-            )
-        )
-        session.commit()
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
             rq_collector=lambda connection: _rq_ok(),
-            now=now,
+            now=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
             archive_enabled=True,
+            after_market_automation_enabled=True,
         )
 
-    archive = payload["components"]["archive"]
-    assert payload["status"] == "degraded"
-    assert archive["status"] == "degraded"
-    assert archive["latest_task_status"] == "failed"
-    assert archive["latest_error_type"] == "RowCountMismatch"
-
-
-def test_after_market_scheduler_health_has_independent_watermark_retry_and_heartbeat_fields() -> None:
-    from app.services.runtime_health import _collect_after_market_scheduler_health
-
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(
-            AfterMarketSchedulerCheckpoint(
-                product="jm",
-                exchange_code="DCE",
-                status="retry_wait",
-                authorization_hash="a" * 64,
-                last_successful_trading_day=date(2026, 7, 21),
-                current_trading_day=date(2026, 7, 22),
-                retry_count=2,
-                last_error_type="ConnectionError",
-                last_error_at=now - timedelta(minutes=5),
-                next_retry_at=now + timedelta(minutes=10),
-                last_result={},
-            )
-        )
-        session.commit()
-        health = _collect_after_market_scheduler_health(
-            session,
-            connection=HeartbeatRedis(now),
-            now=now,
-            enabled=True,
-            clock=HealthClock(),
-        )
-
-    assert health["last_successful_trading_day"] == "2026-07-21"
-    assert health["latest_completed_trading_day"] == "2026-07-22"
-    assert health["latest_eligible_trading_day"] == "2026-07-22"
-    assert health["archive_lag_trading_days"] == 1
-    assert health["current_task"] == "archive:jm:2026-07-22"
-    assert health["retry_count"] == 2
-    assert health["scheduler_heartbeat"]["status"] == "retry_wait"
-    assert health["scheduler_heartbeat"]["pid"] == 4321
-    assert health["lock_status"] == "held"
-    assert "active_binding_end" in health
-
-
-def test_after_market_active_binding_end_uses_latest_passed_file_per_required_identity() -> None:
-    from app.services.runtime_health import _after_market_active_binding_end
-
-    TestingSessionLocal = _session_factory()
-    latest_end = datetime(2026, 7, 21, 15, 0, tzinfo=UTC)
-    required = (
-        ("intraday_research_v1", "1m"),
-        ("intraday_research_v1", "5m"),
-        ("intraday_research_v1", "15m"),
-        ("long_horizon_daily_v1", "1d"),
-    )
-    with TestingSessionLocal() as session:
-        for index, (profile_id, period) in enumerate(required):
-            market_file = MarketDataFile(
-                provider="rqdata",
-                data_type="bars",
-                instrument_symbol="jm",
-                contract_code="JM2609",
-                period=period,
-                start_time=datetime(2026, 6, 12, tzinfo=UTC),
-                end_time=latest_end,
-                file_path=f"/tmp/latest-{index}.parquet",
-                row_count=1,
-                checksum=f"{index + 1:064x}",
-                data_version=f"latest-{index}",
-                data_role="primary",
-                quality_status="passed",
-            )
-            session.add(market_file)
-            session.flush()
-            session.add(
-                ProfileActiveBinding(
-                    profile_id=profile_id,
-                    instrument_symbol="jm",
-                    contract_code="JM2609",
-                    period=period,
-                    data_version=market_file.data_version,
-                    market_data_file_id=market_file.id,
-                    binding_status="active",
-                )
-            )
-
-        historical_file = MarketDataFile(
-            provider="rqdata",
-            data_type="bars",
-            instrument_symbol="jm",
-            contract_code="JM2005",
-            period="1d",
-            start_time=datetime(2020, 1, 2, tzinfo=UTC),
-            end_time=datetime(2020, 4, 3, tzinfo=UTC),
-            file_path="/tmp/historical.parquet",
-            row_count=1,
-            checksum="f" * 64,
-            data_version="historical",
-            data_role="primary",
-            quality_status="passed",
-        )
-        session.add(historical_file)
-        session.flush()
-        session.add(
-            ProfileActiveBinding(
-                profile_id="long_horizon_daily_v1",
-                instrument_symbol="jm",
-                contract_code="JM2005",
-                period="1d",
-                data_version=historical_file.data_version,
-                market_data_file_id=historical_file.id,
-                binding_status="active",
-            )
-        )
-        session.commit()
-
-        active_end, details = _after_market_active_binding_end(session)
-
-    assert active_end == "2026-07-21"
-    assert len(details) == 4
-    assert all(row["contract"] == "JM2609" for row in details)
-
-
-def test_after_market_scheduler_health_degrades_on_stale_heartbeat_even_when_last_state_was_success() -> None:
-    from app.services.runtime_health import _collect_after_market_scheduler_health
-
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(
-            AfterMarketSchedulerCheckpoint(
-                product="jm",
-                exchange_code="DCE",
-                status="success",
-                authorization_hash="a" * 64,
-                last_successful_trading_day=date(2026, 7, 22),
-                retry_count=0,
-                last_result={},
-            )
-        )
-        session.commit()
-        health = _collect_after_market_scheduler_health(
-            session,
-            connection=HeartbeatRedis(now - timedelta(minutes=4), status="success"),
-            now=now,
-            enabled=True,
-            clock=HealthClock(),
-        )
-
-    assert health["status"] == "degraded"
-    assert health["scheduler_heartbeat"]["health_status"] == "degraded"
+    assert payload["components"]["archive"]["status"] == "disabled"
+    assert payload["components"]["archive"]["retired"] is True
+    assert payload["components"]["after_market_scheduler"]["status"] == "disabled"
+    assert payload["components"]["after_market_scheduler"]["retired"] is True
+    assert payload["status"] == "ok"
 
 
 class FakeRedis:
@@ -321,42 +148,6 @@ class FakeRedis:
         if self.exc is not None:
             raise self.exc
         return True
-
-
-class HeartbeatRedis(FakeRedis):
-    def __init__(
-        self,
-        now: datetime,
-        *,
-        status: str = "retry_wait",
-        pid: int = 4321,
-    ) -> None:
-        super().__init__()
-        self.now = now
-        self.status = status
-        self.pid = pid
-
-    def get(self, key: str):
-        return json.dumps(
-            {
-                "generated_at": self.now.isoformat(),
-                "status": self.status,
-                "error_type": None,
-                "lock_status": "held",
-                "pid": self.pid,
-            }
-        )
-
-
-class HealthClock:
-    def latest_completed_trading_day(self, *, product: str, exchange: str, now: datetime):
-        return date(2026, 7, 22)
-
-    def trading_days_between(self, start: date, end: date, *, exchange: str):
-        return [date(2026, 7, 22)], True
-
-    def final_close_at(self, trading_day: date, *, product: str, exchange: str):
-        return datetime(2026, 7, 22, 15, 0)
 
 
 def _session_factory():
@@ -401,7 +192,6 @@ def _rq_no_workers() -> dict:
         "error_type": None,
         "error_message": None,
     }
-
 
 
 def _contains_no_secret_words(payload: dict) -> bool:

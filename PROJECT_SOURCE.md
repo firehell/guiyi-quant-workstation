@@ -2,7 +2,7 @@
 
 ## Current surface vs long-term boundary
 
-- **Current surface**：Market Web + Canonical 历史读 + `data`/`runtime` API/CLI；无 Signal/Review/Strategy Web，无 signal worker，无盘中 Live，无 backtest 子系统。
+- **Current surface**：Market Web + Canonical 历史读 + `guiyi data`/`runtime` CLI + `/api/runtime`；无 `/api/v1/data` data_center HTTP，无 Profile/Binding 选择器，无 Signal/Review/Strategy Web，无 signal worker，无盘中 Live，无 backtest 子系统。
 - **Long-term boundary**：数据治理、K 线与指标、策略研究、复盘、信号观察与前向验证；未来可按新任务重建历史回测。下文章节若写「支持」，未特别标明 current surface 时指长期边界。
 
 ## 定位
@@ -36,14 +36,14 @@ RQData
    (provider-direct 1m/1d/1w + persisted preaggregated 5m/15m/30m/60m)
 -> PostgreSQL Catalog / Manifest / Gap / MainContractMap
 -> MarketDataService
--> Market Web / Indicator display / data+runtime API/CLI
+-> Market Web / Indicator display / data CLI + runtime API/CLI
 ```
 
-这是已冻结的目标，不表示迁移或消费者切换已经完成。目标数据身份使用不可歧义的 `DatasetKey`；`continuous` 与 `actual_dominant` 必须由消费者显式声明，禁止静默互换。正式历史周期永久固定为 `1m/5m/15m/30m/60m/1d/1w`。`1m/1d/1w` 的来源角色为 `provider_direct`，`5m/15m/30m/60m` 的来源角色为 `preaggregated_from_1m`；七者都是可持久化、可查询的 Canonical DatasetKey。历史读取只查请求同频的 Catalog/partition，缺失时返回 DataGap，不从其他周期动态聚合或回退。`actual_dominant 1w` 按该周最后交易日的 `MainContractMap.rank=1` 选择具体合约。
+这是已冻结的目标。目标数据身份使用不可歧义的 `DatasetKey`；`continuous` 与 `actual_dominant` 必须由消费者显式声明，禁止静默互换。正式历史周期永久固定为 `1m/5m/15m/30m/60m/1d/1w`。`1m/1d/1w` 的来源角色为 `provider_direct`，`5m/15m/30m/60m` 的来源角色为 `preaggregated_from_1m`；七者都是可持久化、可查询的 Canonical DatasetKey。历史读取只查请求同频的 Catalog/partition，缺失时返回 DataGap，不从其他周期动态聚合或回退。`actual_dominant 1w` 按该周最后交易日的 `MainContractMap.rank=1` 选择具体合约。
 
-迁移期间既有 Profile/ActiveBinding/复杂 lineage 只作为 legacy compatibility。旧 `GY-CORE-02` Facade 与 `GY-CORE-03` CLI 壳允许复用，但不得继续扩展旧 active selector；旧 `GY-CORE-04～08` 路线已 superseded/paused。迁移顺序与业务约束见 `docs/tasks/GY-DATA-CORE-V2.md`。
+Profile/ActiveBinding/`MarketDataFile` data_role 选择器与 `/api/v1/data` data_center HTTP 已从可执行面卸除；不得恢复为 active selector。日常历史更新入口为 `guiyi data update`。旧 `GY-CORE-04～08` 路线已 superseded/paused。迁移顺序与业务约束见 `docs/tasks/GY-DATA-CORE-V2.md`。
 
-legacy compatibility 数据入口仍必须满足：
+legacy compatibility 读取口径仅作历史说明（已不再是 active 路径）：
 
 ```text
 provider in ("rqdata", "local_parquet")
@@ -51,7 +51,7 @@ data_role = "primary"
 quality_status != "failed"
 ```
 
-严格研究、正式回测与正式信号默认使用 `quality_status=passed`。`validation`、`legacy_reference`、`candidate`、旧 TqSdk/天勤与来源不明数据不得进入默认 active 链路。
+严格研究默认使用 Catalog/`MarketDataService` 与显式 DataGap fail-closed。`validation`、`legacy_reference`、`candidate`、旧 TqSdk/天勤与来源不明数据不得进入默认 active 链路。
 
 historical canonical 与 live observation 分离。**当前无盘中 Live 应用路径**；未来重建 live 时只能用于观察、confirmed bar 聚合、前向判断和盘后核对，不能复制或晋升为 historical canonical；EOD 必须重新获取 RQData provider-final 数据，并在发布前校验 identity、coverage、Manifest digest、checksum 和 row count。staging 或 canonical 校验失败时保留最后有效 canonical 并显式暴露失败。
 

@@ -162,10 +162,19 @@ class HistoricalUpdateWorkflow:
                     ),
                 )
 
-        direct_result = deps.download.run(
-            DownloadRequest(targets=plan.direct_targets, apply=True)
-        )
-        stage_effects.append(direct_result.effects)
+        if plan.direct_targets:
+            direct_result = deps.download.run(
+                DownloadRequest(targets=plan.direct_targets, apply=True)
+            )
+            stage_effects.append(direct_result.effects)
+        else:
+            direct_result = CommandResult(
+                command="data.download",
+                status=CommandStatus.PASSED,
+                readonly=False,
+                effects=empty_effects(),
+                targets=(),
+            )
         direct_by_key = {
             _target_key(item.target): item for item in direct_result.targets
         }
@@ -180,17 +189,33 @@ class HistoricalUpdateWorkflow:
         aggregate_targets: list[DataTarget] = []
         blocked = 0
         for target in plan.aggregate_targets:
-            parent = _parent_1m_key(target)
-            parent_result = direct_by_key.get(parent)
-            if parent_result is None or parent_result.status is not CommandStatus.PASSED:
+            parent = _parent_1m_target(target)
+            parent_key = _target_key(parent)
+            parent_result = direct_by_key.get(parent_key)
+            if parent_result is not None:
+                if parent_result.status is not CommandStatus.PASSED:
+                    blocked += 1
+                    results.append(
+                        TargetResult(
+                            target=target,
+                            status=CommandStatus.BLOCKED,
+                            detail={"reason": "direct_1m_failed"},
+                            error=PublicError(
+                                code="BLOCKED_BY_SOURCE_1M",
+                                type="BlockedError",
+                            ),
+                        )
+                    )
+                    continue
+            elif not _source_1m_trusted(deps.verifier, parent):
                 blocked += 1
                 results.append(
                     TargetResult(
                         target=target,
                         status=CommandStatus.BLOCKED,
-                        detail={"reason": "direct_1m_failed_or_missing"},
+                        detail={"reason": "source_1m_not_trusted"},
                         error=PublicError(
-                            code="AGGREGATE_BLOCKED_BY_DIRECT_1M",
+                            code="BLOCKED_BY_SOURCE_1M",
                             type="BlockedError",
                         ),
                     )
@@ -312,14 +337,31 @@ def _target_key(target: DataTarget) -> tuple[object, ...]:
 
 
 def _parent_1m_key(target: DataTarget) -> tuple[object, ...]:
-    return (
-        target.dataset_kind.value,
-        target.symbol,
-        target.contract_or_series,
-        BarFrequency.M1.value,
-        target.start.isoformat(),
-        target.end.isoformat(),
+    return _target_key(_parent_1m_target(target))
+
+
+def _parent_1m_target(target: DataTarget) -> DataTarget:
+    return DataTarget(
+        provider=target.provider,
+        dataset_kind=target.dataset_kind,
+        symbol=target.symbol,
+        contract_or_series=target.contract_or_series,
+        frequency=BarFrequency.M1,
+        adjustment=target.adjustment,
+        schema_version=target.schema_version,
+        start=target.start,
+        end=target.end,
     )
+
+
+def _source_1m_trusted(
+    verifier: TargetWindowVerifier | None, parent: DataTarget
+) -> bool:
+    """Allow aggregate when canonical 1m already covers the window (no download)."""
+    if verifier is None:
+        return False
+    verified = verifier.verify((parent,))
+    return bool(verified) and verified[0].status is CommandStatus.PASSED
 
 
 def _as_datetime(value: object) -> object:

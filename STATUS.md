@@ -34,8 +34,12 @@ Web 观察面已精简为 **Market 工作台 only**（`/` → `/market`；69 品
 今日工作台、信号监控、策略中心、复盘中心、数据中心、运行状态等 Web 入口已去掉；
 对应 Signal/Review/Strategy/Dashboard/Watchlist/futures_research HTTP、服务、ORM、RQ worker、
 语义合同与 strategy_knowledge/specs 已从仓库删除；生产相关表已由 `20260808_0034` drop。
-**保留**：`/api/v1/market` Canonical 历史读、`/api/v1/data` 与 `/api/runtime`（含 CLI
-`guiyi data *` / `guiyi runtime status`）、盘后 scheduler、Canonical data、`packages/quant-core`。
+**保留**：`/api/v1/market` Canonical 历史读（含兼容 `/api/symbols`）、`/api/runtime`、
+CLI `guiyi data *` / `guiyi runtime status`、Canonical data、`packages/quant-core`。
+`/api/v1/data` data_center HTTP、Profile/Binding 选择器与旧 after-market archive 生产路径
+已从仓库卸除；候选 Alembic `20260808_0035` 可 drop
+`data_profiles` / `profile_active_bindings` / `after_market_scheduler_checkpoints`
+（**未**授权生产 upgrade）。日常历史更新入口为 `guiyi data update`。
 盘中 Live / Task 06 应用路径与生产表均已退役；盘中能力待后续新实现重建。
 tracked legacy evidence 以及主工程被 Git 忽略的
 `/Volumes/扩展盘/guiyi-quant-workstation/backtests/`（87 个文件，约 50 MB）已精确清理。
@@ -95,6 +99,7 @@ production_writes=false
 | slim-web-to-market | completed on develop + prod drop | Web 仅 Market；应用面与 DB 表已删；保留 market/data/runtime API+CLI 与 quant-core |
 | retired-surface-drop-0034 | completed / production applied | `20260805_0033→20260808_0034`；18 表 + trigger drop；Catalog 保留 |
 | docs-hygiene + dominants Catalog | implementation on develop | Market-only 文档收口；删 reports/会话产物；dominants coverage 对齐 Catalog；未做正式补数 |
+| data-foundation-v2-closure | implementation on develop | 单一 V2 语言：卸 data_center HTTP/Profile/Binding/legacy verify/after-market archive；update Direct/Derived 分算 + consistency 只读；候选 Alembic `0035`；**未**执行生产 upgrade / RQData / Canonical / 旧根删除 |
 
 ## 未完成事项与执行边界
 

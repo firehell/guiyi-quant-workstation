@@ -3,9 +3,8 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
-from datetime import date, datetime, time
-import sys
 from typing import Any, TextIO
+import sys
 
 from app.data_core.cli_service import run_data_core_command
 from app.db.session import SessionLocal
@@ -25,15 +24,11 @@ from app.guiyi_cli.output import (
     exception_error_payload,
     print_json,
 )
-from app.services.active_dataset import ActiveDatasetDomainError
-from app.services.core_cli import verify_active_dataset
 from app.services.data_operations.contracts import CliArgumentInvalid
-from app.services.market_workbench import MarketAccessError
 from app.services.runtime_health import build_runtime_health
 
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
-DataVerifier = Callable[..., dict[str, Any]]
 RuntimeHealthBuilder = Callable[[Any], dict[str, Any]]
 DataCoreRunner = Callable[[str, Any, argparse.Namespace], dict[str, Any]]
 
@@ -60,12 +55,13 @@ def main(
     *,
     environ: Mapping[str, str] | None = None,
     session_factory: SessionFactory = SessionLocal,
-    data_verifier: DataVerifier = verify_active_dataset,
     data_core_runner: DataCoreRunner = run_data_core_command,
     runtime_health_builder: RuntimeHealthBuilder = build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
+    data_verifier: Any = None,
 ) -> int:
+    del environ, data_verifier  # legacy ActiveDataset verifier retired from CLI
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
     try:
         reject_legacy_backfill_alias(raw_argv)
@@ -97,11 +93,7 @@ def main(
         status = payload.get("status")
         return 0 if status in {"passed", "planned"} else 1
 
-    if (
-        args.domain == "data"
-        and args.data_command == "verify"
-        and args.dataset_kind is not None
-    ):
+    if args.domain == "data" and args.data_command == "verify":
         try:
             with session_factory() as session:
                 payload = data_core_runner("verify", session, args)
@@ -158,98 +150,12 @@ def main(
         print_json(payload, stdout)
         return 0 if health.get("status") == "ok" else 1
 
-    # Retained read-only legacy verify path.
-    command = "data.verify"
-    if args.domain != "data" or args.data_command != "verify":
-        print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
-        return 2
-    try:
-        start = _parse_datetime(args.start, end_of_day=False)
-        end = _parse_datetime(args.end, end_of_day=True)
-    except ValueError as exc:
-        print_json(
-            {
-                "schema_version": 1,
-                "command": command,
-                "status": "error",
-                "readonly": True,
-                "error": {
-                    "code": "CLI_ARGUMENT_INVALID",
-                    "type": type(exc).__name__,
-                },
-            },
-            stderr,
-        )
-        return 2
-    try:
-        with session_factory() as session:
-            payload = data_verifier(
-                session,
-                symbol=args.symbol,
-                contract=args.contract,
-                period=args.period,
-                start=start,
-                end=end,
-                limit=args.limit,
-            )
-    except ActiveDatasetDomainError as exc:
-        print_json(
-            exception_error_payload(command=command, exc=exc, readonly=True),
-            stderr,
-        )
-        return 1
-    except MarketAccessError as exc:
-        print_json(
-            exception_error_payload(command=command, exc=exc, readonly=True),
-            stderr,
-        )
-        return 1
-    except Exception as exc:  # noqa: BLE001 - CLI boundary emits no exception text.
-        print_json(
-            {
-                "schema_version": 1,
-                "command": command,
-                "status": "error",
-                "readonly": True,
-                "error": {"code": "CLI_INTERNAL_ERROR", "type": type(exc).__name__},
-            },
-            stderr,
-        )
-        return 1
-    print_json(payload, stdout)
-    return 0 if payload.get("status") == "passed" else 1
+    print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
+    return 2
 
 
 def entrypoint() -> None:
     raise SystemExit(main())
-
-
-def _parse_datetime(
-    value: str | None,
-    *,
-    end_of_day: bool,
-) -> datetime | None:
-    if value is None:
-        return None
-    from datetime import UTC
-
-    if len(value) == 10:
-        parsed = datetime.combine(
-            date.fromisoformat(value),
-            time.max if end_of_day else time.min,
-        )
-        return parsed.replace(tzinfo=UTC)
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("must be a positive integer")
-    return parsed
 
 
 def _validate_conditional_arguments(args: argparse.Namespace) -> None:
@@ -261,24 +167,21 @@ def _validate_conditional_arguments(args: argparse.Namespace) -> None:
         return
     if args.data_command != "verify":
         return
-    if args.dataset_kind is not None:
-        required = (
-            args.contract_or_series,
-            args.frequency,
-            args.start,
-            args.end,
-            args.canonical_root,
+    required = (
+        args.dataset_kind,
+        args.contract_or_series,
+        args.frequency,
+        args.start,
+        args.end,
+        args.canonical_root,
+    )
+    if args.symbol.strip().lower() != "jm" or any(
+        value is None or (isinstance(value, str) and not value.strip())
+        for value in required
+    ):
+        raise CliUsageError(
+            "canonical verify requires exact JM DatasetKey identity/window/root"
         )
-        if args.symbol.strip().lower() != "jm" or any(
-            value is None or (isinstance(value, str) and not value.strip())
-            for value in required
-        ):
-            raise CliUsageError(
-                "canonical verify requires exact JM identity/window/root"
-            )
-        return
-    if not args.contract or not args.period:
-        raise CliUsageError("legacy verify requires contract and period")
 
 
 def _command_hint(argv: Sequence[str]) -> str:
