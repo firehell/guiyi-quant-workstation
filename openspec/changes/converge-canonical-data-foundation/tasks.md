@@ -61,4 +61,4 @@
 - [ ] 8.2 Gate B：取得生产表、候选根、正式根和服务范围的另一单次执行意图后完成不可逆 migration 与短维护窗口原子切换
 - [ ] 8.3 Gate C：验证 DataGap=0、全部预期七周期、主力跨换月/周线、相同 fixed through NOOP，且 scheduler/live/notification/order 保持关闭
 - [ ] 8.4 Gate C 通过后删除 migration-only legacy adapter，运行最终完整验证并 archive `converge-canonical-data-foundation`
-- [ ] 8.5 按 develop 日常流程提交并推送普通仓库变更；不合并 main、不创建 release/tag、不切换 Runtime
+- [x] 8.5 按 develop 日常流程提交并推送普通仓库变更；不合并 main、不创建 release/tag、不切换 Runtime
