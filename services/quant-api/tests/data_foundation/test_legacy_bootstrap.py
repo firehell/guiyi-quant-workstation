@@ -1,11 +1,13 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from app.market_data.domain import DatasetKey
+from app.market_data.catalog import MainMapFact
+from app.market_data.domain import BarFrequency, DatasetKey, DatasetKind
+from app.market_data import legacy_bootstrap
 from app.market_data.legacy_bootstrap import LegacyBootstrapAdapter, LegacyBootstrapError
 
 
@@ -55,6 +57,157 @@ def test_legacy_adapter_rejects_unapproved_or_symlink_root(tmp_path) -> None:
             previous_canonical_root=previous,
             allowed_roots=(contract, continuous),
         )
+
+
+def test_legacy_adapter_can_fill_contract_window_from_prior_actual_dominant(
+    tmp_path,
+) -> None:
+    contract, continuous, previous = _roots(tmp_path)
+    path = (
+        previous
+        / "provider/rqdata/dataset_kind/actual_dominant"
+        / "symbol/jm/contract_or_series/JM2509/frequency/1d"
+        / "adjustment/none/schema_version/canonical-bar-v1/data_version/v1/window"
+        / "part-00000.parquet"
+    )
+    _write(path, [{**_row(2, 100), "bar_end": datetime(2025, 1, 2, 7, tzinfo=UTC), "trading_day": date(2025, 1, 2)}])
+    adapter = LegacyBootstrapAdapter(
+        contract_root=contract,
+        continuous_raw_root=continuous,
+        previous_canonical_root=previous,
+    )
+
+    batch = adapter.fetch(
+        DatasetKey("contract", "jm", "JM2509", "1d"),
+        (datetime(2025, 1, 2, 7, tzinfo=UTC),),
+    )
+
+    assert batch is not None
+    assert batch.bars[0].trading_day == date(2025, 1, 2)
+
+
+def test_gate_a_scope_reports_month_partitions_and_exact_provider_windows(
+    tmp_path,
+) -> None:
+    planner = getattr(legacy_bootstrap, "plan_gate_a_scope", lambda **_kwargs: {})
+    days = (
+        date(2025, 1, 2),
+        date(2025, 1, 3),
+        date(2025, 1, 6),
+        date(2025, 1, 7),
+        date(2025, 1, 8),
+        date(2025, 1, 9),
+        date(2025, 1, 10),
+        date(2025, 1, 13),
+        date(2025, 1, 14),
+        date(2025, 1, 15),
+        date(2025, 1, 16),
+        date(2025, 1, 17),
+    )
+    mapped = tuple(MainMapFact("jm", day, "JM2509") for day in days[:7])
+    continuous = {
+        frequency: DatasetKey(DatasetKind.CONTINUOUS, "jm", "MAIN", frequency)
+        for frequency in (BarFrequency.M1, BarFrequency.D1, BarFrequency.W1)
+    }
+    contract = {
+        frequency: DatasetKey(DatasetKind.CONTRACT, "jm", "JM2509", frequency)
+        for frequency in (BarFrequency.M1, BarFrequency.D1, BarFrequency.W1)
+    }
+    coverage = {
+        continuous[BarFrequency.M1]: ((tmp_path / "continuous-1m.parquet", days[:6]),),
+        continuous[BarFrequency.D1]: ((tmp_path / "continuous-1d.parquet", days[:7]),),
+        continuous[BarFrequency.W1]: ((tmp_path / "continuous-1w.parquet", (days[1],)),),
+        contract[BarFrequency.M1]: ((tmp_path / "contract-1m.parquet", days[:7]),),
+        contract[BarFrequency.D1]: ((tmp_path / "contract-1d.parquet", days[:6]),),
+        contract[BarFrequency.W1]: ((tmp_path / "contract-1w.parquet", (days[1], days[6])),),
+    }
+
+    result = planner(
+        products=("jm",),
+        starts={"jm": days[0]},
+        through=days[6],
+        candidate_root=tmp_path / "candidate",
+        active_canonical_root=tmp_path / "active",
+        trading_days={"jm": days},
+        main_map=mapped,
+        legacy_coverages=coverage,
+        legacy_roots=(tmp_path / "contracts", tmp_path / "continuous", tmp_path / "active"),
+    )
+
+    assert result["counts"] == {
+        "products": 1,
+        "direct_datasets": 6,
+        "derived_datasets": 8,
+        "physical_datasets": 14,
+        "direct_month_partitions": 6,
+        "derived_month_partitions": 8,
+        "month_partitions": 14,
+        "legacy_selected_month_targets": 6,
+        "legacy_fully_covered_month_targets": 3,
+        "rqdata_windows": 3,
+        "rqdata_missing_trading_days": 3,
+    }
+    assert {
+        (tuple(item["dataset"]), item["start"], item["end"])
+        for item in result["rqdata_windows"]
+    } == {
+        (continuous[BarFrequency.M1].as_tuple(), "2025-01-10", "2025-01-10"),
+        (continuous[BarFrequency.W1].as_tuple(), "2025-01-10", "2025-01-10"),
+        (contract[BarFrequency.D1].as_tuple(), "2025-01-10", "2025-01-10"),
+    }
+    assert len(result["scope_digest"]) == 64
+
+
+def test_scan_legacy_coverages_recognizes_only_direct_allowlisted_identities(
+    tmp_path,
+) -> None:
+    contract, continuous, previous = _roots(tmp_path)
+    _write(
+        contract / "product=jm/contract=JM2509/frequency=1d/raw.parquet",
+        [_row(2, 100)],
+    )
+    _write(
+        continuous / "product=jm/frequency=1m/version=v1/raw.parquet",
+        [_row(3, 101)],
+    )
+    prior = (
+        previous
+        / "provider/rqdata/dataset_kind/actual_dominant"
+        / "symbol/jm/contract_or_series/JM2509/frequency/1w"
+        / "adjustment/none/schema_version/canonical-bar-v1/data_version/v1/window"
+        / "part-00000.parquet"
+    )
+    _write(
+        prior,
+        [
+            {
+                **_row(3, 101),
+                "bar_end": datetime(2025, 1, 3, 7, tzinfo=UTC),
+                "trading_day": date(2025, 1, 3),
+            }
+        ],
+    )
+    _write(
+        previous / "provider/rqdata/dataset_kind/actual_dominant/symbol/jm/contract_or_series/JM2509/frequency/5m/ignored.parquet",
+        [_row(3, 101)],
+    )
+
+    coverage, invalid = legacy_bootstrap.scan_legacy_coverages(
+        contract_root=contract,
+        continuous_raw_root=continuous,
+        previous_canonical_root=previous,
+        products=("jm",),
+    )
+
+    assert invalid == ()
+    assert {key.as_tuple() for key in coverage} == {
+        ("contract", "jm", "JM2509", "1d"),
+        ("continuous", "jm", "MAIN", "1m"),
+        ("contract", "jm", "JM2509", "1w"),
+    }
+    assert coverage[DatasetKey("contract", "jm", "JM2509", "1w")][0][1] == (
+        date(2025, 1, 3),
+    )
 
 
 def _row(day: int, close: int) -> dict:
