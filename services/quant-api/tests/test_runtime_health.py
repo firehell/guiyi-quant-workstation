@@ -61,8 +61,6 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
         "last_error_at",
         "retry_count",
         "scheduler_heartbeat",
-        "active_binding_end",
-        "active_binding_ends",
         "next_retry_at",
         "authorization_hash",
         "lock_status",

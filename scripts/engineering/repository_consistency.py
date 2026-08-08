@@ -132,15 +132,12 @@ PROTECTED_BOUNDARIES: Mapping[str, str] = {
     "9.4 DataGap fails visibly without fallback": (
         r"DataGap.{0,180}(?:不得静默|不静默|不得.*回退|不.*回退|fail)"
     ),
-    "9.5 strict passed quality": r"quality_status\s*=\s*passed",
-    "9.6 bounded legacy compatibility": (
-        r"rqdata/local_parquet.{0,120}primary.{0,120}quality(?:_status)?\s*!=\s*failed"
-    ),
+    "9.5 six hard validations": r"(?:六项硬校验|six hard validations)",
     "9.7 historical/live separation": (
         r"historical\s+canonical.{0,120}live\s+observation.{0,120}(?:分离|separat|不能|不得)"
     ),
-    "9.8 provider-final publication integrity": (
-        r"EOD.{0,280}RQData.{0,280}(?:digest|checksum).{0,120}(?:row(?:-| )?count|row count)"
+    "9.8 atomic publication integrity": (
+        r"(?=.*(?:原子|atomic))(?=.*(?:digest|checksum))(?=.*(?:row(?:-| )?count|row count))"
     ),
     "9.9 preserve last valid canonical": (
         r"(?:失败|fails?).{0,120}(?:保留|preserve).{0,100}(?:最后有效|last valid).{0,80}canonical"
@@ -161,12 +158,11 @@ PROTECTED_BOUNDARIES: Mapping[str, str] = {
     "10.5 HTDY observation whitelist": (
         r"HTDY\s+original.{0,220}(?:observation-only|观察).{0,120}(?:白名单|whitelist|仅限|只允许)"
     ),
-    "10.6 signal separation": r"Strategy\s*->\s*SignalEvent\s*->\s*Notification Gate\s*->\s*Channel",
     "10.7 research-not-instruction boundary": (
         r"(?:研究观察|research observation).{0,80}(?:不是交易指令|非交易指令|not.{0,20}trading instruction)"
     ),
     "10.9 canonical companion": (
-        r"(?:数据、策略、回测、信号或通知语义|data, strategy, backtest, signal, or notification semantics)"
+        r"(?:数据或指标语义|数据、策略、回测、信号或通知语义|data, strategy, backtest, signal, or notification semantics)"
         r".{0,120}(?:同一变更|same change).{0,80}(?:canonical|deep canonical)"
     ),
     "11.1-11.4 operational defaults": (
@@ -187,7 +183,7 @@ PROTECTED_BOUNDARIES: Mapping[str, str] = {
     ),
     "11.8 observation-only notifications": (
         r"(?:通知|notification).{0,160}(?:研究观察|observation-only).{0,100}"
-        r"(?:非交易指令|not.{0,20}trading instruction)"
+        r"(?:非交易指令|不是交易指令|not.{0,20}trading instruction)"
     ),
     "11.9 no readiness inference": (
         r"(?:不把结果扩写成|不得.*推导|not.{0,30}infer).{0,160}"
@@ -548,11 +544,7 @@ class TaskDisposition(StrEnum):
 
 # Explicit disposition seeds for files still present under docs/tasks/.
 # Deleted historical contracts are recovered only via Git history.
-_FROZEN_RUNTIME_TASKS = frozenset(
-    {
-        "S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md",
-    }
-)
+_FROZEN_RUNTIME_TASKS = frozenset()
 _ACTIVE_CONTRACT_TASKS = frozenset(
     {
         "GY-DATA-CORE-V2.md",

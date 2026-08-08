@@ -139,8 +139,6 @@ def _retired_after_market_scheduler_health() -> dict[str, Any]:
         "last_error_at": None,
         "retry_count": 0,
         "scheduler_heartbeat": None,
-        "active_binding_end": None,
-        "active_binding_ends": [],
         "next_retry_at": None,
         "authorization_hash": None,
         "lock_status": None,

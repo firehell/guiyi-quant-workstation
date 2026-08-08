@@ -1,195 +1,84 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
-from typing import Any, TextIO
 import sys
+from typing import Any, TextIO
 
-from app.data_core.cli_service import run_data_core_command
 from app.db.session import SessionLocal
-from app.guiyi_cli.data_commands import (
-    build_data_operation_request,
-    is_new_data_operation,
-    run_data_operation,
-)
-from app.guiyi_cli.data_parser import (
-    CliUsageError,
-    JsonArgumentParser,
-    add_data_commands,
-    reject_legacy_backfill_alias,
-)
-from app.guiyi_cli.output import (
-    argument_error_payload,
-    exception_error_payload,
-    print_json,
-)
-from app.services.data_operations.contracts import CliArgumentInvalid
+from app.guiyi_cli.data_commands import build_request, run_data_command
+from app.guiyi_cli.data_parser import CliUsageError, JsonArgumentParser, add_data_commands
+from app.guiyi_cli.output import argument_error_payload, exception_error_payload, print_json
+from app.market_data.composition import build_historical_data_manager
+from app.market_data.maintenance import HistoricalDataManager
 from app.services.runtime_health import build_runtime_health
 
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
-RuntimeHealthBuilder = Callable[[Any], dict[str, Any]]
-DataCoreRunner = Callable[[str, Any, argparse.Namespace], dict[str, Any]]
+ManagerFactory = Callable[[Any], HistoricalDataManager]
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = JsonArgumentParser(prog="guiyi")
     domains = parser.add_subparsers(dest="domain", required=True)
-
     data = domains.add_parser("data")
-    data_commands = data.add_subparsers(dest="data_command", required=True)
-    add_data_commands(data_commands)
-
+    commands = data.add_subparsers(dest="data_command", required=True)
+    add_data_commands(commands)
     runtime = domains.add_parser("runtime")
-    runtime_commands = runtime.add_subparsers(
-        dest="runtime_command",
-        required=True,
-    )
-    runtime_commands.add_parser("status")
+    runtime.add_subparsers(dest="runtime_command", required=True).add_parser("status")
     return parser
 
 
 def main(
     argv: Sequence[str] | None = None,
     *,
-    environ: Mapping[str, str] | None = None,
     session_factory: SessionFactory = SessionLocal,
-    data_core_runner: DataCoreRunner = run_data_core_command,
-    runtime_health_builder: RuntimeHealthBuilder = build_runtime_health,
+    manager_factory: ManagerFactory = build_historical_data_manager,
+    runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
-    data_verifier: Any = None,
 ) -> int:
-    del environ, data_verifier  # legacy ActiveDataset verifier retired from CLI
-    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    command = ".".join(raw[:2]) if raw else "guiyi"
     try:
-        reject_legacy_backfill_alias(raw_argv)
-        args = build_parser().parse_args(raw_argv)
-        _validate_conditional_arguments(args)
-    except (CliUsageError, CliArgumentInvalid):
-        print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
+        args = build_parser().parse_args(raw)
+        if args.domain == "data":
+            build_request(args)
+    except (CliUsageError, ValueError):
+        print_json(argument_error_payload(command), stderr)
         return 2
 
-    if is_new_data_operation(args):
-        try:
-            build_data_operation_request(args)
-            with session_factory() as session:
-                payload = run_data_operation(args, session=session)
-        except (CliUsageError, CliArgumentInvalid):
-            print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
-            return 2
-        except Exception as exc:  # noqa: BLE001 - bounded CLI boundary
-            print_json(
-                exception_error_payload(
-                    command=_command_hint(raw_argv),
-                    exc=exc,
-                    readonly=not bool(getattr(args, "apply", False)),
-                ),
-                stderr,
-            )
-            return 1
-        print_json(payload, stdout)
-        status = payload.get("status")
-        return 0 if status in {"passed", "planned"} else 1
-
-    if args.domain == "data" and args.data_command == "verify":
-        try:
-            with session_factory() as session:
-                payload = data_core_runner("verify", session, args)
-        except Exception as exc:  # noqa: BLE001 - bounded CLI boundary
-            code = getattr(exc, "code", "DATA_CORE_COMMAND_FAILED")
-            print_json(
-                {
-                    "schema_version": 1,
-                    "command": "data.verify",
-                    "status": "error",
-                    "readonly": True,
-                    "error": {"code": code, "type": type(exc).__name__},
-                },
-                stderr,
-            )
-            return 1
-        print_json(payload, stdout)
-        return 0 if payload.get("status") in {"passed", "planned"} else 1
-
-    if args.domain == "runtime" and args.runtime_command == "status":
-        try:
-            with session_factory() as session:
+    try:
+        with session_factory() as session:
+            if args.domain == "data":
+                result = run_data_command(args, manager_factory(session))
+                payload = result.as_payload()
+            else:
                 health = runtime_health_builder(session)
-        except Exception as exc:  # noqa: BLE001 - never emit health exception text.
-            print_json(
-                {
+                payload = {
                     "schema_version": 1,
                     "command": "runtime.status",
-                    "status": "error",
+                    "status": health.get("status", "failed"),
                     "readonly": True,
-                    "error": {
-                        "code": "RUNTIME_STATUS_FAILED",
-                        "type": type(exc).__name__,
-                    },
-                },
-                stderr,
-            )
-            return 1
-        payload = {
-            "schema_version": 1,
-            "command": "runtime.status",
-            "status": health.get("status", "failed"),
-            "readonly": True,
-            "effects": {
-                key: health.get(key, False)
-                for key in (
-                    "would_start_services",
-                    "would_enqueue_jobs",
-                    "would_send_notifications",
-                )
-            },
-            "runtime": health,
-        }
-        print_json(payload, stdout)
-        return 0 if health.get("status") == "ok" else 1
-
-    print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
-    return 2
+                    "runtime": health,
+                }
+    except Exception as exc:  # noqa: BLE001 - safe CLI boundary
+        print_json(
+            exception_error_payload(
+                command=command,
+                exc=exc,
+                readonly=not bool(getattr(args, "apply", False)),
+            ),
+            stderr,
+        )
+        return 1
+    print_json(payload, stdout)
+    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok"} else 1
 
 
 def entrypoint() -> None:
     raise SystemExit(main())
-
-
-def _validate_conditional_arguments(args: argparse.Namespace) -> None:
-    if args.domain != "data":
-        return
-    if args.data_command in {"download", "aggregate"}:
-        if args.symbol is not None and not args.contract_or_series:
-            raise CliUsageError("single target requires --contract-or-series")
-        return
-    if args.data_command != "verify":
-        return
-    required = (
-        args.dataset_kind,
-        args.contract_or_series,
-        args.frequency,
-        args.start,
-        args.end,
-        args.canonical_root,
-    )
-    if args.symbol.strip().lower() != "jm" or any(
-        value is None or (isinstance(value, str) and not value.strip())
-        for value in required
-    ):
-        raise CliUsageError(
-            "canonical verify requires exact JM DatasetKey identity/window/root"
-        )
-
-
-def _command_hint(argv: Sequence[str]) -> str:
-    if len(argv) >= 2 and argv[0] in {"data", "runtime"}:
-        return f"{argv[0]}.{argv[1]}"
-    if argv:
-        return str(argv[0])
-    return "guiyi"
 
 
 if __name__ == "__main__":

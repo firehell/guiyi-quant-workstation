@@ -121,8 +121,6 @@ class RuntimeAfterMarketSchedulerHealth(BaseModel):
     last_error_at: str | None = None
     retry_count: int = 0
     scheduler_heartbeat: dict[str, Any] | None = None
-    active_binding_end: str | None = None
-    active_binding_ends: list[dict[str, Any]] = Field(default_factory=list)
     next_retry_at: str | None = None
     authorization_hash: str | None = None
     lock_status: str | None = None

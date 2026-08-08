@@ -8,7 +8,7 @@
 |---|---|---|
 | `docs/` 顶层文件 | `SCREAMING_SNAKE.md` | `DATA_CENTER.md` |
 | `docs/` 子目录 | `snake_case` | `tasks/` |
-| 本目录任务合同 | `TASK-ID-SLUG.md`（大写 ID + 连字符） | `GY-DATA-CORE-V2.md`、`S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md` |
+| 本目录任务合同 | `TASK-ID-SLUG.md`（大写 ID + 连字符） | `GY-DATA-CORE-V2.md` |
 | `openspec/`、`.kiro/`、`prompts/` | kebab-case | `slim-web-to-market`、`code-review.md` |
 | Cursor skill 目录名 | 可保留 kebab（工具惯例） | `.agents/skills/futures-data/` |
 
@@ -31,10 +31,6 @@ Gate/hash-path 不再作为授权。
 
 - `GY-DATA-CORE-V2.md` — 数据交互核心收口 active 业务合同
 
-## Frozen Runtime-consumed（Phase E 前不可删）
-
-- `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`（事故边界；非当前 schema 仪表盘，生产 head 见 `STATUS.md`）
-
 已退役的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据仅能从 Git history 追溯；
 不得再当作现存路径、兼容入口或当前授权。未来重建回测或 Runtime 验收必须新建任务，
 重新定义当前代码与数据边界。
@@ -48,7 +44,6 @@ Gate/hash-path 不再作为授权。
 - `GY-CORE-CONVERGENCE.md`
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`
-- `GY-DATA-CORE-V2-TASK07-EVIDENCE.md`
 - `GY-DATA-PRODUCT-RETIREMENT-21.md`（21 品种退役已完成；当前事实见 `STATUS.md` / `DATA_CENTER.md`）
 - `JM-LIVE-SIGNAL-EVENT-S6-08.md`
 - `JM-LIVE-STABILITY-S6-10.md`

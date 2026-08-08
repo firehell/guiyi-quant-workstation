@@ -41,8 +41,8 @@ def test_property_15_formal_historical_requests_preserve_identity_and_quality(in
         "continuous",
         "actual_dominant",
         "DataGap",
-        "quality_status=passed",
-        "rqdata/local_parquet",
+        "六项硬校验",
+        "contract",
     )
     marker = markers[index % len(markers)]
     assert marker in DATA_CORE or marker in AGENTS
@@ -170,7 +170,7 @@ def test_property_21_research_outputs_cannot_become_order_instructions(index: in
 def test_property_22_semantic_changes_require_canonical_companion(index: int) -> None:
     """Feature: personal-development-mode, Property 22: Semantic changes require their canonical companion"""
     mapping = (
-        ("services/quant-api/app/services/data_core/x.py", "docs/tasks/GY-DATA-CORE-V2.md"),
+        ("services/quant-api/app/market_data/x.py", "docs/tasks/GY-DATA-CORE-V2.md"),
         ("packages/quant-core/guiyi_quant/strategies/y.py", "docs/INDICATOR_KERNEL.md"),
         ("services/quant-api/app/services/market_indicators.py", "docs/INDICATOR_KERNEL.md"),
     )

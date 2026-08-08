@@ -88,7 +88,7 @@ def test_contract_alignment_revision_precedes_live_review_loop_head() -> None:
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == [RETIREMENT_REVISION]
+    assert scripts.get_heads() == ["20260808_0036"]
     assert scripts.get_revision(REVISION).down_revision == PARENT_REVISION
     assert scripts.get_revision(LIVE_REVIEW_REVISION).down_revision == REVISION
     assert scripts.get_revision(LIVE_IDENTITY_REVISION).down_revision == LIVE_REVIEW_REVISION

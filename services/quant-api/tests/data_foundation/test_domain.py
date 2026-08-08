@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+import pytest
+
+from app.market_data.domain import (
+    BarFrequency,
+    CanonicalBar,
+    ContractError,
+    DatasetKey,
+    DatasetKind,
+    SeriesKind,
+    SeriesQuery,
+)
+
+
+def test_dataset_key_normalizes_four_field_identity_and_path() -> None:
+    continuous = DatasetKey(
+        kind=DatasetKind.CONTINUOUS,
+        symbol=" Jm ",
+        series_or_contract=" main ",
+        frequency=BarFrequency.M15,
+    )
+    contract = DatasetKey(
+        kind="contract",
+        symbol="jm",
+        series_or_contract=" jm2509 ",
+        frequency="1m",
+    )
+
+    assert continuous.as_tuple() == ("continuous", "jm", "MAIN", "15m")
+    assert continuous.relative_root.as_posix() == (
+        "kind=continuous/symbol=jm/series=MAIN/frequency=15m"
+    )
+    assert contract.as_tuple() == ("contract", "jm", "JM2509", "1m")
+
+
+@pytest.mark.parametrize(
+    ("kind", "symbol", "series"),
+    [
+        ("actual_dominant", "jm", "JM2509"),
+        ("continuous", "jm", "JM.MAIN"),
+        ("continuous", "jm", "JM2509"),
+        ("contract", "jm", "RB2510"),
+        ("contract", "jm", "MAIN"),
+    ],
+)
+def test_dataset_key_rejects_non_physical_or_mismatched_identity(
+    kind: str,
+    symbol: str,
+    series: str,
+) -> None:
+    with pytest.raises(ContractError):
+        DatasetKey(
+            kind=kind,
+            symbol=symbol,
+            series_or_contract=series,
+            frequency="1m",
+        )
+
+
+def test_series_query_requires_contract_only_for_contract_mode() -> None:
+    window = {
+        "symbol": "jm",
+        "frequency": "1d",
+        "start": datetime(2025, 1, 1, tzinfo=UTC),
+        "end": datetime(2025, 2, 1, tzinfo=UTC),
+    }
+
+    actual = SeriesQuery(series_kind=SeriesKind.ACTUAL_DOMINANT, **window)
+    contract = SeriesQuery(
+        series_kind=SeriesKind.CONTRACT,
+        contract="JM2509",
+        **window,
+    )
+
+    assert actual.physical_key is None
+    assert contract.physical_key == DatasetKey(
+        kind="contract",
+        symbol="jm",
+        series_or_contract="JM2509",
+        frequency="1d",
+    )
+    with pytest.raises(ContractError):
+        SeriesQuery(series_kind="contract", **window)
+    with pytest.raises(ContractError):
+        SeriesQuery(
+            series_kind="continuous",
+            contract="JM2509",
+            **window,
+        )
+
+
+def test_canonical_bar_contains_only_bar_values_and_normalizes_utc_decimal() -> None:
+    bar = CanonicalBar(
+        bar_end=datetime.fromisoformat("2025-01-02T15:00:00+08:00"),
+        trading_day=date(2025, 1, 2),
+        open="100.0",
+        high=Decimal("102"),
+        low="99",
+        close="101.50",
+        volume="10",
+        turnover=None,
+        open_interest="20",
+    )
+
+    assert bar.bar_end == datetime(2025, 1, 2, 7, 0, tzinfo=UTC)
+    assert bar.close == Decimal("101.50")
+    assert tuple(bar.as_record()) == (
+        "bar_end",
+        "trading_day",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover",
+        "open_interest",
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"high": "98"},
+        {"volume": "-1"},
+        {"bar_end": datetime(2025, 1, 2, 15, 0)},
+    ],
+)
+def test_canonical_bar_rejects_invalid_ohlcv_or_naive_time(
+    changes: dict[str, object],
+) -> None:
+    values: dict[str, object] = {
+        "bar_end": datetime(2025, 1, 2, 7, 0, tzinfo=UTC),
+        "trading_day": date(2025, 1, 2),
+        "open": "100",
+        "high": "102",
+        "low": "99",
+        "close": "101",
+        "volume": "10",
+        "turnover": None,
+        "open_interest": "20",
+    }
+    values.update(changes)
+    with pytest.raises(ContractError):
+        CanonicalBar(**values)  # type: ignore[arg-type]

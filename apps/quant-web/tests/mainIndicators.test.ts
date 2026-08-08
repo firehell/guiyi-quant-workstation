@@ -4,10 +4,7 @@ import type { BarData, MainIndicatorSeries } from '../src/types/market.ts'
 import {
   HTDY_REPAINT_SCAN_ZONE_BARS,
   activeIndicatorCodes,
-  buildMainIndicatorRequestParams,
   DEFAULT_VISIBLE_MAIN_INDICATORS,
-  filterVisibleMainIndicatorsForMode,
-  isMainIndicatorAllowed,
   latestMainIndicatorValues,
   loadMainChartPreferences,
   MAIN_CHART_PREFERENCES_KEY,
@@ -39,8 +36,6 @@ test('main indicator registry keeps EMA overlays available and HTDY original obs
   assert.equal(htdy?.capability, 'observation_overlay')
   assert.equal(htdy?.alertCapable, false)
   assert.equal(htdy?.repaintingRisk, 'known')
-  assert.deepEqual(htdy?.allowedDataModes, ['historical'])
-  assert.deepEqual(htdy?.allowedAccessModes, ['browser'])
   assert.ok(htdy?.riskMessages?.includes('未来引用 / 重绘风险'))
   assert.ok(htdy?.riskMessages?.includes('公式语义尚未完全对齐'))
   assert.ok(htdy?.riskMessages?.includes('仅供人工观察'))
@@ -49,25 +44,10 @@ test('main indicator registry keeps EMA overlays available and HTDY original obs
   assert.equal(htdy?.unstableTailBars, HTDY_REPAINT_SCAN_ZONE_BARS)
 })
 
-test('normalizeVisibleMainIndicators keeps HTDY only in historical browser mode', () => {
+test('normalizeVisibleMainIndicators keeps available indicators without a second access language', () => {
   assert.deepEqual(normalizeVisibleMainIndicators(['ema_60', 'unknown', 'htdy', 'ema_10', 'ema_10']), ['ema_60', 'htdy', 'ema_10'])
-  assert.deepEqual(
-    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'browser' }),
-    ['ema_60', 'htdy', 'ema_10'],
-  )
-  assert.deepEqual(
-    normalizeVisibleMainIndicators(['ema_60', 'htdy', 'ema_10'], { dataMode: 'historical', accessMode: 'research' }),
-    ['ema_60', 'ema_10'],
-  )
   assert.deepEqual(normalizeVisibleMainIndicators([]), [])
   assert.deepEqual(normalizeVisibleMainIndicators('bad'), ['ema_21'])
-})
-
-test('mode helpers disable HTDY outside browser historical observation', () => {
-  const htdy = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'htdy')!
-  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'browser' }), true)
-  assert.equal(isMainIndicatorAllowed(htdy, { dataMode: 'historical', accessMode: 'research' }), false)
-  assert.deepEqual(filterVisibleMainIndicatorsForMode(['ema_21', 'htdy'], { dataMode: 'historical', accessMode: 'research' }), ['ema_21'])
 })
 
 test('loadMainChartPreferences recovers from corrupt storage and saves only UI preferences', () => {
@@ -91,10 +71,7 @@ test('loadMainChartPreferences recovers from corrupt storage and saves only UI p
   )
   const loaded = loadMainChartPreferences(storage)
   assert.deepEqual(loaded.visibleMainIndicators, ['ema_10', 'htdy', 'ema_60'])
-  assert.deepEqual(
-    normalizeVisibleMainIndicators(loaded.visibleMainIndicators, { dataMode: 'historical', accessMode: 'browser' }),
-    ['ema_10', 'htdy', 'ema_60'],
-  )
+  assert.deepEqual(normalizeVisibleMainIndicators(loaded.visibleMainIndicators), ['ema_10', 'htdy', 'ema_60'])
   assert.equal(loaded.period, '15m')
   assert.equal(loaded.realtimeFollow, true)
   assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).bars, undefined)
@@ -113,47 +90,6 @@ test('activeIndicatorCodes only changes when standard overlays change, not HTDY 
   assert.equal(withEma21, withEma21AndHtdy)
   assert.notEqual(withEma21, withEma10And21)
   assert.equal(withEma10And21, 'ema10,ema21')
-})
-
-test('buildMainIndicatorRequestParams uses visible bars as display window and skips empty active selection', () => {
-  const params = buildMainIndicatorRequestParams({
-    symbol: 'jm',
-    contract: 'JM2609',
-    period: '15m',
-    bars: bars.slice(10, 20),
-    visibleIds: ['ema_21', 'ema_60'],
-    provider: 'rqdata',
-    dataRole: 'primary',
-    quoteMode: true,
-    allowContinuous: false,
-    accessMode: 'research',
-    expectedMarketDataFileId: 103925,
-    expectedLineageToken: 'lineage-token',
-  })
-
-  assert.deepEqual(params, {
-    symbol: 'jm',
-    contract: 'JM2609',
-    period: '15m',
-    indicator_codes: 'ema21,ema60',
-    display_start: '2026-01-11',
-    display_end: '2026-01-20',
-    display_bar_count: 10,
-    provider: 'rqdata',
-    data_role: 'primary',
-    quote_mode: true,
-    allow_continuous: false,
-    access_mode: 'research',
-    expected_market_data_file_id: 103925,
-    expected_lineage_token: 'lineage-token',
-  })
-  assert.equal(buildMainIndicatorRequestParams({
-    symbol: 'jm',
-    contract: 'JM2609',
-    period: '15m',
-    bars,
-    visibleIds: [],
-  }), null)
 })
 
 test('normalizeMainIndicatorSeries keeps backend EMA points and drops unknown series', () => {

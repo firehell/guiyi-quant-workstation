@@ -31,7 +31,6 @@ EXCLUDED_PREFIXES = (
 SUPERSEDED_COMMAND_PATTERNS = (
     r"\bguiyi\s+data\s+plan\b",
     r"\bguiyi\s+data\s+migrate\b",
-    r"\bguiyi\s+data\s+task07\b",
     r"\bguiyi\s+data\s+backfill\b",
     r"--pre-2020\b",
     r"--pre2020\b",

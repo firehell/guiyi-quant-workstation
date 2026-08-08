@@ -7,7 +7,6 @@ non-Windows hosts can still assert script presence and static contracts.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path

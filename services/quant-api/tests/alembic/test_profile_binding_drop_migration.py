@@ -35,7 +35,7 @@ def test_profile_binding_drop_is_current_alembic_head() -> None:
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == [DROP_REVISION]
+    assert scripts.get_heads() == ["20260808_0036"]
     revision = scripts.get_revision(DROP_REVISION)
     assert revision is not None
     assert revision.down_revision == PARENT_REVISION

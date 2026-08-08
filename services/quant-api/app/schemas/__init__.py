@@ -1,5 +1,1 @@
-from app.schemas.market import SymbolOut
-
-__all__ = [
-    "SymbolOut",
-]
+"""Public API schemas are imported from their owning modules."""

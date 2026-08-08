@@ -64,11 +64,11 @@ def test_retained_ops_surfaces_still_present() -> None:
     paths = client.get("/openapi.json").json()["paths"]
     assert any("/market/" in path or path.endswith("/market") for path in paths)
     assert any(path.startswith("/api/runtime") or "/runtime/" in path for path in paths)
-    assert "/api/symbols" in paths
+    assert "/api/symbols" not in paths
 
 
-def test_data_center_http_unmounted_but_symbols_compat_remains() -> None:
+def test_data_center_http_and_legacy_symbols_compat_are_unmounted() -> None:
     paths = client.get("/openapi.json").json()["paths"]
-    assert "/api/symbols" in paths
+    assert "/api/symbols" not in paths
     assert "/api/v1/data/summary" not in paths
     assert "/api/v1/data/profiles" not in paths

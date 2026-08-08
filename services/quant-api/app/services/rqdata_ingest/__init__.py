@@ -1,2 +1,0 @@
-"""RQData structured ingest helpers."""
-

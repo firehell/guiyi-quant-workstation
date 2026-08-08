@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
 
-from app.api.market import compat_router as market_compat_router
 from app.api.market import router as market_router
 from app.api.runtime import router as runtime_router
 from app.middleware.request_timing import RequestTimingMiddleware
@@ -40,7 +39,6 @@ app.add_middleware(
 # Market-only Web surface: keep market + runtime ops APIs.
 # data_center HTTP and retired Signal/Review/Strategy surfaces are unmounted.
 app.include_router(market_router)
-app.include_router(market_compat_router)
 app.include_router(runtime_router)
 
 @app.get("/health")

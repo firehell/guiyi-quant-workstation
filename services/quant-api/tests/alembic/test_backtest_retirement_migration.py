@@ -46,7 +46,7 @@ def test_backtest_retirement_remains_on_linear_history_before_surface_drop() -> 
     assert revision is not None
     assert revision.down_revision == PARENT_REVISION
     assert scripts.get_revision("20260808_0034") is not None
-    assert scripts.get_heads() == ["20260808_0034"]
+    assert scripts.get_heads() == ["20260808_0036"]
 
 
 def test_backtest_retirement_sql_deletes_only_scoped_legacy_rows() -> None:

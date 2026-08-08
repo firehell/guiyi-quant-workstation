@@ -1,92 +1,64 @@
 # 归一量化项目事实源
 
-## Current surface vs long-term boundary
+更新时间：2026-08-08
 
-- **Current surface**：Market Web + Canonical 历史读 + `guiyi data`/`runtime` CLI + `/api/runtime`；无 `/api/v1/data` data_center HTTP，无 Profile/Binding 选择器，无 Signal/Review/Strategy Web，无 signal worker，无盘中 Live，无 backtest 子系统。
-- **Long-term boundary**：数据治理、K 线与指标、策略研究、复盘、信号观察与前向验证；未来可按新任务重建历史回测。下文章节若写「支持」，未特别标明 current surface 时指长期边界。
+## 定位与边界
 
-## 定位
+归一量化是本地运行、单用户的国内期货量化研究工作站。长期闭环是可信行情、
+指标/策略候选、历史研究、观察与提醒、人工判断、复盘、统计与 OOS/Walk-forward/Shadow。
 
-归一量化是本地运行、单用户使用的国内期货量化研究工作站。长期边界覆盖数据治理、K 线与指标、策略研究、复盘、信号观察与前向验证。历史回测将来可以重建，但当前没有可用的 backtest 子系统或兼容入口。
+项目不做自动交易、实盘下单、SaaS、多用户、高频/Tick 平台或 AI 自动晋升策略。
+当前没有 backtest 子系统、Signal/Review/Strategy 应用面或盘中 Live 路径。
 
-项目不是 SaaS、不是无人值守自动交易机器人、不连接实盘账户自动下单，也不把预警或回测结论表达成交易指令。
+## Current surface
 
-## 个人开发与执行边界
+- Market Web。
+- `/api/v1/market/*` 与 `/api/runtime/*`。
+- `guiyi data update/bootstrap/repair/audit` 与 `guiyi runtime status`。
+- `packages/quant-core` 中的 vn.py-compatible 指标/策略研究代码。
 
-日常在 `develop` 上编辑、按影响本地验证、可选 commit/push。协作门禁与可选工具边界见
-`AGENTS.md`「个人开发工作流」与 `DECISIONS.md`「个人开发」。本地必要验证是完成声明依据；须保留
-无关 dirty changes。
-
-普通仓库删除：关闭 active references，以 Git history 恢复。生产 DB、正式市场数据、仓库外文件、
-Runtime state、远端 refs、Git history、live 配置、真实通知和 GitHub rules 的真实 mutation 属于
-受控外部操作，细则见 `AGENTS.md`「受控外部操作」。
-
-受控外部操作只接受范围明确、单次使用的用户请求；dry-run 与历史材料不授权 mutation。数据质量、
-安全、default-off 与 no-order 约束不能被任何执行意图覆盖。
-
-## Active target 与数据边界
-
-当前长期活动品种池固定为 69 个，唯一文件为 `data/universe/active_products.txt`。21 个退役品种由 `app.data_core.product_retirement` 精确冻结，当前执行事实见 `STATUS.md` 与 `docs/DATA_CENTER.md`；它们在入口层不得重新下载、读取、聚合、注册或重建。未来对生产 DB、正式数据或仓库外工件执行不可逆清理时，必须由一次新请求明确列出操作类别与精确删除范围。
+## Active 数据目标
 
 ```text
 RQData
 -> temporary staging
--> schema/session/duplicate/OHLCV/coverage validation
--> one historical canonical Parquet root
-   (provider-direct 1m/1d/1w + persisted preaggregated 5m/15m/30m/60m)
--> PostgreSQL Catalog / Manifest / Gap / MainContractMap
+-> normalization + six hard validations
+-> Canonical Parquet direct and derived monthly partitions
+-> PostgreSQL minimal Catalog / MainContractMap / ContractSpec
 -> MarketDataService
--> Market Web / Indicator display / data CLI + runtime API/CLI
+-> Market Web / Indicator / future research
 ```
 
-这是已冻结的目标。目标数据身份使用不可歧义的 `DatasetKey`；`continuous` 与 `actual_dominant` 必须由消费者显式声明，禁止静默互换。正式历史周期永久固定为 `1m/5m/15m/30m/60m/1d/1w`。`1m/1d/1w` 的来源角色为 `provider_direct`，`5m/15m/30m/60m` 的来源角色为 `preaggregated_from_1m`；七者都是可持久化、可查询的 Canonical DatasetKey。历史读取只查请求同频的 Catalog/partition，缺失时返回 DataGap，不从其他周期动态聚合或回退。`actual_dominant 1w` 按该周最后交易日的 `MainContractMap.rank=1` 选择具体合约。
+- RQData 是唯一外部事实源。
+- Canonical Parquet 是唯一 active 历史 Bar 存储；PostgreSQL 不保存 K 线。
+- active universe 唯一入口为 `data/universe/active_products.txt`，精确 69 品种。
+- 七周期固定为 `1m/5m/15m/30m/60m/1d/1w`。
+- 物理 Dataset 只有 continuous 和 contract；actual-dominant 依据 rank1 map 在查询时拼接。
+- 所有消费者共用 MarketDataService，不得 glob、自选 active 文件、自判主力或跨频回退。
+- DataGap、映射缺失和物理完整性异常都 fail-closed。
+- historical canonical 与 live observation 分离。
 
-Profile/ActiveBinding/`MarketDataFile` data_role 选择器与 `/api/v1/data` data_center HTTP 已从可执行面卸除；不得恢复为 active selector。日常历史更新入口为 `guiyi data update`。旧 `GY-CORE-04～08` 路线已 superseded/paused。迁移顺序与业务约束见 `docs/tasks/GY-DATA-CORE-V2.md`。
+详细合同见 `docs/DATA_CENTER.md`，分层边界见 `docs/ARCHITECTURE.md`，执行顺序见
+`docs/tasks/GY-DATA-CORE-V2.md`。
 
-legacy compatibility 读取口径仅作历史说明（已不再是 active 路径）：
+## 工程与外部操作
 
-```text
-provider in ("rqdata", "local_parquet")
-data_role = "primary"
-quality_status != "failed"
-```
+普通仓库开发可在 `develop` 直接实现、测试、commit 和 push。任何真实 RQData 调用、
+正式 Canonical 写入/切换、生产数据库 mutation、Runtime/live、真实通知、release/tag 或主要服务启停，
+均需在执行前获得范围明确的一次性意图。dry-run 不授权真实 mutation。
 
-严格研究默认使用 Catalog/`MarketDataService` 与显式 DataGap fail-closed。`validation`、`legacy_reference`、`candidate`、旧 TqSdk/天勤与来源不明数据不得进入默认 active 链路。
+任何结论只证明其精确验证范围；不由代码、测试、数据存在、release 或 smoke 推导盈利、
+长期稳定、交易或 Runtime Ready。
 
-historical canonical 与 live observation 分离。**当前无盘中 Live 应用路径**；未来重建 live 时只能用于观察、confirmed bar 聚合、前向判断和盘后核对，不能复制或晋升为 historical canonical；EOD 必须重新获取 RQData provider-final 数据，并在发布前校验 identity、coverage、Manifest digest、checksum 和 row count。staging 或 canonical 校验失败时保留最后有效 canonical 并显式暴露失败。
-
-V2 迁移只迁移 trusted historical bars 与最小 Catalog/Manifest/Gap/MainContractMap metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、永久 derived period、重复 raw/standard/canonical bar layer，以及 Profile/Binding/legacy lineage 都不是新的 active migration asset。旧 backtest 与其 report/OOS evidence 已退出仓库，不保留 compatibility；历史事实仅由 Git 追溯。Task 07 Stage C 只验收当前 JM 目标 Canonical 并生成精确缺口计划；Runtime promotion 属于 Task 08；旧派生数据删除是后续独立可选任务，不是 Task 07 完成条件。
-
-## 策略、信号与运行边界
-
-- 策略研究、未来重建的回测和正式历史信号禁止未来数据泄漏、look-ahead bias 与未记录重绘；交易相关数值使用 `Decimal`。
-- 当前仓库不提供 `/api/backtests/**`、`/ws/backtests/**`、backtest Web 页面、worker/queue、CLI 或报告兼容入口。未来回测必须是基于 Canonical/MarketDataService 的新任务，并重新定义可复算的策略、参数、数据、订单、trade、equity 与 lineage 合同。
-- HTDY original 的 realtime first-seen observation-only 白名单见 `docs/INDICATOR_KERNEL.md`；**盘中 realtime / Signal / Review 应用路径与合同已退役**（Git history）。
-- 旧信号链路与 DB 表已删除；未来重建须新任务新合同。研究观察始终不是交易指令。
-- live、Runtime promotion/switch、真实通知和企业微信 autosend 默认关闭；缺失、异常、过期或不一致的配置保持关闭。repair/replay/backfill/migration/EOD recalculation 不补发历史通知。
-- 所有信号与 Runtime 模式保持 `auto_order=false`；任何订单创建或提交请求都必须拒绝。
-
-## 模块责任
+## 文档职责
 
 | 文件 | 职责 |
 |---|---|
-| `AGENTS.md` | 唯一开发执行规则、个人工作流与风险边界 |
-| `STATUS.md` | 当前阶段、未完成事项、必要锚点与执行边界 |
-| `DECISIONS.md` | 长期架构、数据、工作流与运行决策 |
-| `TESTING.md` | 当前可执行的本地验证入口 |
-| `docs/DEVELOPMENT.md` | direct-`develop` 工作流、影响匹配验证与外部操作边界 |
-| `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md` | 个人开发 canonical 流程与 Git 恢复方式 |
-| `docs/DATA_CENTER.md` | 数据资产、quality、profile 与 lineage |
-| `docs/ARCHITECTURE.md` | 运行架构与组件边界 |
-| `docs/INDICATOR_KERNEL.md` | 指标版本、契约与 HTDY policy |
-| `docs/tasks/GY-DATA-CORE-V2.md` | 数据核心 V2 active 业务合同与任务顺序 |
-
-`docs/tasks/` 可以包含 active business contract、historical fact、仍被 Runtime 消费的 frozen 文件或已 superseded 的历史来源。历史协作材料只保留事实含义或由 Git history 追溯，不构成当前授权（见 `AGENTS.md` / `DECISIONS.md`）。删除仓库内历史文件时关闭 active references；删除正式数据或其他仓库外资源时使用精确范围的一次性执行意图。
-
-## 不做事项
-
-- 自动交易、自动生成或发送订单。
-- 将企业微信提醒表达为买卖指令。
-- 用单次 smoke、数据文件存在、历史 replay、release 或通知结果冒充长稳、数据可信、live-confirmed、盈利或生产就绪结论。
-- 将可信回测或数据质量结论扩写为策略盈利、稳定或实盘准入。
-- 在代码、文档、测试、配置、日志或外部错误中保存或暴露 webhook、token、密码、cookie、license、私钥或账号信息。
+| `AGENTS.md` | 唯一开发执行规则 |
+| `STATUS.md` | 当前阶段与未完成 Gate |
+| `PROJECT_SOURCE.md` | 长期产品与系统边界 |
+| `DECISIONS.md` | 当前有效长期决策 |
+| `docs/ARCHITECTURE.md` | 项目分层和组件边界 |
+| `docs/DATA_CENTER.md` | Canonical 数据合同 |
+| `docs/tasks/GY-DATA-CORE-V2.md` | active 数据收口业务合同 |
+| `TESTING.md` | 当前可执行验证入口 |
