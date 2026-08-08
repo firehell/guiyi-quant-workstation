@@ -64,17 +64,27 @@ contract Direct SHALL 只覆盖 MainContractMap rank1 的有效窗口，不得�
 - **THEN** 生产与新 Candidate composition 的 `legacy` 为 None
 
 ### Requirement: C2.5 Candidate target 前置检查与有界诊断
-Candidate SHALL 由一个明确的隔离 Catalog/Session、Canonical root、active universe、active_history_floor 和 fixed through 唯一标识。首次运行 MUST 通过 fresh 检查：Candidate 为空且不存在可被读取的 Catalog/Canonical 状态；后续运行 MUST 通过 extend 检查：既有状态与该唯一 target 一致，且 through 仅向前扩展。身份、floor、universe、root 或历史状态不一致时 MUST 在构造 RQData client 或写入前失败。公开 Candidate 操作 MUST NOT 提供 reset、resume、清空或自动恢复语义。
+单一 Candidate metadata SHALL 以不可变 identity 与可变状态分别记录 Candidate。identity 精确包含隔离 Catalog/Session identity、Canonical root identity、active-universe digest、active_history_floor、source policy（`RQData-only` 且 `legacy=None`）和 candidate code SHA；Canonical root 仅以稳定非敏感 identity 表达，不得保存完整本地路径。metadata 的唯一可变进度字段为 `recorded_through`。
 
-Candidate 的失败结果 SHALL 只输出稳定 reason code、固定计数、target identity 摘要和受限数量的 Dataset/window 样本；MUST NOT 输出 provider raw payload、凭据、完整本地路径、完整异常堆栈或无界对象序列化。
+首次运行 MUST 通过 fresh 检查：Candidate 为空且不存在可被读取的 Catalog/Canonical 状态。后续运行 MUST 通过 extend 检查：请求的不可变 identity 与 metadata 完全相同，且 `requested_through >= recorded_through`；成功后 MUST 将同一 Candidate metadata 中的 `recorded_through` 更新为 `max(recorded_through, requested_through)`。identity 不同、metadata 缺失、target 非空却声明 fresh 或 requested through 倒退时，系统 MUST 在构造 RQData client 或写入前失败。公开 Candidate 操作 MUST NOT 提供 reset、resume、清空或自动恢复语义。
+
+Candidate 诊断的允许字段精确为 `reason_code`、`mode`、`candidate_identity_digest`、`recorded_through`、`requested_through`、`planned_count`、`applied_count`、`noop_count`、`blocked_count`、`failed_count` 和 `samples`；`samples` MUST 最多包含 20 个 Dataset/window 样本。`reason_code` SHALL 只取 `CANDIDATE_TARGET_NOT_EMPTY`、`CANDIDATE_METADATA_MISSING`、`CANDIDATE_IDENTITY_MISMATCH`、`CANDIDATE_THROUGH_REGRESSION`、`CANDIDATE_SESSION_FACT_MISSING`、`CANDIDATE_UNSUPPORTED_OPERATION` 或 `CANDIDATE_PRECONDITION_FAILED`。MUST NOT 输出其他字段、provider raw payload、凭据、完整本地路径、完整异常堆栈或无界对象序列化。
 
 #### Scenario: fresh 检查拒绝非空 target
 - **WHEN** 声明 fresh Candidate 但隔离 Catalog 或 Canonical root 已含可读状态
 - **THEN** 系统在任何 provider 请求或写入前拒绝该调用，并返回有界诊断
 
 #### Scenario: extend 检查拒绝漂移 target
-- **WHEN** 声明 extend Candidate 但既有状态的 root、universe、floor 或 through 演进与请求不一致
+- **WHEN** 声明 extend Candidate 但请求 identity 与 metadata 不同，或 `requested_through < recorded_through`
 - **THEN** 系统在任何 provider 请求或写入前拒绝该调用，并返回稳定 reason code
+
+#### Scenario: extend 单调记录 through
+- **WHEN** Candidate identity 匹配且 `requested_through >= recorded_through`
+- **THEN** 系统仅在同一 Candidate metadata 中将 `recorded_through` 单调更新为两者最大值
+
+#### Scenario: 诊断 schema 有界
+- **WHEN** Candidate 前置检查失败
+- **THEN** 诊断只包含允许字段和枚举 reason code，且 samples 不超过 20 项
 
 #### Scenario: 无 reset 或 resume 操作
 - **WHEN** 用户尝试调用 Candidate reset、resume、清空或自动恢复操作

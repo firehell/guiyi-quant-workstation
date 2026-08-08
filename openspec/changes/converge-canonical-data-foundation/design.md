@@ -108,9 +108,13 @@ Bars、MainContractMap、ContractSpec 的同步/维护窗为 `effective_start �
 
 ### D14 — C2.5 以唯一 Candidate target 与严格前置检查运行
 
-Candidate target 由唯一的隔离 Catalog/Session、Canonical root、active universe、floor 和 fixed through 共同标识；不得接受多个 root、隐式默认 root 或跨 target 续跑。首次构建只接受空 Candidate 的 fresh 检查；后续构建只接受已存在且身份、floor、through 演进方向与 Catalog/Manifest 一致的 extend 检查。检查不通过必须在构造 RQData client 或任何写入前失败。
+单一 Candidate metadata SHALL 保存两类状态。不可变 identity 精确为隔离 Catalog/Session identity、Canonical root identity、active-universe digest、active_history_floor、source policy（`RQData-only` 且 `legacy=None`）和 candidate code SHA；root identity 以稳定非敏感摘要保存，不能以完整本地路径代替。可变状态只包含 `recorded_through`，并与上述 identity 同一份 Candidate metadata 持久化。不得接受多个 root、隐式默认 root 或跨 identity 续跑。
 
-不提供 reset、resume、清空 Candidate 或从失败中自动恢复的操作符；失败诊断由新的明确 fresh/extend 调用处理。direct `1w` 在请求边界显式映射为 provider weekly 请求，不能从 `1d` 或 `1m` 替代。历史 Calendar/Session 必须作为 Candidate 的可校验事实覆盖其 effective window 及最小前置 context。诊断仅返回固定字段、计数、受限样本和稳定 reason code，不暴露 provider 原始 payload、凭据、完整本地路径或无界异常文本。
+首次构建只接受空 Candidate 的 fresh 检查。后续 extend 只在请求 identity 与记录 identity 完全一致、并且 `requested_through >= recorded_through` 时允许；成功后 metadata 以 `max(recorded_through, requested_through)` 单调更新 through。identity 不同、metadata 缺失、target 非空却声明 fresh，或 through 倒退时，必须在构造 RQData client 或任何写入前失败。
+
+不提供 reset、resume、清空 Candidate 或从失败中自动恢复的操作符；失败诊断由新的明确 fresh/extend 调用处理。direct `1w` 在请求边界显式映射为 provider weekly 请求，不能从 `1d` 或 `1m` 替代。历史 Calendar/Session 必须作为 Candidate 的可校验事实覆盖其 effective window 及最小前置 context。
+
+诊断 schema 的允许字段精确为 `reason_code`、`mode`、`candidate_identity_digest`、`recorded_through`、`requested_through`、`planned_count`、`applied_count`、`noop_count`、`blocked_count`、`failed_count` 和 `samples`；`samples` 最多 20 项。`reason_code` 只允许 `CANDIDATE_TARGET_NOT_EMPTY`、`CANDIDATE_METADATA_MISSING`、`CANDIDATE_IDENTITY_MISMATCH`、`CANDIDATE_THROUGH_REGRESSION`、`CANDIDATE_SESSION_FACT_MISSING`、`CANDIDATE_UNSUPPORTED_OPERATION` 或 `CANDIDATE_PRECONDITION_FAILED`。任何其他字段、provider 原始 payload、凭据、完整本地路径、完整异常堆栈或无界对象序列化均不允许输出。
 
 替代方案是用 root 路径猜测 Candidate、允许 reset/resume 自动纠错、或把周线回退到日线聚合。这些选择会掩盖身份和历史事实漂移，或者改变 direct-weekly 合同，故拒绝。
 
@@ -129,7 +133,7 @@ Candidate target 由唯一的隔离 Catalog/Session、Canonical root、active un
 2. 以 fixture、临时 canonical root 和隔离 PostgreSQL TDD 实现 domain、ORM/migration、三个深模块、CLI/API/Web；不访问真实 RQData 或生产资源。
 3. 删除 active legacy callers 与最终不再需要的兼容代码；运行 backend、migration、frontend、CLI 与旧语言扫描。
 4. 实现 Recent Trusted Window policy 与 RQData-only Candidate composition；本地全验证后停止。
-5. 先完成 C2.5 repository-only Candidate target 前置：fresh/extend 校验、无 reset/resume、direct-weekly request mapping、历史 session facts 与有界诊断；仅运行本地验证后停止。
+5. 先完成 C2.5 repository-only Candidate target 前置：single metadata 的 immutable identity（Catalog/Session/root/universe/floor/source policy/code SHA）与 monotonic `recorded_through`、fresh/extend 校验、无 reset/resume、direct-weekly request mapping、历史 session facts 与字段白名单/原因码枚举的有界诊断；仅运行本地验证后停止。
 6. Gate A1：JM，`2023-01-01 → fixed T`，Candidate only。Gate A2：每实际交易所 deterministic canary。Gate A3：active 69 Candidate。Gate A4：audit finding_count=0、DataGap=0、same-T update NOOP。各真实 RQData/Candidate 写入分别需要新的单次意图。
 7. Gate B 前输出生产表、候选根、正式根和服务范围。收到另一份单次意图后才能在短维护窗口执行不可逆 migration、Catalog 写入与 root 原子切换。
 8. Gate C 只读/NOOP 验收要求 DataGap=0、floor 之后全部预期七周期可读、主力跨换月/周线正确、相同 fixed through 为零目标零写入零远程；scheduler/live/notification/order 仍关闭。
