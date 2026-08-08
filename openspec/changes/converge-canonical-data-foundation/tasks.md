@@ -20,9 +20,9 @@
 
 ## DFD-04：MarketDataService、API 与 Web 查询瘦身
 
-- [ ] 4.1 先完成 scoped implementation plan；删除退出的查询校验/响应字段，保持三种 SeriesQuery、
+- [x] 4.1 先完成 scoped implementation plan；删除退出的查询校验/响应字段，保持三种 SeriesQuery、
   pre-aggregated Derived 和 fail-closed。
-- [ ] 4.2 以 API、frontend unit/type/build 和 Market smoke 验证。
+- [x] 4.2 以 API、frontend unit/type/build 和 Market smoke 验证。
 
 ## DFD-05：Update、Refresh 与 Quota Resume
 

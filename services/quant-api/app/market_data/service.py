@@ -77,7 +77,11 @@ class MarketDataService:
                 request.frequency,
             )
             try:
-                contract_bars, _ = self._read_physical(key, request)
+                contract_bars, _ = self._read_physical(
+                    key,
+                    request,
+                    require_window_coverage=False,
+                )
             except MarketDataError as exc:
                 if exc.code == "DATASET_OR_PARTITION_MISSING":
                     raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING") from exc
@@ -89,6 +93,8 @@ class MarketDataService:
             )
         bars.sort(key=lambda item: item.bar_end)
         if not bars:
+            raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+        if {item.trade_date for item in selected} - {bar.trading_day for bar in bars}:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         return self._result(request, tuple(bars), segments)
 
@@ -130,10 +136,24 @@ class MarketDataService:
         self,
         key: DatasetKey,
         request: SeriesQuery,
+        *,
+        require_window_coverage: bool = True,
     ) -> tuple[tuple[CanonicalBar, ...], tuple[CatalogPartition, ...]]:
         partitions = self.catalog.partitions(key, request.start, request.end)
         if not partitions:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        partition_months = {(partition.year, partition.month) for partition in partitions}
+        if require_window_coverage:
+            if partition_months != _months_between(
+                min(partition_months),
+                max(partition_months),
+            ):
+                raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+            if (
+                min(partition.coverage_start for partition in partitions) > request.start
+                or max(partition.coverage_end for partition in partitions) < request.end
+            ):
+                raise MarketDataError("DATASET_OR_PARTITION_MISSING")
         bars: list[CanonicalBar] = []
         for partition in partitions:
             try:
@@ -193,3 +213,17 @@ def _segments(mappings: tuple[MainMapFact, ...]) -> tuple[ResolvedContractSegmen
 
 def _local_date(value: datetime) -> date:
     return value.astimezone(SHANGHAI).date()
+
+
+def _months_between(
+    start: tuple[int, int],
+    end: tuple[int, int],
+) -> set[tuple[int, int]]:
+    cursor = start
+    end_month = end
+    result: set[tuple[int, int]] = set()
+    while cursor <= end_month:
+        result.add(cursor)
+        year, month = cursor
+        cursor = (year + 1, 1) if month == 12 else (year, month + 1)
+    return result

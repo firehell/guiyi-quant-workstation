@@ -125,7 +125,7 @@ async function loadBars() {
   } catch (caught) {
     bars.value = []
     response.value = null
-    error.value = '读取失败：窗口可能与 DataGap 相交，或 Catalog/Manifest/Map 不完整'
+    error.value = '读取失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
   } finally {
     loading.value = false
@@ -168,10 +168,8 @@ function normalizeSeriesKind(value: unknown): SeriesKind {
           <span>{{ bars.length }} bars</span>
           <span v-if="response?.coverage">{{ response.coverage.start }} → {{ response.coverage.end }}</span>
         </div>
-        <div v-if="response" class="digest-row">
-          <span>分区 {{ response.partition_digests.length }}</span>
+        <div v-if="response" class="detail-row">
           <span>合约段 {{ response.resolved_contract_segments.length }}</span>
-          <span v-if="response.main_map_digest">Map {{ response.main_map_digest.slice(0, 12) }}</span>
         </div>
       </NCard>
       <KlineChart :bars="bars" :loading="loading" :error="error" :period="frequency" />
@@ -188,6 +186,6 @@ function normalizeSeriesKind(value: unknown): SeriesKind {
 .frequency-select { width: 90px; }
 .date-range { width: 360px; }
 .identity-card { background: var(--gy-bg-panel); }
-.identity-row, .digest-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.digest-row { margin-top: 8px; color: var(--gy-text-muted); font-size: 12px; }
+.identity-row, .detail-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.detail-row { margin-top: 8px; color: var(--gy-text-muted); font-size: 12px; }
 </style>

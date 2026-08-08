@@ -39,21 +39,6 @@ export interface BarData {
   openInterest?: number
 }
 
-export interface DatasetIdentity {
-  kind: 'continuous' | 'contract'
-  symbol: string
-  series_or_contract: string
-  frequency: MarketFrequency
-}
-
-export interface PartitionDigest {
-  dataset: DatasetIdentity
-  year: number
-  month: number
-  checksum: string
-  manifest_digest: string
-}
-
 export interface ResolvedContractSegment {
   contract: string
   start_trading_day: string
@@ -69,13 +54,20 @@ export interface MarketBarsRequestParams {
   end: string
 }
 
+export interface MarketBarsResponseRequest {
+  series_kind: SeriesKind
+  symbol: string
+  contract: string | null
+  frequency: MarketFrequency
+  start: string
+  end: string
+}
+
 export interface MarketBarsResponse {
-  request: MarketBarsRequestParams
+  request: MarketBarsResponseRequest
   bars: CanonicalBarDto[]
   coverage: { start: string; end: string } | null
-  partition_digests: PartitionDigest[]
   resolved_contract_segments: ResolvedContractSegment[]
-  main_map_digest: string | null
 }
 
 export interface MarketCoverageItem {
