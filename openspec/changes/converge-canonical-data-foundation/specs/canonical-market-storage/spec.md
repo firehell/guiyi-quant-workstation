@@ -30,7 +30,7 @@
 Parquet 行 SHALL 只包含 `bar_end`、`trading_day`、`open`、`high`、`low`、`close`、`volume`、`turnover`、`open_interest`；价格与金额字段 SHALL 使用约定 Decimal，`bar_end` SHALL 为 UTC-aware timestamp，身份 MUST 由路径、Manifest 和 Catalog 表达而不在每行重复。
 
 #### Scenario: provider batch 标准化
-- **WHEN** RQData 或允许的 migration candidate 提供可识别的字段和时区
+- **WHEN** RQData 提供可识别的字段和时区
 - **THEN** 系统输出完全相同的 CanonicalBar schema 与值语义
 
 ### Requirement: Manifest 完整性

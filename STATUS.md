@@ -29,18 +29,19 @@ live、真实通知和自动订单保持关闭。
   六项校验、月分区发布、1m 聚合和 DataGap 处理。
 - `MarketDataService`：唯一历史行情入口，支持 continuous、contract 和查询时
   actual-dominant 拼接。
+- V1 Recent Trusted Window：`data/universe/active_history_floor.txt` = `2023-01-01`；
+  `effective_start = max(product_window_start, floor)`；RQData-only Candidate composition
+  已提供；legacy Gate A 路径已 freeze。
 - Alembic `20260808_0036`：候选不可逆最小 schema，未应用生产。
 - OpenSpec：`converge-canonical-data-foundation` active；旧 M3 已 superseded 归档。
 
 ## 本地验证
 
-- 后端与工程完整回归：2497 passed，20 skipped。
-- 可丢弃 PostgreSQL 16 隔离 migration：21 passed，覆盖空库和 `0035→0036`；
-  Alembic `0035:0036 --sql` 也通过。
+- 后端与工程完整回归：262 passed，13 skipped（含 data_foundation 91）。
 - ruff、mypy 与 OpenSpec strict validation 均通过。
-- 前端：52 passed，1 skipped；TypeScript 与生产 build 通过。
-- 浏览器 smoke 已验证 Market-only 页面、新 series query 和缺少正式候选数据时的
-  fail-closed 提示；不构成 Gate C 数据验收。
+- Alembic `0035:0036 --sql` 通过；隔离 PostgreSQL 升级测试本轮未配置 URL，未重跑。
+- 前端：52 passed，1 skipped；生产 build（含 `vue-tsc`）通过。
+- 浏览器 smoke 与真实 RQData/Candidate 写入本轮未执行。
 
 ## 已确认的现有生产事实
 
@@ -50,9 +51,14 @@ live、真实通知和自动订单保持关闭。
 
 ## 未完成的外部 Gate
 
-1. **Gate A**：用固定 through 为 69 品种构建隔离候选 Canonical/Catalog，必要窗口精确调用 RQData。
+合同已改为 **RQData-only Recent Trusted Window**（`active_history_floor=2023-01-01`）；下列
+Gate 的真实 mutation 尚未执行：
+
+1. **Gate A**：JM → 六交易所 canary → active 69；隔离 Candidate；RQData-only update；audit=0；
+   DataGap=0；same-T NOOP。
 2. **Gate B**：维护窗口内应用 `20260808_0036`，写入候选 Catalog 并原子切换正式 Canonical。
-3. **Gate C**：验证 69 品种七周期、DataGap=0、map/spec 完整、actual-dominant 换月/周线与 fixed-through NOOP。
-4. Gate C 通过后才删除一次性候选 bootstrap 读取器并归档新 OpenSpec change。
+3. **Gate C**：验证 floor 后 69 品种七周期、DataGap=0、map/spec 完整、actual-dominant 换月/周线与
+   fixed-through NOOP。
+4. Gate C 通过后才删除 migration-only legacy 读取器并归档 OpenSpec change。
 
 以上每个真实 mutation Gate 都需要目标和范围明确的新一次性执行意图。

@@ -19,6 +19,8 @@ RQData
 active universe 精确为 `data/universe/active_products.txt` 中的 69 品种。只有七个周期：
 `1m/5m/15m/30m/60m/1d/1w`。
 
+V1 active 历史范围为 Recent Trusted Window：`active_history_floor = 2023-01-01`。
+
 ## 已冻结的合同
 
 - 物理 Dataset 只有 `continuous | contract`。
@@ -31,6 +33,7 @@ active universe 精确为 `data/universe/active_products.txt` 中的 69 品种�
 - 每 Dataset 每月只有一个 active 分区；不保留 active overlay 或 data version 目录。
 - DataGap 只保存当前未解决缺口。
 - 所有历史消费者必须经过 MarketDataService。
+- `effective_start(symbol) = max(product_window_start, active_history_floor)`；不得改写 `product_window_starts.csv` 长期事实。
 
 ## 应用模块
 
@@ -49,14 +52,11 @@ guiyi data audit --universe active
 
 无 `--apply` 的 update/bootstrap/repair 只计划、零 RQData、零写入。`audit` 只读。
 
-## 一次性迁移
+## Candidate 与 legacy
 
-本次候选 bootstrap 允许显式白名单读取旧 RQData Parquet，但必须经过与供应商数据相同的
-标准化和六项校验。一个窗口只允许一个无歧义候选；失败则生成精确 RQData 重下窗口，
-不做逐行多源裁决。
+新 Gate A 在隔离 Candidate DB + Candidate Canonical Root 上使用 **RQData-only `update`**（`legacy=None`），复用正常 HistoricalDataManager，不新建重建引擎。
 
-旧 raw/processed 文件本次不删除。它们不得进入日常更新组装、active Catalog 或 MarketDataService。
-最终 Gate C 通过后删除临时读取器，bootstrap 只支持 RQData 全量重建。
+既有 migration-only legacy 白名单 bootstrap 实现进入 freeze：不新增能力、不参加新 Gate A。旧 raw/processed 本次不删除，也不得进入日常更新组装、active Catalog 或 MarketDataService。Gate C 通过后删除临时读取器；最终重建为自 `active_history_floor` 起的 RQData 重建。
 
 ## 验收与 Gate
 
@@ -66,12 +66,13 @@ guiyi data audit --universe active
 - 后端全套、ruff、mypy、前端 unit/build 通过。
 - Alembic offline SQL 通过；隔离 PostgreSQL 可用时跑实际升级测试。
 - active 代码、前端和 canonical 文档不依赖已退役数据语言。
+- Recent Trusted Window policy 与 RQData-only Candidate composition 本地验证通过。
 
 ### 受控外部 Gate
 
-1. **Gate A**: 给出 69 品种、fixed through、候选根、Dataset/月分区和 RQData 精确窗口；取得一次性意图后才构建隔离候选。
-2. **Gate B**: 给出确切生产表、候选根、正式根和服务范围；新意图后才迁移数据库并原子切换。
-3. **Gate C**: 69 品种七周期可读、DataGap=0、map/spec 完整、actual-dominant 换月/周线正确、fixed-through NOOP。
+1. **Gate A**：JM → 六交易所 canary → active 69；隔离 Candidate；RQData-only；audit=0；DataGap=0；same-T NOOP。各写入步骤分别需要一次性意图。
+2. **Gate B**：给出确切生产表、候选根、正式根和服务范围；新意图后才 `0035→0036` 并原子切根。
+3. **Gate C**：floor 后 69 品种七周期可读、DataGap=0、map/spec 完整、actual-dominant 换月/周线正确、fixed-through NOOP。
 
 日调度、live、通知与自动订单始终不在本任务授权内；`auto_order=false`。
 

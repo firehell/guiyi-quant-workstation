@@ -92,9 +92,13 @@ metadata current facts
 
 - `--since` 只限定检查下界，不授权覆盖已正确分区。
 - `--through` 是固定水位；缺省只选最新已完成交易日。
-- 空 Dataset 从 `data/universe/product_window_starts.csv` 起算。
+- 空 Dataset 从 `effective_start = max(product_window_starts.csv, active_history_floor)` 起算；
+  V1 `active_history_floor` 为 `data/universe/active_history_floor.txt` 中的 `2023-01-01`。
+  `1m/5m/15m/30m/60m` 另受 RQData 日内历史下界 `2010-01-04` 约束（`RQDATA_INTRADAY_HISTORY_START`），
+  在 floor=2023 后通常无感。
 - 品种期望交易日是实际交易所开市日与该品种真实合约可交易期的交集：`listed_date ≤ trade_date < de_listed_date`；RQData 的 `maturity_date` 不作为交易边界。无可交易合约的交易所开市日不是数据缺口。
-- MainContractMap 显式使用 RQData `rule=2`；continuous 可早于首个 rank1 事实，actual_dominant 在首个映射前保持 fail-closed。
+- MainContractMap / ContractSpec 维护窗跟随 `effective_start → through`；Calendar 允许 floor 前一个自然月的最小前置 context。
+- MainContractMap 显式使用 RQData `rule=2`；effective_start 前可不存在 map，actual_dominant 在首个映射前保持 fail-closed。
 - 已有 Dataset 计算月度全窗口精确缺口，不只追加尾部。
 - 相同 fixed through 重跑必须零目标、零写入、零 RQData。
 - 真实合约只保存 `MainContractMap rank=1` 的有效窗口。
@@ -129,7 +133,7 @@ end
 返回 request identity、bars、coverage、partition digests、resolved contract segments 和 main-map digest。
 映射、Dataset、日历或分区缺失，以及 DataGap 相交时 fail-closed。
 
-## 7. CLI 与 bootstrap 边界
+## 7. CLI 与 Candidate 边界
 
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
@@ -138,16 +142,18 @@ guiyi data repair --plan exact-plan.json [--apply]
 guiyi data audit --universe active
 ```
 
-`bootstrap` 的临时白名单读取器只用于 Gate A 候选根。日常组装不注入该读取器；最终收口后
-bootstrap 只保留 RQData 全量重建能力。旧 raw/processed 本次不删除，也不被 active Catalog
-、MarketDataService 或日常更新引用。
+新 Gate A 在隔离 Candidate DB/Root 上使用 RQData-only `update`（`legacy=None`）。既有
+migration-only legacy 白名单读取器进入 freeze，不参加新 Gate A；Gate C 通过后删除。
+最终重建为自 `active_history_floor` 起的 RQData 重建。旧 raw/processed 本次不删除，也不被
+active Catalog、MarketDataService 或日常更新引用。
 
 ## 8. 当前迁移状态
 
-代码、schema 和本地 fixture 验证属于候选实现。下列外部 Gate 尚未执行：
+代码、schema 和本地 fixture 验证属于候选实现。合同已改为 Recent Trusted Window；下列外部
+Gate 尚未执行：
 
-- Gate A：69 品种候选 Canonical 构建。
+- Gate A：JM → canary → 69 的 RQData-only Candidate 构建、audit 与 same-T NOOP。
 - Gate B：不可逆生产 schema/drop 与 Canonical 原子切换。
-- Gate C：69 品种、七周期、DataGap=0 和 fixed-through NOOP 最终验收。
+- Gate C：floor 后 69 品种、七周期、DataGap=0 和 fixed-through NOOP 最终验收。
 
 日调度、live、通知和自动订单保持关闭。

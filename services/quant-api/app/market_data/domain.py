@@ -49,6 +49,17 @@ DERIVED_FREQUENCIES = frozenset(
     {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}
 )
 ALL_FREQUENCIES = DIRECT_FREQUENCIES | DERIVED_FREQUENCIES
+# RQData continuous/intraday history floor observed via get_dominant_price / A88.
+RQDATA_INTRADAY_HISTORY_START = date(2010, 1, 4)
+INTRADAY_FREQUENCIES = frozenset(
+    {
+        BarFrequency.M1,
+        BarFrequency.M5,
+        BarFrequency.M15,
+        BarFrequency.M30,
+        BarFrequency.H1,
+    }
+)
 _SYMBOL = re.compile(r"[A-Z]+\Z")
 _CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 

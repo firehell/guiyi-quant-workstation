@@ -1,5 +1,10 @@
 """Temporary, allowlisted Parquet reader for the one-time candidate bootstrap.
 
+FROZEN / migration-only: pending removal after Gate C.
+This path MUST NOT gain new features, MUST NOT be used as the new Gate A data
+source, and MUST NOT be wired into daily composition. New Gate A uses
+``build_candidate_historical_data_manager`` (RQData-only, legacy=None).
+
 This adapter is deliberately absent from the default daily composition.  It
 reads one candidate file per requested window and never arbitrates row values
 across files.  All returned bars still pass through HistoricalDataManager and
@@ -23,6 +28,7 @@ import pyarrow.parquet as pq
 from app.market_data.catalog import MainMapFact
 from app.market_data.domain import (
     DERIVED_FREQUENCIES,
+    RQDATA_INTRADAY_HISTORY_START,
     BarFrequency,
     CanonicalBar,
     DatasetKey,
@@ -64,6 +70,7 @@ class LegacyBootstrapAdapter:
         if any(root not in approved or not root.is_dir() or root.is_symlink() for root in roots):
             raise LegacyBootstrapError("LEGACY_BOOTSTRAP_ROOT_INVALID")
         self._selected = _selected_candidates(exact_scope or {})
+        self._row_cache: dict[Path, tuple[dict[str, Any], ...]] = {}
 
     def fetch(
         self,
@@ -156,16 +163,24 @@ class LegacyBootstrapAdapter:
         path: Path,
         expected: tuple[datetime, ...],
     ) -> tuple[CanonicalBar, ...]:
-        try:
-            rows = pq.ParquetFile(path).read().to_pylist()
-        except Exception as exc:  # noqa: BLE001 - convert file failures to a stable code
-            raise LegacyBootstrapError("LEGACY_BOOTSTRAP_PARQUET_INVALID") from exc
+        resolved = path.resolve()
+        rows = self._row_cache.get(resolved)
+        if rows is None:
+            try:
+                rows = tuple(pq.ParquetFile(resolved).read().to_pylist())
+            except Exception as exc:  # noqa: BLE001 - convert file failures to a stable code
+                raise LegacyBootstrapError("LEGACY_BOOTSTRAP_PARQUET_INVALID") from exc
+            self._row_cache[resolved] = rows
         expected_by_day: dict[date, list[datetime]] = {}
         for value in expected:
             expected_by_day.setdefault(value.astimezone(SHANGHAI).date(), []).append(value)
+        needed_days = set(expected_by_day)
+        expected_set = set(expected)
         bars: dict[datetime, CanonicalBar] = {}
         for index, row in enumerate(rows):
             trading_day = _day(row.get("trading_day", row.get("trading_date", row.get("date"))))
+            if needed_days and trading_day not in needed_days:
+                continue
             if "bar_end" in row:
                 bar_end = _aware(row["bar_end"])
             elif "datetime" in row:
@@ -177,6 +192,8 @@ class LegacyBootstrapAdapter:
                 if not matches:
                     continue
                 bar_end = matches[-1]
+            if expected_set and bar_end not in expected_set:
+                continue
             bar = CanonicalBar(
                 bar_end=bar_end,
                 trading_day=trading_day,
@@ -192,7 +209,7 @@ class LegacyBootstrapAdapter:
             if previous is not None and previous != bar:
                 raise LegacyBootstrapError("LEGACY_BOOTSTRAP_DUPLICATE_CONFLICT")
             bars[bar_end] = bar
-        return tuple(bars[value] for value in sorted(bars))
+        return tuple(bars[value] for value in sorted(bars) if value in expected_set or not expected_set)
 
 
 class ExactScopeProvider:
@@ -202,7 +219,7 @@ class ExactScopeProvider:
         self.delegate = delegate
         self._windows: dict[DatasetKey, list[tuple[int, date, date]]] = defaultdict(list)
         raw_windows = exact_scope.get("rqdata_windows")
-        if not isinstance(raw_windows, list) or not raw_windows:
+        if not isinstance(raw_windows, list):
             raise LegacyBootstrapError("GATE_A_PROVIDER_SCOPE_INVALID")
         for index, item in enumerate(raw_windows):
             try:
@@ -219,6 +236,7 @@ class ExactScopeProvider:
             self._windows[key].append((index, start, end))
         self._used: set[int] = set()
         self.request_count = 0
+        self.fallback_request_count = 0
 
     @property
     def planned_window_count(self) -> int:
@@ -230,25 +248,40 @@ class ExactScopeProvider:
 
     def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
         groups: dict[int, list[datetime]] = defaultdict(list)
+        unscoped: list[datetime] = []
         bounds = {index: (start, end) for index, start, end in self._windows.get(key, ())}
         for value in expected:
             local_value = value.astimezone(SHANGHAI)
             local_day = local_value.date()
-            matches = [
-                index
-                for index, start, end in self._windows.get(key, ())
-                if (
-                    start <= local_day <= end
-                    or (
-                        key.frequency is BarFrequency.M1
-                        and local_value.time() >= time(18)
-                        and start.toordinal() - 1 <= local_day.toordinal() < start.toordinal()
-                    )
-                )
+            windows = self._windows.get(key, ())
+            day_matches = [
+                index for index, start, end in windows if start <= local_day <= end
             ]
-            if len(matches) != 1:
-                raise LegacyBootstrapError("GATE_A_PROVIDER_WINDOW_OUTSIDE_SCOPE")
-            groups[matches[0]].append(value)
+            if len(day_matches) == 1:
+                groups[day_matches[0]].append(value)
+                continue
+            if (
+                not day_matches
+                and key.frequency is BarFrequency.M1
+                and local_value.time() >= time(18)
+            ):
+                # Night sessions may open up to ~3 calendar days before the
+                # trading day (Friday night -> Monday). Prefer the nearest
+                # following window start when multiple candidates exist.
+                night_matches = [
+                    (index, start)
+                    for index, start, end in windows
+                    if start.toordinal() - 4
+                    <= local_day.toordinal()
+                    < start.toordinal()
+                ]
+                if night_matches:
+                    matched = min(night_matches, key=lambda item: item[1])[0]
+                    groups[matched].append(value)
+                    continue
+            # Day-level exact-scope can mark legacy months as fully covered while
+            # minute bars remain incomplete; refill leftovers via RQData.
+            unscoped.append(value)
         bars: dict[datetime, CanonicalBar] = {}
         digests: list[str] = []
         for index in sorted(groups, key=lambda value: bounds[value]):
@@ -261,10 +294,20 @@ class ExactScopeProvider:
                 if previous is not None and previous != bar:
                     raise LegacyBootstrapError("GATE_A_PROVIDER_DUPLICATE_CONFLICT")
                 bars[bar.bar_end] = bar
+        if unscoped:
+            batch = self.delegate.fetch(key, tuple(unscoped))
+            self.request_count += 1
+            self.fallback_request_count += 1
+            digests.append(batch.source_digest)
+            for bar in batch.bars:
+                previous = bars.get(bar.bar_end)
+                if previous is not None and previous != bar:
+                    raise LegacyBootstrapError("GATE_A_PROVIDER_DUPLICATE_CONFLICT")
+                bars[bar.bar_end] = bar
         digest = hashlib.sha256(
             json.dumps(sorted(digests), separators=(",", ":")).encode()
         ).hexdigest()
-        return BarBatch(tuple(bars[value] for value in sorted(bars)), digest, "rqdata")
+        return BarBatch(tuple(bars[value] for value in sorted(bars) if value in bars), digest, "rqdata")
 
 
 def _selected_candidates(
@@ -342,23 +385,28 @@ def plan_gate_a_scope(
     for symbol in normalized_products:
         start = starts[symbol]
         all_days = days_by_product[symbol]
-        direct_days = tuple(day for day in all_days if start <= day <= through)
+        daily_days = tuple(day for day in all_days if start <= day <= through)
+        minute_start = max(start, RQDATA_INTRADAY_HISTORY_START)
+        minute_days = tuple(day for day in all_days if minute_start <= day <= through)
         week_ends = _complete_week_ends(all_days, start=start, through=through)
         for frequency, direct_values in (
-            (BarFrequency.M1, direct_days),
-            (BarFrequency.D1, direct_days),
+            (BarFrequency.M1, minute_days),
+            (BarFrequency.D1, daily_days),
             (BarFrequency.W1, week_ends),
         ):
             desired[DatasetKey(DatasetKind.CONTINUOUS, symbol, "MAIN", frequency)].update(
                 direct_values
             )
-        for day in direct_days:
+        for day in daily_days:
             daily_contract = map_by_day.get((symbol, day))
             if daily_contract is None:
                 continue
-            for frequency in (BarFrequency.M1, BarFrequency.D1):
+            desired[
+                DatasetKey(DatasetKind.CONTRACT, symbol, daily_contract, BarFrequency.D1)
+            ].add(day)
+            if day >= minute_start:
                 desired[
-                    DatasetKey(DatasetKind.CONTRACT, symbol, daily_contract, frequency)
+                    DatasetKey(DatasetKind.CONTRACT, symbol, daily_contract, BarFrequency.M1)
                 ].add(day)
         for day in week_ends:
             weekly_contract = map_by_day.get((symbol, day))

@@ -1,15 +1,17 @@
 ## Context
 
-见 `proposal.md`。当前实现已拥有 DatasetKey、Catalog/Manifest/Gap/MainContractMap 和 MarketDataService 雏形，也保留 MarketDataFile/Profile/Binding/QualityReport、actual_dominant 物理 Dataset、多种浅层 CLI service 与一次性迁移工具。生产已有大量 raw/processed/Canonical 与旧表，代码实现必须先在 fixture、临时目录和隔离 PostgreSQL 中闭环，任何真实 RQData、生产 DB 或正式 Canonical 操作均停在独立执行 Gate 前。
+见 `proposal.md`。当前实现已拥有 DatasetKey、Catalog/Manifest/Gap/MainContractMap 和 MarketDataService，也已收敛 Market Web / CLI / 最小 schema 候选。生产仍停在 `20260808_0035`，正式 Canonical 尚未切换。代码实现必须先在 fixture、临时目录和隔离 PostgreSQL 中闭环，任何真实 RQData、生产 DB 或正式 Canonical 操作均停在独立执行 Gate 前。
 
 本设计同时吸收 `m3-v2-production-correctness` 的精确缺口、实际交易所 identity、完整 ISO 周和固定水位 NOOP 要求。个人单用户边界允许使用一个 provider、一个 canonical root、一个 active Catalog 和月分区原子替换，不需要多 provider seam、任务中心、active binding 或多版本在线裁决。
+
+**本轮收口决策（Recent Trusted Window）**：不再扩展 legacy-assisted full-history Gate A。V1 active 历史下界冻结为 `active_history_floor = 2023-01-01`；Candidate 构建复用正常 `HistoricalDataManager.update`（`legacy=None`），只增加最薄的隔离 composition。
 
 ## Goals / Non-Goals
 
 **Goals:**
 
 - 一个数据概念只有一个 active 身份、一个发布链路和一个读取入口。
-- 既有全量历史通过一次性白名单 bootstrap 与问题窗口精确重下迁入，之后只运行可重用的日增量。
+- V1 以 RQData-only Recent Trusted Window（`effective_start → fixed through`）构建隔离 Candidate，之后只运行可重用的日增量。
 - 数据错误在发布前阻断；已发布问题可按月精确 repair；任何严格查询遇 Gap 或 identity 漂移 fail-closed。
 - 代码结构以三个深模块承载变化，不把下载、聚合、校验和发布复制到多个命令。
 
@@ -19,6 +21,7 @@
 - 不保留旧 API/DB/CLI compatibility，不删除本次未纳入 active 的 raw/processed 文件。
 - 不重建回测、Signal/Review、盘中 live、通知、调度启用或订单能力。
 - 不为不可逆旧表 drop 设计数据库备份或应用级恢复流程；生产执行仍必须由精确 Gate 控制。
+- 不在本轮重新设计 DatasetKey、Catalog、月分区或 MarketDataService；不把 1999+ 全历史纳入 V1 active。
 
 ## Decisions
 
@@ -36,7 +39,7 @@
 
 ### D3 — CanonicalBar 与 ProviderBarBatch 在边界转换
 
-RQData adapter 和一次性 legacy adapter 只负责把来源列映射为 `ProviderBarBatch`；统一 normalizer 再生成最小 CanonicalBar。Dataset identity 在 batch envelope，不写入行。Decimal 由 Arrow decimal128 约束，时间先按实际交易时段解释再转 UTC bar_end。
+RQData adapter 和（已 freeze 的）migration-only legacy adapter 只负责把来源列映射为 `ProviderBarBatch`；统一 normalizer 再生成最小 CanonicalBar。Dataset identity 在 batch envelope，不写入行。Decimal 由 Arrow decimal128 约束，时间先按实际交易时段解释再转 UTC bar_end。
 
 替代方案是让每个 adapter 直接写 Parquet；这会复制校验、时区与 Decimal 语义，故拒绝。
 
@@ -48,15 +51,22 @@ RQData adapter 和一次性 legacy adapter 只负责把来源列映射为 `Provi
 
 ### D5 — HistoricalDataManager 是唯一写应用服务
 
-公开四动作映射到同一个内部执行管线：`desired coverage → exact monthly windows → provider/legacy batch → normalize → validate → publish direct → aggregate derived → strict verify → reconcile gaps`。update 使用 RQData；migration bootstrap 暂时允许 legacy source；repair 只执行 exact plan；audit 只读。metadata synchronizer 在 apply 最终规划前运行，dry-run 只计算需要刷新而不构造远程 client。
+公开四动作映射到同一个内部执行管线：`desired coverage → exact monthly windows → provider batch → normalize → validate → publish direct → aggregate derived → strict verify → reconcile gaps`。日常 update 与新 Gate A Candidate 均使用 RQData，`legacy=None`；既有 migration-only bootstrap 的 legacy source 进入 freeze，不再作为新 Gate A 数据源；repair 只执行 exact plan；audit 只读。metadata synchronizer 在 apply 最终规划前运行，dry-run 只计算需要刷新而不构造远程 client。
 
-替代方案是保留 download/aggregate/sync/verify commands 各自 service；这正是重复算法来源，故删除。
+替代方案是保留 download/aggregate/sync/verify commands 各自 service；这正是重复算法来源，故删除。也不新建第二套 Candidate 重建引擎。
 
-### D6 — 覆盖规划以交易日和月为最小持久化单位
+### D6 — 覆盖规划以交易日和月为最小持久化单位，并受 active_history_floor 约束
 
-planner 用 Calendar/Session、product start、fixed through、Catalog partition coverage、DataGap 和 MainContractMap 得到 TargetWindow；品种期望交易日是交易所开市日与真实合约上市期的交集。continuous 可从 product start 保存；contract/actual-dominant 从 provider 首个 rank1 事实开始，首个事实之后的内部映射洞仍严格失败。可以在月内精确下载缺口，但发布时合并该月已有可信数据并原子重写整月。`--since` 只裁剪检查域，不刷新 covered 数据。closed month 仅显式 repair 可替换。
+planner 用 Calendar/Session、`effective_start`、fixed through、Catalog partition coverage、DataGap 和 MainContractMap 得到 TargetWindow。`product_window_starts.csv` 继续保存长期 provider/listing 起点事实，不得被本轮改写。V1 正式：
 
-替代方案是每个洞一个 Parquet 或只看尾部水位；前者制造 overlay，后者遗漏中间洞，故拒绝。
+```text
+effective_start(symbol) = max(product_window_start(symbol), active_history_floor)
+active_history_floor = 2023-01-01  # data/universe/active_history_floor.txt
+```
+
+品种期望交易日是交易所开市日与真实合约上市期的交集，再与 effective_start 相交。continuous/contract/actual-dominant 的 active 维护均从 effective_start 起；首个 rank1 事实之后的内部映射洞仍严格失败。可以在月内精确下载缺口，但发布时合并该月已有可信数据并原子重写整月。`--since` 只裁剪检查域，不刷新 covered 数据。closed month 仅显式 repair 可替换。
+
+替代方案是每个洞一个 Parquet 或只看尾部水位；前者制造 overlay，后者遗漏中间洞，故拒绝。也不把 V1 floor 写回 CSV 长期事实。
 
 ### D7 — Derived 只读 Canonical 1m 和实际 session
 
@@ -76,11 +86,11 @@ MainContractMap 和 contract_specs 使用自然事实唯一键 upsert 当前事�
 
 替代方案是保留 legacy tables 只读或增加 resolved/history 状态；会延长两套语言且无个人使用价值，故拒绝。
 
-### D10 — 一次性 migration adapter 与最终删除
+### D10 — Legacy migration adapter freeze，Gate C 后删除
 
-legacy adapter 通过固定根与文件 schema 白名单识别候选，禁止 generic glob+guess；同一窗口多候选不仲裁，直接进入精确 RQData 重下计划。Gate C 通过后，在同一 change 删除 adapter、task07/receipt/shadow 工具与 active references，最终 bootstrap 只调用 RQData。
+既有 legacy adapter（任务 4.8）通过固定根与文件 schema 白名单识别候选，已实现并本地验证，但进入 freeze：不新增能力、不继续修历史 edge case、不参加新的 Gate A。新 Gate A 只允许 RQData-only Candidate composition。Gate C 通过后，在同一 change 删除 adapter 与 active references；最终空 Catalog + 空 Canonical 重建只调用 RQData，自 `active_history_floor` 起。
 
-替代方案是长期保留 importer 兼容旧 raw；会使旧数据重新成为 active 事实源，故拒绝。
+替代方案是继续以 legacy 作为 Gate A 主路径或长期保留 importer；会使旧数据重新成为 active 事实源，故拒绝。
 
 ### D11 — CLI、API 与错误模型
 
@@ -88,23 +98,32 @@ CLI 顶层 action result 包含固定 through、planned/applied/noop/blocked/fai
 
 替代方案是兼容参数、双响应 schema 或 access mode toggle；均会保留旧选择语义，故拒绝。
 
+### D12 — Metadata 维护窗跟随 Recent Trusted Window
+
+Bars、MainContractMap、ContractSpec 的同步/维护窗为 `effective_start → fixed through`。Calendar 允许 `month_start(active_history_floor) - 1 month` 起的最小前置 context，用于 previous trading day、night session 与首个完整 ISO week；不得因 bars 只维护 2023+ 而重新同步 1999+ 的 Map/Spec。
+
+### D13 — 薄 Candidate composition，不新建引擎
+
+`build_candidate_historical_data_manager(candidate_session, candidate_root)` 仅组装隔离 Session + 隔离 Canonical root + 现有 `HistoricalDataManager` / `MetadataSynchronizer` / `RQDataMarketAdapter` / `CanonicalMonthlyStore`，且 `legacy=None`。Candidate root 与正式 root 必须完全隔离。不得复制覆盖规划或发布算法。
+
 ## Risks / Trade-offs
 
 - [单月重写在超大 1m 月份有额外 IO] → 以自然月限制重写范围，DuckDB/PyArrow 只读所需列；个人工作站优先一致性。
 - [文件 replace 与 Catalog transaction 无法形成跨系统 ACID] → reader 只信 Catalog+Manifest；发布使用同目录 temp、checksum、可恢复交换顺序和失败注入测试，最后有效分区不被半成品覆盖。
-- [legacy 文件身份或 session 语义不可信] → 白名单仍走六项校验；任何歧义整窗 RQData 重下，不逐行裁决。
+- [V1 不覆盖 2023 前历史] → floor 版本化且可后续下调；现有 Canonical 不重做，按品种补更早窗口。
 - [不可逆 drop 会让旧页面/脚本立即失败] → 同一代码变更先扫描并删除所有 active callers，在隔离 migration 与 API/Web tests 后才进入生产 Gate B。
 - [RQData 修订会改变已关闭月份] → routine update 不改 closed month；审计发现后生成 exact repair plan，由显式 repair 替换受影响月。
-- [69 品种一次 bootstrap 时间长且可能部分失败] → 固定 through、按品种隔离、结构错误全局中止、业务错误可重跑；候选根和隔离 Catalog 不影响当前生产读取。
+- [69 品种 Candidate 时间长且可能部分失败] → 先 JM，再六交易所 canary，再 69；固定 through、按品种隔离、结构错误全局中止；候选根和隔离 Catalog 不影响当前生产读取。
 
 ## Migration Plan
 
 1. 创建并严格验证本 change；完整吸收旧 M3 后把旧 change 作为 superseded history 归档，不同步其未完成 specs。
 2. 以 fixture、临时 canonical root 和隔离 PostgreSQL TDD 实现 domain、ORM/migration、三个深模块、CLI/API/Web；不访问真实 RQData 或生产资源。
 3. 删除 active legacy callers 与最终不再需要的兼容代码；运行 backend、migration、frontend、CLI 与旧语言扫描。
-4. Gate A 前只生成候选构建 dry-run，明确 69 品种、fixed through、候选根、预计 Dataset/月分区、legacy 白名单和精确 RQData windows。收到新的单次意图后才能创建隔离候选数据。
-5. Gate B 前输出生产表、候选根、正式根和服务范围。收到另一份单次意图后才能在短维护窗口执行不可逆 migration、Catalog 写入与 root 原子切换。
-6. Gate C 只读/NOOP 验收要求 DataGap=0、全部预期七周期可读、主力跨换月/周线正确、相同 fixed through 为零目标零写入零远程；scheduler/live/notification/order 仍关闭。
-7. Gate C 通过后删除 migration-only adapter 与 superseded active 工具，完成最终验证并 archive 本 change。main/release/Runtime 不在本 change 授权内。
+4. 实现 Recent Trusted Window policy 与 RQData-only Candidate composition；本地全验证后停止。
+5. Gate A1：JM，`2023-01-01 → fixed T`，Candidate only。Gate A2：每实际交易所 deterministic canary。Gate A3：active 69 Candidate。Gate A4：audit finding_count=0、DataGap=0、same-T update NOOP。各真实 RQData/Candidate 写入分别需要新的单次意图。
+6. Gate B 前输出生产表、候选根、正式根和服务范围。收到另一份单次意图后才能在短维护窗口执行不可逆 migration、Catalog 写入与 root 原子切换。
+7. Gate C 只读/NOOP 验收要求 DataGap=0、floor 之后全部预期七周期可读、主力跨换月/周线正确、相同 fixed through 为零目标零写入零远程；scheduler/live/notification/order 仍关闭。
+8. Gate C 通过后删除 migration-only legacy adapter，评估/收口 `data bootstrap`，完成最终验证并 archive 本 change。main/release/Runtime 不在本 change 授权内。
 
 按用户决策，不为生产旧表 drop 设计应用级 rollback。Gate A 在隔离候选根失败时丢弃候选即可；Gate B 失败必须保持 API 停止并报告实际状态，不以兼容表或旧 selector 静默回退。

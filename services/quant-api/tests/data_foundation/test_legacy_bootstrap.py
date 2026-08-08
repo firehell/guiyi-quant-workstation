@@ -211,6 +211,48 @@ def test_scan_legacy_coverages_recognizes_only_direct_allowlisted_identities(
     )
 
 
+def test_exact_scope_provider_matches_friday_night_to_monday_window() -> None:
+    class Delegate:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def fetch(self, key, expected):
+            self.calls.append((key, expected))
+            bars = tuple(
+                CanonicalBar(
+                    value,
+                    date(2010, 1, 4),
+                    100,
+                    101,
+                    99,
+                    100,
+                    1,
+                    10,
+                    20,
+                )
+                for value in expected
+            )
+            return BarBatch(bars, "a" * 64, "rqdata")
+
+    key = DatasetKey("continuous", "a", "MAIN", "1m")
+    provider = legacy_bootstrap.ExactScopeProvider(
+        Delegate(),
+        {
+            "rqdata_windows": [
+                {
+                    "dataset": list(key.as_tuple()),
+                    "start": "2010-01-04",
+                    "end": "2010-01-04",
+                }
+            ]
+        },
+    )
+    # Friday night Shanghai (UTC+8) belonging to Monday 2010-01-04.
+    night = datetime(2009, 12, 31, 13, 1, tzinfo=UTC)
+    batch = provider.fetch(key, (night,))
+    assert batch.bars[0].bar_end == night
+
+
 def test_exact_scope_provider_splits_calls_and_rejects_days_outside_plan() -> None:
     class Delegate:
         def __init__(self) -> None:
@@ -258,8 +300,11 @@ def test_exact_scope_provider_splits_calls_and_rejects_days_outside_plan() -> No
     assert batch.bars[0].bar_end == expected[0]
     assert len(delegate.calls) == 2
     assert provider.request_count == 2
-    with pytest.raises(LegacyBootstrapError, match="GATE_A_PROVIDER_WINDOW_OUTSIDE_SCOPE"):
-        provider.fetch(key, (datetime(2025, 1, 3, 7, tzinfo=UTC),))
+    # Unscoped leftovers fall back to RQData instead of hard-failing: day-level
+    # exact-scope can mark legacy months complete while minute bars remain open.
+    leftover = provider.fetch(key, (datetime(2025, 1, 3, 7, tzinfo=UTC),))
+    assert leftover.bars[0].bar_end == datetime(2025, 1, 3, 7, tzinfo=UTC)
+    assert provider.fallback_request_count == 1
 
 
 def _row(day: int, close: int) -> dict:

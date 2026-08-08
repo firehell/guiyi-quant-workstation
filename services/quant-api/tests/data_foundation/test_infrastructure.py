@@ -473,3 +473,87 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
 
     assert calls == [("JM", 2, 1)]
     assert snapshot.contracts[0]["expired_date"] == date(2025, 9, 25)
+
+
+def test_intraday_dataset_start_floors_to_rqdata_minute_history(tmp_path) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+    session.add(Exchange(code="DCE", name="DCE"))
+    session.add(Instrument(symbol="a", name="A", exchange_code="DCE", is_active=True))
+    session.add(
+        Contract(
+            contract_code="A0305",
+            instrument_symbol="a",
+            exchange_code="DCE",
+            listed_date=date(2002, 1, 1),
+            expired_date=date(2002, 5, 1),
+            maturity_date=date(2002, 5, 1),
+            provider="rqdata",
+        )
+    )
+    for day in (date(2002, 3, 15), date(2002, 3, 18), date(2010, 1, 4), date(2010, 1, 5)):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=day,
+                is_trading_day=True,
+            )
+        )
+    session.add(
+        TradingSession(
+            exchange_code="DCE",
+            instrument_symbol="a",
+            session_name="day",
+            start_time=time(9),
+            end_time=time(9, 5),
+            effective_from=date(2002, 1, 1),
+            effective_to=None,
+            crosses_midnight=False,
+            is_active=True,
+        )
+    )
+    session.commit()
+    starts = tmp_path / "starts.csv"
+    starts.write_text("product,window_start,note\na,2002-03-15,test\n")
+    floor = tmp_path / "floor.txt"
+    floor.write_text("1900-01-01\n")
+    coverage = DatabaseCoverageSource(session, starts, history_floor_path=floor)
+    minute = DatasetKey("continuous", "a", "MAIN", "1m")
+    daily = DatasetKey("continuous", "a", "MAIN", "1d")
+
+    assert coverage.dataset_start(minute) == date(2010, 1, 4)
+    assert coverage.dataset_start(daily) == date(2002, 3, 15)
+    assert coverage.expected_bar_ends(minute, 2002, 3, date(2002, 3, 15), date(2002, 3, 18)) == ()
+    assert len(coverage.expected_bar_ends(daily, 2002, 3, date(2002, 3, 15), date(2002, 3, 18))) == 2
+    session.close()
+
+
+def test_product_start_applies_active_history_floor(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    starts.write_text(
+        "product,window_start,note\n"
+        "jm,2013-03-22,provider\n"
+        "ao,2023-06-19,provider\n"
+        "bz,2025-07-08,provider\n"
+    )
+    floor = tmp_path / "floor.txt"
+    floor.write_text("2023-01-01\n")
+    for symbol in ("ao", "bz"):
+        session.add(Instrument(symbol=symbol, name=symbol.upper(), exchange_code="DCE", is_active=True))
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts, history_floor_path=floor)
+
+    assert coverage.provider_start("jm") == date(2013, 3, 22)
+    assert coverage.product_start("jm") == date(2023, 1, 1)
+    assert coverage.product_start("ao") == date(2023, 6, 19)
+    assert coverage.product_start("bz") == date(2025, 7, 8)
+    session.close()
+
+
+def test_calendar_context_start_is_previous_natural_month() -> None:
+    from app.market_data.infrastructure import _calendar_context_start
+
+    assert _calendar_context_start(date(2023, 1, 1)) == date(2022, 12, 1)
+    assert _calendar_context_start(date(2023, 6, 19)) == date(2023, 5, 1)
+    assert _calendar_context_start(date(2025, 7, 8)) == date(2025, 6, 1)

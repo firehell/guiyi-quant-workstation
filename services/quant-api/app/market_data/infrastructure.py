@@ -16,9 +16,16 @@ import pandas as pd
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from app.core.env import load_project_env
+from app.core.env import PROJECT_ROOT, load_project_env
 from app.market_data.aggregation import SessionWindow
-from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
+from app.market_data.domain import (
+    INTRADAY_FREQUENCIES,
+    RQDATA_INTRADAY_HISTORY_START,
+    BarFrequency,
+    CanonicalBar,
+    DatasetKey,
+    DatasetKind,
+)
 from app.market_data.maintenance import BarBatch
 from app.market_data.metadata import MetadataSnapshot
 from app.models import (
@@ -49,17 +56,38 @@ class DatabaseCoverageSource:
         session: Session,
         product_starts_path: Path,
         *,
+        history_floor_path: Path | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self.session = session
         self.starts = _load_product_starts(product_starts_path)
+        floor_path = (
+            history_floor_path
+            if history_floor_path is not None
+            else PROJECT_ROOT / "data/universe/active_history_floor.txt"
+        )
+        self.history_floor = _load_history_floor(floor_path)
         self._now = now or (lambda: datetime.now(SHANGHAI))
 
     def product_start(self, symbol: str) -> date:
         try:
+            provider_start = self.starts[symbol.strip().lower()]
+        except KeyError as exc:
+            raise InfrastructureError("PRODUCT_WINDOW_START_MISSING") from exc
+        return max(provider_start, self.history_floor)
+
+    def provider_start(self, symbol: str) -> date:
+        """Return the long-horizon listing/provider start without applying floor."""
+        try:
             return self.starts[symbol.strip().lower()]
         except KeyError as exc:
             raise InfrastructureError("PRODUCT_WINDOW_START_MISSING") from exc
+
+    def dataset_start(self, key: DatasetKey) -> date:
+        start = self.product_start(key.symbol)
+        if key.frequency in INTRADAY_FREQUENCIES:
+            return max(start, RQDATA_INTRADAY_HISTORY_START)
+        return start
 
     def latest_complete_day(self, products: tuple[str, ...]) -> date:
         values: list[date] = []
@@ -172,7 +200,7 @@ class DatabaseCoverageSource:
         start: date,
         end: date,
     ) -> tuple[datetime, ...]:
-        lower = max(start, date(year, month, 1), self.product_start(key.symbol))
+        lower = max(start, date(year, month, 1), self.dataset_start(key))
         upper = min(end, _month_end(year, month))
         if lower > upper:
             return ()
@@ -241,7 +269,7 @@ class DatabaseCoverageSource:
         year: int,
         month: int,
     ) -> tuple[SessionWindow, ...]:
-        lower = max(date(year, month, 1), self.product_start(key.symbol))
+        lower = max(date(year, month, 1), self.dataset_start(key))
         upper = _month_end(year, month)
         return tuple(
             window
@@ -336,18 +364,27 @@ class RQDataMarketAdapter:
     def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
         if not expected:
             raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
-        order_book_id = (
-            f"{key.symbol.upper()}88"
-            if key.kind is DatasetKind.CONTINUOUS
-            else key.series_or_contract
-        )
-        frame = self.client.price(
-            order_book_id,
-            min(expected).date(),
-            max(expected).date(),
-            key.frequency.value,
-        )
-        rows = _records(frame)
+        start_day = min(expected).date()
+        end_day = max(expected).date()
+        order_book_ids: tuple[str, ...]
+        if key.kind is DatasetKind.CONTINUOUS:
+            order_book_ids = (
+                f"{key.symbol.upper()}88",
+                f"{key.symbol.upper()}99",
+            )
+        else:
+            order_book_ids = (key.series_or_contract,)
+        rows: tuple[dict[str, Any], ...] = ()
+        for order_book_id in order_book_ids:
+            frame = self.client.price(
+                order_book_id,
+                start_day,
+                end_day,
+                key.frequency.value,
+            )
+            rows = _records(frame)
+            if rows:
+                break
         expected_by_day: dict[date, list[datetime]] = {}
         for value in expected:
             expected_by_day.setdefault(value.astimezone(SHANGHAI).date(), []).append(value)
@@ -514,11 +551,17 @@ class _RqdatacClient:
             )
         # Fetch one week past the bar watermark so a holiday-short ISO week can
         # still be proven complete without storing a second calendar watermark.
+        # Calendar may start one natural month before the earliest effective_start
+        # for previous-day / night-session / first ISO-week context only.
         earliest = min(starts.values())
+        calendar_start = _calendar_context_start(earliest)
         calendar_end = through + timedelta(days=7)
         trading_dates = tuple(
             pd.Timestamp(item).date()
-            for item in self.api.get_trading_dates(start_date=earliest, end_date=calendar_end)
+            for item in self.api.get_trading_dates(
+                start_date=calendar_start,
+                end_date=calendar_end,
+            )
         )
         sessions = _session_rows(contracts, starts)
         night_exchanges = {
@@ -678,6 +721,30 @@ def _load_product_starts(path: Path) -> dict[str, date]:
     if not result:
         raise InfrastructureError("PRODUCT_WINDOW_STARTS_INVALID")
     return result
+
+
+def _load_history_floor(path: Path) -> date:
+    if not path.is_file() or path.is_symlink():
+        raise InfrastructureError("ACTIVE_HISTORY_FLOOR_INVALID")
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    if len(lines) != 1:
+        raise InfrastructureError("ACTIVE_HISTORY_FLOOR_INVALID")
+    try:
+        return date.fromisoformat(lines[0])
+    except ValueError as exc:
+        raise InfrastructureError("ACTIVE_HISTORY_FLOOR_INVALID") from exc
+
+
+def _calendar_context_start(effective_start: date) -> date:
+    """Earliest calendar day allowed: month_start(effective_start) - 1 month."""
+    month_start = date(effective_start.year, effective_start.month, 1)
+    if month_start.month == 1:
+        return date(month_start.year - 1, 12, 1)
+    return date(month_start.year, month_start.month - 1, 1)
 
 
 def _month_end(year: int, month: int) -> date:

@@ -398,9 +398,14 @@ class HistoricalDataManager:
             if frequencies is None or value in frequencies
         )
         for symbol in tuple(dict.fromkeys(item.strip().lower() for item in products)):
-            start = self.coverage.product_start(symbol)
+            product_start = self.coverage.product_start(symbol)
             for frequency in selected_frequencies:
                 key = DatasetKey(DatasetKind.CONTINUOUS, symbol, "MAIN", frequency)
+                start = (
+                    self.coverage.dataset_start(key)
+                    if hasattr(self.coverage, "dataset_start")
+                    else product_start
+                )
                 for year, month in _months(start, through):
                     yield (
                         key,
@@ -413,7 +418,7 @@ class HistoricalDataManager:
                             )
                         ),
                     )
-            mapping = self.catalog.main_map(symbol, start, through)
+            mapping = self.catalog.main_map(symbol, product_start, through)
             days_by_contract_month: dict[tuple[str, int, int], list[date]] = {}
             for fact in mapping:
                 days_by_contract_month.setdefault(
@@ -422,10 +427,17 @@ class HistoricalDataManager:
             for (contract, year, month), mapped_days in days_by_contract_month.items():
                 for frequency in selected_frequencies:
                     key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
+                    dataset_start = (
+                        self.coverage.dataset_start(key)
+                        if hasattr(self.coverage, "dataset_start")
+                        else product_start
+                    )
                     expected = self.coverage.expected_bar_ends_for_trading_days(
                         key,
-                        tuple(mapped_days),
+                        tuple(day for day in mapped_days if day >= dataset_start),
                     )
+                    if not expected:
+                        continue
                     yield (
                         key,
                         year,
@@ -532,6 +544,12 @@ class HistoricalDataManager:
                 failures.append(_failure(target, exc))
                 self.catalog.session.rollback()
                 self._record_gap(target, exc)
+            if planned == 1 or planned % 100 == 0:
+                print(
+                    f"maintenance {action} direct planned={planned} applied={applied} "
+                    f"failed={len(failures)} provider_requests={provider_requests}",
+                    flush=True,
+                )
         for target in derived:
             planned += 1
             if _family(target.key) in failed_families:
@@ -547,6 +565,12 @@ class HistoricalDataManager:
                 failures.append(_failure(target, exc))
                 self.catalog.session.rollback()
                 self._record_gap(target, exc)
+            if planned % 100 == 0:
+                print(
+                    f"maintenance {action} derived planned={planned} applied={applied} "
+                    f"failed={len(failures)} blocked={blocked}",
+                    flush=True,
+                )
         if planned == 0:
             status = "noop"
         else:

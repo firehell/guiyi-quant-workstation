@@ -1,6 +1,6 @@
 ## Purpose
 
-定义历史数据 update、bootstrap、repair 与 audit 的统一行为，使已有大规模历史数据只补精确缺口、固定水位可幂等重跑，并把一次性迁移安全收敛为日常增量闭环。
+定义历史数据 update、bootstrap、repair 与 audit 的统一行为，使 V1 Recent Trusted Window 可幂等构建与增量，并把 migration-only legacy 路径安全冻结至 Gate C 后删除。
 
 ## ADDED Requirements
 
@@ -12,7 +12,7 @@
 - **THEN** 三个动作产生相同 CanonicalBar、校验结论和分区内容
 
 ### Requirement: 精确增量和固定水位幂等
-`--since` SHALL 仅限制缺口检查下界而不授权覆盖已有正确分区；`--through` SHALL 固定本次水位，默认取各交易所最新完整交易日。已有 Dataset SHALL 检查范围内全部历史缺口，空 Dataset SHALL 从 `product_window_starts.csv` 起算。
+`--since` SHALL 仅限制缺口检查下界而不授权覆盖已有正确分区；`--through` SHALL 固定本次水位，默认取各交易所最新完整交易日。已有 Dataset SHALL 检查范围内全部历史缺口。空 Dataset SHALL 从 `effective_start(symbol) = max(product_window_starts.csv 中的起点, active_history_floor)` 起算；V1 `active_history_floor` SHALL 为 `data/universe/active_history_floor.txt` 中的 `2023-01-01`，且 MUST NOT 改写 `product_window_starts.csv` 的长期事实。
 
 #### Scenario: covered since 窗口
 - **WHEN** 显式 `--since` 后的请求窗口已被正确覆盖
@@ -25,6 +25,14 @@
 #### Scenario: 固定 through 重跑
 - **WHEN** 成功更新后使用相同 `--through` 再次运行
 - **THEN** 结果为 NOOP，目标数、写入数和 RQData 请求数均为零
+
+#### Scenario: floor 抬高早期上市品种
+- **WHEN** 品种在 `product_window_starts.csv` 的起点早于 `2023-01-01`
+- **THEN** 空 Dataset 与覆盖规划从 `2023-01-01` 起算
+
+#### Scenario: 晚于 floor 的上市品种
+- **WHEN** 品种起点晚于 `2023-01-01`
+- **THEN** effective_start 仍为其 listing/provider 起点，不得提前到 floor
 
 ### Requirement: 统一更新顺序
 apply 模式 SHALL 按 Calendar/Session/MainContractMap/contract_specs、最新完整交易日、continuous Direct、rank1 contract Direct、Derived、严格读取验证的顺序执行。结构性 schema、database 或 canonical root 错误 MUST 全局中止；单品种数据失败 SHALL 允许无依赖品种继续但整体退出码非零。
@@ -44,16 +52,16 @@ contract Direct SHALL 只覆盖 MainContractMap rank1 的有效窗口，不得�
 - **WHEN** MainContractMap 新增一个此前没有 Catalog Dataset 的 rank1 合约窗口
 - **THEN** update 发现并计划该真实合约的 direct 与相依 derived 目标
 
-### Requirement: 一次性 bootstrap 白名单
-迁移阶段 SHALL 只接受明确白名单的 actual contract raw、RQData continuous 候选及用于精确补缺的当前 Canonical/dominant 片段，并让所有候选通过同一标准化与六项校验。market samples、重复版本或身份不明文件 MUST NOT 直接合并；失败窗口 SHALL 形成精确 RQData 重下计划而不是逐行多源仲裁。
+### Requirement: RQData-only Candidate 与 legacy freeze
+新 Gate A Candidate 构建 SHALL 复用正常 `HistoricalDataManager.update`，仅允许最薄的隔离 composition（独立 Session + 隔离 Canonical root + RQData adapter），且 MUST 设置 `legacy=None`。既有 migration-only legacy 白名单 bootstrap 实现 MAY 保留至 Gate C，但 MUST NOT 新增能力、MUST NOT 继续作为新 Gate A 数据源；Gate C 通过后 SHALL 删除 legacy adapter 与相关 active references。Candidate Manifest 的 direct `source_kind` SHALL 为 RQData，derived SHALL 为 `derived_1m`；MUST NOT 产生 `legacy_staging` 或 `bootstrap_mixed` 作为新 Gate A 结果语义。
 
-#### Scenario: legacy 候选通过
-- **WHEN** 白名单候选身份唯一且完整通过六项校验
-- **THEN** bootstrap 可将其发布到隔离候选 Canonical 而无需重复下载相同窗口
+#### Scenario: 空 Candidate 仅用 RQData 构建
+- **WHEN** 隔离 Candidate DB/Root 为空且以 fixed through 执行 apply update
+- **THEN** 系统仅调用 RQData，不读取 legacy 白名单根，并发布 effective_start→through 的预期分区
 
-#### Scenario: 候选冲突
-- **WHEN** 同一窗口存在无法唯一判定的多个 legacy 版本
-- **THEN** bootstrap 拒绝合并并把完整问题窗口放入 RQData 重下计划
+#### Scenario: legacy 路径冻结
+- **WHEN** 新 Gate A 或日常 update 组装 HistoricalDataManager
+- **THEN** 生产与新 Candidate composition 的 `legacy` 为 None
 
 ### Requirement: repair 精确计划
 repair SHALL 只接受包含明确 DatasetKey、窗口、月份、原因和预期操作的 exact plan；成功发布并严格复验后 SHALL 删除对应 DataGap，失败 SHALL 保留最后有效分区和缺口。
@@ -63,7 +71,7 @@ repair SHALL 只接受包含明确 DatasetKey、窗口、月份、原因和预�
 - **THEN** 系统在任何写入前拒绝整个结构性请求
 
 ### Requirement: audit 业务验收
-audit SHALL 只读检查 active 69 品种预期的 continuous、全部 rank1 contract、七周期、Manifest/Catalog/Parquet 一致性、Map/spec 覆盖、DataGap 和 MarketDataService 探针，并以 finding count 非零作为失败。
+audit SHALL 只读检查 active 69 品种在 Recent Trusted Window 内预期的 continuous、全部 rank1 contract、七周期、Manifest/Catalog/Parquet 一致性、Map/spec 覆盖、DataGap 和 MarketDataService 探针，并以 finding count 非零作为失败。
 
 #### Scenario: 完整 universe 验收
 - **WHEN** 所有 expected Dataset 和元数据完整且严格探针可读
