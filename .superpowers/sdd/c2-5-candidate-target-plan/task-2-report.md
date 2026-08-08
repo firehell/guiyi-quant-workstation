@@ -78,3 +78,42 @@ is required); no error was reported in Task 2 files.
 No RQData client call, Candidate/production DB mutation, Candidate/production
 Canonical write, Runtime action, notification, or order was performed. Actual
 Candidate construction remains Gate A and needs a new, scoped execution intent.
+
+## Review amendment
+
+Follow-up review fixed the fresh metadata sequencing: the strict empty-root
+check remains in `validate_update` before manager/provider construction, while
+`record_through` now permits Canonical files published by that same validated
+fresh run and still refuses a pre-existing metadata file. The regression test
+publishes a fixture file between fresh preflight and metadata write, then
+confirms extend and audit validation remain usable.
+
+The Candidate-root check now explicitly derives relative paths from
+`PROJECT_ROOT` before walking symlink components; a regression test changes to
+an unrelated current directory and verifies a symlink inside the project
+Candidate parent is rejected. `services/quant-api/README.md` now lists the
+current `update|bootstrap|repair|audit` data CLI surface.
+
+Review RED:
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/pytest -q \
+services/quant-api/tests/data_foundation/test_composition.py
+# 1 failed, 7 passed (fresh metadata sequencing regression)
+```
+
+Review GREEN:
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/pytest -q \
+services/quant-api/tests/data_foundation/test_composition.py \
+services/quant-api/tests/data_foundation/test_cli.py
+# 15 passed
+
+PYTHONPATH=services/quant-api:packages/quant-core \
+/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/pytest -q \
+services/quant-api/tests/data_foundation
+# 88 passed
+```

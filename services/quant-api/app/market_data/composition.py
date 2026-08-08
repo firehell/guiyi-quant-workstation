@@ -154,7 +154,7 @@ class HistoricalDataTarget:
                 raise CandidateTargetError("CANDIDATE_IDENTITY_MISMATCH")
             recorded_through = max(requested_through, _metadata_through(existing))
         else:
-            if self.root.exists() and any(self.root.iterdir()):
+            if metadata_path.exists():
                 raise CandidateTargetError("CANDIDATE_TARGET_NOT_EMPTY")
             recorded_through = requested_through
         _atomic_write_candidate_metadata(
@@ -194,7 +194,9 @@ class HistoricalDataTarget:
 
 
 def _candidate_root(candidate_root: Path) -> Path:
-    raw = candidate_root if candidate_root.is_absolute() else PROJECT_ROOT / candidate_root
+    raw = candidate_root
+    if not raw.is_absolute():
+        raw = (PROJECT_ROOT / raw).absolute()
     normalized = raw.resolve(strict=False)
     candidate_parent = (PROJECT_ROOT / "data/canonical-candidates").resolve(strict=False)
     if _has_symlink_component(raw) or normalized == candidate_parent:

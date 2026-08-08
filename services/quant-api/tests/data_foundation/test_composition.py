@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import json
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -120,6 +121,9 @@ def test_candidate_target_records_only_monotonic_non_sensitive_provenance(
     session = _session()
     fresh = composition.HistoricalDataTarget.candidate(candidate_root, mode="fresh")
     identity = fresh.validate_update(session, date(2026, 8, 7))
+    published = candidate_root / "kind=continuous/symbol=JM/series=MAIN/frequency=1d"
+    published.mkdir(parents=True)
+    (published / "part.parquet").write_bytes(b"published-after-fresh-preflight")
     fresh.record_through(date(2026, 8, 7), identity)
 
     metadata = json.loads((candidate_root / "candidate.json").read_text(encoding="utf-8"))
@@ -130,6 +134,7 @@ def test_candidate_target_records_only_monotonic_non_sensitive_provenance(
 
     extend = composition.HistoricalDataTarget.candidate(candidate_root, mode="extend")
     assert extend.validate_update(session, date(2026, 8, 8)) == identity
+    extend.validate_audit(session)
     with pytest.raises(composition.CandidateTargetError, match="CANDIDATE_THROUGH_REGRESSION"):
         extend.validate_update(session, date(2026, 8, 6))
     session.close()
@@ -141,3 +146,22 @@ def test_candidate_target_rejects_roots_outside_the_candidate_parent(tmp_path, m
 
     with pytest.raises(composition.CandidateTargetError, match="CANDIDATE_PRECONDITION_FAILED"):
         composition.HistoricalDataTarget.candidate(tmp_path / "outside", mode="fresh")
+
+
+def test_relative_candidate_root_rejects_a_symlink_component_from_project_root(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(composition, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setenv("GUIYI_CANDIDATE_DATABASE_URL", "sqlite+pysqlite://")
+    candidate_parent = tmp_path / "data/canonical-candidates"
+    physical = candidate_parent / "physical"
+    physical.mkdir(parents=True)
+    (candidate_parent / "linked").symlink_to(physical, target_is_directory=True)
+    unrelated_cwd = tmp_path / "unrelated-cwd"
+    unrelated_cwd.mkdir()
+    monkeypatch.chdir(unrelated_cwd)
+
+    with pytest.raises(composition.CandidateTargetError, match="CANDIDATE_PRECONDITION_FAILED"):
+        composition.HistoricalDataTarget.candidate(
+            Path("data/canonical-candidates/linked/jm"), mode="fresh"
+        )
