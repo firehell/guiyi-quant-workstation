@@ -24,6 +24,8 @@ build/
 data/raw/
 data/processed/
 data/parquet/
+data/canonical-candidates/
+data/manifests/
 *.parquet
 *.duckdb
 *.db

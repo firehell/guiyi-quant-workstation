@@ -15,10 +15,7 @@ from app.market_data.domain import CanonicalBar, DatasetKey
 from app.market_data.maintenance import (
     AuditRequest,
     BarBatch,
-    BootstrapRequest,
-    ExactRepairItem,
     HistoricalDataManager,
-    RepairRequest,
     UpdateRequest,
 )
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest, SourceMetadata
@@ -117,23 +114,6 @@ class FakeProvider:
         return BarBatch(selected, "a" * 64, "rqdata")
 
 
-class FakeLegacy:
-    def __init__(self, batches: dict[tuple[str, str, str, str], BarBatch]) -> None:
-        self.batches = batches
-        self.calls: list[DatasetKey] = []
-
-    def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch | None:
-        self.calls.append(key)
-        batch = self.batches.get(key.as_tuple())
-        if batch is None:
-            return None
-        return BarBatch(
-            tuple(bar for bar in batch.bars if bar.bar_end in expected),
-            batch.source_digest,
-            "legacy_staging",
-        )
-
-
 def _daily(day: int, close: int) -> CanonicalBar:
     value = Decimal(close)
     return CanonicalBar(
@@ -170,7 +150,6 @@ def _manager(
     coverage: FakeCoverage,
     provider: FakeProvider,
     metadata: FakeMetadata | None = None,
-    legacy: FakeLegacy | None = None,
 ) -> HistoricalDataManager:
     catalog = MarketCatalog(session, tmp_path)
     return HistoricalDataManager(
@@ -179,7 +158,6 @@ def _manager(
         coverage=coverage,
         metadata=metadata or FakeMetadata(),
         provider=provider,
-        legacy=legacy,
     )
 
 
@@ -302,11 +280,11 @@ def test_update_fails_before_provider_when_historical_session_facts_are_missing(
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     bar = _daily(2, 100)
     coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
-    coverage.session_fact_error = InfrastructureError("CANDIDATE_SESSION_FACT_MISSING")
+    coverage.session_fact_error = InfrastructureError("HISTORICAL_SESSION_FACT_MISSING")
     provider = FakeProvider({key.as_tuple(): (bar,)})
     manager = _manager(session, tmp_path, coverage, provider)
 
-    with pytest.raises(InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+    with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
         manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
 
     assert coverage.session_fact_calls == [(("jm",), date(2025, 1, 3))]
@@ -354,7 +332,7 @@ def test_catalog_commit_failure_restores_last_valid_file_pair(
     assert not tuple(tmp_path.rglob("*.bak"))
 
 
-def test_strict_read_failure_rolls_back_candidate_partition(
+def test_strict_read_failure_rolls_back_staged_partition(
     session, tmp_path, monkeypatch
 ) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
@@ -375,104 +353,6 @@ def test_strict_read_failure_rolls_back_candidate_partition(
     assert not tuple(tmp_path.rglob("part.parquet"))
     assert not tuple(tmp_path.rglob("manifest.json"))
     assert not tuple(tmp_path.rglob("*.bak"))
-
-
-def test_bootstrap_prefers_valid_legacy_then_uses_provider_for_missing_window(
-    session, tmp_path
-) -> None:
-    key = DatasetKey("continuous", "jm", "MAIN", "1d")
-    bars = (_daily(2, 100), _daily(3, 101))
-    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in bars)})
-    provider = FakeProvider({key.as_tuple(): bars})
-    legacy = FakeLegacy(
-        {key.as_tuple(): BarBatch((_daily(2, 100),), "b" * 64, "legacy_staging")}
-    )
-    manager = _manager(session, tmp_path, coverage, provider, legacy=legacy)
-
-    result = manager.bootstrap(BootstrapRequest(("jm",), date(2025, 1, 3), True))
-
-    assert result.applied == 1
-    assert len(legacy.calls) == 1
-    assert provider.calls[0][1] == (_daily(3, 101).bar_end,)
-    assert manager.store.read_month(key, 2025, 1) == bars
-
-
-def test_bootstrap_apply_streams_targets_without_materializing_full_plan(
-    session, tmp_path, monkeypatch
-) -> None:
-    key = DatasetKey("continuous", "jm", "MAIN", "1d")
-    bar = _daily(2, 100)
-    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
-    manager = _manager(
-        session,
-        tmp_path,
-        coverage,
-        FakeProvider({key.as_tuple(): (bar,)}),
-    )
-
-    def materialized_plan_forbidden(*_args, **_kwargs):
-        raise AssertionError("full plan must not be materialized in apply mode")
-
-    monkeypatch.setattr(manager, "_plan", materialized_plan_forbidden)
-
-    result = manager.bootstrap(BootstrapRequest(("jm",), date(2025, 1, 3), True))
-
-    assert result.status == "passed"
-    assert result.planned == result.applied == 1
-
-
-def test_repair_replaces_exact_month_and_deletes_gap_after_verification(session, tmp_path) -> None:
-    key = DatasetKey("continuous", "jm", "MAIN", "1d")
-    bars = (_daily(2, 100), _daily(3, 101))
-    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in bars)})
-    provider = FakeProvider({key.as_tuple(): bars})
-    manager = _manager(session, tmp_path, coverage, provider)
-    manager.catalog.add_gap(
-        key,
-        datetime(2025, 1, 1, tzinfo=UTC),
-        datetime(2025, 1, 4, tzinfo=UTC),
-        "COVERAGE_MISSING",
-    )
-    session.commit()
-
-    result = manager.repair(
-        RepairRequest(
-            (
-                ExactRepairItem(
-                    key,
-                    2025,
-                    1,
-                    datetime(2025, 1, 1, tzinfo=UTC),
-                    datetime(2025, 1, 4, tzinfo=UTC),
-                ),
-            ),
-            True,
-        )
-    )
-
-    assert result.applied == 1
-    assert session.scalar(select(DataGap.id)) is None
-
-
-def test_repair_preserves_unaffected_rows_in_the_same_month(session, tmp_path) -> None:
-    key = DatasetKey("continuous", "jm", "MAIN", "1d")
-    all_bars = (_daily(2, 100), _daily(3, 101), _daily(4, 102))
-    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in all_bars)})
-    provider = FakeProvider({key.as_tuple(): (_daily(3, 999),)})
-    manager = _manager(session, tmp_path, coverage, provider)
-    _publish_existing(manager, key, all_bars)
-
-    result = manager.repair(RepairRequest((ExactRepairItem(
-        key,
-        2025,
-        1,
-        datetime(2025, 1, 3, 0, tzinfo=UTC),
-        datetime(2025, 1, 3, 23, tzinfo=UTC),
-    ),), True))
-
-    assert result.applied == 1
-    repaired = manager.store.read_month(key, 2025, 1)
-    assert [bar.close for bar in repaired] == [Decimal("100"), Decimal("999"), Decimal("102")]
 
 
 def test_audit_reports_current_gap_without_remote_calls(session, tmp_path) -> None:

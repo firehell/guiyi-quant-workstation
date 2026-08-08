@@ -6,7 +6,6 @@ import json
 import pytest
 
 from app.guiyi_cli.main import CliUsageError, build_parser, main
-from app.market_data.composition import CandidateTargetError
 from app.market_data.maintenance import MaintenanceResult
 
 
@@ -17,14 +16,6 @@ class FakeManager:
     def update(self, request):
         self.calls.append(("update", request))
         return MaintenanceResult("update", "planned", request.through, 1, 0, 0, 0, 0)
-
-    def bootstrap(self, request):
-        self.calls.append(("bootstrap", request))
-        return MaintenanceResult("bootstrap", "planned", request.through, 1, 0, 0, 0, 0)
-
-    def repair(self, request):
-        self.calls.append(("repair", request))
-        return MaintenanceResult("repair", "planned", None, len(request.items), 0, 0, 0, 0)
 
     def audit(self, request):
         self.calls.append(("audit", request))
@@ -53,7 +44,7 @@ class _NullContext:
         return None
 
 
-def test_data_parser_exposes_only_four_user_commands() -> None:
+def test_data_parser_exposes_only_active_user_commands() -> None:
     parser = build_parser()
     data_action = next(action for action in parser._actions if action.dest == "domain")
     data_parser = data_action.choices["data"]
@@ -61,7 +52,7 @@ def test_data_parser_exposes_only_four_user_commands() -> None:
         action for action in data_parser._actions if action.dest == "data_command"
     )
 
-    assert set(command_action.choices) == {"update", "bootstrap", "repair", "audit"}
+    assert set(command_action.choices) == {"update", "audit"}
 
 
 def test_update_parses_since_through_and_defaults_to_dry_run() -> None:
@@ -88,129 +79,34 @@ def test_update_parses_since_through_and_defaults_to_dry_run() -> None:
     assert request.since.isoformat() == "2025-01-01"
 
 
-def test_bootstrap_and_audit_require_active_universe() -> None:
+def test_audit_requires_active_universe() -> None:
     manager = FakeManager()
-    bootstrap_code, _ = _run(
-        ["data", "bootstrap", "--universe", "active", "--through", "2025-01-03"],
-        manager,
-    )
-    audit_code, _ = _run(["data", "audit", "--universe", "active"], manager)
-    invalid_code, invalid = _run(["data", "bootstrap", "--universe", "other"], manager)
 
-    assert bootstrap_code == audit_code == 0
+    code, payload = _run(["data", "audit", "--universe", "active"], manager)
+    invalid_code, invalid = _run(["data", "audit", "--universe", "other"], manager)
+
+    assert code == 0 and payload["status"] == "passed"
     assert invalid_code == 2
     assert invalid["status"] == "error"
 
 
-def test_repair_loads_exact_plan_and_apply_flag(tmp_path) -> None:
-    plan = tmp_path / "repair.json"
-    plan.write_text(
-        json.dumps(
-            {
-                "items": [
-                    {
-                        "dataset": {
-                            "kind": "continuous",
-                            "symbol": "jm",
-                            "series_or_contract": "MAIN",
-                            "frequency": "1d",
-                        },
-                        "year": 2025,
-                        "month": 1,
-                        "start": "2025-01-01T00:00:00Z",
-                        "end": "2025-02-01T00:00:00Z",
-                    }
-                ]
-            }
-        )
-    )
-    manager = FakeManager()
+@pytest.mark.parametrize("command", ("bootstrap", "repair", "download", "aggregate", "sync", "verify"))
+def test_retired_commands_are_parser_errors(command: str) -> None:
+    code, payload = _run(["data", command], FakeManager())
 
-    code, payload = _run(
-        ["data", "repair", "--plan", str(plan), "--apply"], manager
-    )
-
-    assert code == 0 and payload["planned"] == 1
-    assert manager.calls[0][1].apply is True
+    assert code == 2
+    assert payload["status"] == "error"
 
 
-def test_removed_commands_are_parser_errors() -> None:
-    for command in ("download", "aggregate", "sync", "verify"):
-        code, payload = _run(["data", command], FakeManager())
-        assert code == 2
-        assert payload["status"] == "error"
-
-
-def test_candidate_update_uses_existing_command_with_explicit_target_and_no_database_flag() -> None:
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        ("--candidate-root", "data/canonical-candidates/jm"),
+        ("--candidate-mode", "fresh"),
+    ),
+)
+def test_update_rejects_retired_candidate_flags(arguments: tuple[str, str]) -> None:
     parser = build_parser()
 
-    args = parser.parse_args(
-        [
-            "data",
-            "update",
-            "--symbol",
-            "jm",
-            "--through",
-            "2026-08-07",
-            "--candidate-root",
-            "data/canonical-candidates/jm",
-            "--candidate-mode",
-            "fresh",
-        ]
-    )
-
-    assert args.candidate_root.name == "jm"
-    assert args.candidate_mode == "fresh"
     with pytest.raises(CliUsageError):
-        parser.parse_args(
-            [
-                "data",
-                "update",
-                "--symbol",
-                "jm",
-                "--database-url",
-                "postgresql://not-accepted",
-            ]
-        )
-
-
-def test_candidate_precondition_returns_only_the_bounded_diagnostic(monkeypatch) -> None:
-    def reject_target(*_args, **_kwargs):
-        raise CandidateTargetError("CANDIDATE_PRECONDITION_FAILED")
-
-    monkeypatch.setattr("app.guiyi_cli.main.HistoricalDataTarget.candidate", reject_target)
-    manager = FakeManager()
-
-    code, payload = _run(
-        [
-            "data",
-            "update",
-            "--symbol",
-            "jm",
-            "--through",
-            "2026-08-07",
-            "--candidate-root",
-            "data/canonical-candidates/jm",
-            "--candidate-mode",
-            "fresh",
-        ],
-        manager,
-    )
-
-    assert code == 1
-    assert set(payload) <= {
-        "reason_code",
-        "mode",
-        "candidate_identity_digest",
-        "recorded_through",
-        "requested_through",
-        "planned_count",
-        "applied_count",
-        "noop_count",
-        "blocked_count",
-        "failed_count",
-        "samples",
-    }
-    assert payload["reason_code"] == "CANDIDATE_PRECONDITION_FAILED"
-    assert payload["samples"] == []
-    assert manager.calls == []
+        parser.parse_args(["data", "update", "--symbol", "jm", *arguments])

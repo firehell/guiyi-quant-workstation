@@ -7,7 +7,7 @@
 - `/api/v1/market`：Canonical bars、coverage、dominants、indicators（只读历史）。
 - `/api/v1/data`：数据治理 API。
 - `/api/runtime`：只读 Runtime 状态。
-- CLI：`guiyi data update|bootstrap|repair|audit`、`guiyi runtime status`。
+- CLI：`guiyi data update|audit`、`guiyi runtime status`。
 
 ## Unmounted / retired
 

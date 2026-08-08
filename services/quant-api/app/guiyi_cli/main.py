@@ -11,15 +11,10 @@ from app.guiyi_cli.data_commands import build_request, run_data_command
 from app.guiyi_cli.data_parser import CliUsageError, JsonArgumentParser, add_data_commands
 from app.guiyi_cli.output import (
     argument_error_payload,
-    candidate_error_payload,
     exception_error_payload,
     print_json,
 )
-from app.market_data.composition import (
-    CandidateTargetError,
-    HistoricalDataTarget,
-    build_historical_data_manager,
-)
+from app.market_data.composition import build_historical_data_manager
 from app.market_data.maintenance import HistoricalDataManager
 from app.services.runtime_health import build_runtime_health
 
@@ -71,31 +66,7 @@ def main(
                     "readonly": True,
                     "runtime": health,
                 }
-    except CandidateTargetError as exc:
-        print_json(
-            candidate_error_payload(
-                reason_code=exc.code,
-                mode=getattr(args, "candidate_mode", None),
-                requested_through=getattr(args, "through", None),
-            ),
-            stderr,
-        )
-        return 1
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
-        if (
-            getattr(args, "candidate_root", None) is not None
-            and getattr(exc, "code", None) == "CANDIDATE_SESSION_FACT_MISSING"
-        ):
-            print_json(
-                candidate_error_payload(
-                    reason_code="CANDIDATE_SESSION_FACT_MISSING",
-                    mode=getattr(args, "candidate_mode", None),
-                    requested_through=getattr(args, "through", None),
-                    samples=getattr(exc, "samples", ()),
-                ),
-                stderr,
-            )
-            return 1
         print_json(
             exception_error_payload(
                 command=command,
@@ -114,35 +85,8 @@ def _run_data(
     session_factory: SessionFactory,
     manager_factory: ManagerFactory,
 ) -> dict[str, object]:
-    candidate_root = getattr(args, "candidate_root", None)
-    if candidate_root is None:
-        with session_factory() as session:
-            return run_data_command(args, manager_factory(session)).as_payload()
-
-    if args.data_command not in {"update", "audit"}:
-        raise ValueError("CLI_CANDIDATE_ARGUMENT_INVALID")
-    if args.data_command == "update":
-        target = HistoricalDataTarget.candidate(candidate_root, mode=args.candidate_mode)
-    else:
-        target = HistoricalDataTarget.candidate(candidate_root, mode="extend")
-    with target.open_session() as session:
-        identity = None
-        if args.data_command == "update":
-            request = build_request(args)
-            assert request.through is not None
-            identity = target.validate_update(session, request.through)
-        else:
-            target.validate_audit(session)
-        result = run_data_command(args, target.build_manager(session))
-        if (
-            args.data_command == "update"
-            and bool(args.apply)
-            and result.status in {"passed", "noop"}
-            and identity is not None
-        ):
-            assert result.through is not None
-            target.record_through(result.through, identity)
-        return result.as_payload()
+    with session_factory() as session:
+        return run_data_command(args, manager_factory(session)).as_payload()
 
 
 def entrypoint() -> None:

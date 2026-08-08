@@ -1007,5 +1007,5 @@ def _session_coverage_sample(symbol: str, start: date, end: date) -> Mapping[str
         "frequency": "1d",
         "start": f"{start.isoformat()}T00:00:00Z",
         "end": f"{end.isoformat()}T23:59:59Z",
-        "reason_code": "CANDIDATE_SESSION_FACT_MISSING",
+        "reason_code": "HISTORICAL_SESSION_FACT_MISSING",
     }

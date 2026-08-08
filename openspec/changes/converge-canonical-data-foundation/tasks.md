@@ -7,9 +7,9 @@
 
 ## DFD-02：删除 Candidate、legacy 与生成工件
 
-- [ ] 2.1 先完成 scoped implementation plan；删除 Candidate/Gate/Promotion、legacy importer 和
+- [x] 2.1 完成 scoped implementation plan；删除 Candidate/Gate/Promotion、legacy importer 和
   已生成工件，并关闭代码、测试、CLI、文档引用。
-- [ ] 2.2 运行受影响定向测试和旧入口/死引用扫描。
+- [x] 2.2 运行受影响定向测试和旧入口/死引用扫描。
 
 ## DFD-03：Slim Storage、Catalog、Models 与 0036
 

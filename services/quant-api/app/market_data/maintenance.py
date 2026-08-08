@@ -67,12 +67,6 @@ class BarSource(Protocol):
     def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch: ...
 
 
-class LegacySource(Protocol):
-    def fetch(
-        self, key: DatasetKey, expected: tuple[datetime, ...]
-    ) -> BarBatch | None: ...
-
-
 @dataclass(frozen=True, slots=True)
 class BarBatch:
     bars: tuple[CanonicalBar, ...]
@@ -85,34 +79,6 @@ class UpdateRequest:
     products: tuple[str, ...]
     since: date | None
     through: date | None
-    apply: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class BootstrapRequest:
-    products: tuple[str, ...]
-    through: date | None
-    apply: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class ExactRepairItem:
-    dataset: DatasetKey
-    year: int
-    month: int
-    start: datetime
-    end: datetime
-
-    def __post_init__(self) -> None:
-        if self.start.tzinfo is None or self.end.tzinfo is None or self.start >= self.end:
-            raise ValueError("REPAIR_WINDOW_INVALID")
-        if not 1 <= self.month <= 12:
-            raise ValueError("REPAIR_MONTH_INVALID")
-
-
-@dataclass(frozen=True, slots=True)
-class RepairRequest:
-    items: tuple[ExactRepairItem, ...]
     apply: bool = False
 
 
@@ -193,7 +159,7 @@ _FREQUENCY_ORDER = (
 
 
 class HistoricalDataManager:
-    """Single application service for update/bootstrap/repair/audit."""
+    """Single application service for update and audit."""
 
     def __init__(
         self,
@@ -203,14 +169,12 @@ class HistoricalDataManager:
         coverage: CoverageSource,
         metadata: MetadataPort,
         provider: BarSource,
-        legacy: LegacySource | None = None,
     ) -> None:
         self.catalog = catalog
         self.store = store
         self.coverage = coverage
         self.metadata = metadata
         self.provider = provider
-        self.legacy = legacy
         self._metadata_watermarks: set[tuple[tuple[str, ...], date]] = set()
 
     def update(self, request: UpdateRequest) -> MaintenanceResult:
@@ -235,74 +199,9 @@ class HistoricalDataManager:
                 request.products,
                 request.since,
                 through,
-                use_legacy=False,
             )
         targets = self._plan(request.products, request.since, through)
-        return self._execute("update", targets, through, apply=False, use_legacy=False)
-
-    def bootstrap(self, request: BootstrapRequest) -> MaintenanceResult:
-        through = request.through or self.coverage.latest_complete_day(request.products)
-        watermark = (request.products, through)
-        if request.apply and (
-            watermark not in self._metadata_watermarks
-            and not self.coverage.metadata_complete(request.products, through)
-        ):
-            through = self.metadata.synchronize(
-                request.products,
-                through,
-                {symbol: self.coverage.product_start(symbol) for symbol in request.products},
-            )
-            self._metadata_watermarks.add((request.products, through))
-        if request.apply:
-            self.coverage.require_historical_session_facts(request.products, through)
-            return self._execute_streaming(
-                "bootstrap",
-                request.products,
-                None,
-                through,
-                use_legacy=True,
-            )
-        targets = self._plan(request.products, None, through)
-        return self._execute("bootstrap", targets, through, apply=False, use_legacy=True)
-
-    def repair(self, request: RepairRequest) -> MaintenanceResult:
-        targets: list[_Target] = []
-        for item in request.items:
-            expected = self.coverage.expected_bar_ends(
-                item.dataset,
-                item.year,
-                item.month,
-                item.start.date(),
-                item.end.date(),
-            )
-            existing = self._read_existing(item.dataset, item.year, item.month)
-            month_expected = tuple(sorted(
-                {bar.bar_end for bar in existing} | set(expected)
-            ))
-            targets.append(
-                _Target(
-                    item.dataset,
-                    item.year,
-                    item.month,
-                    month_expected,
-                    expected,
-                    existing,
-                    item.start,
-                    item.end,
-                )
-            )
-        result = self._execute(
-            "repair",
-            tuple(targets),
-            max((item.end.date() for item in request.items), default=None),
-            apply=request.apply,
-            use_legacy=False,
-        )
-        if request.apply and result.failed == 0 and result.blocked == 0:
-            for item in request.items:
-                self.catalog.clear_gaps(item.dataset, item.start, item.end)
-            self.catalog.session.commit()
-        return result
+        return self._execute("update", targets, through, apply=False)
 
     def audit(self, request: AuditRequest) -> MaintenanceResult:
         through = self.coverage.latest_complete_day(request.products)
@@ -457,7 +356,6 @@ class HistoricalDataManager:
         through: date | None,
         *,
         apply: bool,
-        use_legacy: bool,
     ) -> MaintenanceResult:
         if not targets:
             return MaintenanceResult(action, "noop", through, 0, 0, 0, 0, 0)
@@ -480,7 +378,6 @@ class HistoricalDataManager:
             direct,
             derived,
             through,
-            use_legacy=use_legacy,
         )
 
     def _execute_streaming(
@@ -489,8 +386,6 @@ class HistoricalDataManager:
         products: tuple[str, ...],
         since: date | None,
         through: date,
-        *,
-        use_legacy: bool,
     ) -> MaintenanceResult:
         return self._execute_apply(
             action,
@@ -507,7 +402,6 @@ class HistoricalDataManager:
                 frequencies=DERIVED_FREQUENCIES,
             ),
             through,
-            use_legacy=use_legacy,
         )
 
     def _execute_apply(
@@ -516,8 +410,6 @@ class HistoricalDataManager:
         direct,
         derived,
         through: date | None,
-        *,
-        use_legacy: bool,
     ) -> MaintenanceResult:
         planned = 0
         applied = 0
@@ -528,19 +420,9 @@ class HistoricalDataManager:
         for target in direct:
             planned += 1
             try:
-                batches: list[BarBatch] = []
-                remaining = target.missing
-                if use_legacy and self.legacy is not None:
-                    legacy_batch = self.legacy.fetch(target.key, remaining)
-                    if legacy_batch is not None:
-                        batches.append(legacy_batch)
-                        legacy_ends = {bar.bar_end for bar in legacy_batch.bars}
-                        remaining = tuple(item for item in remaining if item not in legacy_ends)
-                if remaining:
-                    batch = self.provider.fetch(target.key, remaining)
-                    provider_requests += 1
-                    batches.append(batch)
-                self._publish_direct(target, tuple(batches))
+                batch = self.provider.fetch(target.key, target.missing)
+                provider_requests += 1
+                self._publish_direct(target, (batch,))
                 applied += 1
             except Exception as exc:  # noqa: BLE001 - isolate one product/dataset
                 if _is_global_failure(exc):
@@ -606,22 +488,14 @@ class HistoricalDataManager:
 
     def _publish_direct(self, target: _Target, batches: tuple[BarBatch, ...]) -> None:
         merged = {bar.bar_end: bar for bar in target.existing}
-        source_kinds: set[str] = set()
         digests: list[str] = []
         for batch in batches:
-            source_kinds.add(batch.source_kind)
             digests.append(batch.source_digest)
             for bar in batch.bars:
                 merged[bar.bar_end] = bar
         bars = tuple(merged[item] for item in target.expected if item in merged)
         if tuple(bar.bar_end for bar in bars) != target.expected:
             raise StorageError("TARGET_WINDOW_INCOMPLETE")
-        if source_kinds == {"legacy_staging"}:
-            source_kind = "legacy_staging"
-        elif source_kinds <= {"rqdata"}:
-            source_kind = "rqdata"
-        else:
-            source_kind = "bootstrap_mixed"
         digest = _combined_digest(digests or ["0" * 64])
         staged = self.store.stage(
             PublishRequest(
@@ -630,7 +504,7 @@ class HistoricalDataManager:
                 target.month,
                 bars,
                 target.expected,
-                SourceMetadata(source_kind=source_kind, source_digest=digest),
+                SourceMetadata(source_kind="rqdata", source_digest=digest),
             )
         )
         self._commit_staged(staged, target)

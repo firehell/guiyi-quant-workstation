@@ -152,7 +152,7 @@ def test_latest_complete_day_excludes_open_session_and_accepts_closed_session(tm
     session.close()
 
 
-def test_metadata_complete_returns_false_before_candidate_metadata_bootstrap(tmp_path) -> None:
+def test_metadata_complete_returns_false_before_active_metadata_sync(tmp_path) -> None:
     session, starts = _session(tmp_path)
     instrument = session.scalar(select(Instrument).where(Instrument.symbol == "jm"))
     assert instrument is not None

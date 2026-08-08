@@ -25,10 +25,10 @@ RQData 重建的历史行情底座。此结论只改变 active 合同和后续�
 
 ## 当前实现差异
 
-当前 `develop` 仍含已退役合同的代码、测试和命令入口；这些内容不再是 active 设计，也不应被
-用于新的数据构建。DFD-02 删除 Candidate/legacy/generated artifacts，DFD-03 收口 storage、
-catalog、models 和候选 `20260808_0036`，DFD-04/05/06 分别完成查询面、维护面和全量验证。
-在这些任务完成前，不把最终 8 表、3 CLI 或 natural-resume 行为表述为已实现。
+DFD-02 已删除 Candidate/Gate/Promotion、legacy importer、旧 CLI 入口及其生成工件；当前只保留
+`update|audit` 的过渡维护面。DFD-03 将收口 storage、catalog、models 和候选
+`20260808_0036`，DFD-04/05/06 分别完成查询面、维护面和全量验证。在这些任务完成前，不把最终
+8 表、3 CLI 或 natural-resume 行为表述为已实现。
 
 ## 外部操作状态
 
