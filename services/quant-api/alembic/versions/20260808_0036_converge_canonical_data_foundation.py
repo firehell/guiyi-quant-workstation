@@ -41,6 +41,7 @@ def upgrade() -> None:
     op.drop_table("data_gaps")
     op.drop_table("market_partitions")
     op.drop_table("market_datasets")
+    op.execute("DROP VIEW IF EXISTS data_core_main_contract_map")
     op.drop_table("main_contract_map")
 
     # Session identity becomes product-specific and deterministic. Existing

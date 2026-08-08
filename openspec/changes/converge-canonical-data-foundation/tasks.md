@@ -10,7 +10,7 @@
 - [x] 2.3 先写失败测试，再将 MarketDataset/MarketPartition/DataGap/MainContractMap ORM 收敛到当前事实唯一键与月分区约束
 - [x] 2.4 先写失败测试，再实现每日 ContractSpec ORM 和 metadata upsert repository
 - [x] 2.5 编写不可逆 Alembic migration：重塑 Catalog/Map/Specs 并 drop 明确列出的旧数据表
-- [ ] 2.6 在空数据库与 `20260808_0035` 隔离升级测试中验证新 head，确认 ORM metadata 不重建退出表
+- [x] 2.6 在空数据库与 `20260808_0035` 隔离升级测试中验证新 head，确认 ORM metadata 不重建退出表
 
 ## 3. Canonical 月分区与质量内核
 
@@ -51,7 +51,7 @@
 ## 7. 本地候选验证与文档
 
 - [x] 7.1 运行领域、Canonical、HistoricalDataManager、MarketDataService、CLI/API 定向测试和数据核心完整 pytest
-- [ ] 7.2 运行 ruff、类型检查、Alembic 隔离迁移测试、前端 unit/type/build 与 CLI dry-run smoke
+- [x] 7.2 运行 ruff、类型检查、Alembic 隔离迁移测试、前端 unit/type/build 与 CLI dry-run smoke
 - [x] 7.3 更新 `docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`、`docs/tasks/GY-DATA-CORE-V2.md`、`TESTING.md` 和 `STATUS.md`，只记录实际完成事实与外部 Gate
 - [x] 7.4 生成 Gate A 前的纯本地 exact-scope dry-run 能力并验证不构造 RQData client、不写生产 DB/正式 Canonical
 

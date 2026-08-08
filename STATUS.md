@@ -34,9 +34,10 @@ live、真实通知和自动订单保持关闭。
 
 ## 本地验证
 
-- 后端与工程完整回归：2503 passed，56 skipped；其中隔离 PostgreSQL migration tests
-  因未配置专用可丢弃数据库而跳过。
-- ruff、mypy、OpenSpec strict validation、Alembic `0035:0036 --sql` 均通过。
+- 后端与工程完整回归：2497 passed，20 skipped。
+- 可丢弃 PostgreSQL 16 隔离 migration：21 passed，覆盖空库和 `0035→0036`；
+  Alembic `0035:0036 --sql` 也通过。
+- ruff、mypy 与 OpenSpec strict validation 均通过。
 - 前端：52 passed，1 skipped；TypeScript 与生产 build 通过。
 - 浏览器 smoke 已验证 Market-only 页面、新 series query 和缺少正式候选数据时的
   fail-closed 提示；不构成 Gate C 数据验收。
