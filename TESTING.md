@@ -30,6 +30,22 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q services/quant-api/tests/data_foundation
 ```
 
+C2.5 Candidate target 的 focused fixture 测试（只使用临时 root 和 SQLite；不读取
+`GUIYI_CANDIDATE_DATABASE_URL` 的真实值）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_composition.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/data_foundation/test_maintenance.py
+```
+
+该组覆盖 Candidate fresh/extend metadata、root containment、环境变量只作为不回显的连接来源、
+historical provider Calendar/Session facts，以及 direct `1w` 的 full-ISO-week/provider-weekly 对齐；
+不是 Gate A，也不连接真实 RQData、Candidate DB 或 Canonical。
+
 ## Alembic
 
 无数据库写入的 SQL 生成检查：
@@ -76,3 +92,12 @@ git status --short
 
 另做旧数据语言的 active-reference 扫描。Alembic 历史和 OpenSpec archive 可保留历史名称；
 active 代码、前端与 canonical 文档不得依赖它们。
+
+C2.5 还需确认已删除的一次性 operator 没有 active source reference：
+
+```bash
+rg -n -i 'gate_a_operator|candidate_rqdata_operator|candidate[_-]gate[_-]a' \
+  services/quant-api/app services/quant-api/tests apps/quant-web docs \
+  STATUS.md PROJECT_SOURCE.md DECISIONS.md \
+  --glob '!**/alembic/**' --glob '!openspec/changes/archive/**'
+```

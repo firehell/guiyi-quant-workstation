@@ -23,6 +23,8 @@ def add_data_commands(
     selector.add_argument("--universe", choices=("active",))
     update.add_argument("--since")
     update.add_argument("--through")
+    update.add_argument("--candidate-root", type=Path)
+    update.add_argument("--candidate-mode", choices=("fresh", "extend"))
     update.add_argument("--apply", action="store_true")
 
     bootstrap = commands.add_parser("bootstrap")
@@ -36,3 +38,4 @@ def add_data_commands(
 
     audit = commands.add_parser("audit")
     audit.add_argument("--universe", choices=("active",), required=True)
+    audit.add_argument("--candidate-root", type=Path)

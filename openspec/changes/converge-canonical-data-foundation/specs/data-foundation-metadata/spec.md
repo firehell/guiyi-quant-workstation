@@ -44,6 +44,13 @@
 - **WHEN** `active_history_floor` 为 `2023-01-01` 且执行 metadata 同步
 - **THEN** calendar 请求起点不早于 `2022-12-01`（floor 所在月月初减一个月）对应的最小前置窗
 
+### Requirement: Candidate 历史 session 事实
+Candidate SHALL 将实际交易所 Calendar 与 TradingSession 作为历史事实，在任何 direct 或 derived 发布前校验其覆盖 `effective_start → fixed through` 和所需最小前置 context。Candidate MUST NOT 以当前默认时段、其他交易所或未持久化的 provider 临时结果替代缺失历史 session 事实。
+
+#### Scenario: Candidate session 事实缺失
+- **WHEN** Candidate 的某个目标窗口缺少实际交易所 Calendar 或 TradingSession 事实
+- **THEN** 系统在构造 provider 请求和写入前以稳定 reason code 失败
+
 ### Requirement: 当前 Catalog 和 Gap
 `market_datasets` SHALL 对四字段 DatasetKey 唯一，`market_partitions` SHALL 对 `dataset_id + year + month` 唯一；`data_gaps` SHALL 只保存当前未解决缺口，并在 repair 成功且复验通过后删除相交的已修复记录。
 

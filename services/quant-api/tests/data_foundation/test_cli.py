@@ -3,7 +3,10 @@ from __future__ import annotations
 import io
 import json
 
-from app.guiyi_cli.main import build_parser, main
+import pytest
+
+from app.guiyi_cli.main import CliUsageError, build_parser, main
+from app.market_data.composition import CandidateTargetError
 from app.market_data.maintenance import MaintenanceResult
 
 
@@ -136,3 +139,78 @@ def test_removed_commands_are_parser_errors() -> None:
         code, payload = _run(["data", command], FakeManager())
         assert code == 2
         assert payload["status"] == "error"
+
+
+def test_candidate_update_uses_existing_command_with_explicit_target_and_no_database_flag() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "data",
+            "update",
+            "--symbol",
+            "jm",
+            "--through",
+            "2026-08-07",
+            "--candidate-root",
+            "data/canonical-candidates/jm",
+            "--candidate-mode",
+            "fresh",
+        ]
+    )
+
+    assert args.candidate_root.name == "jm"
+    assert args.candidate_mode == "fresh"
+    with pytest.raises(CliUsageError):
+        parser.parse_args(
+            [
+                "data",
+                "update",
+                "--symbol",
+                "jm",
+                "--database-url",
+                "postgresql://not-accepted",
+            ]
+        )
+
+
+def test_candidate_precondition_returns_only_the_bounded_diagnostic(monkeypatch) -> None:
+    def reject_target(*_args, **_kwargs):
+        raise CandidateTargetError("CANDIDATE_PRECONDITION_FAILED")
+
+    monkeypatch.setattr("app.guiyi_cli.main.HistoricalDataTarget.candidate", reject_target)
+    manager = FakeManager()
+
+    code, payload = _run(
+        [
+            "data",
+            "update",
+            "--symbol",
+            "jm",
+            "--through",
+            "2026-08-07",
+            "--candidate-root",
+            "data/canonical-candidates/jm",
+            "--candidate-mode",
+            "fresh",
+        ],
+        manager,
+    )
+
+    assert code == 1
+    assert set(payload) <= {
+        "reason_code",
+        "mode",
+        "candidate_identity_digest",
+        "recorded_through",
+        "requested_through",
+        "planned_count",
+        "applied_count",
+        "noop_count",
+        "blocked_count",
+        "failed_count",
+        "samples",
+    }
+    assert payload["reason_code"] == "CANDIDATE_PRECONDITION_FAILED"
+    assert payload["samples"] == []
+    assert manager.calls == []

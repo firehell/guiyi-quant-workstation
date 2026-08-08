@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -64,6 +65,44 @@ def _session(tmp_path):
     starts = tmp_path / "starts.csv"
     starts.write_text("product,window_start,note\njm,2025-01-06,test\n")
     return session, starts
+
+
+def _add_provider_calendar_facts(session: Session, start: date, end: date) -> None:
+    existing = {
+        value
+        for value in session.scalars(
+            select(TradingCalendar.trade_date).where(TradingCalendar.exchange_code == "DCE")
+        )
+    }
+    for offset in range((end - start).days + 1):
+        day = start + timedelta(days=offset)
+        if day not in existing:
+            session.add(
+                TradingCalendar(
+                    exchange_code="DCE",
+                    trade_date=day,
+                    is_trading_day=day.weekday() < 5,
+                    provider="rqdata",
+                )
+            )
+
+
+def _add_date_scoped_session_facts(session: Session, days: tuple[date, ...]) -> None:
+    for day in days:
+        session.add(
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name="provider_day",
+                start_time=time(9),
+                end_time=time(9, 5),
+                effective_from=day,
+                effective_to=day,
+                crosses_midnight=False,
+                is_active=True,
+                provider="rqdata",
+            )
+        )
 
 
 def test_database_coverage_uses_actual_exchange_sessions_and_complete_iso_week(tmp_path) -> None:
@@ -287,6 +326,118 @@ def test_rqdata_bar_adapter_normalizes_continuous_and_daily_bar_end(tmp_path) ->
     session.close()
 
 
+def test_rqdata_weekly_adapter_requests_full_iso_context_and_rejects_other_weeks(
+    tmp_path,
+) -> None:
+    """A provider row can only satisfy the ISO week it actually belongs to."""
+    session, _starts = _session(tmp_path)
+    expected = datetime(2026, 1, 2, 1, 5, tzinfo=UTC)
+    frame = pd.DataFrame(
+        [
+            {
+                "datetime": datetime(2025, 12, 26),
+                "trading_date": date(2025, 12, 26),
+                "open": 100,
+                "high": 101,
+                "low": 99,
+                "close": 100,
+                "volume": 10,
+                "total_turnover": 1000,
+                "open_interest": 20,
+            }
+        ]
+    )
+    client = FakeClient(frame)
+    adapter = RQDataMarketAdapter(session=session, client=client)
+
+    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1w"), (expected,))
+
+    assert client.calls == [("JM88", date(2025, 12, 29), date(2026, 1, 4), "1w")]
+    assert batch.bars == ()
+    session.close()
+
+
+def test_rqdata_weekly_adapter_maps_rows_by_iso_week_not_provider_position(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    first = datetime(2026, 1, 2, 1, 5, tzinfo=UTC)
+    second = datetime(2026, 1, 9, 1, 5, tzinfo=UTC)
+    frame = pd.DataFrame(
+        [
+            {
+                "datetime": datetime(2026, 1, 9),
+                "trading_date": date(2026, 1, 9),
+                "open": 200,
+                "high": 201,
+                "low": 199,
+                "close": 200,
+                "volume": 10,
+                "total_turnover": 2000,
+                "open_interest": 20,
+            },
+            {
+                "datetime": datetime(2026, 1, 2),
+                "trading_date": date(2026, 1, 2),
+                "open": 100,
+                "high": 101,
+                "low": 99,
+                "close": 100,
+                "volume": 10,
+                "total_turnover": 1000,
+                "open_interest": 20,
+            },
+        ]
+    )
+    adapter = RQDataMarketAdapter(session=session, client=FakeClient(frame))
+
+    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1w"), (first, second))
+
+    assert [(bar.bar_end, bar.close) for bar in batch.bars] == [
+        (first, Decimal("100")),
+        (second, Decimal("200")),
+    ]
+    session.close()
+
+
+def test_historical_session_coverage_rejects_missing_provider_context(tmp_path) -> None:
+    """A current session template cannot certify the required historical context."""
+    session, starts = _session(tmp_path)
+    coverage = DatabaseCoverageSource(session, starts)
+
+    with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+        coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
+
+    session.close()
+
+
+def test_historical_session_coverage_rejects_open_ended_current_hours_row(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    _add_provider_calendar_facts(session, date(2024, 12, 1), date(2025, 1, 12))
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+
+    with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+        coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
+
+    session.close()
+
+
+def test_historical_session_coverage_requires_full_iso_week_calendar_context(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    _add_provider_calendar_facts(session, date(2024, 12, 1), date(2025, 1, 10))
+    _add_date_scoped_session_facts(session, tuple(date(2025, 1, day) for day in range(6, 11)))
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+
+    with pytest.raises(infrastructure.InfrastructureError, match="CANDIDATE_SESSION_FACT_MISSING"):
+        coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
+
+    _add_provider_calendar_facts(session, date(2025, 1, 11), date(2025, 1, 12))
+    session.commit()
+
+    coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
+    session.close()
+
+
 def test_rqdata_adapter_does_not_initialize_client_until_provider_read(
     tmp_path, monkeypatch
 ) -> None:
@@ -459,6 +610,15 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
         def get_trading_dates(self, start_date, end_date):
             return (date(2025, 1, 2),)
 
+        def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
+            return pd.DataFrame(
+                {"trading_hours": ["09:00-09:01"]},
+                index=pd.MultiIndex.from_tuples(
+                    [("JM2509", date(2025, 1, 2))],
+                    names=("order_book_id", "date"),
+                ),
+            )
+
         def get_tick_size(self, order_book_id):
             return pd.Series({order_book_id: 0.5})
 
@@ -473,6 +633,86 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
 
     assert calls == [("JM", 2, 1)]
     assert snapshot.contracts[0]["expired_date"] == date(2025, 9, 25)
+
+
+def test_rqdata_metadata_uses_historical_trading_period_facts_not_current_hours() -> None:
+    class FuturesApi:
+        def get_dominant(
+            self, underlying_symbol, start_date, end_date, rule=0, rank=1
+        ):
+            return pd.Series(
+                ["JM2509"],
+                index=pd.to_datetime(["2025-01-02"]),
+                name="dominant",
+            )
+
+        def get_trading_parameters(self, order_book_id, start_date, end_date):
+            return pd.DataFrame()
+
+    class Api:
+        futures = FuturesApi()
+
+        def all_instruments(self, type):
+            return pd.DataFrame(
+                [
+                    {
+                        "underlying_symbol": "JM",
+                        "exchange": "DCE",
+                        "order_book_id": "JM2509",
+                        "symbol": "JM2509",
+                        "contract_multiplier": 60,
+                        "listed_date": date(2025, 1, 1),
+                        "de_listed_date": date(2025, 9, 25),
+                        "maturity_date": date(2025, 9, 30),
+                        "trading_hours": "21:00-23:00",
+                    }
+                ]
+            )
+
+        def get_trading_dates(self, start_date, end_date):
+            return (date(2025, 1, 2),)
+
+        def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
+            assert order_book_ids == ("JM2509",)
+            assert (start_date, end_date, frequency) == (
+                date(2024, 12, 1),
+                date(2025, 1, 2),
+                "1m",
+            )
+            return pd.DataFrame(
+                {"trading_hours": ["09:00-15:00"]},
+                index=pd.MultiIndex.from_tuples(
+                    [("JM2509", date(2025, 1, 2))],
+                    names=("order_book_id", "date"),
+                ),
+            )
+
+        def get_tick_size(self, order_book_id):
+            return pd.Series({order_book_id: 0.5})
+
+    client = object.__new__(infrastructure._RqdatacClient)
+    client.api = Api()
+
+    snapshot = client.metadata_snapshot(
+        ("jm",),
+        date(2025, 1, 2),
+        {"jm": date(2025, 1, 1)},
+    )
+
+    assert snapshot.sessions == (
+        {
+            "exchange_code": "DCE",
+            "instrument_symbol": "jm",
+            "session_name": "session_1",
+            "start_time": time(9),
+            "end_time": time(15),
+            "effective_from": date(2025, 1, 2),
+            "effective_to": date(2025, 1, 2),
+            "crosses_midnight": False,
+            "is_active": True,
+            "provider": "rqdata",
+        },
+    )
 
 
 def test_intraday_dataset_start_floors_to_rqdata_minute_history(tmp_path) -> None:

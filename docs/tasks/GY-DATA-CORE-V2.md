@@ -56,6 +56,22 @@ guiyi data audit --universe active
 
 新 Gate A 在隔离 Candidate DB + Candidate Canonical Root 上使用 **RQData-only `update`**（`legacy=None`），复用正常 HistoricalDataManager，不新建重建引擎。
 
+repository-only C2.5 前置已实现于既有 `guiyi data update/audit`：Candidate root 必须是
+`data/canonical-candidates/*` 内的非 symlink 子目录，且与 active root 隔离；Candidate DB 只从
+环境变量 `GUIYI_CANDIDATE_DATABASE_URL` 读取并且必须不同于 active DB。该变量的值、URL 与任何
+凭据不属于 CLI、日志或诊断输出。
+
+Candidate metadata 只有一份：immutable identity（Catalog/Session、root、universe、floor、source
+policy、code SHA 的非敏感摘要）和唯一 mutable `recorded_through`。`fresh` 要求 root 与十张最小表
+皆为空；`extend` 要求 identity 相同且 requested through 不倒退，并单调推进 recorded through。没有
+reset/resume/清空/自动恢复入口。apply update 可先由 metadata 同步取得 provider 事实，随后在任何
+Bar provider 请求或发布前校验历史 Calendar/Session provider facts；direct `1w` 使用完整 ISO-week
+请求和 provider weekly 行的 ISO-week 对齐。所有失败仅输出字段白名单、固定 reason code 和最多
+20 项受限样本。
+
+这些只是在临时 root 和隔离测试数据库中的代码/fixture 验证，不是 Gate A 的 Candidate 构建，也未执行
+真实 RQData、Candidate/生产 DB、Canonical 写入或任何 Gate A/B/C。
+
 既有 migration-only legacy 白名单 bootstrap 实现进入 freeze：不新增能力、不参加新 Gate A。旧 raw/processed 本次不删除，也不得进入日常更新组装、active Catalog 或 MarketDataService。Gate C 通过后删除临时读取器；最终重建为自 `active_history_floor` 起的 RQData 重建。
 
 ## 验收与 Gate
@@ -66,7 +82,8 @@ guiyi data audit --universe active
 - 后端全套、ruff、mypy、前端 unit/build 通过。
 - Alembic offline SQL 通过；隔离 PostgreSQL 可用时跑实际升级测试。
 - active 代码、前端和 canonical 文档不依赖已退役数据语言。
-- Recent Trusted Window policy 与 RQData-only Candidate composition 本地验证通过。
+- Recent Trusted Window 与 RQData-only Candidate composition 的 C2.5 fresh/extend metadata、
+  root containment、historical session facts 和 direct-weekly ISO 对齐均有本地 fixture 验证。
 
 ### 受控外部 Gate
 

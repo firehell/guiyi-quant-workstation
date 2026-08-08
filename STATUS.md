@@ -32,6 +32,11 @@ live、真实通知和自动订单保持关闭。
 - V1 Recent Trusted Window：`data/universe/active_history_floor.txt` = `2023-01-01`；
   `effective_start = max(product_window_start, floor)`；RQData-only Candidate composition
   已提供；legacy Gate A 路径已 freeze。
+- C2.5 repository-only Candidate target：既有 `guiyi data update/audit` 支持显式、隔离的
+  Candidate root；Candidate DB 仅由不回显的 `GUIYI_CANDIDATE_DATABASE_URL` 环境变量提供。
+  single metadata 固定 identity 并单调记录 `recorded_through`；fresh/extend、root containment、
+  provider historical Calendar/Session facts 与 direct `1w` ISO-week/provider-weekly 对齐均已
+  在 fixture 中验证。不存在 reset/resume/清空/自动恢复入口。
 - Alembic `20260808_0036`：候选不可逆最小 schema，未应用生产。
 - OpenSpec：`converge-canonical-data-foundation` active；旧 M3 已 superseded 归档。
 
@@ -42,6 +47,12 @@ live、真实通知和自动订单保持关闭。
 - Alembic `0035:0036 --sql` 通过；隔离 PostgreSQL 升级测试本轮未配置 URL，未重跑。
 - 前端：52 passed，1 skipped；生产 build（含 `vue-tsc`）通过。
 - 浏览器 smoke 与真实 RQData/Candidate 写入本轮未执行。
+
+本次 C2.5 worktree 验证：focused Candidate 52 passed、完整 `data_foundation` 95 passed、ruff、
+mypy、离线 Alembic SQL 和 OpenSpec strict 均通过；隔离 migration URL 未配置，故未运行会写入
+隔离 PostgreSQL 的测试。前端 unit/build 未完成：本 worktree 的 `apps/quant-web/node_modules` 缺少
+`vite` 与 `vue-tsc`，分别导致 bundle topology test 和 build 在工具启动前失败；未安装依赖或修改前端。
+本次未调用真实 RQData，未写入 Candidate/生产 DB、Canonical，也未执行 Gate A/B/C。
 
 ## 已确认的现有生产事实
 

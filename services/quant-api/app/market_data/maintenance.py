@@ -35,6 +35,9 @@ class CoverageSource(Protocol):
     def product_start(self, symbol: str) -> date: ...
     def latest_complete_day(self, products: tuple[str, ...]) -> date: ...
     def metadata_complete(self, products: tuple[str, ...], through: date) -> bool: ...
+    def require_historical_session_facts(
+        self, products: tuple[str, ...], through: date
+    ) -> None: ...
     def expected_bar_ends(
         self,
         key: DatasetKey,
@@ -226,6 +229,7 @@ class HistoricalDataManager:
             )
             self._metadata_watermarks.add((request.products, through))
         if request.apply:
+            self.coverage.require_historical_session_facts(request.products, through)
             return self._execute_streaming(
                 "update",
                 request.products,
@@ -250,6 +254,7 @@ class HistoricalDataManager:
             )
             self._metadata_watermarks.add((request.products, through))
         if request.apply:
+            self.coverage.require_historical_session_facts(request.products, through)
             return self._execute_streaming(
                 "bootstrap",
                 request.products,
