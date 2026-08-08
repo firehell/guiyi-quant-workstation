@@ -22,6 +22,7 @@ from app.models.data_center import (
     Instrument,
     MainContractMap,
     MarketDataFile,
+    TradingSession,
 )
 from app.services.rqdata_ingest.db import as_date
 from app.services.rqdata_ingest.client import RqDataClient
@@ -295,12 +296,13 @@ def test_catalog_ingest_writes_contracts_calendar_sessions_and_raw_file(tmp_path
         result = ingestor.run(start_date=date(2024, 1, 1), end_date=date(2024, 1, 31))
         session.commit()
 
-        assert result.rows == 4
+        assert result.rows == 6
         assert session.scalar(select(Instrument).where(Instrument.symbol == "rb")) is not None
         contract = session.scalar(select(Contract).where(Contract.contract_code == "RB2405"))
         assert contract is not None
         assert contract.contract_multiplier == 10
         assert contract.product == "rb"
+        assert session.scalar(select(func.count()).select_from(TradingSession)) == 3
         assert session.scalar(select(func.count()).select_from(MarketDataFile)) == 1
         assert (tmp_path / "data/raw/rqdata/catalog/futures_contracts.parquet").exists()
 

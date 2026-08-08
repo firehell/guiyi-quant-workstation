@@ -382,3 +382,106 @@ def test_m2_audit_reports_invalid_catalog_identity_without_crashing() -> None:
     assert "M2_DATASET_IDENTITY_INVALID" in {
         item["code"] for item in result.extras["findings"]
     }
+
+
+def test_m2_unreadable_finding_includes_probe_reason_code() -> None:
+    from app.services.data_operations.market_data_probe import ProbeOutcome, ProbeReasonCode
+    from app.services.data_operations.m2_architecture_audit import build_m2_audit_checker
+
+    datasets = [
+        *[_dataset(kind=DatasetKind.CONTINUOUS, frequency=freq, contract="JM.MAIN") for freq in BarFrequency],
+        *[_dataset(kind=DatasetKind.ACTUAL_DOMINANT, frequency=freq, contract="JM2609") for freq in BarFrequency],
+    ]
+
+    class Catalog:
+        def list_datasets(self, *, symbol: str):
+            return datasets if symbol == "jm" else []
+
+        def list_effective_partitions(self, _key: DatasetKey):
+            return [_partition()]
+
+        def list_gaps(self, _key: DatasetKey):
+            return []
+
+        def list_main_contract_mappings(self, **_kwargs: object):
+            return (SimpleNamespace(symbol="jm", actual_contract="JM2609", trading_day=START.date()),)
+
+    service = AuditV2ApplicationService(
+        checkers={
+            AuditScope.M2: build_m2_audit_checker(
+                catalog=Catalog(),
+                verify_partition=lambda _key, _partition: SimpleNamespace(
+                    lineage=SimpleNamespace(
+                        origin=(
+                            "provider_direct"
+                            if _key.frequency in {BarFrequency.M1, BarFrequency.D1, BarFrequency.W1}
+                            else "local_aggregate"
+                        ),
+                        source_frequency=(
+                            None
+                            if _key.frequency in {BarFrequency.M1, BarFrequency.D1, BarFrequency.W1}
+                            else BarFrequency.M1
+                        ),
+                    )
+                ),
+                market_data_readable=lambda *_args: ProbeOutcome(
+                    False, reason_code=ProbeReasonCode.CALENDAR_MISSING.value
+                ),
+            )
+        }
+    )
+    result = service.run(AuditRequest(scope=AuditScope.M2, symbols=("jm",)))
+    unreadables = [
+        item for item in result.extras["findings"] if item["code"] == "M2_MARKET_DATA_UNREADABLE"
+    ]
+    assert unreadables
+    assert all(item["facts"]["reason_code"] == "calendar_missing" for item in unreadables)
+
+
+def test_m2_mapped_contract_dataset_missing_is_distinct_from_invalid_map() -> None:
+    from app.services.data_operations.m2_architecture_audit import build_m2_audit_checker
+
+    datasets = [
+        *[_dataset(kind=DatasetKind.CONTINUOUS, frequency=freq, contract="JM.MAIN") for freq in BarFrequency],
+        *[_dataset(kind=DatasetKind.ACTUAL_DOMINANT, frequency=freq, contract="JM2609") for freq in BarFrequency],
+    ]
+
+    class Catalog:
+        def list_datasets(self, *, symbol: str):
+            return datasets if symbol == "jm" else []
+
+        def list_effective_partitions(self, _key: DatasetKey):
+            return [_partition()]
+
+        def list_gaps(self, _key: DatasetKey):
+            return []
+
+        def list_main_contract_mappings(self, **_kwargs: object):
+            return (SimpleNamespace(symbol="jm", actual_contract="JM2701", trading_day=START.date()),)
+
+    service = AuditV2ApplicationService(
+        checkers={
+            AuditScope.M2: build_m2_audit_checker(
+                catalog=Catalog(),
+                verify_partition=lambda _key, _partition: SimpleNamespace(
+                    lineage=SimpleNamespace(
+                        origin=(
+                            "provider_direct"
+                            if _key.frequency in {BarFrequency.M1, BarFrequency.D1, BarFrequency.W1}
+                            else "local_aggregate"
+                        ),
+                        source_frequency=(
+                            None
+                            if _key.frequency in {BarFrequency.M1, BarFrequency.D1, BarFrequency.W1}
+                            else BarFrequency.M1
+                        ),
+                    )
+                ),
+                market_data_readable=lambda *_args: True,
+            )
+        }
+    )
+    result = service.run(AuditRequest(scope=AuditScope.M2, symbols=("jm",)))
+    codes = {item["code"] for item in result.extras["findings"]}
+    assert "M2_MAPPED_CONTRACT_DATASET_MISSING" in codes
+    assert "M2_MAIN_CONTRACT_MAP_INVALID" not in codes

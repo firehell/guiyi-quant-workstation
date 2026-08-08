@@ -19,10 +19,18 @@
 api/web 由 launchd 指向 `/Volumes/扩展盘/guiyi-quant-workstation`；`com.guiyi.quant-worker-signals` 保持 bootout。
 已配置 `GUIYI_CANONICAL_DATA_ROOT` 指向正式 Canonical 根，Market bars 只读恢复；
 行情页已去掉「浏览 / 严格研究」切换。通知、live 及退役 HTDY label 保持关闭，自动交易仍不在项目范围。
-前序 `v0.1` / `94f70c72…` 仍为 release 锚点。2026-08-08 已按用户意图执行生产 Alembic `20260805_0033 → 20260808_0034`（退役面表 drop）；未执行 RQData/Canonical 写入。
+前序 `v0.1` / `94f70c72…` 仍为 release 锚点。2026-08-08 已按用户意图执行生产 Alembic `20260805_0033 → 20260808_0034`（退役面表 drop）。
 
 Task 07 Stage A/B 的最新仓库证据记录 release/main/tag 已收口；历史退役窗口曾回读
-`20260803_0032`，当前生产 head 为 `20260808_0034`。
+`20260803_0032`。**2026-08-08 M3 G0 只读回读**：生产 Alembic head = `20260808_0035`；
+`data_profiles` / `profile_active_bindings` / `after_market_scheduler_checkpoints` 均 absent；
+`GUIYI_CANONICAL_DATA_ROOT` 指向 `data/parquet/canonical`（存在）；legacy `canonical/bars` 与
+`data-core-v2` 根 absent；Catalog partition URI 全部为 `provider/...` 相对形态（1258）；
+DataGap=0。Calendar 已有 CFFEX/CZCE/DCE/GFEX/INE/SHFE（G2 apply 后各所 max 达 2026-08-08）；
+CNFE `trading_calendars` / `trading_sessions` 已按单次意图从生产库删除（7897 / 77 行）；非 CNFE 行数未变。
+Sessions：active 69 实际交易所模板 **69/69**（253 行）。
+`TradingSessionClock` / `product_sessions` 已去掉 CNFE/CZCE reader fallback，缺元数据 fail-closed。
+MainContractMap rank1 覆盖 76 个 symbol。**尚未**宣布 Data Foundation Frozen。
 
 Task 07 Stage C 已收窄为“JM 目标 Canonical 验收与精确缺口计划”。历史 candidate 基于 `develop@364753e72458641e226280e326841919539c1354`，仅从 `config/data_core_v2_targets.yaml`、Catalog 和 MainContractMap 生成 JM 显式目标，再通过既有 Canonical reader 和 `MarketDataService` 只读验收。该 commit 与既有协作记录是历史定位信息，不是继续开发的前置授权。
 
@@ -37,9 +45,8 @@ Web 观察面已精简为 **Market 工作台 only**（`/` → `/market`；69 品
 **保留**：`/api/v1/market` Canonical 历史读（含兼容 `/api/symbols`）、`/api/runtime`、
 CLI `guiyi data *` / `guiyi runtime status`、Canonical data、`packages/quant-core`。
 `/api/v1/data` data_center HTTP、Profile/Binding 选择器与旧 after-market archive 生产路径
-已从仓库卸除；候选 Alembic `20260808_0035` 可 drop
-`data_profiles` / `profile_active_bindings` / `after_market_scheduler_checkpoints`
-（**未**授权生产 upgrade）。日常历史更新入口为 `guiyi data update`。
+已从仓库卸除；生产 Alembic `20260808_0035` 已执行，上述三表在 DB 中 absent
+（ORM stale 定义清理见 OpenSpec `m3-v2-production-correctness`）。日常历史更新入口为 `guiyi data update`。
 盘中 Live / Task 06 应用路径与生产表均已退役；盘中能力待后续新实现重建。
 tracked legacy evidence 以及主工程被 Git 忽略的
 `/Volumes/扩展盘/guiyi-quant-workstation/backtests/`（87 个文件，约 50 MB）已精确清理。
@@ -99,7 +106,8 @@ production_writes=false
 | slim-web-to-market | completed on develop + prod drop | Web 仅 Market；应用面与 DB 表已删；保留 market/data/runtime API+CLI 与 quant-core |
 | retired-surface-drop-0034 | completed / production applied | `20260805_0033→20260808_0034`；18 表 + trigger drop；Catalog 保留 |
 | docs-hygiene + dominants Catalog | implementation on develop | Market-only 文档收口；删 reports/会话产物；dominants coverage 对齐 Catalog；未做正式补数 |
-| data-foundation-v2-closure | implementation on develop | 单一 V2 语言：卸 data_center HTTP/Profile/Binding/legacy verify/after-market archive；update Direct/Derived 分算 + consistency 只读；候选 Alembic `0035`；**未**执行生产 upgrade / RQData / Canonical / 旧根删除 |
+| data-foundation-v2-closure | architecture closed / correctness open | 单一 V2 语言已收口；生产 `0035` + legacy 根清理已发生；M3 生产正确性进行中，**非** Foundation Frozen |
+| m3-v2-production-correctness | in progress on develop | OpenSpec active；G0/Wave1/G2 完成；reader fallback 已删；生产 CNFE calendar/session 已删；1w / G1 / 生产 Gate 未完成 |
 
 ## 未完成事项与执行边界
 
@@ -124,7 +132,7 @@ production_writes=false
 
 | 事实 | 当前证据值 | 边界 |
 |---|---|---|
-| PostgreSQL revision | `20260808_0034` | 2026-08-08 退役面 drop 后 head；先前为 `20260805_0033` / `20260803_0032` |
+| PostgreSQL revision | `20260808_0035` | M3 G0 只读回读；`0034` 退役面 drop 之后 head |
 | 生产 Runtime checkout | `develop` 工作树（非 GuiyiRuntime） | launchd api/web 指向本仓；live/通知关闭；signal worker bootout |
 | 21 品种退役 receipt | packet `fee133a5…`; residual DB/files `0/0` | 删除已提交，rollback tag 只回退代码，数据恢复需从 RQData 重建 |
 | Canonical closeout snapshot | 85 datasets / 85 partitions / 0 gaps / 255 files / staging 0 | Task 04 历史只读证据；Stage C 将重新验收明确目标 |

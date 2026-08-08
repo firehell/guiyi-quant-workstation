@@ -273,5 +273,123 @@ def test_planner_blocks_any_target_window_with_catalog_gap() -> None:
     assert exc_info.value.code == "HISTORICAL_UPDATE_DATA_GAP"
 
 
+def test_planner_materializes_exact_missing_subwindows() -> None:
+    """Catalog hole in a sub-range must not keep the full requested window."""
+    since = date(2026, 7, 1)
+    through = date(2026, 8, 7)
+    start, end = inclusive_trading_days_to_half_open(since, through)
+    covered_end = datetime(2026, 7, 31, tzinfo=UTC)
+
+    def covered_windows(probe):
+        if probe.frequency is BarFrequency.M1 and probe.dataset_kind is DatasetKind.CONTINUOUS:
+            return ((start, covered_end),)
+        return ((start, end),)
+
+    mappings = tuple(
+        CanonicalMainContractMapping(
+            id=index,
+            symbol="jm",
+            trading_day=day,
+            actual_contract="JM2609",
+            data_version="v",
+            created_at=None,
+        )
+        for index, day in enumerate((since, through), start=1)
+    )
+    planner = HistoricalUpdateTargetPlanner(
+        list_mappings=lambda *_a: mappings,
+        covered_windows=covered_windows,
+        latest_completed_day=lambda _s: through,
+        mapping_overlap_trading_days=0,
+    )
+    plan = planner.plan(
+        HistoricalUpdateRequest(
+            products=("jm",),
+            since=since,
+            through=through,
+            apply=False,
+        )
+    )
+    m1 = [
+        item
+        for item in plan.direct_targets
+        if item.frequency is BarFrequency.M1 and item.dataset_kind is DatasetKind.CONTINUOUS
+    ]
+    assert len(m1) == 1
+    assert m1[0].start == covered_end
+    assert m1[0].end == end
+    assert m1[0].start > start
+
+
+def test_explicit_since_with_full_coverage_is_noop_not_force_refresh() -> None:
+    start, end = inclusive_trading_days_to_half_open(date(2026, 8, 3), date(2026, 8, 3))
+
+    planner = HistoricalUpdateTargetPlanner(
+        list_mappings=lambda *_a: (
+            CanonicalMainContractMapping(
+                id=1,
+                symbol="jm",
+                trading_day=date(2026, 8, 3),
+                actual_contract="JM2609",
+                data_version="v",
+                created_at=None,
+            ),
+        ),
+        covered_windows=lambda _probe: ((start, end),),
+        latest_completed_day=lambda _s: date(2026, 8, 3),
+        mapping_overlap_trading_days=0,
+    )
+    plan = planner.plan(
+        HistoricalUpdateRequest(
+            products=("jm",),
+            since=date(2026, 8, 3),
+            through=date(2026, 8, 3),
+            apply=False,
+        )
+    )
+    assert plan.direct_targets == ()
+    assert plan.aggregate_targets == ()
+
+
+def test_catchup_discovers_actual_dominant_only_hole_without_since() -> None:
+    """Continuous complete + AD hole must not NOOP when --since is omitted."""
+    start, end = inclusive_trading_days_to_half_open(date(2026, 8, 1), date(2026, 8, 3))
+    continuous_cover = ((start, end),)
+
+    def covered_windows(probe):
+        if probe.dataset_kind is DatasetKind.CONTINUOUS:
+            return continuous_cover
+        # actual_dominant entirely missing
+        return ()
+
+    mappings = tuple(
+        CanonicalMainContractMapping(
+            id=index,
+            symbol="jm",
+            trading_day=day,
+            actual_contract="JM2701",
+            data_version="v",
+            created_at=None,
+        )
+        for index, day in enumerate(
+            (date(2026, 8, 1), date(2026, 8, 2), date(2026, 8, 3)),
+            start=1,
+        )
+    )
+    planner = HistoricalUpdateTargetPlanner(
+        list_mappings=lambda *_a: mappings,
+        covered_windows=covered_windows,
+        latest_completed_day=lambda _s: date(2026, 8, 3),
+        mapping_overlap_trading_days=0,
+    )
+    plan = planner.plan(HistoricalUpdateRequest(products=("jm",), apply=False))
+    assert plan.direct_targets
+    assert any(
+        item.dataset_kind is DatasetKind.ACTUAL_DOMINANT
+        and item.contract_or_series == "JM2701"
+        for item in plan.direct_targets
+    )
+
+
 DIRECT_SET = {BarFrequency.M1, BarFrequency.D1, BarFrequency.W1}
 DERIVED_SET = {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}

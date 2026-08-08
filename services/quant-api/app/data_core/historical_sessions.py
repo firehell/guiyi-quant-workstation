@@ -58,7 +58,12 @@ def product_sessions(
         raise ContractValidationError(
             facts={"field": "calendar", "reason": "missing"}
         )
-    windows = TradingSessionClock(session).windows_for_trading_days(
+    clock = TradingSessionClock(session)
+    if not clock.has_session_templates(product=normalized, exchange=exchange):
+        raise ContractValidationError(
+            facts={"field": "sessions", "reason": "missing"}
+        )
+    windows = clock.windows_for_trading_days(
         trading_days,
         product=normalized,
         exchange=exchange,

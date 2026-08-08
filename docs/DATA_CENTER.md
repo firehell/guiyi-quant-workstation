@@ -8,6 +8,7 @@
 
 - Web 仅 Market；行情列表 `dominants.bars_coverage` / `quote_ready` 与 `/coverage/canonical` 同为 Catalog 口径；K 线只读 Canonical，DataGap fail-closed，不回退 legacy。
 - `/api/v1/data` data_center HTTP、Profile/Binding 选择器与旧 after-market archive 生产路径已卸；兼容 `/api/symbols` 挂在 market。日常历史更新入口为 `guiyi data update`（Direct/Derived 分算；Catalog↔FS consistency 只读；不扫盘注册 orphan）。
+- 生产 Alembic head（M3 G0 只读回读）=`20260808_0035`；`data_profiles` / `profile_active_bindings` / `after_market_scheduler_checkpoints` 已 absent。Canonical 根为 `data/parquet/canonical`；legacy `canonical/bars` 与 `data-core-v2` 根 absent。G2 后 active 69 实际交易所 Calendar/Session 已齐；生产 CNFE `trading_calendars`/`trading_sessions` 已按意图删除。Reader 仅查实际 `exchange_code`，缺元数据 fail-closed。
 - Task 05 已 completed on develop（trusted consumers / inventory）；Backtest 子系统已退役；Signal/Review HTTP 已卸。
 - 行情页已去掉「浏览 / 严格研究」切换；§2.1.1 双模式 browser|research + live 合同标 **superseded / UI 已精简**，勿当 current product。
 - `data/reports/**` 一次性审计快照已从工作树删除，结论以本文与 Git history 为准。下文历史章节若仍写出 `data/reports/...` 路径，一律视为 Git-history 定位，不是工作树现存文件。
@@ -48,7 +49,7 @@ RQData
 - PostgreSQL 只保存轻量 catalog、manifest/checksum、coverage、quality、gap、mapping 与任务状态。
 - 与 gap 相交的读取必须失败关闭；同一唯一键数据相同可幂等合并，OHLCV/identity 冲突必须可见。
 - Profile/ActiveBinding/`MarketDataFile` 选择器与 data_center HTTP **已退役**，不得恢复为
-  active selector；候选 migration `20260808_0035` 可 drop 相关表（生产 upgrade 另需意图）。
+  active selector；生产 migration `20260808_0035` 已 drop 相关表（G0 回读 absent）。
 - V2 migration asset 只有 trusted historical bars 及最小 Catalog/Manifest/Gap/MainContractMap
   metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample、permanent derived
   period、重复 raw/standard/canonical bar layer 和 Profile/Binding/legacy lineage 均为 rebuild-only

@@ -325,8 +325,8 @@ def test_historical_jm_first_trading_day_after_holiday_has_no_night() -> None:
     ]
 
 
-def test_czce_ignores_cnfe_product_continuous_day_and_uses_builtin_segments() -> None:
-    """Wrong CNFE continuous 09:00-15:00 must not drive CZCE/cj expected coverage."""
+def test_missing_czce_sessions_fail_closed_without_builtin_or_cnfe() -> None:
+    """No CZCE templates → empty windows / blocked decision; never invent CNFE or hardcoded CZCE."""
     with _session() as session:
         trading_day = date(2026, 7, 7)
         session.add(
@@ -336,6 +336,15 @@ def test_czce_ignores_cnfe_product_continuous_day_and_uses_builtin_segments() ->
                 is_trading_day=True,
                 has_night_session=False,
                 provider="fixture",
+            )
+        )
+        session.add(
+            TradingCalendar(
+                exchange_code="CNFE",
+                trade_date=trading_day,
+                is_trading_day=True,
+                has_night_session=False,
+                provider="fixture_cnfe",
             )
         )
         session.add(
@@ -350,11 +359,82 @@ def test_czce_ignores_cnfe_product_continuous_day_and_uses_builtin_segments() ->
                 provider="fixture_bad_cnfe",
             )
         )
+        session.add(
+            TradingSession(
+                exchange_code="CNFE",
+                instrument_symbol=None,
+                session_name="cnfe_generic",
+                start_time=time(9, 0),
+                end_time=time(15, 0),
+                crosses_midnight=False,
+                is_active=True,
+                provider="fixture_cnfe_generic",
+            )
+        )
         session.commit()
 
         clock = TradingSessionClock(session)
         windows = clock.windows_for_trading_day(trading_day, product="cj", exchange="CZCE")
         expected_minutes = clock.expected_minute_count(trading_day, product="cj", exchange="CZCE")
+        decision = clock.decision(
+            product="cj",
+            exchange="CZCE",
+            now=datetime(2026, 7, 7, 10, 0),
+        )
+
+    assert windows == []
+    assert expected_minutes == 0
+    assert decision.phase == "blocked"
+    assert decision.reason == "trading_sessions_missing"
+
+
+def test_actual_exchange_sessions_used_without_cnfe_calendar_fallback() -> None:
+    """CZCE product templates drive windows; CNFE-only calendar/session rows stay unused."""
+    with _session() as session:
+        trading_day = date(2026, 7, 7)
+        session.add(
+            TradingCalendar(
+                exchange_code="CZCE",
+                trade_date=trading_day,
+                is_trading_day=True,
+                has_night_session=False,
+                provider="fixture",
+            )
+        )
+        # CNFE calendar alone must not cover a missing actual-exchange day.
+        session.add(
+            TradingCalendar(
+                exchange_code="CNFE",
+                trade_date=trading_day + timedelta(days=1),
+                is_trading_day=True,
+                has_night_session=False,
+                provider="fixture_cnfe",
+            )
+        )
+        for name, start_time, end_time in (
+            ("day_am1", time(9, 0), time(10, 15)),
+            ("day_am2", time(10, 30), time(11, 30)),
+            ("day_pm", time(13, 30), time(15, 0)),
+        ):
+            session.add(
+                TradingSession(
+                    exchange_code="CZCE",
+                    instrument_symbol="cj",
+                    session_name=name,
+                    start_time=start_time,
+                    end_time=end_time,
+                    crosses_midnight=False,
+                    is_active=True,
+                    provider="fixture",
+                )
+            )
+        session.commit()
+
+        clock = TradingSessionClock(session)
+        windows = clock.windows_for_trading_day(trading_day, product="cj", exchange="CZCE")
+        days, complete = clock.trading_days_between(
+            trading_day, trading_day + timedelta(days=1), exchange="CZCE"
+        )
 
     assert [item.name for item in windows] == ["day_am1", "day_am2", "day_pm"]
     assert [(item.start.time(), item.end.time()) for item in windows] == [
@@ -362,6 +442,41 @@ def test_czce_ignores_cnfe_product_continuous_day_and_uses_builtin_segments() ->
         (time(10, 30), time(11, 30)),
         (time(13, 30), time(15, 0)),
     ]
-    # 75 + 60 + 90 = 225 minutes → 15 bars at 15m
-    assert expected_minutes == 225
-    assert expected_minutes // 15 == 15
+    assert days == [trading_day]
+    assert complete is False
+
+
+def test_cnfe_calendar_does_not_fill_missing_actual_exchange_calendar() -> None:
+    with _session() as session:
+        trading_day = date(2026, 7, 7)
+        session.add(
+            TradingCalendar(
+                exchange_code="CNFE",
+                trade_date=trading_day,
+                is_trading_day=True,
+                has_night_session=True,
+                provider="fixture_cnfe",
+            )
+        )
+        session.add(
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name="day",
+                start_time=time(9, 0),
+                end_time=time(15, 0),
+                crosses_midnight=False,
+                is_active=True,
+                provider="fixture",
+            )
+        )
+        session.commit()
+
+        decision = TradingSessionClock(session).decision(
+            product="jm",
+            exchange="DCE",
+            now=datetime(2026, 7, 7, 10, 0),
+        )
+
+    assert decision.phase == "blocked"
+    assert decision.reason == "trading_calendar_missing"

@@ -4,8 +4,8 @@
 
 ## Current surface vs long-term boundary
 
-- **Current surface**：Web 仅 Market（`/` → `/market`）；API 仅 `/api/v1/market`、`/api/v1/data`、`/api/runtime`；CLI `guiyi data *` / `guiyi runtime status`；盘后 scheduler；Canonical 历史读。
-- **Long-term boundary**：`packages/quant-core` 策略/指标研究源码可保留；Signal/Review/Strategy HTTP·worker·DB 表、旧语义合同与 strategy_knowledge/specs 已退役（见 Git history）。无盘中 Live 应用路径与相关生产表，无 backtest 子系统。
+- **Current surface**：Web 仅 Market（`/` → `/market`）；API 仅 `/api/v1/market`（含兼容 `/api/symbols`）与 `/api/runtime`；CLI `guiyi data *` / `guiyi runtime status`；Canonical 历史读。data_center HTTP 与 after-market 生产路径已卸。
+- **Long-term boundary**：`packages/quant-core` 策略/指标研究源码可保留；Signal/Review/Strategy HTTP·worker·DB 表、旧语义合同与 strategy_knowledge/specs 已退役（见 Git history）。无盘中 Live 应用路径与相关生产表，无 backtest 子系统。生产 Alembic head（M3 G0）=`20260808_0035`。
 
 ## 1. 系统定位
 

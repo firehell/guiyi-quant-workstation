@@ -221,7 +221,9 @@ def default_rqdata_ingest_service_map(
             elif self._mode == "contracts":
                 result = ingestor.run(selected, window_start, window_end)
             elif self._mode == "calendar":
-                result = ingestor.run_calendar(window_start, window_end)
+                result = ingestor.run_calendar(
+                    window_start, window_end, products=selected or None
+                )
             elif self._mode == "sessions":
                 result = ingestor.run_sessions(
                     window_start, window_end, products=selected or None

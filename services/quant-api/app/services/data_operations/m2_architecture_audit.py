@@ -15,7 +15,12 @@ from app.data_core.contracts import (
 from app.data_core.product_universe import RETIRED_PRODUCTS, is_retired_identity
 from app.services.data_operations.audit_v2 import AuditFinding
 from app.services.data_operations.contracts import AuditRequest, AuditScope
-from app.services.data_operations.market_data_probe import ProbePosition
+from app.services.data_operations.market_data_probe import (
+    ProbeOutcome,
+    ProbePosition,
+    ProbeReasonCode,
+    classify_probe_exception,
+)
 
 
 class _Catalog(Protocol):
@@ -34,7 +39,9 @@ def build_m2_audit_checker(
     *,
     catalog: _Catalog,
     verify_partition: Callable[[DatasetKey, object], object],
-    market_data_readable: Callable[[DatasetKey, datetime, datetime, ProbePosition], bool],
+    market_data_readable: Callable[
+        [DatasetKey, datetime, datetime, ProbePosition], bool | ProbeOutcome
+    ],
     retired_identity_rejected: Callable[[str], bool] = lambda product: is_retired_identity(
         product=product
     ),
@@ -83,7 +90,9 @@ def _audit_product(
     catalog: _Catalog,
     symbol: str,
     verify_partition: Callable[[DatasetKey, object], object],
-    market_data_readable: Callable[[DatasetKey, datetime, datetime, ProbePosition], bool],
+    market_data_readable: Callable[
+        [DatasetKey, datetime, datetime, ProbePosition], bool | ProbeOutcome
+    ],
     summary: dict[str, int],
 ) -> list[AuditFinding]:
     findings: list[AuditFinding] = []
@@ -231,18 +240,33 @@ def _mapping_findings(
         findings.append(_finding("M2_MAIN_CONTRACT_MAP_INVALID", symbol))
         return
     contracts = {item.contract_or_series for item in actual}
-    if not mappings or any(
-        getattr(item, "symbol", None) != symbol
-        or getattr(item, "actual_contract", None) not in contracts
-        for item in mappings
-    ):
+    if not mappings:
         findings.append(_finding("M2_MAIN_CONTRACT_MAP_INVALID", symbol))
+        return
+    for item in mappings:
+        if getattr(item, "symbol", None) != symbol:
+            findings.append(_finding("M2_MAIN_CONTRACT_MAP_INVALID", symbol))
+            return
+        contract = getattr(item, "actual_contract", None)
+        if not contract:
+            findings.append(_finding("M2_MAIN_CONTRACT_MAP_INVALID", symbol))
+            return
+        if contract not in contracts:
+            findings.append(
+                _finding(
+                    "M2_MAPPED_CONTRACT_DATASET_MISSING",
+                    symbol,
+                    facts_extra={"actual_contract": str(contract)},
+                )
+            )
 
 
 def _probe_findings(
     symbol: str,
     partitions: dict[DatasetKey, tuple[object, ...]],
-    market_data_readable: Callable[[DatasetKey, datetime, datetime, ProbePosition], bool],
+    market_data_readable: Callable[
+        [DatasetKey, datetime, datetime, ProbePosition], bool | ProbeOutcome
+    ],
     findings: list[AuditFinding],
     summary: dict[str, int],
 ) -> None:
@@ -251,20 +275,37 @@ def _probe_findings(
         identity = (dataset.dataset_kind, dataset.frequency)
         if identity in unreadable_frequencies:
             continue
+        reason_code: str | None = None
         try:
             summary["reader_probe_count"] += 1
-            readable = market_data_readable(
+            outcome = market_data_readable(
                 dataset,
                 getattr(partition, "coverage_start"),
                 getattr(partition, "coverage_end"),
                 position,
             )
-        except Exception:  # noqa: BLE001
+            if isinstance(outcome, ProbeOutcome):
+                readable = outcome.readable
+                reason_code = outcome.reason_code
+            else:
+                readable = bool(outcome)
+                if not readable:
+                    reason_code = ProbeReasonCode.READER_EMPTY.value
+        except Exception as exc:  # noqa: BLE001
             readable = False
+            reason_code = classify_probe_exception(exc)
         if not readable:
             unreadable_frequencies.add(identity)
             findings.append(
-                _finding("M2_MARKET_DATA_UNREADABLE", symbol, dataset.frequency)
+                _finding(
+                    "M2_MARKET_DATA_UNREADABLE",
+                    symbol,
+                    dataset.frequency,
+                    facts_extra={
+                        "reason_code": reason_code
+                        or ProbeReasonCode.READER_ERROR.value
+                    },
+                )
             )
 
 
@@ -338,9 +379,15 @@ def _limited_probe_targets(
 
 
 def _finding(
-    code: str, symbol: str, frequency: BarFrequency | None = None
+    code: str,
+    symbol: str,
+    frequency: BarFrequency | None = None,
+    *,
+    facts_extra: dict[str, object] | None = None,
 ) -> AuditFinding:
     facts: dict[str, object] = {"symbol": symbol}
     if frequency is not None:
         facts["frequency"] = frequency.value
+    if facts_extra:
+        facts.update(facts_extra)
     return AuditFinding(code, AuditScope.M2, facts)

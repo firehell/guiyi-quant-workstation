@@ -145,22 +145,29 @@ class DownloadApplicationService:
                         )
                     )
                     continue
-                if self._catalog is not None:
-                    assert_no_gap_intersection(
-                        self._catalog,
-                        dataset=dataset,
-                        start=target.start,
-                        end=target.end,
-                    )
                 if synchronizer is None:
                     synchronizer = self._synchronizer_factory()
                 attempted += 1
-                sync_result = synchronizer.sync(
-                    dataset=dataset,
-                    start=target.start,
-                    end=target.end,
-                    dry_run=False,
-                )
+                published_windows: list[object] = []
+                gap_windows: list[object] = []
+                planned_windows: list[object] = []
+                for window_start, window_end in planned:
+                    if self._catalog is not None:
+                        assert_no_gap_intersection(
+                            self._catalog,
+                            dataset=dataset,
+                            start=window_start,
+                            end=window_end,
+                        )
+                    sync_result = synchronizer.sync(
+                        dataset=dataset,
+                        start=window_start,
+                        end=window_end,
+                        dry_run=False,
+                    )
+                    planned_windows.extend(sync_result.planned_windows)
+                    published_windows.extend(sync_result.published_windows)
+                    gap_windows.extend(sync_result.gap_windows)
             except Exception as exc:  # noqa: BLE001 - preserve per-target isolation
                 results.append(
                     TargetResult(
@@ -173,11 +180,11 @@ class DownloadApplicationService:
                     )
                 )
                 continue
-            published += len(sync_result.published_windows)
-            gap_recorded += len(sync_result.gap_windows)
-            if sync_result.gap_windows and not sync_result.published_windows:
+            published += len(published_windows)
+            gap_recorded += len(gap_windows)
+            if gap_windows and not published_windows:
                 status = CommandStatus.ERROR
-            elif sync_result.gap_windows:
+            elif gap_windows:
                 status = CommandStatus.PARTIAL
             else:
                 status = CommandStatus.PASSED
@@ -186,11 +193,9 @@ class DownloadApplicationService:
                     target=target,
                     status=status,
                     detail={
-                        "planned_windows": _window_payload(sync_result.planned_windows),
-                        "published_windows": _window_payload(
-                            sync_result.published_windows
-                        ),
-                        "gap_windows": _window_payload(sync_result.gap_windows),
+                        "planned_windows": _window_payload(planned_windows),
+                        "published_windows": _window_payload(published_windows),
+                        "gap_windows": _window_payload(gap_windows),
                         "provider": dataset.provider,
                         "dataset_kind": dataset.dataset_kind.value,
                         "symbol": dataset.symbol,

@@ -107,6 +107,8 @@ def test_dry_run_has_no_mutation_effects_and_schema_v1() -> None:
     assert result.schema_version == 2
     assert result.effects.as_payload()["writes_provider_raw"] is False
     assert "plan_summary" in result.extras
+    assert result.extras["metadata_refresh_required"] is True
+    assert "metadata_watermark" in result.extras
     assert "direct_targets" not in result.extras
     assert result.status is CommandStatus.PLANNED
 
@@ -402,8 +404,8 @@ def test_apply_runs_global_metadata_then_replans_before_direct_publish() -> None
     assert result.status is CommandStatus.PASSED
     assert planner_calls == [request, request]
     assert scopes == [
-        MetadataSyncScope.CALENDAR,
         MetadataSyncScope.SESSIONS,
+        MetadataSyncScope.CALENDAR,
         MetadataSyncScope.MAIN_CONTRACT_MAP,
     ]
     assert downloaded == [refreshed_target]

@@ -90,6 +90,76 @@ def _instrument_for_product(session: Session, product: str) -> Instrument | None
     return session.scalar(select(Instrument).where(Instrument.symbol == product))
 
 
+def _resolve_calendar_exchanges(
+    session: Session, products: list[str] | None
+) -> tuple[str, ...]:
+    """Actual exchange codes for calendar materialization (never CNFE)."""
+    query = select(Instrument.exchange_code).where(Instrument.exchange_code.is_not(None))
+    if products:
+        allowed = {item.strip().lower() for item in products if item.strip()}
+        query = query.where(Instrument.symbol.in_(sorted(allowed)))
+    codes = {
+        str(code).strip().upper()
+        for code in session.scalars(query).all()
+        if code and str(code).strip().upper() not in {"", "CNFE", "UNKNOWN"}
+    }
+    return tuple(sorted(codes))
+
+
+def _exchange_has_night_session_template(session: Session, exchange_code: str) -> bool:
+    """Evidence from TradingSession templates: evening/overnight segments imply nights."""
+    rows = session.scalars(
+        select(TradingSession).where(
+            TradingSession.exchange_code == exchange_code,
+            TradingSession.is_active.is_(True),
+        )
+    ).all()
+    for row in rows:
+        if bool(getattr(row, "crosses_midnight", False)):
+            return True
+        start_time = getattr(row, "start_time", None)
+        if start_time is not None and getattr(start_time, "hour", 0) >= 20:
+            return True
+    return False
+
+
+def _normalize_session_clock(raw: str) -> Any:
+    """Normalize RQData :01/:31 opens to wall-clock session starts used by readers."""
+    value = pd.to_datetime(str(raw).strip()).time()
+    if value.minute in {1, 31} and value.second == 0:
+        # 09:01→09:00, 10:31→10:30, 21:01→21:00, 13:31→13:30
+        minute = 0 if value.minute == 1 else 30
+        from datetime import time as time_cls
+
+        return time_cls(hour=value.hour, minute=minute)
+    return value
+
+
+def _parse_instrument_trading_hours(raw: str) -> tuple[tuple[str, Any, Any], ...]:
+    """Parse RQData instrument trading_hours into named session segments."""
+    segments: list[tuple[str, Any, Any]] = []
+    am_index = 0
+    night_index = 0
+    for part in str(raw or "").split(","):
+        token = part.strip()
+        if not token or "-" not in token:
+            continue
+        start_raw, end_raw = token.split("-", 1)
+        start = _normalize_session_clock(start_raw)
+        end = _normalize_session_clock(end_raw)
+        crosses = end < start
+        if start.hour >= 20 or crosses:
+            night_index += 1
+            name = "night" if night_index == 1 else f"night_{night_index}"
+        elif start.hour < 12:
+            am_index += 1
+            name = f"day_am_{am_index}"
+        else:
+            name = "day_pm" if not any(item[0] == "day_pm" for item in segments) else f"day_pm_{len(segments)+1}"
+        segments.append((name, start, end))
+    return tuple(segments)
+
+
 def _with_date_column(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "date" in df.columns:
         return df
@@ -180,8 +250,8 @@ class CatalogIngestor(BaseIngestor):
             allowed = {item.lower() for item in products}
             contracts = contracts[contracts.apply(lambda row: _symbol(_value(row, "underlying_symbol", "product")) in allowed, axis=1)]
         self._upsert_contract_catalog(contracts)
-        self._upsert_calendar(start_date, end_date)
         session_rows = self._upsert_sessions(contracts)
+        self._upsert_calendar(start_date, end_date, products=products)
         self._record_raw_frame(
             df=contracts,
             path=self._raw_path("catalog", "futures_contracts.parquet"),
@@ -193,8 +263,13 @@ class CatalogIngestor(BaseIngestor):
         )
         return IngestResult(rows=len(contracts) + len(self.client.trading_dates(start_date, end_date)) + session_rows, files=1)
 
-    def run_calendar(self, start_date: date, end_date: date) -> IngestResult:
-        self._upsert_calendar(start_date, end_date)
+    def run_calendar(
+        self,
+        start_date: date,
+        end_date: date,
+        products: list[str] | None = None,
+    ) -> IngestResult:
+        self._upsert_calendar(start_date, end_date, products=products)
         return IngestResult(
             rows=len(self.client.trading_dates(start_date, end_date)),
             files=0,
@@ -296,39 +371,100 @@ class CatalogIngestor(BaseIngestor):
                 },
             )
 
-    def _upsert_calendar(self, start_date: date, end_date: date) -> None:
+    def _upsert_calendar(
+        self,
+        start_date: date,
+        end_date: date,
+        products: list[str] | None = None,
+    ) -> None:
         trading_dates = set(self.client.trading_dates(start_date, end_date))
-        current = start_date
-        while current <= end_date:
-            upsert_one(
-                self.session,
-                TradingCalendar,
-                {"exchange_code": "CNFE", "trade_date": current},
-                {"is_trading_day": current in trading_dates, "has_night_session": False, "provider": PROVIDER, "remark": "rqdata generic trading calendar"},
-            )
-            current = date.fromordinal(current.toordinal() + 1)
+        exchanges = _resolve_calendar_exchanges(self.session, products)
+        night_by_exchange = {
+            exchange: _exchange_has_night_session_template(self.session, exchange)
+            for exchange in exchanges
+        }
+        for exchange_code in exchanges:
+            current = start_date
+            while current <= end_date:
+                existing = self.session.scalar(
+                    select(TradingCalendar).where(
+                        TradingCalendar.exchange_code == exchange_code,
+                        TradingCalendar.trade_date == current,
+                    )
+                )
+                night_flag = night_by_exchange[exchange_code]
+                if existing is not None and existing.has_night_session and not night_flag:
+                    # Preserve historically observed night flags when templates are incomplete.
+                    night_flag = True
+                upsert_one(
+                    self.session,
+                    TradingCalendar,
+                    {"exchange_code": exchange_code, "trade_date": current},
+                    {
+                        "is_trading_day": current in trading_dates,
+                        "has_night_session": night_flag,
+                        "provider": PROVIDER,
+                        "remark": "rqdata trading calendar materialized by exchange",
+                    },
+                )
+                current = date.fromordinal(current.toordinal() + 1)
 
     def _upsert_sessions(self, contracts: pd.DataFrame) -> int:
-        products = sorted({_symbol(_value(row, "underlying_symbol", "product")) for row in contracts.to_dict("records") if _symbol(_value(row, "underlying_symbol", "product"))})
-        periods = _clean_frame(self.client.trading_periods(products))
-        for record in periods.to_dict("records"):
-            product = _symbol(_value(record, "product"))
-            exchange_code = str(_value(record, "exchange", "exchange_code") or "CNFE")
+        """Materialize product session templates from instrument trading_hours.
+
+        RQData ``get_trading_periods`` expects concrete order_book_ids and cannot
+        build product templates. Instrument catalog rows already carry
+        ``trading_hours`` + ``exchange``; parse those and resolve identity from
+        Instrument when needed. Never invent CNFE rows.
+        """
+        written = 0
+        seen_products: set[str] = set()
+        for record in contracts.to_dict("records"):
+            product = _symbol(_value(record, "underlying_symbol", "product"))
+            if not product or product in seen_products:
+                continue
+            hours_raw = _value(record, "trading_hours")
+            exchange_code = str(_value(record, "exchange", "exchange_code") or "").strip().upper()
+            if not exchange_code or exchange_code == "CNFE":
+                instrument = _instrument_for_product(self.session, product)
+                if instrument is not None and instrument.exchange_code:
+                    exchange_code = str(instrument.exchange_code).strip().upper()
+            if not exchange_code or exchange_code == "CNFE":
+                continue
+            segments = _parse_instrument_trading_hours(str(hours_raw or ""))
+            if not segments:
+                continue
+            seen_products.add(product)
             upsert_one(
                 self.session,
                 Exchange,
                 {"code": exchange_code},
-                {"name": exchange_code, "country": "CN", "timezone": "Asia/Shanghai", "is_active": True},
+                {
+                    "name": exchange_code,
+                    "country": "CN",
+                    "timezone": "Asia/Shanghai",
+                    "is_active": True,
+                },
             )
-            start = pd.to_datetime(str(_value(record, "start_time", "start") or "09:00:00")).time()
-            end = pd.to_datetime(str(_value(record, "end_time", "end") or "15:00:00")).time()
-            upsert_one(
-                self.session,
-                TradingSession,
-                {"exchange_code": exchange_code, "instrument_symbol": product, "session_name": str(_value(record, "session_name", "name") or "regular")},
-                {"start_time": start, "end_time": end, "crosses_midnight": end < start, "is_active": True, "provider": PROVIDER},
-            )
-        return len(periods)
+            for session_name, start, end in segments:
+                upsert_one(
+                    self.session,
+                    TradingSession,
+                    {
+                        "exchange_code": exchange_code,
+                        "instrument_symbol": product,
+                        "session_name": session_name,
+                    },
+                    {
+                        "start_time": start,
+                        "end_time": end,
+                        "crosses_midnight": end < start,
+                        "is_active": True,
+                        "provider": PROVIDER,
+                    },
+                )
+                written += 1
+        return written
 
 
 class MainMappingIngestor(BaseIngestor):

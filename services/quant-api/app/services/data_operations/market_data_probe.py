@@ -17,6 +17,18 @@ class ProbePosition(StrEnum):
     LAST = "last"
 
 
+class ProbeReasonCode(StrEnum):
+    CALENDAR_MISSING = "calendar_missing"
+    SESSION_MISSING = "session_missing"
+    PROBE_WINDOW_UNAVAILABLE = "probe_window_unavailable"
+    DATASET_MISSING = "dataset_missing"
+    COVERAGE_MISSING = "coverage_missing"
+    CATALOG_GAP = "catalog_gap"
+    MANIFEST_INVALID = "manifest_invalid"
+    READER_EMPTY = "reader_empty"
+    READER_ERROR = "reader_error"
+
+
 class MarketDataProbeError(ValueError):
     def __init__(self, code: str) -> None:
         self.code = code
@@ -27,6 +39,34 @@ class MarketDataProbeError(ValueError):
 class ProbeWindow:
     start: datetime
     end: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeOutcome:
+    """Bounded M2/session-aligned probe result; reason_code only when unreadable."""
+
+    readable: bool
+    reason_code: str | None = None
+
+
+def classify_probe_exception(exc: BaseException) -> str:
+    """Map existing reader/probe error codes into the bounded M2 reason set."""
+    code = str(getattr(exc, "code", "") or type(exc).__name__).upper()
+    if "CALENDAR" in code:
+        return ProbeReasonCode.CALENDAR_MISSING.value
+    if "SESSION" in code:
+        return ProbeReasonCode.SESSION_MISSING.value
+    if "GAP" in code:
+        return ProbeReasonCode.CATALOG_GAP.value
+    if "MANIFEST" in code:
+        return ProbeReasonCode.MANIFEST_INVALID.value
+    if "COVERAGE" in code or "PARTITION" in code:
+        return ProbeReasonCode.COVERAGE_MISSING.value
+    if "DATASET" in code or "NOT_FOUND" in code or "MISSING" in code:
+        return ProbeReasonCode.DATASET_MISSING.value
+    if "PROBE" in code or code == "MARKET_DATA_PROBE_UNAVAILABLE":
+        return ProbeReasonCode.PROBE_WINDOW_UNAVAILABLE.value
+    return ProbeReasonCode.READER_ERROR.value
 
 
 class SessionAlignedMarketDataProbe:

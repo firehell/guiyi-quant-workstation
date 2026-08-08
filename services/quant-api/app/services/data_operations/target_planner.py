@@ -145,12 +145,16 @@ class HistoricalUpdateTargetPlanner:
                 weekly_end_day=weekly_end_day,
             )
             self._reject_gap_intersections(identity)
-            missing_direct = self._filter_missing(identity)
+            missing_direct = materialize_missing_targets(
+                identity, covered_windows=self._covered_windows
+            )
             # Derived missing is planned from full identity 1m windows, never from
             # only this-round direct missing (1m complete + 15m hole must repair).
             derived_identity = derive_aggregate_targets(identity)
             self._reject_gap_intersections(derived_identity)
-            missing_derived = self._filter_missing(derived_identity)
+            missing_derived = materialize_missing_targets(
+                derived_identity, covered_windows=self._covered_windows
+            )
             windows.append(
                 PlannedProductWindow(
                     symbol=symbol,
@@ -161,13 +165,9 @@ class HistoricalUpdateTargetPlanner:
                     weekly_end_day=weekly_end_day,
                 )
             )
+            # Covered windows (with or without explicit --since) are NOOP.
+            # --since is only a missing-detection lower bound, never force-refresh.
             if not missing_direct and not missing_derived:
-                if request.since is None:
-                    # Fully covered catch-up: record window, schedule nothing.
-                    continue
-                # Explicit --since with full coverage: force-refresh the window.
-                direct.extend(identity)
-                aggregate.extend(derived_identity)
                 continue
             direct.extend(missing_direct)
             aggregate.extend(missing_derived)
@@ -237,10 +237,37 @@ class HistoricalUpdateTargetPlanner:
             if derived_missing:
                 earliest_candidates.append(min(window[0] for window in derived_missing))
         if not earliest_candidates:
-            # Continuous MAIN (direct+derived) fully covered for [first, through].
-            # Returning through+1 makes the product NOOP; actual_dominant-only
-            # holes are out of scope for catch-up since resolution (explicit
-            # --since still plans full identity filters).
+            # Continuous MAIN direct+derived may be complete while expected
+            # actual_dominant (or its derived) still has holes. Probe map-expected
+            # identities from first known coverage through watermark.
+            probe_start_day = probe_start.astimezone(SHANGHAI).date()
+            mappings = tuple(self._list_mappings(symbol, probe_start_day, through_day))
+            if mappings:
+                weekly_end_day = complete_week_end(
+                    through_day=through_day, today=through_day
+                )
+                identity = build_identity_targets(
+                    products=(symbol,),
+                    mappings=mappings,
+                    start=probe_start,
+                    end=probe_end,
+                    weekly_end_day=weekly_end_day,
+                )
+                for target in (*identity, *derive_aggregate_targets(identity)):
+                    probe = _probe_from_target(target)
+                    covered = ()
+                    if self._covered_windows is not None:
+                        covered = tuple(self._covered_windows(probe))
+                    hole = plan_missing_windows(
+                        dataset=_probe_to_key(probe),
+                        start=target.start,
+                        end=target.end,
+                        covered_windows=covered,
+                    )
+                    if hole:
+                        earliest_candidates.append(min(window[0] for window in hole))
+        if not earliest_candidates:
+            # All expected continuous + actual_dominant identities covered.
             return through_day + timedelta(days=1)
         earliest = min(earliest_candidates).astimezone(SHANGHAI).date()
         overlap = max(0, self._mapping_overlap_trading_days)
@@ -267,28 +294,56 @@ class HistoricalUpdateTargetPlanner:
                     )
 
     def _filter_missing(self, targets: Sequence[DataTarget]) -> tuple[DataTarget, ...]:
-        if self._covered_windows is None:
-            return tuple(targets)
-        kept: list[DataTarget] = []
-        for target in targets:
-            probe = _CoverageProbe(
-                provider=target.provider,
-                dataset_kind=target.dataset_kind,
-                symbol=target.symbol,
-                contract_or_series=target.contract_or_series,
-                frequency=target.frequency,
-                adjustment=target.adjustment,
-                schema_version=target.schema_version,
+        """Compat wrapper: materialize exact missing sub-windows."""
+        return materialize_missing_targets(
+            targets, covered_windows=self._covered_windows
+        )
+
+
+def materialize_missing_targets(
+    targets: Sequence[DataTarget],
+    *,
+    covered_windows: Callable[[_CoverageProbe], Sequence[tuple[datetime, datetime]]]
+    | None,
+) -> tuple[DataTarget, ...]:
+    """Split each target into Catalog-uncovered exact sub-window targets.
+
+    When coverage probing is unavailable, returns the original targets unchanged.
+    """
+    if covered_windows is None:
+        return tuple(targets)
+    exact: list[DataTarget] = []
+    for target in targets:
+        probe = _CoverageProbe(
+            provider=target.provider,
+            dataset_kind=target.dataset_kind,
+            symbol=target.symbol,
+            contract_or_series=target.contract_or_series,
+            frequency=target.frequency,
+            adjustment=target.adjustment,
+            schema_version=target.schema_version,
+        )
+        missing = plan_missing_windows(
+            dataset=_probe_to_key(probe),
+            start=target.start,
+            end=target.end,
+            covered_windows=covered_windows(probe),
+        )
+        for window_start, window_end in missing:
+            exact.append(
+                _data_target(
+                    dataset_kind=target.dataset_kind,
+                    symbol=target.symbol,
+                    contract_or_series=target.contract_or_series,
+                    frequency=target.frequency,
+                    start=window_start,
+                    end=window_end,
+                    provider=target.provider,
+                    adjustment=target.adjustment,
+                    schema_version=target.schema_version,
+                )
             )
-            missing = plan_missing_windows(
-                dataset=_probe_to_key(probe),
-                start=target.start,
-                end=target.end,
-                covered_windows=self._covered_windows(probe),
-            )
-            if missing:
-                kept.append(target)
-        return tuple(kept)
+    return tuple(exact)
 
 
 def build_identity_targets(

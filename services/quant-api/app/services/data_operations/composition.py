@@ -287,8 +287,12 @@ class _LazyM2AuditChecker:
         from app.data_core.historical_sessions import product_sessions
         from app.services.canonical_market_data import build_canonical_reader
         from app.services.data_operations.market_data_probe import (
+            ProbeOutcome,
             ProbePosition,
+            ProbeReasonCode,
             SessionAlignedMarketDataProbe,
+            classify_probe_exception,
+            MarketDataProbeError,
         )
         from app.services.market_data_service import MarketDataService
 
@@ -305,22 +309,40 @@ class _LazyM2AuditChecker:
             start: datetime,
             end: datetime,
             position: ProbePosition,
-        ) -> bool:
-            window = probe.plan(dataset, start=start, end=end, position=position)
-            result = market_data.get_bars(
-                BarQuery(
-                    dataset_kind=dataset.dataset_kind,
-                    symbol=dataset.symbol,
-                    # M2 validates rank-1 mappings independently. The reader
-                    # probe stays on this concrete target so it does not
-                    # rematerialize every actual contract for every boundary.
-                    contract_or_series=dataset.contract_or_series,
-                    frequency=dataset.frequency,
-                    start=window.start,
-                    end=window.end,
+        ) -> ProbeOutcome:
+            try:
+                window = probe.plan(dataset, start=start, end=end, position=position)
+            except MarketDataProbeError as exc:
+                return ProbeOutcome(
+                    False, reason_code=classify_probe_exception(exc)
                 )
-            )
-            return bool(result.bars)
+            except Exception as exc:  # noqa: BLE001
+                return ProbeOutcome(
+                    False, reason_code=classify_probe_exception(exc)
+                )
+            try:
+                result = market_data.get_bars(
+                    BarQuery(
+                        dataset_kind=dataset.dataset_kind,
+                        symbol=dataset.symbol,
+                        # M2 validates rank-1 mappings independently. The reader
+                        # probe stays on this concrete target so it does not
+                        # rematerialize every actual contract for every boundary.
+                        contract_or_series=dataset.contract_or_series,
+                        frequency=dataset.frequency,
+                        start=window.start,
+                        end=window.end,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                return ProbeOutcome(
+                    False, reason_code=classify_probe_exception(exc)
+                )
+            if not result.bars:
+                return ProbeOutcome(
+                    False, reason_code=ProbeReasonCode.READER_EMPTY.value
+                )
+            return ProbeOutcome(True)
 
         checker = build_m2_audit_checker(
             catalog=HistoricalCatalog(self._session),
