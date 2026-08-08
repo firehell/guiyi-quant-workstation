@@ -17,8 +17,9 @@
 - PostgreSQL active 数据表固定为八张，不保存 Bar 或运行历史。
 - `MetadataSynchronizer` 维护交易所、合约、Calendar、Session 和 rank1 map；
   `HistoricalDataManager` 承担 update、refresh、audit；`MarketDataService` 是唯一读入口。
-- `update` 的 Catalog + Parquet 是唯一续传水位。相同 fixed through 完整重跑必须零目标、零写入、
-  零 provider 请求；明确的 provider 额度耗尽停止当前轮并由下次命令自然续传。
+- `update` 的 Catalog + Parquet 是唯一续传水位。`--through` 省略时解析为本轮最新完整交易日；相同
+  fixed through 完整重跑必须零目标、零写入、零 provider 请求；明确的 provider 额度耗尽停止当前轮
+  并由下次命令自然续传。
 
 ## 公开 CLI
 

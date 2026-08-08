@@ -67,7 +67,7 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 
 ## 不可放宽的业务边界
 
-- 正式历史数据继续遵守 DatasetKey、Catalog/Manifest/Gap/MainContractMap、quality 和
+- 正式历史数据继续遵守 DatasetKey、八表 Catalog、MainContractMap、coverage/可读性和
   MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
 - 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
 - 保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`，live、Runtime promotion、

@@ -116,15 +116,15 @@ Dry-run 展示或验证计划，但 **绝不授权 mutation**。不得从 dry-ru
 > 实际执行
 ```
 
-任何意图都不能绕过 failed quality、DataGap、未来函数保护、secret 保护、默认关闭状态、禁止订单
+任何意图都不能绕过 failed quality、分区 coverage/可读性、未来函数保护、secret 保护、默认关闭状态、禁止订单
 或超范围资源。执行后只报告非秘密的 attempted scope、success/failed/blocked 状态和有界错误。
 失败不自动回滚、force、扩大范围或再次执行。
 
 ## 6. 保留的项目边界
 
 - 数据：RQData -> staging -> validation -> Historical Canonical ->
-  Catalog/Manifest/Gap/MainContractMap -> MarketDataService；正式请求使用明确 DatasetKey 和 kind，
-  DataGap/failed quality 不静默回退。
+  八表 Catalog/MainContractMap -> MarketDataService；正式请求使用明确 DatasetKey 和 kind，
+  coverage/physical failure 不静默回退。
 - 策略与回测：禁止未来数据泄漏，交易数值使用 `Decimal`，保留可复现 lineage；HTDY original 仅限
   deep canonical 定义的 observation-only 白名单。
 - 信号与操作：保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；研究结果不是交易

@@ -14,8 +14,8 @@
 
 ### Requirement: fixed through 和 natural resume
 `effective_start(symbol)` SHALL 为 `max(product_window_start(symbol),2023-01-01)`。update SHALL 以
-explicit `--through` 固定水位，检查全域月度 coverage；完整月跳过，合法子集仅请求缺失 bars，冲突或
-不可读月整月重建。已发布 Catalog + Parquet SHALL 是唯一进度状态。
+显式 `--through` 或在规划开始解析的最新完整交易日固定本轮水位，检查全域月度 coverage；完整月跳过，
+合法子集仅请求缺失 bars，冲突或不可读月整月重建。已发布 Catalog + Parquet SHALL 是唯一进度状态。
 
 #### Scenario: same-T NOOP
 - **WHEN** 所有预期月完整且再次运行相同 fixed through update

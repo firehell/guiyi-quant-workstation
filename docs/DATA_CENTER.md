@@ -94,4 +94,6 @@ guiyi data audit --universe active
 ```
 
 无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
-始终只读。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的单次意图。
+始终只读。省略 `--through` 时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；
+相同解析值的再次完整运行必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建
+仍各自需要范围明确的单次意图。

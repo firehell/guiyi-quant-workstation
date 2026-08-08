@@ -23,7 +23,7 @@ RQData
 -> temporary staging
 -> normalization + six hard validations
 -> Canonical Parquet
--> PostgreSQL Catalog / MainContractMap / ContractSpec
+-> PostgreSQL 八表 Catalog / MainContractMap
 -> MarketDataService
 -> Market Web / Indicator / future research
 ```
@@ -49,9 +49,9 @@ API: http://127.0.0.1:8000/docs
 uv run --project services/quant-api guiyi data update \
   --universe active --since 2026-08-01 --through 2026-08-07
 
-# 一次性 bootstrap 规划
-uv run --project services/quant-api guiyi data bootstrap \
-  --universe active --through 2026-08-07
+# 指定窗口的强制月度重建规划
+uv run --project services/quant-api guiyi data refresh \
+  --symbol jm --since 2026-08-01 --through 2026-08-07
 
 # 当前 Canonical/Catalog 只读审计
 uv run --project services/quant-api guiyi data audit --universe active
@@ -59,7 +59,7 @@ uv run --project services/quant-api guiyi data audit --universe active
 uv run --project services/quant-api guiyi runtime status
 ```
 
-`update/bootstrap/repair` 只有显式 `--apply` 才进入写入路径；参数本身不授权正式数据或生产环境 mutation。
+`update/refresh` 只有显式 `--apply` 才进入写入路径；参数本身不授权正式数据或生产环境 mutation。
 
 ## 安全边界
 

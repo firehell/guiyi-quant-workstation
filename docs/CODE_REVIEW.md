@@ -35,7 +35,7 @@
 RQData
 → staging + 质量校验
 → Canonical Parquet（1m/1d/1w direct + 5m/15m/30m/60m 聚合）
-→ Catalog / Manifest / Gap / MainContractMap
+→ 八表 Catalog / MainContractMap
 → MarketDataService
 → Market Web + data/runtime API/CLI
 ```
@@ -46,7 +46,7 @@ RQData
 
 ## 3. 必查边界
 
-- DataGap / failed quality：fail-closed，无 legacy 回退、无静默缩窗、无跨频。
+- coverage/physical failure：fail-closed，无 legacy 回退、无静默缩窗、无跨频。
 - `continuous` 与 `actual_dominant` 不可互换；dominants coverage 须与 Catalog 同口径。
 - 无订单：任何创建/提交订单路径必须拒绝；`auto_order=false`。
 - 密钥与路径：不在 diff、日志、错误文案中暴露 webhook、token、密码、内部路径、SQL、stack。
