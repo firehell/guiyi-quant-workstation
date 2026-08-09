@@ -1,12 +1,6 @@
-"""Runtime 运维健康检查响应模型（Pydantic）。
-
-与 ``build_runtime_health`` 输出结构一致；部分组件为真实探测（db/redis/rq），
-其余为退役 stub（live_checkpoints、archive、after_market_scheduler、notification_retry）。
-"""
+"""Runtime 运维健康检查响应模型（Pydantic）。"""
 
 from __future__ import annotations
-
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -53,101 +47,39 @@ class RuntimeRqHealth(BaseModel):
     error_message: str | None = None
 
 
-class RuntimeCheckpointRow(BaseModel):
-    """（历史）Live checkpoint 行结构；退役组件仍保留 schema 以兼容响应形状。"""
+class RuntimeLiveMarketHealth(BaseModel):
+    """Live V1 的短 TTL Redis heartbeat 快照。"""
 
-    id: int
-    provider: str
-    instrument_symbol: str
-    contract_code: str
-    period: str
-    source_mode: str
     status: str
-    lag_seconds: int | None = None
-    consecutive_error_count: int = 0
-    last_success_at: str | None = None
-    last_run_at: str | None = None
+    configured_enabled: bool = False
+    operational_count: int = 0
+    subscribed_count: int = 0
+    last_heartbeat_at: str | None = None
     last_bar_at: str | None = None
-    last_error_type: str | None = None
-    updated_at: str | None = None
-
-
-class RuntimeLiveCheckpointsHealth(BaseModel):
-    """盘中 Live checkpoint 健康（已退役 stub，status=disabled, retired=True）。"""
-
-    status: str
-    enabled: bool = False
-    retired: bool = False
-    freshness_seconds: int = 300
-    stale: bool = False
-    polling_expected: bool = False
-    market_phase: str = "unknown"
-    ingest_count: int = 0
-    aggregation_count: int = 0
-    status_counts: dict[str, int] = Field(default_factory=dict)
-    latest_success_at: str | None = None
-    latest_error: dict[str, Any] | None = None
-    recent_ingest: list[RuntimeCheckpointRow] = Field(default_factory=list)
-    recent_aggregation: list[RuntimeCheckpointRow] = Field(default_factory=list)
+    phase_counts: dict[str, int] = Field(default_factory=dict)
     error_type: str | None = None
     error_message: str | None = None
 
 
-class RuntimeNotificationRetryHealth(BaseModel):
-    """企业微信通知重试健康（已退役 stub）。"""
+class RuntimeAfterMarketRun(BaseModel):
+    """盘后一次运行的公开摘要。"""
+
+    trading_day: str
+    status: str
+    attempts: int
+    started_at: str
+    finished_at: str
+    products: list[str] = Field(default_factory=list)
+    error_code: str | None = None
+
+
+class RuntimeAfterMarketHealth(BaseModel):
+    """由本地公开状态文件派生的盘后维护摘要。"""
 
     status: str
-    enabled: bool = False
-    retired: bool = False
-    channel: str = "enterprise_wechat"
-    total_count: int = 0
-    retry_pending_count: int = 0
-    due_retry_count: int = 0
-    failed_count: int = 0
-    sent_count: int = 0
-    skipped_count: int = 0
-    pending_count: int = 0
-    next_retry_at: str | None = None
-    last_sent_at: str | None = None
-    last_failed_at: str | None = None
-    last_error_type_counts: dict[str, int] = Field(default_factory=dict)
-    error_type: str | None = None
-    error_message: str | None = None
-
-
-class RuntimeArchiveHealth(BaseModel):
-    """盘后归档任务健康（已退役 stub）。"""
-
-    status: str
-    enabled: bool = False
-    retired: bool = False
-    latest_task_no: str | None = None
-    latest_task_status: str | None = None
-    latest_contract: str | None = None
-    latest_finished_at: str | None = None
-    latest_error_type: str | None = None
-    error_type: str | None = None
-    error_message: str | None = None
-
-
-class RuntimeAfterMarketSchedulerHealth(BaseModel):
-    """盘后调度器健康（已退役 stub）。"""
-
-    status: str
-    enabled: bool = False
-    retired: bool = False
+    last_run: RuntimeAfterMarketRun | None = None
     last_successful_trading_day: str | None = None
-    latest_completed_trading_day: str | None = None
-    latest_eligible_trading_day: str | None = None
-    archive_lag_trading_days: int | None = None
-    current_task: str | None = None
-    last_error_type: str | None = None
-    last_error_at: str | None = None
-    retry_count: int = 0
-    scheduler_heartbeat: dict[str, Any] | None = None
-    next_retry_at: str | None = None
-    authorization_hash: str | None = None
-    lock_status: str | None = None
+    last_failure: dict[str, str] | None = None
     error_type: str | None = None
     error_message: str | None = None
 
@@ -158,10 +90,8 @@ class RuntimeHealthComponents(BaseModel):
     db: RuntimeComponentHealth
     redis: RuntimeComponentHealth
     rq: RuntimeRqHealth
-    live_checkpoints: RuntimeLiveCheckpointsHealth
-    archive: RuntimeArchiveHealth
-    after_market_scheduler: RuntimeAfterMarketSchedulerHealth
-    notification_retry: RuntimeNotificationRetryHealth
+    live_market: RuntimeLiveMarketHealth
+    after_market: RuntimeAfterMarketHealth
 
 
 class RuntimeHealthOut(BaseModel):

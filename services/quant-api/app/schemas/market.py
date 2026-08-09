@@ -50,6 +50,39 @@ class MarketBarsResponse(BaseModel):
     resolved_contract_segments: list[ContractSegmentOut]
 
 
+class MarketPageMetaOut(BaseModel):
+    """历史游标分页边界。"""
+
+    has_more_before: bool
+    next_before: datetime | None
+
+
+class MarketBarsPageResponse(BaseModel):
+    """``/bars/page`` 历史游标分页响应。"""
+
+    request: dict[str, object]
+    bars: list[MarketBarOut]
+    canonical_coverage: CoverageOut | None
+    page: MarketPageMetaOut
+    resolved_contract_segments: list[ContractSegmentOut]
+
+
+class MarketReadStateResponse(BaseModel):
+    """Market Web 的统一历史/Live 展示状态。"""
+
+    symbol: str
+    series_kind: str
+    frequency: str
+    operational: bool
+    phase: str
+    trading_day: date | None
+    live_eligible: bool
+    live_available: bool
+    live_contract: str | None
+    canonical_end: datetime | None
+    after_market: dict[str, object]
+
+
 class DominantContractOut(BaseModel):
     """单品种最新主力合约摘要。"""
 

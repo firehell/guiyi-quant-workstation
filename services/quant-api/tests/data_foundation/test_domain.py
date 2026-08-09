@@ -12,6 +12,7 @@ from app.market_data.domain import (
     DatasetKey,
     DatasetKind,
     SeriesKind,
+    SeriesPageQuery,
     SeriesQuery,
 )
 
@@ -90,6 +91,57 @@ def test_series_query_requires_contract_only_for_contract_mode() -> None:
             series_kind="continuous",
             contract="JM2509",
             **window,
+        )
+
+
+def test_series_page_query_normalizes_cursor_and_defaults_limit() -> None:
+    request = SeriesPageQuery(
+        series_kind="actual_dominant",
+        symbol=" JM ",
+        frequency="15m",
+        before=datetime(2025, 1, 3, 7, tzinfo=UTC),
+    )
+
+    assert request.symbol == "jm"
+    assert request.frequency is BarFrequency.M15
+    assert request.before == datetime(2025, 1, 3, 7, tzinfo=UTC)
+    assert request.limit == 1200
+    assert request.physical_key is None
+
+
+@pytest.mark.parametrize("limit", (0, 2001, True))
+def test_series_page_query_rejects_invalid_limit(limit: int) -> None:
+    with pytest.raises(ContractError):
+        SeriesPageQuery(
+            series_kind="continuous",
+            symbol="jm",
+            frequency="1d",
+            limit=limit,
+        )
+
+
+def test_series_page_query_requires_aware_cursor_and_contract_only_for_contract() -> None:
+    request = SeriesPageQuery(
+        series_kind="contract",
+        symbol="jm",
+        contract=" jm2509 ",
+        frequency="1d",
+    )
+
+    assert request.contract == "JM2509"
+    assert request.physical_key == DatasetKey("contract", "jm", "JM2509", "1d")
+    with pytest.raises(ContractError):
+        SeriesPageQuery(
+            series_kind="contract",
+            symbol="jm",
+            frequency="1d",
+        )
+    with pytest.raises(ContractError):
+        SeriesPageQuery(
+            series_kind="continuous",
+            symbol="jm",
+            frequency="1d",
+            before=datetime(2025, 1, 3, 7),
         )
 
 

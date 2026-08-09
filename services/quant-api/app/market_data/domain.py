@@ -248,6 +248,73 @@ class SeriesQuery:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class SeriesPageQuery:
+    """历史游标分页请求：返回严格早于 ``before`` 的最新 bars。"""
+
+    series_kind: SeriesKind
+    symbol: str
+    frequency: BarFrequency
+    before: datetime | None = None
+    limit: int = 1200
+    contract: str | None = None
+
+    def __post_init__(self) -> None:
+        kind = _enum(SeriesKind, self.series_kind, field="series_kind")
+        symbol = _text(self.symbol, field="symbol")
+        frequency = _enum(BarFrequency, self.frequency, field="frequency")
+        before = self.before
+        if before is not None:
+            if (
+                not isinstance(before, datetime)
+                or before.tzinfo is None
+                or before.utcoffset() is None
+            ):
+                raise ContractError(field="before", reason="timezone_required")
+            before = before.astimezone(UTC)
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int):
+            raise ContractError(field="limit", reason="integer_required")
+        if not 1 <= self.limit <= 2000:
+            raise ContractError(field="limit", reason="range_invalid")
+        contract = self.contract
+        if kind is SeriesKind.CONTRACT:
+            if contract is None:
+                raise ContractError(field="contract", reason="required_for_contract_series")
+            contract = DatasetKey(
+                kind=DatasetKind.CONTRACT,
+                symbol=symbol,
+                series_or_contract=contract,
+                frequency=frequency,
+            ).series_or_contract
+        elif contract is not None:
+            raise ContractError(field="contract", reason="forbidden_for_series_kind")
+        object.__setattr__(self, "series_kind", kind)
+        object.__setattr__(self, "symbol", symbol)
+        object.__setattr__(self, "frequency", frequency)
+        object.__setattr__(self, "before", before)
+        object.__setattr__(self, "contract", contract)
+
+    @property
+    def physical_key(self) -> DatasetKey | None:
+        """映射到单一物理数据集；``actual_dominant`` 无物理键。"""
+        if self.series_kind is SeriesKind.ACTUAL_DOMINANT:
+            return None
+        if self.series_kind is SeriesKind.CONTINUOUS:
+            return DatasetKey(
+                kind=DatasetKind.CONTINUOUS,
+                symbol=self.symbol,
+                series_or_contract="MAIN",
+                frequency=self.frequency,
+            )
+        assert self.contract is not None
+        return DatasetKey(
+            kind=DatasetKind.CONTRACT,
+            symbol=self.symbol,
+            series_or_contract=self.contract,
+            frequency=self.frequency,
+        )
+
+
 def _decimal(value: Decimal | int | str | None, *, field: str, optional: bool = False) -> Decimal | None:
     """解析有限 Decimal；可选字段允许 ``None``，否则缺失或非有限值 fail-closed。"""
     if value is None:
@@ -354,4 +421,16 @@ class MarketSeriesResult:
     request_identity: Mapping[str, object]
     bars: tuple[CanonicalBar, ...]
     coverage: tuple[datetime, datetime] | None
+    resolved_contract_segments: tuple[ResolvedContractSegment, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSeriesPageResult:
+    """``MarketDataService.query_page`` 的只读分页结果。"""
+
+    request_identity: Mapping[str, object]
+    bars: tuple[CanonicalBar, ...]
+    canonical_coverage: tuple[datetime, datetime] | None
+    has_more_before: bool
+    next_before: datetime | None
     resolved_contract_segments: tuple[ResolvedContractSegment, ...]

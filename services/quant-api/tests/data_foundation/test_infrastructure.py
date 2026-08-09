@@ -15,6 +15,7 @@ from app.market_data.infrastructure import (
     SHANGHAI,
     DatabaseCoverageSource,
     InfrastructureError,
+    RQDataClient,
     RQDataMarketAdapter,
 )
 from app.models import (
@@ -107,6 +108,59 @@ def _add_date_scoped_session_facts(session: Session, days: tuple[date, ...]) -> 
                 provider="rqdata",
             )
         )
+
+
+def test_rqdata_client_requires_both_future_readiness_categories() -> None:
+    class Api:
+        def is_data_ready(self, **kwargs):
+            assert kwargs == {
+                "categories": ["future_daybar", "future_minbar"],
+                "expected_date": date(2026, 8, 10),
+                "market": "cn",
+            }
+            return pd.DataFrame(
+                {"ready": [True, False]},
+                index=["future_daybar", "future_minbar"],
+            )
+
+    client = object.__new__(RQDataClient)
+    client.api = Api()
+
+    assert client.is_future_data_ready(date(2026, 8, 10)) is False
+
+
+def test_rqdata_client_normalizes_exactly_one_dominant_contract() -> None:
+    class Futures:
+        def get_dominant(self, symbol, **kwargs):
+            assert symbol == "JM"
+            assert kwargs == {
+                "start_date": date(2026, 8, 10),
+                "end_date": date(2026, 8, 10),
+                "rule": 2,
+                "rank": 1,
+            }
+            return pd.DataFrame({"dominant": ["jm2609"]})
+
+    class Api:
+        futures = Futures()
+
+    client = object.__new__(RQDataClient)
+    client.api = Api()
+
+    assert client.dominant_for_day("jm", date(2026, 8, 10)) == "JM2609"
+
+
+def test_rqdata_client_creates_the_provider_live_client_without_subscription() -> None:
+    created = object()
+
+    class Api:
+        def LiveMarketDataClient(self):
+            return created
+
+    client = object.__new__(RQDataClient)
+    client.api = Api()
+
+    assert client.live_market_client() is created
 
 
 def test_database_coverage_uses_actual_exchange_sessions_and_complete_iso_week(tmp_path) -> None:
@@ -526,7 +580,7 @@ def test_rqdata_adapter_does_not_initialize_client_until_provider_read(
         def __init__(self) -> None:
             calls.append("init")
 
-    monkeypatch.setattr(infrastructure, "_RqdatacClient", LazyClient)
+    monkeypatch.setattr(infrastructure, "RQDataClient", LazyClient)
     adapter = RQDataMarketAdapter(session=session)
 
     assert calls == []
@@ -603,7 +657,7 @@ def test_rqdatac_client_requests_unadjusted_bars() -> None:
             calls.append((order_book_id, kwargs))
             return pd.DataFrame()
 
-    client = object.__new__(infrastructure._RqdatacClient)
+    client = object.__new__(infrastructure.RQDataClient)
     client.api = Api()
 
     client.price("JM88", date(2025, 1, 2), date(2025, 1, 3), "1m")
@@ -667,7 +721,7 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
         def get_tick_size(self, order_book_id):
             return pd.Series({order_book_id: 0.5})
 
-    client = object.__new__(infrastructure._RqdatacClient)
+    client = object.__new__(infrastructure.RQDataClient)
     client.api = Api()
 
     snapshot = client.metadata_snapshot(
@@ -735,7 +789,7 @@ def test_rqdata_metadata_uses_historical_trading_period_facts_not_current_hours(
         def get_tick_size(self, order_book_id):
             return pd.Series({order_book_id: 0.5})
 
-    client = object.__new__(infrastructure._RqdatacClient)
+    client = object.__new__(infrastructure.RQDataClient)
     client.api = Api()
 
     snapshot = client.metadata_snapshot(

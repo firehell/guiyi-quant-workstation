@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import io
 import json
+from datetime import date
 
 import pytest
 
 from app.guiyi_cli.main import CliUsageError, build_parser, main
 from app.guiyi_cli.output import exception_error_payload
+from app.market_data.after_market import AfterMarketResult
 from app.market_data.maintenance import MaintenanceResult
 
 
@@ -27,12 +29,14 @@ class FakeManager:
         return MaintenanceResult("refresh", "planned", request.through, 1, 0, 0, 0, 0)
 
 
-def _run(args, manager):
+def _run(args, manager, *, after_market_factory=None, live_service_factory=None):
     stdout = io.StringIO()
     stderr = io.StringIO()
     code = main(
         args,
         manager_factory=lambda _session: manager,
+        after_market_factory=after_market_factory,
+        live_service_factory=live_service_factory,
         session_factory=lambda: _NullContext(),
         stdout=stdout,
         stderr=stderr,
@@ -57,7 +61,42 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         action for action in data_parser._actions if action.dest == "data_command"
     )
 
-    assert set(command_action.choices) == {"update", "refresh", "audit", "retire-products"}
+    assert set(command_action.choices) == {
+        "update",
+        "refresh",
+        "audit",
+        "retire-products",
+        "after-market",
+    }
+
+
+def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:
+    manager = FakeManager()
+    received = []
+
+    class Updater:
+        def run(self):
+            return AfterMarketResult("passed", date(2026, 8, 10), 1, None)
+
+    code, payload = _run(
+        ["data", "after-market"],
+        manager,
+        after_market_factory=lambda supplied_manager: received.append(supplied_manager) or Updater(),
+    )
+
+    assert code == 0
+    assert payload == {
+        "schema_version": 1,
+        "command": "data.after-market",
+        "status": "passed",
+        "trading_day": "2026-08-10",
+        "attempts": 1,
+        "error_code": None,
+    }
+    assert received == [manager]
+    assert manager.calls == []
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(["data", "after-market", "--apply"])
 
 
 def test_refresh_requires_a_symbol_and_explicit_window() -> None:
@@ -179,3 +218,36 @@ def test_cli_internal_error_does_not_expose_sqlalchemy_documentation_code() -> N
     payload = exception_error_payload(command="data.update", exc=error)
 
     assert payload["error"] == {"code": "CLI_INTERNAL_ERROR", "type": "RuntimeError"}
+
+
+def test_runtime_parser_exposes_status_and_live_only() -> None:
+    parser = build_parser()
+    runtime_action = next(action for action in parser._actions if action.dest == "domain")
+    runtime_parser = runtime_action.choices["runtime"]
+    command_action = next(action for action in runtime_parser._actions if action.dest == "runtime_command")
+
+    assert set(command_action.choices) == {"status", "live"}
+
+
+def test_runtime_live_runs_only_the_injected_foreground_service() -> None:
+    manager = FakeManager()
+    calls: list[str] = []
+
+    class LiveService:
+        def run_forever(self) -> None:
+            calls.append("run_forever")
+
+    code, payload = _run(
+        ["runtime", "live"],
+        manager,
+        live_service_factory=lambda _session: LiveService(),
+    )
+
+    assert code == 0
+    assert calls == ["run_forever"]
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.live",
+        "status": "ok",
+        "foreground": True,
+    }

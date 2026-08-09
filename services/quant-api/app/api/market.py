@@ -14,7 +14,13 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.market_data.composition import build_market_data_service
-from app.market_data.domain import BarFrequency, ContractError, SeriesKind, SeriesQuery
+from app.market_data.domain import (
+    BarFrequency,
+    ContractError,
+    SeriesKind,
+    SeriesPageQuery,
+    SeriesQuery,
+)
 from app.market_data.service import MarketDataError
 from app.schemas.market import (
     ContractSegmentOut,
@@ -23,8 +29,10 @@ from app.schemas.market import (
     DominantContractListResponse,
     DominantContractOut,
     MarketBarOut,
+    MarketBarsPageResponse,
     MarketBarsResponse,
     MarketCoverageResponse,
+    MarketPageMetaOut,
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
@@ -80,6 +88,73 @@ def canonical_market_bars(
             CoverageOut(start=result.coverage[0], end=result.coverage[1])
             if result.coverage
             else None
+        ),
+        resolved_contract_segments=[
+            ContractSegmentOut(
+                contract=item.contract,
+                start_trading_day=item.start_trading_day,
+                end_trading_day=item.end_trading_day,
+            )
+            for item in result.resolved_contract_segments
+        ],
+    )
+
+
+@router.get("/bars/page", response_model=MarketBarsPageResponse)
+def canonical_market_bars_page(
+    series_kind: str = Query(...),
+    symbol: str = Query(...),
+    frequency: str = Query(...),
+    before: str | None = Query(default=None),
+    limit: int = Query(default=1200, ge=1, le=2000),
+    contract: str | None = Query(default=None),
+    session: Session = Depends(get_db),
+) -> MarketBarsPageResponse:
+    """按独占历史游标读取 Canonical K 线页。"""
+    try:
+        request = SeriesPageQuery(
+            series_kind=cast(SeriesKind, series_kind),
+            symbol=symbol,
+            contract=contract,
+            frequency=cast(BarFrequency, frequency),
+            before=_instant(before) if before is not None else None,
+            limit=limit,
+        )
+        result = build_market_data_service(session).query_page(request)
+    except ContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "facts": dict(exc.facts)},
+        ) from exc
+    except MarketDataError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    return MarketBarsPageResponse(
+        request=dict(result.request_identity),
+        bars=[
+            MarketBarOut(
+                bar_end=bar.bar_end,
+                trading_day=bar.trading_day,
+                open=bar.open,
+                high=bar.high,
+                low=bar.low,
+                close=bar.close,
+                volume=bar.volume,
+                turnover=bar.turnover,
+                open_interest=bar.open_interest,
+            )
+            for bar in result.bars
+        ],
+        canonical_coverage=(
+            CoverageOut(
+                start=result.canonical_coverage[0],
+                end=result.canonical_coverage[1],
+            )
+            if result.canonical_coverage
+            else None
+        ),
+        page=MarketPageMetaOut(
+            has_more_before=result.has_more_before,
+            next_before=result.next_before,
         ),
         resolved_contract_segments=[
             ContractSegmentOut(

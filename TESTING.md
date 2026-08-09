@@ -30,11 +30,26 @@ MYPYPATH=services/quant-api \
 uv run --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
   services/quant-api/app/market_data \
   services/quant-api/app/guiyi_cli \
-  services/quant-api/app/api/market.py
+  services/quant-api/app/api/market.py \
+  services/quant-api/app/api/market_live.py
 
 npm --prefix apps/quant-web test
 npm --prefix apps/quant-web run build
 ```
+
+## Market Runtime V1（本地/无外部副作用）
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_runtime_health.py
+
+scripts/ops/macos/install-local-services.sh --render-only
+plutil -lint .run/launchd/com.guiyi.quant-live.plist
+plutil -lint .run/launchd/com.guiyi.quant-after-market.plist
+```
+
+上述仅覆盖 fixture、mock、仓库 `.run` 渲染和 plist 语法；不得作为 Runtime 启用或数据写入授权。禁止在
+本地验证中调用 `--confirm-market-runtime`、`guiyi runtime live` 或 `guiyi data after-market`。
 
 DFD-03 之后补充 `20260808_0035:20260808_0036 --sql` 和隔离 PostgreSQL migration 测试。DFD-05
 完成后，最终无写入 CLI smoke 为：

@@ -1,6 +1,6 @@
 """归一量化统一 CLI 入口（``uv run guiyi``）。
 
-子域：``data``（历史数据 audit/update/refresh）、``runtime status``（只读健康）。
+子域：``data``（历史数据 audit/update/refresh）、``runtime``（健康与前台 Live）。
 默认 JSON 输出至 stdout；参数错误与异常经 output 模块脱敏后写 stderr。
 """
 
@@ -20,13 +20,16 @@ from app.guiyi_cli.output import (
     exception_error_payload,
     print_json,
 )
-from app.market_data.composition import build_historical_data_manager
+from app.market_data.composition import build_historical_data_manager, build_live_market_service
+from app.market_data.after_market import build_after_market_updater
 from app.market_data.maintenance import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 ManagerFactory = Callable[[Any], HistoricalDataManager]
+AfterMarketFactory = Callable[[HistoricalDataManager], Any]
+LiveServiceFactory = Callable[[Any], Any]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,7 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
     commands = data.add_subparsers(dest="data_command", required=True)
     add_data_commands(commands)
     runtime = domains.add_parser("runtime")
-    runtime.add_subparsers(dest="runtime_command", required=True).add_parser("status")
+    runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
+    runtime_commands.add_parser("status")
+    runtime_commands.add_parser("live")
     return parser
 
 
@@ -46,6 +51,8 @@ def main(
     *,
     session_factory: SessionFactory = SessionLocal,
     manager_factory: ManagerFactory = build_historical_data_manager,
+    after_market_factory: AfterMarketFactory = build_after_market_updater,
+    live_service_factory: LiveServiceFactory = build_live_market_service,
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -74,8 +81,10 @@ def main(
 
     try:
         if args.domain == "data":
-            payload = _run_data(args, session_factory, manager_factory)
-        else:
+            payload = _run_data(
+                args, session_factory, manager_factory, after_market_factory
+            )
+        elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:
                 health = runtime_health_builder(session)
@@ -86,6 +95,16 @@ def main(
                     "readonly": True,
                     "runtime": health,
                 }
+        else:
+            # 前台阻塞循环由 launchd/终端托管；Python 不 daemonize 或启动 worker。
+            with session_factory() as session:
+                live_service_factory(session).run_forever()
+            payload = {
+                "schema_version": 1,
+                "command": "runtime.live",
+                "status": "ok",
+                "foreground": True,
+            }
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
         # 执行期异常：error code 仅暴露公开码或 CLI_INTERNAL_ERROR
         print_json(
@@ -105,10 +124,14 @@ def _run_data(
     args: argparse.Namespace,
     session_factory: SessionFactory,
     manager_factory: ManagerFactory,
+    after_market_factory: AfterMarketFactory,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
     with session_factory() as session:
-        return run_data_command(args, manager_factory(session)).as_payload()
+        manager = manager_factory(session)
+        if args.data_command == "after-market":
+            return after_market_factory(manager).run().as_payload()
+        return run_data_command(args, manager).as_payload()
 
 
 def entrypoint() -> None:

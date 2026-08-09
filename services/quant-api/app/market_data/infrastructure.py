@@ -29,7 +29,7 @@ import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
@@ -420,7 +420,7 @@ class RQDataMarketAdapter:
     def client(self) -> Any:
         """仅在 apply 路径首次需要行情时初始化 rqdatac，dry-run 不触网。"""
         if self._client is None:
-            self._client = _RqdatacClient()
+            self._client = RQDataClient()
         return self._client
 
     def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
@@ -547,13 +547,13 @@ class RQDataMarketAdapter:
         return self.client.metadata_snapshot(products, through, requested_starts)
 
 
-class _RqdatacClient:
+class RQDataClient:
     """rqdatac 薄封装：凭证初始化与 price / metadata 高层调用。"""
 
     def __init__(self) -> None:
         load_project_env()
         try:
-            import rqdatac  # type: ignore[import-not-found]
+            import rqdatac  # type: ignore[import-not-found, import-untyped]
         except ImportError as exc:
             raise InfrastructureError("RQDATA_NOT_INSTALLED") from exc
         uri = os.getenv("RQDATAC2_CONF") or os.getenv("RQDATAC_CONF")
@@ -583,6 +583,48 @@ class _RqdatacClient:
             frequency=frequency,
             adjust_type="none",
         )
+
+    def is_future_data_ready(self, trading_day: date) -> bool:
+        """确认日线与分钟线均已由 RQData 标记为可用。"""
+        frame = self.api.is_data_ready(
+            categories=["future_daybar", "future_minbar"],
+            expected_date=trading_day,
+            market="cn",
+        )
+        required = frame.loc[["future_daybar", "future_minbar"], "ready"]
+        return bool(required.all())
+
+    def dominant_for_day(self, symbol: str, trading_day: date) -> str:
+        """返回指定交易日唯一的 rank=1 主力合约；异常结果显式拒绝。"""
+        frame = _frame(
+            self.api.futures.get_dominant(
+                symbol.upper(),
+                start_date=trading_day,
+                end_date=trading_day,
+                rule=2,
+                rank=1,
+            )
+        )
+        values = tuple(
+            _row_text(
+                row,
+                "dominant",
+                "order_book_id",
+                "contract",
+                "dominant_contract",
+                0,
+                "0",
+            ).strip().upper()
+            for row in frame.to_dict("records")
+        )
+        normalized = tuple(value for value in values if value)
+        if len(normalized) != 1:
+            raise InfrastructureError("RQDATA_DOMINANT_INVALID")
+        return normalized[0]
+
+    def live_market_client(self) -> Any:
+        """创建 RQData Live client；仅由显式的前台 live Runtime 使用。"""
+        return self.api.LiveMarketDataClient()
 
     def metadata_snapshot(
         self,

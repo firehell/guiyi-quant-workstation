@@ -26,7 +26,7 @@ class JsonArgumentParser(argparse.ArgumentParser):
 def add_data_commands(
     commands: argparse._SubParsersAction[Any],
 ) -> None:
-    """注册 data 下的 update、refresh、audit、retire-products 子解析器。"""
+    """注册 data 下的 update、refresh、audit、retire-products、after-market 子解析器。"""
     update = commands.add_parser("update")
     selector = update.add_mutually_exclusive_group(required=True)
     selector.add_argument("--symbol")
@@ -48,3 +48,5 @@ def add_data_commands(
 
     retire = commands.add_parser("retire-products")
     retire.add_argument("--apply", action="store_true")
+
+    commands.add_parser("after-market")

@@ -7,6 +7,7 @@ import {
   HistogramSeries,
   type IChartApi,
   type ISeriesApi,
+  type LogicalRange,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
@@ -24,11 +25,20 @@ const props = withDefaults(defineProps<{
   period: '15m',
 })
 
+const emit = defineEmits<{
+  'need-more-before': []
+  'follow-latest-change': [followLatest: boolean]
+}>()
+
 const container = ref<HTMLElement>()
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
 let observer: ResizeObserver | null = null
+let renderedBars: BarData[] = []
+let isNearLeftBoundary = false
+let paginationArmed = false
+let followLatest = true
 
 onMounted(async () => {
   await nextTick()
@@ -61,36 +71,132 @@ onMounted(async () => {
     priceScaleId: 'volume',
   })
   chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
+  chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   observer = new ResizeObserver(() => resize())
   observer.observe(container.value)
-  render()
+  replaceBars(props.bars)
 })
 
 onUnmounted(() => {
+  chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   observer?.disconnect()
   chart?.remove()
 })
 
-watch(() => [props.bars, props.period], render, { deep: true })
+watch(() => props.period, () => {
+  chart?.applyOptions({ timeScale: { timeVisible: !isDaily() } })
+})
 
-function render() {
-  if (!candles || !volume || !chart) return
-  const theme = resolveChartTheme()
-  const values = props.bars.map((bar) => ({
+function barValues(bars: BarData[]) {
+  return bars.map((bar) => ({
     time: chartTime(bar),
     open: bar.open,
     high: bar.high,
     low: bar.low,
     close: bar.close,
   }))
-  candles.setData(values)
-  volume.setData(props.bars.map((bar) => ({
+}
+
+function volumeValues(bars: BarData[]) {
+  const theme = resolveChartTheme()
+  return bars.map((bar) => ({
     time: chartTime(bar),
     value: bar.volume,
     color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown,
-  })))
+  }))
+}
+
+function sortAndDedupe(bars: BarData[]): BarData[] {
+  const byEnd = new Map<string, BarData>()
+  for (const bar of bars) byEnd.set(bar.time, bar)
+  return [...byEnd.values()].sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
+}
+
+function replaceBars(bars: BarData[], preserveViewport = false): void {
+  const visibleRange = preserveViewport ? chart?.timeScale().getVisibleLogicalRange() : null
+  renderedBars = sortAndDedupe(bars)
+  if (!candles || !volume || !chart) return
+  paginationArmed = false
+  candles.setData(barValues(renderedBars))
+  volume.setData(volumeValues(renderedBars))
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
-  chart.timeScale().fitContent()
+  if (visibleRange) chart.timeScale().setVisibleLogicalRange(visibleRange)
+  else chart.timeScale().fitContent()
+  requestAnimationFrame(() => {
+    const range = chart?.timeScale().getVisibleLogicalRange()
+    isNearLeftBoundary = !!range && range.from <= 20
+    paginationArmed = true
+  })
+}
+
+function prependBars(bars: BarData[]): void {
+  if (!candles || !volume || !chart || !bars.length) return
+  const previousLength = renderedBars.length
+  const visibleRange = chart.timeScale().getVisibleLogicalRange()
+  renderedBars = sortAndDedupe([...bars, ...renderedBars])
+  const prependedCount = renderedBars.length - previousLength
+  if (!prependedCount) return
+  candles.setData(barValues(renderedBars))
+  volume.setData(volumeValues(renderedBars))
+  if (visibleRange) {
+    chart.timeScale().setVisibleLogicalRange({
+      from: visibleRange.from + prependedCount,
+      to: visibleRange.to + prependedCount,
+    })
+  }
+}
+
+function updateBar(bar: BarData): void {
+  if (!candles || !volume) return
+  const index = renderedBars.findIndex((item) => item.time === bar.time)
+  if (index >= 0) renderedBars[index] = bar
+  else renderedBars.push(bar)
+  renderedBars = sortAndDedupe(renderedBars)
+  const theme = resolveChartTheme()
+  if (index >= 0 && index !== renderedBars.length - 1) {
+    candles.setData(barValues(renderedBars))
+    volume.setData(volumeValues(renderedBars))
+    return
+  }
+  candles.update({
+    time: chartTime(bar),
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+  })
+  volume.update({
+    time: chartTime(bar),
+    value: bar.volume,
+    color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown,
+  })
+}
+
+function scrollToLatest(): void {
+  chart?.timeScale().scrollToRealTime()
+  if (!followLatest) {
+    followLatest = true
+    emit('follow-latest-change', true)
+  }
+}
+
+function onVisibleLogicalRangeChange(range: LogicalRange | null) {
+  if (!range || !renderedBars.length) return
+  const isFollowing = range.to >= renderedBars.length - 3
+  if (isFollowing !== followLatest) {
+    followLatest = isFollowing
+    emit('follow-latest-change', isFollowing)
+  }
+  if (!paginationArmed || props.loading) return
+  const nearLeftBoundary = range.from <= 20
+  if (!nearLeftBoundary) {
+    isNearLeftBoundary = false
+    return
+  }
+  if (!isNearLeftBoundary) {
+    isNearLeftBoundary = true
+    emit('need-more-before')
+  }
 }
 
 function chartTime(bar: BarData): Time {
@@ -106,6 +212,13 @@ function resize() {
   if (!container.value || !chart) return
   chart.resize(container.value.clientWidth, container.value.clientHeight)
 }
+
+defineExpose({
+  replaceBars,
+  prependBars,
+  updateBar,
+  scrollToLatest,
+})
 </script>
 
 <template>

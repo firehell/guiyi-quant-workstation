@@ -70,6 +70,56 @@ export interface MarketBarsResponse {
   resolved_contract_segments: ResolvedContractSegment[]
 }
 
+export interface MarketBarsPageRequest {
+  series_kind: SeriesKind
+  symbol: string
+  contract?: string
+  frequency: MarketFrequency
+  before?: string
+  limit?: number
+}
+
+export interface MarketPageMeta {
+  has_more_before: boolean
+  next_before: string | null
+}
+
+export interface MarketBarsPageResponse {
+  request: {
+    series_kind: SeriesKind
+    symbol: string
+    contract: string | null
+    frequency: MarketFrequency
+    before: string | null
+    limit: number
+  }
+  bars: CanonicalBarDto[]
+  canonical_coverage: { start: string; end: string } | null
+  page: MarketPageMeta
+  resolved_contract_segments: ResolvedContractSegment[]
+}
+
+/** 后端 `/market/state` 与 WebSocket `state` 事件的只读展示状态。 */
+export interface MarketReadState {
+  symbol: string
+  series_kind: SeriesKind
+  frequency: MarketFrequency
+  operational: boolean
+  phase: 'TRADING' | 'BREAK' | 'CLOSED' | 'UNKNOWN'
+  trading_day: string | null
+  live_eligible: boolean
+  live_available: boolean
+  live_contract: string | null
+  canonical_end: string | null
+  after_market: Record<string, unknown>
+}
+
+export type MarketWsMessage =
+  | { type: 'state'; state: MarketReadState }
+  | { type: 'snapshot'; bars: CanonicalBarDto[] }
+  | { type: 'bar'; bar: CanonicalBarDto }
+  | { type: 'reset'; trading_day: string | null; contract: string | null }
+
 export interface MarketCoverageItem {
   kind: 'continuous' | 'contract'
   symbol: string

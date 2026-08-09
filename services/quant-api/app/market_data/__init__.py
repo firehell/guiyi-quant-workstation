@@ -12,6 +12,7 @@ from app.market_data.domain import (
     DatasetKey,
     DatasetKind,
     SeriesKind,
+    SeriesPageQuery,
     SeriesQuery,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "DatasetKey",
     "DatasetKind",
     "SeriesKind",
+    "SeriesPageQuery",
     "SeriesQuery",
 ]
