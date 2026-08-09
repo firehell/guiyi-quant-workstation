@@ -12,7 +12,7 @@ from app.market_data.domain import BarFrequency, CanonicalBar
 
 _LIVE_TTL_SECONDS = 3 * 24 * 60 * 60
 LIVE_BAR_CHANNEL_PREFIX = "live:bar"
-LIVE_STATE_CHANNEL = "live:state"
+LIVE_STATE_CHANNEL = "market:state"
 
 
 class RedisClient(Protocol):

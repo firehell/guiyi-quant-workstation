@@ -159,12 +159,12 @@ def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
     store.publish_state({"state": "healthy"})
 
     assert module.live_bar_channel("RB", "1m") == "live:bar:RB:1m"
-    assert module.LIVE_STATE_CHANNEL == "live:state"
+    assert module.LIVE_STATE_CHANNEL == "market:state"
     assert store.heartbeat() == {"state": "healthy"}
     assert fake.published == [
         (
             "live:bar:RB:1m",
             '{"bar_end":"2025-01-02T01:01:00+00:00","trading_day":"2025-01-02","open":"100.1250","high":"101.0000","low":"99.0000","close":"100.7500","volume":"12.500","turnover":"1253.125000","open_interest":"70.000"}',
         ),
-        ("live:state", '{"state":"healthy"}'),
+        ("market:state", '{"state":"healthy"}'),
     ]
