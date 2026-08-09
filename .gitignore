@@ -62,7 +62,8 @@ backtests/reports/
 
 # IDE
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 
 # workstation scaffold local artifacts
 scripts/ai/.out/

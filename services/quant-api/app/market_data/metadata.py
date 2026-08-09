@@ -1,3 +1,14 @@
+"""RQData 元数据同步（数据核心 V2 八表事实写入）。
+
+``MetadataSynchronizer`` 将 adapter 拉取的交易所、品种、合约、交易日历、
+交易时段与主力映射写入 Catalog 所绑定的 SQLAlchemy session。
+
+设计要点：
+- 交易时段（``TradingSession``）按品种全量替换，避免历史时段模板覆盖旧日；
+- 主力映射按 ``main_contract_starts`` 窗口先删后插，保证刷新区间与 RQData 一致；
+- 单事务 commit，异常 rollback，不向 Parquet 写入任何内容。
+"""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -20,6 +31,8 @@ from app.models import (
 
 @dataclass(frozen=True, slots=True)
 class MetadataSnapshot:
+    """一次元数据拉取的不可变快照，供 synchronizer 按表 upsert。"""
+
     exchanges: tuple[Mapping[str, Any], ...]
     instruments: tuple[Mapping[str, Any], ...]
     contracts: tuple[Mapping[str, Any], ...]
@@ -30,6 +43,8 @@ class MetadataSnapshot:
 
 
 class MetadataAdapter(Protocol):
+    """外部元数据来源协议（通常为 RQData 适配器实现）。"""
+
     def fetch_metadata(
         self,
         products: tuple[str, ...],
@@ -39,7 +54,7 @@ class MetadataAdapter(Protocol):
 
 
 class MetadataSynchronizer:
-    """Synchronize the fixed RQData metadata surface as current facts."""
+    """将 RQData 固定元数据面同步为当前数据库事实（八表中的 reference 表）。"""
 
     def __init__(self, adapter: MetadataAdapter, catalog: MarketCatalog) -> None:
         self.adapter = adapter
@@ -51,6 +66,11 @@ class MetadataSynchronizer:
         through: date,
         starts: Mapping[str, date] | None = None,
     ) -> date:
+        """拉取并写入元数据，成功返回 ``through`` 日期。
+
+        ``starts`` 未提供时各品种默认从 ``through`` 当天开始刷新主力映射；
+        ``main_contract_starts`` 与删除窗口不一致时 fail-closed（``ValueError``）。
+        """
         normalized = tuple(dict.fromkeys(item.strip().lower() for item in products))
         floors = dict(starts or {symbol: through for symbol in normalized})
         snapshot = self.adapter.fetch_metadata(normalized, through, floors)
@@ -79,8 +99,7 @@ class MetadataSynchronizer:
                     },
                     values,
                 )
-            # Historical periods are date-scoped facts. Replace prior templates
-            # so a former current-hours approximation cannot cover an older day.
+            # 历史时段是「按生效日」的事实；先删后插，避免旧版当前时段模板误盖历史日
             session.execute(
                 delete(TradingSession).where(
                     TradingSession.instrument_symbol.in_(normalized)
@@ -120,6 +139,7 @@ class MetadataSynchronizer:
 
 
 def _upsert(session, model, identity: Mapping[str, object], values: Mapping[str, Any]) -> None:
+    """按 identity 字段查找行，存在则更新全部列，否则插入新行。"""
     row = session.scalar(
         select(model).where(
             *(getattr(model, field) == value for field, value in identity.items())

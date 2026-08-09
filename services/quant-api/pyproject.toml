@@ -43,6 +43,18 @@ packages = ["app"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.13"
+extraPaths = ["."]
+
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.13"
+extraPaths = ["."]
+
 [tool.uv]
 # RQData 3.5.2+ documents pandas 3 support, but its wheel metadata still caps pandas below 3.
 override-dependencies = ["pandas>=3.0.3"]

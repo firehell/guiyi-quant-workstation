@@ -1,3 +1,15 @@
+"""数据核心 V2 八表 ORM 定义。
+
+八表构成 Catalog 元数据层，与 Canonical Parquet 物理文件通过 ``market_datasets``
++ ``market_partitions`` 关联；``MarketDataService`` 查询时依赖本层而非自行 glob。
+
+表与 V2 角色：
+- exchanges / instruments / contracts：品种与合约主数据
+- trading_calendars / trading_sessions：交易日与会话边界（覆盖校验、bar 对齐）
+- main_contract_map：每日主力合约映射（actual_dominant 查询拼接）
+- market_datasets / market_partitions：逻辑数据集键与月分区物理指针
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time
@@ -20,10 +32,13 @@ from app.db.base import Base
 
 
 def utc_now() -> datetime:
+    """ORM 默认时间戳：当前 UTC 时刻。"""
     return datetime.now(UTC)
 
 
 class TimestampMixin:
+    """为实体提供 created_at / updated_at 审计列。"""
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
@@ -33,6 +48,12 @@ class TimestampMixin:
 
 
 class Exchange(Base, TimestampMixin):
+    """交易所主数据。
+
+    V2 角色：Catalog 根节点；instruments/contracts 通过 exchange_code 关联。
+    提供时区与国家等交易所级属性，供会话与日历查询。
+    """
+
     __tablename__ = "exchanges"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -46,6 +67,12 @@ class Exchange(Base, TimestampMixin):
 
 
 class Instrument(Base, TimestampMixin):
+    """品种（产品）主数据，如 rb、IF。
+
+    V2 角色：DatasetKey 中的 symbol；与 continuous 序列及 MainContractMap 的
+    symbol 字段对应；关联该品种下全部合约行。
+    """
+
     __tablename__ = "instruments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -61,6 +88,12 @@ class Instrument(Base, TimestampMixin):
 
 
 class Contract(Base, TimestampMixin):
+    """具体合约主数据，如 rb2501。
+
+    V2 角色：kind=contract 时 DatasetKey 的 series_or_contract；存储交割月、
+    乘数、上市/到期日等；provider 标记数据来源（默认 rqdata）。
+    """
+
     __tablename__ = "contracts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -86,6 +119,12 @@ class Contract(Base, TimestampMixin):
 
 
 class TradingCalendar(Base):
+    """交易所交易日历。
+
+    V2 角色：判断 trade_date 是否为交易日、是否含夜盘；覆盖校验与 bar 交易日
+    归属依赖本表，不得用自然日静默替代。
+    """
+
     __tablename__ = "trading_calendars"
     __table_args__ = (
         UniqueConstraint("exchange_code", "trade_date", name="uq_trading_calendar_exchange_date"),
@@ -101,6 +140,12 @@ class TradingCalendar(Base):
 
 
 class TradingSession(Base):
+    """品种交易时段定义（含生效日期窗口）。
+
+    V2 角色：定义日内 session 边界与跨午夜标记；分钟 bar 对齐与 session 校验
+    读取本表，支持按 instrument 与 effective_from/to 版本化。
+    """
+
     __tablename__ = "trading_sessions"
     __table_args__ = (
         UniqueConstraint(
@@ -129,6 +174,12 @@ class TradingSession(Base):
 
 
 class MainContractMap(Base, TimestampMixin):
+    """每日主力合约映射（rank=1，规则 volume_open_interest）。
+
+    V2 角色：actual_dominant 查询模式的核心；按 symbol + trade_date 指向
+    当日主力 contract_code，查询时动态拼接分段而非物理 continuous 文件切换。
+    """
+
     __tablename__ = "main_contract_map"
     __table_args__ = (
         UniqueConstraint("symbol", "trade_date", name="uq_main_contract_map_symbol_date"),
@@ -145,10 +196,17 @@ class MainContractMap(Base, TimestampMixin):
 
     @property
     def instrument_symbol(self) -> str:
+        """与 Instrument.symbol 对齐的别名属性。"""
         return self.symbol
 
 
 class MarketDataset(Base):
+    """逻辑市场数据集注册（DatasetKey 四元组之一行）。
+
+    V2 角色：Catalog 核心索引。kind 仅 continuous / contract；frequency 为
+    允许频度集合；与 partitions 一对多，消费者通过本表定位 Parquet 而非 glob。
+    """
+
     __tablename__ = "market_datasets"
     __table_args__ = (
         UniqueConstraint(
@@ -171,6 +229,12 @@ class MarketDataset(Base):
 
 
 class MarketPartition(Base):
+    """数据集月分区物理指针（Canonical Parquet part.parquet）。
+
+    V2 角色：记录 coverage 窗口、行数与 file_uri；MarketDataService 按分区
+    读取并校验物理完整性；月粒度与 staging 发布原子替换策略对齐。
+    """
+
     __tablename__ = "market_partitions"
     __table_args__ = (
         UniqueConstraint("dataset_id", "year", "month", name="uq_market_partitions_month"),

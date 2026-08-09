@@ -1,3 +1,16 @@
+"""Runtime 分层健康检查聚合服务。
+
+健康检查分层说明：
+- **真实探测**：``db``（SELECT 1）、``redis``（PING）、``rq``（队列 registry 与 worker 列表）
+- **退役 stub**：``live_checkpoints``、``archive``、``after_market_scheduler``、
+  ``notification_retry`` — 固定 ``status=disabled``、``retired=True``，不查 DB/Redis
+
+安全与 fail-closed：
+- 健康端点捕获异常并降级为 failed/degraded，不向 HTTP 层抛出原始 stack trace
+- ``_safe_error_message`` 过滤含 password/token/webhook 等敏感子串的错误正文
+- 顶层 ``readonly=True`` 及 ``would_*`` 标志声明本响应不授权启动服务、入队或发通知
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -20,7 +33,9 @@ RUNTIME_STATUS_FAILED = "failed"
 RUNTIME_STATUS_UNKNOWN = "unknown"
 RUNTIME_STATUS_DISABLED = "disabled"
 
+# 当前无活跃业务队列；空元组时 RQ 健康仅枚举 worker、不检查队列积压
 RUNTIME_QUEUE_NAMES: tuple[str, ...] = ()
+# 错误消息脱敏：命中任一子串则 error_message 置 None（fail-closed 不泄露凭据）
 SENSITIVE_TEXT_PARTS = (
     "password",
     "passwd",
@@ -49,8 +64,13 @@ def build_runtime_health(
     live_polling_expected: bool | None = None,
     live_market_phase: str | None = None,
 ) -> dict[str, Any]:
+    """构建 Runtime 健康快照字典（供 HTTP 与 CLI 共用）。
+
+    真实探测 db/redis/rq；退役组件返回固定 stub。可选注入 redis_factory、
+    rq_collector 供测试替换；live/archive/notification 相关参数已永久退役，传入即忽略。
+    """
     current_time = now or datetime.now(UTC)
-    # Live polling / notification / after-market archive Profile paths are permanently retired.
+    # Live 轮询 / 通知 / 盘后归档 Profile 路径已永久退役，忽略历史开关参数
     del live_runtime_enabled, live_polling_expected, live_market_phase, notification_autosend_enabled
     del archive_enabled, after_market_automation_enabled
     freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
@@ -60,6 +80,7 @@ def build_runtime_health(
     components["redis"] = redis_health
 
     if redis_connection is None:
+        # Redis 不可达时 RQ 无法探测，直接标记 failed
         components["rq"] = {
             "status": RUNTIME_STATUS_FAILED,
             "queues": [],
@@ -73,6 +94,8 @@ def build_runtime_health(
             components["rq"] = rq_collector(redis_connection)
         else:
             components["rq"] = _collect_rq_health(redis_connection, queue_names=RUNTIME_QUEUE_NAMES)
+
+    # 以下为退役 stub，不执行真实 DB/Redis 查询
     components["live_checkpoints"] = _retired_live_checkpoint_health(freshness_seconds=freshness_seconds)
     components["notification_retry"] = _retired_notification_retry_health()
     components["archive"] = _retired_archive_health()
@@ -90,6 +113,7 @@ def build_runtime_health(
 
 
 def _retired_live_checkpoint_health(*, freshness_seconds: int) -> dict[str, Any]:
+    """盘中 Live checkpoint 健康 stub（已退役，enabled=False）。"""
     return {
         "status": RUNTIME_STATUS_DISABLED,
         "enabled": False,
@@ -111,6 +135,7 @@ def _retired_live_checkpoint_health(*, freshness_seconds: int) -> dict[str, Any]
 
 
 def _retired_archive_health() -> dict[str, Any]:
+    """盘后归档任务健康 stub（已退役）。"""
     return {
         "status": RUNTIME_STATUS_DISABLED,
         "enabled": False,
@@ -126,6 +151,7 @@ def _retired_archive_health() -> dict[str, Any]:
 
 
 def _retired_after_market_scheduler_health() -> dict[str, Any]:
+    """盘后调度器健康 stub（已退役）。"""
     return {
         "status": RUNTIME_STATUS_DISABLED,
         "enabled": False,
@@ -148,6 +174,7 @@ def _retired_after_market_scheduler_health() -> dict[str, Any]:
 
 
 def _collect_db_health(session: Session) -> dict[str, Any]:
+    """真实探测：执行 SELECT 1 并记录延迟；异常时 status=failed 并脱敏 error_message。"""
     started = perf_counter()
     try:
         session.execute(text("select 1")).scalar_one()
@@ -166,6 +193,7 @@ def _collect_db_health(session: Session) -> dict[str, Any]:
 
 
 def _collect_redis_health(redis_factory: Callable[[], Redis]) -> tuple[Redis | None, dict[str, Any]]:
+    """真实探测：PING Redis；失败时返回 (None, failed_health) 供上层跳过 RQ。"""
     started = perf_counter()
     try:
         connection = redis_factory()
@@ -185,6 +213,7 @@ def _collect_redis_health(redis_factory: Callable[[], Redis]) -> tuple[Redis | N
 
 
 def _collect_rq_health(connection: Redis, *, queue_names: tuple[str, ...] = RUNTIME_QUEUE_NAMES) -> dict[str, Any]:
+    """真实探测：枚举队列 registry 计数与 Worker.all；单 registry 失败仅 degraded。"""
     queue_results: list[dict[str, Any]] = []
     component_status = RUNTIME_STATUS_OK
 
@@ -221,6 +250,7 @@ def _collect_rq_health(connection: Redis, *, queue_names: tuple[str, ...] = RUNT
 
 
 def _collect_queue_health(queue: Queue) -> dict[str, Any]:
+    """收集单队列各 JobRegistry 计数；单项失败将该队列标为 degraded。"""
     payload = {
         "name": queue.name,
         "status": RUNTIME_STATUS_OK,
@@ -249,6 +279,7 @@ def _collect_queue_health(queue: Queue) -> dict[str, Any]:
 
 
 def _apply_worker_coverage(queue_results: list[dict[str, Any]], worker_results: list[dict[str, Any]]) -> bool:
+    """检查每个配置队列是否有 worker 监听；缺失则标 degraded + worker_missing。"""
     worker_queues = {queue_name for worker in worker_results for queue_name in worker["queues"]}
     missing = False
     for queue_health in queue_results:
@@ -261,6 +292,7 @@ def _apply_worker_coverage(queue_results: list[dict[str, Any]], worker_results: 
 
 
 def _retired_notification_retry_health() -> dict[str, Any]:
+    """企业微信通知重试健康 stub（已退役，channel=retired）。"""
     return {
         "status": RUNTIME_STATUS_DISABLED,
         "enabled": False,
@@ -283,6 +315,7 @@ def _retired_notification_retry_health() -> dict[str, Any]:
 
 
 def _worker_payload(worker: Worker) -> dict[str, Any]:
+    """将 RQ Worker 对象序列化为健康响应子结构。"""
     queues = []
     for queue in getattr(worker, "queues", []) or []:
         queues.append(_to_text(getattr(queue, "name", queue)))
@@ -294,6 +327,7 @@ def _worker_payload(worker: Worker) -> dict[str, Any]:
 
 
 def _overall_status(component_values: Any) -> str:
+    """聚合子组件 status：任一 failed → failed；否则任一 degraded → degraded；否则 ok。"""
     has_failed = False
     has_degraded = False
     for component in component_values:
@@ -310,6 +344,7 @@ def _overall_status(component_values: Any) -> str:
 
 
 def _env_positive_int(name: str, default: int) -> int:
+    """从环境变量读取正整数；无效或非正时回退 default。"""
     try:
         value = int(str(os.getenv(name, default)).strip())
     except (TypeError, ValueError):
@@ -318,14 +353,17 @@ def _env_positive_int(name: str, default: int) -> int:
 
 
 def _count_value(value: Any) -> int:
+    """兼容 RQ count 属性为可调用或整型。"""
     return int(value() if callable(value) else value)
 
 
 def _elapsed_ms(started: float) -> float:
+    """perf_counter 起点至今的毫秒数（保留两位小数）。"""
     return round((perf_counter() - started) * 1000, 2)
 
 
 def _error_fields(exc: Exception) -> dict[str, str | None]:
+    """构造 error_type + 经脱敏的 error_message。"""
     return {
         "error_type": exc.__class__.__name__,
         "error_message": _safe_error_message(exc),
@@ -333,6 +371,7 @@ def _error_fields(exc: Exception) -> dict[str, str | None]:
 
 
 def _safe_error_message(exc: Exception) -> str | None:
+    """fail-closed 错误正文：空消息或含敏感子串时返回 None，否则截断至 200 字符。"""
     message = str(exc).strip()
     if not message:
         return None
@@ -343,6 +382,7 @@ def _safe_error_message(exc: Exception) -> str | None:
 
 
 def _iso(value: datetime | None) -> str | None:
+    """datetime 转 ISO 字符串；naive 时假定 UTC。"""
     if value is None:
         return None
     if value.tzinfo is None:
@@ -351,6 +391,7 @@ def _iso(value: datetime | None) -> str | None:
 
 
 def _to_text(value: Any) -> str | None:
+    """将任意值转为 str 或 None。"""
     if value is None:
         return None
     return str(value)

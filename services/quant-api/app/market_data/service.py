@@ -1,3 +1,14 @@
+"""市场数据查询服务（数据核心 V2 唯一历史读入口）。
+
+``MarketDataService`` 是消费者（Market API、CLI 等）访问 canonical 数据的**唯一门面**：
+- 物理序列（``continuous`` / ``contract``）：经八表 Catalog 定位月分区，再读 Parquet；
+- 逻辑序列 ``actual_dominant``：按 ``MainContractMap`` 逐日映射到具体合约数据集后拼接，
+  周线另按「完整交易周」规则选取映射日。
+
+本模块强制执行分区连续性、行数一致、bar 严格递增等 fail-closed 校验；
+映射或物理数据缺失时不回退、不插值，直接 ``MarketDataError``。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,6 +36,8 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class MarketDataError(RuntimeError):
+    """服务层业务失败：以稳定 ``code`` 字符串标识，不含存储内部细节。"""
+
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
@@ -32,6 +45,8 @@ class MarketDataError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class DatasetCoverageSummary:
+    """单个物理数据集在 Catalog 中的聚合覆盖摘要（供运维/审计列表）。"""
+
     kind: str
     symbol: str
     series_or_contract: str
@@ -44,6 +59,8 @@ class DatasetCoverageSummary:
 
 @dataclass(frozen=True, slots=True)
 class DominantContractSummary:
+    """各品种最新主力映射一行摘要（映射日 + 实际合约代码）。"""
+
     symbol: str
     product_name: str
     exchange: str
@@ -52,11 +69,17 @@ class DominantContractSummary:
 
 
 class MarketDataService:
+    """V2 历史市场数据查询服务：Catalog 定位 + Parquet 读取 + 主力拼接。
+
+    依赖注入 ``MarketCatalog`` 与 ``CanonicalMonthlyStore``，自身无全局状态。
+    """
+
     def __init__(self, catalog: MarketCatalog, store: CanonicalMonthlyStore) -> None:
         self.catalog = catalog
         self.store = store
 
     def query(self, request: SeriesQuery) -> MarketSeriesResult:
+        """执行序列查询；``actual_dominant`` 走拼接路径，其余读单一物理数据集。"""
         if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
             return self._actual_dominant(request)
         assert request.physical_key is not None
@@ -64,6 +87,13 @@ class MarketDataService:
         return self._result(request, bars, (),)
 
     def _actual_dominant(self, request: SeriesQuery) -> MarketSeriesResult:
+        """按交易日主力映射拼接多合约物理数据，得到逻辑连续序列。
+
+        关键约束：
+        - 窗口内每个交易日须有 ``MainContractMap`` 行（与交易日历对齐）；
+        - 周线仅使用「完整交易周」最后交易日的映射；
+        - 映射指向的合约分区缺失或交易日缺 bar 时整体失败，不部分返回。
+        """
         start_day = _local_date(request.start)
         end_day = _local_date(request.end)
         mappings = self.catalog.main_map(
@@ -80,6 +110,7 @@ class MarketDataService:
         )
         if not trading_days:
             raise MarketDataError("TRADING_CALENDAR_MISSING")
+        # 与交易日历逐日比对，任一交易日无映射则 fail-closed
         missing_days = self.catalog.missing_main_map_days(
             request.symbol,
             start_day,
@@ -94,6 +125,7 @@ class MarketDataService:
         segments = _segments(selected)
         bars: list[CanonicalBar] = []
         mapping_by_day = {row.trade_date: row.contract for row in selected}
+        # 按出现过的合约去重读取，避免同一合约分区重复 IO
         for contract in dict.fromkeys(row.contract for row in selected):
             key = DatasetKey(
                 DatasetKind.CONTRACT,
@@ -102,6 +134,7 @@ class MarketDataService:
                 request.frequency,
             )
             try:
+                # 拼接场景不要求单月分区覆盖整个查询窗口，只要求映射日有 bar
                 contract_bars, _ = self._read_physical(
                     key,
                     request,
@@ -111,6 +144,7 @@ class MarketDataService:
                 if exc.code == "DATASET_OR_PARTITION_MISSING":
                     raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING") from exc
                 raise
+            # 仅保留「该交易日映射到本合约」的 bar，实现 actual_dominant 语义
             bars.extend(
                 bar
                 for bar in contract_bars
@@ -119,6 +153,7 @@ class MarketDataService:
         bars.sort(key=lambda item: item.bar_end)
         if not bars:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+        # 每个被选中的映射日都必须有对应 bar，防止静默缺口
         if {item.trade_date for item in selected} - {bar.trading_day for bar in bars}:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         return self._result(request, tuple(bars), segments)
@@ -127,6 +162,7 @@ class MarketDataService:
         self,
         symbol: str | None = None,
     ) -> tuple[DatasetCoverageSummary, ...]:
+        """列出 Catalog 中已注册数据集的覆盖范围与行数汇总；无分区的数据集跳过。"""
         query = select(MarketDataset)
         if symbol:
             query = query.where(MarketDataset.symbol == symbol.strip().lower())
@@ -158,6 +194,7 @@ class MarketDataService:
         return tuple(items)
 
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
+        """返回每个品种最近一条主力映射（按 trade_date 降序取首条）。"""
         mappings = self.catalog.session.scalars(
             select(MainContractMap).order_by(
                 MainContractMap.symbol,
@@ -190,6 +227,11 @@ class MarketDataService:
         request: SeriesQuery,
         mappings: tuple[MainMapFact, ...],
     ) -> tuple[MainMapFact, ...]:
+        """周线 actual_dominant：仅保留窗口内「完整 ISO 交易周」的最后交易日映射。
+
+        不完整周（节假日导致周内最后一个交易日不是周五对应日）整周跳过；
+        若窗口内无任何完整周，抛出 ``COMPLETE_WEEK_MISSING``。
+        """
         request_days = self.catalog.trading_days(
             request.symbol,
             _local_date(request.start),
@@ -209,6 +251,7 @@ class MarketDataService:
                 monday,
                 monday + timedelta(days=6),
             )
+            # 该周必须在交易日历上连续填满至 candidate_day，否则不算完整周
             if not full_week or full_week[-1] != candidate_day:
                 continue
             owner = mapping_by_day.get(candidate_day)
@@ -226,11 +269,19 @@ class MarketDataService:
         *,
         require_window_coverage: bool = True,
     ) -> tuple[tuple[CanonicalBar, ...], tuple[CatalogPartition, ...]]:
+        """从 Catalog 解析月分区并读取 Parquet，过滤到 ``(start, end]`` 窗口。
+
+        ``require_window_coverage=True`` 时要求：
+        - 首尾分区间月份无空洞；
+        - 分区 coverage 包络整个查询窗口。
+        并校验每分区 ``row_count`` 与文件行数一致、bar_end 严格递增。
+        """
         partitions = self.catalog.partitions(key, request.start, request.end)
         if not partitions:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
         partition_months = {(partition.year, partition.month) for partition in partitions}
         if require_window_coverage:
+            # 命中分区所跨月份必须连续，防止中间月 Catalog 缺失被忽略
             if partition_months != _months_between(
                 min(partition_months),
                 max(partition_months),
@@ -247,6 +298,7 @@ class MarketDataService:
                 values = self.store.read_month(key, partition.year, partition.month)
             except StorageError as exc:
                 raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+            # Catalog 登记行数与物理文件不一致视为分区损坏
             if len(values) != partition.row_count:
                 raise MarketDataError("PARTITION_INTEGRITY_INVALID")
             bars.extend(
@@ -265,6 +317,7 @@ class MarketDataService:
         bars: tuple[CanonicalBar, ...],
         segments: tuple[ResolvedContractSegment, ...],
     ) -> MarketSeriesResult:
+        """组装统一结果结构，写入请求身份指纹与实际 coverage。"""
         identity = {
             "series_kind": request.series_kind.value,
             "symbol": request.symbol,
@@ -282,6 +335,7 @@ class MarketDataService:
 
 
 def _segments(mappings: tuple[MainMapFact, ...]) -> tuple[ResolvedContractSegment, ...]:
+    """将按日排序的主力映射合并为合约不变的最长连续段。"""
     if not mappings:
         return ()
     result: list[ResolvedContractSegment] = []
@@ -299,6 +353,7 @@ def _segments(mappings: tuple[MainMapFact, ...]) -> tuple[ResolvedContractSegmen
 
 
 def _local_date(value: datetime) -> date:
+    """将带时区时刻转为上海时区交易日（与 RQData/国内期货日历对齐）。"""
     return value.astimezone(SHANGHAI).date()
 
 
@@ -306,6 +361,7 @@ def _months_between(
     start: tuple[int, int],
     end: tuple[int, int],
 ) -> set[tuple[int, int]]:
+    """生成 ``(year, month)`` 闭区间内的全部月份集合，用于分区连续性检查。"""
     cursor = start
     end_month = end
     result: set[tuple[int, int]] = set()

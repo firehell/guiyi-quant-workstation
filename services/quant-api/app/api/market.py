@@ -1,3 +1,9 @@
+"""Market 行情只读 HTTP API。
+
+所有数据经 ``MarketDataService`` 查询 Canonical Parquet 与八表 Catalog；消费者不得
+绕过完整性校验。合同类错误映射为 422，数据可用性/冲突类错误映射为 409。
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -21,7 +27,6 @@ from app.schemas.market import (
     MarketCoverageResponse,
 )
 
-
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 
 
@@ -35,6 +40,7 @@ def canonical_market_bars(
     contract: str | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> MarketBarsResponse:
+    """查询 Canonical K 线序列（continuous / contract / actual_dominant 由 series_kind 决定）。"""
     try:
         request = SeriesQuery(
             series_kind=cast(SeriesKind, series_kind),
@@ -46,11 +52,13 @@ def canonical_market_bars(
         )
         result = build_market_data_service(session).query(request)
     except ContractError as exc:
+        # 合同/参数校验失败 → 422，携带结构化 code 与 facts
         raise HTTPException(
             status_code=422,
             detail={"code": exc.code, "facts": dict(exc.facts)},
         ) from exc
     except MarketDataError as exc:
+        # 数据覆盖、分区或物理完整性问题 → 409
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     return MarketBarsResponse(
         request=dict(result.request_identity),
@@ -86,6 +94,7 @@ def canonical_market_bars(
 
 @router.get("/dominants", response_model=DominantContractListResponse)
 def market_dominants(session: Session = Depends(get_db)) -> DominantContractListResponse:
+    """列出各品种最新主力合约映射（来自 MainContractMap）。"""
     items = build_market_data_service(session).list_latest_dominants()
     return DominantContractListResponse(
         items=[
@@ -106,6 +115,7 @@ def canonical_market_coverage(
     symbol: str | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> MarketCoverageResponse:
+    """列出 Catalog 中数据集分区覆盖（可选按 symbol 过滤）。"""
     items = build_market_data_service(session).list_dataset_coverage(symbol)
     return MarketCoverageResponse(
         items=[
@@ -125,10 +135,12 @@ def canonical_market_coverage(
 
 
 def _instant(value: str) -> datetime:
+    """将查询参数解析为带时区的 datetime；失败时抛出 ContractError 供上层映射为 422。"""
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ContractError(field="datetime", reason="rfc3339_required") from exc
+    # 必须显式时区，禁止 naive 时间戳
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ContractError(field="datetime", reason="timezone_required")
     return parsed

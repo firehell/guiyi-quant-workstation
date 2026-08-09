@@ -1,3 +1,9 @@
+"""Runtime 运维健康检查响应模型（Pydantic）。
+
+与 ``build_runtime_health`` 输出结构一致；部分组件为真实探测（db/redis/rq），
+其余为退役 stub（live_checkpoints、archive、after_market_scheduler、notification_retry）。
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -6,6 +12,8 @@ from pydantic import BaseModel, Field
 
 
 class RuntimeComponentHealth(BaseModel):
+    """通用组件健康（DB、Redis 等单点探测）。"""
+
     status: str
     latency_ms: float | None = None
     error_type: str | None = None
@@ -13,6 +21,8 @@ class RuntimeComponentHealth(BaseModel):
 
 
 class RuntimeRqQueueHealth(BaseModel):
+    """单个 RQ 队列的积压与 registry 计数。"""
+
     name: str
     status: str
     queued_count: int = 0
@@ -25,12 +35,16 @@ class RuntimeRqQueueHealth(BaseModel):
 
 
 class RuntimeRqWorkerHealth(BaseModel):
+    """单个 RQ worker 及其监听队列列表。"""
+
     name: str
     state: str | None = None
     queues: list[str] = Field(default_factory=list)
 
 
 class RuntimeRqHealth(BaseModel):
+    """RQ 子系统聚合（队列列表 + worker 覆盖）。"""
+
     status: str
     queues: list[RuntimeRqQueueHealth] = Field(default_factory=list)
     worker_count: int = 0
@@ -40,6 +54,8 @@ class RuntimeRqHealth(BaseModel):
 
 
 class RuntimeCheckpointRow(BaseModel):
+    """（历史）Live checkpoint 行结构；退役组件仍保留 schema 以兼容响应形状。"""
+
     id: int
     provider: str
     instrument_symbol: str
@@ -57,6 +73,8 @@ class RuntimeCheckpointRow(BaseModel):
 
 
 class RuntimeLiveCheckpointsHealth(BaseModel):
+    """盘中 Live checkpoint 健康（已退役 stub，status=disabled, retired=True）。"""
+
     status: str
     enabled: bool = False
     retired: bool = False
@@ -76,6 +94,8 @@ class RuntimeLiveCheckpointsHealth(BaseModel):
 
 
 class RuntimeNotificationRetryHealth(BaseModel):
+    """企业微信通知重试健康（已退役 stub）。"""
+
     status: str
     enabled: bool = False
     retired: bool = False
@@ -96,6 +116,8 @@ class RuntimeNotificationRetryHealth(BaseModel):
 
 
 class RuntimeArchiveHealth(BaseModel):
+    """盘后归档任务健康（已退役 stub）。"""
+
     status: str
     enabled: bool = False
     retired: bool = False
@@ -109,6 +131,8 @@ class RuntimeArchiveHealth(BaseModel):
 
 
 class RuntimeAfterMarketSchedulerHealth(BaseModel):
+    """盘后调度器健康（已退役 stub）。"""
+
     status: str
     enabled: bool = False
     retired: bool = False
@@ -129,6 +153,8 @@ class RuntimeAfterMarketSchedulerHealth(BaseModel):
 
 
 class RuntimeHealthComponents(BaseModel):
+    """各子组件健康快照的容器。"""
+
     db: RuntimeComponentHealth
     redis: RuntimeComponentHealth
     rq: RuntimeRqHealth
@@ -139,6 +165,8 @@ class RuntimeHealthComponents(BaseModel):
 
 
 class RuntimeHealthOut(BaseModel):
+    """``/api/runtime/health`` 顶层响应；顶层 readonly 标志声明无写操作授权。"""
+
     status: str
     generated_at: str
     readonly: bool = True

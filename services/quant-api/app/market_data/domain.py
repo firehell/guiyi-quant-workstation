@@ -1,3 +1,15 @@
+"""市场数据领域模型与查询契约（数据核心 V2）。
+
+本模块定义 MarketDataService 及其上下游共用的**不可变值对象**与**输入校验边界**：
+- ``DatasetKey``：物理 Parquet 数据集的四元组身份（kind / symbol / series / frequency）；
+- ``SeriesQuery``：消费者查询意图（含 ``actual_dominant`` 逻辑序列，无独立物理数据集）；
+- ``CanonicalBar``：canonical Parquet 行的内存表示，含 OHLCV 与交易日语义。
+
+在 V2 链路中的位置：RQData → staging → canonical Parquet → 八表 Catalog →
+``MarketDataService``；本文件不访问存储或数据库，只负责 fail-closed 契约校验，
+确保非法身份、窗口或 bar 形态在进入服务层前即被拒绝。
+"""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -11,7 +23,11 @@ from typing import Any, Mapping
 
 
 class ContractError(ValueError):
-    """Bounded public contract error without provider or storage details."""
+    """市场数据公共契约校验失败。
+
+    对外只暴露结构化 ``facts``（字段名、原因码、可选原始值），
+    不携带 provider、存储路径或内部堆栈，便于 API/CLI 统一映射为客户端错误。
+    """
 
     code = "MARKET_DATA_CONTRACT_INVALID"
 
@@ -24,17 +40,27 @@ class ContractError(ValueError):
 
 
 class DatasetKind(StrEnum):
+    """物理数据集种类：连续主力（continuous）或具体合约（contract）。"""
+
     CONTINUOUS = "continuous"
     CONTRACT = "contract"
 
 
 class SeriesKind(StrEnum):
+    """查询序列种类。
+
+    ``ACTUAL_DOMINANT`` 为查询时按 ``MainContractMap`` 拼接的逻辑序列，
+    不对应单一物理 Parquet 根目录；其余种类可映射到 ``DatasetKey``。
+    """
+
     CONTINUOUS = "continuous"
     ACTUAL_DOMINANT = "actual_dominant"
     CONTRACT = "contract"
 
 
 class BarFrequency(StrEnum):
+    """K 线频率枚举，与 canonical 分区目录及 Catalog 字段一致。"""
+
     M1 = "1m"
     M5 = "5m"
     M15 = "15m"
@@ -44,12 +70,13 @@ class BarFrequency(StrEnum):
     W1 = "1w"
 
 
+# direct：RQData 直接落盘；derived：由 1m 聚合生成
 DIRECT_FREQUENCIES = frozenset({BarFrequency.M1, BarFrequency.D1, BarFrequency.W1})
 DERIVED_FREQUENCIES = frozenset(
     {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}
 )
 ALL_FREQUENCIES = DIRECT_FREQUENCIES | DERIVED_FREQUENCIES
-# RQData continuous/intraday history floor observed via get_dominant_price / A88.
+# RQData 连续/日内历史下限（get_dominant_price / A88 观测值），用于 coverage 边界校验
 RQDATA_INTRADAY_HISTORY_START = date(2010, 1, 4)
 INTRADAY_FREQUENCIES = frozenset(
     {
@@ -65,6 +92,7 @@ _CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 
 
 def _enum(enum_type: type[StrEnum], value: object, *, field: str) -> Any:
+    """将字符串规范化为 StrEnum；类型或取值非法时抛出 ``ContractError``。"""
     if not isinstance(value, str):
         raise ContractError(field=field, reason="unsupported", value=value)
     try:
@@ -74,6 +102,7 @@ def _enum(enum_type: type[StrEnum], value: object, *, field: str) -> Any:
 
 
 def _text(value: object, *, field: str, upper: bool = False) -> str:
+    """要求非空字符串；可选转大写（合约代码）或小写（品种 symbol）。"""
     if not isinstance(value, str) or not value.strip():
         raise ContractError(field=field, reason="nonempty_text_required")
     normalized = value.strip()
@@ -81,6 +110,7 @@ def _text(value: object, *, field: str, upper: bool = False) -> str:
 
 
 def _window(start: object, end: object) -> tuple[datetime, datetime]:
+    """校验查询窗口：两端须带时区，且 start < end（统一转为 UTC）。"""
     if not isinstance(start, datetime) or start.tzinfo is None or start.utcoffset() is None:
         raise ContractError(field="start", reason="timezone_required")
     if not isinstance(end, datetime) or end.tzinfo is None or end.utcoffset() is None:
@@ -94,6 +124,14 @@ def _window(start: object, end: object) -> tuple[datetime, datetime]:
 
 @dataclass(frozen=True, slots=True)
 class DatasetKey:
+    """物理 canonical 数据集身份（四字段 V2 目标模型的核心键）。
+
+    - ``continuous``：``series_or_contract`` 固定为 ``MAIN``；
+    - ``contract``：``series_or_contract`` 为具体合约代码，且品种前缀须与 ``symbol`` 一致。
+
+    ``relative_root`` 决定 Parquet 在 canonical 根下的目录布局，消费者不得自行拼路径。
+    """
+
     kind: DatasetKind
     symbol: str
     series_or_contract: str
@@ -107,6 +145,7 @@ class DatasetKey:
         series = _text(self.series_or_contract, field="series_or_contract", upper=True)
         frequency = _enum(BarFrequency, self.frequency, field="frequency")
         if kind is DatasetKind.CONTINUOUS:
+            # 连续主力在物理层只有 MAIN 序列，不允许其他 series 名
             if series != "MAIN":
                 raise ContractError(
                     field="series_or_contract",
@@ -121,6 +160,7 @@ class DatasetKey:
                     reason="concrete_contract_required",
                     value=series,
                 )
+            # 防止 RB2501 挂到品种 hc 等跨品种误读
             if match.group(1) != symbol.upper():
                 raise ContractError(
                     field="series_or_contract",
@@ -133,10 +173,12 @@ class DatasetKey:
         object.__setattr__(self, "frequency", frequency)
 
     def as_tuple(self) -> tuple[str, str, str, str]:
+        """返回与 Catalog ``MarketDataset`` 四列对应的字符串元组。"""
         return (self.kind.value, self.symbol, self.series_or_contract, self.frequency.value)
 
     @property
     def relative_root(self) -> PurePosixPath:
+        """canonical 根下的相对目录路径（POSIX，用于存储层拼接月分区）。"""
         return PurePosixPath(
             f"kind={self.kind.value}",
             f"symbol={self.symbol}",
@@ -147,6 +189,12 @@ class DatasetKey:
 
 @dataclass(frozen=True, slots=True)
 class SeriesQuery:
+    """消费者查询请求：逻辑序列种类 + 品种 + 频率 + 半开时间窗口 ``(start, end]``。
+
+    ``physical_key`` 在 ``actual_dominant`` 时为 ``None``，由服务层按主力映射拼接；
+    ``contract`` 仅在 ``SeriesKind.CONTRACT`` 时必填，且会经 ``DatasetKey`` 再校验一次。
+    """
+
     series_kind: SeriesKind
     symbol: str
     frequency: BarFrequency
@@ -163,6 +211,7 @@ class SeriesQuery:
         if kind is SeriesKind.CONTRACT:
             if contract is None:
                 raise ContractError(field="contract", reason="required_for_contract_series")
+            # 借 DatasetKey 规范化合约代码并校验品种前缀
             contract = DatasetKey(
                 kind=DatasetKind.CONTRACT,
                 symbol=symbol,
@@ -180,6 +229,7 @@ class SeriesQuery:
 
     @property
     def physical_key(self) -> DatasetKey | None:
+        """映射到单一物理数据集；``actual_dominant`` 无物理键，返回 ``None``。"""
         if self.series_kind is SeriesKind.ACTUAL_DOMINANT:
             return None
         if self.series_kind is SeriesKind.CONTINUOUS:
@@ -199,6 +249,7 @@ class SeriesQuery:
 
 
 def _decimal(value: Decimal | int | str | None, *, field: str, optional: bool = False) -> Decimal | None:
+    """解析有限 Decimal；可选字段允许 ``None``，否则缺失或非有限值 fail-closed。"""
     if value is None:
         if optional:
             return None
@@ -216,6 +267,11 @@ def _decimal(value: Decimal | int | str | None, *, field: str, optional: bool = 
 
 @dataclass(frozen=True, slots=True)
 class CanonicalBar:
+    """单根 canonical K 线：``bar_end`` 为 UTC 收盘时刻，``trading_day`` 为交易所交易日。
+
+    构造时校验 OHLC 包络、非负成交量/持仓，并统一 ``bar_end`` 为 UTC。
+    """
+
     bar_end: datetime
     trading_day: date
     open: Decimal
@@ -246,6 +302,7 @@ class CanonicalBar:
         close_value = values["close"]
         assert isinstance(low, Decimal) and isinstance(high, Decimal)
         assert isinstance(open_value, Decimal) and isinstance(close_value, Decimal)
+        # low/high 须包住 open/close，防止脏数据静默进入 canonical
         if low > high or any(
             not low <= value <= high for value in (open_value, close_value)
         ):
@@ -259,11 +316,14 @@ class CanonicalBar:
             object.__setattr__(self, field, value)
 
     def as_record(self) -> dict[str, object]:
+        """转为与 Parquet schema 列名一致的字典，供 ``pyarrow`` 写盘。"""
         return asdict(self)
 
 
 @dataclass(frozen=True, slots=True)
 class TargetWindow:
+    """维护/回填任务的目标数据集与时间窗口（已规范为 UTC 且 start < end）。"""
+
     dataset: DatasetKey
     start: datetime
     end: datetime
@@ -276,6 +336,8 @@ class TargetWindow:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedContractSegment:
+    """``actual_dominant`` 查询解析出的连续主力合约段（按交易日 contiguous 合并）。"""
+
     contract: str
     start_trading_day: date
     end_trading_day: date
@@ -283,6 +345,12 @@ class ResolvedContractSegment:
 
 @dataclass(frozen=True, slots=True)
 class MarketSeriesResult:
+    """``MarketDataService.query`` 的只读结果包。
+
+    ``request_identity`` 记录请求指纹便于审计；``coverage`` 为实际返回 bar 的起止 ``bar_end``；
+    ``resolved_contract_segments`` 仅在 ``actual_dominant`` 路径填充。
+    """
+
     request_identity: Mapping[str, object]
     bars: tuple[CanonicalBar, ...]
     coverage: tuple[datetime, datetime] | None

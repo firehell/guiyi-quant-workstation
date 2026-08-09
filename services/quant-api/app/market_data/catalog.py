@@ -1,3 +1,15 @@
+"""八表 Catalog 访问层（数据核心 V2 元数据与分区索引）。
+
+``MarketCatalog`` 封装 PostgreSQL 八表中的市场相关表：
+``MarketDataset`` / ``MarketPartition``（物理数据集与月分区索引）、
+``MainContractMap``（主力映射）、``Instrument`` / ``TradingCalendar``（交易日语义）。
+
+职责边界：
+- 将 ``DatasetKey`` 解析为分区列表与 Parquet 相对 URI（禁止绝对路径与根目录逃逸）；
+- 提供维护期 advisory lock，避免并发发布破坏分区一致性；
+- 不读取 Parquet 内容（由 ``CanonicalMonthlyStore`` 负责）。
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -22,25 +34,34 @@ from app.models import (
 
 
 class CatalogError(RuntimeError):
+    """Catalog 层配置或路径类错误（如分区 URI 越界、品种无交易所）。"""
+
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
 
 
+# 全库唯一的维护 advisory lock 键，与业务数据无关联
 _MAINTENANCE_LOCK_KEY = 4_902_608_003_600_001
 
 
 class MaintenanceLease:
+    """维护锁租约：调用方须在任务结束时 ``release()`` 释放 PostgreSQL advisory lock。"""
+
     def release(self) -> None:
         raise NotImplementedError
 
 
 class _NoopMaintenanceLease(MaintenanceLease):
+    """非 PostgreSQL 方言下的空实现（测试/SQLite 不持锁）。"""
+
     def release(self) -> None:
         return None
 
 
 class _PostgresMaintenanceLease(MaintenanceLease):
+    """持有 ``pg_try_advisory_lock`` 的专用连接，释放时解锁并可选择关闭连接。"""
+
     def __init__(self, connection: Connection, *, close_on_release: bool) -> None:
         self._connection = connection
         self._close_on_release = close_on_release
@@ -58,6 +79,8 @@ class _PostgresMaintenanceLease(MaintenanceLease):
 
 @dataclass(frozen=True, slots=True)
 class CatalogPartition:
+    """单个月分区在 Catalog 中的解析结果（含 coverage 与物理文件路径）。"""
+
     dataset: DatasetKey
     year: int
     month: int
@@ -69,17 +92,25 @@ class CatalogPartition:
 
 @dataclass(frozen=True, slots=True)
 class MainMapFact:
+    """主力映射只读事实行：品种 + 交易日 + 当日 rank-1 合约代码。"""
+
     symbol: str
     trade_date: date
     contract: str
 
 
 class MarketCatalog:
+    """市场数据 Catalog 门面：数据集注册、分区索引、主力映射与交易日查询。"""
+
     def __init__(self, session: Session, canonical_root: Path) -> None:
         self.session = session
         self.canonical_root = canonical_root.resolve()
 
     def acquire_maintenance_lock(self) -> MaintenanceLease | None:
+        """尝试获取全局维护锁；未获取到返回 ``None``（另一维护任务进行中）。
+
+        PostgreSQL 使用 session 级 advisory lock；非 PG 方言返回 noop 租约便于单测。
+        """
         bind = self.session.get_bind()
         if bind.dialect.name != "postgresql":
             return _NoopMaintenanceLease()
@@ -104,6 +135,7 @@ class MarketCatalog:
             raise
 
     def dataset_row(self, key: DatasetKey, *, create: bool = False) -> MarketDataset | None:
+        """按四元组查找 ``MarketDataset``；``create=True`` 时不存在则插入并 flush。"""
         row = self.session.scalar(
             select(MarketDataset).where(
                 MarketDataset.kind == key.kind.value,
@@ -124,6 +156,7 @@ class MarketCatalog:
         return row
 
     def register_partition(self, partition: PublishedPartition) -> None:
+        """将一次成功发布的月分区写入/更新 ``MarketPartition``（coverage、URI、行数）。"""
         dataset = self.dataset_row(partition.dataset, create=True)
         assert dataset is not None
         row = self.session.scalar(
@@ -159,6 +192,11 @@ class MarketCatalog:
         start: datetime,
         end: datetime,
     ) -> tuple[CatalogPartition, ...]:
+        """返回与查询窗口相交的月分区，按年月升序。
+
+        相交条件：``coverage_end > start`` 且 ``coverage_start <= end``（半开窗口友好）。
+        数据集未注册时返回空元组，由上层决定视为缺失。
+        """
         dataset = self.dataset_row(key)
         if dataset is None:
             return ()
@@ -174,6 +212,7 @@ class MarketCatalog:
         return tuple(self._partition(key, row) for row in rows)
 
     def all_partitions(self, key: DatasetKey) -> tuple[CatalogPartition, ...]:
+        """返回某数据集的全部月分区（维护/审计用，不做时间过滤）。"""
         dataset = self.dataset_row(key)
         if dataset is None:
             return ()
@@ -185,6 +224,7 @@ class MarketCatalog:
         return tuple(self._partition(key, row) for row in rows)
 
     def upsert_main_contracts(self, rows: Iterable[tuple[str, date, str]]) -> None:
+        """批量写入主力映射：按 (symbol, trade_date) 幂等更新合约代码与规则字段。"""
         for symbol_value, trade_date, contract in rows:
             symbol = symbol_value.strip().lower()
             contract_code = contract.strip().upper()
@@ -211,6 +251,7 @@ class MarketCatalog:
         self.session.flush()
 
     def main_map(self, symbol: str, start: date, end: date) -> tuple[MainMapFact, ...]:
+        """查询日期闭区间内的主力映射，按交易日升序。"""
         rows = self.session.scalars(
             select(MainContractMap)
             .where(
@@ -225,6 +266,7 @@ class MarketCatalog:
         )
 
     def exchange_for_symbol(self, symbol: str) -> str:
+        """解析品种所属交易所代码；无活跃 ``Instrument`` 时 ``INSTRUMENT_EXCHANGE_MISSING``。"""
         exchange = self.session.scalar(
             select(Instrument.exchange_code).where(
                 Instrument.symbol == symbol.strip().lower(),
@@ -236,6 +278,7 @@ class MarketCatalog:
         return exchange
 
     def trading_days(self, symbol: str, start: date, end: date) -> tuple[date, ...]:
+        """经品种反查交易所后，返回区间内 ``is_trading_day=True`` 的日期列表。"""
         exchange = self.exchange_for_symbol(symbol)
         return tuple(
             self.session.scalars(
@@ -251,11 +294,13 @@ class MarketCatalog:
         )
 
     def missing_main_map_days(self, symbol: str, start: date, end: date) -> tuple[date, ...]:
+        """返回交易日历中存在但 ``MainContractMap`` 缺失的日期（actual_dominant 前置检查）。"""
         expected = self.trading_days(symbol, start, end)
         mapped = {item.trade_date for item in self.main_map(symbol, start, end)}
         return tuple(day for day in expected if day not in mapped)
 
     def _partition(self, key: DatasetKey, row: MarketPartition) -> CatalogPartition:
+        """将 ORM 行转为值对象，并将 DB 中的 coverage 规范为 UTC aware。"""
         return CatalogPartition(
             dataset=key,
             year=row.year,
@@ -267,6 +312,7 @@ class MarketCatalog:
         )
 
     def _relative_uri(self, path: Path) -> str:
+        """绝对路径必须位于 ``canonical_root`` 下，存库为 POSIX 相对 URI。"""
         resolved = path.resolve()
         try:
             return resolved.relative_to(self.canonical_root).as_posix()
@@ -274,6 +320,7 @@ class MarketCatalog:
             raise CatalogError("PARTITION_OUTSIDE_CANONICAL_ROOT") from exc
 
     def _resolve_uri(self, uri: str) -> Path:
+        """解析库内相对 URI 为绝对路径；禁止绝对 URI 与 ``..`` 逃逸 canonical 根。"""
         if Path(uri).is_absolute():
             raise CatalogError("ABSOLUTE_PARTITION_URI_FORBIDDEN")
         path = (self.canonical_root / uri).resolve()
@@ -283,6 +330,7 @@ class MarketCatalog:
 
 
 def _aware(value: datetime) -> datetime:
+    """naive datetime 视为 UTC；已有偏移则归一化到 UTC。"""
     if value.tzinfo is None or value.utcoffset() is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
