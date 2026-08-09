@@ -11,12 +11,16 @@ Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产
 均为 NOOP、audit 均通过，Catalog 与物理 Parquet 已完成只读验收。JM 的
 `MarketDataService` continuous / contract / actual_dominant 有界读回亦已通过。此前周线与 Derived
 开放月 Session 上界缺陷已修复；JM 补齐两个周线 Direct 与四个 Derived 分区的受控执行成功完成
-（2 次 provider 请求、6 个分区发布）。其余 58 个 active 品种尚无正式 Canonical 分区，且历史
-Session facts 未完整；60 品种重建及全域 Canonical 验收仍未完成。2026-08-09 的全域只读 audit
-已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条 finding，即剩余 58 品种各一条
-`MAIN_CONTRACT_MAP_MISSING` 与 `TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。
-Calendar、分区与物理可读性类别尚未形成结论——每个未闭环品种均在历史 Session 覆盖解析处被隔离，
-不得将未到达的检查阶段误记为通过。退役品种含
+（2 次 provider 请求、6 个分区发布）。`ap` 写入前其余 58 个 active 品种尚无正式 Canonical 分区，且
+历史 Session facts 未完整；随后 CZCE `ap` 在精确单次执行意图下完整闭环，发布 685 个正式月分区
+（continuous 308、真实合约 377）。`ap` 的 fixed-T0 dry-run 为 NOOP、audit 通过，且
+`MarketDataService` 已对七周期的 continuous / contract / actual_dominant 完成只读回检；生产正式
+分区现为 2,049 个，剩余 57 个 active 品种待重建。60 品种重建及全域 Canonical 验收仍未完成。
+`ap` 写入前的全域只读 audit 已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条
+finding，即当时 58 个未闭环品种各一条 `MAIN_CONTRACT_MAP_MISSING` 与
+`TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。Calendar、分区与物理可读性类别
+在该基线尚未形成结论——未闭环品种均在历史 Session 覆盖解析处被隔离，不得将未到达的检查阶段误记为
+通过。退役品种含
 股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu`；
 生产 Catalog 已对退役名单执行 `retire-products --apply`（详见 `GY-DATA-PRODUCT-RETIREMENT-5`）。
 
@@ -64,7 +68,10 @@ OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺�
 分区及对应 Parquet 均可读。随后 J 在精确单次执行意图下完成剩余窗口，最终形成 686 个正式月分区；
 fixed-T0 dry-run 为 NOOP、audit 通过，Catalog 与对应 Parquet 均可读。`actual_dominant` 在缺少对应
 concrete-contract 分区时仍保持 fail-closed；其余 58 品种的历史 Session facts 与 Canonical 重建仍需
-后续受控执行。在明确单次
+后续受控执行。随后在明确单次意图下，CZCE `ap` 完成从 T0 的 RQData metadata 同步和 Canonical
+重建，`ap` 产出 `applied=685`、`failed=0`、`provider_requests=293`；写后 audit 为 passed，fixed-T0
+dry-run 为 NOOP，七周期 `MarketDataService` 读回通过。其余 57 品种的历史 Session facts 与 Canonical
+重建仍需后续受控执行。在明确单次
 意图下已多次对生产执行 `guiyi data retire-products --apply`，覆盖退役名单
 `br/cs/ic/if/ih/im/lu/nr/sp`；Canonical 退役目录均为 0，事后 residual=0，显式退役码返回
 `PRODUCT_RETIRED`。未执行服务切换、main/tag/release 或 Runtime promotion。
