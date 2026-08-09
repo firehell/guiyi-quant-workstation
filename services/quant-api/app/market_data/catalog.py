@@ -23,7 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
-from app.market_data.domain import DatasetKey
+from app.market_data.domain import BarFrequency, DatasetKey, DatasetKind
 from app.market_data.session_clock import (
     SessionClockError,
     session_windows_for_trading_day,
@@ -231,6 +231,57 @@ class MarketCatalog:
         )
         return tuple(self._partition(key, row) for row in rows)
 
+    def partitions_before(
+        self,
+        key: DatasetKey,
+        before: datetime | None,
+    ) -> tuple[CatalogPartition, ...]:
+        """返回游标前可能含目标 bars 的物理分区，按最新月份优先。"""
+        dataset = self.dataset_row(key)
+        if dataset is None:
+            return ()
+        statement = select(MarketPartition).where(MarketPartition.dataset_id == dataset.id)
+        if before is not None:
+            statement = statement.where(MarketPartition.coverage_start < before)
+        rows = self.session.scalars(
+            statement.order_by(MarketPartition.year.desc(), MarketPartition.month.desc())
+        )
+        return tuple(self._partition(key, row) for row in rows)
+
+    def contract_partitions_before(
+        self,
+        symbol: str,
+        frequency: BarFrequency,
+        before: datetime | None,
+    ) -> tuple[CatalogPartition, ...]:
+        """返回品种的具体合约分区，按最新月份优先且仅经 Catalog 定位。"""
+        statement = (
+            select(MarketDataset, MarketPartition)
+            .join(MarketPartition, MarketPartition.dataset_id == MarketDataset.id)
+            .where(
+                MarketDataset.kind == DatasetKind.CONTRACT.value,
+                MarketDataset.symbol == symbol.strip().lower(),
+                MarketDataset.frequency == frequency.value,
+            )
+        )
+        if before is not None:
+            statement = statement.where(MarketPartition.coverage_start < before)
+        rows = self.session.execute(
+            statement.order_by(MarketPartition.year.desc(), MarketPartition.month.desc())
+        )
+        return tuple(
+            self._partition(
+                DatasetKey(
+                    kind=DatasetKind.CONTRACT,
+                    symbol=dataset.symbol,
+                    series_or_contract=dataset.series_or_contract,
+                    frequency=frequency,
+                ),
+                partition,
+            )
+            for dataset, partition in rows
+        )
+
     def upsert_main_contracts(self, rows: Iterable[tuple[str, date, str]]) -> None:
         """批量写入主力映射：按 (symbol, trade_date) 幂等更新合约代码与规则字段。"""
         for symbol_value, trade_date, contract in rows:
@@ -266,9 +317,29 @@ class MarketCatalog:
                 MainContractMap.symbol == symbol.strip().lower(),
                 MainContractMap.trade_date >= start,
                 MainContractMap.trade_date <= end,
+                MainContractMap.rank == 1,
             )
             .order_by(MainContractMap.trade_date)
         )
+        return tuple(
+            MainMapFact(row.symbol, row.trade_date, row.contract_code) for row in rows
+        )
+
+    def main_map_before(
+        self,
+        symbol: str,
+        before: datetime | None,
+    ) -> tuple[MainMapFact, ...]:
+        """读取游标当日及以前的正式 rank-1 主力映射事实。"""
+        statement = select(MainContractMap).where(
+            MainContractMap.symbol == symbol.strip().lower(),
+            MainContractMap.rank == 1,
+        )
+        if before is not None:
+            statement = statement.where(
+                MainContractMap.trade_date <= before.astimezone(SHANGHAI).date()
+            )
+        rows = self.session.scalars(statement.order_by(MainContractMap.trade_date))
         return tuple(
             MainMapFact(row.symbol, row.trade_date, row.contract_code) for row in rows
         )

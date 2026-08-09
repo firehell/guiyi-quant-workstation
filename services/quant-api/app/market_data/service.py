@@ -28,9 +28,11 @@ from app.market_data.domain import (
     CanonicalBar,
     DatasetKey,
     DatasetKind,
+    MarketSeriesPageResult,
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
+    SeriesPageQuery,
     SeriesQuery,
 )
 from app.market_data.product_retirement import (
@@ -104,6 +106,148 @@ class MarketDataService:
             bars,
             (),
         )
+
+    def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        """按历史游标返回一页 Canonical bars，游标严格排除自身。"""
+        try:
+            assert_not_retired(request.symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
+            return self._actual_dominant_page(request)
+        assert request.physical_key is not None
+        return self._page_result(
+            request,
+            self._physical_page_bars(request.physical_key, request),
+            (),
+        )
+
+    def _physical_page_bars(
+        self,
+        key: DatasetKey,
+        request: SeriesPageQuery,
+    ) -> list[CanonicalBar]:
+        partitions = self.catalog.partitions_before(key, request.before)
+        if not partitions:
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        selected: list[CanonicalBar] = []
+        previous_end: datetime | None = None
+        for partition in partitions:
+            values = self._partition_bars(partition)
+            for bar in reversed(values):
+                if request.before is not None and bar.bar_end >= request.before:
+                    continue
+                if previous_end is not None and bar.bar_end >= previous_end:
+                    raise MarketDataError("BAR_IDENTITY_CONFLICT")
+                selected.append(bar)
+                previous_end = bar.bar_end
+                if len(selected) == request.limit + 1:
+                    return selected
+        if not selected:
+            raise MarketDataError("QUERY_WINDOW_EMPTY")
+        return selected
+
+    def _actual_dominant_page(
+        self,
+        request: SeriesPageQuery,
+    ) -> MarketSeriesPageResult:
+        mappings = self.catalog.main_map_before(request.symbol, request.before)
+        mapping_by_day = {item.trade_date: item for item in mappings}
+        partitions = self.catalog.contract_partitions_before(
+            request.symbol,
+            request.frequency,
+            request.before,
+        )
+        if not partitions:
+            raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+        selected: list[CanonicalBar] = []
+        missing_map_seen = False
+        for _, month_partitions in _partition_month_groups(partitions):
+            candidates: list[CanonicalBar] = []
+            for partition in month_partitions:
+                for bar in self._partition_bars(partition):
+                    if request.before is not None and bar.bar_end >= request.before:
+                        continue
+                    owner = (
+                        self._page_weekly_owner(request.symbol, bar.trading_day, mapping_by_day)
+                        if request.frequency is BarFrequency.W1
+                        else mapping_by_day.get(bar.trading_day)
+                    )
+                    if owner is None:
+                        missing_map_seen = True
+                        continue
+                    if owner.contract == partition.dataset.series_or_contract:
+                        candidates.append(bar)
+            for bar in sorted(candidates, key=lambda item: item.bar_end, reverse=True):
+                if any(item.bar_end == bar.bar_end for item in selected):
+                    raise MarketDataError("BAR_IDENTITY_CONFLICT")
+                selected.append(bar)
+                if len(selected) == request.limit + 1:
+                    return self._actual_page_result(request, selected, mapping_by_day)
+        if not selected:
+            if missing_map_seen:
+                raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+            raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+        return self._actual_page_result(request, selected, mapping_by_day)
+
+    def _actual_page_result(
+        self,
+        request: SeriesPageQuery,
+        selected: list[CanonicalBar],
+        mapping_by_day: dict[date, MainMapFact],
+    ) -> MarketSeriesPageResult:
+        page = selected[: request.limit]
+        try:
+            missing_days = self.catalog.missing_main_map_days(
+                request.symbol,
+                min(bar.trading_day for bar in page),
+                max(bar.trading_day for bar in page),
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        if missing_days:
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        segments = _segments(
+            tuple(mapping_by_day[bar.trading_day] for bar in reversed(page))
+        )
+        return self._page_result(request, selected, segments)
+
+    def _page_weekly_owner(
+        self,
+        symbol: str,
+        trading_day: date,
+        mapping_by_day: dict[date, MainMapFact],
+    ) -> MainMapFact | None:
+        """仅将完整 ISO 交易周最后交易日的正式 owner 用于周线拼接。"""
+        monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
+        try:
+            week_days = self.catalog.trading_days(symbol, monday, monday + timedelta(days=6))
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        if not week_days or week_days[-1] != trading_day:
+            return None
+        if any(day not in mapping_by_day for day in week_days):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        return mapping_by_day.get(trading_day)
+
+    def _partition_bars(self, partition: CatalogPartition) -> tuple[CanonicalBar, ...]:
+        """读取并验证单一 Catalog 分区，复用正常查询的完整性边界。"""
+        try:
+            values = self.store.read_month(
+                partition.dataset,
+                partition.year,
+                partition.month,
+            )
+        except StorageError as exc:
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+        if len(values) != partition.row_count:
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID")
+        if any(
+            previous.bar_end >= current.bar_end
+            for previous, current in zip(values, values[1:])
+        ):
+            raise MarketDataError("BAR_IDENTITY_CONFLICT")
+        return values
 
     def _actual_dominant(self, request: SeriesQuery) -> MarketSeriesResult:
         """按交易日主力映射拼接多合约物理数据，得到逻辑连续序列。
@@ -367,6 +511,32 @@ class MarketDataService:
             resolved_contract_segments=segments,
         )
 
+    def _page_result(
+        self,
+        request: SeriesPageQuery,
+        selected_descending: list[CanonicalBar],
+        segments: tuple[ResolvedContractSegment, ...],
+    ) -> MarketSeriesPageResult:
+        """将 newest-first 候选转换为稳定的 ascending 页面响应。"""
+        has_more = len(selected_descending) > request.limit
+        page = tuple(reversed(selected_descending[: request.limit]))
+        identity = {
+            "series_kind": request.series_kind.value,
+            "symbol": request.symbol,
+            "contract": request.contract,
+            "frequency": request.frequency.value,
+            "before": request.before.isoformat() if request.before else None,
+            "limit": request.limit,
+        }
+        return MarketSeriesPageResult(
+            request_identity=identity,
+            bars=page,
+            canonical_coverage=(page[0].bar_end, page[-1].bar_end) if page else None,
+            has_more_before=has_more,
+            next_before=page[0].bar_end if has_more else None,
+            resolved_contract_segments=segments,
+        )
+
 
 def _segments(mappings: tuple[MainMapFact, ...]) -> tuple[ResolvedContractSegment, ...]:
     """将按日排序的主力映射合并为合约不变的最长连续段。"""
@@ -384,6 +554,19 @@ def _segments(mappings: tuple[MainMapFact, ...]) -> tuple[ResolvedContractSegmen
         end = row.trade_date
     result.append(ResolvedContractSegment(contract, start, end))
     return tuple(result)
+
+
+def _partition_month_groups(
+    partitions: tuple[CatalogPartition, ...],
+) -> tuple[tuple[tuple[int, int], tuple[CatalogPartition, ...]], ...]:
+    """保留 Catalog 的 reverse 月序，并把同月各合约分区作为一个时间层处理。"""
+    groups: dict[tuple[int, int], list[CatalogPartition]] = {}
+    for partition in partitions:
+        groups.setdefault((partition.year, partition.month), []).append(partition)
+    return tuple(
+        (month, tuple(values))
+        for month, values in groups.items()
+    )
 
 
 def _local_date(value: datetime) -> date:
