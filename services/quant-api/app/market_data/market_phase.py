@@ -165,6 +165,8 @@ class MarketPhaseResolver:
             if actual_calendar_days != expected_calendar_days:
                 return None
             rows[next_trading_day.trade_date] = next_trading_day
+        elif current is not None and current.is_trading_day:
+            return None
         return rows
 
     @staticmethod
