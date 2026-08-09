@@ -11,6 +11,7 @@ import logging
 import os
 
 from app.api.market import router as market_router
+from app.api.market_live import router as market_live_router
 from app.api.runtime import router as runtime_router
 from app.middleware.request_timing import RequestTimingMiddleware
 
@@ -51,6 +52,7 @@ app.add_middleware(
 
 # 仅 Market + Runtime 运维面；data_center HTTP 与 Signal/Review/Strategy 路由未挂载
 app.include_router(market_router)
+app.include_router(market_live_router)
 app.include_router(runtime_router)
 
 

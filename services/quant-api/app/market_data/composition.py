@@ -20,6 +20,7 @@ from app.core.env import PROJECT_ROOT
 from app.market_data.catalog import MarketCatalog
 from app.market_data.live_market import RQDataLiveProvider, LiveMarketService, RedisClient, RedisLiveStore
 from app.market_data.maintenance import HistoricalDataManager
+from app.market_data.market_read import MarketReadService
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.service import MarketDataService
@@ -64,6 +65,16 @@ def build_market_data_service(session: Session) -> MarketDataService:
     """构造只读 ``MarketDataService``（查询路径不注入 RQData 与维护依赖）。"""
     root = canonical_root()
     return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
+
+
+def build_market_read_service(session: Session) -> MarketReadService:
+    """构造 Market Web 只读模型；Redis 仅作为可降级的 transient Live 边界。"""
+    return MarketReadService(
+        market_data=build_market_data_service(session),
+        phase_resolver=MarketPhaseResolver(session),
+        operational_products=load_operational_products(),
+        live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+    )
 
 
 def build_live_market_service(session: Session) -> LiveMarketService:
