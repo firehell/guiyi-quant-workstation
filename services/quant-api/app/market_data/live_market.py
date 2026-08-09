@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections import deque
+from collections.abc import Callable, Iterable, Mapping as MappingABC
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+import re
 from typing import Any, Mapping, Protocol
+from zoneinfo import ZoneInfo
 
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m, bucket_window_for_bar
 from app.market_data.domain import BarFrequency, CanonicalBar
@@ -18,6 +21,8 @@ _LIVE_TTL_SECONDS = 3 * 24 * 60 * 60
 _HEARTBEAT_TTL_SECONDS = 30
 _FINALIZATION_DELAY = timedelta(seconds=2)
 _PROVIDER_RETRY_DELAY = timedelta(seconds=10)
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
+_CONCRETE_CONTRACT = re.compile(r"(?P<symbol>[A-Z]+)(?P<month>\d{3,4})\Z")
 LIVE_BAR_CHANNEL_PREFIX = "live:bar"
 LIVE_STATE_CHANNEL = "market:state"
 
@@ -181,6 +186,83 @@ def _as_text(value: str | bytes) -> str:
     return value.decode() if isinstance(value, bytes) else value
 
 
+def _canonical_bar_from_raw_feed(
+    payload: Mapping[str, Any],
+) -> tuple[str, CanonicalBar] | None:
+    """将已明确完整的 RQData 1m feed 映射为 CanonicalBar；任何歧义均丢弃。"""
+    if payload.get("action") != "feed":
+        return None
+    channel = payload.get("channel")
+    contract = payload.get("order_book_id")
+    if not isinstance(channel, str) or not channel.startswith("bar_"):
+        return None
+    if not isinstance(contract, str) or not contract.strip():
+        return None
+    if channel != f"bar_{contract.strip()}":
+        return None
+    required = ("datetime", "trading_date", "open", "high", "low", "close", "volume")
+    if any(payload.get(field) is None for field in required):
+        return None
+    try:
+        return (
+            contract.strip().upper(),
+            CanonicalBar(
+                bar_end=_raw_datetime(payload["datetime"]),
+                trading_day=_raw_date(payload["trading_date"]),
+                open=Decimal(str(payload["open"])),
+                high=Decimal(str(payload["high"])),
+                low=Decimal(str(payload["low"])),
+                close=Decimal(str(payload["close"])),
+                volume=Decimal(str(payload["volume"])),
+                turnover=_optional_raw_decimal(payload.get("turnover", payload.get("total_turnover"))),
+                open_interest=_optional_raw_decimal(payload.get("open_interest")),
+            ),
+        )
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+
+
+def _raw_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=_SHANGHAI).astimezone(UTC)
+        return value.astimezone(UTC)
+    if isinstance(value, str):
+        normalized = value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return parsed.replace(tzinfo=_SHANGHAI).astimezone(UTC)
+        return parsed.astimezone(UTC)
+    digits = str(value)
+    if not digits.isdigit() or len(digits) < 14:
+        raise ValueError("LIVE_RAW_DATETIME_INVALID")
+    return datetime.strptime(digits[:14], "%Y%m%d%H%M%S").replace(tzinfo=_SHANGHAI).astimezone(UTC)
+
+
+def _raw_date(value: Any) -> date:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    digits = str(value).replace("-", "")
+    if not digits.isdigit() or len(digits) != 8:
+        raise ValueError("LIVE_RAW_TRADING_DATE_INVALID")
+    return datetime.strptime(digits, "%Y%m%d").date()
+
+
+def _optional_raw_decimal(value: Any) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
+
+
+def _concrete_rank1_contract(symbol: str, value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    contract = value.strip().upper()
+    match = _CONCRETE_CONTRACT.fullmatch(contract)
+    if match is None or match.group("symbol") != symbol.upper():
+        return None
+    month = int(match.group("month")[-2:])
+    return contract if 1 <= month <= 12 else None
+
+
 class LiveProvider(Protocol):
     """最小 provider 边界；service 不持有 RQData 全局客户端。"""
 
@@ -189,6 +271,51 @@ class LiveProvider(Protocol):
     def unsubscribe(self, channels: tuple[str, ...]) -> None: ...
 
     def poll(self) -> Iterable[tuple[str, CanonicalBar]]: ...
+
+
+class RawLiveMarketClient(Protocol):
+    """RQData 的最小 raw Live 接口；构造仍留在调用方的延迟 factory 中。"""
+
+    def subscribe(self, channels: list[str]) -> Any: ...
+
+    def unsubscribe(self, channels: list[str]) -> Any: ...
+
+    def listen(self, *, handler: Callable[[Mapping[str, Any]], Any]) -> Any: ...
+
+
+class RQDataLiveProvider:
+    """唯一的 RQData raw-feed adapter：注册 handler、缓冲 raw dict、输出 CanonicalBar。
+
+    仅接受完整的 1m OHLCV feed；tick、partial 或未知 payload 一律不进入服务层。
+    """
+
+    def __init__(self, client: RawLiveMarketClient) -> None:
+        self._client = client
+        self._messages: deque[Mapping[str, Any]] = deque()
+        self._listening = False
+
+    def subscribe(self, channels: tuple[str, ...]) -> None:
+        self._client.subscribe(list(channels))
+
+    def unsubscribe(self, channels: tuple[str, ...]) -> None:
+        self._client.unsubscribe(list(channels))
+
+    def poll(self) -> tuple[tuple[str, CanonicalBar], ...]:
+        if not self._listening:
+            # RQData handler mode owns its background socket reader; this method only drains memory.
+            self._client.listen(handler=self._buffer_message)
+            self._listening = True
+        messages = tuple(self._messages)
+        self._messages.clear()
+        return tuple(
+            item
+            for message in messages
+            if (item := _canonical_bar_from_raw_feed(message)) is not None
+        )
+
+    def _buffer_message(self, message: object) -> None:
+        if isinstance(message, MappingABC):
+            self._messages.append(message)
 
 
 class DominantSource(Protocol):
@@ -233,6 +360,7 @@ class LiveMarketService:
         self._channels: set[str] = set()
         self._pending: dict[tuple[str, datetime], tuple[CanonicalBar, SessionWindow]] = {}
         self._finalized: set[tuple[str, datetime]] = set()
+        self._known_sessions: dict[tuple[str, date], tuple[SessionWindow, ...]] = {}
         self._last_bar_at: datetime | None = None
         self._available = True
         self.next_provider_retry_at: datetime | None = None
@@ -255,13 +383,19 @@ class LiveMarketService:
         trading_day = next(iter(trading_days))
         assert trading_day is not None
         if trading_day != self._trading_day:
-            snapshot = {
+            raw_snapshot = {
                 symbol: self._dominant_source.dominant_for_day(symbol, trading_day)
                 for symbol in self._products
             }
+            snapshot = {
+                symbol: _concrete_rank1_contract(symbol, contract)
+                for symbol, contract in raw_snapshot.items()
+            }
+            if any(contract is None for contract in snapshot.values()):
+                return "LIVE_RANK1_CONTRACT_INVALID"
             self._store.set_subscriptions(trading_day, snapshot)
             self._trading_day = trading_day
-            self._contracts = {symbol: str(contract).upper() for symbol, contract in snapshot.items()}
+            self._contracts = {symbol: contract for symbol, contract in snapshot.items() if contract is not None}
         desired = {f"bar_{contract}" for contract in self._contracts.values()}
         try:
             provider = self._provider_or_create()
@@ -289,9 +423,9 @@ class LiveMarketService:
         if symbol is None:
             return self._reject("LIVE_CONTRACT_NOT_SUBSCRIBED")
         phase = self._phase_resolver.resolve(symbol, now)
-        if phase.trading_day != bar.trading_day or phase.current_session is None:
+        window = self._session_for_bar(symbol, bar, phase, now)
+        if window is None:
             return self._reject("LIVE_BAR_OUTSIDE_SESSION")
-        window = phase.current_session
         elapsed = (bar.bar_end - window.start).total_seconds()
         if (
             not window.start < bar.bar_end <= window.end
@@ -313,24 +447,33 @@ class LiveMarketService:
             if now < bar.bar_end + _FINALIZATION_DELAY:
                 continue
             symbol, _ = key
-            self._pending.pop(key)
-            self._finalized.add(key)
             try:
                 self._store.put_bar(bar.trading_day, symbol, BarFrequency.M1, bar)
                 self._store.publish_bar(symbol, BarFrequency.M1, bar)
-                self._derive(symbol, bar, window)
             except Exception:  # noqa: BLE001 - Redis is an explicit unavailable boundary
                 self._available = False
                 self._reject("LIVE_REDIS_UNAVAILABLE")
                 continue
+            self._pending.pop(key)
+            self._finalized.add(key)
             self._available = True
             self._last_bar_at = bar.bar_end
             finalized.append(bar)
+            try:
+                self._derive(symbol, bar, window)
+            except Exception:  # noqa: BLE001 - Derived only reads/writes transient Redis state
+                self._available = False
+                self._reject("LIVE_REDIS_UNAVAILABLE")
         return tuple(finalized)
 
     def poll(self, now: datetime) -> str | None:
         """执行单个前台 poll cycle；TRADING provider 故障固定十秒重试。"""
         phases = self._phases(now)
+        if self.next_provider_retry_at is not None and now < self.next_provider_retry_at:
+            if not any(item.phase is MarketPhase.TRADING for item in phases.values()):
+                self.next_provider_retry_at = None
+            self.flush_due(now)
+            return None
         try:
             result = self.reconcile(now)
         except _ProviderUnavailable:
@@ -346,8 +489,6 @@ class LiveMarketService:
             self.next_provider_retry_at = None
             return None
         if not self._channels:
-            return None
-        if self.next_provider_retry_at is not None and now < self.next_provider_retry_at:
             return None
         try:
             provider = self._provider_or_create()
@@ -393,7 +534,28 @@ class LiveMarketService:
             self._store.publish_bar(symbol, frequency, derived)
 
     def _phases(self, now: datetime) -> dict[str, ProductMarketPhase]:
-        return {symbol: self._phase_resolver.resolve(symbol, now) for symbol in self._products}
+        phases = {symbol: self._phase_resolver.resolve(symbol, now) for symbol in self._products}
+        for symbol, phase in phases.items():
+            if phase.trading_day is not None and phase.current_session is not None:
+                key = (symbol, phase.trading_day)
+                known = self._known_sessions.get(key, ())
+                if phase.current_session not in known:
+                    self._known_sessions[key] = tuple(sorted((*known, phase.current_session), key=lambda item: item.start))
+        return phases
+
+    def _session_for_bar(
+        self,
+        symbol: str,
+        bar: CanonicalBar,
+        phase: ProductMarketPhase,
+        now: datetime,
+    ) -> SessionWindow | None:
+        if phase.trading_day == bar.trading_day and phase.current_session is not None:
+            return phase.current_session
+        for window in self._known_sessions.get((symbol, bar.trading_day), ()):
+            if window.start < bar.bar_end <= window.end and now <= window.end + _FINALIZATION_DELAY:
+                return window
+        return None
 
     def _provider_or_create(self) -> LiveProvider:
         if self._provider is None:

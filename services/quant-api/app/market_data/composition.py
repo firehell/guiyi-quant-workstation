@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.catalog import MarketCatalog
-from app.market_data.live_market import LiveMarketService, RedisClient, RedisLiveStore
+from app.market_data.live_market import RQDataLiveProvider, LiveMarketService, RedisClient, RedisLiveStore
 from app.market_data.maintenance import HistoricalDataManager
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.operational_universe import load_operational_products
@@ -72,7 +72,7 @@ def build_live_market_service(session: Session) -> LiveMarketService:
 
     rqdata = RQDataClient()
     return LiveMarketService(
-        provider_factory=rqdata.live_market_client,
+        provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
         dominant_source=rqdata,
         phase_resolver=MarketPhaseResolver(session),
         store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
