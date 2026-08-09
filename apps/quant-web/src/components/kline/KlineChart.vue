@@ -27,6 +27,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'need-more-before': []
+  'follow-latest-change': [followLatest: boolean]
 }>()
 
 const container = ref<HTMLElement>()
@@ -37,6 +38,7 @@ let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 let isNearLeftBoundary = false
 let paginationArmed = false
+let followLatest = true
 
 onMounted(async () => {
   await nextTick()
@@ -110,14 +112,16 @@ function sortAndDedupe(bars: BarData[]): BarData[] {
   return [...byEnd.values()].sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
 }
 
-function replaceBars(bars: BarData[]): void {
+function replaceBars(bars: BarData[], preserveViewport = false): void {
+  const visibleRange = preserveViewport ? chart?.timeScale().getVisibleLogicalRange() : null
   renderedBars = sortAndDedupe(bars)
   if (!candles || !volume || !chart) return
   paginationArmed = false
   candles.setData(barValues(renderedBars))
   volume.setData(volumeValues(renderedBars))
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
-  chart.timeScale().fitContent()
+  if (visibleRange) chart.timeScale().setVisibleLogicalRange(visibleRange)
+  else chart.timeScale().fitContent()
   requestAnimationFrame(() => {
     const range = chart?.timeScale().getVisibleLogicalRange()
     isNearLeftBoundary = !!range && range.from <= 20
@@ -147,7 +151,13 @@ function updateBar(bar: BarData): void {
   const index = renderedBars.findIndex((item) => item.time === bar.time)
   if (index >= 0) renderedBars[index] = bar
   else renderedBars.push(bar)
+  renderedBars = sortAndDedupe(renderedBars)
   const theme = resolveChartTheme()
+  if (index >= 0 && index !== renderedBars.length - 1) {
+    candles.setData(barValues(renderedBars))
+    volume.setData(volumeValues(renderedBars))
+    return
+  }
   candles.update({
     time: chartTime(bar),
     open: bar.open,
@@ -164,10 +174,20 @@ function updateBar(bar: BarData): void {
 
 function scrollToLatest(): void {
   chart?.timeScale().scrollToRealTime()
+  if (!followLatest) {
+    followLatest = true
+    emit('follow-latest-change', true)
+  }
 }
 
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
-  if (!paginationArmed || !range || !renderedBars.length || props.loading) return
+  if (!range || !renderedBars.length) return
+  const isFollowing = range.to >= renderedBars.length - 3
+  if (isFollowing !== followLatest) {
+    followLatest = isFollowing
+    emit('follow-latest-change', isFollowing)
+  }
+  if (!paginationArmed || props.loading) return
   const nearLeftBoundary = range.from <= 20
   if (!nearLeftBoundary) {
     isNearLeftBoundary = false

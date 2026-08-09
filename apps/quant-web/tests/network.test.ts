@@ -30,12 +30,12 @@ test('normalizeApiBaseURL ignores localhost env on external host', () => {
 test('resolveWsURL uses current HTTPS origin when no WebSocket URL is configured', () => {
   assert.equal(
     resolveWsURL(undefined, { protocol: 'https:', host: 'workstation.yanyi.com', hostname: 'workstation.yanyi.com' }),
-    'wss://workstation.yanyi.com/ws',
+    'wss://workstation.yanyi.com/api/v1/market/ws',
   )
 })
 
-test('resolveWsURL falls back to relative /ws when no browser location is available', () => {
-  assert.equal(resolveWsURL(undefined), '/ws')
+test('resolveWsURL falls back to the market websocket path when no browser location is available', () => {
+  assert.equal(resolveWsURL(undefined), '/api/v1/market/ws')
 })
 
 test('resolveWsURL preserves explicitly configured WebSocket URL without trailing slashes', () => {
@@ -43,5 +43,8 @@ test('resolveWsURL preserves explicitly configured WebSocket URL without trailin
 })
 
 test('resolveWsURL ignores localhost env on external host', () => {
-  assert.equal(resolveWsURL('ws://localhost:8000/ws', externalHost), 'ws://124.221.95.93/ws')
+  assert.equal(
+    resolveWsURL('ws://localhost:8000/ws', externalHost),
+    'ws://124.221.95.93/api/v1/market/ws',
+  )
 })

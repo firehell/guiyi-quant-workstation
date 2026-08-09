@@ -49,10 +49,10 @@ export function resolveWsURL(value?: string, locationOverride?: BrowserLocation)
     return configured.replace(/\/+$/, '')
   }
 
-  if (!currentLocation) return '/ws'
+  if (!currentLocation) return '/api/v1/market/ws'
 
   const protocol = currentLocation.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${currentLocation.host}/ws`
+  return `${protocol}//${currentLocation.host}/api/v1/market/ws`
 }
 
 function getBrowserLocation() {

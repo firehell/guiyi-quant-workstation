@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
@@ -26,8 +26,12 @@ const {
   hasMoreBefore,
   loadingInitial,
   loadingBefore,
+  marketState,
+  liveUnavailable,
+  mutation,
   replaceSeries,
   loadMoreBefore,
+  dispose,
 } = useMarketSeries()
 let metadataReady = false
 let synchronizingSymbol = false
@@ -38,6 +42,7 @@ const seriesKind = ref<SeriesKind>(normalizeSeriesKind(route.query.series_kind))
 const frequency = ref<MarketFrequency>(normalizeFrequency(route.query.frequency))
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
+const followLatest = ref(true)
 const symbolOptions = computed(() => dominants.value.map((item) => ({
   label: `${item.product.toUpperCase()} ${item.product_name}`,
   value: item.product,
@@ -54,6 +59,21 @@ const selectedCoverage = computed(() => coverageItems.value.find((item) =>
   && item.kind === (seriesKind.value === 'continuous' ? 'continuous' : 'contract')
   && (seriesKind.value !== 'contract' || item.series_or_contract === contract.value),
 ))
+const isLiveDisplay = computed(() => !!marketState.value?.live_eligible
+  && !!marketState.value.live_available
+  && !liveUnavailable.value)
+const phaseLabel = computed(() => {
+  switch (marketState.value?.phase) {
+    case 'TRADING': return '交易中'
+    case 'BREAK': return '盘中休市'
+    case 'CLOSED': return '已收盘'
+    default: return '状态未知'
+  }
+})
+const afterMarketFailed = computed(() => {
+  const afterMarket = marketState.value?.after_market
+  return !!afterMarket && typeof afterMarket === 'object' && afterMarket.last_failure != null
+})
 
 onMounted(async () => {
   metadataLoading.value = true
@@ -62,8 +82,8 @@ onMounted(async () => {
     if (!symbol.value) symbol.value = dominants.value[0]?.product || ''
     syncDominantContract()
     await loadCoverage()
-    metadataReady = true
     await refreshSeries()
+    metadataReady = true
   } catch {
     error.value = '行情元数据加载失败'
   } finally {
@@ -86,6 +106,22 @@ watch(symbol, async () => {
 watch([contract, seriesKind, frequency], () => {
   if (metadataReady && !synchronizingSymbol) void refreshSeries()
 })
+
+watch(mutation, (nextMutation) => {
+  if (!chart.value) return
+  if (nextMutation.kind === 'replace') {
+    chart.value.replaceBars(bars.value, !followLatest.value)
+    return
+  }
+  if (nextMutation.kind === 'prepend') {
+    chart.value.prependBars(nextMutation.bars)
+    return
+  }
+  for (const bar of nextMutation.bars) chart.value.updateBar(bar)
+  if (followLatest.value) chart.value.scrollToLatest()
+})
+
+onUnmounted(dispose)
 
 function syncDominantContract() {
   const value = dominants.value.find((item) => item.product === symbol.value)
@@ -114,10 +150,10 @@ async function refreshSeries() {
   }
   const requested = currentIdentity()
   error.value = null
+  followLatest.value = true
   try {
     await replaceSeries(requested)
     if (!isCurrentIdentity(requested)) return
-    chart.value?.replaceBars(bars.value)
     await router.replace({ query: {
       symbol: requested.symbol,
       contract: contract.value,
@@ -132,11 +168,8 @@ async function refreshSeries() {
 }
 
 async function loadEarlierBars() {
-  const previousLength = bars.value.length
   try {
     await loadMoreBefore()
-    const prependedCount = bars.value.length - previousLength
-    if (prependedCount > 0) chart.value?.prependBars(bars.value.slice(0, prependedCount))
   } catch {
     error.value = '读取更早历史失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
@@ -180,6 +213,11 @@ function normalizeSeriesKind(value: unknown): SeriesKind {
           <span>{{ bars.length }} bars</span>
           <span v-if="selectedCoverage">{{ selectedCoverage.start }} → {{ selectedCoverage.end }}</span>
           <NTag v-if="hasMoreBefore" type="info">可继续向前加载</NTag>
+          <NTag :type="isLiveDisplay ? 'success' : 'default'">{{ isLiveDisplay ? 'Live' : 'Historical' }}</NTag>
+          <NTag>{{ phaseLabel }}</NTag>
+          <span v-if="isLiveDisplay && marketState?.live_contract">当前 Live 主力合约 {{ marketState.live_contract }}</span>
+          <NTag v-if="afterMarketFailed" type="warning">最近盘后更新失败</NTag>
+          <NButton v-if="!followLatest" size="small" secondary @click="chart?.scrollToLatest()">回到最新</NButton>
         </div>
       </NCard>
       <KlineChart
@@ -189,6 +227,7 @@ function normalizeSeriesKind(value: unknown): SeriesKind {
         :error="error"
         :period="frequency"
         @need-more-before="loadEarlierBars"
+        @follow-latest-change="followLatest = $event"
       />
     </NSpin>
   </div>
