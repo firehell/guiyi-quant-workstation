@@ -16,6 +16,7 @@ RQDataMarketAdapter（BarSource + MetadataPort）
     - 日历上下文向前扩一月、向后扩一周，用于夜盘/首周 ISO 周完整性证明，非第二套 watermark。
     - 品种有效交易日 = 日历交易日 ∩ 当日有未到期挂牌合约，避免拉取无合约日行情。
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -44,6 +45,10 @@ from app.market_data.domain import (
 )
 from app.market_data.maintenance import BarBatch
 from app.market_data.metadata import MetadataSnapshot
+from app.market_data.session_clock import (
+    SessionClockError,
+    session_windows_for_trading_day,
+)
 from app.models import (
     Contract,
     Instrument,
@@ -60,7 +65,9 @@ _SESSION = re.compile(r"(?P<start>\d{1,2}:\d{2})\s*[-~]\s*(?P<end>\d{1,2}:\d{2})
 class InfrastructureError(RuntimeError):
     """基础设施层可识别错误；code 供 maintenance 区分 fail-closed 与可隔离失败。"""
 
-    def __init__(self, code: str, *, samples: tuple[Mapping[str, str], ...] = ()) -> None:
+    def __init__(
+        self, code: str, *, samples: tuple[Mapping[str, str], ...] = ()
+    ) -> None:
         self.code = code
         self.samples = samples
         super().__init__(code)
@@ -127,7 +134,9 @@ class DatabaseCoverageSource:
                 raise InfrastructureError("TRADING_CALENDAR_MISSING")
             # 若最大交易日是今天但会话尚未结束，回退到上一交易日，避免拉未完成日 bar。
             if value == today:
-                session_end = max(window.end for window in self._sessions_for_day(symbol, value))
+                session_end = max(
+                    window.end for window in self._sessions_for_day(symbol, value)
+                )
                 if current < session_end:
                     value = self.session.scalar(
                         select(func.max(TradingCalendar.trade_date)).where(
@@ -158,18 +167,23 @@ class DatabaseCoverageSource:
             )
             if calendar_end is None or calendar_end < through:
                 return False
-            if self.session.scalar(
-                select(TradingSession.id).where(
-                    TradingSession.exchange_code == exchange,
-                    TradingSession.instrument_symbol == symbol,
-                    TradingSession.is_active.is_(True),
-                    TradingSession.effective_from <= through,
-                    (
-                        TradingSession.effective_to.is_(None)
-                        | (TradingSession.effective_to >= through)
-                    ),
-                ).limit(1)
-            ) is None:
+            if (
+                self.session.scalar(
+                    select(TradingSession.id)
+                    .where(
+                        TradingSession.exchange_code == exchange,
+                        TradingSession.instrument_symbol == symbol,
+                        TradingSession.is_active.is_(True),
+                        TradingSession.effective_from <= through,
+                        (
+                            TradingSession.effective_to.is_(None)
+                            | (TradingSession.effective_to >= through)
+                        ),
+                    )
+                    .limit(1)
+                )
+                is None
+            ):
                 return False
             last_trading_day = self.session.scalar(
                 select(func.max(TradingCalendar.trade_date)).where(
@@ -190,13 +204,17 @@ class DatabaseCoverageSource:
             if first_map_day is None:
                 return False
             expected_days = self._trading_days(symbol, first_map_day, through)
-            mapped_days = tuple(self.session.scalars(
-                select(MainContractMap.trade_date).where(
-                    MainContractMap.symbol == symbol,
-                    MainContractMap.trade_date >= first_map_day,
-                    MainContractMap.trade_date <= through,
-                ).order_by(MainContractMap.trade_date)
-            ))
+            mapped_days = tuple(
+                self.session.scalars(
+                    select(MainContractMap.trade_date)
+                    .where(
+                        MainContractMap.symbol == symbol,
+                        MainContractMap.trade_date >= first_map_day,
+                        MainContractMap.trade_date <= through,
+                    )
+                    .order_by(MainContractMap.trade_date)
+                )
+            )
             # 主力映射须与有效交易日一一对应，缺口会导致 contract 序列 expected 错误。
             if mapped_days != expected_days:
                 return False
@@ -218,7 +236,9 @@ class DatabaseCoverageSource:
             expected_calendar_days = (calendar_through - context_start).days + 1
             observed_calendar_days = int(
                 self.session.scalar(
-                    select(func.count()).select_from(TradingCalendar).where(
+                    select(func.count())
+                    .select_from(TradingCalendar)
+                    .where(
                         TradingCalendar.exchange_code == exchange,
                         TradingCalendar.trade_date >= context_start,
                         TradingCalendar.trade_date <= calendar_through,
@@ -233,14 +253,16 @@ class DatabaseCoverageSource:
                     symbol, self.product_start(symbol), through
                 ):
                     fact = self.session.scalar(
-                        select(TradingSession.id).where(
+                        select(TradingSession.id)
+                        .where(
                             TradingSession.exchange_code == exchange,
                             TradingSession.instrument_symbol == symbol,
                             TradingSession.provider == "rqdata",
                             TradingSession.is_active.is_(True),
                             TradingSession.effective_from == trading_day,
                             TradingSession.effective_to == trading_day,
-                        ).limit(1)
+                        )
+                        .limit(1)
                     )
                     if fact is None:
                         missing = True
@@ -277,9 +299,7 @@ class DatabaseCoverageSource:
         days = tuple(sorted(dict.fromkeys(trading_days)))
         if not days:
             return ()
-        sessions_by_day = {
-            day: self._sessions_for_day(key.symbol, day) for day in days
-        }
+        sessions_by_day = {day: self._sessions_for_day(key.symbol, day) for day in days}
         if key.frequency is BarFrequency.M1:
             return tuple(
                 window.start + timedelta(minutes=minute)
@@ -373,50 +393,20 @@ class DatabaseCoverageSource:
         exchange = self._exchange(symbol)
         return _product_trading_days(self.session, normalized, exchange, start, end)
 
-    def _sessions_for_day(self, symbol: str, trading_day: date) -> tuple[SessionWindow, ...]:
+    def _sessions_for_day(
+        self, symbol: str, trading_day: date
+    ) -> tuple[SessionWindow, ...]:
         """将 DB 会话模板转为当日实际 SessionWindow（处理夜盘与跨日）。"""
         exchange = self._exchange(symbol)
-        templates = tuple(
-            self.session.scalars(
-                select(TradingSession)
-                .where(
-                    TradingSession.exchange_code == exchange,
-                    TradingSession.instrument_symbol == symbol.strip().lower(),
-                    TradingSession.is_active.is_(True),
-                    TradingSession.effective_from <= trading_day,
-                    (
-                        TradingSession.effective_to.is_(None)
-                        | (TradingSession.effective_to >= trading_day)
-                    ),
-                )
-                .order_by(TradingSession.start_time)
+        try:
+            return session_windows_for_trading_day(
+                self.session,
+                exchange=exchange,
+                symbol=symbol,
+                trading_day=trading_day,
             )
-        )
-        if not templates:
-            raise InfrastructureError("TRADING_SESSION_MISSING")
-        prior = self.session.scalar(
-            select(func.max(TradingCalendar.trade_date)).where(
-                TradingCalendar.exchange_code == exchange,
-                TradingCalendar.trade_date < trading_day,
-                TradingCalendar.is_trading_day.is_(True),
-            )
-        )
-        windows: list[SessionWindow] = []
-        for template in templates:
-            is_night = template.start_time >= time(18)
-            if is_night and prior is None:
-                raise InfrastructureError("PREVIOUS_TRADING_DAY_MISSING")
-            # 夜盘锚定上一交易日，日盘锚定 trading_day 本身。
-            base = prior if is_night else trading_day
-            assert base is not None
-            local_start = datetime.combine(base, template.start_time, tzinfo=SHANGHAI)
-            end_day = base
-            if template.crosses_midnight or template.end_time <= template.start_time:
-                end_day += timedelta(days=1)
-            local_end = datetime.combine(end_day, template.end_time, tzinfo=SHANGHAI)
-            windows.append(SessionWindow(local_start, local_end))
-        windows.sort(key=lambda item: item.start)
-        return tuple(windows)
+        except SessionClockError as exc:
+            raise InfrastructureError(exc.code) from exc
 
 
 class RQDataMarketAdapter:
@@ -439,9 +429,7 @@ class RQDataMarketAdapter:
             raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
         if key.frequency is BarFrequency.W1:
             # 周线需扩到完整 ISO 周自然日范围，否则 provider 返回行与 expected 无法对齐。
-            iso_days = tuple(
-                value.astimezone(SHANGHAI).date() for value in expected
-            )
+            iso_days = tuple(value.astimezone(SHANGHAI).date() for value in expected)
             start_day = min(
                 item - timedelta(days=item.isoweekday() - 1) for item in iso_days
             )
@@ -475,7 +463,9 @@ class RQDataMarketAdapter:
         expected_by_day: dict[date, list[datetime]] = {}
         expected_by_iso_week: dict[tuple[int, int], datetime] = {}
         for value in expected:
-            expected_by_day.setdefault(value.astimezone(SHANGHAI).date(), []).append(value)
+            expected_by_day.setdefault(value.astimezone(SHANGHAI).date(), []).append(
+                value
+            )
             if key.frequency is BarFrequency.W1:
                 iso = value.astimezone(SHANGHAI).date().isocalendar()
                 expected_by_iso_week[(iso.year, iso.week)] = value
@@ -517,7 +507,9 @@ class RQDataMarketAdapter:
                 )
             )
             # 默认从最近映射日前 14 天刷新，映射缺口则前推到首个缺失日。
-            refresh_start = max(floor, current - timedelta(days=14)) if current else floor
+            refresh_start = (
+                max(floor, current - timedelta(days=14)) if current else floor
+            )
             exchange = self.session.scalar(
                 select(Instrument.exchange_code).where(Instrument.symbol == symbol)
             )
@@ -537,14 +529,18 @@ class RQDataMarketAdapter:
                     map_floor,
                     through,
                 )
-                mapped_days = set(self.session.scalars(
-                    select(MainContractMap.trade_date).where(
-                        MainContractMap.symbol == symbol,
-                        MainContractMap.trade_date >= map_floor,
-                        MainContractMap.trade_date <= through,
+                mapped_days = set(
+                    self.session.scalars(
+                        select(MainContractMap.trade_date).where(
+                            MainContractMap.symbol == symbol,
+                            MainContractMap.trade_date >= map_floor,
+                            MainContractMap.trade_date <= through,
+                        )
                     )
-                ))
-                missing_map = next((day for day in calendar_days if day not in mapped_days), None)
+                )
+                missing_map = next(
+                    (day for day in calendar_days if day not in mapped_days), None
+                )
                 if missing_map is not None:
                     refresh_start = min(refresh_start, missing_map)
             requested_starts[symbol] = refresh_start
@@ -599,7 +595,9 @@ class _RqdatacClient:
         product_set = {item.upper() for item in products}
         if "underlying_symbol" not in frame.columns:
             raise InfrastructureError("RQDATA_INSTRUMENT_SCHEMA_INVALID")
-        frame = frame[frame["underlying_symbol"].astype(str).str.upper().isin(product_set)]
+        frame = frame[
+            frame["underlying_symbol"].astype(str).str.upper().isin(product_set)
+        ]
         exchanges: dict[str, dict[str, object]] = {}
         instruments: dict[str, dict[str, object]] = {}
         contracts: list[dict[str, object]] = []
@@ -623,7 +621,9 @@ class _RqdatacClient:
                     "instrument_symbol": symbol,
                     "exchange_code": exchange,
                     "name": str(row.get("symbol", contract)),
-                    "contract_multiplier": _optional_int(row.get("contract_multiplier")),
+                    "contract_multiplier": _optional_int(
+                        row.get("contract_multiplier")
+                    ),
                     "listed_date": listed,
                     "expired_date": _optional_date(row.get("de_listed_date")),
                     "maturity_date": _optional_date(row.get("maturity_date")),
@@ -691,10 +691,7 @@ class _RqdatacClient:
         night_exchanges = {
             str(row["exchange_code"])
             for row in sessions
-            if (
-                isinstance(row["start_time"], time)
-                and row["start_time"] >= time(18)
-            )
+            if (isinstance(row["start_time"], time) and row["start_time"] >= time(18))
             or bool(row["crosses_midnight"])
         }
         trading_day_set = set(trading_dates)
@@ -703,7 +700,8 @@ class _RqdatacClient:
                 "exchange_code": exchange,
                 "trade_date": day,
                 "is_trading_day": day in trading_day_set,
-                "has_night_session": exchange in night_exchanges and day in trading_day_set,
+                "has_night_session": exchange in night_exchanges
+                and day in trading_day_set,
                 "provider": "rqdata",
             }
             for exchange in exchanges
@@ -718,6 +716,7 @@ class _RqdatacClient:
             main_contracts=tuple(main_contracts),
             main_contract_starts=dict(starts),
         )
+
 
 def _product_trading_days(
     session: Session,
@@ -841,7 +840,9 @@ def _row_datetime(row: dict[str, Any]) -> datetime:
     return parsed.tz_convert(UTC).to_pydatetime()
 
 
-def _canonical_bar(row: dict[str, Any], bar_end: datetime, trading_day: date) -> CanonicalBar:
+def _canonical_bar(
+    row: dict[str, Any], bar_end: datetime, trading_day: date
+) -> CanonicalBar:
     """将 provider OHLCV 行映射为 CanonicalBar（Decimal 字段）。"""
     return CanonicalBar(
         bar_end=bar_end,
@@ -851,7 +852,9 @@ def _canonical_bar(row: dict[str, Any], bar_end: datetime, trading_day: date) ->
         low=_decimal(row, "low"),
         close=_decimal(row, "close"),
         volume=_decimal(row, "volume"),
-        turnover=_optional_decimal(_row_value(row, "turnover", "total_turnover", "amount", required=False)),
+        turnover=_optional_decimal(
+            _row_value(row, "turnover", "total_turnover", "amount", required=False)
+        ),
         open_interest=_optional_decimal(
             _row_value(row, "open_interest", "open_oi", "close_oi", required=False)
         ),

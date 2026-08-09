@@ -16,6 +16,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy import text
@@ -23,6 +24,10 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
 from app.market_data.domain import DatasetKey
+from app.market_data.session_clock import (
+    SessionClockError,
+    session_windows_for_trading_day,
+)
 from app.market_data.storage import PublishedPartition
 from app.models import (
     Instrument,
@@ -43,6 +48,7 @@ class CatalogError(RuntimeError):
 
 # 全库唯一的维护 advisory lock 键，与业务数据无关联
 _MAINTENANCE_LOCK_KEY = 4_902_608_003_600_001
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class MaintenanceLease:
@@ -134,7 +140,9 @@ class MarketCatalog:
                 connection.close()
             raise
 
-    def dataset_row(self, key: DatasetKey, *, create: bool = False) -> MarketDataset | None:
+    def dataset_row(
+        self, key: DatasetKey, *, create: bool = False
+    ) -> MarketDataset | None:
         """按四元组查找 ``MarketDataset``；``create=True`` 时不存在则插入并 flush。"""
         row = self.session.scalar(
             select(MarketDataset).where(
@@ -293,7 +301,64 @@ class MarketCatalog:
             )
         )
 
-    def missing_main_map_days(self, symbol: str, start: date, end: date) -> tuple[date, ...]:
+    def trading_days_overlapping_window(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[date, ...]:
+        """返回实际 Session 与 ``(start, end]`` 相交的交易日。
+
+        夜盘虽发生在前一自然日，但身份属于下一交易日；因此候选范围额外纳入
+        ``end`` 自然日后的首个交易日，再以历史 Session 事实精确筛选。
+        """
+        exchange = self.exchange_for_symbol(symbol)
+        start_day = start.astimezone(SHANGHAI).date()
+        end_day = end.astimezone(SHANGHAI).date()
+        candidates = list(self.trading_days(symbol, start_day, end_day))
+        next_day = self.session.scalar(
+            select(TradingCalendar.trade_date)
+            .where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date > end_day,
+                TradingCalendar.is_trading_day.is_(True),
+            )
+            .order_by(TradingCalendar.trade_date)
+            .limit(1)
+        )
+        if next_day is not None:
+            candidates.append(next_day)
+        result: list[date] = []
+        for trading_day in tuple(dict.fromkeys(candidates)):
+            try:
+                windows = session_windows_for_trading_day(
+                    self.session,
+                    exchange=exchange,
+                    symbol=symbol,
+                    trading_day=trading_day,
+                )
+            except SessionClockError as exc:
+                if (
+                    trading_day > end_day
+                    and self.session.scalar(
+                        select(MainContractMap.id)
+                        .where(
+                            MainContractMap.symbol == symbol.strip().lower(),
+                            MainContractMap.trade_date == trading_day,
+                        )
+                        .limit(1)
+                    )
+                    is None
+                ):
+                    continue
+                raise CatalogError(exc.code) from exc
+            if any(window.start < end and start < window.end for window in windows):
+                result.append(trading_day)
+        return tuple(result)
+
+    def missing_main_map_days(
+        self, symbol: str, start: date, end: date
+    ) -> tuple[date, ...]:
         """返回交易日历中存在但 ``MainContractMap`` 缺失的日期（actual_dominant 前置检查）。"""
         expected = self.trading_days(symbol, start, end)
         mapped = {item.trade_date for item in self.main_map(symbol, start, end)}

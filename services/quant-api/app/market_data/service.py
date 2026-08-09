@@ -17,7 +17,12 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from app.market_data.catalog import CatalogPartition, MainMapFact, MarketCatalog
+from app.market_data.catalog import (
+    CatalogError,
+    CatalogPartition,
+    MainMapFact,
+    MarketCatalog,
+)
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
@@ -94,7 +99,11 @@ class MarketDataService:
             return self._actual_dominant(request)
         assert request.physical_key is not None
         bars, _ = self._read_physical(request.physical_key, request)
-        return self._result(request, bars, (),)
+        return self._result(
+            request,
+            bars,
+            (),
+        )
 
     def _actual_dominant(self, request: SeriesQuery) -> MarketSeriesResult:
         """按交易日主力映射拼接多合约物理数据，得到逻辑连续序列。
@@ -104,34 +113,30 @@ class MarketDataService:
         - 周线仅使用「完整交易周」最后交易日的映射；
         - 映射指向的合约分区缺失或交易日缺 bar 时整体失败，不部分返回。
         """
-        start_day = _local_date(request.start)
-        end_day = _local_date(request.end)
-        mappings = self.catalog.main_map(
-            request.symbol,
-            start_day,
-            end_day,
-        )
-        if not mappings:
-            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-        trading_days = self.catalog.trading_days(
-            request.symbol,
-            start_day,
-            end_day,
-        )
+        try:
+            trading_days = self.catalog.trading_days_overlapping_window(
+                request.symbol,
+                request.start,
+                request.end,
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
         if not trading_days:
             raise MarketDataError("TRADING_CALENDAR_MISSING")
-        # 与交易日历逐日比对，任一交易日无映射则 fail-closed
-        missing_days = self.catalog.missing_main_map_days(
+        mappings = self.catalog.main_map(
             request.symbol,
-            start_day,
-            end_day,
+            trading_days[0],
+            trading_days[-1],
         )
+        mapping_by_day = {row.trade_date: row for row in mappings}
+        missing_days = tuple(day for day in trading_days if day not in mapping_by_day)
         if missing_days:
             raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        selected_mappings = tuple(mapping_by_day[day] for day in trading_days)
         if request.frequency is BarFrequency.W1:
-            selected = self._weekly_mappings(request, mappings)
+            selected = self._weekly_mappings(request, selected_mappings)
         else:
-            selected = mappings
+            selected = selected_mappings
         segments = _segments(selected)
         bars: list[CanonicalBar] = []
         mapping_by_day = {row.trade_date: row.contract for row in selected}
@@ -232,7 +237,9 @@ class MarketDataService:
             DominantContractSummary(
                 symbol=symbol,
                 product_name=(
-                    instruments[symbol].name if symbol in instruments else symbol.upper()
+                    instruments[symbol].name
+                    if symbol in instruments
+                    else symbol.upper()
                 ),
                 exchange=(
                     instruments[symbol].exchange_code if symbol in instruments else ""
@@ -300,7 +307,9 @@ class MarketDataService:
         partitions = self.catalog.partitions(key, request.start, request.end)
         if not partitions:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
-        partition_months = {(partition.year, partition.month) for partition in partitions}
+        partition_months = {
+            (partition.year, partition.month) for partition in partitions
+        }
         if require_window_coverage:
             # 命中分区所跨月份必须连续，防止中间月 Catalog 缺失被忽略
             if partition_months != _months_between(
@@ -309,7 +318,8 @@ class MarketDataService:
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
             if (
-                min(partition.coverage_start for partition in partitions) > request.start
+                min(partition.coverage_start for partition in partitions)
+                > request.start
                 or max(partition.coverage_end for partition in partitions) < request.end
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
@@ -328,7 +338,10 @@ class MarketDataService:
         bars.sort(key=lambda item: item.bar_end)
         if not bars:
             raise MarketDataError("QUERY_WINDOW_EMPTY")
-        if any(previous.bar_end >= current.bar_end for previous, current in zip(bars, bars[1:])):
+        if any(
+            previous.bar_end >= current.bar_end
+            for previous, current in zip(bars, bars[1:])
+        ):
             raise MarketDataError("BAR_IDENTITY_CONFLICT")
         return tuple(bars), partitions
 

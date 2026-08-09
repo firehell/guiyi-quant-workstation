@@ -87,7 +87,9 @@ end
 
 `continuous` 读取 Canonical `SYMBOL.MAIN`（仅由 RQData `{SYMBOL}88` 构建）；`contract` 读取指定真实合约；`actual_dominant` 由 rank1
 映射拼接，`1w` 按完整 ISO 周最后交易日的 rank1 合约取整周真实合约 bar。映射、日历、分区或
-coverage 缺失时 fail-closed；响应只返回请求、bars、coverage 和 resolved contract segments。
+coverage 缺失时 fail-closed。`actual_dominant` 按与 `(start, end]` 相交的历史 Session 选择映射日；
+夜盘 bar 的身份始终是其 `trading_day`，而不是发生时刻所在的前一自然日。响应只返回请求、bars、
+coverage 和 resolved contract segments。
 
 ## 6. CLI 与外部操作
 

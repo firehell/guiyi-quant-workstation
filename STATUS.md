@@ -17,12 +17,10 @@ Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产
 `MarketDataService` 已对七周期的 continuous / contract / actual_dominant 完成只读回检。随后 SHFE
 `ag` 在精确单次执行意图下完成 metadata 同步和 Canonical 重建，发布 748 个正式月分区
 （continuous 308、真实合约 440）；写后 audit 通过、fixed-T0 dry-run 为 NOOP，Catalog 与物理
-Parquet 均可读。然而 AG 的分钟及 Derived `actual_dominant` 在“首根夜盘 bar 前一微秒”这一合法
-查询边界仍报 `MAPPED_CONTRACT_DATASET_MISSING`：服务把自然日 `2026-07-31` 错当成该夜盘
-`2026-08-03` 交易日所需 bar 的映射日。按交易日零点对齐的早期、最近与跨换月七周期三形态读回均
-通过，故这是 `MarketDataService` 夜盘查询语义缺陷，而非 AG Catalog/Parquet/映射缺口。生产正式分区
-现为 2,797 个：数据资产重建进度为 4/60、剩余 56 个；完整闭环验收仍为 J/JM/AP 的 3/60，AG 待该
-服务缺陷修复后复验。60 品种重建及全域 Canonical 验收仍未完成。
+Parquet 均可读。AG 的分钟与 Derived `actual_dominant` 曾在首根夜盘 bar 前一微秒的合法查询边界把
+前一自然日错当映射日；仓库内修复后，早期、最近与跨换月的七周期 continuous / contract /
+actual_dominant 共 21 组同窗口读回全部通过。生产正式分区现为 2,797 个，数据资产与完整闭环验收
+均为 4/60，剩余 56 个 active 品种待重建。60 品种重建及全域 Canonical 验收仍未完成。
 `ap` 写入前的全域只读 audit 已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条
 finding，即当时 58 个未闭环品种各一条 `MAIN_CONTRACT_MAP_MISSING` 与
 `TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。Calendar、分区与物理可读性类别
@@ -79,9 +77,10 @@ concrete-contract 分区时仍保持 fail-closed；其余 58 品种的历史 Ses
 重建，`ap` 产出 `applied=685`、`failed=0`、`provider_requests=293`；写后 audit 为 passed，fixed-T0
 dry-run 为 NOOP，七周期 `MarketDataService` 读回通过。随后 SHFE `ag` 在独立的明确单次意图下完成
 metadata 同步与 Canonical 重建，产出 `applied=748`、`failed=0`、`provider_requests=320`；写后 audit
-为 passed、fixed-T0 dry-run 为 NOOP，748 个 Catalog 分区及对应 Parquet 均可读。AG 的
-`actual_dominant` 还暴露出夜盘起点的服务查询语义缺陷，故不能记作完整 canary 闭环；其余 56 个品种的
-数据资产重建及 AG 的服务修复/复验仍需后续工作。在明确单次
+为 passed、fixed-T0 dry-run 为 NOOP，748 个 Catalog 分区及对应 Parquet 均可读。随后修复
+`MarketDataService` 对夜盘查询边界的 `trading_day` 解析，并以相同 21 组窗口只读复验通过；该修复
+没有调用 RQData 或写入生产 Catalog/Canonical。其余 56 个品种的历史 Session facts 与 Canonical
+重建仍需后续受控执行。在明确单次
 意图下已多次对生产执行 `guiyi data retire-products --apply`，覆盖退役名单
 `br/cs/ic/if/ih/im/lu/nr/sp`；Canonical 退役目录均为 0，事后 residual=0，显式退役码返回
 `PRODUCT_RETIRED`。未执行服务切换、main/tag/release 或 Runtime promotion。
