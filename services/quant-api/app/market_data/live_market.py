@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable, Mapping as MappingABC
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import re
+from threading import Lock
 from typing import Any, Mapping, Protocol
 from zoneinfo import ZoneInfo
 
@@ -272,6 +273,8 @@ class LiveProvider(Protocol):
 
     def poll(self) -> Iterable[tuple[str, CanonicalBar]]: ...
 
+    def poll_buffered(self) -> Iterable[tuple[str, CanonicalBar]]: ...
+
 
 class RawLiveMarketClient(Protocol):
     """RQData 的最小 raw Live 接口；构造仍留在调用方的延迟 factory 中。"""
@@ -292,6 +295,7 @@ class RQDataLiveProvider:
     def __init__(self, client: RawLiveMarketClient) -> None:
         self._client = client
         self._messages: deque[Mapping[str, Any]] = deque()
+        self._message_lock = Lock()
         self._listening = False
 
     def subscribe(self, channels: tuple[str, ...]) -> None:
@@ -305,8 +309,12 @@ class RQDataLiveProvider:
             # RQData handler mode owns its background socket reader; this method only drains memory.
             self._client.listen(handler=self._buffer_message)
             self._listening = True
-        messages = tuple(self._messages)
-        self._messages.clear()
+        return self.poll_buffered()
+
+    def poll_buffered(self) -> tuple[tuple[str, CanonicalBar], ...]:
+        with self._message_lock:
+            messages = self._messages
+            self._messages = deque()
         return tuple(
             item
             for message in messages
@@ -315,7 +323,8 @@ class RQDataLiveProvider:
 
     def _buffer_message(self, message: object) -> None:
         if isinstance(message, MappingABC):
-            self._messages.append(message)
+            with self._message_lock:
+                self._messages.append(message)
 
 
 class DominantSource(Protocol):
@@ -469,9 +478,17 @@ class LiveMarketService:
     def poll(self, now: datetime) -> str | None:
         """执行单个前台 poll cycle；TRADING provider 故障固定十秒重试。"""
         phases = self._phases(now)
+        if not any(item.phase is MarketPhase.TRADING for item in phases.values()):
+            self.next_provider_retry_at = None
+            try:
+                self._publish_heartbeat(now, phases)
+                self._drain_session_grace(now)
+                self.flush_due(now)
+            except Exception:  # noqa: BLE001 - Live has no local fallback path
+                self._available = False
+                return self._reject("LIVE_REDIS_UNAVAILABLE")
+            return None
         if self.next_provider_retry_at is not None and now < self.next_provider_retry_at:
-            if not any(item.phase is MarketPhase.TRADING for item in phases.values()):
-                self.next_provider_retry_at = None
             self.flush_due(now)
             return None
         try:
@@ -484,10 +501,6 @@ class LiveMarketService:
         self.flush_due(now)
         if result is not None:
             return result
-        if not any(item.phase is MarketPhase.TRADING for item in phases.values()):
-            # BREAK/CLOSED 不把无新 bar 当成断线，也不创建/消费 provider。
-            self.next_provider_retry_at = None
-            return None
         if not self._channels:
             return None
         try:
@@ -556,6 +569,26 @@ class LiveMarketService:
             if window.start < bar.bar_end <= window.end and now <= window.end + _FINALIZATION_DELAY:
                 return window
         return None
+
+    def _drain_session_grace(self, now: datetime) -> None:
+        """休市边界只 drain 已启动 listener 的 final 1m，不创建、订阅或重连 provider。"""
+        if self._provider is None:
+            return
+        for contract, bar in self._provider.poll_buffered():
+            if self._is_final_grace_bar(contract, bar, now):
+                self.ingest(contract, bar, now=now)
+
+    def _is_final_grace_bar(self, contract: str, bar: CanonicalBar, now: datetime) -> bool:
+        symbol = next(
+            (item for item, current in self._contracts.items() if current == contract.strip().upper()),
+            None,
+        )
+        if symbol is None:
+            return False
+        return any(
+            bar.bar_end == window.end and window.end <= now <= window.end + _FINALIZATION_DELAY
+            for window in self._known_sessions.get((symbol, bar.trading_day), ())
+        )
 
     def _provider_or_create(self) -> LiveProvider:
         if self._provider is None:

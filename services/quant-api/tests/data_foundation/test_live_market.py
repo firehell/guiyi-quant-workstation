@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from collections import deque
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from fnmatch import fnmatch
@@ -218,6 +219,7 @@ class FakeLiveClient:
         self.payloads: list[dict[str, Any]] = []
         self.fail_listen = False
         self.listen_calls = 0
+        self.handler = None
 
     def subscribe(self, channels: tuple[str, ...]) -> None:
         self.subscribed.extend(channels)
@@ -229,11 +231,18 @@ class FakeLiveClient:
         self.listen_calls += 1
         if self.fail_listen:
             raise ConnectionError("provider unavailable")
+        self.handler = handler
         payloads = tuple(self.payloads)
         self.payloads.clear()
         for payload in payloads:
             handler(payload)
         return object()
+
+    def emit(self, payload: dict[str, Any]) -> None:
+        if self.handler is None:
+            self.payloads.append(payload)
+        else:
+            self.handler(payload)
 
 
 class FakeDominants:
@@ -397,6 +406,26 @@ def test_raw_tick_partial_and_unknown_feeds_are_dropped_before_service_ingest() 
     assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == ()
 
 
+def test_adapter_atomic_drain_keeps_callback_message_arriving_after_snapshot() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    client = FakeLiveClient()
+    provider = module.RQDataLiveProvider(client)
+    first = _raw_payload("J2505", _bar(1))
+    second = _raw_payload("J2505", _bar(2))
+
+    class SnapshotThenCallbackDeque(deque):
+        def __iter__(self):
+            snapshot = tuple(super().__iter__())
+            provider._buffer_message(second)
+            return iter(snapshot)
+
+    provider._messages = SnapshotThenCallbackDeque((first,))
+    provider._listening = True
+
+    assert tuple(bar for _contract, bar in provider.poll()) == (_bar(1),)
+    assert tuple(bar for _contract, bar in provider.poll()) == (_bar(2),)
+
+
 def test_session_final_bar_is_accepted_during_break_and_finalizes_after_grace() -> None:
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
@@ -420,6 +449,32 @@ def test_session_final_bar_is_accepted_during_break_and_finalizes_after_grace() 
     assert service.ingest("J2505", final, now=datetime(2025, 1, 2, 1, 5, 1, tzinfo=UTC)) is None
     assert service.flush_due(datetime(2025, 1, 2, 1, 5, 1, tzinfo=UTC)) == ()
     assert service.flush_due(datetime(2025, 1, 2, 1, 5, 2, tzinfo=UTC)) == (final,)
+
+
+def test_started_provider_drains_buffered_final_raw_bar_during_break_grace() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 5, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    service.poll(datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+    client.emit(_raw_payload("J2505", _bar(5)))
+
+    assert service.poll(datetime(2025, 1, 2, 1, 5, 1, tzinfo=UTC)) is None
+    assert service.poll(datetime(2025, 1, 2, 1, 5, 2, tzinfo=UTC)) is None
+    assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (_bar(5),)
+    assert client.listen_calls == 1 and client.subscribed == ["bar_J2505"]
 
 
 @pytest.mark.parametrize("rank1", ("J88", "J888", "J2505.CONT", "JM2505"))
