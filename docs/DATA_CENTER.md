@@ -99,7 +99,11 @@ guiyi data retire-products [--apply]
 ```
 
 无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
-始终只读。`retire-products` 默认 dry-run 盘点已退役品种（`br/cs/ic/if/ih/im/lu/nr/sp`）的 Catalog 行与
+始终只读。audit 对每个请求品种独立返回结构化 finding（`code`、`category`、dataset、year、month）：已知
+Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`、`metadata_calendar`、
+`metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为
+`main_contract_map`、`partition`、`physical`。未知基础设施异常仍 fail-closed。`retire-products` 默认
+dry-run 盘点已退役品种（`br/cs/ic/if/ih/im/lu/nr/sp`）的 Catalog 行与
 Canonical 路径；显式 `--apply` 才硬删，且生产环境另需范围明确的单次执行意图。省略 `--through`
 时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；相同解析值的再次完整运行
 必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的

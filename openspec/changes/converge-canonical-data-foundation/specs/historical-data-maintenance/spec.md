@@ -18,6 +18,17 @@ MUST 只计划或盘点，不得写 PostgreSQL/Parquet（retire 的 `--apply` �
 - **WHEN** 用户调用 `guiyi data retire-products` 且未传 `--apply`
 - **THEN** 仅返回退役品种盘点且不删除 Catalog 行或 Canonical 文件
 
+### Requirement: 分类 audit finding
+audit SHALL 为每个请求品种独立检查并返回 `code`、`category`、dataset、year、month 的结构化 finding。
+已知历史 Session、交易日历和产品窗口元数据缺口 MUST 分别使用 `metadata_session`、
+`metadata_calendar`、`metadata_window` 分类，并继续审计其余请求品种；主力映射、预期分区缺失和
+Catalog/Parquet 物理一致性问题 MUST 分别使用 `main_contract_map`、`partition`、`physical` 分类。
+无法分类的基础设施异常 MUST 继续 fail-closed，不得伪造 finding。
+
+#### Scenario: 一个品种缺少历史 Session
+- **WHEN** active universe 的某个品种无法解析完整交易日并产生 `TRADING_SESSION_MISSING`
+- **THEN** audit 返回该品种的 `metadata_session` finding，并继续返回其他品种的审计结果
+
 ### Requirement: fixed through 和 natural resume
 `effective_start(symbol)` SHALL 为 `max(product_window_start(symbol),2023-01-01)`。update SHALL 以
 显式 `--through` 或在规划开始解析的最新完整交易日固定本轮水位，检查全域月度 coverage；完整月跳过，

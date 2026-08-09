@@ -144,9 +144,10 @@ class AuditFinding:
     """审计发现项：编码 + 数据集四元组 + 问题所在年月。"""
 
     code: str
+    category: str
     dataset: tuple[str, str, str, str]
-    year: int
-    month: int
+    year: int | None
+    month: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +185,7 @@ class MaintenanceResult:
             "findings": [
                 {
                     "code": item.code,
+                    "category": item.category,
                     "dataset": item.dataset,
                     "year": item.year,
                     "month": item.month,
@@ -233,6 +235,25 @@ _FREQUENCY_ORDER = (
     BarFrequency.M30,
     BarFrequency.H1,
 )
+
+_AUDIT_METADATA_CATEGORIES = {
+    "TRADING_SESSION_MISSING": ("metadata_session", "session"),
+    "PREVIOUS_TRADING_DAY_MISSING": ("metadata_session", "session"),
+    "TRADING_CALENDAR_MISSING": ("metadata_calendar", "calendar"),
+    "COMPLETE_TRADING_DAY_MISSING": ("metadata_calendar", "calendar"),
+    "PRODUCT_WINDOW_START_MISSING": ("metadata_window", "window"),
+    "INSTRUMENT_EXCHANGE_MISSING": ("metadata_window", "exchange"),
+}
+
+
+def _audit_metadata_finding(exc: Exception, symbol: str) -> AuditFinding | None:
+    """将已知只读 metadata 缺口转为 finding；未知异常保持 fail-closed。"""
+    code = getattr(exc, "code", None)
+    classification = _AUDIT_METADATA_CATEGORIES.get(code)
+    if classification is None:
+        return None
+    category, series = classification
+    return AuditFinding(code, category, ("metadata", symbol, series, "1d"), None, None)
 
 
 class HistoricalDataManager:
@@ -342,39 +363,59 @@ class HistoricalDataManager:
     def audit(self, request: AuditRequest) -> MaintenanceResult:
         """只读审计：不拉 RQData、不写分区；对照 catalog 与 coverage 期望发现缺口/损坏。"""
         assert_products_not_retired(request.products)
-        through = self.coverage.latest_complete_day(request.products)
         findings: list[AuditFinding] = []
+        throughs: list[date] = []
         for symbol in request.products:
-            start = self.coverage.product_start(symbol)
-            missing_map = self.catalog.missing_main_map_days(symbol, start, through)
-            if missing_map:
-                first = missing_map[0]
-                findings.append(
-                    AuditFinding(
-                        "MAIN_CONTRACT_MAP_MISSING",
-                        ("metadata", symbol, "rank1", "1d"),
-                        first.year,
-                        first.month,
+            try:
+                through = self.coverage.latest_complete_day((symbol,))
+                start = self.coverage.product_start(symbol)
+                missing_map = self.catalog.missing_main_map_days(symbol, start, through)
+                if missing_map:
+                    first = missing_map[0]
+                    findings.append(
+                        AuditFinding(
+                            "MAIN_CONTRACT_MAP_MISSING",
+                            "main_contract_map",
+                            ("metadata", symbol, "rank1", "1d"),
+                            first.year,
+                            first.month,
+                        )
                     )
-                )
-        for key, year, month, expected in self._desired_months(request.products, through):
-            if not expected:
-                continue
-            existing, corrupt = self._existing_partition(key, year, month)
-            if corrupt:
-                # catalog 行与 part.parquet 或 coverage 元数据不一致，视为分区不可用。
-                findings.append(
-                    AuditFinding("EXPECTED_PARTITION_MISSING", key.as_tuple(), year, month)
-                )
-                continue
-            if tuple(bar.bar_end for bar in existing) != expected:
-                findings.append(
-                    AuditFinding("EXPECTED_PARTITION_MISSING", key.as_tuple(), year, month)
-                )
+                for key, year, month, expected in self._desired_months((symbol,), through):
+                    if not expected:
+                        continue
+                    existing, physical_reason = self._existing_partition(key, year, month)
+                    if physical_reason is not None:
+                        findings.append(
+                            AuditFinding(
+                                physical_reason,
+                                "physical",
+                                key.as_tuple(),
+                                year,
+                                month,
+                            )
+                        )
+                        continue
+                    if tuple(bar.bar_end for bar in existing) != expected:
+                        findings.append(
+                            AuditFinding(
+                                "EXPECTED_PARTITION_MISSING",
+                                "partition",
+                                key.as_tuple(),
+                                year,
+                                month,
+                            )
+                        )
+                throughs.append(through)
+            except Exception as exc:  # noqa: BLE001 - recognized metadata gaps isolate one product
+                finding = _audit_metadata_finding(exc, symbol)
+                if finding is None:
+                    raise
+                findings.append(finding)
         return MaintenanceResult(
             action="audit",
             status="passed" if not findings else "failed",
-            through=through,
+            through=min(throughs) if throughs else None,
             planned=0,
             applied=0,
             blocked=0,
@@ -409,8 +450,8 @@ class HistoricalDataManager:
         ):
             if not expected:
                 continue
-            existing, corrupt = self._existing_partition(key, year, month)
-            if corrupt:
+            existing, physical_reason = self._existing_partition(key, year, month)
+            if physical_reason is not None:
                 # 分区元数据损坏：按整月 expected 重拉，避免在残缺文件上增量合并。
                 yield _Target(key, year, month, expected, expected, ())
                 continue
@@ -778,15 +819,15 @@ class HistoricalDataManager:
         key: DatasetKey,
         year: int,
         month: int,
-    ) -> tuple[tuple[CanonicalBar, ...], bool]:
-        """检查 catalog 与 part.parquet 一致性；corrupt=True 表示须整月重写而非增量补缺口。"""
+    ) -> tuple[tuple[CanonicalBar, ...], str | None]:
+        """检查 catalog 与 part.parquet 一致性；返回物理问题码以支持 audit 分类。"""
         rows = tuple(
             item
             for item in self.catalog.all_partitions(key)
             if item.year == year and item.month == month
         )
         if not rows:
-            return (), False
+            return (), None
         expected_path = self.store.root.joinpath(
             *key.relative_root.parts,
             f"year={year:04d}",
@@ -795,20 +836,22 @@ class HistoricalDataManager:
         )
         row = rows[0]
         if len(rows) != 1 or row.file_path != expected_path or not row.file_path.is_file():
-            return (), True
+            return (), "PARTITION_CATALOG_MISMATCH"
         try:
             values = self.store.read_month(key, year, month)
-        except StorageError:
-            return (), True
-        if not values or row.row_count != len(values):
-            return (), True
+        except StorageError as exc:
+            return (), getattr(exc, "code", "PARTITION_UNREADABLE")
+        if not values:
+            return (), "PARTITION_EMPTY"
+        if row.row_count != len(values):
+            return (), "PARTITION_ROW_COUNT_MISMATCH"
         # catalog 记录的 coverage 区间须与物理首尾 bar 对齐，否则消费者会误判可读范围。
         if (
             row.coverage_start != values[0].bar_end - _frequency_delta(key.frequency)
             or row.coverage_end != values[-1].bar_end
         ):
-            return (), True
-        return values, False
+            return (), "PARTITION_COVERAGE_MISMATCH"
+        return values, None
 
 
 def _months(start: date, end: date):

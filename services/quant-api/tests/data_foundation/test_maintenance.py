@@ -12,6 +12,7 @@ from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey
+from app.market_data.infrastructure import InfrastructureError
 from app.market_data.maintenance import (
     AuditRequest,
     BarBatch,
@@ -41,11 +42,17 @@ class FakeCoverage:
         self.session_fact_error: Exception | None = None
         self.session_fact_calls: list[tuple[tuple[str, ...], date]] = []
         self.session_throughs: list[date | None] = []
+        self.latest_errors: dict[str, Exception] = {}
+        self.latest_calls: list[tuple[str, ...]] = []
 
     def product_start(self, _symbol: str) -> date:
         return date(2025, 1, 1)
 
-    def latest_complete_day(self, _products: tuple[str, ...]) -> date:
+    def latest_complete_day(self, products: tuple[str, ...]) -> date:
+        self.latest_calls.append(products)
+        error = self.latest_errors.get(products[0])
+        if error is not None:
+            raise error
         return date(2025, 1, 3)
 
     def metadata_complete(self, _products: tuple[str, ...], _through: date) -> bool:
@@ -420,7 +427,10 @@ def test_audit_and_update_rebuild_when_catalog_uri_is_stale(session, tmp_path) -
     row.file_uri = "stale/part.parquet"
     session.commit()
 
-    assert manager.audit(AuditRequest(("jm",))).status == "failed"
+    audit = manager.audit(AuditRequest(("jm",)))
+    assert [(finding.code, finding.category) for finding in audit.findings] == [
+        ("PARTITION_CATALOG_MISMATCH", "physical")
+    ]
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
 
     assert result.status == "passed"
@@ -644,6 +654,58 @@ def test_audit_reports_missing_partition_without_remote_calls(session, tmp_path)
     assert result.status == "failed"
     assert {finding.code for finding in result.findings} == {"EXPECTED_PARTITION_MISSING"}
     assert provider.calls == []
+
+
+def test_audit_preserves_unreadable_partition_reason(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bars = (_daily(2, 100),)
+    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in bars)})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    _publish_existing(manager, key, bars)
+    manager.catalog.all_partitions(key)[0].file_path.write_bytes(b"invalid")
+
+    result = manager.audit(AuditRequest(("jm",)))
+
+    assert [(item.code, item.category) for item in result.findings] == [
+        ("PARTITION_UNREADABLE", "physical")
+    ]
+
+
+def test_audit_continues_after_known_session_metadata_failure(session, tmp_path) -> None:
+    coverage = FakeCoverage({})
+    coverage.latest_errors["a"] = InfrastructureError("TRADING_SESSION_MISSING")
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+
+    result = manager.audit(AuditRequest(("a", "jm")))
+
+    assert result.status == "failed"
+    assert result.findings[0].code == "TRADING_SESSION_MISSING"
+    assert result.findings[0].category == "metadata_session"
+    assert result.findings[0].dataset == ("metadata", "a", "session", "1d")
+    assert result.findings[0].year is None
+    assert result.findings[0].month is None
+    assert coverage.latest_calls == [("a",), ("jm",)]
+
+
+def test_audit_reports_calendar_metadata_failure(session, tmp_path) -> None:
+    coverage = FakeCoverage({})
+    coverage.latest_errors["jm"] = InfrastructureError("TRADING_CALENDAR_MISSING")
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+
+    result = manager.audit(AuditRequest(("jm",)))
+
+    assert [(item.code, item.category) for item in result.findings] == [
+        ("TRADING_CALENDAR_MISSING", "metadata_calendar")
+    ]
+
+
+def test_audit_reraises_unknown_coverage_error(session, tmp_path) -> None:
+    coverage = FakeCoverage({})
+    coverage.latest_errors["jm"] = RuntimeError("database disconnected")
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+
+    with pytest.raises(RuntimeError, match="database disconnected"):
+        manager.audit(AuditRequest(("jm",)))
 
 
 def _publish_existing(
