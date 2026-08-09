@@ -12,7 +12,11 @@ Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产
 `MarketDataService` continuous / contract / actual_dominant 有界读回亦已通过。此前周线与 Derived
 开放月 Session 上界缺陷已修复；JM 补齐两个周线 Direct 与四个 Derived 分区的受控执行成功完成
 （2 次 provider 请求、6 个分区发布）。其余 58 个 active 品种尚无正式 Canonical 分区，且历史
-Session facts 未完整；60 品种重建及全域 Canonical 验收仍未完成。退役品种含
+Session facts 未完整；60 品种重建及全域 Canonical 验收仍未完成。2026-08-09 的全域只读 audit
+已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条 finding，即剩余 58 品种各一条
+`MAIN_CONTRACT_MAP_MISSING` 与 `TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。
+Calendar、分区与物理可读性类别尚未形成结论——每个未闭环品种均在历史 Session 覆盖解析处被隔离，
+不得将未到达的检查阶段误记为通过。退役品种含
 股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu`；
 生产 Catalog 已对退役名单执行 `retire-products --apply`（详见 `GY-DATA-PRODUCT-RETIREMENT-5`）。
 
