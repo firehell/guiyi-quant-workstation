@@ -134,19 +134,37 @@ class DatabaseCoverageSource:
                 raise InfrastructureError("TRADING_CALENDAR_MISSING")
             # 若最大交易日是今天但会话尚未结束，回退到上一交易日，避免拉未完成日 bar。
             if value == today:
-                session_end = max(
-                    window.end for window in self._sessions_for_day(symbol, value)
-                )
-                if current < session_end:
-                    value = self.session.scalar(
-                        select(func.max(TradingCalendar.trade_date)).where(
-                            TradingCalendar.exchange_code == exchange,
-                            TradingCalendar.is_trading_day.is_(True),
-                            TradingCalendar.trade_date < today,
-                        )
+                try:
+                    session_end = max(
+                        window.end for window in self._sessions_for_day(symbol, value)
                     )
-                    if value is None:
-                        raise InfrastructureError("COMPLETE_TRADING_DAY_MISSING")
+                except InfrastructureError as exc:
+                    if exc.code != "TRADING_SESSION_MISSING":
+                        raise
+                    # 当天日历先于会话 metadata 到达时，只读路径退到已知历史日；
+                    # 历史窗口仍由 require_historical_session_facts 严格验证。
+                    value = self._previous_trading_day(exchange, today)
+                else:
+                    if current < session_end:
+                        value = self._previous_trading_day(exchange, today)
+            values.append(value)
+        return min(values)
+
+    def latest_metadata_day(self, products: tuple[str, ...]) -> date:
+        """metadata bootstrap 可安全同步到的最近已知交易日，不依赖 SessionClock。"""
+        current_day = self._now().astimezone(SHANGHAI).date()
+        values: list[date] = []
+        for symbol in products:
+            exchange = self._exchange(symbol)
+            value = self.session.scalar(
+                select(func.max(TradingCalendar.trade_date)).where(
+                    TradingCalendar.exchange_code == exchange,
+                    TradingCalendar.is_trading_day.is_(True),
+                    TradingCalendar.trade_date <= current_day,
+                )
+            )
+            if value is None:
+                raise InfrastructureError("TRADING_CALENDAR_MISSING")
             values.append(value)
         return min(values)
 
@@ -385,6 +403,18 @@ class DatabaseCoverageSource:
         )
         if value is None:
             raise InfrastructureError("INSTRUMENT_EXCHANGE_MISSING")
+        return value
+
+    def _previous_trading_day(self, exchange: str, today: date) -> date:
+        value = self.session.scalar(
+            select(func.max(TradingCalendar.trade_date)).where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.is_trading_day.is_(True),
+                TradingCalendar.trade_date < today,
+            )
+        )
+        if value is None:
+            raise InfrastructureError("COMPLETE_TRADING_DAY_MISSING")
         return value
 
     def _trading_days(self, symbol: str, start: date, end: date) -> tuple[date, ...]:

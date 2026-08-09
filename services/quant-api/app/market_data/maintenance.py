@@ -62,6 +62,7 @@ class CoverageSource(Protocol):
 
     def product_start(self, symbol: str) -> date: ...
     def latest_complete_day(self, products: tuple[str, ...]) -> date: ...
+    def latest_metadata_day(self, products: tuple[str, ...]) -> date: ...
     def metadata_complete(self, products: tuple[str, ...], through: date) -> bool: ...
     def require_historical_session_facts(
         self, products: tuple[str, ...], through: date
@@ -249,6 +250,8 @@ _AUDIT_METADATA_CATEGORIES = {
 def _audit_metadata_finding(exc: Exception, symbol: str) -> AuditFinding | None:
     """将已知只读 metadata 缺口转为 finding；未知异常保持 fail-closed。"""
     code = getattr(exc, "code", None)
+    if not isinstance(code, str):
+        return None
     classification = _AUDIT_METADATA_CATEGORIES.get(code)
     if classification is None:
         return None
@@ -279,27 +282,30 @@ class HistoricalDataManager:
     def update(self, request: UpdateRequest) -> MaintenanceResult:
         """增量更新：缺省 through 为各品种最近完整交易日；apply 时持锁并先补齐元数据再写分区。"""
         assert_products_not_retired(request.products)
-        through = request.through or self.coverage.latest_complete_day(request.products)
-        if request.since is not None and request.since > through:
-            raise ValueError("UPDATE_WINDOW_INVALID")
         if request.apply:
+            metadata_through = request.through or self.coverage.latest_metadata_day(
+                request.products
+            )
             # apply 路径必须持 maintenance lease，防止与 refresh/另一 update 并发写分区。
             lease = self.catalog.acquire_maintenance_lock()
             if lease is None:
-                return _maintenance_locked("update", through)
+                return _maintenance_locked("update", metadata_through)
             try:
-                watermark = (request.products, through)
+                watermark = (request.products, metadata_through)
                 # 日历/会话/主力映射不齐时先 synchronize；失败则不会进入拉 bar。
                 if (
                     watermark not in self._metadata_watermarks
-                    and not self.coverage.metadata_complete(request.products, through)
+                    and not self.coverage.metadata_complete(request.products, metadata_through)
                 ):
-                    through = self.metadata.synchronize(
+                    self.metadata.synchronize(
                         request.products,
-                        through,
+                        metadata_through,
                         {symbol: self.coverage.product_start(symbol) for symbol in request.products},
                     )
-                    self._metadata_watermarks.add((request.products, through))
+                    self._metadata_watermarks.add(watermark)
+                through = request.through or self.coverage.latest_complete_day(request.products)
+                if request.since is not None and request.since > through:
+                    raise ValueError("UPDATE_WINDOW_INVALID")
                 # 要求每个历史交易日均有 provider 会话事实，禁止用当前 trading_hours 回填旧日。
                 self.coverage.require_historical_session_facts(request.products, through)
                 # streaming：先 direct 再 derived，1m 补齐后同事族当月 derived 立即聚合。
@@ -311,6 +317,9 @@ class HistoricalDataManager:
                 )
             finally:
                 lease.release()
+        through = request.through or self.coverage.latest_complete_day(request.products)
+        if request.since is not None and request.since > through:
+            raise ValueError("UPDATE_WINDOW_INVALID")
         targets = self._plan(request.products, request.since, through)
         return self._execute("update", targets, through, apply=False)
 

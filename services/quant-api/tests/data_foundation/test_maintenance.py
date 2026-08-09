@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -12,7 +12,11 @@ from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey
-from app.market_data.infrastructure import InfrastructureError
+from app.market_data.infrastructure import (
+    SHANGHAI,
+    DatabaseCoverageSource,
+    InfrastructureError,
+)
 from app.market_data.maintenance import (
     AuditRequest,
     BarBatch,
@@ -22,7 +26,7 @@ from app.market_data.maintenance import (
     _Target,
 )
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
-from app.models import Exchange, Instrument, MarketPartition, TradingCalendar
+from app.models import Exchange, Instrument, MarketPartition, TradingCalendar, TradingSession
 
 
 @pytest.fixture
@@ -53,6 +57,9 @@ class FakeCoverage:
         error = self.latest_errors.get(products[0])
         if error is not None:
             raise error
+        return date(2025, 1, 3)
+
+    def latest_metadata_day(self, _products: tuple[str, ...]) -> date:
         return date(2025, 1, 3)
 
     def metadata_complete(self, _products: tuple[str, ...], _through: date) -> bool:
@@ -214,6 +221,41 @@ def test_update_apply_syncs_metadata_before_provider_and_fixed_through_repeats_n
     assert len(provider.calls) == 1
     assert second.status == "noop"
     assert second.planned == second.applied == second.provider_requests == 0
+
+
+def test_update_apply_bootstraps_metadata_before_default_latest_complete_day(
+    session, tmp_path
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    ends = (_daily(2, 100).bar_end, _daily(3, 101).bar_end)
+    coverage = FakeCoverage({key.as_tuple(): ends})
+    provider = FakeProvider({key.as_tuple(): (_daily(2, 100), _daily(3, 101))})
+    events: list[str] = []
+    metadata_ready = False
+
+    def latest_complete_day(products: tuple[str, ...]) -> date:
+        coverage.latest_calls.append(products)
+        events.append("latest_complete_day")
+        if not metadata_ready:
+            raise InfrastructureError("TRADING_SESSION_MISSING")
+        return date(2025, 1, 3)
+
+    class OrderingMetadata(FakeMetadata):
+        def synchronize(self, products, through, starts) -> date:
+            nonlocal metadata_ready
+            events.append("synchronize")
+            metadata_ready = True
+            return super().synchronize(products, through, starts)
+
+    coverage.latest_complete_day = latest_complete_day  # type: ignore[method-assign]
+    metadata = OrderingMetadata()
+    manager = _manager(session, tmp_path, coverage, provider, metadata)
+
+    result = manager.update(UpdateRequest(("jm",), None, None, True))
+
+    assert result.status == "passed"
+    assert events[:2] == ["synchronize", "latest_complete_day"]
+    assert metadata.calls == [(('jm',), date(2025, 1, 3))]
 
 
 def test_update_apply_blocks_without_acquiring_global_maintenance_lock(
@@ -653,6 +695,50 @@ def test_audit_reports_missing_partition_without_remote_calls(session, tmp_path)
 
     assert result.status == "failed"
     assert {finding.code for finding in result.findings} == {"EXPECTED_PARTITION_MISSING"}
+    assert provider.calls == []
+
+
+def test_audit_uses_preceding_complete_day_when_current_session_metadata_is_pending(
+    session, tmp_path
+) -> None:
+    starts = tmp_path / "starts.csv"
+    starts.write_text("product,window_start,note\njm,2025-01-09,test\n")
+    floor = tmp_path / "history-floor.txt"
+    floor.write_text("2025-01-09\n")
+    for trading_day in (date(2025, 1, 9), date(2025, 1, 10)):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=trading_day,
+                is_trading_day=True,
+            )
+        )
+    session.add(
+        TradingSession(
+            exchange_code="DCE",
+            instrument_symbol="jm",
+            session_name="day",
+            start_time=time(9),
+            end_time=time(9, 5),
+            effective_from=date(2025, 1, 9),
+            effective_to=date(2025, 1, 9),
+            crosses_midnight=False,
+            is_active=True,
+        )
+    )
+    session.commit()
+    coverage = DatabaseCoverageSource(
+        session,
+        starts,
+        history_floor_path=floor,
+        now=lambda: datetime(2025, 1, 10, 10, tzinfo=SHANGHAI),
+    )
+    provider = FakeProvider({})
+    manager = _manager(session, tmp_path, coverage, provider)  # type: ignore[arg-type]
+
+    result = manager.audit(AuditRequest(("jm",)))
+
+    assert result.through == date(2025, 1, 9)
     assert provider.calls == []
 
 

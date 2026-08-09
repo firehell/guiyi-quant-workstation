@@ -210,6 +210,27 @@ def test_latest_complete_day_excludes_open_session_and_accepts_closed_session(tm
     session.close()
 
 
+def test_latest_complete_day_falls_back_when_current_session_metadata_is_pending(
+    tmp_path,
+) -> None:
+    """A calendar lead must not make a read-only audit depend on today's session sync."""
+    session, starts = _session(tmp_path)
+    current_session = session.scalar(
+        select(TradingSession).where(TradingSession.instrument_symbol == "jm")
+    )
+    assert current_session is not None
+    current_session.effective_to = date(2025, 1, 9)
+    session.commit()
+    coverage = DatabaseCoverageSource(
+        session,
+        starts,
+        now=lambda: datetime(2025, 1, 10, 10, tzinfo=SHANGHAI),
+    )
+
+    assert coverage.latest_complete_day(("jm",)) == date(2025, 1, 9)
+    session.close()
+
+
 def test_metadata_complete_returns_false_before_active_metadata_sync(tmp_path) -> None:
     session, starts = _session(tmp_path)
     instrument = session.scalar(select(Instrument).where(Instrument.symbol == "jm"))
