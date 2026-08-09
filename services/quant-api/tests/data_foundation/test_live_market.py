@@ -32,7 +32,7 @@ class FakeRedis:
 
     def zrangebyscore(self, key: str, minimum: str | int, maximum: str | int) -> list[str]:
         lower_exclusive = isinstance(minimum, str) and minimum.startswith("(")
-        lower = int(str(minimum).lstrip("("))
+        lower = float("-inf") if minimum == "-inf" else int(str(minimum).lstrip("("))
         upper = float("inf") if maximum == "+inf" else int(maximum)
         return [
             member
@@ -98,6 +98,7 @@ def test_live_bars_are_score_ordered_after_exclusive_and_decimal_lossless() -> N
     store.put_bar(day, "RB", "1m", later)
     store.put_bar(day, "RB", "1m", earlier)
 
+    assert store.bars_after(day, "RB", "1m", None) == (earlier, later)
     assert store.bars_after(day, "RB", "1m", earlier.bar_end) == (later,)
     assert store.bars_between(day, "RB", "1m", earlier.bar_end, later.bar_end) == (earlier, later)
     assert fake.ttls["live:bars:2025-01-02:RB:1m"] == timedelta(days=3).total_seconds()
@@ -146,9 +147,10 @@ def test_cleanup_removes_only_requested_trading_day() -> None:
     assert store.subscriptions(next_day) == {"RB": ["1m"]}
 
 
-def test_heartbeat_and_pubsub_keep_payloads_compact() -> None:
-    """Catches live-state serialization that cannot be decoded by a websocket consumer."""
+def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
+    """Catches publish methods drifting from the public WebSocket channel contract."""
     fake = FakeRedis()
+    module = importlib.import_module("app.market_data.live_market")
     store = _store(fake)
     bar = _bar(1)
 
@@ -156,7 +158,13 @@ def test_heartbeat_and_pubsub_keep_payloads_compact() -> None:
     store.publish_bar("RB", "1m", bar)
     store.publish_state({"state": "healthy"})
 
+    assert module.live_bar_channel("RB", "1m") == "live:bar:RB:1m"
+    assert module.LIVE_STATE_CHANNEL == "live:state"
     assert store.heartbeat() == {"state": "healthy"}
-    assert all(" " not in message for _, message in fake.published)
-    assert json.loads(fake.published[0][1])["open"] == "100.1250"
-    assert json.loads(fake.published[1][1]) == {"state": "healthy"}
+    assert fake.published == [
+        (
+            "live:bar:RB:1m",
+            '{"bar_end":"2025-01-02T01:01:00+00:00","trading_day":"2025-01-02","open":"100.1250","high":"101.0000","low":"99.0000","close":"100.7500","volume":"12.500","turnover":"1253.125000","open_interest":"70.000"}',
+        ),
+        ("live:state", '{"state":"healthy"}'),
+    ]

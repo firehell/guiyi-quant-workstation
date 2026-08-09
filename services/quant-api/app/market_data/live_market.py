@@ -11,6 +11,8 @@ from app.market_data.domain import BarFrequency, CanonicalBar
 
 
 _LIVE_TTL_SECONDS = 3 * 24 * 60 * 60
+LIVE_BAR_CHANNEL_PREFIX = "live:bar"
+LIVE_STATE_CHANNEL = "live:state"
 
 
 class RedisClient(Protocol):
@@ -98,10 +100,10 @@ class RedisLiveStore:
         self._redis.delete(*keys)
 
     def publish_bar(self, symbol: str, frequency: BarFrequency | str, bar: CanonicalBar) -> None:
-        self._redis.publish(f"live:bar:{symbol}:{BarFrequency(frequency).value}", _compact_json(_bar_payload(bar)))
+        self._redis.publish(live_bar_channel(symbol, frequency), _compact_json(_bar_payload(bar)))
 
     def publish_state(self, payload: Mapping[str, Any]) -> None:
-        self._redis.publish("live:state", _compact_json(dict(payload)))
+        self._redis.publish(LIVE_STATE_CHANNEL, _compact_json(dict(payload)))
 
     def _read_bars(self, key: str, minimum: str | int, maximum: str | int) -> tuple[CanonicalBar, ...]:
         return tuple(_bar_from_payload(_as_text(member)) for member in self._redis.zrangebyscore(key, minimum, maximum))
@@ -120,6 +122,11 @@ def _epoch_millis(value: datetime) -> int:
         raise ValueError("LIVE_TIMEZONE_REQUIRED")
     normalized = value.astimezone(UTC)
     return int(normalized.timestamp()) * 1000 + normalized.microsecond // 1000
+
+
+def live_bar_channel(symbol: str, frequency: BarFrequency | str) -> str:
+    """返回单一、稳定的 live bar PubSub channel 名。"""
+    return f"{LIVE_BAR_CHANNEL_PREFIX}:{symbol}:{BarFrequency(frequency).value}"
 
 
 def _bar_payload(bar: CanonicalBar) -> dict[str, str | None]:
