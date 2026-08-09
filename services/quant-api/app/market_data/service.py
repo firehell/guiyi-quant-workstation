@@ -150,12 +150,12 @@ class MarketDataService:
                 ) > 2
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
-            if (
-                newer_partition is not None
-                and newer_partition.coverage_start - partition.coverage_end
-                > timedelta(days=14)
-            ):
-                raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+            if newer_partition is not None:
+                self._validate_partition_coverage_gap(
+                    key.symbol,
+                    partition,
+                    newer_partition,
+                )
             values = self._partition_bars(partition)
             for bar in reversed(values):
                 if request.before is not None and bar.bar_end >= request.before:
@@ -170,6 +170,34 @@ class MarketDataService:
         if not selected:
             raise MarketDataError("QUERY_WINDOW_EMPTY")
         return selected
+
+    def _validate_partition_coverage_gap(
+        self,
+        symbol: str,
+        older: CatalogPartition,
+        newer: CatalogPartition,
+    ) -> None:
+        """用完整 TradingCalendar 事实判断相邻 coverage 之间是否漏过交易日。"""
+        start_day = _local_date(older.coverage_end)
+        end_day = _local_date(newer.coverage_start)
+        if end_day <= start_day + timedelta(days=1):
+            return
+        expected_days = tuple(
+            start_day + timedelta(days=offset)
+            for offset in range(1, (end_day - start_day).days)
+        )
+        try:
+            calendar_days = self.catalog.calendar_days(
+                symbol,
+                expected_days[0],
+                expected_days[-1],
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        if tuple(day for day, _ in calendar_days) != expected_days:
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        if any(is_trading_day for _, is_trading_day in calendar_days):
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
 
     def _actual_dominant_page(
         self,

@@ -372,6 +372,26 @@ class MarketCatalog:
             )
         )
 
+    def calendar_days(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+    ) -> tuple[tuple[date, bool], ...]:
+        """返回正式交易日历事实，含非交易日，供 coverage 缺口校验。"""
+        exchange = self.exchange_for_symbol(symbol)
+        return tuple(
+            self.session.execute(
+                select(TradingCalendar.trade_date, TradingCalendar.is_trading_day)
+                .where(
+                    TradingCalendar.exchange_code == exchange,
+                    TradingCalendar.trade_date >= start,
+                    TradingCalendar.trade_date <= end,
+                )
+                .order_by(TradingCalendar.trade_date)
+            )
+        )
+
     def trading_days_overlapping_window(
         self,
         symbol: str,

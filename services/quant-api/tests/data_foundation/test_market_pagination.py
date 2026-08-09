@@ -197,6 +197,45 @@ def test_query_page_rejects_adjacent_partition_coverage_gap(session, tmp_path) -
         service.query_page(SeriesPageQuery("continuous", "jm", "1d", limit=2))
 
 
+def test_query_page_rejects_short_coverage_gap_with_a_formal_trading_day(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    _publish(catalog, store, key, (_bar(31, 100),))
+    _publish(catalog, store, key, (_bar(3, 101, month=2),))
+    session.add_all(
+        (
+            TradingCalendar(exchange_code="DCE", trade_date=date(2025, 2, 1), is_trading_day=True),
+            TradingCalendar(exchange_code="DCE", trade_date=date(2025, 2, 2), is_trading_day=False),
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        service.query_page(SeriesPageQuery("continuous", "jm", "1d", limit=2))
+
+
+def test_query_page_allows_long_coverage_interval_without_formal_trading_days(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    _publish(catalog, store, key, (_bar(31, 100),))
+    _publish(catalog, store, key, (_bar(20, 101, month=2),))
+    session.add_all(
+        tuple(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 2, day),
+                is_trading_day=False,
+            )
+            for day in range(1, 20)
+        )
+    )
+    session.commit()
+
+    result = service.query_page(SeriesPageQuery("continuous", "jm", "1d", limit=2))
+
+    assert [bar.close for bar in result.bars] == [Decimal("100"), Decimal("101")]
+
+
 def test_query_page_actual_dominant_filters_by_formal_owner(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1d"), (_bar(2, 100),))
