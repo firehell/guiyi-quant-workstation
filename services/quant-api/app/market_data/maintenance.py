@@ -665,7 +665,7 @@ class HistoricalDataManager:
                     symbol=target.key.symbol,
                     contract=contract,
                     frequency=target.key.frequency,
-                    start=target.expected[0] - _frequency_delta(target.key.frequency),
+                    start=target.expected[0] - timedelta(microseconds=1),
                     end=target.expected[-1],
                 )
             )

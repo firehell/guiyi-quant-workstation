@@ -18,6 +18,7 @@ from app.market_data.maintenance import (
     HistoricalDataManager,
     RefreshRequest,
     UpdateRequest,
+    _Target,
 )
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import Exchange, Instrument, MarketPartition, TradingCalendar
@@ -615,6 +616,22 @@ def test_strict_read_failure_leaves_partition_for_next_update(
     assert tuple(tmp_path.rglob("part.parquet"))
     assert not tuple(tmp_path.rglob("manifest.json"))
     assert not tuple(tmp_path.rglob("*.bak"))
+
+
+def test_strict_verify_weekly_short_week_excludes_previous_friday(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1w")
+    previous = CanonicalBar(datetime(2025, 3, 28, 7, tzinfo=UTC), date(2025, 3, 28), *(Decimal("100"),) * 4, 1, 10, 20)
+    expected = tuple(
+        CanonicalBar(datetime(2025, 4, day, 7, tzinfo=UTC), date(2025, 4, day), *(Decimal("100"),) * 4, 1, 10, 20)
+        for day in (3, 11, 18, 25, 30)
+    )
+    manager = _manager(session, tmp_path, FakeCoverage({}), FakeProvider({}))
+    for year, month, bars in ((2025, 3, (previous,)), (2025, 4, expected)):
+        partition = manager.store.publish(PublishRequest(key, year, month, bars, tuple(bar.bar_end for bar in bars)))
+        manager.catalog.register_partition(partition)
+    target = _Target(key, 2025, 4, tuple(bar.bar_end for bar in expected), tuple(bar.bar_end for bar in expected), ())
+
+    manager._strict_verify(target)
 
 
 def test_audit_reports_missing_partition_without_remote_calls(session, tmp_path) -> None:
