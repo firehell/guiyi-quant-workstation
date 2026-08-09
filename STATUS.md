@@ -6,12 +6,13 @@
 
 Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产 PostgreSQL 已从
 `20260808_0035` 升级至最终不可逆 `20260808_0036`，盘点范围内的旧正式数据已删除。固定
-`T0=2026-08-07` 的 JM 重建已完整闭环：已发布 678 个 JM 月分区（continuous 308、真实合约
-370），JM `update` dry-run 为 NOOP、JM audit 通过，Catalog、物理 Parquet 与
-`MarketDataService` 的 continuous / contract / actual_dominant 有界读回均已验收。此前周线与
-Derived 开放月 Session 上界缺陷已修复；补齐两个周线 Direct 与四个 Derived 分区的受控执行
-成功完成（2 次 provider 请求、6 个分区发布）。其余 59 个 active 品种尚无正式 Canonical
-分区，且历史 Session facts 未完整；60 品种重建及全域 Canonical 验收仍未完成。退役品种含
+`T0=2026-08-07` 的 J/JM 重建均已完整闭环：J 已发布 686 个正式月分区（continuous 308、真实合约
+378），JM 已发布 678 个正式月分区（continuous 308、真实合约 370）；两品种的 `update` dry-run
+均为 NOOP、audit 均通过，Catalog 与物理 Parquet 已完成只读验收。JM 的
+`MarketDataService` continuous / contract / actual_dominant 有界读回亦已通过。此前周线与 Derived
+开放月 Session 上界缺陷已修复；JM 补齐两个周线 Direct 与四个 Derived 分区的受控执行成功完成
+（2 次 provider 请求、6 个分区发布）。其余 58 个 active 品种尚无正式 Canonical 分区，且历史
+Session facts 未完整；60 品种重建及全域 Canonical 验收仍未完成。退役品种含
 股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu`；
 生产 Catalog 已对退役名单执行 `retire-products --apply`（详见 `GY-DATA-PRODUCT-RETIREMENT-5`）。
 
@@ -56,8 +57,10 @@ OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺�
 新的精确单次意图下补齐 `JM2405/1w/2024-04`、`JM2505/1w/2025-04` 与
 `JM2609/{5m,15m,30m,60m}/2026-08`。该次执行 `applied=6`、`failed=0`、
 `provider_requests=2`；其后 JM fixed-T0 dry-run 为 NOOP、JM audit 通过，678 个 Catalog
-分区及对应 Parquet 均可读。`actual_dominant` 在缺少对应 concrete-contract 分区时仍保持
-fail-closed；其余 59 品种的历史 Session facts 与 Canonical 重建仍需后续受控执行。在明确单次
+分区及对应 Parquet 均可读。随后 J 在精确单次执行意图下完成剩余窗口，最终形成 686 个正式月分区；
+fixed-T0 dry-run 为 NOOP、audit 通过，Catalog 与对应 Parquet 均可读。`actual_dominant` 在缺少对应
+concrete-contract 分区时仍保持 fail-closed；其余 58 品种的历史 Session facts 与 Canonical 重建仍需
+后续受控执行。在明确单次
 意图下已多次对生产执行 `guiyi data retire-products --apply`，覆盖退役名单
 `br/cs/ic/if/ih/im/lu/nr/sp`；Canonical 退役目录均为 0，事后 residual=0，显式退役码返回
 `PRODUCT_RETIRED`。未执行服务切换、main/tag/release 或 Runtime promotion。
