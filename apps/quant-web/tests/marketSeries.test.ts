@@ -32,7 +32,7 @@ function page(
       turnover: null,
       open_interest: null,
     })),
-    coverage: null,
+    canonical_coverage: null,
     page: pageMeta,
     resolved_contract_segments: [],
   }
