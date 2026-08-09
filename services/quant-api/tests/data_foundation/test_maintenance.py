@@ -39,6 +39,7 @@ class FakeCoverage:
         self.ends = ends
         self.session_fact_error: Exception | None = None
         self.session_fact_calls: list[tuple[tuple[str, ...], date]] = []
+        self.session_throughs: list[date | None] = []
 
     def product_start(self, _symbol: str) -> date:
         return date(2025, 1, 1)
@@ -87,7 +88,9 @@ class FakeCoverage:
         _key: DatasetKey,
         _year: int,
         _month: int,
+        through: date | None = None,
     ) -> tuple[SessionWindow, ...]:
+        self.session_throughs.append(through)
         start = datetime(2025, 1, 2, 1, 0, tzinfo=UTC)
         return (SessionWindow(start, start + timedelta(minutes=5)),)
 
@@ -276,6 +279,24 @@ def test_derived_reads_canonical_1m_and_never_calls_provider(session, tmp_path) 
     assert result.applied == 2
     assert [call[0].frequency.value for call in provider.calls] == ["1m"]
     assert manager.store.read_month(derived_key, 2025, 1)[0].close == Decimal("105")
+
+
+def test_derived_limits_session_lookup_to_target_coverage(session, tmp_path) -> None:
+    source_key = DatasetKey("continuous", "jm", "MAIN", "1m")
+    derived_key = DatasetKey("continuous", "jm", "MAIN", "5m")
+    source = tuple(_minute(index) for index in range(1, 6))
+    coverage = FakeCoverage(
+        {
+            source_key.as_tuple(): tuple(bar.bar_end for bar in source),
+            derived_key.as_tuple(): (source[-1].bar_end,),
+        }
+    )
+    manager = _manager(session, tmp_path, coverage, FakeProvider({source_key.as_tuple(): source}))
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert result.status == "passed"
+    assert coverage.session_throughs == [source[-1].bar_end.date()]
 
 
 def test_existing_complete_1m_rebuilds_derived_before_provider_quota(session, tmp_path) -> None:

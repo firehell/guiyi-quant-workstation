@@ -304,9 +304,12 @@ class DatabaseCoverageSource:
         key: DatasetKey,
         year: int,
         month: int,
+        through: date | None = None,
     ) -> tuple[SessionWindow, ...]:
         lower = max(date(year, month, 1), self.dataset_start(key))
         upper = _month_end(year, month)
+        if through is not None:
+            upper = min(upper, through)
         return tuple(
             window
             for day in self._trading_days(key.symbol, lower, upper)

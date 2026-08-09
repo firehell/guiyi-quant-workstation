@@ -47,7 +47,13 @@ class CoverageSource(Protocol):
         key: DatasetKey,
         trading_days: tuple[date, ...],
     ) -> tuple[datetime, ...]: ...
-    def sessions(self, key: DatasetKey, year: int, month: int): ...
+    def sessions(
+        self,
+        key: DatasetKey,
+        year: int,
+        month: int,
+        through: date | None = None,
+    ): ...
 
 
 class MetadataPort(Protocol):
@@ -599,7 +605,12 @@ class HistoricalDataManager:
             raise StorageError("SOURCE_1M_INCOMPLETE")
         sessions = tuple(
             session
-            for session in self.coverage.sessions(target.key, target.year, target.month)
+            for session in self.coverage.sessions(
+                target.key,
+                target.year,
+                target.month,
+                through=target.expected[-1].date(),
+            )
             if any(session.start < bar_end <= session.end for bar_end in target.expected)
         )
         if not sessions:
