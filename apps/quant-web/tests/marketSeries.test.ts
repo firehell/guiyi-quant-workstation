@@ -343,4 +343,57 @@ describe('market Live overlay', () => {
       ['2026-08-07T10:00:00Z', 160],
     ])
   })
+
+  it('keeps the newest canonical edge when same-series refresh responses resolve out of order', async () => {
+    let pageCalls = 0
+    let resolveOlderRefresh: ((value: MarketBarsPageResponse) => void) | undefined
+    let resolveNewerRefresh: ((value: MarketBarsPageResponse) => void) | undefined
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: () => {
+        pageCalls += 1
+        if (pageCalls === 1) {
+          return Promise.resolve(page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }))
+        }
+        if (pageCalls === 2) {
+          return new Promise<MarketBarsPageResponse>((resolve) => { resolveOlderRefresh = resolve })
+        }
+        return new Promise<MarketBarsPageResponse>((resolve) => { resolveNewerRefresh = resolve })
+      },
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', bars: [
+      liveBar('2026-08-07T09:45:00Z', 150),
+      liveBar('2026-08-07T10:00:00Z', 160),
+      liveBar('2026-08-07T10:15:00Z', 170),
+    ] })
+    sockets[0].message({ type: 'state', state: state({ canonical_end: '2026-08-07T09:45:00Z' }) })
+    sockets[0].message({ type: 'state', state: state({ canonical_end: '2026-08-07T10:00:00Z' }) })
+
+    resolveNewerRefresh?.(page([
+      liveBar('2026-08-07T09:30:00Z', 100),
+      liveBar('2026-08-07T09:45:00Z', 101),
+      liveBar('2026-08-07T10:00:00Z', 102),
+    ], { has_more_before: false, next_before: null }))
+    await Promise.resolve()
+    resolveOlderRefresh?.(page([
+      liveBar('2026-08-07T09:30:00Z', 100),
+      liveBar('2026-08-07T09:45:00Z', 101),
+    ], { has_more_before: false, next_before: null }))
+    await Promise.resolve()
+
+    assert.deepEqual(series.bars.value.map((bar) => [bar.time, bar.close]), [
+      ['2026-08-07T09:30:00Z', 100],
+      ['2026-08-07T09:45:00Z', 101],
+      ['2026-08-07T10:00:00Z', 102],
+      ['2026-08-07T10:15:00Z', 170],
+    ])
+  })
 })

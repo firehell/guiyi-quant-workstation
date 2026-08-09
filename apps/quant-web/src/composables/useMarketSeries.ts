@@ -181,6 +181,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   let liveBars: BarData[] = []
   let activeSocket: MarketWebSocket | null = null
   let reconnectHandle: unknown = null
+  let canonicalRefreshToken = 0
 
   function publishMerged(nextMutation: MarketSeriesMutation): void {
     const seam = latestEnd(canonicalBars)
@@ -205,9 +206,13 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     return nextState.phase !== 'CLOSED' && isIdentityLiveCapable(nextIdentity, nextState)
   }
 
-  async function refreshCanonicalEdge(requestGeneration: number, nextIdentity: MarketSeriesIdentity): Promise<void> {
+  async function refreshCanonicalEdge(
+    requestGeneration: number,
+    nextIdentity: MarketSeriesIdentity,
+    refreshToken: number,
+  ): Promise<void> {
     const page = await fetchPage(toPageRequest(nextIdentity))
-    if (!isCurrentGeneration(requestGeneration, generation)) return
+    if (!isCurrentGeneration(requestGeneration, generation) || refreshToken !== canonicalRefreshToken) return
     const fresh = mergeInitialPage(page).bars
     if (!fresh.length) return
     const freshStart = fresh[0].time
@@ -262,7 +267,8 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         return
       }
       if (isLater(payload.state.canonical_end, previousSeam)) {
-        void refreshCanonicalEdge(requestGeneration, nextIdentity)
+        const refreshToken = ++canonicalRefreshToken
+        void refreshCanonicalEdge(requestGeneration, nextIdentity, refreshToken)
       }
     }
     socket.onclose = () => {
@@ -283,6 +289,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     identity = { ...nextIdentity }
     canonicalBars = []
     liveBars = []
+    canonicalRefreshToken += 1
     marketState.value = null
     liveUnavailable.value = false
     loadingBefore.value = false
