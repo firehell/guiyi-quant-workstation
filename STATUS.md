@@ -6,10 +6,12 @@
 
 Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产 PostgreSQL 已从
 `20260808_0035` 升级至最终不可逆 `20260808_0036`，盘点范围内的旧正式数据已删除。固定
-`T0=2026-08-07` 的 JM 重建已真实启动并完成一次自然续传；当前已发布 670 个 JM 月分区，但固定
-T0 的只读计划与 audit 仍各有 12 个目标/缺口。最近一次继续执行在下载前被
-`TRADING_SESSION_MISSING` 阻止，未写入数据；其 Derived 开放月 Session 上界缺陷已修复并完成本地回归。
-69 品种重建及完整历史 Canonical 验收尚未完成。
+`T0=2026-08-07` 的 JM 重建已完整闭环：已发布 678 个 JM 月分区（continuous 308、真实合约
+370），JM `update` dry-run 为 NOOP、JM audit 通过，Catalog、物理 Parquet 与
+`MarketDataService` 的 continuous / contract / actual_dominant 有界读回均已验收。此前周线与
+Derived 开放月 Session 上界缺陷已修复；补齐两个周线 Direct 与四个 Derived 分区的受控执行
+成功完成（2 次 provider 请求、6 个分区发布）。其余 68 个 active 品种尚无正式 Canonical
+分区，且历史 Session facts 未完整；69 品种重建及全域 Canonical 验收仍未完成。
 
 ## 已冻结的目标合同
 
@@ -47,11 +49,12 @@ OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺�
 
 在用户明确的一次性执行意图下，已执行生产 `0035→0036` migration，删除 `data/raw`、
 `data/processed`、`data/parquet/canonical` 与 `data/canonical-candidates`，并启动 JM 的真实 RQData
-重建。migration 后八张 active 表已验收，旧 Catalog 已清空；JM 已完成一次续传并发布 670 个物理月
-分区。该命令的终端结构化 payload 未被执行包装层保留，因此未把停止原因推断为 quota；只读 plan/audit
-已确认仍各有 12 个目标/缺口，且未追加 provider 请求。随后一次用户授权的 JM 续传在任何下载或数据写入
-之前被 `TRADING_SESSION_MISSING` 阻止；根因是 Derived 聚合为开放月枚举至月末、越过固定 T0。实现现已将
-该查询上界收紧为目标末端覆盖日，并通过生产 Catalog 的只读 Session 检查。`actual_dominant` 在缺少对应
-concrete-contract 分区时保持 fail-closed。未执行服务切换、main/tag/release 或 Runtime promotion。
+重建。migration 后八张 active 表已验收，旧 Catalog 已清空；JM 先完成 672 个物理月分区，随后在
+新的精确单次意图下补齐 `JM2405/1w/2024-04`、`JM2505/1w/2025-04` 与
+`JM2609/{5m,15m,30m,60m}/2026-08`。该次执行 `applied=6`、`failed=0`、
+`provider_requests=2`；其后 JM fixed-T0 dry-run 为 NOOP、JM audit 通过，678 个 Catalog
+分区及对应 Parquet 均可读。`actual_dominant` 在缺少对应 concrete-contract 分区时仍保持
+fail-closed；其余 68 品种的历史 Session facts 与 Canonical 重建仍需后续受控执行。未执行服务切换、
+main/tag/release 或 Runtime promotion。
 
 日调度、live、真实通知和自动订单保持关闭，`auto_order=false`。
