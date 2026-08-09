@@ -7,7 +7,9 @@ from decimal import Decimal
 from fnmatch import fnmatch
 from typing import Any
 
+from app.market_data.aggregation import SessionWindow, aggregate_from_1m
 from app.market_data.domain import CanonicalBar
+from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 
 class FakeRedis:
@@ -168,3 +170,189 @@ def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
         ),
         ("market:state", '{"state":"healthy"}'),
     ]
+
+
+class FakeLiveClient:
+    """Injectable provider fake; it never contacts RQData."""
+
+    def __init__(self) -> None:
+        self.subscribed: list[str] = []
+        self.unsubscribed: list[str] = []
+        self.payloads: list[dict[str, Any]] = []
+        self.fail_poll = False
+
+    def subscribe(self, channels: tuple[str, ...]) -> None:
+        self.subscribed.extend(channels)
+
+    def unsubscribe(self, channels: tuple[str, ...]) -> None:
+        self.unsubscribed.extend(channels)
+
+    def poll(self) -> tuple[dict[str, Any], ...]:
+        if self.fail_poll:
+            raise ConnectionError("provider unavailable")
+        payloads = tuple(self.payloads)
+        self.payloads.clear()
+        return payloads
+
+
+class FakeDominants:
+    def __init__(self, mapping: dict[tuple[str, date], str]) -> None:
+        self.mapping = mapping
+        self.calls: list[tuple[str, date]] = []
+
+    def dominant_for_day(self, symbol: str, trading_day: date) -> str:
+        self.calls.append((symbol, trading_day))
+        return self.mapping[(symbol, trading_day)]
+
+
+class FakePhases:
+    def __init__(self, phases: dict[str, ProductMarketPhase]) -> None:
+        self.phases = phases
+
+    def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+        return self.phases[symbol]
+
+
+def _phase(
+    symbol: str,
+    trading_day: date,
+    session: SessionWindow | None,
+    state: MarketPhase = MarketPhase.TRADING,
+) -> ProductMarketPhase:
+    return ProductMarketPhase(symbol, state, trading_day, session, None)
+
+
+def _live_service(
+    *,
+    client: FakeLiveClient,
+    dominants: FakeDominants,
+    phases: FakePhases,
+    store: Any,
+    products: tuple[str, ...] = ("j", "jm"),
+) -> Any:
+    module = importlib.import_module("app.market_data.live_market")
+    return module.LiveMarketService(
+        provider_factory=lambda: client,
+        dominant_source=dominants,
+        phase_resolver=phases,
+        store=store,
+        operational_products=products,
+    )
+
+
+def test_rank1_subscription_lifecycle_is_once_per_trading_day_and_never_continuous() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    next_day = date(2025, 1, 3)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    dominants = FakeDominants(
+        {("j", day): "J2505", ("jm", day): "JM2505", ("j", next_day): "J2509", ("jm", next_day): "JM2509"}
+    )
+    phases = FakePhases({"j": _phase("j", day, window), "jm": _phase("jm", day, window)})
+    service = _live_service(client=client, dominants=dominants, phases=phases, store=module.RedisLiveStore(fake))
+
+    service.reconcile(datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+    service.reconcile(datetime(2025, 1, 2, 1, 30, tzinfo=UTC))
+    phases.phases = {"j": _phase("j", next_day, window), "jm": _phase("jm", next_day, window)}
+    service.reconcile(datetime(2025, 1, 3, 1, 1, tzinfo=UTC))
+
+    assert dominants.calls == [("j", day), ("jm", day), ("j", next_day), ("jm", next_day)]
+    assert client.subscribed == ["bar_J2505", "bar_JM2505", "bar_J2509", "bar_JM2509"]
+    assert client.unsubscribed == ["bar_J2505", "bar_JM2505"]
+    assert all("88" not in channel for channel in (*client.subscribed, *client.unsubscribed))
+    assert fake.values["live:subscription:2025-01-03"] == '{"j":"J2509","jm":"JM2509"}'
+
+
+def test_completed_1m_bar_is_pending_then_immutable_and_outside_session_is_rejected() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 5, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    service.reconcile(datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    first = _bar(1, price="100")
+    replacement = _bar(1, price="101")
+
+    assert service.ingest("J2505", first, now=datetime(2025, 1, 2, 1, 1, 1, tzinfo=UTC)) is None
+    assert service.ingest("J2505", replacement, now=datetime(2025, 1, 2, 1, 1, 1, tzinfo=UTC)) is None
+    assert service.flush_due(datetime(2025, 1, 2, 1, 1, 1, tzinfo=UTC)) == ()
+    assert service.flush_due(datetime(2025, 1, 2, 1, 1, 2, tzinfo=UTC)) == (replacement,)
+    assert service.ingest("J2505", first, now=datetime(2025, 1, 2, 1, 1, 3, tzinfo=UTC)) == "LIVE_BAR_FINALIZED"
+    outside = CanonicalBar(
+        bar_end=datetime(2025, 1, 2, 1, 6, tzinfo=UTC), trading_day=day,
+        open=Decimal("1"), high=Decimal("1"), low=Decimal("1"), close=Decimal("1"), volume=Decimal("1"),
+        turnover=None, open_interest=None,
+    )
+    assert service.ingest("J2505", outside, now=datetime(2025, 1, 2, 1, 6, 2, tzinfo=UTC)) == "LIVE_BAR_OUTSIDE_SESSION"
+    assert service.rejections == ["LIVE_BAR_FINALIZED", "LIVE_BAR_OUTSIDE_SESSION"]
+    assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (replacement,)
+
+
+def test_live_derived_buckets_match_shared_historical_aggregation_exactly() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    source = tuple(
+        CanonicalBar(
+            bar_end=window.start + timedelta(minutes=index), trading_day=day,
+            open=Decimal(index), high=Decimal(index + 2), low=Decimal(index - 1), close=Decimal(index + 1),
+            volume=Decimal(index), turnover=Decimal(index * 10), open_interest=Decimal(index * 100),
+        )
+        for index in range(1, 61)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=client, dominants=FakeDominants({("j", day): "J2505"}), phases=phases,
+        store=module.RedisLiveStore(fake), products=("j",),
+    )
+    service.reconcile(datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    for bar in source:
+        service.ingest("J2505", bar, now=bar.bar_end + timedelta(seconds=2))
+        service.flush_due(bar.bar_end + timedelta(seconds=2))
+
+    store = module.RedisLiveStore(fake)
+    for frequency in ("5m", "15m", "30m", "60m"):
+        assert store.bars_after(day, "j", frequency, None) == aggregate_from_1m(
+            source, target_frequency=frequency, sessions=(window,)
+        )
+
+
+def test_trading_provider_failure_retries_after_ten_seconds_but_break_staleness_does_not() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    client.fail_poll = True
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=client, dominants=FakeDominants({("j", day): "J2505"}), phases=phases,
+        store=module.RedisLiveStore(fake), products=("j",),
+    )
+
+    assert service.poll(datetime(2025, 1, 2, 1, 1, tzinfo=UTC)) == "LIVE_PROVIDER_RETRY_SCHEDULED"
+    assert service.next_provider_retry_at == datetime(2025, 1, 2, 1, 1, 10, tzinfo=UTC)
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+    assert service.poll(datetime(2025, 1, 2, 1, 1, 1, tzinfo=UTC)) is None
+    assert service.next_provider_retry_at is None

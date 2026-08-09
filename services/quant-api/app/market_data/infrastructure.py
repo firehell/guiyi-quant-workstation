@@ -29,7 +29,7 @@ import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
@@ -553,7 +553,7 @@ class RQDataClient:
     def __init__(self) -> None:
         load_project_env()
         try:
-            import rqdatac  # type: ignore[import-not-found]
+            import rqdatac  # type: ignore[import-not-found, import-untyped]
         except ImportError as exc:
             raise InfrastructureError("RQDATA_NOT_INSTALLED") from exc
         uri = os.getenv("RQDATAC2_CONF") or os.getenv("RQDATAC_CONF")
@@ -621,6 +621,10 @@ class RQDataClient:
         if len(normalized) != 1:
             raise InfrastructureError("RQDATA_DOMINANT_INVALID")
         return normalized[0]
+
+    def live_market_client(self) -> Any:
+        """创建 RQData Live client；仅由显式的前台 live Runtime 使用。"""
+        return self.api.LiveMarketDataClient()
 
     def metadata_snapshot(
         self,

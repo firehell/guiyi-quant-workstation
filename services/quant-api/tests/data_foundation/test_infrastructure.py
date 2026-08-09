@@ -150,6 +150,19 @@ def test_rqdata_client_normalizes_exactly_one_dominant_contract() -> None:
     assert client.dominant_for_day("jm", date(2026, 8, 10)) == "JM2609"
 
 
+def test_rqdata_client_creates_the_provider_live_client_without_subscription() -> None:
+    created = object()
+
+    class Api:
+        def LiveMarketDataClient(self):
+            return created
+
+    client = object.__new__(RQDataClient)
+    client.api = Api()
+
+    assert client.live_market_client() is created
+
+
 def test_database_coverage_uses_actual_exchange_sessions_and_complete_iso_week(tmp_path) -> None:
     session, starts = _session(tmp_path)
     coverage = DatabaseCoverageSource(session, starts)

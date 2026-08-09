@@ -29,13 +29,14 @@ class FakeManager:
         return MaintenanceResult("refresh", "planned", request.through, 1, 0, 0, 0, 0)
 
 
-def _run(args, manager, *, after_market_factory=None):
+def _run(args, manager, *, after_market_factory=None, live_service_factory=None):
     stdout = io.StringIO()
     stderr = io.StringIO()
     code = main(
         args,
         manager_factory=lambda _session: manager,
         after_market_factory=after_market_factory,
+        live_service_factory=live_service_factory,
         session_factory=lambda: _NullContext(),
         stdout=stdout,
         stderr=stderr,
@@ -217,3 +218,36 @@ def test_cli_internal_error_does_not_expose_sqlalchemy_documentation_code() -> N
     payload = exception_error_payload(command="data.update", exc=error)
 
     assert payload["error"] == {"code": "CLI_INTERNAL_ERROR", "type": "RuntimeError"}
+
+
+def test_runtime_parser_exposes_status_and_live_only() -> None:
+    parser = build_parser()
+    runtime_action = next(action for action in parser._actions if action.dest == "domain")
+    runtime_parser = runtime_action.choices["runtime"]
+    command_action = next(action for action in runtime_parser._actions if action.dest == "runtime_command")
+
+    assert set(command_action.choices) == {"status", "live"}
+
+
+def test_runtime_live_runs_only_the_injected_foreground_service() -> None:
+    manager = FakeManager()
+    calls: list[str] = []
+
+    class LiveService:
+        def run_forever(self) -> None:
+            calls.append("run_forever")
+
+    code, payload = _run(
+        ["runtime", "live"],
+        manager,
+        live_service_factory=lambda _session: LiveService(),
+    )
+
+    assert code == 0
+    assert calls == ["run_forever"]
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.live",
+        "status": "ok",
+        "foreground": True,
+    }

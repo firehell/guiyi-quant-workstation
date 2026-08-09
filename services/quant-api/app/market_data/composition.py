@@ -12,14 +12,19 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.catalog import MarketCatalog
+from app.market_data.live_market import LiveMarketService, RedisClient, RedisLiveStore
 from app.market_data.maintenance import HistoricalDataManager
+from app.market_data.market_phase import MarketPhaseResolver
+from app.market_data.operational_universe import load_operational_products
 from app.market_data.service import MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore
+from app.queue import get_redis_connection
 
 
 _PRODUCT_STARTS = PROJECT_ROOT / "data/universe/product_window_starts.csv"
@@ -59,3 +64,17 @@ def build_market_data_service(session: Session) -> MarketDataService:
     """构造只读 ``MarketDataService``（查询路径不注入 RQData 与维护依赖）。"""
     root = canonical_root()
     return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
+
+
+def build_live_market_service(session: Session) -> LiveMarketService:
+    """构造前台 Live 观察服务，不启动循环也不写入 historical Canonical。"""
+    from app.market_data.infrastructure import RQDataClient
+
+    rqdata = RQDataClient()
+    return LiveMarketService(
+        provider_factory=rqdata.live_market_client,
+        dominant_source=rqdata,
+        phase_resolver=MarketPhaseResolver(session),
+        store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+        operational_products=load_operational_products(),
+    )
