@@ -150,6 +150,12 @@ class MarketDataService:
                 ) > 2
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+            if (
+                newer_partition is not None
+                and newer_partition.coverage_start - partition.coverage_end
+                > timedelta(days=14)
+            ):
+                raise MarketDataError("DATASET_OR_PARTITION_MISSING")
             values = self._partition_bars(partition)
             for bar in reversed(values):
                 if request.before is not None and bar.bar_end >= request.before:
@@ -190,13 +196,19 @@ class MarketDataService:
                         (partition.dataset.series_or_contract, bar.trading_day)
                     )
                     owner = (
-                        self._page_weekly_owner(request.symbol, bar.trading_day, mapping_by_day)
+                        self._page_weekly_owner(
+                            request.symbol,
+                            bar.trading_day,
+                            mapping_by_day,
+                            strict_mapping=False,
+                        )
                         if request.frequency is BarFrequency.W1
                         else mapping_by_day.get(bar.trading_day)
                     )
-                    if owner is None:
-                        raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-                    if owner.contract == partition.dataset.series_or_contract:
+                    if (
+                        owner is not None
+                        and owner.contract == partition.dataset.series_or_contract
+                    ):
                         candidates.append(bar)
             for bar in sorted(candidates, key=lambda item: item.bar_end, reverse=True):
                 if any(item.bar_end == bar.bar_end for item in selected):
@@ -210,6 +222,16 @@ class MarketDataService:
                         available_contract_days,
                     )
         if not selected:
+            available_days = {day for _, day in available_contract_days}
+            if any(day not in mapping_by_day for day in available_days):
+                raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+            if request.frequency is BarFrequency.W1:
+                for day in available_days:
+                    self._page_weekly_owner(
+                        request.symbol,
+                        day,
+                        mapping_by_day,
+                    )
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         return self._actual_page_result(
             request,
@@ -261,12 +283,16 @@ class MarketDataService:
             if request.before is not None
             else None
         )
-        relevant_maps = tuple(
-            item for item in mapping_by_day.values() if item.trade_date >= page_start
-        )
-        if not relevant_maps:
+        relevant_days = {
+            item.trade_date for item in mapping_by_day.values() if item.trade_date >= page_start
+        } | {
+            trading_day
+            for _, trading_day in available_contract_days
+            if trading_day >= page_start
+        }
+        if not relevant_days:
             raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-        end_day = max(item.trade_date for item in relevant_maps)
+        end_day = max(relevant_days)
         try:
             expected_days = self.catalog.trading_days(request.symbol, page_start, end_day)
         except CatalogError as exc:
@@ -279,7 +305,17 @@ class MarketDataService:
             owner = mapping_by_day.get(day)
             if owner is None:
                 raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-            if request.frequency is not BarFrequency.W1 and (
+            if request.frequency is BarFrequency.W1:
+                weekly_owner = self._page_weekly_owner(
+                    request.symbol,
+                    day,
+                    mapping_by_day,
+                )
+                if weekly_owner is None:
+                    continue
+                if (weekly_owner.contract, day) not in available_contract_days:
+                    raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+            elif (
                 owner.contract,
                 day,
             ) not in available_contract_days:
@@ -290,6 +326,8 @@ class MarketDataService:
         symbol: str,
         trading_day: date,
         mapping_by_day: dict[date, MainMapFact],
+        *,
+        strict_mapping: bool = True,
     ) -> MainMapFact | None:
         """仅将完整 ISO 交易周最后交易日的正式 owner 用于周线拼接。"""
         monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
@@ -300,7 +338,9 @@ class MarketDataService:
         if not week_days or week_days[-1] != trading_day:
             return None
         if any(day not in mapping_by_day for day in week_days):
-            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+            if strict_mapping:
+                raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+            return None
         return mapping_by_day.get(trading_day)
 
     def _partition_bars(self, partition: CatalogPartition) -> tuple[CanonicalBar, ...]:
