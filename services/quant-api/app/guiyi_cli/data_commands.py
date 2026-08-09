@@ -39,7 +39,7 @@ def build_request(args: argparse.Namespace):
             apply=bool(args.apply),
         )
     if args.data_command == "audit":
-        return AuditRequest(_active_products())
+        return AuditRequest(_products(args.symbol, args.universe))
     if args.data_command == "refresh":
         since = _day(args.since)
         through = _day(args.through)

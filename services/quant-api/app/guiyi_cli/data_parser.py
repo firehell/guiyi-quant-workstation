@@ -42,7 +42,9 @@ def add_data_commands(
     refresh.add_argument("--apply", action="store_true")
 
     audit = commands.add_parser("audit")
-    audit.add_argument("--universe", choices=("active",), required=True)
+    selector = audit.add_mutually_exclusive_group(required=True)
+    selector.add_argument("--symbol")
+    selector.add_argument("--universe", choices=("active",))
 
     retire = commands.add_parser("retire-products")
     retire.add_argument("--apply", action="store_true")

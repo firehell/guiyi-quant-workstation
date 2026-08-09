@@ -97,15 +97,47 @@ def test_update_parses_since_through_and_defaults_to_dry_run() -> None:
     assert request.since.isoformat() == "2025-01-01"
 
 
-def test_audit_requires_active_universe() -> None:
+def test_audit_parses_single_active_symbol() -> None:
+    manager = FakeManager()
+
+    code, payload = _run(["data", "audit", "--symbol", "JM"], manager)
+
+    assert code == 0 and payload["status"] == "passed"
+    assert [action for action, _request in manager.calls] == ["audit"]
+    assert manager.calls[0][1].products == ("jm",)
+
+
+def test_audit_keeps_active_universe_selector() -> None:
     manager = FakeManager()
 
     code, payload = _run(["data", "audit", "--universe", "active"], manager)
-    invalid_code, invalid = _run(["data", "audit", "--universe", "other"], manager)
 
     assert code == 0 and payload["status"] == "passed"
-    assert invalid_code == 2
-    assert invalid["status"] == "error"
+    assert len(manager.calls[0][1].products) == 60
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    ((), ("--symbol", "jm", "--universe", "active")),
+)
+def test_audit_requires_exactly_one_selector(arguments: tuple[str, ...]) -> None:
+    manager = FakeManager()
+
+    code, payload = _run(["data", "audit", *arguments], manager)
+
+    assert code == 2
+    assert payload["status"] == "error"
+    assert manager.calls == []
+
+
+def test_audit_rejects_retired_symbol_before_manager_call() -> None:
+    manager = FakeManager()
+
+    code, payload = _run(["data", "audit", "--symbol", "ic"], manager)
+
+    assert code == 1
+    assert payload["error"]["code"] == "PRODUCT_RETIRED"
+    assert manager.calls == []
 
 
 @pytest.mark.parametrize("command", ("bootstrap", "repair", "download", "aggregate", "sync", "verify"))
