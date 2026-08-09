@@ -418,10 +418,7 @@ class RQDataMarketAdapter:
             end_day = max(expected).date()
         order_book_ids: tuple[str, ...]
         if key.kind is DatasetKind.CONTINUOUS:
-            order_book_ids = (
-                f"{key.symbol.upper()}88",
-                f"{key.symbol.upper()}99",
-            )
+            order_book_ids = (f"{key.symbol.upper()}88",)
         else:
             order_book_ids = (key.series_or_contract,)
         rows: tuple[dict[str, Any], ...] = ()

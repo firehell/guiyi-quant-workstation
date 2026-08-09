@@ -255,6 +255,15 @@ class HistoricalDataManager:
                     request.through,
                 ):
                     raise ValueError("MAIN_CONTRACT_MAP_MISSING")
+                targets = tuple(
+                    self._iter_targets(
+                        products,
+                        request.since,
+                        request.through,
+                        force=True,
+                    )
+                )
+                return self._execute("refresh", targets, request.through, apply=True)
             finally:
                 lease.release()
         targets = tuple(
@@ -523,10 +532,10 @@ class HistoricalDataManager:
                         planned,
                         applied,
                         blocked,
-                        0,
+                        len(failures),
                         provider_requests,
                         "provider_quota_exhausted",
-                        failures=(),
+                        failures=tuple(failures),
                     )
                 if _is_global_failure(exc):
                     raise

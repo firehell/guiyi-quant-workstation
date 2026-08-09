@@ -6,6 +6,7 @@ import json
 import pytest
 
 from app.guiyi_cli.main import CliUsageError, build_parser, main
+from app.guiyi_cli.output import exception_error_payload
 from app.market_data.maintenance import MaintenanceResult
 
 
@@ -127,3 +128,12 @@ def test_update_rejects_retired_candidate_flags(arguments: tuple[str, str]) -> N
 
     with pytest.raises(CliUsageError):
         parser.parse_args(["data", "update", "--symbol", "jm", *arguments])
+
+
+def test_cli_internal_error_does_not_expose_sqlalchemy_documentation_code() -> None:
+    error = RuntimeError("database unavailable")
+    error.code = "e3q8"
+
+    payload = exception_error_payload(command="data.update", exc=error)
+
+    assert payload["error"] == {"code": "CLI_INTERNAL_ERROR", "type": "RuntimeError"}

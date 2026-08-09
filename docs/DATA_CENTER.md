@@ -18,6 +18,10 @@ MarketDataService
 `continuous|contract`；主连的 `series_or_contract=MAIN`；`actual_dominant` 是查询模式，不是物理
 Dataset。
 
+`continuous/MAIN` 的 Direct RQData 来源固定为 `{SYMBOL}88` 未平滑主力连续；`{SYMBOL}99` 持仓量
+加权指数不是可替代来源，任何空窗都必须显式失败。它与按 rule2 `MainContractMap` 拼接的
+`actual_dominant` 保持不同查询语义。
+
 ## 2. Canonical 物理合同
 
 ```text
@@ -81,7 +85,7 @@ start
 end
 ```
 
-`continuous` 读取 `SYMBOL.MAIN`；`contract` 读取指定真实合约；`actual_dominant` 由 rank1
+`continuous` 读取 Canonical `SYMBOL.MAIN`（仅由 RQData `{SYMBOL}88` 构建）；`contract` 读取指定真实合约；`actual_dominant` 由 rank1
 映射拼接，`1w` 按完整 ISO 周最后交易日的 rank1 合约取整周真实合约 bar。映射、日历、分区或
 coverage 缺失时 fail-closed；响应只返回请求、bars、coverage 和 resolved contract segments。
 

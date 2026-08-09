@@ -300,6 +300,18 @@ class FakeClient:
         return self.frame
 
 
+class SplitContinuousClient:
+    version = "test"
+
+    def __init__(self, frames: dict[str, pd.DataFrame]) -> None:
+        self.frames = frames
+        self.calls: list[tuple[str, date, date, str]] = []
+
+    def price(self, order_book_id, start, end, frequency):
+        self.calls.append((order_book_id, start, end, frequency))
+        return self.frames[order_book_id]
+
+
 def _bar(end: datetime, trading_day: date):
     from app.market_data.domain import CanonicalBar
 
@@ -333,6 +345,33 @@ def test_rqdata_bar_adapter_normalizes_continuous_and_daily_bar_end(tmp_path) ->
     assert client.calls[0][0] == "JM88"
     assert batch.bars[0].bar_end == expected
     assert batch.bars[0].turnover == Decimal("1000")
+
+
+def test_continuous_main_does_not_fall_back_from_88_to_99(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
+    index_frame = pd.DataFrame(
+        [
+            {
+                "datetime": datetime(2025, 1, 6),
+                "trading_date": date(2025, 1, 6),
+                "open": 100,
+                "high": 101,
+                "low": 99,
+                "close": 100,
+                "volume": 10,
+                "total_turnover": 1000,
+                "open_interest": 20,
+            }
+        ]
+    )
+    client = SplitContinuousClient({"JM88": pd.DataFrame(), "JM99": index_frame})
+    adapter = RQDataMarketAdapter(session=session, client=client)
+
+    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1d"), (expected,))
+
+    assert batch.bars == ()
+    assert client.calls == [("JM88", date(2025, 1, 6), date(2025, 1, 6), "1d")]
     session.close()
 
 
@@ -404,6 +443,35 @@ def test_rqdata_weekly_adapter_maps_rows_by_iso_week_not_provider_position(tmp_p
     assert [(bar.bar_end, bar.close) for bar in batch.bars] == [
         (first, Decimal("100")),
         (second, Decimal("200")),
+    ]
+    session.close()
+
+
+def test_rqdata_weekly_adapter_accepts_native_multiindex_short_week_label(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2024, 4, 3, 7, tzinfo=UTC)
+    frame = pd.DataFrame(
+        {
+            "open": [100],
+            "high": [101],
+            "low": [99],
+            "close": [100],
+            "volume": [10],
+            "total_turnover": [1000],
+            "open_interest": [20],
+        },
+        index=pd.MultiIndex.from_tuples(
+            [("JM88", date(2024, 4, 3))], names=("order_book_id", "date")
+        ),
+    )
+    client = FakeClient(frame)
+    adapter = RQDataMarketAdapter(session=session, client=client)
+
+    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1w"), (expected,))
+
+    assert client.calls == [("JM88", date(2024, 4, 1), date(2024, 4, 7), "1w")]
+    assert [(bar.bar_end, bar.trading_day) for bar in batch.bars] == [
+        (expected, date(2024, 4, 3))
     ]
     session.close()
 

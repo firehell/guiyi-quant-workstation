@@ -25,7 +25,9 @@ schema、identity、主键单调唯一、OHLCV、session/frequency、coverage �
 
 ### Requirement: Direct 与 Derived 边界
 `1m/1d/1w` SHALL 直接来自 RQData；`5m/15m/30m/60m` SHALL 只从质量通过的同 Dataset Canonical
-1m 按实际 Session 聚合，且 MUST NOT 调用 RQData 或回退其他周期。
+1m 按实际 Session 聚合，且 MUST NOT 调用 RQData 或回退其他周期。`continuous/MAIN` 的 Direct
+来源 SHALL 仅为 RQData `{SYMBOL}88` 未平滑主力连续；系统 MUST NOT 将 `{SYMBOL}99` 持仓量加权
+指数作为空窗 fallback。
 
 #### Scenario: 1m 月发布
 - **WHEN** 1m dataset-month 通过发布校验

@@ -125,6 +125,22 @@ class _QuotaExhausted(RuntimeError):
     code = "PROVIDER_QUOTA_EXHAUSTED"
 
 
+class _FailThenQuotaProvider(FakeProvider):
+    def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
+        self.calls.append((key, expected))
+        if len(self.calls) == 1:
+            raise RuntimeError("first target failed")
+        raise _QuotaExhausted()
+
+
+class _TrackingLease:
+    def __init__(self) -> None:
+        self.released = False
+
+    def release(self) -> None:
+        self.released = True
+
+
 def _daily(day: int, close: int) -> CanonicalBar:
     value = Decimal(close)
     return CanonicalBar(
@@ -440,6 +456,57 @@ def test_quota_partial_preserves_completed_months_and_next_update_resumes(sessio
         BarFrequency.W1,
         BarFrequency.W1,
     ]
+
+
+def test_quota_partial_preserves_earlier_dataset_failures(session, tmp_path) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    coverage = FakeCoverage({
+        daily.as_tuple(): (_daily(2, 100).bar_end,),
+        weekly.as_tuple(): (_daily(3, 101).bar_end,),
+    })
+    manager = _manager(
+        session,
+        tmp_path,
+        coverage,
+        _FailThenQuotaProvider({}),
+    )
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert result.status == "partial"
+    assert result.stop_reason == "provider_quota_exhausted"
+    assert result.failed == 1
+    assert result.failures == ({
+        "dataset": daily.as_tuple(),
+        "year": 2025,
+        "month": 1,
+        "reason_code": "RuntimeError",
+    },)
+
+
+def test_refresh_holds_maintenance_lock_until_provider_fetch_completes(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 100)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    provider = FakeProvider({key.as_tuple(): (bar,)})
+    manager = _manager(session, tmp_path, coverage, provider)
+    lease = _TrackingLease()
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: lease)
+
+    original_fetch = provider.fetch
+
+    def fetch_while_locked(*args, **kwargs):
+        assert not lease.released
+        return original_fetch(*args, **kwargs)
+
+    monkeypatch.setattr(provider, "fetch", fetch_while_locked)
+    result = manager.refresh(RefreshRequest("jm", date(2025, 1, 2), date(2025, 1, 3), True))
+
+    assert result.status == "passed"
+    assert lease.released
 
 
 def test_update_since_rebuilds_an_unreadable_intersecting_month(session, tmp_path) -> None:
