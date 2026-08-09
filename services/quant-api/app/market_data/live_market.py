@@ -403,6 +403,7 @@ class LiveMarketService:
             if any(contract is None for contract in snapshot.values()):
                 return "LIVE_RANK1_CONTRACT_INVALID"
             self._store.set_subscriptions(trading_day, snapshot)
+            self._store.publish_state({"trading_day": trading_day.isoformat()})
             self._trading_day = trading_day
             self._contracts = {symbol: contract for symbol, contract in snapshot.items() if contract is not None}
         desired = {f"bar_{contract}" for contract in self._contracts.values()}

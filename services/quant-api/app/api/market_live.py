@@ -82,6 +82,8 @@ async def market_websocket(
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             if message is None:
+                if await _client_disconnected(websocket):
+                    break
                 await asyncio.sleep(0.01)
                 continue
             channel = _text(message.get("channel"))
@@ -109,6 +111,8 @@ async def market_websocket(
             if channel != channels[0]:
                 continue
             bar = _bar_from_message(message.get("data"))
+            if not current_state.live_eligible or not current_state.live_available:
+                continue
             if bar is None or (current_state.canonical_end is not None and bar.bar_end <= current_state.canonical_end):
                 continue
             if last_sent is not None and bar.bar_end <= last_sent:
@@ -157,6 +161,15 @@ def _state_response(state: MarketReadState) -> MarketReadStateResponse:
 
 async def _send_state(websocket: WebSocket, state: MarketReadState) -> None:
     await websocket.send_json({"type": "state", "state": _state_response(state).model_dump(mode="json")})
+
+
+async def _client_disconnected(websocket: WebSocket) -> bool:
+    """在 Pub/Sub 空轮询时探测客户端断连，避免遗留每连接的 Redis subscription。"""
+    try:
+        message = await asyncio.wait_for(websocket.receive(), timeout=0.01)
+    except TimeoutError:
+        return False
+    return message.get("type") == "websocket.disconnect"
 
 
 def _bar_response(bar: CanonicalBar) -> dict[str, object]:

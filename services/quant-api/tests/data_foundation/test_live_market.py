@@ -316,6 +316,11 @@ def test_rank1_subscription_lifecycle_is_once_per_trading_day_and_never_continuo
     assert client.unsubscribed == ["bar_J2505", "bar_JM2505"]
     assert all("88" not in channel for channel in (*client.subscribed, *client.unsubscribed))
     assert fake.values["live:subscription:2025-01-03"] == '{"j":"J2509","jm":"JM2509"}'
+    state_events = [json.loads(payload) for channel, payload in fake.published if channel == "market:state"]
+    assert state_events == [
+        {"trading_day": "2025-01-02"},
+        {"trading_day": "2025-01-03"},
+    ]
 
 
 def test_completed_1m_bar_is_pending_then_immutable_and_outside_session_is_rejected() -> None:
@@ -523,7 +528,8 @@ def test_redis_failure_keeps_due_bar_pending_for_exact_recovery_retry() -> None:
     assert service.flush_due(datetime(2025, 1, 2, 1, 1, 2, tzinfo=UTC)) == ()
     assert service.flush_due(datetime(2025, 1, 2, 1, 1, 2, tzinfo=UTC)) == (bar,)
     assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (bar,)
-    assert fake.published == [("live:bar:j:1m", json.dumps(_bar_payload(bar), separators=(",", ":")))]
+    live_events = [item for item in fake.published if item[0] == "live:bar:j:1m"]
+    assert live_events == [("live:bar:j:1m", json.dumps(_bar_payload(bar), separators=(",", ":")))]
 
 
 def test_live_derived_buckets_match_shared_historical_aggregation_exactly() -> None:
