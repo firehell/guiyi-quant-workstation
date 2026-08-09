@@ -171,6 +171,28 @@ def test_records_final_failure_and_notifies_once(tmp_path) -> None:
     assert "path" not in json.dumps(status).lower()
 
 
+def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) -> None:
+    updater, _manager, _rqdata, _sleeps, notices = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True, True],
+        results=[
+            _result("partial", stop_reason="PROVIDER_QUOTA_EXHAUSTED"),
+            _result("partial", stop_reason="PROVIDER_QUOTA_EXHAUSTED"),
+        ],
+    )
+
+    result = updater.run()
+    status = _status(tmp_path / "after-market-status.json")
+
+    assert result.error_code == "PROVIDER_QUOTA_EXHAUSTED"
+    assert status["last_failure"] == {
+        "trading_day": "2026-08-10",
+        "error_code": "PROVIDER_QUOTA_EXHAUSTED",
+    }
+    assert notices == ["PROVIDER_QUOTA_EXHAUSTED"]
+
+
 def test_success_clears_previous_last_failure(tmp_path) -> None:
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
@@ -207,3 +229,39 @@ def test_weekend_skip_preserves_unresolved_failure(tmp_path) -> None:
     updater.run()
 
     assert _status(status_path)["last_failure"] == previous_failure
+
+
+def test_weekend_skip_drops_unsafe_legacy_status_fields(tmp_path) -> None:
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "last_run": None,
+                "last_successful_trading_day": "/private/secret/canonical",
+                "last_failure": {
+                    "trading_day": "2026-08-09",
+                    "error_code": "UPDATE_FAILED",
+                    "exception": "RuntimeError: credential text",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    updater, *_ = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 7),
+        readiness=[],
+        results=[],
+    )
+
+    updater.run()
+    status_text = status_path.read_text(encoding="utf-8")
+    status = json.loads(status_text)
+
+    assert status["last_successful_trading_day"] is None
+    assert status["last_failure"] == {
+        "trading_day": "2026-08-09",
+        "error_code": "UPDATE_FAILED",
+    }
+    assert "credential" not in status_text
+    assert "/private/secret" not in status_text

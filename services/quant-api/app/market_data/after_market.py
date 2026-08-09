@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 import json
@@ -22,7 +22,19 @@ from app.core.env import PROJECT_ROOT
 
 
 _NOTIFICATION_TITLE = "Guiyi Quant After-Market"
+_PUBLIC_ERROR_CODES = frozenset(
+    {
+        "MAINTENANCE_LOCKED",
+        "NON_TRADING_DAY",
+        "PROVIDER_QUOTA_EXHAUSTED",
+        "RQDATA_NOT_READY",
+        "RQDATA_READY_CHECK_FAILED",
+        "UPDATE_FAILED",
+    }
+)
 _PUBLIC_NOTIFICATION_MESSAGES = {
+    "MAINTENANCE_LOCKED": "Historical maintenance remained locked after one retry.",
+    "PROVIDER_QUOTA_EXHAUSTED": "RQData quota remained unavailable after one retry.",
     "RQDATA_NOT_READY": "RQData futures data is not ready after one retry.",
     "RQDATA_READY_CHECK_FAILED": "RQData readiness check failed after one retry.",
     "UPDATE_FAILED": "Historical data update failed after one retry.",
@@ -112,7 +124,9 @@ class AfterMarketUpdater:
             )
         except Exception:  # noqa: BLE001 - do not persist exceptions or provider text
             return "UPDATE_FAILED"
-        return None if result.status in {"passed", "noop"} else "UPDATE_FAILED"
+        if result.status in {"passed", "noop"}:
+            return None
+        return _public_maintenance_failure_code(result.stop_reason)
 
     def _write_status(
         self,
@@ -132,8 +146,10 @@ class AfterMarketUpdater:
                 "products": list(products),
                 "error_code": result.error_code,
             },
-            "last_successful_trading_day": previous.get("last_successful_trading_day"),
-            "last_failure": previous.get("last_failure"),
+            "last_successful_trading_day": _public_trading_day(
+                previous.get("last_successful_trading_day")
+            ),
+            "last_failure": _public_last_failure(previous.get("last_failure")),
         }
         if result.status == "passed":
             payload["last_successful_trading_day"] = result.trading_day.isoformat()
@@ -183,6 +199,34 @@ def _load_status(path: Path) -> dict[str, Any]:
     except (OSError, ValueError, TypeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _public_maintenance_failure_code(stop_reason: str | None) -> str:
+    """仅传递明确定义为公开的维护 stop code。"""
+    if stop_reason == "maintenance_locked":
+        return "MAINTENANCE_LOCKED"
+    if stop_reason in _PUBLIC_ERROR_CODES:
+        return stop_reason
+    return "UPDATE_FAILED"
+
+
+def _public_trading_day(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        return None
+
+
+def _public_last_failure(value: object) -> dict[str, str] | None:
+    if not isinstance(value, Mapping):
+        return None
+    trading_day = _public_trading_day(value.get("trading_day"))
+    error_code = value.get("error_code")
+    if trading_day is None or error_code not in _PUBLIC_ERROR_CODES:
+        return None
+    return {"trading_day": trading_day, "error_code": error_code}
 
 
 def _local_timestamp(value: datetime) -> datetime:
