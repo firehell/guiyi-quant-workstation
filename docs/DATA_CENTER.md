@@ -94,7 +94,7 @@ coverage 缺失时 fail-closed；响应只返回请求、bars、coverage 和 res
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
-guiyi data audit --universe active
+guiyi data audit (--symbol X | --universe active)
 guiyi data retire-products [--apply]
 ```
 

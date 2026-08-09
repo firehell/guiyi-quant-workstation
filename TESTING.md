@@ -42,6 +42,7 @@ DFD-03 之后补充 `20260808_0035:20260808_0036 --sql` 和隔离 PostgreSQL mig
 ```bash
 uv run --project services/quant-api guiyi data update --universe active --through 2026-08-07
 uv run --project services/quant-api guiyi data refresh --symbol jm --since 2024-03-01 --through 2024-03-31
+uv run --project services/quant-api guiyi data audit --symbol jm
 uv run --project services/quant-api guiyi data audit --universe active
 ```
 

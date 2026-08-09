@@ -5,9 +5,10 @@
 ## ADDED Requirements
 
 ### Requirement: 公开维护面
-系统 SHALL 公开 `update`、`refresh`、`audit` 与 `retire-products`。无 `--apply` 的
-update/refresh/`retire-products` MUST 只计划或盘点，不得写 PostgreSQL/Parquet（retire 的
-`--apply` 除外且受退役名单与单次意图约束）；audit MUST 只读。
+系统 SHALL 公开 `update`、`refresh`、`audit` 与 `retire-products`。`audit` SHALL 接受
+`(--symbol X | --universe active)` 的互斥选择器。无 `--apply` 的 update/refresh/`retire-products`
+MUST 只计划或盘点，不得写 PostgreSQL/Parquet（retire 的 `--apply` 除外且受退役名单与单次意图
+约束）；audit MUST 只读。
 
 #### Scenario: 已退出动作
 - **WHEN** 用户调用任何已退出的维护操作
