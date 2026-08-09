@@ -4,10 +4,10 @@
 
 ## 结论
 
-Data Foundation 已完成 **DFD-01～DFD-06**：目标架构现在是本地、单用户、可从 RQData 重建的
-历史行情底座；月度 storage、最小 Catalog/ORM、候选 migration 及最小 Market 查询/API/Web 合同已收口，
-并已完成全量本地验证与 active 引用收口。此结论不表示生产数据库迁移、正式 Canonical 重建或真实
-RQData 下载已经发生。
+Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产 PostgreSQL 已从
+`20260808_0035` 升级至最终不可逆 `20260808_0036`，盘点范围内的旧正式数据已删除。固定
+`T0=2026-08-07` 的 JM 重建已真实启动，但在首轮达到 provider quota 后按合同停止；69 品种重建及
+完整历史 Canonical 验收尚未完成。
 
 ## 已冻结的目标合同
 
@@ -27,8 +27,8 @@ RQData 下载已经发生。
 ## 当前实现差异
 
 DFD-02 已删除退出的维护面、legacy importer、旧 CLI 入口及其生成工件。DFD-03 已将
-storage、Catalog、ORM 和候选 `20260808_0036` 收口为八表与单月 `part.parquet`，并仅在隔离 PostgreSQL
-中验证 migration。DFD-04 已验证三种查询、周线 rank1 owner 和 Derived physical partition 读取，并移除
+storage、Catalog、ORM 和最终 `20260808_0036` 收口为八表与单月 `part.parquet`，并已在正式 PostgreSQL
+完成 migration。DFD-04 已验证三种查询、周线 rank1 owner 和 Derived physical partition 读取，并移除
 Market API/Web 的 digest 展示。DFD-05 已实现 `update|refresh|audit`、完整月 refresh、quota partial
 自然续传和本地 Derived 优先重建。DFD-06 已运行后端/工程全量、前端 test/build、Ruff、Mypy 和严格
 OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺口合同收口为八表、完整性和
@@ -36,8 +36,10 @@ OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺�
 
 ## 外部操作状态
 
-未执行真实 RQData 下载、正式 Canonical 写入/删除/重建、生产 PostgreSQL migration、服务切换、
-main/tag/release 或 Runtime promotion。DFD-07 才处理真实数据清理和重建，且每项外部 mutation
-都需要其目标、范围和时间窗明确的一次性执行意图。
+在用户明确的一次性执行意图下，已执行生产 `0035→0036` migration，删除 `data/raw`、
+`data/processed`、`data/parquet/canonical` 与 `data/canonical-candidates`，并启动 JM 的真实 RQData
+重建。migration 后八张 active 表已验收，旧 Catalog 已清空；JM 当前只有部分 continuous 分区，
+`actual_dominant` 因缺少 concrete-contract 分区保持 fail-closed。provider quota 停止后不得在同一
+额度周期继续调用。未执行服务切换、main/tag/release 或 Runtime promotion。
 
 日调度、live、真实通知和自动订单保持关闭，`auto_order=false`。
