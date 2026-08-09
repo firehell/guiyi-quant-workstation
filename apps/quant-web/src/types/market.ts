@@ -70,6 +70,35 @@ export interface MarketBarsResponse {
   resolved_contract_segments: ResolvedContractSegment[]
 }
 
+export interface MarketBarsPageRequest {
+  series_kind: SeriesKind
+  symbol: string
+  contract?: string
+  frequency: MarketFrequency
+  before?: string
+  limit?: number
+}
+
+export interface MarketPageMeta {
+  has_more_before: boolean
+  next_before: string | null
+}
+
+export interface MarketBarsPageResponse {
+  request: {
+    series_kind: SeriesKind
+    symbol: string
+    contract: string | null
+    frequency: MarketFrequency
+    before: string | null
+    limit: number
+  }
+  bars: CanonicalBarDto[]
+  canonical_coverage: { start: string; end: string } | null
+  page: MarketPageMeta
+  resolved_contract_segments: ResolvedContractSegment[]
+}
+
 export interface MarketCoverageItem {
   kind: 'continuous' | 'contract'
   symbol: string

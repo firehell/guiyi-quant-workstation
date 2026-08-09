@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NCard, NDatePicker, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NCard, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { getCanonicalMarketCoverage, getMarketBars, getMarketDominants } from '@/api/market'
+import { getCanonicalMarketCoverage, getMarketDominants } from '@/api/market'
+import { useMarketSeries } from '@/composables/useMarketSeries'
 import type {
-  BarData,
   DominantContractItem,
-  MarketBarsResponse,
   MarketCoverageItem,
   MarketFrequency,
   SeriesKind,
@@ -17,20 +16,28 @@ import { MARKET_FREQUENCIES } from '@/types/market'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
-const loading = ref(false)
 const metadataLoading = ref(false)
 const error = ref<string | null>(null)
 const dominants = ref<DominantContractItem[]>([])
 const coverageItems = ref<MarketCoverageItem[]>([])
-const bars = ref<BarData[]>([])
-const response = ref<MarketBarsResponse | null>(null)
+const chart = ref<InstanceType<typeof KlineChart> | null>(null)
+const {
+  bars,
+  hasMoreBefore,
+  loadingInitial,
+  loadingBefore,
+  replaceSeries,
+  loadMoreBefore,
+} = useMarketSeries()
+let metadataReady = false
+let synchronizingSymbol = false
 
 const symbol = ref(String(route.query.symbol || '').toLowerCase())
 const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(normalizeSeriesKind(route.query.series_kind))
 const frequency = ref<MarketFrequency>(normalizeFrequency(route.query.frequency))
-const range = ref<[number, number]>(defaultRange())
 
+const loading = computed(() => loadingInitial.value || loadingBefore.value)
 const symbolOptions = computed(() => dominants.value.map((item) => ({
   label: `${item.product.toUpperCase()} ${item.product_name}`,
   value: item.product,
@@ -55,8 +62,8 @@ onMounted(async () => {
     if (!symbol.value) symbol.value = dominants.value[0]?.product || ''
     syncDominantContract()
     await loadCoverage()
-    applyCoverageRange()
-    await loadBars()
+    metadataReady = true
+    await refreshSeries()
   } catch {
     error.value = '行情元数据加载失败'
   } finally {
@@ -65,12 +72,20 @@ onMounted(async () => {
 })
 
 watch(symbol, async () => {
+  if (!metadataReady) return
+  synchronizingSymbol = true
   syncDominantContract()
-  await loadCoverage()
-  applyCoverageRange()
+  try {
+    await loadCoverage()
+  } finally {
+    synchronizingSymbol = false
+  }
+  await refreshSeries()
 })
 
-watch([seriesKind, frequency], () => applyCoverageRange())
+watch([contract, seriesKind, frequency], () => {
+  if (metadataReady && !synchronizingSymbol) void refreshSeries()
+})
 
 function syncDominantContract() {
   const value = dominants.value.find((item) => item.product === symbol.value)
@@ -82,59 +97,57 @@ async function loadCoverage() {
   coverageItems.value = (await getCanonicalMarketCoverage(symbol.value)).items
 }
 
-function applyCoverageRange() {
-  const item = selectedCoverage.value
-  if (item) range.value = [Date.parse(item.start), Date.parse(item.end)]
+function currentIdentity() {
+  return {
+    seriesKind: seriesKind.value,
+    symbol: symbol.value,
+    contract: seriesKind.value === 'contract' ? contract.value : undefined,
+    frequency: frequency.value,
+  }
 }
 
-async function loadBars() {
-  if (!symbol.value || !range.value) return
+async function refreshSeries() {
+  if (!symbol.value) return
   if (seriesKind.value === 'contract' && !contract.value) {
     error.value = '指定真实合约时 contract 必填'
     return
   }
-  loading.value = true
+  const requested = currentIdentity()
   error.value = null
   try {
-    const result = await getMarketBars({
-      series_kind: seriesKind.value,
-      symbol: symbol.value,
-      contract: seriesKind.value === 'contract' ? contract.value : undefined,
-      frequency: frequency.value,
-      start: new Date(range.value[0]).toISOString(),
-      end: new Date(range.value[1]).toISOString(),
-    })
-    response.value = result
-    bars.value = result.bars.map((item) => ({
-      time: item.bar_end,
-      trading_day: item.trading_day,
-      open: Number(item.open),
-      high: Number(item.high),
-      low: Number(item.low),
-      close: Number(item.close),
-      volume: Number(item.volume),
-      turnover: item.turnover === null ? undefined : Number(item.turnover),
-      openInterest: item.open_interest === null ? undefined : Number(item.open_interest),
-    }))
+    await replaceSeries(requested)
+    if (!isCurrentIdentity(requested)) return
+    chart.value?.replaceBars(bars.value)
     await router.replace({ query: {
-      symbol: symbol.value,
+      symbol: requested.symbol,
       contract: contract.value,
-      series_kind: seriesKind.value,
-      frequency: frequency.value,
+      series_kind: requested.seriesKind,
+      frequency: requested.frequency,
     } })
-  } catch (caught) {
-    bars.value = []
-    response.value = null
+  } catch {
+    if (!isCurrentIdentity(requested)) return
     error.value = '读取失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
-  } finally {
-    loading.value = false
   }
 }
 
-function defaultRange(): [number, number] {
-  const end = Date.now()
-  return [end - 90 * 24 * 60 * 60 * 1000, end]
+async function loadEarlierBars() {
+  const previousLength = bars.value.length
+  try {
+    await loadMoreBefore()
+    const prependedCount = bars.value.length - previousLength
+    if (prependedCount > 0) chart.value?.prependBars(bars.value.slice(0, prependedCount))
+  } catch {
+    error.value = '读取更早历史失败：数据集、月分区或主力映射不完整'
+    message.error(error.value)
+  }
+}
+
+function isCurrentIdentity(candidate: ReturnType<typeof currentIdentity>) {
+  return candidate.seriesKind === seriesKind.value
+    && candidate.symbol === symbol.value
+    && candidate.contract === (seriesKind.value === 'contract' ? contract.value : undefined)
+    && candidate.frequency === frequency.value
 }
 
 function normalizeFrequency(value: unknown): MarketFrequency {
@@ -154,8 +167,7 @@ function normalizeSeriesKind(value: unknown): SeriesKind {
       <NSelect v-model:value="seriesKind" :options="seriesOptions" class="series-select" />
       <NSelect v-if="seriesKind === 'contract'" v-model:value="contract" :options="[{ label: contract, value: contract }]" class="contract-select" />
       <NSelect v-model:value="frequency" :options="frequencyOptions" class="frequency-select" />
-      <NDatePicker v-model:value="range" type="datetimerange" clearable class="date-range" />
-      <NButton type="primary" :loading="loading" @click="loadBars">读取</NButton>
+      <NButton type="primary" :loading="loadingInitial" @click="refreshSeries">读取最新页</NButton>
     </div>
 
     <NSpin :show="metadataLoading">
@@ -166,13 +178,18 @@ function normalizeSeriesKind(value: unknown): SeriesKind {
           <NTag>{{ seriesKind }}</NTag>
           <NTag>{{ frequency }}</NTag>
           <span>{{ bars.length }} bars</span>
-          <span v-if="response?.coverage">{{ response.coverage.start }} → {{ response.coverage.end }}</span>
-        </div>
-        <div v-if="response" class="detail-row">
-          <span>合约段 {{ response.resolved_contract_segments.length }}</span>
+          <span v-if="selectedCoverage">{{ selectedCoverage.start }} → {{ selectedCoverage.end }}</span>
+          <NTag v-if="hasMoreBefore" type="info">可继续向前加载</NTag>
         </div>
       </NCard>
-      <KlineChart :bars="bars" :loading="loading" :error="error" :period="frequency" />
+      <KlineChart
+        ref="chart"
+        :bars="bars"
+        :loading="loading"
+        :error="error"
+        :period="frequency"
+        @need-more-before="loadEarlierBars"
+      />
     </NSpin>
   </div>
 </template>
@@ -184,8 +201,6 @@ function normalizeSeriesKind(value: unknown): SeriesKind {
 .series-select { width: 220px; }
 .contract-select { width: 150px; }
 .frequency-select { width: 90px; }
-.date-range { width: 360px; }
 .identity-card { background: var(--gy-bg-panel); }
-.identity-row, .detail-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.detail-row { margin-top: 8px; color: var(--gy-text-muted); font-size: 12px; }
+.identity-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 </style>

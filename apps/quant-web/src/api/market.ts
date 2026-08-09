@@ -1,6 +1,8 @@
 import request from './request'
 import type {
   DominantContractListResponse,
+  MarketBarsPageRequest,
+  MarketBarsPageResponse,
   MarketBarsRequestParams,
   MarketBarsResponse,
   MarketCoverageResponse,
@@ -18,4 +20,8 @@ export function getCanonicalMarketCoverage(symbol?: string) {
 
 export function getMarketBars(params: MarketBarsRequestParams) {
   return request.get<never, MarketBarsResponse>('/market/bars/canonical', { params })
+}
+
+export function getMarketBarsPage(params: MarketBarsPageRequest) {
+  return request.get<never, MarketBarsPageResponse>('/market/bars/page', { params })
 }
