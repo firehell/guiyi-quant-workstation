@@ -6,8 +6,8 @@
 
 Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产 PostgreSQL 已从
 `20260808_0035` 升级至最终不可逆 `20260808_0036`，盘点范围内的旧正式数据已删除。固定
-`T0=2026-08-07` 的 JM 重建已真实启动，但在首轮达到 provider quota 后按合同停止；69 品种重建及
-完整历史 Canonical 验收尚未完成。
+`T0=2026-08-07` 的 JM 重建已真实启动并完成一次自然续传；当前已发布 670 个 JM 月分区，但固定
+T0 的只读计划与 audit 仍各有 12 个目标/缺口。69 品种重建及完整历史 Canonical 验收尚未完成。
 
 ## 已冻结的目标合同
 
@@ -38,8 +38,9 @@ OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺�
 
 在用户明确的一次性执行意图下，已执行生产 `0035→0036` migration，删除 `data/raw`、
 `data/processed`、`data/parquet/canonical` 与 `data/canonical-candidates`，并启动 JM 的真实 RQData
-重建。migration 后八张 active 表已验收，旧 Catalog 已清空；JM 当前只有部分 continuous 分区，
-`actual_dominant` 因缺少 concrete-contract 分区保持 fail-closed。provider quota 停止后不得在同一
-额度周期继续调用。未执行服务切换、main/tag/release 或 Runtime promotion。
+重建。migration 后八张 active 表已验收，旧 Catalog 已清空；JM 已完成一次续传并发布 670 个物理月
+分区。该命令的终端结构化 payload 未被执行包装层保留，因此未把停止原因推断为 quota；只读 plan/audit
+已确认仍各有 12 个目标/缺口，且未追加 provider 请求。`actual_dominant` 在缺少对应 concrete-contract
+分区时保持 fail-closed。未执行服务切换、main/tag/release 或 Runtime promotion。
 
 日调度、live、真实通知和自动订单保持关闭，`auto_order=false`。
