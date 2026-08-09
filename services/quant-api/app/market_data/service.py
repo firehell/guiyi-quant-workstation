@@ -132,7 +132,24 @@ class MarketDataService:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
         selected: list[CanonicalBar] = []
         previous_end: datetime | None = None
+        newer_partition: CatalogPartition | None = None
         for partition in partitions:
+            if (
+                newer_partition is None
+                and request.before is not None
+                and partition.coverage_end < request.before
+            ):
+                raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+            if (
+                newer_partition is not None
+                and len(
+                    _months_between(
+                        (partition.year, partition.month),
+                        (newer_partition.year, newer_partition.month),
+                    )
+                ) > 2
+            ):
+                raise MarketDataError("DATASET_OR_PARTITION_MISSING")
             values = self._partition_bars(partition)
             for bar in reversed(values):
                 if request.before is not None and bar.bar_end >= request.before:
@@ -143,6 +160,7 @@ class MarketDataService:
                 previous_end = bar.bar_end
                 if len(selected) == request.limit + 1:
                     return selected
+            newer_partition = partition
         if not selected:
             raise MarketDataError("QUERY_WINDOW_EMPTY")
         return selected
@@ -161,21 +179,23 @@ class MarketDataService:
         if not partitions:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         selected: list[CanonicalBar] = []
-        missing_map_seen = False
+        available_contract_days: set[tuple[str, date]] = set()
         for _, month_partitions in _partition_month_groups(partitions):
             candidates: list[CanonicalBar] = []
             for partition in month_partitions:
                 for bar in self._partition_bars(partition):
                     if request.before is not None and bar.bar_end >= request.before:
                         continue
+                    available_contract_days.add(
+                        (partition.dataset.series_or_contract, bar.trading_day)
+                    )
                     owner = (
                         self._page_weekly_owner(request.symbol, bar.trading_day, mapping_by_day)
                         if request.frequency is BarFrequency.W1
                         else mapping_by_day.get(bar.trading_day)
                     )
                     if owner is None:
-                        missing_map_seen = True
-                        continue
+                        raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
                     if owner.contract == partition.dataset.series_or_contract:
                         candidates.append(bar)
             for bar in sorted(candidates, key=lambda item: item.bar_end, reverse=True):
@@ -183,20 +203,35 @@ class MarketDataService:
                     raise MarketDataError("BAR_IDENTITY_CONFLICT")
                 selected.append(bar)
                 if len(selected) == request.limit + 1:
-                    return self._actual_page_result(request, selected, mapping_by_day)
+                    return self._actual_page_result(
+                        request,
+                        selected,
+                        mapping_by_day,
+                        available_contract_days,
+                    )
         if not selected:
-            if missing_map_seen:
-                raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
-        return self._actual_page_result(request, selected, mapping_by_day)
+        return self._actual_page_result(
+            request,
+            selected,
+            mapping_by_day,
+            available_contract_days,
+        )
 
     def _actual_page_result(
         self,
         request: SeriesPageQuery,
         selected: list[CanonicalBar],
         mapping_by_day: dict[date, MainMapFact],
+        available_contract_days: set[tuple[str, date]],
     ) -> MarketSeriesPageResult:
         page = selected[: request.limit]
+        self._validate_actual_page_boundary(
+            request,
+            page,
+            mapping_by_day,
+            available_contract_days,
+        )
         try:
             missing_days = self.catalog.missing_main_map_days(
                 request.symbol,
@@ -211,6 +246,44 @@ class MarketDataService:
             tuple(mapping_by_day[bar.trading_day] for bar in reversed(page))
         )
         return self._page_result(request, selected, segments)
+
+    def _validate_actual_page_boundary(
+        self,
+        request: SeriesPageQuery,
+        page: list[CanonicalBar],
+        mapping_by_day: dict[date, MainMapFact],
+        available_contract_days: set[tuple[str, date]],
+    ) -> None:
+        """在决定分页边界前验证映射日没有被静默跳过。"""
+        page_start = min(bar.trading_day for bar in page)
+        cursor_day = (
+            request.before.astimezone(SHANGHAI).date()
+            if request.before is not None
+            else None
+        )
+        relevant_maps = tuple(
+            item for item in mapping_by_day.values() if item.trade_date >= page_start
+        )
+        if not relevant_maps:
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        end_day = max(item.trade_date for item in relevant_maps)
+        try:
+            expected_days = self.catalog.trading_days(request.symbol, page_start, end_day)
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        if not expected_days:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        for day in expected_days:
+            if cursor_day is not None and day == cursor_day:
+                continue
+            owner = mapping_by_day.get(day)
+            if owner is None:
+                raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+            if request.frequency is not BarFrequency.W1 and (
+                owner.contract,
+                day,
+            ) not in available_contract_days:
+                raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
 
     def _page_weekly_owner(
         self,

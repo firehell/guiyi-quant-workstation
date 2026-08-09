@@ -154,6 +154,38 @@ def test_query_page_crosses_month_partitions_and_stops_at_history_start(session,
     assert result.next_before is None
 
 
+def test_query_page_rejects_an_internal_missing_month_before_returning_older_bars(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    _publish(catalog, store, key, (_bar(31, 100),))
+    _publish(catalog, store, key, (_bar(1, 102, month=3),))
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        service.query_page(SeriesPageQuery("continuous", "jm", "1d", limit=2))
+
+
+def test_query_page_rejects_cursor_beyond_newest_catalog_coverage(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    _publish(
+        catalog,
+        store,
+        DatasetKey("continuous", "jm", "MAIN", "1d"),
+        (_bar(2, 100),),
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        service.query_page(
+            SeriesPageQuery(
+                "continuous",
+                "jm",
+                "1d",
+                before=datetime(2025, 1, 3, 7, tzinfo=UTC),
+            )
+        )
+
+
 def test_query_page_actual_dominant_filters_by_formal_owner(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1d"), (_bar(2, 100),))
@@ -178,6 +210,16 @@ def test_query_page_actual_dominant_crosses_contract_switch(session, tmp_path) -
 
     assert [bar.close for bar in result.bars] == [Decimal("100"), Decimal("200")]
     assert [segment.contract for segment in result.resolved_contract_segments] == ["JM2505", "JM2509"]
+
+
+def test_query_page_actual_dominant_rejects_newer_mapped_contract_without_bar(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1d"), (_bar(2, 100),))
+    _calendar_and_map(session, catalog, ((2, "JM2505"), (3, "JM2509")))
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="MAPPED_CONTRACT_DATASET_MISSING"):
+        service.query_page(SeriesPageQuery("actual_dominant", "jm", "1d", limit=2))
 
 
 def test_query_page_actual_dominant_week_uses_complete_week_owner(session, tmp_path) -> None:
