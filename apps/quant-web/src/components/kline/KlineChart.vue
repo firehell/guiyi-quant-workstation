@@ -36,6 +36,7 @@ let volume: ISeriesApi<'Histogram'> | null = null
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 let isNearLeftBoundary = false
+let paginationArmed = false
 
 onMounted(async () => {
   await nextTick()
@@ -112,11 +113,16 @@ function sortAndDedupe(bars: BarData[]): BarData[] {
 function replaceBars(bars: BarData[]): void {
   renderedBars = sortAndDedupe(bars)
   if (!candles || !volume || !chart) return
+  paginationArmed = false
   candles.setData(barValues(renderedBars))
   volume.setData(volumeValues(renderedBars))
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
   chart.timeScale().fitContent()
-  isNearLeftBoundary = true
+  requestAnimationFrame(() => {
+    const range = chart?.timeScale().getVisibleLogicalRange()
+    isNearLeftBoundary = !!range && range.from <= 20
+    paginationArmed = true
+  })
 }
 
 function prependBars(bars: BarData[]): void {
@@ -161,7 +167,7 @@ function scrollToLatest(): void {
 }
 
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
-  if (!range || !renderedBars.length || props.loading) return
+  if (!paginationArmed || !range || !renderedBars.length || props.loading) return
   const nearLeftBoundary = range.from <= 20
   if (!nearLeftBoundary) {
     isNearLeftBoundary = false

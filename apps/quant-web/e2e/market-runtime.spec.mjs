@@ -19,8 +19,9 @@ function bars(start, count, seed = 100) {
 }
 
 test('historical pagination requests the latest page before its cursor page', async ({ page }) => {
-  const initialBars = bars(Date.UTC(2026, 7, 7, 1), 100)
-  const olderBars = [...bars(Date.UTC(2026, 7, 6, 1), 100, 0), initialBars[0]]
+  const initialStart = Date.UTC(2026, 7, 7, 1)
+  const initialBars = bars(initialStart, 1200)
+  const olderBars = [...bars(initialStart - 1200 * 15 * 60 * 1000, 1200, 0), initialBars[0]]
   const requests = []
 
   await page.route('**/api/v1/market/**', async (route) => {
@@ -62,13 +63,16 @@ test('historical pagination requests the latest page before its cursor page', as
   expect(first.searchParams.has('before')).toBe(false)
   expect(first.searchParams.has('start')).toBe(false)
   expect(first.searchParams.has('end')).toBe(false)
-  await expect(page.getByText('100 bars')).toBeVisible()
+  await expect(page.getByText('1200 bars')).toBeVisible()
 
   const canvas = page.locator('.chart canvas').first()
   const box = await canvas.boundingBox()
   expect(box).not.toBeNull()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.wheel(0, -1600)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 20, box.y + box.height / 2, { steps: 12 })
+  await page.mouse.up()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
   await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2, { steps: 12 })
   await page.mouse.up()
@@ -76,6 +80,6 @@ test('historical pagination requests the latest page before its cursor page', as
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).length).toBe(2)
   const second = requests.filter((url) => url.pathname.endsWith('/bars/page'))[1]
   expect(second.searchParams.get('before')).toBe(initialBars[0].bar_end)
-  await expect(page.getByText('199 bars')).toBeVisible()
+  await expect(page.getByText('2400 bars')).toBeVisible()
   expect(requests.every((url) => !(url.searchParams.has('start') && url.searchParams.has('end')))).toBe(true)
 })

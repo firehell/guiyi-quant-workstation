@@ -8,9 +8,7 @@
     "build": "vue-tsc -b && vite build && node scripts/checkProductionBundleTopology.mjs dist",
     "test": "node --test tests/*.test.ts",
     "test:indicators": "node --test tests/indicators.test.ts",
-    "test:e2e": "node e2e/run-mock-smoke.mjs",
-    "test:e2e:readonly": "REAL_BACKEND=1 node e2e/run-readonly-smoke.mjs",
-    "test:e2e:playwright-cli": "playwright test -c playwright.config.mjs",
+    "test:e2e": "playwright test -c playwright.config.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,7 +22,7 @@
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.12.3",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vue/tsconfig": "^0.9.1",
