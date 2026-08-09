@@ -76,12 +76,7 @@ def aggregate_from_1m(
 
     失败模式: 源不完整、session 重叠、或存在 session 外 1m 时抛出 ``AggregationError``。
     """
-    try:
-        frequency = BarFrequency(target_frequency)
-    except ValueError as exc:
-        raise AggregationError("TARGET_FREQUENCY_INVALID") from exc
-    if frequency not in DERIVED_FREQUENCIES:
-        raise AggregationError("TARGET_FREQUENCY_NOT_DERIVED")
+    frequency = _derived_frequency(target_frequency)
     _validate_sessions(sessions)
     source = tuple(bars)
     if any(
@@ -92,7 +87,6 @@ def aggregate_from_1m(
 
     assigned: set[datetime] = set()
     output: list[CanonicalBar] = []
-    width = _MINUTES[frequency]
     for session in sessions:
         session_bars = tuple(bar for bar in source if session.start < bar.bar_end <= session.end)
         expected_count = int((session.end - session.start).total_seconds() // 60)
@@ -106,17 +100,35 @@ def aggregate_from_1m(
         assigned.update(expected_ends)
         buckets: dict[datetime, list[CanonicalBar]] = {}
         for bar in session_bars:
-            elapsed = int((bar.bar_end - session.start).total_seconds() // 60)
-            # 按 session 内经过分钟数分桶，末桶不超过 session 末分钟
-            bucket_minutes = min(ceil(elapsed / width) * width, expected_count)
-            bucket_end = session.start + timedelta(minutes=bucket_minutes)
+            bucket_end = bucket_window_for_bar(session, frequency, bar.bar_end).end
             buckets.setdefault(bucket_end, []).append(bar)
         for bucket_end in sorted(buckets):
-            output.append(_aggregate_bucket(tuple(buckets[bucket_end]), bucket_end=bucket_end))
+            output.append(aggregate_bucket(tuple(buckets[bucket_end]), bucket_end=bucket_end))
     # 所有源 1m 必须落在某个 session 内，禁止跨夜或未声明时段的 bar
     if {bar.bar_end for bar in source} != assigned:
         raise AggregationError("SOURCE_1M_OUTSIDE_SESSION")
     return tuple(output)
+
+
+def bucket_window_for_bar(
+    session: SessionWindow,
+    frequency: BarFrequency | str,
+    bar_end: datetime,
+) -> SessionWindow:
+    """返回 session 内包含 ``bar_end`` 的派生频率桶，绝不跨 session。"""
+    target_frequency = _derived_frequency(frequency)
+    if bar_end.tzinfo is None or bar_end.utcoffset() is None:
+        raise AggregationError("BAR_TIMEZONE_REQUIRED")
+    normalized_end = bar_end.astimezone(UTC)
+    if not session.start < normalized_end <= session.end:
+        raise AggregationError("BAR_OUTSIDE_SESSION")
+
+    width = _MINUTES[target_frequency]
+    elapsed = int((normalized_end - session.start).total_seconds() // 60)
+    bucket_minutes = min(ceil(elapsed / width) * width, int((session.end - session.start).total_seconds() // 60))
+    bucket_end = session.start + timedelta(minutes=bucket_minutes)
+    bucket_start = session.start + timedelta(minutes=((elapsed - 1) // width) * width)
+    return SessionWindow(start=bucket_start, end=bucket_end)
 
 
 def _validate_sessions(sessions: tuple[SessionWindow, ...]) -> None:
@@ -128,12 +140,14 @@ def _validate_sessions(sessions: tuple[SessionWindow, ...]) -> None:
             raise AggregationError("SESSIONS_OVERLAP_OR_UNORDERED")
 
 
-def _aggregate_bucket(
+def aggregate_bucket(
     bars: tuple[CanonicalBar, ...],
     *,
     bucket_end: datetime,
 ) -> CanonicalBar:
     """单桶 OHLCV 聚合：open=首根、close/OI=末根、高低极值、量额求和。"""
+    if not bars:
+        raise AggregationError("AGGREGATE_BUCKET_EMPTY")
     first = bars[0]
     last = bars[-1]
     turnovers = tuple(bar.turnover for bar in bars)
@@ -152,3 +166,13 @@ def _aggregate_bucket(
         ),
         open_interest=last.open_interest,
     )
+
+
+def _derived_frequency(frequency: BarFrequency | str) -> BarFrequency:
+    try:
+        result = BarFrequency(frequency)
+    except (TypeError, ValueError) as exc:
+        raise AggregationError("TARGET_FREQUENCY_INVALID") from exc
+    if result not in DERIVED_FREQUENCIES:
+        raise AggregationError("TARGET_FREQUENCY_NOT_DERIVED")
+    return result
