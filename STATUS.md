@@ -11,7 +11,7 @@ launchd 模板默认关闭；本地验证没有启动或加载 Market Runtime、
 生产 DB 或发送通知。`docs/tasks/GY-MARKET-RUNTIME-V1.md` 状态为
 `implementation_ready_for_canary`，不是 `active_v1`。
 
-本轮本地验证：后端 327 passed / 13 skipped、前端 65 passed / 1 skipped、mock Playwright 3 passed、
+本轮本地验证：后端 328 passed / 13 skipped、前端 65 passed / 1 skipped、mock Playwright 3 passed、
 Ruff 通过、两份 Market Runtime plist render/lint 通过。计划指定的 MarketData Mypy 范围仍有 4 个既有
 类型错误（`catalog.py`、`service.py`、`maintenance.py`，均非 MR-07 改动）；该静态检查问题不构成真实
 Runtime 启用授权，MR-08 仍必须先完成只读 preflight 并取得一次明确的“启用 Market Runtime V1”请求。
