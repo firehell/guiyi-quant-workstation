@@ -29,7 +29,7 @@ from app.market_data.product_retirement import (
 
 def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
-    if args.data_command == "retire-products":
+    if args.data_command in {"retire-products", "after-market"}:
         return None
     if args.data_command == "update":
         return UpdateRequest(
