@@ -205,6 +205,8 @@ def _public_maintenance_failure_code(stop_reason: str | None) -> str:
     """仅传递明确定义为公开的维护 stop code。"""
     if stop_reason == "maintenance_locked":
         return "MAINTENANCE_LOCKED"
+    if stop_reason == "provider_quota_exhausted":
+        return "PROVIDER_QUOTA_EXHAUSTED"
     if stop_reason in _PUBLIC_ERROR_CODES:
         return stop_reason
     return "UPDATE_FAILED"

@@ -177,8 +177,8 @@ def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) 
         trading_day=date(2026, 8, 10),
         readiness=[True, True],
         results=[
-            _result("partial", stop_reason="PROVIDER_QUOTA_EXHAUSTED"),
-            _result("partial", stop_reason="PROVIDER_QUOTA_EXHAUSTED"),
+            _result("partial", stop_reason="provider_quota_exhausted"),
+            _result("partial", stop_reason="provider_quota_exhausted"),
         ],
     )
 
