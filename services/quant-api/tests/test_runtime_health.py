@@ -141,6 +141,27 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
     assert stale["components"]["live_market"]["error_type"] == "live_heartbeat_stale"
 
 
+def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_bytes() -> None:
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={"live:heartbeat": b"\xff\xfetoken=must-not-leak"}
+            ),
+            rq_collector=lambda connection: _rq_ok(),
+            live_runtime_enabled=True,
+            after_market_status_path=None,
+        )
+
+    live = payload["components"]["live_market"]
+    assert payload["status"] == "degraded"
+    assert live["status"] == "degraded"
+    assert live["error_type"] == "live_heartbeat_invalid"
+    assert live["error_message"] is None
+    assert _contains_no_secret_words(payload)
+
+
 def test_runtime_health_surfaces_only_public_after_market_failure(tmp_path) -> None:
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
@@ -225,7 +246,7 @@ def test_worker_coverage_requires_each_expected_queue() -> None:
 
 
 class FakeRedis:
-    def __init__(self, exc: Exception | None = None, values: dict[str, str] | None = None) -> None:
+    def __init__(self, exc: Exception | None = None, values: dict[str, str | bytes] | None = None) -> None:
         self.exc = exc
         self.values = values or {}
 
@@ -234,7 +255,7 @@ class FakeRedis:
             raise self.exc
         return True
 
-    def get(self, key: str) -> str | None:
+    def get(self, key: str) -> str | bytes | None:
         return self.values.get(key)
 
 

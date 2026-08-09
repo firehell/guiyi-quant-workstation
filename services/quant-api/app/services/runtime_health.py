@@ -164,7 +164,14 @@ def _collect_live_market_health(
             **empty,
             **(_error_fields(exc) if configured_enabled else {}),
         }
-    heartbeat = _json_mapping(raw)
+    try:
+        heartbeat = _json_mapping(raw)
+    except UnicodeDecodeError:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            **empty,
+            "error_type": "live_heartbeat_invalid" if configured_enabled else None,
+        }
     if heartbeat is None:
         return {
             "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
