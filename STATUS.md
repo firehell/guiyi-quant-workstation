@@ -1,8 +1,20 @@
 # 当前状态
 
-更新时间：2026-08-09
+更新时间：2026-08-10
 
 ## 结论
+
+Market Runtime V1 的 MR-01～MR-07 已在本地 worktree 完成并验证：历史 cursor 分页、operational
+`j/jm/ap/ag` phase/universe、最多一次的盘后 retry、Redis Live Overlay、Market REST/WS、Web seam、
+运行健康与 launchd 包装均已实现。运行范围仍为 **0/4 已启用**（配置能力为 `j/jm/ap/ag` 四品种），
+launchd 模板默认关闭；本地验证没有启动或加载 Market Runtime、订阅真实 RQData Live、写入 Canonical/
+生产 DB 或发送通知。`docs/tasks/GY-MARKET-RUNTIME-V1.md` 状态为
+`implementation_ready_for_canary`，不是 `active_v1`。
+
+本轮本地验证：后端 327 passed / 13 skipped、前端 65 passed / 1 skipped、mock Playwright 3 passed、
+Ruff 通过、两份 Market Runtime plist render/lint 通过。计划指定的 MarketData Mypy 范围仍有 4 个既有
+类型错误（`catalog.py`、`service.py`、`maintenance.py`，均非 MR-07 改动）；该静态检查问题不构成真实
+Runtime 启用授权，MR-08 仍必须先完成只读 preflight 并取得一次明确的“启用 Market Runtime V1”请求。
 
 Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产 PostgreSQL 已从
 `20260808_0035` 升级至最终不可逆 `20260808_0036`，盘点范围内的旧正式数据已删除。固定

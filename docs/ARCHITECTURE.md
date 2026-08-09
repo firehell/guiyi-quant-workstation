@@ -5,7 +5,8 @@
 ## 系统定位
 
 归一量化是本地优先、单用户的国内期货研究工作站。当前目标应用面为 Market Web、Market API、
-三条数据 CLI 与 Canonical 历史读取；不实现自动交易，`auto_order=false` 始终成立。
+数据 CLI 与 Canonical 历史读取；Market Runtime V1 代码已实现但默认关闭，不实现自动交易，
+`auto_order=false` 始终成立。
 
 ## 分层设计
 
@@ -77,3 +78,9 @@ flowchart LR
 `update` 计划缺失或不完整月并自然续传；`refresh` 只重建用户指定的品种/窗口；`audit` 只读。
 代码、fixture、临时目录和隔离数据库验证是普通开发。真实 RQData、正式 Canonical、生产数据库
 migration 与服务启停，必须分别获得范围明确的一次性执行意图。
+
+Market Runtime V1 分为三条明确边界的平面：Historical 继续由 `HistoricalDataManager` 发布 Canonical；
+LiveMarketService 只将当日 `j/jm/ap/ag` 的 rank1 completed 1m 与本地 Derived 写入 Redis；
+AfterMarketUpdater 只在 launchd 的 17:00 触发（失败最多一小时后重试一次）调用既有历史写入口。Live
+永不进入 Canonical、Parquet 或 PostgreSQL。代码与模板默认关闭；只有用户明确请求在该本地工作站启用
+Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 release、其他 DB、通知或订单。

@@ -1,7 +1,7 @@
 # GY-MARKET-RUNTIME-V1：历史分页、盘后自动更新与主力实时行情设计
 
-更新时间：2026-08-09  
-Disposition：`design_ready_for_review`  
+更新时间：2026-08-10
+Disposition：`implementation_ready_for_canary`
 事实基线：`develop@6972b712e8d29466ff460c6be179bc8d2d52d38c`
 
 ## 1. 目标
@@ -1620,4 +1620,6 @@ Canonical / Live seam
 
 其余不建设企业级恢复、队列、权限、多用户或多版本体系。
 
-当前状态仅代表设计已收敛并可供用户审查；尚未授权真实 Live 启用、launchd 安装、每日自动 Canonical 写入或任何其他真实 Runtime mutation。
+MR-01～MR-07 已完成本地代码、fixture/mock、build 与 render-only 验证，因此本文件可进入
+`implementation_ready_for_canary`。该状态不是实际启用：尚未授权真实 Live 启用、launchd 安装、每日自动
+Canonical 写入或任何其他真实 Runtime mutation；MR-08 仍须用户对该本地工作站明确请求“启用 Market Runtime V1”。

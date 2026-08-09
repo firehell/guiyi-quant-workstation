@@ -35,9 +35,10 @@ develop
   且保留 deep canonical 的业务约束。
 - tracked 内容发生变化时运行适用的 secret scan；输出不得包含命中的秘密值。
 
-当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 runtime health
-scheduler component。不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建
-必须单独立项并从 Canonical/MarketDataService 合同开始。
+当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或旧 scheduler component。
+Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现，但 launchd 默认关闭。
+不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建必须单独立项并从
+Canonical/MarketDataService 合同开始。
 
 任何必需检查失败时，明确报告失败，不宣称任务完成。CI 如存在，只是补充结果，不是本地开发、
 commit 或 push 的前置授权。
@@ -64,6 +65,11 @@ Dry-run 只验证计划，绝不转化为 mutation authorization。授权模型�
 Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub 规则修改；每个类别和范围必须
 分别请求。普通 `git push origin develop` 仍属于上述日常开发流，不继承为 release/tag 或其他
 外部操作权限。
+
+唯一的持续授权例外是用户明确要求在识别出的本地工作站“启用 Market Runtime V1”后，既定
+`operational_products.txt`（当前 `j/jm/ap/ag`）的 rank1 Live 观察与 17:00/一次 1h retry 盘后更新可
+持续运行；该请求不授权改变 `operational_products`、其他 DB mutation、release、真实通知或订单。未
+收到该请求时，只能执行 mock、临时目录、render-only 与只读健康验证。
 
 ## 不可放宽的业务边界
 

@@ -2,8 +2,7 @@
 
 健康检查分层说明：
 - **真实探测**：``db``（SELECT 1）、``redis``（PING）、``rq``（队列 registry 与 worker 列表）
-- **退役 stub**：``live_checkpoints``、``archive``、``after_market_scheduler``、
-  ``notification_retry`` — 固定 ``status=disabled``、``retired=True``，不查 DB/Redis
+- **Market Runtime 只读状态**：Redis ``live:heartbeat`` 与本地盘后公开状态文件
 
 安全与 fail-closed：
 - 健康端点捕获异常并降级为 failed/degraded，不向 HTTP 层抛出原始 stack trace
@@ -13,9 +12,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections.abc import Callable, Mapping
+from datetime import UTC, date, datetime
+import json
 import os
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -26,12 +27,24 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.queue import get_redis_connection
+from app.core.env import PROJECT_ROOT
 
 RUNTIME_STATUS_OK = "ok"
 RUNTIME_STATUS_DEGRADED = "degraded"
 RUNTIME_STATUS_FAILED = "failed"
 RUNTIME_STATUS_UNKNOWN = "unknown"
 RUNTIME_STATUS_DISABLED = "disabled"
+DEFAULT_AFTER_MARKET_STATUS_PATH = PROJECT_ROOT / ".run" / "after-market-status.json"
+_PUBLIC_AFTER_MARKET_ERROR_CODES = frozenset(
+    {
+        "MAINTENANCE_LOCKED",
+        "NON_TRADING_DAY",
+        "PROVIDER_QUOTA_EXHAUSTED",
+        "RQDATA_NOT_READY",
+        "RQDATA_READY_CHECK_FAILED",
+        "UPDATE_FAILED",
+    }
+)
 
 # 当前无活跃业务队列；空元组时 RQ 健康仅枚举 worker、不检查队列积压
 RUNTIME_QUEUE_NAMES: tuple[str, ...] = ()
@@ -63,15 +76,16 @@ def build_runtime_health(
     after_market_automation_enabled: bool | None = None,
     live_polling_expected: bool | None = None,
     live_market_phase: str | None = None,
+    after_market_status_path: Path | None = DEFAULT_AFTER_MARKET_STATUS_PATH,
 ) -> dict[str, Any]:
     """构建 Runtime 健康快照字典（供 HTTP 与 CLI 共用）。
 
-    真实探测 db/redis/rq；退役组件返回固定 stub。可选注入 redis_factory、
-    rq_collector 供测试替换；live/archive/notification 相关参数已永久退役，传入即忽略。
+    真实探测 db/redis/rq，读取 Market Runtime 的公开状态。可选注入 redis_factory 与
+    rq_collector 供测试替换；其余旧 Profile 参数保持兼容但不参与状态判定。
     """
     current_time = now or datetime.now(UTC)
-    # Live 轮询 / 通知 / 盘后归档 Profile 路径已永久退役，忽略历史开关参数
-    del live_runtime_enabled, live_polling_expected, live_market_phase, notification_autosend_enabled
+    # 已退役参数不改变 V1 状态；live_runtime_enabled 保留为测试/本地装配可注入开关。
+    del live_polling_expected, live_market_phase, notification_autosend_enabled
     del archive_enabled, after_market_automation_enabled
     freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
     components: dict[str, Any] = {}
@@ -95,11 +109,17 @@ def build_runtime_health(
         else:
             components["rq"] = _collect_rq_health(redis_connection, queue_names=RUNTIME_QUEUE_NAMES)
 
-    # 以下为退役 stub，不执行真实 DB/Redis 查询
-    components["live_checkpoints"] = _retired_live_checkpoint_health(freshness_seconds=freshness_seconds)
-    components["notification_retry"] = _retired_notification_retry_health()
-    components["archive"] = _retired_archive_health()
-    components["after_market_scheduler"] = _retired_after_market_scheduler_health()
+    components["live_market"] = _collect_live_market_health(
+        redis_connection,
+        now=current_time,
+        configured_enabled=(
+            _env_truthy("GUIYI_MARKET_RUNTIME_ENABLED")
+            if live_runtime_enabled is None
+            else live_runtime_enabled
+        ),
+        freshness_seconds=freshness_seconds,
+    )
+    components["after_market"] = _collect_after_market_health(after_market_status_path)
 
     return {
         "status": _overall_status(components.values()),
@@ -112,62 +132,106 @@ def build_runtime_health(
     }
 
 
-def _retired_live_checkpoint_health(*, freshness_seconds: int) -> dict[str, Any]:
-    """盘中 Live checkpoint 健康 stub（已退役，enabled=False）。"""
-    return {
-        "status": RUNTIME_STATUS_DISABLED,
-        "enabled": False,
-        "retired": True,
-        "freshness_seconds": freshness_seconds,
-        "stale": False,
-        "polling_expected": False,
-        "market_phase": "retired",
-        "ingest_count": 0,
-        "aggregation_count": 0,
-        "status_counts": {},
-        "latest_success_at": None,
-        "latest_error": None,
-        "recent_ingest": [],
-        "recent_aggregation": [],
+def _collect_live_market_health(
+    connection: Redis | None,
+    *,
+    now: datetime,
+    configured_enabled: bool,
+    freshness_seconds: int,
+) -> dict[str, Any]:
+    """从短 TTL Redis heartbeat 读取 Live V1 状态；不创建订阅或写 Redis。"""
+    empty: dict[str, Any] = {
+        "configured_enabled": configured_enabled,
+        "operational_count": 0,
+        "subscribed_count": 0,
+        "last_heartbeat_at": None,
+        "last_bar_at": None,
+        "phase_counts": {},
         "error_type": None,
         "error_message": None,
     }
-
-
-def _retired_archive_health() -> dict[str, Any]:
-    """盘后归档任务健康 stub（已退役）。"""
-    return {
-        "status": RUNTIME_STATUS_DISABLED,
-        "enabled": False,
-        "retired": True,
-        "latest_task_no": None,
-        "latest_task_status": None,
-        "latest_contract": None,
-        "latest_finished_at": None,
-        "latest_error_type": None,
-        "error_type": None,
-        "error_message": None,
+    if connection is None:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            **empty,
+            "error_type": "redis_unavailable" if configured_enabled else None,
+        }
+    try:
+        raw = connection.get("live:heartbeat")
+    except Exception as exc:  # noqa: BLE001 - health reads must fail closed.
+        return {
+            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            **empty,
+            **(_error_fields(exc) if configured_enabled else {}),
+        }
+    heartbeat = _json_mapping(raw)
+    if heartbeat is None:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            **empty,
+            "error_type": "live_heartbeat_missing" if configured_enabled else None,
+        }
+    try:
+        heartbeat_at = _required_timestamp(heartbeat.get("generated_at"))
+        operational_count = _nonnegative_int(heartbeat.get("operational_count"))
+        subscribed_count = _nonnegative_int(heartbeat.get("subscribed_count"))
+        last_bar_at = _optional_timestamp(heartbeat.get("last_bar_at"))
+        phase_counts = _phase_counts(heartbeat.get("phase_counts"))
+        available = heartbeat.get("available") is True
+    except ValueError:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            **empty,
+            "error_type": "live_heartbeat_invalid" if configured_enabled else None,
+        }
+    payload = {
+        **empty,
+        "operational_count": operational_count,
+        "subscribed_count": subscribed_count,
+        "last_heartbeat_at": _iso(heartbeat_at),
+        "last_bar_at": _iso(last_bar_at),
+        "phase_counts": phase_counts,
     }
+    stale = heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
+    if not configured_enabled:
+        return {"status": RUNTIME_STATUS_DISABLED, **payload}
+    if stale:
+        return {"status": RUNTIME_STATUS_DEGRADED, **payload, "error_type": "live_heartbeat_stale"}
+    if not available:
+        return {"status": RUNTIME_STATUS_DEGRADED, **payload, "error_type": "live_unavailable"}
+    return {"status": RUNTIME_STATUS_OK, **payload}
 
 
-def _retired_after_market_scheduler_health() -> dict[str, Any]:
-    """盘后调度器健康 stub（已退役）。"""
-    return {
-        "status": RUNTIME_STATUS_DISABLED,
-        "enabled": False,
-        "retired": True,
+def _collect_after_market_health(status_path: Path | None) -> dict[str, Any]:
+    """读取盘后运行的公开状态文件；不恢复任何 scheduler/checkpoint 模型。"""
+    empty = {
+        "last_run": None,
         "last_successful_trading_day": None,
-        "latest_completed_trading_day": None,
-        "latest_eligible_trading_day": None,
-        "archive_lag_trading_days": None,
-        "current_task": None,
-        "last_error_type": None,
-        "last_error_at": None,
-        "retry_count": 0,
-        "scheduler_heartbeat": None,
-        "next_retry_at": None,
-        "authorization_hash": None,
-        "lock_status": None,
+        "last_failure": None,
+        "error_type": None,
+        "error_message": None,
+    }
+    if status_path is None or not status_path.exists():
+        return {"status": RUNTIME_STATUS_DISABLED, **empty}
+    try:
+        raw = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
+    if not isinstance(raw, Mapping):
+        return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
+    last_run = _public_after_market_run(raw.get("last_run"))
+    last_success = _public_trading_day(raw.get("last_successful_trading_day"))
+    last_failure = _public_after_market_failure(raw.get("last_failure"))
+    if last_run is None and last_success is None and last_failure is None:
+        return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
+    status = RUNTIME_STATUS_UNKNOWN
+    if last_run is not None:
+        status = RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
+    return {
+        "status": status,
+        "last_run": last_run,
+        "last_successful_trading_day": last_success,
+        "last_failure": last_failure,
         "error_type": None,
         "error_message": None,
     }
@@ -291,30 +355,7 @@ def _apply_worker_coverage(queue_results: list[dict[str, Any]], worker_results: 
     return missing
 
 
-def _retired_notification_retry_health() -> dict[str, Any]:
-    """企业微信通知重试健康 stub（已退役，channel=retired）。"""
-    return {
-        "status": RUNTIME_STATUS_DISABLED,
-        "enabled": False,
-        "retired": True,
-        "channel": "retired",
-        "total_count": 0,
-        "retry_pending_count": 0,
-        "due_retry_count": 0,
-        "failed_count": 0,
-        "sent_count": 0,
-        "skipped_count": 0,
-        "pending_count": 0,
-        "next_retry_at": None,
-        "last_sent_at": None,
-        "last_failed_at": None,
-        "last_error_type_counts": {},
-        "error_type": None,
-        "error_message": None,
-    }
-
-
-def _worker_payload(worker: Worker) -> dict[str, Any]:
+def _worker_payload(worker: Any) -> dict[str, Any]:
     """将 RQ Worker 对象序列化为健康响应子结构。"""
     queues = []
     for queue in getattr(worker, "queues", []) or []:
@@ -350,6 +391,109 @@ def _env_positive_int(name: str, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return value if value > 0 else default
+
+
+def _env_truthy(name: str) -> bool:
+    """仅明确 true 值启用 Runtime；缺失或异常配置保持默认关闭。"""
+    return str(os.getenv(name, "")).strip().lower() in {"1", "true", "yes"}
+
+
+def _json_mapping(value: object) -> Mapping[str, Any] | None:
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="strict")
+    if not isinstance(value, str):
+        return None
+    try:
+        payload = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    return payload if isinstance(payload, Mapping) else None
+
+
+def _required_timestamp(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError("timestamp required")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("timezone required")
+    return parsed.astimezone(UTC)
+
+
+def _optional_timestamp(value: object) -> datetime | None:
+    return None if value is None else _required_timestamp(value)
+
+
+def _nonnegative_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("nonnegative integer required")
+    return value
+
+
+def _phase_counts(value: object) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        raise ValueError("phase counts required")
+    result: dict[str, int] = {}
+    for phase, count in value.items():
+        if not isinstance(phase, str) or not phase or isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("invalid phase count")
+        result[phase] = count
+    return result
+
+
+def _public_trading_day(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        return None
+
+
+def _public_after_market_failure(value: object) -> dict[str, str] | None:
+    if not isinstance(value, Mapping):
+        return None
+    trading_day = _public_trading_day(value.get("trading_day"))
+    error_code = value.get("error_code")
+    if trading_day is None or error_code not in _PUBLIC_AFTER_MARKET_ERROR_CODES:
+        return None
+    return {"trading_day": trading_day, "error_code": error_code}
+
+
+def _public_after_market_run(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    trading_day = _public_trading_day(value.get("trading_day"))
+    status = value.get("status")
+    attempts = value.get("attempts")
+    products = value.get("products")
+    error_code = value.get("error_code")
+    started_at_text = value.get("started_at")
+    finished_at_text = value.get("finished_at")
+    try:
+        _required_timestamp(started_at_text)
+        _required_timestamp(finished_at_text)
+    except ValueError:
+        return None
+    if (
+        trading_day is None
+        or status not in {"passed", "failed", "skipped"}
+        or isinstance(attempts, bool)
+        or not isinstance(attempts, int)
+        or attempts < 0
+        or not isinstance(products, list)
+        or any(not isinstance(product, str) or not product.strip() for product in products)
+        or (error_code is not None and error_code not in _PUBLIC_AFTER_MARKET_ERROR_CODES)
+    ):
+        return None
+    return {
+        "trading_day": trading_day,
+        "status": status,
+        "attempts": attempts,
+        "started_at": started_at_text,
+        "finished_at": finished_at_text,
+        "products": [product.strip().lower() for product in products],
+        "error_code": error_code,
+    }
 
 
 def _count_value(value: Any) -> int:

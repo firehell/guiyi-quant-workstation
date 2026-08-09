@@ -6,7 +6,8 @@
 
 归一量化是本地运行、单用户的国内期货量化研究工作站。当前只服务可信历史行情、Market Web、
 Indicator Kernel 与未来研究；不做自动交易、实盘下单、SaaS、多用户、高频/Tick 平台或 AI 自动
-晋升策略。当前没有 backtest 子系统、Signal/Review/Strategy 应用面或盘中 Live 路径。
+晋升策略。当前没有 backtest 子系统或 Signal/Review/Strategy 应用面。Market Runtime V1 的历史分页、
+Redis Live Overlay、盘后更新与 WebSocket 代码已实现，但 launchd 尚未启用。
 
 ## Data Foundation 目标合同
 
@@ -34,14 +35,17 @@ RQData
   确定；不维护第二套发布、缺口或内容摘要状态。
 - 所有消费者共用 `MarketDataService`，不得 glob、自选文件、自判主力或跨频回退。
 
-最终用户接口为 `guiyi data update|refresh|audit|retire-products` 与 `/api/v1/market/*`。DFD-02～DFD-06
-正在把当前实现收口至此合同；现有仓库代码中的旧入口不能作为新合同依据。
+最终用户接口为 `guiyi data update|refresh|audit|retire-products` 与 `/api/v1/market/*`。Market Runtime
+仅限 `operational_products.txt` 的 `j/jm/ap/ag`：Live 只观察当日 rank1 completed 1m，盘后最多在 17:00
+和一次一小时后 retry 更新这四个品种；Live 永不提升为 Canonical。DFD-02～DFD-06 正在把当前实现收口至此合同；现有仓库代码中的旧入口不能作为新合同依据。
 
 ## 工程与外部操作
 
 普通仓库开发可以在 `develop` 或任务 worktree 中实现、测试、commit 和 push。真实 RQData、
 正式 Canonical 写入/切换、生产数据库 mutation、Runtime/live、真实通知、release/tag 等均需执行前
-获得范围明确的一次性意图；dry-run 不授权后续 mutation。
+获得范围明确的一次性意图；dry-run 不授权后续 mutation。Market Runtime V1 例外仅在用户明确请求启用
+该本地工作站后生效：该一次启用允许其既定四品种 Live 与盘后有限自动化持续运行，不授权任何其他 DB、
+release、通知或订单动作。
 
 任何结论只证明其精确验证范围；不由代码、测试或数据存在推导盈利、长期稳定、交易或 Runtime Ready。
 
