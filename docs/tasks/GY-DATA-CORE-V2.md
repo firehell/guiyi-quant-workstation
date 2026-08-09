@@ -45,5 +45,6 @@ guiyi data audit --universe active
 7. DFD-07 仅在获得单次外部执行意图后，确认生产 revision、执行正式数据清理/migration，并从
    RQData 重建。
 
-当前代码与 DFD-01 target 仍有差异；只有已完成并经验证的 DFD 才能写入 `STATUS.md`。日调度、live、
-通知与自动订单不在本 change 授权内，`auto_order=false`。
+DFD-01～DFD-06 的仓库收口已完成并写入 `STATUS.md`；DFD-07 的生产重建与完整品种验收仍在进行。
+日调度、live、通知与自动订单不在本 change 授权内，`auto_order=false`。
+当前实现与事实以 `STATUS.md`、`docs/DATA_CENTER.md` 和 `app/market_data/` 为准。

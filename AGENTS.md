@@ -9,8 +9,9 @@
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
-技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis/RQ 与
-RQData → Parquet → DuckDB；`quant-core` 仅保留 vn.py-compatible 策略研究代码，当前不存在回测引擎或适配层。
+技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis 与
+RQData → Canonical Parquet → 八表 Catalog → MarketDataService；`quant-core` 仅保留
+vn.py-compatible 策略研究与 Indicator Kernel 代码，当前不存在回测引擎或适配层。
 
 ## 个人开发工作流
 

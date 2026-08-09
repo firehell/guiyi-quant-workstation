@@ -43,19 +43,12 @@ app.include_router(runtime_router)
 
 @app.get("/health")
 @app.get("/api/health")
+@app.get("/healthz")
 def health_check():
+    """Liveness aliases share one payload; detailed ops status is /api/runtime/health."""
     return {
         "status": "ok",
         "service": "guiyi-quant-api",
         "version": "0.1.0",
-        "readonly": True,
-    }
-
-
-@app.get("/healthz")
-def healthz_check():
-    return {
-        "status": "ok",
-        "service": "local-workstation",
         "readonly": True,
     }

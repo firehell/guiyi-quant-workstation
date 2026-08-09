@@ -158,7 +158,6 @@ main() {
   info "停止归一量化开发环境..."
 
   stop_pid_file "前端" "${PID_DIR}/web.pid" "pnpm dev"
-  stop_pid_file "Worker(signals)" "${PID_DIR}/worker-signals.pid" "app.worker signals"
   stop_pid_file "API" "${PID_DIR}/api.pid" "uvicorn app.main:app"
 
   if [[ "$KEEP_DOCKER" -eq 1 ]]; then

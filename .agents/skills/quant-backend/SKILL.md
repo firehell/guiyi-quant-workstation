@@ -13,33 +13,32 @@ description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Ale
 - SQLAlchemy 2
 - Alembic
 - PostgreSQL
-- Redis + RQ（signal worker 入口已退役）
-- DuckDB
-- Parquet
+- Redis（runtime 探测；signal/notification worker 已退役）
+- Canonical Parquet + MarketDataService
 - pytest / ruff / mypy
 
 ## Current mounted modules
 
-- Market Canonical 读（bars/coverage/dominants/indicators）
-- data 治理 API + `guiyi data *`
-- runtime 只读状态 + `guiyi runtime status`
-- 盘后 scheduler（默认关闭）
+- Market Canonical 读：`/api/v1/market/bars|coverage|dominants`
+- `guiyi data update|refresh|audit`
+- runtime 只读状态：`/api/runtime/health` + `guiyi runtime status`
+- 轻量 liveness：`/health`、`/api/health`、`/healthz`（同一 payload）
 
-已卸 / 退役：signals、strategies、dashboard、reviews、watchlists、futures_research HTTP；backtest API/worker；`guiyi data live`；poll Live。
+已卸 / 退役：signals、strategies、dashboard、reviews、watchlists、futures_research、data_center HTTP；backtest API/worker；`guiyi data live`；poll Live；RQ signal/notification worker 启动面。
 
 ## 分层
 
-- `api/`：路由和依赖注入。
+- `api/`：路由和依赖注入（当前仅 market + runtime）。
 - `schemas/`：Pydantic 请求/响应。
-- `models/`：SQLAlchemy 模型。
-- `services/`：业务逻辑。
-- `data_core/`：Catalog / Canonical / MarketDataService。
-- `repositories/`：数据库读写。
+- `models/market_tables.py`：八表 ORM。
+- `market_data/`：Catalog / Storage / MarketDataService / maintenance。
+- `guiyi_cli/`：统一 CLI。
+- `services/runtime_health.py`：只读 runtime 探测（含退役组件 stub）。
 
 ## 规则
 
-- 不接实盘自动下单。
-- 路由函数不要堆业务逻辑。
-- DataGap / failed quality fail-closed；dominants coverage 与 Catalog 同口径。
+- 不接实盘自动下单；`auto_order=false`。
+- 路由函数不要堆业务逻辑；Market 读路径经 `MarketDataService`。
+- Catalog / coverage / 物理完整性异常 fail-closed。
 - 禁止在日志与错误中暴露密钥、路径、SQL、stack。
-- 产品面以 `STATUS.md` / `services/quant-api/README.md` 为准。
+- 产品面以 `STATUS.md`、`docs/DATA_CENTER.md`、`services/quant-api/README.md` 为准。

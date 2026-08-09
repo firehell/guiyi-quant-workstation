@@ -1,7 +1,7 @@
 [Unit]
 Description=Guiyi Quant supervised application services
-Requires=guiyi-quant-api.service guiyi-quant-worker-signals.service
-After=guiyi-quant-api.service guiyi-quant-worker-signals.service
+Requires=guiyi-quant-api.service
+After=guiyi-quant-api.service
 
 [Install]
 WantedBy=multi-user.target

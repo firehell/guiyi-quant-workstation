@@ -36,6 +36,11 @@ Market API/Web 的 digest 展示。DFD-05 已实现 `update|refresh|audit`、完
 OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺口合同收口为八表、完整性和
 原子月分区发布合同。
 
+工程双轨收口（2026-08-09）：旧 `data_core` / `rqdata_ingest` 等空壳与 pycache、退役 worker 启动面、
+孤儿 data_profiles / v2_targets、未用 ECharts/DuckDB 依赖已清；Market coverage/dominants 经
+`MarketDataService`；ORM 合并为 `models/market_tables.py`；指标权威定为 quant-core Kernel，Web TS
+仅为观察镜像。事实源仍只认 `STATUS.md`、`docs/DATA_CENTER.md` 与 `app/market_data/`。
+
 ## 外部操作状态
 
 在用户明确的一次性执行意图下，已执行生产 `0035→0036` migration，删除 `data/raw`、

@@ -1,4 +1,3 @@
-import type { EChartsOption } from 'echarts'
 import { HISTORICAL_BAR_FREQUENCIES } from '../types/historicalBarFrequency'
 
 /** A股配色：涨红跌绿 */
@@ -7,20 +6,6 @@ export const STOCK_COLORS = {
   down: '#22c55e',
   flat: '#999999',
 } as const
-
-/** ECharts 通用网格配置 */
-export const defaultGrid: EChartsOption['grid'] = {
-  left: '3%',
-  right: '3%',
-  bottom: '3%',
-  containLabel: true,
-}
-
-/** ECharts 通用 tooltip 配置 */
-export const defaultTooltip: EChartsOption['tooltip'] = {
-  trigger: 'axis',
-  axisPointer: { type: 'cross' },
-}
 
 /** 期货交易所列表 */
 export const EXCHANGES = [

@@ -153,7 +153,6 @@ print_json() {
   printf '"log_dir":"%s",' "$LOG_DIR"
   printf '"services":['
   print_service_json "" "api" "${PID_DIR}/api.pid" "uvicorn app.main:app" "8000" "${LOG_DIR}/api.log"
-  print_service_json "," "worker-signals" "${PID_DIR}/worker-signals.pid" "app.worker signals" "" "${LOG_DIR}/worker-signals.log"
   print_service_json "," "web" "${PID_DIR}/web.pid" "pnpm dev" "5173" "${LOG_DIR}/web.log"
   printf '],'
   printf '"ports":{'
@@ -175,7 +174,6 @@ print_human() {
   printf '[dev-status] 日志目录: %s\n' "$LOG_DIR"
   printf '\n进程:\n'
   print_service_human "API" "${PID_DIR}/api.pid" "uvicorn app.main:app" "8000" "${LOG_DIR}/api.log"
-  print_service_human "Worker(signals)" "${PID_DIR}/worker-signals.pid" "app.worker signals" "" "${LOG_DIR}/worker-signals.log"
   print_service_human "Web" "${PID_DIR}/web.pid" "pnpm dev" "5173" "${LOG_DIR}/web.log"
   printf '\n端口:\n'
   printf '  API 8000:      %s\n' "$(port_state 8000)"

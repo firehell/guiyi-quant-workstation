@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import select
 
 from app.market_data.catalog import CatalogPartition, MainMapFact, MarketCatalog
 from app.market_data.domain import (
@@ -15,6 +18,7 @@ from app.market_data.domain import (
     SeriesQuery,
 )
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
+from app.models import Instrument, MainContractMap, MarketDataset, MarketPartition
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -24,6 +28,27 @@ class MarketDataError(RuntimeError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetCoverageSummary:
+    kind: str
+    symbol: str
+    series_or_contract: str
+    frequency: str
+    start: datetime
+    end: datetime
+    row_count: int
+    partition_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class DominantContractSummary:
+    symbol: str
+    product_name: str
+    exchange: str
+    actual_contract: str
+    dominant_mapping_date: date
 
 
 class MarketDataService:
@@ -97,6 +122,68 @@ class MarketDataService:
         if {item.trade_date for item in selected} - {bar.trading_day for bar in bars}:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         return self._result(request, tuple(bars), segments)
+
+    def list_dataset_coverage(
+        self,
+        symbol: str | None = None,
+    ) -> tuple[DatasetCoverageSummary, ...]:
+        query = select(MarketDataset)
+        if symbol:
+            query = query.where(MarketDataset.symbol == symbol.strip().lower())
+        items: list[DatasetCoverageSummary] = []
+        for dataset in self.catalog.session.scalars(
+            query.order_by(MarketDataset.symbol, MarketDataset.frequency)
+        ):
+            partitions = tuple(
+                self.catalog.session.scalars(
+                    select(MarketPartition)
+                    .where(MarketPartition.dataset_id == dataset.id)
+                    .order_by(MarketPartition.year, MarketPartition.month)
+                )
+            )
+            if not partitions:
+                continue
+            items.append(
+                DatasetCoverageSummary(
+                    kind=dataset.kind,
+                    symbol=dataset.symbol,
+                    series_or_contract=dataset.series_or_contract,
+                    frequency=dataset.frequency,
+                    start=partitions[0].coverage_start,
+                    end=partitions[-1].coverage_end,
+                    row_count=sum(item.row_count for item in partitions),
+                    partition_count=len(partitions),
+                )
+            )
+        return tuple(items)
+
+    def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
+        mappings = self.catalog.session.scalars(
+            select(MainContractMap).order_by(
+                MainContractMap.symbol,
+                MainContractMap.trade_date.desc(),
+            )
+        )
+        latest: dict[str, MainContractMap] = {}
+        for row in mappings:
+            latest.setdefault(row.symbol, row)
+        instruments = {
+            row.symbol: row for row in self.catalog.session.scalars(select(Instrument))
+        }
+        return tuple(
+            DominantContractSummary(
+                symbol=symbol,
+                product_name=(
+                    instruments[symbol].name if symbol in instruments else symbol.upper()
+                ),
+                exchange=(
+                    instruments[symbol].exchange_code if symbol in instruments else ""
+                ),
+                actual_contract=row.contract_code,
+                dominant_mapping_date=row.trade_date,
+            )
+            for symbol, row in sorted(latest.items())
+        )
 
     def _weekly_mappings(
         self,

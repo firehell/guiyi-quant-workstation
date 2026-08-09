@@ -1,21 +1,31 @@
 # Indicator Kernel V1-A
 
-更新时间：2026-08-08
+更新时间：2026-08-09
 
 ## 1. 定位
 
 `Indicator Kernel` 是 `packages/quant-core` 下的纯 Python 指标公共层，冻结 EMA、MACD、ATR、指标注册表、能力矩阵与 golden vector。旧 formal report/OOS Gate 与工作树内 `data/reports/indicator_contract_v1/` 已退役；当前只保留指标合同、因果策略研究资格和 observation-only 风险边界（证据见 Git history）。
 
+### 单轨边界（强制）
+
+| 角色 | 位置 | 权限 |
+|---|---|---|
+| **Canonical 算法与策略研究权威** | `packages/quant-core/guiyi_quant/indicators/` | 唯一业务口径；未来扫描/回测/研究必须复用 |
+| **Market Web 观察镜像** | `apps/quant-web/src/utils/indicators.ts` + `mainIndicators.ts` | 仅浏览器 overlay / 测试对齐；不得自成第二业务源 |
+| **Market HTTP indicators API** | 未挂载 | 当前不提供；需要时由新任务从 Kernel 导出，禁止再写一套后端算法 |
+
+对齐机制：Python 与 Web 共用 golden fixture（`apps/quant-web/tests/fixtures/...` 与 `services/quant-api/tests/fixtures/...` 内容必须一致）。口径冲突时以 Python Kernel + golden 为准，再改 Web 镜像。当前 Market `chart.vue` 只画 K 线/成交量，未挂载指标 overlay。
+
 本阶段目标：
 
-- 让 Market Web、未来重建的历史扫描/回测库复用同一套指标口径（非当前 mounted signal/live surface）。
+- 让 Market Web 观察层与未来重建的历史扫描/回测库复用同一套指标口径（非当前 mounted signal/live surface）。
 - 先提供可测试、无副作用、无外部依赖的基础函数。
 - 保持现有策略研究源码与 observation-only 风险边界。
 
 本阶段不做：
 
-- 不改 FastAPI API（Market indicators 路径除外，由独立任务收口）。
-- 不改 PostgreSQL / Alembic / DuckDB / Parquet。
+- 不新增 FastAPI Market indicators 路由（除非独立任务明确授权并从 Kernel 导出）。
+- 不改 PostgreSQL / Alembic / Canonical Parquet 合同。
 - 不迁移 `jm_v1b_daily_direction_fast_entry`。
 - 不接入 `signal_events`、企业微信、live scheduler 或自动交易。
 - 不把火天大有 original 普通升级为历史验证、live 或提醒指标；strict 只表示独立 causal 策略研究资格。original 只保留已归档的 realtime repainting observation policy 例外（盘中 realtime 应用路径已退役）。
