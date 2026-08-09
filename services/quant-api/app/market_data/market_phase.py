@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.market_data.aggregation import SessionWindow
@@ -56,6 +56,8 @@ class MarketPhaseResolver:
             return self._unknown(normalized)
 
         calendar_rows = self._nearby_calendar_rows(exchange, local_now.date())
+        if calendar_rows is None:
+            return self._unknown(normalized)
         current_calendar = calendar_rows.get(local_now.date())
         if current_calendar is None:
             return self._unknown(normalized)
@@ -126,7 +128,7 @@ class MarketPhaseResolver:
         self,
         exchange: str,
         current_day: date,
-    ) -> dict[date, TradingCalendar]:
+    ) -> dict[date, TradingCalendar] | None:
         rows: dict[date, TradingCalendar] = {}
         current = self._session.scalar(
             select(TradingCalendar).where(
@@ -147,6 +149,21 @@ class MarketPhaseResolver:
             .limit(1)
         )
         if next_trading_day is not None:
+            expected_calendar_days = (next_trading_day.trade_date - current_day).days + 1
+            actual_calendar_days = int(
+                self._session.scalar(
+                    select(func.count())
+                    .select_from(TradingCalendar)
+                    .where(
+                        TradingCalendar.exchange_code == exchange,
+                        TradingCalendar.trade_date >= current_day,
+                        TradingCalendar.trade_date <= next_trading_day.trade_date,
+                    )
+                )
+                or 0
+            )
+            if actual_calendar_days != expected_calendar_days:
+                return None
             rows[next_trading_day.trade_date] = next_trading_day
         return rows
 

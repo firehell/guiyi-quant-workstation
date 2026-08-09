@@ -230,6 +230,20 @@ def test_missing_calendar_facts_are_unknown(session: Session) -> None:
     assert MarketPhaseResolver(session).resolve("ap", _now(6, 10)).phase is MarketPhase.UNKNOWN
 
 
+def test_missing_intermediate_calendar_fact_cannot_shift_friday_night_to_tuesday(
+    session: Session,
+) -> None:
+    session.execute(
+        delete(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == date(2025, 1, 6),
+        )
+    )
+    session.commit()
+
+    assert MarketPhaseResolver(session).resolve("jm", _now(3, 21)).phase is MarketPhase.UNKNOWN
+
+
 def test_missing_session_facts_are_unknown(session: Session) -> None:
     session.execute(
         delete(TradingSession).where(TradingSession.instrument_symbol == "ap")
