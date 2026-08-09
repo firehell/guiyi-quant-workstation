@@ -10,8 +10,10 @@ Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产
 370），JM `update` dry-run 为 NOOP、JM audit 通过，Catalog、物理 Parquet 与
 `MarketDataService` 的 continuous / contract / actual_dominant 有界读回均已验收。此前周线与
 Derived 开放月 Session 上界缺陷已修复；补齐两个周线 Direct 与四个 Derived 分区的受控执行
-成功完成（2 次 provider 请求、6 个分区发布）。其余 68 个 active 品种尚无正式 Canonical
-分区，且历史 Session facts 未完整；69 品种重建及全域 Canonical 验收仍未完成。
+成功完成（2 次 provider 请求、6 个分区发布）。其余 59 个 active 品种尚无正式 Canonical
+分区，且历史 Session facts 未完整；60 品种重建及全域 Canonical 验收仍未完成。退役品种含
+股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu`；
+生产 Catalog 已对退役名单执行 `retire-products --apply`（详见 `GY-DATA-PRODUCT-RETIREMENT-5`）。
 
 ## 已冻结的目标合同
 
@@ -25,8 +27,9 @@ Derived 开放月 Session 上界缺陷已修复；补齐两个周线 Direct 与�
 - PostgreSQL active 数据模型最终为八表：`exchanges`、`instruments`、`contracts`、
   `trading_calendars`、`trading_sessions`、`main_contract_map`、`market_datasets`、
   `market_partitions`。
-- 最终公开 CLI 为 `guiyi data update|refresh|audit`。`update` 以数据库和已发布月度
-  Parquet 自然续传；`refresh` 按指定品种和日期范围强制重建相交月份；`audit` 只读。
+- 最终公开 CLI 为 `guiyi data update|refresh|audit|retire-products`。`update` 以数据库和已发布月度
+  Parquet 自然续传；`refresh` 按指定品种和日期范围强制重建相交月份；`audit` 只读；
+  `retire-products` 清退已退役品种 Catalog/Canonical（默认 dry-run）。
 
 ## 当前实现差异
 
@@ -54,7 +57,9 @@ OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺�
 `JM2609/{5m,15m,30m,60m}/2026-08`。该次执行 `applied=6`、`failed=0`、
 `provider_requests=2`；其后 JM fixed-T0 dry-run 为 NOOP、JM audit 通过，678 个 Catalog
 分区及对应 Parquet 均可读。`actual_dominant` 在缺少对应 concrete-contract 分区时仍保持
-fail-closed；其余 68 品种的历史 Session facts 与 Canonical 重建仍需后续受控执行。未执行服务切换、
-main/tag/release 或 Runtime promotion。
+fail-closed；其余 59 品种的历史 Session facts 与 Canonical 重建仍需后续受控执行。在明确单次
+意图下已多次对生产执行 `guiyi data retire-products --apply`，覆盖退役名单
+`br/cs/ic/if/ih/im/lu/nr/sp`；Canonical 退役目录均为 0，事后 residual=0，显式退役码返回
+`PRODUCT_RETIRED`。未执行服务切换、main/tag/release 或 Runtime promotion。
 
 日调度、live、真实通知和自动订单保持关闭，`auto_order=false`。

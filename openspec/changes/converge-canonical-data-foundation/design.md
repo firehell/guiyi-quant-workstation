@@ -29,7 +29,8 @@ active 表为 `exchanges`、`instruments`、`contracts`、`trading_calendars`、
 ### D4 — 三个深模块和三个 CLI
 
 `MetadataSynchronizer` 维护 products、contracts、Calendar、Session 和 rank1 Map；
-`HistoricalDataManager` 是唯一写服务，提供 `update|refresh|audit`；`MarketDataService` 是唯一读服务。
+`HistoricalDataManager` 是唯一写服务，提供 `update|refresh|audit`；`retire-products` 清退
+已退役品种 Catalog/Canonical；`MarketDataService` 是唯一读服务。
 无 `--apply` 的 update/refresh 只计划。`refresh` 强制重建指定 symbol/日期范围中相交月的 continuous
 与 rank1 contract Direct，然后从新 1m 重建 Derived。
 

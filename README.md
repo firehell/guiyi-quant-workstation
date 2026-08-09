@@ -28,7 +28,7 @@ RQData
 -> Market Web / Indicator / future research
 ```
 
-active universe 固定 69 品种，正式周期只有 `1m/5m/15m/30m/60m/1d/1w`。
+active universe 固定 60 品种，正式周期只有 `1m/5m/15m/30m/60m/1d/1w`。
 
 ## 本地启动
 

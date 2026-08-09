@@ -22,5 +22,7 @@
 | 额度 | 明确的 provider quota 耗尽立即停止本轮 | 保留已发布月，未完成月不发布；下次同命令从首个缺失目标续传 |
 | live | historical canonical 与 live observation 分离 | 当前无盘中 Live 应用路径；未确认 bar 不进正式历史资产 |
 | 交易安全 | `auto_order=false` 始终成立 | 任何研究结果、展示或通知都不是交易指令 |
+| active universe | 60 品种；退役含股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu` | 退役码精确硬拦截；生产清退另需单次意图 |
 
-active 数据收口合同见 `docs/tasks/GY-DATA-CORE-V2.md`；当前实施与外部操作状态见 `STATUS.md`。
+active 数据收口合同见 `docs/tasks/GY-DATA-CORE-V2.md`；品种退役合同见
+`docs/tasks/GY-DATA-PRODUCT-RETIREMENT-5.md`；当前实施与外部操作状态见 `STATUS.md`。

@@ -4,13 +4,18 @@
 
 ## ADDED Requirements
 
-### Requirement: 三动作公开维护面
-系统 SHALL 只公开 `update`、`refresh` 和 `audit`。无 `--apply` 的 update/refresh MUST 只计划，
-不得构造 RQData client 或写 PostgreSQL/Parquet；audit MUST 只读。
+### Requirement: 公开维护面
+系统 SHALL 公开 `update`、`refresh`、`audit` 与 `retire-products`。无 `--apply` 的
+update/refresh/`retire-products` MUST 只计划或盘点，不得写 PostgreSQL/Parquet（retire 的
+`--apply` 除外且受退役名单与单次意图约束）；audit MUST 只读。
 
 #### Scenario: 已退出动作
 - **WHEN** 用户调用任何已退出的维护操作
 - **THEN** CLI 不暴露该入口
+
+#### Scenario: retire-products dry-run
+- **WHEN** 用户调用 `guiyi data retire-products` 且未传 `--apply`
+- **THEN** 仅返回退役品种盘点且不删除 Catalog 行或 Canonical 文件
 
 ### Requirement: fixed through 和 natural resume
 `effective_start(symbol)` SHALL 为 `max(product_window_start(symbol),2023-01-01)`。update SHALL 以

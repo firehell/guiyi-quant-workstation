@@ -48,6 +48,7 @@ from app.market_data.domain import (
     SeriesKind,
     SeriesQuery,
 )
+from app.market_data.product_retirement import assert_products_not_retired
 from app.market_data.service import MarketDataService, MarketDataError
 from app.market_data.storage import (
     CanonicalMonthlyStore,
@@ -256,6 +257,7 @@ class HistoricalDataManager:
 
     def update(self, request: UpdateRequest) -> MaintenanceResult:
         """增量更新：缺省 through 为各品种最近完整交易日；apply 时持锁并先补齐元数据再写分区。"""
+        assert_products_not_retired(request.products)
         through = request.through or self.coverage.latest_complete_day(request.products)
         if request.since is not None and request.since > through:
             raise ValueError("UPDATE_WINDOW_INVALID")
@@ -296,6 +298,7 @@ class HistoricalDataManager:
         if request.since > request.through:
             raise ValueError("REFRESH_WINDOW_INVALID")
         products = (request.symbol.strip().lower(),)
+        assert_products_not_retired(products)
         if request.apply:
             lease = self.catalog.acquire_maintenance_lock()
             if lease is None:
@@ -338,6 +341,7 @@ class HistoricalDataManager:
 
     def audit(self, request: AuditRequest) -> MaintenanceResult:
         """只读审计：不拉 RQData、不写分区；对照 catalog 与 coverage 期望发现缺口/损坏。"""
+        assert_products_not_retired(request.products)
         through = self.coverage.latest_complete_day(request.products)
         findings: list[AuditFinding] = []
         for symbol in request.products:

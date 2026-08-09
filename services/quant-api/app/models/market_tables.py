@@ -67,7 +67,7 @@ class Exchange(Base, TimestampMixin):
 
 
 class Instrument(Base, TimestampMixin):
-    """品种（产品）主数据，如 rb、IF。
+    """品种（产品）主数据，如 rb、jm。
 
     V2 角色：DatasetKey 中的 symbol；与 continuous 序列及 MainContractMap 的
     symbol 字段对应；关联该品种下全部合约行。

@@ -19,6 +19,7 @@ from typing import Any, Protocol
 from sqlalchemy import delete, select
 
 from app.market_data.catalog import MarketCatalog
+from app.market_data.product_retirement import assert_products_not_retired
 from app.models import (
     Contract,
     Exchange,
@@ -72,6 +73,7 @@ class MetadataSynchronizer:
         ``main_contract_starts`` 与删除窗口不一致时 fail-closed（``ValueError``）。
         """
         normalized = tuple(dict.fromkeys(item.strip().lower() for item in products))
+        assert_products_not_retired(normalized)
         floors = dict(starts or {symbol: through for symbol in normalized})
         snapshot = self.adapter.fetch_metadata(normalized, through, floors)
         session = self.catalog.session

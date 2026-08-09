@@ -22,6 +22,7 @@ from app.guiyi_cli.output import (
 )
 from app.market_data.composition import build_historical_data_manager
 from app.market_data.maintenance import HistoricalDataManager
+from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
@@ -56,6 +57,16 @@ def main(
         args = build_parser().parse_args(raw)
         if args.domain == "data":
             build_request(args)
+    except ProductRetiredError as exc:
+        print_json(
+            exception_error_payload(
+                command=command,
+                exc=exc,
+                readonly=True,
+            ),
+            stderr,
+        )
+        return 1
     except (CliUsageError, ValueError):
         # 参数/用法错误：固定 CLI_ARGUMENT_INVALID，不写 stack trace
         print_json(argument_error_payload(command), stderr)

@@ -28,6 +28,12 @@ from app.market_data.domain import (
     SeriesKind,
     SeriesQuery,
 )
+from app.market_data.product_retirement import (
+    ProductRetiredError,
+    assert_not_retired,
+    is_retired,
+    load_retired_products,
+)
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
 from app.models import Instrument, MainContractMap, MarketDataset, MarketPartition
 
@@ -80,6 +86,10 @@ class MarketDataService:
 
     def query(self, request: SeriesQuery) -> MarketSeriesResult:
         """执行序列查询；``actual_dominant`` 走拼接路径，其余读单一物理数据集。"""
+        try:
+            assert_not_retired(request.symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
         if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
             return self._actual_dominant(request)
         assert request.physical_key is not None
@@ -163,9 +173,15 @@ class MarketDataService:
         symbol: str | None = None,
     ) -> tuple[DatasetCoverageSummary, ...]:
         """列出 Catalog 中已注册数据集的覆盖范围与行数汇总；无分区的数据集跳过。"""
+        retired = load_retired_products()
         query = select(MarketDataset)
         if symbol:
-            query = query.where(MarketDataset.symbol == symbol.strip().lower())
+            normalized = symbol.strip().lower()
+            try:
+                assert_not_retired(normalized, retired=retired)
+            except ProductRetiredError as exc:
+                raise MarketDataError("PRODUCT_RETIRED") from exc
+            query = query.where(MarketDataset.symbol == normalized)
         items: list[DatasetCoverageSummary] = []
         for dataset in self.catalog.session.scalars(
             query.order_by(MarketDataset.symbol, MarketDataset.frequency)
@@ -177,6 +193,8 @@ class MarketDataService:
                     .order_by(MarketPartition.year, MarketPartition.month)
                 )
             )
+            if dataset.symbol in retired:
+                continue
             if not partitions:
                 continue
             items.append(
@@ -195,6 +213,7 @@ class MarketDataService:
 
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         """返回每个品种最近一条主力映射（按 trade_date 降序取首条）。"""
+        retired = load_retired_products()
         mappings = self.catalog.session.scalars(
             select(MainContractMap).order_by(
                 MainContractMap.symbol,
@@ -203,6 +222,8 @@ class MarketDataService:
         )
         latest: dict[str, MainContractMap] = {}
         for row in mappings:
+            if is_retired(row.symbol, retired=retired):
+                continue
             latest.setdefault(row.symbol, row)
         instruments = {
             row.symbol: row for row in self.catalog.session.scalars(select(Instrument))

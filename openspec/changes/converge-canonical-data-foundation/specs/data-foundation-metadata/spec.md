@@ -14,7 +14,7 @@ PostgreSQL MUST NOT 保存 Bar 行、合约参数、内容摘要、发布清单�
 - **THEN** ORM metadata 与数据库仅包含规定的 active 表，不创建退出表
 
 ### Requirement: 当前交易元数据和主力映射
-MetadataSynchronizer SHALL 维护 69 品种、真实 contract identity、实际交易所 Calendar、
+MetadataSynchronizer SHALL 维护 60 品种、真实 contract identity、实际交易所 Calendar、
 product-specific Session 和 RQData `rule=2` 的 rank1 MainContractMap；Map 对 `(symbol,trade_date)`
 唯一，维护范围为 `effective_start→fixed through`。
 

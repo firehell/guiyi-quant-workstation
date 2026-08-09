@@ -22,7 +22,9 @@ RQData
 
 - RQData 是唯一外部行情事实源；Canonical Parquet 是唯一 active 历史 Bar 存储；PostgreSQL
   不保存 K 线。
-- active universe 唯一入口是 `data/universe/active_products.txt` 的 69 品种；历史下界为
+- active universe 唯一入口是 `data/universe/active_products.txt` 的 60 品种；股指
+  `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu`
+  已退役，见 `retired_products.txt`。历史下界为
   `active_history_floor=2023-01-01`。
 - 七周期固定为 `1m/5m/15m/30m/60m/1d/1w`。`1m/1d/1w` 是 Direct；其余四个周期只从
   Canonical 1m 聚合。
@@ -32,7 +34,7 @@ RQData
   确定；不维护第二套发布、缺口或内容摘要状态。
 - 所有消费者共用 `MarketDataService`，不得 glob、自选文件、自判主力或跨频回退。
 
-最终用户接口为 `guiyi data update|refresh|audit` 与 `/api/v1/market/*`。DFD-02～DFD-06
+最终用户接口为 `guiyi data update|refresh|audit|retire-products` 与 `/api/v1/market/*`。DFD-02～DFD-06
 正在把当前实现收口至此合同；现有仓库代码中的旧入口不能作为新合同依据。
 
 ## 工程与外部操作

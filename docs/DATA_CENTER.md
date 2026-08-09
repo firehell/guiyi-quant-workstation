@@ -95,9 +95,15 @@ coverage 缺失时 fail-closed；响应只返回请求、bars、coverage 和 res
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data audit --universe active
+guiyi data retire-products [--apply]
 ```
 
 无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
-始终只读。省略 `--through` 时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；
-相同解析值的再次完整运行必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建
-仍各自需要范围明确的单次意图。
+始终只读。`retire-products` 默认 dry-run 盘点已退役品种（`br/cs/ic/if/ih/im/lu/nr/sp`）的 Catalog 行与
+Canonical 路径；显式 `--apply` 才硬删，且生产环境另需范围明确的单次执行意图。省略 `--through`
+时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；相同解析值的再次完整运行
+必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的
+单次意图。
+
+active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
+`data/universe/retired_products.txt`，与 active 互斥。

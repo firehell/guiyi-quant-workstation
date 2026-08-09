@@ -57,7 +57,7 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         action for action in data_parser._actions if action.dest == "data_command"
     )
 
-    assert set(command_action.choices) == {"update", "refresh", "audit"}
+    assert set(command_action.choices) == {"update", "refresh", "audit", "retire-products"}
 
 
 def test_refresh_requires_a_symbol_and_explicit_window() -> None:
@@ -128,6 +128,16 @@ def test_update_rejects_retired_candidate_flags(arguments: tuple[str, str]) -> N
 
     with pytest.raises(CliUsageError):
         parser.parse_args(["data", "update", "--symbol", "jm", *arguments])
+
+
+def test_update_rejects_retired_symbol() -> None:
+    code, payload = _run(
+        ["data", "update", "--symbol", "ic", "--through", "2025-01-03"],
+        FakeManager(),
+    )
+
+    assert code == 1
+    assert payload["error"]["code"] == "PRODUCT_RETIRED"
 
 
 def test_cli_internal_error_does_not_expose_sqlalchemy_documentation_code() -> None:

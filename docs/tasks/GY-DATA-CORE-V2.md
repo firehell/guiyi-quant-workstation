@@ -6,7 +6,7 @@
 
 以 RQData → staging → 六项校验 → 月度 Canonical Parquet → 八表 Catalog →
 `MarketDataService` 完成个人期货研究工作站的数据底座。active universe 是
-`data/universe/active_products.txt` 的 69 品种，active 历史从 `2023-01-01` 开始。
+`data/universe/active_products.txt` 的 60 品种，active 历史从 `2023-01-01` 开始。
 
 ## 冻结合同
 
