@@ -139,6 +139,20 @@ class MaintenanceResult:
         }
 
 
+def _maintenance_locked(action: str, through: date) -> MaintenanceResult:
+    return MaintenanceResult(
+        action=action,
+        status="blocked",
+        through=through,
+        planned=0,
+        applied=0,
+        blocked=1,
+        failed=0,
+        provider_requests=0,
+        stop_reason="maintenance_locked",
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _Target:
     key: DatasetKey
@@ -185,25 +199,31 @@ class HistoricalDataManager:
         through = request.through or self.coverage.latest_complete_day(request.products)
         if request.since is not None and request.since > through:
             raise ValueError("UPDATE_WINDOW_INVALID")
-        watermark = (request.products, through)
-        if request.apply and (
-            watermark not in self._metadata_watermarks
-            and not self.coverage.metadata_complete(request.products, through)
-        ):
-            through = self.metadata.synchronize(
-                request.products,
-                through,
-                {symbol: self.coverage.product_start(symbol) for symbol in request.products},
-            )
-            self._metadata_watermarks.add((request.products, through))
         if request.apply:
-            self.coverage.require_historical_session_facts(request.products, through)
-            return self._execute_streaming(
-                "update",
-                request.products,
-                request.since,
-                through,
-            )
+            lease = self.catalog.acquire_maintenance_lock()
+            if lease is None:
+                return _maintenance_locked("update", through)
+            try:
+                watermark = (request.products, through)
+                if (
+                    watermark not in self._metadata_watermarks
+                    and not self.coverage.metadata_complete(request.products, through)
+                ):
+                    through = self.metadata.synchronize(
+                        request.products,
+                        through,
+                        {symbol: self.coverage.product_start(symbol) for symbol in request.products},
+                    )
+                    self._metadata_watermarks.add((request.products, through))
+                self.coverage.require_historical_session_facts(request.products, through)
+                return self._execute_streaming(
+                    "update",
+                    request.products,
+                    request.since,
+                    through,
+                )
+            finally:
+                lease.release()
         targets = self._plan(request.products, request.since, through)
         return self._execute("update", targets, through, apply=False)
 
@@ -212,19 +232,25 @@ class HistoricalDataManager:
             raise ValueError("REFRESH_WINDOW_INVALID")
         products = (request.symbol.strip().lower(),)
         if request.apply:
-            if not self.coverage.metadata_complete(products, request.through):
-                self.metadata.synchronize(
-                    products,
+            lease = self.catalog.acquire_maintenance_lock()
+            if lease is None:
+                return _maintenance_locked("refresh", request.through)
+            try:
+                if not self.coverage.metadata_complete(products, request.through):
+                    self.metadata.synchronize(
+                        products,
+                        request.through,
+                        {request.symbol: self.coverage.product_start(request.symbol)},
+                    )
+                self.coverage.require_historical_session_facts(products, request.through)
+                if self.catalog.missing_main_map_days(
+                    request.symbol,
+                    request.since,
                     request.through,
-                    {request.symbol: self.coverage.product_start(request.symbol)},
-                )
-            self.coverage.require_historical_session_facts(products, request.through)
-            if self.catalog.missing_main_map_days(
-                request.symbol,
-                request.since,
-                request.through,
-            ):
-                raise ValueError("MAIN_CONTRACT_MAP_MISSING")
+                ):
+                    raise ValueError("MAIN_CONTRACT_MAP_MISSING")
+            finally:
+                lease.release()
         targets = tuple(
             self._iter_targets(
                 products,

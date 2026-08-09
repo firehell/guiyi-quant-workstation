@@ -189,6 +189,30 @@ def test_update_apply_syncs_metadata_before_provider_and_fixed_through_repeats_n
     assert second.planned == second.applied == second.provider_requests == 0
 
 
+def test_update_apply_blocks_without_acquiring_global_maintenance_lock(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    ends = (_daily(2, 100).bar_end,)
+    coverage = FakeCoverage({key.as_tuple(): ends})
+    provider = FakeProvider({key.as_tuple(): (_daily(2, 100),)})
+    metadata = FakeMetadata()
+    manager = _manager(session, tmp_path, coverage, provider, metadata)
+    monkeypatch.setattr(
+        manager.catalog,
+        "acquire_maintenance_lock",
+        lambda: None,
+        raising=False,
+    )
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert result.status == "blocked"
+    assert result.stop_reason == "maintenance_locked"
+    assert metadata.calls == []
+    assert provider.calls == []
+
+
 def test_since_is_check_lower_bound_and_does_not_replace_covered_partition(
     session, tmp_path
 ) -> None:

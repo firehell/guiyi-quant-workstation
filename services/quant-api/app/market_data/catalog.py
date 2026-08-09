@@ -6,6 +6,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy import text
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
 from app.market_data.domain import DatasetKey
@@ -23,6 +25,35 @@ class CatalogError(RuntimeError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+_MAINTENANCE_LOCK_KEY = 4_902_608_003_600_001
+
+
+class MaintenanceLease:
+    def release(self) -> None:
+        raise NotImplementedError
+
+
+class _NoopMaintenanceLease(MaintenanceLease):
+    def release(self) -> None:
+        return None
+
+
+class _PostgresMaintenanceLease(MaintenanceLease):
+    def __init__(self, connection: Connection, *, close_on_release: bool) -> None:
+        self._connection = connection
+        self._close_on_release = close_on_release
+
+    def release(self) -> None:
+        try:
+            self._connection.execute(
+                text("SELECT pg_advisory_unlock(:key)"),
+                {"key": _MAINTENANCE_LOCK_KEY},
+            )
+        finally:
+            if self._close_on_release:
+                self._connection.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +78,30 @@ class MarketCatalog:
     def __init__(self, session: Session, canonical_root: Path) -> None:
         self.session = session
         self.canonical_root = canonical_root.resolve()
+
+    def acquire_maintenance_lock(self) -> MaintenanceLease | None:
+        bind = self.session.get_bind()
+        if bind.dialect.name != "postgresql":
+            return _NoopMaintenanceLease()
+        connection = bind.connect() if isinstance(bind, Engine) else bind
+        close_on_release = isinstance(bind, Engine)
+        try:
+            acquired = connection.execute(
+                text("SELECT pg_try_advisory_lock(:key)"),
+                {"key": _MAINTENANCE_LOCK_KEY},
+            ).scalar_one()
+            if not acquired:
+                if close_on_release:
+                    connection.close()
+                return None
+            return _PostgresMaintenanceLease(
+                connection,
+                close_on_release=close_on_release,
+            )
+        except Exception:
+            if close_on_release:
+                connection.close()
+            raise
 
     def dataset_row(self, key: DatasetKey, *, create: bool = False) -> MarketDataset | None:
         row = self.session.scalar(
