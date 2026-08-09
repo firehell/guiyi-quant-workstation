@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -23,14 +24,23 @@ class SessionClockError(RuntimeError):
         super().__init__(code)
 
 
-def session_windows_for_trading_day(
+@dataclass(frozen=True, slots=True)
+class ResolvedSessionWindow:
+    """带原始 Session 元数据的实际交易窗口。"""
+
+    name: str
+    window: SessionWindow
+    is_night: bool
+
+
+def resolved_session_windows_for_trading_day(
     session: Session,
     *,
     exchange: str,
     symbol: str,
     trading_day: date,
-) -> tuple[SessionWindow, ...]:
-    """以交易日为身份解析日盘与锚定前一交易日的夜盘窗口。"""
+) -> tuple[ResolvedSessionWindow, ...]:
+    """以交易日为身份解析日盘与锚定前一交易日的带元数据窗口。"""
     templates = tuple(
         session.scalars(
             select(TradingSession)
@@ -56,7 +66,7 @@ def session_windows_for_trading_day(
             TradingCalendar.is_trading_day.is_(True),
         )
     )
-    windows: list[SessionWindow] = []
+    windows: list[ResolvedSessionWindow] = []
     for template in templates:
         is_night = template.start_time >= time(18)
         if is_night and prior is None:
@@ -68,6 +78,31 @@ def session_windows_for_trading_day(
         if template.crosses_midnight or template.end_time <= template.start_time:
             end_day += timedelta(days=1)
         local_end = datetime.combine(end_day, template.end_time, tzinfo=SHANGHAI)
-        windows.append(SessionWindow(local_start, local_end))
-    windows.sort(key=lambda item: item.start)
+        windows.append(
+            ResolvedSessionWindow(
+                name=template.session_name,
+                window=SessionWindow(local_start, local_end),
+                is_night=is_night,
+            )
+        )
+    windows.sort(key=lambda item: item.window.start)
     return tuple(windows)
+
+
+def session_windows_for_trading_day(
+    session: Session,
+    *,
+    exchange: str,
+    symbol: str,
+    trading_day: date,
+) -> tuple[SessionWindow, ...]:
+    """兼容投影：仅返回实际窗口，保持既有调用方行为。"""
+    return tuple(
+        item.window
+        for item in resolved_session_windows_for_trading_day(
+            session,
+            exchange=exchange,
+            symbol=symbol,
+            trading_day=trading_day,
+        )
+    )
