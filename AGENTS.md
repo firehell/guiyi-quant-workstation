@@ -11,7 +11,8 @@
 
 技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis 与
 RQData → Canonical Parquet → 八表 Catalog → MarketDataService；`quant-core` 仅保留
-vn.py-compatible 策略研究与 Indicator Kernel 代码，当前不存在回测引擎或适配层。
+Indicator Kernel（`guiyi_quant/indicators/`），旧 vn.py-compatible 策略研究包已退役（仅 Git
+history 可追溯），当前不存在回测引擎、策略适配层或策略 HTTP/worker。
 
 ## 个人开发工作流
 

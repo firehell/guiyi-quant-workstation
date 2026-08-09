@@ -20,13 +20,13 @@
 
 - 让 Market Web 观察层与未来重建的历史扫描/回测库复用同一套指标口径（非当前 mounted signal/live surface）。
 - 先提供可测试、无副作用、无外部依赖的基础函数。
-- 保持现有策略研究源码与 observation-only 风险边界。
+- 保持 observation-only 与 strict `strategy_candidate` 风险边界；旧策略包已退役。
 
 本阶段不做：
 
 - 不新增 FastAPI Market indicators 路由（除非独立任务明确授权并从 Kernel 导出）。
 - 不改 PostgreSQL / Alembic / Canonical Parquet 合同。
-- 不迁移 `jm_v1b_daily_direction_fast_entry`。
+- 不恢复已退役的 `guiyi_quant/strategies/` 或旧策略 HTTP/worker。
 - 不接入 `signal_events`、企业微信、live scheduler 或自动交易。
 - 不把火天大有 original 普通升级为历史验证、live 或提醒指标；strict 只表示独立 causal 策略研究资格。original 只保留已归档的 realtime repainting observation policy 例外（盘中 realtime 应用路径已退役）。
 
@@ -38,6 +38,7 @@ packages/quant-core/guiyi_quant/indicators/
 ├── atr.py
 ├── ema.py
 ├── htdy_original.py
+├── htdy_strict.py
 ├── macd.py
 ├── models.py
 ├── policy.py
@@ -116,7 +117,7 @@ retired
 - MACD/ATR 的 `compatibility_validated` 不等于可进 formal strategy/signal；Market EMA API 仍只服务 `validated` EMA。
 - 旧 JM V1-B / report 14 policy 只作为 Git history 中的退役事实，不是 active consumer。
 - `definition_to_metadata()` 可供未来报告 metadata 持久化；C4-02 不写 DB。
-- X4-06 正式 Gate：`INDICATOR_REGISTRY_V1_READY / STRATEGY_INDICATOR_POLICY_READY`。
+- X4-06 正式 Gate：`INDICATOR_REGISTRY_V1_READY`（旧 `STRATEGY_INDICATOR_POLICY_READY` 随策略包退役，仅 Git history）。
 - R45-05 canonical closeout：`STAGE4_COMPLETED / INDICATOR_CONTRACT_READY`；该结论不改变 original observation-only 或 strict historical-only 边界。
 
 火天大有当前只登记风险边界：
@@ -149,11 +150,11 @@ historical_backtest_allowed=false
 auto_order=false
 ```
 
-该 policy 必须由独立 validator 检查，不能修改 `require_formal_strategy_indicator_policy()`，
-也不能把 Registry 项改成普通 `live_capable=true / alert_capable=true`。允许扫描当前 partial
-15m 和末端 repaint zone；事件只表达用户已接受重绘风险的实时首次检测观察，不表达策略可信、
-盈利、可回测、可通知自动化或可交易。该例外也不解决或改写
-`HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；它只冻结用户接受风险后的 exact realtime 身份。
+该 policy 必须由独立 validator 检查，不能把 Registry 项改成普通
+`live_capable=true / alert_capable=true`，也不得绕过 `require_formal_policy()` 对 original 的
+formal backtest 拦截。允许扫描当前 partial 15m 和末端 repaint zone；事件只表达用户已接受重绘
+风险的实时首次检测观察，不表达策略可信、盈利、可回测、可通知自动化或可交易。该例外也不解决或
+改写 `HTDY_FORMULA_OR_XMA_SEMANTICS_UNRESOLVED`；它只冻结用户接受风险后的 exact realtime 身份。
 
 ### Step 1 production kernel boundary
 
@@ -173,8 +174,8 @@ double-XMA 的 exact future dependency horizon 是 24 根；买卖 observation �
 最小必要范围。该 27 不是新的 future horizon，也不构成历史回测许可。
 
 `RealtimeRepaintingObservationPolicy` 仅接受完整且精确的 frozen identity/safety fields；其 hash
-使用 sorted-key、compact、UTF-8、`ensure_ascii=False` 的 canonical JSON。普通 formal policy 和
-`require_formal_strategy_indicator_policy()` 未改变，仍拒绝 original。
+使用 sorted-key、compact、UTF-8、`ensure_ascii=False` 的 canonical JSON。普通 formal policy 与
+`require_formal_policy(..., consumer=FORMAL_BACKTEST_CONSUMER)` 仍拒绝 original。
 
 旧 Step 3/4、Stage 9 与 schema-v3 Runtime Gate 控制面已经退役，只能从 Git history 追溯。
 当前 first-seen policy 仍拒绝 historical replay、其他品种/周期/source mode、通知和普通 consumer；
@@ -204,8 +205,9 @@ block，不写任何 signal/event/notification，也不构成 formal backtest、
 
 ```bash
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_strict_kernel.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_production_kernel_policy.py
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_registry_v1.py
 git diff --check
 ```
 
@@ -215,7 +217,7 @@ git diff --check
 - EMA21 默认 seed 口径与当前 Web EMA 对齐。
 - 未来尾部变化不会改变既有 EMA 输出。
 - 火天大有仍被注册为 observation-only，且 `alert_capable=false`。
-- JM V1-B 现有策略测试不退化。
+- strict 计算源为 `guiyi_quant.indicators.htdy_strict.compute_strict_fields`。
 
 ## 5.1 HTDY 原始公式阻塞解除
 
@@ -293,16 +295,10 @@ ATR 支持：
 
 安全边界：
 
-- MACD / ATR 当前是 `v1-draft` 公共函数，不写入 `indicator_registry`，不注册为 `validated`。
-- 不修改 `packages/quant-core/guiyi_quant/strategies/`、`services/quant-api/app/`、`apps/`、`data/`、数据库、报告、`signal_events`、live evaluator 或企业微信。
+- MACD / ATR 当前是 `v1-draft` 公共函数，Registry 中为 `compatibility_validated`，不等于 formal `validated`。
+- 不修改 `services/quant-api/app/`、`apps/`、`data/`、数据库、报告、`signal_events`、live evaluator 或企业微信；旧 `guiyi_quant/strategies/` 已退役。
 - invalid 输入返回 `valid=false` 或 warm-up 状态，不补 0。
 - future-tail perturbation 不改变既有输出。
-
-V1-D / 迁移 Gate：
-
-- 每个迁移目标必须显式选择 MACD `ema_seed_policy`、`histogram_scale` 和 ATR `smoothing_policy`。
-- 每个迁移目标必须有迁移前后的 golden vector 和策略回归测试。
-- 任何输出差异都必须升策略版本或保持旧链路不变。
 
 V1-C 最小验证命令：
 
@@ -310,41 +306,23 @@ V1-C 最小验证命令：
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1b_diff.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_jm_v1b_daily_direction_fast_entry.py
 uv run --project services/quant-api pytest -q services/quant-api/tests/test_htdy_production_kernel_policy.py
 git diff --check
 uv run --project services/quant-api ruff check packages/quant-core/guiyi_quant/indicators services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py
 ```
 
-## 8. V1-D 迁移设计与 golden vector 对照
+## 8. V1-D 迁移设计（历史）
 
-V1-D 只做 `Migration Plan + Compatibility Vectors`，不做真实迁移。
+V1-D 曾做 `Migration Plan + Compatibility Vectors`，对照旧策略包与 FastAPI strategy 口径；那些调用方与
+`test_indicator_kernel_v1d_migration_vectors.py` 已随 `guiyi_quant/strategies/` 退役，仅 Git history
+可追溯。当前 active 口径以 Kernel Registry / formal policy 与 Web 观察镜像为准。
 
-新增：
+剩余边界：
 
-```text
-docs/INDICATOR_KERNEL_V1D_MIGRATION_PLAN.md
-services/quant-api/tests/test_indicator_kernel_v1d_migration_vectors.py
-```
-
-调用方 policy：
-
-| 调用方 | EMA / MACD policy | histogram | ATR policy | V1-D 结论 |
-|---|---|---|---|---|
-| Web `apps/quant-web/src/utils/indicators.ts` | `sma_window` | `2` | `wilder_sma_seed` | 仅文档登记，不改 `apps/` |
-| FastAPI `app/strategy/su_bing_ema21.py` | `first_value` | `1` | `wilder_first_tr` | golden vector 一致才允许后续迁移 |
-| `quant-core` `su_bing_ema21` | `first_value` | `1` | `ema_first_tr` | golden vector 一致才允许后续迁移 |
-| `jm_v1b_daily_direction_fast_entry` | `first_value` | 不直接输出 | `ema_first_tr` | P0 可信链路，只对照不迁移 |
-| `live_signal_evaluator.py` | 继承 JM V1-B | 不直接输出 | 继承 JM V1-B | P0 预览链路，只回归不迁移 |
-| 日线 MACD / score 策略族 | `first_value` | `1` | 不使用 | golden vector 一致才允许后续迁移 |
-
-V1-D 后续 Gate：
-
-- MACD / ATR 仍不进入 `indicator_registry`，不注册为 `validated`。
-- 任何真实替换必须另开 V1-E 或单独策略版本任务。
-- 若迁移后策略输出、信号时点或报告指标有差异，必须升策略版本并重跑回测 / 信号审查。
-- V1-D golden vector 只证明指定输入和指定 legacy policy 下可复刻现有口径，不证明真实调用方可安全替换。
-- V1-D 关闭表述只能是 `MACD/ATR compatibility draft and migration design completed`，不能写成 `MACD/ATR unified` 或 `Strategy kernel migration completed`。
+- MACD / ATR 不为 formal strategy/live 自动升级。
+- 未来若重建策略/回测，必须新任务、新合同，并显式选择 MACD/ATR policy；不得复活旧策略路径。
+- 关闭表述只能是 `MACD/ATR compatibility draft and migration design completed`（历史），不能写成
+  `MACD/ATR unified` 或 `Strategy kernel migration completed`。
 
 ## 9. V1-E Web MACD 只读展示迁移
 
@@ -359,9 +337,7 @@ V1-E 只迁移 Market 页面 MACD 展示调用方：
 V1-E 不迁移：
 
 - ATR。
-- FastAPI strategy。
-- `quant-core` strategy。
-- JM V1-B。
+- 已退役的 FastAPI / quant-core strategy 路径。
 - historical scan。
 - live evaluator。
-- 回测报告和 `report_id=14` 基线。
+- 回测报告和旧 `report_id=14` 基线（Git history）。

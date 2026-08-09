@@ -39,7 +39,9 @@ OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺�
 工程双轨收口（2026-08-09）：旧 `data_core` / `rqdata_ingest` 等空壳与 pycache、退役 worker 启动面、
 孤儿 data_profiles / v2_targets、未用 ECharts/DuckDB 依赖已清；Market coverage/dominants 经
 `MarketDataService`；ORM 合并为 `models/market_tables.py`；指标权威定为 quant-core Kernel，Web TS
-仅为观察镜像。事实源仍只认 `STATUS.md`、`docs/DATA_CENTER.md` 与 `app/market_data/`。
+仅为观察镜像。旧 `guiyi_quant/strategies/` vn.py 策略研究包及对应策略测试已退役；HTDY strict 计算源
+收口为 `guiyi_quant.indicators.htdy_strict.compute_strict_fields`。事实源仍只认 `STATUS.md`、
+`docs/DATA_CENTER.md` 与 `app/market_data/`。
 
 ## 外部操作状态
 

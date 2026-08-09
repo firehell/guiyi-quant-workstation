@@ -37,11 +37,11 @@ PATH_FIXTURES = [
     "services/quant-api/app/main.py",
     "apps/quant-web/src/App.vue",
     "services/quant-api/app/market_data/service.py",
-    "packages/quant-core/guiyi_quant/strategies/su_bing_ema21/vnpy_strategy.py",
+    "packages/quant-core/guiyi_quant/indicators/htdy_strict.py",
     "services/quant-api/app/services/runtime_health.py",
     "services/quant-api/alembic/versions/z.py",
     "README.md",
-    "packages/quant-core/guiyi_quant/market.py",
+    "packages/quant-core/guiyi_quant/indicators/registry.py",
 ]
 
 
