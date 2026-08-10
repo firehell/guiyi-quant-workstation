@@ -38,7 +38,7 @@ RQData
 
 最终用户接口为 `guiyi data update|refresh|audit|retire-products` 与 `/api/v1/market/*`。Market Runtime
 仅限 `operational_products.txt` 的 `j/jm/ap/ag`：Live 只观察当日 rank1 completed 1m，盘后最多在 17:00
-和一次一小时后 retry 更新这四个品种；Live 永不提升为 Canonical。DFD-02～DFD-06 正在把当前实现收口至此合同；现有仓库代码中的旧入口不能作为新合同依据。
+和一次一小时后 retry 更新这四个品种；Live 永不提升为 Canonical。DFD-01～DFD-06 的仓库收口已完成；DFD-07 生产 Canonical 闭环仍为 `PARTIAL`，精确进度只以 `STATUS.md` 为准。现有仓库代码中的旧入口不能作为当前合同依据。
 
 ## 工程与外部操作
 
@@ -47,6 +47,8 @@ RQData
 获得范围明确的一次性意图；dry-run 不授权后续 mutation。Market Runtime V1 例外仅在用户明确请求启用
 该本地工作站后生效：该一次启用允许其既定四品种 Live 与盘后有限自动化持续运行，不授权任何其他 DB、
 release、通知或订单动作。
+
+当前本机部署根属于可变运行事实，只由 `STATUS.md` 记录。功能开发期可临时从 `develop` 部署以便快速观察；最终 Runtime 验收仍须创建绑定精确提交的独立 worktree，并重新采集自然时点证据。开发态部署不等于 Ready、release 或 Runtime promotion。
 
 任何结论只证明其精确验证范围；不由代码、测试或数据存在推导盈利、长期稳定、交易或 Runtime Ready。
 

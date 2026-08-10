@@ -1,12 +1,11 @@
 # 归一量化系统架构
 
-更新时间：2026-08-09
+更新时间：2026-08-10
 
 ## 系统定位
 
 归一量化是本地优先、单用户的国内期货研究工作站。当前目标应用面为 Market Web、Market API、
-数据 CLI 与 Canonical 历史读取；Market Runtime V1 代码已实现但默认关闭，不实现自动交易，
-`auto_order=false` 始终成立。
+数据 CLI 与 Canonical 历史读取。Market Runtime V1 的代码与 launchd 模板默认关闭；本地工作站已按明确请求启用严格限定为 `j/jm/ap/ag` 的有界 Runtime。不实现自动交易，`auto_order=false` 始终成立。
 
 ## 分层设计
 
@@ -84,3 +83,5 @@ LiveMarketService 只将当日 `j/jm/ap/ag` 的 rank1 completed 1m 与本地 Der
 AfterMarketUpdater 只在 launchd 的 17:00 触发（失败最多一小时后重试一次）调用既有历史写入口。Live
 永不进入 Canonical、Parquet 或 PostgreSQL。代码与模板默认关闭；只有用户明确请求在该本地工作站启用
 Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 release、其他 DB、通知或订单。
+
+开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，当前根和运行状态由 `STATUS.md` 记录。这只是为了快速观察，不改变 Historical/Live 边界，也不构成稳定 Runtime 版本。功能收口后的最终拓扑仍为绑定精确提交的独立 Runtime worktree。

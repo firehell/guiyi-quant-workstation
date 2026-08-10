@@ -42,6 +42,12 @@ Web: http://127.0.0.1:5173
 API: http://127.0.0.1:8000/docs
 ```
 
+## 开发态 launchd 部署
+
+当前本机 launchd 的实际部署根只以 `STATUS.md` 为准。开发期可临时直接运行主 `develop` 工作区，但修改源码不等于已部署：Web 重载前必须运行 `npm --prefix apps/quant-web run build`，API/Live 也需要重载才会采用新代码。
+
+重载会改变 Runtime 状态，只在用户对当次目标和服务面给出明确执行意图后进行，不把 `--confirm-*` 当作日常无条件命令。功能收口后重新创建绑定精确提交的独立 Runtime worktree，再进行最终自然时点验收。
+
 ## 统一 CLI
 
 ```bash
