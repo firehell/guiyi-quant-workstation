@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TEMPLATE_DIR="$PROJECT_ROOT/deploy/launchd"
 RENDER_DIR="$PROJECT_ROOT/.run/launchd"
+MARKET_RUNTIME_MARKER="$PROJECT_ROOT/.run/market-runtime-enabled"
 AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
@@ -77,6 +78,17 @@ reload_launch_agent() {
   return 1
 }
 
+write_market_runtime_activation_marker() {
+  local temporary_marker
+  temporary_marker="$(mktemp "${MARKET_RUNTIME_MARKER}.tmp.XXXXXX")"
+  if ! printf 'enabled\n' >"$temporary_marker"; then
+    rm -f "$temporary_marker"
+    return 1
+  fi
+  chmod 600 "$temporary_marker"
+  mv -f "$temporary_marker" "$MARKET_RUNTIME_MARKER"
+}
+
 for label in "${load_labels[@]}"; do
   source_plist="$RENDER_DIR/${label}.plist"
   target_plist="$AGENT_DIR/${label}.plist"
@@ -87,4 +99,9 @@ for label in "${load_labels[@]}"; do
     launchctl kickstart -k "gui/$UID/$label"
   fi
 done
+
+if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+  write_market_runtime_activation_marker
+fi
+
 printf '[install-local-services] loaded=true mode=%s services=%s\n' "$MODE" "${#load_labels[@]}"

@@ -35,6 +35,7 @@ RUNTIME_STATUS_FAILED = "failed"
 RUNTIME_STATUS_UNKNOWN = "unknown"
 RUNTIME_STATUS_DISABLED = "disabled"
 DEFAULT_AFTER_MARKET_STATUS_PATH = PROJECT_ROOT / ".run" / "after-market-status.json"
+MARKET_RUNTIME_ACTIVATION_MARKER_NAME = "market-runtime-enabled"
 _PUBLIC_AFTER_MARKET_ERROR_CODES = frozenset(
     {
         "MAINTENANCE_LOCKED",
@@ -85,6 +86,7 @@ def build_runtime_health(
     """
     current_time = now or datetime.now(UTC)
     # 已退役参数不改变 V1 状态；live_runtime_enabled 保留为测试/本地装配可注入开关。
+    # 真实启动状态来自项目固定 .run 标记，而非另一个 launchd job 的进程环境。
     del live_polling_expected, live_market_phase, notification_autosend_enabled
     del archive_enabled, after_market_automation_enabled
     freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
@@ -113,7 +115,7 @@ def build_runtime_health(
         redis_connection,
         now=current_time,
         configured_enabled=(
-            _env_truthy("GUIYI_MARKET_RUNTIME_ENABLED")
+            _market_runtime_activation_enabled()
             if live_runtime_enabled is None
             else live_runtime_enabled
         ),
@@ -130,6 +132,15 @@ def build_runtime_health(
         "would_send_notifications": False,
         "components": components,
     }
+
+
+def _market_runtime_activation_enabled() -> bool:
+    """仅接受本项目显式 activation 写入的固定本地标记，任何读取异常均保持关闭。"""
+    marker_path = PROJECT_ROOT / ".run" / MARKET_RUNTIME_ACTIVATION_MARKER_NAME
+    try:
+        return marker_path.read_text(encoding="utf-8") == "enabled\n"
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def _collect_live_market_health(
@@ -398,11 +409,6 @@ def _env_positive_int(name: str, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return value if value > 0 else default
-
-
-def _env_truthy(name: str) -> bool:
-    """仅明确 true 值启用 Runtime；缺失或异常配置保持默认关闭。"""
-    return str(os.getenv(name, "")).strip().lower() in {"1", "true", "yes"}
 
 
 def _json_mapping(value: object) -> Mapping[str, Any] | None:

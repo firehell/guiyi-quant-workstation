@@ -141,6 +141,49 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
     assert stale["components"]["live_market"]["error_type"] == "live_heartbeat_stale"
 
 
+def test_runtime_health_is_disabled_before_local_market_runtime_activation(monkeypatch, tmp_path) -> None:
+    """The API must remain fail-closed without the fixed local activation marker."""
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    # An env var in the API process cannot stand in for the explicit local activation.
+    monkeypatch.setenv("GUIYI_MARKET_RUNTIME_ENABLED", "1")
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            after_market_status_path=None,
+        )
+
+    live = payload["components"]["live_market"]
+    assert live["configured_enabled"] is False
+    assert live["status"] == "disabled"
+
+
+def test_runtime_health_uses_local_activation_marker_not_process_environment(monkeypatch, tmp_path) -> None:
+    """A marker enables missing-heartbeat degradation; another launchd job's env cannot."""
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.setenv("GUIYI_MARKET_RUNTIME_ENABLED", "0")
+    marker = tmp_path / ".run" / "market-runtime-enabled"
+    marker.parent.mkdir()
+    marker.write_text("enabled\n", encoding="utf-8")
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            after_market_status_path=None,
+        )
+
+    live = payload["components"]["live_market"]
+    assert live["configured_enabled"] is True
+    assert live["status"] == "degraded"
+    assert live["error_type"] == "live_heartbeat_missing"
+
+
 def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_bytes() -> None:
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:

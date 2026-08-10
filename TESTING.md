@@ -46,10 +46,13 @@ uv run --project services/quant-api pytest -q services/quant-api/tests/test_runt
 scripts/ops/macos/install-local-services.sh --render-only
 plutil -lint .run/launchd/com.guiyi.quant-live.plist
 plutil -lint .run/launchd/com.guiyi.quant-after-market.plist
+uv run pytest -q tests/engineering/test_market_runtime_launchd.py
 ```
 
 上述仅覆盖 fixture、mock、仓库 `.run` 渲染和 plist 语法；不得作为 Runtime 启用或数据写入授权。禁止在
 本地验证中调用 `--confirm-market-runtime`、`guiyi runtime live` 或 `guiyi data after-market`。
+`--render-only` 与 `--confirm-load` 不会创建或改变 `.run/market-runtime-enabled`；只有成功执行
+`--confirm-market-runtime` 才会原子写入该固定本地标记，供 API 健康端点跨进程判断 Live Runtime 已启用。
 
 DFD-03 之后补充 `20260808_0035:20260808_0036 --sql` 和隔离 PostgreSQL migration 测试。DFD-05
 完成后，最终无写入 CLI smoke 为：
