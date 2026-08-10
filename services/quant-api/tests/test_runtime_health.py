@@ -23,6 +23,7 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
 
     monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
     monkeypatch.setattr("app.services.runtime_health._collect_rq_health", lambda connection, **kwargs: _rq_ok())
+    monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
     monkeypatch.setattr("app.services.runtime_health.DEFAULT_AFTER_MARKET_STATUS_PATH", tmp_path / "missing.json")
     app.dependency_overrides[get_db] = override_get_db
     try:
@@ -205,7 +206,7 @@ def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_byte
     assert _contains_no_secret_words(payload)
 
 
-def test_runtime_health_surfaces_only_public_after_market_failure(tmp_path) -> None:
+def test_runtime_health_surfaces_live_dominant_mismatch(tmp_path) -> None:
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
         json.dumps(
@@ -217,11 +218,11 @@ def test_runtime_health_surfaces_only_public_after_market_failure(tmp_path) -> N
                     "started_at": "2026-08-10T17:00:00+08:00",
                     "finished_at": "2026-08-10T18:00:00+08:00",
                     "products": ["j", "jm", "ap", "ag"],
-                    "error_code": "UPDATE_FAILED",
+                    "error_code": "LIVE_DOMINANT_MISMATCH",
                     "provider_token": "must-not-leak",
                 },
                 "last_successful_trading_day": "2026-08-09",
-                "last_failure": {"trading_day": "2026-08-10", "error_code": "UPDATE_FAILED"},
+                "last_failure": {"trading_day": "2026-08-10", "error_code": "LIVE_DOMINANT_MISMATCH"},
             }
         ),
         encoding="utf-8",
@@ -245,12 +246,12 @@ def test_runtime_health_surfaces_only_public_after_market_failure(tmp_path) -> N
         "started_at": "2026-08-10T17:00:00+08:00",
         "finished_at": "2026-08-10T18:00:00+08:00",
         "products": ["j", "jm", "ap", "ag"],
-        "error_code": "UPDATE_FAILED",
+        "error_code": "LIVE_DOMINANT_MISMATCH",
     }
     assert after_market["last_successful_trading_day"] == "2026-08-09"
     assert after_market["last_failure"] == {
         "trading_day": "2026-08-10",
-        "error_code": "UPDATE_FAILED",
+        "error_code": "LIVE_DOMINANT_MISMATCH",
     }
     assert _contains_no_secret_words(payload)
 

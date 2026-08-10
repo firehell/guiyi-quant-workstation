@@ -344,6 +344,43 @@ describe('market Live overlay', () => {
     ])
   })
 
+  it('refreshes the canonical edge before closing a socket on after-market CLOSED state', async () => {
+    let calls = 0
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => {
+        calls += 1
+        return calls === 1
+          ? page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null })
+          : page([
+            liveBar('2026-08-07T09:30:00Z', 100),
+            liveBar('2026-08-07T09:45:00Z', 101),
+          ], { has_more_before: false, next_before: null })
+      },
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'state', state: state({
+      phase: 'CLOSED',
+      live_available: false,
+      canonical_end: '2026-08-07T09:45:00Z',
+    }) })
+    await Promise.resolve()
+
+    assert.equal(sockets[0].closed, true)
+    assert.equal(calls, 2)
+    assert.deepEqual(series.bars.value.map((bar) => [bar.time, bar.close]), [
+      ['2026-08-07T09:30:00Z', 100],
+      ['2026-08-07T09:45:00Z', 101],
+    ])
+  })
+
   it('keeps the newest canonical edge when same-series refresh responses resolve out of order', async () => {
     let pageCalls = 0
     let resolveOlderRefresh: ((value: MarketBarsPageResponse) => void) | undefined

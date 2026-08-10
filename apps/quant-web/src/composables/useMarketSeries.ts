@@ -262,13 +262,13 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       const previousSeam = latestEnd(canonicalBars)
       marketState.value = payload.state
       liveUnavailable.value = !payload.state.live_available
-      if (!stillNeedsLive(nextIdentity, payload.state)) {
-        clearSocket()
-        return
-      }
       if (isLater(payload.state.canonical_end, previousSeam)) {
         const refreshToken = ++canonicalRefreshToken
         void refreshCanonicalEdge(requestGeneration, nextIdentity, refreshToken)
+      }
+      if (!stillNeedsLive(nextIdentity, payload.state)) {
+        clearSocket()
+        return
       }
     }
     socket.onclose = () => {

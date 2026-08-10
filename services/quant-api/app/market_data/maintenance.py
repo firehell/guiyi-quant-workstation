@@ -99,6 +99,12 @@ class MetadataPort(Protocol):
         starts: Mapping[str, date],
     ) -> date: ...
 
+    def synchronize_current_day(
+        self,
+        products: tuple[str, ...],
+        trading_day: date,
+    ) -> date: ...
+
 
 class BarSource(Protocol):
     """行情拉取端口：按 DatasetKey 与缺失 bar_end 列表返回一批 canonical bars。"""

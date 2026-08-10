@@ -16,6 +16,7 @@ import time
 from typing import Any
 
 from app.market_data.infrastructure import RQDataClient, SHANGHAI
+from app.market_data.live_market import RedisLiveStore
 from app.market_data.maintenance import HistoricalDataManager, UpdateRequest
 from app.market_data.operational_universe import load_operational_products
 from app.core.env import PROJECT_ROOT
@@ -25,6 +26,7 @@ _NOTIFICATION_TITLE = "Guiyi Quant After-Market"
 _PUBLIC_ERROR_CODES = frozenset(
     {
         "MAINTENANCE_LOCKED",
+        "LIVE_DOMINANT_MISMATCH",
         "NON_TRADING_DAY",
         "PROVIDER_QUOTA_EXHAUSTED",
         "RQDATA_NOT_READY",
@@ -34,6 +36,7 @@ _PUBLIC_ERROR_CODES = frozenset(
 )
 _PUBLIC_NOTIFICATION_MESSAGES = {
     "MAINTENANCE_LOCKED": "Historical maintenance remained locked after one retry.",
+    "LIVE_DOMINANT_MISMATCH": "Live dominant contract did not match the formal rank-one map.",
     "PROVIDER_QUOTA_EXHAUSTED": "RQData quota remained unavailable after one retry.",
     "RQDATA_NOT_READY": "RQData futures data is not ready after one retry.",
     "RQDATA_READY_CHECK_FAILED": "RQData readiness check failed after one retry.",
@@ -69,6 +72,7 @@ class AfterMarketUpdater:
         *,
         manager: HistoricalDataManager,
         rqdata: RQDataClient,
+        live_store: RedisLiveStore,
         status_path: Path,
         sleep: Callable[[float], None],
         notifier: Callable[[str], None],
@@ -76,6 +80,7 @@ class AfterMarketUpdater:
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
+        self.live_store = live_store
         self.status_path = status_path
         self.sleep = sleep
         self.notifier = notifier
@@ -119,14 +124,28 @@ class AfterMarketUpdater:
         if not ready:
             return "RQDATA_NOT_READY"
         try:
+            self.manager.metadata.synchronize_current_day(products, trading_day)
             result = self.manager.update(
                 UpdateRequest(products=products, since=None, through=trading_day, apply=True)
             )
         except Exception:  # noqa: BLE001 - do not persist exceptions or provider text
             return "UPDATE_FAILED"
-        if result.status in {"passed", "noop"}:
-            return None
-        return _public_maintenance_failure_code(result.stop_reason)
+        if result.status not in {"passed", "noop"}:
+            return _public_maintenance_failure_code(result.stop_reason)
+        try:
+            # A successful Canonical write must notify the Web seam even when the
+            # temporary intraday snapshot disagrees with the formal map.
+            self.live_store.publish_state({"trading_day": trading_day.isoformat()})
+            if not _rank1_matches_live_snapshot(self.manager, self.live_store, products, trading_day):
+                return "LIVE_DOMINANT_MISMATCH"
+            # TTL remains the recovery path when this best-effort removal fails.
+            try:
+                self.live_store.cleanup_trading_day(trading_day)
+            except Exception:  # noqa: BLE001 - cleanup failure must not re-promote Live data
+                pass
+        except Exception:  # noqa: BLE001 - do not expose catalog or Redis details
+            return "UPDATE_FAILED"
+        return None
 
     def _write_status(
         self,
@@ -183,9 +202,14 @@ def build_after_market_updater(manager: HistoricalDataManager) -> AfterMarketUpd
     client = getattr(provider, "client", None)
     if client is None:
         raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
+    from app.market_data.live_market import RedisClient
+    from app.queue import get_redis_connection
+    from typing import cast
+
     return AfterMarketUpdater(
         manager=manager,
         rqdata=client,
+        live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
         status_path=PROJECT_ROOT / ".run" / "after-market-status.json",
         sleep=time.sleep,
         notifier=default_after_market_notifier,
@@ -210,6 +234,35 @@ def _public_maintenance_failure_code(stop_reason: str | None) -> str:
     if stop_reason in _PUBLIC_ERROR_CODES:
         return stop_reason
     return "UPDATE_FAILED"
+
+
+def _rank1_matches_live_snapshot(
+    manager: HistoricalDataManager,
+    live_store: RedisLiveStore,
+    products: tuple[str, ...],
+    trading_day: date,
+) -> bool:
+    """Compare one immutable Live day snapshot with the formal rank-one facts."""
+    snapshot = live_store.subscriptions(trading_day)
+    if snapshot is None:
+        return False
+    live = {
+        symbol.strip().lower(): contract.strip().upper()
+        for symbol, contract in snapshot.items()
+        if isinstance(symbol, str) and isinstance(contract, str) and symbol.strip() and contract.strip()
+    }
+    if set(live) != set(products):
+        return False
+    formal: dict[str, str] = {}
+    for symbol in products:
+        facts = manager.catalog.main_map(symbol, trading_day, trading_day)
+        if len(facts) != 1:
+            return False
+        contract = facts[0].contract
+        if not isinstance(contract, str) or not contract.strip():
+            return False
+        formal[symbol] = contract.strip().upper()
+    return live == formal
 
 
 def _public_trading_day(value: object) -> str | None:
