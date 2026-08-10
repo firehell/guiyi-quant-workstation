@@ -520,6 +520,118 @@ def test_started_provider_drains_buffered_final_raw_bar_during_break_grace() -> 
     assert client.listen_calls == 1 and client.subscribed == ["bar_J2505"]
 
 
+def test_session_final_bar_arriving_after_finalization_delay_is_still_accepted() -> None:
+    """Catches the two-second finalization delay also truncating provider arrival grace."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 5, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    service.poll(datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+    client.emit(_raw_payload("J2505", _bar(5)))
+
+    assert service.poll(datetime(2025, 1, 2, 1, 5, 10, tzinfo=UTC)) is None
+    assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (_bar(5),)
+
+
+def test_closed_product_final_bar_completes_all_derived_while_another_product_trades() -> None:
+    """Catches a shorter-session product losing its close while another feed remains active."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    j_window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    ag_window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 3, tzinfo=UTC)
+    )
+    source = tuple(
+        CanonicalBar(
+            bar_end=j_window.start + timedelta(minutes=index),
+            trading_day=day,
+            open=Decimal(index),
+            high=Decimal(index + 2),
+            low=Decimal(index - 1),
+            close=Decimal(index + 1),
+            volume=Decimal(index),
+            turnover=Decimal(index * 10),
+            open_interest=Decimal(index * 100),
+        )
+        for index in range(1, 61)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    phases = FakePhases(
+        {
+            "j": _phase("j", day, j_window),
+            "ag": _phase("ag", day, ag_window),
+        }
+    )
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505", ("ag", day): "AG2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j", "ag"),
+    )
+    service.poll(j_window.start)
+    for bar in source[:-1]:
+        service.ingest("J2505", bar, now=bar.bar_end + timedelta(seconds=2))
+        service.flush_due(bar.bar_end + timedelta(seconds=2))
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.CLOSED)
+    client.emit(_raw_payload("J2505", source[-1]))
+
+    assert service.poll(j_window.end + timedelta(seconds=10)) is None
+    store = module.RedisLiveStore(fake)
+    assert store.bars_after(day, "j", "1m", None) == source
+    for frequency in ("5m", "15m", "30m", "60m"):
+        assert store.bars_after(day, "j", frequency, None) == aggregate_from_1m(
+            source, target_frequency=frequency, sessions=(j_window,)
+        )
+    assert json.loads(fake.values["live:heartbeat"])["phase_counts"] == {
+        "CLOSED": 1,
+        "TRADING": 1,
+    }
+
+
+def test_post_session_grace_rejects_nonfinal_and_overdue_final_bars() -> None:
+    """Catches the close grace becoming an unbounded replay path for stale session bars."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 5, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    service.poll(datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.CLOSED)
+    client.emit(_raw_payload("J2505", _bar(4)))
+    service.poll(window.end + timedelta(seconds=10))
+    client.emit(_raw_payload("J2505", _bar(5)))
+    service.poll(window.end + timedelta(seconds=61))
+
+    assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == ()
+    assert service.rejections == ["LIVE_BAR_OUTSIDE_SESSION", "LIVE_BAR_OUTSIDE_SESSION"]
+
+
 @pytest.mark.parametrize("rank1", ("J88", "J888", "J2505.CONT", "JM2505"))
 def test_invalid_rank1_never_creates_snapshot_or_subscription(rank1: str) -> None:
     module = importlib.import_module("app.market_data.live_market")

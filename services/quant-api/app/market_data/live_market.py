@@ -21,6 +21,7 @@ from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 _LIVE_TTL_SECONDS = 3 * 24 * 60 * 60
 _HEARTBEAT_TTL_SECONDS = 30
 _FINALIZATION_DELAY = timedelta(seconds=2)
+_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
 _PROVIDER_RETRY_DELAY = timedelta(seconds=10)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _CONCRETE_CONTRACT = re.compile(r"(?P<symbol>[A-Z]+)(?P<month>\d{3,4})\Z")
@@ -584,7 +585,10 @@ class LiveMarketService:
         if phase.trading_day == bar.trading_day and phase.current_session is not None:
             return phase.current_session
         for window in self._known_sessions.get((symbol, bar.trading_day), ()):
-            if window.start < bar.bar_end <= window.end and now <= window.end + _FINALIZATION_DELAY:
+            if (
+                bar.bar_end == window.end
+                and window.end <= now <= window.end + _SESSION_END_ARRIVAL_GRACE
+            ):
                 return window
         return None
 
@@ -593,20 +597,7 @@ class LiveMarketService:
         if self._provider is None:
             return
         for contract, bar in self._provider.poll_buffered():
-            if self._is_final_grace_bar(contract, bar, now):
-                self.ingest(contract, bar, now=now)
-
-    def _is_final_grace_bar(self, contract: str, bar: CanonicalBar, now: datetime) -> bool:
-        symbol = next(
-            (item for item, current in self._contracts.items() if current == contract.strip().upper()),
-            None,
-        )
-        if symbol is None:
-            return False
-        return any(
-            bar.bar_end == window.end and window.end <= now <= window.end + _FINALIZATION_DELAY
-            for window in self._known_sessions.get((symbol, bar.trading_day), ())
-        )
+            self.ingest(contract, bar, now=now)
 
     def _provider_or_create(self) -> LiveProvider:
         if self._provider is None:

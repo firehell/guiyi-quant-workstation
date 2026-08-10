@@ -528,10 +528,13 @@ V1 只向 Web 发布已完成 1m。
 2. 相同 bar_end 在最终发布前只保留最新 payload；
 3. `now >= bar_end + 2 seconds` 后才 final；
 4. final 后该 bar_end 不再修改；
-5. Session 最后一根同样在 `session_end + 2 seconds` final；
-6. 不在 expected boundary 的事件丢弃并记录稳定错误码。
+5. Session 最后一根只接受 `bar_end == session_end`，已启动的 provider 可在
+   `session_end + 60 seconds` 前补交；到达时若已超过 2 秒 finalization 边界则立即 final；
+6. 收盘后的 Session 中间分钟与超过 60 秒才到达的末根均丢弃并记录稳定错误码。
 
-因此典型 09:31 bar 最晚约 09:31:02 进入 Live Overlay，不再额外等待下一分钟。
+2 秒 finalization 与 60 秒 session-end arrival grace 是两个独立边界。典型 09:31 bar
+仍最晚约 09:31:02 进入 Live Overlay；额外窗口只保护精确的 Session 末根，不构成
+历史补洞、repair 或 replay。
 
 ### 10.5 缺失 Live 分钟
 
