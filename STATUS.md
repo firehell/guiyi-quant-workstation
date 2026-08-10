@@ -35,7 +35,11 @@ actual_dominant 共 21 组同窗口读回全部通过。随后 INE `ec` 在精�
 同步和 Canonical 重建，发布 613 个正式月分区（continuous 259、真实合约 354）；写后 audit 通过、
 fixed-T0 dry-run 为 NOOP，且早期、最近与跨换月的七周期 continuous / contract / actual_dominant
 共 21 组同窗口读回全部通过。生产正式分区现为 3,410 个，数据资产与完整闭环验收均为 5/60，剩余
-55 个 active 品种待重建。60 品种重建及全域 Canonical 验收仍未完成。
+55 个 active 品种待重建。随后 GFEX `lc` 在精确单次执行意图下完成 metadata 同步和 Canonical
+重建，发布 602 个正式月分区（continuous 266、真实合约 336）；写后 audit 通过、fixed-T0 dry-run
+为 NOOP，且早期、最近与跨换月的七周期 continuous / contract / actual_dominant 共 21 组同窗口读回
+全部通过。生产正式分区现为 4,012 个，数据资产与完整闭环验收均为 6/60，剩余 54 个 active 品种待
+重建。60 品种重建及全域 Canonical 验收仍未完成。
 `ap` 写入前的全域只读 audit 已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条
 finding，即当时 58 个未闭环品种各一条 `MAIN_CONTRACT_MAP_MISSING` 与
 `TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。Calendar、分区与物理可读性类别
@@ -98,7 +102,10 @@ metadata 同步与 Canonical 重建，产出 `applied=748`、`failed=0`、`provi
 同步与 Canonical 重建，产出 `applied=613`、`failed=0`、`provider_requests=261`；写后 audit 为
 passed、fixed-T0 dry-run 为 NOOP，613 个 Catalog 分区及对应 Parquet 均可读，且七周期三种查询模式
 的早期、最近与跨换月共 21 组读回通过。其余 55 个品种的历史 Session facts 与 Canonical 重建仍需
-后续受控执行。在明确单次
+后续受控执行。随后 GFEX `lc` 在独立的明确单次意图下完成 metadata 同步与 Canonical 重建，产出
+`applied=602`、`failed=0`、`provider_requests=258`；写后 audit 为 passed、fixed-T0 dry-run 为
+NOOP，602 个 Catalog 分区及对应 Parquet 均可读，且七周期三种查询模式的早期、最近与跨换月共 21 组
+读回通过。其余 54 个品种的历史 Session facts 与 Canonical 重建仍需后续受控执行。在明确单次
 意图下已多次对生产执行 `guiyi data retire-products --apply`，覆盖退役名单
 `br/cs/ic/if/ih/im/lu/nr/sp`；Canonical 退役目录均为 0，事后 residual=0，显式退役码返回
 `PRODUCT_RETIRED`。未执行服务切换、main/tag/release 或 Runtime promotion。

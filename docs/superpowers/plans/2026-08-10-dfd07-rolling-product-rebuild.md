@@ -150,7 +150,7 @@ Expected: 元数据尚未完整时以公开 fail-closed 码停止；不得把无
 记录 runtime 检查点、audit/dry-run JSON 中的 status、finding/错误码，以及三条命令均未带 `--apply`
 的事实。不要创建任务文件、报告文件或数据库记录。
 
-- [ ] **Step 5: 获得 `lc` 的独立单次意图后，执行唯一一次 apply。**
+- [x] **Step 5: 获得 `lc` 的独立单次意图后，执行唯一一次 apply。**
 
 ```bash
 uv run --project services/quant-api guiyi data update --symbol lc --through 2026-08-07 --apply
@@ -158,7 +158,7 @@ uv run --project services/quant-api guiyi data update --symbol lc --through 2026
 
 Expected: 不与任何其他维护操作并发；输出为该次唯一的 `lc` 写入结果。
 
-- [ ] **Step 6: 对成功 apply 运行 audit。**
+- [x] **Step 6: 对成功 apply 运行 audit。**
 
 ```bash
 uv run --project services/quant-api guiyi data audit --symbol lc
@@ -166,7 +166,7 @@ uv run --project services/quant-api guiyi data audit --symbol lc
 
 Expected: `status=passed` 且 `finding_count=0`；否则停止在 `lc`，不转入常规队列。
 
-- [ ] **Step 7: 对成功 audit 运行同 T0 NOOP 检查。**
+- [x] **Step 7: 对成功 audit 运行同 T0 NOOP 检查。**
 
 ```bash
 uv run --project services/quant-api guiyi data update --symbol lc --through 2026-08-07
@@ -174,7 +174,7 @@ uv run --project services/quant-api guiyi data update --symbol lc --through 2026
 
 Expected: `status=noop`、`planned=0`、`provider_requests=0`；否则停止在 `lc`。
 
-- [ ] **Step 8: 做 `lc` 的七周期 MarketDataService 读回。**
+- [x] **Step 8: 做 `lc` 的七周期 MarketDataService 读回。**
 
 对
 `1m/5m/15m/30m/60m/1d/1w` 分别检查 continuous；再从 `lc` 写后 rank1 map 选择已有 coverage
