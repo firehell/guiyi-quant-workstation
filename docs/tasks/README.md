@@ -30,11 +30,12 @@ Gate/hash-path 不再作为授权。
 ## Active contracts
 
 - `GY-DATA-CORE-V2.md` — 数据交互核心收口 active 业务合同
-- `GY-MARKET-RUNTIME-V1.md` — 实现已存在且本地四品种有界 Runtime 已启用；MR-08 自然时点验收仍为 `PARTIAL`
 
 ## Historical facts（仍在本目录）
 
 - `GY-DATA-PRODUCT-RETIREMENT-5.md` — 九品种退役已完成（仓库 + 生产 residual=0）；不构成后续删除授权
+- `GY-MARKET-RUNTIME-V1.md` — 已完成设计与实现的保留参考；本地四品种有界 Runtime 已启用，但 MR-08 自然时点验收
+  仍为 `PARTIAL`。当前事实只看 `STATUS.md`，本文件不构成新的启用、重载或 promotion 授权
 
 已退役的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据仅能从 Git history 追溯；
 不得再当作现存路径、兼容入口或当前授权。未来重建回测或 Runtime 验收必须新建任务，

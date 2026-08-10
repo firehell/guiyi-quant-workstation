@@ -77,7 +77,7 @@ docs/superpowers/specs/2026-08-10-market-research-workspace-design.md
 
 **Interfaces:**
 - Consumes: current audit behavior documented by `docs/DATA_CENTER.md`, `TESTING.md`, and active OpenSpec.
-- Consumes: current Runtime contract documented by `docs/tasks/GY-MARKET-RUNTIME-V1.md` and `STATUS.md`.
+- Consumes: retained Runtime design documented by `docs/tasks/GY-MARKET-RUNTIME-V1.md` and current facts from `STATUS.md`.
 - Produces: no completed Superpowers artifact that can be mistaken for active state or authorization.
 
 - [x] **Step 1: Prove no active document references the five paths or basenames**
@@ -202,13 +202,15 @@ Add section `4. Development Runtime deployment` before the existing repository-d
 
 - [x] **Step 5: Update `docs/tasks/README.md`**
 
-Add `GY-MARKET-RUNTIME-V1.md` under active contracts with this meaning:
+Retain `GY-MARKET-RUNTIME-V1.md` under historical facts with this meaning:
 
 ```text
 Implementation exists and local bounded Runtime is enabled, but MR-08 natural-time acceptance is still partial.
+Current facts come only from STATUS.md; the retained task file grants no new enable, reload, or promotion authorization.
 ```
 
-Do not move it to historical facts until the independent Runtime acceptance is actually complete.
+Keep current acceptance separate from the four-value task disposition: the file is `historical_fact`, while current acceptance is
+`partial_canary_development_runtime` until the independent Runtime acceptance actually completes.
 
 - [x] **Step 6: Validate and commit governance documents**
 
@@ -331,7 +333,8 @@ State that manual `guiyi data after-market` never substitutes for level 3 natura
 Set:
 
 ```text
-Disposition: partial_canary_development_runtime
+Disposition: historical_fact
+Current acceptance: partial_canary_development_runtime
 Current topology: launchd temporarily runs the main develop checkout; old detached worktree is removed.
 ```
 
@@ -424,7 +427,7 @@ Run:
 python3 scripts/engineering/repository_consistency.py --task-inventory
 ```
 
-Expected: task inventory succeeds and recognizes `GY-MARKET-RUNTIME-V1.md` as current/retained rather than a deleted historical artifact.
+Expected: task inventory succeeds, retains `GY-MARKET-RUNTIME-V1.md` as `historical_fact`, and does not treat it as active authorization.
 
 - [x] **Step 3: Scan forbidden stale current-state wording**
 

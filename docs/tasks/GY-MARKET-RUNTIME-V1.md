@@ -1,7 +1,8 @@
 # GY-MARKET-RUNTIME-V1：历史分页、盘后自动更新与主力实时行情设计
 
 更新时间：2026-08-10
-Disposition：`partial_canary_development_runtime`
+Disposition：`historical_fact`
+Current acceptance：`partial_canary_development_runtime`
 当前实现基线：仓库实现与即时验收已完成；精确当前事实以 `STATUS.md` 为准
 
 ## 1. 目标
@@ -1633,7 +1634,7 @@ Canonical / Live seam
 其余不建设企业级恢复、队列、权限、多用户或多版本体系。
 
 MR-01～MR-07 已完成本地代码、fixture/mock、build 与 render-only 验证；MR-08 已完成有界启用和当前可即时执行的
-验收，因此本文件当前为 `partial_canary_development_runtime`。launchd 临时直接运行主 `develop` 工作区，只服务于
+验收；本文件作为 `historical_fact` 保留，当前验收状态为 `partial_canary_development_runtime`。launchd 临时直接运行主 `develop` 工作区，只服务于
 开发期快速修改和观察，不构成 exact-commit Runtime、release 或 promotion 证据。
 
 最终关闭本文件仍需：修复项回归全部通过、真实浏览器左拖加载到 2023 年、自然 10:15/10:30、自然 17:00 完整收口、
