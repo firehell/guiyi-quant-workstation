@@ -80,7 +80,7 @@ docs/superpowers/specs/2026-08-10-market-research-workspace-design.md
 - Consumes: current Runtime contract documented by `docs/tasks/GY-MARKET-RUNTIME-V1.md` and `STATUS.md`.
 - Produces: no completed Superpowers artifact that can be mistaken for active state or authorization.
 
-- [ ] **Step 1: Prove no active document references the five paths or basenames**
+- [x] **Step 1: Prove no active document references the five paths or basenames**
 
 Run:
 
@@ -100,7 +100,7 @@ done
 
 Expected: no active reference output.
 
-- [ ] **Step 2: Delete exactly the five files through Git**
+- [x] **Step 2: Delete exactly the five files through Git**
 
 Run:
 
@@ -115,7 +115,7 @@ git rm -- \
 
 Expected: only the five named tracked Markdown files are staged as deleted.
 
-- [ ] **Step 3: Verify the deletion diff**
+- [x] **Step 3: Verify the deletion diff**
 
 Run:
 
@@ -126,7 +126,7 @@ git diff --cached --check
 
 Expected: five `D` entries and no whitespace errors.
 
-- [ ] **Step 4: Commit the artifact deletion**
+- [x] **Step 4: Commit the artifact deletion**
 
 Run:
 
@@ -151,7 +151,7 @@ Expected: one documentation-only commit containing the five deletions.
 - Consumes: current deployment fact from `STATUS.md`.
 - Produces: one execution rule: edit/test in `develop`; deploy only after explicit one-time intent; final Runtime remains isolated.
 
-- [ ] **Step 1: Update `AGENTS.md` with the temporary development topology**
+- [x] **Step 1: Update `AGENTS.md` with the temporary development topology**
 
 Add one concise paragraph after the ordinary `develop` workflow stating all of the following:
 
@@ -165,7 +165,7 @@ After functional closure, recreate an exact-commit isolated Runtime worktree for
 
 Keep the existing four-product continuing authorization and `auto_order=false` unchanged.
 
-- [ ] **Step 2: Add the long-lived topology decision to `DECISIONS.md`**
+- [x] **Step 2: Add the long-lived topology decision to `DECISIONS.md`**
 
 Update the document date to `2026-08-10` and add one table row:
 
@@ -175,7 +175,7 @@ Decision: During functional development, local launchd may temporarily run the m
 Boundary: No hot reload; each reload needs one-time intent; develop evidence is not promotion or final Runtime evidence.
 ```
 
-- [ ] **Step 3: Update `docs/DEVELOPMENT.md`**
+- [x] **Step 3: Update `docs/DEVELOPMENT.md`**
 
 Update the document date to `2026-08-10`. Add a `Development Runtime deployment` subsection containing this exact sequence:
 
@@ -190,7 +190,7 @@ clean develop + intended commit
 
 State that `--render-only` is ordinary validation, while `--confirm-load` and `--confirm-market-runtime` are controlled external operations. Replace any wording that can be read as “Runtime is currently disabled” with “templates default closed; current local state is routed through STATUS.md.”
 
-- [ ] **Step 4: Update `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`**
+- [x] **Step 4: Update `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`**
 
 Add section `4. Development Runtime deployment` before the existing repository-deletion section and renumber later headings. The section must state:
 
@@ -200,7 +200,7 @@ Add section `4. Development Runtime deployment` before the existing repository-d
 - after reload, verify installed `GUIYI_PROJECT_ROOT`, API/Web reachability, bounded Live state, and scheduled-job idle state;
 - do not manually run after-market to replace a natural event.
 
-- [ ] **Step 5: Update `docs/tasks/README.md`**
+- [x] **Step 5: Update `docs/tasks/README.md`**
 
 Add `GY-MARKET-RUNTIME-V1.md` under active contracts with this meaning:
 
@@ -210,7 +210,7 @@ Implementation exists and local bounded Runtime is enabled, but MR-08 natural-ti
 
 Do not move it to historical facts until the independent Runtime acceptance is actually complete.
 
-- [ ] **Step 6: Validate and commit governance documents**
+- [x] **Step 6: Validate and commit governance documents**
 
 Run:
 
@@ -245,7 +245,7 @@ git commit -m "docs: define develop runtime workflow"
 - Consumes: governance wording established by Task 2.
 - Produces: concise operator navigation without creating a second deployment authority.
 
-- [ ] **Step 1: Update `README.md`**
+- [x] **Step 1: Update `README.md`**
 
 Keep `./scripts/dev/dev-up.sh` as the process-local startup path. Add a separate `Development launchd deployment` note that says:
 
@@ -257,7 +257,7 @@ Keep `./scripts/dev/dev-up.sh` as the process-local startup path. Add a separate
 
 Do not publish `--confirm-*` commands as an always-authorized copy/paste shortcut.
 
-- [ ] **Step 2: Update `PROJECT_SOURCE.md`**
+- [x] **Step 2: Update `PROJECT_SOURCE.md`**
 
 Keep temporary paths and hashes out of this long-lived document. Add these stable rules:
 
@@ -273,7 +273,7 @@ Replace the stale statement that DFD-02 through DFD-06 are still converging with
 DFD-01 through DFD-06 are repository-complete; DFD-07 production Canonical closure remains partial and is reported by STATUS.md.
 ```
 
-- [ ] **Step 3: Update `docs/ARCHITECTURE.md`**
+- [x] **Step 3: Update `docs/ARCHITECTURE.md`**
 
 Update the date to `2026-08-10`. In system positioning, distinguish:
 
@@ -283,7 +283,7 @@ Update the date to `2026-08-10`. In system positioning, distinguish:
 - Live remains Redis-only and never enters Canonical/DB;
 - the final Runtime topology remains an isolated exact-commit worktree.
 
-- [ ] **Step 4: Validate and commit product/architecture documents**
+- [x] **Step 4: Validate and commit product/architecture documents**
 
 Run:
 
@@ -316,7 +316,7 @@ git commit -m "docs: align runtime architecture and navigation"
 - Consumes: current status `develop` deployment with MR-08 still partial.
 - Produces: executable validation commands and still-active plans with correct premises.
 
-- [ ] **Step 1: Update `TESTING.md`**
+- [x] **Step 1: Update `TESTING.md`**
 
 Update the date to `2026-08-10`. Keep the existing no-side-effect Runtime commands. Add three clearly separated levels:
 
@@ -326,7 +326,7 @@ Update the date to `2026-08-10`. Keep the existing no-side-effect Runtime comman
 
 State that manual `guiyi data after-market` never substitutes for level 3 natural evidence.
 
-- [ ] **Step 2: Update `docs/tasks/GY-MARKET-RUNTIME-V1.md`**
+- [x] **Step 2: Update `docs/tasks/GY-MARKET-RUNTIME-V1.md`**
 
 Set:
 
@@ -345,7 +345,7 @@ Retain the original frozen architecture and implementation scope. Add a current-
 
 Do not rewrite historical 4/60 facts as global completion.
 
-- [ ] **Step 3: Correct the P0 implementation plan premise**
+- [x] **Step 3: Correct the P0 implementation plan premise**
 
 In `docs/superpowers/plans/2026-08-10-market-research-workspace-p0.md`, replace:
 
@@ -362,7 +362,7 @@ P0 must reuse these surfaces and must not change the Runtime scope, deployment r
 
 Update review correction 1 from “do not restore Live” to “reuse the currently enabled seam without owning Runtime deployment.”
 
-- [ ] **Step 4: Correct the P0 design premise**
+- [x] **Step 4: Correct the P0 design premise**
 
 In `docs/superpowers/specs/2026-08-10-market-research-workspace-design.md`, replace the statement that the design does not restore intraday Live/WebSocket with:
 
@@ -370,7 +370,7 @@ In `docs/superpowers/specs/2026-08-10-market-research-workspace-design.md`, repl
 Historical Canonical and Live observation remain separate. The design reuses the existing enabled REST/WebSocket seam but does not modify Live collection, Runtime deployment, operational products, or promotion.
 ```
 
-- [ ] **Step 5: Validate and commit Runtime/P0 documents**
+- [x] **Step 5: Validate and commit Runtime/P0 documents**
 
 Run:
 
@@ -405,7 +405,7 @@ git commit -m "docs: refresh runtime acceptance premises"
 - Consumes: Tasks 1-4.
 - Produces: one clean, internally consistent documentation state.
 
-- [ ] **Step 1: Validate active OpenSpec**
+- [x] **Step 1: Validate active OpenSpec**
 
 Run:
 
@@ -416,7 +416,7 @@ openspec status --change converge-canonical-data-foundation --json
 
 Expected: validation succeeds; status output remains evidence only and grants no mutation.
 
-- [ ] **Step 2: Validate task inventory**
+- [x] **Step 2: Validate task inventory**
 
 Run:
 
@@ -426,19 +426,20 @@ python3 scripts/engineering/repository_consistency.py --task-inventory
 
 Expected: task inventory succeeds and recognizes `GY-MARKET-RUNTIME-V1.md` as current/retained rather than a deleted historical artifact.
 
-- [ ] **Step 3: Scan forbidden stale current-state wording**
+- [x] **Step 3: Scan forbidden stale current-state wording**
 
 Run:
 
 ```bash
 rg -n -i --glob '*.md' \
+  --glob '!docs/superpowers/plans/2026-08-10-document-runtime-topology-cleanup.md' \
   'guiyi-quant-workstation-runtime|Runtime detached checkout current|current Runtime.*not enabled|Market Runtime V1.*not enabled|after-market-scheduler' \
   AGENTS.md STATUS.md PROJECT_SOURCE.md DECISIONS.md README.md TESTING.md docs || true
 ```
 
 Expected: only explicitly historical/removed-state descriptions, formal OpenSpec archive, or inactive source names remain; no active document treats them as current topology.
 
-- [ ] **Step 4: Prove deleted artifacts are absent**
+- [x] **Step 4: Prove deleted artifacts are absent**
 
 Run:
 
@@ -456,7 +457,7 @@ done
 
 Expected: all five checks succeed.
 
-- [ ] **Step 5: Run final Markdown and Git checks**
+- [x] **Step 5: Run final Markdown and Git checks**
 
 Run:
 
@@ -468,7 +469,7 @@ git log -6 --oneline --decorate
 
 Expected: no unstaged change, no whitespace failure, and only the planned documentation commits after the design/plan commits.
 
-- [ ] **Step 6: Report bounded completion**
+- [x] **Step 6: Report bounded completion**
 
 Report:
 
