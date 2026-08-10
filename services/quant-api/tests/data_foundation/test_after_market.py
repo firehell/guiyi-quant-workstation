@@ -255,6 +255,54 @@ def test_readiness_failure_logs_only_sanitized_diagnostics(tmp_path, caplog) -> 
     assert "credential-secret-provider-message" not in caplog.text
 
 
+def test_update_exception_logs_only_sanitized_stage_diagnostics(tmp_path, caplog) -> None:
+    updater, manager, _rqdata, _sleeps, notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True, True],
+        results=[],
+    )
+
+    def fail_update(_request):
+        raise RuntimeError("credential-secret-provider-message")
+
+    manager.update = fail_update
+    caplog.set_level(logging.WARNING, logger="app.market_data.after_market")
+
+    result = updater.run()
+
+    assert result.error_code == "UPDATE_FAILED"
+    assert notices == ["UPDATE_FAILED"]
+    assert [record.message for record in caplog.records] == [
+        "after_market_attempt_failed stage=canonical_update attempt=1 "
+        "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=RuntimeError",
+        "after_market_attempt_failed stage=canonical_update attempt=2 "
+        "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=RuntimeError",
+    ]
+    assert "credential-secret-provider-message" not in caplog.text
+
+
+def test_failed_update_result_logs_sanitized_stop_code(tmp_path, caplog) -> None:
+    updater, _manager, _rqdata, _sleeps, _notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True, True],
+        results=[
+            _result("failed", stop_reason="PROVIDER_QUOTA_EXHAUSTED"),
+            _result("passed"),
+        ],
+    )
+    caplog.set_level(logging.WARNING, logger="app.market_data.after_market")
+
+    result = updater.run()
+
+    assert result.status == "passed"
+    assert [record.message for record in caplog.records] == [
+        "after_market_attempt_failed stage=canonical_update_result attempt=1 "
+        "detail_code=PROVIDER_QUOTA_EXHAUSTED result_status=failed"
+    ]
+
+
 def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) -> None:
     updater, _manager, _rqdata, _sleeps, notices, _live_store = _updater(
         tmp_path,

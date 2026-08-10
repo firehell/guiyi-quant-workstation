@@ -145,25 +145,59 @@ class AfterMarketUpdater:
             return "RQDATA_NOT_READY"
         try:
             self.manager.metadata.synchronize_current_day(products, trading_day)
+        except Exception as exc:  # noqa: BLE001 - provider/catalog detail stays private
+            _LOGGER.warning(
+                "after_market_attempt_failed stage=metadata_sync attempt=%s "
+                "detail_code=UNEXPECTED_METADATA_EXCEPTION exception_type=%s",
+                attempt,
+                type(exc).__name__,
+            )
+            return "UPDATE_FAILED"
+        try:
             result = self.manager.update(
                 UpdateRequest(products=products, since=None, through=trading_day, apply=True)
             )
-        except Exception:  # noqa: BLE001 - do not persist exceptions or provider text
+        except Exception as exc:  # noqa: BLE001 - provider/catalog detail stays private
+            _LOGGER.warning(
+                "after_market_attempt_failed stage=canonical_update attempt=%s "
+                "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=%s",
+                attempt,
+                type(exc).__name__,
+            )
             return "UPDATE_FAILED"
         if result.status not in {"passed", "noop"}:
-            return _public_maintenance_failure_code(result.stop_reason)
+            error_code = _public_maintenance_failure_code(result.stop_reason)
+            _LOGGER.warning(
+                "after_market_attempt_failed stage=canonical_update_result attempt=%s "
+                "detail_code=%s result_status=%s",
+                attempt,
+                error_code,
+                result.status,
+            )
+            return error_code
         try:
             # A successful Canonical write must notify the Web seam even when the
             # temporary intraday snapshot disagrees with the formal map.
             self.live_store.publish_state({"trading_day": trading_day.isoformat()})
             if not _rank1_matches_live_snapshot(self.manager, self.live_store, products, trading_day):
+                _LOGGER.warning(
+                    "after_market_attempt_failed stage=live_reconciliation attempt=%s "
+                    "detail_code=LIVE_DOMINANT_MISMATCH",
+                    attempt,
+                )
                 return "LIVE_DOMINANT_MISMATCH"
             # TTL remains the recovery path when this best-effort removal fails.
             try:
                 self.live_store.cleanup_trading_day(trading_day)
             except Exception:  # noqa: BLE001 - cleanup failure must not re-promote Live data
                 pass
-        except Exception:  # noqa: BLE001 - do not expose catalog or Redis details
+        except Exception as exc:  # noqa: BLE001 - catalog/Redis detail stays private
+            _LOGGER.warning(
+                "after_market_attempt_failed stage=live_reconciliation attempt=%s "
+                "detail_code=UNEXPECTED_LIVE_EXCEPTION exception_type=%s",
+                attempt,
+                type(exc).__name__,
+            )
             return "UPDATE_FAILED"
         return None
 
