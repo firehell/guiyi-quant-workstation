@@ -113,23 +113,44 @@ Expected: `status=noop`、`planned=0`、`provider_requests=0`；否则停止在 
 **Files:**
 - Create: none
 - Modify: none
-- Test: same read-only and post-write acceptance sequence as Task 1 and Task 2
+- Test: `lc` scoped audit、fixed-T0 dry-run 与生产写后 MarketDataService 读回
 
 **Interfaces:**
 - Consumes: 完成闭环的 `ec`，以及 `lc` 自己的只读基线和一次性授权。
 - Produces: 四交易所 canary 完成状态，或停在 `lc` 的显式失败状态。
 
-- [ ] **Step 1: 重复 Task 1 的检查点、scoped audit 与 fixed-T0 dry-run，但目标替换为 `lc`。**
+- [ ] **Step 1: 确认 MR-08 处于可安全检查的状态。**
 
 ```bash
 uv run --project services/quant-api guiyi runtime status
+```
+
+Expected: 返回只读 JSON；若显示 MR-08 正在关键验证、或操作者确认正处于关键实时观察，则停止，
+不运行后续命令。
+
+- [ ] **Step 2: 运行 `lc` scoped audit。**
+
+```bash
 uv run --project services/quant-api guiyi data audit --symbol lc
+```
+
+Expected: 当前未闭环品种可返回结构化 metadata/partition finding；命令不调用 RQData、不写入 Catalog
+或 Canonical。
+
+- [ ] **Step 3: 运行固定 T0 的 `lc` dry-run。**
+
+```bash
 uv run --project services/quant-api guiyi data update --symbol lc --through 2026-08-07
 ```
 
-Expected: 三条命令全为只读；任何 MR-08 冲突或 metadata blocker 都停止在准备阶段。
+Expected: 元数据尚未完整时以公开 fail-closed 码停止；不得把无法生成 target 伪称为零目标或已完成。
 
-- [ ] **Step 2: 获得 `lc` 的独立单次意图后，执行唯一一次 apply。**
+- [ ] **Step 4: 交付 `lc` 的只读基线。**
+
+记录 runtime 检查点、audit/dry-run JSON 中的 status、finding/错误码，以及三条命令均未带 `--apply`
+的事实。不要创建任务文件、报告文件或数据库记录。
+
+- [ ] **Step 5: 获得 `lc` 的独立单次意图后，执行唯一一次 apply。**
 
 ```bash
 uv run --project services/quant-api guiyi data update --symbol lc --through 2026-08-07 --apply
@@ -137,25 +158,38 @@ uv run --project services/quant-api guiyi data update --symbol lc --through 2026
 
 Expected: 不与任何其他维护操作并发；输出为该次唯一的 `lc` 写入结果。
 
-- [ ] **Step 3: 依次验收 `lc`。**
+- [ ] **Step 6: 对成功 apply 运行 audit。**
 
 ```bash
 uv run --project services/quant-api guiyi data audit --symbol lc
+```
+
+Expected: `status=passed` 且 `finding_count=0`；否则停止在 `lc`，不转入常规队列。
+
+- [ ] **Step 7: 对成功 audit 运行同 T0 NOOP 检查。**
+
+```bash
 uv run --project services/quant-api guiyi data update --symbol lc --through 2026-08-07
 ```
 
-Expected: audit `passed`/0 findings，dry-run `noop`/0 targets/0 provider requests。随后对
+Expected: `status=noop`、`planned=0`、`provider_requests=0`；否则停止在 `lc`。
+
+- [ ] **Step 8: 做 `lc` 的七周期 MarketDataService 读回。**
+
+对
 `1m/5m/15m/30m/60m/1d/1w` 分别检查 continuous；再从 `lc` 写后 rank1 map 选择已有 coverage
 内的早期、近期和跨换月窗口，检查 concrete contract 与 actual_dominant。任何 mapping、分区、
 coverage 或物理文件缺失都必须显式失败，不得缩短窗口来通过验收。
 
-- [ ] **Step 4: 形成第一批六个样本的排期档。**
+- [ ] **Step 9: 形成第一批六个样本的排期档。**
 
 将 J、JM、AP、AG、EC、LC 的实际 provider 请求数、apply 墙钟时间和发布分区数按终端交付汇总为短、中、长三档。只用于排序后续品种；不据此改造并发、自动重试、配置或数据模型。
 
-- [ ] **Step 5: 常规品种循环。**
+- [ ] **Step 10: 常规品种循环。**
 
-每次只选择最短优先的一个未闭环 active 品种，重复 Task 1 与 Task 2 的完整顺序。每次闭环或失败都回到 MR-08 检查点；在 60 个品种都闭环前，不宣称 DFD-07 完成。
+每次只选择最短优先的一个未闭环 active 品种，执行 runtime 检查点、scoped audit、fixed-T0
+dry-run、一次性授权、唯一 apply、audit、NOOP 与七周期三种查询模式读回。每次闭环或失败都回到
+MR-08 检查点；在 60 个品种都闭环前，不宣称 DFD-07 完成。
 
 ## Verification Summary
 
