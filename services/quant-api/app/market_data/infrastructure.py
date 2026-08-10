@@ -624,12 +624,30 @@ class RQDataClient:
 
     def is_future_data_ready(self, trading_day: date) -> bool:
         """确认日线与分钟线均已由 RQData 标记为可用。"""
+        categories = ("future_daybar", "future_minbar")
         frame = self.api.is_data_ready(
-            categories=["future_daybar", "future_minbar"],
+            categories=list(categories),
             expected_date=trading_day,
             market="cn",
         )
-        required = frame.loc[["future_daybar", "future_minbar"], "ready"]
+        if (
+            not isinstance(frame, pd.DataFrame)
+            or not isinstance(frame.index, pd.MultiIndex)
+            or tuple(frame.index.names) != ("market", "category")
+            or not frame.index.is_unique
+            or "ready" not in frame.columns
+        ):
+            raise InfrastructureError("RQDATA_READY_RESPONSE_INVALID")
+        required_keys = tuple(("cn", category) for category in categories)
+        if any(key not in frame.index for key in required_keys):
+            raise InfrastructureError("RQDATA_READY_RESPONSE_INVALID")
+        required = frame.loc[list(required_keys), "ready"]
+        if (
+            tuple(required.index.tolist()) != required_keys
+            or not pd.api.types.is_bool_dtype(required.dtype)
+            or bool(required.isna().any())
+        ):
+            raise InfrastructureError("RQDATA_READY_RESPONSE_INVALID")
         return bool(required.all())
 
     def dominant_for_day(self, symbol: str, trading_day: date) -> str:

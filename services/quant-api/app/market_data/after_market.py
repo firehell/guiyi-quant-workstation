@@ -10,12 +10,13 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 import json
+import logging
 from pathlib import Path
 import subprocess
 import time
 from typing import Any
 
-from app.market_data.infrastructure import RQDataClient, SHANGHAI
+from app.market_data.infrastructure import InfrastructureError, RQDataClient, SHANGHAI
 from app.market_data.live_market import RedisLiveStore
 from app.market_data.maintenance import HistoricalDataManager, UpdateRequest
 from app.market_data.operational_universe import load_operational_products
@@ -23,6 +24,7 @@ from app.core.env import PROJECT_ROOT
 
 
 _NOTIFICATION_TITLE = "Guiyi Quant After-Market"
+_LOGGER = logging.getLogger(__name__)
 _PUBLIC_ERROR_CODES = frozenset(
     {
         "MAINTENANCE_LOCKED",
@@ -103,7 +105,7 @@ class AfterMarketUpdater:
 
         error_code: str | None = None
         for attempt in (1, 2):
-            error_code = self._attempt(products, trading_day)
+            error_code = self._attempt(products, trading_day, attempt=attempt)
             if error_code is None:
                 result = AfterMarketResult("passed", trading_day, attempt, None)
                 self._write_status(result, started_at, products)
@@ -116,10 +118,28 @@ class AfterMarketUpdater:
         self.notifier(error_code or "UPDATE_FAILED")
         return result
 
-    def _attempt(self, products: tuple[str, ...], trading_day: date) -> str | None:
+    def _attempt(
+        self,
+        products: tuple[str, ...],
+        trading_day: date,
+        *,
+        attempt: int,
+    ) -> str | None:
         try:
             ready = self.rqdata.is_future_data_ready(trading_day)
-        except Exception:  # noqa: BLE001 - provider detail must not become public state
+        except Exception as exc:  # noqa: BLE001 - provider detail must not become public state
+            detail_code = (
+                exc.code
+                if isinstance(exc, InfrastructureError)
+                else "UNEXPECTED_PROVIDER_EXCEPTION"
+            )
+            _LOGGER.warning(
+                "after_market_attempt_failed stage=rqdata_readiness attempt=%s "
+                "detail_code=%s exception_type=%s",
+                attempt,
+                detail_code,
+                type(exc).__name__,
+            )
             return "RQDATA_READY_CHECK_FAILED"
         if not ready:
             return "RQDATA_NOT_READY"

@@ -120,13 +120,89 @@ def test_rqdata_client_requires_both_future_readiness_categories() -> None:
             }
             return pd.DataFrame(
                 {"ready": [True, False]},
-                index=["future_daybar", "future_minbar"],
+                index=pd.MultiIndex.from_tuples(
+                    [
+                        ("cn", "future_daybar"),
+                        ("cn", "future_minbar"),
+                    ],
+                    names=["market", "category"],
+                ),
             )
 
     client = object.__new__(RQDataClient)
     client.api = Api()
 
     assert client.is_future_data_ready(date(2026, 8, 10)) is False
+
+
+def test_rqdata_client_accepts_exact_ready_multiindex_contract() -> None:
+    class Api:
+        def is_data_ready(self, **_kwargs):
+            return pd.DataFrame(
+                {"ready": [True, True]},
+                index=pd.MultiIndex.from_tuples(
+                    [
+                        ("cn", "future_daybar"),
+                        ("cn", "future_minbar"),
+                    ],
+                    names=["market", "category"],
+                ),
+            )
+
+    client = object.__new__(RQDataClient)
+    client.api = Api()
+
+    assert client.is_future_data_ready(date(2026, 8, 10)) is True
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        None,
+        pd.DataFrame({"ready": [True]}, index=["future_daybar"]),
+        pd.DataFrame(
+            {"available": [True, True]},
+            index=pd.MultiIndex.from_tuples(
+                [("cn", "future_daybar"), ("cn", "future_minbar")],
+                names=["market", "category"],
+            ),
+        ),
+        pd.DataFrame(
+            {"ready": [True]},
+            index=pd.MultiIndex.from_tuples(
+                [("cn", "future_daybar")], names=["market", "category"]
+            ),
+        ),
+        pd.DataFrame(
+            {"ready": [True, True, True]},
+            index=pd.MultiIndex.from_tuples(
+                [
+                    ("cn", "future_daybar"),
+                    ("cn", "future_minbar"),
+                    ("cn", "future_minbar"),
+                ],
+                names=["market", "category"],
+            ),
+        ),
+        pd.DataFrame(
+            {"ready": ["true", "true"]},
+            index=pd.MultiIndex.from_tuples(
+                [("cn", "future_daybar"), ("cn", "future_minbar")],
+                names=["market", "category"],
+            ),
+        ),
+    ],
+)
+def test_rqdata_client_rejects_invalid_readiness_response(frame) -> None:
+    class Api:
+        def is_data_ready(self, **_kwargs):
+            return frame
+
+    client = object.__new__(RQDataClient)
+    client.api = Api()
+
+    with pytest.raises(InfrastructureError, match="RQDATA_READY_RESPONSE_INVALID"):
+        client.is_future_data_ready(date(2026, 8, 10))
 
 
 def test_rqdata_client_normalizes_exactly_one_dominant_contract() -> None:

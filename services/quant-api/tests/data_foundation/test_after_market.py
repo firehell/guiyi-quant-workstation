@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, datetime
 
 from app.market_data.after_market import AfterMarketUpdater
+from app.market_data.infrastructure import InfrastructureError
 from app.market_data.maintenance import MaintenanceResult
 
 
@@ -221,6 +223,36 @@ def test_records_final_failure_and_notifies_once(tmp_path) -> None:
     assert status["last_failure"] == {"trading_day": "2026-08-10", "error_code": "UPDATE_FAILED"}
     assert "exception" not in json.dumps(status).lower()
     assert "path" not in json.dumps(status).lower()
+
+
+def test_readiness_failure_logs_only_sanitized_diagnostics(tmp_path, caplog) -> None:
+    class FailingRQData:
+        def is_future_data_ready(self, _trading_day: date) -> bool:
+            try:
+                raise RuntimeError("credential-secret-provider-message")
+            except RuntimeError as exc:
+                raise InfrastructureError("RQDATA_READY_RESPONSE_INVALID") from exc
+
+    updater, _manager, _rqdata, _sleeps, notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[],
+        results=[],
+    )
+    updater.rqdata = FailingRQData()
+    caplog.set_level(logging.WARNING, logger="app.market_data.after_market")
+
+    result = updater.run()
+
+    assert result.error_code == "RQDATA_READY_CHECK_FAILED"
+    assert notices == ["RQDATA_READY_CHECK_FAILED"]
+    assert [record.message for record in caplog.records] == [
+        "after_market_attempt_failed stage=rqdata_readiness attempt=1 "
+        "detail_code=RQDATA_READY_RESPONSE_INVALID exception_type=InfrastructureError",
+        "after_market_attempt_failed stage=rqdata_readiness attempt=2 "
+        "detail_code=RQDATA_READY_RESPONSE_INVALID exception_type=InfrastructureError",
+    ]
+    assert "credential-secret-provider-message" not in caplog.text
 
 
 def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) -> None:

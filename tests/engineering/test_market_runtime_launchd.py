@@ -41,8 +41,10 @@ def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tm
     assert marker.read_text(encoding="utf-8") == "enabled\n"
 
 
-def test_live_launch_agent_uses_project_root_as_working_directory(tmp_path: Path) -> None:
-    """Live RQData initialization must not scan the launchd user's home directory."""
+def test_market_runtime_launch_agents_use_project_root_as_working_directory(
+    tmp_path: Path,
+) -> None:
+    """RQData initialization must not scan the launchd user's home directory."""
     repo = _copy_launchd_fixture(tmp_path / "repo")
     home = tmp_path / "home"
     fake_bin = tmp_path / "bin"
@@ -50,10 +52,12 @@ def test_live_launch_agent_uses_project_root_as_working_directory(tmp_path: Path
 
     _run_installer(repo, home, fake_bin, "--render-only")
 
-    rendered = repo / ".run" / "launchd" / "com.guiyi.quant-live.plist"
-    with rendered.open("rb") as handle:
-        payload = plistlib.load(handle)
-    assert payload["WorkingDirectory"] == str(repo.resolve())
+    for label in ("com.guiyi.quant-live", "com.guiyi.quant-after-market"):
+        rendered = repo / ".run" / "launchd" / f"{label}.plist"
+        with rendered.open("rb") as handle:
+            payload = plistlib.load(handle)
+        assert isinstance(payload, dict)
+        assert payload["WorkingDirectory"] == str(repo.resolve())
 
 
 def _copy_launchd_fixture(destination: Path) -> Path:
