@@ -29,7 +29,7 @@
 - Consumes: `guiyi runtime status`、`guiyi data audit --symbol ec`、`guiyi data update --symbol ec --through 2026-08-07`
 - Produces: `ec` 的 MR-08 检查点、当前 audit/dry-run 结果和后续单次授权所需的精确目标。
 
-- [ ] **Step 1: 确认 MR-08 处于可安全检查的状态。**
+- [x] **Step 1: 确认 MR-08 处于可安全检查的状态。**
 
 ```bash
 uv run --project services/quant-api guiyi runtime status
@@ -37,7 +37,7 @@ uv run --project services/quant-api guiyi runtime status
 
 Expected: 返回只读 JSON；若显示 MR-08 正在关键验证、或操作者确认正处于关键实时观察，则停止，不运行后续命令。
 
-- [ ] **Step 2: 运行 `ec` scoped audit。**
+- [x] **Step 2: 运行 `ec` scoped audit。**
 
 ```bash
 uv run --project services/quant-api guiyi data audit --symbol ec
@@ -45,7 +45,7 @@ uv run --project services/quant-api guiyi data audit --symbol ec
 
 Expected: 当前未闭环品种可返回结构化 metadata/partition finding；命令不调用 RQData、不写入 Catalog 或 Canonical。
 
-- [ ] **Step 3: 运行固定 T0 的 `ec` dry-run。**
+- [x] **Step 3: 运行固定 T0 的 `ec` dry-run。**
 
 ```bash
 uv run --project services/quant-api guiyi data update --symbol ec --through 2026-08-07
@@ -53,7 +53,7 @@ uv run --project services/quant-api guiyi data update --symbol ec --through 2026
 
 Expected: 在元数据尚未完整时以公开 fail-closed 码停止；不得把无法生成 target 伪称为零目标或已完成。
 
-- [ ] **Step 4: 交付只读基线。**
+- [x] **Step 4: 交付只读基线。**
 
 记录 runtime 检查点、audit/dry-run JSON 中的 status、finding/错误码，以及三条命令均未带 `--apply` 的事实。不要创建任务文件、报告文件或数据库记录。
 
@@ -68,11 +68,11 @@ Expected: 在元数据尚未完整时以公开 fail-closed 码停止；不得把
 - Consumes: Task 1 基线与用户明确的单次 `ec` 执行意图。
 - Produces: `ec` 的 Canonical/Catalog 更新结果，或可恢复的当前品种失败状态。
 
-- [ ] **Step 1: 取得且逐字核对 `ec` 的一次性执行意图。**
+- [x] **Step 1: 取得且逐字核对 `ec` 的一次性执行意图。**
 
 授权文字必须限定为：生产 `guiyi data update --symbol ec --through 2026-08-07 --apply`，并明确允许该次 RQData 元数据同步、生产 Catalog 与 Canonical 写入；不得包含任何其他品种、Runtime、通知或订单。
 
-- [ ] **Step 2: 在 MR-08 检查点后启动唯一一次 apply。**
+- [x] **Step 2: 在 MR-08 检查点后启动唯一一次 apply。**
 
 ```bash
 uv run --project services/quant-api guiyi data update --symbol ec --through 2026-08-07 --apply
@@ -80,11 +80,11 @@ uv run --project services/quant-api guiyi data update --symbol ec --through 2026
 
 Expected: 进程自然结束并返回 `passed`、`partial` 或失败 JSON。若返回 `MAINTENANCE_LOCKED`，不重试；等待新的检查点与新的明确意图。
 
-- [ ] **Step 3: 记录唯一的 apply 观测。**
+- [x] **Step 3: 记录唯一的 apply 观测。**
 
 在终端交付中记录墙钟耗时、`planned`、`applied`、`failed`、`blocked`、`provider_requests` 与 `stop_reason`；不把部分发布或单纯分区数量称为闭环。
 
-- [ ] **Step 4: 对成功 apply 运行 audit。**
+- [x] **Step 4: 对成功 apply 运行 audit。**
 
 ```bash
 uv run --project services/quant-api guiyi data audit --symbol ec
@@ -92,7 +92,7 @@ uv run --project services/quant-api guiyi data audit --symbol ec
 
 Expected: `status=passed` 且 `finding_count=0`；否则停止在 `ec`，不进入 `lc`。
 
-- [ ] **Step 5: 对成功 audit 运行同 T0 NOOP 检查。**
+- [x] **Step 5: 对成功 audit 运行同 T0 NOOP 检查。**
 
 ```bash
 uv run --project services/quant-api guiyi data update --symbol ec --through 2026-08-07
@@ -100,11 +100,11 @@ uv run --project services/quant-api guiyi data update --symbol ec --through 2026
 
 Expected: `status=noop`、`planned=0`、`provider_requests=0`；否则停止在 `ec`。
 
-- [ ] **Step 6: 做既有的七周期 MarketDataService 读回。**
+- [x] **Step 6: 做既有的七周期 MarketDataService 读回。**
 
 使用当前已验证的读取入口，对 `1m/5m/15m/30m/60m/1d/1w` 分别检查 continuous；再从写后 rank1 map 选择已有 coverage 内的早期、近期和跨换月窗口，检查 concrete contract 与 actual_dominant。缺少 mapping、分区、coverage 或物理文件时必须 fail-closed，不得缩短窗口来通过验收。
 
-- [ ] **Step 7: 关闭或暂停 `ec`。**
+- [x] **Step 7: 关闭或暂停 `ec`。**
 
 仅在 Step 4 至 Step 6 全部通过时标记 `ec` 闭环；否则报告当前失败点、保留已验证分区并等待针对 `ec` 的后续决定。
 
