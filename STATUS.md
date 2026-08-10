@@ -4,17 +4,18 @@
 
 ## 结论
 
-Market Runtime V1 的 MR-01～MR-07 已在本地 worktree 完成并验证：历史 cursor 分页、operational
-`j/jm/ap/ag` phase/universe、最多一次的盘后 retry、Redis Live Overlay、Market REST/WS、Web seam、
-运行健康与 launchd 包装均已实现。运行范围仍为 **0/4 已启用**（配置能力为 `j/jm/ap/ag` 四品种），
-launchd 模板默认关闭；本地验证没有启动或加载 Market Runtime、订阅真实 RQData Live、写入 Canonical/
-生产 DB 或发送通知。`docs/tasks/GY-MARKET-RUNTIME-V1.md` 状态为
-`implementation_ready_for_canary`，不是 `active_v1`。
+Market Runtime V1 已按本地工作站的明确请求启用，持续运行范围严格固定为 operational
+`j/jm/ap/ag` 4/4；API、Web 与 RQData Live 由 launchd 加载，盘后任务保持空闲并等待每天 17:00。
+Runtime detached checkout 当前为 `44ca152e`，`auto_order=false` 与无订单边界不变。
 
-本轮本地验证：后端 328 passed / 13 skipped、前端 65 passed / 1 skipped、mock Playwright 3 passed、
-Ruff 通过、两份 Market Runtime plist render/lint 通过。计划指定的 MarketData Mypy 范围仍有 4 个既有
-类型错误（`catalog.py`、`service.py`、`maintenance.py`，均非 MR-07 改动）；该静态检查问题不构成真实
-Runtime 启用授权，MR-08 仍必须先完成只读 preflight 并取得一次明确的“启用 Market Runtime V1”请求。
+2026-08-10 的受控盘后重跑在 20:01～21:02 完成两次尝试并安全失败，没有第三次重试。原始
+RQData readiness MultiIndex 解析缺陷已修复；继续诊断确认阻塞来自当天 metadata 仅写单日 Calendar，
+而周频完整性门禁要求覆盖到 ISO 周日，生产事实仅缺 2026-08-15～16。修复后的当天同步只扩展
+Calendar 到本周周日，Session 与 rank-1 MainContractMap 仍只写当天；新代码已部署，但不会热加载进
+已启动的旧重跑进程。因此本次 `last_successful_trading_day` 仍为空，J/JM/AP/AG 未被该任务发布新的
+Canonical 分区；下一次 17:00 调度将使用 `44ca152e`。本轮验证为后端与工程测试 2626 passed / 20
+skipped、定向 Runtime/Data Foundation 257 passed、Ruff 通过、RQData readiness=True，API/Web/Redis/
+RQ/Live 健康；after_market 健康仍如实保留本次失败，等待下一次正式运行改写。
 
 Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产 PostgreSQL 已从
 `20260808_0035` 升级至最终不可逆 `20260808_0036`，盘点范围内的旧正式数据已删除。固定
