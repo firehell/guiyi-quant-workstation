@@ -9,15 +9,15 @@
 - 单事务 commit，异常 rollback，不向 Parquet 写入任何内容。
 
 ``synchronize_current_day`` 是 Runtime canary 使用的受限入口：它只替换指定品种
-单一交易日的 Calendar、按日 TradingSession 与 rank-1 MainContractMap，绝不触碰
-历史/未来 metadata、Dataset 或 Parquet。
+单一交易日的按日 TradingSession 与 rank-1 MainContractMap，并补齐当天至 ISO 周日
+的最小 Calendar 上下文；绝不触碰历史 Session/Map、Dataset 或 Parquet。
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import date, timedelta, time
 from typing import Any, Protocol
 
 from sqlalchemy import delete, select
@@ -154,12 +154,12 @@ class MetadataSynchronizer:
         products: tuple[str, ...],
         trading_day: date,
     ) -> date:
-        """受限同步指定品种的单日 metadata，成功返回该交易日。
+        """受限同步指定品种的当天事实与本周 Calendar 上下文。
 
         此入口特意不复用 ``synchronize``：后者会按品种删除全部 TradingSession，
-        不适用于 Runtime 启用前补齐当天 metadata 的最小权限范围。Provider snapshot
-        可以包含其查询上下文中的其它日期，但这些行绝不会写入；当天事实须完整且
-        与既有 Instrument/Exchange 身份一致，否则整个事务回滚。
+        不适用于 Runtime 启用前补齐当天 metadata 的最小权限范围。Calendar 只允许
+        写入当天至 ISO 周日，以证明周频窗口完整；Session 与 rank-1 Map 仍只写当天。
+        事实须完整且与既有 Instrument/Exchange 身份一致，否则整个事务回滚。
         """
         normalized = _normalized_products(products)
         if type(trading_day) is not date:
@@ -169,7 +169,7 @@ class MetadataSynchronizer:
         session = self.catalog.session
         try:
             exchanges = _existing_product_exchanges(session, normalized)
-            calendars = _current_day_calendars(
+            calendars = _current_week_calendars(
                 snapshot, trading_day, set(exchanges.values())
             )
             sessions = _current_day_sessions(snapshot, normalized, exchanges, trading_day)
@@ -258,29 +258,41 @@ def _existing_product_exchanges(
     return exchanges
 
 
-def _current_day_calendars(
+def _current_week_calendars(
     snapshot: MetadataSnapshot,
     trading_day: date,
     expected_exchanges: set[str],
 ) -> tuple[dict[str, Any], ...]:
-    """提取并验证当前日、且仅当前日的交易所 Calendar 事实。"""
-    values_by_exchange: dict[str, dict[str, Any]] = {}
+    """提取并验证当天至 ISO 周日的完整、受限 Calendar 上下文。"""
+    week_end = trading_day + timedelta(days=7 - trading_day.isoweekday())
+    expected_days = tuple(
+        trading_day + timedelta(days=offset)
+        for offset in range((week_end - trading_day).days + 1)
+    )
+    expected_keys = {
+        (exchange, day) for exchange in expected_exchanges for day in expected_days
+    }
+    values_by_key: dict[tuple[str, date], dict[str, Any]] = {}
     for raw in snapshot.calendars:
-        if raw.get("trade_date") != trading_day:
+        day = raw.get("trade_date")
+        if type(day) is not date or day < trading_day or day > week_end:
             continue
         exchange = raw.get("exchange_code")
         if not isinstance(exchange, str) or exchange not in expected_exchanges:
             raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
-        if exchange in values_by_exchange:
+        key = (exchange, day)
+        if key in values_by_key:
             raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
-        if raw.get("is_trading_day") is not True or not isinstance(
-            raw.get("has_night_session"), bool
+        if (
+            not isinstance(raw.get("is_trading_day"), bool)
+            or not isinstance(raw.get("has_night_session"), bool)
+            or (day == trading_day and raw["is_trading_day"] is not True)
         ):
             raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
-        values_by_exchange[exchange] = dict(raw)
-    if set(values_by_exchange) != expected_exchanges:
+        values_by_key[key] = dict(raw)
+    if set(values_by_key) != expected_keys:
         raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
-    return tuple(values_by_exchange[exchange] for exchange in sorted(values_by_exchange))
+    return tuple(values_by_key[key] for key in sorted(values_by_key))
 
 
 def _current_day_sessions(

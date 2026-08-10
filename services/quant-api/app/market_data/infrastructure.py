@@ -738,7 +738,7 @@ class RQDataClient:
         # 日历向后多取一周：短假周仍可证明 ISO 周完整，无需第二套 calendar watermark。
         if current_day_only:
             calendar_start = through
-            calendar_end = through
+            calendar_end = _iso_week_end(through)
         else:
             earliest = min(starts.values())
             calendar_start = _calendar_context_start(earliest)
@@ -826,7 +826,7 @@ class RQDataClient:
         products: tuple[str, ...],
         trading_day: date,
     ) -> MetadataSnapshot:
-        """构造仅含指定交易日 Calendar/Session/rank1 mapping 的 metadata snapshot。"""
+        """构造当天 Session/rank1 与截至周日的最小 Calendar 上下文。"""
         starts = {symbol: trading_day for symbol in products}
         return self.metadata_snapshot(
             products,

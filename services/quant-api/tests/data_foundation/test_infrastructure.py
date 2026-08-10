@@ -767,6 +767,56 @@ def test_current_day_metadata_adapter_uses_dedicated_single_day_provider_call(tm
     session.close()
 
 
+def test_current_day_metadata_snapshot_fetches_bounded_iso_week_calendar_context() -> None:
+    calls = []
+
+    class FuturesApi:
+        def get_dominant(self, underlying_symbol, start_date, end_date, rule=0, rank=1):
+            return pd.Series(
+                ["JM2509"], index=pd.to_datetime(["2025-01-10"]), name="dominant"
+            )
+
+    class Api:
+        futures = FuturesApi()
+
+        def all_instruments(self, type):
+            return pd.DataFrame(
+                [
+                    {
+                        "underlying_symbol": "JM",
+                        "exchange": "DCE",
+                        "order_book_id": "JM2509",
+                        "symbol": "JM2509",
+                    }
+                ]
+            )
+
+        def get_trading_dates(self, start_date, end_date):
+            calls.append((start_date, end_date))
+            return (date(2025, 1, 10),)
+
+        def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
+            return pd.DataFrame(
+                {"trading_hours": ["09:00-15:00"]},
+                index=pd.MultiIndex.from_tuples(
+                    [("JM2509", date(2025, 1, 10))],
+                    names=("order_book_id", "date"),
+                ),
+            )
+
+    client = object.__new__(infrastructure.RQDataClient)
+    client.api = Api()
+
+    snapshot = client.current_day_metadata_snapshot(("jm",), date(2025, 1, 10))
+
+    assert calls == [(date(2025, 1, 10), date(2025, 1, 12))]
+    assert [row["trade_date"] for row in snapshot.calendars] == [
+        date(2025, 1, 10),
+        date(2025, 1, 11),
+        date(2025, 1, 12),
+    ]
+
+
 def test_rqdatac_client_requests_unadjusted_bars() -> None:
     calls = []
 

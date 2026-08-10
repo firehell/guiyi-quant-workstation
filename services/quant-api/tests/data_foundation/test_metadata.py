@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, timedelta, time
 from pathlib import Path
 
 import pytest
@@ -30,6 +30,7 @@ def test_metadata_snapshot_excludes_contract_specs() -> None:
 _DAY = date(2026, 8, 10)
 _BEFORE = date(2026, 8, 7)
 _AFTER = date(2026, 8, 11)
+_WEEK_END = date(2026, 8, 16)
 
 
 class _Adapter:
@@ -154,21 +155,15 @@ def _snapshot(
             },
         ),
         contracts=(),
-        calendars=(
+        calendars=tuple(
             {
                 "exchange_code": "DCE",
-                "trade_date": _DAY,
-                "is_trading_day": True,
-                "has_night_session": True,
+                "trade_date": _DAY + timedelta(days=offset),
+                "is_trading_day": offset == 0,
+                "has_night_session": offset == 0,
                 "provider": "rqdata",
-            },
-            {
-                "exchange_code": "DCE",
-                "trade_date": _AFTER,
-                "is_trading_day": False,
-                "has_night_session": False,
-                "provider": "rqdata",
-            },
+            }
+            for offset in range((_WEEK_END - _DAY).days + 1)
         ),
         sessions=(
             _session_values("j", "day"),
@@ -235,7 +230,7 @@ def _metadata_state(session: Session) -> dict[str, list[tuple[object, ...]]]:
     }
 
 
-def test_current_day_sync_only_replaces_requested_day_facts() -> None:
+def test_current_day_sync_replaces_day_facts_and_bounded_week_calendar_context() -> None:
     session = _session()
     adapter = _Adapter(_snapshot())
     synchronizer = MetadataSynchronizer(adapter, MarketCatalog(session, Path(".")))
@@ -247,7 +242,12 @@ def test_current_day_sync_only_replaces_requested_day_facts() -> None:
     assert state["calendar"] == [
         ("DCE", _BEFORE, True, True),
         ("DCE", _DAY, True, True),
-        ("DCE", _AFTER, True, False),
+        ("DCE", _AFTER, False, False),
+        ("DCE", date(2026, 8, 12), False, False),
+        ("DCE", date(2026, 8, 13), False, False),
+        ("DCE", date(2026, 8, 14), False, False),
+        ("DCE", date(2026, 8, 15), False, False),
+        ("DCE", _WEEK_END, False, False),
         ("SHFE", _DAY, False, False),
     ]
     assert state["sessions"] == [
