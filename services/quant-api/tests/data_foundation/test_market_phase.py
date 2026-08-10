@@ -267,13 +267,76 @@ def test_missing_session_facts_are_unknown(session: Session) -> None:
     assert MarketPhaseResolver(session).resolve("ap", _now(6, 10)).phase is MarketPhase.UNKNOWN
 
 
-def test_missing_nearby_session_facts_are_not_hidden_by_current_trading_window(
+def test_missing_current_day_session_facts_are_not_hidden_by_trading_window(
     session: Session,
 ) -> None:
     for template in session.scalars(
         select(TradingSession).where(TradingSession.instrument_symbol == "ap")
     ):
-        template.effective_to = date(2025, 1, 6)
+        template.effective_to = date(2025, 1, 5)
     session.commit()
 
     assert MarketPhaseResolver(session).resolve("ap", _now(6, 10)).phase is MarketPhase.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    (
+        (_now(6, 10), MarketPhase.TRADING),
+        (_now(6, 10, 20), MarketPhase.BREAK),
+    ),
+)
+def test_current_day_session_does_not_require_missing_next_day_snapshot(
+    session: Session,
+    now: datetime,
+    expected: MarketPhase,
+) -> None:
+    """完整的当前日日盘不因下一交易日 Calendar/Session 缺失而降级。"""
+    session.execute(
+        delete(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date > date(2025, 1, 6),
+        )
+    )
+    for template in session.scalars(
+        select(TradingSession).where(TradingSession.instrument_symbol == "j")
+    ):
+        template.effective_to = date(2025, 1, 6)
+    session.commit()
+
+    result = MarketPhaseResolver(session).resolve("j", now)
+
+    assert result.phase is expected
+    assert result.trading_day == date(2025, 1, 6)
+
+
+def test_current_evening_night_remains_unknown_without_next_day_snapshot(
+    session: Session,
+) -> None:
+    """当前交易日晚间必须同时有下一交易日的 Calendar 与 Session 事实。"""
+    session.execute(
+        delete(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date > date(2025, 1, 6),
+        )
+    )
+    for template in session.scalars(
+        select(TradingSession).where(TradingSession.instrument_symbol == "jm")
+    ):
+        template.effective_to = date(2025, 1, 6)
+    session.commit()
+
+    assert MarketPhaseResolver(session).resolve("jm", _now(6, 21)).phase is MarketPhase.UNKNOWN
+
+
+def test_friday_night_remains_unknown_without_next_trading_day_sessions(
+    session: Session,
+) -> None:
+    """周五晚间即使 Calendar 已知，缺少周一 Session 事实也不可推测开盘。"""
+    for template in session.scalars(
+        select(TradingSession).where(TradingSession.instrument_symbol == "jm")
+    ):
+        template.effective_to = date(2025, 1, 3)
+    session.commit()
+
+    assert MarketPhaseResolver(session).resolve("jm", _now(3, 21)).phase is MarketPhase.UNKNOWN

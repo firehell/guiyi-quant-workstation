@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import StrEnum
 
 from sqlalchemy import func, select
@@ -63,7 +63,10 @@ class MarketPhaseResolver:
             return self._unknown(normalized)
 
         resolved: list[tuple[date, ResolvedSessionWindow]] = []
-        has_missing_session = False
+        future_snapshot_missing = not any(
+            trading_day > local_now.date() and calendar.is_trading_day
+            for trading_day, calendar in calendar_rows.items()
+        )
         for trading_day, calendar in calendar_rows.items():
             if not calendar.is_trading_day:
                 continue
@@ -75,7 +78,9 @@ class MarketPhaseResolver:
                     trading_day=trading_day,
                 )
             except SessionClockError:
-                has_missing_session = True
+                if trading_day <= local_now.date():
+                    return self._unknown(normalized)
+                future_snapshot_missing = True
                 continue
             resolved.extend(
                 (trading_day, item)
@@ -83,8 +88,6 @@ class MarketPhaseResolver:
                 if not item.is_night or calendar.has_night_session
             )
 
-        if has_missing_session:
-            return self._unknown(normalized)
         resolved.sort(key=lambda item: item[1].window.start)
         for trading_day, item in resolved:
             window = item.window
@@ -112,6 +115,9 @@ class MarketPhaseResolver:
                         None,
                         following.start,
                     )
+
+        if future_snapshot_missing and self._may_be_night_session(local_now):
+            return self._unknown(normalized)
 
         current_trading_day = (
             current_calendar.trade_date if current_calendar.is_trading_day else None
@@ -165,9 +171,13 @@ class MarketPhaseResolver:
             if actual_calendar_days != expected_calendar_days:
                 return None
             rows[next_trading_day.trade_date] = next_trading_day
-        elif current is not None and current.is_trading_day:
-            return None
         return rows
+
+    @staticmethod
+    def _may_be_night_session(now: datetime) -> bool:
+        """缺少下一交易日 snapshot 时，仅夜盘观察窗口必须继续 fail-closed。"""
+        local_time = now.timetz().replace(tzinfo=None)
+        return local_time >= time(18) or local_time < time(6)
 
     @staticmethod
     def _next_session_start(
