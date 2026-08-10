@@ -7,9 +7,11 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.market_data.composition import (
     build_historical_data_manager,
+    build_metadata_synchronizer,
     build_market_data_service,
     canonical_root,
 )
+from app.market_data.metadata import MetadataSynchronizer
 
 
 def _session() -> Session:
@@ -45,4 +47,17 @@ def test_market_data_service_uses_configured_canonical_root(tmp_path, monkeypatc
 
     assert service.catalog.canonical_root == root.resolve()
     assert service.store.root == root.resolve()
+    session.close()
+
+
+def test_metadata_synchronizer_uses_existing_composition_boundary(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "canonical"
+    root.mkdir()
+    monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(root))
+    session = _session()
+
+    synchronizer = build_metadata_synchronizer(session)
+
+    assert isinstance(synchronizer, MetadataSynchronizer)
+    assert synchronizer.catalog.session is session
     session.close()

@@ -670,6 +670,27 @@ def test_metadata_refresh_ignores_history_before_first_provider_main_map(tmp_pat
         assert requested == [{"jm": date(2025, 1, 17)}]
 
 
+def test_current_day_metadata_adapter_uses_dedicated_single_day_provider_call(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    requested = []
+
+    class Client:
+        def current_day_metadata_snapshot(self, products, trading_day):
+            requested.append((products, trading_day))
+            return object()
+
+        def metadata_snapshot(self, *_args, **_kwargs):
+            raise AssertionError("current-day metadata must not use history refresh")
+
+    adapter = RQDataMarketAdapter(session=session, client=Client())
+
+    result = adapter.fetch_current_day_metadata(("jm",), date(2025, 1, 10))
+
+    assert result is not None
+    assert requested == [(("jm",), date(2025, 1, 10))]
+    session.close()
+
+
 def test_rqdatac_client_requests_unadjusted_bars() -> None:
     calls = []
 

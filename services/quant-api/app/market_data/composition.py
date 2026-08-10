@@ -42,7 +42,6 @@ def canonical_root() -> Path:
 def build_historical_data_manager(session: Session) -> HistoricalDataManager:
     """构造历史数据维护管理器：含 RQData provider、元数据同步与 session 边界校验 store。"""
     from app.market_data.infrastructure import DatabaseCoverageSource, RQDataMarketAdapter
-    from app.market_data.metadata import MetadataSynchronizer
 
     root = canonical_root()
     catalog = MarketCatalog(session, root)
@@ -56,9 +55,28 @@ def build_historical_data_manager(session: Session) -> HistoricalDataManager:
         catalog=catalog,
         store=CanonicalMonthlyStore(root, boundary_validator=coverage.valid_boundary),
         coverage=coverage,
-        metadata=MetadataSynchronizer(adapter, catalog),
+        metadata=build_metadata_synchronizer(session, adapter=adapter, catalog=catalog),
         provider=adapter,
     )
+
+
+def build_metadata_synchronizer(
+    session: Session,
+    *,
+    adapter=None,
+    catalog: MarketCatalog | None = None,
+):
+    """构造唯一 metadata 同步边界，供受限单日同步与历史维护共用。
+
+    不会在构造时初始化 RQData；实际 provider 连接只在同步方法被显式调用时发生。
+    可选依赖仅供已有 composition 重用，避免建立第二个 metadata engine。
+    """
+    from app.market_data.infrastructure import RQDataMarketAdapter
+    from app.market_data.metadata import MetadataSynchronizer
+
+    active_catalog = catalog or MarketCatalog(session, canonical_root())
+    active_adapter = adapter or RQDataMarketAdapter(session=session)
+    return MetadataSynchronizer(active_adapter, active_catalog)
 
 
 def build_market_data_service(session: Session) -> MarketDataService:

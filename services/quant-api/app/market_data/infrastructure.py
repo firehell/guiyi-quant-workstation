@@ -576,6 +576,14 @@ class RQDataMarketAdapter:
             requested_starts[symbol] = refresh_start
         return self.client.metadata_snapshot(products, through, requested_starts)
 
+    def fetch_current_day_metadata(
+        self,
+        products: tuple[str, ...],
+        trading_day: date,
+    ) -> MetadataSnapshot:
+        """只请求指定交易日的 Runtime metadata，不扩展历史 refresh window。"""
+        return self.client.current_day_metadata_snapshot(products, trading_day)
+
 
 class RQDataClient:
     """rqdatac 薄封装：凭证初始化与 price / metadata 高层调用。"""
@@ -661,6 +669,8 @@ class RQDataClient:
         products: tuple[str, ...],
         through: date,
         starts: Mapping[str, date],
+        *,
+        current_day_only: bool = False,
     ) -> MetadataSnapshot:
         """组装 MetadataSnapshot：合约、日历、按日会话、主力 rank1 映射。"""
         frame = _frame(self.api.all_instruments(type="Future"))
@@ -708,9 +718,13 @@ class RQDataClient:
         # Calendar may start one natural month before the earliest effective_start
         # for previous-day / night-session / first ISO-week context only.
         # 日历向后多取一周：短假周仍可证明 ISO 周完整，无需第二套 calendar watermark。
-        earliest = min(starts.values())
-        calendar_start = _calendar_context_start(earliest)
-        calendar_end = through + timedelta(days=7)
+        if current_day_only:
+            calendar_start = through
+            calendar_end = through
+        else:
+            earliest = min(starts.values())
+            calendar_start = _calendar_context_start(earliest)
+            calendar_end = through + timedelta(days=7)
         trading_dates = tuple(
             pd.Timestamp(item).date()
             for item in self.api.get_trading_dates(
@@ -787,6 +801,20 @@ class RQDataClient:
             sessions=sessions,
             main_contracts=tuple(main_contracts),
             main_contract_starts=dict(starts),
+        )
+
+    def current_day_metadata_snapshot(
+        self,
+        products: tuple[str, ...],
+        trading_day: date,
+    ) -> MetadataSnapshot:
+        """构造仅含指定交易日 Calendar/Session/rank1 mapping 的 metadata snapshot。"""
+        starts = {symbol: trading_day for symbol in products}
+        return self.metadata_snapshot(
+            products,
+            trading_day,
+            starts,
+            current_day_only=True,
         )
 
 

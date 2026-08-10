@@ -7,13 +7,17 @@
 - 交易时段（``TradingSession``）按品种全量替换，避免历史时段模板覆盖旧日；
 - 主力映射按 ``main_contract_starts`` 窗口先删后插，保证刷新区间与 RQData 一致；
 - 单事务 commit，异常 rollback，不向 Parquet 写入任何内容。
+
+``synchronize_current_day`` 是 Runtime canary 使用的受限入口：它只替换指定品种
+单一交易日的 Calendar、按日 TradingSession 与 rank-1 MainContractMap，绝不触碰
+历史/未来 metadata、Dataset 或 Parquet。
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time
 from typing import Any, Protocol
 
 from sqlalchemy import delete, select
@@ -51,6 +55,12 @@ class MetadataAdapter(Protocol):
         products: tuple[str, ...],
         through: date,
         starts: Mapping[str, date],
+    ) -> MetadataSnapshot: ...
+
+    def fetch_current_day_metadata(
+        self,
+        products: tuple[str, ...],
+        trading_day: date,
     ) -> MetadataSnapshot: ...
 
 
@@ -139,6 +149,78 @@ class MetadataSynchronizer:
             raise
         return through
 
+    def synchronize_current_day(
+        self,
+        products: tuple[str, ...],
+        trading_day: date,
+    ) -> date:
+        """受限同步指定品种的单日 metadata，成功返回该交易日。
+
+        此入口特意不复用 ``synchronize``：后者会按品种删除全部 TradingSession，
+        不适用于 Runtime 启用前补齐当天 metadata 的最小权限范围。Provider snapshot
+        可以包含其查询上下文中的其它日期，但这些行绝不会写入；当天事实须完整且
+        与既有 Instrument/Exchange 身份一致，否则整个事务回滚。
+        """
+        normalized = _normalized_products(products)
+        if type(trading_day) is not date:
+            raise ValueError("CURRENT_DAY_TRADING_DAY_INVALID")
+        assert_products_not_retired(normalized)
+        snapshot = self.adapter.fetch_current_day_metadata(normalized, trading_day)
+        session = self.catalog.session
+        try:
+            exchanges = _existing_product_exchanges(session, normalized)
+            calendars = _current_day_calendars(
+                snapshot, trading_day, set(exchanges.values())
+            )
+            sessions = _current_day_sessions(snapshot, normalized, exchanges, trading_day)
+            main_contracts = _current_day_main_contracts(
+                session, snapshot, normalized, trading_day
+            )
+
+            for values in calendars:
+                _upsert(
+                    session,
+                    TradingCalendar,
+                    {
+                        "exchange_code": values["exchange_code"],
+                        "trade_date": values["trade_date"],
+                    },
+                    values,
+                )
+            session.execute(
+                delete(TradingSession).where(
+                    TradingSession.instrument_symbol.in_(normalized),
+                    TradingSession.effective_from == trading_day,
+                    TradingSession.effective_to == trading_day,
+                )
+            )
+            for values in sessions:
+                _upsert(
+                    session,
+                    TradingSession,
+                    {
+                        "exchange_code": values["exchange_code"],
+                        "instrument_symbol": values["instrument_symbol"],
+                        "session_name": values["session_name"],
+                        "start_time": values["start_time"],
+                        "end_time": values["end_time"],
+                        "effective_from": values["effective_from"],
+                    },
+                    values,
+                )
+            session.execute(
+                delete(MainContractMap).where(
+                    MainContractMap.symbol.in_(normalized),
+                    MainContractMap.trade_date == trading_day,
+                )
+            )
+            self.catalog.upsert_main_contracts(main_contracts)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        return trading_day
+
 
 def _upsert(session, model, identity: Mapping[str, object], values: Mapping[str, Any]) -> None:
     """按 identity 字段查找行，存在则更新全部列，否则插入新行。"""
@@ -153,3 +235,141 @@ def _upsert(session, model, identity: Mapping[str, object], values: Mapping[str,
         return
     for field, value in payload.items():
         setattr(row, field, value)
+
+
+def _normalized_products(products: tuple[str, ...]) -> tuple[str, ...]:
+    """规范化受限同步的显式品种清单，拒绝空值或非字符串输入。"""
+    if not products or any(not isinstance(item, str) or not item.strip() for item in products):
+        raise ValueError("CURRENT_DAY_PRODUCTS_INVALID")
+    return tuple(dict.fromkeys(item.strip().lower() for item in products))
+
+
+def _existing_product_exchanges(
+    session,
+    products: tuple[str, ...],
+) -> dict[str, str]:
+    """受限写入只接受已在 Catalog 中确立身份的 Instrument/Exchange。"""
+    rows = tuple(
+        session.scalars(select(Instrument).where(Instrument.symbol.in_(products)))
+    )
+    exchanges = {row.symbol: row.exchange_code for row in rows}
+    if set(exchanges) != set(products) or any(not value for value in exchanges.values()):
+        raise ValueError("CURRENT_DAY_INSTRUMENT_IDENTITY_INVALID")
+    return exchanges
+
+
+def _current_day_calendars(
+    snapshot: MetadataSnapshot,
+    trading_day: date,
+    expected_exchanges: set[str],
+) -> tuple[dict[str, Any], ...]:
+    """提取并验证当前日、且仅当前日的交易所 Calendar 事实。"""
+    values_by_exchange: dict[str, dict[str, Any]] = {}
+    for raw in snapshot.calendars:
+        if raw.get("trade_date") != trading_day:
+            continue
+        exchange = raw.get("exchange_code")
+        if not isinstance(exchange, str) or exchange not in expected_exchanges:
+            raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
+        if exchange in values_by_exchange:
+            raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
+        if raw.get("is_trading_day") is not True or not isinstance(
+            raw.get("has_night_session"), bool
+        ):
+            raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
+        values_by_exchange[exchange] = dict(raw)
+    if set(values_by_exchange) != expected_exchanges:
+        raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
+    return tuple(values_by_exchange[exchange] for exchange in sorted(values_by_exchange))
+
+
+def _current_day_sessions(
+    snapshot: MetadataSnapshot,
+    products: tuple[str, ...],
+    exchanges: Mapping[str, str],
+    trading_day: date,
+) -> tuple[dict[str, Any], ...]:
+    """提取当前日按日 session；半开或跨日 provider 行都 fail-closed。"""
+    values: list[dict[str, Any]] = []
+    seen: set[tuple[object, ...]] = set()
+    covered: set[str] = set()
+    expected = set(products)
+    for raw in snapshot.sessions:
+        symbol = raw.get("instrument_symbol")
+        effective_from = raw.get("effective_from")
+        effective_to = raw.get("effective_to")
+        touches_day = effective_from == trading_day or effective_to == trading_day
+        if symbol not in expected:
+            if touches_day:
+                raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")
+            continue
+        if not touches_day:
+            continue
+        if effective_from != trading_day or effective_to != trading_day:
+            raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")
+        if (
+            raw.get("exchange_code") != exchanges[symbol]
+            or not isinstance(raw.get("session_name"), str)
+            or not raw["session_name"].strip()
+            or not isinstance(raw.get("start_time"), time)
+            or not isinstance(raw.get("end_time"), time)
+            or not isinstance(raw.get("crosses_midnight"), bool)
+            or not isinstance(raw.get("is_active"), bool)
+        ):
+            raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")
+        identity = (
+            raw["exchange_code"],
+            symbol,
+            raw["session_name"],
+            raw["start_time"],
+            raw["end_time"],
+            effective_from,
+        )
+        if identity in seen:
+            raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")
+        seen.add(identity)
+        covered.add(symbol)
+        values.append(dict(raw))
+    if covered != expected:
+        raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")
+    return tuple(values)
+
+
+def _current_day_main_contracts(
+    session,
+    snapshot: MetadataSnapshot,
+    products: tuple[str, ...],
+    trading_day: date,
+) -> tuple[tuple[str, date, str], ...]:
+    """提取当天唯一 rank-1 映射，并拒绝缺失、重复或非当天 window。"""
+    expected = set(products)
+    if set(snapshot.main_contract_starts) != expected or any(
+        snapshot.main_contract_starts.get(symbol) != trading_day for symbol in products
+    ):
+        raise ValueError("CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID")
+    values: dict[str, tuple[str, date, str]] = {}
+    for row in snapshot.main_contracts:
+        try:
+            raw_symbol, row_day, raw_contract = row
+        except (TypeError, ValueError) as exc:
+            raise ValueError("CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID") from exc
+        if row_day != trading_day:
+            continue
+        if not isinstance(raw_symbol, str) or not isinstance(raw_contract, str):
+            raise ValueError("CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID")
+        symbol = raw_symbol.strip().lower()
+        contract = raw_contract.strip().upper()
+        if symbol not in expected or not contract or symbol in values:
+            raise ValueError("CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID")
+        values[symbol] = (symbol, trading_day, contract)
+    if set(values) != expected:
+        raise ValueError("CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID")
+    existing_contracts = {
+        row.contract_code.upper()
+        for row in session.scalars(
+            select(Contract).where(Contract.instrument_symbol.in_(products))
+        )
+    }
+    if any(contract not in existing_contracts for _, _, contract in values.values()):
+        raise ValueError("CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID")
+    return tuple(values[symbol] for symbol in products)
