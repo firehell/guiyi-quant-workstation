@@ -30,6 +30,16 @@ Product Workspace
 
 当前 DFD-07 数据重建进度不因本设计改变。P0 必须能在 Canonical 未全域完成时对不可用品种 fail-closed/降级展示，而不是伪造完整全市场结论。
 
+### 2.1 Data Foundation Gate
+
+Market Radar 的“全市场”产品结论依赖 active universe 的可信 Canonical 完整性：
+
+- P0 可以在 DFD-07 期间使用 fixture、测试数据库或已经闭环的品种子集开发；
+- 页面在部分宇宙模式下必须明确显示“参与统计品种数 / active universe 总数”；
+- 不得把 4/60、10/60 或其他部分宇宙统计文案写成“全市场”；
+- **60/60 active universe Canonical + audit 闭环是 Market Radar 全宇宙 Ready 的前置 Gate**；
+- 该 Gate 不阻止独立开发 Kline UX、Product Workspace 布局等不依赖全宇宙完成度的 P0 工作。
+
 ## 3. Product Information Architecture
 
 一级导航长期保持简单。当前新增能力只围绕 Market 展开，不为每一种 RQData API 新建一级页面。
@@ -170,9 +180,16 @@ Kline Workspace 接近 TradingView 的“看图效率”，但明确不复制其
 品种/当前合约
 Series: 真实主力 | 主连
 周期: 1m | 5m | 15m | 30m | 60m | D | W
-主图指标: 无 | EMA | BOLL [未来可按正式 Indicator Kernel 增加少量已批准指标]
+主图指标: EMA10 | EMA21 | EMA60 | 火天大有（原始观察）
 全屏
 ```
+
+主图指标直接复用当前 `MAIN_INDICATOR_DEFINITIONS` / Indicator Kernel 已登记能力，不发明新的 Web 指标口径：
+
+- `EMA10/21/60`：标准 overlay；
+- `火天大有（原始观察）`：observation-only、未来引用/重绘风险，默认关闭并持续显示风险标识；不得用于正式回测、信号、提醒或交易结论。
+
+本设计不新增 BOLL 或其他尚未进入 active 主图指标合同的 overlay。未来若确有研究价值，再按 Indicator Kernel 正式变更单独加入。
 
 `contract` 指定真实合约继续由现有查询合同支持，但作为低频研究入口，不与“真实主力/主连”并列抢占常用工具栏。
 
@@ -188,11 +205,11 @@ Series: 真实主力 | 主连
 
 图表面板固定三层：
 
-1. **主图**：Candlestick + 当前选择的主图指标；
+1. **主图**：Candlestick + 当前启用的已登记主图指标；
 2. **副图 1**：Volume，固定存在；
 3. **副图 2**：MACD，固定存在。
 
-主图第一版重点支持 EMA 组合；BOLL 是否进入同一 P0 任务由实施计划按当前 Indicator Kernel 能力决定，不允许在 Web TypeScript 重新定义指标权威。
+EMA overlay 必须与 Python Indicator Kernel + shared golden 保持口径一致。MACD 复用当前 compatibility-validated Web 观察口径；本设计只把它作为固定观察副图，不据此改变其 formal strategy capability。
 
 副图不增加 RSI/KDJ/CCI 等额外管理系统。
 
@@ -393,7 +410,7 @@ Market Radar 支持“全部 / 自选”切换；品种页用简单星标加入/
 - 指标输入不足；
 - 当前 DFD-07 未闭环品种不可安全计算全量统计。
 
-Market Radar 必须显示本轮“可参与计算品种数”，避免把部分宇宙结果误写成完整 60 品种结论。
+Market Radar 必须显示本轮“可参与计算品种数 / active universe 总数”，避免把部分宇宙结果误写成完整 60 品种结论。
 
 ### Enrichment
 
@@ -428,7 +445,7 @@ Market Radar 必须显示本轮“可参与计算品种数”，避免把部分�
 - price/OI 四象限分类；
 - 关注规则标签和确定性排序；
 - Canonical/Map 缺失时的部分宇宙与 fail-closed 行为；
-- 指标计算使用 quant-core Kernel 权威实现。
+- 指标计算复用 quant-core Kernel 权威口径。
 
 ### P0 frontend
 
@@ -438,6 +455,7 @@ Market Radar 必须显示本轮“可参与计算品种数”，避免把部分�
 - Product Workspace 路由和上下文保持；
 - `>=1600px` 右栏常驻、窄屏折叠；
 - 周期/series/主图指标切换；
+- EMA overlay、火天大有 observation 风险标识；
 - Volume + MACD 固定副图；
 - 向左加载并保持 viewport；
 - localStorage 默认值/损坏值回退；
@@ -457,11 +475,11 @@ P0-2 Price × OI scatter
 P0-3 今日值得关注
 P0-4 Product Workspace 页面重排
 P0-5 轻量 TradingView-like Kline UX
-P0-6 EMA + fixed Volume/MACD
+P0-6 已登记主图指标 + fixed Volume/MACD
 P0-7 轻量研究侧栏
 P0-8 自选 + 本地状态记忆
 
---- 真实使用几天后再决定 P1 ---
+--- DFD-07 全宇宙 Ready + P0 真实使用几天后再决定 P1 ---
 
 P1-1 Term Structure
 P1-2 Dominant Migration
@@ -471,7 +489,7 @@ P1-5 Member Position Structure
 P1-6 Trading Economics
 ```
 
-P0 完成后先真实使用并观察信息密度、首屏响应和使用频率，再决定 P1 的具体优先级。不得因为 RQData 提供某接口就自动把它产品化。
+P0 可以在 DFD-07 期间独立开发不依赖完整宇宙的部分，但 Market Radar 全宇宙 Ready 不能越过 60/60 Gate。P0 完成后先真实使用并观察信息密度、首屏响应和使用频率，再决定 P1 的具体优先级。不得因为 RQData 提供某接口就自动把它产品化。
 
 ## 14. Non-goals
 
@@ -494,7 +512,7 @@ P0 完成后先真实使用并观察信息密度、首屏响应和使用频率�
 
 1. 打开 Market Radar 后约十秒内能确定当前市场活跃度和优先研究品种；
 2. 点击品种后第一屏以完整 K 线为视觉中心，不需要先处理表单或大量研究卡片；
-3. 常用周期、真实主力/主连和少量主图指标可以一键切换；
+3. 常用周期、真实主力/主连和当前已登记的少量主图指标可以一键切换；
 4. Volume 与 MACD 始终可见，十字线可以联动读取同一时刻的数据；
 5. 需要更多解释时向下滚动即可，不需要在多个 API 页面间跳转；
 6. 外部 Research API 失败不会破坏可信 Canonical K 线；
