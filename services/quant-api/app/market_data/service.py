@@ -203,7 +203,10 @@ class MarketDataService:
         self,
         request: SeriesPageQuery,
     ) -> MarketSeriesPageResult:
-        mappings = self.catalog.main_map_before(request.symbol, request.before)
+        # ``before`` limits physical bars by ``bar_end`` below.  It must not
+        # limit map facts by natural date because a Friday-night bar belongs
+        # to the next trading day (for example Monday) and needs that owner.
+        mappings = self.catalog.main_map_before(request.symbol, None)
         mapping_by_day = {item.trade_date: item for item in mappings}
         partitions = self.catalog.contract_partitions_before(
             request.symbol,
@@ -422,7 +425,7 @@ class MarketDataService:
             selected = selected_mappings
         segments = _segments(selected)
         bars: list[CanonicalBar] = []
-        mapping_by_day = {row.trade_date: row.contract for row in selected}
+        contract_by_day = {row.trade_date: row.contract for row in selected}
         # 按出现过的合约去重读取，避免同一合约分区重复 IO
         for contract in dict.fromkeys(row.contract for row in selected):
             key = DatasetKey(
@@ -446,7 +449,7 @@ class MarketDataService:
             bars.extend(
                 bar
                 for bar in contract_bars
-                if mapping_by_day.get(bar.trading_day) == contract
+                if contract_by_day.get(bar.trading_day) == contract
             )
         bars.sort(key=lambda item: item.bar_end)
         if not bars:

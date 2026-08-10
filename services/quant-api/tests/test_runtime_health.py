@@ -280,6 +280,23 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
     assert _contains_no_secret_words(payload)
 
 
+def test_runtime_health_never_exposes_arbitrary_exception_messages() -> None:
+    """Catches internal paths, hosts, or query text escaping when no secret keyword is present."""
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                exc=ConnectionError("127.0.0.1 /private/runtime/catalog.db select internal_table")
+            ),
+            rq_collector=lambda connection: _rq_ok(),
+            after_market_status_path=None,
+        )
+
+    assert payload["components"]["redis"]["error_type"] == "ConnectionError"
+    assert payload["components"]["redis"]["error_message"] is None
+
+
 def test_worker_coverage_requires_each_expected_queue() -> None:
     queues = [{"name": "guiyi-signals", "status": "ok"}, {"name": "guiyi-notifications", "status": "ok"}]
     workers = [{"name": "worker-1", "queues": ["guiyi-signals"]}]

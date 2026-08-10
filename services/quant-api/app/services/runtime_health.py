@@ -6,14 +6,14 @@
 
 安全与 fail-closed：
 - 健康端点捕获异常并降级为 failed/degraded，不向 HTTP 层抛出原始 stack trace
-- ``_safe_error_message`` 过滤含 password/token/webhook 等敏感子串的错误正文
+- 公共 health 只返回稳定 ``error_type``，不返回原始异常正文
 - 顶层 ``readonly=True`` 及 ``would_*`` 标志声明本响应不授权启动服务、入队或发通知
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.queue import get_redis_connection
 from app.core.env import PROJECT_ROOT
+from app.market_data.after_market import public_after_market_status
 
 RUNTIME_STATUS_OK = "ok"
 RUNTIME_STATUS_DEGRADED = "degraded"
@@ -36,33 +37,8 @@ RUNTIME_STATUS_UNKNOWN = "unknown"
 RUNTIME_STATUS_DISABLED = "disabled"
 DEFAULT_AFTER_MARKET_STATUS_PATH = PROJECT_ROOT / ".run" / "after-market-status.json"
 MARKET_RUNTIME_ACTIVATION_MARKER_NAME = "market-runtime-enabled"
-_PUBLIC_AFTER_MARKET_ERROR_CODES = frozenset(
-    {
-        "MAINTENANCE_LOCKED",
-        "LIVE_DOMINANT_MISMATCH",
-        "NON_TRADING_DAY",
-        "PROVIDER_QUOTA_EXHAUSTED",
-        "RQDATA_NOT_READY",
-        "RQDATA_READY_CHECK_FAILED",
-        "UPDATE_FAILED",
-    }
-)
-
 # 当前无活跃业务队列；空元组时 RQ 健康仅枚举 worker、不检查队列积压
 RUNTIME_QUEUE_NAMES: tuple[str, ...] = ()
-# 错误消息脱敏：命中任一子串则 error_message 置 None（fail-closed 不泄露凭据）
-SENSITIVE_TEXT_PARTS = (
-    "password",
-    "passwd",
-    "pwd",
-    "secret",
-    "token",
-    "webhook",
-    "cookie",
-    "license",
-    "key",
-    "authorization",
-)
 
 
 def build_runtime_health(
@@ -238,19 +214,18 @@ def _collect_after_market_health(status_path: Path | None) -> dict[str, Any]:
         return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
     if not isinstance(raw, Mapping):
         return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
-    last_run = _public_after_market_run(raw.get("last_run"))
-    last_success = _public_trading_day(raw.get("last_successful_trading_day"))
-    last_failure = _public_after_market_failure(raw.get("last_failure"))
-    if last_run is None and last_success is None and last_failure is None:
+    public = public_after_market_status(raw)
+    if not public:
         return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
+    last_run = public["last_run"]
     status = RUNTIME_STATUS_UNKNOWN
-    if last_run is not None:
+    if isinstance(last_run, Mapping):
         status = RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
     return {
         "status": status,
         "last_run": last_run,
-        "last_successful_trading_day": last_success,
-        "last_failure": last_failure,
+        "last_successful_trading_day": public["last_successful_trading_day"],
+        "last_failure": public["last_failure"],
         "error_type": None,
         "error_message": None,
     }
@@ -454,62 +429,6 @@ def _phase_counts(value: object) -> dict[str, int]:
     return result
 
 
-def _public_trading_day(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return date.fromisoformat(value).isoformat()
-    except ValueError:
-        return None
-
-
-def _public_after_market_failure(value: object) -> dict[str, str] | None:
-    if not isinstance(value, Mapping):
-        return None
-    trading_day = _public_trading_day(value.get("trading_day"))
-    error_code = value.get("error_code")
-    if trading_day is None or error_code not in _PUBLIC_AFTER_MARKET_ERROR_CODES:
-        return None
-    return {"trading_day": trading_day, "error_code": error_code}
-
-
-def _public_after_market_run(value: object) -> dict[str, Any] | None:
-    if not isinstance(value, Mapping):
-        return None
-    trading_day = _public_trading_day(value.get("trading_day"))
-    status = value.get("status")
-    attempts = value.get("attempts")
-    products = value.get("products")
-    error_code = value.get("error_code")
-    started_at_text = value.get("started_at")
-    finished_at_text = value.get("finished_at")
-    try:
-        _required_timestamp(started_at_text)
-        _required_timestamp(finished_at_text)
-    except ValueError:
-        return None
-    if (
-        trading_day is None
-        or status not in {"passed", "failed", "skipped"}
-        or isinstance(attempts, bool)
-        or not isinstance(attempts, int)
-        or attempts < 0
-        or not isinstance(products, list)
-        or any(not isinstance(product, str) or not product.strip() for product in products)
-        or (error_code is not None and error_code not in _PUBLIC_AFTER_MARKET_ERROR_CODES)
-    ):
-        return None
-    return {
-        "trading_day": trading_day,
-        "status": status,
-        "attempts": attempts,
-        "started_at": started_at_text,
-        "finished_at": finished_at_text,
-        "products": [product.strip().lower() for product in products],
-        "error_code": error_code,
-    }
-
-
 def _count_value(value: Any) -> int:
     """兼容 RQ count 属性为可调用或整型。"""
     return int(value() if callable(value) else value)
@@ -529,14 +448,9 @@ def _error_fields(exc: Exception) -> dict[str, str | None]:
 
 
 def _safe_error_message(exc: Exception) -> str | None:
-    """fail-closed 错误正文：空消息或含敏感子串时返回 None，否则截断至 200 字符。"""
-    message = str(exc).strip()
-    if not message:
-        return None
-    lowered = message.lower()
-    if any(part in lowered for part in SENSITIVE_TEXT_PARTS):
-        return None
-    return message[:200]
+    """Public health never returns provider, path, address, SQL, or exception text."""
+    del exc
+    return None
 
 
 def _iso(value: datetime | None) -> str | None:

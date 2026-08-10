@@ -372,6 +372,7 @@ class LiveMarketService:
         self._known_sessions: dict[tuple[str, date], tuple[SessionWindow, ...]] = {}
         self._last_bar_at: datetime | None = None
         self._available = True
+        self._provider_available = True
         self.next_provider_retry_at: datetime | None = None
         self.rejections: list[str] = []
 
@@ -391,10 +392,18 @@ class LiveMarketService:
             return "LIVE_TRADING_DAY_INCONSISTENT"
         trading_day = next(iter(trading_days))
         assert trading_day is not None
-        if trading_day != self._trading_day:
+        active_symbols = tuple(
+            symbol
+            for symbol in self._products
+            if phases[symbol].phase is MarketPhase.TRADING
+            and phases[symbol].trading_day == trading_day
+        )
+        current_contracts = {} if trading_day != self._trading_day else dict(self._contracts)
+        unresolved = tuple(symbol for symbol in active_symbols if symbol not in current_contracts)
+        if unresolved:
             raw_snapshot = {
                 symbol: self._dominant_source.dominant_for_day(symbol, trading_day)
-                for symbol in self._products
+                for symbol in unresolved
             }
             snapshot = {
                 symbol: _concrete_rank1_contract(symbol, contract)
@@ -402,10 +411,15 @@ class LiveMarketService:
             }
             if any(contract is None for contract in snapshot.values()):
                 return "LIVE_RANK1_CONTRACT_INVALID"
-            self._store.set_subscriptions(trading_day, snapshot)
+            current_contracts.update(
+                (symbol, contract)
+                for symbol, contract in snapshot.items()
+                if contract is not None
+            )
+            self._store.set_subscriptions(trading_day, current_contracts)
             self._store.publish_state({"trading_day": trading_day.isoformat()})
             self._trading_day = trading_day
-            self._contracts = {symbol: contract for symbol, contract in snapshot.items() if contract is not None}
+            self._contracts = current_contracts
         desired = {f"bar_{contract}" for contract in self._contracts.values()}
         try:
             provider = self._provider_or_create()
@@ -509,6 +523,9 @@ class LiveMarketService:
             for contract, bar in provider.poll():
                 self.ingest(contract, bar, now=now)
             self.flush_due(now)
+            if not self._provider_available:
+                self._provider_available = True
+                self._publish_heartbeat(now, phases)
         except Exception:  # noqa: BLE001 - provider exception is normalized at boundary
             return self._schedule_provider_retry(now, phases)
         return None
@@ -605,7 +622,13 @@ class LiveMarketService:
             self._provider = None
             # 新 client 没有旧订阅；下一次 reconcile 会重建完整订阅集。
             self._channels = set()
+            self._provider_available = False
             self.next_provider_retry_at = now + _PROVIDER_RETRY_DELAY
+            try:
+                self._publish_heartbeat(now, phases)
+            except Exception:  # noqa: BLE001 - Redis failure supersedes provider retry state
+                self._available = False
+                return self._reject("LIVE_REDIS_UNAVAILABLE")
             return "LIVE_PROVIDER_RETRY_SCHEDULED"
         self.next_provider_retry_at = None
         return None
@@ -619,7 +642,7 @@ class LiveMarketService:
                 "subscribed_count": len(self._channels),
                 "last_bar_at": None if self._last_bar_at is None else self._last_bar_at.isoformat(),
                 "phase_counts": dict(sorted(counts.items())),
-                "available": self._available,
+                "available": self._available and self._provider_available,
             }
         )
 

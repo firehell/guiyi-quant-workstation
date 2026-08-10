@@ -58,12 +58,12 @@ async def market_websocket(
         return
 
     read_service = build_market_read_service(session)
-    initial_state = read_service.state(identity, datetime.now(UTC))
     redis = get_async_redis_connection()
     pubsub = redis.pubsub()
     channels = (live_bar_channel(identity.symbol, identity.frequency), LIVE_STATE_CHANNEL)
     try:
         await pubsub.subscribe(*channels)
+        initial_state = read_service.state(identity, datetime.now(UTC))
         await websocket.accept()
         await _send_state(websocket, initial_state)
 

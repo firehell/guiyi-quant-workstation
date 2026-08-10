@@ -12,6 +12,7 @@ import type { MarketBarsPageResponse, MarketReadState } from '../src/types/marke
 function page(
   bars: Array<{ bar_end: string; close: number }>,
   pageMeta: { has_more_before: boolean; next_before: string | null },
+  canonicalCoverage: { start: string; end: string } | null = null,
 ): MarketBarsPageResponse {
   return {
     request: {
@@ -33,7 +34,7 @@ function page(
       turnover: null,
       open_interest: null,
     })),
-    canonical_coverage: null,
+    canonical_coverage: canonicalCoverage,
     page: pageMeta,
     resolved_contract_segments: [],
   }
@@ -84,6 +85,62 @@ describe('market historical series', () => {
 
     assert.equal(result.nextBefore, '2026-08-07T09:15:00Z')
     assert.equal(result.hasMoreBefore, true)
+  })
+
+  it('exposes the queried series canonical coverage instead of a physical contract guess', async () => {
+    const series = useMarketSeries({
+      fetchPage: async () => page(
+        [
+          liveBar('2023-01-03T01:01:00Z', 90),
+          liveBar('2026-08-10T07:00:00Z', 100),
+        ],
+        { has_more_before: true, next_before: '2026-08-10T07:00:00Z' },
+        { start: '2023-01-03T01:01:00Z', end: '2026-08-10T07:00:00Z' },
+      ),
+      fetchState: async () => state({ phase: 'CLOSED', live_eligible: false, live_available: false }),
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+
+    assert.deepEqual(series.canonicalCoverage.value, {
+      start: '2023-01-03T01:01:00Z',
+      end: '2026-08-10T07:00:00Z',
+    })
+  })
+
+  it('merges an older page into the full loaded canonical coverage', async () => {
+    let calls = 0
+    const series = useMarketSeries({
+      fetchPage: async () => {
+        calls += 1
+        return calls === 1
+          ? page(
+            [
+              liveBar('2026-06-24T18:30:00Z', 100),
+              liveBar('2026-08-10T07:00:00Z', 101),
+            ],
+            { has_more_before: true, next_before: '2026-06-24T18:30:00Z' },
+            { start: '2026-06-24T18:30:00Z', end: '2026-08-10T07:00:00Z' },
+          )
+          : page(
+            [
+              liveBar('2026-05-07T18:16:00Z', 98),
+              liveBar('2026-06-24T18:30:00Z', 100),
+            ],
+            { has_more_before: true, next_before: '2026-05-07T18:16:00Z' },
+            { start: '2026-05-07T18:16:00Z', end: '2026-06-24T18:30:00Z' },
+          )
+      },
+      fetchState: async () => state({ phase: 'CLOSED', live_eligible: false, live_available: false }),
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    await series.loadMoreBefore()
+
+    assert.deepEqual(series.canonicalCoverage.value, {
+      start: '2026-05-07T18:16:00Z',
+      end: '2026-08-10T07:00:00Z',
+    })
   })
 })
 
@@ -371,13 +428,86 @@ describe('market Live overlay', () => {
       live_available: false,
       canonical_end: '2026-08-07T09:45:00Z',
     }) })
-    await Promise.resolve()
+    await new Promise<void>((resolve) => setImmediate(resolve))
 
     assert.equal(sockets[0].closed, true)
     assert.equal(calls, 2)
     assert.deepEqual(series.bars.value.map((bar) => [bar.time, bar.close]), [
       ['2026-08-07T09:30:00Z', 100],
       ['2026-08-07T09:45:00Z', 101],
+    ])
+  })
+
+  it('keeps the socket open until a CLOSED canonical refresh resolves', async () => {
+    let calls = 0
+    let resolveRefresh: ((value: MarketBarsPageResponse) => void) | undefined
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => {
+        calls += 1
+        if (calls === 1) {
+          return page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null })
+        }
+        return new Promise<MarketBarsPageResponse>((resolve) => { resolveRefresh = resolve })
+      },
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'state', state: state({
+      phase: 'CLOSED',
+      live_available: false,
+      canonical_end: '2026-08-07T09:45:00Z',
+    }) })
+
+    assert.equal(sockets[0].closed, false)
+    resolveRefresh?.(page([
+      liveBar('2026-08-07T09:30:00Z', 100),
+      liveBar('2026-08-07T09:45:00Z', 101),
+    ], { has_more_before: false, next_before: null }))
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    assert.equal(sockets[0].closed, true)
+  })
+
+  it('drops stale Live bars and handles a failed CLOSED canonical refresh', async () => {
+    let calls = 0
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => {
+        calls += 1
+        if (calls === 1) {
+          return page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null })
+        }
+        throw new Error('canonical refresh unavailable')
+      },
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 150) })
+    sockets[0].message({ type: 'state', state: state({
+      phase: 'CLOSED',
+      live_available: false,
+      canonical_end: '2026-08-07T09:45:00Z',
+    }) })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    assert.equal(sockets[0].closed, true)
+    assert.equal(series.liveUnavailable.value, true)
+    assert.deepEqual(series.bars.value.map((bar) => [bar.time, bar.close]), [
+      ['2026-08-07T09:30:00Z', 100],
     ])
   })
 

@@ -323,6 +323,44 @@ def test_rank1_subscription_lifecycle_is_once_per_trading_day_and_never_continuo
     ]
 
 
+def test_rank1_subscription_freezes_each_product_only_when_its_session_starts() -> None:
+    """Catches a night-session product causing a CLOSED day-only product to subscribe early."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    dominants = FakeDominants({("j", day): "J2505", ("ap", day): "AP2505"})
+    phases = FakePhases(
+        {
+            "j": _phase("j", day, window),
+            "ap": _phase("ap", day, None, MarketPhase.CLOSED),
+        }
+    )
+    service = _live_service(
+        client=client,
+        dominants=dominants,
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j", "ap"),
+    )
+
+    assert service.reconcile(datetime(2025, 1, 2, 1, 1, tzinfo=UTC)) is None
+    assert dominants.calls == [("j", day)]
+    assert client.subscribed == ["bar_J2505"]
+    assert fake.values["live:subscription:2025-01-02"] == '{"j":"J2505"}'
+
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+    phases.phases["ap"] = _phase("ap", day, window)
+
+    assert service.reconcile(datetime(2025, 1, 2, 1, 30, tzinfo=UTC)) is None
+    assert dominants.calls == [("j", day), ("ap", day)]
+    assert client.subscribed == ["bar_J2505", "bar_AP2505"]
+    assert fake.values["live:subscription:2025-01-02"] == '{"j":"J2505","ap":"AP2505"}'
+
+
 def test_completed_1m_bar_is_pending_then_immutable_and_outside_session_is_rejected() -> None:
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
@@ -585,6 +623,40 @@ def test_trading_provider_failure_retries_after_ten_seconds_but_break_staleness_
     phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
     assert service.poll(datetime(2025, 1, 2, 1, 1, 1, tzinfo=UTC)) is None
     assert service.next_provider_retry_at is None
+
+
+def test_provider_failure_immediately_publishes_unavailable_and_recovery_restores_it() -> None:
+    """Catches a disconnected provider remaining publicly available until a later bar or heartbeat."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    first = FakeLiveClient()
+    first.fail_listen = True
+    replacement = FakeLiveClient()
+    created: list[FakeLiveClient] = []
+    fake = FakeRedis()
+
+    def factory():
+        client = (first, replacement)[len(created)]
+        created.append(client)
+        return module.RQDataLiveProvider(client)
+
+    service = module.LiveMarketService(
+        provider_factory=factory,
+        dominant_source=FakeDominants({("j", day): "J2505"}),
+        phase_resolver=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        operational_products=("j",),
+    )
+    started = datetime(2025, 1, 2, 1, 1, tzinfo=UTC)
+
+    assert service.poll(started) == "LIVE_PROVIDER_RETRY_SCHEDULED"
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+
+    assert service.poll(started + timedelta(seconds=10)) is None
+    assert json.loads(fake.values["live:heartbeat"])["available"] is True
 
 
 def test_provider_retry_deadline_prevents_factory_subscribe_and_listen_before_ten_seconds() -> None:

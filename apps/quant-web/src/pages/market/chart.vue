@@ -3,11 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NSelect, NSpin, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { getCanonicalMarketCoverage, getMarketDominants } from '@/api/market'
+import { getMarketDominants } from '@/api/market'
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import type {
   DominantContractItem,
-  MarketCoverageItem,
   MarketFrequency,
   SeriesKind,
 } from '@/types/market'
@@ -19,11 +18,11 @@ const message = useMessage()
 const metadataLoading = ref(false)
 const error = ref<string | null>(null)
 const dominants = ref<DominantContractItem[]>([])
-const coverageItems = ref<MarketCoverageItem[]>([])
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
 const {
   bars,
   hasMoreBefore,
+  canonicalCoverage,
   loadingInitial,
   loadingBefore,
   marketState,
@@ -54,11 +53,6 @@ const seriesOptions = [
   { label: '主连', value: 'continuous' },
   { label: '指定真实合约', value: 'contract' },
 ]
-const selectedCoverage = computed(() => coverageItems.value.find((item) =>
-  item.frequency === frequency.value
-  && item.kind === (seriesKind.value === 'continuous' ? 'continuous' : 'contract')
-  && (seriesKind.value !== 'contract' || item.series_or_contract === contract.value),
-))
 const isLiveDisplay = computed(() => !!marketState.value?.live_eligible
   && !!marketState.value.live_available
   && !liveUnavailable.value)
@@ -81,7 +75,6 @@ onMounted(async () => {
     dominants.value = (await getMarketDominants()).items
     if (!symbol.value) symbol.value = dominants.value[0]?.product || ''
     syncDominantContract()
-    await loadCoverage()
     await refreshSeries()
     metadataReady = true
   } catch {
@@ -95,11 +88,7 @@ watch(symbol, async () => {
   if (!metadataReady) return
   synchronizingSymbol = true
   syncDominantContract()
-  try {
-    await loadCoverage()
-  } finally {
-    synchronizingSymbol = false
-  }
+  synchronizingSymbol = false
   await refreshSeries()
 })
 
@@ -126,11 +115,6 @@ onUnmounted(dispose)
 function syncDominantContract() {
   const value = dominants.value.find((item) => item.product === symbol.value)
   if (value) contract.value = value.actual_contract
-}
-
-async function loadCoverage() {
-  if (!symbol.value) return
-  coverageItems.value = (await getCanonicalMarketCoverage(symbol.value)).items
 }
 
 function currentIdentity() {
@@ -211,7 +195,7 @@ function normalizeSeriesKind(value: unknown): SeriesKind {
           <NTag>{{ seriesKind }}</NTag>
           <NTag>{{ frequency }}</NTag>
           <span>{{ bars.length }} bars</span>
-          <span v-if="selectedCoverage">{{ selectedCoverage.start }} → {{ selectedCoverage.end }}</span>
+          <span v-if="canonicalCoverage">{{ canonicalCoverage.start }} → {{ canonicalCoverage.end }}</span>
           <NTag v-if="hasMoreBefore" type="info">可继续向前加载</NTag>
           <NTag :type="isLiveDisplay ? 'success' : 'default'">{{ isLiveDisplay ? 'Live' : 'Historical' }}</NTag>
           <NTag>{{ phaseLabel }}</NTag>

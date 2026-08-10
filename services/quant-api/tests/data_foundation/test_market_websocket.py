@@ -74,6 +74,7 @@ class FakeReadService:
         self.race_bar = _bar(2)
 
     def state(self, identity: object, now: datetime) -> MarketReadState:
+        assert self.subscribed is True
         return self._states[0] if len(self._states) == 1 else self._states.popleft()
 
     def live_snapshot(self, identity: object, after: datetime | None, now: datetime) -> tuple[CanonicalBar, ...]:

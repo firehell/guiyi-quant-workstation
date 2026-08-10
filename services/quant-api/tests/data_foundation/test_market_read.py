@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -176,3 +177,69 @@ def test_state_rest_degrades_to_historical_only_when_live_is_unavailable(monkeyp
     assert response.status_code == 200
     assert response.json()["live_available"] is False
     assert response.json()["canonical_end"] == "2025-01-02T01:02:00Z"
+
+
+def test_state_exposes_only_whitelisted_after_market_status_fields(tmp_path) -> None:
+    """Catches a tampered local status file leaking arbitrary fields through Market state."""
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "last_run": {
+                    "trading_day": "2026-08-10",
+                    "status": "failed",
+                    "attempts": 2,
+                    "started_at": "2026-08-10T17:00:00+08:00",
+                    "finished_at": "2026-08-10T18:00:00+08:00",
+                    "products": ["J", "jm", "ap", "ag"],
+                    "error_code": "LIVE_DOMINANT_MISMATCH",
+                    "provider_token": "must-not-leak",
+                },
+                "last_successful_trading_day": "2026-08-09",
+                "last_failure": {
+                    "trading_day": "2026-08-10",
+                    "error_code": "LIVE_DOMINANT_MISMATCH",
+                    "internal_path": "/private/runtime/secret",
+                },
+                "debug": {"sql": "select credential from private_table"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    phase = ProductMarketPhase(
+        symbol="j",
+        phase=MarketPhase.TRADING,
+        trading_day=date(2025, 1, 2),
+        current_session=None,
+        next_session_start=None,
+    )
+    service = MarketReadService(
+        market_data=FakeMarketDataService(_bar(2)),
+        phase_resolver=FakePhaseResolver(phase),
+        operational_products=("j",),
+        live_store=FakeLiveStore(()),
+        after_market_status_path=status_path,
+    )
+
+    state = service.state(
+        SeriesPageQuery("actual_dominant", "j", "1m"),
+        now=datetime(2025, 1, 2, 1, 3, tzinfo=UTC),
+    )
+
+    assert state.after_market == {
+        "last_run": {
+            "trading_day": "2026-08-10",
+            "status": "failed",
+            "attempts": 2,
+            "started_at": "2026-08-10T17:00:00+08:00",
+            "finished_at": "2026-08-10T18:00:00+08:00",
+            "products": ["j", "jm", "ap", "ag"],
+            "error_code": "LIVE_DOMINANT_MISMATCH",
+        },
+        "last_successful_trading_day": "2026-08-09",
+        "last_failure": {
+            "trading_day": "2026-08-10",
+            "error_code": "LIVE_DOMINANT_MISMATCH",
+        },
+    }
+    assert "must-not-leak" not in json.dumps(dict(state.after_market))

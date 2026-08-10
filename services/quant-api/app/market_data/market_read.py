@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Protocol
 
 from app.core.env import PROJECT_ROOT
+from app.market_data.after_market import public_after_market_status
 from app.market_data.domain import (
     CanonicalBar,
     INTRADAY_FREQUENCIES,
@@ -190,4 +191,4 @@ def _load_after_market_status(path: Path) -> Mapping[str, object]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, TypeError, ValueError):
         payload = {}
-    return MappingProxyType(payload if isinstance(payload, dict) else {})
+    return MappingProxyType(public_after_market_status(payload))

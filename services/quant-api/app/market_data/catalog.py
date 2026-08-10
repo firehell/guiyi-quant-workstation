@@ -380,17 +380,16 @@ class MarketCatalog:
     ) -> tuple[tuple[date, bool], ...]:
         """返回正式交易日历事实，含非交易日，供 coverage 缺口校验。"""
         exchange = self.exchange_for_symbol(symbol)
-        return tuple(
-            self.session.execute(
-                select(TradingCalendar.trade_date, TradingCalendar.is_trading_day)
-                .where(
-                    TradingCalendar.exchange_code == exchange,
-                    TradingCalendar.trade_date >= start,
-                    TradingCalendar.trade_date <= end,
-                )
-                .order_by(TradingCalendar.trade_date)
+        rows = self.session.execute(
+            select(TradingCalendar.trade_date, TradingCalendar.is_trading_day)
+            .where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date >= start,
+                TradingCalendar.trade_date <= end,
             )
+            .order_by(TradingCalendar.trade_date)
         )
+        return tuple(rows.tuples().all())
 
     def trading_days_overlapping_window(
         self,

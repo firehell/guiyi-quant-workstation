@@ -262,6 +262,63 @@ def test_query_page_actual_dominant_crosses_contract_switch(session, tmp_path) -
     assert [segment.contract for segment in result.resolved_contract_segments] == ["JM2505", "JM2509"]
 
 
+def test_query_page_actual_dominant_cursor_keeps_next_trading_day_night_owner(
+    session, tmp_path
+) -> None:
+    """Catches a Friday-night cursor dropping its next-trading-day rank-one owner."""
+    catalog, service, store = _service(session, tmp_path)
+    trading_day = date(2025, 1, 6)
+    first = CanonicalBar(
+        bar_end=datetime(2025, 1, 3, 13, 1, tzinfo=UTC),
+        trading_day=trading_day,
+        open=Decimal(100),
+        high=Decimal(101),
+        low=Decimal(99),
+        close=Decimal(100),
+        volume=Decimal(1),
+        turnover=Decimal(10),
+        open_interest=Decimal(20),
+    )
+    cursor_bar = CanonicalBar(
+        bar_end=datetime(2025, 1, 3, 13, 2, tzinfo=UTC),
+        trading_day=trading_day,
+        open=Decimal(101),
+        high=Decimal(102),
+        low=Decimal(100),
+        close=Decimal(101),
+        volume=Decimal(1),
+        turnover=Decimal(10),
+        open_interest=Decimal(20),
+    )
+    _publish(
+        catalog,
+        store,
+        DatasetKey("contract", "jm", "JM2509", "1m"),
+        (first, cursor_bar),
+    )
+    session.add(
+        TradingCalendar(
+            exchange_code="DCE",
+            trade_date=trading_day,
+            is_trading_day=True,
+        )
+    )
+    catalog.upsert_main_contracts((("jm", trading_day, "JM2509"),))
+    session.commit()
+
+    result = service.query_page(
+        SeriesPageQuery(
+            "actual_dominant",
+            "jm",
+            "1m",
+            before=cursor_bar.bar_end,
+            limit=1,
+        )
+    )
+
+    assert result.bars == (first,)
+
+
 def test_query_page_actual_dominant_ignores_current_map_after_latest_canonical_bar(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1d"), (_bar(2, 100),))

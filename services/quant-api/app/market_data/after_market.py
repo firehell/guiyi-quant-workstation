@@ -12,6 +12,7 @@ from datetime import date, datetime
 import json
 import logging
 from pathlib import Path
+import re
 import subprocess
 import time
 from typing import Any
@@ -44,6 +45,7 @@ _PUBLIC_NOTIFICATION_MESSAGES = {
     "RQDATA_READY_CHECK_FAILED": "RQData readiness check failed after one retry.",
     "UPDATE_FAILED": "Historical data update failed after one retry.",
 }
+_PUBLIC_PRODUCT_CODE = re.compile(r"[a-z]{1,4}\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,9 +335,87 @@ def _public_last_failure(value: object) -> dict[str, str] | None:
         return None
     trading_day = _public_trading_day(value.get("trading_day"))
     error_code = value.get("error_code")
-    if trading_day is None or error_code not in _PUBLIC_ERROR_CODES:
+    if (
+        trading_day is None
+        or not isinstance(error_code, str)
+        or error_code not in _PUBLIC_ERROR_CODES
+    ):
         return None
     return {"trading_day": trading_day, "error_code": error_code}
+
+
+def public_after_market_status(value: object) -> dict[str, object]:
+    """Return the sole public, field-whitelisted view of a local status payload."""
+    if not isinstance(value, Mapping):
+        return {}
+    last_run = _public_last_run(value.get("last_run"))
+    last_success = _public_trading_day(value.get("last_successful_trading_day"))
+    last_failure = _public_last_failure(value.get("last_failure"))
+    if last_run is None and last_success is None and last_failure is None:
+        return {}
+    return {
+        "last_run": last_run,
+        "last_successful_trading_day": last_success,
+        "last_failure": last_failure,
+    }
+
+
+def _public_last_run(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    trading_day = _public_trading_day(value.get("trading_day"))
+    status = value.get("status")
+    attempts = value.get("attempts")
+    started_at = _public_timestamp(value.get("started_at"))
+    finished_at = _public_timestamp(value.get("finished_at"))
+    products = value.get("products")
+    error_code = value.get("error_code")
+    normalized_products = (
+        [product.strip().lower() for product in products]
+        if isinstance(products, list) and all(isinstance(product, str) for product in products)
+        else []
+    )
+    valid_attempts = isinstance(attempts, int) and not isinstance(attempts, bool)
+    valid_outcome = valid_attempts and (
+        (status == "passed" and attempts in {1, 2} and error_code is None)
+        or (
+            status == "failed"
+            and attempts == 2
+            and isinstance(error_code, str)
+            and error_code in _PUBLIC_ERROR_CODES - {"NON_TRADING_DAY"}
+        )
+        or (status == "skipped" and attempts == 0 and error_code == "NON_TRADING_DAY")
+    )
+    if (
+        trading_day is None
+        or started_at is None
+        or finished_at is None
+        or not valid_outcome
+        or not normalized_products
+        or any(_PUBLIC_PRODUCT_CODE.fullmatch(product) is None for product in normalized_products)
+    ):
+        return None
+    return {
+        "trading_day": trading_day,
+        "status": status,
+        "attempts": attempts,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "products": normalized_products,
+        "error_code": error_code,
+    }
+
+
+def _public_timestamp(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return value
 
 
 def _local_timestamp(value: datetime) -> datetime:

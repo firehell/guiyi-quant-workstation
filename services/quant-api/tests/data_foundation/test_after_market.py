@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import date, datetime
 
-from app.market_data.after_market import AfterMarketUpdater
+from app.market_data.after_market import AfterMarketUpdater, public_after_market_status
 from app.market_data.infrastructure import InfrastructureError
 from app.market_data.maintenance import MaintenanceResult
 
@@ -450,3 +450,45 @@ def test_rank1_mismatch_is_a_stable_failure_without_live_cleanup(tmp_path) -> No
         "error_code": "LIVE_DOMINANT_MISMATCH",
     }
     assert len(manager.metadata.calls) == 2
+
+
+def test_public_status_rejects_boolean_attempt_count() -> None:
+    """Catches JSON booleans being accepted as integer retry counts."""
+    payload = public_after_market_status(
+        {
+            "last_run": {
+                "trading_day": "2026-08-10",
+                "status": "passed",
+                "attempts": True,
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "finished_at": "2026-08-10T17:05:00+08:00",
+                "products": ["j", "jm", "ap", "ag"],
+                "error_code": None,
+            }
+        }
+    )
+
+    assert payload == {}
+
+
+def test_public_status_rejects_non_string_error_codes() -> None:
+    """Malformed local JSON must fail closed instead of breaking a public endpoint."""
+    payload = public_after_market_status(
+        {
+            "last_run": {
+                "trading_day": "2026-08-10",
+                "status": "failed",
+                "attempts": 2,
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "finished_at": "2026-08-10T17:05:00+08:00",
+                "products": ["j", "jm", "ap", "ag"],
+                "error_code": ["UPDATE_FAILED"],
+            },
+            "last_failure": {
+                "trading_day": "2026-08-10",
+                "error_code": ["UPDATE_FAILED"],
+            },
+        }
+    )
+
+    assert payload == {}

@@ -132,6 +132,11 @@ function latestEnd(items: BarData[]): string | null {
   return items.at(-1)?.time ?? null
 }
 
+function loadedCanonicalCoverage(items: BarData[]): MarketBarsPageResponse['canonical_coverage'] {
+  if (!items.length) return null
+  return { start: items[0].time, end: items.at(-1)!.time }
+}
+
 function isLater(left: string | null, right: string | null): boolean {
   return left !== null && (right === null || Date.parse(left) > Date.parse(right))
 }
@@ -164,6 +169,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   const bars = ref<BarData[]>([])
   const hasMoreBefore = ref(false)
   const nextBefore = ref<string | null>(null)
+  const canonicalCoverage = ref<MarketBarsPageResponse['canonical_coverage']>(null)
   const loadingInitial = ref(false)
   const loadingBefore = ref(false)
   const marketState = ref<MarketReadState | null>(null)
@@ -210,17 +216,29 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     requestGeneration: number,
     nextIdentity: MarketSeriesIdentity,
     refreshToken: number,
-  ): Promise<void> {
-    const page = await fetchPage(toPageRequest(nextIdentity))
-    if (!isCurrentGeneration(requestGeneration, generation) || refreshToken !== canonicalRefreshToken) return
-    const fresh = mergeInitialPage(page).bars
-    if (!fresh.length) return
-    const freshStart = fresh[0].time
-    canonicalBars = sortAndDedupeBars([
-      ...canonicalBars.filter((bar) => Date.parse(bar.time) < Date.parse(freshStart)),
-      ...fresh,
-    ])
-    publishMerged({ kind: 'replace' })
+  ): Promise<boolean> {
+    try {
+      const page = await fetchPage(toPageRequest(nextIdentity))
+      if (!isCurrentGeneration(requestGeneration, generation) || refreshToken !== canonicalRefreshToken) return false
+      const merged = mergeInitialPage(page)
+      const fresh = merged.bars
+      if (!fresh.length) return true
+      const freshStart = fresh[0].time
+      canonicalBars = sortAndDedupeBars([
+        ...canonicalBars.filter((bar) => Date.parse(bar.time) < Date.parse(freshStart)),
+        ...fresh,
+      ])
+      canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
+      publishMerged({ kind: 'replace' })
+      return true
+    } catch {
+      if (isCurrentGeneration(requestGeneration, generation) && refreshToken === canonicalRefreshToken) {
+        liveBars = []
+        liveUnavailable.value = true
+        publishMerged({ kind: 'replace' })
+      }
+      return false
+    }
   }
 
   function applyLiveBars(incoming: CanonicalBarDto[]): void {
@@ -262,14 +280,22 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       const previousSeam = latestEnd(canonicalBars)
       marketState.value = payload.state
       liveUnavailable.value = !payload.state.live_available
+      let canonicalRefresh: Promise<boolean> | null = null
       if (isLater(payload.state.canonical_end, previousSeam)) {
         const refreshToken = ++canonicalRefreshToken
-        void refreshCanonicalEdge(requestGeneration, nextIdentity, refreshToken)
+        canonicalRefresh = refreshCanonicalEdge(requestGeneration, nextIdentity, refreshToken)
       }
       if (!stillNeedsLive(nextIdentity, payload.state)) {
-        clearSocket()
+        if (canonicalRefresh) {
+          void canonicalRefresh.then(() => {
+            if (isCurrentGeneration(requestGeneration, generation) && socket === activeSocket) clearSocket()
+          })
+        } else {
+          clearSocket()
+        }
         return
       }
+      if (canonicalRefresh) void canonicalRefresh
     }
     socket.onclose = () => {
       if (!isCurrentGeneration(requestGeneration, generation) || socket !== activeSocket) return
@@ -289,6 +315,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     identity = { ...nextIdentity }
     canonicalBars = []
     liveBars = []
+    canonicalCoverage.value = null
     canonicalRefreshToken += 1
     marketState.value = null
     liveUnavailable.value = false
@@ -301,6 +328,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       canonicalBars = merged.bars
       hasMoreBefore.value = merged.hasMoreBefore
       nextBefore.value = merged.nextBefore
+      canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
       publishMerged({ kind: 'replace' })
       try {
         const nextState = await fetchState(nextIdentity)
@@ -328,6 +356,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       canonicalBars = merged.bars
       hasMoreBefore.value = merged.hasMoreBefore
       nextBefore.value = merged.nextBefore
+      canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
       const previousTimes = new Set(previous.map((bar) => bar.time))
       publishMerged({ kind: 'prepend', bars: canonicalBars.filter((bar) => !previousTimes.has(bar.time)) })
     } finally {
@@ -343,6 +372,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   return {
     bars,
     hasMoreBefore,
+    canonicalCoverage,
     loadingInitial,
     loadingBefore,
     marketState,

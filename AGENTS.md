@@ -5,7 +5,7 @@
 ## 项目边界
 
 - 做（长期）：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
-- 当前可执行面：Web 为 Market；API/CLI 为 market / data CLI / runtime。Market Runtime V1 已有仓库实现与默认关闭的 launchd 模板，但尚未启用；signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役。
+- 当前可执行面：Web 为 Market；API/CLI 为 market / data CLI / runtime。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用四品种有界 Runtime。signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役。
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
@@ -54,7 +54,7 @@ history 可追溯），当前不存在回测引擎、策略适配层或策略 HT
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
 8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。Signal/Review/Strategy HTTP·worker·DB 表与旧语义合同已退役；未来重建须新任务新合同，不以旧表/旧文档为兼容入口。
-9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 已实现但未启用，且不新增生产表。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
+9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 已在本地工作站按受限持续授权启用，范围仍只是 `j/jm/ap/ag`，且不新增生产表。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
 10. `auto_order=false` 适用于所有研究观察与 Runtime 模式。任何创建或提交订单的流程都必须拒绝；本项目不实现自动交易。
 11. 数据或指标语义变化时，同一变更更新相应 deep canonical；普通 bug fix、UI 调整和测试增加不自动改写项目状态。
 
