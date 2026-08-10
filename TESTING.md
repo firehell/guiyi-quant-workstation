@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-09
+更新时间：2026-08-10
 
 所有数据写入测试使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向
 Runtime/生产数据库。
@@ -37,7 +37,9 @@ npm --prefix apps/quant-web test
 npm --prefix apps/quant-web run build
 ```
 
-## Market Runtime V1（本地/无外部副作用）
+## Market Runtime V1 验证分级
+
+### 1. 本地渲染与测试（无外部副作用）
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -49,10 +51,37 @@ plutil -lint .run/launchd/com.guiyi.quant-after-market.plist
 uv run pytest -q tests/engineering/test_market_runtime_launchd.py
 ```
 
-上述仅覆盖 fixture、mock、仓库 `.run` 渲染和 plist 语法；不得作为 Runtime 启用或数据写入授权。禁止在
-本地验证中调用 `--confirm-market-runtime`、`guiyi runtime live` 或 `guiyi data after-market`。
+上述仅覆盖 fixture、mock、仓库 `.run` 渲染和 plist 语法；不得作为 Runtime 启用、重载或数据写入授权。禁止在
+该级验证中调用 `--confirm-market-runtime`、`guiyi runtime live` 或 `guiyi data after-market`。
 `--render-only` 与 `--confirm-load` 不会创建或改变 `.run/market-runtime-enabled`；只有成功执行
 `--confirm-market-runtime` 才会原子写入该固定本地标记，供 API 健康端点跨进程判断 Live Runtime 已启用。
+
+### 2. 临时 develop 部署重载（受控外部操作）
+
+当前开发期 launchd 临时直接运行主 `develop` 工作区。源码修改不会自动进入正在运行的进程：Web 变更需先完成
+测试和构建，再重载 Web；API 或 Live 变更需先完成对应测试，再重载目标服务。每一次重载都必须取得新的、范围明确
+的一次性执行意图；不得把前一次启用、重载或只读检查复用为本次授权。
+
+重载后至少读回：
+
+- launchd 实际工作目录仍是主 `develop` 工作区；
+- 目标服务健康端点和根页面可用；
+- 未修改 `operational_products.txt`、`auto_order=false`、Canonical/Live 边界或其他受控范围。
+
+该级证据只说明当前开发副本已加载指定变更。由于 `develop` 可继续移动或处于 dirty 状态，不能替代最终隔离 Runtime
+的 exact-commit 验收，也不能据此声明 release、Runtime promotion 或设计文档闭环。
+
+### 3. 最终隔离 Runtime 验收（独立人工 Gate）
+
+代码与文档收口后，重新创建独立、clean、detached 于精确批准 commit/tag 的 Runtime worktree，再执行最终验收。除即时
+测试和浏览器检查外，至少保留以下自然证据：
+
+- 10:15 BREAK 与 10:30 自然恢复；
+- 17:00 launchd 自然任务完整结束、清理、rank1 reconciliation 与前端 seam；
+- 周末或非交易日自然行为。
+
+手工执行 `guiyi data after-market`、fixture、旧状态或受控重跑不能代替 17:00 自然完成证据。最终验收通过也不自动授权
+合并 `main`、创建 tag/release 或 Runtime promotion。
 
 DFD-03 之后补充 `20260808_0035:20260808_0036 --sql` 和隔离 PostgreSQL migration 测试。DFD-05
 完成后，最终无写入 CLI smoke 为：

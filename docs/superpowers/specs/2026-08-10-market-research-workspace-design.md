@@ -25,7 +25,7 @@ Product Workspace
 - 历史行情只能经 `MarketDataService` 读取 Canonical；Web 不自行 glob、不自行判断主力、不跨频回退。
 - 当前物理序列仍只有 `continuous` 与 `contract`；`actual_dominant` 继续由 `MainContractMap rank=1` 查询时拼接。
 - `continuous/MAIN` 继续保持当前未平滑主连语义，不用 `futures.get_dominant_price()` 或复权因子改写现有 Canonical。
-- historical canonical 与 live observation 分离。本设计不恢复盘中 Live、WebSocket、实时 tick 或 Runtime promotion。
+- historical canonical 与 live observation 分离。本设计复用当前本机有界启用的 REST/WebSocket seam，但不修改 Live 采集、Runtime 部署、operational products、实时 tick 或 Runtime promotion。
 - 所有市场状态均为研究观察，不是交易指令；保持 `auto_order=false`。
 
 当前 DFD-07 数据重建进度不因本设计改变。P0 必须能在 Canonical 未全域完成时对不可用品种 fail-closed/降级展示，而不是伪造完整全市场结论。
@@ -496,7 +496,7 @@ P0 可以在 DFD-07 期间独立开发不依赖完整宇宙的部分，但 Marke
 本设计明确不做：
 
 - 自动交易、下单或交易建议；
-- Live/WebSocket/tick 盘中路径；
+- Live 采集、WebSocket 协议、tick 盘中路径或 Runtime 部署变更；
 - 恢复旧 Backtest/Signal/Review/Strategy 应用面；
 - 商业 TradingView 克隆；
 - 绘图工具和复杂自定义指标系统；

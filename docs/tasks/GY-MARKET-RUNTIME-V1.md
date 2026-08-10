@@ -1,8 +1,8 @@
 # GY-MARKET-RUNTIME-V1：历史分页、盘后自动更新与主力实时行情设计
 
 更新时间：2026-08-10
-Disposition：`implementation_ready_for_canary`
-事实基线：`develop@6972b712e8d29466ff460c6be179bc8d2d52d38c`
+Disposition：`partial_canary_development_runtime`
+当前实现基线：仓库实现与即时验收已完成；精确当前事实以 `STATUS.md` 为准
 
 ## 1. 目标
 
@@ -34,6 +34,15 @@ Disposition：`implementation_ready_for_canary`
 ---
 
 ## 2. 当前事实基线
+
+### 当前实现与部署状态
+
+- MR-01～MR-07 的仓库实现已经完成；MR-08 的即时代码、测试和受控实盘检查已形成证据。
+- MR-08 仍为 `PARTIAL`：自然 10:15/10:30、自然 17:00 完整收口和非交易日证据尚未全部形成。
+- 开发期 launchd 临时直接运行主 `develop` 工作区；旧 detached Runtime worktree 已移除。
+- `develop` 便于快速修改和查看，但源码变更不会热加载；Web、API 或 Live 每次重载仍需新的单次执行意图。
+- 最终闭环前必须重新建立 clean、detached、exact-commit/tag 的独立 Runtime worktree。release、`main` 合并与 Runtime
+  promotion 继续是相互独立的人工 Gate。
 
 ### 2.1 active universe
 
@@ -74,7 +83,9 @@ Disposition：`implementation_ready_for_canary`
 
 ### 2.5 当前 Runtime
 
-当前 FastAPI 只有 Market + Runtime 只读 API；Redis 已存在，但无 active 业务队列。旧 Live、Archive、After-market scheduler 仅剩 retired health stub。
+当前 FastAPI 保持 Market + Runtime 面；历史分页、rank1 Live、Redis Overlay、REST/WebSocket seam、盘后更新与 Runtime
+health 已实现。`j/jm/ap/ag` 四品种的本地有界 Runtime 已启用，当前 launchd 临时直接运行主 `develop` 工作区；旧
+detached Runtime worktree 和旧 scheduler 路径已移除。Redis 不承载已退役的业务队列。
 
 本设计不恢复旧 RQ worker、Signal worker、任务中心或历史 Live 兼容路径。
 
@@ -1504,9 +1515,10 @@ MR-07  Runtime health + launchd activation packaging
 MR-08  J/JM/AP/AG real canary
 ```
 
-MR-01～MR-07 均可在不真实启用自动写入/Live 的情况下完成 fixture 与隔离测试。
+MR-01～MR-07 已在不真实启用自动写入/Live 的阶段完成 fixture 与隔离测试。
 
-MR-08 才进行真实 Provider/Runtime 验证，需要用户明确启用范围。
+MR-08 的四品种真实 Provider/Runtime 启用已经按用户明确范围执行；当前只保留尚未完成的自然时点与最终隔离
+Runtime 验收，不扩大 operational scope。
 
 ---
 
@@ -1620,6 +1632,10 @@ Canonical / Live seam
 
 其余不建设企业级恢复、队列、权限、多用户或多版本体系。
 
-MR-01～MR-07 已完成本地代码、fixture/mock、build 与 render-only 验证，因此本文件可进入
-`implementation_ready_for_canary`。该状态不是实际启用：尚未授权真实 Live 启用、launchd 安装、每日自动
-Canonical 写入或任何其他真实 Runtime mutation；MR-08 仍须用户对该本地工作站明确请求“启用 Market Runtime V1”。
+MR-01～MR-07 已完成本地代码、fixture/mock、build 与 render-only 验证；MR-08 已完成有界启用和当前可即时执行的
+验收，因此本文件当前为 `partial_canary_development_runtime`。launchd 临时直接运行主 `develop` 工作区，只服务于
+开发期快速修改和观察，不构成 exact-commit Runtime、release 或 promotion 证据。
+
+最终关闭本文件仍需：修复项回归全部通过、真实浏览器左拖加载到 2023 年、自然 10:15/10:30、自然 17:00 完整收口、
+非交易日行为，以及在新建 clean detached Runtime worktree 上的最终读回。手工 after-market、fixture、旧状态或受控重跑
+均不得冒充自然证据；`auto_order=false` 与四品种 operational scope 保持不变。

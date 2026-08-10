@@ -13,7 +13,7 @@
 - 当前产品面保持 Market-only；不得恢复 Backtest / Signal / Review / Strategy 应用面。
 - `MarketDataService` 仍是唯一正式历史 Bar 读取入口；任何 P0 研究计算不得 glob Parquet、自判主力或跨频回退。
 - `actual_dominant` 只由 `MainContractMap rank=1` 查询时拼接；`continuous/MAIN` 继续保持现有未平滑语义。
-- Market Runtime V1 的历史分页、Redis Live Overlay、REST/WS seam 已实现但尚未启用。P0 **必须保留和复用现有 `useMarketSeries` / `/market/state` / `/market/ws` 行为**，不得删除、复制、重写或借 P0 启用 Runtime。
+- Market Runtime V1 的历史分页、Redis Live Overlay、REST/WS seam 及本地四品种有界启用已经存在。P0 **必须保留和复用现有 `useMarketSeries` / `/market/state` / `/market/ws` 行为**，不得删除、复制、重写或改变 Runtime 部署、范围与授权状态。
 - P0 本地验证不得调用真实 RQData、不得写生产 PostgreSQL/Canonical、不得执行 `guiyi runtime live`、`guiyi data after-market` 或任何 Runtime enable 命令。
 - DFD-07 当前仅 4/60 完整闭环；P0 可以开发并集成，但 Market Radar 必须显示 `participant_count / active_count`，不得把部分宇宙写成“全市场”。
 - 60/60 active universe Canonical + audit 闭环是 Market Radar 完整全宇宙 Ready 的独立前置 Gate；该数据重建属于另一个受控任务，不并入 P0。
@@ -29,7 +29,7 @@
 
 实施时以下四点优先于设计稿中的旧措辞：
 
-1. **不“恢复 Live”，而是保留已实现的 Runtime seam。** 当前 `chart.vue` 已使用 `useMarketSeries`，后者已经承担 cursor page、state、WebSocket、generation token、Canonical/Live seam 和 reconnect；P0 只改变展示层与研究计算。
+1. **复用当前已启用 seam，但不拥有 Runtime 部署。** 当前 `chart.vue` 已使用 `useMarketSeries`，后者已经承担 cursor page、state、WebSocket、generation token、Canonical/Live seam 和 reconnect；P0 只改变展示层与研究计算，不改变采集、部署、品种范围或授权状态。
 2. **先 Product Workspace，后 Radar。** DFD-07 仍为 4/60，而 K 线分页与 Runtime seam 已可用，因此先完成不依赖 60/60 的 Product Workspace，避免 Radar 全宇宙 Gate 阻塞视觉主线。
 3. **Radar 使用“值得关注 + as_of”，不使用无条件“今日”。** Radar P0 基于最近完整 `actual_dominant/1d` Canonical，不把盘中 Live 与历史完整日混成统一 60 品种口径。
 4. **HTDY 独立成任务。** 核心 K 线必须先用 EMA + Volume + MACD 验收；HTDY observation overlay 单独 Review，避免未来引用/重绘风险拖累普通图表任务。
@@ -851,7 +851,7 @@ MarketDataService still owns historical bars
 useMarketSeries still owns Historical/Live seam
 no new provider passthrough
 no new DB table/migration
-no Runtime enable/load
+no Runtime deployment/scope change
 no main/tag/release
 no full-market claim under participant_count < 60
 no trading-advice wording
@@ -940,7 +940,7 @@ P0 code may integrate into `develop` even if DFD-07 remains below 60/60:
 | Partial universe | Missing/stale products are excluded and reported; partial results never claim full market |
 | Sector | Only shown with complete trusted sector metadata among participants |
 | Local UX | last symbol/series/period/indicators/sidebar/watchlist survive locally; corrupt local state falls back safely |
-| Scope | no P1 RQData research APIs, no DB migration, no Runtime enable, no release/tag/main |
+| Scope | no P1 RQData research APIs, no DB migration, no Runtime deployment/scope change, no release/tag/main |
 
 **Separate Gate after P0:** only when DFD-07 reaches 60/60 and active-universe `data audit` passes can the product statement move from “partial-universe Radar” to “full-universe Market Radar Ready”. This Gate is not an implementation task in this plan.
 
@@ -963,7 +963,7 @@ Task 7  Independent integration review + exact readiness closure
 
 Independent of this plan:
 DFD-07 60/60 Canonical rebuild/audit Gate
-MR-08 Market Runtime enable/canary Gate
+MR-08 remaining natural-canary/final-isolated-Runtime Gate
 P1 RQData research enrichment
 ```
 
