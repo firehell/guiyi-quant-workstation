@@ -188,11 +188,7 @@ class AfterMarketUpdater:
                     attempt,
                 )
                 return "LIVE_DOMINANT_MISMATCH"
-            # TTL remains the recovery path when this best-effort removal fails.
-            try:
-                self.live_store.cleanup_trading_day(trading_day)
-            except Exception:  # noqa: BLE001 - cleanup failure must not re-promote Live data
-                pass
+            self.live_store.cleanup_trading_day(trading_day)
         except Exception as exc:  # noqa: BLE001 - catalog/Redis detail stays private
             _LOGGER.warning(
                 "after_market_attempt_failed stage=live_reconciliation attempt=%s "

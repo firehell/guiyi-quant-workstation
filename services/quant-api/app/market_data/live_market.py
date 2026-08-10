@@ -399,7 +399,21 @@ class LiveMarketService:
             if phases[symbol].phase is MarketPhase.TRADING
             and phases[symbol].trading_day == trading_day
         )
-        current_contracts = {} if trading_day != self._trading_day else dict(self._contracts)
+        if trading_day != self._trading_day:
+            stored_contracts = self._store.subscriptions(trading_day)
+            current_contracts: dict[str, str] = {}
+            if stored_contracts is not None:
+                for symbol, contract in stored_contracts.items():
+                    if symbol not in self._products:
+                        return "LIVE_RANK1_CONTRACT_INVALID"
+                    normalized = _concrete_rank1_contract(symbol, contract)
+                    if normalized is None:
+                        return "LIVE_RANK1_CONTRACT_INVALID"
+                    current_contracts[symbol] = normalized
+            self._trading_day = trading_day
+            self._contracts = current_contracts
+        else:
+            current_contracts = dict(self._contracts)
         unresolved = tuple(symbol for symbol in active_symbols if symbol not in current_contracts)
         if unresolved:
             raw_snapshot = {

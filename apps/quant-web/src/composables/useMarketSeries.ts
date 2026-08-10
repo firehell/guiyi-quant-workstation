@@ -216,13 +216,20 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     requestGeneration: number,
     nextIdentity: MarketSeriesIdentity,
     refreshToken: number,
+    expectedCanonicalEnd: string,
   ): Promise<boolean> {
     try {
       const page = await fetchPage(toPageRequest(nextIdentity))
       if (!isCurrentGeneration(requestGeneration, generation) || refreshToken !== canonicalRefreshToken) return false
       const merged = mergeInitialPage(page)
       const fresh = merged.bars
-      if (!fresh.length) return true
+      const freshEnd = latestEnd(fresh)
+      if (freshEnd === null || Date.parse(freshEnd) < Date.parse(expectedCanonicalEnd)) {
+        liveBars = []
+        liveUnavailable.value = true
+        publishMerged({ kind: 'replace' })
+        return false
+      }
       const freshStart = fresh[0].time
       canonicalBars = sortAndDedupeBars([
         ...canonicalBars.filter((bar) => Date.parse(bar.time) < Date.parse(freshStart)),
@@ -281,9 +288,15 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       marketState.value = payload.state
       liveUnavailable.value = !payload.state.live_available
       let canonicalRefresh: Promise<boolean> | null = null
-      if (isLater(payload.state.canonical_end, previousSeam)) {
+      const announcedCanonicalEnd = payload.state.canonical_end
+      if (announcedCanonicalEnd !== null && isLater(announcedCanonicalEnd, previousSeam)) {
         const refreshToken = ++canonicalRefreshToken
-        canonicalRefresh = refreshCanonicalEdge(requestGeneration, nextIdentity, refreshToken)
+        canonicalRefresh = refreshCanonicalEdge(
+          requestGeneration,
+          nextIdentity,
+          refreshToken,
+          announcedCanonicalEnd,
+        )
       }
       if (!stillNeedsLive(nextIdentity, payload.state)) {
         if (canonicalRefresh) {

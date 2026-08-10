@@ -78,6 +78,7 @@ class _LiveStore:
         self.subscription_calls: list[date] = []
         self.published: list[dict[str, str]] = []
         self.cleaned: list[date] = []
+        self.cleanup_failures = 0
 
     def subscriptions(self, trading_day: date):
         self.subscription_calls.append(trading_day)
@@ -87,6 +88,9 @@ class _LiveStore:
         self.published.append(payload)
 
     def cleanup_trading_day(self, trading_day: date) -> None:
+        if self.cleanup_failures:
+            self.cleanup_failures -= 1
+            raise RuntimeError("private redis cleanup detail")
         self.cleaned.append(trading_day)
 
 
@@ -421,6 +425,32 @@ def test_success_reconciles_rank1_publishes_state_and_cleans_live(tmp_path) -> N
     assert live_store.published == [{"trading_day": "2026-08-10"}]
     assert live_store.cleaned == [date(2026, 8, 10)]
     assert notices == []
+
+
+def test_cleanup_failure_retries_then_fails_without_reporting_success(tmp_path) -> None:
+    """Catches a failed Live cleanup being recorded as a completed after-market run."""
+    updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True, True],
+        results=[_result("passed"), _result("noop")],
+    )
+    live_store.cleanup_failures = 2
+
+    result = updater.run()
+    status = _status(tmp_path / "after-market-status.json")
+
+    assert result.status == "failed"
+    assert result.attempts == 2
+    assert result.error_code == "UPDATE_FAILED"
+    assert sleeps == [3600]
+    assert notices == ["UPDATE_FAILED"]
+    assert live_store.cleaned == []
+    assert status["last_successful_trading_day"] is None
+    assert status["last_failure"] == {
+        "trading_day": "2026-08-10",
+        "error_code": "UPDATE_FAILED",
+    }
 
 
 def test_rank1_mismatch_is_a_stable_failure_without_live_cleanup(tmp_path) -> None:
