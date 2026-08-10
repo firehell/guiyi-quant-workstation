@@ -24,7 +24,11 @@
 
 ---
 
+
+
 ## File Structure Map
+
+
 
 ### New backend files
 
@@ -45,6 +49,8 @@ services/quant-api/tests/data_foundation/test_market_read.py
 services/quant-api/tests/data_foundation/test_market_websocket.py
 ```
 
+
+
 ### New frontend files
 
 ```text
@@ -53,6 +59,8 @@ apps/quant-web/tests/marketSeries.test.ts
 apps/quant-web/e2e/market-runtime.spec.mjs
 ```
 
+
+
 ### New runtime/config files
 
 ```text
@@ -60,6 +68,8 @@ data/universe/operational_products.txt
 deploy/launchd/com.guiyi.quant-live.plist.template
 deploy/launchd/com.guiyi.quant-after-market.plist.template
 ```
+
+
 
 ### Existing files expected to change
 
@@ -114,9 +124,12 @@ STATUS.md
 
 ---
 
+
+
 ## Task 1 — MR-01A: Backend Historical Cursor Pagination
 
 **Files:**
+
 - Modify: `services/quant-api/app/market_data/domain.py`
 - Modify: `services/quant-api/app/market_data/catalog.py`
 - Modify: `services/quant-api/app/market_data/service.py`
@@ -126,6 +139,8 @@ STATUS.md
 - Create: `services/quant-api/tests/data_foundation/test_market_pagination.py`
 - Modify: `services/quant-api/tests/data_foundation/test_domain.py`
 - Modify: `services/quant-api/tests/data_foundation/test_market_api.py`
+
+
 
 ### Step 1: Write failing domain tests for the page contract
 
@@ -195,6 +210,7 @@ class MarketSeriesPageResult:
 ```
 
 Implementation rules:
+
 - `before` normalized to UTC;
 - `limit` bool values are rejected even though `bool` is an `int` subclass;
 - contract validation reuses `DatasetKey` exactly as `SeriesQuery` does;
@@ -202,6 +218,8 @@ Implementation rules:
 
 - [ ] Re-export `SeriesPageQuery` only if tests/API benefit; do not turn `app.market_data.__init__` into a large re-export surface.
 - [ ] Re-run the domain tests; expected PASS.
+
+
 
 ### Step 3: Write failing pagination service tests
 
@@ -235,6 +253,8 @@ assert result.has_more_before is True
 
 - [ ] Run only this file. Expected: FAIL because `query_page()` and Catalog helpers do not exist.
 
+
+
 ### Step 4: Add reverse partition lookup to Catalog
 
 - [ ] Add:
@@ -258,6 +278,7 @@ def contract_partitions_before(
 ```
 
 Required semantics:
+
 - query only Catalog rows; never glob files;
 - filter `coverage_start < before` when a cursor exists;
 - order newest partition first;
@@ -289,6 +310,8 @@ Do not call historical RQData and do not materialize actual_dominant.
 
 - [ ] Re-run pagination and existing service tests.
 
+
+
 ### Step 6: Add the REST response contract
 
 - [ ] Add Pydantic models:
@@ -318,6 +341,8 @@ GET /api/v1/market/bars/page
 with default `limit=1200`, API max `2000`, optional RFC3339 `before`.
 
 - [ ] Keep `/bars/canonical` unchanged for explicit diagnostic windows.
+
+
 
 ### Step 7: API tests and regression
 
@@ -361,9 +386,12 @@ git commit -m "feat(market): add cursor pagination for canonical bars"
 
 ---
 
+
+
 ## Task 2 — MR-01B: Web Historical Pagination and Kline Performance
 
 **Files:**
+
 - Modify: `apps/quant-web/src/types/market.ts`
 - Modify: `apps/quant-web/src/api/market.ts`
 - Modify: `apps/quant-web/src/pages/market/chart.vue`
@@ -371,6 +399,8 @@ git commit -m "feat(market): add cursor pagination for canonical bars"
 - Create: `apps/quant-web/src/composables/useMarketSeries.ts` initially historical-only
 - Create: `apps/quant-web/tests/marketSeries.test.ts`
 - Create/extend: `apps/quant-web/e2e/market-runtime.spec.mjs`
+
+
 
 ### Step 1: Write failing model tests
 
@@ -399,6 +429,8 @@ export function getMarketBarsPage(params: MarketBarsPageRequest) {
 }
 ```
 
+
+
 ### Step 3: Implement historical-only `useMarketSeries`
 
 - [ ] V1 shape for this task:
@@ -423,6 +455,8 @@ export function useMarketSeries() {
 - [ ] Switching symbol/series/frequency increments generation; late HTTP responses from old generation are ignored.
 - [ ] Do not open WebSocket yet in this task.
 
+
+
 ### Step 4: Refactor KlineChart to imperative mutations
 
 - [ ] Replace the deep watch that does `setData + fitContent` on every bars mutation.
@@ -436,6 +470,7 @@ scrollToLatest(): void
 ```
 
 Rules:
+
 - `replaceBars`: setData + fitContent;
 - `prependBars`: capture logical visible range, set combined data once, shift the visible logical range by `prependedCount`, do not fit;
 - `updateBar`: `candles.update` + `volume.update`, no full setData and no fit;
@@ -443,12 +478,16 @@ Rules:
 
 - [ ] Emit `need-more-before` when visible logical `from` approaches the left boundary and no load is already in progress.
 
+
+
 ### Step 5: Replace date-range-as-main-navigation in chart.vue
 
 - [ ] Main chart opening should call `replaceSeries()` and immediately display the latest page.
 - [ ] The date range picker may remain only as an explicit diagnostic/manual-window control if still useful; it must not drive the default full-history load.
 - [ ] Wire `need-more-before -> loadMoreBefore -> KlineChart.prependBars`.
 - [ ] Keep route identity synchronization but remove `applyCoverageRange()` as the automatic full-range trigger.
+
+
 
 ### Step 6: Browser smoke
 
@@ -458,6 +497,8 @@ Rules:
   - dragging/triggering left-load requests second page with the exact earliest cursor;
   - first-page bars stay visible after prepend;
   - no request asks for 2023→today full start/end range.
+
+
 
 ### Step 7: Validate
 
@@ -488,15 +529,20 @@ git commit -m "feat(web): paginate market history and optimize kline updates"
 
 ---
 
+
+
 ## Task 3 — MR-02: Operational Universe and MarketPhaseResolver
 
 **Files:**
+
 - Create: `data/universe/operational_products.txt`
 - Create: `services/quant-api/app/market_data/operational_universe.py`
 - Create: `services/quant-api/app/market_data/market_phase.py`
 - Modify: `services/quant-api/app/market_data/session_clock.py`
 - Create: `services/quant-api/tests/data_foundation/test_operational_universe.py`
 - Create: `services/quant-api/tests/data_foundation/test_market_phase.py`
+
+
 
 ### Step 1: Add the explicit operational configuration
 
@@ -518,6 +564,8 @@ No comments or generated state in this file.
 - [ ] Test operational code outside active -> error.
 - [ ] Test retired overlap -> error.
 - [ ] Test a fixture with all 60 active codes passes without code changes.
+
+
 
 ### Step 3: Implement loader
 
@@ -569,11 +617,14 @@ This prevents MarketPhaseResolver from reimplementing night-session anchoring.
 ```
 
 Also cover:
+
 - night session belongs to next trading_day;
 - cross-midnight remains same trading_day identity;
 - weekend CLOSED;
 - exchange holiday CLOSED;
 - missing Calendar/Session UNKNOWN.
+
+
 
 ### Step 6: Implement MarketPhaseResolver
 
@@ -600,6 +651,8 @@ class ProductMarketPhase:
 - [ ] BREAK is only a gap between day-session segments of the same trading_day; the night-to-next-day long closed gap is CLOSED.
 - [ ] UNKNOWN is returned for missing facts, not silently guessed.
 
+
+
 ### Step 7: Validate and commit
 
 - [ ] Run:
@@ -621,9 +674,12 @@ feat(market): add operational universe and market phase resolver
 
 ---
 
+
+
 ## Task 4 — MR-03: AfterMarketUpdater, One Retry, Status, Dry launchd Template
 
 **Files:**
+
 - Create: `services/quant-api/app/market_data/after_market.py`
 - Modify: `services/quant-api/app/market_data/infrastructure.py`
 - Modify: `services/quant-api/app/guiyi_cli/data_parser.py`
@@ -633,6 +689,8 @@ feat(market): add operational universe and market phase resolver
 - Modify: `services/quant-api/tests/data_foundation/test_cli.py`
 - Create: `deploy/launchd/com.guiyi.quant-after-market.plist.template`
 - Modify later activation script only in MR-07; do not load it here.
+
+
 
 ### Step 1: Extend the common RQData boundary under tests
 
@@ -684,6 +742,7 @@ class AfterMarketUpdater:
 ```
 
 Test exact cases:
+
 1. Saturday/non-trading day -> `skipped`, no ready call, no update, no retry;
 2. ready first attempt -> update exactly once;
 3. not-ready first -> injected `sleep(3600)` -> second ready -> update once;
@@ -691,6 +750,8 @@ Test exact cases:
 5. second failure -> final failed + one notifier call;
 6. success clears previous `last_failure`;
 7. weekend skipped does not clear unresolved failure.
+
+
 
 ### Step 3: Implement simple status file
 
@@ -727,17 +788,23 @@ Only public error codes go into the file; no exception messages, credentials or 
 - [ ] Only one `sleep(3600)` and one second attempt.
 - [ ] Final failed -> status + one macOS notification.
 
+
+
 ### Step 5: macOS notification implementation
 
 - [ ] Use fixed executable `/usr/bin/osascript` and a fixed title.
 - [ ] Message content is generated only from known public status/error codes, never provider raw text.
 - [ ] Tests replace notifier with a fake; no real notification in MR-03.
 
+
+
 ### Step 6: CLI
 
 - [ ] Add `guiyi data after-market` with no `--apply` switch: this command itself is the automation entry point and remains uninstalled/unloaded until MR-08.
 - [ ] `_run_data` dispatches AfterMarketUpdater separately rather than pretending it is a `HistoricalDataManager` method.
 - [ ] CLI JSON includes `command=data.after-market`, status, trading_day, attempts, error_code.
+
+
 
 ### Step 7: launchd template only
 
@@ -762,14 +829,19 @@ feat(data): add bounded after-market updater
 
 ---
 
+
+
 ## Task 5 — MR-04A: Shared Aggregation Primitives and RedisLiveStore
 
 **Files:**
+
 - Modify: `services/quant-api/app/market_data/aggregation.py`
 - Create: `services/quant-api/app/market_data/live_market.py` (store + DTO portion first)
 - Modify: `services/quant-api/app/queue.py`
 - Modify: `services/quant-api/tests/data_foundation/test_aggregation.py`
 - Create: `services/quant-api/tests/data_foundation/test_live_market.py`
+
+
 
 ### Step 1: Write failing shared-bucket tests
 
@@ -793,16 +865,21 @@ def aggregate_bucket(
 ```
 
 Assertions:
+
 - 09:01 in 5m -> bucket end 09:05;
 - 10:15 last bar ends exactly 10:15 and never crosses BREAK;
 - partial session tail bucket ends at session.end;
 - invalid bar outside session raises `AggregationError`.
+
+
 
 ### Step 2: Refactor historical aggregation with no behavior change
 
 - [ ] `aggregate_from_1m()` must use the public bucket primitive and `aggregate_bucket` internally.
 - [ ] Existing aggregation tests must remain byte-for-byte semantic equivalents.
 - [ ] Run existing and new aggregation tests before any Live code.
+
+
 
 ### Step 3: Add Redis connection helpers
 
@@ -846,10 +923,14 @@ publish_state(payload)
 
 - [ ] Every Live bar/subscription key gets 3-day TTL on write.
 
+
+
 ### Step 5: Redis tests without requiring the developer's production Redis
 
 - [ ] Use an in-memory fake implementing the small Redis methods or a disposable Redis URL explicitly supplied by test environment; never default test writes to configured Runtime Redis.
 - [ ] Verify score ordering, `after` exclusivity, TTL calls, subscription isolation by trading_day, cleanup and compact serialization.
+
+
 
 ### Step 6: Commit
 
@@ -861,9 +942,12 @@ refactor(market): share session aggregation and add live redis store
 
 ---
 
+
+
 ## Task 6 — MR-04B: LiveMarketService and Runtime CLI
 
 **Files:**
+
 - Modify: `services/quant-api/app/market_data/live_market.py`
 - Modify: `services/quant-api/app/market_data/infrastructure.py`
 - Modify: `services/quant-api/app/market_data/composition.py`
@@ -871,6 +955,8 @@ refactor(market): share session aggregation and add live redis store
 - Modify: `services/quant-api/tests/data_foundation/test_live_market.py`
 - Modify: `services/quant-api/tests/data_foundation/test_cli.py`
 - Create: `deploy/launchd/com.guiyi.quant-live.plist.template`
+
+
 
 ### Step 1: Define injectable Live provider boundary
 
@@ -883,6 +969,8 @@ def live_market_client(self):
 
 - [ ] `LiveMarketService` receives a provider/client factory, phase resolver, RedisLiveStore, DB session and clock. Tests pass fakes.
 
+
+
 ### Step 2: Write failing rank1 subscription lifecycle tests
 
 - [ ] Verify:
@@ -892,6 +980,8 @@ def live_market_client(self):
   - new trading_day may switch contract;
   - subscriptions are exactly `bar_<rank1_contract>`;
   - continuous is never subscribed.
+
+
 
 ### Step 3: Implement rank1 snapshot + subscription reconciliation
 
@@ -915,15 +1005,20 @@ No PostgreSQL `MainContractMap` write occurs here.
   - BREAK does not produce stale errors;
   - outside-session payload returns/records a stable rejection code.
 
+
+
 ### Step 5: Implement pending/final buffer
 
 - [ ] Keep pending bars in process memory keyed by `(symbol, bar_end)`; this is transient and not a checkpoint system.
 - [ ] The main service loop calls `flush_due(now)` every second or on each poll cycle.
 - [ ] Finalized 1m is written to Redis and published once.
 
+
+
 ### Step 6: Implement incremental Derived generation
 
 For every finalized 1m:
+
 - [ ] find containing resolved SessionWindow;
 - [ ] for each 5/15/30/60 frequency, compute its bucket window through shared `bucket_window_for_bar`;
 - [ ] only when current 1m `bar_end == bucket.end`, read the required 1m range from Redis;
@@ -933,6 +1028,8 @@ For every finalized 1m:
 
 - [ ] Add a golden test feeding the same 1m fixture to historical `aggregate_from_1m` and the Live incremental path; 5m/15m/30m/60m OHLCV/OI outputs must match exactly.
 
+
+
 ### Step 7: Provider reconnect and phase loop
 
 - [ ] TRADING connection failure -> fixed 10 second retry.
@@ -940,16 +1037,22 @@ For every finalized 1m:
 - [ ] Redis failure marks Live unavailable; it never falls back to local files.
 - [ ] Heartbeat includes generated_at, operational_count, subscribed_count, last_bar_at, phase counts; short TTL.
 
+
+
 ### Step 8: Runtime CLI
 
 - [ ] Add `guiyi runtime live` alongside `runtime status`.
 - [ ] `runtime live` runs the service foreground until process termination; no daemonization inside Python.
 - [ ] CLI parser tests ensure no other worker/scheduler commands are revived.
 
+
+
 ### Step 9: Live launchd template only
 
 - [ ] Create `com.guiyi.quant-live.plist.template` with RunAtLoad=true, KeepAlive=true, ThrottleInterval=10, and ProgramArguments `run-local-service.sh live`.
 - [ ] Do not load it yet.
+
+
 
 ### Step 10: Validate and commit
 
@@ -963,9 +1066,12 @@ feat(market): add rank1 live market service
 
 ---
 
+
+
 ## Task 7 — MR-05: MarketReadService and FastAPI WebSocket
 
 **Files:**
+
 - Create: `services/quant-api/app/market_data/market_read.py`
 - Create: `services/quant-api/app/api/market_live.py`
 - Modify: `services/quant-api/app/market_data/composition.py`
@@ -974,6 +1080,8 @@ feat(market): add rank1 live market service
 - Modify: `services/quant-api/app/queue.py`
 - Create: `services/quant-api/tests/data_foundation/test_market_read.py`
 - Create: `services/quant-api/tests/data_foundation/test_market_websocket.py`
+
+
 
 ### Step 1: Write failing read-state tests
 
@@ -988,6 +1096,8 @@ other contract                         -> live_eligible=false
 ```
 
 - [ ] Canonical seam rule test: Live bars at or before `canonical_end` are excluded; only `bar_end > canonical_end` survive.
+
+
 
 ### Step 2: Implement MarketReadService
 
@@ -1021,6 +1131,8 @@ live_snapshot(identity, after: datetime | None, now: datetime) -> tuple[Canonica
 
 - [ ] `state()` gets canonical_end through a latest-page query with limit=1, operational membership from the explicit file, phase from MarketPhaseResolver, rank1 from Redis snapshot, after-market state from `.run/after-market-status.json`.
 
+
+
 ### Step 3: State REST endpoint
 
 - [ ] Add:
@@ -1033,19 +1145,25 @@ using the same identity params as the chart.
 
 - [ ] The endpoint is historical-safe: Redis unavailable returns `live_available=false` rather than breaking the request.
 
+
+
 ### Step 4: Write failing WebSocket protocol tests
 
 Using FastAPI TestClient WebSocket and fake Redis/pubsub, assert exactly four message types:
+
 - `state` first;
 - `snapshot` after subscription is established;
 - `bar` for each new confirmed bar;
 - `reset` when trading_day or live_contract changes.
 
 Also assert REST->WS race ordering:
+
 1. server subscribes Pub/Sub;
 2. bar arrives;
 3. server reads snapshot including that bar;
 4. duplicate Pub/Sub copy is deduped by bar_end.
+
+
 
 ### Step 5: Implement dedicated WebSocket router
 
@@ -1071,11 +1189,15 @@ before reading the snapshot.
 - [ ] Pub/Sub `bar` messages at/before canonical_end or last sent bar are ignored.
 - [ ] On `market:state`, recompute state; if trading_day/live_contract changed send `reset`, then send current `state`.
 
+
+
 ### Step 6: FastAPI/Vite proxy path consistency
 
 - [ ] Do not introduce a second `/ws` backend route.
 - [ ] Later frontend will connect directly to `/api/v1/market/ws`.
 - [ ] Modify Vite `/api` proxy to `ws: true` in MR-06 so local dev upgrades work.
+
+
 
 ### Step 7: Validate and commit
 
@@ -1088,9 +1210,12 @@ feat(api): add unified market read state and websocket
 
 ---
 
+
+
 ## Task 8 — MR-06: Unified Web Historical + Live Integration
 
 **Files:**
+
 - Modify: `apps/quant-web/src/composables/useMarketSeries.ts`
 - Modify: `apps/quant-web/src/types/market.ts`
 - Modify: `apps/quant-web/src/api/market.ts`
@@ -1101,6 +1226,8 @@ feat(api): add unified market read state and websocket
 - Modify: `apps/quant-web/tests/network.test.ts`
 - Modify: `apps/quant-web/tests/marketSeries.test.ts`
 - Modify: `apps/quant-web/e2e/market-runtime.spec.mjs`
+
+
 
 ### Step 1: Add exact frontend state/message types
 
@@ -1130,6 +1257,8 @@ wss://host/api/v1/market/ws
 - [ ] Set `ws: true` on Vite `/api` proxy.
 - [ ] Update network tests accordingly.
 
+
+
 ### Step 3: Write failing composable Live tests
 
 - [ ] Inject a fake WebSocket factory into `useMarketSeries` for tests.
@@ -1143,6 +1272,8 @@ wss://host/api/v1/market/ws
   - state BREAK does not reconnect just because no bars arrive;
   - canonical_end advancement removes/replaces Live bars covered by new formal history.
 
+
+
 ### Step 4: Implement WebSocket lifecycle in useMarketSeries
 
 - [ ] After first historical page:
@@ -1155,6 +1286,8 @@ wss://host/api/v1/market/ws
 - [ ] `continuous` and non-rank1 contract do not open a Live socket.
 - [ ] `1d/1w` do not open a Live socket.
 
+
+
 ### Step 5: Mutation model for KlineChart
 
 - [ ] Use the existing imperative functions from MR-01B:
@@ -1166,6 +1299,8 @@ wss://host/api/v1/market/ws
 - [ ] When user scrolls materially left of the current right edge, emit/set `followLatest=false`.
 - [ ] Incoming Live bars never force a historical viewer back to latest.
 - [ ] Add a single lightweight “回到最新” button that calls `scrollToLatest()` and sets follow true.
+
+
 
 ### Step 6: Market state UI
 
@@ -1188,6 +1323,8 @@ No dashboard or new operations center.
   3. retain only Live bars strictly later than new canonical_end;
   4. preserve viewport if `followLatest=false`.
 
+
+
 ### Step 8: Browser E2E
 
 - [ ] Mock REST + WS and validate:
@@ -1200,6 +1337,8 @@ No dashboard or new operations center.
   - canonical advance replaces Live seam without duplicate candles;
   - old-series messages do not leak after symbol switch.
 
+
+
 ### Step 9: Validate and commit
 
 - [ ] Run frontend test/build/Playwright mock suite.
@@ -1211,9 +1350,12 @@ feat(web): merge canonical history with rank1 live overlay
 
 ---
 
+
+
 ## Task 9 — MR-07: Runtime Health, launchd Packaging, Canonical Docs and Activation Boundary
 
 **Files:**
+
 - Modify: `services/quant-api/app/services/runtime_health.py`
 - Modify: `services/quant-api/app/schemas/runtime.py`
 - Modify: `services/quant-api/tests/test_runtime_health.py`
@@ -1229,6 +1371,8 @@ feat(web): merge canonical history with rank1 live overlay
 - Modify: `docs/tasks/GY-MARKET-RUNTIME-V1.md`
 - Modify: `TESTING.md`
 - Modify: `STATUS.md`
+
+
 
 ### Step 1: Replace retired runtime stubs with the V1 state shape
 
@@ -1256,12 +1400,16 @@ last_failure
 - [ ] Do not resurrect archive/notification-retry behavior. If those old stub fields have no active consumer, remove them from the active runtime response/schema in this same change.
 - [ ] Keep DB/Redis probes. Keep RQ health only as existing generic local infrastructure health; `RUNTIME_QUEUE_NAMES` remains empty and no queue is added.
 
+
+
 ### Step 2: Runtime health tests
 
 - [ ] Test fresh heartbeat -> live ok.
 - [ ] Missing/stale heartbeat -> live disabled/degraded according to whether runtime is configured enabled; do not mark historical DB unhealthy.
 - [ ] After-market final failure surfaces public error code.
 - [ ] Secret/redaction regression stays green.
+
+
 
 ### Step 3: Wire service runner
 
@@ -1285,12 +1433,15 @@ No shell daemon loop; launchd owns lifecycle.
 ```
 
 which installs/enables:
+
 - `com.guiyi.quant-live` and kickstarts it;
 - `com.guiyi.quant-after-market` but does **not** kickstart it immediately; it waits for its 17:00 calendar trigger.
 
 This mode is the one-time runtime activation action for MR-08.
 
 - [ ] `local-services-status.sh` lists both new labels without treating absence as base-service failure until Market Runtime has been enabled; output should distinguish base vs optional market-runtime.
+
+
 
 ### Step 5: Render-only verification
 
@@ -1319,6 +1470,8 @@ Do not call `--confirm-market-runtime` in MR-07.
 - [ ] `GY-MARKET-RUNTIME-V1.md`: change disposition from `design_ready_for_review` to `implementation_ready_for_canary` only after all MR-01～MR-07 tests pass.
 - [ ] `TESTING.md`: add focused Market Runtime commands and render-only checks.
 
+
+
 ### Step 7: Full repository verification
 
 - [ ] Run:
@@ -1346,6 +1499,8 @@ git diff --check
 - [ ] Run mock Playwright Market Runtime suite.
 - [ ] Confirm no real RQData Live, no launchctl Market Runtime load, and no formal Canonical mutation occurred during MR-01～MR-07.
 
+
+
 ### Step 8: Commit
 
 - [ ] Commit:
@@ -1355,6 +1510,8 @@ feat(runtime): package Market Runtime V1 for controlled activation
 ```
 
 ---
+
+
 
 ## Task 10 — MR-08: J/JM/AP/AG Real Runtime Canary
 
@@ -1368,6 +1525,8 @@ jm
 ap
 ag
 ```
+
+
 
 ### Step 1: Read-only preflight
 
@@ -1391,12 +1550,16 @@ scripts/ops/macos/install-local-services.sh --confirm-market-runtime
 
 - [ ] Read back launchd status. Live should be loaded; after-market should be loaded/scheduled but not manually kicked at an arbitrary time.
 
+
+
 ### Step 3: Live rank1 canary during a real trading session
 
 - [ ] Verify Redis subscription snapshot contains exactly J/JM/AP/AG and one rank1 contract each.
 - [ ] Verify no continuous/SYMBOL88 channel subscription exists.
 - [ ] Verify `/api/runtime/health` shows operational_count=4 and subscribed_count=4 when applicable.
 - [ ] On at least one night-session product, verify the Live snapshot trading_day is the next formal trading_day, not natural `now.date()`.
+
+
 
 ### Step 4: Real completed-bar behavior
 
@@ -1406,9 +1569,12 @@ scripts/ops/macos/install-local-services.sh --confirm-market-runtime
 - [ ] Verify continuous page stays historical-only.
 - [ ] Verify Redis 5m/15m/30m/60m outputs match session boundaries.
 
+
+
 ### Step 5: Intraday BREAK canary
 
 On a normal trading day:
+
 - [ ] 10:15–10:30 -> phase BREAK;
 - [ ] no stale/disconnect error from lack of bars;
 - [ ] same rank1 subscription remains;
@@ -1425,6 +1591,8 @@ Also verify 11:30–13:30 with the same semantics when the product has those day
   - scroll into history disables follow-latest;
   - “回到最新” restores live-follow.
 
+
+
 ### Step 7: Real 17:00 after-market behavior
 
 - [ ] Let the scheduled 17:00 process run normally; do not manually invoke a second duplicate updater.
@@ -1432,20 +1600,27 @@ Also verify 11:30–13:30 with the same semantics when the product has those day
 - [ ] If first attempt fails/not-ready, verify exactly one retry occurs one hour later.
 - [ ] If final failure occurs, verify one macOS notification and `.run/after-market-status.json` contains the public failure state; no third retry.
 
+
+
 ### Step 8: Formal map and seam verification
 
 After a successful update:
+
 - [ ] compare the Live rank1 snapshot with formal `MainContractMap` for that trading_day;
 - [ ] match -> normal success;
 - [ ] mismatch -> `LIVE_DOMINANT_MISMATCH` in status + local notification, formal MainContractMap remains authoritative;
 - [ ] verify Web receives canonical advancement, refetches rightmost formal page and drops Live bars now covered by Canonical;
 - [ ] verify Live was not promoted or copied into Parquet.
 
+
+
 ### Step 9: Weekend/non-trading verification
 
 - [ ] On a weekend/holiday, Historical page and left pagination remain normal.
 - [ ] Market state is CLOSED and Live unavailable without an error.
 - [ ] 17:00 after-market launch returns skipped/non_trading_day and performs no retry.
+
+
 
 ### Step 10: Close MR-08
 
@@ -1456,28 +1631,34 @@ After a successful update:
 
 ---
 
+
+
 ## Cross-Task Acceptance Matrix
 
-| Capability | Required completion task |
-|---|---|
-| latest 1200 + left cursor pagination | MR-01A/B |
-| no full-history default Web load | MR-01B |
-| operational J/JM/AP/AG explicit config | MR-02 |
-| 10:15–10:30 / 11:30–13:30 BREAK | MR-02 |
-| night trading_day resolution | MR-02 + MR-04B |
-| 17:00 + one 1h retry | MR-03 |
-| final failure status + macOS notification | MR-03 |
-| shared Historical/Live Derived semantics | MR-04A/B |
-| rank1-only completed 1m Live | MR-04B |
-| Redis temporary Live Overlay | MR-04A/B |
-| actual_dominant/current-rank1 live eligibility | MR-05 |
-| REST/WS race-free snapshot | MR-05 |
-| continuous historical-only | MR-05/06 |
-| Live disconnect does not break history | MR-05/06 |
-| canonical advancement replaces Live seam | MR-05/06 |
-| real health + launchd packaging | MR-07 |
-| bounded persistent automation policy | MR-07 |
-| real J/JM/AP/AG end-to-end canary | MR-08 |
+
+| Capability                                     | Required completion task |
+| ---------------------------------------------- | ------------------------ |
+| latest 1200 + left cursor pagination           | MR-01A/B                 |
+| no full-history default Web load               | MR-01B                   |
+| operational J/JM/AP/AG explicit config         | MR-02                    |
+| 10:15–10:30 / 11:30–13:30 BREAK                | MR-02                    |
+| night trading_day resolution                   | MR-02 + MR-04B           |
+| 17:00 + one 1h retry                           | MR-03                    |
+| final failure status + macOS notification      | MR-03                    |
+| shared Historical/Live Derived semantics       | MR-04A/B                 |
+| rank1-only completed 1m Live                   | MR-04B                   |
+| Redis temporary Live Overlay                   | MR-04A/B                 |
+| actual_dominant/current-rank1 live eligibility | MR-05                    |
+| REST/WS race-free snapshot                     | MR-05                    |
+| continuous historical-only                     | MR-05/06                 |
+| Live disconnect does not break history         | MR-05/06                 |
+| canonical advancement replaces Live seam       | MR-05/06                 |
+| real health + launchd packaging                | MR-07                    |
+| bounded persistent automation policy           | MR-07                    |
+| real J/JM/AP/AG end-to-end canary              | MR-08                    |
+
+
+
 
 ## Final Non-Goals Check
 
