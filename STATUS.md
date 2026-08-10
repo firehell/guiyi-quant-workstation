@@ -6,7 +6,8 @@
 
 Market Runtime V1 已按本地工作站的明确请求启用，持续运行范围严格固定为 operational
 `j/jm/ap/ag` 4/4；API、Web 与 RQData Live 由 launchd 加载，盘后任务保持空闲并等待每天 17:00。
-为便于开发期直接验证，launchd 已临时改为直接运行主工作区 `develop@ffe4f468`，旧
+为便于开发期直接验证，launchd 已临时改为直接运行主工作区 `develop`，本次启动的业务代码基线为
+`ffe4f468`；旧
 `8708c934` detached Runtime worktree 已移除；`auto_order=false` 与无订单边界不变。当前 API、
 Web 与 Live 正常，Live 为 `operational_count=4`、`subscribed_count=3`、`CLOSED:1/TRADING:3`。
 develop 保留的 19:22 盘后状态仍为 `RQDATA_READY_CHECK_FAILED`，因此顶层 Runtime health 暂为
