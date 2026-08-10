@@ -6,7 +6,8 @@
 
 Market Runtime V1 已按本地工作站的明确请求启用，持续运行范围严格固定为 operational
 `j/jm/ap/ag` 4/4；API、Web 与 RQData Live 由 launchd 加载，盘后任务保持空闲并等待每天 17:00。
-Runtime detached checkout 当前为 `44ca152e`，`auto_order=false` 与无订单边界不变。
+Runtime detached checkout 当前为 `8708c934`（包含盘后修复祖先 `44ca152e`），`auto_order=false`
+与无订单边界不变。
 
 2026-08-10 首次受控盘后重跑在 20:01～21:02 完成两次尝试并安全失败，没有第三次重试。原始
 RQData readiness MultiIndex 解析缺陷已修复；继续诊断确认阻塞来自当天 metadata 仅写单日 Calendar，
