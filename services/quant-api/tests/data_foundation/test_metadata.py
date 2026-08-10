@@ -293,3 +293,16 @@ def test_current_day_sync_rejects_unknown_rank1_contract_without_any_write() -> 
 
     assert _metadata_state(session) == before
     session.close()
+
+
+def test_current_day_sync_rejects_rank1_contract_owned_by_another_product() -> None:
+    session = _session()
+    before = _metadata_state(session)
+    adapter = _Adapter(_snapshot(j_contract="JM2605"))
+    synchronizer = MetadataSynchronizer(adapter, MarketCatalog(session, Path(".")))
+
+    with pytest.raises(ValueError, match="CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID"):
+        synchronizer.synchronize_current_day(("j", "jm"), _DAY)
+
+    assert _metadata_state(session) == before
+    session.close()

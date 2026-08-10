@@ -365,11 +365,14 @@ def _current_day_main_contracts(
     if set(values) != expected:
         raise ValueError("CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID")
     existing_contracts = {
-        row.contract_code.upper()
+        (row.instrument_symbol, row.contract_code.upper())
         for row in session.scalars(
             select(Contract).where(Contract.instrument_symbol.in_(products))
         )
     }
-    if any(contract not in existing_contracts for _, _, contract in values.values()):
+    if any(
+        (symbol, contract) not in existing_contracts
+        for symbol, _, contract in values.values()
+    ):
         raise ValueError("CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID")
     return tuple(values[symbol] for symbol in products)
