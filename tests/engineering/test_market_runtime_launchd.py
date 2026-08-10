@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import plistlib
 import shutil
 import subprocess
 
@@ -38,6 +39,21 @@ def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tm
 
     _run_installer(repo, home, fake_bin, "--confirm-market-runtime")
     assert marker.read_text(encoding="utf-8") == "enabled\n"
+
+
+def test_live_launch_agent_uses_project_root_as_working_directory(tmp_path: Path) -> None:
+    """Live RQData initialization must not scan the launchd user's home directory."""
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+
+    _run_installer(repo, home, fake_bin, "--render-only")
+
+    rendered = repo / ".run" / "launchd" / "com.guiyi.quant-live.plist"
+    with rendered.open("rb") as handle:
+        payload = plistlib.load(handle)
+    assert payload["WorkingDirectory"] == str(repo.resolve())
 
 
 def _copy_launchd_fixture(destination: Path) -> Path:
