@@ -119,7 +119,7 @@ Expected: `status=noop`、`planned=0`、`provider_requests=0`；否则停止在 
 - Consumes: 完成闭环的 `ec`，以及 `lc` 自己的只读基线和一次性授权。
 - Produces: 四交易所 canary 完成状态，或停在 `lc` 的显式失败状态。
 
-- [ ] **Step 1: 确认 MR-08 处于可安全检查的状态。**
+- [x] **Step 1: 确认 MR-08 处于可安全检查的状态。**
 
 ```bash
 uv run --project services/quant-api guiyi runtime status
@@ -128,7 +128,7 @@ uv run --project services/quant-api guiyi runtime status
 Expected: 返回只读 JSON；若显示 MR-08 正在关键验证、或操作者确认正处于关键实时观察，则停止，
 不运行后续命令。
 
-- [ ] **Step 2: 运行 `lc` scoped audit。**
+- [x] **Step 2: 运行 `lc` scoped audit。**
 
 ```bash
 uv run --project services/quant-api guiyi data audit --symbol lc
@@ -137,7 +137,7 @@ uv run --project services/quant-api guiyi data audit --symbol lc
 Expected: 当前未闭环品种可返回结构化 metadata/partition finding；命令不调用 RQData、不写入 Catalog
 或 Canonical。
 
-- [ ] **Step 3: 运行固定 T0 的 `lc` dry-run。**
+- [x] **Step 3: 运行固定 T0 的 `lc` dry-run。**
 
 ```bash
 uv run --project services/quant-api guiyi data update --symbol lc --through 2026-08-07
@@ -145,7 +145,7 @@ uv run --project services/quant-api guiyi data update --symbol lc --through 2026
 
 Expected: 元数据尚未完整时以公开 fail-closed 码停止；不得把无法生成 target 伪称为零目标或已完成。
 
-- [ ] **Step 4: 交付 `lc` 的只读基线。**
+- [x] **Step 4: 交付 `lc` 的只读基线。**
 
 记录 runtime 检查点、audit/dry-run JSON 中的 status、finding/错误码，以及三条命令均未带 `--apply`
 的事实。不要创建任务文件、报告文件或数据库记录。
