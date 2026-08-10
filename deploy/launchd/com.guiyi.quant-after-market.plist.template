@@ -3,7 +3,7 @@
 <plist version="1.0"><dict>
   <key>Label</key><string>com.guiyi.quant-after-market</string>
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>__RUNTIME_DIR__/run-local-service.sh</string><string>after-market</string></array>
-  <key>WorkingDirectory</key><string>__HOME__</string>
+  <key>WorkingDirectory</key><string>__PROJECT_ROOT__</string>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string><key>GUIYI_PROJECT_ROOT</key><string>__PROJECT_ROOT__</string></dict>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
   <key>StandardOutPath</key><string>__LOG_DIR__/after-market.log</string>
