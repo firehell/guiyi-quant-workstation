@@ -18,6 +18,8 @@ history 可追溯），当前不存在回测引擎、策略适配层或策略 HT
 
 `develop` 是日常开发分支。普通仓库变更可以直接在当前 `develop` 工作区编辑、测试、提交并推送；不要求 GitHub Issue、任务分支、额外 worktree、PR、独立 Review、required CI、exact-head、merge readback、ancestry/cleanup evidence、approval packet、hash 或 receipt。分支、worktree、PR、Review 和 CI 可以按需使用，但只是协作工具，不是开发授权条件，也不授予任何真实外部操作权限。
 
+当前功能开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，以便快速观察。源码修改不会热更新：Web 需要 build 和重载，API/Live 需要重载；每次重载仍是 Runtime switch，需要当次范围明确的一次性执行意图。17:00 任务会读取当时的 `develop` 工作树，因此 dirty 或持续移动的树只能形成开发证据。功能收口后须重新创建绑定精确提交的独立 Runtime worktree，再采集最终自然时点证据。
+
 开始前检查分支、工作区、最近提交、相关实现与测试。工作区存在其他任务或用户的未提交变更时，保留其内容与 index 状态，只修改、验证和暂存本任务明确范围；不得用批量清理、覆盖或全量暂存处理无关变更。
 
 本地验证是普通变更完成声明的依据：
@@ -80,4 +82,4 @@ history 可追溯），当前不存在回测引擎、策略适配层或策略 HT
 2. `STATUS.md`
 3. 与任务相关的 deep canonical 或 active business contract
 
-统一业务 CLI 入口为 `uv run --project services/quant-api guiyi`。`data audit`、`runtime status` 等只读命令不授权后续写入；任何 dry-run 也不授权真实执行。`main` 仍用于 canonical/release，Runtime checkout 可保持隔离和 detached，但它们都不是普通 `develop` 开发的前置流程。
+统一业务 CLI 入口为 `uv run --project services/quant-api guiyi`。`data audit`、`runtime status` 等只读命令不授权后续写入；任何 dry-run 也不授权真实执行。`main` 仍用于 canonical/release；开发期可临时从 `develop` 运行本地服务，最终 Runtime 验收仍使用隔离、精确提交的 worktree。二者都不是普通 `develop` 编辑与本地测试的前置流程。

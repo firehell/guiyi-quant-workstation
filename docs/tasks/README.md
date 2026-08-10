@@ -30,6 +30,7 @@ Gate/hash-path 不再作为授权。
 ## Active contracts
 
 - `GY-DATA-CORE-V2.md` — 数据交互核心收口 active 业务合同
+- `GY-MARKET-RUNTIME-V1.md` — 实现已存在且本地四品种有界 Runtime 已启用；MR-08 自然时点验收仍为 `PARTIAL`
 
 ## Historical facts（仍在本目录）
 

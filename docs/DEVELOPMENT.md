@@ -1,6 +1,6 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-06
+更新时间：2026-08-10
 
 本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
 `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、信号和 Runtime 语义仍由
@@ -35,13 +35,26 @@ develop
   且保留 deep canonical 的业务约束。
 - tracked 内容发生变化时运行适用的 secret scan；输出不得包含命中的秘密值。
 
-当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或旧 scheduler component。
-Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现，但 launchd 默认关闭。
+当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
+Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
 不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建必须单独立项并从
 Canonical/MarketDataService 合同开始。
 
 任何必需检查失败时，明确报告失败，不宣称任务完成。CI 如存在，只是补充结果，不是本地开发、
 commit 或 push 的前置授权。
+
+## 开发态 Runtime 部署
+
+```text
+clean develop + 预期提交
+-> 受影响测试 / Ruff / Mypy / Web build
+-> 当次明确的部署请求
+-> render 并 lint launchd plist
+-> 只重载已授权的服务面
+-> 读回安装根和健康状态
+```
+
+`--render-only` 是普通无副作用验证；`--confirm-load` 和 `--confirm-market-runtime` 会改变本机服务状态，属于受控外部操作。直接修改 `develop` 不会自动生效：Web 需要 build/重载，API/Live 需要重载。开发态运行不是 Ready、Runtime promotion 或最终验收；功能收口后仍需独立精确提交的 Runtime worktree。
 
 ## 普通仓库删除
 

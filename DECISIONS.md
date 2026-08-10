@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-09
+更新时间：2026-08-10
 
 本文件只保留当前有效、长期影响代码或数据语义的决策。历史过程由 Git 与 OpenSpec archive 追溯。
 
@@ -22,6 +22,7 @@
 | 额度 | 明确的 provider quota 耗尽立即停止本轮 | 保留已发布月，未完成月不发布；下次同命令从首个缺失目标续传 |
 | live | historical Canonical 与 Redis Live Observation 分离 | 仅 `operational_products` 当日 rank1 completed 1m；未确认 bar 不进正式历史资产，Live 不进 Parquet/DB |
 | Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `j/jm/ap/ag` 的 Live 观察和每日 17:00 + 一次 1h retry 的盘后更新持续运行 | 新品种必须显式加入 `operational_products.txt`；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
+| 开发态部署拓扑 | 功能开发期可让本地 launchd 临时直接运行主 `develop` 工作区；最终验收重新创建绑定精确提交的独立 Runtime worktree | 不热更新；每次重载需新的一次性意图；develop 证据不等于 promotion 或最终 Runtime 证据 |
 | 交易安全 | `auto_order=false` 始终成立 | 任何研究结果、展示或通知都不是交易指令 |
 | active universe | 60 品种；退役含股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu` | 退役码精确硬拦截；生产清退另需单次意图 |
 
