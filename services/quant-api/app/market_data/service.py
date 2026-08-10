@@ -312,8 +312,6 @@ class MarketDataService:
             else None
         )
         relevant_days = {
-            item.trade_date for item in mapping_by_day.values() if item.trade_date >= page_start
-        } | {
             trading_day
             for _, trading_day in available_contract_days
             if trading_day >= page_start

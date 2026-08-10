@@ -262,9 +262,26 @@ def test_query_page_actual_dominant_crosses_contract_switch(session, tmp_path) -
     assert [segment.contract for segment in result.resolved_contract_segments] == ["JM2505", "JM2509"]
 
 
-def test_query_page_actual_dominant_rejects_newer_mapped_contract_without_bar(session, tmp_path) -> None:
+def test_query_page_actual_dominant_ignores_current_map_after_latest_canonical_bar(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1d"), (_bar(2, 100),))
+    _calendar_and_map(session, catalog, ((2, "JM2505"), (3, "JM2509")))
+    session.commit()
+
+    result = service.query_page(SeriesPageQuery("actual_dominant", "jm", "1d", limit=2))
+
+    assert [bar.close for bar in result.bars] == [Decimal("100")]
+    assert result.has_more_before is False
+
+
+def test_query_page_actual_dominant_rejects_missing_owner_inside_canonical_range(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    _publish(
+        catalog,
+        store,
+        DatasetKey("contract", "jm", "JM2505", "1d"),
+        (_bar(2, 100), _bar(3, 101)),
+    )
     _calendar_and_map(session, catalog, ((2, "JM2505"), (3, "JM2509")))
     session.commit()
 
@@ -309,7 +326,7 @@ def test_query_page_actual_dominant_week_uses_complete_week_owner(session, tmp_p
     assert result.resolved_contract_segments[0].contract == "JM2509"
 
 
-def test_query_page_actual_dominant_week_rejects_newer_complete_week_owner_without_bar(session, tmp_path) -> None:
+def test_query_page_actual_dominant_week_ignores_newer_owner_after_latest_canonical_bar(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1w"), (_bar(10, 105),))
     _calendar_and_map(
@@ -320,8 +337,10 @@ def test_query_page_actual_dominant_week_rejects_newer_complete_week_owner_witho
     )
     session.commit()
 
-    with pytest.raises(MarketDataError, match="MAPPED_CONTRACT_DATASET_MISSING"):
-        service.query_page(SeriesPageQuery("actual_dominant", "jm", "1w", limit=1))
+    result = service.query_page(SeriesPageQuery("actual_dominant", "jm", "1w", limit=1))
+
+    assert [bar.close for bar in result.bars] == [Decimal("105")]
+    assert result.has_more_before is False
 
 
 def test_query_page_actual_dominant_week_rejects_missing_weekday_owner_fact(session, tmp_path) -> None:
