@@ -19,7 +19,7 @@ from app.market_data.domain import (
     SeriesKind,
     SeriesPageQuery,
 )
-from app.market_data.market_phase import ProductMarketPhase
+from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 
 _CONCRETE_CONTRACT = re.compile(r"(?P<symbol>[A-Z]+)(?P<month>\d{3,4})\Z")
@@ -91,12 +91,18 @@ class MarketReadService:
         canonical_end = self._canonical_end(identity)
         phase = self._phase_resolver.resolve(identity.symbol, now)
         operational = identity.symbol in self._operational_products
-        live_contract, live_available = self._live_status(
-            symbol=identity.symbol,
-            trading_day=phase.trading_day,
+        live_phase = phase.phase in {MarketPhase.TRADING, MarketPhase.BREAK}
+        live_contract, live_available = (
+            self._live_status(
+                symbol=identity.symbol,
+                trading_day=phase.trading_day,
+            )
+            if live_phase
+            else (None, False)
         )
         live_eligible = (
-            operational
+            live_phase
+            and operational
             and identity.frequency in INTRADAY_FREQUENCIES
             and live_contract is not None
             and (

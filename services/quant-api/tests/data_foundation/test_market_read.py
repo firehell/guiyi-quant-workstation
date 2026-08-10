@@ -77,10 +77,14 @@ class FakeLiveStore:
         return tuple(bar for bar in self.bars if after is None or bar.bar_end > after)
 
 
-def _service(*, live: FakeLiveStore | None = None) -> MarketReadService:
+def _service(
+    *,
+    live: FakeLiveStore | None = None,
+    market_phase: MarketPhase = MarketPhase.TRADING,
+) -> MarketReadService:
     phase = ProductMarketPhase(
         symbol="j",
-        phase=MarketPhase.TRADING,
+        phase=market_phase,
         trading_day=date(2025, 1, 2),
         current_session=None,
         next_session_start=None,
@@ -112,6 +116,17 @@ def test_state_live_eligibility_requires_operational_rank1_intraday(
     state = _service().state(identity, now=datetime(2025, 1, 2, 1, 3, tzinfo=UTC))
 
     assert state.live_eligible is expected
+
+
+def test_closed_product_never_exposes_live_overlay() -> None:
+    """Catches stale subscriptions leaking Live into a product that is CLOSED."""
+    state = _service(market_phase=MarketPhase.CLOSED).state(
+        SeriesPageQuery("actual_dominant", "j", "1m"),
+        now=datetime(2025, 1, 2, 1, 3, tzinfo=UTC),
+    )
+
+    assert state.live_eligible is False
+    assert state.live_available is False
 
 
 def test_live_snapshot_excludes_canonical_seam_and_preserves_newer_bars() -> None:
