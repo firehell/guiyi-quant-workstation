@@ -24,7 +24,10 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
     monkeypatch.setattr("app.services.runtime_health._collect_rq_health", lambda connection, **kwargs: _rq_ok())
     monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
-    monkeypatch.setattr("app.services.runtime_health.DEFAULT_AFTER_MARKET_STATUS_PATH", tmp_path / "missing.json")
+    monkeypatch.setattr(
+        "app.api.runtime.build_runtime_health",
+        lambda session: build_runtime_health(session, after_market_status_path=None),
+    )
     app.dependency_overrides[get_db] = override_get_db
     try:
         response = TestClient(app).get("/api/runtime/health")
