@@ -2,6 +2,18 @@
 
 本目录保存业务/受控任务合同。恢复只使用 Git history（见 `AGENTS.md` / `DECISIONS.md`）。
 
+## 文档命名约定
+
+| 范围 | 约定 | 示例 |
+|---|---|---|
+| `docs/` 顶层文件 | `SCREAMING_SNAKE.md` | `DATA_CENTER.md` |
+| `docs/` 子目录 | `snake_case` | `tasks/` |
+| 本目录任务合同 | `TASK-ID-SLUG.md`（大写 ID + 连字符） | `GY-DATA-CORE-V2.md` |
+| `openspec/`、`.kiro/`、`prompts/` | kebab-case | `slim-web-to-market`、`code-review.md` |
+| Cursor skill 目录名 | 可保留 kebab（工具惯例） | `.agents/skills/futures-data/` |
+
+禁止：用 `*_latest` 目录名暗示 live 状态；在 `docs/` 顶层混用 kebab 文件名；在 skill 内复制 docs 已有的 SCREAMING 正文造成双轨。
+
 ## 四种 disposition
 
 | Disposition | 含义 | 处理 |
@@ -19,9 +31,11 @@ Gate/hash-path 不再作为授权。
 
 - `GY-DATA-CORE-V2.md` — 数据交互核心收口 active 业务合同
 
-## Frozen Runtime-consumed（Phase E 前不可删）
+## Historical facts（仍在本目录）
 
-- `S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md`
+- `GY-DATA-PRODUCT-RETIREMENT-5.md` — 九品种退役已完成（仓库 + 生产 residual=0）；不构成后续删除授权
+- `GY-MARKET-RUNTIME-V1.md` — 已完成设计与实现的保留参考；本地四品种有界 Runtime 已启用，但 MR-08 自然时点验收
+  仍为 `PARTIAL`。当前事实只看 `STATUS.md`，本文件不构成新的启用、重载或 promotion 授权
 
 已退役的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据仅能从 Git history 追溯；
 不得再当作现存路径、兼容入口或当前授权。未来重建回测或 Runtime 验收必须新建任务，
@@ -36,7 +50,6 @@ Gate/hash-path 不再作为授权。
 - `GY-CORE-CONVERGENCE.md`
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`
-- `GY-DATA-CORE-V2-TASK07-EVIDENCE.md`
 - `GY-DATA-PRODUCT-RETIREMENT-21.md`（21 品种退役已完成；当前事实见 `STATUS.md` / `DATA_CENTER.md`）
 - `JM-LIVE-SIGNAL-EVENT-S6-08.md`
 - `JM-LIVE-STABILITY-S6-10.md`

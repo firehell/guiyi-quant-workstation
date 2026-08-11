@@ -243,7 +243,7 @@ function Invoke-ProfileWeb {
 }
 
 function Invoke-ProfileDataCore {
-  Add-UvPytest -Name 'data_core' -Targets @('services/quant-api/tests/data_core')
+  Add-UvPytest -Name 'data_foundation' -Targets @('services/quant-api/tests/data_foundation')
 }
 
 function Invoke-ProfileStrategy {

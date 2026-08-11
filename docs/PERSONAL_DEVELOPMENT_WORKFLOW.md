@@ -2,7 +2,7 @@
 
 本文件是个人开发模式的详细 workflow canonical。日常入口见 `docs/DEVELOPMENT.md`。其目标是让
 单一项目所有者在 `develop` 上快速迭代，同时把业务正确性与真实外部副作用边界保持为不可绕过的
-约束。
+约束。当前可执行产品面以 `STATUS.md` 为准（Market-only）。
 
 ## 1. 操作分类
 
@@ -56,7 +56,25 @@ END
 
 CI 是可选补充。CI 成功不能代替本地验证，CI 缺失也不能单独阻止普通开发、commit 或 push。
 
-## 4. 普通仓库删除与恢复
+## 4. 开发态 Runtime 部署
+
+即使源码路径位于仓库内，重载 API、Web、Live 或盘后 launchd 任务仍会改变 Runtime 状态，属于受控外部操作。修改 `develop` 不会热更新已运行进程：Web 须先 build，API/Live 须重载。
+
+```text
+clean develop + 精确预期提交
+-> 受影响验证全部通过
+-> Web build 和 Runtime 依赖可用
+-> 用户给出当次、范围明确的部署意图
+-> render/lint
+-> 只重载已授权服务
+-> 读回安装的 GUIYI_PROJECT_ROOT 与运行状态
+```
+
+工作区 dirty、必需检查失败、Web 构建缺失、依赖不可用或安装根与目标不一致时停止，不重试、不 force、不扩大范围。重载后只读验证 API/Web 可达、四品种 Live 状态、安装根和计划任务保持空闲。不手工运行 `guiyi data after-market` 代替自然 17:00 证据。
+
+开发态证据只属于当时的 `develop` 工作树。功能收口后重新创建绑定精确提交的独立 Runtime worktree，再采集最终自然时点证据。
+
+## 5. 普通仓库删除与恢复
 
 ```text
 确认目标仅为 repository-local tracked asset
@@ -80,9 +98,9 @@ CI 是可选补充。CI 成功不能代替本地验证，CI 缺失也不能单�
 若目标是生产 DB 行、正式数据、Runtime state、live config、remote ref、Git history 或仓库外资源，
 立即改判为受控外部操作，不适用本节。
 
-## 5. 受控外部操作的一次性意图
+## 6. 受控外部操作的一次性意图
 
-### 5.1 执行前必须明确的内容
+### 6.1 执行前必须明确的内容
 
 用户的直接请求必须同时标识：
 
@@ -94,7 +112,7 @@ CI 是可选补充。CI 成功不能代替本地验证，CI 缺失也不能单�
 缺少类别、范围或直接执行请求时，在第一次外部 mutation 前停止。一次意图不能跨类别授权，例如
 release/tag 请求不能授权 Runtime/live、通知、数据写入或 GitHub rules 修改。
 
-### 5.2 一次消费且不持久化
+### 6.2 一次消费且不持久化
 
 意图只用于一个立即发生且范围匹配的尝试。以下情况必须重新获得明确请求：
 
@@ -107,7 +125,7 @@ release/tag 请求不能授权 Runtime/live、通知、数据写入或 GitHub ru
 Dry-run 展示或验证计划，但 **绝不授权 mutation**。不得从 dry-run、先前会话或历史结果推断当前
 权限。意图不落盘复用。
 
-### 5.3 安全优先级与结果
+### 6.3 安全优先级与结果
 
 ```text
 业务正确性与禁止事项
@@ -116,15 +134,15 @@ Dry-run 展示或验证计划，但 **绝不授权 mutation**。不得从 dry-ru
 > 实际执行
 ```
 
-任何意图都不能绕过 failed quality、DataGap、未来函数保护、secret 保护、默认关闭状态、禁止订单
+任何意图都不能绕过 failed quality、分区 coverage/可读性、未来函数保护、secret 保护、默认关闭状态、禁止订单
 或超范围资源。执行后只报告非秘密的 attempted scope、success/failed/blocked 状态和有界错误。
 失败不自动回滚、force、扩大范围或再次执行。
 
-## 6. 保留的项目边界
+## 7. 保留的项目边界
 
 - 数据：RQData -> staging -> validation -> Historical Canonical ->
-  Catalog/Manifest/Gap/MainContractMap -> MarketDataService；正式请求使用明确 DatasetKey 和 kind，
-  DataGap/failed quality 不静默回退。
+  八表 Catalog/MainContractMap -> MarketDataService；正式请求使用明确 DatasetKey 和 kind，
+  coverage/physical failure 不静默回退。
 - 策略与回测：禁止未来数据泄漏，交易数值使用 `Decimal`，保留可复现 lineage；HTDY original 仅限
   deep canonical 定义的 observation-only 白名单。
 - 信号与操作：保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`；研究结果不是交易
@@ -134,7 +152,7 @@ Dry-run 展示或验证计划，但 **绝不授权 mutation**。不得从 dry-ru
 - 安全：凭据、token、webhook、password、cookie、license 和 private key 不进入源码、文档、测试、
   日志或输出；外部输入在命令、路径、网络、数据库或文件敏感操作前完成白名单校验。
 
-## 7. 完成报告
+## 8. 完成报告
 
 任务完成时说明：变更文件、实际运行的命令与结果、未运行或不可用检查、剩余风险，以及是否发生
 外部操作。完成报告不得把协作材料写成授权证据，也不得把一次受控操作结果扩写为交易、盈利、

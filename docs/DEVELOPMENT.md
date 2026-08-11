@@ -1,10 +1,10 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-06
+更新时间：2026-08-10
 
 本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
 `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、信号和 Runtime 语义仍由
-`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。
+`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only）。
 
 ## 唯一日常流程
 
@@ -35,12 +35,26 @@ develop
   且保留 deep canonical 的业务约束。
 - tracked 内容发生变化时运行适用的 secret scan；输出不得包含命中的秘密值。
 
-当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 runtime health
-scheduler component。不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建
-必须单独立项并从 Canonical/MarketDataService 合同开始。
+当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
+Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
+不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建必须单独立项并从
+Canonical/MarketDataService 合同开始。
 
 任何必需检查失败时，明确报告失败，不宣称任务完成。CI 如存在，只是补充结果，不是本地开发、
 commit 或 push 的前置授权。
+
+## 开发态 Runtime 部署
+
+```text
+clean develop + 预期提交
+-> 受影响测试 / Ruff / Mypy / Web build
+-> 当次明确的部署请求
+-> render 并 lint launchd plist
+-> 只重载已授权的服务面
+-> 读回安装根和健康状态
+```
+
+`--render-only` 是普通无副作用验证；`--confirm-load` 和 `--confirm-market-runtime` 会改变本机服务状态，属于受控外部操作。直接修改 `develop` 不会自动生效：Web 需要 build/重载，API/Live 需要重载。开发态运行不是 Ready、Runtime promotion 或最终验收；功能收口后仍需独立精确提交的 Runtime worktree。
 
 ## 普通仓库删除
 
@@ -65,9 +79,14 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 分别请求。普通 `git push origin develop` 仍属于上述日常开发流，不继承为 release/tag 或其他
 外部操作权限。
 
+唯一的持续授权例外是用户明确要求在识别出的本地工作站“启用 Market Runtime V1”后，既定
+`operational_products.txt`（当前 `j/jm/ap/ag`）的 rank1 Live 观察与 17:00/一次 1h retry 盘后更新可
+持续运行；该请求不授权改变 `operational_products`、其他 DB mutation、release、真实通知或订单。未
+收到该请求时，只能执行 mock、临时目录、render-only 与只读健康验证。
+
 ## 不可放宽的业务边界
 
-- 正式历史数据继续遵守 DatasetKey、Catalog/Manifest/Gap/MainContractMap、quality 和
+- 正式历史数据继续遵守 DatasetKey、八表 Catalog、MainContractMap、coverage/可读性和
   MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
 - 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
 - 保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`，live、Runtime promotion、

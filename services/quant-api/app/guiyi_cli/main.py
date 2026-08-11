@@ -1,292 +1,142 @@
+"""归一量化统一 CLI 入口（``uv run guiyi``）。
+
+子域：``data``（历史数据 audit/update/refresh）、``runtime``（健康与前台 Live）。
+默认 JSON 输出至 stdout；参数错误与异常经 output 模块脱敏后写 stderr。
+"""
+
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
-from datetime import date, datetime, time
 import sys
 from typing import Any, TextIO
 
-from app.data_core.cli_service import run_data_core_command
 from app.db.session import SessionLocal
-from app.guiyi_cli.data_commands import (
-    build_data_operation_request,
-    is_new_data_operation,
-    run_data_operation,
-)
-from app.guiyi_cli.data_parser import (
-    CliUsageError,
-    JsonArgumentParser,
-    add_data_commands,
-    reject_legacy_backfill_alias,
-)
+from app.guiyi_cli.data_commands import build_request, run_data_command
+from app.guiyi_cli.data_parser import CliUsageError, JsonArgumentParser, add_data_commands
 from app.guiyi_cli.output import (
     argument_error_payload,
     exception_error_payload,
     print_json,
 )
-from app.services.active_dataset import ActiveDatasetDomainError
-from app.services.core_cli import verify_active_dataset
-from app.services.data_operations.contracts import CliArgumentInvalid
-from app.services.market_workbench import MarketAccessError
+from app.market_data.composition import build_historical_data_manager, build_live_market_service
+from app.market_data.after_market import build_after_market_updater
+from app.market_data.maintenance import HistoricalDataManager
+from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
 
-
 SessionFactory = Callable[[], AbstractContextManager[Any]]
-DataVerifier = Callable[..., dict[str, Any]]
-RuntimeHealthBuilder = Callable[[Any], dict[str, Any]]
-DataCoreRunner = Callable[[str, Any, argparse.Namespace], dict[str, Any]]
+ManagerFactory = Callable[[Any], HistoricalDataManager]
+AfterMarketFactory = Callable[[HistoricalDataManager], Any]
+LiveServiceFactory = Callable[[Any], Any]
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """构建 guiyi 根解析器：data 与 runtime 两个子域。"""
     parser = JsonArgumentParser(prog="guiyi")
     domains = parser.add_subparsers(dest="domain", required=True)
-
     data = domains.add_parser("data")
-    data_commands = data.add_subparsers(dest="data_command", required=True)
-    add_data_commands(data_commands)
-
+    commands = data.add_subparsers(dest="data_command", required=True)
+    add_data_commands(commands)
     runtime = domains.add_parser("runtime")
-    runtime_commands = runtime.add_subparsers(
-        dest="runtime_command",
-        required=True,
-    )
+    runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
     runtime_commands.add_parser("status")
+    runtime_commands.add_parser("live")
     return parser
 
 
 def main(
     argv: Sequence[str] | None = None,
     *,
-    environ: Mapping[str, str] | None = None,
     session_factory: SessionFactory = SessionLocal,
-    data_verifier: DataVerifier = verify_active_dataset,
-    data_core_runner: DataCoreRunner = run_data_core_command,
-    runtime_health_builder: RuntimeHealthBuilder = build_runtime_health,
+    manager_factory: ManagerFactory = build_historical_data_manager,
+    after_market_factory: AfterMarketFactory = build_after_market_updater,
+    live_service_factory: LiveServiceFactory = build_live_market_service,
+    runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
-    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    """CLI 主流程：解析 → 执行 → JSON 输出；返回进程退出码（0 成功，2 参数，1 执行错误）。"""
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    command = ".".join(raw[:2]) if raw else "guiyi"
     try:
-        reject_legacy_backfill_alias(raw_argv)
-        args = build_parser().parse_args(raw_argv)
-        _validate_conditional_arguments(args)
-    except (CliUsageError, CliArgumentInvalid):
-        print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
+        args = build_parser().parse_args(raw)
+        if args.domain == "data":
+            build_request(args)
+    except ProductRetiredError as exc:
+        print_json(
+            exception_error_payload(
+                command=command,
+                exc=exc,
+                readonly=True,
+            ),
+            stderr,
+        )
+        return 1
+    except (CliUsageError, ValueError):
+        # 参数/用法错误：固定 CLI_ARGUMENT_INVALID，不写 stack trace
+        print_json(argument_error_payload(command), stderr)
         return 2
 
-    if is_new_data_operation(args):
-        try:
-            build_data_operation_request(args)
-            with session_factory() as session:
-                payload = run_data_operation(args, session=session)
-        except (CliUsageError, CliArgumentInvalid):
-            print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
-            return 2
-        except Exception as exc:  # noqa: BLE001 - bounded CLI boundary
-            print_json(
-                exception_error_payload(
-                    command=_command_hint(raw_argv),
-                    exc=exc,
-                    readonly=not bool(getattr(args, "apply", False)),
-                ),
-                stderr,
+    try:
+        if args.domain == "data":
+            payload = _run_data(
+                args, session_factory, manager_factory, after_market_factory
             )
-            return 1
-        print_json(payload, stdout)
-        status = payload.get("status")
-        return 0 if status in {"passed", "planned"} else 1
-
-    if (
-        args.domain == "data"
-        and args.data_command == "verify"
-        and args.dataset_kind is not None
-    ):
-        try:
-            with session_factory() as session:
-                payload = data_core_runner("verify", session, args)
-        except Exception as exc:  # noqa: BLE001 - bounded CLI boundary
-            code = getattr(exc, "code", "DATA_CORE_COMMAND_FAILED")
-            print_json(
-                {
-                    "schema_version": 1,
-                    "command": "data.verify",
-                    "status": "error",
-                    "readonly": True,
-                    "error": {"code": code, "type": type(exc).__name__},
-                },
-                stderr,
-            )
-            return 1
-        print_json(payload, stdout)
-        return 0 if payload.get("status") in {"passed", "planned"} else 1
-
-    if args.domain == "runtime" and args.runtime_command == "status":
-        try:
+        elif args.runtime_command == "status":
+            # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:
                 health = runtime_health_builder(session)
-        except Exception as exc:  # noqa: BLE001 - never emit health exception text.
-            print_json(
-                {
+                payload = {
                     "schema_version": 1,
                     "command": "runtime.status",
-                    "status": "error",
+                    "status": health.get("status", "failed"),
                     "readonly": True,
-                    "error": {
-                        "code": "RUNTIME_STATUS_FAILED",
-                        "type": type(exc).__name__,
-                    },
-                },
-                stderr,
-            )
-            return 1
-        payload = {
-            "schema_version": 1,
-            "command": "runtime.status",
-            "status": health.get("status", "failed"),
-            "readonly": True,
-            "effects": {
-                key: health.get(key, False)
-                for key in (
-                    "would_start_services",
-                    "would_enqueue_jobs",
-                    "would_send_notifications",
-                )
-            },
-            "runtime": health,
-        }
-        print_json(payload, stdout)
-        return 0 if health.get("status") == "ok" else 1
-
-    # Retained read-only legacy verify path.
-    command = "data.verify"
-    if args.domain != "data" or args.data_command != "verify":
-        print_json(argument_error_payload(_command_hint(raw_argv)), stderr)
-        return 2
-    try:
-        start = _parse_datetime(args.start, end_of_day=False)
-        end = _parse_datetime(args.end, end_of_day=True)
-    except ValueError as exc:
-        print_json(
-            {
+                    "runtime": health,
+                }
+        else:
+            # 前台阻塞循环由 launchd/终端托管；Python 不 daemonize 或启动 worker。
+            with session_factory() as session:
+                live_service_factory(session).run_forever()
+            payload = {
                 "schema_version": 1,
-                "command": command,
-                "status": "error",
-                "readonly": True,
-                "error": {
-                    "code": "CLI_ARGUMENT_INVALID",
-                    "type": type(exc).__name__,
-                },
-            },
-            stderr,
-        )
-        return 2
-    try:
-        with session_factory() as session:
-            payload = data_verifier(
-                session,
-                symbol=args.symbol,
-                contract=args.contract,
-                period=args.period,
-                start=start,
-                end=end,
-                limit=args.limit,
-            )
-    except ActiveDatasetDomainError as exc:
+                "command": "runtime.live",
+                "status": "ok",
+                "foreground": True,
+            }
+    except Exception as exc:  # noqa: BLE001 - safe CLI boundary
+        # 执行期异常：error code 仅暴露公开码或 CLI_INTERNAL_ERROR
         print_json(
-            exception_error_payload(command=command, exc=exc, readonly=True),
-            stderr,
-        )
-        return 1
-    except MarketAccessError as exc:
-        print_json(
-            exception_error_payload(command=command, exc=exc, readonly=True),
-            stderr,
-        )
-        return 1
-    except Exception as exc:  # noqa: BLE001 - CLI boundary emits no exception text.
-        print_json(
-            {
-                "schema_version": 1,
-                "command": command,
-                "status": "error",
-                "readonly": True,
-                "error": {"code": "CLI_INTERNAL_ERROR", "type": type(exc).__name__},
-            },
+            exception_error_payload(
+                command=command,
+                exc=exc,
+                readonly=not bool(getattr(args, "apply", False)),
+            ),
             stderr,
         )
         return 1
     print_json(payload, stdout)
-    return 0 if payload.get("status") == "passed" else 1
+    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok"} else 1
+
+
+def _run_data(
+    args: argparse.Namespace,
+    session_factory: SessionFactory,
+    manager_factory: ManagerFactory,
+    after_market_factory: AfterMarketFactory,
+) -> dict[str, object]:
+    """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
+    with session_factory() as session:
+        manager = manager_factory(session)
+        if args.data_command == "after-market":
+            return after_market_factory(manager).run().as_payload()
+        return run_data_command(args, manager).as_payload()
 
 
 def entrypoint() -> None:
+    """setuptools/console_scripts 入口：将 main 退出码转为 SystemExit。"""
     raise SystemExit(main())
-
-
-def _parse_datetime(
-    value: str | None,
-    *,
-    end_of_day: bool,
-) -> datetime | None:
-    if value is None:
-        return None
-    from datetime import UTC
-
-    if len(value) == 10:
-        parsed = datetime.combine(
-            date.fromisoformat(value),
-            time.max if end_of_day else time.min,
-        )
-        return parsed.replace(tzinfo=UTC)
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("must be a positive integer")
-    return parsed
-
-
-def _validate_conditional_arguments(args: argparse.Namespace) -> None:
-    if args.domain != "data":
-        return
-    if args.data_command in {"download", "aggregate"}:
-        if args.symbol is not None and not args.contract_or_series:
-            raise CliUsageError("single target requires --contract-or-series")
-        return
-    if args.data_command != "verify":
-        return
-    if args.dataset_kind is not None:
-        required = (
-            args.contract_or_series,
-            args.frequency,
-            args.start,
-            args.end,
-            args.canonical_root,
-        )
-        if args.symbol.strip().lower() != "jm" or any(
-            value is None or (isinstance(value, str) and not value.strip())
-            for value in required
-        ):
-            raise CliUsageError(
-                "canonical verify requires exact JM identity/window/root"
-            )
-        return
-    if not args.contract or not args.period:
-        raise CliUsageError("legacy verify requires contract and period")
-
-
-def _command_hint(argv: Sequence[str]) -> str:
-    if len(argv) >= 2 and argv[0] in {"data", "runtime"}:
-        return f"{argv[0]}.{argv[1]}"
-    if argv:
-        return str(argv[0])
-    return "guiyi"
 
 
 if __name__ == "__main__":

@@ -1,189 +1,52 @@
-"""Argument grammar and allow-lists for ``guiyi data`` commands."""
+"""``guiyi data`` 子命令 argparse 定义。
+
+使用 JsonArgumentParser：用法错误转为 CliUsageError 而非打印 help 到 stderr，
+便于 main 统一输出 JSON 错误载荷。
+"""
 
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, date, datetime, time
-from pathlib import Path
-from typing import Sequence
-
-from app.data_core.contracts import BAR_FREQUENCY_VALUES, BarFrequency, DatasetKind
-from app.services.data_operations.contracts import (
-    DIRECT_FREQUENCY_VALUES,
-    DERIVED_FREQUENCY_VALUES,
-    AuditScope,
-    CliArgumentInvalid,
-    MetadataSyncScope,
-)
+from typing import Any, NoReturn
 
 
 class CliUsageError(ValueError):
-    pass
+    """CLI 参数/用法错误；code 供 exception_error_payload 识别为公开错误码。"""
+
+    code = "CLI_ARGUMENT_INVALID"
 
 
 class JsonArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
+    """将 argparse.error 转为 CliUsageError，避免非 JSON 的 stderr 输出。"""
+
+    def error(self, message: str) -> NoReturn:
         raise CliUsageError(message)
 
 
-def add_data_commands(data_commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register unified + retained legacy data commands on an existing subparser."""
-    verify = data_commands.add_parser("verify")
-    verify.add_argument("--symbol", required=True)
-    verify.add_argument("--contract")
-    verify.add_argument("--period")
-    verify.add_argument(
-        "--dataset-kind",
-        choices=("continuous", "actual_dominant"),
-    )
-    verify.add_argument("--contract-or-series")
-    verify.add_argument("--frequency", choices=BAR_FREQUENCY_VALUES)
-    verify.add_argument("--canonical-root", type=Path)
-    verify.add_argument("--start")
-    verify.add_argument("--end")
-    verify.add_argument("--limit", type=_positive_int, default=5000)
-
-    download = data_commands.add_parser("download")
-    _add_target_arguments(download, frequencies=sorted(DIRECT_FREQUENCY_VALUES))
-    download.add_argument("--batch-size", type=_positive_int)
-    download.add_argument("--apply", action="store_true")
-
-    aggregate = data_commands.add_parser("aggregate")
-    _add_target_arguments(aggregate, frequencies=sorted(DERIVED_FREQUENCY_VALUES))
-    aggregate.add_argument("--batch-size", type=_positive_int)
-    aggregate.add_argument("--apply", action="store_true")
-
-    sync = data_commands.add_parser("sync")
-    sync.add_argument(
-        "--scope",
-        choices=tuple(scope.value for scope in MetadataSyncScope),
-        required=True,
-    )
-    sync.add_argument("--symbol")
-    sync.add_argument("--symbols-file", type=Path)
-    sync.add_argument("--start")
-    sync.add_argument("--end")
-    sync.add_argument("--apply", action="store_true")
-
-    audit = data_commands.add_parser("audit")
-    audit.add_argument(
-        "--scope",
-        choices=tuple(scope.value for scope in AuditScope),
-        required=True,
-    )
-    audit.add_argument("--symbol")
-    audit.add_argument("--symbols-file", type=Path)
-    audit.add_argument("--universe", choices=("active",))
-    audit.add_argument(
-        "--dataset-kind",
-        choices=("continuous", "actual_dominant"),
-    )
-    audit.add_argument("--frequency", choices=BAR_FREQUENCY_VALUES)
-    audit.add_argument("--start")
-    audit.add_argument("--end")
-
-    update = data_commands.add_parser("update")
-    update_selector = update.add_mutually_exclusive_group(required=True)
-    update_selector.add_argument("--symbol")
-    update_selector.add_argument(
-        "--universe",
-        choices=("active",),
-        help="Update the retained active universe.",
-    )
-    update.add_argument("--since", help="Inclusive trading-day start (YYYY-MM-DD).")
-    update.add_argument("--through", help="Inclusive trading-day end (YYYY-MM-DD).")
-    update.add_argument(
-        "--apply",
-        action="store_true",
-        help="Local effect selector only; not external authorization.",
-    )
-
-    # Legacy plan/migrate/task07 routes intentionally omitted after replacement cutover.
-
-
-def parse_aware_datetime(value: str, *, field_name: str) -> datetime:
-    try:
-        if len(value) == 10:
-            parsed = datetime.combine(date.fromisoformat(value), time.min, tzinfo=UTC)
-        else:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise CliArgumentInvalid(
-            facts={"field": field_name, "reason": "malformed"}
-        ) from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise CliArgumentInvalid(
-            facts={"field": field_name, "reason": "timezone_required"}
-        )
-    return parsed.astimezone(UTC)
-
-
-def require_paired_window(
-    start: str | None,
-    end: str | None,
-) -> tuple[datetime, datetime]:
-    if (start is None) != (end is None):
-        raise CliArgumentInvalid(facts={"field": "window", "reason": "unpaired"})
-    if start is None or end is None:
-        raise CliArgumentInvalid(facts={"field": "window", "reason": "required"})
-    start_dt = parse_aware_datetime(start, field_name="start")
-    end_dt = parse_aware_datetime(end, field_name="end")
-    if start_dt >= end_dt:
-        raise CliArgumentInvalid(facts={"field": "window", "reason": "invalid"})
-    return start_dt, end_dt
-
-
-def optional_paired_window(
-    start: str | None,
-    end: str | None,
-) -> tuple[datetime, datetime] | None:
-    if start is None and end is None:
-        return None
-    return require_paired_window(start, end)
-
-
-def parse_dataset_kind(value: str) -> DatasetKind:
-    try:
-        return DatasetKind(value)
-    except ValueError as exc:
-        raise CliArgumentInvalid(facts={"field": "dataset_kind"}) from exc
-
-
-def parse_frequency(value: str) -> BarFrequency:
-    try:
-        return BarFrequency(value)
-    except ValueError as exc:
-        raise CliArgumentInvalid(facts={"field": "frequency"}) from exc
-
-
-def reject_legacy_backfill_alias(argv: Sequence[str]) -> None:
-    lowered = {item.lower() for item in argv}
-    if "backfill" in lowered or "--pre-2020" in lowered or "--pre2020" in lowered:
-        raise CliUsageError("legacy backfill aliases are rejected")
-
-
-def _add_target_arguments(
-    parser: argparse.ArgumentParser,
-    *,
-    frequencies: Sequence[str],
-    require_window: bool = True,
+def add_data_commands(
+    commands: argparse._SubParsersAction[Any],
 ) -> None:
-    selector = parser.add_mutually_exclusive_group(required=True)
+    """注册 data 下的 update、refresh、audit、retire-products、after-market 子解析器。"""
+    update = commands.add_parser("update")
+    selector = update.add_mutually_exclusive_group(required=True)
     selector.add_argument("--symbol")
-    selector.add_argument("--symbols-file", type=Path)
-    parser.add_argument(
-        "--dataset-kind",
-        choices=("continuous", "actual_dominant"),
-        required=True,
-    )
-    parser.add_argument("--contract-or-series")
-    parser.add_argument("--frequency", choices=tuple(frequencies), required=True)
-    parser.add_argument("--start", required=require_window)
-    parser.add_argument("--end", required=require_window)
+    selector.add_argument("--universe", choices=("active",))
+    update.add_argument("--since")
+    update.add_argument("--through")
+    update.add_argument("--apply", action="store_true")
 
+    refresh = commands.add_parser("refresh")
+    refresh.add_argument("--symbol", required=True)
+    refresh.add_argument("--since", required=True)
+    refresh.add_argument("--through", required=True)
+    refresh.add_argument("--apply", action="store_true")
 
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("must be a positive integer")
-    return parsed
+    audit = commands.add_parser("audit")
+    selector = audit.add_mutually_exclusive_group(required=True)
+    selector.add_argument("--symbol")
+    selector.add_argument("--universe", choices=("active",))
+
+    retire = commands.add_parser("retire-products")
+    retire.add_argument("--apply", action="store_true")
+
+    commands.add_parser("after-market")

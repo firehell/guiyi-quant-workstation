@@ -1,6 +1,6 @@
 ---
 name: quant-backend
-description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Alembic、Redis、RQ、后端接口、WebSocket、任务队列时使用。
+description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Alembic、Redis、RQ、后端接口、任务队列时使用。
 ---
 
 # 归一量化后端开发 Skill
@@ -13,39 +13,32 @@ description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Ale
 - SQLAlchemy 2
 - Alembic
 - PostgreSQL
-- Redis + RQ
-- DuckDB
-- Parquet
-- pytest
-- ruff
-- mypy
+- Redis（runtime 探测；signal/notification worker 已退役）
+- Canonical Parquet + MarketDataService
+- pytest / ruff / mypy
 
-## 模块
+## Current mounted modules
 
-V1 优先：数据中心、合约管理、品种池、数据下载任务、数据质量检查、策略中心、回测任务、回测报告、信号扫描、复盘记录。
+- Market Canonical 读：`/api/v1/market/bars|coverage|dominants`
+- `guiyi data update|refresh|audit`
+- runtime 只读状态：`/api/runtime/health` + `guiyi runtime status`
+- 轻量 liveness：`/health`、`/api/health`、`/healthz`（同一 payload）
+
+已卸 / 退役：signals、strategies、dashboard、reviews、watchlists、futures_research、data_center HTTP；backtest API/worker；`guiyi data live`；poll Live；RQ signal/notification worker 启动面。
 
 ## 分层
 
-- `api/`：路由和依赖注入。
+- `api/`：路由和依赖注入（当前仅 market + runtime）。
 - `schemas/`：Pydantic 请求/响应。
-- `models/`：SQLAlchemy 模型。
-- `services/`：业务逻辑。
-- `repositories/`：数据库读写。
-- `tasks/`：RQ 后台任务。
-- `websocket/`：任务进度和信号推送。
+- `models/market_tables.py`：八表 ORM。
+- `market_data/`：Catalog / Storage / MarketDataService / maintenance。
+- `guiyi_cli/`：统一 CLI。
+- `services/runtime_health.py`：只读 runtime 探测（含退役组件 stub）。
 
 ## 规则
 
-- 不接实盘自动下单。
-- 路由函数不要堆业务逻辑。
-- 数据下载、回测、扫描必须进入 RQ，HTTP 返回 task id。
-- 所有写操作有日志和可读错误。
-- PostgreSQL 存元数据，Parquet 存行情，DuckDB 读研究数据。
-- 修改后必须给出启动命令和测试命令。
-
-## 验证
-
-- `uv run ruff check .`
-- `uv run pytest -q`
-- `uv run python -m alembic upgrade head`
-- API smoke test：`/health` 返回 `ok`。
+- 不接实盘自动下单；`auto_order=false`。
+- 路由函数不要堆业务逻辑；Market 读路径经 `MarketDataService`。
+- Catalog / coverage / 物理完整性异常 fail-closed。
+- 禁止在日志与错误中暴露密钥、路径、SQL、stack。
+- 产品面以 `STATUS.md`、`docs/DATA_CENTER.md`、`services/quant-api/README.md` 为准。

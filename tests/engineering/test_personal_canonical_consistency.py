@@ -132,24 +132,21 @@ PROTECTED_BOUNDARIES = {
     "9.1 canonical data pipeline": (
         r"RQData.{0,160}staging.{0,160}(?:validation|校验).{0,200}"
         r"(?:historical\s+canonical|Historical\s+Canonical).{0,220}"
-        r"Catalog/Manifest/Gap/MainContractMap.{0,160}MarketDataService"
+        r"(?:八表\s+Catalog|八表\s+Catalog/MainContractMap).{0,160}MarketDataService"
     ),
     "9.2 canonical read interface": r"MarketDataService",
     "9.3 explicit dataset identity": (
         r"DatasetKey.{0,240}continuous.{0,160}actual_dominant"
     ),
-    "9.4 DataGap fails visibly without fallback": (
-        r"DataGap.{0,180}(?:不得静默|不静默|不得.*回退|不.*回退|fail)"
+    "9.4 physical-integrity failures are explicit without fallback": (
+        r"(?:映射|分区|coverage|物理完整性).{0,180}(?:显式失败|不得静默|不静默|不得.*回退|不.*回退|fail)"
     ),
-    "9.5 strict passed quality": r"quality_status\s*=\s*passed",
-    "9.6 bounded legacy compatibility": (
-        r"rqdata/local_parquet.{0,120}primary.{0,120}quality(?:_status)?\s*!=\s*failed"
-    ),
+    "9.5 six validations": r"六项(?:硬)?校验",
     "9.7 historical/live separation": (
         r"historical\s+canonical.{0,120}live\s+observation.{0,120}(?:分离|separat|不能|不得)"
     ),
-    "9.8 provider-final publication integrity": (
-        r"EOD.{0,280}RQData.{0,280}(?:digest|checksum).{0,120}(?:row(?:-| )?count|row count)"
+    "9.8 atomic publication integrity": (
+        r"(?:原子|atomic).{0,260}(?:part\.parquet|发布)"
     ),
     "9.9 preserve last valid canonical": (
         r"(?:失败|fails?).{0,120}(?:保留|preserve).{0,100}(?:最后有效|last valid).{0,80}canonical"
@@ -170,12 +167,11 @@ PROTECTED_BOUNDARIES = {
     "10.5 HTDY observation whitelist": (
         r"HTDY\s+original.{0,220}(?:observation-only|观察).{0,120}(?:白名单|whitelist|仅限|只允许)"
     ),
-    "10.6 signal separation": r"Strategy\s*->\s*SignalEvent\s*->\s*Notification Gate\s*->\s*Channel",
     "10.7 research-not-instruction boundary": (
         r"(?:研究观察|research observation).{0,80}(?:不是交易指令|非交易指令|not.{0,20}trading instruction)"
     ),
     "10.9 canonical companion": (
-        r"(?:数据、策略、回测、信号或通知语义|data, strategy, backtest, signal, or notification semantics)"
+        r"(?:数据或指标语义|数据、策略、回测、信号或通知语义|data, strategy, backtest, signal, or notification semantics)"
         r".{0,120}(?:同一变更|same change).{0,80}(?:canonical|deep canonical)"
     ),
     "11.1-11.4 operational defaults": (
@@ -195,7 +191,7 @@ PROTECTED_BOUNDARIES = {
         r"(?:保持关闭|continue.{0,20}(?:off|disabled))"
     ),
     "11.8 observation-only notifications": (
-        r"(?:通知|notification).{0,160}(?:研究观察|observation-only).{0,100}(?:非交易指令|not.{0,20}trading instruction)"
+        r"(?:通知|notification).{0,160}(?:研究观察|observation-only).{0,100}(?:非交易指令|不是交易指令|not.{0,20}trading instruction)"
     ),
     "11.9 no readiness inference": (
         r"(?:不把结果扩写成|不得.*推导|not.{0,30}infer).{0,160}"

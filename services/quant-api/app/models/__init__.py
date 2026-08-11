@@ -1,59 +1,27 @@
-from app.models.watchlist import Watchlist, WatchlistItem
-from app.models.data_center import (
+"""SQLAlchemy ORM 模型包。
+
+导出数据核心 V2 八表实体（交易所、品种、合约、日历、会话、主力映射、
+数据集与分区）；供 Catalog 维护与 MarketDataService 元数据查询使用。
+"""
+
+from app.models.market_tables import (
     Contract,
-    DataDownloadTask,
-    DataQualityReport,
-    DataSource,
     Exchange,
-    FeeMarginRule,
-    FuturesBasis,
-    FuturesContinuousContractMap,
-    FuturesContractUniverse,
-    FuturesExFactor,
-    FuturesMemberRank,
-    FuturesRollYield,
-    FuturesTradingParameter,
-    FuturesWarehouseStock,
     Instrument,
     MainContractMap,
-    MarketDataFile,
+    MarketDataset,
+    MarketPartition,
     TradingCalendar,
     TradingSession,
 )
-from app.models.data_core import DataGap, MarketDataset, MarketPartition
-from app.models.review import ReviewAttachment, ReviewNote, ReviewTag
-from app.models.signal import SignalEvent, SignalNotification, SignalScanTask, StrategySignal
 
 __all__ = [
     "Contract",
-    "DataDownloadTask",
-    "DataGap",
-    "DataQualityReport",
-    "DataSource",
     "Exchange",
-    "FeeMarginRule",
-    "FuturesBasis",
-    "FuturesContinuousContractMap",
-    "FuturesContractUniverse",
-    "FuturesExFactor",
-    "FuturesMemberRank",
-    "FuturesRollYield",
-    "FuturesTradingParameter",
-    "FuturesWarehouseStock",
     "Instrument",
     "MainContractMap",
     "MarketDataset",
-    "MarketDataFile",
     "MarketPartition",
     "TradingCalendar",
     "TradingSession",
-    "Watchlist",
-    "WatchlistItem",
-    "SignalScanTask",
-    "StrategySignal",
-    "SignalNotification",
-    "SignalEvent",
-    "ReviewNote",
-    "ReviewTag",
-    "ReviewAttachment",
 ]

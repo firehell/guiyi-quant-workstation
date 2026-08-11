@@ -1,5 +1,0 @@
-snapshot_phase,profile_id,instrument_symbol,contract_code,contract_role,period,market_data_file_id,data_version,binding_status,activated_at,superseded_at
-binding,intraday_research_v1,jm,JM2609,actual_contract,15m,103925,signal_review_lineage_003_jm_JM2609_15m_20260708_20260710_v1,active,2026-07-18T09:13:46.647529+00:00,
-binding,intraday_research_v1,jm,JM2609,actual_contract,5m,103924,signal_review_lineage_003_jm_JM2609_5m_20260708_20260710_v1,active,2026-07-18T09:13:46.644075+00:00,
-binding,live_observation_v1,jm,JM2609,actual_contract,15m,103925,signal_review_lineage_003_jm_JM2609_15m_20260708_20260710_v1,active,2026-07-18T09:13:46.649570+00:00,
-binding,live_observation_v1,jm,JM2609,actual_contract,5m,103924,signal_review_lineage_003_jm_JM2609_5m_20260708_20260710_v1,active,2026-07-18T09:13:46.648693+00:00,

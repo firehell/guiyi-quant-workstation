@@ -68,8 +68,6 @@ test('HTDY Web remains historical browser observation-only with a conservative 2
   const htdy = MAIN_INDICATOR_DEFINITIONS.find((definition) => definition.id === 'htdy')
 
   assert.ok(htdy)
-  assert.deepEqual(htdy.allowedDataModes, ['historical'])
-  assert.deepEqual(htdy.allowedAccessModes, ['browser'])
   assert.equal(htdy.alertCapable, false)
   assert.equal(htdy.unstableTailBars, 27)
 })

@@ -6,9 +6,8 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 AGENT_DIR="${HOME}/Library/LaunchAgents"
 API_PLIST="${AGENT_DIR}/com.guiyi.quant-api.plist"
 
-labels=(com.guiyi.quant-api com.guiyi.quant-worker-signals com.guiyi.quant-web com.guiyi.quant-log-rotate)
-[[ "${GUIYI_AFTER_MARKET_AUTOMATION_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && labels+=(com.guiyi.quant-after-market-scheduler)
-[[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] && labels+=(com.guiyi.quant-worker-notifications)
+base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
+market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
 
 runtime_root_from_plist() {
   if [[ ! -f "$API_PLIST" ]]; then
@@ -26,12 +25,21 @@ if [[ "$runtime_root" != "$PROJECT_ROOT" ]]; then
 fi
 
 failed=0
-for label in "${labels[@]}"; do
+printf '[local-services-status] base_services\n'
+for label in "${base_labels[@]}"; do
   if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
     printf '%-42s loaded\n' "$label"
   else
     printf '%-42s missing\n' "$label"
     failed=$((failed + 1))
+  fi
+done
+printf '[local-services-status] optional_market_runtime\n'
+for label in "${market_runtime_labels[@]}"; do
+  if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+    printf '%-42s loaded\n' "$label"
+  else
+    printf '%-42s disabled_or_not_installed\n' "$label"
   fi
 done
 exit "$failed"

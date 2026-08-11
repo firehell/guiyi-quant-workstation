@@ -3,12 +3,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from guiyi_quant.strategies.huotian_dayou_strict import (
-    BOOLEAN_FIELDS,
-    NUMERIC_FIELDS,
-    compute_strict_fields,
-)
-
 
 def _ohlc(length: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     close = np.asarray([100.0 + index * 0.4 + (-1.0 if index % 4 == 0 else 0.5) for index in range(length)])
@@ -19,6 +13,12 @@ def _ohlc(length: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
 
 def test_strict_fields_preserve_declared_fields_and_warmup_nan_boundary() -> None:
+    from guiyi_quant.indicators.htdy_strict import (
+        BOOLEAN_FIELDS,
+        NUMERIC_FIELDS,
+        compute_strict_fields,
+    )
+
     fields = compute_strict_fields(*_ohlc(12), channel_period=3, var23_period=2)
 
     assert set(fields) == set(NUMERIC_FIELDS) | set(BOOLEAN_FIELDS)
@@ -34,6 +34,8 @@ def test_strict_fields_preserve_declared_fields_and_warmup_nan_boundary() -> Non
 
 
 def test_strict_fields_future_tail_does_not_change_existing_prefix() -> None:
+    from guiyi_quant.indicators.htdy_strict import BOOLEAN_FIELDS, NUMERIC_FIELDS, compute_strict_fields
+
     prefix = _ohlc(18)
     extended = tuple(np.concatenate((values, np.asarray([170.0, 65.0, 160.0]))) for values in prefix)
 
@@ -47,6 +49,8 @@ def test_strict_fields_future_tail_does_not_change_existing_prefix() -> None:
 
 
 def test_strict_fields_prefix_append_is_consistent_at_every_step() -> None:
+    from guiyi_quant.indicators.htdy_strict import BOOLEAN_FIELDS, NUMERIC_FIELDS, compute_strict_fields
+
     series = _ohlc(16)
     complete = compute_strict_fields(*series, channel_period=3, var23_period=2)
 
@@ -63,6 +67,8 @@ def test_strict_fields_prefix_append_is_consistent_at_every_step() -> None:
 
 
 def test_strict_fields_empty_and_short_inputs_return_safe_shapes() -> None:
+    from guiyi_quant.indicators.htdy_strict import BOOLEAN_FIELDS, NUMERIC_FIELDS, compute_strict_fields
+
     empty = compute_strict_fields([], [], [], [], channel_period=3, var23_period=2)
     short = compute_strict_fields(*_ohlc(2), channel_period=3, var23_period=2)
 
@@ -72,6 +78,8 @@ def test_strict_fields_empty_and_short_inputs_return_safe_shapes() -> None:
 
 
 def test_strict_fields_reject_mismatched_input_lengths() -> None:
+    from guiyi_quant.indicators.htdy_strict import compute_strict_fields
+
     with pytest.raises(ValueError, match="lengths must match"):
         compute_strict_fields([1.0], [2.0, 3.0], [0.0], [1.0])
 
@@ -81,9 +89,18 @@ def test_strict_fields_reject_mismatched_input_lengths() -> None:
     [(0, 2), (-1, 2), (3, 0), (3, -1)],
 )
 def test_strict_fields_reject_non_positive_periods(channel_period: int, var23_period: int) -> None:
+    from guiyi_quant.indicators.htdy_strict import compute_strict_fields
+
     with pytest.raises(ValueError, match="positive integer"):
         compute_strict_fields(
             *_ohlc(8),
             channel_period=channel_period,
             var23_period=var23_period,
         )
+
+
+def test_registry_points_strict_calculation_to_indicator_kernel() -> None:
+    from guiyi_quant.indicators import get_indicator
+
+    strict = get_indicator("huotian_dayou_strict_v1")
+    assert strict.calculation_source == "guiyi_quant.indicators.htdy_strict.compute_strict_fields"

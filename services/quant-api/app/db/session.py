@@ -1,3 +1,9 @@
+"""SQLAlchemy 引擎与会话工厂。
+
+应用启动时加载 .env、规范化 DATABASE_URL 并创建连接池；``get_db`` 供 FastAPI
+Depends 注入，请求结束自动关闭会话。
+"""
+
 from collections.abc import Generator
 import os
 
@@ -23,5 +29,6 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 def get_db() -> Generator[Session]:
+    """FastAPI 依赖：为每个请求提供 DB 会话并在结束后释放。"""
     with SessionLocal() as session:
         yield session

@@ -11,7 +11,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-GOLDEN_PATH = REPO_ROOT / "data" / "reports" / "indicator_contract_v1" / "htdy_original_realtime_v1_golden.json"
+GOLDEN_PATH = Path(__file__).resolve().parent / "fixtures" / "htdy_original_realtime_v1_golden.json"
 
 
 def _bars(length: int, *, body: tuple[float, float] = (9.9, 10.1)) -> dict[str, list[float | str]]:
@@ -269,8 +269,7 @@ def test_realtime_repainting_policy_accepts_only_the_frozen_exact_identity_and_h
 
 
 def test_registry_remains_observation_only_and_formal_policy_still_rejects_original() -> None:
-    from guiyi_quant.indicators import get_indicator
-    from guiyi_quant.strategies.indicator_policy import require_formal_strategy_indicator_policy
+    from guiyi_quant.indicators import FORMAL_BACKTEST_CONSUMER, get_indicator, require_formal_policy
 
     definition = get_indicator("huo_tian_da_you")
     assert definition.indicator_version == "original-v0"
@@ -279,20 +278,8 @@ def test_registry_remains_observation_only_and_formal_policy_still_rejects_origi
     assert definition.status == "observation_only"
     assert (definition.backtest_capable, definition.live_capable, definition.alert_capable) == (False, False, False)
 
-    with pytest.raises(ValueError, match="observation_only"):
-        require_formal_strategy_indicator_policy(
-            {
-                "strategy_code": "not_formal",
-                "strategy_version": "v1",
-                "indicator_versions": ["huotian_dayou_original_v0"],
-                "formal_policy_ids": ["huotian_dayou_original_v0"],
-                "profile_id": "intraday_research_v1",
-                "confirmed_only": True,
-                "execution_timing": "next_bar_open",
-                "cost_model_version": "cost_model_v1_rate_slippage_size",
-                "research_status": "formal_candidate",
-            }
-        )
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+        require_formal_policy("huotian_dayou_original_v0", consumer=FORMAL_BACKTEST_CONSUMER)
 
 
 def test_tracked_golden_fixture_matches_normalized_production_payload_and_hash() -> None:

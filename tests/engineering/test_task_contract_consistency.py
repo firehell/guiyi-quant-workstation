@@ -36,16 +36,12 @@ def test_every_task_file_has_exactly_one_disposition() -> None:
     assert set(names) == on_disk
 
 
-def test_active_and_frozen_dispositions() -> None:
+def test_active_disposition() -> None:
     inventory = {
         Path(item.path).name: item.disposition
         for item in consistency.inventory_task_dispositions(ROOT)
     }
     assert inventory["GY-DATA-CORE-V2.md"] is consistency.TaskDisposition.ACTIVE_CONTRACT
-    assert (
-        inventory["S6-07-DATABASE-REVISION-DRIFT-RECOVERY.md"]
-        is consistency.TaskDisposition.FROZEN_RUNTIME_CONSUMED
-    )
 
 
 @pytest.mark.parametrize(
@@ -71,10 +67,10 @@ def test_active_contracts_reject_collaboration_authorization_predicates(relative
         "MarketDataService",
         "continuous",
         "actual_dominant",
-        "DataGap",
-        "quality_status=passed",
+        "八表 Catalog",
+        "六项校验",
         "auto_order=false",
-        "一次性",
+        "单次外部执行意图",
     ],
 )
 def test_data_core_contract_keeps_business_boundaries(needle: str) -> None:

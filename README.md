@@ -1,32 +1,34 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站：治理数据、查看 K 线、研究策略、复盘与观察信号。它不提供无人值守自动实盘或自动下单。
+本地、单用户的国内期货量化研究工作站。当前可执行面是 Market Web、Canonical 历史行情、
+Market API、data CLI 和 Runtime 只读状态。项目不实现自动交易或自动下单。
 
 ## 快速导航
 
 | 用途 | 文件 |
 |---|---|
 | 工程执行规则 | `AGENTS.md` |
-| 当前状态与未关闭 Gate | `STATUS.md` |
-| 项目定位与边界 | `PROJECT_SOURCE.md` |
+| 当前状态 | `STATUS.md` |
+| 项目边界 | `PROJECT_SOURCE.md` |
 | 长期决策 | `DECISIONS.md` |
+| 分层架构 | `docs/ARCHITECTURE.md` |
+| Canonical 数据合同 | `docs/DATA_CENTER.md` |
+| active 数据任务 | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 测试入口 | `TESTING.md` |
-| 个人开发工作流 | `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md` |
-| 数据、架构、信号、指标 | `docs/DATA_CENTER.md`、`docs/ARCHITECTURE.md`、`docs/SIGNAL_EVENTS.md`、`docs/INDICATOR_KERNEL.md` |
 
-接手时先读 `AGENTS.md` 和 `STATUS.md`，再按任务读取对应 deep canonical 或受控任务合同。
-
-## 主链路
+## 数据主链路
 
 ```text
 RQData
+-> temporary staging
+-> normalization + six hard validations
 -> Canonical Parquet
--> PostgreSQL Catalog / Manifest / Gap / MainContractMap
+-> PostgreSQL 八表 Catalog / MainContractMap
 -> MarketDataService
--> Market / Signal / Review / Runtime status / Vue Web
+-> Market Web / Indicator / future research
 ```
 
-正式 active 数据仅限 `rqdata/local_parquet + primary + quality_status != failed`；严格研究默认 `quality_status=passed`。
+active universe 固定 60 品种，正式周期只有 `1m/5m/15m/30m/60m/1d/1w`。
 
 ## 本地启动
 
@@ -40,51 +42,34 @@ Web: http://127.0.0.1:5173
 API: http://127.0.0.1:8000/docs
 ```
 
+## 开发态 launchd 部署
+
+当前本机 launchd 的实际部署根只以 `STATUS.md` 为准。开发期可临时直接运行主 `develop` 工作区，但修改源码不等于已部署：Web 重载前必须运行 `npm --prefix apps/quant-web run build`，API/Live 也需要重载才会采用新代码。
+
+重载会改变 Runtime 状态，只在用户对当次目标和服务面给出明确执行意图后进行，不把 `--confirm-*` 当作日常无条件命令。功能收口后重新创建绑定精确提交的独立 Runtime worktree，再进行最终自然时点验收。
+
 ## 统一 CLI
 
 ```bash
-# 只读校验（保留）
-uv run --project services/quant-api guiyi data verify \
-  --symbol jm --contract jm.MAIN --period 15m --provider rqdata
+# 精确增量规划；缺省不写入
+uv run --project services/quant-api guiyi data update \
+  --universe active --since 2026-08-01 --through 2026-08-07
 
-# 直接历史下载（默认 plan；--apply 才写入）
-uv run --project services/quant-api guiyi data download \
-  --symbol jm --dataset-kind continuous --contract-or-series JM.MAIN \
-  --frequency 1m --start 2018-01-01T00:00:00Z --end 2018-01-08T00:00:00Z
+# 指定窗口的强制月度重建规划
+uv run --project services/quant-api guiyi data refresh \
+  --symbol jm --since 2026-08-01 --through 2026-08-07
 
-# 仅从 trusted canonical 1m 聚合
-uv run --project services/quant-api guiyi data aggregate \
-  --symbol jm --dataset-kind continuous --contract-or-series JM.MAIN \
-  --frequency 15m --start 2018-01-01T00:00:00Z --end 2018-01-08T00:00:00Z
-
-# 元数据同步（默认 plan）
-uv run --project services/quant-api guiyi data sync --scope instruments
-
-# 只读 Audit V2
-uv run --project services/quant-api guiyi data audit --scope catalog
+# 当前 Canonical/Catalog 只读审计
+uv run --project services/quant-api guiyi data audit --universe active
 
 uv run --project services/quant-api guiyi runtime status
 ```
 
-`download/aggregate/sync` 默认只读 plan；`--apply` 与 `--confirm-observation-write` 只是本地效果选择器，不构成正式数据/生产环境授权。旧 `data plan/migrate/task07/backfill` 与 `scripts/rqdata_*` 入口已移除，不保留 compatibility shim。
-
-当前仓库没有 `/api/backtests/**`、`/ws/backtests/**`、`/backtest`、`/backtest/batch`、
-`/settings`、`guiyi-backtests` worker/queue 或 `guiyi runtime plan`。未来重建回测必须作为新任务从
-Canonical/MarketDataService 合同重新设计，不提供旧 API、页面、队列、脚本或报告兼容入口。
-
-## 工程入口（Windows）
-
-```powershell
-pwsh -NoProfile -File .\scripts\engineering\preflight.ps1
-pwsh -NoProfile -File .\scripts\engineering\validate.ps1 -Profile Engineering
-pwsh -NoProfile -File .\scripts\engineering\secret-scan.ps1
-```
-
-普通仓库变更直接在 `develop` 编辑、本地验证、可选 commit/push。受控外部操作（正式数据/DB 写入删除、远端 release/tag、Runtime/live、真实通知、GitHub rules）需要范围明确的一次性执行意图；`-WhatIf`/dry-run 不授权真实 mutation。
+`update/refresh` 只有显式 `--apply` 才进入写入路径；参数本身不授权正式数据或生产环境 mutation。
 
 ## 安全边界
 
-- 密钥只存在于本机环境；禁止写入仓库。`scripts/engineering/secret-scan.ps1` 默认 fail-closed。
-- 不自动 push、merge、deploy 或下单。
-- 真实数据、数据库、Runtime 或企业微信写入只接受范围明确的一次性执行意图；不得用 backup、packet、hash、receipt 或二次确认冒充授权。
-- 信号和企业微信仅供研究观察，不是交易指令，也不自动下单。
+- 凭据只来自本机环境，不写入仓库。
+- 普通代码可在 `develop` 实现、测试、commit/push。
+- 真实 RQData、正式 Canonical、生产 DB、Runtime/live、通知和 release/tag 只接受范围明确的一次性执行意图。
+- 所有行情、指标和未来信号只用于研究观察，不是交易指令；`auto_order=false`。

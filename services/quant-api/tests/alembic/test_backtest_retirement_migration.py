@@ -35,17 +35,18 @@ TARGET_SIGNAL_KEYS = (
 )
 
 
-def test_backtest_retirement_is_the_current_alembic_head() -> None:
-    """The destructive retirement must be an explicit new head, never rewritten history."""
+def test_backtest_retirement_remains_on_linear_history_before_surface_drop() -> None:
+    """Backtest retirement stays an explicit revision; head moved to surface drop."""
 
     config = Config(str(QUANT_API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == [RETIREMENT_REVISION]
     revision = scripts.get_revision(RETIREMENT_REVISION)
     assert revision is not None
     assert revision.down_revision == PARENT_REVISION
+    assert scripts.get_revision("20260808_0034") is not None
+    assert scripts.get_heads() == ["20260808_0036"]
 
 
 def test_backtest_retirement_sql_deletes_only_scoped_legacy_rows() -> None:

@@ -1,6 +1,9 @@
 from .atr import atr_series
 from .ema import ema_series
 from .htdy_original import HtdyOriginalResult, compute_htdy_original, htdy_original_source_sha256, normalize_period, xma
+from .htdy_strict import BOOLEAN_FIELDS as HTDY_STRICT_BOOLEAN_FIELDS
+from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
+from .htdy_strict import compute_strict_fields
 from .macd import macd_series
 from .models import (
     AtrSmoothingPolicy,
@@ -41,6 +44,8 @@ __all__ = [
     "HtdyOriginalResult",
     "FORMAL_BACKTEST_CONSUMER",
     "FROZEN_LEGACY_BACKTEST_CONSUMER",
+    "HTDY_STRICT_BOOLEAN_FIELDS",
+    "HTDY_STRICT_NUMERIC_FIELDS",
     "HistogramScale",
     "IndicatorDefinition",
     "IndicatorPoint",
@@ -53,6 +58,7 @@ __all__ = [
     "build_indicator_definition",
     "definition_to_metadata",
     "compute_htdy_original",
+    "compute_strict_fields",
     "ema_series",
     "formal_policy_registry",
     "get_formal_policy",

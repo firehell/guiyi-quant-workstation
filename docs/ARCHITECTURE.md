@@ -1,161 +1,87 @@
 # 归一量化系统架构
 
-更新时间：2026-08-06
+更新时间：2026-08-10
 
-## 1. 系统定位
+## 系统定位
 
-归一量化是单用户、本地优先的国内期货研究工作站。当前闭环是：可信行情、指标与策略研究、
-信号观察、人工判断、盘后复盘和研究统计。系统不实现自动交易，所有信号、Web 展示和通知都
-是研究观察，不是交易指令，`auto_order=false` 始终成立。
+归一量化是本地优先、单用户的国内期货研究工作站。当前目标应用面为 Market Web、Market API、
+数据 CLI 与 Canonical 历史读取。Market Runtime V1 的代码与 launchd 模板默认关闭；本地工作站已按明确请求启用严格限定为 `j/jm/ap/ag` 的有界 Runtime。不实现自动交易，`auto_order=false` 始终成立。
 
-旧 Web/后端回测子系统、`guiyi-backtests` 队列与 Worker、Runtime Scheduler，以及
-S6-08/S6-09/S6-10 控制面已经从仓库 active implementation 中退役。旧合同、报告和证据只可从
-Git history 追溯。未来如需回测，必须按新任务重新设计，不保留旧 API、页面、数据表或兼容入口。
+## 分层设计
 
-## 2. 数据架构
-
-RQData 是唯一外部行情事实源。正式历史数据只有七个周期：`1m`、`5m`、`15m`、`30m`、
-`60m`、`1d`、`1w`。
-
-```plantuml
-@startuml
-left to right direction
-cloud "RQData\n唯一外部事实源" as RQ
-component "增量同步\n1m / 1d / 1w" as Sync
-component "staging + 质量校验\nschema / session / OHLCV\nduplicate / coverage" as Quality
-database "Canonical Parquet\n历史事实" as Canonical
-component "TradingSession 聚合\n5m / 15m / 30m / 60m" as Aggregate
-database "PostgreSQL 轻量目录\nCatalog / Manifest / Gap\nMainContractMap" as Catalog
-component "MarketDataService\n唯一行情入口" as Market
-component "Market / Indicator\nSignal / Review / Web" as Consumer
-database "Live Observation\n与历史 Canonical 分离" as Live
-
-RQ --> Sync
-Sync --> Quality
-Quality --> Canonical : passed only
-Canonical --> Aggregate : canonical 1m
-Canonical --> Catalog
-Aggregate --> Catalog
-Catalog --> Market
-Market --> Consumer
-RQ --> Live
-Live --> Consumer : preview / confirmed observation
-@enduml
+```mermaid
+flowchart TB
+    subgraph Access["接入层"]
+      WEB["Market Web"]
+      API["Market API"]
+      CLI["guiyi data update/refresh/audit"]
+    end
+    subgraph Application["应用层：三个深模块"]
+      MS["MetadataSynchronizer"]
+      HM["HistoricalDataManager"]
+      MQ["MarketDataService"]
+    end
+    subgraph Domain["领域层"]
+      DK["DatasetKey / SeriesQuery / CanonicalBar"]
+      CP["月度 coverage / natural resume"]
+      MM["TradingCalendar / TradingSession / MainContractMap"]
+    end
+    subgraph Infra["基础设施层"]
+      RQ["RQData adapter"]
+      PG["PostgreSQL catalog"]
+      PQ["Parquet / PyArrow reader-writer"]
+    end
+    WEB --> API --> MQ
+    CLI --> MS
+    CLI --> HM
+    MS --> MM
+    HM --> DK
+    HM --> CP
+    MQ --> DK
+    MQ --> MM
+    MS --> RQ
+    MS --> PG
+    HM --> RQ
+    HM --> PG
+    HM --> PQ
+    MQ --> PG
+    MQ --> PQ
 ```
 
-- `1m`、`1d`、`1w` 由 RQData 直接提供；`5m`、`15m`、`30m`、`60m` 只从质量通过的
-  Canonical `1m` 按 TradingSession 确定性聚合。
-- staging 校验失败不发布；schema、交易时段、重复、OHLCV、coverage、identity、checksum、
-  row count 或 manifest digest 异常时保留最后有效 Canonical，并显式记录 DataGap。
-- 与 DataGap 相交的正式读取 fail-closed，不静默填充、缩窗、换源或跨频回退。
-- `continuous` 与 `actual_dominant` 显式且不可互换；actual dominant 只能在
-  `MainContractMap rank=1` 的有效区间使用。
-- `DatasetKey + Catalog/Manifest/Gap/MainContractMap` 定义 active identity；消费者不得自行
-  glob、选择 active 文件、判断主力或绕过质量状态。
-- historical canonical 与 live observation 分离。未确认 bar 只能用于 preview，不能进入正式
-  历史资产或正式信号。
-- EOD 从 RQData 重新获取 provider-final 数据并校验 input digest、checksum 与 row count；
-  repair、replay、backfill、migration 和 EOD recalculation 不补发历史通知。
+- 接入层只解析请求和输出结果；不实现下载、聚合、文件选择或主力判断。
+- `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务。
+- PostgreSQL 保存八表 metadata/catalog，Parquet 保存 Bars；不引入多 provider、插件、任务中心或
+  在线多版本选择器。
 
-## 3. 应用组件
+## 数据架构
 
-```plantuml
-@startuml
-skinparam componentStyle rectangle
-component "quant-web\nVue 3 / Vite / TypeScript" as Web
-component "quant-api\nFastAPI / guiyi CLI" as API
-component "quant-core\n指标与策略语义" as Core
-component "signal worker\n默认关闭通知" as SignalWorker
-component "after-market scheduler\n独立、默认关闭" as EOD
-database "PostgreSQL\nCatalog / Signal / Review metadata" as PG
-queue "Redis\nSignal queue / dedupe" as Redis
-database "Canonical Parquet" as Parquet
-component "MarketDataService" as Market
-
-Web --> API : HTTP / Signal WS
-API --> Market
-Market --> Parquet
-Market --> PG
-API --> Core
-SignalWorker --> Redis
-SignalWorker --> PG
-EOD --> Market
-EOD --> Core
-EOD --> PG
-@enduml
+```mermaid
+flowchart LR
+    RQ["RQData<br/>唯一外部事实源"] --> ST["临时 staging"]
+    ST --> V["标准化 + 六项硬校验"]
+    V --> DD["Canonical Direct<br/>1m / 1d / 1w"]
+    DD --> AG["TradingSession 聚合"]
+    AG --> DV["Canonical Derived<br/>5m / 15m / 30m / 60m"]
+    DD --> CAT["八表 Catalog + 月度 Parquet"]
+    DV --> CAT
+    MAP["MainContractMap rank=1"] --> MDS["MarketDataService"]
+    CAT --> MDS
+    MDS --> CON["Market Web / 指标 / 未来研究"]
 ```
 
-- `quant-api` 提供统一数据、信号、复盘、Watchlist 和只读 Runtime 状态入口。
-- `quant-web` 只从 Vite 环境变量或同源地址连接 API/WS，不持久化浏览器连接配置或凭据。
-- PostgreSQL 只承担轻量目录、质量、lineage、信号和复盘元数据，不作为重型行情仓库。
-- Redis 只服务保留的信号队列与去重；不存在 `guiyi-backtests` 队列或回测 Worker 类型。
-- after-market scheduler 是独立盘后编排器，不是旧 `runtime_scheduler` 的替代别名。
+每 Dataset 每自然月只发布一个 `part.parquet`。文件不存在、不可读、identity 不符或 coverage 不完整
+时，查询 fail-closed，维护命令将该月作为待处理目标；不以第二套状态表保存这些事实。
 
-## 4. 公开接口现状
+## 运行与授权边界
 
-已删除且不得兼容恢复：
+`update` 计划缺失或不完整月并自然续传；`refresh` 只重建用户指定的品种/窗口；`audit` 只读。
+代码、fixture、临时目录和隔离数据库验证是普通开发。真实 RQData、正式 Canonical、生产数据库
+migration 与服务启停，必须分别获得范围明确的一次性执行意图。
 
-- `/api/backtests/**`；
-- `/ws/backtests/**`；
-- Web `/backtest`、`/backtest/batch`、`/settings`；
-- `guiyi runtime plan`；
-- `/api/runtime/health` 的 `components.scheduler`；
-- 回测 report/trade marker、Review 的 `backtest_trade` active source、Dashboard/Strategy 回测入口。
+Market Runtime V1 分为三条明确边界的平面：Historical 继续由 `HistoricalDataManager` 发布 Canonical；
+LiveMarketService 只将当日 `j/jm/ap/ag` 的 rank1 completed 1m 与本地 Derived 写入 Redis；
+AfterMarketUpdater 只在 launchd 的 17:00 触发（失败最多一小时后重试一次）调用既有历史写入口。Live
+永不进入 Canonical、Parquet 或 PostgreSQL。代码与模板默认关闭；只有用户明确请求在该本地工作站启用
+Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 release、其他 DB、通知或订单。
 
-继续保留：
-
-- `/api/watchlists`；
-- `guiyi runtime status`；
-- Market、Indicator、Signal、Review 的非回测能力（行情读为 Canonical）；
-- after-market scheduler health（不再依赖 live checkpoint / LiveMinuteBar 对照）。
-
-已从应用代码退役（勿恢复为 active 路径）：
-
-- poll 盘中 Live K 线（`/market/live/*`、LiveMinuteBar/AggregatedBar、live signal/HTDY realtime）；
-- Task 06 `guiyi data live` / observation / SignalDecision / ResearchSample 链。
-
-## 5. 信号与复盘边界
-
-```plantuml
-@startuml
-left to right direction
-component Strategy
-component SignalEvent
-component "Notification Gate\ndefault off" as Gate
-component "Channel\nobservation only" as Channel
-component "Manual Review" as Review
-
-Strategy --> SignalEvent
-SignalEvent --> Gate
-Gate --> Channel : explicit one-event authorization only
-SignalEvent --> Review
-Review --> Strategy : labels / research feedback
-@enduml
-```
-
-- 通知链固定为 `Strategy -> SignalEvent -> Notification Gate -> Channel`，默认关闭。
-- Task 06 保留 JM、RQData rank=1 actual contract、confirmed `1m/15m`、first-seen 与重绘风险合同。
-- centered/original 指标只允许 canonical 中明确列出的 realtime first-seen observation-only 白名单；
-  禁止把未确认或重绘结果冒充历史信号。
-- 正式边界固定 `observation_only=true`、`not_trading_instruction=true`、
-  `historical_backtest_allowed=false`、`auto_order=false`。
-- Review active source 仅允许 `strategy_signal`、`signal_event`、`signal_decision`、`manual_trade`。
-
-## 6. Runtime 与外部操作
-
-- `guiyi runtime status` 是只读状态入口；旧 runtime plan 与 Runtime Scheduler 已删除。
-- after-market scheduler、live、通知和交易保持默认关闭；配置缺失、异常、过期或不一致时 fail-closed。
-- `develop` 是日常集成分支，`main` 是 release 分支，Runtime checkout 保持隔离并 detached 在精确
-  tag/commit。
-- 合入 `main`、创建 tag 与 Runtime promotion 是不同外部操作；生产数据库/正式数据删除、
-  Runtime 切换、服务启停和真实行情更新也需要各自范围明确、单次使用的执行意图。
-- 本文只描述仓库目标架构，不声明本次 release、Runtime promotion、生产迁移或生产删除已经完成。
-
-## 7. 证据与恢复
-
-- 当前指标合同保存在 `data/reports/indicator_contract_v1/`。
-- S6-07 EOD 数据证据保存在 `data/reports/jm_eod_incremental_automation_s6_07/`。
-- 旧回测、OOS、S6-08/S6-09/S6-10 packet、receipt 和验收证据已从 active repository 删除，
-  只可通过 Git history 恢复 tracked 内容。
-- Canonical、Catalog、MainContractMap、MarketDataFile、Task 06 与非回测 Signal/Review 数据不属于
-  本次仓库证据清理范围。
+开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，当前根和运行状态由 `STATUS.md` 记录。这只是为了快速观察，不改变 Historical/Live 边界，也不构成稳定 Runtime 版本。功能收口后的最终拓扑仍为绑定精确提交的独立 Runtime worktree。

@@ -15,18 +15,11 @@ export default defineConfig({
     },
   },
   build: {
-    // ECharts and ZRender must remain atomic: splitting this vendor group by size
-    // creates circular static imports under Rolldown and breaks production startup.
     chunkSizeWarningLimit: 600,
     rolldownOptions: {
       output: {
         codeSplitting: {
           groups: [
-            {
-              name: 'charting-vendor',
-              test: /node_modules[\\/](echarts|zrender)[\\/]/,
-              priority: 20,
-            },
             {
               name: 'date-vendor',
               test: /node_modules[\\/](date-fns|date-fns-tz)[\\/]/,
@@ -45,6 +38,7 @@ export default defineConfig({
       '/api': {
         target: apiProxyTarget,
         changeOrigin: true,
+        ws: true,
       },
       '/healthz': {
         target: apiProxyTarget,

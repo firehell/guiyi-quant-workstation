@@ -11,14 +11,10 @@ approval_policy = "on-request"
 approvals_reviewer = "auto_review"
 
 # 默认推理强度；具体 Terra / Sol 仍按每个任务选择。
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 
 # 默认使用缓存搜索，减少不必要的实时外网访问。
 web_search = "live"
-
-# 启用项目 hooks。
-[features]
-hooks = true
 
 # Project-local hooks require a trusted project and an explicit hook definition.
 [[hooks.PreToolUse]]

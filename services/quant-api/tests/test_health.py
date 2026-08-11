@@ -56,14 +56,10 @@ def test_health_payload_has_no_credential_looking_keys() -> None:
     assert forbidden.isdisjoint(lowered)
 
 
-def test_healthz_endpoint_returns_local_workstation_payload() -> None:
+def test_healthz_is_liveness_alias() -> None:
     client = TestClient(app)
 
     response = client.get("/healthz")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok",
-        "service": "local-workstation",
-        "readonly": True,
-    }
+    assert response.json() == client.get("/health").json()

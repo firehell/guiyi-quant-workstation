@@ -1,4 +1,4 @@
-import type { BarData, MainIndicatorDefinition, MainIndicatorId, MainIndicatorSeries, MainIndicatorValue } from '@/types/market'
+import type { MainIndicatorDefinition, MainIndicatorId, MainIndicatorSeries, MainIndicatorValue } from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
 export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
@@ -24,31 +24,6 @@ export interface MainChartPreferences {
   visibleMainIndicators: MainIndicatorId[]
   period?: string | null
   realtimeFollow?: boolean
-}
-
-/** 主图指标模式上下文：访问模式（行情仅 historical/canonical） */
-export interface MainIndicatorModeContext {
-  dataMode: 'historical'
-  accessMode: 'browser' | 'research'
-}
-
-/** 主图指标 API 请求参数 */
-export interface MainIndicatorRequestParams {
-  dataset_kind?: 'continuous' | 'actual_dominant'
-  symbol: string
-  contract: string
-  period: string
-  indicator_codes: string
-  display_start: string
-  display_end: string
-  display_bar_count: number
-  provider?: string | null
-  data_role?: string | null
-  quote_mode?: boolean
-  allow_continuous?: boolean
-  access_mode?: 'browser' | 'research'
-  expected_market_data_file_id?: number | null
-  expected_lineage_token?: string | null
 }
 
 /** 主图可叠加指标定义表（EMA、火天大有等） */
@@ -108,8 +83,6 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     lookbackBars: 0,
     alertCapable: false,
     available: true,
-    allowedDataModes: ['historical'],
-    allowedAccessModes: ['browser'],
     repaintingRisk: 'known',
     riskMessages: [
       '未来引用 / 重绘风险',
@@ -174,39 +147,15 @@ export function activeIndicatorCodes(visibleIds: MainIndicatorId[]) {
 }
 
 /**
- * 判断指标在当前数据/访问模式下是否允许显示。
+ * 规范化可见主图指标 id：去重并过滤非法 id。
  */
-export function isMainIndicatorAllowed(
-  definition: MainIndicatorDefinition | null | undefined,
-  context?: MainIndicatorModeContext,
-): definition is MainIndicatorDefinition {
-  if (!definition?.available) return false
-  if (!context) return true
-  if (definition.allowedDataModes && !definition.allowedDataModes.includes(context.dataMode)) return false
-  if (definition.allowedAccessModes && !definition.allowedAccessModes.includes(context.accessMode)) return false
-  return true
-}
-
-/**
- * 按模式过滤可见主图指标 id 列表。
- */
-export function filterVisibleMainIndicatorsForMode(
-  value: MainIndicatorId[],
-  context?: MainIndicatorModeContext,
-): MainIndicatorId[] {
-  return value.filter((id) => isMainIndicatorAllowed(mainIndicatorDefinition(id), context))
-}
-
-/**
- * 规范化可见主图指标 id：去重、过滤非法 id 与模式不允许的指标。
- */
-export function normalizeVisibleMainIndicators(value: unknown, context?: MainIndicatorModeContext): MainIndicatorId[] {
+export function normalizeVisibleMainIndicators(value: unknown): MainIndicatorId[] {
   if (!Array.isArray(value)) return [...DEFAULT_VISIBLE_MAIN_INDICATORS]
   const result: MainIndicatorId[] = []
   value.forEach((item) => {
     if (!isMainIndicatorId(item)) return
     const definition = mainIndicatorDefinition(item)
-    if (!isMainIndicatorAllowed(definition, context) || result.includes(item)) return
+    if (!definition?.available || result.includes(item)) return
     result.push(item)
   })
   return result
@@ -266,47 +215,6 @@ export function defaultMainChartPreferences(): MainChartPreferences {
     period: null,
     realtimeFollow: false,
   }
-}
-
-/**
- * 根据当前 bars 与可见指标构建主图指标 API 请求参数；条件不足时返回 null。
- */
-export function buildMainIndicatorRequestParams(input: {
-  datasetKind?: 'continuous' | 'actual_dominant'
-  symbol: string | null
-  contract: string | null
-  period: string | null
-  bars: BarData[]
-  visibleIds: MainIndicatorId[]
-  provider?: string | null
-  dataRole?: string | null
-  quoteMode?: boolean
-  allowContinuous?: boolean
-  accessMode?: 'browser' | 'research'
-  expectedMarketDataFileId?: number | null
-  expectedLineageToken?: string | null
-}): MainIndicatorRequestParams | null {
-  if (!input.symbol || !input.contract || !input.period || input.bars.length === 0) return null
-  const indicatorCodes = activeIndicatorCodes(input.visibleIds)
-  if (indicatorCodes.length === 0) return null
-  const params: MainIndicatorRequestParams = {
-    symbol: input.symbol,
-    contract: input.contract,
-    period: input.period,
-    indicator_codes: indicatorCodes.join(','),
-    display_start: input.bars[0].time,
-    display_end: input.bars[input.bars.length - 1].time,
-    display_bar_count: input.bars.length,
-    provider: input.provider,
-    data_role: input.dataRole,
-    quote_mode: Boolean(input.quoteMode),
-    allow_continuous: Boolean(input.allowContinuous),
-    access_mode: input.accessMode || 'browser',
-  }
-  if (input.datasetKind) params.dataset_kind = input.datasetKind
-  if (input.expectedMarketDataFileId) params.expected_market_data_file_id = input.expectedMarketDataFileId
-  if (input.expectedLineageToken) params.expected_lineage_token = input.expectedLineageToken
-  return params
 }
 
 /**

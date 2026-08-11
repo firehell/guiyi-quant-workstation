@@ -269,7 +269,11 @@ def list_tracked_scripts(repo_root: Path | None = None) -> tuple[str, ...]:
         capture_output=True,
         text=True,
     )
-    paths = [line.strip().replace("\\", "/") for line in completed.stdout.splitlines() if line.strip()]
+    paths = [
+        line.strip().replace("\\", "/")
+        for line in completed.stdout.splitlines()
+        if line.strip() and (root / line.strip()).is_file()
+    ]
     return tuple(sorted(paths))
 
 

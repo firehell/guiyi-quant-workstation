@@ -28,23 +28,21 @@ fi
 export PYTHONPATH="$PROJECT_ROOT/services/quant-api:$PROJECT_ROOT/packages/quant-core${PYTHONPATH:+:$PYTHONPATH}"
 
 case "$SERVICE" in
-  api|worker-signals|worker-notifications)
-    [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
-    ;;
-esac
-
-case "$SERVICE" in
   api)
+    [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$PROJECT_ROOT/services/quant-api" --host 127.0.0.1 --port 8000 --workers 2 --no-access-log
     ;;
-  worker-signals)
-    cd "$PROJECT_ROOT/services/quant-api"
-    exec "$PYTHON_BIN" -m app.worker signals
+  live)
+    [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
+    exec "$PYTHON_BIN" -m app.guiyi_cli.main runtime live
     ;;
-  worker-notifications)
-    [[ "${GUIYI_WECHAT_AUTOSEND_ENABLED:-0}" =~ ^(1|true|yes|on)$ ]] || { printf '[run-local-service] notification autosend is disabled\n' >&2; exit 78; }
-    cd "$PROJECT_ROOT/services/quant-api"
-    exec "$PYTHON_BIN" -m app.worker notifications
+  after-market)
+    [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
+    exec "$PYTHON_BIN" -m app.guiyi_cli.main data after-market
+    ;;
+  worker-signals|worker-notifications)
+    printf '[run-local-service] retired service refused: %s\n' "$SERVICE" >&2
+    exit 78
     ;;
   web)
     [[ -f "$PROJECT_ROOT/apps/quant-web/dist/index.html" ]] || { printf '[run-local-service] frontend dist missing; run pnpm --dir apps/quant-web build\n' >&2; exit 2; }

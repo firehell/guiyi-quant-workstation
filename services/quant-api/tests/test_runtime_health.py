@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import json
 
 from fastapi.testclient import TestClient
@@ -11,22 +11,11 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.data_center import (
-    AfterMarketSchedulerCheckpoint,
-    DataDownloadTask,
-    MarketDataFile,
-    ProfileActiveBinding,
-)
-from app.models.signal import SignalNotification
 from app.services.runtime_health import _apply_worker_coverage, build_runtime_health
 
 
-def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> None:
+def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, tmp_path) -> None:
     TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(_notification(status="sent", now=now, payload={"token": "should-not-leak"}))
-        session.commit()
 
     def override_get_db():
         with TestingSessionLocal() as session:
@@ -34,10 +23,14 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
 
     monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
     monkeypatch.setattr("app.services.runtime_health._collect_rq_health", lambda connection, **kwargs: _rq_ok())
+    monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
+    monkeypatch.setattr(
+        "app.api.runtime.build_runtime_health",
+        lambda session: build_runtime_health(session, after_market_status_path=None),
+    )
     app.dependency_overrides[get_db] = override_get_db
     try:
-        client = TestClient(app)
-        response = client.get("/api/runtime/health")
+        response = TestClient(app).get("/api/runtime/health")
     finally:
         app.dependency_overrides.clear()
 
@@ -48,35 +41,221 @@ def test_runtime_health_endpoint_returns_readonly_ok_payload(monkeypatch) -> Non
     assert payload["would_start_services"] is False
     assert payload["would_enqueue_jobs"] is False
     assert payload["would_send_notifications"] is False
-    assert payload["components"]["db"]["status"] == "ok"
-    assert payload["components"]["redis"]["status"] == "ok"
-    assert payload["components"]["rq"]["worker_count"] == 1
-    assert "scheduler" not in payload["components"]
-    assert payload["components"]["live_checkpoints"]["status"] == "disabled"
-    assert payload["components"]["live_checkpoints"]["retired"] is True
-    assert payload["components"]["live_checkpoints"]["ingest_count"] == 0
-    assert payload["components"]["notification_retry"]["sent_count"] == 1
-    assert payload["components"]["notification_retry"]["status"] == "disabled"
-    assert "data_core_v2_live_review" not in payload["components"]
-    after_market = payload["components"]["after_market_scheduler"]
-    assert after_market["status"] == "disabled"
-    assert after_market["enabled"] is False
-    assert {
-        "last_successful_trading_day",
-        "latest_completed_trading_day",
-        "latest_eligible_trading_day",
-        "archive_lag_trading_days",
-        "current_task",
-        "last_error_type",
-        "last_error_at",
-        "retry_count",
-        "scheduler_heartbeat",
-        "active_binding_end",
-        "active_binding_ends",
-        "next_retry_at",
-        "authorization_hash",
-        "lock_status",
-    } <= set(after_market)
+    assert set(payload["components"]) == {"db", "redis", "rq", "live_market", "after_market"}
+    assert payload["components"]["live_market"] == {
+        "status": "disabled",
+        "configured_enabled": False,
+        "operational_count": 0,
+        "subscribed_count": 0,
+        "last_heartbeat_at": None,
+        "last_bar_at": None,
+        "phase_counts": {},
+        "error_type": None,
+        "error_message": None,
+    }
+    assert payload["components"]["after_market"] == {
+        "status": "disabled",
+        "last_run": None,
+        "last_successful_trading_day": None,
+        "last_failure": None,
+        "error_type": None,
+        "error_message": None,
+    }
+
+
+def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
+    now = datetime(2026, 8, 10, 1, 2, tzinfo=UTC)
+    redis = FakeRedis(
+        values={
+            "live:heartbeat": json.dumps(
+                {
+                    "generated_at": now.isoformat(),
+                    "operational_count": 4,
+                    "subscribed_count": 4,
+                    "last_bar_at": (now - timedelta(minutes=1)).isoformat(),
+                    "phase_counts": {"trading": 4},
+                    "available": True,
+                }
+            )
+        }
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: redis,
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            live_runtime_enabled=True,
+            after_market_status_path=None,
+        )
+
+    live = payload["components"]["live_market"]
+    assert payload["status"] == "ok"
+    assert live["status"] == "ok"
+    assert live["configured_enabled"] is True
+    assert live["operational_count"] == 4
+    assert live["subscribed_count"] == 4
+    assert live["last_heartbeat_at"] == now.isoformat()
+    assert live["last_bar_at"] == (now - timedelta(minutes=1)).isoformat()
+    assert live["phase_counts"] == {"trading": 4}
+
+
+def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabled() -> None:
+    now = datetime(2026, 8, 10, 1, 10, tzinfo=UTC)
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        disabled = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            live_runtime_enabled=False,
+            after_market_status_path=None,
+        )
+        stale = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "live:heartbeat": json.dumps(
+                        {
+                            "generated_at": (now - timedelta(minutes=6)).isoformat(),
+                            "operational_count": 4,
+                            "subscribed_count": 4,
+                            "last_bar_at": None,
+                            "phase_counts": {"trading": 4},
+                            "available": True,
+                        }
+                    )
+                }
+            ),
+            rq_collector=lambda connection: _rq_ok(),
+            now=now,
+            live_runtime_enabled=True,
+            live_freshness_seconds=300,
+            after_market_status_path=None,
+        )
+
+    assert disabled["status"] == "ok"
+    assert disabled["components"]["db"]["status"] == "ok"
+    assert disabled["components"]["live_market"]["status"] == "disabled"
+    assert stale["status"] == "degraded"
+    assert stale["components"]["db"]["status"] == "ok"
+    assert stale["components"]["live_market"]["status"] == "degraded"
+    assert stale["components"]["live_market"]["error_type"] == "live_heartbeat_stale"
+
+
+def test_runtime_health_is_disabled_before_local_market_runtime_activation(monkeypatch, tmp_path) -> None:
+    """The API must remain fail-closed without the fixed local activation marker."""
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    # An env var in the API process cannot stand in for the explicit local activation.
+    monkeypatch.setenv("GUIYI_MARKET_RUNTIME_ENABLED", "1")
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            after_market_status_path=None,
+        )
+
+    live = payload["components"]["live_market"]
+    assert live["configured_enabled"] is False
+    assert live["status"] == "disabled"
+
+
+def test_runtime_health_uses_local_activation_marker_not_process_environment(monkeypatch, tmp_path) -> None:
+    """A marker enables missing-heartbeat degradation; another launchd job's env cannot."""
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.setenv("GUIYI_MARKET_RUNTIME_ENABLED", "0")
+    marker = tmp_path / ".run" / "market-runtime-enabled"
+    marker.parent.mkdir()
+    marker.write_text("enabled\n", encoding="utf-8")
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            after_market_status_path=None,
+        )
+
+    live = payload["components"]["live_market"]
+    assert live["configured_enabled"] is True
+    assert live["status"] == "degraded"
+    assert live["error_type"] == "live_heartbeat_missing"
+
+
+def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_bytes() -> None:
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={"live:heartbeat": b"\xff\xfetoken=must-not-leak"}
+            ),
+            rq_collector=lambda connection: _rq_ok(),
+            live_runtime_enabled=True,
+            after_market_status_path=None,
+        )
+
+    live = payload["components"]["live_market"]
+    assert payload["status"] == "degraded"
+    assert live["status"] == "degraded"
+    assert live["error_type"] == "live_heartbeat_invalid"
+    assert live["error_message"] is None
+    assert _contains_no_secret_words(payload)
+
+
+def test_runtime_health_surfaces_live_dominant_mismatch(tmp_path) -> None:
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "last_run": {
+                    "trading_day": "2026-08-10",
+                    "status": "failed",
+                    "attempts": 2,
+                    "started_at": "2026-08-10T17:00:00+08:00",
+                    "finished_at": "2026-08-10T18:00:00+08:00",
+                    "products": ["j", "jm", "ap", "ag"],
+                    "error_code": "LIVE_DOMINANT_MISMATCH",
+                    "provider_token": "must-not-leak",
+                },
+                "last_successful_trading_day": "2026-08-09",
+                "last_failure": {"trading_day": "2026-08-10", "error_code": "LIVE_DOMINANT_MISMATCH"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            after_market_status_path=status_path,
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert payload["status"] == "failed"
+    assert after_market["status"] == "failed"
+    assert after_market["last_run"] == {
+        "trading_day": "2026-08-10",
+        "status": "failed",
+        "attempts": 2,
+        "started_at": "2026-08-10T17:00:00+08:00",
+        "finished_at": "2026-08-10T18:00:00+08:00",
+        "products": ["j", "jm", "ap", "ag"],
+        "error_code": "LIVE_DOMINANT_MISMATCH",
+    }
+    assert after_market["last_successful_trading_day"] == "2026-08-09"
+    assert after_market["last_failure"] == {
+        "trading_day": "2026-08-10",
+        "error_code": "LIVE_DOMINANT_MISMATCH",
+    }
     assert _contains_no_secret_words(payload)
 
 
@@ -88,6 +267,7 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
             redis_factory=lambda: FakeRedis(exc=ConnectionError("redis password should-not-leak")),
             rq_collector=lambda connection: _rq_ok(),
             now=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
+            after_market_status_path=None,
         )
 
     assert payload["status"] == "failed"
@@ -100,48 +280,21 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
     assert _contains_no_secret_words(payload)
 
 
-def test_runtime_health_degrades_when_no_rq_workers() -> None:
+def test_runtime_health_never_exposes_arbitrary_exception_messages() -> None:
+    """Catches internal paths, hosts, or query text escaping when no secret keyword is present."""
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:
         payload = build_runtime_health(
             session,
-            redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_no_workers(),
-            now=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
-        )
-
-    assert payload["status"] == "degraded"
-    assert payload["components"]["rq"]["status"] == "degraded"
-    assert payload["components"]["rq"]["worker_count"] == 0
-    assert payload["components"]["live_checkpoints"]["status"] == "disabled"
-    assert payload["components"]["notification_retry"]["status"] == "disabled"
-
-
-def test_runtime_health_degrades_for_due_notification_retry() -> None:
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(_notification(status="retry_pending", now=now, next_retry_at=now - timedelta(minutes=1), last_error_type="http_error"))
-        session.commit()
-
-        payload = build_runtime_health(
-            session,
-            redis_factory=lambda: FakeRedis(),
+            redis_factory=lambda: FakeRedis(
+                exc=ConnectionError("127.0.0.1 /private/runtime/catalog.db select internal_table")
+            ),
             rq_collector=lambda connection: _rq_ok(),
-            now=now,
-            live_runtime_enabled=True,
-            notification_autosend_enabled=True,
+            after_market_status_path=None,
         )
 
-    assert payload["status"] == "degraded"
-    live = payload["components"]["live_checkpoints"]
-    assert live["status"] == "disabled"
-    assert live["retired"] is True
-    notification = payload["components"]["notification_retry"]
-    assert notification["status"] == "degraded"
-    assert notification["retry_pending_count"] == 1
-    assert notification["due_retry_count"] == 1
-    assert notification["last_error_type_counts"]["http_error"] == 1
+    assert payload["components"]["redis"]["error_type"] == "ConnectionError"
+    assert payload["components"]["redis"]["error_message"] is None
 
 
 def test_worker_coverage_requires_each_expected_queue() -> None:
@@ -156,240 +309,18 @@ def test_worker_coverage_requires_each_expected_queue() -> None:
     assert queues[1]["error_type"] == "worker_missing"
 
 
-def test_enabled_archive_failure_is_visible_in_runtime_health() -> None:
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 9, 12, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(
-            DataDownloadTask(
-                task_no="archive:jm:JM2609:2026-07-08",
-                provider="rqdata",
-                data_type="after_market_archive",
-                instrument_symbol="jm",
-                contract_code="JM2609",
-                period="1m_bundle",
-                start_time=now - timedelta(days=1),
-                end_time=now - timedelta(days=1),
-                status="failed",
-                progress=0,
-                result={"quality_gate": "failed", "error_type": "RowCountMismatch"},
-                finished_at=now - timedelta(hours=1),
-            )
-        )
-        session.commit()
-        payload = build_runtime_health(
-            session,
-            redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
-            now=now,
-            archive_enabled=True,
-        )
-
-    archive = payload["components"]["archive"]
-    assert payload["status"] == "degraded"
-    assert archive["status"] == "degraded"
-    assert archive["latest_task_status"] == "failed"
-    assert archive["latest_error_type"] == "RowCountMismatch"
-
-
-def test_after_market_scheduler_health_has_independent_watermark_retry_and_heartbeat_fields() -> None:
-    from app.services.runtime_health import _collect_after_market_scheduler_health
-
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(
-            AfterMarketSchedulerCheckpoint(
-                product="jm",
-                exchange_code="DCE",
-                status="retry_wait",
-                authorization_hash="a" * 64,
-                last_successful_trading_day=date(2026, 7, 21),
-                current_trading_day=date(2026, 7, 22),
-                retry_count=2,
-                last_error_type="ConnectionError",
-                last_error_at=now - timedelta(minutes=5),
-                next_retry_at=now + timedelta(minutes=10),
-                last_result={},
-            )
-        )
-        session.commit()
-        health = _collect_after_market_scheduler_health(
-            session,
-            connection=HeartbeatRedis(now),
-            now=now,
-            enabled=True,
-            clock=HealthClock(),
-        )
-
-    assert health["last_successful_trading_day"] == "2026-07-21"
-    assert health["latest_completed_trading_day"] == "2026-07-22"
-    assert health["latest_eligible_trading_day"] == "2026-07-22"
-    assert health["archive_lag_trading_days"] == 1
-    assert health["current_task"] == "archive:jm:2026-07-22"
-    assert health["retry_count"] == 2
-    assert health["scheduler_heartbeat"]["status"] == "retry_wait"
-    assert health["scheduler_heartbeat"]["pid"] == 4321
-    assert health["lock_status"] == "held"
-    assert "active_binding_end" in health
-
-
-def test_after_market_active_binding_end_uses_latest_passed_file_per_required_identity() -> None:
-    from app.services.runtime_health import _after_market_active_binding_end
-
-    TestingSessionLocal = _session_factory()
-    latest_end = datetime(2026, 7, 21, 15, 0, tzinfo=UTC)
-    required = (
-        ("intraday_research_v1", "1m"),
-        ("intraday_research_v1", "5m"),
-        ("intraday_research_v1", "15m"),
-        ("live_observation_v1", "1m"),
-        ("live_observation_v1", "5m"),
-        ("live_observation_v1", "15m"),
-        ("long_horizon_daily_v1", "1d"),
-    )
-    with TestingSessionLocal() as session:
-        for index, (profile_id, period) in enumerate(required):
-            market_file = MarketDataFile(
-                provider="rqdata",
-                data_type="bars",
-                instrument_symbol="jm",
-                contract_code="JM2609",
-                period=period,
-                start_time=datetime(2026, 6, 12, tzinfo=UTC),
-                end_time=latest_end,
-                file_path=f"/tmp/latest-{index}.parquet",
-                row_count=1,
-                checksum=f"{index + 1:064x}",
-                data_version=f"latest-{index}",
-                data_role="primary",
-                quality_status="passed",
-            )
-            session.add(market_file)
-            session.flush()
-            session.add(
-                ProfileActiveBinding(
-                    profile_id=profile_id,
-                    instrument_symbol="jm",
-                    contract_code="JM2609",
-                    period=period,
-                    data_version=market_file.data_version,
-                    market_data_file_id=market_file.id,
-                    binding_status="active",
-                )
-            )
-
-        historical_file = MarketDataFile(
-            provider="rqdata",
-            data_type="bars",
-            instrument_symbol="jm",
-            contract_code="JM2005",
-            period="1d",
-            start_time=datetime(2020, 1, 2, tzinfo=UTC),
-            end_time=datetime(2020, 4, 3, tzinfo=UTC),
-            file_path="/tmp/historical.parquet",
-            row_count=1,
-            checksum="f" * 64,
-            data_version="historical",
-            data_role="primary",
-            quality_status="passed",
-        )
-        session.add(historical_file)
-        session.flush()
-        session.add(
-            ProfileActiveBinding(
-                profile_id="long_horizon_daily_v1",
-                instrument_symbol="jm",
-                contract_code="JM2005",
-                period="1d",
-                data_version=historical_file.data_version,
-                market_data_file_id=historical_file.id,
-                binding_status="active",
-            )
-        )
-        session.commit()
-
-        active_end, details = _after_market_active_binding_end(session)
-
-    assert active_end == "2026-07-21"
-    assert len(details) == 7
-    assert all(row["contract"] == "JM2609" for row in details)
-
-
-def test_after_market_scheduler_health_degrades_on_stale_heartbeat_even_when_last_state_was_success() -> None:
-    from app.services.runtime_health import _collect_after_market_scheduler_health
-
-    TestingSessionLocal = _session_factory()
-    now = datetime(2026, 7, 23, 10, 0, tzinfo=UTC)
-    with TestingSessionLocal() as session:
-        session.add(
-            AfterMarketSchedulerCheckpoint(
-                product="jm",
-                exchange_code="DCE",
-                status="success",
-                authorization_hash="a" * 64,
-                last_successful_trading_day=date(2026, 7, 22),
-                retry_count=0,
-                last_result={},
-            )
-        )
-        session.commit()
-        health = _collect_after_market_scheduler_health(
-            session,
-            connection=HeartbeatRedis(now - timedelta(minutes=4), status="success"),
-            now=now,
-            enabled=True,
-            clock=HealthClock(),
-        )
-
-    assert health["status"] == "degraded"
-    assert health["scheduler_heartbeat"]["health_status"] == "degraded"
-
-
 class FakeRedis:
-    def __init__(self, exc: Exception | None = None) -> None:
+    def __init__(self, exc: Exception | None = None, values: dict[str, str | bytes] | None = None) -> None:
         self.exc = exc
+        self.values = values or {}
 
     def ping(self) -> bool:
         if self.exc is not None:
             raise self.exc
         return True
 
-
-class HeartbeatRedis(FakeRedis):
-    def __init__(
-        self,
-        now: datetime,
-        *,
-        status: str = "retry_wait",
-        pid: int = 4321,
-    ) -> None:
-        super().__init__()
-        self.now = now
-        self.status = status
-        self.pid = pid
-
-    def get(self, key: str):
-        return json.dumps(
-            {
-                "generated_at": self.now.isoformat(),
-                "status": self.status,
-                "error_type": None,
-                "lock_status": "held",
-                "pid": self.pid,
-            }
-        )
-
-
-class HealthClock:
-    def latest_completed_trading_day(self, *, product: str, exchange: str, now: datetime):
-        return date(2026, 7, 22)
-
-    def trading_days_between(self, start: date, end: date, *, exchange: str):
-        return [date(2026, 7, 22)], True
-
-    def final_close_at(self, trading_day: date, *, product: str, exchange: str):
-        return datetime(2026, 7, 22, 15, 0)
+    def get(self, key: str) -> str | bytes | None:
+        return self.values.get(key)
 
 
 def _session_factory():
@@ -406,28 +337,6 @@ def _session_factory():
 def _rq_ok() -> dict:
     return {
         "status": "ok",
-        "queues": [
-            {
-                "name": "guiyi-signals",
-                "status": "ok",
-                "queued_count": 0,
-                "started_count": 0,
-                "failed_count": 0,
-                "deferred_count": 0,
-                "scheduled_count": 0,
-                "error_type": None,
-            }
-        ],
-        "worker_count": 1,
-        "workers": [{"name": "worker-1", "state": "idle", "queues": ["guiyi-signals"]}],
-        "error_type": None,
-        "error_message": None,
-    }
-
-
-def _rq_no_workers() -> dict:
-    return {
-        "status": "degraded",
         "queues": [],
         "worker_count": 0,
         "workers": [],
@@ -436,34 +345,6 @@ def _rq_no_workers() -> dict:
     }
 
 
-def _notification(
-    *,
-    status: str,
-    now: datetime,
-    payload: dict | None = None,
-    next_retry_at: datetime | None = None,
-    last_error_type: str | None = None,
-) -> SignalNotification:
-    return SignalNotification(
-        event_id=1,
-        signal_id=1,
-        task_no="task-runtime-health",
-        dedupe_key=f"enterprise_wechat:runtime-health:{status}:{next_retry_at}",
-        event_type="signal_created",
-        channel="enterprise_wechat",
-        status=status,
-        payload=payload or {},
-        error_message="https://example.invalid/webhook-token",
-        attempt_count=1,
-        max_attempts=3,
-        last_attempt_at=now,
-        next_retry_at=next_retry_at,
-        last_error_type=last_error_type,
-        response_status_code=500 if last_error_type else 200,
-        sent_at=now if status == "sent" else None,
-    )
-
-
 def _contains_no_secret_words(payload: dict) -> bool:
     text = json.dumps(payload, ensure_ascii=False, default=str).lower()
-    return not any(secret in text for secret in ("webhook", "token", "password", "cookie", "secret", "should-not-leak"))
+    return not any(secret in text for secret in ("webhook", "token", "password", "cookie", "secret", "must-not-leak"))

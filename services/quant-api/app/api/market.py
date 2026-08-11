@@ -1,309 +1,221 @@
-from datetime import date, datetime, time, timedelta
-from typing import Union
+"""Market 行情只读 HTTP API。
+
+所有数据经 ``MarketDataService`` 查询 Canonical Parquet 与八表 Catalog；消费者不得
+绕过完整性校验。合同类错误映射为 422，数据可用性/冲突类错误映射为 409。
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.data_core.contracts import (
-    BAR_FREQUENCY_VALUES,
-    BarFrequency,
-    BarQuery,
-    ContractValidationError,
-    DataCoreError,
-    DatasetKind,
-    UnsupportedFrequencyError,
-    parse_bar_frequency,
-)
 from app.db.session import get_db
+from app.market_data.composition import build_market_data_service
+from app.market_data.domain import (
+    BarFrequency,
+    ContractError,
+    SeriesKind,
+    SeriesPageQuery,
+    SeriesQuery,
+)
+from app.market_data.service import MarketDataError
 from app.schemas.market import (
-    CanonicalBarsResponse,
-    CanonicalMarketIndicatorsResponse,
-    CanonicalMarketMacdIndicatorResponse,
+    ContractSegmentOut,
+    CoverageOut,
+    DatasetCoverageOut,
     DominantContractListResponse,
-    MarketCoverageSummary,
-    MarketWorkbenchCoverage,
-)
-from app.services.canonical_market_data import (
-    CanonicalMarketDataService,
-    build_canonical_reader as _canonical_reader,
-    get_canonical_coverage,
-)
-from app.services.market_dominant_reader import DominantContractReader
-from app.services.market_indicators import (
-    get_canonical_market_indicators,
-    get_canonical_market_macd_indicator,
+    DominantContractOut,
+    MarketBarOut,
+    MarketBarsPageResponse,
+    MarketBarsResponse,
+    MarketCoverageResponse,
+    MarketPageMetaOut,
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 
 
-def _historical_frequency(frequency: str = Query(...)) -> BarFrequency:
-    try:
-        return parse_bar_frequency(frequency)
-    except UnsupportedFrequencyError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "UNSUPPORTED_FREQUENCY",
-                "facts": {
-                    "field": "frequency",
-                    "value": str(frequency),
-                    "allowed": BAR_FREQUENCY_VALUES,
-                },
-            },
-        ) from exc
-
-
-@router.get("/bars/canonical", response_model=CanonicalBarsResponse)
+@router.get("/bars/canonical", response_model=MarketBarsResponse)
 def canonical_market_bars(
-    dataset_kind: DatasetKind = Query(...),
+    series_kind: str = Query(...),
     symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
+    frequency: str = Query(...),
     start: str = Query(...),
     end: str = Query(...),
-    contract_or_series: str | None = None,
+    contract: str | None = Query(default=None),
     session: Session = Depends(get_db),
-) -> CanonicalBarsResponse:
-    """JM historical V2: explicit identity/window, no Profile or tail fallback."""
+) -> MarketBarsResponse:
+    """查询 Canonical K 线序列（continuous / contract / actual_dominant 由 series_kind 决定）。"""
     try:
-        query = BarQuery(
-            dataset_kind=dataset_kind,
+        request = SeriesQuery(
+            series_kind=cast(SeriesKind, series_kind),
             symbol=symbol,
-            contract_or_series=contract_or_series,
-            frequency=frequency,
-            start=_parse_rfc3339_datetime(start),
-            end=_parse_rfc3339_datetime(end),
+            contract=contract,
+            frequency=cast(BarFrequency, frequency),
+            start=_instant(start),
+            end=_instant(end),
         )
-        return CanonicalMarketDataService(
-            session,
-            reader=_canonical_reader(session),
-        ).get_bars(query)
-    except ContractValidationError as exc:
+        result = build_market_data_service(session).query(request)
+    except ContractError as exc:
+        # 合同/参数校验失败 → 422，携带结构化 code 与 facts
         raise HTTPException(
             status_code=422,
             detail={"code": exc.code, "facts": dict(exc.facts)},
         ) from exc
-    except DataCoreError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": exc.code, "facts": dict(exc.facts)},
-        ) from exc
+    except MarketDataError as exc:
+        # 数据覆盖、分区或物理完整性问题 → 409
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    return MarketBarsResponse(
+        request=dict(result.request_identity),
+        bars=[
+            MarketBarOut(
+                bar_end=bar.bar_end,
+                trading_day=bar.trading_day,
+                open=bar.open,
+                high=bar.high,
+                low=bar.low,
+                close=bar.close,
+                volume=bar.volume,
+                turnover=bar.turnover,
+                open_interest=bar.open_interest,
+            )
+            for bar in result.bars
+        ],
+        coverage=(
+            CoverageOut(start=result.coverage[0], end=result.coverage[1])
+            if result.coverage
+            else None
+        ),
+        resolved_contract_segments=[
+            ContractSegmentOut(
+                contract=item.contract,
+                start_trading_day=item.start_trading_day,
+                end_trading_day=item.end_trading_day,
+            )
+            for item in result.resolved_contract_segments
+        ],
+    )
 
 
-@router.get(
-    "/indicators/canonical",
-    response_model=CanonicalMarketIndicatorsResponse,
-)
-def canonical_market_indicators(
-    dataset_kind: DatasetKind = Query(...),
+@router.get("/bars/page", response_model=MarketBarsPageResponse)
+def canonical_market_bars_page(
+    series_kind: str = Query(...),
     symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
-    start: str = Query(...),
-    end: str = Query(...),
-    contract_or_series: str | None = None,
-    indicator_codes: str = Query(default="ema21"),
-    display_bar_count: int = Query(default=10000, ge=1, le=10000),
+    frequency: str = Query(...),
+    before: str | None = Query(default=None),
+    limit: int = Query(default=1200, ge=1, le=2000),
+    contract: str | None = Query(default=None),
     session: Session = Depends(get_db),
-) -> CanonicalMarketIndicatorsResponse:
+) -> MarketBarsPageResponse:
+    """按独占历史游标读取 Canonical K 线页。"""
     try:
-        display_start = _parse_rfc3339_datetime(start)
-        display_end = _parse_rfc3339_datetime(end)
-        requested_codes = [item.strip() for item in indicator_codes.split(",") if item.strip()]
-        warmup_bars = max(
-            ({"ema10": 9, "ema21": 20, "ema60": 59}.get(item, 0) for item in requested_codes),
-            default=0,
-        )
-        service = CanonicalMarketDataService(
-            session,
-            reader=_canonical_reader(session),
-        )
-        bars_response = _canonical_bars_with_effective_warmup(
-            service,
-            dataset_kind=dataset_kind,
+        request = SeriesPageQuery(
+            series_kind=cast(SeriesKind, series_kind),
             symbol=symbol,
-            contract_or_series=contract_or_series,
-            frequency=frequency,
-            display_start=display_start,
-            display_end=display_end,
-            warmup_bars=warmup_bars,
+            contract=contract,
+            frequency=cast(BarFrequency, frequency),
+            before=_instant(before) if before is not None else None,
+            limit=limit,
         )
-        return get_canonical_market_indicators(
-            bars_response,
-            indicator_codes=requested_codes,
-            display_bar_count=display_bar_count,
-            display_start=display_start,
-            display_end=display_end,
-        )
-    except ContractValidationError as exc:
+        result = build_market_data_service(session).query_page(request)
+    except ContractError as exc:
         raise HTTPException(
             status_code=422,
             detail={"code": exc.code, "facts": dict(exc.facts)},
         ) from exc
-    except DataCoreError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": exc.code, "facts": dict(exc.facts)},
-        ) from exc
-
-
-@router.get(
-    "/indicators/macd/canonical",
-    response_model=CanonicalMarketMacdIndicatorResponse,
-)
-def canonical_market_macd_indicator(
-    dataset_kind: DatasetKind = Query(...),
-    symbol: str = Query(...),
-    frequency: BarFrequency = Depends(_historical_frequency),
-    start: str = Query(...),
-    end: str = Query(...),
-    contract_or_series: str | None = None,
-    session: Session = Depends(get_db),
-) -> CanonicalMarketMacdIndicatorResponse:
-    try:
-        query = BarQuery(
-            dataset_kind=dataset_kind,
-            symbol=symbol,
-            contract_or_series=contract_or_series,
-            frequency=frequency,
-            start=_parse_rfc3339_datetime(start),
-            end=_parse_rfc3339_datetime(end),
-        )
-        bars_response = CanonicalMarketDataService(
-            session,
-            reader=_canonical_reader(session),
-        ).get_bars(query)
-        return get_canonical_market_macd_indicator(bars_response)
-    except ContractValidationError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": exc.code, "facts": dict(exc.facts)},
-        ) from exc
-    except DataCoreError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": exc.code, "facts": dict(exc.facts)},
-        ) from exc
-
-
-@router.get(
-    "/coverage/canonical",
-    response_model=MarketWorkbenchCoverage,
-)
-def canonical_market_coverage(
-    symbol: str = Query(default="jm"),
-    session: Session = Depends(get_db),
-) -> MarketWorkbenchCoverage:
-    try:
-        return get_canonical_coverage(session, symbol=symbol)
-    except DataCoreError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": exc.code, "facts": dict(exc.facts)},
-        ) from exc
-
-
-@router.get("/workbench/coverage", response_model=Union[MarketWorkbenchCoverage, MarketCoverageSummary])
-def market_workbench_coverage(
-    symbol: str = Query(default="jm"),
-    session: Session = Depends(get_db),
-) -> MarketWorkbenchCoverage:
-    try:
-        return get_canonical_coverage(session, symbol=symbol)
-    except DataCoreError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": exc.code, "facts": dict(exc.facts)},
-        ) from exc
+    except MarketDataError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    return MarketBarsPageResponse(
+        request=dict(result.request_identity),
+        bars=[
+            MarketBarOut(
+                bar_end=bar.bar_end,
+                trading_day=bar.trading_day,
+                open=bar.open,
+                high=bar.high,
+                low=bar.low,
+                close=bar.close,
+                volume=bar.volume,
+                turnover=bar.turnover,
+                open_interest=bar.open_interest,
+            )
+            for bar in result.bars
+        ],
+        canonical_coverage=(
+            CoverageOut(
+                start=result.canonical_coverage[0],
+                end=result.canonical_coverage[1],
+            )
+            if result.canonical_coverage
+            else None
+        ),
+        page=MarketPageMetaOut(
+            has_more_before=result.has_more_before,
+            next_before=result.next_before,
+        ),
+        resolved_contract_segments=[
+            ContractSegmentOut(
+                contract=item.contract,
+                start_trading_day=item.start_trading_day,
+                end_trading_day=item.end_trading_day,
+            )
+            for item in result.resolved_contract_segments
+        ],
+    )
 
 
 @router.get("/dominants", response_model=DominantContractListResponse)
-def market_dominants(
-    exchange: str | None = None,
-    quote_ready: bool | None = None,
-    search: str | None = None,
-    symbol: str | None = None,
-    session: Session = Depends(get_db),
-) -> DominantContractListResponse:
-    return DominantContractReader(session).list_dominants(
-        exchange=exchange,
-        quote_ready=quote_ready,
-        search=search,
-        symbol=symbol,
+def market_dominants(session: Session = Depends(get_db)) -> DominantContractListResponse:
+    """列出各品种最新主力合约映射（来自 MainContractMap）。"""
+    items = build_market_data_service(session).list_latest_dominants()
+    return DominantContractListResponse(
+        items=[
+            DominantContractOut(
+                product=item.symbol,
+                product_name=item.product_name,
+                exchange=item.exchange,
+                actual_contract=item.actual_contract,
+                dominant_mapping_date=item.dominant_mapping_date,
+            )
+            for item in items
+        ]
     )
 
 
-def _parse_query_datetime(value: str, end_of_day: bool) -> datetime:
-    try:
-        if len(value) == 10:
-            parsed_date = date.fromisoformat(value)
-            parsed = datetime.combine(parsed_date, time.max if end_of_day else time.min)
-        else:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=f"invalid datetime: {value}") from exc
-    return parsed.replace(tzinfo=None)
+@router.get("/coverage/canonical", response_model=MarketCoverageResponse)
+def canonical_market_coverage(
+    symbol: str | None = Query(default=None),
+    session: Session = Depends(get_db),
+) -> MarketCoverageResponse:
+    """列出 Catalog 中数据集分区覆盖（可选按 symbol 过滤）。"""
+    items = build_market_data_service(session).list_dataset_coverage(symbol)
+    return MarketCoverageResponse(
+        items=[
+            DatasetCoverageOut(
+                kind=item.kind,
+                symbol=item.symbol,
+                series_or_contract=item.series_or_contract,
+                frequency=item.frequency,
+                start=item.start,
+                end=item.end,
+                row_count=item.row_count,
+                partition_count=item.partition_count,
+            )
+            for item in items
+        ]
+    )
 
 
-def _parse_rfc3339_datetime(value: str) -> datetime:
+def _instant(value: str) -> datetime:
+    """将查询参数解析为带时区的 datetime；失败时抛出 ContractError 供上层映射为 422。"""
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise ContractValidationError(
-            facts={"field": "datetime", "reason": "rfc3339_required"}
-        ) from exc
+        raise ContractError(field="datetime", reason="rfc3339_required") from exc
+    # 必须显式时区，禁止 naive 时间戳
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ContractValidationError(
-            facts={"field": "datetime", "reason": "timezone_required"}
-        )
+        raise ContractError(field="datetime", reason="timezone_required")
     return parsed
-
-
-def _frequency_delta(frequency: BarFrequency) -> timedelta:
-    return {
-        BarFrequency.M1: timedelta(minutes=1),
-        BarFrequency.M5: timedelta(minutes=5),
-        BarFrequency.M15: timedelta(minutes=15),
-        BarFrequency.M30: timedelta(minutes=30),
-        BarFrequency.H1: timedelta(hours=1),
-        BarFrequency.D1: timedelta(days=1),
-        BarFrequency.W1: timedelta(days=7),
-    }[frequency]
-
-
-def _canonical_bars_with_effective_warmup(
-    service: CanonicalMarketDataService,
-    *,
-    dataset_kind: DatasetKind,
-    symbol: str,
-    contract_or_series: str | None,
-    frequency: BarFrequency,
-    display_start: datetime,
-    display_end: datetime,
-    warmup_bars: int,
-):
-    attempts = 1 if warmup_bars == 0 else 16
-    response = None
-    for attempt in range(attempts):
-        span = _frequency_delta(frequency) * max(1, warmup_bars) * (2**attempt)
-        query = BarQuery(
-            dataset_kind=dataset_kind,
-            symbol=symbol,
-            contract_or_series=contract_or_series,
-            frequency=frequency,
-            start=display_start - span,
-            end=display_end,
-        )
-        response = service.get_bars(query)
-        prior_count = sum(
-            _parse_rfc3339_datetime(str(bar["time"])) < display_start
-            for bar in response.bars
-        )
-        if prior_count >= warmup_bars:
-            return response
-    raise ContractValidationError(
-        facts={
-            "field": "warmup_bars",
-            "reason": "effective_trading_bars_missing",
-            "required": warmup_bars,
-        }
-    )

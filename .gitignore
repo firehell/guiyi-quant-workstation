@@ -11,6 +11,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.hypothesis/
 .mypy_cache/
 .ruff_cache/
 
@@ -24,6 +25,8 @@ build/
 data/raw/
 data/processed/
 data/parquet/
+data/canonical-candidates/
+data/manifests/
 *.parquet
 *.duckdb
 *.db
@@ -59,7 +62,8 @@ backtests/reports/
 
 # IDE
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 
 # workstation scaffold local artifacts
 scripts/ai/.out/

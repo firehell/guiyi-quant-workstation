@@ -1,3 +1,7 @@
+/**
+ * Market Web 观察镜像：算法权威在 packages/quant-core Indicator Kernel。
+ * 本文件只服务浏览器 overlay / 前端测试，必须与 shared golden 对齐；不得另立业务口径。
+ */
 import type { Time } from 'lightweight-charts'
 import type { BarData } from '@/types/market'
 

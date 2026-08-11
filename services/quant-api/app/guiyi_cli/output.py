@@ -1,110 +1,81 @@
-"""Versioned safe JSON envelope for guiyi CLI results."""
+"""CLI JSON 输出与错误载荷脱敏。
+
+``print_json`` 递归脱敏敏感子串与路径；异常载荷仅暴露公开错误码（大写下划线）
+或回退 CLI_INTERNAL_ERROR，不输出 stack trace 或原始异常消息。
+"""
 
 from __future__ import annotations
 
 from datetime import date, datetime
 import json
-import re
 from pathlib import Path
+import re
 from typing import Any, Mapping, TextIO
 
-from app.services.data_operations.contracts import (
-    CommandResult,
-    CommandStatus,
-    EffectSummary,
-    PublicError,
-    empty_effects,
+# 字符串值中命中则替换为 [REDACTED]
+_SENSITIVE = re.compile(
+    r"(?i)(password|passwd|token|secret|api[_-]?key|authorization|license|cookie)"
 )
-
-
-_SECRET_PATTERN = re.compile(
-    r"(?i)(password|passwd|token|secret|api[_-]?key|authorization|bearer\s+\S+|"
-    r"webhook|cookie|license|private[_-]?key)"
-)
-_SQL_PATTERN = re.compile(r"(?i)\b(select|insert|update|delete|drop|alter)\b.+\bfrom\b")
-_URL_PATTERN = re.compile(r"(?i)\bhttps?://[^\s\"']+")
-_PATH_PATTERN = re.compile(r"(?i)([a-z]:\\|/)(?:[^\s\"']+){8,}")
-_STACK_PATTERN = re.compile(r"(?i)traceback \(most recent call last\)|file \".+\", line \d+")
+# 异常 code 须为大写下划线公开码才透出，否则 CLI_INTERNAL_ERROR
+_PUBLIC_ERROR_CODE = re.compile(r"[A-Z][A-Z0-9_]+")
 
 
 def print_json(payload: Mapping[str, Any], stream: TextIO) -> None:
+    """将 payload 经脱敏后格式化 JSON 打印到指定流。"""
     print(
         json.dumps(
-            redact_payload(dict(payload)),
+            _redact(dict(payload)),
             ensure_ascii=False,
             indent=2,
             sort_keys=True,
-            default=_json_default,
+            default=_default,
         ),
         file=stream,
     )
 
 
-def command_result_payload(result: CommandResult) -> dict[str, Any]:
-    return redact_payload(result.as_payload())
-
-
-def argument_error_payload(command: str) -> dict[str, Any]:
-    return CommandResult(
-        command=command,
-        status=CommandStatus.ERROR,
-        readonly=True,
-        effects=empty_effects(),
-        error=PublicError(code="CLI_ARGUMENT_INVALID", type="CliUsageError"),
-    ).as_payload()
+def argument_error_payload(command: str) -> dict[str, object]:
+    """参数/用法错误的固定 JSON 结构（readonly，无细节消息）。"""
+    return {
+        "schema_version": 1,
+        "command": command,
+        "status": "error",
+        "readonly": True,
+        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
+    }
 
 
 def exception_error_payload(
-    *,
-    command: str,
-    exc: BaseException,
-    readonly: bool = True,
-    effects: EffectSummary | None = None,
-    status: CommandStatus = CommandStatus.ERROR,
-) -> dict[str, Any]:
-    code = getattr(exc, "code", None) or getattr(exc, "error_code", None)
-    if not isinstance(code, str) or not code:
+    *, command: str, exc: BaseException, readonly: bool = True
+) -> dict[str, object]:
+    """执行期异常的 JSON 结构；code 脱敏，type 为异常类名。"""
+    code = getattr(exc, "code", None)
+    if not isinstance(code, str) or _PUBLIC_ERROR_CODE.fullmatch(code) is None:
         code = "CLI_INTERNAL_ERROR"
-    return redact_payload(
-        CommandResult(
-            command=command,
-            status=status,
-            readonly=readonly,
-            effects=effects or empty_effects(),
-            error=PublicError(code=code, type=type(exc).__name__),
-        ).as_payload()
-    )
+    return {
+        "schema_version": 1,
+        "command": command,
+        "status": "error",
+        "readonly": readonly,
+        "error": {"code": code, "type": type(exc).__name__},
+    }
 
 
-def redact_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
-    return {key: _redact_value(value) for key, value in payload.items()}
-
-
-def redact_text(value: str) -> str:
-    text = value
-    text = _SECRET_PATTERN.sub("[REDACTED]", text)
-    text = _SQL_PATTERN.sub("[REDACTED_SQL]", text)
-    text = _URL_PATTERN.sub("[REDACTED_URL]", text)
-    text = _PATH_PATTERN.sub("[REDACTED_PATH]", text)
-    text = _STACK_PATTERN.sub("[REDACTED_STACK]", text)
-    return text
-
-
-def _redact_value(value: Any) -> Any:
+def _redact(value: Any) -> Any:
+    """递归脱敏：Mapping/序列/Path/含敏感子串的 str。"""
     if isinstance(value, Mapping):
-        return {str(key): _redact_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_redact_value(item) for item in value]
-    if isinstance(value, tuple):
-        return [_redact_value(item) for item in value]
+        return {str(key): _redact(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redact(item) for item in value]
     if isinstance(value, Path):
         return "[REDACTED_PATH]"
     if isinstance(value, str):
-        return redact_text(value)
+        return _SENSITIVE.sub("[REDACTED]", value)
     return value
 
 
-def _json_default(value: Any) -> str:
+def _default(value: Any) -> str:
+    """json.dumps default：日期 ISO 化，Path 脱敏，其余 str()。"""
     if isinstance(value, (date, datetime)):
         return value.isoformat()
     if isinstance(value, Path):

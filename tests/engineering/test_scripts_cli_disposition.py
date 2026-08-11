@@ -6,7 +6,6 @@ import importlib.util
 from pathlib import Path
 import sys
 
-import pytest
 from hypothesis import given, settings, strategies as st
 
 

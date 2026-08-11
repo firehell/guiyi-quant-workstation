@@ -1,3 +1,0 @@
-product,profile,product_status,issue_type,detail
-jm,jm_main_six_period_latest,audit_pending,db_unavailable,"OperationalError: (psycopg.OperationalError) connection failed: connection to server at ""127.0.0.1"", port 5432 failed: fe_sendauth: no password supplied
-(Background on this error at: https://sqlalche.me/e/20/e3q8); api_snapshot_error=HTTPError: HTTP Error 502: Bad Gateway"
