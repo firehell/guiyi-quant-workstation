@@ -13,6 +13,7 @@ import {
 } from 'lightweight-charts'
 import type { BarData } from '@/types/market'
 import { resolveChartTheme } from '@/styles/chartTheme'
+import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -56,7 +57,12 @@ onMounted(async () => {
       horzLines: { color: theme.grid },
     },
     rightPriceScale: { borderColor: theme.axis },
-    timeScale: { borderColor: theme.axis, timeVisible: !isDaily() },
+    localization: { timeFormatter: formatChartTimeInShanghai },
+    timeScale: {
+      borderColor: theme.axis,
+      timeVisible: !isDaily(),
+      tickMarkFormatter: (time: Time) => formatChartAxisTimeInShanghai(time),
+    },
   })
   candles = chart.addSeries(CandlestickSeries, {
     upColor: theme.up,

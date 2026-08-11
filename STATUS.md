@@ -102,6 +102,9 @@ NOOP。本轮修复了历史 Session metadata 续传、fixed-T0 同月后续 1m 
 从部分状态续传并成功发布 428 个目标（172 次 provider 请求、零失败），写后 audit 为
 passed/0 findings、fixed `T0=2026-08-07` dry-run 为 NOOP。当前完整闭环为 **37/60**，剩余
 **23** 个 active 品种待重建；全域 Canonical 验收仍未完成。
+随后 `pb/pf/pg/pk/pp` 均补齐 12 个 2026-08-10 目标（各 4 次 provider 请求、零失败），
+写后 audit 均为 passed/0 findings，fixed `T0=2026-08-07` dry-run 均为 NOOP。当前完整闭环为
+**42/60**，剩余 **18** 个 active 品种待重建；全域 Canonical 验收仍未完成。
 `ap` 写入前的全域只读 audit 已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条
 finding，即当时 58 个未闭环品种各一条 `MAIN_CONTRACT_MAP_MISSING` 与
 `TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。Calendar、分区与物理可读性类别

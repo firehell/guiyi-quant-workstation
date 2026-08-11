@@ -1,19 +1,34 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, useMessage } from 'naive-ui'
+import { NButton, NCard, NDataTable, NTabPane, NTabs, useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { getMarketDominants } from '@/api/market'
 import type { DominantContractItem } from '@/types/market'
+import {
+  DEFAULT_PRODUCT_SECTOR,
+  describeProduct,
+  PRODUCT_SECTORS,
+  type ProductSector,
+} from '@/utils/productDirectory'
 
 const router = useRouter()
 const message = useMessage()
 const loading = ref(false)
 const dominants = ref<DominantContractItem[]>([])
+const selectedSector = ref<ProductSector>(DEFAULT_PRODUCT_SECTOR)
+
+const availableSectors = computed(() => PRODUCT_SECTORS.filter((sector) =>
+  dominants.value.some((row) => describeProduct(row.product, row.product_name).sector === sector.id),
+))
+
+const sectorRows = (sector: ProductSector) => dominants.value.filter(
+  (row) => describeProduct(row.product, row.product_name).sector === sector,
+)
 
 const columns: DataTableColumns<DominantContractItem> = [
   { title: '品种', key: 'product', width: 90, render: (row) => row.product.toUpperCase() },
-  { title: '名称', key: 'product_name', minWidth: 130 },
+  { title: '名称', key: 'product_name', minWidth: 130, render: (row) => describeProduct(row.product, row.product_name).name },
   { title: '交易所', key: 'exchange', width: 110 },
   { title: 'rank1 真实合约', key: 'actual_contract', width: 150 },
   { title: '映射交易日', key: 'dominant_mapping_date', width: 140 },
@@ -57,20 +72,29 @@ onMounted(async () => {
   <div class="market-page">
     <header>
       <h2>期货行情</h2>
-      <p>MainContractMap rank=1 当前事实；历史 K 线统一由 MarketDataService 读取 Canonical。</p>
+      <p>按产业板块浏览当前 rank1 主力映射；历史 K 线统一由 MarketDataService 读取 Canonical。</p>
     </header>
     <NCard size="small" :bordered="false">
-      <NDataTable
-        :columns="columns"
-        :data="dominants"
-        :loading="loading"
-        :row-key="(row: DominantContractItem) => `${row.product}-${row.actual_contract}`"
-        :pagination="false"
-        size="small"
-        striped
-        flex-height
-        style="height: calc(100vh - 190px); min-height: 480px"
-      />
+      <NTabs v-model:value="selectedSector" type="line" animated>
+        <NTabPane
+          v-for="sector in availableSectors"
+          :key="sector.id"
+          :name="sector.id"
+          :tab="`${sector.label} ${sectorRows(sector.id).length}`"
+        >
+          <NDataTable
+            :columns="columns"
+            :data="sectorRows(sector.id)"
+            :loading="loading"
+            :row-key="(row: DominantContractItem) => `${row.product}-${row.actual_contract}`"
+            :pagination="false"
+            size="small"
+            striped
+            flex-height
+            style="height: calc(100vh - 238px); min-height: 430px"
+          />
+        </NTabPane>
+      </NTabs>
     </NCard>
   </div>
 </template>

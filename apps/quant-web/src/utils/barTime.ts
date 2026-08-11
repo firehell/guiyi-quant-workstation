@@ -3,6 +3,7 @@ import type { Time } from 'lightweight-charts'
 
 /** 日线、周线类周期集合 */
 const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
+const SHANGHAI_TIME_ZONE = 'Asia/Shanghai'
 
 /** Lightweight Charts 业务日时间（无时分秒） */
 export type ChartBusinessDay = { year: number; month: number; day: number }
@@ -10,6 +11,61 @@ export type ChartBusinessDay = { year: number; month: number; day: number }
 export type ChartTimeValue = ChartBusinessDay | number
 
 type BarTimeInput = Pick<BarData, 'time' | 'trading_day'>
+
+function isBusinessDay(time: Time): time is ChartBusinessDay {
+  return typeof time === 'object' && time !== null && 'year' in time
+}
+
+function pad(value: string | number): string {
+  return String(value).padStart(2, '0')
+}
+
+function datePartsInShanghai(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SHANGHAI_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]))
+}
+
+function formatBusinessDay(time: ChartBusinessDay): string {
+  return `${time.year}-${pad(time.month)}-${pad(time.day)}`
+}
+
+function parseChartInstant(time: Time): Date | null {
+  if (typeof time === 'number') {
+    const instant = new Date(time * 1000)
+    return Number.isFinite(instant.getTime()) ? instant : null
+  }
+  if (typeof time === 'string') {
+    const instant = new Date(time)
+    return Number.isFinite(instant.getTime()) ? instant : null
+  }
+  return null
+}
+
+/** 将分钟级横轴刻度格式化为北京时间；交易日保持日期语义。 */
+export function formatChartAxisTimeInShanghai(time: Time): string {
+  if (isBusinessDay(time)) return formatBusinessDay(time)
+  const instant = parseChartInstant(time)
+  if (!instant) return ''
+  const parts = datePartsInShanghai(instant)
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`
+}
+
+/** 将 crosshair 时间格式化为完整北京时间；交易日保持日期语义。 */
+export function formatChartTimeInShanghai(time: Time): string {
+  if (isBusinessDay(time)) return formatBusinessDay(time)
+  const instant = parseChartInstant(time)
+  if (!instant) return ''
+  const parts = datePartsInShanghai(instant)
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`
+}
 
 /**
  * 规范化周期字符串：去空白、转小写；空值返回 null。
