@@ -5,14 +5,26 @@
 ## 结论
 
 Market Runtime V1 已按本地工作站的明确请求启用，持续运行范围严格固定为 operational
-`j/jm/ap/ag` 4/4；API、Web 与 RQData Live 由 launchd 加载，盘后任务保持空闲并等待每天 17:00。
-为便于开发期直接验证，launchd 已临时改为直接运行主工作区 `develop`，本次启动的业务代码基线为
-`ffe4f468`；旧
-`8708c934` detached Runtime worktree 已移除；`auto_order=false` 与无订单边界不变。当前 API、
-Web 与 Live 正常，Live 为 `operational_count=4`、`subscribed_count=3`、`CLOSED:1/TRADING:3`。
-develop 保留的 19:22 盘后状态仍为 `RQDATA_READY_CHECK_FAILED`，因此顶层 Runtime health 暂为
-`failed`；未复制旧 worktree 的 21:28 受控重跑状态。该开发态部署不构成稳定 Runtime 版本验收，
-项目功能收口后须重新创建独立 Runtime worktree 并按精确版本重新采集自然证据。
+`j/jm/ap/ag` 4/4；API、Web 与 RQData Live 由 launchd 加载。为便于开发期直接验证，launchd
+临时直接运行主工作区 `develop`；旧 `8708c934` detached Runtime worktree 已移除；
+`auto_order=false` 与无订单边界不变。
+
+MR-08 开发态自然 canary 已通过日盘与盘后核心链路：10:15 自然进入 BREAK、10:31 自动恢复，既有
+11:30 BREAK / 13:33 自然恢复证据继续有效；actual_dominant 的 15m/30m/60m、current rank1
+contract Live、continuous Historical-only、夜盘 trading_day 和 Live/Canonical 隔离均已通过。
+2026-08-11 的 17:00 launchd 在验收时 clean 的 `develop@839d11ad` 上于 17:00:05 自然启动、
+17:05:21 一次完成，`runs=1`、退出码 0、`status=passed`、`error_code=null`，范围仅为
+`j/jm/ap/ag`。运行前正式 MainContractMap 与 Live snapshot 均为
+`J2609/JM2609/AP2610/AG2610`；运行后四品种 actual_dominant 15m Canonical 均推进到
+`2026-08-11T07:00:00Z`，当日 Live subscription 与 20 个 Live bar key 已清理。一直保持打开的
+AG2610 actual_dominant 15m 页面未手工刷新即从 1200 bars / `2026-08-10T07:00:00Z` 自动更新为
+1237 bars / `2026-08-11T07:00:00Z`，浏览器控制台无 warning/error；Runtime health 随后全部为
+`ok`。
+
+MR-08 仍为 `PARTIAL`：上述证据属于直接运行 `develop` 的开发态自然 canary；真实浏览器左拖加载到
+2023 年、周末 CLOSED + Historical、自然 `non_trading_day` skipped，以及功能收口后新建 clean、
+detached、exact-commit Runtime worktree 的最终读回仍未完成。该状态不表示 release、`main` 合并或
+Runtime promotion。
 
 2026-08-10 首次受控盘后重跑在 20:01～21:02 完成两次尝试并安全失败，没有第三次重试。原始
 RQData readiness MultiIndex 解析缺陷已修复；继续诊断确认阻塞来自当天 metadata 仅写单日 Calendar，

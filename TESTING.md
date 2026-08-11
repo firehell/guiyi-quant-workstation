@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-10
+更新时间：2026-08-11
 
 所有数据写入测试使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向
 Runtime/生产数据库。
@@ -76,12 +76,17 @@ uv run pytest -q tests/engineering/test_market_runtime_launchd.py
 代码与文档收口后，重新创建独立、clean、detached 于精确批准 commit/tag 的 Runtime worktree，再执行最终验收。除即时
 测试和浏览器检查外，至少保留以下自然证据：
 
-- 10:15 BREAK 与 10:30 自然恢复；
+- 10:15 BREAK 与 10:31 首根 completed bar 自然恢复；
 - 17:00 launchd 自然任务完整结束、清理、rank1 reconciliation 与前端 seam；
 - 周末或非交易日自然行为。
 
 手工执行 `guiyi data after-market`、fixture、旧状态或受控重跑不能代替 17:00 自然完成证据。最终验收通过也不自动授权
 合并 `main`、创建 tag/release 或 Runtime promotion。
+
+2026-08-11 已在临时直连 `develop@839d11ad` 的开发副本形成 10:15 BREAK / 10:31 恢复与 17:00
+盘后完整收口的自然 canary：盘后一次尝试通过、四品种 Canonical 前进、rank1 reconciliation、Live
+清理和已打开 Web 页面的 seam 自动更新均已读回。该证据用于关闭开发态 canary，不替代本节要求的最终
+clean detached exact-commit Runtime 复验；周末/非交易日证据仍待自然形成。
 
 DFD-03 之后补充 `20260808_0035:20260808_0036 --sql` 和隔离 PostgreSQL migration 测试。DFD-05
 完成后，最终无写入 CLI smoke 为：
