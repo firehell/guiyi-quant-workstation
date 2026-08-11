@@ -82,9 +82,9 @@ export const PRODUCT_DIRECTORY: Record<string, ProductDirectoryEntry> = {
   sn: { name: '锡', sector: 'nonferrous' },
   sr: { name: '白糖', sector: 'agriculture' },
   ss: { name: '不锈钢', sector: 'steel' },
-  ta: { name: '对苯二甲酸', sector: 'chemical' },
+  ta: { name: 'pta', sector: 'chemical' },
   ur: { name: '尿素', sector: 'chemical' },
-  v: { name: '聚氯乙烯', sector: 'chemical' },
+  v: { name: 'pvc', sector: 'chemical' },
   y: { name: '豆油', sector: 'agriculture' },
   zn: { name: '锌', sector: 'nonferrous' },
 }

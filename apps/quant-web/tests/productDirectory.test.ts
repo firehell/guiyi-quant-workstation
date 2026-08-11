@@ -22,8 +22,11 @@ describe('productDirectory', () => {
     const entries = directory.PRODUCT_DIRECTORY as Record<string, { name: string; sector: string }>
     assert.deepEqual(Object.keys(entries).sort(), activeSymbols())
     assert.equal(new Set(Object.keys(entries)).size, activeSymbols().length)
-    for (const entry of Object.values(entries)) {
-      assert.match(entry.name, /[\u3400-\u9fff]/)
+    for (const [symbol, entry] of Object.entries(entries)) {
+      assert.ok(
+        /[\u3400-\u9fff]/.test(entry.name) || ['ta', 'v'].includes(symbol),
+        `${symbol} must use a Chinese name or an agreed market abbreviation`,
+      )
       assert.notEqual(entry.sector, '')
     }
   })
@@ -37,6 +40,8 @@ describe('productDirectory', () => {
     assert.deepEqual(describe('jm', 'JM'), { symbol: 'jm', name: '焦煤', sector: 'black' })
     assert.deepEqual(describe('rb', 'RB'), { symbol: 'rb', name: '螺纹钢', sector: 'steel' })
     assert.deepEqual(describe('ag', 'AG'), { symbol: 'ag', name: '白银', sector: 'precious' })
+    assert.deepEqual(describe('ta', 'TA'), { symbol: 'ta', name: 'pta', sector: 'chemical' })
+    assert.deepEqual(describe('v', 'V'), { symbol: 'v', name: 'pvc', sector: 'chemical' })
     assert.equal((directory.DEFAULT_PRODUCT_SECTOR as string | undefined), 'black')
   })
 })
