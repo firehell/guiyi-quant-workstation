@@ -2,7 +2,7 @@
 
 更新时间：2026-08-11
 Disposition：`historical_fact`
-Current acceptance：`partial_canary_development_runtime`
+Current acceptance：`completed_owner_accepted`
 当前实现基线：仓库实现与即时验收已完成；精确当前事实以 `STATUS.md` 为准
 
 ## 1. 目标
@@ -39,12 +39,12 @@ Current acceptance：`partial_canary_development_runtime`
 ### 当前实现与部署状态
 
 - MR-01～MR-07 的仓库实现已经完成；MR-08 的即时代码、测试和受控实盘检查已形成证据。
-- MR-08 仍为 `PARTIAL`：开发态自然 10:15/10:31 与 17:00 完整收口已经通过；周末/非交易日和最终
-  isolated exact-commit Runtime 证据尚未形成。
-- 开发期 launchd 临时直接运行主 `develop` 工作区；旧 detached Runtime worktree 已移除。
-- `develop` 便于快速修改和查看，但源码变更不会热加载；Web、API 或 Live 每次重载仍需新的单次执行意图。
-- 最终闭环前必须重新建立 clean、detached、exact-commit/tag 的独立 Runtime worktree。release、`main` 合并与 Runtime
-  promotion 继续是相互独立的人工 Gate。
+- MR-08 已完成：开发态自然 10:15/10:31 与 17:00 完整收口已经通过；用户接受该一次性证据并明确
+  豁免在最终 Runtime 重复等待周末/非交易日事件。
+- 最终 launchd 运行 clean、detached 于 `fe3fb4e0` 的独立 Runtime worktree；API/Web/Live/after-market
+  根一致，四个旧 recovery/worker label 已卸载并移除。
+- exact Runtime 的新盘后状态不迁移旧 JSON，首次自然运行前公开为 enabled + `pending`。
+- release、`main` 合并与 Runtime promotion 继续是相互独立的人工 Gate。
 
 ### 2.1 active universe
 
@@ -87,8 +87,9 @@ Current acceptance：`partial_canary_development_runtime`
 ### 2.5 当前 Runtime
 
 当前 FastAPI 保持 Market + Runtime 面；历史分页、rank1 Live、Redis Overlay、REST/WebSocket seam、盘后更新与 Runtime
-health 已实现。`j/jm/ap/ag` 四品种的本地有界 Runtime 已启用，当前 launchd 临时直接运行主 `develop` 工作区；旧
-detached Runtime worktree 和旧 scheduler 路径已移除。Redis 不承载已退役的业务队列。
+health 已实现。`j/jm/ap/ag` 四品种的本地有界 Runtime 已启用，当前 launchd 运行 clean、detached 于
+`fe3fb4e0` 的独立 Runtime worktree；旧 develop recovery/worker 与旧 scheduler 路径已移除。Redis 不承载
+已退役的业务队列。
 
 本设计不恢复旧 RQ worker、Signal worker、任务中心或历史 Live 兼容路径。
 
@@ -1524,7 +1525,8 @@ MR-08  J/JM/AP/AG real canary
 MR-01～MR-07 已在不真实启用自动写入/Live 的阶段完成 fixture 与隔离测试。
 
 MR-08 的四品种真实 Provider/Runtime 启用已经按用户明确范围执行；开发态日盘 BREAK/恢复与 17:00
-盘后自然 canary 已通过。当前只保留周末/非交易日与最终隔离 Runtime 验收，不扩大 operational scope。
+盘后自然 canary 已通过；最终隔离 Runtime 的 exact identity、拓扑、健康和范围读回也已通过。周末/
+非交易日没有新增现场证据，按用户决定不再作为重复验收项；不扩大 operational scope。
 
 ---
 
@@ -1561,14 +1563,18 @@ J / JM / AP / AG
 | 10:15-10:30 不报 stale | PASS | 10:15 自然 BREAK、10:31 自动恢复通过 |
 | 11:30-13:30 BREAK/恢复 | PASS | 11:30 BREAK、13:33 自然恢复通过 |
 | 夜盘 trading_day 正确 | PASS | 夜盘正确映射下一 trading_day |
-| 周末 Historical 正常、Live CLOSED | PENDING | 等待周末自然证据 |
+| 周末 Historical 正常、Live CLOSED | PASS（用户接受） | 不在最终 Runtime 重复等待；未新增现场自然证据 |
 | 17:00 ready 时 Canonical 自动前进 | PASS | 2026-08-11 17:00 自然任务一次完成，四品种 15m edge 前进到 07:00Z |
 | 首次失败仅 1h 后重试一次 | PASS | 2026-08-10 失败链为两次尝试，无第三次重试 |
 | 最终失败写状态并 macOS 通知 | PASS | 2026-08-10 最终失败后同秒出现 `osascript` 与 NotificationCenter 事件，`interruptionSuppression=none`；定向测试 4 passed |
 | 盘后正式 MainContractMap 与 Live snapshot 对齐 | PASS | 运行前四品种正式映射与冻结 Live snapshot 完全一致 |
 | Canonical 前进后 Web 无缝切换、Live 不 promote | PASS | 原页面 1200→1237 bars 自动刷新；Redis Live 清理，未写入 Parquet |
 | operational scope 可配置扩展 | PASS（代码能力） | 统一读取 operational products；本轮未扩大四品种真实范围 |
-| 非交易日 17:00 skipped | PENDING | 等待自然 `non_trading_day` 证据 |
+| 非交易日 17:00 skipped | PASS（用户接受） | 不在最终 Runtime 重复等待；未新增现场自然证据 |
+| clean detached exact-commit Runtime | PASS | worktree clean/detached 于 `fe3fb4e0`，四个现行服务根一致 |
+| Runtime 拓扑无旧 develop 服务 | PASS | 四个旧 recovery/signals label 均 unloaded，plist 均不存在 |
+| 下一交易日 Session 与夜盘 phase | PASS | 8 月 12 日 AG/AP/J/JM 为 4/3/4/4 段；19:05 CLOSED，模拟 21:05 无 UNKNOWN |
+| 新 Runtime 盘后首跑状态 | PASS | 不迁移旧 JSON；activation enabled，首跑前稳定返回 `pending` |
 
 ---
 
@@ -1643,10 +1649,8 @@ Canonical / Live seam
 其余不建设企业级恢复、队列、权限、多用户或多版本体系。
 
 MR-01～MR-07 已完成本地代码、fixture/mock、build 与 render-only 验证；MR-08 已完成有界启用、即时验收、
-开发态自然 10:15/10:31 与 17:00 完整收口。本文件作为 `historical_fact` 保留，当前验收状态仍为
-`partial_canary_development_runtime`。launchd 临时直接运行主 `develop` 工作区，只服务于开发期快速修改和
-观察，不构成 exact-commit Runtime、release 或 promotion 证据。
-
-最终关闭本文件仍需：周末/非交易日自然行为，以及在新建 clean detached Runtime worktree 上按 exact
-commit 重新读回最终自然证据。手工 after-market、fixture、旧状态或受控重跑均不得冒充自然证据；
-`auto_order=false` 与四品种 operational scope 保持不变。
+开发态自然 10:15/10:31 与 17:00 完整收口，以及最终 clean detached exact-commit Runtime 的身份、
+拓扑、健康与范围读回。本文件作为 `historical_fact` 保留，当前验收状态为 `completed_owner_accepted`。
+自然证据只采集一次；周末/非交易日未新增现场观察，按用户明确决定豁免重复验收，不以 fixture、旧状态或
+受控重跑冒充自然证据。`auto_order=false` 与四品种 operational scope 保持不变；本结论不构成 release、
+`main` 合并或 Runtime promotion。

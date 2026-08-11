@@ -58,7 +58,7 @@ uv run pytest -q tests/engineering/test_market_runtime_launchd.py
 
 ### 2. 临时 develop 部署重载（受控外部操作）
 
-当前开发期 launchd 临时直接运行主 `develop` 工作区。源码修改不会自动进入正在运行的进程：Web 变更需先完成
+功能开发期 launchd 可以临时直接运行主 `develop` 工作区。源码修改不会自动进入正在运行的进程：Web 变更需先完成
 测试和构建，再重载 Web；API 或 Live 变更需先完成对应测试，再重载目标服务。每一次重载都必须取得新的、范围明确
 的一次性执行意图；不得把前一次启用、重载或只读检查复用为本次授权。
 

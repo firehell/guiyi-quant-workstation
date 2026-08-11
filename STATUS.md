@@ -5,8 +5,10 @@
 ## 结论
 
 Market Runtime V1 已按本地工作站的明确请求启用，持续运行范围严格固定为 operational
-`j/jm/ap/ag` 4/4；API、Web 与 RQData Live 由 launchd 加载。为便于开发期直接验证，launchd
-临时直接运行主工作区 `develop`；旧 `8708c934` detached Runtime worktree 已移除；
+`j/jm/ap/ag` 4/4；API、Web、RQData Live 与 17:00 runner 由 launchd 加载。最终 Runtime 已切换到
+`/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime`，该 worktree clean、detached 于
+`fe3fb4e0`。API/Web/Live/after-market 的安装根全部指向该 exact commit；旧 develop
+`web-recovery`、两个 signals worker 与 `api-recovery-single` 已卸载且 plist 已移除。
 `auto_order=false` 与无订单边界不变。
 
 MR-08 开发态自然 canary 已通过日盘与盘后核心链路：10:15 自然进入 BREAK、10:31 自动恢复，既有
@@ -23,9 +25,13 @@ AG2610 actual_dominant 15m 页面未手工刷新即从 1200 bars / `2026-08-10T0
 `2023-11-20T01:46:00Z`，终点始终保持 `2026-08-11T07:00:00Z`；图表容器为 1173×620，分页过程中
 无错误、视口跳回或 console warning/error，真实浏览器左拖加载到 2023 年通过。
 
-MR-08 仍为 `PARTIAL`：上述证据属于直接运行 `develop` 的开发态自然 canary；周末 CLOSED +
-Historical、自然 `non_trading_day` skipped，以及功能收口后新建 clean、detached、exact-commit
-Runtime worktree 的最终读回仍未完成。该状态不表示 release、`main` 合并或 Runtime promotion。
+MR-08 按用户明确的“不重复采证”口径完成：上述 develop 自然 canary 作为一次性功能证据沿用；最终
+Runtime 只复验 exact identity、拓扑、健康和范围。2026-08-11 19:05 的最终读回为 API/Web 200、
+Runtime health `ok`、Live `CLOSED:4`，生产数据库模拟 21:05 为 J/JM/AG `TRADING`、AP `CLOSED`，
+不再出现 `UNKNOWN`。8 月 12 日 Session 为 AG 4、AP 3、J 4、JM 4 段；未来 MainContractMap 未提前
+发布，Dataset/Partition 计数保持 `4701/24064`。新 worktree 不迁移旧盘后状态，启用后的首跑前状态
+稳定为 `pending`。周末 CLOSED/Historical 与自然 `non_trading_day skipped` 未形成现场证据，按用户
+明确决定从最终重复验收中豁免，不冒充自然观察。MR-08 的完成不表示 release、`main` 合并或 Runtime promotion。
 
 2026-08-10 首次受控盘后重跑在 20:01～21:02 完成两次尝试并安全失败，没有第三次重试。另一次
 18:22～19:22 的真实最终失败链已形成 macOS 通知证据：状态于 19:22:22.657 写完，统一日志在
@@ -33,8 +39,8 @@ Runtime worktree 的最终读回仍未完成。该状态不表示 release、`mai
 `com.apple.ScriptEditor2` 通知事件且 `interruptionSuppression=none`。该证据证明最终失败会自动送达
 本机通知，不冒充 17:00 自然调度证据；17:00 自然触发已由 2026-08-11 成功链独立验收。原始
 RQData readiness MultiIndex 解析缺陷已修复；继续诊断确认阻塞来自当天 metadata 仅写单日 Calendar，
-而周频完整性门禁要求覆盖到 ISO 周日。修复后的当天同步只扩展 Calendar 到本周周日，Session 与
-rank-1 MainContractMap 仍只写当天。用户随后给出新的单次执行意图，21:28～21:33 的第二次受控重跑
+而周频完整性门禁要求覆盖到 ISO 周日。当前受限同步的 Calendar 覆盖到 ISO 周日或下一交易日，
+Session 写当天与下一交易日，rank-1 MainContractMap 仍只写当天。用户随后给出新的单次执行意图，21:28～21:33 的第二次受控重跑
 使用 Runtime `44ca152e` 在首次尝试成功，`last_successful_trading_day=2026-08-10`、`last_failure=null`。
 J/JM/AP/AG 的 continuous 1m Canonical 边缘均前进到 `2026-08-10T07:00:00Z`，四品种写后 audit
 均为 passed/0 findings，Runtime API、Web、Redis、RQ、Live 与 after_market 健康均为 ok。本轮代码
@@ -91,6 +97,11 @@ Canonical 验收仍未完成。
 NOOP。本轮修复了历史 Session metadata 续传、fixed-T0 同月后续 1m 聚合，以及窄 fixed-T0 窗口
 不得覆盖较新同月 Canonical 的维护语义。生产 Catalog 当前正式分区为 20,300 个，完整闭环为
 28/60，剩余 32 个 active 品种待重建；全域 Canonical 验收仍未完成。
+随后 `a/al/ao/lh/m/ma/ni/oi/p` 均已完成受控收口：`a/al/ma/ni/oi` 各补齐 12 个
+2026-08-10 目标后通过 audit 与 fixed-T0 NOOP；`ao/lh/m` 的更新为 NOOP 且通过同样验收；`p`
+从部分状态续传并成功发布 428 个目标（172 次 provider 请求、零失败），写后 audit 为
+passed/0 findings、fixed `T0=2026-08-07` dry-run 为 NOOP。当前完整闭环为 **37/60**，剩余
+**23** 个 active 品种待重建；全域 Canonical 验收仍未完成。
 `ap` 写入前的全域只读 audit 已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条
 finding，即当时 58 个未闭环品种各一条 `MAIN_CONTRACT_MAP_MISSING` 与
 `TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。Calendar、分区与物理可读性类别

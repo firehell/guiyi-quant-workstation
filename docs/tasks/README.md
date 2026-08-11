@@ -35,8 +35,9 @@ Gate/hash-path 不再作为授权。
 
 - `GY-DATA-PRODUCT-RETIREMENT-5.md` — 九品种退役已完成（仓库 + 生产 residual=0）；不构成后续删除授权
 - `GY-MARKET-RUNTIME-V1.md` — 已完成设计与实现的保留参考；本地四品种有界 Runtime 已启用，开发态
-  10:15/10:31 与 17:00 自然 canary 已通过；MR-08 因周末/非交易日及最终 isolated exact-commit
-  Runtime Gate 仍为 `PARTIAL`。当前事实只看 `STATUS.md`，本文件不构成新的启用、重载或 promotion 授权
+  10:15/10:31 与 17:00 自然 canary 已通过，最终 isolated exact-commit 身份/拓扑/健康复验完成；
+  周末/非交易日重复采证由用户明确豁免，MR-08 已完成。当前事实只看 `STATUS.md`，本文件不构成新的
+  启用、重载或 promotion 授权
 
 已退役的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据仅能从 Git history 追溯；
 不得再当作现存路径、兼容入口或当前授权。未来重建回测或 Runtime 验收必须新建任务，
