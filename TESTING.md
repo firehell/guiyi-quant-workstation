@@ -73,22 +73,24 @@ uv run pytest -q tests/engineering/test_market_runtime_launchd.py
 
 ### 3. 最终隔离 Runtime 验收（独立人工 Gate）
 
-代码与文档收口后，重新创建独立、clean、detached 于精确批准 commit/tag 的 Runtime worktree，再执行最终验收。除即时
-测试和浏览器检查外，至少保留以下自然证据：
+代码与文档收口后，重新创建独立、clean、detached 于精确批准 commit/tag 的 Runtime worktree。最终部署验收至少读回：
 
-- 10:15 BREAK 与 10:31 首根 completed bar 自然恢复；
-- 17:00 launchd 自然任务完整结束、清理、rank1 reconciliation 与前端 seam；
-- 周末或非交易日自然行为。
+- Git 身份 clean/detached 且等于批准 commit/tag；
+- API/Web/Live/after-market 的 launchd 根只指向该 worktree，已退役 recovery/worker 不再加载；
+- API、Web、Live heartbeat、四品种范围和 `auto_order=false` 边界可读；
+- 新 worktree 不迁移旧 `after-market-status.json`；启用标记存在但尚未首跑时公开状态为 `pending`，不误报 `disabled`。
 
-手工执行 `guiyi data after-market`、fixture、旧状态或受控重跑不能代替 17:00 自然完成证据。最终验收通过也不自动授权
-合并 `main`、创建 tag/release 或 Runtime promotion。
+自然行为只采集一次。已经在同一代码谱系形成并由用户明确接受的 develop canary 可用于功能闭环，不因最终部署封装
+重复等待；没有发生的自然事件必须记为用户豁免/不再要求，不能伪造为现场证据。手工 after-market、fixture、旧状态或
+受控重跑仍不能冒充自然触发。最终验收通过也不自动授权合并 `main`、创建 tag/release 或 Runtime promotion。
 
 2026-08-11 已在临时直连 `develop@839d11ad` 的开发副本形成 10:15 BREAK / 10:31 恢复与 17:00
 盘后完整收口的自然 canary：盘后一次尝试通过、四品种 Canonical 前进、rank1 reconciliation、Live
 清理和已打开 Web 页面的 seam 自动更新均已读回。该证据用于关闭开发态 canary，不替代本节要求的最终
-clean detached exact-commit Runtime 复验。真实浏览器在同一 AG2610 actual_dominant 15m 页面连续
+clean detached exact-commit 的身份、拓扑与健康复验；用户已明确接受该自然证据，不在最终 worktree 重复等待。
+真实浏览器在同一 AG2610 actual_dominant 15m 页面连续
 拖拽，已从 1237 bars 加载到 24037 bars，coverage 起点进入 `2023-11-20T01:46:00Z`，console 无
-warning/error；周末/非交易日证据仍待自然形成。
+warning/error。周末/非交易日不再作为最终 worktree 的重复采证项；未形成的现场观察只记为用户豁免。
 
 macOS 最终失败通知已有真实系统读回：2026-08-10 的最终失败状态写入后，统一日志在同一秒依次记录
 `osascript` 与 NotificationCenter 事件，且 `interruptionSuppression=none`；对应失败分支“重试一次、

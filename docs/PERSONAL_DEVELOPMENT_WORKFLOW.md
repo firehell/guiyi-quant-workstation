@@ -72,7 +72,7 @@ clean develop + 精确预期提交
 
 工作区 dirty、必需检查失败、Web 构建缺失、依赖不可用或安装根与目标不一致时停止，不重试、不 force、不扩大范围。重载后只读验证 API/Web 可达、四品种 Live 状态、安装根和计划任务保持空闲。不手工运行 `guiyi data after-market` 代替自然 17:00 证据。
 
-开发态证据只属于当时的 `develop` 工作树。功能收口后重新创建绑定精确提交的独立 Runtime worktree，再采集最终自然时点证据。
+开发态证据属于当时的代码谱系。功能收口后重新创建绑定精确提交的独立 Runtime worktree，并读回 clean/detached 身份、launchd 根、健康和范围；已由用户接受的同谱系自然证据不因部署封装重复采集。
 
 ## 5. 普通仓库删除与恢复
 

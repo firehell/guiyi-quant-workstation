@@ -66,6 +66,11 @@ identity 唯一；`market_partitions` 以 `(dataset_id, year, month)` 唯一，�
 优先完成 `1d/1w`，再补可本地生成的 Derived，最后按 active universe、Dataset、年月顺序续传 `1m`。
 每完成一个 1m dataset-month，立即生成四个 Derived 月。
 
+17:00 Runtime 的受限 metadata 同步只准备 operational 四品种：Calendar 覆盖当天至 ISO 周日或下一
+交易日（取较晚者），TradingSession 精确替换当天与下一交易日，MainContractMap 仍只发布当天 rank1。
+这样夜盘 phase resolver 在 18:00 后有下一交易日 Session 事实，同时不会提前发布未来主力映射，也不写
+Dataset、Partition 或 Parquet。
+
 既有月等于 expected bars 时跳过；合法子集只下载缺失 bars 并重写完整月；不可读、extra bar 或
 identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `PROVIDER_QUOTA_EXHAUSTED`：本轮
 立即停止 provider 调用，保留已发布月，不发布当前未完成月，并返回 `status=partial` 与

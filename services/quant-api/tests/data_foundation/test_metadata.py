@@ -159,8 +159,8 @@ def _snapshot(
             {
                 "exchange_code": "DCE",
                 "trade_date": _DAY + timedelta(days=offset),
-                "is_trading_day": offset == 0,
-                "has_night_session": offset == 0,
+                "is_trading_day": offset in {0, 1},
+                "has_night_session": offset in {0, 1},
                 "provider": "rqdata",
             }
             for offset in range((_WEEK_END - _DAY).days + 1)
@@ -173,8 +173,15 @@ def _snapshot(
                 "effective_from": _AFTER,
                 "effective_to": _AFTER,
             },
+            {
+                **_session_values("jm", "future"),
+                "effective_from": _AFTER,
+                "effective_to": _AFTER,
+            },
         ),
-        main_contracts=tuple(main_contracts + [("j", _AFTER, "J2609")]),
+        main_contracts=tuple(
+            main_contracts + [("j", _AFTER, "J2609"), ("jm", _AFTER, "JM2609")]
+        ),
         main_contract_starts={"j": _DAY, "jm": _DAY},
     )
 
@@ -242,7 +249,7 @@ def test_current_day_sync_replaces_day_facts_and_bounded_week_calendar_context()
     assert state["calendar"] == [
         ("DCE", _BEFORE, True, True),
         ("DCE", _DAY, True, True),
-        ("DCE", _AFTER, False, False),
+        ("DCE", _AFTER, True, True),
         ("DCE", date(2026, 8, 12), False, False),
         ("DCE", date(2026, 8, 13), False, False),
         ("DCE", date(2026, 8, 14), False, False),
@@ -255,8 +262,9 @@ def test_current_day_sync_replaces_day_facts_and_bounded_week_calendar_context()
         ("j", "before", _BEFORE, _BEFORE),
         ("j", "day", _DAY, _DAY),
         ("j", "open-ended", _DAY, None),
-        ("j", "after", _AFTER, _AFTER),
+        ("j", "future", _AFTER, _AFTER),
         ("jm", "night", _DAY, _DAY),
+        ("jm", "future", _AFTER, _AFTER),
     ]
     assert state["maps"] == [
         ("ag", _DAY, "AG2601"),
@@ -266,6 +274,24 @@ def test_current_day_sync_replaces_day_facts_and_bounded_week_calendar_context()
         ("jm", _DAY, "JM2605"),
     ]
     assert session.get(Exchange, 1).name == "preserved DCE"
+    session.close()
+
+
+def test_current_day_sync_replaces_next_trading_day_sessions_only() -> None:
+    """盘后同步必须准备下一交易日 Session，但不得提前发布下一日 rank1。"""
+    session = _session()
+    synchronizer = MetadataSynchronizer(
+        _Adapter(_snapshot()), MarketCatalog(session, Path("."))
+    )
+
+    synchronizer.synchronize_current_day(("j", "jm"), _DAY)
+
+    state = _metadata_state(session)
+    assert ("j", "future", _AFTER, _AFTER) in state["sessions"]
+    assert ("jm", "future", _AFTER, _AFTER) in state["sessions"]
+    assert ("j", "after", _AFTER, _AFTER) not in state["sessions"]
+    assert ("j", _AFTER, "J2605") in state["maps"]
+    assert ("jm", _AFTER, "JM2609") not in state["maps"]
     session.close()
 
 

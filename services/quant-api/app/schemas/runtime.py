@@ -77,6 +77,7 @@ class RuntimeAfterMarketHealth(BaseModel):
     """由本地公开状态文件派生的盘后维护摘要。"""
 
     status: str
+    configured_enabled: bool = False
     last_run: RuntimeAfterMarketRun | None = None
     last_successful_trading_day: str | None = None
     last_failure: dict[str, str] | None = None

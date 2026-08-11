@@ -35,6 +35,7 @@ RUNTIME_STATUS_DEGRADED = "degraded"
 RUNTIME_STATUS_FAILED = "failed"
 RUNTIME_STATUS_UNKNOWN = "unknown"
 RUNTIME_STATUS_DISABLED = "disabled"
+RUNTIME_STATUS_PENDING = "pending"
 DEFAULT_AFTER_MARKET_STATUS_PATH = PROJECT_ROOT / ".run" / "after-market-status.json"
 MARKET_RUNTIME_ACTIVATION_MARKER_NAME = "market-runtime-enabled"
 # 当前无活跃业务队列；空元组时 RQ 健康仅枚举 worker、不检查队列积压
@@ -65,8 +66,15 @@ def build_runtime_health(
     # 已退役参数不改变 V1 状态；live_runtime_enabled 保留为测试/本地装配可注入开关。
     # 真实启动状态来自项目固定 .run 标记，而非另一个 launchd job 的进程环境。
     del live_polling_expected, live_market_phase, notification_autosend_enabled
-    del archive_enabled, after_market_automation_enabled
+    del archive_enabled
     freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
+    activation_enabled = _market_runtime_activation_enabled()
+    live_enabled = activation_enabled if live_runtime_enabled is None else live_runtime_enabled
+    after_market_enabled = (
+        activation_enabled
+        if after_market_automation_enabled is None
+        else after_market_automation_enabled
+    )
     components: dict[str, Any] = {}
     components["db"] = _collect_db_health(session)
     redis_connection, redis_health = _collect_redis_health(redis_factory or get_redis_connection)
@@ -91,14 +99,13 @@ def build_runtime_health(
     components["live_market"] = _collect_live_market_health(
         redis_connection,
         now=current_time,
-        configured_enabled=(
-            _market_runtime_activation_enabled()
-            if live_runtime_enabled is None
-            else live_runtime_enabled
-        ),
+        configured_enabled=live_enabled,
         freshness_seconds=freshness_seconds,
     )
-    components["after_market"] = _collect_after_market_health(after_market_status_path)
+    components["after_market"] = _collect_after_market_health(
+        after_market_status_path,
+        configured_enabled=after_market_enabled,
+    )
 
     return {
         "status": _overall_status(components.values()),
@@ -197,17 +204,27 @@ def _collect_live_market_health(
     return {"status": RUNTIME_STATUS_OK, **payload}
 
 
-def _collect_after_market_health(status_path: Path | None) -> dict[str, Any]:
+def _collect_after_market_health(
+    status_path: Path | None,
+    *,
+    configured_enabled: bool,
+) -> dict[str, Any]:
     """读取盘后运行的公开状态文件；不恢复任何 scheduler/checkpoint 模型。"""
     empty = {
+        "configured_enabled": configured_enabled,
         "last_run": None,
         "last_successful_trading_day": None,
         "last_failure": None,
         "error_type": None,
         "error_message": None,
     }
-    if status_path is None or not status_path.exists():
+    if status_path is None:
         return {"status": RUNTIME_STATUS_DISABLED, **empty}
+    if not status_path.exists():
+        return {
+            "status": RUNTIME_STATUS_PENDING if configured_enabled else RUNTIME_STATUS_DISABLED,
+            **empty,
+        }
     try:
         raw = json.loads(status_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):

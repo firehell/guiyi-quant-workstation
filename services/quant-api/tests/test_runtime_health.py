@@ -55,6 +55,7 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     }
     assert payload["components"]["after_market"] == {
         "status": "disabled",
+        "configured_enabled": False,
         "last_run": None,
         "last_successful_trading_day": None,
         "last_failure": None,
@@ -186,6 +187,34 @@ def test_runtime_health_uses_local_activation_marker_not_process_environment(mon
     assert live["configured_enabled"] is True
     assert live["status"] == "degraded"
     assert live["error_type"] == "live_heartbeat_missing"
+
+
+def test_enabled_after_market_is_pending_before_its_first_runtime_run(tmp_path) -> None:
+    """新 detached Runtime 不迁移旧状态时应显示待首跑，而不是误报未启用。"""
+    missing_status = tmp_path / "after-market-status.json"
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            rq_collector=lambda connection: _rq_ok(),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            after_market_status_path=missing_status,
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert payload["status"] == "ok"
+    assert after_market == {
+        "status": "pending",
+        "configured_enabled": True,
+        "last_run": None,
+        "last_successful_trading_day": None,
+        "last_failure": None,
+        "error_type": None,
+        "error_message": None,
+    }
 
 
 def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_bytes() -> None:

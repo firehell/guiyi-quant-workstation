@@ -759,8 +759,8 @@ class RQDataClient:
         # for previous-day / night-session / first ISO-week context only.
         # 日历向后多取一周：短假周仍可证明 ISO 周完整，无需第二套 calendar watermark。
         if current_day_only:
-            calendar_start = through
-            calendar_end = _iso_week_end(through)
+            calendar_start = min(starts.values())
+            calendar_end = max(_iso_week_end(calendar_start), through)
         else:
             earliest = min(starts.values())
             calendar_start = _calendar_context_start(earliest)
@@ -848,11 +848,25 @@ class RQDataClient:
         products: tuple[str, ...],
         trading_day: date,
     ) -> MetadataSnapshot:
-        """构造当天 Session/rank1 与截至周日的最小 Calendar 上下文。"""
+        """构造当天 rank1、当天/下一交易日 Session 与有界 Calendar 上下文。"""
+        probe_end = trading_day + timedelta(days=14)
+        probe_dates = tuple(
+            pd.Timestamp(item).date()
+            for item in self.api.get_trading_dates(
+                start_date=trading_day,
+                end_date=probe_end,
+            )
+        )
+        next_trading_day = next(
+            (day for day in probe_dates if day > trading_day),
+            None,
+        )
+        if next_trading_day is None:
+            raise InfrastructureError("RQDATA_NEXT_TRADING_DAY_MISSING")
         starts = {symbol: trading_day for symbol in products}
         return self.metadata_snapshot(
             products,
-            trading_day,
+            next_trading_day,
             starts,
             current_day_only=True,
         )

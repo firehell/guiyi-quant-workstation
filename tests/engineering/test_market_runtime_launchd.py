@@ -60,6 +60,47 @@ def test_market_runtime_launch_agents_use_project_root_as_working_directory(
         assert payload["WorkingDirectory"] == str(repo.resolve())
 
 
+def test_confirm_install_retires_legacy_launch_agents(tmp_path: Path) -> None:
+    """正式加载必须收口旧 develop recovery/worker，避免形成第二套 Runtime。"""
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    agent_dir = home / "Library" / "LaunchAgents"
+    agent_dir.mkdir(parents=True)
+    retired_labels = (
+        "com.guiyi.quant-web-recovery",
+        "com.guiyi.quant-worker-signals",
+        "com.guiyi.quant-worker-signals-recovery",
+        "com.guiyi.quant-api-recovery-single",
+    )
+    for label in retired_labels:
+        (agent_dir / f"{label}.plist").write_text("legacy\n", encoding="utf-8")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_launchctl = fake_bin / "launchctl"
+    fake_launchctl.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$HOME/launchctl-calls.log\"\n"
+        "case \"${1:-}\" in\n"
+        "  bootstrap|enable|kickstart) exit 0 ;;\n"
+        "  print|bootout) exit 1 ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_launchctl.chmod(0o755)
+
+    _run_installer(repo, home, fake_bin, "--render-only")
+    assert all((agent_dir / f"{label}.plist").exists() for label in retired_labels)
+
+    _run_installer(repo, home, fake_bin, "--confirm-load")
+
+    assert all(not (agent_dir / f"{label}.plist").exists() for label in retired_labels)
+    calls = (home / "launchctl-calls.log").read_text(encoding="utf-8")
+    for label in retired_labels:
+        assert f"bootout gui/{os.getuid()}/{label}" in calls
+
+
 def _copy_launchd_fixture(destination: Path) -> Path:
     """Copy only installer inputs so mode tests cannot affect the real workstation."""
     for relative in (
