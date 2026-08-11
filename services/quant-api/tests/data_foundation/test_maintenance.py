@@ -113,10 +113,17 @@ class FakeCoverage:
 class FakeMetadata:
     def __init__(self) -> None:
         self.calls: list[tuple[tuple[str, ...], date]] = []
+        self.current_day_calls: list[tuple[tuple[str, ...], date]] = []
 
     def synchronize(self, products: tuple[str, ...], through: date, _starts) -> date:
         self.calls.append((products, through))
         return through
+
+    def synchronize_current_day(
+        self, products: tuple[str, ...], trading_day: date
+    ) -> date:
+        self.current_day_calls.append((products, trading_day))
+        return trading_day
 
 
 class FakeProvider:
@@ -282,6 +289,51 @@ def test_update_apply_blocks_without_acquiring_global_maintenance_lock(
     assert provider.calls == []
 
 
+def test_update_syncs_current_day_metadata_inside_the_maintenance_lease(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 100)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    metadata = FakeMetadata()
+    manager = _manager(session, tmp_path, coverage, FakeProvider({key.as_tuple(): (bar,)}), metadata)
+    events: list[str] = []
+
+    class Lease(_TrackingLease):
+        def release(self) -> None:
+            events.append("release")
+            super().release()
+
+    lease = Lease()
+
+    def acquire():
+        events.append("acquire")
+        return lease
+
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", acquire)
+    original_sync_current_day = metadata.synchronize_current_day
+
+    def sync_current_day(products: tuple[str, ...], trading_day: date) -> date:
+        events.append("current_day")
+        return original_sync_current_day(products, trading_day)
+
+    monkeypatch.setattr(metadata, "synchronize_current_day", sync_current_day)
+
+    result = manager.update(
+        UpdateRequest(
+            ("jm",),
+            None,
+            date(2025, 1, 3),
+            True,
+            sync_current_day_metadata=True,
+        )
+    )
+
+    assert result.status == "passed"
+    assert metadata.current_day_calls == [(('jm',), date(2025, 1, 3))]
+    assert events == ["acquire", "current_day", "release"]
+
+
 def test_since_is_check_lower_bound_and_does_not_replace_covered_partition(
     session, tmp_path
 ) -> None:
@@ -404,6 +456,30 @@ def test_fixed_through_update_preserves_later_same_month_canonical_bars(session,
     assert tuple(
         bar.bar_end for bar in manager.store.read_month(key, 2025, 1)
     ) == (earlier.bar_end, later.bar_end)
+
+
+def test_fixed_through_rebuilds_night_bar_from_future_trading_day(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    earlier = _daily(2, 100)
+    future_night = CanonicalBar(
+        datetime(2025, 1, 3, 13, 1, tzinfo=UTC),
+        date(2025, 1, 4),
+        Decimal("999"),
+        Decimal("999"),
+        Decimal("999"),
+        Decimal("999"),
+        1,
+        10,
+        20,
+    )
+    coverage = FakeCoverage({key.as_tuple(): (earlier.bar_end,)})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({key.as_tuple(): (earlier,)}))
+    _publish_existing(manager, key, (future_night,))
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 2), True))
+
+    assert result.status == "passed"
+    assert manager.store.read_month(key, 2025, 1) == (earlier,)
 
 
 def test_existing_complete_1m_rebuilds_derived_before_provider_quota(session, tmp_path) -> None:

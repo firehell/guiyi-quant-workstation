@@ -146,18 +146,14 @@ class AfterMarketUpdater:
         if not ready:
             return "RQDATA_NOT_READY"
         try:
-            self.manager.metadata.synchronize_current_day(products, trading_day)
-        except Exception as exc:  # noqa: BLE001 - provider/catalog detail stays private
-            _LOGGER.warning(
-                "after_market_attempt_failed stage=metadata_sync attempt=%s "
-                "detail_code=UNEXPECTED_METADATA_EXCEPTION exception_type=%s",
-                attempt,
-                type(exc).__name__,
-            )
-            return "UPDATE_FAILED"
-        try:
             result = self.manager.update(
-                UpdateRequest(products=products, since=None, through=trading_day, apply=True)
+                UpdateRequest(
+                    products=products,
+                    since=None,
+                    through=trading_day,
+                    apply=True,
+                    sync_current_day_metadata=True,
+                )
             )
         except Exception as exc:  # noqa: BLE001 - provider/catalog detail stays private
             _LOGGER.warning(

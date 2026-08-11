@@ -172,6 +172,20 @@ def test_updates_once_when_first_attempt_is_ready(tmp_path) -> None:
     assert notices == []
 
 
+def test_current_day_metadata_is_delegated_to_the_locked_update(tmp_path) -> None:
+    updater, manager, _rqdata, _sleeps, _notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[_result("passed")],
+    )
+
+    updater.run()
+
+    assert manager.metadata.calls == []
+    assert manager.calls[0].sync_current_day_metadata is True
+
+
 def test_retries_once_after_data_is_not_ready(tmp_path) -> None:
     updater, manager, rqdata, sleeps, notices, _live_store = _updater(
         tmp_path,
@@ -415,7 +429,8 @@ def test_success_reconciles_rank1_publishes_state_and_cleans_live(tmp_path) -> N
 
     assert result.status == "passed"
     assert result.error_code is None
-    assert manager.metadata.calls == [(("j", "jm", "ap", "ag"), date(2026, 8, 10))]
+    assert manager.metadata.calls == []
+    assert manager.calls[0].sync_current_day_metadata is True
     assert manager.catalog.calls == [
         ("j", date(2026, 8, 10), date(2026, 8, 10)),
         ("jm", date(2026, 8, 10), date(2026, 8, 10)),
@@ -479,7 +494,8 @@ def test_rank1_mismatch_is_a_stable_failure_without_live_cleanup(tmp_path) -> No
         "trading_day": "2026-08-10",
         "error_code": "LIVE_DOMINANT_MISMATCH",
     }
-    assert len(manager.metadata.calls) == 2
+    assert manager.metadata.calls == []
+    assert all(request.sync_current_day_metadata for request in manager.calls)
 
 
 def test_public_status_rejects_boolean_attempt_count() -> None:

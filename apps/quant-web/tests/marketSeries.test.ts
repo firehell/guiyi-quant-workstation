@@ -97,7 +97,12 @@ describe('market historical series', () => {
         { has_more_before: true, next_before: '2026-08-10T07:00:00Z' },
         { start: '2023-01-03T01:01:00Z', end: '2026-08-10T07:00:00Z' },
       ),
-      fetchState: async () => state({ phase: 'CLOSED', live_eligible: false, live_available: false }),
+      fetchState: async () => state({
+        phase: 'CLOSED',
+        live_eligible: false,
+        live_available: false,
+        after_market: { last_successful_trading_day: '2026-08-07' },
+      }),
     })
 
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
@@ -131,7 +136,12 @@ describe('market historical series', () => {
             { start: '2026-05-07T18:16:00Z', end: '2026-06-24T18:30:00Z' },
           )
       },
-      fetchState: async () => state({ phase: 'CLOSED', live_eligible: false, live_available: false }),
+      fetchState: async () => state({
+        phase: 'CLOSED',
+        live_eligible: false,
+        live_available: false,
+        after_market: { last_successful_trading_day: '2026-08-07' },
+      }),
     })
 
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
@@ -310,7 +320,14 @@ describe('market Live overlay', () => {
     const make = async (phase: string, eligible: boolean) => {
       const series = useMarketSeries({
         fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
-        fetchState: async () => state({ phase, live_eligible: eligible, live_available: eligible }),
+        fetchState: async () => state({
+          phase,
+          live_eligible: eligible,
+          live_available: eligible,
+          after_market: phase === 'CLOSED'
+            ? { last_successful_trading_day: '2026-08-07' }
+            : {},
+        }),
         createWebSocket: (url: string) => {
           const socket = new FakeSocket(url)
           sockets.push(socket)
@@ -331,6 +348,55 @@ describe('market Live overlay', () => {
     assert.equal(breaking.liveUnavailable.value, false)
     assert.equal(sockets.length, 1)
     assert.equal(scheduled.length, 0)
+  })
+
+  it('waits for the after-market canonical seam when opened after close', async () => {
+    let calls = 0
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => {
+        calls += 1
+        return calls === 1
+          ? page([liveBar('2026-08-07T07:00:00Z', 100)], { has_more_before: false, next_before: null })
+          : page([
+            liveBar('2026-08-07T07:00:00Z', 100),
+            liveBar('2026-08-10T07:00:00Z', 101),
+          ], { has_more_before: false, next_before: null })
+      },
+      fetchState: async () => state({
+        phase: 'CLOSED',
+        trading_day: '2026-08-10',
+        live_eligible: false,
+        live_available: false,
+        canonical_end: '2026-08-07T07:00:00Z',
+        after_market: { last_successful_trading_day: null },
+      }),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+
+    assert.equal(sockets.length, 1)
+    sockets[0].message({ type: 'state', state: state({
+      phase: 'CLOSED',
+      trading_day: '2026-08-10',
+      live_eligible: false,
+      live_available: false,
+      canonical_end: '2026-08-10T07:00:00Z',
+      after_market: { last_successful_trading_day: null },
+    }) })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    assert.equal(sockets[0].closed, true)
+    assert.equal(calls, 2)
+    assert.deepEqual(series.bars.value.map((bar) => bar.time), [
+      '2026-08-07T07:00:00Z',
+      '2026-08-10T07:00:00Z',
+    ])
   })
 
   it('keeps the canonical page visible when the optional state request is unavailable', async () => {

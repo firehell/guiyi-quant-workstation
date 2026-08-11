@@ -159,6 +159,20 @@ function isIdentityLiveCapable(identity: MarketSeriesIdentity, state: MarketRead
     && identity.contract.toUpperCase() === state.live_contract?.toUpperCase()
 }
 
+function shouldAwaitAfterMarketSeam(
+  identity: MarketSeriesIdentity,
+  state: MarketReadState,
+): boolean {
+  if (
+    state.phase !== 'CLOSED'
+    || !state.operational
+    || state.trading_day === null
+    || identity.seriesKind !== 'actual_dominant'
+    || !INTRADAY_FREQUENCIES.has(identity.frequency)
+  ) return false
+  return state.after_market.last_successful_trading_day !== state.trading_day
+}
+
 function isMarketWsMessage(value: unknown): value is MarketWsMessage {
   if (!value || typeof value !== 'object' || !('type' in value)) return false
   const type = (value as { type?: unknown }).type
@@ -208,8 +222,12 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     }
   }
 
-  function stillNeedsLive(nextIdentity: MarketSeriesIdentity, nextState: MarketReadState): boolean {
-    return nextState.phase !== 'CLOSED' && isIdentityLiveCapable(nextIdentity, nextState)
+  function shouldKeepStateSocket(
+    nextIdentity: MarketSeriesIdentity,
+    nextState: MarketReadState,
+  ): boolean {
+    return isIdentityLiveCapable(nextIdentity, nextState)
+      || shouldAwaitAfterMarketSeam(nextIdentity, nextState)
   }
 
   async function refreshCanonicalEdge(
@@ -257,7 +275,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   }
 
   function openSocket(requestGeneration: number, nextIdentity: MarketSeriesIdentity): void {
-    if (!isCurrentGeneration(requestGeneration, generation) || !marketState.value || !stillNeedsLive(nextIdentity, marketState.value)) return
+    if (!isCurrentGeneration(requestGeneration, generation) || !marketState.value || !shouldKeepStateSocket(nextIdentity, marketState.value)) return
     const socket = createWebSocket(socketUrl(getWsURL(), nextIdentity, latestEnd(liveBars)))
     activeSocket = socket
     socket.onmessage = (event) => {
@@ -298,7 +316,13 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
           announcedCanonicalEnd,
         )
       }
-      if (!stillNeedsLive(nextIdentity, payload.state)) {
+      if (payload.state.phase === 'CLOSED' && canonicalRefresh) {
+        void canonicalRefresh.then(() => {
+          if (isCurrentGeneration(requestGeneration, generation) && socket === activeSocket) clearSocket()
+        })
+        return
+      }
+      if (!shouldKeepStateSocket(nextIdentity, payload.state)) {
         if (canonicalRefresh) {
           void canonicalRefresh.then(() => {
             if (isCurrentGeneration(requestGeneration, generation) && socket === activeSocket) clearSocket()
@@ -314,7 +338,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       if (!isCurrentGeneration(requestGeneration, generation) || socket !== activeSocket) return
       activeSocket = null
       liveUnavailable.value = true
-      if (!identity || !marketState.value || !stillNeedsLive(identity, marketState.value)) return
+      if (!identity || !marketState.value || !shouldKeepStateSocket(identity, marketState.value)) return
       reconnectHandle = scheduleReconnect(() => {
         reconnectHandle = null
         openSocket(requestGeneration, nextIdentity)
@@ -347,7 +371,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         const nextState = await fetchState(nextIdentity)
         if (!isCurrentGeneration(requestGeneration, generation)) return
         marketState.value = nextState
-        if (stillNeedsLive(nextIdentity, nextState)) openSocket(requestGeneration, nextIdentity)
+        if (shouldKeepStateSocket(nextIdentity, nextState)) openSocket(requestGeneration, nextIdentity)
       } catch {
         if (isCurrentGeneration(requestGeneration, generation)) liveUnavailable.value = true
       }
