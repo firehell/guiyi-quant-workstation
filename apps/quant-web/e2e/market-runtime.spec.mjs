@@ -74,8 +74,8 @@ async function mockMarketApi(page, requests) {
     requests.push(url)
     if (url.pathname.endsWith('/dominants')) {
       await route.fulfill({ json: { items: [
-        { product: 'ag', product_name: '白银', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-08-07' },
-        { product: 'jm', product_name: '焦煤', exchange: 'DCE', actual_contract: 'JM2601', dominant_mapping_date: '2026-08-07' },
+        { product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-08-07' },
+        { product: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', actual_contract: 'JM2601', dominant_mapping_date: '2026-08-07' },
       ] } })
       return
     }

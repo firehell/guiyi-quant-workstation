@@ -52,8 +52,8 @@ flowchart TB
 - `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
-- active 60 的一级研究板块由 `data/universe/product_sectors.csv` 统一提供，Market API 将
-  taxonomy 与 Instrument 名称一同输出；Web 不再保留第二套品种目录。
+- active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
+  Market API 直接输出该 taxonomy；Web 不再保留第二套品种目录。
 - PostgreSQL 保存八表 metadata/catalog，Parquet 保存 Bars；不引入多 provider、插件、任务中心或
   在线多版本选择器。
 

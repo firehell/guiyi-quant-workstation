@@ -5,9 +5,8 @@
 ## 当前结论
 
 - Market Runtime V1 已在本地工作站启用，持续运行范围严格固定为
-  `data/universe/operational_products.txt` 中的 `j/jm/ap/ag`。当前 API、Live 与 17:00 after-market
-  runner 绑定 clean/detached Runtime `fe3fb4e0`；Web 暂时直连主 `develop` 工作区。本轮
-  P0/P1 架构收口代码尚未切换到 Runtime。
+  `data/universe/operational_products.txt` 中的 `j/jm/ap/ag`。当前 API、Web、Live 与 17:00
+  after-market runner 均绑定 clean/detached Runtime `5ea04f1e`。
 - Runtime 只提供行情研究观察；Historical Canonical 与 Redis Live Overlay 分离，
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - MR-08 的 develop 自然 canary 和最终 Runtime 身份、拓扑、健康、范围复验已经完成。该结论不表示
@@ -15,6 +14,8 @@
 - Data Foundation 已完成 DFD-01～DFD-06，DFD-07 当前完整闭环为 **43/60**，剩余 **17** 个 active
   品种。全域 Canonical 验收仍未完成。
 - `retire-products` 已对退役名单 `br/cs/ic/if/ih/im/lu/nr/sp` 完成受控生产清退，事后 residual 为 0。
+- `5ea04f1e` 部署后读回发现 Instrument name 只有品种代码，Web 中文名称会退化；
+  修复已收口到 `develop` 的统一 display taxonomy，尚未再次切换 Runtime。
 
 ## 当前可执行面
 
@@ -52,6 +53,8 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker、旧 scheduler、自动交
 
 ## 最近验证事实
 
+- 2026-08-11 23:52 将 P0/P1 架构收口部署到 detached `5ea04f1e`；四个 launchd 根统一，
+  API/Web/Runtime health 可用，Live 仍为 `j/jm/ap/ag`，RQ 依赖与退役 label 已清除。
 - 2026-08-11 的开发态17:00自然盘后链对 `j/jm/ap/ag` 一次完成；四品种 Canonical 推进、rank1
   reconciliation、Live 清理和已打开页面的 seam 自动更新均通过。
 - 最终 Runtime 读回为 API/Web 可用、Runtime health `ok`、Live 范围4/4；真实浏览器历史分页从1200 bars

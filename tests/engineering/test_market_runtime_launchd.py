@@ -101,14 +101,28 @@ def test_confirm_install_retires_legacy_launch_agents(tmp_path: Path) -> None:
         assert f"bootout gui/{os.getuid()}/{label}" in calls
 
 
-def test_runtime_service_entrypoint_has_no_retired_worker_modes() -> None:
-    """已退役 worker 不再保留兼容 case；未知服务统一 fail-closed。"""
-    source = (REPO_ROOT / "scripts/ops/macos/run-local-service.sh").read_text(
-        encoding="utf-8"
-    )
+def test_runtime_service_entrypoint_treats_retired_workers_as_unknown(tmp_path: Path) -> None:
+    """已退役 worker 不再保留兼容 mode，并由未知服务分支统一 fail-closed。"""
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    environment = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "GUIYI_PROJECT_ROOT": str(repo),
+        "GUIYI_RUNTIME_ENV": str(tmp_path / "missing.env"),
+        "POSTGRES_PASSWORD": "test-only",
+    }
 
-    assert "worker-signals" not in source
-    assert "worker-notifications" not in source
+    for service in ("worker-signals", "worker-notifications"):
+        result = subprocess.run(
+            [str(repo / "scripts/ops/macos/run-local-service.sh"), service],
+            cwd=repo,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 2
+        assert result.stderr == f"[run-local-service] unknown service: {service}\n"
 
 
 def _copy_launchd_fixture(destination: Path) -> Path:

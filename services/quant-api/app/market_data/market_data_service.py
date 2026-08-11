@@ -41,7 +41,7 @@ from app.market_data.product_retirement import (
     is_retired,
     load_retired_products,
 )
-from app.market_data.product_taxonomy import load_product_sectors
+from app.market_data.product_taxonomy import load_product_taxonomy
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
 from app.models import Instrument, MainContractMap, MarketDataset, MarketPartition
 
@@ -507,7 +507,7 @@ class MarketDataService:
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         """返回每个品种最近一条主力映射（按 trade_date 降序取首条）。"""
         retired = load_retired_products()
-        sectors = load_product_sectors()
+        taxonomy = load_product_taxonomy()
         mappings = self.catalog.session.scalars(
             select(MainContractMap).order_by(
                 MainContractMap.symbol,
@@ -516,7 +516,7 @@ class MarketDataService:
         )
         latest: dict[str, MainContractMap] = {}
         for row in mappings:
-            if is_retired(row.symbol, retired=retired) or row.symbol not in sectors:
+            if is_retired(row.symbol, retired=retired) or row.symbol not in taxonomy:
                 continue
             latest.setdefault(row.symbol, row)
         instruments = {
@@ -525,12 +525,8 @@ class MarketDataService:
         return tuple(
             DominantContractSummary(
                 symbol=symbol,
-                product_name=(
-                    instruments[symbol].name
-                    if symbol in instruments
-                    else symbol.upper()
-                ),
-                sector=sectors[symbol],
+                product_name=taxonomy[symbol].name,
+                sector=taxonomy[symbol].sector,
                 exchange=(
                     instruments[symbol].exchange_code if symbol in instruments else ""
                 ),

@@ -104,7 +104,9 @@ def test_catalog_registers_minimal_month_partition(session, tmp_path) -> None:
     assert not hasattr(row, "manifest_path")
 
 
-def test_latest_dominants_uses_the_repository_sector_taxonomy(session, tmp_path) -> None:
+def test_latest_dominants_uses_repository_display_name_instead_of_provider_code(
+    session, tmp_path
+) -> None:
     catalog = MarketCatalog(session, tmp_path)
     session.add(Instrument(symbol="xx", name="legacy", exchange_code="DCE", is_active=False))
     catalog.upsert_main_contracts(
@@ -119,7 +121,7 @@ def test_latest_dominants_uses_the_repository_sector_taxonomy(session, tmp_path)
 
     assert len(items) == 1
     assert items[0].symbol == "jm"
-    assert items[0].product_name == "JM"
+    assert items[0].product_name == "焦煤"
     assert items[0].sector == "black"
 
 

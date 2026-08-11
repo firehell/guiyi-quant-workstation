@@ -25,7 +25,7 @@
 | 开发态部署拓扑 | 功能开发期可让本地 launchd 临时直接运行主 `develop` 工作区；最终验收重新创建绑定精确提交的独立 Runtime worktree | 不热更新；每次重载需新的一次性意图；develop 证据不等于 promotion 或最终 Runtime 证据 |
 | 交易安全 | `auto_order=false` 始终成立 | 任何研究结果、展示或通知都不是交易指令 |
 | active universe | 60 品种；退役含股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu` | 退役码精确硬拦截；生产清退另需单次意图 |
-| 品种展示 taxonomy | `product_sectors.csv` 覆盖 active 60，由 Market API 在 dominants 中返回板块；品种名称来自 Instrument metadata | Web 只保留板块标签，不复制品种名称/板块映射；未知板块只降级到 `other` |
+| 品种展示 taxonomy | `product_sectors.csv` 覆盖 active 60 的展示名称与板块，由 Market API 在 dominants 中返回 | Web 只保留板块标签，不复制品种名称/板块映射；未知板块只降级到 `other` |
 
 active 数据收口合同见 `docs/tasks/GY-DATA-CORE-V2.md`；品种退役合同见
 `docs/tasks/GY-DATA-PRODUCT-RETIREMENT-5.md`；当前实施与外部操作状态见 `STATUS.md`。
