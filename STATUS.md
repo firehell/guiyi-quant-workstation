@@ -78,6 +78,10 @@ NOOP。本轮修复了历史 Session metadata 续传、fixed-T0 同月后续 1m 
 随后 SHFE `ao` 在独立明确的单次执行意图下完成历史 Session metadata 同步及增量 Canonical
 补齐：`applied=12`、`provider_requests=4`、无失败；写后 audit passed，fixed-T0 dry-run 为 NOOP。
 生产 Catalog 分区数保持 20,300 个，完整闭环为 29/60，剩余 31 个 active 品种待重建。
+
+随后 `lh` 在独立明确的单次执行意图下完成中断后的 metadata 同步与 Canonical 续传：
+`applied=154`、`provider_requests=62`、无失败；写后 audit passed，fixed-T0 dry-run 为 NOOP。
+生产 Catalog 当前正式分区为 20,448 个，完整闭环为 30/60，剩余 30 个 active 品种待重建。
 `ap` 写入前的全域只读 audit 已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条
 finding，即当时 58 个未闭环品种各一条 `MAIN_CONTRACT_MAP_MISSING` 与
 `TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。Calendar、分区与物理可读性类别
