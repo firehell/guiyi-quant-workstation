@@ -36,7 +36,7 @@ PATH_FIXTURES = [
     ".github/workflows/optional-ci.yml",
     "services/quant-api/app/main.py",
     "apps/quant-web/src/App.vue",
-    "services/quant-api/app/market_data/service.py",
+    "services/quant-api/app/market_data/market_data_service.py",
     "packages/quant-core/guiyi_quant/indicators/htdy_strict.py",
     "services/quant-api/app/services/runtime_health.py",
     "services/quant-api/alembic/versions/z.py",

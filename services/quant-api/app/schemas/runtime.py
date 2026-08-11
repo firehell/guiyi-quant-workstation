@@ -14,39 +14,6 @@ class RuntimeComponentHealth(BaseModel):
     error_message: str | None = None
 
 
-class RuntimeRqQueueHealth(BaseModel):
-    """单个 RQ 队列的积压与 registry 计数。"""
-
-    name: str
-    status: str
-    queued_count: int = 0
-    started_count: int = 0
-    failed_count: int = 0
-    deferred_count: int = 0
-    scheduled_count: int = 0
-    worker_present: bool = False
-    error_type: str | None = None
-
-
-class RuntimeRqWorkerHealth(BaseModel):
-    """单个 RQ worker 及其监听队列列表。"""
-
-    name: str
-    state: str | None = None
-    queues: list[str] = Field(default_factory=list)
-
-
-class RuntimeRqHealth(BaseModel):
-    """RQ 子系统聚合（队列列表 + worker 覆盖）。"""
-
-    status: str
-    queues: list[RuntimeRqQueueHealth] = Field(default_factory=list)
-    worker_count: int = 0
-    workers: list[RuntimeRqWorkerHealth] = Field(default_factory=list)
-    error_type: str | None = None
-    error_message: str | None = None
-
-
 class RuntimeLiveMarketHealth(BaseModel):
     """Live V1 的短 TTL Redis heartbeat 快照。"""
 
@@ -90,7 +57,6 @@ class RuntimeHealthComponents(BaseModel):
 
     db: RuntimeComponentHealth
     redis: RuntimeComponentHealth
-    rq: RuntimeRqHealth
     live_market: RuntimeLiveMarketHealth
     after_market: RuntimeAfterMarketHealth
 

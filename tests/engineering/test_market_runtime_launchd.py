@@ -101,6 +101,16 @@ def test_confirm_install_retires_legacy_launch_agents(tmp_path: Path) -> None:
         assert f"bootout gui/{os.getuid()}/{label}" in calls
 
 
+def test_runtime_service_entrypoint_has_no_retired_worker_modes() -> None:
+    """已退役 worker 不再保留兼容 case；未知服务统一 fail-closed。"""
+    source = (REPO_ROOT / "scripts/ops/macos/run-local-service.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "worker-signals" not in source
+    assert "worker-notifications" not in source
+
+
 def _copy_launchd_fixture(destination: Path) -> Path:
     """Copy only installer inputs so mode tests cannot affect the real workstation."""
     for relative in (

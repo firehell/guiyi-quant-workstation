@@ -12,11 +12,9 @@ from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey
-from app.market_data.infrastructure import (
-    SHANGHAI,
-    DatabaseCoverageSource,
-    InfrastructureError,
-)
+from app.market_data.coverage_source import DatabaseCoverageSource
+from app.market_data.errors import InfrastructureError
+from app.market_data.session_clock import SHANGHAI
 from app.market_data.maintenance import (
     AuditRequest,
     BarBatch,
@@ -710,7 +708,7 @@ def test_refresh_apply_fails_closed_when_rank1_map_is_missing(session, tmp_path)
 def test_update_fails_before_provider_when_historical_session_facts_are_missing(
     session, tmp_path
 ) -> None:
-    from app.market_data.infrastructure import InfrastructureError
+    from app.market_data.errors import InfrastructureError
 
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     bar = _daily(2, 100)

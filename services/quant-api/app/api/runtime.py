@@ -1,6 +1,6 @@
 """Runtime 运维只读 API。
 
-暴露分层健康检查端点，聚合 DB/Redis/RQ 真实探测与已退役组件的 stub 状态。
+暴露分层健康检查端点，聚合 DB/Redis 真实探测与 Market Runtime 公开状态。
 """
 
 from __future__ import annotations

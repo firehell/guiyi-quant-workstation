@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.services.runtime_health import _apply_worker_coverage, build_runtime_health
+from app.services.runtime_health import build_runtime_health
 
 
 def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, tmp_path) -> None:
@@ -22,7 +22,6 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
             yield session
 
     monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
-    monkeypatch.setattr("app.services.runtime_health._collect_rq_health", lambda connection, **kwargs: _rq_ok())
     monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
     monkeypatch.setattr(
         "app.api.runtime.build_runtime_health",
@@ -41,7 +40,7 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     assert payload["would_start_services"] is False
     assert payload["would_enqueue_jobs"] is False
     assert payload["would_send_notifications"] is False
-    assert set(payload["components"]) == {"db", "redis", "rq", "live_market", "after_market"}
+    assert set(payload["components"]) == {"db", "redis", "live_market", "after_market"}
     assert payload["components"]["live_market"] == {
         "status": "disabled",
         "configured_enabled": False,
@@ -85,7 +84,6 @@ def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
         payload = build_runtime_health(
             session,
             redis_factory=lambda: redis,
-            rq_collector=lambda connection: _rq_ok(),
             now=now,
             live_runtime_enabled=True,
             after_market_status_path=None,
@@ -109,7 +107,6 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
         disabled = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
             now=now,
             live_runtime_enabled=False,
             after_market_status_path=None,
@@ -130,7 +127,6 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
                     )
                 }
             ),
-            rq_collector=lambda connection: _rq_ok(),
             now=now,
             live_runtime_enabled=True,
             live_freshness_seconds=300,
@@ -157,7 +153,6 @@ def test_runtime_health_is_disabled_before_local_market_runtime_activation(monke
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
             after_market_status_path=None,
         )
 
@@ -179,7 +174,6 @@ def test_runtime_health_uses_local_activation_marker_not_process_environment(mon
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
             after_market_status_path=None,
         )
 
@@ -198,7 +192,6 @@ def test_enabled_after_market_is_pending_before_its_first_runtime_run(tmp_path) 
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
             live_runtime_enabled=False,
             after_market_automation_enabled=True,
             after_market_status_path=missing_status,
@@ -225,7 +218,6 @@ def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_byte
             redis_factory=lambda: FakeRedis(
                 values={"live:heartbeat": b"\xff\xfetoken=must-not-leak"}
             ),
-            rq_collector=lambda connection: _rq_ok(),
             live_runtime_enabled=True,
             after_market_status_path=None,
         )
@@ -264,7 +256,6 @@ def test_runtime_health_surfaces_live_dominant_mismatch(tmp_path) -> None:
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
-            rq_collector=lambda connection: _rq_ok(),
             after_market_status_path=status_path,
         )
 
@@ -294,7 +285,6 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(exc=ConnectionError("redis password should-not-leak")),
-            rq_collector=lambda connection: _rq_ok(),
             now=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
             after_market_status_path=None,
         )
@@ -304,8 +294,6 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
     assert payload["components"]["redis"]["status"] == "failed"
     assert payload["components"]["redis"]["error_type"] == "ConnectionError"
     assert payload["components"]["redis"]["error_message"] is None
-    assert payload["components"]["rq"]["status"] == "failed"
-    assert payload["components"]["rq"]["error_type"] == "redis_unavailable"
     assert _contains_no_secret_words(payload)
 
 
@@ -318,24 +306,11 @@ def test_runtime_health_never_exposes_arbitrary_exception_messages() -> None:
             redis_factory=lambda: FakeRedis(
                 exc=ConnectionError("127.0.0.1 /private/runtime/catalog.db select internal_table")
             ),
-            rq_collector=lambda connection: _rq_ok(),
             after_market_status_path=None,
         )
 
     assert payload["components"]["redis"]["error_type"] == "ConnectionError"
     assert payload["components"]["redis"]["error_message"] is None
-
-
-def test_worker_coverage_requires_each_expected_queue() -> None:
-    queues = [{"name": "guiyi-signals", "status": "ok"}, {"name": "guiyi-notifications", "status": "ok"}]
-    workers = [{"name": "worker-1", "queues": ["guiyi-signals"]}]
-
-    missing = _apply_worker_coverage(queues, workers)
-
-    assert missing is True
-    assert queues[0]["worker_present"] is True
-    assert queues[1]["worker_present"] is False
-    assert queues[1]["error_type"] == "worker_missing"
 
 
 class FakeRedis:
@@ -361,17 +336,6 @@ def _session_factory():
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     return TestingSessionLocal
-
-
-def _rq_ok() -> dict:
-    return {
-        "status": "ok",
-        "queues": [],
-        "worker_count": 0,
-        "workers": [],
-        "error_type": None,
-        "error_message": None,
-    }
 
 
 def _contains_no_secret_words(payload: dict) -> bool:

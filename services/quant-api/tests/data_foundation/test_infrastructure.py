@@ -10,14 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.market_data.domain import DatasetKey
-from app.market_data import infrastructure
-from app.market_data.infrastructure import (
-    SHANGHAI,
-    DatabaseCoverageSource,
-    InfrastructureError,
-    RQDataClient,
-    RQDataMarketAdapter,
-)
+from app.market_data import rqdata_adapter
+from app.market_data.coverage_source import DatabaseCoverageSource
+from app.market_data.errors import InfrastructureError
+from app.market_data.rqdata_adapter import RQDataClient, RQDataMarketAdapter
+from app.market_data.session_clock import SHANGHAI
 from app.models import (
     Contract,
     Exchange,
@@ -655,7 +652,7 @@ def test_historical_session_coverage_rejects_missing_provider_context(tmp_path) 
     session, starts = _session(tmp_path)
     coverage = DatabaseCoverageSource(session, starts)
 
-    with pytest.raises(infrastructure.InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
+    with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
         coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
 
     session.close()
@@ -667,7 +664,7 @@ def test_historical_session_coverage_rejects_open_ended_current_hours_row(tmp_pa
     session.commit()
     coverage = DatabaseCoverageSource(session, starts)
 
-    with pytest.raises(infrastructure.InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
+    with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
         coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
 
     session.close()
@@ -680,7 +677,7 @@ def test_historical_session_coverage_requires_full_iso_week_calendar_context(tmp
     session.commit()
     coverage = DatabaseCoverageSource(session, starts)
 
-    with pytest.raises(infrastructure.InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
+    with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
         coverage.require_historical_session_facts(("jm",), date(2025, 1, 10))
 
     _add_provider_calendar_facts(session, date(2025, 1, 11), date(2025, 1, 12))
@@ -700,7 +697,7 @@ def test_rqdata_adapter_does_not_initialize_client_until_provider_read(
         def __init__(self) -> None:
             calls.append("init")
 
-    monkeypatch.setattr(infrastructure, "RQDataClient", LazyClient)
+    monkeypatch.setattr(rqdata_adapter, "RQDataClient", LazyClient)
     adapter = RQDataMarketAdapter(session=session)
 
     assert calls == []
@@ -831,7 +828,7 @@ def test_current_day_metadata_snapshot_fetches_bounded_next_day_calendar_context
                 ),
             )
 
-    client = object.__new__(infrastructure.RQDataClient)
+    client = object.__new__(rqdata_adapter.RQDataClient)
     client.api = Api()
 
     snapshot = client.current_day_metadata_snapshot(("jm",), current_day)
@@ -899,7 +896,7 @@ def test_current_day_metadata_snapshot_includes_next_trading_day_sessions() -> N
                 ),
             )
 
-    client = object.__new__(infrastructure.RQDataClient)
+    client = object.__new__(rqdata_adapter.RQDataClient)
     client.api = Api()
 
     snapshot = client.current_day_metadata_snapshot(("jm",), current_day)
@@ -928,7 +925,7 @@ def test_rqdatac_client_requests_unadjusted_bars() -> None:
             calls.append((order_book_id, kwargs))
             return pd.DataFrame()
 
-    client = object.__new__(infrastructure.RQDataClient)
+    client = object.__new__(rqdata_adapter.RQDataClient)
     client.api = Api()
 
     client.price("JM88", date(2025, 1, 2), date(2025, 1, 3), "1m")
@@ -937,7 +934,7 @@ def test_rqdatac_client_requests_unadjusted_bars() -> None:
 
 
 def test_rqdata_zero_date_sentinel_normalizes_to_none() -> None:
-    assert infrastructure._optional_date("0000-00-00") is None
+    assert rqdata_adapter._optional_date("0000-00-00") is None
 
 
 def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
@@ -992,7 +989,7 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
         def get_tick_size(self, order_book_id):
             return pd.Series({order_book_id: 0.5})
 
-    client = object.__new__(infrastructure.RQDataClient)
+    client = object.__new__(rqdata_adapter.RQDataClient)
     client.api = Api()
 
     snapshot = client.metadata_snapshot(
@@ -1060,7 +1057,7 @@ def test_rqdata_metadata_uses_historical_trading_period_facts_not_current_hours(
         def get_tick_size(self, order_book_id):
             return pd.Series({order_book_id: 0.5})
 
-    client = object.__new__(infrastructure.RQDataClient)
+    client = object.__new__(rqdata_adapter.RQDataClient)
     client.api = Api()
 
     snapshot = client.metadata_snapshot(
@@ -1162,7 +1159,7 @@ def test_product_start_applies_active_history_floor(tmp_path) -> None:
 
 
 def test_calendar_context_start_is_previous_natural_month() -> None:
-    from app.market_data.infrastructure import _calendar_context_start
+    from app.market_data.coverage_source import _calendar_context_start
 
     assert _calendar_context_start(date(2023, 1, 1)) == date(2022, 12, 1)
     assert _calendar_context_start(date(2023, 6, 19)) == date(2023, 5, 1)

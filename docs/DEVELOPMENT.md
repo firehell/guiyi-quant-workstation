@@ -4,7 +4,7 @@
 
 本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
 `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、信号和 Runtime 语义仍由
-`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only）。
+`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only，含有界 Historical/Live seam）。
 
 ## 唯一日常流程
 
@@ -89,8 +89,9 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 - 正式历史数据继续遵守 DatasetKey、八表 Catalog、MainContractMap、coverage/可读性和
   MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
 - 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
-- 保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`，live、Runtime promotion、
-  真实通知/autosend 默认关闭，历史处理不回放真实通知。
+- Signal/Review/Strategy 应用链已经退役；不得恢复旧事件表、RQ worker、通知 Gate 或历史补发路径。
+- Live、真实通知、Runtime switch/promotion 均受独立 Gate 约束；现有持续授权仅覆盖
+  `operational_products.txt` 的 Market Runtime 行为。
 - 所有输出都是研究观察，不是交易指令；`auto_order=false`，拒绝创建或提交订单。
 - 不读取、显示、提交或记录凭据；外部输入在命令、文件、网络或数据库敏感操作前完成校验。
 

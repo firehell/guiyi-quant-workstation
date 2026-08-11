@@ -17,7 +17,9 @@ import subprocess
 import time
 from typing import Any
 
-from app.market_data.infrastructure import InfrastructureError, RQDataClient, SHANGHAI
+from app.market_data.errors import InfrastructureError
+from app.market_data.rqdata_adapter import RQDataClient
+from app.market_data.session_clock import SHANGHAI
 from app.market_data.live_market import RedisLiveStore
 from app.market_data.maintenance import HistoricalDataManager, UpdateRequest
 from app.market_data.operational_universe import load_operational_products
@@ -251,7 +253,7 @@ def build_after_market_updater(manager: HistoricalDataManager) -> AfterMarketUpd
     if client is None:
         raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
     from app.market_data.live_market import RedisClient
-    from app.queue import get_redis_connection
+    from app.redis_connections import get_redis_connection
     from typing import cast
 
     return AfterMarketUpdater(

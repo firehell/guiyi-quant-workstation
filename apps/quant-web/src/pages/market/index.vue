@@ -7,7 +7,7 @@ import { getMarketDominants } from '@/api/market'
 import type { DominantContractItem } from '@/types/market'
 import {
   DEFAULT_PRODUCT_SECTOR,
-  describeProduct,
+  normalizeProductSector,
   PRODUCT_SECTORS,
   type ProductSector,
 } from '@/utils/productDirectory'
@@ -19,16 +19,16 @@ const dominants = ref<DominantContractItem[]>([])
 const selectedSector = ref<ProductSector>(DEFAULT_PRODUCT_SECTOR)
 
 const availableSectors = computed(() => PRODUCT_SECTORS.filter((sector) =>
-  dominants.value.some((row) => describeProduct(row.product, row.product_name).sector === sector.id),
+  dominants.value.some((row) => normalizeProductSector(row.sector) === sector.id),
 ))
 
 const sectorRows = (sector: ProductSector) => dominants.value.filter(
-  (row) => describeProduct(row.product, row.product_name).sector === sector,
+  (row) => normalizeProductSector(row.sector) === sector,
 )
 
 const columns: DataTableColumns<DominantContractItem> = [
   { title: '品种', key: 'product', width: 90, render: (row) => row.product.toUpperCase() },
-  { title: '名称', key: 'product_name', minWidth: 130, render: (row) => describeProduct(row.product, row.product_name).name },
+  { title: '名称', key: 'product_name', minWidth: 130, render: (row) => row.product_name || row.product.toUpperCase() },
   { title: '交易所', key: 'exchange', width: 110 },
   { title: 'rank1 真实合约', key: 'actual_contract', width: 150 },
   { title: '映射交易日', key: 'dominant_mapping_date', width: 140 },

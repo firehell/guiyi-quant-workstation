@@ -33,8 +33,8 @@ uv run --project services/quant-api mypy --explicit-package-bases --ignore-missi
   services/quant-api/app/api/market.py \
   services/quant-api/app/api/market_live.py
 
-npm --prefix apps/quant-web test
-npm --prefix apps/quant-web run build
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web build
 ```
 
 ## Market Runtime V1 验证分级

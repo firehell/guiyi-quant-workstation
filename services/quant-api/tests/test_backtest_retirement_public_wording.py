@@ -6,7 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 def test_active_public_surfaces_do_not_promise_retired_backtesting() -> None:
     active_public_sources = (
-        PROJECT_ROOT / "services/quant-api/app/market_data/service.py",
+        PROJECT_ROOT / "services/quant-api/app/market_data/market_data_service.py",
         PROJECT_ROOT / "apps/quant-web/src/api/market.ts",
         PROJECT_ROOT / "apps/quant-web/src/pages/market/index.vue",
     )

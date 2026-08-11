@@ -44,7 +44,6 @@ def _baseline_inventory() -> list[str]:
         "post-reboot-verify.sh",
         "rotate-local-service-logs.sh",
         "run-local-service.sh",
-        "server-recover.sh",
     ):
         paths.append(f"scripts/{name}")
     paths.append("scripts/server-status.sh")
@@ -82,7 +81,7 @@ def _baseline_inventory() -> list[str]:
             "scripts/jm_eod_automation_gate.py",
         ]
     )
-    assert len(paths) == 145
+    assert len(paths) == 144
     return paths
 
 
@@ -122,7 +121,7 @@ def test_property_17_disposition_manifest_is_total_partition(mutate: str) -> Non
             if item.disposition is disposition.Disposition.MOVE
         )
         delete_or_replace = len(report.assignments) - keep - move
-        assert (keep, move, delete_or_replace) == (9, 14, 122)
+        assert (keep, move, delete_or_replace) == (9, 13, 122)
     else:
         assert not report.ok
 

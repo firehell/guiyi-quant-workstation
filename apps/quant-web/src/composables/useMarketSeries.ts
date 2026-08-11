@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { resolveWsURL } from '../utils/network.ts'
+import { normalizeBarSeries } from '../utils/barSeries.ts'
 import type {
   BarData,
   CanonicalBarDto,
@@ -64,15 +65,9 @@ function toBarData(item: CanonicalBarDto): BarData {
   }
 }
 
-function sortAndDedupeBars(items: BarData[]): BarData[] {
-  const byEnd = new Map<string, BarData>()
-  for (const item of items) byEnd.set(item.time, item)
-  return [...byEnd.values()].sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
-}
-
 export function mergeInitialPage(page: MarketBarsPageResponse): MergedMarketPage {
   return {
-    bars: sortAndDedupeBars(page.bars.map(toBarData)),
+    bars: normalizeBarSeries(page.bars.map(toBarData)),
     hasMoreBefore: page.page.has_more_before,
     nextBefore: page.page.next_before,
   }
@@ -83,7 +78,7 @@ export function prependHistoricalPage(
   page: MarketBarsPageResponse,
 ): MergedMarketPage {
   return {
-    bars: sortAndDedupeBars([...page.bars.map(toBarData), ...current]),
+    bars: normalizeBarSeries([...page.bars.map(toBarData), ...current]),
     hasMoreBefore: page.page.has_more_before,
     nextBefore: page.page.next_before,
   }
@@ -206,7 +201,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   function publishMerged(nextMutation: MarketSeriesMutation): void {
     const seam = latestEnd(canonicalBars)
     liveBars = liveBars.filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam))
-    bars.value = sortAndDedupeBars([...canonicalBars, ...liveBars])
+    bars.value = normalizeBarSeries([...canonicalBars, ...liveBars])
     mutation.value = nextMutation
   }
 
@@ -249,7 +244,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         return false
       }
       const freshStart = fresh[0].time
-      canonicalBars = sortAndDedupeBars([
+      canonicalBars = normalizeBarSeries([
         ...canonicalBars.filter((bar) => Date.parse(bar.time) < Date.parse(freshStart)),
         ...fresh,
       ])
@@ -268,9 +263,9 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
 
   function applyLiveBars(incoming: CanonicalBarDto[]): void {
     const seam = latestEnd(canonicalBars)
-    const accepted = sortAndDedupeBars(incoming.map(toBarData).filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam)))
+    const accepted = normalizeBarSeries(incoming.map(toBarData).filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam)))
     if (!accepted.length) return
-    liveBars = sortAndDedupeBars([...liveBars, ...accepted])
+    liveBars = normalizeBarSeries([...liveBars, ...accepted])
     publishMerged({ kind: 'live', bars: accepted })
   }
 

@@ -36,7 +36,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined
     : {
-        command: `npm run dev -- --host 127.0.0.1 --port ${e2ePort}`,
+        command: `pnpm dev --host 127.0.0.1 --port ${e2ePort}`,
         url: e2eBaseURL,
         // An arbitrary local server can belong to another worktree; fail rather than test stale source.
         reuseExistingServer: false,

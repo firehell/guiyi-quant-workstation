@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Ordered disposition validator for tracked ``scripts/**`` paths.
 
-Design baseline: 145 paths → 9 keep / 14 move / 122 replace-or-delete.
+Design baseline: 144 paths → 9 keep / 13 move / 122 replace-or-delete.
 The validator regenerates ``git ls-files scripts/**`` and fails on drift,
 overlap, or unmatched paths. Protected resources never enter deletion plans.
 """
@@ -16,9 +16,9 @@ import subprocess
 from typing import Iterable, Sequence
 
 
-DESIGN_BASELINE_TOTAL = 145
+DESIGN_BASELINE_TOTAL = 144
 DESIGN_KEEP = 9
-DESIGN_MOVE = 14
+DESIGN_MOVE = 13
 DESIGN_DELETE_OR_REPLACE = 122
 
 FINAL_LAYOUT = (
@@ -41,7 +41,6 @@ FINAL_LAYOUT = (
     "scripts/ops/macos/post-reboot-verify.sh",
     "scripts/ops/macos/rotate-local-service-logs.sh",
     "scripts/ops/macos/run-local-service.sh",
-    "scripts/ops/macos/server-recover.sh",
     "scripts/ops/network/local-tunnel-healthcheck.sh",
     "scripts/ops/network/public-healthcheck.sh",
     "scripts/ops/network/tunnel-healthcheck.sh",
@@ -84,7 +83,6 @@ MOVE_MAP = {
     "scripts/post-reboot-verify.sh": "scripts/ops/macos/post-reboot-verify.sh",
     "scripts/rotate-local-service-logs.sh": "scripts/ops/macos/rotate-local-service-logs.sh",
     "scripts/run-local-service.sh": "scripts/ops/macos/run-local-service.sh",
-    "scripts/server-recover.sh": "scripts/ops/macos/server-recover.sh",
     "scripts/server-status.sh": "scripts/ops/linux/server-status.sh",
     "scripts/local-tunnel-healthcheck.sh": "scripts/ops/network/local-tunnel-healthcheck.sh",
     "scripts/public-healthcheck.sh": "scripts/ops/network/public-healthcheck.sh",
@@ -133,7 +131,6 @@ MACOS_EXACT = (
     "scripts/post-reboot-verify.sh",
     "scripts/rotate-local-service-logs.sh",
     "scripts/run-local-service.sh",
-    "scripts/server-recover.sh",
 )
 
 
@@ -158,7 +155,7 @@ def disposition_rules() -> tuple[DispositionRule, ...]:
             order=3,
             name="macos_ops",
             disposition=Disposition.MOVE,
-            expected_count=6,
+            expected_count=5,
             exact=MACOS_EXACT,
             target_dir="scripts/ops/macos/",
         ),

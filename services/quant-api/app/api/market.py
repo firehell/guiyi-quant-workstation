@@ -21,7 +21,7 @@ from app.market_data.domain import (
     SeriesPageQuery,
     SeriesQuery,
 )
-from app.market_data.service import MarketDataError
+from app.market_data.market_data_service import MarketDataError
 from app.schemas.market import (
     ContractSegmentOut,
     CoverageOut,
@@ -176,6 +176,7 @@ def market_dominants(session: Session = Depends(get_db)) -> DominantContractList
             DominantContractOut(
                 product=item.symbol,
                 product_name=item.product_name,
+                sector=item.sector,
                 exchange=item.exchange,
                 actual_contract=item.actual_contract,
                 dominant_mapping_date=item.dominant_mapping_date,

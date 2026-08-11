@@ -33,7 +33,7 @@ RQData
 - 物理 Dataset 只有 `continuous` 和 `contract`；`actual_dominant` 在查询时按 rank1
   `MainContractMap` 拼接。
 - 每 Dataset 每自然月只保留一个 `part.parquet`。可用性由完整 coverage、row count 和文件可读性
-  确定；不维护第二套发布、缺口或内容摘要状态。
+  确定；不维护第二套发布、缺口或 checksum/digest 内容摘要状态。
 - 所有消费者共用 `MarketDataService`，不得 glob、自选文件、自判主力或跨频回退。
 
 最终用户接口为 `guiyi data update|refresh|audit|retire-products` 与 `/api/v1/market/*`。Market Runtime

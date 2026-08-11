@@ -1,7 +1,4 @@
-"""Redis 连接工厂，供 RQ 健康探测与（历史）队列基础设施复用。
-
-当前无活跃业务队列；``RUNTIME_QUEUE_NAMES`` 为空时 RQ 健康仅报告 worker 列表。
-"""
+"""Market Runtime 使用的同步/异步 Redis 连接工厂。"""
 
 from __future__ import annotations
 
@@ -18,7 +15,7 @@ def get_redis_connection() -> Redis:
 
 
 def get_async_redis_connection():
-    """为 WebSocket 路径新建异步 Redis 客户端；不创建 RQ queue。"""
+    """为 WebSocket 路径新建异步 Redis 客户端。"""
     from redis.asyncio import Redis as AsyncRedis
 
     return AsyncRedis.from_url(REDIS_URL, decode_responses=True)

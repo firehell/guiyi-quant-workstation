@@ -48,11 +48,14 @@ curl -i http://127.0.0.1:5173/
 curl -i http://127.0.0.1:8000/api/health
 ```
 
-如受监督服务未加载，只能在明确确认后运行：
+如受监督服务未加载，先只读确认具体缺失目标：
 
 ```bash
-./scripts/ops/macos/server-recover.sh --confirm-production-restart
+./scripts/ops/macos/local-services-status.sh
 ```
+
+随后按 `TESTING.md` 对单个目标服务取得范围明确的一次性重载意图；不得用聚合恢复命令同时执行
+数据库迁移、Web build 与多服务切换。
 
 腾讯云 ECS：
 

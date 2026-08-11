@@ -1,4 +1,4 @@
-"""市场数据查询服务（数据核心 V2 唯一历史读入口）。
+"""MarketDataService：数据核心 V2 唯一历史读入口。
 
 ``MarketDataService`` 是消费者（Market API、CLI 等）访问 canonical 数据的**唯一门面**：
 - 物理序列（``continuous`` / ``contract``）：经八表 Catalog 定位月分区，再读 Parquet；
@@ -41,6 +41,7 @@ from app.market_data.product_retirement import (
     is_retired,
     load_retired_products,
 )
+from app.market_data.product_taxonomy import load_product_sectors
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
 from app.models import Instrument, MainContractMap, MarketDataset, MarketPartition
 
@@ -76,6 +77,7 @@ class DominantContractSummary:
 
     symbol: str
     product_name: str
+    sector: str
     exchange: str
     actual_contract: str
     dominant_mapping_date: date
@@ -505,6 +507,7 @@ class MarketDataService:
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         """返回每个品种最近一条主力映射（按 trade_date 降序取首条）。"""
         retired = load_retired_products()
+        sectors = load_product_sectors()
         mappings = self.catalog.session.scalars(
             select(MainContractMap).order_by(
                 MainContractMap.symbol,
@@ -513,7 +516,7 @@ class MarketDataService:
         )
         latest: dict[str, MainContractMap] = {}
         for row in mappings:
-            if is_retired(row.symbol, retired=retired):
+            if is_retired(row.symbol, retired=retired) or row.symbol not in sectors:
                 continue
             latest.setdefault(row.symbol, row)
         instruments = {
@@ -527,6 +530,7 @@ class MarketDataService:
                     if symbol in instruments
                     else symbol.upper()
                 ),
+                sector=sectors[symbol],
                 exchange=(
                     instruments[symbol].exchange_code if symbol in instruments else ""
                 ),

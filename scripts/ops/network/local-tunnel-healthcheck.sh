@@ -77,7 +77,7 @@ main() {
   printf '\n'
   if [[ "$failures" -gt 0 ]]; then
     info "overall=failed ($failures checks)"
-    info "修复: ./scripts/ops/macos/server-recover.sh --confirm-production-restart；确认本地通过后再人工重启 frpc"
+    info "修复: 先运行 ./scripts/ops/macos/local-services-status.sh；任何服务重载须按目标服务取得单次明确意图"
     exit 1
   fi
   info "overall=passed"

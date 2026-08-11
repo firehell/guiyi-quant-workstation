@@ -17,7 +17,7 @@ from app.market_data.live_market import LiveMarketService, RedisLiveStore
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.main import app
 from app.market_data.domain import CanonicalBar
-from app.market_data.market_read import MarketReadState
+from app.market_data.market_read_service import MarketReadState
 
 
 def _bar(minute: int) -> CanonicalBar:

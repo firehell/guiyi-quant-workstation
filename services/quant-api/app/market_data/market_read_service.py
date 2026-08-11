@@ -1,4 +1,4 @@
-"""Market Web 的统一只读模型：Canonical 历史与瞬态 Live overlay 严格分层。"""
+"""MarketReadService：Canonical 历史与瞬态 Live overlay 的统一只读模型。"""
 
 from __future__ import annotations
 

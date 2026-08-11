@@ -40,7 +40,7 @@ sudo systemctl reload nginx
 # Mac mini
 ./scripts/ops/macos/local-services-status.sh
 ./scripts/ops/network/local-tunnel-healthcheck.sh
-./scripts/ops/macos/server-recover.sh --confirm-production-restart
+# 服务重载按 TESTING.md 分目标执行，不使用聚合恢复脚本
 
 # Tencent ECS
 ./scripts/ops/network/tunnel-healthcheck.sh

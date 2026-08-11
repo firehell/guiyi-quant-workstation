@@ -4,7 +4,9 @@ import pytest
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.operational_universe import (
+    ActiveUniverseError,
     OperationalUniverseError,
+    load_active_products,
     load_operational_products,
 )
 
@@ -13,6 +15,33 @@ def _write_universe(tmp_path, values: tuple[str, ...]):
     path = tmp_path / "operational_products.txt"
     path.write_text("\n".join(values) + "\n", encoding="utf-8")
     return path
+
+
+def test_loads_exact_active_products_from_the_canonical_file() -> None:
+    products = load_active_products()
+
+    assert len(products) == 60
+    assert len(set(products)) == 60
+    assert products[0] == "a"
+    assert products[-1] == "zn"
+
+
+def test_rejects_an_incomplete_active_universe(tmp_path) -> None:
+    path = tmp_path / "active_products.txt"
+    path.write_text("j\njm\n", encoding="utf-8")
+
+    with pytest.raises(ActiveUniverseError, match="ACTIVE_UNIVERSE_INVALID"):
+        load_active_products(path)
+
+
+def test_rejects_retired_products_in_the_active_universe(tmp_path) -> None:
+    active = list(load_active_products())
+    active[-1] = "sp"
+    path = tmp_path / "active_products.txt"
+    path.write_text("\n".join(active) + "\n", encoding="utf-8")
+
+    with pytest.raises(ActiveUniverseError, match="ACTIVE_UNIVERSE_INVALID"):
+        load_active_products(path)
 
 
 def test_loads_exact_operational_products_in_configured_order() -> None:

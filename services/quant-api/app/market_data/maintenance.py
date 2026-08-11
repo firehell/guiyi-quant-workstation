@@ -11,7 +11,7 @@ HistoricalDataManager
     调用 store.publish 完成 staging 六项硬校验与 part.parquet 原子替换，再 register_partition
     并 strict_verify 读回。apply=False 时只返回 planned 窗口，不写库与文件。
 
-CoverageSource（Protocol，实现见 infrastructure.DatabaseCoverageSource）
+CoverageSource（Protocol，实现见 coverage_source.DatabaseCoverageSource）
     从交易所日历、会话模板与品种窗口推导「应有 bar_end」序列；不读 Parquet、不拉行情。
     maintenance 用它判断缺口、会话窗口与 metadata 是否齐备；缺口不得在此层静默填充。
 
@@ -49,7 +49,7 @@ from app.market_data.domain import (
     SeriesQuery,
 )
 from app.market_data.product_retirement import assert_products_not_retired
-from app.market_data.service import MarketDataService, MarketDataError
+from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import (
     CanonicalMonthlyStore,
     PublishRequest,

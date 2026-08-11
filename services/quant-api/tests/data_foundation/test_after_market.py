@@ -5,7 +5,7 @@ import logging
 from datetime import date, datetime
 
 from app.market_data.after_market import AfterMarketUpdater, public_after_market_status
-from app.market_data.infrastructure import InfrastructureError
+from app.market_data.errors import InfrastructureError
 from app.market_data.maintenance import MaintenanceResult
 
 

@@ -2,197 +2,63 @@
 
 更新时间：2026-08-11
 
-## 结论
+## 当前结论
 
-Market Runtime V1 已按本地工作站的明确请求启用，持续运行范围严格固定为 operational
-`j/jm/ap/ag` 4/4；API、Web、RQData Live 与 17:00 runner 由 launchd 加载。最终 Runtime 已切换到
-`/Volumes/扩展盘/GuiyiRuntime/guiyi-quant-workstation-runtime`，该 worktree clean、detached 于
-`fe3fb4e0`。API/Web/Live/after-market 的安装根全部指向该 exact commit；旧 develop
-`web-recovery`、两个 signals worker 与 `api-recovery-single` 已卸载且 plist 已移除。
-`auto_order=false` 与无订单边界不变。
+- Market Runtime V1 已在本地工作站启用，持续运行范围严格固定为
+  `data/universe/operational_products.txt` 中的 `j/jm/ap/ag`。当前 API、Live 与 17:00 after-market
+  runner 绑定 clean/detached Runtime `fe3fb4e0`；Web 暂时直连主 `develop` 工作区。本轮
+  P0/P1 架构收口代码尚未切换到 Runtime。
+- Runtime 只提供行情研究观察；Historical Canonical 与 Redis Live Overlay 分离，
+  `auto_order=false`，仓库不存在订单创建或提交路径。
+- MR-08 的 develop 自然 canary 和最终 Runtime 身份、拓扑、健康、范围复验已经完成。该结论不表示
+  release、`main` 合并或新的 Runtime promotion。
+- Data Foundation 已完成 DFD-01～DFD-06，DFD-07 当前完整闭环为 **43/60**，剩余 **17** 个 active
+  品种。全域 Canonical 验收仍未完成。
+- `retire-products` 已对退役名单 `br/cs/ic/if/ih/im/lu/nr/sp` 完成受控生产清退，事后 residual 为 0。
 
-MR-08 开发态自然 canary 已通过日盘与盘后核心链路：10:15 自然进入 BREAK、10:31 自动恢复，既有
-11:30 BREAK / 13:33 自然恢复证据继续有效；actual_dominant 的 15m/30m/60m、current rank1
-contract Live、continuous Historical-only、夜盘 trading_day 和 Live/Canonical 隔离均已通过。
-2026-08-11 的 17:00 launchd 在验收时 clean 的 `develop@839d11ad` 上于 17:00:05 自然启动、
-17:05:21 一次完成，`runs=1`、退出码 0、`status=passed`、`error_code=null`，范围仅为
-`j/jm/ap/ag`。运行前正式 MainContractMap 与 Live snapshot 均为
-`J2609/JM2609/AP2610/AG2610`；运行后四品种 actual_dominant 15m Canonical 均推进到
-`2026-08-11T07:00:00Z`，当日 Live subscription 与 20 个 Live bar key 已清理。一直保持打开的
-AG2610 actual_dominant 15m 页面未手工刷新即从 1200 bars / `2026-08-10T07:00:00Z` 自动更新为
-1237 bars / `2026-08-11T07:00:00Z`，浏览器控制台无 warning/error；Runtime health 随后全部为
-`ok`。随后在同一真实页面连续拖拽加载更早历史，bars 从 1237 增至 24037，coverage 起点进入
-`2023-11-20T01:46:00Z`，终点始终保持 `2026-08-11T07:00:00Z`；图表容器为 1173×620，分页过程中
-无错误、视口跳回或 console warning/error，真实浏览器左拖加载到 2023 年通过。
+## 当前可执行面
 
-MR-08 按用户明确的“不重复采证”口径完成：上述 develop 自然 canary 作为一次性功能证据沿用；最终
-Runtime 只复验 exact identity、拓扑、健康和范围。2026-08-11 19:05 的最终读回为 API/Web 200、
-Runtime health `ok`、Live `CLOSED:4`，生产数据库模拟 21:05 为 J/JM/AG `TRADING`、AP `CLOSED`，
-不再出现 `UNKNOWN`。8 月 12 日 Session 为 AG 4、AP 3、J 4、JM 4 段；未来 MainContractMap 未提前
-发布，Dataset/Partition 计数保持 `4701/24064`。新 worktree 不迁移旧盘后状态，启用后的首跑前状态
-稳定为 `pending`。周末 CLOSED/Historical 与自然 `non_trading_day skipped` 未形成现场证据，按用户
-明确决定从最终重复验收中豁免，不冒充自然观察。MR-08 的完成不表示 release、`main` 合并或 Runtime promotion。
+- Web：Market 列表与 K 线工作台。
+- HTTP：Canonical bars/page、coverage、dominants、Historical/Live state 与 WebSocket、只读 Runtime health。
+- CLI：`guiyi data update|refresh|audit|retire-products|after-market`、`guiyi runtime status|live`。
+- Runtime 持续授权只覆盖 `j/jm/ap/ag` 的当日 rank1 completed 1m Live，以及 17:00/最多一次一小时后
+  retry 的同范围盘后更新。
 
-2026-08-10 首次受控盘后重跑在 20:01～21:02 完成两次尝试并安全失败，没有第三次重试。另一次
-18:22～19:22 的真实最终失败链已形成 macOS 通知证据：状态于 19:22:22.657 写完，统一日志在
-19:22:22.799 记录 `osascript` 启动，并在 19:22:22.845 记录 NotificationCenter 接收
-`com.apple.ScriptEditor2` 通知事件且 `interruptionSuppression=none`。该证据证明最终失败会自动送达
-本机通知，不冒充 17:00 自然调度证据；17:00 自然触发已由 2026-08-11 成功链独立验收。原始
-RQData readiness MultiIndex 解析缺陷已修复；继续诊断确认阻塞来自当天 metadata 仅写单日 Calendar，
-而周频完整性门禁要求覆盖到 ISO 周日。当前受限同步的 Calendar 覆盖到 ISO 周日或下一交易日，
-Session 写当天与下一交易日，rank-1 MainContractMap 仍只写当天。用户随后给出新的单次执行意图，21:28～21:33 的第二次受控重跑
-使用 Runtime `44ca152e` 在首次尝试成功，`last_successful_trading_day=2026-08-10`、`last_failure=null`。
-J/JM/AP/AG 的 continuous 1m Canonical 边缘均前进到 `2026-08-10T07:00:00Z`，四品种写后 audit
-均为 passed/0 findings，Runtime API、Web、Redis、RQ、Live 与 after_market 健康均为 ok。本轮代码
-验证为后端与工程测试 2626 passed / 20 skipped、定向 Runtime/Data Foundation 257 passed、Ruff 通过。
+已退役且不得恢复为兼容入口：backtest API/Web/worker/queue、Signal/Review/Strategy
+HTTP·Web·worker、data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单。
 
-Data Foundation 已完成 **DFD-01～DFD-06**，并已进入 **DFD-07**：生产 PostgreSQL 已从
-`20260808_0035` 升级至最终不可逆 `20260808_0036`，盘点范围内的旧正式数据已删除。固定
-`T0=2026-08-07` 的 J/JM 重建均已完整闭环：J 已发布 686 个正式月分区（continuous 308、真实合约
-378），JM 已发布 678 个正式月分区（continuous 308、真实合约 370）；两品种的 `update` dry-run
-均为 NOOP、audit 均通过，Catalog 与物理 Parquet 已完成只读验收。JM 的
-`MarketDataService` continuous / contract / actual_dominant 有界读回亦已通过。此前周线与 Derived
-开放月 Session 上界缺陷已修复；JM 补齐两个周线 Direct 与四个 Derived 分区的受控执行成功完成
-（2 次 provider 请求、6 个分区发布）。`ap` 写入前其余 58 个 active 品种尚无正式 Canonical 分区，且
-历史 Session facts 未完整；随后 CZCE `ap` 在精确单次执行意图下完整闭环，发布 685 个正式月分区
-（continuous 308、真实合约 377）。`ap` 的 fixed-T0 dry-run 为 NOOP、audit 通过，且
-`MarketDataService` 已对七周期的 continuous / contract / actual_dominant 完成只读回检。随后 SHFE
-`ag` 在精确单次执行意图下完成 metadata 同步和 Canonical 重建，发布 748 个正式月分区
-（continuous 308、真实合约 440）；写后 audit 通过、fixed-T0 dry-run 为 NOOP，Catalog 与物理
-Parquet 均可读。AG 的分钟与 Derived `actual_dominant` 曾在首根夜盘 bar 前一微秒的合法查询边界把
-前一自然日错当映射日；仓库内修复后，早期、最近与跨换月的七周期 continuous / contract /
-actual_dominant 共 21 组同窗口读回全部通过。随后 INE `ec` 在精确单次执行意图下完成 metadata
-同步和 Canonical 重建，发布 613 个正式月分区（continuous 259、真实合约 354）；写后 audit 通过、
-fixed-T0 dry-run 为 NOOP，且早期、最近与跨换月的七周期 continuous / contract / actual_dominant
-共 21 组同窗口读回全部通过。生产正式分区现为 3,410 个，数据资产与完整闭环验收均为 5/60，剩余
-55 个 active 品种待重建。随后 GFEX `lc` 在精确单次执行意图下完成 metadata 同步和 Canonical
-重建，发布 602 个正式月分区（continuous 266、真实合约 336）；写后 audit 通过、fixed-T0 dry-run
-为 NOOP，且早期、最近与跨换月的七周期 continuous / contract / actual_dominant 共 21 组同窗口读回
-全部通过。随后 `pd` 在独立精确单次执行意图下完成 metadata 同步和 Canonical 重建，发布 154 个正式
-月分区（continuous 70、真实合约 84）；写后 audit 通过、fixed-T0 dry-run 为 NOOP，且早期、最近与
-跨换月的七周期 continuous / contract / actual_dominant 共 21 组同窗口读回全部通过。随后 `pt` 在独立
-精确单次执行意图下完成 metadata 同步和 Canonical 重建，发布 154 个正式月分区（continuous 70、真实
-合约 84）；写后 audit 通过、fixed-T0 dry-run 为 NOOP，且早期、最近与跨换月的七周期 continuous /
-contract / actual_dominant 共 21 组同窗口读回全部通过。随后 `pl` 在独立精确单次执行意图下完成
-metadata 同步和 Canonical 重建，发布 233 个正式月分区（continuous 98、真实合约 135）；写后 audit
-通过、fixed-T0 dry-run 为 NOOP，且早期、最近与跨换月的七周期 continuous / contract /
-actual_dominant 共 21 组同窗口读回全部通过。随后 `bz` 在独立精确单次执行意图下完成 metadata 同步和
-Canonical 重建，发布 238 个正式月分区（continuous 98、真实合约 140）；写后 audit 通过、fixed-T0
-dry-run 为 NOOP，且早期、最近与跨换月的七周期 continuous / contract / actual_dominant 共 21 组同
-窗口读回全部通过。随后 `ps` 在独立精确单次执行意图下完成 metadata 同步和 Canonical 重建，发布 350 个
-正式月分区（continuous 147、真实合约 203）；写后 audit 通过、fixed-T0 dry-run 为 NOOP，且早期、
-最近与跨换月的七周期 continuous / contract / actual_dominant 共 21 组同窗口读回全部通过。生产正式
-分区现为 5,141 个，数据资产与完整闭环验收均为 11/60，剩余 49 个 active 品种待重建。随后 `pr` 在
-两次独立精确单次执行意图下完成 metadata 同步、Canonical 重建及中断后补齐，最终发布 442 个正式月
-分区（continuous 175、真实合约 267）；写后 audit 通过、fixed-T0 dry-run 为 NOOP，且七周期三模式
-共 21 组读回全部通过。随后 `px` 在独立明确单次意图下完成 Canonical 重建，最终形成 576 个正式月
-分区（continuous 252、真实合约 324）；写后 audit 为 passed、fixed-T0 dry-run 为 NOOP，且早期、最近与
-跨换月的七周期 continuous / contract / actual_dominant 共 21 组读回全部通过。生产正式分区现为
-6,159 个，数据资产与完整闭环验收均为 13/60，剩余 47 个 active 品种待重建。60 品种重建及全域
-Canonical 验收仍未完成。
+## 已冻结的数据合同
 
-2026-08-11 完成 `ao` 之外的本轮 15 个已同步品种闭环：`au b bu c cf cj cu eb eg fg fu hc i jd l`。
-其中 `b/bu/c/cf/cj/cu/eb/eg/fg/fu/hc/i/jd/l` 的当前 audit 均为 passed、fixed
-`T0=2026-08-07` dry-run 均为 NOOP；`au` 经受控恢复至 2026-08-10 后同样 audit passed / fixed-T0
-NOOP。本轮修复了历史 Session metadata 续传、fixed-T0 同月后续 1m 聚合，以及窄 fixed-T0 窗口
-不得覆盖较新同月 Canonical 的维护语义。生产 Catalog 当前正式分区为 20,300 个，完整闭环为
-28/60，剩余 32 个 active 品种待重建；全域 Canonical 验收仍未完成。
-随后 `a/al/ao/lh/m/ma/ni/oi/p` 均已完成受控收口：`a/al/ma/ni/oi` 各补齐 12 个
-2026-08-10 目标后通过 audit 与 fixed-T0 NOOP；`ao/lh/m` 的更新为 NOOP 且通过同样验收；`p`
-从部分状态续传并成功发布 428 个目标（172 次 provider 请求、零失败），写后 audit 为
-passed/0 findings、fixed `T0=2026-08-07` dry-run 为 NOOP。当前完整闭环为 **37/60**，剩余
-**23** 个 active 品种待重建；全域 Canonical 验收仍未完成。
-随后 `pb/pf/pg/pk/pp` 均补齐 12 个 2026-08-10 目标（各 4 次 provider 请求、零失败），
-写后 audit 均为 passed/0 findings，fixed `T0=2026-08-07` dry-run 均为 NOOP。当前完整闭环为
-**42/60**，剩余 **18** 个 active 品种待重建；全域 Canonical 验收仍未完成。
-`ap` 写入前的全域只读 audit 已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条
-finding，即当时 58 个未闭环品种各一条 `MAIN_CONTRACT_MAP_MISSING` 与
-`TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。Calendar、分区与物理可读性类别
-在该基线尚未形成结论——未闭环品种均在历史 Session 覆盖解析处被隔离，不得将未到达的检查阶段误记为
-通过。退役品种含
-股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu`；
-生产 Catalog 已对退役名单执行 `retire-products --apply`（详见 `GY-DATA-PRODUCT-RETIREMENT-5`）。
-
-## 已冻结的目标合同
-
+- 外部事实源只有 RQData；正式历史链路为
+  `RQData -> staging + 六项硬校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
 - 物理 `DatasetKey=(kind, symbol, series_or_contract, frequency)`；物理 kind 只有
-  `continuous|contract`，`actual_dominant` 只在查询时由 `MainContractMap rank=1` 拼接。
-- Direct 周期是 `1m/1d/1w`；Derived 周期是 `5m/15m/30m/60m`，只从同 Dataset 的
-  Canonical `1m` 按实际交易 Session 聚合。
-- 每 Dataset 每自然月只有一个 `part.parquet`。发布前保留 schema、identity、OHLCV、
-  session/frequency、coverage 和物理可读性校验；Catalog coverage、row count 和可读文件共同
-  表示可用状态。
-- PostgreSQL active 数据模型最终为八表：`exchanges`、`instruments`、`contracts`、
+  `continuous|contract`，`actual_dominant` 仅在查询时由 `MainContractMap rank=1` 拼接。
+- Direct 周期是 `1m/1d/1w`；Derived 周期是 `5m/15m/30m/60m`，只从同 Dataset、质量通过的
+  Canonical `1m` 按 TradingSession 聚合。
+- 每个 Dataset 每自然月只有一个 `part.parquet`；schema、identity、session/frequency、OHLCV、coverage、
+  row count 与物理可读性全部通过后才能原子发布。
+- PostgreSQL active 数据模型只有八表：`exchanges`、`instruments`、`contracts`、
   `trading_calendars`、`trading_sessions`、`main_contract_map`、`market_datasets`、
   `market_partitions`。
-- 最终公开 CLI 为 `guiyi data update|refresh|audit|retire-products`。`update` 以数据库和已发布月度
-  Parquet 自然续传；`refresh` 按指定品种和日期范围强制重建相交月份；`audit` 只读；
-  `retire-products` 清退已退役品种 Catalog/Canonical（默认 dry-run）。
 
-## 当前实现差异
+## 活跃 Gate
 
-DFD-02 已删除退出的维护面、legacy importer、旧 CLI 入口及其生成工件。DFD-03 已将
-storage、Catalog、ORM 和最终 `20260808_0036` 收口为八表与单月 `part.parquet`，并已在正式 PostgreSQL
-完成 migration。DFD-04 已验证三种查询、周线 rank1 owner 和 Derived physical partition 读取，并移除
-Market API/Web 的 digest 展示。DFD-05 已实现 `update|refresh|audit`、完整月 refresh、quota partial
-自然续传和本地 Derived 优先重建。DFD-06 已运行后端/工程全量、前端 test/build、Ruff、Mypy 和严格
-OpenSpec 验证，并将 active Canonical 一致性断言从退出的发布/缺口合同收口为八表、完整性和
-原子月分区发布合同。
+- DFD-07：剩余17个 active 品种仍由用户逐品种给出精确单次执行意图，按
+  `apply -> audit -> fixed T0 no-apply NOOP` 闭环。Catalog 数量增长、单次 apply 完成或进程退出都不等于
+  品种闭环。
+- 历史60品种 Canonical 闭环不改变 `operational_products.txt`，也不自动扩大 Live/after-market 范围。
+- 生产 DB/Canonical 写入或删除、Runtime switch、真实通知、`main`、tag/release 与 promotion 仍各自需要
+  新的范围明确单次执行意图。
 
-工程双轨收口（2026-08-09）：旧 `data_core` / `rqdata_ingest` 等空壳与 pycache、退役 worker 启动面、
-孤儿 data_profiles / v2_targets、未用 ECharts/DuckDB 依赖已清；Market coverage/dominants 经
-`MarketDataService`；ORM 合并为 `models/market_tables.py`；指标权威定为 quant-core Kernel，Web TS
-仅为观察镜像。旧 `guiyi_quant/strategies/` vn.py 策略研究包及对应策略测试已退役；HTDY strict 计算源
-收口为 `guiyi_quant.indicators.htdy_strict.compute_strict_fields`。事实源仍只认 `STATUS.md`、
-`docs/DATA_CENTER.md` 与 `app/market_data/`。
+## 最近验证事实
 
-## 外部操作状态
+- 2026-08-11 的开发态17:00自然盘后链对 `j/jm/ap/ag` 一次完成；四品种 Canonical 推进、rank1
+  reconciliation、Live 清理和已打开页面的 seam 自动更新均通过。
+- 最终 Runtime 读回为 API/Web 可用、Runtime health `ok`、Live 范围4/4；真实浏览器历史分页从1200 bars
+  扩展至24037 bars，覆盖进入2023年，未观察到 console warning/error 或视口跳回。
+- 周末 `non_trading_day skipped` 未形成新的自然现场证据，按既有决定不重复制造或冒充该证据。
+- `rb` 已完成受控收口：发布 507 个目标（183 次 provider 请求、零失败），写后 audit 为
+  passed/0 findings，fixed `T0=2026-08-07` no-apply 为 NOOP（0 provider 请求）。
 
-在用户明确的一次性执行意图下，已执行生产 `0035→0036` migration，删除 `data/raw`、
-`data/processed`、`data/parquet/canonical` 与 `data/canonical-candidates`，并启动 JM 的真实 RQData
-重建。migration 后八张 active 表已验收，旧 Catalog 已清空；JM 先完成 672 个物理月分区，随后在
-新的精确单次意图下补齐 `JM2405/1w/2024-04`、`JM2505/1w/2025-04` 与
-`JM2609/{5m,15m,30m,60m}/2026-08`。该次执行 `applied=6`、`failed=0`、
-`provider_requests=2`；其后 JM fixed-T0 dry-run 为 NOOP、JM audit 通过，678 个 Catalog
-分区及对应 Parquet 均可读。随后 J 在精确单次执行意图下完成剩余窗口，最终形成 686 个正式月分区；
-fixed-T0 dry-run 为 NOOP、audit 通过，Catalog 与对应 Parquet 均可读。`actual_dominant` 在缺少对应
-concrete-contract 分区时仍保持 fail-closed；其余 58 品种的历史 Session facts 与 Canonical 重建仍需
-后续受控执行。随后在明确单次意图下，CZCE `ap` 完成从 T0 的 RQData metadata 同步和 Canonical
-重建，`ap` 产出 `applied=685`、`failed=0`、`provider_requests=293`；写后 audit 为 passed，fixed-T0
-dry-run 为 NOOP，七周期 `MarketDataService` 读回通过。随后 SHFE `ag` 在独立的明确单次意图下完成
-metadata 同步与 Canonical 重建，产出 `applied=748`、`failed=0`、`provider_requests=320`；写后 audit
-为 passed、fixed-T0 dry-run 为 NOOP，748 个 Catalog 分区及对应 Parquet 均可读。随后修复
-`MarketDataService` 对夜盘查询边界的 `trading_day` 解析，并以相同 21 组窗口只读复验通过；该修复
-没有调用 RQData 或写入生产 Catalog/Canonical。随后 INE `ec` 在独立的明确单次意图下完成 metadata
-同步与 Canonical 重建，产出 `applied=613`、`failed=0`、`provider_requests=261`；写后 audit 为
-passed、fixed-T0 dry-run 为 NOOP，613 个 Catalog 分区及对应 Parquet 均可读，且七周期三种查询模式
-的早期、最近与跨换月共 21 组读回通过。其余 55 个品种的历史 Session facts 与 Canonical 重建仍需
-后续受控执行。随后 GFEX `lc` 在独立的明确单次意图下完成 metadata 同步与 Canonical 重建，产出
-`applied=602`、`failed=0`、`provider_requests=258`；写后 audit 为 passed、fixed-T0 dry-run 为
-NOOP，602 个 Catalog 分区及对应 Parquet 均可读，且七周期三种查询模式的早期、最近与跨换月共 21 组
-读回通过。随后 `pd` 在独立明确单次意图下完成 metadata 同步与 Canonical 重建，产出 `applied=154`、
-`failed=0`、`provider_requests=66`；写后 audit 为 passed、fixed-T0 dry-run 为 NOOP，154 个 Catalog
-分区及对应 Parquet 均可读，且七周期三种查询模式的早期、最近与跨换月共 21 组读回通过。随后 `pt`
-在独立明确单次意图下完成 metadata 同步与 Canonical 重建，产出 `applied=154`、`failed=0`、
-`provider_requests=66`；写后 audit 为 passed、fixed-T0 dry-run 为 NOOP，154 个 Catalog 分区及对应
-Parquet 均可读，且七周期三种查询模式的早期、最近与跨换月共 21 组读回通过。随后 `pl` 在独立明确
-单次意图下完成 metadata 同步与 Canonical 重建，产出 `applied=233`、`failed=0`、
-`provider_requests=97`；写后 audit 为 passed、fixed-T0 dry-run 为 NOOP，233 个 Catalog 分区及对应
-Parquet 均可读，且七周期三种查询模式的早期、最近与跨换月共 21 组读回通过。随后 `bz` 在独立明确
-单次意图下完成 metadata 同步与 Canonical 重建，产出 `applied=238`、`failed=0`、
-`provider_requests=102`；写后 audit 为 passed、fixed-T0 dry-run 为 NOOP，238 个 Catalog 分区及对应
-Parquet 均可读，且七周期三种查询模式的早期、最近与跨换月共 21 组读回通过。随后 `ps` 在独立明确
-单次意图下完成 metadata 同步与 Canonical 重建，产出 `applied=350`、`failed=0`、
-`provider_requests=150`；写后 audit 为 passed、fixed-T0 dry-run 为 NOOP，350 个 Catalog 分区及对应
-Parquet 均可读，且七周期三种查询模式的早期、最近与跨换月共 21 组读回通过。其余 49 个品种的历史
-Session facts 与 Canonical 重建仍需后续受控执行。随后 `pr` 的首次更新进程中断后，经第二次独立明确
-单次意图补齐 73 个缺失分区（`provider_requests=29`）；最终 audit 为 passed、fixed-T0 dry-run 为
-NOOP，442 个 Catalog 分区及对应 Parquet 均可读，且七周期三种查询模式共 21 组读回通过。随后 `px`
-在独立明确单次意图下完成 Canonical 重建，形成 576 个 Catalog 分区（continuous 252、真实合约 324）；
-写后 audit 为 passed、fixed-T0 dry-run 为 NOOP，且七周期三种查询模式共 21 组读回通过。其余 47 个
-品种的历史 Session facts 与 Canonical 重建仍需后续受控执行。在明确单次
-意图下已多次对生产执行 `guiyi data retire-products --apply`，覆盖退役名单
-`br/cs/ic/if/ih/im/lu/nr/sp`；Canonical 退役目录均为 0，事后 residual=0，显式退役码返回
-`PRODUCT_RETIRED`。未执行服务切换、main/tag/release 或 Runtime promotion。
-
-日调度、live、真实通知和自动订单保持关闭，`auto_order=false`。
+更早的逐品种 receipt、故障诊断、自然 canary 与受控执行细节以 Git history 和对应 active task canonical
+为历史记录，不再复制到当前状态页。

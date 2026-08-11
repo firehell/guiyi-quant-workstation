@@ -677,7 +677,7 @@ Redis 不可用时 Live 标记 unavailable；Historical Web 必须继续正常�
 新增：
 
 ```text
-app/market_data/market_read.py
+app/market_data/market_read_service.py
 ```
 
 它是展示 Query Facade，不替代 MarketDataService。
@@ -1332,15 +1332,17 @@ services/quant-api/app/market_data/
   operational_universe.py
   market_phase.py
   live_market.py
-  market_read.py
+  market_read_service.py
   after_market.py
 
 现有复用：
   aggregation.py
   session_clock.py
-  service.py
+  market_data_service.py
   maintenance.py
-  infrastructure.py
+  coverage_source.py
+  rqdata_adapter.py
+  errors.py
 ```
 
 API 尽量继续放在现有 `app/api/market.py`，除非 WebSocket 代码使文件明显失焦时才拆 `market_live.py`。

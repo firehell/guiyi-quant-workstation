@@ -35,7 +35,7 @@ consistency = _load_module()
         (".github/workflows/optional-ci.yml", {"Engineering"}),
         ("services/quant-api/app/main.py", {"Backend"}),
         ("apps/quant-web/src/pages/market/chart.vue", {"Web"}),
-        ("services/quant-api/app/market_data/service.py", {"Backend", "DataCore"}),
+        ("services/quant-api/app/market_data/market_data_service.py", {"Backend", "DataCore"}),
         ("packages/quant-core/guiyi_quant/indicators/htdy_strict.py", {"Backend", "Strategy"}),
         ("services/quant-api/app/services/runtime_health.py", {"Backend", "Runtime"}),
         ("services/quant-api/alembic/versions/0001_init.py", {"Backend", "Migration"}),

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import CanonicalBar, DatasetKey, SeriesQuery
-from app.market_data.service import MarketDataError, MarketDataService
+from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import (
     Exchange,
@@ -102,6 +102,25 @@ def test_catalog_registers_minimal_month_partition(session, tmp_path) -> None:
     assert row.file_path == partition.parquet_path
     assert row.row_count == 1
     assert not hasattr(row, "manifest_path")
+
+
+def test_latest_dominants_uses_the_repository_sector_taxonomy(session, tmp_path) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    session.add(Instrument(symbol="xx", name="legacy", exchange_code="DCE", is_active=False))
+    catalog.upsert_main_contracts(
+        (
+            ("jm", date(2025, 1, 2), "JM2505"),
+            ("xx", date(2025, 1, 2), "XX2505"),
+        )
+    )
+    session.commit()
+
+    items = MarketDataService(catalog, CanonicalMonthlyStore(tmp_path)).list_latest_dominants()
+
+    assert len(items) == 1
+    assert items[0].symbol == "jm"
+    assert items[0].product_name == "JM"
+    assert items[0].sector == "black"
 
 
 def test_continuous_and_contract_query_use_catalogued_physical_partitions(
