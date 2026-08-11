@@ -1553,7 +1553,7 @@ J / JM / AP / AG
 | 验收项 | 状态 | 当前证据 |
 |---|---|---|
 | Web 首屏最近历史快速显示 | PASS | actual_dominant 页面真实加载与 coverage 显示通过 |
-| 左拖可持续加载到 2023 | PENDING | 仍需真实浏览器完成最终长历史拖拽 |
+| 左拖可持续加载到 2023 | PASS | 同一页面真实拖拽从 1237 增至 24037 bars，coverage 起点到 `2023-11-20T01:46:00Z`，console 无错误 |
 | actual_dominant 1m 实时 | PASS | 四品种 current rank1 Live 已通过 |
 | 5m/15m/30m/60m 按本地 Session 规则实时 | PASS | 真实 15m/30m/60m 字段级聚合及既有 5m 证据通过 |
 | continuous 无 Live | PASS | continuous 保持 Historical-only |
@@ -1647,6 +1647,6 @@ MR-01～MR-07 已完成本地代码、fixture/mock、build 与 render-only 验�
 `partial_canary_development_runtime`。launchd 临时直接运行主 `develop` 工作区，只服务于开发期快速修改和
 观察，不构成 exact-commit Runtime、release 或 promotion 证据。
 
-最终关闭本文件仍需：真实浏览器左拖加载到 2023 年、周末/非交易日自然行为，以及在新建 clean detached
-Runtime worktree 上按 exact commit 重新读回最终自然证据。手工 after-market、fixture、旧状态或受控重跑
-均不得冒充自然证据；`auto_order=false` 与四品种 operational scope 保持不变。
+最终关闭本文件仍需：周末/非交易日自然行为，以及在新建 clean detached Runtime worktree 上按 exact
+commit 重新读回最终自然证据。手工 after-market、fixture、旧状态或受控重跑均不得冒充自然证据；
+`auto_order=false` 与四品种 operational scope 保持不变。

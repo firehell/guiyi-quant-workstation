@@ -86,7 +86,9 @@ uv run pytest -q tests/engineering/test_market_runtime_launchd.py
 2026-08-11 已在临时直连 `develop@839d11ad` 的开发副本形成 10:15 BREAK / 10:31 恢复与 17:00
 盘后完整收口的自然 canary：盘后一次尝试通过、四品种 Canonical 前进、rank1 reconciliation、Live
 清理和已打开 Web 页面的 seam 自动更新均已读回。该证据用于关闭开发态 canary，不替代本节要求的最终
-clean detached exact-commit Runtime 复验；周末/非交易日证据仍待自然形成。
+clean detached exact-commit Runtime 复验。真实浏览器在同一 AG2610 actual_dominant 15m 页面连续
+拖拽，已从 1237 bars 加载到 24037 bars，coverage 起点进入 `2023-11-20T01:46:00Z`，console 无
+warning/error；周末/非交易日证据仍待自然形成。
 
 DFD-03 之后补充 `20260808_0035:20260808_0036 --sql` 和隔离 PostgreSQL migration 测试。DFD-05
 完成后，最终无写入 CLI smoke 为：

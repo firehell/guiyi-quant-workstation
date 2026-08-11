@@ -19,12 +19,13 @@ contract Live、continuous Historical-only、夜盘 trading_day 和 Live/Canonic
 `2026-08-11T07:00:00Z`，当日 Live subscription 与 20 个 Live bar key 已清理。一直保持打开的
 AG2610 actual_dominant 15m 页面未手工刷新即从 1200 bars / `2026-08-10T07:00:00Z` 自动更新为
 1237 bars / `2026-08-11T07:00:00Z`，浏览器控制台无 warning/error；Runtime health 随后全部为
-`ok`。
+`ok`。随后在同一真实页面连续拖拽加载更早历史，bars 从 1237 增至 24037，coverage 起点进入
+`2023-11-20T01:46:00Z`，终点始终保持 `2026-08-11T07:00:00Z`；图表容器为 1173×620，分页过程中
+无错误、视口跳回或 console warning/error，真实浏览器左拖加载到 2023 年通过。
 
-MR-08 仍为 `PARTIAL`：上述证据属于直接运行 `develop` 的开发态自然 canary；真实浏览器左拖加载到
-2023 年、周末 CLOSED + Historical、自然 `non_trading_day` skipped，以及功能收口后新建 clean、
-detached、exact-commit Runtime worktree 的最终读回仍未完成。该状态不表示 release、`main` 合并或
-Runtime promotion。
+MR-08 仍为 `PARTIAL`：上述证据属于直接运行 `develop` 的开发态自然 canary；周末 CLOSED +
+Historical、自然 `non_trading_day` skipped，以及功能收口后新建 clean、detached、exact-commit
+Runtime worktree 的最终读回仍未完成。该状态不表示 release、`main` 合并或 Runtime promotion。
 
 2026-08-10 首次受控盘后重跑在 20:01～21:02 完成两次尝试并安全失败，没有第三次重试。原始
 RQData readiness MultiIndex 解析缺陷已修复；继续诊断确认阻塞来自当天 metadata 仅写单日 Calendar，
