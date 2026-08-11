@@ -380,10 +380,33 @@ def test_metadata_complete_allows_history_before_first_provider_main_map(tmp_pat
                 rule="volume_open_interest",
             )
             )
+    _add_date_scoped_session_facts(
+        session,
+        (date(2025, 1, 8), date(2025, 1, 9), date(2025, 1, 10)),
+    )
     session.commit()
     coverage = DatabaseCoverageSource(session, starts)
 
     assert coverage.metadata_complete(("jm",), date(2025, 1, 10)) is True
+    session.close()
+
+
+def test_metadata_complete_rejects_only_current_session_when_history_is_missing(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    for day in (date(2025, 1, 8), date(2025, 1, 9), date(2025, 1, 10)):
+        session.add(
+            MainContractMap(
+                symbol="jm",
+                trade_date=day,
+                contract_code="JM2509",
+                rank=1,
+                rule="volume_open_interest",
+            )
+        )
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+
+    assert coverage.metadata_complete(("jm",), date(2025, 1, 10)) is False
     session.close()
 
 
@@ -686,7 +709,7 @@ def test_rqdata_adapter_does_not_initialize_client_until_provider_read(
     session.close()
 
 
-def test_metadata_refresh_ignores_history_before_first_provider_main_map(tmp_path) -> None:
+def test_metadata_refresh_keeps_session_history_from_first_provider_main_map(tmp_path) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
@@ -743,7 +766,7 @@ def test_metadata_refresh_ignores_history_before_first_provider_main_map(tmp_pat
             {"jm": date(2025, 1, 1)},
         )
 
-        assert requested == [{"jm": date(2025, 1, 17)}]
+        assert requested == [{"jm": date(2025, 1, 20)}]
 
 
 def test_current_day_metadata_adapter_uses_dedicated_single_day_provider_call(tmp_path) -> None:

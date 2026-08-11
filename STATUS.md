@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-10
+更新时间：2026-08-11
 
 ## 结论
 
@@ -67,6 +67,13 @@ dry-run 为 NOOP，且早期、最近与跨换月的七周期 continuous / contr
 跨换月的七周期 continuous / contract / actual_dominant 共 21 组读回全部通过。生产正式分区现为
 6,159 个，数据资产与完整闭环验收均为 13/60，剩余 47 个 active 品种待重建。60 品种重建及全域
 Canonical 验收仍未完成。
+
+2026-08-11 完成 `ao` 之外的本轮 15 个已同步品种闭环：`au b bu c cf cj cu eb eg fg fu hc i jd l`。
+其中 `b/bu/c/cf/cj/cu/eb/eg/fg/fu/hc/i/jd/l` 的当前 audit 均为 passed、fixed
+`T0=2026-08-07` dry-run 均为 NOOP；`au` 经受控恢复至 2026-08-10 后同样 audit passed / fixed-T0
+NOOP。本轮修复了历史 Session metadata 续传、fixed-T0 同月后续 1m 聚合，以及窄 fixed-T0 窗口
+不得覆盖较新同月 Canonical 的维护语义。生产 Catalog 当前正式分区为 20,300 个，完整闭环为
+28/60，剩余 32 个 active 品种待重建；全域 Canonical 验收仍未完成。
 `ap` 写入前的全域只读 audit 已增强为逐品种结构化 finding：固定 `T0=2026-08-07` 返回 116 条
 finding，即当时 58 个未闭环品种各一条 `MAIN_CONTRACT_MAP_MISSING` 与
 `TRADING_SESSION_MISSING`；J/JM 无 finding，且零 provider request。Calendar、分区与物理可读性类别

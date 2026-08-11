@@ -236,6 +236,23 @@ class DatabaseCoverageSource:
             # 主力映射须与有效交易日一一对应，缺口会导致 contract 序列 expected 错误。
             if mapped_days != expected_days:
                 return False
+            session_days = set(
+                self.session.scalars(
+                    select(TradingSession.effective_from)
+                    .where(
+                        TradingSession.exchange_code == exchange,
+                        TradingSession.instrument_symbol == symbol,
+                        TradingSession.provider == "rqdata",
+                        TradingSession.is_active.is_(True),
+                        TradingSession.effective_from >= first_map_day,
+                        TradingSession.effective_from <= through,
+                        TradingSession.effective_to == TradingSession.effective_from,
+                    )
+                    .distinct()
+                )
+            )
+            if session_days != set(expected_days):
+                return False
         return True
 
     def require_historical_session_facts(
@@ -552,6 +569,11 @@ class RQDataMarketAdapter:
                     )
                 )
                 map_floor = first_map_day or floor
+                # MetadataSynchronizer replaces all historical Session facts for a
+                # product.  Its snapshot must therefore start at the first
+                # provider-backed map day, not merely the recent map-refresh
+                # window; otherwise a near-term refresh erases older sessions.
+                refresh_start = map_floor
                 calendar_days = _product_trading_days(
                     self.session,
                     symbol,

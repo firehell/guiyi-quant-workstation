@@ -458,6 +458,7 @@ class HistoricalDataManager:
         force: bool = False,
     ):
         """遍历应处理的月分区；force 时 missing=整段 expected（refresh 重写语义）。"""
+        latest_complete_by_symbol: dict[str, date] = {}
         for key, year, month, expected in self._desired_months(
             products,
             through,
@@ -470,6 +471,10 @@ class HistoricalDataManager:
                 # 分区元数据损坏：按整月 expected 重拉，避免在残缺文件上增量合并。
                 yield _Target(key, year, month, expected, expected, ())
                 continue
+            latest_complete = latest_complete_by_symbol.get(key.symbol)
+            if latest_complete is None:
+                latest_complete = self.coverage.latest_complete_day((key.symbol,))
+                latest_complete_by_symbol[key.symbol] = latest_complete
             present = {bar.bar_end for bar in existing}
             missing = tuple(
                 item
@@ -479,11 +484,17 @@ class HistoricalDataManager:
             if force:
                 if expected and (since is None or expected[-1].date() >= since):
                     yield _Target(key, year, month, expected, expected, ())
-            elif not present <= set(expected) or len(present) != len(existing):
-                # 存在非期望 bar 或重复 bar_end：整月重写而非只补 missing。
+            elif len(present) != len(existing) or any(
+                item <= expected[-1] or item.date() > latest_complete
+                for item in present - set(expected)
+            ):
+                # 窗口内非期望 bar 或重复 bar_end：整月重写而非只补 missing。
                 yield _Target(key, year, month, expected, expected, ())
             elif missing:
-                yield _Target(key, year, month, expected, missing, existing)
+                # fixed-through 只能补窗口内的缺口，不能把该月已发布的后续
+                # Canonical bar 当作异常并在重写时丢弃。
+                publish_expected = tuple(sorted(set(expected).union(present)))
+                yield _Target(key, year, month, publish_expected, missing, existing)
 
     def _desired_months(
         self,
@@ -763,6 +774,11 @@ class HistoricalDataManager:
         )
         if not sessions:
             raise StorageError("TARGET_SESSION_WINDOW_MISSING")
+        source = tuple(
+            bar
+            for bar in source
+            if any(session.start < bar.bar_end <= session.end for session in sessions)
+        )
         bars = aggregate_from_1m(
             source,
             target_frequency=target.key.frequency,

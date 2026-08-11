@@ -365,6 +365,47 @@ def test_derived_limits_session_lookup_to_target_coverage(session, tmp_path) -> 
     assert coverage.session_throughs == [source[-1].bar_end.date()]
 
 
+def test_derived_ignores_later_same_month_1m_outside_target_sessions(session, tmp_path) -> None:
+    source_key = DatasetKey("continuous", "jm", "MAIN", "1m")
+    derived_key = DatasetKey("continuous", "jm", "MAIN", "5m")
+    source = tuple(_minute(index) for index in range(1, 11))
+    coverage = FakeCoverage({
+        source_key.as_tuple(): tuple(bar.bar_end for bar in source),
+        derived_key.as_tuple(): (source[4].bar_end,),
+    })
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    _publish_existing(manager, source_key, source)
+
+    manager._publish_derived(
+        _Target(
+            derived_key,
+            2025,
+            1,
+            (source[4].bar_end,),
+            (source[4].bar_end,),
+            (),
+        )
+    )
+
+    assert manager.store.read_month(derived_key, 2025, 1)[0].bar_end == source[4].bar_end
+
+
+def test_fixed_through_update_preserves_later_same_month_canonical_bars(session, tmp_path) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    earlier = _daily(2, 100)
+    later = _daily(3, 101)
+    coverage = FakeCoverage({key.as_tuple(): (earlier.bar_end, later.bar_end)})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({key.as_tuple(): (earlier,)}))
+    _publish_existing(manager, key, (later,))
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 2), True))
+
+    assert result.status == "passed"
+    assert tuple(
+        bar.bar_end for bar in manager.store.read_month(key, 2025, 1)
+    ) == (earlier.bar_end, later.bar_end)
+
+
 def test_existing_complete_1m_rebuilds_derived_before_provider_quota(session, tmp_path) -> None:
     minute = DatasetKey("continuous", "jm", "MAIN", "1m")
     derived = DatasetKey("continuous", "jm", "MAIN", "5m")
