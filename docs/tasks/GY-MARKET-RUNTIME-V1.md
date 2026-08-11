@@ -1564,7 +1564,7 @@ J / JM / AP / AG
 | 周末 Historical 正常、Live CLOSED | PENDING | 等待周末自然证据 |
 | 17:00 ready 时 Canonical 自动前进 | PASS | 2026-08-11 17:00 自然任务一次完成，四品种 15m edge 前进到 07:00Z |
 | 首次失败仅 1h 后重试一次 | PASS | 2026-08-10 失败链为两次尝试，无第三次重试 |
-| 最终失败写状态并 macOS 通知 | PARTIAL | 2026-08-10 状态文件真实记录稳定公开错误码；通知能力已有测试，尚未单独采集自然通知证据 |
+| 最终失败写状态并 macOS 通知 | PASS | 2026-08-10 最终失败后同秒出现 `osascript` 与 NotificationCenter 事件，`interruptionSuppression=none`；定向测试 4 passed |
 | 盘后正式 MainContractMap 与 Live snapshot 对齐 | PASS | 运行前四品种正式映射与冻结 Live snapshot 完全一致 |
 | Canonical 前进后 Web 无缝切换、Live 不 promote | PASS | 原页面 1200→1237 bars 自动刷新；Redis Live 清理，未写入 Parquet |
 | operational scope 可配置扩展 | PASS（代码能力） | 统一读取 operational products；本轮未扩大四品种真实范围 |

@@ -90,6 +90,11 @@ clean detached exact-commit Runtime 复验。真实浏览器在同一 AG2610 act
 拖拽，已从 1237 bars 加载到 24037 bars，coverage 起点进入 `2023-11-20T01:46:00Z`，console 无
 warning/error；周末/非交易日证据仍待自然形成。
 
+macOS 最终失败通知已有真实系统读回：2026-08-10 的最终失败状态写入后，统一日志在同一秒依次记录
+`osascript` 与 NotificationCenter 事件，且 `interruptionSuppression=none`；对应失败分支“重试一次、
+写状态、只通知一次”的四项定向测试继续通过。该通知证据来自真实最终失败链，但不替代 17:00 launchd
+自然触发证据。
+
 DFD-03 之后补充 `20260808_0035:20260808_0036 --sql` 和隔离 PostgreSQL migration 测试。DFD-05
 完成后，最终无写入 CLI smoke 为：
 

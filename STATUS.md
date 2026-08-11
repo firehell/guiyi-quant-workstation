@@ -27,7 +27,11 @@ MR-08 仍为 `PARTIAL`：上述证据属于直接运行 `develop` 的开发态�
 Historical、自然 `non_trading_day` skipped，以及功能收口后新建 clean、detached、exact-commit
 Runtime worktree 的最终读回仍未完成。该状态不表示 release、`main` 合并或 Runtime promotion。
 
-2026-08-10 首次受控盘后重跑在 20:01～21:02 完成两次尝试并安全失败，没有第三次重试。原始
+2026-08-10 首次受控盘后重跑在 20:01～21:02 完成两次尝试并安全失败，没有第三次重试。另一次
+18:22～19:22 的真实最终失败链已形成 macOS 通知证据：状态于 19:22:22.657 写完，统一日志在
+19:22:22.799 记录 `osascript` 启动，并在 19:22:22.845 记录 NotificationCenter 接收
+`com.apple.ScriptEditor2` 通知事件且 `interruptionSuppression=none`。该证据证明最终失败会自动送达
+本机通知，不冒充 17:00 自然调度证据；17:00 自然触发已由 2026-08-11 成功链独立验收。原始
 RQData readiness MultiIndex 解析缺陷已修复；继续诊断确认阻塞来自当天 metadata 仅写单日 Calendar，
 而周频完整性门禁要求覆盖到 ISO 周日。修复后的当天同步只扩展 Calendar 到本周周日，Session 与
 rank-1 MainContractMap 仍只写当天。用户随后给出新的单次执行意图，21:28～21:33 的第二次受控重跑
