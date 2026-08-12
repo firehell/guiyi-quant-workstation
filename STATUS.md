@@ -44,10 +44,16 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
-- `2026-08-12` 已按两次独立单次请求完成隔离 Runtime 从 `51e84988...` 到 clean/detached
-  `0dea973d5eb18d056c8bf37f2fe598c7f3446148` 的切换与失败续作；production 包为 `quant-api 1.0.0`，
-  Web build 通过，API/Web/Live 为 running，四个 launchd 根一致。
-  API/Web HTTP 200、Runtime health 为 `ok`，Market dominants 返回 60 个唯一且业务字段完整的品种。
+- `2026-08-12 20:38 +08:00` 已将隔离 Runtime 从 `0dea973d...` 单次切换到 clean/detached
+  `v1.0.0^{}`=`423b049830087e7885736e6e5471d5e289134bbe`；`uv sync --no-dev`、Web production build 与
+  bundle topology 均通过，API/Web/Live/after-market 已从同一 Runtime 根重载。API/Web/Live 为
+  running，after-market 为等待下一个 17:00 的 not running。未运行 migration、手工盘后、数据任务或通知。
+- production 读回为 `quant-api 1.0.0`；API/Web HTTP 200、Runtime health `ok/readonly=true`，DB/Redis/Live
+  均为 `ok`。Market dominants 返回 60 个唯一且业务字段完整的品种，映射日均为
+  `2026-08-12`；JM actual-dominant 15m 真实读取的 Canonical edge 为 `2026-08-12T07:00:00Z`。
+- 本机 FRPC 进程、5173/8000 监听与本地 HTTP 链通过。当前 Runtime 环境未配置
+  `PUBLIC_BASE_URL`/Basic Auth 验收变量，因此本次未运行公网 `public-healthcheck.sh`，也未重载
+  未变更的 FRP/Nginx 配置。
 - 配置读回为 active=60、operational=60 且内容相同。`2026-08-12 17:00:01 +08:00`
   launchd 自然触发 60 品种盘后更新；第一次在 Canonical update 阶段抛出 `ValueError`
   而失败，无代码变更、无人工补跑，一小时后的唯一自动 retry 于 `19:15:06 +08:00`
@@ -63,7 +69,8 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 ## v1.0.0 封板状态
 
 - 仓库版本号、changelog 与当前状态已收口为 `1.0.0`；60 品种 17:00 自然盘后最后外部
-  Gate 已通过，封板条件已满足。`v1.0.0` annotated tag 必须精确指向包含本状态的最终
-  `main` release merge commit；Tag 不授权 Runtime 切换、migration、通知或任何数据写入。
+  Gate 已通过，封板条件已满足。annotated `v1.0.0` tag 对象为 `7b573d97...`，peeled target
+  精确为最终 `main` release merge commit `423b0498...`；同一 target 已部署到隔离 Runtime。Tag 不授权
+  migration、通知或任何数据写入。
 - active OpenSpec 已与实现同步：continuous `1m` 只用 `{SYMBOL}88`，`1d` 按 rank1 真实合约交易所日行情，
   `1w` 只由完整同源日线聚合。
