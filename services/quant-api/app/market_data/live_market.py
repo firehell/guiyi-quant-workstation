@@ -401,7 +401,10 @@ class LiveMarketService:
             self._contracts = current_contracts
         else:
             current_contracts = dict(self._contracts)
-        unresolved = tuple(symbol for symbol in active_symbols if symbol not in current_contracts)
+        # Freeze one complete operational-universe rank1 snapshot for the day.
+        # Provider channels remain phase-scoped below; the snapshot is also the
+        # immutable reconciliation input consumed by the after-market runner.
+        unresolved = tuple(symbol for symbol in self._products if symbol not in current_contracts)
         if unresolved:
             raw_snapshot = {
                 symbol: self._dominant_source.dominant_for_day(symbol, trading_day)
@@ -422,7 +425,7 @@ class LiveMarketService:
             self._store.publish_state({"trading_day": trading_day.isoformat()})
             self._trading_day = trading_day
             self._contracts = current_contracts
-        desired = {f"bar_{contract}" for contract in self._contracts.values()}
+        desired = {f"bar_{self._contracts[symbol]}" for symbol in active_symbols}
         try:
             provider = self._provider_or_create()
         except Exception as exc:  # noqa: BLE001 - provider boundary is intentionally minimal

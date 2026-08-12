@@ -19,7 +19,7 @@
 - HTTP：历史分页、dominants、Historical/Live state、WebSocket 和只读 Runtime health。
 - CLI：`guiyi data update|refresh|audit|after-market`、`guiyi runtime status|live`。
 - Runtime：`operational_products.txt` 是 Live 与 17:00/最多一次一小时后 retry 盘后更新的唯一范围入口；
-  本轮将其与 active 60 完全对齐，最终运行态以部署后的精确提交读回为准。
+  该文件已与 active 60 完全对齐。
 
 已退役且不得恢复为兼容入口：backtest API/Web/worker/queue、Signal/Review/Strategy HTTP·Web·worker、
 data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单。
@@ -42,7 +42,14 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 - 周末 CLOSED 与 `non_trading_day skipped` 按既有决定接受，未制造新的自然现场证据。
 - 部署、生产数据写入、真实通知、`main`、tag/release 与未来 Runtime switch 仍是相互独立的人工 Gate。
 
-## 本轮待写回
+## 当前 Runtime 读回
 
-- 代码、测试和文档完成后提交精确 commit。
-- 仅按用户本轮明确请求执行一次本地 Runtime switch；随后写回 clean/detached 身份、60 品种范围和健康读回。
+- `2026-08-12` 已执行一次用户明确请求的本地 Runtime switch：隔离 worktree clean/detached 于
+  `a0106860b67f1d00d872dfb57570611729944609`；API/Web/Live/after-market launchd 根一致，API/Web
+  HTTP 200，Runtime health 为 `ok`，Market dominants 返回 60 个唯一且业务字段完整的品种。
+- 配置读回为 active=60、operational=60。部署后现场暴露出 56 个品种的 `TradingSession.effective_to`
+  仍停在 `2026-08-11`，因此 13:47 的 Live heartbeat 为 operational=60、TRADING/subscribed=4、
+  UNKNOWN=56；系统按合同 fail-closed，未用过期 Session 猜测今日时段，也未手工写 DB 或调用 RQData。
+- 根因修复将“完整当日 rank1 快照”与“当前 TRADING provider channels”分离：前者覆盖 operational 60，
+  后者仍按真实 phase 订阅。代码与回归已完成，但首次部署意图已经消耗，修复 commit 尚待新的单次 Runtime
+  switch；17:00 盘后任务未被手工提前触发。

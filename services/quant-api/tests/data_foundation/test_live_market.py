@@ -349,8 +349,8 @@ def test_restart_restores_frozen_rank1_snapshot_without_resolving_again() -> Non
     assert store.subscriptions(day) == {"j": "J2505"}
 
 
-def test_rank1_subscription_freezes_each_product_only_when_its_session_starts() -> None:
-    """Catches a night-session product causing a CLOSED day-only product to subscribe early."""
+def test_rank1_snapshot_covers_the_universe_without_subscribing_closed_products() -> None:
+    """The day snapshot is complete while provider channels remain phase-scoped."""
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
     window = SessionWindow(
@@ -374,9 +374,12 @@ def test_rank1_subscription_freezes_each_product_only_when_its_session_starts() 
     )
 
     assert service.reconcile(datetime(2025, 1, 2, 1, 1, tzinfo=UTC)) is None
-    assert dominants.calls == [("j", day)]
+    assert dominants.calls == [("j", day), ("ap", day)]
     assert client.subscribed == ["bar_J2505"]
-    assert fake.values["live:subscription:2025-01-02"] == '{"j":"J2505"}'
+    assert json.loads(fake.values["live:subscription:2025-01-02"]) == {
+        "ap": "AP2505",
+        "j": "J2505",
+    }
 
     phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
     phases.phases["ap"] = _phase("ap", day, window)
@@ -384,7 +387,10 @@ def test_rank1_subscription_freezes_each_product_only_when_its_session_starts() 
     assert service.reconcile(datetime(2025, 1, 2, 1, 30, tzinfo=UTC)) is None
     assert dominants.calls == [("j", day), ("ap", day)]
     assert client.subscribed == ["bar_J2505", "bar_AP2505"]
-    assert fake.values["live:subscription:2025-01-02"] == '{"j":"J2505","ap":"AP2505"}'
+    assert json.loads(fake.values["live:subscription:2025-01-02"]) == {
+        "ap": "AP2505",
+        "j": "J2505",
+    }
 
 
 def test_completed_1m_bar_is_pending_then_immutable_and_outside_session_is_rejected() -> None:
