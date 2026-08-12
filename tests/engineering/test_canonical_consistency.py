@@ -47,10 +47,62 @@ ACTIVE_CANONICAL = (
     "openspec/specs/market-series-query/spec.md",
 )
 
+RETIRED_AI_ASSISTANCE = (
+    ".agents/skills/futures-strategy",
+    ".agents/skills/quant-safety-review",
+    ".agents/skills/risk-center",
+    ".codex/agents/risk-reviewer.toml",
+)
+
+ACTIVE_PROJECT_SKILLS = {
+    "database-modeling",
+    "docs-product-manager",
+    "futures-data",
+    "git-commit-workflow",
+    "market-kline-workbench",
+    "project-governor",
+    "quant-backend",
+    "quant-frontend",
+    "testing-quality",
+    "ui-bugfix",
+}
+
+ACTIVE_CODEX_REVIEWERS = {
+    "architecture-reviewer.toml",
+    "frontend-reviewer.toml",
+    "product-reviewer.toml",
+}
+
+CURSOR_OPENSPEC_COMMANDS = {
+    "opsx-apply.md",
+    "opsx-archive.md",
+    "opsx-explore.md",
+    "opsx-propose.md",
+    "opsx-sync.md",
+    "opsx-update.md",
+}
+
 
 def test_governance_surface_has_one_executable_entrypoint() -> None:
     assert (ROOT / "scripts/engineering/secret_scan.py").is_file()
     assert all(not (ROOT / relative).exists() for relative in RETIRED_ASSETS)
+
+
+def test_project_assistance_matches_the_active_market_architecture() -> None:
+    assert all(not (ROOT / relative).exists() for relative in RETIRED_AI_ASSISTANCE)
+    assert {
+        path.parent.name for path in (ROOT / ".agents/skills").glob("*/SKILL.md")
+    } == ACTIVE_PROJECT_SKILLS
+    assert {
+        path.name for path in (ROOT / ".codex/agents").glob("*.toml")
+    } == ACTIVE_CODEX_REVIEWERS
+    assert not (ROOT / ".cursor/skills").exists()
+    assert {
+        path.name for path in (ROOT / ".cursor/commands").glob("opsx-*.md")
+    } == CURSOR_OPENSPEC_COMMANDS
+    guidance = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "项目辅助只服务当前 active 架构" in guidance
+    assert "每项任务默认主 agent，最多增加一个必要的 specialist 或 reviewer" in guidance
 
 
 def test_active_canonical_has_no_retired_entrypoint_references() -> None:

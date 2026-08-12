@@ -10,7 +10,7 @@
 | `docs/` 子目录 | `snake_case` | `tasks/` |
 | 本目录任务合同 | `TASK-ID-SLUG.md`（大写 ID + 连字符） | `GY-DATA-CORE-V2.md` |
 | `openspec/`、`.kiro/`、`prompts/` | kebab-case | `slim-web-to-market`、`code-review.md` |
-| Cursor skill 目录名 | 可保留 kebab（工具惯例） | `.agents/skills/futures-data/` |
+| 项目 skill 目录名 | 可保留 kebab（工具惯例） | `.agents/skills/futures-data/` |
 
 禁止：用 `*_latest` 目录名暗示 live 状态；在 `docs/` 顶层混用 kebab 文件名；在 skill 内复制 docs 已有的 SCREAMING 正文造成双轨。
 

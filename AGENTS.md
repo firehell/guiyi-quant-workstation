@@ -14,6 +14,10 @@ RQData → Canonical Parquet → 八表 Catalog → MarketDataService；`quant-c
 Indicator Kernel（`guiyi_quant/indicators/`），旧 vn.py-compatible 策略研究包已退役（仅 Git
 history 可追溯），当前不存在回测引擎、策略适配层或策略 HTTP/worker。
 
+## 项目辅助范围
+
+项目辅助只服务当前 active 架构；已经退役的策略、回测、Signal/Review、账户与风控子系统不保留项目级 skill、reviewer、command 或 task template。每项任务默认主 agent，最多增加一个必要的 specialist 或 reviewer；不得把多个辅助角色串成固定流程。未来重新引入策略、回测或风险计算，必须先以新任务新合同定义其业务边界，再按需恢复辅助说明。
+
 ## 个人开发工作流
 
 `develop` 是日常开发分支。普通仓库变更可以直接在当前 `develop` 工作区编辑、测试、提交并推送；不要求 GitHub Issue、任务分支、额外 worktree、PR、独立 Review、required CI、exact-head、merge readback、ancestry/cleanup evidence、approval packet、hash 或 receipt。分支、worktree、PR、Review 和 CI 可以按需使用，但只是协作工具，不是开发授权条件，也不授予任何真实外部操作权限。
