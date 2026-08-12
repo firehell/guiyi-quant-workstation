@@ -44,6 +44,10 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-13 00:02 +08:00` 在不重载、不手工盘后或数据写入的情况下，已只读观察到 RQData Live
+  provider 额度自然恢复：Runtime health 回到 `ok/readonly=true`，Live heartbeat 报
+  operational=60、phase-scoped subscribed=11、`error_type=null`，last bar/heartbeat 均推进；DB、Redis 与
+  after-market 继续为 `ok`。订阅数按当时 `TRADING=11` 动态变化，不要求 60 个 channel 同时订阅。
 - `2026-08-12 23:15 +08:00` 已将隔离 Runtime 固定到 clean/detached `v1.1.0^{}`=
   `f2568ba2fc3cbcf515abba1e51f12eacd30f8ff0`；API package 读回为 `quant-api 1.1.0`，Web production
   build、API/Web reload 与四个 launchd 根一致均已确认。API/Web HTTP 200、Radar 为 `ready`（active=60、
@@ -104,9 +108,9 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   Redis Live 或任何历史写入路径。
 - 版本源、changelog 与本状态已收口为 `1.1.0`。本版本不新增数据/DB writer、migration、通知、订单或
   自动交易；`auto_order=false` 继续成立。
-- annotated `v1.1.0` tag 对象为 `8d72f458...`，peeled target 精确为 `f2568ba2...`；本地 `main`
-  已 fast-forward 到同一 release commit。tag 与 main 未推送远端；Runtime 部署状态与外部 Live provider
-  限额事实以上述 Runtime 读回为准。
+- annotated `v1.1.0` tag 对象为 `8d72f458...`，peeled target 精确为 `f2568ba2...`；本地 `main` 包含
+  该 release commit 及后续部署状态记录。tag 与 main 未推送远端；Runtime 部署与 Live 恢复事实以上述
+  Runtime 读回为准。
 
 - 仓库版本号、changelog 与当前状态已收口为 `1.0.0`；60 品种 17:00 自然盘后最后外部
   Gate 已通过，封板条件已满足。annotated `v1.0.0` tag 对象为 `7b573d97...`，peeled target
@@ -130,5 +134,6 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   “未来引用/重绘风险/仅供人工观察”。
 - **P0 Runtime-integrated readback 已封板于 v1.1.0**：隔离 Runtime 已为精确 release commit
   `f2568ba2...`，P0 Web/API/Live/after-market 均指向同一 clean/detached worktree；Research/Radar、
-  Historical/Live seam、60 品种范围和 after-market activation 字段均可只读验证。当前 Live provider quota
-  exhausted 时保持显式 degraded，不把该外部限额伪装为 Live 可用；真实使用数日的 P1 决策观察期也尚未开始。
+  Historical/Live seam、60 品种范围和 after-market activation 字段均可只读验证。曾出现的 Live provider
+  quota exhausted 保持显式降级记录，已于上述时点自然恢复为 health `ok`；真实使用数日的 P1 决策观察期
+  也尚未开始。
