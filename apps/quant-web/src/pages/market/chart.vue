@@ -3,11 +3,12 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NDrawer, NDrawerContent, NSpin, NTag, useMessage } from 'naive-ui'
 import ProductResearchSidebar from '@/components/market/ProductResearchSidebar.vue'
+import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { getMarketDominants } from '@/api/market'
+import { getMarketDominants, getProductResearch } from '@/api/market'
 import { useMarketSeries } from '@/composables/useMarketSeries'
-import type { DominantContractItem, MainIndicatorId, MarketFrequency, SeriesKind } from '@/types/market'
+import type { DominantContractItem, MainIndicatorId, MarketFrequency, ProductResearchResponse, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { loadMainChartPreferences, saveMainChartPreferences } from '@/utils/mainIndicators'
 import {
@@ -31,6 +32,9 @@ const researchDrawerOpen = ref(false)
 const researchSidebarOpen = ref(initialWorkspacePreferences.researchSidebarOpen)
 const watchlist = ref(initialWorkspacePreferences.watchlist)
 const visibleMainIndicators = ref<MainIndicatorId[]>(initialMainChartPreferences.visibleMainIndicators)
+const research = ref<ProductResearchResponse | null>(null)
+const researchLoading = ref(false)
+const researchError = ref(false)
 const {
   bars,
   hasMoreBefore,
@@ -46,6 +50,7 @@ const {
 } = useMarketSeries()
 let metadataReady = false
 let synchronizingSymbol = false
+let researchGeneration = 0
 
 const symbol = ref(resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
@@ -83,6 +88,7 @@ onMounted(async () => {
     if (seriesKind.value !== 'contract' || !contract.value) syncDominantContract()
     await refreshSeries()
     metadataReady = true
+    void refreshResearch()
   } catch {
     error.value = '行情元数据加载失败'
   } finally {
@@ -103,6 +109,10 @@ watch(symbol, async () => {
 
 watch([contract, seriesKind, frequency], () => {
   if (metadataReady && !synchronizingSymbol) void refreshSeries()
+})
+
+watch([symbol, seriesKind, contract], () => {
+  if (metadataReady && !synchronizingSymbol) void refreshResearch()
 })
 
 watch([symbol, seriesKind, researchSidebarOpen, watchlist], persistWorkspacePreferences, { deep: true })
@@ -167,6 +177,29 @@ async function refreshSeries() {
     if (!isCurrentIdentity(requested)) return
     error.value = '读取失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
+  }
+}
+
+async function refreshResearch() {
+  if (!symbol.value) return
+  const requestGeneration = ++researchGeneration
+  const requested = currentIdentity()
+  researchLoading.value = true
+  researchError.value = false
+  research.value = null
+  try {
+    const snapshot = await getProductResearch({
+      symbol: requested.symbol,
+      seriesKind: requested.seriesKind,
+      contract: requested.contract,
+    })
+    if (requestGeneration !== researchGeneration || !isCurrentIdentity(requested)) return
+    research.value = snapshot
+  } catch {
+    if (requestGeneration !== researchGeneration || !isCurrentIdentity(requested)) return
+    researchError.value = true
+  } finally {
+    if (requestGeneration === researchGeneration) researchLoading.value = false
   }
 }
 
@@ -330,10 +363,21 @@ function normalizeSymbol(value: unknown): string | null {
             :phase="phaseLabel"
             :has-more-before="hasMoreBefore"
             :watchlisted="watchlisted"
+            :research="research"
+            :research-loading="researchLoading"
+            :research-error="researchError"
             @toggle-watchlist="toggleWatchlist"
           />
         </div>
       </div>
+      <PriceVolumeOiPanel
+        v-if="research"
+        class="product-workspace__research-panel"
+        :daily="research.recent_daily"
+      />
+      <NAlert v-else-if="researchError" type="warning" :show-icon="false" class="product-workspace__research-panel">
+        研究数据暂不可用；K 线仍使用既有 Canonical / Live 读取链路。
+      </NAlert>
     </NSpin>
 
     <NDrawer v-model:show="researchDrawerOpen" :width="320" placement="right">
@@ -347,6 +391,9 @@ function normalizeSymbol(value: unknown): string | null {
           :phase="phaseLabel"
           :has-more-before="hasMoreBefore"
           :watchlisted="watchlisted"
+          :research="research"
+          :research-loading="researchLoading"
+          :research-error="researchError"
           @toggle-watchlist="toggleWatchlist"
         />
       </NDrawerContent>
@@ -364,6 +411,7 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace__main--sidebar-closed .product-workspace__sidebar { display: none; }
 .product-workspace__kline { min-width: 0; }
 .product-workspace__sidebar { position: sticky; top: 0; }
+.product-workspace__research-panel { margin-top: 12px; }
 .product-workspace:fullscreen { display: grid; place-items: stretch; padding: 16px; background: var(--gy-bg-app); }
 .product-workspace:fullscreen .product-workspace__main { grid-template-columns: minmax(0, 1fr); height: 100%; }
 .product-workspace:fullscreen .product-workspace__kline { min-height: 100%; }

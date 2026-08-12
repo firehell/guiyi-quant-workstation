@@ -75,6 +75,29 @@ export interface MarketBarsPageResponse {
   resolved_contract_segments: ResolvedContractSegment[]
 }
 
+/** Read-only Product Research snapshot; nullable backend metrics stay nullable in the browser. */
+export interface ProductResearchResponse {
+  symbol: string
+  product_name: string
+  sector: string
+  exchange: string
+  series_kind: SeriesKind
+  contract: string | null
+  as_of: string
+  current_dominant: string
+  dominant_mapping_date: string
+  daily_trend: 'up' | 'down' | 'neutral' | 'unavailable'
+  weekly_trend: 'up' | 'down' | 'neutral' | 'unavailable'
+  position20: number | null
+  distance_to_20d_high: number | null
+  distance_to_20d_low: number | null
+  volume_ratio20: number | null
+  oi_change_1d: number | null
+  turnover_change_5d: number | null
+  atr14_percentile252: number | null
+  recent_daily: CanonicalBarDto[]
+}
+
 /** 后端 `/market/state` 与 WebSocket `state` 事件的只读展示状态。 */
 export interface MarketReadState {
   symbol: string

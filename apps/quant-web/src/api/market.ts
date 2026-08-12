@@ -5,11 +5,26 @@ import type {
   MarketBarsPageResponse,
   MarketReadState,
   MarketFrequency,
+  ProductResearchResponse,
   SeriesKind,
 } from '@/types/market'
 
 export function getMarketDominants() {
   return request.get<never, DominantContractListResponse>('/market/dominants')
+}
+
+export function getProductResearch(params: {
+  symbol: string
+  seriesKind: SeriesKind
+  contract?: string
+}) {
+  return request.get<never, ProductResearchResponse>('/market/research/product', {
+    params: {
+      symbol: params.symbol,
+      series_kind: params.seriesKind,
+      contract: params.seriesKind === 'contract' ? params.contract : undefined,
+    },
+  })
 }
 
 export function getMarketBarsPage(params: MarketBarsPageRequest) {
