@@ -5,7 +5,7 @@
 ## 项目边界
 
 - 做（长期）：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
-- 当前可执行面：Web 为 Market；API/CLI 为 market / data CLI / runtime。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用四品种有界 Runtime。signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役。
+- 当前可执行面：Web 为 Market；API/CLI 为 market / data CLI / runtime。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用由 `operational_products.txt` 界定范围的 Runtime。signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役。
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
@@ -43,7 +43,7 @@ history 可追溯），当前不存在回测引擎、策略适配层或策略 HT
 
 ### Market Runtime V1 的受限持续授权
 
-代码与 launchd 模板默认关闭。只有用户对识别出的本地工作站明确请求“启用 Market Runtime V1”并实际执行一次启用操作后，才允许以下有界持续自动行为：只对 `operational_products.txt`（当前 `j/jm/ap/ag`）订阅当日 rank1 completed 1m；每日 17:00 及最多一次 1 小时后 retry 仅对同一品种集合运行正式 `HistoricalDataManager.update`。启用后的日常运行不需要逐日重新确认；显式修改 `operational_products.txt` 才扩展该自动范围。
+代码与 launchd 模板默认关闭。只有用户对识别出的本地工作站明确请求“启用 Market Runtime V1”并实际执行一次启用操作后，才允许以下有界持续自动行为：只对 `operational_products.txt` 订阅当日 rank1 completed 1m；每日 17:00 及最多一次 1 小时后 retry 仅对同一品种集合运行正式 `HistoricalDataManager.update`。启用后的日常运行不需要逐日重新确认；显式修改 `operational_products.txt` 才改变该自动范围。
 
 该授权不覆盖 main/tag/release、其他生产 DB/数据变更、Runtime 版本切换、真实外部通知渠道或任何订单；`auto_order=false` 始终不变。没有上述明确启用请求时，render-only、健康读取和测试不构成启用授权。
 
@@ -56,19 +56,15 @@ history 可追溯），当前不存在回测引擎、策略适配层或策略 HT
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
 8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。Signal/Review/Strategy HTTP·worker·DB 表与旧语义合同已退役；未来重建须新任务新合同，不以旧表/旧文档为兼容入口。
-9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 已在本地工作站按受限持续授权启用，范围仍只是 `j/jm/ap/ag`，且不新增生产表。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
+9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 只读取同一个 `operational_products.txt`，且不新增生产表。repair、replay、backfill、migration 与 EOD recalculation 不补发历史通知。
 10. `auto_order=false` 适用于所有研究观察与 Runtime 模式。任何创建或提交订单的流程都必须拒绝；本项目不实现自动交易。
 11. 数据或指标语义变化时，同一变更更新相应 deep canonical；普通 bug fix、UI 调整和测试增加不自动改写项目状态。
 
-## 数据核心 V2 迁移治理
+## Data Foundation 稳定合同
 
-`docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互核心收口的 active 业务合同。目标架构已经冻结，但除文档明确列出的已完成事实外，不得把数据迁移、消费者切换、live/EOD 收口、删除或 Runtime 验收写成已完成。
-
-- active target：RQData → 临时 staging → 六项硬校验 → 单一 historical canonical Parquet（`1m` 为 `get_price` 输入；`1d` 为交易所日行情事实；`1w` 只由同一日线聚合；`5m/15m/30m/60m` 只由 `1m` 聚合）→ 八表 Catalog/MainContractMap → `MarketDataService` → consumers。
-- 候选 Alembic `20260808_0036` 最终将 active 数据 schema 收口为八表；生产 DB、正式数据或仓库外文件的实际变更另需精确范围的一次性执行意图。
-- 已发生的 PR、CI、Review、packet、hash、receipt、report 和 evidence 只作为历史事实，不是当前授权。仓库内过期工件可按普通删除处理；生产数据、正式 Parquet、DB、Runtime 或其他外部资源必须按受控外部操作处理。
-- 迁移资产只包括 trusted historical bars 及最小 Catalog/MainContractMap/Calendar/Session metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample 和重复 bar layer 均不属于 active migration asset。
-- active OpenSpec change 为 `converge-canonical-data-foundation`；DFD-02～DFD-06 是仓库收口任务，DFD-07 的生产 migration、正式数据清理和 RQData 重建各需新的单次执行意图。
+DFD-01～DFD-07 与 active 60 品种闭环已经完成；当前长期行为规范位于 `openspec/specs/`，数据语义以
+`docs/DATA_CENTER.md` 和 `services/quant-api/app/market_data/` 为准。历史 change、task、receipt 和执行
+细节只从 Git history 追溯，不构成新的写入、部署或 Runtime 授权。
 
 ## 文档与交付
 
@@ -80,6 +76,6 @@ history 可追溯），当前不存在回测引擎、策略适配层或策略 HT
 
 1. `AGENTS.md`
 2. `STATUS.md`
-3. 与任务相关的 deep canonical 或 active business contract
+3. 与任务相关的 deep canonical 或 OpenSpec 主 spec
 
 统一业务 CLI 入口为 `uv run --project services/quant-api guiyi`。`data audit`、`runtime status` 等只读命令不授权后续写入；任何 dry-run 也不授权真实执行。`main` 仍用于 canonical/release；开发期可临时从 `develop` 运行本地服务，最终 Runtime 验收仍使用隔离、精确提交的 worktree。二者都不是普通 `develop` 编辑与本地测试的前置流程。

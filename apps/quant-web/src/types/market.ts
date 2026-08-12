@@ -46,31 +46,6 @@ export interface ResolvedContractSegment {
   end_trading_day: string
 }
 
-export interface MarketBarsRequestParams {
-  series_kind: SeriesKind
-  symbol: string
-  contract?: string
-  frequency: MarketFrequency
-  start: string
-  end: string
-}
-
-export interface MarketBarsResponseRequest {
-  series_kind: SeriesKind
-  symbol: string
-  contract: string | null
-  frequency: MarketFrequency
-  start: string
-  end: string
-}
-
-export interface MarketBarsResponse {
-  request: MarketBarsResponseRequest
-  bars: CanonicalBarDto[]
-  coverage: { start: string; end: string } | null
-  resolved_contract_segments: ResolvedContractSegment[]
-}
-
 export interface MarketBarsPageRequest {
   series_kind: SeriesKind
   symbol: string
@@ -120,21 +95,6 @@ export type MarketWsMessage =
   | { type: 'snapshot'; bars: CanonicalBarDto[] }
   | { type: 'bar'; bar: CanonicalBarDto }
   | { type: 'reset'; trading_day: string | null; contract: string | null }
-
-export interface MarketCoverageItem {
-  kind: 'continuous' | 'contract'
-  symbol: string
-  series_or_contract: string
-  frequency: MarketFrequency
-  start: string
-  end: string
-  row_count: number
-  partition_count: number
-}
-
-export interface MarketCoverageResponse {
-  items: MarketCoverageItem[]
-}
 
 export interface KlineMarker {
   id: string

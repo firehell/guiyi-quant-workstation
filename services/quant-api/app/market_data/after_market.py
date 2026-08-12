@@ -21,7 +21,7 @@ from app.market_data.errors import InfrastructureError
 from app.market_data.rqdata_adapter import RQDataClient
 from app.market_data.session_clock import SHANGHAI
 from app.market_data.live_market import RedisLiveStore
-from app.market_data.maintenance import HistoricalDataManager, UpdateRequest
+from app.market_data.historical_data_manager import HistoricalDataManager, UpdateRequest
 from app.market_data.operational_universe import load_operational_products
 from app.core.env import PROJECT_ROOT
 

@@ -12,7 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.market_data.composition import build_market_read_service
-from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, SeriesKind, SeriesPageQuery
+from app.market_data.domain import (
+    BarFrequency,
+    CanonicalBar,
+    ContractError,
+    SeriesKind,
+    SeriesPageQuery,
+    parse_rfc3339_instant,
+)
 from app.market_data.live_market import LIVE_STATE_CHANNEL, live_bar_channel
 from app.market_data.market_read_service import MarketReadState
 from app.redis_connections import get_async_redis_connection
@@ -189,13 +196,7 @@ def _bar_response(bar: CanonicalBar) -> dict[str, object]:
 def _after(value: str | None) -> datetime | None:
     if value is None:
         return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ContractError(field="after", reason="rfc3339_required") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ContractError(field="after", reason="timezone_required")
-    return parsed.astimezone(UTC)
+    return parse_rfc3339_instant(value, field="after")
 
 
 def _later(first: datetime | None, second: datetime | None) -> datetime | None:

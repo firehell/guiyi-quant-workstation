@@ -50,6 +50,7 @@ logs/
 
 # local rollback copies produced by controlled data-repair runs
 data/reports/source_interval_provenance_repair_apply_*/backups/
+data/reports/morning-note/
 
 # secrets
 secrets/

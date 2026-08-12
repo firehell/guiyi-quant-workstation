@@ -13,7 +13,7 @@ Market API、data CLI 和 Runtime 只读状态。项目不实现自动交易或�
 | 长期决策 | `DECISIONS.md` |
 | 分层架构 | `docs/ARCHITECTURE.md` |
 | Canonical 数据合同 | `docs/DATA_CENTER.md` |
-| active 数据任务 | `docs/tasks/GY-DATA-CORE-V2.md` |
+| 行为规范 | `openspec/specs/` |
 | 测试入口 | `TESTING.md` |
 | 运维拓扑与只读检查 | `deploy/README.md` |
 

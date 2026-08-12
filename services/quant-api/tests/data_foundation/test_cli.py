@@ -9,7 +9,7 @@ import pytest
 from app.guiyi_cli.main import CliUsageError, build_parser, main
 from app.guiyi_cli.output import exception_error_payload
 from app.market_data.after_market import AfterMarketResult
-from app.market_data.maintenance import MaintenanceResult
+from app.market_data.historical_data_manager import MaintenanceResult
 
 
 class FakeManager:
@@ -65,7 +65,6 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "update",
         "refresh",
         "audit",
-        "retire-products",
         "after-market",
     }
 
@@ -110,6 +109,25 @@ def test_refresh_requires_a_symbol_and_explicit_window() -> None:
     request = manager.calls[0][1]
     assert request.symbol == "jm"
     assert request.apply is False
+
+
+def test_refresh_rejects_the_completed_one_off_frequency_selector() -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                "data",
+                "refresh",
+                "--symbol",
+                "rs",
+                "--since",
+                "2025-01-01",
+                "--through",
+                "2025-01-31",
+                "--frequencies",
+                "1d",
+                "1w",
+            ]
+        )
 
 
 def test_update_parses_since_through_and_defaults_to_dry_run() -> None:

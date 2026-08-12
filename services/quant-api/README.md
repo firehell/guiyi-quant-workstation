@@ -4,9 +4,9 @@
 
 ## Current mounted surface
 
-- `/api/v1/market`：Canonical bars/page、coverage、dominants、Historical/Live state 与 WebSocket。
+- `/api/v1/market`：Canonical 历史分页、dominants、Historical/Live state 与 WebSocket。
 - `/api/runtime`：DB、Redis、Live 与 after-market 的只读 Runtime 状态。
-- CLI：`guiyi data update|refresh|audit|retire-products|after-market`、
+- CLI：`guiyi data update|refresh|audit|after-market`、
   `guiyi runtime status|live`。
 
 ## Unmounted / retired

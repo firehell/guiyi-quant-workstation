@@ -8,13 +8,12 @@ from collections import deque
 from collections.abc import Callable, Iterable, Mapping as MappingABC
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-import re
 from threading import Lock
 from typing import Any, Mapping, Protocol
 from zoneinfo import ZoneInfo
 
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m, bucket_window_for_bar
-from app.market_data.domain import BarFrequency, CanonicalBar
+from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 
@@ -24,7 +23,6 @@ _FINALIZATION_DELAY = timedelta(seconds=2)
 _SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
 _PROVIDER_RETRY_DELAY = timedelta(seconds=10)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
-_CONCRETE_CONTRACT = re.compile(r"(?P<symbol>[A-Z]+)(?P<month>\d{3,4})\Z")
 LIVE_BAR_CHANNEL_PREFIX = "live:bar"
 LIVE_STATE_CHANNEL = "market:state"
 
@@ -254,17 +252,6 @@ def _optional_raw_decimal(value: Any) -> Decimal | None:
     return None if value is None else Decimal(str(value))
 
 
-def _concrete_rank1_contract(symbol: str, value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    contract = value.strip().upper()
-    match = _CONCRETE_CONTRACT.fullmatch(contract)
-    if match is None or match.group("symbol") != symbol.upper():
-        return None
-    month = int(match.group("month")[-2:])
-    return contract if 1 <= month <= 12 else None
-
-
 class LiveProvider(Protocol):
     """最小 provider 边界；service 不持有 RQData 全局客户端。"""
 
@@ -406,7 +393,7 @@ class LiveMarketService:
                 for symbol, contract in stored_contracts.items():
                     if symbol not in self._products:
                         return "LIVE_RANK1_CONTRACT_INVALID"
-                    normalized = _concrete_rank1_contract(symbol, contract)
+                    normalized = normalize_contract_for_symbol(symbol, contract)
                     if normalized is None:
                         return "LIVE_RANK1_CONTRACT_INVALID"
                     current_contracts[symbol] = normalized
@@ -421,7 +408,7 @@ class LiveMarketService:
                 for symbol in unresolved
             }
             snapshot = {
-                symbol: _concrete_rank1_contract(symbol, contract)
+                symbol: normalize_contract_for_symbol(symbol, contract)
                 for symbol, contract in raw_snapshot.items()
             }
             if any(contract is None for contract in snapshot.values()):

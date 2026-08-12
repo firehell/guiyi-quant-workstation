@@ -138,7 +138,6 @@ class RefreshRequest:
     since: date
     through: date
     apply: bool = False
-    frequencies: frozenset[BarFrequency] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,7 +367,6 @@ class HistoricalDataManager:
                         request.since,
                         request.through,
                         force=True,
-                        frequencies=request.frequencies,
                     )
                 )
                 return self._execute("refresh", targets, request.through, apply=True)
@@ -380,7 +378,6 @@ class HistoricalDataManager:
                 request.since,
                 request.through,
                 force=True,
-                frequencies=request.frequencies,
             )
         )
         return self._execute("refresh", targets, request.through, apply=request.apply)

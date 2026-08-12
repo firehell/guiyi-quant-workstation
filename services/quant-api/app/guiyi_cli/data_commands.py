@@ -2,7 +2,7 @@
 
 将 argparse Namespace 转为 HistoricalDataManager 的 Update/Audit/Refresh 请求对象，
 并委托 manager 同名方法执行。active universe 固定 60 品种，与仓库 data/universe 对齐。
-退役品种由 ``retired_products.txt`` 精确拦截；``retire-products`` 走 Catalog/Canonical 清退。
+退役品种由 ``retired_products.txt`` 精确拦截；已完成的生产清退不再提供重复执行入口。
 """
 
 from __future__ import annotations
@@ -10,25 +10,19 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
-from app.market_data.composition import canonical_root
-from app.market_data.maintenance import (
+from app.market_data.historical_data_manager import (
     AuditRequest,
     HistoricalDataManager,
     RefreshRequest,
     UpdateRequest,
 )
-from app.market_data.domain import BarFrequency
-from app.market_data.product_retirement import (
-    assert_not_retired,
-    apply_retirement,
-    plan_retirement,
-)
+from app.market_data.product_retirement import assert_not_retired
 from app.market_data.operational_universe import load_active_products
 
 
 def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
-    if args.data_command in {"retire-products", "after-market"}:
+    if args.data_command == "after-market":
         return None
     if args.data_command == "update":
         return UpdateRequest(
@@ -51,19 +45,12 @@ def build_request(args: argparse.Namespace):
             since=since,
             through=through,
             apply=bool(args.apply),
-            frequencies=_refresh_frequencies(args.frequencies),
         )
     raise ValueError("CLI_DATA_COMMAND_INVALID")
 
 
 def run_data_command(args: argparse.Namespace, manager: HistoricalDataManager):
     """调用 manager 上与 data_command 同名的方法并返回结果对象。"""
-    if args.data_command == "retire-products":
-        session = manager.catalog.session
-        root = manager.catalog.canonical_root
-        if bool(args.apply):
-            return apply_retirement(session, root)
-        return plan_retirement(session, root)
     request = build_request(args)
     action = getattr(manager, args.data_command)
     return action(request)
@@ -88,20 +75,3 @@ def _day(value: str | None) -> date | None:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("CLI_DATE_INVALID") from exc
-
-
-def _refresh_frequencies(
-    values: list[str] | tuple[str, ...] | None,
-) -> frozenset[BarFrequency] | None:
-    """可选的日/周精确重建范围；省略时保持既有全频 refresh。"""
-    if not values:
-        return None
-    return frozenset(BarFrequency(value) for value in values)
-
-
-# re-export helpers used by tests
-__all__ = [
-    "build_request",
-    "run_data_command",
-    "canonical_root",
-]

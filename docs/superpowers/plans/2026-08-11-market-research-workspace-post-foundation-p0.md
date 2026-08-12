@@ -14,7 +14,7 @@
 - `MarketDataService` 仍是唯一正式历史 Bar 读取入口；Research Service 不得 glob Parquet、自判主力或跨频回退。
 - `actual_dominant` 继续由 `MainContractMap rank=1` 查询时拼接；`continuous/MAIN` 继续保持未平滑语义。
 - 必须保留现有 `MarketReadService`、`useMarketSeries`、`/bars/page`、`/market/state`、`/market/ws`、cursor pagination、generation token、Canonical/Live seam 和 reconnect 行为。
-- Historical Research Universe 为 active 60；Live Observation Universe 继续只由 `operational_products.txt` 决定。完成 60/60 不授权扩大 Live。
+- Historical Research Universe 与 Live/after-market Universe 均为 active 60；运行范围仍只由 `operational_products.txt` 决定，且不得扩展到订单或通知。
 - P0 Research API 只读 PostgreSQL/Canonical，不调用 RQData、不写 PostgreSQL、不写 Canonical、不改 Runtime enable state。
 - 全市场 Radar 必须显式返回 `expected_as_of`、`participant_count`、`active_count`、stale/unavailable；任何品种未达到 expected_as_of 时显示 degraded，不伪装 60/60 current。
 - P0 不实现 active 60 自动日终写入。若后续要达到每天 60/60 current 的 Daily Ready，另开 Lane 3 任务复用正式 `HistoricalDataManager.update`，且保持 Live universe 不变。
@@ -53,7 +53,7 @@
 
 - Create: `services/quant-api/app/market_data/research.py` — 单品种研究计算、共享研究指标函数、`MarketResearchService.product_snapshot()`。
 - Create: `services/quant-api/app/market_data/radar.py` — 60 品种 Radar 聚合、freshness、attention 规则。
-- Modify: `services/quant-api/app/market_data/operational_universe.py` — 提取 `load_active_products()`，不改变 operational 语义。
+- Modify: `services/quant-api/app/market_data/operational_universe.py` — `load_active_products()` 与 operational 配置保持同一 60 品种合同。
 - Modify: `services/quant-api/app/market_data/composition.py` — 组装 Research/Radar service；只注入 read dependencies。
 - Modify: `services/quant-api/app/schemas/market.py` — Product Research / Radar DTO。
 - Modify: `services/quant-api/app/api/market.py` — 新增只读 research routes。
@@ -658,7 +658,7 @@ Add:
 def load_active_products(path: Path | None = None) -> tuple[str, ...]: ...
 ```
 
-It must validate exactly 60 unique normalized symbols and zero retired overlap. Existing `load_operational_products()` calls/reuses it; operational semantics remain unchanged.
+It must validate exactly 60 unique normalized symbols and zero retired overlap. Existing `load_operational_products()` returns the same ordered 60-product universe.
 
 Radar snapshot minimum fields:
 

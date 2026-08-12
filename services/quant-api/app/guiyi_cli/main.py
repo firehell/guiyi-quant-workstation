@@ -22,7 +22,7 @@ from app.guiyi_cli.output import (
 )
 from app.market_data.composition import build_historical_data_manager, build_live_market_service
 from app.market_data.after_market import build_after_market_updater
-from app.market_data.maintenance import HistoricalDataManager
+from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
 

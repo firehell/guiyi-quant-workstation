@@ -21,7 +21,7 @@ from app.market_data.coverage_source import (
 )
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
 from app.market_data.errors import InfrastructureError
-from app.market_data.maintenance import BarBatch
+from app.market_data.historical_data_manager import BarBatch
 from app.market_data.metadata import MetadataSnapshot
 from app.market_data.session_clock import SHANGHAI
 from app.models import Contract, Instrument, MainContractMap, TradingCalendar

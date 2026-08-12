@@ -56,11 +56,11 @@ F. MarketDataService 对当前要求的查询模式/周期完成全域只读验�
 
 ```text
 60 品种全部启用 Live
-60 品种全部进入 operational_products
+60 品种全部进入 `operational_products.txt`，Live 与盘后自动更新共用这一完整范围
 60 品种全部自动盘后更新已获授权
 ```
 
-当前 Runtime 的有界持续自动化只由 `operational_products.txt` 控制。若届时仍为 `j/jm/ap/ag`，则保持：
+当前 Runtime 的有界持续自动化只由 `operational_products.txt` 控制，且该文件与 active 60 完全一致：
 
 ```text
 Historical Research Universe = active 60
@@ -219,7 +219,7 @@ active_count      = 60
 
 ```text
 active_products.txt       = 60 historical research universe
-operational_products.txt  = Live observation subset
+operational_products.txt  = same 60-product Live/after-market universe
 ```
 
 不要为了更新 60 品种历史数据而把 Live subscription 扩成 60。

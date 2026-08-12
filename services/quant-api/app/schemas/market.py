@@ -41,15 +41,6 @@ class ContractSegmentOut(BaseModel):
     end_trading_day: date
 
 
-class MarketBarsResponse(BaseModel):
-    """``/bars/canonical`` 完整响应。"""
-
-    request: dict[str, object]
-    bars: list[MarketBarOut]
-    coverage: CoverageOut | None
-    resolved_contract_segments: list[ContractSegmentOut]
-
-
 class MarketPageMetaOut(BaseModel):
     """历史游标分页边界。"""
 
@@ -98,22 +89,3 @@ class DominantContractListResponse(BaseModel):
     """``/dominants`` 列表响应。"""
 
     items: list[DominantContractOut]
-
-
-class DatasetCoverageOut(BaseModel):
-    """Catalog 中单条数据集（kind + symbol + series + frequency）的覆盖摘要。"""
-
-    kind: str
-    symbol: str
-    series_or_contract: str
-    frequency: str
-    start: datetime
-    end: datetime
-    row_count: int
-    partition_count: int
-
-
-class MarketCoverageResponse(BaseModel):
-    """``/coverage/canonical`` 列表响应。"""
-
-    items: list[DatasetCoverageOut]

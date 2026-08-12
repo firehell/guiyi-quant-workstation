@@ -1,7 +1,7 @@
 """项目根路径与环境变量加载。
 
-在 import ``db.session`` 时自动调用 ``load_project_env``，从仓库根目录 ``.env`` 读取
-配置（不修改 .env 文件本身）。
+在 import ``db.session`` 时自动调用 ``load_project_env``，以不覆盖已有进程环境的方式读取仓库根
+``.env``。launchd 先由 ``run-local-service.sh`` 加载外部 ``project.env``，仓库文件只作开发 fallback。
 """
 
 from pathlib import Path

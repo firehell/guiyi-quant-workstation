@@ -20,6 +20,8 @@ RETIRED_GET_PATHS = [
     "/api/v1/data/summary",
     "/api/v1/data/profiles",
     "/api/v1/data/coverage",
+    "/api/v1/market/bars/canonical",
+    "/api/v1/market/coverage/canonical",
 ]
 
 RETIRED_MODULES = [
