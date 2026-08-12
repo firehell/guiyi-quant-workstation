@@ -54,8 +54,9 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   `ready`、active=60、participant=60、stale/unavailable 均为空、`expected_as_of=2026-08-12`。
 - 同次只读范围核对为 active=60、operational=60；盘后公开状态的最近成功记录仍为
   `2026-08-12`、`passed`、attempts=2、products=60。发现一个不改变实际运行状态的 Runtime health
-  响应呈现缺陷：`components.after_market.configured_enabled` 未透传 activation marker 而默认显示为 false；
-  在修复并取得新的 Runtime switch 授权前，不将该字段表述为已正确验收。
+  响应呈现缺陷：`components.after_market.configured_enabled` 未透传 activation marker 而默认显示为 false。
+  该根因已由 `8547c0af...` 修复并通过定向 Runtime health 测试；当前隔离 Runtime 仍为切换前的
+  `e9eedb1b...`，在取得新的 Runtime switch 授权并读回前，不将该字段表述为已正确验收。
 - `2026-08-12 20:38 +08:00` 已将隔离 Runtime 从 `0dea973d...` 单次切换到 clean/detached
   `v1.0.0^{}`=`423b049830087e7885736e6e5471d5e289134bbe`；`uv sync --no-dev`、Web production build 与
   bundle topology 均通过，API/Web/Live/after-market 已从同一 Runtime 根重载。API/Web/Live 为
@@ -103,4 +104,4 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 - **P0 Runtime-integrated readback 已完成**：隔离 Runtime 已为精确 P0 提交
   `e9eedb1b...`，P0 Web/API/Live/after-market 均指向同一 clean/detached worktree，且 Research/Radar、
   Historical/Live seam 和 60 品种范围均可只读验证。Runtime health 的 after-market activation 字段存在上述
-  呈现缺陷，需作为小修复单独处理；真实使用数日的 P1 决策观察期也尚未开始。
+  呈现缺陷，修复已在 `8547c0af...` 完成、尚待单独 Runtime switch；真实使用数日的 P1 决策观察期也尚未开始。
