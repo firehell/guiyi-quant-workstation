@@ -44,6 +44,15 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-12 23:15 +08:00` 已将隔离 Runtime 固定到 clean/detached `v1.1.0^{}`=
+  `f2568ba2fc3cbcf515abba1e51f12eacd30f8ff0`；API package 读回为 `quant-api 1.1.0`，Web production
+  build、API/Web reload 与四个 launchd 根一致均已确认。API/Web HTTP 200、Radar 为 `ready`（active=60、
+  participant=60、stale/unavailable 为空），JM actual-dominant 15m 可读，active/operational 均为 60，
+  after-market activation=true 且最近自然盘后记录仍为 60 品种 `passed`。
+- 同次只读读回的 Runtime health 为 `degraded`：Live heartbeat 仍报告 operational=60，但当前
+  subscribed=0，原因是 RQData Live provider 返回 quota exhausted；这是显式外部 provider 限额状态，不做
+  手工盘后、数据写入、重载或重试。DB、Redis、after-market 均为 `ok`，Historical/Canonical 与 Radar
+  读取不受影响；恢复 Live 需 provider 额度可用后由现有 Runtime 自然恢复，再只读观察。
 - `2026-08-12 22:43 +08:00` 已按单次授权将隔离 Runtime 固定到 clean/detached
   `8547c0afb974a3b73b68a5207fd1d731d56a54ed`，即 P0 基线加 Runtime health 修复；运行时 API
   依赖同步和 Web production build 均通过。部署脚本在 API `kickstart` 返回一次
@@ -95,6 +104,9 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   Redis Live 或任何历史写入路径。
 - 版本源、changelog 与本状态已收口为 `1.1.0`。本版本不新增数据/DB writer、migration、通知、订单或
   自动交易；`auto_order=false` 继续成立。
+- annotated `v1.1.0` tag 对象为 `8d72f458...`，peeled target 精确为 `f2568ba2...`；本地 `main`
+  已 fast-forward 到同一 release commit。tag 与 main 未推送远端；Runtime 部署状态与外部 Live provider
+  限额事实以上述 Runtime 读回为准。
 
 - 仓库版本号、changelog 与当前状态已收口为 `1.0.0`；60 品种 17:00 自然盘后最后外部
   Gate 已通过，封板条件已满足。annotated `v1.0.0` tag 对象为 `7b573d97...`，peeled target
@@ -116,7 +128,7 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 - 真实浏览器在当前前端工作树检查到：旧 Runtime API 缺少新 Research/Radar 路由时，Radar 明确显示不可用、
   Product Workspace 仍保持 Canonical/Live K 线可读；HTDY 仅在用户显式开启后展示
   “未来引用/重绘风险/仅供人工观察”。
-- **P0 Runtime-integrated readback 已完成**：隔离 Runtime 已为精确 P0 加修复提交
-  `8547c0af...`，P0 Web/API/Live/after-market 均指向同一 clean/detached worktree，且 Research/Radar、
-  Historical/Live seam、60 品种范围和 after-market activation 字段均可只读验证。真实使用数日的 P1
-  决策观察期也尚未开始。
+- **P0 Runtime-integrated readback 已封板于 v1.1.0**：隔离 Runtime 已为精确 release commit
+  `f2568ba2...`，P0 Web/API/Live/after-market 均指向同一 clean/detached worktree；Research/Radar、
+  Historical/Live seam、60 品种范围和 after-market activation 字段均可只读验证。当前 Live provider quota
+  exhausted 时保持显式 degraded，不把该外部限额伪装为 Live 可用；真实使用数日的 P1 决策观察期也尚未开始。
