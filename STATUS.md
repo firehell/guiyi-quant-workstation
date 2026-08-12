@@ -46,20 +46,24 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 - `2026-08-12` 已按两次独立单次请求完成隔离 Runtime 从 `51e84988...` 到 clean/detached
   `0dea973d5eb18d056c8bf37f2fe598c7f3446148` 的切换与失败续作；production 包为 `quant-api 1.0.0`，
-  Web build 通过，API/Web/Live 为 running，after-market 为 `not running/runs=0`，四个 launchd 根一致。
+  Web build 通过，API/Web/Live 为 running，四个 launchd 根一致。
   API/Web HTTP 200、Runtime health 为 `ok`，Market dominants 返回 60 个唯一且业务字段完整的品种。
-- 配置读回为 active=60、operational=60 且内容相同。Redis `live:subscription:2026-08-12` 精确覆盖
-  operational 60，60 个 rank1 合约格式有效；16:06 已收盘时 provider subscribed=0，heartbeat 仍因
-  56 个 `TradingSession.effective_to` 停在 `2026-08-11` 而显示 `CLOSED=4/UNKNOWN=56`，系统继续 fail-closed。
-- Calendar-first 盘后修复已部署：17:00 先以 Calendar-only metadata day 判断交易日，再在 update 内同步
-  Session。只读读回为 `metadata_day=2026-08-12`、同步前 `complete_day=2026-08-11`；after-market status
-  仍为 `pending/last_run=null`、状态文件不存在，未运行 migration/通知、未手工触发盘后。今天 17:00 的
-  60 品种自然运行仍是最后外部验收 Gate，不得在触发完成前写成已通过。
+- 配置读回为 active=60、operational=60 且内容相同。`2026-08-12 17:00:01 +08:00`
+  launchd 自然触发 60 品种盘后更新；第一次在 Canonical update 阶段抛出 `ValueError`
+  而失败，无代码变更、无人工补跑，一小时后的唯一自动 retry 于 `19:15:06 +08:00`
+  完成：`status=passed`、`attempts=2`、`error_code=null`、`last_successful_trading_day=2026-08-12`，
+  launchd `runs=1/last exit code=0`。公开日志按合同只保留异常类型，不将未记录的具体 provider 子原因
+  升级为确定结论。
+- 盘后只读核对为当天 TradingSession 60/60、MainContractMap rank1 60/60；continuous
+  `1m/5m/15m/30m/60m/1d` 的 60 品种统一推进至 `2026-08-12T07:00:00Z`，`1w` 统一停在
+  已完整周 `2026-08-07T07:00:00Z`；当天 rank1 真实合约的 `1m/5m/15m/30m/60m/1d`
+  也为 60/60。Runtime health 读回 Live `CLOSED=60`、`subscribed_count=0`，表明当日 Live snapshot
+  已清理；Live 仍未写入 Parquet。
 
 ## v1.0.0 封板状态
 
-- 仓库版本号与 changelog 已收口为 `1.0.0` release candidate；正式 tag 尚未创建。
+- 仓库版本号、changelog 与当前状态已收口为 `1.0.0`；60 品种 17:00 自然盘后最后外部
+  Gate 已通过，封板条件已满足。`v1.0.0` annotated tag 必须精确指向包含本状态的最终
+  `main` release merge commit；Tag 不授权 Runtime 切换、migration、通知或任何数据写入。
 - active OpenSpec 已与实现同步：continuous `1m` 只用 `{SYMBOL}88`，`1d` 按 rank1 真实合约交易所日行情，
   `1w` 只由完整同源日线聚合。
-- 正式 `v1.0.0` tag 的最后外部证据是：部署本次封板 commit 后，17:00 launchd 自然触发的 60 品种盘后
-  更新通过并只读核对 Session/map/Canonical/Web seam/Live cleanup。不得手工触发补证。

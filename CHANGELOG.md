@@ -2,7 +2,7 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-08-12
 
 首个封板候选，范围为本地单用户国内期货行情研究底座：
 
@@ -12,4 +12,5 @@
 - operational 60 的 Live observation 和 17:00 盘后增量更新，Historical/Live 严格分离；
 - 无 backtest、Signal/Review/Strategy 兼容面，无交易账户、订单或自动交易路径。
 
-正式 `v1.0.0` tag 仅在 60 品种 17:00 自然盘后验收通过后创建。
+2026-08-12 的 60 品种 17:00 自然盘后于唯一一小时自动 retry 后完成，且 Session、
+MainContractMap、Canonical edge 与 Live cleanup 只读验收通过；本版本据此封板。

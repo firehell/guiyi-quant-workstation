@@ -50,7 +50,11 @@ logs/
 
 # local rollback copies produced by controlled data-repair runs
 data/reports/source_interval_provenance_repair_apply_*/backups/
+
+# local scheduled research reports (dated observations, not release assets)
 data/reports/morning-note/
+data/reports/catalyst-calendar/
+data/reports/thesis-tracker/
 
 # secrets
 secrets/
