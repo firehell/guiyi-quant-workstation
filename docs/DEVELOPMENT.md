@@ -82,8 +82,8 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 外部操作权限。
 
 唯一的持续授权例外是用户明确要求在识别出的本地工作站“启用 Market Runtime V1”后，既定
-`operational_products.txt`（当前 `j/jm/ap/ag`）的 rank1 Live 观察与 17:00/一次 1h retry 盘后更新可
-持续运行；该请求不授权改变 `operational_products`、其他 DB mutation、release、真实通知或订单。未
+`operational_products.txt`（当前与 active 60 一致）的 rank1 Live 观察与 17:00/一次 1h retry 盘后更新可
+持续运行；该请求不授权其他 DB mutation、release、真实通知或订单。未
 收到该请求时，只能执行 mock、临时目录、render-only 与只读健康验证。
 
 ## 不可放宽的业务边界
@@ -103,6 +103,6 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 - 日常开发流程：本文
 - 当前状态：`STATUS.md`
 - 长期产品与数据边界：`PROJECT_SOURCE.md`、`DECISIONS.md`
-- 数据核心 V2 active 合同：`docs/tasks/GY-DATA-CORE-V2.md`
+- 数据与查询 active 合同：`openspec/specs/`
 
 本文不得复制或重新解释业务 canonical。

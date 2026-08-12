@@ -40,7 +40,10 @@ ACTIVE_CANONICAL = (
     "docs/DEVELOPMENT.md",
     "docs/ARCHITECTURE.md",
     "docs/DATA_CENTER.md",
-    "docs/tasks/GY-DATA-CORE-V2.md",
+    "openspec/specs/canonical-market-storage/spec.md",
+    "openspec/specs/data-foundation-metadata/spec.md",
+    "openspec/specs/historical-data-maintenance/spec.md",
+    "openspec/specs/market-series-query/spec.md",
 )
 
 
@@ -60,16 +63,24 @@ def test_current_architecture_facts_are_explicit() -> None:
     architecture = (ROOT / "docs/ARCHITECTURE.md").read_text(encoding="utf-8")
     project = (ROOT / "PROJECT_SOURCE.md").read_text(encoding="utf-8")
     status = (ROOT / "STATUS.md").read_text(encoding="utf-8")
-    data_contract = (ROOT / "docs/tasks/GY-DATA-CORE-V2.md").read_text(
-        encoding="utf-8"
+    data_contract = "\n".join(
+        (ROOT / relative).read_text(encoding="utf-8")
+        for relative in ACTIVE_CANONICAL
+        if relative.startswith("openspec/specs/")
     )
 
     assert "MarketDataService" in architecture
     assert "HistoricalDataManager" in architecture
     assert "RQData" in architecture
     assert "auto_order=false" in project
-    assert "j/jm/ap/ag" in status
-    for fact in ("DatasetKey", "八表 Catalog", "actual_dominant", "六项校验"):
+    assert "active 60" in status
+    for fact in (
+        "DatasetKey",
+        "八表 active 模型",
+        "最小月度 Catalog",
+        "actual_dominant",
+        "schema、identity、主键单调唯一、OHLCV、session/frequency、coverage 和物理可读性",
+    ):
         assert fact in data_contract
 
 

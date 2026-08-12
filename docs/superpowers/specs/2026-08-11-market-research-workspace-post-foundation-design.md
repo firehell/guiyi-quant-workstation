@@ -1,103 +1,124 @@
 # Market Research Workspace V2 — Post-Foundation Design
 
+Final rebase：2026-08-12  
+Review baseline：`develop@51e849888590872eab298a682a105ef904ca0426`（文档提交前代码头）
+
 ## 1. Purpose
 
-本设计是归一量化 Market Research Workspace 的新开发基线，供 **Market Runtime MR-08 已完成验收、active universe 60/60 历史 Canonical 已全部闭环** 后启动开发使用。
+本设计是归一量化在 Data Foundation 完整闭环后的 Market Research Workspace 最终 P0 设计基线。
 
-目标不是把 RQData API 或大量原始字段搬到 Web，而是把可信市场数据压缩成两级个人研究工作流：
+当前目标不是继续建设数据底座，也不是把 RQData API 返回值搬到 Web，而是在已经可信的 60 品种历史行情、主力映射和 Runtime seam 之上，把 Market Web 收敛成两个高效研究入口：
 
 ```text
 Market Radar
-    -> 快速理解全市场状态
-    -> 找到值得进一步研究的品种
+    -> 看全市场状态
+    -> 找值得进一步研究的品种
     -> 点击品种
 Product Workspace
     -> 第一屏完整看 K 线
-    -> 再向下看趋势、量价、OI 与后续期货研究增强
+    -> 再看趋势、量价、OI 和合约上下文
 ```
 
-项目仍然是本地优先、单用户、个人开发维护的国内期货研究工作站。设计优先级固定为：
+项目仍然是本地优先、单用户、个人开发维护的国内期货量化研究工作站。设计优先级固定为：
 
 ```text
 研究效率
 > 数据语义正确
 > 响应速度
 > 简单可维护
-> 可复用
+> 必要复用
 > 商业终端式扩展能力
 ```
 
-本设计不复制 TradingView，不建设 SaaS、多用户平台或自动交易系统。
+不复制 TradingView，不建设 SaaS、多用户平台，也不实现自动交易。
 
 ---
 
-## 2. Activation Gate
+## 2. Final Rebase Baseline
 
-### 2.1 本文是未来基线文档
+### 2.1 Data Foundation 已满足
 
-本文生成时仓库仍处于 60 品种逐步闭环过程中；**不得因为本文存在就把 60/60 写成当前已完成事实**。
-
-真正开始执行本文前，只认 `STATUS.md` 的最新事实。至少必须满足：
+当前 `STATUS.md` 已确认：
 
 ```text
-A. Market Runtime MR-08 最终验收已完成
-B. active universe = 60
-C. 60/60 品种历史 Canonical 全部完成闭环
-D. 60/60 audit passed
-E. 60/60 fixed-through/fixed-T0 口径达到仓库当时规定的 NOOP 验收
-F. MarketDataService 对当前要求的查询模式/周期完成全域只读验收
+DFD-01 ～ DFD-07 全部完成并归档
+active universe = 60
+60/60 Canonical closure complete
+fixed T0 = 2026-08-11
+full audit = passed / 0 findings
 ```
 
-若未来 Data Foundation 的任务编号发生变化，以 `STATUS.md`、`docs/DATA_CENTER.md` 和 active task contract 的事实为准，不依赖本文中的旧阶段编号。
+因此旧文档中“等待 60/60 后再启用本设计”的前置条件已经满足。本文从现在起不再以 partial universe 为主要产品设计前提。
 
-### 2.2 Runtime 与 60/60 Data Foundation 是两个不同维度
-
-即使 60/60 历史数据全部闭环，也不能自动推出：
-
-```text
-60 品种全部启用 Live
-60 品种全部进入 operational_products
-60 品种全部自动盘后更新已获授权
-```
-
-当前 Runtime 的有界持续自动化只由 `operational_products.txt` 控制。若届时仍为 `j/jm/ap/ag`，则保持：
-
-```text
-Historical Research Universe = active 60
-Live Observation Universe     = operational subset
-```
-
-任何扩大 Live 或自动真实写入范围的动作都属于独立 Runtime/Data Gate。
-
----
-
-## 3. Frozen Project Boundaries
-
-### 3.1 Historical Core
-
-继续冻结：
+长期数据事实继续只认：
 
 ```text
 RQData
--> temporary staging
--> six hard validations
+-> temporary staging + six hard validations
 -> Canonical Parquet
--> PostgreSQL eight-table metadata/catalog
+-> PostgreSQL eight-table Catalog/metadata
 -> MarketDataService
 -> consumers
 ```
 
-- Canonical Parquet 是唯一 active 历史 Bar 存储。
-- PostgreSQL 不保存 K 线。
-- `MarketDataService` 是正式历史 Bar 唯一读取入口。
-- Web、Research Service、Indicator consumer 均不得 glob Parquet、自选文件、自判主力或跨频回退。
-- 物理 Dataset 只有 `continuous | contract`。
-- `actual_dominant` 继续由 `MainContractMap rank=1` 查询时拼接。
-- `continuous/MAIN` 继续保持当前未平滑连续语义，不引入 `get_dominant_price` 或复权连续序列替代。
+### 2.2 active 与 operational 现在均为 60
 
-### 3.2 Live Core
+当前：
 
-继续冻结 historical / live 分层：
+```text
+active_products.txt      = 60
+operational_products.txt = same 60
+```
+
+这意味着：
+
+- Historical Research Universe 为 60；
+- Runtime Live/after-market 的**配置范围**也是这 60；
+- 但 Live provider channels 仍必须按真实 MarketPhase 只订阅当前 `TRADING` 的品种，不能把“operational=60”误解为“任何时刻同时订阅 60 个 channel”。
+
+60 品种的每日 17:00 + 最多一次 1h retry 历史更新已经属于现有 Market Runtime V1 的有界持续自动化能力，不再为 Market Radar 另建第二套 Daily Freshness scheduler。
+
+### 2.3 当前仍有一个独立 Runtime 部署尾项
+
+2026-08-12 的 60 品种 Runtime switch 已部署到 `a0106860...`，现场暴露 56 个品种 `TradingSession.effective_to` 仍停在 2026-08-11，Live heartbeat 因而出现 `UNKNOWN=56`。系统按合同 fail-closed，没有猜测 session。
+
+`develop@51e84988...` 已完成根因修复：
+
+```text
+完整 operational-60 当日 rank1 snapshot
+        !=
+当前 TRADING provider channels
+```
+
+修复代码和回归已完成，但还没有用新的单次 Runtime switch 部署到当前隔离 Runtime。
+
+这个尾项：
+
+- **不否定 Data Foundation 60/60 完成事实；**
+- **不阻塞 P0 纯代码开发；**
+- 但在 P0 最终真实 Runtime 集成验收前必须先按 `STATUS.md` 处理完，并读回 60 品种 Runtime 健康状态。
+
+---
+
+## 3. Frozen Boundaries
+
+### 3.1 Historical Core
+
+以下合同不在 P0 重构：
+
+- Canonical Parquet 是唯一 active 历史 Bar 存储；
+- PostgreSQL 不保存 K 线；
+- `MarketDataService` 是历史 Bar 唯一正式读取入口；
+- 物理 Dataset 只有 `continuous | contract`；
+- `actual_dominant` 只在查询时按 `MainContractMap rank=1` 拼接；
+- `continuous/MAIN` 保持当前未平滑连续语义；
+- Consumer 不得 glob、自判主力、自选物理文件或跨频回退。
+
+P0 Research Service 只能成为 `MarketDataService` 的只读消费者，不能绕过它。
+
+### 3.2 Runtime / Live Core
+
+继续冻结：
 
 ```text
 Historical Canonical
@@ -105,39 +126,53 @@ Historical Canonical
 Redis Live Observation
 ```
 
-P0 Market Research Workspace 必须复用已经验收的：
+Product Workspace 必须复用当前已经存在并验收过的：
 
 ```text
 MarketReadService
 useMarketSeries
-/bars/page
-/market/state
-/market/ws
+GET /api/v1/market/bars/page
+GET /api/v1/market/state
+WS  /api/v1/market/ws
 Canonical/Live seam
+after-market seam refresh
 ```
 
-不重建第二套分页、WebSocket、Live merge 或 trading-day 逻辑。
+不新增第二套分页、WebSocket、reconnect、trading-day、phase 或 Historical/Live merge 逻辑。
 
 ### 3.3 Indicator Authority
 
-指标权威继续是：
+唯一指标业务权威继续是：
 
 ```text
 packages/quant-core/guiyi_quant/indicators/
 ```
 
-Web TypeScript 只允许作为已登记指标的观察镜像。
-
-当前主图可用集合按仓库实际 Registry/`MAIN_INDICATOR_DEFINITIONS` 读取；设计基线按目前事实为：
+当前 Registry 核心状态保持：
 
 ```text
-EMA10
-EMA21
-EMA60
-HTDY original observation（默认关闭，明确重绘/未来引用风险）
+EMA10 / EMA21 / EMA60 -> validated
+MACD                  -> compatibility_validated
+ATR                   -> compatibility_validated
+HTDY original         -> observation_only
+HTDY strict           -> strategy_candidate
 ```
 
-Volume 与 MACD 固定为副图观察面，不因此修改 MACD formal capability。
+Web `indicators.ts` / `mainIndicators.ts` 只用于浏览器观察镜像；发生口径冲突时必须以 Python Kernel + golden 为准。
+
+### 3.4 Product taxonomy 已经存在
+
+当前仓库已经有：
+
+```text
+data/universe/product_sectors.csv
+services/quant-api/app/market_data/product_taxonomy.py
+apps/quant-web/src/utils/productDirectory.ts
+```
+
+`product_sectors.csv` 精确覆盖 active 60，并提供展示名称和一级研究板块；后端 taxonomy 做严格一致性校验，`/market/dominants` 已返回 `product_name + sector`。
+
+因此 P0 不再设计新的 sector 配置，不从 `Instrument.sector` 推断，也不让 Web 复制品种到板块映射。
 
 ---
 
@@ -151,7 +186,7 @@ Market
 └─ Product Workspace
 ```
 
-不创建：
+不新增：
 
 ```text
 RQData API 中心
@@ -161,97 +196,169 @@ RQData API 中心
 交易参数一级页
 ```
 
-未来 RQData Research Enrichment 全部是 Product Workspace 的研究模块，不是 provider API 页面。
+以后 RQData Research Enrichment 仍然是 Product Workspace 的纵向研究模块，而不是 provider API 页面。
 
 ---
 
-## 5. Data Freshness Model
+## 5. Market Research Read Model
 
-这是 V2 相对旧设计新增的核心约束。
+### 5.1 Why
 
-### 5.1 60/60 闭环只证明历史资产完整，不证明每天都已更新
+当前 Web 已经能正确读取 K 线和 Live seam，但 Radar、右侧研究摘要、下方量价/OI 如果各自在浏览器重复计算，会产生：
 
-Market Radar 每次响应必须显式返回：
+- 同一指标多个口径；
+- 60 品种前端 N+1；
+- 浏览器承担过多研究逻辑；
+- 以后 P1 数据难以复用。
+
+P0 新增一个**只读研究语义层**：
+
+```text
+MarketDataService
+      ↓
+research_metrics
+      ↓
+MarketResearchService / MarketRadarService
+      ↓
+ProductResearchSnapshot / RadarSnapshot
+      ↓
+Market Web
+```
+
+### 5.2 Responsibilities
+
+Research 层只允许：
+
+- 调用 `MarketDataService`；
+- 读取 `MainContractMap`/dominants 已有摘要；
+- 使用 `load_active_products()`；
+- 使用 `load_product_taxonomy()`；
+- 使用 `DatabaseCoverageSource.latest_complete_day()`；
+- 调用 quant-core EMA/ATR 等权威函数；
+- 计算研究统计并输出 DTO。
+
+明确禁止：
+
+- 调用 RQData provider；
+- 写 PostgreSQL；
+- 写 Canonical；
+- 读写 Redis Live；
+- 修改 `operational_products`；
+- 承担 Runtime subscription 或 after-market 控制。
+
+推荐只读 API：
+
+```text
+GET /api/v1/market/research/product
+GET /api/v1/market/research/radar
+```
+
+---
+
+## 6. Freshness Model
+
+### 6.1 expected_as_of
+
+Radar 的目标日期不能由浏览器自然日猜测。
+
+固定使用现有交易日/session 事实：
 
 ```text
 expected_as_of
-participant_count
-active_count
-stale/unavailable products
+= DatabaseCoverageSource.latest_complete_day(active 60)
 ```
 
-`expected_as_of` 由可信 TradingCalendar/完整交易日语义确定，不由浏览器自然日猜测。
+这意味着：
 
-一个品种只有在：
+- 交易日盘中：通常仍是上一完整交易日；
+- 收盘并且 session 已完整结束：可以推进到当天；
+- 周末/节假日：保持最近完整交易日；
+- Calendar/Session 事实不足：fail-closed。
+
+### 6.2 participant rule
+
+Radar 每个 symbol 使用 `actual_dominant / 1d` 最新历史数据。
+
+只有：
 
 ```text
-latest actual_dominant/1d trading_day == expected_as_of
+latest trading_day == expected_as_of
 ```
 
-时才进入该次 Radar 统计。
+才进入 participant 集合。
 
-因此正常全域状态是：
+响应必须显式返回：
+
+```text
+status = ready | degraded
+expected_as_of
+active_count = 60
+participant_count
+stale[]
+unavailable[]
+```
+
+正常状态：
 
 ```text
 participant_count = 60
-active_count      = 60
+status = ready
 ```
 
-若某品种日线没有推进到 expected_as_of，则 Radar 返回 `partial/degraded`，Web 显示例如：
+任何品种没推进到 `expected_as_of`：
+
+```text
+status = degraded
+```
+
+Web 例如显示：
 
 ```text
 数据日期 2026-08-20 · 参与 59/60 · 1 个品种待更新
 ```
 
-禁止继续显示“全市场完整”。
+禁止隐藏 stale 或继续写“全市场完整”。
 
-### 5.2 Daily Ready Gate
+### 6.3 Daily freshness 复用现有 Runtime
 
-为了让 Market Radar 成为每天可用的研究入口，最终还需要一个独立 Daily Freshness Gate：
+当前 `operational_products.txt` 已与 active 60 一致，现有 17:00 after-market updater 也读取同一份 60 品种配置并调用唯一正式 `HistoricalDataManager.update`。
 
-```text
-60/60 latest complete trading day current
-```
+因此 P0：
 
-最简单的长期方案是复用现有 `HistoricalDataManager.update` / `guiyi data update --universe active`，实现一个**仅历史日终更新 active 60** 的轻量自动化，同时保持 Live universe 不变。
+- **不新建 Daily Radar scheduler；**
+- **不新增数据库任务表；**
+- **不新增第二个历史写入口。**
 
-推荐长期关系：
-
-```text
-active_products.txt       = 60 historical research universe
-operational_products.txt  = Live observation subset
-```
-
-不要为了更新 60 品种历史数据而把 Live subscription 扩成 60。
-
-真正启用 60 品种自动日终写入属于独立 Lane 3 / Runtime + formal data write Gate；P0 Web 代码可以先完成，但在该 Gate 通过前只能诚实显示 `as_of` 与 freshness 状态。
+如果盘后更新失败，Radar 只通过 freshness 诚实降级，不主动修复或触发写入。
 
 ---
 
-## 6. Market Radar
+## 7. Market Radar
 
-### 6.1 Research Questions
+### 7.1 First-screen questions
 
-Market Radar 第一屏只回答：
+第一屏只回答：
 
-1. 最近完整交易日的市场整体活跃度如何？
-2. 价格与持仓结构在哪些品种上出现明显变化？
-3. 哪些品种值得打开 Product Workspace 继续研究？
+1. 最近完整交易日整个市场有多活跃？
+2. 价格与持仓变化集中在哪里？
+3. 哪些品种值得打开 Product Workspace 继续看？
+4. 哪些板块整体更强或更弱？
 
-### 6.2 First-screen Layout
+### 7.2 Layout
 
 从上到下：
 
 ```text
 Market Summary
 Price Change × OI Change Scatter
-值得关注
-板块表现（有可信分类时）
+值得关注 Attention
+Sector Summary
+Full Market Detail
 ```
 
-页面可继续向下滚动查看全市场明细。
+页面允许纵向滚动，但前三块应在常见桌面第一屏/第一屏附近完成发现任务。
 
-### 6.3 Summary Strip
+### 7.3 Summary Strip
 
 最多 6 项：
 
@@ -261,22 +368,22 @@ Price Change × OI Change Scatter
 放量品种
 明显增仓品种
 高波动品种
-数据日期 / freshness
+expected_as_of / freshness
 ```
 
-不增加只是“能算”但不明显改善研究效率的卡片。
+不增加“平均收益、总OI、综合分数”等仅因为能计算但不能明显降低研究成本的指标。
 
-### 6.4 Price × OI Scatter
+### 7.4 Price × OI Scatter
 
-固定定义：
+固定：
 
 ```text
-X = 1D price change
-Y = 1D open-interest change
-Bubble size = turnover/liquidity proxy
+X = price_change_1d
+Y = oi_change_1d
+bubble size = turnover/liquidity proxy
 ```
 
-四象限只表达事实结构：
+四象限只使用事实措辞：
 
 ```text
 上涨 + 增仓
@@ -285,162 +392,210 @@ Bubble size = turnover/liquidity proxy
 下跌 + 减仓
 ```
 
-禁止把 OI 变化直接解释成“多头资金流入”“空头资金流出”。
+禁止使用“多头资金流入/空头资金流出”等由这些字段无法单独证明的因果描述。
 
-Hover 只显示 4～5 个核心值；点击直接进入 Product Workspace，不增加中间详情弹窗。
-
-### 6.5 Attention Candidates
-
-统一名称使用：
+Hover 只显示：
 
 ```text
-attention = 系统规则筛出的“值得关注”
-watchlist = 用户本地自选
+品种/名称
+1D涨跌
+OI变化
+量比
+ATR分位
 ```
 
-二者不得混用。
+点击直接进入 Product Workspace，不增加中间详情弹窗。
 
-P0 使用透明规则标签而不是综合黑盒分数。基线规则可冻结为：
+### 7.5 Attention
+
+统一命名：
 
 ```text
-abs(1D price change) >= 2%
-volume ratio 20      >= 1.50
-OI 1D increase       >= 5%
-OI 1D decrease       <= -5%
-ATR14 percentile     >= 80%
-position20           >= 90%  -> near 20d high
-position20           <= 10%  -> near 20d low
+attention = 系统透明规则筛出的“值得关注”
+watchlist = 用户本地手工自选
+```
+
+两者不共用字段名。
+
+P0 固定规则：
+
+```text
+abs(price_change_1d) >= 2%
+volume_ratio20        >= 1.50
+oi_change_1d          >= 5%   -> oi_increase
+oi_change_1d          <= -5%  -> oi_decrease
+atr14_percentile252   >= 80%
+position20            >= 90%  -> near_20d_high
+position20            <= 10%  -> near_20d_low
 EMA21 direction aligned with close
 ```
 
-候选至少满足 2 个原因；不足 10 个就少显示，不降低标准凑数量。
+候选至少满足 2 个原因，不为了凑满 10 条降低阈值。
 
-排序：
+排序固定：
 
 ```text
 reason_count DESC
 abs(price_change_1d) DESC
-turnover DESC
+turnover DESC (None last)
 symbol ASC
 ```
 
 Web 只翻译后端 reason code，不重新评分。
 
-### 6.6 Sector Summary
+### 7.6 Sector Summary
 
-旧设计因为数据库 `Instrument.sector` 未必完整而选择隐藏板块；V2 在 60/60 基线后建议使用一个非常轻量、版本化的仓库配置：
+直接使用现有 60 品种 taxonomy。
 
-```text
-data/universe/product_sectors.csv
-```
-
-要求：
-
-- 恰好覆盖 active 60；
-- 每个品种只属于一个一级研究板块；
-- 与 `active_products.txt` 一致性测试；
-- 不进 PostgreSQL，不做 taxonomy 平台。
-
-建议一级板块保持少量稳定分类，例如黑色、有色、贵金属、能源、化工、农产品等；具体 60 品种映射在该任务设计/Review 时一次性冻结。
-
-如果用户不希望维护这份静态映射，则 sector 模块整体隐藏，不能从 symbol 名称猜测。
-
-### 6.7 Full Market Detail
-
-Radar 下半部分保留紧凑表：
+每个 sector 返回：
 
 ```text
-品种 | 1D | 5D | 量比 | OI变化 | ATR分位 | 20日位置 | 状态
+sector
+total_count
+participant_count
+up_count
+down_count
+median_price_change_1d
+attention_count
 ```
 
-表格用于核对和快速排序，不是第一视觉中心。
+使用**中位数**而不是成交额加权收益，避免不同品种合约规模直接参与跨品种收益权重。
+
+Web 使用现有 `PRODUCT_SECTORS` 负责 sector label，不复制 symbol->sector 映射。
+
+### 7.7 Full Market Detail
+
+页面下方紧凑表：
+
+```text
+品种 | 板块 | 1D | 5D | 量比 | OI变化 | ATR分位 | 20日位置 | 状态
+```
+
+支持按板块和本地自选过滤；它是核对/排序工具，不是首页主视觉。
 
 ---
 
-## 7. Market Research Service
+## 8. Shared Research Metrics
 
-V2 不再让前端为 Product Sidebar 和 Radar 各自重复计算研究指标。
+后端共享指标定义一次，供 Product Snapshot 与 Radar 共用。
 
-新增只读研究语义层：
-
-```text
-MarketDataService
-      ↓
-MarketResearchService
-      ↓
-RadarSnapshot / ProductResearchSnapshot
-      ↓
-Market Web
-```
-
-职责：
-
-- 读取 Canonical / MainContractMap / Instrument metadata；
-- 调用 quant-core EMA/ATR 等权威函数；
-- 计算 Radar 和 Product Research 的二次统计；
-- 输出研究 DTO；
-- 不写 DB/Parquet；
-- 不调用 RQData provider；
-- 不负责 Live subscription。
-
-推荐只读 API：
+固定 P0 语义：
 
 ```text
-GET /api/v1/market/research/radar
-GET /api/v1/market/research/product?symbol=...&series_kind=...
+price_change_1d = close_T / close_T-1 - 1
+price_change_5d = close_T / close_T-5 - 1
+
+position20 =
+(close_T - min(low,last20)) /
+(max(high,last20) - min(low,last20))
+
+volume_ratio20 =
+volume_T / mean(previous 20 volume)
+# current excluded
+
+oi_change_1d =
+OI_T / OI_T-1 - 1
+# both finite and previous > 0
+
+turnover_change_5d =
+turnover_T / mean(previous 5 turnover) - 1
+# all required values present
 ```
 
-API 是研究语义，不是 `/api/rqdata/*` provider passthrough。
+Trend：
 
-### 7.1 ProductResearchSnapshot
+```text
+up      = close > EMA21 AND EMA21[T] > EMA21[T-1]
+down    = close < EMA21 AND EMA21[T] < EMA21[T-1]
+neutral = otherwise
+unavailable = EMA not ready
+```
+
+EMA 必须调用 quant-core：
+
+```text
+ema_series(period=21, seed_policy=sma_window)
+```
+
+ATR 必须调用 quant-core：
+
+```text
+atr_series(period=14, smoothing_policy=wilder_sma_seed)
+```
+
+ATR percentile：latest ready ATR 相对其前最多 252 个 ready ATR 的经验分位；基准 ready 值少于 20 个返回 unavailable。
+
+后端研究比例/价格衍生值继续使用 `Decimal`；仅在 Web HTTP 边界转成显示数值。
+
+---
+
+## 9. ProductResearchSnapshot
+
+一个聚合响应同时服务右栏和 K 线下面的 P0 研究区，避免多个前端请求。
 
 至少返回：
 
 ```text
-symbol / name / exchange
-current dominant / mapping date
-daily trend
-weekly trend
-20d position
-20d high/low distance
-volume ratio20
-OI change1d
-turnover change5d
-ATR percentile
-recent daily price/OI/volume series
+symbol
+product_name
+sector
+exchange
+series_kind
+contract
+as_of
+current_dominant
+dominant_mapping_date
+
+daily_trend
+weekly_trend
+position20
+distance_to_20d_high
+distance_to_20d_low
+volume_ratio20
+oi_change_1d
+turnover_change_5d
+atr14_percentile252
+
+recent_daily[]
 ```
 
-一个响应满足轻量右栏和 K 线以下 P0 Price/Volume/OI 区，避免 Web N+1 请求。
+后端可以读取最多 300 根日线计算 ATR/历史分位，但 HTTP `recent_daily` 只返回最近 80 个点，足够下方 Price/Volume/OI 观察，减少无意义 payload。
+
+Product Research 必须跟随当前图表 identity：
+
+```text
+actual_dominant
+continuous
+contract + exact contract
+```
+
+不在右栏偷偷切换另一种 series 口径。
 
 ---
 
-## 8. Product Workspace
+## 10. Product Workspace
 
-### 8.1 Core Principle
+### 10.1 Core Principle
 
-进入品种页以后：
+> **进入品种页后，K 线永远是第一视觉中心。**
 
-> **K 线永远是第一视觉中心。**
+辅助研究不能默认把主图挤成小窗。
 
-辅助研究不能默认把 K 线压成小窗。
-
-### 8.2 Responsive Layout
+### 10.2 Responsive Layout
 
 ```text
 >= 1600px
 Kline Workspace + 296px lightweight research sidebar
 
 < 1600px
-Kline full width + “研究” drawer entry
+Kline full width + “研究” drawer
 ```
 
 所有桌面尺寸支持 K 线全屏。
 
-不专门建设移动端交易终端布局。
+### 10.3 Toolbar
 
-### 8.3 Toolbar
-
-高频控件固定为：
+高频控件固定：
 
 ```text
 品种
@@ -450,11 +605,11 @@ Period: 1m 5m 15m 30m 60m D W
 全屏
 ```
 
-`contract` 指定真实合约保留为低频高级入口。
+`contract` 保留为低频高级入口。
 
-切换 Series/Period 直接加载，不保留“选择参数 -> 点击读取”的管理后台式流程。
+切换 Series/Period 立即沿用现有 `replaceSeries()`，不再保留“选择后点击读取最新页”的管理后台式主流程。
 
-### 8.4 Kline Panels
+### 10.4 Kline Panels
 
 固定三层：
 
@@ -464,35 +619,37 @@ Pane 1: Volume
 Pane 2: MACD
 ```
 
-主图 overlay 只允许当前 Registry 已登记、Web 允许显示的项目。
+默认比例约 6/2/2。
 
-明确不做：
-
-- 画线；
-- 斐波那契；
-- 文本标注；
-- 自定义公式；
-- 任意 pane 管理；
-- RSI/KDJ/CCI 等指标市场；
-- 多图分屏；
-- Dashboard builder。
-
-### 8.5 Historical Pagination / Live Seam
-
-完全复用当前验收通过的行为：
+必须继续复用当前 Kline 已有能力：
 
 ```text
-initial latest page
-left drag -> load earlier
-prepend keeps viewport
-followLatest only when user is at right edge
-Canonical always wins
-Live only after canonical_end
+normalizeBarSeries
+Shanghai time formatting
+replaceBars
+prependBars
+updateBar
+followLatest
+left-edge pagination
+viewport preservation
 ```
 
-P0 不改这一业务语义，只允许为了三 pane/overlay 做最小图表组件扩展。
+不因增加 pane/indicator 回退成全量重绘 + 无条件 `fitContent()`。
 
-### 8.6 Crosshair
+### 10.5 Main indicators
+
+主图只展示当前 Registry/Web definition 已登记能力：
+
+```text
+EMA10
+EMA21
+EMA60
+HTDY original observation
+```
+
+不新增 BOLL/RSI/KDJ/CCI。
+
+### 10.6 Crosshair
 
 优先实现跨 pane 十字线联动，而不是画线工具。
 
@@ -502,27 +659,27 @@ P0 不改这一业务语义，只允许为了三 pane/overlay 做最小图表组
 O H L C
 Volume
 OI
-visible EMA
+enabled EMA
 MACD DIF / DEA / HIST
 ```
 
-不存在的字段显示 unavailable，不补 0。
+缺失字段显示 unavailable，不补 0。
 
-### 8.7 HTDY Original
+### 10.7 HTDY original
 
-HTDY original 继续独立于核心 EMA/MACD Kline 任务：
+HTDY 继续单独作为风险任务：
 
 - 默认关闭；
-- 开启时持续显示“未来引用/重绘风险/仅供人工观察”；
-- 不改变 Indicator Registry capability；
-- 不进入 Radar attention 规则；
-- 不把 observation 标记命名为正式“买入/卖出信号”。
+- 开启时始终显示“未来引用 / 重绘风险 / 仅供人工观察”；
+- 不改变 Registry capability；
+- 不进入 Radar attention；
+- observation marker 使用“买观察/卖观察/XG观察”，不称为正式买卖信号。
 
 ---
 
-## 9. Lightweight Research Sidebar
+## 11. Lightweight Research Sidebar
 
-大屏常驻右栏只保留三个块：
+只保留三块。
 
 ### Trend / Position
 
@@ -542,38 +699,37 @@ OI 1D
 成交额相对5日
 ```
 
-### Contract Context
-
-P0：
+### Contract / Runtime Context
 
 ```text
 当前 rank1 主力
-MainContractMap 映射日
-Live 状态（仅 operational 品种适用）
+映射交易日
+当前 Live/Historical 状态
+Market phase
 ```
 
-右栏不放大表和 provider raw fields。
+Runtime state 仍来自现有 `MarketReadService/useMarketSeries`，不是 Research API 自行推断。
+
+右栏不放大表、provider raw fields 或 P1 占位卡片。
 
 ---
 
-## 10. Vertical Research Area
+## 12. Vertical Research Area
 
-第一屏下面只先实现 P0：
+P0 只实现：
 
 ```text
 Price / Volume / OI
 ```
 
-使用 `ProductResearchSnapshot.recent_daily_series` 显示：
+使用 `ProductResearchSnapshot.recent_daily` 显示：
 
-- price trend；
-- OI trend；
-- volume/turnover；
+- normalized price trend；
+- normalized OI trend；
+- volume bars；
 - 简短事实摘要。
 
-P0 完成后先真实使用，再决定 P1。
-
-P1 候选保持：
+P0 不提前实现：
 
 ```text
 Term Structure
@@ -584,13 +740,13 @@ Member Position Structure
 Trading Economics
 ```
 
-这些模块后续通过 `FuturesResearchService + RQData Research Adapter` 单独设计，不能塞进 `MarketDataService`。
+这些属于 P1，必须在 P0 实际使用后重新排序优先级。
 
 ---
 
-## 11. Local Interaction State
+## 13. Local Interaction State
 
-单用户本地应用直接使用 localStorage 保存 UI 偏好：
+单用户本地 Web 直接使用 localStorage：
 
 ```text
 last symbol
@@ -601,144 +757,209 @@ research sidebar open/closed
 watchlist
 ```
 
-不建用户表、Preference API、账户系统或云同步。
+不建用户表、Preference API、账户体系或云同步。
 
-损坏时回退默认值即可。
+损坏/版本不匹配时回退默认值，不能阻塞 Market 页面。
 
 ---
 
-## 12. Error / Degradation Policy
+## 14. Error / Degradation Policy
 
-### 12.1 Core Kline
+### Kline Core
 
-Canonical/Map/coverage/physical integrity 错误继续 fail-closed。
+Canonical、Map、coverage、物理一致性问题继续显式失败；不得用 Research 数据掩盖。
 
-### 12.2 Research Snapshot
+### Product Research
 
-单品种 Research 计算失败只让右栏/下方研究区显示 unavailable；如果 Kline 本身仍可读，不允许研究摘要错误覆盖整个 Kline 页面。
-
-### 12.3 Radar
-
-Radar 返回完整 freshness metadata：
+Research API 失败时：
 
 ```text
-expected_as_of
-participant_count
-active_count
-unavailable/stale
+Kline 仍可读 -> Kline 正常
+Sidebar / lower research -> unavailable
 ```
 
-只要不是 60/60 current，就显式 degraded。
+不得用 Research 错误覆盖整个图表页。
 
-### 12.4 P1 Enrichment
+### Radar
 
-以后 warehouse/member/roll provider 失败只影响对应模块，绝不能破坏 Historical Core。
+Radar 必须保留：
+
+```text
+ready/degraded
+expected_as_of
+participant_count/60
+stale
+unavailable
+```
+
+不能静默排除坏品种再显示 60 品种结论。
+
+### Runtime
+
+Live/Redis/phase 异常继续按当前 Runtime 合同降级；Research Service 不接管 Runtime 修复。
 
 ---
 
-## 13. Performance
+## 15. Performance
 
-只做明显有效的优化：
+只做明显有效的控制：
 
-- Kline 默认最近 1200 bars，继续 cursor 左拖；
-- Kline Live append 使用现有增量 update；
-- Radar 后端批量生成一次 snapshot，避免前端 60 × N 请求；
-- Product Research 一个聚合响应满足 sidebar + 下方 P0；
-- P1 后续 IntersectionObserver lazy load；
-- localStorage / 简单进程内短缓存可用；
-- 不建分布式缓存、任务平台、通用 invalidation 系统。
+- Kline 继续最新 1200 bars + cursor 左拖；
+- Live append 保持增量 update；
+- Radar 后端一次批量生成 snapshot，避免前端 60 × N；
+- Product Research 一个响应满足 sidebar + lower panel；
+- Radar/Research 可以使用简单进程内短缓存，但缓存 key 必须包含 identity / expected_as_of；
+- P1 以后再按 viewport lazy load；
+- 不建分布式缓存、任务平台或复杂 invalidation 系统。
 
 ---
 
-## 14. Testing Strategy
+## 16. Testing Strategy
 
 ### Backend
 
-重点验证：
+至少覆盖：
 
-- expected_as_of；
-- 60/60 current 与 degraded freshness；
-- price/OI/volume/ATR/EMA 公式；
-- transparent reason codes；
-- deterministic attention sorting；
-- ProductResearchSnapshot；
-- sector config 与 active 60 精确一致；
-- `MarketDataService` 仍是唯一 historical reader。
+- shared research metric exact semantics；
+- Decimal/null behavior；
+- ProductResearchSnapshot identity 一致；
+- `expected_as_of` 使用现有 complete-day 语义；
+- 60/60 ready；
+- 59/60 stale degraded；
+- known `MarketDataError` 单品种隔离；
+- unexpected exception 继续 fail-closed；
+- attention reason / deterministic sort；
+- sector summary 使用现有 taxonomy；
+- Research 路径零 provider / 零 mutation。
 
 ### Frontend
 
-重点验证：
+至少覆盖：
 
-- Market Radar 第一屏信息层级；
-- scatter hover/click；
+- Radar summary/scatter/attention/sector/detail；
 - attention 与 watchlist 区分；
-- Product Workspace responsive layout；
+- Product Workspace responsive；
 - period/series switch；
 - three-pane Kline；
-- EMA + Volume + MACD；
+- EMA + fixed Volume/MACD；
 - crosshair；
 - HTDY risk notice；
-- left pagination / viewport / Runtime seam 回归；
-- localStorage fallback。
+- left pagination / Shanghai time / viewport；
+- current after-market seam 和 WebSocket regression；
+- localStorage fallback；
+- Research failure 不影响 Kline。
 
-### Runtime/Data Regression
+### Repository verification
 
-P0 Web/Research Service 不能让已经通过 MR-08 的：
+实现期的真实命令始终以当时 `TESTING.md` 为准。当前基线使用：
 
 ```text
-BREAK/CLOSED
-night trading_day
-Historical-only continuous
-actual_dominant Live
-Canonical/Live seam
-after-market canonical advance
+pytest / Ruff / Mypy
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web build
+secret_scan.py
+git diff --check
+openspec validate --specs --strict --no-interactive
 ```
 
-发生回归。
+---
+
+## 17. Delivery Order
+
+最终 P0 顺序：
+
+```text
+P0-1 Shared Research Metrics + Product Research Service
+P0-2 Product Workspace shell / local state
+P0-3 Three-pane Kline Core
+P0-4 Product Research Sidebar + Price/Volume/OI
+P0-5 Full-universe Radar backend
+P0-6 Market Radar Web
+P0-7 HTDY original observation overlay
+P0-8 Final integration review + real-use gate
+```
+
+这套顺序不再被 60/60 Data Foundation 阻塞。
+
+当前 `51e84988...` Runtime fix 若在 P0 开发开始时仍未部署：
+
+- P0-1～P0-7 可以正常开发；
+- P0-8 的真实 Runtime-integrated acceptance 前必须先完成独立 Runtime switch/readback。
 
 ---
 
-## 15. Non-goals
+## 18. P1 Direction
 
-本阶段明确不做：
+P0 真实使用一段时间后，再决定以下模块优先级：
 
-- 自动交易或下单；
-- 交易建议；
-- 扩大 Live universe；
-- Tick/五档盘口；
-- 新 Backtest/Signal/Review/Strategy 应用面；
+```text
+Term Structure
+Dominant Migration
+Roll Yield
+Warehouse State
+Member Position Structure
+Trading Economics
+```
+
+P1 原则保持：
+
+```text
+RQData Research Adapter
+       ↓
+FuturesResearchService
+       ↓
+semantic DTO
+       ↓
+Product Workspace
+```
+
+不得把 provider API 塞进 `MarketDataService`，也不得建立 `/api/rqdata/*` passthrough。
+
+---
+
+## 19. Non-goals
+
+P0 明确不做：
+
+- 新的历史数据架构；
+- 新 Daily scheduler；
+- 扩大 operational universe（当前已经是 60）；
+- Tick / 五档盘口；
+- 自动交易、下单或交易建议；
+- Backtest/Signal/Review/Strategy 应用面；
 - RQData raw API browser；
 - 商业 TradingView clone；
-- 绘图工具；
+- 画线、斐波那契、自定义公式；
 - 多用户/SaaS；
+- Dashboard builder；
 - Research Catalog/lineage 平台；
-- P1 provider research modules 的提前实现。
+- P1 enrichment 提前实现。
 
 ---
 
-## 16. Success Criteria
+## 20. Success Criteria
 
-只有同时满足以下体验目标，P0 才算成功：
+P0 成功标准：
 
-1. 打开 Market Radar 后约 10 秒内能知道数据日期、市场活跃度和优先研究品种；
-2. 正常 Daily Ready 状态为 60/60 current，任何 stale product 都明确暴露；
-3. 点击品种进入 Product Workspace 后，第一视觉中心始终是完整 Kline；
-4. 周期、真实主力/主连、少量主图指标可以一键切换；
-5. Volume 与 MACD 始终固定可见；
-6. 十字线能同步查看同一时刻 OHLCV/OI/EMA/MACD；
-7. 向左可以持续浏览更早历史且视口不跳回；
-8. 研究摘要减少人工找数据时间，而不是增加卡片数量；
-9. Live 仅影响 operational subset，60 品种历史 Radar 不依赖 60 路 Live；
-10. 所有复杂度都能直接换来个人研究效率。
+1. Radar 正常日能显示 60/60 current，异常日能明确显示 degraded；
+2. 打开 Radar 后约 10 秒内能知道数据日期、市场活跃度、主要板块和优先研究品种；
+3. 点击品种后第一视觉中心始终是完整 Kline；
+4. 真实主力/主连和七周期一键切换；
+5. Volume + MACD 固定可见；
+6. 十字线能读取同一时刻 OHLCV/OI/EMA/MACD；
+7. 向左加载继续保持已经验收的历史分页体验；
+8. Sidebar/Price-OI 区减少人工找数据的时间；
+9. 60 品种 Runtime 状态和 Research 状态职责清晰，不互相冒充；
+10. 新增复杂度都能直接换来个人研究效率。
 
 ---
 
-## 17. Supersession
+## 21. Supersession
 
-当 Activation Gate 满足并正式开始 Market Research Workspace 开发后，本文件替代以下旧开发基线：
+本文件是 Market Research Workspace 当前设计基线，替代：
 
 ```text
 docs/superpowers/specs/2026-08-10-market-research-workspace-design.md
 ```
 
-旧文档保留为设计演进历史，不再作为 Codex 实施入口。
+同目录旧文档只保留设计演进历史，不再作为 Codex 实施入口。

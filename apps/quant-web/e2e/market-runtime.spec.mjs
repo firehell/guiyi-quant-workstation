@@ -79,10 +79,6 @@ async function mockMarketApi(page, requests) {
       ] } })
       return
     }
-    if (url.pathname.endsWith('/coverage/canonical')) {
-      await route.fulfill({ json: { items: [] } })
-      return
-    }
     if (url.pathname.endsWith('/state')) {
       const kind = url.searchParams.get('series_kind')
       const frequency = url.searchParams.get('frequency')

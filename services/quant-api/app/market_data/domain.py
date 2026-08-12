@@ -91,6 +91,29 @@ _SYMBOL = re.compile(r"[A-Z]+\Z")
 _CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 
 
+def normalize_contract_for_symbol(symbol: str, value: object) -> str | None:
+    """规范化真实期货合约，并拒绝跨品种、非法月份和非字符串输入。"""
+    if not isinstance(value, str):
+        return None
+    contract = value.strip().upper()
+    match = _CONTRACT.fullmatch(contract)
+    if match is None or match.group(1) != symbol.strip().upper():
+        return None
+    month = int(contract[-2:])
+    return contract if 1 <= month <= 12 else None
+
+
+def parse_rfc3339_instant(value: str, *, field: str) -> datetime:
+    """解析带时区 RFC3339 时间并规范化为 UTC。"""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ContractError(field=field, reason="rfc3339_required") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ContractError(field=field, reason="timezone_required")
+    return parsed.astimezone(UTC)
+
+
 def _enum(enum_type: type[StrEnum], value: object, *, field: str) -> Any:
     """将字符串规范化为 StrEnum；类型或取值非法时抛出 ``ContractError``。"""
     if not isinstance(value, str):

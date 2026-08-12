@@ -14,7 +14,25 @@ from app.market_data.domain import (
     SeriesKind,
     SeriesPageQuery,
     SeriesQuery,
+    normalize_contract_for_symbol,
+    parse_rfc3339_instant,
 )
+
+
+def test_contract_normalizer_accepts_only_the_requested_symbol_and_real_month() -> None:
+    assert normalize_contract_for_symbol("jm", " jm2609 ") == "JM2609"
+    assert normalize_contract_for_symbol("jm", "RB2610") is None
+    assert normalize_contract_for_symbol("jm", "JM2613") is None
+    assert normalize_contract_for_symbol("jm", None) is None
+
+
+def test_rfc3339_parser_requires_timezone_and_normalizes_utc() -> None:
+    assert parse_rfc3339_instant("2025-01-02T15:00:00+08:00", field="after") == datetime(
+        2025, 1, 2, 7, tzinfo=UTC
+    )
+    with pytest.raises(ContractError) as exc:
+        parse_rfc3339_instant("2025-01-02T15:00:00", field="after")
+    assert exc.value.facts == {"field": "after", "reason": "timezone_required"}
 
 
 def test_dataset_key_normalizes_four_field_identity_and_path() -> None:

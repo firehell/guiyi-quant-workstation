@@ -5,7 +5,7 @@
 ## 系统定位
 
 归一量化是本地优先、单用户的国内期货研究工作站。当前目标应用面为 Market Web、Market API、
-数据 CLI 与 Canonical 历史读取。Market Runtime V1 的代码与 launchd 模板默认关闭；本地工作站已按明确请求启用严格限定为 `j/jm/ap/ag` 的有界 Runtime。不实现自动交易，`auto_order=false` 始终成立。
+数据 CLI 与 Canonical 历史读取。Market Runtime V1 的代码与 launchd 模板默认关闭；本地工作站已按明确请求启用 active 60 的有界 Runtime。不实现自动交易，`auto_order=false` 始终成立。
 
 ## 分层设计
 
@@ -21,6 +21,11 @@ flowchart TB
       HM["HistoricalDataManager"]
       MQ["MarketDataService"]
     end
+    subgraph Runtime["展示与运行时 seam"]
+      MR["MarketReadService"]
+      LM["LiveMarketService"]
+      AM["AfterMarketUpdater"]
+    end
     subgraph Domain["领域层"]
       DK["DatasetKey / SeriesQuery / CanonicalBar"]
       CP["月度 coverage / natural resume"]
@@ -30,10 +35,15 @@ flowchart TB
       RQ["RQData adapter"]
       PG["PostgreSQL catalog"]
       PQ["Parquet / PyArrow reader-writer"]
+      RD["Redis Live Overlay"]
     end
-    WEB --> API --> MQ
+    WEB --> API --> MR
+    MR --> MQ
+    MR --> RD
     CLI --> MS
     CLI --> HM
+    LM --> RD
+    AM --> HM
     MS --> MM
     HM --> DK
     HM --> CP
@@ -46,10 +56,12 @@ flowchart TB
     HM --> PQ
     MQ --> PG
     MQ --> PQ
+    LM --> RQ
 ```
 
 - 接入层只解析请求和输出结果；不实现下载、聚合、文件选择或主力判断。
-- `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务。
+- `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务；
+  `MarketReadService` 只在展示边界合并 Canonical 与 Redis Live，不创建第二条历史读链。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
@@ -83,7 +95,7 @@ flowchart LR
 migration 与服务启停，必须分别获得范围明确的一次性执行意图。
 
 Market Runtime V1 分为三条明确边界的平面：Historical 继续由 `HistoricalDataManager` 发布 Canonical；
-LiveMarketService 只将当日 `j/jm/ap/ag` 的 rank1 completed 1m 与本地 Derived 写入 Redis；
+LiveMarketService 只将 active 60 当日 rank1 completed 1m 与本地 Derived 写入 Redis；
 AfterMarketUpdater 只在 launchd 的 17:00 触发（失败最多一小时后重试一次）调用既有历史写入口。Live
 永不进入 Canonical、Parquet 或 PostgreSQL。代码与模板默认关闭；只有用户明确请求在该本地工作站启用
 Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 release、其他 DB、通知或订单。

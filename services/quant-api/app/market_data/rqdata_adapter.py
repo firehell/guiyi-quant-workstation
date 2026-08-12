@@ -21,10 +21,10 @@ from app.market_data.coverage_source import (
 )
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
 from app.market_data.errors import InfrastructureError
-from app.market_data.maintenance import BarBatch
+from app.market_data.historical_data_manager import BarBatch
 from app.market_data.metadata import MetadataSnapshot
 from app.market_data.session_clock import SHANGHAI
-from app.models import Instrument, MainContractMap
+from app.models import Contract, Instrument, MainContractMap, TradingCalendar
 
 
 _SESSION = re.compile(r"(?P<start>\d{1,2}:\d{2})\s*[-~]\s*(?P<end>\d{1,2}:\d{2})")
@@ -48,69 +48,168 @@ class RQDataMarketAdapter:
         """按 expected bar_end 拉取并归一化为 CanonicalBar；配额错误转为 PROVIDER_QUOTA_EXHAUSTED。"""
         if not expected:
             raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
+        if key.frequency is BarFrequency.D1:
+            return BarBatch(self._daily_bars(key, expected))
         if key.frequency is BarFrequency.W1:
-            # 周线需扩到完整 ISO 周自然日范围，否则 provider 返回行与 expected 无法对齐。
-            iso_days = tuple(value.astimezone(SHANGHAI).date() for value in expected)
-            start_day = min(
-                item - timedelta(days=item.isoweekday() - 1) for item in iso_days
-            )
-            end_day = max(
-                item + timedelta(days=7 - item.isoweekday()) for item in iso_days
-            )
-        else:
-            start_day = min(expected).date()
-            end_day = max(expected).date()
-        order_book_ids: tuple[str, ...]
-        if key.kind is DatasetKind.CONTINUOUS:
-            order_book_ids = (f"{key.symbol.upper()}88",)
-        else:
-            order_book_ids = (key.series_or_contract,)
-        rows: tuple[dict[str, Any], ...] = ()
-        for order_book_id in order_book_ids:
-            try:
-                frame = self.client.price(
+            return BarBatch(self._weekly_bars(key, expected))
+        return BarBatch(self._minute_bars(key, expected))
+
+    def _minute_bars(
+        self, key: DatasetKey, expected: tuple[datetime, ...]
+    ) -> tuple[CanonicalBar, ...]:
+        """1m 保持 get_price；期货日/周线另走交易所日行情。"""
+        order_book_id = (
+            f"{key.symbol.upper()}88"
+            if key.kind is DatasetKind.CONTINUOUS
+            else key.series_or_contract
+        )
+        try:
+            rows = _records(
+                self.client.price(
                     order_book_id,
-                    start_day,
-                    end_day,
+                    min(expected).date(),
+                    max(expected).date(),
                     key.frequency.value,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize provider boundary
+            if _is_rqdata_quota_error(exc):
+                raise InfrastructureError("PROVIDER_QUOTA_EXHAUSTED") from exc
+            raise
+        bars = [
+            _canonical_bar(row, bar_end, _row_date(row))
+            for row in rows
+            if (bar_end := _row_datetime(row)) in expected
+        ]
+        return tuple(sorted(bars, key=lambda item: item.bar_end))
+
+    def _daily_bars(
+        self, key: DatasetKey, expected: tuple[datetime, ...]
+    ) -> tuple[CanonicalBar, ...]:
+        """期货日线取交易所日行情；continuous 按交易日 rank1 合约拼接。"""
+        expected_by_day = {
+            value.astimezone(SHANGHAI).date(): value for value in expected
+        }
+        rows = self._exchange_daily_rows(key, tuple(expected_by_day))
+        return tuple(
+            _canonical_bar(row, expected_by_day[trading_day], trading_day)
+            for trading_day, row in sorted(rows.items())
+            if trading_day in expected_by_day
+        )
+
+    def _weekly_bars(
+        self, key: DatasetKey, expected: tuple[datetime, ...]
+    ) -> tuple[CanonicalBar, ...]:
+        """期货周线仅由同一交易所日行情在完整 ISO 周内聚合。"""
+        expected_by_week = {
+            _iso_week(value.astimezone(SHANGHAI).date()): value for value in expected
+        }
+        mondays = tuple(
+            _iso_monday(value.astimezone(SHANGHAI).date()) for value in expected
+        )
+        source_days = self._source_trading_days(
+            key, min(mondays), max(mondays) + timedelta(days=6)
+        )
+        rows = self._exchange_daily_rows(key, source_days)
+        required_by_week: dict[tuple[int, int], set[date]] = {}
+        for trading_day in source_days:
+            iso = _iso_week(trading_day)
+            if iso in expected_by_week:
+                required_by_week.setdefault(iso, set()).add(trading_day)
+        grouped: dict[tuple[int, int], list[tuple[date, dict[str, Any]]]] = {}
+        for trading_day, row in rows.items():
+            iso = _iso_week(trading_day)
+            if iso in expected_by_week:
+                grouped.setdefault(iso, []).append((trading_day, row))
+        return tuple(
+            _aggregate_daily_rows(tuple(sorted(rows)), bar_end=expected_by_week[iso])
+            for iso, rows in sorted(grouped.items())
+            if {trading_day for trading_day, _ in rows} == required_by_week[iso]
+        )
+
+    def _exchange_daily_rows(
+        self, key: DatasetKey, days: tuple[date, ...]
+    ) -> dict[date, dict[str, Any]]:
+        """按真实合约分组读取交易所日线；每个交易日只接受一行。"""
+        contracts_by_day = self._contracts_by_day(key, days)
+        requested: dict[str, list[date]] = {}
+        for trading_day, contract in contracts_by_day.items():
+            requested.setdefault(contract, []).append(trading_day)
+        result: dict[date, dict[str, Any]] = {}
+        for contract, contract_days in requested.items():
+            try:
+                rows = _records(
+                    self.client.exchange_daily(
+                        contract, min(contract_days), max(contract_days)
+                    )
                 )
             except Exception as exc:  # noqa: BLE001 - normalize provider boundary
                 if _is_rqdata_quota_error(exc):
                     raise InfrastructureError("PROVIDER_QUOTA_EXHAUSTED") from exc
                 raise
-            rows = _records(frame)
-            if rows:
-                break
-        expected_by_day: dict[date, list[datetime]] = {}
-        expected_by_iso_week: dict[tuple[int, int], datetime] = {}
-        for value in expected:
-            expected_by_day.setdefault(value.astimezone(SHANGHAI).date(), []).append(
-                value
+            allowed = set(contract_days)
+            for row in rows:
+                trading_day = _row_date(row)
+                if trading_day not in allowed:
+                    continue
+                if trading_day in result:
+                    raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
+                result[trading_day] = row
+        return result
+
+    def _contracts_by_day(
+        self, key: DatasetKey, days: tuple[date, ...]
+    ) -> dict[date, str]:
+        """continuous 使用已同步的 rank1 映射，contract 保持物理身份。"""
+        normalized = tuple(sorted(dict.fromkeys(days)))
+        if key.kind is DatasetKind.CONTRACT:
+            return {trading_day: key.series_or_contract for trading_day in normalized}
+        mapped = {
+            item.trade_date: item.contract_code
+            for item in self.session.scalars(
+                select(MainContractMap).where(
+                    MainContractMap.symbol == key.symbol,
+                    MainContractMap.trade_date.in_(normalized),
+                )
             )
-            if key.frequency is BarFrequency.W1:
-                iso = value.astimezone(SHANGHAI).date().isocalendar()
-                expected_by_iso_week[(iso.year, iso.week)] = value
-        bars: list[CanonicalBar] = []
-        for row in rows:
-            trading_day = _row_date(row)
-            if key.frequency is BarFrequency.W1:
-                iso = trading_day.isocalendar()
-                bar_end = expected_by_iso_week.get((iso.year, iso.week))
-                if bar_end is None:
-                    continue
-            elif key.frequency is BarFrequency.D1:
-                candidates = expected_by_day.get(trading_day)
-                if not candidates:
-                    continue
-                bar_end = candidates[-1]
-            else:
-                bar_end = _row_datetime(row)
-                # 只接纳落在 expected 内的 bar，避免 provider 多返导致发布校验失败。
-                if bar_end not in expected:
-                    continue
-            bars.append(_canonical_bar(row, bar_end, trading_day))
-        bars.sort(key=lambda item: item.bar_end)
-        return BarBatch(tuple(bars))
+        }
+        if any(day not in mapped for day in normalized):
+            raise InfrastructureError("MAIN_CONTRACT_MAP_MISSING")
+        return mapped
+
+    def _source_trading_days(
+        self, key: DatasetKey, start: date, end: date
+    ) -> tuple[date, ...]:
+        """周线聚合的交易日集合，真实合约仅纳入挂牌且未到期区间。"""
+        exchange = self.session.scalar(
+            select(Instrument.exchange_code).where(Instrument.symbol == key.symbol)
+        )
+        if exchange is None:
+            raise InfrastructureError("INSTRUMENT_EXCHANGE_MISSING")
+        statement = select(TradingCalendar.trade_date).where(
+            TradingCalendar.exchange_code == exchange,
+            TradingCalendar.trade_date >= start,
+            TradingCalendar.trade_date <= end,
+            TradingCalendar.is_trading_day.is_(True),
+        )
+        days = tuple(self.session.scalars(statement.order_by(TradingCalendar.trade_date)))
+        if key.kind is DatasetKind.CONTRACT:
+            contract = self.session.scalar(select(Contract).where(
+                Contract.contract_code == key.series_or_contract,
+                Contract.instrument_symbol == key.symbol,
+            ))
+            if (
+                contract is None
+                or contract.listed_date is None
+                or contract.expired_date is None
+            ):
+                return ()
+            return tuple(
+                day
+                for day in days
+                if contract.listed_date <= day < contract.expired_date
+            )
+        return days
 
     def fetch_metadata(
         self,
@@ -216,6 +315,15 @@ class RQDataClient:
             end_date=end,
             frequency=frequency,
             adjust_type="none",
+        )
+
+    def exchange_daily(self, order_book_id: str, start: date, end: date):
+        """调用期货交易所日行情，保留 close 与 settlement 的独立事实。"""
+        return self.api.futures.get_exchange_daily(
+            order_book_id,
+            start_date=start,
+            end_date=end,
+            market="cn",
         )
 
     def is_future_data_ready(self, trading_day: date) -> bool:
@@ -480,6 +588,53 @@ def _row_datetime(row: dict[str, Any]) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.tz_localize(SHANGHAI)
     return parsed.tz_convert(UTC).to_pydatetime()
+
+
+def _iso_week(value: date) -> tuple[int, int]:
+    """返回 ISO 年/周，避免把日线/周线的分组语义散落在调用点。"""
+    iso = value.isocalendar()
+    return iso.year, iso.week
+
+
+def _iso_monday(value: date) -> date:
+    """返回 value 所在 ISO 周的周一。"""
+    return value - timedelta(days=value.isoweekday() - 1)
+
+
+def _aggregate_daily_rows(
+    values: tuple[tuple[date, dict[str, Any]], ...],
+    *,
+    bar_end: datetime,
+) -> CanonicalBar:
+    """从排序后的交易所日行情聚合周线，保持日线 OHLCV 事实口径。"""
+    if not values:
+        raise InfrastructureError("RQDATA_WEEKLY_SOURCE_EMPTY")
+    rows = tuple(row for _, row in values)
+    first_day, first_row = values[0]
+    last_day, last_row = values[-1]
+    turnovers = tuple(
+        _optional_decimal(
+            _row_value(row, "turnover", "total_turnover", "amount", required=False)
+        )
+        for row in rows
+    )
+    return CanonicalBar(
+        bar_end=bar_end,
+        trading_day=last_day,
+        open=_decimal(first_row, "open"),
+        high=max(_decimal(row, "high") for row in rows),
+        low=min(_decimal(row, "low") for row in rows),
+        close=_decimal(last_row, "close"),
+        volume=sum((_decimal(row, "volume") for row in rows), start=Decimal(0)),
+        turnover=(
+            None
+            if all(value is None for value in turnovers)
+            else sum((value or Decimal(0) for value in turnovers), start=Decimal(0))
+        ),
+        open_interest=_optional_decimal(
+            _row_value(last_row, "open_interest", "open_oi", "close_oi", required=False)
+        ),
+    )
 
 
 def _canonical_bar(

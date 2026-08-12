@@ -43,7 +43,7 @@ from app.market_data.product_retirement import (
 )
 from app.market_data.product_taxonomy import load_product_taxonomy
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
-from app.models import Instrument, MainContractMap, MarketDataset, MarketPartition
+from app.models import Instrument, MainContractMap
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -55,20 +55,6 @@ class MarketDataError(RuntimeError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
-
-
-@dataclass(frozen=True, slots=True)
-class DatasetCoverageSummary:
-    """单个物理数据集在 Catalog 中的聚合覆盖摘要（供运维/审计列表）。"""
-
-    kind: str
-    symbol: str
-    series_or_contract: str
-    frequency: str
-    start: datetime
-    end: datetime
-    row_count: int
-    partition_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -460,49 +446,6 @@ class MarketDataService:
         if {item.trade_date for item in selected} - {bar.trading_day for bar in bars}:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         return self._result(request, tuple(bars), segments)
-
-    def list_dataset_coverage(
-        self,
-        symbol: str | None = None,
-    ) -> tuple[DatasetCoverageSummary, ...]:
-        """列出 Catalog 中已注册数据集的覆盖范围与行数汇总；无分区的数据集跳过。"""
-        retired = load_retired_products()
-        query = select(MarketDataset)
-        if symbol:
-            normalized = symbol.strip().lower()
-            try:
-                assert_not_retired(normalized, retired=retired)
-            except ProductRetiredError as exc:
-                raise MarketDataError("PRODUCT_RETIRED") from exc
-            query = query.where(MarketDataset.symbol == normalized)
-        items: list[DatasetCoverageSummary] = []
-        for dataset in self.catalog.session.scalars(
-            query.order_by(MarketDataset.symbol, MarketDataset.frequency)
-        ):
-            partitions = tuple(
-                self.catalog.session.scalars(
-                    select(MarketPartition)
-                    .where(MarketPartition.dataset_id == dataset.id)
-                    .order_by(MarketPartition.year, MarketPartition.month)
-                )
-            )
-            if dataset.symbol in retired:
-                continue
-            if not partitions:
-                continue
-            items.append(
-                DatasetCoverageSummary(
-                    kind=dataset.kind,
-                    symbol=dataset.symbol,
-                    series_or_contract=dataset.series_or_contract,
-                    frequency=dataset.frequency,
-                    start=partitions[0].coverage_start,
-                    end=partitions[-1].coverage_end,
-                    row_count=sum(item.row_count for item in partitions),
-                    partition_count=len(partitions),
-                )
-            )
-        return tuple(items)
 
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         """返回每个品种最近一条主力映射（按 trade_date 降序取首条）。"""

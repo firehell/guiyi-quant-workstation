@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines retirement of selected products from the active research universe: exact-match hard rejection, a 60-product active list mutually exclusive with retired codes, and an auditable dry-run/`--apply` purge of catalog rows and Canonical paths.
+Defines the permanent exclusion of retired products from the active research universe after the one-time production purge has completed.
 
 ## Requirements
 
@@ -31,18 +31,3 @@ The system SHALL reject any maintenance, metadata sync, or market series request
 #### Scenario: Near-miss codes are not rejected by retirement
 - **WHEN** a caller requests an active product whose code is not an exact retired member
 - **THEN** retirement rejection does not apply
-
-### Requirement: Retire-products dry-run and apply purge
-The system SHALL provide `guiyi data retire-products` that defaults to dry-run inventory of catalog rows and Canonical paths for retired symbols. With explicit `--apply`, it MUST hard-delete in order: `market_partitions` (via retired `market_datasets`), `market_datasets`, `main_contract_map`, `trading_sessions`, `contracts`, `instruments`, then remove Canonical directories under the configured canonical root for `symbol={retired}` after path normalization stays inside that root. It MUST NOT delete `exchanges` or `trading_calendars`. Missing rows or directories MUST be treated as successful no-ops. After apply, residual counts for retired symbols across those tables and paths MUST be zero. Production `--apply` MUST require a separate scoped one-shot execution intent outside the repository change itself.
-
-#### Scenario: Dry-run reports inventory without mutation
-- **WHEN** `guiyi data retire-products` runs without `--apply`
-- **THEN** the result reports per-table row counts and path counts for retired symbols and leaves database and filesystem unchanged
-
-#### Scenario: Apply reaches residual zero
-- **WHEN** `guiyi data retire-products --apply` runs against an environment that contains retired-symbol catalog rows and/or Canonical directories
-- **THEN** those rows and directories are removed in the required order and residual counts for the nine retired symbols are zero
-
-#### Scenario: Shared exchange metadata is retained
-- **WHEN** retire-products apply deletes retired instruments
-- **THEN** `exchanges` and `trading_calendars` rows for shared exchanges remain

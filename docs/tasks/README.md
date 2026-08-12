@@ -23,20 +23,16 @@
 | `frozen_runtime_consumed` | Runtime/代码仍读取、哈希或绑定 | 在 caller 迁移与 Runtime smoke 通过前保留 |
 | `superseded_unreferenced` | 无 active caller、无现行业务边界 | 可与 active references 一并普通删除 |
 
-本目录 disposition 由下方列表直接维护，不再生成机器 inventory 或治理工件。checksum/digest/
-data-identity 语义保留；Gate/hash-path 不再作为授权。
+本目录 disposition 由下方列表直接维护，不再生成机器 inventory 或治理工件。Canonical identity 与
+物理可读性语义保留；已退出的 checksum/digest/Gate/hash-path 不再作为 active 合同或授权。
 
 ## Active contracts
 
-- `GY-DATA-CORE-V2.md` — 数据交互核心收口 active 业务合同
+当前无 active task contract；长期行为规范位于 `openspec/specs/`。
 
 ## Historical facts（仍在本目录）
 
-- `GY-DATA-PRODUCT-RETIREMENT-5.md` — 九品种退役已完成（仓库 + 生产 residual=0）；不构成后续删除授权
-- `GY-MARKET-RUNTIME-V1.md` — 已完成设计与实现的保留参考；本地四品种有界 Runtime 已启用，开发态
-  10:15/10:31 与 17:00 自然 canary 已通过，最终 isolated exact-commit 身份/拓扑/健康复验完成；
-  周末/非交易日重复采证由用户明确豁免，MR-08 已完成。当前事实只看 `STATUS.md`，本文件不构成新的
-  启用、重载或 promotion 授权
+已完成的 Data Foundation、品种清退与四品种 Runtime 阶段合同已删除，仅从 Git history 追溯。
 
 已退役的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据仅能从 Git history 追溯；
 不得再当作现存路径、兼容入口或当前授权。未来重建回测或 Runtime 验收必须新建任务，
@@ -52,6 +48,9 @@ data-identity 语义保留；Gate/hash-path 不再作为授权。
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-APPROVAL.md`
 - `GY-DATA-CORE-V2-TASK06-MIGRATION-INCIDENT.md`
 - `GY-DATA-PRODUCT-RETIREMENT-21.md`（21 品种退役已完成；当前事实见 `STATUS.md` / `DATA_CENTER.md`）
+- `GY-DATA-CORE-V2.md`
+- `GY-DATA-PRODUCT-RETIREMENT-5.md`
+- `GY-MARKET-RUNTIME-V1.md`
 - `JM-LIVE-SIGNAL-EVENT-S6-08.md`
 - `JM-LIVE-STABILITY-S6-10.md`
 - `V1-FINAL-ACCEPTANCE-S6-11.md`

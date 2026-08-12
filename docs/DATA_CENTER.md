@@ -18,9 +18,11 @@ MarketDataService
 `continuous|contract`；主连的 `series_or_contract=MAIN`；`actual_dominant` 是查询模式，不是物理
 Dataset。
 
-`continuous/MAIN` 的 Direct RQData 来源固定为 `{SYMBOL}88` 未平滑主力连续；`{SYMBOL}99` 持仓量
-加权指数不是可替代来源，任何空窗都必须显式失败。它与按 rule2 `MainContractMap` 拼接的
-`actual_dominant` 保持不同查询语义。
+`1m` 的 `continuous/MAIN` 输入固定为 `{SYMBOL}88` 未平滑主力连续；`{SYMBOL}99` 持仓量加权指数
+不是可替代来源，任何空窗都必须显式失败。期货 `1d` 的事实固定为 RQData
+`futures.get_exchange_daily`：真实合约直接读取，`continuous/MAIN` 按每个交易日 rank1
+`MainContractMap` 拼接对应真实合约。`1w` 仅由同一交易所日行情在完整 ISO 周内聚合，缺任一应有
+交易日事实即失败；不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
 
 ## 2. Canonical 物理合同
 
@@ -63,10 +65,10 @@ identity 唯一；`market_partitions` 以 `(dataset_id, year, month)` 唯一，�
 
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
 `active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后
-优先完成 `1d/1w`，再补可本地生成的 Derived，最后按 active universe、Dataset、年月顺序续传 `1m`。
+优先完成交易所事实 `1d` 与由其聚合的 `1w`，再补可本地生成的 Derived，最后按 active universe、Dataset、年月顺序续传 `1m`。
 每完成一个 1m dataset-month，立即生成四个 Derived 月。
 
-17:00 Runtime 的受限 metadata 同步只准备 operational 四品种：Calendar 覆盖当天至 ISO 周日或下一
+17:00 Runtime 的受限 metadata 同步准备 operational 60 品种：Calendar 覆盖当天至 ISO 周日或下一
 交易日（取较晚者），TradingSession 精确替换当天与下一交易日，MainContractMap 仍只发布当天 rank1。
 这样夜盘 phase resolver 在 18:00 后有下一交易日 Session 事实，同时不会提前发布未来主力映射，也不写
 Dataset、Partition 或 Parquet。
@@ -90,7 +92,8 @@ start
 end
 ```
 
-`continuous` 读取 Canonical `SYMBOL.MAIN`（仅由 RQData `{SYMBOL}88` 构建）；`contract` 读取指定真实合约；`actual_dominant` 由 rank1
+`continuous` 读取 Canonical `SYMBOL.MAIN`（`1m` 由 RQData `{SYMBOL}88` 构建，`1d/1w` 由 rank1
+真实合约的交易所日行情构建）；`contract` 读取指定真实合约；`actual_dominant` 由 rank1
 映射拼接，`1w` 按完整 ISO 周最后交易日的 rank1 合约取整周真实合约 bar。映射、日历、分区或
 coverage 缺失时 fail-closed。`actual_dominant` 按与 `(start, end]` 相交的历史 Session 选择映射日；
 夜盘 bar 的身份始终是其 `trading_day`，而不是发生时刻所在的前一自然日。响应只返回请求、bars、
@@ -102,16 +105,15 @@ coverage 和 resolved contract segments。
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data audit (--symbol X | --universe active)
-guiyi data retire-products [--apply]
 ```
 
 无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
 始终只读。audit 对每个请求品种独立返回结构化 finding（`code`、`category`、dataset、year、month）：已知
 Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`、`metadata_calendar`、
 `metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为
-`main_contract_map`、`partition`、`physical`。未知基础设施异常仍 fail-closed。`retire-products` 默认
-dry-run 盘点已退役品种（`br/cs/ic/if/ih/im/lu/nr/sp`）的 Catalog 行与
-Canonical 路径；显式 `--apply` 才硬删，且生产环境另需范围明确的单次执行意图。省略 `--through`
+`main_contract_map`、`partition`、`physical`。未知基础设施异常仍 fail-closed。已退役品种
+`br/cs/ic/if/ih/im/lu/nr/sp` 已完成一次性生产清退；系统只保留精确拒绝防护，不再公开重复删除入口。
+省略 `--through`
 时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；相同解析值的再次完整运行
 必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的
 单次意图。

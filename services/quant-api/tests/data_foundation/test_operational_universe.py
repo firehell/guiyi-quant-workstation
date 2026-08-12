@@ -44,8 +44,11 @@ def test_rejects_retired_products_in_the_active_universe(tmp_path) -> None:
         load_active_products(path)
 
 
-def test_loads_exact_operational_products_in_configured_order() -> None:
-    assert load_operational_products() == ("j", "jm", "ap", "ag")
+def test_operational_products_are_the_complete_active_universe() -> None:
+    active = load_active_products()
+
+    assert len(active) == 60
+    assert load_operational_products() == active
 
 
 def test_rejects_duplicate_operational_code(tmp_path) -> None:

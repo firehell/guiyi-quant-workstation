@@ -2,64 +2,71 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 Market Runtime MR-08 已验收、active 60/60 历史 Canonical 已全部闭环的基线上，把当前 Market Web 升级为“Market Radar → Product Workspace”的高效个人期货研究工作站，同时保留已经验收的 Historical/Live seam 与数据合同。
+Final rebase：2026-08-12  
+Design source：`docs/superpowers/specs/2026-08-11-market-research-workspace-post-foundation-design.md`
 
-**Architecture:** P0 新增只读 `MarketResearchService`，统一从 `MarketDataService` 读取历史行情并复用 quant-core 指标权威，向 Web 输出 `RadarSnapshot` 与 `ProductResearchSnapshot`；Web 不再自行组合 60 个品种的研究逻辑。现有 `useMarketSeries`、`MarketReadService`、cursor 分页和 WebSocket seam 原样保留；Kline 只做轻量三 pane、EMA、固定 Volume/MACD、crosshair 和响应式 Product Workspace。
+**Goal:** 在 active 60/60 Canonical 已完整闭环的稳定基线上，把当前 Market Web 升级为“Market Radar → Product Workspace”的个人期货研究工作站，同时保持已经验收的 Historical/Live seam、60 品种 Runtime 范围和 Indicator Kernel 权威边界。
 
-**Tech Stack:** Vue 3 / TypeScript / Vite / Naive UI / lightweight-charts 5.2；FastAPI / SQLAlchemy / PostgreSQL；`packages/quant-core` Indicator Kernel；Node test runner / Playwright / pytest / Ruff / Mypy。
+**Architecture:** 新增只读共享研究层：`MarketDataService -> research_metrics -> MarketResearchService / MarketRadarService -> semantic DTO -> Web`。Product Workspace 继续使用现有 `useMarketSeries` / `MarketReadService`；Radar 只读 `actual_dominant/1d` Canonical，不调用 provider、不触发历史写入。Kline 在现有分页、上海时间和 viewport 行为上增加固定三 pane、EMA、Volume/MACD 和 crosshair。
+
+**Tech Stack:** Vue 3 / TypeScript / Vite / Naive UI / lightweight-charts 5.2；FastAPI / SQLAlchemy / PostgreSQL；`packages/quant-core` Indicator Kernel；pytest / Ruff / Mypy / Node test runner / Playwright / pnpm。
 
 ## Global Constraints
 
-- 本计划**只在** `STATUS.md` 明确确认 MR-08 最终验收完成且 active 60/60 Canonical/audit 全闭环后启动。
-- `MarketDataService` 仍是唯一正式历史 Bar 读取入口；Research Service 不得 glob Parquet、自判主力或跨频回退。
-- `actual_dominant` 继续由 `MainContractMap rank=1` 查询时拼接；`continuous/MAIN` 继续保持未平滑语义。
-- 必须保留现有 `MarketReadService`、`useMarketSeries`、`/bars/page`、`/market/state`、`/market/ws`、cursor pagination、generation token、Canonical/Live seam 和 reconnect 行为。
-- Historical Research Universe 为 active 60；Live Observation Universe 继续只由 `operational_products.txt` 决定。完成 60/60 不授权扩大 Live。
-- P0 Research API 只读 PostgreSQL/Canonical，不调用 RQData、不写 PostgreSQL、不写 Canonical、不改 Runtime enable state。
-- 全市场 Radar 必须显式返回 `expected_as_of`、`participant_count`、`active_count`、stale/unavailable；任何品种未达到 expected_as_of 时显示 degraded，不伪装 60/60 current。
-- P0 不实现 active 60 自动日终写入。若后续要达到每天 60/60 current 的 Daily Ready，另开 Lane 3 任务复用正式 `HistoricalDataManager.update`，且保持 Live universe 不变。
-- 主图 overlay 只复用当前 Registry/`MAIN_INDICATOR_DEFINITIONS` 已登记项目；基线为 EMA10/EMA21/EMA60 与默认关闭的 HTDY original observation。
-- Volume 与 MACD 固定为副图；不做画线、斐波那契、RSI/KDJ/CCI、任意 pane、分屏、多窗口或 TradingView clone。
-- HTDY original 保持 observation-only、future-looking/repainting 风险；不得进入 Radar attention 规则，不修改 Registry capability。
-- `attention` 只表示规则筛出的“值得关注”；`watchlist` 只表示用户本地自选，二者不得混用。
-- P0 不新建 sector taxonomy。只有届时已经存在可信、完整 sector 元数据时才显示板块块；否则隐藏，不猜测。
-- 所有结果都是研究观察，不是交易指令；保持 `auto_order=false`。
-- 普通 P0 代码是 Lane 2；不得发布 main/tag，不得 Runtime promotion，不得执行真实数据写入。
+- 当前 `STATUS.md` 已确认 DFD-01～DFD-07 完成归档、active 60/60 Canonical closure、全域 audit passed / 0 findings；本计划不再等待 Data Foundation Gate。
+- `active_products.txt` 与 `operational_products.txt` 当前内容完全一致，均为 60；不得在 P0 修改这两个文件。
+- Runtime 60 只表示 operational scope=60；Live provider channel 必须继续按真实 `TRADING` phase 动态订阅，不要求任何时刻同时 60 channel。
+- 现有 17:00 + 最多一次 1h retry after-market 已更新 operational 60；P0 不新增 Daily scheduler、任务表或第二历史写入口。
+- `MarketDataService` 仍是唯一正式历史 Bar 入口；Research 不得 glob Parquet、自判主力或跨频回退。
+- `actual_dominant` 只由 `MainContractMap rank=1` 查询拼接；`continuous/MAIN` 保持当前未平滑语义。
+- 必须保留现有 `MarketReadService`、`useMarketSeries`、`/bars/page`、`/market/state`、`/market/ws`、after-market seam、generation token、reconnect、left pagination、Shanghai time 和 viewport 行为。
+- P0 Research API 只读 PostgreSQL/Canonical；不得调用 RQData、Redis Live，不得写 PostgreSQL/Canonical，不得执行 Runtime switch。
+- `product_sectors.csv` / `product_taxonomy.py` 已是 active 60 展示 taxonomy；不得创建第二套 symbol→sector 映射。
+- `load_active_products()` 已存在；不得为了 Radar 再实现 active-universe loader。
+- 主图只复用当前 `MAIN_INDICATOR_DEFINITIONS` 已登记项目；EMA10/21/60 为标准 overlay，HTDY original 默认关闭且 observation-only。
+- Volume 与 MACD 固定为两个副图；不做画线、斐波那契、RSI/KDJ/CCI、任意 pane、分屏、多窗口或 TradingView clone。
+- `attention` = 后端透明规则筛选；`watchlist` = 用户 localStorage 自选；字段和 UI 文案不得混用。
+- 所有输出是研究观察，不是交易指令；`auto_order=false` 始终成立。
+- 普通实现为 Lane 2；不得发布 `main`、创建 tag、切换最终 Runtime 或执行真实数据写入。
+- 实现期所有验证命令以当时 `TESTING.md` 为准；当前 Web package manager 是 pnpm，不再使用旧计划中的 npm 命令。
 
 ---
 
-## Activation Readback — 开发前一次性检查
+## Start Readback
 
-在 Task 1 前执行只读检查，不修改代码：
+Task 1 开始前只读确认一次：
 
 ```text
-1. 阅读 STATUS.md
-2. 确认 active universe = 60
-3. 确认 60/60 Canonical closure + audit passed
-4. 确认 Market Runtime MR-08 final acceptance 已闭环
-5. 确认当前 Runtime operational subset 和 exact boundary
-6. 阅读 AGENTS.md / docs/DEVELOPMENT.md / PROJECT_SOURCE.md / DECISIONS.md
-7. 阅读 docs/DATA_CENTER.md / docs/INDICATOR_KERNEL.md / docs/tasks/GY-MARKET-RUNTIME-V1.md（若仍 active）
-8. 阅读本设计：docs/superpowers/specs/2026-08-11-market-research-workspace-post-foundation-design.md
+1. STATUS.md 仍确认 Data Foundation 60/60 完成
+2. AGENTS.md / docs/DEVELOPMENT.md 无新执行规则冲突
+3. PROJECT_SOURCE.md / DECISIONS.md 仍确认 active=60、operational=60
+4. docs/DATA_CENTER.md 数据合同无变化
+5. docs/INDICATOR_KERNEL.md Registry/HTDY 边界无变化
+6. product_sectors.csv 仍精确覆盖 active 60
+7. 当前 Market Web 仍以 useMarketSeries + KlineChart 为主路径
 ```
 
-任一事实与本计划冲突时，以 active canonical 为准，停止并更新计划；不得从本文推断已经发生的生产状态。
+当前另有一个独立 Runtime 部署尾项：`develop@51e84988...` 的完整 rank1 snapshot / phase-scoped channel 修复尚待新的单次 Runtime switch。若开始开发时 `STATUS.md` 仍记录此项：
+
+- Task 1～7 不因此阻塞；
+- 不允许 Codex 顺手执行 Runtime switch；
+- Task 8 的真实 Runtime-integrated acceptance 前必须先由用户独立授权完成该 switch/readback。
 
 ---
 
-## File Structure
+## File Map
 
-### Backend research semantics
+### Backend
 
-- Create: `services/quant-api/app/market_data/research.py` — 单品种研究计算、共享研究指标函数、`MarketResearchService.product_snapshot()`。
-- Create: `services/quant-api/app/market_data/radar.py` — 60 品种 Radar 聚合、freshness、attention 规则。
-- Modify: `services/quant-api/app/market_data/operational_universe.py` — 提取 `load_active_products()`，不改变 operational 语义。
-- Modify: `services/quant-api/app/market_data/composition.py` — 组装 Research/Radar service；只注入 read dependencies。
-- Modify: `services/quant-api/app/schemas/market.py` — Product Research / Radar DTO。
-- Modify: `services/quant-api/app/api/market.py` — 新增只读 research routes。
-- Test: `services/quant-api/tests/test_market_research.py`。
-- Test: `services/quant-api/tests/test_market_radar.py`。
-- Test: `services/quant-api/tests/test_market_research_api.py`。
+- Create: `services/quant-api/app/market_data/research_metrics.py` — 纯研究指标组合函数；零 I/O。
+- Create: `services/quant-api/app/market_data/market_research_service.py` — 单品种 ProductResearchSnapshot 只读 facade。
+- Create: `services/quant-api/app/market_data/market_radar.py` — 60 品种 freshness、Radar 聚合、attention、sector summary。
+- Modify: `services/quant-api/app/market_data/composition.py` — 只读 Research/Radar 组装。
+- Modify: `services/quant-api/app/schemas/market.py` — Product Research / Radar Pydantic DTO。
+- Modify: `services/quant-api/app/api/market.py` — 两个只读 research endpoint。
+- Create: `services/quant-api/tests/data_foundation/test_market_research.py`。
+- Create: `services/quant-api/tests/data_foundation/test_market_radar.py`。
+- Modify: `services/quant-api/tests/data_foundation/test_market_api.py`。
 
 ### Product Workspace Web
 
@@ -73,44 +80,45 @@
 - Modify: `apps/quant-web/src/components/kline/KlineChart.vue`。
 - Modify: `apps/quant-web/src/types/market.ts`。
 - Modify: `apps/quant-web/src/api/market.ts`。
-- Modify only if needed for chart tokens: `apps/quant-web/src/styles/tokens.css` / `apps/quant-web/src/styles/chartTheme.ts`。
+- Modify only if needed: `apps/quant-web/src/styles/chartTheme.ts`, `apps/quant-web/src/styles/tokens.css`。
 
-### Market Radar Web
+### Radar Web
 
 - Create: `apps/quant-web/src/components/market/MarketSummaryStrip.vue`。
 - Create: `apps/quant-web/src/components/market/MarketScatter.vue`。
 - Create: `apps/quant-web/src/components/market/MarketAttentionList.vue`。
+- Create: `apps/quant-web/src/components/market/MarketSectorSummary.vue`。
 - Create: `apps/quant-web/src/components/market/MarketDetailTable.vue`。
 - Modify: `apps/quant-web/src/pages/market/index.vue`。
-- Modify: `apps/quant-web/src/types/market.ts`。
-- Modify: `apps/quant-web/src/api/market.ts`。
+- Reuse: `apps/quant-web/src/utils/productDirectory.ts` — sector labels only。
 
-### Tests
+### Web Tests
 
 - Create: `apps/quant-web/tests/market-workspace-preferences.test.ts`。
 - Create: `apps/quant-web/tests/kline-view-model.test.ts`。
-- Modify: `apps/quant-web/tests/indicators.test.ts` only for HTDY UI boundary regression。
-- Modify: `apps/quant-web/e2e/market-runtime.spec.mjs` only when selectors/layout change；原 Runtime 语义测试必须保留。
+- Modify: `apps/quant-web/tests/indicators.test.ts` only for HTDY UI risk regression。
+- Modify: `apps/quant-web/e2e/market-runtime.spec.mjs` only when selectors/layout change；现有 seam scenarios must remain。
 - Create: `apps/quant-web/e2e/market-research.spec.mjs`。
 - Create: `apps/quant-web/e2e/market-radar.spec.mjs`。
 
 ---
 
-### Task 1: Shared Product Research Service and exact metric semantics
+### Task 1: Shared research metrics and ProductResearchService
 
-**Lane:** Lane 2；推荐 Sol / 高推理，因为该任务冻结研究指标口径并连接 quant-core。
+**Lane:** Lane 2  
+**Recommended:** Sol / 高推理  
+**Reason:** 冻结研究统计口径并连接 quant-core；错误会传播到 Radar 和 Product Workspace。
 
 **Files:**
-- Create: `services/quant-api/app/market_data/research.py`
+- Create: `services/quant-api/app/market_data/research_metrics.py`
+- Create: `services/quant-api/app/market_data/market_research_service.py`
 - Modify: `services/quant-api/app/market_data/composition.py`
 - Modify: `services/quant-api/app/schemas/market.py`
 - Modify: `services/quant-api/app/api/market.py`
-- Create: `services/quant-api/tests/test_market_research.py`
-- Create: `services/quant-api/tests/test_market_research_api.py`
+- Create: `services/quant-api/tests/data_foundation/test_market_research.py`
+- Modify: `services/quant-api/tests/data_foundation/test_market_api.py`
 
 **Interfaces:**
-
-Internal identity:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -118,20 +126,11 @@ class ResearchSeriesIdentity:
     symbol: str
     series_kind: SeriesKind
     contract: str | None = None
-```
 
-Internal snapshot:
-
-```python
 @dataclass(frozen=True, slots=True)
-class ProductResearchSnapshot:
-    symbol: str
-    product_name: str
-    exchange: str
-    series_kind: str
-    contract: str | None
-    current_dominant: str | None
-    dominant_mapping_date: date | None
+class ResearchMetrics:
+    price_change_1d: Decimal | None
+    price_change_5d: Decimal | None
     daily_trend: str
     weekly_trend: str
     position20: Decimal | None
@@ -141,111 +140,117 @@ class ProductResearchSnapshot:
     oi_change_1d: Decimal | None
     turnover_change_5d: Decimal | None
     atr14_percentile252: Decimal | None
-    recent_daily: tuple[ResearchDailyPoint, ...]
-```
 
-Public service:
-
-```python
 class MarketResearchService:
     def product_snapshot(self, identity: ResearchSeriesIdentity) -> ProductResearchSnapshot: ...
 ```
 
-API:
+Public API:
 
 ```text
 GET /api/v1/market/research/product
   symbol
   series_kind
-  contract?      # 仅 contract 必填
+  contract?   # only contract mode requires it
 ```
 
-#### Exact P0 metric definitions
+Frozen metric formulas:
 
 ```text
+price_change_1d = close_T / close_T-1 - 1
+price_change_5d = close_T / close_T-5 - 1
 position20 = (close_T - min(low,last20)) / (max(high,last20)-min(low,last20))
 distance_to_20d_high = close_T / max(high,last20) - 1
-distance_to_20d_low  = close_T / min(low,last20) - 1
+distance_to_20d_low = close_T / min(low,last20) - 1
 volume_ratio20 = volume_T / mean(previous 20 volumes), current excluded
-oi_change_1d = OI_T / OI_T-1 - 1, only when both are finite and previous > 0
-turnover_change_5d = turnover_T / mean(previous 5 turnovers) - 1, only when all six values exist
+oi_change_1d = oi_T / oi_T-1 - 1, both finite and previous > 0
+turnover_change_5d = turnover_T / mean(previous 5 turnovers) - 1, all required values present
 ```
 
-Daily/weekly trend:
+Trend：
 
 ```text
-up      = close > EMA21 AND EMA21[T] > EMA21[T-1]
-down    = close < EMA21 AND EMA21[T] < EMA21[T-1]
+up      = close > EMA21 and EMA21[T] > EMA21[T-1]
+down    = close < EMA21 and EMA21[T] < EMA21[T-1]
 neutral = otherwise
-unavailable = EMA not ready / insufficient data
+unavailable = EMA not ready
 ```
 
-EMA 必须调用 quant-core `ema_series(..., period=21, seed_policy="sma_window")`。
+EMA must call quant-core `ema_series(period=21, seed_policy="sma_window")`。ATR must call `atr_series(period=14, smoothing_policy="wilder_sma_seed")`。ATR percentile uses the latest ready ATR against at most the previous 252 ready ATR values；fewer than 20 baseline values => `None`。
 
-ATR 必须调用 quant-core `atr_series(..., period=14, smoothing_policy="wilder_sma_seed")`；ATR percentile 使用 latest ready ATR 对前最多 252 个 ready ATR 值计算经验分位，少于 20 个基准值则返回 `None`。
-
-- [ ] **Step 1: Write failing pure metric tests**
-
-至少加入以下测试结构：
+- [ ] **Step 1: Write RED metric tests**
 
 ```python
-def test_product_metrics_exclude_current_bar_from_volume_baseline():
-    bars = daily_bars(volumes=[100] * 20 + [200])
-    snapshot = build_product_metrics(bars, weekly_bars(...))
-    assert snapshot.volume_ratio20 == Decimal("2")
+def test_volume_ratio_excludes_current_bar():
+    daily = make_daily_bars(volumes=[Decimal("100")] * 20 + [Decimal("200")])
+    result = calculate_research_metrics(daily, make_weekly_bars(30))
+    assert result.volume_ratio20 == Decimal("2")
 
 
-def test_product_metrics_return_unavailable_instead_of_zero_when_oi_missing():
-    bars = daily_bars_with_missing_latest_oi()
-    snapshot = build_product_metrics(bars, weekly_bars(...))
-    assert snapshot.oi_change_1d is None
+def test_missing_oi_is_unavailable_not_zero():
+    daily = make_daily_bars_with_latest_oi(None)
+    result = calculate_research_metrics(daily, make_weekly_bars(30))
+    assert result.oi_change_1d is None
 ```
 
-同时覆盖 EMA up/down/neutral、position20、turnover5、ATR percentile、短历史 unavailable。
+Also cover：1D/5D return、EMA up/down/neutral、position20 zero-range handling、turnover5、ATR percentile、insufficient history。
 
 - [ ] **Step 2: Run RED**
 
 ```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_market_research.py
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_market_research.py
 ```
 
-Expected: FAIL because research module/functions do not exist.
+Expected: FAIL because the new module/functions do not exist.
 
-- [ ] **Step 3: Implement pure helpers without duplicating indicator formulas**
+- [ ] **Step 3: Implement pure `research_metrics.py`**
 
-`research.py` 中只写研究组合逻辑；EMA/ATR 必须通过 quant-core public functions。所有输出 ratio/price-derived values 使用 `Decimal`，不得把数据库/Canonical Decimal 转 float 后再作为后端业务结果。
+Use `Decimal` for backend ratio/price-derived results。Do not duplicate EMA/ATR formulas；call quant-core public functions。Missing/invalid values return `None`/`unavailable`，never 0。
 
 - [ ] **Step 4: Implement `MarketResearchService.product_snapshot()`**
 
-对同一 identity 调用 `MarketDataService.query_page()`：
+Read current identity through `MarketDataService.query_page()` only：
 
 ```text
 1d limit = 300
 1w limit = 80
 ```
 
-只读历史；不调用 `/market/state`、Redis 或 RQData。当前主力上下文使用既有 `MarketDataService.list_latest_dominants()` / MainContractMap 事实，不自行计算主力。
+Use existing `list_latest_dominants()` for current rank1 context。Read product name/sector from existing taxonomy-backed dominant summary。Return only latest 80 daily points in `recent_daily`。
 
-- [ ] **Step 5: Add Pydantic DTO and endpoint**
+- [ ] **Step 5: Add Product Research DTO and API test**
 
-合同/identity 错误映射到现有 422 语义；`MarketDataError` 映射到 409；错误响应不暴露路径、SQL 或 provider internal detail。
+Add API test cases：
 
-- [ ] **Step 6: Run targeted GREEN**
+```text
+valid actual_dominant -> 200
+valid continuous -> 200
+contract without contract -> 422
+MarketDataError -> 409
+```
+
+Research failure responses must not expose SQL/path/provider internals。
+
+- [ ] **Step 6: Run GREEN**
 
 ```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_market_research.py \
-  services/quant-api/tests/test_market_research_api.py
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_market_research.py \
+  services/quant-api/tests/data_foundation/test_market_api.py
 
 uv run --project services/quant-api ruff check \
-  services/quant-api/app/market_data/research.py \
+  services/quant-api/app/market_data/research_metrics.py \
+  services/quant-api/app/market_data/market_research_service.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/app/schemas/market.py \
   services/quant-api/app/api/market.py \
-  services/quant-api/tests/test_market_research.py \
-  services/quant-api/tests/test_market_research_api.py
+  services/quant-api/tests/data_foundation/test_market_research.py \
+  services/quant-api/tests/data_foundation/test_market_api.py
 
 git diff --check
 ```
@@ -254,20 +259,22 @@ git diff --check
 
 ```bash
 git add \
-  services/quant-api/app/market_data/research.py \
+  services/quant-api/app/market_data/research_metrics.py \
+  services/quant-api/app/market_data/market_research_service.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/app/schemas/market.py \
   services/quant-api/app/api/market.py \
-  services/quant-api/tests/test_market_research.py \
-  services/quant-api/tests/test_market_research_api.py
+  services/quant-api/tests/data_foundation/test_market_research.py \
+  services/quant-api/tests/data_foundation/test_market_api.py
 git commit -m "feat(market): add product research read model"
 ```
 
 ---
 
-### Task 2: Product Workspace shell, fast controls, and local state
+### Task 2: Product Workspace shell and local state
 
-**Lane:** Lane 2；Terra / 中推理。
+**Lane:** Lane 2  
+**Recommended:** Terra / 中推理
 
 **Files:**
 - Create: `apps/quant-web/src/components/market/ProductWorkspaceToolbar.vue`
@@ -277,7 +284,7 @@ git commit -m "feat(market): add product research read model"
 - Modify: `apps/quant-web/src/pages/market/chart.vue`
 - Modify: `apps/quant-web/src/types/market.ts`
 - Modify: `apps/quant-web/src/api/market.ts`
-- Modify selectors only as required: `apps/quant-web/e2e/market-runtime.spec.mjs`
+- Modify selectors only when necessary: `apps/quant-web/e2e/market-runtime.spec.mjs`
 
 **Interfaces:**
 
@@ -291,9 +298,9 @@ export interface MarketWorkspacePreferences {
 }
 ```
 
-Exports:
+Exports：
 
-```ts
+```text
 defaultMarketWorkspacePreferences()
 loadMarketWorkspacePreferences(storage?)
 saveMarketWorkspacePreferences(value, storage?)
@@ -303,27 +310,27 @@ toggleWatchlistSymbol(value, symbol)
 - [ ] **Step 1: Write localStorage RED tests**
 
 ```ts
-test('corrupt local state falls back to simple defaults', () => {
+test('corrupt workspace state falls back to defaults', () => {
   const storage = { getItem: () => '{bad' }
   assert.deepEqual(loadMarketWorkspacePreferences(storage), defaultMarketWorkspacePreferences())
 })
 
 test('watchlist normalizes and toggles one symbol', () => {
-  const a = toggleWatchlistSymbol(defaultMarketWorkspacePreferences(), ' JM ')
-  assert.deepEqual(a.watchlist, ['jm'])
-  assert.deepEqual(toggleWatchlistSymbol(a, 'jm').watchlist, [])
+  const added = toggleWatchlistSymbol(defaultMarketWorkspacePreferences(), ' JM ')
+  assert.deepEqual(added.watchlist, ['jm'])
+  assert.deepEqual(toggleWatchlistSymbol(added, 'jm').watchlist, [])
 })
 ```
 
 - [ ] **Step 2: Run RED**
 
 ```bash
-node --test apps/quant-web/tests/market-workspace-preferences.test.ts
+pnpm --dir apps/quant-web exec node --test tests/market-workspace-preferences.test.ts
 ```
 
-- [ ] **Step 3: Implement local preference helper**
+- [ ] **Step 3: Implement local preferences**
 
-Defaults:
+Exact defaults：
 
 ```ts
 {
@@ -335,19 +342,19 @@ Defaults:
 }
 ```
 
-Malformed/wrong-version storage silently falls back; no Preference API or DB.
+Malformed JSON, wrong version, invalid series or invalid watchlist entries fall back/normalize；storage errors never block page load。
 
-- [ ] **Step 4: Replace management-form toolbar**
+- [ ] **Step 4: Replace the management-style toolbar**
 
-Visible high-frequency controls:
+Visible high-frequency controls：
 
 ```text
 品种 | 真实主力/主连 | 1m 5m 15m 30m 60m D W | 指标 | 全屏
 ```
 
-`contract` 作为高级入口。Route query 优先于 localStorage；未提供 route 时读 localStorage，最终 fallback 为第一个 dominant / actual_dominant / 15m。
+`contract` remains in a compact advanced entry。Route query has precedence over localStorage；period preference continues to reuse current main chart preference；final fallback remains first dominant / actual_dominant / 15m。
 
-切换立即调用现有 `replaceSeries()`；不保留“读取最新页”主按钮流程。
+Series/period changes call existing `refreshSeries()` / `replaceSeries()` immediately；remove the main “读取最新页” interaction。
 
 - [ ] **Step 5: Add responsive shell**
 
@@ -357,41 +364,44 @@ Visible high-frequency controls:
   grid-template-columns: minmax(0, 1fr) 296px;
   gap: 12px;
 }
+
 @media (max-width: 1599px) {
-  .product-workspace__main { grid-template-columns: minmax(0, 1fr); }
+  .product-workspace__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 ```
 
-小于 1600px 隐藏常驻右栏并使用一个 `NDrawer` “研究”入口。全屏只作用于 Kline workspace container。
+Below 1600px, use one Naive UI drawer entry named `研究`。Fullscreen only targets the Kline workspace container。
 
-- [ ] **Step 6: Preserve every Runtime seam behavior**
+- [ ] **Step 6: Preserve current seam wiring exactly**
 
-`chart.vue` 必须继续使用现有：
+`chart.vue` must continue to consume：
 
 ```text
 bars
 canonicalCoverage
-replaceSeries
-loadMoreBefore
-mutation replace/prepend/live
+hasMoreBefore
 marketState
 liveUnavailable
-followLatest
+mutation
+replaceSeries
+loadMoreBefore
 dispose
 ```
 
-不得在页面重新实现 WebSocket/merge。
+Keep mutation `replace/prepend/live` and `followLatest` behavior；do not move WebSocket logic into the page。
 
-- [ ] **Step 7: Run regression**
+- [ ] **Step 7: Run Web regression**
 
 ```bash
-npm --prefix apps/quant-web test
-npm --prefix apps/quant-web run test:e2e -- market-runtime.spec.mjs
-npm --prefix apps/quant-web run build
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web test:e2e -- market-runtime.spec.mjs
+pnpm --dir apps/quant-web build
 git diff --check
 ```
 
-Existing Runtime browser scenarios must remain green.
+Existing pagination、after-market seam、BREAK/CLOSED、stale WebSocket isolation scenarios must remain green。
 
 - [ ] **Step 8: Commit**
 
@@ -410,9 +420,10 @@ git commit -m "feat(web): add focused product workspace shell"
 
 ---
 
-### Task 3: Three-pane Kline core, EMA, fixed Volume/MACD, and crosshair
+### Task 3: Three-pane Kline core, EMA, fixed Volume/MACD, crosshair
 
-**Lane:** Lane 2；Sol / 高推理，因为该任务同时触及图表生命周期、分页视口和已验收 Live append。
+**Lane:** Lane 2  
+**Recommended:** Sol / 高推理
 
 **Files:**
 - Create: `apps/quant-web/src/utils/klineViewModel.ts`
@@ -420,7 +431,7 @@ git commit -m "feat(web): add focused product workspace shell"
 - Create: `apps/quant-web/tests/kline-view-model.test.ts`
 - Modify: `apps/quant-web/src/components/kline/KlineChart.vue`
 - Modify: `apps/quant-web/src/pages/market/chart.vue`
-- Modify only if required: `apps/quant-web/src/styles/chartTheme.ts`, `apps/quant-web/src/styles/tokens.css`
+- Modify only if needed: `apps/quant-web/src/styles/chartTheme.ts`, `apps/quant-web/src/styles/tokens.css`
 
 **Interfaces:**
 
@@ -440,7 +451,7 @@ export function buildKlineDerivedData(
 ): KlineDerivedData
 ```
 
-`KlineChart` must keep exposed methods exactly:
+`KlineChart` must keep exposed methods：
 
 ```text
 replaceBars(bars, preserveViewport?)
@@ -449,82 +460,87 @@ updateBar(bar)
 scrollToLatest()
 ```
 
-and adds:
-
-```text
-prop visibleMainIndicators
-emit crosshair-change(HoverKlineContext | null)
-```
+Adds prop `visibleMainIndicators` and emit `crosshair-change(HoverKlineContext | null)`。
 
 - [ ] **Step 1: Write view-model RED tests**
 
 ```ts
-test('only selected EMA overlays are derived while MACD is always derived', () => {
-  const d = buildKlineDerivedData(makeBars(100), ['ema_21'])
-  assert.equal(d.ema.ema_10, undefined)
-  assert.ok(d.ema.ema_21!.length > 0)
-  assert.ok(d.macd.histogram.length > 0)
+test('only enabled EMA is derived while MACD is always available', () => {
+  const result = buildKlineDerivedData(makeBars(100), ['ema_21'])
+  assert.equal(result.ema.ema_10, undefined)
+  assert.ok(result.ema.ema_21!.length > 0)
+  assert.ok(result.macd.histogram.length > 0)
 })
 ```
 
-Add a hover alignment test asserting bar/OI/EMA/MACD all resolve from the same bar time.
+Add one test proving OHLCV/OI/EMA/MACD hover context resolves from the same bar timestamp。
 
 - [ ] **Step 2: Run RED**
 
 ```bash
-node --test apps/quant-web/tests/kline-view-model.test.ts
+pnpm --dir apps/quant-web exec node --test tests/kline-view-model.test.ts
 ```
 
-- [ ] **Step 3: Implement derived data using existing Web observation mirror**
+- [ ] **Step 3: Implement derived data by reusing existing Web mirror**
 
-Use existing `calculateEMA()` / `calculateMACD()` from `src/utils/indicators.ts`; do not duplicate formulas in `klineViewModel.ts`.
+Use `calculateEMA()` and `calculateMACD()` from `src/utils/indicators.ts`。Do not duplicate formulas in `klineViewModel.ts`。
 
-- [ ] **Step 4: Convert chart to fixed three panes**
+- [ ] **Step 4: Convert `KlineChart` to three fixed panes**
 
-Using lightweight-charts v5 pane indexes:
+Pane assignment：
 
-```ts
-candles       -> pane 0
-volume        -> pane 1
-macdHistogram -> pane 2
-macdDif       -> pane 2
-macdDea       -> pane 2
+```text
+pane 0 -> Candlestick + EMA overlays
+pane 1 -> Volume histogram
+pane 2 -> MACD histogram + DIF + DEA
 ```
 
-Target visual proportion approximately 6/2/2. This is code-fixed, not user-resizable product configuration.
+Target visual proportion approximately 6/2/2；not user-resizable product configuration。
 
-- [ ] **Step 5: Add EMA series lifecycle**
+- [ ] **Step 5: Preserve current chart infrastructure**
 
-EMA line series use a `Map<MainIndicatorId, ISeriesApi<'Line'>>` for EMA10/21/60. `replace/prepend` may recompute and `setData`; Live `updateBar` must not call `fitContent()` and must preserve current follow/viewport behavior.
+Continue using current：
 
-- [ ] **Step 6: Add synchronized crosshair**
+```text
+normalizeBarSeries
+formatChartTimeInShanghai
+formatChartAxisTimeInShanghai
+replace/prepend/update
+left-edge trigger
+viewport preservation
+followLatest
+```
 
-`KlineHoverLegend` shows only values available at the crosshair time:
+`replace/prepend` may recompute derived series and `setData()`；Live `updateBar` must not unconditionally `fitContent()`。
+
+- [ ] **Step 6: Add synchronized crosshair legend**
+
+Display only available：
 
 ```text
 O H L C | Volume | OI | enabled EMA | DIF DEA HIST
 ```
 
-Never replace missing OI/indicator values with zero.
+Missing fields render `—`/unavailable；never 0。
 
-- [ ] **Step 7: Make chart viewport-based**
-
-Baseline:
+- [ ] **Step 7: Make chart height viewport-based**
 
 ```css
-.kline-shell { min-height: 680px; height: clamp(680px, 74vh, 1040px); }
+.kline-shell {
+  min-height: 680px;
+  height: clamp(680px, 74vh, 1040px);
+}
 .chart { width: 100%; height: 100%; }
 ```
 
-Fullscreen uses 100vh. No drag-resize layout system.
+Fullscreen uses the available viewport；do not implement layout drag/resize。
 
-- [ ] **Step 8: Run full chart regression**
+- [ ] **Step 8: Run complete chart regression**
 
 ```bash
-node --test apps/quant-web/tests/kline-view-model.test.ts
-npm --prefix apps/quant-web test
-npm --prefix apps/quant-web run test:e2e -- market-runtime.spec.mjs
-npm --prefix apps/quant-web run build
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web test:e2e -- market-runtime.spec.mjs
+pnpm --dir apps/quant-web build
 git diff --check
 ```
 
@@ -536,19 +552,19 @@ git add \
   apps/quant-web/src/components/kline/KlineHoverLegend.vue \
   apps/quant-web/src/components/kline/KlineChart.vue \
   apps/quant-web/src/pages/market/chart.vue \
-  apps/quant-web/src/styles/chartTheme.ts \
-  apps/quant-web/src/styles/tokens.css \
   apps/quant-web/tests/kline-view-model.test.ts
+git add apps/quant-web/src/styles/chartTheme.ts apps/quant-web/src/styles/tokens.css 2>/dev/null || true
 git commit -m "feat(web): add three-pane market chart"
 ```
 
-Only stage theme/token files if they actually changed.
+Before commit, unstage any theme/token file that did not actually change。
 
 ---
 
 ### Task 4: Product Research Sidebar and Price/Volume/OI section
 
-**Lane:** Lane 2；Terra / 中推理。
+**Lane:** Lane 2  
+**Recommended:** Terra / 中推理
 
 **Files:**
 - Create: `apps/quant-web/src/components/market/PriceVolumeOiPanel.vue`
@@ -558,9 +574,7 @@ Only stage theme/token files if they actually changed.
 - Modify: `apps/quant-web/src/api/market.ts`
 - Create: `apps/quant-web/e2e/market-research.spec.mjs`
 
-**Interfaces:**
-
-Frontend API:
+**Frontend API:**
 
 ```ts
 export function getProductResearch(params: {
@@ -570,59 +584,57 @@ export function getProductResearch(params: {
 }): Promise<ProductResearchResponse>
 ```
 
-One response drives both sidebar and lower P0 panel.
+- [ ] **Step 1: Add Product Research TypeScript DTO/API**
 
-- [ ] **Step 1: Add Web DTO and API call**
+Keep nullable backend values nullable；convert Decimal JSON to number only at this display boundary。
 
-Map backend Decimal JSON values to nullable numeric display values only at the Web boundary; preserve null as unavailable.
+- [ ] **Step 2: Write E2E RED expectations**
 
-- [ ] **Step 2: Write E2E expectations before UI**
-
-Mock `/market/research/product` and assert:
+Mock `/api/v1/market/research/product` and assert：
 
 ```text
-- large viewport shows research sidebar
-- 1599px viewport uses drawer entry instead of permanent 296px column
-- daily/weekly trend, position20, volume ratio, OI and dominant context appear
-- missing OI renders unavailable copy, not 0%
-- research endpoint failure does not hide or error the Kline chart
+>=1600px -> permanent research sidebar visible
+1599px -> sidebar not permanent, 研究 drawer entry visible
+daily/weekly trend + position + volume ratio + OI + dominant context visible
+missing OI -> unavailable, not 0%
+research endpoint failure -> Kline remains visible and usable
 ```
 
-Run RED:
+- [ ] **Step 3: Run RED**
 
 ```bash
-npm --prefix apps/quant-web run test:e2e -- market-research.spec.mjs
+pnpm --dir apps/quant-web test:e2e -- market-research.spec.mjs
 ```
 
-- [ ] **Step 3: Bind sidebar to current displayed identity**
+- [ ] **Step 4: Bind one snapshot to current identity**
 
-On symbol/series/contract change, request exactly one Product Research snapshot. Use a generation token/abort pattern so stale research results cannot leak from previous symbol into current page.
+On symbol/series/contract change request exactly one Product Research snapshot。Use generation/abort protection so old symbol responses cannot leak into the new page。Research error must remain separate from the Kline `error` state。
 
-- [ ] **Step 4: Implement compact three-block sidebar**
+- [ ] **Step 5: Implement the three-block sidebar**
 
 ```text
 趋势/位置
 量与持仓
-合约上下文
+合约/Runtime上下文
 ```
 
-No P1 placeholder cards.
+Runtime state/phase comes from existing `marketState`，not Research API。
 
-- [ ] **Step 5: Implement PriceVolumeOiPanel**
+- [ ] **Step 6: Implement `PriceVolumeOiPanel`**
 
-Use recent daily series from the same response. A simple SVG is enough: normalized close line + normalized OI line + compact volume bars. If OI is absent, still render price/volume and show `OI 暂无可用数据`.
+Use `recent_daily` from the same response：normalized close line + normalized OI line + compact volume bars。If OI is unavailable，render price/volume and show `OI 暂无可用数据`。
 
-- [ ] **Step 6: Run tests/build**
+- [ ] **Step 7: Run regression**
 
 ```bash
-npm --prefix apps/quant-web test
-npm --prefix apps/quant-web run test:e2e -- market-research.spec.mjs
-npm --prefix apps/quant-web run test:e2e -- market-runtime.spec.mjs
-npm --prefix apps/quant-web run build
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web test:e2e -- market-research.spec.mjs
+pnpm --dir apps/quant-web test:e2e -- market-runtime.spec.mjs
+pnpm --dir apps/quant-web build
 git diff --check
 ```
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add \
@@ -637,30 +649,44 @@ git commit -m "feat(web): add product research context"
 
 ---
 
-### Task 5: Full-universe Radar backend with freshness and transparent attention rules
+### Task 5: Full-universe Market Radar backend
 
-**Lane:** Lane 2；Sol / 高推理。该任务定义 60 品种聚合研究口径，但仍完全只读。
+**Lane:** Lane 2  
+**Recommended:** Sol / 高推理
 
 **Files:**
-- Create: `services/quant-api/app/market_data/radar.py`
-- Modify: `services/quant-api/app/market_data/operational_universe.py`
+- Create: `services/quant-api/app/market_data/market_radar.py`
 - Modify: `services/quant-api/app/market_data/composition.py`
 - Modify: `services/quant-api/app/schemas/market.py`
 - Modify: `services/quant-api/app/api/market.py`
-- Create: `services/quant-api/tests/test_market_radar.py`
-- Modify: `services/quant-api/tests/test_market_research_api.py`
+- Create: `services/quant-api/tests/data_foundation/test_market_radar.py`
+- Modify: `services/quant-api/tests/data_foundation/test_market_api.py`
 
-**Interfaces:**
+**Existing dependencies to reuse unchanged:**
 
-Add:
-
-```python
-def load_active_products(path: Path | None = None) -> tuple[str, ...]: ...
+```text
+load_active_products()              # already validates active 60
+load_product_taxonomy()             # already validates exact 60 taxonomy
+DatabaseCoverageSource.latest_complete_day()
+MarketDataService.query_page()
+research_metrics.py
 ```
 
-It must validate exactly 60 unique normalized symbols and zero retired overlap. Existing `load_operational_products()` calls/reuses it; operational semantics remain unchanged.
+**Frozen thresholds:**
 
-Radar snapshot minimum fields:
+```python
+PRICE_MOVE_PCT = Decimal("0.02")
+VOLUME_EXPANSION_RATIO = Decimal("1.50")
+OI_EXPANSION_PCT = Decimal("0.05")
+HIGH_VOLATILITY_PERCENTILE = Decimal("0.80")
+NEAR_HIGH_POSITION = Decimal("0.90")
+NEAR_LOW_POSITION = Decimal("0.10")
+ATTENTION_MIN_REASONS = 2
+ATTENTION_LIMIT = 10
+RADAR_DAILY_LIMIT = 300
+```
+
+**Response minimum:**
 
 ```text
 status: ready | degraded
@@ -672,9 +698,10 @@ unavailable[]
 summary
 items[]
 attention[]
+sector_summary[]
 ```
 
-Frozen reason codes:
+**Reason codes:**
 
 ```text
 price_move_up
@@ -689,58 +716,48 @@ ema21_up
 ema21_down
 ```
 
-Frozen thresholds:
+- [ ] **Step 1: Write Radar RED tests**
 
-```python
-PRICE_MOVE_PCT = Decimal("0.02")
-VOLUME_EXPANSION_RATIO = Decimal("1.50")
-OI_EXPANSION_PCT = Decimal("0.05")
-HIGH_VOLATILITY_PERCENTILE = Decimal("0.80")
-NEAR_HIGH_POSITION = Decimal("0.90")
-NEAR_LOW_POSITION = Decimal("0.10")
-ATTENTION_MIN_REASONS = 2
-ATTENTION_LIMIT = 10
-RADAR_DAILY_LIMIT = 300
-```
-
-- [ ] **Step 1: Write active-universe loader tests**
-
-Assert invalid count, duplicates and retired overlap raise the existing stable universe error. Assert operational subset validation still passes unchanged.
-
-- [ ] **Step 2: Write Radar RED tests with fake readers**
-
-Cover:
+Use fake MarketData reader + fake complete-day reader。Cover：
 
 ```text
-- expected_as_of supplied by injected complete-day reader
-- all 60 current => status=ready, participant_count=60
-- one stale latest day => degraded, participant_count=59, stale contains symbol
-- one known MarketDataError => degraded, unavailable contains code, other products continue
-- unexpected RuntimeError propagates
-- attention threshold is not lowered to fill 10
-- sorting is deterministic
+expected_as_of=2026-08-11 and all 60 current -> ready / 60
+one latest day stale -> degraded / 59 + stale symbol
+one known MarketDataError -> degraded + unavailable; other symbols continue
+unexpected RuntimeError -> propagates
+attention does not lower threshold to fill 10
+attention order is deterministic
+sector totals match taxonomy and active 60
 ```
 
-- [ ] **Step 3: Reuse existing complete-day semantics**
+- [ ] **Step 2: Run RED**
 
-`MarketRadarService` consumes a small protocol:
-
-```python
-class CompleteDayReader(Protocol):
-    def latest_complete_day(self, products: tuple[str, ...]) -> date: ...
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_market_radar.py
 ```
 
-Composition may adapt existing `DatabaseCoverageSource.latest_complete_day()`; do not implement browser-date or `datetime.now().date()` logic in Radar.
+- [ ] **Step 3: Implement `expected_as_of` from current complete-day semantics**
 
-- [ ] **Step 4: Query each active symbol through MarketDataService**
+Composition builds the existing `DatabaseCoverageSource` and injects it into Radar。Do not call `datetime.now().date()` in Radar logic。
 
-For each symbol use `actual_dominant / 1d / limit=300`. A symbol participates only when its latest `trading_day == expected_as_of`.
+- [ ] **Step 4: Read active 60 through MarketDataService**
 
-Radar metric values reuse shared metric helpers from Task 1; do not create a second EMA/ATR/volume implementation.
+For every active symbol：
 
-- [ ] **Step 5: Build attention reasons**
+```text
+series_kind = actual_dominant
+frequency = 1d
+limit = 300
+```
 
-Rules exactly follow frozen thresholds. Candidate requires `reason_count >= 2`. Sort:
+A symbol participates only when latest `trading_day == expected_as_of`。Reuse shared metric calculation from Task 1；do not duplicate EMA/ATR/volume formulas。
+
+- [ ] **Step 5: Implement attention and stable sort**
+
+Candidate requires at least 2 frozen reasons。Sort：
 
 ```text
 reason_count DESC
@@ -749,131 +766,54 @@ turnover DESC (None last)
 symbol ASC
 ```
 
-Return at most 10.
+Return at most 10。
 
-- [ ] **Step 6: Add read-only Radar endpoint**
+- [ ] **Step 6: Implement sector summary from existing taxonomy**
+
+For each sector return：
+
+```text
+sector
+total_count
+participant_count
+up_count
+down_count
+median_price_change_1d
+attention_count
+```
+
+`total_count` comes from taxonomy/active 60；`participant_count` comes from current Radar participants。No DB taxonomy table and no symbol inference。
+
+- [ ] **Step 7: Add endpoint**
 
 ```text
 GET /api/v1/market/research/radar
 ```
 
-No provider call and no request body.
+No request body，no provider call，no mutation。
 
-- [ ] **Step 7: Run targeted and full backend regression**
+- [ ] **Step 8: Run targeted and full backend verification**
 
 ```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_market_research.py \
-  services/quant-api/tests/test_market_radar.py \
-  services/quant-api/tests/test_market_research_api.py
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_market_research.py \
+  services/quant-api/tests/data_foundation/test_market_radar.py \
+  services/quant-api/tests/data_foundation/test_market_api.py
 
 uv run --project services/quant-api ruff check \
-  services/quant-api/app/market_data/research.py \
-  services/quant-api/app/market_data/radar.py \
-  services/quant-api/app/market_data/operational_universe.py \
-  services/quant-api/app/market_data/composition.py \
-  services/quant-api/app/api/market.py \
-  services/quant-api/app/schemas/market.py
-
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q services/quant-api/tests
-
-git diff --check
-```
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add \
-  services/quant-api/app/market_data/radar.py \
-  services/quant-api/app/market_data/operational_universe.py \
+  services/quant-api/app/market_data/research_metrics.py \
+  services/quant-api/app/market_data/market_research_service.py \
+  services/quant-api/app/market_data/market_radar.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/app/schemas/market.py \
-  services/quant-api/app/api/market.py \
-  services/quant-api/tests/test_market_radar.py \
-  services/quant-api/tests/test_market_research_api.py
-git commit -m "feat(market): add full-universe research radar"
-```
+  services/quant-api/app/api/market.py
 
----
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --offline --project services/quant-api pytest -q services/quant-api/tests
 
-### Task 6: Market Radar Web and local watchlist
-
-**Lane:** Lane 2；Terra / 中推理。
-
-**Files:**
-- Create: `apps/quant-web/src/components/market/MarketSummaryStrip.vue`
-- Create: `apps/quant-web/src/components/market/MarketScatter.vue`
-- Create: `apps/quant-web/src/components/market/MarketAttentionList.vue`
-- Create: `apps/quant-web/src/components/market/MarketDetailTable.vue`
-- Create: `apps/quant-web/e2e/market-radar.spec.mjs`
-- Modify: `apps/quant-web/src/pages/market/index.vue`
-- Modify: `apps/quant-web/src/types/market.ts`
-- Modify: `apps/quant-web/src/api/market.ts`
-- Modify: `apps/quant-web/src/utils/marketWorkspacePreferences.ts`
-
-- [ ] **Step 1: Add Radar TypeScript contract/API**
-
-```ts
-export function getMarketRadar() {
-  return request.get<never, MarketRadarResponse>('/market/research/radar')
-}
-```
-
-Preserve `status`, freshness, stale/unavailable and null metrics exactly.
-
-- [ ] **Step 2: Write Radar E2E RED expectations**
-
-Mock a ready 60/60 snapshot and a degraded 59/60 snapshot. Assert:
-
-```text
-- expected_as_of/date visible
-- ready shows 60/60
-- degraded shows 59/60 and clear warning
-- scatter point click routes directly to Product Workspace
-- attention reasons are visible
-- no composite score is shown
-- local 自选 is distinct from attention
-```
-
-- [ ] **Step 3: Build compact summary strip**
-
-Only:
-
-```text
-上涨 | 下跌 | 放量 | 明显增仓 | 高波动 | 数据日期/60状态
-```
-
-- [ ] **Step 4: Build native SVG scatter**
-
-X = price 1D, Y = OI 1D. Missing OI items stay in detail table but are omitted from scatter. Bubble radius uses bounded log turnover, 6–18px. Hover only shows symbol/name, price, OI, volume ratio, ATR percentile.
-
-- [ ] **Step 5: Build attention list**
-
-Web translates backend reason codes to factual Chinese labels. It must not recalculate thresholds or scores.
-
-- [ ] **Step 6: Build detail table and optional watchlist filter**
-
-Table columns:
-
-```text
-品种 | 1D | 5D | 量比 | OI变化 | ATR分位 | 20日位置 | 状态
-```
-
-`全部 / 自选` uses localStorage watchlist. Clicking any item goes directly to `actual_dominant` Product Workspace; period uses stored chart preference if valid, otherwise 15m。
-
-- [ ] **Step 7: Sector behavior**
-
-P0 does **not** create a classification file. If the future repository already has complete trusted sector metadata, an optional low-density sector block may be rendered; otherwise do not render the block. This omission is accepted P0 behavior and does not block Radar Ready.
-
-- [ ] **Step 8: Run Web verification**
-
-```bash
-npm --prefix apps/quant-web test
-npm --prefix apps/quant-web run test:e2e -- market-radar.spec.mjs
-npm --prefix apps/quant-web run test:e2e -- market-runtime.spec.mjs
-npm --prefix apps/quant-web run build
 git diff --check
 ```
 
@@ -881,9 +821,115 @@ git diff --check
 
 ```bash
 git add \
+  services/quant-api/app/market_data/market_radar.py \
+  services/quant-api/app/market_data/composition.py \
+  services/quant-api/app/schemas/market.py \
+  services/quant-api/app/api/market.py \
+  services/quant-api/tests/data_foundation/test_market_radar.py \
+  services/quant-api/tests/data_foundation/test_market_api.py
+git commit -m "feat(market): add full-universe research radar"
+```
+
+---
+
+### Task 6: Market Radar Web
+
+**Lane:** Lane 2  
+**Recommended:** Terra / 中推理
+
+**Files:**
+- Create: `apps/quant-web/src/components/market/MarketSummaryStrip.vue`
+- Create: `apps/quant-web/src/components/market/MarketScatter.vue`
+- Create: `apps/quant-web/src/components/market/MarketAttentionList.vue`
+- Create: `apps/quant-web/src/components/market/MarketSectorSummary.vue`
+- Create: `apps/quant-web/src/components/market/MarketDetailTable.vue`
+- Create: `apps/quant-web/e2e/market-radar.spec.mjs`
+- Modify: `apps/quant-web/src/pages/market/index.vue`
+- Modify: `apps/quant-web/src/types/market.ts`
+- Modify: `apps/quant-web/src/api/market.ts`
+- Modify: `apps/quant-web/src/utils/marketWorkspacePreferences.ts`
+- Reuse unchanged: `apps/quant-web/src/utils/productDirectory.ts`
+
+- [ ] **Step 1: Add Radar TypeScript DTO/API**
+
+```ts
+export function getMarketRadar() {
+  return request.get<never, MarketRadarResponse>('/market/research/radar')
+}
+```
+
+Preserve `status`、`expected_as_of`、stale/unavailable and nullable metrics exactly。
+
+- [ ] **Step 2: Write Radar E2E RED tests**
+
+Mock both：
+
+```text
+ready: active=60 participant=60
+degraded: active=60 participant=59 + one stale
+```
+
+Assert：
+
+```text
+expected_as_of visible
+ready shows 60/60
+degraded shows 59/60 + warning
+scatter click routes directly to /market/chart
+attention reason tags visible
+no composite score
+sector summary uses existing productDirectory labels
+attention and 自选 are distinct
+```
+
+- [ ] **Step 3: Run RED**
+
+```bash
+pnpm --dir apps/quant-web test:e2e -- market-radar.spec.mjs
+```
+
+- [ ] **Step 4: Implement Summary + SVG Scatter**
+
+Summary only：
+
+```text
+上涨 | 下跌 | 放量 | 明显增仓 | 高波动 | 数据日期/60状态
+```
+
+Scatter：X=1D return，Y=OI 1D；missing OI items remain in table but are omitted from scatter。Bubble radius uses bounded log turnover 6–18px。Hover only shows symbol/name、1D、OI、volume ratio、ATR percentile。
+
+- [ ] **Step 5: Implement Attention + Sector Summary**
+
+Attention only translates backend reasons。Sector component consumes backend sector summary and uses existing `PRODUCT_SECTORS` labels；do not copy symbol mapping into Web。
+
+- [ ] **Step 6: Implement detail table and local watchlist filter**
+
+Columns：
+
+```text
+品种 | 板块 | 1D | 5D | 量比 | OI变化 | ATR分位 | 20日位置 | 状态
+```
+
+Support `全部 / 自选` and sector filtering。Click opens `actual_dominant` Product Workspace；use stored valid period else 15m。
+
+- [ ] **Step 7: Run Web verification**
+
+```bash
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web test:e2e -- market-radar.spec.mjs
+pnpm --dir apps/quant-web test:e2e -- market-runtime.spec.mjs
+pnpm --dir apps/quant-web build
+git diff --check
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add \
   apps/quant-web/src/components/market/MarketSummaryStrip.vue \
   apps/quant-web/src/components/market/MarketScatter.vue \
   apps/quant-web/src/components/market/MarketAttentionList.vue \
+  apps/quant-web/src/components/market/MarketSectorSummary.vue \
   apps/quant-web/src/components/market/MarketDetailTable.vue \
   apps/quant-web/src/pages/market/index.vue \
   apps/quant-web/src/types/market.ts \
@@ -895,9 +941,10 @@ git commit -m "feat(web): add market research radar"
 
 ---
 
-### Task 7: HTDY original observation overlay — isolated risk task
+### Task 7: HTDY original observation overlay
 
-**Lane:** Lane 2；Sol / 高推理 + 独立 Review。
+**Lane:** Lane 2  
+**Recommended:** Sol / 高推理 + 独立 Review
 
 **Files:**
 - Modify: `apps/quant-web/src/utils/klineViewModel.ts`
@@ -907,27 +954,28 @@ git commit -m "feat(web): add market research radar"
 - Modify: `apps/quant-web/tests/kline-view-model.test.ts`
 - Modify: `apps/quant-web/tests/indicators.test.ts`
 
-- [ ] **Step 1: Freeze risk assertions first**
+- [ ] **Step 1: Freeze risk assertions before rendering**
 
-Tests must assert current registry mirror stays:
+Tests must assert current definition remains：
 
 ```text
-defaultVisible = false
-capability = observation_overlay
-repaintingRisk = known
-unstableTailBars = 27
-alertCapable = false
+defaultVisible=false
+capability=observation_overlay
+repaintingRisk=known
+unstableTailBars=27
+alertCapable=false
 ```
 
-- [ ] **Step 2: Run tests before rendering change**
+- [ ] **Step 2: Run baseline indicator tests**
 
 ```bash
-node --test apps/quant-web/tests/indicators.test.ts apps/quant-web/tests/kline-view-model.test.ts
+pnpm --dir apps/quant-web test:indicators
+pnpm --dir apps/quant-web exec node --test tests/kline-view-model.test.ts
 ```
 
-- [ ] **Step 3: Use existing `calculateHuoTianDaYou()` only**
+- [ ] **Step 3: Render only from existing HTDY Web mirror**
 
-Do not change formula or quant-core. When selected, render existing `zk1/zd1/zd2` as light overlay lines and observation markers. Labels must use：
+Call current `calculateHuoTianDaYou()`；do not change formula、quant-core or Registry。Render `zk1/zd1/zd2` as light overlay and existing observations as：
 
 ```text
 买观察
@@ -935,26 +983,26 @@ Do not change formula or quant-core. When selected, render existing `zk1/zd1/zd2
 XG观察
 ```
 
-Do not use “买入信号/卖出信号/建议”。
+Do not implement pixel-exact Tongdaxin STICKLINE engine in P0。
 
 - [ ] **Step 4: Keep risk notice visible**
 
-While enabled, toolbar/fullscreen always displays:
+When enabled, normal/fullscreen UI always shows：
 
 ```text
 火天大有原始观察 · 未来引用/重绘风险 · 仅供人工观察
 ```
 
-- [ ] **Step 5: Verify no backend/Runtime capability change**
+- [ ] **Step 5: Verify no capability/runtime change**
 
 ```bash
-npm --prefix apps/quant-web test
-npm --prefix apps/quant-web run test:e2e -- market-runtime.spec.mjs
-npm --prefix apps/quant-web run build
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web test:e2e -- market-runtime.spec.mjs
+pnpm --dir apps/quant-web build
 git diff --check
 ```
 
-Review diff must show no changes to quant-core registry capability, Runtime, DB or API signal surfaces.
+Diff review must confirm no quant-core Registry capability、Runtime、DB、Signal/Review surface change。
 
 - [ ] **Step 6: Commit**
 
@@ -971,171 +1019,203 @@ git commit -m "feat(web): add htdy observation overlay"
 
 ---
 
-### Task 8: P0 integration, exact status closure, and user-use Gate
+### Task 8: P0 integration review and real-use Gate
 
-**Lane:** Lane 2 integration；Sol / 高推理，独立 Review 会话。
+**Lane:** Lane 2 integration review  
+**Recommended:** Sol / 高推理 / 新独立 Review 会话 / Plan-only review
 
 **Files:**
-- Modify only when facts change: `STATUS.md`
-- Modify if validation commands change: `TESTING.md`
-- Modify design/plan only if implementation differs from approved semantics.
+- Modify only when facts changed: `STATUS.md`
+- Modify only when validation commands changed: `TESTING.md`
+- Modify design/plan only if implementation semantics changed and the change is approved。
 
-- [ ] **Step 1: Review architecture boundaries**
+- [ ] **Step 1: Review final diff against hard boundaries**
 
-Explicitly verify:
+Verify exactly：
 
 ```text
 MarketDataService still owns all historical bars
-MarketResearchService is read-only
+Research services are read-only
 useMarketSeries still owns Historical/Live seam
-operational Live subset unchanged
-no RQData provider passthrough
+active=60 and operational=60 unchanged
+no new provider passthrough
 no DB migration/table
+no new scheduler/history writer
 no main/tag/release
-no Runtime switch/promotion
-no active-60 real data write
-no P1 member/warehouse/roll-yield scope
+no Runtime switch in implementation tasks
 no trading-advice wording
+no P1 member/warehouse/roll-yield scope
 HTDY capability unchanged
 ```
 
-- [ ] **Step 2: Run complete frontend verification**
+- [ ] **Step 2: Run current project-native engineering checks**
 
 ```bash
-npm --prefix apps/quant-web test
-npm --prefix apps/quant-web run test:e2e -- market-runtime.spec.mjs
-npm --prefix apps/quant-web run test:e2e -- market-research.spec.mjs
-npm --prefix apps/quant-web run test:e2e -- market-radar.spec.mjs
-npm --prefix apps/quant-web run build
+python3 scripts/engineering/secret_scan.py --json
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q tests/engineering
+find scripts/ops -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+git diff --check
 ```
 
 - [ ] **Step 3: Run complete backend verification**
 
 ```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q services/quant-api/tests
+  uv run --offline --project services/quant-api pytest -q services/quant-api/tests
 
 uv run --project services/quant-api ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant
 
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 MYPYPATH=services/quant-api \
-uv run --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
-  services/quant-api/app/market_data \
-  services/quant-api/app/guiyi_cli \
-  services/quant-api/app/api/market.py \
-  services/quant-api/app/api/market_live.py
+  uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/market_data services/quant-api/app/guiyi_cli \
+  services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py
 ```
 
-No new errors are accepted relative to the baseline at the moment development actually starts.
+Acceptance is the actual output of the current command；do not carry forward old Mypy-baseline exemptions from earlier plans。
 
-- [ ] **Step 4: Repository hygiene**
+- [ ] **Step 4: Run complete Web verification**
 
 ```bash
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web test:e2e -- market-runtime.spec.mjs
+pnpm --dir apps/quant-web test:e2e -- market-research.spec.mjs
+pnpm --dir apps/quant-web test:e2e -- market-radar.spec.mjs
+pnpm --dir apps/quant-web build
+```
+
+- [ ] **Step 5: Validate active specs**
+
+```bash
+openspec validate --specs --strict --no-interactive
+openspec list --json
 git diff --check
 git status --short
 ```
 
-Run the repository-applicable secret scan for changed tracked executable/source files; report only pass/fail.
+- [ ] **Step 6: Resolve current independent Runtime deployment status before real integrated acceptance**
 
-- [ ] **Step 5: Update bounded status**
-
-If code/test complete but active 60 daily freshness automation is not enabled, status must distinguish：
+Read `STATUS.md`。If `51e84988...`-lineage Runtime fix is still not deployed, stop the real Runtime acceptance and report：
 
 ```text
-Market Research Workspace P0 Ready
-vs
-Daily Radar 60/60 Current Automation not enabled
+P0 code verification complete
+Runtime-integrated acceptance blocked on separate Runtime switch Gate
 ```
 
-Do not claim daily freshness automation from historical closure alone.
+Do **not** perform the switch without a fresh user request。
 
-- [ ] **Step 6: Real-use Gate**
+If `STATUS.md` already records the switch/readback complete，run only the allowed read-only smoke required by the current project contract。
 
-Before starting P1, use the P0 interface for several normal sessions and evaluate only：
+- [ ] **Step 7: Update exact status wording**
+
+Only after Step 2～6 evidence exists，record bounded facts such as：
 
 ```text
-Radar 是否真的减少找品种时间
+Market Research Workspace P0 code/tests complete
+Radar reports 60/60 or explicit degraded freshness
+Runtime scope remains active=60 / operational=60
+no P1 or trading capability enabled
+```
+
+Do not infer profitability、strategy validity or release readiness。
+
+- [ ] **Step 8: Real-use Gate before P1**
+
+Use P0 during normal research sessions and review only：
+
+```text
+Radar 是否减少找品种时间
+attention 是否噪声过多
+Sector Summary 是否有帮助
 Kline 第一屏是否足够完整
 右栏是否过载
-attention 规则是否产生过多噪声
-页面首屏/切换是否足够快
+切换 period/series 是否足够快
+页面首屏是否足够快
 ```
 
-This is a product-use review, not a profitability Gate.
+This is a product-use Gate，not a profitability Gate。
 
-- [ ] **Step 7: Commit documentation only if changed**
+- [ ] **Step 9: Commit closure docs only if changed**
 
 ```bash
-git add STATUS.md TESTING.md docs/superpowers/specs/2026-08-11-market-research-workspace-post-foundation-design.md docs/superpowers/plans/2026-08-11-market-research-workspace-post-foundation-p0.md
+git add STATUS.md TESTING.md \
+  docs/superpowers/specs/2026-08-11-market-research-workspace-post-foundation-design.md \
+  docs/superpowers/plans/2026-08-11-market-research-workspace-post-foundation-p0.md
 git diff --cached --quiet || git commit -m "docs: close market research workspace P0"
 ```
 
-Stage only files that actually changed.
+Only stage files that actually changed。
 
 ---
 
 ## Codex Dispatch Order
 
 ```text
-Task 1  MarketResearchService product snapshot      Sol / high
+Task 1  Shared metrics + Product Research Service    Sol / high
 Task 2  Product Workspace shell                     Terra / medium
-Task 3  Kline three-pane core                       Sol / high
-Task 4  Product research UI                         Terra / medium
+Task 3  Three-pane Kline Core                       Sol / high
+Task 4  Product Research UI                         Terra / medium
 Task 5  Full-universe Radar backend                 Sol / high
-Task 6  Radar Web                                   Terra / medium
+Task 6  Market Radar Web                            Terra / medium
 Task 7  HTDY observation                            Sol / high + independent review
 Task 8  Final integration review                    Sol / high / Plan-only review
 ```
 
-每个独立任务默认：
+Default task flow：
 
 ```text
-一个 Codex App 新会话
-一个 task branch/worktree（从 develop 创建）
-Plan-then-execute
-测试通过后可按仓库个人流程集成 develop
-确认进入 develop 后清理 task worktree/branch
-不要求 PR，除非当时仓库流程或用户另有要求
+develop
+-> new task branch/worktree
+-> one Codex App session
+-> Plan-then-execute
+-> TDD + task verification
+-> integrate to develop
+-> confirm integrated commit
+-> clean task worktree/merged branch
 ```
 
-禁止触及 `main`、tag、最终 Runtime worktree 或真实数据写入。
+PR is optional unless the repository rules at execution time or the user explicitly require one。
+
+Every task forbids：
+
+```text
+main/tag/release
+Runtime switch/promotion
+production DB/Canonical mutation
+manual RQData maintenance
+scope expansion into P1
+```
 
 ---
 
-## Separate Lane 3 Follow-up — Daily 60/60 Freshness
+## Removed from the old plan after final rebase
 
-这不是本 P0 实施任务，不与 Task 1～8 混跑。
-
-当 P0 完成且用户确认需要每天自动得到 60/60 current Radar 时，再单独启动：
+The following old assumptions are explicitly retired：
 
 ```text
-目标：active 60 historical EOD update
-保持：operational Live subset 不变
-复用：HistoricalDataManager.update / existing readiness / natural resume
-不做：60 路 Live、task center、DB scheduler table
+partial 4/60 or 37/60 as the primary Radar mode
+separate Lane-3 Daily 60 freshness scheduler
+operational subset assumed to remain j/jm/ap/ag
+creating load_active_products() in the Radar task
+creating product_sectors.csv in P0
+npm-based Web commands
+old Mypy baseline exemptions
+reading deleted docs/tasks/GY-MARKET-RUNTIME-V1.md as an active contract
 ```
 
-该任务必须使用：
-
-```text
-Lane 3
-Sol / high
-新会话
-Plan-only first
-独立 Review
-真实写入/Runtime scope 人工 Gate
-```
-
-启用前必须先在最终 60/60 基线上只读测量每日目标量、provider quota、典型耗时和失败恢复行为；不要在本文中预设生产执行时长或额度。
+Current facts come from `STATUS.md`、`AGENTS.md`、`PROJECT_SOURCE.md`、`DECISIONS.md`、`docs/DATA_CENTER.md`、`docs/INDICATOR_KERNEL.md`、`openspec/specs/` and the current implementation。
 
 ---
 
 ## Supersession
 
-Activation Gate 满足并开始 V2 开发后，本计划替代：
+This plan is the current executable P0 plan and replaces：
 
 ```text
 docs/superpowers/plans/2026-08-10-market-research-workspace-p0.md
 ```
 
-旧计划保留为历史，不再作为 Codex 执行入口。
+The older plan remains historical only and must not be used as a Codex execution source。

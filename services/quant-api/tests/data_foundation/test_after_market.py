@@ -6,7 +6,12 @@ from datetime import date, datetime
 
 from app.market_data.after_market import AfterMarketUpdater, public_after_market_status
 from app.market_data.errors import InfrastructureError
-from app.market_data.maintenance import MaintenanceResult
+from app.market_data.historical_data_manager import MaintenanceResult
+from app.market_data.operational_universe import load_active_products
+
+
+_ACTIVE_PRODUCTS = load_active_products()
+_ACTIVE_CONTRACTS = {symbol: f"{symbol.upper()}2601" for symbol in _ACTIVE_PRODUCTS}
 
 
 class _Coverage:
@@ -54,12 +59,7 @@ class _Metadata:
 class _Catalog:
     def __init__(self, trading_day: date) -> None:
         self.trading_day = trading_day
-        self.contracts = {
-            "j": "J2601",
-            "jm": "JM2601",
-            "ap": "AP2610",
-            "ag": "AG2610",
-        }
+        self.contracts = dict(_ACTIVE_CONTRACTS)
         self.calls: list[tuple[str, date, date]] = []
 
     def main_map(self, symbol: str, start: date, end: date):
@@ -69,12 +69,7 @@ class _Catalog:
 
 class _LiveStore:
     def __init__(self) -> None:
-        self.snapshot = {
-            "j": "J2601",
-            "jm": "JM2601",
-            "ap": "AP2610",
-            "ag": "AG2610",
-        }
+        self.snapshot = dict(_ACTIVE_CONTRACTS)
         self.subscription_calls: list[date] = []
         self.published: list[dict[str, str]] = []
         self.cleaned: list[date] = []
@@ -163,7 +158,7 @@ def test_updates_once_when_first_attempt_is_ready(tmp_path) -> None:
     assert result.status == "passed"
     assert result.attempts == 1
     assert result.error_code is None
-    assert manager.calls[0].products == ("j", "jm", "ap", "ag")
+    assert manager.calls[0].products == _ACTIVE_PRODUCTS
     assert manager.calls[0].since is None
     assert manager.calls[0].through == date(2026, 8, 10)
     assert manager.calls[0].apply is True
@@ -432,10 +427,8 @@ def test_success_reconciles_rank1_publishes_state_and_cleans_live(tmp_path) -> N
     assert manager.metadata.calls == []
     assert manager.calls[0].sync_current_day_metadata is True
     assert manager.catalog.calls == [
-        ("j", date(2026, 8, 10), date(2026, 8, 10)),
-        ("jm", date(2026, 8, 10), date(2026, 8, 10)),
-        ("ap", date(2026, 8, 10), date(2026, 8, 10)),
-        ("ag", date(2026, 8, 10), date(2026, 8, 10)),
+        (symbol, date(2026, 8, 10), date(2026, 8, 10))
+        for symbol in _ACTIVE_PRODUCTS
     ]
     assert live_store.published == [{"trading_day": "2026-08-10"}]
     assert live_store.cleaned == [date(2026, 8, 10)]

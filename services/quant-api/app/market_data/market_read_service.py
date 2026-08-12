@@ -7,7 +7,6 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 import json
 from pathlib import Path
-import re
 from types import MappingProxyType
 from typing import Protocol
 
@@ -19,11 +18,9 @@ from app.market_data.domain import (
     MarketSeriesPageResult,
     SeriesKind,
     SeriesPageQuery,
+    normalize_contract_for_symbol,
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
-
-
-_CONCRETE_CONTRACT = re.compile(r"(?P<symbol>[A-Z]+)(?P<month>\d{3,4})\Z")
 
 
 class MarketPageReader(Protocol):
@@ -163,19 +160,10 @@ class MarketReadService:
             heartbeat = self._live_store.heartbeat()
         except Exception:  # noqa: BLE001 - Redis is an explicit historical-safe boundary
             return None, False
-        contract = _current_contract(symbol, subscriptions.get(symbol) if subscriptions else None)
+        contract = normalize_contract_for_symbol(
+            symbol, subscriptions.get(symbol) if subscriptions else None
+        )
         return contract, bool(heartbeat and heartbeat.get("available") is True)
-
-
-def _current_contract(symbol: str, value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    contract = value.strip().upper()
-    match = _CONCRETE_CONTRACT.fullmatch(contract)
-    if match is None or match.group("symbol") != symbol.upper():
-        return None
-    month = int(match.group("month")[-2:])
-    return contract if 1 <= month <= 12 else None
 
 
 def _later(first: datetime | None, second: datetime | None) -> datetime | None:

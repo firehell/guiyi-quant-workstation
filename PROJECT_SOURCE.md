@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-10
+更新时间：2026-08-12
 
 ## 定位与边界
 
@@ -8,7 +8,7 @@
 Indicator Kernel 与未来研究；不做自动交易、实盘下单、SaaS、多用户、高频/Tick 平台或 AI 自动
 晋升策略，所有研究观察始终保持 `auto_order=false`。当前没有 backtest 子系统或 Signal/Review/Strategy 应用面。Market Runtime V1 的历史分页、
 Redis Live Overlay、盘后更新与 WebSocket 代码已实现；仓库 launchd 模板仍默认关闭，
-本地工作站已按明确请求启用严格限定为 `j/jm/ap/ag` 的有界 Runtime。
+本地工作站按明确请求启用由 `operational_products.txt` 定义范围的 Runtime。
 
 ## Data Foundation 目标合同
 
@@ -36,16 +36,17 @@ RQData
   确定；不维护第二套发布、缺口或 checksum/digest 内容摘要状态。
 - 所有消费者共用 `MarketDataService`，不得 glob、自选文件、自判主力或跨频回退。
 
-最终用户接口为 `guiyi data update|refresh|audit|retire-products` 与 `/api/v1/market/*`。Market Runtime
-仅限 `operational_products.txt` 的 `j/jm/ap/ag`：Live 只观察当日 rank1 completed 1m，盘后最多在 17:00
-和一次一小时后 retry 更新这四个品种；Live 永不提升为 Canonical。DFD-01～DFD-06 的仓库收口已完成；DFD-07 生产 Canonical 闭环仍为 `PARTIAL`，精确进度只以 `STATUS.md` 为准。现有仓库代码中的旧入口不能作为当前合同依据。
+最终用户接口为 `guiyi data update|refresh|audit` 与 `/api/v1/market/*`。Market Runtime 的 Live 与盘后
+更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察当日 rank1 completed
+1m，盘后最多在 17:00 和一次一小时后 retry 更新相同范围，Live 永不提升为 Canonical。DFD-01～DFD-07
+和 60 品种 Canonical 闭环已经完成，长期规范位于 `openspec/specs/`；现有旧入口不能作为当前合同依据。
 
 ## 工程与外部操作
 
 普通仓库开发可以在 `develop` 或任务 worktree 中实现、测试、commit 和 push。真实 RQData、
 正式 Canonical 写入/切换、生产数据库 mutation、Runtime/live、真实通知、release/tag 等均需执行前
 获得范围明确的一次性意图；dry-run 不授权后续 mutation。Market Runtime V1 例外仅在用户明确请求启用
-该本地工作站后生效：该一次启用允许其既定四品种 Live 与盘后有限自动化持续运行，不授权任何其他 DB、
+该本地工作站后生效：该一次启用允许 `operational_products.txt` 明确列出的 Live 与盘后有限自动化持续运行，不授权任何其他 DB、
 release、通知或订单动作。
 
 当前本机部署根属于可变运行事实，只由 `STATUS.md` 记录。功能开发期可临时从 `develop` 部署以便快速观察；最终 Runtime 采用绑定精确提交的独立 worktree，验收读回身份、拓扑、健康和范围。已经在同一代码谱系形成且由用户接受的自然时点证据不因部署封装重复采集；开发态部署仍不等于 Ready、release 或 Runtime promotion。
@@ -62,5 +63,5 @@ release、通知或订单动作。
 | `DECISIONS.md` | 当前有效长期决策 |
 | `docs/ARCHITECTURE.md` | 项目分层和组件边界 |
 | `docs/DATA_CENTER.md` | Canonical 数据合同 |
-| `docs/tasks/GY-DATA-CORE-V2.md` | active 数据收口业务合同 |
+| `openspec/specs/` | 当前数据与查询行为规范 |
 | `TESTING.md` | 当前可执行验证入口 |
