@@ -65,8 +65,8 @@ identity 唯一；`market_partitions` 以 `(dataset_id, year, month)` 唯一，�
 
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
 `active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后
-优先完成交易所事实 `1d` 与由其聚合的 `1w`，再补可本地生成的 Derived，最后按 active universe、Dataset、年月顺序续传 `1m`。
-每完成一个 1m dataset-month，立即生成四个 Derived 月。
+优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
+provider 分钟线 `1m`。每完成一个 1m dataset-month，立即生成四个日内派生月。
 
 17:00 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日，
 再由持 maintenance lock 的 `HistoricalDataManager.update` 同步 metadata 后规划 coverage；不得先用可能
@@ -82,7 +82,8 @@ identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `P
 `stop_reason=provider_quota_exhausted`。下一次完全相同命令从首个缺失目标续传。
 
 `refresh --symbol --since --through --apply` 强制重建窗口相交月中的 continuous 与所涉 rank1
-contract 的 Direct，再由 1m 重建 Derived。它不接受 repair plan，也不产生额外进度或证据文件。
+contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四个日内派生周期。它不接受 repair plan，
+也不产生额外进度或证据文件。
 
 ## 5. 唯一查询入口
 

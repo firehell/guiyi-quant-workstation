@@ -32,8 +32,8 @@ RQData
 
 - 物理 `DatasetKey=(kind, symbol, series_or_contract, frequency)`
 - 物理 kind 只有 `continuous|contract`；`actual_dominant` 只在查询时由 `MainContractMap rank=1` 拼接
-- Direct：`1m` 主连来自 `{SYMBOL}88`，`1d` 来自真实合约交易所日行情并按 rank1 map 拼接，`1w`
-  只从完整同源 `1d` 聚合；Derived：`5m/15m/30m/60m` 只从同 Dataset Canonical `1m` 按 Session 聚合
+- 基础 provider：`1m` 主连来自 `{SYMBOL}88`，`1d` 来自真实合约交易所日行情并按 rank1 map 拼接。
+  派生：`1w` 只从完整同源 `1d` 聚合；`5m/15m/30m/60m` 只从同 Dataset Canonical `1m` 按 Session 聚合
 - 消费者不得自行 glob、选择 active、判断主力或绕过完整性校验
 - 正式 CLI：`guiyi data update|refresh|audit`
 

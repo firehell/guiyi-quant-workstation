@@ -28,8 +28,8 @@ RQData
   `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu`
   已退役，见 `retired_products.txt`。历史下界为
   `active_history_floor=2023-01-01`。
-- 七周期固定为 `1m/5m/15m/30m/60m/1d/1w`。`1m/1d/1w` 是 Direct；其余四个周期只从
-  Canonical 1m 聚合。
+- 七周期固定为 `1m/5m/15m/30m/60m/1d/1w`。基础 provider 周期是 `1m/1d`；`1w` 只从完整同源
+  日线聚合，`5m/15m/30m/60m` 只从 Canonical 1m 聚合。
 - 物理 Dataset 只有 `continuous` 和 `contract`；`actual_dominant` 在查询时按 rank1
   `MainContractMap` 拼接。
 - 每 Dataset 每自然月只保留一个 `part.parquet`。可用性由完整 coverage、row count 和文件可读性

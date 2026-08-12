@@ -26,8 +26,8 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 已冻结的数据合同
 
-- Direct：`1m` 使用 RQData `get_price`，`1d` 使用交易所日行情，`1w` 只从完整同源日线聚合。
-- Derived：`5m/15m/30m/60m` 只从同 Dataset、质量通过的 Canonical `1m` 按 TradingSession 聚合。
+- 基础 provider：`1m` 使用 RQData `get_price`，`1d` 使用交易所日行情。
+- 派生：`1w` 只从完整同源日线聚合；`5m/15m/30m/60m` 只从同 Dataset、质量通过的 Canonical `1m` 按 TradingSession 聚合。
 - 每个 Dataset 每自然月只有一个 `part.parquet`；schema、identity、session/frequency、OHLCV、coverage、
   row count 与物理可读性全部通过后才能原子发布。
 - PostgreSQL active 数据模型只有八表：`exchanges`、`instruments`、`contracts`、`trading_calendars`、

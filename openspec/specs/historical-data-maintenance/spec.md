@@ -46,7 +46,7 @@ provider 调用，保留已发布月且不发布当前未完成月，并返回 `
 
 ### Requirement: refresh 完整月重建
 refresh SHALL 接受 symbol、since、through，并强制重建相交月份的 continuous 与所涉 rank1 contract
-Direct；新 1m 发布后 MUST 重建四个 Derived 月。
+基础 provider `1m/1d` 与日线派生 `1w`；新 1m 发布后 MUST 重建四个日内派生月。
 
 #### Scenario: refresh dry-run
 - **WHEN** refresh 未传 `--apply`
