@@ -44,12 +44,14 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
-- `2026-08-12` 已执行一次用户明确请求的本地 Runtime switch：隔离 worktree clean/detached 于
-  `a0106860b67f1d00d872dfb57570611729944609`；API/Web/Live/after-market launchd 根一致，API/Web
-  HTTP 200，Runtime health 为 `ok`，Market dominants 返回 60 个唯一且业务字段完整的品种。
+- `2026-08-12` 已按新的单次明确请求将隔离 Runtime 从 `a0106860` 切换到 clean/detached
+  `51e849888590872eab298a682a105ef904ca0426`；API/Web/Live 为 running，after-market 仅重载且
+  `not running/runs=0`，四个 launchd 根一致。API/Web HTTP 200，Runtime health 为 `ok`，Market
+  dominants 返回 60 个唯一且业务字段完整的品种。
 - 配置读回为 active=60、operational=60。部署后现场暴露出 56 个品种的 `TradingSession.effective_to`
   仍停在 `2026-08-11`，因此 13:47 的 Live heartbeat 为 operational=60、TRADING/subscribed=4、
   UNKNOWN=56；系统按合同 fail-closed，未用过期 Session 猜测今日时段，也未手工写 DB 或调用 RQData。
-- 根因修复将“完整当日 rank1 快照”与“当前 TRADING provider channels”分离：前者覆盖 operational 60，
-  后者仍按真实 phase 订阅。代码与回归已完成，但首次部署意图已经消耗，修复 commit 尚待新的单次 Runtime
-  switch；17:00 盘后任务未被手工提前触发。
+- 根因修复已部署：“完整当日 rank1 快照”与“当前 TRADING provider channels”分离。Redis
+  `live:subscription:2026-08-12` 精确覆盖 operational 60，全部合约格式有效；provider channels 仍按真实
+  phase 保持 4 个。after-market status 仍为 `pending/last_run=null` 且状态文件不存在，17:00 任务未被
+  手工提前触发。56 个过期 Session 是否由自然盘后同步推进，仍需在自然运行后另行只读观察。
