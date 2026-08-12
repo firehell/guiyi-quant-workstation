@@ -14,8 +14,8 @@ from app.db.session import get_db
 from app.market_data.composition import build_market_read_service
 from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, SeriesKind, SeriesPageQuery
 from app.market_data.live_market import LIVE_STATE_CHANNEL, live_bar_channel
-from app.market_data.market_read import MarketReadState
-from app.queue import get_async_redis_connection
+from app.market_data.market_read_service import MarketReadState
+from app.redis_connections import get_async_redis_connection
 from app.schemas.market import MarketReadStateResponse
 
 

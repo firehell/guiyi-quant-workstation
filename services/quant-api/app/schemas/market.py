@@ -88,6 +88,7 @@ class DominantContractOut(BaseModel):
 
     product: str
     product_name: str
+    sector: str
     exchange: str
     actual_contract: str
     dominant_mapping_date: date

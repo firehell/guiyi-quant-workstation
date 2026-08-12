@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import CanonicalBar, DatasetKey, SeriesPageQuery
-from app.market_data.service import MarketDataError, MarketDataService
+from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import Exchange, Instrument, TradingCalendar, TradingSession
 

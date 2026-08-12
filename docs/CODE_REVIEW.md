@@ -40,7 +40,9 @@ RQData
 → Market Web + data/runtime API/CLI
 ```
 
-当前 **不** 包含：backtest 子系统、Signal/Review/Strategy Web、signal RQ worker、盘中 Live 应用路径、自动交易。
+当前 **不** 包含：backtest 子系统、Signal/Review/Strategy Web、signal RQ worker、自动交易。
+盘中 Live 只存在于 `operational_products.txt` 的有界 Market Runtime，且与 Historical Canonical 分离；
+不得将其扩写为全品种 Runtime 或正式历史事实源。
 
 ---
 

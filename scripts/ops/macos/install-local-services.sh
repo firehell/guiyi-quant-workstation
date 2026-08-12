@@ -11,6 +11,12 @@ LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
 base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
 market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
+retired_labels=(
+  com.guiyi.quant-web-recovery
+  com.guiyi.quant-worker-signals
+  com.guiyi.quant-worker-signals-recovery
+  com.guiyi.quant-api-recovery-single
+)
 render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}")
 load_labels=("${base_labels[@]}")
 
@@ -78,6 +84,22 @@ reload_launch_agent() {
   return 1
 }
 
+retire_launch_agent() {
+  local label="$1"
+  local attempt
+
+  launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
+  for attempt in 1 2 3 4 5; do
+    if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+      rm -f "$AGENT_DIR/${label}.plist"
+      return 0
+    fi
+    sleep 1
+  done
+  printf '[install-local-services] ERROR: retired launchd bootout timed out label=%s\n' "$label" >&2
+  return 1
+}
+
 write_market_runtime_activation_marker() {
   local temporary_marker
   temporary_marker="$(mktemp "${MARKET_RUNTIME_MARKER}.tmp.XXXXXX")"
@@ -88,6 +110,10 @@ write_market_runtime_activation_marker() {
   chmod 600 "$temporary_marker"
   mv -f "$temporary_marker" "$MARKET_RUNTIME_MARKER"
 }
+
+for label in "${retired_labels[@]}"; do
+  retire_launch_agent "$label"
+done
 
 for label in "${load_labels[@]}"; do
   source_plist="$RENDER_DIR/${label}.plist"

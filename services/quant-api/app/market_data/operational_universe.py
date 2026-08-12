@@ -13,6 +13,15 @@ _ACTIVE_PATH = PROJECT_ROOT / "data/universe/active_products.txt"
 _EXPECTED_ACTIVE_COUNT = 60
 
 
+class ActiveUniverseError(ValueError):
+    """历史研究品种配置不满足 active/retired 宇宙约束。"""
+
+    code = "ACTIVE_UNIVERSE_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
 class OperationalUniverseError(ValueError):
     """运行品种配置不满足 active/retired 宇宙约束。"""
 
@@ -20,6 +29,26 @@ class OperationalUniverseError(ValueError):
 
     def __init__(self) -> None:
         super().__init__(self.code)
+
+
+def load_active_products(path: Path | None = None) -> tuple[str, ...]:
+    """按文件顺序加载 active 60，并校验唯一性及退役互斥。"""
+    try:
+        products = tuple(
+            normalize_symbol(item)
+            for item in (path or _ACTIVE_PATH).read_text(encoding="utf-8").splitlines()
+            if item.strip()
+        )
+        retired = load_retired_products()
+    except (OSError, ValueError) as exc:
+        raise ActiveUniverseError() from exc
+    if (
+        len(products) != _EXPECTED_ACTIVE_COUNT
+        or len(set(products)) != _EXPECTED_ACTIVE_COUNT
+        or set(products).intersection(retired)
+    ):
+        raise ActiveUniverseError()
+    return products
 
 
 def load_operational_products(path: Path | None = None) -> tuple[str, ...]:
@@ -30,20 +59,13 @@ def load_operational_products(path: Path | None = None) -> tuple[str, ...]:
             for item in (path or _OPERATIONAL_PATH).read_text(encoding="utf-8").splitlines()
             if item.strip()
         )
-        active = tuple(
-            normalize_symbol(item)
-            for item in _ACTIVE_PATH.read_text(encoding="utf-8").splitlines()
-            if item.strip()
-        )
+        active = load_active_products()
         retired = load_retired_products()
     except (OSError, ValueError) as exc:
         raise OperationalUniverseError() from exc
 
     if (
-        len(active) != _EXPECTED_ACTIVE_COUNT
-        or len(set(active)) != _EXPECTED_ACTIVE_COUNT
-        or set(active).intersection(retired)
-        or len(products) != len(set(products))
+        len(products) != len(set(products))
         or not set(products).issubset(active)
         or set(products).intersection(retired)
     ):

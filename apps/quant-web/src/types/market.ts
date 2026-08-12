@@ -5,6 +5,7 @@ export type SeriesKind = 'continuous' | 'actual_dominant' | 'contract'
 export interface DominantContractItem {
   product: string
   product_name: string
+  sector: string
   exchange: string
   actual_contract: string
   dominant_mapping_date: string

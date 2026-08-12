@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-10
+更新时间：2026-08-12
 
 本文件只保留当前有效、长期影响代码或数据语义的决策。历史过程由 Git 与 OpenSpec archive 追溯。
 
@@ -23,8 +23,11 @@
 | live | historical Canonical 与 Redis Live Observation 分离 | 仅 `operational_products` 当日 rank1 completed 1m；未确认 bar 不进正式历史资产，Live 不进 Parquet/DB |
 | Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `j/jm/ap/ag` 的 Live 观察和每日 17:00 + 一次 1h retry 的盘后更新持续运行 | 新品种必须显式加入 `operational_products.txt`；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
 | 开发态部署拓扑 | 功能开发期可让本地 launchd 临时直接运行主 `develop` 工作区；最终验收重新创建绑定精确提交的独立 Runtime worktree | 不热更新；每次重载需新的一次性意图；develop 证据不等于 promotion 或最终 Runtime 证据 |
+| 工程验证 | `TESTING.md` 的项目原生命令是唯一验证入口；工程脚本只保留无依赖的 `secret_scan.py` | 不保留自验证治理框架、重复流程文档、废弃构建包装或可选 CI 双轨 |
+| 运维拓扑 | Mac launchd → FRPC → 腾讯云 FRPS/Nginx 是唯一 active 链；local/tunnel/public 分段检查均只读 | 不保留并行 PID 管理器或远端应用副本；安装、重载与云端配置应用仍是独立 Gate |
 | 交易安全 | `auto_order=false` 始终成立 | 任何研究结果、展示或通知都不是交易指令 |
 | active universe | 60 品种；退役含股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu` | 退役码精确硬拦截；生产清退另需单次意图 |
+| 品种展示 taxonomy | `product_sectors.csv` 覆盖 active 60 的展示名称与板块，由 Market API 在 dominants 中返回 | Web 只保留板块标签，不复制品种名称/板块映射；未知板块只降级到 `other` |
 
 active 数据收口合同见 `docs/tasks/GY-DATA-CORE-V2.md`；品种退役合同见
 `docs/tasks/GY-DATA-PRODUCT-RETIREMENT-5.md`；当前实施与外部操作状态见 `STATUS.md`。

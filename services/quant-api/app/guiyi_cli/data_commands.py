@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
-from app.core.env import PROJECT_ROOT
 from app.market_data.composition import canonical_root
 from app.market_data.maintenance import (
     AuditRequest,
@@ -20,11 +19,10 @@ from app.market_data.maintenance import (
 )
 from app.market_data.product_retirement import (
     assert_not_retired,
-    assert_products_not_retired,
     apply_retirement,
-    load_retired_products,
     plan_retirement,
 )
+from app.market_data.operational_universe import load_active_products
 
 
 def build_request(args: argparse.Namespace):
@@ -69,29 +67,12 @@ def run_data_command(args: argparse.Namespace, manager: HistoricalDataManager):
 def _products(symbol: str | None, universe: str | None) -> tuple[str, ...]:
     """解析品种列表：--universe active 或单个 --symbol。"""
     if universe == "active":
-        return _active_products()
+        return load_active_products()
     normalized = str(symbol or "").strip().lower()
     if not normalized:
         raise ValueError("CLI_SYMBOL_REQUIRED")
     assert_not_retired(normalized)
     return (normalized,)
-
-
-def _active_products() -> tuple[str, ...]:
-    """从 data/universe/active_products.txt 读取并校验 60 个唯一品种。"""
-    path = PROJECT_ROOT / "data/universe/active_products.txt"
-    products = tuple(
-        item.strip().lower()
-        for item in path.read_text(encoding="utf-8").splitlines()
-        if item.strip()
-    )
-    if len(products) != 60 or len(set(products)) != 60:
-        raise ValueError("ACTIVE_UNIVERSE_INVALID")
-    retired = load_retired_products()
-    if retired.intersection(products):
-        raise ValueError("ACTIVE_RETIRED_OVERLAP")
-    assert_products_not_retired(products, retired=retired)
-    return products
 
 
 def _day(value: str | None) -> date | None:

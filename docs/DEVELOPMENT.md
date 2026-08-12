@@ -1,10 +1,9 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-10
+更新时间：2026-08-12
 
-本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
-`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、信号和 Runtime 语义仍由
-`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only）。
+本文定义仓库日常开发与外部副作用边界的唯一流程入口；产品、数据、策略、信号和 Runtime 语义仍由
+`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only，含有界 Historical/Live seam）。
 
 ## 唯一日常流程
 
@@ -37,6 +36,9 @@ develop
 
 当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
 Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
+唯一 active 运维链为 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；本地状态只使用
+`scripts/ops/macos/local-services-status.sh`，分段只读检查与配置导航见 `deploy/README.md`。仓库不保留
+并行 PID 管理器、远端 API/Web 副本或会隐式执行 migration 的聚合启动器。
 不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建必须单独立项并从
 Canonical/MarketDataService 合同开始。
 
@@ -89,15 +91,16 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 - 正式历史数据继续遵守 DatasetKey、八表 Catalog、MainContractMap、coverage/可读性和
   MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
 - 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
-- 保持 `Strategy -> SignalEvent -> Notification Gate -> Channel`，live、Runtime promotion、
-  真实通知/autosend 默认关闭，历史处理不回放真实通知。
+- Signal/Review/Strategy 应用链已经退役；不得恢复旧事件表、RQ worker、通知 Gate 或历史补发路径。
+- Live、真实通知、Runtime switch/promotion 均受独立 Gate 约束；现有持续授权仅覆盖
+  `operational_products.txt` 的 Market Runtime 行为。
 - 所有输出都是研究观察，不是交易指令；`auto_order=false`，拒绝创建或提交订单。
 - 不读取、显示、提交或记录凭据；外部输入在命令、文件、网络或数据库敏感操作前完成校验。
 
 ## 权威边界
 
 - 工程执行规则：`AGENTS.md`
-- 详细个人开发流程：`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`
+- 日常开发流程：本文
 - 当前状态：`STATUS.md`
 - 长期产品与数据边界：`PROJECT_SOURCE.md`、`DECISIONS.md`
 - 数据核心 V2 active 合同：`docs/tasks/GY-DATA-CORE-V2.md`

@@ -5,8 +5,11 @@
 ## Current surface
 
 - 路由仅 Market：`/` → `/market`（列表）与 `/market/chart`（K 线）。
-- 展示 60 活动品种的 Canonical 历史行情；主图 EMA10/21/60、火天大有、副图 MACD。
-- 行情页无「浏览 / 严格研究」切换 UI；无 Live 模式；无 signal/strategy/review/dashboard/settings 入口。
+- 展示60个 active 历史研究品种的当前 rank1 映射，并读取 Canonical K 线。
+- `j/jm/ap/ag` 的当日 rank1 completed 1m 可通过 Historical/Live seam 增量观察；continuous、非 rank1
+  contract、日线和周线保持 Historical-only。
+- 当前图表只渲染 K 线与成交量。EMA/HTDY/MACD 仍是测试通过的 Web 观察镜像，尚未挂载到页面。
+- 无「浏览 / 严格研究」切换，也没有 signal/strategy/review/dashboard/settings 入口。
 
 ## 不做
 

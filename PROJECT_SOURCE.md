@@ -6,7 +6,7 @@
 
 归一量化是本地运行、单用户的国内期货量化研究工作站。当前只服务可信历史行情、Market Web、
 Indicator Kernel 与未来研究；不做自动交易、实盘下单、SaaS、多用户、高频/Tick 平台或 AI 自动
-晋升策略。当前没有 backtest 子系统或 Signal/Review/Strategy 应用面。Market Runtime V1 的历史分页、
+晋升策略，所有研究观察始终保持 `auto_order=false`。当前没有 backtest 子系统或 Signal/Review/Strategy 应用面。Market Runtime V1 的历史分页、
 Redis Live Overlay、盘后更新与 WebSocket 代码已实现；仓库 launchd 模板仍默认关闭，
 本地工作站已按明确请求启用严格限定为 `j/jm/ap/ag` 的有界 Runtime。
 
@@ -33,7 +33,7 @@ RQData
 - 物理 Dataset 只有 `continuous` 和 `contract`；`actual_dominant` 在查询时按 rank1
   `MainContractMap` 拼接。
 - 每 Dataset 每自然月只保留一个 `part.parquet`。可用性由完整 coverage、row count 和文件可读性
-  确定；不维护第二套发布、缺口或内容摘要状态。
+  确定；不维护第二套发布、缺口或 checksum/digest 内容摘要状态。
 - 所有消费者共用 `MarketDataService`，不得 glob、自选文件、自判主力或跨频回退。
 
 最终用户接口为 `guiyi data update|refresh|audit|retire-products` 与 `/api/v1/market/*`。Market Runtime
@@ -48,7 +48,7 @@ RQData
 该本地工作站后生效：该一次启用允许其既定四品种 Live 与盘后有限自动化持续运行，不授权任何其他 DB、
 release、通知或订单动作。
 
-当前本机部署根属于可变运行事实，只由 `STATUS.md` 记录。功能开发期可临时从 `develop` 部署以便快速观察；最终 Runtime 验收仍须创建绑定精确提交的独立 worktree，并重新采集自然时点证据。开发态部署不等于 Ready、release 或 Runtime promotion。
+当前本机部署根属于可变运行事实，只由 `STATUS.md` 记录。功能开发期可临时从 `develop` 部署以便快速观察；最终 Runtime 采用绑定精确提交的独立 worktree，验收读回身份、拓扑、健康和范围。已经在同一代码谱系形成且由用户接受的自然时点证据不因部署封装重复采集；开发态部署仍不等于 Ready、release 或 Runtime promotion。
 
 任何结论只证明其精确验证范围；不由代码、测试或数据存在推导盈利、长期稳定、交易或 Runtime Ready。
 

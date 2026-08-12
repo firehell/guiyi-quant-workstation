@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-08-10
+更新时间：2026-08-12
 
 ## 系统定位
 
@@ -50,6 +50,10 @@ flowchart TB
 
 - 接入层只解析请求和输出结果；不实现下载、聚合、文件选择或主力判断。
 - `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务。
+- 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
+  `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
+- active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
+  Market API 直接输出该 taxonomy；Web 不再保留第二套品种目录。
 - PostgreSQL 保存八表 metadata/catalog，Parquet 保存 Bars；不引入多 provider、插件、任务中心或
   在线多版本选择器。
 
@@ -85,3 +89,18 @@ AfterMarketUpdater 只在 launchd 的 17:00 触发（失败最多一小时后重
 Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 release、其他 DB、通知或订单。
 
 开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，当前根和运行状态由 `STATUS.md` 记录。这只是为了快速观察，不改变 Historical/Live 边界，也不构成稳定 Runtime 版本。功能收口后的最终拓扑仍为绑定精确提交的独立 Runtime worktree。
+
+## 运维拓扑
+
+```mermaid
+flowchart LR
+    L["Mac launchd<br/>API / Web / Live / after-market"] --> FPC["FRPC"]
+    FPC --> FPS["腾讯云 FRPS"]
+    FPS --> NG["Nginx<br/>TLS + Basic Auth"]
+    NG --> B["Browser"]
+```
+
+API、Web、Live 和 after-market 四个 launchd label 必须指向同一 supervised Runtime 根；启用标记
+存在时 Live/after-market 均须加载，定时型 after-market 已加载但未运行属于正常状态。本地唯一状态
+入口只读取 launchd、Git 身份和 HTTP/Runtime health，不执行服务 mutation。腾讯云只承担隧道与
+HTTPS 反代，不保留第二套应用进程。完整三段只读检查见 `deploy/README.md`。

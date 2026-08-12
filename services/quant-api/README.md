@@ -4,19 +4,19 @@
 
 ## Current mounted surface
 
-- `/api/v1/market`：Canonical bars、coverage、dominants、indicators（只读历史）。
-- `/api/v1/data`：数据治理 API。
-- `/api/runtime`：只读 Runtime 状态。
-- CLI：`guiyi data update|audit`、`guiyi runtime status`。
+- `/api/v1/market`：Canonical bars/page、coverage、dominants、Historical/Live state 与 WebSocket。
+- `/api/runtime`：DB、Redis、Live 与 after-market 的只读 Runtime 状态。
+- CLI：`guiyi data update|refresh|audit|retire-products|after-market`、
+  `guiyi runtime status|live`。
 
 ## Unmounted / retired
 
 - `/api/signals`、`/ws/signals`、`/api/v1/strategies`、`/api/dashboard`、`/api/reviews`、watchlists、futures_research。
 - `/api/backtests/**`、`/ws/backtests/**`、`guiyi-backtests` worker/queue。
-- poll Live `/market/live/*`、`guiyi data live`、signal/notification RQ worker 入口。
+- poll Live `/market/live/*`、`guiyi data live`、signal/notification RQ worker/queue 入口。
 - `guiyi runtime plan`。
 
-DB 中 signal/review 等表可能仍存在（未 drop）；不得当作 mounted API。
+Active PostgreSQL 数据模型只有八表 Market Catalog；Signal/Review/Strategy 表与应用语义已经退役。
 
 ## 本地
 

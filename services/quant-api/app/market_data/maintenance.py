@@ -11,7 +11,7 @@ HistoricalDataManager
     调用 store.publish 完成 staging 六项硬校验与 part.parquet 原子替换，再 register_partition
     并 strict_verify 读回。apply=False 时只返回 planned 窗口，不写库与文件。
 
-CoverageSource（Protocol，实现见 infrastructure.DatabaseCoverageSource）
+CoverageSource（Protocol，实现见 coverage_source.DatabaseCoverageSource）
     从交易所日历、会话模板与品种窗口推导「应有 bar_end」序列；不读 Parquet、不拉行情。
     maintenance 用它判断缺口、会话窗口与 metadata 是否齐备；缺口不得在此层静默填充。
 
@@ -49,7 +49,7 @@ from app.market_data.domain import (
     SeriesQuery,
 )
 from app.market_data.product_retirement import assert_products_not_retired
-from app.market_data.service import MarketDataService, MarketDataError
+from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import (
     CanonicalMonthlyStore,
     PublishRequest,
@@ -127,6 +127,7 @@ class UpdateRequest:
     since: date | None
     through: date | None
     apply: bool = False
+    sync_current_day_metadata: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,6 +298,11 @@ class HistoricalDataManager:
             if lease is None:
                 return _maintenance_locked("update", metadata_through)
             try:
+                if request.sync_current_day_metadata:
+                    self.metadata.synchronize_current_day(
+                        request.products,
+                        metadata_through,
+                    )
                 watermark = (request.products, metadata_through)
                 # 日历/会话/主力映射不齐时先 synchronize；失败则不会进入拉 bar。
                 if (
@@ -475,7 +481,8 @@ class HistoricalDataManager:
             if latest_complete is None:
                 latest_complete = self.coverage.latest_complete_day((key.symbol,))
                 latest_complete_by_symbol[key.symbol] = latest_complete
-            present = {bar.bar_end for bar in existing}
+            existing_by_end = {bar.bar_end: bar for bar in existing}
+            present = set(existing_by_end)
             missing = tuple(
                 item
                 for item in expected
@@ -485,7 +492,8 @@ class HistoricalDataManager:
                 if expected and (since is None or expected[-1].date() >= since):
                     yield _Target(key, year, month, expected, expected, ())
             elif len(present) != len(existing) or any(
-                item <= expected[-1] or item.date() > latest_complete
+                item <= expected[-1]
+                or existing_by_end[item].trading_day > latest_complete
                 for item in present - set(expected)
             ):
                 # 窗口内非期望 bar 或重复 bar_end：整月重写而非只补 missing。

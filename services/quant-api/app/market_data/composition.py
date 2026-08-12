@@ -20,12 +20,12 @@ from app.core.env import PROJECT_ROOT
 from app.market_data.catalog import MarketCatalog
 from app.market_data.live_market import RQDataLiveProvider, LiveMarketService, RedisClient, RedisLiveStore
 from app.market_data.maintenance import HistoricalDataManager
-from app.market_data.market_read import MarketReadService
+from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.operational_universe import load_operational_products
-from app.market_data.service import MarketDataService
+from app.market_data.market_data_service import MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore
-from app.queue import get_redis_connection
+from app.redis_connections import get_redis_connection
 
 
 _PRODUCT_STARTS = PROJECT_ROOT / "data/universe/product_window_starts.csv"
@@ -41,7 +41,8 @@ def canonical_root() -> Path:
 
 def build_historical_data_manager(session: Session) -> HistoricalDataManager:
     """构造历史数据维护管理器：含 RQData provider、元数据同步与 session 边界校验 store。"""
-    from app.market_data.infrastructure import DatabaseCoverageSource, RQDataMarketAdapter
+    from app.market_data.coverage_source import DatabaseCoverageSource
+    from app.market_data.rqdata_adapter import RQDataMarketAdapter
 
     root = canonical_root()
     catalog = MarketCatalog(session, root)
@@ -71,7 +72,7 @@ def build_metadata_synchronizer(
     不会在构造时初始化 RQData；实际 provider 连接只在同步方法被显式调用时发生。
     可选依赖仅供已有 composition 重用，避免建立第二个 metadata engine。
     """
-    from app.market_data.infrastructure import RQDataMarketAdapter
+    from app.market_data.rqdata_adapter import RQDataMarketAdapter
     from app.market_data.metadata import MetadataSynchronizer
 
     active_catalog = catalog or MarketCatalog(session, canonical_root())
@@ -97,7 +98,7 @@ def build_market_read_service(session: Session) -> MarketReadService:
 
 def build_live_market_service(session: Session) -> LiveMarketService:
     """构造前台 Live 观察服务，不启动循环也不写入 historical Canonical。"""
-    from app.market_data.infrastructure import RQDataClient
+    from app.market_data.rqdata_adapter import RQDataClient
 
     rqdata = RQDataClient()
     return LiveMarketService(

@@ -23,9 +23,8 @@
 | `frozen_runtime_consumed` | Runtime/代码仍读取、哈希或绑定 | 在 caller 迁移与 Runtime smoke 通过前保留 |
 | `superseded_unreferenced` | 无 active caller、无现行业务边界 | 可与 active references 一并普通删除 |
 
-机器可读 inventory 由 `scripts/engineering/repository_consistency.py --task-inventory`
-在内存/命令输出中生成，不落盘为授权工件。checksum/digest/data-identity 语义保留；
-Gate/hash-path 不再作为授权。
+本目录 disposition 由下方列表直接维护，不再生成机器 inventory 或治理工件。checksum/digest/
+data-identity 语义保留；Gate/hash-path 不再作为授权。
 
 ## Active contracts
 
@@ -34,8 +33,10 @@ Gate/hash-path 不再作为授权。
 ## Historical facts（仍在本目录）
 
 - `GY-DATA-PRODUCT-RETIREMENT-5.md` — 九品种退役已完成（仓库 + 生产 residual=0）；不构成后续删除授权
-- `GY-MARKET-RUNTIME-V1.md` — 已完成设计与实现的保留参考；本地四品种有界 Runtime 已启用，但 MR-08 自然时点验收
-  仍为 `PARTIAL`。当前事实只看 `STATUS.md`，本文件不构成新的启用、重载或 promotion 授权
+- `GY-MARKET-RUNTIME-V1.md` — 已完成设计与实现的保留参考；本地四品种有界 Runtime 已启用，开发态
+  10:15/10:31 与 17:00 自然 canary 已通过，最终 isolated exact-commit 身份/拓扑/健康复验完成；
+  周末/非交易日重复采证由用户明确豁免，MR-08 已完成。当前事实只看 `STATUS.md`，本文件不构成新的
+  启用、重载或 promotion 授权
 
 已退役的回测、OOS、S6-08 / S6-10 / S6-11 合同与证据仅能从 Git history 追溯；
 不得再当作现存路径、兼容入口或当前授权。未来重建回测或 Runtime 验收必须新建任务，
@@ -57,5 +58,4 @@ Gate/hash-path 不再作为授权。
 
 普通开发不强制创建任务合同。受控外部操作边界见 `AGENTS.md`。
 
-工程规则见 `AGENTS.md`；当前状态见 `STATUS.md`；个人开发流程见
-`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`。
+工程规则见 `AGENTS.md`；当前状态见 `STATUS.md`；开发流程见 `docs/DEVELOPMENT.md`。

@@ -13,6 +13,8 @@ import {
 } from 'lightweight-charts'
 import type { BarData } from '@/types/market'
 import { resolveChartTheme } from '@/styles/chartTheme'
+import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
+import { normalizeBarSeries } from '@/utils/barSeries'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -56,7 +58,12 @@ onMounted(async () => {
       horzLines: { color: theme.grid },
     },
     rightPriceScale: { borderColor: theme.axis },
-    timeScale: { borderColor: theme.axis, timeVisible: !isDaily() },
+    localization: { timeFormatter: formatChartTimeInShanghai },
+    timeScale: {
+      borderColor: theme.axis,
+      timeVisible: !isDaily(),
+      tickMarkFormatter: (time: Time) => formatChartAxisTimeInShanghai(time),
+    },
   })
   candles = chart.addSeries(CandlestickSeries, {
     upColor: theme.up,
@@ -106,15 +113,9 @@ function volumeValues(bars: BarData[]) {
   }))
 }
 
-function sortAndDedupe(bars: BarData[]): BarData[] {
-  const byEnd = new Map<string, BarData>()
-  for (const bar of bars) byEnd.set(bar.time, bar)
-  return [...byEnd.values()].sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
-}
-
 function replaceBars(bars: BarData[], preserveViewport = false): void {
   const visibleRange = preserveViewport ? chart?.timeScale().getVisibleLogicalRange() : null
-  renderedBars = sortAndDedupe(bars)
+  renderedBars = normalizeBarSeries(bars)
   if (!candles || !volume || !chart) return
   paginationArmed = false
   candles.setData(barValues(renderedBars))
@@ -133,7 +134,7 @@ function prependBars(bars: BarData[]): void {
   if (!candles || !volume || !chart || !bars.length) return
   const previousLength = renderedBars.length
   const visibleRange = chart.timeScale().getVisibleLogicalRange()
-  renderedBars = sortAndDedupe([...bars, ...renderedBars])
+  renderedBars = normalizeBarSeries([...bars, ...renderedBars])
   const prependedCount = renderedBars.length - previousLength
   if (!prependedCount) return
   candles.setData(barValues(renderedBars))
@@ -151,7 +152,7 @@ function updateBar(bar: BarData): void {
   const index = renderedBars.findIndex((item) => item.time === bar.time)
   if (index >= 0) renderedBars[index] = bar
   else renderedBars.push(bar)
-  renderedBars = sortAndDedupe(renderedBars)
+  renderedBars = normalizeBarSeries(renderedBars)
   const theme = resolveChartTheme()
   if (index >= 0 && index !== renderedBars.length - 1) {
     candles.setData(barValues(renderedBars))

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.market_data.domain import CanonicalBar, MarketSeriesPageResult, SeriesPageQuery
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
-from app.market_data.market_read import MarketReadService
+from app.market_data.market_read_service import MarketReadService
 
 
 def _bar(minute: int) -> CanonicalBar:
