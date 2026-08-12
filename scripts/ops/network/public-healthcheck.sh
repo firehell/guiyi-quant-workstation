@@ -51,7 +51,7 @@ check_websocket() {
     -H 'Upgrade: websocket' \
     -H 'Sec-WebSocket-Version: 13' \
     -H 'Sec-WebSocket-Key: Z3VpeWktcHVibGljLWhlYWx0aA==' \
-    "${PUBLIC_BASE_URL%/}/ws/signals" 2>/dev/null || true)"
+    "${PUBLIC_BASE_URL%/}/api/v1/market/ws?series_kind=actual_dominant&symbol=jm&frequency=1m" 2>/dev/null || true)"
   printf '  %-20s status=%s expected=%s\n' "websocket_upgrade" "${status:-000}" "$expected"
   [[ "$status" == "$expected" ]]
 }

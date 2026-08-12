@@ -20,6 +20,15 @@ RETIRED_ASSETS = (
     "scripts/engineering/script_disposition.py",
     "scripts/engineering/secret-scan.ps1",
     "scripts/engineering/validate.ps1",
+    "scripts/dev/dev-up.sh",
+    "scripts/dev/dev-down.sh",
+    "scripts/dev/dev-status.sh",
+    "scripts/dev/dev-healthcheck.sh",
+    "scripts/ops/macos/post-reboot-verify.sh",
+    "scripts/ops/linux/server-status.sh",
+    "deploy/systemd/guiyi-quant-api.service",
+    "deploy/systemd/guiyi-quant.env.example",
+    "deploy/systemd/guiyi-quant.target",
 )
 
 ACTIVE_CANONICAL = (
@@ -72,3 +81,16 @@ def test_retired_application_surfaces_are_not_restored() -> None:
         "apps/quant-web/package-lock.json",
     )
     assert all(not (ROOT / relative).exists() for relative in forbidden_paths)
+
+
+def test_public_websocket_route_matches_market_api_contract() -> None:
+    healthcheck = (ROOT / "scripts/ops/network/public-healthcheck.sh").read_text(
+        encoding="utf-8"
+    )
+    nginx = (ROOT / "deploy/nginx/guiyi-quant.conf").read_text(encoding="utf-8")
+
+    assert "/api/v1/market/ws?" in healthcheck
+    assert "/ws/signals" not in healthcheck
+    assert "proxy_set_header Upgrade $http_upgrade;" in nginx
+    assert 'proxy_set_header Connection "upgrade";' in nginx
+    assert "location /ws/" not in nginx

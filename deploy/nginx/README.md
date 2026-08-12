@@ -14,7 +14,7 @@ Browser
 
 | 公网路径 | Nginx upstream（ECS 本机） | Mac mini 本地 |
 |---|---|---|
-| `/api/*`、`/ws/*`、`/healthz` | `127.0.0.1:18000` | `127.0.0.1:8000` |
+| `/api/*`（含 `/api/v1/market/ws`）、`/healthz` | `127.0.0.1:18000` | `127.0.0.1:8000` |
 | `/*`（含 `/market`） | `127.0.0.1:18080` | `127.0.0.1:5173` supervised static dist |
 
 ## 安装步骤（Ubuntu ECS）

@@ -34,11 +34,19 @@ def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tm
     _run_installer(repo, home, fake_bin, "--render-only")
     assert not marker.exists()
 
-    _run_installer(repo, home, fake_bin, "--confirm-load")
+    base_result = _run_installer(repo, home, fake_bin, "--confirm-load")
     assert not marker.exists()
+    assert (
+        "[install-local-services] loaded=true mode=--confirm-load services=3"
+        in base_result.stdout
+    )
 
-    _run_installer(repo, home, fake_bin, "--confirm-market-runtime")
+    runtime_result = _run_installer(repo, home, fake_bin, "--confirm-market-runtime")
     assert marker.read_text(encoding="utf-8") == "enabled\n"
+    assert (
+        "[install-local-services] loaded=true mode=--confirm-market-runtime services=2"
+        in runtime_result.stdout
+    )
 
 
 def test_market_runtime_launch_agents_use_project_root_as_working_directory(
@@ -125,11 +133,49 @@ def test_runtime_service_entrypoint_treats_retired_workers_as_unknown(tmp_path: 
         assert result.stderr == f"[run-local-service] unknown service: {service}\n"
 
 
+def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path) -> None:
+    repo, home, fake_bin, calls = _status_fixture(tmp_path)
+
+    result = _run_status(repo, home, fake_bin)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "[local-services-status] readonly=true" in result.stdout
+    assert f"supervised_runtime_root={repo.resolve()}" in result.stdout
+    assert "runtime_detached=true" in result.stdout
+    assert "runtime_clean=true" in result.stdout
+    assert "com.guiyi.quant-after-market loaded state=not_running" in result.stdout
+    assert "overall=passed" in result.stdout
+    assert not calls.exists()
+
+
+def test_local_status_requires_market_labels_when_marker_is_enabled(tmp_path: Path) -> None:
+    repo, home, fake_bin, calls = _status_fixture(tmp_path, missing_after_market=True)
+
+    result = _run_status(repo, home, fake_bin)
+
+    assert result.returncode == 1
+    assert "com.guiyi.quant-after-market missing" in result.stdout
+    assert "overall=failed" in result.stdout
+    assert not calls.exists()
+
+
+def test_local_status_rejects_launch_agents_from_different_roots(tmp_path: Path) -> None:
+    repo, home, fake_bin, calls = _status_fixture(tmp_path, mismatched_web_root=True)
+
+    result = _run_status(repo, home, fake_bin)
+
+    assert result.returncode == 1
+    assert "com.guiyi.quant-web root_mismatch" in result.stdout
+    assert "overall=failed" in result.stdout
+    assert not calls.exists()
+
+
 def _copy_launchd_fixture(destination: Path) -> Path:
     """Copy only installer inputs so mode tests cannot affect the real workstation."""
     for relative in (
         "deploy/launchd",
         "scripts/ops/macos/install-local-services.sh",
+        "scripts/ops/macos/local-services-status.sh",
         "scripts/ops/macos/run-local-service.sh",
         "scripts/ops/macos/rotate-local-service-logs.sh",
     ):
@@ -143,7 +189,9 @@ def _copy_launchd_fixture(destination: Path) -> Path:
     return destination
 
 
-def _run_installer(repo: Path, home: Path, fake_bin: Path, mode: str) -> None:
+def _run_installer(
+    repo: Path, home: Path, fake_bin: Path, mode: str
+) -> subprocess.CompletedProcess[str]:
     environment = {
         **os.environ,
         "HOME": str(home),
@@ -158,3 +206,102 @@ def _run_installer(repo: Path, home: Path, fake_bin: Path, mode: str) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+    return result
+
+
+def _status_fixture(
+    tmp_path: Path,
+    *,
+    missing_after_market: bool = False,
+    mismatched_web_root: bool = False,
+) -> tuple[Path, Path, Path, Path]:
+    repo = _copy_launchd_fixture(tmp_path / "runtime")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    (repo / ".gitignore").write_text(".run/\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(["git", "checkout", "--detach", "-q"], cwd=repo, check=True)
+    (repo / ".run").mkdir()
+    (repo / ".run/market-runtime-enabled").write_text("enabled\n", encoding="utf-8")
+
+    home = tmp_path / "home"
+    agent_dir = home / "Library/LaunchAgents"
+    agent_dir.mkdir(parents=True)
+    for label in (
+        "com.guiyi.quant-api",
+        "com.guiyi.quant-web",
+        "com.guiyi.quant-live",
+        "com.guiyi.quant-after-market",
+    ):
+        project_root = (
+            str((tmp_path / "different-runtime").resolve())
+            if label == "com.guiyi.quant-web" and mismatched_web_root
+            else str(repo.resolve())
+        )
+        with (agent_dir / f"{label}.plist").open("wb") as handle:
+            plistlib.dump(
+                {
+                    "Label": label,
+                    "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": project_root},
+                },
+                handle,
+            )
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    calls = home / "mutation-calls.log"
+    fake_launchctl = fake_bin / "launchctl"
+    missing_clause = (
+        'if [ "$label" = "com.guiyi.quant-after-market" ]; then exit 1; fi\n'
+        if missing_after_market
+        else ""
+    )
+    fake_launchctl.write_text(
+        "#!/bin/sh\n"
+        'if [ "${1:-}" != "print" ]; then printf "%s\\n" "$*" >> "$HOME/mutation-calls.log"; exit 90; fi\n'
+        'label="${2##*/}"\n'
+        + missing_clause
+        + 'if [ "$label" = "com.guiyi.quant-after-market" ]; then echo "state = not running"; else echo "state = running"; fi\n',
+        encoding="utf-8",
+    )
+    fake_launchctl.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  *api/runtime/health*) echo \'{"status":"ok","readonly":true}\' ;;\n'
+        "  *) echo 200 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+    return repo, home, fake_bin, calls
+
+
+def _run_status(repo: Path, home: Path, fake_bin: Path) -> subprocess.CompletedProcess[str]:
+    environment = {
+        **os.environ,
+        "HOME": str(home),
+        "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+    return subprocess.run(
+        [str(repo / "scripts/ops/macos/local-services-status.sh")],
+        cwd=repo,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )

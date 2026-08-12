@@ -1,6 +1,7 @@
 # FRPC 隧道配置（Mac mini → 腾讯云）
 
-Mac mini 的 launchd 受监督服务就绪后，通过 FRPC 将本地只读 Web/API 端口映射到腾讯云 FRPS。`dev-up.sh` 仅用于开发和临时 smoke。
+Mac mini 的 launchd 受监督服务就绪后，通过 FRPC 将本地只读 Web/API 端口映射到腾讯云 FRPS。
+完整运维顺序见 [`deploy/README.md`](../README.md)。
 
 ## 端口映射
 
