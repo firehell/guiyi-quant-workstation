@@ -7,7 +7,7 @@ RQData 拉取组装成可审计的维护流程。消费者（MarketDataService�
 职责边界
 --------
 HistoricalDataManager
-    唯一维护入口：规划目标月分区、区分 direct（RQData 直拉）与 derived（由 1m 聚合）、
+    唯一维护入口：规划目标月分区、区分经 BarSource 获取的 base/weekly 目标与日内 1m 派生目标、
     调用 store.publish 完成 staging 六项硬校验与 part.parquet 原子替换，再 register_partition
     并 strict_verify 读回。apply=False 时只返回 planned 窗口，不写库与文件。
 
@@ -39,8 +39,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.market_data.aggregation import AggregationError, aggregate_from_1m
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import (
-    DERIVED_FREQUENCIES,
-    DIRECT_FREQUENCIES,
+    INTRADAY_DERIVED_FREQUENCIES,
+    PROVIDER_FETCH_FREQUENCIES,
     BarFrequency,
     CanonicalBar,
     DatasetKey,
@@ -230,11 +230,9 @@ class _Target:
     expected: tuple[datetime, ...]
     missing: tuple[datetime, ...]
     existing: tuple[CanonicalBar, ...]
-    gap_clear_start: datetime | None = None
-    gap_clear_end: datetime | None = None
 
 
-# 规划顺序：先日/周再 1m，使 derived 聚合能尽快在同事族 1m 补齐后触发。
+# 规划顺序：先日/周再 1m，使日内派生能在同族 1m 补齐后尽快触发。
 _FREQUENCY_ORDER = (
     BarFrequency.D1,
     BarFrequency.W1,
@@ -575,7 +573,7 @@ class HistoricalDataManager:
         *,
         apply: bool,
     ) -> MaintenanceResult:
-        """执行或仅规划：apply 时先 direct 批次再 derived（非 streaming 路径）。"""
+        """执行或仅规划：apply 时先 fetch 批次再聚合日内频度（非 streaming 路径）。"""
         if not targets:
             return MaintenanceResult(action, "noop", through, 0, 0, 0, 0, 0)
         if not apply:
@@ -590,12 +588,18 @@ class HistoricalDataManager:
                 0,
                 target_windows=tuple(_target_payload(item) for item in targets),
             )
-        direct = tuple(item for item in targets if item.key.frequency in DIRECT_FREQUENCIES)
-        derived = tuple(item for item in targets if item.key.frequency in DERIVED_FREQUENCIES)
+        fetched = tuple(
+            item for item in targets if item.key.frequency in PROVIDER_FETCH_FREQUENCIES
+        )
+        intraday_derived = tuple(
+            item
+            for item in targets
+            if item.key.frequency in INTRADAY_DERIVED_FREQUENCIES
+        )
         return self._execute_apply(
             action,
-            direct,
-            derived,
+            fetched,
+            intraday_derived,
             through,
         )
 
@@ -606,20 +610,20 @@ class HistoricalDataManager:
         since: date | None,
         through: date,
     ) -> MaintenanceResult:
-        """update apply 专用：direct 与 derived 分两路迭代器，支持 1m 后即时聚合 derived。"""
+        """update apply 专用：fetch 与日内派生分两路，支持 1m 后即时聚合。"""
         return self._execute_apply(
             action,
             self._iter_targets(
                 products,
                 since,
                 through,
-                frequencies=DIRECT_FREQUENCIES,
+                frequencies=PROVIDER_FETCH_FREQUENCIES,
             ),
             self._iter_targets(
                 products,
                 since,
                 through,
-                frequencies=DERIVED_FREQUENCIES,
+                frequencies=INTRADAY_DERIVED_FREQUENCIES,
             ),
             through,
         )
@@ -627,20 +631,20 @@ class HistoricalDataManager:
     def _execute_apply(
         self,
         action: str,
-        direct,
-        derived,
+        fetched,
+        intraday_derived,
         through: date | None,
     ) -> MaintenanceResult:
-        """apply 核心循环：先尝试已有 1m 的 derived，再拉 direct，最后扫剩余 derived。"""
-        remaining_derived = list(derived)
+        """apply 核心循环：先聚合已有 1m，再 fetch，最后扫剩余日内派生目标。"""
+        remaining_derived = list(intraday_derived)
         planned = 0
         applied = 0
         blocked = 0
         provider_requests = 0
         failures: list[Mapping[str, object]] = []
-        # 某 (kind, symbol, contract) 族 direct 失败后，同族 derived 标记 blocked 而非误聚合。
+        # 某 (kind, symbol, contract) 族 fetch 失败后，同族日内派生标记 blocked 而非误聚合。
         failed_families: set[tuple[str, str, str]] = set()
-        # 已有完整 1m 的 derived 可先发布（例如 refresh 只动了 direct 之外的频度）。
+        # 已有完整 1m 的日内派生可先发布（例如 refresh 只涉及日内派生频度）。
         for target in tuple(remaining_derived):
             try:
                 self._publish_derived(target)
@@ -657,14 +661,14 @@ class HistoricalDataManager:
                 remaining_derived.remove(target)
                 planned += 1
                 applied += 1
-        for target in direct:
+        for target in fetched:
             planned += 1
             try:
                 provider_requests += 1
                 batch = self.provider.fetch(target.key, target.missing)
-                self._publish_direct(target, (batch,))
+                self._publish_fetched(target, (batch,))
                 applied += 1
-                # derived 聚合触发点：同族同月 1m 发布成功后立即聚合同月 5m/15m/30m/60m。
+                # 日内派生触发点：同族同月 1m 发布成功后立即聚合 5m/15m/30m/60m。
                 if target.key.frequency is BarFrequency.M1:
                     ready = [
                         item
@@ -700,7 +704,7 @@ class HistoricalDataManager:
                 self.catalog.session.rollback()
             if planned == 1 or planned % 100 == 0:
                 print(
-                    f"maintenance {action} direct planned={planned} applied={applied} "
+                    f"maintenance {action} fetched planned={planned} applied={applied} "
                     f"failed={len(failures)} provider_requests={provider_requests}",
                     flush=True,
                 )
@@ -739,7 +743,7 @@ class HistoricalDataManager:
             failures=tuple(failures),
         )
 
-    def _publish_direct(self, target: _Target, batches: tuple[BarBatch, ...]) -> None:
+    def _publish_fetched(self, target: _Target, batches: tuple[BarBatch, ...]) -> None:
         """合并 existing 与 provider 批次，经 store.publish 六项校验后注册分区。"""
         merged = {bar.bar_end: bar for bar in target.existing}
         for batch in batches:

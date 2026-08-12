@@ -6,17 +6,26 @@ from decimal import Decimal
 import pytest
 
 from app.market_data.domain import (
+    BASE_PROVIDER_FREQUENCIES,
     BarFrequency,
     CanonicalBar,
     ContractError,
     DatasetKey,
     DatasetKind,
+    DERIVED_FREQUENCIES,
+    PROVIDER_FETCH_FREQUENCIES,
     SeriesKind,
     SeriesPageQuery,
     SeriesQuery,
     normalize_contract_for_symbol,
     parse_rfc3339_instant,
 )
+
+
+def test_frequency_lineage_keeps_weekly_out_of_provider_base_but_fetchable() -> None:
+    assert BASE_PROVIDER_FREQUENCIES == {BarFrequency.M1, BarFrequency.D1}
+    assert BarFrequency.W1 in DERIVED_FREQUENCIES
+    assert BarFrequency.W1 in PROVIDER_FETCH_FREQUENCIES
 
 
 def test_contract_normalizer_accepts_only_the_requested_symbol_and_real_month() -> None:

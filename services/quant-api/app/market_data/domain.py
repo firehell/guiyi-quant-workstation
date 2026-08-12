@@ -70,12 +70,16 @@ class BarFrequency(StrEnum):
     W1 = "1w"
 
 
-# direct：RQData 直接落盘；derived：由 1m 聚合生成
-DIRECT_FREQUENCIES = frozenset({BarFrequency.M1, BarFrequency.D1, BarFrequency.W1})
-DERIVED_FREQUENCIES = frozenset(
+# 基础 provider 数据：1m 由 get_price 获取，1d 由交易所日行情获取。
+BASE_PROVIDER_FREQUENCIES = frozenset({BarFrequency.M1, BarFrequency.D1})
+# 派生数据：日内频度由 Canonical 1m 聚合，1w 由完整同源 1d 聚合。
+INTRADAY_DERIVED_FREQUENCIES = frozenset(
     {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}
 )
-ALL_FREQUENCIES = DIRECT_FREQUENCIES | DERIVED_FREQUENCIES
+DERIVED_FREQUENCIES = INTRADAY_DERIVED_FREQUENCIES | frozenset({BarFrequency.W1})
+ALL_FREQUENCIES = BASE_PROVIDER_FREQUENCIES | DERIVED_FREQUENCIES
+# HistoricalDataManager 需经 BarSource 取得的目标：1w 的 adapter 在此步骤内聚合日线。
+PROVIDER_FETCH_FREQUENCIES = BASE_PROVIDER_FREQUENCIES | frozenset({BarFrequency.W1})
 # RQData 连续/日内历史下限（get_dominant_price / A88 观测值），用于 coverage 边界校验
 RQDATA_INTRADAY_HISTORY_START = date(2010, 1, 4)
 INTRADAY_FREQUENCIES = frozenset(

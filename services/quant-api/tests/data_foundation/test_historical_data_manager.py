@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
@@ -205,6 +206,17 @@ def _manager(
         coverage=coverage,
         metadata=metadata or FakeMetadata(),
         provider=provider,
+    )
+
+
+def test_target_contains_only_active_planning_fields() -> None:
+    assert tuple(field.name for field in fields(_Target)) == (
+        "key",
+        "year",
+        "month",
+        "expected",
+        "missing",
+        "existing",
     )
 
 

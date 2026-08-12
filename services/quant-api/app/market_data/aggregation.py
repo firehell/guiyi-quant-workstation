@@ -16,7 +16,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from math import ceil
 
-from app.market_data.domain import BarFrequency, CanonicalBar, DERIVED_FREQUENCIES
+from app.market_data.domain import (
+    BarFrequency,
+    CanonicalBar,
+    INTRADAY_DERIVED_FREQUENCIES,
+)
 
 
 class AggregationError(RuntimeError):
@@ -71,7 +75,7 @@ def aggregate_from_1m(
 
     参数:
         bars: 已按 ``bar_end`` 升序的 1m canonical bar。
-        target_frequency: 须为 ``DERIVED_FREQUENCIES`` 之一。
+        target_frequency: 须为 ``INTRADAY_DERIVED_FREQUENCIES`` 之一。
         sessions: 不重叠、升序的 session 列表；源 1m 必须恰好覆盖这些 session。
 
     失败模式: 源不完整、session 重叠、或存在 session 外 1m 时抛出 ``AggregationError``。
@@ -173,6 +177,6 @@ def _derived_frequency(frequency: BarFrequency | str) -> BarFrequency:
         result = BarFrequency(frequency)
     except (TypeError, ValueError) as exc:
         raise AggregationError("TARGET_FREQUENCY_INVALID") from exc
-    if result not in DERIVED_FREQUENCIES:
+    if result not in INTRADAY_DERIVED_FREQUENCIES:
         raise AggregationError("TARGET_FREQUENCY_NOT_DERIVED")
     return result
