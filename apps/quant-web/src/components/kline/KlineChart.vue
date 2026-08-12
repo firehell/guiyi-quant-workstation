@@ -5,42 +5,58 @@ import {
   ColorType,
   createChart,
   HistogramSeries,
+  LineSeries,
   type IChartApi,
   type ISeriesApi,
   type LogicalRange,
+  type MouseEventParams,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import type { BarData } from '@/types/market'
+import KlineHoverLegend from '@/components/kline/KlineHoverLegend.vue'
+import type { BarData, HoverKlineContext, MainIndicatorId } from '@/types/market'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
+import { buildKlineDerivedData, resolveKlineHoverContext, type KlineValuePoint } from '@/utils/klineViewModel'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
   loading?: boolean
   error?: string | null
   period?: string
+  visibleMainIndicators?: MainIndicatorId[]
 }>(), {
   loading: false,
   error: null,
   period: '15m',
+  visibleMainIndicators: () => [],
 })
 
 const emit = defineEmits<{
   'need-more-before': []
   'follow-latest-change': [followLatest: boolean]
+  'crosshair-change': [context: HoverKlineContext | null]
 }>()
 
 const container = ref<HTMLElement>()
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
+let macdHistogram: ISeriesApi<'Histogram'> | null = null
+let macdDif: ISeriesApi<'Line'> | null = null
+let macdDea: ISeriesApi<'Line'> | null = null
+const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 let isNearLeftBoundary = false
 let paginationArmed = false
 let followLatest = true
+const hoverContext = ref<HoverKlineContext | null>(null)
+let derivedData = buildKlineDerivedData([], [])
+
+type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
+const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
 
 onMounted(async () => {
   await nextTick()
@@ -65,6 +81,9 @@ onMounted(async () => {
       tickMarkFormatter: (time: Time) => formatChartAxisTimeInShanghai(time),
     },
   })
+  chart.panes()[0].setStretchFactor(6)
+  chart.addPane().setStretchFactor(2)
+  chart.addPane().setStretchFactor(2)
   candles = chart.addSeries(CandlestickSeries, {
     upColor: theme.up,
     downColor: theme.down,
@@ -72,13 +91,20 @@ onMounted(async () => {
     borderDownColor: theme.down,
     wickUpColor: theme.up,
     wickDownColor: theme.down,
-  })
+  }, 0)
+  emaLines.ema_10 = chart.addSeries(LineSeries, { color: '#facc15', lineWidth: 1, lastValueVisible: false }, 0)
+  emaLines.ema_21 = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, lastValueVisible: false }, 0)
+  emaLines.ema_60 = chart.addSeries(LineSeries, { color: '#a78bfa', lineWidth: 1, lastValueVisible: false }, 0)
   volume = chart.addSeries(HistogramSeries, {
     priceFormat: { type: 'volume' },
-    priceScaleId: 'volume',
-  })
-  chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
+  }, 1)
+  macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 2)
+  macdDif = chart.addSeries(LineSeries, { color: '#38bdf8', lineWidth: 1, lastValueVisible: false }, 2)
+  macdDea = chart.addSeries(LineSeries, { color: '#f472b6', lineWidth: 1, lastValueVisible: false }, 2)
+  chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.05 } })
+  chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
+  chart.subscribeCrosshairMove(onCrosshairMove)
   observer = new ResizeObserver(() => resize())
   observer.observe(container.value)
   replaceBars(props.bars)
@@ -86,6 +112,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
+  chart?.unsubscribeCrosshairMove(onCrosshairMove)
   observer?.disconnect()
   chart?.remove()
 })
@@ -93,6 +120,10 @@ onUnmounted(() => {
 watch(() => props.period, () => {
   chart?.applyOptions({ timeScale: { timeVisible: !isDaily() } })
 })
+
+watch(() => props.visibleMainIndicators, () => {
+  renderDerivedSeries()
+}, { deep: true })
 
 function barValues(bars: BarData[]) {
   return bars.map((bar) => ({
@@ -116,10 +147,9 @@ function volumeValues(bars: BarData[]) {
 function replaceBars(bars: BarData[], preserveViewport = false): void {
   const visibleRange = preserveViewport ? chart?.timeScale().getVisibleLogicalRange() : null
   renderedBars = normalizeBarSeries(bars)
-  if (!candles || !volume || !chart) return
+  if (!chart) return
   paginationArmed = false
-  candles.setData(barValues(renderedBars))
-  volume.setData(volumeValues(renderedBars))
+  renderAllSeries()
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
   if (visibleRange) chart.timeScale().setVisibleLogicalRange(visibleRange)
   else chart.timeScale().fitContent()
@@ -131,14 +161,13 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
 }
 
 function prependBars(bars: BarData[]): void {
-  if (!candles || !volume || !chart || !bars.length) return
+  if (!chart || !bars.length) return
   const previousLength = renderedBars.length
   const visibleRange = chart.timeScale().getVisibleLogicalRange()
   renderedBars = normalizeBarSeries([...bars, ...renderedBars])
   const prependedCount = renderedBars.length - previousLength
   if (!prependedCount) return
-  candles.setData(barValues(renderedBars))
-  volume.setData(volumeValues(renderedBars))
+  renderAllSeries()
   if (visibleRange) {
     chart.timeScale().setVisibleLogicalRange({
       from: visibleRange.from + prependedCount,
@@ -148,29 +177,12 @@ function prependBars(bars: BarData[]): void {
 }
 
 function updateBar(bar: BarData): void {
-  if (!candles || !volume) return
   const index = renderedBars.findIndex((item) => item.time === bar.time)
   if (index >= 0) renderedBars[index] = bar
   else renderedBars.push(bar)
   renderedBars = normalizeBarSeries(renderedBars)
-  const theme = resolveChartTheme()
-  if (index >= 0 && index !== renderedBars.length - 1) {
-    candles.setData(barValues(renderedBars))
-    volume.setData(volumeValues(renderedBars))
-    return
-  }
-  candles.update({
-    time: chartTime(bar),
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    close: bar.close,
-  })
-  volume.update({
-    time: chartTime(bar),
-    value: bar.volume,
-    color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown,
-  })
+  // Live updates rebuild only series data; viewport ownership remains with the user/follow state.
+  renderAllSeries()
 }
 
 function scrollToLatest(): void {
@@ -200,9 +212,65 @@ function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   }
 }
 
+function onCrosshairMove(param: MouseEventParams<Time>) {
+  if (param.time === undefined) {
+    hoverContext.value = null
+    emit('crosshair-change', null)
+    return
+  }
+  const bar = renderedBars.find((item) => sameChartTime(chartTime(item), param.time!))
+  const nextContext = bar
+    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time)
+    : null
+  hoverContext.value = nextContext
+  emit('crosshair-change', nextContext)
+}
+
+function renderAllSeries(): void {
+  if (!candles || !volume || !chart) return
+  candles.setData(barValues(renderedBars))
+  volume.setData(volumeValues(renderedBars))
+  renderDerivedSeries()
+}
+
+function renderDerivedSeries(): void {
+  if (!chart || !macdHistogram || !macdDif || !macdDea) return
+  derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators)
+  const theme = resolveChartTheme()
+
+  EMA_INDICATORS.forEach((indicator) => {
+    emaLines[indicator]?.setData(chartValues(derivedData.ema[indicator]))
+  })
+  macdDif.setData(chartValues(derivedData.macd.dif))
+  macdDea.setData(chartValues(derivedData.macd.dea))
+  macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => ({
+    ...point,
+    color: point.value >= 0 ? theme.volumeUp : theme.volumeDown,
+  })))
+}
+
+function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
+  if (!points?.length) return []
+  const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
+  return points.flatMap((point) => {
+    const bar = barsByTime.get(point.time)
+    return bar ? [{ time: chartTime(bar), value: point.value }] : []
+  })
+}
+
 function chartTime(bar: BarData): Time {
   if (isDaily()) return (bar.trading_day || bar.time.slice(0, 10)) as Time
   return Math.floor(new Date(bar.time).getTime() / 1000) as UTCTimestamp
+}
+
+function sameChartTime(left: Time, right: Time): boolean {
+  return chartTimeKey(left) === chartTimeKey(right)
+}
+
+function chartTimeKey(time: Time): string {
+  if (typeof time === 'number') return `timestamp:${time}`
+  if (typeof time === 'string') return `date:${time}`
+  return `date:${time.year}-${String(time.month).padStart(2, '0')}-${String(time.day).padStart(2, '0')}`
 }
 
 function isDaily() {
@@ -225,6 +293,7 @@ defineExpose({
 <template>
   <div class="kline-shell">
     <div ref="container" class="chart" />
+    <KlineHoverLegend :context="hoverContext" />
     <div v-if="loading" class="overlay">读取 Canonical…</div>
     <div v-else-if="error" class="overlay error">{{ error }}</div>
     <div v-else-if="!bars.length" class="overlay">当前窗口无可读 bars</div>
@@ -232,8 +301,8 @@ defineExpose({
 </template>
 
 <style scoped>
-.kline-shell { position: relative; min-height: 620px; border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
-.chart { width: 100%; height: 620px; }
+.kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
+.chart { width: 100%; height: 100%; }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gy-text-muted); background: rgba(11, 17, 27, .48); pointer-events: none; }
 .overlay.error { color: #fb7185; }
 </style>

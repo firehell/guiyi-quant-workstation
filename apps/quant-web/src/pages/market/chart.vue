@@ -315,6 +315,7 @@ function normalizeSymbol(value: unknown): string | null {
               :loading="loading"
               :error="error"
               :period="frequency"
+              :visible-main-indicators="visibleMainIndicators"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
             />
