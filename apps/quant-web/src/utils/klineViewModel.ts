@@ -1,5 +1,5 @@
-import type { BarData, HoverKlineContext, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
-import { calculateEMA, calculateMACD } from './indicators.ts'
+import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
+import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
@@ -16,6 +16,14 @@ export interface KlineDerivedData {
     dea: KlineValuePoint[]
     histogram: KlineValuePoint[]
   }
+  htdy: HtdyDerivedData | null
+}
+
+export interface HtdyDerivedData {
+  zk1: KlineValuePoint[]
+  zd1: KlineValuePoint[]
+  zd2: KlineValuePoint[]
+  markers: KlineMarker[]
 }
 
 /** Formats a nullable chart observation without inventing a numeric fallback. */
@@ -53,6 +61,43 @@ export function buildKlineDerivedData(
       dea: macd.dea.map(toKlineValuePoint),
       histogram: macd.histogram.map(toKlineValuePoint),
     },
+    htdy: visibleMainIndicators.includes('htdy') ? buildHtdyDerivedData(bars) : null,
+  }
+}
+
+function buildHtdyDerivedData(bars: BarData[]): HtdyDerivedData {
+  const observation = calculateHuoTianDaYou(bars)
+  return {
+    zk1: observation.points.flatMap((point) => htdyValuePoint(point.time, point.zk1)),
+    zd1: observation.points.flatMap((point) => htdyValuePoint(point.time, point.zd1)),
+    zd2: observation.points.flatMap((point) => htdyValuePoint(point.time, point.zd2)),
+    markers: observation.points.flatMap((point) => [
+      point.buyObservation ? observationMarker(point.time, '买观察', '#2dd4bf', 'belowBar', 'arrowUp') : null,
+      point.sellObservation ? observationMarker(point.time, '卖观察', '#f472b6', 'aboveBar', 'arrowDown') : null,
+      point.xgObservation ? observationMarker(point.time, 'XG观察', '#facc15', 'belowBar', 'circle') : null,
+    ].filter((marker): marker is KlineMarker => marker !== null)),
+  }
+}
+
+function htdyValuePoint(time: unknown, value: number | null): KlineValuePoint[] {
+  return value === null ? [] : [{ time: String(time), value }]
+}
+
+function observationMarker(
+  time: unknown,
+  label: string,
+  color: string,
+  position: KlineMarker['position'],
+  shape: KlineMarker['shape'],
+): KlineMarker {
+  return {
+    id: `htdy:${label}:${String(time)}`,
+    time: String(time),
+    label,
+    tooltip: '火天大有原始观察；未来引用/重绘风险，仅供人工观察',
+    color,
+    position,
+    shape,
   }
 }
 

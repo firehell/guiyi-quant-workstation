@@ -4,9 +4,11 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   HistogramSeries,
   LineSeries,
   type IChartApi,
+  type ISeriesMarkersPluginApi,
   type ISeriesApi,
   type LogicalRange,
   type MouseEventParams,
@@ -14,7 +16,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import KlineHoverLegend from '@/components/kline/KlineHoverLegend.vue'
-import type { BarData, HoverKlineContext, MainIndicatorId } from '@/types/market'
+import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId } from '@/types/market'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
@@ -46,6 +48,10 @@ let volume: ISeriesApi<'Histogram'> | null = null
 let macdHistogram: ISeriesApi<'Histogram'> | null = null
 let macdDif: ISeriesApi<'Line'> | null = null
 let macdDea: ISeriesApi<'Line'> | null = null
+let htdyZk1: ISeriesApi<'Line'> | null = null
+let htdyZd1: ISeriesApi<'Line'> | null = null
+let htdyZd2: ISeriesApi<'Line'> | null = null
+let htdyMarkers: ISeriesMarkersPluginApi<Time> | null = null
 const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
@@ -95,6 +101,10 @@ onMounted(async () => {
   emaLines.ema_10 = chart.addSeries(LineSeries, { color: '#facc15', lineWidth: 1, lastValueVisible: false }, 0)
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: '#a78bfa', lineWidth: 1, lastValueVisible: false }, 0)
+  htdyZk1 = chart.addSeries(LineSeries, { color: 'rgba(45, 212, 191, .58)', lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
+  htdyZd1 = chart.addSeries(LineSeries, { color: 'rgba(45, 212, 191, .4)', lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
+  htdyZd2 = chart.addSeries(LineSeries, { color: 'rgba(250, 204, 21, .42)', lineWidth: 1, lineStyle: 1, lastValueVisible: false }, 0)
+  htdyMarkers = createSeriesMarkers(candles)
   volume = chart.addSeries(HistogramSeries, {
     priceFormat: { type: 'volume' },
   }, 1)
@@ -247,6 +257,10 @@ function renderDerivedSeries(): void {
     ...point,
     color: point.value >= 0 ? theme.volumeUp : theme.volumeDown,
   })))
+  htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
+  htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
+  htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
+  htdyMarkers?.setMarkers(chartMarkers(derivedData.htdy?.markers ?? []))
 }
 
 function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
@@ -255,6 +269,20 @@ function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time;
   return points.flatMap((point) => {
     const bar = barsByTime.get(point.time)
     return bar ? [{ time: chartTime(bar), value: point.value }] : []
+  })
+}
+
+function chartMarkers(markers: KlineMarker[]) {
+  const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
+  return markers.flatMap((marker) => {
+    const bar = barsByTime.get(marker.time)
+    return bar ? [{
+      time: chartTime(bar),
+      position: marker.position,
+      shape: marker.shape,
+      color: marker.color,
+      text: marker.label,
+    }] : []
   })
 }
 

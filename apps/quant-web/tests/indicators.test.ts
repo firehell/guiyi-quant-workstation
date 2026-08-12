@@ -68,6 +68,9 @@ test('HTDY Web remains historical browser observation-only with a conservative 2
   const htdy = MAIN_INDICATOR_DEFINITIONS.find((definition) => definition.id === 'htdy')
 
   assert.ok(htdy)
+  assert.equal(htdy.defaultVisible, false)
+  assert.equal(htdy.capability, 'observation_overlay')
+  assert.equal(htdy.repaintingRisk, 'known')
   assert.equal(htdy.alertCapable, false)
   assert.equal(htdy.unstableTailBars, 27)
 })

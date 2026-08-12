@@ -65,3 +65,14 @@ test('research endpoint failure leaves the Kline readable', async ({ page }) => 
   await page.getByRole('button', { name: '研究', exact: true }).click()
   await expect(page.getByRole('dialog').getByText('研究数据暂不可用', { exact: true })).toBeVisible()
 })
+
+test('HTDY stays opt-in and keeps its repainting-risk notice visible in the workspace', async ({ page }) => {
+  await mockWorkspace(page, { json: research() })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  await expect(page.getByText('火天大有原始观察 · 未来引用/重绘风险 · 仅供人工观察', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '指标', exact: true }).click()
+  await page.getByRole('checkbox', { name: /火天大有（原始观察）/ }).click()
+  await expect(page.getByText('火天大有原始观察 · 未来引用/重绘风险 · 仅供人工观察', { exact: true })).toBeVisible()
+})

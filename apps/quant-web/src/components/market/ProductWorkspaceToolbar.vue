@@ -40,7 +40,7 @@ const symbolOptions = computed(() => props.dominants.map((item) => ({
 })))
 const indicatorOptions = MAIN_INDICATOR_DEFINITIONS
   .filter((item) => item.available)
-  .map((item) => ({ label: item.displayName, value: item.id }))
+  .map((item) => ({ label: item.displayName, value: item.id, capability: item.capability }))
 
 function periodLabel(value: MarketFrequency) {
   return value === '1d' ? 'D' : value === '1w' ? 'W' : value
@@ -91,6 +91,7 @@ function updateIndicators(value: Array<string | number>) {
       >
         <NCheckbox v-for="item in indicatorOptions" :key="item.value" :value="item.value">
           {{ item.label }}
+          <small v-if="item.capability === 'observation_overlay'">仅观察 · 重绘风险</small>
         </NCheckbox>
       </NCheckboxGroup>
     </NPopover>
@@ -123,6 +124,7 @@ function updateIndicators(value: Array<string | number>) {
 .toolbar__series, .toolbar__periods { white-space: nowrap; }
 .toolbar__spacer { flex: 1 1 8px; }
 .toolbar__indicator-menu { display: grid; gap: 8px; padding: 4px; min-width: 172px; }
+.toolbar__indicator-menu small { display: block; margin-top: 2px; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .toolbar__advanced { display: grid; gap: 8px; width: 196px; padding: 4px; }
 .toolbar__advanced > span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 

@@ -28,6 +28,18 @@ test('only enabled EMA is derived while MACD is always available', () => {
   assert.equal(result.macd.dea.length, result.macd.histogram.length)
 })
 
+test('HTDY is only derived when its observation overlay is explicitly visible', () => {
+  const hidden = buildKlineDerivedData(bars, ['ema_21'])
+  const visible = buildKlineDerivedData(bars, ['ema_21', 'htdy'])
+
+  assert.equal(hidden.htdy, null)
+  assert.ok(visible.htdy)
+  assert.ok(visible.htdy?.zk1.length)
+  assert.ok(visible.htdy?.zd1.length)
+  assert.ok(visible.htdy?.zd2.length)
+  assert.ok(visible.htdy?.markers.every((marker) => ['买观察', '卖观察', 'XG观察'].includes(marker.label)))
+})
+
 test('crosshair context keeps OHLCV OI EMA and MACD on the hovered bar timestamp', () => {
   const result = buildKlineDerivedData(bars, ['ema_21'])
   const target = bars[79]

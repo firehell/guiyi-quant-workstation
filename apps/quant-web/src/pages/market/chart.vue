@@ -76,6 +76,7 @@ const afterMarketFailed = computed(() => {
   return !!afterMarket && typeof afterMarket === 'object' && afterMarket.last_failure != null
 })
 const watchlisted = computed(() => watchlist.value.includes(symbol.value))
+const htdyVisible = computed(() => visibleMainIndicators.value.includes('htdy'))
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', syncFullscreen)
@@ -344,6 +345,9 @@ function normalizeSymbol(value: unknown): string | null {
       <div ref="workspaceElement" class="product-workspace">
         <div class="product-workspace__main" :class="{ 'product-workspace__main--sidebar-closed': !researchSidebarOpen }">
           <div class="product-workspace__kline">
+            <NAlert v-if="htdyVisible" type="warning" :show-icon="false" class="product-workspace__htdy-risk">
+              火天大有原始观察 · 未来引用/重绘风险 · 仅供人工观察
+            </NAlert>
             <KlineChart
               ref="chart"
               :bars="bars"
@@ -412,6 +416,7 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace__main--sidebar-closed { grid-template-columns: minmax(0, 1fr); }
 .product-workspace__main--sidebar-closed .product-workspace__sidebar { display: none; }
 .product-workspace__kline { min-width: 0; }
+.product-workspace__htdy-risk { margin-bottom: 8px; }
 .product-workspace__sidebar { position: sticky; top: 0; }
 .product-workspace__research-panel { margin-top: 12px; }
 .product-workspace:fullscreen { display: grid; place-items: stretch; padding: 16px; background: var(--gy-bg-app); }
