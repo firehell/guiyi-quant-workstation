@@ -210,6 +210,43 @@ def test_enabled_after_market_is_pending_before_its_first_runtime_run(tmp_path) 
     }
 
 
+def test_enabled_after_market_preserves_activation_state_after_completed_run(tmp_path) -> None:
+    """已完成的盘后状态不能覆盖 Runtime activation 的真实值。"""
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "last_run": {
+                    "trading_day": "2026-08-10",
+                    "status": "passed",
+                    "attempts": 1,
+                    "started_at": "2026-08-10T17:00:00+08:00",
+                    "finished_at": "2026-08-10T17:30:00+08:00",
+                    "products": ["jm"],
+                    "error_code": None,
+                },
+                "last_successful_trading_day": "2026-08-10",
+                "last_failure": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            after_market_status_path=status_path,
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "ok"
+    assert after_market["configured_enabled"] is True
+
+
 def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_bytes() -> None:
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:

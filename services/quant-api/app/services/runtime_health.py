@@ -212,6 +212,7 @@ def _collect_after_market_health(
         status = RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
     return {
         "status": status,
+        **empty,
         "last_run": last_run,
         "last_successful_trading_day": public["last_successful_trading_day"],
         "last_failure": public["last_failure"],
