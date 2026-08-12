@@ -188,3 +188,77 @@ def test_product_research_api_maps_market_errors_without_internal_details(monkey
 
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "QUERY_WINDOW_EMPTY"}}
+
+
+class FakeRadarService:
+    def snapshot(self):
+        metrics = SimpleNamespace(
+            price_change_1d=Decimal("0.03"),
+            price_change_5d=Decimal("0.05"),
+            volume_ratio20=Decimal("1.7"),
+            oi_change_1d=Decimal("0.08"),
+            atr14_percentile252=Decimal("0.82"),
+            position20=Decimal("0.91"),
+        )
+        item = SimpleNamespace(
+            symbol="jm",
+            product_name="焦煤",
+            sector="black",
+            metrics=metrics,
+            turnover=Decimal("1000"),
+            reason_codes=(
+                "price_move_up",
+                "volume_expansion",
+                "oi_increase",
+                "high_volatility",
+            ),
+        )
+        sector = SimpleNamespace(
+            sector="black",
+            total_count=1,
+            participant_count=1,
+            up_count=1,
+            down_count=0,
+            median_price_change_1d=Decimal("0.03"),
+            attention_count=1,
+        )
+        return SimpleNamespace(
+            status="ready",
+            expected_as_of=date(2025, 1, 2),
+            active_count=60,
+            participant_count=60,
+            stale=(),
+            unavailable=(),
+            items=(item,),
+            attention=(item,),
+            sector_summary=(sector,),
+        )
+
+
+def test_market_radar_api_returns_explicit_freshness_and_transparent_reasons(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.market.build_market_radar_service",
+        lambda _session: FakeRadarService(),
+        raising=False,
+    )
+
+    response = TestClient(app).get("/api/v1/market/research/radar")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["expected_as_of"] == "2025-01-02"
+    assert payload["active_count"] == 60
+    assert payload["participant_count"] == 60
+    assert payload["summary"] == {
+        "up_count": 1,
+        "down_count": 0,
+        "volume_expansion_count": 1,
+        "oi_increase_count": 1,
+        "high_volatility_count": 1,
+    }
+    assert payload["attention"][0]["reason_codes"] == [
+        "price_move_up",
+        "volume_expansion",
+        "oi_increase",
+        "high_volatility",
+    ]
