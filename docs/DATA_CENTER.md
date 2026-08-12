@@ -1,6 +1,6 @@
 # Canonical 数据基础
 
-更新时间：2026-08-09
+更新时间：2026-08-12
 
 ## 1. 唯一 active 数据语言
 
@@ -68,8 +68,11 @@ identity 唯一；`market_partitions` 以 `(dataset_id, year, month)` 唯一，�
 优先完成交易所事实 `1d` 与由其聚合的 `1w`，再补可本地生成的 Derived，最后按 active universe、Dataset、年月顺序续传 `1m`。
 每完成一个 1m dataset-month，立即生成四个 Derived 月。
 
-17:00 Runtime 的受限 metadata 同步准备 operational 60 品种：Calendar 覆盖当天至 ISO 周日或下一
-交易日（取较晚者），TradingSession 精确替换当天与下一交易日，MainContractMap 仍只发布当天 rank1。
+17:00 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日，
+再由持 maintenance lock 的 `HistoricalDataManager.update` 同步 metadata 后规划 coverage；不得先用可能
+尚未同步的当天 TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备 operational 60 品种：
+Calendar 覆盖当天至 ISO 周日或下一交易日（取较晚者），TradingSession 精确替换当天与下一交易日，
+MainContractMap 仍只发布当天 rank1。
 这样夜盘 phase resolver 在 18:00 后有下一交易日 Session 事实，同时不会提前发布未来主力映射，也不写
 Dataset、Partition 或 Parquet。
 

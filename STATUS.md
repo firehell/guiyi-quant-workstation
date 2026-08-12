@@ -44,14 +44,22 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
-- `2026-08-12` 已按新的单次明确请求将隔离 Runtime 从 `a0106860` 切换到 clean/detached
-  `51e849888590872eab298a682a105ef904ca0426`；API/Web/Live 为 running，after-market 仅重载且
-  `not running/runs=0`，四个 launchd 根一致。API/Web HTTP 200，Runtime health 为 `ok`，Market
-  dominants 返回 60 个唯一且业务字段完整的品种。
-- 配置读回为 active=60、operational=60。部署后现场暴露出 56 个品种的 `TradingSession.effective_to`
-  仍停在 `2026-08-11`，因此 13:47 的 Live heartbeat 为 operational=60、TRADING/subscribed=4、
-  UNKNOWN=56；系统按合同 fail-closed，未用过期 Session 猜测今日时段，也未手工写 DB 或调用 RQData。
-- 根因修复已部署：“完整当日 rank1 快照”与“当前 TRADING provider channels”分离。Redis
-  `live:subscription:2026-08-12` 精确覆盖 operational 60，全部合约格式有效；provider channels 仍按真实
-  phase 保持 4 个。after-market status 仍为 `pending/last_run=null` 且状态文件不存在，17:00 任务未被
-  手工提前触发。56 个过期 Session 是否由自然盘后同步推进，仍需在自然运行后另行只读观察。
+- `2026-08-12` 已按两次独立单次请求完成隔离 Runtime 从 `51e84988...` 到 clean/detached
+  `0dea973d5eb18d056c8bf37f2fe598c7f3446148` 的切换与失败续作；production 包为 `quant-api 1.0.0`，
+  Web build 通过，API/Web/Live 为 running，after-market 为 `not running/runs=0`，四个 launchd 根一致。
+  API/Web HTTP 200、Runtime health 为 `ok`，Market dominants 返回 60 个唯一且业务字段完整的品种。
+- 配置读回为 active=60、operational=60 且内容相同。Redis `live:subscription:2026-08-12` 精确覆盖
+  operational 60，60 个 rank1 合约格式有效；16:06 已收盘时 provider subscribed=0，heartbeat 仍因
+  56 个 `TradingSession.effective_to` 停在 `2026-08-11` 而显示 `CLOSED=4/UNKNOWN=56`，系统继续 fail-closed。
+- Calendar-first 盘后修复已部署：17:00 先以 Calendar-only metadata day 判断交易日，再在 update 内同步
+  Session。只读读回为 `metadata_day=2026-08-12`、同步前 `complete_day=2026-08-11`；after-market status
+  仍为 `pending/last_run=null`、状态文件不存在，未运行 migration/通知、未手工触发盘后。今天 17:00 的
+  60 品种自然运行仍是最后外部验收 Gate，不得在触发完成前写成已通过。
+
+## v1.0.0 封板状态
+
+- 仓库版本号与 changelog 已收口为 `1.0.0` release candidate；正式 tag 尚未创建。
+- active OpenSpec 已与实现同步：continuous `1m` 只用 `{SYMBOL}88`，`1d` 按 rank1 真实合约交易所日行情，
+  `1w` 只由完整同源日线聚合。
+- 正式 `v1.0.0` tag 的最后外部证据是：部署本次封板 commit 后，17:00 launchd 自然触发的 60 品种盘后
+  更新通过并只读核对 Session/map/Canonical/Web seam/Live cleanup。不得手工触发补证。

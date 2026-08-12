@@ -25,13 +25,15 @@ RQData
 2. `docs/DATA_CENTER.md`
 3. `services/quant-api/app/market_data/`
 
-长期边界见 `AGENTS.md` / `PROJECT_SOURCE.md`；active 业务合同见 `docs/tasks/GY-DATA-CORE-V2.md`。
+长期边界见 `AGENTS.md` / `PROJECT_SOURCE.md`；active 行为合同见 `openspec/specs/`，数据语义以
+`openspec/specs/canonical-market-storage/spec.md` 与 `docs/DATA_CENTER.md` 为准。
 
 ## active 数据入口
 
 - 物理 `DatasetKey=(kind, symbol, series_or_contract, frequency)`
 - 物理 kind 只有 `continuous|contract`；`actual_dominant` 只在查询时由 `MainContractMap rank=1` 拼接
-- Direct：`1m/1d/1w`；Derived：`5m/15m/30m/60m`（只从同 Dataset Canonical `1m` 按 Session 聚合）
+- Direct：`1m` 主连来自 `{SYMBOL}88`，`1d` 来自真实合约交易所日行情并按 rank1 map 拼接，`1w`
+  只从完整同源 `1d` 聚合；Derived：`5m/15m/30m/60m` 只从同 Dataset Canonical `1m` 按 Session 聚合
 - 消费者不得自行 glob、选择 active、判断主力或绕过完整性校验
 - 正式 CLI：`guiyi data update|refresh|audit`
 

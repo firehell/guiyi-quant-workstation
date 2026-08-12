@@ -15,18 +15,30 @@ _ACTIVE_CONTRACTS = {symbol: f"{symbol.upper()}2601" for symbol in _ACTIVE_PRODU
 
 
 class _Coverage:
-    def __init__(self, trading_day: date) -> None:
+    def __init__(self, trading_day: date, *, metadata_day: date | None = None) -> None:
         self.trading_day = trading_day
-        self.calls: list[tuple[str, ...]] = []
+        self.metadata_day = metadata_day or trading_day
+        self.complete_day_calls: list[tuple[str, ...]] = []
+        self.metadata_day_calls: list[tuple[str, ...]] = []
 
     def latest_complete_day(self, products: tuple[str, ...]) -> date:
-        self.calls.append(products)
+        self.complete_day_calls.append(products)
         return self.trading_day
+
+    def latest_metadata_day(self, products: tuple[str, ...]) -> date:
+        self.metadata_day_calls.append(products)
+        return self.metadata_day
 
 
 class _Manager:
-    def __init__(self, trading_day: date, results: list[MaintenanceResult]) -> None:
-        self.coverage = _Coverage(trading_day)
+    def __init__(
+        self,
+        trading_day: date,
+        results: list[MaintenanceResult],
+        *,
+        metadata_day: date | None = None,
+    ) -> None:
+        self.coverage = _Coverage(trading_day, metadata_day=metadata_day)
         self._results = results
         self.calls = []
         self.metadata = _Metadata()
@@ -103,8 +115,15 @@ def _result(status: str, *, stop_reason: str | None = None) -> MaintenanceResult
     )
 
 
-def _updater(tmp_path, *, trading_day: date, readiness: list[bool], results: list[MaintenanceResult]):
-    manager = _Manager(trading_day, results)
+def _updater(
+    tmp_path,
+    *,
+    trading_day: date,
+    readiness: list[bool],
+    results: list[MaintenanceResult],
+    metadata_day: date | None = None,
+):
+    manager = _Manager(trading_day, results, metadata_day=metadata_day)
     rqdata = _RQData(readiness)
     sleeps: list[float] = []
     notices: list[str] = []
@@ -141,6 +160,29 @@ def test_skips_non_trading_day_without_ready_update_or_retry(tmp_path) -> None:
     assert result.error_code == "NON_TRADING_DAY"
     assert manager.calls == []
     assert rqdata.calls == []
+    assert sleeps == []
+    assert notices == []
+
+
+def test_uses_calendar_metadata_day_before_current_session_sync(tmp_path) -> None:
+    """A stale current-day Session must not make a real trading day look closed."""
+    updater, manager, rqdata, sleeps, notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 9),
+        metadata_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[_result("passed")],
+    )
+
+    result = updater.run()
+
+    assert result.status == "passed"
+    assert result.trading_day == date(2026, 8, 10)
+    assert manager.coverage.metadata_day_calls == [_ACTIVE_PRODUCTS]
+    assert manager.coverage.complete_day_calls == []
+    assert manager.calls[0].through == date(2026, 8, 10)
+    assert manager.calls[0].sync_current_day_metadata is True
+    assert rqdata.calls == [date(2026, 8, 10)]
     assert sleeps == []
     assert notices == []
 

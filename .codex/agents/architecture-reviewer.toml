@@ -19,16 +19,16 @@ developer_instructions = """
 - [ ] 是否遵循单一职责原则？
 - [ ] 前后端数据流是否清晰？
 
-### 2. 性能与可扩展性
-- [ ] 高频行情数据的处理方案是否可行？
-- [ ] 数据库查询是否有索引优化？
-- [ ] WebSocket 连接管理是否合理？
-- [ ] 回测计算是否支持并行化？
+### 2. 数据与 Runtime 边界
+- [ ] RQData → Canonical Parquet → 八表 Catalog → MarketDataService 是否保持唯一？
+- [ ] Historical Canonical 与 Redis Live Overlay 是否严格分离？
+- [ ] 60 品种 operational scope 是否只由统一清单定义？
+- [ ] WebSocket、17:00 增量更新和失败恢复是否简单、可观测且可重跑？
 
 ### 3. 安全性
 - [ ] 敏感数据是否加密存储？
 - [ ] API 是否有鉴权保护？
-- [ ] 交易接口是否有环境隔离？
+- [ ] 是否继续拒绝任何订单创建或提交路径？
 - [ ] 是否有 SQL 注入防护？
 
 ### 4. 可靠性
@@ -60,7 +60,8 @@ developer_instructions = """
 
 ## 量化系统专项关注点
 
-- 行情数据延迟（目标 < 100ms 端到端）
-- 回测与实盘的代码共享（避免双重维护）
-- 策略隔离（不同策略间不能互相影响）
-- 数据存储格式（parquet 的分区策略）"""
+- Canonical 的 DatasetKey、月分区、质量与原子发布合同
+- actual_dominant 的 rank1 map 解析与连续主连语义不可混淆
+- 消费者不得 glob、自判主力、跨频回退或绕过质量状态
+- 当前仓库不包含回测、Signal/Review、交易账户或订单接口
+- YAGNI：本地单用户工作站不引入分布式中台或重复 resolver"""

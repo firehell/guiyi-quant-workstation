@@ -49,6 +49,14 @@ active universe 固定 60 品种，正式周期只有 `1m/5m/15m/30m/60m/1d/1w`�
 唯一 active 运维链是 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；local/tunnel/public 三段只读检查及
 配置入口统一见 `deploy/README.md`。
 
+## Runtime 恢复验收
+
+1. 先读 `STATUS.md`，再运行 `./scripts/ops/macos/local-services-status.sh`；不要用聊天记录推断当前 Runtime。
+2. 核对 Runtime checkout 为 clean/detached 精确提交、四个 launchd 根一致、active/operational 均为 60。
+3. 核对 `/api/health`、`/api/runtime/health` 与真实 Market 业务字段；健康接口 200 不替代业务读回。
+4. 盘后失败只读检查 launchd run count 与 `.run/after-market-status.json`，不得手工触发冒充自然成功。
+5. 任何重载、Runtime switch、真实数据/DB 写入或 release/tag 均重新取得单次明确意图。
+
 ## 统一 CLI
 
 ```bash
