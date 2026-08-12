@@ -89,3 +89,27 @@ class DominantContractListResponse(BaseModel):
     """``/dominants`` 列表响应。"""
 
     items: list[DominantContractOut]
+
+
+class ProductResearchResponse(BaseModel):
+    """``/research/product`` 单品种只读研究快照。"""
+
+    symbol: str
+    product_name: str
+    sector: str
+    exchange: str
+    series_kind: str
+    contract: str | None
+    as_of: date
+    current_dominant: str
+    dominant_mapping_date: date
+    daily_trend: str
+    weekly_trend: str
+    position20: Decimal | None
+    distance_to_20d_high: Decimal | None
+    distance_to_20d_low: Decimal | None
+    volume_ratio20: Decimal | None
+    oi_change_1d: Decimal | None
+    turnover_change_5d: Decimal | None
+    atr14_percentile252: Decimal | None
+    recent_daily: list[MarketBarOut]

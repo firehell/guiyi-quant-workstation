@@ -24,6 +24,7 @@ from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
+from app.market_data.market_research_service import MarketResearchService
 from app.market_data.storage import CanonicalMonthlyStore
 from app.redis_connections import get_redis_connection
 
@@ -84,6 +85,11 @@ def build_market_data_service(session: Session) -> MarketDataService:
     """构造只读 ``MarketDataService``（查询路径不注入 RQData 与维护依赖）。"""
     root = canonical_root()
     return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
+
+
+def build_market_research_service(session: Session) -> MarketResearchService:
+    """构造 Product Workspace 的只读研究服务。"""
+    return MarketResearchService(build_market_data_service(session))
 
 
 def build_market_read_service(session: Session) -> MarketReadService:

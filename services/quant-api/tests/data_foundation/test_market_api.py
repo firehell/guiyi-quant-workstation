@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -10,7 +11,9 @@ from app.market_data.domain import (
     CanonicalBar,
     MarketSeriesPageResult,
     ResolvedContractSegment,
+    SeriesKind,
 )
+from app.market_data.market_data_service import MarketDataError
 
 
 class FakeService:
@@ -92,3 +95,96 @@ def test_market_bars_page_validates_contract_and_limit(monkeypatch) -> None:
 
     assert missing_contract.status_code == 422
     assert invalid_limit.status_code == 422
+
+
+class FakeResearchService:
+    def __init__(self, *, failure: MarketDataError | None = None) -> None:
+        self.failure = failure
+        self.requests = []
+
+    def product_snapshot(self, identity):
+        self.requests.append(identity)
+        if self.failure is not None:
+            raise self.failure
+        bar = CanonicalBar(
+            datetime(2025, 1, 2, 7, tzinfo=UTC),
+            date(2025, 1, 2),
+            Decimal("100"),
+            Decimal("101"),
+            Decimal("99"),
+            Decimal("100"),
+            Decimal("10"),
+            Decimal("1000"),
+            Decimal("20"),
+        )
+        return SimpleNamespace(
+            symbol="jm",
+            product_name="焦煤",
+            sector="black",
+            exchange="DCE",
+            series_kind=SeriesKind.ACTUAL_DOMINANT,
+            contract=None,
+            as_of=date(2025, 1, 2),
+            current_dominant="JM2509",
+            dominant_mapping_date=date(2025, 1, 2),
+            metrics=SimpleNamespace(
+                daily_trend="up",
+                weekly_trend="neutral",
+                position20=Decimal("0.5"),
+                distance_to_20d_high=Decimal("-0.1"),
+                distance_to_20d_low=Decimal("0.2"),
+                volume_ratio20=Decimal("2"),
+                oi_change_1d=Decimal("0.1"),
+                turnover_change_5d=Decimal("0.3"),
+                atr14_percentile252=Decimal("0.8"),
+            ),
+            recent_daily=(bar,),
+        )
+
+
+def test_product_research_api_supports_actual_dominant_and_continuous(monkeypatch) -> None:
+    fake = FakeResearchService()
+    monkeypatch.setattr("app.api.market.build_market_research_service", lambda _session: fake, raising=False)
+    client = TestClient(app)
+
+    actual = client.get(
+        "/api/v1/market/research/product",
+        params={"symbol": "jm", "series_kind": "actual_dominant"},
+    )
+    continuous = client.get(
+        "/api/v1/market/research/product",
+        params={"symbol": "jm", "series_kind": "continuous"},
+    )
+
+    assert actual.status_code == 200
+    assert continuous.status_code == 200
+    assert actual.json()["symbol"] == "jm"
+    assert actual.json()["recent_daily"][0]["close"] == "100"
+    assert [item.series_kind.value for item in fake.requests] == ["actual_dominant", "continuous"]
+
+
+def test_product_research_api_rejects_contract_without_contract(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.market.build_market_research_service", lambda _session: FakeResearchService(), raising=False)
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/product",
+        params={"symbol": "jm", "series_kind": "contract"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_product_research_api_maps_market_errors_without_internal_details(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.market.build_market_research_service",
+        lambda _session: FakeResearchService(failure=MarketDataError("QUERY_WINDOW_EMPTY")),
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/product",
+        params={"symbol": "jm", "series_kind": "actual_dominant"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "QUERY_WINDOW_EMPTY"}}
