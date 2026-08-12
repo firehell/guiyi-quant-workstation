@@ -138,6 +138,7 @@ class RefreshRequest:
     since: date
     through: date
     apply: bool = False
+    frequencies: frozenset[BarFrequency] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +146,7 @@ class AuditRequest:
     """只读审计请求：检查主力映射与分区完整性，不触发 provider 与写入。"""
 
     products: tuple[str, ...]
+    through: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,6 +368,7 @@ class HistoricalDataManager:
                         request.since,
                         request.through,
                         force=True,
+                        frequencies=request.frequencies,
                     )
                 )
                 return self._execute("refresh", targets, request.through, apply=True)
@@ -377,6 +380,7 @@ class HistoricalDataManager:
                 request.since,
                 request.through,
                 force=True,
+                frequencies=request.frequencies,
             )
         )
         return self._execute("refresh", targets, request.through, apply=request.apply)
@@ -388,7 +392,7 @@ class HistoricalDataManager:
         throughs: list[date] = []
         for symbol in request.products:
             try:
-                through = self.coverage.latest_complete_day((symbol,))
+                through = request.through or self.coverage.latest_complete_day((symbol,))
                 start = self.coverage.product_start(symbol)
                 missing_map = self.catalog.missing_main_map_days(symbol, start, through)
                 if missing_map:

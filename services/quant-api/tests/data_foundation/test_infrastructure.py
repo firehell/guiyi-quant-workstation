@@ -411,13 +411,13 @@ def test_rqdata_adapter_maps_only_explicit_quota_errors(tmp_path) -> None:
     session, _ = _session(tmp_path)
 
     class Client:
-        def price(self, *_args):
+        def exchange_daily(self, *_args):
             error = RuntimeError("daily download quota exceeded")
             error.code = "RQDATA_DAILY_QUOTA_EXCEEDED"
             raise error
 
     adapter = RQDataMarketAdapter(session=session, client=Client())
-    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
 
     with pytest.raises(InfrastructureError, match="PROVIDER_QUOTA_EXHAUSTED"):
         adapter.fetch(key, (datetime(2025, 1, 6, 7, tzinfo=UTC),))
@@ -483,20 +483,31 @@ class SplitContinuousClient:
         return self.frames[order_book_id]
 
 
+class ExchangeDailyClient:
+    version = "test"
+
+    def __init__(self, frames: dict[str, pd.DataFrame]) -> None:
+        self.frames = frames
+        self.calls: list[tuple[str, date, date]] = []
+
+    def exchange_daily(self, order_book_id, start, end):
+        self.calls.append((order_book_id, start, end))
+        return self.frames[order_book_id]
+
+
 def _bar(end: datetime, trading_day: date):
     from app.market_data.domain import CanonicalBar
 
     return CanonicalBar(end, trading_day, 1, 1, 1, 1, 1, 1, 1)
 
 
-def test_rqdata_bar_adapter_normalizes_continuous_and_daily_bar_end(tmp_path) -> None:
-    session, starts = _session(tmp_path)
+def test_rqdata_bar_adapter_normalizes_exchange_daily_bar_end(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
     expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
     frame = pd.DataFrame(
         [
             {
-                "datetime": datetime(2025, 1, 6),
-                "trading_date": date(2025, 1, 6),
+                "date": date(2025, 1, 6),
                 "open": 100,
                 "high": 101,
                 "low": 99,
@@ -507,15 +518,209 @@ def test_rqdata_bar_adapter_normalizes_continuous_and_daily_bar_end(tmp_path) ->
             }
         ]
     )
-    client = FakeClient(frame)
+    client = ExchangeDailyClient({"JM2509": frame})
     adapter = RQDataMarketAdapter(session=session, client=client)
-    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
 
     batch = adapter.fetch(key, (expected,))
 
-    assert client.calls[0][0] == "JM88"
+    assert client.calls == [("JM2509", date(2025, 1, 6), date(2025, 1, 6))]
     assert batch.bars[0].bar_end == expected
     assert batch.bars[0].turnover == Decimal("1000")
+
+
+def test_rqdata_daily_adapter_uses_exchange_daily_zero_trade_ohlc(tmp_path) -> None:
+    """期货日线必须保留交易所零成交日的原始 0 OHLC，而非将结算价写为 close。"""
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
+    client = ExchangeDailyClient(
+        {
+            "JM2509": pd.DataFrame(
+                [
+                    {
+                        "date": date(2025, 1, 6),
+                        "open": 0,
+                        "high": 0,
+                        "low": 0,
+                        "close": 0,
+                        "volume": 0,
+                        "total_turnover": 0,
+                        "open_interest": 20,
+                        "settlement": 100,
+                    }
+                ]
+            )
+        }
+    )
+    adapter = RQDataMarketAdapter(session=session, client=client)
+
+    batch = adapter.fetch(DatasetKey("contract", "jm", "JM2509", "1d"), (expected,))
+
+    assert client.calls == [("JM2509", date(2025, 1, 6), date(2025, 1, 6))]
+    assert [(bar.open, bar.high, bar.low, bar.close) for bar in batch.bars] == [
+        (Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"))
+    ]
+    session.close()
+
+
+def test_rqdata_daily_continuous_uses_rank1_exchange_daily_fact(tmp_path) -> None:
+    """continuous/MAIN 日线按该交易日 rank1 合约的交易所事实构成。"""
+    session, _starts = _session(tmp_path)
+    session.add(
+        MainContractMap(
+            symbol="jm",
+            trade_date=date(2025, 1, 6),
+            contract_code="JM2509",
+            rank=1,
+            rule="volume_open_interest",
+        )
+    )
+    session.commit()
+    expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
+    client = ExchangeDailyClient(
+        {
+            "JM2509": pd.DataFrame(
+                [
+                    {
+                        "date": date(2025, 1, 6),
+                        "open": 100,
+                        "high": 110,
+                        "low": 90,
+                        "close": 105,
+                        "volume": 10,
+                        "total_turnover": 1000,
+                        "open_interest": 20,
+                    }
+                ]
+            )
+        }
+    )
+    adapter = RQDataMarketAdapter(session=session, client=client)
+
+    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1d"), (expected,))
+
+    assert client.calls == [("JM2509", date(2025, 1, 6), date(2025, 1, 6))]
+    assert [(bar.open, bar.high, bar.low, bar.close) for bar in batch.bars] == [
+        (Decimal("100"), Decimal("110"), Decimal("90"), Decimal("105"))
+    ]
+    session.close()
+
+
+def test_rqdata_weekly_adapter_aggregates_exchange_daily_facts(tmp_path) -> None:
+    """期货周线只由该 ISO 周的交易所日线聚合，volume/turnover 求和。"""
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 10, 1, 5, tzinfo=UTC)
+    rows = []
+    for offset, day in enumerate(range(6, 11), start=1):
+        rows.append(
+            {
+                "date": date(2025, 1, day),
+                "open": 100 + offset,
+                "high": 110 + offset,
+                "low": 90 + offset,
+                "close": 105 + offset,
+                "volume": offset,
+                "total_turnover": offset * 100,
+                "open_interest": 20 + offset,
+            }
+        )
+    client = ExchangeDailyClient({"JM2509": pd.DataFrame(rows)})
+    adapter = RQDataMarketAdapter(session=session, client=client)
+
+    batch = adapter.fetch(DatasetKey("contract", "jm", "JM2509", "1w"), (expected,))
+
+    assert client.calls == [("JM2509", date(2025, 1, 6), date(2025, 1, 10))]
+    assert [(bar.bar_end, bar.trading_day) for bar in batch.bars] == [(expected, date(2025, 1, 10))]
+    assert [(bar.open, bar.high, bar.low, bar.close, bar.volume, bar.turnover, bar.open_interest) for bar in batch.bars] == [
+        (Decimal("101"), Decimal("115"), Decimal("91"), Decimal("110"), Decimal("15"), Decimal("1500"), Decimal("25"))
+    ]
+    session.close()
+
+
+def test_rqdata_weekly_continuous_aggregates_daily_rank1_segments(tmp_path) -> None:
+    """continuous 周线跨 rank1 切换时按每日映射合并交易所日事实。"""
+    session, _starts = _session(tmp_path)
+    for day, contract in ((6, "JM2509"), (7, "JM2509"), (8, "JM2509"), (9, "JM2505"), (10, "JM2505")):
+        session.add(
+            MainContractMap(
+                symbol="jm",
+                trade_date=date(2025, 1, day),
+                contract_code=contract,
+                rank=1,
+                rule="volume_open_interest",
+            )
+        )
+    session.commit()
+    expected = datetime(2025, 1, 10, 1, 5, tzinfo=UTC)
+    first_rows = [
+        {
+            "date": date(2025, 1, day),
+            "open": 100 + day,
+            "high": 110 + day,
+            "low": 90 + day,
+            "close": 105 + day,
+            "volume": 1,
+            "total_turnover": 100,
+            "open_interest": 20 + day,
+        }
+        for day in range(6, 9)
+    ]
+    second_rows = [
+        {
+            "date": date(2025, 1, day),
+            "open": 200 + day,
+            "high": 210 + day,
+            "low": 190 + day,
+            "close": 205 + day,
+            "volume": 1,
+            "total_turnover": 100,
+            "open_interest": 20 + day,
+        }
+        for day in range(9, 11)
+    ]
+    client = ExchangeDailyClient(
+        {"JM2509": pd.DataFrame(first_rows), "JM2505": pd.DataFrame(second_rows)}
+    )
+    adapter = RQDataMarketAdapter(session=session, client=client)
+
+    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1w"), (expected,))
+
+    assert client.calls == [
+        ("JM2509", date(2025, 1, 6), date(2025, 1, 8)),
+        ("JM2505", date(2025, 1, 9), date(2025, 1, 10)),
+    ]
+    assert [(bar.open, bar.high, bar.low, bar.close) for bar in batch.bars] == [
+        (Decimal("106"), Decimal("220"), Decimal("96"), Decimal("215"))
+    ]
+    session.close()
+
+
+def test_rqdata_weekly_adapter_rejects_incomplete_exchange_daily_week(tmp_path) -> None:
+    """周线缺少任一交易所日事实时不得以部分周生成 bar。"""
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 10, 1, 5, tzinfo=UTC)
+    rows = [
+        {
+            "date": date(2025, 1, day),
+            "open": 100,
+            "high": 110,
+            "low": 90,
+            "close": 105,
+            "volume": 1,
+            "total_turnover": 100,
+            "open_interest": 20,
+        }
+        for day in range(6, 10)
+    ]
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=ExchangeDailyClient({"JM2509": pd.DataFrame(rows)}),
+    )
+
+    batch = adapter.fetch(DatasetKey("contract", "jm", "JM2509", "1w"), (expected,))
+
+    assert batch.bars == ()
+    session.close()
 
 
 def test_continuous_main_does_not_fall_back_from_88_to_99(tmp_path) -> None:
@@ -524,7 +729,7 @@ def test_continuous_main_does_not_fall_back_from_88_to_99(tmp_path) -> None:
     index_frame = pd.DataFrame(
         [
             {
-                "datetime": datetime(2025, 1, 6),
+                "datetime": datetime(2025, 1, 6, 9, 5),
                 "trading_date": date(2025, 1, 6),
                 "open": 100,
                 "high": 101,
@@ -539,111 +744,10 @@ def test_continuous_main_does_not_fall_back_from_88_to_99(tmp_path) -> None:
     client = SplitContinuousClient({"JM88": pd.DataFrame(), "JM99": index_frame})
     adapter = RQDataMarketAdapter(session=session, client=client)
 
-    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1d"), (expected,))
+    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1m"), (expected,))
 
     assert batch.bars == ()
-    assert client.calls == [("JM88", date(2025, 1, 6), date(2025, 1, 6), "1d")]
-    session.close()
-
-
-def test_rqdata_weekly_adapter_requests_full_iso_context_and_rejects_other_weeks(
-    tmp_path,
-) -> None:
-    """A provider row can only satisfy the ISO week it actually belongs to."""
-    session, _starts = _session(tmp_path)
-    expected = datetime(2026, 1, 2, 1, 5, tzinfo=UTC)
-    frame = pd.DataFrame(
-        [
-            {
-                "datetime": datetime(2025, 12, 26),
-                "trading_date": date(2025, 12, 26),
-                "open": 100,
-                "high": 101,
-                "low": 99,
-                "close": 100,
-                "volume": 10,
-                "total_turnover": 1000,
-                "open_interest": 20,
-            }
-        ]
-    )
-    client = FakeClient(frame)
-    adapter = RQDataMarketAdapter(session=session, client=client)
-
-    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1w"), (expected,))
-
-    assert client.calls == [("JM88", date(2025, 12, 29), date(2026, 1, 4), "1w")]
-    assert batch.bars == ()
-    session.close()
-
-
-def test_rqdata_weekly_adapter_maps_rows_by_iso_week_not_provider_position(tmp_path) -> None:
-    session, _starts = _session(tmp_path)
-    first = datetime(2026, 1, 2, 1, 5, tzinfo=UTC)
-    second = datetime(2026, 1, 9, 1, 5, tzinfo=UTC)
-    frame = pd.DataFrame(
-        [
-            {
-                "datetime": datetime(2026, 1, 9),
-                "trading_date": date(2026, 1, 9),
-                "open": 200,
-                "high": 201,
-                "low": 199,
-                "close": 200,
-                "volume": 10,
-                "total_turnover": 2000,
-                "open_interest": 20,
-            },
-            {
-                "datetime": datetime(2026, 1, 2),
-                "trading_date": date(2026, 1, 2),
-                "open": 100,
-                "high": 101,
-                "low": 99,
-                "close": 100,
-                "volume": 10,
-                "total_turnover": 1000,
-                "open_interest": 20,
-            },
-        ]
-    )
-    adapter = RQDataMarketAdapter(session=session, client=FakeClient(frame))
-
-    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1w"), (first, second))
-
-    assert [(bar.bar_end, bar.close) for bar in batch.bars] == [
-        (first, Decimal("100")),
-        (second, Decimal("200")),
-    ]
-    session.close()
-
-
-def test_rqdata_weekly_adapter_accepts_native_multiindex_short_week_label(tmp_path) -> None:
-    session, _starts = _session(tmp_path)
-    expected = datetime(2024, 4, 3, 7, tzinfo=UTC)
-    frame = pd.DataFrame(
-        {
-            "open": [100],
-            "high": [101],
-            "low": [99],
-            "close": [100],
-            "volume": [10],
-            "total_turnover": [1000],
-            "open_interest": [20],
-        },
-        index=pd.MultiIndex.from_tuples(
-            [("JM88", date(2024, 4, 3))], names=("order_book_id", "date")
-        ),
-    )
-    client = FakeClient(frame)
-    adapter = RQDataMarketAdapter(session=session, client=client)
-
-    batch = adapter.fetch(DatasetKey("continuous", "jm", "MAIN", "1w"), (expected,))
-
-    assert client.calls == [("JM88", date(2024, 4, 1), date(2024, 4, 7), "1w")]
-    assert [(bar.bar_end, bar.trading_day) for bar in batch.bars] == [
-        (expected, date(2024, 4, 3))
-    ]
+    assert client.calls == [("JM88", date(2025, 1, 6), date(2025, 1, 6), "1m")]
     session.close()
 
 

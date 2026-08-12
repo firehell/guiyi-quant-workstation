@@ -557,6 +557,31 @@ def test_refresh_mid_month_rebuilds_the_complete_intersecting_month(session, tmp
     assert manager.store.read_month(key, 2025, 1) == bars
 
 
+def test_refresh_can_limit_force_plan_to_daily_and_weekly_frequencies(session, tmp_path) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    minute = DatasetKey("continuous", "jm", "MAIN", "1m")
+    coverage = FakeCoverage(
+        {
+            daily.as_tuple(): (_daily(2, 100).bar_end,),
+            minute.as_tuple(): (_minute(1).bar_end,),
+        }
+    )
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+
+    result = manager.refresh(
+        RefreshRequest(
+            "jm",
+            date(2025, 1, 2),
+            date(2025, 1, 2),
+            False,
+            frozenset({BarFrequency.D1, BarFrequency.W1}),
+        )
+    )
+
+    assert result.status == "planned"
+    assert {item["dataset"][3] for item in result.target_windows} == {"1d"}
+
+
 def test_update_rebuilds_a_partition_with_extra_bar(session, tmp_path) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     expected = (_daily(2, 200), _daily(3, 201))
@@ -811,6 +836,16 @@ def test_audit_reports_missing_partition_without_remote_calls(session, tmp_path)
     assert result.status == "failed"
     assert {finding.code for finding in result.findings} == {"EXPECTED_PARTITION_MISSING"}
     assert provider.calls == []
+
+
+def test_audit_honors_explicit_fixed_through_boundary(session, tmp_path) -> None:
+    coverage = FakeCoverage({})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+
+    result = manager.audit(AuditRequest(("jm",), through=date(2025, 1, 2)))
+
+    assert result.through == date(2025, 1, 2)
+    assert coverage.latest_calls == []
 
 
 def test_audit_uses_preceding_complete_day_when_current_session_metadata_is_pending(

@@ -146,6 +146,18 @@ def test_audit_parses_single_active_symbol() -> None:
     assert manager.calls[0][1].products == ("jm",)
 
 
+def test_audit_parses_fixed_through_boundary() -> None:
+    manager = FakeManager()
+
+    code, payload = _run(
+        ["data", "audit", "--universe", "active", "--through", "2025-01-03"],
+        manager,
+    )
+
+    assert code == 0 and payload["status"] == "passed"
+    assert manager.calls[0][1].through == date(2025, 1, 3)
+
+
 def test_audit_keeps_active_universe_selector() -> None:
     manager = FakeManager()
 

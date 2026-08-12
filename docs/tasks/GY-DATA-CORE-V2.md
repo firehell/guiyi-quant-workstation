@@ -12,7 +12,8 @@
 
 - 物理 Dataset 是 `continuous|contract` 和四字段 `DatasetKey`；`actual_dominant` 只在查询时拼接。
   `continuous`、`contract` 与 `actual_dominant` 是不同查询模式，不可互换。
-- Direct 是 `1m/1d/1w`，Derived 是 `5m/15m/30m/60m`，Derived 只从同 Dataset Canonical 1m 聚合。
+- `1m` 是 RQData `get_price` 输入；`1d` 是 RQData 交易所日行情事实，`continuous/MAIN` 按当日 rank1
+  真实合约拼接；`1w` 只由同一日线完整 ISO 周聚合；`5m/15m/30m/60m` 只从同 Dataset Canonical 1m 聚合。
 - 每 Dataset 每月只有一个 `part.parquet`。完整 coverage、row count、Catalog identity 与文件可读性
   共同定义可用月；不存在额外发布/缺口/参数数据语言。
 - 月分区先完成候选文件校验，再以同文件系统临时文件原子替换；任何失败保留最后一个有效
@@ -70,8 +71,9 @@ Session 是品种的历史有效窗口；两者都必须覆盖该 canary 自己�
 
 1. `MetadataSynchronizer` 已为该品种在 `[effective_start, T0]` 同步 Instrument/Contract、Calendar、
    historical Session facts 和连续 rank1 map；任何缺口都停止，不用当前交易时段或自然日补写历史事实。
-2. `HistoricalDataManager` 已发布 `continuous/MAIN` 与每个 rank1 映射真实合约的七个正式周期：Direct
-   `1m/1d/1w`，以及只从质量通过 Canonical `1m` 聚合的 `5m/15m/30m/60m`。不得创建
+2. `HistoricalDataManager` 已发布 `continuous/MAIN` 与每个 rank1 映射真实合约的七个正式周期：`1m` 取
+   `get_price`，`1d` 取交易所日行情，`1w` 只由完整日线事实聚合，以及只从质量通过 Canonical `1m`
+   聚合的 `5m/15m/30m/60m`。不得创建
    `actual_dominant` 的物理 Dataset 或 Parquet。
 3. 写后运行 `guiyi data audit --symbol <symbol>`；必须 `status=passed`、`finding_count=0`、
    `provider_requests=0`。若为 partial、failed 或出现任何 Session/Calendar/MainContractMap/partition/

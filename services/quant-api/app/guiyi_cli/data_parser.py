@@ -39,12 +39,14 @@ def add_data_commands(
     refresh.add_argument("--symbol", required=True)
     refresh.add_argument("--since", required=True)
     refresh.add_argument("--through", required=True)
+    refresh.add_argument("--frequencies", nargs="+", choices=("1d", "1w"))
     refresh.add_argument("--apply", action="store_true")
 
     audit = commands.add_parser("audit")
     selector = audit.add_mutually_exclusive_group(required=True)
     selector.add_argument("--symbol")
     selector.add_argument("--universe", choices=("active",))
+    audit.add_argument("--through")
 
     retire = commands.add_parser("retire-products")
     retire.add_argument("--apply", action="store_true")

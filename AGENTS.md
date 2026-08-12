@@ -64,7 +64,7 @@ history 可追溯），当前不存在回测引擎、策略适配层或策略 HT
 
 `docs/tasks/GY-DATA-CORE-V2.md` 是当前数据交互核心收口的 active 业务合同。目标架构已经冻结，但除文档明确列出的已完成事实外，不得把数据迁移、消费者切换、live/EOD 收口、删除或 Runtime 验收写成已完成。
 
-- active target：RQData → 临时 staging → 六项硬校验 → 单一 historical canonical Parquet（direct `1m/1d/1w` + derived `5m/15m/30m/60m`）→ 八表 Catalog/MainContractMap → `MarketDataService` → consumers。
+- active target：RQData → 临时 staging → 六项硬校验 → 单一 historical canonical Parquet（`1m` 为 `get_price` 输入；`1d` 为交易所日行情事实；`1w` 只由同一日线聚合；`5m/15m/30m/60m` 只由 `1m` 聚合）→ 八表 Catalog/MainContractMap → `MarketDataService` → consumers。
 - 候选 Alembic `20260808_0036` 最终将 active 数据 schema 收口为八表；生产 DB、正式数据或仓库外文件的实际变更另需精确范围的一次性执行意图。
 - 已发生的 PR、CI、Review、packet、hash、receipt、report 和 evidence 只作为历史事实，不是当前授权。仓库内过期工件可按普通删除处理；生产数据、正式 Parquet、DB、Runtime 或其他外部资源必须按受控外部操作处理。
 - 迁移资产只包括 trusted historical bars 及最小 Catalog/MainContractMap/Calendar/Session metadata。旧 indicator/cache、Backtest、Signal/Review、live/EOD/Sample 和重复 bar layer 均不属于 active migration asset。

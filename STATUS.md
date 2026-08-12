@@ -11,8 +11,8 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - MR-08 的 develop 自然 canary 和最终 Runtime 身份、拓扑、健康、范围复验已经完成。该结论不表示
   release、`main` 合并或新的 Runtime promotion。
-- Data Foundation 已完成 DFD-01～DFD-06，DFD-07 当前完整闭环为 **43/60**，剩余 **17** 个 active
-  品种。全域 Canonical 验收仍未完成。
+- Data Foundation 已完成 DFD-01～DFD-07：active universe 的 **60/60** 个品种已在固定
+  `T0=2026-08-11` 完成 Canonical 闭环；全域 audit 为 passed/0 findings。
 - `retire-products` 已对退役名单 `br/cs/ic/if/ih/im/lu/nr/sp` 完成受控生产清退，事后 residual 为 0。
 - Instrument name 只有品种代码导致 Web 中文名称退化的问题已由统一 display taxonomy 收口并部署；
   Runtime 读回 `a=豆一`、`jm=焦煤`，45 个主力品种的名称与板块均非空。
@@ -34,8 +34,9 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker、旧 scheduler、自动交
   `RQData -> staging + 六项硬校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
 - 物理 `DatasetKey=(kind, symbol, series_or_contract, frequency)`；物理 kind 只有
   `continuous|contract`，`actual_dominant` 仅在查询时由 `MainContractMap rank=1` 拼接。
-- Direct 周期是 `1m/1d/1w`；Derived 周期是 `5m/15m/30m/60m`，只从同 Dataset、质量通过的
-  Canonical `1m` 按 TradingSession 聚合。
+- `1m` 使用 RQData `get_price`；`1d` 使用交易所日行情，`continuous/MAIN` 按当日 rank1 真实合约
+  拼接；`1w` 只从完整的同源日线聚合。`5m/15m/30m/60m` 只从同 Dataset、质量通过的 Canonical `1m`
+  按 TradingSession 聚合。
 - 每个 Dataset 每自然月只有一个 `part.parquet`；schema、identity、session/frequency、OHLCV、coverage、
   row count 与物理可读性全部通过后才能原子发布。
 - PostgreSQL active 数据模型只有八表：`exchanges`、`instruments`、`contracts`、
@@ -44,9 +45,12 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker、旧 scheduler、自动交
 
 ## 活跃 Gate
 
-- DFD-07：剩余17个 active 品种仍由用户逐品种给出精确单次执行意图，按
-  `apply -> audit -> fixed T0 no-apply NOOP` 闭环。Catalog 数量增长、单次 apply 完成或进程退出都不等于
-  品种闭环。
+- DFD-07：此前的 39 个 Map/Session 缺口品种
+  `a/al/ao/au/b/bu/bz/c/cf/cj/cu/eb/ec/eg/fg/fu/hc/i/jd/l/lc/lh/m/ma/ni/oi/p/pb/pd/pf/pg/pk/pl/pp/pr/ps/pt/px/rb`
+  已在授权范围内串行完成 `apply -> audit -> fixed T0 no-apply NOOP`。随后
+  `guiyi data audit --universe active --through 2026-08-11` 为 passed/0 findings；审计显式固定
+  `--through`，不把后续交易日的自然新增 metadata 覆盖需求混入历史 T0 验收。Catalog 数量增长、单次
+  apply 完成或进程退出都不等于品种闭环。
 - 历史60品种 Canonical 闭环不改变 `operational_products.txt`，也不自动扩大 Live/after-market 范围。
 - 生产 DB/Canonical 写入或删除、Runtime switch、真实通知、`main`、tag/release 与 promotion 仍各自需要
   新的范围明确单次执行意图。
@@ -68,6 +72,58 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker、旧 scheduler、自动交
 - 周末 `non_trading_day skipped` 未形成新的自然现场证据，按既有决定不重复制造或冒充该证据。
 - `rb` 已完成受控收口：发布 507 个目标（183 次 provider 请求、零失败），写后 audit 为
   passed/0 findings，fixed `T0=2026-08-07` no-apply 为 NOOP（0 provider 请求）。
+- `rm` 已在明确单次授权下完成受控收口：主力映射与 TradingSession 覆盖均推进至
+  `2026-08-11`；七周期分区读回合计 692 个分区、783,134 根预期 bar 均为 0 findings；fixed
+  `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。全量 audit 的终端输出超时，未重试 apply，
+  以同一 audit 分区比较逻辑的分频读回完成验收。
+- `sh` 已在明确单次授权下完成受控收口：写入 1 个目标（1 次 provider 请求、零失败）；主力映射与
+  TradingSession 覆盖均推进至 `2026-08-11`；七周期分区读回合计 567 个分区、629,124 根预期 bar
+  均为 0 findings；fixed `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。全量 audit 的
+  终端输出超时，未重试 apply，以同一 audit 分区比较逻辑的分频读回完成验收。
+- `ur` 已在批量授权队列中完成受控收口：写入 1 个目标（1 次 provider 请求、零失败）；主力映射与
+  TradingSession 覆盖均推进至 `2026-08-11`；七周期分区读回合计 679 个分区均为 0 findings；fixed
+  `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。首次紧邻写入的读回曾出现短暂派生频率
+  差异，稳定后复核为 0 findings，未重试 apply。
+- `ru` 已在批量授权队列中完成受控收口：写入 1 个目标（1 次 provider 请求、零失败）；主力映射与
+  TradingSession 覆盖均推进至 `2026-08-11`；七周期分区读回均为 0 findings；fixed
+  `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。全量 audit 的终端输出超时，以同一
+  audit 分区比较逻辑的分频读回完成验收，未重试 apply。
+- `sa` 已在批量授权队列中完成受控收口：写入 1 个目标（1 次 provider 请求、零失败）；主力映射与
+  TradingSession 覆盖均推进至 `2026-08-11`；七周期分区读回均为 0 findings；fixed
+  `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。写后派生分区曾出现短暂读回差异，稳定后
+  复核为 0 findings，未重试 apply。
+- `ta` 已在批量授权队列中完成受控收口：写入 1 个目标（1 次 provider 请求、零失败）；主力映射与
+  TradingSession 覆盖均推进至 `2026-08-11`；七周期分区读回均为 0 findings；fixed
+  `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。写后读回稳定后才继续后续品种，未重试 apply。
+- `v` 已在批量授权队列中完成受控收口：写入 1 个目标（1 次 provider 请求、零失败）；主力映射与
+  TradingSession 覆盖均推进至 `2026-08-11`；七周期分区读回均为 0 findings；fixed
+  `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。派生分区稳定后复核通过，未重试 apply。
+- `y` 已在批量授权队列中完成受控收口：写入 1 个目标（1 次 provider 请求、零失败）；主力映射与
+  TradingSession 覆盖均推进至 `2026-08-11`；七周期分区读回均为 0 findings；fixed
+  `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。
+- `sr` 已在批量授权队列中完成受控收口：写入 1 个目标（1 次 provider 请求、零失败）；主力映射与
+  TradingSession 覆盖均推进至 `2026-08-11`；七周期分区读回均为 0 findings；fixed
+  `T0=2026-08-07` 的七周期 no-apply 规划均为 `planned=0`。
+- `zn` 已在批量授权队列中完成受控收口：补齐 `ZN2601`～`ZN2609` 在 2025-11～2026-08 的 117 个
+  真实合约 direct/derived 增量目标；主力映射与 TradingSession 覆盖均推进至 `2026-08-11`。全量只读
+  audit 为 passed/0 findings，fixed `T0=2026-08-07` no-apply 为 NOOP（0 目标）。
+- `rs` 已按更新后的期货日/周事实口径完成受控收口：`1d` 使用 RQData 交易所日行情，`1w` 只由完整
+  日线事实聚合；对 2023-01-01～2026-08-11 的 `1d/1w` 精确 refresh 发布 200/200 个目标（200 次
+  provider 请求、零失败），未触碰 `1m` 或其派生周期。写后 audit 为 passed/0 findings，fixed
+  `T0=2026-08-07` no-apply update 为 NOOP（0 目标）。此前的临时零成交结算价归一化已撤回，其 34 根
+  平价 OHLC 已由本次可信事实重建覆盖。
+- `sc` 已在批量授权队列中完成受控收口：写后全量只读 audit 为 passed/0 findings，fixed
+  `T0=2026-08-07` no-apply update 为 NOOP（0 目标）；未重试 apply。
+- `sf` 已在批量授权队列中完成受控收口：发布 12 个目标（4 次 provider 请求、零失败）；写后全量只读
+  audit 为 passed/0 findings，fixed `T0=2026-08-07` no-apply update 为 NOOP（0 目标）。
+- `si` 已在批量授权队列中完成受控收口：发布 12 个目标（4 次 provider 请求、零失败）；写后全量只读
+  audit 为 passed/0 findings，fixed `T0=2026-08-07` no-apply update 为 NOOP（0 目标）。
+- `sm` 已在批量授权队列中完成受控收口：发布 12 个目标（4 次 provider 请求、零失败）；写后全量只读
+  audit 为 passed/0 findings，fixed `T0=2026-08-07` no-apply update 为 NOOP（0 目标）。
+- `sn` 已在批量授权队列中完成受控收口：发布 12 个目标（4 次 provider 请求、零失败）；写后全量只读
+  audit 为 passed/0 findings，fixed `T0=2026-08-07` no-apply update 为 NOOP（0 目标）。
+- `ss` 已在批量授权队列中完成受控收口：发布 12 个目标（4 次 provider 请求、零失败）；写后全量只读
+  audit 为 passed/0 findings，fixed `T0=2026-08-07` no-apply update 为 NOOP（0 目标）。
 
 更早的逐品种 receipt、故障诊断、自然 canary 与受控执行细节以 Git history 和对应 active task canonical
 为历史记录，不再复制到当前状态页。

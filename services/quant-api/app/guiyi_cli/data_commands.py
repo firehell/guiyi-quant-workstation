@@ -17,6 +17,7 @@ from app.market_data.maintenance import (
     RefreshRequest,
     UpdateRequest,
 )
+from app.market_data.domain import BarFrequency
 from app.market_data.product_retirement import (
     assert_not_retired,
     apply_retirement,
@@ -37,7 +38,10 @@ def build_request(args: argparse.Namespace):
             apply=bool(args.apply),
         )
     if args.data_command == "audit":
-        return AuditRequest(_products(args.symbol, args.universe))
+        return AuditRequest(
+            _products(args.symbol, args.universe),
+            through=_day(args.through),
+        )
     if args.data_command == "refresh":
         since = _day(args.since)
         through = _day(args.through)
@@ -47,6 +51,7 @@ def build_request(args: argparse.Namespace):
             since=since,
             through=through,
             apply=bool(args.apply),
+            frequencies=_refresh_frequencies(args.frequencies),
         )
     raise ValueError("CLI_DATA_COMMAND_INVALID")
 
@@ -83,6 +88,15 @@ def _day(value: str | None) -> date | None:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("CLI_DATE_INVALID") from exc
+
+
+def _refresh_frequencies(
+    values: list[str] | tuple[str, ...] | None,
+) -> frozenset[BarFrequency] | None:
+    """可选的日/周精确重建范围；省略时保持既有全频 refresh。"""
+    if not values:
+        return None
+    return frozenset(BarFrequency(value) for value in values)
 
 
 # re-export helpers used by tests
