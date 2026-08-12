@@ -74,3 +74,20 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   migration、通知或任何数据写入。
 - active OpenSpec 已与实现同步：continuous `1m` 只用 `{SYMBOL}88`，`1d` 按 rank1 真实合约交易所日行情，
   `1w` 只由完整同源日线聚合。
+
+## Market Research Workspace P0 代码验收
+
+- `develop` 已完成 P0-1～P0-7：共享只读 Research/Radar、Product Workspace shell、固定
+  `Kline + EMA / Volume / MACD`、研究侧栏与 Price/Volume/OI、完整 active 60 Radar、Radar Web、以及默认关闭的
+  HTDY 原始观察层。当前 P0 实现提交为 `7231f072...`；Radar 使用 `expected_as_of` 和
+  `participant_count/active_count` 显式报告 freshness，不以缺失品种伪装完整覆盖。
+- 本轮代码验收已完成：工程测试 22 passed；后端 402 passed / 13 skipped、Ruff 和 Mypy（30 个源文件）通过；
+  Web 85 passed / 1 skipped、Radar/Research/Runtime seam 浏览器回归 10 passed、production build 通过；
+  OpenSpec 5/5 passed、secret scan 0 finding。没有新 provider、DB migration/table、scheduler、history writer、
+  订单或 `auto_order` 语义变更。
+- 真实浏览器在当前前端工作树检查到：旧 Runtime API 缺少新 Research/Radar 路由时，Radar 明确显示不可用、
+  Product Workspace 仍保持 Canonical/Live K 线可读；HTDY 仅在用户显式开启后展示
+  “未来引用/重绘风险/仅供人工观察”。
+- **P0 Runtime-integrated acceptance 尚未完成**：当前隔离 Runtime 仍为 `v1.0.0` 的
+  `423b0498...`，并非上述 P0 `develop` 提交。未执行 Runtime switch；需独立、范围明确的当次授权后才可
+  在精确 P0 commit 上完成 Runtime readback。真实使用数日的 P1 决策观察期也尚未开始。
