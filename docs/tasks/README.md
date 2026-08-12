@@ -23,9 +23,8 @@
 | `frozen_runtime_consumed` | Runtime/代码仍读取、哈希或绑定 | 在 caller 迁移与 Runtime smoke 通过前保留 |
 | `superseded_unreferenced` | 无 active caller、无现行业务边界 | 可与 active references 一并普通删除 |
 
-机器可读 inventory 由 `scripts/engineering/repository_consistency.py --task-inventory`
-在内存/命令输出中生成，不落盘为授权工件。checksum/digest/data-identity 语义保留；
-Gate/hash-path 不再作为授权。
+本目录 disposition 由下方列表直接维护，不再生成机器 inventory 或治理工件。checksum/digest/
+data-identity 语义保留；Gate/hash-path 不再作为授权。
 
 ## Active contracts
 
@@ -59,5 +58,4 @@ Gate/hash-path 不再作为授权。
 
 普通开发不强制创建任务合同。受控外部操作边界见 `AGENTS.md`。
 
-工程规则见 `AGENTS.md`；当前状态见 `STATUS.md`；个人开发流程见
-`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`。
+工程规则见 `AGENTS.md`；当前状态见 `STATUS.md`；开发流程见 `docs/DEVELOPMENT.md`。

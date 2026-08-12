@@ -1,9 +1,20 @@
 # 测试与验证入口
 
-更新时间：2026-08-11
+更新时间：2026-08-12
 
 所有数据写入测试使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向
 Runtime/生产数据库。
+
+## 工程与仓库检查
+
+```bash
+python3 scripts/engineering/secret_scan.py --json
+uv run --project services/quant-api pytest -q tests/engineering
+```
+
+Secret scan 默认只扫描 `git ls-files`，也可指定仓库内相对路径；只报告文件、行号和规则类别，
+不输出命中内容。无命中返回 0，命中返回 1，非法路径或调用返回 2；`--warn-only` 仅将命中降级为
+警告，不放宽非法输入。
 
 ## DFD-01 文档合同验证
 
@@ -48,7 +59,7 @@ uv run --project services/quant-api pytest -q services/quant-api/tests/test_runt
 scripts/ops/macos/install-local-services.sh --render-only
 plutil -lint .run/launchd/com.guiyi.quant-live.plist
 plutil -lint .run/launchd/com.guiyi.quant-after-market.plist
-uv run pytest -q tests/engineering/test_market_runtime_launchd.py
+uv run --project services/quant-api pytest -q tests/engineering/test_market_runtime_launchd.py
 ```
 
 上述仅覆盖 fixture、mock、仓库 `.run` 渲染和 plist 语法；不得作为 Runtime 启用、重载或数据写入授权。禁止在

@@ -1,9 +1,8 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-10
+更新时间：2026-08-12
 
-本文定义仓库日常开发的简明入口。完整流程和外部副作用边界见
-`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；产品、数据、策略、信号和 Runtime 语义仍由
+本文定义仓库日常开发与外部副作用边界的唯一流程入口；产品、数据、策略、信号和 Runtime 语义仍由
 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only，含有界 Historical/Live seam）。
 
 ## 唯一日常流程
@@ -98,7 +97,7 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 ## 权威边界
 
 - 工程执行规则：`AGENTS.md`
-- 详细个人开发流程：`docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`
+- 日常开发流程：本文
 - 当前状态：`STATUS.md`
 - 长期产品与数据边界：`PROJECT_SOURCE.md`、`DECISIONS.md`
 - 数据核心 V2 active 合同：`docs/tasks/GY-DATA-CORE-V2.md`

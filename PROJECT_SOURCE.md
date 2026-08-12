@@ -6,7 +6,7 @@
 
 归一量化是本地运行、单用户的国内期货量化研究工作站。当前只服务可信历史行情、Market Web、
 Indicator Kernel 与未来研究；不做自动交易、实盘下单、SaaS、多用户、高频/Tick 平台或 AI 自动
-晋升策略。当前没有 backtest 子系统或 Signal/Review/Strategy 应用面。Market Runtime V1 的历史分页、
+晋升策略，所有研究观察始终保持 `auto_order=false`。当前没有 backtest 子系统或 Signal/Review/Strategy 应用面。Market Runtime V1 的历史分页、
 Redis Live Overlay、盘后更新与 WebSocket 代码已实现；仓库 launchd 模板仍默认关闭，
 本地工作站已按明确请求启用严格限定为 `j/jm/ap/ag` 的有界 Runtime。
 

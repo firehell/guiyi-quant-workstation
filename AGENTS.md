@@ -31,7 +31,7 @@ history 可追溯），当前不存在回测引擎、策略适配层或策略 HT
 
 普通仓库删除包括 Git 跟踪的源码、测试、普通配置、旧工程流程、hook/rule/CI、ADR 和过期文档。此类删除不需要协作门禁或额外执行意图，但必须在同一变更中关闭 active references 并运行受影响验证；恢复只使用 Git history，不创建备份目录、隔离副本、rollback tag、packet 或删除 receipt。
 
-详细流程见 `docs/DEVELOPMENT.md` 与 `docs/PERSONAL_DEVELOPMENT_WORKFLOW.md`；当前可执行命令以 `TESTING.md` 为准。
+详细流程见 `docs/DEVELOPMENT.md`；当前可执行命令以 `TESTING.md` 为准。
 
 ## 受控外部操作
 
