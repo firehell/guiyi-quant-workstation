@@ -16,11 +16,14 @@
 | 分区 | 每 Dataset 每自然月一个 `part.parquet` | 只发布完整、可读的月；不保留 overlay/data version |
 | 质量 | 固定执行 schema、identity、OHLCV、session/frequency、coverage、physical 六项校验 | 失败保留最后有效月；不建立第二套缺口状态 |
 | Catalog | PostgreSQL 只保留八张 active 数据表 | 不保留合约参数、内容摘要、运行历史或通用 lineage |
+| Data Foundation Frozen | 新功能不得修改 `DatasetKey`、八表 Catalog、Canonical 语义或每 Dataset 每自然月一个 `part.parquet` 的月分区模型 | 如需改变基础合同，必须先作为独立架构决策；不得借新功能重构 |
 | 查询 | MarketDataService 是唯一历史行情入口 | 消费者不得 glob、自选文件、自判主力或跨频回退 |
+| 研究读模型 | 新研究功能只通过 `MarketDataService` 消费历史行情；可由 Canonical 与现有 Catalog 推导的结果按需计算 | 不得直接读 Parquet、复制 resolver、新增研究表或长期数据副本 |
 | 增量 | `--since` 是检查下界，`--through` 是固定水位 | 已发布 Parquet + Catalog 是唯一自然续传水位；同 T 完整重跑零请求零写入 |
 | 修复 | `refresh` 重建指定品种/日期范围内相交月份的完整数据族 | 不接受精确计划文件或逐行裁决 |
 | 额度 | 明确的 provider quota 耗尽立即停止本轮 | 保留已发布月，未完成月不发布；下次同命令从首个缺失目标续传 |
 | live | historical Canonical 与 Redis Live Observation 分离 | 仅 `operational_products` 当日 rank1 completed 1m；未确认 bar 不进正式历史资产，Live 不进 Parquet/DB |
+| 模块长期性 | 新增模块前必须确认个人使用是否值得长期维护 | 无明确肯定答案时不创建模块 |
 | Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `operational_products.txt` 中 active 60 的 Live 观察和每日 17:00 + 一次 1h retry 的盘后更新持续运行 | 范围变化必须显式修改同一配置；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
 | 开发态部署拓扑 | 功能开发期可让本地 launchd 临时直接运行主 `develop` 工作区；最终验收重新创建绑定精确提交的独立 Runtime worktree | 不热更新；每次重载需新的一次性意图；develop 证据不等于 promotion 或最终 Runtime 证据 |
 | 工程验证 | `TESTING.md` 的项目原生命令是唯一验证入口；工程脚本只保留无依赖的 `secret_scan.py` | 不保留自验证治理框架、重复流程文档、废弃构建包装或可选 CI 双轨 |

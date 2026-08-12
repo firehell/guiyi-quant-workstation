@@ -36,6 +36,21 @@ RQData
   确定；不维护第二套发布、缺口或 checksum/digest 内容摘要状态。
 - 所有消费者共用 `MarketDataService`，不得 glob、自选文件、自判主力或跨频回退。
 
+### 已冻结的五条架构原则
+
+以下原则是后续功能开发的固定前提，不因新增研究功能而重构或扩展其边界：
+
+1. **Data Foundation Frozen**：不得因新功能修改 `DatasetKey`、八表 Catalog、Canonical 语义或“每
+   Dataset 每自然月一个 `part.parquet`”的月分区模型。
+2. **唯一 Historical Gateway**：`MarketDataService` 是所有新研究功能读取历史行情的唯一入口；新功能
+   不得直接读取 Parquet，也不得复制历史行情 resolver。
+3. **Live 永远是 Observation**：Live 只存在于 Redis Overlay；不得写入或提升为 Canonical，也不得作为
+   正式历史事实。
+4. **读模型优先**：可以由 Canonical 和现有 Catalog 计算得到的研究结果，必须按需计算；不得为其新增
+   表或长期数据副本。
+5. **模块长期性审查**：每新增一个模块，都必须先回答“个人使用真的需要长期维护这个模块吗？”；答案不
+   明确时，不创建该模块。
+
 最终用户接口为 `guiyi data update|refresh|audit` 与 `/api/v1/market/*`。Market Runtime 的 Live 与盘后
 更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察当日 rank1 completed
 1m，盘后最多在 17:00 和一次一小时后 retry 更新相同范围，Live 永不提升为 Canonical。DFD-01～DFD-07
