@@ -6,7 +6,7 @@
 
 - Market Runtime V1 已在本地工作站启用，持续运行范围严格固定为
   `data/universe/operational_products.txt` 中的 `j/jm/ap/ag`。当前 API、Web、Live 与 17:00
-  after-market runner 均绑定 clean/detached Runtime `233d859e`。
+  after-market runner 均绑定 clean/detached Runtime `e49d4fc4`。
 - Runtime 只提供行情研究观察；Historical Canonical 与 Redis Live Overlay 分离，
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - MR-08 的 develop 自然 canary 和最终 Runtime 身份、拓扑、健康、范围复验已经完成。该结论不表示
