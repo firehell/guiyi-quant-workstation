@@ -1,12 +1,15 @@
-import type { SeriesKind } from '@/types/market'
+import type { MarketFrequency, SeriesKind } from '@/types/market'
 
 export const MARKET_WORKSPACE_PREFERENCES_KEY = 'guiyi.market.workspace.preferences.v1'
 export const MARKET_WORKSPACE_PREFERENCES_VERSION = 1
+
+const VALID_FREQUENCIES = new Set<MarketFrequency>(['1m', '5m', '15m', '30m', '60m', '1d', '1w'])
 
 export interface MarketWorkspacePreferences {
   version: 1
   symbol: string | null
   seriesKind: Extract<SeriesKind, 'actual_dominant' | 'continuous'>
+  frequency: MarketFrequency
   researchSidebarOpen: boolean
   watchlist: string[]
 }
@@ -18,6 +21,7 @@ export function defaultMarketWorkspacePreferences(): MarketWorkspacePreferences 
     version: 1,
     symbol: null,
     seriesKind: 'actual_dominant',
+    frequency: '15m',
     researchSidebarOpen: true,
     watchlist: [],
   }
@@ -38,6 +42,7 @@ export function loadMarketWorkspacePreferences(
       version: 1,
       symbol: normalizeSymbol(parsed.symbol),
       seriesKind: parsed.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant',
+      frequency: normalizeFrequency(parsed.frequency),
       researchSidebarOpen: typeof parsed.researchSidebarOpen === 'boolean'
         ? parsed.researchSidebarOpen
         : true,
@@ -58,6 +63,7 @@ export function saveMarketWorkspacePreferences(
       version: 1,
       symbol: normalizeSymbol(preferences.symbol),
       seriesKind: preferences.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant',
+      frequency: normalizeFrequency(preferences.frequency),
       researchSidebarOpen: Boolean(preferences.researchSidebarOpen),
       watchlist: normalizeWatchlist(preferences.watchlist),
     }))
@@ -95,6 +101,12 @@ function normalizeSymbol(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const normalized = value.trim().toLowerCase()
   return /^[a-z]+$/.test(normalized) ? normalized : null
+}
+
+function normalizeFrequency(value: unknown): MarketFrequency {
+  return typeof value === 'string' && VALID_FREQUENCIES.has(value as MarketFrequency)
+    ? value as MarketFrequency
+    : '15m'
 }
 
 function browserStorage(): WorkspaceStorage | null {

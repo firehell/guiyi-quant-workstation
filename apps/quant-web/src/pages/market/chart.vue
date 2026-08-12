@@ -115,7 +115,7 @@ watch([symbol, seriesKind, contract], () => {
   if (metadataReady && !synchronizingSymbol) void refreshResearch()
 })
 
-watch([symbol, seriesKind, researchSidebarOpen, watchlist], persistWorkspacePreferences, { deep: true })
+watch([symbol, seriesKind, frequency, researchSidebarOpen, watchlist], persistWorkspacePreferences, { deep: true })
 
 watch(frequency, (period) => {
   const current = loadMainChartPreferences()
@@ -230,6 +230,7 @@ function toggleWatchlist() {
     version: 1,
     symbol: symbol.value || null,
     seriesKind: seriesKind.value === 'continuous' ? 'continuous' : 'actual_dominant',
+    frequency: frequency.value,
     researchSidebarOpen: researchSidebarOpen.value,
     watchlist: watchlist.value,
   }, symbol.value)
@@ -241,6 +242,7 @@ function persistWorkspacePreferences() {
     version: 1,
     symbol: symbol.value || null,
     seriesKind: seriesKind.value === 'continuous' ? 'continuous' : 'actual_dominant',
+    frequency: frequency.value,
     researchSidebarOpen: researchSidebarOpen.value,
     watchlist: watchlist.value,
   })

@@ -1,67 +1,52 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NTabPane, NTabs, useMessage } from 'naive-ui'
-import type { DataTableColumns } from 'naive-ui'
-import { getMarketDominants } from '@/api/market'
-import type { DominantContractItem } from '@/types/market'
+import { NAlert, NSpin } from 'naive-ui'
+import MarketAttentionList from '@/components/market/MarketAttentionList.vue'
+import MarketDetailTable from '@/components/market/MarketDetailTable.vue'
+import MarketScatter from '@/components/market/MarketScatter.vue'
+import MarketSectorSummary from '@/components/market/MarketSectorSummary.vue'
+import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
+import { getMarketRadar } from '@/api/market'
+import type { MarketRadarItem, MarketRadarResponse } from '@/types/market'
 import {
-  DEFAULT_PRODUCT_SECTOR,
-  normalizeProductSector,
-  PRODUCT_SECTORS,
-  type ProductSector,
-} from '@/utils/productDirectory'
+  loadMarketWorkspacePreferences,
+  saveMarketWorkspacePreferences,
+  toggleWatchlistSymbol,
+} from '@/utils/marketWorkspacePreferences'
 
 const router = useRouter()
-const message = useMessage()
-const loading = ref(false)
-const dominants = ref<DominantContractItem[]>([])
-const selectedSector = ref<ProductSector>(DEFAULT_PRODUCT_SECTOR)
+const loading = ref(true)
+const error = ref(false)
+const radar = ref<MarketRadarResponse | null>(null)
+const preferences = ref(loadMarketWorkspacePreferences())
+const freshnessIssue = computed(() => {
+  if (!radar.value || radar.value.status === 'ready') return ''
+  const parts = [
+    radar.value.stale.length ? `stale ${radar.value.stale.join(', ')}` : '',
+    radar.value.unavailable.length ? `unavailable ${radar.value.unavailable.join(', ')}` : '',
+  ].filter(Boolean)
+  return `Radar 数据不完整：${parts.join('；')}`
+})
 
-const availableSectors = computed(() => PRODUCT_SECTORS.filter((sector) =>
-  dominants.value.some((row) => normalizeProductSector(row.sector) === sector.id),
-))
-
-const sectorRows = (sector: ProductSector) => dominants.value.filter(
-  (row) => normalizeProductSector(row.sector) === sector,
-)
-
-const columns: DataTableColumns<DominantContractItem> = [
-  { title: '品种', key: 'product', width: 90, render: (row) => row.product.toUpperCase() },
-  { title: '名称', key: 'product_name', minWidth: 130, render: (row) => row.product_name || row.product.toUpperCase() },
-  { title: '交易所', key: 'exchange', width: 110 },
-  { title: 'rank1 真实合约', key: 'actual_contract', width: 150 },
-  { title: '映射交易日', key: 'dominant_mapping_date', width: 140 },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 110,
-    render: (row) => h(
-      NButton,
-      { size: 'small', type: 'primary', secondary: true, onClick: () => openChart(row) },
-      { default: () => '查看 K 线' },
-    ),
-  },
-]
-
-function openChart(row: DominantContractItem) {
+function openChart(item: MarketRadarItem) {
+  const frequency = preferences.value.frequency
   void router.push({
     name: 'market-chart',
-    query: {
-      symbol: row.product,
-      contract: row.actual_contract,
-      series_kind: 'actual_dominant',
-      frequency: '15m',
-    },
+    query: { symbol: item.symbol, series_kind: 'actual_dominant', frequency },
   })
 }
 
+function toggleWatchlist(symbol: string) {
+  preferences.value = toggleWatchlistSymbol(preferences.value, symbol)
+  saveMarketWorkspacePreferences(preferences.value)
+}
+
 onMounted(async () => {
-  loading.value = true
   try {
-    dominants.value = (await getMarketDominants()).items
+    radar.value = await getMarketRadar()
   } catch {
-    message.error('加载当前主力映射失败')
+    error.value = true
   } finally {
     loading.value = false
   }
@@ -69,38 +54,21 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="market-page">
-    <header>
-      <h2>期货行情</h2>
-      <p>按产业板块浏览当前 rank1 主力映射；历史 K 线统一由 MarketDataService 读取 Canonical。</p>
-    </header>
-    <NCard size="small" :bordered="false">
-      <NTabs v-model:value="selectedSector" type="line" animated>
-        <NTabPane
-          v-for="sector in availableSectors"
-          :key="sector.id"
-          :name="sector.id"
-          :tab="`${sector.label} ${sectorRows(sector.id).length}`"
-        >
-          <NDataTable
-            :columns="columns"
-            :data="sectorRows(sector.id)"
-            :loading="loading"
-            :row-key="(row: DominantContractItem) => `${row.product}-${row.actual_contract}`"
-            :pagination="false"
-            size="small"
-            striped
-            flex-height
-            style="height: calc(100vh - 238px); min-height: 430px"
-          />
-        </NTabPane>
-      </NTabs>
-    </NCard>
+  <div class="market-radar-page">
+    <header class="market-radar-page__intro"><h1>期货市场发现</h1><p>基于最近完整交易日的 Canonical 日线研究快照；所有内容仅供人工观察。</p></header>
+    <NSpin :show="loading">
+      <NAlert v-if="error" type="warning" title="Radar 暂不可用">无法读取只读 Radar；可稍后重试，不影响 Product Workspace。</NAlert>
+      <template v-else-if="radar">
+        <NAlert v-if="freshnessIssue" type="warning" :title="freshnessIssue" />
+        <MarketSummaryStrip :radar="radar" />
+        <div class="market-radar-page__discovery"><MarketScatter :items="radar.items" @open="openChart" /><MarketAttentionList :items="radar.attention" @open="openChart" /></div>
+        <MarketSectorSummary :sectors="radar.sector_summary" />
+        <MarketDetailTable :items="radar.items" :watchlist="preferences.watchlist" @open="openChart" @toggle-watchlist="toggleWatchlist" />
+      </template>
+    </NSpin>
   </div>
 </template>
 
 <style scoped>
-.market-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-header h2 { margin: 0 0 6px; }
-header p { margin: 0; color: var(--gy-text-muted); }
+.market-radar-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }.market-radar-page__intro h1 { margin: 0 0 6px; font-size: var(--gy-font-size-xl); }.market-radar-page__intro p { margin: 0; color: var(--gy-text-muted); }.market-radar-page__discovery { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, .9fr); gap: 16px; }@media (max-width: 980px) { .market-radar-page__discovery { grid-template-columns: 1fr; } }
 </style>

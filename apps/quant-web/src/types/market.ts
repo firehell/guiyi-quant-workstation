@@ -98,6 +98,51 @@ export interface ProductResearchResponse {
   recent_daily: CanonicalBarDto[]
 }
 
+export interface MarketRadarSummary {
+  up_count: number
+  down_count: number
+  volume_expansion_count: number
+  oi_increase_count: number
+  high_volatility_count: number
+}
+
+export interface MarketRadarItem {
+  symbol: string
+  product_name: string
+  sector: string
+  price_change_1d: number | null
+  price_change_5d: number | null
+  volume_ratio20: number | null
+  oi_change_1d: number | null
+  atr14_percentile252: number | null
+  position20: number | null
+  turnover: number | null
+  reason_codes: string[]
+}
+
+export interface MarketRadarSectorSummary {
+  sector: string
+  total_count: number
+  participant_count: number
+  up_count: number
+  down_count: number
+  median_price_change_1d: number | null
+  attention_count: number
+}
+
+export interface MarketRadarResponse {
+  status: 'ready' | 'degraded'
+  expected_as_of: string
+  active_count: number
+  participant_count: number
+  stale: string[]
+  unavailable: string[]
+  summary: MarketRadarSummary
+  items: MarketRadarItem[]
+  attention: MarketRadarItem[]
+  sector_summary: MarketRadarSectorSummary[]
+}
+
 /** 后端 `/market/state` 与 WebSocket `state` 事件的只读展示状态。 */
 export interface MarketReadState {
   symbol: string

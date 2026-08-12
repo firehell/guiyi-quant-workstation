@@ -35,6 +35,7 @@ test('invalid persisted values are normalized without blocking the workspace', (
     version: 1,
     symbol: 'jm',
     seriesKind: 'actual_dominant',
+    frequency: '15m',
     researchSidebarOpen: false,
     watchlist: ['jm'],
   })
