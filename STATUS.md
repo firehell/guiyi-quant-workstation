@@ -44,6 +44,18 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-12 22:25 +08:00` 已按单次授权将隔离 Runtime 固定到 clean/detached
+  `e9eedb1b93c64af4ca899e8384312de052a24637`；运行时 API 依赖同步和 P0 Web production build
+  均通过，API/Web/Live/after-market 四个 launchd plist 根均只指向该隔离 worktree，且 Market Runtime
+  activation marker 已启用。未执行 migration、手工盘后、数据任务、通知、release 或 `main` 操作。
+- 切换后只读回读为 API/Web HTTP 200、Runtime health `ok/readonly=true`；DB/Redis/Live 均为 `ok`，
+  Live heartbeat 报 operational=60（当时 phase-scoped subscribed=45）。实际 Market 业务字段可读：
+  JM actual-dominant 15m 为 operational/live_available，Product Research 当前主力为 `JM2609`；Radar 为
+  `ready`、active=60、participant=60、stale/unavailable 均为空、`expected_as_of=2026-08-12`。
+- 同次只读范围核对为 active=60、operational=60；盘后公开状态的最近成功记录仍为
+  `2026-08-12`、`passed`、attempts=2、products=60。发现一个不改变实际运行状态的 Runtime health
+  响应呈现缺陷：`components.after_market.configured_enabled` 未透传 activation marker 而默认显示为 false；
+  在修复并取得新的 Runtime switch 授权前，不将该字段表述为已正确验收。
 - `2026-08-12 20:38 +08:00` 已将隔离 Runtime 从 `0dea973d...` 单次切换到 clean/detached
   `v1.0.0^{}`=`423b049830087e7885736e6e5471d5e289134bbe`；`uv sync --no-dev`、Web production build 与
   bundle topology 均通过，API/Web/Live/after-market 已从同一 Runtime 根重载。API/Web/Live 为
@@ -88,6 +100,7 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 - 真实浏览器在当前前端工作树检查到：旧 Runtime API 缺少新 Research/Radar 路由时，Radar 明确显示不可用、
   Product Workspace 仍保持 Canonical/Live K 线可读；HTDY 仅在用户显式开启后展示
   “未来引用/重绘风险/仅供人工观察”。
-- **P0 Runtime-integrated acceptance 尚未完成**：当前隔离 Runtime 仍为 `v1.0.0` 的
-  `423b0498...`，并非上述 P0 `develop` 提交。未执行 Runtime switch；需独立、范围明确的当次授权后才可
-  在精确 P0 commit 上完成 Runtime readback。真实使用数日的 P1 决策观察期也尚未开始。
+- **P0 Runtime-integrated readback 已完成**：隔离 Runtime 已为精确 P0 提交
+  `e9eedb1b...`，P0 Web/API/Live/after-market 均指向同一 clean/detached worktree，且 Research/Radar、
+  Historical/Live seam 和 60 品种范围均可只读验证。Runtime health 的 after-market activation 字段存在上述
+  呈现缺陷，需作为小修复单独处理；真实使用数日的 P1 决策观察期也尚未开始。
