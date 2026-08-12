@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 
@@ -105,3 +106,73 @@ def test_public_websocket_route_matches_market_api_contract() -> None:
     assert "proxy_set_header Upgrade $http_upgrade;" in nginx
     assert 'proxy_set_header Connection "upgrade";' in nginx
     assert "location /ws/" not in nginx
+
+
+def test_release_candidate_has_no_active_references_to_deleted_contracts() -> None:
+    active_guidance = (
+        ".agents/skills/futures-data/SKILL.md",
+        "docs/superpowers/specs/2026-08-11-market-research-workspace-post-foundation-design.md",
+        "docs/superpowers/plans/2026-08-11-market-research-workspace-post-foundation-p0.md",
+    )
+    retired_contracts = (
+        "docs/tasks/GY-DATA-CORE-V2.md",
+        "docs/superpowers/specs/2026-08-10-market-research-workspace-design.md",
+        "docs/superpowers/plans/2026-08-10-market-research-workspace-p0.md",
+    )
+
+    for relative in active_guidance:
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        for retired in retired_contracts:
+            assert retired not in text, f"{relative} still references {retired}"
+
+
+def test_release_candidate_versions_are_consistently_1_0_0() -> None:
+    pyproject = (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
+    api = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
+    version_module = (ROOT / "services/quant-api/app/version.py").read_text(
+        encoding="utf-8"
+    )
+    web = (ROOT / "apps/quant-web/package.json").read_text(encoding="utf-8")
+
+    assert 'version = "1.0.0"' in pyproject
+    assert 'APP_VERSION = "1.0.0"' in version_module
+    assert "version=APP_VERSION" in api
+    assert '"version": "1.0.0"' in web
+    assert '"version": APP_VERSION' in api
+
+
+def test_release_candidate_excludes_private_sources_and_retired_ai_guidance() -> None:
+    tracked_private_sources = subprocess.run(
+        ["git", "-c", "core.fsmonitor=false", "ls-files", "private_sources"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert tracked_private_sources == ""
+    git_workflow = (ROOT / ".agents/skills/git-commit-workflow/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "AI Agent 默认不允许 push" not in git_workflow
+    assert "git pull --rebase" not in git_workflow
+
+    architecture_reviewer = (ROOT / ".codex/agents/architecture-reviewer.toml").read_text(
+        encoding="utf-8"
+    )
+    frontend_reviewer = (ROOT / ".codex/agents/frontend-reviewer.toml").read_text(
+        encoding="utf-8"
+    )
+    governor = (ROOT / ".agents/skills/project-governor/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    kline = (ROOT / ".agents/skills/market-kline-workbench/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    for retired_phrase in ("高频行情", "回测计算是否支持并行化", "交易接口是否有环境隔离"):
+        assert retired_phrase not in architecture_reviewer
+    for retired_phrase in ("资金曲线", "回撤曲线", "策略、回测、复盘闭环"):
+        assert retired_phrase not in frontend_reviewer
+    assert "数据 -> 策略 -> 回测 -> 报告 -> 复盘 -> 信号" not in governor
+    assert "信号 marker" not in kline

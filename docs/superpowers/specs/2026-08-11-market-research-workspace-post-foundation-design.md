@@ -78,11 +78,9 @@ operational_products.txt = same 60
 
 60 品种的每日 17:00 + 最多一次 1h retry 历史更新已经属于现有 Market Runtime V1 的有界持续自动化能力，不再为 Market Radar 另建第二套 Daily Freshness scheduler。
 
-### 2.3 当前仍有一个独立 Runtime 部署尾项
+### 2.3 当前仍有一个独立 Runtime 自然验收尾项
 
-2026-08-12 的 60 品种 Runtime switch 已部署到 `a0106860...`，现场暴露 56 个品种 `TradingSession.effective_to` 仍停在 2026-08-11，Live heartbeat 因而出现 `UNKNOWN=56`。系统按合同 fail-closed，没有猜测 session。
-
-`develop@51e84988...` 已完成根因修复：
+2026-08-12 的 60 品种 Runtime 已切换到 clean/detached `51e84988...`，并部署了下列根因修复：
 
 ```text
 完整 operational-60 当日 rank1 snapshot
@@ -90,13 +88,16 @@ operational_products.txt = same 60
 当前 TRADING provider channels
 ```
 
-修复代码和回归已完成，但还没有用新的单次 Runtime switch 部署到当前隔离 Runtime。
+现场同时发现 56 个品种 `TradingSession.effective_to` 停在 2026-08-11。盘后 runner 已修复为先按
+Calendar-only metadata day 判断交易日，再由 `HistoricalDataManager.update` 同步当天 Session，避免旧
+Session 把真实交易日误判为 `NON_TRADING_DAY`。该修复只有部署到隔离 Runtime 后，才能形成 17:00
+自然运行证据；部署和自然验收状态以 `STATUS.md` 为准。
 
 这个尾项：
 
 - **不否定 Data Foundation 60/60 完成事实；**
 - **不阻塞 P0 纯代码开发；**
-- 但在 P0 最终真实 Runtime 集成验收前必须先按 `STATUS.md` 处理完，并读回 60 品种 Runtime 健康状态。
+- 但在 P0 最终真实 Runtime 集成验收前必须读回 60 品种自然盘后状态与健康状态。
 
 ---
 
@@ -881,10 +882,11 @@ P0-8 Final integration review + real-use gate
 
 这套顺序不再被 60/60 Data Foundation 阻塞。
 
-当前 `51e84988...` Runtime fix 若在 P0 开发开始时仍未部署：
+若 `STATUS.md` 所列当前封板 commit（包含 Calendar-first 盘后修复）在 P0 开发开始时仍未部署：
 
 - P0-1～P0-7 可以正常开发；
-- P0-8 的真实 Runtime-integrated acceptance 前必须先完成独立 Runtime switch/readback。
+- P0-8 的真实 Runtime-integrated acceptance 前必须先完成独立 Runtime switch/readback；不得只因
+  `51e84988...` 已部署就跳过本轮封板 commit。
 
 ---
 
@@ -951,15 +953,3 @@ P0 成功标准：
 8. Sidebar/Price-OI 区减少人工找数据的时间；
 9. 60 品种 Runtime 状态和 Research 状态职责清晰，不互相冒充；
 10. 新增复杂度都能直接换来个人研究效率。
-
----
-
-## 21. Supersession
-
-本文件是 Market Research Workspace 当前设计基线，替代：
-
-```text
-docs/superpowers/specs/2026-08-10-market-research-workspace-design.md
-```
-
-同目录旧文档只保留设计演进历史，不再作为 Codex 实施入口。

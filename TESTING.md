@@ -95,6 +95,18 @@ API 依赖并仅执行一次对应 Runtime switch。部署后至少读回：
 `--confirm-market-runtime` 才会启用或重载 Market Runtime 并更新 marker。完成或失败后，本次执行意图即
 消耗；重试必须取得新的明确请求。
 
+### 17:00 自然盘后验收
+
+不得手工执行 `guiyi data after-market` 代替 launchd 证据。自然触发后只读核对：
+
+- launchd `runs` 增加且 `.run/after-market-status.json` 的 products 精确为 operational 60；
+- `status=passed`、`attempts=1|2`，或在真实非交易日精确为 `NON_TRADING_DAY`；
+- 当天 TradingSession / MainContractMap 已推进，正式 rank1 与同日 Live snapshot 一致；
+- Canonical edge 与 Web Historical/Live seam 随正式发布更新，Live 从未写入 Parquet；
+- intended same-day Live 清理完成，随后 Runtime health 不再因旧 Session 报 `UNKNOWN=56`。
+
+代码、fixture、render-only 或手工命令只能证明实现，不得写成自然盘后通过。
+
 ## 最终检查
 
 ```bash

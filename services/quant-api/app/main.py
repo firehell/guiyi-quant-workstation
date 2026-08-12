@@ -14,6 +14,7 @@ from app.api.market import router as market_router
 from app.api.market_live import router as market_live_router
 from app.api.runtime import router as runtime_router
 from app.middleware.request_timing import RequestTimingMiddleware
+from app.version import APP_VERSION
 
 logging.basicConfig(level=logging.INFO)
 
@@ -38,7 +39,7 @@ def resolve_cors_origins() -> list[str]:
     return origins
 
 
-app = FastAPI(title="归一量化 API", version="0.1.0")
+app = FastAPI(title="归一量化 API", version=APP_VERSION)
 
 app.add_middleware(RequestTimingMiddleware)
 # CORS：允许凭证、全部方法与请求头；来源由 resolve_cors_origins 白名单控制
@@ -67,6 +68,6 @@ def health_check():
     return {
         "status": "ok",
         "service": "guiyi-quant-api",
-        "version": "0.1.0",
+        "version": APP_VERSION,
         "readonly": True,
     }

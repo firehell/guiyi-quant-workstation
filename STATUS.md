@@ -55,3 +55,15 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   `live:subscription:2026-08-12` 精确覆盖 operational 60，全部合约格式有效；provider channels 仍按真实
   phase 保持 4 个。after-market status 仍为 `pending/last_run=null` 且状态文件不存在，17:00 任务未被
   手工提前触发。56 个过期 Session 是否由自然盘后同步推进，仍需在自然运行后另行只读观察。
+- 封板审查又发现并修复了盘后启动顺序：旧 Runtime 会先以 60 品种 Session 的最小完整日判断是否运行，
+  因当天 56 个 Session 尚未同步而可能误报 `NON_TRADING_DAY`；release candidate 已改为先用 Calendar-only
+  metadata day 判断，再在 update 内同步 Session。该修复尚未切换到上述 `51e84988...` Runtime，因此在
+  新的单次 Runtime switch 完成前，**今天 17:00 的 60 品种自然盘后仍是阻断状态**，不得写成已就绪。
+
+## v1.0.0 封板状态
+
+- 仓库版本号与 changelog 已收口为 `1.0.0` release candidate；正式 tag 尚未创建。
+- active OpenSpec 已与实现同步：continuous `1m` 只用 `{SYMBOL}88`，`1d` 按 rank1 真实合约交易所日行情，
+  `1w` 只由完整同源日线聚合。
+- 正式 `v1.0.0` tag 的最后外部证据是：部署本次封板 commit 后，17:00 launchd 自然触发的 60 品种盘后
+  更新通过并只读核对 Session/map/Canonical/Web seam/Live cleanup。不得手工触发补证。

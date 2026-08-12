@@ -96,7 +96,9 @@ class AfterMarketUpdater:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
         started_at = _local_timestamp(self.now())
         products = load_operational_products()
-        trading_day = self.manager.coverage.latest_complete_day(products)
+        # 先用仅依赖 Calendar 的日期判断今天是否为交易日。当天 Session 正是下方
+        # manager.update() 要同步的 metadata，不能反过来把它作为进入更新的前置条件。
+        trading_day = self.manager.coverage.latest_metadata_day(products)
         if trading_day != started_at.date():
             result = AfterMarketResult(
                 status="skipped",

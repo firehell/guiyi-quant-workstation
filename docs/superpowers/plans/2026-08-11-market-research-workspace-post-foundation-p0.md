@@ -16,7 +16,8 @@ Design source：`docs/superpowers/specs/2026-08-11-market-research-workspace-pos
 - 当前 `STATUS.md` 已确认 DFD-01～DFD-07 完成归档、active 60/60 Canonical closure、全域 audit passed / 0 findings；本计划不再等待 Data Foundation Gate。
 - `active_products.txt` 与 `operational_products.txt` 当前内容完全一致，均为 60；不得在 P0 修改这两个文件。
 - Runtime 60 只表示 operational scope=60；Live provider channel 必须继续按真实 `TRADING` phase 动态订阅，不要求任何时刻同时 60 channel。
-- 现有 17:00 + 最多一次 1h retry after-market 已更新 operational 60；P0 不新增 Daily scheduler、任务表或第二历史写入口。
+- 现有 17:00 + 最多一次 1h retry after-market 已配置为 operational 60；首次 60 品种自然运行通过前，
+  只声明配置与代码就绪，不声明真实更新已完成。P0 不新增 Daily scheduler、任务表或第二历史写入口。
 - `MarketDataService` 仍是唯一正式历史 Bar 入口；Research 不得 glob Parquet、自判主力或跨频回退。
 - `actual_dominant` 只由 `MainContractMap rank=1` 查询拼接；`continuous/MAIN` 保持当前未平滑语义。
 - 必须保留现有 `MarketReadService`、`useMarketSeries`、`/bars/page`、`/market/state`、`/market/ws`、after-market seam、generation token、reconnect、left pagination、Shanghai time 和 viewport 行为。
@@ -46,11 +47,12 @@ Task 1 开始前只读确认一次：
 7. 当前 Market Web 仍以 useMarketSeries + KlineChart 为主路径
 ```
 
-当前另有一个独立 Runtime 部署尾项：`develop@51e84988...` 的完整 rank1 snapshot / phase-scoped channel 修复尚待新的单次 Runtime switch。若开始开发时 `STATUS.md` 仍记录此项：
+当前另有一个独立 Runtime 自然验收尾项：`51e84988...` 已部署完整 rank1 snapshot / phase-scoped
+channel 修复；盘后 Calendar-first 修复的部署状态与 17:00 结果只看 `STATUS.md`。若开始开发时仍未完成：
 
 - Task 1～7 不因此阻塞；
-- 不允许 Codex 顺手执行 Runtime switch；
-- Task 8 的真实 Runtime-integrated acceptance 前必须先由用户独立授权完成该 switch/readback。
+- 不允许 Codex 顺手执行 Runtime switch 或手工盘后；
+- Task 8 的真实 Runtime-integrated acceptance 前必须先完成独立授权的 switch（如仍需要），并等自然触发读回。
 
 ---
 
@@ -1098,7 +1100,8 @@ git status --short
 
 - [ ] **Step 6: Resolve current independent Runtime deployment status before real integrated acceptance**
 
-Read `STATUS.md`。If `51e84988...`-lineage Runtime fix is still not deployed, stop the real Runtime acceptance and report：
+Read `STATUS.md`。If the current release-sealing commit recorded there, including the Calendar-first after-market
+fix, is still not deployed, stop the real Runtime acceptance and report：
 
 ```text
 P0 code verification complete
@@ -1107,7 +1110,9 @@ Runtime-integrated acceptance blocked on separate Runtime switch Gate
 
 Do **not** perform the switch without a fresh user request。
 
-If `STATUS.md` already records the switch/readback complete，run only the allowed read-only smoke required by the current project contract。
+Do not treat the earlier `51e84988...` switch as evidence that the newer sealing fix is deployed. If `STATUS.md`
+records the exact current sealing commit switch/readback complete，run only the allowed read-only smoke required by
+the current project contract。
 
 - [ ] **Step 7: Update exact status wording**
 
@@ -1203,19 +1208,6 @@ creating load_active_products() in the Radar task
 creating product_sectors.csv in P0
 npm-based Web commands
 old Mypy baseline exemptions
-reading deleted docs/tasks/GY-MARKET-RUNTIME-V1.md as an active contract
 ```
 
 Current facts come from `STATUS.md`、`AGENTS.md`、`PROJECT_SOURCE.md`、`DECISIONS.md`、`docs/DATA_CENTER.md`、`docs/INDICATOR_KERNEL.md`、`openspec/specs/` and the current implementation。
-
----
-
-## Supersession
-
-This plan is the current executable P0 plan and replaces：
-
-```text
-docs/superpowers/plans/2026-08-10-market-research-workspace-p0.md
-```
-
-The older plan remains historical only and must not be used as a Codex execution source。
