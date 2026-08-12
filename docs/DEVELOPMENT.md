@@ -36,6 +36,9 @@ develop
 
 当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
 Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
+唯一 active 运维链为 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；本地状态只使用
+`scripts/ops/macos/local-services-status.sh`，分段只读检查与配置导航见 `deploy/README.md`。仓库不保留
+并行 PID 管理器、远端 API/Web 副本或会隐式执行 migration 的聚合启动器。
 不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建必须单独立项并从
 Canonical/MarketDataService 合同开始。
 

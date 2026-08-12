@@ -16,6 +16,16 @@ Secret scan 默认只扫描 `git ls-files`，也可指定仓库内相对路径�
 不输出命中内容。无命中返回 0，命中返回 1，非法路径或调用返回 2；`--warn-only` 仅将命中降级为
 警告，不放宽非法输入。
 
+保留的运维 Shell 与公网路由合同使用：
+
+```bash
+find scripts/ops -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+uv run --project services/quant-api pytest -q tests/engineering/test_market_runtime_launchd.py
+```
+
+实际本地、隧道和公网检查入口见 `deploy/README.md`；这些检查均为只读，任何安装、重载或云端配置
+应用仍需新的单次执行意图。
+
 ## DFD-01 文档合同验证
 
 ```bash

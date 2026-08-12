@@ -1,7 +1,7 @@
 # 运维拓扑与只读检查
 
 仓库唯一 active 运维链为：Mac launchd 受监督 Runtime → FRPC 本地隧道 → 腾讯云 FRPS → Nginx
-HTTPS/Basic Auth 公网入口。腾讯云不运行 API/Web systemd 副本。
+HTTPS/Basic Auth 公网入口。腾讯云不运行第二套 API/Web 应用副本。
 
 ## 三段只读检查
 

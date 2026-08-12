@@ -15,6 +15,7 @@ Market API、data CLI 和 Runtime 只读状态。项目不实现自动交易或�
 | Canonical 数据合同 | `docs/DATA_CENTER.md` |
 | active 数据任务 | `docs/tasks/GY-DATA-CORE-V2.md` |
 | 测试入口 | `TESTING.md` |
+| 运维拓扑与只读检查 | `deploy/README.md` |
 
 ## 数据主链路
 
@@ -30,23 +31,23 @@ RQData
 
 active universe 固定 60 品种，正式周期只有 `1m/5m/15m/30m/60m/1d/1w`。
 
-## 本地启动
+## 本地状态与开发
 
 ```bash
-cp .env.example .env
-./scripts/dev/dev-up.sh
+./scripts/ops/macos/local-services-status.sh
 ```
 
-```text
-Web: http://127.0.0.1:5173
-API: http://127.0.0.1:8000/docs
-```
+这是唯一只读本地 Runtime 状态入口，不会启动、停止或重载服务。开发与验证命令见 `TESTING.md`；
+仓库不提供会隐式执行 migration 或聚合切换多服务的一键开发启动器。
 
 ## 开发态 launchd 部署
 
 当前本机 launchd 的实际部署根只以 `STATUS.md` 为准。开发期可临时直接运行主 `develop` 工作区，但修改源码不等于已部署：Web 重载前必须运行 `pnpm --dir apps/quant-web build`，API/Live 也需要重载才会采用新代码。
 
 重载会改变 Runtime 状态，只在用户对当次目标和服务面给出明确执行意图后进行，不把 `--confirm-*` 当作日常无条件命令。功能收口后重新创建绑定精确提交的独立 Runtime worktree，再进行最终自然时点验收。
+
+唯一 active 运维链是 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；local/tunnel/public 三段只读检查及
+配置入口统一见 `deploy/README.md`。
 
 ## 统一 CLI
 
