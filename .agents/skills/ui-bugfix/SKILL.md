@@ -33,4 +33,5 @@ description: 当任务涉及归一量化 Vue/Naive UI 页面截图可见问题�
 - 只修截图或复现路径可见问题。
 - 不重构业务逻辑。
 - 不改策略、回测、风控核心。
-- 修复后至少跑 `pnpm build`，必要时浏览器验证。
+- 修复后至少按 `TESTING.md` 跑 `pnpm --dir apps/quant-web test` 与 `pnpm --dir apps/quant-web build`，
+  必要时浏览器验证。

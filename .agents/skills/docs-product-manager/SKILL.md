@@ -30,4 +30,4 @@ description: 当任务涉及归一量化 PRD、功能说明、页面原型、开
 - 空泛 PRD。
 - 一份任务覆盖多个大模块。
 - 没有验收标准。
-- 把 V1.5/V2/V3 功能塞进 V1。
+- 把未来策略、回测、Signal/Review、模拟账户或订单能力塞进当前 Market v1.0.0/Workspace 任务。

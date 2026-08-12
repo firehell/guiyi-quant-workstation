@@ -11,7 +11,7 @@ description: 当任务涉及归一量化 PostgreSQL 表结构、SQLAlchemy 模�
 - Canonical Parquet：历史 K 线月分区 `part.parquet`。
 - 读取门面：`MarketDataService`（不是 DuckDB 主链路）。
 
-事实源：`STATUS.md`、`docs/DATA_CENTER.md`、`app/models/market_tables.py`。
+事实源：`STATUS.md`、`docs/DATA_CENTER.md`、`services/quant-api/app/models/market_tables.py`。
 
 ## Active 八表
 

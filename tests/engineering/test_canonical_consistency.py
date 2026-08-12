@@ -176,3 +176,15 @@ def test_release_candidate_excludes_private_sources_and_retired_ai_guidance() ->
         assert retired_phrase not in frontend_reviewer
     assert "数据 -> 策略 -> 回测 -> 报告 -> 复盘 -> 信号" not in governor
     assert "信号 marker" not in kline
+
+    all_project_skills = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / ".agents/skills").glob("*/SKILL.md"))
+    )
+    for retired_phrase in (
+        "uv run python -m alembic upgrade head",
+        "把 V1.5/V2/V3 功能塞进 V1",
+        "、`app/models/market_tables.py`。",
+        "已卸（勿当现行页面）：Dashboard、数据中心、策略中心、回测任务/报告、信号扫描、复盘中心、系统设置、Live 模式",
+    ):
+        assert retired_phrase not in all_project_skills
