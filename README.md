@@ -1,6 +1,6 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。当前可执行面是 Market Web、Canonical 历史行情、
+本地、单用户的国内期货量化研究工作站。当前正式版本为 `v1.1.0`；可执行面是 Market Web、Canonical 历史行情、
 Market API、data CLI 和 Runtime 只读状态。项目不实现自动交易或自动下单。
 
 ## 快速导航

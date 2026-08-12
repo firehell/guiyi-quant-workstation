@@ -87,7 +87,14 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   也为 60/60。Runtime health 读回 Live `CLOSED=60`、`subscribed_count=0`，表明当日 Live snapshot
   已清理；Live 仍未写入 Parquet。
 
-## v1.0.0 封板状态
+## v1.1.0 封板状态
+
+- `v1.1.0` 在 `v1.0.0` 的 60 品种 Canonical/Runtime 基线上封板 Market Research Workspace P0：全市场
+  Radar、Product Workspace、三层 K 线与十字线、Product Research、HTDY 原始观察层及 Runtime health
+  activation 状态修复均已完成。Research/Radar 继续只读，不绕过 `MarketDataService`，不调用 RQData、
+  Redis Live 或任何历史写入路径。
+- 版本源、changelog 与本状态已收口为 `1.1.0`。本版本不新增数据/DB writer、migration、通知、订单或
+  自动交易；`auto_order=false` 继续成立。
 
 - 仓库版本号、changelog 与当前状态已收口为 `1.0.0`；60 品种 17:00 自然盘后最后外部
   Gate 已通过，封板条件已满足。annotated `v1.0.0` tag 对象为 `7b573d97...`，peeled target

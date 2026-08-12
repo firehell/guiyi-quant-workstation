@@ -178,18 +178,20 @@ def test_release_candidate_has_no_active_references_to_deleted_contracts() -> No
             assert retired not in text, f"{relative} still references {retired}"
 
 
-def test_release_candidate_versions_are_consistently_1_0_0() -> None:
+def test_release_versions_are_consistently_1_1_0() -> None:
     pyproject = (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
+    lock = (ROOT / "services/quant-api/uv.lock").read_text(encoding="utf-8")
     api = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
     version_module = (ROOT / "services/quant-api/app/version.py").read_text(
         encoding="utf-8"
     )
     web = (ROOT / "apps/quant-web/package.json").read_text(encoding="utf-8")
 
-    assert 'version = "1.0.0"' in pyproject
-    assert 'APP_VERSION = "1.0.0"' in version_module
+    assert 'version = "1.1.0"' in pyproject
+    assert 'name = "quant-api"\nversion = "1.1.0"\nsource = { editable = "." }' in lock
+    assert 'APP_VERSION = "1.1.0"' in version_module
     assert "version=APP_VERSION" in api
-    assert '"version": "1.0.0"' in web
+    assert '"version": "1.1.0"' in web
     assert '"version": APP_VERSION' in api
 
 
