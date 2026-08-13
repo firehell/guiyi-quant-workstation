@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-12
+更新时间：2026-08-13
 
 ## 当前结论
 
@@ -44,6 +44,18 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-13 00:02 +08:00` 在不重载、不手工盘后或数据写入的情况下，已只读观察到 RQData Live
+  provider 额度自然恢复：Runtime health 回到 `ok/readonly=true`，Live heartbeat 报
+  operational=60、phase-scoped subscribed=11、`error_type=null`，last bar/heartbeat 均推进；DB、Redis 与
+  after-market 继续为 `ok`。订阅数按当时 `TRADING=11` 动态变化，不要求 60 个 channel 同时订阅。
+- `2026-08-12 23:15 +08:00` 已将隔离 Runtime 固定到 clean/detached `v1.1.0^{}`=
+  `f2568ba2fc3cbcf515abba1e51f12eacd30f8ff0`；API package 读回为 `quant-api 1.1.0`，Web production
+  build、API/Web reload 与四个 launchd 根一致均已确认。API/Web HTTP 200、Radar 为 `ready`（active=60、
+  participant=60、stale/unavailable 为空），JM actual-dominant 15m 可读，active/operational 均为 60，
+  after-market activation=true 且最近自然盘后记录仍为 60 品种 `passed`。
+- 同次只读读回的 Runtime health 曾为 `degraded`：Live heartbeat 仍报告 operational=60，但当前
+  subscribed=0，原因是 RQData Live provider 返回 quota exhausted；未做手工盘后、数据写入、重载或重试。
+  DB、Redis、after-market 均为 `ok`，Historical/Canonical 与 Radar 读取不受影响；该外部限额已如上自然恢复。
 - `2026-08-12 22:43 +08:00` 已按单次授权将隔离 Runtime 固定到 clean/detached
   `8547c0afb974a3b73b68a5207fd1d731d56a54ed`，即 P0 基线加 Runtime health 修复；运行时 API
   依赖同步和 Web production build 均通过。部署脚本在 API `kickstart` 返回一次
@@ -95,11 +107,12 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   Redis Live 或任何历史写入路径。
 - 版本源、changelog 与本状态已收口为 `1.1.0`。本版本不新增数据/DB writer、migration、通知、订单或
   自动交易；`auto_order=false` 继续成立。
-
-- 仓库版本号、changelog 与当前状态已收口为 `1.0.0`；60 品种 17:00 自然盘后最后外部
-  Gate 已通过，封板条件已满足。annotated `v1.0.0` tag 对象为 `7b573d97...`，peeled target
-  精确为最终 `main` release merge commit `423b0498...`；同一 target 已部署到隔离 Runtime。Tag 不授权
-  migration、通知或任何数据写入。
+- GitHub 远端读回：`origin/main` 已推至 `4d46c834...`，其中包含 `v1.1.0` release commit 及后续
+  Runtime 恢复状态记录；annotated `v1.1.0` tag 对象 `8d72f458...` 也已存在于远端，peeled target 为
+  `f2568ba2...`。因此不再将 `v1.1.0` 写作“tag 未推”；若要撤销远端 tag，须另行取得该受控 release
+  操作的明确授权。
+- `v1.0.0` 是已完成的历史封板基线：annotated tag 对象为 `7b573d97...`，peeled target 为
+  `423b0498...`。它不再代表当前仓库版本或 Runtime；tag 不授权 migration、通知或任何数据写入。
 - active OpenSpec 已与实现同步：continuous `1m` 只用 `{SYMBOL}88`，`1d` 按 rank1 真实合约交易所日行情，
   `1w` 只由完整同源日线聚合。
 
@@ -116,7 +129,7 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 - 真实浏览器在当前前端工作树检查到：旧 Runtime API 缺少新 Research/Radar 路由时，Radar 明确显示不可用、
   Product Workspace 仍保持 Canonical/Live K 线可读；HTDY 仅在用户显式开启后展示
   “未来引用/重绘风险/仅供人工观察”。
-- **P0 Runtime-integrated readback 已完成**：隔离 Runtime 已为精确 P0 加修复提交
-  `8547c0af...`，P0 Web/API/Live/after-market 均指向同一 clean/detached worktree，且 Research/Radar、
+- **P0 Runtime-integrated readback 已封板于 v1.1.0**：隔离 Runtime 已为精确 release commit
+  `f2568ba2...`，P0 Web/API/Live/after-market 均指向同一 clean/detached worktree；Research/Radar、
   Historical/Live seam、60 品种范围和 after-market activation 字段均可只读验证。真实使用数日的 P1
   决策观察期也尚未开始。
