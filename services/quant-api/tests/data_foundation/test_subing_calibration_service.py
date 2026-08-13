@@ -34,6 +34,7 @@ from app.market_data.subing_research import (
 
 _DAY_ONE = date(2026, 8, 3)
 _DAY_TWO = date(2026, 8, 4)
+_ROLLOVER_THROUGH = date(2026, 8, 9)
 
 
 class _FakeMarketData:
@@ -279,6 +280,79 @@ def test_companion_alignment_ignores_latest_confirmed_other_segment(
 
     assert result.cohorts["A"].sample_count == 1
     assert result.cohorts["B"].sample_count == 0
+
+
+@pytest.mark.parametrize(
+    "frequency",
+    (BarFrequency.M5, BarFrequency.M15, BarFrequency.D1),
+)
+def test_slope_labels_never_consume_an_insufficient_next_rank1_segment(
+    frequency: BarFrequency,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches a pre-roll entry labeling the next contract's large price gap."""
+    market_data = _rollover_market_data(frequency)
+    monkeypatch.setattr(
+        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        _rollover_factors,
+    )
+
+    result = SubingCalibrationResearchService(market_data, products=("jm",)).run(
+        CalibrationResearchRequest(
+            CalibrationPhase.SLOPE,
+            CalibrationMode.VALIDATION,
+            frequency,
+            _DAY_ONE,
+            _ROLLOVER_THROUGH,
+            slope_threshold_bps=Decimal("1"),
+        )
+    )
+
+    evaluation = result.report.threshold_evaluation
+    assert evaluation is not None
+    assert evaluation.sample_count == 4
+    assert evaluation.horizons[3].sample_count == 1
+    assert evaluation.horizons[3].median_directional_return_bps == Decimal("300")
+
+
+@pytest.mark.parametrize(
+    "frequency",
+    (BarFrequency.M5, BarFrequency.M15, BarFrequency.D1),
+)
+def test_zero_band_cohorts_keep_future_labels_inside_each_rank1_segment(
+    frequency: BarFrequency,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches Cohort A or B outcomes crossing into insufficient rollover warm-up."""
+    market_data = _rollover_market_data(frequency)
+    monkeypatch.setattr(
+        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        _rollover_factors,
+    )
+    inputs: dict[str, object]
+    if frequency is BarFrequency.D1:
+        inputs = {"slope_threshold_bps": Decimal("1")}
+    else:
+        inputs = {"slope_thresholds": SlopeThresholds(Decimal("1"), Decimal("1"))}
+
+    result = SubingCalibrationResearchService(market_data, products=("jm",)).run(
+        CalibrationResearchRequest(
+            CalibrationPhase.ZERO_BAND,
+            CalibrationMode.VALIDATION,
+            frequency,
+            _DAY_ONE,
+            _ROLLOVER_THROUGH,
+            zero_band_bps=Decimal("20"),
+            **inputs,  # type: ignore[arg-type]
+        )
+    )
+
+    for cohort_name in ("A", "B"):
+        evaluation = result.cohorts[cohort_name].threshold_evaluation
+        assert evaluation is not None
+        assert evaluation.sample_count == 4
+        assert evaluation.horizons[3].sample_count == 1
+        assert evaluation.horizons[3].median_directional_return_bps == Decimal("300")
 
 
 def test_slope_discovery_uses_equal_product_weight_and_two_read_passes(
@@ -648,6 +722,109 @@ def _result(
         bars=bars,
         coverage=(bars[0].bar_end, bars[-1].bar_end),
         resolved_contract_segments=segments,
+    )
+
+
+def _rollover_market_data(frequency: BarFrequency) -> _FakeMarketData:
+    results = {("jm", frequency): _rollover_result(frequency)}
+    if frequency in {BarFrequency.M5, BarFrequency.M15}:
+        companion = (
+            BarFrequency.M15 if frequency is BarFrequency.M5 else BarFrequency.M5
+        )
+        results[("jm", companion)] = _rollover_result(companion, companion=True)
+    return _FakeMarketData(results)
+
+
+def _rollover_result(
+    frequency: BarFrequency,
+    *,
+    companion: bool = False,
+) -> MarketSeriesResult:
+    if companion:
+        minute = 55 if frequency is BarFrequency.M15 else 70
+        old = (
+            _bar(
+                datetime(2026, 8, 3, 0, tzinfo=UTC) + timedelta(minutes=minute),
+                _DAY_ONE,
+                Decimal("200"),
+            ),
+        )
+        new = (
+            _bar(
+                datetime(2026, 8, 4, 0, tzinfo=UTC) + timedelta(minutes=minute),
+                _DAY_TWO,
+                Decimal("20000"),
+            ),
+        )
+    elif frequency is BarFrequency.D1:
+        old = tuple(
+            _bar(
+                datetime(2026, 8, 3 + index, 7, tzinfo=UTC),
+                _DAY_ONE + timedelta(days=index),
+                Decimal(100 + index),
+            )
+            for index in range(4)
+        )
+        new = tuple(
+            _bar(
+                datetime(2026, 8, 7 + index, 7, tzinfo=UTC),
+                date(2026, 8, 7) + timedelta(days=index),
+                Decimal(10000 + index),
+            )
+            for index in range(3)
+        )
+    else:
+        first_minute = 5 if frequency is BarFrequency.M5 else 15
+        old = _bars(
+            frequency=frequency,
+            count=4,
+            trading_day=_DAY_ONE,
+            first_end=datetime(2026, 8, 3, 1, first_minute, tzinfo=UTC),
+            first_close=Decimal("100"),
+        )
+        new = _bars(
+            frequency=frequency,
+            count=3,
+            trading_day=_DAY_TWO,
+            first_end=datetime(2026, 8, 4, 1, first_minute, tzinfo=UTC),
+            first_close=Decimal("10000"),
+        )
+    old_end = date(2026, 8, 6) if frequency is BarFrequency.D1 else _DAY_ONE
+    new_start = date(2026, 8, 7) if frequency is BarFrequency.D1 else _DAY_TWO
+    new_end = date(2026, 8, 9) if frequency is BarFrequency.D1 else _DAY_TWO
+    return _result(
+        old + new,
+        (
+            ResolvedContractSegment("JM2609", _DAY_ONE, old_end),
+            ResolvedContractSegment("JM2701", new_start, new_end),
+        ),
+    )
+
+
+def _rollover_factors(
+    bars: tuple[CanonicalBar, ...],
+    *,
+    timeframe: BarFrequency,
+    contract: str,
+    segment_start_trading_day: date,
+    latest_bar_source: str,
+) -> tuple[SubingFactorResult, ...]:
+    del latest_bar_source
+    if contract == "JM2701":
+        return tuple(
+            SubingFactorResult(SubingFactorStatus.INSUFFICIENT_DATA, None)
+            for _bar_value in bars
+        )
+    return tuple(
+        _factor(
+            bar,
+            timeframe=timeframe,
+            contract=contract,
+            segment_start=segment_start_trading_day,
+            cross=MacdCross.GOLDEN,
+            volume_ratio=Decimal("3"),
+        )
+        for bar in bars
     )
 
 

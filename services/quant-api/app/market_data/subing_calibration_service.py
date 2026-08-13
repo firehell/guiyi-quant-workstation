@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -156,9 +156,22 @@ class _MarketDataReader(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class _FactorSeries:
+class _FactorSegment:
     bars: tuple[CanonicalBar, ...]
     factors: tuple[SubingFactorResult, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _FactorSeries:
+    segments: tuple[_FactorSegment, ...]
+
+    @property
+    def bars(self) -> tuple[CanonicalBar, ...]:
+        return tuple(bar for segment in self.segments for bar in segment.bars)
+
+    @property
+    def factors(self) -> tuple[SubingFactorResult, ...]:
+        return tuple(factor for segment in self.segments for factor in segment.factors)
 
 
 class SubingCalibrationResearchService:
@@ -200,9 +213,8 @@ class SubingCalibrationResearchService:
             product_candidates: list[tuple[Decimal, Decimal, Decimal]] = []
             for product in products:
                 series = self._factor_series(product, request.frequency, request)
-                samples = build_research_samples(
-                    series.factors,
-                    series.bars,
+                samples = _build_segment_samples(
+                    series,
                     horizons=_HORIZONS,
                     direction_selector=slope_direction,
                 )
@@ -253,9 +265,8 @@ class SubingCalibrationResearchService:
         result: dict[str, tuple[SubingResearchSample, ...]] = {}
         for product in products:
             series = self._factor_series(product, request.frequency, request)
-            result[product] = build_research_samples(
-                series.factors,
-                series.bars,
+            result[product] = _build_segment_samples(
+                series,
                 horizons=_HORIZONS,
                 direction_selector=slope_direction,
             )
@@ -311,26 +322,36 @@ class SubingCalibrationResearchService:
         else:
             companion_by_index = (None,) * len(primary.factors)
 
-        cohort_a = build_research_samples(
-            primary.factors,
-            primary.bars,
+        cohort_a = _build_segment_samples(
+            primary,
             horizons=_HORIZONS,
             direction_selector=_cross_direction,
             value_selector=lambda factor: factor.macd_zero_distance_bps,
         )
-        cohort_b = build_research_samples(
-            primary.factors,
-            primary.bars,
-            horizons=_HORIZONS,
-            direction_selector=lambda index, factor: self._cohort_b_direction(
-                request,
-                index,
-                factor,
-                companion_by_index,
-            ),
-            value_selector=lambda factor: factor.macd_zero_distance_bps,
-        )
-        return cohort_a, cohort_b
+        cohort_b: list[SubingResearchSample] = []
+        offset = 0
+        for segment in primary.segments:
+            segment_companions = companion_by_index[
+                offset : offset + len(segment.factors)
+            ]
+            cohort_b.extend(
+                build_research_samples(
+                    segment.factors,
+                    segment.bars,
+                    horizons=_HORIZONS,
+                    direction_selector=lambda index, factor: self._cohort_b_direction(
+                        request,
+                        index,
+                        factor,
+                        segment_companions,
+                    ),
+                    value_selector=lambda factor: factor.macd_zero_distance_bps,
+                )
+            )
+            offset += len(segment.factors)
+        if offset != len(companion_by_index):
+            raise ValueError("primary factor segments are inconsistent")
+        return cohort_a, tuple(cohort_b)
 
     @staticmethod
     def _cohort_b_direction(
@@ -416,7 +437,7 @@ class SubingCalibrationResearchService:
             for bar in result.bars
             if request.since <= bar.trading_day <= request.through
         )
-        pairs: list[tuple[CanonicalBar, SubingFactorResult]] = []
+        factor_segments: list[_FactorSegment] = []
         covered: set[tuple[datetime, date]] = set()
         for segment in result.resolved_contract_segments:
             segment_bars = tuple(
@@ -435,18 +456,17 @@ class SubingCalibrationResearchService:
                 segment_start_trading_day=segment.start_trading_day,
                 latest_bar_source="canonical",
             )
-            for bar, factor in zip(segment_bars, factors, strict=True):
+            for bar in segment_bars:
                 identity = (bar.bar_end, bar.trading_day)
                 if identity in covered:
                     raise ValueError("rank1 segments overlap")
                 covered.add(identity)
-                pairs.append((bar, factor))
+            factor_segments.append(_FactorSegment(segment_bars, factors))
         if len(covered) != len(requested_bars):
             raise ValueError("rank1 segment identity is incomplete")
-        pairs.sort(key=lambda pair: pair[0].bar_end)
+        factor_segments.sort(key=lambda segment: segment.bars[0].bar_end)
         return _FactorSeries(
-            bars=tuple(pair[0] for pair in pairs),
-            factors=tuple(pair[1] for pair in pairs),
+            segments=tuple(factor_segments),
         )
 
 
@@ -464,15 +484,19 @@ def _align_latest_companions(
     primary: _FactorSeries,
     companion: _FactorSeries,
 ) -> tuple[SubingFactorSnapshot | None, ...]:
+    primary_bars = primary.bars
+    primary_factors = primary.factors
+    companion_bars = companion.bars
+    companion_factors = companion.factors
     pointer = 0
     latest_by_segment: dict[tuple[str, date], SubingFactorSnapshot] = {}
     aligned: list[SubingFactorSnapshot | None] = []
-    for bar, primary_result in zip(primary.bars, primary.factors, strict=True):
+    for bar, primary_result in zip(primary_bars, primary_factors, strict=True):
         while (
-            pointer < len(companion.bars)
-            and companion.bars[pointer].bar_end <= bar.bar_end
+            pointer < len(companion_bars)
+            and companion_bars[pointer].bar_end <= bar.bar_end
         ):
-            companion_result = companion.factors[pointer]
+            companion_result = companion_factors[pointer]
             if (
                 companion_result.status is SubingFactorStatus.READY
                 and companion_result.snapshot is not None
@@ -506,6 +530,26 @@ def _cross_direction(
     if factor.macd_cross is MacdCross.DEAD:
         return DirectionalSide.SHORT
     return None
+
+
+def _build_segment_samples(
+    series: _FactorSeries,
+    *,
+    horizons: Sequence[int],
+    direction_selector: Callable[[int, SubingFactorSnapshot], DirectionalSide | None],
+    value_selector: Callable[[SubingFactorSnapshot], Decimal] | None = None,
+) -> tuple[SubingResearchSample, ...]:
+    return tuple(
+        sample
+        for segment in series.segments
+        for sample in build_research_samples(
+            segment.factors,
+            segment.bars,
+            horizons=horizons,
+            direction_selector=direction_selector,
+            value_selector=value_selector,
+        )
+    )
 
 
 def _median_candidates(
