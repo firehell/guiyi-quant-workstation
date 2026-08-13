@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -49,6 +50,46 @@ def test_scope_add_normalizes_and_remove_is_idempotent(session: Session) -> None
     assert disabled.enabled_for_product is False
     assert disabled_again.enabled_for_product is False
     assert session.scalar(select(AlertRule)).scope_products == []
+
+
+def test_scope_update_locks_rule_row_before_replacing_array(session: Session) -> None:
+    from app.alerts.service import AlertService
+
+    statements: list[object] = []
+
+    def capture_statement(execute_state: object) -> None:
+        statement = execute_state.statement  # type: ignore[attr-defined]
+        if getattr(execute_state, "is_select", False):
+            statements.append(statement)
+
+    event.listen(session, "do_orm_execute", capture_statement)
+    try:
+        AlertService(session, operational_products=("ag",)).set_product_enabled(
+            "htdy_original_15m", "ag", True
+        )
+    finally:
+        event.remove(session, "do_orm_execute", capture_statement)
+
+    assert any(
+        getattr(statement, "_for_update_arg", None) is not None
+        for statement in statements
+    )
+
+
+def test_scope_commit_failure_rolls_back_and_returns_stable_error(session: Session) -> None:
+    from app.alerts.service import AlertScopeError, AlertService
+
+    def fail_commit(_: Session) -> None:
+        raise SQLAlchemyError("database detail must not escape")
+
+    event.listen(session, "before_commit", fail_commit, once=True)
+
+    with pytest.raises(AlertScopeError, match="ALERT_SCOPE_PERSIST_FAILED"):
+        AlertService(session, operational_products=("ag",)).set_product_enabled(
+            "htdy_original_15m", "ag", True
+        )
+
+    assert session.in_transaction() is False
 
 
 def test_scope_rejects_non_operational_symbol_and_unknown_rule(session: Session) -> None:

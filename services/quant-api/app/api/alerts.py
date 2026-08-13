@@ -123,4 +123,5 @@ def _state_out(state: ProductAlertRuleState) -> ProductAlertRuleStateOut:
 
 
 def _scope_http_error(exc: AlertScopeError) -> HTTPException:
-    return HTTPException(status_code=422, detail={"code": exc.code})
+    status_code = 503 if exc.code == "ALERT_SCOPE_PERSIST_FAILED" else 422
+    return HTTPException(status_code=status_code, detail={"code": exc.code})

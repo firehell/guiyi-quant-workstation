@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.alerts.models import AlertEvent, AlertRule
@@ -83,14 +83,19 @@ class AlertService:
         enabled: bool,
     ) -> ProductAlertRuleState:
         normalized = self._require_operational_symbol(symbol)
-        rule = self._rule_by_code(rule_code)
+        rule = self._rule_by_code(rule_code, for_update=True)
         scope = set(rule.scope_products or [])
         if enabled:
             scope.add(normalized)
         else:
             scope.discard(normalized)
         rule.scope_products = sorted(scope)
-        self._session.commit()
+        try:
+            self._session.commit()
+            self._session.refresh(rule)
+        except SQLAlchemyError:
+            self._session.rollback()
+            raise AlertScopeError("ALERT_SCOPE_PERSIST_FAILED") from None
         return self._state(rule, normalized)
 
     def create_event(self, request: AlertEventCreate) -> AlertEvent | None:
@@ -165,11 +170,17 @@ class AlertService:
         )
         return tuple(self._session.scalars(statement).all())
 
-    def _rule_by_code(self, rule_code: str) -> AlertRule:
+    def _rule_by_code(
+        self,
+        rule_code: str,
+        *,
+        for_update: bool = False,
+    ) -> AlertRule:
         normalized = str(rule_code or "").strip()
-        rule = self._session.scalar(
-            select(AlertRule).where(AlertRule.rule_code == normalized)
-        )
+        statement = select(AlertRule).where(AlertRule.rule_code == normalized)
+        if for_update:
+            statement = statement.with_for_update()
+        rule = self._session.scalar(statement)
         if rule is None:
             raise AlertRuleNotFoundError()
         return rule
