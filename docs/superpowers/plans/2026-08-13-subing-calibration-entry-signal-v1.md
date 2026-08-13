@@ -4,7 +4,7 @@
 
 **Goal:** 在 Factor Observation 已独立验收后，建立可重复、只读的 5m/15m Calibration Research，经过人工 Gate 将最小 intraday Calibration 固化为 Git 事实，再交付确定性的 `MATCHED LONG/SHORT` 入场 Signal；1d 保持非阻塞研究轨，Alert V2 仍不实现。
 
-**Architecture:** 历史研究只通过 `MarketDataService` 获取 actual-dominant 结果，并按 `resolved_contract_segments` 将 bars 切成互不继承状态的 rank1 segment；每个 segment 单独调用已有 `calculate_subing_factor_series()`，再生成 3/5/8K future labels 与聚合报告。研究 CLI 只向 stdout 输出 JSON、不写 DB/Canonical/报告文件；只有人工批准后的最小 Calibration 才写入 `data/research_policies/` 并由 `SubingReadService` 注入 pure Signal evaluator。
+**Architecture:** 历史研究只通过 `MarketDataService` 获取 actual-dominant 结果，并按 `resolved_contract_segments` 将 bars 切成互不继承状态的 rank1 segment；每个 segment 单独调用已有 `calculate_subing_factor_series()`，再生成 3/5/8K future labels。Zero-Band 的 decision cohort 必须同时重建 5m↔15m confirmed companion relationship，不允许降级成 primary-only。研究 CLI 只向 stdout 输出 JSON、不写 DB/Canonical/报告文件；只有人工批准后的最小 Calibration 才写入 `data/research_policies/` 并由 `SubingReadService` 注入 pure Signal evaluator。
 
 **Tech Stack:** Python 3 / argparse unified `guiyi` CLI / Decimal / SQLAlchemy read session / MarketDataService / quant-core policy registry / FastAPI / Vue 3 / TypeScript / Vitest / Playwright / Git-tracked JSON policy artifact.
 
@@ -18,6 +18,7 @@
 - 5m/15m 3/5/8K future labels 不跨 `trading_day`，也不跨 rank1 segment。
 - Slope 必须先于 MACD Zero-Band；禁止联合优化两个阈值。
 - 第一轮 Slope 与 Zero-Band 都从 timeframe-wide threshold 开始；Zero-Band 使用 `zero_distance_bps`，不预建 product×timeframe 全矩阵。
+- Zero-Band Cohort B 必须满足“除 zero-band 外的其他 SuBing 条件”，包括 5m↔15m latest-confirmed companion alignment；不得把 cohort 改名后偷偷删除 multi-TF 条件。
 - Discovery 只提出候选；Validation 使用人工冻结的精确阈值。系统不得自动选择“最优”或自动晋升。
 - Accepted Calibration 必须 Git-tracked、versioned、human-reviewable；聊天、临时 CLI 参数、stdout 报告或 localStorage 不得驱动正式 Signal。
 - Generic `macd` registry 继续保持 `compatibility_validated/live_capable=False/alert_capable=False`；本计划通过独立、明确命名的 scoped FormalPolicy 批准 SuBing confirmed Signal consumer，不做全局 MACD capability 晋升。
@@ -30,10 +31,10 @@
 ## File Map
 
 **Create**
-- `services/quant-api/app/market_data/subing_calibration.py` — pure future-label、统计聚合、accepted calibration schema/loader。
-- `services/quant-api/app/market_data/subing_calibration_service.py` — MarketDataService-only historical segment research orchestration。
-- `services/quant-api/tests/test_subing_calibration.py` — labels、bucket/candidate、artifact validation tests。
-- `services/quant-api/tests/data_foundation/test_subing_calibration_service.py` — rank1 segment isolation and discovery/validation tests。
+- `services/quant-api/app/market_data/subing_calibration.py` — pure future labels、统计聚合、accepted calibration schema/loader。
+- `services/quant-api/app/market_data/subing_calibration_service.py` — MarketDataService-only historical segment/multi-TF research orchestration。
+- `services/quant-api/tests/test_subing_calibration.py` — labels、candidate evaluation、artifact validation tests。
+- `services/quant-api/tests/data_foundation/test_subing_calibration_service.py` — rank1 segment isolation、multi-TF cohort、discovery/validation tests。
 - `services/quant-api/app/guiyi_cli/research_parser.py` — read-only research CLI parser。
 - `services/quant-api/app/guiyi_cli/research_commands.py` — calibration command execution/output mapping。
 - `services/quant-api/tests/test_research_cli.py` — no-side-effect CLI contract tests。
@@ -43,10 +44,10 @@
 **Modify**
 - `services/quant-api/app/guiyi_cli/main.py` — add read-only `research` domain。
 - `services/quant-api/app/market_data/subing_research.py` — add policy/calibration-aware Signal evaluator and same-boundary resolver。
-- `packages/quant-core/guiyi_quant/indicators/policy.py` — add scoped `subing_macd_sma_window_scale2_v1` formal Signal policy after Gate review。
+- `packages/quant-core/guiyi_quant/indicators/policy.py` — add scoped `subing_macd_sma_window_scale2_v1` formal Signal policy after human capability Gate。
 - `docs/INDICATOR_KERNEL.md` — document scoped SuBing MACD Signal policy without globally promoting generic MACD。
 - `services/quant-api/app/market_data/subing_read_service.py` — inject accepted calibration and expose Signal evaluation。
-- `services/quant-api/app/market_data/composition.py` — load tracked calibration artifact into `SubingReadService`。
+- `services/quant-api/app/market_data/composition.py` — build Calibration service and load tracked calibration artifact into `SubingReadService`。
 - `services/quant-api/app/schemas/market.py` — add Signal DTO to SuBing response。
 - `services/quant-api/app/api/market.py` — serialize Signal evaluation, endpoint identity unchanged。
 - `services/quant-api/tests/test_subing_research.py` — Signal condition/resolver tests。
@@ -55,7 +56,7 @@
 - `apps/quant-web/src/types/market.ts` — Signal response types。
 - `apps/quant-web/src/api/market.ts` — carry Signal fields through existing normalization。
 - `apps/quant-web/src/components/market/SubingStatusStrip.vue` — matched/pending/not-matched display。
-- `apps/quant-web/src/components/market/SubingResearchSection.vue` — Signal condition explanation without adding trade-management UI。
+- `apps/quant-web/src/components/market/SubingResearchSection.vue` — Signal condition explanation without trade-management UI。
 - `apps/quant-web/tests/subingResearch.test.ts` — Signal display tests。
 - `apps/quant-web/e2e/market-research.spec.mjs` — matched Signal Web regression。
 - `TESTING.md` — add calibration/signal read-only commands and tests。
@@ -77,7 +78,7 @@
 
 - [ ] **Step 1: Write failing tests for 3/5/8K labels and hard boundaries**
 
-Use explicit test bars and assert exact bps semantics:
+Use explicit local bar/factor builders and assert exact bps semantics:
 
 ```python
 def test_long_three_bar_outcome_uses_close_high_low_and_same_day_only():
@@ -94,9 +95,9 @@ def test_intraday_horizon_becomes_unavailable_at_trading_day_boundary():
     assert samples[-2].outcomes[3] is None
 ```
 
-Add mirrored SHORT tests and a rank1 segment boundary case where a following bar with another `segment_start_trading_day` must not satisfy the horizon.
+Add mirrored SHORT tests and a rank1 segment boundary case where a following bar with another `segment_start_trading_day` cannot satisfy the horizon.
 
-- [ ] **Step 2: Run focused tests and confirm the module is missing**
+- [ ] **Step 2: Run focused tests and confirm module missing**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -104,11 +105,11 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_subing_calibration.py
 ```
 
-Expected: FAIL on missing module/types.
+Expected: FAIL.
 
 - [ ] **Step 3: Implement exact research label formulas**
 
-Use next-N bars **after** the sample bar. For entry close `C0` and direction sign `s` (`+1` long, `-1` short):
+Use next-N bars **after** the sample bar. For entry close `C0` and direction sign `s` (`+1` LONG, `-1` SHORT):
 
 ```python
 directional_return_bps = s * (future_n.close - C0) / C0 * Decimal(10000)
@@ -126,15 +127,15 @@ mfe_bps = (C0 - min(lows)) / C0 * Decimal(10000)
 mae_bps = (C0 - max(highs)) / C0 * Decimal(10000)
 ```
 
-Thus MFE is non-negative when price moves favorably and MAE is non-positive when price moves adversely.
+MFE is favorable/non-negative; MAE is adverse/non-positive.
 
-`ema21_failure=True` when any future Factor snapshot inside the horizon has confirmed close below EMA21 for LONG or above EMA21 for SHORT.
+`ema21_failure=True` when any future ready Factor snapshot in the horizon has confirmed close below EMA21 for LONG or above EMA21 for SHORT.
 
-For 5m/15m, require all N future bars to have the same `trading_day`, `contract`, and `segment_start_trading_day`; otherwise outcome is `None`. For 1d require same contract/segment only.
+For 5m/15m require all N future bars to have the same `trading_day`, `contract`, and `segment_start_trading_day`; otherwise outcome is `None`. For 1d require same contract/segment only.
 
-- [ ] **Step 4: Define the Slope research cohort without inventing a flat threshold**
+- [ ] **Step 4: Define the Slope discovery cohort without a flat threshold**
 
-A sample is eligible for Slope discovery when:
+Eligible sample:
 
 ```text
 LONG baseline:
@@ -148,21 +149,17 @@ slope_5_bps_per_bar < 0
 slope_10_bps_per_bar < 0
 ```
 
-The studied scalar is `abs(slope_5_bps_per_bar)`. No flat threshold is used to create this cohort.
+Studied scalar = `abs(slope_5_bps_per_bar)`. No flat threshold is used to form this cohort.
 
-- [ ] **Step 5: Implement candidate quantiles and threshold evaluation with bounded memory**
+- [ ] **Step 5: Implement candidate quantiles and threshold evaluation with product-bounded memory**
 
-`candidate_quantiles(values)` is used only on one product at a time. Compute inclusive P10/P20/P30 using the stdlib `statistics.quantiles(..., n=100, method="inclusive")` when there are at least two values; one value returns that value for all three quantiles; zero values returns no candidates.
+`candidate_quantiles(values)` is called only on one product at a time. Compute inclusive P10/P20/P30 via stdlib `statistics.quantiles(..., n=100, method="inclusive")` for at least two values; one value returns the same value for all three; zero values yields no candidates.
 
-Global discovery candidates are **not** chosen here. The service task will take the median of each product's P10/P20/P30, preserving equal product weight rather than allowing the most active products to dominate.
+`evaluate_threshold(samples, threshold, selector)` returns sample count and, for each horizon, available count, median directional return, median MFE, median MAE and EMA21 failure rate. It must not rank candidates or return a `best` field.
 
-`evaluate_threshold(samples, threshold, selector)` returns sample count and, for each available horizon, count, median directional return, median MFE, median MAE and EMA21 failure rate. It must not rank candidates or return `best`.
+- [ ] **Step 6: Run pure Calibration tests and commit**
 
-- [ ] **Step 6: Run pure Calibration tests**
-
-Run the new file; expected PASS.
-
-- [ ] **Step 7: Commit Task 1**
+Expected: PASS.
 
 ```bash
 git add services/quant-api/app/market_data/subing_calibration.py \
@@ -172,7 +169,7 @@ git commit -m "feat: add SuBing calibration research math"
 
 ---
 
-### Task 2: Build MarketDataService-only historical Calibration orchestration
+### Task 2: Build MarketDataService-only historical Calibration and full multi-TF cohort orchestration
 
 **Files:**
 - Create: `services/quant-api/app/market_data/subing_calibration_service.py`
@@ -180,17 +177,26 @@ git commit -m "feat: add SuBing calibration research math"
 - Modify: `services/quant-api/app/market_data/composition.py`
 
 **Interfaces:**
-- Produces: `CalibrationResearchRequest` and `SubingCalibrationResearchService.run(request)`.
-- Request fields: `phase`, `mode`, `frequency`, `since`, `through`, optional `symbol`, optional explicit thresholds.
-- The service performs no writes and never uses `MarketReadService`/Redis.
+- Produces: `CalibrationResearchRequest`, `SlopeThresholds`, `SubingCalibrationResearchService.run(request)`.
+- Service performs no writes and never uses `MarketReadService`/Redis.
+- For intraday Zero-Band it reconstructs both 5m and 15m Factor streams and aligns latest confirmed companion `<= primary.bar_end`.
 
-- [ ] **Step 1: Write failing tests proving segment isolation**
+- [ ] **Step 1: Write failing tests proving segment isolation and full companion Cohort B**
 
-Construct a fake `MarketDataService.query(ACTUAL_DOMINANT)` response containing two `ResolvedContractSegment`s with a large rollover price gap. Assert the service calls `calculate_subing_factor_series()` separately per segment and never generates an outcome whose future bars cross from segment A to B.
+Use a fake MarketDataService returning explicit M5 and M15 actual-dominant results with the same rank1 segment. Assert:
 
-Also assert requests outside `1d|5m|15m` are rejected and `since > through` fails before any data read.
+```text
+- each frequency is factorized segment-by-segment
+- no Factor state crosses a rollover
+- 5m primary at 10:25 uses latest 15m <= 10:25
+- 15m primary at 10:30 uses latest 5m <= 10:30
+- Cohort B rejects an otherwise valid primary when companion direction/slope conflicts
+- Cohort B accepts when all other SuBing conditions including companion alignment pass
+```
 
-- [ ] **Step 2: Run focused tests and confirm the service is missing**
+Also reject unsupported frequencies and `since > through` before any data read.
+
+- [ ] **Step 2: Run focused tests and confirm service missing**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -198,11 +204,9 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_subing_calibration_service.py
 ```
 
-Expected: FAIL on missing module/types.
+Expected: FAIL.
 
-- [ ] **Step 3: Implement a trading-day-safe MarketDataService query window**
-
-Resolve the outer UTC query window from Shanghai trading-day dates so night-session bars belonging to `since` are included, then filter returned bars by `bar.trading_day`:
+- [ ] **Step 3: Implement trading-day-safe historical query and segment factorization**
 
 ```python
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -213,36 +217,32 @@ def _research_window(since: date, through: date) -> tuple[datetime, datetime]:
     return start, end
 ```
 
-Query:
+For each requested product/frequency:
 
 ```python
 result = self._market_data.query(
-    SeriesQuery(
-        SeriesKind.ACTUAL_DOMINANT,
-        symbol,
-        frequency,
-        start,
-        end,
-    )
+    SeriesQuery(SeriesKind.ACTUAL_DOMINANT, symbol, frequency, start, end)
 )
 ```
 
-Filter bars to `since <= trading_day <= through` before segment processing.
+Filter `since <= bar.trading_day <= through`. For every `resolved_contract_segment`, slice only bars inside its trading-day interval and call `calculate_subing_factor_series()` separately with `contract=segment.contract` and that segment start. Never concatenate Factor state between segments.
 
-- [ ] **Step 4: Split the returned bars strictly by `resolved_contract_segments` before indicators**
+- [ ] **Step 4: Implement reusable latest-confirmed companion alignment**
 
-For each segment:
+For one product, build M5 and M15 Factor series separately. Align by a monotonic two-pointer helper rather than O(N²):
 
 ```python
-segment_bars = tuple(
-    bar for bar in result.bars
-    if segment.start_trading_day <= bar.trading_day <= segment.end_trading_day
-)
+def latest_companion_at_or_before(
+    companion_results: Sequence[SubingFactorResult],
+    primary_bar_end: datetime,
+    *,
+    contract: str,
+    segment_start_trading_day: date,
+) -> SubingFactorResult | None:
+    ...
 ```
 
-Assert each selected bar lies in the segment and call `calculate_subing_factor_series(segment_bars, contract=segment.contract, segment_start_trading_day=segment.start_trading_day, ...)` **once per segment**. Never concatenate factor state between segments.
-
-The actual-dominant query is only the MarketDataService facade selecting the correct physical rank1 bars; no consumer may direct-read Catalog/Parquet.
+Eligible companion must be READY, `bar_end <= primary_bar_end`, same contract and same segment start. Never use a later companion.
 
 - [ ] **Step 5: Implement Slope discovery/validation modes**
 
@@ -250,38 +250,52 @@ The actual-dominant query is only the MarketDataService facade selecting the cor
 1. Process one product at a time.
 2. Build its eligible Slope samples.
 3. Calculate product P10/P20/P30 of `abs(slope_5_bps_per_bar)`.
-4. Discard its raw rows before the next product.
-5. Global candidate A/B/C = median across available product P10/P20/P30 respectively.
-6. Second read pass evaluates those three fixed candidates across products and aggregates outcomes.
-7. Return all three candidate rows; never choose one.
+4. Discard raw rows before next product.
+5. Global candidate A/B/C = median across product P10/P20/P30 respectively.
+6. Second read pass evaluates all three fixed candidates across products.
+7. Return all three; never select one.
 
-`phase="slope", mode="validation"` requires an explicit `slope_threshold_bps` and evaluates only that threshold on the requested later time window.
+`phase="slope", mode="validation"` requires explicit `slope_threshold_bps` and evaluates only that threshold on the later requested window.
 
-- [ ] **Step 6: Implement Zero-Band discovery/validation modes**
+- [ ] **Step 6: Implement Zero-Band Cohort A and full SuBing Cohort B**
 
-Zero-Band always requires an explicit human-approved `slope_threshold_bps` from the earlier Gate.
+For 5m/15m, request must contain both human-approved Slope thresholds via `SlopeThresholds(m5=..., m15=...)`.
 
-Cohort A: all confirmed MACD crosses with valid Factor snapshots.
-
-Cohort B requires every other SuBing hard condition except zero-band:
+Cohort A:
 
 ```text
-primary price side matches direction
-primary slope_5 passes explicit flat threshold
-primary slope_10 sign matches direction
-primary volume_ratio_prev >= 3 for 5m/15m
-companion relationship is not part of this historical single-series Calibration service
+all confirmed MACD GOLDEN/DEAD crosses with READY primary Factor
 ```
 
-Because full 5m↔15m companion reconstruction would couple two historical streams into Calibration complexity, V1 Zero-Band report must label this cohort `primary_context_cohort`, not claim full SuBing multi-TF qualification. Final Signal still requires companion alignment in the live/read model.
+Cohort B = every SuBing hard condition **except zero-band**:
 
-Discovery uses per-product P20/P40/P60 of `macd_zero_distance_bps`, then median-across-products to form three timeframe-wide candidate bands and evaluates all three. Validation requires explicit `zero_band_bps` and evaluates only `distance_bps <= zero_band_bps`.
+```text
+Primary LONG:
+price_side == ABOVE
+slope_5 > approved primary timeframe threshold
+slope_10 > 0
+macd_cross == GOLDEN
+volume_ratio_prev >= 3
+latest confirmed companion exists
+companion price_side == ABOVE
+companion slope_5 > approved companion timeframe threshold
+companion slope_10 > 0
 
-Do not create product overrides in this task.
+Primary SHORT:
+mirror price/slope signs
+macd_cross == DEAD
+volume_ratio_prev >= 3
+latest confirmed companion exists
+companion direction/slope mirror passes
+```
+
+For 1d Cohort B there is no companion and daily volume is not a hard gate: price side + approved daily slope + cross only, excluding zero-band.
+
+Discovery candidates are derived from per-product P20/P40/P60 of **Cohort B** `macd_zero_distance_bps`, then median-across-products. Each candidate report must evaluate both Cohort A and Cohort B so the user can compare generic cross behavior against SuBing-context behavior.
+
+Validation requires explicit `zero_band_bps` and evaluates `distance_bps <= threshold` for both cohorts; no auto selection and no product overrides.
 
 - [ ] **Step 7: Add composition builder and run tests**
-
-Add:
 
 ```python
 def build_subing_calibration_research_service(session: Session) -> SubingCalibrationResearchService:
@@ -291,7 +305,7 @@ def build_subing_calibration_research_service(session: Session) -> SubingCalibra
     )
 ```
 
-Run the new tests plus `test_market_research.py`; expected PASS and no Redis/provider construction.
+Run new tests plus `test_market_research.py`; prove no Redis/provider construction.
 
 - [ ] **Step 8: Commit Task 2**
 
@@ -304,7 +318,7 @@ git commit -m "feat: add SuBing calibration research service"
 
 ---
 
-### Task 3: Expose a read-only, reproducible Calibration CLI
+### Task 3: Expose a read-only reproducible Calibration CLI
 
 **Files:**
 - Create: `services/quant-api/app/guiyi_cli/research_parser.py`
@@ -313,24 +327,41 @@ git commit -m "feat: add SuBing calibration research service"
 - Modify: `services/quant-api/app/guiyi_cli/main.py`
 
 **Interfaces:**
-- Command:
-  `guiyi research subing-calibration --phase {slope,zero-band} --mode {discovery,validation} --frequency {5m,15m,1d} --since YYYY-MM-DD --through YYYY-MM-DD [--symbol X] [--slope-threshold-bps DECIMAL] [--zero-band-bps DECIMAL]`.
+- Base command:
+  `guiyi research subing-calibration --phase {slope,zero-band} --mode {discovery,validation} --frequency {5m,15m,1d} --since YYYY-MM-DD --through YYYY-MM-DD [--symbol X]`.
+- Slope validation adds `--slope-threshold-bps DECIMAL`.
+- Intraday Zero-Band discovery/validation adds both `--slope-threshold-5m-bps DECIMAL` and `--slope-threshold-15m-bps DECIMAL`; validation additionally adds `--zero-band-bps DECIMAL`.
+- 1d Zero-Band discovery uses `--slope-threshold-bps`; validation also uses `--zero-band-bps`.
 - stdout JSON only; zero DB/Canonical/Redis/RQData writes.
 
-- [ ] **Step 1: Write parser/command tests for the exact mode matrix**
+- [ ] **Step 1: Write parser/command tests for exact mode matrix**
 
 Require:
 
 ```text
-slope discovery       -> no threshold accepted/required
-slope validation      -> --slope-threshold-bps required
-zero-band discovery   -> --slope-threshold-bps required, zero-band threshold forbidden
-zero-band validation  -> both --slope-threshold-bps and --zero-band-bps required
+slope discovery:
+  no threshold required; threshold flags rejected
+
+slope validation:
+  --slope-threshold-bps required
+
+zero-band discovery 5m/15m:
+  --slope-threshold-5m-bps and --slope-threshold-15m-bps required
+  --zero-band-bps rejected
+
+zero-band validation 5m/15m:
+  both intraday slope thresholds + --zero-band-bps required
+
+zero-band discovery 1d:
+  --slope-threshold-bps required
+
+zero-band validation 1d:
+  --slope-threshold-bps + --zero-band-bps required
 ```
 
-`--symbol` is optional; omitted means active 60. Invalid frequency or negative threshold exits with code 2 and the existing redacted CLI argument payload.
+`--symbol` optional; omitted means active 60. Invalid frequency, non-finite or negative threshold exits code 2 through existing redacted argument payload.
 
-- [ ] **Step 2: Run CLI tests and confirm `research` domain is missing**
+- [ ] **Step 2: Run CLI tests and confirm `research` missing**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -338,15 +369,15 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_research_cli.py
 ```
 
-Expected: FAIL because parser/domain is not registered.
+Expected: FAIL.
 
-- [ ] **Step 3: Add the `research` parser without changing data/runtime semantics**
+- [ ] **Step 3: Add `research` parser without changing data/runtime semantics**
 
-Implement `add_research_commands()` in `research_parser.py`. Parse dates with `date.fromisoformat`, thresholds with `Decimal`, reject non-finite/negative values before service construction.
+Implement `add_research_commands()` in `research_parser.py`; parse dates with `date.fromisoformat`, thresholds with `Decimal`, and validate mode matrix before service construction.
 
-- [ ] **Step 4: Add read-only command execution**
+- [ ] **Step 4: Add read-only command execution/output**
 
-`research_commands.py` builds `CalibrationResearchRequest` and returns `report.as_payload()` with:
+`research_commands.py` builds `CalibrationResearchRequest`/`SlopeThresholds` and returns `report.as_payload()` containing:
 
 ```text
 schema_version
@@ -359,21 +390,20 @@ products
 sample_count
 product_sample_counts
 candidate_thresholds      # discovery only
-threshold_evaluation      # validation or each discovery candidate
-cohort_name               # zero-band only
+candidate_evaluations     # all candidates, never ranked
+cohorts                    # zero-band A/B comparison
+threshold_evaluation       # validation
 ```
 
-No field may be named `best_threshold`, `recommended_trade`, or `approved`.
+No `best_threshold`, `approved`, trading instruction or performance claim.
 
 - [ ] **Step 5: Wire `guiyi_cli.main` with injected research-service factory**
 
-Add a `research` branch parallel to `data` and `runtime`. `readonly=True` must be used for execution errors. Existing `data` and `runtime` parser tests must remain unchanged.
+Add `research` branch parallel to `data`/`runtime`. Errors always report `readonly=True`. Existing data/runtime behavior must remain unchanged.
 
-- [ ] **Step 6: Run CLI regressions**
+- [ ] **Step 6: Run CLI regressions and commit**
 
-Run `test_research_cli.py`, `test_alert_cli.py`, and the data CLI tests referenced by `TESTING.md`; expected PASS.
-
-- [ ] **Step 7: Commit Task 3**
+Run `test_research_cli.py`, `test_alert_cli.py` and existing data CLI tests. Expected PASS.
 
 ```bash
 git add services/quant-api/app/guiyi_cli/research_parser.py \
@@ -385,58 +415,54 @@ git commit -m "feat: add read-only SuBing calibration CLI"
 
 ---
 
-### Gate A: Human approval of the intraday Slope candidate
+### Gate A: Human approval of intraday Slope candidates
 
-This is a **hard stop**, not an implementation step.
+**Hard stop.**
 
-Run Discovery separately for 5m and 15m over the chosen Discovery window. Review all candidate rows, product coverage and outcome stability. Then run Validation on a later non-overlapping window with the exact candidate under review.
+Run Slope Discovery separately for 5m and 15m on the chosen Discovery window. Review all candidates, sample coverage and outcome stability. Then run later non-overlapping Validation with the exact candidate under review.
 
-The plan must not choose the threshold. Continue only after the user explicitly approves exact Decimal values for both:
+Continue only after the user explicitly approves exact Decimal values for both:
 
 ```text
 5m slope_flat_threshold_bps_per_bar
 15m slope_flat_threshold_bps_per_bar
 ```
 
-Do not create the accepted Calibration artifact yet; these approved Slope values become explicit inputs to Zero-Band research.
+Do not create the accepted Calibration artifact yet. Both approved values become immutable inputs to every intraday Zero-Band Discovery/Validation run.
 
 ---
 
-### Task 4: Complete Zero-Band research with the approved Slope thresholds
+### Task 4: Complete full multi-TF Zero-Band research with Gate A Slope thresholds
 
 **Files:**
-- Primarily execution of the already implemented read-only CLI.
-- Modify code/tests only if a genuine correctness bug is found; do not tune methodology to make results look better.
+- Primarily execute the read-only CLI from Task 3.
+- Modify code/tests only for a demonstrated correctness bug; do not tune methodology to make results look better.
 
-**Interfaces:**
-- Inputs are the exact Gate A slope thresholds.
-- Output remains research report JSON; no accepted artifact yet.
+- [ ] **Step 1: Run 5m Zero-Band Discovery with both exact approved Slope thresholds**
 
-- [ ] **Step 1: Run 5m Zero-Band Discovery with the exact approved 5m Slope threshold**
+Supply Gate A 5m and 15m slope values. Confirm output contains Cohort A and full companion-aware Cohort B, exact slope inputs and three unranked candidate bands.
 
-Use the chosen Discovery window and capture stdout for review. Verify report records the exact slope threshold and `cohort_name`.
+- [ ] **Step 2: Run 15m Zero-Band Discovery with the same two exact Slope thresholds**
 
-- [ ] **Step 2: Run 15m Zero-Band Discovery with the exact approved 15m Slope threshold**
+Confirm 15m primary uses latest confirmed 5m companion.
 
-Same requirements as Step 1.
+- [ ] **Step 3: Human-select one 5m and one 15m Zero-Band candidate for Validation**
 
-- [ ] **Step 3: Human-select one 5m and one 15m Zero-Band candidate**
+Stop until the user names exact candidate values. The system does not select.
 
-The system presents candidate bands but does not select them. Stop until the user names the exact candidate values to validate.
+- [ ] **Step 4: Run later-window Validation for both exact candidates**
 
-- [ ] **Step 4: Run later-window Validation for both exact Zero-Band candidates**
+Supply both frozen Slope thresholds on every run plus the single zero-band threshold being validated. Do not change Slope during this phase.
 
-Use non-overlapping later windows and explicit `--zero-band-bps`. Do not change Slope values during Zero-Band validation.
+- [ ] **Step 5: Present both Cohort A/B validation reports for Gate B**
 
-- [ ] **Step 5: Present the two validation reports for Gate B**
-
-Do not commit research stdout and do not update runtime state.
+Do not commit stdout and do not update Runtime state.
 
 ---
 
 ### Gate B: Human approval of final intraday Calibration
 
-Hard stop. Continue only after the user explicitly approves all four exact Decimal values:
+**Hard stop.** Continue only after explicit approval of all four exact Decimal values:
 
 ```text
 5m slope_flat_threshold_bps_per_bar
@@ -445,11 +471,11 @@ Hard stop. Continue only after the user explicitly approves all four exact Decim
 15m macd_zero_band_bps
 ```
 
-If any value changes after Validation, create a new candidate and rerun the relevant later-window validation before approval.
+If any value changes after Validation, create a new candidate and rerun relevant later-window Validation before approval.
 
 ---
 
-### Task 5: Persist the accepted intraday Calibration as a minimal Git fact
+### Task 5: Persist accepted intraday Calibration as a minimal Git fact
 
 **Files:**
 - Create after Gate B: `data/research_policies/subing_calibration_intraday_v1.json`
@@ -461,9 +487,7 @@ If any value changes after Validation, create a new candidate and rerun the rele
 - Produces: `SubingCalibration`, `load_subing_calibration(path)`, `pending_subing_calibration()`.
 - Initial production artifact accepts exactly 5m and 15m; 1d remains pending.
 
-- [ ] **Step 1: Add a test-only calibration fixture with explicit non-production values**
-
-Create `services/quant-api/tests/fixtures/subing_calibration_test_v1.json` using these values **only for deterministic tests**:
+- [ ] **Step 1: Add test-only fixture with explicit non-production values**
 
 ```json
 {
@@ -475,13 +499,13 @@ Create `services/quant-api/tests/fixtures/subing_calibration_test_v1.json` using
 }
 ```
 
-No production code may use this fixture.
+Production code must never load the test fixture.
 
 - [ ] **Step 2: Write failing loader tests**
 
-Test successful load, missing file -> pending object, unknown schema -> fail closed, non-finite/negative values -> fail, missing accepted timeframe value -> fail, and `1d` lookup -> pending/unaccepted.
+Cover successful test-fixture load; missing file -> pending; unknown schema -> fail closed; non-finite/negative -> fail; missing value for accepted timeframe -> fail; 1d -> not accepted.
 
-- [ ] **Step 3: Implement the calibration value object and loader**
+- [ ] **Step 3: Implement immutable Calibration value object/loader**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -494,23 +518,22 @@ class SubingCalibration:
     def is_accepted(self, timeframe: BarFrequency) -> bool: ...
 ```
 
-Use immutable mappings (`MappingProxyType`) and no environment override. Missing production artifact returns `pending_subing_calibration()`; malformed existing artifact raises a stable configuration error rather than silently downgrading.
+Use immutable mappings and no environment/runtime override. Missing production file -> pending; malformed existing file -> stable configuration error, never silent pending.
 
-- [ ] **Step 4: Create the production artifact with the exact Gate B values**
+- [ ] **Step 4: Create production artifact with exact Gate B values**
 
-Create `data/research_policies/subing_calibration_intraday_v1.json` with:
-- `schema_version=1`
-- `calibration_id="subing_calibration_intraday_v1"`
-- `accepted_timeframes=["5m","15m"]`
-- exact four Decimal strings approved at Gate B.
+Create `data/research_policies/subing_calibration_intraday_v1.json` containing only:
 
-Do not include 1d, product overrides, timestamps, performance claims or research output rows.
+```text
+schema_version = 1
+calibration_id = subing_calibration_intraday_v1
+accepted_timeframes = 5m, 15m
+four exact Gate B Decimal strings
+```
 
-- [ ] **Step 5: Run loader tests and inspect the artifact diff manually**
+No 1d, product overrides, timestamps, research rows or performance claims.
 
-Expected: PASS. Confirm the only production values are the four approved numbers.
-
-- [ ] **Step 6: Commit Task 5**
+- [ ] **Step 5: Run tests, manually inspect diff and commit**
 
 ```bash
 git add data/research_policies/subing_calibration_intraday_v1.json \
@@ -520,54 +543,76 @@ git add data/research_policies/subing_calibration_intraday_v1.json \
 git commit -m "feat: accept SuBing intraday calibration v1"
 ```
 
-This commit is the repository fact that authorizes later Signal code to consume those values; it does not authorize Alert or Runtime.
+This commit makes the four values a repository fact; it does not authorize Signal Alert or Runtime.
 
 ---
 
-### Task 6: Pass the MACD formal Signal capability Gate with a scoped policy
+### Task 6: Prepare the scoped MACD formal Signal policy evidence
+
+**Files:**
+- Modify tests only in this task until Gate C approval:
+  - `services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py`
+  - `services/quant-api/tests/test_indicator_registry_v1.py`
+
+**Interfaces:**
+- Evidence target: proposed policy ID `subing_macd_sma_window_scale2_v1` with consumer `subing_signal` only.
+- Generic MACD registry must remain unpromoted.
+
+- [ ] **Step 1: Add edge/golden evidence tests for the proposed scoped policy math**
+
+Before creating the policy, test the underlying explicit MACD invocation (`fast=12, slow=26, signal=9, sma_window, histogram_scale=2`) for:
+
+```text
+first ready DIF/DEA index
+equality edge used by Golden/Dead cross
+historical and completed-live identical close sequence -> identical points
+appending one later confirmed close -> prior points unchanged
+```
+
+Also assert generic `get_indicator("macd")` remains `compatibility_validated`, `live_capable=False`, `alert_capable=False`.
+
+- [ ] **Step 2: Run full Indicator tests and present evidence for independent Review**
+
+Run the current commands in `docs/INDICATOR_KERNEL.md`. Do not modify `policy.py` yet.
+
+- [ ] **Step 3: Independent Review checks**
+
+Review must explicitly confirm:
+
+```text
+same formula/policy as reviewed Factor observation
+confirmed-only/no repaint for appended closed bars
+scope only SuBing entry Signal
+no generic MACD promotion
+no Backtest/Alert capability
+```
+
+---
+
+### Gate C: Human approval of scoped MACD Signal capability
+
+**Hard stop.** Only after the independent review evidence is presented and the user explicitly approves the scoped policy may implementation modify `packages/quant-core/guiyi_quant/indicators/policy.py`.
+
+This Gate does not approve Alert V2 or generic MACD live/alert capability.
+
+---
+
+### Task 7: Create the approved scoped MACD policy and deterministic intraday Entry Signal
 
 **Files:**
 - Modify: `packages/quant-core/guiyi_quant/indicators/policy.py`
 - Modify: `docs/INDICATOR_KERNEL.md`
 - Modify: `services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py`
-- Modify: `services/quant-api/tests/test_indicator_registry_v1.py` only if needed to assert generic registry remains unpromoted.
+- Modify: `services/quant-api/tests/test_indicator_registry_v1.py`
+- Modify: `services/quant-api/app/market_data/subing_research.py`
+- Modify: `services/quant-api/tests/test_subing_research.py`
 
 **Interfaces:**
-- Produces formal policy ID: `subing_macd_sma_window_scale2_v1`.
-- Allows consumer: `subing_signal` only.
-- Does **not** grant generic MACD live/alert/backtest capability.
+- Formal policy: `subing_macd_sma_window_scale2_v1`, consumer `subing_signal` only.
+- Produces: `SubingSignalStatus`, `SubingDirection`, `ConditionState`, `SubingSignalEvaluation`, `ResolvedSubingSignal`.
+- Produces: `evaluate_subing_signal(primary, companion, calibration)` and `resolve_subing_signals(five_minute, fifteen_minute)`.
 
-- [ ] **Step 1: Write failing scoped-policy tests**
-
-Require:
-
-```python
-policy = require_formal_policy(
-    "subing_macd_sma_window_scale2_v1",
-    consumer="subing_signal",
-)
-assert policy.seed_policy == "sma_window"
-assert policy.histogram_scale == 2
-
-with pytest.raises(ValueError):
-    require_formal_policy("subing_macd_sma_window_scale2_v1", consumer="alert")
-```
-
-Also assert `get_indicator("macd").status == "compatibility_validated"`, `live_capable is False`, `alert_capable is False`.
-
-- [ ] **Step 2: Add edge/golden tests proving the scoped policy matches the already observed MACD math**
-
-Cover:
-- first ready DIF/DEA index;
-- equality edge for Golden/Dead cross;
-- historical and completed-live identical close sequence produces identical `macd_series` points;
-- no repaint of earlier points when one later confirmed close is appended.
-
-- [ ] **Step 3: Run tests and confirm missing formal policy**
-
-Expected: FAIL on unknown `subing_macd_sma_window_scale2_v1`.
-
-- [ ] **Step 4: Add the scoped policy without changing generic `macd` definition**
+- [ ] **Step 1: Add the approved scoped policy**
 
 ```python
 "subing_macd_sma_window_scale2_v1": FormalPolicy(
@@ -585,41 +630,15 @@ Expected: FAIL on unknown `subing_macd_sma_window_scale2_v1`.
 ),
 ```
 
-- [ ] **Step 5: Update Indicator deep canonical**
+Keep `get_indicator("macd")` generic registry fields unchanged.
 
-Document that this is a scoped SuBing Signal consumer policy, not a global promotion of `macd`, and Alert V2 would require a separate capability decision.
+- [ ] **Step 2: Update Indicator canonical**
 
-- [ ] **Step 6: Run full indicator regressions**
+Document scoped policy and explicitly state it is not generic MACD promotion; Alert V2 requires a separate future capability decision.
 
-Run all Indicator Kernel commands listed in `docs/INDICATOR_KERNEL.md`; expected PASS.
+- [ ] **Step 3: Write failing Signal tests with the test Calibration fixture**
 
-- [ ] **Step 7: Commit Task 6**
-
-```bash
-git add packages/quant-core/guiyi_quant/indicators/policy.py \
-  docs/INDICATOR_KERNEL.md \
-  services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
-  services/quant-api/tests/test_indicator_registry_v1.py
-git commit -m "feat: approve scoped SuBing MACD signal policy"
-```
-
----
-
-### Task 7: Implement deterministic intraday Entry Signal evaluation and resolver
-
-**Files:**
-- Modify: `services/quant-api/app/market_data/subing_research.py`
-- Modify: `services/quant-api/tests/test_subing_research.py`
-
-**Interfaces:**
-- Produces: `SubingSignalStatus`, `SubingDirection`, `ConditionState`, `SubingSignalEvaluation`, `ResolvedSubingSignal`.
-- Produces: `evaluate_subing_signal(primary, companion, calibration)` and `resolve_subing_signals(five_minute, fifteen_minute)`.
-
-- [ ] **Step 1: Write failing Signal condition tests with the test calibration fixture**
-
-Cover exact LONG and SHORT paths, hard failure, pending 1d, insufficient Factor, companion conflict and same-boundary resolution.
-
-Required assertions:
+Require exact LONG/SHORT, hard fail, missing calibration, companion conflict and same-boundary behavior:
 
 ```python
 result = evaluate_subing_signal(primary_long, companion_long, calibration)
@@ -631,79 +650,79 @@ assert conflict.status is SubingSignalStatus.NOT_MATCHED
 assert conflict.direction is SubingDirection.NONE
 ```
 
-- [ ] **Step 2: Encode the immutable V1 hard conditions**
+1d must be `RESEARCH_PENDING` because the intraday artifact does not accept 1d.
 
-For LONG primary 5m/15m:
+- [ ] **Step 4: Encode immutable V1 hard conditions**
+
+Primary LONG 5m/15m:
 
 ```text
 price_side == ABOVE
-slope_5_bps_per_bar > calibration.slope_threshold(primary timeframe)
-slope_10_bps_per_bar > 0
+slope_5 > calibration threshold(primary)
+slope_10 > 0
 macd_cross == GOLDEN
-macd_zero_distance_bps <= calibration.zero_band(primary timeframe)
+macd_zero_distance_bps <= calibration zero-band(primary)
 volume_ratio_prev >= 3
 ```
 
-SHORT mirrors all signs/cross direction.
+SHORT mirrors signs/cross.
 
-Companion alignment for the requested direction:
+Companion LONG:
 
 ```text
-LONG:
 price_side == ABOVE
-slope_5_bps_per_bar > calibration.slope_threshold(companion timeframe)
-slope_10_bps_per_bar > 0
-
-SHORT:
-price_side == BELOW
-slope_5_bps_per_bar < -calibration.slope_threshold(companion timeframe)
-slope_10_bps_per_bar < 0
+slope_5 > calibration threshold(companion)
+slope_10 > 0
 ```
 
-Do not inspect companion MACD or volume.
+SHORT mirrors; do not inspect companion MACD/volume.
 
-- [ ] **Step 3: Implement status/direction priority**
+- [ ] **Step 5: Implement status/direction priority**
 
 ```text
-primary/companion Factor insufficient -> INSUFFICIENT_DATA / NONE
-calibration not accepted for either intraday timeframe -> RESEARCH_PENDING / candidate direction or NONE
-scoped MACD policy unavailable -> RESEARCH_PENDING / candidate direction or NONE
-any known hard condition fails -> NOT_MATCHED / NONE
+Factor insufficient -> INSUFFICIENT_DATA / NONE
+calibration not accepted for required timeframe(s) -> RESEARCH_PENDING / candidate direction or NONE
+scoped MACD policy missing/not allowed -> RESEARCH_PENDING / candidate direction or NONE
+known hard condition FAIL -> NOT_MATCHED / NONE
 all pass -> MATCHED / LONG|SHORT
 ```
 
-Require `subing_macd_sma_window_scale2_v1` with consumer `subing_signal` before returning MATCHED.
+Before MATCHED require `require_formal_policy("subing_macd_sma_window_scale2_v1", consumer="subing_signal")`.
 
-- [ ] **Step 4: Implement same-boundary resolver**
+- [ ] **Step 6: Implement same-boundary resolver**
 
-If 5m and 15m are both MATCHED with the same `bar_end` and direction, return only 15m with `lower_tf_confirmation=True` and `resolution="higher_timeframe_wins"`.
+5m + 15m both MATCHED, same `bar_end`, same direction -> only 15m with `lower_tf_confirmation=True`, `resolution="higher_timeframe_wins"`.
 
-If both are MATCHED at the same boundary but directions differ, raise/fail closed with stable `SUBING_SIGNAL_DIRECTION_CONFLICT`; never choose one.
+Same boundary but different directions -> stable fail-closed `SUBING_SIGNAL_DIRECTION_CONFLICT`; never choose one.
 
 Otherwise return whichever timeframe is independently MATCHED.
 
-- [ ] **Step 5: Run pure Factor + Signal tests**
+- [ ] **Step 7: Run Indicator + Signal tests and commit**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
   services/quant-api/tests/test_subing_research.py \
   services/quant-api/tests/test_subing_calibration.py
 ```
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 7**
-
 ```bash
-git add services/quant-api/app/market_data/subing_research.py \
+git add packages/quant-core/guiyi_quant/indicators/policy.py \
+  docs/INDICATOR_KERNEL.md \
+  services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  services/quant-api/app/market_data/subing_research.py \
   services/quant-api/tests/test_subing_research.py
 git commit -m "feat: evaluate SuBing entry signals"
 ```
 
 ---
 
-### Task 8: Inject accepted Calibration into the read model and expose Signal to Web
+### Task 8: Inject accepted Calibration into read model and expose Signal to Web
 
 **Files:**
 - Modify: `services/quant-api/app/market_data/subing_read_service.py`
@@ -720,36 +739,32 @@ git commit -m "feat: evaluate SuBing entry signals"
 - Modify: `apps/quant-web/e2e/market-research.spec.mjs`
 
 **Interfaces:**
-- Existing `/api/v1/market/research/subing` gains `signal` but retains Factor fields/identity.
-- No Alert persistence/event side effect.
+- Existing `/api/v1/market/research/subing` gains `signal`; Factor fields/identity remain.
+- No persistence/event/Alert side effect.
 
-- [ ] **Step 1: Write failing read/API tests for accepted vs pending timeframes**
+- [ ] **Step 1: Write failing read/API tests for accepted vs pending timeframe**
 
-5m/15m with the test fixture can return `MATCHED`; 1d must remain `RESEARCH_PENDING` because the initial production/test intraday calibration does not accept 1d.
-
-Assert no DB writes and no Alert service calls.
+5m/15m with test artifact can return MATCHED; 1d remains RESEARCH_PENDING. Assert no Alert service use and no DB mutation.
 
 - [ ] **Step 2: Inject Calibration through composition**
 
-`SubingReadService.__init__` receives `calibration: SubingCalibration`. `build_subing_read_service()` loads the tracked production path:
+`SubingReadService` receives `calibration: SubingCalibration`. `build_subing_read_service()` loads only:
 
 ```python
 PROJECT_ROOT / "data/research_policies/subing_calibration_intraday_v1.json"
 ```
 
-No environment variable or runtime override is allowed.
+No env/localStorage/runtime override.
 
-- [ ] **Step 3: Evaluate primary Signal and the relevant companion at the same snapshot cutoff**
+- [ ] **Step 3: Evaluate Signal at the same primary cutoff**
 
-For 5m request evaluate 5m primary against aligned 15m companion. For 15m request evaluate 15m primary against aligned 5m companion.
+5m request: evaluate 5m primary vs aligned 15m companion. If primary `bar_end` equals companion 15m `bar_end`, also evaluate the 15m full Signal using the same two snapshots reversed (15m primary / 5m companion) and apply resolver.
 
-To honor same-boundary 15m priority on a 5m request whose primary `bar_end` is also a 15m completed boundary, compute both formal evaluations and apply `resolve_subing_signals`; the returned resolved Signal may therefore have `trigger_timeframe="15m"`.
+15m request: evaluate 15m primary vs aligned 5m companion; if same-boundary 5m full Signal is also computable, resolve the pair.
 
-Do not create an event or remember previous signals.
+Do not persist Signal or remember previous signals.
 
 - [ ] **Step 4: Extend HTTP DTOs**
-
-Add:
 
 ```python
 class SubingConditionOut(BaseModel):
@@ -765,11 +780,9 @@ class SubingSignalOut(BaseModel):
     conditions: list[SubingConditionOut]
 ```
 
-Return the evaluation even when pending/not-matched so Web can explain state.
+Return evaluation for matched/pending/not-matched/insufficient states.
 
-- [ ] **Step 5: Update Web types/status presentation**
-
-Display only:
+- [ ] **Step 5: Update Web presentation**
 
 ```text
 MATCHED + LONG  -> 买入信号
@@ -779,17 +792,15 @@ INSUFFICIENT_DATA -> 指标 warm-up 中
 NOT_MATCHED -> 当前不匹配
 ```
 
-Do not add position, exit, trade button, Alert toggle or notification side effect.
+No position, exit, trade button, new Alert toggle or notification side effect.
 
-- [ ] **Step 6: Extend E2E**
+- [ ] **Step 6: Extend E2E and run regressions**
 
-Mock MATCHED LONG and assert the Product Workspace shows `买入信号`, current contract and trigger timeframe. Assert HTDY Alert controls remain the existing HTDY-only behavior and no SuBing alert rule is requested/created.
+Mock MATCHED LONG; assert `买入信号`, current contract and trigger timeframe. Assert existing HTDY Alert behavior remains unchanged and no SuBing Alert rule endpoint is requested/created.
 
-- [ ] **Step 7: Run backend/Web regressions**
+Run all SuBing tests, Alert V1 tests, Web tests, `market-research.spec.mjs`, `alert-v1.spec.mjs`, Web build.
 
-Run all SuBing tests, Alert V1 tests, Web tests, `market-research.spec.mjs`, `alert-v1.spec.mjs`, and Web build. Expected PASS.
-
-- [ ] **Step 8: Commit Task 8**
+- [ ] **Step 7: Commit Task 8**
 
 ```bash
 git add services/quant-api/app/market_data/subing_read_service.py \
@@ -809,55 +820,45 @@ git commit -m "feat: expose SuBing entry signal observation"
 
 ---
 
-### Task 9: Add the non-blocking 1d Calibration research path without delaying intraday acceptance
+### Task 9: Keep 1d as a non-blocking Calibration research track
 
 **Files:**
-- Reuse calibration code and CLI from Tasks 1-3.
-- Modify tests only if 1d-specific behavior is missing.
-- Do **not** modify `subing_calibration_intraday_v1.json`.
-
-**Interfaces:**
-- 1d can run Slope and Zero-Band Discovery/Validation.
-- 1d formal Signal remains `RESEARCH_PENDING` until a future independently approved 1d calibration artifact/version exists.
+- Reuse Tasks 1-3 code/CLI.
+- Modify tests only if 1d-specific correctness is missing.
+- Do not modify `subing_calibration_intraday_v1.json`.
 
 - [ ] **Step 1: Run 1d Slope Discovery on the chosen historical window**
 
-Confirm segment-local warm-up and daily outcomes can cross trading days but never rank1 segment.
+Confirm segment-local warm-up and daily outcomes may cross trading days but never rank1 segment.
 
-- [ ] **Step 2: Review 1d results independently**
+- [ ] **Step 2: Review 1d independently**
 
-No intraday threshold may be changed because of 1d findings.
+Intraday thresholds are immutable with respect to 1d findings.
 
-- [ ] **Step 3: If the user wants to continue 1d Calibration, use the same human Gate pattern**
+- [ ] **Step 3: If the user chooses to continue 1d Calibration, reuse the same human Gate pattern**
 
-Run explicit later-window Validation and Zero-Band research. Do not create an accepted 1d artifact unless the user separately approves exact 1d values.
+Run explicit later-window Validation then 1d Zero-Band with `--slope-threshold-bps`. Do not create accepted 1d artifact/version without separate user approval.
 
-- [ ] **Step 4: Verify 5m/15m Signal remains unchanged**
+- [ ] **Step 4: Re-run 5m/15m Signal tests after any 1d correctness code change**
 
-Run intraday Signal tests after any 1d research-code fix. Expected identical outputs.
+Expected identical intraday outputs.
 
-No commit is required if this task is research execution only; any correctness code change must get its own focused test and commit.
+Research-only execution needs no commit; any code fix requires focused test/commit.
 
 ---
 
-### Task 10: Close testing/canonical/status boundaries without touching Alert or Runtime
+### Task 10: Close testing/canonical/status boundaries without Alert or Runtime
 
 **Files:**
 - Modify: `TESTING.md`
 - Modify: `docs/ARCHITECTURE.md`
-- Modify: `STATUS.md` only after all executable tasks and required tests pass.
-
-**Interfaces:**
-- No new Runtime or notification interface.
-- Final state is SuBing Entry Signal available in Web/research read model, Alert integration absent.
+- Modify: `STATUS.md` only after all executable tasks and required checks pass.
 
 - [ ] **Step 1: Add read-only Calibration CLI examples to `TESTING.md`**
 
-Document discovery/validation examples using clearly labeled **example research windows**, and state that the commands only query existing Canonical/Catalog via MarketDataService and print JSON. Do not put accepted production threshold values into command examples unless they are already present in the tracked calibration artifact.
+Use clearly labeled example research windows. State commands only query existing Canonical/Catalog through MarketDataService and print JSON. Do not copy accepted production thresholds into examples unless already present in tracked artifact.
 
-- [ ] **Step 2: Add SuBing Signal tests to the no-side-effect validation block**
-
-Include:
+- [ ] **Step 2: Add SuBing Signal tests to no-side-effect validation**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -880,7 +881,7 @@ Git-tracked accepted Calibration -> pure Signal evaluation
 SubingReadService -> Web observation
 ```
 
-Explicitly state no research DB, no Signal persistence and no Alert integration in this version.
+No research DB, Signal persistence or Alert integration.
 
 - [ ] **Step 4: Run full required repository verification**
 
@@ -906,15 +907,15 @@ git diff --check
 git status --short
 ```
 
-Expected: PASS with no real notification, Runtime switch, migration, RQData write or Canonical mutation.
+Expected: PASS with no notification, Runtime switch, migration, RQData write or Canonical mutation.
 
-- [ ] **Step 5: Update `STATUS.md` conservatively if all executable gates passed**
+- [ ] **Step 5: Update `STATUS.md` conservatively only after all gates/checks passed**
 
 Record only:
 
 ```text
 SuBing 5m/15m accepted Calibration exists as tracked Git fact
-scoped MACD SuBing Signal policy passed
+scoped MACD SuBing Signal policy passed its explicit Gate
 5m/15m Entry Signal evaluation available in Product Workspace
 1d remains research/pending unless separately accepted
 Alert V1 unchanged
@@ -922,7 +923,7 @@ SuBing Alert V2 not implemented
 no Runtime deployment/switch performed
 ```
 
-Do not claim profitability, backtest validity, Alert Ready or Runtime Ready.
+Do not claim profitability, Backtest validity, Alert Ready or Runtime Ready.
 
 - [ ] **Step 6: Commit Task 10**
 
@@ -939,10 +940,12 @@ This plan is complete when all of the following are true:
 
 ```text
 5m/15m Slope candidate -> later-window Validation -> human approval
+5m/15m Zero-Band Cohort B includes full latest-confirmed 5m↔15m relationship
 5m/15m Zero-Band candidate -> later-window Validation -> human approval
 accepted intraday Calibration exists as a Git-tracked versioned artifact
-scoped MACD SuBing Signal policy is explicitly approved and tested
-deterministic MATCHED LONG/SHORT Signal is available in the read model/Web
+scoped MACD SuBing Signal policy passes independent Review + human Gate
+Generic MACD registry remains unpromoted
+deterministic MATCHED LONG/SHORT Signal is available in read model/Web
 same-boundary 15m wins
 1d does not block intraday and remains pending unless independently accepted
 no Signal persistence
@@ -952,4 +955,4 @@ no Runtime mutation
 no automatic parameter promotion
 ```
 
-Future `Alert V2 — SuBing Entry Signal Integration` must remain a separate design/spec/plan after a real Live observation period.
+Future `Alert V2 — SuBing Entry Signal Integration` remains a separate design/spec/plan after a real Live observation period.
