@@ -7,6 +7,13 @@ import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import { getMarketDominants, getProductResearch } from '@/api/market'
+import {
+  getAlertRuntimeStatus,
+  getProductAlerts,
+  setAlertProductEnabled,
+  type AlertRuntimeStatus,
+  type ProductAlertRuleState,
+} from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import type { DominantContractItem, MainIndicatorId, MarketFrequency, ProductResearchResponse, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
@@ -35,6 +42,10 @@ const visibleMainIndicators = ref<MainIndicatorId[]>(initialMainChartPreferences
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
+const alertRule = ref<ProductAlertRuleState | null>(null)
+const alertRuntimeStatus = ref<AlertRuntimeStatus | null>(null)
+const alertLoading = ref(false)
+const alertSaving = ref(false)
 const {
   bars,
   hasMoreBefore,
@@ -51,6 +62,7 @@ const {
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
+let alertGeneration = 0
 
 const symbol = ref(resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
@@ -90,6 +102,7 @@ onMounted(async () => {
     await refreshSeries()
     metadataReady = true
     void refreshResearch()
+    void refreshAlerts()
   } catch {
     error.value = '行情元数据加载失败'
   } finally {
@@ -103,6 +116,7 @@ watch(symbol, async () => {
   try {
     if (seriesKind.value !== 'contract') syncDominantContract()
     await refreshSeries()
+    void refreshAlerts()
   } finally {
     synchronizingSymbol = false
   }
@@ -201,6 +215,46 @@ async function refreshResearch() {
     researchError.value = true
   } finally {
     if (requestGeneration === researchGeneration) researchLoading.value = false
+  }
+}
+
+async function refreshAlerts() {
+  if (!symbol.value) return
+  const requestGeneration = ++alertGeneration
+  const requestedSymbol = symbol.value
+  alertLoading.value = true
+  alertRule.value = null
+  try {
+    const [scope, runtimeStatus] = await Promise.all([
+      getProductAlerts(requestedSymbol),
+      getAlertRuntimeStatus(),
+    ])
+    if (requestGeneration !== alertGeneration || symbol.value !== requestedSymbol) return
+    alertRule.value = scope.rules.find((rule) => rule.rule_code === 'htdy_original_15m') || null
+    alertRuntimeStatus.value = runtimeStatus
+  } catch {
+    if (requestGeneration !== alertGeneration || symbol.value !== requestedSymbol) return
+    alertRule.value = null
+    alertRuntimeStatus.value = 'failed'
+  } finally {
+    if (requestGeneration === alertGeneration) alertLoading.value = false
+  }
+}
+
+async function toggleAlert(enabled: boolean) {
+  const current = alertRule.value
+  const requestedSymbol = symbol.value
+  if (!current || !requestedSymbol || alertSaving.value) return
+  alertSaving.value = true
+  try {
+    const updated = await setAlertProductEnabled(current.rule_code, requestedSymbol, enabled)
+    if (symbol.value === requestedSymbol && alertRule.value?.rule_code === updated.rule_code) {
+      alertRule.value = updated
+    }
+  } catch {
+    message.error('Alert Scope 更新失败')
+  } finally {
+    alertSaving.value = false
   }
 }
 
@@ -372,7 +426,12 @@ function normalizeSymbol(value: unknown): string | null {
             :research="research"
             :research-loading="researchLoading"
             :research-error="researchError"
+            :alert-rule="alertRule"
+            :alert-runtime-status="alertRuntimeStatus"
+            :alert-loading="alertLoading"
+            :alert-saving="alertSaving"
             @toggle-watchlist="toggleWatchlist"
+            @toggle-alert="toggleAlert"
           />
         </div>
       </div>
@@ -400,7 +459,12 @@ function normalizeSymbol(value: unknown): string | null {
           :research="research"
           :research-loading="researchLoading"
           :research-error="researchError"
+          :alert-rule="alertRule"
+          :alert-runtime-status="alertRuntimeStatus"
+          :alert-loading="alertLoading"
+          :alert-saving="alertSaving"
           @toggle-watchlist="toggleWatchlist"
+          @toggle-alert="toggleAlert"
         />
       </NDrawerContent>
     </NDrawer>
