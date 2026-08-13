@@ -195,6 +195,8 @@ def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
             redis_factory=lambda: redis,
             now=now,
             live_runtime_enabled=True,
+            alert_runtime_enabled=False,
+            wecom_configured=False,
             after_market_status_path=None,
         )
 
@@ -218,6 +220,8 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
             redis_factory=lambda: FakeRedis(),
             now=now,
             live_runtime_enabled=False,
+            alert_runtime_enabled=False,
+            wecom_configured=False,
             after_market_status_path=None,
         )
         stale = build_runtime_health(
@@ -239,6 +243,8 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
             now=now,
             live_runtime_enabled=True,
             live_freshness_seconds=300,
+            alert_runtime_enabled=False,
+            wecom_configured=False,
             after_market_status_path=None,
         )
 
@@ -303,6 +309,8 @@ def test_enabled_after_market_is_pending_before_its_first_runtime_run(tmp_path) 
             redis_factory=lambda: FakeRedis(),
             live_runtime_enabled=False,
             after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            wecom_configured=False,
             after_market_status_path=missing_status,
         )
 
@@ -365,6 +373,8 @@ def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_byte
                 values={"live:heartbeat": b"\xff\xfetoken=must-not-leak"}
             ),
             live_runtime_enabled=True,
+            alert_runtime_enabled=False,
+            wecom_configured=False,
             after_market_status_path=None,
         )
 
@@ -402,6 +412,8 @@ def test_runtime_health_surfaces_live_dominant_mismatch(tmp_path) -> None:
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
+            alert_runtime_enabled=False,
+            wecom_configured=False,
             after_market_status_path=status_path,
         )
 
@@ -432,6 +444,8 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
             session,
             redis_factory=lambda: FakeRedis(exc=ConnectionError("redis password should-not-leak")),
             now=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
+            alert_runtime_enabled=False,
+            wecom_configured=False,
             after_market_status_path=None,
         )
 
