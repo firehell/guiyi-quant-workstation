@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.alerts.evaluators import AlertEvaluation
+from app.alerts.composition import RedisAlertHeartbeatStore
 from app.alerts.models import AlertEvent, AlertRule
 from app.alerts.runtime import AlertRuntime
 from app.db.base import Base
@@ -202,6 +203,47 @@ def test_disabled_out_of_scope_or_non_operational_stops_before_market_read(sessi
     assert sender.messages == outside_sender.messages == []
 
 
+@pytest.mark.parametrize("revocation", ("disable", "scope_remove"))
+def test_runtime_refreshes_rule_truth_after_another_session_revokes_authorization(
+    revocation: str,
+    tmp_path,
+) -> None:
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'alerts.sqlite3'}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as runtime_session:
+        runtime_session.add(
+            AlertRule(
+                rule_code="htdy_original_15m",
+                indicator_code="huotian_dayou_original_v0",
+                frequency="15m",
+                enabled=True,
+                scope_mode="watchlist",
+                scope_products=["ag"],
+            )
+        )
+        runtime_session.commit()
+        runtime, read, _evaluator, sender = _runtime(runtime_session)
+        cached_rule = runtime._enabled_rule("ag")
+        assert cached_rule is not None
+
+        with Session(engine) as writer:
+            rule = writer.scalar(select(AlertRule))
+            assert rule is not None
+            if revocation == "disable":
+                rule.enabled = False
+            else:
+                rule.scope_products = []
+            writer.commit()
+
+        assert cached_rule.enabled is True
+        assert cached_rule.scope_products == ["ag"]
+
+        runtime.process_message(CHANNEL, _payload())
+
+        assert read.calls == 0
+        assert sender.messages == []
+
+
 @pytest.mark.parametrize(
     ("read_result", "evaluation"),
     (
@@ -246,6 +288,21 @@ def test_database_create_failure_rolls_back_and_never_sends(
     assert sender.messages == []
 
 
+@pytest.mark.parametrize("numeric", ("not-a-number", "NaN", "Infinity"))
+def test_malformed_or_nonfinite_numeric_payload_is_a_no_send_skip(
+    session: Session,
+    numeric: str,
+) -> None:
+    payload = json.loads(_payload())
+    payload["close"] = numeric
+    runtime, read, evaluator, sender = _runtime(session)
+
+    runtime.process_message(CHANNEL, json.dumps(payload))
+
+    assert read.calls == evaluator.calls == 0
+    assert sender.messages == []
+
+
 class FakeMessageSource:
     def __init__(self, stop_states: list[bool]) -> None:
         self.patterns: list[str] = []
@@ -268,6 +325,27 @@ class FakeHeartbeatStore:
 
     def write(self, payload: dict[str, object], *, ttl_seconds: int) -> None:
         self.writes.append((payload, ttl_seconds))
+
+
+def test_redis_heartbeat_store_sets_value_and_ttl_atomically() -> None:
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def set(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+
+        def expire(self, *_args, **_kwargs):
+            raise AssertionError("heartbeat TTL must be atomic with SET")
+
+    redis = FakeRedis()
+
+    RedisAlertHeartbeatStore(redis).write({"available": True}, ttl_seconds=30)
+
+    assert len(redis.calls) == 1
+    assert redis.calls[0][0][0] == "alert:heartbeat"
+    assert json.loads(redis.calls[0][0][1]) == {"available": True}
+    assert redis.calls[0][1] == {"ex": 30}
 
 
 def test_run_forever_heartbeat_has_fixed_fields_10s_cadence_and_30s_ttl(session: Session) -> None:

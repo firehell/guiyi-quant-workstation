@@ -47,8 +47,8 @@ class RedisAlertHeartbeatStore:
         self._redis.set(
             "alert:heartbeat",
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            ex=ttl_seconds,
         )
-        self._redis.expire("alert:heartbeat", ttl_seconds)
 
 
 def build_wecom_sender_from_env() -> WeComWebhookSender:

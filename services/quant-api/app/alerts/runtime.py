@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 import json
 import logging
 from typing import Protocol
@@ -151,7 +151,9 @@ class AlertRuntime:
     def _enabled_rule(self, symbol: str) -> AlertRule | None:
         try:
             rule = self._session.scalar(
-                select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m")
+                select(AlertRule)
+                .where(AlertRule.rule_code == "htdy_original_15m")
+                .execution_options(populate_existing=True)
             )
         except Exception:  # noqa: BLE001 - DB read failure must not send
             self._session.rollback()
@@ -222,7 +224,7 @@ def _parse_event(channel: object, payload: object) -> tuple[str, CanonicalBar] |
                 None if raw["open_interest"] is None else Decimal(str(raw["open_interest"]))
             ),
         )
-    except (KeyError, TypeError, ValueError, UnicodeError):
+    except (DecimalException, KeyError, TypeError, ValueError, UnicodeError):
         return None
     return symbol, bar
 
