@@ -52,6 +52,18 @@ class RuntimeAfterMarketHealth(BaseModel):
     error_message: str | None = None
 
 
+class RuntimeAlertHealth(BaseModel):
+    """Alert V1 activation、webhook presence 与短 TTL heartbeat 摘要。"""
+
+    status: str
+    configured_enabled: bool = False
+    webhook_configured: bool = False
+    last_heartbeat_at: str | None = None
+    enabled_rule_count: int = 0
+    scope_product_count: int = 0
+    error_type: str | None = None
+
+
 class RuntimeHealthComponents(BaseModel):
     """各子组件健康快照的容器。"""
 
@@ -59,6 +71,7 @@ class RuntimeHealthComponents(BaseModel):
     redis: RuntimeComponentHealth
     live_market: RuntimeLiveMarketHealth
     after_market: RuntimeAfterMarketHealth
+    alert: RuntimeAlertHealth
 
 
 class RuntimeHealthOut(BaseModel):

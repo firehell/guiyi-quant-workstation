@@ -36,6 +36,10 @@ case "$SERVICE" in
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     exec "$PYTHON_BIN" -m app.guiyi_cli.main runtime live
     ;;
+  alert)
+    [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
+    exec "$PYTHON_BIN" -m app.guiyi_cli.main runtime alert
+    ;;
   after-market)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     exec "$PYTHON_BIN" -m app.guiyi_cli.main data after-market

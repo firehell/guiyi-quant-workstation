@@ -23,6 +23,8 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
 
     monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
     monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
+    monkeypatch.setattr("app.services.runtime_health._alert_runtime_activation_enabled", lambda: False)
+    monkeypatch.delenv("WECOM_WEBHOOK_URL", raising=False)
     monkeypatch.setattr(
         "app.api.runtime.build_runtime_health",
         lambda session: build_runtime_health(session, after_market_status_path=None),
@@ -40,7 +42,7 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     assert payload["would_start_services"] is False
     assert payload["would_enqueue_jobs"] is False
     assert payload["would_send_notifications"] is False
-    assert set(payload["components"]) == {"db", "redis", "live_market", "after_market"}
+    assert set(payload["components"]) == {"db", "redis", "live_market", "after_market", "alert"}
     assert payload["components"]["live_market"] == {
         "status": "disabled",
         "configured_enabled": False,
@@ -61,6 +63,113 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
         "error_type": None,
         "error_message": None,
     }
+    assert payload["components"]["alert"] == {
+        "status": "disabled",
+        "configured_enabled": False,
+        "webhook_configured": False,
+        "last_heartbeat_at": None,
+        "enabled_rule_count": 0,
+        "scope_product_count": 0,
+        "error_type": None,
+    }
+
+
+def test_alert_health_activation_and_webhook_fail_closed(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("WECOM_WEBHOOK_URL", raising=False)
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        disabled = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            live_runtime_enabled=False,
+            after_market_status_path=None,
+        )
+        marker = tmp_path / ".run" / "alert-runtime-enabled"
+        marker.parent.mkdir()
+        marker.write_text("enabled\n", encoding="utf-8")
+        missing_webhook = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            live_runtime_enabled=False,
+            after_market_status_path=None,
+        )
+
+    assert disabled["components"]["alert"]["status"] == "disabled"
+    assert disabled["components"]["alert"]["configured_enabled"] is False
+    assert missing_webhook["components"]["alert"]["status"] == "degraded"
+    assert missing_webhook["components"]["alert"]["error_type"] == "wecom_webhook_missing"
+
+
+def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -> None:
+    now = datetime(2026, 8, 13, 2, 45, tzinfo=UTC)
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    marker = tmp_path / ".run" / "alert-runtime-enabled"
+    marker.parent.mkdir()
+    marker.write_text("enabled\n", encoding="utf-8")
+    monkeypatch.setenv("WECOM_WEBHOOK_URL", "https://must-not-leak.invalid/private-key")
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        missing = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=now,
+            live_runtime_enabled=False,
+            after_market_status_path=None,
+        )
+        stale = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": json.dumps(
+                        {
+                            "generated_at": (now - timedelta(seconds=31)).isoformat(),
+                            "available": True,
+                            "enabled_rule_count": 1,
+                            "scope_product_count": 2,
+                        }
+                    )
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            after_market_status_path=None,
+        )
+        fresh = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": json.dumps(
+                        {
+                            "generated_at": now.isoformat(),
+                            "available": True,
+                            "enabled_rule_count": 1,
+                            "scope_product_count": 2,
+                        }
+                    )
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            after_market_status_path=None,
+        )
+
+    assert missing["components"]["alert"]["error_type"] == "alert_heartbeat_missing"
+    assert stale["components"]["alert"]["error_type"] == "alert_heartbeat_stale"
+    assert fresh["components"]["alert"] == {
+        "status": "ok",
+        "configured_enabled": True,
+        "webhook_configured": True,
+        "last_heartbeat_at": now.isoformat(),
+        "enabled_rule_count": 1,
+        "scope_product_count": 2,
+        "error_type": None,
+    }
+    rendered = json.dumps(fresh, ensure_ascii=False)
+    assert "must-not-leak" not in rendered
+    assert "private-key" not in rendered
 
 
 def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
@@ -376,5 +485,9 @@ def _session_factory():
 
 
 def _contains_no_secret_words(payload: dict) -> bool:
-    text = json.dumps(payload, ensure_ascii=False, default=str).lower()
+    public = json.loads(json.dumps(payload, ensure_ascii=False, default=str))
+    alert = public.get("components", {}).get("alert", {})
+    if isinstance(alert, dict):
+        alert.pop("webhook_configured", None)
+    text = json.dumps(public, ensure_ascii=False, default=str).lower()
     return not any(secret in text for secret in ("webhook", "token", "password", "cookie", "secret", "must-not-leak"))
