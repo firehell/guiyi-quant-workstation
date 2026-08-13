@@ -1,6 +1,7 @@
 """归一量化统一 CLI 入口（``uv run guiyi``）。
 
-子域：``data``（历史数据 audit/update/refresh）、``runtime``（健康与前台 Live）。
+子域：``data``（历史数据 audit/update/refresh）、``research``（只读研究）、
+``runtime``（健康与前台 Live）。
 默认 JSON 输出至 stdout；参数错误与异常经 output 模块脱敏后写 stderr。
 """
 
@@ -21,10 +22,20 @@ from app.guiyi_cli.output import (
     exception_error_payload,
     print_json,
 )
-from app.market_data.composition import build_historical_data_manager, build_live_market_service
+from app.guiyi_cli.research_parser import add_research_commands
+from app.guiyi_cli.research_commands import (
+    build_research_request,
+    run_research_command,
+)
+from app.market_data.composition import (
+    build_historical_data_manager,
+    build_live_market_service,
+    build_subing_calibration_research_service,
+)
 from app.market_data.after_market import build_after_market_updater
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
+from app.market_data.subing_calibration_service import CalibrationResearchRequest
 from app.services.runtime_health import build_runtime_health
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
@@ -33,15 +44,21 @@ AfterMarketFactory = Callable[[HistoricalDataManager], Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[Any], Any]
 AlertCanarySenderFactory = Callable[[], Any]
+ResearchServiceFactory = Callable[[Any], Any]
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构建 guiyi 根解析器：data 与 runtime 两个子域。"""
+    """构建 guiyi 根解析器：data、research 与 runtime 三个子域。"""
     parser = JsonArgumentParser(prog="guiyi")
     domains = parser.add_subparsers(dest="domain", required=True)
     data = domains.add_parser("data")
     commands = data.add_subparsers(dest="data_command", required=True)
     add_data_commands(commands)
+    research = domains.add_parser("research")
+    research_commands = research.add_subparsers(
+        dest="research_command", required=True
+    )
+    add_research_commands(research_commands)
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
     runtime_commands.add_parser("status")
@@ -60,6 +77,9 @@ def main(
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
     alert_canary_sender_factory: AlertCanarySenderFactory = build_wecom_sender_from_env,
+    research_service_factory: ResearchServiceFactory = (
+        build_subing_calibration_research_service
+    ),
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -67,10 +87,13 @@ def main(
     """CLI 主流程：解析 → 执行 → JSON 输出；返回进程退出码（0 成功，2 参数，1 执行错误）。"""
     raw = list(argv) if argv is not None else sys.argv[1:]
     command = ".".join(raw[:2]) if raw else "guiyi"
+    research_request: CalibrationResearchRequest | None = None
     try:
         args = build_parser().parse_args(raw)
         if args.domain == "data":
             build_request(args)
+        elif args.domain == "research":
+            research_request = build_research_request(args)
     except ProductRetiredError as exc:
         print_json(
             exception_error_payload(
@@ -91,6 +114,13 @@ def main(
             payload = _run_data(
                 args, session_factory, manager_factory, after_market_factory
             )
+        elif args.domain == "research":
+            assert research_request is not None
+            with session_factory() as session:
+                payload = run_research_command(
+                    research_request,
+                    research_service_factory(session),
+                )
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:
@@ -134,7 +164,11 @@ def main(
             exception_error_payload(
                 command=command,
                 exc=exc,
-                readonly=not bool(getattr(args, "apply", False)),
+                readonly=(
+                    True
+                    if args.domain == "research"
+                    else not bool(getattr(args, "apply", False))
+                ),
             ),
             stderr,
         )
