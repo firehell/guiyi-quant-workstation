@@ -126,9 +126,11 @@ write_alert_runtime_activation_marker() {
   mv -f "$temporary_marker" "$ALERT_RUNTIME_MARKER"
 }
 
-for label in "${retired_labels[@]}"; do
-  retire_launch_agent "$label"
-done
+if [[ "$MODE" != "--confirm-alert-runtime" ]]; then
+  for label in "${retired_labels[@]}"; do
+    retire_launch_agent "$label"
+  done
+fi
 
 for label in "${load_labels[@]}"; do
   source_plist="$RENDER_DIR/${label}.plist"

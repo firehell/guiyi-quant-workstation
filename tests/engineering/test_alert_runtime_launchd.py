@@ -44,8 +44,10 @@ def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_pat
     assert "mode=--confirm-alert-runtime services=1" in result.stdout
     calls = (alert_home / "launchctl-calls.log").read_text(encoding="utf-8")
     assert "com.guiyi.quant-alert" in calls
-    assert "com.guiyi.quant-live" not in calls
-    assert "com.guiyi.quant-after-market" not in calls
+    assert all(
+        "com.guiyi.quant-" not in line or "com.guiyi.quant-alert" in line
+        for line in calls.splitlines()
+    )
 
 
 def test_run_local_service_has_dedicated_alert_cli_branch() -> None:
