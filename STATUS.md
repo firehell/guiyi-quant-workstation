@@ -14,8 +14,8 @@
   current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
   Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
 - Alert V1 仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：production migration 已完成并只读验收；真实 WeCom
-  canary **未执行**、Alert Runtime **未激活**。G1 不授权 G2/G3，代码测试、mock sender 与 render-only
-  也不改变后两项状态。
+  canary 已尝试一次但在发送前失败，G2 **未完成**；Alert Runtime **未激活**。各 Gate 不能相互授权，
+  代码测试、mock sender 与 render-only 也不改变真实状态。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
@@ -43,6 +43,11 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   `20260813_0037`。只读读回确认八表 Market Catalog 全部仍在，`alert_rules` / `alert_events` 两张独立
   Application Domain 表存在；唯一 seed 为 enabled 的 `htdy_original_15m`、`watchlist`、空 Scope，
   AlertEvent=0，Event 幂等唯一约束与 `symbol,bar_end` 查询索引存在。此次未发送通知或启用 Alert Runtime。
+- `2026-08-13 14:35 +08:00` 已将 WeCom webhook 写入本机 Runtime secret source（权限 `600`，值不入仓库、
+  DB 或日志），随后按单次 G2 授权尝试 `guiyi runtime alert-canary`。手工命令缺少 `packages/quant-core`
+  的 `PYTHONPATH`，CLI 在导入阶段以 `ModuleNotFoundError` 停止，sender 未构造且未发起 HTTP；因此没有
+  企业微信消息，G2 未完成且该次授权已消耗。只读读回继续为 Scope 为空、AlertEvent=0、Alert Runtime
+  activation marker 不存在；正确的 CLI 依赖路径已通过只读 import 验证，未自行重试。
 
 ## 历史验收事实
 
