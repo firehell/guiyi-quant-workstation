@@ -70,6 +70,7 @@ test('server scope control and persistent bell stay bounded to actual-dominant 1
   })
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+  await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '火天大有', exact: true }).click()
   await expect(page.getByText('火天大有 · 15m 实际主力')).toBeVisible()
   await expect(page.getByText('未启用', { exact: true })).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')

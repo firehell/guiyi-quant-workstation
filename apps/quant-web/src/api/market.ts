@@ -8,7 +8,10 @@ import type {
   MarketRadarResponse,
   ProductResearchResponse,
   SeriesKind,
+  SubingFrequency,
+  SubingResearchResponse,
 } from '@/types/market'
+import { normalizeSubingResearch } from '@/types/market'
 
 export function getMarketDominants() {
   return request.get<never, DominantContractListResponse>('/market/dominants')
@@ -31,6 +34,15 @@ export function getProductResearch(params: {
       contract: params.seriesKind === 'contract' ? params.contract : undefined,
     },
   }).then(normalizeProductResearch)
+}
+
+export function getSubingResearch(params: { symbol: string; frequency: SubingFrequency }) {
+  return request.get<never, SubingResearchResponse>('/market/research/subing', {
+    params: {
+      symbol: params.symbol,
+      frequency: params.frequency,
+    },
+  }).then(normalizeSubingResearch)
 }
 
 /** FastAPI serializes Decimal as strings; convert only at the display HTTP boundary. */

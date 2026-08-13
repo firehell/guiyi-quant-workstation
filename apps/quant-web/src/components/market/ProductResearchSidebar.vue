@@ -2,8 +2,16 @@
 import { computed } from 'vue'
 import { NButton, NDivider, NTag } from 'naive-ui'
 import ProductAlertControl from '@/components/market/ProductAlertControl.vue'
+import SubingResearchSection from '@/components/market/SubingResearchSection.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
-import type { DominantContractItem, MarketFrequency, ProductResearchResponse, SeriesKind } from '@/types/market'
+import type {
+  DominantContractItem,
+  MarketFrequency,
+  ProductResearchResponse,
+  ResearchOverlayId,
+  SeriesKind,
+  SubingResearchResponse,
+} from '@/types/market'
 
 const props = defineProps<{
   dominant: DominantContractItem | undefined
@@ -17,6 +25,11 @@ const props = defineProps<{
   research: ProductResearchResponse | null
   researchLoading: boolean
   researchError: boolean
+  selectedOverlay: ResearchOverlayId
+  subing: SubingResearchResponse | null
+  subingLoading: boolean
+  subingError: boolean
+  subingSupported: boolean
   alertRule: ProductAlertRuleState | null
   alertRuntimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
@@ -58,6 +71,15 @@ function ratio(value: number | null) {
         {{ watchlisted ? '已自选' : '加入自选' }}
       </NButton>
     </div>
+    <template v-if="selectedOverlay === 'subing'">
+      <NDivider />
+      <SubingResearchSection
+        :snapshot="subing"
+        :loading="subingLoading"
+        :error="subingError"
+        :supported="subingSupported"
+      />
+    </template>
     <template v-if="research">
       <NDivider />
       <section class="research-sidebar__section">

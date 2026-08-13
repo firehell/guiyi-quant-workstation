@@ -99,6 +99,112 @@ export interface ProductResearchResponse {
   recent_daily: CanonicalBarDto[]
 }
 
+export type SubingFrequency = '5m' | '15m' | '1d'
+export type SubingFactorStatus = 'ready' | 'insufficient_data'
+
+export interface SubingFactorSnapshot {
+  timeframe: SubingFrequency
+  bar_end: string
+  trading_day: string
+  contract: string
+  segment_start_trading_day: string
+  bar_source: 'canonical' | 'live'
+  close: number
+  ema21: number
+  price_side: 'above' | 'below' | 'equal' | 'unavailable'
+  slope_5_raw: number
+  slope_10_raw: number
+  slope_5_bps_per_bar: number
+  slope_10_bps_per_bar: number
+  macd_dif: number
+  macd_dea: number
+  macd_histogram: number
+  macd_cross: 'golden' | 'dead' | 'none' | 'unavailable'
+  macd_cross_level: number
+  macd_zero_distance_abs: number
+  macd_zero_distance_bps: number
+  volume: number
+  previous_volume: number
+  volume_ratio_prev: number | null
+}
+
+export interface SubingFactorResult {
+  status: SubingFactorStatus
+  snapshot: SubingFactorSnapshot | null
+}
+
+export interface SubingResearchResponse {
+  symbol: string
+  product_name: string
+  frequency: SubingFrequency
+  actual_contract: string
+  dominant_mapping_date: string
+  segment_start_trading_day: string
+  source_mode: 'canonical' | 'canonical_live'
+  live_observation: 'available' | 'unavailable' | 'not_applicable'
+  live_reason: string | null
+  macd_policy_id: string
+  calibration_state: 'pending'
+  primary: SubingFactorResult
+  companion: SubingFactorResult | null
+}
+
+/** FastAPI serializes Decimal fields as strings; normalize the complete Factor snapshot. */
+export function normalizeSubingResearch(payload: SubingResearchResponse): SubingResearchResponse {
+  return {
+    ...payload,
+    primary: normalizeSubingFactorResult(payload.primary),
+    companion: payload.companion ? normalizeSubingFactorResult(payload.companion) : null,
+  }
+}
+
+function normalizeSubingFactorResult(result: SubingFactorResult): SubingFactorResult {
+  if (!result.snapshot) return { ...result, snapshot: null }
+  const snapshot = result.snapshot
+  return {
+    ...result,
+    snapshot: {
+      ...snapshot,
+      close: Number(snapshot.close),
+      ema21: Number(snapshot.ema21),
+      slope_5_raw: Number(snapshot.slope_5_raw),
+      slope_10_raw: Number(snapshot.slope_10_raw),
+      slope_5_bps_per_bar: Number(snapshot.slope_5_bps_per_bar),
+      slope_10_bps_per_bar: Number(snapshot.slope_10_bps_per_bar),
+      macd_dif: Number(snapshot.macd_dif),
+      macd_dea: Number(snapshot.macd_dea),
+      macd_histogram: Number(snapshot.macd_histogram),
+      macd_cross_level: Number(snapshot.macd_cross_level),
+      macd_zero_distance_abs: Number(snapshot.macd_zero_distance_abs),
+      macd_zero_distance_bps: Number(snapshot.macd_zero_distance_bps),
+      volume: Number(snapshot.volume),
+      previous_volume: Number(snapshot.previous_volume),
+      volume_ratio_prev: snapshot.volume_ratio_prev === null
+        ? null
+        : Number(snapshot.volume_ratio_prev),
+    },
+  }
+}
+
+/** Keep chart-derived EMA/MACD state local to the current rank1 segment. */
+export function filterBarsToSubingSegment(bars: BarData[], segmentStart: string): BarData[] {
+  return bars.filter((bar) => (bar.trading_day || '') >= segmentStart)
+}
+
+export function isSubingSupportedFrequency(frequency: MarketFrequency): frequency is SubingFrequency {
+  return frequency === '5m' || frequency === '15m' || frequency === '1d'
+}
+
+export function shouldScheduleSubingCompanionRefresh(payload: SubingResearchResponse): boolean {
+  const primary = payload.primary.snapshot
+  const companion = payload.companion?.snapshot
+  if (payload.frequency !== '5m' || !primary || !companion) return false
+  const primaryEnd = Date.parse(primary.bar_end)
+  const companionEnd = Date.parse(companion.bar_end)
+  if (!Number.isFinite(primaryEnd) || !Number.isFinite(companionEnd)) return false
+  return new Date(primaryEnd).getUTCMinutes() % 15 === 0 && companionEnd < primaryEnd
+}
+
 export interface MarketRadarSummary {
   up_count: number
   down_count: number
