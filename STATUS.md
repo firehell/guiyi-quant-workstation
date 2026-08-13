@@ -10,6 +10,10 @@
   MarketDataService`；物理 Dataset 只有 `continuous|contract`，`actual_dominant` 只按 rank1 map 查询拼接。
 - Market Runtime V1 只提供行情研究观察。Historical Canonical 与 Redis Live Overlay 分离，Live 不写
   Parquet，`auto_order=false`，仓库不存在订单创建或提交路径。
+- SuBing Factor Observation V1 已在 `develop` 完成只读代码闭环：只展示 current rank1
+  segment 的 Kline/EMA/MACD/Factor，且有效当前合约视图不覆盖用户的 Market series
+  preference；盘中仅合并同当前合约的 completed Live Bar，不做 pre-rank1 warm-up 或
+  cross-roll 指标状态。Calibration 仍为 `pending`，formal Signal 未实现。
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
@@ -20,6 +24,8 @@
 - Alert V1 的 G1/G2/G3 已分别按单次授权执行：production migration 与真实 WeCom canary 已完成，Alert
   Runtime 已仅以 `jm`（焦煤）Scope 激活并读回 `status=ok`。当前仍为 `PARTIAL`：尚未等到自然 confirmed
   15m HTDY observation，因此不能声称自然 Event/通知/persistent 🔔 闭环已验收。
+- SuBing 本轮未修改 Rule/Scope/Event、WeCom 或 Alert Runtime，不改变上述 Alert V1
+  `PARTIAL` 事实；也未执行 Market/Alert Runtime deployment 或 switch。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
@@ -171,3 +177,22 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   `f2568ba2...`，P0 Web/API/Live/after-market 均指向同一 clean/detached worktree；Research/Radar、
   Historical/Live seam、60 品种范围和 after-market activation 字段均可只读验证。真实使用数日的 P1
   决策观察期也尚未开始。
+
+## SuBing Factor Observation V1 代码验收
+
+- `develop` 已提供薄 `SubingReadService` 与 SuBing API/Web 观察面；只从
+  `MarketDataService` / `MarketReadService` 复用已有 Historical/completed Live seam，不直连
+  provider/Redis，不新增 persistence、cache 或 Runtime component。`MarketResearchService` 仍为
+  Historical-only。
+- Factor Observation 的 primary 与 companion 都裁剪到当前 rank1 segment，companion 不晚于
+  primary cutoff；日线仍为 Historical-only。Kline/EMA/MACD/Factor 因此不携带主力切换前
+  warm-up 或跨换月状态。前端的 effective current-contract identity 只影响 SuBing 视图，
+  不写回用户的 continuous/actual-dominant/contract 偏好。
+- 本轮实现验收为后端 `503 passed / 13 skipped`、Ruff 通过、Mypy 32 个源文件通过、
+  Web `102 passed / 1 skipped`、Playwright 精确两个用例文件 `11 passed`、production build 通过、
+  secret scan 0 finding。Playwright 在子沙箱因 `listen EPERM 127.0.0.1:5182` 未启动后，
+  由 controller 在同一 `4f1598e9` 工作树外层以原命令重跑通过，未用已部署 Runtime 服务替代。
+- 状态仍是 Factor Observation 完成、Calibration `pending`、formal Signal absent、Alert V1
+  unchanged。本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
+  `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中，当前隔离 Runtime 仍为 `v1.1.0`
+  的 17:00 模板。

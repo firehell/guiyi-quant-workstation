@@ -25,6 +25,8 @@ flowchart TB
     end
     subgraph Runtime["展示与运行时 seam"]
       MR["MarketReadService"]
+      MRS["MarketResearchService"]
+      SR["SubingReadService"]
       LM["LiveMarketService"]
       AM["AfterMarketUpdater"]
       AR["AlertRuntime"]
@@ -47,9 +49,14 @@ flowchart TB
       RD["Redis Live Overlay"]
     end
     WEB --> API --> MR
+    API --> MRS
+    API --> SR
     WEB --> ALERTAPI --> AS
     MR --> MQ
     MR --> RD
+    MRS --> MQ
+    SR --> MQ
+    SR --> MR
     CLI --> MS
     CLI --> HM
     LM --> RD
@@ -78,6 +85,10 @@ flowchart TB
 - 接入层只解析请求和输出结果；不实现下载、聚合、文件选择或主力判断。
 - `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务；
   `MarketReadService` 只在展示边界合并 Canonical 与 Redis Live，不创建第二条历史读链。
+- `MarketResearchService` 仅组合 `MarketDataService` 的 Historical Canonical 结果，不读 Redis Live。
+  薄 `SubingReadService` 复用 `MarketDataService` 的 current rank1 segment 身份和
+  `MarketReadService` 的 Historical/completed Live seam；它不直连 provider 或 Redis，不存储、
+  不写 Canonical/DB，不管理 Runtime、校准或 Signal。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，

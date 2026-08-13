@@ -37,6 +37,39 @@ pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build
 ```
 
+## SuBing Factor Observation V1
+
+### 无副作用实现与回归验证
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_research.py \
+  services/quant-api/tests/test_subing_api.py \
+  services/quant-api/tests/data_foundation/test_subing_read_service.py \
+  services/quant-api/tests/data_foundation/test_market_read.py \
+  services/quant-api/tests/data_foundation/test_market_research.py
+
+uv run --project services/quant-api ruff check \
+  services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant
+
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+MYPYPATH=services/quant-api \
+  uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/market_data services/quant-api/app/guiyi_cli \
+  services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py
+
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web exec playwright test \
+  e2e/market-research.spec.mjs e2e/alert-v1.spec.mjs
+pnpm --dir apps/quant-web build
+```
+
+这些命令只验证 SuBing Factor Observation 的 current-rank1 segment、Historical/completed Live
+seam、有效当前合约视图和 Web 展示；不运行 provider、Canonical/DB 写入、Runtime
+switch 或通知。Calibration 仍为 `pending`，也不产生 formal Signal。
+
 ## Alert V1
 
 ### 无副作用单元、集成与浏览器验证
