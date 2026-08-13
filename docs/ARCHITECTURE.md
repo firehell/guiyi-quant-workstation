@@ -113,7 +113,7 @@ migration 与服务启停，必须分别获得范围明确的一次性执行意�
 
 Market Runtime V1 分为三条明确边界的平面：Historical 继续由 `HistoricalDataManager` 发布 Canonical；
 LiveMarketService 只将 active 60 当日 rank1 completed 1m 与本地 Derived 写入 Redis；
-AfterMarketUpdater 只在 launchd 的 17:00 触发（失败最多一小时后重试一次）调用既有历史写入口。Live
+AfterMarketUpdater 只在 launchd 的 18:05 触发（失败最多一小时后重试一次）调用既有历史写入口。Live
 永不进入 Canonical、Parquet 或 PostgreSQL。代码与模板默认关闭；只有用户明确请求在该本地工作站启用
 Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 release、其他 DB、通知或订单。
 

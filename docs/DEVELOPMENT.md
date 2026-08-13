@@ -85,7 +85,7 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 外部操作权限。
 
 唯一的持续授权例外是用户明确要求在识别出的本地工作站“启用 Market Runtime V1”后，既定
-`operational_products.txt`（当前与 active 60 一致）的 rank1 Live 观察与 17:00/一次 1h retry 盘后更新可
+`operational_products.txt`（当前与 active 60 一致）的 rank1 Live 观察与 18:05/一次 1h retry 盘后更新可
 持续运行；该请求不授权其他 DB mutation、release、真实通知或订单。未
 收到该请求时，只能执行 mock、临时目录、render-only 与只读健康验证。
 

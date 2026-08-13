@@ -24,7 +24,7 @@
 | 额度 | 明确的 provider quota 耗尽立即停止本轮 | 保留已发布月，未完成月不发布；下次同命令从首个缺失目标续传 |
 | live | historical Canonical 与 Redis Live Observation 分离 | 仅 `operational_products` 当日 rank1 completed 1m；未确认 bar 不进正式历史资产，Live 不进 Parquet/DB |
 | 模块长期性 | 新增模块前必须确认个人使用是否值得长期维护 | 无明确肯定答案时不创建模块 |
-| Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `operational_products.txt` 中 active 60 的 Live 观察和每日 17:00 + 一次 1h retry 的盘后更新持续运行 | 范围变化必须显式修改同一配置；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
+| Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `operational_products.txt` 中 active 60 的 Live 观察和每日 18:05 + 一次 1h retry 的盘后更新持续运行 | 范围变化必须显式修改同一配置；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
 | Alert V1 应用 | 独立 Application Domain 只提供 `htdy_original_15m` server-side Scope、幂等 AlertEvent、一次 WeCom 尝试和持久 Web Marker | 不修改八表 Catalog/Canonical/rank1；不恢复 Signal/Review/Strategy，不 replay/backfill/retry，不建 delivery 表或订单路径 |
 | Alert Runtime V1 授权 | 只有用户明确启用本地 Alert Runtime V1 后，`htdy_original_15m × enabled scope_products × WeCom` 才可持续处理后续 confirmed 15m Bar | 与 Market Runtime 授权独立；不覆盖新 Rule/渠道、migration、Runtime switch、release、Canonical 写入或订单 |
 | 开发态部署拓扑 | 功能开发期可让本地 launchd 临时直接运行主 `develop` 工作区；最终验收重新创建绑定精确提交的独立 Runtime worktree | 不热更新；每次重载需新的一次性意图；develop 证据不等于 promotion 或最终 Runtime 证据 |

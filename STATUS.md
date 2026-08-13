@@ -10,6 +10,10 @@
   MarketDataService`；物理 Dataset 只有 `continuous|contract`，`actual_dominant` 只按 rank1 map 查询拼接。
 - Market Runtime V1 只提供行情研究观察。Historical Canonical 与 Redis Live Overlay 分离，Live 不写
   Parquet，`auto_order=false`，仓库不存在订单创建或提交路径。
+- 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
+  现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
+  `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
+  `NEXT_TRADING_SESSION_NOT_READY`；当前隔离 Runtime 仍为 `v1.1.0` 的 17:00 模板，尚未执行 Runtime switch。
 - Alert V1 已在 `develop` 完成代码实现：server-side Scope、actual-dominant confirmed 15m 的 Python HTDY
   current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
   Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
@@ -25,8 +29,8 @@
 - HTTP：历史分页、dominants、Historical/Live state、WebSocket、Alert Scope/Event API 和只读 Runtime health。
 - CLI：`guiyi data update|refresh|audit|after-market`、`guiyi runtime status|live|alert|alert-canary`；其中
   `alert-canary` 是真实通知 Gate，不能作为普通测试执行。
-- Runtime：`operational_products.txt` 是 Live 与 17:00/最多一次一小时后 retry 盘后更新的唯一范围入口；
-  该文件已与 active 60 完全对齐。
+- Runtime：`operational_products.txt` 是 Live 与目标 18:05/最多一次一小时后 retry 盘后更新的唯一范围入口；
+  该文件已与 active 60 完全对齐。当前隔离 Runtime 在单独切换前仍按旧 17:00 模板运行。
 - Alert Runtime：唯一 Rule 为 `htdy_original_15m`，当前 server-side Scope 精确为 `jm`；不从
   `operational_products.txt` 自动扩大 Alert Scope。
 
@@ -72,6 +76,12 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-13 17:00:02 +08:00` 的 60 品种自然盘后首次尝试在实际分区处理前以 `ValueError` 退出；未人工
+  补跑，唯一一小时 retry 随后完成，并于 `19:20:23 +08:00` 写入 `status=passed`、`attempts=2`、
+  `last_successful_trading_day=2026-08-13`，launchd exit code=0。只读验收确认 continuous
+  `1m/5m/15m/30m/60m/1d` 全部 60/60 推进至 `2026-08-13T07:00:00Z`，Radar=`ready`、participant=60、
+  stale/unavailable 为空，当日 Live bar/subscription keys 均已清理；`1w` 正确停在已完整周
+  `2026-08-07T07:00:00Z`。
 - `2026-08-13 00:02 +08:00` 在不重载、不手工盘后或数据写入的情况下，已只读观察到 RQData Live
   provider 额度自然恢复：Runtime health 回到 `ok/readonly=true`，Live heartbeat 报
   operational=60、phase-scoped subscribed=11、`error_type=null`，last bar/heartbeat 均推进；DB、Redis 与

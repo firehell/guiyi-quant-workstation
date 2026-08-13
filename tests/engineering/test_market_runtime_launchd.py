@@ -68,6 +68,22 @@ def test_market_runtime_launch_agents_use_project_root_as_working_directory(
         assert payload["WorkingDirectory"] == str(repo.resolve())
 
 
+def test_after_market_launch_agent_runs_after_next_session_metadata_is_ready(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+
+    _run_installer(repo, home, fake_bin, "--render-only")
+
+    rendered = repo / ".run/launchd/com.guiyi.quant-after-market.plist"
+    with rendered.open("rb") as handle:
+        payload = plistlib.load(handle)
+    assert payload["StartCalendarInterval"] == {"Hour": 18, "Minute": 5}
+
+
 def test_confirm_install_retires_legacy_launch_agents(tmp_path: Path) -> None:
     """正式加载必须收口旧 develop recovery/worker，避免形成第二套 Runtime。"""
     repo = _copy_launchd_fixture(tmp_path / "repo")

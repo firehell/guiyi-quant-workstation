@@ -337,6 +337,46 @@ def test_update_exception_logs_only_sanitized_stage_diagnostics(tmp_path, caplog
     assert "credential-secret-provider-message" not in caplog.text
 
 
+def test_next_trading_session_not_ready_is_retried_with_stable_public_code(
+    tmp_path, caplog
+) -> None:
+    updater, manager, _rqdata, sleeps, notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True, True],
+        results=[],
+    )
+
+    def fail_update(_request):
+        raise InfrastructureError("NEXT_TRADING_SESSION_NOT_READY")
+
+    manager.update = fail_update
+    caplog.set_level(logging.WARNING, logger="app.market_data.after_market")
+
+    result = updater.run()
+    public_status = public_after_market_status(
+        _status(tmp_path / "after-market-status.json")
+    )
+
+    assert result.status == "failed"
+    assert result.attempts == 2
+    assert result.error_code == "NEXT_TRADING_SESSION_NOT_READY"
+    assert public_status["last_run"]["error_code"] == (
+        "NEXT_TRADING_SESSION_NOT_READY"
+    )
+    assert public_status["last_failure"]["error_code"] == (
+        "NEXT_TRADING_SESSION_NOT_READY"
+    )
+    assert sleeps == [3600]
+    assert notices == ["NEXT_TRADING_SESSION_NOT_READY"]
+    assert [record.message for record in caplog.records] == [
+        "after_market_attempt_failed stage=metadata_readiness attempt=1 "
+        "detail_code=NEXT_TRADING_SESSION_NOT_READY exception_type=InfrastructureError",
+        "after_market_attempt_failed stage=metadata_readiness attempt=2 "
+        "detail_code=NEXT_TRADING_SESSION_NOT_READY exception_type=InfrastructureError",
+    ]
+
+
 def test_failed_update_result_logs_sanitized_stop_code(tmp_path, caplog) -> None:
     updater, _manager, _rqdata, _sleeps, _notices, _live_store = _updater(
         tmp_path,

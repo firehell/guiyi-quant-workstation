@@ -139,7 +139,7 @@ API 依赖并仅执行一次对应 Runtime switch。部署后至少读回：
 `--confirm-market-runtime` 才会启用或重载 Market Runtime 并更新 marker。完成或失败后，本次执行意图即
 消耗；重试必须取得新的明确请求。
 
-### 17:00 自然盘后验收
+### 18:05 自然盘后验收
 
 不得手工执行 `guiyi data after-market` 代替 launchd 证据。自然触发后只读核对：
 

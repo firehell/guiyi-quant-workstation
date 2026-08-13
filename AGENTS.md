@@ -23,7 +23,7 @@ Domain 表不属于 Market Catalog，不改变八表合同。
 
 `develop` 是日常开发分支。普通仓库变更可以直接在当前 `develop` 工作区编辑、测试、提交并推送；不要求 GitHub Issue、任务分支、额外 worktree、PR、独立 Review、required CI、exact-head、merge readback、ancestry/cleanup evidence、approval packet、hash 或 receipt。分支、worktree、PR、Review 和 CI 可以按需使用，但只是协作工具，不是开发授权条件，也不授予任何真实外部操作权限。
 
-当前功能开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，以便快速观察。源码修改不会热更新：Web 需要 build 和重载，API/Live 需要重载；每次重载仍是 Runtime switch，需要当次范围明确的一次性执行意图。17:00 任务会读取当时的 `develop` 工作树，因此 dirty 或持续移动的树只能形成开发证据。功能收口后的最终拓扑采用绑定精确提交的独立 Runtime worktree，验收读回 clean/detached 身份、launchd 根、健康状态和受限范围；已经在同一代码谱系形成并由用户接受的自然时点证据不因部署封装重复采集，具体复用或豁免事实由 `STATUS.md` 记录。
+当前功能开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，以便快速观察。源码修改不会热更新：Web 需要 build 和重载，API/Live 需要重载；每次重载仍是 Runtime switch，需要当次范围明确的一次性执行意图。18:05 任务会读取当时的 `develop` 工作树，因此 dirty 或持续移动的树只能形成开发证据。功能收口后的最终拓扑采用绑定精确提交的独立 Runtime worktree，验收读回 clean/detached 身份、launchd 根、健康状态和受限范围；已经在同一代码谱系形成并由用户接受的自然时点证据不因部署封装重复采集，具体复用或豁免事实由 `STATUS.md` 记录。
 
 开始前检查分支、工作区、最近提交、相关实现与测试。工作区存在其他任务或用户的未提交变更时，保留其内容与 index 状态，只修改、验证和暂存本任务明确范围；不得用批量清理、覆盖或全量暂存处理无关变更。
 
@@ -48,7 +48,7 @@ Domain 表不属于 Market Catalog，不改变八表合同。
 
 ### Market Runtime V1 的受限持续授权
 
-代码与 launchd 模板默认关闭。只有用户对识别出的本地工作站明确请求“启用 Market Runtime V1”并实际执行一次启用操作后，才允许以下有界持续自动行为：只对 `operational_products.txt` 订阅当日 rank1 completed 1m；每日 17:00 及最多一次 1 小时后 retry 仅对同一品种集合运行正式 `HistoricalDataManager.update`。启用后的日常运行不需要逐日重新确认；显式修改 `operational_products.txt` 才改变该自动范围。
+代码与 launchd 模板默认关闭。只有用户对识别出的本地工作站明确请求“启用 Market Runtime V1”并实际执行一次启用操作后，才允许以下有界持续自动行为：只对 `operational_products.txt` 订阅当日 rank1 completed 1m；每日 18:05 及最多一次 1 小时后 retry 仅对同一品种集合运行正式 `HistoricalDataManager.update`。启用后的日常运行不需要逐日重新确认；显式修改 `operational_products.txt` 才改变该自动范围。
 
 该授权不覆盖 main/tag/release、其他生产 DB/数据变更、Runtime 版本切换、真实外部通知渠道或任何订单；`auto_order=false` 始终不变。没有上述明确启用请求时，render-only、健康读取和测试不构成启用授权。
 

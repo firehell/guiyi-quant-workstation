@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
+from app.market_data.errors import InfrastructureError
 from app.market_data.metadata import MetadataSnapshot, MetadataSynchronizer
 from app.models import (
     Contract,
@@ -295,11 +296,91 @@ def test_current_day_sync_replaces_next_trading_day_sessions_only() -> None:
     session.close()
 
 
+def test_current_day_sync_reports_missing_next_trading_sessions_as_not_ready() -> None:
+    """下一交易日 Session 尚未发布是可重试时点，不是未知 ValueError。"""
+    session = _session()
+    before = _metadata_state(session)
+    snapshot = _snapshot()
+    snapshot = MetadataSnapshot(
+        exchanges=snapshot.exchanges,
+        instruments=snapshot.instruments,
+        contracts=snapshot.contracts,
+        calendars=snapshot.calendars,
+        sessions=tuple(
+            row for row in snapshot.sessions if row["effective_from"] == _DAY
+        ),
+        main_contracts=snapshot.main_contracts,
+        main_contract_starts=snapshot.main_contract_starts,
+    )
+    synchronizer = MetadataSynchronizer(
+        _Adapter(snapshot), MarketCatalog(session, Path("."))
+    )
+
+    with pytest.raises(InfrastructureError) as captured:
+        synchronizer.synchronize_current_day(("j", "jm"), _DAY)
+
+    assert captured.value.code == "NEXT_TRADING_SESSION_NOT_READY"
+    assert _metadata_state(session) == before
+    session.close()
+
+
+def test_current_day_sync_keeps_missing_current_sessions_fail_closed() -> None:
+    session = _session()
+    before = _metadata_state(session)
+    snapshot = _snapshot()
+    snapshot = MetadataSnapshot(
+        exchanges=snapshot.exchanges,
+        instruments=snapshot.instruments,
+        contracts=snapshot.contracts,
+        calendars=snapshot.calendars,
+        sessions=tuple(
+            row for row in snapshot.sessions if row["effective_from"] == _AFTER
+        ),
+        main_contracts=snapshot.main_contracts,
+        main_contract_starts=snapshot.main_contract_starts,
+    )
+    synchronizer = MetadataSynchronizer(
+        _Adapter(snapshot), MarketCatalog(session, Path("."))
+    )
+
+    with pytest.raises(ValueError, match="CURRENT_DAY_TRADING_SESSION_INVALID"):
+        synchronizer.synchronize_current_day(("j", "jm"), _DAY)
+
+    assert _metadata_state(session) == before
+    session.close()
+
+
 def test_current_day_sync_invalid_provider_fact_rolls_back_all_metadata() -> None:
     session = _session()
     before = _metadata_state(session)
     adapter = _Adapter(_snapshot(include_jm_map=False))
     synchronizer = MetadataSynchronizer(adapter, MarketCatalog(session, Path(".")))
+
+    with pytest.raises(ValueError, match="CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID"):
+        synchronizer.synchronize_current_day(("j", "jm"), _DAY)
+
+    assert _metadata_state(session) == before
+    session.close()
+
+
+def test_current_day_sync_checks_rank1_before_missing_next_session() -> None:
+    session = _session()
+    before = _metadata_state(session)
+    snapshot = _snapshot(include_jm_map=False)
+    snapshot = MetadataSnapshot(
+        exchanges=snapshot.exchanges,
+        instruments=snapshot.instruments,
+        contracts=snapshot.contracts,
+        calendars=snapshot.calendars,
+        sessions=tuple(
+            row for row in snapshot.sessions if row["effective_from"] == _DAY
+        ),
+        main_contracts=snapshot.main_contracts,
+        main_contract_starts=snapshot.main_contract_starts,
+    )
+    synchronizer = MetadataSynchronizer(
+        _Adapter(snapshot), MarketCatalog(session, Path("."))
+    )
 
     with pytest.raises(ValueError, match="CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID"):
         synchronizer.synchronize_current_day(("j", "jm"), _DAY)

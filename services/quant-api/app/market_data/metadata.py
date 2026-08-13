@@ -24,6 +24,7 @@ from typing import Any, Protocol
 from sqlalchemy import delete, select
 
 from app.market_data.catalog import MarketCatalog
+from app.market_data.errors import InfrastructureError
 from app.market_data.product_retirement import assert_products_not_retired
 from app.models import (
     Contract,
@@ -171,6 +172,9 @@ class MetadataSynchronizer:
         session = self.catalog.session
         try:
             exchanges = _existing_product_exchanges(session, normalized)
+            main_contracts = _current_day_main_contracts(
+                session, snapshot, normalized, trading_day
+            )
             calendars, next_trading_days = _current_calendar_context(
                 snapshot, trading_day, set(exchanges.values())
             )
@@ -180,9 +184,6 @@ class MetadataSynchronizer:
                 exchanges,
                 trading_day,
                 next_trading_days,
-            )
-            main_contracts = _current_day_main_contracts(
-                session, snapshot, normalized, trading_day
             )
 
             for values in calendars:
@@ -388,7 +389,10 @@ def _current_and_next_sessions(
         seen.add(identity)
         covered.add((symbol, effective_from))
         values.append(dict(raw))
-    if covered != expected_days:
+    missing = expected_days - covered
+    if missing and all(day != trading_day for _, day in missing):
+        raise InfrastructureError("NEXT_TRADING_SESSION_NOT_READY")
+    if missing:
         raise ValueError("CURRENT_DAY_TRADING_SESSION_INVALID")
     return tuple(values)
 

@@ -56,7 +56,7 @@ RQData
 
 最终用户接口为 `guiyi data update|refresh|audit` 与 `/api/v1/market/*`。Market Runtime 的 Live 与盘后
 更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察当日 rank1 completed
-1m，盘后最多在 17:00 和一次一小时后 retry 更新相同范围，Live 永不提升为 Canonical。DFD-01～DFD-07
+1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为 Canonical。DFD-01～DFD-07
 和 60 品种 Canonical 闭环已经完成，长期规范位于 `openspec/specs/`；现有旧入口不能作为当前合同依据。
 
 ## Alert V1 应用边界

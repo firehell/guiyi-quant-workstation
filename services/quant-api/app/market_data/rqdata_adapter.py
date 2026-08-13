@@ -494,6 +494,7 @@ class RQDataClient:
             periods,
             main_contracts,
             symbol_exchanges,
+            allow_missing_after=(min(starts.values()) if current_day_only else None),
         )
         # 有夜盘或跨日的交易所，日历行标记 has_night_session。
         night_exchanges = {
@@ -720,9 +721,21 @@ def _historical_session_rows(
     periods: tuple[dict[str, Any], ...],
     main_contracts: list[tuple[str, date, str]],
     symbol_exchanges: Mapping[str, str],
+    *,
+    allow_missing_after: date | None = None,
 ) -> tuple[dict[str, object], ...]:
-    """将 get_trading_periods 结果转为按日 TradingSession 行；须与主力映射日全集一致。"""
-    expected = {(contract, day): symbol for symbol, day, contract in main_contracts}
+    """将 get_trading_periods 结果转为按日 TradingSession 行。
+
+    历史快照必须与主力映射日全集一致；Runtime 快照可保留
+    ``allow_missing_after`` 之后尚未发布的 Session，交由 MetadataSynchronizer
+    在先验证当天 rank1 后唯一分类为可重试时点。
+    """
+    expected: dict[tuple[str, date], str] = {}
+    for symbol, day, contract in main_contracts:
+        key = (contract, day)
+        if key in expected and allow_missing_after is None:
+            raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
+        expected.setdefault(key, symbol)
     values: dict[tuple[str, date], str] = {}
     for row in periods:
         contract = _row_text(row, "order_book_id", "level_0").upper()
@@ -734,7 +747,11 @@ def _historical_session_rows(
         if hours is None or key in values:
             raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
         values[key] = hours
-    if set(values) != set(expected):
+    missing = set(expected) - set(values)
+    if missing and (
+        allow_missing_after is None
+        or any(trading_day <= allow_missing_after for _, trading_day in missing)
+    ):
         raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
     rows: list[dict[str, object]] = []
     for contract, trading_day in sorted(values, key=lambda item: (item[1], item[0])):
