@@ -1,6 +1,7 @@
 export const MARKET_FREQUENCIES = ['1m', '5m', '15m', '30m', '60m', '1d', '1w'] as const
 export type MarketFrequency = (typeof MARKET_FREQUENCIES)[number]
 export type SeriesKind = 'continuous' | 'actual_dominant' | 'contract'
+export type ResearchOverlayId = 'none' | 'subing' | 'htdy'
 
 export interface DominantContractItem {
   product: string

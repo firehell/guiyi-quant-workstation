@@ -17,10 +17,15 @@ import {
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
-import type { DominantContractItem, MainIndicatorId, MarketFrequency, ProductResearchResponse, SeriesKind } from '@/types/market'
+import type { DominantContractItem, MarketFrequency, ProductResearchResponse, ResearchOverlayId, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { isCurrentAlertMutation } from '@/utils/alertControl'
-import { loadMainChartPreferences, saveMainChartPreferences } from '@/utils/mainIndicators'
+import {
+  loadMainChartPreferences,
+  resolveEffectiveSeriesIdentity,
+  saveMainChartPreferences,
+  visibleMainIndicatorsForOverlay,
+} from '@/utils/mainIndicators'
 import {
   loadMarketWorkspacePreferences,
   saveMarketWorkspacePreferences,
@@ -41,7 +46,7 @@ const fullscreen = ref(false)
 const researchDrawerOpen = ref(false)
 const researchSidebarOpen = ref(initialWorkspacePreferences.researchSidebarOpen)
 const watchlist = ref(initialWorkspacePreferences.watchlist)
-const visibleMainIndicators = ref<MainIndicatorId[]>(initialMainChartPreferences.visibleMainIndicators)
+const selectedOverlay = ref<ResearchOverlayId>(initialMainChartPreferences.selectedOverlay)
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
@@ -80,6 +85,8 @@ const frequency = ref<MarketFrequency>(resolveInitialFrequency())
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
 const followLatest = ref(true)
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
+const visibleMainIndicators = computed(() => visibleMainIndicatorsForOverlay(selectedOverlay.value))
+const effectiveIdentity = computed(() => currentIdentity())
 const isLiveDisplay = computed(() => !!marketState.value?.live_eligible
   && !!marketState.value.live_available
   && !liveUnavailable.value)
@@ -96,7 +103,7 @@ const afterMarketFailed = computed(() => {
   return !!afterMarket && typeof afterMarket === 'object' && afterMarket.last_failure != null
 })
 const watchlisted = computed(() => watchlist.value.includes(symbol.value))
-const htdyVisible = computed(() => visibleMainIndicators.value.includes('htdy'))
+const htdyVisible = computed(() => selectedOverlay.value === 'htdy')
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', syncFullscreen)
@@ -106,7 +113,6 @@ onMounted(async () => {
     if (!dominants.value.some((item) => item.product === symbol.value)) {
       symbol.value = dominants.value[0]?.product || ''
     }
-    if (seriesKind.value !== 'contract' || !contract.value) syncDominantContract()
     await refreshSeries()
     metadataReady = true
     void refreshResearch()
@@ -122,7 +128,6 @@ watch(symbol, async () => {
   if (!metadataReady) return
   synchronizingSymbol = true
   try {
-    if (seriesKind.value !== 'contract') syncDominantContract()
     await refreshSeries()
     void refreshAlerts()
   } finally {
@@ -134,11 +139,23 @@ watch([contract, seriesKind, frequency], () => {
   if (metadataReady && !synchronizingSymbol) void refreshSeries()
 })
 
-watch([symbol, seriesKind, frequency], () => {
+watch(selectedOverlay, () => {
+  if (metadataReady && !synchronizingSymbol) void refreshSeries()
+})
+
+watch([symbol, seriesKind, contract], () => {
+  if (metadataReady) void syncPersistentAlertMarkers(currentIdentity(), [], 'replace')
+})
+
+watch([frequency, selectedOverlay], () => {
   if (metadataReady) void syncPersistentAlertMarkers(currentIdentity(), [], 'replace')
 })
 
 watch([symbol, seriesKind, contract], () => {
+  if (metadataReady && !synchronizingSymbol) void refreshResearch()
+})
+
+watch(selectedOverlay, () => {
   if (metadataReady && !synchronizingSymbol) void refreshResearch()
 })
 
@@ -170,27 +187,32 @@ onUnmounted(() => {
   disposePersistentAlertMarkers()
 })
 
-function syncDominantContract() {
-  const value = dominants.value.find((item) => item.product === symbol.value)
-  if (value) contract.value = value.actual_contract
-}
-
 function currentIdentity() {
+  const effective = resolveEffectiveSeriesIdentity({
+    overlay: selectedOverlay.value,
+    userSeriesKind: seriesKind.value,
+    userContract: contract.value || undefined,
+    dominantContract: selectedDominant.value?.actual_contract,
+  })
   return {
-    seriesKind: seriesKind.value,
+    seriesKind: effective.seriesKind,
     symbol: symbol.value,
-    contract: seriesKind.value === 'contract' ? contract.value : undefined,
+    contract: effective.contract,
     frequency: frequency.value,
   }
 }
 
 async function refreshSeries() {
   if (!symbol.value) return
-  if (seriesKind.value === 'contract' && !contract.value) {
-    error.value = '指定真实合约时 contract 必填'
+  if (selectedOverlay.value === 'subing' && !selectedDominant.value?.actual_contract) {
+    error.value = '苏冰观察需要当前主力合约，等待主力映射'
     return
   }
   const requested = currentIdentity()
+  if (requested.seriesKind === 'contract' && !requested.contract) {
+    error.value = '指定真实合约时 contract 必填'
+    return
+  }
   error.value = null
   followLatest.value = true
   try {
@@ -198,8 +220,8 @@ async function refreshSeries() {
     if (!isCurrentIdentity(requested)) return
     await router.replace({ query: {
       symbol: requested.symbol,
-      contract: contract.value,
-      series_kind: requested.seriesKind,
+      contract: contract.value || undefined,
+      series_kind: seriesKind.value,
       frequency: requested.frequency,
     } })
   } catch {
@@ -291,16 +313,17 @@ async function loadEarlierBars() {
 }
 
 function isCurrentIdentity(candidate: ReturnType<typeof currentIdentity>) {
-  return candidate.seriesKind === seriesKind.value
-    && candidate.symbol === symbol.value
-    && candidate.contract === (seriesKind.value === 'contract' ? contract.value : undefined)
-    && candidate.frequency === frequency.value
+  const current = currentIdentity()
+  return candidate.seriesKind === current.seriesKind
+    && candidate.symbol === current.symbol
+    && candidate.contract === current.contract
+    && candidate.frequency === current.frequency
 }
 
-function updateVisibleMainIndicators(value: MainIndicatorId[]) {
-  visibleMainIndicators.value = value
+function updateSelectedOverlay(value: ResearchOverlayId) {
+  selectedOverlay.value = value
   const current = loadMainChartPreferences()
-  saveMainChartPreferences({ ...current, visibleMainIndicators: value })
+  saveMainChartPreferences({ ...current, selectedOverlay: value })
 }
 
 function toggleWatchlist() {
@@ -390,13 +413,13 @@ function normalizeSymbol(value: unknown): string | null {
       :frequency="frequency"
       :contract="contract"
       :dominants="dominants"
-      :visible-main-indicators="visibleMainIndicators"
+      :selected-overlay="selectedOverlay"
       :fullscreen="fullscreen"
       @update:symbol="symbol = $event"
       @update:series-kind="seriesKind = $event"
       @update:frequency="frequency = $event"
       @update:contract="contract = $event"
-      @update:visible-main-indicators="updateVisibleMainIndicators"
+      @update:selected-overlay="updateSelectedOverlay"
       @open-research="openResearchDrawer"
       @toggle-fullscreen="toggleFullscreen"
       @back="router.push({ name: 'market' })"
@@ -407,7 +430,7 @@ function normalizeSymbol(value: unknown): string | null {
       <NCard size="small" :bordered="false" class="identity-card">
         <div class="identity-row">
           <strong>{{ symbol.toUpperCase() }} {{ selectedDominant?.product_name }}</strong>
-          <NTag>{{ seriesKind }}</NTag>
+          <NTag>{{ effectiveIdentity.seriesKind }}</NTag>
           <NTag>{{ frequency }}</NTag>
           <span>{{ bars.length }} bars</span>
           <span v-if="canonicalCoverage">{{ canonicalCoverage.start }} → {{ canonicalCoverage.end }}</span>
@@ -440,9 +463,9 @@ function normalizeSymbol(value: unknown): string | null {
           <ProductResearchSidebar
             class="product-workspace__sidebar"
             :dominant="selectedDominant"
-            :series-kind="seriesKind"
+            :series-kind="effectiveIdentity.seriesKind"
             :frequency="frequency"
-            :contract="contract"
+            :contract="effectiveIdentity.contract || ''"
             :live="isLiveDisplay"
             :phase="phaseLabel"
             :has-more-before="hasMoreBefore"
@@ -473,9 +496,9 @@ function normalizeSymbol(value: unknown): string | null {
       <NDrawerContent title="研究" closable>
         <ProductResearchSidebar
           :dominant="selectedDominant"
-          :series-kind="seriesKind"
+          :series-kind="effectiveIdentity.seriesKind"
           :frequency="frequency"
-          :contract="contract"
+          :contract="effectiveIdentity.contract || ''"
           :live="isLiveDisplay"
           :phase="phaseLabel"
           :has-more-before="hasMoreBefore"

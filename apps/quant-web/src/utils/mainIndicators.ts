@@ -1,9 +1,17 @@
-import type { MainIndicatorDefinition, MainIndicatorId, MainIndicatorSeries, MainIndicatorValue } from '@/types/market'
+import type {
+  MainIndicatorDefinition,
+  MainIndicatorId,
+  MainIndicatorSeries,
+  MainIndicatorValue,
+  ResearchOverlayId,
+  SeriesKind,
+} from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
+export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v2'
 /** 主图指标偏好 schema 版本 */
-export const MAIN_CHART_PREFERENCES_VERSION = 1
+export const MAIN_CHART_PREFERENCES_VERSION = 2
+const LEGACY_MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
 export const HTDY_REPAINT_SCAN_ZONE_BARS = 27
 export const HTDY_WEB_OBSERVATION_METADATA = {
   indicator_code: 'huotian_dayou_original_v0',
@@ -20,6 +28,13 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
 
 /** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
+  version: 2
+  selectedOverlay: ResearchOverlayId
+  period?: string | null
+  realtimeFollow?: boolean
+}
+
+interface LegacyMainChartPreferences {
   version: 1
   visibleMainIndicators: MainIndicatorId[]
   period?: string | null
@@ -162,6 +177,27 @@ export function normalizeVisibleMainIndicators(value: unknown): MainIndicatorId[
   return result
 }
 
+export function visibleMainIndicatorsForOverlay(overlay: ResearchOverlayId): MainIndicatorId[] {
+  if (overlay === 'subing') return ['ema_21']
+  if (overlay === 'htdy') return ['htdy']
+  return []
+}
+
+export function resolveEffectiveSeriesIdentity(input: {
+  overlay: ResearchOverlayId
+  userSeriesKind: SeriesKind
+  userContract?: string
+  dominantContract?: string
+}): { seriesKind: SeriesKind; contract?: string } {
+  if (input.overlay === 'subing') {
+    return { seriesKind: 'contract', contract: input.dominantContract }
+  }
+  return {
+    seriesKind: input.userSeriesKind,
+    contract: input.userSeriesKind === 'contract' ? input.userContract : undefined,
+  }
+}
+
 /**
  * 从 localStorage 加载主图偏好；版本不匹配或解析失败时返回默认值。
  */
@@ -169,14 +205,27 @@ export function loadMainChartPreferences(storage: Pick<Storage, 'getItem'> | nul
   if (!storage) return defaultMainChartPreferences()
   try {
     const raw = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
-    if (!raw) return defaultMainChartPreferences()
-    const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
-    if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
+      if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
+      return {
+        version: 2,
+        selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
+        period: typeof parsed.period === 'string' ? parsed.period : null,
+        realtimeFollow: Boolean(parsed.realtimeFollow),
+      }
+    }
+    const legacyRaw = storage.getItem(LEGACY_MAIN_CHART_PREFERENCES_KEY)
+    if (!legacyRaw) return defaultMainChartPreferences()
+    const legacy = JSON.parse(legacyRaw) as Partial<LegacyMainChartPreferences> | null
+    if (!legacy || legacy.version !== 1 || !Array.isArray(legacy.visibleMainIndicators)) {
+      return defaultMainChartPreferences()
+    }
     return {
-      version: 1,
-      visibleMainIndicators: normalizeVisibleMainIndicators(parsed.visibleMainIndicators),
-      period: typeof parsed.period === 'string' ? parsed.period : null,
-      realtimeFollow: Boolean(parsed.realtimeFollow),
+      version: 2,
+      selectedOverlay: normalizeVisibleMainIndicators(legacy.visibleMainIndicators).includes('htdy') ? 'htdy' : 'subing',
+      period: typeof legacy.period === 'string' ? legacy.period : null,
+      realtimeFollow: Boolean(legacy.realtimeFollow),
     }
   } catch {
     return defaultMainChartPreferences()
@@ -196,7 +245,7 @@ export function saveMainChartPreferences(
       MAIN_CHART_PREFERENCES_KEY,
       JSON.stringify({
         version: MAIN_CHART_PREFERENCES_VERSION,
-        visibleMainIndicators: normalizeVisibleMainIndicators(preferences.visibleMainIndicators),
+        selectedOverlay: normalizeResearchOverlay(preferences.selectedOverlay),
         period: preferences.period || null,
         realtimeFollow: Boolean(preferences.realtimeFollow),
       }),
@@ -211,8 +260,8 @@ export function saveMainChartPreferences(
  */
 export function defaultMainChartPreferences(): MainChartPreferences {
   return {
-    version: 1,
-    visibleMainIndicators: [...DEFAULT_VISIBLE_MAIN_INDICATORS],
+    version: 2,
+    selectedOverlay: 'subing',
     period: null,
     realtimeFollow: false,
   }
@@ -266,4 +315,8 @@ export function latestMainIndicatorValues(series: MainIndicatorSeries[], visible
 
 function browserStorage() {
   return typeof window === 'undefined' ? null : window.localStorage
+}
+
+function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
+  return value === 'none' || value === 'htdy' ? value : 'subing'
 }

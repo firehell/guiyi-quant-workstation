@@ -5,13 +5,16 @@ import {
   HTDY_REPAINT_SCAN_ZONE_BARS,
   activeIndicatorCodes,
   DEFAULT_VISIBLE_MAIN_INDICATORS,
+  defaultMainChartPreferences,
   latestMainIndicatorValues,
   loadMainChartPreferences,
   MAIN_CHART_PREFERENCES_KEY,
   MAIN_INDICATOR_DEFINITIONS,
   normalizeMainIndicatorSeries,
   normalizeVisibleMainIndicators,
+  resolveEffectiveSeriesIdentity,
   saveMainChartPreferences,
+  visibleMainIndicatorsForOverlay,
 } from '../src/utils/mainIndicators.ts'
 
 const bars: BarData[] = Array.from({ length: 80 }, (_, index) => {
@@ -51,7 +54,37 @@ test('normalizeVisibleMainIndicators keeps available indicators without a second
   assert.deepEqual(normalizeVisibleMainIndicators('bad'), ['ema_21'])
 })
 
-test('loadMainChartPreferences recovers from corrupt storage and saves only UI preferences', () => {
+test('research overlay defaults to SuBing and exposes exactly one overlay indicator set', () => {
+  assert.equal(defaultMainChartPreferences().selectedOverlay, 'subing')
+  assert.deepEqual(visibleMainIndicatorsForOverlay('subing'), ['ema_21'])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('htdy'), ['htdy'])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('none'), [])
+})
+
+test('SuBing resolves current dominant without replacing the user Market series preference', () => {
+  assert.deepEqual(resolveEffectiveSeriesIdentity({
+    overlay: 'subing',
+    userSeriesKind: 'continuous',
+    userContract: undefined,
+    dominantContract: 'JM2609',
+  }), { seriesKind: 'contract', contract: 'JM2609' })
+
+  assert.deepEqual(resolveEffectiveSeriesIdentity({
+    overlay: 'htdy',
+    userSeriesKind: 'continuous',
+    userContract: undefined,
+    dominantContract: 'JM2609',
+  }), { seriesKind: 'continuous', contract: undefined })
+
+  assert.deepEqual(resolveEffectiveSeriesIdentity({
+    overlay: 'none',
+    userSeriesKind: 'contract',
+    userContract: 'JM2605',
+    dominantContract: 'JM2609',
+  }), { seriesKind: 'contract', contract: 'JM2605' })
+})
+
+test('preference v2 migrates legacy HTDY visibility and preserves period and realtime follow', () => {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) || null,
@@ -59,23 +92,60 @@ test('loadMainChartPreferences recovers from corrupt storage and saves only UI p
   }
 
   values.set(MAIN_CHART_PREFERENCES_KEY, 'not-json')
-  assert.deepEqual(loadMainChartPreferences(storage).visibleMainIndicators, ['ema_21'])
+  assert.equal(loadMainChartPreferences(storage).selectedOverlay, 'subing')
+
+  values.delete(MAIN_CHART_PREFERENCES_KEY)
+  values.set('guiyi.market.chart.preferences.v1', JSON.stringify({
+    version: 1,
+    visibleMainIndicators: ['ema_10', 'htdy', 'ema_60'],
+    period: '15m',
+    realtimeFollow: true,
+  }))
+  assert.deepEqual(loadMainChartPreferences(storage), {
+    version: 2,
+    selectedOverlay: 'htdy',
+    period: '15m',
+    realtimeFollow: true,
+  })
+
+  values.set('guiyi.market.chart.preferences.v1', JSON.stringify({
+    version: 1,
+    visibleMainIndicators: ['ema_10', 'ema_60'],
+    period: '1d',
+    realtimeFollow: false,
+  }))
+  assert.deepEqual(loadMainChartPreferences(storage), {
+    version: 2,
+    selectedOverlay: 'subing',
+    period: '1d',
+    realtimeFollow: false,
+  })
+})
+
+test('preference v2 saves only the selected overlay and chart UI preferences', () => {
+  const values = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => values.get(key) || null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  }
 
   saveMainChartPreferences(
     {
-      version: 1,
-      visibleMainIndicators: ['ema_10', 'htdy', 'ema_60'],
+      version: 2,
+      selectedOverlay: 'none',
       period: '15m',
       realtimeFollow: true,
     },
     storage,
   )
   const loaded = loadMainChartPreferences(storage)
-  assert.deepEqual(loaded.visibleMainIndicators, ['ema_10', 'htdy', 'ema_60'])
-  assert.deepEqual(normalizeVisibleMainIndicators(loaded.visibleMainIndicators), ['ema_10', 'htdy', 'ema_60'])
+  assert.equal(loaded.version, 2)
+  assert.equal(loaded.selectedOverlay, 'none')
   assert.equal(loaded.period, '15m')
   assert.equal(loaded.realtimeFollow, true)
-  assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).bars, undefined)
+  const saved = JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!)
+  assert.equal(saved.visibleMainIndicators, undefined)
+  assert.equal(saved.bars, undefined)
 })
 
 test('activeIndicatorCodes maps visible ids to backend indicator codes', () => {
