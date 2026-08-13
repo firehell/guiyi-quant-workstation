@@ -45,7 +45,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="fast12_slow26_signal9",
         confirmed_only=True,
         frozen_legacy=False,
-        allowed_consumers=("Market_readonly_display",),
+        allowed_consumers=("Market_readonly_display", "subing_factor_observation"),
         blocked_consumers=("formal_strategy_signal_until_validated", FORMAL_BACKTEST_CONSUMER),
         notes="Web/Market MACD display compatibility policy; not strategy-validated.",
     ),

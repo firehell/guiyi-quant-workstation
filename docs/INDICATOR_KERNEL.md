@@ -1,6 +1,6 @@
 # Indicator Kernel
 
-更新时间：2026-08-11
+更新时间：2026-08-13
 
 ## 定位
 
@@ -14,8 +14,8 @@ HTDY original/strict、Registry 与 formal policy；旧策略包、回测、Sign
 | Web 观察镜像 | `apps/quant-web/src/utils/indicators.ts`、`mainIndicators.ts` | 仅浏览器展示计算；不得成为策略事实源 |
 | Market indicators HTTP | 无 | 当前未挂载；未来如需提供，必须从 Kernel 输出 |
 
-当前 Market 图表只渲染 K 线和成交量。Web 指标镜像有测试覆盖，但尚未挂载到页面；页面是否启用由独立
-Product Workspace 任务决定。
+当前 Product Workspace 已挂载 `Kline + EMA / Volume / MACD`；Web 指标镜像仍只服务浏览器展示，
+不得成为 Factor、Signal 或 Runtime 的事实源。
 
 ## 代码位置
 
@@ -37,6 +37,9 @@ packages/quant-core/guiyi_quant/indicators/
 - EMA 默认 `seed_policy=sma_window`，`first_ready_index=period-1`；无效输入不得补零，恢复输出前必须重新
   取得完整有效窗口。
 - MACD/ATR 支持显式计算 policy，但 `compatibility_validated` 不等于 formal strategy、live 或 alert 资格。
+- `web_macd_legacy_v1` 只额外允许明确命名的 `subing_factor_observation` consumer 计算只读 Factor；
+  generic `macd` 仍为 `compatibility_validated`，`backtest/live/alert` capability 均为 false。
+- 苏冰 Formal Signal 的 MACD 语义审查与独立 scoped policy 仍未完成；Factor observation 不得被解读为 Signal 晋升。
 - 所有正式消费者只能使用 confirmed bars；未确认 bar 最多用于 Web preview。
 - 未知 `indicator_code`、policy 或 consumer 必须 fail-closed。
 - 未来若重建策略或回测，必须新任务、新合同并复用 Python Kernel；不得恢复旧策略包或复制算法。
