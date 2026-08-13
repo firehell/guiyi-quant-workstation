@@ -7,6 +7,7 @@ from sqlalchemy import pool
 from alembic import context
 from app.db.url import normalize_database_url
 from app import models  # noqa: F401
+from app.alerts import models as alert_models  # noqa: F401
 from app.db.base import Base
 
 # this is the Alembic Config object, which provides
