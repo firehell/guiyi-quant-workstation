@@ -26,6 +26,7 @@ from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
+from app.market_data.subing_read_service import SubingReadService
 from app.market_data.operational_universe import load_active_products
 from app.market_data.product_taxonomy import load_product_taxonomy
 from app.market_data.storage import CanonicalMonthlyStore
@@ -119,6 +120,14 @@ def build_market_read_service(session: Session) -> MarketReadService:
         phase_resolver=MarketPhaseResolver(session),
         operational_products=load_operational_products(),
         live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+    )
+
+
+def build_subing_read_service(session: Session) -> SubingReadService:
+    """构造 current-rank1 SuBing Factor Observation 只读模型。"""
+    return SubingReadService(
+        market_data=build_market_data_service(session),
+        market_read=build_market_read_service(session),
     )
 
 
