@@ -48,6 +48,8 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_subing_research.py \
   services/quant-api/tests/test_subing_api.py \
   services/quant-api/tests/data_foundation/test_subing_read_service.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py::test_latest_dominant_segment_returns_current_contiguous_rank1_segment \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py::test_latest_dominant_segment_fails_closed_for_missing_map_after_known_contract \
   services/quant-api/tests/data_foundation/test_market_read.py \
   services/quant-api/tests/data_foundation/test_market_research.py
 

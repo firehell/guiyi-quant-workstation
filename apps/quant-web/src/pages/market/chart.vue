@@ -107,11 +107,15 @@ const loading = computed(() => loadingInitial.value
   || (selectedOverlay.value === 'subing' && subingSupported.value && subingLoading.value))
 const followLatest = ref(true)
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
-const visibleMainIndicators = computed(() => visibleMainIndicatorsForOverlay(selectedOverlay.value))
-const effectiveIdentity = computed(() => currentIdentity())
 const subingSupported = computed(() => isSubingSupportedFrequency(frequency.value))
+const visibleMainIndicators = computed(() => {
+  if (selectedOverlay.value === 'subing' && !subingSupported.value) return []
+  return visibleMainIndicatorsForOverlay(selectedOverlay.value)
+})
+const effectiveIdentity = computed(() => currentIdentity())
 const visibleBars = computed(() => {
   if (selectedOverlay.value !== 'subing') return bars.value
+  if (!subingSupported.value) return bars.value
   const segmentStart = subing.value?.segment_start_trading_day
   return segmentStart ? filterBarsToSubingSegment(bars.value, segmentStart) : []
 })
@@ -256,31 +260,33 @@ function currentIdentity() {
 }
 
 async function refreshSeries() {
-  if (!symbol.value) return
+  if (!symbol.value) return false
   if (selectedOverlay.value === 'subing' && !selectedDominant.value?.actual_contract) {
     error.value = '苏冰观察需要当前主力合约，等待主力映射'
-    return
+    return false
   }
   const requested = currentIdentity()
   if (requested.seriesKind === 'contract' && !requested.contract) {
     error.value = '指定真实合约时 contract 必填'
-    return
+    return false
   }
   error.value = null
   followLatest.value = true
   try {
     await replaceSeries(requested)
-    if (!isCurrentIdentity(requested)) return
+    if (!isCurrentIdentity(requested)) return false
     await router.replace({ query: {
       symbol: requested.symbol,
       contract: contract.value || undefined,
       series_kind: seriesKind.value,
       frequency: requested.frequency,
     } })
+    return true
   } catch {
-    if (!isCurrentIdentity(requested)) return
+    if (!isCurrentIdentity(requested)) return false
     error.value = '读取失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
+    return false
   }
 }
 
@@ -332,16 +338,33 @@ async function refreshSubing(allowDelayedRefresh = true) {
   subingLoading.value = true
   subingError.value = false
   try {
-    const snapshot = await getSubingResearch({
+    const expectedDominant = selectedDominant.value
+    if (!expectedDominant) throw new Error('dominant metadata unavailable')
+    let snapshot = await getSubingResearch({
       symbol: requestedSymbol,
       frequency: requestedFrequency,
     })
-    if (
-      requestGeneration !== subingGeneration
-      || selectedOverlay.value !== 'subing'
-      || symbol.value !== requestedSymbol
-      || frequency.value !== requestedFrequency
-    ) return
+    if (!isCurrentSubingRequest(requestGeneration, requestedSymbol, requestedFrequency)) return
+    if (!isSubingSnapshotForDominant(snapshot, expectedDominant)) {
+      subing.value = null
+      chart.value?.replaceBars(visibleBars.value, !followLatest.value)
+      const refreshedDominants = await getMarketDominants()
+      if (!isCurrentSubingRequest(requestGeneration, requestedSymbol, requestedFrequency)) return
+      dominants.value = refreshedDominants.items
+      const refreshedExpected = selectedDominant.value
+      if (!refreshedExpected) throw new Error('dominant metadata unavailable')
+      const seriesReloaded = await refreshSeries()
+      if (!seriesReloaded) throw new Error('dominant contract series reload failed')
+      if (!isCurrentSubingRequest(requestGeneration, requestedSymbol, requestedFrequency)) return
+      snapshot = await getSubingResearch({
+        symbol: requestedSymbol,
+        frequency: requestedFrequency,
+      })
+      if (!isCurrentSubingRequest(requestGeneration, requestedSymbol, requestedFrequency)) return
+      if (!isSubingSnapshotForDominant(snapshot, refreshedExpected)) {
+        throw new Error('SuBing snapshot dominant identity mismatch')
+      }
+    }
     subing.value = snapshot
     chart.value?.replaceBars(visibleBars.value, !followLatest.value)
     if (allowDelayedRefresh && shouldScheduleSubingCompanionRefresh(snapshot)) {
@@ -353,11 +376,31 @@ async function refreshSubing(allowDelayedRefresh = true) {
     }
   } catch {
     if (requestGeneration !== subingGeneration) return
+    subing.value = null
     subingError.value = true
     chart.value?.replaceBars(visibleBars.value, !followLatest.value)
   } finally {
     if (requestGeneration === subingGeneration) subingLoading.value = false
   }
+}
+
+function isCurrentSubingRequest(
+  generation: number,
+  requestedSymbol: string,
+  requestedFrequency: MarketFrequency,
+) {
+  return generation === subingGeneration
+    && selectedOverlay.value === 'subing'
+    && symbol.value === requestedSymbol
+    && frequency.value === requestedFrequency
+}
+
+function isSubingSnapshotForDominant(
+  snapshot: SubingResearchResponse,
+  expected: DominantContractItem,
+) {
+  return snapshot.actual_contract === expected.actual_contract
+    && snapshot.dominant_mapping_date === expected.dominant_mapping_date
 }
 
 function clearSubingRefreshTimer() {

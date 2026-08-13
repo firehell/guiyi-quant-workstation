@@ -46,16 +46,32 @@ function subing(overrides = {}) {
 async function mockWorkspace(page, researchResponse, options = {}) {
   const marketRequests = options.marketRequests || []
   const subingRequests = options.subingRequests || []
+  const dominantRequests = options.dominantRequests || []
+  let dominantResponseIndex = 0
+  let subingResponseIndex = 0
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/dominants')) {
-      return route.fulfill({ json: { items: [{ product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-08-11' }] } })
+      dominantRequests.push(Object.fromEntries(url.searchParams))
+      if (dominantResponseIndex > 0 && options.dominantsRefreshDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.dominantsRefreshDelayMs))
+      }
+      const responses = options.dominantsResponses || []
+      const response = responses[Math.min(dominantResponseIndex, responses.length - 1)]
+        || { items: [{ product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-08-11' }] }
+      dominantResponseIndex += 1
+      return route.fulfill({ json: response })
     }
     if (url.pathname.endsWith('/research/product')) return route.fulfill(researchResponse)
     if (url.pathname.endsWith('/research/subing')) {
       subingRequests.push(Object.fromEntries(url.searchParams))
       if (options.subingDelayMs) await new Promise((resolve) => setTimeout(resolve, options.subingDelayMs))
-      return route.fulfill({ json: options.subingResponse || subing() })
+      const responses = options.subingResponses || []
+      const response = responses[Math.min(subingResponseIndex, responses.length - 1)]
+        || options.subingResponse
+        || subing()
+      subingResponseIndex += 1
+      return route.fulfill({ json: response })
     }
     if (url.pathname.endsWith('/state')) return route.fulfill({ json: { symbol: 'ag', series_kind: url.searchParams.get('series_kind'), frequency: url.searchParams.get('frequency'), operational: true, phase: options.live ? 'TRADING' : 'CLOSED', trading_day: '2026-08-11', live_eligible: !!options.live, live_available: !!options.live, live_contract: options.live ? 'AG2601' : null, canonical_end: null, after_market: {} } })
     if (url.pathname.endsWith('/bars/page')) {
@@ -116,7 +132,63 @@ test('SuBing keeps unsupported 30m explicit and does not request a snapshot', as
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=30m')
 
   await expect(page.getByText('苏冰 Factor V1 当前周期不可用，仅支持 5m / 15m / 1d', { exact: true })).toBeVisible()
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
   expect(subingRequests).toEqual([])
+})
+
+test('SuBing refreshes dominant metadata once before accepting a rollover snapshot', async ({ page }) => {
+  const marketRequests = []
+  const subingRequests = []
+  const dominantRequests = []
+  const ag2602 = subing({
+    actual_contract: 'AG2602',
+    dominant_mapping_date: '2026-08-12',
+  })
+  await mockWorkspace(page, { json: research() }, {
+    marketRequests,
+    subingRequests,
+    dominantRequests,
+    dominantsRefreshDelayMs: 700,
+    dominantsResponses: [
+      { items: [{ product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-08-11' }] },
+      { items: [{ product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2602', dominant_mapping_date: '2026-08-12' }] },
+    ],
+    subingResponses: [ag2602, ag2602],
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=5m')
+
+  await expect.poll(() => subingRequests.length).toBe(1)
+  await expect(page.getByText('0 bars', { exact: true })).toBeVisible()
+  await expect.poll(() => dominantRequests.length).toBe(2)
+  await expect.poll(() => subingRequests.length).toBe(2)
+  await expect.poll(() => marketRequests.at(-1)?.contract).toBe('AG2602')
+  await expect(page.getByText('109 bars', { exact: true })).toBeVisible()
+  await expect(page.locator('.toolbar__dominant')).toHaveText('当前主力 AG2602')
+  expect(marketRequests[0]?.contract).toBe('AG2601')
+  expect(dominantRequests).toHaveLength(2)
+})
+
+test('SuBing fails closed after one dominant refresh still mismatches the snapshot', async ({ page }) => {
+  const subingRequests = []
+  const dominantRequests = []
+  const mismatched = subing({
+    actual_contract: 'AG2602',
+    dominant_mapping_date: '2026-08-12',
+  })
+  await mockWorkspace(page, { json: research() }, {
+    subingRequests,
+    dominantRequests,
+    subingResponses: [mismatched, mismatched],
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  await expect.poll(() => subingRequests.length).toBe(2)
+  await expect(page.getByText('苏冰 Factor 快照不可用', { exact: true })).toBeVisible()
+  await expect(page.getByText('0 bars', { exact: true })).toBeVisible()
+  await page.waitForTimeout(700)
+  expect(subingRequests).toHaveLength(2)
+  expect(dominantRequests).toHaveLength(2)
 })
 
 test('SuBing performs exactly one delayed refresh for an older companion at the 5m common boundary', async ({ page }) => {

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
@@ -212,6 +214,51 @@ def test_companion_keeps_live_source_when_cutoff_removes_only_later_live_bars() 
     assert result.companion.snapshot.bar_end == retained_live.bar_end
     assert result.companion.snapshot.close == retained_live.close
     assert result.companion.snapshot.bar_source == "live"
+
+
+def test_source_mode_uses_only_live_bars_retained_by_the_primary_cutoff() -> None:
+    """Catches source_mode being decided before later companion Live bars are cut off."""
+    primary = _bars(
+        frequency=BarFrequency.M15,
+        count=50,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    companion = _bars(
+        frequency=BarFrequency.M5,
+        count=50,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+        first_close=Decimal("200"),
+    )
+    later_companion_live = _bar(
+        primary[-1].bar_end + timedelta(minutes=5),
+        _SEGMENT_START,
+        Decimal("500"),
+    )
+    market_read = _FakeMarketRead(
+        {BarFrequency.M15: primary, BarFrequency.M5: companion},
+        live={BarFrequency.M5: (later_companion_live,)},
+    )
+
+    result = SubingReadService(
+        market_data=_FakeMarketData(), market_read=market_read
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M15), now=_NOW)
+
+    assert result.primary.snapshot is not None
+    assert result.primary.snapshot.bar_source == "canonical"
+    assert result.companion is not None
+    assert result.companion.snapshot is not None
+    assert result.companion.snapshot.bar_source == "canonical"
+    assert result.source_mode == "canonical"
+    assert result.live_observation == "available"
+
+
+def test_read_request_rejects_malformed_ascii_product_symbols() -> None:
+    """Catches malformed non-product text reaching dominant resolution."""
+    with pytest.raises(ValueError, match="invalid SuBing symbol"):
+        SubingReadRequest("###", BarFrequency.M5)
 
 
 def test_daily_snapshot_is_historical_only_and_has_no_companion() -> None:

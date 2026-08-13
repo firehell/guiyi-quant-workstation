@@ -58,13 +58,16 @@ class SubingReadRequest:
     def __post_init__(self) -> None:
         if not isinstance(self.symbol, str) or not self.symbol.strip():
             raise ValueError("symbol must not be empty")
+        normalized_symbol = self.symbol.strip()
+        if not normalized_symbol.isascii() or not normalized_symbol.isalpha():
+            raise ValueError("invalid SuBing symbol")
         try:
             frequency = BarFrequency(self.frequency)
         except (TypeError, ValueError) as exc:
             raise ValueError("unsupported SuBing frequency") from exc
         if frequency not in SUPPORTED_SUBING_FREQUENCIES:
             raise ValueError("unsupported SuBing frequency")
-        object.__setattr__(self, "symbol", self.symbol.strip().lower())
+        object.__setattr__(self, "symbol", normalized_symbol.lower())
         object.__setattr__(self, "frequency", frequency)
 
 
@@ -156,7 +159,6 @@ class SubingReadService:
                 companion_bars = companion_historical
                 primary_source = "canonical"
                 companion_live_ends = frozenset()
-                source_mode = "canonical"
                 live_observation = "unavailable"
                 live_reason = "contract_mismatch"
             elif not all(
@@ -168,11 +170,10 @@ class SubingReadService:
                 companion_bars = companion_historical
                 primary_source = "canonical"
                 companion_live_ends = frozenset()
-                source_mode = "canonical"
                 live_observation = "unavailable"
                 live_reason = "live_unavailable"
             else:
-                primary_bars, primary_source, primary_live_ends = self._merge_live(
+                primary_bars, primary_source, _ = self._merge_live(
                     primary_identity,
                     primary_historical,
                     segment.start_trading_day,
@@ -183,11 +184,6 @@ class SubingReadService:
                     companion_historical,
                     segment.start_trading_day,
                     now,
-                )
-                source_mode = (
-                    "canonical_live"
-                    if primary_live_ends or companion_live_ends
-                    else "canonical"
                 )
                 live_observation = "available"
                 live_reason = None
@@ -219,6 +215,11 @@ class SubingReadService:
                 contract=dominant.actual_contract,
                 segment_start_trading_day=segment.start_trading_day,
                 latest_bar_source=aligned_source,
+            )
+            source_mode = (
+                "canonical_live"
+                if primary_source == "live" or aligned_source == "live"
+                else "canonical"
             )
 
         return SubingReadSnapshot(

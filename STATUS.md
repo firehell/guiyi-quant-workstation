@@ -188,10 +188,10 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   primary cutoff；日线仍为 Historical-only。Kline/EMA/MACD/Factor 因此不携带主力切换前
   warm-up 或跨换月状态。前端的 effective current-contract identity 只影响 SuBing 视图，
   不写回用户的 continuous/actual-dominant/contract 偏好。
-- 本轮实现验收为后端 `503 passed / 13 skipped`、Ruff 通过、Mypy 32 个源文件通过、
-  Web `102 passed / 1 skipped`、Playwright 精确两个用例文件 `11 passed`、production build 通过、
+- 本轮实现验收为后端 `506 passed / 13 skipped`、Ruff 通过、Mypy 32 个源文件通过、
+  Web `102 passed / 1 skipped`、Playwright 精确两个用例文件 `13 passed`、production build 通过、
   secret scan 0 finding。Playwright 在子沙箱因 `listen EPERM 127.0.0.1:5182` 未启动后，
-  由 controller 在同一 `4f1598e9` 工作树外层以原命令重跑通过，未用已部署 Runtime 服务替代。
+  由 controller 在同一工作树外层以原命令重跑通过，未用已部署 Runtime 服务替代。
 - 状态仍是 Factor Observation 完成、Calibration `pending`、formal Signal absent、Alert V1
   unchanged。本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
   `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中，当前隔离 Runtime 仍为 `v1.1.0`

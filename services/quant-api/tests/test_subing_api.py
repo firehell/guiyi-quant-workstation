@@ -122,6 +122,26 @@ def test_subing_api_rejects_unsupported_frequency(monkeypatch) -> None:
     assert response.json() == {"detail": {"code": "INVALID_SUBING_REQUEST"}}
 
 
+def test_subing_api_rejects_malformed_symbol_before_service_lookup(monkeypatch) -> None:
+    class _UnexpectedService:
+        def snapshot(self, request, now):
+            raise AssertionError("malformed symbols must not reach dominant lookup")
+
+    monkeypatch.setattr(
+        "app.api.market.build_subing_read_service",
+        lambda _session: _UnexpectedService(),
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/subing",
+        params={"symbol": "###", "frequency": "5m"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "INVALID_SUBING_REQUEST"}}
+
+
 def test_subing_api_maps_market_errors_without_internal_details(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.api.market.build_subing_read_service",
