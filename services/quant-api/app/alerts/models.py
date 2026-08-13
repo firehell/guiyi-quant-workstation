@@ -14,14 +14,18 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    JSON,
     String,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+
+_SCOPE_PRODUCTS_TYPE = ARRAY(String(32)).with_variant(JSON(), "sqlite")
+_OBSERVATION_TYPES_TYPE = ARRAY(String(8)).with_variant(JSON(), "sqlite")
 
 
 def utc_now() -> datetime:
@@ -54,9 +58,8 @@ class AlertRule(Base):
         String(32), default="watchlist", nullable=False
     )
     scope_products: Mapped[list[str]] = mapped_column(
-        ARRAY(String(32)),
+        _SCOPE_PRODUCTS_TYPE,
         default=list,
-        server_default=text("'{}'::varchar[]"),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -88,7 +91,7 @@ class AlertEvent(Base):
             "cardinality(observation_types) BETWEEN 1 AND 2 "
             "AND observation_types <@ ARRAY['buy','sell']::varchar[]",
             name="ck_alert_events_observation_types",
-        ),
+        ).ddl_if(dialect="postgresql"),
         Index("ix_alert_events_symbol_bar_end", "symbol", "bar_end"),
     )
 
@@ -101,7 +104,7 @@ class AlertEvent(Base):
     frequency: Mapped[str] = mapped_column(String(8), nullable=False)
     bar_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     observation_types: Mapped[list[str]] = mapped_column(
-        ARRAY(String(8)), nullable=False
+        _OBSERVATION_TYPES_TYPE, nullable=False
     )
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
