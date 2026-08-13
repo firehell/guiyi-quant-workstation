@@ -13,9 +13,9 @@
 - Alert V1 已在 `develop` 完成代码实现：server-side Scope、actual-dominant confirmed 15m 的 Python HTDY
   current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
   Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
-- Alert V1 仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：production migration 与真实 WeCom canary 已分别完成
-  并只读验收；Alert Runtime **未激活**。G1/G2 不授权 G3，代码测试、mock sender 与 render-only 也不
-  改变 Runtime 状态。
+- Alert V1 的 G1/G2/G3 已分别按单次授权执行：production migration 与真实 WeCom canary 已完成，Alert
+  Runtime 已仅以 `jm`（焦煤）Scope 激活并读回 `status=ok`。当前仍为 `PARTIAL`：尚未等到自然 confirmed
+  15m HTDY observation，因此不能声称自然 Event/通知/persistent 🔔 闭环已验收。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
@@ -27,6 +27,8 @@
   `alert-canary` 是真实通知 Gate，不能作为普通测试执行。
 - Runtime：`operational_products.txt` 是 Live 与 17:00/最多一次一小时后 retry 盘后更新的唯一范围入口；
   该文件已与 active 60 完全对齐。
+- Alert Runtime：唯一 Rule 为 `htdy_original_15m`，当前 server-side Scope 精确为 `jm`；不从
+  `operational_products.txt` 自动扩大 Alert Scope。
 
 已退役且不得恢复为兼容入口：backtest API/Web/worker/queue、Signal/Review/Strategy HTTP·Web·worker、
 data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单。
@@ -52,6 +54,12 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   `runtime alert-canary` 返回 `status=ok`，企业微信接口接受测试文案。发送后只读读回仍为 Scope 为空、
   AlertEvent=0、Alert Runtime activation marker 不存在；未修改 Rule/Scope、未伪造正式 Event、未启用
   或切换 Runtime。G2 至此完成，但不授权 G3。
+- `2026-08-13 14:47 +08:00` 已按单次 G3 授权将 `htdy_original_15m` Scope 从空集精确更新为仅 `jm`，
+  并只安装/启动 `com.guiyi.quant-alert`。Alert label 根为当前 `develop` 提交 `9c310599...`，独立 activation
+  marker 为 enabled；API/Web/Live/after-market 未由此次脚本分支重载或改根。按 launchd wrapper 的真实
+  Redis 环境只读读回 `components.alert.status=ok`、webhook configured、enabled_rule_count=1、
+  scope_product_count=1，heartbeat 从 `06:47:00Z` 推进到 `06:47:10Z`；数据库仍为 AlertEvent=0。
+  当前只等待自然 confirmed 15m HTDY buy/sell observation，不 replay/backfill、不伪造信号验收。
 
 ## 历史验收事实
 
