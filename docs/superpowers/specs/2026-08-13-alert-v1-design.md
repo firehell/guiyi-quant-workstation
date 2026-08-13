@@ -24,7 +24,7 @@ Alert != StrategySignal != Order != Trading Decision
 auto_order=false
 ```
 
-V1 首个且唯一真实 Rule 为火天大有 original：
+V1 首个且唯一真实 Rule：
 
 ```text
 huotian_dayou_original_v0
@@ -122,7 +122,7 @@ LiveMarketService
 
 - 继续作为 Canonical history + Redis Live overlay 的统一只读模型；
 - Alert 不自行实现 Historical/Live seam；
-- 为 server-side evaluator 增加一个通用“截至指定 bar_end 的统一窗口”读取能力。
+- 为 server-side evaluator 增加“截至指定 bar_end 的统一窗口 + 当时实际主力 contract context”读取能力。
 
 `Indicator Kernel`
 
@@ -197,7 +197,9 @@ runtime scope
 
 当前 `scope_mode=watchlist`。
 
-数据模型允许未来存在 `operational_all`，但 V1 Web 和 API 不开放切换入口。
+数据模型可以接受未来 `operational_all`，但 V1 Web 和 API 不开放切换入口。
+
+`scope_products` 内部统一保存小写 canonical product symbol，例如 `ag/jm/ap`。
 
 现有 browser-local “自选”继续只是 Market Workspace 偏好，不是 Alert Runtime 的配置事实源。
 
@@ -306,7 +308,7 @@ AlertEvent 表达的是“当时系统确实触发并发起过提醒”，而不
 observation_types = ["buy", "sell"]
 ```
 
-形成一个 Event 和一条企微。
+形成一个 Event 和一条企微；类型顺序固定为 `buy` 后 `sell`。
 
 ---
 
@@ -314,10 +316,24 @@ observation_types = ["buy", "sell"]
 
 Pub/Sub payload 只承担“某根 15m 已完成”的触发职责；HTDY 计算上下文必须通过 `MarketReadService` 读取。
 
-建议为 `MarketReadService` 增加通用 server-side read method，概念接口：
+为 `MarketReadService` 增加一个通用 server-side read model，概念结果：
 
 ```text
-bars_until(identity, end=event.bar_end, limit=N)
+MarketReadWindow
+├─ symbol
+├─ series_kind = actual_dominant
+├─ frequency = 15m
+├─ trading_day
+├─ contract
+├─ cutoff = event.bar_end
+└─ bars[]
+```
+
+概念接口：
+
+```text
+bars_until(identity, trading_day, end=event.bar_end, limit=32)
+    -> MarketReadWindow
 ```
 
 要求：
@@ -326,12 +342,21 @@ bars_until(identity, end=event.bar_end, limit=N)
 - 内部复用现有 `history_page`、`live_snapshot`、Canonical/Live seam 与 bar_end 去重；
 - 所有返回 Bar 满足 `bar_end <= event.bar_end`；
 - 最后一根必须满足 `last.bar_end == event.bar_end`；
-- 无法满足时 fail-closed；
+- V1 HTDY evaluator 使用固定 32 根 bounded context，不向用户暴露窗口配置；
+- 32 根窗口必须用 differential test 对比“完整历史截断到相同 bar_end”的最后一根 buy/sell，测试不一致则阻塞；
 - Alert 不直接读 Parquet；
 - Alert 不自行拼 Redis + Canonical；
 - Alert 不保存读取到的输入 Bars。
 
-HTDY evaluator 使用固定、代码定义的最小充分 lookback，不向用户暴露窗口配置。具体窗口必须通过 differential test 证明：在目标测试集合上，有限窗口的最后一根 buy/sell 与截至同一 bar_end 的完整历史计算一致。
+### 7.1 Contract resolution
+
+`alert_events.contract` 必须记录当次 Live 观察实际使用的 rank1 contract，统一大写，例如 `AG2610`。
+
+这个 contract context 也必须由 `MarketReadService` 的统一 read model 提供，AlertRuntime 不直接读取/解释 MainContractMap 或 Redis subscription key。
+
+对于包含当日 Live overlay 的窗口，`MarketReadService` 应按 Pub/Sub payload 的 `trading_day` 使用既有 Live subscription snapshot / seam context 解析对应 symbol 的实际 contract，而不是只调用受当前 `MarketPhase` 限制的 `state(identity, now)`。这样 10:15 BREAK、11:30 BREAK 或 session 收尾后的 completed Bar 不会因为处理瞬间 phase 已变化而丢失 contract context。
+
+如果 event 对应 trading_day 的 actual-rank1 contract 无法唯一解析，fail-closed，不发通知。
 
 对于 repainting 指标，`event.bar_end` 是硬截断边界。即使 AlertRuntime 延迟处理旧 event，也绝不能读取更晚的 Bar。
 
@@ -345,7 +370,7 @@ HTDY evaluator 使用固定、代码定义的最小充分 lookback，不向用�
 live:bar:{symbol}:{frequency}
 ```
 
-AlertRuntime V1 订阅：
+AlertRuntime V1 pattern-subscribe：
 
 ```text
 live:bar:*:15m
@@ -377,7 +402,7 @@ V1 新增两张 Alert Application Domain 表。Data Foundation / Market Catalog 
 
 ### 9.1 alert_rules
 
-建议字段：
+字段：
 
 ```text
 id              PK
@@ -406,7 +431,7 @@ scope_products  = []
 
 ### 9.2 alert_events
 
-建议字段：
+字段：
 
 ```text
 id                  PK
@@ -421,13 +446,15 @@ notified_at         timestamptz, NOT NULL
 created_at          timestamptz, NOT NULL
 ```
 
+时间统一以 timezone-aware UTC 存储；API/Web/企微显示时按 `Asia/Shanghai` 格式化。
+
 唯一身份：
 
 ```text
 UNIQUE(rule_id, symbol, frequency, bar_end)
 ```
 
-建议读取索引：
+读取索引：
 
 ```text
 INDEX(symbol, bar_end)
@@ -455,7 +482,7 @@ INDEX(symbol, bar_end)
 
 `notified_at` 的语义固定为：
 
-> AlertRuntime 已经进入该 Event 的一次 WeCom 通知动作的时间。
+> AlertRuntime 创建并提交该 Event，准备立即进入一次 WeCom 通知动作的时间。
 
 它不代表企业微信确认成功接收，也不代表用户看到消息。
 
@@ -473,7 +500,7 @@ AlertEvent 的 PostgreSQL unique constraint 是唯一的业务幂等边界。
 
 ```text
 current bar triggers
-    -> construct AlertEvent
+    -> construct AlertEvent with notified_at
     -> INSERT / COMMIT
     -> unique duplicate? stop
     -> invoke WeCom exactly once
@@ -558,11 +585,7 @@ V1 主动接受一个极小窗口：Event 已经落库，但进程在真正完�
 WECOM_WEBHOOK_URL
 ```
 
-正式 Runtime 优先使用当前本地 wrapper 已支持的：
-
-```text
-~/Library/Application Support/GuiyiQuant/project.env
-```
+正式 Runtime 使用当前本地 wrapper 已支持的 Runtime `project.env`。
 
 禁止写入：
 
@@ -722,7 +745,7 @@ actual_dominant + 15m
 
 不投影到 continuous、contract、5m、30m、60m 等其他 Series/Frequency。
 
-建议使用短标签，避免遮挡 K 线：
+使用短标签，避免遮挡 K 线：
 
 ```text
 🔔买
@@ -732,7 +755,12 @@ actual_dominant + 15m
 
 Persistent Alert Marker 与 HTDY overlay 开关独立。即使用户关闭 HTDY current overlay，历史 🔔 仍然显示。
 
-Web 不需要 Alert 专属 WebSocket。进入/切换 `actual_dominant + 15m`、加载更早历史时按当前 loaded bar range 查询 Alert Events；盘中页面可用轻量周期刷新保持新 Alert marker 最终可见，不建立第二套实时通道。
+Web 不建立 Alert 专属 WebSocket：
+
+- 进入/切换 `actual_dominant + 15m` 时查询当前 loaded bar range 的 Alert Events；
+- 向左加载更早历史后查询新增 range；
+- 停留在 `actual_dominant + 15m` 的盘中页面时，每 30 秒刷新当前最近 range 的 Alert Events；
+- 其他 Series/Frequency 停止 Alert Event 周期刷新并清空 Persistent Alert Marker。
 
 ---
 
@@ -743,6 +771,14 @@ Web 不需要 Alert 专属 WebSocket。进入/切换 `actual_dominant + 15m`、�
 ```text
 guiyi runtime alert
 ```
+
+新增一次性真实通道 canary CLI：
+
+```text
+guiyi runtime alert-canary
+```
+
+`alert-canary` 只发送固定测试文案，不创建 AlertEvent，不启动 Runtime，不改变 Scope；它本身属于真实通知受控外部操作，必须在执行前获得当次明确意图。
 
 新增 launchd service：
 
@@ -768,6 +804,14 @@ Alert 使用独立 activation marker：
 
 `guiyi runtime alert` 的真实运行路径必须 fail-closed：activation 未启用、Webhook 未配置或关键依赖不可用时不得进入真实通知消费状态。
 
+本地服务安装脚本增加独立显式入口：
+
+```text
+--confirm-alert-runtime
+```
+
+它只负责 Alert launchd + Alert activation，不得顺带修改 Market Runtime activation。
+
 ---
 
 ## 17. Runtime Health
@@ -786,11 +830,11 @@ GET /api/runtime/health
 components.alert
 ```
 
-建议字段：
+字段：
 
 ```text
 status
-a configured_enabled
+configured_enabled
 webhook_configured
 last_heartbeat_at
 enabled_rule_count
@@ -798,14 +842,20 @@ scope_product_count
 error_type
 ```
 
-其中字段名实现时使用正常 JSON 名 `configured_enabled`；上方 `a` 只是本行排版误差不得进入实现。
-
-> 实现计划必须在落地前删除上述排版误差，最终 schema 只有 `configured_enabled`。
-
-AlertRuntime 写短 TTL Redis heartbeat：
+AlertRuntime 每 10 秒写一次短 TTL heartbeat：
 
 ```text
 alert:heartbeat
+TTL = 30 seconds
+```
+
+heartbeat 只包含非敏感运行摘要，例如：
+
+```text
+generated_at
+available
+enabled_rule_count
+scope_product_count
 ```
 
 公开 heartbeat/health 不包含 webhook、内部地址、原始异常正文或 stack trace。
@@ -843,17 +893,21 @@ Indicator Registry alert_capable == true?
    no -> FAIL CLOSED
         |
         v
-MarketReadService actual_dominant + 15m
+MarketReadService actual_dominant + 15m window
         |
         v
-hard truncate to event.bar_end
+hard cutoff <= event.bar_end
         |
         v
 last.bar_end == event.bar_end?
    no -> FAIL CLOSED
         |
         v
-Python HTDY original
+contract uniquely resolved for event trading_day?
+   no -> FAIL CLOSED
+        |
+        v
+Python HTDY original over fixed 32-bar context
         |
         v
 inspect last point only
@@ -863,9 +917,6 @@ buy/sell present?
    no -> END
         |
        yes
-        v
-resolve current contract consistency
-        |
         v
 INSERT AlertEvent
         |
@@ -899,8 +950,9 @@ END regardless of delivery result
 | 当前 event Bar 无法读取 | fail-closed |
 | 最后一根 `bar_end != event.bar_end` | fail-closed |
 | 读取结果含 event 之后未来 Bar | fail-closed |
-| actual_dominant / contract 上下文不一致 | fail-closed |
+| actual_dominant / contract 无法唯一解析或上下文不一致 | fail-closed |
 | HTDY Kernel 异常 | fail-closed |
+| 32-bar differential contract 被回归测试证明不一致 | 阻塞发布 |
 | AlertEvent INSERT / COMMIT 失败 | fail-closed |
 | UNIQUE Event 已存在 | no-op，不二次发送 |
 | Webhook 未配置 | Runtime unavailable，不发送 |
@@ -921,7 +973,7 @@ END regardless of delivery result
 
 ## 20. Code Placement
 
-建议新增：
+新增：
 
 ```text
 services/quant-api/app/alerts/
@@ -950,7 +1002,7 @@ services/quant-api/app/schemas/alerts.py
 
 不得把 Alert ORM 加进 `app/models/market_tables.py`；该文件继续只表达 Data Foundation 八表。
 
-Web 建议新增：
+Web 新增：
 
 ```text
 apps/quant-web/src/api/alerts.ts
@@ -1039,7 +1091,8 @@ htdy_original_15m
 - current sell；
 - current buy+sell；
 - 连续两根分别产生 Event；
-- event 后加入未来 Bar 导致旧 marker repaint，不修改旧 Event。
+- event 后加入未来 Bar 导致旧 marker repaint，不修改旧 Event；
+- 固定 32 根 context 与 full-history cutoff 的最后一根 buy/sell differential 一致。
 
 核心业务回归：
 
@@ -1064,7 +1117,8 @@ no old-bar backfill
 - last bar 必须等于 event bar；
 - Canonical + Live 正确 dedup；
 - future Bar 不可见；
-- fixed lookback last-output differential 与 full-history 截断结果一致。
+- event trading_day 的 actual-rank1 contract 在 BREAK/session-end 场景仍可从统一 read model 唯一解析；
+- contract 无法解析时 fail-closed。
 
 ### 22.4 AlertService
 
@@ -1086,7 +1140,8 @@ no old-bar backfill
 - 单次调用；
 - timeout 有界；
 - HTTP failure no retry；
-- log 不包含 webhook URL、key、response body。
+- log 不包含 webhook URL、key、response body；
+- `alert-canary` 只发测试文案且不写 AlertEvent。
 
 ### 22.7 HTTP API
 
@@ -1101,7 +1156,9 @@ no old-bar backfill
 - activation on + webhook missing -> degraded/unavailable；
 - stale/missing heartbeat -> degraded；
 - healthy heartbeat -> ok；
+- heartbeat 10s / TTL 30s；
 - launchd render/lint；
+- Market Runtime activation 与 Alert Runtime activation 互不影响；
 - secret scan 0 finding。
 
 ### 22.9 Web
@@ -1111,7 +1168,8 @@ no old-bar backfill
 - Alert marker 只在 actual_dominant + 15m；
 - HTDY overlay off 时 persistent 🔔 仍显示；
 - repaint 后 current marker 可消失而 persistent 🔔 不消失；
-- XG marker/计算完全移除。
+- XG marker/计算完全移除；
+- 盘中 30 秒 Event refresh 不建立新的 WebSocket。
 
 ---
 
@@ -1140,7 +1198,13 @@ seed empty-scope htdy_original_15m
 
 ### Gate 2 — Real WeCom canary
 
-配置本机 `WECOM_WEBHOOK_URL` 后，使用专用 canary 路径发送一条明确测试消息：
+配置本机 `WECOM_WEBHOOK_URL` 后，显式执行：
+
+```text
+guiyi runtime alert-canary
+```
+
+固定测试文案：
 
 ```text
 【归一量化】企微测试
@@ -1220,7 +1284,7 @@ Alert V1 完成必须同时满足：
 Rule
 -> server-side Scope
 -> completed actual_dominant 15m
--> MarketReadService hard cutoff
+-> MarketReadService hard cutoff + event contract context
 -> Python HTDY current-bar buy/sell
 -> idempotent AlertEvent
 -> one concise WeCom attempt
