@@ -13,6 +13,7 @@ import sys
 from typing import Any, TextIO
 
 from app.db.session import SessionLocal
+from app.alerts.composition import build_alert_runtime, build_wecom_sender_from_env
 from app.guiyi_cli.data_commands import build_request, run_data_command
 from app.guiyi_cli.data_parser import CliUsageError, JsonArgumentParser, add_data_commands
 from app.guiyi_cli.output import (
@@ -30,6 +31,8 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 ManagerFactory = Callable[[Any], HistoricalDataManager]
 AfterMarketFactory = Callable[[HistoricalDataManager], Any]
 LiveServiceFactory = Callable[[Any], Any]
+AlertRuntimeFactory = Callable[[Any], Any]
+AlertCanarySenderFactory = Callable[[], Any]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
     runtime_commands.add_parser("status")
     runtime_commands.add_parser("live")
+    runtime_commands.add_parser("alert")
+    runtime_commands.add_parser("alert-canary")
     return parser
 
 
@@ -53,6 +58,8 @@ def main(
     manager_factory: ManagerFactory = build_historical_data_manager,
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
+    alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
+    alert_canary_sender_factory: AlertCanarySenderFactory = build_wecom_sender_from_env,
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -95,7 +102,7 @@ def main(
                     "readonly": True,
                     "runtime": health,
                 }
-        else:
+        elif args.runtime_command == "live":
             # 前台阻塞循环由 launchd/终端托管；Python 不 daemonize 或启动 worker。
             with session_factory() as session:
                 live_service_factory(session).run_forever()
@@ -104,6 +111,22 @@ def main(
                 "command": "runtime.live",
                 "status": "ok",
                 "foreground": True,
+            }
+        elif args.runtime_command == "alert":
+            with session_factory() as session:
+                alert_runtime_factory(session).run_forever()
+            payload = {
+                "schema_version": 1,
+                "command": "runtime.alert",
+                "status": "ok",
+                "foreground": True,
+            }
+        else:
+            alert_canary_sender_factory().send_canary()
+            payload = {
+                "schema_version": 1,
+                "command": "runtime.alert-canary",
+                "status": "ok",
             }
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
         # 执行期异常：error code 仅暴露公开码或 CLI_INTERNAL_ERROR
