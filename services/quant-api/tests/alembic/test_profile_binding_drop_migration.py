@@ -30,12 +30,12 @@ KEPT_TABLES = (
 )
 
 
-def test_profile_binding_drop_is_current_alembic_head() -> None:
+def test_profile_binding_drop_remains_before_current_alembic_head() -> None:
     config = Config(str(QUANT_API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20260808_0036"]
+    assert scripts.get_heads() == ["20260813_0037"]
     revision = scripts.get_revision(DROP_REVISION)
     assert revision is not None
     assert revision.down_revision == PARENT_REVISION

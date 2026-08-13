@@ -16,7 +16,13 @@ from app.alerts.evaluators import AlertEvaluation, AlertEvaluator
 from app.alerts.models import AlertRule
 from app.alerts.service import AlertEventCreate, AlertService
 from app.alerts.wecom import AlertEventMessage, WeComWebhookSender
-from app.market_data.domain import CanonicalBar, SeriesPageQuery, normalize_contract_for_symbol
+from app.market_data.domain import (
+    BarFrequency,
+    CanonicalBar,
+    SeriesKind,
+    SeriesPageQuery,
+    normalize_contract_for_symbol,
+)
 from app.market_data.market_read_service import MarketReadService, MarketReadWindow
 from app.market_data.product_retirement import normalize_symbol
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
@@ -84,7 +90,7 @@ class AlertRuntime:
         finally:
             self.message_source.close()
 
-    def process_message(self, channel: str, payload: object) -> None:
+    def process_message(self, channel: object, payload: object) -> None:
         """处理单条实时事件；任一输入/依赖异常都在发送前 fail closed。"""
         parsed = _parse_event(channel, payload)
         if parsed is None:
@@ -97,7 +103,7 @@ class AlertRuntime:
             return
         try:
             window = self._market_read.bars_until(
-                SeriesPageQuery("actual_dominant", symbol, "15m"),
+                SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, BarFrequency.M15),
                 trading_day=event_bar.trading_day,
                 end=event_bar.bar_end,
                 limit=32,

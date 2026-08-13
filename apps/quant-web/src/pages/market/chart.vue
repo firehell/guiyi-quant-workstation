@@ -9,12 +9,14 @@ import KlineChart from '@/components/kline/KlineChart.vue'
 import { getMarketDominants, getProductResearch } from '@/api/market'
 import {
   getAlertRuntimeStatus,
+  getAlertEvents,
   getProductAlerts,
   setAlertProductEnabled,
   type AlertRuntimeStatus,
   type ProductAlertRuleState,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
+import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import type { DominantContractItem, MainIndicatorId, MarketFrequency, ProductResearchResponse, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { isCurrentAlertMutation } from '@/utils/alertControl'
@@ -60,6 +62,11 @@ const {
   loadMoreBefore,
   dispose,
 } = useMarketSeries()
+const {
+  markers: persistentAlertMarkers,
+  sync: syncPersistentAlertMarkers,
+  dispose: disposePersistentAlertMarkers,
+} = usePersistentAlertMarkers({ fetchEvents: getAlertEvents })
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
@@ -127,6 +134,10 @@ watch([contract, seriesKind, frequency], () => {
   if (metadataReady && !synchronizingSymbol) void refreshSeries()
 })
 
+watch([symbol, seriesKind, frequency], () => {
+  if (metadataReady) void syncPersistentAlertMarkers(currentIdentity(), [], 'replace')
+})
+
 watch([symbol, seriesKind, contract], () => {
   if (metadataReady && !synchronizingSymbol) void refreshResearch()
 })
@@ -139,6 +150,7 @@ watch(frequency, (period) => {
 })
 
 watch(mutation, (nextMutation) => {
+  void syncPersistentAlertMarkers(currentIdentity(), bars.value, nextMutation.kind)
   if (!chart.value) return
   if (nextMutation.kind === 'replace') {
     chart.value.replaceBars(bars.value, !followLatest.value)
@@ -155,6 +167,7 @@ watch(mutation, (nextMutation) => {
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
   dispose()
+  disposePersistentAlertMarkers()
 })
 
 function syncDominantContract() {
@@ -419,6 +432,7 @@ function normalizeSymbol(value: unknown): string | null {
               :error="error"
               :period="frequency"
               :visible-main-indicators="visibleMainIndicators"
+              :alert-markers="persistentAlertMarkers"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
             />

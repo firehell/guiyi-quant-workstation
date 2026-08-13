@@ -10,14 +10,20 @@
   MarketDataService`；物理 Dataset 只有 `continuous|contract`，`actual_dominant` 只按 rank1 map 查询拼接。
 - Market Runtime V1 只提供行情研究观察。Historical Canonical 与 Redis Live Overlay 分离，Live 不写
   Parquet，`auto_order=false`，仓库不存在订单创建或提交路径。
+- Alert V1 已在 `develop` 完成代码实现：server-side Scope、actual-dominant confirmed 15m 的 Python HTDY
+  current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
+  Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
+- Alert V1 仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：production migration **未执行**、真实 WeCom
+  canary **未执行**、Alert Runtime **未激活**；代码测试、mock sender 与 render-only 不改变这些状态。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
 ## 当前可执行面
 
 - Web：Market 列表与 K 线工作台。
-- HTTP：历史分页、dominants、Historical/Live state、WebSocket 和只读 Runtime health。
-- CLI：`guiyi data update|refresh|audit|after-market`、`guiyi runtime status|live`。
+- HTTP：历史分页、dominants、Historical/Live state、WebSocket、Alert Scope/Event API 和只读 Runtime health。
+- CLI：`guiyi data update|refresh|audit|after-market`、`guiyi runtime status|live|alert|alert-canary`；其中
+  `alert-canary` 是真实通知 Gate，不能作为普通测试执行。
 - Runtime：`operational_products.txt` 是 Live 与 17:00/最多一次一小时后 retry 盘后更新的唯一范围入口；
   该文件已与 active 60 完全对齐。
 
@@ -30,8 +36,10 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 - 派生：`1w` 只从完整同源日线聚合；`5m/15m/30m/60m` 只从同 Dataset、质量通过的 Canonical `1m` 按 TradingSession 聚合。
 - 每个 Dataset 每自然月只有一个 `part.parquet`；schema、identity、session/frequency、OHLCV、coverage、
   row count 与物理可读性全部通过后才能原子发布。
-- PostgreSQL active 数据模型只有八表：`exchanges`、`instruments`、`contracts`、`trading_calendars`、
+- Data Foundation / Market Catalog 精确为八表：`exchanges`、`instruments`、`contracts`、`trading_calendars`、
   `trading_sessions`、`main_contract_map`、`market_datasets`、`market_partitions`。
+- Alert V1 migration 代码定义 `alert_rules` / `alert_events` 两张独立 Application Domain 表；由于 production
+  migration 尚未执行，不能把它们写成当前生产数据库事实。
 
 ## 历史验收事实
 

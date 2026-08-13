@@ -174,6 +174,18 @@ export interface KlineMarker {
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
 }
 
+export interface AlertEvent {
+  id: number
+  rule_code: string
+  symbol: string
+  contract: string
+  frequency: '15m'
+  bar_end: string
+  observation_types: Array<'buy' | 'sell'>
+  detected_at: string
+  notified_at: string
+}
+
 export interface ChartOverlay {
   id: string
   type: 'price_line' | 'signal_marker' | 'trade_marker' | 'risk_band'

@@ -21,6 +21,7 @@ import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
 import { buildKlineDerivedData, resolveKlineHoverContext, type KlineValuePoint } from '@/utils/klineViewModel'
+import { mergeKlineMarkers } from '@/utils/alertMarkers'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -28,11 +29,13 @@ const props = withDefaults(defineProps<{
   error?: string | null
   period?: string
   visibleMainIndicators?: MainIndicatorId[]
+  alertMarkers?: KlineMarker[]
 }>(), {
   loading: false,
   error: null,
   period: '15m',
   visibleMainIndicators: () => [],
+  alertMarkers: () => [],
 })
 
 const emit = defineEmits<{
@@ -132,6 +135,10 @@ watch(() => props.period, () => {
 })
 
 watch(() => props.visibleMainIndicators, () => {
+  renderDerivedSeries()
+}, { deep: true })
+
+watch(() => props.alertMarkers, () => {
   renderDerivedSeries()
 }, { deep: true })
 
@@ -260,7 +267,10 @@ function renderDerivedSeries(): void {
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
-  htdyMarkers?.setMarkers(chartMarkers(derivedData.htdy?.markers ?? []))
+  htdyMarkers?.setMarkers(chartMarkers(mergeKlineMarkers(
+    derivedData.htdy?.markers ?? [],
+    props.alertMarkers,
+  )))
 }
 
 function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
@@ -273,10 +283,11 @@ function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time;
 }
 
 function chartMarkers(markers: KlineMarker[]) {
-  const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
+  const barsByTime = new Map(renderedBars.map((bar) => [markerTimeKey(bar.time), bar]))
   return markers.flatMap((marker) => {
-    const bar = barsByTime.get(marker.time)
+    const bar = barsByTime.get(markerTimeKey(marker.time))
     return bar ? [{
+      id: marker.id,
       time: chartTime(bar),
       position: marker.position,
       shape: marker.shape,
@@ -284,6 +295,11 @@ function chartMarkers(markers: KlineMarker[]) {
       text: marker.label,
     }] : []
   })
+}
+
+function markerTimeKey(value: string): string {
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? `instant:${timestamp}` : `raw:${value}`
 }
 
 function chartTime(bar: BarData): Time {
@@ -319,7 +335,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="kline-shell">
+  <div class="kline-shell" data-testid="kline-shell" :data-alert-marker-count="alertMarkers.length">
     <div ref="container" class="chart" />
     <KlineHoverLegend :context="hoverContext" />
     <div v-if="loading" class="overlay">读取 Canonical…</div>

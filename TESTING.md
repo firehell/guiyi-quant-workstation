@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-12
+更新时间：2026-08-13
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -36,6 +36,50 @@ MYPYPATH=services/quant-api \
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build
 ```
+
+## Alert V1
+
+### 无副作用单元、集成与浏览器验证
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_models.py \
+  services/quant-api/tests/test_alert_service.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_wecom.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_alert_api.py \
+  services/quant-api/tests/test_alert_cli.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/data_foundation/test_market_read.py
+
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  tests/engineering/test_alert_runtime_launchd.py
+
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web exec playwright test e2e/alert-v1.spec.mjs
+
+scripts/ops/macos/install-local-services.sh --render-only
+plutil -lint .run/launchd/com.guiyi.quant-alert.plist
+```
+
+这些命令只使用隔离数据库、mock sender、mock API 或 render-only，不启动真实 AlertRuntime、不执行生产
+migration，也不发送真实企业微信。`--confirm-alert-runtime` 不是测试参数。
+
+### 三个独立受控外部 Gate
+
+- production PostgreSQL migration：仅在明确授权后升级到 `20260813_0037`，并读回八表 Market Catalog
+  未变、两张 Alert Application 表和空 Scope seed；不发送通知。
+- real WeCom canary：仅在独立明确授权后执行 `guiyi runtime alert-canary`；不写 AlertEvent、不改 Scope、
+  不启用 Runtime。
+- Alert Runtime activation：仅在 migration/canary 前置已满足且再次明确授权后执行
+  `install-local-services.sh --confirm-alert-runtime`；必须读回独立 activation marker 与健康状态。
+
+三个 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或 mock 通过只证明
+实现，不证明 production migration、真实通知通道或 Alert Runtime 已启用。
 
 ## OpenSpec
 
