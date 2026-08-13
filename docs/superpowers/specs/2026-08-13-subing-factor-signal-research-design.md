@@ -12,11 +12,16 @@ Review baseline：`develop@42ffb26ad53cb3187705ed8236b197f14b1c6904`
 ```text
 Indicator
 → Factor
-→ Calibration Research
-→ Signal
-→ Live Observation
-→ 人工盘中验证
-→ Future Alert V2
+   ├─ Product Workspace observation
+   └─ Calibration Research
+          ↓
+   approved policy/calibration
+          ↓
+        Signal
+          ↓
+   Live human validation
+          ↓
+   Future Alert V2
 ```
 
 V1 第一阶段只做**入场方向信号**。系统负责在研究阶段把参数分析前置；盘中只在 completed K 上执行已经冻结的确定性规则，输出 `LONG / SHORT / NONE`。不承担持仓、退出、8K 管理、加减仓、反手、资金、订单或自动交易。
@@ -132,10 +137,15 @@ EMA21 退出
                           │
                           ▼
                SubingFactorSnapshot
-                          │
-                          │ + SubingSignalPolicy
-                          │ + SubingCalibration
-                          ▼
+                   │             │
+                   │             └─────> Product Workspace
+                   │
+                   └─────> Calibration Research
+                                  │
+                                  ▼
+                         approved calibration
+                                  │
+                                  ▼
                SubingSignalEvaluation
                           │
                           ▼
@@ -430,6 +440,22 @@ product × timeframe
 
 研究，并同时比较 absolute / normalized distance 是否能降低参数数量。
 
+### 8.4 MACD capability Gate
+
+当前 MACD 仍属于已有兼容/展示口径，不得因为苏冰开始使用它，就隐式宣布其已经获得正式 Signal/Live/Alert 资格。
+
+V1 可以先用明确记录的 MACD policy/version 做 Historical/Live **Factor observation**，但在 `SubingSignalEvaluation` 可以把结果晋升为正式 `LONG / SHORT` 之前，必须完成一个独立的 Lane 3 语义审查：
+
+```text
+确认 Python MACD policy/version
+确认 confirmed 1d/5m/15m 计算口径
+补充 golden / edge tests
+确认 Historical 与 completed Live 同口径
+同步 Indicator deep canonical / registry capability（如实现合同需要）
+```
+
+该 Gate 未完成时，即使 Calibration 数值已经存在，也只能保持 research-only，不得接 Alert V2。
+
 ---
 
 ## 9. Signal Semantics
@@ -455,7 +481,7 @@ Signal 状态优先级：
 任一已知硬条件 FAIL
 → NONE
 
-所有已知条件通过，但 Calibration 未冻结
+所有已知条件通过，但 Calibration / capability Gate 未冻结
 → RESEARCH_PENDING
 
 所有必需条件通过
@@ -798,7 +824,7 @@ WeCom sender
 
 ### 14.2 Future Alert V2
 
-只有 Calibration 人工批准、Signal 稳定且完成一段 Live 人工观察后，才新立项：
+只有 Calibration 人工批准、MACD capability Gate 完成、Signal 稳定且完成一段 Live 人工观察后，才新立项：
 
 ```text
 Alert V2 — SuBing Entry Signal Integration
@@ -822,6 +848,8 @@ activation Gate
 苏冰不是 Indicator。
 
 未来 Alert V2 不应为了兼容当前 `indicator_code` 语义，把 `subing_entry_v1` 冒充 Indicator。需要时允许做一个小而正确的 Alert rule model 调整，但该 migration 属于未来独立设计和真实 Gate。
+
+未来 Signal rule 应采用版本化、不可原地改变语义的 rule identity，保证 `AlertEvent -> rule -> 当时 policy/calibration` 可以复算；具体表结构留给 Alert V2 独立设计。
 
 ### 14.4 V1 message scope
 
@@ -879,6 +907,7 @@ partition/mapping invalid
 warm-up insufficient
 companion unavailable
 calibration pending
+MACD capability pending
 ```
 
 使用：
@@ -944,6 +973,7 @@ frequency
 Factor deterministic calculation
 Slope 5K/10K regression + bps/bar
 MACD confirmed cross + zero distance
+MACD Historical/completed-Live policy parity
 Volume invalid denominator
 Signal condition priority
 5m / 15m companion alignment
@@ -979,23 +1009,33 @@ Alert V1 untouched regression
 S0  SuBing Factor Core
     Factor / Policy / pending Calibration / pure tests
 
-S1  Current-rank1 Research Snapshot
+S0.5 MACD confirmed-research capability review
+    Historical/completed-Live parity + golden/edge tests
+    不晋升 Signal，只确认 Factor observation 的可信口径
+
+S1  Current-rank1 Factor Snapshot
     contract-local Historical + completed Live + multi-TF
 
-S2  Factor Calibration — Slope
+S2  Product Workspace Factor Observation
+    无/苏冰/火天大有单选 + EMA21 + Factor details
+    Signal 仍可保持 RESEARCH_PENDING
+
+S3  Factor Calibration — Slope
     3/5/8 labels + discovery/validation + candidate only
 
 Gate
     人工批准 slope candidate
 
-S3  Factor Calibration — MACD Zero-Band
+S4  Factor Calibration — MACD Zero-Band
     abs/normalized + product×timeframe + OOS
 
 Gate
     人工批准 zero-band candidate
+    + MACD formal Signal capability Gate
 
-S4  SuBing Signal + Product Workspace
-    LONG/SHORT/NONE + resolver + 单选 Overlay + Live observation
+S5  SuBing Entry Signal
+    LONG/SHORT/NONE + 5m/15m resolver
+    Web 展示，但仍不接 Alert V1
 
 Observation period
     人工盘中使用和复盘
@@ -1004,13 +1044,13 @@ Future independent task
     Alert V2 — SuBing Entry Signal Integration
 ```
 
-如果实现过程中发现 Slope / Zero-Band 尚无法冻结，则 Signal 保持 `RESEARCH_PENDING`，不得为了“功能完整”自行选择阈值。
+如果实现过程中发现 Slope / Zero-Band 或 MACD capability 尚无法冻结，则 Signal 保持 `RESEARCH_PENDING`，不得为了“功能完整”自行选择阈值或放宽 capability。
 
 ---
 
 ## 19. Lane / Gate Guidance
 
-涉及 Factor 公式、Signal semantics、multi-timeframe causality、Calibration/OOS 的任务属于可信研究口径：
+涉及 Factor 公式、Signal semantics、multi-timeframe causality、MACD capability、Calibration/OOS 的任务属于可信研究口径：
 
 ```text
 Lane 3
@@ -1026,6 +1066,7 @@ independent review
 
 ```text
 Calibration approved
+MACD Signal capability approved
 Signal promoted
 Alert enabled
 Runtime switched
@@ -1046,7 +1087,7 @@ main/tag released
 4. 5m/15m 盘中只消费 completed Live bars；
 5. multi-timeframe 不使用未来 companion；
 6. raw Factor value 与 Signal gate 分离；
-7. Calibration 未批准时明确 `RESEARCH_PENDING`；
+7. Calibration / capability 未批准时明确 `RESEARCH_PENDING`；
 8. Signal 仅输出入场方向，不承担持仓/退出；
 9. 5m/15m 同刻 full signal 只保留 15m 一条；
 10. Web 为 `无 / 苏冰 / 火天大有` 单选；
@@ -1064,4 +1105,4 @@ main/tag released
 
 苏冰 V1 的最终定位：
 
-> **一个基于当前 rank1 真实合约、只使用 confirmed Historical/Live Bar 的轻量 Factor → Signal 研究能力。重计算、参数检验和 OOS 全部前置；盘中只执行人工批准后的确定性入场方向规则。第一阶段不建设 Strategy，不建设通用 Factor 平台，也不接现有 Alert V1。未来若验证成熟，再以独立 Alert V2 复用现有 Scope/Event/WeCom/Runtime 基础设施发送 5m/15m 入场方向信号。**
+> **一个基于当前 rank1 真实合约、只使用 confirmed Historical/Live Bar 的轻量 Factor → Signal 研究能力。可重算的 Factor 不长期存储；参数检验和 OOS 全部前置；盘中只执行人工批准后的确定性入场方向规则。第一阶段不建设 Strategy，不建设通用 Factor 平台，也不接现有 Alert V1。未来若验证成熟，再以独立 Alert V2 复用现有 Scope/Event/WeCom/Runtime 基础设施发送 5m/15m 入场方向信号。**
