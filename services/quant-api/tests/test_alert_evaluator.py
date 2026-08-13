@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+import json
 import math
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -90,14 +92,38 @@ def test_evaluator_fails_closed_for_wrong_identity_or_short_context(
 
 
 def test_32_bar_contract_matches_full_history_current_observation() -> None:
-    length = 128
-    datetimes = [f"t{index}" for index in range(length)]
-    base = [100 + math.sin(index / 4) * 3 + index * 0.03 for index in range(length)]
-    open_ = [value + math.sin(index) * 0.5 for index, value in enumerate(base)]
-    high = [max(open_[index], base[index]) + 1 + index % 5 * 0.1 for index in range(length)]
-    low = [min(open_[index], base[index]) - 1 - index % 3 * 0.1 for index in range(length)]
-    close = [value + math.cos(index / 3) * 0.7 for index, value in enumerate(base)]
-    volume = [1000 + index * 7 for index in range(length)]
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures" / "htdy_original_realtime_v1_golden.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    golden = fixture["bars"]
+    datetimes = [bar["datetime"] for bar in golden]
+    open_ = [bar["open"] for bar in golden]
+    high = [math.nan if bar["high"] is None else bar["high"] for bar in golden]
+    low = [math.nan if bar["low"] is None else bar["low"] for bar in golden]
+    close = [bar["close"] for bar in golden]
+    volume = [bar["volume"] for bar in golden]
+
+    # Continue the tracked production golden through a stable no-observation region,
+    # then create a fresh three-candle edge so current buy/sell truth is exercised.
+    for index in range(40):
+        datetimes.append(f"golden-extension-{index}")
+        open_.append(99.8)
+        high.append(100.0)
+        low.append(100.0)
+        close.append(99.9)
+        volume.append(2000.0 + index)
+    for index in range(3):
+        datetimes.append(f"golden-conflict-{index}")
+        open_.append(99.9)
+        high.append(100.0)
+        low.append(100.0)
+        close.append(100.1)
+        volume.append(2100.0 + index)
+
+    observed: set[tuple[bool, bool]] = set()
+    length = len(datetimes)
 
     for cutoff in range(32, length + 1):
         full = compute_htdy_original(
@@ -119,3 +145,8 @@ def test_32_bar_contract_matches_full_history_current_observation() -> None:
 
         assert bool(bounded.buy_observation[-1]) is bool(full.buy_observation[-1])
         assert bool(bounded.sell_observation[-1]) is bool(full.sell_observation[-1])
+        observed.add((bool(full.buy_observation[-1]), bool(full.sell_observation[-1])))
+
+    assert (False, False) in observed
+    assert any(buy for buy, _sell in observed)
+    assert any(sell for _buy, sell in observed)
