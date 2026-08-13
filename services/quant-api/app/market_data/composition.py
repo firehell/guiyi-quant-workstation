@@ -26,6 +26,7 @@ from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
+from app.market_data.subing_calibration_service import SubingCalibrationResearchService
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.operational_universe import load_active_products
 from app.market_data.product_taxonomy import load_product_taxonomy
@@ -128,6 +129,16 @@ def build_subing_read_service(session: Session) -> SubingReadService:
     return SubingReadService(
         market_data=build_market_data_service(session),
         market_read=build_market_read_service(session),
+    )
+
+
+def build_subing_calibration_research_service(
+    session: Session,
+) -> SubingCalibrationResearchService:
+    """Construct historical-only SuBing Calibration over MarketDataService."""
+    return SubingCalibrationResearchService(
+        market_data=build_market_data_service(session),
+        products=load_active_products(),
     )
 
 
