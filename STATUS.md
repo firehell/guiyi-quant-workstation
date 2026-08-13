@@ -13,8 +13,9 @@
 - Alert V1 已在 `develop` 完成代码实现：server-side Scope、actual-dominant confirmed 15m 的 Python HTDY
   current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
   Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
-- Alert V1 仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：production migration **未执行**、真实 WeCom
-  canary **未执行**、Alert Runtime **未激活**；代码测试、mock sender 与 render-only 不改变这些状态。
+- Alert V1 仍为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：production migration 已完成并只读验收；真实 WeCom
+  canary **未执行**、Alert Runtime **未激活**。G1 不授权 G2/G3，代码测试、mock sender 与 render-only
+  也不改变后两项状态。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
@@ -38,8 +39,10 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   row count 与物理可读性全部通过后才能原子发布。
 - Data Foundation / Market Catalog 精确为八表：`exchanges`、`instruments`、`contracts`、`trading_calendars`、
   `trading_sessions`、`main_contract_map`、`market_datasets`、`market_partitions`。
-- Alert V1 migration 代码定义 `alert_rules` / `alert_events` 两张独立 Application Domain 表；由于 production
-  migration 尚未执行，不能把它们写成当前生产数据库事实。
+- `2026-08-13 14:19 +08:00` 已按单次授权将 production PostgreSQL 从 `20260808_0036` 升级到
+  `20260813_0037`。只读读回确认八表 Market Catalog 全部仍在，`alert_rules` / `alert_events` 两张独立
+  Application Domain 表存在；唯一 seed 为 enabled 的 `htdy_original_15m`、`watchlist`、空 Scope，
+  AlertEvent=0，Event 幂等唯一约束与 `symbol,bar_end` 查询索引存在。此次未发送通知或启用 Alert Runtime。
 
 ## 历史验收事实
 
