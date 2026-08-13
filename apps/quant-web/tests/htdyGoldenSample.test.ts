@@ -25,7 +25,6 @@ interface GoldenBundle {
     white_candle: boolean[]
     buy_observation: boolean[]
     sell_observation: boolean[]
-    xg: boolean[]
   }
   comparison: {
     numeric_atol: number
@@ -65,7 +64,6 @@ test(
     assert.deepEqual(points.map((point) => point.whiteCandle), bundle.python_original.white_candle)
     assert.deepEqual(points.map((point) => point.buyObservation), bundle.python_original.buy_observation)
     assert.deepEqual(points.map((point) => point.sellObservation), bundle.python_original.sell_observation)
-    assert.deepEqual(points.map((point) => point.xgObservation), bundle.python_original.xg)
   },
 )
 

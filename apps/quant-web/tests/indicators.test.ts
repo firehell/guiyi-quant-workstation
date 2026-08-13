@@ -71,7 +71,7 @@ test('HTDY Web remains historical browser observation-only with a conservative 2
   assert.equal(htdy.defaultVisible, false)
   assert.equal(htdy.capability, 'observation_overlay')
   assert.equal(htdy.repaintingRisk, 'known')
-  assert.equal(htdy.alertCapable, false)
+  assert.equal(htdy.alertCapable, true)
   assert.equal(htdy.unstableTailBars, 27)
 })
 
@@ -141,11 +141,12 @@ test('HTDY consecutive observations fire only on the newly completed third candl
   assert.equal(isNewThirdConsecutive(flags, 8), true)
 })
 
-test('HTDY Web output retains an explicit XG observation field and deliberately excludes XG2', () => {
+test('HTDY Web output exposes only buy and sell observations', () => {
   const result = calculateHuoTianDaYou(makeDeterministicHtdyBars(8))
 
-  assert.ok(result.points.every((point) => typeof point.xgObservation === 'boolean'))
-  assert.equal('xg2Observation' in result.points[0], false)
+  assert.ok(result.points.every((point) => typeof point.buyObservation === 'boolean'))
+  assert.ok(result.points.every((point) => typeof point.sellObservation === 'boolean'))
+  assert.ok(result.points.every((point) => !('xgObservation' in point)))
 })
 
 test('HTDY future tail changes historical observation output and remains repainting-only', () => {

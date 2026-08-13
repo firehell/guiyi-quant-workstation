@@ -74,7 +74,6 @@ function buildHtdyDerivedData(bars: BarData[]): HtdyDerivedData {
     markers: observation.points.flatMap((point) => [
       point.buyObservation ? observationMarker(point.time, '买观察', '#2dd4bf', 'belowBar', 'arrowUp') : null,
       point.sellObservation ? observationMarker(point.time, '卖观察', '#f472b6', 'aboveBar', 'arrowDown') : null,
-      point.xgObservation ? observationMarker(point.time, 'XG观察', '#facc15', 'belowBar', 'circle') : null,
     ].filter((marker): marker is KlineMarker => marker !== null)),
   }
 }

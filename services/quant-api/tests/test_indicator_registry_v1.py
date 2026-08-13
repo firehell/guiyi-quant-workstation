@@ -55,6 +55,24 @@ def test_observation_only_cannot_enable_formal_capabilities() -> None:
         )
 
 
+def test_observation_only_can_enable_alert_without_live_or_backtest() -> None:
+    from guiyi_quant.indicators import build_indicator_definition
+
+    definition = build_indicator_definition(
+        **_base_kwargs(
+            status="observation_only",
+            closed_bar_only=False,
+            confirmed_only=False,
+            repainting_risk="known",
+            alert_capable=True,
+        )
+    )
+
+    assert definition.alert_capable is True
+    assert definition.live_capable is False
+    assert definition.backtest_capable is False
+
+
 def test_registry_uses_exact_seven_frequency_historical_contract() -> None:
     from guiyi_quant.indicators import indicator_registry
 
@@ -242,7 +260,7 @@ def test_macd_and_atr_are_compatibility_validated_not_validated() -> None:
     assert atr.alert_capable is False
 
 
-def test_htdy_original_blocked_and_alias_resolves() -> None:
+def test_htdy_original_is_alert_capable_but_not_live_or_backtest_capable() -> None:
     from guiyi_quant.indicators import get_indicator, resolve_indicator_code
 
     original = get_indicator("huotian_dayou_original_v0")
@@ -251,9 +269,10 @@ def test_htdy_original_blocked_and_alias_resolves() -> None:
     assert aliased.indicator_code == "huotian_dayou_original_v0"
     assert original is aliased
     assert original.status == "observation_only"
+    assert original.web_capable is True
     assert original.backtest_capable is False
     assert original.live_capable is False
-    assert original.alert_capable is False
+    assert original.alert_capable is True
     assert original.repainting_risk == "known"
 
 

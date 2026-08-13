@@ -121,8 +121,8 @@ def validate_definition_capabilities(definition: IndicatorDefinition) -> None:
         if definition.backtest_capable or definition.live_capable or definition.alert_capable:
             raise ValueError(f"{status} cannot be backtest/live/alert capable")
     elif status == "observation_only":
-        if definition.backtest_capable or definition.live_capable or definition.alert_capable:
-            raise ValueError("observation_only cannot be backtest/live/alert capable")
+        if definition.backtest_capable or definition.live_capable:
+            raise ValueError("observation_only cannot be backtest/live capable")
     elif status == "strategy_candidate":
         if not definition.backtest_capable:
             raise ValueError("strategy_candidate requires backtest_capable=True")

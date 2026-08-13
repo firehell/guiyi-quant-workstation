@@ -48,15 +48,18 @@ packages/quant-core/guiyi_quant/indicators/
 | `ema10` / `ema21` / `ema60` | `validated` | yes | yes | yes | no |
 | `macd` | `compatibility_validated` | yes | no | no | no |
 | `atr` | `compatibility_validated` | yes | no | no | no |
-| `huotian_dayou_original_v0` | `observation_only` | yes | no | no | no |
+| `huotian_dayou_original_v0` | `observation_only` | yes | no | no | yes |
 | `huotian_dayou_strict_v1` | `strategy_candidate` | no | yes | no | no |
 
-这里的 `backtest/live` 表示 Kernel policy 能力，不表示仓库当前存在对应应用入口，也不授权 Runtime、通知
+这里的 `backtest/live/alert` 表示 Kernel policy 能力，不表示仓库当前存在对应应用入口，也不授权 Runtime、通知
 或交易。
 
 ## HTDY 风险边界
 
-- original 使用 XMA 风格居中窗口，具有已知未来依赖和重绘风险，只能作为 Web observation。
+- original 使用 XMA 风格居中窗口，具有已知未来依赖和重绘风险；只能作为 Web observation，或在
+  `actual_dominant + 15m + confirmed completed bar` 上只检查当前最后一根的 Alert observation。
+- Alert 只使用 Python Kernel 已有的 `buy_observation` / `sell_observation`；不扫描旧 repaint 区域，不将
+  original 升级为 backtest、正式 live strategy 或 `auto_order`。
 - original 的 single/double XMA exact future dependency 分别为12/24根；Web 使用27根保守 repaint scan zone。
 - strict 是独立 causal 计算，只具策略研究候选资格；它不会自动恢复回测、Signal、live evaluator 或 alert。
 - `RealtimeRepaintingObservationPolicy` 仅保留 frozen policy validator 与历史兼容测试。旧
