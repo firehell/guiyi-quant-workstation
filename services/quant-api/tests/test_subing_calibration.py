@@ -4,6 +4,8 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.subing_calibration import (
     DirectionalSide,
@@ -11,6 +13,7 @@ from app.market_data.subing_calibration import (
     build_research_samples,
     candidate_quantiles,
     evaluate_threshold,
+    slope_direction,
 )
 from app.market_data.subing_research import (
     MacdCross,
@@ -104,38 +107,226 @@ def _series(*, timeframe: BarFrequency = BarFrequency.M5):
     return bars, tuple(_factor(bar, timeframe=timeframe) for bar in bars)
 
 
-def test_build_outcomes_uses_exact_long_and_short_3k_formulas() -> None:
-    bars, factors = _series()
+@pytest.mark.parametrize(
+    ("horizon", "long_return", "long_mfe", "long_mae", "short_return", "short_mfe", "short_mae"),
+    (
+        (3, "300", "500", "-200", "-300", "200", "-500"),
+        (5, "500", "700", "-200", "-500", "200", "-700"),
+        (8, "800", "1000", "-200", "-800", "200", "-1000"),
+    ),
+)
+@pytest.mark.parametrize(
+    "timeframe",
+    (BarFrequency.M5, BarFrequency.M15, BarFrequency.D1),
+)
+def test_build_outcomes_uses_exact_long_and_short_formulas(
+    timeframe: BarFrequency,
+    horizon: int,
+    long_return: str,
+    long_mfe: str,
+    long_mae: str,
+    short_return: str,
+    short_mfe: str,
+    short_mae: str,
+) -> None:
+    bars, factors = _series(timeframe=timeframe)
 
     long_outcome = build_outcomes_at(
-        factors, bars, index=0, direction=DirectionalSide.LONG, horizons=(3,)
-    )[3]
+        factors, bars, index=0, direction=DirectionalSide.LONG, horizons=(horizon,)
+    )[horizon]
     short_outcome = build_outcomes_at(
-        factors, bars, index=0, direction=DirectionalSide.SHORT, horizons=(3,)
-    )[3]
+        factors, bars, index=0, direction=DirectionalSide.SHORT, horizons=(horizon,)
+    )[horizon]
 
     assert long_outcome is not None
-    assert long_outcome.directional_return_bps == Decimal("300")
-    assert long_outcome.mfe_bps == Decimal("500")
-    assert long_outcome.mae_bps == Decimal("-200")
+    assert long_outcome.directional_return_bps == Decimal(long_return)
+    assert long_outcome.mfe_bps == Decimal(long_mfe)
+    assert long_outcome.mae_bps == Decimal(long_mae)
     assert long_outcome.ema21_failure is False
     assert short_outcome is not None
-    assert short_outcome.directional_return_bps == Decimal("-300")
-    assert short_outcome.mfe_bps == Decimal("200")
-    assert short_outcome.mae_bps == Decimal("-500")
+    assert short_outcome.directional_return_bps == Decimal(short_return)
+    assert short_outcome.mfe_bps == Decimal(short_mfe)
+    assert short_outcome.mae_bps == Decimal(short_mae)
 
 
-def test_intraday_outcomes_never_cross_trading_day_or_rank1_segment() -> None:
+@pytest.mark.parametrize(
+    ("direction", "future_ema21"),
+    (
+        (DirectionalSide.LONG, "102"),
+        (DirectionalSide.SHORT, "100"),
+    ),
+)
+def test_ema21_failure_uses_direction_and_ready_future_snapshots(
+    direction: DirectionalSide,
+    future_ema21: str,
+) -> None:
     bars, factors = _series()
+    failed = replace(factors[1].snapshot, ema21=Decimal(future_ema21))
+    assert failed is not None
+
+    outcome = build_outcomes_at(
+        (
+            factors[0],
+            SubingFactorResult(SubingFactorStatus.READY, failed),
+            *factors[2:],
+        ),
+        bars,
+        index=0,
+        direction=direction,
+        horizons=(3,),
+    )[3]
+
+    assert outcome is not None
+    assert outcome.ema21_failure is True
+
+
+def test_non_ready_future_factor_does_not_erase_price_outcome() -> None:
+    bars, factors = _series()
+    with_gap = (
+        factors[0],
+        SubingFactorResult(SubingFactorStatus.INSUFFICIENT_DATA, None),
+        *factors[2:],
+    )
+
+    outcome = build_outcomes_at(
+        with_gap,
+        bars,
+        index=0,
+        direction=DirectionalSide.LONG,
+        horizons=(3,),
+    )[3]
+
+    assert outcome is not None
+    assert outcome.directional_return_bps == Decimal("300")
+    assert outcome.mfe_bps == Decimal("500")
+    assert outcome.mae_bps == Decimal("-200")
+    assert outcome.ema21_failure is False
+
+
+def test_entry_factor_must_match_bar_trading_day() -> None:
+    bars, factors = _series(timeframe=BarFrequency.D1)
+    wrong_entry = replace(factors[0].snapshot, trading_day=date(2026, 8, 2))
+    assert wrong_entry is not None
+
+    with pytest.raises(ValueError, match="entry factor must be ready and aligned"):
+        build_outcomes_at(
+            (
+                SubingFactorResult(SubingFactorStatus.READY, wrong_entry),
+                *factors[1:],
+            ),
+            bars,
+            index=0,
+            direction=DirectionalSide.LONG,
+            horizons=(3,),
+        )
+
+
+def test_entry_timeframe_must_be_supported_by_calibration() -> None:
+    bars, factors = _series(timeframe=BarFrequency.M30)
+
+    with pytest.raises(ValueError, match="timeframe"):
+        build_outcomes_at(
+            factors,
+            bars,
+            index=0,
+            direction=DirectionalSide.LONG,
+            horizons=(3,),
+        )
+
+
+def test_future_ready_factor_with_mixed_timeframe_invalidates_horizon() -> None:
+    bars, factors = _series()
+    wrong_timeframe = replace(factors[2].snapshot, timeframe=BarFrequency.M15)
+    assert wrong_timeframe is not None
+
+    outcome = build_outcomes_at(
+        (
+            *factors[:2],
+            SubingFactorResult(SubingFactorStatus.READY, wrong_timeframe),
+            *factors[3:],
+        ),
+        bars,
+        index=0,
+        direction=DirectionalSide.LONG,
+        horizons=(3,),
+    )[3]
+
+    assert outcome is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("bar_end", _START + timedelta(minutes=11)),
+        ("trading_day", date(2026, 8, 4)),
+        ("close", Decimal("999")),
+        ("timeframe", BarFrequency.M15),
+        ("contract", "JM2701"),
+        ("segment_start_trading_day", date(2026, 8, 2)),
+    ),
+)
+def test_future_ready_factor_identity_mismatch_invalidates_horizon(
+    field: str,
+    value: object,
+) -> None:
+    bars, factors = _series()
+    snapshot = factors[2].snapshot
+    assert snapshot is not None
+    wrong_identity = replace(snapshot, **{field: value})
+
+    outcome = build_outcomes_at(
+        (
+            *factors[:2],
+            SubingFactorResult(SubingFactorStatus.READY, wrong_identity),
+            *factors[3:],
+        ),
+        bars,
+        index=0,
+        direction=DirectionalSide.LONG,
+        horizons=(3,),
+    )[3]
+
+    assert outcome is None
+
+
+def test_all_non_ready_future_factors_keep_price_outcome_and_no_ema_failure() -> None:
+    bars, factors = _series()
+    insufficient = SubingFactorResult(SubingFactorStatus.INSUFFICIENT_DATA, None)
+
+    outcome = build_outcomes_at(
+        (factors[0], insufficient, insufficient, insufficient, *factors[4:]),
+        bars,
+        index=0,
+        direction=DirectionalSide.SHORT,
+        horizons=(3,),
+    )[3]
+
+    assert outcome is not None
+    assert outcome.directional_return_bps == Decimal("-300")
+    assert outcome.mfe_bps == Decimal("200")
+    assert outcome.mae_bps == Decimal("-500")
+    assert outcome.ema21_failure is False
+
+
+@pytest.mark.parametrize("timeframe", (BarFrequency.M5, BarFrequency.M15))
+def test_intraday_outcomes_never_cross_trading_day_or_rank1_segment(
+    timeframe: BarFrequency,
+) -> None:
+    bars, factors = _series(timeframe=timeframe)
     next_day_bar = replace(bars[3], trading_day=date(2026, 8, 4))
+    next_day_factors = tuple(
+        _factor(bar, timeframe=timeframe)
+        for bar in (*bars[:3], next_day_bar, *bars[4:])
+    )
     next_segment = _factor(
-        next_day_bar,
+        bars[3],
+        timeframe=timeframe,
         contract="JM2701",
         segment_start=date(2026, 8, 4),
     )
 
     day_poison = build_outcomes_at(
-        factors,
+        next_day_factors,
         (*bars[:3], next_day_bar, *bars[4:]),
         index=0,
         direction=DirectionalSide.LONG,
@@ -143,7 +334,7 @@ def test_intraday_outcomes_never_cross_trading_day_or_rank1_segment() -> None:
     )
     segment_poison = build_outcomes_at(
         (*factors[:3], next_segment, *factors[4:]),
-        (*bars[:3], next_day_bar, *bars[4:]),
+        bars,
         index=0,
         direction=DirectionalSide.LONG,
         horizons=(3,),
@@ -170,12 +361,13 @@ def test_daily_outcomes_may_cross_day_but_not_rank1_segment() -> None:
         direction=DirectionalSide.LONG,
         horizons=(3,),
     )
+    segment_snapshot = daily_factors[3].snapshot
+    assert segment_snapshot is not None
     changed_segment = replace(
-        daily_factors[3].snapshot,
+        segment_snapshot,
         contract="JM2701",
         segment_start_trading_day=date(2026, 8, 6),
     )
-    assert changed_segment is not None
     poison = build_outcomes_at(
         (
             *daily_factors[:3],
@@ -213,6 +405,13 @@ def test_research_samples_use_only_the_explicit_direction_selector() -> None:
     assert samples[0].outcomes[8] is not None
 
 
+def test_research_samples_fail_closed_without_direction_selector() -> None:
+    bars, factors = _series()
+
+    with pytest.raises(TypeError):
+        build_research_samples(factors, bars, horizons=(3,))  # type: ignore[call-arg]
+
+
 def test_slope_selector_excludes_wrong_side_or_disagreeing_slopes() -> None:
     bars, factors = _series()
     below = replace(
@@ -236,7 +435,12 @@ def test_slope_selector_excludes_wrong_side_or_disagreeing_slopes() -> None:
         *factors[3:],
     )
 
-    samples = build_research_samples(mixed, bars, horizons=(3, 5, 8))
+    samples = build_research_samples(
+        mixed,
+        bars,
+        horizons=(3, 5, 8),
+        direction_selector=slope_direction,
+    )
 
     assert [sample.direction for sample in samples[:2]] == [
         DirectionalSide.LONG,
@@ -245,16 +449,77 @@ def test_slope_selector_excludes_wrong_side_or_disagreeing_slopes() -> None:
     assert all(sample.factor.bar_end != bars[2].bar_end for sample in samples)
 
 
-def test_candidate_quantiles_are_inclusive_and_explicitly_unavailable() -> None:
+def test_candidate_quantiles_are_product_bounded_inclusive_and_explicit() -> None:
     assert candidate_quantiles(
-        [Decimal("1"), Decimal("2"), Decimal("3"), Decimal("4"), Decimal("5")]
-    ) == (Decimal("1.4"), Decimal("1.8"), Decimal("2.2"))
-    assert candidate_quantiles([Decimal("7.5")]) == (
-        Decimal("7.5"),
-        Decimal("7.5"),
-        Decimal("7.5"),
-    )
-    assert candidate_quantiles([]) is None
+        {
+            "JM": [
+                Decimal("1"),
+                Decimal("2"),
+                Decimal("3"),
+                Decimal("4"),
+                Decimal("5"),
+            ],
+            "AG": [Decimal("7.5")],
+            "RB": [],
+        }
+    ) == {
+        "JM": (Decimal("1.4"), Decimal("1.8"), Decimal("2.2")),
+        "AG": (Decimal("7.5"), Decimal("7.5"), Decimal("7.5")),
+        "RB": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "percentiles",
+    ((0, 20, 30), (10, 20, 100), (10, 10, 30), (True, 20, 30)),
+)
+def test_candidate_quantiles_reject_invalid_percentiles(
+    percentiles: tuple[int, int, int],
+) -> None:
+    with pytest.raises(ValueError, match="percentiles"):
+        candidate_quantiles(
+            {"JM": [Decimal("1"), Decimal("2")]},
+            percentiles=percentiles,
+        )
+
+
+@pytest.mark.parametrize("invalid", (Decimal("NaN"), Decimal("-1")))
+def test_candidate_quantiles_reject_non_finite_or_negative_values(
+    invalid: Decimal,
+) -> None:
+    with pytest.raises(ValueError, match="candidate value"):
+        candidate_quantiles({"JM": [invalid]})
+
+
+def test_candidate_quantiles_require_decimal_values_and_named_products() -> None:
+    with pytest.raises(TypeError, match="candidate value must be Decimal"):
+        candidate_quantiles({"JM": [1.25]})  # type: ignore[list-item]
+    with pytest.raises(ValueError, match="product"):
+        candidate_quantiles({" ": [Decimal("1")]})
+
+
+def test_horizons_reject_booleans_even_though_bool_is_an_int_subclass() -> None:
+    bars, factors = _series()
+
+    with pytest.raises(ValueError, match="positive integers"):
+        build_outcomes_at(
+            factors,
+            bars,
+            index=0,
+            direction=DirectionalSide.LONG,
+            horizons=(True,),
+        )
+
+
+@pytest.mark.parametrize("invalid", (Decimal("NaN"), Decimal("-1")))
+def test_threshold_rejects_non_finite_or_negative_decimal(invalid: Decimal) -> None:
+    with pytest.raises(ValueError, match="threshold"):
+        evaluate_threshold((), invalid)
+
+
+def test_threshold_requires_decimal_input() -> None:
+    with pytest.raises(TypeError, match="threshold must be Decimal"):
+        evaluate_threshold((), 1.25)  # type: ignore[arg-type]
 
 
 def test_threshold_evaluation_reports_hand_checked_horizon_statistics() -> None:
@@ -267,9 +532,15 @@ def test_threshold_evaluation_reports_hand_checked_horizon_statistics() -> None:
             lambda index, factor: DirectionalSide.LONG if index < 3 else None
         ),
     )
+    failed_outcome = base[1].outcomes[3]
+    assert failed_outcome is not None
     samples = (
         replace(base[0], studied_value=Decimal("1")),
-        replace(base[1], studied_value=Decimal("2")),
+        replace(
+            base[1],
+            studied_value=Decimal("2"),
+            outcomes={3: replace(failed_outcome, ema21_failure=True)},
+        ),
         replace(base[2], studied_value=Decimal("3")),
     )
 
@@ -287,4 +558,31 @@ def test_threshold_evaluation_reports_hand_checked_horizon_statistics() -> None:
     assert evaluation.horizons[3].median_mae_bps == Decimal(
         "-246.5540671714230246554067172"
     )
-    assert evaluation.horizons[3].ema21_failure_rate == Decimal("0")
+    assert evaluation.horizons[3].ema21_failure_rate == Decimal("0.5")
+
+
+def test_threshold_direction_is_strict_above_or_inclusive_at_or_below() -> None:
+    bars, factors = _series()
+    base = build_research_samples(
+        factors,
+        bars,
+        horizons=(3,),
+        direction_selector=(
+            lambda index, factor: DirectionalSide.LONG if index < 3 else None
+        ),
+    )
+    samples = tuple(
+        replace(sample, studied_value=Decimal(index))
+        for index, sample in enumerate(base, start=1)
+    )
+
+    strict_above = evaluate_threshold(samples, Decimal("2"), horizons=(3,))
+    inclusive_below = evaluate_threshold(
+        samples,
+        Decimal("2"),
+        horizons=(3,),
+        include_at_or_below=True,
+    )
+
+    assert strict_above.sample_count == 1
+    assert inclusive_below.sample_count == 2
