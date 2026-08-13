@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import logging
+import traceback
 
 import pytest
 
@@ -97,7 +98,7 @@ def test_send_failure_is_one_shot_and_log_is_sanitized(
         raise failure
 
     with caplog.at_level(logging.WARNING, logger="app.alerts.wecom"):
-        with pytest.raises(WeComSendError, match="WECOM_REQUEST_FAILED"):
+        with pytest.raises(WeComSendError, match="WECOM_REQUEST_FAILED") as exc_info:
             WeComWebhookSender(secret_url, post_json=post_json).send(_event(("buy",)))
 
     assert calls == 1
@@ -105,6 +106,9 @@ def test_send_failure_is_one_shot_and_log_is_sanitized(
     assert "WECOM_REQUEST_FAILED" in log_text
     assert secret_url not in log_text
     assert str(failure) not in log_text
+    rendered_traceback = "".join(traceback.format_exception(exc_info.value))
+    assert secret_url not in rendered_traceback
+    assert str(failure) not in rendered_traceback
 
 
 def test_wecom_error_response_is_one_shot_and_sanitized(caplog: pytest.LogCaptureFixture) -> None:
@@ -124,3 +128,14 @@ def test_wecom_error_response_is_one_shot_and_sanitized(caplog: pytest.LogCaptur
     assert calls == 1
     assert "WECOM_RESPONSE_REJECTED" in caplog.text
     assert "private raw response" not in caplog.text
+
+
+@pytest.mark.parametrize("errcode", (False, 0.0, "0", None))
+def test_malformed_success_errcode_fails_closed(errcode: object) -> None:
+    def post_json(_url: str, _payload: object, *, timeout: float) -> object:
+        return {"errcode": errcode}
+
+    with pytest.raises(WeComSendError, match="WECOM_RESPONSE_REJECTED"):
+        WeComWebhookSender("https://example.invalid/webhook", post_json=post_json).send(
+            _event(("buy",))
+        )

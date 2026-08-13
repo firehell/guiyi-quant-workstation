@@ -64,10 +64,11 @@ class WeComWebhookSender:
                 payload,
                 timeout=self._timeout_seconds,
             )
-        except Exception as exc:  # noqa: BLE001 - transport detail must be collapsed
+        except Exception:  # noqa: BLE001 - transport detail must be collapsed
             _LOGGER.warning("WECOM_REQUEST_FAILED")
-            raise WeComSendError("WECOM_REQUEST_FAILED") from exc
-        if not isinstance(response, Mapping) or response.get("errcode") != 0:
+            raise WeComSendError("WECOM_REQUEST_FAILED") from None
+        errcode = response.get("errcode") if isinstance(response, Mapping) else None
+        if type(errcode) is not int or errcode != 0:
             _LOGGER.warning("WECOM_RESPONSE_REJECTED")
             raise WeComSendError("WECOM_RESPONSE_REJECTED")
 
