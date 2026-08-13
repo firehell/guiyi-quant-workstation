@@ -77,7 +77,7 @@ async function mockWorkspace(page, researchResponse, options = {}) {
     if (url.pathname.endsWith('/bars/page')) {
       const request = Object.fromEntries(url.searchParams)
       marketRequests.push(request)
-      return route.fulfill({ json: { request: { series_kind: request.series_kind, symbol: 'ag', contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 }, bars: options.bars || Array.from({ length: 120 }, (_, index) => bar(index)), canonical_coverage: null, page: { has_more_before: false, next_before: null }, resolved_contract_segments: [] } })
+      return route.fulfill({ json: { request: { series_kind: request.series_kind, symbol: 'ag', contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 }, bars: options.bars || Array.from({ length: 120 }, (_, index) => bar(index)), canonical_coverage: null, page: options.pageMeta || { has_more_before: false, next_before: null }, resolved_contract_segments: [] } })
     }
     return route.abort()
   })
@@ -128,12 +128,16 @@ test('SuBing keeps the visible chart empty until the segment snapshot resolves',
 
 test('SuBing keeps unsupported 30m explicit and does not request a snapshot', async ({ page }) => {
   const subingRequests = []
-  await mockWorkspace(page, { json: research() }, { subingRequests })
+  await mockWorkspace(page, { json: research() }, {
+    subingRequests,
+    pageMeta: { has_more_before: true, next_before: '2026-08-01T01:00:00Z' },
+  })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=30m')
 
   await expect(page.getByText('苏冰 Factor V1 当前周期不可用，仅支持 5m / 15m / 1d', { exact: true })).toBeVisible()
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
+  await expect(page.getByText('可继续向前加载', { exact: true })).toBeVisible()
   expect(subingRequests).toEqual([])
 })
 

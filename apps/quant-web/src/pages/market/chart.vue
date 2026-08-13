@@ -121,7 +121,7 @@ const visibleBars = computed(() => {
 })
 const visibleStartTradingDay = computed(() => visibleBars.value[0]?.trading_day || '')
 const canLoadEarlier = computed(() => {
-  if (selectedOverlay.value !== 'subing') return hasMoreBefore.value
+  if (selectedOverlay.value !== 'subing' || !subingSupported.value) return hasMoreBefore.value
   const segmentStart = subing.value?.segment_start_trading_day
   const visibleStart = visibleStartTradingDay.value
   return !!segmentStart && !!visibleStart && visibleStart > segmentStart && hasMoreBefore.value
@@ -459,7 +459,7 @@ async function toggleAlert(enabled: boolean) {
 }
 
 async function loadEarlierBars() {
-  if (selectedOverlay.value === 'subing') {
+  if (selectedOverlay.value === 'subing' && subingSupported.value) {
     const segmentStart = subing.value?.segment_start_trading_day
     const visibleStart = visibleStartTradingDay.value
     if (!segmentStart || !visibleStart || visibleStart <= segmentStart) return
