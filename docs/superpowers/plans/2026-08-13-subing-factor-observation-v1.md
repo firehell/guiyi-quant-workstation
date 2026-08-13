@@ -4,7 +4,7 @@
 
 **Goal:** 在不修改 Data Foundation、Alert V1 或 Runtime 的前提下，交付当前 rank1 segment 的 1d/5m/15m 苏冰 Factor 只读观察，包括 completed Live 5m/15m、`无/苏冰/火天大有` 单选 Overlay 和 Product Workspace 研究展示。
 
-**Architecture:** 新增 zero-I/O `subing_research.py` 作为 Factor 计算核心；新增薄 `SubingReadService` 作为 current-rank1/segment/primary-companion/Historical-Live orchestration seam。现有 `MarketResearchService` 继续 Historical-only，Historical 只经 `MarketDataService`，Live 只经 `MarketReadService`，换月后严格 rank1-segment-local warm-up。
+**Architecture:** 新增 zero-I/O `subing_research.py` 作为 Factor 计算核心；新增薄 `SubingReadService` 作为 current-rank1/segment/primary-companion/Historical-Live orchestration seam。现有 `MarketResearchService` 继续 Historical-only，Historical 只经 `MarketDataService`，Live 只经 `MarketReadService`，换月后严格 rank1-segment-local warm-up；苏冰模式的**可见 Kline 本身也必须截断在 current rank1 segment**，不能只截 Factor。
 
 **Tech Stack:** Python 3 / FastAPI / Decimal / quant-core Indicator Kernel / PostgreSQL Catalog read path / Redis Live Overlay via `MarketReadService` / Vue 3 / TypeScript / Naive UI / Lightweight Charts / Vitest / Playwright.
 
@@ -16,9 +16,10 @@
 - 不修改 `MarketResearchService` 的 P0 Historical-only 合同。
 - 不修改 `alert_rules`、`alert_events`、Alert Runtime、HTDY evaluator、WeCom sender 或任何 Runtime 状态。
 - 当前阶段只做 Factor Observation；不得输出正式 `MATCHED LONG/SHORT` Signal，不得自行填 Calibration。
-- MACD 仅允许 `web_macd_legacy_v1` 作为明确命名的 research Factor observation policy；不得在本计划中晋升 `live_candidate`、backtest 或 alert capability。
+- MACD 仅允许 `web_macd_legacy_v1` 作为明确命名的 research Factor observation policy；不得在本计划中晋升 generic `macd` 的 live/backtest/alert capability。
 - 苏冰只支持 `1d / 5m / 15m`；5m/15m 只消费 completed Live bars。
 - 当前品种自动使用 latest rank1 真实 contract，并只使用 current rank1 segment；不得跨换月继承 EMA/MACD，不得读取 pre-rank1 contract 数据补 warm-up。
+- SuBing 模式 Kline、EMA21、MACD、Factor 必须使用同一 current rank1 segment；不得让图表向左分页显示 segment 之前的同 contract 历史。
 - Web 用户层主图 Overlay 单选：`none / subing / htdy`；苏冰主图只显示 EMA21，Volume/MACD 副图继续固定。
 - 不新增 DB、Redis key、worker、scheduler、WebSocket、Factor Store、Rule Engine 或 Strategy Engine。
 - 所有外部写入、Runtime switch、真实通知均不在本计划范围。
@@ -51,10 +52,11 @@
 - `apps/quant-web/tests/mainIndicators.test.ts` — preference migration and overlay mapping.
 - `apps/quant-web/src/components/market/ProductWorkspaceToolbar.vue` — single-select research Overlay and SuBing current-contract mode.
 - `apps/quant-web/src/components/market/ProductResearchSidebar.vue` — mount `SubingResearchSection` inside existing sidebar.
-- `apps/quant-web/src/pages/market/chart.vue` — current-rank1 contract pinning, SuBing snapshot fetch and completed-bar refresh.
+- `apps/quant-web/src/pages/market/chart.vue` — current-rank1 contract pinning, segment-clipped visible Kline, SuBing snapshot fetch and completed-bar refresh.
 - `apps/quant-web/e2e/market-research.spec.mjs` — Product Workspace regression and SuBing UI behavior.
 - `TESTING.md` — add no-side-effect SuBing validation entry.
 - `docs/ARCHITECTURE.md` — add thin `SubingReadService` read seam after implementation is real.
+- `STATUS.md` — only if code and required tests actually complete.
 
 ---
 
@@ -69,31 +71,30 @@
 **Interfaces:**
 - Produces: `SubingFactorStatus`, `PriceSide`, `MacdCross`, `SubingFactorSnapshot`, `SubingFactorResult`.
 - Produces: `calculate_subing_factor_series(...)` and `calculate_subing_factor(...)`.
-- Later tasks pass only current-segment `CanonicalBar` sequences into these functions.
+- Later tasks pass only one current-segment `CanonicalBar` sequence into these functions.
 
-- [ ] **Step 1: Write failing tests for factor math and policy guard**
+- [ ] **Step 1: Write failing tests for Factor math and policy guard**
 
-Create tests that require the new interfaces and verify exact semantics:
+Create deterministic local bar builders in the test file; do not depend on undeclared fixtures. Require the new interfaces and verify exact semantics:
 
 ```python
-from datetime import date
 from decimal import Decimal
 
 from app.market_data.domain import BarFrequency
 from app.market_data.subing_research import (
-    MacdCross,
     PriceSide,
     SubingFactorStatus,
     calculate_subing_factor,
 )
 
 
-def test_subing_factor_reports_price_slope_macd_and_volume(ready_bars):
+def test_subing_factor_reports_price_slope_macd_and_volume():
+    bars = _ready_bars(count=48, final_volume=Decimal("300"), previous_volume=Decimal("100"))
     result = calculate_subing_factor(
-        ready_bars,
+        bars,
         timeframe=BarFrequency.M5,
         contract="JM2609",
-        segment_start_trading_day=ready_bars[0].trading_day,
+        segment_start_trading_day=bars[0].trading_day,
         latest_bar_source="canonical",
     )
     assert result.status is SubingFactorStatus.READY
@@ -104,23 +105,22 @@ def test_subing_factor_reports_price_slope_macd_and_volume(ready_bars):
     assert result.snapshot.volume_ratio_prev == Decimal("3")
 
 
-def test_subing_factor_returns_insufficient_when_segment_warmup_is_short(short_bars):
+def test_subing_factor_returns_insufficient_when_segment_warmup_is_short():
+    bars = _ready_bars(count=20)
     result = calculate_subing_factor(
-        short_bars,
+        bars,
         timeframe=BarFrequency.M15,
         contract="JM2609",
-        segment_start_trading_day=short_bars[0].trading_day,
+        segment_start_trading_day=bars[0].trading_day,
         latest_bar_source="canonical",
     )
     assert result.status is SubingFactorStatus.INSUFFICIENT_DATA
     assert result.snapshot is None
 ```
 
-Add focused tests for Golden/Dead cross equality edges, `previous_volume <= 0`, strict input ordering, and segment dates before `segment_start_trading_day` being rejected.
+Add focused tests for Golden/Dead cross equality edges, `previous_volume <= 0`, strict increasing `bar_end`, and any bar whose `trading_day < segment_start_trading_day` being rejected.
 
 - [ ] **Step 2: Run the new tests and confirm they fail because the module does not exist**
-
-Run:
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -132,7 +132,7 @@ Expected: FAIL on missing `app.market_data.subing_research` or missing exported 
 
 - [ ] **Step 3: Add the explicit MACD Factor-observation policy consumer without promoting MACD**
 
-Update `web_macd_legacy_v1` only as follows; do not change `macd` registry status/capability in this plan:
+Update only `web_macd_legacy_v1`:
 
 ```python
 "web_macd_legacy_v1": FormalPolicy(
@@ -152,40 +152,24 @@ Update `web_macd_legacy_v1` only as follows; do not change `macd` registry statu
 
 `registry.py` must still report `status="compatibility_validated"`, `live_capable=False`, `alert_capable=False`.
 
-- [ ] **Step 4: Implement the pure Factor types and calculations**
+- [ ] **Step 4: Implement pure Factor types and calculations**
 
-Use exact policy IDs and Decimal outputs. The core shape should be:
+Use exact policy IDs and Decimal outputs:
 
 ```python
-from dataclasses import dataclass
-from datetime import date, datetime
-from decimal import Decimal
-from enum import StrEnum
-from collections.abc import Sequence
-
-from app.market_data.domain import BarFrequency, CanonicalBar
-from guiyi_quant.indicators.ema import ema_series
-from guiyi_quant.indicators.macd import macd_series
-from guiyi_quant.indicators.policy import require_formal_policy
-from guiyi_quant.indicators.registry import get_indicator
-
-
 class SubingFactorStatus(StrEnum):
     READY = "ready"
     INSUFFICIENT_DATA = "insufficient_data"
-
 
 class PriceSide(StrEnum):
     ABOVE = "above"
     BELOW = "below"
     EQUAL = "equal"
 
-
 class MacdCross(StrEnum):
     GOLDEN = "golden"
     DEAD = "dead"
     NONE = "none"
-
 
 @dataclass(frozen=True, slots=True)
 class SubingFactorSnapshot:
@@ -213,14 +197,13 @@ class SubingFactorSnapshot:
     previous_volume: Decimal
     volume_ratio_prev: Decimal | None
 
-
 @dataclass(frozen=True, slots=True)
 class SubingFactorResult:
     status: SubingFactorStatus
     snapshot: SubingFactorSnapshot | None
 ```
 
-Before MACD calculation, require:
+Before MACD calculation:
 
 ```python
 policy = require_formal_policy("web_macd_legacy_v1", consumer="subing_factor_observation")
@@ -228,9 +211,9 @@ definition = get_indicator("macd")
 assert policy.policy_id == definition.formal_policy_id
 ```
 
-Use `ema_series(..., period=21, seed_policy="sma_window")`, the registry MACD defaults, and convert rounded kernel values via `Decimal(str(value))`.
+Use `ema_series(..., period=21, seed_policy="sma_window")` and the registry MACD defaults. Convert rounded kernel values with `Decimal(str(value))`.
 
-Implement OLS slope with Decimal:
+OLS slope:
 
 ```python
 def _regression_slope(values: Sequence[Decimal]) -> Decimal:
@@ -248,13 +231,11 @@ def _regression_slope(values: Sequence[Decimal]) -> Decimal:
     return numerator / denominator
 ```
 
-Normalize with `slope / mean(ema_window) * Decimal(10000)`. Golden is previous `DIF <= DEA` and current `DIF > DEA`; Dead is mirrored. `cross_level=(DIF+DEA)/2`; zero distance is both absolute and `/ close * 10000`.
+Normalize with `slope / mean(ema_window) * Decimal(10000)`. Golden: previous `DIF <= DEA` and current `DIF > DEA`; Dead mirrored. `cross_level=(DIF+DEA)/2`; zero distance is absolute and `/close*10000`.
 
-`calculate_subing_factor_series()` must compute one aligned indicator pass and return results for all input bars; `calculate_subing_factor()` returns the last result. This avoids recomputing indicators per historical bar in the Calibration plan.
+`calculate_subing_factor_series()` performs one aligned EMA/MACD pass and returns one `SubingFactorResult` per input bar. A bar is READY only when current EMA21, last 10 ready EMA21 values, current+previous ready DIF/DEA, current volume and previous volume are available. `calculate_subing_factor()` returns the last result.
 
-- [ ] **Step 5: Run pure tests plus existing indicator tests**
-
-Run:
+- [ ] **Step 5: Run pure tests plus existing Indicator regressions**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -264,11 +245,11 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_indicator_registry_v1.py
 ```
 
-Expected: PASS; existing MACD `compatibility_validated/live_capable=False` assertions remain unchanged except the newly allowed research consumer.
+Expected: PASS; generic MACD capability remains unchanged.
 
-- [ ] **Step 6: Align `docs/INDICATOR_KERNEL.md` with current Product Workspace facts**
+- [ ] **Step 6: Align `docs/INDICATOR_KERNEL.md`**
 
-Replace the stale statement that Market charts do not mount indicators with the current state: Product Workspace already renders EMA/MACD/HTDY observation, Python Kernel remains authoritative, and `web_macd_legacy_v1` is additionally allowed only for `subing_factor_observation`. Do not describe Signal capability as approved.
+Replace the stale claim that Product Workspace does not mount indicators with the current EMA/MACD/HTDY observation facts. Document `subing_factor_observation` as research-only and explicitly state that formal Signal capability is still pending.
 
 - [ ] **Step 7: Commit Task 1**
 
@@ -294,32 +275,40 @@ git commit -m "feat: add SuBing factor core"
 - Produces: `MarketDataService.latest_dominant_segment(symbol: str) -> DominantContractSegmentSummary`.
 - `SubingReadService` must use this method instead of reading `MainContractMap` directly.
 
-- [ ] **Step 1: Write failing service tests for contiguous current segment resolution**
+- [ ] **Step 1: Write failing service tests using existing `session` and `tmp_path` fixtures**
 
-Add tests covering normal rollover and missing-map fail-closed behavior:
+Seed exact calendar/map rows inside each test:
 
 ```python
-def test_latest_dominant_segment_starts_after_last_contract_change(service, seeded_catalog):
-    # rank1: JM2609, JM2609, JM2610, JM2610
+def test_latest_dominant_segment_starts_after_last_contract_change(session, tmp_path):
+    catalog = MarketCatalog(session, tmp_path)
+    session.add_all(
+        TradingCalendar("DCE", date(2025, 1, 2), True),
+        TradingCalendar("DCE", date(2025, 1, 3), True),
+        TradingCalendar("DCE", date(2025, 1, 6), True),
+        TradingCalendar("DCE", date(2025, 1, 7), True),
+    )
+    catalog.upsert_main_contracts((
+        ("jm", date(2025, 1, 2), "JM2505"),
+        ("jm", date(2025, 1, 3), "JM2505"),
+        ("jm", date(2025, 1, 6), "JM2509"),
+        ("jm", date(2025, 1, 7), "JM2509"),
+    ))
+    session.commit()
+    service = MarketDataService(catalog, CanonicalMonthlyStore(tmp_path))
     result = service.latest_dominant_segment("jm")
-    assert result.contract == "JM2610"
-    assert result.start_trading_day == date(2026, 8, 12)
-    assert result.end_trading_day == date(2026, 8, 13)
-
-
-def test_latest_dominant_segment_rejects_missing_mapping_day(service, seeded_catalog):
-    # remove one expected trading-day mapping inside the candidate segment
-    with pytest.raises(MarketDataError, match="MAIN_CONTRACT_MAP_MISSING"):
-        service.latest_dominant_segment("jm")
+    assert result.contract == "JM2509"
+    assert result.start_trading_day == date(2025, 1, 6)
+    assert result.end_trading_day == date(2025, 1, 7)
 ```
 
-- [ ] **Step 2: Run the two focused tests and confirm the method is missing**
+For the missing-map test, seed trading days Jan 6/7 but only map Jan 7 to JM2509 and ensure the resolver raises `MarketDataError("MAIN_CONTRACT_MAP_MISSING")` rather than silently setting segment start Jan 7.
 
-Run the exact new test node IDs with `pytest -q`; expected FAIL with `AttributeError`/import error for the new summary.
+- [ ] **Step 2: Run exact new test node IDs and confirm failure**
 
-- [ ] **Step 3: Implement the resolver inside MarketDataService**
+Expected: FAIL because `latest_dominant_segment`/summary do not exist.
 
-Add:
+- [ ] **Step 3: Implement resolver inside MarketDataService**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -328,26 +317,17 @@ class DominantContractSegmentSummary:
     contract: str
     start_trading_day: date
     end_trading_day: date
-
-
-def latest_dominant_segment(self, symbol: str) -> DominantContractSegmentSummary:
-    mappings = self.catalog.main_map_before(symbol, None)
-    if not mappings:
-        raise MarketDataError("DOMINANT_CONTEXT_MISSING")
-    latest = mappings[-1]
-    start = latest.trade_date
-    for item in reversed(mappings[:-1]):
-        if item.contract != latest.contract:
-            break
-        start = item.trade_date
-    expected_days = self.catalog.trading_days(symbol, start, latest.trade_date)
-    mapping_by_day = {item.trade_date: item for item in mappings if start <= item.trade_date <= latest.trade_date}
-    if any(day not in mapping_by_day for day in expected_days):
-        raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-    return DominantContractSegmentSummary(symbol, latest.contract, start, latest.trade_date)
 ```
 
-Do not add a new Catalog resolver or expose Catalog to SuBing.
+Algorithm:
+1. `main_map_before(symbol, None)`; empty -> `DOMINANT_CONTEXT_MISSING`.
+2. Let latest mapping be the current contract/end day.
+3. Walk mappings backward while the contract is unchanged to find tentative start.
+4. Query formal trading days between tentative start and end.
+5. Every expected trading day must have a rank1 mapping and the same current contract; otherwise `MAIN_CONTRACT_MAP_MISSING`.
+6. Return the summary.
+
+Do not add a second Catalog resolver.
 
 - [ ] **Step 4: Run service/pagination regressions**
 
@@ -370,7 +350,7 @@ git commit -m "feat: expose current dominant segment"
 
 ---
 
-### Task 3: Build `SubingReadService` on the existing Historical/Live seams
+### Task 3: Build `SubingReadService` on existing Historical/Live seams
 
 **Files:**
 - Create: `services/quant-api/app/market_data/subing_read_service.py`
@@ -381,22 +361,25 @@ git commit -m "feat: expose current dominant segment"
 - Consumes: `MarketDataService.latest_dominant_segment`, `MarketDataService.list_latest_dominants`, `MarketReadService.history_page/state/live_snapshot`, `calculate_subing_factor`.
 - Produces: `SubingReadRequest`, `SubingReadSnapshot`, `SubingReadService.snapshot(request, now)`.
 
-- [ ] **Step 1: Write failing tests for current segment, rollover poison and multi-timeframe cutoff**
+- [ ] **Step 1: Write failing tests for segment isolation, Live mismatch and multi-TF cutoff**
 
-Tests must prove:
+Use local fakes in the new test file; do not rely on Redis/production DB. Require:
 
 ```python
 snapshot = service.snapshot(SubingReadRequest("jm", BarFrequency.M5), now)
 assert snapshot.actual_contract == "JM2610"
 assert snapshot.segment_start_trading_day == date(2026, 8, 12)
-assert snapshot.primary.snapshot.trading_day >= snapshot.segment_start_trading_day
+assert snapshot.primary.snapshot is None or snapshot.primary.snapshot.trading_day >= date(2026, 8, 12)
 assert snapshot.companion is not None
-assert snapshot.companion.snapshot.bar_end <= snapshot.primary.snapshot.bar_end
+if snapshot.primary.snapshot and snapshot.companion.snapshot:
+    assert snapshot.companion.snapshot.bar_end <= snapshot.primary.snapshot.bar_end
 ```
 
-Add a rollover poison fixture where the physical contract page also contains an older rank1 segment of the same contract; assert bars before `segment_start_trading_day` never reach the Factor core. Add a Live contract mismatch case and assert `live_observation="unavailable"`, `live_reason="contract_mismatch"`, with canonical factors still readable.
+Rollover poison: make the physical contract page also contain an older, non-current segment of the same contract and assert those bars never enter the Factor core.
 
-- [ ] **Step 2: Run focused tests and confirm the service is missing**
+Live contract mismatch: current rank1 JM2610 but MarketRead state reports JM2609; assert canonical Factor remains readable, `live_observation="unavailable"`, `live_reason="contract_mismatch"`, and no live bar is merged.
+
+- [ ] **Step 2: Run focused tests and confirm missing module/types**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -404,11 +387,9 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_subing_read_service.py
 ```
 
-Expected: FAIL on missing module/types.
+Expected: FAIL.
 
 - [ ] **Step 3: Implement request/snapshot contracts**
-
-Use these stable shapes:
 
 ```python
 SUPPORTED_SUBING_FREQUENCIES = frozenset({BarFrequency.M5, BarFrequency.M15, BarFrequency.D1})
@@ -435,7 +416,7 @@ class SubingReadSnapshot:
     companion: SubingFactorResult | None
 ```
 
-Reject unsupported frequencies with a stable `SubingReadError("SUBING_FREQUENCY_UNSUPPORTED")`.
+Unsupported frequency -> stable `SubingReadError("SUBING_FREQUENCY_UNSUPPORTED")`.
 
 - [ ] **Step 4: Implement segment-local primary/companion orchestration**
 
@@ -455,22 +436,13 @@ historical = tuple(
 )
 ```
 
-For 5m/15m only, inspect `MarketReadService.state(identity, now)`. Merge Live only when the current live contract equals the resolved rank1 contract and Live is available. Use `live_snapshot(identity, after=historical[-1].bar_end if historical else None, now=now)`, dedupe by `bar_end`, filter again to current segment, and sort.
+For 5m/15m only, inspect `MarketReadService.state(identity, now)`. Merge Live only when live contract equals current rank1 contract and Live is available. Use `live_snapshot(identity, after=historical[-1].bar_end if historical else None, now=now)`, dedupe by `bar_end`, filter current segment again, and sort.
 
-For companion:
+Companion frequency is 15m for 5m primary and 5m for 15m primary; slice companion to `bar_end <= primary_cutoff` before Factor calculation. 1d never reads Live and has no companion.
 
-```python
-companion_frequency = BarFrequency.M15 if request.frequency is BarFrequency.M5 else BarFrequency.M5
-companion_bars = tuple(bar for bar in merged_companion if bar.bar_end <= primary_cutoff)
-```
-
-1d never reads Live and has no companion.
-
-Set `latest_bar_source="live"` only if the final primary/companion `bar_end` came from the Live snapshot. Set `calibration_state="pending"` and never evaluate formal Signal in this plan.
+Set `latest_bar_source="live"` only if the final selected bar came from Live. Set `calibration_state="pending"`; formal Signal evaluation is forbidden in this plan.
 
 - [ ] **Step 5: Add composition wiring without touching `MarketResearchService`**
-
-Add:
 
 ```python
 def build_subing_read_service(session: Session) -> SubingReadService:
@@ -478,8 +450,6 @@ def build_subing_read_service(session: Session) -> SubingReadService:
     market_read = build_market_read_service(session)
     return SubingReadService(market_data=market_data, market_read=market_read)
 ```
-
-Do not change `build_market_research_service()`.
 
 - [ ] **Step 6: Run read-service and MarketRead regressions**
 
@@ -491,7 +461,7 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_market_research.py
 ```
 
-Expected: PASS, including proof that P0 research remains Historical-only.
+Expected: PASS and P0 research remains Historical-only.
 
 - [ ] **Step 7: Commit Task 3**
 
@@ -518,7 +488,7 @@ git commit -m "feat: add SuBing read model"
 
 - [ ] **Step 1: Write failing API tests**
 
-Test 200 shape, unsupported 30m -> 422, MarketDataError -> 409, and no `series_kind`/contract dependency. The 200 assertion must include:
+Test 200 shape, unsupported 30m -> 422, MarketDataError -> 409, and no `series_kind`/contract dependency:
 
 ```python
 assert payload["symbol"] == "jm"
@@ -526,18 +496,19 @@ assert payload["actual_contract"] == "JM2609"
 assert payload["frequency"] == "5m"
 assert payload["calibration_state"] == "pending"
 assert payload["primary"]["status"] in {"ready", "insufficient_data"}
-assert payload["signal"] if "signal" in payload else None is None
+assert "signal" not in payload
 ```
-
-Do not add a `signal` field just to satisfy this test; preferably assert `"signal" not in payload`.
 
 - [ ] **Step 2: Run the API test and confirm 404/import failure**
 
-Run `pytest -q services/quant-api/tests/test_subing_api.py`; expected FAIL.
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q services/quant-api/tests/test_subing_api.py
+```
+
+Expected: FAIL.
 
 - [ ] **Step 3: Add Pydantic DTOs**
-
-Use nested models such as:
 
 ```python
 class SubingFactorOut(BaseModel):
@@ -585,11 +556,11 @@ class SubingResearchResponse(BaseModel):
     companion: SubingFactorResultOut | None
 ```
 
-- [ ] **Step 4: Add the endpoint with existing error conventions**
+- [ ] **Step 4: Add endpoint with existing error conventions**
 
-Parse frequency through `BarFrequency`; reject anything outside the SuBing set as 422. Call `build_subing_read_service(session).snapshot(..., now=datetime.now(UTC))`. Map `ContractError`/`SubingReadError` input errors to 422 and `MarketDataError` to 409. Never expose Redis/provider/internal stack details.
+Parse via `BarFrequency`; unsupported SuBing timeframe -> 422. Call `build_subing_read_service(session).snapshot(..., now=datetime.now(UTC))`. Map `ContractError`/input `SubingReadError` to 422 and `MarketDataError` to 409; never expose Redis/provider/internal details.
 
-- [ ] **Step 5: Run API plus Market API regressions**
+- [ ] **Step 5: Run API regressions**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -611,7 +582,7 @@ git commit -m "feat: expose SuBing factor research API"
 
 ---
 
-### Task 5: Replace the user-facing indicator multi-select with a single research Overlay
+### Task 5: Replace user-facing indicator multi-select with one research Overlay
 
 **Files:**
 - Modify: `apps/quant-web/src/types/market.ts`
@@ -622,12 +593,10 @@ git commit -m "feat: expose SuBing factor research API"
 
 **Interfaces:**
 - Produces: `ResearchOverlayId = 'none' | 'subing' | 'htdy'`.
-- Produces: `visibleMainIndicatorsForOverlay(overlay)` mapping internal chart primitives.
-- Preference version becomes 2; v1 preference migrates without breaking existing users.
+- Produces: `visibleMainIndicatorsForOverlay(overlay)`.
+- Preference schema becomes version 2 with explicit v1 migration.
 
 - [ ] **Step 1: Write failing preference tests**
-
-Require:
 
 ```ts
 expect(defaultMainChartPreferences().selectedOverlay).toBe('subing')
@@ -636,19 +605,19 @@ expect(visibleMainIndicatorsForOverlay('htdy')).toEqual(['htdy'])
 expect(visibleMainIndicatorsForOverlay('none')).toEqual([])
 ```
 
-Add a v1 migration case: stored `visibleMainIndicators` containing `htdy` migrates to `htdy`; all other valid old states migrate to default `subing`. Preserve stored period/realtimeFollow.
+Stored v1 with `htdy` visible -> `htdy`; every other valid v1 visible-indicator state -> default `subing`. Preserve period/realtimeFollow.
 
-- [ ] **Step 2: Run the focused Web test and confirm failure**
+- [ ] **Step 2: Run focused Web test and confirm failure**
 
 ```bash
 pnpm --dir apps/quant-web test -- mainIndicators.test.ts
 ```
 
-Expected: FAIL on missing `selectedOverlay`/helper.
+Expected: FAIL.
 
-- [ ] **Step 3: Change preferences to v2 without removing primitive indicator metadata**
+- [ ] **Step 3: Change preferences to v2 without removing primitive metadata**
 
-Keep `MAIN_INDICATOR_DEFINITIONS` because Kline internals and HTDY metadata still use it. Change only user preference shape:
+Keep `MAIN_INDICATOR_DEFINITIONS` for chart internals/HTDY metadata. Add:
 
 ```ts
 export type ResearchOverlayId = 'none' | 'subing' | 'htdy'
@@ -667,11 +636,11 @@ export function visibleMainIndicatorsForOverlay(value: ResearchOverlayId): MainI
 }
 ```
 
-Keep the same storage key, bump schema version to 2, and implement explicit v1 migration rather than silently discarding period.
+Same storage key; schema version 2; explicit migration.
 
-- [ ] **Step 4: Convert the toolbar to a single-select Overlay**
+- [ ] **Step 4: Convert toolbar to one Overlay selector**
 
-Replace the checkbox group with a single select/radio surface containing exactly:
+Exactly:
 
 ```ts
 [
@@ -681,11 +650,9 @@ Replace the checkbox group with a single select/radio surface containing exactly
 ]
 ```
 
-Add `selectedOverlay` prop and `update:selected-overlay` emit. When `selectedOverlay === 'subing'`, hide/disable the user series-kind and arbitrary-contract controls and display `当前主力 {dominantContract}` instead; the user must not choose main-continuous or arbitrary contract inside SuBing mode.
+Add `selectedOverlay` prop and `update:selected-overlay` emit. In SuBing mode hide/disable user series-kind/arbitrary-contract controls and show `当前主力 {dominantContract}`; user cannot choose continuous/arbitrary contract inside SuBing.
 
-- [ ] **Step 5: Pin SuBing chart identity to the current dominant contract**
-
-In `chart.vue`, maintain `selectedOverlay` from v2 preferences and derive internal `visibleMainIndicators` using the helper. On transition to `subing`:
+- [ ] **Step 5: Pin SuBing chart identity to current dominant on initial load and every symbol change**
 
 ```ts
 function activateSubing() {
@@ -696,9 +663,9 @@ function activateSubing() {
 }
 ```
 
-When symbol changes while SuBing is active, immediately resync `contract` from the new dominant before `refreshSeries()`. Do not use `actual_dominant` bars for the SuBing chart.
+Call `activateSubing()` **after dominants metadata is loaded but before the initial `refreshSeries()`** when default/current Overlay is SuBing. Also call it before `refreshSeries()` on every symbol change while SuBing is selected and on transitions into SuBing. Do not use actual-dominant Kline in SuBing mode.
 
-Unsupported 1m/30m/60m/1w keeps `selectedOverlay='subing'` but later SuBing API fetch must be skipped with an explicit unavailable UI state.
+Unsupported 1m/30m/60m/1w keeps Overlay selected but Factor fetch is skipped later with explicit unavailable UI.
 
 - [ ] **Step 6: Run preference tests and Web build**
 
@@ -722,7 +689,7 @@ git commit -m "feat: make research overlay single select"
 
 ---
 
-### Task 6: Render SuBing Factor observation and refresh it from completed Live bars
+### Task 6: Render segment-clipped SuBing Factor observation and refresh from completed Live bars
 
 **Files:**
 - Modify: `apps/quant-web/src/types/market.ts`
@@ -735,91 +702,101 @@ git commit -m "feat: make research overlay single select"
 - Modify: `apps/quant-web/e2e/market-research.spec.mjs`
 
 **Interfaces:**
-- Consumes: `GET /market/research/subing` and the existing `useMarketSeries().mutation` completed-bar updates.
-- Produces: compact status strip + detailed sidebar section; no Signal/Alert actions.
+- Consumes: `GET /market/research/subing` and existing completed-bar `mutation` events.
+- Produces: current-segment visible Kline + compact Factor strip + detailed sidebar section; no Signal/Alert actions.
 
-- [ ] **Step 1: Write failing API normalization tests**
-
-Add a fixture with Decimal strings and verify:
+- [ ] **Step 1: Write failing API normalization/helper tests**
 
 ```ts
 const result = normalizeSubingResearch(payload)
 expect(result.primary.snapshot?.slope_5_bps_per_bar).toBe(2.7)
 expect(result.primary.snapshot?.macd_zero_distance_abs).toBe(8.3)
 expect(result.companion?.snapshot?.bar_end).toBe('2026-08-13T02:15:00Z')
+expect(filterBarsToSubingSegment(bars, '2026-08-12').every((bar) => bar.trading_day >= '2026-08-12')).toBe(true)
 ```
 
-Also test a `status='insufficient_data'` factor with `snapshot=null`.
+Also test `status='insufficient_data'` with `snapshot=null` and a segment filter containing old same-contract bars.
 
-- [ ] **Step 2: Add Web DTOs and `getSubingResearch()`**
-
-Define exact response types mirroring backend DTOs, using numeric browser values after normalization. Add:
+- [ ] **Step 2: Add Web DTOs, normalization and segment helper**
 
 ```ts
 export function getSubingResearch(params: { symbol: string; frequency: '5m' | '15m' | '1d' }) {
   return request.get<never, SubingResearchResponse>('/market/research/subing', { params })
     .then(normalizeSubingResearch)
 }
+
+export function filterBarsToSubingSegment(bars: BarData[], segmentStart: string): BarData[] {
+  return bars.filter((bar) => (bar.trading_day || '') >= segmentStart)
+}
 ```
 
-Normalize only Decimal-valued Factor fields; keep timestamps/enum strings unchanged.
+Normalize Decimal-valued Factor fields only.
 
 - [ ] **Step 3: Build `SubingStatusStrip.vue`**
 
-The component must render these cases without inventing Signal semantics:
+Render Factor-only states:
 
 ```text
-ready factor:
+READY:
 苏冰 · Live观察 · 10:25
 5m ↑ / 15m ↑
 MACD 金叉 · 距零轴 8.3 · 量 3.42x
 研究参数待冻结
 
-insufficient:
+INSUFFICIENT:
 苏冰 · 当前主力已切换
 指标 warm-up 中 · 暂无正式判断
 
-live unavailable:
+LIVE unavailable:
 苏冰 · Historical
 Live 苏冰暂不可用
 ```
 
-Do not render “买入/卖出” in this plan.
+Do not render 买入/卖出 in this plan.
 
-- [ ] **Step 4: Build `SubingResearchSection.vue` and mount it inside the existing sidebar**
+- [ ] **Step 4: Build `SubingResearchSection.vue` and mount in existing sidebar**
 
-Render primary Factor values, companion confirmed time/direction facts, current contract, segment start, source mode, and policy/calibration state. Keep existing Product Research and HTDY Alert controls intact. `ProductResearchSidebar.vue` should receive a nullable `subing` prop and mount the section first when Overlay is SuBing.
+Display primary Factor values, companion confirmed time/direction facts, current contract, segment start, source mode and policy/calibration state. Existing Product Research and HTDY Alert controls remain intact.
 
-- [ ] **Step 5: Add snapshot lifecycle to `chart.vue`**
+- [ ] **Step 5: Make current rank1 segment own the SuBing visible chart range**
 
-Maintain generation counters just like existing Product Research to drop stale async responses. Fetch on:
+In `chart.vue` derive:
 
-```text
-initial metadata ready
-symbol change
-frequency change
-Overlay enters subing
-completed primary Live mutation
+```ts
+const visibleBars = computed(() => {
+  if (selectedOverlay.value !== 'subing') return bars.value
+  const start = subing.value?.segment_start_trading_day
+  return start ? filterBarsToSubingSegment(bars.value, start) : []
+})
 ```
 
-Only call the endpoint for `5m|15m|1d`. Clear the snapshot for unsupported frequency.
+While SuBing snapshot is loading, do not briefly render unbounded contract bars; show chart loading/empty state until segment start is known.
 
-On a 5m completed bar that is also a 15m boundary, if the first response has `companion.snapshot.bar_end < primary.snapshot.bar_end`, schedule exactly one delayed refresh; store the timeout handle and clear it on identity change/unmount. Do not poll.
+Pass `visibleBars` to `KlineChart`. In the existing `mutation` watcher, when SuBing is selected, rebuild the chart from `visibleBars` rather than forwarding an unfiltered prepend/update directly. This low-frequency replace is acceptable for V1 and prevents any pre-segment bar from entering EMA/MACD browser mirrors.
 
-- [ ] **Step 6: Extend the existing Market Research E2E mock**
+`loadEarlierBars()` must no-op once the earliest visible bar is at `segment_start_trading_day`; if an underlying page fetch returns bars before the segment, they may stay in `useMarketSeries` internal state but must never become visible or feed Kline-derived EMA/MACD.
+
+- [ ] **Step 6: Add SuBing snapshot lifecycle and completed-Live refresh**
+
+Use a generation counter to discard stale HTTP responses. Fetch on initial metadata-ready state, symbol/frequency changes, transition into SuBing and completed primary Live mutation. Only call for 5m/15m/1d; unsupported frequency clears snapshot into explicit unavailable state.
+
+At a common 15m boundary on a 5m page, if first response has `companion.snapshot.bar_end < primary.snapshot.bar_end`, schedule exactly one delayed refresh; clear the timer on identity change/unmount. No polling.
+
+- [ ] **Step 7: Extend Market Research E2E**
 
 Mock `/api/v1/market/research/subing` and assert:
 
 ```text
-Overlay options are exactly 无/苏冰/火天大有
-苏冰 selects current dominant real contract
-EMA21 is visible through existing chart primitive mapping
-status strip shows Factor observation, not a trade command
-switching to 火天大有 hides SuBing strip and preserves HTDY repaint warning
+Overlay options exactly 无/苏冰/火天大有
+initial default SuBing uses current dominant real contract before first series request
+old same-contract bars before segment_start are not rendered
+EMA21 is the only SuBing main overlay
+status strip shows Factor observation, not trade command
+火天大有 hides SuBing strip and preserves HTDY repaint warning
 unsupported 30m keeps 苏冰 selected but shows unavailable
 ```
 
-- [ ] **Step 7: Run Web unit/E2E/build regressions**
+- [ ] **Step 8: Run Web unit/E2E/build regressions**
 
 ```bash
 pnpm --dir apps/quant-web test
@@ -827,9 +804,9 @@ pnpm --dir apps/quant-web exec playwright test e2e/market-research.spec.mjs e2e/
 pnpm --dir apps/quant-web build
 ```
 
-Expected: PASS; Alert V1 UI regression stays green.
+Expected: PASS.
 
-- [ ] **Step 8: Commit Task 6**
+- [ ] **Step 9: Commit Task 6**
 
 ```bash
 git add apps/quant-web/src/types/market.ts \
@@ -856,9 +833,7 @@ git commit -m "feat: show SuBing factor observation"
 - No new runtime interface.
 - Completion state remains Factor Observation / Calibration pending; no Signal Ready claim.
 
-- [ ] **Step 1: Add a no-side-effect SuBing validation block to `TESTING.md`**
-
-Document only commands that do not mutate Runtime/DB/Canonical:
+- [ ] **Step 1: Add no-side-effect SuBing validation to `TESTING.md`**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -884,9 +859,9 @@ pnpm --dir apps/quant-web build
 
 - [ ] **Step 2: Align `docs/ARCHITECTURE.md`**
 
-Add `SubingReadService` as a thin Market research read seam between MarketDataService/MarketReadService and Product Workspace. Explicitly state that it has no provider, Redis direct access, storage or Runtime responsibility and that existing `MarketResearchService` remains Historical-only.
+Add `SubingReadService` as a thin seam between `MarketDataService`/`MarketReadService` and Product Workspace. State explicitly: no provider, no Redis direct access, no storage/Runtime responsibility; existing `MarketResearchService` remains Historical-only.
 
-- [ ] **Step 3: Run the full affected backend validation**
+- [ ] **Step 3: Run full affected backend validation**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -903,9 +878,9 @@ uv run --offline --project services/quant-api mypy --explicit-package-bases --ig
   services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py
 ```
 
-Expected: all required checks PASS.
+Expected: PASS.
 
-- [ ] **Step 4: Run engineering and tracked-content checks**
+- [ ] **Step 4: Run engineering/tracked-content checks**
 
 ```bash
 python3 scripts/engineering/secret_scan.py --json
@@ -915,13 +890,14 @@ git status --short
 
 Expected: no secret findings, no whitespace errors, only intended task files modified.
 
-- [ ] **Step 5: Update `STATUS.md` conservatively if and only if Tasks 1-6 and all validations passed**
+- [ ] **Step 5: Update `STATUS.md` conservatively only after Tasks 1-6 and validation pass**
 
 Record only:
 
 ```text
 SuBing Factor Observation code complete on develop
 1d/5m/15m current-rank1 segment-local read model available
+SuBing visible Kline is current-rank1-segment-local
 5m/15m completed Live Factor observation implemented
 Calibration remains pending
 formal Entry Signal not implemented
@@ -950,6 +926,7 @@ formal Signal = not implemented
 Alert V1 = unchanged
 Runtime = untouched
 Data Foundation = unchanged
+Kline/EMA/MACD/Factor = current rank1 segment only
 no pre-rank1 warm-up
 no cross-roll indicator state
 no new persistence/cache/runtime component
