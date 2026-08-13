@@ -5,3 +5,18 @@ export function alertRuntimeLabel(status: AlertRuntimeStatus | null): '正常' |
   if (status === 'disabled') return '未启用'
   return '不可用'
 }
+
+export function isCurrentAlertMutation(input: {
+  requestGeneration: number
+  currentGeneration: number
+  requestedSymbol: string
+  currentSymbol: string
+  requestedRuleCode: string
+  currentRuleCode: string | undefined
+  updatedRuleCode: string
+}): boolean {
+  return input.requestGeneration === input.currentGeneration
+    && input.requestedSymbol === input.currentSymbol
+    && input.requestedRuleCode === input.currentRuleCode
+    && input.requestedRuleCode === input.updatedRuleCode
+}

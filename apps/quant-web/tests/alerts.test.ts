@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
-import { alertRuntimeLabel } from '../src/utils/alertControl.ts'
+import { alertRuntimeLabel, isCurrentAlertMutation } from '../src/utils/alertControl.ts'
 
 
 const apiSource = read('../src/api/alerts.ts')
@@ -39,6 +39,27 @@ describe('Product Alert server-side scope', () => {
     assert.equal(alertRuntimeLabel('disabled'), '未启用')
     assert.equal(alertRuntimeLabel('degraded'), '不可用')
     assert.equal(alertRuntimeLabel('failed'), '不可用')
+  })
+
+  it('rejects an old AG PUT response after AG to JM to AG generation changes', () => {
+    assert.equal(isCurrentAlertMutation({
+      requestGeneration: 1,
+      currentGeneration: 3,
+      requestedSymbol: 'ag',
+      currentSymbol: 'ag',
+      requestedRuleCode: 'htdy_original_15m',
+      currentRuleCode: 'htdy_original_15m',
+      updatedRuleCode: 'htdy_original_15m',
+    }), false)
+    assert.equal(isCurrentAlertMutation({
+      requestGeneration: 3,
+      currentGeneration: 3,
+      requestedSymbol: 'ag',
+      currentSymbol: 'ag',
+      requestedRuleCode: 'htdy_original_15m',
+      currentRuleCode: 'htdy_original_15m',
+      updatedRuleCode: 'htdy_original_15m',
+    }), true)
   })
 })
 

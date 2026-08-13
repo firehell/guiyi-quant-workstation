@@ -17,6 +17,7 @@ import {
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import type { DominantContractItem, MainIndicatorId, MarketFrequency, ProductResearchResponse, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
+import { isCurrentAlertMutation } from '@/utils/alertControl'
 import { loadMainChartPreferences, saveMainChartPreferences } from '@/utils/mainIndicators'
 import {
   loadMarketWorkspacePreferences,
@@ -244,11 +245,20 @@ async function refreshAlerts() {
 async function toggleAlert(enabled: boolean) {
   const current = alertRule.value
   const requestedSymbol = symbol.value
+  const requestGeneration = alertGeneration
   if (!current || !requestedSymbol || alertSaving.value) return
   alertSaving.value = true
   try {
     const updated = await setAlertProductEnabled(current.rule_code, requestedSymbol, enabled)
-    if (symbol.value === requestedSymbol && alertRule.value?.rule_code === updated.rule_code) {
+    if (isCurrentAlertMutation({
+      requestGeneration,
+      currentGeneration: alertGeneration,
+      requestedSymbol,
+      currentSymbol: symbol.value,
+      requestedRuleCode: current.rule_code,
+      currentRuleCode: alertRule.value?.rule_code,
+      updatedRuleCode: updated.rule_code,
+    })) {
       alertRule.value = updated
     }
   } catch {
