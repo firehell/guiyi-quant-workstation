@@ -20,7 +20,7 @@ from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 _LIVE_TTL_SECONDS = 3 * 24 * 60 * 60
 _HEARTBEAT_TTL_SECONDS = 30
 _FINALIZATION_DELAY = timedelta(seconds=2)
-_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
+LIVE_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
 _PROVIDER_RETRY_DELAY = timedelta(seconds=10)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 LIVE_BAR_CHANNEL_PREFIX = "live:bar"
@@ -596,7 +596,7 @@ class LiveMarketService:
         for window in self._known_sessions.get((symbol, bar.trading_day), ()):
             if (
                 bar.bar_end == window.end
-                and window.end <= now <= window.end + _SESSION_END_ARRIVAL_GRACE
+                and window.end <= now <= window.end + LIVE_SESSION_END_ARRIVAL_GRACE
             ):
                 return window
         return None
@@ -614,7 +614,7 @@ class LiveMarketService:
             symbol
             for (symbol, _trading_day), windows in self._known_sessions.items()
             if any(
-                window.end <= now <= window.end + _SESSION_END_ARRIVAL_GRACE
+                window.end <= now <= window.end + LIVE_SESSION_END_ARRIVAL_GRACE
                 for window in windows
             )
         }

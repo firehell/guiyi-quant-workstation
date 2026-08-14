@@ -12,6 +12,7 @@ import pytest
 
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m
 from app.market_data.domain import CanonicalBar
+from app.market_data.live_market import LIVE_SESSION_END_ARRIVAL_GRACE
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 
@@ -582,7 +583,13 @@ def test_all_idle_keeps_final_bar_through_grace_then_unsubscribes_once() -> None
     assert heartbeat["subscribed_count"] == 1
     assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (final,)
 
-    assert service.poll(window.end + timedelta(seconds=61)) is None
+    assert LIVE_SESSION_END_ARRIVAL_GRACE == timedelta(seconds=60)
+    assert (
+        service.poll(
+            window.end + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(seconds=1)
+        )
+        is None
+    )
     assert client.unsubscribed == ["bar_J2505"]
     heartbeat = json.loads(fake.values["live:heartbeat"])
     assert heartbeat["subscribed_count"] == 0
@@ -610,7 +617,12 @@ def test_direct_reconcile_tears_down_all_idle_channel_after_grace() -> None:
     service.reconcile(window.start + timedelta(minutes=1))
     phases.phases["j"] = _phase("j", day, None, MarketPhase.CLOSED)
 
-    assert service.reconcile(window.end + timedelta(seconds=61)) is None
+    assert (
+        service.reconcile(
+            window.end + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(seconds=1)
+        )
+        is None
+    )
     assert client.unsubscribed == ["bar_J2505"]
     assert json.loads(fake.values["live:heartbeat"])["subscribed_count"] == 0
 
@@ -643,7 +655,12 @@ def test_mixed_phase_keeps_closed_channel_through_grace_then_removes_only_it() -
     assert client.unsubscribed == []
     assert json.loads(fake.values["live:heartbeat"])["subscribed_count"] == 2
 
-    assert service.poll(j_window.end + timedelta(seconds=61)) is None
+    assert (
+        service.poll(
+            j_window.end + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(seconds=1)
+        )
+        is None
+    )
     assert client.unsubscribed == ["bar_J2505"]
     assert json.loads(fake.values["live:heartbeat"])["subscribed_count"] == 1
 
@@ -693,7 +710,9 @@ def test_idle_unsubscribe_failure_is_visible_and_recovers_without_faking_cleanup
     client.fail_unsubscribe = True
 
     assert (
-        service.poll(window.end + timedelta(seconds=61))
+        service.poll(
+            window.end + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(seconds=1)
+        )
         == "LIVE_PROVIDER_UNAVAILABLE"
     )
     assert service._channels == {"bar_J2505"}
@@ -815,7 +834,9 @@ def test_post_session_grace_rejects_nonfinal_and_overdue_final_bars() -> None:
     client.emit(_raw_payload("J2505", _bar(4)))
     service.poll(window.end + timedelta(seconds=10))
     client.emit(_raw_payload("J2505", _bar(5)))
-    service.poll(window.end + timedelta(seconds=61))
+    service.poll(
+        window.end + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(seconds=1)
+    )
 
     assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == ()
     assert service.rejections == ["LIVE_BAR_OUTSIDE_SESSION", "LIVE_BAR_OUTSIDE_SESSION"]
