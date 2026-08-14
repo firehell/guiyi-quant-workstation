@@ -13,15 +13,16 @@
 - SuBing Factor Observation V1 已在 `develop` 完成只读代码闭环：只展示 current rank1
   segment 的 Kline/EMA/MACD/Factor，且有效当前合约视图不覆盖用户的 Market series
   preference；盘中仅合并同当前合约的 completed Live Bar，不做 pre-rank1 warm-up 或
-  cross-roll 指标状态。Calibration Gate A 已由用户人工批准，冻结
+  cross-roll 指标状态。Calibration Gate B-R 已由用户人工批准：intraday V1 接受 slope-only
+  Calibration promotion，并继续冻结
   `5m=0.688190651160584793944957992`、`15m=1.329531078893356968545882036`
   两个 exact Decimal 作为 EMA21 flat / trend-persistence filter。随后完成 intraday Zero-Band
   Discovery 与冻结候选 C 对 NO-BAND 的非重叠 OOS Validation：5m 没有表现出增量价值，15m 只有
   5K 局部改善且三个 horizon failure 均更高、样本稀疏，因此当前设计已**拒绝 intraday V1
   zero-band hard gate**；`macd_zero_distance_abs/bps` 继续保留为 Factor/Web/research 字段，不进入
   executable Signal 条件或 accepted intraday Calibration。15m LONG/SHORT OOS asymmetry 只记录为
-  observation risk，不据此拆方向规则。当前 **Gate B-R 仍待人工批准** slope-only Calibration promotion；
-  Calibration artifact 尚未创建，MACD Gate C 未开始，formal Signal 尚未实现。
+  observation risk，不创建方向特例、方向阈值或禁用 LONG。Calibration artifact 在本 Task
+  完成前仍尚未创建；MACD Gate C 尚未批准，formal Signal 尚未实现。
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
