@@ -43,10 +43,12 @@
   current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
   Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
 - Alert V1 的 G1/G2/G3 已分别按单次授权执行：production migration 与真实 WeCom canary 已完成，Alert
-  Runtime 已仅以 `jm`（焦煤）Scope 激活并读回 `status=ok`。当前仍为 `PARTIAL`：尚未等到自然 confirmed
-  15m HTDY observation，因此不能声称自然 Event/通知/persistent 🔔 闭环已验收。
+  Runtime 已仅以 `jm`（焦煤）Scope 激活。`2026-08-13 22:31 +08:00` 已自然产生 `JM2609` confirmed
+  15m HTDY `sell` observation：唯一 AlertEvent 落库、统一行情 32-bar 窗口重算一致、用户确认 WeCom
+  实际收到，Event API 可读 persistent 🔔 事实。`2026-08-14` 又按单次授权将 Alert label 切换到
+  clean/detached `4f1598e9...`，API health 读回 `components.alert.status=ok`。Alert V1 自然通知闭环已验收。
 - SuBing 本轮未修改 Rule/Scope/Event、WeCom 或 Alert Runtime，不改变上述 Alert V1
-  `PARTIAL` 事实；也未执行 Market/Alert Runtime deployment 或 switch。
+  业务语义；其后完成的 Alert 自然闭环与 detached switch 也不授权 Alert V2 或 SuBing Runtime。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
@@ -90,7 +92,10 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   marker 为 enabled；API/Web/Live/after-market 未由此次脚本分支重载或改根。按 launchd wrapper 的真实
   Redis 环境只读读回 `components.alert.status=ok`、webhook configured、enabled_rule_count=1、
   scope_product_count=1，heartbeat 从 `06:47:00Z` 推进到 `06:47:10Z`；数据库仍为 AlertEvent=0。
-  当前只等待自然 confirmed 15m HTDY buy/sell observation，不 replay/backfill、不伪造信号验收。
+  `2026-08-13 22:31 +08:00` 自然到达交易日 `2026-08-14` 的 `JM2609` confirmed 15m Bar，Runtime 在
+  `22:31:03.977 +08:00` 检出 `sell` 并创建唯一 Event id=1；只读读回 Event 总数=1、Scope 仍仅 `jm`。
+  `MarketReadService.bars_until()` 以 event-day rank1 取得精确截止该 Bar 的 32 根 actual-dominant 15m，
+  HTDY current-bar 独立重算仍为 `sell`；用户确认 WeCom 实际收到。未 replay/backfill/retry 或手工造 Event。
 
 ## 历史验收事实
 
@@ -103,6 +108,12 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-14 12:31 +08:00` 已按单次授权只将 `com.guiyi.quant-alert` 从可变 develop 根切换到现有
+  clean/detached Runtime `4f1598e9d84578f3a4468f1d859ed60106b5cae2`；该提交与当前 develop 的 Alert、
+  health、MarketRead seam 和 installer 代码逐文件一致。只在 detached 根写入 Alert activation marker，
+  只重载 Alert label，并清除旧 develop 根的失效 marker；API/Web/Live/after-market 未重载。launchd 根与
+  marker 唯一指向 detached Runtime，API Runtime health 为 `ok/readonly=true`，Alert 为
+  `status=ok`、webhook configured、enabled_rule_count=1、scope_product_count=1，heartbeat 新鲜可用。
 - `2026-08-13 17:00:02 +08:00` 的 60 品种自然盘后首次尝试在实际分区处理前以 `ValueError` 退出；未人工
   补跑，唯一一小时 retry 随后完成，并于 `19:20:23 +08:00` 写入 `status=passed`、`attempts=2`、
   `last_successful_trading_day=2026-08-13`，launchd exit code=0。只读验收确认 continuous
