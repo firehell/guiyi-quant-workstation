@@ -125,6 +125,24 @@ def test_resolver_active_phase_without_day_does_not_fall_back_to_closed_day() ->
     assert result.trading_day is None
 
 
+def test_resolver_active_day_is_unavailable_when_another_active_phase_has_no_day() -> (
+    None
+):
+    result = resolve_current_trading_day(
+        FakePhases(
+            {
+                "jm": phase("jm", MarketPhase.TRADING, date(2026, 8, 15)),
+                "rb": phase("rb", MarketPhase.BREAK, None),
+            }
+        ),
+        products=("jm", "rb"),
+        now=aware("2026-08-14T21:10:00+08:00"),
+    )
+
+    assert result.status is CurrentTradingDayStatus.UNAVAILABLE
+    assert result.trading_day is None
+
+
 def test_resolver_weekend_without_trading_day_is_unavailable() -> None:
     result = resolve_current_trading_day(
         FakePhases(

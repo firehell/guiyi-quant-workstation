@@ -43,6 +43,8 @@ def resolve_current_trading_day(
         item.trading_day for item in active_phases if item.trading_day is not None
     }
     if active_phases:
+        if any(item.trading_day is None for item in active_phases):
+            return CurrentTradingDayResult(CurrentTradingDayStatus.UNAVAILABLE, None)
         return _unique_day_result(active_days)
 
     closed_days = {
