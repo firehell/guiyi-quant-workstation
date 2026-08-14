@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-13
+更新时间：2026-08-14
 
 ## 当前结论
 
@@ -13,7 +13,10 @@
 - SuBing Factor Observation V1 已在 `develop` 完成只读代码闭环：只展示 current rank1
   segment 的 Kline/EMA/MACD/Factor，且有效当前合约视图不覆盖用户的 Market series
   preference；盘中仅合并同当前合约的 completed Live Bar，不做 pre-rank1 warm-up 或
-  cross-roll 指标状态。Calibration 仍为 `pending`，formal Signal 未实现。
+  cross-roll 指标状态。Calibration Gate A 已由用户人工批准；后续 intraday Zero-Band research
+  冻结使用 `5m=0.688190651160584793944957992`、`15m=1.329531078893356968545882036`
+  两个 exact Decimal 作为 EMA21 flat / trend-persistence filter，不构成 slope 单因子盈利验证，
+  也不批准 Signal、Strategy 或 Alert。Calibration artifact 尚未创建，formal Signal 尚未实现。
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
