@@ -1,6 +1,6 @@
 # v1.3 Decision Compression / Alert V2 设计规格
 
-> 状态：Design Review
+> 状态：Design Approved
 >
 > 日期：2026-08-14
 >

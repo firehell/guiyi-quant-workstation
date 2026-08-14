@@ -33,7 +33,8 @@ MYPYPATH=services/quant-api \
   uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
   services/quant-api/app/market_data services/quant-api/app/guiyi_cli services/quant-api/app/alerts \
   services/quant-api/app/services/runtime_health.py \
-  services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py
+  services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py \
+  services/quant-api/app/api/alerts.py
 
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build
@@ -87,7 +88,7 @@ current-rank1 segment、Historical/completed Live seam 和有效当前合约视�
 Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不运行真实研究窗口。当前 accepted
 intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distance 不参与 executable Signal。
 
-## Alert V1
+## Alert V2
 
 ### 无副作用单元、集成与浏览器验证
 
@@ -95,6 +96,8 @@ intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distan
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_registry.py \
+  services/quant-api/tests/test_alert_current_trading_day.py \
   services/quant-api/tests/test_alert_models.py \
   services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_evaluator.py \
@@ -103,33 +106,41 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_alert_api.py \
   services/quant-api/tests/test_alert_cli.py \
   services/quant-api/tests/test_runtime_health.py \
-  services/quant-api/tests/data_foundation/test_market_read.py
+  services/quant-api/tests/alembic/test_alert_v2_migration.py \
+  services/quant-api/tests/data_foundation/test_aggregation.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/data_foundation/test_market_phase.py \
+  services/quant-api/tests/data_foundation/test_market_read.py \
+  services/quant-api/tests/data_foundation/test_subing_read_service.py
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
   tests/engineering/test_alert_runtime_launchd.py
 
 pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web exec playwright test e2e/alert-v1.spec.mjs
-
 scripts/ops/macos/install-local-services.sh --render-only
 plutil -lint .run/launchd/com.guiyi.quant-alert.plist
 ```
 
-这些命令只使用隔离数据库、mock sender、mock API 或 render-only，不启动真实 AlertRuntime、不执行生产
-migration，也不发送真实企业微信。`--confirm-alert-runtime` 不是测试参数。
+这些命令只使用隔离数据库、mock sender、mock API 或 render-only，不启动真实
+AlertRuntime。production migration `20260814_0038`、v1.3 Runtime promotion/switch、真实
+SuBing Scope write/activation 和真实 WeCom/canary 都不是测试命令。`alembic
+upgrade/current`、`runtime alert-canary`、`--confirm-alert-runtime`、真实 Scope PUT 禁止作为
+本节验证；测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
 
-### 三个独立受控外部 Gate
+### 独立受控外部 Gate
 
-- production PostgreSQL migration：仅在明确授权后升级到 `20260813_0037`，并读回八表 Market Catalog
-  未变、两张 Alert Application 表和空 Scope seed；不发送通知。
-- real WeCom canary：仅在独立明确授权后执行 `guiyi runtime alert-canary`；不写 AlertEvent、不改 Scope、
-  不启用 Runtime。
-- Alert Runtime activation：仅在 migration/canary 前置已满足且再次明确授权后执行
-  `install-local-services.sh --confirm-alert-runtime`；必须读回独立 activation marker 与健康状态。
+- production PostgreSQL migration：仅在明确授权的短维护窗口升级到
+  `20260814_0038`；读回两张 Alert Application Domain 表与八表 Market Catalog 未变。
+- v1.3 release/tag 与 Alert Runtime promotion/switch：分别取得明确授权，不得让 running
+  v1.2 API/Alert 与 V2 schema 共存。
+- SuBing Scope write/activation：对精确 `subing_entry_signal_v1 × product` 另行授权；seed
+  必须保持空集，不从 HTDY Scope 或 `operational_products.txt` 自动扩张。
+- real WeCom/canary：仅在独立明确授权后尝试；不写 AlertEvent、不改 Scope、不启用或
+  切换 Runtime。
 
-三个 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或 mock 通过只证明
-实现，不证明 production migration、真实通知通道或 Alert Runtime 已启用。
+这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
+mock 通过只证明实现，不证明任何生产 Gate 已执行。
 
 ## OpenSpec
 

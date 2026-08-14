@@ -1,13 +1,13 @@
 # 架构决策记录
 
-更新时间：2026-08-13
+更新时间：2026-08-14
 
 本文件只保留当前有效、长期影响代码或数据语义的决策。历史过程由 Git 与 OpenSpec archive 追溯。
 
 | 主题 | 决策 | 边界 |
 |---|---|---|
 | 产品 | 本地、单用户国内期货研究工作站 | 不做自动交易、SaaS、多用户或无人值守下单 |
-| 外部操作 | 正式数据/DB/Runtime/live/通知/release 只接受范围明确的一次性执行意图 | dry-run 不授权 mutation；仅已明确启用的 Market Runtime V1 与 Alert Runtime V1 各自拥有互不继承的有界持续授权 |
+| 外部操作 | 正式数据/DB/Runtime/live/通知/release 只接受范围明确的一次性执行意图 | dry-run 不授权 mutation；仅已明确启用的 Market Runtime V1 与精确 activation 的 Alert Runtime V2 Rule Scope 各自拥有互不继承的有界持续授权 |
 | 数据源 | RQData 是唯一外部行情事实源 | 不建多 provider seam、插件或逐行多源裁决 |
 | 历史存储 | 只长期保存一套 Canonical Parquet | staging 临时；PostgreSQL 不存 Bar |
 | 数据身份 | `DatasetKey=(kind,symbol,series_or_contract,frequency)` | provider、schema 与来源属性不进入 identity |
@@ -25,8 +25,9 @@
 | live | historical Canonical 与 Redis Live Observation 分离 | 仅 `operational_products` 当日 rank1 completed 1m；未确认 bar 不进正式历史资产，Live 不进 Parquet/DB |
 | 模块长期性 | 新增模块前必须确认个人使用是否值得长期维护 | 无明确肯定答案时不创建模块 |
 | Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `operational_products.txt` 中 active 60 的 Live 观察和每日 18:05 + 一次 1h retry 的盘后更新持续运行 | 范围变化必须显式修改同一配置；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
-| Alert V1 应用 | 独立 Application Domain 只提供 `htdy_original_15m` server-side Scope、幂等 AlertEvent、一次 WeCom 尝试和持久 Web Marker | 不修改八表 Catalog/Canonical/rank1；不恢复 Signal/Review/Strategy，不 replay/backfill/retry，不建 delivery 表或订单路径 |
-| Alert Runtime V1 授权 | 只有用户明确启用本地 Alert Runtime V1 后，`htdy_original_15m × enabled scope_products × WeCom` 才可持续处理后续 confirmed 15m Bar | 与 Market Runtime 授权独立；不覆盖新 Rule/渠道、migration、Runtime switch、release、Canonical 写入或订单 |
+| Alert V2 应用 | 独立 Application Domain 的 Code Registry 只含 `htdy_original_15m` 与 `subing_entry_signal_v1`；两张应用表记录 Scope 与不可变 Event | 不修改八表 Catalog/Canonical/rank1；SuBing seed Scope 为空；不恢复 Signal/Review/Strategy，不 replay/backfill/retry/outbox/queue，不建订单路径 |
+| Alert V2 评估语义 | HTDY 保持 event-cutoff；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，stale identity fail-closed，final Session Bar 只使用共享 arrival grace，5m/15m 同边界使用 TradingSession bucket | 不复制 SuBing 公式/resolver，不建 `snapshot_at`/cutoff/replay 语义；current trading day 只由 `MarketPhaseResolver + operational products` 唯一解析，不可用时 fail-closed |
+| Alert Runtime V2 授权 | 仅 `htdy_original_15m × 该 Rule 显式 scope_products × WeCom` 与 `subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom` 可在精确 activation 后持续处理后续自然事件 | 未来第三条 Rule 不继承；与 Market Runtime 授权独立；production migration、v1.3 release/tag、Runtime promotion/switch、Scope write/activation 与真实 WeCom/canary 互不授权 |
 | 开发态部署拓扑 | 功能开发期可让本地 launchd 临时直接运行主 `develop` 工作区；最终验收重新创建绑定精确提交的独立 Runtime worktree | 不热更新；每次重载需新的一次性意图；develop 证据不等于 promotion 或最终 Runtime 证据 |
 | 工程验证 | `TESTING.md` 的项目原生命令是唯一验证入口；工程脚本只保留无依赖的 `secret_scan.py` | 不保留自验证治理框架、重复流程文档、废弃构建包装或可选 CI 双轨 |
 | 运维拓扑 | Mac launchd → FRPC → 腾讯云 FRPS/Nginx 是唯一 active 链；local/tunnel/public 分段检查均只读 | 不保留并行 PID 管理器或远端应用副本；安装、重载与云端配置应用仍是独立 Gate |
