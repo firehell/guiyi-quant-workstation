@@ -21,6 +21,7 @@ Lane: **Lane 3**
 - SuBing 数学事实继续只由现有 Factor / accepted Calibration / FormalPolicy / resolver 决定；Alert 不复制 slope、MACD、volume、companion 或 same-boundary 15m-wins 逻辑。
 - SuBing V2 不实现 `snapshot_at()`、event-time reconstruction、replay/backfill、queue、outbox、retry worker 或 dead-letter。
 - SuBing 实时路径必须执行 stale-event identity guard：current primary `bar_end/trading_day` 与 incoming completed Bar 不一致时直接 drop。
+- 最终 Session 收线 Bar 在 `bar_end + 2s` 后才由 Live 发布，此时 `MarketPhaseResolver` 已可能为 `CLOSED`。Runtime 必须复用 Live 既有 60 秒 Session-end arrival grace 与该 Bar 的真实 TradingSession：只在 `processing_now ∈ [bar_end, bar_end + grace]` 且 `bar_end == session.end` 时，用 `bar_end - 1 microsecond` 作为 `SubingReadService.snapshot()` 的 phase-observation `now`，使刚发布的 current Live Bar 可见；仍读取完整 current snapshot 并执行相同 identity guard。超过 grace 直接 drop，不得借此恢复旧消息、构造 cutoff 或实现 `snapshot_at()`。
 - HTDY 必须保持 v1.2 已验收的 `MarketReadService.bars_until(event cutoff)` 行为，不因为 SuBing 的实时取舍而退化。
 - 一个 SuBing Rule 开关覆盖 5m + 15m；同一 15m boundary 的 5m Pub/Sub 只做触发抑制，等待 15m message 后消费既有 resolver；不得新增第二套 Signal 优先规则。
 - `subing_entry_signal_v1` migration seed 必须 `enabled=true, scope_products=[]`；不得复制 HTDY 当前 Scope，也不得自动扩到 operational 60。
@@ -70,6 +71,7 @@ Task 1 开始前只读确认：
 - Modify: `services/quant-api/app/alerts/runtime.py` — 5m/15m parser、Rule dispatch、boundary defer、stale guard、fault isolation。
 - Modify: `services/quant-api/app/alerts/composition.py` — 注入 HTDY evaluator、`build_subing_read_service` 和 shared sender。
 - Modify: `services/quant-api/app/alerts/wecom.py` — code-defined HTDY/SuBing renderer + shared transport。
+- Modify: `services/quant-api/app/market_data/live_market.py` — 将现有 60 秒 Session-end arrival grace 提升为 Live/Alert 共用的 public constant；不改变 Live 发布、finalization 或 grace 行为。
 - Modify: `services/quant-api/app/schemas/alerts.py` — V2 Scope/Event/current DTO。
 - Modify: `services/quant-api/app/api/alerts.py` — Product Scope、history events、current formal signals、product current-events。
 - Modify: `services/quant-api/app/services/runtime_health.py` only if heartbeat validation needs V2 count semantics; do not add per-rule health platform.
@@ -82,6 +84,7 @@ Task 1 开始前只读确认：
 - Modify: `services/quant-api/tests/test_alert_evaluator.py` only for HTDY regression if interface changes。
 - Modify: `services/quant-api/tests/test_alert_wecom.py`。
 - Modify: `services/quant-api/tests/test_alert_runtime.py`。
+- Modify: `services/quant-api/tests/data_foundation/test_live_market.py` — 锁定 public grace 仍为 60 秒，并让既有超时拒绝测试引用同一常量；不改变 Live 行为。
 - Modify: `services/quant-api/tests/test_alert_api.py`。
 - Modify: `services/quant-api/tests/test_alert_cli.py` only if composition signature changes affect CLI fixtures。
 - Modify: `services/quant-api/tests/test_runtime_health.py` only if heartbeat behavior changes。
@@ -835,7 +838,9 @@ git commit -m "feat: render subing alert messages"
 **Files:**
 - Modify: `services/quant-api/app/alerts/runtime.py`
 - Modify: `services/quant-api/app/alerts/composition.py`
+- Modify: `services/quant-api/app/market_data/live_market.py`
 - Modify: `services/quant-api/tests/test_alert_runtime.py`
+- Modify: `services/quant-api/tests/data_foundation/test_live_market.py`
 - Modify only if required by signatures: `services/quant-api/tests/test_alert_cli.py`
 
 **Interfaces:**
@@ -857,7 +862,49 @@ class AlertRuntime:
         taxonomy: Mapping[str, ProductTaxonomyEntry],
         ...,
     ) -> None: ...
+
+
+# app.market_data.live_market; existing value, newly public/shared
+LIVE_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
+
+
+def _event_session_window(
+    session: Session,
+    *,
+    symbol: str,
+    event_bar: CanonicalBar,
+) -> SessionWindow | None: ...
+
+
+def _subing_snapshot_now(
+    *,
+    event_bar: CanonicalBar,
+    event_session: SessionWindow,
+    processing_now: datetime,
+) -> datetime | None: ...
 ```
+
+`_event_session_window()` must resolve the active instrument exchange, require that exchange's `TradingCalendar` row for `event_bar.trading_day` to be a trading day, and call existing `resolved_session_windows_for_trading_day()`. Match `MarketPhaseResolver` by excluding `item.is_night` when that calendar row has `has_night_session != true`; then accept exactly one remaining window satisfying `window.start < event_bar.bar_end <= window.end`, otherwise return `None`. It must not copy TradingSession date anchoring or silently accept a night event on a no-night trading day.
+
+`_subing_snapshot_now()` contract is exact:
+
+```text
+processing_now < event_bar.bar_end
+-> None / drop
+
+event_bar.bar_end != event_session.end
+-> processing_now
+
+event_bar.bar_end == event_session.end
+AND processing_now <= event_bar.bar_end + LIVE_SESSION_END_ARRIVAL_GRACE
+-> event_bar.bar_end - 1 microsecond
+
+event_bar.bar_end == event_session.end
+AND processing_now > event_bar.bar_end + LIVE_SESSION_END_ARRIVAL_GRACE
+-> None / drop
+```
+
+The adjusted instant is only a phase-observation input to the existing current `SubingReadService.snapshot()`. It does not set a data cutoff: the service still reads the full current Redis snapshot, and the normal primary `bar_end/trading_day` guard remains mandatory.
 
 Transport pattern becomes:
 
@@ -871,9 +918,9 @@ Parser accepts only `5m` / `15m` after validating exact channel shape and payloa
 
 ```python
 def test_runtime_accepts_completed_5m_and_15m_channels() -> None:
-    assert parse_event("live:bar:jm:5m", payload("5m")) is not None
-    assert parse_event("live:bar:jm:15m", payload("15m")) is not None
-    assert parse_event("live:bar:jm:30m", payload("30m")) is None
+    assert _parse_event("live:bar:jm:5m", payload("5m")) is not None
+    assert _parse_event("live:bar:jm:15m", payload("15m")) is not None
+    assert _parse_event("live:bar:jm:30m", payload("30m")) is None
 ```
 
 Keep non-operational rejection.
@@ -902,9 +949,9 @@ def test_stale_subing_snapshot_is_dropped_without_event_or_send() -> None:
 
 Mirror for trading_day mismatch and primary not READY.
 
-- [ ] **Step 4: Add same-boundary 5m defer test**
+- [ ] **Step 4: Add exact TradingSession resolution and same-boundary 5m defer tests**
 
-Build real TradingSession fixtures for `jm` and a 5m incoming Bar whose end is also the end of the existing 15m bucket. Assert:
+Build real Instrument / TradingCalendar / TradingSession fixtures for `jm` and a 5m incoming Bar whose end is also the end of the existing 15m bucket. Assert `_event_session_window()` returns the one resolved window; also assert missing/non-trading calendar facts and a night Bar on `has_night_session=false` return `None`. Then assert:
 
 ```python
 runtime.process_message("live:bar:jm:5m", boundary_payload)
@@ -914,9 +961,38 @@ assert event_rows(session) == []
 
 Then process the 15m payload and assert exactly one SuBing evaluation/Event.
 
-The implementation must derive this from existing session facts + `bucket_window_for_bar()` semantics, not `minute % 15`.
+The implementation must call `resolved_session_windows_for_trading_day()` and derive the boundary with `bucket_window_for_bar(event_session, BarFrequency.M15, event_bar.bar_end).end == event_bar.bar_end`; do not use current `MarketPhaseResolver.current_session`, because exact completed boundaries may already be `BREAK/CLOSED`, and do not use `minute % 15`.
 
-- [ ] **Step 5: Add existing resolver semantics as runtime regression only**
+- [ ] **Step 5: Add day and cross-midnight Session-end current handoff regressions**
+
+Use real day-session and cross-midnight TradingSession fixtures. At an incoming completed 15m Bar whose `bar_end == event_session.end`, freeze Runtime clock at `bar_end + 2 seconds` and make the fake Subing reader record its `now` argument:
+
+```python
+runtime.process_message("live:bar:jm:15m", session_end_payload)
+assert subing_reader.calls[0].now == SESSION_END - timedelta(microseconds=1)
+assert len(event_rows(session)) == 1
+assert len(sender.messages) == 1
+```
+
+Run the same contract for a cross-midnight session final Bar. Then use fresh isolated DB/reader/sender fixtures for each fail-closed case:
+
+```python
+runtime.clock = lambda: SESSION_END + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(microseconds=1)
+runtime.process_message("live:bar:jm:15m", session_end_payload)
+assert subing_reader.calls == []
+assert event_rows(session) == []
+assert sender.messages == []
+
+runtime.clock = lambda: ORDINARY_END + timedelta(seconds=2)
+runtime.process_message("live:bar:jm:5m", ordinary_payload)
+assert subing_reader.calls[0].now == ORDINARY_END + timedelta(seconds=2)
+```
+
+These tests must prove the exception is limited to a just-published final Session Bar. They must not pass an old event timestamp to an unrestricted snapshot, add a cutoff API, or make a delayed session-end message replayable after the shared grace.
+
+In `test_live_market.py`, retain the existing accepted-within-grace and rejected-after-grace behavior tests, assert `LIVE_SESSION_END_ARRIVAL_GRACE == timedelta(seconds=60)`, and replace the hard-coded overdue `61` seconds with `LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(seconds=1)`. This verifies the public/shared identity without changing Live semantics.
+
+- [ ] **Step 6: Add existing resolver semantics as runtime regression only**
 
 Use real `SubingReadSnapshot.resolved_signal` fixtures to assert:
 
@@ -928,7 +1004,7 @@ reciprocal-only matched returned by SubingReadService -> one Event
 
 Do not re-test or reimplement the internal slope/MACD formula in Alert tests.
 
-- [ ] **Step 6: Add per-rule fault isolation test**
+- [ ] **Step 7: Add per-rule fault isolation test**
 
 On a 15m Bar with both rules scoped:
 
@@ -941,11 +1017,11 @@ def test_subing_failure_does_not_block_htdy() -> None:
 
 Mirror HTDY failure → SuBing still creates Event.
 
-- [ ] **Step 7: Add idempotency and one-shot failure regressions**
+- [ ] **Step 8: Add idempotency and one-shot failure regressions**
 
 Process identical Pub/Sub twice; assert one Event and one send. Make sender fail; assert Event remains committed and second processing does not retry because unique Event already exists.
 
-- [ ] **Step 8: Run runtime tests to RED**
+- [ ] **Step 9: Run runtime tests to RED**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -954,7 +1030,7 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_alert_runtime.py
 ```
 
-- [ ] **Step 9: Implement Runtime V2 minimally**
+- [ ] **Step 10: Implement Runtime V2 minimally**
 
 Implementation shape:
 
@@ -968,15 +1044,21 @@ process_message
   filter definition.input_frequencies + explicit scope
   for each eligible Rule independently:
     HTDY -> existing bars_until + evaluator
+    SuBing -> resolve event TradingSession with existing session_clock facts
     SuBing 5m at 15m boundary -> defer/skip
-    SuBing otherwise -> current snapshot -> identity guard -> resolved_signal
+    SuBing final Session Bar within shared arrival grace -> bounded phase-observation now
+    SuBing final Session Bar outside shared arrival grace -> drop
+    SuBing otherwise -> processing_now
+    SuBing current snapshot -> identity guard -> resolved_signal
     normalized result -> create_event commit
     if newly created -> render/send once outside transaction
 ```
 
-A rule exception is collapsed to a stable warning and must not stop later rules. Do not create worker pools, parallel tasks or in-memory cooldown state.
+A SuBing session-resolution/grace failure skips only SuBing; it must not block the HTDY event-cutoff branch on the same 15m message. A rule exception is collapsed to a stable warning and must not stop later rules. Do not create worker pools, parallel tasks or in-memory cooldown state.
 
-- [ ] **Step 10: Update composition**
+Promote the existing private Live grace constant to `LIVE_SESSION_END_ARRIVAL_GRACE` and use that same object in both `LiveMarketService._session_for_bar()` and Alert Runtime. Do not create a second grace duration or change Live finalization/publication behavior.
+
+- [ ] **Step 11: Update composition**
 
 `build_alert_runtime()` injects:
 
@@ -988,7 +1070,7 @@ htdy_evaluator=HtdyOriginal15mEvaluator()
 
 Keep existing activation marker and exact webhook validation. No new Runtime marker or launchd label.
 
-- [ ] **Step 11: Run runtime + SuBing + HTDY regression suite**
+- [ ] **Step 12: Run runtime + SuBing + HTDY regression suite**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -997,18 +1079,23 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_alert_evaluator.py \
   services/quant-api/tests/test_alert_wecom.py \
+  services/quant-api/tests/data_foundation/test_aggregation.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/data_foundation/test_market_phase.py \
   services/quant-api/tests/data_foundation/test_subing_read_service.py \
   services/quant-api/tests/test_subing_research.py \
   services/quant-api/tests/data_foundation/test_market_read.py
 ```
 
-- [ ] **Step 12: Commit Runtime V2**
+- [ ] **Step 13: Commit Runtime V2**
 
 ```bash
 git add \
   services/quant-api/app/alerts/runtime.py \
   services/quant-api/app/alerts/composition.py \
+  services/quant-api/app/market_data/live_market.py \
   services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
   services/quant-api/tests/test_alert_cli.py
 git commit -m "feat: dispatch subing through alert runtime v2"
 ```
@@ -1144,6 +1231,9 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_alert_cli.py \
   services/quant-api/tests/test_runtime_health.py \
   services/quant-api/tests/alembic/test_alert_v2_migration.py \
+  services/quant-api/tests/data_foundation/test_aggregation.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/data_foundation/test_market_phase.py \
   services/quant-api/tests/data_foundation/test_market_read.py \
   services/quant-api/tests/data_foundation/test_subing_read_service.py
 ```
@@ -1194,6 +1284,8 @@ Reviewer must verify at minimum:
 no Alert copy of SuBing formula/resolver
 no future data introduced by Alert
 stale-event guard is fail-closed
+final Session Bar is visible only inside the shared Live arrival grace
+session-end phase observation does not create snapshot_at/cutoff/replay behavior
 15m boundary defer uses TradingSession bucket semantics
 HTDY cutoff path remains intact
 migration never touches Market Catalog
@@ -1230,6 +1322,8 @@ legacy HTDY rows are preserved without invented trading_day
 current trading day resolver is deterministic/fail-closed
 current formal-signals and product current-events APIs exist
 SuBing Runtime consumes current SubingReadService only after event identity guard
+day and cross-midnight final Session Bars use the shared bounded arrival grace, then still pass the same current-snapshot identity guard
+session-end messages outside that grace are dropped and cannot be replayed
 same-boundary priority remains exclusively inside existing SuBing resolver
 5m-at-15m-boundary is deferred using existing session bucket semantics
 HTDY cutoff evaluator remains unchanged in meaning
