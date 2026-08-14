@@ -125,6 +125,37 @@ test('SuBing clips old same-contract bars and renders the requested primary Sign
   await expect(page.locator('body')).not.toContainText('ZERO_BAND')
 })
 
+test('SuBing shows a same-boundary companion-only match without replacing the requested primary', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: subing({
+      primary: {
+        status: 'ready',
+        snapshot: { ...subing().primary.snapshot, bar_end: '2026-01-12T02:30:00Z' },
+      },
+      companion: {
+        status: 'ready',
+        snapshot: { ...subing().companion.snapshot, bar_end: '2026-01-12T02:30:00Z' },
+      },
+      primary_signal: {
+        status: 'not_matched', direction: 'none', trigger_timeframe: '5m',
+        lower_tf_confirmation: false, resolution: null,
+        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
+      },
+      resolved_signal: {
+        status: 'matched', direction: 'long', trigger_timeframe: '15m',
+        lower_tf_confirmation: false, resolution: null,
+        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
+      },
+    }),
+  })
+  await page.setViewportSize({ width: 1680, height: 1000 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  await expect(page.locator('.subing-strip')).toContainText('15m · 买入信号')
+  await expect(page.getByRole('definition').filter({ hasText: '5m · 当前不匹配' })).toBeVisible()
+  await expect(page.getByRole('definition').filter({ hasText: '15m · 买入信号' })).toBeVisible()
+})
+
 test('SuBing same-boundary dual match keeps 5m primary and resolves one 15m buy signal', async ({ page }) => {
   const alertRequests = []
   await page.route('**/api/v1/alerts/**', async (route) => {

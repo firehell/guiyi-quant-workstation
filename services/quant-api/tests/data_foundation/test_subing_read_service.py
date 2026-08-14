@@ -343,6 +343,51 @@ def test_intraday_snapshot_keeps_primary_evaluation_separate_from_resolved_signa
 
 
 @pytest.mark.parametrize(
+    ("frequency", "direction", "reciprocal_cross"),
+    [
+        (BarFrequency.M5, SubingDirection.LONG, MacdCross.GOLDEN),
+        (BarFrequency.M15, SubingDirection.SHORT, MacdCross.DEAD),
+    ],
+)
+def test_same_boundary_reciprocal_only_match_is_resolved_without_overwriting_primary(
+    monkeypatch: pytest.MonkeyPatch,
+    frequency: BarFrequency,
+    direction: SubingDirection,
+    reciprocal_cross: MacdCross,
+) -> None:
+    """Catches a requested non-match suppressing a complete companion opportunity."""
+    boundary = datetime(2026, 8, 3, 5, 0, tzinfo=UTC)
+    companion_frequency = (
+        BarFrequency.M15 if frequency is BarFrequency.M5 else BarFrequency.M5
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_read_service.calculate_subing_factor",
+        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
+            timeframe,
+            boundary,
+            cross=(MacdCross.NONE if timeframe is frequency else reciprocal_cross),
+            direction=direction,
+        ),
+    )
+
+    result = _service_with_calibration(
+        {
+            frequency: (_bar(boundary, _SEGMENT_START, Decimal("100")),),
+            companion_frequency: (_bar(boundary, _SEGMENT_START, Decimal("100")),),
+        }
+    ).snapshot(SubingReadRequest("jm", frequency), now=_NOW)
+
+    assert result.primary_signal.status is SubingSignalStatus.NOT_MATCHED
+    assert result.primary_signal.trigger_timeframe is frequency
+    assert result.resolved_signal is not None
+    assert result.resolved_signal.status is SubingSignalStatus.MATCHED
+    assert result.resolved_signal.direction is direction
+    assert result.resolved_signal.trigger_timeframe is companion_frequency
+    assert result.resolved_signal.lower_tf_confirmation is False
+    assert result.resolved_signal.resolution is None
+
+
+@pytest.mark.parametrize(
     ("frequency", "direction", "cross"),
     [
         (BarFrequency.M5, SubingDirection.LONG, MacdCross.GOLDEN),

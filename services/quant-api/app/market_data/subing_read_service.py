@@ -287,19 +287,28 @@ class SubingReadService:
         companion: SubingFactorResult | None,
         primary_signal: SubingSignalEvaluation,
     ) -> SubingSignalEvaluation | None:
-        if primary_signal.status is not SubingSignalStatus.MATCHED:
-            return None
         if not _same_ready_boundary(primary, companion):
-            return primary_signal
+            return (
+                primary_signal
+                if primary_signal.status is SubingSignalStatus.MATCHED
+                else None
+            )
         assert companion is not None
         reciprocal = evaluate_subing_signal(
             companion,
             companion=primary,
             calibration=cast(_SignalCalibrationView, self._calibration),
         )
-        if reciprocal.status is not SubingSignalStatus.MATCHED:
+        if (
+            primary_signal.status is SubingSignalStatus.MATCHED
+            and reciprocal.status is SubingSignalStatus.MATCHED
+        ):
+            return resolve_same_boundary_subing_signals(primary_signal, reciprocal)
+        if primary_signal.status is SubingSignalStatus.MATCHED:
             return primary_signal
-        return resolve_same_boundary_subing_signals(primary_signal, reciprocal)
+        if reciprocal.status is SubingSignalStatus.MATCHED:
+            return reciprocal
+        return None
 
     def _latest_dominant(self, symbol: str) -> DominantContractSummary:
         for dominant in self._market_data.list_latest_dominants():
