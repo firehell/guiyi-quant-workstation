@@ -72,9 +72,18 @@ uv run --project services/quant-api guiyi data refresh \
 uv run --project services/quant-api guiyi data audit --universe active
 
 uv run --project services/quant-api guiyi runtime status
+
+# SuBing Calibration 只读研究入口；实际运行需显式 phase/mode/frequency/window
+uv run --project services/quant-api guiyi research subing-calibration --help
 ```
 
 `update/refresh` 只有显式 `--apply` 才进入写入路径；参数本身不授权正式数据或生产环境 mutation。
+
+`guiyi research subing-calibration` 的 Historical 输入只通过 `MarketDataService`，结果只以 JSON
+写入 stdout。它不直接读取 provider，不写 PostgreSQL、Canonical Parquet 或 Redis，也不自动选择、批准
+或晋升参数。Discovery/Validation 的临时 stdout 不是正式 artifact；当前唯一 accepted intraday
+Calibration 是 Git-tracked 的 slope-only 文件
+`data/research_policies/subing_calibration_intraday_v1.json`。
 
 ## 安全边界
 

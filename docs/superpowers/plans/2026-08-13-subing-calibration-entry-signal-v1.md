@@ -27,7 +27,7 @@
 
 ---
 
-## Execution Status Before This Plan Continues
+## Current Execution Status
 
 已完成：
 
@@ -37,6 +37,15 @@ Task 2  MarketDataService-only research      e384028f + 686026a4
 Task 3  read-only Calibration CLI            b2a6dcea
 Gate A  slope approval record                b9494dc0
 Task 4  Zero-Band Discovery + frozen-C OOS   COMPLETE, no tracked research-output commit
+Gate B-R slope-only approval                  3ac907ad
+Task 5  slope-only Calibration Git fact       e2f7eee9
+Task 6  scoped MACD evidence                  ee037317
+Gate C  scoped-only approval                  1c6cb4da
+Task 7  deterministic Signal pure core        20cdbb22
+Task 8  Product Workspace observation         22a35db9
+Task 8  reciprocal orchestration fix          2d77c356
+Task 9  1d future research                    NOT EXECUTED / NON-BLOCKING
+Task 10 docs/testing/status closure            CURRENT TASK
 ```
 
 Gate A frozen values：
@@ -57,9 +66,9 @@ OOS vs NO-BAND 结论：intraday zero-band hard gate **rejected**。不再进入
 
 ---
 
-## Gate B-R: Human Approval of Slope-only Intraday Calibration
+## Gate B-R: Human Approval of Slope-only Intraday Calibration — PASSED
 
-**HARD STOP.** 当前下一步不是写 artifact，而是等待用户明确批准以下完整语义：
+此 Gate 当时是 Task 5 前的 **HARD STOP**；用户随后已明确批准以下完整语义：
 
 ```text
 1. 5m slope = 0.688190651160584793944957992
@@ -70,7 +79,7 @@ OOS vs NO-BAND 结论：intraday zero-band hard gate **rejected**。不再进入
 6. 15m LONG OOS asymmetry remains observation risk only; no direction-specific rule
 ```
 
-只有用户明确回复批准 Gate B-R，才允许执行 Task 5。
+该人工批准已满足，Task 5 随后只固化 slope-only artifact；它没有授权其他 capability。
 
 ---
 
@@ -231,9 +240,10 @@ Stop and present evidence. Do not modify `policy.py`.
 
 ---
 
-## Gate C: Human Approval of Scoped MACD Signal Capability
+## Gate C: Human Approval of Scoped MACD Signal Capability — PASSED
 
-**HARD STOP.** Only after independent evidence review and explicit user approval may Task 7 modify `policy.py`.
+此 Gate 当时是 Task 7 前的 **HARD STOP**；独立 evidence review 与用户明确批准均已完成，Task 7
+随后只增加 scoped SuBing consumer policy 与 pure Signal。
 
 Gate C approves only a SuBing entry-Signal consumer; it does not approve generic MACD, formal Backtest, Alert V2 or Runtime.
 
@@ -445,6 +455,8 @@ Assert no SuBing Alert API call and no zero-band condition. Run SuBing + Alert V
 - Modify: `TESTING.md`
 - Modify: `docs/ARCHITECTURE.md`
 - Modify: `STATUS.md`
+- Modify: `docs/superpowers/specs/2026-08-13-subing-factor-signal-research-design.md`
+- Modify: `docs/superpowers/plans/2026-08-13-subing-calibration-entry-signal-v1.md`
 
 - [ ] **Step 1: Document read-only research CLI**
 
@@ -499,7 +511,9 @@ Do not announce Signal/Alert/Runtime Ready prematurely.
 - [ ] **Step 6: Commit docs**
 
 ```bash
-git add README.md TESTING.md docs/ARCHITECTURE.md STATUS.md
+git add README.md TESTING.md docs/ARCHITECTURE.md STATUS.md \
+  docs/superpowers/specs/2026-08-13-subing-factor-signal-research-design.md \
+  docs/superpowers/plans/2026-08-13-subing-calibration-entry-signal-v1.md
 git commit -m "docs: record SuBing slope-only signal boundaries"
 ```
 

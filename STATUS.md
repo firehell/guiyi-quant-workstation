@@ -13,10 +13,10 @@
 - SuBing Factor Observation V1 已在 `develop` 完成只读代码闭环：只展示 current rank1
   segment 的 Kline/EMA/MACD/Factor，且有效当前合约视图不覆盖用户的 Market series
   preference；盘中仅合并同当前合约的 completed Live Bar，不做 pre-rank1 warm-up 或
-  cross-roll 指标状态。Calibration Gate B-R 已由用户人工批准：intraday V1 接受 slope-only
-  Calibration promotion，并继续冻结
+  cross-roll 指标状态。Calibration Gate A 已通过并冻结
   `5m=0.688190651160584793944957992`、`15m=1.329531078893356968545882036`
-  两个 exact Decimal 作为 EMA21 flat / trend-persistence filter。随后完成 intraday Zero-Band
+  两个 exact Decimal 作为 EMA21 flat / trend-persistence filter；Gate B-R 也已由用户人工批准，
+  intraday V1 接受 slope-only Calibration promotion。随后完成 intraday Zero-Band
   Discovery 与冻结候选 C 对 NO-BAND 的非重叠 OOS Validation：5m 没有表现出增量价值，15m 只有
   5K 局部改善且三个 horizon failure 均更高、样本稀疏，因此当前设计已**拒绝 intraday V1
   zero-band hard gate**；`macd_zero_distance_abs/bps` 继续保留为 Factor/Web/research 字段，不进入
@@ -24,11 +24,17 @@
   observation risk，不创建方向特例、方向阈值或禁用 LONG。slope-only Calibration 已以
   `data/research_policies/subing_calibration_intraday_v1.json` 成为 Git-tracked 仓库事实；
   MACD Gate C 已由用户人工批准，且只批准 SuBing V1 Entry Signal 的 scoped consumer；generic MACD
-  继续保持 `compatibility_validated`，backtest/live/alert capability 均未改变。Gate C 不批准 Alert V2
-  或 Runtime。SuBing V1 slope-only formal Signal pure core、tracked Calibration 注入及 Product Workspace
-  只读 Signal observation 已完成并通过独立 Lane 3 Review：5m/15m 保留 requested primary evaluation，
-  仅实际 MATCHED opportunity 生成可选 resolved Signal，同 boundary 双 MATCHED 时 15m wins；1d 继续
-  `RESEARCH_PENDING`。本状态不批准 Alert V2、Runtime 或任何交易能力。
+  继续保持 `compatibility_validated`，backtest/live/alert capability 均未改变。scoped policy 固定为
+  `subing_macd_sma_window_scale2_v1`，数学 equivalence tuple 为
+  `("sma_window", 2, "fast12_slow26_signal9", True)`。Gate C 不批准 Alert V2 或 Runtime。SuBing V1
+  slope-only formal Signal pure core、tracked Calibration 注入及 Product Workspace
+  只读 Signal observation 已完成并通过独立 Lane 3 Review：5m/15m 的 `primary_signal` 始终保留
+  requested timeframe evaluation，`resolved_signal` 只表示可选的实际 MATCHED opportunity；same READY
+  boundary 会评估完整 reciprocal opportunity，因此 reciprocal-only MATCHED 不会遗漏，双 MATCHED
+  同方向时 15m wins、反方向 fail-closed，普通 reciprocal NOT_MATCHED 不覆盖 requested primary。1d
+  继续 `RESEARCH_PENDING`，是独立 non-blocking future research track。本实现不持久化 Signal，不接
+  Alert V1/V2，不部署或晋升 SuBing Runtime，不写 DB/Canonical，`auto_order=false`。本状态不批准
+  Alert V2、Runtime、Strategy、Backtest 或任何交易能力。
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
@@ -205,12 +211,15 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   不写回用户的 continuous/actual-dominant/contract 偏好。
 - Task 8 将 accepted slope-only Calibration 仅从 tracked production artifact 注入
   `SubingReadService`，并在 API/Web 明确分离 primary 与 resolved Signal；Factor observation 与 scoped
-  Signal MACD policy identity 分开，zero-distance 继续只作 Factor/Web 描述。最终测试数量见本次交付
-  commit 的验证记录；Playwright 使用临时 Vite 测试服务，未用已部署 Runtime 替代。
+  Signal MACD policy identity 分开，zero-distance 继续只作 Factor/Web 描述。reciprocal orchestration
+  修复保证 same READY boundary 即使 requested primary 为 NOT_MATCHED，也会发现 companion timeframe
+  的独立 MATCHED opportunity；requested primary 本身不被覆盖。最终测试数量见本次交付 commit 的验证
+  记录；Playwright 使用临时 Vite 测试服务，未用已部署 Runtime 替代。
 - 状态仍是 Factor Observation 完成；Calibration Gate B-R 已批准，slope-only artifact 已成为
   Git-tracked 仓库事实；MACD Gate C 已人工批准且仅限 SuBing V1 Entry Signal scoped consumer，
-  generic MACD capability 未晋升。formal Signal pure core 与 Task 8 API/Web exposure 已完成，Alert V1
-  unchanged。
+  generic MACD capability 未晋升。formal 5m/15m Signal pure core 与 Task 8 API/Web observation 已完成，
+  1d 仍 pending/non-blocking；无 Signal persistence、Alert integration、SuBing Runtime deployment、DB/
+  Canonical write，Alert V1 unchanged，`auto_order=false`。
   本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
   `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中，当前隔离 Runtime 仍为 `v1.1.0`
   的 17:00 模板。

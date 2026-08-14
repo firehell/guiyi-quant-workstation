@@ -1,7 +1,7 @@
 # 苏冰 Factor → Signal 研究与盘中观察 V1 Design
 
 Final design：2026-08-14  
-Current baseline：`develop` after Gate A + intraday Zero-Band OOS review
+Current baseline：`develop` after Gate B-R + Gate C + Task 8 reciprocal orchestration review
 
 ## 1. Purpose
 
@@ -211,7 +211,7 @@ Historical Calibration 只用 `actual_dominant/resolved_contract_segments` 解�
 15m
 ```
 
-- `5m/15m`：当前 intraday 主线，Historical + completed Live Observation + future Signal/Alert。
+- `5m/15m`：当前 intraday 主线，Historical + completed Live + Signal observation；Alert V2 仍是 future。
 - `1d`：独立、非阻塞 Research/Web 轨道；不得阻塞 intraday Signal。
 - `1m/30m/60m/1w`：SuBing V1 unavailable，但普通 Market 行情和历史分页继续工作。
 
@@ -381,7 +381,8 @@ zero-distance remains observation/research-only
 15m LONG asymmetry is observation risk only
 ```
 
-当前设计收缩的批准不自动等于 Gate B-R promotion 批准。
+该设计结论本身不自动构成 promotion；Gate B-R 后续已由用户人工批准，accepted intraday Calibration
+因此严格保持 slope-only。
 
 ### 8.6 MACD capability Gate C
 
@@ -396,7 +397,15 @@ Historical/completed-Live parity
 golden/dead edge tests
 ```
 
-未来 scoped SuBing Signal policy 必须与 Factor observation policy 在 seed/histogram/lookback/confirmed-only 上数学等价。Gate C 不批准 generic MACD、Backtest 或 Alert capability。
+Gate C 已人工批准且只批准 scoped SuBing Signal consumer：
+
+```text
+policy_id = subing_macd_sma_window_scale2_v1
+equivalence = ("sma_window", 2, "fast12_slow26_signal9", True)
+```
+
+该 policy 与 Factor observation policy 在 seed/histogram/lookback/confirmed-only 上数学等价。Gate C
+没有批准 generic MACD、Backtest、Alert 或 Runtime capability。
 
 ---
 
@@ -457,6 +466,17 @@ resolution = HIGHER_TIMEFRAME_WINS
 ```
 
 反向冲突必须 fail-closed。
+
+对外 read snapshot 明确分离：
+
+```text
+primary_signal  = requested timeframe evaluation
+resolved_signal = optional actual MATCHED opportunity
+```
+
+primary/companion 不在同一 READY boundary 时，只有 primary `MATCHED` 才产生 resolved。同一 READY
+boundary 必须评估 reciprocal 完整 timeframe opportunity：reciprocal-only `MATCHED` 必须被发现；双
+`MATCHED` 继续使用上述 resolver；普通 reciprocal `NOT_MATCHED` 不覆盖 requested primary。
 
 ### 9.4 Daily
 
@@ -613,22 +633,25 @@ Alert V1 untouched regression
 
 ---
 
-## 17. Current Development Sequence
+## 17. Current Development Status
 
 ```text
-S0-S2  Factor Observation                    COMPLETE
-S3     Slope Calibration                     COMPLETE
-Gate A slope pair                            PASSED
-S4     Zero-Band Discovery + frozen-C OOS    COMPLETE
-Result intraday zero-band hard gate          REJECTED
-Gate B-R slope-only Calibration promotion    PENDING
-S5     Commit slope-only Calibration artifact
-S6     Scoped MACD evidence
-Gate C MACD Signal capability                PENDING
-S7     Deterministic intraday Signal
-S8     Product Workspace Signal observation
-Observation period
-Future Alert V2
+S0-S2  Factor Observation                         COMPLETE
+S3     Slope Calibration                          COMPLETE
+Gate A slope pair                                 PASSED
+S4     Zero-Band Discovery + frozen-C OOS         COMPLETE
+Result intraday zero-band hard gate               REJECTED
+Gate B-R slope-only Calibration promotion         PASSED
+S5     Git-tracked slope-only Calibration         COMPLETE
+S6     Scoped MACD evidence                       COMPLETE
+Gate C scoped SuBing MACD Signal capability       PASSED
+S7     Deterministic 5m/15m Signal pure core      COMPLETE
+S8     Product Workspace Signal observation       COMPLETE
+S8 fix same-boundary reciprocal opportunity       COMPLETE
+S9     1d future research track                   PENDING / NON-BLOCKING
+S10    Docs/testing/status boundary closure       CURRENT TASK
+Future Live human observation period
+Future Alert V2                                   NOT IMPLEMENTED
 ```
 
 1d 是独立、非阻塞 track。
@@ -676,4 +699,4 @@ Intraday SuBing V1 完成时必须证明：
 
 ## 20. Final Design Statement
 
-> **苏冰 V1 是 current-rank1、rank1-segment-local、confirmed-bar-only 的轻量 Factor → Signal 研究能力。Slope 经独立 Discovery/Validation 后人工冻结；MACD zero-distance 虽保留为可解释 Factor，但在完整 SuBing 条件下未通过 OOS 增量价值检验，因此不进入 intraday hard gate。Accepted intraday Calibration 收缩为两个 slope Decimal；MACD cross 仍需独立 capability Gate。最终盘中只执行人工批准、确定性的入场方向规则，不建设 Strategy/Factor 平台，不自动下单，不接现有 Alert V1；未来 Alert V2 仍需独立设计与人工 Gate。**
+> **苏冰 V1 是 current-rank1、rank1-segment-local、confirmed-bar-only 的轻量 Factor → Signal 研究能力。Slope 经独立 Discovery/Validation 后人工冻结；MACD zero-distance 虽保留为可解释 Factor，但在完整 SuBing 条件下未通过 OOS 增量价值检验，因此不进入 intraday hard gate。Accepted intraday Calibration 收缩为两个 slope Decimal；MACD cross 已通过只面向 SuBing Entry Signal consumer 的 Gate C，generic MACD capability 未晋升。当前只提供人工批准、确定性的 5m/15m 入场方向观察，不建设 Strategy/Factor 平台，不持久化 Signal，不自动下单，不接现有 Alert V1；未来 Alert V2 仍需独立设计与人工 Gate。**

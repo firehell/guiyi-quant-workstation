@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-13
+更新时间：2026-08-14
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -37,7 +37,7 @@ pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build
 ```
 
-## SuBing Factor Observation V1
+## SuBing Factor / Calibration / Signal Observation V1
 
 ### 无副作用实现与回归验证
 
@@ -45,6 +45,11 @@ pnpm --dir apps/quant-web build
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_calibration.py \
+  services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
+  services/quant-api/tests/test_research_cli.py \
+  services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
   services/quant-api/tests/test_subing_research.py \
   services/quant-api/tests/test_subing_api.py \
   services/quant-api/tests/data_foundation/test_subing_read_service.py \
@@ -68,9 +73,15 @@ pnpm --dir apps/quant-web exec playwright test \
 pnpm --dir apps/quant-web build
 ```
 
-这些命令只验证 SuBing Factor Observation 的 current-rank1 segment、Historical/completed Live
-seam、有效当前合约视图和 Web 展示；不运行 provider、Canonical/DB 写入、Runtime
-switch 或通知。Calibration 仍为 `pending`，也不产生 formal Signal。
+这些命令覆盖 strict slope-only Calibration loader、MarketDataService-only research/CLI、scoped MACD
+equivalence、Signal pure core、`SubingReadService` reciprocal orchestration、API、Web unit/E2E、
+current-rank1 segment、Historical/completed Live seam 和有效当前合约视图。测试只使用 fixture、mock、
+临时目录或隔离数据库，不运行 provider、Canonical/DB/Redis 写入、Runtime switch 或通知。
+
+`guiyi research subing-calibration` 本身是只读 Historical research：只通过 `MarketDataService` 取数，
+输出 stdout JSON，不直接读 provider，也不写 DB、Canonical 或 Redis，不自动 promotion。Discovery/
+Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不运行真实研究窗口。当前 accepted
+intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distance 不参与 executable Signal。
 
 ## Alert V1
 

@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-08-13
+更新时间：2026-08-14
 
 ## 系统定位
 
@@ -16,6 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
+      RCLI["guiyi research subing-calibration"]
       ALERTAPI["Alert API"]
     end
     subgraph Application["应用层：三个深模块"]
@@ -27,6 +28,7 @@ flowchart TB
       MR["MarketReadService"]
       MRS["MarketResearchService"]
       SR["SubingReadService"]
+      SCR["SubingCalibrationResearchService"]
       LM["LiveMarketService"]
       AM["AfterMarketUpdater"]
       AR["AlertRuntime"]
@@ -51,6 +53,7 @@ flowchart TB
     WEB --> API --> MR
     API --> MRS
     API --> SR
+    RCLI --> SCR --> MQ
     WEB --> ALERTAPI --> AS
     MR --> MQ
     MR --> RD
@@ -86,9 +89,12 @@ flowchart TB
 - `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务；
   `MarketReadService` 只在展示边界合并 Canonical 与 Redis Live，不创建第二条历史读链。
 - `MarketResearchService` 仅组合 `MarketDataService` 的 Historical Canonical 结果，不读 Redis Live。
+  `SubingCalibrationResearchService` 只通过 `MarketDataService` 读取 segment-local Historical，结果由
+  CLI 以 stdout JSON 返回；不直连 provider，不写 DB/Canonical/Redis，也不自动晋升参数。
   薄 `SubingReadService` 复用 `MarketDataService` 的 current rank1 segment 身份和
-  `MarketReadService` 的 Historical/completed Live seam；它不直连 provider 或 Redis，不存储、
-  不写 Canonical/DB，不管理 Runtime、校准或 Signal。
+  `MarketReadService` 的 Historical/completed Live seam；composition 只注入 Git-tracked slope-only
+  Calibration，它再调用 pure `evaluate_subing_signal()`。该服务不拥有或修改 Calibration/Signal 公式，
+  不直连 provider/Redis，不持久化 Signal，不写 Canonical/DB，也不管理 Runtime。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
@@ -115,6 +121,30 @@ flowchart LR
 
 每 Dataset 每自然月只发布一个 `part.parquet`。文件不存在、不可读、identity 不符或 coverage 不完整
 时，查询 fail-closed，维护命令将该月作为待处理目标；不以第二套状态表保存这些事实。
+
+## SuBing V1 研究与观察链
+
+```mermaid
+flowchart LR
+    MDS["MarketDataService"] --> CR["read-only Calibration Research"]
+    CR --> OUT["stdout JSON"]
+    CAL["Git-tracked slope-only Calibration"] --> SIG["pure evaluate_subing_signal()"]
+    MRS["MarketReadService"] --> SRS["SubingReadService"]
+    SRS --> SIG
+    SIG --> API["Market API"] --> WEB["Product Workspace Observation"]
+```
+
+`primary_signal` 永远是 requested timeframe 自己的 evaluation；`resolved_signal` 只表示可选的实际
+`MATCHED` opportunity。primary/companion 不在同一 READY boundary 时，只有 primary `MATCHED` 才产生
+resolved；在同一 READY boundary 时必须反向评估完整 companion opportunity：reciprocal-only
+`MATCHED` 必须被发现，双 `MATCHED` 同方向由既有 resolver 选择 15m 并标记 lower-timeframe
+confirmation，反方向 fail-closed，普通 reciprocal `NOT_MATCHED` 不覆盖 requested primary。
+
+该链没有 research DB、Signal persistence 或 Alert integration。`macd_zero_distance_abs/bps` 只保留为
+Factor/Web/research observation，不是 executable Signal 条件；Alert V1 保持独立且不变，未来 Alert V2
+仍需新设计与人工 Gate。scoped consumer policy 是 `subing_macd_sma_window_scale2_v1`，其 equivalence
+tuple 固定为 `("sma_window", 2, "fast12_slow26_signal9", True)`；generic MACD 继续保持
+`compatibility_validated`，backtest/live/alert capability 均未晋升。
 
 ## 运行与授权边界
 
