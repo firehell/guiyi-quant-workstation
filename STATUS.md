@@ -13,10 +13,15 @@
 - SuBing Factor Observation V1 已在 `develop` 完成只读代码闭环：只展示 current rank1
   segment 的 Kline/EMA/MACD/Factor，且有效当前合约视图不覆盖用户的 Market series
   preference；盘中仅合并同当前合约的 completed Live Bar，不做 pre-rank1 warm-up 或
-  cross-roll 指标状态。Calibration Gate A 已由用户人工批准；后续 intraday Zero-Band research
-  冻结使用 `5m=0.688190651160584793944957992`、`15m=1.329531078893356968545882036`
-  两个 exact Decimal 作为 EMA21 flat / trend-persistence filter，不构成 slope 单因子盈利验证，
-  也不批准 Signal、Strategy 或 Alert。Calibration artifact 尚未创建，formal Signal 尚未实现。
+  cross-roll 指标状态。Calibration Gate A 已由用户人工批准，冻结
+  `5m=0.688190651160584793944957992`、`15m=1.329531078893356968545882036`
+  两个 exact Decimal 作为 EMA21 flat / trend-persistence filter。随后完成 intraday Zero-Band
+  Discovery 与冻结候选 C 对 NO-BAND 的非重叠 OOS Validation：5m 没有表现出增量价值，15m 只有
+  5K 局部改善且三个 horizon failure 均更高、样本稀疏，因此当前设计已**拒绝 intraday V1
+  zero-band hard gate**；`macd_zero_distance_abs/bps` 继续保留为 Factor/Web/research 字段，不进入
+  executable Signal 条件或 accepted intraday Calibration。15m LONG/SHORT OOS asymmetry 只记录为
+  observation risk，不据此拆方向规则。当前 **Gate B-R 仍待人工批准** slope-only Calibration promotion；
+  Calibration artifact 尚未创建，MACD Gate C 未开始，formal Signal 尚未实现。
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
@@ -36,8 +41,8 @@
 
 - Web：Market 列表与 K 线工作台。
 - HTTP：历史分页、dominants、Historical/Live state、WebSocket、Alert Scope/Event API 和只读 Runtime health。
-- CLI：`guiyi data update|refresh|audit|after-market`、`guiyi runtime status|live|alert|alert-canary`；其中
-  `alert-canary` 是真实通知 Gate，不能作为普通测试执行。
+- CLI：`guiyi data update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、
+  `guiyi runtime status|live|alert|alert-canary`；其中 `alert-canary` 是真实通知 Gate，不能作为普通测试执行。
 - Runtime：`operational_products.txt` 是 Live 与目标 18:05/最多一次一小时后 retry 盘后更新的唯一范围入口；
   该文件已与 active 60 完全对齐。当前隔离 Runtime 在单独切换前仍按旧 17:00 模板运行。
 - Alert Runtime：唯一 Rule 为 `htdy_original_15m`，当前 server-side Scope 精确为 `jm`；不从
@@ -195,7 +200,8 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   Web `102 passed / 1 skipped`、Playwright 精确两个用例文件 `13 passed`、production build 通过、
   secret scan 0 finding。Playwright 在子沙箱因 `listen EPERM 127.0.0.1:5182` 未启动后，
   由 controller 在同一工作树外层以原命令重跑通过，未用已部署 Runtime 服务替代。
-- 状态仍是 Factor Observation 完成、Calibration `pending`、formal Signal absent、Alert V1
-  unchanged。本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
+- 状态仍是 Factor Observation 完成；Gate A slope 已批准并冻结，intraday zero-band hard gate 已由
+  Discovery/OOS 证据拒绝，Gate B-R slope-only Calibration promotion 尚未批准；formal Signal absent、
+  MACD Gate C 未开始、Alert V1 unchanged。本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
   `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中，当前隔离 Runtime 仍为 `v1.1.0`
   的 17:00 模板。
