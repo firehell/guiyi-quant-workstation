@@ -345,6 +345,54 @@ def test_current_product_events_filters_symbol_and_day_and_orders_descending(
     assert {item.symbol for item in events} == {"jm"}
 
 
+def test_current_product_events_excludes_database_rules_missing_from_registry(
+    session: Session,
+) -> None:
+    from app.alerts.service import AlertService
+
+    htdy = seed_rule(session, "htdy_original_15m")
+    subing = seed_rule(session, "subing_entry_signal_v1")
+    rogue = AlertRule(rule_code="rogue_rule", enabled=True, scope_products=["jm"])
+    session.add(rogue)
+    session.flush()
+    session.add(
+        AlertEvent(
+            rule_id=rogue.id,
+            symbol="jm",
+            contract="JM2609",
+            trading_day=TRADING_DAY,
+            frequency="15m",
+            bar_end=BAR_END + timedelta(minutes=60),
+            result_codes=["buy"],
+            lower_tf_confirmation=False,
+            detected_at=BAR_END + timedelta(minutes=60, seconds=1),
+            notification_attempted_at=BAR_END + timedelta(minutes=60, seconds=2),
+        )
+    )
+    session.commit()
+    service = AlertService(session, operational_products=("jm",))
+    service.create_event(
+        event_request(htdy.id, bar_end=BAR_END + timedelta(minutes=15))
+    )
+    service.create_event(
+        event_request(subing.id, bar_end=BAR_END + timedelta(minutes=45))
+    )
+
+    events = service.list_current_product_events(
+        symbol="jm",
+        trading_day=TRADING_DAY,
+    )
+
+    assert [item.rule.rule_code for item in events] == [
+        "subing_entry_signal_v1",
+        "htdy_original_15m",
+    ]
+    assert [item.bar_end.replace(tzinfo=UTC) for item in events] == [
+        BAR_END + timedelta(minutes=45),
+        BAR_END + timedelta(minutes=15),
+    ]
+
+
 def test_current_day_reads_exclude_legacy_null_trading_day(session: Session) -> None:
     from app.alerts.service import AlertService
 

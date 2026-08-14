@@ -93,6 +93,34 @@ def test_current_alert_views_return_ready_trading_day_events() -> None:
     }
 
 
+def test_current_product_events_excludes_database_rules_missing_from_registry() -> None:
+    testing_session = _session_factory()
+    _seed_current_events_with_rogue_rule(testing_session)
+
+    def override_get_db():
+        with testing_session() as session:
+            yield session
+
+    _override_current_trading_day(
+        CurrentTradingDayResult(CurrentTradingDayStatus.READY, TRADING_DAY)
+    )
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = TestClient(app).get("/api/alerts/products/jm/current-events")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert [item["rule_code"] for item in response.json()["items"]] == [
+        "subing_entry_signal_v1",
+        "htdy_original_15m",
+    ]
+    assert [item["bar_end"] for item in response.json()["items"]] == [
+        "2026-08-14T14:00:00",
+        "2026-08-14T13:30:00",
+    ]
+
+
 def test_history_and_current_views_serialize_null_notification_attempt() -> None:
     testing_session = _session_factory()
     _seed_event_with_null_notification_attempt(testing_session)
@@ -363,5 +391,72 @@ def _seed_event_with_null_notification_attempt(
                 detected_at=BAR_END + timedelta(minutes=45, seconds=1),
                 notification_attempted_at=None,
             )
+        )
+        session.commit()
+
+
+def _seed_current_events_with_rogue_rule(
+    testing_session: sessionmaker[Session],
+) -> None:
+    with testing_session() as session:
+        htdy = session.scalar(
+            select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m")
+        )
+        subing = session.scalar(
+            select(AlertRule).where(AlertRule.rule_code == "subing_entry_signal_v1")
+        )
+        assert htdy is not None
+        assert subing is not None
+        rogue = AlertRule(
+            rule_code="rogue_rule",
+            enabled=True,
+            scope_products=["jm"],
+            created_at=BAR_END,
+            updated_at=BAR_END,
+        )
+        session.add(rogue)
+        session.flush()
+        session.add_all(
+            [
+                AlertEvent(
+                    rule_id=htdy.id,
+                    symbol="jm",
+                    contract="JM2609",
+                    trading_day=TRADING_DAY,
+                    frequency="15m",
+                    bar_end=BAR_END + timedelta(minutes=15),
+                    result_codes=["sell"],
+                    lower_tf_confirmation=False,
+                    detected_at=BAR_END + timedelta(minutes=15, seconds=1),
+                    notification_attempted_at=BAR_END
+                    + timedelta(minutes=15, seconds=2),
+                ),
+                AlertEvent(
+                    rule_id=subing.id,
+                    symbol="jm",
+                    contract="JM2609",
+                    trading_day=TRADING_DAY,
+                    frequency="15m",
+                    bar_end=BAR_END + timedelta(minutes=45),
+                    result_codes=["buy"],
+                    lower_tf_confirmation=True,
+                    detected_at=BAR_END + timedelta(minutes=45, seconds=1),
+                    notification_attempted_at=BAR_END
+                    + timedelta(minutes=45, seconds=2),
+                ),
+                AlertEvent(
+                    rule_id=rogue.id,
+                    symbol="jm",
+                    contract="JM2609",
+                    trading_day=TRADING_DAY,
+                    frequency="15m",
+                    bar_end=BAR_END + timedelta(minutes=60),
+                    result_codes=["buy"],
+                    lower_tf_confirmation=False,
+                    detected_at=BAR_END + timedelta(minutes=60, seconds=1),
+                    notification_attempted_at=BAR_END
+                    + timedelta(minutes=60, seconds=2),
+                ),
+            ]
         )
         session.commit()

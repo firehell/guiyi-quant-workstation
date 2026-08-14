@@ -196,9 +196,14 @@ class AlertService:
         trading_day: date,
     ) -> tuple[AlertEvent, ...]:
         normalized = self._require_operational_symbol(symbol)
+        registered_rule_codes = tuple(
+            definition.rule_code for definition in alert_rule_definitions()
+        )
         statement = (
             select(AlertEvent)
+            .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
             .where(
+                AlertRule.rule_code.in_(registered_rule_codes),
                 AlertEvent.symbol == normalized,
                 AlertEvent.trading_day == trading_day,
             )

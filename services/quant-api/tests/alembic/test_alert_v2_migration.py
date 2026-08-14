@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 import importlib.util
+import os
 from pathlib import Path
+from types import ModuleType
 from typing import Any
+from uuid import uuid4
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+import sqlalchemy as sa
+from sqlalchemy import create_engine, inspect as sa_inspect
+from sqlalchemy.engine import Engine
+
+from app.db.migration_test_guard import (
+    MigrationTestDatabaseSafetyError,
+    probe_database_identity,
+    require_isolated_migration_database_url,
+)
 
 
 QUANT_API_ROOT = Path(__file__).resolve().parents[2]
+V1_MIGRATION_PATH = QUANT_API_ROOT / "alembic/versions/20260813_0037_alert_v1.py"
 MIGRATION_PATH = QUANT_API_ROOT / "alembic/versions/20260814_0038_alert_v2.py"
 MARKET_TABLES = {
     "exchanges",
@@ -57,6 +73,7 @@ class RecordingOperations:
         self.market_table_mutations: list[tuple[str, str]] = []
         self.dropped_constraints: list[tuple[str, str, str | None]] = []
         self.renamed_columns: list[tuple[str, str, str]] = []
+        self.altered_columns: list[tuple[str, str, dict[str, object]]] = []
         self.added_columns: list[tuple[str, object]] = []
         self.dropped_columns: list[tuple[str, str]] = []
         self.created_unique_constraints: list[tuple[str, str, tuple[str, ...]]] = []
@@ -87,6 +104,7 @@ class RecordingOperations:
         **kwargs: object,
     ) -> None:
         self._record_mutation("alter_column", table_name)
+        self.altered_columns.append((table_name, column_name, dict(kwargs)))
         new_column_name = kwargs.get("new_column_name")
         if isinstance(new_column_name, str):
             self.renamed_columns.append((table_name, column_name, new_column_name))
@@ -171,6 +189,22 @@ def test_alert_v2_upgrade_changes_only_alert_application_schema() -> None:
         "notified_at",
         "notification_attempted_at",
     ) in recorder.renamed_columns
+    notification_attempt = _altered_column(
+        recorder,
+        "alert_events",
+        "notified_at",
+    )
+    assert set(notification_attempt) == {
+        "new_column_name",
+        "nullable",
+        "existing_nullable",
+        "existing_type",
+    }
+    assert notification_attempt["new_column_name"] == "notification_attempted_at"
+    assert notification_attempt["nullable"] is True
+    assert notification_attempt["existing_nullable"] is False
+    assert isinstance(notification_attempt["existing_type"], sa.DateTime)
+    assert notification_attempt["existing_type"].timezone is True
     assert _added_column(recorder, "alert_events", "trading_day").nullable is True
     lower_tf_confirmation = _added_column(
         recorder, "alert_events", "lower_tf_confirmation"
@@ -237,6 +271,49 @@ def test_alert_v2_downgrade_fails_closed() -> None:
         migration.downgrade()
 
 
+@pytest.fixture
+def isolated_postgres_engine() -> Iterator[Engine]:
+    configured_url = os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL", "").strip()
+    if not configured_url:
+        pytest.skip("GUIYI_ISOLATED_MIGRATION_DATABASE_URL is required")
+    try:
+        url = require_isolated_migration_database_url(
+            os.environ,
+            identity_probe=probe_database_identity,
+        )
+    except MigrationTestDatabaseSafetyError as exc:
+        pytest.fail(str(exc))
+
+    engine = create_engine(url, pool_pre_ping=True)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+def test_alert_v2_upgrade_makes_notification_attempt_nullable_in_isolated_postgres(
+    isolated_postgres_engine: Engine,
+) -> None:
+    schema = f"alert_v2_{uuid4().hex}"
+    with isolated_postgres_engine.begin() as connection:
+        connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+    try:
+        _run_upgrade(isolated_postgres_engine, schema, V1_MIGRATION_PATH)
+        _run_upgrade(isolated_postgres_engine, schema, MIGRATION_PATH)
+
+        columns = {
+            column["name"]: column
+            for column in sa_inspect(isolated_postgres_engine).get_columns(
+                "alert_events",
+                schema=schema,
+            )
+        }
+        assert columns["notification_attempted_at"]["nullable"] is True
+    finally:
+        with isolated_postgres_engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
 def _added_column(
     recorder: RecordingOperations,
     table_name: str,
@@ -251,9 +328,39 @@ def _added_column(
     return matches[0]
 
 
-def _load_migration() -> object:
+def _altered_column(
+    recorder: RecordingOperations,
+    table_name: str,
+    column_name: str,
+) -> dict[str, object]:
+    matches = [
+        kwargs
+        for recorded_table, recorded_column, kwargs in recorder.altered_columns
+        if recorded_table == table_name and recorded_column == column_name
+    ]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def _run_upgrade(engine: Engine, schema: str, migration_path: Path) -> None:
+    migration = _load_migration_from(
+        migration_path,
+        f"alert_migration_{uuid4().hex}",
+    )
+    with engine.begin() as connection:
+        connection.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+
+
+def _load_migration() -> ModuleType:
     assert MIGRATION_PATH.exists(), f"missing migration: {MIGRATION_PATH.name}"
-    spec = importlib.util.spec_from_file_location("alert_v2_migration", MIGRATION_PATH)
+    return _load_migration_from(MIGRATION_PATH, "alert_v2_migration")
+
+
+def _load_migration_from(path: Path, module_name: str) -> ModuleType:
+    assert path.exists(), f"missing migration: {path.name}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
     assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)

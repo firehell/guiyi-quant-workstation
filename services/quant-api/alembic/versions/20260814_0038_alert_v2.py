@@ -59,6 +59,9 @@ def upgrade() -> None:
         "alert_events",
         "notified_at",
         new_column_name="notification_attempted_at",
+        nullable=True,
+        existing_nullable=False,
+        existing_type=sa.DateTime(timezone=True),
     )
     op.add_column(
         "alert_events",

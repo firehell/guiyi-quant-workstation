@@ -90,7 +90,7 @@ intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distan
 
 ## Alert V2
 
-### 无副作用单元、集成与浏览器验证
+### 无副作用单元、集成与 render-only 验证
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \

@@ -1,6 +1,6 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-13
+更新时间：2026-08-15
 
 本文定义仓库日常开发与外部副作用边界的唯一流程入口；产品、数据、策略、信号和 Runtime 语义仍由
 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only，含有界 Historical/Live seam）。
