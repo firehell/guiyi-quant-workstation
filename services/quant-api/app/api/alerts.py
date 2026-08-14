@@ -243,7 +243,6 @@ def _list_events(
 
 
 def _event_out(event: AlertEvent, *, rule_code: str) -> AlertEventOut:
-    assert event.notification_attempted_at is not None
     return AlertEventOut(
         id=event.id,
         rule_code=rule_code,

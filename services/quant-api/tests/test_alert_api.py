@@ -93,6 +93,53 @@ def test_current_alert_views_return_ready_trading_day_events() -> None:
     }
 
 
+def test_history_and_current_views_serialize_null_notification_attempt() -> None:
+    testing_session = _session_factory()
+    _seed_event_with_null_notification_attempt(testing_session)
+
+    def override_get_db():
+        with testing_session() as session:
+            yield session
+
+    _override_current_trading_day(
+        CurrentTradingDayResult(CurrentTradingDayStatus.READY, TRADING_DAY)
+    )
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        history = client.get(
+            "/api/alerts/events",
+            params={
+                "symbol": "jm",
+                "rule_code": "subing_entry_signal_v1",
+                "start": "2026-08-14T00:00:00Z",
+                "end": "2026-08-14T14:01:00Z",
+            },
+        )
+        current = client.get("/api/alerts/formal-signals/current")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert history.status_code == 200
+    assert history.json()["items"] == [
+        {
+            "id": 1,
+            "rule_code": "subing_entry_signal_v1",
+            "symbol": "jm",
+            "contract": "JM2609",
+            "trading_day": "2026-08-15",
+            "frequency": "15m",
+            "bar_end": "2026-08-14T14:00:00",
+            "result_codes": ["buy"],
+            "lower_tf_confirmation": False,
+            "detected_at": "2026-08-14T14:00:01",
+            "notification_attempted_at": None,
+        }
+    ]
+    assert current.status_code == 200
+    assert current.json()["items"][0]["notification_attempted_at"] is None
+
+
 def test_current_alert_views_fail_closed_when_trading_day_is_unavailable() -> None:
     testing_session = _session_factory()
     _seed_events(testing_session)
@@ -291,5 +338,30 @@ def _seed_events(testing_session: sessionmaker[Session]) -> None:
                     + timedelta(minutes=30, seconds=2),
                 ),
             ]
+        )
+        session.commit()
+
+
+def _seed_event_with_null_notification_attempt(
+    testing_session: sessionmaker[Session],
+) -> None:
+    with testing_session() as session:
+        subing = session.scalar(
+            select(AlertRule).where(AlertRule.rule_code == "subing_entry_signal_v1")
+        )
+        assert subing is not None
+        session.add(
+            AlertEvent(
+                rule_id=subing.id,
+                symbol="jm",
+                contract="JM2609",
+                trading_day=TRADING_DAY,
+                frequency="15m",
+                bar_end=BAR_END + timedelta(minutes=45),
+                result_codes=["buy"],
+                lower_tf_confirmation=False,
+                detected_at=BAR_END + timedelta(minutes=45, seconds=1),
+                notification_attempted_at=None,
+            )
         )
         session.commit()

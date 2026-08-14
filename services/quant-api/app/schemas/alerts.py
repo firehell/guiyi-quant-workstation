@@ -36,7 +36,7 @@ class AlertEventOut(BaseModel):
     result_codes: list[str]
     lower_tf_confirmation: bool
     detected_at: datetime
-    notification_attempted_at: datetime
+    notification_attempted_at: datetime | None
 
 
 class FormalSignalAlertEventOut(AlertEventOut):

@@ -466,7 +466,7 @@ class AlertEventCreate:
     result_codes: tuple[str, ...]
     lower_tf_confirmation: bool
     detected_at: datetime
-    notification_attempted_at: datetime
+    notification_attempted_at: datetime | None
 ```
 
 - [ ] **Step 1: Write current trading day resolver tests**
@@ -620,7 +620,7 @@ class AlertEventOut(BaseModel):
     result_codes: list[str]
     lower_tf_confirmation: bool
     detected_at: datetime
-    notification_attempted_at: datetime
+    notification_attempted_at: datetime | None
 
 class CurrentAlertEventsResponse(BaseModel):
     status: Literal["ready", "unavailable"]
