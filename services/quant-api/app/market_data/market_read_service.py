@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path
 from types import MappingProxyType
@@ -14,6 +14,7 @@ from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
 from app.market_data.domain import (
     CanonicalBar,
+    BarFrequency,
     INTRADAY_FREQUENCIES,
     MarketSeriesPageResult,
     SeriesKind,
@@ -60,6 +61,23 @@ class MarketReadState:
     after_market: Mapping[str, object]
 
 
+@dataclass(frozen=True, slots=True)
+class MarketReadWindow:
+    """以事件 Bar 为硬截止点的 Alert 只读窗口。"""
+
+    symbol: str
+    series_kind: str
+    frequency: str
+    trading_day: date
+    contract: str
+    cutoff: datetime
+    bars: tuple[CanonicalBar, ...]
+
+
+class MarketReadWindowError(RuntimeError):
+    """Alert 窗口不能被唯一、完整解析时的稳定失败。"""
+
+
 class MarketReadService:
     """展示查询 facade；历史始终经 ``MarketDataService``，Live 只读 Redis。"""
 
@@ -83,6 +101,68 @@ class MarketReadService:
     def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         """读取正式历史页；不直接接触 Parquet 或 Live Redis。"""
         return self._market_data.query_page(request)
+
+    def bars_until(
+        self,
+        identity: SeriesPageQuery,
+        *,
+        trading_day: date,
+        end: datetime,
+        limit: int = 32,
+    ) -> MarketReadWindow:
+        """合并 Canonical/Live，并严格停在指定 completed event Bar。"""
+        if (
+            identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
+            or identity.frequency is not BarFrequency.M15
+            or identity.contract is not None
+        ):
+            raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        if end.tzinfo is None or end.utcoffset() is None:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_TIMEZONE_REQUIRED")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 2000:
+            raise MarketReadWindowError("MARKET_READ_LIMIT_INVALID")
+        cutoff = end.astimezone(UTC)
+
+        try:
+            subscriptions = self._live_store.subscriptions(trading_day)
+        except Exception as exc:  # noqa: BLE001 - Alert must fail closed at the Redis seam
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE") from exc
+        contract = normalize_contract_for_symbol(
+            identity.symbol,
+            subscriptions.get(identity.symbol) if subscriptions else None,
+        )
+        if contract is None:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+
+        historical = self.history_page(
+            replace(identity, before=cutoff + timedelta(microseconds=1), limit=limit)
+        ).bars
+        try:
+            live = self._live_store.bars_after(
+                trading_day,
+                identity.symbol,
+                identity.frequency.value,
+                None,
+            )
+        except Exception as exc:  # noqa: BLE001 - incomplete Alert input must not degrade
+            raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE") from exc
+
+        deduped = {bar.bar_end: bar for bar in historical if bar.bar_end <= cutoff}
+        for bar in live:
+            if bar.bar_end <= cutoff:
+                deduped.setdefault(bar.bar_end, bar)
+        bars = tuple(deduped[key] for key in sorted(deduped))[-limit:]
+        if not bars or bars[-1].bar_end != cutoff:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        return MarketReadWindow(
+            symbol=identity.symbol,
+            series_kind=identity.series_kind.value,
+            frequency=identity.frequency.value,
+            trading_day=trading_day,
+            contract=contract,
+            cutoff=cutoff,
+            bars=bars,
+        )
 
     def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:
         """返回统一展示状态；Redis 任意失败降级为 historical-only。"""

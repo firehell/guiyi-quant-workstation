@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,6 +17,7 @@ from app.market_data.composition import (
     build_market_data_service,
     build_market_radar_service,
     build_market_research_service,
+    build_subing_read_service,
 )
 from app.market_data.domain import (
     BarFrequency,
@@ -26,6 +28,9 @@ from app.market_data.domain import (
 )
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.market_research_service import ResearchSeriesIdentity
+from app.market_data.subing_calibration import SubingCalibrationError
+from app.market_data.subing_read_service import SubingReadRequest
+from app.market_data.subing_research import SubingFactorResult, SubingSignalEvaluation
 from app.schemas.market import (
     ContractSegmentOut,
     CoverageOut,
@@ -39,6 +44,11 @@ from app.schemas.market import (
     MarketRadarSectorOut,
     MarketRadarSummaryOut,
     ProductResearchResponse,
+    SubingConditionOut,
+    SubingFactorResultOut,
+    SubingFactorSnapshotOut,
+    SubingResearchResponse,
+    SubingSignalOut,
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
@@ -116,7 +126,9 @@ def canonical_market_bars_page(
 
 
 @router.get("/dominants", response_model=DominantContractListResponse)
-def market_dominants(session: Session = Depends(get_db)) -> DominantContractListResponse:
+def market_dominants(
+    session: Session = Depends(get_db),
+) -> DominantContractListResponse:
     """列出各品种最新主力合约映射（来自 MainContractMap）。"""
     items = build_market_data_service(session).list_latest_dominants()
     return DominantContractListResponse(
@@ -194,6 +206,61 @@ def product_research(
     )
 
 
+@router.get("/research/subing", response_model=SubingResearchResponse)
+def subing_research(
+    symbol: str = Query(...),
+    frequency: str = Query(...),
+    session: Session = Depends(get_db),
+) -> SubingResearchResponse:
+    """返回 current-rank1 SuBing Factor Observation 只读快照。"""
+    try:
+        request = SubingReadRequest(
+            symbol=symbol,
+            frequency=cast(BarFrequency, frequency),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_SUBING_REQUEST"},
+        ) from exc
+
+    try:
+        snapshot = build_subing_read_service(session).snapshot(
+            request,
+            datetime.now(UTC),
+        )
+    except (MarketDataError, SubingCalibrationError) as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+
+    return SubingResearchResponse(
+        symbol=snapshot.symbol,
+        product_name=snapshot.product_name,
+        frequency=snapshot.frequency.value,
+        actual_contract=snapshot.actual_contract,
+        dominant_mapping_date=snapshot.dominant_mapping_date,
+        segment_start_trading_day=snapshot.segment_start_trading_day,
+        source_mode=snapshot.source_mode,
+        live_observation=snapshot.live_observation,
+        live_reason=snapshot.live_reason,
+        macd_policy_id=snapshot.macd_policy_id,
+        signal_macd_policy_id=snapshot.signal_macd_policy_id,
+        calibration_state=snapshot.calibration_state,
+        calibration_id=snapshot.calibration_id,
+        primary=_subing_factor_result(snapshot.primary),
+        companion=(
+            _subing_factor_result(snapshot.companion)
+            if snapshot.companion is not None
+            else None
+        ),
+        primary_signal=_subing_signal(snapshot.primary_signal),
+        resolved_signal=(
+            _subing_signal(snapshot.resolved_signal)
+            if snapshot.resolved_signal is not None
+            else None
+        ),
+    )
+
+
 @router.get("/research/radar", response_model=MarketRadarResponse)
 def market_radar(session: Session = Depends(get_db)) -> MarketRadarResponse:
     """返回完整 active universe 的只读 Radar；freshness 异常显式降级。"""
@@ -258,4 +325,59 @@ def _radar_item(item) -> MarketRadarItemOut:
         position20=metrics.position20,
         turnover=item.turnover,
         reason_codes=list(item.reason_codes),
+    )
+
+
+def _subing_factor_result(result: SubingFactorResult) -> SubingFactorResultOut:
+    snapshot = result.snapshot
+    return SubingFactorResultOut(
+        status=result.status.value,
+        snapshot=(
+            SubingFactorSnapshotOut(
+                timeframe=snapshot.timeframe.value,
+                bar_end=snapshot.bar_end,
+                trading_day=snapshot.trading_day,
+                contract=snapshot.contract,
+                segment_start_trading_day=snapshot.segment_start_trading_day,
+                bar_source=snapshot.bar_source,
+                close=snapshot.close,
+                ema21=snapshot.ema21,
+                price_side=snapshot.price_side.value,
+                slope_5_raw=snapshot.slope_5_raw,
+                slope_10_raw=snapshot.slope_10_raw,
+                slope_5_bps_per_bar=snapshot.slope_5_bps_per_bar,
+                slope_10_bps_per_bar=snapshot.slope_10_bps_per_bar,
+                macd_dif=snapshot.macd_dif,
+                macd_dea=snapshot.macd_dea,
+                macd_histogram=snapshot.macd_histogram,
+                macd_cross=snapshot.macd_cross.value,
+                macd_cross_level=snapshot.macd_cross_level,
+                macd_zero_distance_abs=snapshot.macd_zero_distance_abs,
+                macd_zero_distance_bps=snapshot.macd_zero_distance_bps,
+                volume=snapshot.volume,
+                previous_volume=snapshot.previous_volume,
+                volume_ratio_prev=snapshot.volume_ratio_prev,
+            )
+            if snapshot is not None
+            else None
+        ),
+    )
+
+
+def _subing_signal(signal: SubingSignalEvaluation) -> SubingSignalOut:
+    return SubingSignalOut(
+        status=signal.status.value,
+        direction=signal.direction.value,
+        trigger_timeframe=(
+            signal.trigger_timeframe.value
+            if signal.trigger_timeframe is not None
+            else None
+        ),
+        lower_tf_confirmation=signal.lower_tf_confirmation,
+        resolution=signal.resolution.value if signal.resolution is not None else None,
+        conditions=[
+            SubingConditionOut(code=condition.code, state=condition.state.value)
+            for condition in signal.conditions
+        ],
+        error_code=signal.error_code,
     )

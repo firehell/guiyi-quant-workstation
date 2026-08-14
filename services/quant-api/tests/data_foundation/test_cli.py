@@ -250,13 +250,13 @@ def test_cli_internal_error_does_not_expose_sqlalchemy_documentation_code() -> N
     assert payload["error"] == {"code": "CLI_INTERNAL_ERROR", "type": "RuntimeError"}
 
 
-def test_runtime_parser_exposes_status_and_live_only() -> None:
+def test_runtime_parser_exposes_active_runtime_commands() -> None:
     parser = build_parser()
     runtime_action = next(action for action in parser._actions if action.dest == "domain")
     runtime_parser = runtime_action.choices["runtime"]
     command_action = next(action for action in runtime_parser._actions if action.dest == "runtime_command")
 
-    assert set(command_action.choices) == {"status", "live"}
+    assert set(command_action.choices) == {"status", "live", "alert", "alert-canary"}
 
 
 def test_runtime_live_runs_only_the_injected_foreground_service() -> None:

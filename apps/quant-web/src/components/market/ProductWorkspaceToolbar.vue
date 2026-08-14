@@ -3,15 +3,13 @@ import { computed } from 'vue'
 import {
   NButton,
   NButtonGroup,
-  NCheckbox,
-  NCheckboxGroup,
   NInput,
   NPopover,
   NSelect,
+  NTag,
 } from 'naive-ui'
-import type { DominantContractItem, MainIndicatorId, MarketFrequency, SeriesKind } from '@/types/market'
+import type { DominantContractItem, MarketFrequency, ResearchOverlayId, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
-import { MAIN_INDICATOR_DEFINITIONS } from '@/utils/mainIndicators'
 
 const props = defineProps<{
   symbol: string
@@ -19,7 +17,7 @@ const props = defineProps<{
   frequency: MarketFrequency
   contract: string
   dominants: DominantContractItem[]
-  visibleMainIndicators: MainIndicatorId[]
+  selectedOverlay: ResearchOverlayId
   fullscreen: boolean
 }>()
 
@@ -28,7 +26,7 @@ const emit = defineEmits<{
   'update:series-kind': [value: SeriesKind]
   'update:frequency': [value: MarketFrequency]
   'update:contract': [value: string]
-  'update:visible-main-indicators': [value: MainIndicatorId[]]
+  'update:selected-overlay': [value: ResearchOverlayId]
   'open-research': []
   'toggle-fullscreen': []
   back: []
@@ -38,18 +36,17 @@ const symbolOptions = computed(() => props.dominants.map((item) => ({
   label: `${item.product.toUpperCase()} ${item.product_name}`,
   value: item.product,
 })))
-const indicatorOptions = MAIN_INDICATOR_DEFINITIONS
-  .filter((item) => item.available)
-  .map((item) => ({ label: item.displayName, value: item.id, capability: item.capability }))
+const currentDominant = computed(() => props.dominants.find((item) => item.product === props.symbol)?.actual_contract)
+const overlayOptions: Array<{ label: string; value: ResearchOverlayId }> = [
+  { label: '无', value: 'none' },
+  { label: '苏冰', value: 'subing' },
+  { label: '火天大有', value: 'htdy' },
+]
 
 function periodLabel(value: MarketFrequency) {
   return value === '1d' ? 'D' : value === '1w' ? 'W' : value
 }
 
-function updateIndicators(value: Array<string | number>) {
-  const ids = value.filter((item): item is MainIndicatorId => indicatorOptions.some((option) => option.value === item))
-  emit('update:visible-main-indicators', ids)
-}
 </script>
 
 <template>
@@ -64,7 +61,7 @@ function updateIndicators(value: Array<string | number>) {
       aria-label="品种"
       @update:value="emit('update:symbol', $event)"
     />
-    <NButtonGroup size="small" class="toolbar__series">
+    <NButtonGroup v-if="selectedOverlay !== 'subing'" size="small" class="toolbar__series">
       <NButton
         :type="seriesKind === 'actual_dominant' ? 'primary' : 'default'"
         @click="emit('update:series-kind', 'actual_dominant')"
@@ -74,6 +71,9 @@ function updateIndicators(value: Array<string | number>) {
         @click="emit('update:series-kind', 'continuous')"
       >主连</NButton>
     </NButtonGroup>
+    <NTag v-else size="small" type="info" class="toolbar__dominant">
+      当前主力 {{ currentDominant || '等待映射' }}
+    </NTag>
     <NButtonGroup size="small" class="toolbar__periods" aria-label="周期">
       <NButton
         v-for="item in MARKET_FREQUENCIES"
@@ -82,20 +82,15 @@ function updateIndicators(value: Array<string | number>) {
         @click="emit('update:frequency', item)"
       >{{ periodLabel(item) }}</NButton>
     </NButtonGroup>
-    <NPopover trigger="click" placement="bottom-start">
-      <template #trigger><NButton size="small" secondary>指标</NButton></template>
-      <NCheckboxGroup
-        :value="visibleMainIndicators"
-        class="toolbar__indicator-menu"
-        @update:value="updateIndicators"
-      >
-        <NCheckbox v-for="item in indicatorOptions" :key="item.value" :value="item.value">
-          {{ item.label }}
-          <small v-if="item.capability === 'observation_overlay'">仅观察 · 重绘风险</small>
-        </NCheckbox>
-      </NCheckboxGroup>
-    </NPopover>
-    <NPopover trigger="click" placement="bottom-end">
+    <NButtonGroup size="small" class="toolbar__overlay" aria-label="Overlay">
+      <NButton
+        v-for="item in overlayOptions"
+        :key="item.value"
+        :type="selectedOverlay === item.value ? 'primary' : 'default'"
+        @click="emit('update:selected-overlay', item.value)"
+      >{{ item.label }}</NButton>
+    </NButtonGroup>
+    <NPopover v-if="selectedOverlay !== 'subing'" trigger="click" placement="bottom-end">
       <template #trigger><NButton size="small" tertiary>高级</NButton></template>
       <div class="toolbar__advanced">
         <span>指定真实合约</span>
@@ -121,10 +116,8 @@ function updateIndicators(value: Array<string | number>) {
 <style scoped>
 .product-workspace-toolbar { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .toolbar__symbol { width: 184px; }
-.toolbar__series, .toolbar__periods { white-space: nowrap; }
+.toolbar__series, .toolbar__periods, .toolbar__overlay, .toolbar__dominant { white-space: nowrap; }
 .toolbar__spacer { flex: 1 1 8px; }
-.toolbar__indicator-menu { display: grid; gap: 8px; padding: 4px; min-width: 172px; }
-.toolbar__indicator-menu small { display: block; margin-top: 2px; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .toolbar__advanced { display: grid; gap: 8px; width: 196px; padding: 4px; }
 .toolbar__advanced > span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 

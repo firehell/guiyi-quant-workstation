@@ -127,12 +127,13 @@ _REGISTRY: dict[str, IndicatorDefinition] = {
         repainting_risk="known",
         repainting_notes=(
             "Original production XMA uses symmetric clipped windows and can repaint. "
-            "XMA(6) external oracle remains unresolved. Forbidden for backtest, live evaluator, signal_events, and notifications."
+            "Allowed for Web observation and current-bar Alert observation. "
+            "Forbidden for historical backtest, formal strategy/live-trading evaluation, and auto-order."
         ),
         web_capable=True,
         backtest_capable=False,
         live_capable=False,
-        alert_capable=False,
+        alert_capable=True,
         default_visible=False,
         default_color="#fb923c",
         output_schema="channel",

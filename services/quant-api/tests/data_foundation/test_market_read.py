@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.market_data.domain import CanonicalBar, MarketSeriesPageResult, SeriesPageQuery
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
-from app.market_data.market_read_service import MarketReadService
+from app.market_data.market_read_service import MarketReadService, MarketReadWindowError
 
 
 def _bar(minute: int) -> CanonicalBar:
@@ -21,6 +21,20 @@ def _bar(minute: int) -> CanonicalBar:
         high=Decimal("101"),
         low=Decimal("99"),
         close=Decimal("100"),
+        volume=Decimal("10"),
+        turnover=Decimal("1000"),
+        open_interest=Decimal("20"),
+    )
+
+
+def _bar_at(bar_end: datetime, *, close: str = "100") -> CanonicalBar:
+    return CanonicalBar(
+        bar_end=bar_end,
+        trading_day=date(2025, 1, 2),
+        open=Decimal(close),
+        high=Decimal(close) + 1,
+        low=Decimal(close) - 1,
+        close=Decimal(close),
         volume=Decimal("10"),
         turnover=Decimal("1000"),
         open_interest=Decimal("20"),
@@ -76,6 +90,64 @@ class FakeLiveStore:
     ) -> tuple[CanonicalBar, ...]:
         assert (trading_day, symbol, frequency) == (date(2025, 1, 2), "j", "1m")
         return tuple(bar for bar in self.bars if after is None or bar.bar_end > after)
+
+
+class WindowMarketDataService:
+    def __init__(self, bars: tuple[CanonicalBar, ...]) -> None:
+        self.bars = bars
+
+    def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        eligible = tuple(
+            bar for bar in self.bars if request.before is None or bar.bar_end < request.before
+        )[-request.limit :]
+        return MarketSeriesPageResult(
+            request_identity={"symbol": request.symbol},
+            bars=eligible,
+            canonical_coverage=None,
+            has_more_before=False,
+            next_before=None,
+            resolved_contract_segments=(),
+        )
+
+
+class WindowLiveStore(FakeLiveStore):
+    def __init__(
+        self,
+        bars: tuple[CanonicalBar, ...],
+        *,
+        subscription: object = "J2505",
+    ) -> None:
+        super().__init__(bars)
+        self.snapshot = {"j": subscription}
+
+    def bars_after(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        after: datetime | None,
+    ) -> tuple[CanonicalBar, ...]:
+        assert (trading_day, symbol, frequency) == (date(2025, 1, 2), "j", "15m")
+        return tuple(bar for bar in self.bars if after is None or bar.bar_end > after)
+
+
+class ForbiddenPhaseResolver:
+    def resolve(self, symbol: str, now: datetime) -> ProductMarketPhase:
+        raise AssertionError("bars_until must not depend on current market phase")
+
+
+def _window_service(
+    canonical: tuple[CanonicalBar, ...],
+    live: tuple[CanonicalBar, ...],
+    *,
+    subscription: object = "J2505",
+) -> MarketReadService:
+    return MarketReadService(
+        market_data=WindowMarketDataService(canonical),
+        phase_resolver=ForbiddenPhaseResolver(),
+        operational_products=("j",),
+        live_store=WindowLiveStore(live, subscription=subscription),
+    )
 
 
 def _service(
@@ -243,3 +315,59 @@ def test_state_exposes_only_whitelisted_after_market_status_fields(tmp_path) -> 
         },
     }
     assert "must-not-leak" not in json.dumps(dict(state.after_market))
+
+
+def test_bars_until_hard_cutoff_dedup_limit_and_event_day_contract() -> None:
+    """Catches future Live bars, seam duplicates, or phase-gated contract lookup leaking into Alert."""
+    start = datetime(2025, 1, 1, 16, 0, tzinfo=UTC)
+    canonical = tuple(_bar_at(start + timedelta(minutes=15 * index)) for index in range(40))
+    cutoff = canonical[-2].bar_end
+    live = (
+        _bar_at(canonical[-3].bar_end, close="101"),
+        _bar_at(cutoff, close="102"),
+        _bar_at(cutoff + timedelta(minutes=15), close="103"),
+    )
+
+    window = _window_service(canonical, live).bars_until(
+        SeriesPageQuery("actual_dominant", "j", "15m"),
+        trading_day=date(2025, 1, 2),
+        end=cutoff,
+        limit=32,
+    )
+
+    assert window.contract == "J2505"
+    assert window.cutoff == cutoff
+    assert len(window.bars) == 32
+    assert window.bars[-1].bar_end == cutoff
+    assert len({bar.bar_end for bar in window.bars}) == 32
+    assert all(bar.bar_end <= cutoff for bar in window.bars)
+
+
+@pytest.mark.parametrize("subscription", (None, "", "AG2505", "J-INVALID"))
+def test_bars_until_rejects_missing_invalid_or_cross_symbol_contract(subscription: object) -> None:
+    cutoff = datetime(2025, 1, 2, 2, 45, tzinfo=UTC)
+
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CONTRACT_UNAVAILABLE"):
+        _window_service((_bar_at(cutoff),), (), subscription=subscription).bars_until(
+            SeriesPageQuery("actual_dominant", "j", "15m"),
+            trading_day=date(2025, 1, 2),
+            end=cutoff,
+        )
+
+
+def test_bars_until_requires_exact_event_bar_and_alert_identity() -> None:
+    cutoff = datetime(2025, 1, 2, 2, 45, tzinfo=UTC)
+    service = _window_service((_bar_at(cutoff - timedelta(minutes=15)),), ())
+
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CUTOFF_BAR_MISSING"):
+        service.bars_until(
+            SeriesPageQuery("actual_dominant", "j", "15m"),
+            trading_day=date(2025, 1, 2),
+            end=cutoff,
+        )
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_IDENTITY_UNSUPPORTED"):
+        service.bars_until(
+            SeriesPageQuery("continuous", "j", "15m"),
+            trading_day=date(2025, 1, 2),
+            end=cutoff,
+        )

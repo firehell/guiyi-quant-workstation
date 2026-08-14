@@ -24,6 +24,7 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.alerts.wecom import is_valid_wecom_webhook_url
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -36,6 +37,7 @@ RUNTIME_STATUS_DISABLED = "disabled"
 RUNTIME_STATUS_PENDING = "pending"
 DEFAULT_AFTER_MARKET_STATUS_PATH = PROJECT_ROOT / ".run" / "after-market-status.json"
 MARKET_RUNTIME_ACTIVATION_MARKER_NAME = "market-runtime-enabled"
+ALERT_RUNTIME_ACTIVATION_MARKER_NAME = "alert-runtime-enabled"
 
 
 def build_runtime_health(
@@ -46,6 +48,9 @@ def build_runtime_health(
     live_runtime_enabled: bool | None = None,
     live_freshness_seconds: int | None = None,
     after_market_automation_enabled: bool | None = None,
+    alert_runtime_enabled: bool | None = None,
+    wecom_configured: bool | None = None,
+    alert_freshness_seconds: int = 30,
     after_market_status_path: Path | None = DEFAULT_AFTER_MARKET_STATUS_PATH,
 ) -> dict[str, Any]:
     """构建 Runtime 健康快照字典（供 HTTP 与 CLI 共用）。
@@ -63,6 +68,25 @@ def build_runtime_health(
         if after_market_automation_enabled is None
         else after_market_automation_enabled
     )
+    alert_enabled = (
+        _alert_runtime_activation_enabled()
+        if alert_runtime_enabled is None
+        else alert_runtime_enabled
+    )
+    if wecom_configured is None:
+        webhook_value = os.getenv("WECOM_WEBHOOK_URL", "")
+        webhook_present = bool(webhook_value.strip())
+        webhook_configured = is_valid_wecom_webhook_url(webhook_value)
+        webhook_error_type = (
+            None
+            if webhook_configured
+            else "wecom_webhook_invalid"
+            if webhook_present
+            else "wecom_webhook_missing"
+        )
+    else:
+        webhook_configured = wecom_configured
+        webhook_error_type = None if webhook_configured else "wecom_webhook_missing"
     components: dict[str, Any] = {}
     components["db"] = _collect_db_health(session)
     redis_connection, redis_health = _collect_redis_health(redis_factory or get_redis_connection)
@@ -77,6 +101,14 @@ def build_runtime_health(
     components["after_market"] = _collect_after_market_health(
         after_market_status_path,
         configured_enabled=after_market_enabled,
+    )
+    components["alert"] = _collect_alert_health(
+        redis_connection,
+        now=current_time,
+        configured_enabled=alert_enabled,
+        webhook_configured=webhook_configured,
+        webhook_error_type=webhook_error_type,
+        freshness_seconds=alert_freshness_seconds,
     )
 
     return {
@@ -97,6 +129,93 @@ def _market_runtime_activation_enabled() -> bool:
         return marker_path.read_text(encoding="utf-8") == "enabled\n"
     except (OSError, UnicodeDecodeError):
         return False
+
+
+def _alert_runtime_activation_enabled() -> bool:
+    """Alert activation 与 Market marker 严格分离，读取异常时保持关闭。"""
+    marker_path = PROJECT_ROOT / ".run" / ALERT_RUNTIME_ACTIVATION_MARKER_NAME
+    try:
+        return marker_path.read_text(encoding="utf-8") == "enabled\n"
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def _collect_alert_health(
+    connection: Redis | None,
+    *,
+    now: datetime,
+    configured_enabled: bool,
+    webhook_configured: bool,
+    webhook_error_type: str | None,
+    freshness_seconds: int,
+) -> dict[str, Any]:
+    empty = {
+        "configured_enabled": configured_enabled,
+        "webhook_configured": webhook_configured,
+        "last_heartbeat_at": None,
+        "enabled_rule_count": 0,
+        "scope_product_count": 0,
+        "error_type": None,
+    }
+    if not configured_enabled:
+        return {"status": RUNTIME_STATUS_DISABLED, **empty}
+    if not webhook_configured:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **empty,
+            "error_type": webhook_error_type or "wecom_webhook_missing",
+        }
+    if connection is None:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **empty,
+            "error_type": "redis_unavailable",
+        }
+    try:
+        heartbeat = _json_mapping(connection.get("alert:heartbeat"))
+    except Exception:  # noqa: BLE001 - public health stays sanitized
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **empty,
+            "error_type": "alert_heartbeat_invalid",
+        }
+    if heartbeat is None:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **empty,
+            "error_type": "alert_heartbeat_missing",
+        }
+    try:
+        heartbeat_at = _required_timestamp(heartbeat.get("generated_at"))
+        enabled_rule_count = _nonnegative_int(heartbeat.get("enabled_rule_count"))
+        scope_product_count = _nonnegative_int(heartbeat.get("scope_product_count"))
+        available = heartbeat.get("available") is True
+    except ValueError:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **empty,
+            "error_type": "alert_heartbeat_invalid",
+        }
+    payload = {
+        **empty,
+        "last_heartbeat_at": _iso(heartbeat_at),
+        "enabled_rule_count": enabled_rule_count,
+        "scope_product_count": scope_product_count,
+    }
+    stale = heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
+    if stale:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **payload,
+            "error_type": "alert_heartbeat_stale",
+        }
+    if not available:
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **payload,
+            "error_type": "alert_unavailable",
+        }
+    return {"status": RUNTIME_STATUS_OK, **payload}
 
 
 def _collect_live_market_health(

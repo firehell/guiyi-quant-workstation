@@ -5,22 +5,29 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TEMPLATE_DIR="$PROJECT_ROOT/deploy/launchd"
 RENDER_DIR="$PROJECT_ROOT/.run/launchd"
 MARKET_RUNTIME_MARKER="$PROJECT_ROOT/.run/market-runtime-enabled"
+ALERT_RUNTIME_MARKER="$PROJECT_ROOT/.run/alert-runtime-enabled"
 AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
+RUNTIME_COMMIT="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null)"
+if [[ ! "$RUNTIME_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  printf '[install-local-services] invalid runtime commit identity\n' >&2
+  exit 1
+fi
 base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
 market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
+alert_runtime_labels=(com.guiyi.quant-alert)
 retired_labels=(
   com.guiyi.quant-web-recovery
   com.guiyi.quant-worker-signals
   com.guiyi.quant-worker-signals-recovery
   com.guiyi.quant-api-recovery-single
 )
-render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}")
+render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}")
 load_labels=("${base_labels[@]}")
 
-[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime]\n' "$0" >&2; exit 2; }
+[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime]\n' "$0" >&2; exit 2; }
 mkdir -p "$RENDER_DIR"
 
 for label in "${render_labels[@]}"; do
@@ -28,6 +35,7 @@ for label in "${render_labels[@]}"; do
   output="$RENDER_DIR/${label}.plist"
   sed \
     -e "s|__PROJECT_ROOT__|$PROJECT_ROOT|g" \
+    -e "s|__RUNTIME_COMMIT__|$RUNTIME_COMMIT|g" \
     -e "s|__RUNTIME_DIR__|$RUNTIME_DIR|g" \
     -e "s|__LOG_DIR__|$LOG_DIR|g" \
     -e "s|__HOME__|$HOME|g" \
@@ -40,6 +48,8 @@ printf '[install-local-services] rendered=%s\n' "$RENDER_DIR"
 
 if [[ "$MODE" == "--confirm-market-runtime" ]]; then
   load_labels=("${market_runtime_labels[@]}")
+elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
+  load_labels=("${alert_runtime_labels[@]}")
 fi
 
 if [[ "$PROJECT_ROOT" == /Volumes/* && "${GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD:-0}" != "1" ]]; then
@@ -111,9 +121,22 @@ write_market_runtime_activation_marker() {
   mv -f "$temporary_marker" "$MARKET_RUNTIME_MARKER"
 }
 
-for label in "${retired_labels[@]}"; do
-  retire_launch_agent "$label"
-done
+write_alert_runtime_activation_marker() {
+  local temporary_marker
+  temporary_marker="$(mktemp "${ALERT_RUNTIME_MARKER}.tmp.XXXXXX")"
+  if ! printf 'enabled\n' >"$temporary_marker"; then
+    rm -f "$temporary_marker"
+    return 1
+  fi
+  chmod 600 "$temporary_marker"
+  mv -f "$temporary_marker" "$ALERT_RUNTIME_MARKER"
+}
+
+if [[ "$MODE" != "--confirm-alert-runtime" ]]; then
+  for label in "${retired_labels[@]}"; do
+    retire_launch_agent "$label"
+  done
+fi
 
 for label in "${load_labels[@]}"; do
   source_plist="$RENDER_DIR/${label}.plist"
@@ -121,13 +144,15 @@ for label in "${load_labels[@]}"; do
   cp "$source_plist" "$target_plist"
   reload_launch_agent "$label" "$target_plist"
   launchctl enable "gui/$UID/$label"
-  if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" ]]; then
+  if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" ]]; then
     launchctl kickstart -k "gui/$UID/$label"
   fi
 done
 
 if [[ "$MODE" == "--confirm-market-runtime" ]]; then
   write_market_runtime_activation_marker
+elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
+  write_alert_runtime_activation_marker
 fi
 
 printf '[install-local-services] loaded=true mode=%s services=%s\n' "$MODE" "${#load_labels[@]}"

@@ -18,7 +18,12 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.catalog import MarketCatalog
-from app.market_data.live_market import RQDataLiveProvider, LiveMarketService, RedisClient, RedisLiveStore
+from app.market_data.live_market import (
+    RQDataLiveProvider,
+    LiveMarketService,
+    RedisClient,
+    RedisLiveStore,
+)
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_phase import MarketPhaseResolver
@@ -26,6 +31,9 @@ from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
+from app.market_data.subing_calibration import load_accepted_subing_calibration
+from app.market_data.subing_calibration_service import SubingCalibrationResearchService
+from app.market_data.subing_read_service import SubingReadService
 from app.market_data.operational_universe import load_active_products
 from app.market_data.product_taxonomy import load_product_taxonomy
 from app.market_data.storage import CanonicalMonthlyStore
@@ -34,6 +42,9 @@ from app.redis_connections import get_redis_connection
 
 _PRODUCT_STARTS = PROJECT_ROOT / "data/universe/product_window_starts.csv"
 _HISTORY_FLOOR = PROJECT_ROOT / "data/universe/active_history_floor.txt"
+_SUBING_CALIBRATION = (
+    PROJECT_ROOT / "data/research_policies/subing_calibration_intraday_v1.json"
+)
 
 
 def canonical_root() -> Path:
@@ -119,6 +130,26 @@ def build_market_read_service(session: Session) -> MarketReadService:
         phase_resolver=MarketPhaseResolver(session),
         operational_products=load_operational_products(),
         live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+    )
+
+
+def build_subing_read_service(session: Session) -> SubingReadService:
+    """构造注入 tracked slope-only Calibration 的 SuBing 只读模型。"""
+    calibration = load_accepted_subing_calibration(_SUBING_CALIBRATION)
+    return SubingReadService(
+        market_data=build_market_data_service(session),
+        market_read=build_market_read_service(session),
+        calibration=calibration,
+    )
+
+
+def build_subing_calibration_research_service(
+    session: Session,
+) -> SubingCalibrationResearchService:
+    """Construct historical-only SuBing Calibration over MarketDataService."""
+    return SubingCalibrationResearchService(
+        market_data=build_market_data_service(session),
+        products=load_active_products(),
     )
 
 

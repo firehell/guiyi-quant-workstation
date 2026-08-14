@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { NButton, NDivider, NTag } from 'naive-ui'
-import type { DominantContractItem, MarketFrequency, ProductResearchResponse, SeriesKind } from '@/types/market'
+import ProductAlertControl from '@/components/market/ProductAlertControl.vue'
+import SubingResearchSection from '@/components/market/SubingResearchSection.vue'
+import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
+import type {
+  DominantContractItem,
+  MarketFrequency,
+  ProductResearchResponse,
+  ResearchOverlayId,
+  SeriesKind,
+  SubingResearchResponse,
+} from '@/types/market'
 
 const props = defineProps<{
   dominant: DominantContractItem | undefined
@@ -15,10 +25,20 @@ const props = defineProps<{
   research: ProductResearchResponse | null
   researchLoading: boolean
   researchError: boolean
+  selectedOverlay: ResearchOverlayId
+  subing: SubingResearchResponse | null
+  subingLoading: boolean
+  subingError: boolean
+  subingSupported: boolean
+  alertRule: ProductAlertRuleState | null
+  alertRuntimeStatus: AlertRuntimeStatus | null
+  alertLoading: boolean
+  alertSaving: boolean
 }>()
 
 const emit = defineEmits<{
   'toggle-watchlist': []
+  'toggle-alert': [enabled: boolean]
 }>()
 
 const seriesLabel = computed(() => {
@@ -51,6 +71,15 @@ function ratio(value: number | null) {
         {{ watchlisted ? '已自选' : '加入自选' }}
       </NButton>
     </div>
+    <template v-if="selectedOverlay === 'subing'">
+      <NDivider />
+      <SubingResearchSection
+        :snapshot="subing"
+        :loading="subingLoading"
+        :error="subingError"
+        :supported="subingSupported"
+      />
+    </template>
     <template v-if="research">
       <NDivider />
       <section class="research-sidebar__section">
@@ -75,6 +104,14 @@ function ratio(value: number | null) {
     </template>
     <p v-else-if="researchLoading" class="research-sidebar__unavailable">读取研究数据…</p>
     <p v-else-if="researchError" class="research-sidebar__unavailable">研究数据暂不可用</p>
+    <NDivider />
+    <ProductAlertControl
+      :rule="alertRule"
+      :runtime-status="alertRuntimeStatus"
+      :loading="alertLoading"
+      :saving="alertSaving"
+      @toggle="emit('toggle-alert', $event)"
+    />
     <NDivider />
     <section class="research-sidebar__section">
       <h3>合约 / Runtime 上下文</h3>

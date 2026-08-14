@@ -189,7 +189,7 @@ def _metadata() -> dict[str, Any]:
         "status": "observation_only",
         "backtest_capable": False,
         "live_capable": False,
-        "alert_capable": False,
+        "alert_capable": True,
         "auto_order": False,
         "future_looking": True,
         "repainting_accepted": True,

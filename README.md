@@ -1,7 +1,7 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。当前正式版本为 `v1.1.0`；可执行面是 Market Web、Canonical 历史行情、
-Market API、data CLI 和 Runtime 只读状态。项目不实现自动交易或自动下单。
+本地、单用户的国内期货量化研究工作站。当前正式版本为 `v1.2.0`；可执行面是 Market Web、Canonical 历史行情、
+Market API、data CLI、Runtime 只读状态、Alert V1 与苏冰只读研究观察。项目不实现自动交易或自动下单。
 
 ## 快速导航
 
@@ -52,7 +52,8 @@ active universe 固定 60 品种，正式周期只有 `1m/5m/15m/30m/60m/1d/1w`�
 ## Runtime 恢复验收
 
 1. 先读 `STATUS.md`，再运行 `./scripts/ops/macos/local-services-status.sh`；不要用聊天记录推断当前 Runtime。
-2. 核对 Runtime checkout 为 clean/detached 精确提交、四个 launchd 根一致、active/operational 均为 60。
+2. 核对 Runtime checkout 为 clean/detached 精确提交、五个应用 launchd 根与 loaded commit 一致、
+   active/operational 均为 60，Alert Scope 未从 Market Runtime 范围自动扩大。
 3. 核对 `/api/health`、`/api/runtime/health` 与真实 Market 业务字段；健康接口 200 不替代业务读回。
 4. 盘后失败只读检查 launchd run count 与 `.run/after-market-status.json`，不得手工触发冒充自然成功。
 5. 任何重载、Runtime switch、真实数据/DB 写入或 release/tag 均重新取得单次明确意图。
@@ -72,9 +73,18 @@ uv run --project services/quant-api guiyi data refresh \
 uv run --project services/quant-api guiyi data audit --universe active
 
 uv run --project services/quant-api guiyi runtime status
+
+# SuBing Calibration 只读研究入口；实际运行需显式 phase/mode/frequency/window
+uv run --project services/quant-api guiyi research subing-calibration --help
 ```
 
 `update/refresh` 只有显式 `--apply` 才进入写入路径；参数本身不授权正式数据或生产环境 mutation。
+
+`guiyi research subing-calibration` 的 Historical 输入只通过 `MarketDataService`，结果只以 JSON
+写入 stdout。它不直接读取 provider，不写 PostgreSQL、Canonical Parquet 或 Redis，也不自动选择、批准
+或晋升参数。Discovery/Validation 的临时 stdout 不是正式 artifact；当前唯一 accepted intraday
+Calibration 是 Git-tracked 的 slope-only 文件
+`data/research_policies/subing_calibration_intraday_v1.json`。
 
 ## 安全边界
 

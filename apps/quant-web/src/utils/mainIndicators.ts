@@ -1,9 +1,15 @@
-import type { MainIndicatorDefinition, MainIndicatorId, MainIndicatorSeries, MainIndicatorValue } from '@/types/market'
+import type {
+  MainIndicatorDefinition,
+  MainIndicatorId,
+  ResearchOverlayId,
+  SeriesKind,
+} from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
+export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v2'
 /** 主图指标偏好 schema 版本 */
-export const MAIN_CHART_PREFERENCES_VERSION = 1
+export const MAIN_CHART_PREFERENCES_VERSION = 2
+const LEGACY_MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
 export const HTDY_REPAINT_SCAN_ZONE_BARS = 27
 export const HTDY_WEB_OBSERVATION_METADATA = {
   indicator_code: 'huotian_dayou_original_v0',
@@ -20,6 +26,13 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
 
 /** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
+  version: 2
+  selectedOverlay: ResearchOverlayId
+  period?: string | null
+  realtimeFollow?: boolean
+}
+
+interface LegacyMainChartPreferences {
   version: 1
   visibleMainIndicators: MainIndicatorId[]
   period?: string | null
@@ -81,14 +94,15 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     color: '#2dd4bf',
     parameters: {},
     lookbackBars: 0,
-    alertCapable: false,
+    alertCapable: true,
     available: true,
     repaintingRisk: 'known',
     riskMessages: [
       '未来引用 / 重绘风险',
       '公式语义尚未完全对齐',
       '仅供人工观察',
-      '不进入严格研究、回测、信号、提醒或交易',
+      '只允许当前已收线 Bar 的预警观察',
+      '不进入严格研究、回测、正式 live 或交易',
     ],
     unstableTailBars: HTDY_REPAINT_SCAN_ZONE_BARS,
   },
@@ -98,9 +112,6 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
 export const DEFAULT_VISIBLE_MAIN_INDICATORS = MAIN_INDICATOR_DEFINITIONS
   .filter((definition) => definition.available && definition.defaultVisible)
   .map((definition) => definition.id)
-
-/** 趋势 EMA 指标 id 列表 */
-export const TREND_EMA_INDICATORS: MainIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
 
 const definitionsById = new Map(MAIN_INDICATOR_DEFINITIONS.map((definition) => [definition.id, definition]))
 
@@ -119,34 +130,6 @@ export function mainIndicatorDefinition(id: MainIndicatorId) {
 }
 
 /**
- * 将指标 id 转为后端 indicator_code（name 字段）。
- */
-export function indicatorCodeForId(id: MainIndicatorId) {
-  return mainIndicatorDefinition(id)?.name || null
-}
-
-/**
- * 将后端 indicator_code 反查为主图指标 id。
- */
-export function mainIndicatorIdForCode(code: string): MainIndicatorId | null {
-  const definition = MAIN_INDICATOR_DEFINITIONS.find((item) => item.name === code)
-  return definition?.id || null
-}
-
-/**
- * 从可见 id 列表提取需请求的后端指标 code（仅 standard_overlay 且 available）。
- */
-export function activeIndicatorCodes(visibleIds: MainIndicatorId[]) {
-  return visibleIds
-    .map((id) => mainIndicatorDefinition(id))
-    .filter(
-      (definition): definition is MainIndicatorDefinition =>
-        Boolean(definition?.available && definition.capability === 'standard_overlay'),
-    )
-    .map((definition) => definition.name)
-}
-
-/**
  * 规范化可见主图指标 id：去重并过滤非法 id。
  */
 export function normalizeVisibleMainIndicators(value: unknown): MainIndicatorId[] {
@@ -161,6 +144,27 @@ export function normalizeVisibleMainIndicators(value: unknown): MainIndicatorId[
   return result
 }
 
+export function visibleMainIndicatorsForOverlay(overlay: ResearchOverlayId): MainIndicatorId[] {
+  if (overlay === 'subing') return ['ema_21']
+  if (overlay === 'htdy') return ['htdy']
+  return []
+}
+
+export function resolveEffectiveSeriesIdentity(input: {
+  overlay: ResearchOverlayId
+  userSeriesKind: SeriesKind
+  userContract?: string
+  dominantContract?: string
+}): { seriesKind: SeriesKind; contract?: string } {
+  if (input.overlay === 'subing') {
+    return { seriesKind: 'contract', contract: input.dominantContract }
+  }
+  return {
+    seriesKind: input.userSeriesKind,
+    contract: input.userSeriesKind === 'contract' ? input.userContract : undefined,
+  }
+}
+
 /**
  * 从 localStorage 加载主图偏好；版本不匹配或解析失败时返回默认值。
  */
@@ -168,14 +172,27 @@ export function loadMainChartPreferences(storage: Pick<Storage, 'getItem'> | nul
   if (!storage) return defaultMainChartPreferences()
   try {
     const raw = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
-    if (!raw) return defaultMainChartPreferences()
-    const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
-    if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
+      if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
+      return {
+        version: 2,
+        selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
+        period: typeof parsed.period === 'string' ? parsed.period : null,
+        realtimeFollow: Boolean(parsed.realtimeFollow),
+      }
+    }
+    const legacyRaw = storage.getItem(LEGACY_MAIN_CHART_PREFERENCES_KEY)
+    if (!legacyRaw) return defaultMainChartPreferences()
+    const legacy = JSON.parse(legacyRaw) as Partial<LegacyMainChartPreferences> | null
+    if (!legacy || legacy.version !== 1 || !Array.isArray(legacy.visibleMainIndicators)) {
+      return defaultMainChartPreferences()
+    }
     return {
-      version: 1,
-      visibleMainIndicators: normalizeVisibleMainIndicators(parsed.visibleMainIndicators),
-      period: typeof parsed.period === 'string' ? parsed.period : null,
-      realtimeFollow: Boolean(parsed.realtimeFollow),
+      version: 2,
+      selectedOverlay: normalizeVisibleMainIndicators(legacy.visibleMainIndicators).includes('htdy') ? 'htdy' : 'subing',
+      period: typeof legacy.period === 'string' ? legacy.period : null,
+      realtimeFollow: Boolean(legacy.realtimeFollow),
     }
   } catch {
     return defaultMainChartPreferences()
@@ -195,7 +212,7 @@ export function saveMainChartPreferences(
       MAIN_CHART_PREFERENCES_KEY,
       JSON.stringify({
         version: MAIN_CHART_PREFERENCES_VERSION,
-        visibleMainIndicators: normalizeVisibleMainIndicators(preferences.visibleMainIndicators),
+        selectedOverlay: normalizeResearchOverlay(preferences.selectedOverlay),
         period: preferences.period || null,
         realtimeFollow: Boolean(preferences.realtimeFollow),
       }),
@@ -210,59 +227,17 @@ export function saveMainChartPreferences(
  */
 export function defaultMainChartPreferences(): MainChartPreferences {
   return {
-    version: 1,
-    visibleMainIndicators: [...DEFAULT_VISIBLE_MAIN_INDICATORS],
+    version: 2,
+    selectedOverlay: 'subing',
     period: null,
     realtimeFollow: false,
   }
 }
 
-/**
- * 规范化后端返回的主图指标序列：映射 id、过滤非 overlay 指标、统一点字段。
- */
-export function normalizeMainIndicatorSeries(series: MainIndicatorSeries[]): MainIndicatorSeries[] {
-  const result: MainIndicatorSeries[] = []
-  series.forEach((item) => {
-    const id = isMainIndicatorId(item.id) ? item.id : mainIndicatorIdForCode(item.indicator_code)
-    const definition = id ? mainIndicatorDefinition(id) : null
-    if (!id || !definition?.available || definition.capability !== 'standard_overlay') return
-    result.push({
-      ...item,
-      id,
-      points: item.points.map((point) => ({
-        ...point,
-        ready: Boolean(point.ready),
-        valid: Boolean(point.valid),
-        value: typeof point.value === 'number' ? point.value : null,
-        reason: point.reason || null,
-      })),
-    })
-  })
-  return result
-}
-
-/**
- * 提取可见 overlay 指标的最新有效数值，用于图例/状态栏展示。
- */
-export function latestMainIndicatorValues(series: MainIndicatorSeries[], visibleIds: MainIndicatorId[]): MainIndicatorValue[] {
-  const result: MainIndicatorValue[] = []
-  visibleIds.forEach((id) => {
-    const definition = mainIndicatorDefinition(id)
-    if (!definition || !definition.available || definition.capability !== 'standard_overlay') return
-    const latest = series.find((item) => item.id === id)?.points.at(-1)
-    result.push({
-      id: definition.id,
-      displayName: definition.displayName,
-      color: definition.color,
-      value: latest?.ready && latest.valid ? latest.value : null,
-      ready: latest?.ready ?? false,
-      valid: latest?.valid ?? false,
-      reason: latest?.reason ?? (latest ? null : 'indicator_not_loaded'),
-    })
-  })
-  return result
-}
-
 function browserStorage() {
   return typeof window === 'undefined' ? null : window.localStorage
+}
+
+function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
+  return value === 'none' || value === 'htdy' ? value : 'subing'
 }

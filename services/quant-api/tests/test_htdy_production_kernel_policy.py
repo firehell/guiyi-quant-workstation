@@ -219,6 +219,7 @@ def test_production_metadata_and_source_hash_are_repeatable_and_bound_to_module_
     assert result.metadata["indicator_code"] == "huotian_dayou_original_v0"
     assert result.metadata["indicator_version"] == "original-v0"
     assert result.metadata["status"] == "observation_only"
+    assert result.metadata["alert_capable"] is True
     assert result.metadata["future_looking"] is True
     assert result.metadata["repainting_accepted"] is True
     assert result.metadata["historical_backtest_allowed"] is False
@@ -276,7 +277,7 @@ def test_registry_remains_observation_only_and_formal_policy_still_rejects_origi
     assert definition.calculation_source == "guiyi_quant.indicators.htdy_original.compute_htdy_original"
     assert definition.input_fields == ("open", "high", "low", "close", "volume")
     assert definition.status == "observation_only"
-    assert (definition.backtest_capable, definition.live_capable, definition.alert_capable) == (False, False, False)
+    assert (definition.backtest_capable, definition.live_capable, definition.alert_capable) == (False, False, True)
 
     with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
         require_formal_policy("huotian_dayou_original_v0", consumer=FORMAL_BACKTEST_CONSUMER)

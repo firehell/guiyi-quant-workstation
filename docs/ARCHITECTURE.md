@@ -1,11 +1,12 @@
 # 归一量化系统架构
 
-更新时间：2026-08-12
+更新时间：2026-08-14
 
 ## 系统定位
 
 归一量化是本地优先、单用户的国内期货研究工作站。当前目标应用面为 Market Web、Market API、
-数据 CLI 与 Canonical 历史读取。Market Runtime V1 的代码与 launchd 模板默认关闭；本地工作站已按明确请求启用 active 60 的有界 Runtime。不实现自动交易，`auto_order=false` 始终成立。
+数据 CLI、Canonical 历史读取与独立 Alert Application Domain。Market Runtime V1 与 Alert Runtime V1
+的代码/launchd 边界和授权相互独立；Alert 模板默认关闭。不实现自动交易，`auto_order=false` 始终成立。
 
 ## 分层设计
 
@@ -15,6 +16,8 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
+      RCLI["guiyi research subing-calibration"]
+      ALERTAPI["Alert API"]
     end
     subgraph Application["应用层：三个深模块"]
       MS["MetadataSynchronizer"]
@@ -23,8 +26,17 @@ flowchart TB
     end
     subgraph Runtime["展示与运行时 seam"]
       MR["MarketReadService"]
+      MRS["MarketResearchService"]
+      SR["SubingReadService"]
+      SCR["SubingCalibrationResearchService"]
       LM["LiveMarketService"]
       AM["AfterMarketUpdater"]
+      AR["AlertRuntime"]
+    end
+    subgraph AlertApp["Alert Application Domain"]
+      AS["AlertService / Scope / Event"]
+      AE["HTDY original 15m Evaluator"]
+      WC["WeCom one-shot sender"]
     end
     subgraph Domain["领域层"]
       DK["DatasetKey / SeriesQuery / CanonicalBar"]
@@ -34,15 +46,29 @@ flowchart TB
     subgraph Infra["基础设施层"]
       RQ["RQData adapter"]
       PG["PostgreSQL catalog"]
+      APG["PostgreSQL alert application tables"]
       PQ["Parquet / PyArrow reader-writer"]
       RD["Redis Live Overlay"]
     end
     WEB --> API --> MR
+    API --> MRS
+    API --> SR
+    RCLI --> SCR --> MQ
+    WEB --> ALERTAPI --> AS
     MR --> MQ
     MR --> RD
+    MRS --> MQ
+    SR --> MQ
+    SR --> MR
     CLI --> MS
     CLI --> HM
     LM --> RD
+    RD --> AR
+    AR --> MR
+    AR --> AE
+    AR --> AS
+    AS --> APG
+    AS --> WC
     AM --> HM
     MS --> MM
     HM --> DK
@@ -62,12 +88,22 @@ flowchart TB
 - 接入层只解析请求和输出结果；不实现下载、聚合、文件选择或主力判断。
 - `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务；
   `MarketReadService` 只在展示边界合并 Canonical 与 Redis Live，不创建第二条历史读链。
+- `MarketResearchService` 仅组合 `MarketDataService` 的 Historical Canonical 结果，不读 Redis Live。
+  `SubingCalibrationResearchService` 只通过 `MarketDataService` 读取 segment-local Historical，结果由
+  CLI 以 stdout JSON 返回；不直连 provider，不写 DB/Canonical/Redis，也不自动晋升参数。
+  薄 `SubingReadService` 复用 `MarketDataService` 的 current rank1 segment 身份和
+  `MarketReadService` 的 Historical/completed Live seam；composition 只注入 Git-tracked slope-only
+  Calibration，并对冻结 ID/timeframes/两个 exact Decimal 做整体身份校验，同 ID 内容漂移也 fail-closed；
+  它再调用 pure `evaluate_subing_signal()`。Historical 输入同时受 current rank1 segment 起止日约束。
+  该服务不拥有或修改 Calibration/Signal 公式，
+  不直连 provider/Redis，不持久化 Signal，不写 Canonical/DB，也不管理 Runtime。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
   Market API 直接输出该 taxonomy；Web 不再保留第二套品种目录。
-- PostgreSQL 保存八表 metadata/catalog，Parquet 保存 Bars；不引入多 provider、插件、任务中心或
-  在线多版本选择器。
+- PostgreSQL 的 Data Foundation / Market Catalog 精确保留八表，Parquet 保存 Bars；Alert 的
+  `alert_rules` / `alert_events` 是独立 Application Domain 表，不进入 Market Catalog。不引入多
+  provider、插件、任务中心或在线多版本选择器。
 
 ## 数据架构
 
@@ -88,6 +124,30 @@ flowchart LR
 每 Dataset 每自然月只发布一个 `part.parquet`。文件不存在、不可读、identity 不符或 coverage 不完整
 时，查询 fail-closed，维护命令将该月作为待处理目标；不以第二套状态表保存这些事实。
 
+## SuBing V1 研究与观察链
+
+```mermaid
+flowchart LR
+    MDS["MarketDataService"] --> CR["read-only Calibration Research"]
+    CR --> OUT["stdout JSON"]
+    CAL["Git-tracked slope-only Calibration"] --> SIG["pure evaluate_subing_signal()"]
+    MRS["MarketReadService"] --> SRS["SubingReadService"]
+    SRS --> SIG
+    SIG --> API["Market API"] --> WEB["Product Workspace Observation"]
+```
+
+`primary_signal` 永远是 requested timeframe 自己的 evaluation；`resolved_signal` 只表示可选的实际
+`MATCHED` opportunity。primary/companion 不在同一 READY boundary 时，只有 primary `MATCHED` 才产生
+resolved；在同一 READY boundary 时必须反向评估完整 companion opportunity：reciprocal-only
+`MATCHED` 必须被发现，双 `MATCHED` 同方向由既有 resolver 选择 15m 并标记 lower-timeframe
+confirmation，反方向 fail-closed，普通 reciprocal `NOT_MATCHED` 不覆盖 requested primary。
+
+该链没有 research DB、Signal persistence 或 Alert integration。`macd_zero_distance_abs/bps` 只保留为
+Factor/Web/research observation，不是 executable Signal 条件；Alert V1 保持独立且不变，未来 Alert V2
+仍需新设计与人工 Gate。scoped consumer policy 是 `subing_macd_sma_window_scale2_v1`，其 equivalence
+tuple 固定为 `("sma_window", 2, "fast12_slow26_signal9", True)`；generic MACD 继续保持
+`compatibility_validated`，backtest/live/alert capability 均未晋升。
+
 ## 运行与授权边界
 
 `update` 计划缺失或不完整月并自然续传；`refresh` 只重建用户指定的品种/窗口；`audit` 只读。
@@ -96,9 +156,20 @@ migration 与服务启停，必须分别获得范围明确的一次性执行意�
 
 Market Runtime V1 分为三条明确边界的平面：Historical 继续由 `HistoricalDataManager` 发布 Canonical；
 LiveMarketService 只将 active 60 当日 rank1 completed 1m 与本地 Derived 写入 Redis；
-AfterMarketUpdater 只在 launchd 的 17:00 触发（失败最多一小时后重试一次）调用既有历史写入口。Live
+AfterMarketUpdater 只在 launchd 的 18:05 触发（失败最多一小时后重试一次）调用既有历史写入口。Live
 永不进入 Canonical、Parquet 或 PostgreSQL。代码与模板默认关闭；只有用户明确请求在该本地工作站启用
 Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 release、其他 DB、通知或订单。
+
+Alert V1 不复活 Signal/Review/Strategy。它只从 Live 15m completed-bar 事件触发，经
+`MarketReadService.bars_until()` 获得硬截止的 actual-dominant 历史/Live 统一窗口与当日 rank1 contract，
+由 Python Indicator Kernel 只检查当前最后一根 HTDY original 买/卖观察，再通过 `AlertService` 幂等落
+`AlertEvent` 并进行一次简洁 WeCom 尝试。停机期间不 replay/backfill，发送失败不 retry；Web persistent
+Marker 只读取已记录 Event，和当前会 repaint 的 HTDY overlay 独立。
+
+AlertRuntime 是独立进程、独立 activation marker 与独立健康组件。只有用户明确启用后，才持续运行
+`htdy_original_15m × enabled scope_products × WeCom`；该授权不覆盖 migration、真实 canary、Runtime
+switch、release、Canonical 写入、新 Rule/渠道或订单。每条 completed-bar 消息与 heartbeat 都使用独立短
+Session/transaction；Webhook sender 与 health 共用 exact 企业微信目标校验器。
 
 开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，当前根和运行状态由 `STATUS.md` 记录。这只是为了快速观察，不改变 Historical/Live 边界，也不构成稳定 Runtime 版本。功能收口后的最终拓扑仍为绑定精确提交的独立 Runtime worktree。
 
@@ -106,13 +177,15 @@ Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 rele
 
 ```mermaid
 flowchart LR
-    L["Mac launchd<br/>API / Web / Live / after-market"] --> FPC["FRPC"]
+    L["Mac launchd<br/>API / Web / Live / after-market / Alert"] --> FPC["FRPC"]
     FPC --> FPS["腾讯云 FRPS"]
     FPS --> NG["Nginx<br/>TLS + Basic Auth"]
     NG --> B["Browser"]
 ```
 
-API、Web、Live 和 after-market 四个 launchd label 必须指向同一 supervised Runtime 根；启用标记
-存在时 Live/after-market 均须加载，定时型 after-market 已加载但未运行属于正常状态。本地唯一状态
+API、Web、Live、after-market 和已获授权的 Alert launchd label 必须指向同一 supervised Runtime 根；安装器
+将当次 checkout commit 冻结进每个 label 的 `GUIYI_RUNTIME_COMMIT`。状态脚本必须读取 launchd 已加载的
+root/commit，并分别与 supervised checkout 对比，不能用之后移动过的 checkout HEAD 冒充在运行进程身份。
+启用标记存在时 Live/after-market 均须加载，定时型 after-market 已加载但未运行属于正常状态。本地唯一状态
 入口只读取 launchd、Git 身份和 HTTP/Runtime health，不执行服务 mutation。腾讯云只承担隧道与
 HTTPS 反代，不保留第二套应用进程。完整三段只读检查见 `deploy/README.md`。

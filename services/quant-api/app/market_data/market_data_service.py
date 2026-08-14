@@ -69,6 +69,16 @@ class DominantContractSummary:
     dominant_mapping_date: date
 
 
+@dataclass(frozen=True, slots=True)
+class DominantContractSegmentSummary:
+    """品种当前连续 rank-1 主力区段。"""
+
+    symbol: str
+    contract: str
+    start_trading_day: date
+    end_trading_day: date
+
+
 class MarketDataService:
     """V2 历史市场数据查询服务：Catalog 定位 + Parquet 读取 + 主力拼接。
 
@@ -477,6 +487,64 @@ class MarketDataService:
                 dominant_mapping_date=row.trade_date,
             )
             for symbol, row in sorted(latest.items())
+        )
+
+    def latest_dominant_segment(self, symbol: str) -> DominantContractSegmentSummary:
+        """返回最新连续 rank-1 合约区段；日历或映射缺口时整体失败。"""
+        mappings = self.catalog.main_map_before(symbol, None)
+        if not mappings:
+            raise MarketDataError("DOMINANT_CONTEXT_MISSING")
+
+        latest = mappings[-1]
+        current_start_index = len(mappings) - 1
+        while (
+            current_start_index > 0
+            and mappings[current_start_index - 1].contract == latest.contract
+        ):
+            current_start_index -= 1
+
+        previous_mapping = (
+            mappings[current_start_index - 1] if current_start_index > 0 else None
+        )
+        validation_start = (
+            previous_mapping.trade_date
+            if previous_mapping is not None
+            else mappings[0].trade_date
+        )
+        try:
+            trading_days = self.catalog.trading_days(
+                latest.symbol,
+                validation_start,
+                latest.trade_date,
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        if not trading_days:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+
+        mapping_by_day = {
+            item.trade_date: item
+            for item in mappings
+            if validation_start <= item.trade_date <= latest.trade_date
+        }
+        if any(day not in mapping_by_day for day in trading_days):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+
+        segment_days = tuple(
+            day
+            for day in trading_days
+            if previous_mapping is None or day > previous_mapping.trade_date
+        )
+        if not segment_days or any(
+            mapping_by_day[day].contract != latest.contract for day in segment_days
+        ):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+
+        return DominantContractSegmentSummary(
+            symbol=latest.symbol,
+            contract=latest.contract,
+            start_trading_day=segment_days[0],
+            end_trading_day=latest.trade_date,
         )
 
     def _weekly_mappings(

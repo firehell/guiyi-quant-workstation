@@ -7,6 +7,7 @@ from .models import FormalPolicy
 
 FORMAL_BACKTEST_CONSUMER = "formal_backtest"
 FROZEN_LEGACY_BACKTEST_CONSUMER = "frozen_legacy_backtest"
+HTDY_ALERT_OBSERVATION_CONSUMER = "htdy_alert_observation"
 
 
 _POLICIES: dict[str, FormalPolicy] = {
@@ -45,9 +46,30 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="fast12_slow26_signal9",
         confirmed_only=True,
         frozen_legacy=False,
-        allowed_consumers=("Market_readonly_display",),
+        allowed_consumers=("Market_readonly_display", "subing_factor_observation"),
         blocked_consumers=("formal_strategy_signal_until_validated", FORMAL_BACKTEST_CONSUMER),
         notes="Web/Market MACD display compatibility policy; not strategy-validated.",
+    ),
+    "subing_macd_sma_window_scale2_v1": FormalPolicy(
+        policy_id="subing_macd_sma_window_scale2_v1",
+        indicator_family="MACD",
+        seed_policy="sma_window",
+        smoothing_policy=None,
+        histogram_scale=2,
+        lookback="fast12_slow26_signal9",
+        confirmed_only=True,
+        frozen_legacy=False,
+        allowed_consumers=("subing_signal",),
+        blocked_consumers=(
+            FORMAL_BACKTEST_CONSUMER,
+            "alert",
+            "notification",
+            "generic_live",
+        ),
+        notes=(
+            "Scoped confirmed MACD policy approved only for SuBing V1 entry-signal "
+            "evaluation; generic MACD registry capability remains unchanged."
+        ),
     ),
     "strategy_macd_first_value_scale1_v1": FormalPolicy(
         policy_id="strategy_macd_first_value_scale1_v1",
@@ -110,9 +132,12 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="period25_with_future_window",
         confirmed_only=False,
         frozen_legacy=False,
-        allowed_consumers=("Web_manual_observation",),
+        allowed_consumers=("Web_manual_observation", HTDY_ALERT_OBSERVATION_CONSUMER),
         blocked_consumers=("Backtest", FORMAL_BACKTEST_CONSUMER, "Signal", "live", "alert", "notification"),
-        notes="Original XMA observation-only; D4-00 unresolved blocks Tongdaxin-equivalent claim.",
+        notes=(
+            "Original XMA observation-only; scoped current-bar Alert observation is allowed, "
+            "while generic alert/live/Signal/notification and formal backtest remain blocked."
+        ),
     ),
     "huotian_dayou_strict_v1": FormalPolicy(
         policy_id="huotian_dayou_strict_v1",

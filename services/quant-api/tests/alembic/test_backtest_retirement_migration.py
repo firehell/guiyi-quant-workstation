@@ -35,8 +35,8 @@ TARGET_SIGNAL_KEYS = (
 )
 
 
-def test_backtest_retirement_remains_on_linear_history_before_surface_drop() -> None:
-    """Backtest retirement stays an explicit revision; head moved to surface drop."""
+def test_backtest_retirement_remains_on_linear_history_before_alert_v1() -> None:
+    """Backtest retirement stays explicit while Alert V1 advances the linear head."""
 
     config = Config(str(QUANT_API_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
@@ -46,7 +46,7 @@ def test_backtest_retirement_remains_on_linear_history_before_surface_drop() -> 
     assert revision is not None
     assert revision.down_revision == PARENT_REVISION
     assert scripts.get_revision("20260808_0034") is not None
-    assert scripts.get_heads() == ["20260808_0036"]
+    assert scripts.get_heads() == ["20260813_0037"]
 
 
 def test_backtest_retirement_sql_deletes_only_scoped_legacy_rows() -> None:

@@ -103,7 +103,7 @@ def test_parameters_hash_is_stable_and_order_independent() -> None:
     assert len(left) == 16
 
 
-def test_htdy_registry_is_observation_only_and_not_alert_capable() -> None:
+def test_htdy_registry_is_observation_only_and_alert_only_capable() -> None:
     from guiyi_quant.indicators import get_indicator
 
     definition = get_indicator("huo_tian_da_you")
@@ -114,5 +114,5 @@ def test_htdy_registry_is_observation_only_and_not_alert_capable() -> None:
     assert definition.web_capable is True
     assert definition.backtest_capable is False
     assert definition.live_capable is False
-    assert definition.alert_capable is False
+    assert definition.alert_capable is True
     assert "XMA" in definition.repainting_notes

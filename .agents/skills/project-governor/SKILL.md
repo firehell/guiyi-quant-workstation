@@ -7,15 +7,16 @@ description: 当任务涉及归一量化功能取舍、阶段归属、优先级�
 
 ## 判断原则
 
-当前 v1.0.0 只封板可信 Canonical 60 品种、Market Web/API、data/runtime CLI 和有界 Market
-Runtime。任何功能先判断是否加强这条行情研究底座；策略、回测、Signal/Review 都是未来新任务，
-不得因历史文件或旧阶段名称恢复为当前兼容面。
+当前 release 基线为 v1.1.0：可信 Canonical 60 品种之上已完成 Market Radar / Product Workspace、
+HTDY Alert V1 与 SuBing Factor/Signal 人工观察。任何功能先判断是否加强这条研究闭环；旧
+Signal/Review/Strategy 子系统与回测仍已退役，不得因历史文件或名称恢复为兼容面。Alert V1 与
+SuBing observation 是两个独立、限域的应用能力，不代表通用策略平台。
 
 ## 阶段口径
 
-- v1.0.0：RQData → Canonical/Catalog → MarketDataService → Market Web/API；60 品种 Live observation
-  与 17:00 盘后增量更新保持有界、可恢复、无订单。
-- 下一阶段：Market Radar / Product Workspace，只读复用现有行情与指标入口。
+- v1.0.0：RQData → Canonical/Catalog → MarketDataService → Market Web/API 的历史基线。
+- v1.1.0：60 品种有界 Market Runtime、Radar / Product Workspace 与只读研究面。
+- 当前 develop：Alert V1 自然事件闭环；SuBing current-rank1-segment-local Factor/Signal 人工观察。
 - 未来研究阶段：按新合同重建策略、回测、OOS/Walk-forward、Signal/Review 与 AI 辅助研究。
 - 长期不做：自动交易、实盘下单、多用户 SaaS、tick 级高频和 AI 自动晋升正式策略。
 

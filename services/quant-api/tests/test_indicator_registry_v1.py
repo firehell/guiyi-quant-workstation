@@ -55,6 +55,24 @@ def test_observation_only_cannot_enable_formal_capabilities() -> None:
         )
 
 
+def test_observation_only_can_enable_alert_without_live_or_backtest() -> None:
+    from guiyi_quant.indicators import build_indicator_definition
+
+    definition = build_indicator_definition(
+        **_base_kwargs(
+            status="observation_only",
+            closed_bar_only=False,
+            confirmed_only=False,
+            repainting_risk="known",
+            alert_capable=True,
+        )
+    )
+
+    assert definition.alert_capable is True
+    assert definition.live_capable is False
+    assert definition.backtest_capable is False
+
+
 def test_registry_uses_exact_seven_frequency_historical_contract() -> None:
     from guiyi_quant.indicators import indicator_registry
 
@@ -238,12 +256,66 @@ def test_macd_and_atr_are_compatibility_validated_not_validated() -> None:
     assert macd.formal_policy_id == "web_macd_legacy_v1"
     assert atr.formal_policy_id == "web_atr_wilder_sma_seed_v1"
     assert macd.backtest_capable is False
+    assert macd.live_capable is False
+    assert macd.alert_capable is False
     assert atr.live_capable is False
     assert atr.alert_capable is False
 
 
-def test_htdy_original_blocked_and_alias_resolves() -> None:
-    from guiyi_quant.indicators import get_indicator, resolve_indicator_code
+def test_subing_signal_macd_policy_is_scoped_and_math_equivalent() -> None:
+    """Catches widening SuBing MACD approval or drifting from Factor math."""
+    from guiyi_quant.indicators import (
+        FORMAL_BACKTEST_CONSUMER,
+        get_formal_policy,
+        require_formal_policy,
+    )
+
+    observation = get_formal_policy("web_macd_legacy_v1")
+    signal = require_formal_policy(
+        "subing_macd_sma_window_scale2_v1",
+        consumer="subing_signal",
+    )
+
+    assert signal.policy_id == "subing_macd_sma_window_scale2_v1"
+    assert signal.indicator_family == "MACD"
+    assert (
+        (
+            signal.seed_policy,
+            signal.histogram_scale,
+            signal.lookback,
+            signal.confirmed_only,
+        )
+        == (
+            observation.seed_policy,
+            observation.histogram_scale,
+            observation.lookback,
+            observation.confirmed_only,
+        )
+        == ("sma_window", 2, "fast12_slow26_signal9", True)
+    )
+    assert signal.allowed_consumers == ("subing_signal",)
+    assert signal.blocked_consumers == (
+        FORMAL_BACKTEST_CONSUMER,
+        "alert",
+        "notification",
+        "generic_live",
+    )
+    assert signal.frozen_legacy is False
+
+    for consumer in signal.blocked_consumers:
+        with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+            require_formal_policy(signal.policy_id, consumer=consumer)
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_NOT_ALLOWED"):
+        require_formal_policy(signal.policy_id, consumer="Market_readonly_display")
+
+
+def test_htdy_original_is_alert_capable_but_not_live_or_backtest_capable() -> None:
+    from guiyi_quant.indicators import (
+        HTDY_ALERT_OBSERVATION_CONSUMER,
+        get_indicator,
+        require_formal_policy,
+        resolve_indicator_code,
+    )
 
     original = get_indicator("huotian_dayou_original_v0")
     aliased = get_indicator("huo_tian_da_you")
@@ -251,10 +323,18 @@ def test_htdy_original_blocked_and_alias_resolves() -> None:
     assert aliased.indicator_code == "huotian_dayou_original_v0"
     assert original is aliased
     assert original.status == "observation_only"
+    assert original.web_capable is True
     assert original.backtest_capable is False
     assert original.live_capable is False
-    assert original.alert_capable is False
+    assert original.alert_capable is True
     assert original.repainting_risk == "known"
+    policy = require_formal_policy(
+        original.formal_policy_id,
+        consumer=HTDY_ALERT_OBSERVATION_CONSUMER,
+    )
+    assert policy.policy_id == "huotian_dayou_original_v0"
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+        require_formal_policy(original.formal_policy_id, consumer="alert")
 
 
 def test_htdy_strict_is_strategy_candidate_backtest_only() -> None:

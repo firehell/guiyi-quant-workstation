@@ -115,6 +115,82 @@ class ProductResearchResponse(BaseModel):
     recent_daily: list[MarketBarOut]
 
 
+class SubingFactorSnapshotOut(BaseModel):
+    """SuBing 单周期 confirmed-bar Factor 快照。"""
+
+    timeframe: str
+    bar_end: datetime
+    trading_day: date
+    contract: str
+    segment_start_trading_day: date
+    bar_source: str
+    close: Decimal
+    ema21: Decimal
+    price_side: str
+    slope_5_raw: Decimal
+    slope_10_raw: Decimal
+    slope_5_bps_per_bar: Decimal
+    slope_10_bps_per_bar: Decimal
+    macd_dif: Decimal
+    macd_dea: Decimal
+    macd_histogram: Decimal
+    macd_cross: str
+    macd_cross_level: Decimal
+    macd_zero_distance_abs: Decimal
+    macd_zero_distance_bps: Decimal
+    volume: Decimal
+    previous_volume: Decimal
+    volume_ratio_prev: Decimal | None
+
+
+class SubingFactorResultOut(BaseModel):
+    """SuBing Factor 可用性与可选快照。"""
+
+    status: str
+    snapshot: SubingFactorSnapshotOut | None
+
+
+class SubingConditionOut(BaseModel):
+    """SuBing executable Signal 单项条件，不包含 zero-band。"""
+
+    code: str
+    state: str
+
+
+class SubingSignalOut(BaseModel):
+    """SuBing 入场方向 Signal 的只读评估或同 boundary 解析结果。"""
+
+    status: str
+    direction: str
+    trigger_timeframe: str | None
+    lower_tf_confirmation: bool
+    resolution: str | None
+    conditions: list[SubingConditionOut]
+    error_code: str | None
+
+
+class SubingResearchResponse(BaseModel):
+    """``/research/subing`` current-rank1 只读研究快照。"""
+
+    symbol: str
+    product_name: str
+    frequency: str
+    actual_contract: str
+    dominant_mapping_date: date
+    segment_start_trading_day: date
+    source_mode: str
+    live_observation: str
+    live_reason: str | None
+    macd_policy_id: str
+    signal_macd_policy_id: str
+    calibration_state: str
+    calibration_id: str | None
+    primary: SubingFactorResultOut
+    companion: SubingFactorResultOut | None
+    primary_signal: SubingSignalOut
+    resolved_signal: SubingSignalOut | None
+
+
 class MarketRadarSummaryOut(BaseModel):
     """Radar 第一屏需要的聚合计数，不包含综合分数。"""
 

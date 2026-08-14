@@ -28,7 +28,6 @@ export interface HuoTianDaYouPoint {
   whiteCandle: boolean
   buyObservation: boolean
   sellObservation: boolean
-  xgObservation: boolean
   candleSegments: HuoTianDaYouCandleSegment[]
 }
 
@@ -99,25 +98,6 @@ export function calculateHuoTianDaYou(bars: BarData[], period = 25, roundOutput 
   }
 
   const zd2 = tdxEmaFinite(zd1, period)
-  const close = bars.map((bar) => bar.close)
-  const previousClose = referenceValues(close, 1)
-  const delta = close.map((value, index) => subtractFinite(value, previousClose[index]))
-  const absoluteDelta = delta.map((value) => (isFiniteNumber(value) ? Math.abs(value) : undefined))
-  const var23Numerator = tdxXma(tdxXma(delta, 6), 6)
-  const var23Denominator = tdxXma(tdxXma(absoluteDelta, 6), 6)
-  const var23 = var23Numerator.map((value, index) => divideFinite(value, var23Denominator[index], 100))
-  const var23Ma2 = movingAverageFinite(var23, 2)
-  const var23Llv2 = lowestFinite(var23, 2)
-  const var23Llv7 = lowestFinite(var23, 7)
-  const negativeCount2 = countFlags(var23.map((value) => isFiniteNumber(value) && value < 0), 2)
-  const callbackBuy = var23.map((value, index) =>
-    isFiniteNumber(value) &&
-    isFiniteNumber(var23Llv2[index]) &&
-    isFiniteNumber(var23Llv7[index]) &&
-    var23Llv2[index] === var23Llv7[index] &&
-    negativeCount2[index] > 0 &&
-    crossesAbove(var23, var23Ma2, index),
-  )
   const yellowFlags: boolean[] = []
   const whiteFlags: boolean[] = []
 
@@ -138,7 +118,6 @@ export function calculateHuoTianDaYou(bars: BarData[], period = 25, roundOutput 
       whiteCandle,
       buyObservation: isNewThirdConsecutive(yellowFlags, index),
       sellObservation: isNewThirdConsecutive(whiteFlags, index),
-      xgObservation: Boolean(isFiniteNumber(lower) && lower > bar.high && callbackBuy[index] && bar.low <= lower),
       candleSegments,
     }
   })
@@ -294,64 +273,6 @@ function tdxEmaFinite(values: Array<number | undefined>, period: number): Array<
     result[index] = previous
   })
   return result
-}
-
-function referenceValues(values: number[], periods: number): Array<number | undefined> {
-  return values.map((_, index) => (index >= periods ? values[index - periods] : undefined))
-}
-
-function subtractFinite(left: number | undefined, right: number | undefined): number | undefined {
-  return isFiniteNumber(left) && isFiniteNumber(right) ? left - right : undefined
-}
-
-function divideFinite(
-  numerator: number | undefined,
-  denominator: number | undefined,
-  scale = 1,
-): number | undefined {
-  return isFiniteNumber(numerator) && isFiniteNumber(denominator) && denominator !== 0
-    ? (numerator / denominator) * scale
-    : undefined
-}
-
-function movingAverageFinite(values: Array<number | undefined>, period: number): Array<number | undefined> {
-  return values.map((_, index) => {
-    if (index < period - 1) return undefined
-    const window = values.slice(index - period + 1, index + 1)
-    return window.every(isFiniteNumber) ? average(window) : undefined
-  })
-}
-
-function lowestFinite(values: Array<number | undefined>, period: number): Array<number | undefined> {
-  return values.map((_, index) => {
-    const window = values.slice(Math.max(0, index - period + 1), index + 1).filter(isFiniteNumber)
-    return window.length > 0 ? Math.min(...window) : undefined
-  })
-}
-
-function countFlags(flags: boolean[], period: number): number[] {
-  return flags.map((_, index) => flags.slice(Math.max(0, index - period + 1), index + 1).filter(Boolean).length)
-}
-
-/** 判断 index 处 left 是否上穿 right（前一根 ≤，当前根 >） */
-function crossesAbove(
-  left: Array<number | undefined>,
-  right: Array<number | undefined>,
-  index: number,
-): boolean {
-  if (index <= 0) return false
-  const previousLeft = left[index - 1]
-  const previousRight = right[index - 1]
-  const currentLeft = left[index]
-  const currentRight = right[index]
-  return Boolean(
-    isFiniteNumber(previousLeft) &&
-    isFiniteNumber(previousRight) &&
-    isFiniteNumber(currentLeft) &&
-    isFiniteNumber(currentRight) &&
-    previousLeft <= previousRight &&
-    currentLeft > currentRight,
-  )
 }
 
 /**

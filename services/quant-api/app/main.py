@@ -1,6 +1,6 @@
 """归一量化 FastAPI 应用入口。
 
-当前仅挂载 Market 行情与 Runtime 运维只读 API；data_center HTTP、Signal/Review/Strategy
+当前仅挂载 Market 行情、Alert 与 Runtime 运维只读 API；data_center HTTP、Signal/Review/Strategy
 等已退役表面均未注册。存活探针（liveness）与详细运维健康检查分层：本模块提供轻量
 `/health` 别名，完整组件状态见 `/api/runtime/health`。
 """
@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 import os
 
+from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
 from app.api.market_live import router as market_live_router
 from app.api.runtime import router as runtime_router
@@ -51,9 +52,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 仅 Market + Runtime 运维面；data_center HTTP 与 Signal/Review/Strategy 路由未挂载
+# 仅 Market + Alert + Runtime 运维面；data_center HTTP 与 Signal/Review/Strategy 路由未挂载
 app.include_router(market_router)
 app.include_router(market_live_router)
+app.include_router(alerts_router)
 app.include_router(runtime_router)
 
 

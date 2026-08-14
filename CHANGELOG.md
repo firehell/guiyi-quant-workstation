@@ -2,6 +2,26 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.2.0] - 2026-08-14
+
+盘中观察与只读信号研究版本：
+
+- 新增独立 Alert V1 Application Domain：只处理 server-side Scope 中自然到达的 actual-dominant
+  confirmed 15m Bar，复用 Python HTDY current-bar evaluator，AlertEvent 先提交后最多尝试一次 WeCom；
+  停机历史不 replay/backfill，发送失败不 retry；
+- Product Workspace 新增 Alert Scope 控制与持久铃铛，只展示已记录 Event，不恢复旧
+  Signal/Review/Strategy 应用链；当前生产 Scope 仍精确为 `jm`；
+- 新增苏冰 current-rank1-segment-local Factor Observation、slope-only Calibration 与 5m/15m
+  Entry Signal 只读观察；Zero-Band hard gate 已由 OOS evidence 拒绝，1d 保持非阻断
+  `RESEARCH_PENDING`；
+- SuBing Signal 只在 Product Workspace 展示，不持久化、不接 Alert、不自动晋升参数或 Runtime；
+- 盘后目标调度由 17:00 收敛为 18:05，并显式分类下一交易日 Session 尚未就绪；Live 与 Historical
+  Canonical 继续分离；
+- launchd 增加精确 loaded commit 身份核对，API/Web/Live/after-market/Alert 统一从 clean/detached
+  Runtime 根运行；
+- 完成 Alert、HTDY、苏冰、WeCom、DB Session 生命周期、Web composable 与文档一致性 Review 收口；
+  `auto_order=false` 不变，不新增订单、自动交易、Alert V2、SuBing Runtime 或新的 Market Catalog 表。
+
 ## [1.1.0] - 2026-08-12
 
 Market Research Workspace P0 封板版本：

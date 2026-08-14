@@ -10,6 +10,7 @@ labels=(
   com.guiyi.quant-web
   com.guiyi.quant-live
   com.guiyi.quant-after-market
+  com.guiyi.quant-alert
 )
 failed=0
 
@@ -33,30 +34,30 @@ printf '[local-services-status] inspector_repo=%s\n' "$PROJECT_ROOT"
 runtime_root="$(plist_root "$API_LABEL")"
 printf '[local-services-status] supervised_runtime_root=%s\n' "$runtime_root"
 
-runtime_commit=unknown
-runtime_detached=unknown
-runtime_clean=unknown
+runtime_checkout_commit=unknown
+runtime_checkout_detached=unknown
+runtime_checkout_clean=unknown
 if [[ "$runtime_root" == "missing" || "$runtime_root" == "unknown" || ! -d "$runtime_root" ]]; then
   record_failure
 elif git -C "$runtime_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  runtime_commit="$(git -C "$runtime_root" rev-parse --short=8 HEAD 2>/dev/null || printf 'unknown')"
+  runtime_checkout_commit="$(git -C "$runtime_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
   if git -C "$runtime_root" symbolic-ref -q HEAD >/dev/null 2>&1; then
-    runtime_detached=false
+    runtime_checkout_detached=false
   else
-    runtime_detached=true
+    runtime_checkout_detached=true
   fi
   if [[ -z "$(git -C "$runtime_root" status --porcelain 2>/dev/null)" ]]; then
-    runtime_clean=true
+    runtime_checkout_clean=true
   else
-    runtime_clean=false
+    runtime_checkout_clean=false
   fi
 else
   record_failure
 fi
-printf '[local-services-status] runtime_commit=%s\n' "$runtime_commit"
-printf '[local-services-status] runtime_detached=%s\n' "$runtime_detached"
-printf '[local-services-status] runtime_clean=%s\n' "$runtime_clean"
-[[ "$runtime_commit" != "unknown" && "$runtime_detached" == "true" && "$runtime_clean" == "true" ]] || record_failure
+printf '[local-services-status] runtime_checkout_commit=%s\n' "${runtime_checkout_commit:0:8}"
+printf '[local-services-status] runtime_checkout_detached=%s\n' "$runtime_checkout_detached"
+printf '[local-services-status] runtime_checkout_clean=%s\n' "$runtime_checkout_clean"
+[[ "$runtime_checkout_commit" != "unknown" && "$runtime_checkout_detached" == "true" && "$runtime_checkout_clean" == "true" ]] || record_failure
 
 marker_enabled=false
 if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" && -f "$runtime_root/.run/market-runtime-enabled" ]]; then
@@ -64,12 +65,19 @@ if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" && -f "$runti
 fi
 printf '[local-services-status] market_runtime_enabled=%s\n' "$marker_enabled"
 
+alert_marker_enabled=false
+if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" && -f "$runtime_root/.run/alert-runtime-enabled" ]]; then
+  alert_marker_enabled=true
+fi
+printf '[local-services-status] alert_runtime_enabled=%s\n' "$alert_marker_enabled"
+
 for label in "${labels[@]}"; do
   root="$(plist_root "$label")"
   required=false
   case "$label" in
     com.guiyi.quant-api|com.guiyi.quant-web) required=true ;;
     com.guiyi.quant-live|com.guiyi.quant-after-market) [[ "$marker_enabled" == "true" ]] && required=true ;;
+    com.guiyi.quant-alert) [[ "$alert_marker_enabled" == "true" ]] && required=true ;;
   esac
 
   if [[ "$root" != "missing" && "$root" != "$runtime_root" ]]; then
@@ -85,7 +93,19 @@ for label in "${labels[@]}"; do
     state="$(printf '%s\n' "$launch_output" | sed -n 's/^[[:space:]]*state = //p' | head -1)"
     state="${state:-unknown}"
     state="${state// /_}"
-    printf '[local-services-status] %s loaded state=%s root=%s\n' "$label" "$state" "$root"
+    loaded_root="$(printf '%s\n' "$launch_output" | sed -n 's/^[[:space:]]*GUIYI_PROJECT_ROOT => //p' | head -1)"
+    loaded_root="${loaded_root:-unknown}"
+    loaded_commit="$(printf '%s\n' "$launch_output" | sed -n 's/^[[:space:]]*GUIYI_RUNTIME_COMMIT => //p' | head -1)"
+    loaded_commit="${loaded_commit:-unknown}"
+    printf '[local-services-status] %s loaded state=%s root=%s loaded_commit=%s\n' "$label" "$state" "$loaded_root" "${loaded_commit:0:8}"
+    if [[ "$loaded_root" != "$runtime_root" ]]; then
+      printf '[local-services-status] %s loaded_root_mismatch configured_root=%s\n' "$label" "$root"
+      record_failure
+    fi
+    if [[ "$loaded_commit" != "$runtime_checkout_commit" ]]; then
+      printf '[local-services-status] %s commit_mismatch checkout_commit=%s loaded_commit=%s\n' "$label" "${runtime_checkout_commit:0:8}" "${loaded_commit:0:8}"
+      record_failure
+    fi
     if [[ "$required" == "true" && "$label" != "com.guiyi.quant-after-market" && "$state" != "running" ]]; then
       record_failure
     fi

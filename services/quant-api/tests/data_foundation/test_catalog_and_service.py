@@ -125,6 +125,53 @@ def test_latest_dominants_uses_repository_display_name_instead_of_provider_code(
     assert items[0].sector == "black"
 
 
+def test_latest_dominant_segment_returns_current_contiguous_rank1_segment(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    for day, contract in ((2, "JM2505"), (3, "JM2505"), (6, "JM2509"), (7, "JM2509")):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True
+            )
+        )
+        catalog.upsert_main_contracts((("jm", date(2025, 1, day), contract),))
+    session.commit()
+
+    segment = MarketDataService(
+        catalog, CanonicalMonthlyStore(tmp_path)
+    ).latest_dominant_segment("jm")
+
+    assert segment.symbol == "jm"
+    assert segment.contract == "JM2509"
+    assert segment.start_trading_day == date(2025, 1, 6)
+    assert segment.end_trading_day == date(2025, 1, 7)
+
+
+def test_latest_dominant_segment_fails_closed_for_missing_map_after_known_contract(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    for day in (3, 6, 7):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True
+            )
+        )
+    catalog.upsert_main_contracts(
+        (
+            ("jm", date(2025, 1, 3), "JM2505"),
+            ("jm", date(2025, 1, 7), "JM2509"),
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="MAIN_CONTRACT_MAP_MISSING"):
+        MarketDataService(
+            catalog, CanonicalMonthlyStore(tmp_path)
+        ).latest_dominant_segment("jm")
+
+
 def test_continuous_and_contract_query_use_catalogued_physical_partitions(
     session, tmp_path
 ) -> None:

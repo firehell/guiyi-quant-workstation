@@ -68,13 +68,14 @@ identity 唯一；`market_partitions` 以 `(dataset_id, year, month)` 唯一，�
 优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
 provider 分钟线 `1m`。每完成一个 1m dataset-month，立即生成四个日内派生月。
 
-17:00 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日，
+18:05 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日，
 再由持 maintenance lock 的 `HistoricalDataManager.update` 同步 metadata 后规划 coverage；不得先用可能
 尚未同步的当天 TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备 operational 60 品种：
 Calendar 覆盖当天至 ISO 周日或下一交易日（取较晚者），TradingSession 精确替换当天与下一交易日，
 MainContractMap 仍只发布当天 rank1。
-这样夜盘 phase resolver 在 18:00 后有下一交易日 Session 事实，同时不会提前发布未来主力映射，也不写
-Dataset、Partition 或 Parquet。
+下一交易日 Session 尚未由 provider 发布时精确返回 `NEXT_TRADING_SESSION_NOT_READY`，最多一小时后再
+尝试一次；格式、重复或身份异常仍 fail-closed。这样夜盘 phase resolver 在夜盘前取得下一交易日 Session
+事实，同时不会提前发布未来主力映射，也不写 Dataset、Partition 或 Parquet。
 
 既有月等于 expected bars 时跳过；合法子集只下载缺失 bars 并重写完整月；不可读、extra bar 或
 identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `PROVIDER_QUOTA_EXHAUSTED`：本轮

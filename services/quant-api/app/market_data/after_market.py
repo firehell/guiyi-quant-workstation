@@ -33,6 +33,7 @@ _PUBLIC_ERROR_CODES = frozenset(
         "MAINTENANCE_LOCKED",
         "LIVE_DOMINANT_MISMATCH",
         "NON_TRADING_DAY",
+        "NEXT_TRADING_SESSION_NOT_READY",
         "PROVIDER_QUOTA_EXHAUSTED",
         "RQDATA_NOT_READY",
         "RQDATA_READY_CHECK_FAILED",
@@ -42,6 +43,7 @@ _PUBLIC_ERROR_CODES = frozenset(
 _PUBLIC_NOTIFICATION_MESSAGES = {
     "MAINTENANCE_LOCKED": "Historical maintenance remained locked after one retry.",
     "LIVE_DOMINANT_MISMATCH": "Live dominant contract did not match the formal rank-one map.",
+    "NEXT_TRADING_SESSION_NOT_READY": "Next trading session metadata remained unavailable after one retry.",
     "PROVIDER_QUOTA_EXHAUSTED": "RQData quota remained unavailable after one retry.",
     "RQDATA_NOT_READY": "RQData futures data is not ready after one retry.",
     "RQDATA_READY_CHECK_FAILED": "RQData readiness check failed after one retry.",
@@ -71,7 +73,7 @@ class AfterMarketResult:
 
 
 class AfterMarketUpdater:
-    """17:00 本地盘后维护：最多两次尝试，唯一写入口仍为 HistoricalDataManager。"""
+    """18:05 本地盘后维护：最多两次尝试，唯一写入口仍为 HistoricalDataManager。"""
 
     def __init__(
         self,
@@ -159,6 +161,23 @@ class AfterMarketUpdater:
                     sync_current_day_metadata=True,
                 )
             )
+        except InfrastructureError as exc:
+            if exc.code == "NEXT_TRADING_SESSION_NOT_READY":
+                _LOGGER.warning(
+                    "after_market_attempt_failed stage=metadata_readiness attempt=%s "
+                    "detail_code=%s exception_type=%s",
+                    attempt,
+                    exc.code,
+                    type(exc).__name__,
+                )
+                return exc.code
+            _LOGGER.warning(
+                "after_market_attempt_failed stage=canonical_update attempt=%s "
+                "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=%s",
+                attempt,
+                type(exc).__name__,
+            )
+            return "UPDATE_FAILED"
         except Exception as exc:  # noqa: BLE001 - provider/catalog detail stays private
             _LOGGER.warning(
                 "after_market_attempt_failed stage=canonical_update attempt=%s "
