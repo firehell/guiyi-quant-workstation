@@ -2,6 +2,162 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## 0. 2026-08-14 Gate B-R Amendment（权威执行合同）
+
+本节基于已完成的 Gate A、5m/15m Zero-Band Discovery，以及冻结候选 C 对 NO-BAND 的非重叠 OOS Validation。**本节覆盖下文原 Task 4 Step 3 之后、原 Gate B、原 Task 5 Calibration schema、原 Task 7 zero-band hard condition、Plan Acceptance 中所有与 intraday zero-band hard gate 冲突的内容。**原文保留用于研究/实施轨迹审计，不得在冲突处继续执行。
+
+### 0.1 已完成且冻结的研究事实
+
+Gate A 已人工批准：
+
+```text
+5m slope_flat_threshold_bps_per_bar
+= 0.688190651160584793944957992
+
+15m slope_flat_threshold_bps_per_bar
+= 1.329531078893356968545882036
+```
+
+Zero-Band Discovery 已完成；进入 OOS 的唯一冻结 candidate 为：
+
+```text
+5m C = 16.01901065112843434322837440 bps
+15m C = 27.16954645407146036410753274 bps
+```
+
+Validation window 固定为 `2026-05-01..2026-08-11`，并与 NO-BAND baseline 对照。OOS 不支持 zero-band 作为 intraday hard gate：5m C 在 return/failure/正负分布上整体弱于 NO-BAND；15m 只有 5K 局部改善，但三个 horizon failure 均更高、3K/8K 不形成一致增量且样本稀疏。不得回头用 Validation 重新挑 A/B，不得创造新 threshold/product/direction override。
+
+### 0.2 Research-driven simplification
+
+当前 intraday V1 决定：
+
+```text
+保留：MACD GOLDEN / DEAD cross
+保留：macd_zero_distance_abs / macd_zero_distance_bps Factor
+删除：zero_distance_bps <= threshold 作为 5m/15m Signal hard gate
+删除：macd_zero_band_bps 作为 accepted intraday Calibration 字段
+```
+
+Zero-Band research CLI/service 可以保留为 research-only 能力；不要为“清理”删除历史研究代码。
+
+15m LONG/SHORT OOS asymmetry 记录为 observation risk，不得在本版本中据此拆 LONG/SHORT 参数、禁用方向或改变 Signal 语义。
+
+该决定只覆盖 5m/15m intraday V1；1d 仍是独立、非阻塞 research track。
+
+### Gate B-R: Human approval of slope-only intraday Calibration
+
+**Hard stop.** 在创建 production Calibration artifact 前，必须再次取得用户明确批准以下完整语义：
+
+```text
+1. 5m slope = 0.688190651160584793944957992
+2. 15m slope = 1.329531078893356968545882036
+3. intraday MACD zero-band hard gate rejected by OOS
+4. accepted intraday Calibration is slope-only
+5. macd_zero_distance_abs/bps remain observation/research-only
+6. 15m LONG OOS asymmetry is an observation risk only; no direction-specific rule is introduced
+```
+
+当前用户仅批准了“设计收缩”，**尚不得把它解释为 Gate B-R 对 production Calibration artifact 的 promotion 授权**。
+
+### Amended Task 5: Persist slope-only accepted intraday Calibration
+
+**Only after Gate B-R passes.**
+
+Production artifact：
+
+```json
+{
+  "schema_version": 1,
+  "calibration_id": "subing_intraday_v1",
+  "accepted_timeframes": ["5m", "15m"],
+  "slope_flat_threshold_bps_per_bar": {
+    "5m": "0.688190651160584793944957992",
+    "15m": "1.329531078893356968545882036"
+  }
+}
+```
+
+Test fixture使用独立 test ID/values，但 schema 同样**不得包含** `macd_zero_band_bps`。
+
+Loader contract：
+
+```python
+@dataclass(frozen=True, slots=True)
+class SubingCalibration:
+    calibration_id: str | None
+    accepted_timeframes: frozenset[BarFrequency]
+    slope_flat_threshold_bps_per_bar: Mapping[BarFrequency, Decimal]
+```
+
+Requirements：
+
+- missing production file -> pending；
+- malformed existing file -> stable fail-closed config error；
+- no env/localStorage/runtime override；
+- 1d 不进入这个 artifact；
+- 不接受/忽略 `macd_zero_band_bps` 等未知 executable threshold 字段；schema 漂移必须 fail-closed；
+- artifact commit 只让 Calibration 成为 Git fact，不批准 MACD Gate C、Signal、Alert 或 Runtime。
+
+### Amended Task 7: Deterministic intraday Signal without zero-band hard gate
+
+Gate C 仍按原计划独立执行。Gate C 通过后，Primary LONG hard conditions 为：
+
+```text
+price ABOVE
+slope5 > threshold(primary)
+slope10 > 0
+MACD GOLDEN
+volume_ratio_prev available and >= 3
+latest confirmed companion READY
+companion price ABOVE
+companion slope5 > threshold(companion)
+companion slope10 > 0
+```
+
+SHORT 完全镜像。
+
+`macd_zero_distance_abs/bps` 继续出现在 Factor/Web/research，但不进入 executable condition list，不影响 `MATCHED / NOT_MATCHED`。必须新增 regression：在所有其他输入相同的情况下，仅改变 zero-distance 值不能改变 Signal status/direction。
+
+Signal 仍必须执行 scoped MACD FormalPolicy capability/equivalence Gate；删除 zero-band 不代表 generic MACD capability 被提升。
+
+### Amended downstream sequence
+
+```text
+Gate B-R（pending）
+→ slope-only Calibration artifact
+→ Task 6 scoped MACD evidence
+→ Gate C
+→ amended Task 7 Signal（无 zero-band hard gate）
+→ Task 8 read model/Web
+→ Live human observation
+→ Future Alert V2（独立设计）
+```
+
+Task 9 的 1d track 不自动继承 intraday zero-band rejection；若未来继续 1d，必须单独研究/批准。
+
+### Amended Plan Acceptance
+
+```text
+5m/15m slope thresholds passed Discovery/Validation + human Gate A
+intraday zero-band research completed with frozen-candidate OOS vs NO-BAND
+intraday zero-band hard gate rejected; A/B are not re-tested on Validation
+accepted intraday Calibration is slope-only and Git-tracked/versioned
+macd_zero_distance_abs/bps remain observable/researchable but non-executable
+scoped MACD policy passes independent Review + human Gate C
+Generic MACD registry remains unpromoted
+deterministic MATCHED LONG/SHORT uses price+slope+MACD cross+3x volume+companion alignment
+same-boundary 15m wins
+15m LONG OOS asymmetry is recorded but does not create direction-specific rules
+1d remains non-blocking/pending unless separately accepted
+no Signal persistence
+no Alert V2
+no DB/Canonical/Redis schema addition
+no Runtime mutation
+no automatic parameter promotion
+```
+
+---
+
 **Goal:** 在 Factor Observation 已独立验收后，建立可重复、只读的 5m/15m Calibration Research，经过人工 Gate 将最小 intraday Calibration 固化为 Git 事实，再交付确定性的 `MATCHED LONG/SHORT` 入场 Signal；1d 保持非阻塞研究轨，Alert V2 仍不实现。
 
 **Architecture:** 历史研究只通过 `MarketDataService` 获取 actual-dominant 结果，并按 `resolved_contract_segments` 将 bars 切成互不继承状态的 rank1 segment；每个 segment 单独调用已有 `calculate_subing_factor_series()`，future-label builder 的方向由 Slope/Zero-Band cohort 显式传入，绝不自行猜测。Zero-Band decision cohort 必须重建完整 5m↔15m latest-confirmed relationship。研究 CLI 只输出 stdout JSON；只有人工批准后的最小 Calibration 才写入 `data/research_policies/` 并注入 pure Signal evaluator。
@@ -87,7 +243,7 @@ assert samples[0].outcomes[3].mfe_bps == Decimal("500")
 assert samples[0].outcomes[3].mae_bps == Decimal("-200")
 ```
 
-A selector returning `None` means “not part of this cohort”; label code must never infer LONG/SHORT from price/MACD by itself.
+A selector returning `None` means “not part of this cohort”；label code must never infer LONG/SHORT from price/MACD by itself.
 
 - [ ] **Step 2: Run focused test; confirm missing module**
 
