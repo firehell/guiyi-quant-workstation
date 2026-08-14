@@ -38,7 +38,7 @@
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
-  `NEXT_TRADING_SESSION_NOT_READY`；当前隔离 Runtime 已运行包含 18:05 模板的 `d82e06cc...`。
+  `NEXT_TRADING_SESSION_NOT_READY`；当前隔离 Runtime 已运行包含 18:05 模板的 `v1.2.0^{}`。
 - Alert V1 已在 `develop` 完成代码实现：server-side Scope、actual-dominant confirmed 15m 的 Python HTDY
   current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
   Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
@@ -115,6 +115,16 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-14 14:24 +08:00` 已按本次明确授权将隔离 Runtime 切换到 annotated tag `v1.2.0` 的
+  peeled commit `ba111533f2502cbead02770f7fc8f363adb03a55`；checkout clean/detached 且
+  `git describe --exact-match=v1.2.0`。API/Web/Live/after-market/Alert 五个应用 label 的 loaded root
+  只指向该 worktree，loaded commit 均精确为 `ba111533`；API/Web/Live/Alert 为 running，after-market
+  保持 schedule-only 的 not running，状态脚本 `overall=passed`。API `/api/health` 读回 version=`1.2.0`，
+  Runtime health 为 `ok/readonly=true`，DB/Redis/Live/after-market/Alert 均为 `ok`；Live
+  operational/subscribed=60/60，Alert enabled_rule/scope=1/1。业务读回为 dominants=60、`jm -> JM2609`，
+  火天大有 `htdy_original_15m` 仍仅对 `jm` 启用，苏冰 `jm/15m` 为 current-rank1 `JM2609`、
+  calibration=`accepted`、只读 signal=`not_matched`。本地 FRPC 链通过。本次未执行 migration、手工盘后或
+  Canonical 写入、真实 canary/通知、Nginx/公网配置变更。
 - `2026-08-14 13:54 +08:00` 已按单次授权将本机隔离 Runtime 固定到 clean/detached
   `d82e06ccca0b596c0147549fc93422a0e7794577`，并统一重载 API/Web/Live/after-market 与已启用 Alert。
   五个应用 label 的 loaded root 均为该隔离 worktree，`GUIYI_RUNTIME_COMMIT` 均精确匹配 `d82e06cc`；
@@ -201,8 +211,9 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   `RESEARCH_PENDING`，Zero-Band hard gate 继续 rejected。
 - 本版本不新增订单、自动交易、Alert V2、SuBing Runtime、Signal/Review/Strategy 兼容链或新的 Market
   Catalog 表；Historical/Live seam、`MarketDataService` 唯一入口与 `auto_order=false` 不变。
-- annotated `v1.2.0` tag、`main` 同步与 tag-based Runtime switch 只在本次完整 release verification
-  通过后执行；本节在执行前不把计划写成已发布事实。
+- release merge `ba111533...` 已通过双父普通 merge 保留 main/develop 历史，远端 `main` 与 `develop`
+  均读回该 commit。annotated `v1.2.0` tag object 为 `1e38800a...`，远端 peeled target 精确为
+  `ba111533...`；隔离 Runtime 也已按该 tag 部署并通过上文五服务/业务读回。
 
 ## v1.1.0 封板状态
 
