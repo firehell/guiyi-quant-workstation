@@ -115,9 +115,15 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
-- 本轮新增的 `GUIYI_RUNTIME_COMMIT` 只会在下一次获批的 Runtime render/reload 后进入已加载 plist；当前
-  detached Runtime 未切换，因此不能把新状态脚本的 process-identity Gate 写成已部署。下一次 switch 必须
-  对 API/Web/Live/after-market 与已启用 Alert 一并读回 loaded root/commit；本轮未执行该受控外部操作。
+- `2026-08-14 13:54 +08:00` 已按单次授权将本机隔离 Runtime 固定到 clean/detached
+  `d82e06ccca0b596c0147549fc93422a0e7794577`，并统一重载 API/Web/Live/after-market 与已启用 Alert。
+  五个应用 label 的 loaded root 均为该隔离 worktree，`GUIYI_RUNTIME_COMMIT` 均精确匹配 `d82e06cc`；
+  API/Web/Live/Alert 为 running，after-market 保持 schedule-only 的 not running，状态脚本
+  `overall=passed`。API/Web HTTP 200，Runtime health 为 `ok/readonly=true`，DB/Redis/Live/after-market/
+  Alert 均为 `ok`；Live operational/subscribed=60/60，Alert enabled_rule/scope=1/1。业务读回为 dominants
+  60、`jm -> JM2609`，火天大有 `htdy_original_15m` 仍仅对 `jm` 启用，苏冰 `jm/15m` 为
+  current-rank1 `JM2609`、calibration=`accepted`、只读 signal=`not_matched`。本次未执行 migration、
+  手工盘后或 Canonical 写入、真实 canary/通知、`main`、tag/release。
 - `2026-08-14 12:31 +08:00` 已按单次授权只将 `com.guiyi.quant-alert` 从可变 develop 根切换到现有
   clean/detached Runtime `4f1598e9d84578f3a4468f1d859ed60106b5cae2`；该提交与当前 develop 的 Alert、
   health、MarketRead seam 和 installer 代码逐文件一致。只在 detached 根写入 Alert activation marker，
