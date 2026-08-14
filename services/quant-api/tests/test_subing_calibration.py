@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 from app.market_data.domain import BarFrequency, CanonicalBar
+from app.market_data import subing_calibration as calibration_module
 from app.market_data.subing_calibration import (
     DirectionalSide,
     build_outcomes_at,
@@ -586,3 +589,131 @@ def test_threshold_direction_is_strict_above_or_inclusive_at_or_below() -> None:
 
     assert strict_above.sample_count == 1
     assert inclusive_below.sample_count == 2
+
+
+_CALIBRATION_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "subing_calibration_test_v1.json"
+)
+
+
+def _write_calibration_payload(
+    path: Path,
+    payload: dict[str, object],
+) -> None:
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _valid_calibration_payload() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "calibration_id": "subing_test_intraday_v1",
+        "accepted_timeframes": ["5m", "15m"],
+        "slope_flat_threshold_bps_per_bar": {
+            "5m": "1.25",
+            "15m": "0.80",
+        },
+    }
+
+
+def test_missing_calibration_file_returns_pending(tmp_path: Path) -> None:
+    calibration = calibration_module.load_subing_calibration(tmp_path / "missing.json")
+
+    assert calibration.calibration_id is None
+    assert calibration.accepted_timeframes == frozenset()
+    assert calibration.slope_flat_threshold_bps_per_bar == {}
+
+
+def test_valid_slope_only_fixture_loads_exact_immutable_values() -> None:
+    calibration = calibration_module.load_subing_calibration(_CALIBRATION_FIXTURE)
+
+    assert calibration.calibration_id == "subing_test_intraday_v1"
+    assert calibration.accepted_timeframes == frozenset(
+        {BarFrequency.M5, BarFrequency.M15}
+    )
+    assert calibration.slope_flat_threshold_bps_per_bar == {
+        BarFrequency.M5: Decimal("1.25"),
+        BarFrequency.M15: Decimal("0.80"),
+    }
+    with pytest.raises(TypeError):
+        calibration.slope_flat_threshold_bps_per_bar[BarFrequency.M5] = Decimal(  # type: ignore[index]
+            "9"
+        )
+
+
+def test_unknown_calibration_schema_fails_closed(tmp_path: Path) -> None:
+    payload = _valid_calibration_payload()
+    payload["schema_version"] = 2
+    path = tmp_path / "calibration.json"
+    _write_calibration_payload(path, payload)
+
+    with pytest.raises(ValueError, match="SUBING_CALIBRATION_INVALID"):
+        calibration_module.load_subing_calibration(path)
+
+
+@pytest.mark.parametrize("invalid", ("-0.01", "NaN", "Infinity", "-Infinity", None))
+def test_negative_non_finite_or_null_slope_fails_closed(
+    tmp_path: Path,
+    invalid: str | None,
+) -> None:
+    payload = _valid_calibration_payload()
+    slopes = payload["slope_flat_threshold_bps_per_bar"]
+    assert isinstance(slopes, dict)
+    slopes["5m"] = invalid
+    path = tmp_path / "calibration.json"
+    _write_calibration_payload(path, payload)
+
+    with pytest.raises(ValueError, match="SUBING_CALIBRATION_INVALID"):
+        calibration_module.load_subing_calibration(path)
+
+
+def test_sentinel_scale_slope_fails_closed(tmp_path: Path) -> None:
+    payload = _valid_calibration_payload()
+    slopes = payload["slope_flat_threshold_bps_per_bar"]
+    assert isinstance(slopes, dict)
+    slopes["5m"] = "1E+999999"
+    path = tmp_path / "calibration.json"
+    _write_calibration_payload(path, payload)
+
+    with pytest.raises(ValueError, match="SUBING_CALIBRATION_INVALID"):
+        calibration_module.load_subing_calibration(path)
+
+
+@pytest.mark.parametrize("missing", ("5m", "15m"))
+def test_missing_required_intraday_slope_fails_closed(
+    tmp_path: Path,
+    missing: str,
+) -> None:
+    payload = _valid_calibration_payload()
+    slopes = payload["slope_flat_threshold_bps_per_bar"]
+    assert isinstance(slopes, dict)
+    del slopes[missing]
+    path = tmp_path / "calibration.json"
+    _write_calibration_payload(path, payload)
+
+    with pytest.raises(ValueError, match="SUBING_CALIBRATION_INVALID"):
+        calibration_module.load_subing_calibration(path)
+
+
+def test_daily_accepted_value_fails_closed(tmp_path: Path) -> None:
+    payload = _valid_calibration_payload()
+    accepted = payload["accepted_timeframes"]
+    slopes = payload["slope_flat_threshold_bps_per_bar"]
+    assert isinstance(accepted, list)
+    assert isinstance(slopes, dict)
+    accepted.append("1d")
+    slopes["1d"] = "1.00"
+    path = tmp_path / "calibration.json"
+    _write_calibration_payload(path, payload)
+
+    with pytest.raises(ValueError, match="SUBING_CALIBRATION_INVALID"):
+        calibration_module.load_subing_calibration(path)
+
+
+def test_executable_zero_band_field_fails_closed(tmp_path: Path) -> None:
+    payload = _valid_calibration_payload()
+    payload["macd_zero_band_bps"] = {"5m": "16", "15m": "27"}
+    path = tmp_path / "calibration.json"
+    _write_calibration_payload(path, payload)
+
+    with pytest.raises(ValueError, match="SUBING_CALIBRATION_INVALID"):
+        calibration_module.load_subing_calibration(path)

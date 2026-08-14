@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from pathlib import Path
 from statistics import median, quantiles
+from types import MappingProxyType
+
+from app.core.env import PROJECT_ROOT
 
 from .domain import BarFrequency, CanonicalBar
 from .subing_research import (
@@ -13,6 +18,108 @@ from .subing_research import (
     SubingFactorSnapshot,
     SubingFactorStatus,
 )
+
+
+_SUBING_CALIBRATION_PATH = (
+    PROJECT_ROOT / "data/research_policies/subing_calibration_intraday_v1.json"
+)
+_ACCEPTED_INTRADAY_TIMEFRAMES = frozenset({BarFrequency.M5, BarFrequency.M15})
+_MAX_SLOPE_THRESHOLD_BPS_PER_BAR = Decimal("10000")
+_CALIBRATION_FIELDS = frozenset(
+    {
+        "schema_version",
+        "calibration_id",
+        "accepted_timeframes",
+        "slope_flat_threshold_bps_per_bar",
+    }
+)
+
+
+class SubingCalibrationError(ValueError):
+    code = "SUBING_CALIBRATION_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+@dataclass(frozen=True, slots=True)
+class SubingCalibration:
+    calibration_id: str | None
+    accepted_timeframes: frozenset[BarFrequency]
+    slope_flat_threshold_bps_per_bar: Mapping[BarFrequency, Decimal]
+
+    def __post_init__(self) -> None:
+        accepted = frozenset(self.accepted_timeframes)
+        thresholds = dict(self.slope_flat_threshold_bps_per_bar)
+        if self.calibration_id is None:
+            if accepted or thresholds:
+                raise SubingCalibrationError()
+        elif (
+            not isinstance(self.calibration_id, str)
+            or not self.calibration_id.strip()
+            or accepted != _ACCEPTED_INTRADAY_TIMEFRAMES
+            or set(thresholds) != _ACCEPTED_INTRADAY_TIMEFRAMES
+            or any(
+                not isinstance(value, Decimal) or not value.is_finite() or value < 0
+                or value > _MAX_SLOPE_THRESHOLD_BPS_PER_BAR
+                for value in thresholds.values()
+            )
+        ):
+            raise SubingCalibrationError()
+        object.__setattr__(self, "accepted_timeframes", accepted)
+        object.__setattr__(
+            self,
+            "slope_flat_threshold_bps_per_bar",
+            MappingProxyType(thresholds),
+        )
+
+
+def load_subing_calibration(path: Path | None = None) -> SubingCalibration:
+    source = path if path is not None else _SUBING_CALIBRATION_PATH
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return SubingCalibration(None, frozenset(), MappingProxyType({}))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SubingCalibrationError() from exc
+
+    try:
+        if not isinstance(payload, dict) or set(payload) != _CALIBRATION_FIELDS:
+            raise SubingCalibrationError()
+        if type(payload["schema_version"]) is not int or payload["schema_version"] != 1:
+            raise SubingCalibrationError()
+        calibration_id = payload["calibration_id"]
+        if not isinstance(calibration_id, str) or not calibration_id.strip():
+            raise SubingCalibrationError()
+        raw_timeframes = payload["accepted_timeframes"]
+        if raw_timeframes != [BarFrequency.M5.value, BarFrequency.M15.value]:
+            raise SubingCalibrationError()
+        raw_thresholds = payload["slope_flat_threshold_bps_per_bar"]
+        if not isinstance(raw_thresholds, dict) or set(raw_thresholds) != {
+            BarFrequency.M5.value,
+            BarFrequency.M15.value,
+        }:
+            raise SubingCalibrationError()
+        thresholds: dict[BarFrequency, Decimal] = {}
+        for timeframe in _ACCEPTED_INTRADAY_TIMEFRAMES:
+            raw_value = raw_thresholds[timeframe.value]
+            if not isinstance(raw_value, str):
+                raise SubingCalibrationError()
+            value = Decimal(raw_value)
+            if (
+                not value.is_finite()
+                or value < 0
+                or value > _MAX_SLOPE_THRESHOLD_BPS_PER_BAR
+            ):
+                raise SubingCalibrationError()
+            thresholds[timeframe] = value
+        return SubingCalibration(
+            calibration_id=calibration_id,
+            accepted_timeframes=_ACCEPTED_INTRADAY_TIMEFRAMES,
+            slope_flat_threshold_bps_per_bar=thresholds,
+        )
+    except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+        raise SubingCalibrationError() from exc
 
 
 class DirectionalSide(StrEnum):

@@ -21,8 +21,9 @@
   5K 局部改善且三个 horizon failure 均更高、样本稀疏，因此当前设计已**拒绝 intraday V1
   zero-band hard gate**；`macd_zero_distance_abs/bps` 继续保留为 Factor/Web/research 字段，不进入
   executable Signal 条件或 accepted intraday Calibration。15m LONG/SHORT OOS asymmetry 只记录为
-  observation risk，不创建方向特例、方向阈值或禁用 LONG。Calibration artifact 在本 Task
-  完成前仍尚未创建；MACD Gate C 尚未批准，formal Signal 尚未实现。
+  observation risk，不创建方向特例、方向阈值或禁用 LONG。slope-only Calibration 已以
+  `data/research_policies/subing_calibration_intraday_v1.json` 成为 Git-tracked 仓库事实；
+  MACD Gate C 尚未批准，formal Signal 尚未实现。
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
@@ -201,8 +202,8 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   Web `102 passed / 1 skipped`、Playwright 精确两个用例文件 `13 passed`、production build 通过、
   secret scan 0 finding。Playwright 在子沙箱因 `listen EPERM 127.0.0.1:5182` 未启动后，
   由 controller 在同一工作树外层以原命令重跑通过，未用已部署 Runtime 服务替代。
-- 状态仍是 Factor Observation 完成；Gate A slope 已批准并冻结，intraday zero-band hard gate 已由
-  Discovery/OOS 证据拒绝，Gate B-R slope-only Calibration promotion 尚未批准；formal Signal absent、
-  MACD Gate C 未开始、Alert V1 unchanged。本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
+- 状态仍是 Factor Observation 完成；Calibration Gate B-R 已批准，slope-only artifact 已成为
+  Git-tracked 仓库事实；MACD Gate C 仍 pending，formal Signal absent、Alert V1 unchanged。
+  本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
   `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中，当前隔离 Runtime 仍为 `v1.1.0`
   的 17:00 模板。
