@@ -27,7 +27,7 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 ## 配置与变更 Gate
 
-- [`deploy/launchd/`](launchd/)：Mac API/Web/Live/after-market 与日志轮转模板；安装器模式见
+- [`deploy/launchd/`](launchd/)：Mac API/Web/Live/after-market/Alert 与日志轮转模板；安装器模式见
   `TESTING.md`。
 - [`deploy/frp/`](frp/)：FRPC/FRPS 隧道配置与分段验收。
 - [`deploy/nginx/`](nginx/)：腾讯云 HTTPS/Basic Auth 反代模板。

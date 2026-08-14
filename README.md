@@ -1,7 +1,7 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。当前正式版本为 `v1.1.0`；可执行面是 Market Web、Canonical 历史行情、
-Market API、data CLI 和 Runtime 只读状态。项目不实现自动交易或自动下单。
+本地、单用户的国内期货量化研究工作站。当前正式版本为 `v1.2.0`；可执行面是 Market Web、Canonical 历史行情、
+Market API、data CLI、Runtime 只读状态、Alert V1 与苏冰只读研究观察。项目不实现自动交易或自动下单。
 
 ## 快速导航
 
@@ -52,7 +52,8 @@ active universe 固定 60 品种，正式周期只有 `1m/5m/15m/30m/60m/1d/1w`�
 ## Runtime 恢复验收
 
 1. 先读 `STATUS.md`，再运行 `./scripts/ops/macos/local-services-status.sh`；不要用聊天记录推断当前 Runtime。
-2. 核对 Runtime checkout 为 clean/detached 精确提交、四个 launchd 根一致、active/operational 均为 60。
+2. 核对 Runtime checkout 为 clean/detached 精确提交、五个应用 launchd 根与 loaded commit 一致、
+   active/operational 均为 60，Alert Scope 未从 Market Runtime 范围自动扩大。
 3. 核对 `/api/health`、`/api/runtime/health` 与真实 Market 业务字段；健康接口 200 不替代业务读回。
 4. 盘后失败只读检查 launchd run count 与 `.run/after-market-status.json`，不得手工触发冒充自然成功。
 5. 任何重载、Runtime switch、真实数据/DB 写入或 release/tag 均重新取得单次明确意图。

@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-13
+更新时间：2026-08-14
 
 ## 定位与边界
 
@@ -54,10 +54,13 @@ RQData
 5. **模块长期性审查**：每新增一个模块，都必须先回答“个人使用真的需要长期维护这个模块吗？”；答案不
    明确时，不创建该模块。
 
-最终用户接口为 `guiyi data update|refresh|audit` 与 `/api/v1/market/*`。Market Runtime 的 Live 与盘后
-更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察当日 rank1 completed
-1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为 Canonical。DFD-01～DFD-07
-和 60 品种 Canonical 闭环已经完成，长期规范位于 `openspec/specs/`；现有旧入口不能作为当前合同依据。
+当前用户接口为 Market Web、`/api/v1/market/*`、`/api/alerts/*`，以及 `guiyi data
+update|refresh|audit|after-market`、只读 `guiyi research subing-calibration` 和 `guiyi runtime
+status|live|alert|alert-canary`；其中 `alert-canary` 是独立真实通知 Gate，不是普通只读命令。Market
+Runtime 的 Live 与盘后更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
+当日 rank1 completed 1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为
+Canonical。DFD-01～DFD-07 和 60 品种 Canonical 闭环已经完成，长期规范位于 `openspec/specs/`；现有旧
+入口不能作为当前合同依据。
 
 ## Alert V1 应用边界
 

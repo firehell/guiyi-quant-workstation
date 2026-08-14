@@ -1,6 +1,6 @@
 # Alert V1 — 盘中观察预警设计
 
-日期：2026-08-13  
+日期：2026-08-13
 状态：Implemented / Natural Event Accepted
 
 ## 1. Purpose

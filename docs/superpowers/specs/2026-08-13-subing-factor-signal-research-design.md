@@ -1,6 +1,6 @@
 # 苏冰 Factor → Signal 研究与盘中观察 V1 Design
 
-Final design：2026-08-14  
+Final design：2026-08-14
 Current baseline：`develop` after Gate B-R + Gate C + Task 8 reciprocal orchestration review
 
 ## 1. Purpose

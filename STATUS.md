@@ -38,7 +38,7 @@
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
-  `NEXT_TRADING_SESSION_NOT_READY`；当前隔离 Runtime 仍为 `v1.1.0` 的 17:00 模板，尚未执行 Runtime switch。
+  `NEXT_TRADING_SESSION_NOT_READY`；当前隔离 Runtime 已运行包含 18:05 模板的 `d82e06cc...`。
 - Alert V1 已在 `develop` 完成代码实现：server-side Scope、actual-dominant confirmed 15m 的 Python HTDY
   current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
   Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
@@ -66,7 +66,7 @@
 - CLI：`guiyi data update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、
   `guiyi runtime status|live|alert|alert-canary`；其中 `alert-canary` 是真实通知 Gate，不能作为普通测试执行。
 - Runtime：`operational_products.txt` 是 Live 与目标 18:05/最多一次一小时后 retry 盘后更新的唯一范围入口；
-  该文件已与 active 60 完全对齐。当前隔离 Runtime 在单独切换前仍按旧 17:00 模板运行。
+  该文件已与 active 60 完全对齐，当前隔离 Runtime 已加载 18:05 模板。
 - Alert Runtime：唯一 Rule 为 `htdy_original_15m`，当前 server-side Scope 精确为 `jm`；不从
   `operational_products.txt` 自动扩大 Alert Scope。
 
@@ -191,6 +191,19 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   也为 60/60。Runtime health 读回 Live `CLOSED=60`、`subscribed_count=0`，表明当日 Live snapshot
   已清理；Live 仍未写入 Parquet。
 
+## v1.2.0 发布范围
+
+- 版本源、README 与 changelog 已收口为 `1.2.0`。本版本在 `v1.1.0` 的 Market Research Workspace
+  基线上增加 Alert V1、火天大有窄范围自然预警、苏冰 current-rank1 Factor/Calibration/Signal 只读观察、
+  18:05 盘后调度与 Runtime loaded-commit 身份核对。
+- Alert V1 只保留 `htdy_original_15m × enabled scope_products × WeCom`；当前 Scope 精确为 `jm`，不从
+  operational 60 自动扩大。SuBing Signal 不持久化、不接 Alert、不自动晋升参数或 Runtime，1d 继续
+  `RESEARCH_PENDING`，Zero-Band hard gate 继续 rejected。
+- 本版本不新增订单、自动交易、Alert V2、SuBing Runtime、Signal/Review/Strategy 兼容链或新的 Market
+  Catalog 表；Historical/Live seam、`MarketDataService` 唯一入口与 `auto_order=false` 不变。
+- annotated `v1.2.0` tag、`main` 同步与 tag-based Runtime switch 只在本次完整 release verification
+  通过后执行；本节在执行前不把计划写成已发布事实。
+
 ## v1.1.0 封板状态
 
 - `v1.1.0` 在 `v1.0.0` 的 60 品种 Canonical/Runtime 基线上封板 Market Research Workspace P0：全市场
@@ -247,6 +260,6 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   generic MACD capability 未晋升。formal 5m/15m Signal pure core 与 Task 8 API/Web observation 已完成，
   1d 仍 pending/non-blocking；无 Signal persistence、Alert integration、SuBing Runtime deployment、DB/
   Canonical write，Alert V1 unchanged，`auto_order=false`。
-  本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
-  `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中，当前隔离 Runtime 仍为 `v1.1.0`
-  的 17:00 模板。
+  Task 8 当轮没有 Runtime deployment/switch；当时 `4f1598e9` 的 18:05 调度与
+  `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中、隔离 Runtime 仍为 `v1.1.0`
+  的 17:00 模板。该历史截点已由上文 `2026-08-14 13:54 +08:00` 的 `d82e06cc` 五服务部署取代。

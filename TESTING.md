@@ -179,8 +179,8 @@ plutil -lint .run/launchd/com.guiyi.quant-after-market.plist
 部署属于受控外部操作。取得本次明确意图后，将 Runtime worktree 固定到已验证 commit，构建 Web，安装
 API 依赖并仅执行一次对应 Runtime switch。部署后至少读回：
 
-- Runtime clean/detached 且等于批准 commit；
-- API/Web/Live/after-market 的 launchd 根只指向该 worktree；
+- Runtime clean/detached 且等于批准 commit 或 release tag 的 peeled commit；
+- API/Web/Live/after-market/Alert 的 launchd 根只指向该 worktree，已加载 commit 与 checkout 一致；
 - `operational_products.txt` 与 active 60 完全一致，Live subscription/heartbeat 与 after-market status
   均报告同一 60 品种集合；
 - API、Web、Runtime health 和实际 Market 业务字段可读；

@@ -12,7 +12,7 @@ def test_health_endpoint_returns_ok() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["service"] == "guiyi-quant-api"
-    assert payload["version"] == "1.1.0"
+    assert payload["version"] == "1.2.0"
     assert payload.get("readonly") is True
 
 
@@ -25,7 +25,7 @@ def test_api_health_endpoint_returns_full_payload() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["service"] == "guiyi-quant-api"
-    assert payload["version"] == "1.1.0"
+    assert payload["version"] == "1.2.0"
     assert payload.get("readonly") is True
 
 
