@@ -3,6 +3,124 @@
 Final design：2026-08-13  
 Review baseline：`develop@1f6d8a300136be1539bb4c2d498955a9ea01e3cf`（本轮 Spec review 前）
 
+## 0. 2026-08-14 Intraday Zero-Band Research Amendment（权威覆盖）
+
+本节是基于已经完成的 5m/15m Zero-Band Discovery 与后续非重叠 OOS Validation 形成的**研究驱动设计收缩**。它只修改 intraday V1 的可执行语义；下文旧章节中与本节冲突的 `macd_zero_band` hard-gate / 四参数 Calibration / Gate B 描述保留为研究过程记录，但**不得继续作为实现合同执行**。
+
+### 0.1 Gate A 继续有效
+
+5m/15m slope Gate A 已人工批准并冻结：
+
+```text
+5m slope_flat_threshold_bps_per_bar
+= 0.688190651160584793944957992
+
+15m slope_flat_threshold_bps_per_bar
+= 1.329531078893356968545882036
+```
+
+这两个值仅解释为 EMA21 flat / trend-persistence filter，不构成 slope 单因子盈利验证。
+
+### 0.2 Intraday Zero-Band hard gate 被 OOS 拒绝
+
+Zero-Band Discovery 使用完整 companion-aware Cohort B；随后冻结最宽候选 C 并在独立 Validation window `2026-05-01..2026-08-11` 与 **NO-BAND baseline** 做 OOS 对照。
+
+冻结候选为：
+
+```text
+5m C = 16.01901065112843434322837440 bps
+15m C = 27.16954645407146036410753274 bps
+```
+
+OOS 结论不支持 `zero_distance_bps <= threshold` 作为 intraday V1 hard gate：
+
+- 5m C 相比 NO-BAND，在 3K/5K/8K 的 EMA21 failure 全部更高；5K/8K median directional return 与正负分布也更弱。MAE 变浅同时 MFE 明显缩小，更像压缩双向 excursion，而不是改善方向质量。
+- 15m 只有 5K 出现局部 terminal-return 改善，但 3K 无稳定增量、8K 更弱，且三个 horizon 的 EMA21 failure 均高于 NO-BAND；样本较薄，不能形成决策级 OOS 证据。
+- 15m LONG/SHORT 存在明显 OOS asymmetry，但不得使用该 Validation 结果现场创建 LONG/SHORT 不同 threshold、禁用方向或其他新规则；若未来要改变方向语义，必须作为新版本重新 Discovery/OOS。
+- 不回头验证 A/B，不在 Validation window 重新搜索 threshold，不增加 product/sector/direction override。
+
+因此 intraday V1 的正式决定是：
+
+> **保留 MACD cross；保留 `macd_zero_distance_abs/bps` 作为 Factor、Web 解释和未来研究字段；删除 MACD zero-band 作为 5m/15m executable Signal hard condition。**
+
+该结论只适用于当前 5m/15m intraday V1。1d 仍是独立、非阻塞的 research-only 轨道；不得从 intraday OOS 自动推导 1d zero-band 的结论。
+
+### 0.3 Intraday accepted Calibration 收缩为 slope-only
+
+后续可被 Git-tracked/versioned artifact 接受的 intraday V1 Calibration 只包含：
+
+```text
+5m slope_flat_threshold_bps_per_bar
+15m slope_flat_threshold_bps_per_bar
+```
+
+不得使用 `Infinity`、超大哨兵值、nullable special-case 或其他方式伪装 zero-band 仍存在。`macd_zero_distance_*` 不进入 accepted intraday Calibration artifact。
+
+在新的人工 Gate（本文称 **Gate B-R**）批准之前，不得创建该 artifact；当前仍保持 `RESEARCH_PENDING`。
+
+### 0.4 Intraday Signal Required conditions（覆盖 §9.3）
+
+Primary 5m/15m LONG 必需条件：
+
+```text
+price ABOVE EMA21
+slope5 > frozen threshold(primary)
+slope10 > 0
+MACD GOLDEN
+volume_ratio_prev available and >= 3
+latest confirmed companion READY
+companion price ABOVE EMA21
+companion slope5 > frozen threshold(companion)
+companion slope10 > 0
+```
+
+SHORT 完全镜像：
+
+```text
+price BELOW EMA21
+slope5 < -frozen threshold(primary)
+slope10 < 0
+MACD DEAD
+volume_ratio_prev available and >= 3
+latest confirmed companion READY
+companion price BELOW EMA21
+companion slope5 < -frozen threshold(companion)
+companion slope10 < 0
+```
+
+`macd_zero_distance_abs/bps` 可以展示、记录 condition explanation 或用于未来 research，但**不得决定 `MATCHED / NOT_MATCHED`**。
+
+### 0.5 Development/Gate 覆盖（覆盖 §13.3-13.6、§18、§20-21 的冲突部分）
+
+新的 intraday 主线为：
+
+```text
+Slope Discovery/Validation
+→ Gate A：5m/15m slope approved
+→ Zero-Band Discovery + frozen-C OOS vs NO-BAND
+→ research conclusion：intraday zero-band hard gate rejected
+→ Gate B-R：人工批准 slope-only intraday Calibration 语义
+→ Git-tracked slope-only Calibration artifact
+→ scoped MACD Signal capability evidence / Gate C
+→ deterministic intraday Entry Signal
+→ Live human observation
+→ Future Alert V2（独立设计）
+```
+
+Zero-Band research 代码/CLI 可以继续作为 research-only 工具保留，不需要为了“清理”删除；它不得成为当前 accepted artifact 或 executable intraday Signal 的依赖。
+
+V1 验收必须额外证明：
+
+```text
+macd_zero_distance_abs/bps 仍可观察/研究
+5m/15m Signal 不读取 zero-band threshold
+更改 zero_distance 值本身不会改变 MATCHED/NOT_MATCHED（其他条件相同）
+accepted intraday Calibration 只有两个 slope Decimal
+15m LONG OOS asymmetry 被记录为 observation risk，而没有被偷偷编码成方向特例
+```
+
+---
+
 ## 1. Purpose
 
 本设计定义归一量化下一阶段“苏冰”研究能力的 V1 边界。
@@ -461,7 +579,7 @@ Dead：
 
 ```text
 prev DIF >= prev DEA
-AND current DIF < current DEA
+AND current DIF < prev DEA
 ```
 
 交叉确认 K 上：
