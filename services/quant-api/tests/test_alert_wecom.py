@@ -66,6 +66,24 @@ def test_subing_5m_message_is_short() -> None:
     assert text == "【苏冰】焦煤 · JM2609\n\n5m 买入信号 · 10:25"
 
 
+def test_subing_5m_rejects_lower_tf_confirmation() -> None:
+    event = AlertNotificationMessage(
+        rule_code="subing_entry_signal_v1",
+        symbol="jm",
+        product_name="焦煤",
+        contract="JM2609",
+        frequency="5m",
+        bar_end=datetime(2026, 8, 14, 10, 25, tzinfo=_SHANGHAI),
+        result_codes=("buy",),
+        lower_tf_confirmation=True,
+    )
+
+    with pytest.raises(
+        ValueError, match="^ALERT_NOTIFICATION_LOWER_TF_CONFIRMATION_INVALID$"
+    ):
+        format_alert_message(event)
+
+
 def test_subing_15m_lower_tf_confirmation_adds_one_line() -> None:
     text = format_alert_message(
         AlertNotificationMessage(

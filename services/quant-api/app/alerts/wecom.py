@@ -145,6 +145,8 @@ def _format_htdy_message(event: AlertNotificationMessage) -> str:
 def _format_subing_message(event: AlertNotificationMessage) -> str:
     if event.frequency not in {"5m", "15m"}:
         raise ValueError("ALERT_NOTIFICATION_FREQUENCY_INVALID")
+    if event.frequency == "5m" and event.lower_tf_confirmation:
+        raise ValueError("ALERT_NOTIFICATION_LOWER_TF_CONFIRMATION_INVALID")
     if event.result_codes == ("buy",):
         action = "买入"
     elif event.result_codes == ("sell",):
