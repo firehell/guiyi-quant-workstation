@@ -384,21 +384,21 @@ def test_companion_macd_and_volume_are_non_executable_poison(
     assert result.direction is direction
 
 
-def test_missing_calibration_precedes_known_hard_failure() -> None:
-    """Catches an unfrozen slope being treated as zero or a hard fail winning priority."""
+def test_known_hard_failure_precedes_missing_calibration() -> None:
+    """A known failed condition is not a candidate waiting on calibration."""
     result = evaluate_subing_signal(
         _signal_factor(timeframe=BarFrequency.M5, volume_ratio=Decimal("1")),
         companion=_signal_factor(timeframe=BarFrequency.M15),
         calibration=SubingCalibration(None, frozenset(), {}),
     )
 
-    assert result.status is SubingSignalStatus.RESEARCH_PENDING
-    assert result.direction is SubingDirection.LONG
-    assert result.error_code == "SUBING_CALIBRATION_PENDING"
+    assert result.status is SubingSignalStatus.NOT_MATCHED
+    assert result.direction is SubingDirection.NONE
+    assert result.error_code is None
 
 
-def test_pending_calibration_only_emits_a_directionally_coherent_candidate() -> None:
-    """Catches a negative slope5 being labeled as a pending LONG candidate."""
+def test_pending_calibration_does_not_emit_an_incoherent_candidate() -> None:
+    """A negative slope5 is a known failure, not a pending LONG candidate."""
     result = evaluate_subing_signal(
         _signal_factor(
             timeframe=BarFrequency.M5,
@@ -408,8 +408,9 @@ def test_pending_calibration_only_emits_a_directionally_coherent_candidate() -> 
         calibration=SubingCalibration(None, frozenset(), {}),
     )
 
-    assert result.status is SubingSignalStatus.RESEARCH_PENDING
+    assert result.status is SubingSignalStatus.NOT_MATCHED
     assert result.direction is SubingDirection.NONE
+    assert result.error_code is None
 
 
 def test_unavailable_factor_precedes_pending_calibration() -> None:
@@ -554,10 +555,10 @@ def test_daily_signal_remains_research_pending_without_intraday_companion() -> N
     assert result.error_code == "SUBING_DAILY_RESEARCH_PENDING"
 
 
-def test_scoped_policy_unavailable_precedes_known_hard_failure(
+def test_known_hard_failure_precedes_scoped_policy_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catches missing Gate-C policy being treated as a hard condition failure."""
+    """Catches missing Gate-C policy hiding an already failed hard condition."""
     real_require = require_formal_policy
 
     def missing_signal_policy(policy_id: str, *, consumer: str | None = None):
@@ -575,9 +576,22 @@ def test_scoped_policy_unavailable_precedes_known_hard_failure(
         calibration=_accepted_calibration(),
     )
 
-    assert result.status is SubingSignalStatus.RESEARCH_PENDING
-    assert result.direction is SubingDirection.LONG
-    assert result.error_code == "SUBING_MACD_POLICY_UNAVAILABLE"
+    assert result.status is SubingSignalStatus.NOT_MATCHED
+    assert result.direction is SubingDirection.NONE
+    assert result.error_code is None
+
+
+def test_known_hard_failure_precedes_pending_calibration() -> None:
+    """Catches an absent artifact presenting an impossible setup as a candidate."""
+    result = evaluate_subing_signal(
+        _signal_factor(timeframe=BarFrequency.M5, volume_ratio=Decimal("1")),
+        companion=_signal_factor(timeframe=BarFrequency.M15),
+        calibration=SubingCalibration(None, frozenset(), {}),
+    )
+
+    assert result.status is SubingSignalStatus.NOT_MATCHED
+    assert result.direction is SubingDirection.NONE
+    assert result.error_code is None
 
 
 def test_scoped_policy_equivalence_mismatch_never_matches(

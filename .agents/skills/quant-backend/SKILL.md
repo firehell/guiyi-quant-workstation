@@ -13,14 +13,17 @@ description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Ale
 - SQLAlchemy 2
 - Alembic
 - PostgreSQL
-- Redis（runtime 探测；signal/notification worker 已退役）
+- Redis（Market Live overlay、Alert completed-bar transport 与 runtime 探测；旧 signal/notification worker 已退役）
 - Canonical Parquet + MarketDataService
 - pytest / ruff / mypy
 
 ## Current mounted modules
 
 - Market Canonical 读：`/api/v1/market/bars|coverage|dominants`
+- Market 研究读：Product Research、Radar 与 SuBing current-rank1 observation API
+- Alert Application Domain：server-side Scope/Event API、独立 Alert Runtime 与 WeCom one-shot sender
 - `guiyi data update|refresh|audit`
+- `guiyi research subing-calibration`（只读 stdout 研究报告）
 - runtime 只读状态：`/api/runtime/health` + `guiyi runtime status`
 - 轻量 liveness：`/health`、`/api/health`、`/healthz`（同一 payload）
 
@@ -28,12 +31,13 @@ description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Ale
 
 ## 分层
 
-- `api/`：路由和依赖注入（当前仅 market + runtime）。
+- `api/`：路由和依赖注入（当前 market + alerts + runtime）。
 - `schemas/`：Pydantic 请求/响应。
 - `models/market_tables.py`：八表 ORM。
 - `market_data/`：Catalog / Storage / MarketDataService / maintenance。
 - `guiyi_cli/`：统一 CLI。
-- `services/runtime_health.py`：只读 runtime 探测（含退役组件 stub）。
+- `alerts/`：Rule/Scope/Event、HTDY scoped evaluator、短 Session Runtime 与严格 WeCom sender。
+- `services/runtime_health.py`：只读 Market/Alert runtime 探测。
 
 ## 规则
 

@@ -10,6 +10,11 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
+RUNTIME_COMMIT="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null)"
+if [[ ! "$RUNTIME_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  printf '[install-local-services] invalid runtime commit identity\n' >&2
+  exit 1
+fi
 base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
 market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
 alert_runtime_labels=(com.guiyi.quant-alert)
@@ -30,6 +35,7 @@ for label in "${render_labels[@]}"; do
   output="$RENDER_DIR/${label}.plist"
   sed \
     -e "s|__PROJECT_ROOT__|$PROJECT_ROOT|g" \
+    -e "s|__RUNTIME_COMMIT__|$RUNTIME_COMMIT|g" \
     -e "s|__RUNTIME_DIR__|$RUNTIME_DIR|g" \
     -e "s|__LOG_DIR__|$LOG_DIR|g" \
     -e "s|__HOME__|$HOME|g" \

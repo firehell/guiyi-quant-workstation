@@ -7,6 +7,7 @@ from .models import FormalPolicy
 
 FORMAL_BACKTEST_CONSUMER = "formal_backtest"
 FROZEN_LEGACY_BACKTEST_CONSUMER = "frozen_legacy_backtest"
+HTDY_ALERT_OBSERVATION_CONSUMER = "htdy_alert_observation"
 
 
 _POLICIES: dict[str, FormalPolicy] = {
@@ -131,9 +132,12 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="period25_with_future_window",
         confirmed_only=False,
         frozen_legacy=False,
-        allowed_consumers=("Web_manual_observation",),
+        allowed_consumers=("Web_manual_observation", HTDY_ALERT_OBSERVATION_CONSUMER),
         blocked_consumers=("Backtest", FORMAL_BACKTEST_CONSUMER, "Signal", "live", "alert", "notification"),
-        notes="Original XMA observation-only; D4-00 unresolved blocks Tongdaxin-equivalent claim.",
+        notes=(
+            "Original XMA observation-only; scoped current-bar Alert observation is allowed, "
+            "while generic alert/live/Signal/notification and formal backtest remain blocked."
+        ),
     ),
     "huotian_dayou_strict_v1": FormalPolicy(
         policy_id="huotian_dayou_strict_v1",

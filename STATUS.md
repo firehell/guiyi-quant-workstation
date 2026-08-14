@@ -49,6 +49,13 @@
   clean/detached `4f1598e9...`，API health 读回 `components.alert.status=ok`。Alert V1 自然通知闭环已验收。
 - SuBing 本轮未修改 Rule/Scope/Event、WeCom 或 Alert Runtime，不改变上述 Alert V1
   业务语义；其后完成的 Alert 自然闭环与 detached switch 也不授权 Alert V2 或 SuBing Runtime。
+- `2026-08-14` 完成 Alert/HTDY/SuBing 跨代码、测试、运维与文档的彻底 Review 收口：SuBing Historical
+  同时校验 current rank1 segment 起止、production Calibration exact identity 与独立 EMA21 标签分母，已知
+  Signal 条件失败不再误报 `RESEARCH_PENDING`；HTDY Alert evaluator 增加 scoped FormalPolicy，Alert
+  message/heartbeat 改为短 Session，WeCom sender/health 共用严格目标校验；launchd 状态改为核对实际已加载
+  root/commit；Web 标记稳定排序并把 SuBing/Alert 页面生命周期拆入 composable，删除只被测试引用的死代码
+  和三个已完成的一次性实施 Plan。上述均是 `develop` 代码/文档收口，不执行 migration、通知、数据写入、
+  release 或 Runtime switch。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
@@ -108,6 +115,9 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- 本轮新增的 `GUIYI_RUNTIME_COMMIT` 只会在下一次获批的 Runtime render/reload 后进入已加载 plist；当前
+  detached Runtime 未切换，因此不能把新状态脚本的 process-identity Gate 写成已部署。下一次 switch 必须
+  对 API/Web/Live/after-market 与已启用 Alert 一并读回 loaded root/commit；本轮未执行该受控外部操作。
 - `2026-08-14 12:31 +08:00` 已按单次授权只将 `com.guiyi.quant-alert` 从可变 develop 根切换到现有
   clean/detached Runtime `4f1598e9d84578f3a4468f1d859ed60106b5cae2`；该提交与当前 develop 的 Alert、
   health、MarketRead seam 和 installer 代码逐文件一致。只在 detached 根写入 Alert activation marker，

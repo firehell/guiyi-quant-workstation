@@ -5,8 +5,8 @@
 ## 定位
 
 `packages/quant-core/guiyi_quant/indicators/` 是指标业务口径的唯一权威模块。当前保留 EMA、MACD、ATR、
-HTDY original/strict、Registry 与 formal policy；旧策略包、回测、Signal/Review、realtime evaluator、
-通知和报告 Gate 都已退役。
+HTDY original/strict、Registry 与 formal policy；旧策略包、回测、Signal/Review、generic realtime
+evaluator、旧通知和报告 Gate 都已退役。当前 Alert V1 只保留独立、严格限域的 HTDY current-bar consumer。
 
 | 角色 | 位置 | 当前状态 |
 |---|---|---|
@@ -41,6 +41,9 @@ packages/quant-core/guiyi_quant/indicators/
   generic `macd` 仍为 `compatibility_validated`，`backtest/live/alert` capability 均为 false。
 - Gate C 已人工批准 `subing_macd_sma_window_scale2_v1`，且只允许 `subing_signal` consumer；它不提升
   generic MACD，也不批准 Backtest、Alert V2、notification、generic live 或 Runtime。
+- HTDY original 只允许明确命名的 `htdy_alert_observation` consumer 在
+  `actual_dominant + confirmed 15m + current last bar` 边界执行；generic `alert/live/notification`
+  consumer 仍然 fail-closed。
 - 所有正式消费者只能使用 confirmed bars；未确认 bar 最多用于 Web preview。
 - 未知 `indicator_code`、policy 或 consumer 必须 fail-closed。
 - 未来若重建策略或回测，必须新任务、新合同并复用 Python Kernel；不得恢复旧策略包或复制算法。

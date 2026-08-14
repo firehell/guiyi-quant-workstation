@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.market_data.market_read_service import MarketReadWindow
-from guiyi_quant.indicators import compute_htdy_original, get_indicator
+from guiyi_quant.indicators import (
+    HTDY_ALERT_OBSERVATION_CONSUMER,
+    compute_htdy_original,
+    get_indicator,
+    require_formal_policy,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +39,13 @@ class HtdyOriginal15mEvaluator:
         definition = get_indicator(self.indicator_code)
         if definition.alert_capable is not True:
             raise AlertEvaluationError("ALERT_EVALUATION_CAPABILITY_DISABLED")
+        try:
+            require_formal_policy(
+                definition.formal_policy_id,
+                consumer=HTDY_ALERT_OBSERVATION_CONSUMER,
+            )
+        except (KeyError, ValueError):
+            raise AlertEvaluationError("ALERT_EVALUATION_POLICY_DISABLED") from None
         if (
             window.series_kind != "actual_dominant"
             or window.frequency != self.frequency

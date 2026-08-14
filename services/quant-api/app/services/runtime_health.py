@@ -24,6 +24,7 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.alerts.wecom import is_valid_wecom_webhook_url
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -72,11 +73,20 @@ def build_runtime_health(
         if alert_runtime_enabled is None
         else alert_runtime_enabled
     )
-    webhook_configured = (
-        bool(os.getenv("WECOM_WEBHOOK_URL", "").strip())
-        if wecom_configured is None
-        else wecom_configured
-    )
+    if wecom_configured is None:
+        webhook_value = os.getenv("WECOM_WEBHOOK_URL", "")
+        webhook_present = bool(webhook_value.strip())
+        webhook_configured = is_valid_wecom_webhook_url(webhook_value)
+        webhook_error_type = (
+            None
+            if webhook_configured
+            else "wecom_webhook_invalid"
+            if webhook_present
+            else "wecom_webhook_missing"
+        )
+    else:
+        webhook_configured = wecom_configured
+        webhook_error_type = None if webhook_configured else "wecom_webhook_missing"
     components: dict[str, Any] = {}
     components["db"] = _collect_db_health(session)
     redis_connection, redis_health = _collect_redis_health(redis_factory or get_redis_connection)
@@ -97,6 +107,7 @@ def build_runtime_health(
         now=current_time,
         configured_enabled=alert_enabled,
         webhook_configured=webhook_configured,
+        webhook_error_type=webhook_error_type,
         freshness_seconds=alert_freshness_seconds,
     )
 
@@ -135,6 +146,7 @@ def _collect_alert_health(
     now: datetime,
     configured_enabled: bool,
     webhook_configured: bool,
+    webhook_error_type: str | None,
     freshness_seconds: int,
 ) -> dict[str, Any]:
     empty = {
@@ -151,7 +163,7 @@ def _collect_alert_health(
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **empty,
-            "error_type": "wecom_webhook_missing",
+            "error_type": webhook_error_type or "wecom_webhook_missing",
         }
     if connection is None:
         return {

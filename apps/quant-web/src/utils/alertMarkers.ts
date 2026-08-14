@@ -33,9 +33,16 @@ export function mergeKlineMarkers(
   currentObservationMarkers: KlineMarker[],
   persistentAlertMarkers: KlineMarker[],
 ): KlineMarker[] {
-  const merged = new Map<string, KlineMarker>()
-  for (const marker of [...currentObservationMarkers, ...persistentAlertMarkers]) {
-    merged.set(marker.id, marker)
+  const merged = new Map<string, { marker: KlineMarker; sourceOrder: number }>()
+  for (const [sourceOrder, markers] of [currentObservationMarkers, persistentAlertMarkers].entries()) {
+    for (const marker of markers) merged.set(marker.id, { marker, sourceOrder })
   }
   return [...merged.values()]
+    .sort((left, right) => {
+      const timeOrder = Date.parse(left.marker.time) - Date.parse(right.marker.time)
+      return timeOrder
+        || left.sourceOrder - right.sourceOrder
+        || left.marker.id.localeCompare(right.marker.id)
+    })
+    .map(({ marker }) => marker)
 }

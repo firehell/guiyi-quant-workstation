@@ -261,6 +261,26 @@ def evaluate_subing_signal(
         )
 
     candidate = _candidate_direction(primary_snapshot, companion_snapshot)
+    condition_direction = (
+        candidate
+        if candidate is not SubingDirection.NONE
+        else _condition_direction(primary_snapshot)
+    )
+    known_conditions = _known_direction_conditions(
+        condition_direction,
+        primary_snapshot,
+        companion_snapshot,
+    )
+    if any(
+        condition.state is SubingConditionState.FAIL
+        for condition in known_conditions
+    ):
+        return _signal_state(
+            SubingSignalStatus.NOT_MATCHED,
+            trigger_timeframe=primary_snapshot.timeframe,
+            bar_end=primary_snapshot.bar_end,
+            conditions=known_conditions,
+        )
     thresholds = _calibration_thresholds(
         calibration,
         primary_snapshot.timeframe,
@@ -543,6 +563,45 @@ def _direction_conditions(
             "MACD_POLICY_EQUIVALENCE",
             SubingConditionState.PASS,
         ),
+    )
+
+
+def _known_direction_conditions(
+    direction: SubingDirection,
+    primary: SubingFactorSnapshot,
+    companion: SubingFactorSnapshot,
+) -> tuple[SubingConditionResult, ...]:
+    assert primary.volume_ratio_prev is not None
+    if direction is SubingDirection.LONG:
+        checks = (
+            ("PRIMARY_PRICE_DIRECTION", primary.price_side is PriceSide.ABOVE),
+            ("PRIMARY_SLOPE5_DIRECTION", primary.slope_5_bps_per_bar > 0),
+            ("PRIMARY_SLOPE10_DIRECTION", primary.slope_10_bps_per_bar > 0),
+            ("PRIMARY_MACD_CROSS", primary.macd_cross is MacdCross.GOLDEN),
+            ("PRIMARY_VOLUME_RATIO", primary.volume_ratio_prev >= 3),
+            ("COMPANION_PRICE_DIRECTION", companion.price_side is PriceSide.ABOVE),
+            ("COMPANION_SLOPE5_DIRECTION", companion.slope_5_bps_per_bar > 0),
+            ("COMPANION_SLOPE10_DIRECTION", companion.slope_10_bps_per_bar > 0),
+        )
+    elif direction is SubingDirection.SHORT:
+        checks = (
+            ("PRIMARY_PRICE_DIRECTION", primary.price_side is PriceSide.BELOW),
+            ("PRIMARY_SLOPE5_DIRECTION", primary.slope_5_bps_per_bar < 0),
+            ("PRIMARY_SLOPE10_DIRECTION", primary.slope_10_bps_per_bar < 0),
+            ("PRIMARY_MACD_CROSS", primary.macd_cross is MacdCross.DEAD),
+            ("PRIMARY_VOLUME_RATIO", primary.volume_ratio_prev >= 3),
+            ("COMPANION_PRICE_DIRECTION", companion.price_side is PriceSide.BELOW),
+            ("COMPANION_SLOPE5_DIRECTION", companion.slope_5_bps_per_bar < 0),
+            ("COMPANION_SLOPE10_DIRECTION", companion.slope_10_bps_per_bar < 0),
+        )
+    else:
+        raise ValueError("LONG or SHORT direction required")
+    return tuple(
+        SubingConditionResult(
+            code,
+            SubingConditionState.PASS if passed else SubingConditionState.FAIL,
+        )
+        for code, passed in checks
     )
 
 

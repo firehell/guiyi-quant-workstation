@@ -27,6 +27,10 @@ def test_alert_launchd_render_only_is_default_closed_and_has_runtime_contract(tm
     assert payload["RunAtLoad"] is True
     assert payload["KeepAlive"] is True
     assert payload["ThrottleInterval"] == 10
+    assert (
+        payload["EnvironmentVariables"]["GUIYI_RUNTIME_COMMIT"]
+        == "1111111111111111111111111111111111111111"
+    )
 
 
 def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_path: Path) -> None:
@@ -85,6 +89,17 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
     launchctl.chmod(0o755)
+    git = fake_bin / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "-C" ] && [ "${3:-}" = "rev-parse" ] && [ "${4:-}" = "HEAD" ]; then\n'
+        "  printf '1111111111111111111111111111111111111111\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    git.chmod(0o755)
     return home, fake_bin
 
 

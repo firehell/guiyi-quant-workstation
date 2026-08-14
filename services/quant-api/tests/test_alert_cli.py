@@ -13,9 +13,10 @@ from app.guiyi_cli.main import build_parser, main
 def _run(args: list[str], **factories):
     stdout = io.StringIO()
     stderr = io.StringIO()
+    session_factory = factories.pop("session_factory", lambda: nullcontext(object()))
     code = main(
         args,
-        session_factory=lambda: nullcontext(object()),
+        session_factory=session_factory,
         stdout=stdout,
         stderr=stderr,
         **factories,
@@ -41,9 +42,13 @@ def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
         def run_forever(self) -> None:
             calls.append("run_forever")
 
+    def forbidden_outer_session():
+        raise AssertionError("runtime alert must not hold one process-lifetime DB session")
+
     code, payload = _run(
         ["runtime", "alert"],
-        alert_runtime_factory=lambda _session: Runtime(),
+        session_factory=forbidden_outer_session,
+        alert_runtime_factory=lambda: Runtime(),
     )
 
     assert code == 0
@@ -90,4 +95,4 @@ def test_default_alert_factories_fail_closed_without_activation_or_webhook(
     with pytest.raises(RuntimeError, match="WECOM_WEBHOOK_NOT_CONFIGURED"):
         build_wecom_sender_from_env()
     with pytest.raises(RuntimeError, match="ALERT_RUNTIME_NOT_ENABLED"):
-        build_alert_runtime(object())  # type: ignore[arg-type]
+        build_alert_runtime()

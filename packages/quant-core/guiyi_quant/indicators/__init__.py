@@ -24,6 +24,7 @@ from .models import (
 from .policy import (
     FORMAL_BACKTEST_CONSUMER,
     FROZEN_LEGACY_BACKTEST_CONSUMER,
+    HTDY_ALERT_OBSERVATION_CONSUMER,
     formal_policy_registry,
     get_formal_policy,
     require_formal_policy,
@@ -44,6 +45,7 @@ __all__ = [
     "HtdyOriginalResult",
     "FORMAL_BACKTEST_CONSUMER",
     "FROZEN_LEGACY_BACKTEST_CONSUMER",
+    "HTDY_ALERT_OBSERVATION_CONSUMER",
     "HTDY_STRICT_BOOLEAN_FIELDS",
     "HTDY_STRICT_NUMERIC_FIELDS",
     "HistogramScale",

@@ -9,6 +9,11 @@ import pytest
 from app.alerts.wecom import AlertEventMessage, WeComSendError, WeComWebhookSender
 
 
+_TEST_WEBHOOK_URL = (
+    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?" + "key=test-key-12345678"
+)
+
+
 def _event(observations: tuple[str, ...]) -> AlertEventMessage:
     return AlertEventMessage(
         symbol="ag",
@@ -39,14 +44,14 @@ def test_send_uses_exact_concise_template(
         return {"errcode": 0}
 
     WeComWebhookSender(
-        "https://example.invalid/webhook",
+        _TEST_WEBHOOK_URL,
         timeout_seconds=3.0,
         post_json=post_json,
     ).send(_event(observations))
 
     assert calls == [
         (
-            "https://example.invalid/webhook",
+            _TEST_WEBHOOK_URL,
             {
                 "msgtype": "text",
                 "text": {
@@ -71,7 +76,7 @@ def test_canary_is_fixed_and_does_not_accept_arbitrary_text() -> None:
         payloads.append(payload)
         return {"errcode": 0}
 
-    sender = WeComWebhookSender("https://example.invalid/webhook", post_json=post_json)
+    sender = WeComWebhookSender(_TEST_WEBHOOK_URL, post_json=post_json)
 
     sender.send_canary()
 
@@ -88,7 +93,7 @@ def test_send_failure_is_one_shot_and_log_is_sanitized(
     failure: Exception,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    secret_url = "https://example.invalid/private-key-value"
+    secret_url = _TEST_WEBHOOK_URL
     calls = 0
 
     def post_json(_url: str, _payload: object, *, timeout: float) -> object:
@@ -121,7 +126,7 @@ def test_wecom_error_response_is_one_shot_and_sanitized(caplog: pytest.LogCaptur
 
     with caplog.at_level(logging.WARNING, logger="app.alerts.wecom"):
         with pytest.raises(WeComSendError, match="WECOM_RESPONSE_REJECTED"):
-            WeComWebhookSender("https://example.invalid/webhook", post_json=post_json).send(
+            WeComWebhookSender(_TEST_WEBHOOK_URL, post_json=post_json).send(
                 _event(("sell",))
             )
 
@@ -136,6 +141,27 @@ def test_malformed_success_errcode_fails_closed(errcode: object) -> None:
         return {"errcode": errcode}
 
     with pytest.raises(WeComSendError, match="WECOM_RESPONSE_REJECTED"):
-        WeComWebhookSender("https://example.invalid/webhook", post_json=post_json).send(
+        WeComWebhookSender(_TEST_WEBHOOK_URL, post_json=post_json).send(
             _event(("buy",))
         )
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "https://example.invalid/cgi-bin/webhook/send?" + "key=test-key-12345678",
+        "http://qyapi.weixin.qq.com/cgi-bin/webhook/send?" + "key=test-key-12345678",
+        "https://qyapi.weixin.qq.com:443/cgi-bin/webhook/send?" + "key=test-key-12345678",
+        "https://user@qyapi.weixin.qq.com/cgi-bin/webhook/send?" + "key=test-key-12345678",
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/other?" + "key=test-key-12345678",
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?" + "key=short",
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?"
+        + "key=test-key-12345678&extra=1",
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?"
+        + "key=test-key-12345678#fragment",
+    ),
+)
+def test_sender_rejects_non_wecom_or_ambiguous_webhook_urls(url: str) -> None:
+    """Catches Alert content being sent to arbitrary HTTPS destinations."""
+    with pytest.raises(ValueError, match="WECOM_WEBHOOK_INVALID"):
+        WeComWebhookSender(url, post_json=lambda *_args, **_kwargs: {"errcode": 0})

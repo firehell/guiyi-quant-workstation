@@ -13,26 +13,22 @@ import {
   getAlertEvents,
   getProductAlerts,
   setAlertProductEnabled,
-  type AlertRuntimeStatus,
-  type ProductAlertRuleState,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
+import { useProductAlertScope } from '@/composables/useProductAlertScope'
+import { useSubingObservation } from '@/composables/useSubingObservation'
 import type {
   DominantContractItem,
   MarketFrequency,
   ProductResearchResponse,
   ResearchOverlayId,
   SeriesKind,
-  SubingResearchResponse,
 } from '@/types/market'
 import {
   filterBarsToSubingSegment,
-  isSubingSupportedFrequency,
   MARKET_FREQUENCIES,
-  shouldScheduleSubingCompanionRefresh,
 } from '@/types/market'
-import { isCurrentAlertMutation } from '@/utils/alertControl'
 import {
   loadMainChartPreferences,
   resolveEffectiveSeriesIdentity,
@@ -63,13 +59,12 @@ const selectedOverlay = ref<ResearchOverlayId>(initialMainChartPreferences.selec
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
-const subing = ref<SubingResearchResponse | null>(null)
-const subingLoading = ref(false)
-const subingError = ref(false)
-const alertRule = ref<ProductAlertRuleState | null>(null)
-const alertRuntimeStatus = ref<AlertRuntimeStatus | null>(null)
-const alertLoading = ref(false)
-const alertSaving = ref(false)
+const symbol = ref(resolveInitialSymbol())
+const contract = ref(String(route.query.contract || '').toUpperCase())
+const seriesKind = ref<SeriesKind>(resolveInitialSeriesKind())
+const frequency = ref<MarketFrequency>(resolveInitialFrequency())
+const followLatest = ref(true)
+const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
 const {
   bars,
   hasMoreBefore,
@@ -88,26 +83,51 @@ const {
   sync: syncPersistentAlertMarkers,
   dispose: disposePersistentAlertMarkers,
 } = usePersistentAlertMarkers({ fetchEvents: getAlertEvents })
+const {
+  subing,
+  subingLoading,
+  subingError,
+  subingSupported,
+  reset: resetSubingSnapshot,
+  refresh: refreshSubing,
+  dispose: disposeSubingObservation,
+} = useSubingObservation({
+  selectedOverlay,
+  symbol,
+  frequency,
+  dominants,
+  selectedDominant,
+  followLatest,
+  fetchSnapshot: getSubingResearch,
+  fetchDominants: getMarketDominants,
+  refreshSeries: () => refreshSeries(),
+  visibleBars: () => visibleBars.value,
+  replaceChartBars: (nextBars, preserveViewport) => {
+    chart.value?.replaceBars(nextBars, preserveViewport)
+  },
+})
+const {
+  alertRule,
+  alertRuntimeStatus,
+  alertLoading,
+  alertSaving,
+  refresh: refreshAlerts,
+  toggle: toggleAlert,
+  dispose: disposeProductAlertScope,
+} = useProductAlertScope({
+  symbol,
+  fetchProductAlerts: getProductAlerts,
+  fetchRuntimeStatus: getAlertRuntimeStatus,
+  setProductEnabled: setAlertProductEnabled,
+  notifyError: (text) => message.error(text),
+})
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
-let alertGeneration = 0
-let subingGeneration = 0
-let subingRefreshTimer: ReturnType<typeof setTimeout> | null = null
-
-const SUBING_COMMON_BOUNDARY_REFRESH_MS = 600
-
-const symbol = ref(resolveInitialSymbol())
-const contract = ref(String(route.query.contract || '').toUpperCase())
-const seriesKind = ref<SeriesKind>(resolveInitialSeriesKind())
-const frequency = ref<MarketFrequency>(resolveInitialFrequency())
 
 const loading = computed(() => loadingInitial.value
   || loadingBefore.value
   || (selectedOverlay.value === 'subing' && subingSupported.value && subingLoading.value))
-const followLatest = ref(true)
-const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
-const subingSupported = computed(() => isSubingSupportedFrequency(frequency.value))
 const visibleMainIndicators = computed(() => {
   if (selectedOverlay.value === 'subing' && !subingSupported.value) return []
   return visibleMainIndicatorsForOverlay(selectedOverlay.value)
@@ -238,8 +258,8 @@ watch(mutation, (nextMutation) => {
 
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
-  subingGeneration += 1
-  clearSubingRefreshTimer()
+  disposeSubingObservation()
+  disposeProductAlertScope()
   dispose()
   disposePersistentAlertMarkers()
 })
@@ -310,151 +330,6 @@ async function refreshResearch() {
     researchError.value = true
   } finally {
     if (requestGeneration === researchGeneration) researchLoading.value = false
-  }
-}
-
-function resetSubingSnapshot() {
-  subingGeneration += 1
-  clearSubingRefreshTimer()
-  subing.value = null
-  subingError.value = false
-  subingLoading.value = selectedOverlay.value === 'subing' && subingSupported.value
-  chart.value?.replaceBars(visibleBars.value)
-}
-
-async function refreshSubing(allowDelayedRefresh = true) {
-  const requestedSymbol = symbol.value
-  const requestedFrequency = frequency.value
-  if (
-    selectedOverlay.value !== 'subing'
-    || !requestedSymbol
-    || !isSubingSupportedFrequency(requestedFrequency)
-  ) {
-    subingLoading.value = false
-    return
-  }
-  if (allowDelayedRefresh) clearSubingRefreshTimer()
-  const requestGeneration = ++subingGeneration
-  subingLoading.value = true
-  subingError.value = false
-  try {
-    const expectedDominant = selectedDominant.value
-    if (!expectedDominant) throw new Error('dominant metadata unavailable')
-    let snapshot = await getSubingResearch({
-      symbol: requestedSymbol,
-      frequency: requestedFrequency,
-    })
-    if (!isCurrentSubingRequest(requestGeneration, requestedSymbol, requestedFrequency)) return
-    if (!isSubingSnapshotForDominant(snapshot, expectedDominant)) {
-      subing.value = null
-      chart.value?.replaceBars(visibleBars.value, !followLatest.value)
-      const refreshedDominants = await getMarketDominants()
-      if (!isCurrentSubingRequest(requestGeneration, requestedSymbol, requestedFrequency)) return
-      dominants.value = refreshedDominants.items
-      const refreshedExpected = selectedDominant.value
-      if (!refreshedExpected) throw new Error('dominant metadata unavailable')
-      const seriesReloaded = await refreshSeries()
-      if (!seriesReloaded) throw new Error('dominant contract series reload failed')
-      if (!isCurrentSubingRequest(requestGeneration, requestedSymbol, requestedFrequency)) return
-      snapshot = await getSubingResearch({
-        symbol: requestedSymbol,
-        frequency: requestedFrequency,
-      })
-      if (!isCurrentSubingRequest(requestGeneration, requestedSymbol, requestedFrequency)) return
-      if (!isSubingSnapshotForDominant(snapshot, refreshedExpected)) {
-        throw new Error('SuBing snapshot dominant identity mismatch')
-      }
-    }
-    subing.value = snapshot
-    chart.value?.replaceBars(visibleBars.value, !followLatest.value)
-    if (allowDelayedRefresh && shouldScheduleSubingCompanionRefresh(snapshot)) {
-      subingRefreshTimer = setTimeout(() => {
-        subingRefreshTimer = null
-        if (requestGeneration !== subingGeneration) return
-        void refreshSubing(false)
-      }, SUBING_COMMON_BOUNDARY_REFRESH_MS)
-    }
-  } catch {
-    if (requestGeneration !== subingGeneration) return
-    subing.value = null
-    subingError.value = true
-    chart.value?.replaceBars(visibleBars.value, !followLatest.value)
-  } finally {
-    if (requestGeneration === subingGeneration) subingLoading.value = false
-  }
-}
-
-function isCurrentSubingRequest(
-  generation: number,
-  requestedSymbol: string,
-  requestedFrequency: MarketFrequency,
-) {
-  return generation === subingGeneration
-    && selectedOverlay.value === 'subing'
-    && symbol.value === requestedSymbol
-    && frequency.value === requestedFrequency
-}
-
-function isSubingSnapshotForDominant(
-  snapshot: SubingResearchResponse,
-  expected: DominantContractItem,
-) {
-  return snapshot.actual_contract === expected.actual_contract
-    && snapshot.dominant_mapping_date === expected.dominant_mapping_date
-}
-
-function clearSubingRefreshTimer() {
-  if (subingRefreshTimer === null) return
-  clearTimeout(subingRefreshTimer)
-  subingRefreshTimer = null
-}
-
-async function refreshAlerts() {
-  if (!symbol.value) return
-  const requestGeneration = ++alertGeneration
-  const requestedSymbol = symbol.value
-  alertLoading.value = true
-  alertRule.value = null
-  try {
-    const [scope, runtimeStatus] = await Promise.all([
-      getProductAlerts(requestedSymbol),
-      getAlertRuntimeStatus(),
-    ])
-    if (requestGeneration !== alertGeneration || symbol.value !== requestedSymbol) return
-    alertRule.value = scope.rules.find((rule) => rule.rule_code === 'htdy_original_15m') || null
-    alertRuntimeStatus.value = runtimeStatus
-  } catch {
-    if (requestGeneration !== alertGeneration || symbol.value !== requestedSymbol) return
-    alertRule.value = null
-    alertRuntimeStatus.value = 'failed'
-  } finally {
-    if (requestGeneration === alertGeneration) alertLoading.value = false
-  }
-}
-
-async function toggleAlert(enabled: boolean) {
-  const current = alertRule.value
-  const requestedSymbol = symbol.value
-  const requestGeneration = alertGeneration
-  if (!current || !requestedSymbol || alertSaving.value) return
-  alertSaving.value = true
-  try {
-    const updated = await setAlertProductEnabled(current.rule_code, requestedSymbol, enabled)
-    if (isCurrentAlertMutation({
-      requestGeneration,
-      currentGeneration: alertGeneration,
-      requestedSymbol,
-      currentSymbol: symbol.value,
-      requestedRuleCode: current.rule_code,
-      currentRuleCode: alertRule.value?.rule_code,
-      updatedRuleCode: updated.rule_code,
-    })) {
-      alertRule.value = updated
-    }
-  } catch {
-    message.error('Alert Scope 更新失败')
-  } finally {
-    alertSaving.value = false
   }
 }
 

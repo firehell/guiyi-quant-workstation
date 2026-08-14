@@ -1,16 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { BarData, MainIndicatorSeries } from '../src/types/market.ts'
+import type { BarData } from '../src/types/market.ts'
 import {
   HTDY_REPAINT_SCAN_ZONE_BARS,
-  activeIndicatorCodes,
   DEFAULT_VISIBLE_MAIN_INDICATORS,
   defaultMainChartPreferences,
-  latestMainIndicatorValues,
   loadMainChartPreferences,
   MAIN_CHART_PREFERENCES_KEY,
   MAIN_INDICATOR_DEFINITIONS,
-  normalizeMainIndicatorSeries,
   normalizeVisibleMainIndicators,
   resolveEffectiveSeriesIdentity,
   saveMainChartPreferences,
@@ -147,76 +144,3 @@ test('preference v2 saves only the selected overlay and chart UI preferences', (
   assert.equal(saved.visibleMainIndicators, undefined)
   assert.equal(saved.bars, undefined)
 })
-
-test('activeIndicatorCodes maps visible ids to backend indicator codes', () => {
-  assert.deepEqual(activeIndicatorCodes(['ema_10', 'ema_21', 'ema_60']), ['ema10', 'ema21', 'ema60'])
-  assert.deepEqual(activeIndicatorCodes(['ema_10', 'htdy', 'ema_21']), ['ema10', 'ema21'])
-  assert.deepEqual(activeIndicatorCodes(['htdy']), [])
-})
-
-test('activeIndicatorCodes only changes when standard overlays change, not HTDY observation', () => {
-  const withEma21 = activeIndicatorCodes(['ema_21']).join(',')
-  const withEma21AndHtdy = activeIndicatorCodes(['ema_21', 'htdy']).join(',')
-  const withEma10And21 = activeIndicatorCodes(['ema_10', 'ema_21']).join(',')
-  assert.equal(withEma21, withEma21AndHtdy)
-  assert.notEqual(withEma21, withEma10And21)
-  assert.equal(withEma10And21, 'ema10,ema21')
-})
-
-test('normalizeMainIndicatorSeries keeps backend EMA points and drops unknown series', () => {
-  const normalized = normalizeMainIndicatorSeries([
-    series('ema_21', 'ema21', [
-      { time: '2026-01-21', value: 110, ready: true, valid: true },
-      { time: '2026-01-22', value: null, ready: false, valid: true, reason: 'warming_up' },
-    ]),
-    series('htdy', 'huo_tian_da_you', [{ time: '2026-01-21', value: 1, ready: true, valid: true }]),
-    series('ema_21', 'unknown', [{ time: '2026-01-21', value: 1, ready: true, valid: true }], 'bad_id'),
-  ])
-  assert.equal(normalized.length, 1)
-  assert.equal(normalized[0].id, 'ema_21')
-  assert.equal(normalized[0].seed_policy, 'sma_window')
-  assert.equal(normalized[0].calculation_start, '2026-01-01T09:00:00')
-  assert.equal(normalized[0].confirmed_only, true)
-  assert.equal(normalized[0].data_version, 'indicator-test')
-  assert.equal(normalized[0].points[1].value, null)
-  assert.equal(normalized[0].points[1].reason, 'warming_up')
-})
-
-test('latestMainIndicatorValues uses API readiness instead of local EMA calculation', () => {
-  const values = latestMainIndicatorValues(
-    [
-      series('ema_10', 'ema10', [{ time: '2026-01-22', value: 120, ready: true, valid: true }]),
-      series('ema_21', 'ema21', [{ time: '2026-01-22', value: null, ready: false, valid: true, reason: 'warming_up' }]),
-    ],
-    ['ema_10', 'ema_21', 'ema_60'],
-  )
-  assert.deepEqual(values.map((item) => item.id), ['ema_10', 'ema_21', 'ema_60'])
-  assert.equal(values[0].value, 120)
-  assert.equal(values[1].value, null)
-  assert.equal(values[1].reason, 'warming_up')
-  assert.equal(values[2].reason, 'indicator_not_loaded')
-})
-
-function series(
-  id: string,
-  code: string,
-  points: MainIndicatorSeries['points'],
-  rawId: string = id,
-): MainIndicatorSeries {
-  return {
-    id: rawId as MainIndicatorSeries['id'],
-    indicator_code: code,
-    display_name: code.toUpperCase(),
-    indicator_version: 'v1',
-    parameters: { period: 21 },
-    parameters_hash: 'hash',
-    seed_policy: 'sma_window',
-    calculation_start: '2026-01-01T09:00:00',
-    warmup_bars: 20,
-    confirmed_only: true,
-    data_version: 'indicator-test',
-    calculation_source: 'guiyi_quant.indicators.ema.ema_series',
-    repainting_risk: 'none',
-    points,
-  }
-}

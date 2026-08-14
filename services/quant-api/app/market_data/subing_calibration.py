@@ -24,6 +24,13 @@ _SUBING_CALIBRATION_PATH = (
     PROJECT_ROOT / "data/research_policies/subing_calibration_intraday_v1.json"
 )
 _ACCEPTED_INTRADAY_TIMEFRAMES = frozenset({BarFrequency.M5, BarFrequency.M15})
+_ACCEPTED_INTRADAY_CALIBRATION_ID = "subing_intraday_v1"
+_ACCEPTED_INTRADAY_THRESHOLDS = MappingProxyType(
+    {
+        BarFrequency.M5: Decimal("0.688190651160584793944957992"),
+        BarFrequency.M15: Decimal("1.329531078893356968545882036"),
+    }
+)
 _MAX_SLOPE_THRESHOLD_BPS_PER_BAR = Decimal("10000")
 _CALIBRATION_FIELDS = frozenset(
     {
@@ -122,6 +129,19 @@ def load_subing_calibration(path: Path | None = None) -> SubingCalibration:
         raise SubingCalibrationError() from exc
 
 
+def load_accepted_subing_calibration(path: Path | None = None) -> SubingCalibration:
+    """Load only the frozen production identity; same-id semantic drift is invalid."""
+    calibration = load_subing_calibration(path)
+    if (
+        calibration.calibration_id != _ACCEPTED_INTRADAY_CALIBRATION_ID
+        or calibration.accepted_timeframes != _ACCEPTED_INTRADAY_TIMEFRAMES
+        or calibration.slope_flat_threshold_bps_per_bar
+        != _ACCEPTED_INTRADAY_THRESHOLDS
+    ):
+        raise SubingCalibrationError()
+    return calibration
+
+
 class DirectionalSide(StrEnum):
     LONG = "long"
     SHORT = "short"
@@ -133,7 +153,7 @@ class SubingOutcome:
     directional_return_bps: Decimal
     mfe_bps: Decimal
     mae_bps: Decimal
-    ema21_failure: bool
+    ema21_failure: bool | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +167,7 @@ class SubingResearchSample:
 @dataclass(frozen=True, slots=True)
 class HorizonEvaluation:
     sample_count: int
+    ema21_sample_count: int
     median_directional_return_bps: Decimal | None
     median_mfe_bps: Decimal | None
     median_mae_bps: Decimal | None
@@ -378,18 +399,21 @@ def _outcome_for_horizon(
     final_close = future_bars[-1].close
     directional_return = sign * (final_close - entry_close) / entry_close * Decimal(10000)
     ready_factors = tuple(factor for factor, _bar in ready_factor_bars)
+    ema21_failure: bool | None = None
     if direction is DirectionalSide.LONG:
         mfe = (max(bar.high for bar in future_bars) - entry_close) / entry_close * Decimal(10000)
         mae = (min(bar.low for bar in future_bars) - entry_close) / entry_close * Decimal(10000)
-        ema21_failure = any(
-            factor.close < factor.ema21 for factor in ready_factors
-        )
+        if len(ready_factors) == horizon:
+            ema21_failure = any(
+                factor.close < factor.ema21 for factor in ready_factors
+            )
     else:
         mfe = (entry_close - min(bar.low for bar in future_bars)) / entry_close * Decimal(10000)
         mae = (entry_close - max(bar.high for bar in future_bars)) / entry_close * Decimal(10000)
-        ema21_failure = any(
-            factor.close > factor.ema21 for factor in ready_factors
-        )
+        if len(ready_factors) == horizon:
+            ema21_failure = any(
+                factor.close > factor.ema21 for factor in ready_factors
+            )
     return SubingOutcome(
         horizon=horizon,
         directional_return_bps=directional_return,
@@ -408,18 +432,25 @@ def _evaluate_horizon(
         if (outcome := sample.outcomes.get(horizon)) is not None
     )
     if not outcomes:
-        return HorizonEvaluation(0, None, None, None, None)
+        return HorizonEvaluation(0, 0, None, None, None, None)
     count = len(outcomes)
+    ema21_labels = tuple(
+        outcome.ema21_failure
+        for outcome in outcomes
+        if outcome.ema21_failure is not None
+    )
     return HorizonEvaluation(
         sample_count=count,
+        ema21_sample_count=len(ema21_labels),
         median_directional_return_bps=median(
             outcome.directional_return_bps for outcome in outcomes
         ),
         median_mfe_bps=median(outcome.mfe_bps for outcome in outcomes),
         median_mae_bps=median(outcome.mae_bps for outcome in outcomes),
         ema21_failure_rate=(
-            Decimal(sum(outcome.ema21_failure for outcome in outcomes))
-            / Decimal(count)
+            None
+            if not ema21_labels
+            else Decimal(sum(ema21_labels)) / Decimal(len(ema21_labels))
         ),
     )
 

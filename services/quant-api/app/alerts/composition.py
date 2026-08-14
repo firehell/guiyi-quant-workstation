@@ -7,12 +7,11 @@ import json
 import os
 from typing import Any
 
-from sqlalchemy.orm import Session
-
 from app.alerts.evaluators import HtdyOriginal15mEvaluator
 from app.alerts.runtime import AlertRuntime
 from app.alerts.wecom import WeComWebhookSender
 from app.core.env import PROJECT_ROOT
+from app.db.session import SessionLocal
 from app.market_data.composition import build_market_read_service
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.product_taxonomy import load_product_taxonomy
@@ -58,7 +57,7 @@ def build_wecom_sender_from_env() -> WeComWebhookSender:
     return WeComWebhookSender(webhook_url)
 
 
-def build_alert_runtime(session: Session) -> AlertRuntime:
+def build_alert_runtime() -> AlertRuntime:
     """构造已显式 activation 的 Alert Runtime；缺 Gate 时保持关闭。"""
     try:
         enabled = ALERT_RUNTIME_ACTIVATION_MARKER.read_text(encoding="utf-8") == "enabled\n"
@@ -68,8 +67,8 @@ def build_alert_runtime(session: Session) -> AlertRuntime:
         raise RuntimeError("ALERT_RUNTIME_NOT_ENABLED")
     redis = get_redis_connection()
     return AlertRuntime(
-        session=session,
-        market_read=build_market_read_service(session),
+        session_factory=SessionLocal,
+        market_read_factory=build_market_read_service,
         evaluator=HtdyOriginal15mEvaluator(),
         sender=build_wecom_sender_from_env(),
         operational_products=load_operational_products(),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import json
@@ -132,8 +133,8 @@ def _runtime(
     active_evaluator = evaluator or FakeEvaluator()
     active_sender = sender or FakeSender()
     runtime = AlertRuntime(
-        session=session,
-        market_read=active_read,
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: active_read,
         evaluator=active_evaluator,
         sender=active_sender,
         operational_products=operational_products,
@@ -223,7 +224,7 @@ def test_runtime_refreshes_rule_truth_after_another_session_revokes_authorizatio
         )
         runtime_session.commit()
         runtime, read, _evaluator, sender = _runtime(runtime_session)
-        cached_rule = runtime._enabled_rule("ag")
+        cached_rule = runtime._enabled_rule(runtime_session, "ag")
         assert cached_rule is not None
 
         with Session(engine) as writer:
@@ -286,6 +287,28 @@ def test_database_create_failure_rolls_back_and_never_sends(
 
     assert session.in_transaction() is False
     assert sender.messages == []
+
+
+def test_no_event_and_heartbeat_release_read_only_transactions(
+    session: Session,
+) -> None:
+    """Catches the foreground loop leaving PostgreSQL idle in transaction."""
+    runtime, _read, _evaluator, sender = _runtime(
+        session,
+        evaluator=FakeEvaluator(AlertEvaluation(())),
+    )
+
+    runtime.process_message(CHANNEL, _payload())
+
+    assert session.in_transaction() is False
+    assert sender.messages == []
+
+    heartbeat = FakeHeartbeatStore()
+    runtime.heartbeat_store = heartbeat
+    runtime._write_heartbeat(datetime(2026, 8, 13, 2, 45, tzinfo=UTC))
+
+    assert session.in_transaction() is False
+    assert len(heartbeat.writes) == 1
 
 
 @pytest.mark.parametrize("numeric", ("not-a-number", "NaN", "Infinity"))

@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 import logging
+import re
 from typing import Any
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -15,6 +17,9 @@ from zoneinfo import ZoneInfo
 _LOGGER = logging.getLogger(__name__)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _CANARY_TEXT = "【归一量化】企微测试\n\nAlert 通知通道正常"
+_WECOM_WEBHOOK_HOST = "qyapi.weixin.qq.com"
+_WECOM_WEBHOOK_PATH = "/cgi-bin/webhook/send"
+_WECOM_WEBHOOK_QUERY = re.compile(r"key=[A-Za-z0-9_-]{8,}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +39,38 @@ class WeComSendError(RuntimeError):
 PostJson = Callable[..., object]
 
 
+def validate_wecom_webhook_url(value: object) -> str:
+    """只接受企业微信机器人固定 HTTPS endpoint，不回显 key。"""
+    if not isinstance(value, str):
+        raise ValueError("WECOM_WEBHOOK_INVALID")
+    normalized = value.strip()
+    try:
+        parsed = urlsplit(normalized)
+        valid = (
+            parsed.scheme == "https"
+            and parsed.hostname == _WECOM_WEBHOOK_HOST
+            and parsed.port is None
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path == _WECOM_WEBHOOK_PATH
+            and _WECOM_WEBHOOK_QUERY.fullmatch(parsed.query) is not None
+            and not parsed.fragment
+        )
+    except ValueError:
+        valid = False
+    if not normalized or not valid:
+        raise ValueError("WECOM_WEBHOOK_INVALID")
+    return normalized
+
+
+def is_valid_wecom_webhook_url(value: object) -> bool:
+    try:
+        validate_wecom_webhook_url(value)
+    except ValueError:
+        return False
+    return True
+
+
 class WeComWebhookSender:
     def __init__(
         self,
@@ -42,11 +79,9 @@ class WeComWebhookSender:
         timeout_seconds: float = 5.0,
         post_json: PostJson | None = None,
     ) -> None:
-        if not isinstance(webhook_url, str) or not webhook_url.startswith("https://"):
-            raise ValueError("WECOM_WEBHOOK_INVALID")
         if timeout_seconds <= 0:
             raise ValueError("WECOM_TIMEOUT_INVALID")
-        self._webhook_url = webhook_url
+        self._webhook_url = validate_wecom_webhook_url(webhook_url)
         self._timeout_seconds = float(timeout_seconds)
         self._post_json = post_json or _stdlib_post_json
 

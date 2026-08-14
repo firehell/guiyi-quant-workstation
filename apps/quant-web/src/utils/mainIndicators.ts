@@ -1,8 +1,6 @@
 import type {
   MainIndicatorDefinition,
   MainIndicatorId,
-  MainIndicatorSeries,
-  MainIndicatorValue,
   ResearchOverlayId,
   SeriesKind,
 } from '@/types/market'
@@ -115,9 +113,6 @@ export const DEFAULT_VISIBLE_MAIN_INDICATORS = MAIN_INDICATOR_DEFINITIONS
   .filter((definition) => definition.available && definition.defaultVisible)
   .map((definition) => definition.id)
 
-/** 趋势 EMA 指标 id 列表 */
-export const TREND_EMA_INDICATORS: MainIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
-
 const definitionsById = new Map(MAIN_INDICATOR_DEFINITIONS.map((definition) => [definition.id, definition]))
 
 /**
@@ -132,34 +127,6 @@ export function isMainIndicatorId(value: unknown): value is MainIndicatorId {
  */
 export function mainIndicatorDefinition(id: MainIndicatorId) {
   return definitionsById.get(id) || null
-}
-
-/**
- * 将指标 id 转为后端 indicator_code（name 字段）。
- */
-export function indicatorCodeForId(id: MainIndicatorId) {
-  return mainIndicatorDefinition(id)?.name || null
-}
-
-/**
- * 将后端 indicator_code 反查为主图指标 id。
- */
-export function mainIndicatorIdForCode(code: string): MainIndicatorId | null {
-  const definition = MAIN_INDICATOR_DEFINITIONS.find((item) => item.name === code)
-  return definition?.id || null
-}
-
-/**
- * 从可见 id 列表提取需请求的后端指标 code（仅 standard_overlay 且 available）。
- */
-export function activeIndicatorCodes(visibleIds: MainIndicatorId[]) {
-  return visibleIds
-    .map((id) => mainIndicatorDefinition(id))
-    .filter(
-      (definition): definition is MainIndicatorDefinition =>
-        Boolean(definition?.available && definition.capability === 'standard_overlay'),
-    )
-    .map((definition) => definition.name)
 }
 
 /**
@@ -265,52 +232,6 @@ export function defaultMainChartPreferences(): MainChartPreferences {
     period: null,
     realtimeFollow: false,
   }
-}
-
-/**
- * 规范化后端返回的主图指标序列：映射 id、过滤非 overlay 指标、统一点字段。
- */
-export function normalizeMainIndicatorSeries(series: MainIndicatorSeries[]): MainIndicatorSeries[] {
-  const result: MainIndicatorSeries[] = []
-  series.forEach((item) => {
-    const id = isMainIndicatorId(item.id) ? item.id : mainIndicatorIdForCode(item.indicator_code)
-    const definition = id ? mainIndicatorDefinition(id) : null
-    if (!id || !definition?.available || definition.capability !== 'standard_overlay') return
-    result.push({
-      ...item,
-      id,
-      points: item.points.map((point) => ({
-        ...point,
-        ready: Boolean(point.ready),
-        valid: Boolean(point.valid),
-        value: typeof point.value === 'number' ? point.value : null,
-        reason: point.reason || null,
-      })),
-    })
-  })
-  return result
-}
-
-/**
- * 提取可见 overlay 指标的最新有效数值，用于图例/状态栏展示。
- */
-export function latestMainIndicatorValues(series: MainIndicatorSeries[], visibleIds: MainIndicatorId[]): MainIndicatorValue[] {
-  const result: MainIndicatorValue[] = []
-  visibleIds.forEach((id) => {
-    const definition = mainIndicatorDefinition(id)
-    if (!definition || !definition.available || definition.capability !== 'standard_overlay') return
-    const latest = series.find((item) => item.id === id)?.points.at(-1)
-    result.push({
-      id: definition.id,
-      displayName: definition.displayName,
-      color: definition.color,
-      value: latest?.ready && latest.valid ? latest.value : null,
-      ready: latest?.ready ?? false,
-      valid: latest?.valid ?? false,
-      reason: latest?.reason ?? (latest ? null : 'indicator_not_loaded'),
-    })
-  })
-  return result
 }
 
 function browserStorage() {

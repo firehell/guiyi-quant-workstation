@@ -91,6 +91,22 @@ def test_evaluator_fails_closed_for_wrong_identity_or_short_context(
         HtdyOriginal15mEvaluator().evaluate(window)
 
 
+def test_evaluator_requires_the_scoped_htdy_alert_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches Registry alert capability bypassing the scoped FormalPolicy."""
+    monkeypatch.setattr(
+        "app.alerts.evaluators.require_formal_policy",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("FORMAL_POLICY_CONSUMER_BLOCKED")
+        ),
+        raising=False,
+    )
+
+    with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_POLICY_DISABLED"):
+        HtdyOriginal15mEvaluator().evaluate(_window())
+
+
 def test_32_bar_contract_matches_full_history_current_observation() -> None:
     fixture = json.loads(
         (Path(__file__).parent / "fixtures" / "htdy_original_realtime_v1_golden.json").read_text(

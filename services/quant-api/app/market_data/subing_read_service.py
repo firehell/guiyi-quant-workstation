@@ -148,6 +148,7 @@ class SubingReadService:
         primary_historical = self._historical_segment(
             primary_identity,
             segment.start_trading_day,
+            segment.end_trading_day,
         )
 
         companion_frequency = _COMPANION_FREQUENCY.get(request.frequency)
@@ -157,7 +158,11 @@ class SubingReadService:
             else None
         )
         companion_historical = (
-            self._historical_segment(companion_identity, segment.start_trading_day)
+            self._historical_segment(
+                companion_identity,
+                segment.start_trading_day,
+                segment.end_trading_day,
+            )
             if companion_identity is not None
             else ()
         )
@@ -320,11 +325,18 @@ class SubingReadService:
         self,
         identity: SeriesPageQuery,
         segment_start: date,
+        segment_end: date,
     ) -> tuple[CanonicalBar, ...]:
         page = self._market_read.history_page(identity)
+        if any(bar.trading_day > segment_end for bar in page.bars):
+            raise MarketDataError("DOMINANT_SEGMENT_HISTORY_INCONSISTENT")
         return tuple(
             sorted(
-                (bar for bar in page.bars if bar.trading_day >= segment_start),
+                (
+                    bar
+                    for bar in page.bars
+                    if segment_start <= bar.trading_day <= segment_end
+                ),
                 key=lambda bar: bar.bar_end,
             )
         )

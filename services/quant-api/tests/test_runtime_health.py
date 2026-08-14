@@ -108,7 +108,10 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
     marker = tmp_path / ".run" / "alert-runtime-enabled"
     marker.parent.mkdir()
     marker.write_text("enabled\n", encoding="utf-8")
-    monkeypatch.setenv("WECOM_WEBHOOK_URL", "https://must-not-leak.invalid/private-key")
+    monkeypatch.setenv(
+        "WECOM_WEBHOOK_URL",
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?" + "key=health-test-key-12345",
+    )
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
@@ -168,8 +171,30 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
         "error_type": None,
     }
     rendered = json.dumps(fresh, ensure_ascii=False)
-    assert "must-not-leak" not in rendered
-    assert "private-key" not in rendered
+    assert "health-test-key" not in rendered
+
+
+def test_alert_health_rejects_invalid_webhook_destination(monkeypatch, tmp_path) -> None:
+    """Catches a non-WeCom HTTPS URL being reported as configured and healthy."""
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    marker = tmp_path / ".run" / "alert-runtime-enabled"
+    marker.parent.mkdir()
+    marker.write_text("enabled\n", encoding="utf-8")
+    monkeypatch.setenv("WECOM_WEBHOOK_URL", "https://example.invalid/private-key")
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            live_runtime_enabled=False,
+            after_market_status_path=None,
+        )
+
+    alert = payload["components"]["alert"]
+    assert alert["status"] == "degraded"
+    assert alert["webhook_configured"] is False
+    assert alert["error_type"] == "wecom_webhook_invalid"
 
 
 def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:

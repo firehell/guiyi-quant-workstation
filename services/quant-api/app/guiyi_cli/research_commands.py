@@ -117,6 +117,7 @@ def _evaluation_payload(evaluation: ThresholdEvaluation) -> dict[str, object]:
 def _horizon_payload(evaluation: HorizonEvaluation) -> dict[str, object]:
     return {
         "sample_count": evaluation.sample_count,
+        "ema21_sample_count": evaluation.ema21_sample_count,
         "median_directional_return_bps": _optional_decimal(
             evaluation.median_directional_return_bps
         ),

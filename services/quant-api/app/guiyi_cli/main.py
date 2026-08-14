@@ -42,7 +42,7 @@ SessionFactory = Callable[[], AbstractContextManager[Any]]
 ManagerFactory = Callable[[Any], HistoricalDataManager]
 AfterMarketFactory = Callable[[HistoricalDataManager], Any]
 LiveServiceFactory = Callable[[Any], Any]
-AlertRuntimeFactory = Callable[[Any], Any]
+AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
 
@@ -143,8 +143,7 @@ def main(
                 "foreground": True,
             }
         elif args.runtime_command == "alert":
-            with session_factory() as session:
-                alert_runtime_factory(session).run_forever()
+            alert_runtime_factory().run_forever()
             payload = {
                 "schema_version": 1,
                 "command": "runtime.alert",

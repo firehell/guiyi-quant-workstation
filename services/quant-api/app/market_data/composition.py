@@ -31,7 +31,7 @@ from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
-from app.market_data.subing_calibration import load_subing_calibration
+from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.market_data.subing_calibration_service import SubingCalibrationResearchService
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.operational_universe import load_active_products
@@ -135,7 +135,7 @@ def build_market_read_service(session: Session) -> MarketReadService:
 
 def build_subing_read_service(session: Session) -> SubingReadService:
     """构造注入 tracked slope-only Calibration 的 SuBing 只读模型。"""
-    calibration = load_subing_calibration(_SUBING_CALIBRATION)
+    calibration = load_accepted_subing_calibration(_SUBING_CALIBRATION)
     return SubingReadService(
         market_data=build_market_data_service(session),
         market_read=build_market_read_service(session),

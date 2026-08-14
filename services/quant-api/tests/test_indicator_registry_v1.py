@@ -310,7 +310,12 @@ def test_subing_signal_macd_policy_is_scoped_and_math_equivalent() -> None:
 
 
 def test_htdy_original_is_alert_capable_but_not_live_or_backtest_capable() -> None:
-    from guiyi_quant.indicators import get_indicator, resolve_indicator_code
+    from guiyi_quant.indicators import (
+        HTDY_ALERT_OBSERVATION_CONSUMER,
+        get_indicator,
+        require_formal_policy,
+        resolve_indicator_code,
+    )
 
     original = get_indicator("huotian_dayou_original_v0")
     aliased = get_indicator("huo_tian_da_you")
@@ -323,6 +328,13 @@ def test_htdy_original_is_alert_capable_but_not_live_or_backtest_capable() -> No
     assert original.live_capable is False
     assert original.alert_capable is True
     assert original.repainting_risk == "known"
+    policy = require_formal_policy(
+        original.formal_policy_id,
+        consumer=HTDY_ALERT_OBSERVATION_CONSUMER,
+    )
+    assert policy.policy_id == "huotian_dayou_original_v0"
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+        require_formal_policy(original.formal_policy_id, consumer="alert")
 
 
 def test_htdy_strict_is_strategy_candidate_backtest_only() -> None:

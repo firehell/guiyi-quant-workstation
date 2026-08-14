@@ -1,7 +1,7 @@
 # Alert V1 — 盘中观察预警设计
 
 日期：2026-08-13  
-状态：Design Approved / Implementation Not Started
+状态：Implemented / Natural Event Accepted
 
 ## 1. Purpose
 
@@ -133,6 +133,8 @@ LiveMarketService
 
 - 定义某个 code-defined Rule 如何判断“当前刚收完的 Bar”是否形成观察；
 - V1 只有 `HtdyOriginal15mEvaluator`；
+- 在执行前必须通过 Indicator Kernel 的 scoped `htdy_alert_observation` FormalPolicy；generic
+  `alert/live/notification` consumer 继续 fail-closed；
 - 不负责持久化和发送。
 
 `AlertService`
@@ -598,6 +600,10 @@ WECOM_WEBHOOK_URL
 
 `WeComWebhookSender` 使用固定有界 timeout，只调用一次。
 
+Webhook 配置只接受 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=<非空合法 key>`：禁止 HTTP、
+其他 host/port、userinfo、其他 path/query 或 fragment。Sender 与 Runtime health 必须共用同一 validator，
+不能出现“health 显示已配置但 sender 拒绝”的双重口径。
+
 Webhook timeout / HTTP error / WeCom error：
 
 ```text
@@ -788,6 +794,10 @@ com.guiyi.quant-alert
 
 沿用现有 Runtime 模式：Python foreground blocking process，由 launchd `RunAtLoad + KeepAlive` 托管，Python 自己不 daemonize。
 
+数据库 Session 不得持有整个常驻进程生命周期。每条 Pub/Sub 消息只打开一个短 Session，在 sender 调用前
+完成 commit/rollback 并关闭；10 秒 heartbeat 也使用独立短 Session，任何只读/skip/failure 分支都不得
+遗留 active transaction 或长期占用连接池。
+
 Alert 使用独立 activation marker：
 
 ```text
@@ -869,6 +879,8 @@ degraded / failed    -> Alert Runtime 不可用
 ```
 
 Runtime 进程本身存活但 `WECOM_WEBHOOK_URL` 缺失时必须显示不可用，不能显示 healthy。
+Webhook 存在但未通过上述 exact destination validator 时，health 必须报告 invalid/unavailable，不能只按
+非空字符串显示 configured。
 
 ---
 

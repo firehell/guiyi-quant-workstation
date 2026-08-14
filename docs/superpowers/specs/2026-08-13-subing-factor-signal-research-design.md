@@ -367,7 +367,10 @@ macd_zero_band hard gate   => intraday V1 拒绝
 
 不得用 Infinity、超大值、nullable special-case 伪装 zero-band。
 
-聊天、stdout、localStorage、env 或运行时内存值不能成为 accepted Calibration。Artifact 必须 Git-tracked/versioned；同 ID 不得原地改变语义。
+聊天、stdout、localStorage、env 或运行时内存值不能成为 accepted Calibration。Artifact 必须
+Git-tracked/versioned；同 ID 不得原地改变语义。生产 composition 只允许加载冻结的 exact identity：
+`calibration_id`、accepted timeframes 与两个 Decimal 必须同时完全相等；即使复用同一个 ID，只要字段或
+阈值漂移也必须 fail-closed。
 
 ### 8.5 Gate B-R
 
@@ -542,7 +545,11 @@ MAE 3K/5K/8K
 EMA21 failure within 3K/5K/8K
 ```
 
-5m/15m 不跨 `trading_day`、contract 或 rank1 segment；不足 horizon => unavailable。
+5m/15m 不跨 `trading_day`、contract 或 rank1 segment；Historical 读取必须同时受 current rank1 segment
+起止日约束，发现 segment end 之后的 bar 必须 fail-closed，不能静默纳入 warm-up。价格 return/MFE/MAE
+只要完整 horizon bar 可用即可计算；`EMA21 failure` 只有对应 horizon 的 Factor snapshot 全部 READY 且身份
+对齐时才有标签，否则为 `null`。报告同时输出 `sample_count` 与独立的 `ema21_sample_count`，failure rate
+只能以有标签样本为分母；不足 horizon => outcome unavailable。
 
 ### 13.2 Discovery / Validation
 
@@ -649,7 +656,7 @@ S7     Deterministic 5m/15m Signal pure core      COMPLETE
 S8     Product Workspace Signal observation       COMPLETE
 S8 fix same-boundary reciprocal opportunity       COMPLETE
 S9     1d future research track                   PENDING / NON-BLOCKING
-S10    Docs/testing/status boundary closure       CURRENT TASK
+S10    Docs/testing/status boundary closure       COMPLETE
 Future Live human observation period
 Future Alert V2                                   NOT IMPLEMENTED
 ```

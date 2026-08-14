@@ -93,7 +93,9 @@ flowchart TB
   CLI 以 stdout JSON 返回；不直连 provider，不写 DB/Canonical/Redis，也不自动晋升参数。
   薄 `SubingReadService` 复用 `MarketDataService` 的 current rank1 segment 身份和
   `MarketReadService` 的 Historical/completed Live seam；composition 只注入 Git-tracked slope-only
-  Calibration，它再调用 pure `evaluate_subing_signal()`。该服务不拥有或修改 Calibration/Signal 公式，
+  Calibration，并对冻结 ID/timeframes/两个 exact Decimal 做整体身份校验，同 ID 内容漂移也 fail-closed；
+  它再调用 pure `evaluate_subing_signal()`。Historical 输入同时受 current rank1 segment 起止日约束。
+  该服务不拥有或修改 Calibration/Signal 公式，
   不直连 provider/Redis，不持久化 Signal，不写 Canonical/DB，也不管理 Runtime。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
@@ -166,7 +168,8 @@ Marker 只读取已记录 Event，和当前会 repaint 的 HTDY overlay 独立�
 
 AlertRuntime 是独立进程、独立 activation marker 与独立健康组件。只有用户明确启用后，才持续运行
 `htdy_original_15m × enabled scope_products × WeCom`；该授权不覆盖 migration、真实 canary、Runtime
-switch、release、Canonical 写入、新 Rule/渠道或订单。
+switch、release、Canonical 写入、新 Rule/渠道或订单。每条 completed-bar 消息与 heartbeat 都使用独立短
+Session/transaction；Webhook sender 与 health 共用 exact 企业微信目标校验器。
 
 开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，当前根和运行状态由 `STATUS.md` 记录。这只是为了快速观察，不改变 Historical/Live 边界，也不构成稳定 Runtime 版本。功能收口后的最终拓扑仍为绑定精确提交的独立 Runtime worktree。
 
@@ -180,7 +183,9 @@ flowchart LR
     NG --> B["Browser"]
 ```
 
-API、Web、Live、after-market 和已获授权的 Alert launchd label 必须指向同一 supervised Runtime 根；启用标记
-存在时 Live/after-market 均须加载，定时型 after-market 已加载但未运行属于正常状态。本地唯一状态
+API、Web、Live、after-market 和已获授权的 Alert launchd label 必须指向同一 supervised Runtime 根；安装器
+将当次 checkout commit 冻结进每个 label 的 `GUIYI_RUNTIME_COMMIT`。状态脚本必须读取 launchd 已加载的
+root/commit，并分别与 supervised checkout 对比，不能用之后移动过的 checkout HEAD 冒充在运行进程身份。
+启用标记存在时 Live/after-market 均须加载，定时型 after-market 已加载但未运行属于正常状态。本地唯一状态
 入口只读取 launchd、Git 身份和 HTTP/Runtime health，不执行服务 mutation。腾讯云只承担隧道与
 HTTPS 反代，不保留第二套应用进程。完整三段只读检查见 `deploy/README.md`。

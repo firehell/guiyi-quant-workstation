@@ -367,30 +367,6 @@ export interface MainIndicatorValue {
   reason?: string | null
 }
 
-export interface MainIndicatorPoint {
-  time: string
-  value: number | null
-  ready: boolean
-  valid: boolean
-  reason?: string | null
-}
-
-export interface MainIndicatorSeries {
-  id: MainIndicatorId
-  indicator_code: string
-  display_name: string
-  indicator_version: string
-  parameters: Record<string, number | string | boolean>
-  parameters_hash: string
-  seed_policy: string
-  calculation_start?: string | null
-  warmup_bars: number
-  confirmed_only: boolean
-  calculation_source: string
-  repainting_risk: string
-  points: MainIndicatorPoint[]
-}
-
 export interface HoverKlineContext {
   time: string
   bar: BarData

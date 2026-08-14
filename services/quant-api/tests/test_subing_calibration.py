@@ -183,7 +183,7 @@ def test_ema21_failure_uses_direction_and_ready_future_snapshots(
     assert outcome.ema21_failure is True
 
 
-def test_non_ready_future_factor_does_not_erase_price_outcome() -> None:
+def test_non_ready_future_factor_keeps_price_outcome_but_not_ema_label() -> None:
     bars, factors = _series()
     with_gap = (
         factors[0],
@@ -203,7 +203,44 @@ def test_non_ready_future_factor_does_not_erase_price_outcome() -> None:
     assert outcome.directional_return_bps == Decimal("300")
     assert outcome.mfe_bps == Decimal("500")
     assert outcome.mae_bps == Decimal("-200")
-    assert outcome.ema21_failure is False
+    assert outcome.ema21_failure is None
+
+
+def test_ema21_failure_rate_uses_only_complete_factor_labels() -> None:
+    """Catches unavailable future Factor labels being counted as successful holds."""
+    bars, factors = _series()
+    samples = build_research_samples(
+        factors,
+        bars,
+        horizons=(3,),
+        direction_selector=(
+            lambda index, _factor: DirectionalSide.LONG if index < 2 else None
+        ),
+    )
+    first = samples[0].outcomes[3]
+    second = samples[1].outcomes[3]
+    assert first is not None
+    assert second is not None
+    with_mixed_labels = (
+        replace(
+            samples[0],
+            outcomes={3: replace(first, ema21_failure=True)},
+        ),
+        replace(
+            samples[1],
+            outcomes={3: replace(second, ema21_failure=None)},
+        ),
+    )
+
+    evaluation = evaluate_threshold(
+        with_mixed_labels,
+        Decimal("0"),
+        horizons=(3,),
+    ).horizons[3]
+
+    assert evaluation.sample_count == 2
+    assert evaluation.ema21_sample_count == 1
+    assert evaluation.ema21_failure_rate == Decimal("1")
 
 
 def test_entry_factor_must_match_bar_trading_day() -> None:
@@ -308,7 +345,7 @@ def test_all_non_ready_future_factors_keep_price_outcome_and_no_ema_failure() ->
     assert outcome.directional_return_bps == Decimal("-300")
     assert outcome.mfe_bps == Decimal("200")
     assert outcome.mae_bps == Decimal("-500")
-    assert outcome.ema21_failure is False
+    assert outcome.ema21_failure is None
 
 
 @pytest.mark.parametrize("timeframe", (BarFrequency.M5, BarFrequency.M15))
@@ -552,6 +589,7 @@ def test_threshold_evaluation_reports_hand_checked_horizon_statistics() -> None:
     assert evaluation.threshold == Decimal("1")
     assert evaluation.sample_count == 2
     assert evaluation.horizons[3].sample_count == 2
+    assert evaluation.horizons[3].ema21_sample_count == 2
     assert evaluation.horizons[3].median_directional_return_bps == Decimal(
         "295.5736750145602795573675014"
     )
@@ -638,6 +676,36 @@ def test_valid_slope_only_fixture_loads_exact_immutable_values() -> None:
         calibration.slope_flat_threshold_bps_per_bar[BarFrequency.M5] = Decimal(  # type: ignore[index]
             "9"
         )
+
+
+def test_tracked_production_calibration_matches_the_frozen_identity() -> None:
+    calibration = calibration_module.load_accepted_subing_calibration(
+        Path(__file__).parents[3]
+        / "data/research_policies/subing_calibration_intraday_v1.json"
+    )
+
+    assert calibration.calibration_id == "subing_intraday_v1"
+    assert calibration.slope_flat_threshold_bps_per_bar == {
+        BarFrequency.M5: Decimal("0.688190651160584793944957992"),
+        BarFrequency.M15: Decimal("1.329531078893356968545882036"),
+    }
+
+
+def test_production_calibration_rejects_same_id_value_drift(tmp_path: Path) -> None:
+    payload = {
+        "schema_version": 1,
+        "calibration_id": "subing_intraday_v1",
+        "accepted_timeframes": ["5m", "15m"],
+        "slope_flat_threshold_bps_per_bar": {
+            "5m": "0.688190651160584793944957993",
+            "15m": "1.329531078893356968545882036",
+        },
+    }
+    path = tmp_path / "drifted-production-calibration.json"
+    _write_calibration_payload(path, payload)
+
+    with pytest.raises(ValueError, match="SUBING_CALIBRATION_INVALID"):
+        calibration_module.load_accepted_subing_calibration(path)
 
 
 def test_unknown_calibration_schema_fails_closed(tmp_path: Path) -> None:

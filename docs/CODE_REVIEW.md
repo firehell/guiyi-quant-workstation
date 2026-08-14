@@ -52,7 +52,8 @@ RQData
 - `continuous` 与 `actual_dominant` 不可互换；dominants coverage 须与 Catalog 同口径。
 - 无订单：任何创建/提交订单路径必须拒绝；`auto_order=false`。
 - 密钥与路径：不在 diff、日志、错误文案中暴露 webhook、token、密码、内部路径、SQL、stack。
-- 未来函数：策略/指标不得使用未确认未来数据；HTDY realtime 应用路径已退役。
+- 未来函数：策略/指标不得使用未确认未来数据；旧 HTDY generic realtime/Signal 应用路径已退役。当前
+  Alert V1 只能经 scoped FormalPolicy 检查 actual-dominant confirmed 15m 的最后一根 current bar。
 - 文档与代码一致：不得把已卸 surface 写成「当前仍提供」。
 
 ---

@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { computed, ref } from 'vue'
+import { useSubingObservation } from '../src/composables/useSubingObservation.ts'
 import {
   filterBarsToSubingSegment,
   isSubingSupportedFrequency,
@@ -149,6 +151,42 @@ test('schedules one bounded refresh only for an older companion at a common 5m b
       snapshot: { ...commonBoundary.primary.snapshot!, bar_end: '2026-08-13T02:25:00Z' },
     },
   }), false)
+})
+
+test('SuBing observation composable preserves current dominant identity after extraction', async () => {
+  const selectedOverlay = ref<'subing' | 'htdy' | 'none'>('subing')
+  const symbol = ref('jm')
+  const frequency = ref<'5m' | '15m' | '1d'>('5m')
+  const dominants = ref([{
+    product: 'jm',
+    product_name: '焦煤',
+    sector: 'black',
+    exchange: 'DCE',
+    actual_contract: 'JM2609',
+    dominant_mapping_date: '2026-08-13',
+  }])
+  const replacements: BarData[][] = []
+  const controller = useSubingObservation({
+    selectedOverlay,
+    symbol,
+    frequency,
+    dominants,
+    selectedDominant: computed(() => dominants.value[0]),
+    followLatest: ref(true),
+    fetchSnapshot: async () => normalizeSubingResearch(readyPayload),
+    fetchDominants: async () => ({ items: dominants.value }),
+    refreshSeries: async () => true,
+    visibleBars: () => [bar('2026-08-13T02:25:00Z', '2026-08-13')],
+    replaceChartBars: (items) => replacements.push(items),
+  })
+
+  await controller.refresh()
+
+  assert.equal(controller.subing.value?.actual_contract, 'JM2609')
+  assert.equal(controller.subingError.value, false)
+  assert.equal(controller.subingLoading.value, false)
+  assert.equal(replacements.length, 1)
+  controller.dispose()
 })
 
 function bar(time: string, tradingDay: string): BarData {

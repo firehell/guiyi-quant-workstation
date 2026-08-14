@@ -9,6 +9,8 @@ import {
   mergeKlineMarkers,
 } from '../src/utils/alertMarkers.ts'
 import { usePersistentAlertMarkers } from '../src/composables/usePersistentAlertMarkers.ts'
+import { useProductAlertScope } from '../src/composables/useProductAlertScope.ts'
+import { ref } from 'vue'
 import type { AlertEvent } from '../src/api/alerts.ts'
 import type { BarData } from '../src/types/market.ts'
 
@@ -16,6 +18,7 @@ import type { BarData } from '../src/types/market.ts'
 const apiSource = read('../src/api/alerts.ts')
 const controlSource = read('../src/components/market/ProductAlertControl.vue')
 const chartSource = read('../src/pages/market/chart.vue')
+const scopeSource = read('../src/composables/useProductAlertScope.ts')
 
 
 describe('Product Alert server-side scope', () => {
@@ -30,7 +33,7 @@ describe('Product Alert server-side scope', () => {
   it('renders the switch directly from server true or false and emits the selected value', () => {
     assert.match(controlSource, /rule\?\.enabled_for_product \|\| false/)
     assert.match(controlSource, /@update:value="emit\('toggle', \$event\)"/)
-    assert.match(chartSource, /alertRule\.value = updated/)
+    assert.match(scopeSource, /alertRule\.value = updated/)
   })
 
   it('refetches on symbol change while series/frequency changes never invoke scope PUT', () => {
@@ -38,8 +41,10 @@ describe('Product Alert server-side scope', () => {
     const identityWatcher = between(chartSource, 'watch([contract, seriesKind, frequency]', 'watch([symbol, seriesKind, contract]')
     assert.match(symbolWatcher, /refreshAlerts\(\)/)
     assert.doesNotMatch(identityWatcher, /setAlertProductEnabled|toggleAlert/)
-    const toggle = between(chartSource, 'async function toggleAlert', 'async function loadEarlierBars')
-    assert.match(toggle, /setAlertProductEnabled\(current\.rule_code, requestedSymbol, enabled\)/)
+    assert.match(
+      scopeSource,
+      /setProductEnabled\([\s\S]*current\.rule_code,[\s\S]*requestedSymbol,[\s\S]*enabled/,
+    )
   })
 
   it('maps Runtime health to the three fixed labels', () => {
@@ -70,6 +75,32 @@ describe('Product Alert server-side scope', () => {
     }), true)
   })
 
+  it('keeps only the latest symbol scope response after page lifecycle extraction', async () => {
+    const symbol = ref('ag')
+    const resolvers = new Map<string, (value: { symbol: string; rules: never[] }) => void>()
+    const controller = useProductAlertScope({
+      symbol,
+      fetchProductAlerts: (requestedSymbol) => new Promise((resolve) => {
+        resolvers.set(requestedSymbol, resolve)
+      }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: async () => { throw new Error('not used') },
+      notifyError: () => undefined,
+    })
+
+    const oldRequest = controller.refresh()
+    symbol.value = 'jm'
+    const currentRequest = controller.refresh()
+    resolvers.get('jm')!({ symbol: 'jm', rules: [] })
+    await currentRequest
+    resolvers.get('ag')!({ symbol: 'ag', rules: [] })
+    await oldRequest
+
+    assert.equal(controller.alertRuntimeStatus.value, 'ok')
+    assert.equal(controller.alertLoading.value, false)
+    controller.dispose()
+  })
+
   it('builds one persistent bell marker for buy, sell, or buy+sell only', () => {
     assert.deepEqual(alertEventsToMarkers([
       event(1, ['buy']),
@@ -91,6 +122,26 @@ describe('Product Alert server-side scope', () => {
       ['htdy:old', persistent[0].id],
     )
     assert.deepEqual(mergeKlineMarkers([], persistent), persistent)
+  })
+
+  it('sorts merged current and persistent markers by bar time and stable id', () => {
+    const marker = (id: string, time: string) => ({
+      id,
+      time,
+      label: id,
+      tooltip: id,
+      color: '#fff',
+      position: 'aboveBar' as const,
+      shape: 'square' as const,
+    })
+
+    assert.deepEqual(
+      mergeKlineMarkers(
+        [marker('current:1100', '2026-08-13T03:00:00Z'), marker('current:1000', '2026-08-13T02:00:00Z')],
+        [marker('persistent:b', '2026-08-13T02:30:00Z'), marker('persistent:a', '2026-08-13T02:30:00Z')],
+      ).map((item) => item.id),
+      ['current:1000', 'persistent:a', 'persistent:b', 'current:1100'],
+    )
   })
 
   it('enables persistent reads only for actual_dominant 15m', () => {

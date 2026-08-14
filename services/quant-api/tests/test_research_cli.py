@@ -356,6 +356,7 @@ def test_invalid_frequency_exits_two_before_service_construction() -> None:
 def _horizon(*, sample_count: int = 2) -> HorizonEvaluation:
     return HorizonEvaluation(
         sample_count=sample_count,
+        ema21_sample_count=sample_count,
         median_directional_return_bps=Decimal("12.3400"),
         median_mfe_bps=Decimal("18.500"),
         median_mae_bps=Decimal("-3.250"),
@@ -447,6 +448,7 @@ def test_slope_discovery_outputs_json_safe_decimal_strings_and_active_60() -> No
         "horizons": {
             "3": {
                 "sample_count": 2,
+                "ema21_sample_count": 2,
                 "median_directional_return_bps": "12.3400",
                 "median_mfe_bps": "18.500",
                 "median_mae_bps": "-3.250",

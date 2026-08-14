@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, DecimalException
 import json
@@ -44,12 +45,16 @@ class AlertHeartbeatStore(Protocol):
     def write(self, payload: dict[str, object], *, ttl_seconds: int) -> None: ...
 
 
+AlertSessionFactory = Callable[[], AbstractContextManager[Session]]
+AlertMarketReadFactory = Callable[[Session], MarketReadService]
+
+
 class AlertRuntime:
     def __init__(
         self,
         *,
-        session: Session,
-        market_read: MarketReadService,
+        session_factory: AlertSessionFactory,
+        market_read_factory: AlertMarketReadFactory,
         evaluator: AlertEvaluator,
         sender: WeComWebhookSender,
         operational_products: tuple[str, ...],
@@ -59,8 +64,8 @@ class AlertRuntime:
         clock: Callable[[], datetime] | None = None,
         stop_requested: Callable[[], bool] | None = None,
     ) -> None:
-        self._session = session
-        self._market_read = market_read
+        self._session_factory = session_factory
+        self._market_read_factory = market_read_factory
         self._evaluator = evaluator
         self._sender = sender
         self._operational_products = frozenset(
@@ -98,41 +103,56 @@ class AlertRuntime:
         symbol, event_bar = parsed
         if symbol not in self._operational_products:
             return
-        rule = self._enabled_rule(symbol)
-        if rule is None:
-            return
         try:
-            window = self._market_read.bars_until(
-                SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, BarFrequency.M15),
-                trading_day=event_bar.trading_day,
-                end=event_bar.bar_end,
-                limit=32,
-            )
-            if not _window_matches_event(window, symbol=symbol, event_bar=event_bar):
-                return
-            evaluation = self._evaluator.evaluate(window)
-            if not isinstance(evaluation, AlertEvaluation) or not evaluation.observation_types:
-                return
-            now = self._aware_now()
-            created = AlertService(
-                self._session,
-                operational_products=tuple(self._operational_products),
-            ).create_event(
-                AlertEventCreate(
-                    rule_id=rule.id,
-                    symbol=symbol,
-                    contract=window.contract,
-                    frequency="15m",
-                    bar_end=event_bar.bar_end,
-                    observation_types=evaluation.observation_types,
-                    detected_at=now,
-                    notified_at=now,
-                )
-            )
-            if created is None:
-                return
+            with self._session_factory() as session:
+                try:
+                    rule = self._enabled_rule(session, symbol)
+                    if rule is None:
+                        return
+                    window = self._market_read_factory(session).bars_until(
+                        SeriesPageQuery(
+                            SeriesKind.ACTUAL_DOMINANT,
+                            symbol,
+                            BarFrequency.M15,
+                        ),
+                        trading_day=event_bar.trading_day,
+                        end=event_bar.bar_end,
+                        limit=32,
+                    )
+                    if not _window_matches_event(
+                        window,
+                        symbol=symbol,
+                        event_bar=event_bar,
+                    ):
+                        return
+                    evaluation = self._evaluator.evaluate(window)
+                    if (
+                        not isinstance(evaluation, AlertEvaluation)
+                        or not evaluation.observation_types
+                    ):
+                        return
+                    now = self._aware_now()
+                    created = AlertService(
+                        session,
+                        operational_products=tuple(self._operational_products),
+                    ).create_event(
+                        AlertEventCreate(
+                            rule_id=rule.id,
+                            symbol=symbol,
+                            contract=window.contract,
+                            frequency="15m",
+                            bar_end=event_bar.bar_end,
+                            observation_types=evaluation.observation_types,
+                            detected_at=now,
+                            notified_at=now,
+                        )
+                    )
+                    if created is None:
+                        return
+                finally:
+                    if session.in_transaction():
+                        session.rollback()
         except Exception:  # noqa: BLE001 - fail closed without external detail
-            self._session.rollback()
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
             return
 
@@ -154,15 +174,15 @@ class AlertRuntime:
         except Exception:  # noqa: BLE001 - Event stays committed; V1 never retries
             _LOGGER.warning("ALERT_NOTIFICATION_FAILED")
 
-    def _enabled_rule(self, symbol: str) -> AlertRule | None:
+    def _enabled_rule(self, session: Session, symbol: str) -> AlertRule | None:
         try:
-            rule = self._session.scalar(
+            rule = session.scalar(
                 select(AlertRule)
                 .where(AlertRule.rule_code == "htdy_original_15m")
                 .execution_options(populate_existing=True)
             )
         except Exception:  # noqa: BLE001 - DB read failure must not send
-            self._session.rollback()
+            session.rollback()
             return None
         if (
             rule is None
@@ -176,18 +196,26 @@ class AlertRuntime:
 
     def _write_heartbeat(self, now: datetime) -> None:
         assert self.heartbeat_store is not None
-        enabled = self._session.scalars(select(AlertRule).where(AlertRule.enabled.is_(True))).all()
-        scope = {
-            symbol
-            for rule in enabled
-            for symbol in (rule.scope_products or [])
-            if symbol in self._operational_products
-        }
+        with self._session_factory() as session:
+            try:
+                enabled = session.scalars(
+                    select(AlertRule).where(AlertRule.enabled.is_(True))
+                ).all()
+                enabled_rule_count = len(enabled)
+                scope = {
+                    symbol
+                    for rule in enabled
+                    for symbol in (rule.scope_products or [])
+                    if symbol in self._operational_products
+                }
+            finally:
+                if session.in_transaction():
+                    session.rollback()
         self.heartbeat_store.write(
             {
                 "generated_at": now.astimezone(UTC).isoformat(),
                 "available": True,
-                "enabled_rule_count": len(enabled),
+                "enabled_rule_count": enabled_rule_count,
                 "scope_product_count": len(scope),
             },
             ttl_seconds=_HEARTBEAT_TTL_SECONDS,

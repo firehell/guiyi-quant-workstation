@@ -17,6 +17,7 @@ from app.market_data.domain import (
 from app.market_data.market_data_service import (
     DominantContractSegmentSummary,
     DominantContractSummary,
+    MarketDataError,
 )
 from app.market_data.market_read_service import MarketReadState
 from app.market_data.subing_calibration import SubingCalibration, SubingCalibrationError
@@ -78,6 +79,39 @@ def test_snapshot_reads_only_the_current_rank1_contract_segment() -> None:
     assert poisoned.primary.snapshot is not None
     assert poisoned.primary.snapshot.trading_day == _SEGMENT_START
     assert poisoned.calibration_state == "pending"
+
+
+def test_snapshot_fails_closed_when_history_extends_past_rank1_segment() -> None:
+    """Catches post-rank1 same-contract bars poisoning Factor and Signal state."""
+    current = _bars(
+        frequency=BarFrequency.M5,
+        count=50,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 1, 5, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    post_segment = _bars(
+        frequency=BarFrequency.M5,
+        count=50,
+        trading_day=date(2026, 8, 4),
+        first_end=datetime(2026, 8, 4, 1, 5, tzinfo=UTC),
+        first_close=Decimal("900"),
+    )
+    companion = _bars(
+        frequency=BarFrequency.M15,
+        count=50,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+        first_close=Decimal("200"),
+    )
+
+    with pytest.raises(MarketDataError, match="DOMINANT_SEGMENT_HISTORY_INCONSISTENT"):
+        _service(
+            {
+                BarFrequency.M5: current + post_segment,
+                BarFrequency.M15: companion,
+            }
+        ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
 
 
 def test_companion_is_cut_off_at_the_primary_confirmed_bar() -> None:
@@ -288,7 +322,7 @@ def test_daily_snapshot_is_historical_only_and_has_no_companion() -> None:
     daily = _bars(
         frequency=BarFrequency.D1,
         count=50,
-        trading_day=_SEGMENT_START,
+        trading_day=date(2026, 6, 15),
         first_end=datetime(2026, 6, 15, 7, 0, tzinfo=UTC),
         first_close=Decimal("100"),
         trading_day_step=True,
@@ -624,7 +658,7 @@ def test_composition_injects_only_the_tracked_production_calibration(
         def __init__(self, **kwargs) -> None:
             observed.update(kwargs)
 
-    monkeypatch.setattr(composition, "load_subing_calibration", load, raising=False)
+    monkeypatch.setattr(composition, "load_accepted_subing_calibration", load)
     monkeypatch.setattr(composition, "SubingReadService", CapturingService)
 
     composition.build_subing_read_service(object())
@@ -643,9 +677,8 @@ def test_composition_propagates_malformed_calibration_without_defaulting(
 ) -> None:
     monkeypatch.setattr(
         composition,
-        "load_subing_calibration",
+        "load_accepted_subing_calibration",
         lambda _path: (_ for _ in ()).throw(SubingCalibrationError()),
-        raising=False,
     )
 
     with pytest.raises(SubingCalibrationError, match="SUBING_CALIBRATION_INVALID"):

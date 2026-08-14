@@ -8,7 +8,8 @@ HTTPS/Basic Auth 公网入口。腾讯云不运行第二套 API/Web 应用副本
 按链路从内向外执行；以下脚本只读取状态，不启动、停止、重载服务，也不运行 migration 或数据任务：
 
 ```bash
-# Mac：四个 launchd label、同一 Runtime 根、Git 身份与本地 HTTP/Runtime health
+# Mac：API/Web/Live/after-market/Alert 五个 label（按 activation marker 判定 required）、同一 Runtime 根、
+# 已加载进程 commit 身份与本地 HTTP/Runtime health
 ./scripts/ops/macos/local-services-status.sh
 
 # Mac：本地端口与 FRPC
@@ -30,6 +31,9 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
   `TESTING.md`。
 - [`deploy/frp/`](frp/)：FRPC/FRPS 隧道配置与分段验收。
 - [`deploy/nginx/`](nginx/)：腾讯云 HTTPS/Basic Auth 反代模板。
+
+安装器会把渲染时 checkout SHA 写入每个 plist 的 `GUIYI_RUNTIME_COMMIT`；只读状态脚本同时核对已加载
+`GUIYI_PROJECT_ROOT`、该 commit 与当前 supervised checkout，避免把移动后的工作树 HEAD 当成已运行版本。
 
 `--render-only` 可用于本地无副作用验证。任何 launchd 加载/重载、Runtime switch、腾讯云配置应用或
 Nginx reload 都是独立受控外部操作，必须在执行前取得与目标相符的一次性明确意图。
