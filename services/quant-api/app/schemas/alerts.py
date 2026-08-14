@@ -1,8 +1,9 @@
-"""Pydantic contracts for the minimal Alert V1 HTTP surface."""
+"""Pydantic contracts for Alert V2 read-only HTTP views."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -10,9 +11,8 @@ from pydantic import BaseModel
 class ProductAlertRuleStateOut(BaseModel):
     rule_code: str
     display_name: str
-    indicator_code: str
-    series_kind: str
-    frequency: str
+    kind: str
+    input_frequencies: list[str]
     enabled_for_product: bool
 
 
@@ -30,12 +30,31 @@ class AlertEventOut(BaseModel):
     rule_code: str
     symbol: str
     contract: str
+    trading_day: date | None
     frequency: str
     bar_end: datetime
-    observation_types: list[str]
+    result_codes: list[str]
+    lower_tf_confirmation: bool
     detected_at: datetime
-    notified_at: datetime
+    notification_attempted_at: datetime
+
+
+class FormalSignalAlertEventOut(AlertEventOut):
+    display_name: str
+    product_name: str
 
 
 class AlertEventListResponse(BaseModel):
     items: list[AlertEventOut]
+
+
+class CurrentAlertEventsResponse(BaseModel):
+    status: Literal["ready", "unavailable"]
+    trading_day: date | None
+    items: list[AlertEventOut]
+
+
+class CurrentFormalSignalEventsResponse(BaseModel):
+    status: Literal["ready", "unavailable"]
+    trading_day: date | None
+    items: list[FormalSignalAlertEventOut]
