@@ -15,21 +15,21 @@ export interface ChartTheme {
   atr: string
 }
 
-/** SSR 或无 CSS 变量时的默认配色 */
+/** SSR 或无 CSS 变量时的默认配色（与亮色 tokens.css 对齐） */
 const FALLBACK: ChartTheme = {
-  background: '#0b111b',
-  grid: '#202a3a',
-  axis: '#39465b',
-  text: '#9aa7b9',
-  textMuted: '#8290a6',
-  up: '#fa5151',
-  down: '#07c160',
-  volumeUp: 'rgba(250, 81, 81, 0.42)',
-  volumeDown: 'rgba(7, 193, 96, 0.42)',
-  ema: '#f59e0b',
-  macdDif: '#38bdf8',
-  macdDea: '#f59e0b',
-  atr: '#a78bfa',
+  background: '#FFFFFF',
+  grid: '#EEF2F6',
+  axis: '#98A2B3',
+  text: '#475467',
+  textMuted: '#667085',
+  up: '#DC2626',
+  down: '#16A34A',
+  volumeUp: 'rgba(220, 38, 38, 0.38)',
+  volumeDown: 'rgba(22, 163, 74, 0.38)',
+  ema: '#F59E0B',
+  macdDif: '#0284C7',
+  macdDea: '#F59E0B',
+  atr: '#7C3AED',
 }
 
 function cssValue(style: CSSStyleDeclaration, name: string, fallback: string) {

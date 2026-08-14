@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import { themeOverrides } from '../src/styles/theme.ts'
@@ -28,7 +29,7 @@ function contrastRatio(foreground: string, background: string) {
   return (light + 0.05) / (dark + 0.05)
 }
 
-describe('dark theme control contract', () => {
+describe('theme control contract', () => {
   it('keeps RadioButton active text readable on its selected surface', () => {
     const radio = (themeOverrides as ThemeRecord).Radio
     assert.ok(radio, 'Radio overrides must define the selected control contract')
@@ -66,5 +67,39 @@ describe('dark theme control contract', () => {
     assert.notEqual(tabs.tabTextColorActiveSegment, tabs.tabTextColorDisabledSegment)
     assert.match(tabs.tabTextColorActiveLine, /^#[0-9a-f]{6}$/i)
     assert.match(tabs.tabTextColorActiveSegment, /^#[0-9a-f]{6}$/i)
+  })
+})
+
+describe('light theme token contract', () => {
+  const css = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8')
+
+  it('declares a fixed light color scheme', () => {
+    assert.match(css, /color-scheme:\s*light/)
+    assert.doesNotMatch(css, /color-scheme:\s*dark/)
+  })
+
+  it('uses the approved light surface and text palette', () => {
+    assert.match(css, /--gy-bg-app:\s*var\(--gy-gray-50\)/)
+    assert.match(css, /--gy-bg-canvas:\s*#fff(?:fff)?/i)
+    assert.match(css, /--gy-bg-panel:\s*#fff(?:fff)?/i)
+    assert.match(css, /--gy-text-primary:\s*var\(--gy-gray-900\)/)
+    assert.match(css, /--gy-border:\s*var\(--gy-gray-200\)/)
+  })
+
+  it('keeps China futures direction colors: red up, green down', () => {
+    assert.match(css, /--gy-up:\s*var\(--gy-red-600\)/)
+    assert.match(css, /--gy-down:\s*var\(--gy-green-600\)/)
+    assert.match(css, /--gy-red-600:\s*#dc2626/i)
+    assert.match(css, /--gy-green-600:\s*#16a34a/i)
+  })
+
+  it('keeps accent and warning non-directional', () => {
+    assert.match(css, /--gy-accent:\s*var\(--gy-blue-600\)/)
+    assert.match(css, /--gy-status-warning:\s*var\(--gy-orange-500\)/)
+    assert.notEqual(
+      css.match(/--gy-accent:\s*(.+);/)?.[1],
+      css.match(/--gy-up:\s*(.+);/)?.[1],
+      'accent must not collide with direction colors',
+    )
   })
 })

@@ -204,21 +204,7 @@ onUnmounted(() => {
 
 .sidebar {
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(20, 133, 238, 0.035), transparent 28%),
-    var(--gy-bg-canvas);
-}
-
-.sidebar::after {
-  content: '';
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 1px;
-  background: linear-gradient(180deg, transparent, rgba(20, 133, 238, 0.32), transparent 70%);
-  pointer-events: none;
+  background: var(--gy-bg-canvas);
 }
 
 .brand {
@@ -289,7 +275,7 @@ onUnmounted(() => {
   justify-content: center;
   color: var(--gy-status-warning);
   background: var(--gy-status-warning-soft);
-  border: 1px solid rgba(255, 143, 31, 0.25);
+  border: 1px solid rgba(247, 144, 9, 0.35);
   border-radius: var(--gy-radius-md);
 }
 
@@ -307,7 +293,6 @@ onUnmounted(() => {
   gap: var(--gy-space-4);
   padding: 0 var(--gy-content-padding);
   background: var(--gy-bg-header);
-  backdrop-filter: blur(10px);
 }
 
 .header__breadcrumb {
@@ -341,11 +326,7 @@ onUnmounted(() => {
   min-width: 0;
   padding: var(--gy-content-padding);
   overflow: auto;
-  background-color: var(--gy-bg-app);
-  background-image:
-    radial-gradient(circle at 12% 0%, rgba(20, 133, 238, 0.055), transparent 34%),
-    var(--gy-grid-overlay);
-  background-size: auto, 32px 32px;
+  background: var(--gy-bg-app);
 }
 
 @media (max-width: 1199px) {
