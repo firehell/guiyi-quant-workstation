@@ -175,6 +175,7 @@ def _snapshot(
     primary_bar_end: datetime,
     primary_trading_day: date = DAY,
     primary_status: SubingFactorStatus = SubingFactorStatus.READY,
+    primary_signal: SubingSignalEvaluation | None = None,
     resolved_signal: SubingSignalEvaluation | None = None,
 ) -> SubingReadSnapshot:
     primary = _factor(
@@ -183,11 +184,15 @@ def _snapshot(
         trading_day=primary_trading_day,
         status=primary_status,
     )
-    primary_signal = resolved_signal or _signal(
-        status=SubingSignalStatus.NOT_MATCHED,
-        direction=SubingDirection.NONE,
-        trigger_timeframe=frequency,
-        bar_end=primary_bar_end,
+    active_primary_signal = (
+        primary_signal
+        if primary_signal is not None
+        else _signal(
+            status=SubingSignalStatus.NOT_MATCHED,
+            direction=SubingDirection.NONE,
+            trigger_timeframe=frequency,
+            bar_end=primary_bar_end,
+        )
     )
     return SubingReadSnapshot(
         symbol="jm",
@@ -205,7 +210,7 @@ def _snapshot(
         calibration_id="subing_intraday_v1",
         primary=primary,
         companion=None,
-        primary_signal=primary_signal,
+        primary_signal=active_primary_signal,
         resolved_signal=resolved_signal,
     )
 
@@ -348,10 +353,12 @@ class FakeSubingRead:
         self.result = snapshot
         self.error = error
         self.calls: list[SubingCall] = []
+        self.raised: list[Exception] = []
 
     def snapshot(self, request, now: datetime) -> SubingReadSnapshot:
         self.calls.append(SubingCall(request, now))
         if self.error is not None:
+            self.raised.append(self.error)
             raise self.error
         return self.result
 
@@ -400,8 +407,7 @@ def _runtime(
         ),
     )
     market_read = FakeRead(
-        market_read_result
-        or _window(bar_end=event_end, trading_day=event_day)
+        market_read_result or _window(bar_end=event_end, trading_day=event_day)
     )
     subing_read = FakeSubingRead(active_snapshot, subing_error)
     htdy_evaluator = FakeHtdyEvaluator(htdy_observations, htdy_error)
@@ -475,7 +481,9 @@ def test_non_operational_symbol_stops_before_rule_dispatch(session: Session) -> 
     assert harness.sender.messages == []
 
 
-def test_ordinary_5m_subing_match_creates_event_and_sends_once(session: Session) -> None:
+def test_ordinary_5m_subing_match_creates_event_and_sends_once(
+    session: Session,
+) -> None:
     _seed_rule(session, "subing_entry_signal_v1")
     _seed_market_facts(session)
     snapshot = _snapshot(
@@ -603,7 +611,9 @@ def test_event_session_window_rejects_night_bar_on_no_night_trading_day(
     )
 
 
-def test_event_session_window_rejects_ambiguous_matching_windows(session: Session) -> None:
+def test_event_session_window_rejects_ambiguous_matching_windows(
+    session: Session,
+) -> None:
     _seed_market_facts(session)
     session.add(
         TradingSession(
@@ -722,9 +732,7 @@ def test_session_final_bar_after_shared_grace_is_dropped(session: Session) -> No
         event_end=DAY_SESSION_END,
         subing_snapshot=snapshot,
         clock=(
-            DAY_SESSION_END
-            + LIVE_SESSION_END_ARRIVAL_GRACE
-            + timedelta(microseconds=1)
+            DAY_SESSION_END + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(microseconds=1)
         ),
     )
 
@@ -796,42 +804,26 @@ def test_subing_snapshot_now_obeys_exact_final_bar_contract(
     )
 
 
-@pytest.mark.parametrize(
-    ("resolved_signal", "expected_frequency", "expected_lower"),
-    (
-        (
-            _signal(
-                direction=SubingDirection.LONG,
-                trigger_timeframe=BarFrequency.M15,
-                bar_end=BOUNDARY_END,
-                lower_tf_confirmation=True,
-                resolution=SubingSignalResolution.HIGHER_TIMEFRAME_WINS,
-            ),
-            "15m",
-            True,
-        ),
-        (
-            _signal(
-                direction=SubingDirection.SHORT,
-                trigger_timeframe=BarFrequency.M5,
-                bar_end=BOUNDARY_END,
-            ),
-            "5m",
-            False,
-        ),
-    ),
-)
-def test_runtime_consumes_existing_resolved_match_without_reimplementing_resolver(
+def test_reciprocal_only_resolved_match_drives_event_and_sender(
     session: Session,
-    resolved_signal: SubingSignalEvaluation,
-    expected_frequency: str,
-    expected_lower: bool,
 ) -> None:
     _seed_rule(session, "subing_entry_signal_v1")
     _seed_market_facts(session)
+    primary_signal = _signal(
+        status=SubingSignalStatus.NOT_MATCHED,
+        direction=SubingDirection.NONE,
+        trigger_timeframe=BarFrequency.M15,
+        bar_end=BOUNDARY_END,
+    )
+    resolved_signal = _signal(
+        direction=SubingDirection.SHORT,
+        trigger_timeframe=BarFrequency.M5,
+        bar_end=BOUNDARY_END,
+    )
     snapshot = _snapshot(
         frequency=BarFrequency.M15,
         primary_bar_end=BOUNDARY_END,
+        primary_signal=primary_signal,
         resolved_signal=resolved_signal,
     )
     harness = _runtime(
@@ -847,8 +839,75 @@ def test_runtime_consumes_existing_resolved_match_without_reimplementing_resolve
 
     events = _event_rows(session)
     assert len(events) == 1
-    assert events[0].frequency == expected_frequency
-    assert events[0].lower_tf_confirmation is expected_lower
+    assert events[0].frequency == "5m"
+    assert events[0].result_codes == ["sell"]
+    assert events[0].lower_tf_confirmation is False
+    assert harness.sender.messages == [
+        AlertNotificationMessage(
+            rule_code="subing_entry_signal_v1",
+            symbol="jm",
+            product_name="焦煤",
+            contract="JM2609",
+            frequency="5m",
+            bar_end=BOUNDARY_END,
+            result_codes=("sell",),
+            lower_tf_confirmation=False,
+        )
+    ]
+
+
+def test_higher_timeframe_resolved_confirmation_drives_event_and_sender(
+    session: Session,
+) -> None:
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    primary_signal = _signal(
+        direction=SubingDirection.LONG,
+        trigger_timeframe=BarFrequency.M15,
+        bar_end=BOUNDARY_END,
+        lower_tf_confirmation=False,
+    )
+    resolved_signal = _signal(
+        direction=SubingDirection.LONG,
+        trigger_timeframe=BarFrequency.M15,
+        bar_end=BOUNDARY_END,
+        lower_tf_confirmation=True,
+        resolution=SubingSignalResolution.HIGHER_TIMEFRAME_WINS,
+    )
+    snapshot = _snapshot(
+        frequency=BarFrequency.M15,
+        primary_bar_end=BOUNDARY_END,
+        primary_signal=primary_signal,
+        resolved_signal=resolved_signal,
+    )
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        subing_snapshot=snapshot,
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    events = _event_rows(session)
+    assert len(events) == 1
+    assert events[0].frequency == "15m"
+    assert events[0].result_codes == ["buy"]
+    assert events[0].lower_tf_confirmation is True
+    assert harness.sender.messages == [
+        AlertNotificationMessage(
+            rule_code="subing_entry_signal_v1",
+            symbol="jm",
+            product_name="焦煤",
+            contract="JM2609",
+            frequency="15m",
+            bar_end=BOUNDARY_END,
+            result_codes=("buy",),
+            lower_tf_confirmation=True,
+        )
+    ]
 
 
 @pytest.mark.parametrize(
@@ -891,14 +950,18 @@ def test_none_or_direction_conflict_resolved_signal_creates_no_event(
     assert harness.sender.messages == []
 
 
-def test_subing_failure_does_not_block_htdy(session: Session) -> None:
+def test_subing_failure_does_not_block_htdy(
+    session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     _seed_rule(session, "htdy_original_15m")
     _seed_rule(session, "subing_entry_signal_v1")
     _seed_market_facts(session)
+    subing_error = RuntimeError("SUBING_READ_FAILED")
     harness = _runtime(
         session,
         event_end=BOUNDARY_END,
-        subing_error=RuntimeError("x"),
+        subing_error=subing_error,
         htdy_observations=("sell",),
     )
 
@@ -908,8 +971,27 @@ def test_subing_failure_does_not_block_htdy(session: Session) -> None:
     )
 
     events = _event_rows(session)
+    assert len(harness.subing_read.calls) == 1
+    assert harness.subing_read.calls[0].request == SubingReadRequest(
+        "jm",
+        BarFrequency.M15,
+    )
+    assert harness.subing_read.raised == [subing_error]
+    assert caplog.messages.count("ALERT_RULE_PROCESSING_FAILED") == 1
     assert _rule_codes(events) == ["htdy_original_15m"]
     assert events[0].result_codes == ["sell"]
+    assert harness.sender.messages == [
+        AlertNotificationMessage(
+            rule_code="htdy_original_15m",
+            symbol="jm",
+            product_name="焦煤",
+            contract="JM2609",
+            frequency="15m",
+            bar_end=BOUNDARY_END,
+            result_codes=("sell",),
+            lower_tf_confirmation=False,
+        )
+    ]
 
 
 def test_htdy_failure_does_not_block_subing(session: Session) -> None:
