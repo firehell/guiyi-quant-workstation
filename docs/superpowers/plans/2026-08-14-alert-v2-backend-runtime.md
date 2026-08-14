@@ -466,7 +466,7 @@ class AlertEventCreate:
     result_codes: tuple[str, ...]
     lower_tf_confirmation: bool
     detected_at: datetime
-    notification_attempted_at: datetime | None
+    notification_attempted_at: datetime
 ```
 
 - [ ] **Step 1: Write current trading day resolver tests**
