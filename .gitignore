@@ -47,6 +47,7 @@ logs/
 # local AI / agent runtime artifacts (not canonical)
 .ai/
 .workbuddy/
+.worktrees/
 
 # local rollback copies produced by controlled data-repair runs
 data/reports/source_interval_provenance_repair_apply_*/backups/
