@@ -49,6 +49,27 @@ _POLICIES: dict[str, FormalPolicy] = {
         blocked_consumers=("formal_strategy_signal_until_validated", FORMAL_BACKTEST_CONSUMER),
         notes="Web/Market MACD display compatibility policy; not strategy-validated.",
     ),
+    "subing_macd_sma_window_scale2_v1": FormalPolicy(
+        policy_id="subing_macd_sma_window_scale2_v1",
+        indicator_family="MACD",
+        seed_policy="sma_window",
+        smoothing_policy=None,
+        histogram_scale=2,
+        lookback="fast12_slow26_signal9",
+        confirmed_only=True,
+        frozen_legacy=False,
+        allowed_consumers=("subing_signal",),
+        blocked_consumers=(
+            FORMAL_BACKTEST_CONSUMER,
+            "alert",
+            "notification",
+            "generic_live",
+        ),
+        notes=(
+            "Scoped confirmed MACD policy approved only for SuBing V1 entry-signal "
+            "evaluation; generic MACD registry capability remains unchanged."
+        ),
+    ),
     "strategy_macd_first_value_scale1_v1": FormalPolicy(
         policy_id="strategy_macd_first_value_scale1_v1",
         indicator_family="MACD",

@@ -262,6 +262,53 @@ def test_macd_and_atr_are_compatibility_validated_not_validated() -> None:
     assert atr.alert_capable is False
 
 
+def test_subing_signal_macd_policy_is_scoped_and_math_equivalent() -> None:
+    """Catches widening SuBing MACD approval or drifting from Factor math."""
+    from guiyi_quant.indicators import (
+        FORMAL_BACKTEST_CONSUMER,
+        get_formal_policy,
+        require_formal_policy,
+    )
+
+    observation = get_formal_policy("web_macd_legacy_v1")
+    signal = require_formal_policy(
+        "subing_macd_sma_window_scale2_v1",
+        consumer="subing_signal",
+    )
+
+    assert signal.policy_id == "subing_macd_sma_window_scale2_v1"
+    assert signal.indicator_family == "MACD"
+    assert (
+        (
+            signal.seed_policy,
+            signal.histogram_scale,
+            signal.lookback,
+            signal.confirmed_only,
+        )
+        == (
+            observation.seed_policy,
+            observation.histogram_scale,
+            observation.lookback,
+            observation.confirmed_only,
+        )
+        == ("sma_window", 2, "fast12_slow26_signal9", True)
+    )
+    assert signal.allowed_consumers == ("subing_signal",)
+    assert signal.blocked_consumers == (
+        FORMAL_BACKTEST_CONSUMER,
+        "alert",
+        "notification",
+        "generic_live",
+    )
+    assert signal.frozen_legacy is False
+
+    for consumer in signal.blocked_consumers:
+        with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+            require_formal_policy(signal.policy_id, consumer=consumer)
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_NOT_ALLOWED"):
+        require_formal_policy(signal.policy_id, consumer="Market_readonly_display")
+
+
 def test_htdy_original_is_alert_capable_but_not_live_or_backtest_capable() -> None:
     from guiyi_quant.indicators import get_indicator, resolve_indicator_code
 

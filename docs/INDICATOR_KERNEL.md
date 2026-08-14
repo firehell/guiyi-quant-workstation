@@ -1,6 +1,6 @@
 # Indicator Kernel
 
-更新时间：2026-08-13
+更新时间：2026-08-14
 
 ## 定位
 
@@ -39,7 +39,8 @@ packages/quant-core/guiyi_quant/indicators/
 - MACD/ATR 支持显式计算 policy，但 `compatibility_validated` 不等于 formal strategy、live 或 alert 资格。
 - `web_macd_legacy_v1` 只额外允许明确命名的 `subing_factor_observation` consumer 计算只读 Factor；
   generic `macd` 仍为 `compatibility_validated`，`backtest/live/alert` capability 均为 false。
-- 苏冰 Formal Signal 的 MACD 语义审查与独立 scoped policy 仍未完成；Factor observation 不得被解读为 Signal 晋升。
+- Gate C 已人工批准 `subing_macd_sma_window_scale2_v1`，且只允许 `subing_signal` consumer；它不提升
+  generic MACD，也不批准 Backtest、Alert V2、notification、generic live 或 Runtime。
 - 所有正式消费者只能使用 confirmed bars；未确认 bar 最多用于 Web preview。
 - 未知 `indicator_code`、policy 或 consumer 必须 fail-closed。
 - 未来若重建策略或回测，必须新任务、新合同并复用 Python Kernel；不得恢复旧策略包或复制算法。
@@ -56,6 +57,19 @@ packages/quant-core/guiyi_quant/indicators/
 
 这里的 `backtest/live/alert` 表示 Kernel policy 能力，不表示仓库当前存在对应应用入口，也不授权 Runtime、通知
 或交易。
+
+## SuBing scoped MACD
+
+SuBing V1 Entry Signal 复用 Factor observation 的固定数学等价 tuple：
+
+```text
+("sma_window", 2, "fast12_slow26_signal9", True)
+```
+
+四项依次是 `seed_policy`、`histogram_scale`、`lookback`、`confirmed_only`。Signal core 必须同时读取
+`web_macd_legacy_v1` 与 `subing_macd_sma_window_scale2_v1` 并核对该 exact tuple；policy 缺失或不等价时
+fail closed，不能产生 `MATCHED`。`macd_zero_distance_abs/bps` 继续保留为 Factor/Web/research observation，
+不属于 intraday V1 executable Signal 条件。未来 Alert V2 仍需独立设计、证据与人工 Gate。
 
 ## HTDY 风险边界
 

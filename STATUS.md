@@ -25,7 +25,8 @@
   `data/research_policies/subing_calibration_intraday_v1.json` 成为 Git-tracked 仓库事实；
   MACD Gate C 已由用户人工批准，且只批准 SuBing V1 Entry Signal 的 scoped consumer；generic MACD
   继续保持 `compatibility_validated`，backtest/live/alert capability 均未改变。Gate C 不批准 Alert V2
-  或 Runtime；formal Signal 在本 Task 完成前仍尚未实现。
+  或 Runtime。SuBing V1 slope-only formal Signal pure core 与 same-boundary resolver 已完成并通过独立
+  Lane 3 Review；Task 8 API/Web exposure 尚未开始。
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
@@ -206,7 +207,8 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   由 controller 在同一工作树外层以原命令重跑通过，未用已部署 Runtime 服务替代。
 - 状态仍是 Factor Observation 完成；Calibration Gate B-R 已批准，slope-only artifact 已成为
   Git-tracked 仓库事实；MACD Gate C 已人工批准且仅限 SuBing V1 Entry Signal scoped consumer，
-  generic MACD capability 未晋升，formal Signal 在本 Task 完成前仍 absent、Alert V1 unchanged。
+  generic MACD capability 未晋升。formal Signal pure core 已实现，Task 8 API/Web exposure 尚未开始，
+  Alert V1 unchanged。
   本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
   `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中，当前隔离 Runtime 仍为 `v1.1.0`
   的 17:00 模板。
