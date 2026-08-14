@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { SubingFactorSnapshot, SubingResearchResponse } from '@/types/market'
+import {
+  subingSignalLabel,
+  type SubingFactorSnapshot,
+  type SubingResearchResponse,
+  type SubingSignal,
+} from '@/types/market'
 
 defineProps<{
   snapshot: SubingResearchResponse | null
@@ -29,6 +34,12 @@ function factor(value: SubingFactorSnapshot | null | undefined) {
   if (!value) return 'warm-up 中'
   return `${direction(value.price_side)} · S5 ${value.slope_5_bps_per_bar.toFixed(1)} bps/bar · MACD ${cross(value.macd_cross)}`
 }
+
+function signal(value: SubingSignal) {
+  const timeframe = value.trigger_timeframe ?? '—'
+  const confirmation = value.lower_tf_confirmation ? ' · 低周期确认' : ''
+  return `${timeframe} · ${subingSignalLabel(value)}${confirmation}`
+}
 </script>
 
 <template>
@@ -41,6 +52,8 @@ function factor(value: SubingFactorSnapshot | null | undefined) {
       <div><dt>当前合约</dt><dd>{{ snapshot.actual_contract }}</dd></div>
       <div><dt>段起始</dt><dd>{{ snapshot.segment_start_trading_day }}</dd></div>
       <div><dt>数据模式</dt><dd>{{ snapshot.source_mode === 'canonical_live' ? 'Canonical + completed Live' : 'Canonical' }}</dd></div>
+      <div><dt>Primary Signal</dt><dd>{{ signal(snapshot.primary_signal) }}</dd></div>
+      <div v-if="snapshot.resolved_signal"><dt>Resolved Signal</dt><dd>{{ signal(snapshot.resolved_signal) }}</dd></div>
       <div><dt>Primary 确认</dt><dd>{{ snapshot.primary.snapshot ? confirmed(snapshot.primary.snapshot.bar_end) : '—' }}</dd></div>
       <div class="subing-research__factor"><dt>Primary Factor</dt><dd>{{ factor(snapshot.primary.snapshot) }}</dd></div>
       <template v-if="snapshot.companion">

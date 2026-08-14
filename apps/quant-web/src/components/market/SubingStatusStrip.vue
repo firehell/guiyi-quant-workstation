@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { NAlert, NTag } from 'naive-ui'
-import type { SubingFactorSnapshot, SubingResearchResponse } from '@/types/market'
+import {
+  subingSignalLabel,
+  type SubingFactorSnapshot,
+  type SubingResearchResponse,
+} from '@/types/market'
 
 const props = defineProps<{
   snapshot: SubingResearchResponse | null
@@ -13,6 +17,14 @@ const props = defineProps<{
 const primary = computed(() => props.snapshot?.primary.snapshot ?? null)
 const companion = computed(() => props.snapshot?.companion?.snapshot ?? null)
 const ready = computed(() => props.snapshot?.primary.status === 'ready' && !!primary.value)
+const signal = computed(() => props.snapshot?.resolved_signal ?? props.snapshot?.primary_signal ?? null)
+const signalType = computed(() => signal.value?.status === 'matched' ? 'success' : 'info')
+const signalContext = computed(() => {
+  if (!signal.value) return ''
+  const timeframe = signal.value.trigger_timeframe ? `${signal.value.trigger_timeframe} · ` : ''
+  const confirmation = signal.value.lower_tf_confirmation ? ' · 低周期确认' : ''
+  return `${timeframe}${subingSignalLabel(signal.value)}${confirmation}`
+})
 const directions = computed(() => {
   if (!primary.value) return ''
   const primaryLabel = `${primary.value.timeframe} ${direction(primary.value)}`
@@ -58,16 +70,17 @@ function confirmedTime(value: string) {
       <strong>苏冰 Factor · 当前主力已切换</strong>
       <NTag v-if="snapshot.live_observation === 'unavailable'" size="small" type="warning">Live observation unavailable</NTag>
     </div>
-    <div>指标 warm-up 中 · 暂无 Factor 判断</div>
+    <div>指标 warm-up 中 / 数据不足</div>
   </NAlert>
-  <NAlert v-else type="success" :show-icon="false" class="subing-strip">
+  <NAlert v-else :type="signalType" :show-icon="false" class="subing-strip">
     <div class="subing-strip__row">
       <strong>苏冰 Factor · {{ primary?.bar_source === 'live' ? 'Live观察' : 'Historical观察' }} · {{ confirmedTime(primary!.bar_end) }}</strong>
       <NTag v-if="snapshot.live_observation === 'unavailable'" size="small" type="warning">Live observation unavailable</NTag>
     </div>
+    <div><strong>{{ signalContext }}</strong></div>
     <div>{{ directions }}</div>
     <div>MACD {{ crossLabel(primary!.macd_cross) }} · 距零轴 {{ primary!.macd_zero_distance_bps.toFixed(1) }} bps · 量 {{ ratio(primary!.volume_ratio_prev) }}</div>
-    <div>Factor 条件观察 · <span>研究参数待冻结</span></div>
+    <div>Factor 条件观察 · zero-distance 仅作描述</div>
   </NAlert>
 </template>
 

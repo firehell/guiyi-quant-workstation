@@ -36,9 +36,16 @@ function subing(overrides = {}) {
     symbol: 'ag', product_name: '白银', frequency: '5m', actual_contract: 'AG2601',
     dominant_mapping_date: '2026-08-11', segment_start_trading_day: '2026-01-12',
     source_mode: 'canonical_live', live_observation: 'available', live_reason: null,
-    macd_policy_id: 'web_macd_legacy_v1', calibration_state: 'pending',
+    macd_policy_id: 'web_macd_legacy_v1', signal_macd_policy_id: 'subing_macd_sma_window_scale2_v1',
+    calibration_state: 'accepted', calibration_id: 'subing_intraday_v1',
     primary: { status: 'ready', snapshot: snapshot('5m', '2026-01-12T02:25:00Z') },
     companion: { status: 'ready', snapshot: snapshot('15m', '2026-01-12T02:15:00Z') },
+    primary_signal: {
+      status: 'not_matched', direction: 'none', trigger_timeframe: '5m',
+      lower_tf_confirmation: false, resolution: null,
+      conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
+    },
+    resolved_signal: null,
     ...overrides,
   }
 }
@@ -102,19 +109,121 @@ test('SuBing owns the current dominant segment while preserving the user series 
   await expect(page).toHaveURL(/series_kind=continuous/)
 })
 
-test('SuBing clips old same-contract bars and renders Factor-only research wording', async ({ page }) => {
+test('SuBing clips old same-contract bars and renders the requested primary Signal', async ({ page }) => {
   await mockWorkspace(page, { json: research() })
   await page.setViewportSize({ width: 1680, height: 1000 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   await expect(page.getByText('109 bars', { exact: true })).toBeVisible()
-  await expect(page.getByText('研究参数待冻结', { exact: true })).toBeVisible()
+  await expect(page.locator('.subing-strip')).toContainText('5m · 当前不匹配')
   await expect(page.getByText('苏冰观察', { exact: true })).toBeVisible()
   await expect(page.getByText('当前合约', { exact: true })).toBeVisible()
   await expect(page.getByText('段起始', { exact: true })).toBeVisible()
   await expect(page.locator('body')).not.toContainText('买入')
   await expect(page.locator('body')).not.toContainText('卖出')
   await expect(page.locator('body')).not.toContainText('formal signal')
+  await expect(page.locator('body')).not.toContainText('ZERO_BAND')
+})
+
+test('SuBing same-boundary dual match keeps 5m primary and resolves one 15m buy signal', async ({ page }) => {
+  const alertRequests = []
+  await page.route('**/api/v1/alerts/**', async (route) => {
+    alertRequests.push(route.request().url())
+    return route.abort()
+  })
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: subing({
+      primary: {
+        status: 'ready',
+        snapshot: { ...subing().primary.snapshot, bar_end: '2026-01-12T02:30:00Z' },
+      },
+      companion: {
+        status: 'ready',
+        snapshot: { ...subing().companion.snapshot, bar_end: '2026-01-12T02:30:00Z' },
+      },
+      primary_signal: {
+        status: 'matched', direction: 'long', trigger_timeframe: '5m',
+        lower_tf_confirmation: false, resolution: null,
+        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
+      },
+      resolved_signal: {
+        status: 'matched', direction: 'long', trigger_timeframe: '15m',
+        lower_tf_confirmation: true, resolution: 'higher_timeframe_wins',
+        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
+      },
+    }),
+  })
+  await page.setViewportSize({ width: 1680, height: 1000 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  await expect(page.locator('.subing-strip')).toContainText('15m · 买入信号 · 低周期确认')
+  await expect(page.getByText('Primary Signal')).toBeVisible()
+  await expect(page.getByText('5m · 买入信号', { exact: true })).toBeVisible()
+  await expect(page.getByText('Resolved Signal')).toBeVisible()
+  await expect(page.getByRole('definition').filter({ hasText: '15m · 买入信号 · 低周期确认' })).toBeVisible()
+  await expect(page.locator('body')).not.toContainText('ZERO_BAND')
+  await expect(page.locator('body')).not.toContainText('零轴条件')
+  expect(alertRequests).toEqual([])
+})
+
+test('SuBing same-boundary 15m request keeps 15m as both primary and resolved signal', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: subing({
+      frequency: '15m',
+      primary: {
+        status: 'ready',
+        snapshot: { ...subing().companion.snapshot, bar_end: '2026-01-12T02:30:00Z' },
+      },
+      companion: {
+        status: 'ready',
+        snapshot: { ...subing().primary.snapshot, bar_end: '2026-01-12T02:30:00Z' },
+      },
+      primary_signal: {
+        status: 'matched', direction: 'short', trigger_timeframe: '15m',
+        lower_tf_confirmation: false, resolution: null,
+        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
+      },
+      resolved_signal: {
+        status: 'matched', direction: 'short', trigger_timeframe: '15m',
+        lower_tf_confirmation: true, resolution: 'higher_timeframe_wins',
+        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
+      },
+    }),
+  })
+  await page.setViewportSize({ width: 1680, height: 1000 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  await expect(page.locator('.subing-strip')).toContainText('15m · 卖出信号 · 低周期确认')
+  await expect(page.getByText('15m · 卖出信号', { exact: true })).toBeVisible()
+  await expect(page.getByRole('definition').filter({ hasText: '15m · 卖出信号 · 低周期确认' })).toBeVisible()
+})
+
+test('SuBing 15m non-match keeps the requested primary and creates no resolved signal', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: subing({
+      frequency: '15m',
+      primary: {
+        status: 'ready',
+        snapshot: { ...subing().companion.snapshot, bar_end: '2026-01-12T02:15:00Z' },
+      },
+      companion: {
+        status: 'ready',
+        snapshot: { ...subing().primary.snapshot, bar_end: '2026-01-12T02:15:00Z' },
+      },
+      primary_signal: {
+        status: 'not_matched', direction: 'none', trigger_timeframe: '15m',
+        lower_tf_confirmation: false, resolution: null,
+        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
+      },
+      resolved_signal: null,
+    }),
+  })
+  await page.setViewportSize({ width: 1680, height: 1000 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  await expect(page.locator('.subing-strip')).toContainText('15m · 当前不匹配')
+  await expect(page.getByRole('definition').filter({ hasText: '15m · 当前不匹配' })).toBeVisible()
+  await expect(page.getByText('Resolved Signal')).toHaveCount(0)
 })
 
 test('SuBing keeps the visible chart empty until the segment snapshot resolves', async ({ page }) => {

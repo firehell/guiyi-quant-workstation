@@ -4,6 +4,7 @@ import {
   filterBarsToSubingSegment,
   isSubingSupportedFrequency,
   shouldScheduleSubingCompanionRefresh,
+  subingSignalLabel,
   normalizeSubingResearch,
   type BarData,
   type SubingResearchResponse,
@@ -20,7 +21,9 @@ const readyPayload = {
   live_observation: 'available',
   live_reason: null,
   macd_policy_id: 'web_macd_legacy_v1',
-  calibration_state: 'pending',
+  signal_macd_policy_id: 'subing_macd_sma_window_scale2_v1',
+  calibration_state: 'accepted',
+  calibration_id: 'subing_intraday_v1',
   primary: {
     status: 'ready',
     snapshot: {
@@ -53,6 +56,12 @@ const readyPayload = {
     status: 'insufficient_data',
     snapshot: null,
   },
+  primary_signal: {
+    status: 'matched', direction: 'long', trigger_timeframe: '5m',
+    lower_tf_confirmation: false, resolution: null,
+    conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
+  },
+  resolved_signal: null,
 } as unknown as SubingResearchResponse
 
 test('normalizes Decimal Factor values at the SuBing HTTP boundary', () => {
@@ -88,6 +97,24 @@ test('supports only the three SuBing V1 snapshot frequencies', () => {
   assert.equal(isSubingSupportedFrequency('15m'), true)
   assert.equal(isSubingSupportedFrequency('1d'), true)
   assert.equal(isSubingSupportedFrequency('30m'), false)
+})
+
+test('maps every formal Signal status without trading or zero-band language', () => {
+  assert.equal(subingSignalLabel({ status: 'matched', direction: 'long' }), '买入信号')
+  assert.equal(subingSignalLabel({ status: 'matched', direction: 'short' }), '卖出信号')
+  assert.equal(subingSignalLabel({ status: 'not_matched', direction: 'none' }), '当前不匹配')
+  assert.equal(
+    subingSignalLabel({ status: 'insufficient_data', direction: 'none' }),
+    '指标 warm-up 中 / 数据不足',
+  )
+  assert.equal(
+    subingSignalLabel({ status: 'research_pending', direction: 'none' }),
+    '研究参数/能力待冻结',
+  )
+  assert.equal(subingSignalLabel({ status: 'matched', direction: 'none' }), '当前不匹配')
+  for (const label of ['买入信号', '卖出信号', '当前不匹配', '指标 warm-up 中 / 数据不足']) {
+    assert.doesNotMatch(label, /零轴|zero|下单|仓位|止损|止盈|提醒/i)
+  }
 })
 
 test('schedules one bounded refresh only for an older companion at a common 5m boundary', () => {

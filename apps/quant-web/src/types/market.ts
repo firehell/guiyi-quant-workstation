@@ -133,6 +133,25 @@ export interface SubingFactorResult {
   snapshot: SubingFactorSnapshot | null
 }
 
+export type SubingSignalStatus = 'matched' | 'not_matched' | 'research_pending' | 'insufficient_data'
+export type SubingSignalDirection = 'long' | 'short' | 'none'
+export type SubingConditionState = 'pass' | 'fail' | 'pending' | 'unavailable'
+
+export interface SubingCondition {
+  code: string
+  state: SubingConditionState
+}
+
+export interface SubingSignal {
+  status: SubingSignalStatus
+  direction: SubingSignalDirection
+  trigger_timeframe: SubingFrequency | null
+  lower_tf_confirmation: boolean
+  resolution: 'higher_timeframe_wins' | 'direction_conflict' | null
+  conditions: SubingCondition[]
+  error_code: string | null
+}
+
 export interface SubingResearchResponse {
   symbol: string
   product_name: string
@@ -144,9 +163,23 @@ export interface SubingResearchResponse {
   live_observation: 'available' | 'unavailable' | 'not_applicable'
   live_reason: string | null
   macd_policy_id: string
-  calibration_state: 'pending'
+  signal_macd_policy_id: string
+  calibration_state: 'accepted' | 'pending'
+  calibration_id: string | null
   primary: SubingFactorResult
   companion: SubingFactorResult | null
+  primary_signal: SubingSignal
+  resolved_signal: SubingSignal | null
+}
+
+export function subingSignalLabel(
+  signal: Pick<SubingSignal, 'status' | 'direction'>,
+): string {
+  if (signal.status === 'matched' && signal.direction === 'long') return '买入信号'
+  if (signal.status === 'matched' && signal.direction === 'short') return '卖出信号'
+  if (signal.status === 'research_pending') return '研究参数/能力待冻结'
+  if (signal.status === 'insufficient_data') return '指标 warm-up 中 / 数据不足'
+  return '当前不匹配'
 }
 
 /** FastAPI serializes Decimal fields as strings; normalize the complete Factor snapshot. */

@@ -25,8 +25,10 @@
   `data/research_policies/subing_calibration_intraday_v1.json` 成为 Git-tracked 仓库事实；
   MACD Gate C 已由用户人工批准，且只批准 SuBing V1 Entry Signal 的 scoped consumer；generic MACD
   继续保持 `compatibility_validated`，backtest/live/alert capability 均未改变。Gate C 不批准 Alert V2
-  或 Runtime。SuBing V1 slope-only formal Signal pure core 与 same-boundary resolver 已完成并通过独立
-  Lane 3 Review；Task 8 API/Web exposure 尚未开始。
+  或 Runtime。SuBing V1 slope-only formal Signal pure core、tracked Calibration 注入及 Product Workspace
+  只读 Signal observation 已完成并通过独立 Lane 3 Review：5m/15m 保留 requested primary evaluation，
+  仅实际 MATCHED opportunity 生成可选 resolved Signal，同 boundary 双 MATCHED 时 15m wins；1d 继续
+  `RESEARCH_PENDING`。本状态不批准 Alert V2、Runtime 或任何交易能力。
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
@@ -191,7 +193,7 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   Historical/Live seam、60 品种范围和 after-market activation 字段均可只读验证。真实使用数日的 P1
   决策观察期也尚未开始。
 
-## SuBing Factor Observation V1 代码验收
+## SuBing Factor / Signal Observation V1 代码验收
 
 - `develop` 已提供薄 `SubingReadService` 与 SuBing API/Web 观察面；只从
   `MarketDataService` / `MarketReadService` 复用已有 Historical/completed Live seam，不直连
@@ -201,14 +203,14 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   primary cutoff；日线仍为 Historical-only。Kline/EMA/MACD/Factor 因此不携带主力切换前
   warm-up 或跨换月状态。前端的 effective current-contract identity 只影响 SuBing 视图，
   不写回用户的 continuous/actual-dominant/contract 偏好。
-- 本轮实现验收为后端 `506 passed / 13 skipped`、Ruff 通过、Mypy 32 个源文件通过、
-  Web `102 passed / 1 skipped`、Playwright 精确两个用例文件 `13 passed`、production build 通过、
-  secret scan 0 finding。Playwright 在子沙箱因 `listen EPERM 127.0.0.1:5182` 未启动后，
-  由 controller 在同一工作树外层以原命令重跑通过，未用已部署 Runtime 服务替代。
+- Task 8 将 accepted slope-only Calibration 仅从 tracked production artifact 注入
+  `SubingReadService`，并在 API/Web 明确分离 primary 与 resolved Signal；Factor observation 与 scoped
+  Signal MACD policy identity 分开，zero-distance 继续只作 Factor/Web 描述。最终测试数量见本次交付
+  commit 的验证记录；Playwright 使用临时 Vite 测试服务，未用已部署 Runtime 替代。
 - 状态仍是 Factor Observation 完成；Calibration Gate B-R 已批准，slope-only artifact 已成为
   Git-tracked 仓库事实；MACD Gate C 已人工批准且仅限 SuBing V1 Entry Signal scoped consumer，
-  generic MACD capability 未晋升。formal Signal pure core 已实现，Task 8 API/Web exposure 尚未开始，
-  Alert V1 unchanged。
+  generic MACD capability 未晋升。formal Signal pure core 与 Task 8 API/Web exposure 已完成，Alert V1
+  unchanged。
   本轮没有 Runtime deployment/switch；`4f1598e9` 的 18:05 调度与
   `NEXT_TRADING_SESSION_NOT_READY` 分类仅在 `develop` 代码中，当前隔离 Runtime 仍为 `v1.1.0`
   的 17:00 模板。

@@ -28,8 +28,9 @@ from app.market_data.domain import (
 )
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.market_research_service import ResearchSeriesIdentity
+from app.market_data.subing_calibration import SubingCalibrationError
 from app.market_data.subing_read_service import SubingReadRequest
-from app.market_data.subing_research import SubingFactorResult
+from app.market_data.subing_research import SubingFactorResult, SubingSignalEvaluation
 from app.schemas.market import (
     ContractSegmentOut,
     CoverageOut,
@@ -43,9 +44,11 @@ from app.schemas.market import (
     MarketRadarSectorOut,
     MarketRadarSummaryOut,
     ProductResearchResponse,
+    SubingConditionOut,
     SubingFactorResultOut,
     SubingFactorSnapshotOut,
     SubingResearchResponse,
+    SubingSignalOut,
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
@@ -226,7 +229,7 @@ def subing_research(
             request,
             datetime.now(UTC),
         )
-    except MarketDataError as exc:
+    except (MarketDataError, SubingCalibrationError) as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
 
     return SubingResearchResponse(
@@ -240,11 +243,19 @@ def subing_research(
         live_observation=snapshot.live_observation,
         live_reason=snapshot.live_reason,
         macd_policy_id=snapshot.macd_policy_id,
+        signal_macd_policy_id=snapshot.signal_macd_policy_id,
         calibration_state=snapshot.calibration_state,
+        calibration_id=snapshot.calibration_id,
         primary=_subing_factor_result(snapshot.primary),
         companion=(
             _subing_factor_result(snapshot.companion)
             if snapshot.companion is not None
+            else None
+        ),
+        primary_signal=_subing_signal(snapshot.primary_signal),
+        resolved_signal=(
+            _subing_signal(snapshot.resolved_signal)
+            if snapshot.resolved_signal is not None
             else None
         ),
     )
@@ -350,4 +361,23 @@ def _subing_factor_result(result: SubingFactorResult) -> SubingFactorResultOut:
             if snapshot is not None
             else None
         ),
+    )
+
+
+def _subing_signal(signal: SubingSignalEvaluation) -> SubingSignalOut:
+    return SubingSignalOut(
+        status=signal.status.value,
+        direction=signal.direction.value,
+        trigger_timeframe=(
+            signal.trigger_timeframe.value
+            if signal.trigger_timeframe is not None
+            else None
+        ),
+        lower_tf_confirmation=signal.lower_tf_confirmation,
+        resolution=signal.resolution.value if signal.resolution is not None else None,
+        conditions=[
+            SubingConditionOut(code=condition.code, state=condition.state.value)
+            for condition in signal.conditions
+        ],
+        error_code=signal.error_code,
     )

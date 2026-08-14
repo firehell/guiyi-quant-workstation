@@ -150,6 +150,25 @@ class SubingFactorResultOut(BaseModel):
     snapshot: SubingFactorSnapshotOut | None
 
 
+class SubingConditionOut(BaseModel):
+    """SuBing executable Signal 单项条件，不包含 zero-band。"""
+
+    code: str
+    state: str
+
+
+class SubingSignalOut(BaseModel):
+    """SuBing 入场方向 Signal 的只读评估或同 boundary 解析结果。"""
+
+    status: str
+    direction: str
+    trigger_timeframe: str | None
+    lower_tf_confirmation: bool
+    resolution: str | None
+    conditions: list[SubingConditionOut]
+    error_code: str | None
+
+
 class SubingResearchResponse(BaseModel):
     """``/research/subing`` current-rank1 只读研究快照。"""
 
@@ -163,9 +182,13 @@ class SubingResearchResponse(BaseModel):
     live_observation: str
     live_reason: str | None
     macd_policy_id: str
+    signal_macd_policy_id: str
     calibration_state: str
+    calibration_id: str | None
     primary: SubingFactorResultOut
     companion: SubingFactorResultOut | None
+    primary_signal: SubingSignalOut
+    resolved_signal: SubingSignalOut | None
 
 
 class MarketRadarSummaryOut(BaseModel):

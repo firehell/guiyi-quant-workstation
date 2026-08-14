@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Protocol
+from decimal import Decimal
+from typing import Protocol, cast
 
 from app.market_data.domain import (
     BarFrequency,
@@ -19,7 +21,16 @@ from app.market_data.market_data_service import (
     MarketDataError,
 )
 from app.market_data.market_read_service import MarketReadState
-from app.market_data.subing_research import SubingFactorResult, calculate_subing_factor
+from app.market_data.subing_calibration import SubingCalibration
+from app.market_data.subing_research import (
+    SubingFactorResult,
+    SubingFactorStatus,
+    SubingSignalEvaluation,
+    SubingSignalStatus,
+    calculate_subing_factor,
+    evaluate_subing_signal,
+    resolve_same_boundary_subing_signals,
+)
 
 
 SUPPORTED_SUBING_FREQUENCIES = frozenset(
@@ -34,7 +45,9 @@ _COMPANION_FREQUENCY = {
 class SubingMarketDataReader(Protocol):
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]: ...
 
-    def latest_dominant_segment(self, symbol: str) -> DominantContractSegmentSummary: ...
+    def latest_dominant_segment(
+        self, symbol: str
+    ) -> DominantContractSegmentSummary: ...
 
 
 class SubingMarketRead(Protocol):
@@ -48,6 +61,12 @@ class SubingMarketRead(Protocol):
         after: datetime | None,
         now: datetime,
     ) -> tuple[CanonicalBar, ...]: ...
+
+
+class _SignalCalibrationView(Protocol):
+    calibration_id: str | None
+    accepted_timeframes: frozenset[BarFrequency]
+    slope_flat_threshold_bps_per_bar: Mapping[BarFrequency, Decimal]
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,9 +102,13 @@ class SubingReadSnapshot:
     live_observation: str
     live_reason: str | None
     macd_policy_id: str
+    signal_macd_policy_id: str
     calibration_state: str
+    calibration_id: str | None
     primary: SubingFactorResult
     companion: SubingFactorResult | None
+    primary_signal: SubingSignalEvaluation
+    resolved_signal: SubingSignalEvaluation | None
 
 
 class SubingReadService:
@@ -96,9 +119,11 @@ class SubingReadService:
         *,
         market_data: SubingMarketDataReader,
         market_read: SubingMarketRead,
+        calibration: SubingCalibration,
     ) -> None:
         self._market_data = market_data
         self._market_read = market_read
+        self._calibration = calibration
 
     def snapshot(self, request: SubingReadRequest, now: datetime) -> SubingReadSnapshot:
         if not isinstance(request, SubingReadRequest):
@@ -162,8 +187,7 @@ class SubingReadService:
                 live_observation = "unavailable"
                 live_reason = "contract_mismatch"
             elif not all(
-                state.live_available
-                and state.live_contract == dominant.actual_contract
+                state.live_available and state.live_contract == dominant.actual_contract
                 for state in states
             ):
                 primary_bars = primary_historical
@@ -222,6 +246,17 @@ class SubingReadService:
                 else "canonical"
             )
 
+        primary_signal = evaluate_subing_signal(
+            primary,
+            companion=companion,
+            calibration=cast(_SignalCalibrationView, self._calibration),
+        )
+        resolved_signal = self._resolve_matched_signal(
+            primary,
+            companion,
+            primary_signal,
+        )
+
         return SubingReadSnapshot(
             symbol=request.symbol,
             product_name=dominant.product_name,
@@ -233,10 +268,38 @@ class SubingReadService:
             live_observation=live_observation,
             live_reason=live_reason,
             macd_policy_id="web_macd_legacy_v1",
-            calibration_state="pending",
+            signal_macd_policy_id="subing_macd_sma_window_scale2_v1",
+            calibration_state=(
+                "accepted"
+                if self._calibration.calibration_id is not None
+                else "pending"
+            ),
+            calibration_id=self._calibration.calibration_id,
             primary=primary,
             companion=companion,
+            primary_signal=primary_signal,
+            resolved_signal=resolved_signal,
         )
+
+    def _resolve_matched_signal(
+        self,
+        primary: SubingFactorResult,
+        companion: SubingFactorResult | None,
+        primary_signal: SubingSignalEvaluation,
+    ) -> SubingSignalEvaluation | None:
+        if primary_signal.status is not SubingSignalStatus.MATCHED:
+            return None
+        if not _same_ready_boundary(primary, companion):
+            return primary_signal
+        assert companion is not None
+        reciprocal = evaluate_subing_signal(
+            companion,
+            companion=primary,
+            calibration=cast(_SignalCalibrationView, self._calibration),
+        )
+        if reciprocal.status is not SubingSignalStatus.MATCHED:
+            return primary_signal
+        return resolve_same_boundary_subing_signals(primary_signal, reciprocal)
 
     def _latest_dominant(self, symbol: str) -> DominantContractSummary:
         for dominant in self._market_data.list_latest_dominants():
@@ -273,7 +336,9 @@ class SubingReadService:
         ordered = tuple(by_end[key] for key in sorted(by_end))
         bars = tuple(item[0] for item in ordered)
         latest_source = ordered[-1][1] if ordered else "canonical"
-        live_ends = frozenset(bar.bar_end for bar, source in ordered if source == "live")
+        live_ends = frozenset(
+            bar.bar_end for bar, source in ordered if source == "live"
+        )
         return bars, latest_source, live_ends
 
 
@@ -288,4 +353,18 @@ def _identity(
         frequency=frequency,
         limit=300,
         contract=contract,
+    )
+
+
+def _same_ready_boundary(
+    primary: SubingFactorResult,
+    companion: SubingFactorResult | None,
+) -> bool:
+    return (
+        primary.status is SubingFactorStatus.READY
+        and primary.snapshot is not None
+        and companion is not None
+        and companion.status is SubingFactorStatus.READY
+        and companion.snapshot is not None
+        and primary.snapshot.bar_end == companion.snapshot.bar_end
     )
