@@ -3,26 +3,138 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import logging
 import traceback
+from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.alerts.wecom import AlertEventMessage, WeComSendError, WeComWebhookSender
+from app.alerts.wecom import (
+    AlertNotificationMessage,
+    WeComSendError,
+    WeComWebhookSender,
+    format_alert_message,
+)
 
 
 _TEST_WEBHOOK_URL = (
     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?" + "key=test-key-12345678"
 )
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
-def _event(observations: tuple[str, ...]) -> AlertEventMessage:
-    return AlertEventMessage(
+def _event(observations: tuple[str, ...]) -> AlertNotificationMessage:
+    return AlertNotificationMessage(
+        rule_code="htdy_original_15m",
         symbol="ag",
         product_name="白银",
         contract="AG2610",
         frequency="15m",
         bar_end=datetime(2026, 8, 13, 2, 45, tzinfo=UTC),
-        observation_types=observations,
+        result_codes=observations,
     )
+
+
+def test_htdy_message_keeps_v1_copy() -> None:
+    text = format_alert_message(
+        AlertNotificationMessage(
+            rule_code="htdy_original_15m",
+            symbol="jm",
+            product_name="焦煤",
+            contract="JM2609",
+            frequency="15m",
+            bar_end=datetime(2026, 8, 13, 14, 30, tzinfo=UTC),
+            result_codes=("sell",),
+        )
+    )
+
+    assert "火天大有 · 卖出观察" in text
+    assert "15m" in text
+
+
+def test_subing_5m_message_is_short() -> None:
+    text = format_alert_message(
+        AlertNotificationMessage(
+            rule_code="subing_entry_signal_v1",
+            symbol="jm",
+            product_name="焦煤",
+            contract="JM2609",
+            frequency="5m",
+            bar_end=datetime(2026, 8, 14, 10, 25, tzinfo=_SHANGHAI),
+            result_codes=("buy",),
+        )
+    )
+
+    assert text == "【苏冰】焦煤 · JM2609\n\n5m 买入信号 · 10:25"
+
+
+def test_subing_15m_lower_tf_confirmation_adds_one_line() -> None:
+    text = format_alert_message(
+        AlertNotificationMessage(
+            rule_code="subing_entry_signal_v1",
+            symbol="jm",
+            product_name="焦煤",
+            contract="JM2609",
+            frequency="15m",
+            bar_end=datetime(2026, 8, 14, 10, 30, tzinfo=_SHANGHAI),
+            result_codes=("buy",),
+            lower_tf_confirmation=True,
+        )
+    )
+
+    assert text.endswith("15m 买入信号 · 10:30\n5m 同向确认")
+
+
+@pytest.mark.parametrize(
+    ("rule_code", "contract", "frequency", "result_codes", "error_code"),
+    (
+        (
+            "subing_entry_signal_v1",
+            "JM2609",
+            "15m",
+            ("buy", "sell"),
+            "ALERT_NOTIFICATION_RESULT_INVALID",
+        ),
+        (
+            "subing_entry_signal_v1",
+            "JM2609",
+            "30m",
+            ("buy",),
+            "ALERT_NOTIFICATION_FREQUENCY_INVALID",
+        ),
+        (
+            "unknown_rule",
+            "JM2609",
+            "15m",
+            ("buy",),
+            "ALERT_NOTIFICATION_RULE_INVALID",
+        ),
+        (
+            "subing_entry_signal_v1",
+            " ",
+            "15m",
+            ("buy",),
+            "ALERT_NOTIFICATION_IDENTITY_INVALID",
+        ),
+    ),
+)
+def test_subing_renderer_rejects_invalid_message_inputs(
+    rule_code: str,
+    contract: str,
+    frequency: str,
+    result_codes: tuple[str, ...],
+    error_code: str,
+) -> None:
+    event = AlertNotificationMessage(
+        rule_code=rule_code,
+        symbol="jm",
+        product_name="焦煤",
+        contract=contract,
+        frequency=frequency,
+        bar_end=datetime(2026, 8, 14, 10, 30, tzinfo=_SHANGHAI),
+        result_codes=result_codes,
+    )
+
+    with pytest.raises(ValueError, match=f"^{error_code}$"):
+        format_alert_message(event)
 
 
 @pytest.mark.parametrize(
