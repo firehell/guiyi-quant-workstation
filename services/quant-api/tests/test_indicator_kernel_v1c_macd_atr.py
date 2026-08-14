@@ -47,6 +47,73 @@ def test_macd_series_replicates_web_sma_window_histogram_scale_2() -> None:
         assert result.histogram.points[index].value == expected["histogram"][index]
 
 
+def test_macd_12_26_9_sma_window_scale_2_has_exact_first_ready_points() -> None:
+    from guiyi_quant.indicators import ema_series, macd_series
+
+    closes = [100.0] * 26 + [110.0, 100.0, 110.0, 100.0, 110.0, 100.0, 110.0, 100.0]
+    fast_ema = ema_series(closes, 12, seed_policy="sma_window")
+    slow_ema = ema_series(closes, 26, seed_policy="sma_window")
+    result = macd_series(
+        closes,
+        12,
+        26,
+        9,
+        ema_seed_policy="sma_window",
+        histogram_scale=2,
+    )
+
+    assert result.parameters == {
+        "fast": 12,
+        "slow": 26,
+        "signal": 9,
+        "ema_seed_policy": "sma_window",
+        "histogram_scale": 2,
+        "round_digits": 6,
+    }
+    assert result.calculation_basis == {
+        "input_field": "close",
+        "closed_bar_only": True,
+        "alignment": "one_point_per_input_bar",
+        "ema_seed_policy": "sma_window",
+        "histogram_formula": "(DIF - DEA) * 2",
+        "warmup_bars": 33,
+    }
+    assert next(index for index, point in enumerate(fast_ema.points) if point.ready) == 11
+    assert next(index for index, point in enumerate(slow_ema.points) if point.ready) == 25
+    assert next(index for index, point in enumerate(result.dif.points) if point.ready) == 25
+    assert next(index for index, point in enumerate(result.dea.points) if point.ready) == 33
+    assert next(index for index, point in enumerate(result.histogram.points) if point.ready) == 33
+    assert result.dif.points[33].value == 1.168673
+    assert result.dea.points[33].value == 1.004891
+    assert result.histogram.points[33].value == 0.327563
+
+
+def test_appending_confirmed_close_does_not_change_prior_macd_12_26_9_points() -> None:
+    from guiyi_quant.indicators import macd_series
+
+    closes = [100.0 + ((index * 7) % 19) for index in range(48)]
+    original = macd_series(
+        closes,
+        12,
+        26,
+        9,
+        ema_seed_policy="sma_window",
+        histogram_scale=2,
+    )
+    appended = macd_series(
+        [*closes, 500.0],
+        12,
+        26,
+        9,
+        ema_seed_policy="sma_window",
+        histogram_scale=2,
+    )
+
+    assert appended.dif.points[:-1] == original.dif.points
+    assert appended.dea.points[:-1] == original.dea.points
+    assert appended.histogram.points[:-1] == original.histogram.points
+
+
 def test_macd_series_replicates_python_strategy_first_value_histogram_scale_1() -> None:
     from guiyi_quant.indicators import macd_series
 

@@ -256,6 +256,8 @@ def test_macd_and_atr_are_compatibility_validated_not_validated() -> None:
     assert macd.formal_policy_id == "web_macd_legacy_v1"
     assert atr.formal_policy_id == "web_atr_wilder_sma_seed_v1"
     assert macd.backtest_capable is False
+    assert macd.live_capable is False
+    assert macd.alert_capable is False
     assert atr.live_capable is False
     assert atr.alert_capable is False
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -15,6 +15,14 @@ from app.market_data.subing_research import (
     calculate_subing_factor_series,
 )
 from guiyi_quant.indicators import get_indicator, require_formal_policy
+
+
+_SCOPED_SIGNAL_MACD_EQUIVALENCE_TARGET = (
+    "sma_window",
+    2,
+    "fast12_slow26_signal9",
+    True,
+)
 
 
 def _bars_from_closes(
@@ -123,11 +131,53 @@ def test_macd_cross_accepts_equality_on_the_previous_bar(
 ) -> None:
     bars = _bars_from_closes([Decimal("100")] * 47 + [final_close])
 
-    result = _calculate(bars)
+    series = calculate_subing_factor_series(
+        bars,
+        timeframe=BarFrequency.M5,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+        latest_bar_source="canonical",
+    )
+    previous = series[-2]
+    result = series[-1]
 
+    assert previous.status is SubingFactorStatus.READY
+    assert previous.snapshot is not None
+    assert previous.snapshot.macd_dif == previous.snapshot.macd_dea
     assert result.status is SubingFactorStatus.READY
     assert result.snapshot is not None
     assert result.snapshot.macd_cross is expected_cross
+    if expected_cross is MacdCross.GOLDEN:
+        assert result.snapshot.macd_dif > result.snapshot.macd_dea
+    else:
+        assert result.snapshot.macd_dif < result.snapshot.macd_dea
+
+
+def test_historical_and_completed_live_have_identical_confirmed_factor_math() -> None:
+    bars = _ready_bars()
+    historical = calculate_subing_factor_series(
+        bars,
+        timeframe=BarFrequency.M5,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+        latest_bar_source="canonical",
+    )
+    completed_live = calculate_subing_factor_series(
+        bars,
+        timeframe=BarFrequency.M5,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+        latest_bar_source="live",
+    )
+
+    assert len(historical) == len(completed_live)
+    for historical_result, live_result in zip(historical, completed_live, strict=True):
+        assert historical_result.status is live_result.status
+        if historical_result.snapshot is None:
+            assert live_result.snapshot is None
+            continue
+        assert live_result.snapshot is not None
+        assert replace(live_result.snapshot, bar_source="canonical") == historical_result.snapshot
 
 
 @pytest.mark.parametrize("previous_volume", (Decimal("0"), Decimal("-1")))
@@ -205,12 +255,29 @@ def test_input_before_segment_start_is_rejected_instead_of_inheriting_state() ->
         )
 
 
-def test_macd_policy_allows_only_named_factor_observation_without_capability_promotion() -> None:
+def test_factor_macd_matches_scoped_signal_equivalence_target_without_promotion() -> None:
     policy = require_formal_policy("web_macd_legacy_v1", consumer="subing_factor_observation")
     definition = get_indicator("macd")
 
     assert policy.policy_id == definition.formal_policy_id
+    assert (
+        policy.seed_policy,
+        policy.histogram_scale,
+        policy.lookback,
+        policy.confirmed_only,
+    ) == _SCOPED_SIGNAL_MACD_EQUIVALENCE_TARGET
+    assert (
+        definition.seed_policy,
+        definition.histogram_scale,
+        policy.lookback,
+        definition.confirmed_only,
+    ) == _SCOPED_SIGNAL_MACD_EQUIVALENCE_TARGET
+    assert definition.default_parameters["fast"] == 12
+    assert definition.default_parameters["slow"] == 26
+    assert definition.default_parameters["signal"] == 9
     assert definition.status == "compatibility_validated"
     assert definition.backtest_capable is False
     assert definition.live_capable is False
     assert definition.alert_capable is False
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_NOT_ALLOWED"):
+        require_formal_policy("web_macd_legacy_v1", consumer="subing_signal")
