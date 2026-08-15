@@ -22,6 +22,59 @@ function research(oiChange = 0.06) {
   }
 }
 
+function radar() {
+  return {
+    status: 'ready', expected_as_of: '2026-08-15', active_count: 60, participant_count: 60,
+    stale: [], unavailable: [],
+    summary: { up_count: 20, down_count: 18, volume_expansion_count: 12, oi_increase_count: 9, high_volatility_count: 7 },
+    items: [], attention: [], sector_summary: [],
+  }
+}
+
+function formalSignal() {
+  return {
+    id: 17, rule_code: 'subing_entry_signal_v1', display_name: '苏冰', symbol: 'jm', product_name: '焦煤',
+    contract: 'JM2609', trading_day: '2026-08-15', frequency: '5m', bar_end: '2026-08-15T02:25:00Z',
+    result_codes: ['buy'], lower_tf_confirmation: true, detected_at: '2026-08-15T02:26:00Z', notification_attempted_at: null,
+  }
+}
+
+async function mockMarketHomepage(page, currentFormalResponse) {
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+}
+
+test('Market homepage shows only current formal signals above Radar', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] })
+  await page.goto('/market')
+
+  const formal = page.getByTestId('market-formal-signals')
+  await expect(formal).toContainText('苏冰')
+  await expect(formal).toContainText('JM 焦煤 · JM2609')
+  await expect(formal).toContainText('5m 买入信号 · 10:25')
+  await expect(formal).toContainText('5m 同向确认')
+  await expect(formal).not.toContainText('火天大有')
+  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+  expect(await page.locator('[data-testid="market-formal-signals"], .radar-summary').evaluateAll((nodes) => (
+    Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
+  ))).toBe(true)
+})
+
+test('Market homepage distinguishes ready empty formal signals', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] })
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-formal-signals')).toContainText('当前没有需要处理的正式信号')
+})
+
+test('Market homepage keeps Radar visible when formal signals are unavailable', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'unavailable', trading_day: null, items: [] })
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-formal-signals')).toContainText('正式信号暂不可用')
+  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+})
+
 function subing(overrides = {}) {
   const snapshot = (timeframe, barEnd, priceSide = 'above') => ({
     timeframe, bar_end: barEnd, trading_day: '2026-01-12', contract: 'AG2601',
