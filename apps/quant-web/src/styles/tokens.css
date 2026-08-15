@@ -1,92 +1,94 @@
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
   /* Primitive palette */
-  --gy-ink-950: #060a10;
-  --gy-ink-900: #0a0f18;
-  --gy-ink-850: #0d1420;
-  --gy-ink-800: #111a29;
-  --gy-ink-750: #162033;
-  --gy-slate-700: #253149;
-  --gy-slate-600: #34425c;
-  --gy-slate-400: #8290a6;
-  --gy-slate-300: #aeb9c9;
-  --gy-slate-100: #e8edf5;
-  --gy-blue-500: #4e83ff;
-  --gy-blue-400: #73a0ff;
-  --gy-blue-600: #356bd8;
-  --gy-red-500: #fa5151;
-  --gy-green-500: #07c160;
-  --gy-orange-500: #ff8f1f;
-  --gy-violet-400: #a78bfa;
+  --gy-gray-50: #f8fafc;
+  --gy-gray-100: #f2f4f7;
+  --gy-gray-200: #e4e7ec;
+  --gy-gray-300: #d0d5dd;
+  --gy-gray-400: #98a2b3;
+  --gy-gray-500: #667085;
+  --gy-gray-600: #475467;
+  --gy-gray-700: #344054;
+  --gy-gray-800: #1d2939;
+  --gy-gray-900: #101828;
+  --gy-blue-500: #3b82f6;
+  --gy-blue-600: #2563eb;
+  --gy-blue-700: #1d4ed8;
+  --gy-red-600: #dc2626;
+  --gy-red-700: #b91c1c;
+  --gy-green-600: #16a34a;
+  --gy-green-700: #15803d;
+  --gy-orange-500: #f79009;
+  --gy-violet-500: #7c3aed;
 
   /* Semantic surfaces */
-  --gy-bg-app: var(--gy-ink-950);
-  --gy-bg-canvas: var(--gy-ink-900);
-  --gy-bg-panel: var(--gy-ink-850);
-  --gy-bg-panel-strong: var(--gy-ink-800);
-  --gy-bg-elevated: var(--gy-ink-750);
-  --gy-bg-overlay: rgba(13, 20, 32, 0.94);
-  --gy-bg-header: rgba(10, 15, 24, 0.92);
-  --gy-bg-selected: rgba(78, 131, 255, 0.12);
-  --gy-bg-hover: rgba(255, 255, 255, 0.04);
-  --gy-border-subtle: rgba(255, 255, 255, 0.055);
-  --gy-border: #202b3e;
-  --gy-border-strong: #2c3a52;
-  --gy-border-focus: rgba(115, 160, 255, 0.72);
-  --gy-text-primary: var(--gy-slate-100);
-  --gy-text-secondary: var(--gy-slate-300);
-  --gy-text-muted: var(--gy-slate-400);
-  --gy-text-disabled: #536076;
-  --gy-accent: var(--gy-blue-500);
-  --gy-accent-hover: var(--gy-blue-400);
-  --gy-accent-pressed: var(--gy-blue-600);
-  --gy-accent-soft: rgba(78, 131, 255, 0.13);
-  --gy-text-on-accent: #f8fbff;
-  --gy-control-active-bg: #2f5fc4;
+  --gy-bg-app: var(--gy-gray-50);
+  --gy-bg-canvas: #ffffff;
+  --gy-bg-panel: #ffffff;
+  --gy-bg-panel-strong: var(--gy-gray-50);
+  --gy-bg-elevated: var(--gy-gray-100);
+  --gy-bg-overlay: #ffffff;
+  --gy-bg-header: rgba(255, 255, 255, 0.92);
+  --gy-bg-selected: rgba(37, 99, 235, 0.1);
+  --gy-bg-hover: rgba(16, 24, 40, 0.04);
+  --gy-border-subtle: rgba(16, 24, 40, 0.06);
+  --gy-border: var(--gy-gray-200);
+  --gy-border-strong: var(--gy-gray-300);
+  --gy-border-focus: rgba(37, 99, 235, 0.55);
+  --gy-text-primary: var(--gy-gray-900);
+  --gy-text-secondary: var(--gy-gray-600);
+  --gy-text-muted: var(--gy-gray-500);
+  --gy-text-disabled: var(--gy-gray-400);
+  --gy-accent: var(--gy-blue-600);
+  --gy-accent-hover: var(--gy-blue-700);
+  --gy-accent-pressed: #1e40af;
+  --gy-accent-soft: rgba(37, 99, 235, 0.1);
+  --gy-text-on-accent: #ffffff;
+  --gy-control-active-bg: var(--gy-blue-600);
   --gy-control-active-text: var(--gy-text-on-accent);
-  --gy-control-active-border: var(--gy-blue-400);
-  --gy-control-hover-bg: #3b6ed3;
-  --gy-control-pressed-bg: #2855b0;
-  --gy-control-disabled-bg: #1a2435;
-  --gy-control-disabled-text: #68758a;
+  --gy-control-active-border: var(--gy-blue-700);
+  --gy-control-hover-bg: var(--gy-blue-700);
+  --gy-control-pressed-bg: #1e40af;
+  --gy-control-disabled-bg: var(--gy-gray-100);
+  --gy-control-disabled-text: var(--gy-gray-400);
 
   /* Domain direction: China futures convention, always pair with text. */
-  --gy-up: var(--gy-red-500);
-  --gy-up-soft: rgba(250, 81, 81, 0.12);
-  --gy-down: var(--gy-green-500);
-  --gy-down-soft: rgba(7, 193, 96, 0.12);
-  --gy-neutral: var(--gy-slate-400);
+  --gy-up: var(--gy-red-600);
+  --gy-up-soft: rgba(220, 38, 38, 0.1);
+  --gy-down: var(--gy-green-600);
+  --gy-down-soft: rgba(22, 163, 74, 0.1);
+  --gy-neutral: var(--gy-gray-400);
 
   /* Semantic state: keep separate from direction. */
-  --gy-status-ok: var(--gy-green-500);
-  --gy-status-ok-soft: rgba(7, 193, 96, 0.12);
+  --gy-status-ok: var(--gy-green-600);
+  --gy-status-ok-soft: rgba(22, 163, 74, 0.12);
   --gy-status-warning: var(--gy-orange-500);
-  --gy-status-warning-soft: rgba(255, 143, 31, 0.12);
-  --gy-status-error: var(--gy-red-500);
-  --gy-status-error-soft: rgba(250, 81, 81, 0.12);
-  --gy-status-info: var(--gy-blue-500);
-  --gy-status-info-soft: rgba(78, 131, 255, 0.12);
+  --gy-status-warning-soft: rgba(247, 144, 9, 0.12);
+  --gy-status-error: var(--gy-red-600);
+  --gy-status-error-soft: rgba(220, 38, 38, 0.1);
+  --gy-status-info: var(--gy-blue-600);
+  --gy-status-info-soft: rgba(37, 99, 235, 0.1);
   --gy-surface-warning: var(--gy-status-warning-soft);
   --gy-surface-error: var(--gy-status-error-soft);
   --gy-surface-info: var(--gy-status-info-soft);
 
   /* Chart palette */
-  --gy-chart-bg: #0b111b;
-  --gy-chart-grid: #202a3a;
-  --gy-chart-axis: #39465b;
-  --gy-chart-text: #9aa7b9;
+  --gy-chart-bg: #ffffff;
+  --gy-chart-grid: #eef2f6;
+  --gy-chart-axis: #98a2b3;
+  --gy-chart-text: #475467;
   --gy-chart-ema: #f59e0b;
-  --gy-chart-macd-dif: #38bdf8;
+  --gy-chart-macd-dif: #0284c7;
   --gy-chart-macd-dea: #f59e0b;
-  --gy-chart-atr: var(--gy-violet-400);
-  --gy-chart-volume-up: rgba(250, 81, 81, 0.42);
-  --gy-chart-volume-down: rgba(7, 193, 96, 0.42);
-  --gy-chart-htdy-zk1: #e2e8f0;
-  --gy-chart-htdy-zd1: #fb7185;
-  --gy-chart-htdy-zd2: #2dd4bf;
-  --gy-chart-htdy-band: rgba(45, 212, 191, 0.22);
-  --gy-chart-htdy-band-stroke: rgba(45, 212, 191, 0.55);
+  --gy-chart-atr: var(--gy-violet-500);
+  --gy-chart-volume-up: rgba(220, 38, 38, 0.38);
+  --gy-chart-volume-down: rgba(22, 163, 74, 0.38);
+  --gy-chart-htdy-zk1: #667085;
+  --gy-chart-htdy-zd1: #e11d48;
+  --gy-chart-htdy-zd2: #0d9488;
+  --gy-chart-htdy-band: rgba(13, 148, 136, 0.14);
+  --gy-chart-htdy-band-stroke: rgba(13, 148, 136, 0.45);
 
   /* Type */
   --gy-font-sans: 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
@@ -114,9 +116,9 @@
   --gy-radius-pill: 999px;
 
   /* Elevation and motion */
-  --gy-shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.2);
-  --gy-shadow-overlay: 0 18px 44px rgba(0, 0, 0, 0.42);
-  --gy-shadow-focus: 0 0 0 3px rgba(78, 131, 255, 0.18);
+  --gy-shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
+  --gy-shadow-overlay: 0 18px 44px rgba(16, 24, 40, 0.16);
+  --gy-shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.15);
   --gy-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --gy-transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -126,14 +128,10 @@
   --gy-header-height: 56px;
   --gy-content-padding: 20px;
   --gy-panel-padding: 16px;
-  --gy-table-header: #121c2b;
-  --gy-grid-overlay:
-    linear-gradient(rgba(52, 66, 92, 0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(52, 66, 92, 0.09) 1px, transparent 1px);
+  --gy-table-header: var(--gy-gray-50);
 
   /* Compatibility aliases used by existing pages. */
   --gy-bg-base: var(--gy-bg-app);
-  --gy-bg-elevated: var(--gy-bg-panel-strong);
   --gy-text: var(--gy-text-primary);
 }
 

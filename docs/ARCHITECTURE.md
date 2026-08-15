@@ -5,7 +5,7 @@
 ## 系统定位
 
 归一量化是本地优先、单用户的国内期货研究工作站。当前目标应用面为 Market Web、Market API、
-数据 CLI、Canonical 历史读取与独立 Alert Application Domain。Market Runtime V1 与 Alert Runtime V1
+数据 CLI、Canonical 历史读取与独立 Alert Application Domain。Market Runtime V1 与 Alert Runtime V2
 的代码/launchd 边界和授权相互独立；Alert 模板默认关闭。不实现自动交易，`auto_order=false` 始终成立。
 
 ## 分层设计
@@ -102,7 +102,7 @@ flowchart TB
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
   Market API 直接输出该 taxonomy；Web 不再保留第二套品种目录。
 - PostgreSQL 的 Data Foundation / Market Catalog 精确保留八表，Parquet 保存 Bars；Alert 的
-  `alert_rules` / `alert_events` 是独立 Application Domain 表，不进入 Market Catalog。不引入多
+  `alert_rules` / `alert_events` 是独立 Application Domain 表，不进入且不改变八表 Market Catalog。不引入多
   provider、插件、任务中心或在线多版本选择器。
 
 ## 数据架构
@@ -142,9 +142,10 @@ resolved；在同一 READY boundary 时必须反向评估完整 companion opport
 `MATCHED` 必须被发现，双 `MATCHED` 同方向由既有 resolver 选择 15m 并标记 lower-timeframe
 confirmation，反方向 fail-closed，普通 reciprocal `NOT_MATCHED` 不覆盖 requested primary。
 
-该链没有 research DB、Signal persistence 或 Alert integration。`macd_zero_distance_abs/bps` 只保留为
-Factor/Web/research observation，不是 executable Signal 条件；Alert V1 保持独立且不变，未来 Alert V2
-仍需新设计与人工 Gate。scoped consumer policy 是 `subing_macd_sma_window_scale2_v1`，其 equivalence
+该链没有 research DB 或 Signal persistence。`macd_zero_distance_abs/bps` 只保留为
+Factor/Web/research observation，不是 executable Signal 条件；Alert V2 只调用该链已有
+`SubingReadService` 读模型，不复制 Factor、Calibration、FormalPolicy 或 same-boundary resolver。
+scoped consumer policy 是 `subing_macd_sma_window_scale2_v1`，其 equivalence
 tuple 固定为 `("sma_window", 2, "fast12_slow26_signal9", True)`；generic MACD 继续保持
 `compatibility_validated`，backtest/live/alert capability 均未晋升。
 
@@ -160,16 +161,32 @@ AfterMarketUpdater 只在 launchd 的 18:05 触发（失败最多一小时后重
 永不进入 Canonical、Parquet 或 PostgreSQL。代码与模板默认关闭；只有用户明确请求在该本地工作站启用
 Market Runtime V1 后，这一有界自动化才可运行，且不扩展到 release、其他 DB、通知或订单。
 
-Alert V1 不复活 Signal/Review/Strategy。它只从 Live 15m completed-bar 事件触发，经
-`MarketReadService.bars_until()` 获得硬截止的 actual-dominant 历史/Live 统一窗口与当日 rank1 contract，
-由 Python Indicator Kernel 只检查当前最后一根 HTDY original 买/卖观察，再通过 `AlertService` 幂等落
-`AlertEvent` 并进行一次简洁 WeCom 尝试。停机期间不 replay/backfill，发送失败不 retry；Web persistent
-Marker 只读取已记录 Event，和当前会 repaint 的 HTDY overlay 独立。
+Alert V2 不复活 Signal/Review/Strategy。单一 `AlertRuntime` 只调度 Code Registry 中的
+`htdy_original_15m` 和 `subing_entry_signal_v1`；一条 Rule 失败不阻断另一条。HTDY 继续通过
+`MarketReadService.bars_until()` 使用事件截止的 actual-dominant 15m 窗口。SuBing 只向
+`SubingReadService.snapshot()` 请求 current snapshot；primary `bar_end + trading_day` 与 incoming completed
+Bar 不同一即 fail-closed。final Session Bar 只在 Live 共享 arrival grace 内使用 phase
+observation 可见，不新增 `snapshot_at`/cutoff/replay；5m 与 15m 落在同一 TradingSession bucket
+boundary 时延后 5m，使用既有 resolver 唯一决议。
 
-AlertRuntime 是独立进程、独立 activation marker 与独立健康组件。只有用户明确启用后，才持续运行
-`htdy_original_15m × enabled scope_products × WeCom`；该授权不覆盖 migration、真实 canary、Runtime
-switch、release、Canonical 写入、新 Rule/渠道或订单。每条 completed-bar 消息与 heartbeat 都使用独立短
-Session/transaction；Webhook sender 与 health 共用 exact 企业微信目标校验器。
+两条 Rule 都只在自身显式 `scope_products` 内创建幂等 `AlertEvent`，Event commit 先于
+one-shot WeCom。停机期间不 replay/backfill，发送失败不 retry，不建 outbox/queue/
+Signal Center/订单。SuBing migration seed Scope 为空集。当前交易日由
+`MarketPhaseResolver + operational_products.txt` 唯一解析，缺失或不一致时 API 显式
+`unavailable`。
+
+AlertRuntime 是独立进程、独立 activation marker 与独立健康组件。其有界持续授权只限于：
+
+```text
+htdy_original_15m × 该 Rule 显式 scope_products × WeCom
++
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
+```
+
+未来第三条 Rule 不继承授权。production migration、v1.3 release/tag、Runtime
+promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 互不授权。每条
+completed-bar 消息与 heartbeat 都使用独立短 Session/transaction；Webhook sender 与 health 共用
+exact 企业微信目标校验器。
 
 开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，当前根和运行状态由 `STATUS.md` 记录。这只是为了快速观察，不改变 Historical/Live 边界，也不构成稳定 Runtime 版本。功能收口后的最终拓扑仍为绑定精确提交的独立 Runtime worktree。
 

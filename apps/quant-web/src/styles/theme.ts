@@ -1,33 +1,33 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
 /**
- * Naive UI 深色主题覆盖。
+ * Naive UI 亮色主题覆盖。
  * Naive 在 JS 中推导 alpha 变体，因此此处须使用具体色值；与 tokens.css 保持一致。
  */
 // Naive UI derives alpha variants in JavaScript and therefore requires concrete
 // color values here. Keep these values aligned with tokens.css.
 const palette = {
-  app: '#060a10',
-  canvas: '#0a0f18',
-  panel: '#0d1420',
-  panelStrong: '#111a29',
-  elevated: '#162033',
-  overlay: '#0d1420',
-  hover: 'rgba(255, 255, 255, 0.04)',
-  selected: 'rgba(78, 131, 255, 0.12)',
-  border: '#202b3e',
-  primaryText: '#e8edf5',
-  secondaryText: '#aeb9c9',
-  mutedText: '#8290a6',
-  disabledText: '#68758a',
-  accent: '#4e83ff',
-  accentHover: '#73a0ff',
-  accentPressed: '#356bd8',
-  onAccent: '#f8fbff',
-  controlActive: '#2f5fc4',
-  controlActiveHover: '#3b6ed3',
-  controlPressed: '#2855b0',
-  controlDisabled: '#1a2435',
+  app: '#F8FAFC',
+  canvas: '#FFFFFF',
+  panel: '#FFFFFF',
+  panelStrong: '#F8FAFC',
+  elevated: '#F2F4F7',
+  overlay: '#FFFFFF',
+  hover: 'rgba(16, 24, 40, 0.04)',
+  selected: 'rgba(37, 99, 235, 0.1)',
+  border: '#E4E7EC',
+  primaryText: '#101828',
+  secondaryText: '#475467',
+  mutedText: '#667085',
+  disabledText: '#98A2B3',
+  accent: '#2563EB',
+  accentHover: '#1D4ED8',
+  accentPressed: '#1E40AF',
+  onAccent: '#FFFFFF',
+  controlActive: '#2563EB',
+  controlActiveHover: '#1D4ED8',
+  controlPressed: '#1E40AF',
+  controlDisabled: '#F2F4F7',
 } as const
 
 /** 导出给 NConfigProvider 的全局 theme-overrides */
@@ -84,8 +84,8 @@ export const themeOverrides: GlobalThemeOverrides = {
     paddingSmall: '14px',
   },
   DataTable: {
-    thColor: '#121c2b',
-    thColorHover: '#121c2b',
+    thColor: '#F8FAFC',
+    thColorHover: '#F8FAFC',
     tdColor: palette.panel,
     tdColorHover: palette.hover,
     borderColor: palette.border,

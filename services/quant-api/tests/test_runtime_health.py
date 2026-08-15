@@ -174,6 +174,36 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
     assert "health-test-key" not in rendered
 
 
+def test_alert_health_accepts_v2_heartbeat_counts() -> None:
+    """V2 scope count is the unique enabled-rule product union, not rule-product pairs."""
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    heartbeat = {
+        "generated_at": now.isoformat(),
+        "available": True,
+        "enabled_rule_count": 2,
+        "scope_product_count": 1,
+    }
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        health = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={"alert:heartbeat": json.dumps(heartbeat)}
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            wecom_configured=True,
+            after_market_status_path=None,
+        )
+
+    alert = health["components"]["alert"]
+    assert alert["status"] == "ok"
+    assert alert["enabled_rule_count"] == 2
+    assert alert["scope_product_count"] == 1
+
+
 def test_alert_health_rejects_invalid_webhook_destination(monkeypatch, tmp_path) -> None:
     """Catches a non-WeCom HTTPS URL being reported as configured and healthy."""
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)

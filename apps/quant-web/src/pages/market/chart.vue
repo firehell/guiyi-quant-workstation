@@ -11,12 +11,14 @@ import { getMarketDominants, getProductResearch, getSubingResearch } from '@/api
 import {
   getAlertRuntimeStatus,
   getAlertEvents,
+  getProductCurrentAlertEvents,
   getProductAlerts,
   setAlertProductEnabled,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
+import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
 import { useSubingObservation } from '@/composables/useSubingObservation'
 import type {
   DominantContractItem,
@@ -29,6 +31,7 @@ import {
   filterBarsToSubingSegment,
   MARKET_FREQUENCIES,
 } from '@/types/market'
+import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
   resolveEffectiveSeriesIdentity,
@@ -107,10 +110,11 @@ const {
   },
 })
 const {
-  alertRule,
+  htdyRule,
+  subingRule,
   alertRuntimeStatus,
   alertLoading,
-  alertSaving,
+  savingRuleCodes,
   refresh: refreshAlerts,
   toggle: toggleAlert,
   dispose: disposeProductAlertScope,
@@ -121,6 +125,13 @@ const {
   setProductEnabled: setAlertProductEnabled,
   notifyError: (text) => message.error(text),
 })
+const {
+  loading: currentEventsLoading,
+  status: currentEventsStatus,
+  items: currentEvents,
+  refresh: refreshCurrentEvents,
+  dispose: disposeProductCurrentAlertEvents,
+} = useProductCurrentAlertEvents({ symbol, fetchCurrentEvents: getProductCurrentAlertEvents })
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
@@ -163,6 +174,10 @@ const afterMarketFailed = computed(() => {
 })
 const watchlisted = computed(() => watchlist.value.includes(symbol.value))
 const htdyVisible = computed(() => selectedOverlay.value === 'htdy')
+const latestHtdyObservation = computed(() => {
+  if (!htdyVisible.value) return null
+  return buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
+})
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', syncFullscreen)
@@ -177,6 +192,7 @@ onMounted(async () => {
     void refreshSubing()
     void refreshResearch()
     void refreshAlerts()
+    void refreshCurrentEvents()
   } catch {
     error.value = '行情元数据加载失败'
   } finally {
@@ -260,6 +276,7 @@ onUnmounted(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
   disposeSubingObservation()
   disposeProductAlertScope()
+  disposeProductCurrentAlertEvents()
   dispose()
   disposePersistentAlertMarkers()
 })
@@ -385,7 +402,7 @@ function persistWorkspacePreferences() {
 }
 
 function openResearchDrawer() {
-  if (window.innerWidth >= 1600) {
+  if (window.innerWidth >= 1200) {
     researchSidebarOpen.value = !researchSidebarOpen.value
     return
   }
@@ -524,10 +541,15 @@ function normalizeSymbol(value: unknown): string | null {
             :subing-loading="subingLoading || metadataLoading"
             :subing-error="subingError"
             :subing-supported="subingSupported"
-            :alert-rule="alertRule"
+            :htdy-rule="htdyRule"
+            :subing-rule="subingRule"
             :alert-runtime-status="alertRuntimeStatus"
             :alert-loading="alertLoading"
-            :alert-saving="alertSaving"
+            :saving-rule-codes="savingRuleCodes"
+            :current-events-loading="currentEventsLoading"
+            :current-events-status="currentEventsStatus"
+            :current-events="currentEvents"
+            :htdy-observation="latestHtdyObservation"
             @toggle-watchlist="toggleWatchlist"
             @toggle-alert="toggleAlert"
           />
@@ -562,10 +584,15 @@ function normalizeSymbol(value: unknown): string | null {
           :subing-loading="subingLoading || metadataLoading"
           :subing-error="subingError"
           :subing-supported="subingSupported"
-          :alert-rule="alertRule"
+          :htdy-rule="htdyRule"
+          :subing-rule="subingRule"
           :alert-runtime-status="alertRuntimeStatus"
           :alert-loading="alertLoading"
-          :alert-saving="alertSaving"
+          :saving-rule-codes="savingRuleCodes"
+          :current-events-loading="currentEventsLoading"
+          :current-events-status="currentEventsStatus"
+          :current-events="currentEvents"
+          :htdy-observation="latestHtdyObservation"
           @toggle-watchlist="toggleWatchlist"
           @toggle-alert="toggleAlert"
         />
@@ -591,8 +618,9 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace:fullscreen .product-workspace__kline { min-height: 100%; }
 .product-workspace:fullscreen .product-workspace__sidebar { display: none; }
 
-@media (max-width: 1599px) {
+@media (min-width: 980px) and (max-width: 1199px) {
   .product-workspace__main { grid-template-columns: minmax(0, 1fr); }
   .product-workspace__sidebar { display: none; }
 }
+@media (max-width: 979px) { .product-workspace__main { grid-template-columns: minmax(0, 1fr); }.product-workspace__sidebar { position: static; } }
 </style>

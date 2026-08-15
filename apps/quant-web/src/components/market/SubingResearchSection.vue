@@ -44,7 +44,7 @@ function signal(value: SubingSignal) {
 
 <template>
   <section class="subing-research">
-    <h3>苏冰观察</h3>
+    <h3>苏冰研究明细</h3>
     <p v-if="!supported" class="subing-research__unavailable">V1 仅支持 5m / 15m / 1d</p>
     <p v-else-if="loading" class="subing-research__unavailable">读取 Factor 快照…</p>
     <p v-else-if="error || !snapshot" class="subing-research__unavailable">Factor 快照暂不可用</p>

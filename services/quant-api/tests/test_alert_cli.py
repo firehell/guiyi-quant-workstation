@@ -61,15 +61,23 @@ def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
     }
 
 
-def test_alert_canary_calls_only_fixed_sender_without_db_session_use() -> None:
+def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
     calls: list[str] = []
 
     class Sender:
         def send_canary(self) -> None:
             calls.append("send_canary")
 
+    def forbidden_session_factory():
+        raise AssertionError("alert canary must not create Event or modify Scope")
+
+    def forbidden_alert_runtime_factory():
+        raise AssertionError("alert canary must not enable or construct Alert Runtime")
+
     code, payload = _run(
         ["runtime", "alert-canary"],
+        session_factory=forbidden_session_factory,
+        alert_runtime_factory=forbidden_alert_runtime_factory,
         alert_canary_sender_factory=lambda: Sender(),
     )
 

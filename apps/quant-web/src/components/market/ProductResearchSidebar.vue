@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { NButton, NDivider, NTag } from 'naive-ui'
-import ProductAlertControl from '@/components/market/ProductAlertControl.vue'
+import ProductAlertRules from '@/components/market/ProductAlertRules.vue'
+import ProductFormalSignalCard from '@/components/market/ProductFormalSignalCard.vue'
+import ProductTodayAlertEvents from '@/components/market/ProductTodayAlertEvents.vue'
 import SubingResearchSection from '@/components/market/SubingResearchSection.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
 import type {
@@ -30,15 +32,20 @@ const props = defineProps<{
   subingLoading: boolean
   subingError: boolean
   subingSupported: boolean
-  alertRule: ProductAlertRuleState | null
+  htdyRule: ProductAlertRuleState | null
+  subingRule: ProductAlertRuleState | null
   alertRuntimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
-  alertSaving: boolean
+  savingRuleCodes: Set<string>
+  currentEventsLoading: boolean
+  currentEventsStatus: 'ready' | 'unavailable' | null
+  currentEvents: import('@/types/market').AlertEvent[]
+  htdyObservation: import('@/types/market').KlineMarker | null
 }>()
 
 const emit = defineEmits<{
   'toggle-watchlist': []
-  'toggle-alert': [enabled: boolean]
+  'toggle-alert': [ruleCode: string, enabled: boolean]
 }>()
 
 const seriesLabel = computed(() => {
@@ -58,6 +65,20 @@ function percent(value: number | null) {
 function ratio(value: number | null) {
   return value === null ? '—' : `${value.toFixed(2)}x`
 }
+
+function htdyObservationLabel(value: string) {
+  if (value === '买观察') return '买入观察'
+  if (value === '卖观察') return '卖出观察'
+  return '观察不可用'
+}
+
+function htdyObservationTime(value: string) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '--:--'
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date)
+}
 </script>
 
 <template>
@@ -71,8 +92,35 @@ function ratio(value: number | null) {
         {{ watchlisted ? '已自选' : '加入自选' }}
       </NButton>
     </div>
+    <NDivider />
+    <ProductFormalSignalCard :snapshot="subing" />
+    <NDivider />
+    <section class="research-sidebar__section"><h3>提醒开关</h3></section>
+    <ProductAlertRules
+      :htdy-rule="htdyRule"
+      :subing-rule="subingRule"
+      :runtime-status="alertRuntimeStatus"
+      :loading="alertLoading"
+      :saving-rule-codes="savingRuleCodes"
+      @toggle="(ruleCode, enabled) => emit('toggle-alert', ruleCode, enabled)"
+    />
+    <NDivider />
+    <section v-if="htdyObservation" class="research-sidebar__section research-sidebar__htdy">
+      <h3>火天大有观察</h3>
+      <strong :class="htdyObservation.label === '买观察' ? 'research-sidebar__htdy--buy' : 'research-sidebar__htdy--sell'">
+        {{ htdyObservationLabel(htdyObservation.label) }} · {{ htdyObservationTime(htdyObservation.time) }}
+      </strong>
+      <p class="research-sidebar__unavailable">原始观察可能重绘，仅供人工观察</p>
+    </section>
+    <NDivider v-if="htdyObservation" />
+    <ProductTodayAlertEvents
+      :loading="currentEventsLoading"
+      :status="currentEventsStatus"
+      :items="currentEvents"
+    />
+    <NDivider />
+    <section class="research-sidebar__section"><h3>研究明细</h3></section>
     <template v-if="selectedOverlay === 'subing'">
-      <NDivider />
       <SubingResearchSection
         :snapshot="subing"
         :loading="subingLoading"
@@ -81,7 +129,6 @@ function ratio(value: number | null) {
       />
     </template>
     <template v-if="research">
-      <NDivider />
       <section class="research-sidebar__section">
         <h3>趋势 / 位置</h3>
         <dl class="research-sidebar__facts">
@@ -92,7 +139,6 @@ function ratio(value: number | null) {
           <div><dt>ATR 分位</dt><dd>{{ percent(research.atr14_percentile252) }}</dd></div>
         </dl>
       </section>
-      <NDivider />
       <section class="research-sidebar__section">
         <h3>量与持仓</h3>
         <dl class="research-sidebar__facts">
@@ -104,14 +150,6 @@ function ratio(value: number | null) {
     </template>
     <p v-else-if="researchLoading" class="research-sidebar__unavailable">读取研究数据…</p>
     <p v-else-if="researchError" class="research-sidebar__unavailable">研究数据暂不可用</p>
-    <NDivider />
-    <ProductAlertControl
-      :rule="alertRule"
-      :runtime-status="alertRuntimeStatus"
-      :loading="alertLoading"
-      :saving="alertSaving"
-      @toggle="emit('toggle-alert', $event)"
-    />
     <NDivider />
     <section class="research-sidebar__section">
       <h3>合约 / Runtime 上下文</h3>
@@ -126,7 +164,7 @@ function ratio(value: number | null) {
     </section>
     <NDivider />
     <div class="research-sidebar__note">
-      <span>历史浏览</span>
+      <span>边界说明</span>
       <strong>{{ hasMoreBefore ? '可继续向左加载' : '已到当前可读边界' }}</strong>
     </div>
   </aside>
@@ -141,7 +179,9 @@ function ratio(value: number | null) {
 .research-sidebar__facts > div { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .research-sidebar__facts dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 .research-sidebar__facts dd { margin: 0; font-family: var(--gy-font-mono); font-size: var(--gy-font-size-sm); text-align: right; }
-.research-sidebar__section h3 { margin: 0; font-size: var(--gy-font-size-sm); }.research-sidebar__unavailable { margin: 16px 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
+.research-sidebar__section h3 { margin: 0; font-size: var(--gy-font-size-sm); }.research-sidebar__unavailable { margin: 16px 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }.research-sidebar__htdy { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--gy-status-warning); border-radius: var(--gy-radius-sm); background: var(--gy-status-warning-soft); }
+.research-sidebar__htdy--buy { color: var(--gy-up); font-size: var(--gy-font-size-sm); }
+.research-sidebar__htdy--sell { color: var(--gy-down); font-size: var(--gy-font-size-sm); }
 .research-sidebar__note { display: grid; gap: 4px; font-size: var(--gy-font-size-sm); }
 .research-sidebar__note > span { color: var(--gy-text-muted); }
 </style>

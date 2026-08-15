@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import { alertRuntimeLabel, isCurrentAlertMutation } from '../src/utils/alertControl.ts'
 import {
   alertEventsToMarkers,
   isPersistentAlertIdentity,
+  markerRuleCodes,
   mergeKlineMarkers,
 } from '../src/utils/alertMarkers.ts'
 import { usePersistentAlertMarkers } from '../src/composables/usePersistentAlertMarkers.ts'
@@ -16,7 +17,8 @@ import type { BarData } from '../src/types/market.ts'
 
 
 const apiSource = read('../src/api/alerts.ts')
-const controlSource = read('../src/components/market/ProductAlertControl.vue')
+const marketTypesSource = read('../src/types/market.ts')
+const rulesPath = new URL('../src/components/market/ProductAlertRules.vue', import.meta.url)
 const chartSource = read('../src/pages/market/chart.vue')
 const scopeSource = read('../src/composables/useProductAlertScope.ts')
 
@@ -30,10 +32,67 @@ describe('Product Alert server-side scope', () => {
     assert.doesNotMatch(chartSource, /localStorage.*alert|alert.*localStorage/i)
   })
 
-  it('renders the switch directly from server true or false and emits the selected value', () => {
-    assert.match(controlSource, /rule\?\.enabled_for_product \|\| false/)
-    assert.match(controlSource, /@update:value="emit\('toggle', \$event\)"/)
-    assert.match(scopeSource, /alertRule\.value = updated/)
+  it('uses the exact V2 current-view endpoints', () => {
+    assert.match(
+      apiSource,
+      /getCurrentFormalSignals\(\)\s*\{\s*return request\.get<never, CurrentFormalSignalsResponse>\('\/api\/alerts\/formal-signals\/current'\)/,
+    )
+    assert.match(
+      apiSource,
+      /getProductCurrentAlertEvents\(symbol: string\)\s*\{\s*return request\.get<never, ProductCurrentAlertEventsResponse>\(\s*`\/api\/alerts\/products\/\$\{symbol\}\/current-events`,/,
+    )
+  })
+
+  it('declares only the backend V2 rule and event DTO fields', () => {
+    assert.deepEqual(interfaceFields(apiSource, 'ProductAlertRuleState'), [
+      'rule_code: string',
+      'display_name: string',
+      'kind: AlertRuleKind',
+      'input_frequencies: MarketFrequency[]',
+      'enabled_for_product: boolean',
+    ])
+    assert.deepEqual(interfaceFields(marketTypesSource, 'AlertEvent'), [
+      'id: number',
+      'rule_code: string',
+      'symbol: string',
+      'contract: string',
+      'trading_day: string | null',
+      'frequency: MarketFrequency',
+      'bar_end: string',
+      "result_codes: Array<'buy' | 'sell'>",
+      'lower_tf_confirmation: boolean',
+      'detected_at: string',
+      'notification_attempted_at: string | null',
+    ])
+    assert.deepEqual(interfaceFields(apiSource, 'CurrentFormalSignalItem'), [
+      'display_name: string',
+      'product_name: string',
+    ])
+    assert.deepEqual(interfaceFields(apiSource, 'CurrentFormalSignalsResponse'), [
+      "status: 'ready' | 'unavailable'",
+      'trading_day: string | null',
+      'items: CurrentFormalSignalItem[]',
+    ])
+    assert.deepEqual(interfaceFields(apiSource, 'ProductCurrentAlertEventsResponse'), [
+      "status: 'ready' | 'unavailable'",
+      'trading_day: string | null',
+      'items: AlertEvent[]',
+    ])
+  })
+
+  it('drops V1 rule shape fields in favor of the V2 rule registry contract', () => {
+    assert.doesNotMatch(interfaceBody(apiSource, 'ProductAlertRuleState'), /indicator_code|series_kind|frequency:/)
+    assert.doesNotMatch(interfaceBody(marketTypesSource, 'AlertEvent'), /observation_types|notified_at/)
+  })
+
+  it('renders the two fixed registry rows and a shared Runtime status only once', () => {
+    assert.equal(existsSync(rulesPath), true)
+    const rulesSource = read('../src/components/market/ProductAlertRules.vue')
+    assert.match(rulesSource, /火天大有 · 15m/)
+    assert.match(rulesSource, /苏冰入场信号/)
+    assert.equal((rulesSource.match(/Alert Runtime/g) || []).length, 1)
+    assert.doesNotMatch(rulesSource, /5m.*NSwitch|NSwitch.*5m/)
+    assert.match(rulesSource, /不可用/)
   })
 
   it('refetches on symbol change while series/frequency changes never invoke scope PUT', () => {
@@ -43,7 +102,7 @@ describe('Product Alert server-side scope', () => {
     assert.doesNotMatch(identityWatcher, /setAlertProductEnabled|toggleAlert/)
     assert.match(
       scopeSource,
-      /setProductEnabled\([\s\S]*current\.rule_code,[\s\S]*requestedSymbol,[\s\S]*enabled/,
+      /setProductEnabled\([\s\S]*ruleCode,[\s\S]*requestedSymbol,[\s\S]*enabled/,
     )
   })
 
@@ -75,6 +134,69 @@ describe('Product Alert server-side scope', () => {
     }), true)
   })
 
+  it('toggles the exact rule without changing its neighbor', async () => {
+    const symbol = ref('jm')
+    const controller = useProductAlertScope({
+      symbol,
+      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(true), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: async (ruleCode, requestedSymbol, enabled) => ({
+        ...(ruleCode === 'subing_entry_signal_v1' ? subingRule(enabled) : htdyRule(enabled)),
+        symbol: requestedSymbol,
+      }),
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    await controller.toggle('subing_entry_signal_v1', true)
+
+    assert.equal(controller.subingRule.value?.enabled_for_product, true)
+    assert.equal(controller.htdyRule.value?.enabled_for_product, true)
+    controller.dispose()
+  })
+
+  it('tracks saving independently for each rule', async () => {
+    const symbol = ref('jm')
+    let resolveUpdate: ((value: ReturnType<typeof subingRule>) => void) | undefined
+    const controller = useProductAlertScope({
+      symbol,
+      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(false), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    const pending = controller.toggle('subing_entry_signal_v1', true)
+    assert.equal(controller.savingRuleCodes.value.has('subing_entry_signal_v1'), true)
+    assert.equal(controller.savingRuleCodes.value.has('htdy_original_15m'), false)
+    resolveUpdate!(subingRule(true))
+    await pending
+    assert.equal(controller.savingRuleCodes.value.size, 0)
+    controller.dispose()
+  })
+
+  it('drops a stale rule mutation response after the selected symbol changes', async () => {
+    const symbol = ref('ag')
+    let resolveUpdate: ((value: ReturnType<typeof subingRule>) => void) | undefined
+    const controller = useProductAlertScope({
+      symbol,
+      fetchProductAlerts: async (requestedSymbol) => ({ symbol: requestedSymbol, rules: [htdyRule(false), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    const pending = controller.toggle('subing_entry_signal_v1', true)
+    symbol.value = 'jm'
+    await controller.refresh()
+    resolveUpdate!(subingRule(true))
+    await pending
+    assert.equal(controller.subingRule.value?.enabled_for_product, false)
+    controller.dispose()
+  })
+
   it('keeps only the latest symbol scope response after page lifecycle extraction', async () => {
     const symbol = ref('ag')
     const resolvers = new Map<string, (value: { symbol: string; rules: never[] }) => void>()
@@ -101,15 +223,17 @@ describe('Product Alert server-side scope', () => {
     controller.dispose()
   })
 
-  it('builds one persistent bell marker for buy, sell, or buy+sell only', () => {
+  it('labels V2 persistent events by Rule category while keeping the Event identity stable', () => {
     assert.deepEqual(alertEventsToMarkers([
+      event(0, ['buy', 'sell'], 'subing_entry_signal_v1'),
       event(1, ['buy']),
-      event(2, ['sell']),
+      event(2, ['sell'], 'subing_entry_signal_v1'),
       event(3, ['buy', 'sell']),
     ]).map((marker) => [marker.id, marker.label]), [
-      ['alert:htdy_original_15m:ag:2026-08-13T02:15:00Z', '🔔买'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:30:00Z', '🔔卖'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '🔔买/卖'],
+      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:00:00Z', '买入/卖出信号'],
+      ['alert:htdy_original_15m:ag:2026-08-13T02:15:00Z', '买入观察'],
+      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:30:00Z', '卖出信号'],
+      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '买入/卖出观察'],
     ])
   })
 
@@ -144,22 +268,30 @@ describe('Product Alert server-side scope', () => {
     )
   })
 
-  it('enables persistent reads only for actual_dominant 15m', () => {
+  it('uses the exact V2 Rule set for each visible series identity', () => {
+    assert.deepEqual(markerRuleCodes('actual_dominant', '5m'), ['subing_entry_signal_v1'])
+    assert.deepEqual(markerRuleCodes('actual_dominant', '15m'), ['htdy_original_15m', 'subing_entry_signal_v1'])
+    assert.deepEqual(markerRuleCodes('continuous', '15m'), [])
+    assert.deepEqual(markerRuleCodes('actual_dominant', '30m'), [])
     assert.equal(isPersistentAlertIdentity('actual_dominant', '15m'), true)
+    assert.equal(isPersistentAlertIdentity('actual_dominant', '5m'), true)
     assert.equal(isPersistentAlertIdentity('continuous', '15m'), false)
     assert.equal(isPersistentAlertIdentity('contract', '15m'), false)
     assert.equal(isPersistentAlertIdentity('actual_dominant', '30m'), false)
   })
 
-  it('fetches initial/prepend/recent ranges, dedups, and clears timer off identity', async () => {
-    const requests: Array<{ start: string; end: string }> = []
+  it('fetches only the exact V2 Rules per frequency, dedups, and clears timer off identity', async () => {
+    const requests: Array<{ ruleCode: string; start: string; end: string }> = []
     const scheduled: Array<() => void> = []
     const cleared: unknown[] = []
-    let response: AlertEvent[] = [event(3, ['buy'])]
     const controller = usePersistentAlertMarkers({
       fetchEvents: async (params) => {
-        requests.push({ start: params.start, end: params.end })
-        return { items: response }
+        requests.push({ ruleCode: params.ruleCode, start: params.start, end: params.end })
+        return { items: [event(
+          params.ruleCode === 'htdy_original_15m' ? 3 : 2,
+          ['buy'],
+          params.ruleCode,
+        )] }
       },
       scheduleInterval: (callback, delay) => {
         assert.equal(delay, 30_000)
@@ -171,26 +303,42 @@ describe('Product Alert server-side scope', () => {
     const initialBars = bars('2026-08-13T02:30:00Z', '2026-08-13T02:45:00Z')
 
     await controller.sync(identity(), initialBars, 'replace')
-    assert.equal(requests.length, 1)
-    assert.equal(controller.markers.value.length, 1)
+    assert.deepEqual(requests.map((request) => request.ruleCode), [
+      'htdy_original_15m',
+      'subing_entry_signal_v1',
+    ])
+    assert.equal(controller.markers.value.length, 2)
 
-    response = [event(1, ['sell']), event(3, ['buy'])]
     await controller.sync(
       identity(),
       bars('2026-08-13T02:15:00Z', ...initialBars),
       'prepend',
     )
-    assert.equal(requests.length, 2)
+    assert.equal(requests.length, 4)
     assert.equal(controller.markers.value.length, 2)
 
     await scheduled.at(-1)!()
-    assert.equal(requests.length, 3)
+    assert.equal(requests.length, 6)
     assert.match(requests.at(-1)!.start, /2026-08-13/)
 
     await controller.sync({ ...identity(), seriesKind: 'continuous' }, initialBars, 'replace')
     assert.deepEqual(controller.markers.value, [])
     assert.ok(cleared.length >= 1)
+    await controller.sync({ ...identity(), seriesKind: 'contract' }, initialBars, 'replace')
+    assert.equal(requests.length, 6)
     controller.dispose()
+
+    const fiveMinuteRequests: string[] = []
+    const fiveMinute = usePersistentAlertMarkers({
+      fetchEvents: async (params) => {
+        fiveMinuteRequests.push(params.ruleCode)
+        return { items: [{ ...event(1, ['sell'], params.ruleCode), frequency: '5m' }] }
+      },
+    })
+    await fiveMinute.sync({ ...identity(), frequency: '5m' }, initialBars, 'replace')
+    assert.deepEqual(fiveMinuteRequests, ['subing_entry_signal_v1'])
+    assert.equal(fiveMinute.markers.value.length, 1)
+    fiveMinute.dispose()
   })
 })
 
@@ -207,18 +355,57 @@ function between(source: string, start: string, end: string) {
   return source.slice(from, to)
 }
 
-function event(index: number, observations: Array<'buy' | 'sell'>): AlertEvent {
+function interfaceBody(source: string, name: string) {
+  const match = source.match(new RegExp(`export interface ${name}(?: extends [^{]+)? \\{([\\s\\S]*?)\\n\\}`))
+  assert.ok(match, `missing interface ${name}`)
+  return match[1]
+}
+
+function interfaceFields(source: string, name: string) {
+  return interfaceBody(source, name)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function event(
+  index: number,
+  observations: Array<'buy' | 'sell'>,
+  ruleCode = 'htdy_original_15m',
+): AlertEvent {
   const minute = String(index * 15).padStart(2, '0')
   return {
     id: index,
-    rule_code: 'htdy_original_15m',
+    rule_code: ruleCode,
     symbol: 'ag',
     contract: 'AG2610',
+    trading_day: '2026-08-13',
     frequency: '15m',
     bar_end: `2026-08-13T02:${minute}:00Z`,
-    observation_types: observations,
+    result_codes: observations,
+    lower_tf_confirmation: false,
     detected_at: '2026-08-13T02:45:01Z',
-    notified_at: '2026-08-13T02:45:01Z',
+    notification_attempted_at: '2026-08-13T02:45:01Z',
+  }
+}
+
+function htdyRule(enabled: boolean) {
+  return {
+    rule_code: 'htdy_original_15m',
+    display_name: '火天大有',
+    kind: 'indicator_observation' as const,
+    input_frequencies: ['15m' as const],
+    enabled_for_product: enabled,
+  }
+}
+
+function subingRule(enabled: boolean) {
+  return {
+    rule_code: 'subing_entry_signal_v1',
+    display_name: '苏冰入场信号',
+    kind: 'formal_signal' as const,
+    input_frequencies: ['5m' as const, '15m' as const],
+    enabled_for_product: enabled,
   }
 }
 

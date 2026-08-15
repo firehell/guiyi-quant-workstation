@@ -23,13 +23,15 @@ _WECOM_WEBHOOK_QUERY = re.compile(r"key=[A-Za-z0-9_-]{8,}")
 
 
 @dataclass(frozen=True, slots=True)
-class AlertEventMessage:
+class AlertNotificationMessage:
+    rule_code: str
     symbol: str
     product_name: str
     contract: str
     frequency: str
     bar_end: datetime
-    observation_types: tuple[str, ...]
+    result_codes: tuple[str, ...]
+    lower_tf_confirmation: bool = False
 
 
 class WeComSendError(RuntimeError):
@@ -85,8 +87,8 @@ class WeComWebhookSender:
         self._timeout_seconds = float(timeout_seconds)
         self._post_json = post_json or _stdlib_post_json
 
-    def send(self, event: AlertEventMessage) -> None:
-        self._send_text(_format_event(event))
+    def send(self, event: AlertNotificationMessage) -> None:
+        self._send_text(format_alert_message(event))
 
     def send_canary(self) -> None:
         self._send_text(_CANARY_TEXT)
@@ -108,21 +110,29 @@ class WeComWebhookSender:
             raise WeComSendError("WECOM_RESPONSE_REJECTED")
 
 
-def _format_event(event: AlertEventMessage) -> str:
+def format_alert_message(event: AlertNotificationMessage) -> str:
     if event.bar_end.tzinfo is None or event.bar_end.utcoffset() is None:
-        raise ValueError("ALERT_EVENT_TIMEZONE_REQUIRED")
-    if event.frequency != "15m":
-        raise ValueError("ALERT_EVENT_FREQUENCY_INVALID")
+        raise ValueError("ALERT_NOTIFICATION_TIMEZONE_REQUIRED")
     if not event.symbol.strip() or not event.product_name.strip() or not event.contract.strip():
-        raise ValueError("ALERT_EVENT_IDENTITY_INVALID")
-    if event.observation_types == ("buy",):
+        raise ValueError("ALERT_NOTIFICATION_IDENTITY_INVALID")
+    if event.rule_code == "htdy_original_15m":
+        return _format_htdy_message(event)
+    if event.rule_code == "subing_entry_signal_v1":
+        return _format_subing_message(event)
+    raise ValueError("ALERT_NOTIFICATION_RULE_INVALID")
+
+
+def _format_htdy_message(event: AlertNotificationMessage) -> str:
+    if event.frequency != "15m":
+        raise ValueError("ALERT_NOTIFICATION_FREQUENCY_INVALID")
+    if event.result_codes == ("buy",):
         observation = "买入观察"
-    elif event.observation_types == ("sell",):
+    elif event.result_codes == ("sell",):
         observation = "卖出观察"
-    elif event.observation_types == ("buy", "sell"):
+    elif event.result_codes == ("buy", "sell"):
         observation = "买入观察 + 卖出观察"
     else:
-        raise ValueError("ALERT_EVENT_OBSERVATION_INVALID")
+        raise ValueError("ALERT_NOTIFICATION_RESULT_INVALID")
     local_time = event.bar_end.astimezone(_SHANGHAI).strftime("%H:%M")
     return (
         f"【归一量化】{event.symbol.strip().upper()} {event.product_name.strip()}\n\n"
@@ -130,6 +140,27 @@ def _format_event(event: AlertEventMessage) -> str:
         f"主力：{event.contract.strip().upper()}\n"
         f"15m · {local_time} 收线"
     )
+
+
+def _format_subing_message(event: AlertNotificationMessage) -> str:
+    if event.frequency not in {"5m", "15m"}:
+        raise ValueError("ALERT_NOTIFICATION_FREQUENCY_INVALID")
+    if event.frequency == "5m" and event.lower_tf_confirmation:
+        raise ValueError("ALERT_NOTIFICATION_LOWER_TF_CONFIRMATION_INVALID")
+    if event.result_codes == ("buy",):
+        action = "买入"
+    elif event.result_codes == ("sell",):
+        action = "卖出"
+    else:
+        raise ValueError("ALERT_NOTIFICATION_RESULT_INVALID")
+    local_time = event.bar_end.astimezone(_SHANGHAI).strftime("%H:%M")
+    message = (
+        f"【苏冰】{event.product_name.strip()} · {event.contract.strip().upper()}\n\n"
+        f"{event.frequency} {action}信号 · {local_time}"
+    )
+    if event.lower_tf_confirmation:
+        message += "\n5m 同向确认"
+    return message
 
 
 def _stdlib_post_json(url: str, payload: Mapping[str, Any], *, timeout: float) -> object:

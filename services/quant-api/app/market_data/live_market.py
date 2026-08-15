@@ -20,7 +20,7 @@ from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 _LIVE_TTL_SECONDS = 3 * 24 * 60 * 60
 _HEARTBEAT_TTL_SECONDS = 30
 _FINALIZATION_DELAY = timedelta(seconds=2)
-_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
+LIVE_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
 _PROVIDER_RETRY_DELAY = timedelta(seconds=10)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 LIVE_BAR_CHANNEL_PREFIX = "live:bar"
@@ -374,6 +374,10 @@ class LiveMarketService:
         }
         if not trading_days:
             self.next_provider_retry_at = None
+            self._sync_provider_channels(
+                self._channels_in_session_grace(now),
+                create_if_missing=False,
+            )
             self._publish_heartbeat(now, phases)
             return None
         if len(trading_days) != 1:
@@ -425,21 +429,10 @@ class LiveMarketService:
             self._store.publish_state({"trading_day": trading_day.isoformat()})
             self._trading_day = trading_day
             self._contracts = current_contracts
-        desired = {f"bar_{self._contracts[symbol]}" for symbol in active_symbols}
-        try:
-            provider = self._provider_or_create()
-        except Exception as exc:  # noqa: BLE001 - provider boundary is intentionally minimal
-            raise _ProviderUnavailable() from exc
-        removed = tuple(sorted(self._channels - desired))
-        added = tuple(sorted(desired - self._channels))
-        try:
-            if removed:
-                provider.unsubscribe(removed)
-            if added:
-                provider.subscribe(added)
-        except Exception as exc:  # noqa: BLE001 - see _ProviderUnavailable
-            raise _ProviderUnavailable() from exc
-        self._channels = desired
+        desired = {
+            f"bar_{self._contracts[symbol]}" for symbol in active_symbols
+        } | self._channels_in_session_grace(now)
+        self._sync_provider_channels(desired, create_if_missing=True)
         self._publish_heartbeat(now, phases)
         return None
 
@@ -501,9 +494,21 @@ class LiveMarketService:
         if not any(item.phase is MarketPhase.TRADING for item in phases.values()):
             self.next_provider_retry_at = None
             try:
-                self._publish_heartbeat(now, phases)
                 self._drain_session_grace(now)
                 self.flush_due(now)
+                self._sync_provider_channels(
+                    self._channels_in_session_grace(now),
+                    create_if_missing=False,
+                )
+                self._publish_heartbeat(now, phases)
+            except _ProviderUnavailable:
+                self._provider_available = False
+                try:
+                    self._publish_heartbeat(now, phases)
+                except Exception:  # noqa: BLE001 - Redis remains the explicit state boundary
+                    self._available = False
+                    return self._reject("LIVE_REDIS_UNAVAILABLE")
+                return self._reject("LIVE_PROVIDER_UNAVAILABLE")
             except Exception:  # noqa: BLE001 - Live has no local fallback path
                 self._available = False
                 return self._reject("LIVE_REDIS_UNAVAILABLE")
@@ -591,7 +596,7 @@ class LiveMarketService:
         for window in self._known_sessions.get((symbol, bar.trading_day), ()):
             if (
                 bar.bar_end == window.end
-                and window.end <= now <= window.end + _SESSION_END_ARRIVAL_GRACE
+                and window.end <= now <= window.end + LIVE_SESSION_END_ARRIVAL_GRACE
             ):
                 return window
         return None
@@ -602,6 +607,47 @@ class LiveMarketService:
             return
         for contract, bar in self._provider.poll_buffered():
             self.ingest(contract, bar, now=now)
+
+    def _channels_in_session_grace(self, now: datetime) -> set[str]:
+        """仅保留已经订阅、且仍可接收 Session final bar 的通道。"""
+        grace_symbols = {
+            symbol
+            for (symbol, _trading_day), windows in self._known_sessions.items()
+            if any(
+                window.end <= now <= window.end + LIVE_SESSION_END_ARRIVAL_GRACE
+                for window in windows
+            )
+        }
+        return {
+            channel
+            for symbol, contract in self._contracts.items()
+            if symbol in grace_symbols
+            and (channel := f"bar_{contract}") in self._channels
+        }
+
+    def _sync_provider_channels(
+        self,
+        desired: set[str],
+        *,
+        create_if_missing: bool,
+    ) -> None:
+        """应用真实 provider 差量；失败时不伪造本地 channel 已收敛。"""
+        removed = tuple(sorted(self._channels - desired))
+        added = tuple(sorted(desired - self._channels))
+        if not removed and not added:
+            return
+        if self._provider is None and not create_if_missing:
+            return
+        try:
+            provider = self._provider_or_create()
+            if removed:
+                provider.unsubscribe(removed)
+            if added:
+                provider.subscribe(added)
+        except Exception as exc:  # noqa: BLE001 - provider boundary is intentionally minimal
+            raise _ProviderUnavailable() from exc
+        self._channels = desired
+        self._provider_available = True
 
     def _provider_or_create(self) -> LiveProvider:
         if self._provider is None:

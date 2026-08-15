@@ -22,6 +22,90 @@ function research(oiChange = 0.06) {
   }
 }
 
+function radar() {
+  return {
+    status: 'ready', expected_as_of: '2026-08-15', active_count: 60, participant_count: 60,
+    stale: [], unavailable: [],
+    summary: { up_count: 20, down_count: 18, volume_expansion_count: 12, oi_increase_count: 9, high_volatility_count: 7 },
+    items: [], attention: [], sector_summary: [],
+  }
+}
+
+function formalSignal() {
+  return {
+    id: 17, rule_code: 'subing_entry_signal_v1', display_name: '苏冰', symbol: 'jm', product_name: '焦煤',
+    contract: 'JM2609', trading_day: '2026-08-15', frequency: '5m', bar_end: '2026-08-15T02:25:00Z',
+    result_codes: ['buy'], lower_tf_confirmation: true, detected_at: '2026-08-15T02:26:00Z', notification_attempted_at: null,
+  }
+}
+
+async function mockMarketHomepage(page, currentFormalResponse) {
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+}
+
+test('Market homepage shows only current formal signals above Radar', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] })
+  await page.goto('/market')
+
+  const formal = page.getByTestId('market-formal-signals')
+  await expect(formal).toContainText('苏冰')
+  await expect(formal).toContainText('JM 焦煤 · JM2609')
+  await expect(formal).toContainText('5m 买入信号 · 10:25')
+  await expect(formal).toContainText('5m 同向确认')
+  await expect(formal).not.toContainText('火天大有')
+  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+  expect(await page.locator('[data-testid="market-formal-signals"], .radar-summary').evaluateAll((nodes) => (
+    Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
+  ))).toBe(true)
+})
+
+test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 979, height: 900 })
+  await mockMarketHomepage(page, {
+    status: 'ready',
+    trading_day: '2026-08-15',
+    items: [formalSignal(), { ...formalSignal(), id: 18, symbol: 'ag', product_name: '白银', contract: 'AG2601' }],
+  })
+  await page.goto('/market')
+
+  const formal = page.getByTestId('market-formal-signals')
+  await expect(formal).toContainText('只显示当前交易日的正式信号')
+  await expect(page.getByText('值得关注，但尚未形成正式信号', { exact: true })).toBeVisible()
+  await expect(formal.locator('.market-formal-signals__card')).toHaveCount(2)
+  expect(await formal.locator('.market-formal-signals__card').evaluateAll((cards) => cards[1].getBoundingClientRect().top > cards[0].getBoundingClientRect().top)).toBe(true)
+  expect(await page.locator('[data-testid="market-formal-signals"], .market-attention').evaluateAll((nodes) => (
+    Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
+  ))).toBe(true)
+})
+
+test('Market homepage keeps lower-timeframe confirmation fixed at 5m for a 15m signal', async ({ page }) => {
+  await mockMarketHomepage(page, {
+    status: 'ready', trading_day: '2026-08-15', items: [{ ...formalSignal(), frequency: '15m' }],
+  })
+  await page.goto('/market')
+
+  const formal = page.getByTestId('market-formal-signals')
+  await expect(formal).toContainText('15m 买入信号')
+  await expect(formal).toContainText('5m 同向确认')
+  await expect(formal).not.toContainText('15m 同向确认')
+})
+
+test('Market homepage distinguishes ready empty formal signals', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] })
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-formal-signals')).toContainText('当前没有需要处理的正式信号')
+})
+
+test('Market homepage keeps Radar visible when formal signals are unavailable', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'unavailable', trading_day: null, items: [] })
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-formal-signals')).toContainText('正式信号暂不可用')
+  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+})
+
 function subing(overrides = {}) {
   const snapshot = (timeframe, barEnd, priceSide = 'above') => ({
     timeframe, bar_end: barEnd, trading_day: '2026-01-12', contract: 'AG2601',
@@ -116,7 +200,7 @@ test('SuBing clips old same-contract bars and renders the requested primary Sign
 
   await expect(page.getByText('109 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.subing-strip')).toContainText('5m · 当前不匹配')
-  await expect(page.getByText('苏冰观察', { exact: true })).toBeVisible()
+  await expect(page.getByText('苏冰研究明细', { exact: true })).toBeVisible()
   await expect(page.getByText('当前合约', { exact: true })).toBeVisible()
   await expect(page.getByText('段起始', { exact: true })).toBeVisible()
   await expect(page.locator('body')).not.toContainText('买入')
@@ -393,6 +477,21 @@ test('shows one identity-matched research snapshot without crowding desktop Klin
   await expect(page.locator('.product-workspace__sidebar')).toBeVisible()
 })
 
+test('research control toggles the inline sidebar instead of opening a duplicate drawer at 1280px', async ({ page }) => {
+  await mockWorkspace(page, { json: research() })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const sidebar = page.locator('.product-workspace__sidebar')
+  const researchControl = page.getByRole('button', { name: '研究', exact: true })
+  await expect(sidebar).toBeVisible()
+  await researchControl.click()
+  await expect(sidebar).toBeHidden()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await researchControl.click()
+  await expect(sidebar).toBeVisible()
+})
+
 test('keeps Kline usable when research is unavailable and does not invent missing OI', async ({ page }) => {
   await mockWorkspace(page, { json: research(null) })
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -407,8 +506,7 @@ test('research endpoint failure leaves the Kline readable', async ({ page }) => 
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByText('109 bars')).toBeVisible()
-  await page.getByRole('button', { name: '研究', exact: true }).click()
-  await expect(page.getByRole('dialog').getByText('研究数据暂不可用', { exact: true })).toBeVisible()
+  await expect(page.locator('.product-workspace__sidebar').getByText('研究数据暂不可用', { exact: true })).toBeVisible()
 })
 
 test('HTDY stays opt-in and keeps its repainting-risk notice visible in the workspace', async ({ page }) => {

@@ -1,6 +1,6 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-13
+更新时间：2026-08-15
 
 本文定义仓库日常开发与外部副作用边界的唯一流程入口；产品、数据、策略、信号和 Runtime 语义仍由
 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only，含有界 Historical/Live seam）。
@@ -36,9 +36,11 @@ develop
 
 当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
 Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
-Alert V1 的 Application Domain、API、Web 与独立 `runtime alert` 代码已实现；它不恢复已退役的
-Signal/Review/Strategy 链。production migration、真实 WeCom canary 与 Alert Runtime activation 未经各自
-明确请求不得执行，当前状态同样只以 `STATUS.md` 为准。
+Alert V2 的 Application Domain、API 与独立 `runtime alert` 代码面不恢复已退役的
+Signal/Review/Strategy 链。production migration `20260814_0038`、v1.3 release/tag、Runtime
+promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 未经各自明确请求
+不得执行，当前实施与生产状态只以 `STATUS.md` 为准。测试路由的 Scope PUT
+只验证代码合同，不是真实 Scope mutation 授权。
 唯一 active 运维链为 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；本地状态只使用
 `scripts/ops/macos/local-services-status.sh`，分段只读检查与配置导航见 `deploy/README.md`。仓库不保留
 并行 PID 管理器、远端 API/Web 副本或会隐式执行 migration 的聚合启动器。
@@ -89,18 +91,34 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 持续运行；该请求不授权其他 DB mutation、release、真实通知或订单。未
 收到该请求时，只能执行 mock、临时目录、render-only 与只读健康验证。
 
-Alert Runtime V1 是另一份独立持续授权：只有用户在识别出的本地工作站明确启用后，才允许
-`htdy_original_15m × enabled scope_products × WeCom` 对后续自然 confirmed 15m Bar 持续运行。该授权
-不从 Market Runtime 继承，也不覆盖新增 Rule/渠道、production migration、Runtime switch、release、
-Canonical 写入或订单。migration、真实 canary、activation 三个 Gate 必须分别取得一次性执行意图。
+Alert Runtime V2 是另一份独立持续授权，且只列举：
+
+```text
+htdy_original_15m × 该 Rule 显式 scope_products × WeCom
++
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
+```
+
+用户必须先对识别出的本地工作站明确执行 V2 Runtime promotion，目标 Scope 还必须已获得精确 Rule +
+Product 授权；开启成功后只允许该精确范围的后续自然事件持续创建 Event
+并尝试一次 WeCom。未来第三条 Rule 不继承授权。该授权不从 Market Runtime、既有
+HTDY Scope 或任何其他 Gate 推导；production migration、v1.3 release/tag、Runtime
+promotion/switch、Scope write/activation 和真实 WeCom/canary 都必须分别取得一次性执行意图。
+其中 V2 migration 只保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation。
 
 ## 不可放宽的业务边界
 
 - 正式历史数据继续遵守 DatasetKey、精确八表 Market Catalog、MainContractMap、coverage/可读性和
   MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
 - 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
-- Signal/Review/Strategy 应用链已经退役；Alert V1 只使用新设计的 Application Domain，不得恢复旧事件表、
-  RQ worker 或历史补发路径。
+- Signal/Review/Strategy 应用链已经退役；Alert V2 只使用独立的两张 Application Domain
+  表，不属于且不改变八表 Market Catalog，不得恢复旧事件表、RQ worker 或历史补发路径。
+- HTDY 继续使用 event-cutoff；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/
+  `SubingReadService` resolver，stale identity fail-closed，final Session Bar 仅在共享 arrival grace
+  内可见，5m 在 15m boundary 按 TradingSession bucket 延后。current trading day 只由
+  `MarketPhaseResolver + operational products` 唯一解析，不可用时 fail-closed。
+- Alert V2 无 replay/backfill/retry/outbox/queue/Signal Center/订单路径；SuBing Rule seed
+  Scope 为空集，`auto_order=false`。
 - Live、真实通知、Runtime switch/promotion 均受独立 Gate 约束；Market 与 Alert 两份持续授权只覆盖各自
   明确范围，不能相互或向外扩张。
 - 所有输出都是研究观察，不是交易指令；`auto_order=false`，拒绝创建或提交订单。

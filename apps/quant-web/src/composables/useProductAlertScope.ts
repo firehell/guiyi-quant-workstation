@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import type {
   AlertRuntimeStatus,
   ProductAlertRuleState,
@@ -20,10 +20,15 @@ interface Dependencies {
 }
 
 export function useProductAlertScope(dependencies: Dependencies) {
-  const alertRule = ref<ProductAlertRuleState | null>(null)
+  const alertRules = ref<ProductAlertRuleState[]>([])
   const alertRuntimeStatus = ref<AlertRuntimeStatus | null>(null)
   const alertLoading = ref(false)
-  const alertSaving = ref(false)
+  const savingRuleCodes = ref<Set<string>>(new Set())
+  const rulesByCode = computed(() => new Map(
+    alertRules.value.map((rule) => [rule.rule_code, rule]),
+  ))
+  const htdyRule = computed(() => rulesByCode.value.get('htdy_original_15m') ?? null)
+  const subingRule = computed(() => rulesByCode.value.get('subing_entry_signal_v1') ?? null)
   let generation = 0
 
   async function refresh(): Promise<void> {
@@ -31,35 +36,33 @@ export function useProductAlertScope(dependencies: Dependencies) {
     if (!requestedSymbol) return
     const requestGeneration = ++generation
     alertLoading.value = true
-    alertRule.value = null
+    alertRules.value = []
     try {
       const [scope, runtimeStatus] = await Promise.all([
         dependencies.fetchProductAlerts(requestedSymbol),
         dependencies.fetchRuntimeStatus(),
       ])
       if (!isCurrent(requestGeneration, requestedSymbol)) return
-      alertRule.value = scope.rules.find(
-        (rule) => rule.rule_code === 'htdy_original_15m',
-      ) ?? null
+      alertRules.value = scope.rules
       alertRuntimeStatus.value = runtimeStatus
     } catch {
       if (!isCurrent(requestGeneration, requestedSymbol)) return
-      alertRule.value = null
+      alertRules.value = []
       alertRuntimeStatus.value = 'failed'
     } finally {
       if (requestGeneration === generation) alertLoading.value = false
     }
   }
 
-  async function toggle(enabled: boolean): Promise<void> {
-    const current = alertRule.value
+  async function toggle(ruleCode: string, enabled: boolean): Promise<void> {
+    const current = rulesByCode.value.get(ruleCode)
     const requestedSymbol = dependencies.symbol.value
     const requestGeneration = generation
-    if (!current || !requestedSymbol || alertSaving.value) return
-    alertSaving.value = true
+    if (!current || !requestedSymbol || savingRuleCodes.value.has(ruleCode)) return
+    savingRuleCodes.value = new Set(savingRuleCodes.value).add(ruleCode)
     try {
       const updated = await dependencies.setProductEnabled(
-        current.rule_code,
+        ruleCode,
         requestedSymbol,
         enabled,
       )
@@ -68,16 +71,20 @@ export function useProductAlertScope(dependencies: Dependencies) {
         currentGeneration: generation,
         requestedSymbol,
         currentSymbol: dependencies.symbol.value,
-        requestedRuleCode: current.rule_code,
-        currentRuleCode: alertRule.value?.rule_code,
+        requestedRuleCode: ruleCode,
+        currentRuleCode: rulesByCode.value.get(ruleCode)?.rule_code,
         updatedRuleCode: updated.rule_code,
       })) {
-        alertRule.value = updated
+        alertRules.value = alertRules.value.map((rule) => (
+          rule.rule_code === ruleCode ? updated : rule
+        ))
       }
     } catch {
       dependencies.notifyError('Alert Scope 更新失败')
     } finally {
-      alertSaving.value = false
+      const saving = new Set(savingRuleCodes.value)
+      saving.delete(ruleCode)
+      savingRuleCodes.value = saving
     }
   }
 
@@ -89,14 +96,16 @@ export function useProductAlertScope(dependencies: Dependencies) {
   function dispose(): void {
     generation += 1
     alertLoading.value = false
-    alertSaving.value = false
+    savingRuleCodes.value = new Set()
   }
 
   return {
-    alertRule,
+    alertRules,
+    htdyRule,
+    subingRule,
     alertRuntimeStatus,
     alertLoading,
-    alertSaving,
+    savingRuleCodes,
     refresh,
     toggle,
     dispose,

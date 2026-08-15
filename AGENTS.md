@@ -5,14 +5,14 @@
 ## 项目边界
 
 - 做（长期）：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
-- 当前可执行面：Web 为 Market；API/CLI 为 market / data CLI / runtime，并包含独立 Alert V1 代码面。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用由 `operational_products.txt` 界定范围的 Runtime。Alert Runtime 模板默认关闭，不能从 Market Runtime 授权推导启用。signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役。
+- 当前可执行面：Web 为 Market；API/CLI 为 market / data CLI / runtime，并包含独立 Alert Application Domain。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用由 `operational_products.txt` 界定范围的 Runtime。Alert Runtime 模板默认关闭，不能从 Market Runtime 授权推导启用。signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役。
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
 技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis 与
 RQData → Canonical Parquet → 八表 Catalog → MarketDataService；`quant-core` 仅保留
 Indicator Kernel（`guiyi_quant/indicators/`），旧 vn.py-compatible 策略研究包已退役（仅 Git
-history 可追溯），当前不存在回测引擎、策略适配层或策略 HTTP/worker。Alert V1 的两张 Application
+history 可追溯），当前不存在回测引擎、策略适配层或策略 HTTP/worker。Alert 的两张 Application
 Domain 表不属于 Market Catalog，不改变八表合同。
 
 ## 项目辅助范围
@@ -52,15 +52,20 @@ Domain 表不属于 Market Catalog，不改变八表合同。
 
 该授权不覆盖 main/tag/release、其他生产 DB/数据变更、Runtime 版本切换、真实外部通知渠道或任何订单；`auto_order=false` 始终不变。没有上述明确启用请求时，render-only、健康读取和测试不构成启用授权。
 
-### Alert Runtime V1 的独立受限持续授权
+### Alert Runtime V2 的独立受限持续授权
 
-Alert 代码与 launchd 模板默认关闭。只有用户对识别出的本地工作站明确请求“启用 Alert Runtime V1”并
-实际执行一次启用操作后，才允许持续处理 `htdy_original_15m × enabled scope_products × WeCom` 范围内
-此后自然到达的 confirmed 15m Bar。停机历史不 replay/backfill，发送失败不 retry。
+Alert 代码与 launchd 模板默认关闭。Alert Runtime V2 的有界持续授权只限于：
+
+```text
+htdy_original_15m × 该 Rule 显式 scope_products × WeCom
++
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
+```
+
+只有用户对识别出的本地工作站明确执行 V2 Runtime promotion，且目标 Scope 已获得精确 Rule + Product 授权后，才允许对该精确范围此后自然到达的完成 Bar 持续创建 Event 并尝试一次 WeCom。V2 migration 保留已明确授权的 HTDY Scope，不为其虚构第二次 Scope write；SuBing 仍必须独立执行精确 Scope activation。停机历史不 replay/backfill，发送失败不 retry。未来第三条 Rule 不继承授权。
 
 该授权与 Market Runtime V1 相互独立，不覆盖新增 Rule 或通知渠道、生产 migration、任何 Runtime switch、
-main/tag/release、Canonical 写入或订单。production migration、真实 WeCom canary 和首次 Alert Runtime
-activation 仍是三个独立的一次性 Gate；mock、测试、render-only 或其中一个 Gate 不授权其余 Gate。
+main/tag/release、Canonical 写入或订单。production migration、v1.3 release/tag、Runtime promotion/switch、SuBing Scope write/activation 和真实 WeCom/canary 都是独立的一次性 Gate；mock、测试、render-only 或其中一个 Gate 不授权其余 Gate。测试路由的 Scope PUT 不构成真实 Scope mutation 授权。
 
 ## 工程与业务硬规则
 
@@ -70,8 +75,8 @@ activation 仍是三个独立的一次性 Gate；mock、测试、render-only 或
 5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后才能发布；月分区以同文件系统临时文件原子替换 `part.parquet`，失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
-8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。Signal/Review/Strategy HTTP·worker·DB 表与旧语义合同已退役；Alert V1 是独立 Application Domain，不以旧表或旧 worker 为入口；未来重建仍须新任务新合同。
-9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 只读取同一个 `operational_products.txt`，且不新增生产表。Alert V1 只处理启用 Scope 中自然到达的 `htdy_original_15m` confirmed Bar；repair、replay、backfill、migration 与 EOD recalculation 不补评或补发历史通知。
+8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。Signal/Review/Strategy HTTP·worker·DB 表与旧语义合同已退役；Alert 是独立 Application Domain，不以旧表或旧 worker 为入口；未来重建仍须新任务新合同。
+9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 只读取同一个 `operational_products.txt`，且不新增生产表。Alert V2 的 HTDY 保持 event-cutoff；SuBing 只复用已有 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，不复制公式或 same-boundary 规则。SuBing 仅在 incoming Bar 与 current snapshot 的 `bar_end + trading_day` 同一时继续，stale 必须 fail-closed；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 唯一解析，不可用时 fail-closed。repair、replay、backfill、migration 与 EOD recalculation 不补评或补发历史通知。
 10. `auto_order=false` 适用于所有研究观察与 Runtime 模式。任何创建或提交订单的流程都必须拒绝；本项目不实现自动交易。
 11. 数据或指标语义变化时，同一变更更新相应 deep canonical；普通 bug fix、UI 调整和测试增加不自动改写项目状态。
 

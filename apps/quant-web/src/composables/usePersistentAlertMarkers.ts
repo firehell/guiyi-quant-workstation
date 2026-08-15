@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import type { AlertEventListResponse } from '../api/alerts.ts'
 import type { BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
-import { alertEventsToMarkers, isPersistentAlertIdentity } from '../utils/alertMarkers.ts'
+import { alertEventsToMarkers, isPersistentAlertIdentity, markerRuleCodes } from '../utils/alertMarkers.ts'
 
 
 const REFRESH_INTERVAL_MS = 30_000
@@ -109,24 +109,29 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
     end: string,
     requestGeneration: number,
   ) {
+    const ruleCodes = markerRuleCodes(identity.seriesKind, identity.frequency)
+    if (!ruleCodes.length) return
     const normalizedEnd = Date.parse(end) > Date.parse(start)
       ? end
       : new Date(Date.parse(start) + 1).toISOString()
     try {
-      const response = await fetchEvents({
+      const responses = await Promise.all(ruleCodes.map((ruleCode) => fetchEvents({
         symbol: identity.symbol,
-        ruleCode: 'htdy_original_15m',
+        ruleCode,
         start,
         end: normalizedEnd,
-      })
+      })))
       if (requestGeneration !== generation || identityKey(identity) !== identityKey(activeIdentity)) return
-      for (const event of response.items) {
-        if (
-          event.rule_code !== 'htdy_original_15m'
-          || event.symbol !== identity.symbol
-          || event.frequency !== '15m'
-        ) continue
-        events.set(eventKey(event), event)
+      for (const [index, response] of responses.entries()) {
+        const ruleCode = ruleCodes[index]
+        for (const event of response.items) {
+          if (
+            event.rule_code !== ruleCode
+            || event.symbol !== identity.symbol
+            || event.frequency !== identity.frequency
+          ) continue
+          events.set(eventKey(event), event)
+        }
       }
       markers.value = alertEventsToMarkers([...events.values()])
     } catch {
@@ -157,7 +162,7 @@ function identityKey(identity: AlertMarkerIdentity | null): string {
 }
 
 function eventKey(event: AlertEventListResponse['items'][number]): string {
-  return `${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`
+  return `${event.rule_code}:${event.symbol}:${event.bar_end}`
 }
 
 function barRange(bars: BarData[]): { start: string; end: string } {

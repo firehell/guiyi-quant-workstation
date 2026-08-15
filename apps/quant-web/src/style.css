@@ -52,9 +52,17 @@ a {
   outline-offset: 2px;
 }
 
+button:disabled,
+.n-button.n-button--disabled {
+  color: var(--gy-text-disabled) !important;
+  background: var(--gy-control-disabled-bg) !important;
+  border-color: var(--gy-border) !important;
+  opacity: 1 !important;
+}
+
 ::selection {
   color: #fff;
-  background: rgba(20, 133, 238, 0.42);
+  background: rgba(37, 99, 235, 0.28);
 }
 
 ::-webkit-scrollbar {
@@ -63,7 +71,7 @@ a {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--gy-slate-600);
+  background: var(--gy-gray-300);
   border: 2px solid transparent;
   border-radius: var(--gy-radius-pill);
   background-clip: padding-box;
