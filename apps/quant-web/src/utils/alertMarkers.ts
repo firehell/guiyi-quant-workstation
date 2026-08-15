@@ -1,11 +1,23 @@
 import type { AlertEvent, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 
+const SUBING_RULE_CODE = 'subing_entry_signal_v1'
+const HTDY_RULE_CODE = 'htdy_original_15m'
 
 export function isPersistentAlertIdentity(
   seriesKind: SeriesKind,
   frequency: MarketFrequency,
 ): boolean {
-  return seriesKind === 'actual_dominant' && frequency === '15m'
+  return markerRuleCodes(seriesKind, frequency).length > 0
+}
+
+export function markerRuleCodes(
+  seriesKind: SeriesKind,
+  frequency: MarketFrequency,
+): string[] {
+  if (seriesKind !== 'actual_dominant') return []
+  if (frequency === '5m') return [SUBING_RULE_CODE]
+  if (frequency === '15m') return [HTDY_RULE_CODE, SUBING_RULE_CODE]
+  return []
 }
 
 export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
@@ -13,9 +25,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
     .sort((left, right) => Date.parse(left.bar_end) - Date.parse(right.bar_end))
     .flatMap((event) => {
       const observations = new Set(event.result_codes)
-      const label = observations.has('buy') && observations.has('sell')
-        ? '🔔买/卖'
-        : observations.has('buy') ? '🔔买' : observations.has('sell') ? '🔔卖' : null
+      const label = markerLabel(event.rule_code, observations)
       if (!label) return []
       return [{
         id: `alert:${event.rule_code}:${event.symbol}:${event.bar_end}`,
@@ -27,6 +37,16 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
         shape: 'square' as const,
       }]
     })
+}
+
+function markerLabel(ruleCode: string, observations: Set<'buy' | 'sell'>): string | null {
+  const category = ruleCode === SUBING_RULE_CODE
+    ? '信号'
+    : ruleCode === HTDY_RULE_CODE ? '观察' : null
+  if (!category) return null
+  if (observations.has('buy')) return `买入${category}`
+  if (observations.has('sell')) return `卖出${category}`
+  return null
 }
 
 export function mergeKlineMarkers(

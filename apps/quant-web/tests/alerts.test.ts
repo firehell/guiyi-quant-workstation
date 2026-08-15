@@ -6,6 +6,7 @@ import { alertRuntimeLabel, isCurrentAlertMutation } from '../src/utils/alertCon
 import {
   alertEventsToMarkers,
   isPersistentAlertIdentity,
+  markerRuleCodes,
   mergeKlineMarkers,
 } from '../src/utils/alertMarkers.ts'
 import { usePersistentAlertMarkers } from '../src/composables/usePersistentAlertMarkers.ts'
@@ -222,15 +223,15 @@ describe('Product Alert server-side scope', () => {
     controller.dispose()
   })
 
-  it('builds one persistent bell marker for buy, sell, or buy+sell only', () => {
+  it('labels V2 persistent events by Rule category while keeping the Event identity stable', () => {
     assert.deepEqual(alertEventsToMarkers([
       event(1, ['buy']),
-      event(2, ['sell']),
-      event(3, ['buy', 'sell']),
+      event(2, ['sell'], 'subing_entry_signal_v1'),
+      event(3, ['sell']),
     ]).map((marker) => [marker.id, marker.label]), [
-      ['alert:htdy_original_15m:ag:2026-08-13T02:15:00Z', '🔔买'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:30:00Z', '🔔卖'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '🔔买/卖'],
+      ['alert:htdy_original_15m:ag:2026-08-13T02:15:00Z', '买入观察'],
+      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:30:00Z', '卖出信号'],
+      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '卖出观察'],
     ])
   })
 
@@ -265,22 +266,30 @@ describe('Product Alert server-side scope', () => {
     )
   })
 
-  it('enables persistent reads only for actual_dominant 15m', () => {
+  it('uses the exact V2 Rule set for each visible series identity', () => {
+    assert.deepEqual(markerRuleCodes('actual_dominant', '5m'), ['subing_entry_signal_v1'])
+    assert.deepEqual(markerRuleCodes('actual_dominant', '15m'), ['htdy_original_15m', 'subing_entry_signal_v1'])
+    assert.deepEqual(markerRuleCodes('continuous', '15m'), [])
+    assert.deepEqual(markerRuleCodes('actual_dominant', '30m'), [])
     assert.equal(isPersistentAlertIdentity('actual_dominant', '15m'), true)
+    assert.equal(isPersistentAlertIdentity('actual_dominant', '5m'), true)
     assert.equal(isPersistentAlertIdentity('continuous', '15m'), false)
     assert.equal(isPersistentAlertIdentity('contract', '15m'), false)
     assert.equal(isPersistentAlertIdentity('actual_dominant', '30m'), false)
   })
 
-  it('fetches initial/prepend/recent ranges, dedups, and clears timer off identity', async () => {
-    const requests: Array<{ start: string; end: string }> = []
+  it('fetches only the exact V2 Rules per frequency, dedups, and clears timer off identity', async () => {
+    const requests: Array<{ ruleCode: string; start: string; end: string }> = []
     const scheduled: Array<() => void> = []
     const cleared: unknown[] = []
-    let response: AlertEvent[] = [event(3, ['buy'])]
     const controller = usePersistentAlertMarkers({
       fetchEvents: async (params) => {
-        requests.push({ start: params.start, end: params.end })
-        return { items: response }
+        requests.push({ ruleCode: params.ruleCode, start: params.start, end: params.end })
+        return { items: [event(
+          params.ruleCode === 'htdy_original_15m' ? 3 : 2,
+          ['buy'],
+          params.ruleCode,
+        )] }
       },
       scheduleInterval: (callback, delay) => {
         assert.equal(delay, 30_000)
@@ -292,26 +301,42 @@ describe('Product Alert server-side scope', () => {
     const initialBars = bars('2026-08-13T02:30:00Z', '2026-08-13T02:45:00Z')
 
     await controller.sync(identity(), initialBars, 'replace')
-    assert.equal(requests.length, 1)
-    assert.equal(controller.markers.value.length, 1)
+    assert.deepEqual(requests.map((request) => request.ruleCode), [
+      'htdy_original_15m',
+      'subing_entry_signal_v1',
+    ])
+    assert.equal(controller.markers.value.length, 2)
 
-    response = [event(1, ['sell']), event(3, ['buy'])]
     await controller.sync(
       identity(),
       bars('2026-08-13T02:15:00Z', ...initialBars),
       'prepend',
     )
-    assert.equal(requests.length, 2)
+    assert.equal(requests.length, 4)
     assert.equal(controller.markers.value.length, 2)
 
     await scheduled.at(-1)!()
-    assert.equal(requests.length, 3)
+    assert.equal(requests.length, 6)
     assert.match(requests.at(-1)!.start, /2026-08-13/)
 
     await controller.sync({ ...identity(), seriesKind: 'continuous' }, initialBars, 'replace')
     assert.deepEqual(controller.markers.value, [])
     assert.ok(cleared.length >= 1)
+    await controller.sync({ ...identity(), seriesKind: 'contract' }, initialBars, 'replace')
+    assert.equal(requests.length, 6)
     controller.dispose()
+
+    const fiveMinuteRequests: string[] = []
+    const fiveMinute = usePersistentAlertMarkers({
+      fetchEvents: async (params) => {
+        fiveMinuteRequests.push(params.ruleCode)
+        return { items: [{ ...event(1, ['sell'], params.ruleCode), frequency: '5m' }] }
+      },
+    })
+    await fiveMinute.sync({ ...identity(), frequency: '5m' }, initialBars, 'replace')
+    assert.deepEqual(fiveMinuteRequests, ['subing_entry_signal_v1'])
+    assert.equal(fiveMinute.markers.value.length, 1)
+    fiveMinute.dispose()
   })
 })
 
@@ -341,11 +366,15 @@ function interfaceFields(source: string, name: string) {
     .filter(Boolean)
 }
 
-function event(index: number, observations: Array<'buy' | 'sell'>): AlertEvent {
+function event(
+  index: number,
+  observations: Array<'buy' | 'sell'>,
+  ruleCode = 'htdy_original_15m',
+): AlertEvent {
   const minute = String(index * 15).padStart(2, '0')
   return {
     id: index,
-    rule_code: 'htdy_original_15m',
+    rule_code: ruleCode,
     symbol: 'ag',
     contract: 'AG2610',
     trading_day: '2026-08-13',
