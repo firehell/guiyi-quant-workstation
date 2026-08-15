@@ -103,10 +103,10 @@ def validate_not_executed(
 
     if primary_reason is None or not primary_reason.strip():
         raise ExecutionReviewContractError("PRIMARY_REASON_REQUIRED")
-    primary = primary_reason.strip()
+    primary = primary_reason
     if primary not in NOT_EXECUTED_REASONS:
         raise ExecutionReviewContractError("UNKNOWN_DECISION_REASON")
-    secondary = tuple(item.strip() for item in secondary_reasons)
+    secondary = tuple(secondary_reasons)
     if any(item not in NOT_EXECUTED_REASONS for item in secondary):
         raise ExecutionReviewContractError("UNKNOWN_DECISION_REASON")
     if len(secondary) != len(set(secondary)):
@@ -120,12 +120,12 @@ def validate_not_executed(
 def validate_execution_reasons(reasons: Sequence[str]) -> None:
     """Validate the required fixed execution-reason vocabulary."""
 
-    normalized = tuple(item.strip() for item in reasons)
-    if not normalized:
+    exact_reasons = tuple(reasons)
+    if not exact_reasons:
         raise ExecutionReviewContractError("EXECUTION_REASON_REQUIRED")
-    if any(item not in EXECUTION_REASON_TAGS for item in normalized):
+    if any(item not in EXECUTION_REASON_TAGS for item in exact_reasons):
         raise ExecutionReviewContractError("UNKNOWN_EXECUTION_REASON")
-    if len(normalized) != len(set(normalized)):
+    if len(exact_reasons) != len(set(exact_reasons)):
         raise ExecutionReviewContractError("EXECUTION_REASON_DUPLICATE")
 
 

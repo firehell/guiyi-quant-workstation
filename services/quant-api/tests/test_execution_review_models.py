@@ -130,6 +130,7 @@ def test_models_use_array_json_variants_timezone_and_named_constraints() -> None
         "ck_trade_episodes_lifecycle",
         "ck_trade_episodes_closed_at",
         "ck_trade_episodes_multiplier_positive",
+        "ck_trade_episodes_multiplier_lineage",
     }
 
 
@@ -323,6 +324,41 @@ def test_episode_lifecycle_accepts_open_roll_and_net_zero_states(session: Sessio
             ),
         )
     )
+
+    session.commit()
+
+
+@pytest.mark.parametrize(
+    ("snapshot", "policy_id"),
+    [
+        (Decimal("60"), None),
+        (None, "product_trade_multipliers_v1"),
+        (Decimal("60"), "unknown_policy"),
+    ],
+)
+def test_episode_multiplier_snapshot_and_policy_are_both_present_or_both_absent(
+    session: Session,
+    snapshot: Decimal | None,
+    policy_id: str | None,
+) -> None:
+    decision = _decision(_event(session, symbol="jm", contract="JM2609"))
+    episode = _episode(decision)
+    episode.contract_multiplier_snapshot = snapshot
+    episode.multiplier_policy_id = policy_id
+    session.add(episode)
+
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_episode_multiplier_snapshot_and_policy_may_both_be_absent(
+    session: Session,
+) -> None:
+    decision = _decision(_event(session, symbol="jm", contract="JM2609"))
+    episode = _episode(decision)
+    episode.contract_multiplier_snapshot = None
+    episode.multiplier_policy_id = None
+    session.add(episode)
 
     session.commit()
 

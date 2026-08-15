@@ -146,6 +146,7 @@ def test_upgrade_is_strictly_additive_and_matches_domain_contract() -> None:
         "uq_trade_episodes_origin_decision",
         "ck_trade_episodes_direction",
         "ck_trade_episodes_multiplier_positive",
+        "ck_trade_episodes_multiplier_lineage",
         "ck_trade_episodes_lifecycle",
         "ck_trade_episodes_closed_at",
     }
@@ -220,7 +221,7 @@ def isolated_migration_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[tuple[Config, Engine]]:
     if not os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL", "").strip():
-        pytest.skip("GUIYI_ISOLATED_MIGRATION_DATABASE_URL is required")
+        pytest.fail("GUIYI_ISOLATED_MIGRATION_DATABASE_URL is required")
     try:
         url = require_isolated_migration_database_url(
             os.environ,
@@ -268,6 +269,88 @@ def test_upgrade_preserves_market_and_alert_signatures_and_adds_only_four_tables
         column["name"]
         for column in inspector.get_columns("trade_executions")
     } >= {"sequence_no", "episode_id", "execution_type"}
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("trade_episodes")
+    } == {
+        "ck_trade_episodes_closed_at",
+        "ck_trade_episodes_direction",
+        "ck_trade_episodes_lifecycle",
+        "ck_trade_episodes_multiplier_lineage",
+        "ck_trade_episodes_multiplier_positive",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("trade_executions")
+    } == {
+        "ck_trade_executions_open_sequence",
+        "ck_trade_executions_price_positive",
+        "ck_trade_executions_quantity_positive",
+        "ck_trade_executions_sequence_positive",
+        "ck_trade_executions_type",
+    }
+    assert {
+        table_name: {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints(table_name)
+        }
+        for table_name in ("trade_decisions", "trade_reviews")
+    } == {
+        "trade_decisions": {
+            "ck_trade_decisions_disposition",
+            "ck_trade_decisions_stop_price_positive",
+        },
+        "trade_reviews": {"ck_trade_reviews_adherence"},
+    }
+    assert {
+        table_name: {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints(table_name)
+        }
+        for table_name in NEW_TABLES
+    } == {
+        "trade_decisions": {"uq_trade_decisions_alert_event"},
+        "trade_episodes": {"uq_trade_episodes_origin_decision"},
+        "trade_executions": {
+            "uq_trade_executions_episode_sequence",
+            "uq_trade_executions_trigger_decision",
+        },
+        "trade_reviews": {"uq_trade_reviews_episode"},
+    }
+    assert {
+        (
+            table_name,
+            tuple(foreign_key["constrained_columns"]),
+            foreign_key["referred_table"],
+            tuple(foreign_key["referred_columns"]),
+        )
+        for table_name in NEW_TABLES
+        for foreign_key in inspector.get_foreign_keys(table_name)
+    } == {
+        ("trade_decisions", ("alert_event_id",), "alert_events", ("id",)),
+        (
+            "trade_episodes",
+            ("origin_decision_id",),
+            "trade_decisions",
+            ("id",),
+        ),
+        ("trade_executions", ("episode_id",), "trade_episodes", ("id",)),
+        (
+            "trade_executions",
+            ("trigger_decision_id",),
+            "trade_decisions",
+            ("id",),
+        ),
+        ("trade_reviews", ("episode_id",), "trade_episodes", ("id",)),
+    }
+    episode_indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("trade_episodes")
+    }
+    assert episode_indexes["uq_trade_episodes_symbol_open"]["unique"] is True
+    assert episode_indexes["uq_trade_episodes_symbol_open"]["column_names"] == [
+        "symbol"
+    ]
 
 
 def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
@@ -278,7 +361,7 @@ def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
     now = datetime(2026, 8, 15, 8, tzinfo=UTC)
 
     with engine.begin() as connection:
-        decision_ids = _seed_decisions(connection, now, count=8)
+        decision_ids = _seed_decisions(connection, now, count=10)
         open_episode_id = _insert_episode(
             connection,
             decision_ids[0],
@@ -313,6 +396,7 @@ def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
             ) VALUES (:episode_id, 1, 'OPEN', :now, 100, 1, :now, :now)
             """,
             {"episode_id": open_episode_id, "now": now},
+            "uq_trade_executions_episode_sequence",
         ),
         (
             """
@@ -322,6 +406,7 @@ def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
             ) VALUES (:episode_id, 2, 'OPEN', :now, 100, 1, :now, :now)
             """,
             {"episode_id": open_episode_id, "now": now},
+            "ck_trade_executions_open_sequence",
         ),
         (
             """
@@ -334,6 +419,7 @@ def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
             )
             """,
             {"decision_id": decision_ids[1], "now": now},
+            "uq_trade_episodes_symbol_open",
         ),
         (
             """
@@ -350,6 +436,7 @@ def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
                 "now": now,
                 "closed_at": now + timedelta(hours=1),
             },
+            "ck_trade_episodes_lifecycle",
         ),
         (
             """
@@ -367,6 +454,7 @@ def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
                 "now": now,
                 "closed_at": now + timedelta(hours=1),
             },
+            "ck_trade_episodes_lifecycle",
         ),
         (
             """
@@ -384,6 +472,7 @@ def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
                 "now": now,
                 "closed_at": now + timedelta(hours=1),
             },
+            "ck_trade_episodes_lifecycle",
         ),
         (
             """
@@ -400,13 +489,60 @@ def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
                 "now": now,
                 "closed_at": now - timedelta(seconds=1),
             },
+            "ck_trade_episodes_closed_at",
+        ),
+        (
+            """
+            INSERT INTO trade_episodes (
+                origin_decision_id, symbol, contract, direction, opened_at,
+                contract_multiplier_snapshot, multiplier_policy_id,
+                created_at, updated_at
+            ) VALUES (
+                :decision_id, 'cu', 'CU2701', 'LONG', :now,
+                5, NULL, :now, :now
+            )
+            """,
+            {"decision_id": decision_ids[6], "now": now},
+            "ck_trade_episodes_multiplier_lineage",
         ),
     ]
 
-    for statement, parameters in invalid_statements:
-        with pytest.raises(IntegrityError):
+    for statement, parameters, expected_constraint in invalid_statements:
+        with pytest.raises(IntegrityError) as exc_info:
             with engine.begin() as connection:
                 connection.execute(text(statement), parameters)
+        assert exc_info.value.orig.diag.constraint_name == expected_constraint
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO trade_episodes (
+                    origin_decision_id, symbol, contract, direction, opened_at,
+                    closed_at, close_reason, roll_reference_exit_price,
+                    roll_reference_bar_end,
+                    created_at, updated_at
+                ) VALUES (
+                    :open_decision, 'zn', 'ZN2701', 'LONG', :now,
+                    NULL, NULL, NULL, NULL, :now, :now
+                ), (
+                    :roll_decision, 'ag', 'AG2701', 'LONG', :now,
+                    :closed_at, 'DOMINANT_ROLL', 100, :bar_end, :now, :now
+                ), (
+                    :net_zero_decision, 'al', 'AL2701', 'SHORT', :now,
+                    :closed_at, 'EXECUTION_NET_ZERO', NULL, NULL, :now, :now
+                )
+                """
+            ),
+            {
+                "open_decision": decision_ids[7],
+                "roll_decision": decision_ids[8],
+                "net_zero_decision": decision_ids[9],
+                "now": now,
+                "closed_at": now + timedelta(hours=1),
+                "bar_end": now + timedelta(minutes=30),
+            },
+        )
 
 
 def _column_names(recorder: RecordingOperations, table_name: str) -> set[str]:

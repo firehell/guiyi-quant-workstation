@@ -58,6 +58,46 @@ def test_unknown_reason_or_review_tag_is_rejected() -> None:
             note=None,
         )
 
+
+@pytest.mark.parametrize(
+    ("validator", "value", "code"),
+    [
+        ("primary", " TOO_LATE ", "UNKNOWN_DECISION_REASON"),
+        ("secondary", " POOR_LOCATION ", "UNKNOWN_DECISION_REASON"),
+        ("execution", " LOCATION_ACCEPTABLE ", "UNKNOWN_EXECUTION_REASON"),
+        ("review", " REASONABLE ", "UNKNOWN_REVIEW_TAG"),
+    ],
+)
+def test_fixed_vocabularies_reject_non_exact_literals(
+    validator: str,
+    value: str,
+    code: str,
+) -> None:
+    with pytest.raises(ExecutionReviewContractError, match=code):
+        if validator == "primary":
+            validate_not_executed(
+                primary_reason=value,
+                secondary_reasons=(),
+                note=None,
+            )
+        elif validator == "secondary":
+            validate_not_executed(
+                primary_reason="TOO_LATE",
+                secondary_reasons=(value,),
+                note=None,
+            )
+        elif validator == "execution":
+            validate_execution_reasons((value,))
+        else:
+            validate_review(
+                signal_execution_adherence="ALIGNED",
+                entry_tags=(value,),
+                holding_tags=("NORMAL",),
+                exit_tags=("NORMAL",),
+                market_context_tags=("TREND",),
+                psychology_tags=("NONE",),
+            )
+
     with pytest.raises(ExecutionReviewContractError, match="UNKNOWN_EXECUTION_REASON"):
         validate_execution_reasons(("MADE_UP",))
 

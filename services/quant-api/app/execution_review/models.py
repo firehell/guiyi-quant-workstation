@@ -106,6 +106,14 @@ class TradeEpisode(Base):
             name="ck_trade_episodes_multiplier_positive",
         ),
         CheckConstraint(
+            "((contract_multiplier_snapshot IS NULL "
+            "AND multiplier_policy_id IS NULL) "
+            "OR (contract_multiplier_snapshot IS NOT NULL "
+            "AND multiplier_policy_id IS NOT NULL "
+            "AND multiplier_policy_id = 'product_trade_multipliers_v1'))",
+            name="ck_trade_episodes_multiplier_lineage",
+        ),
+        CheckConstraint(
             "((closed_at IS NULL AND close_reason IS NULL "
             "AND roll_reference_exit_price IS NULL "
             "AND roll_reference_bar_end IS NULL) "
