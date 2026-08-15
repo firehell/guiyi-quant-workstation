@@ -38,7 +38,7 @@
 - 连续两个交易日的 17:00 首次盘后尝试都以 `ValueError` 进入一小时 retry，第二次均成功；
   现有时序与 18:00 后补齐证据高置信指向下一交易日 Session 尚未就绪，但历史日志无子码无法直接证实。
   `develop` 已将目标调度收敛为 18:05，并把该时点缺口精确分类为
-  `NEXT_TRADING_SESSION_NOT_READY`；当前隔离 Runtime 已运行包含 18:05 模板的 `v1.2.0^{}`。
+  `NEXT_TRADING_SESSION_NOT_READY`；当前隔离 Runtime 已运行包含 18:05 模板的 `v1.3.0^{}`。
 - Alert V1 已在 `develop` 完成代码实现：server-side Scope、actual-dominant confirmed 15m 的 Python HTDY
   current-bar evaluator、幂等 AlertEvent、单次简洁 WeCom sender、独立 Runtime/health/launchd 边界，以及
   Product Workspace persistent 🔔 Marker。它不 replay/backfill/retry，也不恢复 Signal/Review/Strategy。
@@ -57,7 +57,7 @@
   root/commit；Web 标记稳定排序并把 SuBing/Alert 页面生命周期拆入 composable，删除只被测试引用的死代码
   和三个已完成的一次性实施 Plan。上述均是 `develop` 代码/文档收口，不执行 migration、通知、数据写入、
   release 或 Runtime switch。
-- Alert V2 backend 已在 `develop` 达到 `CODE_COMPLETE / TEST_COMPLETE`：Code Registry 精确为
+- Alert V2 backend 已在 `v1.3.0` 达到 `CODE_COMPLETE / TEST_COMPLETE`：Code Registry 精确为
   `htdy_original_15m + subing_entry_signal_v1`，AlertRule V2 只保留可变 Scope，AlertEvent V2
   保留事件 identity/trading-day/result/confirmation 事实；current trading day 复用
   `MarketPhaseResolver + operational_products.txt` 且不可用时 fail-closed。HTDY 保持 event-cutoff；
@@ -65,30 +65,33 @@
   same-boundary 规则，stale identity、final Session arrival grace 和 TradingSession bucket defer 都已按合同
   fail-closed。Event commit 先于 one-shot WeCom，无 replay/backfill/retry/outbox/queue/Signal Center/
   订单，`auto_order=false`。migration `20260814_0038` 只修改两张 Alert Application Domain 表，
-  SuBing seed Scope 为 `[]`，不属于且不改变八表 Market Catalog。最终验证为 backend
-  `780 passed, 13 skipped`、Engineering `29 passed`、Ruff/Mypy/secret scan/diff check/render-only/plist lint
+  SuBing seed Scope 为 `[]`，不属于且不改变八表 Market Catalog。release tree 最终验证为 backend
+  `782 passed, 14 skipped`、Engineering `29 passed`、Ruff/Mypy/Web unit/selected Playwright/Web build/
+  secret scan/diff check/render-only/plist lint
   全部通过。
-- `v1.3.0` release candidate 已在 `develop` 准备完成；本次只统一正式版本源、engineering consistency
-  test、CHANGELOG、README 与当前状态，不改变 API、数据库 schema、Runtime 配置或真实 Alert Scope。
-- Alert V2 尚未进入生产：当前 production Runtime 仍为 `v1.2.0`，production migration
-  `20260814_0038`、`main`/annotated `v1.3.0` tag 发布、Runtime promotion/switch、SuBing Scope
-  write/activation 与 natural SuBing canary 全部 `PENDING / NOT AUTHORIZED`。测试路由 Scope PUT
-  不构成真实 Scope mutation 授权。
+- `v1.3.0` 已发布：annotated tag object 为 `75580bf69527a657539d563373f40341be41d505`，
+  peeled target、`origin/main` 与 release 时的 `origin/develop` 均为 release merge
+  `d7b45ffcd563abe37963620de45fe41978e6c839`。
+- `2026-08-15` 按四个独立单次 Gate 完成 release、maintenance、production `20260814_0038`
+  migration 与五服务 Runtime promotion，其中维护窗口为 `11:56–12:16 +08:00`；Runtime 根精确为
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`，API health version=`1.3.0`。HTDY Scope 保持仅 `jm`，
+  `subing_entry_signal_v1` Scope 仍为 `[]`；未执行 Scope PUT、真实 WeCom、replay/backfill/retry 或
+  natural SuBing canary。测试路由 Scope PUT 不构成真实 Scope mutation 授权。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
 ## 当前可执行面
 
 - Web：Market 列表与 K 线工作台。
-- HTTP：`develop` 代码面包含历史分页、dominants、Historical/Live state、WebSocket、Alert Rule Scope/
-  Event/current formal-signals/product current-events API 和只读 Runtime health；production v1.2.0 仍是 V1 API。
+- HTTP：production `v1.3.0` 包含历史分页、dominants、Historical/Live state、WebSocket、Alert V2 Rule Scope/
+  Event/current formal-signals/product current-events API 和只读 Runtime health。
 - CLI：`guiyi data update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、
   `guiyi runtime status|live|alert|alert-canary`；其中 `alert-canary` 是真实通知 Gate，不能作为普通测试执行。
 - Runtime：`operational_products.txt` 是 Live 与目标 18:05/最多一次一小时后 retry 盘后更新的唯一范围入口；
   该文件已与 active 60 完全对齐，当前隔离 Runtime 已加载 18:05 模板。
-- Alert Runtime：production v1.2.0 唯一 Rule 为 `htdy_original_15m`，当前 server-side Scope 精确为
-  `jm`；不从 `operational_products.txt` 自动扩大 Alert Scope。`develop` V2 的 SuBing Scope 仍未对
-  production 执行写入或 activation。
+- Alert Runtime：production `v1.3.0` 的 code-defined Rule 为 `htdy_original_15m` 与
+  `subing_entry_signal_v1`；HTDY server-side Scope 精确为 `jm`，SuBing Scope 为 `[]`。两条 Rule 都不从
+  `operational_products.txt` 自动扩大 Alert Scope。
 
 已退役且不得恢复为兼容入口：backtest API/Web/worker/queue、Signal/Review/Strategy HTTP·Web·worker、
 data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单。
@@ -105,8 +108,9 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
   `20260813_0037`。只读读回确认八表 Market Catalog 全部仍在，`alert_rules` / `alert_events` 两张独立
   Application Domain 表存在；唯一 seed 为 enabled 的 `htdy_original_15m`、`watchlist`、空 Scope，
   AlertEvent=0，Event 幂等唯一约束与 `symbol,bar_end` 查询索引存在。此次未发送通知或启用 Alert Runtime。
-- `20260814_0038` 只存在于 `develop` migration 代码与隔离/recording 测试；production 仍为
-  `20260813_0037`，未执行 V2 schema mutation。
+- `2026-08-15` 已按独立单次 DB Gate 将 production 从 `20260813_0037` 升级到
+  `20260814_0038`。读回确认 AlertRule/Event V2 columns、checks、唯一约束与索引正确；HTDY `jm`
+  Scope 和 3 条历史 Event 保留，SuBing Rule 已 seed 且 Scope=`[]`、Event=0，八表 Catalog 计数逐项不变。
 - `2026-08-13 14:35 +08:00` 已将 WeCom webhook 写入本机 Runtime secret source（权限 `600`，值不入仓库、
   DB 或日志），随后按单次 G2 授权尝试 `guiyi runtime alert-canary`。手工命令缺少 `packages/quant-core`
   的 `PYTHONPATH`，CLI 在导入阶段以 `ModuleNotFoundError` 停止，sender 未构造且未发起 HTTP；因此没有
@@ -137,6 +141,17 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-15 12:16 +08:00` 最终读回：Runtime worktree clean/detached 且 exact tag=`v1.3.0`，
+  API/Web/Live/after-market/Alert 五个应用 label 的 loaded root 均为
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`，完整 loaded commit 均为
+  `d7b45ffcd563abe37963620de45fe41978e6c839`。API/Web/Live/Alert 为 running，after-market 保持
+  schedule-only `not running`；状态脚本 `overall=passed`，API/Web HTTP 200，API version=`1.3.0`。
+  Runtime health 为 `ok/readonly=true`：DB/Redis/Live/Alert 为 `ok`，after-market 为可读的 `pending`
+  且尚无本 Runtime 根的自然 run；operational=60、当前周末 CLOSED=60/subscribed=0，Alert
+  enabled_rule/scope=2/1。业务读回确认 `jm` 的 HTDY enabled、SuBing disabled；当前交易日 resolver
+  unavailable 时 formal-signals/current-events 明确返回 unavailable。production revision=`20260814_0038`，
+  HTDY Event 仍为 3、SuBing Event=0；本次未修改 Scope、发送真实 WeCom、replay/backfill/retry、手工盘后、
+  写 Canonical 或执行 natural SuBing canary。
 - `2026-08-14 14:24 +08:00` 已按本次明确授权将隔离 Runtime 切换到 annotated tag `v1.2.0` 的
   peeled commit `ba111533f2502cbead02770f7fc8f363adb03a55`；checkout clean/detached 且
   `git describe --exact-match=v1.2.0`。API/Web/Live/after-market/Alert 五个应用 label 的 loaded root
