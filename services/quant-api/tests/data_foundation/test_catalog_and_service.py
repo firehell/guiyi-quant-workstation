@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -478,7 +478,10 @@ def test_actual_dominant_week_uses_last_trading_day_owner(session, tmp_path) -> 
     assert result.resolved_contract_segments[0].contract == "JM2509"
 
 
-@pytest.mark.parametrize("failure", ("missing_partition", "unreadable", "row_count"))
+@pytest.mark.parametrize(
+    "failure",
+    ("missing_partition", "unreadable", "row_count", "file_path", "coverage"),
+)
 def test_query_fails_closed_for_missing_or_invalid_physical_partition(
     session, tmp_path, failure
 ) -> None:
@@ -493,8 +496,20 @@ def test_query_fails_closed_for_missing_or_invalid_physical_partition(
     session.commit()
     if failure == "unreadable":
         catalog.all_partitions(key)[0].file_path.unlink()
-    else:
+    elif failure == "row_count":
         session.execute(update(MarketPartition).values(row_count=2))
+        session.commit()
+    elif failure == "file_path":
+        alternate = tmp_path / "alternate.parquet"
+        alternate.write_bytes(catalog.all_partitions(key)[0].file_path.read_bytes())
+        session.execute(update(MarketPartition).values(file_uri="alternate.parquet"))
+        session.commit()
+    else:
+        session.execute(
+            update(MarketPartition).values(
+                coverage_end=_bar(2, 100).bar_end + timedelta(days=1)
+            )
+        )
         session.commit()
     with pytest.raises(MarketDataError, match="PARTITION_INTEGRITY_INVALID"):
         MarketDataService(catalog, store).query(

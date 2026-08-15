@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.18.4",
     "fastapi>=0.138.0",
+    "guiyi-quant-core",
     "pandas>=3.0.3",
     "psycopg[binary]>=3.3.4",
     "pyarrow>=24.0.0",
@@ -20,7 +21,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.100.0",
     "httpx2>=2.4.0",
     "mypy>=2.1.0",
     "pytest>=9.1.1",
@@ -44,3 +44,6 @@ pythonpath = ["."]
 [tool.uv]
 # RQData 3.5.2+ documents pandas 3 support, but its wheel metadata still caps pandas below 3.
 override-dependencies = ["pandas>=3.0.3"]
+
+[tool.uv.sources]
+guiyi-quant-core = { path = "../../packages/quant-core", editable = true }

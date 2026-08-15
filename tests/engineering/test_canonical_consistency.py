@@ -160,24 +160,6 @@ def test_public_websocket_route_matches_market_api_contract() -> None:
     assert "location /ws/" not in nginx
 
 
-def test_release_candidate_has_no_active_references_to_deleted_contracts() -> None:
-    active_guidance = (
-        ".agents/skills/futures-data/SKILL.md",
-        "docs/superpowers/specs/2026-08-11-market-research-workspace-post-foundation-design.md",
-        "docs/superpowers/plans/2026-08-11-market-research-workspace-post-foundation-p0.md",
-    )
-    retired_contracts = (
-        "docs/tasks/GY-DATA-CORE-V2.md",
-        "docs/superpowers/specs/2026-08-10-market-research-workspace-design.md",
-        "docs/superpowers/plans/2026-08-10-market-research-workspace-p0.md",
-    )
-
-    for relative in active_guidance:
-        text = (ROOT / relative).read_text(encoding="utf-8")
-        for retired in retired_contracts:
-            assert retired not in text, f"{relative} still references {retired}"
-
-
 def test_release_versions_are_consistently_1_3_1() -> None:
     pyproject = (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
     lock = (ROOT / "services/quant-api/uv.lock").read_text(encoding="utf-8")

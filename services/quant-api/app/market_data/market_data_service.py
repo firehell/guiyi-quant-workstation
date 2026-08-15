@@ -373,15 +373,9 @@ class MarketDataService:
     def _partition_bars(self, partition: CatalogPartition) -> tuple[CanonicalBar, ...]:
         """读取并验证单一 Catalog 分区，复用正常查询的完整性边界。"""
         try:
-            values = self.store.read_month(
-                partition.dataset,
-                partition.year,
-                partition.month,
-            )
+            values = self.store.read_catalog_partition(partition)
         except StorageError as exc:
             raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
-        if len(values) != partition.row_count:
-            raise MarketDataError("PARTITION_INTEGRITY_INVALID")
         if any(
             previous.bar_end >= current.bar_end
             for previous, current in zip(values, values[1:])
@@ -623,12 +617,9 @@ class MarketDataService:
         bars: list[CanonicalBar] = []
         for partition in partitions:
             try:
-                values = self.store.read_month(key, partition.year, partition.month)
+                values = self.store.read_catalog_partition(partition)
             except StorageError as exc:
                 raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
-            # Catalog 登记行数与物理文件不一致视为分区损坏
-            if len(values) != partition.row_count:
-                raise MarketDataError("PARTITION_INTEGRITY_INVALID")
             bars.extend(
                 bar for bar in values if request.start < bar.bar_end <= request.end
             )

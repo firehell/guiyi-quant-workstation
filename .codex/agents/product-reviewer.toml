@@ -20,8 +20,8 @@ developer_instructions = """
 - [ ] 数据字段定义是否完整？
 
 ### 2. 合理性评估
-- [ ] 功能是否符合量化交易业务逻辑？
-- [ ] 风控相关需求是否足够严谨？
+- [ ] 功能是否服务于可信的量化研究观察？
+- [ ] 未确认数据、研究结论与人工 Gate 的边界是否严谨？
 - [ ] 性能要求是否与数据量匹配？
 
 ### 3. 用户价值判断
@@ -55,7 +55,7 @@ developer_instructions = """
 
 ## 注意事项
 
-- 当前 v1.0.0 只有 Canonical 60 品种、Market Web/API/CLI 和有界 Runtime；不得把已退役的
+- 当前 v1.3.1 只有 Canonical 60 品种、Market Web/API/CLI、有界 Market Runtime 与 Alert V2；不得把已退役的
   策略、回测、Signal/Review 或交易表面当作现成功能
 - 未来策略/回测需求必须作为新合同，并包含可复算 lineage、成本、时序与 OOS 定义
 - 行情数据相关需求必须说明数据频率和来源"""

@@ -5,6 +5,15 @@
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
 
+首次检出或锁文件变化后先联网完成一次依赖同步；后续 `--offline` 命令只依赖该
+venv 与同一 cache：
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv sync --project services/quant-api --locked
+pnpm --dir apps/quant-web install --frozen-lockfile
+```
+
 ## 工程与仓库检查
 
 ```bash
@@ -21,7 +30,6 @@ Secret scan 默认只扫描 `git ls-files`，只报告文件、行号和规则�
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api pytest -q services/quant-api/tests
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -46,7 +54,6 @@ pnpm --dir apps/quant-web build
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_subing_calibration.py \
   services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
@@ -94,7 +101,6 @@ intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distan
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_alert_registry.py \
   services/quant-api/tests/test_alert_current_trading_day.py \
@@ -169,7 +175,6 @@ uv run --project services/quant-api guiyi data audit --universe active --through
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_runtime_health.py \
   services/quant-api/tests/data_foundation/test_operational_universe.py \

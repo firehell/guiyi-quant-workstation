@@ -111,9 +111,9 @@ flowchart TB
 flowchart LR
     RQ["RQData<br/>唯一外部事实源"] --> ST["临时 staging"]
     ST --> V["标准化 + 六项硬校验"]
-    V --> DD["Canonical Direct<br/>1m / 1d / 1w"]
-    DD --> AG["TradingSession 聚合"]
-    AG --> DV["Canonical Derived<br/>5m / 15m / 30m / 60m"]
+    V --> DD["Canonical Provider Base<br/>1m / 1d"]
+    DD --> AG["TradingSession / 完整同源日线聚合"]
+    AG --> DV["Canonical Derived<br/>5m / 15m / 30m / 60m / 1w"]
     DD --> CAT["八表 Catalog + 月度 Parquet"]
     DV --> CAT
     MAP["MainContractMap rank=1"] --> MDS["MarketDataService"]

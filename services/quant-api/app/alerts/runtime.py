@@ -501,6 +501,6 @@ def _window_matches_event(
         and window.trading_day == event_bar.trading_day
         and window.cutoff == event_bar.bar_end
         and window.bars
-        and window.bars[-1].bar_end == event_bar.bar_end
+        and window.bars[-1] == event_bar
         and normalize_contract_for_symbol(symbol, window.contract) == window.contract
     )

@@ -1063,6 +1063,46 @@ def test_htdy_mismatched_event_cutoff_creates_no_event(session: Session) -> None
     assert harness.sender.messages == []
 
 
+def test_htdy_same_cutoff_with_different_bar_values_creates_no_event(
+    session: Session,
+) -> None:
+    """Catches an Event being attributed to a Pub/Sub bar the reader did not return."""
+    _seed_rule(session, "htdy_original_15m")
+    mismatched = CanonicalBar(
+        bar_end=BOUNDARY_END,
+        trading_day=DAY,
+        open=Decimal("100"),
+        high=Decimal("101"),
+        low=Decimal("99"),
+        close=Decimal("100.5"),
+        volume=Decimal("10"),
+        turnover=Decimal("1000"),
+        open_interest=Decimal("20"),
+    )
+    window = MarketReadWindow(
+        symbol="jm",
+        series_kind="actual_dominant",
+        frequency="15m",
+        trading_day=DAY,
+        contract="JM2609",
+        cutoff=BOUNDARY_END,
+        bars=(_bar(BOUNDARY_END),) * 31 + (mismatched,),
+    )
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        market_read_result=window,
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
 def test_duplicate_pubsub_creates_one_event_and_sends_once(session: Session) -> None:
     _seed_rule(session, "subing_entry_signal_v1")
     _seed_market_facts(session)

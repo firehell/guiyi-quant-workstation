@@ -37,7 +37,7 @@ description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Ale
 - `market_data/`：Catalog / Storage / MarketDataService / maintenance。
 - `guiyi_cli/`：统一 CLI。
 - `alerts/`：Rule/Scope/Event、HTDY scoped evaluator、短 Session Runtime 与严格 WeCom sender。
-- `services/runtime_health.py`：只读 Market/Alert runtime 探测。
+- `app/services/runtime_health.py`：只读 Market/Alert runtime 探测。
 
 ## 规则
 

@@ -15,6 +15,9 @@ export const PRODUCT_SECTORS = [
 export type ProductSector = (typeof PRODUCT_SECTORS)[number]['id']
 
 const PRODUCT_SECTOR_IDS = new Set<string>(PRODUCT_SECTORS.map((sector) => sector.id))
+const PRODUCT_SECTOR_LABELS = new Map<string, string>(
+  PRODUCT_SECTORS.map((sector) => [sector.id, sector.label]),
+)
 
 export const DEFAULT_PRODUCT_SECTOR: ProductSector = 'black'
 
@@ -22,4 +25,8 @@ export const DEFAULT_PRODUCT_SECTOR: ProductSector = 'black'
 export function normalizeProductSector(value: string | null | undefined): ProductSector {
   const normalized = value?.trim().toLowerCase() ?? ''
   return PRODUCT_SECTOR_IDS.has(normalized) ? normalized as ProductSector : 'other'
+}
+
+export function productSectorLabel(value: string | null | undefined): string {
+  return PRODUCT_SECTOR_LABELS.get(normalizeProductSector(value)) ?? '航运/其他'
 }

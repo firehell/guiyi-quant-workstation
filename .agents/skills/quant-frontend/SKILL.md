@@ -1,6 +1,6 @@
 ---
 name: quant-frontend
-description: 当任务涉及归一量化前端、Vue 3、Vite、TypeScript、Naive UI、K线图、深色量化工作台时使用。
+description: 当任务涉及归一量化前端、Vue 3、Vite、TypeScript、Naive UI、K线图或 Market 工作台时使用。
 ---
 
 # 归一量化前端开发 Skill
@@ -11,7 +11,6 @@ description: 当任务涉及归一量化前端、Vue 3、Vite、TypeScript、Nai
 - Vite
 - TypeScript
 - Naive UI
-- Pinia
 - Vue Router
 - Axios
 - Lightweight Charts
@@ -35,6 +34,6 @@ SuBing current-rank1-segment-local Factor/Signal observation、server-side Alert
 - SuBing 页面状态放入专用 composable，但行情 identity、Historical/Live seam 和 segment 裁剪仍只复用
   既有 Market contracts，不另建前端行情 resolver。
 - DataGap fail-closed，不暗示可回退 legacy。
-- 页面风格是深色本地量化工作台，优先清晰、可扫描。
+- 页面使用深蓝品牌 Shell + 浅色研究工作区，优先清晰、可扫描。
 - 产品面以 `STATUS.md` / `apps/quant-web/README.md` 为准。
 - 每次修改后给出运行命令和测试方法。

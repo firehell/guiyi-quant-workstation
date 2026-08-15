@@ -8,7 +8,10 @@
 serverAddr = "frps.example.com"
 serverPort = 7000
 
-# auth.token = "YOUR_TOKEN"   # 若 FRPS 启用了 token，在此填写（勿提交仓库）
+# 必须与 FRPS 使用同一 token；真实值只保存在本机的 0600 文件中。
+auth.method = "token"
+auth.tokenSource.type = "file"
+auth.tokenSource.file.path = "/usr/local/etc/frp/client_token"
 
 [[proxies]]
 name = "guiyi-web"

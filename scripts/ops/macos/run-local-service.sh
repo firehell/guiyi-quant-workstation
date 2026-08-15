@@ -25,8 +25,6 @@ export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
 if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
   export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
 fi
-export PYTHONPATH="$PROJECT_ROOT/services/quant-api:$PROJECT_ROOT/packages/quant-core${PYTHONPATH:+:$PYTHONPATH}"
-
 case "$SERVICE" in
   api)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }

@@ -845,16 +845,16 @@ class HistoricalDataManager:
             raise StorageError("STRICT_READ_VERIFICATION_FAILED")
 
     def _read_existing(self, key: DatasetKey, year: int, month: int) -> tuple[CanonicalBar, ...]:
-        """读取已有月分区；无 catalog 行或物理不可读时返回空元组（非 corrupt 语义）。"""
+        """只读取通过共享 Catalog 完整性校验的唯一月分区。"""
         rows = tuple(
             item
             for item in self.catalog.all_partitions(key)
             if item.year == year and item.month == month
         )
-        if not rows:
+        if len(rows) != 1:
             return ()
         try:
-            return self.store.read_month(key, year, month)
+            return self.store.read_catalog_partition(rows[0])
         except StorageError:
             return ()
 
@@ -872,29 +872,13 @@ class HistoricalDataManager:
         )
         if not rows:
             return (), None
-        expected_path = self.store.root.joinpath(
-            *key.relative_root.parts,
-            f"year={year:04d}",
-            f"month={month:02d}",
-            "part.parquet",
-        )
         row = rows[0]
-        if len(rows) != 1 or row.file_path != expected_path or not row.file_path.is_file():
+        if len(rows) != 1:
             return (), "PARTITION_CATALOG_MISMATCH"
         try:
-            values = self.store.read_month(key, year, month)
+            values = self.store.read_catalog_partition(row)
         except StorageError as exc:
             return (), getattr(exc, "code", "PARTITION_UNREADABLE")
-        if not values:
-            return (), "PARTITION_EMPTY"
-        if row.row_count != len(values):
-            return (), "PARTITION_ROW_COUNT_MISMATCH"
-        # catalog 记录的 coverage 区间须与物理首尾 bar 对齐，否则消费者会误判可读范围。
-        if (
-            row.coverage_start != values[0].bar_end - _frequency_delta(key.frequency)
-            or row.coverage_end != values[-1].bar_end
-        ):
-            return (), "PARTITION_COVERAGE_MISMATCH"
         return values, None
 
 
@@ -947,16 +931,3 @@ def _is_global_failure(exc: Exception) -> bool:
         "PARTITION_URI_ESCAPE",
         "PARTITION_OUTSIDE_CANONICAL_ROOT",
     }
-
-
-def _frequency_delta(frequency: BarFrequency) -> timedelta:
-    """单根 bar 的时间跨度，用于 coverage_start 与 bar_end 对齐校验。"""
-    return {
-        BarFrequency.M1: timedelta(minutes=1),
-        BarFrequency.M5: timedelta(minutes=5),
-        BarFrequency.M15: timedelta(minutes=15),
-        BarFrequency.M30: timedelta(minutes=30),
-        BarFrequency.H1: timedelta(hours=1),
-        BarFrequency.D1: timedelta(days=1),
-        BarFrequency.W1: timedelta(days=7),
-    }[frequency]

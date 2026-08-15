@@ -17,4 +17,11 @@ describe('productDirectory', () => {
     assert.equal(productDirectory.normalizeProductSector(null), 'other')
     assert.equal(productDirectory.DEFAULT_PRODUCT_SECTOR, 'black')
   })
+
+  it('renders backend sector codes with the shared Chinese label', () => {
+    assert.equal(typeof productDirectory.productSectorLabel, 'function')
+    assert.equal(productDirectory.productSectorLabel('black'), '黑色系')
+    assert.equal(productDirectory.productSectorLabel('agriculture'), '农产品')
+    assert.equal(productDirectory.productSectorLabel('unknown'), '航运/其他')
+  })
 })

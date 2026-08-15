@@ -514,6 +514,43 @@ def test_existing_complete_1m_rebuilds_derived_before_provider_quota(session, tm
     assert [call[0].frequency for call in provider.calls] == [BarFrequency.D1]
 
 
+def test_catalog_invalid_1m_is_repaired_before_derived_publish(session, tmp_path) -> None:
+    minute = DatasetKey("continuous", "jm", "MAIN", "1m")
+    derived = DatasetKey("continuous", "jm", "MAIN", "5m")
+    stale_source = tuple(_minute(index) for index in range(1, 6))
+    repaired_source = tuple(
+        CanonicalBar(
+            bar.bar_end,
+            bar.trading_day,
+            Decimal(200 + index),
+            Decimal(200 + index),
+            Decimal(200 + index),
+            Decimal(200 + index),
+            bar.volume,
+            bar.open_interest,
+            bar.turnover,
+        )
+        for index, bar in enumerate(stale_source, start=1)
+    )
+    coverage = FakeCoverage({
+        minute.as_tuple(): tuple(bar.bar_end for bar in repaired_source),
+        derived.as_tuple(): (repaired_source[-1].bar_end,),
+    })
+    provider = FakeProvider({minute.as_tuple(): repaired_source})
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(manager, minute, stale_source)
+    row = session.scalar(select(MarketPartition))
+    assert row is not None
+    row.file_uri = "stale/part.parquet"
+    session.commit()
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+
+    assert result.status == "passed"
+    assert [call[0].frequency for call in provider.calls] == [BarFrequency.M1]
+    assert manager.store.read_month(derived, 2025, 1)[0].close == Decimal("205")
+
+
 def test_dry_run_plans_without_metadata_provider_or_writes(session, tmp_path) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     coverage = FakeCoverage({key.as_tuple(): (_daily(2, 100).bar_end,)})

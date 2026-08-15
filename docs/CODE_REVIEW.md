@@ -34,7 +34,7 @@
 ```text
 RQData
 → staging + 质量校验
-→ Canonical Parquet（1m/1d/1w direct + 5m/15m/30m/60m 聚合）
+→ Canonical Parquet（1m/1d provider base + 1w 由完整日线聚合 + 5m/15m/30m/60m 由 1m 聚合）
 → 八表 Catalog / MainContractMap
 → MarketDataService
 → Market Web + data/runtime API/CLI
@@ -53,7 +53,8 @@ RQData
 - 无订单：任何创建/提交订单路径必须拒绝；`auto_order=false`。
 - 密钥与路径：不在 diff、日志、错误文案中暴露 webhook、token、密码、内部路径、SQL、stack。
 - 未来函数：策略/指标不得使用未确认未来数据；旧 HTDY generic realtime/Signal 应用路径已退役。当前
-  Alert V1 只能经 scoped FormalPolicy 检查 actual-dominant confirmed 15m 的最后一根 current bar。
+  Alert V2 的 HTDY 只能经 scoped FormalPolicy 检查 actual-dominant confirmed 15m
+  的最后一根 current bar；SuBing 只能复用现有 current-rank1 resolver 的同一 completed Bar。
 - 文档与代码一致：不得把已卸 surface 写成「当前仍提供」。
 
 ---

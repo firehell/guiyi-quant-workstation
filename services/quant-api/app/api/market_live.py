@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 import json
 from typing import cast
@@ -70,12 +71,18 @@ async def market_websocket(
     channels = (live_bar_channel(identity.symbol, identity.frequency), LIVE_STATE_CHANNEL)
     try:
         await pubsub.subscribe(*channels)
-        initial_state = read_service.state(identity, datetime.now(UTC))
+        initial_state = _read_and_release_session(
+            session,
+            lambda: read_service.state(identity, datetime.now(UTC)),
+        )
         await websocket.accept()
         await _send_state(websocket, initial_state)
 
         cutoff = _later(after, initial_state.canonical_end)
-        snapshot = read_service.live_snapshot(identity, cutoff, datetime.now(UTC))
+        snapshot = _read_and_release_session(
+            session,
+            lambda: read_service.live_snapshot(identity, cutoff, datetime.now(UTC)),
+        )
         snapshot = _newer_bars(snapshot, canonical_end=initial_state.canonical_end, after=cutoff)
         await websocket.send_json(
             {
@@ -95,7 +102,10 @@ async def market_websocket(
                 continue
             channel = _text(message.get("channel"))
             if channel == LIVE_STATE_CHANNEL:
-                next_state = read_service.state(identity, datetime.now(UTC))
+                next_state = _read_and_release_session(
+                    session,
+                    lambda: read_service.state(identity, datetime.now(UTC)),
+                )
                 if (
                     next_state.trading_day != current_state.trading_day
                     or next_state.live_contract != current_state.live_contract
@@ -133,6 +143,17 @@ async def market_websocket(
         await pubsub.unsubscribe(*channels)
         await pubsub.aclose()
         await redis.aclose()
+
+
+def _read_and_release_session[T](
+    session: Session,
+    operation: Callable[[], T],
+) -> T:
+    """Release any checked-out DB connection immediately after one read."""
+    try:
+        return operation()
+    finally:
+        session.close()
 
 
 def _identity(
