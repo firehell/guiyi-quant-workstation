@@ -7,11 +7,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect as sa_inspect, text
+from sqlalchemy import Column, Integer, MetaData, Table, create_engine, inspect as sa_inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
@@ -19,6 +20,12 @@ from app.db.migration_test_guard import (
     MigrationTestDatabaseSafetyError,
     probe_database_identity,
     require_isolated_migration_database_url,
+)
+from app.execution_review.models import (
+    TradeDecision,
+    TradeEpisode,
+    TradeExecution,
+    TradeReview,
 )
 
 
@@ -352,6 +359,27 @@ def test_upgrade_preserves_market_and_alert_signatures_and_adds_only_four_tables
         "symbol"
     ]
 
+    orm_schema = f"execution_review_orm_{uuid4().hex}"
+    orm_metadata = MetaData(schema=orm_schema)
+    Table("alert_events", orm_metadata, Column("id", Integer, primary_key=True))
+    for model in (TradeDecision, TradeEpisode, TradeExecution, TradeReview):
+        model.__table__.to_metadata(orm_metadata, schema=orm_schema)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(f'CREATE SCHEMA "{orm_schema}"')
+        orm_metadata.create_all(connection)
+    try:
+        for table_name in NEW_TABLES:
+            assert _constraint_signature(engine, table_name) == _constraint_signature(
+                engine,
+                table_name,
+                schema=orm_schema,
+            )
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                f'DROP SCHEMA IF EXISTS "{orm_schema}" CASCADE'
+            )
+
 
 def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
     isolated_migration_context: tuple[Config, Engine],
@@ -624,6 +652,59 @@ def _table_signature(engine: Engine, table_name: str) -> dict[str, object]:
                 str(index.get("dialect_options")),
             )
             for index in inspector.get_indexes(table_name)
+        ),
+    }
+
+
+def _constraint_signature(
+    engine: Engine,
+    table_name: str,
+    *,
+    schema: str | None = None,
+) -> dict[str, object]:
+    inspector = sa_inspect(engine)
+    return {
+        "fks": sorted(
+            (
+                tuple(foreign_key["constrained_columns"]),
+                foreign_key["referred_table"],
+                tuple(foreign_key["referred_columns"]),
+                foreign_key.get("name"),
+            )
+            for foreign_key in inspector.get_foreign_keys(
+                table_name,
+                schema=schema,
+            )
+        ),
+        "checks": sorted(
+            (check.get("name"), check.get("sqltext"))
+            for check in inspector.get_check_constraints(
+                table_name,
+                schema=schema,
+            )
+        ),
+        "uniques": sorted(
+            (
+                unique.get("name"),
+                tuple(unique.get("column_names") or ()),
+            )
+            for unique in inspector.get_unique_constraints(
+                table_name,
+                schema=schema,
+            )
+        ),
+        "indexes": sorted(
+            (
+                index.get("name"),
+                tuple(index.get("column_names") or ()),
+                index.get("unique"),
+                str(index.get("dialect_options")),
+            )
+            for index in inspector.get_indexes(
+                table_name,
+                schema=schema,
+            )
+            if not index.get("duplicates_constraint")
         ),
     }
 
