@@ -26,7 +26,7 @@ withDefaults(
   padding: 4px 10px;
   color: var(--gy-status-warning);
   background: var(--gy-status-warning-soft);
-  border: 1px solid rgba(255, 143, 31, 0.28);
+  border: 1px solid rgba(247, 144, 9, 0.4);
   border-radius: var(--gy-radius-pill);
   font-size: var(--gy-font-size-xs);
   white-space: nowrap;

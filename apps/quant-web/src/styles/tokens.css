@@ -23,35 +23,44 @@
   --gy-violet-500: #7c3aed;
 
   /* Semantic surfaces */
-  --gy-bg-app: var(--gy-gray-50);
+  --gy-bg-app: #f4f7fb;
   --gy-bg-canvas: #ffffff;
   --gy-bg-panel: #ffffff;
   --gy-bg-panel-strong: var(--gy-gray-50);
   --gy-bg-elevated: var(--gy-gray-100);
   --gy-bg-overlay: #ffffff;
   --gy-bg-header: rgba(255, 255, 255, 0.92);
-  --gy-bg-selected: rgba(37, 99, 235, 0.1);
+  --gy-bg-selected: rgba(29, 78, 216, 0.08);
   --gy-bg-hover: rgba(16, 24, 40, 0.04);
   --gy-border-subtle: rgba(16, 24, 40, 0.06);
-  --gy-border: var(--gy-gray-200);
+  --gy-border: #dbe3ee;
   --gy-border-strong: var(--gy-gray-300);
-  --gy-border-focus: rgba(37, 99, 235, 0.55);
-  --gy-text-primary: var(--gy-gray-900);
-  --gy-text-secondary: var(--gy-gray-600);
-  --gy-text-muted: var(--gy-gray-500);
+  --gy-border-focus: rgba(29, 78, 216, 0.5);
+  --gy-text-primary: #0f1f38;
+  --gy-text-secondary: #33507e;
+  --gy-text-muted: #5b718f;
   --gy-text-disabled: var(--gy-gray-400);
-  --gy-accent: var(--gy-blue-600);
-  --gy-accent-hover: var(--gy-blue-700);
-  --gy-accent-pressed: #1e40af;
-  --gy-accent-soft: rgba(37, 99, 235, 0.1);
+  --gy-accent: #1d4ed8;
+  --gy-accent-hover: #1e40af;
+  --gy-accent-pressed: #1e3a8a;
+  --gy-accent-soft: rgba(29, 78, 216, 0.08);
   --gy-text-on-accent: #ffffff;
-  --gy-control-active-bg: var(--gy-blue-600);
+  --gy-control-active-bg: var(--gy-accent);
   --gy-control-active-text: var(--gy-text-on-accent);
-  --gy-control-active-border: var(--gy-blue-700);
-  --gy-control-hover-bg: var(--gy-blue-700);
-  --gy-control-pressed-bg: #1e40af;
+  --gy-control-active-border: var(--gy-accent-hover);
+  --gy-control-hover-bg: var(--gy-accent-hover);
+  --gy-control-pressed-bg: var(--gy-accent-pressed);
   --gy-control-disabled-bg: var(--gy-gray-100);
   --gy-control-disabled-text: var(--gy-gray-400);
+
+  /* Brand shell (fixed deep navy chrome) */
+  --gy-shell-bg: #0b1d3a;
+  --gy-shell-item-hover: #16305c;
+  --gy-shell-text: #8ca8cf;
+  --gy-shell-text-active: #bfdbfe;
+  --gy-shell-text-muted: #5b7ba6;
+  --gy-shell-accent: #60a5fa;
+  --gy-shell-border: rgba(255, 255, 255, 0.08);
 
   /* Domain direction: China futures convention, always pair with text. */
   --gy-up: var(--gy-red-600);
@@ -75,7 +84,7 @@
 
   /* Chart palette */
   --gy-chart-bg: #ffffff;
-  --gy-chart-grid: #eef2f6;
+  --gy-chart-grid: #edf1f7;
   --gy-chart-axis: #98a2b3;
   --gy-chart-text: #475467;
   --gy-chart-ema: #f59e0b;
@@ -118,7 +127,7 @@
   /* Elevation and motion */
   --gy-shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
   --gy-shadow-overlay: 0 18px 44px rgba(16, 24, 40, 0.16);
-  --gy-shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  --gy-shadow-focus: 0 0 0 3px rgba(29, 78, 216, 0.15);
   --gy-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
   --gy-transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
 

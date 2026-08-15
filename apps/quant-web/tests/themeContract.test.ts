@@ -73,17 +73,23 @@ describe('theme control contract', () => {
 describe('light theme token contract', () => {
   const css = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8')
 
+  function tokenValue(name: string): string {
+    const match = css.match(new RegExp(`${name}:\\s*(.+);`))
+    assert.ok(match, `expected ${name} to be defined in tokens.css`)
+    return match[1].trim()
+  }
+
   it('declares a fixed light color scheme', () => {
     assert.match(css, /color-scheme:\s*light/)
     assert.doesNotMatch(css, /color-scheme:\s*dark/)
   })
 
   it('uses the approved light surface and text palette', () => {
-    assert.match(css, /--gy-bg-app:\s*var\(--gy-gray-50\)/)
+    assert.match(css, /--gy-bg-app:\s*#f4f7fb/i)
     assert.match(css, /--gy-bg-canvas:\s*#fff(?:fff)?/i)
     assert.match(css, /--gy-bg-panel:\s*#fff(?:fff)?/i)
-    assert.match(css, /--gy-text-primary:\s*var\(--gy-gray-900\)/)
-    assert.match(css, /--gy-border:\s*var\(--gy-gray-200\)/)
+    assert.match(css, /--gy-text-primary:\s*#0f1f38/i)
+    assert.match(css, /--gy-border:\s*#dbe3ee/i)
   })
 
   it('keeps China futures direction colors: red up, green down', () => {
@@ -94,12 +100,27 @@ describe('light theme token contract', () => {
   })
 
   it('keeps accent and warning non-directional', () => {
-    assert.match(css, /--gy-accent:\s*var\(--gy-blue-600\)/)
+    assert.match(css, /--gy-accent:\s*#1d4ed8/i)
     assert.match(css, /--gy-status-warning:\s*var\(--gy-orange-500\)/)
-    assert.notEqual(
-      css.match(/--gy-accent:\s*(.+);/)?.[1],
-      css.match(/--gy-up:\s*(.+);/)?.[1],
-      'accent must not collide with direction colors',
+    assert.notEqual(tokenValue('--gy-accent'), tokenValue('--gy-up'))
+  })
+
+  it('defines the deep navy brand shell with readable shell text', () => {
+    assert.match(css, /--gy-shell-bg:\s*#0b1d3a/i)
+    assert.match(css, /--gy-shell-text:\s*#8ca8cf/i)
+    assert.match(css, /--gy-shell-text-active:\s*#bfdbfe/i)
+    assert.match(css, /--gy-shell-accent:\s*#60a5fa/i)
+    assert.ok(
+      contrastRatio(tokenValue('--gy-shell-text'), tokenValue('--gy-shell-bg')) >= 4.5,
+      'shell text must meet WCAG AA on the navy shell',
+    )
+    assert.ok(
+      contrastRatio(tokenValue('--gy-shell-text-active'), tokenValue('--gy-shell-bg')) >= 4.5,
+      'active shell text must meet WCAG AA on the navy shell',
+    )
+    assert.ok(
+      contrastRatio('#FFFFFF', tokenValue('--gy-accent')) >= 4.5,
+      'white text on the brand accent must meet WCAG AA',
     )
   })
 })

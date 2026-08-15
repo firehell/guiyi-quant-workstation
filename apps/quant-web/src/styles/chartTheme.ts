@@ -18,10 +18,10 @@ export interface ChartTheme {
 /** SSR 或无 CSS 变量时的默认配色（与亮色 tokens.css 对齐） */
 const FALLBACK: ChartTheme = {
   background: '#FFFFFF',
-  grid: '#EEF2F6',
+  grid: '#EDF1F7',
   axis: '#98A2B3',
-  text: '#475467',
-  textMuted: '#667085',
+  text: '#33507E',
+  textMuted: '#5B718F',
   up: '#DC2626',
   down: '#16A34A',
   volumeUp: 'rgba(220, 38, 38, 0.38)',
