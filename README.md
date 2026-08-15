@@ -1,9 +1,10 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。当前 `develop` 已准备 `v1.3.0` release candidate；当前正式发布版本和
-本机隔离 Runtime 仍为 `v1.2.0`。`develop` 的可执行代码面包括 Market Web、Canonical 历史行情、Market API、
-data CLI、Runtime 只读状态、Alert V2、当前交易日 Formal Signal、Product 双 Rule Scope/今日记录，以及苏冰
-Factor/Calibration/Signal 研究观察。项目不实现自动交易或自动下单，`auto_order=false`。
+本地、单用户的国内期货量化研究工作站。当前代码版本身份为 `v1.3.0`；main/tag、production Runtime、
+数据库 migration 与 Alert Scope 的实际状态以 `STATUS.md` 为准。当前可执行代码面包括 Market Web、
+Canonical 历史行情、Market API、data CLI、Runtime 只读状态、Alert V2、当前交易日 Formal Signal、
+Product 双 Rule Scope/今日记录，以及苏冰 Factor/Calibration/Signal 研究观察。项目不实现自动交易或
+自动下单，`auto_order=false`。
 
 ## 快速导航
 
