@@ -72,6 +72,11 @@
 - `v1.3.0` 已发布：annotated tag object 为 `75580bf69527a657539d563373f40341be41d505`，
   peeled target、`origin/main` 与 release 时的 `origin/develop` 均为 release merge
   `d7b45ffcd563abe37963620de45fe41978e6c839`。
+- `v1.3.1` Market Web 品牌重设计补丁已通过 release PR #166 发布：annotated tag
+  object 为 `6b6476ffa9f1bec5bb6a90dcc0608c42426a8c96`，peeled target 与 `origin/main` 均为
+  `aebb8da211961d7385618f8f6c46d5cd373482bc`；`origin/develop` 为发布准备提交
+  `ead3adc28981d278f961050ba47d969ac6e126f4`。本补丁只收口前端视觉、Radar 加载/失败恢复、
+  板块 Tab 与图表/Marker 语义色，未改指标公式、Signal 判断或 Alert API。
 - `2026-08-15` 按四个独立单次 Gate 完成 release、maintenance、production `20260814_0038`
   migration 与五服务 Runtime promotion，其中维护窗口为 `11:56–12:16 +08:00`；Runtime 根精确为
   `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`，API health version=`1.3.0`。HTDY Scope 保持仅 `jm`，
@@ -89,13 +94,13 @@
 ## 当前可执行面
 
 - Web：Market 列表与 K 线工作台。
-- HTTP：production `v1.3.0` 包含历史分页、dominants、Historical/Live state、WebSocket、Alert V2 Rule Scope/
+- HTTP：production `v1.3.1` 包含历史分页、dominants、Historical/Live state、WebSocket、Alert V2 Rule Scope/
   Event/current formal-signals/product current-events API 和只读 Runtime health。
 - CLI：`guiyi data update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、
   `guiyi runtime status|live|alert|alert-canary`；其中 `alert-canary` 是真实通知 Gate，不能作为普通测试执行。
 - Runtime：`operational_products.txt` 是 Live 与目标 18:05/最多一次一小时后 retry 盘后更新的唯一范围入口；
   该文件已与 active 60 完全对齐，当前隔离 Runtime 已加载 18:05 模板。
-- Alert Runtime：production `v1.3.0` 的 code-defined Rule 为 `htdy_original_15m` 与
+- Alert Runtime：production `v1.3.1` 的 code-defined Rule 为 `htdy_original_15m` 与
   `subing_entry_signal_v1`；HTDY server-side Scope 精确为 `jm`，SuBing Scope 精确为 `jm`。两条 Rule 都不从
   `operational_products.txt` 自动扩大 Alert Scope。
 
@@ -149,7 +154,19 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
-- `2026-08-15 14:03 +08:00` 最新只读读回：exact `v1.3.0` Runtime 身份与五服务 loaded root/commit
+- `2026-08-15 17:01 +08:00` 已复用现有 `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`
+  Runtime 根完成 `v1.3.1` switch；目录名保留历史名称，运行身份以 clean/detached
+  exact tag=`v1.3.1` 与 peeled commit
+  `aebb8da211961d7385618f8f6c46d5cd373482bc` 为准。API/Web/Live/after-market/Alert 五个应用 label
+  的 loaded root 与完整 loaded commit 全部一致；API/Web/Live/Alert 为 running，after-market 保持
+  schedule-only `not running`，状态脚本 `overall=passed`。API health version=`1.3.1`；Runtime
+  health=`ok/readonly=true`，DB/Redis/Live/Alert 均为 `ok`，after-market 为可读 `pending`。当时为周末
+  CLOSED=60/subscribed=0；dominants=60 且品种唯一，`jm -> JM2609`；Radar=`ready`、
+  active/participant=60/60、stale/unavailable=0。`jm` 的 HTDY/SuBing 两条 Rule 仍均 enabled；
+  当前交易日 resolver 在周末不可用时，formal-signals/current-events 明确返回 `unavailable`。
+  本次未执行 migration、Scope mutation、真实 WeCom、replay/backfill/retry、手工盘后、Canonical 写入或
+  Runtime 目录迁移；`auto_order=false` 不变。
+- `2026-08-15 14:03 +08:00` 此前只读读回：exact `v1.3.0` Runtime 身份与五服务 loaded root/commit
   无 deployment drift，状态脚本 `overall=passed`，API version=`1.3.0`，production revision=
   `20260814_0038`；DB/Redis/Live/Alert 均为 `ok`。Code Registry 仍精确为
   `htdy_original_15m + subing_entry_signal_v1`；两条 Rule 的 production Scope 均精确为 `jm`，HTDY Event=3、
