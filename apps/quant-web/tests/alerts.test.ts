@@ -16,6 +16,7 @@ import type { BarData } from '../src/types/market.ts'
 
 
 const apiSource = read('../src/api/alerts.ts')
+const marketTypesSource = read('../src/types/market.ts')
 const controlSource = read('../src/components/market/ProductAlertControl.vue')
 const chartSource = read('../src/pages/market/chart.vue')
 const scopeSource = read('../src/composables/useProductAlertScope.ts')
@@ -28,6 +29,59 @@ describe('Product Alert server-side scope', () => {
     assert.match(apiSource, /\{ enabled \}/)
     assert.doesNotMatch(apiSource, /localStorage|sessionStorage/)
     assert.doesNotMatch(chartSource, /localStorage.*alert|alert.*localStorage/i)
+  })
+
+  it('uses the exact V2 current-view endpoints', () => {
+    assert.match(
+      apiSource,
+      /getCurrentFormalSignals\(\)\s*\{\s*return request\.get<never, CurrentFormalSignalsResponse>\('\/api\/alerts\/formal-signals\/current'\)/,
+    )
+    assert.match(
+      apiSource,
+      /getProductCurrentAlertEvents\(symbol: string\)\s*\{\s*return request\.get<never, ProductCurrentAlertEventsResponse>\(\s*`\/api\/alerts\/products\/\$\{symbol\}\/current-events`,/,
+    )
+  })
+
+  it('declares only the backend V2 rule and event DTO fields', () => {
+    assert.deepEqual(interfaceFields(apiSource, 'ProductAlertRuleState'), [
+      'rule_code: string',
+      'display_name: string',
+      'kind: AlertRuleKind',
+      'input_frequencies: MarketFrequency[]',
+      'enabled_for_product: boolean',
+    ])
+    assert.deepEqual(interfaceFields(marketTypesSource, 'AlertEvent'), [
+      'id: number',
+      'rule_code: string',
+      'symbol: string',
+      'contract: string',
+      'trading_day: string | null',
+      'frequency: MarketFrequency',
+      'bar_end: string',
+      "result_codes: Array<'buy' | 'sell'>",
+      'lower_tf_confirmation: boolean',
+      'detected_at: string',
+      'notification_attempted_at: string | null',
+    ])
+    assert.deepEqual(interfaceFields(apiSource, 'CurrentFormalSignalItem'), [
+      'display_name: string',
+      'product_name: string',
+    ])
+    assert.deepEqual(interfaceFields(apiSource, 'CurrentFormalSignalsResponse'), [
+      "status: 'ready' | 'unavailable'",
+      'trading_day: string | null',
+      'items: CurrentFormalSignalItem[]',
+    ])
+    assert.deepEqual(interfaceFields(apiSource, 'ProductCurrentAlertEventsResponse'), [
+      "status: 'ready' | 'unavailable'",
+      'trading_day: string | null',
+      'items: AlertEvent[]',
+    ])
+  })
+
+  it('drops V1 rule shape fields in favor of the V2 rule registry contract', () => {
+    assert.doesNotMatch(interfaceBody(apiSource, 'ProductAlertRuleState'), /indicator_code|series_kind|frequency:/)
+    assert.doesNotMatch(interfaceBody(marketTypesSource, 'AlertEvent'), /observation_types|notified_at/)
   })
 
   it('renders the switch directly from server true or false and emits the selected value', () => {
@@ -207,6 +261,19 @@ function between(source: string, start: string, end: string) {
   return source.slice(from, to)
 }
 
+function interfaceBody(source: string, name: string) {
+  const match = source.match(new RegExp(`export interface ${name}(?: extends [^{]+)? \\{([\\s\\S]*?)\\n\\}`))
+  assert.ok(match, `missing interface ${name}`)
+  return match[1]
+}
+
+function interfaceFields(source: string, name: string) {
+  return interfaceBody(source, name)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
 function event(index: number, observations: Array<'buy' | 'sell'>): AlertEvent {
   const minute = String(index * 15).padStart(2, '0')
   return {
@@ -214,11 +281,13 @@ function event(index: number, observations: Array<'buy' | 'sell'>): AlertEvent {
     rule_code: 'htdy_original_15m',
     symbol: 'ag',
     contract: 'AG2610',
+    trading_day: '2026-08-13',
     frequency: '15m',
     bar_end: `2026-08-13T02:${minute}:00Z`,
-    observation_types: observations,
+    result_codes: observations,
+    lower_tf_confirmation: false,
     detected_at: '2026-08-13T02:45:01Z',
-    notified_at: '2026-08-13T02:45:01Z',
+    notification_attempted_at: '2026-08-13T02:45:01Z',
   }
 }
 

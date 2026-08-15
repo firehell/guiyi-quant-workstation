@@ -314,16 +314,19 @@ export interface KlineMarker {
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
 }
 
+/** Alert V2 `AlertEventOut`：只读展示 DTO，方向语义见 result_codes。 */
 export interface AlertEvent {
   id: number
   rule_code: string
   symbol: string
   contract: string
-  frequency: '15m'
+  trading_day: string | null
+  frequency: MarketFrequency
   bar_end: string
-  observation_types: Array<'buy' | 'sell'>
+  result_codes: Array<'buy' | 'sell'>
+  lower_tf_confirmation: boolean
   detected_at: string
-  notified_at: string
+  notification_attempted_at: string | null
 }
 
 export interface ChartOverlay {

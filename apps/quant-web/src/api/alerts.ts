@@ -1,16 +1,17 @@
 import request from './request'
 import type { AlertRuntimeStatus } from '@/utils/alertControl'
-import type { AlertEvent } from '@/types/market'
+import type { AlertEvent, MarketFrequency } from '@/types/market'
 
 export type { AlertRuntimeStatus } from '@/utils/alertControl'
 export type { AlertEvent } from '@/types/market'
 
+export type AlertRuleKind = 'indicator_observation' | 'formal_signal'
+
 export interface ProductAlertRuleState {
   rule_code: string
   display_name: string
-  indicator_code: string
-  series_kind: 'actual_dominant'
-  frequency: '15m'
+  kind: AlertRuleKind
+  input_frequencies: MarketFrequency[]
   enabled_for_product: boolean
 }
 
@@ -20,6 +21,23 @@ export interface ProductAlertStateResponse {
 }
 
 export interface AlertEventListResponse {
+  items: AlertEvent[]
+}
+
+export interface CurrentFormalSignalItem extends AlertEvent {
+  display_name: string
+  product_name: string
+}
+
+export interface CurrentFormalSignalsResponse {
+  status: 'ready' | 'unavailable'
+  trading_day: string | null
+  items: CurrentFormalSignalItem[]
+}
+
+export interface ProductCurrentAlertEventsResponse {
+  status: 'ready' | 'unavailable'
+  trading_day: string | null
   items: AlertEvent[]
 }
 
@@ -49,6 +67,16 @@ export function setAlertProductEnabled(
 export function getAlertRuntimeStatus() {
   return request.get<never, RuntimeHealthResponse>('/api/runtime/health')
     .then((response) => response.components.alert.status)
+}
+
+export function getCurrentFormalSignals() {
+  return request.get<never, CurrentFormalSignalsResponse>('/api/alerts/formal-signals/current')
+}
+
+export function getProductCurrentAlertEvents(symbol: string) {
+  return request.get<never, ProductCurrentAlertEventsResponse>(
+    `/api/alerts/products/${symbol}/current-events`,
+  )
 }
 
 export function getAlertEvents(params: {

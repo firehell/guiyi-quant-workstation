@@ -12,7 +12,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
   return [...events]
     .sort((left, right) => Date.parse(left.bar_end) - Date.parse(right.bar_end))
     .flatMap((event) => {
-      const observations = new Set(event.observation_types)
+      const observations = new Set(event.result_codes)
       const label = observations.has('buy') && observations.has('sell')
         ? '🔔买/卖'
         : observations.has('buy') ? '🔔买' : observations.has('sell') ? '🔔卖' : null
