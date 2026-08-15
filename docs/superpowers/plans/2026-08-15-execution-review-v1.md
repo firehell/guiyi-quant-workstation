@@ -20,6 +20,7 @@
 - All new historical reads use `MarketDataService`; Execution Review must not directly read Parquet, Redis, RQData, or MainContractMap.
 - Live remains observation-only and is never persisted as Execution Review market truth.
 - All price/cost/PnL arithmetic uses `Decimal`; PnL is explicitly `Estimated Gross PnL`, never account PnL.
+- Execution timeline topology and PnL replay order are determined only by episode-local `sequence_no`: unique and continuous `1..N`, with OPEN at sequence 1; `executed_at` may tie and is never an ordering key.
 - No Account / Position / Risk / Order / manual-trade domain, no reverse/lock workflow, no auto-order path; `auto_order=false` always.
 - One symbol may have at most one OPEN Episode; Episode symbol/contract/direction are immutable lineage fields.
 - Signal-driven OPEN/ADD must have `executed_at >= AlertEvent.bar_end`.
@@ -126,6 +127,7 @@ If the Alembic head is no longer `20260814_0038` when Task 1 starts, stop and re
 ```python
 @dataclass(frozen=True, slots=True)
 class ExecutionFact:
+    sequence_no: int
     execution_type: str
     price: Decimal
     quantity: int
@@ -216,14 +218,14 @@ Create `test_execution_review_pnl.py` covering at least:
 
 ```python
 def test_long_open_add_reduce_close_uses_weighted_average_cost():
-    facts = [
-        ExecutionFact("OPEN", Decimal("100"), 1),
-        ExecutionFact("ADD", Decimal("110"), 1),
-        ExecutionFact("REDUCE", Decimal("120"), 1),
-        ExecutionFact("CLOSE", Decimal("130"), 1),
+    executions = [
+        ExecutionFact(1, "OPEN", Decimal("100"), 1),
+        ExecutionFact(2, "ADD", Decimal("110"), 1),
+        ExecutionFact(3, "REDUCE", Decimal("120"), 1),
+        ExecutionFact(4, "CLOSE", Decimal("130"), 1),
     ]
     state = calculate_position_state(
-        direction="LONG", facts=facts, multiplier=Decimal("10")
+        direction="LONG", executions=executions, multiplier=Decimal("10")
     )
     assert state.remaining_quantity == 0
     assert state.realized_points == Decimal("40")
@@ -231,6 +233,9 @@ def test_long_open_add_reduce_close_uses_weighted_average_cost():
 
 
 def test_short_is_mirrored(): ...
+def test_input_order_is_ignored_in_favor_of_sequence_no(): ...
+def test_duplicate_or_gapped_sequence_is_rejected(): ...
+def test_sequence_one_must_be_open_and_open_cannot_repeat(): ...
 def test_over_reduce_and_reverse_are_rejected(): ...
 def test_missing_multiplier_keeps_points_but_amount_unavailable(): ...
 def test_roll_estimate_only_values_remaining_quantity(): ...
@@ -238,7 +243,7 @@ def test_roll_estimate_only_values_remaining_quantity(): ...
 
 - [ ] **Step 6: Implement `pnl.py` and make tests pass**
 
-The implementation must iterate the timeline in order, update weighted average cost only on OPEN/ADD, realize points on REDUCE/CLOSE, and reject any topology that makes remaining quantity negative or leaves an OPEN/ADD after a zero position.
+The implementation must validate positive integer `sequence_no` values, reject duplicates and gaps, require the exact set `1..N`, then replay solely in `sequence_no ASC` order. Sequence 1 must be OPEN and no later OPEN is valid. `executed_at` is not part of `ExecutionFact` and must not affect topology or PnL ordering. Update weighted average cost only on OPEN/ADD, realize points on REDUCE/CLOSE, and reject any topology that makes remaining quantity negative or adds an execution after a zero position.
 
 - [ ] **Step 7: Write ORM model tests before models**
 
@@ -248,12 +253,14 @@ Create `test_execution_review_models.py` using the existing isolated SQLite test
 - one origin Decision per Episode;
 - one Review per Episode;
 - nullable `trigger_decision_id` allows many manual executions, but non-null trigger is unique;
+- `(episode_id, sequence_no)` is unique;
+- OPEN requires `sequence_no = 1`, while non-OPEN requires `sequence_no > 1`;
 - partial unique OPEN Episode index rejects two simultaneous OPEN Episodes for the same symbol;
-- scalar checks reject illegal disposition/direction/execution type/close reason and non-positive quantity.
+- scalar checks reject illegal disposition/direction/execution type/close reason, non-positive sequence/quantity, and non-positive price.
 
 - [ ] **Step 8: Implement `models.py`**
 
-Use SQLAlchemy 2 mapped models, timezone-aware `DateTime`, `Numeric(24, 8)` for prices/multipliers, `Integer` quantity, and `ARRAY(String(...)).with_variant(JSON(), "sqlite")` for tag arrays, matching the existing Alert model portability pattern.
+Use SQLAlchemy 2 mapped models, timezone-aware `DateTime`, `Numeric(24, 8)` for prices/multipliers, `Integer` for `sequence_no` and quantity, and `ARRAY(String(...)).with_variant(JSON(), "sqlite")` for tag arrays, matching the existing Alert model portability pattern. `trade_executions` must include the episode-local sequence unique/check constraints; cross-row continuity remains a pure-core/write-service invariant.
 
 Required tables:
 
@@ -268,7 +275,7 @@ Do not add market bars or mutable Signal snapshots.
 
 - [ ] **Step 9: Write migration test before migration**
 
-Create `test_execution_review_v1_migration.py` based on the existing alert migration test style. It must prove upgrade from `20260814_0038` creates only the four new application tables and leaves the exact eight Market Catalog tables plus `alert_rules/alert_events` intact.
+Create `test_execution_review_v1_migration.py` based on the existing alert migration test style. It must prove upgrade from `20260814_0038` creates only the four new application tables, enforces the `trade_executions` sequence unique/check constraints, and leaves the exact eight Market Catalog tables plus `alert_rules/alert_events` intact.
 
 - [ ] **Step 10: Implement additive migration `20260815_0039_execution_review_v1.py`**
 
@@ -279,7 +286,7 @@ revision = "20260815_0039"
 down_revision = "20260814_0038"
 ```
 
-Create only the four approved tables, checks, FKs, unique constraints and the partial unique OPEN-Episode index. Do not alter Alert or Market tables.
+Create only the four approved tables, checks, FKs, unique constraints and the partial unique OPEN-Episode index. For `trade_executions`, include non-null positive `sequence_no`, `UNIQUE(episode_id, sequence_no)`, and the OPEN-at-1/non-OPEN-after-1 row check. Do not alter Alert or Market tables.
 
 - [ ] **Step 11: Add multiplier loader tests**
 
@@ -294,7 +301,7 @@ Requirements: lowercase normalized product code, positive Decimal multiplier, no
 
 - [ ] **Step 12: Populate the multiplier reference from public official exchange specifications**
 
-Create `data/reference/product_trade_multipliers.csv` with `product,multiplier` only. Use official exchange contract specifications for the current active 60; do **not** call real RQData as part of ordinary implementation. Add an engineering/unit assertion that every symbol in `data/universe/active_products.txt` appears exactly once. If an official multiplier cannot be verified for an active product, leave that symbol absent and make the coverage test explicitly list the unresolved symbol as a blocking finding rather than guessing a value.
+Create `data/reference/product_trade_multipliers.csv` with `product,multiplier` only, where `multiplier` is the CNY PnL scaling factor per lot per one quoted-price unit. Use current public official exchange contract specifications; do **not** call real RQData or guess a value. Every submitted row must be unique, valid, officially verified, and belong to `data/universe/active_products.txt`, but Task 1 may contain a verified subset of the active 60. Tests must report the deterministic missing-symbol set; lookup for a missing product returns `None`, so Decision/Execution facts remain recordable while CNY `Estimated Gross PnL` is `unavailable`. Full 60/60 official coverage is a prerequisite for v1.4 rollout/closure, not a Domain Core integration Gate.
 
 - [ ] **Step 13: Run Task 1 verification**
 
@@ -423,7 +430,7 @@ The client request must not contain a direction field; direction comes from Even
 
 - [ ] **Step 5: Implement `record_executed` first-entry path**
 
-If no OPEN Episode exists for the symbol, create `Decision(EXECUTED) + Episode + OPEN` in one transaction. Snapshot the verified multiplier if available; absence leaves multiplier fields null and does not block the record.
+If no OPEN Episode exists for the symbol, create `Decision(EXECUTED) + Episode + OPEN(sequence_no=1)` in one transaction. Snapshot the verified multiplier if available; absence leaves multiplier fields null and does not block the record.
 
 - [ ] **Step 6: Add same/opposite existing-Episode tests**
 
@@ -437,7 +444,7 @@ same symbol + different contract while old Episode remains OPEN -> OPEN_EPISODE_
 
 - [ ] **Step 7: Implement same-direction ADD transaction**
 
-Lock the current OPEN Episode row, create the new Decision and one ADD with `trigger_decision_id` in the same transaction. Map duplicate triggers/unique races to stable 409-style domain conflicts.
+Lock the current OPEN Episode row, create the new Decision and one ADD with the next consecutive `sequence_no` and `trigger_decision_id` in the same transaction. Map duplicate triggers/unique races to stable 409-style domain conflicts.
 
 - [ ] **Step 8: Add manual ADD/REDUCE/CLOSE tests**
 
@@ -460,7 +467,7 @@ Cover simple price/time/note edits, atomic timeline replacement, invalid replace
 
 - [ ] **Step 11: Implement correction methods**
 
-Timeline replacement must validate the complete candidate sequence before replacing rows. `EXECUTED -> NOT_EXECUTED` may internally remove the trigger Execution only when the resulting Episode/review lineage remains valid; otherwise raise `DECISION_CORRECTION_CONFLICT`.
+Timeline replacement must accept the complete candidate timeline, rebuild and renumber it atomically as `1..N` inside one transaction, and validate it through the same pure core before replacing rows. The replacement either commits in full or rolls back in full; it must never expose temporary duplicate, gapped, negative-position, or reverse states. `EXECUTED -> NOT_EXECUTED` may internally remove the trigger Execution only when the resulting Episode/review lineage remains valid; otherwise raise `DECISION_CORRECTION_CONFLICT`.
 
 - [ ] **Step 12: Add structured Review tests and implement Review commands**
 
