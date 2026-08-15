@@ -1828,6 +1828,163 @@ def test_postgresql_event_states_uses_one_consistent_statement_snapshot(
     assert state == "pending_decision"
 
 
+@pytest.mark.parametrize("read_kind", ["items", "stats"])
+def test_postgresql_read_models_do_not_mix_disposition_correction_snapshots(
+    postgres_engine: Engine,
+    read_kind: str,
+) -> None:
+    factory = sessionmaker(bind=postgres_engine, expire_on_commit=False)
+    with factory() as seed:
+        decision = _service(seed).record_not_executed(
+            _event(seed).id,
+            NotExecutedCommand(primary_reason="TOO_LATE"),
+        )
+        decision_id = decision.id
+    snapshot_read = Event()
+    writer_finished = Event()
+
+    def read_model() -> object:
+        with factory() as local_session:
+            intercepted = False
+
+            @sqlalchemy_event.listens_for(
+                local_session,
+                "do_orm_execute",
+                retval=True,
+            )
+            def pause_after_snapshot(state: object):
+                nonlocal intercepted
+                statement = str(state.statement)  # type: ignore[attr-defined]
+                old_decision_read = (
+                    "FROM trade_decisions" in statement
+                    and "alert_event_id IN" in statement
+                )
+                new_single_read = (
+                    "FROM alert_events" in statement
+                    and "LEFT OUTER JOIN trade_decisions" in statement
+                    and "LEFT OUTER JOIN trade_episodes" in statement
+                )
+                if not intercepted and (old_decision_read or new_single_read):
+                    intercepted = True
+                    result = state.invoke_statement()  # type: ignore[attr-defined]
+                    snapshot_read.set()
+                    assert writer_finished.wait(timeout=10)
+                    return result
+                return state.invoke_statement()  # type: ignore[attr-defined]
+
+            if read_kind == "items":
+                return tuple(
+                    (item.item_kind, item.state)
+                    for item in _service(local_session).list_items()
+                )
+            stats = _service(local_session).stats()
+            return (
+                stats.opportunities.not_executed_decisions,
+                stats.episode_states.open_episodes,
+            )
+
+    def correct_disposition() -> None:
+        assert snapshot_read.wait(timeout=10)
+        try:
+            with factory() as local_session:
+                _service(local_session).correct_disposition(
+                    decision_id,
+                    DispositionCorrectionCommand(
+                        target_disposition="EXECUTED",
+                        executed_at=BAR_END + timedelta(minutes=5),
+                        price=Decimal("1260"),
+                        quantity=1,
+                        execution_reason_tags=("KEY_LEVEL_BREAKOUT",),
+                    ),
+                )
+        finally:
+            writer_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        read_future = executor.submit(read_model)
+        write_future = executor.submit(correct_disposition)
+        observed = read_future.result(timeout=15)
+        write_future.result(timeout=15)
+
+    if read_kind == "items":
+        assert observed == (("decision", "done"),)
+    else:
+        assert observed == (1, 0)
+
+
+def test_postgresql_episode_detail_uses_one_statement_snapshot(
+    postgres_engine: Engine,
+) -> None:
+    factory = sessionmaker(bind=postgres_engine, expire_on_commit=False)
+    with factory() as seed:
+        opened = _service(seed).record_executed(
+            _event(seed).id,
+            _executed(quantity=2),
+        )
+        episode_id = opened.episode.id
+    snapshot_read = Event()
+    writer_finished = Event()
+
+    def read_detail() -> tuple[int, int]:
+        with factory() as local_session:
+            intercepted = False
+
+            @sqlalchemy_event.listens_for(
+                local_session,
+                "do_orm_execute",
+                retval=True,
+            )
+            def pause_after_snapshot(state: object):
+                nonlocal intercepted
+                statement = str(state.statement)  # type: ignore[attr-defined]
+                old_execution_read = (
+                    "FROM trade_executions" in statement
+                    and "ORDER BY trade_executions.sequence_no" in statement
+                )
+                new_single_read = (
+                    "FROM trade_episodes" in statement
+                    and "LEFT OUTER JOIN trade_executions" in statement
+                    and "LEFT OUTER JOIN trade_reviews" in statement
+                )
+                if not intercepted and (old_execution_read or new_single_read):
+                    intercepted = True
+                    result = state.invoke_statement()  # type: ignore[attr-defined]
+                    snapshot_read.set()
+                    assert writer_finished.wait(timeout=10)
+                    return result
+                return state.invoke_statement()  # type: ignore[attr-defined]
+
+            detail = _service(local_session).episode_detail(episode_id)
+            return (
+                sum(row.quantity for row in detail.executions),
+                detail.position.remaining_quantity,
+            )
+
+    def append_execution() -> None:
+        assert snapshot_read.wait(timeout=10)
+        try:
+            with factory() as local_session:
+                _service(local_session).append_execution(
+                    episode_id,
+                    ExecutionCommand(
+                        execution_type="ADD",
+                        executed_at=BAR_END + timedelta(minutes=4),
+                        price=Decimal("1260"),
+                        quantity=1,
+                    ),
+                )
+        finally:
+            writer_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        read_future = executor.submit(read_detail)
+        write_future = executor.submit(append_execution)
+        observed = read_future.result(timeout=15)
+        write_future.result(timeout=15)
+
+    assert observed == (2, 2)
+
+
 @pytest.mark.parametrize(
     ("constraint_name", "code"),
     [

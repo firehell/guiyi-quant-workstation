@@ -217,6 +217,15 @@ class ReviewIssueStats:
 
 
 @dataclass(frozen=True, slots=True)
+class _OpportunitySnapshot:
+    event: AlertEvent
+    rule_code: str
+    decision: TradeDecision | None
+    episode: TradeEpisode | None
+    review: TradeReview | None
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionReviewStats:
     opportunities: OpportunityStats
     episode_states: EpisodeStateStats
@@ -982,25 +991,12 @@ class ExecutionReviewService:
             "done",
         }:
             raise _invalid("EXECUTION_REVIEW_STATE_INVALID")
-        events = self._eligible_events()
-        event_by_id = {event.id: event for event in events}
-        decisions = tuple(
-            self._session.scalars(
-                select(TradeDecision).where(
-                    TradeDecision.alert_event_id.in_(event_by_id)
-                )
-            ).all()
-        ) if event_by_id else ()
-        decision_by_event = {row.alert_event_id: row for row in decisions}
-        episodes = tuple(
-            self._session.scalars(select(TradeEpisode)).all()
-        )
-        review_episode_ids = set(
-            self._session.scalars(select(TradeReview.episode_id)).all()
-        )
         items: list[ReviewItem] = []
-        for event in events:
-            decision = decision_by_event.get(event.id)
+        for row in self._opportunity_snapshot():
+            event = row.event
+            if self._eligible_direction(event, row.rule_code) is None:
+                continue
+            decision = row.decision
             if decision is None:
                 items.append(
                     self._item(
@@ -1018,24 +1014,21 @@ class ExecutionReviewService:
                         decision=decision,
                     )
                 )
-        for episode in episodes:
-            origin = next(
-                (row for row in decisions if row.id == episode.origin_decision_id),
-                None,
-            )
-            if origin is None:
-                continue
-            event = event_by_id[origin.alert_event_id]
-            item_state = self._episode_state(episode, review_episode_ids)
-            items.append(
-                self._item(
-                    event=event,
-                    item_kind="episode",
-                    state=item_state,
-                    decision=origin,
-                    episode=episode,
+            elif row.episode is not None:
+                item_state = (
+                    "open"
+                    if row.episode.closed_at is None
+                    else "done" if row.review is not None else "pending_review"
                 )
-            )
+                items.append(
+                    self._item(
+                        event=event,
+                        item_kind="episode",
+                        state=item_state,
+                        decision=decision,
+                        episode=row.episode,
+                    )
+                )
         filtered = (item for item in items if state is None or item.state == state)
         return tuple(
             sorted(filtered, key=lambda item: (item.trading_day, item.event_id))
@@ -1107,14 +1100,38 @@ class ExecutionReviewService:
         return self._read_call(lambda: self._episode_detail(episode_id))
 
     def _episode_detail(self, episode_id: int) -> EpisodeDetail:
-        episode = self._session.get(TradeEpisode, episode_id)
-        if episode is None:
+        rows = self._session.execute(
+            select(TradeEpisode, TradeExecution, TradeReview)
+            .outerjoin(
+                TradeExecution,
+                TradeExecution.episode_id == TradeEpisode.id,
+            )
+            .outerjoin(
+                TradeReview,
+                TradeReview.episode_id == TradeEpisode.id,
+            )
+            .where(TradeEpisode.id == episode_id)
+            .order_by(TradeExecution.sequence_no)
+        ).all()
+        if not rows:
             raise _not_found("TRADE_EPISODE_NOT_FOUND")
-        executions = self._executions(episode.id)
-        position = self._calculate_position(episode, self._execution_facts(episode.id))
-        review = self._session.scalar(
-            select(TradeReview).where(TradeReview.episode_id == episode.id)
+        episode = rows[0].TradeEpisode
+        executions = tuple(
+            row.TradeExecution
+            for row in rows
+            if row.TradeExecution is not None
         )
+        facts = tuple(
+            ExecutionFact(
+                sequence_no=row.sequence_no,
+                execution_type=row.execution_type,
+                price=row.price,
+                quantity=row.quantity,
+            )
+            for row in executions
+        )
+        position = self._calculate_position(episode, facts)
+        review = rows[0].TradeReview
         return EpisodeDetail(episode, executions, review, position)
 
     def stats(
@@ -1160,34 +1177,44 @@ class ExecutionReviewService:
             raise _invalid("EXECUTION_REVIEW_STATS_FILTER_INVALID")
         if frequency is not None and frequency not in ELIGIBLE_FREQUENCIES:
             raise _invalid("EXECUTION_REVIEW_STATS_FILTER_INVALID")
-        events = self._eligible_events(
-            trading_day_from,
-            trading_day_to,
-            symbol=normalized_symbol,
-            direction=direction,
-            frequency=frequency,
-        )
-        event_ids = {event.id for event in events}
+        backlog: list[_OpportunitySnapshot] = []
+        for row in self._opportunity_snapshot():
+            event_direction = self._eligible_direction(row.event, row.rule_code)
+            if event_direction is None:
+                continue
+            if normalized_symbol is not None and row.event.symbol != normalized_symbol:
+                continue
+            if direction is not None and event_direction != direction:
+                continue
+            if frequency is not None and row.event.frequency != frequency:
+                continue
+            backlog.append(row)
+        ranged_rows: list[_OpportunitySnapshot] = []
+        for snapshot in backlog:
+            trading_day = snapshot.event.trading_day
+            assert trading_day is not None
+            if trading_day_from is not None and trading_day < trading_day_from:
+                continue
+            if trading_day_to is not None and trading_day > trading_day_to:
+                continue
+            ranged_rows.append(snapshot)
+        ranged = tuple(ranged_rows)
         decisions = tuple(
-            self._session.scalars(
-                select(TradeDecision).where(
-                    TradeDecision.alert_event_id.in_(event_ids)
-                )
-            ).all()
-        ) if event_ids else ()
+            row.decision for row in ranged if row.decision is not None
+        )
         processed = len(decisions)
         executed = sum(row.disposition == "EXECUTED" for row in decisions)
         not_executed = processed - executed
         reasons: dict[str, int] = {}
-        for row in decisions:
+        for decision_row in decisions:
             if (
-                row.disposition == "NOT_EXECUTED"
-                and row.primary_not_execute_reason is not None
+                decision_row.disposition == "NOT_EXECUTED"
+                and decision_row.primary_not_execute_reason is not None
             ):
-                reasons[row.primary_not_execute_reason] = (
-                    reasons.get(row.primary_not_execute_reason, 0) + 1
+                reasons[decision_row.primary_not_execute_reason] = (
+                    reasons.get(decision_row.primary_not_execute_reason, 0) + 1
                 )
-        eligible = len(events)
+        eligible = len(ranged)
         opportunity_stats = OpportunityStats(
             eligible_events=eligible,
             processed_events=processed,
@@ -1204,65 +1231,54 @@ class ExecutionReviewService:
             ),
             primary_reason_counts=dict(sorted(reasons.items())),
         )
-        backlog_events = self._eligible_events(
-            symbol=normalized_symbol,
-            direction=direction,
-            frequency=frequency,
-        )
-        backlog_event_ids = {event.id for event in backlog_events}
-        backlog_decisions = tuple(
-            self._session.scalars(
-                select(TradeDecision).where(
-                    TradeDecision.alert_event_id.in_(backlog_event_ids)
-                )
-            ).all()
-        ) if backlog_event_ids else ()
-        origin_event_by_decision = {
-            row.id: row.alert_event_id for row in backlog_decisions
-        }
-        origin_decision_ids = set(origin_event_by_decision)
         episodes = tuple(
-            self._session.scalars(
-                select(TradeEpisode).where(
-                    TradeEpisode.origin_decision_id.in_(origin_decision_ids)
-                )
-            ).all()
-        ) if origin_decision_ids else ()
-        review_episode_ids = set(
-            self._session.scalars(select(TradeReview.episode_id)).all()
+            row.episode for row in backlog if row.episode is not None
         )
+        review_by_episode = {
+            row.episode.id: row.review
+            for row in backlog
+            if row.episode is not None and row.review is not None
+        }
+        ranged_episode_ids = {
+            row.episode.id for row in ranged if row.episode is not None
+        }
         episode_stats = EpisodeStateStats(
             open_episodes=sum(row.closed_at is None for row in episodes),
             pending_review_episodes=sum(
-                row.closed_at is not None and row.id not in review_episode_ids
+                row.closed_at is not None and row.id not in review_by_episode
                 for row in episodes
             ),
             done_episodes=sum(
                 row.closed_at is not None
-                and row.id in review_episode_ids
-                and origin_event_by_decision[row.origin_decision_id] in event_ids
+                and row.id in review_by_episode
+                and row.id in ranged_episode_ids
                 for row in episodes
             ),
         )
-        filtered_episode_ids = {
-            row.id
-            for row in episodes
-            if origin_event_by_decision[row.origin_decision_id] in event_ids
-        }
         reviews = tuple(
-            self._session.scalars(
-                select(TradeReview).where(
-                    TradeReview.episode_id.in_(filtered_episode_ids)
-                )
-            ).all()
-        ) if filtered_episode_ids else ()
+            row.review
+            for row in ranged
+            if row.episode is not None and row.review is not None
+        )
         review_issue_stats = ReviewIssueStats(
-            entry=_review_tag_counts(reviews, "entry_tags", neutral="REASONABLE"),
-            holding=_review_tag_counts(reviews, "holding_tags", neutral="NORMAL"),
-            exit_risk=_review_tag_counts(reviews, "exit_tags", neutral="NORMAL"),
+            entry=_review_tag_counts(
+                reviews,
+                lambda review: review.entry_tags,
+                neutral="REASONABLE",
+            ),
+            holding=_review_tag_counts(
+                reviews,
+                lambda review: review.holding_tags,
+                neutral="NORMAL",
+            ),
+            exit_risk=_review_tag_counts(
+                reviews,
+                lambda review: review.exit_tags,
+                neutral="NORMAL",
+            ),
             psychology=_review_tag_counts(
                 reviews,
-                "psychology_tags",
+                lambda review: review.psychology_tags,
                 neutral="NONE",
             ),
         )
@@ -1545,6 +1561,48 @@ class ExecutionReviewService:
             position=position,
         )
 
+    def _opportunity_snapshot(self) -> tuple[_OpportunitySnapshot, ...]:
+        rows = self._session.execute(
+            select(
+                AlertEvent,
+                AlertRule.rule_code,
+                TradeDecision,
+                TradeEpisode,
+                TradeReview,
+            )
+            .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
+            .outerjoin(
+                TradeDecision,
+                TradeDecision.alert_event_id == AlertEvent.id,
+            )
+            .outerjoin(
+                TradeEpisode,
+                TradeEpisode.origin_decision_id == TradeDecision.id,
+            )
+            .outerjoin(
+                TradeReview,
+                TradeReview.episode_id == TradeEpisode.id,
+            )
+            .order_by(AlertEvent.trading_day, AlertEvent.id)
+        ).all()
+        return tuple(_OpportunitySnapshot(*row) for row in rows)
+
+    @staticmethod
+    def _eligible_direction(event: AlertEvent, rule_code: str) -> str | None:
+        if (
+            rule_code != ELIGIBLE_RULE_CODE
+            or event.trading_day is None
+            or not str(event.contract or "").strip()
+            or event.frequency not in ELIGIBLE_FREQUENCIES
+        ):
+            return None
+        result_codes = tuple(event.result_codes or ())
+        if result_codes == ("buy",):
+            return "LONG"
+        if result_codes == ("sell",):
+            return "SHORT"
+        return None
+
     def _eligible_event(self, event_id: int) -> tuple[AlertEvent, str]:
         row = self._session.execute(
             select(AlertEvent, AlertRule.rule_code)
@@ -1798,13 +1856,13 @@ def _validate_database_decimal(value: object, code: str) -> None:
 
 def _review_tag_counts(
     reviews: tuple[TradeReview, ...],
-    attribute: str,
+    tags: Callable[[TradeReview], list[str]],
     *,
     neutral: str,
 ) -> dict[str, int]:
     counts: dict[str, int] = {}
     for review in reviews:
-        for tag in getattr(review, attribute):
+        for tag in tags(review):
             if tag != neutral:
                 counts[tag] = counts.get(tag, 0) + 1
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
