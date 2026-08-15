@@ -19,13 +19,21 @@ from app.market_data.session_clock import SHANGHAI
 from app.market_data.historical_data_manager import (
     AuditRequest,
     BarBatch,
+    BarFetchRequest,
     HistoricalDataManager,
     RefreshRequest,
     UpdateRequest,
     _Target,
 )
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
-from app.models import Exchange, Instrument, MarketPartition, TradingCalendar, TradingSession
+from app.models import (
+    Exchange,
+    Instrument,
+    MainContractMap,
+    MarketPartition,
+    TradingCalendar,
+    TradingSession,
+)
 
 
 @pytest.fixture
@@ -42,6 +50,7 @@ def session() -> Session:
 class FakeCoverage:
     def __init__(self, ends: dict[tuple[str, str, str, str], tuple[datetime, ...]]) -> None:
         self.ends = ends
+        self.latest_day = date(2025, 1, 3)
         self.session_fact_error: Exception | None = None
         self.session_fact_calls: list[tuple[tuple[str, ...], date]] = []
         self.session_throughs: list[date | None] = []
@@ -56,7 +65,7 @@ class FakeCoverage:
         error = self.latest_errors.get(products[0])
         if error is not None:
             raise error
-        return date(2025, 1, 3)
+        return self.latest_day
 
     def latest_metadata_day(self, _products: tuple[str, ...]) -> date:
         return date(2025, 1, 3)
@@ -82,7 +91,9 @@ class FakeCoverage:
         return tuple(
             value
             for value in self.ends.get(key.as_tuple(), ())
-            if start <= value.date() <= end
+            if value.year == _year
+            and value.month == _month
+            and start <= value.date() <= end
         )
 
     def expected_bar_ends_for_trading_days(
@@ -141,6 +152,59 @@ class FakeProvider:
         selected = tuple(bar for bar in self.bars.get(key.as_tuple(), ()) if bar.bar_end in expected)
         return BarBatch(selected)
 
+    def fetch_many(
+        self,
+        requests: tuple[BarFetchRequest, ...],
+    ) -> tuple[BarBatch, ...]:
+        return tuple(
+            self.fetch(request.key, request.expected)
+            for request in requests
+        )
+
+
+class _ChangingSnapshotProvider(FakeProvider):
+    def __init__(self, daily: DatasetKey, weekly: DatasetKey) -> None:
+        super().__init__({})
+        self.daily = daily
+        self.weekly = weekly
+        self.revision = 0
+
+    def _batch(self, key: DatasetKey, expected: tuple[datetime, ...], revision: int) -> BarBatch:
+        if key == self.daily:
+            return BarBatch(tuple(
+                _daily_with_volume(value.day, 100 + value.day, revision)
+                for value in expected
+            ))
+        if key == self.weekly:
+            value = expected[-1]
+            return BarBatch((CanonicalBar(
+                value,
+                value.date(),
+                Decimal("106"),
+                Decimal("110"),
+                Decimal("106"),
+                Decimal("110"),
+                Decimal(5 * revision),
+                Decimal(50 * revision),
+                Decimal("30"),
+            ),))
+        raise AssertionError(key)
+
+    def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
+        self.revision += 1
+        self.calls.append((key, expected))
+        return self._batch(key, expected, self.revision)
+
+    def fetch_many(
+        self,
+        requests: tuple[BarFetchRequest, ...],
+    ) -> tuple[BarBatch, ...]:
+        self.revision += 1
+        return tuple(
+            self._batch(request.key, request.expected, self.revision)
+            for request in requests
+        )
+
 
 class _QuotaExhausted(RuntimeError):
     code = "PROVIDER_QUOTA_EXHAUSTED"
@@ -152,6 +216,14 @@ class _FailThenQuotaProvider(FakeProvider):
         if len(self.calls) == 1:
             raise RuntimeError("first target failed")
         raise _QuotaExhausted()
+
+
+class _FailFirstProvider(FakeProvider):
+    def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
+        if not self.calls:
+            self.calls.append((key, expected))
+            raise RuntimeError("first target failed")
+        return super().fetch(key, expected)
 
 
 class _TrackingLease:
@@ -174,6 +246,36 @@ def _daily(day: int, close: int) -> CanonicalBar:
         1,
         10,
         20,
+    )
+
+
+def _daily_with_volume(day: int, close: int, volume: int) -> CanonicalBar:
+    value = Decimal(close)
+    return CanonicalBar(
+        datetime(2025, 1, day, 7, tzinfo=UTC),
+        date(2025, 1, day),
+        value,
+        value,
+        value,
+        value,
+        Decimal(volume),
+        Decimal(volume * 10),
+        Decimal(20 + day),
+    )
+
+
+def _daily_on(trading_day: date, close: int, volume: int) -> CanonicalBar:
+    value = Decimal(close)
+    return CanonicalBar(
+        datetime.combine(trading_day, time(7), tzinfo=UTC),
+        trading_day,
+        value,
+        value,
+        value,
+        value,
+        Decimal(volume),
+        Decimal(volume * 10),
+        Decimal(20 + trading_day.day),
     )
 
 
@@ -238,6 +340,329 @@ def test_update_apply_syncs_metadata_before_provider_and_fixed_through_repeats_n
     assert len(provider.calls) == 1
     assert second.status == "noop"
     assert second.planned == second.applied == second.provider_requests == 0
+
+
+def test_update_refreshes_complete_daily_week_from_same_snapshot_as_new_weekly_bar(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    old_daily = tuple(_daily_with_volume(day, 100 + day, 1) for day in range(6, 10))
+    revised_daily = tuple(
+        _daily_with_volume(day, 100 + day, volume)
+        for day, volume in zip(range(6, 11), (10, 20, 30, 40, 50), strict=True)
+    )
+    weekly_bar = CanonicalBar(
+        revised_daily[-1].bar_end,
+        revised_daily[-1].trading_day,
+        revised_daily[0].open,
+        max(bar.high for bar in revised_daily),
+        min(bar.low for bar in revised_daily),
+        revised_daily[-1].close,
+        Decimal("150"),
+        Decimal("1500"),
+        revised_daily[-1].open_interest,
+    )
+    coverage = FakeCoverage(
+        {
+            daily.as_tuple(): tuple(bar.bar_end for bar in revised_daily),
+            weekly.as_tuple(): (weekly_bar.bar_end,),
+        }
+    )
+    coverage.latest_day = date(2025, 1, 10)
+    provider = FakeProvider(
+        {
+            daily.as_tuple(): revised_daily,
+            weekly.as_tuple(): (weekly_bar,),
+        }
+    )
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(manager, daily, old_daily)
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
+
+    stored_daily = manager.store.read_month(daily, 2025, 1)
+    stored_weekly = manager.store.read_month(weekly, 2025, 1)
+    assert result.status == "passed"
+    assert tuple(bar.volume for bar in stored_daily) == (
+        Decimal("10"),
+        Decimal("20"),
+        Decimal("30"),
+        Decimal("40"),
+        Decimal("50"),
+    )
+    assert stored_weekly[0].volume == sum(
+        (bar.volume for bar in stored_daily), start=Decimal("0")
+    )
+
+
+def test_update_publishes_daily_and_weekly_from_one_provider_batch(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    daily_ends = tuple(_daily(day, 100 + day).bar_end for day in range(6, 11))
+    coverage = FakeCoverage(
+        {
+            daily.as_tuple(): daily_ends,
+            weekly.as_tuple(): (daily_ends[-1],),
+        }
+    )
+    coverage.latest_day = date(2025, 1, 10)
+    provider = _ChangingSnapshotProvider(daily, weekly)
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(
+        manager,
+        daily,
+        tuple(_daily_with_volume(day, 100 + day, 1) for day in range(6, 10)),
+    )
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
+
+    stored_daily = manager.store.read_month(daily, 2025, 1)
+    stored_weekly = manager.store.read_month(weekly, 2025, 1)
+    assert result.status == "passed"
+    assert stored_weekly[0].volume == sum(
+        (bar.volume for bar in stored_daily), start=Decimal("0")
+    )
+
+
+def test_weekly_owner_refresh_keeps_contract_daily_to_rank1_mapped_days(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    all_daily = tuple(
+        _daily_with_volume(day, 100 + day, volume)
+        for day, volume in zip(range(6, 11), (10, 20, 30, 40, 50), strict=True)
+    )
+
+    class ContractCoverage(FakeCoverage):
+        def expected_bar_ends(self, key, year, month, start, end):
+            if key == daily:
+                return tuple(
+                    bar.bar_end
+                    for bar in all_daily
+                    if bar.bar_end.year == year
+                    and bar.bar_end.month == month
+                    and start <= bar.trading_day <= end
+                )
+            return super().expected_bar_ends(key, year, month, start, end)
+
+    coverage = ContractCoverage(
+        {
+            daily.as_tuple(): tuple(bar.bar_end for bar in all_daily[-2:]),
+            weekly.as_tuple(): (all_daily[-1].bar_end,),
+        }
+    )
+    coverage.latest_day = date(2025, 1, 10)
+    for trading_day in (date(2025, 1, 9), date(2025, 1, 10)):
+        session.add(MainContractMap(
+            symbol="jm",
+            trade_date=trading_day,
+            contract_code="JM2509",
+            rank=1,
+            rule="volume_open_interest",
+        ))
+    session.commit()
+    weekly_bar = CanonicalBar(
+        all_daily[-1].bar_end,
+        all_daily[-1].trading_day,
+        all_daily[0].open,
+        max(bar.high for bar in all_daily),
+        min(bar.low for bar in all_daily),
+        all_daily[-1].close,
+        Decimal("150"),
+        Decimal("1500"),
+        all_daily[-1].open_interest,
+    )
+    manager = _manager(
+        session,
+        tmp_path,
+        coverage,
+        FakeProvider(
+            {
+                daily.as_tuple(): all_daily,
+                weekly.as_tuple(): (weekly_bar,),
+            }
+        ),
+    )
+    _publish_existing(manager, daily, (all_daily[-2],))
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
+
+    stored_daily = manager.store.read_month(daily, 2025, 1)
+    assert result.status == "passed"
+    assert tuple(bar.trading_day for bar in stored_daily) == (
+        date(2025, 1, 9),
+        date(2025, 1, 10),
+    )
+
+
+def test_incomplete_weekly_batch_does_not_publish_companion_daily_refresh(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    old_daily = tuple(_daily_with_volume(day, 100 + day, 1) for day in range(6, 11))
+    revised_daily = tuple(
+        _daily_with_volume(day, 100 + day, volume)
+        for day, volume in zip(range(6, 11), (10, 20, 30, 40, 50), strict=True)
+    )
+    coverage = FakeCoverage(
+        {
+            daily.as_tuple(): tuple(bar.bar_end for bar in old_daily),
+            weekly.as_tuple(): (old_daily[-1].bar_end,),
+        }
+    )
+    coverage.latest_day = date(2025, 1, 10)
+    manager = _manager(
+        session,
+        tmp_path,
+        coverage,
+        FakeProvider({daily.as_tuple(): revised_daily}),
+    )
+    _publish_existing(manager, daily, old_daily)
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
+
+    assert result.status == "failed"
+    assert manager.store.read_month(daily, 2025, 1) == old_daily
+    assert not manager.catalog.all_partitions(weekly)
+
+
+def test_daily_failure_blocks_weekly_publish_until_next_update(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    daily_bars = tuple(_daily_with_volume(day, 100 + day, 1) for day in range(6, 11))
+    weekly_bar = CanonicalBar(
+        daily_bars[-1].bar_end,
+        daily_bars[-1].trading_day,
+        daily_bars[0].open,
+        max(bar.high for bar in daily_bars),
+        min(bar.low for bar in daily_bars),
+        daily_bars[-1].close,
+        Decimal("5"),
+        Decimal("50"),
+        daily_bars[-1].open_interest,
+    )
+    coverage = FakeCoverage(
+        {
+            daily.as_tuple(): tuple(bar.bar_end for bar in daily_bars),
+            weekly.as_tuple(): (weekly_bar.bar_end,),
+        }
+    )
+    coverage.latest_day = date(2025, 1, 10)
+    provider = _FailFirstProvider(
+        {
+            daily.as_tuple(): daily_bars,
+            weekly.as_tuple(): (weekly_bar,),
+        }
+    )
+    manager = _manager(session, tmp_path, coverage, provider)
+
+    first = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
+
+    assert first.status == "failed"
+    assert not manager.catalog.all_partitions(weekly)
+
+    second = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
+
+    assert second.status == "passed"
+    assert manager.store.read_month(daily, 2025, 1) == daily_bars
+    assert manager.store.read_month(weekly, 2025, 1) == (weekly_bar,)
+
+
+def test_update_dry_run_exposes_daily_refresh_required_by_missing_weekly_bar(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    daily_bars = tuple(_daily_with_volume(day, 100 + day, 1) for day in range(6, 11))
+    coverage = FakeCoverage(
+        {
+            daily.as_tuple(): tuple(bar.bar_end for bar in daily_bars),
+            weekly.as_tuple(): (daily_bars[-1].bar_end,),
+        }
+    )
+    coverage.latest_day = date(2025, 1, 10)
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    _publish_existing(manager, daily, daily_bars)
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), False))
+
+    assert result.status == "planned"
+    assert [target["dataset"] for target in result.target_windows] == [
+        daily.as_tuple(),
+        weekly.as_tuple(),
+    ]
+    assert result.target_windows[0]["missing_bar_count"] == 5
+
+
+def test_weekly_refresh_updates_daily_partitions_on_both_sides_of_month_boundary(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    trading_days = tuple(
+        date(2025, 3, 31) + timedelta(days=offset) for offset in range(5)
+    )
+    old_daily = tuple(
+        _daily_on(trading_day, 100 + offset, 1)
+        for offset, trading_day in enumerate(trading_days)
+    )
+    revised_daily = tuple(
+        _daily_on(trading_day, 100 + offset, volume)
+        for offset, (trading_day, volume) in enumerate(
+            zip(trading_days, (10, 20, 30, 40, 50), strict=True)
+        )
+    )
+    weekly_bar = CanonicalBar(
+        revised_daily[-1].bar_end,
+        revised_daily[-1].trading_day,
+        revised_daily[0].open,
+        max(bar.high for bar in revised_daily),
+        min(bar.low for bar in revised_daily),
+        revised_daily[-1].close,
+        Decimal("150"),
+        Decimal("1500"),
+        revised_daily[-1].open_interest,
+    )
+    coverage = FakeCoverage(
+        {
+            daily.as_tuple(): tuple(bar.bar_end for bar in revised_daily),
+            weekly.as_tuple(): (weekly_bar.bar_end,),
+        }
+    )
+    coverage.latest_day = date(2025, 4, 4)
+    manager = _manager(
+        session,
+        tmp_path,
+        coverage,
+        FakeProvider(
+            {
+                daily.as_tuple(): revised_daily,
+                weekly.as_tuple(): (weekly_bar,),
+            }
+        ),
+    )
+    _publish_existing(manager, daily, old_daily[:1])
+    _publish_existing(manager, daily, old_daily[1:])
+
+    result = manager.update(UpdateRequest(("jm",), None, date(2025, 4, 4), True))
+
+    stored_daily = (
+        *manager.store.read_month(daily, 2025, 3),
+        *manager.store.read_month(daily, 2025, 4),
+    )
+    stored_weekly = manager.store.read_month(weekly, 2025, 4)
+    assert result.status == "passed"
+    assert tuple(bar.volume for bar in stored_daily) == tuple(
+        Decimal(value) for value in (10, 20, 30, 40, 50)
+    )
+    assert stored_weekly[0].volume == Decimal("150")
 
 
 def test_update_apply_bootstraps_metadata_before_default_latest_complete_day(
@@ -660,7 +1085,7 @@ def test_quota_partial_preserves_completed_months_and_next_update_resumes(sessio
 
     assert partial.status == "partial"
     assert partial.stop_reason == "provider_quota_exhausted"
-    assert partial.provider_requests == 2
+    assert partial.provider_requests == 3
     assert partial.applied == 1
     assert manager.store.read_month(daily, 2025, 1) == (daily_bar,)
     assert not manager.catalog.all_partitions(weekly)
@@ -670,7 +1095,8 @@ def test_quota_partial_preserves_completed_months_and_next_update_resumes(sessio
     assert resumed.status == "passed"
     assert [call[0].frequency for call in provider.calls] == [
         BarFrequency.D1,
-        BarFrequency.W1,
+        BarFrequency.D1,
+        BarFrequency.D1,
         BarFrequency.W1,
     ]
 
@@ -678,9 +1104,11 @@ def test_quota_partial_preserves_completed_months_and_next_update_resumes(sessio
 def test_quota_partial_preserves_earlier_dataset_failures(session, tmp_path) -> None:
     daily = DatasetKey("continuous", "jm", "MAIN", "1d")
     weekly = DatasetKey("continuous", "jm", "MAIN", "1w")
+    next_daily = DatasetKey("continuous", "rb", "MAIN", "1d")
     coverage = FakeCoverage({
         daily.as_tuple(): (_daily(2, 100).bar_end,),
         weekly.as_tuple(): (_daily(3, 101).bar_end,),
+        next_daily.as_tuple(): (_daily(2, 102).bar_end,),
     })
     manager = _manager(
         session,
@@ -689,7 +1117,7 @@ def test_quota_partial_preserves_earlier_dataset_failures(session, tmp_path) -> 
         _FailThenQuotaProvider({}),
     )
 
-    result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+    result = manager.update(UpdateRequest(("jm", "rb"), None, date(2025, 1, 3), True))
 
     assert result.status == "partial"
     assert result.stop_reason == "provider_quota_exhausted"
@@ -973,10 +1401,11 @@ def _publish_existing(
     key: DatasetKey,
     bars: tuple[CanonicalBar, ...],
 ) -> None:
+    first_day = bars[0].trading_day
     published = manager.store.publish(PublishRequest(
         key,
-        2025,
-        1,
+        first_day.year,
+        first_day.month,
         bars,
         tuple(bar.bar_end for bar in bars),
     ))

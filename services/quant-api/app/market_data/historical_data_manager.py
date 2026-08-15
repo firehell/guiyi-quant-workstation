@@ -49,6 +49,7 @@ from app.market_data.domain import (
     SeriesQuery,
 )
 from app.market_data.product_retirement import assert_products_not_retired
+from app.market_data.session_clock import SHANGHAI
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import (
     CanonicalMonthlyStore,
@@ -107,9 +108,12 @@ class MetadataPort(Protocol):
 
 
 class BarSource(Protocol):
-    """行情拉取端口：按 DatasetKey 与缺失 bar_end 列表返回一批 canonical bars。"""
+    """行情拉取端口：同批请求共享 provider 日行情快照。"""
 
-    def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch: ...
+    def fetch_many(
+        self,
+        requests: tuple[BarFetchRequest, ...],
+    ) -> tuple[BarBatch, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +121,14 @@ class BarBatch:
     """单次 provider 拉取归一化后的 bar 批次。"""
 
     bars: tuple[CanonicalBar, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BarFetchRequest:
+    """一次 provider 逻辑请求；同一 fetch_many 调用内可复用底层日行情。"""
+
+    key: DatasetKey
+    expected: tuple[datetime, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,8 +462,13 @@ class HistoricalDataManager:
         since: date | None,
         through: date,
     ) -> tuple[_Target, ...]:
-        """dry-run 规划：收集全部待处理 _Target，不区分 direct/derived 顺序。"""
-        return tuple(self._iter_targets(products, since, through))
+        """dry-run 规划：显式展示缺失周线会带动的完整同周日线刷新。"""
+        planned: list[_Target] = []
+        for target in self._iter_targets(products, since, through):
+            if target.key.frequency is BarFrequency.W1:
+                planned.extend(self._weekly_daily_companions(target, through))
+            planned.append(target)
+        return tuple(planned)
 
     def _iter_targets(
         self,
@@ -662,12 +679,36 @@ class HistoricalDataManager:
                 planned += 1
                 applied += 1
         for target in fetched:
-            planned += 1
+            if (
+                target.key.frequency is BarFrequency.W1
+                and _family(target.key) in failed_families
+            ):
+                planned += 1
+                blocked += 1
+                continue
             try:
-                provider_requests += 1
-                batch = self.provider.fetch(target.key, target.missing)
-                self._publish_fetched(target, (batch,))
-                applied += 1
+                fetch_targets = (
+                    (*self._weekly_daily_companions(target, through), target)
+                    if target.key.frequency is BarFrequency.W1 and through is not None
+                    else (target,)
+                )
+                planned += len(fetch_targets)
+                provider_requests += len(fetch_targets)
+                batches = self.provider.fetch_many(tuple(
+                    BarFetchRequest(fetch_target.key, fetch_target.missing)
+                    for fetch_target in fetch_targets
+                ))
+                if len(batches) != len(fetch_targets):
+                    raise StorageError("PROVIDER_BATCH_COUNT_MISMATCH")
+                paired = tuple(zip(fetch_targets, batches, strict=True))
+                for fetch_target, batch in paired:
+                    self._merged_fetched_bars(
+                        fetch_target,
+                        (batch,),
+                    )
+                for fetch_target, batch in paired:
+                    self._publish_fetched(fetch_target, (batch,))
+                    applied += 1
                 # 日内派生触发点：同族同月 1m 发布成功后立即聚合 5m/15m/30m/60m。
                 if target.key.frequency is BarFrequency.M1:
                     ready = [
@@ -743,15 +784,78 @@ class HistoricalDataManager:
             failures=tuple(failures),
         )
 
+    def _weekly_daily_companions(
+        self,
+        weekly: _Target,
+        through: date,
+    ) -> tuple[_Target, ...]:
+        """周线发布前强制刷新同一 ISO 周内已落盘的日线事实。"""
+        daily_key = DatasetKey(
+            weekly.key.kind,
+            weekly.key.symbol,
+            weekly.key.series_or_contract,
+            BarFrequency.D1,
+        )
+        refresh_by_month: dict[tuple[int, int], set[datetime]] = {}
+        for weekly_end in weekly.missing:
+            trading_day = weekly_end.astimezone(SHANGHAI).date()
+            monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
+            sunday = min(monday + timedelta(days=6), through)
+            if daily_key.kind is DatasetKind.CONTRACT:
+                mapped_days = tuple(
+                    fact.trade_date
+                    for fact in self.catalog.main_map(
+                        daily_key.symbol,
+                        monday,
+                        sunday,
+                    )
+                    if fact.contract == daily_key.series_or_contract
+                )
+                expected = self.coverage.expected_bar_ends_for_trading_days(
+                    daily_key,
+                    mapped_days,
+                )
+                for item in expected:
+                    local_day = item.astimezone(SHANGHAI).date()
+                    refresh_by_month.setdefault(
+                        (local_day.year, local_day.month), set()
+                    ).add(item.astimezone(UTC))
+                continue
+            for year, month in _months(monday, sunday):
+                expected = self.coverage.expected_bar_ends(
+                    daily_key,
+                    year,
+                    month,
+                    monday,
+                    sunday,
+                )
+                refresh_by_month.setdefault((year, month), set()).update(
+                    item.astimezone(UTC) for item in expected
+                )
+        companions: list[_Target] = []
+        for (year, month), refresh in sorted(refresh_by_month.items()):
+            if not refresh:
+                continue
+            existing, physical_reason = self._existing_partition(daily_key, year, month)
+            if physical_reason is not None:
+                raise StorageError(physical_reason)
+            present = {bar.bar_end for bar in existing}
+            expected = tuple(sorted(present.union(refresh)))
+            companions.append(
+                _Target(
+                    daily_key,
+                    year,
+                    month,
+                    expected,
+                    tuple(sorted(refresh)),
+                    existing,
+                )
+            )
+        return tuple(companions)
+
     def _publish_fetched(self, target: _Target, batches: tuple[BarBatch, ...]) -> None:
         """合并 existing 与 provider 批次，经 store.publish 六项校验后注册分区。"""
-        merged = {bar.bar_end: bar for bar in target.existing}
-        for batch in batches:
-            for bar in batch.bars:
-                merged[bar.bar_end] = bar
-        bars = tuple(merged[item] for item in target.expected if item in merged)
-        if tuple(bar.bar_end for bar in bars) != target.expected:
-            raise StorageError("TARGET_WINDOW_INCOMPLETE")
+        bars = self._merged_fetched_bars(target, batches)
         # publish 内部：schema/顺序/月界/会话边界校验 → tmp.parquet → os.replace 原子替换。
         partition = self.store.publish(
             PublishRequest(
@@ -763,6 +867,21 @@ class HistoricalDataManager:
             )
         )
         self._commit_partition(partition, target)
+
+    def _merged_fetched_bars(
+        self,
+        target: _Target,
+        batches: tuple[BarBatch, ...],
+    ) -> tuple[CanonicalBar, ...]:
+        """在任何分区写入前验证 provider 批次可构成完整目标窗口。"""
+        merged = {bar.bar_end: bar for bar in target.existing}
+        for batch in batches:
+            for bar in batch.bars:
+                merged[bar.bar_end] = bar
+        bars = tuple(merged[item] for item in target.expected if item in merged)
+        if tuple(bar.bar_end for bar in bars) != target.expected:
+            raise StorageError("TARGET_WINDOW_INCOMPLETE")
+        return bars
 
     def _publish_derived(self, target: _Target) -> None:
         """从当月 1m 源分区聚合 derived 频度；会话窗口须覆盖 target.expected。"""

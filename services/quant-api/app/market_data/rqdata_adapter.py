@@ -21,7 +21,7 @@ from app.market_data.coverage_source import (
 )
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
 from app.market_data.errors import InfrastructureError
-from app.market_data.historical_data_manager import BarBatch
+from app.market_data.historical_data_manager import BarBatch, BarFetchRequest
 from app.market_data.metadata import MetadataSnapshot
 from app.market_data.session_clock import SHANGHAI
 from app.models import Contract, Instrument, MainContractMap, TradingCalendar
@@ -44,15 +44,40 @@ class RQDataMarketAdapter:
             self._client = RQDataClient()
         return self._client
 
-    def fetch(self, key: DatasetKey, expected: tuple[datetime, ...]) -> BarBatch:
-        """按 expected bar_end 拉取并归一化为 CanonicalBar；配额错误转为 PROVIDER_QUOTA_EXHAUSTED。"""
-        if not expected:
+    def fetch_many(
+        self,
+        requests: tuple[BarFetchRequest, ...],
+    ) -> tuple[BarBatch, ...]:
+        """同批日/周请求复用按真实合约和交易日索引的临时日行情快照。"""
+        if not requests:
             raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
-        if key.frequency is BarFrequency.D1:
-            return BarBatch(self._daily_bars(key, expected))
-        if key.frequency is BarFrequency.W1:
-            return BarBatch(self._weekly_bars(key, expected))
-        return BarBatch(self._minute_bars(key, expected))
+        cache: dict[tuple[str, date], dict[str, Any]] = {}
+        batches: dict[int, BarBatch] = {}
+        order = sorted(
+            range(len(requests)),
+            key=lambda index: (
+                0
+                if requests[index].key.frequency is BarFrequency.W1
+                else 1
+                if requests[index].key.frequency is BarFrequency.D1
+                else 2,
+                index,
+            ),
+        )
+        for index in order:
+            request = requests[index]
+            key = request.key
+            expected = request.expected
+            if not expected:
+                raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
+            if key.frequency is BarFrequency.D1:
+                bars = self._daily_bars(key, expected, cache=cache)
+            elif key.frequency is BarFrequency.W1:
+                bars = self._weekly_bars(key, expected, cache=cache)
+            else:
+                bars = self._minute_bars(key, expected)
+            batches[index] = BarBatch(bars)
+        return tuple(batches[index] for index in range(len(requests)))
 
     def _minute_bars(
         self, key: DatasetKey, expected: tuple[datetime, ...]
@@ -84,13 +109,17 @@ class RQDataMarketAdapter:
         return tuple(sorted(bars, key=lambda item: item.bar_end))
 
     def _daily_bars(
-        self, key: DatasetKey, expected: tuple[datetime, ...]
+        self,
+        key: DatasetKey,
+        expected: tuple[datetime, ...],
+        *,
+        cache: dict[tuple[str, date], dict[str, Any]] | None = None,
     ) -> tuple[CanonicalBar, ...]:
         """期货日线取交易所日行情；continuous 按交易日 rank1 合约拼接。"""
         expected_by_day = {
             value.astimezone(SHANGHAI).date(): value for value in expected
         }
-        rows = self._exchange_daily_rows(key, tuple(expected_by_day))
+        rows = self._exchange_daily_rows(key, tuple(expected_by_day), cache=cache)
         return tuple(
             _canonical_bar(row, expected_by_day[trading_day], trading_day)
             for trading_day, row in sorted(rows.items())
@@ -98,7 +127,11 @@ class RQDataMarketAdapter:
         )
 
     def _weekly_bars(
-        self, key: DatasetKey, expected: tuple[datetime, ...]
+        self,
+        key: DatasetKey,
+        expected: tuple[datetime, ...],
+        *,
+        cache: dict[tuple[str, date], dict[str, Any]] | None = None,
     ) -> tuple[CanonicalBar, ...]:
         """期货周线仅由同一交易所日行情在完整 ISO 周内聚合。"""
         expected_by_week = {
@@ -110,7 +143,7 @@ class RQDataMarketAdapter:
         source_days = self._source_trading_days(
             key, min(mondays), max(mondays) + timedelta(days=6)
         )
-        rows = self._exchange_daily_rows(key, source_days)
+        rows = self._exchange_daily_rows(key, source_days, cache=cache)
         required_by_week: dict[tuple[int, int], set[date]] = {}
         for trading_day in source_days:
             iso = _iso_week(trading_day)
@@ -128,33 +161,53 @@ class RQDataMarketAdapter:
         )
 
     def _exchange_daily_rows(
-        self, key: DatasetKey, days: tuple[date, ...]
+        self,
+        key: DatasetKey,
+        days: tuple[date, ...],
+        *,
+        cache: dict[tuple[str, date], dict[str, Any]] | None = None,
     ) -> dict[date, dict[str, Any]]:
         """按真实合约分组读取交易所日线；每个交易日只接受一行。"""
+        active_cache = cache if cache is not None else {}
         contracts_by_day = self._contracts_by_day(key, days)
         requested: dict[str, list[date]] = {}
         for trading_day, contract in contracts_by_day.items():
             requested.setdefault(contract, []).append(trading_day)
         result: dict[date, dict[str, Any]] = {}
         for contract, contract_days in requested.items():
-            try:
-                rows = _records(
-                    self.client.exchange_daily(
-                        contract, min(contract_days), max(contract_days)
+            missing_days = tuple(
+                trading_day
+                for trading_day in contract_days
+                if (contract, trading_day) not in active_cache
+            )
+            if missing_days:
+                try:
+                    rows = _records(
+                        self.client.exchange_daily(
+                            contract, min(missing_days), max(missing_days)
+                        )
                     )
-                )
-            except Exception as exc:  # noqa: BLE001 - normalize provider boundary
-                if _is_rqdata_quota_error(exc):
-                    raise InfrastructureError("PROVIDER_QUOTA_EXHAUSTED") from exc
-                raise
-            allowed = set(contract_days)
-            for row in rows:
-                trading_day = _row_date(row)
-                if trading_day not in allowed:
+                except Exception as exc:  # noqa: BLE001 - normalize provider boundary
+                    if _is_rqdata_quota_error(exc):
+                        raise InfrastructureError("PROVIDER_QUOTA_EXHAUSTED") from exc
+                    raise
+                allowed = set(missing_days)
+                seen: set[date] = set()
+                for row in rows:
+                    trading_day = _row_date(row)
+                    if trading_day not in allowed:
+                        continue
+                    if trading_day in seen:
+                        raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
+                    seen.add(trading_day)
+                    active_cache[(contract, trading_day)] = row
+            for trading_day in contract_days:
+                cached_row = active_cache.get((contract, trading_day))
+                if cached_row is None:
                     continue
                 if trading_day in result:
                     raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
-                result[trading_day] = row
+                result[trading_day] = cached_row
         return result
 
     def _contracts_by_day(
