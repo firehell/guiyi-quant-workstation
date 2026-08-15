@@ -477,6 +477,21 @@ test('shows one identity-matched research snapshot without crowding desktop Klin
   await expect(page.locator('.product-workspace__sidebar')).toBeVisible()
 })
 
+test('research control toggles the inline sidebar instead of opening a duplicate drawer at 1280px', async ({ page }) => {
+  await mockWorkspace(page, { json: research() })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const sidebar = page.locator('.product-workspace__sidebar')
+  const researchControl = page.getByRole('button', { name: '研究', exact: true })
+  await expect(sidebar).toBeVisible()
+  await researchControl.click()
+  await expect(sidebar).toBeHidden()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await researchControl.click()
+  await expect(sidebar).toBeVisible()
+})
+
 test('keeps Kline usable when research is unavailable and does not invent missing OI', async ({ page }) => {
   await mockWorkspace(page, { json: research(null) })
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -491,8 +506,7 @@ test('research endpoint failure leaves the Kline readable', async ({ page }) => 
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByText('109 bars')).toBeVisible()
-  await page.getByRole('button', { name: '研究', exact: true }).click()
-  await expect(page.getByRole('dialog').getByText('研究数据暂不可用', { exact: true })).toBeVisible()
+  await expect(page.locator('.product-workspace__sidebar').getByText('研究数据暂不可用', { exact: true })).toBeVisible()
 })
 
 test('HTDY stays opt-in and keeps its repainting-risk notice visible in the workspace', async ({ page }) => {

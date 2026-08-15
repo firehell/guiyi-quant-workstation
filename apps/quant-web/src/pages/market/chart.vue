@@ -402,7 +402,7 @@ function persistWorkspacePreferences() {
 }
 
 function openResearchDrawer() {
-  if (window.innerWidth >= 1600) {
+  if (window.innerWidth >= 1200) {
     researchSidebarOpen.value = !researchSidebarOpen.value
     return
   }
