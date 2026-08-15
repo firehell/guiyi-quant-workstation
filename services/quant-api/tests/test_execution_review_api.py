@@ -12,6 +12,7 @@ from app.alerts.models import AlertEvent, AlertRule
 from app.api import execution_review as execution_review_api
 from app.db.base import Base
 from app.db.session import get_db
+from app.execution_review.contracts import ExecutionReviewContractError
 from app.main import app
 from app.execution_review.service import ExecutionReviewDomainError
 
@@ -258,6 +259,46 @@ def test_not_executed_and_disposition_correction_routes(
                 ]
             },
         ),
+        (
+            "POST",
+            "/api/execution-review/events/1/executed",
+            {
+                "executed_at": "2026-08-15T01:03:00Z",
+                "price": "1268.5",
+                "quantity": True,
+                "execution_reason_tags": ["KEY_LEVEL_BREAKOUT"],
+            },
+        ),
+        (
+            "POST",
+            "/api/execution-review/events/1/executed",
+            {
+                "executed_at": "2026-08-15T01:03:00Z",
+                "price": "1268.5",
+                "quantity": 2147483648,
+                "execution_reason_tags": ["KEY_LEVEL_BREAKOUT"],
+            },
+        ),
+        (
+            "POST",
+            "/api/execution-review/events/1/executed",
+            {
+                "executed_at": "2026-08-15T01:03:00Z",
+                "price": "1.123456789",
+                "quantity": 1,
+                "execution_reason_tags": ["KEY_LEVEL_BREAKOUT"],
+            },
+        ),
+        (
+            "POST",
+            "/api/execution-review/events/1/executed",
+            {
+                "executed_at": "2026-08-15T01:03:00Z",
+                "price": "10000000000000000",
+                "quantity": 1,
+                "execution_reason_tags": ["KEY_LEVEL_BREAKOUT"],
+            },
+        ),
     ],
 )
 def test_request_contract_rejects_client_owned_fields_with_stable_code(
@@ -337,6 +378,31 @@ def test_unknown_persistence_failure_uses_redacted_503_envelope(
     )
 
     response = client.get("/api/execution-review/items")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {"code": "EXECUTION_REVIEW_PERSIST_FAILED"}
+    }
+
+
+def test_multiplier_reference_failure_uses_redacted_503_envelope(
+    api: tuple[TestClient, sessionmaker[Session]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _ = api
+
+    def fail_loader(_: object) -> dict[str, object]:
+        raise ExecutionReviewContractError("MULTIPLIER_REFERENCE_INVALID")
+
+    monkeypatch.setattr(
+        execution_review_api,
+        "load_product_trade_multipliers",
+        fail_loader,
+    )
+
+    response = TestClient(app, raise_server_exceptions=False).get(
+        "/api/execution-review/items"
+    )
 
     assert response.status_code == 503
     assert response.json() == {

@@ -8,10 +8,14 @@ from pathlib import Path
 from typing import TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.execution_review.contracts import load_product_trade_multipliers
+from app.execution_review.contracts import (
+    ExecutionReviewContractError,
+    load_product_trade_multipliers,
+)
 from app.execution_review.models import (
     TradeDecision,
     TradeEpisode,
@@ -130,12 +134,18 @@ def episode_detail(
 def stats(
     trading_day_from: date | None = Query(default=None),
     trading_day_to: date | None = Query(default=None),
+    symbol: str | None = Query(default=None),
+    direction: str | None = Query(default=None),
+    frequency: str | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> ExecutionReviewStatsResponse:
     result = _domain_call(
         lambda: _service(session).stats(
             trading_day_from=trading_day_from,
             trading_day_to=trading_day_to,
+            symbol=symbol,
+            direction=direction,
+            frequency=frequency,
         )
     )
     return ExecutionReviewStatsResponse(
@@ -382,6 +392,11 @@ def _domain_call(call: Callable[[], _T]) -> _T:
             status_code=exc.status_code,
             detail={"code": exc.code},
         ) from exc
+    except (ExecutionReviewContractError, SQLAlchemyError):
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "EXECUTION_REVIEW_PERSIST_FAILED"},
+        ) from None
 
 
 def _decision_out(row: TradeDecision) -> DecisionOut:
@@ -389,8 +404,8 @@ def _decision_out(row: TradeDecision) -> DecisionOut:
         id=row.id,
         alert_event_id=row.alert_event_id,
         disposition=row.disposition,
-        first_viewed_at=row.first_viewed_at,
-        decided_at=row.decided_at,
+        first_viewed_at=_utc_timestamp(row.first_viewed_at),
+        decided_at=_utc_timestamp(row.decided_at),
         primary_not_execute_reason=row.primary_not_execute_reason,
         secondary_not_execute_reasons=list(row.secondary_not_execute_reasons),
         note=row.decision_note,
@@ -407,11 +422,11 @@ def _episode_out(row: TradeEpisode) -> EpisodeOut:
         symbol=row.symbol,
         contract=row.contract,
         direction=row.direction,
-        opened_at=row.opened_at,
-        closed_at=row.closed_at,
+        opened_at=_utc_timestamp(row.opened_at),
+        closed_at=_utc_timestamp(row.closed_at),
         close_reason=row.close_reason,
         roll_reference_exit_price=row.roll_reference_exit_price,
-        roll_reference_bar_end=row.roll_reference_bar_end,
+        roll_reference_bar_end=_utc_timestamp(row.roll_reference_bar_end),
         contract_multiplier_snapshot=row.contract_multiplier_snapshot,
         multiplier_policy_id=row.multiplier_policy_id,
     )
@@ -424,7 +439,7 @@ def _execution_out(row: TradeExecution) -> ExecutionOut:
         trigger_decision_id=row.trigger_decision_id,
         sequence_no=row.sequence_no,
         execution_type=row.execution_type,
-        executed_at=row.executed_at,
+        executed_at=_utc_timestamp(row.executed_at),
         price=row.price,
         quantity=row.quantity,
         note=row.note,
@@ -442,8 +457,8 @@ def _review_out(row: TradeReview) -> ReviewOut:
         market_context_tags=list(row.market_context_tags),
         psychology_tags=list(row.psychology_tags),
         summary=row.summary,
-        submitted_at=row.submitted_at,
-        updated_at=row.updated_at,
+        submitted_at=_utc_timestamp(row.submitted_at),
+        updated_at=_utc_timestamp(row.updated_at),
     )
 
 
@@ -508,3 +523,11 @@ def _review_command(request: ReviewRequest) -> ReviewCommand:
         psychology_tags=tuple(request.psychology_tags),
         summary=request.summary,
     )
+
+
+def _utc_timestamp(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

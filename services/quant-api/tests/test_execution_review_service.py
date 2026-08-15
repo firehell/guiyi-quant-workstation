@@ -6,14 +6,14 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import os
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 from alembic import command as alembic_command
 from alembic.config import Config
 from sqlalchemy import create_engine, event as sqlalchemy_event, func, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.alerts.models import AlertEvent, AlertRule
@@ -103,6 +103,26 @@ def test_not_executed_creates_one_decision_with_server_time(
     assert _count(session, TradeEpisode) == 0
     assert _count(session, TradeExecution) == 0
     assert _count(session, TradeReview) == 0
+
+
+def test_successful_mutation_does_not_depend_on_post_commit_refresh(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = _event(session)
+
+    def fail_refresh(*_: object, **__: object) -> None:
+        raise SQLAlchemyError("database unavailable after commit")
+
+    monkeypatch.setattr(session, "refresh", fail_refresh)
+    decision = _service(session).record_not_executed(
+        event.id,
+        NotExecutedCommand(primary_reason="TOO_LATE"),
+    )
+
+    assert decision.disposition == "NOT_EXECUTED"
+    with Session(session.get_bind()) as check:
+        assert _count(check, TradeDecision) == 1
 
 
 def test_not_executed_uses_explicit_decided_at_and_allows_late_first_view(
@@ -491,6 +511,27 @@ def test_closed_episode_rejects_follow_up_execution(session: Session) -> None:
     assert _count(session, TradeExecution) == 2
 
 
+def test_manual_close_cannot_precede_episode_open(session: Session) -> None:
+    service = _service(session)
+    opened = service.record_executed(_event(session).id, _executed(quantity=1))
+
+    with pytest.raises(
+        ExecutionReviewDomainError,
+        match="^EXECUTION_REVIEW_TIME_INVALID$",
+    ):
+        service.append_execution(
+            opened.episode.id,
+            ExecutionCommand(
+                execution_type="CLOSE",
+                executed_at=BAR_END + timedelta(minutes=2),
+                price=Decimal("1260"),
+                quantity=1,
+            ),
+        )
+
+    assert _count(session, TradeExecution) == 1
+
+
 def test_simple_execution_correction_updates_only_mutable_fact_fields(
     session: Session,
 ) -> None:
@@ -535,6 +576,62 @@ def test_invalid_simple_execution_correction_rolls_back(session: Session) -> Non
     assert unchanged is not None
     assert unchanged.price == Decimal("1268.5")
     assert unchanged.note is None
+
+
+def test_triggered_execution_correction_cannot_precede_decision(
+    session: Session,
+) -> None:
+    service = _service(session)
+    opened = service.record_executed(
+        _event(session).id,
+        _executed(
+            decided_at=BAR_END + timedelta(minutes=2),
+            executed_at=BAR_END + timedelta(minutes=3),
+        ),
+    )
+
+    with pytest.raises(ExecutionReviewDomainError, match="^DECISION_AFTER_EXECUTION$"):
+        service.update_execution(
+            opened.execution.id,
+            ExecutionUpdateCommand(
+                executed_at=BAR_END + timedelta(minutes=1),
+                price=Decimal("1268.5"),
+            ),
+        )
+
+    unchanged = session.get(TradeExecution, opened.execution.id)
+    assert unchanged is not None
+    assert _utc(unchanged.executed_at) == BAR_END + timedelta(minutes=3)
+
+
+def test_open_correction_cannot_move_after_episode_close(session: Session) -> None:
+    service = _service(session)
+    opened = service.record_executed(_event(session).id, _executed(quantity=1))
+    service.append_execution(
+        opened.episode.id,
+        ExecutionCommand(
+            execution_type="CLOSE",
+            executed_at=BAR_END + timedelta(minutes=5),
+            price=Decimal("1260"),
+            quantity=1,
+        ),
+    )
+
+    with pytest.raises(
+        ExecutionReviewDomainError,
+        match="^EXECUTION_REVIEW_TIME_INVALID$",
+    ):
+        service.update_execution(
+            opened.execution.id,
+            ExecutionUpdateCommand(
+                executed_at=BAR_END + timedelta(minutes=6),
+                price=Decimal("1268.5"),
+            ),
+        )
+
+    unchanged = session.get(TradeEpisode, opened.episode.id)
+    assert unchanged is not None
+    assert _utc(unchanged.opened_at) == BAR_END + timedelta(minutes=3)
 
 
 def test_timeline_replacement_renumbers_and_preserves_trigger_lineage(
@@ -598,6 +695,37 @@ def test_timeline_replacement_renumbers_and_preserves_trigger_lineage(
     ]
     assert result.position.remaining_quantity == 0
     assert result.episode.close_reason == "EXECUTION_NET_ZERO"
+
+
+def test_timeline_close_cannot_precede_rebuilt_open(session: Session) -> None:
+    service = _service(session)
+    opened = service.record_executed(_event(session).id, _executed(quantity=1))
+
+    with pytest.raises(
+        ExecutionReviewDomainError,
+        match="^EXECUTION_REVIEW_TIME_INVALID$",
+    ):
+        service.replace_execution_timeline(
+            opened.episode.id,
+            (
+                TimelineExecutionCommand(
+                    execution_id=opened.execution.id,
+                    execution_type="OPEN",
+                    executed_at=BAR_END + timedelta(minutes=6),
+                    price=Decimal("1268.5"),
+                    quantity=1,
+                ),
+                TimelineExecutionCommand(
+                    execution_id=None,
+                    execution_type="CLOSE",
+                    executed_at=BAR_END + timedelta(minutes=5),
+                    price=Decimal("1260"),
+                    quantity=1,
+                ),
+            ),
+        )
+
+    assert _count(session, TradeExecution) == 1
 
 
 @pytest.mark.parametrize("mutation", ["omit_trigger", "change_trigger_type"])
@@ -683,6 +811,33 @@ def test_invalid_timeline_replacement_rolls_back_all_rows(session: Session) -> N
     assert [(row.id, row.sequence_no, row.execution_type) for row in rows] == [
         (first.execution.id, 1, "OPEN")
     ]
+
+
+def test_timeline_correction_cannot_move_trigger_before_decision(
+    session: Session,
+) -> None:
+    service = _service(session)
+    opened = service.record_executed(
+        _event(session).id,
+        _executed(
+            decided_at=BAR_END + timedelta(minutes=2),
+            executed_at=BAR_END + timedelta(minutes=3),
+        ),
+    )
+
+    with pytest.raises(ExecutionReviewDomainError, match="^DECISION_AFTER_EXECUTION$"):
+        service.replace_execution_timeline(
+            opened.episode.id,
+            (
+                TimelineExecutionCommand(
+                    execution_id=opened.execution.id,
+                    execution_type="OPEN",
+                    executed_at=BAR_END + timedelta(minutes=1),
+                    price=Decimal("1268.5"),
+                    quantity=2,
+                ),
+            ),
+        )
 
 
 def test_update_not_executed_validates_complete_cross_fields(session: Session) -> None:
@@ -953,6 +1108,44 @@ def test_second_review_is_conflict(session: Session) -> None:
     assert _count(session, TradeReview) == 1
 
 
+def test_reviewed_episode_cannot_be_reopened_by_timeline_correction(
+    session: Session,
+) -> None:
+    service = _service(session)
+    opened = service.record_executed(_event(session).id, _executed(quantity=1))
+    closed = service.append_execution(
+        opened.episode.id,
+        ExecutionCommand(
+            execution_type="CLOSE",
+            executed_at=BAR_END + timedelta(minutes=5),
+            price=Decimal("1260"),
+            quantity=1,
+        ),
+    )
+    review = service.submit_review(opened.episode.id, _review_command())
+
+    with pytest.raises(ExecutionReviewDomainError, match="^REVIEW_LINEAGE_CONFLICT$"):
+        service.replace_execution_timeline(
+            opened.episode.id,
+            (
+                TimelineExecutionCommand(
+                    execution_id=opened.execution.id,
+                    execution_type="OPEN",
+                    executed_at=BAR_END + timedelta(minutes=3),
+                    price=Decimal("1268.5"),
+                    quantity=1,
+                ),
+            ),
+        )
+
+    unchanged = session.get(TradeEpisode, opened.episode.id)
+    assert unchanged is not None
+    assert unchanged.close_reason == "EXECUTION_NET_ZERO"
+    assert unchanged.closed_at is not None
+    assert session.get(TradeExecution, closed.execution.id) is not None
+    assert session.get(TradeReview, review.id) is not None
+
+
 def test_read_models_classify_pending_open_pending_review_and_done(
     session: Session,
 ) -> None:
@@ -1038,6 +1231,25 @@ def test_read_models_classify_pending_open_pending_review_and_done(
     }
 
 
+def test_read_path_database_failure_is_stable_and_redacted(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_execute(*_: object, **__: object) -> object:
+        raise SQLAlchemyError("sensitive SQL and connection details")
+
+    monkeypatch.setattr(session, "execute", fail_execute)
+
+    with pytest.raises(
+        ExecutionReviewDomainError,
+        match="^EXECUTION_REVIEW_PERSIST_FAILED$",
+    ) as captured:
+        _service(session).list_items()
+
+    assert captured.value.status_code == 503
+    assert "sensitive" not in str(captured.value).lower()
+
+
 def test_stats_separate_opportunities_from_episode_states(session: Session) -> None:
     service = _service(session)
     _event(session, symbol="p", contract="P2609", bar_end=BAR_END)
@@ -1099,6 +1311,29 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
         ).id,
         _executed(executed_at=old_bar_end + timedelta(minutes=3)),
     )
+    old_done = service.record_executed(
+        _event(
+            session,
+            symbol="y",
+            contract="Y2609",
+            trading_day=date(2026, 8, 14),
+            bar_end=old_bar_end + timedelta(minutes=1),
+        ).id,
+        _executed(
+            executed_at=old_bar_end + timedelta(minutes=4),
+            quantity=1,
+        ),
+    )
+    service.append_execution(
+        old_done.episode.id,
+        ExecutionCommand(
+            execution_type="CLOSE",
+            executed_at=old_bar_end + timedelta(minutes=5),
+            price=Decimal("1260"),
+            quantity=1,
+        ),
+    )
+    service.submit_review(old_done.episode.id, _review_command())
 
     stats = service.stats(
         trading_day_from=date(2026, 8, 15),
@@ -1118,6 +1353,19 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
     assert stats.episode_states.done_episodes == 1
     assert open_result.episode.id != done.episode.id
 
+    filtered = service.stats(
+        trading_day_from=date(2026, 8, 15),
+        trading_day_to=date(2026, 8, 15),
+        symbol="o",
+        direction="SHORT",
+        frequency="15m",
+    )
+    assert filtered.opportunities.eligible_events == 1
+    assert filtered.opportunities.processed_events == 1
+    assert filtered.episode_states.open_episodes == 1
+    assert filtered.episode_states.pending_review_episodes == 0
+    assert filtered.episode_states.done_episodes == 0
+
 
 def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
     postgres_engine: Engine,
@@ -1128,47 +1376,7 @@ def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
         second = _event(seed, bar_end=BAR_END + timedelta(minutes=15))
         event_ids = (first.id, second.id)
 
-    barrier = Barrier(2)
-
-    def race(event_id: int, minute: int) -> tuple[int, str]:
-        with factory() as local_session:
-            intercepted = False
-
-            @sqlalchemy_event.listens_for(
-                local_session,
-                "do_orm_execute",
-                retval=True,
-            )
-            def synchronize_open_lookup(state: object):
-                nonlocal intercepted
-                statement = str(state.statement)  # type: ignore[attr-defined]
-                if (
-                    not intercepted
-                    and "trade_episodes" in statement
-                    and "closed_at IS NULL" in statement
-                ):
-                    intercepted = True
-                    result = state.invoke_statement()  # type: ignore[attr-defined]
-                    barrier.wait(timeout=10)
-                    return result
-                return state.invoke_statement()  # type: ignore[attr-defined]
-
-            try:
-                _service(local_session).record_executed(
-                    event_id,
-                    _executed(
-                        executed_at=BAR_END + timedelta(minutes=minute),
-                        quantity=1,
-                    ),
-                )
-                return event_id, "created"
-            except ExecutionReviewDomainError as exc:
-                return event_id, exc.code
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        results = tuple(
-            executor.map(race, event_ids, (20, 21))
-        )
+    results = _race_open_events(factory, event_ids)
 
     assert sorted(code for _, code in results) == [
         "OPEN_EPISODE_CONFLICT",
@@ -1195,6 +1403,108 @@ def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
         assert _count(check, TradeDecision) == 2
         assert _count(check, TradeEpisode) == 1
         assert _count(check, TradeExecution) == 2
+
+
+@pytest.mark.parametrize(
+    ("second_changes", "expected_conflict"),
+    [
+        ({"result_codes": ["buy"]}, "OPPOSITE_EPISODE_OPEN"),
+        ({"contract": "JM2701"}, "OPEN_EPISODE_CONFLICT"),
+    ],
+)
+def test_postgresql_open_race_reclassifies_winner_business_facts(
+    postgres_engine: Engine,
+    second_changes: dict[str, object],
+    expected_conflict: str,
+) -> None:
+    factory = sessionmaker(bind=postgres_engine, expire_on_commit=False)
+    with factory() as seed:
+        first = _event(seed, bar_end=BAR_END)
+        second = _event(
+            seed,
+            bar_end=BAR_END + timedelta(minutes=15),
+            **second_changes,
+        )
+        event_ids = (first.id, second.id)
+
+    results = _race_open_events(factory, event_ids)
+
+    assert sorted(code for _, code in results) == [
+        expected_conflict,
+        "created",
+    ]
+    with factory() as check:
+        assert _count(check, TradeDecision) == 1
+        assert _count(check, TradeEpisode) == 1
+        assert _count(check, TradeExecution) == 1
+
+
+def test_postgresql_disposition_correction_open_race_reclassifies_winner(
+    postgres_engine: Engine,
+) -> None:
+    factory = sessionmaker(bind=postgres_engine, expire_on_commit=False)
+    with factory() as seed:
+        first = _service(seed).record_not_executed(
+            _event(seed, bar_end=BAR_END).id,
+            NotExecutedCommand(primary_reason="TOO_LATE"),
+        )
+        second = _service(seed).record_not_executed(
+            _event(
+                seed,
+                bar_end=BAR_END + timedelta(minutes=15),
+                result_codes=["buy"],
+            ).id,
+            NotExecutedCommand(primary_reason="TOO_LATE"),
+        )
+        decision_ids = (first.id, second.id)
+    barrier = Barrier(2)
+
+    def race(decision_id: int, minute: int) -> str:
+        with factory() as local_session:
+            intercepted = False
+
+            @sqlalchemy_event.listens_for(
+                local_session,
+                "do_orm_execute",
+                retval=True,
+            )
+            def synchronize_open_lookup(state: object):
+                nonlocal intercepted
+                statement = str(state.statement)  # type: ignore[attr-defined]
+                if (
+                    not intercepted
+                    and "trade_episodes" in statement
+                    and "closed_at IS NULL" in statement
+                ):
+                    intercepted = True
+                    result = state.invoke_statement()  # type: ignore[attr-defined]
+                    barrier.wait(timeout=10)
+                    return result
+                return state.invoke_statement()  # type: ignore[attr-defined]
+
+            try:
+                _service(local_session).correct_disposition(
+                    decision_id,
+                    DispositionCorrectionCommand(
+                        target_disposition="EXECUTED",
+                        executed_at=BAR_END + timedelta(minutes=minute),
+                        price=Decimal("1260"),
+                        quantity=1,
+                        execution_reason_tags=("KEY_LEVEL_BREAKOUT",),
+                    ),
+                )
+                return "created"
+            except ExecutionReviewDomainError as exc:
+                return exc.code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(race, decision_ids, (30, 31)))
+
+    assert sorted(results) == ["OPPOSITE_EPISODE_OPEN", "created"]
+    with factory() as check:
+        assert _count(check, TradeDecision) == 2
+        assert _count(check, TradeEpisode) == 1
+        assert _count(check, TradeExecution) == 1
 
 
 def test_postgresql_episode_lock_serializes_concurrent_manual_appends(
@@ -1234,6 +1544,86 @@ def test_postgresql_episode_lock_serializes_concurrent_manual_appends(
             .order_by(TradeExecution.sequence_no)
         ).all()
         assert [row.sequence_no for row in rows] == [1, 2, 3]
+
+
+def test_postgresql_decision_update_serializes_with_disposition_correction(
+    postgres_engine: Engine,
+) -> None:
+    factory = sessionmaker(bind=postgres_engine, expire_on_commit=False)
+    with factory() as seed:
+        opened = _service(seed).record_executed(_event(seed).id, _executed())
+        decision_id = opened.decision.id
+    update_selected = Event()
+    correction_started = Event()
+    correction_finished = Event()
+
+    def update() -> None:
+        with factory() as local_session:
+            intercepted = False
+
+            @sqlalchemy_event.listens_for(
+                local_session,
+                "do_orm_execute",
+                retval=True,
+            )
+            def hold_after_decision_read(state: object):
+                nonlocal intercepted
+                statement = str(state.statement)  # type: ignore[attr-defined]
+                if not intercepted and "FROM trade_decisions" in statement:
+                    intercepted = True
+                    result = state.invoke_statement()  # type: ignore[attr-defined]
+                    update_selected.set()
+                    if "FOR UPDATE" in statement:
+                        assert correction_started.wait(timeout=10)
+                    else:
+                        assert correction_finished.wait(timeout=10)
+                    return result
+                return state.invoke_statement()  # type: ignore[attr-defined]
+
+            _service(local_session).update_decision(
+                decision_id,
+                DecisionUpdateCommand(
+                    first_viewed_at=None,
+                    decided_at=BAR_END + timedelta(minutes=2),
+                    primary_not_execute_reason=None,
+                    secondary_not_execute_reasons=(),
+                    note="updated",
+                    execution_reason_tags=("PULLBACK_RECONFIRMED",),
+                    planned_stop_price=Decimal("1300"),
+                    stop_basis="EMA",
+                ),
+            )
+
+    def correct() -> None:
+        assert update_selected.wait(timeout=10)
+        correction_started.set()
+        try:
+            with factory() as local_session:
+                _service(local_session).correct_disposition(
+                    decision_id,
+                    DispositionCorrectionCommand(
+                        target_disposition="NOT_EXECUTED",
+                        primary_reason="TOO_LATE",
+                    ),
+                )
+        finally:
+            correction_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        update_future = executor.submit(update)
+        correction_future = executor.submit(correct)
+        update_future.result(timeout=15)
+        correction_future.result(timeout=15)
+
+    with factory() as check:
+        decision = check.get(TradeDecision, decision_id)
+        assert decision is not None
+        assert decision.disposition == "NOT_EXECUTED"
+        assert decision.primary_not_execute_reason == "TOO_LATE"
+        assert decision.secondary_not_execute_reasons == []
+        assert decision.execution_reason_tags == []
+        assert decision.planned_stop_price is None
+        assert decision.stop_basis is None
 
 
 @pytest.mark.parametrize(
@@ -1355,6 +1745,51 @@ def _reset_postgres(engine: Engine) -> None:
     with engine.begin() as connection:
         connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
+
+
+def _race_open_events(
+    factory: sessionmaker[Session],
+    event_ids: tuple[int, int],
+) -> tuple[tuple[int, str], ...]:
+    barrier = Barrier(2)
+
+    def race(event_id: int, minute: int) -> tuple[int, str]:
+        with factory() as local_session:
+            intercepted = False
+
+            @sqlalchemy_event.listens_for(
+                local_session,
+                "do_orm_execute",
+                retval=True,
+            )
+            def synchronize_open_lookup(state: object):
+                nonlocal intercepted
+                statement = str(state.statement)  # type: ignore[attr-defined]
+                if (
+                    not intercepted
+                    and "trade_episodes" in statement
+                    and "closed_at IS NULL" in statement
+                ):
+                    intercepted = True
+                    result = state.invoke_statement()  # type: ignore[attr-defined]
+                    barrier.wait(timeout=10)
+                    return result
+                return state.invoke_statement()  # type: ignore[attr-defined]
+
+            try:
+                _service(local_session).record_executed(
+                    event_id,
+                    _executed(
+                        executed_at=BAR_END + timedelta(minutes=minute),
+                        quantity=1,
+                    ),
+                )
+                return event_id, "created"
+            except ExecutionReviewDomainError as exc:
+                return event_id, exc.code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        return tuple(executor.map(race, event_ids, (20, 21)))
 
 
 def _integrity_error(constraint_name: str) -> IntegrityError:

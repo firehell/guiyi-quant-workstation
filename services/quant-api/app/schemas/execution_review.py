@@ -4,9 +4,22 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
+
+
+DatabaseDecimal = Annotated[
+    Decimal,
+    Field(
+        gt=Decimal("0"),
+        allow_inf_nan=False,
+        max_digits=24,
+        decimal_places=8,
+    ),
+]
+PositiveQuantity = Annotated[StrictInt, Field(gt=0, le=2_147_483_647)]
+PositiveDatabaseId = Annotated[StrictInt, Field(gt=0, le=2_147_483_647)]
 
 
 class StrictRequest(BaseModel):
@@ -23,12 +36,12 @@ class NotExecutedRequest(StrictRequest):
 
 class ExecutedRequest(StrictRequest):
     executed_at: datetime
-    price: Decimal
-    quantity: int
+    price: DatabaseDecimal
+    quantity: PositiveQuantity
     execution_reason_tags: list[str]
     first_viewed_at: datetime | None = None
     decided_at: datetime | None = None
-    planned_stop_price: Decimal | None = None
+    planned_stop_price: DatabaseDecimal | None = None
     stop_basis: str | None = None
     note: str | None = None
 
@@ -36,23 +49,23 @@ class ExecutedRequest(StrictRequest):
 class ExecutionCreateRequest(StrictRequest):
     execution_type: Literal["ADD", "REDUCE", "CLOSE"]
     executed_at: datetime
-    price: Decimal
-    quantity: int
+    price: DatabaseDecimal
+    quantity: PositiveQuantity
     note: str | None = None
 
 
 class ExecutionUpdateRequest(StrictRequest):
     executed_at: datetime
-    price: Decimal
+    price: DatabaseDecimal
     note: str | None = None
 
 
 class TimelineExecutionRequest(StrictRequest):
-    execution_id: int | None = None
+    execution_id: PositiveDatabaseId | None = None
     execution_type: Literal["OPEN", "ADD", "REDUCE", "CLOSE"]
     executed_at: datetime
-    price: Decimal
-    quantity: int
+    price: DatabaseDecimal
+    quantity: PositiveQuantity
     note: str | None = None
 
 
@@ -67,7 +80,7 @@ class DecisionUpdateRequest(StrictRequest):
     secondary_not_execute_reasons: list[str]
     note: str | None
     execution_reason_tags: list[str]
-    planned_stop_price: Decimal | None
+    planned_stop_price: DatabaseDecimal | None
     stop_basis: str | None
 
 
@@ -77,11 +90,11 @@ class DispositionCorrectionRequest(StrictRequest):
     secondary_reasons: list[str] = []
     execution_reason_tags: list[str] = []
     executed_at: datetime | None = None
-    price: Decimal | None = None
-    quantity: int | None = None
+    price: DatabaseDecimal | None = None
+    quantity: PositiveQuantity | None = None
     first_viewed_at: datetime | None = None
     decided_at: datetime | None = None
-    planned_stop_price: Decimal | None = None
+    planned_stop_price: DatabaseDecimal | None = None
     stop_basis: str | None = None
     note: str | None = None
 

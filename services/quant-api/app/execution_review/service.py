@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import TypeVar
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -36,6 +37,9 @@ from app.execution_review.pnl import (
 
 ELIGIBLE_RULE_CODE = "subing_entry_signal_v1"
 ELIGIBLE_FREQUENCIES = frozenset({"5m", "15m"})
+MAX_DATABASE_INTEGER = 2_147_483_647
+MAX_DATABASE_DECIMAL = Decimal("10000000000000000")
+_T = TypeVar("_T")
 
 
 class ExecutionReviewDomainError(RuntimeError):
@@ -270,8 +274,7 @@ class ExecutionReviewService:
                 stop_basis=None,
             )
             self._session.add(decision)
-            self._session.commit()
-            self._session.refresh(decision)
+            self._commit_rows(decision)
             return decision
         except ExecutionReviewDomainError:
             self._session.rollback()
@@ -291,9 +294,13 @@ class ExecutionReviewService:
         """Atomically create an EXECUTED Decision and its OPEN or ADD fact."""
 
         event_symbol: str | None = None
+        event_contract: str | None = None
+        event_direction: str | None = None
         try:
             event, direction = self._eligible_event(event_id)
             event_symbol = event.symbol
+            event_contract = event.contract
+            event_direction = direction
             if self._decision_for_event(event.id) is not None:
                 raise _conflict("DECISION_ALREADY_EXISTS")
             self._validate_executed_command(event, command)
@@ -373,9 +380,7 @@ class ExecutionReviewService:
             )
             position = self._calculate_position(episode, candidate)
             self._session.add(execution)
-            self._session.commit()
-            for row in (decision, episode, execution):
-                self._session.refresh(row)
+            self._commit_rows(decision, episode, execution)
             return ExecutedResult(
                 decision=decision,
                 episode=episode,
@@ -392,13 +397,22 @@ class ExecutionReviewService:
                 constraint_name == "uq_trade_episodes_symbol_open"
                 and event_symbol is not None
             ):
-                self._session.scalar(
-                    select(TradeEpisode.id).where(
-                        TradeEpisode.symbol == event_symbol,
-                        TradeEpisode.closed_at.is_(None),
+                try:
+                    winner = self._session.scalar(
+                        select(TradeEpisode).where(
+                            TradeEpisode.symbol == event_symbol,
+                            TradeEpisode.closed_at.is_(None),
+                        )
                     )
-                )
+                except SQLAlchemyError:
+                    self._session.rollback()
+                    raise _persistence_failure() from None
                 self._session.rollback()
+                if winner is not None and winner.direction != event_direction:
+                    raise _conflict("OPPOSITE_EPISODE_OPEN") from None
+                if winner is not None and winner.contract != event_contract:
+                    raise _conflict("OPEN_EPISODE_CONFLICT") from None
+                raise _conflict("OPEN_EPISODE_CONFLICT") from None
             raise self._integrity_error(exc) from None
         except SQLAlchemyError:
             self._session.rollback()
@@ -438,6 +452,11 @@ class ExecutionReviewService:
                 ),
             )
             position = self._calculate_position(episode, candidate)
+            if (
+                command.execution_type == "CLOSE"
+                and _utc(command.executed_at) < _utc(episode.opened_at)
+            ):
+                raise _invalid("EXECUTION_REVIEW_TIME_INVALID")
             execution = TradeExecution(
                 episode_id=episode.id,
                 trigger_decision_id=None,
@@ -454,9 +473,7 @@ class ExecutionReviewService:
                 episode.close_reason = "EXECUTION_NET_ZERO"
                 episode.roll_reference_exit_price = None
                 episode.roll_reference_bar_end = None
-            self._session.commit()
-            self._session.refresh(episode)
-            self._session.refresh(execution)
+            self._commit_rows(episode, execution)
             return ExecutionResult(
                 episode=episode,
                 execution=execution,
@@ -480,16 +497,15 @@ class ExecutionReviewService:
         """Correct only time, price, and note without changing lineage/topology."""
 
         try:
-            execution = self._session.get(TradeExecution, execution_id)
-            if execution is None:
-                raise _not_found("TRADE_EXECUTION_NOT_FOUND")
-            episode = self._session.scalar(
-                select(TradeEpisode)
-                .where(TradeEpisode.id == execution.episode_id)
+            locked = self._session.execute(
+                select(TradeExecution, TradeEpisode)
+                .join(TradeEpisode, TradeExecution.episode_id == TradeEpisode.id)
+                .where(TradeExecution.id == execution_id)
                 .with_for_update()
-            )
-            if episode is None:
-                raise _not_found("TRADE_EPISODE_NOT_FOUND")
+            ).one_or_none()
+            if locked is None:
+                raise _not_found("TRADE_EXECUTION_NOT_FOUND")
+            execution, episode = locked
             if episode.close_reason == "DOMINANT_ROLL":
                 raise _conflict("EXECUTION_CORRECTION_CONFLICT")
             _require_aware(command.executed_at)
@@ -509,12 +525,17 @@ class ExecutionReviewService:
             execution.price = command.price
             execution.note = command.note
             if execution.execution_type == "OPEN":
+                if (
+                    episode.closed_at is not None
+                    and _utc(command.executed_at) > _utc(episode.closed_at)
+                ):
+                    raise _invalid("EXECUTION_REVIEW_TIME_INVALID")
                 episode.opened_at = command.executed_at
             if execution.execution_type == "CLOSE":
+                if _utc(command.executed_at) < _utc(episode.opened_at):
+                    raise _invalid("EXECUTION_REVIEW_TIME_INVALID")
                 episode.closed_at = command.executed_at
-            self._session.commit()
-            self._session.refresh(episode)
-            self._session.refresh(execution)
+            self._commit_rows(episode, execution)
             return ExecutionResult(
                 episode=episode,
                 execution=execution,
@@ -606,6 +627,15 @@ class ExecutionReviewService:
                 )
                 lineage.append(trigger_id)
             position = self._calculate_position(episode, tuple(facts))
+            if (
+                position.remaining_quantity == 0
+                and _utc(commands[-1].executed_at) < _utc(commands[0].executed_at)
+            ):
+                raise _invalid("EXECUTION_REVIEW_TIME_INVALID")
+            if position.remaining_quantity > 0 and self._session.scalar(
+                select(TradeReview.id).where(TradeReview.episode_id == episode.id)
+            ) is not None:
+                raise _conflict("REVIEW_LINEAGE_CONFLICT")
 
             for row in existing:
                 self._session.expunge(row)
@@ -640,10 +670,7 @@ class ExecutionReviewService:
                 episode.close_reason = None
             episode.roll_reference_exit_price = None
             episode.roll_reference_bar_end = None
-            self._session.commit()
-            self._session.refresh(episode)
-            for row in rebuilt:
-                self._session.refresh(row)
+            self._commit_rows(episode, *rebuilt)
             return TimelineResult(
                 episode=episode,
                 executions=tuple(rebuilt),
@@ -667,7 +694,11 @@ class ExecutionReviewService:
         """Update fields under the Decision's immutable disposition contract."""
 
         try:
-            decision = self._session.get(TradeDecision, decision_id)
+            decision = self._session.scalar(
+                select(TradeDecision)
+                .where(TradeDecision.id == decision_id)
+                .with_for_update()
+            )
             if decision is None:
                 raise _not_found("TRADE_DECISION_NOT_FOUND")
             event = self._event_for_decision(decision)
@@ -721,8 +752,7 @@ class ExecutionReviewService:
             decision.execution_reason_tags = list(command.execution_reason_tags)
             decision.planned_stop_price = command.planned_stop_price
             decision.stop_basis = command.stop_basis
-            self._session.commit()
-            self._session.refresh(decision)
+            self._commit_rows(decision)
             return decision
         except ExecutionReviewDomainError:
             self._session.rollback()
@@ -741,6 +771,7 @@ class ExecutionReviewService:
     ) -> DispositionCorrectionResult:
         """Perform the only bounded transition between Decision dispositions."""
 
+        race_context: tuple[str, str, str] | None = None
         try:
             decision = self._session.scalar(
                 select(TradeDecision)
@@ -754,21 +785,46 @@ class ExecutionReviewService:
             if decision.disposition == command.target_disposition:
                 raise _conflict("DECISION_DISPOSITION_UNCHANGED")
             if command.target_disposition == "EXECUTED":
+                event = self._event_for_decision(decision)
+                _, direction = self._eligible_event(event.id)
+                race_context = (event.symbol, event.contract, direction)
                 result = self._correct_to_executed(decision, command)
             else:
                 result = self._correct_to_not_executed(decision, command)
-            self._session.commit()
-            self._session.refresh(decision)
+            rows: list[object] = [decision]
             if result.episode is not None:
-                self._session.refresh(result.episode)
+                rows.append(result.episode)
             if result.execution is not None:
-                self._session.refresh(result.execution)
+                rows.append(result.execution)
+            self._commit_rows(*rows)
             return result
         except ExecutionReviewDomainError:
             self._session.rollback()
             raise
         except IntegrityError as exc:
+            constraint_name = _constraint_name(exc)
             self._session.rollback()
+            if (
+                constraint_name == "uq_trade_episodes_symbol_open"
+                and race_context is not None
+            ):
+                symbol, contract, direction = race_context
+                try:
+                    winner = self._session.execute(
+                        select(TradeEpisode.contract, TradeEpisode.direction).where(
+                            TradeEpisode.symbol == symbol,
+                            TradeEpisode.closed_at.is_(None),
+                        )
+                    ).one_or_none()
+                except SQLAlchemyError:
+                    self._session.rollback()
+                    raise _persistence_failure() from None
+                self._session.rollback()
+                if winner is not None and winner.direction != direction:
+                    raise _conflict("OPPOSITE_EPISODE_OPEN") from None
+                if winner is not None and winner.contract != contract:
+                    raise _conflict("OPEN_EPISODE_CONFLICT") from None
+                raise _conflict("OPEN_EPISODE_CONFLICT") from None
             raise self._integrity_error(exc) from None
         except SQLAlchemyError:
             self._session.rollback()
@@ -812,8 +868,7 @@ class ExecutionReviewService:
                 updated_at=now,
             )
             self._session.add(review)
-            self._session.commit()
-            self._session.refresh(review)
+            self._commit_rows(review)
             return review
         except ExecutionReviewDomainError:
             self._session.rollback()
@@ -847,8 +902,7 @@ class ExecutionReviewService:
             review.psychology_tags = list(command.psychology_tags)
             review.summary = command.summary
             review.updated_at = now
-            self._session.commit()
-            self._session.refresh(review)
+            self._commit_rows(review)
             return review
         except ExecutionReviewDomainError:
             self._session.rollback()
@@ -861,6 +915,9 @@ class ExecutionReviewService:
             raise _persistence_failure() from None
 
     def list_items(self, *, state: str | None = None) -> tuple[ReviewItem, ...]:
+        return self._read_call(lambda: self._list_items(state=state))
+
+    def _list_items(self, *, state: str | None = None) -> tuple[ReviewItem, ...]:
         """List opportunity and Episode work items under the canonical states."""
 
         if state is not None and state not in {
@@ -930,6 +987,9 @@ class ExecutionReviewService:
         )
 
     def event_states(self) -> tuple[EventReviewState, ...]:
+        return self._read_call(self._event_states)
+
+    def _event_states(self) -> tuple[EventReviewState, ...]:
         """Classify each eligible Event using its Decision/Execution lineage."""
 
         items = self.list_items()
@@ -977,6 +1037,9 @@ class ExecutionReviewService:
         return tuple(direct[event.id] for event in self._eligible_events())
 
     def episode_detail(self, episode_id: int) -> EpisodeDetail:
+        return self._read_call(lambda: self._episode_detail(episode_id))
+
+    def _episode_detail(self, episode_id: int) -> EpisodeDetail:
         episode = self._session.get(TradeEpisode, episode_id)
         if episode is None:
             raise _not_found("TRADE_EPISODE_NOT_FOUND")
@@ -992,6 +1055,28 @@ class ExecutionReviewService:
         *,
         trading_day_from: date | None = None,
         trading_day_to: date | None = None,
+        symbol: str | None = None,
+        direction: str | None = None,
+        frequency: str | None = None,
+    ) -> ExecutionReviewStats:
+        return self._read_call(
+            lambda: self._stats(
+                trading_day_from=trading_day_from,
+                trading_day_to=trading_day_to,
+                symbol=symbol,
+                direction=direction,
+                frequency=frequency,
+            )
+        )
+
+    def _stats(
+        self,
+        *,
+        trading_day_from: date | None = None,
+        trading_day_to: date | None = None,
+        symbol: str | None = None,
+        direction: str | None = None,
+        frequency: str | None = None,
     ) -> ExecutionReviewStats:
         """Compute separate opportunity and Episode-state denominators."""
 
@@ -1001,7 +1086,20 @@ class ExecutionReviewService:
             and trading_day_from > trading_day_to
         ):
             raise _invalid("EXECUTION_REVIEW_DATE_RANGE_INVALID")
-        events = self._eligible_events(trading_day_from, trading_day_to)
+        normalized_symbol = symbol.strip().lower() if symbol is not None else None
+        if normalized_symbol == "":
+            raise _invalid("EXECUTION_REVIEW_STATS_FILTER_INVALID")
+        if direction is not None and direction not in {"LONG", "SHORT"}:
+            raise _invalid("EXECUTION_REVIEW_STATS_FILTER_INVALID")
+        if frequency is not None and frequency not in ELIGIBLE_FREQUENCIES:
+            raise _invalid("EXECUTION_REVIEW_STATS_FILTER_INVALID")
+        events = self._eligible_events(
+            trading_day_from,
+            trading_day_to,
+            symbol=normalized_symbol,
+            direction=direction,
+            frequency=frequency,
+        )
         event_ids = {event.id for event in events}
         decisions = tuple(
             self._session.scalars(
@@ -1039,9 +1137,30 @@ class ExecutionReviewService:
             ),
             primary_reason_counts=dict(sorted(reasons.items())),
         )
-        episodes = tuple(
-            self._session.scalars(select(TradeEpisode)).all()
+        backlog_events = self._eligible_events(
+            symbol=normalized_symbol,
+            direction=direction,
+            frequency=frequency,
         )
+        backlog_event_ids = {event.id for event in backlog_events}
+        backlog_decisions = tuple(
+            self._session.scalars(
+                select(TradeDecision).where(
+                    TradeDecision.alert_event_id.in_(backlog_event_ids)
+                )
+            ).all()
+        ) if backlog_event_ids else ()
+        origin_event_by_decision = {
+            row.id: row.alert_event_id for row in backlog_decisions
+        }
+        origin_decision_ids = set(origin_event_by_decision)
+        episodes = tuple(
+            self._session.scalars(
+                select(TradeEpisode).where(
+                    TradeEpisode.origin_decision_id.in_(origin_decision_ids)
+                )
+            ).all()
+        ) if origin_decision_ids else ()
         review_episode_ids = set(
             self._session.scalars(select(TradeReview.episode_id)).all()
         )
@@ -1052,7 +1171,9 @@ class ExecutionReviewService:
                 for row in episodes
             ),
             done_episodes=sum(
-                row.closed_at is not None and row.id in review_episode_ids
+                row.closed_at is not None
+                and row.id in review_episode_ids
+                and origin_event_by_decision[row.origin_decision_id] in event_ids
                 for row in episodes
             ),
         )
@@ -1071,6 +1192,25 @@ class ExecutionReviewService:
             )
         except ExecutionReviewContractError as exc:
             raise _invalid(exc.code) from None
+
+    def _commit_rows(self, *rows: object) -> None:
+        """Commit without any fallible database read after transaction success."""
+
+        self._session.flush()
+        for row in rows:
+            if row in self._session:
+                self._session.expunge(row)
+        self._session.commit()
+
+    def _read_call(self, call: Callable[[], _T]) -> _T:
+        try:
+            return call()
+        except ExecutionReviewDomainError:
+            self._session.rollback()
+            raise
+        except SQLAlchemyError:
+            self._session.rollback()
+            raise _persistence_failure() from None
 
     def _correct_to_executed(
         self,
@@ -1306,6 +1446,10 @@ class ExecutionReviewService:
         self,
         trading_day_from: date | None = None,
         trading_day_to: date | None = None,
+        *,
+        symbol: str | None = None,
+        direction: str | None = None,
+        frequency: str | None = None,
     ) -> tuple[AlertEvent, ...]:
         rows = self._session.execute(
             select(AlertEvent, AlertRule.rule_code)
@@ -1320,11 +1464,20 @@ class ExecutionReviewService:
                 continue
             if trading_day_to is not None and event.trading_day > trading_day_to:
                 continue
+            if symbol is not None and event.symbol != symbol:
+                continue
+            if frequency is not None and event.frequency != frequency:
+                continue
             if (
                 not str(event.contract or "").strip()
                 or event.frequency not in ELIGIBLE_FREQUENCIES
                 or tuple(event.result_codes or ()) not in {("buy",), ("sell",)}
             ):
+                continue
+            event_direction = (
+                "LONG" if tuple(event.result_codes) == ("buy",) else "SHORT"
+            )
+            if direction is not None and event_direction != direction:
                 continue
             result.append(event)
         return tuple(result)
@@ -1425,13 +1578,18 @@ class ExecutionReviewService:
     ) -> None:
         if trigger_decision_id is None:
             return
-        event_bar_end = self._session.scalar(
-            select(AlertEvent.bar_end)
+        causal_times = self._session.execute(
+            select(AlertEvent.bar_end, TradeDecision.decided_at)
             .join(TradeDecision, TradeDecision.alert_event_id == AlertEvent.id)
             .where(TradeDecision.id == trigger_decision_id)
-        )
-        if event_bar_end is None or _utc(executed_at) < _utc(event_bar_end):
+        ).one_or_none()
+        if causal_times is None:
             raise _invalid("EXECUTION_TIME_BEFORE_SIGNAL")
+        event_bar_end, decided_at = causal_times
+        if _utc(executed_at) < _utc(event_bar_end):
+            raise _invalid("EXECUTION_TIME_BEFORE_SIGNAL")
+        if _utc(executed_at) < _utc(decided_at):
+            raise _invalid("DECISION_AFTER_EXECUTION")
 
     @staticmethod
     def _calculate_position(
@@ -1472,9 +1630,12 @@ def _require_aware(value: datetime) -> None:
 
 
 def _validate_price_quantity(price: Decimal, quantity: int) -> None:
-    if not isinstance(price, Decimal) or not price.is_finite() or price <= 0:
-        raise _invalid("PRICE_INVALID")
-    if type(quantity) is not int or quantity <= 0:
+    _validate_database_decimal(price, "PRICE_INVALID")
+    if (
+        type(quantity) is not int
+        or quantity <= 0
+        or quantity > MAX_DATABASE_INTEGER
+    ):
         raise _invalid("EXECUTION_QUANTITY_INVALID")
 
 
@@ -1483,12 +1644,24 @@ def _validate_stop(price: Decimal | None, basis: str | None) -> None:
         if basis is not None:
             raise _invalid("PLANNED_STOP_PRICE_REQUIRED")
         return
-    if not isinstance(price, Decimal) or not price.is_finite() or price <= 0:
-        raise _invalid("STOP_PRICE_INVALID")
+    _validate_database_decimal(price, "STOP_PRICE_INVALID")
     if basis is None:
         raise _invalid("STOP_BASIS_REQUIRED")
     if basis not in STOP_BASES:
         raise _invalid("UNKNOWN_STOP_BASIS")
+
+
+def _validate_database_decimal(value: object, code: str) -> None:
+    if (
+        not isinstance(value, Decimal)
+        or not value.is_finite()
+        or value <= 0
+        or value >= MAX_DATABASE_DECIMAL
+    ):
+        raise _invalid(code)
+    exponent = value.as_tuple().exponent
+    if not isinstance(exponent, int) or exponent < -8:
+        raise _invalid(code)
 
 
 def _utc(value: datetime) -> datetime:
