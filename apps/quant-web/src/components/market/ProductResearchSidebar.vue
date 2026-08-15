@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { NButton, NDivider, NTag } from 'naive-ui'
 import ProductAlertRules from '@/components/market/ProductAlertRules.vue'
+import ProductFormalSignalCard from '@/components/market/ProductFormalSignalCard.vue'
+import ProductTodayAlertEvents from '@/components/market/ProductTodayAlertEvents.vue'
 import SubingResearchSection from '@/components/market/SubingResearchSection.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
 import type {
@@ -35,6 +37,10 @@ const props = defineProps<{
   alertRuntimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
   savingRuleCodes: Set<string>
+  currentEventsLoading: boolean
+  currentEventsStatus: 'ready' | 'unavailable' | null
+  currentEvents: import('@/types/market').AlertEvent[]
+  htdyObservationVisible: boolean
 }>()
 
 const emit = defineEmits<{
@@ -72,8 +78,32 @@ function ratio(value: number | null) {
         {{ watchlisted ? '已自选' : '加入自选' }}
       </NButton>
     </div>
+    <NDivider />
+    <ProductFormalSignalCard :snapshot="subing" />
+    <NDivider />
+    <section class="research-sidebar__section"><h3>提醒开关</h3></section>
+    <ProductAlertRules
+      :htdy-rule="htdyRule"
+      :subing-rule="subingRule"
+      :runtime-status="alertRuntimeStatus"
+      :loading="alertLoading"
+      :saving-rule-codes="savingRuleCodes"
+      @toggle="(ruleCode, enabled) => emit('toggle-alert', ruleCode, enabled)"
+    />
+    <NDivider />
+    <section v-if="htdyObservationVisible" class="research-sidebar__section">
+      <h3>火天大有观察</h3>
+      <p class="research-sidebar__unavailable">原始观察可能重绘，仅供人工观察</p>
+    </section>
+    <NDivider v-if="htdyObservationVisible" />
+    <ProductTodayAlertEvents
+      :loading="currentEventsLoading"
+      :status="currentEventsStatus"
+      :items="currentEvents"
+    />
+    <NDivider />
+    <section class="research-sidebar__section"><h3>研究明细</h3></section>
     <template v-if="selectedOverlay === 'subing'">
-      <NDivider />
       <SubingResearchSection
         :snapshot="subing"
         :loading="subingLoading"
@@ -82,7 +112,6 @@ function ratio(value: number | null) {
       />
     </template>
     <template v-if="research">
-      <NDivider />
       <section class="research-sidebar__section">
         <h3>趋势 / 位置</h3>
         <dl class="research-sidebar__facts">
@@ -93,7 +122,6 @@ function ratio(value: number | null) {
           <div><dt>ATR 分位</dt><dd>{{ percent(research.atr14_percentile252) }}</dd></div>
         </dl>
       </section>
-      <NDivider />
       <section class="research-sidebar__section">
         <h3>量与持仓</h3>
         <dl class="research-sidebar__facts">
@@ -105,15 +133,6 @@ function ratio(value: number | null) {
     </template>
     <p v-else-if="researchLoading" class="research-sidebar__unavailable">读取研究数据…</p>
     <p v-else-if="researchError" class="research-sidebar__unavailable">研究数据暂不可用</p>
-    <NDivider />
-    <ProductAlertRules
-      :htdy-rule="htdyRule"
-      :subing-rule="subingRule"
-      :runtime-status="alertRuntimeStatus"
-      :loading="alertLoading"
-      :saving-rule-codes="savingRuleCodes"
-      @toggle="(ruleCode, enabled) => emit('toggle-alert', ruleCode, enabled)"
-    />
     <NDivider />
     <section class="research-sidebar__section">
       <h3>合约 / Runtime 上下文</h3>
@@ -128,7 +147,7 @@ function ratio(value: number | null) {
     </section>
     <NDivider />
     <div class="research-sidebar__note">
-      <span>历史浏览</span>
+      <span>边界说明</span>
       <strong>{{ hasMoreBefore ? '可继续向左加载' : '已到当前可读边界' }}</strong>
     </div>
   </aside>

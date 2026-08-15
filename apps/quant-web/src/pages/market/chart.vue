@@ -11,12 +11,14 @@ import { getMarketDominants, getProductResearch, getSubingResearch } from '@/api
 import {
   getAlertRuntimeStatus,
   getAlertEvents,
+  getProductCurrentAlertEvents,
   getProductAlerts,
   setAlertProductEnabled,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
+import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
 import { useSubingObservation } from '@/composables/useSubingObservation'
 import type {
   DominantContractItem,
@@ -122,6 +124,13 @@ const {
   setProductEnabled: setAlertProductEnabled,
   notifyError: (text) => message.error(text),
 })
+const {
+  loading: currentEventsLoading,
+  status: currentEventsStatus,
+  items: currentEvents,
+  refresh: refreshCurrentEvents,
+  dispose: disposeProductCurrentAlertEvents,
+} = useProductCurrentAlertEvents({ symbol, fetchCurrentEvents: getProductCurrentAlertEvents })
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
@@ -178,6 +187,7 @@ onMounted(async () => {
     void refreshSubing()
     void refreshResearch()
     void refreshAlerts()
+    void refreshCurrentEvents()
   } catch {
     error.value = '行情元数据加载失败'
   } finally {
@@ -261,6 +271,7 @@ onUnmounted(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
   disposeSubingObservation()
   disposeProductAlertScope()
+  disposeProductCurrentAlertEvents()
   dispose()
   disposePersistentAlertMarkers()
 })
@@ -530,6 +541,10 @@ function normalizeSymbol(value: unknown): string | null {
             :alert-runtime-status="alertRuntimeStatus"
             :alert-loading="alertLoading"
             :saving-rule-codes="savingRuleCodes"
+            :current-events-loading="currentEventsLoading"
+            :current-events-status="currentEventsStatus"
+            :current-events="currentEvents"
+            :htdy-observation-visible="htdyVisible && visibleBars.length > 0"
             @toggle-watchlist="toggleWatchlist"
             @toggle-alert="toggleAlert"
           />
@@ -569,6 +584,10 @@ function normalizeSymbol(value: unknown): string | null {
           :alert-runtime-status="alertRuntimeStatus"
           :alert-loading="alertLoading"
           :saving-rule-codes="savingRuleCodes"
+          :current-events-loading="currentEventsLoading"
+          :current-events-status="currentEventsStatus"
+          :current-events="currentEvents"
+          :htdy-observation-visible="htdyVisible && visibleBars.length > 0"
           @toggle-watchlist="toggleWatchlist"
           @toggle-alert="toggleAlert"
         />
