@@ -356,6 +356,10 @@ def test_same_contract_and_direction_event_creates_decision_and_add(
     [
         ({"result_codes": ["buy"]}, "OPPOSITE_EPISODE_OPEN"),
         ({"contract": "JM2701"}, "OPEN_EPISODE_CONFLICT"),
+        (
+            {"contract": "JM2701", "result_codes": ["buy"]},
+            "OPEN_EPISODE_CONFLICT",
+        ),
     ],
 )
 def test_existing_episode_conflicts_are_stable_and_atomic(
@@ -1206,7 +1210,15 @@ def test_read_models_classify_pending_open_pending_review_and_done(
             quantity=1,
         ),
     )
-    service.submit_review(done.episode.id, _review_command())
+    service.submit_review(
+        done.episode.id,
+        _review_command(
+            entry_tags=("TOO_LATE",),
+            holding_tags=("COULD_NOT_HOLD",),
+            exit_tags=("STOP_DELAYED",),
+            psychology_tags=("HESITATION",),
+        ),
+    )
 
     items = service.list_items()
     assert {(item.item_kind, item.state, item.event_id) for item in items} == {
@@ -1299,7 +1311,15 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
                 quantity=1,
             ),
         )
-    service.submit_review(done.episode.id, _review_command())
+    service.submit_review(
+        done.episode.id,
+        _review_command(
+            entry_tags=("TOO_LATE",),
+            holding_tags=("COULD_NOT_HOLD",),
+            exit_tags=("STOP_DELAYED",),
+            psychology_tags=("HESITATION",),
+        ),
+    )
     old_bar_end = BAR_END - timedelta(days=1)
     service.record_executed(
         _event(
@@ -1351,6 +1371,10 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
     assert stats.episode_states.open_episodes == 2
     assert stats.episode_states.pending_review_episodes == 1
     assert stats.episode_states.done_episodes == 1
+    assert stats.review_issue_top.entry == {"TOO_LATE": 1}
+    assert stats.review_issue_top.holding == {"COULD_NOT_HOLD": 1}
+    assert stats.review_issue_top.exit_risk == {"STOP_DELAYED": 1}
+    assert stats.review_issue_top.psychology == {"HESITATION": 1}
     assert open_result.episode.id != done.episode.id
 
     filtered = service.stats(
@@ -1365,6 +1389,7 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
     assert filtered.episode_states.open_episodes == 1
     assert filtered.episode_states.pending_review_episodes == 0
     assert filtered.episode_states.done_episodes == 0
+    assert filtered.review_issue_top.entry == {}
 
 
 def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
@@ -1410,6 +1435,10 @@ def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
     [
         ({"result_codes": ["buy"]}, "OPPOSITE_EPISODE_OPEN"),
         ({"contract": "JM2701"}, "OPEN_EPISODE_CONFLICT"),
+        (
+            {"contract": "JM2701", "result_codes": ["buy"]},
+            "OPEN_EPISODE_CONFLICT",
+        ),
     ],
 )
 def test_postgresql_open_race_reclassifies_winner_business_facts(
@@ -1624,6 +1653,179 @@ def test_postgresql_decision_update_serializes_with_disposition_correction(
         assert decision.execution_reason_tags == []
         assert decision.planned_stop_price is None
         assert decision.stop_basis is None
+
+
+@pytest.mark.parametrize("correction_kind", ["execution", "timeline"])
+def test_postgresql_causal_corrections_serialize_decision_and_execution(
+    postgres_engine: Engine,
+    correction_kind: str,
+) -> None:
+    factory = sessionmaker(bind=postgres_engine, expire_on_commit=False)
+    with factory() as seed:
+        opened = _service(seed).record_executed(
+            _event(seed).id,
+            _executed(
+                decided_at=BAR_END + timedelta(minutes=2),
+                executed_at=BAR_END + timedelta(minutes=5),
+                quantity=1,
+            ),
+        )
+        decision_id = opened.decision.id
+        execution_id = opened.execution.id
+        episode_id = opened.episode.id
+    causal_read = Event()
+    decision_started = Event()
+    decision_finished = Event()
+
+    def correct_execution() -> str:
+        with factory() as local_session:
+            intercepted = False
+
+            @sqlalchemy_event.listens_for(
+                local_session,
+                "do_orm_execute",
+                retval=True,
+            )
+            def hold_after_decision_read(state: object):
+                nonlocal intercepted
+                statement = str(state.statement)  # type: ignore[attr-defined]
+                if not intercepted and "trade_decisions" in statement:
+                    intercepted = True
+                    result = state.invoke_statement()  # type: ignore[attr-defined]
+                    causal_read.set()
+                    if "FOR UPDATE" in statement:
+                        assert decision_started.wait(timeout=10)
+                    else:
+                        assert decision_finished.wait(timeout=10)
+                    return result
+                return state.invoke_statement()  # type: ignore[attr-defined]
+
+            try:
+                if correction_kind == "execution":
+                    _service(local_session).update_execution(
+                        execution_id,
+                        ExecutionUpdateCommand(
+                            executed_at=BAR_END + timedelta(minutes=3),
+                            price=Decimal("1268.5"),
+                        ),
+                    )
+                else:
+                    _service(local_session).replace_execution_timeline(
+                        episode_id,
+                        (
+                            TimelineExecutionCommand(
+                                execution_id=execution_id,
+                                execution_type="OPEN",
+                                executed_at=BAR_END + timedelta(minutes=3),
+                                price=Decimal("1268.5"),
+                                quantity=1,
+                            ),
+                        ),
+                    )
+                return "updated"
+            except ExecutionReviewDomainError as exc:
+                return exc.code
+
+    def correct_decision() -> str:
+        assert causal_read.wait(timeout=10)
+        decision_started.set()
+        try:
+            with factory() as local_session:
+                try:
+                    _service(local_session).update_decision(
+                        decision_id,
+                        DecisionUpdateCommand(
+                            first_viewed_at=None,
+                            decided_at=BAR_END + timedelta(minutes=4),
+                            primary_not_execute_reason=None,
+                            secondary_not_execute_reasons=(),
+                            note=None,
+                            execution_reason_tags=("KEY_LEVEL_BREAKOUT",),
+                            planned_stop_price=None,
+                            stop_basis=None,
+                        ),
+                    )
+                    return "updated"
+                except ExecutionReviewDomainError as exc:
+                    return exc.code
+        finally:
+            decision_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        execution_future = executor.submit(correct_execution)
+        decision_future = executor.submit(correct_decision)
+        results = (execution_future.result(timeout=15), decision_future.result(timeout=15))
+
+    assert sorted(results) == ["DECISION_AFTER_EXECUTION", "updated"]
+    with factory() as check:
+        decision = check.get(TradeDecision, decision_id)
+        execution = check.get(TradeExecution, execution_id)
+        assert decision is not None
+        assert execution is not None
+        assert _utc(decision.decided_at) <= _utc(execution.executed_at)
+
+
+def test_postgresql_event_states_uses_one_consistent_statement_snapshot(
+    postgres_engine: Engine,
+) -> None:
+    factory = sessionmaker(bind=postgres_engine, expire_on_commit=False)
+    with factory() as seed:
+        event_id = _event(seed).id
+    snapshot_read = Event()
+    writer_finished = Event()
+
+    def read_states() -> str:
+        with factory() as local_session:
+            intercepted = False
+
+            @sqlalchemy_event.listens_for(
+                local_session,
+                "do_orm_execute",
+                retval=True,
+            )
+            def pause_after_snapshot(state: object):
+                nonlocal intercepted
+                statement = str(state.statement)  # type: ignore[attr-defined]
+                old_final_read = (
+                    "FROM trade_reviews" in statement
+                    and "trade_reviews.episode_id" in statement
+                )
+                new_single_read = (
+                    "FROM alert_events" in statement
+                    and "LEFT OUTER JOIN trade_decisions" in statement
+                )
+                if not intercepted and (old_final_read or new_single_read):
+                    intercepted = True
+                    result = state.invoke_statement()  # type: ignore[attr-defined]
+                    snapshot_read.set()
+                    assert writer_finished.wait(timeout=10)
+                    return result
+                return state.invoke_statement()  # type: ignore[attr-defined]
+
+            try:
+                states = _service(local_session).event_states()
+                return states[0].state
+            except ExecutionReviewDomainError as exc:
+                return exc.code
+
+    def write_decision() -> None:
+        assert snapshot_read.wait(timeout=10)
+        try:
+            with factory() as local_session:
+                _service(local_session).record_executed(
+                    event_id,
+                    _executed(quantity=1),
+                )
+        finally:
+            writer_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        read_future = executor.submit(read_states)
+        write_future = executor.submit(write_decision)
+        state = read_future.result(timeout=15)
+        write_future.result(timeout=15)
+
+    assert state == "pending_decision"
 
 
 @pytest.mark.parametrize(

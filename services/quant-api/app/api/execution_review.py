@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, overload
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
@@ -61,6 +61,7 @@ from app.schemas.execution_review import (
     PositionOut,
     ReviewItemOut,
     ReviewItemsResponse,
+    ReviewIssueStatsOut,
     ReviewOut,
     ReviewRequest,
     TimelineReplaceRequest,
@@ -165,6 +166,12 @@ def stats(
             open_episodes=result.episode_states.open_episodes,
             pending_review_episodes=result.episode_states.pending_review_episodes,
             done_episodes=result.episode_states.done_episodes,
+        ),
+        review_issue_top=ReviewIssueStatsOut(
+            entry=result.review_issue_top.entry,
+            holding=result.review_issue_top.holding,
+            exit_risk=result.review_issue_top.exit_risk,
+            psychology=result.review_issue_top.psychology,
         ),
     )
 
@@ -523,6 +530,14 @@ def _review_command(request: ReviewRequest) -> ReviewCommand:
         psychology_tags=tuple(request.psychology_tags),
         summary=request.summary,
     )
+
+
+@overload
+def _utc_timestamp(value: datetime) -> datetime: ...
+
+
+@overload
+def _utc_timestamp(value: None) -> None: ...
 
 
 def _utc_timestamp(value: datetime | None) -> datetime | None:

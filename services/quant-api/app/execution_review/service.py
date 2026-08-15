@@ -209,9 +209,18 @@ class EpisodeStateStats:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewIssueStats:
+    entry: dict[str, int]
+    holding: dict[str, int]
+    exit_risk: dict[str, int]
+    psychology: dict[str, int]
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionReviewStats:
     opportunities: OpportunityStats
     episode_states: EpisodeStateStats
+    review_issue_top: ReviewIssueStats
 
 
 @dataclass(frozen=True, slots=True)
@@ -397,22 +406,11 @@ class ExecutionReviewService:
                 constraint_name == "uq_trade_episodes_symbol_open"
                 and event_symbol is not None
             ):
-                try:
-                    winner = self._session.scalar(
-                        select(TradeEpisode).where(
-                            TradeEpisode.symbol == event_symbol,
-                            TradeEpisode.closed_at.is_(None),
-                        )
-                    )
-                except SQLAlchemyError:
-                    self._session.rollback()
-                    raise _persistence_failure() from None
-                self._session.rollback()
-                if winner is not None and winner.direction != event_direction:
-                    raise _conflict("OPPOSITE_EPISODE_OPEN") from None
-                if winner is not None and winner.contract != event_contract:
-                    raise _conflict("OPEN_EPISODE_CONFLICT") from None
-                raise _conflict("OPEN_EPISODE_CONFLICT") from None
+                raise self._open_episode_race_error(
+                    symbol=event_symbol,
+                    contract=event_contract,
+                    direction=event_direction,
+                ) from None
             raise self._integrity_error(exc) from None
         except SQLAlchemyError:
             self._session.rollback()
@@ -497,15 +495,41 @@ class ExecutionReviewService:
         """Correct only time, price, and note without changing lineage/topology."""
 
         try:
-            locked = self._session.execute(
-                select(TradeExecution, TradeEpisode)
-                .join(TradeEpisode, TradeExecution.episode_id == TradeEpisode.id)
+            identity = self._session.execute(
+                select(
+                    TradeExecution.episode_id,
+                    TradeExecution.trigger_decision_id,
+                )
+                .where(TradeExecution.id == execution_id)
+            ).one_or_none()
+            if identity is None:
+                raise _not_found("TRADE_EXECUTION_NOT_FOUND")
+            if identity.trigger_decision_id is not None:
+                decision = self._session.scalar(
+                    select(TradeDecision)
+                    .where(TradeDecision.id == identity.trigger_decision_id)
+                    .with_for_update()
+                )
+                if decision is None:
+                    raise _conflict("DECISION_LINEAGE_INVALID")
+            episode = self._session.scalar(
+                select(TradeEpisode)
+                .where(TradeEpisode.id == identity.episode_id)
+                .with_for_update()
+            )
+            if episode is None:
+                raise _not_found("TRADE_EPISODE_NOT_FOUND")
+            execution = self._session.scalar(
+                select(TradeExecution)
                 .where(TradeExecution.id == execution_id)
                 .with_for_update()
-            ).one_or_none()
-            if locked is None:
-                raise _not_found("TRADE_EXECUTION_NOT_FOUND")
-            execution, episode = locked
+            )
+            if (
+                execution is None
+                or execution.episode_id != episode.id
+                or execution.trigger_decision_id != identity.trigger_decision_id
+            ):
+                raise _conflict("EXECUTION_CORRECTION_CONFLICT")
             if episode.close_reason == "DOMINANT_ROLL":
                 raise _conflict("EXECUTION_CORRECTION_CONFLICT")
             _require_aware(command.executed_at)
@@ -559,6 +583,30 @@ class ExecutionReviewService:
         """Atomically rebuild a complete client-ordered timeline as ``1..N``."""
 
         try:
+            preexisting = tuple(
+                self._session.execute(
+                    select(
+                        TradeExecution.id,
+                        TradeExecution.trigger_decision_id,
+                    ).where(TradeExecution.episode_id == episode_id)
+                ).all()
+            )
+            trigger_decision_ids = sorted(
+                row.trigger_decision_id
+                for row in preexisting
+                if row.trigger_decision_id is not None
+            )
+            if trigger_decision_ids:
+                locked_decision_ids = set(
+                    self._session.scalars(
+                        select(TradeDecision.id)
+                        .where(TradeDecision.id.in_(trigger_decision_ids))
+                        .order_by(TradeDecision.id)
+                        .with_for_update()
+                    ).all()
+                )
+                if locked_decision_ids != set(trigger_decision_ids):
+                    raise _conflict("DECISION_LINEAGE_INVALID")
             episode = self._session.scalar(
                 select(TradeEpisode)
                 .where(TradeEpisode.id == episode_id)
@@ -568,7 +616,13 @@ class ExecutionReviewService:
                 raise _not_found("TRADE_EPISODE_NOT_FOUND")
             if episode.close_reason == "DOMINANT_ROLL":
                 raise _conflict("EXECUTION_CORRECTION_CONFLICT")
-            existing = self._executions(episode.id)
+            existing = self._executions(episode.id, for_update=True)
+            if {
+                (row.id, row.trigger_decision_id) for row in existing
+            } != {
+                (row.id, row.trigger_decision_id) for row in preexisting
+            }:
+                raise _conflict("EXECUTION_CORRECTION_CONFLICT")
             existing_by_id = {row.id: row for row in existing}
             supplied_ids = tuple(
                 command.execution_id
@@ -733,12 +787,24 @@ class ExecutionReviewService:
                 except ExecutionReviewContractError as exc:
                     raise _invalid(exc.code) from None
                 _validate_stop(command.planned_stop_price, command.stop_basis)
-                trigger = self._session.scalar(
-                    select(TradeExecution).where(
-                        TradeExecution.trigger_decision_id == decision.id
+                trigger_episode_id = self._session.scalar(
+                    select(TradeExecution.episode_id).where(
+                        TradeExecution.trigger_decision_id == decision.id,
                     )
                 )
-                if trigger is None:
+                if trigger_episode_id is None:
+                    raise _conflict("DECISION_LINEAGE_INVALID")
+                episode = self._session.scalar(
+                    select(TradeEpisode)
+                    .where(TradeEpisode.id == trigger_episode_id)
+                    .with_for_update()
+                )
+                trigger = self._session.scalar(
+                    select(TradeExecution)
+                    .where(TradeExecution.trigger_decision_id == decision.id)
+                    .with_for_update()
+                )
+                if episode is None or trigger is None:
                     raise _conflict("DECISION_LINEAGE_INVALID")
                 if _utc(command.decided_at) > _utc(trigger.executed_at):
                     raise _invalid("DECISION_AFTER_EXECUTION")
@@ -809,22 +875,11 @@ class ExecutionReviewService:
                 and race_context is not None
             ):
                 symbol, contract, direction = race_context
-                try:
-                    winner = self._session.execute(
-                        select(TradeEpisode.contract, TradeEpisode.direction).where(
-                            TradeEpisode.symbol == symbol,
-                            TradeEpisode.closed_at.is_(None),
-                        )
-                    ).one_or_none()
-                except SQLAlchemyError:
-                    self._session.rollback()
-                    raise _persistence_failure() from None
-                self._session.rollback()
-                if winner is not None and winner.direction != direction:
-                    raise _conflict("OPPOSITE_EPISODE_OPEN") from None
-                if winner is not None and winner.contract != contract:
-                    raise _conflict("OPEN_EPISODE_CONFLICT") from None
-                raise _conflict("OPEN_EPISODE_CONFLICT") from None
+                raise self._open_episode_race_error(
+                    symbol=symbol,
+                    contract=contract,
+                    direction=direction,
+                ) from None
             raise self._integrity_error(exc) from None
         except SQLAlchemyError:
             self._session.rollback()
@@ -992,49 +1047,61 @@ class ExecutionReviewService:
     def _event_states(self) -> tuple[EventReviewState, ...]:
         """Classify each eligible Event using its Decision/Execution lineage."""
 
-        items = self.list_items()
-        episode_states = {
-            item.episode_id: item.state
-            for item in items
-            if item.item_kind == "episode"
-        }
-        direct = {
-            item.event_id: EventReviewState(
-                event_id=item.event_id,
-                state=item.state,
-                decision_id=item.decision_id,
-                episode_id=item.episode_id,
+        rows = self._session.execute(
+            select(
+                AlertEvent,
+                AlertRule.rule_code,
+                TradeDecision,
+                TradeExecution,
+                TradeEpisode,
+                TradeReview.id.label("review_id"),
             )
-            for item in items
-            if item.item_kind == "decision"
-        }
-        decisions = tuple(self._session.scalars(select(TradeDecision)).all())
-        if decisions:
-            triggers = tuple(
-                self._session.scalars(
-                    select(TradeExecution).where(
-                        TradeExecution.trigger_decision_id.in_(
-                            row.id for row in decisions
-                        )
-                    )
-                ).all()
+            .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
+            .outerjoin(
+                TradeDecision,
+                TradeDecision.alert_event_id == AlertEvent.id,
             )
-            trigger_by_decision = {
-                row.trigger_decision_id: row for row in triggers
-            }
-            for decision in decisions:
-                if decision.disposition != "EXECUTED":
-                    continue
-                trigger = trigger_by_decision.get(decision.id)
-                if trigger is None or trigger.episode_id not in episode_states:
-                    raise _conflict("DECISION_LINEAGE_INVALID")
-                direct[decision.alert_event_id] = EventReviewState(
-                    event_id=decision.alert_event_id,
-                    state=episode_states[trigger.episode_id],
-                    decision_id=decision.id,
-                    episode_id=trigger.episode_id,
-                )
-        return tuple(direct[event.id] for event in self._eligible_events())
+            .outerjoin(
+                TradeExecution,
+                TradeExecution.trigger_decision_id == TradeDecision.id,
+            )
+            .outerjoin(
+                TradeEpisode,
+                TradeEpisode.id == TradeExecution.episode_id,
+            )
+            .outerjoin(
+                TradeReview,
+                TradeReview.episode_id == TradeEpisode.id,
+            )
+            .order_by(AlertEvent.trading_day, AlertEvent.id)
+        ).all()
+        result: list[EventReviewState] = []
+        for event, rule_code, decision, execution, episode, review_id in rows:
+            if (
+                rule_code != ELIGIBLE_RULE_CODE
+                or event.trading_day is None
+                or not str(event.contract or "").strip()
+                or event.frequency not in ELIGIBLE_FREQUENCIES
+                or tuple(event.result_codes or ()) not in {("buy",), ("sell",)}
+            ):
+                continue
+            if decision is None:
+                result.append(EventReviewState(event.id, "pending_decision", None, None))
+                continue
+            if decision.disposition == "NOT_EXECUTED":
+                result.append(EventReviewState(event.id, "done", decision.id, None))
+                continue
+            if execution is None or episode is None:
+                raise _conflict("DECISION_LINEAGE_INVALID")
+            state = (
+                "open"
+                if episode.closed_at is None
+                else "done" if review_id is not None else "pending_review"
+            )
+            result.append(
+                EventReviewState(event.id, state, decision.id, episode.id)
+            )
+        return tuple(result)
 
     def episode_detail(self, episode_id: int) -> EpisodeDetail:
         return self._read_call(lambda: self._episode_detail(episode_id))
@@ -1177,7 +1244,33 @@ class ExecutionReviewService:
                 for row in episodes
             ),
         )
-        return ExecutionReviewStats(opportunity_stats, episode_stats)
+        filtered_episode_ids = {
+            row.id
+            for row in episodes
+            if origin_event_by_decision[row.origin_decision_id] in event_ids
+        }
+        reviews = tuple(
+            self._session.scalars(
+                select(TradeReview).where(
+                    TradeReview.episode_id.in_(filtered_episode_ids)
+                )
+            ).all()
+        ) if filtered_episode_ids else ()
+        review_issue_stats = ReviewIssueStats(
+            entry=_review_tag_counts(reviews, "entry_tags", neutral="REASONABLE"),
+            holding=_review_tag_counts(reviews, "holding_tags", neutral="NORMAL"),
+            exit_risk=_review_tag_counts(reviews, "exit_tags", neutral="NORMAL"),
+            psychology=_review_tag_counts(
+                reviews,
+                "psychology_tags",
+                neutral="NONE",
+            ),
+        )
+        return ExecutionReviewStats(
+            opportunity_stats,
+            episode_stats,
+            review_issue_stats,
+        )
 
     @staticmethod
     def _validate_review(command: ReviewCommand) -> None:
@@ -1211,6 +1304,32 @@ class ExecutionReviewService:
         except SQLAlchemyError:
             self._session.rollback()
             raise _persistence_failure() from None
+
+    def _open_episode_race_error(
+        self,
+        *,
+        symbol: str,
+        contract: str | None,
+        direction: str | None,
+    ) -> ExecutionReviewDomainError:
+        """Classify a rolled-back OPEN race from scalar winner facts."""
+
+        try:
+            winner = self._session.execute(
+                select(TradeEpisode.contract, TradeEpisode.direction).where(
+                    TradeEpisode.symbol == symbol,
+                    TradeEpisode.closed_at.is_(None),
+                )
+            ).one_or_none()
+        except SQLAlchemyError:
+            self._session.rollback()
+            raise _persistence_failure() from None
+        self._session.rollback()
+        if winner is not None and winner.contract != contract:
+            return _conflict("OPEN_EPISODE_CONFLICT")
+        if winner is not None and winner.direction != direction:
+            return _conflict("OPPOSITE_EPISODE_OPEN")
+        return _conflict("OPEN_EPISODE_CONFLICT")
 
     def _correct_to_executed(
         self,
@@ -1335,21 +1454,28 @@ class ExecutionReviewService:
             _require_aware(command.first_viewed_at)
         if _utc(decided_at) < _utc(event.bar_end):
             raise _invalid("DECISION_TIME_BEFORE_SIGNAL")
-        trigger = self._session.scalar(
-            select(TradeExecution).where(
-                TradeExecution.trigger_decision_id == decision.id
+        trigger_episode_id = self._session.scalar(
+            select(TradeExecution.episode_id).where(
+                TradeExecution.trigger_decision_id == decision.id,
             )
         )
-        if trigger is None:
+        if trigger_episode_id is None:
             raise _conflict("DECISION_CORRECTION_CONFLICT")
         episode = self._session.scalar(
             select(TradeEpisode)
-            .where(TradeEpisode.id == trigger.episode_id)
+            .where(TradeEpisode.id == trigger_episode_id)
+            .with_for_update()
+        )
+        trigger = self._session.scalar(
+            select(TradeExecution)
+            .where(TradeExecution.trigger_decision_id == decision.id)
             .with_for_update()
         )
         if episode is None or self._session.scalar(
-            select(TradeReview.id).where(TradeReview.episode_id == trigger.episode_id)
+            select(TradeReview.id).where(TradeReview.episode_id == trigger_episode_id)
         ) is not None:
+            raise _conflict("DECISION_CORRECTION_CONFLICT")
+        if trigger is None or trigger.episode_id != episode.id:
             raise _conflict("DECISION_CORRECTION_CONFLICT")
         rows = self._executions(episode.id)
         is_origin = episode.origin_decision_id == decision.id
@@ -1562,14 +1688,20 @@ class ExecutionReviewService:
             for row in executions
         )
 
-    def _executions(self, episode_id: int) -> tuple[TradeExecution, ...]:
-        return tuple(
-            self._session.scalars(
+    def _executions(
+        self,
+        episode_id: int,
+        *,
+        for_update: bool = False,
+    ) -> tuple[TradeExecution, ...]:
+        statement = (
             select(TradeExecution)
             .where(TradeExecution.episode_id == episode_id)
             .order_by(TradeExecution.sequence_no)
-            ).all()
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return tuple(self._session.scalars(statement).all())
 
     def _validate_trigger_time(
         self,
@@ -1662,6 +1794,20 @@ def _validate_database_decimal(value: object, code: str) -> None:
     exponent = value.as_tuple().exponent
     if not isinstance(exponent, int) or exponent < -8:
         raise _invalid(code)
+
+
+def _review_tag_counts(
+    reviews: tuple[TradeReview, ...],
+    attribute: str,
+    *,
+    neutral: str,
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for review in reviews:
+        for tag in getattr(review, attribute):
+            if tag != neutral:
+                counts[tag] = counts.get(tag, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def _utc(value: datetime) -> datetime:

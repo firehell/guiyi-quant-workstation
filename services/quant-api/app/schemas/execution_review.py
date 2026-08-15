@@ -248,6 +248,14 @@ class EpisodeStateStatsOut(BaseModel):
     done_episodes: int
 
 
+class ReviewIssueStatsOut(BaseModel):
+    entry: dict[str, int]
+    holding: dict[str, int]
+    exit_risk: dict[str, int]
+    psychology: dict[str, int]
+
+
 class ExecutionReviewStatsResponse(BaseModel):
     opportunities: OpportunityStatsOut
     episode_states: EpisodeStateStatsOut
+    review_issue_top: ReviewIssueStatsOut

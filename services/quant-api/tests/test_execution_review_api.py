@@ -132,9 +132,16 @@ def test_http_full_execution_review_flow_and_read_models(
     assert timeline.status_code == 200
     assert [row["sequence_no"] for row in timeline.json()["executions"]] == [1, 2]
 
+    review_payload = {
+        **_review_json(),
+        "entry_tags": ["TOO_LATE"],
+        "holding_tags": ["COULD_NOT_HOLD"],
+        "exit_tags": ["STOP_DELAYED"],
+        "psychology_tags": ["HESITATION"],
+    }
     review = client.post(
         f"/api/execution-review/episodes/{episode_id}/review",
-        json=_review_json(),
+        json=review_payload,
     )
     assert review.status_code == 200
     review_id = review.json()["id"]
@@ -142,7 +149,7 @@ def test_http_full_execution_review_flow_and_read_models(
 
     review_update = client.put(
         f"/api/execution-review/reviews/{review_id}",
-        json={**_review_json(), "summary": "updated"},
+        json={**review_payload, "summary": "updated"},
     )
     assert review_update.status_code == 200
     assert review_update.json()["submitted_at"] == review.json()["submitted_at"]
@@ -158,6 +165,12 @@ def test_http_full_execution_review_flow_and_read_models(
     assert detail.json()["position"]["remaining_quantity"] == 0
     assert stats.json()["opportunities"]["processed_events"] == 1
     assert stats.json()["episode_states"]["done_episodes"] == 1
+    assert stats.json()["review_issue_top"] == {
+        "entry": {"TOO_LATE": 1},
+        "holding": {"COULD_NOT_HOLD": 1},
+        "exit_risk": {"STOP_DELAYED": 1},
+        "psychology": {"HESITATION": 1},
+    }
 
 
 def test_not_executed_and_disposition_correction_routes(
