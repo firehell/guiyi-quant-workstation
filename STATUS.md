@@ -50,14 +50,15 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
-- `2026-08-15 21:50 +08:00` 已按单次授权把 Market Runtime V1 的 Live/after-market 切换到
-  clean/detached `3e930a032c6b880686ff1f1fccc77db61bc2803c`，根为
-  `/Volumes/扩展盘/guiyi-quant-runtime-3e930a032`。该提交修复未来 `1d/1w` source snapshot
-  漂移；不回填或改写现有历史分区。
-- API/Web/Alert 因不在本次 Market Runtime 授权范围内，继续运行 clean/detached
-  `a12ac867ab591e442f23b7f644a3f230485522da`。API/Web/Live/Alert 均 running，after-market 为
-  schedule-only `not running`；API version=`1.3.1`，Runtime health=`ok/readonly=true`。
-- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`pending`。本次切换未执行 migration、
+- `2026-08-15 23:24 +08:00` 已按单次授权把 API/Web/Market Live/after-market/Alert 合并到唯一
+  clean/detached Runtime 根 `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`，统一提交为
+  `3e930a032c6b880686ff1f1fccc77db61bc2803c`。该目录名仅是部署根名称；API version=`1.3.1`，
+  运行身份以精确提交为准。
+- API/Web/Live/Alert 均 running，after-market 为 schedule-only `not running`；Runtime
+  health=`ok/readonly=true`，Market 主力目录为 active 60。旧 Runtime worktree
+  `guiyi-quant-runtime-3e930a032`、`guiyi-quant-runtime-51b1f44f8` 和
+  `guiyi-quant-runtime-a12ac867` 已删除，仅保留上述唯一 Runtime 根。
+- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`skipped/NON_TRADING_DAY`。本次切换未执行 migration、
   RQData/Canonical/DB 写入、Scope mutation、真实 WeCom、手工盘后、replay/backfill/retry、tag
   或 release；`auto_order=false` 不变。
 
