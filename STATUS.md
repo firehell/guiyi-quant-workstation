@@ -33,7 +33,8 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 已冻结合同
 
-- 基础 provider 周期只有 `1m/1d`；`1w` 只从完整同源 Canonical `1d` 聚合，
+- 基础 provider 周期只有 `1m/1d`；`1w` 只从完整同源交易所日行情聚合，并在同一 maintenance
+  批次用同一 source snapshot 刷新对应 Canonical `1d`，
   `5m/15m/30m/60m` 只从质量通过的同 Dataset Canonical `1m` 按 TradingSession 聚合。
 - 物理 Dataset 只有 `continuous|contract`；`actual_dominant` 只在查询时按
   `MainContractMap rank=1` 拼接。
@@ -49,19 +50,21 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
-- `2026-08-15 20:28 +08:00` 已按单次授权将五服务 Runtime 切换到 clean/detached
-  `a12ac867ab591e442f23b7f644a3f230485522da`，根为
-  `/Volumes/扩展盘/guiyi-quant-runtime-a12ac867`。API/Web/Live/Alert running，after-market 为
-  schedule-only `not running`，五个 loaded root/commit 均与 checkout 一致；API version=`1.3.1`，
-  Runtime health=`ok/readonly=true`。旧 `51b1f44f8...` Runtime worktree 保留，未执行回切。
-- 当时为周末：Live `CLOSED=60/subscribed=0`，dominants=60，Radar active/participant=60/60、
-  stale/unavailable=0；JM 的 HTDY/SuBing Rule 均 enabled，Event 数分别为 3/0。
-- 本次未执行 migration、RQData/Canonical/DB 写入、Scope mutation、真实 WeCom、手工盘后、
-  replay/backfill/retry、`main`、tag 或 release；`auto_order=false` 不变。
+- `2026-08-15 21:50 +08:00` 已按单次授权把 Market Runtime V1 的 Live/after-market 切换到
+  clean/detached `3e930a032c6b880686ff1f1fccc77db61bc2803c`，根为
+  `/Volumes/扩展盘/guiyi-quant-runtime-3e930a032`。该提交修复未来 `1d/1w` source snapshot
+  漂移；不回填或改写现有历史分区。
+- API/Web/Alert 因不在本次 Market Runtime 授权范围内，继续运行 clean/detached
+  `a12ac867ab591e442f23b7f644a3f230485522da`。API/Web/Live/Alert 均 running，after-market 为
+  schedule-only `not running`；API version=`1.3.1`，Runtime health=`ok/readonly=true`。
+- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`pending`。本次切换未执行 migration、
+  RQData/Canonical/DB 写入、Scope mutation、真实 WeCom、手工盘后、replay/backfill/retry、tag
+  或 release；`auto_order=false` 不变。
 
 ## 未执行 Gate 与最小下一步
 
 - 本轮除上述已授权 Runtime switch 外，不执行 migration、真实 RQData/Canonical/DB 写入、
-  Scope mutation、WeCom、`main`、tag 或 release。
+  Scope mutation、WeCom、tag 或 release。
+- 周线修复的部署身份已读回；业务级效果等待下一次自然 18:05 盘后更新，不手工运行、回填或补证。
 - 唯一待自然事件：继续等待 `subing_entry_signal_v1 × jm` 的后续自然 completed Bar 验收；
   无事件就保持 pending，不人工补证。
