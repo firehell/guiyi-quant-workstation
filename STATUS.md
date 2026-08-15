@@ -49,18 +49,19 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
-- `2026-08-15 19:29 +08:00` 最后一次已授权读回：五服务 Runtime 绑定 clean/detached
-  `51b1f44f8ffb3580054ed591053e7eda451506f3`，根为
-  `/Volumes/扩展盘/guiyi-quant-runtime-51b1f44f8`。API/Web/Live/Alert running，after-market 为
-  schedule-only `not running`，API version=`1.3.1`，Runtime health=`ok/readonly=true`。
+- `2026-08-15 20:28 +08:00` 已按单次授权将五服务 Runtime 切换到 clean/detached
+  `a12ac867ab591e442f23b7f644a3f230485522da`，根为
+  `/Volumes/扩展盘/guiyi-quant-runtime-a12ac867`。API/Web/Live/Alert running，after-market 为
+  schedule-only `not running`，五个 loaded root/commit 均与 checkout 一致；API version=`1.3.1`，
+  Runtime health=`ok/readonly=true`。旧 `51b1f44f8...` Runtime worktree 保留，未执行回切。
 - 当时为周末：Live `CLOSED=60/subscribed=0`，dominants=60，Radar active/participant=60/60、
   stale/unavailable=0；JM 的 HTDY/SuBing Rule 均 enabled，Event 数分别为 3/0。
-- 当前 develop 中的收敛修正只是仓库代码/文档事实，尚未 Runtime switch；不得将其表述为
-  已部署或 Runtime Ready。
+- 本次未执行 migration、RQData/Canonical/DB 写入、Scope mutation、真实 WeCom、手工盘后、
+  replay/backfill/retry、`main`、tag 或 release；`auto_order=false` 不变。
 
 ## 未执行 Gate 与最小下一步
 
-- 本轮不执行 migration、真实 RQData/Canonical/DB 写入、Scope mutation、WeCom、Runtime switch、
-  `main`、tag 或 release。
+- 本轮除上述已授权 Runtime switch 外，不执行 migration、真实 RQData/Canonical/DB 写入、
+  Scope mutation、WeCom、`main`、tag 或 release。
 - 唯一待自然事件：继续等待 `subing_entry_signal_v1 × jm` 的后续自然 completed Bar 验收；
   无事件就保持 pending，不人工补证。
