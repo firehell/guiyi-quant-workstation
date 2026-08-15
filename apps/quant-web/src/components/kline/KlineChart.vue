@@ -101,12 +101,12 @@ onMounted(async () => {
     wickUpColor: theme.up,
     wickDownColor: theme.down,
   }, 0)
-  emaLines.ema_10 = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 1, lastValueVisible: false }, 0)
-  emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema, lineWidth: 2, lastValueVisible: false }, 0)
-  emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.atr, lineWidth: 1, lastValueVisible: false }, 0)
-  htdyZk1 = chart.addSeries(LineSeries, { color: 'rgba(13, 148, 136, .62)', lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
-  htdyZd1 = chart.addSeries(LineSeries, { color: 'rgba(13, 148, 136, .42)', lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
-  htdyZd2 = chart.addSeries(LineSeries, { color: 'rgba(202, 138, 4, .55)', lineWidth: 1, lineStyle: 1, lastValueVisible: false }, 0)
+  emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
+  emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
+  emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
+  htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
+  htdyZd1 = chart.addSeries(LineSeries, { color: theme.htdyZd1, lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
+  htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 1, lineStyle: 1, lastValueVisible: false }, 0)
   htdyMarkers = createSeriesMarkers(candles)
   volume = chart.addSeries(HistogramSeries, {
     priceFormat: { type: 'volume' },

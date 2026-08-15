@@ -68,7 +68,7 @@ function barTime(value: string) {
 .market-formal-signals__heading p, .market-formal-signals__state { margin: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 .market-formal-signals__unavailable { display: flex; align-items: center; gap: 8px; color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
 .market-formal-signals__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.market-formal-signals__card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-left: 3px solid var(--gy-border-strong); border-radius: var(--gy-radius-md); background: var(--gy-bg-app); transition: transform var(--gy-transition-fast), box-shadow var(--gy-transition-fast); }
+.market-formal-signals__card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-left: 3px solid var(--gy-border-strong); border-radius: var(--gy-radius-md); background: var(--gy-bg-app); }
 .market-formal-signals__card--buy { border-left-color: var(--gy-up); background: var(--gy-up-soft); }
 .market-formal-signals__card--sell { border-left-color: var(--gy-down); background: var(--gy-down-soft); }
 .market-formal-signals__main { min-width: 0; }
@@ -81,5 +81,4 @@ function barTime(value: string) {
 .market-formal-signals__open { flex: 0 0 auto; padding: 4px 2px; border: 0; background: none; color: var(--gy-accent); font-size: var(--gy-font-size-sm); cursor: pointer; white-space: nowrap; }
 .market-formal-signals__open:hover { color: var(--gy-accent-hover); text-decoration: underline; }
 @media (max-width: 979px) { .market-formal-signals__cards { grid-template-columns: 1fr; } }
-@media (hover: hover) { .market-formal-signals__card:hover { transform: translateY(-1px); box-shadow: var(--gy-shadow-panel); } }
 </style>

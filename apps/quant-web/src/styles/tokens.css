@@ -20,7 +20,6 @@
   --gy-green-600: #16a34a;
   --gy-green-700: #15803d;
   --gy-orange-500: #f79009;
-  --gy-violet-500: #7c3aed;
 
   /* Semantic surfaces */
   --gy-bg-app: #f4f7fb;
@@ -87,17 +86,16 @@
   --gy-chart-grid: #edf1f7;
   --gy-chart-axis: #98a2b3;
   --gy-chart-text: #33507e;
+  --gy-chart-ema-10: #d97706;
   --gy-chart-ema: #f59e0b;
+  --gy-chart-ema-60: #7c3aed;
   --gy-chart-macd-dif: #0284c7;
   --gy-chart-macd-dea: #f59e0b;
-  --gy-chart-atr: var(--gy-violet-500);
   --gy-chart-volume-up: rgba(220, 38, 38, 0.38);
   --gy-chart-volume-down: rgba(22, 163, 74, 0.38);
-  --gy-chart-htdy-zk1: #667085;
-  --gy-chart-htdy-zd1: #e11d48;
-  --gy-chart-htdy-zd2: #0d9488;
-  --gy-chart-htdy-band: rgba(13, 148, 136, 0.14);
-  --gy-chart-htdy-band-stroke: rgba(13, 148, 136, 0.45);
+  --gy-chart-htdy-zk1: rgba(13, 148, 136, 0.62);
+  --gy-chart-htdy-zd1: rgba(13, 148, 136, 0.42);
+  --gy-chart-htdy-zd2: rgba(202, 138, 4, 0.55);
 
   /* Type */
   --gy-font-sans: 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;

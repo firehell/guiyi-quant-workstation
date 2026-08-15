@@ -4,8 +4,6 @@ import type { GlobalThemeOverrides } from 'naive-ui'
  * Naive UI 亮色主题覆盖（深蓝品牌壳 + 浅色工作区）。
  * Naive 在 JS 中推导 alpha 变体，因此此处须使用具体色值；与 tokens.css 保持一致。
  */
-// Naive UI derives alpha variants in JavaScript and therefore requires concrete
-// color values here. Keep these values aligned with tokens.css.
 const palette = {
   app: '#F4F7FB',
   canvas: '#FFFFFF',

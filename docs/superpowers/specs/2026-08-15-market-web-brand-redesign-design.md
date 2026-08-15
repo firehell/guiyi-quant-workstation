@@ -1,6 +1,6 @@
 # Market Web 品牌视觉重设计（方向 B 深蓝壳）
 
-> 状态：已与用户逐段确认（2026-08-15）。实现计划另行编写。
+> 状态：已实现并完成代码 Review 收口（2026-08-15）。
 > 前置：`docs/superpowers/plans/2026-08-14-decision-compression-web-ui.md` 的 8 项任务已全部落在 `develop`，本设计在其之上做视觉层重构。
 
 ## 目标
@@ -53,10 +53,12 @@
 - 结构不动：工具栏 → 身份行 → 左 K 线（含副图）+ 右侧栏（与 K 线列等高、栏内滚动，已实现）→ 底部研究面板。
 - 右侧栏顺序保持：SuBing 正式信号卡 → 两个独立 Rule 开关 → 今日记录 → HTDY 观察 → 研究事实。
 - 只换肤：方向 B 组件语言；图表网格/坐标令牌微调；Marker 与 exact-frequency 行为不变。
+- 前端内部 `KlineMarker` 使用 `tone` 表达语义，由唯一 `chartTheme` 解析实际颜色：SuBing 买入为红、卖出为绿，无法唯一归类的组合信号为中性，HTDY current observation 与 persistent Event 均为橙色。标签、位置、形状、排序和 exact-frequency 合同不变。
 
 ## 组件语言与微交互
 
 - 卡片：白底 + 0.5px `#DBE3EE` 边 + 10px 圆角 + 一级极浅投影；可点卡 hover 上移 1px + 边变深，150ms。
+- “需要处理”信号卡只有“查看 →”是点击入口，整卡不使用 hover 抬升，避免制造整卡可点击的错误暗示；“值得关注”等整卡可点击项保留 1px hover 抬升。
 - Chip/Tag：tinted surface + 同色深文字；方向 chip 必须带文字。
 - 按钮：主按钮 `#1D4ED8` 实底白字；次按钮白底灰边；危险操作用 error token，不用方向红。
 - 微交互只三处：hover 抬升、Tab 下划线滑动、页面切换淡入；全部 `prefers-reduced-motion` 可关。
@@ -64,15 +66,26 @@
 ## 错误与空态
 
 - 需要处理：`ready` 空 = 一行安静文案（"当前交易日暂无正式信号"）；`unavailable` = 警告 chip + 文案，区域占位不消失。
-- Radar / 明细加载用骨架行；接口失败保留上次内容 + 顶部错误条。
+- Radar 首次加载使用 Summary、散点/关注和明细骨架；页首提供中性“刷新 Radar”动作。
+- Radar 刷新只保留当前页面内存中的最后成功快照，不写 `sessionStorage`、不轮询；刷新失败继续展示旧快照并显示顶部错误条和重试入口，旧数据的 `expected_as_of` 继续可见，不冒充最新数据。
 - K 线页右栏各区块独立空态，互不影响。
 
 ## 测试策略
 
 - 扩展 `tests/themeContract.test.ts`：`--gy-shell-*` 令牌断言 + 壳上文字对比度（≥4.5:1）+ accent 白字对比度。
-- 明细 Tab 组件测试：默认选中第一个板块、切换过滤正确、Tab 顺序 = `sector_summary` 顺序。
+- 明细 Tab 行为测试：默认选中第一个板块、切换过滤正确、Tab 顺序 = `sector_summary` 顺序。
 - 现有 e2e 选择器保持稳定；首页结构变化处更新对应断言。
+- 首页行为测试覆盖三条正式信号 `2 + 1`、HTDY observation fail-closed 排除、空态/不可用态、Radar 首次骨架、刷新失败保留和重试更新、板块与自选组合过滤；不以读取 Vue 源码字符串代替用户可见行为。
 - 验收断点：1440×900 / 1280×720 / 1024×768。
+
+## 实现与验收（2026-08-15）
+
+- 实现范围保持在 `apps/quant-web/`；未修改后端、HTTP DTO、路由、DB、Runtime、WeCom、Canonical、指标公式或 Signal 判断。
+- 首页已按“需要处理 → Summary → 散点/值得关注 → 板块 Tab 明细”落地；旧 `MarketSectorSummary` 卡已删除，板块顺序和中位涨跌直接复用后端 `sector_summary`。
+- 深蓝品牌壳、浅色工作区、图表主题和 Marker tone 已统一；EMA/HTDY 曲线颜色只从 `chartTheme`/CSS token 解析，不再在指标元数据与渲染组件重复维护。
+- Review 删除了已由真实浏览器行为覆盖的源码字符串 Tab 测试，以及未使用的指标颜色字段和主题 token；保留的测试直接验证页面行为、主题解析或领域输出。
+- 验收命令为 `pnpm --dir apps/quant-web test`、`pnpm --dir apps/quant-web exec playwright test e2e/market-research.spec.mjs e2e/alert-v1.spec.mjs`、`pnpm --dir apps/quant-web build`、`git diff --check` 和本任务 staged secret scan；三种桌面断点及首页/K 线页已完成人工检查。
+- 本次视觉与错误态收口不改变项目阶段事实，因此不更新 `STATUS.md`，也不构成 Web/Runtime 重载、release 或 Runtime promotion。
 
 ## 非目标
 

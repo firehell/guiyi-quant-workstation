@@ -140,7 +140,6 @@ function toHoverIndicatorValue(indicator: EmaIndicatorId, value: number | null):
   return {
     id: indicator,
     displayName: definition?.displayName || indicator,
-    color: definition?.color || '#94a3b8',
     value,
     ready: value !== null,
     valid: true,

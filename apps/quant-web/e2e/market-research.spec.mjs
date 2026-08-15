@@ -63,7 +63,14 @@ async function mockMarketHomepage(page, currentFormalResponse) {
 }
 
 test('Market homepage shows only current formal signals above Radar', async ({ page }) => {
-  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] })
+  await mockMarketHomepage(page, {
+    status: 'ready',
+    trading_day: '2026-08-15',
+    items: [
+      formalSignal(),
+      { ...formalSignal(), id: 18, rule_code: 'htdy_original_15m', display_name: '火天大有' },
+    ],
+  })
   await page.goto('/market')
 
   const formal = page.getByTestId('market-formal-signals')
@@ -77,6 +84,16 @@ test('Market homepage shows only current formal signals above Radar', async ({ p
   expect(await page.locator('[data-testid="market-formal-signals"], .radar-summary').evaluateAll((nodes) => (
     Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
   ))).toBe(true)
+})
+
+test('formal signal cards do not advertise a container-wide click target', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] })
+  await page.goto('/market')
+
+  const card = page.getByTestId('market-formal-signals').locator('.market-formal-signals__card')
+  await card.hover()
+  await expect(card).toHaveCSS('transform', 'none')
+  await expect(card.getByRole('button', { name: '查看 →' })).toBeVisible()
 })
 
 test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewport', async ({ page }) => {
