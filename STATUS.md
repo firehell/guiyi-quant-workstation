@@ -154,6 +154,20 @@ data-center HTTP、旧 RQ worker、旧 scheduler、自动交易与真实订单�
 
 ## 当前 Runtime 读回
 
+- `2026-08-15 19:29 +08:00` 已按单次授权将五服务 Runtime 统一切换到 clean/detached exact
+  commit `51b1f44f8ffb3580054ed591053e7eda451506f3`，独立根为
+  `/Volumes/扩展盘/guiyi-quant-runtime-51b1f44f8`。该提交修复非交易日盘后返回
+  `skipped/NON_TRADING_DAY` 时 CLI 误退出 1 的问题；目标工程 122 项 Runtime/盘后回归、Ruff、
+  Web production build、bundle topology 与 render/plist lint 通过。API/Web/Live/after-market/Alert
+  五个 label 的 loaded root 与完整 loaded commit 全部一致；API/Web/Live/Alert 为 running，
+  after-market 保持 schedule-only `not running`，状态脚本 `overall=passed`，API version=`1.3.1`，
+  Runtime health=`ok/readonly=true`，production revision 仍为 `20260814_0038`。周末 Live 为
+  `CLOSED=60/subscribed=0`，JM actual-dominant 不暴露 Live overlay；dominants=60 且品种唯一、
+  `jm -> JM2609`，Radar=`ready`、active/participant=60/60、stale/unavailable=0。`jm` 的
+  HTDY/SuBing 两条 Rule 仍均 enabled，Event 仍为 3/0，周末 current 接口明确 `unavailable`。
+  新根没有复制旧根的 18:05 状态，因此 after-market 为可读 `pending/last_run=null`；未手工
+  补跑、未执行 migration、Scope mutation、真实 WeCom、replay/backfill/retry 或 Canonical 写入，
+  `auto_order=false` 不变。旧 `aebb8da2...` Runtime worktree 保留，未执行回切。
 - `2026-08-15 17:01 +08:00` 已复用现有 `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`
   Runtime 根完成 `v1.3.1` switch；目录名保留历史名称，运行身份以 clean/detached
   exact tag=`v1.3.1` 与 peeled commit
