@@ -107,10 +107,11 @@ const {
   },
 })
 const {
-  alertRule,
+  htdyRule,
+  subingRule,
   alertRuntimeStatus,
   alertLoading,
-  alertSaving,
+  savingRuleCodes,
   refresh: refreshAlerts,
   toggle: toggleAlert,
   dispose: disposeProductAlertScope,
@@ -524,10 +525,11 @@ function normalizeSymbol(value: unknown): string | null {
             :subing-loading="subingLoading || metadataLoading"
             :subing-error="subingError"
             :subing-supported="subingSupported"
-            :alert-rule="alertRule"
+            :htdy-rule="htdyRule"
+            :subing-rule="subingRule"
             :alert-runtime-status="alertRuntimeStatus"
             :alert-loading="alertLoading"
-            :alert-saving="alertSaving"
+            :saving-rule-codes="savingRuleCodes"
             @toggle-watchlist="toggleWatchlist"
             @toggle-alert="toggleAlert"
           />
@@ -562,10 +564,11 @@ function normalizeSymbol(value: unknown): string | null {
           :subing-loading="subingLoading || metadataLoading"
           :subing-error="subingError"
           :subing-supported="subingSupported"
-          :alert-rule="alertRule"
+          :htdy-rule="htdyRule"
+          :subing-rule="subingRule"
           :alert-runtime-status="alertRuntimeStatus"
           :alert-loading="alertLoading"
-          :alert-saving="alertSaving"
+          :saving-rule-codes="savingRuleCodes"
           @toggle-watchlist="toggleWatchlist"
           @toggle-alert="toggleAlert"
         />

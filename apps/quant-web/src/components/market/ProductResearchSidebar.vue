@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { NButton, NDivider, NTag } from 'naive-ui'
-import ProductAlertControl from '@/components/market/ProductAlertControl.vue'
+import ProductAlertRules from '@/components/market/ProductAlertRules.vue'
 import SubingResearchSection from '@/components/market/SubingResearchSection.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
 import type {
@@ -30,15 +30,16 @@ const props = defineProps<{
   subingLoading: boolean
   subingError: boolean
   subingSupported: boolean
-  alertRule: ProductAlertRuleState | null
+  htdyRule: ProductAlertRuleState | null
+  subingRule: ProductAlertRuleState | null
   alertRuntimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
-  alertSaving: boolean
+  savingRuleCodes: Set<string>
 }>()
 
 const emit = defineEmits<{
   'toggle-watchlist': []
-  'toggle-alert': [enabled: boolean]
+  'toggle-alert': [ruleCode: string, enabled: boolean]
 }>()
 
 const seriesLabel = computed(() => {
@@ -105,12 +106,13 @@ function ratio(value: number | null) {
     <p v-else-if="researchLoading" class="research-sidebar__unavailable">读取研究数据…</p>
     <p v-else-if="researchError" class="research-sidebar__unavailable">研究数据暂不可用</p>
     <NDivider />
-    <ProductAlertControl
-      :rule="alertRule"
+    <ProductAlertRules
+      :htdy-rule="htdyRule"
+      :subing-rule="subingRule"
       :runtime-status="alertRuntimeStatus"
       :loading="alertLoading"
-      :saving="alertSaving"
-      @toggle="emit('toggle-alert', $event)"
+      :saving-rule-codes="savingRuleCodes"
+      @toggle="(ruleCode, enabled) => emit('toggle-alert', ruleCode, enabled)"
     />
     <NDivider />
     <section class="research-sidebar__section">

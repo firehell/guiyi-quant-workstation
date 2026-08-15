@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import { alertRuntimeLabel, isCurrentAlertMutation } from '../src/utils/alertControl.ts'
@@ -17,7 +17,7 @@ import type { BarData } from '../src/types/market.ts'
 
 const apiSource = read('../src/api/alerts.ts')
 const marketTypesSource = read('../src/types/market.ts')
-const controlSource = read('../src/components/market/ProductAlertControl.vue')
+const rulesPath = new URL('../src/components/market/ProductAlertRules.vue', import.meta.url)
 const chartSource = read('../src/pages/market/chart.vue')
 const scopeSource = read('../src/composables/useProductAlertScope.ts')
 
@@ -84,10 +84,14 @@ describe('Product Alert server-side scope', () => {
     assert.doesNotMatch(interfaceBody(marketTypesSource, 'AlertEvent'), /observation_types|notified_at/)
   })
 
-  it('renders the switch directly from server true or false and emits the selected value', () => {
-    assert.match(controlSource, /rule\?\.enabled_for_product \|\| false/)
-    assert.match(controlSource, /@update:value="emit\('toggle', \$event\)"/)
-    assert.match(scopeSource, /alertRule\.value = updated/)
+  it('renders the two fixed registry rows and a shared Runtime status only once', () => {
+    assert.equal(existsSync(rulesPath), true)
+    const rulesSource = read('../src/components/market/ProductAlertRules.vue')
+    assert.match(rulesSource, /火天大有 · 15m/)
+    assert.match(rulesSource, /苏冰入场信号/)
+    assert.equal((rulesSource.match(/Alert Runtime/g) || []).length, 1)
+    assert.doesNotMatch(rulesSource, /5m.*NSwitch|NSwitch.*5m/)
+    assert.match(rulesSource, /不可用/)
   })
 
   it('refetches on symbol change while series/frequency changes never invoke scope PUT', () => {
@@ -97,7 +101,7 @@ describe('Product Alert server-side scope', () => {
     assert.doesNotMatch(identityWatcher, /setAlertProductEnabled|toggleAlert/)
     assert.match(
       scopeSource,
-      /setProductEnabled\([\s\S]*current\.rule_code,[\s\S]*requestedSymbol,[\s\S]*enabled/,
+      /setProductEnabled\([\s\S]*ruleCode,[\s\S]*requestedSymbol,[\s\S]*enabled/,
     )
   })
 
@@ -127,6 +131,69 @@ describe('Product Alert server-side scope', () => {
       currentRuleCode: 'htdy_original_15m',
       updatedRuleCode: 'htdy_original_15m',
     }), true)
+  })
+
+  it('toggles the exact rule without changing its neighbor', async () => {
+    const symbol = ref('jm')
+    const controller = useProductAlertScope({
+      symbol,
+      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(true), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: async (ruleCode, requestedSymbol, enabled) => ({
+        ...(ruleCode === 'subing_entry_signal_v1' ? subingRule(enabled) : htdyRule(enabled)),
+        symbol: requestedSymbol,
+      }),
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    await controller.toggle('subing_entry_signal_v1', true)
+
+    assert.equal(controller.subingRule.value?.enabled_for_product, true)
+    assert.equal(controller.htdyRule.value?.enabled_for_product, true)
+    controller.dispose()
+  })
+
+  it('tracks saving independently for each rule', async () => {
+    const symbol = ref('jm')
+    let resolveUpdate: ((value: ReturnType<typeof subingRule>) => void) | undefined
+    const controller = useProductAlertScope({
+      symbol,
+      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(false), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    const pending = controller.toggle('subing_entry_signal_v1', true)
+    assert.equal(controller.savingRuleCodes.value.has('subing_entry_signal_v1'), true)
+    assert.equal(controller.savingRuleCodes.value.has('htdy_original_15m'), false)
+    resolveUpdate!(subingRule(true))
+    await pending
+    assert.equal(controller.savingRuleCodes.value.size, 0)
+    controller.dispose()
+  })
+
+  it('drops a stale rule mutation response after the selected symbol changes', async () => {
+    const symbol = ref('ag')
+    let resolveUpdate: ((value: ReturnType<typeof subingRule>) => void) | undefined
+    const controller = useProductAlertScope({
+      symbol,
+      fetchProductAlerts: async (requestedSymbol) => ({ symbol: requestedSymbol, rules: [htdyRule(false), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    const pending = controller.toggle('subing_entry_signal_v1', true)
+    symbol.value = 'jm'
+    await controller.refresh()
+    resolveUpdate!(subingRule(true))
+    await pending
+    assert.equal(controller.subingRule.value?.enabled_for_product, false)
+    controller.dispose()
   })
 
   it('keeps only the latest symbol scope response after page lifecycle extraction', async () => {
@@ -288,6 +355,26 @@ function event(index: number, observations: Array<'buy' | 'sell'>): AlertEvent {
     lower_tf_confirmation: false,
     detected_at: '2026-08-13T02:45:01Z',
     notification_attempted_at: '2026-08-13T02:45:01Z',
+  }
+}
+
+function htdyRule(enabled: boolean) {
+  return {
+    rule_code: 'htdy_original_15m',
+    display_name: '火天大有',
+    kind: 'indicator_observation' as const,
+    input_frequencies: ['15m' as const],
+    enabled_for_product: enabled,
+  }
+}
+
+function subingRule(enabled: boolean) {
+  return {
+    rule_code: 'subing_entry_signal_v1',
+    display_name: '苏冰入场信号',
+    kind: 'formal_signal' as const,
+    input_frequencies: ['5m' as const, '15m' as const],
+    enabled_for_product: enabled,
   }
 }
 
