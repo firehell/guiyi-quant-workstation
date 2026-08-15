@@ -225,13 +225,15 @@ describe('Product Alert server-side scope', () => {
 
   it('labels V2 persistent events by Rule category while keeping the Event identity stable', () => {
     assert.deepEqual(alertEventsToMarkers([
+      event(0, ['buy', 'sell'], 'subing_entry_signal_v1'),
       event(1, ['buy']),
       event(2, ['sell'], 'subing_entry_signal_v1'),
-      event(3, ['sell']),
+      event(3, ['buy', 'sell']),
     ]).map((marker) => [marker.id, marker.label]), [
+      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:00:00Z', '买入/卖出信号'],
       ['alert:htdy_original_15m:ag:2026-08-13T02:15:00Z', '买入观察'],
       ['alert:subing_entry_signal_v1:ag:2026-08-13T02:30:00Z', '卖出信号'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '卖出观察'],
+      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '买入/卖出观察'],
     ])
   })
 

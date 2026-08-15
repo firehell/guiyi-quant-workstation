@@ -44,6 +44,7 @@ function markerLabel(ruleCode: string, observations: Set<'buy' | 'sell'>): strin
     ? '信号'
     : ruleCode === HTDY_RULE_CODE ? '观察' : null
   if (!category) return null
+  if (observations.has('buy') && observations.has('sell')) return `买入/卖出${category}`
   if (observations.has('buy')) return `买入${category}`
   if (observations.has('sell')) return `卖出${category}`
   return null
