@@ -5,7 +5,6 @@ import { NAlert, NSpin } from 'naive-ui'
 import MarketAttentionList from '@/components/market/MarketAttentionList.vue'
 import MarketDetailTable from '@/components/market/MarketDetailTable.vue'
 import MarketScatter from '@/components/market/MarketScatter.vue'
-import MarketSectorSummary from '@/components/market/MarketSectorSummary.vue'
 import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
 import MarketFormalSignals from '@/components/market/MarketFormalSignals.vue'
 import { getMarketRadar } from '@/api/market'
@@ -87,8 +86,7 @@ onMounted(async () => {
         <NAlert v-if="freshnessIssue" type="warning" :title="freshnessIssue" />
         <MarketSummaryStrip :radar="radar" />
         <div class="market-radar-page__discovery"><MarketScatter :items="radar.items" @open="openChart" /><MarketAttentionList :items="radar.attention" @open="openChart" /></div>
-        <MarketSectorSummary :sectors="radar.sector_summary" />
-        <MarketDetailTable :items="radar.items" :watchlist="preferences.watchlist" @open="openChart" @toggle-watchlist="toggleWatchlist" />
+        <MarketDetailTable :items="radar.items" :sectors="radar.sector_summary" :watchlist="preferences.watchlist" @open="openChart" @toggle-watchlist="toggleWatchlist" />
       </template>
     </NSpin>
   </div>

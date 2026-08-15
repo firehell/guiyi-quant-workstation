@@ -50,8 +50,9 @@ test('Market homepage shows only current formal signals above Radar', async ({ p
 
   const formal = page.getByTestId('market-formal-signals')
   await expect(formal).toContainText('苏冰')
-  await expect(formal).toContainText('JM 焦煤 · JM2609')
-  await expect(formal).toContainText('5m 买入信号 · 10:25')
+  await expect(formal).toContainText('JM 焦煤 · 买入信号')
+  await expect(formal).toContainText('JM2609')
+  await expect(formal).toContainText('5m · 10:25 确认')
   await expect(formal).toContainText('5m 同向确认')
   await expect(formal).not.toContainText('火天大有')
   await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
@@ -86,7 +87,8 @@ test('Market homepage keeps lower-timeframe confirmation fixed at 5m for a 15m s
   await page.goto('/market')
 
   const formal = page.getByTestId('market-formal-signals')
-  await expect(formal).toContainText('15m 买入信号')
+  await expect(formal).toContainText('买入信号')
+  await expect(formal).toContainText('15m')
   await expect(formal).toContainText('5m 同向确认')
   await expect(formal).not.toContainText('15m 同向确认')
 })
