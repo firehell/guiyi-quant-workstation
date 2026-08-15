@@ -16,8 +16,10 @@ function ruleLabel(ruleCode: string) {
 
 function resultLabel(event: AlertEvent) {
   const direction = event.result_codes.length === 1 ? event.result_codes[0] : null
-  if (direction === 'buy') return event.rule_code === 'htdy_original_15m' ? '买入观察' : '买入信号'
-  if (direction === 'sell') return event.rule_code === 'htdy_original_15m' ? '卖出观察' : '卖出信号'
+  if (event.rule_code === 'subing_entry_signal_v1' && direction === 'buy') return '买入信号'
+  if (event.rule_code === 'subing_entry_signal_v1' && direction === 'sell') return '卖出信号'
+  if (event.rule_code === 'htdy_original_15m' && direction === 'buy') return '买入观察'
+  if (event.rule_code === 'htdy_original_15m' && direction === 'sell') return '卖出观察'
   return '提醒记录'
 }
 

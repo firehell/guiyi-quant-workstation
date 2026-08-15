@@ -31,6 +31,7 @@ import {
   filterBarsToSubingSegment,
   MARKET_FREQUENCIES,
 } from '@/types/market'
+import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
   resolveEffectiveSeriesIdentity,
@@ -173,6 +174,9 @@ const afterMarketFailed = computed(() => {
 })
 const watchlisted = computed(() => watchlist.value.includes(symbol.value))
 const htdyVisible = computed(() => selectedOverlay.value === 'htdy')
+const latestHtdyObservation = computed(() => (
+  buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
+))
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', syncFullscreen)
@@ -544,7 +548,7 @@ function normalizeSymbol(value: unknown): string | null {
             :current-events-loading="currentEventsLoading"
             :current-events-status="currentEventsStatus"
             :current-events="currentEvents"
-            :htdy-observation-visible="htdyVisible && visibleBars.length > 0"
+            :htdy-observation="latestHtdyObservation"
             @toggle-watchlist="toggleWatchlist"
             @toggle-alert="toggleAlert"
           />
@@ -587,7 +591,7 @@ function normalizeSymbol(value: unknown): string | null {
           :current-events-loading="currentEventsLoading"
           :current-events-status="currentEventsStatus"
           :current-events="currentEvents"
-          :htdy-observation-visible="htdyVisible && visibleBars.length > 0"
+          :htdy-observation="latestHtdyObservation"
           @toggle-watchlist="toggleWatchlist"
           @toggle-alert="toggleAlert"
         />

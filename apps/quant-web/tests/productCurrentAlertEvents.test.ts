@@ -7,6 +7,8 @@ import type { AlertEvent } from '../src/types/market.ts'
 
 const todayEventsSource = readFileSync(new URL('../src/components/market/ProductTodayAlertEvents.vue', import.meta.url), 'utf-8')
 const formalSignalSource = readFileSync(new URL('../src/components/market/ProductFormalSignalCard.vue', import.meta.url), 'utf-8')
+const chartSource = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf-8')
+const sidebarSource = readFileSync(new URL('../src/components/market/ProductResearchSidebar.vue', import.meta.url), 'utf-8')
 
 test('drops a stale response after the product symbol changes', async () => {
   const symbol = ref('ag')
@@ -77,6 +79,27 @@ test('preserves the backend bar_end descending order', async () => {
 test('uses a stable safe fallback for an unknown current-event rule', () => {
   assert.match(todayEventsSource, /return '未知提醒'/)
   assert.match(todayEventsSource, /v-for="item in items"/)
+})
+
+test('does not infer a formal or observation result for an unknown current-event rule', () => {
+  assert.match(
+    todayEventsSource,
+    /event\.rule_code === 'subing_entry_signal_v1' && direction === 'buy'/,
+  )
+  assert.match(
+    todayEventsSource,
+    /event\.rule_code === 'htdy_original_15m' && direction === 'sell'/,
+  )
+  assert.match(todayEventsSource, /return '提醒记录'/)
+})
+
+test('derives the sidebar HTDY observation from the latest existing HTDY marker', () => {
+  assert.match(chartSource, /buildKlineDerivedData\(visibleBars\.value, \['htdy'\]\)/)
+  assert.match(chartSource, /htdy\?\.markers\.at\(-1\) \?\? null/)
+  assert.doesNotMatch(chartSource, /htdyVisible && visibleBars\.length > 0/)
+  assert.match(sidebarSource, /htdyObservation: import\('@\/types\/market'\)\.KlineMarker \| null/)
+  assert.match(sidebarSource, /v-if="htdyObservation"/)
+  assert.match(sidebarSource, /htdyObservation\.label/)
 })
 
 test('keeps the primary signal card restricted to resolved MATCHED signals', () => {

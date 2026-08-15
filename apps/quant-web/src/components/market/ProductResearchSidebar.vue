@@ -40,7 +40,7 @@ const props = defineProps<{
   currentEventsLoading: boolean
   currentEventsStatus: 'ready' | 'unavailable' | null
   currentEvents: import('@/types/market').AlertEvent[]
-  htdyObservationVisible: boolean
+  htdyObservation: import('@/types/market').KlineMarker | null
 }>()
 
 const emit = defineEmits<{
@@ -64,6 +64,20 @@ function percent(value: number | null) {
 
 function ratio(value: number | null) {
   return value === null ? '—' : `${value.toFixed(2)}x`
+}
+
+function htdyObservationLabel(value: string) {
+  if (value === '买观察') return '买入观察'
+  if (value === '卖观察') return '卖出观察'
+  return '观察不可用'
+}
+
+function htdyObservationTime(value: string) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '--:--'
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date)
 }
 </script>
 
@@ -91,11 +105,14 @@ function ratio(value: number | null) {
       @toggle="(ruleCode, enabled) => emit('toggle-alert', ruleCode, enabled)"
     />
     <NDivider />
-    <section v-if="htdyObservationVisible" class="research-sidebar__section">
+    <section v-if="htdyObservation" class="research-sidebar__section">
       <h3>火天大有观察</h3>
+      <strong :class="htdyObservation.label === '买观察' ? 'research-sidebar__htdy--buy' : 'research-sidebar__htdy--sell'">
+        {{ htdyObservationLabel(htdyObservation.label) }} · {{ htdyObservationTime(htdyObservation.time) }}
+      </strong>
       <p class="research-sidebar__unavailable">原始观察可能重绘，仅供人工观察</p>
     </section>
-    <NDivider v-if="htdyObservationVisible" />
+    <NDivider v-if="htdyObservation" />
     <ProductTodayAlertEvents
       :loading="currentEventsLoading"
       :status="currentEventsStatus"
@@ -163,6 +180,8 @@ function ratio(value: number | null) {
 .research-sidebar__facts dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 .research-sidebar__facts dd { margin: 0; font-family: var(--gy-font-mono); font-size: var(--gy-font-size-sm); text-align: right; }
 .research-sidebar__section h3 { margin: 0; font-size: var(--gy-font-size-sm); }.research-sidebar__unavailable { margin: 16px 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
+.research-sidebar__htdy--buy { color: var(--gy-up); font-size: var(--gy-font-size-sm); }
+.research-sidebar__htdy--sell { color: var(--gy-down); font-size: var(--gy-font-size-sm); }
 .research-sidebar__note { display: grid; gap: 4px; font-size: var(--gy-font-size-sm); }
 .research-sidebar__note > span { color: var(--gy-text-muted); }
 </style>
