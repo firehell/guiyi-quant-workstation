@@ -60,6 +60,18 @@ test('Market homepage shows only current formal signals above Radar', async ({ p
   ))).toBe(true)
 })
 
+test('Market homepage keeps lower-timeframe confirmation fixed at 5m for a 15m signal', async ({ page }) => {
+  await mockMarketHomepage(page, {
+    status: 'ready', trading_day: '2026-08-15', items: [{ ...formalSignal(), frequency: '15m' }],
+  })
+  await page.goto('/market')
+
+  const formal = page.getByTestId('market-formal-signals')
+  await expect(formal).toContainText('15m 买入信号')
+  await expect(formal).toContainText('5m 同向确认')
+  await expect(formal).not.toContainText('15m 同向确认')
+})
+
 test('Market homepage distinguishes ready empty formal signals', async ({ page }) => {
   await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] })
   await page.goto('/market')

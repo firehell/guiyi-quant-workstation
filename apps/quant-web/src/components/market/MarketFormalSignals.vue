@@ -40,7 +40,7 @@ function barTime(value: string) {
           <div :class="['market-formal-signals__direction', direction(item).className]">
             {{ item.frequency }} {{ direction(item).label }} · {{ barTime(item.bar_end) }}
           </div>
-          <div v-if="item.lower_tf_confirmation" class="market-formal-signals__confirmation">{{ item.frequency }} 同向确认</div>
+          <div v-if="item.lower_tf_confirmation" class="market-formal-signals__confirmation">5m 同向确认</div>
           <NButton size="small" @click="emit('open', item)">查看 K 线</NButton>
         </NCard>
       </div>
