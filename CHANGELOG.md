@@ -2,6 +2,20 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.3.0] - 2026-08-15
+
+Decision Compression / Alert V2 release candidate：
+
+- 将 SuBing 5m/15m Formal Signal 接入现有 Alert Application Domain，与 HTDY 一起由
+  `htdy_original_15m`、`subing_entry_signal_v1` 两条 code-defined Rule 和 single Alert Runtime 统一编排；
+- Market 首页新增当前交易日“需要处理”，只展示 Formal Signal；Product Workspace 提供 HTDY/SuBing
+  双 Rule 独立 Scope、当前交易日“今日记录”和 actual-dominant exact-frequency persistent Marker；
+- Market Web 统一为高对比亮色界面，保留中国期货红涨绿跌与既有 Radar/Kline 能力；
+- Alert V2 保持 Event 先提交、WeCom one-shot，无 replay、backfill、retry、Signal Center 或自动交易，
+  `auto_order=false` 不变；
+- 本条只记录已实现的 release candidate 代码事实，不表示 production migration、Runtime promotion、
+  SuBing production Scope activation 或 natural SuBing canary 已完成。
+
 ## [1.2.0] - 2026-08-14
 
 盘中观察与只读信号研究版本：

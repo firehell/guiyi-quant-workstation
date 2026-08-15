@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-14
+更新时间：2026-08-15
 
 ## 当前结论
 
@@ -68,9 +68,12 @@
   SuBing seed Scope 为 `[]`，不属于且不改变八表 Market Catalog。最终验证为 backend
   `780 passed, 13 skipped`、Engineering `29 passed`、Ruff/Mypy/secret scan/diff check/render-only/plist lint
   全部通过。
+- `v1.3.0` release candidate 已在 `develop` 准备完成；本次只统一正式版本源、engineering consistency
+  test、CHANGELOG、README 与当前状态，不改变 API、数据库 schema、Runtime 配置或真实 Alert Scope。
 - Alert V2 尚未进入生产：当前 production Runtime 仍为 `v1.2.0`，production migration
-  `20260814_0038`、v1.3 release/tag、Runtime promotion/switch、SuBing Scope write/activation 与真实
-  WeCom/canary 全部 `PENDING / NOT AUTHORIZED`。测试路由 Scope PUT 不构成真实 Scope mutation 授权。
+  `20260814_0038`、`main`/annotated `v1.3.0` tag 发布、Runtime promotion/switch、SuBing Scope
+  write/activation 与 natural SuBing canary 全部 `PENDING / NOT AUTHORIZED`。测试路由 Scope PUT
+  不构成真实 Scope mutation 授权。
 - 九个退役品种 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成生产清退且 residual=0；运行时继续保留退役名单防护，
   不再保留重复执行生产删除的 CLI。
 
