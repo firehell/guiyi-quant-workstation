@@ -13,6 +13,7 @@ export interface ChartTheme {
   macdDif: string
   macdDea: string
   atr: string
+  htdy: string
 }
 
 /** SSR 或无 CSS 变量时的默认配色（与亮色 tokens.css 对齐） */
@@ -30,6 +31,7 @@ const FALLBACK: ChartTheme = {
   macdDif: '#0284C7',
   macdDea: '#F59E0B',
   atr: '#7C3AED',
+  htdy: '#F79009',
 }
 
 function cssValue(style: CSSStyleDeclaration, name: string, fallback: string) {
@@ -54,5 +56,6 @@ export function resolveChartTheme(root: Element = document.documentElement): Cha
     macdDif: cssValue(style, '--gy-chart-macd-dif', FALLBACK.macdDif),
     macdDea: cssValue(style, '--gy-chart-macd-dea', FALLBACK.macdDea),
     atr: cssValue(style, '--gy-chart-atr', FALLBACK.atr),
+    htdy: cssValue(style, '--gy-status-warning', FALLBACK.htdy),
   }
 }

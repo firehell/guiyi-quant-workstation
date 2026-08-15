@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import { themeOverrides } from '../src/styles/theme.ts'
+import { resolveChartTheme } from '../src/styles/chartTheme.ts'
 
 type ThemeRecord = Record<string, any>
 
@@ -103,6 +104,13 @@ describe('light theme token contract', () => {
     assert.match(css, /--gy-accent:\s*#1d4ed8/i)
     assert.match(css, /--gy-status-warning:\s*var\(--gy-orange-500\)/)
     assert.notEqual(tokenValue('--gy-accent'), tokenValue('--gy-up'))
+  })
+
+  it('keeps the chart fallback aligned with CSS text and HTDY observation tokens', () => {
+    const fallback = resolveChartTheme({} as Element)
+    assert.equal(fallback.text.toLowerCase(), tokenValue('--gy-chart-text').toLowerCase())
+    assert.equal(fallback.htdy.toLowerCase(), '#f79009')
+    assert.equal(tokenValue('--gy-status-warning'), 'var(--gy-orange-500)')
   })
 
   it('defines the deep navy brand shell with readable shell text', () => {

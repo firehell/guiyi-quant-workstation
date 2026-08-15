@@ -22,12 +22,30 @@ function research(oiChange = 0.06) {
   }
 }
 
-function radar() {
+function radarItem(overrides = {}) {
+  return {
+    symbol: 'jm', product_name: '焦煤', sector: 'black', price_change_1d: 0.012,
+    price_change_5d: 0.032, volume_ratio20: 1.4, oi_change_1d: 0.021,
+    atr14_percentile252: 0.72, position20: 0.84, turnover: 12_000,
+    reason_codes: ['price_move_up', 'oi_increase'],
+    ...overrides,
+  }
+}
+
+function sectorSummary(sector, median) {
+  return {
+    sector, total_count: 1, participant_count: 1, up_count: median > 0 ? 1 : 0,
+    down_count: median < 0 ? 1 : 0, median_price_change_1d: median, attention_count: 1,
+  }
+}
+
+function radar(overrides = {}) {
   return {
     status: 'ready', expected_as_of: '2026-08-15', active_count: 60, participant_count: 60,
     stale: [], unavailable: [],
     summary: { up_count: 20, down_count: 18, volume_expansion_count: 12, oi_increase_count: 9, high_volatility_count: 7 },
     items: [], attention: [], sector_summary: [],
+    ...overrides,
   }
 }
 
@@ -80,6 +98,26 @@ test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewpo
   ))).toBe(true)
 })
 
+test('Market homepage caps formal decisions at two columns on desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await mockMarketHomepage(page, {
+    status: 'ready',
+    trading_day: '2026-08-15',
+    items: [
+      formalSignal(),
+      { ...formalSignal(), id: 18, symbol: 'ag', product_name: '白银', contract: 'AG2601' },
+      { ...formalSignal(), id: 19, symbol: 'au', product_name: '黄金', contract: 'AU2610' },
+    ],
+  })
+  await page.goto('/market')
+
+  const cards = page.getByTestId('market-formal-signals').locator('.market-formal-signals__card')
+  await expect(cards).toHaveCount(3)
+  const tops = await cards.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top))
+  expect(Math.abs(tops[0] - tops[1])).toBeLessThan(1)
+  expect(tops[2]).toBeGreaterThan(tops[1])
+})
+
 test('Market homepage keeps lower-timeframe confirmation fixed at 5m for a 15m signal', async ({ page }) => {
   await mockMarketHomepage(page, {
     status: 'ready', trading_day: '2026-08-15', items: [{ ...formalSignal(), frequency: '15m' }],
@@ -97,15 +135,100 @@ test('Market homepage distinguishes ready empty formal signals', async ({ page }
   await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] })
   await page.goto('/market')
 
-  await expect(page.getByTestId('market-formal-signals')).toContainText('当前没有需要处理的正式信号')
+  await expect(page.getByTestId('market-formal-signals')).toContainText('当前交易日暂无正式信号')
 })
 
 test('Market homepage keeps Radar visible when formal signals are unavailable', async ({ page }) => {
   await mockMarketHomepage(page, { status: 'unavailable', trading_day: null, items: [] })
   await page.goto('/market')
 
-  await expect(page.getByTestId('market-formal-signals')).toContainText('正式信号暂不可用')
+  const formal = page.getByTestId('market-formal-signals')
+  await expect(formal.getByText('暂不可用', { exact: true })).toBeVisible()
+  await expect(formal).toContainText('正式信号暂不可用')
   await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+})
+
+test('Market homepage shows Radar skeletons while the initial snapshot is pending', async ({ page }) => {
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
+  }))
+  await page.route('**/api/v1/market/research/radar', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await route.fulfill({ json: radar() })
+  })
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-radar-skeleton')).toBeVisible()
+  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-radar-skeleton')).toHaveCount(0)
+})
+
+test('manual Radar refresh keeps the last snapshot on failure and updates on retry', async ({ page }) => {
+  let attempt = 0
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
+  }))
+  await page.route('**/api/v1/market/research/radar', async (route) => {
+    attempt += 1
+    if (attempt === 2) return route.fulfill({ status: 503, json: { detail: 'temporarily unavailable' } })
+    return route.fulfill({ json: radar({ expected_as_of: attempt === 1 ? '2026-08-14' : '2026-08-15' }) })
+  })
+  await page.goto('/market')
+  await expect(page.getByText('2026-08-14 · 60/60', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '刷新 Radar' }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toBeVisible()
+  await expect(page.getByText('2026-08-14 · 60/60', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '重试' }).click()
+  await expect(page.getByText('2026-08-15 · 60/60', { exact: true })).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toHaveCount(0)
+})
+
+test('sector tabs preserve backend order and combine sector with watchlist filtering', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('guiyi.market.workspace.preferences.v1', JSON.stringify({
+      version: 1, symbol: null, seriesKind: 'actual_dominant', frequency: '15m',
+      researchSidebarOpen: true, watchlist: ['a'],
+    }))
+  })
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
+  }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar({
+    items: [radarItem(), radarItem({ symbol: 'a', product_name: '豆一', sector: 'agriculture', price_change_1d: -0.004 })],
+    sector_summary: [sectorSummary('black', 0.008), sectorSummary('agriculture', -0.004)],
+  }) }))
+  await page.goto('/market')
+
+  const tabs = page.getByRole('tablist', { name: '按板块筛选' }).getByRole('tab')
+  await expect(tabs).toHaveText(['黑色系 0.8%', '农产品 -0.4%'])
+  await expect(tabs.first()).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.market-detail tbody tr')).toContainText('JM 焦煤')
+  await expect(page.locator('.market-detail tbody tr')).not.toContainText('A 豆一')
+
+  await page.getByRole('button', { name: '自选', exact: true }).click()
+  await expect(page.locator('.market-detail tbody tr')).toHaveCount(0)
+  await tabs.nth(1).click()
+  await expect(page.locator('.market-detail tbody tr')).toHaveCount(1)
+  await expect(page.locator('.market-detail tbody tr')).toContainText('A 豆一')
+  await expect(tabs.nth(1).locator('.market-detail__tab-median')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+})
+
+test('Market homepage stays inside the three desktop acceptance viewports', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] })
+  await page.goto('/market')
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    const box = await page.getByTestId('market-formal-signals').boundingBox()
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
+  }
 })
 
 function subing(overrides = {}) {

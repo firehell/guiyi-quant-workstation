@@ -101,19 +101,19 @@ onMounted(async () => {
     wickUpColor: theme.up,
     wickDownColor: theme.down,
   }, 0)
-  emaLines.ema_10 = chart.addSeries(LineSeries, { color: '#facc15', lineWidth: 1, lastValueVisible: false }, 0)
-  emaLines.ema_21 = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, lastValueVisible: false }, 0)
-  emaLines.ema_60 = chart.addSeries(LineSeries, { color: '#a78bfa', lineWidth: 1, lastValueVisible: false }, 0)
-  htdyZk1 = chart.addSeries(LineSeries, { color: 'rgba(45, 212, 191, .58)', lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
-  htdyZd1 = chart.addSeries(LineSeries, { color: 'rgba(45, 212, 191, .4)', lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
-  htdyZd2 = chart.addSeries(LineSeries, { color: 'rgba(250, 204, 21, .42)', lineWidth: 1, lineStyle: 1, lastValueVisible: false }, 0)
+  emaLines.ema_10 = chart.addSeries(LineSeries, { color: '#d97706', lineWidth: 1, lastValueVisible: false }, 0)
+  emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema, lineWidth: 2, lastValueVisible: false }, 0)
+  emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.atr, lineWidth: 1, lastValueVisible: false }, 0)
+  htdyZk1 = chart.addSeries(LineSeries, { color: 'rgba(13, 148, 136, .62)', lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
+  htdyZd1 = chart.addSeries(LineSeries, { color: 'rgba(13, 148, 136, .42)', lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
+  htdyZd2 = chart.addSeries(LineSeries, { color: 'rgba(202, 138, 4, .55)', lineWidth: 1, lineStyle: 1, lastValueVisible: false }, 0)
   htdyMarkers = createSeriesMarkers(candles)
   volume = chart.addSeries(HistogramSeries, {
     priceFormat: { type: 'volume' },
   }, 1)
   macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 2)
-  macdDif = chart.addSeries(LineSeries, { color: '#38bdf8', lineWidth: 1, lastValueVisible: false }, 2)
-  macdDea = chart.addSeries(LineSeries, { color: '#f472b6', lineWidth: 1, lastValueVisible: false }, 2)
+  macdDif = chart.addSeries(LineSeries, { color: theme.macdDif, lineWidth: 1, lastValueVisible: false }, 2)
+  macdDea = chart.addSeries(LineSeries, { color: theme.macdDea, lineWidth: 1, lastValueVisible: false }, 2)
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.05 } })
   chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
@@ -284,6 +284,7 @@ function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time;
 
 function chartMarkers(markers: KlineMarker[]) {
   const barsByTime = new Map(renderedBars.map((bar) => [markerTimeKey(bar.time), bar]))
+  const theme = resolveChartTheme()
   return markers.flatMap((marker) => {
     const bar = barsByTime.get(markerTimeKey(marker.time))
     return bar ? [{
@@ -291,7 +292,11 @@ function chartMarkers(markers: KlineMarker[]) {
       time: chartTime(bar),
       position: marker.position,
       shape: marker.shape,
-      color: marker.color,
+      color: marker.tone === 'up'
+        ? theme.up
+        : marker.tone === 'down'
+          ? theme.down
+          : marker.tone === 'htdy' ? theme.htdy : theme.textMuted,
       text: marker.label,
     }] : []
   })
@@ -348,5 +353,5 @@ defineExpose({
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
 .chart { width: 100%; height: 100%; }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gy-text-muted); background: rgba(11, 17, 27, .48); pointer-events: none; }
-.overlay.error { color: #fb7185; }
+.overlay.error { color: var(--gy-status-error); }
 </style>

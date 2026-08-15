@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NEmpty, NSpin } from 'naive-ui'
+import { NSpin, NTag } from 'naive-ui'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
 
 defineProps<{
@@ -34,8 +34,11 @@ function barTime(value: string) {
     </header>
     <NSpin :show="loading">
       <p v-if="loading" class="market-formal-signals__state">正在读取正式信号…</p>
-      <p v-else-if="status === 'unavailable'" class="market-formal-signals__state">正式信号暂不可用</p>
-      <NEmpty v-else-if="status === 'ready' && items.length === 0" description="当前没有需要处理的正式信号" />
+      <div v-else-if="status === 'unavailable'" class="market-formal-signals__unavailable">
+        <NTag type="warning" size="small" :bordered="false">暂不可用</NTag>
+        <span>正式信号暂不可用</span>
+      </div>
+      <p v-else-if="status === 'ready' && items.length === 0" class="market-formal-signals__state">当前交易日暂无正式信号</p>
       <div v-else-if="status === 'ready'" class="market-formal-signals__cards">
         <article
           v-for="item in items"
@@ -59,11 +62,12 @@ function barTime(value: string) {
 </template>
 
 <style scoped>
-.market-formal-signals { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-lg); background: var(--gy-bg-panel); box-shadow: var(--gy-shadow-panel); }
+.market-formal-signals { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: .5px solid var(--gy-border); border-radius: var(--gy-radius-lg); background: var(--gy-bg-panel); box-shadow: var(--gy-shadow-panel); }
 .market-formal-signals__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .market-formal-signals h2 { margin: 0; font-size: var(--gy-font-size-lg); }
 .market-formal-signals__heading p, .market-formal-signals__state { margin: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
-.market-formal-signals__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.market-formal-signals__unavailable { display: flex; align-items: center; gap: 8px; color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
+.market-formal-signals__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .market-formal-signals__card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-left: 3px solid var(--gy-border-strong); border-radius: var(--gy-radius-md); background: var(--gy-bg-app); transition: transform var(--gy-transition-fast), box-shadow var(--gy-transition-fast); }
 .market-formal-signals__card--buy { border-left-color: var(--gy-up); background: var(--gy-up-soft); }
 .market-formal-signals__card--sell { border-left-color: var(--gy-down); background: var(--gy-down-soft); }

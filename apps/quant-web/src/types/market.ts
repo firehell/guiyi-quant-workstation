@@ -309,7 +309,7 @@ export interface KlineMarker {
   time: string
   label: string
   tooltip?: string
-  color: string
+  tone: 'up' | 'down' | 'htdy' | 'neutral'
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
 }

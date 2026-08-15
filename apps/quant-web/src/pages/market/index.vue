@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NAlert, NSpin } from 'naive-ui'
+import { NAlert, NButton } from 'naive-ui'
 import MarketAttentionList from '@/components/market/MarketAttentionList.vue'
 import MarketDetailTable from '@/components/market/MarketDetailTable.vue'
 import MarketScatter from '@/components/market/MarketScatter.vue'
 import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
 import MarketFormalSignals from '@/components/market/MarketFormalSignals.vue'
+import MarketRadarSkeleton from '@/components/market/MarketRadarSkeleton.vue'
 import { getMarketRadar } from '@/api/market'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
 import type { MarketRadarItem, MarketRadarResponse } from '@/types/market'
@@ -18,7 +19,7 @@ import {
 } from '@/utils/marketWorkspacePreferences'
 
 const router = useRouter()
-const loading = ref(true)
+const loading = ref(false)
 const error = ref(false)
 const radar = ref<MarketRadarResponse | null>(null)
 const {
@@ -58,8 +59,10 @@ function toggleWatchlist(symbol: string) {
   saveMarketWorkspacePreferences(preferences.value)
 }
 
-onMounted(async () => {
-  void refreshFormalSignals()
+async function refreshRadar() {
+  if (loading.value) return
+  loading.value = true
+  error.value = false
   try {
     radar.value = await getMarketRadar()
   } catch {
@@ -67,12 +70,20 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+onMounted(() => {
+  void refreshFormalSignals()
+  void refreshRadar()
 })
 </script>
 
 <template>
   <div class="market-radar-page">
-    <header class="market-radar-page__intro"><h1>期货市场发现</h1><p>基于最近完整交易日的 Canonical 日线研究快照；所有内容仅供人工观察。</p></header>
+    <header class="market-radar-page__intro">
+      <div><h1>期货市场发现</h1><p>基于最近完整交易日的 Canonical 日线研究快照；所有内容仅供人工观察。</p></div>
+      <NButton secondary size="small" :loading="loading" :disabled="loading" @click="refreshRadar">刷新 Radar</NButton>
+    </header>
     <MarketFormalSignals
       :loading="formalLoading"
       :status="formalStatus"
@@ -80,18 +91,34 @@ onMounted(async () => {
       :items="formalItems"
       @open="openFormalSignal"
     />
-    <NSpin :show="loading">
-      <NAlert v-if="error" type="warning" title="Radar 暂不可用">无法读取只读 Radar；可稍后重试，不影响 Product Workspace。</NAlert>
-      <template v-else-if="radar">
+    <MarketRadarSkeleton v-if="loading && !radar" />
+    <template v-else>
+      <div v-if="error" class="market-radar-page__error">
+        <NAlert
+          type="warning"
+          :title="radar ? 'Radar 刷新失败' : 'Radar 暂不可用'"
+        >
+          {{ radar ? '已保留上一份成功快照；重试前请以其时点为准。' : '无法读取只读 Radar；不影响 Product Workspace。' }}
+        </NAlert>
+        <NButton size="small" :loading="loading" :disabled="loading" @click="refreshRadar">重试</NButton>
+      </div>
+      <template v-if="radar">
         <NAlert v-if="freshnessIssue" type="warning" :title="freshnessIssue" />
         <MarketSummaryStrip :radar="radar" />
         <div class="market-radar-page__discovery"><MarketScatter :items="radar.items" @open="openChart" /><MarketAttentionList :items="radar.attention" @open="openChart" /></div>
         <MarketDetailTable :items="radar.items" :sectors="radar.sector_summary" :watchlist="preferences.watchlist" @open="openChart" @toggle-watchlist="toggleWatchlist" />
       </template>
-    </NSpin>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.market-radar-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }.market-radar-page__intro h1 { margin: 0 0 6px; font-size: var(--gy-font-size-xl); }.market-radar-page__intro p { margin: 0; color: var(--gy-text-muted); }.market-radar-page__discovery { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, .9fr); gap: 16px; }@media (max-width: 980px) { .market-radar-page__discovery { grid-template-columns: 1fr; } }
+.market-radar-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.market-radar-page__intro { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.market-radar-page__intro h1 { margin: 0 0 6px; font-size: var(--gy-font-size-xl); }
+.market-radar-page__intro p { margin: 0; color: var(--gy-text-muted); }
+.market-radar-page__error { display: flex; align-items: center; gap: 10px; }
+.market-radar-page__error :deep(.n-alert) { min-width: 0; flex: 1; }
+.market-radar-page__discovery { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, .9fr); gap: 16px; }
+@media (max-width: 980px) { .market-radar-page__discovery { grid-template-columns: 1fr; } }
 </style>

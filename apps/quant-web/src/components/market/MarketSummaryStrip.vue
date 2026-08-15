@@ -22,12 +22,12 @@ defineProps<{ radar: MarketRadarResponse }>()
 </template>
 
 <style scoped>
-.radar-summary { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 16px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); }
+.radar-summary { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border: .5px solid var(--gy-border); border-radius: var(--gy-radius-lg); background: var(--gy-bg-panel); overflow: hidden; }
 .radar-summary__meta { display: flex; align-items: baseline; gap: 10px; }
 .radar-summary__eyebrow { color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .radar-summary__meta h2 { margin: 0; font-size: var(--gy-font-size-md); }
 .radar-summary__meta strong { font-family: var(--gy-font-mono); font-size: var(--gy-font-size-xs); color: var(--gy-text-muted); font-weight: 400; }
-.radar-summary__chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.radar-summary__chips { display: flex; gap: 8px; flex-wrap: nowrap; min-width: 0; overflow-x: auto; }
 .radar-summary__chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--gy-bg-app); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-pill); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); }
 .radar-summary__count { font-family: var(--gy-font-mono); font-weight: 500; color: var(--gy-text-primary); }
 .radar-summary__count--up { color: var(--gy-up); }
