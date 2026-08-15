@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import ts from 'typescript'
 import { nextTick, ref } from 'vue'
 import { useProductCurrentAlertEvents } from '../src/composables/useProductCurrentAlertEvents.ts'
 import type { AlertEvent } from '../src/types/market.ts'
@@ -82,15 +83,30 @@ test('uses a stable safe fallback for an unknown current-event rule', () => {
 })
 
 test('does not infer a formal or observation result for an unknown current-event rule', () => {
-  assert.match(
-    todayEventsSource,
-    /event\.rule_code === 'subing_entry_signal_v1' && direction === 'buy'/,
-  )
-  assert.match(
-    todayEventsSource,
-    /event\.rule_code === 'htdy_original_15m' && direction === 'sell'/,
-  )
-  assert.match(todayEventsSource, /return '提醒记录'/)
+  const { ruleLabel, resultLabel, resultClass } = productTodayResultHelpers()
+  const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy'] })
+
+  assert.equal(ruleLabel(unknown.rule_code), '未知提醒')
+  assert.equal(resultLabel(unknown), '提醒记录')
+  assert.equal(resultClass(unknown), '')
+})
+
+test('preserves legal combined HTDY and SuBing current-event directions without coloring them as one direction', () => {
+  const { resultLabel, resultClass } = productTodayResultHelpers()
+
+  assert.equal(resultLabel(eventWith({ rule_code: 'htdy_original_15m', result_codes: ['buy', 'sell'] })), '买入/卖出观察')
+  assert.equal(resultLabel(eventWith({ rule_code: 'subing_entry_signal_v1', result_codes: ['buy', 'sell'] })), '买入/卖出信号')
+  assert.equal(resultClass(eventWith({ rule_code: 'htdy_original_15m', result_codes: ['buy', 'sell'] })), '')
+  assert.equal(resultClass(eventWith({ rule_code: 'subing_entry_signal_v1', result_codes: ['buy', 'sell'] })), '')
+})
+
+test('keeps an unknown combined current event fail-closed', () => {
+  const { ruleLabel, resultLabel, resultClass } = productTodayResultHelpers()
+  const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy', 'sell'] })
+
+  assert.equal(ruleLabel(unknown.rule_code), '未知提醒')
+  assert.equal(resultLabel(unknown), '提醒记录')
+  assert.equal(resultClass(unknown), '')
 })
 
 test('derives the sidebar HTDY observation from the latest existing HTDY marker', () => {
@@ -126,5 +142,24 @@ function event(id: number): AlertEvent {
     lower_tf_confirmation: false,
     detected_at: '2026-08-15T01:00:01Z',
     notification_attempted_at: null,
+  }
+}
+
+function eventWith(overrides: Pick<AlertEvent, 'rule_code' | 'result_codes'>): AlertEvent {
+  return { ...event(9), ...overrides }
+}
+
+function productTodayResultHelpers() {
+  const source = todayEventsSource.slice(
+    todayEventsSource.indexOf('function ruleLabel'),
+    todayEventsSource.indexOf('function barTime'),
+  )
+  const javascript = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  return Function(`${javascript}; return { ruleLabel, resultLabel, resultClass }`)() as {
+    ruleLabel: (ruleCode: string) => string
+    resultLabel: (event: AlertEvent) => string
+    resultClass: (event: AlertEvent) => string
   }
 }

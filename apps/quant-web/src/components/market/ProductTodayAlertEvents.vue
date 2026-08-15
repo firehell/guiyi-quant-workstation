@@ -15,16 +15,25 @@ function ruleLabel(ruleCode: string) {
 }
 
 function resultLabel(event: AlertEvent) {
-  const direction = event.result_codes.length === 1 ? event.result_codes[0] : null
-  if (event.rule_code === 'subing_entry_signal_v1' && direction === 'buy') return '买入信号'
-  if (event.rule_code === 'subing_entry_signal_v1' && direction === 'sell') return '卖出信号'
-  if (event.rule_code === 'htdy_original_15m' && direction === 'buy') return '买入观察'
-  if (event.rule_code === 'htdy_original_15m' && direction === 'sell') return '卖出观察'
+  const hasBuy = event.result_codes.includes('buy')
+  const hasSell = event.result_codes.includes('sell')
+  if (event.rule_code === 'subing_entry_signal_v1') {
+    if (hasBuy && hasSell) return '买入/卖出信号'
+    if (hasBuy) return '买入信号'
+    if (hasSell) return '卖出信号'
+  }
+  if (event.rule_code === 'htdy_original_15m') {
+    if (hasBuy && hasSell) return '买入/卖出观察'
+    if (hasBuy) return '买入观察'
+    if (hasSell) return '卖出观察'
+  }
   return '提醒记录'
 }
 
 function resultClass(event: AlertEvent) {
-  const direction = event.result_codes.length === 1 ? event.result_codes[0] : null
+  if (event.result_codes.length !== 1) return ''
+  if (event.rule_code !== 'subing_entry_signal_v1' && event.rule_code !== 'htdy_original_15m') return ''
+  const direction = event.result_codes[0]
   return direction === 'buy' ? 'product-today-alert-events__result--buy'
     : direction === 'sell' ? 'product-today-alert-events__result--sell'
       : ''
