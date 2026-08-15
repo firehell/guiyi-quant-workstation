@@ -60,6 +60,25 @@ test('Market homepage shows only current formal signals above Radar', async ({ p
   ))).toBe(true)
 })
 
+test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 979, height: 900 })
+  await mockMarketHomepage(page, {
+    status: 'ready',
+    trading_day: '2026-08-15',
+    items: [formalSignal(), { ...formalSignal(), id: 18, symbol: 'ag', product_name: '白银', contract: 'AG2601' }],
+  })
+  await page.goto('/market')
+
+  const formal = page.getByTestId('market-formal-signals')
+  await expect(formal).toContainText('只显示当前交易日的正式信号')
+  await expect(page.getByText('值得关注，但尚未形成正式信号', { exact: true })).toBeVisible()
+  await expect(formal.locator('.market-formal-signals__card')).toHaveCount(2)
+  expect(await formal.locator('.market-formal-signals__card').evaluateAll((cards) => cards[1].getBoundingClientRect().top > cards[0].getBoundingClientRect().top)).toBe(true)
+  expect(await page.locator('[data-testid="market-formal-signals"], .market-attention').evaluateAll((nodes) => (
+    Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
+  ))).toBe(true)
+})
+
 test('Market homepage keeps lower-timeframe confirmation fixed at 5m for a 15m signal', async ({ page }) => {
   await mockMarketHomepage(page, {
     status: 'ready', trading_day: '2026-08-15', items: [{ ...formalSignal(), frequency: '15m' }],
@@ -181,7 +200,7 @@ test('SuBing clips old same-contract bars and renders the requested primary Sign
 
   await expect(page.getByText('109 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.subing-strip')).toContainText('5m · 当前不匹配')
-  await expect(page.getByText('苏冰观察', { exact: true })).toBeVisible()
+  await expect(page.getByText('苏冰研究明细', { exact: true })).toBeVisible()
   await expect(page.getByText('当前合约', { exact: true })).toBeVisible()
   await expect(page.getByText('段起始', { exact: true })).toBeVisible()
   await expect(page.locator('body')).not.toContainText('买入')

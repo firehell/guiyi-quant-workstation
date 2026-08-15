@@ -618,8 +618,9 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace:fullscreen .product-workspace__kline { min-height: 100%; }
 .product-workspace:fullscreen .product-workspace__sidebar { display: none; }
 
-@media (max-width: 1599px) {
+@media (min-width: 980px) and (max-width: 1199px) {
   .product-workspace__main { grid-template-columns: minmax(0, 1fr); }
   .product-workspace__sidebar { display: none; }
 }
+@media (max-width: 979px) { .product-workspace__main { grid-template-columns: minmax(0, 1fr); }.product-workspace__sidebar { position: static; } }
 </style>

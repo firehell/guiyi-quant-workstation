@@ -37,7 +37,7 @@ function time(value: string | undefined) {
 </script>
 
 <template>
-  <section class="product-formal-signal" data-testid="product-formal-signal">
+  <section :class="['product-formal-signal', signal ? `product-formal-signal--${signal.direction}` : 'product-formal-signal--empty']" data-testid="product-formal-signal">
     <h3>正式信号</h3>
     <template v-if="signal">
       <strong :class="signal.direction === 'long' ? 'product-formal-signal--buy' : 'product-formal-signal--sell'">
@@ -50,7 +50,8 @@ function time(value: string | undefined) {
 </template>
 
 <style scoped>
-.product-formal-signal { display: grid; gap: 8px; }
+.product-formal-signal { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--gy-border-strong); border-left: 4px solid var(--gy-border-strong); border-radius: var(--gy-radius-sm); background: var(--gy-bg-panel); }
+.product-formal-signal--long { border-left-color: var(--gy-up); }.product-formal-signal--short { border-left-color: var(--gy-down); }
 .product-formal-signal h3 { margin: 0; font-size: var(--gy-font-size-sm); }
 .product-formal-signal strong { font-size: var(--gy-font-size-sm); }
 .product-formal-signal p { margin: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }

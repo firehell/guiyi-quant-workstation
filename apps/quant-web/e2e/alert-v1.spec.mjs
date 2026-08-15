@@ -74,6 +74,7 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
       { rule_code: 'htdy_original_15m', display_name: '火天大有', kind: 'indicator_observation', input_frequencies: ['15m'], enabled_for_product: false },
       { rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal', input_frequencies: ['5m', '15m'], enabled_for_product: false },
     ] } })
+    if (url.pathname.endsWith('/current-events')) return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-13', items: [] } })
     if (url.pathname.endsWith('/events')) {
       const ruleCode = url.searchParams.get('rule_code')
       requests.push({ ruleCode, activeFrequency })
@@ -89,6 +90,14 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   })
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=30m')
+  const sidebar = page.locator('.product-workspace__sidebar')
+  await expect(sidebar).toBeVisible()
+  await expect(sidebar.getByTestId('product-formal-signal')).toBeVisible()
+  await expect(sidebar.getByTestId('product-alert-rules')).toBeVisible()
+  await expect(sidebar.getByTestId('product-today-alert-events')).toBeVisible()
+  expect(await sidebar.locator('[data-testid="product-formal-signal"], [data-testid="product-alert-rules"], [data-testid="product-today-alert-events"]').evaluateAll((nodes) => (
+    nodes.every((node, index) => index === 0 || Boolean(nodes[index - 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING))
+  ))).toBe(true)
   await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '无', exact: true }).click()
   await page.getByRole('button', { name: '真实主力', exact: true }).click()
   await page.getByRole('button', { name: '5m', exact: true }).click()

@@ -48,7 +48,5 @@ const rows = computed(() => [
 </template>
 
 <style scoped>
-.product-alert-rules { display: grid; gap: 10px; }
-.product-alert-rules__row { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: var(--gy-font-size-sm); }
-.product-alert-rules__row > span:first-child { color: var(--gy-text-muted); }
+.product-alert-rules { display: grid; gap: 10px; }.product-alert-rules__row { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: var(--gy-font-size-sm); }.product-alert-rules__row > span:first-child { color: var(--gy-text-secondary); }.product-alert-rules :deep(.n-switch.n-switch--disabled) { opacity: .68; }
 </style>

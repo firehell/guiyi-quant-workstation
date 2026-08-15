@@ -105,7 +105,7 @@ function htdyObservationTime(value: string) {
       @toggle="(ruleCode, enabled) => emit('toggle-alert', ruleCode, enabled)"
     />
     <NDivider />
-    <section v-if="htdyObservation" class="research-sidebar__section">
+    <section v-if="htdyObservation" class="research-sidebar__section research-sidebar__htdy">
       <h3>火天大有观察</h3>
       <strong :class="htdyObservation.label === '买观察' ? 'research-sidebar__htdy--buy' : 'research-sidebar__htdy--sell'">
         {{ htdyObservationLabel(htdyObservation.label) }} · {{ htdyObservationTime(htdyObservation.time) }}
@@ -179,7 +179,7 @@ function htdyObservationTime(value: string) {
 .research-sidebar__facts > div { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .research-sidebar__facts dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 .research-sidebar__facts dd { margin: 0; font-family: var(--gy-font-mono); font-size: var(--gy-font-size-sm); text-align: right; }
-.research-sidebar__section h3 { margin: 0; font-size: var(--gy-font-size-sm); }.research-sidebar__unavailable { margin: 16px 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
+.research-sidebar__section h3 { margin: 0; font-size: var(--gy-font-size-sm); }.research-sidebar__unavailable { margin: 16px 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }.research-sidebar__htdy { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--gy-status-warning); border-radius: var(--gy-radius-sm); background: var(--gy-status-warning-soft); }
 .research-sidebar__htdy--buy { color: var(--gy-up); font-size: var(--gy-font-size-sm); }
 .research-sidebar__htdy--sell { color: var(--gy-down); font-size: var(--gy-font-size-sm); }
 .research-sidebar__note { display: grid; gap: 4px; font-size: var(--gy-font-size-sm); }

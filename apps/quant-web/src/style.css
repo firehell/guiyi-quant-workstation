@@ -52,6 +52,14 @@ a {
   outline-offset: 2px;
 }
 
+button:disabled,
+.n-button.n-button--disabled {
+  color: var(--gy-text-disabled) !important;
+  background: var(--gy-control-disabled-bg) !important;
+  border-color: var(--gy-border) !important;
+  opacity: 1 !important;
+}
+
 ::selection {
   color: #fff;
   background: rgba(37, 99, 235, 0.28);

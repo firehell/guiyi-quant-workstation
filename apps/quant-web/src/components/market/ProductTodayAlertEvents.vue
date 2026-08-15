@@ -23,6 +23,13 @@ function resultLabel(event: AlertEvent) {
   return '提醒记录'
 }
 
+function resultClass(event: AlertEvent) {
+  const direction = event.result_codes.length === 1 ? event.result_codes[0] : null
+  return direction === 'buy' ? 'product-today-alert-events__result--buy'
+    : direction === 'sell' ? 'product-today-alert-events__result--sell'
+      : ''
+}
+
 function barTime(value: string) {
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return '--:--'
@@ -43,7 +50,7 @@ function barTime(value: string) {
         <div v-for="item in items" :key="item.id" class="product-today-alert-events__row">
           <time>{{ barTime(item.bar_end) }}</time>
           <strong>{{ ruleLabel(item.rule_code) }}</strong>
-          <span>{{ resultLabel(item) }}</span>
+          <span :class="resultClass(item)">{{ resultLabel(item) }}</span>
         </div>
       </div>
     </NSpin>
@@ -57,4 +64,5 @@ function barTime(value: string) {
 .product-today-alert-events__rows { display: grid; gap: 8px; }
 .product-today-alert-events__row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 8px; font-size: var(--gy-font-size-sm); }
 .product-today-alert-events__row time { color: var(--gy-text-muted); font-family: var(--gy-font-mono); }
+.product-today-alert-events__result--buy { color: var(--gy-up); font-weight: 600; }.product-today-alert-events__result--sell { color: var(--gy-down); font-weight: 600; }
 </style>
