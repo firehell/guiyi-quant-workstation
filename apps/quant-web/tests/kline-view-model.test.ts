@@ -40,6 +40,7 @@ test('HTDY is only derived when its observation overlay is explicitly visible', 
   assert.ok(visible.htdy?.zd2.length)
   assert.ok(visible.htdy?.markers.length)
   assert.ok(visible.htdy?.markers.every((marker) => ['买观察', '卖观察'].includes(marker.label)))
+  assert.ok(visible.htdy?.markers.every((marker) => marker.tone === 'htdy'))
 })
 
 test('crosshair context keeps OHLCV OI EMA and MACD on the hovered bar timestamp', () => {

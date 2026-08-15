@@ -32,11 +32,22 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
         time: event.bar_end,
         label,
         tooltip: `持久 AlertEvent · ${event.contract} · ${label}`,
-        color: '#facc15',
+        tone: markerTone(event.rule_code, observations),
         position: 'aboveBar' as const,
         shape: 'square' as const,
       }]
     })
+}
+
+function markerTone(
+  ruleCode: string,
+  observations: Set<'buy' | 'sell'>,
+): KlineMarker['tone'] {
+  if (ruleCode === HTDY_RULE_CODE) return 'htdy'
+  if (ruleCode !== SUBING_RULE_CODE) return 'neutral'
+  if (observations.size === 1 && observations.has('buy')) return 'up'
+  if (observations.size === 1 && observations.has('sell')) return 'down'
+  return 'neutral'
 }
 
 function markerLabel(ruleCode: string, observations: Set<'buy' | 'sell'>): string | null {

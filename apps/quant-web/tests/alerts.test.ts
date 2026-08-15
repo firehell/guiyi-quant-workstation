@@ -224,17 +224,27 @@ describe('Product Alert server-side scope', () => {
   })
 
   it('labels V2 persistent events by Rule category while keeping the Event identity stable', () => {
-    assert.deepEqual(alertEventsToMarkers([
+    const markers = alertEventsToMarkers([
       event(0, ['buy', 'sell'], 'subing_entry_signal_v1'),
       event(1, ['buy']),
       event(2, ['sell'], 'subing_entry_signal_v1'),
       event(3, ['buy', 'sell']),
-    ]).map((marker) => [marker.id, marker.label]), [
-      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:00:00Z', '买入/卖出信号'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:15:00Z', '买入观察'],
-      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:30:00Z', '卖出信号'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '买入/卖出观察'],
     ])
+
+    assert.deepEqual(markers.map((marker) => [marker.id, marker.label, marker.tone]), [
+      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:00:00Z', '买入/卖出信号', 'neutral'],
+      ['alert:htdy_original_15m:ag:2026-08-13T02:15:00Z', '买入观察', 'htdy'],
+      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:30:00Z', '卖出信号', 'down'],
+      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '买入/卖出观察', 'htdy'],
+    ])
+  })
+
+  it('keeps SuBing direction tones separate from HTDY observation tone', () => {
+    assert.deepEqual(alertEventsToMarkers([
+      event(0, ['buy'], 'subing_entry_signal_v1'),
+      event(1, ['sell'], 'subing_entry_signal_v1'),
+      event(2, ['buy'], 'htdy_original_15m'),
+    ]).map((marker) => marker.tone), ['up', 'down', 'htdy'])
   })
 
   it('keeps persistent bells independent from current repainting HTDY markers', () => {
@@ -254,7 +264,7 @@ describe('Product Alert server-side scope', () => {
       time,
       label: id,
       tooltip: id,
-      color: '#fff',
+      tone: 'neutral' as const,
       position: 'aboveBar' as const,
       shape: 'square' as const,
     })

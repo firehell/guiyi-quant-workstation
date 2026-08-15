@@ -5,6 +5,8 @@ interface CurrentFormalSignalsDependencies {
   fetchCurrent?: () => Promise<CurrentFormalSignalsResponse>
 }
 
+const HTDY_OBSERVATION_RULE_CODE = 'htdy_original_15m'
+
 export function useCurrentFormalSignals(dependencies: CurrentFormalSignalsDependencies = {}) {
   const loading = ref(false)
   const status = ref<CurrentFormalSignalsResponse['status'] | null>(null)
@@ -21,7 +23,7 @@ export function useCurrentFormalSignals(dependencies: CurrentFormalSignalsDepend
       const response = await fetchCurrent()
       status.value = response.status
       tradingDay.value = response.trading_day
-      items.value = response.items
+      items.value = response.items.filter((item) => item.rule_code !== HTDY_OBSERVATION_RULE_CODE)
     } catch {
       status.value = 'unavailable'
       tradingDay.value = null

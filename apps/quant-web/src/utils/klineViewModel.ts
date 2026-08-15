@@ -72,8 +72,8 @@ function buildHtdyDerivedData(bars: BarData[]): HtdyDerivedData {
     zd1: observation.points.flatMap((point) => htdyValuePoint(point.time, point.zd1)),
     zd2: observation.points.flatMap((point) => htdyValuePoint(point.time, point.zd2)),
     markers: observation.points.flatMap((point) => [
-      point.buyObservation ? observationMarker(point.time, '买观察', '#2dd4bf', 'belowBar', 'arrowUp') : null,
-      point.sellObservation ? observationMarker(point.time, '卖观察', '#f472b6', 'aboveBar', 'arrowDown') : null,
+      point.buyObservation ? observationMarker(point.time, '买观察', 'belowBar', 'arrowUp') : null,
+      point.sellObservation ? observationMarker(point.time, '卖观察', 'aboveBar', 'arrowDown') : null,
     ].filter((marker): marker is KlineMarker => marker !== null)),
   }
 }
@@ -85,7 +85,6 @@ function htdyValuePoint(time: unknown, value: number | null): KlineValuePoint[] 
 function observationMarker(
   time: unknown,
   label: string,
-  color: string,
   position: KlineMarker['position'],
   shape: KlineMarker['shape'],
 ): KlineMarker {
@@ -94,7 +93,7 @@ function observationMarker(
     time: String(time),
     label,
     tooltip: '火天大有原始观察；未来引用/重绘风险，仅供人工观察',
-    color,
+    tone: 'htdy',
     position,
     shape,
   }
@@ -141,7 +140,6 @@ function toHoverIndicatorValue(indicator: EmaIndicatorId, value: number | null):
   return {
     id: indicator,
     displayName: definition?.displayName || indicator,
-    color: definition?.color || '#94a3b8',
     value,
     ready: value !== null,
     valid: true,

@@ -9,27 +9,37 @@ export interface ChartTheme {
   down: string
   volumeUp: string
   volumeDown: string
-  ema: string
+  ema10: string
+  ema21: string
+  ema60: string
   macdDif: string
   macdDea: string
-  atr: string
+  htdy: string
+  htdyZk1: string
+  htdyZd1: string
+  htdyZd2: string
 }
 
 /** SSR 或无 CSS 变量时的默认配色（与亮色 tokens.css 对齐） */
 const FALLBACK: ChartTheme = {
   background: '#FFFFFF',
-  grid: '#EEF2F6',
+  grid: '#EDF1F7',
   axis: '#98A2B3',
-  text: '#475467',
-  textMuted: '#667085',
+  text: '#33507E',
+  textMuted: '#5B718F',
   up: '#DC2626',
   down: '#16A34A',
   volumeUp: 'rgba(220, 38, 38, 0.38)',
   volumeDown: 'rgba(22, 163, 74, 0.38)',
-  ema: '#F59E0B',
+  ema10: '#D97706',
+  ema21: '#F59E0B',
+  ema60: '#7C3AED',
   macdDif: '#0284C7',
   macdDea: '#F59E0B',
-  atr: '#7C3AED',
+  htdy: '#F79009',
+  htdyZk1: 'rgba(13, 148, 136, 0.62)',
+  htdyZd1: 'rgba(13, 148, 136, 0.42)',
+  htdyZd2: 'rgba(202, 138, 4, 0.55)',
 }
 
 function cssValue(style: CSSStyleDeclaration, name: string, fallback: string) {
@@ -50,9 +60,14 @@ export function resolveChartTheme(root: Element = document.documentElement): Cha
     down: cssValue(style, '--gy-down', FALLBACK.down),
     volumeUp: cssValue(style, '--gy-chart-volume-up', FALLBACK.volumeUp),
     volumeDown: cssValue(style, '--gy-chart-volume-down', FALLBACK.volumeDown),
-    ema: cssValue(style, '--gy-chart-ema', FALLBACK.ema),
+    ema10: cssValue(style, '--gy-chart-ema-10', FALLBACK.ema10),
+    ema21: cssValue(style, '--gy-chart-ema', FALLBACK.ema21),
+    ema60: cssValue(style, '--gy-chart-ema-60', FALLBACK.ema60),
     macdDif: cssValue(style, '--gy-chart-macd-dif', FALLBACK.macdDif),
     macdDea: cssValue(style, '--gy-chart-macd-dea', FALLBACK.macdDea),
-    atr: cssValue(style, '--gy-chart-atr', FALLBACK.atr),
+    htdy: cssValue(style, '--gy-status-warning', FALLBACK.htdy),
+    htdyZk1: cssValue(style, '--gy-chart-htdy-zk1', FALLBACK.htdyZk1),
+    htdyZd1: cssValue(style, '--gy-chart-htdy-zd1', FALLBACK.htdyZd1),
+    htdyZd2: cssValue(style, '--gy-chart-htdy-zd2', FALLBACK.htdyZd2),
   }
 }

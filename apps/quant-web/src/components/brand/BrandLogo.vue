@@ -40,7 +40,7 @@ withDefaults(
 }
 
 .brand-logo__copy strong {
-  color: var(--gy-text-primary);
+  color: #ffffff;
   font-size: 17px;
   letter-spacing: 0.06em;
   white-space: nowrap;
@@ -48,7 +48,7 @@ withDefaults(
 
 .brand-logo__copy small {
   margin-top: 2px;
-  color: var(--gy-text-muted);
+  color: var(--gy-shell-text-muted);
   font-family: var(--gy-font-mono);
   font-size: 8px;
   letter-spacing: 0.12em;

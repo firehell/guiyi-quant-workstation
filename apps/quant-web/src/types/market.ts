@@ -309,7 +309,7 @@ export interface KlineMarker {
   time: string
   label: string
   tooltip?: string
-  color: string
+  tone: 'up' | 'down' | 'htdy' | 'neutral'
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
 }
@@ -349,7 +349,6 @@ export interface MainIndicatorDefinition {
   renderer: 'line' | 'markers' | 'band' | 'mixed'
   capability: 'standard_overlay' | 'observation_overlay'
   defaultVisible: boolean
-  color: string
   parameters: Record<string, number | string | boolean>
   lookbackBars: number
   alertCapable: boolean
@@ -364,7 +363,6 @@ export interface MainIndicatorValue {
   id: MainIndicatorId
   displayName: string
   value: number | null
-  color: string
   ready?: boolean
   valid?: boolean
   reason?: string | null

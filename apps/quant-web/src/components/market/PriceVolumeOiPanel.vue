@@ -49,6 +49,6 @@ function line(key: 'price' | 'oi') {
 .price-volume-oi__heading { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
 .price-volume-oi__heading span, .price-volume-oi__heading small { color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .price-volume-oi h3 { margin: 2px 0 0; font-size: var(--gy-font-size-md); }.price-volume-oi__chart { width: 100%; height: 150px; margin-top: 12px; background: var(--gy-bg-app); }
-.price { fill: none; stroke: #f59e0b; stroke-width: 1.3; vector-effect: non-scaling-stroke; }.oi { fill: none; stroke: #38bdf8; stroke-width: 1.1; vector-effect: non-scaling-stroke; }.volume { fill: rgba(45, 212, 191, .32); }
+.price { fill: none; stroke: var(--gy-chart-ema); stroke-width: 1.3; vector-effect: non-scaling-stroke; }.oi { fill: none; stroke: var(--gy-chart-macd-dif); stroke-width: 1.1; vector-effect: non-scaling-stroke; }.volume { fill: rgba(13, 148, 136, .3); }
 .price-volume-oi__legend { display: flex; gap: 12px; margin-top: 8px; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 </style>

@@ -1,33 +1,38 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
 /**
- * Naive UI 亮色主题覆盖。
+ * Naive UI 亮色主题覆盖（深蓝品牌壳 + 浅色工作区）。
  * Naive 在 JS 中推导 alpha 变体，因此此处须使用具体色值；与 tokens.css 保持一致。
  */
-// Naive UI derives alpha variants in JavaScript and therefore requires concrete
-// color values here. Keep these values aligned with tokens.css.
 const palette = {
-  app: '#F8FAFC',
+  app: '#F4F7FB',
   canvas: '#FFFFFF',
   panel: '#FFFFFF',
   panelStrong: '#F8FAFC',
   elevated: '#F2F4F7',
   overlay: '#FFFFFF',
   hover: 'rgba(16, 24, 40, 0.04)',
-  selected: 'rgba(37, 99, 235, 0.1)',
-  border: '#E4E7EC',
-  primaryText: '#101828',
-  secondaryText: '#475467',
-  mutedText: '#667085',
+  selected: 'rgba(29, 78, 216, 0.08)',
+  border: '#DBE3EE',
+  primaryText: '#0F1F38',
+  secondaryText: '#33507E',
+  mutedText: '#5B718F',
   disabledText: '#98A2B3',
-  accent: '#2563EB',
-  accentHover: '#1D4ED8',
-  accentPressed: '#1E40AF',
+  accent: '#1D4ED8',
+  accentHover: '#1E40AF',
+  accentPressed: '#1E3A8A',
   onAccent: '#FFFFFF',
-  controlActive: '#2563EB',
-  controlActiveHover: '#1D4ED8',
-  controlPressed: '#1E40AF',
+  controlActive: '#1D4ED8',
+  controlActiveHover: '#1E40AF',
+  controlPressed: '#1E3A8A',
   controlDisabled: '#F2F4F7',
+  // Brand shell (sidebar + header chrome), aligned with --gy-shell-* tokens.
+  shell: '#0B1D3A',
+  shellItemHover: '#16305C',
+  shellText: '#8CA8CF',
+  shellTextActive: '#BFDBFE',
+  shellTextMuted: '#5B7BA6',
+  shellAccent: '#60A5FA',
 } as const
 
 /** 导出给 NConfigProvider 的全局 theme-overrides */
@@ -58,22 +63,22 @@ export const themeOverrides: GlobalThemeOverrides = {
   },
   Layout: {
     color: palette.app,
-    siderColor: palette.canvas,
-    headerColor: palette.canvas,
+    siderColor: palette.shell,
+    headerColor: palette.shell,
   },
   Menu: {
     color: 'transparent',
-    groupTextColor: palette.mutedText,
-    itemColorHover: palette.hover,
-    itemColorActive: palette.selected,
-    itemColorActiveHover: palette.selected,
-    itemTextColor: palette.secondaryText,
-    itemTextColorHover: palette.primaryText,
-    itemTextColorActive: palette.accentHover,
-    itemTextColorActiveHover: palette.accentHover,
-    itemIconColor: palette.mutedText,
-    itemIconColorHover: palette.primaryText,
-    itemIconColorActive: palette.accentHover,
+    groupTextColor: palette.shellTextMuted,
+    itemColorHover: 'rgba(255, 255, 255, 0.06)',
+    itemColorActive: palette.shellItemHover,
+    itemColorActiveHover: palette.shellItemHover,
+    itemTextColor: palette.shellText,
+    itemTextColorHover: palette.shellTextActive,
+    itemTextColorActive: palette.shellTextActive,
+    itemTextColorActiveHover: palette.shellTextActive,
+    itemIconColor: palette.shellTextMuted,
+    itemIconColorHover: palette.shellTextActive,
+    itemIconColorActive: palette.shellAccent,
     itemHeight: '38px',
     itemBorderRadius: '5px',
   },

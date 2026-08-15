@@ -523,36 +523,38 @@ function normalizeSymbol(value: unknown): string | null {
               @follow-latest-change="followLatest = $event"
             />
           </div>
-          <ProductResearchSidebar
-            class="product-workspace__sidebar"
-            :dominant="selectedDominant"
-            :series-kind="effectiveIdentity.seriesKind"
-            :frequency="frequency"
-            :contract="effectiveIdentity.contract || ''"
-            :live="isLiveDisplay"
-            :phase="phaseLabel"
-            :has-more-before="canLoadEarlier"
-            :watchlisted="watchlisted"
-            :research="research"
-            :research-loading="researchLoading"
-            :research-error="researchError"
-            :selected-overlay="selectedOverlay"
-            :subing="subing"
-            :subing-loading="subingLoading || metadataLoading"
-            :subing-error="subingError"
-            :subing-supported="subingSupported"
-            :htdy-rule="htdyRule"
-            :subing-rule="subingRule"
-            :alert-runtime-status="alertRuntimeStatus"
-            :alert-loading="alertLoading"
-            :saving-rule-codes="savingRuleCodes"
-            :current-events-loading="currentEventsLoading"
-            :current-events-status="currentEventsStatus"
-            :current-events="currentEvents"
-            :htdy-observation="latestHtdyObservation"
-            @toggle-watchlist="toggleWatchlist"
-            @toggle-alert="toggleAlert"
-          />
+          <div class="product-workspace__sidebar-wrap">
+            <ProductResearchSidebar
+              class="product-workspace__sidebar"
+              :dominant="selectedDominant"
+              :series-kind="effectiveIdentity.seriesKind"
+              :frequency="frequency"
+              :contract="effectiveIdentity.contract || ''"
+              :live="isLiveDisplay"
+              :phase="phaseLabel"
+              :has-more-before="canLoadEarlier"
+              :watchlisted="watchlisted"
+              :research="research"
+              :research-loading="researchLoading"
+              :research-error="researchError"
+              :selected-overlay="selectedOverlay"
+              :subing="subing"
+              :subing-loading="subingLoading || metadataLoading"
+              :subing-error="subingError"
+              :subing-supported="subingSupported"
+              :htdy-rule="htdyRule"
+              :subing-rule="subingRule"
+              :alert-runtime-status="alertRuntimeStatus"
+              :alert-loading="alertLoading"
+              :saving-rule-codes="savingRuleCodes"
+              :current-events-loading="currentEventsLoading"
+              :current-events-status="currentEventsStatus"
+              :current-events="currentEvents"
+              :htdy-observation="latestHtdyObservation"
+              @toggle-watchlist="toggleWatchlist"
+              @toggle-alert="toggleAlert"
+            />
+          </div>
         </div>
       </div>
       <PriceVolumeOiPanel
@@ -606,21 +608,27 @@ function normalizeSymbol(value: unknown): string | null {
 .identity-card { background: var(--gy-bg-panel); }
 .identity-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .product-workspace { min-width: 0; }
-.product-workspace__main { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 12px; align-items: start; }
+.product-workspace__main { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 12px; align-items: stretch; }
 .product-workspace__main--sidebar-closed { grid-template-columns: minmax(0, 1fr); }
-.product-workspace__main--sidebar-closed .product-workspace__sidebar { display: none; }
+.product-workspace__main--sidebar-closed .product-workspace__sidebar-wrap { display: none; }
 .product-workspace__kline { min-width: 0; }
 .product-workspace__htdy-risk { margin-bottom: 8px; }
-.product-workspace__sidebar { position: sticky; top: 0; }
+/* 侧栏与左侧 K 线列（含副图）等高：wrap 随 grid 行高拉伸，侧栏绝对填充并内部滚动 */
+.product-workspace__sidebar-wrap { position: relative; min-width: 0; min-height: 0; }
+.product-workspace__sidebar-wrap > .product-workspace__sidebar { position: absolute; inset: 0; overflow-y: auto; }
 .product-workspace__research-panel { margin-top: 12px; }
 .product-workspace:fullscreen { display: grid; place-items: stretch; padding: 16px; background: var(--gy-bg-app); }
 .product-workspace:fullscreen .product-workspace__main { grid-template-columns: minmax(0, 1fr); height: 100%; }
 .product-workspace:fullscreen .product-workspace__kline { min-height: 100%; }
-.product-workspace:fullscreen .product-workspace__sidebar { display: none; }
+.product-workspace:fullscreen .product-workspace__sidebar-wrap { display: none; }
 
 @media (min-width: 980px) and (max-width: 1199px) {
   .product-workspace__main { grid-template-columns: minmax(0, 1fr); }
-  .product-workspace__sidebar { display: none; }
+  .product-workspace__sidebar-wrap { display: none; }
 }
-@media (max-width: 979px) { .product-workspace__main { grid-template-columns: minmax(0, 1fr); }.product-workspace__sidebar { position: static; } }
+@media (max-width: 979px) {
+  .product-workspace__main { grid-template-columns: minmax(0, 1fr); }
+  .product-workspace__sidebar-wrap { position: static; }
+  .product-workspace__sidebar-wrap > .product-workspace__sidebar { position: static; overflow: visible; }
+}
 </style>
