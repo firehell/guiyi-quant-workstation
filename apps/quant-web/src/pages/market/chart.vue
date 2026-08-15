@@ -174,9 +174,10 @@ const afterMarketFailed = computed(() => {
 })
 const watchlisted = computed(() => watchlist.value.includes(symbol.value))
 const htdyVisible = computed(() => selectedOverlay.value === 'htdy')
-const latestHtdyObservation = computed(() => (
-  buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
-))
+const latestHtdyObservation = computed(() => {
+  if (!htdyVisible.value) return null
+  return buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
+})
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', syncFullscreen)

@@ -94,7 +94,12 @@ test('does not infer a formal or observation result for an unknown current-event
 })
 
 test('derives the sidebar HTDY observation from the latest existing HTDY marker', () => {
+  assert.match(chartSource, /if \(!htdyVisible\.value\) return null/)
   assert.match(chartSource, /buildKlineDerivedData\(visibleBars\.value, \['htdy'\]\)/)
+  assert.ok(
+    chartSource.indexOf('if (!htdyVisible.value) return null')
+      < chartSource.indexOf("buildKlineDerivedData(visibleBars.value, ['htdy'])"),
+  )
   assert.match(chartSource, /htdy\?\.markers\.at\(-1\) \?\? null/)
   assert.doesNotMatch(chartSource, /htdyVisible && visibleBars\.length > 0/)
   assert.match(sidebarSource, /htdyObservation: import\('@\/types\/market'\)\.KlineMarker \| null/)
