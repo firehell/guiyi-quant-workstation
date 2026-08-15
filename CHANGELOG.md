@@ -2,6 +2,21 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.3.1] - 2026-08-15
+
+Market Web 品牌视觉与错误态收口：
+
+- Market 首页收敛为“需要处理 → Summary → 散点/值得关注 → 板块 Tab 明细”四层决策结构，
+  正式信号两列换行，板块顺序及中位涨跌直接复用 Radar 返回事实；
+- 首次加载使用分区骨架；手动刷新失败时保留页面内最后成功快照，同时明示旧快照时点、
+  错误条和重试入口，不新增轮询或持久化；
+- 深蓝品牌壳、浅色工作区、图表主题与 Marker `tone` 语义统一；SuBing 买入红/卖出绿、
+  HTDY 橙色观察和 reduced-motion 合同保持一致；
+- 删除旧板块概览组件、源码字符串型测试与重复图表色值定义，EMA/HTDY 色板只从
+  `chartTheme`/CSS token 解析；
+- 本补丁不改后端、HTTP DTO、DB、Canonical、指标公式、Signal 判断、Alert Scope、
+  WeCom 或 `auto_order=false`。
+
 ## [1.3.0] - 2026-08-15
 
 Decision Compression / Alert V2：

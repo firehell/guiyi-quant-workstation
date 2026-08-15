@@ -1,6 +1,6 @@
 # Market Web 品牌视觉重设计（方向 B 深蓝壳）
 
-> 状态：已实现并完成代码 Review 收口（2026-08-15）。
+> 状态：已实现、完成代码 Review 收口并纳入 `v1.3.1` 发布（2026-08-15）。
 > 前置：`docs/superpowers/plans/2026-08-14-decision-compression-web-ui.md` 的 8 项任务已全部落在 `develop`，本设计在其之上做视觉层重构。
 
 ## 目标
@@ -86,6 +86,9 @@
 - Review 删除了已由真实浏览器行为覆盖的源码字符串 Tab 测试，以及未使用的指标颜色字段和主题 token；保留的测试直接验证页面行为、主题解析或领域输出。
 - 验收命令为 `pnpm --dir apps/quant-web test`、`pnpm --dir apps/quant-web exec playwright test e2e/market-research.spec.mjs e2e/alert-v1.spec.mjs`、`pnpm --dir apps/quant-web build`、`git diff --check` 和本任务 staged secret scan；三种桌面断点及首页/K 线页已完成人工检查。
 - 本次视觉与错误态收口不改变项目阶段事实，因此不更新 `STATUS.md`，也不构成 Web/Runtime 重载、release 或 Runtime promotion。
+
+上述边界描述的是实现与 Review 阶段；随后的 `v1.3.1` 发布和 Runtime switch 作为独立、
+用户明确授权的 Gate 执行，实际发布与运行身份以 `STATUS.md` 读回事实为准。
 
 ## 非目标
 
