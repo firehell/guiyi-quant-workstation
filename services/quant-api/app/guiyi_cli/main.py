@@ -173,7 +173,7 @@ def main(
         )
         return 1
     print_json(payload, stdout)
-    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok"} else 1
+    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok", "skipped"} else 1
 
 
 def _run_data(

@@ -6,7 +6,8 @@
 
 `packages/quant-core/guiyi_quant/indicators/` 是指标业务口径的唯一权威模块。当前保留 EMA、MACD、ATR、
 HTDY original/strict、Registry 与 formal policy；旧策略包、回测、Signal/Review、generic realtime
-evaluator、旧通知和报告 Gate 都已退役。当前 Alert V1 只保留独立、严格限域的 HTDY current-bar consumer。
+evaluator、旧通知和报告 Gate 都已退役。当前 Alert V2 只保留独立、严格限域的 HTDY
+current-bar consumer，以及复用现有 resolver 的 SuBing consumer。
 
 | 角色 | 位置 | 当前状态 |
 |---|---|---|
@@ -99,7 +100,6 @@ Python 与 Web 当前各保留一份相同 golden 内容供不同测试运行时
 ## 验证
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_indicator_kernel.py \
   services/quant-api/tests/test_indicator_kernel_v1b_diff.py \

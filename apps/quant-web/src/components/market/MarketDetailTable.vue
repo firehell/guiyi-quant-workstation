@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { MarketRadarItem, MarketRadarSectorSummary } from '@/types/market'
-import { PRODUCT_SECTORS } from '@/utils/productDirectory'
+import { productSectorLabel } from '@/utils/productDirectory'
 
 const props = defineProps<{
   items: MarketRadarItem[]
@@ -12,12 +12,11 @@ const emit = defineEmits<{ open: [item: MarketRadarItem]; toggleWatchlist: [symb
 const mode = ref<'all' | 'watchlist'>('all')
 const activeSector = ref('')
 
-const sectorLabels = new Map<string, string>(PRODUCT_SECTORS.map((sector) => [sector.id, sector.label]))
 
 /** 板块 Tab 直接复用后端 sector_summary 的顺序与集合，默认选中第一个。 */
 const tabs = computed(() => props.sectors.map((sector) => ({
   id: sector.sector,
-  label: sectorLabels.get(sector.sector) || sector.sector,
+  label: productSectorLabel(sector.sector),
   median: sector.median_price_change_1d,
 })))
 
@@ -56,7 +55,7 @@ function medianTone(value: number | null) { return value === null ? 'flat' : val
         <span :class="['market-detail__tab-median', `market-detail__tab-median--${medianTone(tab.median)}`]">{{ percent(tab.median) }}</span>
       </button>
     </div>
-    <div class="market-detail__scroll"><table><thead><tr><th>品种</th><th>板块</th><th>1D</th><th>5D</th><th>量比</th><th>OI变化</th><th>ATR分位</th><th>20日位置</th><th>状态</th><th>自选</th></tr></thead><tbody><tr v-for="item in rows" :key="item.symbol"><td><button :aria-label="`${item.symbol.toUpperCase()} ${item.product_name}`" @click="emit('open', item)">{{ item.symbol.toUpperCase() }} {{ item.product_name }}</button></td><td>{{ sectorLabels.get(item.sector) || item.sector }}</td><td>{{ percent(item.price_change_1d) }}</td><td>{{ percent(item.price_change_5d) }}</td><td>{{ ratio(item.volume_ratio20) }}</td><td>{{ percent(item.oi_change_1d) }}</td><td>{{ percent(item.atr14_percentile252) }}</td><td>{{ percent(item.position20) }}</td><td>{{ item.reason_codes.length ? '关注' : '常规' }}</td><td><button @click="emit('toggleWatchlist', item.symbol)">{{ watchlist.includes(item.symbol) ? '已自选' : '加入' }}</button></td></tr></tbody></table></div>
+    <div class="market-detail__scroll"><table><thead><tr><th>品种</th><th>板块</th><th>1D</th><th>5D</th><th>量比</th><th>OI变化</th><th>ATR分位</th><th>20日位置</th><th>状态</th><th>自选</th></tr></thead><tbody><tr v-for="item in rows" :key="item.symbol"><td><button :aria-label="`${item.symbol.toUpperCase()} ${item.product_name}`" @click="emit('open', item)">{{ item.symbol.toUpperCase() }} {{ item.product_name }}</button></td><td>{{ productSectorLabel(item.sector) }}</td><td>{{ percent(item.price_change_1d) }}</td><td>{{ percent(item.price_change_5d) }}</td><td>{{ ratio(item.volume_ratio20) }}</td><td>{{ percent(item.oi_change_1d) }}</td><td>{{ percent(item.atr14_percentile252) }}</td><td>{{ percent(item.position20) }}</td><td>{{ item.reason_codes.length ? '关注' : '常规' }}</td><td><button @click="emit('toggleWatchlist', item.symbol)">{{ watchlist.includes(item.symbol) ? '已自选' : '加入' }}</button></td></tr></tbody></table></div>
   </section>
 </template>
 

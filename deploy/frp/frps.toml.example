@@ -1,0 +1,11 @@
+# 腾讯云 FRPS 最小模板。真实 token 只写 ECS 本机配置，不得提交。
+bindAddr = "0.0.0.0"
+bindPort = 7000
+
+# FRPC 的 18000/18080 代理端口只供同机 Nginx 使用，不直接暴露公网。
+proxyBindAddr = "127.0.0.1"
+
+# 控制面必须认证；真实 token 只保存在 ECS 本机的 0600 文件中。
+auth.method = "token"
+auth.tokenSource.type = "file"
+auth.tokenSource.file.path = "/etc/frp/server_token"

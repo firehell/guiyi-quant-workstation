@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import pytest
+
 from app.alerts.current_trading_day import (
     CurrentTradingDayStatus,
     resolve_current_trading_day,
@@ -98,6 +100,26 @@ def test_resolver_unknown_only_is_unavailable() -> None:
         FakePhases(
             {
                 "jm": phase("jm", MarketPhase.UNKNOWN, None),
+                "rb": phase("rb", MarketPhase.UNKNOWN, None),
+            }
+        ),
+        products=("jm", "rb"),
+        now=aware("2026-08-14T21:10:00+08:00"),
+    )
+
+    assert result.status is CurrentTradingDayStatus.UNAVAILABLE
+    assert result.trading_day is None
+
+
+@pytest.mark.parametrize("known_phase", (MarketPhase.TRADING, MarketPhase.CLOSED))
+def test_resolver_unknown_product_invalidates_known_product_day(
+    known_phase: MarketPhase,
+) -> None:
+    """Catches one unresolved operational product being hidden by a known peer."""
+    result = resolve_current_trading_day(
+        FakePhases(
+            {
+                "jm": phase("jm", known_phase, date(2026, 8, 15)),
                 "rb": phase("rb", MarketPhase.UNKNOWN, None),
             }
         ),

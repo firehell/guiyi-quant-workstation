@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-14
+更新时间：2026-08-15
 
 ## 定位与边界
 
@@ -51,8 +51,9 @@ RQData
 4. **读模型优先**：可以由 Canonical 和现有 Catalog 计算得到的市场事实，必须按需计算；不得为其新增
    Catalog 表或长期数据副本。只有经明确业务设计、且不属于 Market Data Foundation 的应用事实才可
    进入独立 Application Domain 表。
-5. **模块长期性审查**：每新增一个模块，都必须先回答“个人使用真的需要长期维护这个模块吗？”；答案不
-   明确时，不创建该模块。
+5. **模块长期性与功能价值审查**：每新增一个模块，都必须先回答“个人使用真的需要长期维护这个模块吗？”；
+   答案不明确时，不创建该模块。新增功能还必须至少明确实现以下一项：减少个人盯盘时间、提高发现研究机会
+   的概率、提高人工观察与研究执行的一致性，或增加未来复盘研究的证据；四项均不满足时，不做。
 
 当前用户接口为 Market Web、`/api/v1/market/*`、`/api/alerts/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration` 和 `guiyi runtime
@@ -68,7 +69,7 @@ Alert V2 只保留两条 code-defined Rule：`htdy_original_15m` 复用 `MarketR
 
 SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `trading_day` 同一时创建 Event，stale 或不可用状态 fail-closed。final Session Bar 只在 Live 共享的有界 arrival grace 内可见；该 phase observation 不建立 `snapshot_at`/cutoff/replay 路径。5m 事件落在同一 15m boundary 时依既有 TradingSession bucket 语义延后，继续由 15m snapshot 唯一决议。HTDY event-cutoff 语义不变。
 
-当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后最多尝试一次 WeCom；无 replay/backfill/retry/outbox/queue/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
+当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后最多尝试一次 WeCom；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示 HTTP 已接受或用户已收到。无 replay/backfill/retry/outbox/queue/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
 
 Alert 代码与 launchd 模板默认关闭。production migration `20260814_0038`、v1.3 release/tag、Runtime promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、mock sender 或 render-only 不证明任何 Gate 已执行。
 

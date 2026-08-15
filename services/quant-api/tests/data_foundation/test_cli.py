@@ -98,6 +98,42 @@ def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:
         build_parser().parse_args(["data", "after-market", "--apply"])
 
 
+def test_after_market_non_trading_day_skip_exits_successfully() -> None:
+    manager = FakeManager()
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    class Updater:
+        def run(self):
+            return AfterMarketResult(
+                "skipped",
+                date(2026, 8, 14),
+                0,
+                "NON_TRADING_DAY",
+            )
+
+    code = main(
+        ["data", "after-market"],
+        manager_factory=lambda _session: manager,
+        after_market_factory=lambda _manager: Updater(),
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue()) == {
+        "schema_version": 1,
+        "command": "data.after-market",
+        "status": "skipped",
+        "trading_day": "2026-08-14",
+        "attempts": 0,
+        "error_code": "NON_TRADING_DAY",
+    }
+    assert stderr.getvalue() == ""
+    assert manager.calls == []
+
+
 def test_refresh_requires_a_symbol_and_explicit_window() -> None:
     manager = FakeManager()
     code, payload = _run(

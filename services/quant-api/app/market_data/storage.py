@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import os
 from pathlib import Path
+from typing import Protocol
 import uuid
 
 import pyarrow as pa
@@ -65,6 +66,31 @@ class PublishedPartition:
 BoundaryValidator = Callable[[DatasetKey, CanonicalBar], bool]
 
 
+class CatalogPartitionLike(Protocol):
+    """Catalog partition fields required by the physical integrity boundary."""
+
+    @property
+    def dataset(self) -> DatasetKey: ...
+
+    @property
+    def year(self) -> int: ...
+
+    @property
+    def month(self) -> int: ...
+
+    @property
+    def coverage_start(self) -> datetime: ...
+
+    @property
+    def coverage_end(self) -> datetime: ...
+
+    @property
+    def file_path(self) -> Path: ...
+
+    @property
+    def row_count(self) -> int: ...
+
+
 class CanonicalMonthlyStore:
     """Canonical 月分区 Parquet 存储：原子发布与严格 schema 读取。"""
 
@@ -107,6 +133,39 @@ class CanonicalMonthlyStore:
         if not table.schema.equals(CANONICAL_SCHEMA, check_metadata=False):
             raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
         return tuple(CanonicalBar(**record) for record in table.to_pylist())
+
+    def read_catalog_partition(
+        self,
+        partition: CatalogPartitionLike,
+    ) -> tuple[CanonicalBar, ...]:
+        """Read one Catalog partition only when URI, rows and coverage match disk."""
+        expected_path = self.month_path(
+            partition.dataset,
+            partition.year,
+            partition.month,
+        )
+        if partition.file_path != expected_path or not expected_path.is_file():
+            raise StorageError("PARTITION_CATALOG_MISMATCH")
+        values = self.read_month(
+            partition.dataset,
+            partition.year,
+            partition.month,
+        )
+        if not values:
+            raise StorageError("PARTITION_EMPTY")
+        if partition.row_count != len(values):
+            raise StorageError("PARTITION_ROW_COUNT_MISMATCH")
+        if (
+            partition.coverage_start
+            != values[0].bar_end - _frequency_delta(partition.dataset.frequency)
+            or partition.coverage_end != values[-1].bar_end
+        ):
+            raise StorageError("PARTITION_COVERAGE_MISMATCH")
+        return values
+
+    def month_path(self, dataset: DatasetKey, year: int, month: int) -> Path:
+        """Return the authoritative physical path for a month partition."""
+        return self._month_directory(dataset, year, month) / "part.parquet"
 
     def _month_directory(self, dataset: DatasetKey, year: int, month: int) -> Path:
         """拼接月分区目录并校验仍在 ``canonical_root`` 内（防路径注入）。"""

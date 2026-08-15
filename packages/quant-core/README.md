@@ -47,7 +47,9 @@ guiyi_quant/
 - `guiyi_quant.indicators.policy`：formal policy 表与 `require_formal_policy` fail-closed 查询。
 - 默认 EMA 口径为 `seed_policy=sma_window`，对齐当前 Web `calculateEMA`。
 - MACD / ATR 已登记为 `compatibility_validated`（非正式 `validated`），不得据此静默迁移 live evaluator。
-- 火天大有 original=`observation_only`；strict=`strategy_candidate`；不得进入 live / alert / 通知链路。
+- 火天大有 original=`observation_only`；strict=`strategy_candidate`。original 只允许明确命名的
+  `htdy_alert_observation` consumer 在 actual-dominant confirmed 15m current-last-bar 边界评估；
+  generic live/alert/notification 仍 fail-closed。
 
 ## 明确不做
 
@@ -59,5 +61,5 @@ guiyi_quant/
 
 ## 开发状态
 
-🚧 **部分初始化** — Indicator Kernel 与 HTDY 双版本已在 `indicators/`；策略研究源码已退役。详见
+✅ **当前 active 范围已完成** — Indicator Kernel 与 HTDY 双版本已在 `indicators/`；策略研究源码已退役。详见
 `STATUS.md`、`AGENTS.md` 和 `docs/INDICATOR_KERNEL.md`。

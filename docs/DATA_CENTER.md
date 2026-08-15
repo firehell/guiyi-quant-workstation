@@ -82,6 +82,13 @@ identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `P
 立即停止 provider 调用，保留已发布月，不发布当前未完成月，并返回 `status=partial` 与
 `stop_reason=provider_quota_exhausted`。下一次完全相同命令从首个缺失目标续传。
 
+缺失完整 ISO 周的 `1w` 时，同一 maintenance 批次会把该周对应的 `1d` 作为 refresh context；
+RQData adapter 先读取完整周日行情，并在调用内按 `(contract, trading_day)` 复用同一 source
+snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d 月分区、1w 月分区顺序原子替换；
+跨月周会刷新两侧日线月分区。`continuous` 日线仍按每日 rank1 拼接；最终 owner 合约用于
+`actual_dominant 1w` 整周聚合时，非 rank1 日只作为该周内部 source context，不进入
+`actual_dominant 1d` 的可读结果。dry-run 会显式列出由缺失周线带动的日线 refresh 窗口。
+
 `refresh --symbol --since --through --apply` 强制重建窗口相交月中的 continuous 与所涉 rank1
 contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四个日内派生周期。它不接受 repair plan，
 也不产生额外进度或证据文件。

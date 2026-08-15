@@ -34,6 +34,8 @@ def resolve_current_trading_day(
     """Return the unique active day, or the unique closed day as fallback."""
 
     phases = tuple(phase_resolver.resolve(product, now) for product in products)
+    if any(item.phase is MarketPhase.UNKNOWN for item in phases):
+        return CurrentTradingDayResult(CurrentTradingDayStatus.UNAVAILABLE, None)
     active_phases = tuple(
         item
         for item in phases

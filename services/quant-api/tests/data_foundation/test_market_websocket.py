@@ -251,19 +251,29 @@ class DisconnectingWebSocket:
         self.client_state.name = "DISCONNECTED"
 
 
+class TrackingSession:
+    def __init__(self) -> None:
+        self.close_count = 0
+
+    def close(self) -> None:
+        self.close_count += 1
+
+
 @pytest.mark.asyncio
 async def test_idle_websocket_detects_client_disconnect_and_closes_pubsub(monkeypatch) -> None:
-    """Catches an idle client disconnect leaving its Redis Pub/Sub resource loop alive."""
+    """Catches idle WebSockets retaining Redis or a database pool connection."""
     pubsub = IdlePubSub()
     redis = FakeAsyncRedis(pubsub)  # type: ignore[arg-type]
     websocket = DisconnectingWebSocket()
+    session = TrackingSession()
     monkeypatch.setattr("app.api.market_live.build_market_read_service", lambda _session: StaticReadService(_state()))
     monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
 
-    await asyncio.wait_for(market_websocket(websocket, object()), timeout=0.05)  # type: ignore[arg-type]
+    await asyncio.wait_for(market_websocket(websocket, session), timeout=0.05)  # type: ignore[arg-type]
 
     assert pubsub.closed is True
     assert redis.closed is True
+    assert session.close_count == 2
 
 
 class BridgeRedis:

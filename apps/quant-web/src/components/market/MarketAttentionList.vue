@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MarketRadarItem } from '@/types/market'
+import { productSectorLabel } from '@/utils/productDirectory'
 
 defineProps<{ items: MarketRadarItem[] }>()
 const emit = defineEmits<{ open: [item: MarketRadarItem] }>()
@@ -17,7 +18,7 @@ const labels: Record<string, string> = {
     <ol v-if="items.length">
       <li v-for="item in items" :key="item.symbol">
         <button :aria-label="`${item.symbol.toUpperCase()} ${item.product_name}`" @click="emit('open', item)">
-          <strong>{{ item.symbol.toUpperCase() }} {{ item.product_name }}</strong><span>{{ item.sector }}</span>
+          <strong>{{ item.symbol.toUpperCase() }} {{ item.product_name }}</strong><span>{{ productSectorLabel(item.sector) }}</span>
         </button>
         <div><small v-for="reason in item.reason_codes" :key="reason">{{ labels[reason] || reason }}</small></div>
       </li>

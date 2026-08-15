@@ -12,7 +12,7 @@
 | 历史存储 | 只长期保存一套 Canonical Parquet | staging 临时；PostgreSQL 不存 Bar |
 | 数据身份 | `DatasetKey=(kind,symbol,series_or_contract,frequency)` | provider、schema 与来源属性不进入 identity |
 | 主力数据 | 物理保存真实合约 Canonical，actual_dominant 查询时拼接 | 不长期保存重复的主力拼接 Parquet |
-| 周期 | Direct 为 `1m/1d/1w`，Derived 为 `5m/15m/30m/60m` | Derived 只读同 Dataset Canonical 1m，不调 RQData |
+| 周期 | Provider 基础周期为 `1m/1d`；`1w` 由完整同源 `1d` 聚合，`5m/15m/30m/60m` 由 Canonical `1m` 聚合 | 派生周期只读同 Dataset Canonical，不调 RQData |
 | 分区 | 每 Dataset 每自然月一个 `part.parquet` | 只发布完整、可读的月；不保留 overlay/data version |
 | 质量 | 固定执行 schema、identity、OHLCV、session/frequency、coverage、physical 六项校验 | 失败保留最后有效月；不建立第二套缺口状态 |
 | Market Catalog | Data Foundation / Market Catalog 精确保留八张 active 数据表 | 不保留合约参数、内容摘要、运行历史或通用 lineage；明确设计的非 Market Foundation Application Domain 表不计入八表 |
