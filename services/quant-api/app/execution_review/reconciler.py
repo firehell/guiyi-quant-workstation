@@ -108,7 +108,7 @@ class ExecutionReviewRollReconciler:
                 current_segment = self._market_data.latest_dominant_segment(
                     normalized_symbol
                 )
-                if current_segment.contract == episode.contract:
+                if current_segment == old_segment:
                     self._session.rollback()
                     return RollReconcileResult(
                         "NOOP",

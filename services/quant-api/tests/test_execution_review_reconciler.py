@@ -94,6 +94,29 @@ def test_same_current_rank1_is_noop_without_reference_read(session: Session) -> 
     assert episode.closed_at is None
 
 
+def test_same_contract_code_in_a_later_rank1_segment_still_closes_old_episode(
+    session: Session,
+) -> None:
+    opened = _open_episode(session)
+    market_data = _MarketData()
+    market_data.current_segment = DominantContractSegmentSummary(
+        "jm",
+        market_data.old_segment.contract,
+        date(2026, 8, 20),
+        date(2026, 8, 21),
+    )
+
+    result = _reconciler(session, market_data).reconcile_symbol("jm")
+
+    assert result.status == "DOMINANT_ROLL"
+    episode = session.get(TradeEpisode, opened.id)
+    assert episode is not None
+    assert episode.close_reason == "DOMINANT_ROLL"
+    assert market_data.reference_calls == [
+        ("jm", "JM2609", BarFrequency.M1, ROLL_DAY)
+    ]
+
+
 def test_changed_rank1_closes_with_last_old_contract_confirmed_m1_without_fake_close(
     session: Session,
 ) -> None:
