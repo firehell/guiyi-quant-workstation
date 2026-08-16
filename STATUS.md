@@ -18,11 +18,13 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## Execution Review V1（RELEASED / PRODUCTION MIGRATION AND RUNTIME PENDING）
+## Execution Review V1（RELEASED / PRODUCTION MIGRATION COMPLETE / RUNTIME PENDING）
 
 - 状态为 `RELEASED`：release PR #167 已合入 main，annotated tag `v1.4.0` 的 peeled commit 为
-  `3a6f4289ff08848f9177c41a649a94f877412c23`。production DB 仍为 `20260814_0038`，Runtime identity 仍为
-  `3e930a032c6b880686ff1f1fccc77db61bc2803c`。
+  `3a6f4289ff08848f9177c41a649a94f877412c23`。production DB 已完成 additive `20260815_0039`
+  migration，四张 Execution Review 表已存在。Runtime 仍为旧 `v1.3.1` identity
+  `3e930a032c6b880686ff1f1fccc77db61bc2803c`，Execution Review production Runtime surface
+  尚未 promotion。
 - `v1.4.0` 代码新增 `/trade-records` 与 `/api/execution-review/*`，以四张独立 Application Domain 表保存
   苏冰 Event 的人工 Decision、真实手工 Execution timeline、单品种 OPEN Episode 与结构化 Review；
   不恢复旧 Review Center，不连接账户或创建订单。
@@ -34,8 +36,8 @@
 - 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 55 files 无问题；
   Web unit `147 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `57 passed`；Web
   production build、secret scan（0 findings）、shell syntax 与 diff check 通过。
-- SuBing Natural Canary 继续 pending；Task 6 Gate A 已完成，Gate B production migration、Gate C
-  Runtime promotion 与 Gate D roll marker activation 均未执行，`Gate D not activated`。
+- SuBing Natural Canary 继续 pending；Task 6 Gate A release 与 Gate B production migration 已完成，
+  Gate C Runtime promotion 继续 pending，Gate D 仍为 `disabled / not activated`。
 
 ## 当前可执行面
 
@@ -60,7 +62,9 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - 每 Dataset 每自然月只有一个 `part.parquet`。schema、identity、session/frequency、OHLCV、
   coverage、row count、Catalog URI 和物理可读性不一致时 fail-closed。
 - Market Catalog 精确为八表；`alert_rules` / `alert_events` 是独立 Alert Application Domain，
-  不属于且不改变八表合同。production DB revision 当前为 `20260814_0038`。
+  不属于且不改变八表合同。production DB revision 当前为 `20260815_0039`；
+  `trade_decisions` / `trade_episodes` / `trade_executions` / `trade_reviews` 是独立
+  Execution Review Application Domain，0039 未改变 Market 八表或 Alert 两表 schema identity。
 - SuBing 只使用 current-rank1-segment-local Historical/completed Live，不做 pre-rank1 warm-up、
   cross-roll EMA/MACD 继承或 zero-band hard gate；1d 仍为 `RESEARCH_PENDING`。
 - Alert HTDY 保持 event-cutoff；SuBing 只复用 accepted Calibration、FormalPolicy 和
@@ -81,12 +85,16 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   RQData/Canonical/DB 写入、Scope mutation、真实 WeCom、手工盘后、replay/backfill/retry、tag
   或 release；`auto_order=false` 不变。
 
-## 未执行 Gate 与最小下一步
+## Gate 与最小下一步
 
-- Gate A 只完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization；
-  未执行 migration、Runtime switch、真实 RQData/Canonical/DB 写入、Scope mutation 或 WeCom。
+- Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
+- Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
+  Market 八表与 Alert 两表 normalized schema signatures 保持不变。
+- Gate C Runtime promotion 仍 pending；正式五服务仍使用旧 `v1.3.1` identity
+  `3e930a032c6b880686ff1f1fccc77db61bc2803c`，Execution Review production Runtime surface
+  尚未 promotion。Gate D 仍为 `disabled / not activated`。
 - 周线修复的部署身份已读回；业务级效果等待下一次自然 18:05 盘后更新，不手工运行、回填或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证，也不计作 Task 6 已完成事实。
-- 最小下一步：完成 exact `v1.4.0` detached Runtime preparation 与 production DB read-only preflight，
-  然后停止并请求 Gate B production migration approval。
+- 最小下一步：停止并请求 Gate C Runtime promotion approval；Natural Canary 继续作为
+  独立 pending evidence，不计作 Gate C 或 Gate D 已完成事实。
