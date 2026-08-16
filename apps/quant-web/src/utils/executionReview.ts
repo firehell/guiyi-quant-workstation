@@ -66,22 +66,25 @@ export function buildReviewItemFilters(
   return result
 }
 
-export function buildStatsFilters(
-  state: ExecutionReviewState,
-  filters: ReviewFilterDraft,
-): StatsFilters {
+export function buildStatsFilters(filters: ReviewFilterDraft): StatsFilters {
   const result: StatsFilters = {
     symbol: filters.symbol.trim() || undefined,
     direction: filters.direction || undefined,
     frequency: filters.frequency || undefined,
   }
-  if (state === 'done' && filters.start_trading_day) {
+  if (filters.start_trading_day) {
     result.trading_day_from = filters.start_trading_day
   }
-  if (state === 'done' && filters.end_trading_day) {
+  if (filters.end_trading_day) {
     result.trading_day_to = filters.end_trading_day
   }
   return result
+}
+
+export function formatExecutionReviewRate(value: string | null): string {
+  if (value === null) return '—'
+  const percent = Number(value) * 100
+  return Number.isFinite(percent) ? `${percent.toFixed(1)}%` : '—'
 }
 
 export interface NotExecutedDraft {

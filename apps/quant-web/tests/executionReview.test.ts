@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import {
@@ -15,6 +16,7 @@ import {
   buildStatsFilters,
   defaultExecutionQuantity,
   executionReviewActionLabel,
+  formatExecutionReviewRate,
   initialReconstructionMode,
   timelineForDisplay,
   MANUAL_EXECUTION_TYPES,
@@ -22,6 +24,11 @@ import {
   validateNotExecutedDraft,
   validateReviewDraft,
 } from '../src/utils/executionReview.ts'
+
+const executionStatsSource = readFileSync(
+  new URL('../src/components/execution-review/ExecutionStats.vue', import.meta.url),
+  'utf8',
+)
 
 function fakeHttp(response: unknown = {}) {
   const calls: Array<{ method: string; url: string; config?: unknown; body?: unknown }> = []
@@ -239,25 +246,41 @@ describe('Execution Review presentation contracts', () => {
     assert.equal(defaultExecutionQuantity('REDUCE', 7, 2), 2)
   })
 
-  it('applies historical dates only to done while preserving active work queues', () => {
+  it('keeps stats dates independent from workflow state while preserving active work queues', () => {
     const filters = {
       symbol: ' jm ', direction: 'LONG' as const, frequency: '5m' as const,
       start_trading_day: '2026-08-01', end_trading_day: '2026-08-15',
     }
-    assert.deepEqual(buildReviewItemFilters('open', filters), {
-      state: 'open', symbol: 'jm', direction: 'LONG', frequency: '5m',
-    })
+    for (const state of ['pending_decision', 'open', 'pending_review'] as const) {
+      assert.deepEqual(buildReviewItemFilters(state, filters), {
+        state, symbol: 'jm', direction: 'LONG', frequency: '5m',
+      })
+    }
     assert.deepEqual(buildReviewItemFilters('done', filters), {
       state: 'done', symbol: 'jm', direction: 'LONG', frequency: '5m',
       start_trading_day: '2026-08-01', end_trading_day: '2026-08-15',
     })
-    assert.deepEqual(buildStatsFilters('open', filters), {
-      symbol: 'jm', direction: 'LONG', frequency: '5m',
-    })
-    assert.deepEqual(buildStatsFilters('done', filters), {
+    assert.deepEqual(buildStatsFilters(filters), {
       symbol: 'jm', direction: 'LONG', frequency: '5m',
       trading_day_from: '2026-08-01', trading_day_to: '2026-08-15',
     })
+    assert.deepEqual(buildStatsFilters({
+      ...filters, start_trading_day: '', end_trading_day: '',
+    }), {
+      symbol: 'jm', direction: 'LONG', frequency: '5m',
+    })
+  })
+
+  it('formats backend rates with exactly one decimal without recomputing counts', () => {
+    assert.equal(formatExecutionReviewRate('0.8'), '80.0%')
+    assert.equal(formatExecutionReviewRate('0.375'), '37.5%')
+    assert.equal(formatExecutionReviewRate(null), '—')
+  })
+
+  it('renders backend primary reason counts without consuming secondary reasons', () => {
+    assert.match(executionStatsSource, /主要未执行原因/)
+    assert.match(executionStatsSource, /stats\.opportunities\.primary_reason_counts/)
+    assert.doesNotMatch(executionStatsSource, /secondary_reasons/)
   })
 
   it('enforces neutral tag affordances and all five review groups', () => {

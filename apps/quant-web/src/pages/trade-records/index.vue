@@ -88,7 +88,7 @@ async function loadStats() {
   statsLoading.value = true
   statsError.value = ''
   try {
-    const next = await getStats(buildStatsFilters(currentState.value, filters))
+    const next = await getStats(buildStatsFilters(filters))
     if (current === statsGeneration) stats.value = next
   } catch (reason) {
     if (current === statsGeneration) statsError.value = executionReviewErrorMessage(reason)
@@ -249,11 +249,13 @@ const frequencyOptions = [{ label: '5m', value: '5m' }, { label: '15m', value: '
         <NInput v-model:value="filters.symbol" clearable placeholder="品种，例如 jm" />
         <NSelect v-model:value="filters.direction" clearable placeholder="方向" :options="directionOptions" />
         <NSelect v-model:value="filters.frequency" clearable placeholder="周期" :options="frequencyOptions" />
-        <template v-if="currentState === 'done'">
-          <label>开始交易日<input v-model="filters.start_trading_day" class="gy-native-input" type="date"></label>
-          <label>结束交易日<input v-model="filters.end_trading_day" class="gy-native-input" type="date"></label>
-        </template>
+        <label>统计 / 已完成开始交易日<input v-model="filters.start_trading_day" class="gy-native-input" type="date"></label>
+        <label>统计 / 已完成结束交易日<input v-model="filters.end_trading_day" class="gy-native-input" type="date"></label>
         <NButton @click="loadAll">应用筛选</NButton>
+        <p class="trade-records-page__filter-scope">
+          <span>交易日范围始终影响统计；只影响“已完成”列表，不影响待决策、进行中和待复盘。</span>
+          <strong v-if="!filters.start_trading_day && !filters.end_trading_day">全部可用历史（未设置交易日范围）</strong>
+        </p>
       </div>
     </NCard>
     <ExecutionStats :stats="stats" :loading="statsLoading" :error="statsError" />
@@ -316,7 +318,7 @@ const frequencyOptions = [{ label: '5m', value: '5m' }, { label: '15m', value: '
 
 <style scoped>
 .trade-records-page { display: grid; gap: 16px; min-width: 0; }.trade-records-page__intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }.trade-records-page__intro h1, .trade-records-page__intro p { margin: 0; }.trade-records-page__intro p { margin-top: 6px; color: var(--gy-text-muted); }
-.trade-records-page__filters { display: grid; grid-template-columns: minmax(140px, 1fr) 140px 120px repeat(2, minmax(150px, auto)) auto; align-items: end; gap: 10px; }.trade-records-page__filters label { display: grid; gap: 5px; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
+.trade-records-page__filters { display: grid; grid-template-columns: minmax(140px, 1fr) 140px 120px repeat(2, minmax(190px, auto)) auto; align-items: end; gap: 10px; }.trade-records-page__filters label { display: grid; gap: 5px; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }.trade-records-page__filter-scope { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }.trade-records-page__filter-scope strong { color: var(--gy-text-primary); }
 .trade-records-page__workspace { display: grid; grid-template-columns: minmax(280px, .75fr) minmax(0, 2fr); align-items: start; gap: 16px; }.trade-records-page__list { position: sticky; top: 0; }.trade-records-page__list :deep(.n-card__content) { display: grid; gap: 8px; }
 .trade-records-page__item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); color: var(--gy-text-primary); text-align: left; cursor: pointer; }.trade-records-page__item:hover, .trade-records-page__item--active { border-color: var(--gy-accent); background: var(--gy-accent-soft); }.trade-records-page__item span { display: grid; gap: 3px; }.trade-records-page__item small { color: var(--gy-text-muted); }
 .trade-records-page__detail { min-width: 0; display: grid; gap: 14px; }.gy-native-input { width: 100%; height: 34px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--gy-border-strong); border-radius: var(--gy-radius-sm); background: var(--gy-bg-panel); color: var(--gy-text-primary); }

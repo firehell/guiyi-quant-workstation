@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { NAlert, NCollapse, NCollapseItem, NSpin } from 'naive-ui'
 import type { ExecutionReviewStatsResponse } from '@/types/executionReview'
+import { formatExecutionReviewRate } from '@/utils/executionReview'
 
 const props = defineProps<{
   stats: ExecutionReviewStatsResponse | null
@@ -18,8 +19,8 @@ const opportunityMetrics = computed(() => {
     ['待决策', value.pending_events],
     ['已执行', value.executed_decisions],
     ['未执行', value.not_executed_decisions],
-    ['决策完成率', formatRate(value.decision_completion_rate)],
-    ['执行率', formatRate(value.execution_rate)],
+    ['决策完成率', formatExecutionReviewRate(value.decision_completion_rate)],
+    ['执行率', formatExecutionReviewRate(value.execution_rate)],
   ]
 })
 
@@ -42,12 +43,6 @@ const issueGroups = computed(() => {
     ['Psychology', props.stats.review_issue_top.psychology],
   ] as const
 })
-
-function formatRate(value: string | null): string {
-  if (value === null) return '—'
-  const percent = Number(value) * 100
-  return Number.isFinite(percent) ? `${Number(percent.toFixed(1))}%` : '—'
-}
 
 function counts(value: Record<string, number>): string {
   const entries = Object.entries(value)
@@ -74,6 +69,12 @@ function counts(value: Record<string, number>): string {
                 <span v-for="([label, value]) in episodeMetrics" :key="label"><small>{{ label }}</small><b>{{ value }}</b></span>
               </div>
             </div>
+            <div class="execution-stats__group" data-testid="primary-reason-counts">
+              <strong>主要未执行原因</strong>
+              <div class="execution-stats__issues">
+                <span><b>{{ counts(stats.opportunities.primary_reason_counts) }}</b></span>
+              </div>
+            </div>
             <div class="execution-stats__group">
               <strong>复盘问题标签</strong>
               <div class="execution-stats__issues">
@@ -88,7 +89,7 @@ function counts(value: Record<string, number>): string {
 </template>
 
 <style scoped>
-.execution-stats__content { display: grid; grid-template-columns: 1.3fr .7fr 1fr; gap: 16px; }.execution-stats__group { display: grid; align-content: start; gap: 8px; min-width: 0; }.execution-stats__metrics { display: grid; grid-template-columns: repeat(4, minmax(72px, 1fr)); gap: 6px; }.execution-stats__metrics--episodes { grid-template-columns: repeat(3, minmax(72px, 1fr)); }.execution-stats__metrics span, .execution-stats__issues span { display: grid; gap: 2px; padding: 8px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: var(--gy-bg-panel); }.execution-stats__metrics small, .execution-stats__issues small { color: var(--gy-text-muted); }.execution-stats__metrics b { font-size: var(--gy-font-size-md); }.execution-stats__issues { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }.execution-stats__issues b { overflow-wrap: anywhere; font-size: var(--gy-font-size-xs); font-weight: 500; }
+.execution-stats__content { display: grid; grid-template-columns: 1.3fr .7fr .9fr 1fr; gap: 16px; }.execution-stats__group { display: grid; align-content: start; gap: 8px; min-width: 0; }.execution-stats__metrics { display: grid; grid-template-columns: repeat(4, minmax(72px, 1fr)); gap: 6px; }.execution-stats__metrics--episodes { grid-template-columns: repeat(3, minmax(72px, 1fr)); }.execution-stats__metrics span, .execution-stats__issues span { display: grid; gap: 2px; padding: 8px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: var(--gy-bg-panel); }.execution-stats__metrics small, .execution-stats__issues small { color: var(--gy-text-muted); }.execution-stats__metrics b { font-size: var(--gy-font-size-md); }.execution-stats__issues { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }.execution-stats__issues b { overflow-wrap: anywhere; font-size: var(--gy-font-size-xs); font-weight: 500; }
 @media (max-width: 1180px) { .execution-stats__content { grid-template-columns: 1fr; }.execution-stats__metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .execution-stats__metrics, .execution-stats__metrics--episodes, .execution-stats__issues { grid-template-columns: 1fr 1fr; } }
 </style>

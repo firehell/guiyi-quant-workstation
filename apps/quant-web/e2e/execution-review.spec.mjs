@@ -189,7 +189,7 @@ async function mockExecutionReview(page, options = {}) {
       if (options.statsError) {
         return route.fulfill({ status: 503, json: { detail: { code: 'STATS_UNAVAILABLE' } } })
       }
-      return route.fulfill({ json: stats() })
+      return route.fulfill({ json: options.statsResponse || stats() })
     }
     if (request.method() === 'GET' && path.endsWith('/items')) {
       const requestedState = url.searchParams.get('state')
@@ -719,18 +719,23 @@ test('missing multiplier explains unavailable RMB PnL without hiding review fact
   await expect(episodeDetail).toContainText('结构化复盘')
 })
 
-test('stats are expanded by default and share only applicable queue filters', async ({ page }) => {
+test('stats keep their date range across tabs while active queues remain date-unfiltered', async ({ page }) => {
   const store = await mockExecutionReview(page, { state: 'done' })
   await page.goto('/trade-records?state=done')
 
   const panel = page.getByTestId('execution-stats')
   await expect(panel).toContainText('ExecutionStats / 执行复盘统计')
   await expect(panel).toContainText('符合机会12')
-  await expect(panel).toContainText('决策完成率75%')
+  await expect(panel).toContainText('决策完成率75.0%')
   await expect(panel).toContainText('待复盘1')
+  await expect(panel.getByTestId('primary-reason-counts')).toContainText('主要未执行原因')
+  await expect(panel.getByTestId('primary-reason-counts')).toContainText('TOO_LATE 2')
+  await expect(panel.getByTestId('primary-reason-counts')).toContainText('POOR_LOCATION 1')
+  await expect(page.getByText('全部可用历史（未设置交易日范围）')).toBeVisible()
   await page.getByPlaceholder('品种，例如 jm').fill(' jm ')
-  await page.getByLabel('开始交易日').fill('2026-08-01')
-  await page.getByLabel('结束交易日').fill('2026-08-15')
+  await page.getByLabel('统计 / 已完成开始交易日').fill('2026-08-01')
+  await page.getByLabel('统计 / 已完成结束交易日').fill('2026-08-15')
+  store.requests.length = 0
   await page.getByRole('button', { name: '应用筛选' }).click()
 
   await expect.poll(() => store.requests.findLast((value) => value.startsWith('GET /api/execution-review/stats'))).toContain('symbol=jm')
@@ -738,8 +743,41 @@ test('stats are expanded by default and share only applicable queue filters', as
   expect(latestStatsRequest).toContain('trading_day_from=2026-08-01')
   expect(latestStatsRequest).toContain('trading_day_to=2026-08-15')
 
-  await page.getByText('进行中 0', { exact: true }).click()
-  await expect.poll(() => store.requests.findLast((value) => value.startsWith('GET /api/execution-review/stats'))).not.toContain('trading_day_from')
+  for (const state of ['pending_decision', 'open', 'pending_review']) {
+    const request = store.requests.find((value) => value.includes(`/items?state=${state}`))
+    expect(request).toBeTruthy()
+    expect(request).not.toContain('start_trading_day')
+    expect(request).not.toContain('end_trading_day')
+  }
+  const doneRequest = store.requests.find((value) => value.includes('/items?state=done'))
+  expect(doneRequest).toContain('start_trading_day=2026-08-01')
+  expect(doneRequest).toContain('end_trading_day=2026-08-15')
+
+  for (const tab of ['待决策 0', '进行中 0', '待复盘 0', '已完成 1']) {
+    const previousStatsRequests = store.requests.filter((value) => value.startsWith('GET /api/execution-review/stats')).length
+    await page.getByText(tab, { exact: true }).click()
+    await expect.poll(() => store.requests.filter((value) => value.startsWith('GET /api/execution-review/stats')).length).toBeGreaterThan(previousStatsRequests)
+    const request = store.requests.findLast((value) => value.startsWith('GET /api/execution-review/stats'))
+    expect(request).toContain('trading_day_from=2026-08-01')
+    expect(request).toContain('trading_day_to=2026-08-15')
+    await expect(page.getByLabel('统计 / 已完成开始交易日')).toBeVisible()
+    await expect(page.getByLabel('统计 / 已完成开始交易日')).toHaveValue('2026-08-01')
+    await expect(page.getByLabel('统计 / 已完成结束交易日')).toBeVisible()
+    await expect(page.getByLabel('统计 / 已完成结束交易日')).toHaveValue('2026-08-15')
+  }
+})
+
+test('empty primary reason counts display 无 and ignore secondary reason data', async ({ page }) => {
+  const response = stats()
+  response.opportunities.primary_reason_counts = {}
+  response.opportunities.secondary_reason_counts = { SECONDARY_ONLY: 9 }
+  await mockExecutionReview(page, { statsResponse: response, emptyItems: true })
+  await page.goto('/trade-records')
+
+  const reasons = page.getByTestId('primary-reason-counts')
+  await expect(reasons).toContainText('主要未执行原因')
+  await expect(reasons).toContainText('无')
+  await expect(reasons).not.toContainText('SECONDARY_ONLY')
 })
 
 test('stats failure remains local and does not hide the execution queue', async ({ page }) => {
