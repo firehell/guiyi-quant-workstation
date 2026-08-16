@@ -126,8 +126,16 @@ function reconstruction(mode = 'signal', unavailable = false) {
       bar_end: '2026-08-15T02:25:00Z', trading_day: '2026-08-15',
       open: 2298, high: 2302, low: 2296, close: 2300,
       volume: 100, turnover: 1000, open_interest: 200,
+    }, ...(mode === 'full' ? [{
+      bar_end: '2026-08-15T02:30:00Z', trading_day: '2026-08-15',
+      open: 2300, high: 2310, low: 2299, close: 2308,
+      volume: 120, turnover: 1200, open_interest: 205,
+    }] : [])],
+    bars_15m: unavailable ? [] : [{
+      bar_end: '2026-08-15T02:15:00Z', trading_day: '2026-08-15',
+      open: 2290, high: 2301, low: 2288, close: 2298,
+      volume: 280, turnover: 2800, open_interest: 198,
     }],
-    bars_15m: [],
   }
 }
 
@@ -184,6 +192,20 @@ async function mockExecutionReview(page, options = {}) {
     }
     if (request.method() === 'POST' && path.endsWith(`/episodes/${episodeId}/executions`)) {
       const body = request.postDataJSON()
+      if (options.appendErrorCode) {
+        store.detail = {
+          ...store.detail,
+          episode: episode({ closed_at: '2026-08-15T04:00:00Z', close_reason: 'EXECUTION_NET_ZERO' }),
+          executions: [...store.detail.executions, execution({
+            id: 52, trigger_decision_id: null, sequence_no: 2, execution_type: 'CLOSE',
+            executed_at: '2026-08-15T04:00:00Z', price: '2310.00000000', quantity: 2,
+          })],
+          position: position({ remaining_quantity: 0, average_cost: null }),
+        }
+        store.state = 'pending_review'
+        store.item = item('pending_review')
+        return route.fulfill({ status: 409, json: { detail: { code: options.appendErrorCode } } })
+      }
       const close = execution({
         id: 52, trigger_decision_id: null, sequence_no: 2,
         execution_type: body.execution_type, executed_at: body.executed_at,
@@ -319,6 +341,19 @@ test('opposite Event is hard blocked without close-and-reverse affordance', asyn
   await expect.poll(() => store.requests.filter((value) => value.startsWith('GET /api/execution-review/items')).length).toBeGreaterThan(4)
 })
 
+test('409 while appending always reloads the authoritative EpisodeDetail', async ({ page }) => {
+  await mockExecutionReview(page, { state: 'open', appendErrorCode: 'EPISODE_ALREADY_CLOSED' })
+  await page.goto(`/trade-records?state=open&episode_id=${episodeId}`)
+  await page.getByRole('button', { name: 'CLOSE', exact: true }).click()
+  await page.getByTestId('execution-at').fill('2026-08-15T11:00')
+  await page.getByTestId('execution-price').fill('2310.5')
+  await page.getByRole('button', { name: '保存执行记录' }).click()
+
+  await expect(page).toHaveURL(/state=pending_review/)
+  await expect(page.getByTestId('episode-detail')).toContainText('已结束')
+  await expect(page.getByTestId('execution-form')).toHaveCount(0)
+})
+
 test('DOMINANT_ROLL is an estimate and actual CLOSE uses full timeline correction', async ({ page }) => {
   const rolled = detail({
     episode: episode({
@@ -348,10 +383,14 @@ test('reconstruction defaults signal and switches to full only explicitly', asyn
   await page.goto(`/trade-records?state=pending_decision&event_id=${eventId}`)
 
   await expect(page.getByTestId('reconstruction-panel')).toContainText('信号当时')
+  await expect(page.getByTestId('reconstruction-bars-5m')).toContainText('2300')
+  await expect(page.getByTestId('reconstruction-bars-5m')).not.toContainText('2308')
+  await expect(page.getByTestId('reconstruction-bars-15m')).toContainText('2298')
   expect(store.requests.some((value) => value.includes('mode=signal'))).toBe(true)
   await page.getByRole('button', { name: '完整走势' }).click()
   await expect.poll(() => store.requests.some((value) => value.includes('mode=full'))).toBe(true)
   await expect(page.getByTestId('reconstruction-panel')).toContainText('事后历史重建')
+  await expect(page.getByTestId('reconstruction-bars-5m')).toContainText('2308')
 })
 
 test('unavailable reconstruction never blocks Review submission', async ({ page }) => {

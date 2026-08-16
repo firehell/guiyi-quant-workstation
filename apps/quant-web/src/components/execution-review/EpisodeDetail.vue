@@ -260,7 +260,10 @@ function setTimelineType(index: number, value: ExecutionType) {
           <tbody><tr v-for="row in displayTimeline" :key="row.id">
             <td>{{ row.sequence_no }}</td><td>{{ row.execution_type }}</td><td>{{ formatTime(row.executed_at) }}</td>
             <td>{{ row.price }}</td><td>{{ row.quantity }}</td><td>{{ row.trigger_decision_id ? `Decision #${row.trigger_decision_id}` : 'Manual' }}</td>
-            <td><NButton size="tiny" quaternary @click="openExecutionEdit(row)">编辑</NButton></td>
+            <td>
+              <NButton v-if="detail.episode.close_reason !== 'DOMINANT_ROLL'" size="tiny" quaternary @click="openExecutionEdit(row)">编辑</NButton>
+              <span v-else>使用完整时间线纠错</span>
+            </td>
           </tr></tbody>
         </NTable>
       </div>

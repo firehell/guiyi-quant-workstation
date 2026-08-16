@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { NAlert, NButton, NButtonGroup, NCard, NDescriptions, NDescriptionsItem, NSpin, NTag } from 'naive-ui'
+import { NAlert, NButton, NButtonGroup, NCard, NDescriptions, NDescriptionsItem, NSpin, NTable, NTag } from 'naive-ui'
 import { executionReviewErrorMessage, getReconstruction } from '@/api/executionReview'
 import type { Direction, EventReconstructionResponse, ReconstructionMode, ReconstructionReason } from '@/types/executionReview'
 import { initialReconstructionMode } from '@/utils/executionReview'
@@ -75,9 +75,41 @@ onMounted(() => void load(mode.value))
           <span>{{ result.reason ? reasonText[result.reason] : '正式历史行情暂不可用' }}</span>
         </NAlert>
         <div v-else class="reconstruction__bars">
-          <NTag :bordered="false">5m {{ result.bars_5m.length }} 根</NTag>
-          <NTag :bordered="false">15m {{ result.bars_15m.length }} 根</NTag>
-          <span v-if="result.window">窗口 {{ result.window.start_trading_day }} → {{ result.window.end_trading_day }}</span>
+          <div class="reconstruction__summary">
+            <NTag :bordered="false">5m {{ result.bars_5m.length }} 根</NTag>
+            <NTag :bordered="false">15m {{ result.bars_15m.length }} 根</NTag>
+            <span v-if="result.window">窗口 {{ result.window.start_trading_day }} → {{ result.window.end_trading_day }}</span>
+          </div>
+          <section data-testid="reconstruction-bars-5m">
+            <strong>5m OHLCV</strong>
+            <div class="reconstruction__table-wrap">
+              <NTable size="small" :single-line="false">
+                <thead><tr><th>Bar end</th><th>交易日</th><th>O</th><th>H</th><th>L</th><th>C</th><th>V</th><th>持仓量</th></tr></thead>
+                <tbody>
+                  <tr v-for="bar in result.bars_5m" :key="bar.bar_end">
+                    <td>{{ bar.bar_end }}</td><td>{{ bar.trading_day }}</td><td>{{ bar.open }}</td><td>{{ bar.high }}</td>
+                    <td>{{ bar.low }}</td><td>{{ bar.close }}</td><td>{{ bar.volume }}</td><td>{{ bar.open_interest ?? '—' }}</td>
+                  </tr>
+                  <tr v-if="result.bars_5m.length === 0"><td colspan="8">无 5m bar</td></tr>
+                </tbody>
+              </NTable>
+            </div>
+          </section>
+          <section data-testid="reconstruction-bars-15m">
+            <strong>15m OHLCV</strong>
+            <div class="reconstruction__table-wrap">
+              <NTable size="small" :single-line="false">
+                <thead><tr><th>Bar end</th><th>交易日</th><th>O</th><th>H</th><th>L</th><th>C</th><th>V</th><th>持仓量</th></tr></thead>
+                <tbody>
+                  <tr v-for="bar in result.bars_15m" :key="bar.bar_end">
+                    <td>{{ bar.bar_end }}</td><td>{{ bar.trading_day }}</td><td>{{ bar.open }}</td><td>{{ bar.high }}</td>
+                    <td>{{ bar.low }}</td><td>{{ bar.close }}</td><td>{{ bar.volume }}</td><td>{{ bar.open_interest ?? '—' }}</td>
+                  </tr>
+                  <tr v-if="result.bars_15m.length === 0"><td colspan="8">无 15m bar</td></tr>
+                </tbody>
+              </NTable>
+            </div>
+          </section>
         </div>
       </template>
     </NSpin>
@@ -90,6 +122,10 @@ onMounted(() => void load(mode.value))
 .reconstruction__header span { color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .reconstruction__availability { margin-top: 12px; }
 .reconstruction__availability :deep(.n-alert-body__content) { display: grid; gap: 3px; }
-.reconstruction__bars { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
+.reconstruction__bars { display: grid; gap: 12px; margin-top: 12px; color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
+.reconstruction__summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.reconstruction__bars section { display: grid; gap: 6px; min-width: 0; }
+.reconstruction__table-wrap { overflow-x: auto; }
+.reconstruction__table-wrap table { min-width: 760px; }
 @media (max-width: 760px) { .reconstruction__header { align-items: flex-start; flex-direction: column; } }
 </style>

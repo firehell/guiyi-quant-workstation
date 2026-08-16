@@ -170,7 +170,9 @@ async function handleChanged(outcome: {
 }
 
 async function handleStale() {
+  const authoritativeEpisodeId = selectedItem.value?.episode_id ?? detail.value?.episode.id ?? null
   await loadAll()
+  if (authoritativeEpisodeId) await loadDetail(authoritativeEpisodeId)
   message.warning('已刷新后端最新状态')
 }
 
