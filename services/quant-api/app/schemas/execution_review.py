@@ -8,6 +8,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
+from app.schemas.market import MarketBarOut
+
 
 DatabaseDecimal = Annotated[
     Decimal,
@@ -236,6 +238,34 @@ class EventContextOut(BaseModel):
     lower_tf_confirmation: bool
     detected_at: datetime
     notification_attempted_at: datetime | None
+
+
+class ReconstructionSegmentOut(BaseModel):
+    contract: str
+    start_trading_day: date
+    end_trading_day: date
+
+
+class ReconstructionWindowOut(BaseModel):
+    start_trading_day: date
+    end_trading_day: date
+    bar_end_cutoff: datetime | None
+
+
+class EventReconstructionResponse(BaseModel):
+    status: Literal["READY", "UNAVAILABLE"]
+    reason: Literal[
+        "MARKET_HISTORY_NOT_READY",
+        "MARKET_IDENTITY_CONFLICT",
+        "MARKET_PARTITION_UNAVAILABLE",
+    ] | None
+    mode: Literal["signal", "full"]
+    post_hoc_reconstruction: bool
+    event: EventContextOut
+    segment: ReconstructionSegmentOut | None
+    window: ReconstructionWindowOut | None
+    bars_5m: list["MarketBarOut"]
+    bars_15m: list["MarketBarOut"]
 
 
 class EpisodeDetailResponse(BaseModel):

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import TypeVar
+from typing import Literal, Protocol, TypeVar
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -33,6 +33,11 @@ from app.execution_review.pnl import (
     PositionState,
     calculate_position_state,
 )
+from app.market_data.domain import BarFrequency, CanonicalBar
+from app.market_data.market_data_service import (
+    DominantContractSegmentSummary,
+    MarketDataError,
+)
 
 
 ELIGIBLE_RULE_CODE = "subing_entry_signal_v1"
@@ -40,6 +45,34 @@ ELIGIBLE_FREQUENCIES = frozenset({"5m", "15m"})
 MAX_DATABASE_INTEGER = 2_147_483_647
 MAX_DATABASE_DECIMAL = Decimal("10000000000000000")
 _T = TypeVar("_T")
+ReconstructionMode = Literal["signal", "full"]
+ReconstructionUnavailableReason = Literal[
+    "MARKET_HISTORY_NOT_READY",
+    "MARKET_IDENTITY_CONFLICT",
+    "MARKET_PARTITION_UNAVAILABLE",
+]
+
+_RECONSTRUCTION_HISTORY_CODES = frozenset(
+    {
+        "DOMINANT_CONTEXT_MISSING",
+        "TRADING_CALENDAR_MISSING",
+        "MAIN_CONTRACT_MAP_MISSING",
+        "INSTRUMENT_EXCHANGE_MISSING",
+        "TRADING_SESSION_MISSING",
+        "PREVIOUS_TRADING_DAY_MISSING",
+        "PRODUCT_RETIRED",
+    }
+)
+_RECONSTRUCTION_IDENTITY_CODES = frozenset(
+    {"MAIN_CONTRACT_MAP_CONFLICT", "BAR_IDENTITY_CONFLICT"}
+)
+_RECONSTRUCTION_PARTITION_CODES = frozenset(
+    {
+        "DATASET_OR_PARTITION_MISSING",
+        "QUERY_WINDOW_EMPTY",
+        "PARTITION_INTEGRITY_INVALID",
+    }
+)
 
 
 class ExecutionReviewDomainError(RuntimeError):
@@ -49,6 +82,28 @@ class ExecutionReviewDomainError(RuntimeError):
         self.code = code
         self.status_code = status_code
         super().__init__(code)
+
+
+class HistoricalMarketData(Protocol):
+    def dominant_segment_for_day(
+        self,
+        symbol: str,
+        trading_day: date,
+    ) -> DominantContractSegmentSummary: ...
+
+    def contract_bars_for_trading_day(
+        self,
+        *,
+        symbol: str,
+        contract: str,
+        frequency: BarFrequency,
+        trading_day: date,
+    ) -> tuple[CanonicalBar, ...]: ...
+
+
+class DefensiveReconcileResult(Protocol):
+    @property
+    def status(self) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +312,26 @@ class EpisodeDetail:
     position: PositionState
 
 
+@dataclass(frozen=True, slots=True)
+class ReconstructionWindow:
+    start_trading_day: date
+    end_trading_day: date
+    bar_end_cutoff: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class EventReconstruction:
+    status: Literal["READY", "UNAVAILABLE"]
+    reason: ReconstructionUnavailableReason | None
+    mode: ReconstructionMode
+    post_hoc_reconstruction: bool
+    event: EventContext
+    segment: DominantContractSegmentSummary | None
+    window: ReconstructionWindow | None
+    bars_5m: tuple[CanonicalBar, ...]
+    bars_15m: tuple[CanonicalBar, ...]
+
+
 class ExecutionReviewService:
     """Own every Execution Review mutation for one request-scoped Session."""
 
@@ -266,10 +341,131 @@ class ExecutionReviewService:
         *,
         multipliers: Mapping[str, Decimal],
         clock: Callable[[], datetime],
+        market_data: HistoricalMarketData | None = None,
+        reconcile_symbol: Callable[[str], DefensiveReconcileResult] | None = None,
     ) -> None:
         self._session = session
         self._multipliers = dict(multipliers)
         self._clock = clock
+        self._market_data = market_data
+        self._reconcile_symbol = reconcile_symbol
+
+    def reconstruct_event(
+        self,
+        event_id: int,
+        *,
+        mode: ReconstructionMode = "signal",
+    ) -> EventReconstruction:
+        """Rebuild immutable Event context from formal historical Canonical bars."""
+        if mode not in {"signal", "full"}:
+            raise _invalid("RECONSTRUCTION_MODE_INVALID")
+        event, _ = self._eligible_event(event_id)
+        if self._market_data is None:
+            raise _persistence_failure()
+        assert event.trading_day is not None
+        context = self._event_context(event, ELIGIBLE_RULE_CODE)
+        try:
+            segment = self._market_data.dominant_segment_for_day(
+                event.symbol,
+                event.trading_day,
+            )
+            if segment.contract != event.contract:
+                return self._unavailable_reconstruction(
+                    context,
+                    mode=mode,
+                    reason="MARKET_IDENTITY_CONFLICT",
+                )
+            if mode == "signal":
+                trading_days: tuple[date, ...] = (event.trading_day,)
+                cutoff = _utc(event.bar_end)
+            else:
+                trading_days = tuple(
+                    segment.start_trading_day + timedelta(days=offset)
+                    for offset in range(
+                        (segment.end_trading_day - segment.start_trading_day).days
+                        + 1
+                    )
+                )
+                cutoff = None
+            bars_by_frequency: dict[BarFrequency, tuple[CanonicalBar, ...]] = {}
+            for frequency in (BarFrequency.M5, BarFrequency.M15):
+                values = tuple(
+                    bar
+                    for trading_day in trading_days
+                    for bar in self._market_data.contract_bars_for_trading_day(
+                        symbol=event.symbol,
+                        contract=event.contract,
+                        frequency=frequency,
+                        trading_day=trading_day,
+                    )
+                    if cutoff is None or _utc(bar.bar_end) <= cutoff
+                )
+                bars_by_frequency[frequency] = tuple(
+                    sorted(values, key=lambda item: item.bar_end)
+                )
+        except MarketDataError as exc:
+            reason = _public_reconstruction_reason(exc.code)
+            if reason is None:
+                raise _persistence_failure() from None
+            return self._unavailable_reconstruction(
+                context,
+                mode=mode,
+                reason=reason,
+            )
+
+        event_frequency = BarFrequency(event.frequency)
+        if not any(
+            bar.trading_day == event.trading_day
+            and _utc(bar.bar_end) == _utc(event.bar_end)
+            for bar in bars_by_frequency[event_frequency]
+        ):
+            return self._unavailable_reconstruction(
+                context,
+                mode=mode,
+                reason="MARKET_HISTORY_NOT_READY",
+            )
+        return EventReconstruction(
+            status="READY",
+            reason=None,
+            mode=mode,
+            post_hoc_reconstruction=True,
+            event=context,
+            segment=segment,
+            window=ReconstructionWindow(
+                start_trading_day=(
+                    event.trading_day
+                    if mode == "signal"
+                    else segment.start_trading_day
+                ),
+                end_trading_day=(
+                    event.trading_day
+                    if mode == "signal"
+                    else segment.end_trading_day
+                ),
+                bar_end_cutoff=cutoff,
+            ),
+            bars_5m=bars_by_frequency[BarFrequency.M5],
+            bars_15m=bars_by_frequency[BarFrequency.M15],
+        )
+
+    @staticmethod
+    def _unavailable_reconstruction(
+        event: EventContext,
+        *,
+        mode: ReconstructionMode,
+        reason: ReconstructionUnavailableReason,
+    ) -> EventReconstruction:
+        return EventReconstruction(
+            status="UNAVAILABLE",
+            reason=reason,
+            mode=mode,
+            post_hoc_reconstruction=True,
+            event=event,
+            segment=None,
+            window=None,
+            bars_5m=(),
+            bars_15m=(),
+        )
 
     def record_not_executed(
         self,
@@ -339,6 +535,32 @@ class ExecutionReviewService:
             if self._decision_for_event(event.id) is not None:
                 raise _conflict("DECISION_ALREADY_EXISTS")
             self._validate_executed_command(event, command)
+            has_open_episode = self._session.scalar(
+                select(TradeEpisode.id)
+                .where(
+                    TradeEpisode.symbol == event.symbol,
+                    TradeEpisode.closed_at.is_(None),
+                )
+                .limit(1)
+            ) is not None
+            if has_open_episode and self._reconcile_symbol is not None:
+                try:
+                    reconcile_result = self._reconcile_symbol(event.symbol)
+                except ExecutionReviewDomainError:
+                    raise
+                except Exception:
+                    raise _persistence_failure() from None
+                if reconcile_result.status == "ROLL_RECONCILIATION_REQUIRED":
+                    raise _conflict("ROLL_RECONCILIATION_REQUIRED")
+                if reconcile_result.status not in {"NOOP", "DOMINANT_ROLL"}:
+                    raise _persistence_failure()
+                self._session.expire_all()
+                event, direction = self._eligible_event(event_id)
+                event_symbol = event.symbol
+                event_contract = event.contract
+                event_direction = direction
+                if self._decision_for_event(event.id) is not None:
+                    raise _conflict("DECISION_ALREADY_EXISTS")
             episode = self._session.scalar(
                 select(TradeEpisode)
                 .where(
@@ -640,8 +862,7 @@ class ExecutionReviewService:
             )
             if episode is None:
                 raise _not_found("TRADE_EPISODE_NOT_FOUND")
-            if episode.close_reason == "DOMINANT_ROLL":
-                raise _conflict("EXECUTION_CORRECTION_CONFLICT")
+            replacing_roll_estimate = episode.close_reason == "DOMINANT_ROLL"
             existing = self._executions(episode.id, for_update=True)
             if {
                 (row.id, row.trigger_decision_id) for row in existing
@@ -707,6 +928,12 @@ class ExecutionReviewService:
                 )
                 lineage.append(trigger_id)
             position = self._calculate_position(episode, tuple(facts))
+            if replacing_roll_estimate and (
+                position.remaining_quantity != 0
+                or not commands
+                or commands[-1].execution_type != "CLOSE"
+            ):
+                raise _conflict("EXECUTION_CORRECTION_CONFLICT")
             if (
                 position.remaining_quantity == 0
                 and _utc(commands[-1].executed_at) < _utc(commands[0].executed_at)
@@ -1763,6 +1990,24 @@ class ExecutionReviewService:
             return "SHORT"
         return None
 
+    @staticmethod
+    def _event_context(event: AlertEvent, rule_code: str) -> EventContext:
+        if event.trading_day is None:
+            raise _conflict("DECISION_LINEAGE_INVALID")
+        return EventContext(
+            id=event.id,
+            rule_code=rule_code,
+            symbol=event.symbol,
+            contract=event.contract,
+            trading_day=event.trading_day,
+            frequency=event.frequency,
+            bar_end=event.bar_end,
+            result_codes=tuple(event.result_codes),
+            lower_tf_confirmation=event.lower_tf_confirmation,
+            detected_at=event.detected_at,
+            notification_attempted_at=event.notification_attempted_at,
+        )
+
     def _eligible_event(self, event_id: int) -> tuple[AlertEvent, str]:
         row = self._session.execute(
             select(AlertEvent, AlertRule.rule_code)
@@ -2000,6 +2245,18 @@ def _persistence_failure() -> ExecutionReviewDomainError:
         "EXECUTION_REVIEW_PERSIST_FAILED",
         status_code=503,
     )
+
+
+def _public_reconstruction_reason(
+    code: str,
+) -> ReconstructionUnavailableReason | None:
+    if code in _RECONSTRUCTION_HISTORY_CODES:
+        return "MARKET_HISTORY_NOT_READY"
+    if code in _RECONSTRUCTION_IDENTITY_CODES:
+        return "MARKET_IDENTITY_CONFLICT"
+    if code in _RECONSTRUCTION_PARTITION_CODES:
+        return "MARKET_PARTITION_UNAVAILABLE"
+    return None
 
 
 def _constraint_name(exc: IntegrityError) -> str | None:

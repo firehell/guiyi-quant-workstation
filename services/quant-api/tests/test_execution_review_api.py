@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -225,6 +227,158 @@ def test_not_executed_and_disposition_correction_routes(
     assert corrected.status_code == 200
     assert corrected.json()["decision"]["id"] == decision_id
     assert corrected.json()["decision"]["disposition"] == "EXECUTED"
+
+
+def test_reconstruction_route_defaults_to_signal_and_serializes_canonical_bars(
+    api: tuple[TestClient, sessionmaker[Session]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = api
+    calls: list[tuple[int, str]] = []
+    event = SimpleNamespace(
+        id=17,
+        rule_code="subing_entry_signal_v1",
+        symbol="jm",
+        contract="JM2609",
+        trading_day=date(2026, 8, 15),
+        frequency="5m",
+        bar_end=BAR_END,
+        result_codes=("buy",),
+        lower_tf_confirmation=False,
+        detected_at=BAR_END + timedelta(seconds=1),
+        notification_attempted_at=None,
+    )
+    segment = SimpleNamespace(
+        contract="JM2609",
+        start_trading_day=date(2026, 8, 14),
+        end_trading_day=date(2026, 8, 18),
+    )
+    window = SimpleNamespace(
+        start_trading_day=date(2026, 8, 15),
+        end_trading_day=date(2026, 8, 15),
+        bar_end_cutoff=BAR_END,
+    )
+    bar = SimpleNamespace(
+        bar_end=BAR_END,
+        trading_day=date(2026, 8, 15),
+        open=Decimal("100"),
+        high=Decimal("101"),
+        low=Decimal("99"),
+        close=Decimal("100.5"),
+        volume=Decimal("10"),
+        turnover=Decimal("1000"),
+        open_interest=Decimal("20"),
+    )
+
+    class FakeService:
+        def reconstruct_event(self, event_id: int, *, mode: str):
+            calls.append((event_id, mode))
+            return SimpleNamespace(
+                status="READY",
+                reason=None,
+                mode=mode,
+                post_hoc_reconstruction=True,
+                event=event,
+                segment=segment,
+                window=window,
+                bars_5m=(bar,),
+                bars_15m=(),
+            )
+
+    monkeypatch.setattr(execution_review_api, "_service", lambda _session: FakeService())
+
+    response = client.get("/api/execution-review/events/17/reconstruction")
+
+    assert response.status_code == 200
+    assert calls == [(17, "signal")]
+    assert response.json() == {
+        "status": "READY",
+        "reason": None,
+        "mode": "signal",
+        "post_hoc_reconstruction": True,
+        "event": {
+            "id": 17,
+            "rule_code": "subing_entry_signal_v1",
+            "symbol": "jm",
+            "contract": "JM2609",
+            "trading_day": "2026-08-15",
+            "frequency": "5m",
+            "bar_end": "2026-08-15T01:00:00Z",
+            "result_codes": ["buy"],
+            "lower_tf_confirmation": False,
+            "detected_at": "2026-08-15T01:00:01Z",
+            "notification_attempted_at": None,
+        },
+        "segment": {
+            "contract": "JM2609",
+            "start_trading_day": "2026-08-14",
+            "end_trading_day": "2026-08-18",
+        },
+        "window": {
+            "start_trading_day": "2026-08-15",
+            "end_trading_day": "2026-08-15",
+            "bar_end_cutoff": "2026-08-15T01:00:00Z",
+        },
+        "bars_5m": [
+            {
+                "bar_end": "2026-08-15T01:00:00Z",
+                "trading_day": "2026-08-15",
+                "open": "100",
+                "high": "101",
+                "low": "99",
+                "close": "100.5",
+                "volume": "10",
+                "turnover": "1000",
+                "open_interest": "20",
+            }
+        ],
+        "bars_15m": [],
+    }
+
+
+def test_reconstruction_unavailable_is_http_200(
+    api: tuple[TestClient, sessionmaker[Session]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = api
+
+    class FakeService:
+        def reconstruct_event(self, _event_id: int, *, mode: str):
+            return SimpleNamespace(
+                status="UNAVAILABLE",
+                reason="MARKET_PARTITION_UNAVAILABLE",
+                mode=mode,
+                post_hoc_reconstruction=True,
+                event=SimpleNamespace(
+                    id=17,
+                    rule_code="subing_entry_signal_v1",
+                    symbol="jm",
+                    contract="JM2609",
+                    trading_day=date(2026, 8, 15),
+                    frequency="15m",
+                    bar_end=BAR_END,
+                    result_codes=("sell",),
+                    lower_tf_confirmation=False,
+                    detected_at=BAR_END + timedelta(seconds=1),
+                    notification_attempted_at=None,
+                ),
+                segment=None,
+                window=None,
+                bars_5m=(),
+                bars_15m=(),
+            )
+
+    monkeypatch.setattr(execution_review_api, "_service", lambda _session: FakeService())
+
+    response = client.get(
+        "/api/execution-review/events/17/reconstruction?mode=full"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "UNAVAILABLE"
+    assert response.json()["reason"] == "MARKET_PARTITION_UNAVAILABLE"
+    assert response.json()["segment"] is None
+    assert response.json()["window"] is None
 
 
 def test_event_states_require_bounded_ids_and_fail_closed(
@@ -497,7 +651,9 @@ def test_execution_review_domain_errors_use_stable_envelope(
     missing = client.get("/api/execution-review/episodes/999")
 
     assert opposite.status_code == 409
-    assert opposite.json() == {"detail": {"code": "OPPOSITE_EPISODE_OPEN"}}
+    assert opposite.json() == {
+        "detail": {"code": "ROLL_RECONCILIATION_REQUIRED"}
+    }
     assert missing.status_code == 404
     assert missing.json() == {
         "detail": {"code": "TRADE_EPISODE_NOT_FOUND"}
@@ -573,13 +729,13 @@ def test_multiplier_reference_failure_uses_redacted_503_envelope(
 ) -> None:
     _, _ = api
 
-    def fail_loader(_: object) -> dict[str, object]:
+    def fail_builder(_: object) -> object:
         raise ExecutionReviewContractError("MULTIPLIER_REFERENCE_INVALID")
 
     monkeypatch.setattr(
         execution_review_api,
-        "load_product_trade_multipliers",
-        fail_loader,
+        "build_execution_review_service",
+        fail_builder,
     )
 
     response = TestClient(app, raise_server_exceptions=False).get(

@@ -29,6 +29,7 @@ from app.execution_review.models import (
     TradeExecution,
     TradeReview,
 )
+from app.execution_review.reconciler import RollReconcileResult
 from app.execution_review.service import (
     ExecutedCommand,
     DecisionUpdateCommand,
@@ -123,6 +124,127 @@ def test_successful_mutation_does_not_depend_on_post_commit_refresh(
     assert decision.disposition == "NOT_EXECUTED"
     with Session(session.get_bind()) as check:
         assert _count(check, TradeDecision) == 1
+
+
+def test_duplicate_processed_event_does_not_call_defensive_reconcile(
+    session: Session,
+) -> None:
+    event = _event(session)
+    _service(session).record_executed(event.id, _executed())
+    calls: list[str] = []
+    service = ExecutionReviewService(
+        session,
+        multipliers={"jm": Decimal("60")},
+        clock=lambda: SERVER_NOW,
+        reconcile_symbol=lambda symbol: (
+            calls.append(symbol)
+            or RollReconcileResult("NOOP", symbol)
+        ),
+    )
+
+    with pytest.raises(ExecutionReviewDomainError, match="^DECISION_ALREADY_EXISTS$"):
+        service.record_executed(event.id, _executed())
+
+    assert calls == []
+
+
+def test_record_executed_without_open_episode_does_not_call_reconciler(
+    session: Session,
+) -> None:
+    event = _event(session)
+    calls: list[str] = []
+    service = ExecutionReviewService(
+        session,
+        multipliers={"jm": Decimal("60")},
+        clock=lambda: SERVER_NOW,
+        reconcile_symbol=lambda symbol: (
+            calls.append(symbol)
+            or RollReconcileResult("NOOP", symbol)
+        ),
+    )
+
+    result = service.record_executed(event.id, _executed())
+
+    assert result.execution.execution_type == "OPEN"
+    assert calls == []
+
+
+def test_defensive_reconcile_required_blocks_new_decision_and_execution(
+    session: Session,
+) -> None:
+    _service(session).record_executed(_event(session).id, _executed())
+    next_event = _event(
+        session,
+        bar_end=BAR_END + timedelta(minutes=10),
+    )
+    calls: list[str] = []
+    service = ExecutionReviewService(
+        session,
+        multipliers={"jm": Decimal("60")},
+        clock=lambda: SERVER_NOW,
+        reconcile_symbol=lambda symbol: (
+            calls.append(symbol)
+            or RollReconcileResult(
+                "ROLL_RECONCILIATION_REQUIRED",
+                symbol,
+            )
+        ),
+    )
+
+    with pytest.raises(
+        ExecutionReviewDomainError,
+        match="^ROLL_RECONCILIATION_REQUIRED$",
+    ):
+        service.record_executed(
+            next_event.id,
+            _executed(executed_at=BAR_END + timedelta(minutes=13)),
+        )
+
+    assert calls == ["jm"]
+    assert _count(session, TradeDecision) == 1
+    assert _count(session, TradeExecution) == 1
+
+
+def test_defensive_reconcile_reloads_closed_old_contract_before_new_event(
+    session: Session,
+) -> None:
+    old = _service(session).record_executed(_event(session).id, _executed())
+    next_event = _event(
+        session,
+        contract="JM2701",
+        bar_end=BAR_END + timedelta(minutes=10),
+    )
+    calls: list[str] = []
+
+    def reconcile(symbol: str) -> RollReconcileResult:
+        calls.append(symbol)
+        episode = session.get(TradeEpisode, old.episode.id)
+        assert episode is not None
+        episode.closed_at = BAR_END + timedelta(minutes=8)
+        episode.close_reason = "DOMINANT_ROLL"
+        episode.roll_reference_exit_price = Decimal("1258")
+        episode.roll_reference_bar_end = BAR_END + timedelta(minutes=8)
+        session.commit()
+        return RollReconcileResult("DOMINANT_ROLL", symbol, episode.id)
+
+    service = ExecutionReviewService(
+        session,
+        multipliers={"jm": Decimal("60")},
+        clock=lambda: SERVER_NOW,
+        reconcile_symbol=reconcile,
+    )
+
+    result = service.record_executed(
+        next_event.id,
+        _executed(executed_at=BAR_END + timedelta(minutes=13)),
+    )
+
+    assert calls == ["jm"]
+    assert result.execution.execution_type == "OPEN"
+    assert result.episode.contract == "JM2701"
+    old_episode = session.get(TradeEpisode, old.episode.id)
+    assert old_episode is not None
+    assert old_episode.close_reason == "DOMINANT_ROLL"
 
 
 def test_not_executed_uses_explicit_decided_at_and_allows_late_first_view(
@@ -1148,6 +1270,86 @@ def test_reviewed_episode_cannot_be_reopened_by_timeline_correction(
     assert unchanged.closed_at is not None
     assert session.get(TradeExecution, closed.execution.id) is not None
     assert session.get(TradeReview, review.id) is not None
+
+
+def test_real_close_timeline_replaces_dominant_roll_estimate(
+    session: Session,
+) -> None:
+    service = _service(session)
+    opened = service.record_executed(_event(session).id, _executed(quantity=2))
+    episode = session.get(TradeEpisode, opened.episode.id)
+    assert episode is not None
+    episode.closed_at = BAR_END + timedelta(minutes=30)
+    episode.close_reason = "DOMINANT_ROLL"
+    episode.roll_reference_exit_price = Decimal("1258")
+    episode.roll_reference_bar_end = BAR_END + timedelta(minutes=30)
+    session.commit()
+
+    result = service.replace_execution_timeline(
+        episode.id,
+        (
+            TimelineExecutionCommand(
+                execution_id=opened.execution.id,
+                execution_type="OPEN",
+                executed_at=opened.execution.executed_at,
+                price=opened.execution.price,
+                quantity=2,
+            ),
+            TimelineExecutionCommand(
+                execution_id=None,
+                execution_type="CLOSE",
+                executed_at=BAR_END + timedelta(minutes=40),
+                price=Decimal("1250"),
+                quantity=2,
+            ),
+        ),
+    )
+
+    assert result.position.remaining_quantity == 0
+    assert result.episode.close_reason == "EXECUTION_NET_ZERO"
+    assert _utc(result.episode.closed_at) == BAR_END + timedelta(minutes=40)
+    assert result.episode.roll_reference_exit_price is None
+    assert result.episode.roll_reference_bar_end is None
+    assert result.executions[0].id == opened.execution.id
+    assert result.executions[0].trigger_decision_id == opened.decision.id
+    assert result.executions[-1].execution_type == "CLOSE"
+    assert result.executions[-1].trigger_decision_id is None
+
+
+def test_dominant_roll_timeline_correction_cannot_reopen_episode(
+    session: Session,
+) -> None:
+    service = _service(session)
+    opened = service.record_executed(_event(session).id, _executed(quantity=2))
+    episode = session.get(TradeEpisode, opened.episode.id)
+    assert episode is not None
+    episode.closed_at = BAR_END + timedelta(minutes=30)
+    episode.close_reason = "DOMINANT_ROLL"
+    episode.roll_reference_exit_price = Decimal("1258")
+    episode.roll_reference_bar_end = BAR_END + timedelta(minutes=30)
+    session.commit()
+
+    with pytest.raises(
+        ExecutionReviewDomainError,
+        match="^EXECUTION_CORRECTION_CONFLICT$",
+    ):
+        service.replace_execution_timeline(
+            episode.id,
+            (
+                TimelineExecutionCommand(
+                    execution_id=opened.execution.id,
+                    execution_type="OPEN",
+                    executed_at=opened.execution.executed_at,
+                    price=opened.execution.price,
+                    quantity=2,
+                ),
+            ),
+        )
+
+    unchanged = session.get(TradeEpisode, episode.id)
+    assert unchanged is not None
+    assert unchanged.close_reason == "DOMINANT_ROLL"
+    assert unchanged.roll_reference_exit_price == Decimal("1258")
 
 
 def test_read_models_classify_pending_open_pending_review_and_done(

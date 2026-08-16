@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, date, datetime
-from pathlib import Path
 from typing import Literal, TypeVar, overload
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -12,9 +11,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.execution_review.composition import build_execution_review_service
 from app.execution_review.contracts import (
     ExecutionReviewContractError,
-    load_product_trade_multipliers,
 )
 from app.execution_review.models import (
     TradeDecision,
@@ -23,6 +22,7 @@ from app.execution_review.models import (
     TradeReview,
 )
 from app.execution_review.pnl import PositionState
+from app.market_data.domain import CanonicalBar
 from app.execution_review.service import (
     DecisionUpdateCommand,
     DispositionCorrectionCommand,
@@ -48,6 +48,7 @@ from app.schemas.execution_review import (
     EpisodeOut,
     EpisodeStateStatsOut,
     EventContextOut,
+    EventReconstructionResponse,
     EventStateOut,
     EventStatesResponse,
     ExecutedRequest,
@@ -65,17 +66,16 @@ from app.schemas.execution_review import (
     ReviewIssueStatsOut,
     ReviewOut,
     ReviewRequest,
+    ReconstructionSegmentOut,
+    ReconstructionWindowOut,
     TimelineReplaceRequest,
     TimelineResponse,
 )
+from app.schemas.market import MarketBarOut
 
 
 router = APIRouter(prefix="/api/execution-review", tags=["execution-review"])
 _T = TypeVar("_T")
-_MULTIPLIER_PATH = (
-    Path(__file__).resolve().parents[4]
-    / "data/reference/product_trade_multipliers.csv"
-)
 
 
 @router.get("/items", response_model=ReviewItemsResponse)
@@ -171,6 +171,61 @@ def episode_detail(
         executions=[_execution_out(item) for item in detail.executions],
         review=_review_out(detail.review) if detail.review is not None else None,
         position=_position_out(detail.position),
+    )
+
+
+@router.get(
+    "/events/{event_id}/reconstruction",
+    response_model=EventReconstructionResponse,
+)
+def event_reconstruction(
+    event_id: int,
+    mode: Literal["signal", "full"] = Query(default="signal"),
+    session: Session = Depends(get_db),
+) -> EventReconstructionResponse:
+    result = _domain_call(
+        lambda: _service(session).reconstruct_event(event_id, mode=mode)
+    )
+    return EventReconstructionResponse(
+        status=result.status,
+        reason=result.reason,
+        mode=result.mode,
+        post_hoc_reconstruction=result.post_hoc_reconstruction,
+        event=EventContextOut(
+            id=result.event.id,
+            rule_code=result.event.rule_code,
+            symbol=result.event.symbol,
+            contract=result.event.contract,
+            trading_day=result.event.trading_day,
+            frequency=result.event.frequency,
+            bar_end=_utc_timestamp(result.event.bar_end),
+            result_codes=list(result.event.result_codes),
+            lower_tf_confirmation=result.event.lower_tf_confirmation,
+            detected_at=_utc_timestamp(result.event.detected_at),
+            notification_attempted_at=_utc_timestamp(
+                result.event.notification_attempted_at
+            ),
+        ),
+        segment=(
+            ReconstructionSegmentOut(
+                contract=result.segment.contract,
+                start_trading_day=result.segment.start_trading_day,
+                end_trading_day=result.segment.end_trading_day,
+            )
+            if result.segment is not None
+            else None
+        ),
+        window=(
+            ReconstructionWindowOut(
+                start_trading_day=result.window.start_trading_day,
+                end_trading_day=result.window.end_trading_day,
+                bar_end_cutoff=_utc_timestamp(result.window.bar_end_cutoff),
+            )
+            if result.window is not None
+            else None
+        ),
+        bars_5m=[_market_bar_out(bar) for bar in result.bars_5m],
+        bars_15m=[_market_bar_out(bar) for bar in result.bars_15m],
     )
 
 
@@ -437,11 +492,7 @@ def correct_disposition(
 
 
 def _service(session: Session) -> ExecutionReviewService:
-    return ExecutionReviewService(
-        session,
-        multipliers=load_product_trade_multipliers(_MULTIPLIER_PATH),
-        clock=lambda: datetime.now(UTC),
-    )
+    return build_execution_review_service(session)
 
 
 def _domain_call(call: Callable[[], _T]) -> _T:
@@ -503,6 +554,20 @@ def _execution_out(row: TradeExecution) -> ExecutionOut:
         price=row.price,
         quantity=row.quantity,
         note=row.note,
+    )
+
+
+def _market_bar_out(bar: CanonicalBar) -> MarketBarOut:
+    return MarketBarOut(
+        bar_end=_utc_timestamp(bar.bar_end),
+        trading_day=bar.trading_day,
+        open=bar.open,
+        high=bar.high,
+        low=bar.low,
+        close=bar.close,
+        volume=bar.volume,
+        turnover=bar.turnover,
+        open_interest=bar.open_interest,
     )
 
 

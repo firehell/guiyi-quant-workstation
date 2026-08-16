@@ -71,6 +71,20 @@ if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" && -f "$runti
 fi
 printf '[local-services-status] alert_runtime_enabled=%s\n' "$alert_marker_enabled"
 
+execution_review_roll=disabled
+execution_review_roll_marker="$runtime_root/.run/execution-review-roll-enabled"
+if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" && ( -e "$execution_review_roll_marker" || -L "$execution_review_roll_marker" ) ]]; then
+  if [[ -f "$execution_review_roll_marker" && ! -L "$execution_review_roll_marker" ]] \
+    && [[ "$(stat -f '%Lp' "$execution_review_roll_marker" 2>/dev/null || printf 'unknown')" == "600" ]] \
+    && cmp -s "$execution_review_roll_marker" <(printf 'enabled\n'); then
+    execution_review_roll=enabled
+  else
+    execution_review_roll=invalid
+    record_failure
+  fi
+fi
+printf '[local-services-status] execution_review_roll=%s\n' "$execution_review_roll"
+
 for label in "${labels[@]}"; do
   root="$(plist_root "$label")"
   required=false
