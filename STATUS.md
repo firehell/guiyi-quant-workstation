@@ -36,8 +36,9 @@
 - 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 55 files 无问题；
   Web unit `147 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `57 passed`；Web
   production build、secret scan（0 findings）、shell syntax 与 diff check 通过。
-- SuBing Natural Canary 继续 pending；Task 6 Gate A release、Gate B production migration 与
-  Gate C Runtime promotion 已完成，Gate D 仍为 `disabled / not activated`。
+- SuBing Natural Canary 继续 pending；Task 6 Gate A release、Gate B production migration、
+  Gate C Runtime promotion 与 Gate C External Review（`PASS`，Critical=`0`、Important=`0`、
+  Minor=`0`）均已完成。`v1.4.0` rollout 主体完成，Gate D 仍为 `disabled / not activated`。
 
 ## 当前可执行面
 
@@ -79,10 +80,9 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.0`，统一提交为
   `3a6f4289ff08848f9177c41a649a94f877412c23`，API version=`1.4.0`。
 - API/Web/Live/Alert 均 running，after-market 为 schedule-only `not running`；Runtime
-  health=`ok/readonly=true`，Market 主力目录为 active 60。旧 Runtime 根
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0` 与提交
-  `3e930a032c6b880686ff1f1fccc77db61bc2803c` 继续保留，用于 Gate C 外部 Review 完成前的
-  bounded rollback identity，未被删除或重载。
+  health=`ok/readonly=true`，Market 主力目录为 active 60。Gate C External Review 已 `PASS`；
+  旧 `v1.3.0` Runtime worktree 已按 Git worktree 流程清理，当前仅保留唯一正式
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.0` Runtime。
 - Market Runtime V1 持续授权已按原 active 60 范围迁移至 `v1.4.0`；Alert Runtime V2
   持续授权已按原 Rule/Scope（`htdy_original_15m -> jm`、
   `subing_entry_signal_v1 -> jm`）迁移至 `v1.4.0`，未扩大范围。
@@ -98,9 +98,11 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
 - Gate C Runtime promotion 已完成；正式五服务已统一加载 `v1.4.0` identity
   `3a6f4289ff08848f9177c41a649a94f877412c23`，Execution Review production Runtime surface
-  已 available。Gate D 仍为 `disabled / not activated`。
+  已 available。Gate C External Review=`PASS`（Critical=`0`、Important=`0`、Minor=`0`）；旧
+  `v1.3.0` Runtime worktree 已清理，`v1.4.0` rollout 主体完成。Gate D 仍为
+  `disabled / not activated`。
 - 周线修复的部署身份已读回；业务级效果等待下一次自然 18:05 盘后更新，不手工运行、回填或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证，也不计作 Task 6 已完成事实。
-- 最小下一步：完成 Gate C 外部只读 Review；Natural Canary 继续作为独立
-  pending evidence，Gate D 除非获得新的明确授权，否则保持关闭。
+  不人工补证；该独立 pending 状态不改写 `v1.4.0` rollout 主体完成事实。
+- 最小下一步：只等待自然 SuBing Event 形成 Natural Canary evidence；Gate D 除非获得新的明确
+  授权，否则保持关闭。
