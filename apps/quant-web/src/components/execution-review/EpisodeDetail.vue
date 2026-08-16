@@ -8,6 +8,7 @@ import {
   correctDisposition,
   ExecutionReviewApiError,
   executionReviewErrorMessage,
+  refreshDispositionCorrectionState,
   replaceExecutionTimeline,
   updateDecision,
   updateExecution,
@@ -26,8 +27,8 @@ import { EXECUTION_REASONS, NOT_EXECUTED_REASONS, STOP_BASES, timelineForDisplay
 
 const props = defineProps<{ detail: EpisodeDetailResponse; workflowState: ExecutionReviewState }>()
 const emit = defineEmits<{
-  changed: [outcome: { state: ExecutionReviewState; eventId: number; episodeId: number; message: string }]
-  stale: []
+  changed: [outcome: { state: ExecutionReviewState; eventId: number; episodeId: number | null; message: string }]
+  stale: [eventId?: number]
 }>()
 
 const error = ref('')
@@ -38,6 +39,7 @@ const timelineModal = ref(false)
 const dispositionModal = ref(false)
 const editingExecutionId = ref<number | null>(null)
 const editingDecisionId = ref<number | null>(null)
+const editingDecisionEventId = ref<number | null>(null)
 const executionDraft = reactive({ executed_at: '', price: '', note: '' })
 const decisionDraft = reactive({
   first_viewed_at: null as string | null,
@@ -81,6 +83,7 @@ async function saveExecutionEdit() {
 
 function openDecisionEdit(row: Decision) {
   editingDecisionId.value = row.id
+  editingDecisionEventId.value = row.alert_event_id
   decisionDraft.first_viewed_at = row.first_viewed_at
   decisionDraft.decided_at = toLocalInput(row.decided_at)
   decisionDraft.primary_not_execute_reason = row.primary_not_execute_reason
@@ -175,32 +178,46 @@ async function saveDispositionCorrection() {
     return
   }
   await mutate(async () => {
-    await correctDisposition(editingDecisionId.value!, {
+    const response = await correctDisposition(editingDecisionId.value!, {
       target_disposition: 'NOT_EXECUTED',
       primary_reason: dispositionDraft.primary_reason,
       secondary_reasons: dispositionDraft.secondary_reasons,
       note: dispositionDraft.note || null,
     })
+    const eventState = await refreshDispositionCorrectionState(response)
     dispositionModal.value = false
-    changed('done', '处理结果已纠正')
-  })
+    changed(
+      eventState.state,
+      '处理结果已纠正',
+      eventState.episode_id,
+      eventState.event_id,
+    )
+  }, editingDecisionEventId.value ?? props.detail.origin_event.id)
 }
 
-async function mutate(operation: () => Promise<void>) {
+async function mutate(
+  operation: () => Promise<void>,
+  staleEventId: number = props.detail.origin_event.id,
+) {
   saving.value = true
   error.value = ''
   try { await operation() }
   catch (reason) {
     error.value = executionReviewErrorMessage(reason)
-    if (reason instanceof ExecutionReviewApiError && reason.httpStatus === 409) emit('stale')
+    if (reason instanceof ExecutionReviewApiError && reason.httpStatus === 409) emit('stale', staleEventId)
   } finally { saving.value = false }
 }
 
-function changed(state: ExecutionReviewState, message: string) {
+function changed(
+  state: ExecutionReviewState,
+  message: string,
+  episodeId: number | null = props.detail.episode.id,
+  eventId: number = props.detail.origin_event.id,
+) {
   emit('changed', {
     state,
-    eventId: props.detail.origin_event.id,
-    episodeId: props.detail.episode.id,
+    eventId,
+    episodeId,
     message,
   })
 }
@@ -274,14 +291,14 @@ function setTimelineType(index: number, value: ExecutionType) {
       :episode-id="detail.episode.id"
       :remaining-quantity="detail.position.remaining_quantity"
       @changed="handleChildChanged"
-      @stale="emit('stale')"
+      @stale="emit('stale', detail.origin_event.id)"
     />
     <TradeReviewForm
       v-if="workflowState === 'pending_review' || detail.review"
       :episode-id="detail.episode.id"
       :review="detail.review"
       @changed="handleChildChanged"
-      @stale="emit('stale')"
+      @stale="emit('stale', detail.origin_event.id)"
     />
 
     <NModal v-model:show="executionModal" preset="card" title="编辑执行时间 / 价格 / 备注" class="episode-detail__modal">
@@ -310,7 +327,7 @@ function setTimelineType(index: number, value: ExecutionType) {
     <NModal v-model:show="dispositionModal" preset="card" title="次级纠错：改为未执行" class="episode-detail__modal">
       <NAlert type="warning">该操作由后端验证完整 lineage，不会在前端删除事实。</NAlert>
       <NForm label-placement="top">
-        <NFormItem label="Primary reason"><NSelect v-model:value="dispositionDraft.primary_reason" :options="NOT_EXECUTED_REASONS.map(option)" /></NFormItem>
+        <NFormItem label="Primary reason"><NSelect v-model:value="dispositionDraft.primary_reason" data-testid="disposition-primary" :options="NOT_EXECUTED_REASONS.map(option)" /></NFormItem>
         <NFormItem label="Secondary reasons"><NSelect v-model:value="dispositionDraft.secondary_reasons" multiple :options="NOT_EXECUTED_REASONS.map(option)" /></NFormItem>
         <NFormItem label="备注"><NInput v-model:value="dispositionDraft.note" /></NFormItem>
       </NForm>

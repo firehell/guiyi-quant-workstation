@@ -147,6 +147,8 @@ async function mockExecutionReview(page, options = {}) {
     reconstructionUnavailable: options.reconstructionUnavailable || false,
     executedType: options.executedType || 'OPEN',
     executedErrorCode: options.executedErrorCode || null,
+    correctionBody: null,
+    correctionCalls: 0,
     requests: [],
     timelineBody: null,
   }
@@ -163,16 +165,24 @@ async function mockExecutionReview(page, options = {}) {
       return route.fulfill({ json: { items: !options.emptyItems && requestedState === store.state ? [current] : [] } })
     }
     if (request.method() === 'GET' && path.endsWith('/event-states')) {
+      const current = store.item || item(store.state, { notExecuted: options.notExecuted })
+      const requestedEventId = Number(url.searchParams.get('event_ids')) || eventId
       return route.fulfill({ json: { items: [{
-        event_id: eventId, state: store.state, decision_id: 31,
-        episode_id: store.state === 'done' ? episodeId : null,
+        event_id: requestedEventId, state: store.state,
+        decision_id: current.decision_id, episode_id: current.episode_id,
       }] } })
     }
     if (request.method() === 'GET' && path.endsWith(`/episodes/${episodeId}`)) {
+      if (options.correctionRemovesEpisode && store.correctionCalls > 0) {
+        return route.fulfill({ status: 404, json: { detail: { code: 'TRADE_EPISODE_NOT_FOUND' } } })
+      }
       return route.fulfill({ json: store.detail })
     }
-    if (request.method() === 'GET' && path.endsWith(`/events/${eventId}/reconstruction`)) {
-      return route.fulfill({ json: reconstruction(url.searchParams.get('mode') || 'signal', store.reconstructionUnavailable) })
+    if (request.method() === 'GET' && /\/events\/\d+\/reconstruction$/.test(path)) {
+      const requestedEventId = Number(path.split('/').at(-2))
+      const response = reconstruction(url.searchParams.get('mode') || 'signal', store.reconstructionUnavailable)
+      response.event = eventContext({ id: requestedEventId })
+      return route.fulfill({ json: response })
     }
     if (request.method() === 'POST' && path.endsWith(`/events/${eventId}/not-executed`)) {
       store.state = 'done'
@@ -234,6 +244,49 @@ async function mockExecutionReview(page, options = {}) {
       store.item = item('done')
       return route.fulfill({ status: 201, json: review })
     }
+    if (request.method() === 'POST' && /\/decisions\/\d+\/correct-disposition$/.test(path)) {
+      const body = request.postDataJSON()
+      const correctedDecisionId = Number(path.split('/').at(-2))
+      const correctedEventId = options.correctionEventId || eventId
+      store.correctionBody = body
+      store.correctionCalls += 1
+      if (options.correctionErrorCode) {
+        if (options.correctionConflictState) {
+          store.state = options.correctionConflictState
+          store.item = item(store.state, {
+            event_id: correctedEventId,
+            decision_id: correctedDecisionId,
+            notExecuted: store.state === 'done',
+          })
+        }
+        return route.fulfill({ status: 409, json: { detail: { code: options.correctionErrorCode } } })
+      }
+      store.state = options.correctionEventState || (body.target_disposition === 'EXECUTED' ? 'open' : 'done')
+      store.item = item(store.state, {
+        event_id: correctedEventId,
+        decision_id: correctedDecisionId,
+        notExecuted: store.state === 'done' && body.target_disposition === 'NOT_EXECUTED',
+      })
+      if (options.correctionDetail) store.detail = options.correctionDetail
+      const resultingEpisode = body.target_disposition === 'EXECUTED' || store.state !== 'done'
+        ? store.detail.episode
+        : null
+      return route.fulfill({ json: {
+        decision: decision({
+          id: correctedDecisionId,
+          alert_event_id: correctedEventId,
+          disposition: body.target_disposition,
+        }),
+        episode: resultingEpisode,
+        execution: body.target_disposition === 'EXECUTED'
+          ? execution({
+              trigger_decision_id: correctedDecisionId,
+              execution_type: options.correctionExecutionType || 'OPEN',
+            })
+          : null,
+        position: resultingEpisode ? store.detail.position : null,
+      } })
+    }
     if (request.method() === 'PUT' && path.endsWith(`/episodes/${episodeId}/execution-timeline`)) {
       store.timelineBody = request.postDataJSON()
       const last = store.timelineBody.items.at(-1)
@@ -277,6 +330,17 @@ async function fillExecuted(page) {
   await selectFirst(page, 'decision-execution-reasons')
 }
 
+async function fillExecutedCorrection(page) {
+  await page.getByTestId('correction-executed-at').fill('2026-08-15T10:35')
+  await page.getByTestId('correction-price').fill('2301.5')
+  await page.getByTestId('correction-quantity').fill('2')
+  await selectFirst(page, 'correction-execution-reasons')
+}
+
+async function chooseDispositionPrimary(page) {
+  await selectFirst(page, 'disposition-primary')
+}
+
 async function fillReview(page) {
   for (const testId of [
     'review-adherence', 'review-entry', 'review-holding', 'review-exit',
@@ -296,6 +360,44 @@ test('pending decision records NOT_EXECUTED and moves to done', async ({ page })
   await expect(page.getByText('已记录为未执行', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/state=done/)
   await expect(page.getByText('已完成 1', { exact: true })).toBeVisible()
+})
+
+test('NOT_EXECUTED correction records execution facts and follows backend open state', async ({ page }) => {
+  const store = await mockExecutionReview(page, { correctionEventState: 'open' })
+  await page.goto(`/trade-records?state=pending_decision&event_id=${eventId}`)
+  await selectFirst(page, 'not-executed-primary')
+  await page.getByRole('button', { name: '记录未执行' }).click()
+
+  await page.getByRole('button', { name: '纠错：改为已执行' }).click()
+  await fillExecutedCorrection(page)
+  await page.getByRole('button', { name: '提交处理结果纠错' }).click()
+
+  await expect(page.getByText('处理结果已纠正，已记录开仓')).toBeVisible()
+  await expect(page).toHaveURL(/state=open&episode_id=45/)
+  await expect(page.getByTestId('episode-detail')).toBeVisible()
+  expect(store.correctionBody.target_disposition).toBe('EXECUTED')
+  expect(store.correctionBody.direction).toBeUndefined()
+  expect(store.requests.some((value) => value.includes('GET /api/execution-review/event-states?event_ids=17'))).toBe(true)
+})
+
+test('NOT_EXECUTED correction shows ADD result but still follows backend EventState', async ({ page }) => {
+  const closed = detail({
+    episode: episode({ closed_at: '2026-08-15T04:00:00Z', close_reason: 'EXECUTION_NET_ZERO' }),
+    position: position({ remaining_quantity: 0, average_cost: null }),
+  })
+  await mockExecutionReview(page, {
+    state: 'done', notExecuted: true,
+    correctionExecutionType: 'ADD', correctionEventState: 'pending_review',
+    correctionDetail: closed,
+  })
+  await page.goto(`/trade-records?state=done&event_id=${eventId}`)
+
+  await page.getByRole('button', { name: '纠错：改为已执行' }).click()
+  await fillExecutedCorrection(page)
+  await page.getByRole('button', { name: '提交处理结果纠错' }).click()
+
+  await expect(page.getByText('处理结果已纠正，已记录为同方向加仓')).toBeVisible()
+  await expect(page).toHaveURL(/state=pending_review&episode_id=45/)
 })
 
 test('EXECUTED OPEN then real CLOSE then structured Review reaches done', async ({ page }) => {
@@ -327,6 +429,117 @@ test('same-direction later Event trusts backend ADD response', async ({ page }) 
   await page.getByRole('button', { name: '记录实际执行' }).click()
 
   await expect(page.getByText('已记录为同方向加仓')).toBeVisible()
+})
+
+test('later ADD disposition correction follows backend open state instead of forcing done', async ({ page }) => {
+  const addDetail = detail({
+    decisions: [decision(), decision({
+      id: 32, alert_event_id: 18, decided_at: '2026-08-15T03:00:00Z',
+    })],
+    executions: [execution(), execution({
+      id: 52, trigger_decision_id: 32, sequence_no: 2, execution_type: 'ADD',
+      executed_at: '2026-08-15T03:00:00Z', price: '2305.00000000', quantity: 1,
+    })],
+    position: position({ remaining_quantity: 3, average_cost: '2301.66666667' }),
+  })
+  await mockExecutionReview(page, {
+    state: 'open', detail: addDetail, correctionEventId: 18, correctionEventState: 'open',
+  })
+  await page.goto(`/trade-records?state=open&episode_id=${episodeId}`)
+
+  await page.getByRole('button', { name: '编辑 Decision context' }).nth(1).click()
+  await page.getByRole('button', { name: '纠正处理结果' }).click()
+  await chooseDispositionPrimary(page)
+  await page.getByRole('button', { name: '提交处理结果纠错' }).click()
+
+  await expect(page).toHaveURL(/state=open&episode_id=45/)
+  await expect(page.getByText('处理结果已纠正', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('episode-detail')).toContainText('进行中')
+})
+
+test('later ADD disposition correction follows backend pending_review state', async ({ page }) => {
+  const addDetail = detail({
+    decisions: [decision(), decision({ id: 32, alert_event_id: 18 })],
+    executions: [execution(), execution({
+      id: 52, trigger_decision_id: 32, sequence_no: 2, execution_type: 'ADD', quantity: 1,
+    })],
+  })
+  const corrected = {
+    ...addDetail,
+    episode: episode({ closed_at: '2026-08-15T04:00:00Z', close_reason: 'EXECUTION_NET_ZERO' }),
+    position: position({ remaining_quantity: 0, average_cost: null }),
+  }
+  await mockExecutionReview(page, {
+    state: 'open', detail: addDetail, correctionEventId: 18,
+    correctionEventState: 'pending_review', correctionDetail: corrected,
+  })
+  await page.goto(`/trade-records?state=open&episode_id=${episodeId}`)
+
+  await page.getByRole('button', { name: '编辑 Decision context' }).nth(1).click()
+  await page.getByRole('button', { name: '纠正处理结果' }).click()
+  await chooseDispositionPrimary(page)
+  await page.getByRole('button', { name: '提交处理结果纠错' }).click()
+
+  await expect(page).toHaveURL(/state=pending_review&episode_id=45/)
+})
+
+test('correct-disposition 409 refreshes authoritative state without retrying mutation', async ({ page }) => {
+  const store = await mockExecutionReview(page, {
+    state: 'done', notExecuted: true,
+    correctionErrorCode: 'DECISION_CORRECTION_CONFLICT', correctionConflictState: 'open',
+  })
+  await page.goto(`/trade-records?state=done&event_id=${eventId}`)
+
+  await page.getByRole('button', { name: '纠错：改为已执行' }).click()
+  await fillExecutedCorrection(page)
+  await page.getByRole('button', { name: '提交处理结果纠错' }).click()
+
+  await expect(page.getByText('已刷新后端最新状态')).toBeVisible()
+  await expect(page).toHaveURL(/state=open&episode_id=45/)
+  expect(store.correctionCalls).toBe(1)
+})
+
+test('Episode correction 409 follows the Decision Event after the old Episode disappears', async ({ page }) => {
+  const addDetail = detail({
+    decisions: [decision(), decision({ id: 32, alert_event_id: 18 })],
+    executions: [execution(), execution({
+      id: 52, trigger_decision_id: 32, sequence_no: 2, execution_type: 'ADD', quantity: 1,
+    })],
+  })
+  const store = await mockExecutionReview(page, {
+    state: 'open', detail: addDetail, correctionEventId: 18,
+    correctionErrorCode: 'DECISION_CORRECTION_CONFLICT', correctionConflictState: 'done',
+    correctionRemovesEpisode: true,
+  })
+  await page.goto(`/trade-records?state=open&episode_id=${episodeId}`)
+  await expect(page.getByTestId('episode-detail')).toBeVisible()
+  const initialEpisodeReads = store.requests.filter((value) => value.includes(`GET /api/execution-review/episodes/${episodeId}`)).length
+
+  await page.getByRole('button', { name: '编辑 Decision context' }).nth(1).click()
+  await page.getByRole('button', { name: '纠正处理结果' }).click()
+  await chooseDispositionPrimary(page)
+  await page.getByRole('button', { name: '提交处理结果纠错' }).click()
+
+  await expect(page.getByText('已刷新后端最新状态')).toBeVisible()
+  await expect(page).toHaveURL(/state=done&event_id=18/)
+  expect(store.correctionCalls).toBe(1)
+  expect(store.requests.some((value) => value.includes('GET /api/execution-review/event-states?event_ids=18'))).toBe(true)
+  expect(store.requests.filter((value) => value.includes(`GET /api/execution-review/episodes/${episodeId}`))).toHaveLength(initialEpisodeReads)
+})
+
+test('unavailable reconstruction does not block NOT_EXECUTED correction', async ({ page }) => {
+  await mockExecutionReview(page, {
+    state: 'done', notExecuted: true, reconstructionUnavailable: true,
+    correctionEventState: 'open',
+  })
+  await page.goto(`/trade-records?state=done&event_id=${eventId}`)
+
+  await expect(page.getByText('历史行情暂不可重建')).toBeVisible()
+  await page.getByRole('button', { name: '纠错：改为已执行' }).click()
+  await fillExecutedCorrection(page)
+  await page.getByRole('button', { name: '提交处理结果纠错' }).click()
+
+  await expect(page).toHaveURL(/state=open&episode_id=45/)
 })
 
 test('opposite Event is hard blocked without close-and-reverse affordance', async ({ page }) => {

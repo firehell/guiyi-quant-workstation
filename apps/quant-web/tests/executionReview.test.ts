@@ -5,10 +5,12 @@ import {
   ExecutionReviewApiError,
   createExecutionReviewApi,
   executionReviewErrorMessage,
+  refreshDispositionCorrectionState,
   toExecutionReviewApiError,
 } from '../src/api/executionReview.ts'
 import {
   applyNeutralSelection,
+  buildExecutedDispositionCorrectionRequest,
   buildReviewItemFilters,
   defaultExecutionQuantity,
   executionReviewActionLabel,
@@ -112,6 +114,68 @@ describe('Execution Review HTTP adapter', () => {
       'POST /api/execution-review/decisions/9/correct-disposition',
     ])
     assert.ok(http.calls.every((call) => call.body === payload))
+  })
+
+  it('builds EXECUTED disposition correction facts without sending direction', () => {
+    const body = buildExecutedDispositionCorrectionRequest({
+      executed_at: '2026-08-15T10:30:00.000Z',
+      price: '2300.5',
+      quantity: 2,
+      execution_reason_tags: ['KEY_LEVEL_BREAKOUT'],
+      planned_stop_price: '2288.5',
+      stop_basis: 'PREVIOUS_BAR_EXTREME',
+      note: 'manual correction',
+    })
+
+    assert.deepEqual(body, {
+      target_disposition: 'EXECUTED',
+      executed_at: '2026-08-15T10:30:00.000Z',
+      price: '2300.5',
+      quantity: 2,
+      execution_reason_tags: ['KEY_LEVEL_BREAKOUT'],
+      planned_stop_price: '2288.5',
+      stop_basis: 'PREVIOUS_BAR_EXTREME',
+      note: 'manual correction',
+    })
+    assert.equal('direction' in body, false)
+  })
+
+  it('refreshes correction workflow state only from the corrected Event state', async () => {
+    const response = {
+      decision: { alert_event_id: 42 },
+      episode: { id: 7, closed_at: null },
+      execution: { execution_type: 'ADD' },
+    }
+    const calls: number[][] = []
+
+    const eventState = await refreshDispositionCorrectionState(response as never, async (eventIds) => {
+      calls.push(eventIds)
+      return { items: [{ event_id: 42, state: 'pending_review', decision_id: 9, episode_id: 7 }] }
+    })
+
+    assert.deepEqual(calls, [[42]])
+    assert.deepEqual(eventState, {
+      event_id: 42,
+      state: 'pending_review',
+      decision_id: 9,
+      episode_id: 7,
+    })
+  })
+
+  it('does not derive correction workflow state from Episode closed_at', async () => {
+    for (const [closedAt, authoritativeState] of [
+      [null, 'done'],
+      ['2026-08-15T04:00:00Z', 'open'],
+    ] as const) {
+      const eventState = await refreshDispositionCorrectionState({
+        decision: { alert_event_id: 42 },
+        episode: { id: 7, closed_at: closedAt },
+      } as never, async () => ({
+        items: [{ event_id: 42, state: authoritativeState, decision_id: 9, episode_id: 7 }],
+      }))
+
+      assert.equal(eventState.state, authoritativeState)
+    }
   })
 })
 

@@ -4,6 +4,7 @@ import type {
   DispositionCorrectionRequest,
   DispositionCorrectionResponse,
   EpisodeDetailResponse,
+  EventState,
   EventReconstructionResponse,
   EventStatesResponse,
   ExecutedRequest,
@@ -147,6 +148,19 @@ export const updateExecution = api.updateExecution
 export const replaceExecutionTimeline = api.replaceExecutionTimeline
 export const updateReview = api.updateReview
 export const correctDisposition = api.correctDisposition
+
+type EventStatesLoader = (eventIds: number[]) => Promise<EventStatesResponse>
+
+export async function refreshDispositionCorrectionState(
+  response: DispositionCorrectionResponse,
+  loadEventStates: EventStatesLoader = getEventStates,
+): Promise<EventState> {
+  const eventId = response.decision.alert_event_id
+  const states = await loadEventStates([eventId])
+  const eventState = states.items.find((item) => item.event_id === eventId)
+  if (!eventState) throw new ExecutionReviewApiError('EVENT_STATE_NOT_FOUND', null)
+  return eventState
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null

@@ -3,10 +3,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NEmpty, NInput, NSelect, NSpin, NTabPane, NTabs, NTag, useMessage } from 'naive-ui'
 import DecisionForm from '@/components/execution-review/DecisionForm.vue'
+import DispositionCorrectionForm from '@/components/execution-review/DispositionCorrectionForm.vue'
 import EpisodeDetail from '@/components/execution-review/EpisodeDetail.vue'
 import ReconstructionPanel from '@/components/execution-review/ReconstructionPanel.vue'
 import { executionReviewErrorMessage, getEpisodeDetail, getEventStates, listItems } from '@/api/executionReview'
-import type { Direction, EpisodeDetailResponse, ExecutionReviewFrequency, ExecutionReviewState, ReviewItem } from '@/types/executionReview'
+import type { Direction, EpisodeDetailResponse, EventState, ExecutionReviewFrequency, ExecutionReviewState, ReviewItem } from '@/types/executionReview'
 import { buildReviewItemFilters } from '@/utils/executionReview'
 
 const STATES: ExecutionReviewState[] = ['pending_decision', 'open', 'pending_review', 'done']
@@ -169,11 +170,37 @@ async function handleChanged(outcome: {
   await loadAll()
 }
 
-async function handleStale() {
+async function handleStale(eventId?: number) {
   const authoritativeEpisodeId = selectedItem.value?.episode_id ?? detail.value?.episode.id ?? null
+  if (eventId) {
+    try {
+      const response = await getEventStates([eventId])
+      const eventState = response.items.find((item) => item.event_id === eventId)
+      if (eventState) {
+        currentState.value = eventState.state
+        detail.value = null
+        fallbackItem.value = null
+        await router.replace(eventStateSelectionQuery(eventState))
+      }
+    } catch (reason) {
+      error.value = executionReviewErrorMessage(reason)
+    }
+  }
   await loadAll()
-  if (authoritativeEpisodeId) await loadDetail(authoritativeEpisodeId)
+  if (!eventId && authoritativeEpisodeId) await loadDetail(authoritativeEpisodeId)
   message.warning('已刷新后端最新状态')
+}
+
+function eventStateSelectionQuery(eventState: EventState) {
+  const useEpisode = eventState.state === 'open' || eventState.state === 'pending_review'
+  return {
+    name: 'trade-records',
+    query: {
+      state: eventState.state,
+      event_id: useEpisode ? undefined : String(eventState.event_id),
+      episode_id: useEpisode && eventState.episode_id ? String(eventState.episode_id) : undefined,
+    },
+  }
 }
 
 function validState(value: unknown): value is ExecutionReviewState {
@@ -245,9 +272,19 @@ const frequencyOptions = [{ label: '5m', value: '5m' }, { label: '15m', value: '
               @stale="handleStale"
             />
           </NSpin>
-          <NAlert v-else type="info">
-            已记录为未执行。当前 API 未提供独立 Decision read contract，本页不猜测或缓存原因明细。
-          </NAlert>
+          <div v-else class="trade-records-page__done-decision">
+            <NAlert type="info">
+              已记录为未执行。当前 API 未提供独立 Decision read contract，本页不猜测或缓存原因明细。
+            </NAlert>
+            <DispositionCorrectionForm
+              v-if="selectedItem.decision_id"
+              :decision-id="selectedItem.decision_id"
+              :event-id="selectedItem.event_id"
+              :direction="selectedItem.direction"
+              @changed="handleChanged"
+              @stale="handleStale"
+            />
+          </div>
         </template>
       </section>
     </div>
@@ -260,6 +297,7 @@ const frequencyOptions = [{ label: '5m', value: '5m' }, { label: '15m', value: '
 .trade-records-page__workspace { display: grid; grid-template-columns: minmax(280px, .75fr) minmax(0, 2fr); align-items: start; gap: 16px; }.trade-records-page__list { position: sticky; top: 0; }.trade-records-page__list :deep(.n-card__content) { display: grid; gap: 8px; }
 .trade-records-page__item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); color: var(--gy-text-primary); text-align: left; cursor: pointer; }.trade-records-page__item:hover, .trade-records-page__item--active { border-color: var(--gy-accent); background: var(--gy-accent-soft); }.trade-records-page__item span { display: grid; gap: 3px; }.trade-records-page__item small { color: var(--gy-text-muted); }
 .trade-records-page__detail { min-width: 0; display: grid; gap: 14px; }.gy-native-input { width: 100%; height: 34px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--gy-border-strong); border-radius: var(--gy-radius-sm); background: var(--gy-bg-panel); color: var(--gy-text-primary); }
+.trade-records-page__done-decision { display: grid; gap: 14px; }
 @media (max-width: 1180px) { .trade-records-page__filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }.trade-records-page__workspace { grid-template-columns: 260px minmax(0, 1fr); } }
 @media (max-width: 820px) { .trade-records-page__filters, .trade-records-page__workspace { grid-template-columns: 1fr; }.trade-records-page__list { position: static; }.trade-records-page__intro { flex-direction: column; } }
 </style>

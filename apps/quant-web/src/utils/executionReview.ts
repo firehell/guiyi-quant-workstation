@@ -1,5 +1,6 @@
 import type {
   Episode,
+  DispositionCorrectionRequest,
   Execution,
   ExecutionReviewState,
   ManualExecutionType,
@@ -78,6 +79,31 @@ export interface ExecutedDraft {
   planned_stop_price: string | null
   stop_basis: string | null
   note: string
+}
+
+export interface ExecutedDispositionCorrectionFacts {
+  executed_at: string
+  price: string
+  quantity: number
+  execution_reason_tags: string[]
+  planned_stop_price: string | null
+  stop_basis: string | null
+  note: string | null
+}
+
+export function buildExecutedDispositionCorrectionRequest(
+  facts: ExecutedDispositionCorrectionFacts,
+): DispositionCorrectionRequest {
+  return {
+    target_disposition: 'EXECUTED',
+    executed_at: facts.executed_at,
+    price: facts.price,
+    quantity: facts.quantity,
+    execution_reason_tags: facts.execution_reason_tags,
+    planned_stop_price: facts.planned_stop_price,
+    stop_basis: facts.stop_basis,
+    note: facts.note,
+  }
 }
 
 export function validateNotExecutedDraft(draft: NotExecutedDraft): string[] {
