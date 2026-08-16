@@ -94,6 +94,27 @@ def test_same_current_rank1_is_noop_without_reference_read(session: Session) -> 
     assert episode.closed_at is None
 
 
+def test_same_rank1_segment_extension_between_reads_remains_noop(
+    session: Session,
+) -> None:
+    opened = _open_episode(session)
+    market_data = _MarketData()
+    market_data.current_segment = DominantContractSegmentSummary(
+        market_data.old_segment.symbol,
+        market_data.old_segment.contract,
+        market_data.old_segment.start_trading_day,
+        market_data.old_segment.end_trading_day + timedelta(days=1),
+    )
+
+    result = _reconciler(session, market_data).reconcile_symbol("jm")
+
+    assert result.status == "NOOP"
+    assert market_data.reference_calls == []
+    episode = session.get(TradeEpisode, opened.id)
+    assert episode is not None
+    assert episode.closed_at is None
+
+
 def test_same_contract_code_in_a_later_rank1_segment_still_closes_old_episode(
     session: Session,
 ) -> None:
