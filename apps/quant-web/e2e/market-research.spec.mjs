@@ -59,6 +59,12 @@ function formalSignal() {
 
 async function mockMarketHomepage(page, currentFormalResponse) {
   await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
+  await page.route('**/api/execution-review/event-states**', (route) => {
+    const ids = new URL(route.request().url()).searchParams.getAll('event_ids').map(Number)
+    return route.fulfill({ json: { items: ids.map((id) => ({
+      event_id: id, state: 'pending_decision', decision_id: null, episode_id: null,
+    })) } })
+  })
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
 }
 
@@ -93,7 +99,7 @@ test('formal signal cards do not advertise a container-wide click target', async
   const card = page.getByTestId('market-formal-signals').locator('.market-formal-signals__card')
   await card.hover()
   await expect(card).toHaveCSS('transform', 'none')
-  await expect(card.getByRole('button', { name: '查看 →' })).toBeVisible()
+  await expect(card.getByRole('button', { name: '记录执行' })).toBeVisible()
 })
 
 test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewport', async ({ page }) => {

@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { NSpin, NTag } from 'naive-ui'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
+import type { EventState } from '@/types/executionReview'
+import { executionReviewActionLabel } from '@/utils/executionReview'
 
-defineProps<{
+const props = defineProps<{
   loading: boolean
   status: 'ready' | 'unavailable' | null
   tradingDay: string | null
   items: CurrentFormalSignalItem[]
+  eventStates?: Record<number, EventState>
 }>()
 
 const emit = defineEmits<{
-  open: [item: CurrentFormalSignalItem]
+  open: [item: CurrentFormalSignalItem, state?: EventState]
 }>()
 
 function direction(item: CurrentFormalSignalItem) {
@@ -23,6 +26,15 @@ function barTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
     hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai',
   }).format(new Date(value))
+}
+
+function stateFor(item: CurrentFormalSignalItem) {
+  return props.eventStates?.[item.id]
+}
+
+function actionLabel(item: CurrentFormalSignalItem) {
+  const state = stateFor(item)
+  return state ? executionReviewActionLabel(state.state) : '查看 →'
 }
 </script>
 
@@ -54,7 +66,7 @@ function barTime(value: string) {
               {{ item.display_name }} · {{ item.frequency }} · {{ barTime(item.bar_end) }} 确认 · {{ item.contract }}<template v-if="item.lower_tf_confirmation"> · 5m 同向确认</template>
             </div>
           </div>
-          <button class="market-formal-signals__open" @click="emit('open', item)">查看 →</button>
+          <button class="market-formal-signals__open" @click="emit('open', item, stateFor(item))">{{ actionLabel(item) }}</button>
         </article>
       </div>
     </NSpin>
