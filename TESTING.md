@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-14
+更新时间：2026-08-16
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -40,13 +40,42 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 MYPYPATH=services/quant-api \
   uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
   services/quant-api/app/market_data services/quant-api/app/guiyi_cli services/quant-api/app/alerts \
+  services/quant-api/app/execution_review \
   services/quant-api/app/services/runtime_health.py \
   services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py \
-  services/quant-api/app/api/alerts.py
+  services/quant-api/app/api/alerts.py services/quant-api/app/api/execution_review.py
 
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build
 ```
+
+需要运行 Alembic 或 PostgreSQL 约束测试时，必须显式提供一个库名包含 `test` 或 `isolated`、且与
+Runtime `DATABASE_URL` 物理身份不同的 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。测试 guard 会以
+数据库名和 OID 双重拒绝 production/Runtime 库；禁止为了让测试运行而放宽该校验。
+
+## Execution Review V1
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_execution_review_contracts.py \
+  services/quant-api/tests/test_execution_review_pnl.py \
+  services/quant-api/tests/test_execution_review_models.py \
+  services/quant-api/tests/test_execution_review_service.py \
+  services/quant-api/tests/test_execution_review_api.py \
+  services/quant-api/tests/test_execution_review_reconstruction.py \
+  services/quant-api/tests/test_execution_review_reconciler.py \
+  services/quant-api/tests/alembic/test_execution_review_v1_migration.py
+
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web exec playwright test e2e/execution-review.spec.mjs
+pnpm --dir apps/quant-web build
+```
+
+这些测试覆盖 trusted-partial reference/evidence 一一对应、缺失 multiplier 的 nullable RMB 估算、
+Episode snapshot、四状态工作流、reconstruction、roll estimate、stats 和 Web unavailable 展示。测试
+不执行 production migration、release、Runtime switch、roll marker、Scope/WeCom、Canonical 或订单行为。
 
 ## SuBing Factor / Calibration / Signal Observation V1
 

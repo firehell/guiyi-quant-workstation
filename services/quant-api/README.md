@@ -6,6 +6,7 @@
 
 - `/api/v1/market`：Canonical 历史分页、dominants、Historical/Live state 与 WebSocket。
 - `/api/alerts`：Alert V2 两条 code-defined Rule 的 server-side Scope、Event 与当前视图。
+- `/api/execution-review`：苏冰 Event 的人工 Decision、Episode/Execution timeline、Review、reconstruction 与 lightweight stats。
 - `/api/runtime`：DB、Redis、Live、after-market 与 Alert 的只读 Runtime 状态。
 - CLI：`guiyi data update|refresh|audit|after-market`、
   只读 `guiyi research subing-calibration`、`guiyi runtime status|live|alert`；
@@ -18,8 +19,9 @@
 - poll Live `/market/live/*`、`guiyi data live`、signal/notification RQ worker/queue 入口。
 - `guiyi runtime plan`。
 
-Market Data Foundation 精确为八表 Catalog；`alert_rules` / `alert_events` 是独立的
-Alert Application Domain 两表。Signal/Review/Strategy 表与应用语义已退役。
+Market Data Foundation 精确为八表 Catalog；`alert_rules` / `alert_events` 是独立 Alert Domain 两表，
+四张 `trade_*` 表是独立 Execution Review Domain。旧 Signal/Review/Strategy 表与应用语义已退役；
+Execution Review 不是旧 Review Center 的兼容入口。
 
 ## 本地
 

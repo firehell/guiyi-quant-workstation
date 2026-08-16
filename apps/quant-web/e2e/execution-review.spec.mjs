@@ -50,7 +50,7 @@ function episode(overrides = {}) {
     roll_reference_exit_price: null,
     roll_reference_bar_end: null,
     contract_multiplier_snapshot: '60.00000000',
-    multiplier_policy_id: 'cn_futures_multiplier_v1',
+    multiplier_policy_id: 'product_trade_multipliers_v1',
     ...overrides,
   }
 }
@@ -89,6 +89,32 @@ function detail(overrides = {}) {
     review: null,
     position: position(),
     ...overrides,
+  }
+}
+
+function stats() {
+  return {
+    opportunities: {
+      eligible_events: 12,
+      processed_events: 9,
+      pending_events: 3,
+      executed_decisions: 5,
+      not_executed_decisions: 4,
+      decision_completion_rate: '0.75000000',
+      execution_rate: '0.55555556',
+      primary_reason_counts: { TOO_LATE: 2, POOR_LOCATION: 1 },
+    },
+    episode_states: {
+      open_episodes: 2,
+      pending_review_episodes: 1,
+      done_episodes: 6,
+    },
+    review_issue_top: {
+      entry: { TOO_LATE: 2 },
+      holding: { COULD_NOT_HOLD: 1 },
+      exit_risk: { STOP_DELAYED: 1 },
+      psychology: { HESITATION: 2 },
+    },
   }
 }
 
@@ -159,6 +185,12 @@ async function mockExecutionReview(page, options = {}) {
     const path = url.pathname
     store.requests.push(`${request.method()} ${path}${url.search}`)
 
+    if (request.method() === 'GET' && path.endsWith('/stats')) {
+      if (options.statsError) {
+        return route.fulfill({ status: 503, json: { detail: { code: 'STATS_UNAVAILABLE' } } })
+      }
+      return route.fulfill({ json: stats() })
+    }
     if (request.method() === 'GET' && path.endsWith('/items')) {
       const requestedState = url.searchParams.get('state')
       const current = store.item || item(store.state, { notExecuted: options.notExecuted })
@@ -645,6 +677,78 @@ test('done deep-link resolves a non-origin trigger Event through event state lin
 
   await expect(page.getByTestId('episode-detail')).toContainText('#45')
   await expect(page.getByTestId('episode-detail')).toContainText('已结束')
+})
+
+test('missing multiplier explains unavailable RMB PnL without hiding review facts', async ({ page }) => {
+  const completed = detail({
+    episode: episode({
+      closed_at: '2026-08-15T04:00:00Z',
+      close_reason: 'EXECUTION_NET_ZERO',
+      contract_multiplier_snapshot: null,
+      multiplier_policy_id: null,
+    }),
+    executions: [execution(), execution({
+      id: 52, trigger_decision_id: null, sequence_no: 2, execution_type: 'CLOSE',
+      executed_at: '2026-08-15T04:00:00Z', price: '2306.25000000', quantity: 2,
+    })],
+    review: {
+      id: 71, episode_id: episodeId, signal_execution_adherence: 'ALIGNED',
+      entry_tags: ['REASONABLE'], holding_tags: ['NORMAL'], exit_tags: ['NORMAL'],
+      market_context_tags: ['RANGE'], psychology_tags: ['NONE'], summary: null,
+      submitted_at: '2026-08-15T08:00:00Z', updated_at: '2026-08-15T08:00:00Z',
+    },
+    position: position({
+      remaining_quantity: 0,
+      average_cost: null,
+      realized_points: '12.50000000',
+      estimated_gross_pnl: null,
+    }),
+  })
+  await mockExecutionReview(page, { state: 'done', detail: completed })
+
+  await page.goto(`/trade-records?state=done&event_id=${eventId}`)
+
+  const episodeDetail = page.getByTestId('episode-detail')
+  await expect(episodeDetail).toContainText('人民币估算不可用')
+  await expect(episodeDetail).toContainText('该品种 multiplier 尚未核验')
+  await expect(episodeDetail).toContainText('Realized points')
+  await expect(episodeDetail).toContainText('12.50000000')
+  await expect(episodeDetail).toContainText('剩余手数')
+  await expect(episodeDetail).toContainText('平均成本')
+  await expect(page.getByTestId('execution-timeline')).toBeVisible()
+  await expect(episodeDetail).toContainText('结构化复盘')
+})
+
+test('stats are expanded by default and share only applicable queue filters', async ({ page }) => {
+  const store = await mockExecutionReview(page, { state: 'done' })
+  await page.goto('/trade-records?state=done')
+
+  const panel = page.getByTestId('execution-stats')
+  await expect(panel).toContainText('ExecutionStats / 执行复盘统计')
+  await expect(panel).toContainText('符合机会12')
+  await expect(panel).toContainText('决策完成率75%')
+  await expect(panel).toContainText('待复盘1')
+  await page.getByPlaceholder('品种，例如 jm').fill(' jm ')
+  await page.getByLabel('开始交易日').fill('2026-08-01')
+  await page.getByLabel('结束交易日').fill('2026-08-15')
+  await page.getByRole('button', { name: '应用筛选' }).click()
+
+  await expect.poll(() => store.requests.findLast((value) => value.startsWith('GET /api/execution-review/stats'))).toContain('symbol=jm')
+  const latestStatsRequest = store.requests.findLast((value) => value.startsWith('GET /api/execution-review/stats'))
+  expect(latestStatsRequest).toContain('trading_day_from=2026-08-01')
+  expect(latestStatsRequest).toContain('trading_day_to=2026-08-15')
+
+  await page.getByText('进行中 0', { exact: true }).click()
+  await expect.poll(() => store.requests.findLast((value) => value.startsWith('GET /api/execution-review/stats'))).not.toContain('trading_day_from')
+})
+
+test('stats failure remains local and does not hide the execution queue', async ({ page }) => {
+  await mockExecutionReview(page, { state: 'open', statsError: true })
+  await page.goto(`/trade-records?state=open&episode_id=${episodeId}`)
+
+  await expect(page.getByTestId('execution-stats')).toContainText('统计暂不可用')
+  await expect(page.getByText('进行中 1', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('episode-detail')).toBeVisible()
 })
 
 test('MarketFormalSignals batches event states and deep-links all four actions', async ({ page }) => {

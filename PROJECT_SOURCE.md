@@ -6,7 +6,7 @@
 
 归一量化是本地运行、单用户的国内期货量化研究工作站。当前只服务可信历史行情、Market Web、
 Indicator Kernel 与未来研究；不做自动交易、实盘下单、SaaS、多用户、高频/Tick 平台或 AI 自动
-晋升策略，所有研究观察始终保持 `auto_order=false`。当前没有 backtest 子系统或 Signal/Review/Strategy 应用面；Alert 是独立、窄范围的观察通知应用，不恢复这些旧应用面。Market Runtime V1 的历史分页、
+晋升策略，所有研究观察始终保持 `auto_order=false`。当前没有 backtest 子系统或旧 Signal/Review/Strategy 应用面；Alert 是独立、窄范围的观察通知应用，Execution Review 是独立的人工决策/手工执行/复盘 Application Domain，二者都不恢复旧应用面。Market Runtime V1 的历史分页、
 Redis Live Overlay、盘后更新与 WebSocket 代码已实现；仓库 launchd 模板仍默认关闭，
 本地工作站按明确请求启用由 `operational_products.txt` 定义范围的 Runtime。
 
@@ -25,7 +25,7 @@ RQData
 - RQData 是唯一外部行情事实源；Canonical Parquet 是唯一 active 历史 Bar 存储；PostgreSQL
   不保存 K 线。
 - Data Foundation / Market Catalog 始终精确为八表。经明确设计的 Application Domain 可以新增不属于
-  Market Catalog 的应用表；Alert V2 仍只使用 `alert_rules` / `alert_events` 两张 Application Domain 表，不属于且不改变八表 Market Catalog。
+  Market Catalog 的应用表；Alert V2 使用 `alert_rules` / `alert_events` 两张表，Execution Review 使用四张 `trade_*` 表，均不属于且不改变八表 Market Catalog。
 - active universe 唯一入口是 `data/universe/active_products.txt` 的 60 品种；股指
   `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu`
   已退役，见 `retired_products.txt`。历史下界为
@@ -55,7 +55,7 @@ RQData
    答案不明确时，不创建该模块。新增功能还必须至少明确实现以下一项：减少个人盯盘时间、提高发现研究机会
    的概率、提高人工观察与研究执行的一致性，或增加未来复盘研究的证据；四项均不满足时，不做。
 
-当前用户接口为 Market Web、`/api/v1/market/*`、`/api/alerts/*`，以及 `guiyi data
+当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration` 和 `guiyi runtime
 status|live|alert|alert-canary`；其中 `alert-canary` 是独立真实通知 Gate，不是普通只读命令。Market
 Runtime 的 Live 与盘后更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
@@ -72,6 +72,12 @@ SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `tra
 当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后最多尝试一次 WeCom；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示 HTTP 已接受或用户已收到。无 replay/backfill/retry/outbox/queue/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
 
 Alert 代码与 launchd 模板默认关闭。production migration `20260814_0038`、v1.3 release/tag、Runtime promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、mock sender 或 render-only 不证明任何 Gate 已执行。
+
+## Execution Review V1 应用边界
+
+Execution Review 只消费不可变的 `subing_entry_signal_v1` AlertEvent，保存人工 Decision、固定真实合约/方向的 Episode、真实手工 Execution timeline 与结构化 Review。一个品种最多一个 OPEN Episode；不跨合约合并、不自动反手、不连接账户或创建订单。历史重建只经 `MarketDataService`，默认截止 Signal 时点；roll reconcile 是默认关闭、独立授权的估算关闭路径。
+
+Multiplier 使用 trusted-partial 官方证据合同：reference 与 official evidence 集合严格相等且只是 active 60 的子集。缺失 multiplier 不阻断 Decision/Execution/Review，只使人民币估算不可用；realized points 与仓位拓扑仍可用。Episode 创建时 snapshot，当时为 NULL 的历史记录不因后续 reference 扩大而自动改写。完整业务语义见 `docs/EXECUTION_REVIEW.md`。
 
 ## 工程与外部操作
 
@@ -105,5 +111,6 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
 | `DECISIONS.md` | 当前有效长期决策 |
 | `docs/ARCHITECTURE.md` | 项目分层和组件边界 |
 | `docs/DATA_CENTER.md` | Canonical 数据合同 |
+| `docs/EXECUTION_REVIEW.md` | Execution Review 业务语义 deep canonical |
 | `openspec/specs/` | 当前数据与查询行为规范 |
 | `TESTING.md` | 当前可执行验证入口 |

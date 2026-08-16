@@ -86,7 +86,7 @@ def isolated_migration_context(
         pytest.fail(str(exc))
 
     monkeypatch.setenv("DATABASE_URL", url)
-    config = Config(str(QUANT_API_ROOT / "alembic.ini"))
+    config = Config()
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     config.set_main_option("sqlalchemy.url", url)
     engine = create_engine(url, pool_pre_ping=True)

@@ -248,7 +248,14 @@ function setTimelineType(index: number, value: ExecutionType) {
         <NDescriptionsItem label="剩余手数">{{ detail.position.remaining_quantity }}</NDescriptionsItem>
         <NDescriptionsItem label="平均成本">{{ detail.position.average_cost ?? '—' }}</NDescriptionsItem>
         <NDescriptionsItem label="Realized points">{{ detail.position.realized_points }}</NDescriptionsItem>
-        <NDescriptionsItem label="Estimated Gross PnL / 估算毛盈亏">{{ detail.position.estimated_gross_pnl ?? '—' }}</NDescriptionsItem>
+        <NDescriptionsItem label="Estimated Gross PnL / 估算毛盈亏">
+          <template v-if="detail.position.estimated_gross_pnl !== null">{{ detail.position.estimated_gross_pnl }}</template>
+          <span v-else-if="detail.episode.contract_multiplier_snapshot === null" class="episode-detail__pnl-unavailable">
+            <strong>人民币估算不可用</strong>
+            <small>该品种 multiplier 尚未核验</small>
+          </span>
+          <template v-else>—</template>
+        </NDescriptionsItem>
       </NDescriptions>
       <NAlert v-if="detail.episode.close_reason === 'DOMINANT_ROLL'" type="warning" class="episode-detail__roll">
         <strong>主力换月自动结束</strong>
@@ -361,6 +368,7 @@ function setTimelineType(index: number, value: ExecutionType) {
 <style scoped>
 .episode-detail { display: grid; gap: 14px; }.episode-detail__title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .episode-detail__roll { margin-top: 14px; }.episode-detail__roll :deep(.n-alert-body__content) { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.episode-detail__pnl-unavailable { display: grid; gap: 2px; }.episode-detail__pnl-unavailable small { color: var(--gy-text-secondary); }
 .episode-detail__lineage { display: grid; gap: 8px; }.episode-detail__lineage article { display: grid; grid-template-columns: 1.2fr 1fr 1.5fr auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); font-size: var(--gy-font-size-sm); }
 .episode-detail__table-wrap { overflow-x: auto; }.episode-detail__modal { width: min(560px, calc(100vw - 32px)); }.episode-detail__timeline-modal { width: min(1040px, calc(100vw - 32px)); }
 .episode-detail__timeline-editor { display: grid; gap: 8px; margin: 14px 0; }.episode-detail__timeline-row { display: grid; grid-template-columns: 110px 170px 1fr 90px 1fr auto; gap: 8px; }.episode-detail__row-actions { display: flex; align-items: center; gap: 4px; }

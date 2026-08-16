@@ -3,7 +3,7 @@
 更新时间：2026-08-15
 
 本文定义仓库日常开发与外部副作用边界的唯一流程入口；产品、数据、策略、信号和 Runtime 语义仍由
-`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准（Market-only，含有界 Historical/Live seam）。
+`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准；Execution Review 语义以 `docs/EXECUTION_REVIEW.md` 为准。
 
 ## 唯一日常流程
 
@@ -36,8 +36,8 @@ develop
 
 当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
 Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
-Alert V2 的 Application Domain、API 与独立 `runtime alert` 代码面不恢复已退役的
-Signal/Review/Strategy 链。production migration `20260814_0038`、v1.3 release/tag、Runtime
+Alert V2 的 Application Domain、API 与独立 `runtime alert` 代码面，以及 Execution Review 的四表
+Application Domain、API 和 `/trade-records`，都不恢复已退役的旧 Signal/Review/Strategy 链。production migration `20260814_0038`、v1.3 release/tag、Runtime
 promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 未经各自明确请求
 不得执行，当前实施与生产状态只以 `STATUS.md` 为准。测试路由的 Scope PUT
 只验证代码合同，不是真实 Scope mutation 授权。
@@ -111,8 +111,8 @@ promotion/switch、Scope write/activation 和真实 WeCom/canary 都必须分别
 - 正式历史数据继续遵守 DatasetKey、精确八表 Market Catalog、MainContractMap、coverage/可读性和
   MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
 - 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
-- Signal/Review/Strategy 应用链已经退役；Alert V2 只使用独立的两张 Application Domain
-  表，不属于且不改变八表 Market Catalog，不得恢复旧事件表、RQ worker 或历史补发路径。
+- 旧 Signal/Review/Strategy 应用链已经退役；Alert V2 两表与 Execution Review 四表是不同的独立
+  Application Domain，均不属于且不改变八表 Market Catalog，不得恢复旧事件表、RQ worker 或历史补发路径。
 - HTDY 继续使用 event-cutoff；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/
   `SubingReadService` resolver，stale identity fail-closed，final Session Bar 仅在共享 arrival grace
   内可见，5m 在 15m boundary 按 TradingSession bucket 延后。current trading day 只由
@@ -131,5 +131,6 @@ promotion/switch、Scope write/activation 和真实 WeCom/canary 都必须分别
 - 当前状态：`STATUS.md`
 - 长期产品与数据边界：`PROJECT_SOURCE.md`、`DECISIONS.md`
 - 数据与查询 active 合同：`openspec/specs/`
+- Execution Review 业务合同：`docs/EXECUTION_REVIEW.md`
 
 本文不得复制或重新解释业务 canonical。

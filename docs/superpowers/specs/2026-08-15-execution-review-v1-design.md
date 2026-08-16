@@ -766,9 +766,11 @@ multiplier = 每手每 1 个报价价格单位对应的人民币 PnL 缩放因�
 - 不建立 ContractSpec / Account / Risk Domain；
 - 不保存保证金、手续费、tick value、交易所限仓或交割规则；
 - 具体 multiplier 数值只能在实现阶段从当前可核验的官方交易所公开合约规格中确认，不由本设计文档猜测，也不为此调用真实 RQData；
+- 采用 trusted-partial 合同：reference product set 与机器可校验的 official evidence product set 严格相等，且只是 active product set 的子集；只能跟踪可由正式交易所资料或监管机构官方镜像证明的值；
 - Episode 创建时 snapshot 当前 multiplier 与 `multiplier_policy_id`，历史 Episode 不随文件变化重新漂移；
 - multiplier 缺失不能阻止记录真实 Decision/Execution；lookup 返回 `None`，只让人民币 `Estimated Gross PnL` 显示 `unavailable`；
 - 价格点数、持仓手数、Execution timeline 仍可正常使用。
+- active-60 60/60 completion 是独立 Lane 3 reference-data 目标，不是 v1.4 release Gate；历史 NULL snapshot enrichment 也必须另做 Lane 3 设计和人工 Gate。
 
 因此人民币金额只是辅助复盘，不是账户对账事实。
 

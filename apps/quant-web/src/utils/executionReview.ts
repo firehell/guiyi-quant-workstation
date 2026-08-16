@@ -7,6 +7,7 @@ import type {
   ReconstructionMode,
   ReviewItemFilters,
   ReviewRequest,
+  StatsFilters,
 } from '@/types/executionReview'
 
 export const NOT_EXECUTED_REASONS = [
@@ -62,6 +63,24 @@ export function buildReviewItemFilters(
   }
   if (state === 'done' && filters.start_trading_day) result.start_trading_day = filters.start_trading_day
   if (state === 'done' && filters.end_trading_day) result.end_trading_day = filters.end_trading_day
+  return result
+}
+
+export function buildStatsFilters(
+  state: ExecutionReviewState,
+  filters: ReviewFilterDraft,
+): StatsFilters {
+  const result: StatsFilters = {
+    symbol: filters.symbol.trim() || undefined,
+    direction: filters.direction || undefined,
+    frequency: filters.frequency || undefined,
+  }
+  if (state === 'done' && filters.start_trading_day) {
+    result.trading_day_from = filters.start_trading_day
+  }
+  if (state === 'done' && filters.end_trading_day) {
+    result.trading_day_to = filters.end_trading_day
+  }
   return result
 }
 

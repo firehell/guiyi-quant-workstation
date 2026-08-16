@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import csv
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
+import re
+from urllib.parse import urlparse
 
 import pytest
 
@@ -186,75 +190,89 @@ def test_multiplier_loader_fails_closed_for_malformed_reference(
         load_product_trade_multipliers(path)
 
 
-def test_tracked_multiplier_reference_is_an_active_subset() -> None:
+def test_tracked_multiplier_reference_and_official_evidence_cover_active_universe() -> None:
     project_root = Path(__file__).resolve().parents[3]
     reference = load_product_trade_multipliers(
         project_root / "data/reference/product_trade_multipliers.csv"
     )
-    active = set(load_active_products())
-
-    assert reference == {
-        "ec": Decimal("50"),
-        "j": Decimal("100"),
-        "jm": Decimal("60"),
-        "lc": Decimal("1"),
-        "rb": Decimal("10"),
-        "si": Decimal("5"),
-        "sr": Decimal("10"),
-    }
-    assert set(reference) <= active
-    assert tuple(sorted(active - set(reference))) == (
-        "a",
-        "ag",
-        "al",
-        "ao",
-        "ap",
-        "au",
-        "b",
-        "bu",
-        "bz",
-        "c",
-        "cf",
-        "cj",
-        "cu",
-        "eb",
-        "eg",
-        "fg",
-        "fu",
-        "hc",
-        "i",
-        "jd",
-        "l",
-        "lh",
-        "m",
-        "ma",
-        "ni",
-        "oi",
-        "p",
-        "pb",
-        "pd",
-        "pf",
-        "pg",
-        "pk",
-        "pl",
-        "pp",
-        "pr",
-        "ps",
-        "pt",
-        "px",
-        "rm",
-        "rs",
-        "ru",
-        "sa",
-        "sc",
-        "sf",
-        "sh",
-        "sm",
-        "sn",
-        "ss",
-        "ta",
-        "ur",
-        "v",
-        "y",
-        "zn",
+    evidence_path = (
+        project_root / "data/reference/product_trade_multipliers.sources.csv"
     )
+    with evidence_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        assert reader.fieldnames == [
+            "product",
+            "exchange",
+            "source_kind",
+            "official_source_title",
+            "official_source_url",
+            "source_effective_date",
+            "effective_scope",
+            "verified_on",
+            "quote_unit",
+            "trading_unit_or_contract_multiplier",
+            "derived_multiplier",
+            "artifact_sha256",
+            "derivation_note",
+        ]
+        evidence_rows = list(reader)
+
+    active = set(load_active_products())
+    evidence_products = [row["product"] for row in evidence_rows]
+
+    assert len(active) == 60
+    assert len(evidence_products) == len(set(evidence_products))
+    assert set(reference) == set(evidence_products)
+    assert set(reference) <= active
+    assert all(multiplier > 0 for multiplier in reference.values())
+
+    allowed_hosts = {
+        "SHFE": {"www.shfe.com.cn", "shfe.com.cn"},
+        "INE": {"www.ine.cn", "ine.cn"},
+        "DCE": {"www.dce.com.cn", "dce.com.cn"},
+        "CZCE": {"www.czce.com.cn", "czce.com.cn"},
+        "GFEX": {"www.gfex.com.cn", "gfex.com.cn"},
+    }
+    allowed_source_kinds = {
+        "exchange_html",
+        "exchange_attachment",
+        "regulator_official_mirror",
+    }
+    exchange_products = {
+        "SHFE": {
+            "ag", "al", "ao", "au", "bu", "cu", "fu", "hc", "ni", "pb",
+            "rb", "ru", "sn", "ss", "zn",
+        },
+        "INE": {"ec", "sc"},
+        "DCE": {
+            "a", "b", "bz", "c", "eb", "eg", "i", "j", "jd", "jm", "l",
+            "lh", "m", "p", "pg", "pp", "v", "y",
+        },
+        "CZCE": {
+            "ap", "cf", "cj", "fg", "ma", "oi", "pf", "pk", "pl", "pr",
+            "px", "rm", "rs", "sa", "sf", "sh", "sm", "sr", "ta", "ur",
+        },
+        "GFEX": {"lc", "pd", "ps", "pt", "si"},
+    }
+    assert set().union(*exchange_products.values()) == active
+    for row in evidence_rows:
+        assert set(row) == set(reader.fieldnames)
+        required_fields = set(reader.fieldnames) - {"artifact_sha256"}
+        assert all(row[field].strip() for field in required_fields)
+        assert row["exchange"] in allowed_hosts
+        assert row["product"] in exchange_products[row["exchange"]]
+        assert row["source_kind"] in allowed_source_kinds
+        source_url = urlparse(row["official_source_url"])
+        assert source_url.scheme == "https"
+        if row["source_kind"] == "regulator_official_mirror":
+            assert source_url.hostname in {"www.csrc.gov.cn", "csrc.gov.cn"}
+        else:
+            assert source_url.hostname in allowed_hosts[row["exchange"]]
+        if row["source_kind"] == "exchange_attachment":
+            assert Path(source_url.path).suffix.lower() in {".doc", ".docx", ".pdf"}
+        date.fromisoformat(row["source_effective_date"])
+        date.fromisoformat(row["verified_on"])
+        assert row["verified_on"] == "2026-08-16"
+        if row["artifact_sha256"]:
+            assert re.fullmatch(r"[0-9a-f]{64}", row["artifact_sha256"])
+        assert Decimal(row["derived_multiplier"]) == reference[row["product"]]

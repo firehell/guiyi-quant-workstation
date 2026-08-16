@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-15
+更新时间：2026-08-16
 
 ## 当前结论
 
@@ -17,6 +17,25 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+
+## Execution Review V1 candidate（UNRELEASED）
+
+- 状态为 `CODE_COMPLETE / TEST_COMPLETE`；这是 branch-neutral implementation candidate，不声明已经
+  集成 `develop`、发布、迁移或部署。production release 仍为 `v1.3.1`，production DB 仍为
+  `20260814_0038`，Runtime identity 未改变。
+- 候选代码新增 `/trade-records` 与 `/api/execution-review/*`，以四张独立 Application Domain 表保存
+  苏冰 Event 的人工 Decision、真实手工 Execution timeline、单品种 OPEN Episode 与结构化 Review；
+  不恢复旧 Review Center，不连接账户或创建订单。
+- official multiplier coverage = `7 / 60`。reference 与 official evidence 集合精确相等、无重复、
+  无 unknown，逐行 derived multiplier 与 reference 相等。缺失 multiplier 只影响人民币
+  Estimated Gross PnL availability；realized points、仓位拓扑、时间线与 Review 保持可用。
+- trusted-partial snapshot 在 Episode 创建时冻结；当时为 NULL 的历史 Episode 不因未来 reference
+  扩大自动改写。active-60 60/60 是后续独立 Lane 3 reference-data objective，不是 v1.4 release Gate。
+- 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 54 files 无问题；
+  Web unit `145 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `50 passed`；Web
+  production build、secret scan（0 findings）、shell syntax 与 diff check 通过。
+- SuBing Natural Canary 继续 pending；Task 6 的 release、production migration、Runtime promotion
+  与 roll marker activation 均未执行，`Gate D not activated`。
 
 ## 当前可执行面
 

@@ -5,10 +5,11 @@ import { NAlert, NButton, NCard, NEmpty, NInput, NSelect, NSpin, NTabPane, NTabs
 import DecisionForm from '@/components/execution-review/DecisionForm.vue'
 import DispositionCorrectionForm from '@/components/execution-review/DispositionCorrectionForm.vue'
 import EpisodeDetail from '@/components/execution-review/EpisodeDetail.vue'
+import ExecutionStats from '@/components/execution-review/ExecutionStats.vue'
 import ReconstructionPanel from '@/components/execution-review/ReconstructionPanel.vue'
-import { executionReviewErrorMessage, getEpisodeDetail, getEventStates, listItems } from '@/api/executionReview'
-import type { Direction, EpisodeDetailResponse, EventState, ExecutionReviewFrequency, ExecutionReviewState, ReviewItem } from '@/types/executionReview'
-import { buildReviewItemFilters } from '@/utils/executionReview'
+import { executionReviewErrorMessage, getEpisodeDetail, getEventStates, getStats, listItems } from '@/api/executionReview'
+import type { Direction, EpisodeDetailResponse, EventState, ExecutionReviewFrequency, ExecutionReviewState, ExecutionReviewStatsResponse, ReviewItem } from '@/types/executionReview'
+import { buildReviewItemFilters, buildStatsFilters } from '@/utils/executionReview'
 
 const STATES: ExecutionReviewState[] = ['pending_decision', 'open', 'pending_review', 'done']
 const labels: Record<ExecutionReviewState, string> = {
@@ -26,11 +27,15 @@ const filters = reactive({
   start_trading_day: '', end_trading_day: '',
 })
 const loading = ref(false)
+const statsLoading = ref(false)
 const detailLoading = ref(false)
 const error = ref('')
+const statsError = ref('')
+const stats = ref<ExecutionReviewStatsResponse | null>(null)
 const detail = ref<EpisodeDetailResponse | null>(null)
 const fallbackItem = ref<ReviewItem | null>(null)
 let listGeneration = 0
+let statsGeneration = 0
 let detailGeneration = 0
 
 const currentItems = computed(() => itemsByState.value[currentState.value])
@@ -50,12 +55,15 @@ watch(() => route.query.state, (value) => {
   if (currentState.value !== next) currentState.value = next
 })
 
+watch(currentState, () => void loadStats())
+
 watch(() => selectedItem.value?.episode_id, (episodeId) => {
   detail.value = null
   if (episodeId) void loadDetail(episodeId)
 })
 
 async function loadAll() {
+  void loadStats()
   const current = ++listGeneration
   loading.value = true
   error.value = ''
@@ -72,6 +80,20 @@ async function loadAll() {
     if (current === listGeneration) error.value = executionReviewErrorMessage(reason)
   } finally {
     if (current === listGeneration) loading.value = false
+  }
+}
+
+async function loadStats() {
+  const current = ++statsGeneration
+  statsLoading.value = true
+  statsError.value = ''
+  try {
+    const next = await getStats(buildStatsFilters(currentState.value, filters))
+    if (current === statsGeneration) stats.value = next
+  } catch (reason) {
+    if (current === statsGeneration) statsError.value = executionReviewErrorMessage(reason)
+  } finally {
+    if (current === statsGeneration) statsLoading.value = false
   }
 }
 
@@ -234,6 +256,7 @@ const frequencyOptions = [{ label: '5m', value: '5m' }, { label: '15m', value: '
         <NButton @click="loadAll">应用筛选</NButton>
       </div>
     </NCard>
+    <ExecutionStats :stats="stats" :loading="statsLoading" :error="statsError" />
     <NTabs :value="currentState" type="line" animated @update:value="setState">
       <NTabPane v-for="state in STATES" :key="state" :name="state" :tab="`${labels[state]} ${itemsByState[state].length}`" />
     </NTabs>

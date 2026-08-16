@@ -12,6 +12,7 @@ import {
   applyNeutralSelection,
   buildExecutedDispositionCorrectionRequest,
   buildReviewItemFilters,
+  buildStatsFilters,
   defaultExecutionQuantity,
   executionReviewActionLabel,
   initialReconstructionMode,
@@ -249,6 +250,13 @@ describe('Execution Review presentation contracts', () => {
     assert.deepEqual(buildReviewItemFilters('done', filters), {
       state: 'done', symbol: 'jm', direction: 'LONG', frequency: '5m',
       start_trading_day: '2026-08-01', end_trading_day: '2026-08-15',
+    })
+    assert.deepEqual(buildStatsFilters('open', filters), {
+      symbol: 'jm', direction: 'LONG', frequency: '5m',
+    })
+    assert.deepEqual(buildStatsFilters('done', filters), {
+      symbol: 'jm', direction: 'LONG', frequency: '5m',
+      trading_day_from: '2026-08-01', trading_day_to: '2026-08-15',
     })
   })
 

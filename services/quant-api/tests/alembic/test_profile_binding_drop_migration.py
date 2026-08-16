@@ -35,10 +35,13 @@ def test_profile_binding_drop_remains_before_current_alembic_head() -> None:
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["20260814_0038"]
     revision = scripts.get_revision(DROP_REVISION)
     assert revision is not None
     assert revision.down_revision == PARENT_REVISION
+    child = scripts.get_revision("20260808_0036")
+    assert child is not None
+    assert child.down_revision == DROP_REVISION
+    assert DROP_REVISION in {item.revision for item in scripts.walk_revisions()}
 
 
 def test_profile_binding_drop_sql_is_irreversible_and_scoped() -> None:

@@ -301,7 +301,7 @@ Requirements: lowercase normalized product code, positive Decimal multiplier, no
 
 - [ ] **Step 12: Populate the multiplier reference from public official exchange specifications**
 
-Create `data/reference/product_trade_multipliers.csv` with `product,multiplier` only, where `multiplier` is the CNY PnL scaling factor per lot per one quoted-price unit. Use current public official exchange contract specifications; do **not** call real RQData or guess a value. Every submitted row must be unique, valid, officially verified, and belong to `data/universe/active_products.txt`, but Task 1 may contain a verified subset of the active 60. Tests must report the deterministic missing-symbol set; lookup for a missing product returns `None`, so Decision/Execution facts remain recordable while CNY `Estimated Gross PnL` is `unavailable`. Full 60/60 official coverage is a prerequisite for v1.4 rollout/closure, not a Domain Core integration Gate.
+Create `data/reference/product_trade_multipliers.csv` with `product,multiplier` and a machine-checkable `data/reference/product_trade_multipliers.sources.csv`. Use current public official exchange specifications; do **not** call real RQData, use third-party final evidence, or guess a value. The trusted-partial contract is `reference product set == official evidence product set ⊆ active product set`, with no duplicates/unknowns and an exact per-row derived-multiplier match. Lookup for a missing product returns `None`, so Decision/Execution/Review and realized points remain available while CNY `Estimated Gross PnL` is `unavailable`. Full active-60 coverage is an independent Lane 3 reference-data objective and is not a v1.4 rollout/closure Gate.
 
 - [ ] **Step 13: Run Task 1 verification**
 
@@ -1025,7 +1025,7 @@ git commit -m "docs: close execution review v1 implementation"
 
 **Lane:** Lane 3 rollout; new independent Sol session; Plan-only before each mutation Gate.
 
-**Precondition:** Tasks 1-5 integrated to `develop`, full regression green, independent reviews passed, and `STATUS.md` still accurately describes production. SuBing Natural Canary may still be pending; do not fabricate it.
+**Precondition:** Tasks 1-5 integrated to `develop`; every tracked multiplier has machine-checkable official evidence; missing multiplier has explicit Web RMB-unavailable presentation; full regression is green; independent reviews passed; and `STATUS.md` still accurately describes production. Active-60 multiplier 60/60 is not a precondition. SuBing Natural Canary may still be pending; do not fabricate it.
 
 **External Gates are independent:**
 

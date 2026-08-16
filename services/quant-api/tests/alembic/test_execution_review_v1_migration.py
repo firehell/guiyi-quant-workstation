@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -52,6 +53,12 @@ NEW_TABLES = {
     "trade_executions",
     "trade_reviews",
 }
+LOGGER_NAMES = (
+    "app.alerts.runtime",
+    "app.alerts.wecom",
+    "app.market_data.after_market",
+    "app.guiyi_cli.main",
+)
 
 
 class RecordingOperations:
@@ -238,7 +245,7 @@ def isolated_migration_context(
         pytest.fail(str(exc))
 
     monkeypatch.setenv("DATABASE_URL", url)
-    config = Config(str(QUANT_API_ROOT / "alembic.ini"))
+    config = Config()
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     config.set_main_option("sqlalchemy.url", url)
     engine = create_engine(url, pool_pre_ping=True)
@@ -379,6 +386,18 @@ def test_upgrade_preserves_market_and_alert_signatures_and_adds_only_four_tables
             connection.exec_driver_sql(
                 f'DROP SCHEMA IF EXISTS "{orm_schema}" CASCADE'
             )
+
+
+def test_migration_command_preserves_application_logger_disabled_state(
+    isolated_migration_context: tuple[Config, Engine],
+) -> None:
+    config, _ = isolated_migration_context
+    before = {name: logging.getLogger(name).disabled for name in LOGGER_NAMES}
+
+    command.upgrade(config, "head")
+
+    after = {name: logging.getLogger(name).disabled for name in LOGGER_NAMES}
+    assert after == before
 
 
 def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
