@@ -293,7 +293,7 @@ test('pending decision records NOT_EXECUTED and moves to done', async ({ page })
   await selectFirst(page, 'not-executed-primary')
   await page.getByRole('button', { name: '记录未执行' }).click()
 
-  await expect(page.getByText('已记录为未执行')).toBeVisible()
+  await expect(page.getByText('已记录为未执行', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/state=done/)
   await expect(page.getByText('已完成 1', { exact: true })).toBeVisible()
 })
