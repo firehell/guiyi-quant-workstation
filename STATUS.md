@@ -18,13 +18,13 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## Execution Review V1（RELEASED / PRODUCTION MIGRATION COMPLETE / RUNTIME PENDING）
+## Execution Review V1（RELEASED / PRODUCTION MIGRATION COMPLETE / RUNTIME PROMOTED）
 
 - 状态为 `RELEASED`：release PR #167 已合入 main，annotated tag `v1.4.0` 的 peeled commit 为
   `3a6f4289ff08848f9177c41a649a94f877412c23`。production DB 已完成 additive `20260815_0039`
-  migration，四张 Execution Review 表已存在。Runtime 仍为旧 `v1.3.1` identity
-  `3e930a032c6b880686ff1f1fccc77db61bc2803c`，Execution Review production Runtime surface
-  尚未 promotion。
+  migration，四张 Execution Review 表已存在。正式 Runtime 已 promotion 至 `v1.4.0` identity
+  `3a6f4289ff08848f9177c41a649a94f877412c23`，Execution Review production Runtime surface
+  已 available。
 - `v1.4.0` 代码新增 `/trade-records` 与 `/api/execution-review/*`，以四张独立 Application Domain 表保存
   苏冰 Event 的人工 Decision、真实手工 Execution timeline、单品种 OPEN Episode 与结构化 Review；
   不恢复旧 Review Center，不连接账户或创建订单。
@@ -36,13 +36,14 @@
 - 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 55 files 无问题；
   Web unit `147 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `57 passed`；Web
   production build、secret scan（0 findings）、shell syntax 与 diff check 通过。
-- SuBing Natural Canary 继续 pending；Task 6 Gate A release 与 Gate B production migration 已完成，
-  Gate C Runtime promotion 继续 pending，Gate D 仍为 `disabled / not activated`。
+- SuBing Natural Canary 继续 pending；Task 6 Gate A release、Gate B production migration 与
+  Gate C Runtime promotion 已完成，Gate D 仍为 `disabled / not activated`。
 
 ## 当前可执行面
 
-- Web：`/market` 与 `/market/chart`。
-- HTTP：`/api/v1/market/*`、`/api/alerts/*`、`/api/runtime/health` 和轻量 health。
+- Web：`/market`、`/market/chart` 与 `/trade-records`。
+- HTTP：`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`、`/api/runtime/health`
+  和轻量 health。
 - CLI：`guiyi data update|refresh|audit|after-market`；只读
   `guiyi research subing-calibration`、`guiyi runtime status|live|alert`。
 - `guiyi runtime alert-canary` 是真实 WeCom Gate，不是普通测试命令。
@@ -73,15 +74,20 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
-- `2026-08-15 23:24 +08:00` 已按单次授权把 API/Web/Market Live/after-market/Alert 合并到唯一
-  clean/detached Runtime 根 `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`，统一提交为
-  `3e930a032c6b880686ff1f1fccc77db61bc2803c`。该目录名仅是部署根名称；API version=`1.3.1`，
-  运行身份以精确提交为准。
+- `2026-08-16 21:04 +08:00` 已按单次 Gate C 授权把 API/Web/Market Live/after-market/Alert
+  promotion 至 clean/detached/exact-tag Runtime 根
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.0`，统一提交为
+  `3a6f4289ff08848f9177c41a649a94f877412c23`，API version=`1.4.0`。
 - API/Web/Live/Alert 均 running，after-market 为 schedule-only `not running`；Runtime
-  health=`ok/readonly=true`，Market 主力目录为 active 60。旧 Runtime worktree
-  `guiyi-quant-runtime-3e930a032`、`guiyi-quant-runtime-51b1f44f8` 和
-  `guiyi-quant-runtime-a12ac867` 已删除，仅保留上述唯一 Runtime 根。
-- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`skipped/NON_TRADING_DAY`。本次切换未执行 migration、
+  health=`ok/readonly=true`，Market 主力目录为 active 60。旧 Runtime 根
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0` 与提交
+  `3e930a032c6b880686ff1f1fccc77db61bc2803c` 继续保留，用于 Gate C 外部 Review 完成前的
+  bounded rollback identity，未被删除或重载。
+- Market Runtime V1 持续授权已按原 active 60 范围迁移至 `v1.4.0`；Alert Runtime V2
+  持续授权已按原 Rule/Scope（`htdy_original_15m -> jm`、
+  `subing_entry_signal_v1 -> jm`）迁移至 `v1.4.0`，未扩大范围。
+- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`pending`且仅保留 18:05 schedule。
+  本次切换未执行 migration、
   RQData/Canonical/DB 写入、Scope mutation、真实 WeCom、手工盘后、replay/backfill/retry、tag
   或 release；`auto_order=false` 不变。
 
@@ -90,11 +96,11 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- Gate C Runtime promotion 仍 pending；正式五服务仍使用旧 `v1.3.1` identity
-  `3e930a032c6b880686ff1f1fccc77db61bc2803c`，Execution Review production Runtime surface
-  尚未 promotion。Gate D 仍为 `disabled / not activated`。
+- Gate C Runtime promotion 已完成；正式五服务已统一加载 `v1.4.0` identity
+  `3a6f4289ff08848f9177c41a649a94f877412c23`，Execution Review production Runtime surface
+  已 available。Gate D 仍为 `disabled / not activated`。
 - 周线修复的部署身份已读回；业务级效果等待下一次自然 18:05 盘后更新，不手工运行、回填或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证，也不计作 Task 6 已完成事实。
-- 最小下一步：停止并请求 Gate C Runtime promotion approval；Natural Canary 继续作为
-  独立 pending evidence，不计作 Gate C 或 Gate D 已完成事实。
+- 最小下一步：完成 Gate C 外部只读 Review；Natural Canary 继续作为独立
+  pending evidence，Gate D 除非获得新的明确授权，否则保持关闭。
