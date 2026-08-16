@@ -15,7 +15,7 @@
 
 - 一个品种最多一个 OPEN Episode；Episode 固定 origin Event 的真实合约和 LONG/SHORT 方向。
 - 同方向、同合约的后续自然 Signal 可成为 ADD；跨合约不合并，反方向不自动反手，必须先结束旧 Episode。
-- `sequence_no=1` 只能是 origin Decision 触发的真实 OPEN；后续 ADD/REDUCE/CLOSE 是人工记录。仓位拓扑、加权平均成本和 realized points 由后端 `Decimal` 计算，客户端不重算。
+- origin Signal 先形成 Decision，再触发真实 OPEN，且 `OPEN.trigger_decision_id` 指向该 origin Decision；同方向、同合约的后续 formal Signal 先形成新的 Decision，再触发 ADD，且 `ADD.trigger_decision_id` 指向该 later Decision。人工记录的 ADD/REDUCE/CLOSE 不由 Signal 触发，`trigger_decision_id = NULL`。仓位拓扑、加权平均成本和 realized points 由后端 `Decimal` 计算，客户端不重算。
 - `DOMINANT_ROLL` 仅是对已 OPEN Episode 的系统估算结束：使用旧合约最后一个可验证的 completed Canonical 1m reference，不伪造真实 CLOSE；后续真实 CLOSE 通过完整时间线纠错替换该估算语义。
 - 自动 roll reconcile 默认关闭，只能在 v1.4 Runtime 已 promotion 后通过独立 Gate 激活；它不是 `AfterMarketUpdater` 内部职责，不 replay/backfill 历史。
 
@@ -58,7 +58,7 @@ multiplier reference product set
 
 ## Lightweight stats
 
-ExecutionStats 只展示机会数、已处理/待处理数、执行/未执行数、决策完成率、执行率、Episode 工作状态、主要未执行原因与结构化复盘问题标签。筛选复用 symbol/direction/frequency；历史日期只在 done 视图适用，不设隐含 30 天窗口。
+ExecutionStats 只展示机会数、已处理/待处理数、执行/未执行数、决策完成率、执行率、Episode 工作状态、主要未执行原因与结构化复盘问题标签。筛选复用 symbol/direction/frequency；日期范围始终可以影响 ExecutionStats，但在工作列表中只影响 done，pending_decision / open / pending_review 不得被日期范围过滤；不设隐含 30 天窗口。
 
 V1 不提供 PnL ranking、win rate、Sharpe、MFE/MAE、profit factor 或策略盈利结论。统计不可用不得遮蔽交易记录工作区。
 
