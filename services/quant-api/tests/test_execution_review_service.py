@@ -1220,7 +1220,11 @@ def test_read_models_classify_pending_open_pending_review_and_done(
         ),
     )
 
-    items = service.list_items()
+    items = tuple(
+        item
+        for state in ("pending_decision", "open", "pending_review", "done")
+        for item in service.list_items(state=state)
+    )
     assert {(item.item_kind, item.state, item.event_id) for item in items} == {
         ("decision", "pending_decision", pending.id),
         ("decision", "done", not_event.id),
@@ -1233,7 +1237,17 @@ def test_read_models_classify_pending_open_pending_review_and_done(
         ("decision", not_decision.id, None),
         ("episode", done.decision.id, done.episode.id),
     }
-    event_states = {row.event_id: row.state for row in service.event_states()}
+    requested_event_ids = (
+        pending.id,
+        not_event.id,
+        open_result.decision.alert_event_id,
+        pending_review.decision.alert_event_id,
+        done.decision.alert_event_id,
+    )
+    event_states = {
+        row.event_id: row.state
+        for row in service.event_states(requested_event_ids)
+    }
     assert event_states == {
         pending.id: "pending_decision",
         not_event.id: "done",
@@ -1241,6 +1255,231 @@ def test_read_models_classify_pending_open_pending_review_and_done(
         pending_review.decision.alert_event_id: "pending_review",
         done.decision.alert_event_id: "done",
     }
+
+    assert [item.event_id for item in service.list_items(
+        state="pending_decision",
+        symbol=" P ",
+        direction="SHORT",
+        frequency="15m",
+        start_trading_day=date(2099, 1, 1),
+        end_trading_day=date(2099, 1, 2),
+    )] == [pending.id]
+    assert [item.episode_id for item in service.list_items(
+        state="open",
+        symbol="o",
+        direction="SHORT",
+        frequency="15m",
+        start_trading_day=date(2099, 1, 1),
+        end_trading_day=date(2099, 1, 2),
+    )] == [open_result.episode.id]
+    assert [item.episode_id for item in service.list_items(
+        state="pending_review",
+        symbol="r",
+        direction="SHORT",
+        frequency="15m",
+        start_trading_day=date(2099, 1, 1),
+        end_trading_day=date(2099, 1, 2),
+    )] == [pending_review.episode.id]
+    assert [item.episode_id for item in service.list_items(
+        state="done",
+        symbol="d",
+        direction="SHORT",
+        frequency="15m",
+        start_trading_day=date(2026, 8, 15),
+        end_trading_day=date(2026, 8, 15),
+    )] == [done.episode.id]
+
+
+def test_event_states_are_bounded_ordered_and_deduplicated(
+    session: Session,
+) -> None:
+    first = _event(session, symbol="a", contract="A2609")
+    second = _event(
+        session,
+        symbol="b",
+        contract="B2609",
+        bar_end=BAR_END + timedelta(minutes=1),
+    )
+    unrequested = _event(
+        session,
+        symbol="c",
+        contract="C2609",
+        bar_end=BAR_END + timedelta(minutes=2),
+    )
+
+    states = _service(session).event_states((second.id, first.id, second.id))
+
+    assert [row.event_id for row in states] == [second.id, first.id]
+    assert unrequested.id not in {row.event_id for row in states}
+
+
+def test_event_states_missing_id_fails_the_batch(session: Session) -> None:
+    event = _event(session)
+
+    with pytest.raises(
+        ExecutionReviewDomainError,
+        match="^EXECUTION_REVIEW_EVENT_NOT_FOUND$",
+    ) as captured:
+        _service(session).event_states((event.id, event.id + 1000))
+
+    assert captured.value.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("event_changes", "code"),
+    [
+        ({"rule_code": "htdy_original_15m"}, "EVENT_NOT_EXECUTION_REVIEW_ELIGIBLE"),
+        ({"result_codes": ["buy", "sell"]}, "EVENT_DIRECTION_INVALID"),
+    ],
+)
+def test_event_states_reject_ineligible_or_invalid_direction(
+    session: Session,
+    event_changes: dict[str, object],
+    code: str,
+) -> None:
+    event = _event(session, **event_changes)
+
+    with pytest.raises(ExecutionReviewDomainError, match=f"^{code}$") as captured:
+        _service(session).event_states((event.id,))
+
+    assert captured.value.status_code == 422
+
+
+def test_done_items_use_alert_trading_day_not_bar_end_natural_date(
+    session: Session,
+) -> None:
+    event = _event(
+        session,
+        trading_day=date(2026, 8, 15),
+        bar_end=datetime(2026, 8, 14, 17, 0, tzinfo=UTC),
+    )
+    _service(session).record_not_executed(
+        event.id,
+        NotExecutedCommand(primary_reason="TOO_LATE"),
+    )
+
+    matching = _service(session).list_items(
+        state="done",
+        start_trading_day=date(2026, 8, 15),
+        end_trading_day=date(2026, 8, 15),
+    )
+    natural_date = _service(session).list_items(
+        state="done",
+        start_trading_day=date(2026, 8, 14),
+        end_trading_day=date(2026, 8, 14),
+    )
+
+    assert [item.event_id for item in matching] == [event.id]
+    assert natural_date == ()
+
+
+def test_zero_stats_denominators_are_undefined(session: Session) -> None:
+    empty = _service(session).stats()
+
+    assert empty.opportunities.eligible_events == 0
+    assert empty.opportunities.decision_completion_rate is None
+    assert empty.opportunities.execution_rate is None
+
+    _event(session)
+    pending = _service(session).stats()
+
+    assert pending.opportunities.eligible_events == 1
+    assert pending.opportunities.processed_events == 0
+    assert pending.opportunities.decision_completion_rate == Decimal("0")
+    assert pending.opportunities.execution_rate is None
+
+
+def test_episode_detail_returns_origin_event_and_only_trigger_decisions_in_order(
+    session: Session,
+) -> None:
+    service = _service(session)
+    notification_attempted_at = BAR_END + timedelta(seconds=5)
+    origin_event = _event(
+        session,
+        lower_tf_confirmation=True,
+        notification_attempted_at=notification_attempted_at,
+    )
+    opened = service.record_executed(origin_event.id, _executed(quantity=1))
+    service.append_execution(
+        opened.episode.id,
+        ExecutionCommand(
+            execution_type="ADD",
+            executed_at=BAR_END + timedelta(minutes=4),
+            price=Decimal("1267"),
+            quantity=1,
+        ),
+    )
+    later_one = service.record_executed(
+        _event(session, bar_end=BAR_END + timedelta(minutes=5)).id,
+        _executed(
+            executed_at=BAR_END + timedelta(minutes=8),
+            price=Decimal("1266"),
+            quantity=1,
+        ),
+    )
+    service.append_execution(
+        opened.episode.id,
+        ExecutionCommand(
+            execution_type="ADD",
+            executed_at=BAR_END + timedelta(minutes=9),
+            price=Decimal("1265"),
+            quantity=1,
+        ),
+    )
+    later_two = service.record_executed(
+        _event(session, bar_end=BAR_END + timedelta(minutes=10)).id,
+        _executed(
+            executed_at=BAR_END + timedelta(minutes=13),
+            price=Decimal("1264"),
+            quantity=1,
+        ),
+    )
+    unrelated_not_executed = service.record_not_executed(
+        _event(session, bar_end=BAR_END + timedelta(minutes=14)).id,
+        NotExecutedCommand(primary_reason="TOO_LATE"),
+    )
+    unrelated_episode = service.record_executed(
+        _event(
+            session,
+            symbol="a",
+            contract="A2609",
+            bar_end=BAR_END + timedelta(minutes=15),
+        ).id,
+        _executed(
+            executed_at=BAR_END + timedelta(minutes=18),
+            quantity=1,
+        ),
+    )
+
+    detail = service.episode_detail(opened.episode.id)
+
+    assert detail.origin_event.id == origin_event.id
+    assert detail.origin_event.rule_code == "subing_entry_signal_v1"
+    assert detail.origin_event.symbol == "jm"
+    assert detail.origin_event.contract == "JM2609"
+    assert detail.origin_event.trading_day == date(2026, 8, 15)
+    assert detail.origin_event.frequency == "15m"
+    assert detail.origin_event.bar_end == origin_event.bar_end
+    assert detail.origin_event.result_codes == ("sell",)
+    assert detail.origin_event.lower_tf_confirmation is True
+    assert detail.origin_event.detected_at == origin_event.detected_at
+    assert _utc(detail.origin_event.notification_attempted_at) == _utc(
+        notification_attempted_at
+    )
+    assert [decision.id for decision in detail.decisions] == [
+        opened.decision.id,
+        later_one.decision.id,
+        later_two.decision.id,
+    ]
+    assert [execution.trigger_decision_id for execution in detail.executions] == [
+        opened.decision.id,
+        None,
+        later_one.decision.id,
+        None,
+        later_two.decision.id,
+    ]
+    assert unrelated_not_executed.id not in {row.id for row in detail.decisions}
+    assert unrelated_episode.decision.id not in {row.id for row in detail.decisions}
 
 
 def test_read_path_database_failure_is_stable_and_redacted(
@@ -1256,7 +1495,7 @@ def test_read_path_database_failure_is_stable_and_redacted(
         ExecutionReviewDomainError,
         match="^EXECUTION_REVIEW_PERSIST_FAILED$",
     ) as captured:
-        _service(session).list_items()
+        _service(session).list_items(state="done")
 
     assert captured.value.status_code == 503
     assert "sensitive" not in str(captured.value).lower()
@@ -1803,7 +2042,7 @@ def test_postgresql_event_states_uses_one_consistent_statement_snapshot(
                 return state.invoke_statement()  # type: ignore[attr-defined]
 
             try:
-                states = _service(local_session).event_states()
+                states = _service(local_session).event_states((event_id,))
                 return states[0].state
             except ExecutionReviewDomainError as exc:
                 return exc.code
@@ -1875,7 +2114,7 @@ def test_postgresql_read_models_do_not_mix_disposition_correction_snapshots(
             if read_kind == "items":
                 return tuple(
                     (item.item_kind, item.state)
-                    for item in _service(local_session).list_items()
+                    for item in _service(local_session).list_items(state="done")
                 )
             stats = _service(local_session).stats()
             return (
@@ -1922,10 +2161,16 @@ def test_postgresql_episode_detail_uses_one_statement_snapshot(
             _executed(quantity=2),
         )
         episode_id = opened.episode.id
+        origin_event_id = opened.decision.alert_event_id
+        origin_decision_id = opened.decision.id
+        later_event_id = _event(
+            seed,
+            bar_end=BAR_END + timedelta(minutes=5),
+        ).id
     snapshot_read = Event()
     writer_finished = Event()
 
-    def read_detail() -> tuple[int, int]:
+    def read_detail() -> tuple[int, int, tuple[int, ...], int]:
         with factory() as local_session:
             intercepted = False
 
@@ -1958,17 +2203,18 @@ def test_postgresql_episode_detail_uses_one_statement_snapshot(
             return (
                 sum(row.quantity for row in detail.executions),
                 detail.position.remaining_quantity,
+                tuple(row.id for row in detail.decisions),
+                detail.origin_event.id,
             )
 
-    def append_execution() -> None:
+    def append_signal_execution() -> None:
         assert snapshot_read.wait(timeout=10)
         try:
             with factory() as local_session:
-                _service(local_session).append_execution(
-                    episode_id,
-                    ExecutionCommand(
-                        execution_type="ADD",
-                        executed_at=BAR_END + timedelta(minutes=4),
+                _service(local_session).record_executed(
+                    later_event_id,
+                    _executed(
+                        executed_at=BAR_END + timedelta(minutes=8),
                         price=Decimal("1260"),
                         quantity=1,
                     ),
@@ -1978,11 +2224,11 @@ def test_postgresql_episode_detail_uses_one_statement_snapshot(
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         read_future = executor.submit(read_detail)
-        write_future = executor.submit(append_execution)
+        write_future = executor.submit(append_signal_execution)
         observed = read_future.result(timeout=15)
         write_future.result(timeout=15)
 
-    assert observed == (2, 2)
+    assert observed == (2, 2, (origin_decision_id,), origin_event_id)
 
 
 @pytest.mark.parametrize(
@@ -2060,6 +2306,9 @@ def _event(session: Session, **changes: object) -> AlertEvent:
     frequency = changes.pop("frequency", "15m")
     symbol = str(changes.pop("symbol", "jm"))
     bar_end = changes.pop("bar_end", BAR_END)
+    lower_tf_confirmation = bool(changes.pop("lower_tf_confirmation", False))
+    detected_at = changes.pop("detected_at", bar_end + timedelta(seconds=1))
+    notification_attempted_at = changes.pop("notification_attempted_at", None)
     if changes:
         raise AssertionError(f"unknown event changes: {changes}")
     rule = session.scalar(
@@ -2081,8 +2330,9 @@ def _event(session: Session, **changes: object) -> AlertEvent:
         frequency=frequency,
         bar_end=bar_end,
         result_codes=result_codes,
-        lower_tf_confirmation=False,
-        detected_at=bar_end + timedelta(seconds=1),
+        lower_tf_confirmation=lower_tf_confirmation,
+        detected_at=detected_at,
+        notification_attempted_at=notification_attempted_at,
     )
     session.add(event)
     session.commit()

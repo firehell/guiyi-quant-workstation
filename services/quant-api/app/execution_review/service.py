@@ -10,7 +10,7 @@ from typing import TypeVar
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.alerts.models import AlertEvent, AlertRule
 from app.execution_review.contracts import (
@@ -196,8 +196,8 @@ class OpportunityStats:
     pending_events: int
     executed_decisions: int
     not_executed_decisions: int
-    decision_completion_rate: Decimal
-    execution_rate: Decimal
+    decision_completion_rate: Decimal | None
+    execution_rate: Decimal | None
     primary_reason_counts: dict[str, int]
 
 
@@ -233,8 +233,25 @@ class ExecutionReviewStats:
 
 
 @dataclass(frozen=True, slots=True)
+class EventContext:
+    id: int
+    rule_code: str
+    symbol: str
+    contract: str
+    trading_day: date
+    frequency: str
+    bar_end: datetime
+    result_codes: tuple[str, ...]
+    lower_tf_confirmation: bool
+    detected_at: datetime
+    notification_attempted_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class EpisodeDetail:
     episode: TradeEpisode
+    origin_event: EventContext
+    decisions: tuple[TradeDecision, ...]
     executions: tuple[TradeExecution, ...]
     review: TradeReview | None
     position: PositionState
@@ -978,23 +995,71 @@ class ExecutionReviewService:
             self._session.rollback()
             raise _persistence_failure() from None
 
-    def list_items(self, *, state: str | None = None) -> tuple[ReviewItem, ...]:
-        return self._read_call(lambda: self._list_items(state=state))
+    def list_items(
+        self,
+        *,
+        state: str,
+        symbol: str | None = None,
+        direction: str | None = None,
+        frequency: str | None = None,
+        start_trading_day: date | None = None,
+        end_trading_day: date | None = None,
+    ) -> tuple[ReviewItem, ...]:
+        return self._read_call(
+            lambda: self._list_items(
+                state=state,
+                symbol=symbol,
+                direction=direction,
+                frequency=frequency,
+                start_trading_day=start_trading_day,
+                end_trading_day=end_trading_day,
+            )
+        )
 
-    def _list_items(self, *, state: str | None = None) -> tuple[ReviewItem, ...]:
+    def _list_items(
+        self,
+        *,
+        state: str,
+        symbol: str | None = None,
+        direction: str | None = None,
+        frequency: str | None = None,
+        start_trading_day: date | None = None,
+        end_trading_day: date | None = None,
+    ) -> tuple[ReviewItem, ...]:
         """List opportunity and Episode work items under the canonical states."""
 
-        if state is not None and state not in {
+        if state not in {
             "pending_decision",
             "open",
             "pending_review",
             "done",
         }:
             raise _invalid("EXECUTION_REVIEW_STATE_INVALID")
+        normalized_symbol = symbol.strip().lower() if symbol is not None else None
+        if normalized_symbol == "":
+            raise _invalid("EXECUTION_REVIEW_ITEMS_FILTER_INVALID")
+        if direction is not None and direction not in {"LONG", "SHORT"}:
+            raise _invalid("EXECUTION_REVIEW_ITEMS_FILTER_INVALID")
+        if frequency is not None and frequency not in ELIGIBLE_FREQUENCIES:
+            raise _invalid("EXECUTION_REVIEW_ITEMS_FILTER_INVALID")
+        if (
+            state == "done"
+            and start_trading_day is not None
+            and end_trading_day is not None
+            and start_trading_day > end_trading_day
+        ):
+            raise _invalid("EXECUTION_REVIEW_DATE_RANGE_INVALID")
         items: list[ReviewItem] = []
         for row in self._opportunity_snapshot():
             event = row.event
-            if self._eligible_direction(event, row.rule_code) is None:
+            event_direction = self._eligible_direction(event, row.rule_code)
+            if event_direction is None:
+                continue
+            if normalized_symbol is not None and event.symbol != normalized_symbol:
+                continue
+            if direction is not None and event_direction != direction:
+                continue
+            if frequency is not None and event.frequency != frequency:
                 continue
             decision = row.decision
             if decision is None:
@@ -1029,17 +1094,42 @@ class ExecutionReviewService:
                         episode=row.episode,
                     )
                 )
-        filtered = (item for item in items if state is None or item.state == state)
+        filtered = (item for item in items if item.state == state)
+        if state == "done":
+            filtered = (
+                item
+                for item in filtered
+                if (
+                    start_trading_day is None
+                    or item.trading_day >= start_trading_day
+                )
+                and (
+                    end_trading_day is None
+                    or item.trading_day <= end_trading_day
+                )
+            )
         return tuple(
             sorted(filtered, key=lambda item: (item.trading_day, item.event_id))
         )
 
-    def event_states(self) -> tuple[EventReviewState, ...]:
-        return self._read_call(self._event_states)
+    def event_states(
+        self,
+        event_ids: tuple[int, ...],
+    ) -> tuple[EventReviewState, ...]:
+        return self._read_call(lambda: self._event_states(event_ids))
 
-    def _event_states(self) -> tuple[EventReviewState, ...]:
-        """Classify each eligible Event using its Decision/Execution lineage."""
+    def _event_states(
+        self,
+        event_ids: tuple[int, ...],
+    ) -> tuple[EventReviewState, ...]:
+        """Classify only requested Events using one statement snapshot."""
 
+        requested_ids = tuple(dict.fromkeys(event_ids))
+        if not requested_ids or any(
+            event_id <= 0 or event_id > MAX_DATABASE_INTEGER
+            for event_id in requested_ids
+        ):
+            raise _invalid("EXECUTION_REVIEW_EVENT_IDS_INVALID")
         rows = self._session.execute(
             select(
                 AlertEvent,
@@ -1066,18 +1156,25 @@ class ExecutionReviewService:
                 TradeReview,
                 TradeReview.episode_id == TradeEpisode.id,
             )
-            .order_by(AlertEvent.trading_day, AlertEvent.id)
+            .where(AlertEvent.id.in_(requested_ids))
         ).all()
+        rows_by_event_id = {row[0].id: row for row in rows}
+        if any(event_id not in rows_by_event_id for event_id in requested_ids):
+            raise _not_found("EXECUTION_REVIEW_EVENT_NOT_FOUND")
         result: list[EventReviewState] = []
-        for event, rule_code, decision, execution, episode, review_id in rows:
+        for event_id in requested_ids:
+            event, rule_code, decision, execution, episode, review_id = (
+                rows_by_event_id[event_id]
+            )
             if (
                 rule_code != ELIGIBLE_RULE_CODE
                 or event.trading_day is None
                 or not str(event.contract or "").strip()
                 or event.frequency not in ELIGIBLE_FREQUENCIES
-                or tuple(event.result_codes or ()) not in {("buy",), ("sell",)}
             ):
-                continue
+                raise _invalid("EVENT_NOT_EXECUTION_REVIEW_ELIGIBLE")
+            if tuple(event.result_codes or ()) not in {("buy",), ("sell",)}:
+                raise _invalid("EVENT_DIRECTION_INVALID")
             if decision is None:
                 result.append(EventReviewState(event.id, "pending_decision", None, None))
                 continue
@@ -1100,11 +1197,39 @@ class ExecutionReviewService:
         return self._read_call(lambda: self._episode_detail(episode_id))
 
     def _episode_detail(self, episode_id: int) -> EpisodeDetail:
+        origin_decision_alias = aliased(TradeDecision)
+        trigger_decision_alias = aliased(TradeDecision)
+        origin_event_alias = aliased(AlertEvent)
+        origin_rule_alias = aliased(AlertRule)
         rows = self._session.execute(
-            select(TradeEpisode, TradeExecution, TradeReview)
+            select(
+                TradeEpisode,
+                origin_decision_alias,
+                origin_event_alias,
+                origin_rule_alias.rule_code,
+                TradeExecution,
+                trigger_decision_alias,
+                TradeReview,
+            )
+            .join(
+                origin_decision_alias,
+                origin_decision_alias.id == TradeEpisode.origin_decision_id,
+            )
+            .join(
+                origin_event_alias,
+                origin_event_alias.id == origin_decision_alias.alert_event_id,
+            )
+            .join(
+                origin_rule_alias,
+                origin_rule_alias.id == origin_event_alias.rule_id,
+            )
             .outerjoin(
                 TradeExecution,
                 TradeExecution.episode_id == TradeEpisode.id,
+            )
+            .outerjoin(
+                trigger_decision_alias,
+                trigger_decision_alias.id == TradeExecution.trigger_decision_id,
             )
             .outerjoin(
                 TradeReview,
@@ -1115,12 +1240,27 @@ class ExecutionReviewService:
         ).all()
         if not rows:
             raise _not_found("TRADE_EPISODE_NOT_FOUND")
-        episode = rows[0].TradeEpisode
+        episode = rows[0][0]
+        origin_decision = rows[0][1]
+        origin_event = rows[0][2]
+        origin_rule_code = rows[0][3]
+        if origin_event.trading_day is None:
+            raise _conflict("DECISION_LINEAGE_INVALID")
         executions = tuple(
-            row.TradeExecution
+            row[4]
             for row in rows
-            if row.TradeExecution is not None
+            if row[4] is not None
         )
+        decisions = [origin_decision]
+        decision_ids = {origin_decision.id}
+        for row in rows:
+            trigger_decision = row[5]
+            if (
+                trigger_decision is not None
+                and trigger_decision.id not in decision_ids
+            ):
+                decisions.append(trigger_decision)
+                decision_ids.add(trigger_decision.id)
         facts = tuple(
             ExecutionFact(
                 sequence_no=row.sequence_no,
@@ -1131,8 +1271,28 @@ class ExecutionReviewService:
             for row in executions
         )
         position = self._calculate_position(episode, facts)
-        review = rows[0].TradeReview
-        return EpisodeDetail(episode, executions, review, position)
+        review = rows[0][6]
+        event_context = EventContext(
+            id=origin_event.id,
+            rule_code=origin_rule_code,
+            symbol=origin_event.symbol,
+            contract=origin_event.contract,
+            trading_day=origin_event.trading_day,
+            frequency=origin_event.frequency,
+            bar_end=origin_event.bar_end,
+            result_codes=tuple(origin_event.result_codes),
+            lower_tf_confirmation=origin_event.lower_tf_confirmation,
+            detected_at=origin_event.detected_at,
+            notification_attempted_at=origin_event.notification_attempted_at,
+        )
+        return EpisodeDetail(
+            episode=episode,
+            origin_event=event_context,
+            decisions=tuple(decisions),
+            executions=executions,
+            review=review,
+            position=position,
+        )
 
     def stats(
         self,
@@ -1222,12 +1382,12 @@ class ExecutionReviewService:
             executed_decisions=executed,
             not_executed_decisions=not_executed,
             decision_completion_rate=(
-                Decimal(processed) / Decimal(eligible) if eligible else Decimal("0")
+                Decimal(processed) / Decimal(eligible) if eligible else None
             ),
             execution_rate=(
                 Decimal(executed) / Decimal(processed)
                 if processed
-                else Decimal("0")
+                else None
             ),
             primary_reason_counts=dict(sorted(reasons.items())),
         )
@@ -1626,46 +1786,6 @@ class ExecutionReviewService:
             return event, "SHORT"
         raise _invalid("EVENT_DIRECTION_INVALID")
 
-    def _eligible_events(
-        self,
-        trading_day_from: date | None = None,
-        trading_day_to: date | None = None,
-        *,
-        symbol: str | None = None,
-        direction: str | None = None,
-        frequency: str | None = None,
-    ) -> tuple[AlertEvent, ...]:
-        rows = self._session.execute(
-            select(AlertEvent, AlertRule.rule_code)
-            .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
-            .order_by(AlertEvent.trading_day, AlertEvent.id)
-        ).all()
-        result = []
-        for event, rule_code in rows:
-            if rule_code != ELIGIBLE_RULE_CODE or event.trading_day is None:
-                continue
-            if trading_day_from is not None and event.trading_day < trading_day_from:
-                continue
-            if trading_day_to is not None and event.trading_day > trading_day_to:
-                continue
-            if symbol is not None and event.symbol != symbol:
-                continue
-            if frequency is not None and event.frequency != frequency:
-                continue
-            if (
-                not str(event.contract or "").strip()
-                or event.frequency not in ELIGIBLE_FREQUENCIES
-                or tuple(event.result_codes or ()) not in {("buy",), ("sell",)}
-            ):
-                continue
-            event_direction = (
-                "LONG" if tuple(event.result_codes) == ("buy",) else "SHORT"
-            )
-            if direction is not None and event_direction != direction:
-                continue
-            result.append(event)
-        return tuple(result)
-
     @staticmethod
     def _item(
         *,
@@ -1688,17 +1808,6 @@ class ExecutionReviewService:
             direction=direction,
             trading_day=event.trading_day,
         )
-
-    @staticmethod
-    def _episode_state(
-        episode: TradeEpisode,
-        review_episode_ids: set[int],
-    ) -> str:
-        if episode.closed_at is None:
-            return "open"
-        if episode.id in review_episode_ids:
-            return "done"
-        return "pending_review"
 
     def _decision_for_event(self, event_id: int) -> TradeDecision | None:
         return self._session.scalar(

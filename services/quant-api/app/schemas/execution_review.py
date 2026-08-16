@@ -224,8 +224,24 @@ class EventStatesResponse(BaseModel):
     items: list[EventStateOut]
 
 
+class EventContextOut(BaseModel):
+    id: int
+    rule_code: str
+    symbol: str
+    contract: str
+    trading_day: date
+    frequency: str
+    bar_end: datetime
+    result_codes: list[str]
+    lower_tf_confirmation: bool
+    detected_at: datetime
+    notification_attempted_at: datetime | None
+
+
 class EpisodeDetailResponse(BaseModel):
     episode: EpisodeOut
+    origin_event: EventContextOut
+    decisions: list[DecisionOut]
     executions: list[ExecutionOut]
     review: ReviewOut | None
     position: PositionOut
@@ -237,8 +253,8 @@ class OpportunityStatsOut(BaseModel):
     pending_events: int
     executed_decisions: int
     not_executed_decisions: int
-    decision_completion_rate: Decimal
-    execution_rate: Decimal
+    decision_completion_rate: Decimal | None
+    execution_rate: Decimal | None
     primary_reason_counts: dict[str, int]
 
 

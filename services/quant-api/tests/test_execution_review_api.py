@@ -57,7 +57,7 @@ def test_http_full_execution_review_flow_and_read_models(
             "execution_reason_tags": ["KEY_LEVEL_BREAKOUT"],
         },
     )
-    assert executed.status_code == 200
+    assert executed.status_code == 201
     payload = executed.json()
     assert payload["decision"]["disposition"] == "EXECUTED"
     assert payload["episode"]["direction"] == "SHORT"
@@ -103,7 +103,7 @@ def test_http_full_execution_review_flow_and_read_models(
             "quantity": 2,
         },
     )
-    assert close.status_code == 200
+    assert close.status_code == 201
     assert close.json()["episode"]["close_reason"] == "EXECUTION_NET_ZERO"
     close_execution_id = close.json()["execution"]["id"]
 
@@ -143,7 +143,7 @@ def test_http_full_execution_review_flow_and_read_models(
         f"/api/execution-review/episodes/{episode_id}/review",
         json=review_payload,
     )
-    assert review.status_code == 200
+    assert review.status_code == 201
     review_id = review.json()["id"]
     assert "submitted_at" in review.json()
 
@@ -154,8 +154,21 @@ def test_http_full_execution_review_flow_and_read_models(
     assert review_update.status_code == 200
     assert review_update.json()["submitted_at"] == review.json()["submitted_at"]
 
-    items = client.get("/api/execution-review/items", params={"state": "done"})
-    states = client.get("/api/execution-review/event-states")
+    items = client.get(
+        "/api/execution-review/items",
+        params={
+            "state": "done",
+            "symbol": " JM ",
+            "direction": "SHORT",
+            "frequency": "15m",
+            "start_trading_day": "2026-08-15",
+            "end_trading_day": "2026-08-15",
+        },
+    )
+    states = client.get(
+        "/api/execution-review/event-states",
+        params=[("event_ids", str(event_id))],
+    )
     detail = client.get(f"/api/execution-review/episodes/{episode_id}")
     stats = client.get("/api/execution-review/stats")
     assert items.status_code == states.status_code == detail.status_code == 200
@@ -163,6 +176,20 @@ def test_http_full_execution_review_flow_and_read_models(
     assert items.json()["items"][0]["item_kind"] == "episode"
     assert states.json()["items"][0]["state"] == "done"
     assert detail.json()["position"]["remaining_quantity"] == 0
+    assert detail.json()["origin_event"] == {
+        "id": event_id,
+        "rule_code": "subing_entry_signal_v1",
+        "symbol": "jm",
+        "contract": "JM2609",
+        "trading_day": "2026-08-15",
+        "frequency": "15m",
+        "bar_end": "2026-08-15T01:00:00Z",
+        "result_codes": ["sell"],
+        "lower_tf_confirmation": False,
+        "detected_at": "2026-08-15T01:00:01Z",
+        "notification_attempted_at": None,
+    }
+    assert [row["id"] for row in detail.json()["decisions"]] == [decision_id]
     assert stats.json()["opportunities"]["processed_events"] == 1
     assert stats.json()["episode_states"]["done_episodes"] == 1
     assert stats.json()["review_issue_top"] == {
@@ -182,7 +209,7 @@ def test_not_executed_and_disposition_correction_routes(
         f"/api/execution-review/events/{event_id}/not-executed",
         json={"primary_reason": "TOO_LATE"},
     )
-    assert created.status_code == 200
+    assert created.status_code == 201
     decision_id = created.json()["id"]
 
     corrected = client.post(
@@ -198,6 +225,124 @@ def test_not_executed_and_disposition_correction_routes(
     assert corrected.status_code == 200
     assert corrected.json()["decision"]["id"] == decision_id
     assert corrected.json()["decision"]["disposition"] == "EXECUTED"
+
+
+def test_event_states_require_bounded_ids_and_fail_closed(
+    api: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, factory = api
+    first_id = _seed_event(factory)
+    second_id = _seed_event(
+        factory,
+        symbol="a",
+        contract="A2609",
+        bar_end=BAR_END + timedelta(minutes=1),
+    )
+    unrequested_id = _seed_event(
+        factory,
+        symbol="b",
+        contract="B2609",
+        bar_end=BAR_END + timedelta(minutes=2),
+    )
+
+    missing_parameter = client.get("/api/execution-review/event-states")
+    bounded = client.get(
+        "/api/execution-review/event-states",
+        params=[
+            ("event_ids", str(second_id)),
+            ("event_ids", str(first_id)),
+            ("event_ids", str(second_id)),
+        ],
+    )
+    missing_event = client.get(
+        "/api/execution-review/event-states",
+        params=[("event_ids", str(first_id)), ("event_ids", "999999")],
+    )
+    non_positive = client.get(
+        "/api/execution-review/event-states",
+        params={"event_ids": 0},
+    )
+
+    assert missing_parameter.status_code == 422
+    assert missing_parameter.json() == {
+        "detail": {"code": "INVALID_EXECUTION_REVIEW_REQUEST"}
+    }
+    assert bounded.status_code == 200
+    assert [row["event_id"] for row in bounded.json()["items"]] == [
+        second_id,
+        first_id,
+    ]
+    assert unrequested_id not in {
+        row["event_id"] for row in bounded.json()["items"]
+    }
+    assert missing_event.status_code == 404
+    assert missing_event.json() == {
+        "detail": {"code": "EXECUTION_REVIEW_EVENT_NOT_FOUND"}
+    }
+    assert non_positive.status_code == 422
+    assert non_positive.json() == {
+        "detail": {"code": "EXECUTION_REVIEW_EVENT_IDS_INVALID"}
+    }
+
+
+def test_event_states_reject_ineligible_event(
+    api: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, factory = api
+    event_id = _seed_event(factory, rule_code="htdy_original_15m")
+
+    response = client.get(
+        "/api/execution-review/event-states",
+        params={"event_ids": event_id},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "EVENT_NOT_EXECUTION_REVIEW_ELIGIBLE"}
+    }
+
+
+def test_items_require_state_and_active_states_ignore_historical_range(
+    api: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, factory = api
+    event_id = _seed_event(factory)
+
+    missing_state = client.get("/api/execution-review/items")
+    pending = client.get(
+        "/api/execution-review/items",
+        params={
+            "state": "pending_decision",
+            "symbol": "JM",
+            "direction": "SHORT",
+            "frequency": "15m",
+            "start_trading_day": "2099-01-02",
+            "end_trading_day": "2099-01-01",
+        },
+    )
+
+    assert missing_state.status_code == 422
+    assert missing_state.json() == {
+        "detail": {"code": "INVALID_EXECUTION_REVIEW_REQUEST"}
+    }
+    assert pending.status_code == 200
+    assert [row["event_id"] for row in pending.json()["items"]] == [event_id]
+
+
+def test_stats_zero_denominators_are_json_null(
+    api: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, factory = api
+
+    empty = client.get("/api/execution-review/stats")
+    _seed_event(factory)
+    pending = client.get("/api/execution-review/stats")
+
+    assert empty.status_code == pending.status_code == 200
+    assert empty.json()["opportunities"]["decision_completion_rate"] is None
+    assert empty.json()["opportunities"]["execution_rate"] is None
+    assert pending.json()["opportunities"]["decision_completion_rate"] == "0"
+    assert pending.json()["opportunities"]["execution_rate"] is None
 
 
 @pytest.mark.parametrize(
@@ -338,7 +483,7 @@ def test_execution_review_domain_errors_use_stable_envelope(
         f"/api/execution-review/events/{event_id}/executed",
         json=_executed_json(),
     )
-    assert first.status_code == 200
+    assert first.status_code == 201
     opposite_id = _seed_event(
         factory,
         result_codes=["sell"],
@@ -359,12 +504,17 @@ def test_execution_review_domain_errors_use_stable_envelope(
     }
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["/api/alerts/events", "/api/v1/market/bars/page"],
+)
 def test_non_execution_review_validation_keeps_fastapi_default_handler(
     api: tuple[TestClient, sessionmaker[Session]],
+    path: str,
 ) -> None:
     client, _ = api
 
-    response = client.get("/api/alerts/events")
+    response = client.get(path)
 
     assert response.status_code == 422
     assert isinstance(response.json()["detail"], list)
@@ -377,8 +527,24 @@ def test_unknown_persistence_failure_uses_redacted_503_envelope(
     client, _ = api
 
     class FailingService:
-        def list_items(self, *, state: str | None = None) -> tuple[object, ...]:
-            del state
+        def list_items(
+            self,
+            *,
+            state: str,
+            symbol: str | None = None,
+            direction: str | None = None,
+            frequency: str | None = None,
+            start_trading_day: date | None = None,
+            end_trading_day: date | None = None,
+        ) -> tuple[object, ...]:
+            del (
+                state,
+                symbol,
+                direction,
+                frequency,
+                start_trading_day,
+                end_trading_day,
+            )
             raise ExecutionReviewDomainError(
                 "EXECUTION_REVIEW_PERSIST_FAILED",
                 status_code=503,
@@ -390,7 +556,10 @@ def test_unknown_persistence_failure_uses_redacted_503_envelope(
         lambda _: FailingService(),
     )
 
-    response = client.get("/api/execution-review/items")
+    response = client.get(
+        "/api/execution-review/items",
+        params={"state": "done"},
+    )
 
     assert response.status_code == 503
     assert response.json() == {
@@ -414,7 +583,7 @@ def test_multiplier_reference_failure_uses_redacted_503_envelope(
     )
 
     response = TestClient(app, raise_server_exceptions=False).get(
-        "/api/execution-review/items"
+        "/api/execution-review/items?state=done"
     )
 
     assert response.status_code == 503
@@ -428,25 +597,30 @@ def _seed_event(
     *,
     result_codes: list[str] | None = None,
     bar_end: datetime = BAR_END,
+    rule_code: str = "subing_entry_signal_v1",
+    symbol: str = "jm",
+    contract: str = "JM2609",
+    trading_day: date = date(2026, 8, 15),
+    frequency: str = "15m",
 ) -> int:
     with factory() as session:
         rule = session.query(AlertRule).filter_by(
-            rule_code="subing_entry_signal_v1"
+            rule_code=rule_code
         ).one_or_none()
         if rule is None:
             rule = AlertRule(
-                rule_code="subing_entry_signal_v1",
+                rule_code=rule_code,
                 enabled=True,
-                scope_products=["jm"],
+                scope_products=[symbol],
                 created_at=BAR_END,
                 updated_at=BAR_END,
             )
         event = AlertEvent(
             rule=rule,
-            symbol="jm",
-            contract="JM2609",
-            trading_day=date(2026, 8, 15),
-            frequency="15m",
+            symbol=symbol,
+            contract=contract,
+            trading_day=trading_day,
+            frequency=frequency,
             bar_end=bar_end,
             result_codes=result_codes or ["sell"],
             lower_tf_confirmation=False,

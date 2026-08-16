@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TypeVar, overload
+from typing import Literal, TypeVar, overload
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -47,6 +47,7 @@ from app.schemas.execution_review import (
     EpisodeDetailResponse,
     EpisodeOut,
     EpisodeStateStatsOut,
+    EventContextOut,
     EventStateOut,
     EventStatesResponse,
     ExecutedRequest,
@@ -79,10 +80,29 @@ _MULTIPLIER_PATH = (
 
 @router.get("/items", response_model=ReviewItemsResponse)
 def list_items(
-    state: str | None = Query(default=None),
+    state: Literal[
+        "pending_decision",
+        "open",
+        "pending_review",
+        "done",
+    ] = Query(...),
+    symbol: str | None = Query(default=None),
+    direction: Literal["LONG", "SHORT"] | None = Query(default=None),
+    frequency: Literal["5m", "15m"] | None = Query(default=None),
+    start_trading_day: date | None = Query(default=None),
+    end_trading_day: date | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> ReviewItemsResponse:
-    items = _domain_call(lambda: _service(session).list_items(state=state))
+    items = _domain_call(
+        lambda: _service(session).list_items(
+            state=state,
+            symbol=symbol,
+            direction=direction,
+            frequency=frequency,
+            start_trading_day=start_trading_day,
+            end_trading_day=end_trading_day,
+        )
+    )
     return ReviewItemsResponse(
         items=[
             ReviewItemOut(
@@ -102,8 +122,13 @@ def list_items(
 
 
 @router.get("/event-states", response_model=EventStatesResponse)
-def event_states(session: Session = Depends(get_db)) -> EventStatesResponse:
-    states = _domain_call(lambda: _service(session).event_states())
+def event_states(
+    event_ids: list[int] = Query(..., min_length=1),
+    session: Session = Depends(get_db),
+) -> EventStatesResponse:
+    states = _domain_call(
+        lambda: _service(session).event_states(tuple(event_ids))
+    )
     return EventStatesResponse(
         items=[
             EventStateOut(
@@ -125,6 +150,24 @@ def episode_detail(
     detail = _domain_call(lambda: _service(session).episode_detail(episode_id))
     return EpisodeDetailResponse(
         episode=_episode_out(detail.episode),
+        origin_event=EventContextOut(
+            id=detail.origin_event.id,
+            rule_code=detail.origin_event.rule_code,
+            symbol=detail.origin_event.symbol,
+            contract=detail.origin_event.contract,
+            trading_day=detail.origin_event.trading_day,
+            frequency=detail.origin_event.frequency,
+            bar_end=_utc_timestamp(detail.origin_event.bar_end),
+            result_codes=list(detail.origin_event.result_codes),
+            lower_tf_confirmation=(
+                detail.origin_event.lower_tf_confirmation
+            ),
+            detected_at=_utc_timestamp(detail.origin_event.detected_at),
+            notification_attempted_at=_utc_timestamp(
+                detail.origin_event.notification_attempted_at
+            ),
+        ),
+        decisions=[_decision_out(item) for item in detail.decisions],
         executions=[_execution_out(item) for item in detail.executions],
         review=_review_out(detail.review) if detail.review is not None else None,
         position=_position_out(detail.position),
@@ -179,6 +222,7 @@ def stats(
 @router.post(
     "/events/{event_id}/not-executed",
     response_model=DecisionOut,
+    status_code=status.HTTP_201_CREATED,
 )
 def record_not_executed(
     event_id: int,
@@ -200,7 +244,11 @@ def record_not_executed(
     return _decision_out(decision)
 
 
-@router.post("/events/{event_id}/executed", response_model=ExecutedResponse)
+@router.post(
+    "/events/{event_id}/executed",
+    response_model=ExecutedResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def record_executed(
     event_id: int,
     request: ExecutedRequest,
@@ -228,6 +276,7 @@ def record_executed(
 @router.post(
     "/episodes/{episode_id}/executions",
     response_model=ExecutionResponse,
+    status_code=status.HTTP_201_CREATED,
 )
 def append_execution(
     episode_id: int,
@@ -249,7 +298,11 @@ def append_execution(
     return _execution_response(result)
 
 
-@router.post("/episodes/{episode_id}/review", response_model=ReviewOut)
+@router.post(
+    "/episodes/{episode_id}/review",
+    response_model=ReviewOut,
+    status_code=status.HTTP_201_CREATED,
+)
 def submit_review(
     episode_id: int,
     request: ReviewRequest,
