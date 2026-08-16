@@ -36,7 +36,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined
     : {
-        command: `pnpm dev --host 127.0.0.1 --port ${e2ePort}`,
+        command: `VITE_PROXY_API_TARGET=http://127.0.0.1:1 VITE_PROXY_WS_TARGET=ws://127.0.0.1:1 pnpm dev --host 127.0.0.1 --port ${e2ePort}`,
         url: e2eBaseURL,
         // An arbitrary local server can belong to another worktree; fail rather than test stale source.
         reuseExistingServer: false,

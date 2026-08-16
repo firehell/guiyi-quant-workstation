@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import json
 import logging
+import io
 from datetime import date, datetime
 
+import pytest
+
 from app.market_data.after_market import AfterMarketUpdater, public_after_market_status
+from app.market_data.after_market import AfterMarketResult
+from app.guiyi_cli.main import (
+    _execution_review_roll_marker_state,
+    main as guiyi_main,
+)
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import MaintenanceResult
 from app.market_data.operational_universe import load_active_products
@@ -12,6 +20,22 @@ from app.market_data.operational_universe import load_active_products
 
 _ACTIVE_PRODUCTS = load_active_products()
 _ACTIVE_CONTRACTS = {symbol: f"{symbol.upper()}2601" for symbol in _ACTIVE_PRODUCTS}
+
+
+@pytest.fixture(autouse=True)
+def _restore_after_market_logger_state():
+    loggers = tuple(
+        logging.getLogger(name)
+        for name in ("app.market_data.after_market", "app.guiyi_cli.main")
+    )
+    disabled_states = tuple(logger.disabled for logger in loggers)
+    for logger in loggers:
+        logger.disabled = False
+    try:
+        yield
+    finally:
+        for logger, was_disabled in zip(loggers, disabled_states, strict=True):
+            logger.disabled = was_disabled
 
 
 class _Coverage:
@@ -142,6 +166,188 @@ def _updater(
 
 def _status(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("market_status", ("skipped", "failed"))
+def test_after_market_followup_does_not_run_for_non_passed_result(
+    market_status: str,
+) -> None:
+    events: list[str] = []
+    sessions = _TrackedSessionFactory(events)
+
+    class Updater:
+        def run(self):
+            events.append("market_run")
+            return AfterMarketResult(market_status, date(2026, 8, 10), 1, None)
+
+    code = guiyi_main(
+        ["data", "after-market"],
+        session_factory=sessions,
+        manager_factory=lambda session: events.append(f"manager:{session}") or object(),
+        after_market_factory=lambda _manager: Updater(),
+        execution_review_roll_marker_state=lambda: "enabled",
+        roll_reconciler_factory=lambda _session: pytest.fail(
+            "reconciler must not be built"
+        ),
+        stdout=io.StringIO(),
+        stderr=io.StringIO(),
+    )
+
+    assert code == (0 if market_status == "skipped" else 1)
+    assert events == ["enter:session-1", "manager:session-1", "market_run", "exit:session-1"]
+
+
+@pytest.mark.parametrize("marker_state", ("disabled", "invalid"))
+def test_after_market_passed_with_disabled_marker_uses_only_market_session(
+    marker_state: str,
+) -> None:
+    events: list[str] = []
+    sessions = _TrackedSessionFactory(events)
+
+    class Updater:
+        def run(self):
+            events.append("market_run")
+            return AfterMarketResult("passed", date(2026, 8, 10), 1, None)
+
+    code = guiyi_main(
+        ["data", "after-market"],
+        session_factory=sessions,
+        manager_factory=lambda session: events.append(f"manager:{session}") or object(),
+        after_market_factory=lambda _manager: Updater(),
+        execution_review_roll_marker_state=lambda: marker_state,
+        roll_reconciler_factory=lambda _session: pytest.fail(
+            "reconciler must not be built"
+        ),
+        stdout=io.StringIO(),
+        stderr=io.StringIO(),
+    )
+
+    assert code == 0
+    assert events == ["enter:session-1", "manager:session-1", "market_run", "exit:session-1"]
+
+
+def test_after_market_passed_with_enabled_marker_reconciles_in_new_session() -> None:
+    events: list[str] = []
+    sessions = _TrackedSessionFactory(events)
+
+    class Updater:
+        def run(self):
+            events.append("market_run")
+            return AfterMarketResult("passed", date(2026, 8, 10), 1, None)
+
+    class Reconciler:
+        def reconcile_open_episodes(self):
+            events.append("reconcile")
+            return ()
+
+    code = guiyi_main(
+        ["data", "after-market"],
+        session_factory=sessions,
+        manager_factory=lambda session: events.append(f"manager:{session}") or object(),
+        after_market_factory=lambda _manager: Updater(),
+        execution_review_roll_marker_state=lambda: events.append("marker") or "enabled",
+        roll_reconciler_factory=lambda session: (
+            events.append(f"reconciler:{session}") or Reconciler()
+        ),
+        stdout=io.StringIO(),
+        stderr=io.StringIO(),
+    )
+
+    assert code == 0
+    assert events == [
+        "enter:session-1",
+        "manager:session-1",
+        "market_run",
+        "exit:session-1",
+        "marker",
+        "enter:session-2",
+        "reconciler:session-2",
+        "reconcile",
+        "exit:session-2",
+    ]
+
+
+def test_after_market_reconcile_exception_preserves_passed_result(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    events: list[str] = []
+    sessions = _TrackedSessionFactory(events)
+
+    class Updater:
+        def run(self):
+            events.append("market_run")
+            return AfterMarketResult("passed", date(2026, 8, 10), 1, None)
+
+    class Reconciler:
+        def reconcile_open_episodes(self):
+            events.append("reconcile")
+            raise RuntimeError("private database detail")
+
+    stdout = io.StringIO()
+    caplog.set_level(logging.WARNING, logger="app.guiyi_cli.main")
+    code = guiyi_main(
+        ["data", "after-market"],
+        session_factory=sessions,
+        manager_factory=lambda _session: object(),
+        after_market_factory=lambda _manager: Updater(),
+        execution_review_roll_marker_state=lambda: "enabled",
+        roll_reconciler_factory=lambda _session: Reconciler(),
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["status"] == "passed"
+    assert events == [
+        "enter:session-1",
+        "market_run",
+        "exit:session-1",
+        "enter:session-2",
+        "reconcile",
+        "exit:session-2",
+    ]
+    assert [record.message for record in caplog.records] == [
+        "EXECUTION_REVIEW_ROLL_FOLLOWUP_FAILED"
+    ]
+
+
+class _TrackedSessionFactory:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+        self.count = 0
+
+    def __call__(self):
+        self.count += 1
+        return _TrackedSessionContext(f"session-{self.count}", self.events)
+
+
+class _TrackedSessionContext:
+    def __init__(self, name: str, events: list[str]) -> None:
+        self.name = name
+        self.events = events
+
+    def __enter__(self):
+        self.events.append(f"enter:{self.name}")
+        return self.name
+
+    def __exit__(self, _exc_type, _exc, _traceback):
+        self.events.append(f"exit:{self.name}")
+        return False
+
+
+def test_execution_review_roll_marker_reader_is_exact_and_default_off(tmp_path) -> None:
+    assert _execution_review_roll_marker_state(tmp_path) == "disabled"
+    marker = tmp_path / ".run/execution-review-roll-enabled"
+    marker.parent.mkdir()
+    marker.write_bytes(b"enabled\n")
+    marker.chmod(0o600)
+    assert _execution_review_roll_marker_state(tmp_path) == "enabled"
+
+    marker.write_bytes(b"enabled")
+    assert _execution_review_roll_marker_state(tmp_path) == "invalid"
+    marker.write_bytes(b"enabled\n")
+    marker.chmod(0o644)
+    assert _execution_review_roll_marker_state(tmp_path) == "invalid"
 
 
 def test_skips_non_trading_day_without_ready_update_or_retry(tmp_path) -> None:

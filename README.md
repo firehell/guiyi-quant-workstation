@@ -1,9 +1,9 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。当前代码版本身份为 `v1.3.1`；main/tag、production Runtime、
+本地、单用户的国内期货量化研究工作站。当前代码版本身份为 `v1.4.0`；main/tag、production Runtime、
 数据库 migration 与 Alert Scope 的实际状态以 `STATUS.md` 为准。当前可执行代码面包括 Market Web、
 Canonical 历史行情、Market API、data CLI、Runtime 只读状态、Alert V2、当前交易日 Formal Signal、
-Product 双 Rule Scope/今日记录，以及苏冰 Factor/Calibration/Signal 研究观察。项目不实现自动交易或
+Product 双 Rule Scope/今日记录、Execution Review V1，以及苏冰 Factor/Calibration/Signal 研究观察。项目不实现自动交易或
 自动下单，`auto_order=false`。
 
 ## 快速导航
@@ -16,6 +16,7 @@ Product 双 Rule Scope/今日记录，以及苏冰 Factor/Calibration/Signal 研
 | 长期决策 | `DECISIONS.md` |
 | 分层架构 | `docs/ARCHITECTURE.md` |
 | Canonical 数据合同 | `docs/DATA_CENTER.md` |
+| Execution Review 业务合同 | `docs/EXECUTION_REVIEW.md` |
 | 行为规范 | `openspec/specs/` |
 | 测试入口 | `TESTING.md` |
 | 运维拓扑与只读检查 | `deploy/README.md` |

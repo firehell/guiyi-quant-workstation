@@ -172,6 +172,211 @@ def test_latest_dominant_segment_fails_closed_for_missing_map_after_known_contra
         ).latest_dominant_segment("jm")
 
 
+def test_dominant_segment_for_day_returns_historical_containing_segment(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    contracts = {
+        2: "JM2505",
+        3: "JM2505",
+        6: "JM2509",
+        7: "JM2509",
+        8: "JM2509",
+    }
+    for day in range(2, 9):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=day in contracts,
+            )
+        )
+    catalog.upsert_main_contracts(
+        tuple(("jm", date(2025, 1, day), contract) for day, contract in contracts.items())
+    )
+    session.commit()
+
+    service = MarketDataService(catalog, CanonicalMonthlyStore(tmp_path))
+
+    historical = service.dominant_segment_for_day("jm", date(2025, 1, 3))
+    latest = service.latest_dominant_segment("jm")
+
+    assert historical.contract == "JM2505"
+    assert historical.start_trading_day == date(2025, 1, 2)
+    assert historical.end_trading_day == date(2025, 1, 3)
+    assert latest.contract == "JM2509"
+
+
+def test_dominant_segment_for_day_fails_closed_for_calendar_gap(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    for day, is_trading_day in ((2, True), (3, True), (5, False), (6, True)):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=is_trading_day,
+            )
+        )
+    catalog.upsert_main_contracts(
+        (
+            ("jm", date(2025, 1, 2), "JM2505"),
+            ("jm", date(2025, 1, 3), "JM2505"),
+            ("jm", date(2025, 1, 6), "JM2509"),
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="TRADING_CALENDAR_MISSING"):
+        MarketDataService(
+            catalog, CanonicalMonthlyStore(tmp_path)
+        ).dominant_segment_for_day("jm", date(2025, 1, 3))
+
+
+def test_dominant_segment_for_day_fails_closed_for_mapping_gap(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    for day in range(2, 7):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=day in (2, 3, 6),
+            )
+        )
+    catalog.upsert_main_contracts(
+        (
+            ("jm", date(2025, 1, 2), "JM2505"),
+            ("jm", date(2025, 1, 6), "JM2509"),
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="MAIN_CONTRACT_MAP_MISSING"):
+        MarketDataService(
+            catalog, CanonicalMonthlyStore(tmp_path)
+        ).dominant_segment_for_day("jm", date(2025, 1, 2))
+
+
+def test_contract_bars_for_trading_day_reads_only_real_contract_dataset(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add_all(
+        (
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 2), is_trading_day=True
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True
+            ),
+        )
+    )
+    real_key = DatasetKey("contract", "jm", "JM2505", "1m")
+    continuous_key = DatasetKey("continuous", "jm", "MAIN", "1m")
+    _publish(catalog, store, real_key, (_bar(2, 200), _bar(3, 201)))
+    _publish(catalog, store, continuous_key, (_bar(2, 900),))
+    session.commit()
+
+    bars = MarketDataService(catalog, store).contract_bars_for_trading_day(
+        symbol="jm",
+        contract="JM2505",
+        frequency="1m",
+        trading_day=date(2025, 1, 2),
+    )
+
+    assert tuple(bar.close for bar in bars) == (Decimal("200"),)
+
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        MarketDataService(catalog, store).contract_bars_for_trading_day(
+            symbol="jm",
+            contract="JM2509",
+            frequency="1m",
+            trading_day=date(2025, 1, 2),
+        )
+
+
+def test_contract_bars_for_trading_day_uses_canonical_trading_day_for_night_bar(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add_all(
+        (
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 4), is_trading_day=False
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 5), is_trading_day=False
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 6), is_trading_day=True
+            ),
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name="night",
+                start_time=time(21),
+                end_time=time(23),
+                effective_from=date(2025, 1, 6),
+                effective_to=date(2025, 1, 6),
+                is_active=True,
+            ),
+        )
+    )
+    night_bar = CanonicalBar(
+        datetime(2025, 1, 3, 13, 2, tzinfo=UTC),
+        date(2025, 1, 6),
+        Decimal("200"),
+        Decimal("201"),
+        Decimal("199"),
+        Decimal("200"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    key = DatasetKey("contract", "jm", "JM2509", "1m")
+    _publish(catalog, store, key, (night_bar,))
+    session.commit()
+
+    bars = MarketDataService(catalog, store).contract_bars_for_trading_day(
+        symbol="jm",
+        contract="JM2509",
+        frequency="1m",
+        trading_day=date(2025, 1, 6),
+    )
+
+    assert bars == (night_bar,)
+
+
+def test_contract_bars_for_trading_day_returns_empty_only_for_formal_nontrading_day(
+    session, tmp_path
+) -> None:
+    session.add(
+        TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, 4), is_trading_day=False
+        )
+    )
+    session.commit()
+
+    bars = MarketDataService(
+        MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+    ).contract_bars_for_trading_day(
+        symbol="jm",
+        contract="JM2505",
+        frequency="1m",
+        trading_day=date(2025, 1, 4),
+    )
+
+    assert bars == ()
+
+
 def test_continuous_and_contract_query_use_catalogued_physical_partitions(
     session, tmp_path
 ) -> None:

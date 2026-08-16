@@ -12,7 +12,7 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const viteEntry = join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js')
 const routerSource = readFileSync(join(projectRoot, 'src/app/router.ts'), 'utf8')
 
-test('router registers only Market routes', () => {
+test('router registers only Market and Execution Review workspace routes', () => {
   const retiredRouteNames = ['dashboard', 'signal', 'strategy', 'review', 'data', 'runtime', 'settings']
   for (const routeName of retiredRouteNames) {
     assert.equal(routerSource.includes(`name: '${routeName}'`), false, `router still registers ${routeName}`)
@@ -20,6 +20,8 @@ test('router registers only Market routes', () => {
   }
   assert.match(routerSource, /name: 'market'/)
   assert.match(routerSource, /name: 'market-chart'/)
+  assert.match(routerSource, /name: 'trade-records'/)
+  assert.match(routerSource, /pages\/trade-records\/index\.vue/)
   assert.match(routerSource, /redirect: '\/market'/)
 })
 

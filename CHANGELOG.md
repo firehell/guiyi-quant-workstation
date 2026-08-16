@@ -2,6 +2,22 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.4.0] - 2026-08-16
+
+Execution Review V1：
+
+- 新增 `/trade-records` 与 `/api/execution-review/*`，以独立的 Decision / Episode / Execution /
+  Review 四表 Application Domain 保存苏冰 Formal Signal 的人工决策、真实手工执行时间线与结构化复盘；
+- 支持 origin Signal 形成 OPEN、同方向同合约 later Signal 形成 ADD，以及人工
+  ADD/REDUCE/CLOSE；不连接账户、不创建订单，`auto_order=false` 不变；
+- 历史行情 reconstruction 只经 `MarketDataService`，并提供默认关闭的有界 `DOMINANT_ROLL`
+  reconcile 能力，不调用 RQData、不写 Canonical、不伪造真实 CLOSE；
+- 新增 Lightweight Stats，仅呈现机会、处理、执行、Episode 状态、未执行原因与结构化复盘标签，
+  不提供胜率、Sharpe、PnL ranking 或策略盈利结论；
+- multiplier 采用 trusted-partial official reference，当前 coverage 为 `7 / 60`。缺失 multiplier
+  只令人民币 Estimated Gross PnL unavailable；realized points、仓位拓扑、时间线与 Review 仍可用，
+  `60 / 60` 不属于 v1.4 release Gate。
+
 ## [1.3.1] - 2026-08-15
 
 Market Web 品牌视觉与错误态收口：

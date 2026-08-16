@@ -1,11 +1,11 @@
 # 归一量化系统架构
 
-更新时间：2026-08-14
+更新时间：2026-08-16
 
 ## 系统定位
 
 归一量化是本地优先、单用户的国内期货研究工作站。当前目标应用面为 Market Web、Market API、
-数据 CLI、Canonical 历史读取与独立 Alert Application Domain。Market Runtime V1 与 Alert Runtime V2
+数据 CLI、Canonical 历史读取、独立 Alert Application Domain 与独立 Execution Review Application Domain。Market Runtime V1 与 Alert Runtime V2
 的代码/launchd 边界和授权相互独立；Alert 模板默认关闭。不实现自动交易，`auto_order=false` 始终成立。
 
 ## 分层设计
@@ -18,6 +18,7 @@ flowchart TB
       CLI["guiyi data update/refresh/audit"]
       RCLI["guiyi research subing-calibration"]
       ALERTAPI["Alert API"]
+      ERAPI["Execution Review API"]
     end
     subgraph Application["应用层：三个深模块"]
       MS["MetadataSynchronizer"]
@@ -38,6 +39,11 @@ flowchart TB
       AE["HTDY original 15m Evaluator"]
       WC["WeCom one-shot sender"]
     end
+    subgraph ExecutionReview["Execution Review Application Domain"]
+      ERS["ExecutionReviewService"]
+      ER4["Decision / Episode / Execution / Review"]
+      ERST["Lightweight ExecutionStats"]
+    end
     subgraph Domain["领域层"]
       DK["DatasetKey / SeriesQuery / CanonicalBar"]
       CP["月度 coverage / natural resume"]
@@ -47,6 +53,7 @@ flowchart TB
       RQ["RQData adapter"]
       PG["PostgreSQL catalog"]
       APG["PostgreSQL alert application tables"]
+      EPG["PostgreSQL execution-review application tables"]
       PQ["Parquet / PyArrow reader-writer"]
       RD["Redis Live Overlay"]
     end
@@ -55,6 +62,10 @@ flowchart TB
     API --> SR
     RCLI --> SCR --> MQ
     WEB --> ALERTAPI --> AS
+    WEB --> ERAPI --> ERS
+    ERS --> ER4 --> EPG
+    ERS --> ERST
+    ERS --> MQ
     MR --> MQ
     MR --> RD
     MRS --> MQ
@@ -102,7 +113,7 @@ flowchart TB
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
   Market API 直接输出该 taxonomy；Web 不再保留第二套品种目录。
 - PostgreSQL 的 Data Foundation / Market Catalog 精确保留八表，Parquet 保存 Bars；Alert 的
-  `alert_rules` / `alert_events` 是独立 Application Domain 表，不进入且不改变八表 Market Catalog。不引入多
+  `alert_rules` / `alert_events` 与 Execution Review 的四张 `trade_*` 表是独立 Application Domain 表，不进入且不改变八表 Market Catalog。不引入多
   provider、插件、任务中心或在线多版本选择器。
 
 ## 数据架构
@@ -187,6 +198,15 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
 promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 互不授权。每条
 completed-bar 消息与 heartbeat 都使用独立短 Session/transaction；Webhook sender 与 health 共用
 exact 企业微信目标校验器。
+
+Execution Review 不反向依赖或修改 Alert Event：只从不可变 `subing_entry_signal_v1` Event 建立人工
+Decision、固定合约/方向的 Episode、真实手工 Execution timeline 和结构化 Review。一个品种最多一个
+OPEN Episode；不跨合约合并、不自动反手、不建账户/订单。post-hoc reconstruction 与 roll reference
+只经 `MarketDataService`；业务语义见 `docs/EXECUTION_REVIEW.md`。
+
+人民币估算使用 Git-tracked trusted-partial multiplier reference 与逐行官方 evidence。缺失值不阻断
+工作流，Episode 创建时 snapshot，历史 NULL 不随 reference 扩张。ExecutionStats 只提供机会处理、
+Episode 状态与复盘问题分布，不提供收益类排名或策略业绩指标。
 
 开发期的本地 launchd 可临时直接绑定主 `develop` 工作区，当前根和运行状态由 `STATUS.md` 记录。这只是为了快速观察，不改变 Historical/Live 边界，也不构成稳定 Runtime 版本。功能收口后的最终拓扑仍为绑定精确提交的独立 Runtime worktree。
 

@@ -55,6 +55,13 @@ function state(symbol, overrides = {}) {
 
 async function installFakeWebSocket(page) {
   await page.addInitScript(() => {
+    window.localStorage.setItem('guiyi.market.chart.preferences.v2', JSON.stringify({
+      version: 2,
+      selectedOverlay: 'none',
+      period: null,
+      realtimeFollow: false,
+    }))
+
     class FakeWebSocket {
       static sockets = []
 
@@ -233,6 +240,7 @@ test('switches series and period from the workspace shell, opens research on com
   const requests = []
   await installFakeWebSocket(page)
   await mockMarketApi(page, requests)
+  await page.setViewportSize({ width: 1100, height: 900 })
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByText('1200 bars')).toBeVisible()

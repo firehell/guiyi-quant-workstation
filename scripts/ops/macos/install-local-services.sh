@@ -6,10 +6,34 @@ TEMPLATE_DIR="$PROJECT_ROOT/deploy/launchd"
 RENDER_DIR="$PROJECT_ROOT/.run/launchd"
 MARKET_RUNTIME_MARKER="$PROJECT_ROOT/.run/market-runtime-enabled"
 ALERT_RUNTIME_MARKER="$PROJECT_ROOT/.run/alert-runtime-enabled"
+EXECUTION_REVIEW_ROLL_MARKER="$PROJECT_ROOT/.run/execution-review-roll-enabled"
 AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
+
+write_execution_review_roll_marker() {
+  local temporary_marker marker_mode
+  mkdir -p "$PROJECT_ROOT/.run"
+  temporary_marker="$(mktemp "${EXECUTION_REVIEW_ROLL_MARKER}.tmp.XXXXXX")"
+  if ! printf 'enabled\n' >"$temporary_marker"; then
+    rm -f "$temporary_marker"
+    return 1
+  fi
+  chmod 600 "$temporary_marker"
+  mv -f "$temporary_marker" "$EXECUTION_REVIEW_ROLL_MARKER"
+  marker_mode="$(stat -f '%Lp' "$EXECUTION_REVIEW_ROLL_MARKER")"
+  if [[ "$marker_mode" != "600" ]] || ! cmp -s "$EXECUTION_REVIEW_ROLL_MARKER" <(printf 'enabled\n'); then
+    return 1
+  fi
+}
+
+if [[ "$MODE" == "--confirm-execution-review-roll" ]]; then
+  write_execution_review_roll_marker
+  printf '[install-local-services] execution_review_roll=enabled\n'
+  exit 0
+fi
+
 RUNTIME_COMMIT="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null)"
 if [[ ! "$RUNTIME_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   printf '[install-local-services] invalid runtime commit identity\n' >&2
@@ -27,7 +51,7 @@ retired_labels=(
 render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}")
 load_labels=("${base_labels[@]}")
 
-[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime]\n' "$0" >&2; exit 2; }
+[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-execution-review-roll]\n' "$0" >&2; exit 2; }
 mkdir -p "$RENDER_DIR"
 
 for label in "${render_labels[@]}"; do

@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
-/** 应用路由表：仅保留 Market 工作台；meta.title 供侧边栏与面包屑使用 */
+/** 应用路由表：Market 与人工 Execution Review；meta.title 供侧边栏与面包屑使用 */
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -18,6 +18,12 @@ const routes: RouteRecordRaw[] = [
         name: 'market-chart',
         component: () => import('@/pages/market/chart.vue'),
         meta: { title: '品种行情', icon: 'chart' },
+      },
+      {
+        path: 'trade-records',
+        name: 'trade-records',
+        component: () => import('@/pages/trade-records/index.vue'),
+        meta: { title: '交易记录', icon: 'review' },
       },
       {
         path: ':pathMatch(.*)*',

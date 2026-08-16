@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton } from 'naive-ui'
 import MarketAttentionList from '@/components/market/MarketAttentionList.vue'
@@ -9,7 +9,9 @@ import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
 import MarketFormalSignals from '@/components/market/MarketFormalSignals.vue'
 import MarketRadarSkeleton from '@/components/market/MarketRadarSkeleton.vue'
 import { getMarketRadar } from '@/api/market'
+import { getEventStates } from '@/api/executionReview'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
+import type { EventState } from '@/types/executionReview'
 import type { MarketRadarItem, MarketRadarResponse } from '@/types/market'
 import { useCurrentFormalSignals } from '@/composables/useCurrentFormalSignals'
 import {
@@ -30,6 +32,8 @@ const {
   refresh: refreshFormalSignals,
 } = useCurrentFormalSignals()
 const preferences = ref(loadMarketWorkspacePreferences())
+const formalEventStates = ref<Record<number, EventState>>({})
+let formalStateGeneration = 0
 const freshnessIssue = computed(() => {
   if (!radar.value || radar.value.status === 'ready') return ''
   const parts = [
@@ -47,11 +51,42 @@ function openChart(item: MarketRadarItem) {
   })
 }
 
-function openFormalSignal(item: CurrentFormalSignalItem) {
+function openFormalSignal(item: CurrentFormalSignalItem, state?: EventState) {
+  if (state) {
+    const useEpisode = state.state === 'open' || state.state === 'pending_review'
+    void router.push({
+      name: 'trade-records',
+      query: {
+        state: state.state,
+        event_id: useEpisode ? undefined : String(item.id),
+        episode_id: useEpisode && state.episode_id ? String(state.episode_id) : undefined,
+      },
+    })
+    return
+  }
   void router.push({
     name: 'market-chart',
     query: { symbol: item.symbol, series_kind: 'actual_dominant', frequency: item.frequency },
   })
+}
+
+watch([formalStatus, formalItems], () => {
+  void refreshFormalEventStates()
+}, { deep: true })
+
+async function refreshFormalEventStates() {
+  const generation = ++formalStateGeneration
+  if (formalStatus.value !== 'ready' || formalItems.value.length === 0) {
+    formalEventStates.value = {}
+    return
+  }
+  try {
+    const response = await getEventStates(formalItems.value.map((item) => item.id))
+    if (generation !== formalStateGeneration) return
+    formalEventStates.value = Object.fromEntries(response.items.map((item) => [item.event_id, item]))
+  } catch {
+    if (generation === formalStateGeneration) formalEventStates.value = {}
+  }
 }
 
 function toggleWatchlist(symbol: string) {
@@ -89,6 +124,7 @@ onMounted(() => {
       :status="formalStatus"
       :trading-day="formalTradingDay"
       :items="formalItems"
+      :event-states="formalEventStates"
       @open="openFormalSignal"
     />
     <MarketRadarSkeleton v-if="loading && !radar" />

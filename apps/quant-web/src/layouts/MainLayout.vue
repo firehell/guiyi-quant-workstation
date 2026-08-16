@@ -56,6 +56,7 @@ const menuOptions: MenuOption[] = [
     key: 'work-group',
     children: [
       { label: 'Market 工作台', key: 'market', icon: renderIcon('market') },
+      { label: '交易记录', key: 'trade-records', icon: renderIcon('review') },
     ],
   },
 ]
@@ -72,6 +73,7 @@ const activeKey = computed(() => {
 
 const breadcrumbItems = computed(() => {
   if (route.name === 'market-chart') return ['行情看板', '品种行情']
+  if (route.name === 'trade-records') return ['交易记录']
   if (route.name === 'not-found') return ['页面不存在']
   return [String(route.meta.title || '归一量化工作站')]
 })

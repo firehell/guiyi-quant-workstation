@@ -267,6 +267,7 @@ UNIQUE(symbol) WHERE closed_at IS NULL
 id
 episode_id                       FK trade_episodes.id
 trigger_decision_id              nullable, FK trade_decisions.id
+sequence_no                     integer > 0
 
 execution_type
   OPEN
@@ -284,6 +285,16 @@ updated_at
 ```
 
 当 `trigger_decision_id` 非空时必须唯一，保证同一个 Event/Decision 不会被重复执行两次。
+
+同一 Episode 的 Execution 使用确定性序号：
+
+```text
+UNIQUE(episode_id, sequence_no)
+sequence_no 集合必须连续为 1..N
+OPEN 必须且只能是 sequence_no = 1
+```
+
+数据库约束保证 `sequence_no > 0`、episode 内唯一，以及 OPEN/非 OPEN 的行级序号规则；跨行连续性由 pure PnL core 和写服务在提交完整 timeline 时共同校验。`executed_at` 允许相同或非单调，只记录事实时间；timeline 拓扑与 PnL 重放顺序唯一使用 `sequence_no ASC`，不得以 `executed_at` 或数据库行顺序替代。
 
 逻辑 lineage：
 
@@ -588,12 +599,13 @@ TradeExecution.episode_id
 
 ### 8.3 Topology correction
 
-已经存在多个 Execution 的 Episode，如果要纠正 `quantity / execution_type / sequence`，Web 必须编辑完整 timeline 后一次提交。
+已经存在多个 Execution 的 Episode，如果要纠正 `quantity / execution_type / sequence_no`，Web 必须编辑完整 timeline 后一次提交。
 
 服务在单个 transaction 中：
 
 ```text
-验证完整 timeline
+按目标顺序原子重建并重编号为 1..N
+→ 验证完整 timeline
 → 重新推导净手数 / avg cost / close state
 → 全部替换或全部失败
 ```
@@ -715,12 +727,16 @@ Estimated Gross PnL
 LONG：
 
 ```text
-realized += (exit_price - avg_cost) × quantity × multiplier
+realized_points += (exit_price - avg_cost) × quantity
 ```
 
 SHORT 镜像。
 
-ADD 更新平均成本；REDUCE/CLOSE 不改变剩余仓位的 avg cost，只实现对应数量的 gross PnL。
+ADD 更新平均成本；REDUCE/CLOSE 不改变剩余仓位的 avg cost，只实现对应数量的 points。人民币估算统一为：
+
+```text
+Estimated Gross PnL = realized_points × multiplier
+```
 
 ### 10.2 Product Multiplier Reference
 
@@ -736,15 +752,25 @@ data/reference/product_trade_multipliers.csv
 product,multiplier
 ```
 
+其中：
+
+```text
+multiplier = 每手每 1 个报价价格单位对应的人民币 PnL 缩放因子
+```
+
+普通商品根据官方交易单位和报价单位换算；指数等由官方直接定义 contract multiplier 的品种直接使用该值。`multiplier` 不能一概解释成“吨/手”。
+
 边界：
 
 - 不属于八表 Market Catalog；
 - 不建立 ContractSpec / Account / Risk Domain；
 - 不保存保证金、手续费、tick value、交易所限仓或交割规则；
-- 具体 multiplier 数值必须在实现阶段从当前可核验的交易所/RQData 合约规格中确认，不由本设计文档猜测；
+- 具体 multiplier 数值只能在实现阶段从当前可核验的官方交易所公开合约规格中确认，不由本设计文档猜测，也不为此调用真实 RQData；
+- 采用 trusted-partial 合同：reference product set 与机器可校验的 official evidence product set 严格相等，且只是 active product set 的子集；只能跟踪可由正式交易所资料或监管机构官方镜像证明的值；
 - Episode 创建时 snapshot 当前 multiplier 与 `multiplier_policy_id`，历史 Episode 不随文件变化重新漂移；
-- multiplier 缺失不能阻止记录真实 Decision/Execution，只让人民币 gross PnL 显示 `unavailable`；
+- multiplier 缺失不能阻止记录真实 Decision/Execution；lookup 返回 `None`，只让人民币 `Estimated Gross PnL` 显示 `unavailable`；
 - 价格点数、持仓手数、Execution timeline 仍可正常使用。
+- active-60 60/60 completion 是独立 Lane 3 reference-data 目标，不是 v1.4 release Gate；历史 NULL snapshot enrichment 也必须另做 Lane 3 设计和人工 Gate。
 
 因此人民币金额只是辅助复盘，不是账户对账事实。
 
@@ -1301,6 +1327,9 @@ REDUCE / CLOSE
 weighted average cost
 partial/final realized gross pnl
 Decimal precision
+sequence_no unique and continuous 1..N
+OPEN is sequence_no 1
+input order and executed_at do not override sequence_no order
 missing multiplier
 multiplier snapshot stability
 DOMINANT_ROLL estimated pnl
@@ -1332,6 +1361,8 @@ over-reduce rejected
 exact CLOSE closes
 manual ADD allowed only inside existing Episode
 trigger Decision unique
+episode sequence unique
+sequence gap/duplicate rejected
 ```
 
 ### 19.4 Correction

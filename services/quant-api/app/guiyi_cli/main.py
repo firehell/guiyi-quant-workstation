@@ -10,11 +10,16 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
+import logging
+from pathlib import Path
+import stat
 import sys
 from typing import Any, TextIO
 
 from app.db.session import SessionLocal
 from app.alerts.composition import build_alert_runtime, build_wecom_sender_from_env
+from app.core.env import PROJECT_ROOT
+from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
 from app.guiyi_cli.data_parser import CliUsageError, JsonArgumentParser, add_data_commands
 from app.guiyi_cli.output import (
@@ -45,6 +50,27 @@ LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
+RollReconcilerFactory = Callable[[Any], Any]
+RollMarkerState = Callable[[], str]
+
+logger = logging.getLogger(__name__)
+
+
+def _execution_review_roll_marker_state(
+    project_root: Path = PROJECT_ROOT,
+) -> str:
+    marker = project_root / ".run/execution-review-roll-enabled"
+    try:
+        metadata = marker.lstat()
+        if not stat.S_ISREG(metadata.st_mode):
+            return "invalid"
+        if stat.S_IMODE(metadata.st_mode) != 0o600:
+            return "invalid"
+        return "enabled" if marker.read_bytes() == b"enabled\n" else "invalid"
+    except FileNotFoundError:
+        return "disabled"
+    except OSError:
+        return "invalid"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -80,6 +106,12 @@ def main(
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
+    execution_review_roll_marker_state: RollMarkerState = (
+        _execution_review_roll_marker_state
+    ),
+    roll_reconciler_factory: RollReconcilerFactory = (
+        build_execution_review_roll_reconciler
+    ),
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -112,7 +144,12 @@ def main(
     try:
         if args.domain == "data":
             payload = _run_data(
-                args, session_factory, manager_factory, after_market_factory
+                args,
+                session_factory,
+                manager_factory,
+                after_market_factory,
+                execution_review_roll_marker_state,
+                roll_reconciler_factory,
             )
         elif args.domain == "research":
             assert research_request is not None
@@ -181,12 +218,29 @@ def _run_data(
     session_factory: SessionFactory,
     manager_factory: ManagerFactory,
     after_market_factory: AfterMarketFactory,
+    execution_review_roll_marker_state: RollMarkerState,
+    roll_reconciler_factory: RollReconcilerFactory,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
+    if args.data_command == "after-market":
+        with session_factory() as session:
+            manager = manager_factory(session)
+            market_result = after_market_factory(manager).run()
+        payload = market_result.as_payload()
+        if (
+            market_result.status == "passed"
+            and execution_review_roll_marker_state() == "enabled"
+        ):
+            try:
+                with session_factory() as followup_session:
+                    roll_reconciler_factory(
+                        followup_session
+                    ).reconcile_open_episodes()
+            except Exception:  # noqa: BLE001 - isolated best-effort follow-up
+                logger.warning("EXECUTION_REVIEW_ROLL_FOLLOWUP_FAILED")
+        return payload
     with session_factory() as session:
         manager = manager_factory(session)
-        if args.data_command == "after-market":
-            return after_market_factory(manager).run().as_payload()
         return run_data_command(args, manager).as_payload()
 
 

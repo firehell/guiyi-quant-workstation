@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-15
+更新时间：2026-08-16
 
 ## 当前结论
 
@@ -17,6 +17,25 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+
+## Execution Review V1（UNRELEASED）
+
+- 状态为 `CODE_COMPLETE / TEST_COMPLETE on develop`，仍为 `UNRELEASED`。production release 仍为
+  `v1.3.1`，production DB 仍为 `20260814_0038`，Runtime identity 仍为
+  `3e930a032c6b880686ff1f1fccc77db61bc2803c`。
+- 候选代码新增 `/trade-records` 与 `/api/execution-review/*`，以四张独立 Application Domain 表保存
+  苏冰 Event 的人工 Decision、真实手工 Execution timeline、单品种 OPEN Episode 与结构化 Review；
+  不恢复旧 Review Center，不连接账户或创建订单。
+- official multiplier coverage = `7 / 60`。reference 与 official evidence 集合精确相等、无重复、
+  无 unknown，逐行 derived multiplier 与 reference 相等。缺失 multiplier 只影响人民币
+  Estimated Gross PnL availability；realized points、仓位拓扑、时间线与 Review 保持可用。
+- trusted-partial snapshot 在 Episode 创建时冻结；当时为 NULL 的历史 Episode 不因未来 reference
+  扩大自动改写。active-60 60/60 是后续独立 Lane 3 reference-data objective，不是 v1.4 release Gate。
+- 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 54 files 无问题；
+  Web unit `147 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `51 passed`；Web
+  production build、secret scan（0 findings）、shell syntax 与 diff check 通过。
+- SuBing Natural Canary 继续 pending；Task 6 的 release、production migration、Runtime promotion
+  与 roll marker activation 均未执行，`Gate D not activated`。
 
 ## 当前可执行面
 
@@ -50,14 +69,15 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
-- `2026-08-15 21:50 +08:00` 已按单次授权把 Market Runtime V1 的 Live/after-market 切换到
-  clean/detached `3e930a032c6b880686ff1f1fccc77db61bc2803c`，根为
-  `/Volumes/扩展盘/guiyi-quant-runtime-3e930a032`。该提交修复未来 `1d/1w` source snapshot
-  漂移；不回填或改写现有历史分区。
-- API/Web/Alert 因不在本次 Market Runtime 授权范围内，继续运行 clean/detached
-  `a12ac867ab591e442f23b7f644a3f230485522da`。API/Web/Live/Alert 均 running，after-market 为
-  schedule-only `not running`；API version=`1.3.1`，Runtime health=`ok/readonly=true`。
-- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`pending`。本次切换未执行 migration、
+- `2026-08-15 23:24 +08:00` 已按单次授权把 API/Web/Market Live/after-market/Alert 合并到唯一
+  clean/detached Runtime 根 `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`，统一提交为
+  `3e930a032c6b880686ff1f1fccc77db61bc2803c`。该目录名仅是部署根名称；API version=`1.3.1`，
+  运行身份以精确提交为准。
+- API/Web/Live/Alert 均 running，after-market 为 schedule-only `not running`；Runtime
+  health=`ok/readonly=true`，Market 主力目录为 active 60。旧 Runtime worktree
+  `guiyi-quant-runtime-3e930a032`、`guiyi-quant-runtime-51b1f44f8` 和
+  `guiyi-quant-runtime-a12ac867` 已删除，仅保留上述唯一 Runtime 根。
+- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`skipped/NON_TRADING_DAY`。本次切换未执行 migration、
   RQData/Canonical/DB 写入、Scope mutation、真实 WeCom、手工盘后、replay/backfill/retry、tag
   或 release；`auto_order=false` 不变。
 
@@ -66,5 +86,7 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - 本轮除上述已授权 Runtime switch 外，不执行 migration、真实 RQData/Canonical/DB 写入、
   Scope mutation、WeCom、tag 或 release。
 - 周线修复的部署身份已读回；业务级效果等待下一次自然 18:05 盘后更新，不手工运行、回填或补证。
-- 唯一待自然事件：继续等待 `subing_entry_signal_v1 × jm` 的后续自然 completed Bar 验收；
-  无事件就保持 pending，不人工补证。
+- SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
+  不人工补证，也不计作 Task 6 已完成事实。
+- 最小下一步：`Task 6 Plan-only -> Gate A release approval -> Gate B production migration
+  approval -> Gate C Runtime promotion approval -> optional Gate D`。

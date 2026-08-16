@@ -45,8 +45,12 @@ def test_backtest_retirement_remains_on_linear_history_before_alert_v1() -> None
     revision = scripts.get_revision(RETIREMENT_REVISION)
     assert revision is not None
     assert revision.down_revision == PARENT_REVISION
-    assert scripts.get_revision("20260808_0034") is not None
-    assert scripts.get_heads() == ["20260814_0038"]
+    child = scripts.get_revision("20260808_0034")
+    assert child is not None
+    assert child.down_revision == RETIREMENT_REVISION
+    assert RETIREMENT_REVISION in {
+        item.revision for item in scripts.walk_revisions()
+    }
 
 
 def test_backtest_retirement_sql_deletes_only_scoped_legacy_rows() -> None:
