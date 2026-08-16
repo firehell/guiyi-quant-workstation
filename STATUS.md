@@ -8,7 +8,7 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 release 为 `v1.3.1`；Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
+- 当前 release 为 `v1.4.0`；Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
   Historical Canonical 与 Redis Live Overlay 分离，Live 不写 Parquet/DB。
@@ -18,12 +18,12 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## Execution Review V1（UNRELEASED）
+## Execution Review V1（RELEASED / PRODUCTION MIGRATION AND RUNTIME PENDING）
 
-- 状态为 `CODE_COMPLETE / TEST_COMPLETE on develop`，仍为 `UNRELEASED`。production release 仍为
-  `v1.3.1`，production DB 仍为 `20260814_0038`，Runtime identity 仍为
+- 状态为 `RELEASED`：release PR #167 已合入 main，annotated tag `v1.4.0` 的 peeled commit 为
+  `3a6f4289ff08848f9177c41a649a94f877412c23`。production DB 仍为 `20260814_0038`，Runtime identity 仍为
   `3e930a032c6b880686ff1f1fccc77db61bc2803c`。
-- 候选代码新增 `/trade-records` 与 `/api/execution-review/*`，以四张独立 Application Domain 表保存
+- `v1.4.0` 代码新增 `/trade-records` 与 `/api/execution-review/*`，以四张独立 Application Domain 表保存
   苏冰 Event 的人工 Decision、真实手工 Execution timeline、单品种 OPEN Episode 与结构化 Review；
   不恢复旧 Review Center，不连接账户或创建订单。
 - official multiplier coverage = `7 / 60`。reference 与 official evidence 集合精确相等、无重复、
@@ -31,11 +31,11 @@
   Estimated Gross PnL availability；realized points、仓位拓扑、时间线与 Review 保持可用。
 - trusted-partial snapshot 在 Episode 创建时冻结；当时为 NULL 的历史 Episode 不因未来 reference
   扩大自动改写。active-60 60/60 是后续独立 Lane 3 reference-data objective，不是 v1.4 release Gate。
-- 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 54 files 无问题；
-  Web unit `147 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `51 passed`；Web
+- 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 55 files 无问题；
+  Web unit `147 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `57 passed`；Web
   production build、secret scan（0 findings）、shell syntax 与 diff check 通过。
-- SuBing Natural Canary 继续 pending；Task 6 的 release、production migration、Runtime promotion
-  与 roll marker activation 均未执行，`Gate D not activated`。
+- SuBing Natural Canary 继续 pending；Task 6 Gate A 已完成，Gate B production migration、Gate C
+  Runtime promotion 与 Gate D roll marker activation 均未执行，`Gate D not activated`。
 
 ## 当前可执行面
 
@@ -83,10 +83,10 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 未执行 Gate 与最小下一步
 
-- 本轮除上述已授权 Runtime switch 外，不执行 migration、真实 RQData/Canonical/DB 写入、
-  Scope mutation、WeCom、tag 或 release。
+- Gate A 只完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization；
+  未执行 migration、Runtime switch、真实 RQData/Canonical/DB 写入、Scope mutation 或 WeCom。
 - 周线修复的部署身份已读回；业务级效果等待下一次自然 18:05 盘后更新，不手工运行、回填或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证，也不计作 Task 6 已完成事实。
-- 最小下一步：`Task 6 Plan-only -> Gate A release approval -> Gate B production migration
-  approval -> Gate C Runtime promotion approval -> optional Gate D`。
+- 最小下一步：完成 exact `v1.4.0` detached Runtime preparation 与 production DB read-only preflight，
+  然后停止并请求 Gate B production migration approval。
