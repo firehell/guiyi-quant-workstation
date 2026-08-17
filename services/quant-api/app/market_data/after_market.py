@@ -118,10 +118,12 @@ class AfterMarketUpdater:
                 result = AfterMarketResult("passed", trading_day, attempt, None)
                 self._write_status(result, started_at, products)
                 return result
-            if attempt == 1:
+            if attempt == 1 and error_code == "NEXT_TRADING_SESSION_NOT_READY":
                 self.sleep(3600)
+                continue
+            break
 
-        result = AfterMarketResult("failed", trading_day, 2, error_code)
+        result = AfterMarketResult("failed", trading_day, attempt, error_code)
         self._write_status(result, started_at, products)
         self.notifier(error_code or "UPDATE_FAILED")
         return result
@@ -395,7 +397,7 @@ def _public_last_run(value: object) -> dict[str, object] | None:
         (status == "passed" and attempts in {1, 2} and error_code is None)
         or (
             status == "failed"
-            and attempts == 2
+            and attempts in {1, 2}
             and isinstance(error_code, str)
             and error_code in _PUBLIC_ERROR_CODES - {"NON_TRADING_DAY"}
         )

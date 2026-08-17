@@ -429,7 +429,7 @@ def test_current_day_metadata_is_delegated_to_the_locked_update(tmp_path) -> Non
     assert manager.calls[0].sync_current_day_metadata is True
 
 
-def test_retries_once_after_data_is_not_ready(tmp_path) -> None:
+def test_does_not_retry_when_rqdata_is_not_ready(tmp_path) -> None:
     updater, manager, rqdata, sleeps, notices, _live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 10),
@@ -439,15 +439,16 @@ def test_retries_once_after_data_is_not_ready(tmp_path) -> None:
 
     result = updater.run()
 
-    assert result.status == "passed"
-    assert result.attempts == 2
-    assert rqdata.calls == [date(2026, 8, 10), date(2026, 8, 10)]
-    assert len(manager.calls) == 1
-    assert sleeps == [3600]
-    assert notices == []
+    assert result.status == "failed"
+    assert result.attempts == 1
+    assert result.error_code == "RQDATA_NOT_READY"
+    assert rqdata.calls == [date(2026, 8, 10)]
+    assert manager.calls == []
+    assert sleeps == []
+    assert notices == ["RQDATA_NOT_READY"]
 
 
-def test_retries_once_after_first_update_failure(tmp_path) -> None:
+def test_does_not_retry_after_provider_quota_failure(tmp_path) -> None:
     updater, manager, rqdata, sleeps, notices, _live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 10),
@@ -457,11 +458,13 @@ def test_retries_once_after_first_update_failure(tmp_path) -> None:
 
     result = updater.run()
 
-    assert result.status == "passed"
-    assert result.attempts == 2
-    assert len(manager.calls) == 2
-    assert sleeps == [3600]
-    assert notices == []
+    assert result.status == "failed"
+    assert result.attempts == 1
+    assert result.error_code == "PROVIDER_QUOTA_EXHAUSTED"
+    assert rqdata.calls == [date(2026, 8, 10)]
+    assert len(manager.calls) == 1
+    assert sleeps == []
+    assert notices == ["PROVIDER_QUOTA_EXHAUSTED"]
 
 
 def test_records_final_failure_and_notifies_once(tmp_path) -> None:
@@ -474,13 +477,15 @@ def test_records_final_failure_and_notifies_once(tmp_path) -> None:
 
     result = updater.run()
     status = _status(tmp_path / "after-market-status.json")
+    public_status = public_after_market_status(status)
 
     assert result.status == "failed"
-    assert result.attempts == 2
+    assert result.attempts == 1
     assert result.error_code == "UPDATE_FAILED"
-    assert len(manager.calls) == 2
-    assert sleeps == [3600]
+    assert len(manager.calls) == 1
+    assert sleeps == []
     assert notices == ["UPDATE_FAILED"]
+    assert public_status["last_run"]["attempts"] == 1
     assert status["last_failure"] == {"trading_day": "2026-08-10", "error_code": "UPDATE_FAILED"}
     assert "exception" not in json.dumps(status).lower()
     assert "path" not in json.dumps(status).lower()
@@ -506,11 +511,10 @@ def test_readiness_failure_logs_only_sanitized_diagnostics(tmp_path, caplog) -> 
     result = updater.run()
 
     assert result.error_code == "RQDATA_READY_CHECK_FAILED"
+    assert result.attempts == 1
     assert notices == ["RQDATA_READY_CHECK_FAILED"]
     assert [record.message for record in caplog.records] == [
         "after_market_attempt_failed stage=rqdata_readiness attempt=1 "
-        "detail_code=RQDATA_READY_RESPONSE_INVALID exception_type=InfrastructureError",
-        "after_market_attempt_failed stage=rqdata_readiness attempt=2 "
         "detail_code=RQDATA_READY_RESPONSE_INVALID exception_type=InfrastructureError",
     ]
     assert "credential-secret-provider-message" not in caplog.text
@@ -533,11 +537,10 @@ def test_update_exception_logs_only_sanitized_stage_diagnostics(tmp_path, caplog
     result = updater.run()
 
     assert result.error_code == "UPDATE_FAILED"
+    assert result.attempts == 1
     assert notices == ["UPDATE_FAILED"]
     assert [record.message for record in caplog.records] == [
         "after_market_attempt_failed stage=canonical_update attempt=1 "
-        "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=RuntimeError",
-        "after_market_attempt_failed stage=canonical_update attempt=2 "
         "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=RuntimeError",
     ]
     assert "credential-secret-provider-message" not in caplog.text
@@ -597,7 +600,9 @@ def test_failed_update_result_logs_sanitized_stop_code(tmp_path, caplog) -> None
 
     result = updater.run()
 
-    assert result.status == "passed"
+    assert result.status == "failed"
+    assert result.attempts == 1
+    assert result.error_code == "PROVIDER_QUOTA_EXHAUSTED"
     assert [record.message for record in caplog.records] == [
         "after_market_attempt_failed stage=canonical_update_result attempt=1 "
         "detail_code=PROVIDER_QUOTA_EXHAUSTED result_status=failed"
@@ -618,6 +623,7 @@ def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) 
     result = updater.run()
     status = _status(tmp_path / "after-market-status.json")
 
+    assert result.attempts == 1
     assert result.error_code == "PROVIDER_QUOTA_EXHAUSTED"
     assert status["last_failure"] == {
         "trading_day": "2026-08-10",
@@ -723,7 +729,7 @@ def test_success_reconciles_rank1_publishes_state_and_cleans_live(tmp_path) -> N
     assert notices == []
 
 
-def test_cleanup_failure_retries_then_fails_without_reporting_success(tmp_path) -> None:
+def test_cleanup_failure_does_not_retry_or_report_success(tmp_path) -> None:
     """Catches a failed Live cleanup being recorded as a completed after-market run."""
     updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
         tmp_path,
@@ -737,10 +743,11 @@ def test_cleanup_failure_retries_then_fails_without_reporting_success(tmp_path) 
     status = _status(tmp_path / "after-market-status.json")
 
     assert result.status == "failed"
-    assert result.attempts == 2
+    assert result.attempts == 1
     assert result.error_code == "UPDATE_FAILED"
-    assert sleeps == [3600]
+    assert sleeps == []
     assert notices == ["UPDATE_FAILED"]
+    assert live_store.published == [{"trading_day": "2026-08-10"}]
     assert live_store.cleaned == []
     assert status["last_successful_trading_day"] is None
     assert status["last_failure"] == {
@@ -762,14 +769,11 @@ def test_rank1_mismatch_is_a_stable_failure_without_live_cleanup(tmp_path) -> No
     status = _status(tmp_path / "after-market-status.json")
 
     assert result.status == "failed"
-    assert result.attempts == 2
+    assert result.attempts == 1
     assert result.error_code == "LIVE_DOMINANT_MISMATCH"
-    assert sleeps == [3600]
+    assert sleeps == []
     assert notices == ["LIVE_DOMINANT_MISMATCH"]
-    assert live_store.published == [
-        {"trading_day": "2026-08-10"},
-        {"trading_day": "2026-08-10"},
-    ]
+    assert live_store.published == [{"trading_day": "2026-08-10"}]
     assert live_store.cleaned == []
     assert status["last_failure"] == {
         "trading_day": "2026-08-10",
