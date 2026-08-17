@@ -341,6 +341,32 @@ test('SuBing owns the current dominant segment while preserving the user series 
   await expect(page).toHaveURL(/series_kind=continuous/)
 })
 
+test('shared EMA switches persist across SuBing and HTDY while none hides every overlay', async ({ page }) => {
+  await mockWorkspace(page, { json: research() })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+  const ema = page.getByRole('group', { name: 'EMA' })
+  const ema10 = ema.getByRole('button', { name: 'EMA10', exact: true })
+  const ema60 = ema.getByRole('button', { name: 'EMA60', exact: true })
+  const kline = page.locator('.product-workspace__kline')
+  const overlay = page.getByRole('group', { name: 'Overlay' })
+
+  await expect(ema10).toHaveAttribute('aria-pressed', 'false')
+  await expect(ema60).toHaveAttribute('aria-pressed', 'false')
+  await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_21')
+  await ema10.click()
+  await ema60.click()
+  await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_10,ema_21,ema_60')
+  await overlay.getByRole('button', { name: '火天大有', exact: true }).click()
+  await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_10,ema_60,htdy')
+  await overlay.getByRole('button', { name: '无', exact: true }).click()
+  await expect(kline).toHaveAttribute('data-visible-main-indicators', '')
+  await expect(ema10).toHaveAttribute('aria-pressed', 'true')
+  await expect(ema60).toHaveAttribute('aria-pressed', 'true')
+  await overlay.getByRole('button', { name: '苏冰', exact: true }).click()
+  await page.reload()
+  await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_10,ema_21,ema_60')
+})
+
 test('SuBing clips old same-contract bars and renders the requested primary Signal', async ({ page }) => {
   await mockWorkspace(page, { json: research() })
   await page.setViewportSize({ width: 1680, height: 1000 })

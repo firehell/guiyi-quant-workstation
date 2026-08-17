@@ -23,6 +23,7 @@ import { useSubingObservation } from '@/composables/useSubingObservation'
 import type {
   DominantContractItem,
   MarketFrequency,
+  OptionalEmaIndicatorId,
   ProductResearchResponse,
   ResearchOverlayId,
   SeriesKind,
@@ -34,6 +35,7 @@ import {
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
+  normalizeOptionalEmaIndicators,
   resolveEffectiveSeriesIdentity,
   saveMainChartPreferences,
   visibleMainIndicatorsForOverlay,
@@ -59,6 +61,9 @@ const researchDrawerOpen = ref(false)
 const researchSidebarOpen = ref(initialWorkspacePreferences.researchSidebarOpen)
 const watchlist = ref(initialWorkspacePreferences.watchlist)
 const selectedOverlay = ref<ResearchOverlayId>(initialMainChartPreferences.selectedOverlay)
+const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
+  ...initialMainChartPreferences.optionalEmaIndicators,
+])
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
@@ -141,7 +146,7 @@ const loading = computed(() => loadingInitial.value
   || (selectedOverlay.value === 'subing' && subingSupported.value && subingLoading.value))
 const visibleMainIndicators = computed(() => {
   if (selectedOverlay.value === 'subing' && !subingSupported.value) return []
-  return visibleMainIndicatorsForOverlay(selectedOverlay.value)
+  return visibleMainIndicatorsForOverlay(selectedOverlay.value, optionalEmaIndicators.value)
 })
 const effectiveIdentity = computed(() => currentIdentity())
 const visibleBars = computed(() => {
@@ -378,6 +383,12 @@ function updateSelectedOverlay(value: ResearchOverlayId) {
   saveMainChartPreferences({ ...current, selectedOverlay: value })
 }
 
+function updateOptionalEmaIndicators(value: OptionalEmaIndicatorId[]) {
+  optionalEmaIndicators.value = normalizeOptionalEmaIndicators(value)
+  const current = loadMainChartPreferences()
+  saveMainChartPreferences({ ...current, optionalEmaIndicators: optionalEmaIndicators.value })
+}
+
 function toggleWatchlist() {
   const next = toggleWatchlistSymbol({
     version: 1,
@@ -466,12 +477,14 @@ function normalizeSymbol(value: unknown): string | null {
       :contract="contract"
       :dominants="dominants"
       :selected-overlay="selectedOverlay"
+      :optional-ema-indicators="optionalEmaIndicators"
       :fullscreen="fullscreen"
       @update:symbol="symbol = $event"
       @update:series-kind="seriesKind = $event"
       @update:frequency="frequency = $event"
       @update:contract="contract = $event"
       @update:selected-overlay="updateSelectedOverlay"
+      @update:optional-ema-indicators="updateOptionalEmaIndicators"
       @open-research="openResearchDrawer"
       @toggle-fullscreen="toggleFullscreen"
       @back="router.push({ name: 'market' })"
