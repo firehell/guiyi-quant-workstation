@@ -8,7 +8,7 @@ import {
   NSelect,
   NTag,
 } from 'naive-ui'
-import type { DominantContractItem, MarketFrequency, ResearchOverlayId, SeriesKind } from '@/types/market'
+import type { DominantContractItem, MarketFrequency, OptionalEmaIndicatorId, ResearchOverlayId, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
 
 const props = defineProps<{
@@ -18,6 +18,7 @@ const props = defineProps<{
   contract: string
   dominants: DominantContractItem[]
   selectedOverlay: ResearchOverlayId
+  optionalEmaIndicators: OptionalEmaIndicatorId[]
   fullscreen: boolean
 }>()
 
@@ -27,6 +28,7 @@ const emit = defineEmits<{
   'update:frequency': [value: MarketFrequency]
   'update:contract': [value: string]
   'update:selected-overlay': [value: ResearchOverlayId]
+  'update:optional-ema-indicators': [value: OptionalEmaIndicatorId[]]
   'open-research': []
   'toggle-fullscreen': []
   back: []
@@ -42,9 +44,20 @@ const overlayOptions: Array<{ label: string; value: ResearchOverlayId }> = [
   { label: '苏冰', value: 'subing' },
   { label: '火天大有', value: 'htdy' },
 ]
+const optionalEmaOptions: Array<{ label: string; value: OptionalEmaIndicatorId }> = [
+  { label: 'EMA10', value: 'ema_10' },
+  { label: 'EMA60', value: 'ema_60' },
+]
 
 function periodLabel(value: MarketFrequency) {
   return value === '1d' ? 'D' : value === '1w' ? 'W' : value
+}
+
+function toggleOptionalEma(value: OptionalEmaIndicatorId) {
+  const selected = new Set(props.optionalEmaIndicators)
+  if (selected.has(value)) selected.delete(value)
+  else selected.add(value)
+  emit('update:optional-ema-indicators', optionalEmaOptions.map((item) => item.value).filter((id) => selected.has(id)))
 }
 
 </script>
@@ -90,6 +103,15 @@ function periodLabel(value: MarketFrequency) {
         @click="emit('update:selected-overlay', item.value)"
       >{{ item.label }}</NButton>
     </NButtonGroup>
+    <NButtonGroup size="small" class="toolbar__ema" aria-label="EMA">
+      <NButton
+        v-for="item in optionalEmaOptions"
+        :key="item.value"
+        :type="optionalEmaIndicators.includes(item.value) ? 'primary' : 'default'"
+        :aria-pressed="optionalEmaIndicators.includes(item.value)"
+        @click="toggleOptionalEma(item.value)"
+      >{{ item.label }}</NButton>
+    </NButtonGroup>
     <NPopover v-if="selectedOverlay !== 'subing'" trigger="click" placement="bottom-end">
       <template #trigger><NButton size="small" tertiary>高级</NButton></template>
       <div class="toolbar__advanced">
@@ -116,7 +138,7 @@ function periodLabel(value: MarketFrequency) {
 <style scoped>
 .product-workspace-toolbar { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .toolbar__symbol { width: 184px; }
-.toolbar__series, .toolbar__periods, .toolbar__overlay, .toolbar__dominant { white-space: nowrap; }
+.toolbar__series, .toolbar__periods, .toolbar__overlay, .toolbar__ema, .toolbar__dominant { white-space: nowrap; }
 .toolbar__spacer { flex: 1 1 8px; }
 .toolbar__advanced { display: grid; gap: 8px; width: 196px; padding: 4px; }
 .toolbar__advanced > span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }

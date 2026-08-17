@@ -8,7 +8,7 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 release 为 `v1.3.1`；Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
+- 当前 release 为 `v1.4.0`；Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
   Historical Canonical 与 Redis Live Overlay 分离，Live 不写 Parquet/DB。
@@ -18,12 +18,14 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## Execution Review V1（UNRELEASED）
+## Execution Review V1（RELEASED / PRODUCTION MIGRATION COMPLETE / RUNTIME PROMOTED）
 
-- 状态为 `CODE_COMPLETE / TEST_COMPLETE on develop`，仍为 `UNRELEASED`。production release 仍为
-  `v1.3.1`，production DB 仍为 `20260814_0038`，Runtime identity 仍为
-  `3e930a032c6b880686ff1f1fccc77db61bc2803c`。
-- 候选代码新增 `/trade-records` 与 `/api/execution-review/*`，以四张独立 Application Domain 表保存
+- 状态为 `RELEASED`：release PR #167 已合入 main，annotated tag `v1.4.0` 的 peeled commit 为
+  `3a6f4289ff08848f9177c41a649a94f877412c23`。production DB 已完成 additive `20260815_0039`
+  migration，四张 Execution Review 表已存在。正式 Runtime 已 promotion 至 `v1.4.0` identity
+  `3a6f4289ff08848f9177c41a649a94f877412c23`，Execution Review production Runtime surface
+  已 available。
+- `v1.4.0` 代码新增 `/trade-records` 与 `/api/execution-review/*`，以四张独立 Application Domain 表保存
   苏冰 Event 的人工 Decision、真实手工 Execution timeline、单品种 OPEN Episode 与结构化 Review；
   不恢复旧 Review Center，不连接账户或创建订单。
 - official multiplier coverage = `7 / 60`。reference 与 official evidence 集合精确相等、无重复、
@@ -31,16 +33,18 @@
   Estimated Gross PnL availability；realized points、仓位拓扑、时间线与 Review 保持可用。
 - trusted-partial snapshot 在 Episode 创建时冻结；当时为 NULL 的历史 Episode 不因未来 reference
   扩大自动改写。active-60 60/60 是后续独立 Lane 3 reference-data objective，不是 v1.4 release Gate。
-- 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 54 files 无问题；
-  Web unit `147 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `51 passed`；Web
+- 完整验证：backend `1031 passed`；engineering `41 passed`；Ruff 通过；Mypy 55 files 无问题；
+  Web unit `147 passed / 1 conditional skip`；Market/Alert/Execution Review E2E `57 passed`；Web
   production build、secret scan（0 findings）、shell syntax 与 diff check 通过。
-- SuBing Natural Canary 继续 pending；Task 6 的 release、production migration、Runtime promotion
-  与 roll marker activation 均未执行，`Gate D not activated`。
+- SuBing Natural Canary 继续 pending；Task 6 Gate A release、Gate B production migration、
+  Gate C Runtime promotion 与 Gate C External Review（`PASS`，Critical=`0`、Important=`0`、
+  Minor=`0`）均已完成。`v1.4.0` rollout 主体完成，Gate D 仍为 `disabled / not activated`。
 
 ## 当前可执行面
 
-- Web：`/market` 与 `/market/chart`。
-- HTTP：`/api/v1/market/*`、`/api/alerts/*`、`/api/runtime/health` 和轻量 health。
+- Web：`/market`、`/market/chart` 与 `/trade-records`。
+- HTTP：`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`、`/api/runtime/health`
+  和轻量 health。
 - CLI：`guiyi data update|refresh|audit|after-market`；只读
   `guiyi research subing-calibration`、`guiyi runtime status|live|alert`。
 - `guiyi runtime alert-canary` 是真实 WeCom Gate，不是普通测试命令。
@@ -60,7 +64,9 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - 每 Dataset 每自然月只有一个 `part.parquet`。schema、identity、session/frequency、OHLCV、
   coverage、row count、Catalog URI 和物理可读性不一致时 fail-closed。
 - Market Catalog 精确为八表；`alert_rules` / `alert_events` 是独立 Alert Application Domain，
-  不属于且不改变八表合同。production DB revision 当前为 `20260814_0038`。
+  不属于且不改变八表合同。production DB revision 当前为 `20260815_0039`；
+  `trade_decisions` / `trade_episodes` / `trade_executions` / `trade_reviews` 是独立
+  Execution Review Application Domain，0039 未改变 Market 八表或 Alert 两表 schema identity。
 - SuBing 只使用 current-rank1-segment-local Historical/completed Live，不做 pre-rank1 warm-up、
   cross-roll EMA/MACD 继承或 zero-band hard gate；1d 仍为 `RESEARCH_PENDING`。
 - Alert HTDY 保持 event-cutoff；SuBing 只复用 accepted Calibration、FormalPolicy 和
@@ -69,24 +75,34 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
-- `2026-08-15 23:24 +08:00` 已按单次授权把 API/Web/Market Live/after-market/Alert 合并到唯一
-  clean/detached Runtime 根 `/Volumes/扩展盘/guiyi-quant-runtime-v1.3.0`，统一提交为
-  `3e930a032c6b880686ff1f1fccc77db61bc2803c`。该目录名仅是部署根名称；API version=`1.3.1`，
-  运行身份以精确提交为准。
+- `2026-08-16 21:04 +08:00` 已按单次 Gate C 授权把 API/Web/Market Live/after-market/Alert
+  promotion 至 clean/detached/exact-tag Runtime 根
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.0`，统一提交为
+  `3a6f4289ff08848f9177c41a649a94f877412c23`，API version=`1.4.0`。
 - API/Web/Live/Alert 均 running，after-market 为 schedule-only `not running`；Runtime
-  health=`ok/readonly=true`，Market 主力目录为 active 60。旧 Runtime worktree
-  `guiyi-quant-runtime-3e930a032`、`guiyi-quant-runtime-51b1f44f8` 和
-  `guiyi-quant-runtime-a12ac867` 已删除，仅保留上述唯一 Runtime 根。
-- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`skipped/NON_TRADING_DAY`。本次切换未执行 migration、
+  health=`ok/readonly=true`，Market 主力目录为 active 60。Gate C External Review 已 `PASS`；
+  旧 `v1.3.0` Runtime worktree 已按 Git worktree 流程清理，当前仅保留唯一正式
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.0` Runtime。
+- Market Runtime V1 持续授权已按原 active 60 范围迁移至 `v1.4.0`；Alert Runtime V2
+  持续授权已按原 Rule/Scope（`htdy_original_15m -> jm`、
+  `subing_entry_signal_v1 -> jm`）迁移至 `v1.4.0`，未扩大范围。
+- 当前为周末：Live `CLOSED=60/subscribed=0`，after-market=`pending`且仅保留 18:05 schedule。
+  本次切换未执行 migration、
   RQData/Canonical/DB 写入、Scope mutation、真实 WeCom、手工盘后、replay/backfill/retry、tag
   或 release；`auto_order=false` 不变。
 
-## 未执行 Gate 与最小下一步
+## Gate 与最小下一步
 
-- 本轮除上述已授权 Runtime switch 外，不执行 migration、真实 RQData/Canonical/DB 写入、
-  Scope mutation、WeCom、tag 或 release。
+- Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
+- Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
+  Market 八表与 Alert 两表 normalized schema signatures 保持不变。
+- Gate C Runtime promotion 已完成；正式五服务已统一加载 `v1.4.0` identity
+  `3a6f4289ff08848f9177c41a649a94f877412c23`，Execution Review production Runtime surface
+  已 available。Gate C External Review=`PASS`（Critical=`0`、Important=`0`、Minor=`0`）；旧
+  `v1.3.0` Runtime worktree 已清理，`v1.4.0` rollout 主体完成。Gate D 仍为
+  `disabled / not activated`。
 - 周线修复的部署身份已读回；业务级效果等待下一次自然 18:05 盘后更新，不手工运行、回填或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证，也不计作 Task 6 已完成事实。
-- 最小下一步：`Task 6 Plan-only -> Gate A release approval -> Gate B production migration
-  approval -> Gate C Runtime promotion approval -> optional Gate D`。
+  不人工补证；该独立 pending 状态不改写 `v1.4.0` rollout 主体完成事实。
+- 最小下一步：只等待自然 SuBing Event 形成 Natural Canary evidence；Gate D 除非获得新的明确
+  授权，否则保持关闭。
