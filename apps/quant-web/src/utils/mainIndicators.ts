@@ -1,15 +1,17 @@
 import type {
   MainIndicatorDefinition,
   MainIndicatorId,
+  OptionalEmaIndicatorId,
   ResearchOverlayId,
   SeriesKind,
 } from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v2'
+export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v3'
 /** 主图指标偏好 schema 版本 */
-export const MAIN_CHART_PREFERENCES_VERSION = 2
-const LEGACY_MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
+export const MAIN_CHART_PREFERENCES_VERSION = 3
+const LEGACY_V2_MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v2'
+const LEGACY_V1_MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
 export const HTDY_REPAINT_SCAN_ZONE_BARS = 27
 export const HTDY_WEB_OBSERVATION_METADATA = {
   indicator_code: 'huotian_dayou_original_v0',
@@ -26,8 +28,9 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
 
 /** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
-  version: 2
+  version: 3
   selectedOverlay: ResearchOverlayId
+  optionalEmaIndicators: OptionalEmaIndicatorId[]
   period?: string | null
   realtimeFollow?: boolean
 }
@@ -38,6 +41,15 @@ interface LegacyMainChartPreferences {
   period?: string | null
   realtimeFollow?: boolean
 }
+
+interface LegacyV2MainChartPreferences {
+  version: 2
+  selectedOverlay: ResearchOverlayId
+  period?: string | null
+  realtimeFollow?: boolean
+}
+
+const OPTIONAL_EMA_INDICATORS: OptionalEmaIndicatorId[] = ['ema_10', 'ema_60']
 
 /** 主图可叠加指标定义表（EMA、火天大有等） */
 export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
@@ -140,9 +152,22 @@ export function normalizeVisibleMainIndicators(value: unknown): MainIndicatorId[
   return result
 }
 
-export function visibleMainIndicatorsForOverlay(overlay: ResearchOverlayId): MainIndicatorId[] {
-  if (overlay === 'subing') return ['ema_21']
-  if (overlay === 'htdy') return ['htdy']
+export function normalizeOptionalEmaIndicators(value: unknown): OptionalEmaIndicatorId[] {
+  if (!Array.isArray(value)) return []
+  return OPTIONAL_EMA_INDICATORS.filter((id) => value.includes(id))
+}
+
+export function visibleMainIndicatorsForOverlay(
+  overlay: ResearchOverlayId,
+  optionalEmaIndicators: OptionalEmaIndicatorId[] = [],
+): MainIndicatorId[] {
+  const optional = normalizeOptionalEmaIndicators(optionalEmaIndicators)
+  if (overlay === 'subing') return [
+    ...(optional.includes('ema_10') ? ['ema_10' as const] : []),
+    'ema_21',
+    ...(optional.includes('ema_60') ? ['ema_60' as const] : []),
+  ]
+  if (overlay === 'htdy') return [...optional, 'htdy']
   return []
 }
 
@@ -172,21 +197,34 @@ export function loadMainChartPreferences(storage: Pick<Storage, 'getItem'> | nul
       const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
       if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
       return {
-        version: 2,
+        version: 3,
         selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
+        optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
         period: typeof parsed.period === 'string' ? parsed.period : null,
         realtimeFollow: Boolean(parsed.realtimeFollow),
       }
     }
-    const legacyRaw = storage.getItem(LEGACY_MAIN_CHART_PREFERENCES_KEY)
+    const legacyV2Raw = storage.getItem(LEGACY_V2_MAIN_CHART_PREFERENCES_KEY)
+    if (legacyV2Raw) {
+      const legacy = JSON.parse(legacyV2Raw) as Partial<LegacyV2MainChartPreferences> | null
+      if (legacy?.version === 2) return {
+        version: 3,
+        selectedOverlay: normalizeResearchOverlay(legacy.selectedOverlay),
+        optionalEmaIndicators: [],
+        period: typeof legacy.period === 'string' ? legacy.period : null,
+        realtimeFollow: Boolean(legacy.realtimeFollow),
+      }
+    }
+    const legacyRaw = storage.getItem(LEGACY_V1_MAIN_CHART_PREFERENCES_KEY)
     if (!legacyRaw) return defaultMainChartPreferences()
     const legacy = JSON.parse(legacyRaw) as Partial<LegacyMainChartPreferences> | null
     if (!legacy || legacy.version !== 1 || !Array.isArray(legacy.visibleMainIndicators)) {
       return defaultMainChartPreferences()
     }
     return {
-      version: 2,
+      version: 3,
       selectedOverlay: normalizeVisibleMainIndicators(legacy.visibleMainIndicators).includes('htdy') ? 'htdy' : 'subing',
+      optionalEmaIndicators: [],
       period: typeof legacy.period === 'string' ? legacy.period : null,
       realtimeFollow: Boolean(legacy.realtimeFollow),
     }
@@ -209,6 +247,7 @@ export function saveMainChartPreferences(
       JSON.stringify({
         version: MAIN_CHART_PREFERENCES_VERSION,
         selectedOverlay: normalizeResearchOverlay(preferences.selectedOverlay),
+        optionalEmaIndicators: normalizeOptionalEmaIndicators(preferences.optionalEmaIndicators),
         period: preferences.period || null,
         realtimeFollow: Boolean(preferences.realtimeFollow),
       }),
@@ -223,8 +262,9 @@ export function saveMainChartPreferences(
  */
 export function defaultMainChartPreferences(): MainChartPreferences {
   return {
-    version: 2,
+    version: 3,
     selectedOverlay: 'subing',
+    optionalEmaIndicators: [],
     period: null,
     realtimeFollow: false,
   }

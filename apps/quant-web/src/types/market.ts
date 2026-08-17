@@ -340,6 +340,7 @@ export interface ChartOverlay {
 
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
 export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
+export type OptionalEmaIndicatorId = 'ema_10' | 'ema_60'
 
 export interface MainIndicatorDefinition {
   id: MainIndicatorId
