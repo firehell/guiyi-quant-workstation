@@ -537,6 +537,12 @@ test('SuBing keeps unsupported 30m explicit and does not request a snapshot', as
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
   await expect(page.getByText('可继续向前加载', { exact: true })).toBeVisible()
   expect(subingRequests).toEqual([])
+
+  const ema = page.getByRole('group', { name: 'EMA' })
+  await ema.getByRole('button', { name: 'EMA10', exact: true }).click()
+  await ema.getByRole('button', { name: 'EMA60', exact: true }).click()
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
+  expect(subingRequests).toEqual([])
 })
 
 test('SuBing refreshes dominant metadata once before accepting a rollover snapshot', async ({ page }) => {

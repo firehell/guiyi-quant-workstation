@@ -176,3 +176,39 @@ test('preference v3 saves and loads optional EMAs with chart UI preferences', ()
   values.set(MAIN_CHART_PREFERENCES_KEY, 'not-json')
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
 })
+
+test('preference loading falls back when accessing browser localStorage throws', () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      get localStorage() {
+        throw new Error('SecurityError')
+      },
+    },
+  })
+
+  try {
+    assert.deepEqual(loadMainChartPreferences(), defaultMainChartPreferences())
+    assert.doesNotThrow(() => saveMainChartPreferences(defaultMainChartPreferences()))
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
+  }
+})
+
+test('preference loading falls back when localStorage getItem throws', () => {
+  assert.deepEqual(loadMainChartPreferences({
+    getItem() {
+      throw new Error('SecurityError')
+    },
+  }), defaultMainChartPreferences())
+})
+
+test('preference saving ignores localStorage setItem failures', () => {
+  assert.doesNotThrow(() => saveMainChartPreferences(defaultMainChartPreferences(), {
+    setItem() {
+      throw new Error('SecurityError')
+    },
+  }))
+})

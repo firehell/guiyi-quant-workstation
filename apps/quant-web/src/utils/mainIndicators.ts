@@ -270,8 +270,13 @@ export function defaultMainChartPreferences(): MainChartPreferences {
   }
 }
 
-function browserStorage() {
-  return typeof window === 'undefined' ? null : window.localStorage
+function browserStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
 }
 
 function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
