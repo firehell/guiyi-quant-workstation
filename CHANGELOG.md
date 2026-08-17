@@ -2,7 +2,13 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
-## [Unreleased]
+## [1.4.2] - 2026-08-17
+
+- 盘后一小时后 retry 仅允许 `NEXT_TRADING_SESSION_NOT_READY`；其他失败首试即结束，
+  并按实际执行次数公开 `attempts=1`。
+- 不改变 18:05 自然调度、Historical/Live seam、operational 60、Alert Scope、通知或订单边界。
+
+## [1.4.1] - 2026-08-17
 
 - 新增共享可选 EMA 显示开关，并完成 v3 本地偏好迁移；指标计算公式保持不变。
 - 后端、Alert、Runtime 与数据边界保持不变。
