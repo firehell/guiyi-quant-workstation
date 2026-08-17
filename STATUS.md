@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-16
+更新时间：2026-08-17
 
 ## 当前结论
 
@@ -8,7 +8,7 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 release 为 `v1.4.0`；Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
+- 当前 release 为 `v1.4.1`；Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
   Historical Canonical 与 Redis Live Overlay 分离，Live 不写 Parquet/DB。
@@ -17,6 +17,22 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+
+## Shared Optional EMA Overlays V1.4.1（RELEASED / RUNTIME GATE PENDING）
+
+- release PR #168 已合入 main；annotated tag `v1.4.1` 的 peeled commit 与 `origin/main` 均为
+  `60d7c5b35565b29114dd55355762dddebb852fd5`，并包含批准候选
+  `14637e0fffb6ba74e9b111c91e95bcee145043af`。
+- Product Workspace 新增一组共享的 EMA10 / EMA60 显示开关；切换苏冰或火天大有时保持同一选择，
+  苏冰继续固定显示 EMA21，火天大有继续固定显示原始观察层，选择“无”时不显示主图指标但保留偏好。
+- 主图偏好升级至 v3；v2/v1 安全迁移后可选 EMA 默认关闭。localStorage 属性访问、读取或写入失败
+  均不会阻塞 K 线，SuBing unsupported 周期继续 fail-closed。
+- 发布候选验证：Web unit `150 passed / 1 conditional skip`；Market/Alert E2E `30 passed`；
+  backend health/engineering `47 passed`；Web production build、secret scan（0 findings）与 diff check 通过；
+  final branch review 及 scoped fix re-review 均通过。
+- 本次未执行 DB/Canonical 写入、Alert Scope、WeCom、通知、订单或 Runtime switch。正式 Runtime
+  仍为 `v1.4.0` identity `3a6f4289ff08848f9177c41a649a94f877412c23`；`v1.4.1` Runtime promotion
+  需要新的独立明确执行意图。
 
 ## Execution Review V1（RELEASED / PRODUCTION MIGRATION COMPLETE / RUNTIME PROMOTED）
 
