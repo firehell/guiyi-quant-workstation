@@ -36,7 +36,7 @@
 - `deploy/openclaw/versions.json` — exact dependency identity.
 - `deploy/openclaw/README.md` — control-plane/runtime paths and explicit no-Gateway boundary.
 - `deploy/launchd/com.guiyi.quant-weixin-context.plist.template` — guiyi-owned context-monitor service.
-- `scripts/ops/macos/install-openclaw-weixin-tools.sh` — check/install helper whose default path is read-only and whose real install mode remains externally gated.
+- `scripts/ops/macos/install-openclaw-weixin-tools.sh` — check/install helper; real install path remains externally gated.
 - `services/quant-api/tests/test_alert_notification.py`
 - `services/quant-api/tests/test_alert_recipient_registry.py`
 - `services/quant-api/tests/test_alert_weixin.py`
@@ -51,6 +51,7 @@
 - `services/quant-api/app/guiyi_cli/main.py`
 - `services/quant-api/tests/test_alert_runtime.py`
 - `services/quant-api/tests/test_alert_cli.py`
+- `deploy/launchd/com.guiyi.quant-alert.plist.template`
 - `tests/engineering/test_alert_runtime_launchd.py`
 - `scripts/ops/macos/install-local-services.sh`
 - `scripts/ops/macos/run-local-service.sh`
@@ -76,23 +77,19 @@
 - Test source to migrate from: `services/quant-api/tests/test_alert_wecom.py`
 
 **Interfaces:**
-- Produces: `AlertNotificationMessage` dataclass with the current fields.
-- Produces: `AlertNotificationSender(Protocol)` with `send(message) -> None`.
-- Produces: `ALERT_CANARY_TEXT`.
-- Produces: `format_alert_message(message) -> str` with unchanged HTDY/SuBing validation and wording.
+- `AlertNotificationMessage` dataclass with current fields.
+- `AlertNotificationSender(Protocol)` with `send(message) -> None`.
+- `ALERT_CANARY_TEXT`.
+- `format_alert_message(message) -> str` with unchanged HTDY/SuBing validation/wording.
 
 - [ ] **Step 1: Copy formatter/model tests out of `test_alert_wecom.py` and import `app.alerts.notification`**
 
-Keep the existing exact HTDY/SuBing expected strings. Add:
+Keep current exact HTDY/SuBing expected strings. Add:
 
 ```python
 from datetime import UTC, datetime
 
-from app.alerts.notification import (
-    ALERT_CANARY_TEXT,
-    AlertNotificationMessage,
-    format_alert_message,
-)
+from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage, format_alert_message
 
 
 def test_canary_text_is_channel_neutral() -> None:
@@ -121,11 +118,9 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   services/quant-api/tests/test_alert_notification.py
 ```
 
-Expected: FAIL because `app.alerts.notification` does not exist.
+Expected: FAIL because module is absent.
 
-- [ ] **Step 3: Create `notification.py` by moving, not rewriting, existing formatter logic**
-
-Required Protocol:
+- [ ] **Step 3: Create `notification.py` by moving existing logic**
 
 ```python
 from typing import Protocol
@@ -135,23 +130,23 @@ class AlertNotificationSender(Protocol):
     def send(self, message: AlertNotificationMessage) -> None: ...
 ```
 
-Move current timezone/validation/HTDY/SuBing formatter code without changing conditions or strings.
+Move current timezone/validation/formatter code without changing conditions or strings.
 
-- [ ] **Step 4: Change `runtime.py` to depend on the Protocol**
+- [ ] **Step 4: Change `runtime.py` to depend on Protocol**
 
 ```python
 from app.alerts.notification import AlertNotificationMessage, AlertNotificationSender
 ```
 
-Constructor:
+Constructor field:
 
 ```python
 sender: AlertNotificationSender,
 ```
 
-Do not change Event creation/send ordering or the post-commit exception boundary.
+Do not change Event creation/send ordering.
 
-- [ ] **Step 5: Run notification + runtime tests**
+- [ ] **Step 5: Run tests**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -165,8 +160,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit Task 1**
 
 ```bash
-git add \
-  services/quant-api/app/alerts/notification.py \
+git add services/quant-api/app/alerts/notification.py \
   services/quant-api/app/alerts/runtime.py \
   services/quant-api/tests/test_alert_notification.py \
   services/quant-api/tests/test_alert_runtime.py
@@ -184,16 +178,14 @@ git commit -m "refactor(alert): extract notification contract"
 **Interfaces:**
 - `NotificationRecipient(alias: str, target: str)` frozen dataclass.
 - `RecipientRegistrySnapshot(version: int, channel: str, account_id: str, recipients: tuple[NotificationRecipient, ...])`.
-- `RecipientRegistryError(RuntimeError)` with stable codes only.
+- `RecipientRegistryError(RuntimeError)`.
 - `load_recipient_registry(path: Path) -> RecipientRegistrySnapshot`.
 - `write_recipient_registry(path: Path, snapshot: RecipientRegistrySnapshot) -> None`.
 - `add_recipient(snapshot, recipient) -> RecipientRegistrySnapshot`.
 
 - [ ] **Step 1: Write registry validation tests**
 
-Cover missing path, directory/symlink/non-regular path, mode != `0600`, malformed JSON, version != 1, channel mismatch, blank account, duplicate alias/target, non-boolean enabled, target not ending `@im.wechat`, empty/all-disabled, and a fixed safe maximum of **16 enabled recipients**.
-
-Representative test:
+Cover missing path, directory/symlink/non-regular, mode != `0600`, malformed JSON, version != 1, channel mismatch, blank account, duplicate alias/target, non-boolean enabled, target not ending `@im.wechat`, empty/all-disabled, and maximum **16 enabled recipients**.
 
 ```python
 def test_load_registry_rejects_duplicate_target(tmp_path: Path) -> None:
@@ -208,21 +200,20 @@ def test_load_registry_rejects_duplicate_target(tmp_path: Path) -> None:
         load_recipient_registry(path)
 ```
 
-- [ ] **Step 2: Run focused tests and verify import failure**
+- [ ] **Step 2: Run tests and verify import failure**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-  uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_recipient_registry.py
+  uv run --offline --project services/quant-api pytest -q services/quant-api/tests/test_alert_recipient_registry.py
 ```
 
 Expected: FAIL because module is absent.
 
 - [ ] **Step 3: Implement immutable load/validation**
 
-Use `Path.lstat()` + `stat.S_ISREG`, reject symlinks, require `0600`, parse exact schema, strip aliases/targets, and return only enabled recipients in the runtime snapshot.
+Use `lstat`, reject symlink, require regular `0600`, strict schema, stripped alias/target, runtime snapshot contains only enabled recipients.
 
-- [ ] **Step 4: Add atomic-write tests and implementation**
+- [ ] **Step 4: Add atomic-write test and implementation**
 
 ```python
 def test_write_registry_is_atomic_and_owner_only(tmp_path: Path) -> None:
@@ -240,14 +231,13 @@ def test_write_registry_is_atomic_and_owner_only(tmp_path: Path) -> None:
     assert load_recipient_registry(path) == snapshot
 ```
 
-Implementation must require an existing `0700` parent, create a same-directory `0600` temp file, flush+`fsync`, then `os.replace`.
+Require existing `0700` parent; same-dir `0600` temp; flush, `fsync`, `os.replace`.
 
 - [ ] **Step 5: Run tests**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-  uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_recipient_registry.py
+  uv run --offline --project services/quant-api pytest -q services/quant-api/tests/test_alert_recipient_registry.py
 ```
 
 Expected: PASS.
@@ -255,8 +245,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit Task 2**
 
 ```bash
-git add services/quant-api/app/alerts/recipient_registry.py \
-  services/quant-api/tests/test_alert_recipient_registry.py
+git add services/quant-api/app/alerts/recipient_registry.py services/quant-api/tests/test_alert_recipient_registry.py
 git commit -m "feat(alert): add private recipient registry"
 ```
 
@@ -272,15 +261,13 @@ git commit -m "feat(alert): add private recipient registry"
 - Create: `tests/engineering/openclaw_weixin_adapter.test.mjs`
 
 **Interfaces:**
-- `OpenClawWeixinDependency(root, cli_executable, node_executable, plugin_root, openclaw_version, plugin_version)` frozen dataclass.
+- `OpenClawWeixinDependency(root, cli_executable, node_executable, plugin_root, openclaw_version, plugin_version)`.
 - `resolve_openclaw_weixin_dependency(root: Path, *, run_process=...) -> OpenClawWeixinDependency`.
 - `OpenClawWeixinAdapterRunner(dependency, *, run_process=...)`.
 - `probe(snapshot) -> None`.
-- Node adapter exports `runProbe`, `runRegister`, `runMonitor`, `runSend` for tests and supports `process.argv[2]` action.
+- Node exports `runProbe/runRegister/runMonitor/runSend` and CLI action in `process.argv[2]`.
 
-- [ ] **Step 1: Add exact dependency identity**
-
-Create:
+- [ ] **Step 1: Create exact version file**
 
 ```json
 {
@@ -293,7 +280,7 @@ Create:
 
 - [ ] **Step 2: Write Python dependency-probe tests**
 
-Mock fixed argv and return JSON matching `plugins inspect`. Exact argv:
+Exact inspect argv:
 
 ```python
 [
@@ -305,22 +292,22 @@ Mock fixed argv and return JSON matching `plugins inspect`. Exact argv:
 ]
 ```
 
-Reject wrong OpenClaw/plugin version, disabled/error state, missing/escaping install path, missing Node executable, and malformed JSON with stable errors only.
+Reject wrong versions/status, missing/escaping install path, missing Node, malformed JSON.
 
 - [ ] **Step 3: Implement dependency discovery**
 
-Read `deploy/openclaw/versions.json`; require:
+Require fixed:
 
 ```text
 <root>/runtime/bin/openclaw
 <root>/runtime/tools/node/bin/node
 ```
 
-Use realpath containment for plugin root. Never use PATH, glob, shell strings, `latest`, or runtime package search.
+Realpath containment only; no PATH/glob/shell/`latest`.
 
-- [ ] **Step 4: Write Node probe tests with fake managed plugin project**
+- [ ] **Step 4: Write Node probe tests with fake managed plugin tree**
 
-Fake exact files:
+Exact fake files:
 
 ```text
 dist/src/auth/accounts.js
@@ -330,27 +317,25 @@ dist/src/messaging/inbound.js
 dist/src/messaging/send.js
 ```
 
-Also create fake `node_modules/openclaw` exports for `plugin-sdk/config-runtime`. Adapter uses `createRequire(path.join(pluginRoot, "package.json"))` to resolve this peer surface.
+Add fake `node_modules/openclaw` export for `plugin-sdk/config-runtime`. Adapter resolves it via `createRequire(path.join(pluginRoot, "package.json"))`.
 
-Assert `runProbe()` resolves exact account, requires enabled/configured/token, restores tokens, requires every approved target context, never calls send/getUpdates, and returns only `{status:"ready",recipient_count:N}`.
+Probe must require exact account enabled/configured/token, restore all contexts, never call send/getUpdates, and return only `{status:"ready",recipient_count:N}`.
 
-- [ ] **Step 5: Implement adapter dependency loading**
+- [ ] **Step 5: Implement adapter module loading**
 
-Before dynamic imports:
+Before plugin imports:
 
 ```javascript
 process.env.OPENCLAW_LOG_LEVEL = "FATAL";
 ```
 
-Use exact `pathToFileURL` imports for Tencent modules and `createRequire` for OpenClaw `loadConfig()`.
+Use exact file URLs and OpenClaw `loadConfig()` peer surface.
 
-- [ ] **Step 6: Run Python + Node tests**
+- [ ] **Step 6: Run tests**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-  uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_weixin.py
-
+  uv run --offline --project services/quant-api pytest -q services/quant-api/tests/test_alert_weixin.py
 node --test tests/engineering/openclaw_weixin_adapter.test.mjs
 ```
 
@@ -359,10 +344,8 @@ Expected: PASS.
 - [ ] **Step 7: Commit Task 3**
 
 ```bash
-git add deploy/openclaw/versions.json \
-  services/quant-api/app/alerts/weixin.py \
-  services/quant-api/app/alerts/openclaw_weixin_adapter.mjs \
-  services/quant-api/tests/test_alert_weixin.py \
+git add deploy/openclaw/versions.json services/quant-api/app/alerts/weixin.py \
+  services/quant-api/app/alerts/openclaw_weixin_adapter.mjs services/quant-api/tests/test_alert_weixin.py \
   tests/engineering/openclaw_weixin_adapter.test.mjs
 git commit -m "feat(alert): add pinned iLink adapter probe"
 ```
@@ -380,67 +363,47 @@ git commit -m "feat(alert): add pinned iLink adapter probe"
 - Modify: `tests/engineering/openclaw_weixin_adapter.test.mjs`
 
 **Interfaces:**
-- `generate_registration_challenge() -> str` using `secrets` with at least 80 bits entropy.
-- `RegistrationMatch(alias: str, target: str)` internal dataclass; target never logged/displayed.
+- `generate_registration_challenge() -> str`, at least 80 bits entropy.
+- `RegistrationMatch(alias: str, target: str)` internal only.
 - `register_recipient(alias: str, *, prompt_stream: TextIO, timeout_seconds: float = 180.0) -> RecipientRegistrySnapshot`.
-- CLI: `guiyi runtime weixin-register --alias <alias>`.
-- `main(..., prompt_stream: TextIO | None = None)` gains an injectable interactive stream. Production default opens `/dev/tty`; if no TTY is available, fail with `WEIXIN_REGISTRATION_TTY_REQUIRED` before polling.
+- CLI `guiyi runtime weixin-register --alias <alias>`.
+- `main(..., prompt_stream: TextIO | None = None)`: production default opens `/dev/tty`; no TTY -> `WEIXIN_REGISTRATION_TTY_REQUIRED` before polling.
 
-- [ ] **Step 1: Extend parser/CLI tests**
+- [ ] **Step 1: Extend CLI tests**
 
-Runtime command set becomes:
+Runtime commands:
 
 ```python
 {"status", "live", "alert", "alert-canary", "weixin-context", "weixin-register"}
 ```
 
-Use `prompt_stream=io.StringIO()` in registration tests. Assert challenge appears only there; final stdout is one JSON document; stderr remains empty on success; target never appears in any stream.
+Use injected `prompt_stream=io.StringIO()`. Challenge only appears there; stdout is one final JSON; stderr empty on success; target absent from every stream. Failure must leave stderr as one parseable JSON error with no challenge/target.
 
-Add timeout/failure test asserting stderr remains one parseable JSON error document and does not contain the challenge or target.
+- [ ] **Step 2: Write Node registration tests**
 
-- [ ] **Step 2: Write Node `register` tests**
+Sequence: wrong unknown; approved refresh; exact new challenge. Assert cursor persistence, approved refresh, unknown drop, exact target context persistence, no send/Agent/pairing/reply. Cover timeout, two matches, missing context, invalid sender.
 
-Fake `getUpdates` sequence:
-
-1. unknown sender/wrong text;
-2. already-approved sender/new context;
-3. new sender/exact challenge/non-empty context.
-
-Assert cursor saved, approved context refreshed, wrong unknown sender not persisted, exact target persisted via `setContextToken` and returned only to captured parent stdout, and no send/Agent/pairing/reply call.
-
-Cover timeout, two exact matches in one response (`WEIXIN_REGISTRATION_AMBIGUOUS`), missing context, non-`@im.wechat` sender.
-
-- [ ] **Step 3: Implement `register` action**
-
-Exact text only:
+- [ ] **Step 3: Implement exact challenge matching**
 
 ```javascript
 const text = msg.item_list?.find((item) => item?.type === 1)?.text_item?.text;
 if (text === challenge && msg.from_user_id?.endsWith("@im.wechat") && msg.context_token) {
-  // exact candidate
+  // candidate
 }
 ```
 
-Never send a reply. Advance the persisted `get_updates_buf` through plugin helpers.
+Never reply. Advance plugin sync cursor.
 
 - [ ] **Step 4: Implement Python registration orchestration**
 
-Rules:
+Validate alias; refuse if context monitor runs; first registry needs exactly one indexed account; existing registry fixes account; challenge only to prompt stream; adapter target capture never logged; atomic registry write.
 
-- validate alias;
-- fail if context monitor is currently running; never stop it implicitly;
-- first registry creation requires exactly one indexed logged-in account;
-- existing registry fixes account identity and rejects duplicate alias/target;
-- generate challenge and write it only to `prompt_stream`, flush immediately, never log it;
-- capture target from adapter stdout internally, write registry atomically, discard target from public outputs.
-
-- [ ] **Step 5: Run focused tests**
+- [ ] **Step 5: Run tests**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_weixin.py \
-  services/quant-api/tests/test_alert_cli.py
+  services/quant-api/tests/test_alert_weixin.py services/quant-api/tests/test_alert_cli.py
 node --test tests/engineering/openclaw_weixin_adapter.test.mjs
 ```
 
@@ -449,18 +412,15 @@ Expected: PASS.
 - [ ] **Step 6: Commit Task 4**
 
 ```bash
-git add services/quant-api/app/alerts/weixin.py \
-  services/quant-api/app/alerts/openclaw_weixin_adapter.mjs \
-  services/quant-api/app/guiyi_cli/main.py \
-  services/quant-api/tests/test_alert_weixin.py \
-  services/quant-api/tests/test_alert_cli.py \
-  tests/engineering/openclaw_weixin_adapter.test.mjs
+git add services/quant-api/app/alerts/weixin.py services/quant-api/app/alerts/openclaw_weixin_adapter.mjs \
+  services/quant-api/app/guiyi_cli/main.py services/quant-api/tests/test_alert_weixin.py \
+  services/quant-api/tests/test_alert_cli.py tests/engineering/openclaw_weixin_adapter.test.mjs
 git commit -m "feat(alert): add challenge recipient registration"
 ```
 
 ---
 
-### Task 5: Add the notification-only context monitor and launchd contract
+### Task 5: Add notification-only context monitor and launchd contract
 
 **Files:**
 - Create: `services/quant-api/app/alerts/weixin_context.py`
@@ -475,7 +435,7 @@ git commit -m "feat(alert): add challenge recipient registration"
 - Modify: `tests/engineering/openclaw_weixin_adapter.test.mjs`
 
 **Interfaces:**
-- `WeixinContextStatus` parser with only `schema_version/status/recipient_count/last_poll_at/last_context_refresh_at/last_error_code`.
+- `WeixinContextStatus` parser with only schema/status/count/timestamps/error-code.
 - `WeixinContextMonitor.run_forever() -> None`.
 - `build_weixin_context_monitor_from_env() -> WeixinContextMonitor`.
 - CLI `guiyi runtime weixin-context`.
@@ -483,15 +443,15 @@ git commit -m "feat(alert): add challenge recipient registration"
 
 - [ ] **Step 1: Write Node monitor tests**
 
-Prove cursor resume/save-before-handle, approved-target refresh, unknown drop, zero send calls, SIGTERM graceful exit with best-effort `notifyStop`, getUpdates-only network backoff, and stale-token degraded behavior with same-account credential reread.
+Prove cursor resume/save-before-handle, approved refresh, unknown drop, zero send calls, SIGTERM graceful exit + best-effort notifyStop, getUpdates-only backoff, stale-token degraded + same-account credential reread.
 
 - [ ] **Step 2: Implement privacy-safe status file**
 
-Adapter receives `status_path` through stdin bootstrap. Write same-directory `0600` temp JSON, flush+fsync+rename. Never include ids/body/token/provider raw text. `status="ok"` only after successful poll.
+`status_path` via stdin bootstrap. Same-dir `0600` temp, fsync, rename. `status="ok"` only after successful poll. No ids/body/token/raw provider response.
 
-- [ ] **Step 3: Write Python wrapper tests using `Popen` abstraction**
+- [ ] **Step 3: Write Python wrapper tests using `Popen`**
 
-The wrapper must spawn exact argv:
+Exact argv:
 
 ```python
 [
@@ -501,60 +461,57 @@ The wrapper must spawn exact argv:
 ]
 ```
 
-It writes one bootstrap JSON document to child stdin, closes stdin, waits for the child, and never forwards raw child stdout/stderr.
+Write one bootstrap JSON to child stdin then close. Never forward raw child output. On parent termination: `terminate()`, bounded wait, `kill()` only if needed; restore previous signal handlers.
 
-Test injected signal handling: on parent SIGTERM/KeyboardInterrupt path, call child `terminate()`, wait with a bounded timeout, then `kill()` only if the child fails to exit. This is process cleanup, not notification retry.
+- [ ] **Step 4: Implement `weixin_context.py`**
 
-- [ ] **Step 4: Implement `weixin_context.py` with `subprocess.Popen`**
+Use `subprocess.Popen`, not `run`. Collapse unexpected child exit to `WEIXIN_CONTEXT_MONITOR_FAILED`.
 
-Do not use `subprocess.run()` for the long-lived child. Install temporary signal handlers around the child lifetime and restore previous handlers on exit. Collapse unexpected child failure to `WEIXIN_CONTEXT_MONITOR_FAILED` without raw stderr.
+- [ ] **Step 5: Add CLI foreground branch**
 
-- [ ] **Step 5: Add CLI branch**
-
-`runtime weixin-context` stays foreground. Final natural-exit payload:
+Natural-exit payload:
 
 ```json
-{
-  "schema_version": 1,
-  "command": "runtime.weixin-context",
-  "status": "ok",
-  "foreground": true
-}
+{"schema_version":1,"command":"runtime.weixin-context","status":"ok","foreground":true}
 ```
 
-- [ ] **Step 6: Add launchd template/render modes**
+- [ ] **Step 6: Add launchd template and render contract**
 
-Template carries same `GUIYI_PROJECT_ROOT`/`GUIYI_RUNTIME_COMMIT` as Alert. Add `weixin-context)` to `run-local-service.sh`. Add `--confirm-weixin-context` to installer; render-only never loads it.
+`com.guiyi.quant-weixin-context.plist.template` must carry:
 
-- [ ] **Step 7: Run focused tests**
+```text
+GUIYI_PROJECT_ROOT
+GUIYI_RUNTIME_COMMIT
+GUIYI_OPENCLAW_ROOT
+GUIYI_ALERT_RECIPIENTS_PATH
+```
+
+Add template placeholders `__OPENCLAW_ROOT__` and `__ALERT_RECIPIENTS_PATH__`. `install-local-services.sh` renders them from environment variables. `--confirm-weixin-context` must require both variables to be absolute and non-empty; render-only may use explicit fixture values supplied by tests. Add `weixin-context)` to `run-local-service.sh`.
+
+- [ ] **Step 7: Run tests**
 
 ```bash
 node --test tests/engineering/openclaw_weixin_adapter.test.mjs
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_weixin_context.py \
-  services/quant-api/tests/test_alert_cli.py \
-  tests/engineering/test_weixin_context_launchd.py \
-  tests/engineering/test_alert_runtime_launchd.py
-scripts/ops/macos/install-local-services.sh --render-only
+  services/quant-api/tests/test_alert_weixin_context.py services/quant-api/tests/test_alert_cli.py \
+  tests/engineering/test_weixin_context_launchd.py tests/engineering/test_alert_runtime_launchd.py
+GUIYI_OPENCLAW_ROOT=/private/tmp/guiyi-render-openclaw \
+GUIYI_ALERT_RECIPIENTS_PATH=/private/tmp/guiyi-render-secrets/recipients.json \
+  scripts/ops/macos/install-local-services.sh --render-only
 plutil -lint .run/launchd/com.guiyi.quant-weixin-context.plist
 ```
 
-Expected: PASS; render-only performs no launchctl mutation.
+Expected: PASS; no launchctl mutation.
 
 - [ ] **Step 8: Commit Task 5**
 
 ```bash
-git add services/quant-api/app/alerts/weixin_context.py \
-  services/quant-api/app/alerts/openclaw_weixin_adapter.mjs \
-  services/quant-api/app/guiyi_cli/main.py \
-  services/quant-api/tests/test_alert_weixin_context.py \
-  deploy/launchd/com.guiyi.quant-weixin-context.plist.template \
-  scripts/ops/macos/install-local-services.sh \
-  scripts/ops/macos/run-local-service.sh \
-  tests/engineering/test_weixin_context_launchd.py \
-  tests/engineering/test_alert_runtime_launchd.py \
-  tests/engineering/openclaw_weixin_adapter.test.mjs
+git add services/quant-api/app/alerts/weixin_context.py services/quant-api/app/alerts/openclaw_weixin_adapter.mjs \
+  services/quant-api/app/guiyi_cli/main.py services/quant-api/tests/test_alert_weixin_context.py \
+  deploy/launchd/com.guiyi.quant-weixin-context.plist.template scripts/ops/macos/install-local-services.sh \
+  scripts/ops/macos/run-local-service.sh tests/engineering/test_weixin_context_launchd.py \
+  tests/engineering/test_alert_runtime_launchd.py tests/engineering/openclaw_weixin_adapter.test.mjs
 git commit -m "feat(alert): add notification-only context monitor"
 ```
 
@@ -576,13 +533,13 @@ git commit -m "feat(alert): add notification-only context monitor"
 - `WeixinAlertSender.send(message) -> None`.
 - `WeixinAlertSender.send_canary() -> WeixinSendSummary`.
 
-- [ ] **Step 1: Write Node send fan-out tests**
+- [ ] **Step 1: Write Node fan-out tests**
 
-Four fake targets; member_3 rejects. Assert exactly one physical call per recipient, member_4 still attempted, no second call for member_3. Context-missing target gets zero physical call.
+Four targets; member_3 rejects. Exactly one physical call each, member_4 still attempted, no retry. Missing-context target gets zero physical send.
 
 - [ ] **Step 2: Implement adapter `send`**
 
-Use `Promise.allSettled`. Before each send require same account configured/token + exact context. Call only:
+Use `Promise.allSettled`; exact account/config/context. Only:
 
 ```javascript
 await sendMessageWeixin({
@@ -592,58 +549,39 @@ await sendMessageWeixin({
 });
 ```
 
-Do not call `sendWeixinOutbound`, hooks, Gateway, queue, or Agent surfaces.
+No `sendWeixinOutbound`, hooks, Gateway, queue, Agent.
 
 - [ ] **Step 3: Write Python sender tests**
 
-Verify one formatted text + one child process per Alert, all recipients included, child timeout/malformed JSON/nonzero exit collapse, partial failure is isolated, raw stderr secrets never appear publicly.
+One formatted text + one child process per Alert; all recipients included; timeout/malformed/nonzero collapse; partial failure isolated; raw stderr never public.
 
-- [ ] **Step 4: Implement `WeixinAlertSender`**
+- [ ] **Step 4: Implement sender**
 
-`send(message)` must complete the adapter fan-out and raise one sanitized `WeixinSendError("WEIXIN_SEND_FAILED")` if summary.failed > 0; Runtime catches it after Event commit. Do not retry.
+`send()` raises sanitized `WEIXIN_SEND_FAILED` after all attempts if any fail. `send_canary()` returns aggregate summary for ordinary recipient failures; catastrophic adapter failures may raise stable error.
 
-`send_canary()` uses `ALERT_CANARY_TEXT` and returns the full sanitized summary instead of raising for ordinary recipient failures; catastrophic adapter failure may raise a stable transport error.
+- [ ] **Step 5: Change `alert-canary` JSON contract**
 
-- [ ] **Step 5: Change `runtime alert-canary` to emit structured result and nonzero on partial failure**
-
-Success payload must be:
+Success:
 
 ```json
-{
-  "schema_version": 1,
-  "command": "runtime.alert-canary",
-  "status": "ok",
-  "attempted": 4,
-  "provider_accepted": 4,
-  "failed": 0,
-  "failed_aliases": []
-}
+{"schema_version":1,"command":"runtime.alert-canary","status":"ok","attempted":4,"provider_accepted":4,"failed":0,"failed_aliases":[]}
 ```
 
-Partial failure payload must still be written to stdout as a normal command result, but use `status="failed"` so `main()` returns exit code 1:
+Partial failure remains normal stdout command result but `status="failed"`, so `main()` returns 1:
 
 ```json
-{
-  "schema_version": 1,
-  "command": "runtime.alert-canary",
-  "status": "failed",
-  "attempted": 4,
-  "provider_accepted": 3,
-  "failed": 1,
-  "failed_aliases": ["member_3"]
-}
+{"schema_version":1,"command":"runtime.alert-canary","status":"failed","attempted":4,"provider_accepted":3,"failed":1,"failed_aliases":["member_3"]}
 ```
 
-Do not treat provider accepted as delivered/read.
+Provider accepted is not delivered/read.
 
-- [ ] **Step 6: Run focused tests**
+- [ ] **Step 6: Run tests**
 
 ```bash
 node --test tests/engineering/openclaw_weixin_adapter.test.mjs
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_notification.py \
-  services/quant-api/tests/test_alert_weixin.py \
+  services/quant-api/tests/test_alert_notification.py services/quant-api/tests/test_alert_weixin.py \
   services/quant-api/tests/test_alert_cli.py
 ```
 
@@ -652,18 +590,15 @@ Expected: PASS.
 - [ ] **Step 7: Commit Task 6**
 
 ```bash
-git add services/quant-api/app/alerts/weixin.py \
-  services/quant-api/app/alerts/openclaw_weixin_adapter.mjs \
-  services/quant-api/app/guiyi_cli/main.py \
-  services/quant-api/tests/test_alert_weixin.py \
-  services/quant-api/tests/test_alert_cli.py \
-  tests/engineering/openclaw_weixin_adapter.test.mjs
+git add services/quant-api/app/alerts/weixin.py services/quant-api/app/alerts/openclaw_weixin_adapter.mjs \
+  services/quant-api/app/guiyi_cli/main.py services/quant-api/tests/test_alert_weixin.py \
+  services/quant-api/tests/test_alert_cli.py tests/engineering/openclaw_weixin_adapter.test.mjs
 git commit -m "feat(alert): add single-shot Weixin sender"
 ```
 
 ---
 
-### Task 7: Rewire Alert composition, gate startup, and retire active WeCom code
+### Task 7: Rewire Alert composition, startup Gate, and retire active WeCom code
 
 **Files:**
 - Modify: `services/quant-api/app/alerts/composition.py`
@@ -671,6 +606,7 @@ git commit -m "feat(alert): add single-shot Weixin sender"
 - Modify: `services/quant-api/app/guiyi_cli/main.py`
 - Modify: `services/quant-api/tests/test_alert_runtime.py`
 - Modify: `services/quant-api/tests/test_alert_cli.py`
+- Modify: `deploy/launchd/com.guiyi.quant-alert.plist.template`
 - Delete: `services/quant-api/app/alerts/wecom.py`
 - Delete: `services/quant-api/tests/test_alert_wecom.py`
 - Modify: `scripts/ops/macos/install-local-services.sh`
@@ -678,81 +614,74 @@ git commit -m "feat(alert): add single-shot Weixin sender"
 
 **Interfaces:**
 - `build_weixin_sender_from_env() -> WeixinAlertSender`.
-- `build_alert_runtime()` requires activation marker + fresh context status + adapter probe before Runtime construction.
-- default canary factory becomes `build_weixin_sender_from_env`.
+- `build_alert_runtime()` requires activation marker + fresh context status + probe.
+- canary default factory becomes `build_weixin_sender_from_env`.
 
 - [ ] **Step 1: Add failing composition/CLI tests**
 
-Replace missing-webhook assertions with missing recipient/OpenClaw/context status fail-closed tests. Canary must never construct DB session or AlertRuntime.
+Replace webhook missing cases with recipient/OpenClaw/context status failures. Canary must never construct DB session or AlertRuntime.
 
-- [ ] **Step 2: Add context-status freshness validator**
+- [ ] **Step 2: Add fixed context freshness validation**
 
-Fixed **90-second** window. Require schema 1, `status="ok"`, expected recipient count, aware `last_poll_at`, age <=90s. Collapse failure to `ALERT_NOTIFICATION_TRANSPORT_NOT_READY`.
+**90 seconds**, schema 1, `status=ok`, expected count, aware timestamp; failure -> `ALERT_NOTIFICATION_TRANSPORT_NOT_READY`.
 
 - [ ] **Step 3: Rewire composition**
-
-Order:
 
 ```text
 activation marker
 → operational products/taxonomy
 → recipient registry
 → monitor status
-→ pinned OpenClaw/plugin dependency
-→ adapter probe 4/4 context
+→ pinned dependency
+→ adapter probe 4/4
 → Redis source/heartbeat
-→ AlertRuntime(sender=WeixinAlertSender)
+→ AlertRuntime(WeixinAlertSender)
 ```
 
-No preflight may create Event, mutate Scope, or send.
+No Event/Scope/send in preflight.
 
-- [ ] **Step 4: Make `--confirm-alert-runtime` load context first**
+- [ ] **Step 4: Inject the same private paths into Alert launchd**
 
-Load `com.guiyi.quant-weixin-context`, wait up to 90s for fresh/ok privacy-safe status, then load `com.guiyi.quant-alert`; write alert marker only after both succeed. Failure leaves Alert marker disabled and must not report success.
+Add `__OPENCLAW_ROOT__` and `__ALERT_RECIPIENTS_PATH__` to `com.guiyi.quant-alert.plist.template` so Alert and ContextMonitor receive the same values. `--confirm-alert-runtime` must reject missing/non-absolute render values.
 
-- [ ] **Step 5: Delete WeCom implementation/tests and close active imports**
+- [ ] **Step 5: Make `--confirm-alert-runtime` load context first**
 
-After Task 8 canonical edits, this search must have no active hits:
+Load context, wait <=90s for fresh/ok status, then load Alert; write alert marker only after both succeed. Failure leaves Alert marker disabled and reports failure.
+
+- [ ] **Step 6: Delete WeCom implementation/tests and close active imports**
+
+After Task 8 canonical edits, no active hits:
 
 ```bash
 git grep -n -E 'WeComWebhookSender|build_wecom_sender_from_env|WECOM_WEBHOOK_URL|qyapi\.weixin\.qq\.com' -- \
   services scripts deploy TESTING.md AGENTS.md PROJECT_SOURCE.md DECISIONS.md || true
 ```
 
-Historical evidence outside active paths may retain old facts.
-
-- [ ] **Step 6: Run Alert regression tests**
+- [ ] **Step 7: Run regression tests**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_notification.py \
-  services/quant-api/tests/test_alert_recipient_registry.py \
-  services/quant-api/tests/test_alert_weixin.py \
-  services/quant-api/tests/test_alert_weixin_context.py \
-  services/quant-api/tests/test_alert_runtime.py \
-  services/quant-api/tests/test_alert_cli.py \
-  tests/engineering/test_alert_runtime_launchd.py \
-  tests/engineering/test_weixin_context_launchd.py
+  services/quant-api/tests/test_alert_notification.py services/quant-api/tests/test_alert_recipient_registry.py \
+  services/quant-api/tests/test_alert_weixin.py services/quant-api/tests/test_alert_weixin_context.py \
+  services/quant-api/tests/test_alert_runtime.py services/quant-api/tests/test_alert_cli.py \
+  tests/engineering/test_alert_runtime_launchd.py tests/engineering/test_weixin_context_launchd.py
 ```
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 7**
+- [ ] **Step 8: Commit Task 7**
 
 ```bash
-git add -A services/quant-api/app/alerts \
-  services/quant-api/app/guiyi_cli/main.py \
-  services/quant-api/tests \
-  scripts/ops/macos/install-local-services.sh \
-  tests/engineering/test_alert_runtime_launchd.py \
-  tests/engineering/test_weixin_context_launchd.py
+git add -A services/quant-api/app/alerts services/quant-api/app/guiyi_cli/main.py services/quant-api/tests \
+  deploy/launchd/com.guiyi.quant-alert.plist.template scripts/ops/macos/install-local-services.sh \
+  tests/engineering/test_alert_runtime_launchd.py tests/engineering/test_weixin_context_launchd.py
 git commit -m "feat(alert): switch develop transport to iLink"
 ```
 
 ---
 
-### Task 8: Add tooling/status, update canonicals, and run full verification
+### Task 8: Add OpenClaw tooling/status, update canonicals, and verify D1
 
 **Files:**
 - Create: `deploy/openclaw/README.md`
@@ -762,16 +691,16 @@ git commit -m "feat(alert): switch develop transport to iLink"
 - Modify: `AGENTS.md`
 - Modify: `PROJECT_SOURCE.md`
 - Modify: `DECISIONS.md`
-- Do not change `STATUS.md` to claim production transport changed.
+- Do not claim production transport changed in `STATUS.md`.
 
 **Interfaces:**
-- `install-openclaw-weixin-tools.sh --check` is read-only and exits 0 with a structured `not_installed` status when the external tools are absent; it never installs in D1.
-- A future real `--confirm-install` path may perform D2 only after external authorization.
-- `local-services-status.sh` reports guiyi context identity + external version identity without PII/secrets.
+- `install-openclaw-weixin-tools.sh --check`: read-only; exits 0 with `status=not_installed` when tools are absent.
+- `install-openclaw-weixin-tools.sh --confirm-install`: D2-only real install entry; never called during D1 verification.
+- `local-services-status.sh`: privacy-safe guiyi context identity + external dependency versions.
 
 - [ ] **Step 1: Write engineering tests for tooling/status**
 
-Fixture `--check` verifies version/path contracts but never npm/login/launchctl/send. Local status fixture includes:
+Fixture `--check` never npm/login/launchctl/send. Status fixture emits:
 
 ```text
 external.openclaw.version=2026.8.1
@@ -780,60 +709,53 @@ weixin_context.loaded=...
 weixin_context.status=...
 ```
 
-No target/account fields.
+No account/target.
 
-- [ ] **Step 2: Implement tooling/status**
+- [ ] **Step 2: Implement exact `--check` behavior**
 
-Keep external OpenClaw dependency identity separate from guiyi commit identity. Do not add any OpenClaw Gateway service label.
+Read `deploy/openclaw/versions.json`. If `$GUIYI_OPENCLAW_ROOT/runtime/bin/openclaw` is absent, print a structured `status=not_installed` and exit 0. If present, read only version/plugin inspect and return `installed|mismatch`; never modify files/config.
 
-- [ ] **Step 3: Update `TESTING.md` Alert V2 section**
+- [ ] **Step 3: Implement exact externally gated `--confirm-install` behavior**
 
-Add new Python/Node tests and read-only commands:
+Require `GUIYI_OPENCLAW_ROOT` to be an absolute `/Volumes/...` path and require exact versions from `versions.json`. The helper must:
 
-```bash
-node --test tests/engineering/openclaw_weixin_adapter.test.mjs
-scripts/ops/macos/install-openclaw-weixin-tools.sh --check
-scripts/ops/macos/install-local-services.sh --render-only
-```
+1. create `runtime/state/cache/npm/tmp` under that root with state root mode 0700;
+2. download the official OpenClaw CLI installer to a temporary file;
+3. run it with `--prefix <root>/runtime --version 2026.8.1 --node-version 24.15.0 --no-onboard`;
+4. set `OPENCLAW_PREFIX/STATE_DIR/CONFIG_PATH/CONFIG/npm_config_cache/TMPDIR` to the approved root;
+5. run `openclaw plugins install npm:@tencent-weixin/openclaw-weixin@2.4.6 --pin`;
+6. run `openclaw config set plugins.entries.openclaw-weixin.enabled true`;
+7. never run `gateway`, `channels login`, `message send`, launchctl, guiyi Runtime switch, or onboarding.
 
-Explicitly say registration, QR login, real canary, `--confirm-weixin-context`, `--confirm-alert-runtime`, OpenClaw install, release and promotion are not test permissions.
+The script itself does not decide authorization; callers may invoke `--confirm-install` only after D2 explicit intent.
 
-- [ ] **Step 4: Update active canonicals without falsifying production state**
+- [ ] **Step 4: Implement `local-services-status.sh` additions**
 
-`AGENTS.md`, `PROJECT_SOURCE.md`, `DECISIONS.md` must record:
+Keep OpenClaw dependency version identity separate from guiyi commit identity. If Alert marker is enabled, context monitor is required; report fresh privacy-safe status. No Gateway label.
 
-- develop architecture is notification-only iLink, no Gateway/AI inbound;
-- no-retry/no-queue Event semantics remain;
-- current production Runtime remains v1.4.2 WeCom until rollout D8/D9;
-- existing WeCom continuous authorization does not authorize iLink;
-- iLink canary/continuous authorization/promotion are separate Lane 3 Gates;
-- `STATUS.md` remains source of current production fact.
+- [ ] **Step 5: Update `TESTING.md`**
 
-Do not say iLink is production active or continuously authorized.
+Add new Python/Node tests and read-only commands. Explicitly state QR login, registration, real canary, `--confirm-install`, `--confirm-weixin-context`, `--confirm-alert-runtime`, release and promotion are not test permissions.
 
-- [ ] **Step 5: Run full relevant project-native verification**
+- [ ] **Step 6: Update active canonicals without falsifying production**
+
+Record notification-only develop architecture/no Gateway, unchanged no-retry semantics, current production v1.4.2 WeCom until rollout D8/D9, no inheritance of WeCom authorization to iLink, and separate Lane 3 Gates. `STATUS.md` remains production fact source.
+
+- [ ] **Step 7: Run full relevant verification**
 
 ```bash
 python3 scripts/engineering/secret_scan.py --json
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_registry.py \
-  services/quant-api/tests/test_alert_current_trading_day.py \
-  services/quant-api/tests/test_alert_models.py \
-  services/quant-api/tests/test_alert_service.py \
-  services/quant-api/tests/test_alert_evaluator.py \
-  services/quant-api/tests/test_alert_notification.py \
-  services/quant-api/tests/test_alert_recipient_registry.py \
-  services/quant-api/tests/test_alert_weixin.py \
-  services/quant-api/tests/test_alert_weixin_context.py \
-  services/quant-api/tests/test_alert_runtime.py \
-  services/quant-api/tests/test_alert_api.py \
-  services/quant-api/tests/test_alert_cli.py \
-  services/quant-api/tests/test_runtime_health.py \
-  services/quant-api/tests/alembic/test_alert_v2_migration.py \
-  tests/engineering/test_alert_runtime_launchd.py \
-  tests/engineering/test_weixin_context_launchd.py
+  services/quant-api/tests/test_alert_registry.py services/quant-api/tests/test_alert_current_trading_day.py \
+  services/quant-api/tests/test_alert_models.py services/quant-api/tests/test_alert_service.py \
+  services/quant-api/tests/test_alert_evaluator.py services/quant-api/tests/test_alert_notification.py \
+  services/quant-api/tests/test_alert_recipient_registry.py services/quant-api/tests/test_alert_weixin.py \
+  services/quant-api/tests/test_alert_weixin_context.py services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_alert_api.py services/quant-api/tests/test_alert_cli.py \
+  services/quant-api/tests/test_runtime_health.py services/quant-api/tests/alembic/test_alert_v2_migration.py \
+  tests/engineering/test_alert_runtime_launchd.py tests/engineering/test_weixin_context_launchd.py
 
 node --test tests/engineering/openclaw_weixin_adapter.test.mjs
 
@@ -841,26 +763,24 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant
 
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-MYPYPATH=services/quant-api \
-  uv run --offline --project services/quant-api mypy \
-  --explicit-package-bases --ignore-missing-imports \
-  services/quant-api/app/alerts services/quant-api/app/guiyi_cli \
-  services/quant-api/app/services/runtime_health.py
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api \
+  uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/alerts services/quant-api/app/guiyi_cli services/quant-api/app/services/runtime_health.py
 
 find scripts/ops -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
 scripts/ops/macos/install-openclaw-weixin-tools.sh --check
-scripts/ops/macos/install-local-services.sh --render-only
+GUIYI_OPENCLAW_ROOT=/private/tmp/guiyi-render-openclaw \
+GUIYI_ALERT_RECIPIENTS_PATH=/private/tmp/guiyi-render-secrets/recipients.json \
+  scripts/ops/macos/install-local-services.sh --render-only
 plutil -lint .run/launchd/com.guiyi.quant-alert.plist
 plutil -lint .run/launchd/com.guiyi.quant-weixin-context.plist
-
 git diff --check
 git status --short
 ```
 
-Expected: all exit 0; secret scan 0 findings; no command sends or mutates Runtime.
+Expected: exit 0; secret scan 0 findings; no external mutation.
 
-- [ ] **Step 6: Search active references and review scope**
+- [ ] **Step 8: Search active references and review scope**
 
 ```bash
 git grep -n -E 'WeComWebhookSender|build_wecom_sender_from_env|WECOM_WEBHOOK_URL|qyapi\.weixin\.qq\.com' -- \
@@ -868,24 +788,17 @@ git grep -n -E 'WeComWebhookSender|build_wecom_sender_from_env|WECOM_WEBHOOK_URL
 
 git diff --stat develop...HEAD
 git diff develop...HEAD -- \
-  services/quant-api/app/alerts \
-  services/quant-api/app/guiyi_cli \
-  services/quant-api/tests \
-  deploy/openclaw deploy/launchd \
-  scripts/ops/macos \
-  TESTING.md AGENTS.md PROJECT_SOURCE.md DECISIONS.md
+  services/quant-api/app/alerts services/quant-api/app/guiyi_cli services/quant-api/tests \
+  deploy/openclaw deploy/launchd scripts/ops/macos TESTING.md AGENTS.md PROJECT_SOURCE.md DECISIONS.md
 ```
 
-Verify no evaluator formula, Rule Scope, migration, DB schema, Canonical, order path, main/tag or Runtime worktree was modified.
+No evaluator formula, Scope, migration, DB schema, Canonical, order, main/tag or Runtime worktree change.
 
-- [ ] **Step 7: Commit Task 8**
+- [ ] **Step 9: Commit Task 8**
 
 ```bash
-git add deploy/openclaw \
-  scripts/ops/macos/install-openclaw-weixin-tools.sh \
-  scripts/ops/macos/local-services-status.sh \
-  TESTING.md AGENTS.md PROJECT_SOURCE.md DECISIONS.md \
-  tests/engineering
+git add deploy/openclaw scripts/ops/macos/install-openclaw-weixin-tools.sh \
+  scripts/ops/macos/local-services-status.sh TESTING.md AGENTS.md PROJECT_SOURCE.md DECISIONS.md tests/engineering
 git commit -m "docs(alert): define iLink notification operations"
 ```
 
@@ -893,22 +806,23 @@ git commit -m "docs(alert): define iLink notification operations"
 
 ## D1 Completion Gate
 
-Fresh evidence must support all statements:
+Fresh evidence must support:
 
 ```text
-PASS: no real external operation executed
-PASS: no OpenClaw Gateway in runtime design
-PASS: inbound cannot enter Agent/LLM/slash/tool pipeline
-PASS: registration uses exact challenge and is monitor-exclusive
-PASS: registration preserves CLI JSON contract via separate interactive prompt stream
-PASS: context-monitor parent forwards termination to Node child
-PASS: alert-canary reports aggregate acceptance and exits nonzero on partial failure
-PASS: every AlertEvent×recipient has at most one physical send attempt
-PASS: Event remains committed on notification failure
-PASS: no notification retry/replay/backfill/outbox/queue
-PASS: no DB migration/schema/Scope/evaluator/order change
-PASS: active WeCom code retired on develop
-PASS: production v1.4.2 WeCom state not modified or falsely rewritten in STATUS.md
+PASS no real external operation executed
+PASS no OpenClaw Gateway in runtime design
+PASS inbound cannot enter Agent/LLM/slash/tool pipeline
+PASS registration exact-challenge and monitor-exclusive
+PASS registration preserves CLI JSON via separate TTY/prompt stream
+PASS context-monitor parent forwards termination to Node child
+PASS Alert and ContextMonitor receive the same explicit private paths
+PASS alert-canary reports aggregate acceptance and exits nonzero on partial failure
+PASS each AlertEvent×recipient has at most one physical send attempt
+PASS Event remains committed on notification failure
+PASS no notification retry/replay/backfill/outbox/queue
+PASS no DB migration/schema/Scope/evaluator/order change
+PASS active WeCom code retired on develop
+PASS production v1.4.2 WeCom state not modified/falsified in STATUS.md
 ```
 
 If all pass: **允许集成 develop**. D2-D9 remain blocked behind the separate rollout plan and fresh user Gates.
