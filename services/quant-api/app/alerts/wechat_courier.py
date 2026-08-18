@@ -57,6 +57,19 @@ class WeChatGroupSendSummary:
 
 
 RunProcess = Callable[..., subprocess.CompletedProcess[str]]
+DependencyResolver = Callable[[Path], WeChatCourierDependency]
+
+
+def _is_private_directory(path: Path) -> bool:
+    try:
+        metadata = path.stat()
+    except OSError:
+        return False
+    return (
+        stat.S_ISDIR(metadata.st_mode)
+        and stat.S_IMODE(metadata.st_mode) == 0o700
+        and metadata.st_uid == os.getuid()
+    )
 
 
 def _load_versions() -> str:
@@ -113,12 +126,25 @@ def resolve_wechat_courier_dependency(
         _contained(resolved_root, resolved_root / "cache/clang"),
     )
     if (
-        not source_root.is_dir()
+        not _is_private_directory(resolved_root)
+        or not source_root.is_dir()
         or not git_metadata.is_dir()
         or not module_path.is_file()
-        or not all(directory.is_dir() for directory in required_directories)
+        or not all(_is_private_directory(directory) for directory in required_directories)
     ):
         raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+    try:
+        unresolved_git_head = git_metadata / "HEAD"
+        if unresolved_git_head.is_symlink():
+            raise ValueError
+        git_head = _contained(resolved_root, unresolved_git_head)
+        if (
+            not git_head.is_file()
+            or git_head.read_text(encoding="ascii").strip() != commit
+        ):
+            raise ValueError
+    except (OSError, UnicodeError, ValueError):
+        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
     try:
         python_mode = python_executable.stat().st_mode
     except OSError:
@@ -173,6 +199,8 @@ def _nonblocking_gui_lock(dependency: WeChatCourierDependency):
     lock_path = dependency.root / "runtime/guiyi-wechat-courier.lock"
     descriptor: int | None = None
     try:
+        if not _is_private_directory(lock_path.parent):
+            raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
         descriptor = os.open(
             lock_path,
             os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
@@ -205,15 +233,18 @@ class WeChatCourierRunner:
         dependency: WeChatCourierDependency,
         *,
         run_process: RunProcess = subprocess.run,
+        resolve_dependency: DependencyResolver = resolve_wechat_courier_dependency,
     ) -> None:
         self._dependency = dependency
         self._run_process = run_process
+        self._resolve_dependency = resolve_dependency
 
     def verify_target(self, target: WeChatGroupTarget) -> None:
         payload = {
             "action": "verify",
             "target_chat": target.target_chat,
             "upstream_root": str(self._dependency.source_root),
+            "upstream_commit": self._dependency.upstream_commit,
         }
         self._run_child(payload, {"status": "verified"})
 
@@ -223,12 +254,16 @@ class WeChatCourierRunner:
             "target_chat": target.target_chat,
             "text": text,
             "upstream_root": str(self._dependency.source_root),
+            "upstream_commit": self._dependency.upstream_commit,
         }
         self._run_child(payload, {"status": "sent"})
 
     def _run_child(self, payload: dict[str, str], expected: dict[str, str]) -> None:
         try:
             with _nonblocking_gui_lock(self._dependency):
+                refreshed = self._resolve_dependency(self._dependency.root)
+                if refreshed != self._dependency:
+                    raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
                 result = self._run_process(
                     [str(self._dependency.python_executable), str(ADAPTER_PATH)],
                     input=json.dumps(payload, separators=(",", ":")),

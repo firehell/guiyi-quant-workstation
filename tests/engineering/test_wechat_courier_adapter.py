@@ -15,6 +15,11 @@ from app.alerts.wechat_courier_adapter import (
 
 
 TARGET = "fixture-group-title"
+PINNED_COMMIT = "981bd14e238302b2a0e206cb5f28e8e2505bb874"
+
+
+def _accept_fixture_upstream(_root: Path, _commit: str) -> None:
+    return None
 
 
 @pytest.mark.parametrize(
@@ -68,6 +73,7 @@ def _fake_upstream(
     title: str = TARGET,
     safety: str = "clean-chat",
     send_failure: bool = False,
+    cleanup_failure: bool = False,
 ) -> Path:
     source_root.mkdir(parents=True)
     module_path = source_root / "wechat_courier.py"
@@ -123,6 +129,7 @@ def _fake_upstream(
         f"SEARCH_BOXES = {json.dumps([{'text': text, 'min_x': 0.1, 'min_y': 0.2, 'width': 0.3, 'height': 0.1} for text in (boxes if boxes is not None else [TARGET])])}\n"
         f"SAFETY_TEXT = {safety!r}\n"
         f"TITLE_TEXT = {title!r}\n"
+        f"CLEANUP_FAILURE = {cleanup_failure!r}\n"
         "SHOT_COUNT = 0\n"
         "def record(name):\n"
         "    with LOG.open('a', encoding='utf-8') as handle: handle.write(name + '\\n')\n"
@@ -130,7 +137,8 @@ def _fake_upstream(
         "    global SHOT_COUNT\n"
         "    SHOT_COUNT += 1\n"
         "    path = ROOT / f'{name}-{SHOT_COUNT}.png'\n"
-        "    path.write_bytes(b'fixture')\n"
+        "    if CLEANUP_FAILURE and name == 'search': path.mkdir()\n"
+        "    else: path.write_bytes(b'fixture')\n"
         "    return path\n"
         + "\n".join(functions.values())
     )
@@ -145,15 +153,23 @@ def test_verify_uses_exact_private_seam_cleans_screenshots_and_never_sends(
     source_root = tmp_path / "source"
     _fake_upstream(source_root)
     opened: list[str] = []
+    validations: list[tuple[Path, str]] = []
 
     result = execute_adapter_action(
-        {"action": "verify", "target_chat": TARGET, "upstream_root": str(source_root)},
+        {
+            "action": "verify",
+            "target_chat": TARGET,
+            "upstream_root": str(source_root),
+            "upstream_commit": PINNED_COMMIT,
+        },
         open_search_ui=lambda _upstream, target: opened.append(target),
         sleep=lambda _seconds: None,
+        validate_upstream=lambda root, commit: validations.append((root, commit)),
     )
 
     assert result == {"status": "verified"}
     assert opened == [TARGET]
+    assert validations == [(source_root, PINNED_COMMIT), (source_root, PINNED_COMMIT)]
     assert capsys.readouterr() == ("", "")
     assert list(source_root.glob("*.png")) == []
     assert (source_root / "calls.log").read_text(encoding="utf-8").splitlines() == [
@@ -183,9 +199,11 @@ def test_search_miss_near_match_or_ambiguity_fails_before_click(
                 "action": "verify",
                 "target_chat": TARGET,
                 "upstream_root": str(source_root),
+                "upstream_commit": PINNED_COMMIT,
             },
             open_search_ui=lambda _upstream, _target: None,
             sleep=lambda _seconds: None,
+            validate_upstream=_accept_fixture_upstream,
         )
     calls = (source_root / "calls.log").read_text(encoding="utf-8")
     assert "click_point" not in calls
@@ -204,9 +222,11 @@ def test_title_failure_retries_only_read_only_ocr_three_times_and_cleans(
                 "action": "verify",
                 "target_chat": TARGET,
                 "upstream_root": str(source_root),
+                "upstream_commit": PINNED_COMMIT,
             },
             open_search_ui=lambda _upstream, _target: None,
             sleep=lambda _seconds: None,
+            validate_upstream=_accept_fixture_upstream,
         )
 
     assert list(source_root.glob("*.png")) == []
@@ -221,9 +241,15 @@ def test_missing_exact_upstream_export_fails_dependency_closed(tmp_path: Path) -
 
     with pytest.raises(AdapterError, match="^WECHAT_COURIER_DEPENDENCY_INVALID$"):
         execute_adapter_action(
-            {"action": "verify", "target_chat": TARGET, "upstream_root": str(source_root)},
+            {
+                "action": "verify",
+                "target_chat": TARGET,
+                "upstream_root": str(source_root),
+                "upstream_commit": PINNED_COMMIT,
+            },
             open_search_ui=lambda _upstream, _target: None,
             sleep=lambda _seconds: None,
+            validate_upstream=_accept_fixture_upstream,
         )
 
 
@@ -237,9 +263,11 @@ def test_send_verifies_then_calls_physical_send_exactly_once(tmp_path: Path) -> 
             "target_chat": TARGET,
             "text": "fixture-alert",
             "upstream_root": str(source_root),
+            "upstream_commit": PINNED_COMMIT,
         },
         open_search_ui=lambda _upstream, _target: None,
         sleep=lambda _seconds: None,
+        validate_upstream=_accept_fixture_upstream,
     )
 
     assert result == {"status": "sent"}
@@ -263,9 +291,11 @@ def test_send_target_verification_failure_calls_no_send(
                 "target_chat": TARGET,
                 "text": "fixture-alert",
                 "upstream_root": str(source_root),
+                "upstream_commit": PINNED_COMMIT,
             },
             open_search_ui=lambda _upstream, _target: None,
             sleep=lambda _seconds: None,
+            validate_upstream=_accept_fixture_upstream,
         )
 
     calls = (source_root / "calls.log").read_text(encoding="utf-8")
@@ -283,10 +313,34 @@ def test_send_primitive_failure_is_not_retried(tmp_path: Path) -> None:
                 "target_chat": TARGET,
                 "text": "fixture-alert",
                 "upstream_root": str(source_root),
+                "upstream_commit": PINNED_COMMIT,
             },
             open_search_ui=lambda _upstream, _target: None,
             sleep=lambda _seconds: None,
+            validate_upstream=_accept_fixture_upstream,
         )
 
     calls = (source_root / "calls.log").read_text(encoding="utf-8").splitlines()
     assert calls.count("paste_and_send_text") == 1
+
+
+def test_screenshot_cleanup_failure_aborts_before_send(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    _fake_upstream(source_root, cleanup_failure=True)
+
+    with pytest.raises(AdapterError, match="^WECHAT_GROUP_TARGET_UNVERIFIED$"):
+        execute_adapter_action(
+            {
+                "action": "send",
+                "target_chat": TARGET,
+                "text": "fixture-alert",
+                "upstream_root": str(source_root),
+                "upstream_commit": PINNED_COMMIT,
+            },
+            open_search_ui=lambda _upstream, _target: None,
+            sleep=lambda _seconds: None,
+            validate_upstream=_accept_fixture_upstream,
+        )
+
+    calls = (source_root / "calls.log").read_text(encoding="utf-8")
+    assert "paste_and_send_text" not in calls

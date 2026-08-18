@@ -125,6 +125,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
             redis_factory=lambda: FakeRedis(),
             now=now,
             live_runtime_enabled=False,
+            notification_transport_configured=True,
             after_market_status_path=None,
         )
         stale = build_runtime_health(
@@ -143,6 +144,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
             ),
             now=now,
             live_runtime_enabled=False,
+            notification_transport_configured=True,
             after_market_status_path=None,
         )
         fresh = build_runtime_health(
@@ -161,6 +163,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
             ),
             now=now,
             live_runtime_enabled=False,
+            notification_transport_configured=True,
             after_market_status_path=None,
         )
 

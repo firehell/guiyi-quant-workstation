@@ -39,6 +39,7 @@ _SAFETY_REJECT_TERMS = (
     "视频",
     "相关搜索",
 )
+UpstreamValidator = Callable[[Path, str], None]
 
 
 class AdapterError(RuntimeError):
@@ -99,6 +100,33 @@ def _load_upstream(upstream_root: Path) -> ModuleType:
         raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
 
 
+def _validate_upstream_identity(upstream_root: Path, expected_commit: str) -> None:
+    commands = (
+        ["/usr/bin/git", "-C", str(upstream_root), "rev-parse", "HEAD"],
+        ["/usr/bin/git", "-C", str(upstream_root), "status", "--porcelain"],
+    )
+    try:
+        results = [
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10.0,
+                env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+            )
+            for command in commands
+        ]
+    except (OSError, subprocess.SubprocessError):
+        raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
+    if (
+        any(result.returncode != 0 for result in results)
+        or results[0].stdout.strip() != expected_commit
+        or results[1].stdout.strip()
+    ):
+        raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID")
+
+
 def _run_private_command(
     argv: list[str],
     *,
@@ -143,11 +171,12 @@ end tell
     )
 
 
-def _safe_unlink(path: object) -> None:
+def _unlink_screenshot(path: object) -> bool:
     try:
         Path(path).unlink(missing_ok=True)  # type: ignore[arg-type]
+        return True
     except (OSError, TypeError, ValueError):
-        pass
+        return False
 
 
 def _validate_search_result(upstream: ModuleType, target: str) -> None:
@@ -178,8 +207,8 @@ def _validate_search_result(upstream: ModuleType, target: str) -> None:
     except Exception:
         raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED") from None
     finally:
-        if screenshot is not None:
-            _safe_unlink(screenshot)
+        if screenshot is not None and not _unlink_screenshot(screenshot):
+            raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
 
 
 def _safety_text_is_clean(value: str) -> bool:
@@ -210,8 +239,11 @@ def _validate_title_attempt(upstream: ModuleType, target: str, attempt: int) -> 
     except Exception:
         raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED") from None
     finally:
+        cleanup_failed = False
         for screenshot in screenshots:
-            _safe_unlink(screenshot)
+            cleanup_failed = not _unlink_screenshot(screenshot) or cleanup_failed
+        if cleanup_failed:
+            raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
 
 
 def _verify_target(
@@ -266,26 +298,32 @@ def execute_adapter_action(
     *,
     open_search_ui: Callable[[ModuleType, str], None] = _open_search_ui,
     sleep: Callable[[float], None] = time.sleep,
+    validate_upstream: UpstreamValidator = _validate_upstream_identity,
 ) -> dict[str, str]:
     if not isinstance(payload, dict):
         raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID")
     action = payload.get("action")
     expected_keys = (
-        {"action", "target_chat", "upstream_root"}
+        {"action", "target_chat", "upstream_root", "upstream_commit"}
         if action == "verify"
-        else {"action", "target_chat", "text", "upstream_root"}
+        else {"action", "target_chat", "text", "upstream_root", "upstream_commit"}
     )
     if (
         action not in {"verify", "send"}
         or set(payload) != expected_keys
         or not _valid_private_text(payload.get("target_chat"))
         or not isinstance(payload.get("upstream_root"), str)
+        or not isinstance(payload.get("upstream_commit"), str)
+        or re.fullmatch(r"[0-9a-f]{40}", payload["upstream_commit"]) is None
         or (action == "send" and not _valid_message_text(payload.get("text")))
     ):
         raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID")
     private_output = io.StringIO()
     with redirect_stdout(private_output), redirect_stderr(private_output):
-        upstream = _load_upstream(Path(payload["upstream_root"]))
+        upstream_root = Path(payload["upstream_root"])
+        validate_upstream(upstream_root, payload["upstream_commit"])
+        upstream = _load_upstream(upstream_root)
+        validate_upstream(upstream_root, payload["upstream_commit"])
         _verify_target(
             upstream,
             payload["target_chat"],

@@ -152,8 +152,10 @@ def test_runtime_service_entrypoint_treats_retired_workers_as_unknown(tmp_path: 
 
 def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path) -> None:
     repo, home, fake_bin, calls = _status_fixture(tmp_path)
+    caller_root = tmp_path / "caller-courier"
+    caller_root.mkdir()
 
-    result = _run_status(repo, home, fake_bin)
+    result = _run_status(repo, home, fake_bin, caller_root=caller_root)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "[local-services-status] readonly=true" in result.stdout
@@ -384,11 +386,18 @@ def _status_fixture(
     return repo, home, fake_bin, calls
 
 
-def _run_status(repo: Path, home: Path, fake_bin: Path) -> subprocess.CompletedProcess[str]:
+def _run_status(
+    repo: Path,
+    home: Path,
+    fake_bin: Path,
+    *,
+    caller_root: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
     environment = {
         **os.environ,
         "HOME": str(home),
         "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+        "GUIYI_WECHAT_COURIER_ROOT": str(caller_root or ""),
     }
     return subprocess.run(
         [str(repo / "scripts/ops/macos/local-services-status.sh")],

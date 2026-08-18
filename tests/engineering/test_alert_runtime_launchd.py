@@ -82,6 +82,28 @@ def test_run_local_service_has_dedicated_alert_cli_branch() -> None:
     assert "runtime alert" in source
 
 
+def test_render_rejects_alert_path_xml_injection(tmp_path: Path) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/install-local-services.sh"), "--render-only"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/fixture/<key>injected</key>",
+            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/fixture/group.json",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "invalid alert notification path" in result.stderr
+
+
 def _copy_fixture(destination: Path) -> Path:
     for relative in (
         "deploy/launchd",

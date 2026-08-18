@@ -55,12 +55,17 @@ load_labels=("${base_labels[@]}")
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-execution-review-roll]\n' "$0" >&2; exit 2; }
 if [[ "$MODE" == "--confirm-alert-runtime" ]]; then
-  [[ "$WECHAT_COURIER_ROOT" == /* && "$ALERT_WECHAT_GROUP_PATH" == /* ]] || {
+  [[ "$WECHAT_COURIER_ROOT" == /Volumes/* && "$ALERT_WECHAT_GROUP_PATH" == /Volumes/* ]] || {
     printf '[install-local-services] alert notification paths not configured\n' >&2
     exit 1
   }
 fi
-if [[ "$WECHAT_COURIER_ROOT" == *['&|'$'\n']* || "$ALERT_WECHAT_GROUP_PATH" == *['&|'$'\n']* ]]; then
+if [[ "$WECHAT_COURIER_ROOT" == *'&'* || "$WECHAT_COURIER_ROOT" == *'<'* \
+  || "$WECHAT_COURIER_ROOT" == *'>'* || "$WECHAT_COURIER_ROOT" == *$'\n'* \
+  || "$WECHAT_COURIER_ROOT" == *$'\r'* || "$WECHAT_COURIER_ROOT" == *$'\t'* \
+  || "$ALERT_WECHAT_GROUP_PATH" == *'&'* || "$ALERT_WECHAT_GROUP_PATH" == *'<'* \
+  || "$ALERT_WECHAT_GROUP_PATH" == *'>'* || "$ALERT_WECHAT_GROUP_PATH" == *$'\n'* \
+  || "$ALERT_WECHAT_GROUP_PATH" == *$'\r'* || "$ALERT_WECHAT_GROUP_PATH" == *$'\t'* ]]; then
   printf '[install-local-services] invalid alert notification path\n' >&2
   exit 1
 fi

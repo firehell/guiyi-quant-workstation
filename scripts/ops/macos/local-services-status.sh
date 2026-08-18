@@ -25,6 +25,15 @@ plist_root() {
   plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - "$plist" 2>/dev/null || printf 'unknown'
 }
 
+plist_value() {
+  local label="$1" key="$2" plist="${AGENT_DIR}/${label}.plist"
+  if [[ ! -f "$plist" ]]; then
+    printf 'missing'
+    return 0
+  fi
+  plutil -extract "EnvironmentVariables.${key}" raw -o - "$plist" 2>/dev/null || printf 'missing'
+}
+
 record_failure() {
   failed=$((failed + 1))
 }
@@ -32,8 +41,8 @@ record_failure() {
 printf '[local-services-status] readonly=true\n'
 printf '[local-services-status] inspector_repo=%s\n' "$PROJECT_ROOT"
 wechat_courier_status=not_installed
-wechat_courier_root="${GUIYI_WECHAT_COURIER_ROOT:-}"
-if [[ -n "$wechat_courier_root" && -e "$wechat_courier_root" ]]; then
+wechat_courier_root="$(plist_value com.guiyi.quant-alert GUIYI_WECHAT_COURIER_ROOT)"
+if [[ "$wechat_courier_root" != "missing" && -e "$wechat_courier_root" ]]; then
   wechat_courier_status=invalid
   if [[ -d "$wechat_courier_root/source/.git" \
     && -f "$wechat_courier_root/source/wechat_courier.py" \
@@ -43,7 +52,18 @@ if [[ -n "$wechat_courier_root" && -e "$wechat_courier_root" ]]; then
     && -d "$wechat_courier_root/cache/clang" ]]; then
     courier_commit="$(/usr/bin/git -C "$wechat_courier_root/source" rev-parse HEAD 2>/dev/null || true)"
     courier_dirty="$(/usr/bin/git -C "$wechat_courier_root/source" status --porcelain 2>/dev/null || printf 'invalid')"
-    if [[ "$courier_commit" == "$PINNED_WECHAT_COURIER_COMMIT" && -z "$courier_dirty" ]]; then
+    courier_head="$(tr -d '\n' < "$wechat_courier_root/source/.git/HEAD" 2>/dev/null || true)"
+    private_modes=true
+    expected_owner="$(id -u)"
+    for private_directory in "$wechat_courier_root" "$wechat_courier_root/runtime" "$wechat_courier_root/tmp" "$wechat_courier_root/cache/clang"; do
+      if [[ "$(stat -f '%Lp' "$private_directory" 2>/dev/null || true)" != "700" \
+        || "$(stat -f '%u' "$private_directory" 2>/dev/null || true)" != "$expected_owner" ]]; then
+        private_modes=false
+      fi
+    done
+    if [[ "$courier_commit" == "$PINNED_WECHAT_COURIER_COMMIT" \
+      && "$courier_head" == "$PINNED_WECHAT_COURIER_COMMIT" \
+      && -z "$courier_dirty" && "$private_modes" == "true" ]]; then
       wechat_courier_status=ready
     fi
   fi

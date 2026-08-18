@@ -52,6 +52,8 @@ def test_confirm_install_uses_only_exact_fake_commands_and_never_runs_upstream(
             f"git -C {root}/source checkout --detach {PINNED_COMMIT}",
             f"python -m venv {root}/venv",
             "venv-python -m pip install --disable-pip-version-check Pillow==11.3.0",
+            f"git -C {root}/source rev-parse HEAD",
+            f"git -C {root}/source status --porcelain",
         ]
         assert "main" not in "\n".join(lines)
         assert "watch" not in "\n".join(lines)
@@ -142,6 +144,12 @@ def _installed_fixture(tmp_path: Path) -> Path:
         root / "venv/bin",
     ):
         directory.mkdir(parents=True)
+    for private_directory in (root, root / "runtime", root / "tmp", root / "cache/clang"):
+        private_directory.chmod(0o700)
+    (root / "source/.git/HEAD").write_text(f"{PINNED_COMMIT}\n", encoding="utf-8")
+    for private_directory in (root, root / "runtime", root / "tmp", root / "cache/clang"):
+        private_directory.chmod(0o700)
+    (root / "source/.git/HEAD").write_text(f"{PINNED_COMMIT}\n", encoding="utf-8")
     (root / "source/wechat_courier.py").write_text("# fixture\n", encoding="utf-8")
     python = root / "venv/bin/python"
     python.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -172,8 +180,10 @@ def _fake_install_commands(tmp_path: Path) -> tuple[Path, Path, Path]:
         f"printf 'git %s\\n' \"$*\" >> {str(calls)!r}\n"
         'if [ "${1:-}" = "clone" ]; then\n'
         '  mkdir -p "$3/.git"\n'
+        f'  printf "{PINNED_COMMIT}\\n" > "$3/.git/HEAD"\n'
         '  printf "# fake upstream\\n" > "$3/wechat_courier.py"\n'
-        "fi\n",
+        "fi\n"
+        f'case "$*" in *"rev-parse HEAD") printf "{PINNED_COMMIT}\\n" ;; esac\n',
         encoding="utf-8",
     )
     git.chmod(0o700)

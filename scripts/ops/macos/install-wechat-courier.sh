@@ -14,7 +14,7 @@ PYTHON_BIN="/usr/bin/python3"
 }
 
 check_installation() {
-  local commit dirty
+  local commit dirty owner
   if [[ -z "$ROOT" || ! -e "$ROOT" ]]; then
     printf 'status=not_installed\n'
     return 0
@@ -24,6 +24,19 @@ check_installation() {
     || ! -x "$ROOT/venv/bin/python" \
     || ! -d "$ROOT/runtime" || ! -d "$ROOT/tmp" \
     || ! -d "$ROOT/cache/clang" ]]; then
+    printf 'commit=%s\nstatus=invalid\n' "$PINNED_COMMIT"
+    return 1
+  fi
+  owner="$(id -u)"
+  for private_directory in "$ROOT" "$ROOT/runtime" "$ROOT/tmp" "$ROOT/cache/clang"; do
+    if [[ "$(stat -f '%Lp' "$private_directory" 2>/dev/null || true)" != "700" \
+      || "$(stat -f '%u' "$private_directory" 2>/dev/null || true)" != "$owner" ]]; then
+      printf 'commit=%s\nstatus=invalid\n' "$PINNED_COMMIT"
+      return 1
+    fi
+  done
+  if [[ -L "$ROOT/source/.git/HEAD" \
+    || "$(tr -d '\n' < "$ROOT/source/.git/HEAD" 2>/dev/null || true)" != "$PINNED_COMMIT" ]]; then
     printf 'commit=%s\nstatus=invalid\n' "$PINNED_COMMIT"
     return 1
   fi
@@ -65,6 +78,7 @@ if [[ -L "$ROOT" || -L "$ROOT/source" || -L "$ROOT/venv" \
 fi
 
 mkdir -p "$ROOT" "$ROOT/runtime" "$ROOT/tmp" "$ROOT/cache/clang"
+chmod 700 "$ROOT" "$ROOT/runtime" "$ROOT/tmp" "$ROOT/cache" "$ROOT/cache/clang"
 resolved_root="$(cd "$ROOT" && pwd -P)"
 if [[ "$resolved_root" != "$ROOT" || "$resolved_root" != /Volumes/* ]]; then
   printf 'status=invalid_root\n' >&2
@@ -81,4 +95,12 @@ fi
 "$GIT_BIN" -C "$ROOT/source" checkout --detach "$PINNED_COMMIT"
 "$PYTHON_BIN" -m venv "$ROOT/venv"
 "$ROOT/venv/bin/python" -m pip install --disable-pip-version-check Pillow==11.3.0
+post_check="$(check_installation)" || {
+  printf 'status=invalid_installation\n' >&2
+  exit 1
+}
+[[ "$post_check" == *$'status=ready' ]] || {
+  printf 'status=invalid_installation\n' >&2
+  exit 1
+}
 printf 'commit=%s\nstatus=installed\n' "$PINNED_COMMIT"

@@ -50,6 +50,9 @@ def _dependency_tree(tmp_path: Path) -> Path:
         root / "venv/bin",
     ):
         directory.mkdir(parents=True)
+    for private_directory in (root, root / "runtime", root / "tmp", root / "cache/clang"):
+        private_directory.chmod(0o700)
+    (root / "source/.git/HEAD").write_text(f"{PINNED_COMMIT}\n", encoding="utf-8")
     (root / "source/wechat_courier.py").write_text("# fixture\n", encoding="utf-8")
     python = root / "venv/bin/python"
     python.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -114,6 +117,7 @@ def test_dependency_resolver_uses_fixed_git_argv_and_exact_clean_commit(
         "wrong_commit",
         "dirty",
         "escaping_source",
+        "unsafe_runtime_mode",
     ),
 )
 def test_dependency_resolver_fails_closed(
@@ -133,12 +137,15 @@ def test_dependency_resolver_fails_closed(
     elif failure == "escaping_source":
         outside = tmp_path / "outside-source"
         (root / "source/wechat_courier.py").unlink()
+        (root / "source/.git/HEAD").unlink()
         (root / "source/.git").rmdir()
         (root / "source").rmdir()
         outside.mkdir()
         (outside / ".git").mkdir()
         (outside / "wechat_courier.py").write_text("fixture", encoding="utf-8")
         (root / "source").symlink_to(outside, target_is_directory=True)
+    elif failure == "unsafe_runtime_mode":
+        (root / "runtime").chmod(0o755)
 
     def run_process(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if argv[-2:] == ["rev-parse", "HEAD"]:
@@ -168,7 +175,17 @@ def test_runner_uses_fixed_child_argv_stdin_and_exact_environment(tmp_path: Path
         observed["cwd"] = kwargs["cwd"]
         return subprocess.CompletedProcess(argv, 0, '{"status":"verified"}\n', "private")
 
-    WeChatCourierRunner(dependency, run_process=run_process).verify_target(_target())
+    validations: list[Path] = []
+
+    def resolve_dependency(path: Path) -> WeChatCourierDependency:
+        validations.append(path)
+        return dependency
+
+    WeChatCourierRunner(
+        dependency,
+        run_process=run_process,
+        resolve_dependency=resolve_dependency,
+    ).verify_target(_target())
 
     assert observed["argv"] == [
         str(dependency.python_executable),
@@ -178,6 +195,7 @@ def test_runner_uses_fixed_child_argv_stdin_and_exact_environment(tmp_path: Path
         "action": "verify",
         "target_chat": "fixture-group-title",
         "upstream_root": str(dependency.source_root),
+        "upstream_commit": PINNED_COMMIT,
     }
     assert observed["env"] == {
         "PATH": f"{root.resolve()}/venv/bin:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -186,6 +204,7 @@ def test_runner_uses_fixed_child_argv_stdin_and_exact_environment(tmp_path: Path
         "PYTHONUNBUFFERED": "1",
     }
     assert observed["cwd"] == str(dependency.root / "runtime")
+    assert validations == [dependency.root]
 
 
 @pytest.mark.parametrize(
@@ -213,8 +232,39 @@ def test_runner_collapses_child_failure_without_leaking_private_output(
         return subprocess.CompletedProcess(argv, returncode, stdout, "fixture-group-title raw")
 
     with pytest.raises(WeChatCourierError) as captured:
-        WeChatCourierRunner(dependency, run_process=run_process).verify_target(_target())
+        WeChatCourierRunner(
+            dependency,
+            run_process=run_process,
+            resolve_dependency=lambda _root: dependency,
+        ).verify_target(_target())
     assert "fixture-group-title" not in str(captured.value)
+
+
+def test_runner_revalidates_dependency_and_rejects_drift_before_child(
+    tmp_path: Path,
+) -> None:
+    root = _dependency_tree(tmp_path)
+    dependency = WeChatCourierDependency(
+        root.resolve(),
+        (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
+        PINNED_COMMIT,
+    )
+    drifted = WeChatCourierDependency(
+        dependency.root,
+        dependency.source_root,
+        dependency.python_executable,
+        "0" * 40,
+    )
+
+    with pytest.raises(WeChatCourierError, match="^WECHAT_COURIER_DEPENDENCY_INVALID$"):
+        WeChatCourierRunner(
+            dependency,
+            run_process=lambda *_args, **_kwargs: pytest.fail(
+                "drift must stop before child"
+            ),
+            resolve_dependency=lambda _root: drifted,
+        ).send_text(_target(), "fixture-alert")
 
 
 def test_gui_lock_is_nonblocking_and_never_starts_second_child(tmp_path: Path) -> None:
@@ -234,6 +284,7 @@ def test_gui_lock_is_nonblocking_and_never_starts_second_child(tmp_path: Path) -
             run_process=lambda *_args, **_kwargs: pytest.fail(
                 "busy sender must not start a child"
             ),
+            resolve_dependency=lambda _root: dependency,
         )
         with pytest.raises(WeChatCourierError, match="^WECHAT_COURIER_BUSY$"):
             runner.send_text(_target(), "fixture-alert")
@@ -258,9 +309,11 @@ def test_runner_send_uses_one_child_and_does_not_put_private_text_in_argv(
         calls.append((argv, kwargs))
         return subprocess.CompletedProcess(argv, 0, '{"status":"sent"}', "private")
 
-    WeChatCourierRunner(dependency, run_process=run_process).send_text(
-        _target(), "fixture-alert"
-    )
+    WeChatCourierRunner(
+        dependency,
+        run_process=run_process,
+        resolve_dependency=lambda _root: dependency,
+    ).send_text(_target(), "fixture-alert")
 
     assert len(calls) == 1
     assert "fixture-alert" not in " ".join(calls[0][0])
@@ -269,6 +322,7 @@ def test_runner_send_uses_one_child_and_does_not_put_private_text_in_argv(
         "target_chat": "fixture-group-title",
         "text": "fixture-alert",
         "upstream_root": str(dependency.source_root),
+        "upstream_commit": PINNED_COMMIT,
     }
 
 
@@ -301,9 +355,11 @@ def test_runner_send_failure_is_single_shot_and_privacy_safe(
         return subprocess.CompletedProcess(argv, returncode, stdout, "fixture-alert raw")
 
     with pytest.raises(WeChatCourierError, match=f"^{error_code}$"):
-        WeChatCourierRunner(dependency, run_process=run_process).send_text(
-            _target(), "fixture-alert"
-        )
+        WeChatCourierRunner(
+            dependency,
+            run_process=run_process,
+            resolve_dependency=lambda _root: dependency,
+        ).send_text(_target(), "fixture-alert")
     assert calls == 1
 
 
