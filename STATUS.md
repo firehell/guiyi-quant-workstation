@@ -8,7 +8,7 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 release 为 `v1.4.2`；Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
+- 当前 Git release 为 `v1.5.0`；production Runtime 仍为 `v1.4.2 + WeCom`。Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
   Historical Canonical 与 Redis Live Overlay 分离，Live 不写 Parquet/DB。
@@ -21,10 +21,11 @@
   校验合同。rollout G2 owner bootstrap 与 G3 zero-send preflight 已完成；`2026-08-19` 的唯一一次新授权
   G4 canary 已获 provider acceptance，用户已确认微信中恰好收到一条，因此 G4 PASS。
   G5 已完成正常微信入站后的 preflight、一次外部 restart 后的 persisted-context preflight、版本无漂移
-  与 single-shot 回归；尚未执行 G6～G9、release 或 Runtime promotion，production 继续保持
+  与 single-shot 回归。G6 已按用户批准的完整累计 `develop` 范围完成 release PR #170、独立审查与
+  annotated `v1.5.0` tag；G7～G9 与 Runtime promotion 尚未执行，production 继续保持
   `v1.4.2 + WeCom`。
 
-## Clawbot Single-Shot D1（CODE PASS / NOT RELEASED）
+## Clawbot Single-Shot D1（RELEASED / NOT RUNTIME PROMOTED）
 
 - `develop` 的唯一 active 通知 transport 已改为 `AlertEvent commit -> ClawbotAlertSender -> one Node
   child -> openclaw-weixin private seam -> sendMessageWeixin()`；每个 Event 最多一个 child、一次发送
@@ -42,7 +43,15 @@
   Critical=`0` / Important=`0` / Minor=`0`。G5 的两次 zero-send preflight 均 PASS；外部 restart 仅按用户
   明确委托执行一次，restart 后 account/context 仍 ready；OpenClaw/Node/plugin 版本精确匹配 manifest，
   Node seam `22 passed`、Clawbot/Alert `138 passed`、launchd engineering `29 passed`，禁止 active path
-  为零且未执行可选第二次 canary。当前 rollout 为 G2～G5 PASS，G6～G9 均未执行。
+  为零且未执行可选第二次 canary。
+- G6 按用户批准的方案 2 将 Clawbot、Market Live stale-feed repair、HTDY UI/canonical/status 与
+  `v1.5.0` release identity 作为完整累计 `develop` 差异发布。clean detached 候选验证包括 backend
+  `984 passed / 14 skipped`、engineering `53 passed`、Node seam `22 passed`、Web unit
+  `150 passed / 1 conditional skip`、browser E2E `52 passed`、Web production build、Ruff、Mypy、
+  shell/plist、render-only 六路径一致性、secret scan 0 与 diff check；17 项需要显式 isolated PostgreSQL
+  test DB 的测试未使用 production DB。fresh independent review 为 Critical=`0` / Important=`0` /
+  Minor=`0`。release PR #170 已合并；`origin/main` 与 annotated tag `v1.5.0` 的 peeled commit 均为
+  `957d19893187c7876b88e58f82fd5656536ee214`。当前 rollout 为 G2～G6 PASS，G7～G9 均未执行。
 
 ## After-Market Bounded Retry V1.4.2（RELEASED / RUNTIME PROMOTED）
 
