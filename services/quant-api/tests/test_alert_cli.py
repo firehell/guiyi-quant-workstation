@@ -3,6 +3,8 @@ from __future__ import annotations
 from contextlib import nullcontext
 import io
 import json
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +13,8 @@ from app.alerts.composition import (
     build_alert_runtime,
     build_wechat_group_sender_from_env,
 )
+from app.alerts.clawbot import ClawbotError, ClawbotOwnerCandidate
+from app.alerts.clawbot_owner import ClawbotOwner
 from app.alerts.wechat_courier import WeChatCourierError
 from app.guiyi_cli.main import build_parser, main
 
@@ -43,7 +47,8 @@ def test_runtime_parser_exposes_alert_and_fixed_canary() -> None:
         "live",
         "alert",
         "alert-canary",
-        "alert-target-verify",
+        "clawbot-owner-bootstrap",
+        "clawbot-preflight",
     }
 
 
@@ -73,82 +78,97 @@ def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
     }
 
 
-def test_alert_target_verify_is_no_send_and_exposes_alias_only() -> None:
-    calls: list[str] = []
+def test_clawbot_owner_bootstrap_discovery_is_readonly_and_hides_ids() -> None:
+    class Runner:
+        dependency = SimpleNamespace(owner_path=Path("/private/owner.json"))
 
-    class Sender:
-        def verify_target(self) -> None:
-            calls.append("verify_target")
-
-        def send(self, *_args: object) -> None:
-            calls.append("send")
-
-        def send_canary(self) -> None:
-            calls.append("send_canary")
+        def discover_owner(self) -> ClawbotOwnerCandidate:
+            return ClawbotOwnerCandidate("fixture-account", "fixture-owner@im.wechat")
 
     code, payload = _run(
-        ["runtime", "alert-target-verify"],
-        alert_target_sender_factory=lambda: Sender(),
+        ["runtime", "clawbot-owner-bootstrap"],
+        clawbot_runner_factory=lambda: Runner(),
     )
 
     assert code == 0
-    assert calls == ["verify_target"]
     assert payload == {
         "schema_version": 1,
-        "command": "runtime.alert-target-verify",
+        "command": "runtime.clawbot-owner-bootstrap",
+        "status": "ready",
+        "readonly": True,
+        "channel": "openclaw-weixin",
+        "owner_alias": "owner",
+        "account_count": 1,
+        "owner_candidate_count": 1,
+        "context_available": True,
+        "owner_written": False,
+    }
+    assert "fixture-account" not in json.dumps(payload)
+    assert "fixture-owner" not in json.dumps(payload)
+
+
+def test_clawbot_owner_bootstrap_write_requires_explicit_flag_and_hides_ids() -> None:
+    writes: list[tuple[Path, str, str]] = []
+
+    class Runner:
+        dependency = SimpleNamespace(owner_path=Path("/private/owner.json"))
+
+        def discover_owner(self) -> ClawbotOwnerCandidate:
+            return ClawbotOwnerCandidate("fixture-account", "fixture-owner@im.wechat")
+
+    code, payload = _run(
+        ["runtime", "clawbot-owner-bootstrap", "--confirm-write-owner"],
+        clawbot_runner_factory=lambda: Runner(),
+        clawbot_owner_writer=lambda path, *, account_id, target_user_id: writes.append(
+            (path, account_id, target_user_id)
+        ),
+    )
+
+    assert code == 0
+    assert writes == [(Path("/private/owner.json"), "fixture-account", "fixture-owner@im.wechat")]
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.clawbot-owner-bootstrap",
         "status": "ok",
         "readonly": False,
-        "group_alias": "primary_alert_group",
-        "target_verified": True,
-        "message_sent": False,
+        "channel": "openclaw-weixin",
+        "owner_alias": "owner",
+        "owner_written": True,
     }
-    assert "fixture-group-title" not in json.dumps(payload)
+    assert "fixture-account" not in json.dumps(payload)
 
 
-def test_alert_target_verify_factory_failure_is_sanitized_and_no_send() -> None:
-    calls: list[str] = []
+def test_clawbot_preflight_loads_frozen_owner_and_never_sends() -> None:
+    calls: list[object] = []
+    owner = ClawbotOwner(1, "openclaw-weixin", "owner", "fixture-account", "fixture-owner@im.wechat")
 
-    def fail_factory():
-        calls.append("factory")
-        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+    class Runner:
+        dependency = SimpleNamespace(owner_path=Path("/private/owner.json"))
+
+        def probe(self, value: ClawbotOwner) -> None:
+            calls.append(value)
+
+        def send_text(self, *_args: object) -> None:
+            raise AssertionError("preflight must not send")
 
     code, payload = _run(
-        ["runtime", "alert-target-verify"],
-        alert_target_sender_factory=fail_factory,
+        ["runtime", "clawbot-preflight"],
+        clawbot_runner_factory=lambda: Runner(),
+        clawbot_owner_loader=lambda _path: owner,
     )
 
-    assert code == 1
-    assert calls == ["factory"]
-    assert payload["command"] == "runtime.alert-target-verify"
-    assert payload["readonly"] is False
-    assert payload["error"] == {
-        "code": "WECHAT_COURIER_DEPENDENCY_INVALID",
-        "type": "WeChatCourierError",
-    }
-
-
-def test_alert_target_verify_target_failure_is_sanitized_and_no_send() -> None:
-    calls: list[str] = []
-
-    class Sender:
-        def verify_target(self) -> None:
-            calls.append("verify_target")
-            raise WeChatCourierError("WECHAT_GROUP_TARGET_UNVERIFIED")
-
-        def send(self, *_args: object) -> None:
-            calls.append("send")
-
-    code, payload = _run(
-        ["runtime", "alert-target-verify"],
-        alert_target_sender_factory=lambda: Sender(),
-    )
-
-    assert code == 1
-    assert calls == ["verify_target"]
-    assert payload["readonly"] is False
-    assert payload["error"] == {
-        "code": "WECHAT_GROUP_TARGET_UNVERIFIED",
-        "type": "WeChatCourierError",
+    assert code == 0
+    assert calls == [owner]
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.clawbot-preflight",
+        "status": "ok",
+        "readonly": True,
+        "channel": "openclaw-weixin",
+        "owner_alias": "owner",
+        "account_configured": True,
+        "context_available": True,
+        "would_send": False,
     }
 
 
@@ -163,7 +183,7 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
                 (),
                 {
                     "attempted": 1,
-                    "automation_completed": 1,
+                    "provider_accepted": 1,
                     "failed": 0,
                     "failed_aliases": (),
                 },
@@ -189,7 +209,7 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
         "command": "runtime.alert-canary",
         "status": "ok",
         "attempted": 1,
-        "automation_completed": 1,
+        "provider_accepted": 1,
         "failed": 0,
         "failed_aliases": [],
     }
@@ -203,9 +223,9 @@ def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> No
                 (),
                 {
                     "attempted": 1,
-                    "automation_completed": 0,
+                    "provider_accepted": 0,
                     "failed": 1,
-                    "failed_aliases": ("primary_alert_group",),
+                    "failed_aliases": ("owner",),
                 },
             )()
 
@@ -220,15 +240,15 @@ def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> No
         "command": "runtime.alert-canary",
         "status": "failed",
         "attempted": 1,
-        "automation_completed": 0,
+        "provider_accepted": 0,
         "failed": 1,
-        "failed_aliases": ["primary_alert_group"],
+        "failed_aliases": ["owner"],
     }
 
 
 def test_alert_canary_factory_exception_is_execution_error() -> None:
     def fail_factory():
-        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+        raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY")
 
     code, payload = _run(
         ["runtime", "alert-canary"],
@@ -242,8 +262,8 @@ def test_alert_canary_factory_exception_is_execution_error() -> None:
         "status": "error",
         "readonly": False,
         "error": {
-            "code": "WECHAT_COURIER_DEPENDENCY_INVALID",
-            "type": "WeChatCourierError",
+            "code": "ALERT_NOTIFICATION_TRANSPORT_NOT_READY",
+            "type": "ClawbotError",
         },
     }
 
@@ -251,7 +271,7 @@ def test_alert_canary_factory_exception_is_execution_error() -> None:
 def test_alert_canary_send_exception_is_execution_error() -> None:
     class Sender:
         def send_canary(self):
-            raise WeChatCourierError("WECHAT_COURIER_SEND_FAILED")
+            raise ClawbotError("CLAWBOT_SEND_FAILED")
 
     code, payload = _run(
         ["runtime", "alert-canary"],
@@ -262,8 +282,8 @@ def test_alert_canary_send_exception_is_execution_error() -> None:
     assert payload["command"] == "runtime.alert-canary"
     assert payload["readonly"] is False
     assert payload["error"] == {
-        "code": "WECHAT_COURIER_SEND_FAILED",
-        "type": "WeChatCourierError",
+        "code": "CLAWBOT_SEND_FAILED",
+        "type": "ClawbotError",
     }
 
 

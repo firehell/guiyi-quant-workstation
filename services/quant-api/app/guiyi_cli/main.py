@@ -17,11 +17,17 @@ import sys
 from typing import Any, TextIO
 
 from app.db.session import SessionLocal
-from app.alerts.composition import (
-    build_alert_runtime,
-    build_wechat_group_sender_from_env,
+from app.alerts.clawbot import (
+    build_clawbot_runner_from_env,
+    build_clawbot_sender_from_env,
 )
-from app.alerts.wechat_group_config import PRIMARY_ALERT_GROUP_ALIAS
+from app.alerts.clawbot_owner import (
+    CLAWBOT_CHANNEL,
+    CLAWBOT_OWNER_ALIAS,
+    load_clawbot_owner,
+    write_clawbot_owner_atomic,
+)
+from app.alerts.composition import build_alert_runtime
 from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
@@ -53,7 +59,9 @@ AfterMarketFactory = Callable[[HistoricalDataManager], Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
-AlertTargetSenderFactory = Callable[[], Any]
+ClawbotRunnerFactory = Callable[[], Any]
+ClawbotOwnerLoader = Callable[[Path], Any]
+ClawbotOwnerWriter = Callable[..., None]
 ResearchServiceFactory = Callable[[Any], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
@@ -65,7 +73,11 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "research":
         return True
     if args.domain == "runtime":
-        return args.runtime_command == "status"
+        if args.runtime_command in {"status", "clawbot-preflight"}:
+            return True
+        if args.runtime_command == "clawbot-owner-bootstrap":
+            return not bool(args.confirm_write_owner)
+        return False
     return not bool(getattr(args, "apply", False))
 
 
@@ -104,7 +116,9 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
     runtime_commands.add_parser("alert-canary")
-    runtime_commands.add_parser("alert-target-verify")
+    bootstrap = runtime_commands.add_parser("clawbot-owner-bootstrap")
+    bootstrap.add_argument("--confirm-write-owner", action="store_true")
+    runtime_commands.add_parser("clawbot-preflight")
     return parser
 
 
@@ -117,11 +131,11 @@ def main(
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
     alert_canary_sender_factory: AlertCanarySenderFactory = (
-        build_wechat_group_sender_from_env
+        build_clawbot_sender_from_env
     ),
-    alert_target_sender_factory: AlertTargetSenderFactory = (
-        build_wechat_group_sender_from_env
-    ),
+    clawbot_runner_factory: ClawbotRunnerFactory = build_clawbot_runner_from_env,
+    clawbot_owner_loader: ClawbotOwnerLoader = load_clawbot_owner,
+    clawbot_owner_writer: ClawbotOwnerWriter = write_clawbot_owner_atomic,
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
@@ -213,20 +227,55 @@ def main(
                 "command": "runtime.alert-canary",
                 "status": "ok" if summary.failed == 0 else "failed",
                 "attempted": summary.attempted,
-                "automation_completed": summary.automation_completed,
+                "provider_accepted": summary.provider_accepted,
                 "failed": summary.failed,
                 "failed_aliases": list(summary.failed_aliases),
             }
-        elif args.runtime_command == "alert-target-verify":
-            alert_target_sender_factory().verify_target()
+        elif args.runtime_command == "clawbot-owner-bootstrap":
+            runner = clawbot_runner_factory()
+            candidate = runner.discover_owner()
+            if args.confirm_write_owner:
+                clawbot_owner_writer(
+                    runner.dependency.owner_path,
+                    account_id=candidate.account_id,
+                    target_user_id=candidate.target_user_id,
+                )
+                payload = {
+                    "schema_version": 1,
+                    "command": "runtime.clawbot-owner-bootstrap",
+                    "status": "ok",
+                    "readonly": False,
+                    "channel": CLAWBOT_CHANNEL,
+                    "owner_alias": CLAWBOT_OWNER_ALIAS,
+                    "owner_written": True,
+                }
+            else:
+                payload = {
+                    "schema_version": 1,
+                    "command": "runtime.clawbot-owner-bootstrap",
+                    "status": "ready",
+                    "readonly": True,
+                    "channel": CLAWBOT_CHANNEL,
+                    "owner_alias": CLAWBOT_OWNER_ALIAS,
+                    "account_count": 1,
+                    "owner_candidate_count": 1,
+                    "context_available": True,
+                    "owner_written": False,
+                }
+        elif args.runtime_command == "clawbot-preflight":
+            runner = clawbot_runner_factory()
+            owner = clawbot_owner_loader(runner.dependency.owner_path)
+            runner.probe(owner)
             payload = {
                 "schema_version": 1,
-                "command": "runtime.alert-target-verify",
+                "command": "runtime.clawbot-preflight",
                 "status": "ok",
-                "readonly": False,
-                "group_alias": PRIMARY_ALERT_GROUP_ALIAS,
-                "target_verified": True,
-                "message_sent": False,
+                "readonly": True,
+                "channel": CLAWBOT_CHANNEL,
+                "owner_alias": CLAWBOT_OWNER_ALIAS,
+                "account_configured": True,
+                "context_available": True,
+                "would_send": False,
             }
         else:
             raise RuntimeError("CLI_RUNTIME_COMMAND_INVALID")
@@ -242,7 +291,7 @@ def main(
         )
         return 1
     print_json(payload, stdout)
-    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok", "skipped"} else 1
+    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok", "ready", "skipped"} else 1
 
 
 def _run_data(
