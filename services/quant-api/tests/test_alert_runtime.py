@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session
 from app.alerts.composition import RedisAlertHeartbeatStore
 from app.alerts.evaluators import AlertEvaluation
 from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.notification import AlertNotificationMessage
 from app.alerts.runtime import (
     AlertRuntime,
     _event_session_window,
     _parse_event,
     _subing_snapshot_now,
 )
-from app.alerts.wecom import AlertNotificationMessage
 from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, CanonicalBar
