@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "openclaw_version": "OpenClaw 2026.7.1-2 (0790d9f)",
+  "openclaw_weixin_version": "2.4.6",
+  "node_version": "v24.15.0",
+  "plugin_modules": {
+    "accounts": "dist/src/auth/accounts.js",
+    "inbound": "dist/src/messaging/inbound.js",
+    "send": "dist/src/messaging/send.js"
+  }
+}
