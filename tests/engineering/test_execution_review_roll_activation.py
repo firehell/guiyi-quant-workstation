@@ -50,6 +50,10 @@ def test_other_install_modes_never_create_roll_marker(
     repo = _copy_fixture(tmp_path / mode.removeprefix("--"))
     home, fake_bin, _calls = _fake_runtime(tmp_path / f"runtime-{mode.removeprefix('--')}")
 
+    if mode == "--confirm-alert-runtime":
+        prerequisite = _run_installer(repo, home, fake_bin, "--confirm-load")
+        assert prerequisite.returncode == 0, prerequisite.stderr
+
     result = _run_installer(repo, home, fake_bin, mode)
 
     assert result.returncode == 0, result.stderr

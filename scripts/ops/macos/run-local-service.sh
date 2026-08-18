@@ -7,6 +7,8 @@ SERVICE="${1:-}"
 RUNTIME_DIR="${GUIYI_RUNTIME_DIR:-$HOME/Library/Application Support/GuiyiQuant}"
 RUNTIME_ENV="${GUIYI_RUNTIME_ENV:-$RUNTIME_DIR/project.env}"
 PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
+LAUNCHER_WECHAT_COURIER_ROOT="${GUIYI_WECHAT_COURIER_ROOT:-}"
+LAUNCHER_ALERT_WECHAT_GROUP_PATH="${GUIYI_ALERT_WECHAT_GROUP_PATH:-}"
 
 if [[ -f "$RUNTIME_ENV" ]]; then
   set -a
@@ -18,6 +20,13 @@ elif [[ -f "$PROJECT_ROOT/.env" ]]; then
   # shellcheck disable=SC1091
   source "$PROJECT_ROOT/.env"
   set +a
+fi
+
+if [[ -n "$LAUNCHER_WECHAT_COURIER_ROOT" ]]; then
+  export GUIYI_WECHAT_COURIER_ROOT="$LAUNCHER_WECHAT_COURIER_ROOT"
+fi
+if [[ -n "$LAUNCHER_ALERT_WECHAT_GROUP_PATH" ]]; then
+  export GUIYI_ALERT_WECHAT_GROUP_PATH="$LAUNCHER_ALERT_WECHAT_GROUP_PATH"
 fi
 
 [[ -n "${POSTGRES_PASSWORD:-}" ]] || { printf '[run-local-service] POSTGRES_PASSWORD missing\n' >&2; exit 2; }

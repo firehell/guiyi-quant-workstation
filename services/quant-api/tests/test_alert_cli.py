@@ -38,7 +38,13 @@ def test_runtime_parser_exposes_alert_and_fixed_canary() -> None:
         action for action in runtime_parser._actions if action.dest == "runtime_command"
     )
 
-    assert set(command_action.choices) == {"status", "live", "alert", "alert-canary"}
+    assert set(command_action.choices) == {
+        "status",
+        "live",
+        "alert",
+        "alert-canary",
+        "alert-target-verify",
+    }
 
 
 def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
@@ -64,6 +70,85 @@ def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
         "command": "runtime.alert",
         "status": "ok",
         "foreground": True,
+    }
+
+
+def test_alert_target_verify_is_no_send_and_exposes_alias_only() -> None:
+    calls: list[str] = []
+
+    class Sender:
+        def verify_target(self) -> None:
+            calls.append("verify_target")
+
+        def send(self, *_args: object) -> None:
+            calls.append("send")
+
+        def send_canary(self) -> None:
+            calls.append("send_canary")
+
+    code, payload = _run(
+        ["runtime", "alert-target-verify"],
+        alert_target_sender_factory=lambda: Sender(),
+    )
+
+    assert code == 0
+    assert calls == ["verify_target"]
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.alert-target-verify",
+        "status": "ok",
+        "readonly": False,
+        "group_alias": "primary_alert_group",
+        "target_verified": True,
+        "message_sent": False,
+    }
+    assert "fixture-group-title" not in json.dumps(payload)
+
+
+def test_alert_target_verify_factory_failure_is_sanitized_and_no_send() -> None:
+    calls: list[str] = []
+
+    def fail_factory():
+        calls.append("factory")
+        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+
+    code, payload = _run(
+        ["runtime", "alert-target-verify"],
+        alert_target_sender_factory=fail_factory,
+    )
+
+    assert code == 1
+    assert calls == ["factory"]
+    assert payload["command"] == "runtime.alert-target-verify"
+    assert payload["readonly"] is False
+    assert payload["error"] == {
+        "code": "WECHAT_COURIER_DEPENDENCY_INVALID",
+        "type": "WeChatCourierError",
+    }
+
+
+def test_alert_target_verify_target_failure_is_sanitized_and_no_send() -> None:
+    calls: list[str] = []
+
+    class Sender:
+        def verify_target(self) -> None:
+            calls.append("verify_target")
+            raise WeChatCourierError("WECHAT_GROUP_TARGET_UNVERIFIED")
+
+        def send(self, *_args: object) -> None:
+            calls.append("send")
+
+    code, payload = _run(
+        ["runtime", "alert-target-verify"],
+        alert_target_sender_factory=lambda: Sender(),
+    )
+
+    assert code == 1
+    assert calls == ["verify_target"]
+    assert payload["readonly"] is False
+    assert payload["error"] == {
+        "code": "WECHAT_GROUP_TARGET_UNVERIFIED",
+        "type": "WeChatCourierError",
     }
 
 
@@ -138,6 +223,88 @@ def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> No
         "automation_completed": 0,
         "failed": 1,
         "failed_aliases": ["primary_alert_group"],
+    }
+
+
+def test_alert_canary_factory_exception_is_execution_error() -> None:
+    def fail_factory():
+        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+
+    code, payload = _run(
+        ["runtime", "alert-canary"],
+        alert_canary_sender_factory=fail_factory,
+    )
+
+    assert code == 1
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.alert-canary",
+        "status": "error",
+        "readonly": False,
+        "error": {
+            "code": "WECHAT_COURIER_DEPENDENCY_INVALID",
+            "type": "WeChatCourierError",
+        },
+    }
+
+
+def test_alert_canary_send_exception_is_execution_error() -> None:
+    class Sender:
+        def send_canary(self):
+            raise WeChatCourierError("WECHAT_COURIER_SEND_FAILED")
+
+    code, payload = _run(
+        ["runtime", "alert-canary"],
+        alert_canary_sender_factory=lambda: Sender(),
+    )
+
+    assert code == 1
+    assert payload["command"] == "runtime.alert-canary"
+    assert payload["readonly"] is False
+    assert payload["error"] == {
+        "code": "WECHAT_COURIER_SEND_FAILED",
+        "type": "WeChatCourierError",
+    }
+
+
+def test_runtime_status_exception_remains_readonly() -> None:
+    def fail_health(_session):
+        raise RuntimeError("private health detail")
+
+    code, payload = _run(
+        ["runtime", "status"],
+        runtime_health_builder=fail_health,
+    )
+
+    assert code == 1
+    assert payload["command"] == "runtime.status"
+    assert payload["readonly"] is True
+    assert payload["error"] == {
+        "code": "CLI_INTERNAL_ERROR",
+        "type": "RuntimeError",
+    }
+
+
+@pytest.mark.parametrize("runtime_command", ("live", "alert"))
+def test_foreground_runtime_exception_is_not_readonly(runtime_command: str) -> None:
+    class Runtime:
+        def run_forever(self) -> None:
+            raise RuntimeError("private runtime detail")
+
+    factories = (
+        {"live_service_factory": lambda _session: Runtime()}
+        if runtime_command == "live"
+        else {"alert_runtime_factory": lambda: Runtime()}
+    )
+
+    code, payload = _run(["runtime", runtime_command], **factories)
+
+    assert code == 1
+    assert payload["command"] == f"runtime.{runtime_command}"
+    assert payload["readonly"] is False
+    assert payload["error"] == {
+        "code": "CLI_INTERNAL_ERROR",
+        "type": "RuntimeError",
     }
 
 

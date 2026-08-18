@@ -384,6 +384,39 @@ def test_group_sender_formats_once_and_returns_structured_canary_summary() -> No
     assert summary == WeChatGroupSendSummary(1, 1, 0, ())
 
 
+def test_group_sender_target_verify_calls_runner_verify_once_and_never_sends() -> None:
+    calls: list[str] = []
+
+    class Runner:
+        def verify_target(self, target: WeChatGroupTarget) -> None:
+            assert target == _target()
+            calls.append("verify_target")
+
+        def send_text(self, _target: WeChatGroupTarget, _text: str) -> None:
+            calls.append("send_text")
+
+    WeChatGroupAlertSender(target=_target(), runner=Runner()).verify_target()
+
+    assert calls == ["verify_target"]
+
+
+def test_group_sender_target_verify_failure_never_falls_through_to_send() -> None:
+    calls: list[str] = []
+
+    class Runner:
+        def verify_target(self, _target: WeChatGroupTarget) -> None:
+            calls.append("verify_target")
+            raise WeChatCourierError("WECHAT_GROUP_TARGET_UNVERIFIED")
+
+        def send_text(self, _target: WeChatGroupTarget, _text: str) -> None:
+            calls.append("send_text")
+
+    with pytest.raises(WeChatCourierError, match="^WECHAT_GROUP_TARGET_UNVERIFIED$"):
+        WeChatGroupAlertSender(target=_target(), runner=Runner()).verify_target()
+
+    assert calls == ["verify_target"]
+
+
 def test_group_canary_failure_returns_alias_only_without_retry() -> None:
     calls = 0
 

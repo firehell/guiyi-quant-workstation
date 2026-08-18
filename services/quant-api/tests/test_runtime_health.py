@@ -212,6 +212,47 @@ def test_alert_health_accepts_v2_heartbeat_counts() -> None:
     assert alert["scope_product_count"] == 1
 
 
+def test_alert_health_structural_transport_is_ready_from_process_environment(
+    monkeypatch,
+) -> None:
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", "/Volumes/fixture/courier")
+    monkeypatch.setenv(
+        "GUIYI_ALERT_WECHAT_GROUP_PATH", "/Volumes/fixture/secrets/group.json"
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "app.services.runtime_health.build_wechat_group_sender_from_env",
+        lambda: calls.append("structural-preflight") or object(),
+    )
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": json.dumps(
+                        {
+                            "generated_at": now.isoformat(),
+                            "available": True,
+                            "enabled_rule_count": 2,
+                            "scope_product_count": 1,
+                        }
+                    )
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            after_market_status_path=None,
+        )
+
+    assert calls == ["structural-preflight"]
+    assert payload["components"]["alert"]["status"] == "ok"
+    assert payload["components"]["alert"]["notification_transport_configured"] is True
+
+
 def test_alert_health_rejects_invalid_transport_paths(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
     marker = tmp_path / ".run" / "alert-runtime-enabled"

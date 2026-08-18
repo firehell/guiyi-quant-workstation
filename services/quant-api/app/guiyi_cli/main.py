@@ -21,6 +21,7 @@ from app.alerts.composition import (
     build_alert_runtime,
     build_wechat_group_sender_from_env,
 )
+from app.alerts.wechat_group_config import PRIMARY_ALERT_GROUP_ALIAS
 from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
@@ -52,11 +53,20 @@ AfterMarketFactory = Callable[[HistoricalDataManager], Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
+AlertTargetSenderFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
 
 logger = logging.getLogger(__name__)
+
+
+def _execution_is_readonly(args: argparse.Namespace) -> bool:
+    if args.domain == "research":
+        return True
+    if args.domain == "runtime":
+        return args.runtime_command == "status"
+    return not bool(getattr(args, "apply", False))
 
 
 def _execution_review_roll_marker_state(
@@ -94,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
     runtime_commands.add_parser("alert-canary")
+    runtime_commands.add_parser("alert-target-verify")
     return parser
 
 
@@ -106,6 +117,9 @@ def main(
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
     alert_canary_sender_factory: AlertCanarySenderFactory = (
+        build_wechat_group_sender_from_env
+    ),
+    alert_target_sender_factory: AlertTargetSenderFactory = (
         build_wechat_group_sender_from_env
     ),
     research_service_factory: ResearchServiceFactory = (
@@ -192,7 +206,7 @@ def main(
                 "status": "ok",
                 "foreground": True,
             }
-        else:
+        elif args.runtime_command == "alert-canary":
             summary = alert_canary_sender_factory().send_canary()
             payload = {
                 "schema_version": 1,
@@ -203,17 +217,26 @@ def main(
                 "failed": summary.failed,
                 "failed_aliases": list(summary.failed_aliases),
             }
+        elif args.runtime_command == "alert-target-verify":
+            alert_target_sender_factory().verify_target()
+            payload = {
+                "schema_version": 1,
+                "command": "runtime.alert-target-verify",
+                "status": "ok",
+                "readonly": False,
+                "group_alias": PRIMARY_ALERT_GROUP_ALIAS,
+                "target_verified": True,
+                "message_sent": False,
+            }
+        else:
+            raise RuntimeError("CLI_RUNTIME_COMMAND_INVALID")
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
         # 执行期异常：error code 仅暴露公开码或 CLI_INTERNAL_ERROR
         print_json(
             exception_error_payload(
                 command=command,
                 exc=exc,
-                readonly=(
-                    True
-                    if args.domain == "research"
-                    else not bool(getattr(args, "apply", False))
-                ),
+                readonly=_execution_is_readonly(args),
             ),
             stderr,
         )

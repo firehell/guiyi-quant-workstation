@@ -29,6 +29,21 @@ is_external_volume_path() {
   [[ "$current" == /Volumes/* ]]
 }
 
+installed_api_notification_paths_match() {
+  local api_plist="$AGENT_DIR/com.guiyi.quant-api.plist"
+  local installed_courier_root installed_group_path
+
+  [[ -f "$api_plist" ]] || return 1
+  installed_courier_root="$(
+    plutil -extract EnvironmentVariables.GUIYI_WECHAT_COURIER_ROOT raw -o - "$api_plist" 2>/dev/null
+  )" || return 1
+  installed_group_path="$(
+    plutil -extract EnvironmentVariables.GUIYI_ALERT_WECHAT_GROUP_PATH raw -o - "$api_plist" 2>/dev/null
+  )" || return 1
+  [[ "$installed_courier_root" == "$WECHAT_COURIER_ROOT" \
+    && "$installed_group_path" == "$ALERT_WECHAT_GROUP_PATH" ]]
+}
+
 write_execution_review_roll_marker() {
   local temporary_marker marker_mode
   mkdir -p "$PROJECT_ROOT/.run"
@@ -83,6 +98,10 @@ if [[ "$WECHAT_COURIER_ROOT" == *'&'* || "$WECHAT_COURIER_ROOT" == *'<'* \
   || "$ALERT_WECHAT_GROUP_PATH" == *'>'* || "$ALERT_WECHAT_GROUP_PATH" == *$'\n'* \
   || "$ALERT_WECHAT_GROUP_PATH" == *$'\r'* || "$ALERT_WECHAT_GROUP_PATH" == *$'\t'* ]]; then
   printf '[install-local-services] invalid alert notification path\n' >&2
+  exit 1
+fi
+if [[ "$MODE" == "--confirm-alert-runtime" ]] && ! installed_api_notification_paths_match; then
+  printf '[install-local-services] installed API notification paths do not match\n' >&2
   exit 1
 fi
 mkdir -p "$RENDER_DIR"

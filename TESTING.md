@@ -166,7 +166,8 @@ plutil -lint .run/launchd/com.guiyi.quant-alert.plist
 变更、打开/搜索真实微信群、真实 WeChat OCR 截图、真实 canary/send、Runtime switch/release、production
 migration 或 SuBing Scope write/activation。当前 production exact-tag 仍为 WeCom。`alembic
 upgrade/current`、`runtime alert-canary`、`--confirm-alert-runtime`、真实 Scope PUT 禁止作为
-本节验证；测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
+本节验证；`runtime alert-target-verify` 虽然 no-send，但会真实改变 WeChat GUI 状态并产生临时截图/OCR，
+同样禁止作为测试命令且公开 `readonly=false`。测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
 
 ### 独立受控外部 Gate
 

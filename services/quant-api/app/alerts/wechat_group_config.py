@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import stat
 from typing import Any
@@ -36,8 +37,10 @@ def load_wechat_group_target(path: Path) -> WeChatGroupTarget:
         if (
             not stat.S_ISDIR(parent_metadata.st_mode)
             or stat.S_IMODE(parent_metadata.st_mode) != 0o700
+            or parent_metadata.st_uid != os.getuid()
             or not stat.S_ISREG(file_metadata.st_mode)
             or stat.S_IMODE(file_metadata.st_mode) != 0o600
+            or file_metadata.st_uid != os.getuid()
         ):
             raise ValueError
         payload = json.loads(path.read_text(encoding="utf-8"))

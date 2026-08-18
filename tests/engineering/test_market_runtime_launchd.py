@@ -167,9 +167,62 @@ def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path)
     assert "loaded_commit=" in result.stdout
     assert f"external.wechat_courier.commit={PINNED_WECHAT_COURIER_COMMIT}" in result.stdout
     assert "external.wechat_courier.status=not_installed" in result.stdout
+    assert "alert.notification_channel=wecom" in result.stdout
+    assert "alert.notification_group_alias" not in result.stdout
+    assert "overall=passed" in result.stdout
+    assert not calls.exists()
+
+
+def test_local_status_reports_courier_from_supervised_runtime(tmp_path: Path) -> None:
+    repo, home, fake_bin, calls = _status_fixture(
+        tmp_path,
+        runtime_channel="courier",
+        alert_enabled=False,
+    )
+
+    result = _run_status(repo, home, fake_bin)
+
+    assert result.returncode == 0, result.stdout + result.stderr
     assert "alert.notification_channel=wechat-courier" in result.stdout
     assert "alert.notification_group_alias=primary_alert_group" in result.stdout
     assert "overall=passed" in result.stdout
+    assert not calls.exists()
+
+
+def test_local_status_fails_closed_for_ambiguous_active_alert_runtime(
+    tmp_path: Path,
+) -> None:
+    for runtime_channel in ("ambiguous", "none"):
+        repo, home, fake_bin, calls = _status_fixture(
+            tmp_path / runtime_channel,
+            runtime_channel=runtime_channel,
+        )
+
+        result = _run_status(repo, home, fake_bin)
+
+        assert result.returncode == 1
+        assert "alert.notification_channel=unknown" in result.stdout
+        assert "overall=failed" in result.stdout
+        assert not calls.exists()
+
+
+def test_local_status_fails_for_active_courier_with_invalid_dependency(
+    tmp_path: Path,
+) -> None:
+    invalid_root = tmp_path / "invalid-courier"
+    invalid_root.mkdir()
+    repo, home, fake_bin, calls = _status_fixture(
+        tmp_path,
+        runtime_channel="courier",
+        courier_root=invalid_root,
+    )
+
+    result = _run_status(repo, home, fake_bin)
+
+    assert result.returncode == 1
+    assert "alert.notification_channel=wechat-courier" in result.stdout
+    assert "external.wechat_courier.status=invalid" in result.stdout
+    assert "overall=failed" in result.stdout
     assert not calls.exists()
 
 
@@ -276,12 +329,21 @@ def _run_installer(
 def _status_fixture(
     tmp_path: Path,
     *,
+    runtime_channel: str = "wecom",
+    alert_enabled: bool = True,
+    courier_root: Path | None = None,
     missing_after_market: bool = False,
     missing_alert: bool = False,
     mismatched_web_root: bool = False,
     mismatched_loaded_commit: bool = False,
 ) -> tuple[Path, Path, Path, Path]:
     repo = _copy_launchd_fixture(tmp_path / "runtime")
+    alerts = repo / "services/quant-api/app/alerts"
+    alerts.mkdir(parents=True)
+    if runtime_channel in {"wecom", "ambiguous"}:
+        (alerts / "wecom.py").write_text("# legacy fixture\n", encoding="utf-8")
+    if runtime_channel in {"courier", "ambiguous"}:
+        (alerts / "wechat_courier.py").write_text("# courier fixture\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     (repo / ".gitignore").write_text(".run/\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
@@ -302,7 +364,8 @@ def _status_fixture(
     subprocess.run(["git", "checkout", "--detach", "-q"], cwd=repo, check=True)
     (repo / ".run").mkdir()
     (repo / ".run/market-runtime-enabled").write_text("enabled\n", encoding="utf-8")
-    (repo / ".run/alert-runtime-enabled").write_text("enabled\n", encoding="utf-8")
+    if alert_enabled:
+        (repo / ".run/alert-runtime-enabled").write_text("enabled\n", encoding="utf-8")
     checkout_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=repo,
@@ -335,6 +398,11 @@ def _status_fixture(
                     "EnvironmentVariables": {
                         "GUIYI_PROJECT_ROOT": project_root,
                         "GUIYI_RUNTIME_COMMIT": checkout_commit,
+                        **(
+                            {"GUIYI_WECHAT_COURIER_ROOT": str(courier_root)}
+                            if label == "com.guiyi.quant-alert" and courier_root is not None
+                            else {}
+                        ),
                     },
                 },
                 handle,

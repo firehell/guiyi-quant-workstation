@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -143,6 +144,31 @@ def test_parent_mode_must_be_exactly_0700(tmp_path: Path) -> None:
 
 def test_file_mode_must_be_exactly_0600(tmp_path: Path) -> None:
     path = _write(_private_path(tmp_path), _payload(), mode=0o640)
+
+    with pytest.raises(WeChatGroupConfigError, match="^WECHAT_GROUP_CONFIG_INVALID$"):
+        load_wechat_group_target(path)
+
+
+@pytest.mark.parametrize("wrong_owner", ("parent", "file"))
+def test_private_group_config_requires_current_user_ownership(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    wrong_owner: str,
+) -> None:
+    path = _write(_private_path(tmp_path), _payload())
+    selected = path.parent if wrong_owner == "parent" else path
+    original_lstat = Path.lstat
+
+    def lstat_with_wrong_owner(candidate: Path):
+        metadata = original_lstat(candidate)
+        if candidate == selected:
+            return SimpleNamespace(
+                st_mode=metadata.st_mode,
+                st_uid=os.getuid() + 1,
+            )
+        return metadata
+
+    monkeypatch.setattr(Path, "lstat", lstat_with_wrong_owner)
 
     with pytest.raises(WeChatGroupConfigError, match="^WECHAT_GROUP_CONFIG_INVALID$"):
         load_wechat_group_target(path)

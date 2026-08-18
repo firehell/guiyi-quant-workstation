@@ -302,6 +302,9 @@ class WeChatGroupAlertSender:
         text = format_alert_message(message)
         self._runner.send_text(self._target, text)
 
+    def verify_target(self) -> None:
+        self._runner.verify_target(self._target)
+
     def send_canary(self) -> WeChatGroupSendSummary:
         try:
             self._runner.send_text(self._target, ALERT_CANARY_TEXT)
