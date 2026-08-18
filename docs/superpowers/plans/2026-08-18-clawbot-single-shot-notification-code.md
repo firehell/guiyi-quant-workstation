@@ -4,34 +4,34 @@
 
 **Goal:** Replace all active WeChat-Courier notification code on `develop` with one Clawbot/OpenClaw-Weixin single-shot sender that preserves Alert Event-first, no-retry, at-most-one physical send semantics, while keeping current production `v1.4.2` + WeCom untouched until rollout.
 
-**Architecture:** Keep `AlertNotificationMessage`, `AlertNotificationSender` and the existing formatters as the stable domain boundary. Discover the user's already-installed OpenClaw/Node/openclaw-weixin exact versions first, freeze only those version/module-shape facts in Git, then use one private `.mjs` seam to read the existing Clawbot account/context state and call Tencent `sendMessageWeixin()` at most once. Guiyi never calls `openclaw message send`, never owns OpenClaw login/inbound/Gateway lifecycle, and never creates a notification queue/retry path.
+**Architecture:** Keep `AlertNotificationMessage`, `AlertNotificationSender` and the existing formatters as the stable domain boundary. First perform read-only discovery of the user's already-installed OpenClaw, Node and `openclaw-weixin`; freeze only their exact non-secret compatibility facts. Then use one private `.mjs` seam to read existing Clawbot account/context state and call Tencent `sendMessageWeixin()` at most once. Guiyi never calls `openclaw message send`, never owns OpenClaw login/inbound/Gateway lifecycle, and never creates a notification queue/retry path.
 
-**Tech Stack:** Python 3.13 project runtime, Node.js from the user's existing OpenClaw installation, OpenClaw CLI, Tencent `@tencent-weixin/openclaw-weixin`, subprocess/stdin JSON, macOS launchd, pytest, node:test.
+**Tech Stack:** Python 3.13 project runtime, the existing local Node/OpenClaw installation, Tencent `@tencent-weixin/openclaw-weixin`, subprocess/stdin JSON, macOS launchd, pytest, `node --test`.
 
 **Spec:** `docs/superpowers/specs/2026-08-18-clawbot-single-shot-notification-design.md`
 
 ## Global Constraints
 
-- Code baseline is `develop` at/after `e8337b80b8fcde9968e67b71a7d80b1068983d83`; if `develop` moves, re-read the delta before implementation.
-- Current production stays exact-tag `v1.4.2` / `fb96506493763340e082ed85e8112b60d6670d65` and keeps WeCom until rollout Gate G8. D1 must not send WeCom or Clawbot messages and must not switch Runtime.
-- D1 is repository work plus G1 read-only local dependency discovery only. No OpenClaw install/update/enable/disable/login/logout/config write, no owner config write, no canary, no launchd load/reload, no release/main/tag.
-- Preserve `htdy_original_15m`, `subing_entry_signal_v1`, their evaluator semantics and current Scope, Alert two-table schema/Event identity, DB revision, Market eight-table contract, Canonical, Execution Review, and `auto_order=false`.
-- Preserve Event-first: Event commit happens before notification attempt; notification failure never rolls back an Event.
-- For every new `AlertEvent × owner`: bridge child process count `<= 1`; `sendMessageWeixin()` call count `<= 1`; context missing means physical send `= 0`.
-- No notification retry, replay, backfill, outbox, queue, provider fallback, WeCom fallback, Courier fallback, Gateway send, OpenClaw `message send`, Agent/tool send, or broadcast.
-- V1 recipient is exactly one alias: `owner`; no recipient list, fan-out, routing DSL, recipient DB or per-rule recipient routing.
-- Real `account_id`, `target_user_id`, bot token, context token, real message body and OpenClaw raw logs must never enter Git, public CLI output, Guiyi logs or task reports.
+- Baseline is `develop` at/after `e8337b80b8fcde9968e67b71a7d80b1068983d83`; if `develop` moves, re-read the delta before implementation.
+- Current production remains exact-tag `v1.4.2` / `fb96506493763340e082ed85e8112b60d6670d65` + WeCom until rollout G8. D1 must not send WeCom or Clawbot messages and must not switch Runtime.
+- D1 is repository work plus G1 read-only local dependency discovery. No OpenClaw install/update/enable/disable/login/logout/config write, no real owner-config write, no canary, no launchd load/reload, no main/tag/release.
+- Preserve `htdy_original_15m`, `subing_entry_signal_v1`, evaluator semantics, current Scope, Alert two-table schema/Event identity, DB revision, Market eight-table contract, Canonical, Execution Review and `auto_order=false`.
+- Preserve Event-first: Event commit precedes notification attempt; notification failure never rolls back an Event.
+- For every new `AlertEvent × owner`: bridge child count `<=1`; `sendMessageWeixin()` call count `<=1`; missing context means physical send `=0`.
+- No notification retry, replay, backfill, outbox, queue, provider fallback, WeCom fallback, Courier fallback, Gateway send, OpenClaw `message send`, Agent/tool send or broadcast.
+- V1 recipient is exactly `owner`; no recipient list, fan-out, routing DSL, recipient DB or per-rule recipient routing.
+- Real `account_id`, `target_user_id`, bot token, context token, real message body and raw OpenClaw/Tencent logs never enter Git, public CLI output, Guiyi logs or task reports.
 - The only file allowed to know Tencent private module paths/exports is `services/quant-api/app/alerts/openclaw_weixin_single_shot.mjs`.
-- Tests use fake plugin roots, fake account/context modules, temp private config and mocked subprocesses. D1 must never touch the real owner's private account/context values after G1 discovery has finished.
+- D1 tests use fake plugin roots/modules, temp private config and mocked subprocesses. After G1 compatibility discovery, D1 tests must not read the real owner's account/context contents.
 
 ---
 
-## File Structure Locked by This Plan
+## File Structure
 
 ### Preserve
 
 - `services/quant-api/app/alerts/notification.py`
-- `services/quant-api/app/alerts/runtime.py` transport-neutral `AlertNotificationSender` dependency
+- `services/quant-api/app/alerts/runtime.py` transport-neutral sender dependency
 - `services/quant-api/tests/test_alert_notification.py`
 
 ### Create
@@ -60,15 +60,11 @@
 - `scripts/ops/macos/local-services-status.sh`
 - `tests/engineering/test_alert_runtime_launchd.py`
 - `tests/engineering/test_market_runtime_launchd.py`
-- `tests/engineering/test_secret_scan.py` as needed for Clawbot private-data regression coverage
-- `AGENTS.md`
-- `PROJECT_SOURCE.md`
-- `DECISIONS.md`
-- `TESTING.md`
-- `deploy/README.md`
-- `STATUS.md` only to record a truthful `develop / not released` Clawbot target; current production `v1.4.2 + WeCom` facts must remain unchanged.
+- `tests/engineering/test_secret_scan.py` if required for Clawbot privacy regression coverage
+- `AGENTS.md`, `PROJECT_SOURCE.md`, `DECISIONS.md`, `TESTING.md`, `deploy/README.md`
+- `STATUS.md` only to state the truthful `develop / not released` target; existing production v1.4.2/WeCom facts remain.
 
-### Delete after Clawbot replacement is green
+### Delete after replacement tests are green
 
 - `services/quant-api/app/alerts/wechat_courier.py`
 - `services/quant-api/app/alerts/wechat_courier_adapter.py`
@@ -81,19 +77,15 @@
 - `deploy/wechat-courier/versions.json`
 - `scripts/ops/macos/install-wechat-courier.sh`
 
-The old Courier design/code/rollout docs were already deleted before this plan. Historical WeCom/Courier evidence remains in Git history/STATUS history only.
+The old Courier design/code/rollout docs were already deleted. Historical WeCom/Courier facts remain only in Git history and truthful historical/status text.
 
 ---
 
-## Gate G1: Read-Only Discovery of the Existing Clawbot Installation
+## Gate G1 — Read-Only Discovery of the Existing Clawbot Installation
 
 **Lane:** Lane 2 read-only external inspection.
 
-**Purpose:** establish execution-time facts required to freeze D1 compatibility. This Gate changes no files outside the task branch until the final sanitized `deploy/clawbot/versions.json` commit.
-
-- [ ] **Step 1: Record repository and production truth**
-
-Run:
+- [ ] **Step 1: Read repository and production truth**
 
 ```bash
 git fetch origin develop
@@ -104,11 +96,9 @@ git status --short
 scripts/ops/macos/local-services-status.sh
 ```
 
-Expected before any Clawbot code work: production remains the supervised exact-tag `v1.4.2` Runtime and reports WeCom. If production/runtime truth is inconsistent with `STATUS.md`, stop before D1.
+Expected before D1: supervised production is still exact-tag v1.4.2 and reports WeCom. If production truth conflicts with `STATUS.md`, stop.
 
-- [ ] **Step 2: Resolve exact local executables without mutating OpenClaw**
-
-Run:
+- [ ] **Step 2: Resolve exact local executables and official read-only OpenClaw surfaces**
 
 ```bash
 OPENCLAW_BIN="$(command -v openclaw)"
@@ -122,32 +112,34 @@ NODE_BIN="$(command -v node)"
 "$OPENCLAW_BIN" channels status --channel openclaw-weixin --probe --json
 ```
 
-Do not run any OpenClaw writer (`plugins install/update/enable/disable`, `config set/patch/unset`, `channels login/logout/add/remove`, `message send`).
+Forbidden in G1: `plugins install/update/enable/disable`, `config set/patch/unset`, `channels login/logout/add/remove`, `message send` or any OpenClaw writer.
 
-- [ ] **Step 3: Parse only the non-secret compatibility facts**
+- [ ] **Step 3: Parse only non-secret compatibility facts**
 
-From `plugins inspect ... --json`, require exactly one `openclaw-weixin` plugin with status `loaded`, an exact version string, and one exact install path. Resolve the install path with `realpath` and require it to be a directory. Record only:
+Require exactly one loaded `openclaw-weixin` plugin with one exact version and one exact install path. Resolve its install path with `realpath`. Record only in local task evidence:
 
 ```text
-openclaw exact version
-node exact version
-openclaw-weixin exact version
-resolved plugin root path (local task evidence only, never tracked)
+exact OpenClaw version
+exact Node version
+exact openclaw-weixin version
+resolved plugin root
 ```
 
-Do not copy the plugin JSON wholesale into the task report because install/account diagnostics may contain local information.
+Do not copy raw plugin/account diagnostics into the report.
 
-- [ ] **Step 4: Resolve the active config/state paths without guessing**
+- [ ] **Step 4: Resolve exact config/state paths without guessing**
 
-Use `openclaw config file --json` for the exact config path. For state dir:
+Use `openclaw config file --json` for the config path. For state dir:
 
-1. if `OPENCLAW_STATE_DIR` is explicitly set, require an absolute existing directory and use its resolved realpath;
-2. otherwise, accept the config file's parent only if the expected Tencent state subtree for the installed plugin exists there and can be verified structurally without printing account contents;
-3. otherwise stop with `G1 BLOCKED: OPENCLAW_STATE_DIR_NOT_DETERMINISTIC` and ask the user for the exact state directory. Do not assume `~/.openclaw` merely because it is the upstream default.
+1. if `OPENCLAW_STATE_DIR` is explicitly set, require an absolute existing directory and use its realpath;
+2. otherwise accept the config file's parent only if the expected Tencent state subtree for this installed plugin exists there and can be structurally verified without printing account contents;
+3. otherwise stop with `G1 BLOCKED: OPENCLAW_STATE_DIR_NOT_DETERMINISTIC` and ask the user for the exact state directory.
 
-- [ ] **Step 5: Verify the installed private module shape read-only**
+Do not assume `~/.openclaw` simply because it is an upstream default.
 
-Under the exact plugin root, require the installed compiled modules used by the approved seam. For the currently published package this is expected to be:
+- [ ] **Step 5: Verify exact compiled private module shape**
+
+For the installed version, require these observed compiled module files; if the real installed version differs, stop and revise the spec/plan rather than guessing:
 
 ```text
 dist/src/auth/accounts.js
@@ -155,38 +147,35 @@ dist/src/messaging/inbound.js
 dist/src/messaging/send.js
 ```
 
-Run one read-only Node import probe that asserts these exact exports exist:
+A read-only Node import probe must confirm exact exports:
 
 ```text
-loadWeixinAccount
-restoreContextTokens
-getContextToken
-sendMessageWeixin
+accounts.js:
+  listIndexedWeixinAccountIds
+  loadWeixinAccount
+  DEFAULT_BASE_URL
+
+inbound.js:
+  restoreContextTokens
+  getContextToken
+
+send.js:
+  sendMessageWeixin
 ```
 
-If the observed installed version has a different compiled layout, stop and revise the spec/plan before implementation. Do not glob for alternates or fall back to `src/*.ts`.
+No glob/fallback path and no `src/*.ts` import is allowed.
 
-- [ ] **Step 6: Create an isolated task branch/worktree from the just-read `develop`**
+- [ ] **Step 6: Create isolated task branch/worktree**
 
-Use `superpowers:using-git-worktrees`. The branch should be notification-specific, for example:
+Use `superpowers:using-git-worktrees`, for example branch `task/clawbot-single-shot-notification`, based on the just-read `develop`.
 
-```text
-task/clawbot-single-shot-notification
-```
-
-No implementation changes belong directly on the user's main develop worktree.
-
-**G1 PASS evidence:** exact OpenClaw/Node/plugin versions, exact plugin root, exact config/state paths, plugin loaded/probe healthy, exact private export shape. Evidence must be sanitized and contain no account/user/token/context values.
+**G1 PASS:** exact versions, plugin root, config/state paths, loaded/probe status and private export shape are known; evidence contains no account/user/token/context values.
 
 ---
 
-### Task 1: Freeze the Observed Compatibility Contract and Owner File Schema
+### Task 1 — Freeze Compatibility Facts and Owner Schema
 
-**Files:**
-- Create: `deploy/clawbot/versions.json`
-- Create: `deploy/clawbot/README.md`
-- Create: `services/quant-api/app/alerts/clawbot_owner.py`
-- Create: `services/quant-api/tests/test_alert_clawbot_owner.py`
+**Files:** `deploy/clawbot/*`, `clawbot_owner.py`, `test_alert_clawbot_owner.py`.
 
 **Interfaces:**
 
@@ -202,7 +191,6 @@ class ClawbotOwner:
 class ClawbotOwnerError(RuntimeError): ...
 
 def load_clawbot_owner(path: Path) -> ClawbotOwner: ...
-
 def write_clawbot_owner_atomic(path: Path, *, account_id: str, target_user_id: str) -> None: ...
 ```
 
@@ -214,211 +202,107 @@ CLAWBOT_CHANNEL = "openclaw-weixin"
 CLAWBOT_OWNER_ALIAS = "owner"
 ```
 
-- [ ] **Step 1: Write `deploy/clawbot/versions.json` from G1 facts**
+- [ ] **Step 1: Write `deploy/clawbot/versions.json` from the exact G1 readbacks**
 
-The file contains only exact non-secret compatibility facts observed in G1, plus exact private module relative paths verified in G1. Required schema:
+The tracked file must contain exactly these keys:
 
-```json
-{
-  "schema_version": 1,
-  "openclaw_version": "the exact G1 stdout version string",
-  "openclaw_weixin_version": "the exact G1 plugin version string",
-  "node_version": "the exact G1 node version string",
-  "plugin_modules": {
-    "accounts": "dist/src/auth/accounts.js",
-    "inbound": "dist/src/messaging/inbound.js",
-    "send": "dist/src/messaging/send.js"
-  }
-}
+```text
+schema_version = 1
+openclaw_version = exact G1 OpenClaw version string
+openclaw_weixin_version = exact G1 plugin version string
+node_version = exact G1 Node version string
+plugin_modules.accounts = dist/src/auth/accounts.js
+plugin_modules.inbound = dist/src/messaging/inbound.js
+plugin_modules.send = dist/src/messaging/send.js
 ```
 
-Do not track local absolute install paths, account ids, user ids, tokens or context values.
+No local absolute path or private id belongs in Git.
 
 - [ ] **Step 2: Write owner-loader RED tests**
 
-Cover:
-
-```text
-missing file
-symlink
-non-regular file
-parent mode != 0700
-file mode != 0600
-parent uid != current uid
-file uid != current uid
-malformed JSON
-missing/extra key
-version != 1
-channel != openclaw-weixin
-owner_alias != owner
-blank/control-character account_id
-blank/control-character target_user_id
-target_user_id not ending @im.wechat
-```
-
-Use only synthetic values such as `fixture-owner@im.wechat`.
+Cover missing/symlink/non-regular, parent mode `0700`, file mode `0600`, parent/file current uid, exact schema keys, fixed version/channel/alias, control/blank ids, and `target_user_id` ending in `@im.wechat`. Use only synthetic values such as `fixture-owner@im.wechat`.
 
 - [ ] **Step 3: Implement strict immutable owner loading**
 
-Use `lstat()`, exact mode and UID checks. Errors collapse to stable `CLAWBOT_OWNER_INVALID` and never interpolate private values or paths.
+Use `lstat()`, exact mode/uid checks, no symlink. Collapse errors to `CLAWBOT_OWNER_INVALID`; never interpolate private values or paths.
 
-- [ ] **Step 4: Add an atomic owner writer for later rollout**
+- [ ] **Step 4: Implement atomic owner writer for rollout G2 only**
 
-`write_clawbot_owner_atomic()` must:
+Require existing private parent `0700/current uid`; validate ids; write same-directory temp file; chmod `0600`; fsync; `os.replace`; re-load as postcondition. D1 tests use temp paths only.
 
-```text
-require parent already exists and is 0700/current uid
-validate candidate ids before writing
-write a temp file in the same parent
-chmod temp 0600
-fsync temp
-os.replace(temp, final)
-chmod final 0600
-re-load with load_clawbot_owner() as postcondition
-```
+- [ ] **Step 5: Focused tests + commit**
 
-It must not be executed against the real production path during D1.
-
-- [ ] **Step 5: Verify and commit**
-
-Run the focused owner tests and `git diff --check`, then commit only Task 1 files.
+Run owner tests and `git diff --check`, then commit only Task 1 files.
 
 ---
 
-### Task 2: Implement the One Tencent Private Seam (`discover_owner`, `probe`, `send`)
+### Task 2 — Implement the Single Tencent Private Seam
 
-**Files:**
-- Create: `services/quant-api/app/alerts/openclaw_weixin_single_shot.mjs`
-- Create: `tests/engineering/openclaw_weixin_single_shot.test.mjs`
+**Files:** `openclaw_weixin_single_shot.mjs`, `openclaw_weixin_single_shot.test.mjs`.
 
-**Interfaces:**
-
-The seam reads one JSON object from stdin. It receives local dependency paths via explicit environment, not argv.
-
-Allowed actions:
+The single seam supports exactly three actions:
 
 ```text
 discover_owner  # read-only bootstrap helper, zero send
 probe           # owner/account/context readiness, zero send
-send            # one text send attempt maximum
+send            # at most one text send attempt
 ```
 
-The added `discover_owner` action is the implementation clarification required by the approved owner-bootstrap section: it stays inside the same single private seam and never creates a second notification path.
+`discover_owner` is the necessary clarification of the approved owner-bootstrap section; it remains inside the same one private seam and is not a second transport.
 
-- [ ] **Step 1: Build a fake plugin tree for node:test**
+- [ ] **Step 1: Create fake compiled plugin modules for `node --test`**
 
-The fixture provides the exact three compiled module files named by `versions.json` and records calls to:
+The fake account module exports `listIndexedWeixinAccountIds`, `loadWeixinAccount`, `DEFAULT_BASE_URL`; inbound exports `restoreContextTokens`, `getContextToken`; send exports `sendMessageWeixin`. All calls are recorded; no network/OpenClaw real state.
 
-```text
-loadWeixinAccount
-restoreContextTokens
-getContextToken
-sendMessageWeixin
-```
+- [ ] **Step 2: RED tests for manifest/path/export safety**
 
-No network or real OpenClaw import is allowed in D1 tests.
+Require absolute plugin root, exact manifest schema, plugin `package.json` version equal to frozen manifest, every relative module realpath under plugin root, and every required export callable/value of the expected type. Any mismatch => `CLAWBOT_DEPENDENCY_INVALID`, zero send.
 
-- [ ] **Step 2: Write RED tests for dependency/path safety**
+- [ ] **Step 3: RED tests for `discover_owner`**
 
-Require:
+Require exactly one indexed account; `loadWeixinAccount()` returns token + `userId`; `userId` ends `@im.wechat`; `restoreContextTokens(account)` then `getContextToken(account,userId)` returns non-empty. Zero/multiple accounts, missing token/user/context or malformed data fail closed.
 
-```text
-plugin root absolute and existing
-manifest schema exact
-package.json version == frozen plugin version
-all manifest module paths resolve under plugin root
-all required exports are functions
-no glob/fallback/private source TS imports
-```
+The child may return `account_id`/`target_user_id` only to its trusted parent over captured stdout JSON; public CLI must never echo them. Child stderr must never intentionally print them.
 
-Missing or mismatched dependency => `CLAWBOT_DEPENDENCY_INVALID`, zero send.
+- [ ] **Step 4: RED tests for `probe`**
 
-- [ ] **Step 3: Write RED tests for `discover_owner`**
+Load exact owner account, require token, require `account.userId == target_user_id`, restore context, require non-empty context; `sendMessageWeixin` calls = 0. Missing context => `CLAWBOT_CONTEXT_UNAVAILABLE`.
 
-Contract:
+- [ ] **Step 5: RED tests for `send`**
 
-```text
-exactly one indexed/configured account
-loadWeixinAccount(account)
-account token present
-account.userId exists and ends @im.wechat
-restoreContextTokens(account)
-getContextToken(account, account.userId) returns non-empty
-candidate count exactly one
-```
-
-The child may return the private `account_id`/`target_user_id` only in its captured machine payload to the trusted Python parent. The public CLI must never echo those fields. Tests must prove child stderr never contains them.
-
-Multiple accounts, zero accounts, missing user id, missing context, malformed account => fail closed and zero send.
-
-- [ ] **Step 4: Write RED tests for `probe`**
-
-Inputs include the frozen owner ids. Require:
-
-```text
-load exact account
-configured token exists
-account.userId == target_user_id
-restore contexts
-context exists
-sendMessageWeixin calls == 0
-```
-
-Missing context => `CLAWBOT_CONTEXT_UNAVAILABLE` and zero send.
-
-- [ ] **Step 5: Write RED tests for `send`**
-
-Require:
-
-```text
-same dependency/account/context checks as probe
-sendMessageWeixin called exactly once on success
-sendMessageWeixin throw => exactly one call, CLAWBOT_SEND_FAILED
-context missing => zero calls
-no loop/re-spawn/retry path inside child
-```
-
-- [ ] **Step 6: Implement minimal ESM seam**
-
-Use `fs`, `path`, `url` and dynamic `import(pathToFileURL(...))`. Resolve every manifest module realpath under the exact plugin root. Do not import `channel.ts/channel.js`, `sendWeixinOutbound`, OpenClaw core message functions, hooks, Gateway or Agent code.
-
-The send call must be exactly the low-level Tencent API:
+Same checks as probe, then exactly one call:
 
 ```javascript
 await sendMessageWeixin({
   to: targetUserId,
   text,
-  opts: { baseUrl: account.baseUrl || DEFAULT_BASE_URL_IF_EXACTLY_AVAILABLE_FROM_ACCOUNT_MODULE,
-          token: account.token,
-          contextToken }
-})
+  opts: {
+    baseUrl: account.baseUrl?.trim() || DEFAULT_BASE_URL,
+    token: account.token,
+    contextToken,
+  },
+});
 ```
 
-If the frozen installed account module does not expose a safe exact base URL contract, stop and adjust the private seam from the observed installed module; never guess.
+Success => one call. Throw => one call + `CLAWBOT_SEND_FAILED`. Missing context => zero calls.
 
-- [ ] **Step 7: Sanitize child output**
+- [ ] **Step 6: Implement minimal ESM seam**
 
-Normal public machine results for `probe/send` are stable codes only. `discover_owner` sensitive fields are for captured parent consumption only; parent tests must prove they never reach user-visible stdout/stderr/logging.
+Read one stdin JSON object; get plugin root and versions-manifest path only from explicit child env; use `pathToFileURL()` for exact dynamic imports. Never import channel/Gateway/Agent/message-tool modules. Never invoke hooks or public OpenClaw send APIs.
 
-- [ ] **Step 8: Run node tests and commit**
+Set/expect child logging to the quietest available mode; regardless of upstream logger behavior, the Python parent captures and discards raw stdout/stderr and never forwards raw vendor output.
 
-Run:
+- [ ] **Step 7: Run node tests + commit**
 
 ```bash
 node --test tests/engineering/openclaw_weixin_single_shot.test.mjs
 ```
 
-Expected: all pass with fake modules only.
-
 ---
 
-### Task 3: Add Python Clawbot Runner, Sender, Bootstrap and Canary Contracts
+### Task 3 — Python Dependency/Runner/Sender + Controlled CLI
 
-**Files:**
-- Create: `services/quant-api/app/alerts/clawbot.py`
-- Create: `services/quant-api/tests/test_alert_clawbot.py`
-- Modify: `services/quant-api/app/guiyi_cli/main.py`
-- Modify: `services/quant-api/tests/test_alert_cli.py`
+**Files:** `clawbot.py`, `test_alert_clawbot.py`, `guiyi_cli/main.py`, `test_alert_cli.py`.
 
 **Interfaces:**
 
@@ -434,16 +318,16 @@ class ClawbotDependency:
     versions_path: Path
 
 @dataclass(frozen=True, slots=True)
+class ClawbotOwnerCandidate:
+    account_id: str
+    target_user_id: str
+
+@dataclass(frozen=True, slots=True)
 class ClawbotSendSummary:
     attempted: int
     provider_accepted: int
     failed: int
     failed_aliases: tuple[str, ...]
-
-@dataclass(frozen=True, slots=True)
-class ClawbotOwnerCandidate:
-    account_id: str
-    target_user_id: str
 
 class ClawbotError(RuntimeError): ...
 
@@ -457,140 +341,9 @@ class ClawbotAlertSender:
     def send_canary(self) -> ClawbotSendSummary: ...
 ```
 
-- [ ] **Step 1: Write RED dependency/runner tests**
+- [ ] **Step 1: RED tests for dependency resolution**
 
-Parent process must use fixed argv only:
-
-```python
-[node_bin, PROJECT_ROOT / "services/quant-api/app/alerts/openclaw_weixin_single_shot.mjs"]
-```
-
-All action/account/target/text data goes through stdin JSON. Tests inspect argv and assert no `@im.wechat`, account id or message body appears there.
-
-Child environment is rebuilt from an allowlist. At minimum it sets:
-
-```text
-OPENCLAW_STATE_DIR=<exact configured state dir>
-OPENCLAW_CONFIG=<exact config path>
-GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT=<exact plugin root>
-GUIYI_CLAWBOT_VERSIONS_PATH=<exact manifest>
-PATH=<node parent dir>:/usr/bin:/bin:/usr/sbin:/sbin
-```
-
-Do not blindly inherit conflicting `OPENCLAW_*`/`CLAWDBOT_*`.
-
-- [ ] **Step 2: Implement one-child-at-most runner semantics**
-
-Each `discover_owner`, `probe` or `send_text` call invokes `subprocess.run()` once with a finite timeout. Timeout, crash, malformed JSON or nonzero exit returns a stable Clawbot error and never creates a second child.
-
-- [ ] **Step 3: Write sender RED tests**
-
-Prove:
-
-```text
-format_alert_message called through existing formatter
-one sender call -> one runner.send_text
-runner failure propagates sanitized Clawbot error
-send_canary uses fixed ALERT_CANARY_TEXT
-success summary attempted=1/provider_accepted=1/failed=0
-failure summary attempted=1/provider_accepted=0/failed=1/failed_aliases=("owner",)
-```
-
-- [ ] **Step 4: Add CLI surfaces with no arbitrary send primitive**
-
-Replace Courier-only `alert-target-verify` with:
-
-```text
-guiyi runtime clawbot-owner-bootstrap [--confirm-write-owner]
-guiyi runtime clawbot-preflight
-guiyi runtime alert-canary
-```
-
-Contracts:
-
-`clawbot-owner-bootstrap` without confirm:
-
-```json
-{
-  "schema_version": 1,
-  "command": "runtime.clawbot-owner-bootstrap",
-  "status": "ready",
-  "readonly": true,
-  "channel": "openclaw-weixin",
-  "owner_alias": "owner",
-  "account_count": 1,
-  "owner_candidate_count": 1,
-  "context_available": true,
-  "owner_written": false
-}
-```
-
-With `--confirm-write-owner`, the command uses the same unique candidate and `write_clawbot_owner_atomic()`, returns `readonly=false`, and still does not expose ids. D1 tests use a temp file only; the real production path is rollout-only.
-
-`clawbot-preflight`:
-
-```json
-{
-  "schema_version": 1,
-  "command": "runtime.clawbot-preflight",
-  "status": "ok",
-  "readonly": true,
-  "channel": "openclaw-weixin",
-  "owner_alias": "owner",
-  "account_configured": true,
-  "context_available": true,
-  "would_send": false
-}
-```
-
-`alert-canary` keeps the generic command but changes its result field from Courier's `automation_completed` to:
-
-```text
-attempted
-provider_accepted
-failed
-failed_aliases
-```
-
-No CLI may accept `--target`, `--account`, `--message` or free-form text for Clawbot sends.
-
-- [ ] **Step 5: Fix readonly classification tests**
-
-Expected:
-
-```text
-runtime status -> true
-runtime clawbot-owner-bootstrap (discovery) -> true
-runtime clawbot-owner-bootstrap --confirm-write-owner -> false
-runtime clawbot-preflight -> true
-runtime live/alert/alert-canary -> false
-```
-
-- [ ] **Step 6: Verify and commit**
-
-Run focused Python tests and node tests before commit.
-
----
-
-### Task 4: Rewire Alert Composition and Health Without Changing Alert Semantics
-
-**Files:**
-- Modify: `services/quant-api/app/alerts/composition.py`
-- Modify: `services/quant-api/app/services/runtime_health.py`
-- Modify: `services/quant-api/tests/test_alert_runtime.py`
-- Modify: `services/quant-api/tests/test_runtime_health.py`
-
-**Interfaces:**
-
-```python
-def build_clawbot_sender_from_env(*, live_probe: bool = True) -> ClawbotAlertSender: ...
-
-def clawbot_transport_configured_from_env() -> bool: ...
-```
-
-- [ ] **Step 1: Write RED composition tests**
-
-Require all six explicit path inputs:
+All six local paths are explicit env inputs:
 
 ```text
 GUIYI_OPENCLAW_BIN
@@ -601,113 +354,158 @@ GUIYI_OPENCLAW_CONFIG_PATH
 GUIYI_ALERT_CLAWBOT_OWNER_PATH
 ```
 
-Reject missing/relative/nonexistent/incorrect file type, unsupported manifest version, exact version mismatch or plugin inspect mismatch with `ALERT_NOTIFICATION_TRANSPORT_NOT_READY`. Do not expose raw local paths in public errors.
+Reject missing/relative/nonexistent/wrong type. Exact live validation compares `openclaw --version`, `node --version`, and `openclaw plugins inspect openclaw-weixin --runtime --json` to the frozen manifest and exact resolved plugin root. Any mismatch => `ALERT_NOTIFICATION_TRANSPORT_NOT_READY`.
 
-- [ ] **Step 2: Implement two-level preflight**
+- [ ] **Step 2: RED tests for one-child-at-most runner**
 
-`live_probe=False` checks only structural/local compatibility for HTTP health and must not call Tencent network APIs or send.
+Fixed argv only:
 
-`live_probe=True` additionally loads the immutable owner and runs exactly one `runner.probe(owner)` before returning the sender. This is used by Alert Runtime startup, `clawbot-preflight` and canary construction.
-
-- [ ] **Step 3: Rewire `build_alert_runtime()`**
-
-Replace `build_wechat_group_sender_from_env()` with `build_clawbot_sender_from_env(live_probe=True)`. Keep evaluator, Redis source/heartbeat, operational products, taxonomy and session factories unchanged.
-
-- [ ] **Step 4: Preserve Event-first/no-retry regression tests**
-
-Tests must prove:
-
-```text
-DB/Event creation failure -> sender calls 0
-new Event commit -> sender call 1
-duplicate Event -> sender calls 0
-sender failure -> Event remains committed
-sender failure -> no second sender call and next Bar can still process
-old failed Event is never replayed/backfilled
+```python
+[node_bin, PROJECT_ROOT / "services/quant-api/app/alerts/openclaw_weixin_single_shot.mjs"]
 ```
 
-- [ ] **Step 5: Make runtime health structural only**
+Action/account/target/text are stdin JSON. Child env is an allowlist and includes:
 
-`build_runtime_health()` should use `clawbot_transport_configured_from_env()` or `build_clawbot_sender_from_env(live_probe=False)` and must not call `send`, bootstrap owner, mutate context or invoke `channels status --probe` on every HTTP request.
+```text
+OPENCLAW_STATE_DIR=<exact state dir>
+OPENCLAW_CONFIG=<exact config path>
+OPENCLAW_LOG_LEVEL=FATAL
+GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT=<exact plugin root>
+GUIYI_CLAWBOT_VERSIONS_PATH=<exact versions manifest>
+PATH=<node parent>:/usr/bin:/bin:/usr/sbin:/sbin
+```
 
-- [ ] **Step 6: Verify and commit**
+Do not blindly inherit conflicting `OPENCLAW_*`/`CLAWDBOT_*`. Each runner method calls `subprocess.run()` exactly once with finite timeout. Timeout/crash/nonzero/malformed output never creates a second child. Raw child stdout/stderr is never included in the raised public error.
 
-Run Alert runtime/composition/health focused tests.
+- [ ] **Step 3: RED sender tests**
+
+`send()` uses existing `format_alert_message()` once and runner once. `send_canary()` uses fixed `ALERT_CANARY_TEXT` and returns:
+
+```text
+success: attempted=1, provider_accepted=1, failed=0, failed_aliases=()
+failure: attempted=1, provider_accepted=0, failed=1, failed_aliases=("owner",)
+```
+
+- [ ] **Step 4: Add controlled CLI only**
+
+Replace Courier `alert-target-verify` with:
+
+```text
+guiyi runtime clawbot-owner-bootstrap [--confirm-write-owner]
+guiyi runtime clawbot-preflight
+guiyi runtime alert-canary
+```
+
+No `--target`, `--account`, `--message`, arbitrary send or free-form text option exists.
+
+Discovery bootstrap public output contains only channel/alias/count/context booleans and `owner_written=false`; `readonly=true`. `--confirm-write-owner` writes the unique candidate through `write_clawbot_owner_atomic()`, returns deterministic `status=ok`, `readonly=false`, `owner_written=true`, and still exposes no ids.
+
+`clawbot-preflight` calls `probe`, returns `readonly=true`, `would_send=false` and zero send.
+
+`alert-canary` returns `attempted/provider_accepted/failed/failed_aliases`; it is not readonly.
+
+- [ ] **Step 5: Readonly classification tests**
+
+```text
+runtime status -> true
+clawbot-owner-bootstrap discovery -> true
+clawbot-owner-bootstrap --confirm-write-owner -> false
+clawbot-preflight -> true
+runtime live/alert/alert-canary -> false
+```
+
+- [ ] **Step 6: Focused tests + commit**
 
 ---
 
-### Task 5: Replace Courier Ops/Launchd Identity With External Clawbot Identity
+### Task 4 — Rewire Alert Composition and Structural Health
 
-**Files:**
-- Modify: `deploy/launchd/com.guiyi.quant-api.plist.template`
-- Modify: `deploy/launchd/com.guiyi.quant-alert.plist.template`
-- Modify: `scripts/ops/macos/install-local-services.sh`
-- Modify: `scripts/ops/macos/run-local-service.sh`
-- Modify: `scripts/ops/macos/local-services-status.sh`
-- Modify: `tests/engineering/test_alert_runtime_launchd.py`
-- Modify: `tests/engineering/test_market_runtime_launchd.py`
+**Files:** `composition.py`, `runtime_health.py`, `test_alert_runtime.py`, `test_runtime_health.py`.
 
-- [ ] **Step 1: Replace launchd Courier vars**
+**Interfaces:**
 
-API and Alert plist templates must carry the same six Clawbot path variables. No real account/user/token/context belongs in launchd.
+```python
+def build_clawbot_dependency_from_env(*, verify_versions: bool) -> ClawbotDependency: ...
+def build_clawbot_runner_from_env(*, verify_versions: bool = True) -> ClawbotRunner: ...
+def build_clawbot_sender_from_env(*, live_probe: bool = True) -> ClawbotAlertSender: ...
+def clawbot_transport_configured_from_env() -> bool: ...
+```
 
-- [ ] **Step 2: Preserve launcher-authority precedence**
+- [ ] **Step 1: RED composition tests**
 
-Extend the existing `run-local-service.sh` protection so non-empty launchd values for all six Clawbot path variables survive `project.env/.env` sourcing. Do not alter precedence for unrelated secrets.
+`verify_versions=True` runs only local/read-only version/plugin-inspect checks plus private seam probe. `live_probe=True` loads immutable owner and calls runner `probe(owner)` once. No send.
 
-- [ ] **Step 3: Update render/install fail-closed checks**
+- [ ] **Step 2: Rewire `build_alert_runtime()`**
 
-`install-local-services.sh --confirm-alert-runtime` must validate the required Clawbot paths and the already-installed API plist's six values before writing the Alert marker or invoking `launchctl`. Any API/Alert mismatch => failure before mutation.
+Replace Courier builder with `build_clawbot_sender_from_env(live_probe=True)`. Do not change evaluators, Redis source/heartbeat, operational products, taxonomy or session factories.
 
-No script may install/update/restart OpenClaw.
+- [ ] **Step 3: Preserve Event-first/no-retry tests**
 
-- [ ] **Step 4: Replace status channel detection**
+Prove DB/Event failure => 0 sends; new committed Event => 1 sender call; duplicate Event => 0; sender failure leaves Event committed; no second sender call; next Bar can continue; old failed Event is never replayed.
 
-`local-services-status.sh` identifies the supervised Runtime source tree:
+- [ ] **Step 4: Structural HTTP health only**
+
+`clawbot_transport_configured_from_env()` validates local path/file/manifest/owner structure without network send, owner discovery or Tencent API calls. `/api/runtime/health` remains readonly and must not run a real canary/probe on every HTTP request.
+
+- [ ] **Step 5: Focused tests + commit**
+
+---
+
+### Task 5 — Replace Courier Ops/Launchd With External Clawbot Identity
+
+**Files:** both API/Alert plist templates, `install-local-services.sh`, `run-local-service.sh`, `local-services-status.sh`, engineering launchd tests.
+
+- [ ] **Step 1: Replace Courier env in API + Alert plist templates**
+
+Both receive exactly the same six Clawbot path variables. No account/user/token/context value belongs in plist.
+
+- [ ] **Step 2: Preserve launcher authority**
+
+Extend existing `run-local-service.sh` logic so non-empty launchd values for all six Clawbot path variables win over `project.env/.env`. Do not alter unrelated env precedence.
+
+- [ ] **Step 3: Fail closed before Alert promotion mutation**
+
+`install-local-services.sh --confirm-alert-runtime` validates required Clawbot paths and the already-installed API plist's six values before writing Alert marker or invoking `launchctl`. API/Alert mismatch fails before mutation. No script may install/update/restart OpenClaw.
+
+- [ ] **Step 4: Replace supervised notification-channel status logic**
 
 ```text
 wecom.py only -> wecom
-clawbot.py only, no wecom/courier -> clawbot-openclaw-weixin
+clawbot.py only and no wecom/courier -> clawbot-openclaw-weixin
 ambiguous/none -> unknown
 ```
 
-For Clawbot Runtime, print only sanitized external dependency facts:
+For Clawbot Runtime print only sanitized external facts:
 
 ```text
 alert.notification_channel=clawbot-openclaw-weixin
 alert.notification_owner_alias=owner
 external.openclaw.status=ready|invalid|missing
-external.openclaw.version=<non-secret exact>
+external.openclaw.version=<non-secret exact version>
 external.openclaw_weixin.status=ready|invalid|missing
-external.openclaw_weixin.version=<non-secret exact>
+external.openclaw_weixin.version=<non-secret exact version>
 external.clawbot_owner_config=ready|invalid|missing
 ```
 
-Never print account id, target user id, bot/context token, plugin raw JSON or message text. Never compare OpenClaw/plugin identity to `GUIYI_RUNTIME_COMMIT`.
+Never print ids/tokens/raw plugin JSON/message. Never compare OpenClaw/plugin identity with `GUIYI_RUNTIME_COMMIT`.
 
-Legacy v1.4.2 WeCom Runtime must still pass status even when Clawbot variables are absent.
+Legacy v1.4.2 WeCom Runtime must still report/passes without Clawbot vars.
 
-- [ ] **Step 5: Add engineering tests**
+- [ ] **Step 5: Engineering tests + shell/render/plutil verification + commit**
 
-Cover legacy WeCom, new Clawbot, ambiguous source identity, missing dependency, mismatched API/Alert paths, launcher precedence and sanitized status output.
-
-- [ ] **Step 6: Verify and commit**
-
-Run engineering tests, shell `bash -n`, render-only launchd and `plutil -lint` only. Do not load services.
+No real `launchctl` load/reload in D1.
 
 ---
 
-### Task 6: Delete Courier Active Source, Close Canonicals, and Run Full Verification
+### Task 6 — Delete Courier, Close Canonicals, Full Verification, Independent Review
 
-**Files:** delete/modify the paths listed in the File Structure section.
+- [ ] **Step 1: Delete all Courier source/tests/tooling listed in File Structure**
 
-- [ ] **Step 1: Delete Courier-only source/tests/tooling**
-
-Delete exactly the Courier files listed above. Remove `alert-target-verify`, Courier env vars, Courier installer/version manifest and Courier status logic. Do not delete unrelated historical evidence.
+Remove Courier env vars, `alert-target-verify`, installer/version/status logic. Do not rewrite historical evidence.
 
 - [ ] **Step 2: Verify active WeCom source remains zero on `develop`**
 
-In active source/config/tests, the following must not reappear:
+Active source/config/tests must not reintroduce:
 
 ```text
 WeComWebhookSender
@@ -716,28 +514,13 @@ WECOM_WEBHOOK_URL
 qyapi.weixin.qq.com
 ```
 
-`STATUS.md` historical/current production paragraphs may still truthfully say WeCom until rollout G8.
+Historical/current-production text in `STATUS.md` may still say WeCom until G8.
 
 - [ ] **Step 3: Update canonicals truthfully**
 
-Document:
+Record `develop = Clawbot single-shot / not released`, `production = v1.4.2 + WeCom until G8`, and `OpenClaw = external existing infrastructure not Guiyi-supervised`. Do not claim bootstrap/canary/release/promotion occurred.
 
-```text
-develop notification target = Clawbot single-shot / not released
-production exact-tag = v1.4.2 + WeCom until G8
-OpenClaw/Clawbot = external existing infrastructure, not Guiyi-supervised
-no public OpenClaw message send/durable queue in Alert path
-```
-
-Do not claim owner bootstrap, canary, release or Runtime promotion happened during D1.
-
-- [ ] **Step 4: Run secret/privacy scans**
-
-Run the repository secret scan and explicit diffs/grep. Test fixtures may contain obvious synthetic `fixture-owner@im.wechat`; no real opaque ids may appear.
-
-- [ ] **Step 5: Run full D1 verification**
-
-At minimum:
+- [ ] **Step 4: Run full verification**
 
 ```bash
 python3 scripts/engineering/secret_scan.py --json
@@ -768,82 +551,68 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 bash -n scripts/ops/macos/install-local-services.sh
 bash -n scripts/ops/macos/run-local-service.sh
 bash -n scripts/ops/macos/local-services-status.sh
-
 scripts/ops/macos/install-local-services.sh --render-only
 plutil -lint .run/launchd/com.guiyi.quant-api.plist
 plutil -lint .run/launchd/com.guiyi.quant-alert.plist
-
 git diff --check
 ```
 
-Also run the project's normal broader Alert/backend regression set if the task branch changed shared CLI/ops files beyond the focused scope.
+Run the broader normal Alert/backend regressions if shared CLI/ops edits require them.
 
-- [ ] **Step 6: Run forbidden-path checks**
+- [ ] **Step 5: Forbidden-path review**
 
-Active production files must not contain calls to:
+Production source must not call/contain active paths for:
 
 ```text
 openclaw message send
-sendDurableMessageBatchCore
 Gateway send
+sendDurableMessageBatchCore
 wechat_courier
 GUIYI_WECHAT_COURIER_ROOT
 GUIYI_ALERT_WECHAT_GROUP_PATH
 alert-target-verify
 ```
 
-The tests may contain literal forbidden strings only to assert rejection; scope grep accordingly rather than deleting the tests.
+Tests may contain literal forbidden strings only to assert they are rejected; scope grep accordingly.
 
-- [ ] **Step 7: Independent Review**
+- [ ] **Step 6: Independent Review in a fresh session**
 
-Open a fresh review session and inspect, at minimum:
+Review at minimum:
 
-1. `sendMessageWeixin` physical call count can never exceed one per sender invocation;
+1. `sendMessageWeixin` cannot exceed one call per sender invocation;
 2. missing context is zero-send;
-3. child timeout/crash/malformed output cannot re-spawn;
-4. no OpenClaw public `message send`/durable queue path slipped in;
-5. `discover_owner` cannot leak ids to CLI/logs;
-6. owner config cannot hot reload into a running sender;
-7. Alert Event is committed before notification and survives failure;
-8. evaluator/Scope/DB/Canonical/order paths are unchanged;
-9. API/Alert launchd path identities match and launcher values win;
-10. status reports supervised Runtime truth and keeps legacy v1.4.2 WeCom truthful;
-11. no real OpenClaw mutation/send/runtime switch happened during D1.
+3. timeout/crash/malformed child output cannot respawn;
+4. no public OpenClaw/durable queue path exists;
+5. `discover_owner` private ids cannot leak to CLI/logs;
+6. owner config is immutable for a running sender;
+7. Event-first and failure isolation remain intact;
+8. evaluator/Scope/DB/Canonical/order diffs are zero;
+9. API/Alert launchd paths match and launcher values win;
+10. status reads supervised Runtime truth and legacy v1.4.2 WeCom remains truthful;
+11. D1 performed no real owner write/send/OpenClaw mutation/Runtime switch.
 
-**R1 PASS:** Critical=`0`, Important=`0`; all required verification passes.
+**R1 PASS:** Critical=`0`, Important=`0`, required verification PASS.
 
-- [ ] **Step 8: Integrate task branch to `develop` only after R1 PASS**
+- [ ] **Step 7: Integrate task branch into `develop` only after R1 PASS**
 
-Fast-forward/merge according to repository workflow, re-read `origin/develop`, then clean the task worktree/merged task branch. Do not touch `main`, tag or production Runtime.
+Use repository workflow, read back `origin/develop`, then clean the task worktree/merged task branch. Do not touch main/tag/production.
 
 ---
 
 ## D1 Completion Gate
 
-D1 is complete only when all of these are true:
+D1 completes only when:
 
 ```text
-G1 exact installed dependency facts captured and frozen
-Clawbot single-shot source is the only active develop notification transport
-WeChat-Courier active source/tests/tooling = 0
+G1 exact installed dependency facts are frozen
+Clawbot single-shot is the only active develop notification transport
+Courier active source/tests/tooling = 0
 active WeCom sender source/config = 0 on develop
 production v1.4.2 + WeCom unchanged
-clawbot-owner-bootstrap code exists but real owner file not written
-clawbot-preflight code exists but no real external call executed by D1 tests
-alert-canary code exists but no real message sent
+bootstrap/preflight/canary code exists but no real owner write/send occurred
 Event-first/no-retry/at-most-one verified
-secret/privacy tests pass
-Critical=0 / Important=0 independent review
+privacy/secret checks pass
+R1 Critical=0 / Important=0
 ```
 
-Final D1 verdict:
-
-```text
-D1 CLAWBOT CODE PASS，允许进入 rollout G2 owner bootstrap
-```
-
-or
-
-```text
-D1 CLAWBOT CODE BLOCKED，禁止进入真实 owner/canary
-```
+Final verdict: `D1 CLAWBOT CODE PASS，允许进入 rollout G2 owner bootstrap` or `D1 CLAWBOT CODE BLOCKED，禁止进入真实 owner/canary`.
