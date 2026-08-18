@@ -237,10 +237,16 @@ owner_alias = owner
 
 ```text
 openclaw --version
+openclaw config file
 openclaw plugins inspect openclaw-weixin --runtime --json
 openclaw channels status --channel openclaw-weixin --probe --json
 node --version
 ```
+
+当前 official OpenClaw `2026.7.1-2` 的 `config file` 不提供 `--json`。该 surface 必须精确返回一行
+非空绝对路径；不得包含额外 stdout 行，路径必须指向 existing regular file，并以 `realpath` 冻结。
+任何空值、多行、相对路径、symlink/non-regular、不可读或命令失败均 fail closed；不得改用默认目录、
+环境推断、候选扫描或 wrapper。
 
 从官方 OpenClaw surfaces 读取并冻结：
 

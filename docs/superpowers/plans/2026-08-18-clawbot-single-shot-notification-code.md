@@ -107,7 +107,7 @@ NODE_BIN="$(command -v node)"
 [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ]
 "$OPENCLAW_BIN" --version
 "$NODE_BIN" --version
-"$OPENCLAW_BIN" config file --json
+"$OPENCLAW_BIN" config file
 "$OPENCLAW_BIN" plugins inspect openclaw-weixin --runtime --json
 "$OPENCLAW_BIN" channels status --channel openclaw-weixin --probe --json
 ```
@@ -129,7 +129,10 @@ Do not copy raw plugin/account diagnostics into the report.
 
 - [ ] **Step 4: Resolve exact config/state paths without guessing**
 
-Use `openclaw config file --json` for the config path. For state dir:
+Use the current official `openclaw config file` surface for the config path. Require stdout to contain exactly one
+non-empty absolute path line, resolve it with `realpath`, and require an existing readable regular file that is not a
+symlink. Empty/multiline/relative/missing/non-regular/unreadable output or command failure is a hard stop; do not use a
+default path, environment inference, candidate scan or wrapper. For state dir:
 
 1. if `OPENCLAW_STATE_DIR` is explicitly set, require an absolute existing directory and use its realpath;
 2. otherwise accept the config file's parent only if the expected Tencent state subtree for this installed plugin exists there and can be structurally verified without printing account contents;
