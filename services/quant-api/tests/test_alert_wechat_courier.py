@@ -100,6 +100,7 @@ def test_dependency_resolver_uses_fixed_git_argv_and_exact_clean_commit(
         root=root.resolve(),
         source_root=(root / "source").resolve(),
         python_executable=(root / "venv/bin/python").resolve(),
+        resolved_python_executable=(root / "venv/bin/python").resolve(),
         upstream_commit=PINNED_COMMIT,
     )
     assert calls == [
@@ -126,6 +127,7 @@ def test_dependency_resolver_accepts_standard_venv_python_symlink(
     dependency = resolve_wechat_courier_dependency(root, run_process=run_process)
 
     assert dependency.python_executable == python
+    assert dependency.resolved_python_executable == Path("/usr/bin/python3").resolve()
 
 
 @pytest.mark.parametrize(
@@ -138,6 +140,7 @@ def test_dependency_resolver_accepts_standard_venv_python_symlink(
         "dirty",
         "escaping_source",
         "escaping_python_parent",
+        "untrusted_python_target",
         "unsafe_runtime_mode",
     ),
 )
@@ -174,6 +177,12 @@ def test_dependency_resolver_fails_closed(
         python.write_text("#!/bin/sh\n", encoding="utf-8")
         python.chmod(0o700)
         (root / "venv/bin").symlink_to(outside, target_is_directory=True)
+    elif failure == "untrusted_python_target":
+        outside = tmp_path / "outside-python"
+        outside.write_text("#!/bin/sh\n", encoding="utf-8")
+        outside.chmod(0o700)
+        (root / "venv/bin/python").unlink()
+        (root / "venv/bin/python").symlink_to(outside)
     elif failure == "unsafe_runtime_mode":
         (root / "runtime").chmod(0o755)
 
@@ -193,6 +202,7 @@ def test_runner_uses_fixed_child_argv_stdin_and_exact_environment(tmp_path: Path
     dependency = WeChatCourierDependency(
         root.resolve(),
         (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
         (root / "venv/bin/python").resolve(),
         PINNED_COMMIT,
     )
@@ -255,6 +265,7 @@ def test_runner_collapses_child_failure_without_leaking_private_output(
         root.resolve(),
         (root / "source").resolve(),
         (root / "venv/bin/python").resolve(),
+        (root / "venv/bin/python").resolve(),
         PINNED_COMMIT,
     )
 
@@ -278,12 +289,14 @@ def test_runner_revalidates_dependency_and_rejects_drift_before_child(
         root.resolve(),
         (root / "source").resolve(),
         (root / "venv/bin/python").resolve(),
+        (root / "venv/bin/python").resolve(),
         PINNED_COMMIT,
     )
     drifted = WeChatCourierDependency(
         dependency.root,
         dependency.source_root,
         dependency.python_executable,
+        dependency.resolved_python_executable,
         "0" * 40,
     )
 
@@ -297,11 +310,47 @@ def test_runner_revalidates_dependency_and_rejects_drift_before_child(
         ).send_text(_target(), "fixture-alert")
 
 
+def test_runner_rejects_resolved_python_identity_drift_before_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _dependency_tree(tmp_path)
+    monkeypatch.setattr(courier, "VERSIONS_FILE", _versions_file(tmp_path))
+
+    def git_process(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        stdout = f"{PINNED_COMMIT}\n" if argv[-2:] == ["rev-parse", "HEAD"] else ""
+        return subprocess.CompletedProcess(argv, 0, stdout, "private")
+
+    dependency = resolve_wechat_courier_dependency(root, run_process=git_process)
+    python = root / "venv/bin/python"
+    replacement = root / "venv/bin/python3"
+    replacement.write_text("#!/bin/sh\n", encoding="utf-8")
+    replacement.chmod(0o700)
+    python.unlink()
+    python.symlink_to("python3")
+
+    with pytest.raises(WeChatCourierError, match="^WECHAT_COURIER_DEPENDENCY_INVALID$"):
+        WeChatCourierRunner(
+            dependency,
+            run_process=lambda *_args, **_kwargs: pytest.fail(
+                "interpreter drift must stop before child"
+            ),
+            resolve_dependency=lambda path: resolve_wechat_courier_dependency(
+                path,
+                run_process=git_process,
+            ),
+        ).verify_target(_target())
+
+
 def test_gui_lock_is_nonblocking_and_never_starts_second_child(tmp_path: Path) -> None:
     root = _dependency_tree(tmp_path)
     dependency = WeChatCourierDependency(
         root.resolve(),
         (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
         (root / "venv/bin/python").resolve(),
         PINNED_COMMIT,
     )
@@ -330,6 +379,7 @@ def test_runner_send_uses_one_child_and_does_not_put_private_text_in_argv(
     dependency = WeChatCourierDependency(
         root.resolve(),
         (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
         (root / "venv/bin/python").resolve(),
         PINNED_COMMIT,
     )
@@ -374,6 +424,7 @@ def test_runner_send_failure_is_single_shot_and_privacy_safe(
     dependency = WeChatCourierDependency(
         root.resolve(),
         (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
         (root / "venv/bin/python").resolve(),
         PINNED_COMMIT,
     )

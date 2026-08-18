@@ -26,6 +26,10 @@ VERSIONS_FILE = PROJECT_ROOT / "deploy/wechat-courier/versions.json"
 ADAPTER_PATH = PROJECT_ROOT / "services/quant-api/app/alerts/wechat_courier_adapter.py"
 _REPOSITORY = "bladydora/WeChat-Courier-macOS"
 _TIMEOUT_SECONDS = 45.0
+_TRUSTED_SYSTEM_PYTHON_ENTRIES = (
+    Path("/usr/bin/python3"),
+    Path("/Library/Developer/CommandLineTools/usr/bin/python3"),
+)
 _PUBLIC_ERROR_CODES = {
     "WECHAT_COURIER_BUSY",
     "WECHAT_GROUP_TARGET_UNVERIFIED",
@@ -45,6 +49,7 @@ class WeChatCourierDependency:
     root: Path
     source_root: Path
     python_executable: Path
+    resolved_python_executable: Path
     upstream_commit: str
 
 
@@ -100,12 +105,24 @@ def _contained(root: Path, path: Path) -> Path:
         raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
 
 
-def _contained_executable_entry(root: Path, path: Path) -> Path:
+def _contained_executable_entry(root: Path, path: Path) -> tuple[Path, Path]:
     """Contain the venv entry while allowing its standard interpreter symlink."""
     try:
         resolved_parent = path.parent.resolve(strict=True)
         resolved_parent.relative_to(root)
-        return resolved_parent / path.name
+        entry = resolved_parent / path.name
+        resolved_entry = entry.resolve(strict=True)
+        trusted_system_pythons = {
+            candidate.resolve(strict=True)
+            for candidate in _TRUSTED_SYSTEM_PYTHON_ENTRIES
+            if candidate.exists()
+        }
+        try:
+            resolved_entry.relative_to(root)
+        except ValueError:
+            if resolved_entry not in trusted_system_pythons:
+                raise ValueError
+        return entry, resolved_entry
     except (OSError, ValueError):
         raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
 
@@ -129,7 +146,7 @@ def resolve_wechat_courier_dependency(
     source_root = _contained(resolved_root, resolved_root / "source")
     git_metadata = _contained(resolved_root, source_root / ".git")
     module_path = _contained(resolved_root, source_root / "wechat_courier.py")
-    python_executable = _contained_executable_entry(
+    python_executable, resolved_python_executable = _contained_executable_entry(
         resolved_root,
         resolved_root / "venv/bin/python",
     )
@@ -194,6 +211,7 @@ def resolve_wechat_courier_dependency(
         root=resolved_root,
         source_root=source_root,
         python_executable=python_executable,
+        resolved_python_executable=resolved_python_executable,
         upstream_commit=commit,
     )
 
