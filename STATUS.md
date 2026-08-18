@@ -22,8 +22,9 @@
   G4 canary 已获 provider acceptance，用户已确认微信中恰好收到一条，因此 G4 PASS。
   G5 已完成正常微信入站后的 preflight、一次外部 restart 后的 persisted-context preflight、版本无漂移
   与 single-shot 回归。G6 已按用户批准的完整累计 `develop` 范围完成 release PR #170、独立审查与
-  annotated `v1.5.0` tag；G7～G9 与 Runtime promotion 尚未执行，production 继续保持
-  `v1.4.2 + WeCom`。
+  annotated `v1.5.0` tag；G7 已在 Gate time 读回两条 enabled Rule 的精确 Scope 均为 `jm`，并按用户
+  预先明确授权的顺序锁定两条 Rule 的 bounded continuous authorization。G8～G9 与 Runtime
+  promotion 尚未执行，production 继续保持 `v1.4.2 + WeCom`。
 
 ## Clawbot Single-Shot D1（RELEASED / NOT RUNTIME PROMOTED）
 
@@ -51,7 +52,14 @@
   shell/plist、render-only 六路径一致性、secret scan 0 与 diff check；17 项需要显式 isolated PostgreSQL
   test DB 的测试未使用 production DB。fresh independent review 为 Critical=`0` / Important=`0` /
   Minor=`0`。release PR #170 已合并；`origin/main` 与 annotated tag `v1.5.0` 的 peeled commit 均为
-  `957d19893187c7876b88e58f82fd5656536ee214`。当前 rollout 为 G2～G6 PASS，G7～G9 均未执行。
+  `957d19893187c7876b88e58f82fd5656536ee214`。
+- G7 Gate-time 只读核对确认 Code/DB Registry 均精确为 `htdy_original_15m` 与
+  `subing_entry_signal_v1`，两条 Rule 均 `enabled=true / scope=jm`；owner 严格 schema 元数据为
+  `owner × openclaw-weixin`，未输出私有 id。依据用户对既定 G2→G9 顺序的明确整体授权，持续通知
+  范围锁定为 `htdy_original_15m × jm × owner × clawbot-openclaw-weixin` 与
+  `subing_entry_signal_v1 × jm × owner × clawbot-openclaw-weixin`，且只覆盖 G8 后新建的自然
+  AlertEvent；不覆盖新 Rule/Scope/owner、synthetic Event、replay/backfill、canary、release、Runtime
+  promotion、DB/Canonical 或订单。当前 rollout 为 G2～G7 PASS，G8～G9 均未执行。
 
 ## After-Market Bounded Retry V1.4.2（RELEASED / RUNTIME PROMOTED）
 
