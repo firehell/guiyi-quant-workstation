@@ -130,6 +130,10 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   `overall=passed`。Alert 在首次 3 秒验收时短暂为 `spawn_scheduled`，未执行第二次重载即
   自然进入 `running`；正式 `5173` JM 页面已读回 HTDY 高对比三轨/图例，原顶部风险提示横幅不再
   出现。本次未执行 DB/Canonical/Scope/通知渠道变更、手工通知、手工盘后或订单操作。
+- 上述 `ok/overall=passed` 是切换后的瞬时读回；`23:35 +08:00` 起 Live 自动重连被 RQData
+  以 `4003 quota exceeded` 拒绝，当前仍为单一 Live 进程、心跳持续更新，但
+  `TRADING=11/subscribed=0`、Runtime health=`degraded/live_unavailable`。API、Web、Redis、DB、
+  after-market 与 Alert 保持 `ok`。现有十秒自动重连尚未恢复；未执行第二次 Runtime mutation。
 - `2026-08-18 22:16 +08:00` 已按本次明确授权把 API/Web/Market Live/after-market/
   现有 Alert Runtime 统一重载至 clean/detached Runtime 根
   `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.2` 的 Live hotfix 提交
