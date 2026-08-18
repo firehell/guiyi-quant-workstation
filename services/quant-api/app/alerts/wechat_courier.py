@@ -237,6 +237,7 @@ class WeChatCourierRunner:
                     check=False,
                     timeout=_TIMEOUT_SECONDS,
                     env=courier_child_environment(self._dependency.root),
+                    cwd=str(self._dependency.root / "runtime"),
                 )
             parsed: Any = json.loads(result.stdout)
         except WeChatCourierError:

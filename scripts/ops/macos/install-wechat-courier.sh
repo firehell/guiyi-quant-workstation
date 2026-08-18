@@ -8,11 +8,6 @@ ROOT="${GUIYI_WECHAT_COURIER_ROOT:-}"
 GIT_BIN="/usr/bin/git"
 PYTHON_BIN="/usr/bin/python3"
 
-if [[ "${GUIYI_WECHAT_COURIER_TESTING:-0}" == "1" ]]; then
-  GIT_BIN="${GUIYI_WECHAT_COURIER_GIT_BIN:-$GIT_BIN}"
-  PYTHON_BIN="${GUIYI_WECHAT_COURIER_PYTHON_BIN:-$PYTHON_BIN}"
-fi
-
 [[ "$MODE" == "--check" || "$MODE" == "--confirm-install" ]] || {
   printf 'usage: %s [--check|--confirm-install]\n' "$0" >&2
   exit 2
@@ -63,7 +58,18 @@ if [[ "$resolved_parent" != /Volumes/* || "$name" == '.' || "$name" == '..' ]]; 
 fi
 ROOT="$resolved_parent/$name"
 
+if [[ -L "$ROOT" || -L "$ROOT/source" || -L "$ROOT/venv" \
+  || -L "$ROOT/runtime" || -L "$ROOT/tmp" || -L "$ROOT/cache" ]]; then
+  printf 'status=invalid_root\n' >&2
+  exit 2
+fi
+
 mkdir -p "$ROOT" "$ROOT/runtime" "$ROOT/tmp" "$ROOT/cache/clang"
+resolved_root="$(cd "$ROOT" && pwd -P)"
+if [[ "$resolved_root" != "$ROOT" || "$resolved_root" != /Volumes/* ]]; then
+  printf 'status=invalid_root\n' >&2
+  exit 2
+fi
 if [[ ! -e "$ROOT/source" ]]; then
   "$GIT_BIN" clone "$UPSTREAM_URL" "$ROOT/source"
 else

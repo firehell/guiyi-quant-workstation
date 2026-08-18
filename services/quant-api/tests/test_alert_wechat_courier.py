@@ -165,6 +165,7 @@ def test_runner_uses_fixed_child_argv_stdin_and_exact_environment(tmp_path: Path
         observed["argv"] = argv
         observed["input"] = json.loads(str(kwargs["input"]))
         observed["env"] = kwargs["env"]
+        observed["cwd"] = kwargs["cwd"]
         return subprocess.CompletedProcess(argv, 0, '{"status":"verified"}\n', "private")
 
     WeChatCourierRunner(dependency, run_process=run_process).verify_target(_target())
@@ -184,6 +185,7 @@ def test_runner_uses_fixed_child_argv_stdin_and_exact_environment(tmp_path: Path
         "CLANG_MODULE_CACHE_PATH": str(root.resolve() / "cache/clang"),
         "PYTHONUNBUFFERED": "1",
     }
+    assert observed["cwd"] == str(dependency.root / "runtime")
 
 
 @pytest.mark.parametrize(

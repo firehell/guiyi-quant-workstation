@@ -75,6 +75,26 @@ def test_confirm_install_rejects_non_volume_root_before_any_command(
     assert not calls.exists()
 
 
+def test_confirm_install_rejects_symlink_root_before_any_command(
+    tmp_path: Path,
+) -> None:
+    root = REPO_ROOT / ".run" / f"test-courier-link-{uuid4().hex}"
+    fake_git, fake_python, calls = _fake_install_commands(tmp_path)
+    root.symlink_to(tmp_path / "outside", target_is_directory=True)
+    try:
+        result = _run(
+            "--confirm-install",
+            root,
+            git_bin=fake_git,
+            python_bin=fake_python,
+        )
+
+        assert result.returncode == 2
+        assert not calls.exists()
+    finally:
+        root.unlink(missing_ok=True)
+
+
 def _run(
     mode: str,
     root: Path,
@@ -86,14 +106,24 @@ def _run(
         **os.environ,
         "GUIYI_WECHAT_COURIER_ROOT": str(root),
     }
-    if git_bin is not None:
-        env["GUIYI_WECHAT_COURIER_TESTING"] = "1"
-        env["GUIYI_WECHAT_COURIER_GIT_BIN"] = str(git_bin)
-    if python_bin is not None:
-        env["GUIYI_WECHAT_COURIER_TESTING"] = "1"
-        env["GUIYI_WECHAT_COURIER_PYTHON_BIN"] = str(python_bin)
+    script = SCRIPT
+    if git_bin is not None or python_bin is not None:
+        fixture_root = git_bin.parent if git_bin is not None else python_bin.parent
+        fixture_script = fixture_root / "install-wechat-courier-fixture.sh"
+        source = SCRIPT.read_text(encoding="utf-8")
+        if git_bin is not None:
+            source = source.replace(
+                'GIT_BIN="/usr/bin/git"', f'GIT_BIN="{git_bin}"'
+            )
+        if python_bin is not None:
+            source = source.replace(
+                'PYTHON_BIN="/usr/bin/python3"', f'PYTHON_BIN="{python_bin}"'
+            )
+        fixture_script.write_text(source, encoding="utf-8")
+        fixture_script.chmod(0o700)
+        script = fixture_script
     return subprocess.run(
-        [str(SCRIPT), mode],
+        [str(script), mode],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
