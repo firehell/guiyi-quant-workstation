@@ -69,6 +69,9 @@
   并恢复 health=`ok`，未重载或重试。DB=`20260815_0039`、两 Rule `scope=jm`、roll disabled 均未变，
   OpenClaw gateway PID 前后均为 `23054`。旧 `v1.4.2` worktree 保留为 G9 前显式 rollback material。
   当前 rollout 为 G2～G8 PASS；G9 仅等待首个新自然 Alert，不 synthetic/replay/backfill。
+- G8 后 `2026-08-19 00:54～01:04 +08:00` 的只读 G9 监控覆盖 01:00 自然收线及后续评估，
+  `post_g8_natural_event_count=0`，因此没有 notification attempt，也没有消息到达证据。G9 诚实保持
+  pending；未清理旧 `v1.4.2` rollback worktree 或 private WeCom credential。
 
 ## After-Market Bounded Retry V1.4.2（RELEASED / RUNTIME PROMOTED）
 
