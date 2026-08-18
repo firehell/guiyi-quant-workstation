@@ -233,7 +233,7 @@ owner_alias = owner
 
 ### 5.1 Read-only dependency discovery
 
-bootstrap 先运行只读 discovery：
+在任何 Clawbot transport code 实现之前，必须先对用户当前已经安装的环境执行只读 discovery：
 
 ```text
 openclaw --version
@@ -251,6 +251,8 @@ node --version
 - channel configured/enabled/probe facts。
 
 不得猜 npm global path、`~/.openclaw`、`latest`、`main` 或扫描多个插件目录。
+
+该 discovery 可以联网做 channel probe，但不得发送消息、不得 login/logout、不得 update/install/enable/disable plugin、不得修改 OpenClaw config/state。
 
 ### 5.2 唯一 owner candidate
 
@@ -298,7 +300,7 @@ exactly one configured account
 
 ### 6.1 版本冻结
 
-代码实现开始时，从用户当前已安装环境的 read-only discovery 生成：
+G1 read-only discovery 必须发生在 D1 code implementation 之前。D1 的第一个 repository change 才把已经读回并记录的实际安装事实写成：
 
 ```text
 deploy/clawbot/versions.json
@@ -315,7 +317,7 @@ deploy/clawbot/versions.json
 }
 ```
 
-这三个值必须来自实际安装读回，不能从 GitHub `main`、npm `latest` 或本文推断。
+这三个值必须来自 G1 的实际安装读回，不能从 GitHub `main`、npm `latest`、本文或模型知识推断。
 
 版本变化默认 fail closed，必须重新执行 compatibility review/probe 后才允许更新 manifest。
 
@@ -355,7 +357,7 @@ services/quant-api/app/alerts/openclaw_weixin_single_shot.mjs
 
 允许知道腾讯插件内部 module path/export。
 
-对 implementation-time 实际冻结的 plugin 版本，seam 必须要求 exact compiled module shape，概念上包括：
+对 G1 实际冻结的 plugin 版本，seam 必须要求 exact compiled module shape，概念上包括：
 
 ```text
 <plugin_root>/dist/src/auth/accounts.js
@@ -804,7 +806,7 @@ D1 代码测试不得真实发送微信，使用 fake pinned plugin tree / temp 
 
 ### dependency
 
-- observed exact OpenClaw/Node/plugin versions；
+- G1 observed exact OpenClaw/Node/plugin versions；
 - exact plugin root from inspect-derived config；
 - exact module files/exports；
 - wrong version/layout => fail closed；
@@ -872,18 +874,18 @@ queue/retry fallback inside Clawbot sender
 
 ---
 
-## 16. Rollout Gates
+## 16. Development + Rollout Gates
 
-代码实现和真实外部操作分离。
+代码实现和真实外部操作分离，顺序固定为：
 
 ```text
 D0  Design approved
 ↓
-D1  Clawbot code replacement; Courier/WeCom active source retired on develop
+G1  real installed OpenClaw read-only discovery; record exact versions/paths; no send/no mutation
+↓
+D1  write frozen manifest + Clawbot code replacement; Courier/WeCom active source retired on develop
 ↓
 R1  independent code review: Critical=0 / Important=0
-↓
-G1  real installed OpenClaw read-only discovery; freeze exact versions/paths
 ↓
 G2  owner bootstrap + explicit private owner write; no send
 ↓
@@ -905,7 +907,7 @@ G9  wait for first natural Alert; confirm Clawbot receipt; no synthetic/replay/b
 
 ### G1
 
-Read-only only；不得 update OpenClaw/plugin、不得 send。
+Read-only only。允许读取版本、plugin inspect、channel probe 和固定路径事实；不得 update/install/login/logout、不得写 owner、不得 send。G1 evidence 是 D1 `versions.json` 和 exact path contract 的唯一来源。
 
 ### G2
 
@@ -957,4 +959,4 @@ promotion 不隐含 canary，不 replay 历史 Event。只有 promotion 成功�
 12. production v1.4.2 WeCom 在 G8 前保持真实现状，不提前停止。
 13. OpenClaw/Clawbot 继续由其现有 runtime 管理；Guiyi 不新增第二 supervisor。
 14. evaluator/Rule/Scope/Alert DB/Market/Canonical/Execution Review/order path 零语义变化；`auto_order=false`。
-15. 真实 owner write、canary、continuous authorization、release、Runtime promotion 均为互不继承的独立 Gate。
+15. G1 discovery、真实 owner write、canary、continuous authorization、release、Runtime promotion 均为互不继承的独立 Gate。
