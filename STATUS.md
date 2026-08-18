@@ -20,7 +20,9 @@
 - `develop` 已完成 Clawbot single-shot D1 code PASS，并在 `d82ea43dd` 修复多行 Alert 正文的 LF
   校验合同。rollout G2 owner bootstrap 与 G3 zero-send preflight 已完成；`2026-08-19` 的唯一一次新授权
   G4 canary 已获 provider acceptance，用户已确认微信中恰好收到一条，因此 G4 PASS。
-  尚未执行 G5～G9、release 或 Runtime promotion；production 继续保持 `v1.4.2 + WeCom`。
+  G5 已完成正常微信入站后的 preflight、一次外部 restart 后的 persisted-context preflight、版本无漂移
+  与 single-shot 回归；尚未执行 G6～G9、release 或 Runtime promotion，production 继续保持
+  `v1.4.2 + WeCom`。
 
 ## Clawbot Single-Shot D1（CODE PASS / NOT RELEASED）
 
@@ -37,7 +39,10 @@
   本次 LF 修复与 G4 未修改 OpenClaw、未 load/reload launchd、未切换 Runtime。
 - Courier active source/tests/tooling 已从 D1 代码删除，active WeCom sender source/config 仍为零；
   production exact-tag/hotfix Runtime 的 WeCom 事实未改变。D1 完整验证及独立 R1 为
-  Critical=`0` / Important=`0` / Minor=`0`；当前 rollout 为 G2/G3/G4 PASS，G5～G9 均未执行。
+  Critical=`0` / Important=`0` / Minor=`0`。G5 的两次 zero-send preflight 均 PASS；外部 restart 仅按用户
+  明确委托执行一次，restart 后 account/context 仍 ready；OpenClaw/Node/plugin 版本精确匹配 manifest，
+  Node seam `22 passed`、Clawbot/Alert `138 passed`、launchd engineering `29 passed`，禁止 active path
+  为零且未执行可选第二次 canary。当前 rollout 为 G2～G5 PASS，G6～G9 均未执行。
 
 ## After-Market Bounded Retry V1.4.2（RELEASED / RUNTIME PROMOTED）
 
