@@ -11,8 +11,6 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
-OPENCLAW_ROOT="${GUIYI_OPENCLAW_ROOT:-}"
-ALERT_RECIPIENTS_PATH="${GUIYI_ALERT_RECIPIENTS_PATH:-}"
 
 write_execution_review_roll_marker() {
   local temporary_marker marker_mode
@@ -44,20 +42,16 @@ fi
 base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
 market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
 alert_runtime_labels=(com.guiyi.quant-alert)
-weixin_context_labels=(com.guiyi.quant-weixin-context)
 retired_labels=(
   com.guiyi.quant-web-recovery
   com.guiyi.quant-worker-signals
   com.guiyi.quant-worker-signals-recovery
   com.guiyi.quant-api-recovery-single
 )
-render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weixin_context_labels[@]}")
+render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}")
 load_labels=("${base_labels[@]}")
 
-[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" || "$MODE" == "--confirm-weixin-context" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-weixin-context|--confirm-execution-review-roll]\n' "$0" >&2; exit 2; }
-if [[ "$MODE" == "--confirm-weixin-context" ]]; then
-  [[ "$OPENCLAW_ROOT" == /* && -n "$ALERT_RECIPIENTS_PATH" && "$ALERT_RECIPIENTS_PATH" == /* ]] || { printf '[install-local-services] invalid Weixin private paths\n' >&2; exit 2; }
-fi
+[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-execution-review-roll]\n' "$0" >&2; exit 2; }
 mkdir -p "$RENDER_DIR"
 
 for label in "${render_labels[@]}"; do
@@ -69,8 +63,6 @@ for label in "${render_labels[@]}"; do
     -e "s|__RUNTIME_DIR__|$RUNTIME_DIR|g" \
     -e "s|__LOG_DIR__|$LOG_DIR|g" \
     -e "s|__HOME__|$HOME|g" \
-    -e "s|__OPENCLAW_ROOT__|$OPENCLAW_ROOT|g" \
-    -e "s|__ALERT_RECIPIENTS_PATH__|$ALERT_RECIPIENTS_PATH|g" \
     "$template" >"$output"
   plutil -lint "$output" >/dev/null
 done
@@ -82,8 +74,6 @@ if [[ "$MODE" == "--confirm-market-runtime" ]]; then
   load_labels=("${market_runtime_labels[@]}")
 elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
   load_labels=("${alert_runtime_labels[@]}")
-elif [[ "$MODE" == "--confirm-weixin-context" ]]; then
-  load_labels=("${weixin_context_labels[@]}")
 fi
 
 if [[ "$PROJECT_ROOT" == /Volumes/* && "${GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD:-0}" != "1" ]]; then

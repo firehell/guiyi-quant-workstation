@@ -4,8 +4,6 @@ set -euo pipefail
 PROJECT_ROOT="${GUIYI_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 [[ -d "$PROJECT_ROOT" ]] || { printf '[run-local-service] project root unavailable: %s\n' "$PROJECT_ROOT" >&2; exit 78; }
 SERVICE="${1:-}"
-LAUNCH_OPENCLAW_ROOT="${GUIYI_OPENCLAW_ROOT:-}"
-LAUNCH_ALERT_RECIPIENTS_PATH="${GUIYI_ALERT_RECIPIENTS_PATH:-}"
 RUNTIME_DIR="${GUIYI_RUNTIME_DIR:-$HOME/Library/Application Support/GuiyiQuant}"
 RUNTIME_ENV="${GUIYI_RUNTIME_ENV:-$RUNTIME_DIR/project.env}"
 PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
@@ -22,12 +20,10 @@ elif [[ -f "$PROJECT_ROOT/.env" ]]; then
   set +a
 fi
 
-if [[ "$SERVICE" != "weixin-context" ]]; then
-  [[ -n "${POSTGRES_PASSWORD:-}" ]] || { printf '[run-local-service] POSTGRES_PASSWORD missing\n' >&2; exit 2; }
-  export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
-  if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
-    export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
-  fi
+[[ -n "${POSTGRES_PASSWORD:-}" ]] || { printf '[run-local-service] POSTGRES_PASSWORD missing\n' >&2; exit 2; }
+export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
+if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
+  export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
 fi
 case "$SERVICE" in
   api)
@@ -41,13 +37,6 @@ case "$SERVICE" in
   alert)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     exec "$PYTHON_BIN" -m app.guiyi_cli.main runtime alert
-    ;;
-  weixin-context)
-    [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
-    [[ -n "$LAUNCH_OPENCLAW_ROOT" && -n "$LAUNCH_ALERT_RECIPIENTS_PATH" ]] || { printf '[run-local-service] Weixin private paths missing\n' >&2; exit 2; }
-    export GUIYI_OPENCLAW_ROOT="$LAUNCH_OPENCLAW_ROOT"
-    export GUIYI_ALERT_RECIPIENTS_PATH="$LAUNCH_ALERT_RECIPIENTS_PATH"
-    exec "$PYTHON_BIN" -m app.guiyi_cli.main runtime weixin-context
     ;;
   after-market)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }

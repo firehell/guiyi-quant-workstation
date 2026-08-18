@@ -18,8 +18,6 @@ from typing import Any, TextIO
 
 from app.db.session import SessionLocal
 from app.alerts.composition import build_alert_runtime, build_wecom_sender_from_env
-from app.alerts.weixin import WeixinRegistrationError, register_recipient
-from app.alerts.weixin_context import build_weixin_context_monitor_from_env
 from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
@@ -54,8 +52,6 @@ AlertCanarySenderFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
-WeixinRegister = Callable[..., Any]
-WeixinContextFactory = Callable[[], Any]
 
 logger = logging.getLogger(__name__)
 
@@ -95,9 +91,6 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
     runtime_commands.add_parser("alert-canary")
-    runtime_commands.add_parser("weixin-context")
-    register = runtime_commands.add_parser("weixin-register")
-    register.add_argument("--alias", required=True)
     return parser
 
 
@@ -110,8 +103,6 @@ def main(
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
     alert_canary_sender_factory: AlertCanarySenderFactory = build_wecom_sender_from_env,
-    weixin_register: WeixinRegister = register_recipient,
-    weixin_context_factory: WeixinContextFactory = build_weixin_context_monitor_from_env,
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
@@ -124,7 +115,6 @@ def main(
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
-    prompt_stream: TextIO | None = None,
 ) -> int:
     """CLI 主流程：解析 → 执行 → JSON 输出；返回进程退出码（0 成功，2 参数，1 执行错误）。"""
     raw = list(argv) if argv is not None else sys.argv[1:]
@@ -197,37 +187,12 @@ def main(
                 "status": "ok",
                 "foreground": True,
             }
-        elif args.runtime_command == "alert-canary":
+        else:
             alert_canary_sender_factory().send_canary()
             payload = {
                 "schema_version": 1,
                 "command": "runtime.alert-canary",
                 "status": "ok",
-            }
-        elif args.runtime_command == "weixin-register":
-            if prompt_stream is None:
-                try:
-                    with open("/dev/tty", "w", encoding="utf-8") as tty:
-                        weixin_register(args.alias, prompt_stream=tty)
-                except OSError as exc:
-                    raise WeixinRegistrationError(
-                        "WEIXIN_REGISTRATION_TTY_REQUIRED"
-                    ) from exc
-            else:
-                weixin_register(args.alias, prompt_stream=prompt_stream)
-            payload = {
-                "schema_version": 1,
-                "command": "runtime.weixin-register",
-                "status": "ok",
-                "alias": args.alias,
-            }
-        else:
-            weixin_context_factory().run_forever()
-            payload = {
-                "schema_version": 1,
-                "command": "runtime.weixin-context",
-                "status": "ok",
-                "foreground": True,
             }
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
         # 执行期异常：error code 仅暴露公开码或 CLI_INTERNAL_ERROR
