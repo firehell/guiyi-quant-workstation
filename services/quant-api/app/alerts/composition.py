@@ -32,6 +32,21 @@ from app.redis_connections import get_redis_connection
 
 
 ALERT_RUNTIME_ACTIVATION_MARKER = PROJECT_ROOT / ".run" / "alert-runtime-enabled"
+WECHAT_EXTERNAL_VOLUME_ROOT = Path("/Volumes")
+
+
+def _resolve_under_external_volume(path: Path) -> Path:
+    if not path.is_absolute():
+        raise ValueError
+    allowed_root = WECHAT_EXTERNAL_VOLUME_ROOT.resolve(strict=True)
+    resolved = path.resolve(strict=True)
+    try:
+        relative = resolved.relative_to(allowed_root)
+    except ValueError:
+        raise ValueError from None
+    if not relative.parts:
+        raise ValueError
+    return resolved
 
 
 class RedisAlertMessageSource:
@@ -69,10 +84,8 @@ def build_wechat_group_sender_from_env() -> WeChatGroupAlertSender:
     if not courier_root or not group_config_path:
         raise RuntimeError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY")
     try:
-        root = Path(courier_root)
-        config_path = Path(group_config_path)
-        if not root.is_absolute() or not config_path.is_absolute():
-            raise ValueError
+        root = _resolve_under_external_volume(Path(courier_root))
+        config_path = _resolve_under_external_volume(Path(group_config_path))
         target = load_wechat_group_target(config_path)
         dependency = resolve_wechat_courier_dependency(root)
         runner = WeChatCourierRunner(dependency)

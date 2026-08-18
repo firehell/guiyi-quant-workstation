@@ -177,6 +177,7 @@ def test_group_sender_composition_collapses_private_config_and_dependency_failur
         config.chmod(0o644 if failure == "invalid_config" else 0o600)
     monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(root))
     monkeypatch.setenv("GUIYI_ALERT_WECHAT_GROUP_PATH", str(config))
+    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", tmp_path)
     if failure == "wrong_commit":
         monkeypatch.setattr(
             alert_composition,
@@ -219,6 +220,7 @@ def test_valid_group_sender_composition_does_no_gui_verify_or_send(
 
     monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(root))
     monkeypatch.setenv("GUIYI_ALERT_WECHAT_GROUP_PATH", str(config))
+    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", tmp_path)
     monkeypatch.setattr(
         alert_composition,
         "resolve_wechat_courier_dependency",
@@ -230,3 +232,40 @@ def test_valid_group_sender_composition_does_no_gui_verify_or_send(
 
     assert constructed == [dependency]
     assert sender is not None
+
+
+def test_group_sender_composition_rejects_external_volume_escape(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    allowed_root = tmp_path / "Volumes"
+    allowed_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    courier = outside / "courier"
+    courier.mkdir()
+    secrets = outside / "secrets"
+    secrets.mkdir(mode=0o700)
+    config = secrets / "alert-wechat-group.json"
+    config.write_text(
+        '{"version":1,"channel":"wechat-courier","group_alias":"primary_alert_group","target_chat":"fixture-group-title"}',
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    escape = allowed_root / "escape"
+    escape.symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", allowed_root)
+    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(escape / "courier"))
+    monkeypatch.setenv(
+        "GUIYI_ALERT_WECHAT_GROUP_PATH",
+        str(escape / "secrets/alert-wechat-group.json"),
+    )
+    monkeypatch.setattr(
+        alert_composition,
+        "load_wechat_group_target",
+        lambda _path: (_ for _ in ()).throw(AssertionError("escaped path reached loader")),
+    )
+
+    with pytest.raises(RuntimeError, match="^ALERT_NOTIFICATION_TRANSPORT_NOT_READY$"):
+        build_wechat_group_sender_from_env()

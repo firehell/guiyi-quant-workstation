@@ -104,6 +104,30 @@ def test_render_rejects_alert_path_xml_injection(tmp_path: Path) -> None:
     assert "invalid alert notification path" in result.stderr
 
 
+def test_alert_confirmation_rejects_path_escape_before_render(tmp_path: Path) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/install-local-services.sh"), "--confirm-alert-runtime"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
+            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/../private/tmp/courier",
+            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/../private/tmp/group.json",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "alert notification paths not configured" in result.stderr
+    assert not (repo / ".run/alert-runtime-enabled").exists()
+
+
 def _copy_fixture(destination: Path) -> Path:
     for relative in (
         "deploy/launchd",
