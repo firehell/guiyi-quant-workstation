@@ -17,6 +17,23 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+- `develop` 已形成 Clawbot single-shot D1 code candidate，但尚未 release、owner bootstrap、preflight、
+  canary 或 Runtime promotion；production 继续保持 `v1.4.2 + WeCom`。
+
+## Clawbot Single-Shot D1（CODE CANDIDATE / NOT RELEASED）
+
+- `develop` 的唯一 active 通知 transport 已改为 `AlertEvent commit -> ClawbotAlertSender -> one Node
+  child -> openclaw-weixin private seam -> sendMessageWeixin()`；每个 Event 最多一个 child、一次发送
+  primitive，失败不回滚 Event，也不 retry、queue、replay、backfill、fan-out 或 fallback。
+- 非敏感 manifest 冻结 G1 实际读回的 OpenClaw `2026.7.1-2 (0790d9f)`、Node `v24.15.0`、
+  `openclaw-weixin 2.4.6`、exact plugin root/module shape。OpenClaw 是既有外部依赖，不由归一量化
+  安装、更新、登录、启动、停止或监督。
+- owner 采用 Git 外 `0700` parent / `0600` file 的严格不可变 schema，公开只使用别名 `owner`；
+  bootstrap、zero-send preflight 与 canary CLI 已有代码，但本轮未写真实 owner、未运行真实 preflight/
+  canary/send、未修改 OpenClaw、未 load/reload launchd、未切换 Runtime。
+- Courier active source/tests/tooling 已从 candidate 删除，active WeCom sender source/config 仍为零；
+  production exact-tag/hotfix Runtime 的 WeCom 事实未改变。D1 仍需完整验证与独立 R1 后才能宣布
+  CODE PASS；rollout G2～G9 均未执行。
 
 ## After-Market Bounded Retry V1.4.2（RELEASED / RUNTIME PROMOTED）
 
@@ -98,7 +115,8 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   cross-roll EMA/MACD 继承或 zero-band hard gate；1d 仍为 `RESEARCH_PENDING`。
 - Alert HTDY 保持 event-cutoff；SuBing 只复用 accepted Calibration、FormalPolicy 和
   `SubingReadService` resolver。incoming Event Bar 与读回的当前最后 Bar 必须整体相同。
-- Alert Event 先提交，然后最多尝试一次 WeCom；不建 replay/backfill/retry/outbox/queue。
+- production Alert Event 先提交，然后最多尝试一次 WeCom；develop Clawbot candidate 保持相同
+  Event-first/at-most-once 语义；两者都不建 replay/backfill/retry/outbox/queue。
 
 ## 当前 Runtime 事实
 

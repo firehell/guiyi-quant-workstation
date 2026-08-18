@@ -57,8 +57,9 @@ RQData
 
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration` 和 `guiyi runtime
-status|live|alert|alert-canary|alert-target-verify`；其中 `alert-canary` 是独立真实通知 Gate，
-`alert-target-verify` 是只使用私有固定目标且绝不发送消息的受控 GUI/OCR Gate；两者都不是普通只读命令。Market
+status|live|alert|alert-canary|clawbot-owner-bootstrap|clawbot-preflight`；其中 `alert-canary` 是独立真实通知 Gate，
+`clawbot-owner-bootstrap --confirm-write-owner` 会写 Git 外私有 owner 配置；`clawbot-preflight` 只做 zero-send
+account/context readiness probe，但仍是受控外部 Gate。这些命令都不能由普通只读测试授权。Market
 Runtime 的 Live 与盘后更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
 当日 rank1 completed 1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为
 Canonical。DFD-01～DFD-07 和 60 品种 Canonical 闭环已经完成，长期规范位于 `openspec/specs/`；现有旧
@@ -70,11 +71,11 @@ Alert V2 只保留两条 code-defined Rule：`htdy_original_15m` 复用 `MarketR
 
 SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `trading_day` 同一时创建 Event，stale 或不可用状态 fail-closed。final Session Bar 只在 Live 共享的有界 arrival grace 内可见；该 phase observation 不建立 `snapshot_at`/cutoff/replay 路径。5m 事件落在同一 15m boundary 时依既有 TradingSession bucket 语义延后，继续由 15m snapshot 唯一决议。HTDY event-cutoff 语义不变。
 
-当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后 develop 的 `WeChatGroupAlertSender` 对唯一固定群最多启动一个 pinned Courier child；目标群必须置顶且在首页无需滚动，adapter 不搜索、不滚动，并在首页可见聊天列表唯一精确匹配与精确 chat title 都通过后调用一次发送 primitive；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示自动化完成或用户已收到。无 replay/backfill/retry/outbox/queue/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
+当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后 develop 的 `ClawbotAlertSender` 最多启动一个固定 Node child，通过唯一 `openclaw-weixin` private seam 调用一次 `sendMessageWeixin()`；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示 provider 已接受或用户已收到。无 replay/backfill/retry/outbox/queue/fan-out/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
 
-微信群目标只存于 Git 外的单份 `0700` parent / `0600` private JSON，Runtime 只使用固定别名 `primary_alert_group`。Pinned Courier 必须是 exact commit、clean checkout 和 exact reviewed module shape；upstream 模糊匹配不构成安全边界，OCR 原文、截图、群名与消息正文不进入 guiyi 日志。GUI lock 非阻塞，busy 立即失败而不等待或排队。仓库没有 OpenClaw、Tencent iLink、context monitor 或任何微信 inbound/Agent/LLM/slash/tool/reply pipeline。
+Clawbot owner 只存于 Git 外的单份 `0700` parent / `0600` private JSON，Runtime 只公开固定别名 `owner`，不输出 account id、target id、token、context 或消息正文。OpenClaw、Node、`openclaw-weixin` 的 exact version、plugin root 与三个 compiled module shape 由 manifest 冻结；缺失 context、timeout、crash 或 malformed child output 都是 zero-retry failure。OpenClaw 是既有外部依赖，不由归一量化安装、更新、登录、启动、停止或监督；仓库没有 public OpenClaw message-send、durable queue、微信 inbound、context monitor 或 Agent/LLM/slash/tool/reply pipeline。
 
-Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 仍运行既有 WeCom transport；develop 的 Courier 目标不等于 production 已迁移。production migration、未来 Courier install/TCC/no-send target verification、release/tag、Runtime promotion/switch、SuBing Scope write/activation 与真实群 canary/send 是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake Courier 或 render-only 不证明任何 Gate 已执行。
+Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 仍运行既有 WeCom transport；develop 的 Clawbot single-shot 目标不等于 production 已迁移。owner bootstrap/write、preflight、真实 canary/send、release/tag、Runtime promotion/switch、SuBing Scope write/activation 与任何 OpenClaw 变更是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam 或 render-only 不证明任何 Gate 已执行。
 
 ## Execution Review V1 应用边界
 

@@ -173,19 +173,16 @@ printf '[local-services-status] alert_runtime_enabled=%s\n' "$alert_marker_enabl
 
 wecom_present=false
 clawbot_present=false
-courier_present=false
 if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" ]]; then
   wecom_path="$runtime_root/services/quant-api/app/alerts/wecom.py"
   clawbot_path="$runtime_root/services/quant-api/app/alerts/clawbot.py"
-  courier_path="$runtime_root/services/quant-api/app/alerts/wechat_courier.py"
   [[ -f "$wecom_path" && ! -L "$wecom_path" ]] && wecom_present=true
   [[ -f "$clawbot_path" && ! -L "$clawbot_path" ]] && clawbot_present=true
-  [[ -f "$courier_path" && ! -L "$courier_path" ]] && courier_present=true
 fi
 notification_channel=unknown
-if [[ "$wecom_present" == "true" && "$clawbot_present" == "false" && "$courier_present" == "false" ]]; then
+if [[ "$wecom_present" == "true" && "$clawbot_present" == "false" ]]; then
   notification_channel=wecom
-elif [[ "$wecom_present" == "false" && "$clawbot_present" == "true" && "$courier_present" == "false" ]]; then
+elif [[ "$wecom_present" == "false" && "$clawbot_present" == "true" ]]; then
   notification_channel=clawbot-openclaw-weixin
 fi
 printf '[local-services-status] alert.notification_channel=%s\n' "$notification_channel"

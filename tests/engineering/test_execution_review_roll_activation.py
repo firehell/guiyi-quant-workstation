@@ -156,6 +156,7 @@ def _run_installer(
     fake_bin: Path,
     mode: str,
 ) -> subprocess.CompletedProcess[str]:
+    clawbot_paths = _clawbot_paths(repo.parent / "clawbot-fixture")
     return subprocess.run(
         [str(repo / "scripts/ops/macos/install-local-services.sh"), mode],
         cwd=repo,
@@ -164,13 +165,39 @@ def _run_installer(
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
-            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/fixture/courier",
-            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/fixture/secrets/group.json",
+            **clawbot_paths,
         },
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def _clawbot_paths(root: Path) -> dict[str, str]:
+    plugin = root / "plugin"
+    state = root / "state"
+    owner_parent = root / "owner"
+    for directory in (plugin, state, owner_parent):
+        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+        directory.chmod(0o700)
+    openclaw = root / "openclaw"
+    node = root / "node"
+    for executable in (openclaw, node):
+        executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        executable.chmod(0o700)
+    config = state / "openclaw.json"
+    config.write_text("{}\n", encoding="utf-8")
+    owner = owner_parent / "owner.json"
+    owner.write_text("{}\n", encoding="utf-8")
+    owner.chmod(0o600)
+    return {
+        "GUIYI_OPENCLAW_BIN": str(openclaw),
+        "GUIYI_OPENCLAW_NODE_BIN": str(node),
+        "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT": str(plugin),
+        "GUIYI_OPENCLAW_STATE_DIR": str(state),
+        "GUIYI_OPENCLAW_CONFIG_PATH": str(config),
+        "GUIYI_ALERT_CLAWBOT_OWNER_PATH": str(owner),
+    }
 
 
 def _status_fixture(root: Path) -> tuple[Path, Path, Path]:

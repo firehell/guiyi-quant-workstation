@@ -67,8 +67,15 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
 该授权与 Market Runtime V1 相互独立，不覆盖新增 Rule 或通知渠道、生产 migration、任何 Runtime switch、
 main/tag/release、Canonical 写入或订单。production migration、v1.3 release/tag、Runtime promotion/switch、SuBing Scope write/activation 和真实 WeCom/canary 都是独立的一次性 Gate；mock、测试、render-only 或其中一个 Gate 不授权其余 Gate。测试路由的 Scope PUT 不构成真实 Scope mutation 授权。
 
-`develop` 的通知目标架构已改为单一固定微信群的 pinned WeChat-Courier 单次 GUI 自动化：私有配置只保存
-`primary_alert_group` 对应的精确群名；目标群由用户保持置顶且无需滚动，首页可见聊天列表必须唯一精确匹配，adapter 不输入群名、不搜索、不滚动；chat title 必须精确匹配或仅带正整数成员数后缀，不使用 upstream 模糊匹配作为安全边界。每个 committed Event 最多启动一个 child、调用一次发送 primitive，GUI lock 使用非阻塞独占锁，不形成 retry、queue、replay 或 backfill。仓库不引入 OpenClaw、Tencent iLink、context monitor、inbound、Agent/LLM/slash/tool/reply 路径。当前 production exact-tag Runtime 仍为 WeCom，直至未来独立 rollout、release 与 Runtime promotion 被记录于 `STATUS.md`；本次 develop 代码、fixture、render-only 和测试不改变该事实或授予真实 Courier 安装、TCC、群验证、canary、发送或 Runtime switch。
+`develop` 的通知目标架构是 Clawbot single-shot：每个 committed Event 最多启动一个固定 Node child，
+只允许唯一 `openclaw-weixin` private seam 调用一次 `sendMessageWeixin()`。Git 外的 owner 配置采用
+`0700` parent / `0600` file，只保存固定别名 `owner` 与精确 account/target；缺失 context、超时、crash、
+malformed output 或发送失败均 fail-closed，不 retry、queue、replay、backfill、fan-out 或 fallback。OpenClaw
+与腾讯插件是已经存在的外部依赖，归一量化不安装、更新、登录、启动、停止或监督它们，也不引入
+OpenClaw public message-send、durable queue、inbound、context monitor、Agent/LLM/slash/tool/reply 路径。
+当前 production exact-tag Runtime 仍为 WeCom，直至未来独立 rollout、release 与 Runtime promotion 被
+记录于 `STATUS.md`；develop 代码、fixture、render-only 和测试不授权 owner bootstrap、preflight、canary、
+真实发送、OpenClaw 变更或 Runtime switch。
 
 ## 工程与业务硬规则
 
