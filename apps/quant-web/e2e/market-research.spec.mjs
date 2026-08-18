@@ -689,12 +689,29 @@ test('research endpoint failure leaves the Kline readable', async ({ page }) => 
   await expect(page.locator('.product-workspace__sidebar').getByText('研究数据暂不可用', { exact: true })).toBeVisible()
 })
 
-test('HTDY stays opt-in and keeps its repainting-risk notice visible in the workspace', async ({ page }) => {
+test('HTDY stays opt-in and uses an in-chart legend without the redundant risk banner', async ({ page }) => {
   await mockWorkspace(page, { json: research() })
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
   await expect(page.getByText('火天大有原始观察 · 未来引用/重绘风险 · 仅供人工观察', { exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('htdy-chart-legend')).toHaveCount(0)
   await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '火天大有', exact: true }).click()
-  await expect(page.getByText('火天大有原始观察 · 未来引用/重绘风险 · 仅供人工观察', { exact: true })).toBeVisible()
+  await expect(page.getByText('火天大有原始观察 · 未来引用/重绘风险 · 仅供人工观察', { exact: true })).toHaveCount(0)
+  const legend = page.getByTestId('htdy-chart-legend')
+  await expect(legend).toBeVisible()
+  await expect(legend.getByText('ZK1 上轨', { exact: true })).toBeVisible()
+  await expect(legend.getByText('ZD1 下轨', { exact: true })).toBeVisible()
+  await expect(legend.getByText('ZD2 趋势', { exact: true })).toBeVisible()
+
+  const shellBox = await page.getByTestId('kline-shell').boundingBox()
+  expect(shellBox).not.toBeNull()
+  await page.mouse.move(shellBox.x + 240, shellBox.y + 220)
+  const hoverLegend = page.locator('.kline-hover-legend')
+  await expect(hoverLegend).toBeVisible()
+  const hoverBox = await hoverLegend.boundingBox()
+  const legendBox = await legend.boundingBox()
+  expect(hoverBox).not.toBeNull()
+  expect(legendBox).not.toBeNull()
+  expect(legendBox.y).toBeGreaterThanOrEqual(hoverBox.y + hoverBox.height + 4)
 })

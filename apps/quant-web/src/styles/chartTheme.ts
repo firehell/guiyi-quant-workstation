@@ -37,9 +37,9 @@ const FALLBACK: ChartTheme = {
   macdDif: '#0284C7',
   macdDea: '#F59E0B',
   htdy: '#F79009',
-  htdyZk1: 'rgba(13, 148, 136, 0.62)',
-  htdyZd1: 'rgba(13, 148, 136, 0.42)',
-  htdyZd2: 'rgba(202, 138, 4, 0.55)',
+  htdyZk1: '#0F766E',
+  htdyZd1: '#0891B2',
+  htdyZd2: '#D97706',
 }
 
 function cssValue(style: CSSStyleDeclaration, name: string, fallback: string) {

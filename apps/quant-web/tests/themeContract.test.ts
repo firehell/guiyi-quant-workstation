@@ -118,9 +118,9 @@ describe('light theme token contract', () => {
     assert.equal(fallback.ema10, '#D97706')
     assert.equal(fallback.ema21, '#F59E0B')
     assert.equal(fallback.ema60, '#7C3AED')
-    assert.equal(fallback.htdyZk1, 'rgba(13, 148, 136, 0.62)')
-    assert.equal(fallback.htdyZd1, 'rgba(13, 148, 136, 0.42)')
-    assert.equal(fallback.htdyZd2, 'rgba(202, 138, 4, 0.55)')
+    assert.equal(fallback.htdyZk1, '#0F766E')
+    assert.equal(fallback.htdyZd1, '#0891B2')
+    assert.equal(fallback.htdyZd2, '#D97706')
     assert.equal('atr' in fallback, false)
   })
 

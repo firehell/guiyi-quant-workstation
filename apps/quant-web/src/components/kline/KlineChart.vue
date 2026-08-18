@@ -104,9 +104,9 @@ onMounted(async () => {
   emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
-  htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
-  htdyZd1 = chart.addSeries(LineSeries, { color: theme.htdyZd1, lineWidth: 1, lineStyle: 2, lastValueVisible: false }, 0)
-  htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 1, lineStyle: 1, lastValueVisible: false }, 0)
+  htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
+  htdyZd1 = chart.addSeries(LineSeries, { color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }, 0)
+  htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
   htdyMarkers = createSeriesMarkers(candles)
   volume = chart.addSeries(HistogramSeries, {
     priceFormat: { type: 'volume' },
@@ -298,6 +298,7 @@ function chartMarkers(markers: KlineMarker[]) {
           ? theme.down
           : marker.tone === 'htdy' ? theme.htdy : theme.textMuted,
       text: marker.label,
+      size: marker.tone === 'htdy' ? 1.5 : 1,
     }] : []
   })
 }
@@ -343,6 +344,16 @@ defineExpose({
   <div class="kline-shell" data-testid="kline-shell" :data-alert-marker-count="alertMarkers.length">
     <div ref="container" class="chart" />
     <KlineHoverLegend :context="hoverContext" />
+    <div
+      v-if="visibleMainIndicators.includes('htdy')"
+      class="htdy-legend"
+      data-testid="htdy-chart-legend"
+      aria-label="火天大有图例"
+    >
+      <span><i class="htdy-legend__line htdy-legend__line--zk1" />ZK1 上轨</span>
+      <span><i class="htdy-legend__line htdy-legend__line--zd1" />ZD1 下轨</span>
+      <span><i class="htdy-legend__line htdy-legend__line--zd2" />ZD2 趋势</span>
+    </div>
     <div v-if="loading" class="overlay">读取 Canonical…</div>
     <div v-else-if="error" class="overlay error">{{ error }}</div>
     <div v-else-if="!bars.length" class="overlay">当前窗口无可读 bars</div>
@@ -352,6 +363,12 @@ defineExpose({
 <style scoped>
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
 .chart { width: 100%; height: 100%; }
+.htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }
+.htdy-legend span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+.htdy-legend__line { display: inline-block; width: 18px; border-top: 2px solid; }
+.htdy-legend__line--zk1 { border-color: var(--gy-chart-htdy-zk1); }
+.htdy-legend__line--zd1 { border-color: var(--gy-chart-htdy-zd1); border-top-style: dashed; }
+.htdy-legend__line--zd2 { border-color: var(--gy-chart-htdy-zd2); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gy-text-muted); background: rgba(11, 17, 27, .48); pointer-events: none; }
 .overlay.error { color: var(--gy-status-error); }
 </style>
