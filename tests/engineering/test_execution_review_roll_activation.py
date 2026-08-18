@@ -160,6 +160,8 @@ def _run_installer(
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
+            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/fixture/courier",
+            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/fixture/secrets/group.json",
         },
         capture_output=True,
         text=True,

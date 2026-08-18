@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.alerts.evaluators import AlertEvaluation, AlertEvaluator
 from app.alerts.models import AlertRule
+from app.alerts.notification import AlertNotificationMessage, AlertNotificationSender
 from app.alerts.registry import get_alert_rule_definition
 from app.alerts.service import AlertEventCreate, AlertService
-from app.alerts.wecom import AlertNotificationMessage, WeComWebhookSender
 from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
 from app.market_data.domain import (
     BarFrequency,
@@ -83,7 +83,7 @@ class AlertRuntime:
         market_read_factory: AlertMarketReadFactory,
         subing_read_factory: AlertSubingReadFactory,
         htdy_evaluator: AlertEvaluator,
-        sender: WeComWebhookSender,
+        sender: AlertNotificationSender,
         operational_products: tuple[str, ...],
         taxonomy: Mapping[str, ProductTaxonomyEntry],
         message_source: AlertMessageSource | None = None,

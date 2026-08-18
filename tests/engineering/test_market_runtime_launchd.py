@@ -10,6 +10,7 @@ import subprocess
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+PINNED_WECHAT_COURIER_COMMIT = "981bd14e238302b2a0e206cb5f28e8e2505bb874"
 
 
 def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tmp_path: Path) -> None:
@@ -151,8 +152,10 @@ def test_runtime_service_entrypoint_treats_retired_workers_as_unknown(tmp_path: 
 
 def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path) -> None:
     repo, home, fake_bin, calls = _status_fixture(tmp_path)
+    caller_root = tmp_path / "caller-courier"
+    caller_root.mkdir()
 
-    result = _run_status(repo, home, fake_bin)
+    result = _run_status(repo, home, fake_bin, caller_root=caller_root)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "[local-services-status] readonly=true" in result.stdout
@@ -162,6 +165,10 @@ def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path)
     assert "com.guiyi.quant-after-market loaded state=not_running" in result.stdout
     assert "com.guiyi.quant-alert loaded state=running" in result.stdout
     assert "loaded_commit=" in result.stdout
+    assert f"external.wechat_courier.commit={PINNED_WECHAT_COURIER_COMMIT}" in result.stdout
+    assert "external.wechat_courier.status=not_installed" in result.stdout
+    assert "alert.notification_channel=wechat-courier" in result.stdout
+    assert "alert.notification_group_alias=primary_alert_group" in result.stdout
     assert "overall=passed" in result.stdout
     assert not calls.exists()
 
@@ -379,11 +386,18 @@ def _status_fixture(
     return repo, home, fake_bin, calls
 
 
-def _run_status(repo: Path, home: Path, fake_bin: Path) -> subprocess.CompletedProcess[str]:
+def _run_status(
+    repo: Path,
+    home: Path,
+    fake_bin: Path,
+    *,
+    caller_root: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
     environment = {
         **os.environ,
         "HOME": str(home),
         "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+        "GUIYI_WECHAT_COURIER_ROOT": str(caller_root or ""),
     }
     return subprocess.run(
         [str(repo / "scripts/ops/macos/local-services-status.sh")],

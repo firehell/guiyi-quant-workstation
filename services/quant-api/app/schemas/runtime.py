@@ -53,11 +53,11 @@ class RuntimeAfterMarketHealth(BaseModel):
 
 
 class RuntimeAlertHealth(BaseModel):
-    """Alert V1 activation、webhook presence 与短 TTL heartbeat 摘要。"""
+    """Alert activation、notification transport 与短 TTL heartbeat 摘要。"""
 
     status: str
     configured_enabled: bool = False
-    webhook_configured: bool = False
+    notification_transport_configured: bool = False
     last_heartbeat_at: str | None = None
     enabled_rule_count: int = 0
     scope_product_count: int = 0

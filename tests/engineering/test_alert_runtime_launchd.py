@@ -31,6 +31,8 @@ def test_alert_launchd_render_only_is_default_closed_and_has_runtime_contract(tm
         payload["EnvironmentVariables"]["GUIYI_RUNTIME_COMMIT"]
         == "1111111111111111111111111111111111111111"
     )
+    assert payload["EnvironmentVariables"]["GUIYI_WECHAT_COURIER_ROOT"] == ""
+    assert payload["EnvironmentVariables"]["GUIYI_ALERT_WECHAT_GROUP_PATH"] == ""
 
 
 def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_path: Path) -> None:
@@ -42,7 +44,16 @@ def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_pat
 
     alert_repo = _copy_fixture(tmp_path / "alert-repo")
     alert_home, alert_bin = _fake_runtime(tmp_path / "alert")
-    result = _run(alert_repo, alert_home, alert_bin, "--confirm-alert-runtime")
+    result = _run(
+        alert_repo,
+        alert_home,
+        alert_bin,
+        "--confirm-alert-runtime",
+        extra_env={
+            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/fixture/courier",
+            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/fixture/secrets/group.json",
+        },
+    )
     assert (alert_repo / ".run/alert-runtime-enabled").read_text() == "enabled\n"
     assert not (alert_repo / ".run/market-runtime-enabled").exists()
     assert "mode=--confirm-alert-runtime services=1" in result.stdout
@@ -52,12 +63,69 @@ def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_pat
         "com.guiyi.quant-" not in line or "com.guiyi.quant-alert" in line
         for line in calls.splitlines()
     )
+    rendered = alert_repo / ".run/launchd/com.guiyi.quant-alert.plist"
+    with rendered.open("rb") as handle:
+        alert_payload = plistlib.load(handle)
+    assert (
+        alert_payload["EnvironmentVariables"]["GUIYI_WECHAT_COURIER_ROOT"]
+        == "/Volumes/fixture/courier"
+    )
+    assert (
+        alert_payload["EnvironmentVariables"]["GUIYI_ALERT_WECHAT_GROUP_PATH"]
+        == "/Volumes/fixture/secrets/group.json"
+    )
 
 
 def test_run_local_service_has_dedicated_alert_cli_branch() -> None:
     source = (REPO_ROOT / "scripts/ops/macos/run-local-service.sh").read_text(encoding="utf-8")
     assert "alert)" in source
     assert "runtime alert" in source
+
+
+def test_render_rejects_alert_path_xml_injection(tmp_path: Path) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/install-local-services.sh"), "--render-only"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/fixture/<key>injected</key>",
+            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/fixture/group.json",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "invalid alert notification path" in result.stderr
+
+
+def test_alert_confirmation_rejects_path_escape_before_render(tmp_path: Path) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/install-local-services.sh"), "--confirm-alert-runtime"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
+            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/../private/tmp/courier",
+            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/../private/tmp/group.json",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "alert notification paths not configured" in result.stderr
+    assert not (repo / ".run/alert-runtime-enabled").exists()
 
 
 def _copy_fixture(destination: Path) -> Path:
@@ -103,7 +171,14 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
     return home, fake_bin
 
 
-def _run(repo: Path, home: Path, fake_bin: Path, mode: str) -> subprocess.CompletedProcess[str]:
+def _run(
+    repo: Path,
+    home: Path,
+    fake_bin: Path,
+    mode: str,
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [str(repo / "scripts/ops/macos/install-local-services.sh"), mode],
         cwd=repo,
@@ -111,6 +186,7 @@ def _run(repo: Path, home: Path, fake_bin: Path, mode: str) -> subprocess.Comple
             **os.environ,
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+            **(extra_env or {}),
         },
         capture_output=True,
         text=True,

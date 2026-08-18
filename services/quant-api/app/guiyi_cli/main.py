@@ -17,7 +17,10 @@ import sys
 from typing import Any, TextIO
 
 from app.db.session import SessionLocal
-from app.alerts.composition import build_alert_runtime, build_wecom_sender_from_env
+from app.alerts.composition import (
+    build_alert_runtime,
+    build_wechat_group_sender_from_env,
+)
 from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
@@ -102,7 +105,9 @@ def main(
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
-    alert_canary_sender_factory: AlertCanarySenderFactory = build_wecom_sender_from_env,
+    alert_canary_sender_factory: AlertCanarySenderFactory = (
+        build_wechat_group_sender_from_env
+    ),
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
@@ -188,11 +193,15 @@ def main(
                 "foreground": True,
             }
         else:
-            alert_canary_sender_factory().send_canary()
+            summary = alert_canary_sender_factory().send_canary()
             payload = {
                 "schema_version": 1,
                 "command": "runtime.alert-canary",
-                "status": "ok",
+                "status": "ok" if summary.failed == 0 else "failed",
+                "attempted": summary.attempted,
+                "automation_completed": summary.automation_completed,
+                "failed": summary.failed,
+                "failed_aliases": list(summary.failed_aliases),
             }
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
         # 执行期异常：error code 仅暴露公开码或 CLI_INTERNAL_ERROR

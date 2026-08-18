@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-15
+更新时间：2026-08-18
 
 ## 定位与边界
 
@@ -69,9 +69,11 @@ Alert V2 只保留两条 code-defined Rule：`htdy_original_15m` 复用 `MarketR
 
 SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `trading_day` 同一时创建 Event，stale 或不可用状态 fail-closed。final Session Bar 只在 Live 共享的有界 arrival grace 内可见；该 phase observation 不建立 `snapshot_at`/cutoff/replay 路径。5m 事件落在同一 15m boundary 时依既有 TradingSession bucket 语义延后，继续由 15m snapshot 唯一决议。HTDY event-cutoff 语义不变。
 
-当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后最多尝试一次 WeCom；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示 HTTP 已接受或用户已收到。无 replay/backfill/retry/outbox/queue/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
+当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后 develop 的 `WeChatGroupAlertSender` 对唯一固定群最多启动一个 pinned Courier child，并在唯一精确 search result 与精确 chat title 都通过后调用一次发送 primitive；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示自动化完成或用户已收到。无 replay/backfill/retry/outbox/queue/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
 
-Alert 代码与 launchd 模板默认关闭。production migration `20260814_0038`、v1.3 release/tag、Runtime promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、mock sender 或 render-only 不证明任何 Gate 已执行。
+微信群目标只存于 Git 外的单份 `0700` parent / `0600` private JSON，Runtime 只使用固定别名 `primary_alert_group`。Pinned Courier 必须是 exact commit、clean checkout 和 exact reviewed module shape；upstream 模糊匹配不构成安全边界，OCR 原文、截图、群名与消息正文不进入 guiyi 日志。GUI lock 非阻塞，busy 立即失败而不等待或排队。仓库没有 OpenClaw、Tencent iLink、context monitor 或任何微信 inbound/Agent/LLM/slash/tool/reply pipeline。
+
+Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 仍运行既有 WeCom transport；develop 的 Courier 目标不等于 production 已迁移。production migration、未来 Courier install/TCC/no-send target verification、release/tag、Runtime promotion/switch、SuBing Scope write/activation 与真实群 canary/send 是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake Courier 或 render-only 不证明任何 Gate 已执行。
 
 ## Execution Review V1 应用边界
 

@@ -6,7 +6,12 @@ import json
 
 import pytest
 
-from app.alerts.composition import build_alert_runtime, build_wecom_sender_from_env
+import app.alerts.composition as alert_composition
+from app.alerts.composition import (
+    build_alert_runtime,
+    build_wechat_group_sender_from_env,
+)
+from app.alerts.wechat_courier import WeChatCourierError
 from app.guiyi_cli.main import build_parser, main
 
 
@@ -21,7 +26,8 @@ def _run(args: list[str], **factories):
         stderr=stderr,
         **factories,
     )
-    return code, json.loads((stdout if code == 0 else stderr).getvalue())
+    stream = stdout if stdout.getvalue() else stderr
+    return code, json.loads(stream.getvalue())
 
 
 def test_runtime_parser_exposes_alert_and_fixed_canary() -> None:
@@ -65,8 +71,18 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
     calls: list[str] = []
 
     class Sender:
-        def send_canary(self) -> None:
+        def send_canary(self):
             calls.append("send_canary")
+            return type(
+                "Summary",
+                (),
+                {
+                    "attempted": 1,
+                    "automation_completed": 1,
+                    "failed": 0,
+                    "failed_aliases": (),
+                },
+            )()
 
     def forbidden_session_factory():
         raise AssertionError("alert canary must not create Event or modify Scope")
@@ -87,20 +103,169 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
         "schema_version": 1,
         "command": "runtime.alert-canary",
         "status": "ok",
+        "attempted": 1,
+        "automation_completed": 1,
+        "failed": 0,
+        "failed_aliases": [],
     }
 
 
-def test_default_alert_factories_fail_closed_without_activation_or_webhook(
+def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> None:
+    class Sender:
+        def send_canary(self):
+            return type(
+                "Summary",
+                (),
+                {
+                    "attempted": 1,
+                    "automation_completed": 0,
+                    "failed": 1,
+                    "failed_aliases": ("primary_alert_group",),
+                },
+            )()
+
+    code, payload = _run(
+        ["runtime", "alert-canary"],
+        alert_canary_sender_factory=lambda: Sender(),
+    )
+
+    assert code == 1
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.alert-canary",
+        "status": "failed",
+        "attempted": 1,
+        "automation_completed": 0,
+        "failed": 1,
+        "failed_aliases": ["primary_alert_group"],
+    }
+
+
+def test_default_alert_factories_fail_closed_without_activation_or_transport(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    monkeypatch.delenv("WECOM_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("GUIYI_WECHAT_COURIER_ROOT", raising=False)
+    monkeypatch.delenv("GUIYI_ALERT_WECHAT_GROUP_PATH", raising=False)
     monkeypatch.setattr(
         "app.alerts.composition.ALERT_RUNTIME_ACTIVATION_MARKER",
         tmp_path / "missing-marker",
     )
 
-    with pytest.raises(RuntimeError, match="WECOM_WEBHOOK_NOT_CONFIGURED"):
-        build_wecom_sender_from_env()
+    with pytest.raises(RuntimeError, match="ALERT_NOTIFICATION_TRANSPORT_NOT_READY"):
+        build_wechat_group_sender_from_env()
     with pytest.raises(RuntimeError, match="ALERT_RUNTIME_NOT_ENABLED"):
         build_alert_runtime()
+
+
+@pytest.mark.parametrize("failure", ("missing_config", "invalid_config", "wrong_commit"))
+def test_group_sender_composition_collapses_private_config_and_dependency_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    failure: str,
+) -> None:
+    root = tmp_path / "courier"
+    root.mkdir()
+    secrets = tmp_path / "secrets"
+    secrets.mkdir(mode=0o700)
+    config = secrets / "alert-wechat-group.json"
+    if failure != "missing_config":
+        config.write_text(
+            '{"version":1,"channel":"wechat-courier","group_alias":"primary_alert_group","target_chat":"fixture-group-title"}',
+            encoding="utf-8",
+        )
+        config.chmod(0o644 if failure == "invalid_config" else 0o600)
+    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(root))
+    monkeypatch.setenv("GUIYI_ALERT_WECHAT_GROUP_PATH", str(config))
+    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", tmp_path)
+    if failure == "wrong_commit":
+        monkeypatch.setattr(
+            alert_composition,
+            "resolve_wechat_courier_dependency",
+            lambda _root: (_ for _ in ()).throw(
+                WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+            ),
+        )
+
+    with pytest.raises(RuntimeError, match="^ALERT_NOTIFICATION_TRANSPORT_NOT_READY$"):
+        build_wechat_group_sender_from_env()
+
+
+def test_valid_group_sender_composition_does_no_gui_verify_or_send(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    root = tmp_path / "courier"
+    root.mkdir()
+    secrets = tmp_path / "secrets"
+    secrets.mkdir(mode=0o700)
+    config = secrets / "alert-wechat-group.json"
+    config.write_text(
+        '{"version":1,"channel":"wechat-courier","group_alias":"primary_alert_group","target_chat":"fixture-group-title"}',
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    dependency = object()
+    constructed: list[object] = []
+
+    class StructuralRunner:
+        def __init__(self, value: object) -> None:
+            constructed.append(value)
+
+        def verify_target(self, *_args: object) -> None:
+            raise AssertionError("composition must not open GUI or verify")
+
+        def send_text(self, *_args: object) -> None:
+            raise AssertionError("composition must not send")
+
+    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(root))
+    monkeypatch.setenv("GUIYI_ALERT_WECHAT_GROUP_PATH", str(config))
+    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", tmp_path)
+    monkeypatch.setattr(
+        alert_composition,
+        "resolve_wechat_courier_dependency",
+        lambda _root: dependency,
+    )
+    monkeypatch.setattr(alert_composition, "WeChatCourierRunner", StructuralRunner)
+
+    sender = build_wechat_group_sender_from_env()
+
+    assert constructed == [dependency]
+    assert sender is not None
+
+
+def test_group_sender_composition_rejects_external_volume_escape(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    allowed_root = tmp_path / "Volumes"
+    allowed_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    courier = outside / "courier"
+    courier.mkdir()
+    secrets = outside / "secrets"
+    secrets.mkdir(mode=0o700)
+    config = secrets / "alert-wechat-group.json"
+    config.write_text(
+        '{"version":1,"channel":"wechat-courier","group_alias":"primary_alert_group","target_chat":"fixture-group-title"}',
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    escape = allowed_root / "escape"
+    escape.symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", allowed_root)
+    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(escape / "courier"))
+    monkeypatch.setenv(
+        "GUIYI_ALERT_WECHAT_GROUP_PATH",
+        str(escape / "secrets/alert-wechat-group.json"),
+    )
+    monkeypatch.setattr(
+        alert_composition,
+        "load_wechat_group_target",
+        lambda _path: (_ for _ in ()).throw(AssertionError("escaped path reached loader")),
+    )
+
+    with pytest.raises(RuntimeError, match="^ALERT_NOTIFICATION_TRANSPORT_NOT_READY$"):
+        build_wechat_group_sender_from_env()

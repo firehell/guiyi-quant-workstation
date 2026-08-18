@@ -11,6 +11,23 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
+WECHAT_COURIER_ROOT="${GUIYI_WECHAT_COURIER_ROOT:-}"
+ALERT_WECHAT_GROUP_PATH="${GUIYI_ALERT_WECHAT_GROUP_PATH:-}"
+
+is_external_volume_path() {
+  local path="$1" current="" component
+  local -a components
+
+  [[ "$path" == /Volumes/* ]] || return 1
+  IFS='/' read -r -a components <<<"${path#/}"
+  for component in "${components[@]}"; do
+    [[ -z "$component" || "$component" == "." ]] && continue
+    [[ "$component" != ".." ]] || return 1
+    current="${current}/${component}"
+    [[ ! -L "$current" ]] || return 1
+  done
+  [[ "$current" == /Volumes/* ]]
+}
 
 write_execution_review_roll_marker() {
   local temporary_marker marker_mode
@@ -52,6 +69,22 @@ render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtim
 load_labels=("${base_labels[@]}")
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-execution-review-roll]\n' "$0" >&2; exit 2; }
+if [[ "$MODE" == "--confirm-alert-runtime" ]]; then
+  is_external_volume_path "$WECHAT_COURIER_ROOT" \
+    && is_external_volume_path "$ALERT_WECHAT_GROUP_PATH" || {
+    printf '[install-local-services] alert notification paths not configured\n' >&2
+    exit 1
+  }
+fi
+if [[ "$WECHAT_COURIER_ROOT" == *'&'* || "$WECHAT_COURIER_ROOT" == *'<'* \
+  || "$WECHAT_COURIER_ROOT" == *'>'* || "$WECHAT_COURIER_ROOT" == *$'\n'* \
+  || "$WECHAT_COURIER_ROOT" == *$'\r'* || "$WECHAT_COURIER_ROOT" == *$'\t'* \
+  || "$ALERT_WECHAT_GROUP_PATH" == *'&'* || "$ALERT_WECHAT_GROUP_PATH" == *'<'* \
+  || "$ALERT_WECHAT_GROUP_PATH" == *'>'* || "$ALERT_WECHAT_GROUP_PATH" == *$'\n'* \
+  || "$ALERT_WECHAT_GROUP_PATH" == *$'\r'* || "$ALERT_WECHAT_GROUP_PATH" == *$'\t'* ]]; then
+  printf '[install-local-services] invalid alert notification path\n' >&2
+  exit 1
+fi
 mkdir -p "$RENDER_DIR"
 
 for label in "${render_labels[@]}"; do
@@ -63,6 +96,8 @@ for label in "${render_labels[@]}"; do
     -e "s|__RUNTIME_DIR__|$RUNTIME_DIR|g" \
     -e "s|__LOG_DIR__|$LOG_DIR|g" \
     -e "s|__HOME__|$HOME|g" \
+    -e "s|__WECHAT_COURIER_ROOT__|$WECHAT_COURIER_ROOT|g" \
+    -e "s|__ALERT_WECHAT_GROUP_PATH__|$ALERT_WECHAT_GROUP_PATH|g" \
     "$template" >"$output"
   plutil -lint "$output" >/dev/null
 done
