@@ -180,6 +180,16 @@ def resolve_clawbot_dependency(
         [str(dependency.node_bin), "--version"],
         [str(dependency.openclaw_bin), "plugins", "inspect", "openclaw-weixin", "--runtime", "--json"],
     )
+    command_environment = {
+        "OPENCLAW_STATE_DIR": str(dependency.state_dir),
+        "OPENCLAW_CONFIG": str(dependency.config_path),
+        "OPENCLAW_CONFIG_PATH": str(dependency.config_path),
+        "OPENCLAW_LOG_LEVEL": "FATAL",
+        "PATH": (
+            f"{dependency.openclaw_bin.parent}:{dependency.node_bin.parent}"
+            ":/usr/bin:/bin:/usr/sbin:/sbin"
+        ),
+    }
     try:
         results = [
             run_process(
@@ -188,7 +198,7 @@ def resolve_clawbot_dependency(
                 text=True,
                 check=False,
                 timeout=VERSION_TIMEOUT_SECONDS,
-                env={"PATH": f"{dependency.openclaw_bin.parent}:{dependency.node_bin.parent}:/usr/bin:/bin"},
+                env=command_environment,
             )
             for command in commands
         ]

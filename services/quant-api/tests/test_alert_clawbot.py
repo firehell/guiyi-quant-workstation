@@ -85,9 +85,11 @@ def _message() -> AlertNotificationMessage:
 def test_dependency_resolver_validates_exact_live_versions_and_plugin_root(tmp_path: Path) -> None:
     expected, manifest = _tree(tmp_path)
     calls: list[list[str]] = []
+    environments: list[object] = []
 
-    def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
+        environments.append(kwargs["env"])
         if argv == [str(expected.openclaw_bin), "--version"]:
             stdout = "OpenClaw fixture\n"
         elif argv == [str(expected.node_bin), "--version"]:
@@ -119,6 +121,15 @@ def test_dependency_resolver_validates_exact_live_versions_and_plugin_root(tmp_p
         [str(expected.node_bin), "--version"],
         [str(expected.openclaw_bin), "plugins", "inspect", "openclaw-weixin", "--runtime", "--json"],
     ]
+    assert environments == [
+        {
+            "OPENCLAW_STATE_DIR": str(expected.state_dir),
+            "OPENCLAW_CONFIG": str(expected.config_path),
+            "OPENCLAW_CONFIG_PATH": str(expected.config_path),
+            "OPENCLAW_LOG_LEVEL": "FATAL",
+            "PATH": f"{expected.openclaw_bin.parent}:{expected.node_bin.parent}:/usr/bin:/bin:/usr/sbin:/sbin",
+        }
+    ] * 3
 
 
 @pytest.mark.parametrize("problem", ["relative", "missing_node", "config_dir", "missing_parent", "version_mismatch"])
