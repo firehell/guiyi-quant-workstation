@@ -199,6 +199,42 @@ test("send invokes Tencent primitive exactly once with the required shape", () =
 });
 
 
+test("send preserves the fixed multiline Alert canary and invokes Tencent exactly once", () => {
+  const text = "【归一量化】微信通知测试\n\nAlert 通知通道正常";
+  const result = invoke(fixture(), {
+    action: "send",
+    account_id: "fixture-account",
+    target_user_id: "fixture-owner@im.wechat",
+    text,
+  });
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.output, { status: "accepted", action: "send" });
+  assert.equal(result.calls.length, 1);
+  assert.equal(result.calls[0].text, text);
+});
+
+
+for (const [name, text] of [
+  ["NUL", "fixture\u0000alert"],
+  ["CR", "fixture\ralert"],
+  ["TAB", "fixture\talert"],
+  ["DEL", "fixture\u007falert"],
+  ["C1 control", "fixture\u0085alert"],
+]) {
+  test(`send rejects ${name} in message text before physical send`, () => {
+    const result = invoke(fixture(), {
+      action: "send",
+      account_id: "fixture-account",
+      target_user_id: "fixture-owner@im.wechat",
+      text,
+    });
+    assert.notEqual(result.status, 0);
+    assert.equal(result.output.error, "CLAWBOT_INPUT_INVALID");
+    assert.deepEqual(result.calls, []);
+  });
+}
+
+
 test("send throw records one physical attempt and never retries", () => {
   const result = invoke(
     fixture(),

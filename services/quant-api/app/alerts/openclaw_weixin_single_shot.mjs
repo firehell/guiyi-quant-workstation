@@ -62,6 +62,19 @@ function requirePrivateText(value) {
 }
 
 
+function requireMessageText(value) {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    value.trim() !== value ||
+    /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/u.test(value)
+  ) {
+    fail("CLAWBOT_INPUT_INVALID");
+  }
+  return value;
+}
+
+
 async function requireRegularFile(file) {
   const metadata = await lstat(file);
   if (!metadata.isFile() || metadata.isSymbolicLink()) fail("CLAWBOT_DEPENDENCY_INVALID");
@@ -206,7 +219,7 @@ async function execute() {
   if (input.action === "probe") {
     return { status: "ready", action: "probe", account_configured: true, context_available: true };
   }
-  const text = requirePrivateText(input.text);
+  const text = requireMessageText(input.text);
   try {
     await dependency.send.sendMessageWeixin({
       to: owner.targetUserId,
