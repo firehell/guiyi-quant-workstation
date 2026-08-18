@@ -22,6 +22,7 @@ _HEARTBEAT_TTL_SECONDS = 30
 _FINALIZATION_DELAY = timedelta(seconds=2)
 LIVE_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
 _PROVIDER_RETRY_DELAY = timedelta(seconds=10)
+_LIVE_BAR_FRESHNESS = timedelta(minutes=5)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 LIVE_BAR_CHANNEL_PREFIX = "live:bar"
 LIVE_STATE_CHANNEL = "market:state"
@@ -263,6 +264,8 @@ class LiveProvider(Protocol):
 
     def poll_buffered(self) -> Iterable[tuple[str, CanonicalBar]]: ...
 
+    def close(self) -> None: ...
+
 
 class RawLiveMarketClient(Protocol):
     """RQData 的最小 raw Live 接口；构造仍留在调用方的延迟 factory 中。"""
@@ -271,7 +274,15 @@ class RawLiveMarketClient(Protocol):
 
     def unsubscribe(self, channels: list[str]) -> Any: ...
 
-    def listen(self, *, handler: Callable[[Mapping[str, Any]], Any]) -> Any: ...
+    def listen(self, *, handler: Callable[[Mapping[str, Any]], Any]) -> LiveListener: ...
+
+    def close(self) -> Any: ...
+
+
+class LiveListener(Protocol):
+    """Minimal listener-thread boundary returned by RQData handler mode."""
+
+    def is_alive(self) -> bool: ...
 
 
 class RQDataLiveProvider:
@@ -284,7 +295,8 @@ class RQDataLiveProvider:
         self._client = client
         self._messages: deque[Mapping[str, Any]] = deque()
         self._message_lock = Lock()
-        self._listening = False
+        self._listener: LiveListener | None = None
+        self._closed = False
 
     def subscribe(self, channels: tuple[str, ...]) -> None:
         self._client.subscribe(list(channels))
@@ -293,21 +305,41 @@ class RQDataLiveProvider:
         self._client.unsubscribe(list(channels))
 
     def poll(self) -> tuple[tuple[str, CanonicalBar], ...]:
-        if not self._listening:
+        if self._closed:
+            raise ConnectionError("LIVE_PROVIDER_CLOSED")
+        if self._listener is None:
             # RQData handler mode owns its background socket reader; this method only drains memory.
-            self._client.listen(handler=self._buffer_message)
-            self._listening = True
+            self._listener = self._client.listen(handler=self._buffer_message)
         return self.poll_buffered()
 
     def poll_buffered(self) -> tuple[tuple[str, CanonicalBar], ...]:
         with self._message_lock:
             messages = self._messages
             self._messages = deque()
-        return tuple(
+            listener_stopped = (
+                self._listener is not None and not self._listener.is_alive()
+            )
+        buffered = tuple(
             item
             for message in messages
             if (item := _canonical_bar_from_raw_feed(message)) is not None
         )
+        # Preserve a valid final Bar that the handler accepted immediately before
+        # its listener stopped. The next poll reports the dead provider.
+        if buffered:
+            return buffered
+        if listener_stopped:
+            self.close()
+            raise ConnectionError("LIVE_PROVIDER_LISTENER_STOPPED")
+        return ()
+
+    def close(self) -> None:
+        """Idempotently retire a client that the service will never reuse."""
+        if self._closed:
+            return
+        self._closed = True
+        self._listener = None
+        self._client.close()
 
     def _buffer_message(self, message: object) -> None:
         if isinstance(message, MappingABC):
@@ -479,7 +511,7 @@ class LiveMarketService:
             self._pending.pop(key)
             self._finalized.add(key)
             self._available = True
-            self._last_bar_at = bar.bar_end
+            self._last_bar_at = max(self._last_bar_at, bar.bar_end) if self._last_bar_at else bar.bar_end
             finalized.append(bar)
             try:
                 self._derive(symbol, bar, window)
@@ -502,6 +534,7 @@ class LiveMarketService:
                 )
                 self._publish_heartbeat(now, phases)
             except _ProviderUnavailable:
+                self._discard_provider()
                 self._provider_available = False
                 try:
                     self._publish_heartbeat(now, phases)
@@ -605,7 +638,11 @@ class LiveMarketService:
         """休市边界只 drain 已启动 listener 的 final 1m，不创建、订阅或重连 provider。"""
         if self._provider is None:
             return
-        for contract, bar in self._provider.poll_buffered():
+        try:
+            buffered = self._provider.poll_buffered()
+        except Exception as exc:  # noqa: BLE001 - provider failures stay outside Redis semantics
+            raise _ProviderUnavailable() from exc
+        for contract, bar in buffered:
             self.ingest(contract, bar, now=now)
 
     def _channels_in_session_grace(self, now: datetime) -> set[str]:
@@ -654,15 +691,26 @@ class LiveMarketService:
             self._provider = self._provider_factory()
         return self._provider
 
+    def _discard_provider(self) -> None:
+        """Forget failed provider state so no closed client or stale channel can be reused."""
+        provider = self._provider
+        self._provider = None
+        self._channels = set()
+        if provider is None:
+            return
+        try:
+            provider.close()
+        except Exception:  # noqa: BLE001 - provider is discarded regardless of close outcome
+            pass
+
     def _schedule_provider_retry(
         self,
         now: datetime,
         phases: Mapping[str, ProductMarketPhase],
     ) -> str | None:
         if any(item.phase is MarketPhase.TRADING for item in phases.values()):
-            self._provider = None
             # 新 client 没有旧订阅；下一次 reconcile 会重建完整订阅集。
-            self._channels = set()
+            self._discard_provider()
             self._provider_available = False
             self.next_provider_retry_at = now + _PROVIDER_RETRY_DELAY
             try:
@@ -676,6 +724,12 @@ class LiveMarketService:
 
     def _publish_heartbeat(self, now: datetime, phases: Mapping[str, ProductMarketPhase]) -> None:
         counts = Counter(phase.phase.value for phase in phases.values())
+        bar_feed_fresh = True
+        if counts[MarketPhase.TRADING.value] > 0:
+            bar_feed_fresh = (
+                self._last_bar_at is not None
+                and timedelta(0) <= now - self._last_bar_at <= _LIVE_BAR_FRESHNESS
+            )
         self._store.set_heartbeat(
             {
                 "generated_at": now.astimezone(UTC).isoformat(),
@@ -683,7 +737,7 @@ class LiveMarketService:
                 "subscribed_count": len(self._channels),
                 "last_bar_at": None if self._last_bar_at is None else self._last_bar_at.isoformat(),
                 "phase_counts": dict(sorted(counts.items())),
-                "available": self._available and self._provider_available,
+                "available": self._available and self._provider_available and bar_feed_fresh,
             }
         )
 

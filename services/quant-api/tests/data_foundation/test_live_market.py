@@ -211,6 +211,14 @@ def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
     ]
 
 
+class FakeListener:
+    def __init__(self) -> None:
+        self.alive = True
+
+    def is_alive(self) -> bool:
+        return self.alive
+
+
 class FakeLiveClient:
     """Injectable provider fake; it never contacts RQData."""
 
@@ -222,6 +230,8 @@ class FakeLiveClient:
         self.fail_unsubscribe = False
         self.listen_calls = 0
         self.handler = None
+        self.listener = FakeListener()
+        self.closed = False
 
     def subscribe(self, channels: tuple[str, ...]) -> None:
         self.subscribed.extend(channels)
@@ -231,7 +241,7 @@ class FakeLiveClient:
             raise ConnectionError("provider unavailable")
         self.unsubscribed.extend(channels)
 
-    def listen(self, *, handler) -> object:
+    def listen(self, *, handler) -> FakeListener:
         self.listen_calls += 1
         if self.fail_listen:
             raise ConnectionError("provider unavailable")
@@ -240,7 +250,10 @@ class FakeLiveClient:
         self.payloads.clear()
         for payload in payloads:
             handler(payload)
-        return object()
+        return self.listener
+
+    def close(self) -> None:
+        self.closed = True
 
     def emit(self, payload: dict[str, Any]) -> None:
         if self.handler is None:
@@ -499,10 +512,177 @@ def test_adapter_atomic_drain_keeps_callback_message_arriving_after_snapshot() -
             return iter(snapshot)
 
     provider._messages = SnapshotThenCallbackDeque((first,))
-    provider._listening = True
+    provider._listener = client.listener
 
     assert tuple(bar for _contract, bar in provider.poll()) == (_bar(1),)
     assert tuple(bar for _contract, bar in provider.poll()) == (_bar(2),)
+
+
+def test_adapter_keeps_callback_arriving_between_queue_swap_and_listener_stop() -> None:
+    """Catches a callback entering the new queue just before its listener exits."""
+    module = importlib.import_module("app.market_data.live_market")
+    client = FakeLiveClient()
+    provider = module.RQDataLiveProvider(client)
+    final = _raw_payload("J2505", _bar(5))
+
+    class EmptySnapshotThenFinalCallbackDeque(deque):
+        def __iter__(self):
+            snapshot = tuple(super().__iter__())
+            provider._buffer_message(final)
+            client.listener.alive = False
+            return iter(snapshot)
+
+    provider._messages = EmptySnapshotThenFinalCallbackDeque()
+    provider._listener = client.listener
+
+    assert provider.poll_buffered() == ()
+    assert tuple(bar for _contract, bar in provider.poll_buffered()) == (_bar(5),)
+    with pytest.raises(ConnectionError, match="LIVE_PROVIDER_LISTENER_STOPPED"):
+        provider.poll_buffered()
+
+
+def test_adapter_dead_listener_closes_client_and_surfaces_provider_failure() -> None:
+    """Catches a dead handler thread degrading into an endless empty queue."""
+    module = importlib.import_module("app.market_data.live_market")
+    client = FakeLiveClient()
+    provider = module.RQDataLiveProvider(client)
+
+    assert provider.poll() == ()
+    client.listener.alive = False
+
+    with pytest.raises(ConnectionError, match="LIVE_PROVIDER_LISTENER_STOPPED"):
+        provider.poll()
+    assert client.closed is True
+
+
+def test_trading_heartbeat_becomes_unavailable_when_completed_bars_are_stale() -> None:
+    """Catches a fresh process heartbeat masking a silent live feed."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    bar = _bar(1)
+
+    service.reconcile(bar.bar_end)
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+    assert service.ingest("J2505", bar, now=bar.bar_end + timedelta(seconds=2)) is None
+    assert service.flush_due(bar.bar_end + timedelta(seconds=2)) == (bar,)
+
+    service.reconcile(bar.bar_end + timedelta(minutes=4, seconds=59))
+    assert json.loads(fake.values["live:heartbeat"])["available"] is True
+
+    service.reconcile(bar.bar_end + timedelta(minutes=5))
+    assert json.loads(fake.values["live:heartbeat"])["available"] is True
+
+    service.reconcile(bar.bar_end + timedelta(minutes=5, seconds=1))
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+
+
+def test_idle_heartbeat_does_not_require_new_completed_bars() -> None:
+    """Catches scheduled breaks being mislabeled unavailable only because bars stop."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    bar = _bar(1)
+    service.reconcile(bar.bar_end)
+    assert service.ingest("J2505", bar, now=bar.bar_end + timedelta(seconds=2)) is None
+    assert service.flush_due(bar.bar_end + timedelta(seconds=2)) == (bar,)
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+
+    service.reconcile(bar.bar_end + timedelta(minutes=30))
+
+    assert json.loads(fake.values["live:heartbeat"])["available"] is True
+
+
+def test_break_detects_dead_started_listener_without_reconnecting() -> None:
+    """Catches session-grace draining a dead listener while still claiming availability."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    started = window.start + timedelta(minutes=1)
+    assert service.poll(started) is None
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+    client.listener.alive = False
+
+    assert service.poll(started + timedelta(seconds=1)) == "LIVE_PROVIDER_UNAVAILABLE"
+    assert client.closed is True
+    assert client.listen_calls == 1
+    heartbeat = json.loads(fake.values["live:heartbeat"])
+    assert heartbeat["available"] is False
+    assert heartbeat["subscribed_count"] == 0
+    assert service._provider is None
+    assert service._channels == set()
+
+    assert (
+        service.poll(window.end + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(seconds=1))
+        is None
+    )
+    heartbeat = json.loads(fake.values["live:heartbeat"])
+    assert heartbeat["available"] is False
+    assert heartbeat["subscribed_count"] == 0
+    assert client.unsubscribed == []
+
+
+def test_latest_completed_bar_time_never_moves_backwards() -> None:
+    """Catches a delayed older product Bar making a healthy global feed look stale."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    newer = _bar(2)
+    older = _bar(1)
+    service.reconcile(newer.bar_end)
+    assert service.ingest("J2505", newer, now=newer.bar_end + timedelta(seconds=2)) is None
+    assert service.flush_due(newer.bar_end + timedelta(seconds=2)) == (newer,)
+    assert service.ingest("J2505", older, now=newer.bar_end + timedelta(seconds=3)) is None
+    assert service.flush_due(newer.bar_end + timedelta(seconds=3)) == (older,)
+
+    service.reconcile(newer.bar_end + timedelta(minutes=5))
+
+    heartbeat = json.loads(fake.values["live:heartbeat"])
+    assert heartbeat["last_bar_at"] == newer.bar_end.isoformat()
+    assert heartbeat["available"] is True
 
 
 def test_session_final_bar_is_accepted_during_break_and_finalizes_after_grace() -> None:
@@ -554,6 +734,38 @@ def test_started_provider_drains_buffered_final_raw_bar_during_break_grace() -> 
     assert service.poll(datetime(2025, 1, 2, 1, 5, 2, tzinfo=UTC)) is None
     assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (_bar(5),)
     assert client.listen_calls == 1 and client.subscribed == ["bar_J2505"]
+
+
+def test_dead_listener_delivers_buffered_final_bar_before_provider_is_discarded() -> None:
+    """Catches listener death dropping a final Bar already accepted by its handler."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 5, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    service.poll(window.start + timedelta(minutes=1))
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+    final = _bar(5)
+    client.emit(_raw_payload("J2505", final))
+    client.listener.alive = False
+
+    assert service.poll(window.end + timedelta(seconds=2)) is None
+    assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (final,)
+
+    assert service.poll(window.end + timedelta(seconds=3)) == "LIVE_PROVIDER_UNAVAILABLE"
+    assert client.closed is True
+    assert service._provider is None
+    assert service._channels == set()
 
 
 def test_all_idle_keeps_final_bar_through_grace_then_unsubscribes_once() -> None:
@@ -689,7 +901,7 @@ def test_idle_poll_does_not_create_provider() -> None:
     assert json.loads(fake.values["live:heartbeat"])["subscribed_count"] == 0
 
 
-def test_idle_unsubscribe_failure_is_visible_and_recovers_without_faking_cleanup() -> None:
+def test_idle_unsubscribe_failure_discards_provider_without_reconnecting() -> None:
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
     window = SessionWindow(
@@ -715,9 +927,11 @@ def test_idle_unsubscribe_failure_is_visible_and_recovers_without_faking_cleanup
         )
         == "LIVE_PROVIDER_UNAVAILABLE"
     )
-    assert service._channels == {"bar_J2505"}
+    assert client.closed is True
+    assert service._provider is None
+    assert service._channels == set()
     heartbeat = json.loads(fake.values["live:heartbeat"])
-    assert heartbeat["subscribed_count"] == 1
+    assert heartbeat["subscribed_count"] == 0
     assert heartbeat["available"] is False
 
     client.fail_unsubscribe = False
@@ -725,7 +939,7 @@ def test_idle_unsubscribe_failure_is_visible_and_recovers_without_faking_cleanup
     assert service._channels == set()
     heartbeat = json.loads(fake.values["live:heartbeat"])
     assert heartbeat["subscribed_count"] == 0
-    assert heartbeat["available"] is True
+    assert heartbeat["available"] is False
 
 
 def test_session_final_bar_arriving_after_finalization_delay_is_still_accepted() -> None:
@@ -957,6 +1171,7 @@ def test_provider_failure_immediately_publishes_unavailable_and_recovery_restore
     first = FakeLiveClient()
     first.fail_listen = True
     replacement = FakeLiveClient()
+    replacement.payloads = [_raw_payload("J2505", _bar(1))]
     created: list[FakeLiveClient] = []
     fake = FakeRedis()
 
@@ -978,7 +1193,60 @@ def test_provider_failure_immediately_publishes_unavailable_and_recovery_restore
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
 
     assert service.poll(started + timedelta(seconds=10)) is None
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+    assert service.poll(started + timedelta(seconds=11)) is None
     assert json.loads(fake.values["live:heartbeat"])["available"] is True
+
+
+def test_dead_started_listener_retries_and_recovers_with_a_fresh_bar() -> None:
+    """Catches listener liveness errors bypassing the service retry state machine."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    first = FakeLiveClient()
+    first.payloads = [_raw_payload("J2505", _bar(1))]
+    replacement = FakeLiveClient()
+    replacement.payloads = [_raw_payload("J2505", _bar(2))]
+    clients = (first, replacement)
+    created: list[FakeLiveClient] = []
+    fake = FakeRedis()
+
+    def factory():
+        client = clients[len(created)]
+        created.append(client)
+        return module.RQDataLiveProvider(client)
+
+    service = module.LiveMarketService(
+        provider_factory=factory,
+        dominant_source=FakeDominants({("j", day): "J2505"}),
+        phase_resolver=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        operational_products=("j",),
+    )
+    started = datetime(2025, 1, 2, 1, 1, 2, tzinfo=UTC)
+    assert service.poll(started) is None
+    assert service.poll(started + timedelta(seconds=1)) is None
+    assert json.loads(fake.values["live:heartbeat"])["available"] is True
+    first.listener.alive = False
+    detected_at = datetime(2025, 1, 2, 1, 2, 3, tzinfo=UTC)
+
+    assert service.poll(detected_at) == "LIVE_PROVIDER_RETRY_SCHEDULED"
+    assert first.closed is True
+    assert service.next_provider_retry_at == detected_at + timedelta(seconds=10)
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+
+    assert service.poll(detected_at + timedelta(seconds=9)) is None
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+    assert service.poll(detected_at + timedelta(seconds=10)) is None
+    assert service.poll(detected_at + timedelta(seconds=11)) is None
+    heartbeat = json.loads(fake.values["live:heartbeat"])
+    assert heartbeat["available"] is True
+    assert heartbeat["last_bar_at"] == _bar(2).bar_end.isoformat()
+    assert created == [first, replacement]
+    assert replacement.subscribed == ["bar_J2505"]
+    assert replacement.listen_calls == 1
 
 
 def test_provider_retry_deadline_prevents_factory_subscribe_and_listen_before_ten_seconds() -> None:
