@@ -93,9 +93,9 @@
   --gy-chart-macd-dea: #f59e0b;
   --gy-chart-volume-up: rgba(220, 38, 38, 0.38);
   --gy-chart-volume-down: rgba(22, 163, 74, 0.38);
-  --gy-chart-htdy-zk1: rgba(13, 148, 136, 0.62);
-  --gy-chart-htdy-zd1: rgba(13, 148, 136, 0.42);
-  --gy-chart-htdy-zd2: rgba(202, 138, 4, 0.55);
+  --gy-chart-htdy-zk1: #0f766e;
+  --gy-chart-htdy-zd1: #0891b2;
+  --gy-chart-htdy-zd2: #d97706;
 
   /* Type */
   --gy-font-sans: 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;

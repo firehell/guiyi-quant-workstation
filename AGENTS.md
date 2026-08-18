@@ -67,6 +67,16 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
 该授权与 Market Runtime V1 相互独立，不覆盖新增 Rule 或通知渠道、生产 migration、任何 Runtime switch、
 main/tag/release、Canonical 写入或订单。production migration、v1.3 release/tag、Runtime promotion/switch、SuBing Scope write/activation 和真实 WeCom/canary 都是独立的一次性 Gate；mock、测试、render-only 或其中一个 Gate 不授权其余 Gate。测试路由的 Scope PUT 不构成真实 Scope mutation 授权。
 
+`develop` 的通知目标架构是 Clawbot single-shot：每个 committed Event 最多启动一个固定 Node child，
+只允许唯一 `openclaw-weixin` private seam 调用一次 `sendMessageWeixin()`。Git 外的 owner 配置采用
+`0700` parent / `0600` file，只保存固定别名 `owner` 与精确 account/target；缺失 context、超时、crash、
+malformed output 或发送失败均 fail-closed，不 retry、queue、replay、backfill、fan-out 或 fallback。OpenClaw
+与腾讯插件是已经存在的外部依赖，归一量化不安装、更新、登录、启动、停止或监督它们，也不引入
+OpenClaw public message-send、durable queue、inbound、context monitor、Agent/LLM/slash/tool/reply 路径。
+当前 production exact-tag Runtime 仍为 WeCom，直至未来独立 rollout、release 与 Runtime promotion 被
+记录于 `STATUS.md`；develop 代码、fixture、render-only 和测试不授权 owner bootstrap、preflight、canary、
+真实发送、OpenClaw 变更或 Runtime switch。
+
 ## 工程与业务硬规则
 
 1. 外部输入在敏感操作前校验类型、格式、范围、允许值与关联字段；系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM，输入派生路径规范化后必须仍在允许根目录内。
@@ -76,7 +86,7 @@ main/tag/release、Canonical 写入或订单。production migration、v1.3 relea
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
 8. 当前仓库不提供 backtest API/Web/worker/queue/CLI 或报告兼容入口。未来回测必须作为新任务基于 Canonical/MarketDataService 重建，并保留策略、参数、数据、订单、trade、equity 与 lineage 以支持复算。旧 Signal/Review/Strategy HTTP·worker·DB 表与旧语义合同已退役；Alert 与 Execution Review 是独立 Application Domain，不以旧表或旧 worker 为入口。Execution Review 业务语义只看 `docs/EXECUTION_REVIEW.md`；未来其他重建仍须新任务新合同。
-9. live、Runtime promotion/switch、真实通知与企业微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 只读取同一个 `operational_products.txt`，且不新增生产表。Alert V2 的 HTDY 保持 event-cutoff；SuBing 只复用已有 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，不复制公式或 same-boundary 规则。SuBing 仅在 incoming Bar 与 current snapshot 的 `bar_end + trading_day` 同一时继续，stale 必须 fail-closed；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 唯一解析，不可用时 fail-closed。repair、replay、backfill、migration 与 EOD recalculation 不补评或补发历史通知。
+9. live、Runtime promotion/switch、真实通知与微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 只读取同一个 `operational_products.txt`，且不新增生产表。Alert V2 的 HTDY 保持 event-cutoff；SuBing 只复用已有 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，不复制公式或 same-boundary 规则。SuBing 仅在 incoming Bar 与 current snapshot 的 `bar_end + trading_day` 同一时继续，stale 必须 fail-closed；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 唯一解析，不可用时 fail-closed。repair、replay、backfill、migration 与 EOD recalculation 不补评或补发历史通知。
 10. `auto_order=false` 适用于所有研究观察与 Runtime 模式。任何创建或提交订单的流程都必须拒绝；本项目不实现自动交易。
 11. 数据或指标语义变化时，同一变更更新相应 deep canonical；普通 bug fix、UI 调整和测试增加不自动改写项目状态。
 

@@ -2,6 +2,15 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.5.0] - 2026-08-19
+
+- Alert 通知代码由 WeCom 收敛为唯一 Clawbot/OpenClaw-Weixin single-shot transport，保持 Event-first、
+  每个 Event 最多一个 child/一次 `sendMessageWeixin()`，无 retry/replay/backfill/fallback；rollout
+  G2～G5 已通过，production 在独立 G8 promotion 前仍保持 WeCom。
+- 修复 Market Live stale-feed 恢复路径，并收口 HTDY 图表观察层的高对比展示与说明。
+- 不改变 Rule/Scope、Alert DB/Event identity、Canonical、Execution Review、RQData 或订单边界；
+  `auto_order=false` 不变。
+
 ## [1.4.2] - 2026-08-17
 
 - 盘后一小时后 retry 仅允许 `NEXT_TRADING_SESSION_NOT_READY`；其他失败首试即结束，

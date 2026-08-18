@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session
 from app.alerts.composition import RedisAlertHeartbeatStore
 from app.alerts.evaluators import AlertEvaluation
 from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.notification import AlertNotificationMessage
 from app.alerts.runtime import (
     AlertRuntime,
     _event_session_window,
     _parse_event,
     _subing_snapshot_now,
 )
-from app.alerts.wecom import AlertNotificationMessage
 from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, CanonicalBar
@@ -1127,6 +1127,63 @@ def test_notification_failure_keeps_event_and_duplicate_never_retries(
 
     assert len(_event_rows(session)) == 1
     assert len(harness.sender.messages) == 1
+
+
+def test_notification_failure_does_not_block_next_completed_bar(
+    session: Session,
+) -> None:
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    harness = _runtime(session, sender_error=RuntimeError("send failed"))
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    next_end = ORDINARY_END + timedelta(minutes=15)
+    harness.subing_read.result = _snapshot(
+        frequency=BarFrequency.M5,
+        primary_bar_end=next_end,
+        resolved_signal=_signal(
+            trigger_timeframe=BarFrequency.M5,
+            bar_end=next_end,
+        ),
+    )
+    harness.runtime.clock = lambda: next_end + timedelta(seconds=2)
+    harness.runtime.process_message(
+        "live:bar:jm:5m",
+        _payload(bar_end=next_end),
+    )
+
+    assert len(_event_rows(session)) == 2
+    assert len(harness.sender.messages) == 2
+
+
+def test_multiple_messages_from_one_bar_are_sent_sequentially(session: Session) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    snapshot = _snapshot(
+        frequency=BarFrequency.M15,
+        primary_bar_end=BOUNDARY_END,
+        resolved_signal=_signal(
+            trigger_timeframe=BarFrequency.M15,
+            bar_end=BOUNDARY_END,
+        ),
+    )
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        subing_snapshot=snapshot,
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert len(_event_rows(session)) == 2
+    assert [message.rule_code for message in harness.sender.messages] == [
+        "htdy_original_15m",
+        "subing_entry_signal_v1",
+    ]
 
 
 @pytest.mark.parametrize("revocation", ("disable", "scope_remove"))

@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-16
+更新时间：2026-08-18
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -136,7 +136,9 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   services/quant-api/tests/test_alert_models.py \
   services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_evaluator.py \
-  services/quant-api/tests/test_alert_wecom.py \
+  services/quant-api/tests/test_alert_notification.py \
+  services/quant-api/tests/test_alert_clawbot_owner.py \
+  services/quant-api/tests/test_alert_clawbot.py \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_alert_api.py \
   services/quant-api/tests/test_alert_cli.py \
@@ -150,18 +152,22 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  tests/engineering/test_alert_runtime_launchd.py
+  tests/engineering/test_alert_runtime_launchd.py \
+  tests/engineering/test_market_runtime_launchd.py
+
+node --test tests/engineering/openclaw_weixin_single_shot.test.mjs
 
 pnpm --dir apps/quant-web test
 scripts/ops/macos/install-local-services.sh --render-only
 plutil -lint .run/launchd/com.guiyi.quant-alert.plist
 ```
 
-这些命令只使用隔离数据库、mock sender、mock API 或 render-only，不启动真实
-AlertRuntime。production migration `20260814_0038`、v1.3 Runtime promotion/switch、真实
-SuBing Scope write/activation 和真实 WeCom/canary 都不是测试命令。`alembic
-upgrade/current`、`runtime alert-canary`、`--confirm-alert-runtime`、真实 Scope PUT 禁止作为
-本节验证；测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
+这些命令只使用隔离数据库、mock sender、fake exact-version plugin tree、tmp_path/fake process 或 render-only，
+不启动真实 AlertRuntime，不写真实 owner，不执行真实 Clawbot preflight/canary/send，也不修改或监督
+OpenClaw。它们不授权 Runtime switch/release、production migration 或 SuBing Scope write/activation。
+当前 production exact-tag 仍为 WeCom。`alembic upgrade/current`、`runtime clawbot-owner-bootstrap
+--confirm-write-owner`、`runtime clawbot-preflight`、`runtime alert-canary`、`--confirm-alert-runtime` 与真实
+Scope PUT 禁止作为本节验证命令。测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
 
 ### 独立受控外部 Gate
 
@@ -171,8 +177,8 @@ upgrade/current`、`runtime alert-canary`、`--confirm-alert-runtime`、真实 S
   v1.2 API/Alert 与 V2 schema 共存。
 - SuBing Scope write/activation：对精确 `subing_entry_signal_v1 × product` 另行授权；seed
   必须保持空集，不从 HTDY Scope 或 `operational_products.txt` 自动扩张。
-- real WeCom/canary：仅在独立明确授权后尝试；不写 AlertEvent、不改 Scope、不启用或
-  切换 Runtime。
+- Clawbot owner bootstrap/write、zero-send preflight、真实 canary/send：每类只在未来 rollout 的独立明确
+  授权后执行；不写 AlertEvent、不改 Scope、不修改 OpenClaw、不自动启用或切换 Runtime。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
 mock 通过只证明实现，不证明任何生产 Gate 已执行。

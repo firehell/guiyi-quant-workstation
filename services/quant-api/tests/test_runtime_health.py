@@ -24,7 +24,10 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
     monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
     monkeypatch.setattr("app.services.runtime_health._alert_runtime_activation_enabled", lambda: False)
-    monkeypatch.delenv("WECOM_WEBHOOK_URL", raising=False)
+    monkeypatch.setattr(
+        "app.services.runtime_health.clawbot_transport_configured_from_env",
+        lambda: False,
+    )
     monkeypatch.setattr(
         "app.api.runtime.build_runtime_health",
         lambda session: build_runtime_health(session, after_market_status_path=None),
@@ -66,7 +69,7 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     assert payload["components"]["alert"] == {
         "status": "disabled",
         "configured_enabled": False,
-        "webhook_configured": False,
+        "notification_transport_configured": False,
         "last_heartbeat_at": None,
         "enabled_rule_count": 0,
         "scope_product_count": 0,
@@ -74,9 +77,12 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     }
 
 
-def test_alert_health_activation_and_webhook_fail_closed(monkeypatch, tmp_path) -> None:
+def test_alert_health_activation_and_transport_fail_closed(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
-    monkeypatch.delenv("WECOM_WEBHOOK_URL", raising=False)
+    monkeypatch.setattr(
+        "app.services.runtime_health.clawbot_transport_configured_from_env",
+        lambda: False,
+    )
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
@@ -89,7 +95,7 @@ def test_alert_health_activation_and_webhook_fail_closed(monkeypatch, tmp_path) 
         marker = tmp_path / ".run" / "alert-runtime-enabled"
         marker.parent.mkdir()
         marker.write_text("enabled\n", encoding="utf-8")
-        missing_webhook = build_runtime_health(
+        missing_transport = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
             live_runtime_enabled=False,
@@ -98,8 +104,11 @@ def test_alert_health_activation_and_webhook_fail_closed(monkeypatch, tmp_path) 
 
     assert disabled["components"]["alert"]["status"] == "disabled"
     assert disabled["components"]["alert"]["configured_enabled"] is False
-    assert missing_webhook["components"]["alert"]["status"] == "degraded"
-    assert missing_webhook["components"]["alert"]["error_type"] == "wecom_webhook_missing"
+    assert missing_transport["components"]["alert"]["status"] == "degraded"
+    assert (
+        missing_transport["components"]["alert"]["error_type"]
+        == "alert_notification_transport_missing"
+    )
 
 
 def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -> None:
@@ -108,10 +117,6 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
     marker = tmp_path / ".run" / "alert-runtime-enabled"
     marker.parent.mkdir()
     marker.write_text("enabled\n", encoding="utf-8")
-    monkeypatch.setenv(
-        "WECOM_WEBHOOK_URL",
-        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?" + "key=health-test-key-12345",
-    )
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
@@ -120,6 +125,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
             redis_factory=lambda: FakeRedis(),
             now=now,
             live_runtime_enabled=False,
+            notification_transport_configured=True,
             after_market_status_path=None,
         )
         stale = build_runtime_health(
@@ -138,6 +144,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
             ),
             now=now,
             live_runtime_enabled=False,
+            notification_transport_configured=True,
             after_market_status_path=None,
         )
         fresh = build_runtime_health(
@@ -156,6 +163,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
             ),
             now=now,
             live_runtime_enabled=False,
+            notification_transport_configured=True,
             after_market_status_path=None,
         )
 
@@ -164,14 +172,14 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
     assert fresh["components"]["alert"] == {
         "status": "ok",
         "configured_enabled": True,
-        "webhook_configured": True,
+        "notification_transport_configured": True,
         "last_heartbeat_at": now.isoformat(),
         "enabled_rule_count": 1,
         "scope_product_count": 2,
         "error_type": None,
     }
     rendered = json.dumps(fresh, ensure_ascii=False)
-    assert "health-test-key" not in rendered
+    assert "fixture/secrets" not in rendered
 
 
 def test_alert_health_accepts_v2_heartbeat_counts() -> None:
@@ -194,7 +202,7 @@ def test_alert_health_accepts_v2_heartbeat_counts() -> None:
             now=now,
             live_runtime_enabled=False,
             alert_runtime_enabled=True,
-            wecom_configured=True,
+            notification_transport_configured=True,
             after_market_status_path=None,
         )
 
@@ -204,13 +212,53 @@ def test_alert_health_accepts_v2_heartbeat_counts() -> None:
     assert alert["scope_product_count"] == 1
 
 
-def test_alert_health_rejects_invalid_webhook_destination(monkeypatch, tmp_path) -> None:
-    """Catches a non-WeCom HTTPS URL being reported as configured and healthy."""
+def test_alert_health_structural_transport_is_ready_from_process_environment(
+    monkeypatch,
+) -> None:
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "app.services.runtime_health.clawbot_transport_configured_from_env",
+        lambda: calls.append("structural-check") or True,
+    )
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": json.dumps(
+                        {
+                            "generated_at": now.isoformat(),
+                            "available": True,
+                            "enabled_rule_count": 2,
+                            "scope_product_count": 1,
+                        }
+                    )
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            after_market_status_path=None,
+        )
+
+    assert calls == ["structural-check"]
+    assert payload["components"]["alert"]["status"] == "ok"
+    assert payload["components"]["alert"]["notification_transport_configured"] is True
+
+
+def test_alert_health_rejects_invalid_transport_paths(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
     marker = tmp_path / ".run" / "alert-runtime-enabled"
     marker.parent.mkdir()
     marker.write_text("enabled\n", encoding="utf-8")
-    monkeypatch.setenv("WECOM_WEBHOOK_URL", "https://example.invalid/private-key")
+    monkeypatch.setattr(
+        "app.services.runtime_health.clawbot_transport_configured_from_env",
+        lambda: False,
+    )
+    monkeypatch.setenv("GUIYI_OPENCLAW_BIN", "relative/openclaw")
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
@@ -223,8 +271,8 @@ def test_alert_health_rejects_invalid_webhook_destination(monkeypatch, tmp_path)
 
     alert = payload["components"]["alert"]
     assert alert["status"] == "degraded"
-    assert alert["webhook_configured"] is False
-    assert alert["error_type"] == "wecom_webhook_invalid"
+    assert alert["notification_transport_configured"] is False
+    assert alert["error_type"] == "alert_notification_transport_invalid"
 
 
 def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
@@ -251,7 +299,7 @@ def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
             now=now,
             live_runtime_enabled=True,
             alert_runtime_enabled=False,
-            wecom_configured=False,
+            notification_transport_configured=False,
             after_market_status_path=None,
         )
 
@@ -276,7 +324,7 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
             now=now,
             live_runtime_enabled=False,
             alert_runtime_enabled=False,
-            wecom_configured=False,
+            notification_transport_configured=False,
             after_market_status_path=None,
         )
         stale = build_runtime_health(
@@ -299,7 +347,7 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
             live_runtime_enabled=True,
             live_freshness_seconds=300,
             alert_runtime_enabled=False,
-            wecom_configured=False,
+            notification_transport_configured=False,
             after_market_status_path=None,
         )
 
@@ -365,7 +413,7 @@ def test_enabled_after_market_is_pending_before_its_first_runtime_run(tmp_path) 
             live_runtime_enabled=False,
             after_market_automation_enabled=True,
             alert_runtime_enabled=False,
-            wecom_configured=False,
+            notification_transport_configured=False,
             after_market_status_path=missing_status,
         )
 
@@ -429,7 +477,7 @@ def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_byte
             ),
             live_runtime_enabled=True,
             alert_runtime_enabled=False,
-            wecom_configured=False,
+            notification_transport_configured=False,
             after_market_status_path=None,
         )
 
@@ -468,7 +516,7 @@ def test_runtime_health_surfaces_live_dominant_mismatch(tmp_path) -> None:
             session,
             redis_factory=lambda: FakeRedis(),
             alert_runtime_enabled=False,
-            wecom_configured=False,
+            notification_transport_configured=False,
             after_market_status_path=status_path,
         )
 
@@ -500,7 +548,7 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
             redis_factory=lambda: FakeRedis(exc=ConnectionError("redis password should-not-leak")),
             now=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
             alert_runtime_enabled=False,
-            wecom_configured=False,
+            notification_transport_configured=False,
             after_market_status_path=None,
         )
 
@@ -557,6 +605,6 @@ def _contains_no_secret_words(payload: dict) -> bool:
     public = json.loads(json.dumps(payload, ensure_ascii=False, default=str))
     alert = public.get("components", {}).get("alert", {})
     if isinstance(alert, dict):
-        alert.pop("webhook_configured", None)
+        alert.pop("notification_transport_configured", None)
     text = json.dumps(public, ensure_ascii=False, default=str).lower()
     return not any(secret in text for secret in ("webhook", "token", "password", "cookie", "secret", "must-not-leak"))

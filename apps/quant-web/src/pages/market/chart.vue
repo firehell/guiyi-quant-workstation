@@ -521,9 +521,6 @@ function normalizeSymbol(value: unknown): string | null {
               :error="subingError"
               :supported="subingSupported"
             />
-            <NAlert v-if="htdyVisible" type="warning" :show-icon="false" class="product-workspace__htdy-risk">
-              火天大有原始观察 · 未来引用/重绘风险 · 仅供人工观察
-            </NAlert>
             <KlineChart
               ref="chart"
               :bars="visibleBars"
@@ -625,7 +622,6 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace__main--sidebar-closed { grid-template-columns: minmax(0, 1fr); }
 .product-workspace__main--sidebar-closed .product-workspace__sidebar-wrap { display: none; }
 .product-workspace__kline { min-width: 0; }
-.product-workspace__htdy-risk { margin-bottom: 8px; }
 /* 侧栏与左侧 K 线列（含副图）等高：wrap 随 grid 行高拉伸，侧栏绝对填充并内部滚动 */
 .product-workspace__sidebar-wrap { position: relative; min-width: 0; min-height: 0; }
 .product-workspace__sidebar-wrap > .product-workspace__sidebar { position: absolute; inset: 0; overflow-y: auto; }

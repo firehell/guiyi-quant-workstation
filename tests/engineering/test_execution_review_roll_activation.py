@@ -50,6 +50,10 @@ def test_other_install_modes_never_create_roll_marker(
     repo = _copy_fixture(tmp_path / mode.removeprefix("--"))
     home, fake_bin, _calls = _fake_runtime(tmp_path / f"runtime-{mode.removeprefix('--')}")
 
+    if mode == "--confirm-alert-runtime":
+        prerequisite = _run_installer(repo, home, fake_bin, "--confirm-load")
+        assert prerequisite.returncode == 0, prerequisite.stderr
+
     result = _run_installer(repo, home, fake_bin, mode)
 
     assert result.returncode == 0, result.stderr
@@ -152,6 +156,7 @@ def _run_installer(
     fake_bin: Path,
     mode: str,
 ) -> subprocess.CompletedProcess[str]:
+    clawbot_paths = _clawbot_paths(repo.parent / "clawbot-fixture")
     return subprocess.run(
         [str(repo / "scripts/ops/macos/install-local-services.sh"), mode],
         cwd=repo,
@@ -160,11 +165,39 @@ def _run_installer(
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
+            **clawbot_paths,
         },
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def _clawbot_paths(root: Path) -> dict[str, str]:
+    plugin = root / "plugin"
+    state = root / "state"
+    owner_parent = root / "owner"
+    for directory in (plugin, state, owner_parent):
+        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+        directory.chmod(0o700)
+    openclaw = root / "openclaw"
+    node = root / "node"
+    for executable in (openclaw, node):
+        executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        executable.chmod(0o700)
+    config = state / "openclaw.json"
+    config.write_text("{}\n", encoding="utf-8")
+    owner = owner_parent / "owner.json"
+    owner.write_text("{}\n", encoding="utf-8")
+    owner.chmod(0o600)
+    return {
+        "GUIYI_OPENCLAW_BIN": str(openclaw),
+        "GUIYI_OPENCLAW_NODE_BIN": str(node),
+        "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT": str(plugin),
+        "GUIYI_OPENCLAW_STATE_DIR": str(state),
+        "GUIYI_OPENCLAW_CONFIG_PATH": str(config),
+        "GUIYI_ALERT_CLAWBOT_OWNER_PATH": str(owner),
+    }
 
 
 def _status_fixture(root: Path) -> tuple[Path, Path, Path]:

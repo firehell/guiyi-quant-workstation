@@ -24,13 +24,157 @@ plist_root() {
   plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - "$plist" 2>/dev/null || printf 'unknown'
 }
 
+plist_value() {
+  local label="$1" key="$2"
+  local plist="${AGENT_DIR}/${label}.plist"
+  if [[ ! -f "$plist" ]]; then
+    printf 'missing'
+    return 0
+  fi
+  plutil -extract "EnvironmentVariables.${key}" raw -o - "$plist" 2>/dev/null || printf 'missing'
+}
+
 record_failure() {
   failed=$((failed + 1))
 }
 
+manifest_value() {
+  local manifest="$1" key="$2"
+  python3 - "$manifest" "$key" <<'PY'
+import json
+import sys
+
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8"))[sys.argv[2]]
+    if not isinstance(value, str) or not value or any(ord(character) < 32 for character in value):
+        raise ValueError
+    print(value)
+except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+}
+
+command_version_matches() {
+  local executable="$1" expected="$2"
+  python3 - "$executable" "$expected" <<'PY'
+import subprocess
+import sys
+
+try:
+    result = subprocess.run(
+        [sys.argv[1], "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+        env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+    )
+except (OSError, subprocess.SubprocessError):
+    raise SystemExit(1)
+raise SystemExit(0 if result.returncode == 0 and result.stdout.strip() == sys.argv[2] else 1)
+PY
+}
+
+json_version_matches() {
+  local path="$1" expected="$2"
+  python3 - "$path" "$expected" <<'PY'
+import json
+import sys
+
+try:
+    version = json.load(open(sys.argv[1], encoding="utf-8"))["version"]
+except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+raise SystemExit(0 if version == sys.argv[2] else 1)
+PY
+}
+
+plugin_modules_valid() {
+  local root="$1" manifest="$2"
+  python3 - "$root" "$manifest" <<'PY'
+import json
+import os
+from pathlib import PurePosixPath
+import stat
+import sys
+import unicodedata
+
+root, manifest_path = sys.argv[1:]
+try:
+    modules = json.load(open(manifest_path, encoding="utf-8"))["plugin_modules"]
+    if not isinstance(modules, dict) or set(modules) != {"accounts", "inbound", "send"}:
+        raise ValueError
+    exact_root = os.path.realpath(root)
+    for value in modules.values():
+        if (
+            not isinstance(value, str)
+            or not value
+            or value.strip() != value
+            or "\\" in value
+            or any(unicodedata.category(character).startswith("C") for character in value)
+        ):
+            raise ValueError
+        relative = PurePosixPath(value)
+        if relative.is_absolute() or str(relative) != value:
+            raise ValueError
+        if any(part in {"", ".", ".."} for part in relative.parts):
+            raise ValueError
+        expected = os.path.join(exact_root, *relative.parts)
+        metadata = os.lstat(expected)
+        if not stat.S_ISREG(metadata.st_mode) or os.path.realpath(expected) != expected:
+            raise ValueError
+except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+}
+
+launch_value() {
+  local output="$1" key="$2"
+  printf '%s\n' "$output" | sed -n "s/^[[:space:]]*${key} => //p" | head -1
+}
+
+owner_config_valid() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import json
+import os
+import stat
+import sys
+import unicodedata
+
+path = sys.argv[1]
+try:
+    parent = os.lstat(os.path.dirname(path))
+    metadata = os.lstat(path)
+    if not stat.S_ISDIR(parent.st_mode) or stat.S_IMODE(parent.st_mode) != 0o700:
+        raise ValueError
+    if parent.st_uid != os.getuid() or not stat.S_ISREG(metadata.st_mode):
+        raise ValueError
+    if stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid():
+        raise ValueError
+    payload = json.load(open(path, encoding="utf-8"))
+    if set(payload) != {"version", "channel", "owner_alias", "account_id", "target_user_id"}:
+        raise ValueError
+    if payload["version"] != 1 or type(payload["version"]) is not int:
+        raise ValueError
+    if payload["channel"] != "openclaw-weixin" or payload["owner_alias"] != "owner":
+        raise ValueError
+    account = payload["account_id"]
+    target = payload["target_user_id"]
+    for value in (account, target):
+        if not isinstance(value, str) or not value or value.strip() != value:
+            raise ValueError
+        if any(unicodedata.category(character).startswith("C") for character in value):
+            raise ValueError
+    if not target.endswith("@im.wechat") or target == "@im.wechat":
+        raise ValueError
+except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+}
+
 printf '[local-services-status] readonly=true\n'
 printf '[local-services-status] inspector_repo=%s\n' "$PROJECT_ROOT"
-
 runtime_root="$(plist_root "$API_LABEL")"
 printf '[local-services-status] supervised_runtime_root=%s\n' "$runtime_root"
 
@@ -70,6 +214,131 @@ if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" && -f "$runti
   alert_marker_enabled=true
 fi
 printf '[local-services-status] alert_runtime_enabled=%s\n' "$alert_marker_enabled"
+
+wecom_present=false
+clawbot_present=false
+courier_present=false
+if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" ]]; then
+  alerts_root="$runtime_root/services/quant-api/app/alerts"
+  wecom_path="$alerts_root/wecom.py"
+  clawbot_path="$alerts_root/clawbot.py"
+  [[ -f "$wecom_path" && ! -L "$wecom_path" ]] && wecom_present=true
+  [[ -f "$clawbot_path" && ! -L "$clawbot_path" ]] && clawbot_present=true
+  for legacy_courier_path in "$alerts_root"/*courier.py; do
+    [[ -e "$legacy_courier_path" || -L "$legacy_courier_path" ]] || continue
+    if [[ -f "$legacy_courier_path" && ! -L "$legacy_courier_path" ]]; then
+      courier_present=true
+      break
+    fi
+  done
+fi
+notification_channel=unknown
+if [[ "$wecom_present" == "true" && "$clawbot_present" == "false" && "$courier_present" == "false" ]]; then
+  notification_channel=wecom
+elif [[ "$wecom_present" == "false" && "$clawbot_present" == "true" && "$courier_present" == "false" ]]; then
+  notification_channel=clawbot-openclaw-weixin
+fi
+printf '[local-services-status] alert.notification_channel=%s\n' "$notification_channel"
+if [[ "$notification_channel" == "clawbot-openclaw-weixin" ]]; then
+  printf '[local-services-status] alert.notification_owner_alias=owner\n'
+  versions_manifest="$runtime_root/deploy/clawbot/versions.json"
+  openclaw_version="$(manifest_value "$versions_manifest" openclaw_version 2>/dev/null || printf 'unknown')"
+  node_version="$(manifest_value "$versions_manifest" node_version 2>/dev/null || printf 'unknown')"
+  plugin_version="$(manifest_value "$versions_manifest" openclaw_weixin_version 2>/dev/null || printf 'unknown')"
+  clawbot_identity_valid=true
+  if api_launch_output="$(launchctl print "gui/$UID/com.guiyi.quant-api" 2>/dev/null)"; then
+    api_loaded=true
+  else
+    api_loaded=false
+  fi
+  if alert_launch_output="$(launchctl print "gui/$UID/com.guiyi.quant-alert" 2>/dev/null)"; then
+    alert_loaded=true
+  else
+    alert_loaded=false
+  fi
+  clawbot_env_names=(
+    GUIYI_OPENCLAW_BIN
+    GUIYI_OPENCLAW_NODE_BIN
+    GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT
+    GUIYI_OPENCLAW_STATE_DIR
+    GUIYI_OPENCLAW_CONFIG_PATH
+    GUIYI_ALERT_CLAWBOT_OWNER_PATH
+  )
+  for key in "${clawbot_env_names[@]}"; do
+    api_value="$(plist_value com.guiyi.quant-api "$key")"
+    alert_value="$(plist_value com.guiyi.quant-alert "$key")"
+    if [[ "$api_value" == "missing" || "$alert_value" == "missing" || "$api_value" != "$alert_value" ]]; then
+      clawbot_identity_valid=false
+    fi
+    if [[ "$api_loaded" != "true" || "$(launch_value "$api_launch_output" "$key")" != "$api_value" ]]; then
+      clawbot_identity_valid=false
+    fi
+    if [[ "$alert_loaded" == "true" && "$(launch_value "$alert_launch_output" "$key")" != "$alert_value" ]]; then
+      clawbot_identity_valid=false
+    fi
+  done
+  if [[ "$alert_marker_enabled" == "true" && "$alert_loaded" != "true" ]]; then
+    clawbot_identity_valid=false
+  fi
+  openclaw_bin="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_BIN)"
+  node_bin="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_NODE_BIN)"
+  state_dir="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_STATE_DIR)"
+  config_path="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_CONFIG_PATH)"
+  plugin_root="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT)"
+  owner_path="$(plist_value com.guiyi.quant-alert GUIYI_ALERT_CLAWBOT_OWNER_PATH)"
+
+  openclaw_status=missing
+  if [[ "$openclaw_bin" != "missing" && "$node_bin" != "missing" \
+    && "$state_dir" != "missing" && "$config_path" != "missing" \
+    && -e "$openclaw_bin" && -e "$node_bin" && -e "$state_dir" && -e "$config_path" ]]; then
+    openclaw_status=invalid
+    if [[ "$openclaw_version" != "unknown" && "$node_version" != "unknown" \
+      && -f "$openclaw_bin" && ! -L "$openclaw_bin" && -x "$openclaw_bin" \
+      && -f "$node_bin" && ! -L "$node_bin" && -x "$node_bin" \
+      && -d "$state_dir" && ! -L "$state_dir" \
+      && -f "$config_path" && ! -L "$config_path" ]] \
+      && command_version_matches "$openclaw_bin" "$openclaw_version" \
+      && command_version_matches "$node_bin" "$node_version"; then
+      openclaw_status=ready
+    fi
+  fi
+
+  plugin_status=missing
+  if [[ "$plugin_root" != "missing" && -e "$plugin_root" ]]; then
+    plugin_status=invalid
+    if [[ "$plugin_version" != "unknown" && -d "$plugin_root" && ! -L "$plugin_root" \
+      && -f "$plugin_root/package.json" && ! -L "$plugin_root/package.json" \
+      ]] \
+      && json_version_matches "$plugin_root/package.json" "$plugin_version" \
+      && plugin_modules_valid "$plugin_root" "$versions_manifest"; then
+      plugin_status=ready
+    fi
+  fi
+
+  owner_status=missing
+  if [[ "$owner_path" != "missing" && -e "$owner_path" ]]; then
+    owner_status=invalid
+    owner_config_valid "$owner_path" && owner_status=ready
+  fi
+  if [[ "$clawbot_identity_valid" != "true" ]]; then
+    openclaw_status=invalid
+    plugin_status=invalid
+    owner_status=invalid
+    record_failure
+  fi
+  printf '[local-services-status] external.openclaw.status=%s\n' "$openclaw_status"
+  printf '[local-services-status] external.openclaw.version=%s\n' "$openclaw_version"
+  printf '[local-services-status] external.openclaw_weixin.status=%s\n' "$plugin_status"
+  printf '[local-services-status] external.openclaw_weixin.version=%s\n' "$plugin_version"
+  printf '[local-services-status] external.clawbot_owner_config=%s\n' "$owner_status"
+  if [[ "$alert_marker_enabled" == "true" \
+    && ( "$openclaw_status" != "ready" || "$plugin_status" != "ready" || "$owner_status" != "ready" ) ]]; then
+    record_failure
+  fi
+fi
+if [[ "$alert_marker_enabled" == "true" && "$notification_channel" == "unknown" ]]; then
+  record_failure
+fi
 
 execution_review_roll=disabled
 execution_review_roll_marker="$runtime_root/.run/execution-review-roll-enabled"
