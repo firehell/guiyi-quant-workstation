@@ -71,6 +71,29 @@ def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
     }
 
 
+def test_runtime_weixin_context_runs_only_injected_foreground_monitor() -> None:
+    calls: list[str] = []
+
+    class Monitor:
+        def run_forever(self) -> None:
+            calls.append("run_forever")
+
+    code, payload, _stdout, _stderr = _run(
+        ["runtime", "weixin-context"],
+        session_factory=lambda: (_ for _ in ()).throw(AssertionError("no DB session")),
+        weixin_context_factory=lambda: Monitor(),
+    )
+
+    assert code == 0
+    assert calls == ["run_forever"]
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.weixin-context",
+        "status": "ok",
+        "foreground": True,
+    }
+
+
 def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
     calls: list[str] = []
 

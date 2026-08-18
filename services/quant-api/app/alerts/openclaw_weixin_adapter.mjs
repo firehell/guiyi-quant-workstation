@@ -1,6 +1,14 @@
 process.env.OPENCLAW_LOG_LEVEL = "FATAL";
 
 import { createRequire } from "node:module";
+import {
+  closeSync,
+  fsyncSync,
+  openSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -267,6 +275,187 @@ async function register(input) {
 }
 
 
+function writeMonitorStatus(statusPath, status) {
+  const parent = path.dirname(statusPath);
+  const temporary = path.join(parent, `.${path.basename(statusPath)}.${process.pid}.${Date.now()}.tmp`);
+  let fileDescriptor;
+  try {
+    fileDescriptor = openSync(temporary, "wx", 0o600);
+    writeFileSync(fileDescriptor, `${JSON.stringify(status)}\n`, "utf8");
+    fsyncSync(fileDescriptor);
+    closeSync(fileDescriptor);
+    fileDescriptor = undefined;
+    renameSync(temporary, statusPath);
+    const directoryDescriptor = openSync(parent, "r");
+    try {
+      fsyncSync(directoryDescriptor);
+    } finally {
+      closeSync(directoryDescriptor);
+    }
+  } catch (error) {
+    if (fileDescriptor !== undefined) closeSync(fileDescriptor);
+    try { unlinkSync(temporary); } catch {}
+    throw error;
+  }
+}
+
+
+function monitorStatus(recipientCount, state, lastPollAt, lastRefreshAt, errorCode) {
+  return {
+    schema_version: 1,
+    status: state,
+    recipient_count: recipientCount,
+    last_poll_at: lastPollAt,
+    last_context_refresh_at: lastRefreshAt,
+    last_error_code: errorCode,
+  };
+}
+
+
+function interruptibleDelay(milliseconds, state) {
+  if (state.stopping) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, milliseconds);
+    state.wakeDelay = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+  }).finally(() => { state.wakeDelay = undefined; });
+}
+
+
+async function monitor(input) {
+  if (
+    typeof input.account_id !== "string"
+    || typeof input.status_path !== "string"
+    || !path.isAbsolute(input.status_path)
+  ) {
+    fail("WEIXIN_ADAPTER_INPUT_INVALID");
+  }
+  validateRecipientList(input.approved_recipients, "enabled_recipients");
+  const seam = await loadPrivateSeam(input.plugin_root);
+  let config = await seam.loadConfig();
+  let account = resolveExactAccount(seam, config, input.account_id);
+  seam.restoreContextTokens(account.accountId);
+  const approvedTargets = new Set(input.approved_recipients.map((item) => item.target));
+  const syncPath = seam.getSyncBufFilePath(account.accountId);
+  let cursor = seam.loadGetUpdatesBuf(syncPath) ?? "";
+  let lastPollAt = null;
+  let lastRefreshAt = null;
+  let backoffIndex = 0;
+  const transportBackoffs = [2_000, 5_000, 15_000, 30_000];
+  const state = { stopping: false, wakeDelay: undefined, controller: undefined };
+  const requestStop = () => {
+    state.stopping = true;
+    state.controller?.abort();
+    state.wakeDelay?.();
+  };
+  process.once("SIGTERM", requestStop);
+  process.once("SIGINT", requestStop);
+  try {
+    try {
+      await seam.notifyStart({ baseUrl: account.baseUrl, token: account.token });
+    } catch {
+      // Provider lifecycle notification is best-effort and never user-visible.
+    }
+    while (!state.stopping) {
+      state.controller = new AbortController();
+      let response;
+      try {
+        response = requireObject(await seam.getUpdates({
+          baseUrl: account.baseUrl,
+          token: account.token,
+          timeoutMs: 35_000,
+          get_updates_buf: cursor,
+          abortSignal: state.controller.signal,
+        }));
+      } catch {
+        if (state.stopping) break;
+        writeMonitorStatus(input.status_path, monitorStatus(
+          input.approved_recipients.length,
+          "degraded",
+          lastPollAt,
+          lastRefreshAt,
+          "WEIXIN_CONTEXT_TRANSPORT_ERROR",
+        ));
+        const delay = transportBackoffs[Math.min(backoffIndex, transportBackoffs.length - 1)];
+        backoffIndex += 1;
+        await interruptibleDelay(delay, state);
+        continue;
+      } finally {
+        state.controller = undefined;
+      }
+      if (state.stopping) break;
+      if (response.ret === -14 || response.errcode === -14) {
+        writeMonitorStatus(input.status_path, monitorStatus(
+          input.approved_recipients.length,
+          "degraded",
+          lastPollAt,
+          lastRefreshAt,
+          "WEIXIN_CONTEXT_TOKEN_STALE",
+        ));
+        const staleToken = account.token;
+        await interruptibleDelay(60_000, state);
+        if (state.stopping) break;
+        try {
+          config = await seam.loadConfig();
+          const candidate = resolveExactAccount(seam, config, input.account_id);
+          if (candidate.token !== staleToken) account = candidate;
+        } catch {
+          // Stay degraded and reread the same account after the next fixed interval.
+        }
+        continue;
+      }
+      if (response.ret !== 0 || !Array.isArray(response.msgs)) {
+        writeMonitorStatus(input.status_path, monitorStatus(
+          input.approved_recipients.length,
+          "degraded",
+          lastPollAt,
+          lastRefreshAt,
+          "WEIXIN_CONTEXT_API_ERROR",
+        ));
+        await interruptibleDelay(30_000, state);
+        continue;
+      }
+      if (typeof response.get_updates_buf === "string") {
+        seam.saveGetUpdatesBuf(syncPath, response.get_updates_buf);
+        cursor = response.get_updates_buf;
+      }
+      let refreshed = false;
+      for (const message of response.msgs) {
+        if (message === null || typeof message !== "object") continue;
+        const sender = message.from_user_id;
+        const contextToken = message.context_token;
+        if (
+          approvedTargets.has(sender)
+          && typeof contextToken === "string"
+          && contextToken.length > 0
+        ) {
+          seam.setContextToken(account.accountId, sender, contextToken);
+          refreshed = true;
+        }
+      }
+      lastPollAt = new Date().toISOString();
+      if (refreshed) lastRefreshAt = lastPollAt;
+      backoffIndex = 0;
+      writeMonitorStatus(input.status_path, monitorStatus(
+        input.approved_recipients.length,
+        "ok",
+        lastPollAt,
+        lastRefreshAt,
+        null,
+      ));
+    }
+  } finally {
+    try {
+      await seam.notifyStop({ baseUrl: account.baseUrl, token: account.token });
+    } catch {
+      // Best-effort lifecycle stop only.
+    }
+  }
+}
+
+
 async function main() {
   const command = process.argv[2];
   const input = await readInput();
@@ -279,6 +468,13 @@ async function main() {
   ) {
     return register(input);
   }
+  if (
+    command === "monitor"
+    && Object.keys(input).sort().join(",") === "account_id,approved_recipients,plugin_root,status_path"
+  ) {
+    await monitor(input);
+    return undefined;
+  }
   {
     fail("WEIXIN_ADAPTER_INPUT_INVALID");
   }
@@ -287,7 +483,7 @@ async function main() {
 
 try {
   const result = await main();
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (result !== undefined) process.stdout.write(`${JSON.stringify(result)}\n`);
 } catch (error) {
   const code = error instanceof AdapterFailure ? error.code : "WEIXIN_ADAPTER_INCOMPATIBLE";
   process.stdout.write(`${JSON.stringify({ status: "failed", error_code: code })}\n`);

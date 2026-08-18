@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 
@@ -59,8 +59,8 @@ export async function getUpdates() {
   await new Promise((resolve) => setTimeout(resolve, 20));
   return { ret: 0, msgs: [], get_updates_buf: "idle" };
 }
-export async function notifyStart() { throw new Error("probe called notifyStart"); }
-export async function notifyStop() { throw new Error("probe called notifyStop"); }
+export async function notifyStart() { appendFileSync(process.env.FAKE_LOG, "notifyStart\\n"); }
+export async function notifyStop() { appendFileSync(process.env.FAKE_LOG, "notifyStop\\n"); }
 `,
   );
   await writeModule(
@@ -246,4 +246,79 @@ test("register ignores missing-context and invalid sender then times out", async
     error_code: "WEIXIN_REGISTRATION_TIMEOUT",
   });
   assert.equal((await readFile(logPath, "utf8")).includes("context:"), false);
+});
+
+
+async function waitForFileText(filePath, needle) {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    try {
+      const content = await readFile(filePath, "utf8");
+      if (content.includes(needle)) return content;
+    } catch {
+      // The adapter creates the status file after startup.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for ${needle}`);
+}
+
+
+test("monitor resumes cursor, refreshes only approved target, and stops gracefully", async () => {
+  const pluginRoot = await fakePluginTree();
+  const logPath = path.join(pluginRoot, "events.log");
+  const statusPath = path.join(pluginRoot, "status.json");
+  await writeFile(logPath, "");
+  const updates = [{
+    ret: 0,
+    get_updates_buf: "cursor-monitor",
+    msgs: [
+      message("unknown@im.wechat", "ignored", "unknown-context"),
+      message("u1@im.wechat", "approved content", "approved-context"),
+    ],
+  }];
+  const child = spawn(process.execPath, [ADAPTER, "monitor"], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      OPENCLAW_LOG_LEVEL: "FATAL",
+      FAKE_LOG: logPath,
+      FAKE_UPDATES: JSON.stringify(updates),
+    },
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  child.stdin.end(JSON.stringify({
+    plugin_root: pluginRoot,
+    account_id: "account-fixture",
+    approved_recipients: [{ alias: "owner", target: "u1@im.wechat" }],
+    status_path: statusPath,
+  }));
+
+  const events = await waitForFileText(logPath, "context:u1@im.wechat");
+  assert.equal(events.includes("context:unknown@im.wechat"), false);
+  assert.ok(events.indexOf("save:cursor-monitor") < events.indexOf("context:u1@im.wechat"));
+  child.kill("SIGTERM");
+  const exitCode = await new Promise((resolve) => child.once("exit", resolve));
+  assert.equal(exitCode, 0);
+  assert.equal((await readFile(logPath, "utf8")).includes("notifyStop"), true);
+  assert.equal(stdout, "");
+  assert.equal(stderr, "");
+  const status = JSON.parse(await readFile(statusPath, "utf8"));
+  assert.equal((await stat(statusPath)).mode & 0o777, 0o600);
+  assert.deepEqual(Object.keys(status).sort(), [
+    "last_context_refresh_at",
+    "last_error_code",
+    "last_poll_at",
+    "recipient_count",
+    "schema_version",
+    "status",
+  ]);
+  assert.equal(status.schema_version, 1);
+  assert.equal(status.recipient_count, 1);
+  assert.equal(status.status, "ok");
+  assert.equal(JSON.stringify(status).includes("@im.wechat"), false);
+  assert.equal(JSON.stringify(status).includes("approved-context"), false);
 });

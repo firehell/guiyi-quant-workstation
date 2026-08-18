@@ -19,6 +19,7 @@ from typing import Any, TextIO
 from app.db.session import SessionLocal
 from app.alerts.composition import build_alert_runtime, build_wecom_sender_from_env
 from app.alerts.weixin import WeixinRegistrationError, register_recipient
+from app.alerts.weixin_context import build_weixin_context_monitor_from_env
 from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
@@ -54,6 +55,7 @@ ResearchServiceFactory = Callable[[Any], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
 WeixinRegister = Callable[..., Any]
+WeixinContextFactory = Callable[[], Any]
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +111,7 @@ def main(
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
     alert_canary_sender_factory: AlertCanarySenderFactory = build_wecom_sender_from_env,
     weixin_register: WeixinRegister = register_recipient,
+    weixin_context_factory: WeixinContextFactory = build_weixin_context_monitor_from_env,
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
@@ -219,7 +222,13 @@ def main(
                 "alias": args.alias,
             }
         else:
-            raise RuntimeError("WEIXIN_CONTEXT_MONITOR_UNAVAILABLE")
+            weixin_context_factory().run_forever()
+            payload = {
+                "schema_version": 1,
+                "command": "runtime.weixin-context",
+                "status": "ok",
+                "foreground": True,
+            }
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
         # 执行期异常：error code 仅暴露公开码或 CLI_INTERNAL_ERROR
         print_json(
