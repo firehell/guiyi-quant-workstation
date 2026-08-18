@@ -5,11 +5,21 @@ from __future__ import annotations
 from collections.abc import Mapping
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from app.alerts.evaluators import HtdyOriginal15mEvaluator
 from app.alerts.runtime import AlertRuntime
-from app.alerts.wecom import WeComWebhookSender
+from app.alerts.wechat_courier import (
+    WeChatCourierError,
+    WeChatCourierRunner,
+    WeChatGroupAlertSender,
+    resolve_wechat_courier_dependency,
+)
+from app.alerts.wechat_group_config import (
+    WeChatGroupConfigError,
+    load_wechat_group_target,
+)
 from app.core.env import PROJECT_ROOT
 from app.db.session import SessionLocal
 from app.market_data.composition import (
@@ -53,11 +63,22 @@ class RedisAlertHeartbeatStore:
         )
 
 
-def build_wecom_sender_from_env() -> WeComWebhookSender:
-    webhook_url = os.getenv("WECOM_WEBHOOK_URL", "").strip()
-    if not webhook_url:
-        raise RuntimeError("WECOM_WEBHOOK_NOT_CONFIGURED")
-    return WeComWebhookSender(webhook_url)
+def build_wechat_group_sender_from_env() -> WeChatGroupAlertSender:
+    courier_root = os.getenv("GUIYI_WECHAT_COURIER_ROOT", "")
+    group_config_path = os.getenv("GUIYI_ALERT_WECHAT_GROUP_PATH", "")
+    if not courier_root or not group_config_path:
+        raise RuntimeError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY")
+    try:
+        root = Path(courier_root)
+        config_path = Path(group_config_path)
+        if not root.is_absolute() or not config_path.is_absolute():
+            raise ValueError
+        target = load_wechat_group_target(config_path)
+        dependency = resolve_wechat_courier_dependency(root)
+        runner = WeChatCourierRunner(dependency)
+    except (OSError, ValueError, WeChatGroupConfigError, WeChatCourierError):
+        raise RuntimeError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY") from None
+    return WeChatGroupAlertSender(target=target, runner=runner)
 
 
 def build_alert_runtime() -> AlertRuntime:
@@ -68,15 +89,18 @@ def build_alert_runtime() -> AlertRuntime:
         enabled = False
     if not enabled:
         raise RuntimeError("ALERT_RUNTIME_NOT_ENABLED")
+    operational_products = load_operational_products()
+    taxonomy = load_product_taxonomy()
+    sender = build_wechat_group_sender_from_env()
     redis = get_redis_connection()
     return AlertRuntime(
         session_factory=SessionLocal,
         market_read_factory=build_market_read_service,
         subing_read_factory=build_subing_read_service,
         htdy_evaluator=HtdyOriginal15mEvaluator(),
-        sender=build_wecom_sender_from_env(),
-        operational_products=load_operational_products(),
-        taxonomy=load_product_taxonomy(),
+        sender=sender,
+        operational_products=operational_products,
+        taxonomy=taxonomy,
         message_source=RedisAlertMessageSource(redis),
         heartbeat_store=RedisAlertHeartbeatStore(redis),
     )

@@ -24,7 +24,6 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.alerts.wecom import is_valid_wecom_webhook_url
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -49,7 +48,7 @@ def build_runtime_health(
     live_freshness_seconds: int | None = None,
     after_market_automation_enabled: bool | None = None,
     alert_runtime_enabled: bool | None = None,
-    wecom_configured: bool | None = None,
+    notification_transport_configured: bool | None = None,
     alert_freshness_seconds: int = 30,
     after_market_status_path: Path | None = DEFAULT_AFTER_MARKET_STATUS_PATH,
 ) -> dict[str, Any]:
@@ -73,20 +72,27 @@ def build_runtime_health(
         if alert_runtime_enabled is None
         else alert_runtime_enabled
     )
-    if wecom_configured is None:
-        webhook_value = os.getenv("WECOM_WEBHOOK_URL", "")
-        webhook_present = bool(webhook_value.strip())
-        webhook_configured = is_valid_wecom_webhook_url(webhook_value)
-        webhook_error_type = (
+    if notification_transport_configured is None:
+        courier_root = os.getenv("GUIYI_WECHAT_COURIER_ROOT", "")
+        group_config_path = os.getenv("GUIYI_ALERT_WECHAT_GROUP_PATH", "")
+        transport_present = bool(courier_root or group_config_path)
+        transport_configured = bool(courier_root and group_config_path) and all(
+            Path(value).is_absolute() for value in (courier_root, group_config_path)
+        )
+        transport_error_type = (
             None
-            if webhook_configured
-            else "wecom_webhook_invalid"
-            if webhook_present
-            else "wecom_webhook_missing"
+            if transport_configured
+            else "alert_notification_transport_invalid"
+            if transport_present
+            else "alert_notification_transport_missing"
         )
     else:
-        webhook_configured = wecom_configured
-        webhook_error_type = None if webhook_configured else "wecom_webhook_missing"
+        transport_configured = notification_transport_configured
+        transport_error_type = (
+            None
+            if transport_configured
+            else "alert_notification_transport_missing"
+        )
     components: dict[str, Any] = {}
     components["db"] = _collect_db_health(session)
     redis_connection, redis_health = _collect_redis_health(redis_factory or get_redis_connection)
@@ -106,8 +112,8 @@ def build_runtime_health(
         redis_connection,
         now=current_time,
         configured_enabled=alert_enabled,
-        webhook_configured=webhook_configured,
-        webhook_error_type=webhook_error_type,
+        notification_transport_configured=transport_configured,
+        transport_error_type=transport_error_type,
         freshness_seconds=alert_freshness_seconds,
     )
 
@@ -145,13 +151,13 @@ def _collect_alert_health(
     *,
     now: datetime,
     configured_enabled: bool,
-    webhook_configured: bool,
-    webhook_error_type: str | None,
+    notification_transport_configured: bool,
+    transport_error_type: str | None,
     freshness_seconds: int,
 ) -> dict[str, Any]:
     empty = {
         "configured_enabled": configured_enabled,
-        "webhook_configured": webhook_configured,
+        "notification_transport_configured": notification_transport_configured,
         "last_heartbeat_at": None,
         "enabled_rule_count": 0,
         "scope_product_count": 0,
@@ -159,11 +165,12 @@ def _collect_alert_health(
     }
     if not configured_enabled:
         return {"status": RUNTIME_STATUS_DISABLED, **empty}
-    if not webhook_configured:
+    if not notification_transport_configured:
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **empty,
-            "error_type": webhook_error_type or "wecom_webhook_missing",
+            "error_type": transport_error_type
+            or "alert_notification_transport_missing",
         }
     if connection is None:
         return {

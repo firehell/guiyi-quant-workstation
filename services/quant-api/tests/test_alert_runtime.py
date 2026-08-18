@@ -1129,6 +1129,63 @@ def test_notification_failure_keeps_event_and_duplicate_never_retries(
     assert len(harness.sender.messages) == 1
 
 
+def test_notification_failure_does_not_block_next_completed_bar(
+    session: Session,
+) -> None:
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    harness = _runtime(session, sender_error=RuntimeError("send failed"))
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    next_end = ORDINARY_END + timedelta(minutes=15)
+    harness.subing_read.result = _snapshot(
+        frequency=BarFrequency.M5,
+        primary_bar_end=next_end,
+        resolved_signal=_signal(
+            trigger_timeframe=BarFrequency.M5,
+            bar_end=next_end,
+        ),
+    )
+    harness.runtime.clock = lambda: next_end + timedelta(seconds=2)
+    harness.runtime.process_message(
+        "live:bar:jm:5m",
+        _payload(bar_end=next_end),
+    )
+
+    assert len(_event_rows(session)) == 2
+    assert len(harness.sender.messages) == 2
+
+
+def test_multiple_messages_from_one_bar_are_sent_sequentially(session: Session) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    snapshot = _snapshot(
+        frequency=BarFrequency.M15,
+        primary_bar_end=BOUNDARY_END,
+        resolved_signal=_signal(
+            trigger_timeframe=BarFrequency.M15,
+            bar_end=BOUNDARY_END,
+        ),
+    )
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        subing_snapshot=snapshot,
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert len(_event_rows(session)) == 2
+    assert [message.rule_code for message in harness.sender.messages] == [
+        "htdy_original_15m",
+        "subing_entry_signal_v1",
+    ]
+
+
 @pytest.mark.parametrize("revocation", ("disable", "scope_remove"))
 def test_runtime_refreshes_rule_truth_after_external_revocation(
     revocation: str,
