@@ -306,7 +306,7 @@ def _pinned_temp_directory(root: Path):
 def _temp_directory_identity_matches(descriptor: int, temp_root: Path) -> bool:
     try:
         held = os.fstat(descriptor)
-        current = temp_root.stat(follow_symlinks=False)
+        current = os.stat(temp_root, follow_symlinks=False)
         return (
             stat.S_ISDIR(current.st_mode)
             and held.st_dev == current.st_dev

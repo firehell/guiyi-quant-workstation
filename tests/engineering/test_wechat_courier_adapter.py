@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 
+import app.alerts.wechat_courier_adapter as adapter
 from app.alerts.wechat_courier_adapter import (
     _capture_screen_rect,
     _validate_ocr_box,
@@ -214,6 +215,22 @@ def test_pinned_temp_directory_rejects_path_identity_swap(
     descriptor = os.open(pinned, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     monkeypatch.setenv("TMPDIR", str(pinned))
     monkeypatch.setenv("GUIYI_WECHAT_COURIER_TMP_FD", str(descriptor))
+    class Python39Path:
+        def __init__(self, value: str) -> None:
+            self._path = Path(value)
+
+        def is_absolute(self) -> bool:
+            return self._path.is_absolute()
+
+        def stat(self, **kwargs: object):
+            if "follow_symlinks" in kwargs:
+                raise TypeError("Python 3.9 Path.stat has no follow_symlinks")
+            return self._path.stat()
+
+        def __fspath__(self) -> str:
+            return str(self._path)
+
+    monkeypatch.setattr(adapter, "Path", Python39Path)
     try:
         _validate_pinned_temp_directory()
         held = tmp_path / "held"

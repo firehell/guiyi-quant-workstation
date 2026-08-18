@@ -67,7 +67,7 @@ def _validate_pinned_temp_directory() -> None:
         if not temp_root.is_absolute():
             raise ValueError
         held = os.fstat(descriptor)
-        current = temp_root.stat(follow_symlinks=False)
+        current = os.stat(temp_root, follow_symlinks=False)
         if (
             not stat.S_ISDIR(held.st_mode)
             or not stat.S_ISDIR(current.st_mode)
