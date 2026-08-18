@@ -10,6 +10,7 @@ import subprocess
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+PINNED_WECHAT_COURIER_COMMIT = "981bd14e238302b2a0e206cb5f28e8e2505bb874"
 
 
 def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tmp_path: Path) -> None:
@@ -162,6 +163,10 @@ def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path)
     assert "com.guiyi.quant-after-market loaded state=not_running" in result.stdout
     assert "com.guiyi.quant-alert loaded state=running" in result.stdout
     assert "loaded_commit=" in result.stdout
+    assert f"external.wechat_courier.commit={PINNED_WECHAT_COURIER_COMMIT}" in result.stdout
+    assert "external.wechat_courier.status=not_installed" in result.stdout
+    assert "alert.notification_channel=wechat-courier" in result.stdout
+    assert "alert.notification_group_alias=primary_alert_group" in result.stdout
     assert "overall=passed" in result.stdout
     assert not calls.exists()
 

@@ -13,6 +13,7 @@ labels=(
   com.guiyi.quant-alert
 )
 failed=0
+PINNED_WECHAT_COURIER_COMMIT="981bd14e238302b2a0e206cb5f28e8e2505bb874"
 
 plist_root() {
   local label="$1"
@@ -30,6 +31,27 @@ record_failure() {
 
 printf '[local-services-status] readonly=true\n'
 printf '[local-services-status] inspector_repo=%s\n' "$PROJECT_ROOT"
+wechat_courier_status=not_installed
+wechat_courier_root="${GUIYI_WECHAT_COURIER_ROOT:-}"
+if [[ -n "$wechat_courier_root" && -e "$wechat_courier_root" ]]; then
+  wechat_courier_status=invalid
+  if [[ -d "$wechat_courier_root/source/.git" \
+    && -f "$wechat_courier_root/source/wechat_courier.py" \
+    && -x "$wechat_courier_root/venv/bin/python" \
+    && -d "$wechat_courier_root/runtime" \
+    && -d "$wechat_courier_root/tmp" \
+    && -d "$wechat_courier_root/cache/clang" ]]; then
+    courier_commit="$(/usr/bin/git -C "$wechat_courier_root/source" rev-parse HEAD 2>/dev/null || true)"
+    courier_dirty="$(/usr/bin/git -C "$wechat_courier_root/source" status --porcelain 2>/dev/null || printf 'invalid')"
+    if [[ "$courier_commit" == "$PINNED_WECHAT_COURIER_COMMIT" && -z "$courier_dirty" ]]; then
+      wechat_courier_status=ready
+    fi
+  fi
+fi
+printf '[local-services-status] external.wechat_courier.commit=%s\n' "$PINNED_WECHAT_COURIER_COMMIT"
+printf '[local-services-status] external.wechat_courier.status=%s\n' "$wechat_courier_status"
+printf '[local-services-status] alert.notification_channel=wechat-courier\n'
+printf '[local-services-status] alert.notification_group_alias=primary_alert_group\n'
 
 runtime_root="$(plist_root "$API_LABEL")"
 printf '[local-services-status] supervised_runtime_root=%s\n' "$runtime_root"
