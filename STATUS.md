@@ -120,6 +120,16 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
+- `2026-08-18 23:32 +08:00` 已按明确单次授权将本机统一五服务 Runtime 从
+  `579cb034222b44e45f4a365c534428d58c1cf252` 切换至 UI-only 补丁提交
+  `1bbd70e3bf6705df196a53fde5184ac3de8fbde0`。该提交仅为 `579cb034` 基线加入本次 HTDY
+  的 6 个 Web 代码/测试文件，未携带 `develop` 上尚未 promotion 的 Clawbot/Alert 变更。
+- 正式 Web production build 通过；API/Web/Live/Alert 均 `running`，after-market 为 schedule-only
+  `not running`，五个 launchd label 的 root/loaded commit 均精确为 `1bbd70e3`，Runtime
+  checkout 为 clean/detached，API/Web=200，Runtime health=`ok/readonly=true`，只读状态脚本
+  `overall=passed`。Alert 在首次 3 秒验收时短暂为 `spawn_scheduled`，未执行第二次重载即
+  自然进入 `running`；正式 `5173` JM 页面已读回 HTDY 高对比三轨/图例，原顶部风险提示横幅不再
+  出现。本次未执行 DB/Canonical/Scope/通知渠道变更、手工通知、手工盘后或订单操作。
 - `2026-08-18 22:16 +08:00` 已按本次明确授权把 API/Web/Market Live/after-market/
   现有 Alert Runtime 统一重载至 clean/detached Runtime 根
   `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.2` 的 Live hotfix 提交
