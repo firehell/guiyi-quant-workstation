@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-17
+更新时间：2026-08-18
 
 ## 当前结论
 
@@ -102,17 +102,23 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
-- `2026-08-17 22:46 +08:00` 已按本次明确授权把 API/Web/Market Live/after-market/Alert promotion
-  至 clean/detached/exact-tag Runtime 根 `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.2`，统一提交为
-  `fb96506493763340e082ed85e8112b60d6670d65`，API version=`1.4.2`。
+- `2026-08-18 22:16 +08:00` 已按本次明确授权把 API/Web/Market Live/after-market/
+  现有 Alert Runtime 统一重载至 clean/detached Runtime 根
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.4.2` 的 Live hotfix 提交
+  `579cb034222b44e45f4a365c534428d58c1cf252`。该提交的父提交是 `v1.4.2` peeled commit
+  `fb96506493763340e082ed85e8112b60d6670d65`；release/tag 未变，API version 仍为 `1.4.2`。
 - API/Web/Live/Alert 均 running，after-market 为 schedule-only `not running`；五个 launchd label 的
-  root 与 loaded commit 均精确指向 `v1.4.2`，Runtime health=`ok/readonly=true`，DB revision 仍为
+  root 与 loaded commit 均精确指向 `579cb034`，Runtime health=`ok/readonly=true`，DB revision 仍为
   `20260815_0039`。旧 `v1.4.1` Runtime worktree 已在正式引用清零后通过 `git worktree remove`
   清理，当前只保留唯一正式 `v1.4.2` Runtime。
 - Market Runtime V1 持续授权保持原 active 60；切换后读回为 `TRADING=45/CLOSED=15/subscribed=45`，
-  `jm` 的 actual-dominant 1m 为 `TRADING/live_available=true/JM2609`。Alert Runtime V2 保持原 Rule/Scope：
+  RQData socket=`ESTABLISHED`。`jm` actual-dominant 1m 为
+  `TRADING/live_available=true/JM2701`，Redis Bar 从 2 根持续增长至 4 根、最新 `22:20 +08:00`，
+  WebSocket state/snapshot 已读回实时 Bar。重启时所在的不完整 15m bucket 不聚合，等待首个
+  完整 post-restart bucket 自然完成，不用缺失分钟填充。Alert Runtime V2 保持原 Rule/Scope：
   `htdy_original_15m -> jm`、`subing_entry_signal_v1 -> jm`；抽查 `ag` 两条 Rule 均未启用。
-- 新 Runtime 未复制旧盘后状态；after-market=`pending/runs=0` 且仅保留 18:05 schedule。本次切换未执行 migration、RQData/Canonical/DB
+- after-market 最新自然运行为 `2026-08-18/passed/attempts=1`，仅保留 18:05 schedule。
+  本次热修切换未执行 migration、RQData/Canonical/DB
   写入、Scope mutation、真实 WeCom、手工盘后、replay/backfill/retry 或订单操作；
   Execution Review roll 继续 `disabled / not activated`，`auto_order=false` 不变。
 
@@ -121,12 +127,13 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.4.2` Runtime promotion 已完成；正式五服务已统一加载 identity
-  `fb96506493763340e082ed85e8112b60d6670d65`，Market/Alert 原持续授权范围未扩大，旧
+- `v1.4.2` Runtime promotion 及 Live hotfix 切换已完成；正式五服务已统一加载 identity
+  `579cb034222b44e45f4a365c534428d58c1cf252`，Market/Alert 原持续授权范围未扩大，旧
   `v1.4.1` Runtime worktree 已清理。Gate D 仍为 `disabled / not activated`。
-- bounded retry 修复的部署身份已读回；新 Runtime 的业务级盘后证据等待下一次自然 18:05，
-  不手工运行、回填、retry 或补证。
+- bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
+  `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证；该独立 pending 状态不改写 `v1.4.2` release/Runtime promotion 完成事实。
-- 最小下一步：只等待下一次自然 18:05 盘后运行形成 v1.4.2 evidence；不得手工补跑。SuBing
-  Natural Canary 与 Gate D 继续分别保持 `pending`、`disabled / not activated`。
+- 最小下一步：只等待首个完整 post-restart 15m bucket 自然完成并只读验收；不回填、
+  不补证。SuBing Natural Canary 与 Gate D 继续分别保持 `pending`、
+  `disabled / not activated`。
