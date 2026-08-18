@@ -24,6 +24,10 @@ from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage,
 def _tree(tmp_path: Path) -> tuple[ClawbotDependency, Path]:
     root = tmp_path / "plugin"
     root.mkdir()
+    (root / "package.json").write_text(
+        json.dumps({"version": "2.4.6"}),
+        encoding="utf-8",
+    )
     for relative in (
         "dist/src/auth/accounts.js",
         "dist/src/messaging/inbound.js",
@@ -132,7 +136,19 @@ def test_dependency_resolver_validates_exact_live_versions_and_plugin_root(tmp_p
     ] * 3
 
 
-@pytest.mark.parametrize("problem", ["relative", "missing_node", "config_dir", "missing_parent", "version_mismatch"])
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "relative",
+        "missing_node",
+        "config_dir",
+        "missing_parent",
+        "version_mismatch",
+        "missing_package",
+        "package_version",
+        "package_symlink",
+    ],
+)
 def test_dependency_resolver_fails_closed(tmp_path: Path, problem: str) -> None:
     expected, manifest = _tree(tmp_path)
     values = {
@@ -153,6 +169,18 @@ def test_dependency_resolver_fails_closed(tmp_path: Path, problem: str) -> None:
         expected.config_path.mkdir()
     elif problem == "missing_parent":
         values["owner_path"] = tmp_path / "missing/owner.json"
+    elif problem == "missing_package":
+        (expected.plugin_root / "package.json").unlink()
+    elif problem == "package_version":
+        (expected.plugin_root / "package.json").write_text(
+            json.dumps({"version": "9.9.9"}),
+            encoding="utf-8",
+        )
+    elif problem == "package_symlink":
+        package = expected.plugin_root / "package.json"
+        outside = tmp_path / "package.json"
+        package.replace(outside)
+        package.symlink_to(outside)
 
     def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if argv[-1] == "--version":
@@ -165,6 +193,37 @@ def test_dependency_resolver_fails_closed(tmp_path: Path, problem: str) -> None:
 
     with pytest.raises(ClawbotError, match="^ALERT_NOTIFICATION_TRANSPORT_NOT_READY$"):
         resolve_clawbot_dependency(**values, verify_versions=True, run_process=run)
+
+
+def test_python_resolver_uses_manifest_module_paths_without_private_path_knowledge(
+    tmp_path: Path,
+) -> None:
+    expected, manifest = _tree(tmp_path)
+    custom_modules = {
+        "accounts": "compiled/account-entry.js",
+        "inbound": "compiled/context-entry.js",
+        "send": "compiled/send-entry.js",
+    }
+    for relative in custom_modules.values():
+        module = expected.plugin_root / relative
+        module.parent.mkdir(parents=True, exist_ok=True)
+        module.write_text("export {};\n", encoding="utf-8")
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["plugin_modules"] = custom_modules
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = resolve_clawbot_dependency(
+        openclaw_bin=expected.openclaw_bin,
+        node_bin=expected.node_bin,
+        plugin_root=expected.plugin_root,
+        state_dir=expected.state_dir,
+        config_path=expected.config_path,
+        owner_path=expected.owner_path,
+        versions_path=manifest,
+        verify_versions=False,
+    )
+
+    assert result == expected
 
 
 def test_runner_uses_fixed_argv_stdin_and_allowlisted_environment(tmp_path: Path) -> None:
@@ -207,6 +266,42 @@ def test_runner_uses_fixed_argv_stdin_and_allowlisted_environment(tmp_path: Path
         "GUIYI_CLAWBOT_VERSIONS_PATH": str(dependency.versions_path),
         "PATH": f"{dependency.node_bin.parent}:/usr/bin:/bin:/usr/sbin:/sbin",
     }
+
+
+@pytest.mark.parametrize(
+    ("account_id", "target_user_id"),
+    [
+        (" fixture-account", "fixture-owner@im.wechat"),
+        ("fixture-account", "fixture-owner\n@im.wechat"),
+    ],
+)
+def test_runner_discovery_rejects_ids_that_owner_schema_cannot_persist(
+    tmp_path: Path,
+    account_id: str,
+    target_user_id: str,
+) -> None:
+    dependency, _ = _tree(tmp_path)
+
+    def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "status": "ready",
+                    "action": "discover_owner",
+                    "account_count": 1,
+                    "owner_candidate_count": 1,
+                    "context_available": True,
+                    "account_id": account_id,
+                    "target_user_id": target_user_id,
+                }
+            ),
+            "",
+        )
+
+    with pytest.raises(ClawbotError, match="^CLAWBOT_CHILD_FAILED$"):
+        ClawbotRunner(dependency, run_process=run).discover_owner()
 
 
 @pytest.mark.parametrize("failure", ["timeout", "crash", "malformed", "private_error"])
@@ -301,6 +396,16 @@ def test_structural_transport_check_reads_files_without_version_probe_or_send(
     )
 
     assert clawbot_transport_configured_from_env() is True
+
+    (dependency.plugin_root / "package.json").write_text(
+        json.dumps({"version": "9.9.9"}),
+        encoding="utf-8",
+    )
+    assert clawbot_transport_configured_from_env() is False
+    (dependency.plugin_root / "package.json").write_text(
+        json.dumps({"version": "2.4.6"}),
+        encoding="utf-8",
+    )
 
     dependency.owner_path.chmod(0o644)
     assert clawbot_transport_configured_from_env() is False

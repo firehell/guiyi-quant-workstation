@@ -27,12 +27,14 @@ function fixture() {
 export async function listIndexedWeixinAccountIds() {
   if (process.env.FAKE_SCENARIO === "zero_accounts") return [];
   if (process.env.FAKE_SCENARIO === "multiple_accounts") return ["fixture-account", "other-account"];
+  if (process.env.FAKE_SCENARIO === "bad_account") return [" fixture-account"];
   return ["fixture-account"];
 }
 export async function loadWeixinAccount() {
   return {
     token: process.env.FAKE_SCENARIO === "missing_token" ? "" : "fixture-token",
     userId: process.env.FAKE_SCENARIO === "bad_user" ? "invalid" :
+      process.env.FAKE_SCENARIO === "noncanonical_user" ? " fixture-owner@im.wechat" :
       process.env.FAKE_SCENARIO === "owner_mismatch" ? "other@im.wechat" : "fixture-owner@im.wechat",
     baseUrl: "",
   };
@@ -125,7 +127,15 @@ test("discover_owner returns one private candidate to the captured parent and ne
 });
 
 
-for (const scenario of ["zero_accounts", "multiple_accounts", "missing_token", "bad_user", "missing_context"]) {
+for (const scenario of [
+  "zero_accounts",
+  "multiple_accounts",
+  "missing_token",
+  "bad_user",
+  "bad_account",
+  "noncanonical_user",
+  "missing_context",
+]) {
   test(`discover_owner fails closed for ${scenario} with zero send`, () => {
     const result = invoke(fixture(), { action: "discover_owner" }, scenario);
     assert.notEqual(result.status, 0);

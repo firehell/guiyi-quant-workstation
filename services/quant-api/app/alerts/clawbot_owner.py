@@ -123,11 +123,21 @@ def _parse_owner(payload: Any) -> ClawbotOwner:
         raise ValueError
     if channel != CLAWBOT_CHANNEL or owner_alias != CLAWBOT_OWNER_ALIAS:
         raise ValueError
-    _validate_identifier(account_id)
-    _validate_identifier(target_user_id)
-    if not target_user_id.endswith("@im.wechat") or target_user_id == "@im.wechat":
-        raise ValueError
+    validate_clawbot_owner_ids(account_id, target_user_id)
     return ClawbotOwner(version, channel, owner_alias, account_id, target_user_id)
+
+
+def validate_clawbot_owner_ids(account_id: object, target_user_id: object) -> None:
+    """Apply the immutable owner identifier contract to discovery and persistence."""
+    try:
+        _validate_identifier(account_id)
+        _validate_identifier(target_user_id)
+        if not isinstance(target_user_id, str):
+            raise ValueError
+        if not target_user_id.endswith("@im.wechat") or target_user_id == "@im.wechat":
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ClawbotOwnerError("CLAWBOT_OWNER_INVALID") from None
 
 
 def _validate_identifier(value: object) -> None:

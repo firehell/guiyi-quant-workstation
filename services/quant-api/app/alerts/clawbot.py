@@ -7,15 +7,18 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import stat
 import subprocess
 from typing import Any
+import unicodedata
 
 from app.alerts.clawbot_owner import (
     CLAWBOT_OWNER_ALIAS,
     ClawbotOwner,
     ClawbotOwnerError,
     load_clawbot_owner,
+    validate_clawbot_owner_ids,
 )
 from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage, format_alert_message
 from app.core.env import PROJECT_ROOT
@@ -114,17 +117,32 @@ def _manifest(path: Path) -> dict[str, Any]:
                 isinstance(payload[key], str) and bool(payload[key])
                 for key in ("openclaw_version", "openclaw_weixin_version", "node_version")
             )
-            or payload["plugin_modules"]
-            != {
-                "accounts": "dist/src/auth/accounts.js",
-                "inbound": "dist/src/messaging/inbound.js",
-                "send": "dist/src/messaging/send.js",
-            }
+            or not isinstance(payload["plugin_modules"], dict)
+            or set(payload["plugin_modules"]) != {"accounts", "inbound", "send"}
         ):
             raise ValueError
+        for value in payload["plugin_modules"].values():
+            _module_relative_path(value)
         return payload
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError, ClawbotError):
         raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY") from None
+
+
+def _module_relative_path(value: object) -> Path:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value.strip() != value
+        or "\\" in value
+        or any(unicodedata.category(character).startswith("C") for character in value)
+    ):
+        raise ValueError
+    relative = PurePosixPath(value)
+    if relative.is_absolute() or str(relative) != value or any(
+        part in {"", ".", ".."} for part in relative.parts
+    ):
+        raise ValueError
+    return Path(*relative.parts)
 
 
 def resolve_clawbot_dependency(
@@ -147,12 +165,29 @@ def resolve_clawbot_dependency(
     resolved_config = _regular(config_path)
     try:
         for relative_value in manifest["plugin_modules"].values():
-            relative = Path(relative_value)
-            if relative.is_absolute() or ".." in relative.parts:
-                raise ValueError
+            relative = _module_relative_path(relative_value)
             module = _regular(resolved_plugin / relative)
             module.relative_to(resolved_plugin)
-    except (KeyError, OSError, TypeError, ValueError, ClawbotError):
+            if module != resolved_plugin / relative:
+                raise ValueError
+        package_path = _regular(resolved_plugin / "package.json")
+        if package_path != resolved_plugin / "package.json":
+            raise ValueError
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(package, dict)
+            or package.get("version") != manifest["openclaw_weixin_version"]
+        ):
+            raise ValueError
+    except (
+        KeyError,
+        OSError,
+        UnicodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+        ClawbotError,
+    ):
         raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY") from None
     try:
         if not owner_path.is_absolute():
@@ -248,10 +283,9 @@ class ClawbotRunner:
                 raise ValueError
             account_id = payload["account_id"]
             target_user_id = payload["target_user_id"]
-            if not isinstance(account_id, str) or not account_id or not isinstance(target_user_id, str) or not target_user_id.endswith("@im.wechat"):
-                raise ValueError
+            validate_clawbot_owner_ids(account_id, target_user_id)
             return ClawbotOwnerCandidate(account_id, target_user_id)
-        except (KeyError, TypeError, ValueError):
+        except (ClawbotOwnerError, KeyError, TypeError, ValueError):
             raise ClawbotError("CLAWBOT_CHILD_FAILED") from None
 
     def probe(self, owner: ClawbotOwner) -> None:

@@ -49,8 +49,13 @@ async function readInput() {
 }
 
 
+function isPrivateText(value) {
+  return typeof value === "string" && Boolean(value) && value.trim() === value && !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+
 function requirePrivateText(value) {
-  if (typeof value !== "string" || !value || value.trim() !== value || /[\u0000-\u001f\u007f]/u.test(value)) {
+  if (!isPrivateText(value)) {
     fail("CLAWBOT_INPUT_INVALID");
   }
   return value;
@@ -145,7 +150,7 @@ async function loadDependency() {
 
 async function discoverOwner(dependency) {
   const ids = await dependency.accounts.listIndexedWeixinAccountIds();
-  if (!Array.isArray(ids) || ids.length !== 1 || typeof ids[0] !== "string" || !ids[0]) {
+  if (!Array.isArray(ids) || ids.length !== 1 || !isPrivateText(ids[0])) {
     fail("CLAWBOT_OWNER_UNAVAILABLE");
   }
   const account = await dependency.accounts.loadWeixinAccount(ids[0]);
@@ -153,7 +158,7 @@ async function discoverOwner(dependency) {
     !account ||
     typeof account.token !== "string" ||
     !account.token.trim() ||
-    typeof account.userId !== "string" ||
+    !isPrivateText(account.userId) ||
     !account.userId.endsWith("@im.wechat")
   ) {
     fail("CLAWBOT_OWNER_UNAVAILABLE");
