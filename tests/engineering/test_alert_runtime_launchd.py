@@ -6,8 +6,18 @@ import plistlib
 import shutil
 import subprocess
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CLAWBOT_ENV_NAMES = (
+    "GUIYI_OPENCLAW_BIN",
+    "GUIYI_OPENCLAW_NODE_BIN",
+    "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT",
+    "GUIYI_OPENCLAW_STATE_DIR",
+    "GUIYI_OPENCLAW_CONFIG_PATH",
+    "GUIYI_ALERT_CLAWBOT_OWNER_PATH",
+)
 
 
 def test_alert_launchd_render_only_is_default_closed_and_has_runtime_contract(tmp_path: Path) -> None:
@@ -31,8 +41,9 @@ def test_alert_launchd_render_only_is_default_closed_and_has_runtime_contract(tm
         payload["EnvironmentVariables"]["GUIYI_RUNTIME_COMMIT"]
         == "1111111111111111111111111111111111111111"
     )
-    assert payload["EnvironmentVariables"]["GUIYI_WECHAT_COURIER_ROOT"] == ""
-    assert payload["EnvironmentVariables"]["GUIYI_ALERT_WECHAT_GROUP_PATH"] == ""
+    assert {key: payload["EnvironmentVariables"][key] for key in CLAWBOT_ENV_NAMES} == {
+        key: "" for key in CLAWBOT_ENV_NAMES
+    }
 
 
 def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_path: Path) -> None:
@@ -44,10 +55,7 @@ def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_pat
 
     alert_repo = _copy_fixture(tmp_path / "alert-repo")
     alert_home, alert_bin = _fake_runtime(tmp_path / "alert")
-    approved_paths = {
-        "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/fixture/courier",
-        "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/fixture/secrets/group.json",
-    }
+    approved_paths = _clawbot_paths(tmp_path / "clawbot")
     _run(
         alert_repo,
         alert_home,
@@ -78,15 +86,8 @@ def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_pat
     api_rendered = alert_repo / ".run/launchd/com.guiyi.quant-api.plist"
     with api_rendered.open("rb") as handle:
         api_payload = plistlib.load(handle)
-    assert (
-        alert_payload["EnvironmentVariables"]["GUIYI_WECHAT_COURIER_ROOT"]
-        == "/Volumes/fixture/courier"
-    )
-    assert (
-        alert_payload["EnvironmentVariables"]["GUIYI_ALERT_WECHAT_GROUP_PATH"]
-        == "/Volumes/fixture/secrets/group.json"
-    )
-    for key in ("GUIYI_WECHAT_COURIER_ROOT", "GUIYI_ALERT_WECHAT_GROUP_PATH"):
+    for key in CLAWBOT_ENV_NAMES:
+        assert alert_payload["EnvironmentVariables"][key] == approved_paths[key]
         assert api_payload["EnvironmentVariables"][key] == alert_payload[
             "EnvironmentVariables"
         ][key]
@@ -111,10 +112,7 @@ def test_alert_confirmation_rejects_installed_api_path_mismatch_without_mutation
         home,
         fake_bin,
         "--confirm-load",
-        extra_env={
-            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/old/courier",
-            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/old/group.json",
-        },
+        extra_env=_clawbot_paths(tmp_path / "old-clawbot"),
     )
     calls = home / "launchctl-calls.log"
     calls.unlink()
@@ -127,8 +125,7 @@ def test_alert_confirmation_rejects_installed_api_path_mismatch_without_mutation
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
-            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/new/courier",
-            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/new/group.json",
+            **_clawbot_paths(tmp_path / "new-clawbot"),
         },
         capture_output=True,
         text=True,
@@ -147,7 +144,7 @@ def test_run_local_service_has_dedicated_alert_cli_branch() -> None:
     assert "runtime alert" in source
 
 
-def test_run_local_service_preserves_launcher_courier_paths_over_runtime_env(
+def test_run_local_service_preserves_launcher_clawbot_paths_over_runtime_env(
     tmp_path: Path,
 ) -> None:
     repo = _copy_fixture(tmp_path / "repo")
@@ -155,16 +152,16 @@ def test_run_local_service_preserves_launcher_courier_paths_over_runtime_env(
     python.parent.mkdir(parents=True)
     python.write_text(
         "#!/bin/sh\n"
-        "printf 'root=%s\\n' \"$GUIYI_WECHAT_COURIER_ROOT\"\n"
-        "printf 'config=%s\\n' \"$GUIYI_ALERT_WECHAT_GROUP_PATH\"\n",
+        + "".join(f"printf '{key}=%s\\n' \"${key}\"\n" for key in CLAWBOT_ENV_NAMES),
         encoding="utf-8",
     )
     python.chmod(0o700)
     runtime_env = tmp_path / "project.env"
+    runtime_values = {key: f"/runtime-env/{index}" for index, key in enumerate(CLAWBOT_ENV_NAMES)}
+    launcher_values = {key: f"/launcher/{index}" for index, key in enumerate(CLAWBOT_ENV_NAMES)}
     runtime_env.write_text(
         "POSTGRES_PASSWORD=test-only\n"
-        "GUIYI_WECHAT_COURIER_ROOT=/Volumes/runtime-env/courier\n"
-        "GUIYI_ALERT_WECHAT_GROUP_PATH=/Volumes/runtime-env/group.json\n",
+        + "".join(f"{key}={value}\n" for key, value in runtime_values.items()),
         encoding="utf-8",
     )
 
@@ -176,8 +173,7 @@ def test_run_local_service_preserves_launcher_courier_paths_over_runtime_env(
             "HOME": str(tmp_path / "home"),
             "GUIYI_PROJECT_ROOT": str(repo),
             "GUIYI_RUNTIME_ENV": str(runtime_env),
-            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/launcher/courier",
-            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/launcher/group.json",
+            **launcher_values,
         },
         capture_output=True,
         text=True,
@@ -186,12 +182,18 @@ def test_run_local_service_preserves_launcher_courier_paths_over_runtime_env(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
-        "root=/Volumes/launcher/courier",
-        "config=/Volumes/launcher/group.json",
+        f"{key}={launcher_values[key]}" for key in CLAWBOT_ENV_NAMES
     ]
 
 
-def test_render_rejects_alert_path_xml_injection(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "malicious_path",
+    ("/fixture/<key>injected</key>", "/fixture/|g", "/fixture/back\\slash"),
+)
+def test_render_rejects_alert_path_injection(
+    tmp_path: Path,
+    malicious_path: str,
+) -> None:
     repo = _copy_fixture(tmp_path / "repo")
     home, fake_bin = _fake_runtime(tmp_path)
     result = subprocess.run(
@@ -201,8 +203,10 @@ def test_render_rejects_alert_path_xml_injection(tmp_path: Path) -> None:
             **os.environ,
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
-            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/fixture/<key>injected</key>",
-            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/fixture/group.json",
+            **{
+                **{key: f"/fixture/{index}" for index, key in enumerate(CLAWBOT_ENV_NAMES)},
+                "GUIYI_OPENCLAW_BIN": malicious_path,
+            },
         },
         capture_output=True,
         text=True,
@@ -224,8 +228,10 @@ def test_alert_confirmation_rejects_path_escape_before_render(tmp_path: Path) ->
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
-            "GUIYI_WECHAT_COURIER_ROOT": "/Volumes/../private/tmp/courier",
-            "GUIYI_ALERT_WECHAT_GROUP_PATH": "/Volumes/../private/tmp/group.json",
+            **{
+                **_clawbot_paths(tmp_path / "clawbot"),
+                "GUIYI_OPENCLAW_BIN": "/private/tmp/../tmp/openclaw",
+            },
         },
         capture_output=True,
         text=True,
@@ -252,6 +258,32 @@ def _copy_fixture(destination: Path) -> Path:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
     return destination
+
+
+def _clawbot_paths(root: Path) -> dict[str, str]:
+    plugin = root / "plugin"
+    state = root / "state"
+    private = root / "private"
+    for directory in (plugin, state, private):
+        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+        directory.chmod(0o700)
+    openclaw = root / "openclaw"
+    node = root / "node"
+    for executable in (openclaw, node):
+        executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        executable.chmod(0o700)
+    config = state / "openclaw.json"
+    config.write_text("{}\n", encoding="utf-8")
+    owner = private / "owner.json"
+    owner.write_text("{}\n", encoding="utf-8")
+    owner.chmod(0o600)
+    return dict(
+        zip(
+            CLAWBOT_ENV_NAMES,
+            map(str, (openclaw, node, plugin, state, config, owner)),
+            strict=True,
+        )
+    )
 
 
 def _fake_runtime(root: Path) -> tuple[Path, Path]:

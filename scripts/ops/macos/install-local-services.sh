@@ -11,37 +11,60 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
-WECHAT_COURIER_ROOT="${GUIYI_WECHAT_COURIER_ROOT:-}"
-ALERT_WECHAT_GROUP_PATH="${GUIYI_ALERT_WECHAT_GROUP_PATH:-}"
+OPENCLAW_BIN="${GUIYI_OPENCLAW_BIN:-}"
+OPENCLAW_NODE_BIN="${GUIYI_OPENCLAW_NODE_BIN:-}"
+OPENCLAW_WEIXIN_PLUGIN_ROOT="${GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT:-}"
+OPENCLAW_STATE_DIR="${GUIYI_OPENCLAW_STATE_DIR:-}"
+OPENCLAW_CONFIG_PATH="${GUIYI_OPENCLAW_CONFIG_PATH:-}"
+ALERT_CLAWBOT_OWNER_PATH="${GUIYI_ALERT_CLAWBOT_OWNER_PATH:-}"
 
-is_external_volume_path() {
-  local path="$1" current="" component
+is_safe_absolute_path() {
+  local path="$1" component
   local -a components
 
-  [[ "$path" == /Volumes/* ]] || return 1
+  [[ "$path" == /* ]] || return 1
+  [[ "$path" != *'&'* && "$path" != *'<'* && "$path" != *'>'* \
+    && "$path" != *'|'* && "$path" != *\\* \
+    && "$path" != *$'\n'* && "$path" != *$'\r'* && "$path" != *$'\t'* ]] || return 1
   IFS='/' read -r -a components <<<"${path#/}"
   for component in "${components[@]}"; do
     [[ -z "$component" || "$component" == "." ]] && continue
     [[ "$component" != ".." ]] || return 1
-    current="${current}/${component}"
-    [[ ! -L "$current" ]] || return 1
   done
-  [[ "$current" == /Volumes/* ]]
+}
+
+clawbot_paths_ready() {
+  local owner_parent
+  for path in "$OPENCLAW_BIN" "$OPENCLAW_NODE_BIN" "$OPENCLAW_WEIXIN_PLUGIN_ROOT" \
+    "$OPENCLAW_STATE_DIR" "$OPENCLAW_CONFIG_PATH" "$ALERT_CLAWBOT_OWNER_PATH"; do
+    is_safe_absolute_path "$path" || return 1
+  done
+  [[ -f "$OPENCLAW_BIN" && ! -L "$OPENCLAW_BIN" && -x "$OPENCLAW_BIN" ]] || return 1
+  [[ -f "$OPENCLAW_NODE_BIN" && ! -L "$OPENCLAW_NODE_BIN" && -x "$OPENCLAW_NODE_BIN" ]] || return 1
+  [[ -d "$OPENCLAW_WEIXIN_PLUGIN_ROOT" && ! -L "$OPENCLAW_WEIXIN_PLUGIN_ROOT" ]] || return 1
+  [[ -d "$OPENCLAW_STATE_DIR" && ! -L "$OPENCLAW_STATE_DIR" ]] || return 1
+  [[ -f "$OPENCLAW_CONFIG_PATH" && ! -L "$OPENCLAW_CONFIG_PATH" ]] || return 1
+  [[ -f "$ALERT_CLAWBOT_OWNER_PATH" && ! -L "$ALERT_CLAWBOT_OWNER_PATH" ]] || return 1
+  owner_parent="$(dirname "$ALERT_CLAWBOT_OWNER_PATH")"
+  [[ -d "$owner_parent" && ! -L "$owner_parent" ]] || return 1
+  [[ "$(stat -f '%Lp' "$ALERT_CLAWBOT_OWNER_PATH" 2>/dev/null)" == "600" ]] || return 1
+  [[ "$(stat -f '%Lp' "$owner_parent" 2>/dev/null)" == "700" ]] || return 1
+  [[ "$(stat -f '%u' "$ALERT_CLAWBOT_OWNER_PATH" 2>/dev/null)" == "$(id -u)" ]] || return 1
+  [[ "$(stat -f '%u' "$owner_parent" 2>/dev/null)" == "$(id -u)" ]] || return 1
 }
 
 installed_api_notification_paths_match() {
   local api_plist="$AGENT_DIR/com.guiyi.quant-api.plist"
-  local installed_courier_root installed_group_path
+  local key expected installed
 
   [[ -f "$api_plist" ]] || return 1
-  installed_courier_root="$(
-    plutil -extract EnvironmentVariables.GUIYI_WECHAT_COURIER_ROOT raw -o - "$api_plist" 2>/dev/null
-  )" || return 1
-  installed_group_path="$(
-    plutil -extract EnvironmentVariables.GUIYI_ALERT_WECHAT_GROUP_PATH raw -o - "$api_plist" 2>/dev/null
-  )" || return 1
-  [[ "$installed_courier_root" == "$WECHAT_COURIER_ROOT" \
-    && "$installed_group_path" == "$ALERT_WECHAT_GROUP_PATH" ]]
+  for key in GUIYI_OPENCLAW_BIN GUIYI_OPENCLAW_NODE_BIN \
+    GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT GUIYI_OPENCLAW_STATE_DIR \
+    GUIYI_OPENCLAW_CONFIG_PATH GUIYI_ALERT_CLAWBOT_OWNER_PATH; do
+    expected="${!key}"
+    installed="$(plutil -extract "EnvironmentVariables.${key}" raw -o - "$api_plist" 2>/dev/null)" || return 1
+    [[ "$installed" == "$expected" ]] || return 1
+  done
 }
 
 write_execution_review_roll_marker() {
@@ -85,21 +108,18 @@ load_labels=("${base_labels[@]}")
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-execution-review-roll]\n' "$0" >&2; exit 2; }
 if [[ "$MODE" == "--confirm-alert-runtime" ]]; then
-  is_external_volume_path "$WECHAT_COURIER_ROOT" \
-    && is_external_volume_path "$ALERT_WECHAT_GROUP_PATH" || {
+  clawbot_paths_ready || {
     printf '[install-local-services] alert notification paths not configured\n' >&2
     exit 1
   }
 fi
-if [[ "$WECHAT_COURIER_ROOT" == *'&'* || "$WECHAT_COURIER_ROOT" == *'<'* \
-  || "$WECHAT_COURIER_ROOT" == *'>'* || "$WECHAT_COURIER_ROOT" == *$'\n'* \
-  || "$WECHAT_COURIER_ROOT" == *$'\r'* || "$WECHAT_COURIER_ROOT" == *$'\t'* \
-  || "$ALERT_WECHAT_GROUP_PATH" == *'&'* || "$ALERT_WECHAT_GROUP_PATH" == *'<'* \
-  || "$ALERT_WECHAT_GROUP_PATH" == *'>'* || "$ALERT_WECHAT_GROUP_PATH" == *$'\n'* \
-  || "$ALERT_WECHAT_GROUP_PATH" == *$'\r'* || "$ALERT_WECHAT_GROUP_PATH" == *$'\t'* ]]; then
-  printf '[install-local-services] invalid alert notification path\n' >&2
-  exit 1
-fi
+for path in "$OPENCLAW_BIN" "$OPENCLAW_NODE_BIN" "$OPENCLAW_WEIXIN_PLUGIN_ROOT" \
+  "$OPENCLAW_STATE_DIR" "$OPENCLAW_CONFIG_PATH" "$ALERT_CLAWBOT_OWNER_PATH"; do
+  if [[ -n "$path" ]] && ! is_safe_absolute_path "$path"; then
+    printf '[install-local-services] invalid alert notification path\n' >&2
+    exit 1
+  fi
+done
 if [[ "$MODE" == "--confirm-alert-runtime" ]] && ! installed_api_notification_paths_match; then
   printf '[install-local-services] installed API notification paths do not match\n' >&2
   exit 1
@@ -115,8 +135,12 @@ for label in "${render_labels[@]}"; do
     -e "s|__RUNTIME_DIR__|$RUNTIME_DIR|g" \
     -e "s|__LOG_DIR__|$LOG_DIR|g" \
     -e "s|__HOME__|$HOME|g" \
-    -e "s|__WECHAT_COURIER_ROOT__|$WECHAT_COURIER_ROOT|g" \
-    -e "s|__ALERT_WECHAT_GROUP_PATH__|$ALERT_WECHAT_GROUP_PATH|g" \
+    -e "s|__OPENCLAW_BIN__|$OPENCLAW_BIN|g" \
+    -e "s|__OPENCLAW_NODE_BIN__|$OPENCLAW_NODE_BIN|g" \
+    -e "s|__OPENCLAW_WEIXIN_PLUGIN_ROOT__|$OPENCLAW_WEIXIN_PLUGIN_ROOT|g" \
+    -e "s|__OPENCLAW_STATE_DIR__|$OPENCLAW_STATE_DIR|g" \
+    -e "s|__OPENCLAW_CONFIG_PATH__|$OPENCLAW_CONFIG_PATH|g" \
+    -e "s|__ALERT_CLAWBOT_OWNER_PATH__|$ALERT_CLAWBOT_OWNER_PATH|g" \
     "$template" >"$output"
   plutil -lint "$output" >/dev/null
 done

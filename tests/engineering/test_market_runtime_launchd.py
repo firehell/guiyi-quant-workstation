@@ -10,7 +10,8 @@ import subprocess
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PINNED_WECHAT_COURIER_COMMIT = "981bd14e238302b2a0e206cb5f28e8e2505bb874"
+OPENCLAW_VERSION = "OpenClaw 2026.7.1-2 (0790d9f)"
+OPENCLAW_WEIXIN_VERSION = "2.4.6"
 
 
 def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tmp_path: Path) -> None:
@@ -152,10 +153,8 @@ def test_runtime_service_entrypoint_treats_retired_workers_as_unknown(tmp_path: 
 
 def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path) -> None:
     repo, home, fake_bin, calls = _status_fixture(tmp_path)
-    caller_root = tmp_path / "caller-courier"
-    caller_root.mkdir()
 
-    result = _run_status(repo, home, fake_bin, caller_root=caller_root)
+    result = _run_status(repo, home, fake_bin)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "[local-services-status] readonly=true" in result.stdout
@@ -165,26 +164,31 @@ def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path)
     assert "com.guiyi.quant-after-market loaded state=not_running" in result.stdout
     assert "com.guiyi.quant-alert loaded state=running" in result.stdout
     assert "loaded_commit=" in result.stdout
-    assert f"external.wechat_courier.commit={PINNED_WECHAT_COURIER_COMMIT}" in result.stdout
-    assert "external.wechat_courier.status=not_installed" in result.stdout
     assert "alert.notification_channel=wecom" in result.stdout
-    assert "alert.notification_group_alias" not in result.stdout
+    assert "external.openclaw" not in result.stdout
+    assert "alert.notification_owner_alias" not in result.stdout
     assert "overall=passed" in result.stdout
     assert not calls.exists()
 
 
-def test_local_status_reports_courier_from_supervised_runtime(tmp_path: Path) -> None:
+def test_local_status_reports_clawbot_from_supervised_runtime(tmp_path: Path) -> None:
     repo, home, fake_bin, calls = _status_fixture(
         tmp_path,
-        runtime_channel="courier",
+        runtime_channel="clawbot",
         alert_enabled=False,
+        clawbot_state="ready",
     )
 
     result = _run_status(repo, home, fake_bin)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "alert.notification_channel=wechat-courier" in result.stdout
-    assert "alert.notification_group_alias=primary_alert_group" in result.stdout
+    assert "alert.notification_channel=clawbot-openclaw-weixin" in result.stdout
+    assert "alert.notification_owner_alias=owner" in result.stdout
+    assert "external.openclaw.status=ready" in result.stdout
+    assert f"external.openclaw.version={OPENCLAW_VERSION}" in result.stdout
+    assert "external.openclaw_weixin.status=ready" in result.stdout
+    assert f"external.openclaw_weixin.version={OPENCLAW_WEIXIN_VERSION}" in result.stdout
+    assert "external.clawbot_owner_config=ready" in result.stdout
     assert "overall=passed" in result.stdout
     assert not calls.exists()
 
@@ -206,22 +210,20 @@ def test_local_status_fails_closed_for_ambiguous_active_alert_runtime(
         assert not calls.exists()
 
 
-def test_local_status_fails_for_active_courier_with_invalid_dependency(
+def test_local_status_fails_for_active_clawbot_with_invalid_dependency(
     tmp_path: Path,
 ) -> None:
-    invalid_root = tmp_path / "invalid-courier"
-    invalid_root.mkdir()
     repo, home, fake_bin, calls = _status_fixture(
         tmp_path,
-        runtime_channel="courier",
-        courier_root=invalid_root,
+        runtime_channel="clawbot",
+        clawbot_state="invalid",
     )
 
     result = _run_status(repo, home, fake_bin)
 
     assert result.returncode == 1
-    assert "alert.notification_channel=wechat-courier" in result.stdout
-    assert "external.wechat_courier.status=invalid" in result.stdout
+    assert "alert.notification_channel=clawbot-openclaw-weixin" in result.stdout
+    assert "external.openclaw.status=invalid" in result.stdout
     assert "overall=failed" in result.stdout
     assert not calls.exists()
 
@@ -279,6 +281,7 @@ def _copy_launchd_fixture(destination: Path) -> Path:
     """Copy only installer inputs so mode tests cannot affect the real workstation."""
     for relative in (
         "deploy/launchd",
+        "deploy/clawbot",
         "scripts/ops/macos/install-local-services.sh",
         "scripts/ops/macos/local-services-status.sh",
         "scripts/ops/macos/run-local-service.sh",
@@ -331,7 +334,7 @@ def _status_fixture(
     *,
     runtime_channel: str = "wecom",
     alert_enabled: bool = True,
-    courier_root: Path | None = None,
+    clawbot_state: str = "missing",
     missing_after_market: bool = False,
     missing_alert: bool = False,
     mismatched_web_root: bool = False,
@@ -342,8 +345,9 @@ def _status_fixture(
     alerts.mkdir(parents=True)
     if runtime_channel in {"wecom", "ambiguous"}:
         (alerts / "wecom.py").write_text("# legacy fixture\n", encoding="utf-8")
-    if runtime_channel in {"courier", "ambiguous"}:
-        (alerts / "wechat_courier.py").write_text("# courier fixture\n", encoding="utf-8")
+    if runtime_channel in {"clawbot", "ambiguous"}:
+        (alerts / "clawbot.py").write_text("# clawbot fixture\n", encoding="utf-8")
+    clawbot_paths = _status_clawbot_paths(tmp_path / "external-clawbot", state=clawbot_state)
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     (repo / ".gitignore").write_text(".run/\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
@@ -398,11 +402,7 @@ def _status_fixture(
                     "EnvironmentVariables": {
                         "GUIYI_PROJECT_ROOT": project_root,
                         "GUIYI_RUNTIME_COMMIT": checkout_commit,
-                        **(
-                            {"GUIYI_WECHAT_COURIER_ROOT": str(courier_root)}
-                            if label == "com.guiyi.quant-alert" and courier_root is not None
-                            else {}
-                        ),
+                        **(clawbot_paths if label == "com.guiyi.quant-alert" else {}),
                     },
                 },
                 handle,
@@ -458,14 +458,11 @@ def _run_status(
     repo: Path,
     home: Path,
     fake_bin: Path,
-    *,
-    caller_root: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     environment = {
         **os.environ,
         "HOME": str(home),
         "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
-        "GUIYI_WECHAT_COURIER_ROOT": str(caller_root or ""),
     }
     return subprocess.run(
         [str(repo / "scripts/ops/macos/local-services-status.sh")],
@@ -475,3 +472,51 @@ def _run_status(
         text=True,
         check=False,
     )
+
+
+def _status_clawbot_paths(root: Path, *, state: str) -> dict[str, str]:
+    if state == "missing":
+        return {}
+    plugin = root / "plugin"
+    state_dir = root / "state"
+    owner_dir = root / "owner"
+    plugin.mkdir(parents=True)
+    state_dir.mkdir()
+    owner_dir.mkdir(mode=0o700)
+    owner_dir.chmod(0o700)
+    openclaw = root / "openclaw"
+    node = root / "node"
+    openclaw.write_text(f"#!/bin/sh\nprintf '%s\\n' '{OPENCLAW_VERSION}'\n", encoding="utf-8")
+    node.write_text("#!/bin/sh\nprintf '%s\\n' 'v24.15.0'\n", encoding="utf-8")
+    openclaw.chmod(0o700)
+    node.chmod(0o700)
+    config = state_dir / "openclaw.json"
+    config.write_text("{}\n", encoding="utf-8")
+    owner = owner_dir / "owner.json"
+    owner.write_text(
+        '{"version":1,"channel":"openclaw-weixin","owner_alias":"owner",'
+        '"account_id":"private-account","target_user_id":"private-owner@im.wechat"}\n',
+        encoding="utf-8",
+    )
+    owner.chmod(0o600)
+    (plugin / "package.json").write_text(
+        f'{{"version":"{OPENCLAW_WEIXIN_VERSION}"}}\n', encoding="utf-8"
+    )
+    for relative in (
+        "dist/src/auth/accounts.js",
+        "dist/src/messaging/inbound.js",
+        "dist/src/messaging/send.js",
+    ):
+        module = plugin / relative
+        module.parent.mkdir(parents=True, exist_ok=True)
+        module.write_text("export {};\n", encoding="utf-8")
+    if state == "invalid":
+        openclaw.write_text("#!/bin/sh\nprintf 'wrong\\n'\n", encoding="utf-8")
+    return {
+        "GUIYI_OPENCLAW_BIN": str(openclaw),
+        "GUIYI_OPENCLAW_NODE_BIN": str(node),
+        "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT": str(plugin),
+        "GUIYI_OPENCLAW_STATE_DIR": str(state_dir),
+        "GUIYI_OPENCLAW_CONFIG_PATH": str(config),
+        "GUIYI_ALERT_CLAWBOT_OWNER_PATH": str(owner),
+    }

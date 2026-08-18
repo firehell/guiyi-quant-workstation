@@ -13,7 +13,6 @@ labels=(
   com.guiyi.quant-alert
 )
 failed=0
-PINNED_WECHAT_COURIER_COMMIT="981bd14e238302b2a0e206cb5f28e8e2505bb874"
 
 plist_root() {
   local label="$1"
@@ -37,6 +36,97 @@ plist_value() {
 
 record_failure() {
   failed=$((failed + 1))
+}
+
+manifest_value() {
+  local manifest="$1" key="$2"
+  python3 - "$manifest" "$key" <<'PY'
+import json
+import sys
+
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8"))[sys.argv[2]]
+    if not isinstance(value, str) or not value or any(ord(character) < 32 for character in value):
+        raise ValueError
+    print(value)
+except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+}
+
+command_version_matches() {
+  local executable="$1" expected="$2"
+  python3 - "$executable" "$expected" <<'PY'
+import subprocess
+import sys
+
+try:
+    result = subprocess.run(
+        [sys.argv[1], "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+        env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+    )
+except (OSError, subprocess.SubprocessError):
+    raise SystemExit(1)
+raise SystemExit(0 if result.returncode == 0 and result.stdout.strip() == sys.argv[2] else 1)
+PY
+}
+
+json_version_matches() {
+  local path="$1" expected="$2"
+  python3 - "$path" "$expected" <<'PY'
+import json
+import sys
+
+try:
+    version = json.load(open(sys.argv[1], encoding="utf-8"))["version"]
+except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+raise SystemExit(0 if version == sys.argv[2] else 1)
+PY
+}
+
+owner_config_valid() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import json
+import os
+import stat
+import sys
+import unicodedata
+
+path = sys.argv[1]
+try:
+    parent = os.lstat(os.path.dirname(path))
+    metadata = os.lstat(path)
+    if not stat.S_ISDIR(parent.st_mode) or stat.S_IMODE(parent.st_mode) != 0o700:
+        raise ValueError
+    if parent.st_uid != os.getuid() or not stat.S_ISREG(metadata.st_mode):
+        raise ValueError
+    if stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid():
+        raise ValueError
+    payload = json.load(open(path, encoding="utf-8"))
+    if set(payload) != {"version", "channel", "owner_alias", "account_id", "target_user_id"}:
+        raise ValueError
+    if payload["version"] != 1 or type(payload["version"]) is not int:
+        raise ValueError
+    if payload["channel"] != "openclaw-weixin" or payload["owner_alias"] != "owner":
+        raise ValueError
+    account = payload["account_id"]
+    target = payload["target_user_id"]
+    for value in (account, target):
+        if not isinstance(value, str) or not value or value.strip() != value:
+            raise ValueError
+        if any(unicodedata.category(character).startswith("C") for character in value):
+            raise ValueError
+    if not target.endswith("@im.wechat") or target == "@im.wechat":
+        raise ValueError
+except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
 }
 
 printf '[local-services-status] readonly=true\n'
@@ -82,58 +172,81 @@ fi
 printf '[local-services-status] alert_runtime_enabled=%s\n' "$alert_marker_enabled"
 
 wecom_present=false
-wechat_courier_present=false
+clawbot_present=false
+courier_present=false
 if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" ]]; then
   wecom_path="$runtime_root/services/quant-api/app/alerts/wecom.py"
-  wechat_courier_path="$runtime_root/services/quant-api/app/alerts/wechat_courier.py"
+  clawbot_path="$runtime_root/services/quant-api/app/alerts/clawbot.py"
+  courier_path="$runtime_root/services/quant-api/app/alerts/wechat_courier.py"
   [[ -f "$wecom_path" && ! -L "$wecom_path" ]] && wecom_present=true
-  [[ -f "$wechat_courier_path" && ! -L "$wechat_courier_path" ]] && wechat_courier_present=true
+  [[ -f "$clawbot_path" && ! -L "$clawbot_path" ]] && clawbot_present=true
+  [[ -f "$courier_path" && ! -L "$courier_path" ]] && courier_present=true
 fi
 notification_channel=unknown
-if [[ "$wecom_present" == "true" && "$wechat_courier_present" == "false" ]]; then
+if [[ "$wecom_present" == "true" && "$clawbot_present" == "false" && "$courier_present" == "false" ]]; then
   notification_channel=wecom
-elif [[ "$wecom_present" == "false" && "$wechat_courier_present" == "true" ]]; then
-  notification_channel=wechat-courier
+elif [[ "$wecom_present" == "false" && "$clawbot_present" == "true" && "$courier_present" == "false" ]]; then
+  notification_channel=clawbot-openclaw-weixin
 fi
 printf '[local-services-status] alert.notification_channel=%s\n' "$notification_channel"
-if [[ "$notification_channel" == "wechat-courier" ]]; then
-  printf '[local-services-status] alert.notification_group_alias=primary_alert_group\n'
-fi
+if [[ "$notification_channel" == "clawbot-openclaw-weixin" ]]; then
+  printf '[local-services-status] alert.notification_owner_alias=owner\n'
+  versions_manifest="$runtime_root/deploy/clawbot/versions.json"
+  openclaw_version="$(manifest_value "$versions_manifest" openclaw_version 2>/dev/null || printf 'unknown')"
+  node_version="$(manifest_value "$versions_manifest" node_version 2>/dev/null || printf 'unknown')"
+  plugin_version="$(manifest_value "$versions_manifest" openclaw_weixin_version 2>/dev/null || printf 'unknown')"
+  openclaw_bin="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_BIN)"
+  node_bin="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_NODE_BIN)"
+  state_dir="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_STATE_DIR)"
+  config_path="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_CONFIG_PATH)"
+  plugin_root="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT)"
+  owner_path="$(plist_value com.guiyi.quant-alert GUIYI_ALERT_CLAWBOT_OWNER_PATH)"
 
-wechat_courier_status=not_installed
-wechat_courier_root="$(plist_value com.guiyi.quant-alert GUIYI_WECHAT_COURIER_ROOT)"
-if [[ "$wechat_courier_root" != "missing" && -e "$wechat_courier_root" ]]; then
-  wechat_courier_status=invalid
-  if [[ -d "$wechat_courier_root/source/.git" \
-    && -f "$wechat_courier_root/source/wechat_courier.py" \
-    && -x "$wechat_courier_root/venv/bin/python" \
-    && -d "$wechat_courier_root/runtime" \
-    && -d "$wechat_courier_root/tmp" \
-    && -d "$wechat_courier_root/cache/clang" ]]; then
-    courier_commit="$(/usr/bin/git -C "$wechat_courier_root/source" rev-parse HEAD 2>/dev/null || true)"
-    courier_dirty="$(/usr/bin/git -C "$wechat_courier_root/source" status --porcelain 2>/dev/null || printf 'invalid')"
-    courier_head="$(tr -d '\n' < "$wechat_courier_root/source/.git/HEAD" 2>/dev/null || true)"
-    private_modes=true
-    expected_owner="$(id -u)"
-    for private_directory in "$wechat_courier_root" "$wechat_courier_root/runtime" "$wechat_courier_root/tmp" "$wechat_courier_root/cache/clang"; do
-      if [[ "$(stat -f '%Lp' "$private_directory" 2>/dev/null || true)" != "700" \
-        || "$(stat -f '%u' "$private_directory" 2>/dev/null || true)" != "$expected_owner" ]]; then
-        private_modes=false
-      fi
-    done
-    if [[ "$courier_commit" == "$PINNED_WECHAT_COURIER_COMMIT" \
-      && "$courier_head" == "$PINNED_WECHAT_COURIER_COMMIT" \
-      && -z "$courier_dirty" && "$private_modes" == "true" ]]; then
-      wechat_courier_status=ready
+  openclaw_status=missing
+  if [[ "$openclaw_bin" != "missing" && "$node_bin" != "missing" \
+    && "$state_dir" != "missing" && "$config_path" != "missing" \
+    && -e "$openclaw_bin" && -e "$node_bin" && -e "$state_dir" && -e "$config_path" ]]; then
+    openclaw_status=invalid
+    if [[ "$openclaw_version" != "unknown" && "$node_version" != "unknown" \
+      && -f "$openclaw_bin" && ! -L "$openclaw_bin" && -x "$openclaw_bin" \
+      && -f "$node_bin" && ! -L "$node_bin" && -x "$node_bin" \
+      && -d "$state_dir" && ! -L "$state_dir" \
+      && -f "$config_path" && ! -L "$config_path" ]] \
+      && command_version_matches "$openclaw_bin" "$openclaw_version" \
+      && command_version_matches "$node_bin" "$node_version"; then
+      openclaw_status=ready
     fi
   fi
+
+  plugin_status=missing
+  if [[ "$plugin_root" != "missing" && -e "$plugin_root" ]]; then
+    plugin_status=invalid
+    if [[ "$plugin_version" != "unknown" && -d "$plugin_root" && ! -L "$plugin_root" \
+      && -f "$plugin_root/package.json" && ! -L "$plugin_root/package.json" \
+      && -f "$plugin_root/dist/src/auth/accounts.js" && ! -L "$plugin_root/dist/src/auth/accounts.js" \
+      && -f "$plugin_root/dist/src/messaging/inbound.js" && ! -L "$plugin_root/dist/src/messaging/inbound.js" \
+      && -f "$plugin_root/dist/src/messaging/send.js" && ! -L "$plugin_root/dist/src/messaging/send.js" ]] \
+      && json_version_matches "$plugin_root/package.json" "$plugin_version"; then
+      plugin_status=ready
+    fi
+  fi
+
+  owner_status=missing
+  if [[ "$owner_path" != "missing" && -e "$owner_path" ]]; then
+    owner_status=invalid
+    owner_config_valid "$owner_path" && owner_status=ready
+  fi
+  printf '[local-services-status] external.openclaw.status=%s\n' "$openclaw_status"
+  printf '[local-services-status] external.openclaw.version=%s\n' "$openclaw_version"
+  printf '[local-services-status] external.openclaw_weixin.status=%s\n' "$plugin_status"
+  printf '[local-services-status] external.openclaw_weixin.version=%s\n' "$plugin_version"
+  printf '[local-services-status] external.clawbot_owner_config=%s\n' "$owner_status"
+  if [[ "$alert_marker_enabled" == "true" \
+    && ( "$openclaw_status" != "ready" || "$plugin_status" != "ready" || "$owner_status" != "ready" ) ]]; then
+    record_failure
+  fi
 fi
-printf '[local-services-status] external.wechat_courier.commit=%s\n' "$PINNED_WECHAT_COURIER_COMMIT"
-printf '[local-services-status] external.wechat_courier.status=%s\n' "$wechat_courier_status"
 if [[ "$alert_marker_enabled" == "true" && "$notification_channel" == "unknown" ]]; then
-  record_failure
-elif [[ "$alert_marker_enabled" == "true" && "$notification_channel" == "wechat-courier" \
-  && "$wechat_courier_status" != "ready" ]]; then
   record_failure
 fi
 
