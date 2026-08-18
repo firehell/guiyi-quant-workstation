@@ -108,6 +108,26 @@ def test_dependency_resolver_uses_fixed_git_argv_and_exact_clean_commit(
     ]
 
 
+def test_dependency_resolver_accepts_standard_venv_python_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _dependency_tree(tmp_path)
+    python = root / "venv/bin/python"
+    python.unlink()
+    (root / "venv/bin/python3").symlink_to("/usr/bin/python3")
+    python.symlink_to("python3")
+    monkeypatch.setattr(courier, "VERSIONS_FILE", _versions_file(tmp_path))
+
+    def run_process(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        stdout = f"{PINNED_COMMIT}\n" if argv[-2:] == ["rev-parse", "HEAD"] else ""
+        return subprocess.CompletedProcess(argv, 0, stdout, "private")
+
+    dependency = resolve_wechat_courier_dependency(root, run_process=run_process)
+
+    assert dependency.python_executable == python
+
+
 @pytest.mark.parametrize(
     "failure",
     (
@@ -117,6 +137,7 @@ def test_dependency_resolver_uses_fixed_git_argv_and_exact_clean_commit(
         "wrong_commit",
         "dirty",
         "escaping_source",
+        "escaping_python_parent",
         "unsafe_runtime_mode",
     ),
 )
@@ -144,6 +165,15 @@ def test_dependency_resolver_fails_closed(
         (outside / ".git").mkdir()
         (outside / "wechat_courier.py").write_text("fixture", encoding="utf-8")
         (root / "source").symlink_to(outside, target_is_directory=True)
+    elif failure == "escaping_python_parent":
+        outside = tmp_path / "outside-bin"
+        (root / "venv/bin/python").unlink()
+        (root / "venv/bin").rmdir()
+        outside.mkdir()
+        python = outside / "python"
+        python.write_text("#!/bin/sh\n", encoding="utf-8")
+        python.chmod(0o700)
+        (root / "venv/bin").symlink_to(outside, target_is_directory=True)
     elif failure == "unsafe_runtime_mode":
         (root / "runtime").chmod(0o755)
 

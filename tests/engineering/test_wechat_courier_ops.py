@@ -31,6 +31,20 @@ def test_check_accepts_only_complete_clean_pinned_fixture(tmp_path: Path) -> Non
     assert "fixture-group-title" not in result.stdout
 
 
+def test_check_accepts_standard_venv_python_symlink(tmp_path: Path) -> None:
+    root = _installed_fixture(tmp_path)
+    python = root / "venv/bin/python"
+    python.unlink()
+    (root / "venv/bin/python3").symlink_to("/usr/bin/python3")
+    python.symlink_to("python3")
+    fake_git = _fake_check_git(tmp_path)
+
+    result = _run("--check", root, git_bin=fake_git)
+
+    assert result.returncode == 0
+    assert result.stdout == f"commit={PINNED_COMMIT}\nstatus=ready\n"
+
+
 def test_confirm_install_uses_only_exact_fake_commands_and_never_runs_upstream(
     tmp_path: Path,
 ) -> None:

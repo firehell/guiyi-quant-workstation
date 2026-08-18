@@ -100,6 +100,16 @@ def _contained(root: Path, path: Path) -> Path:
         raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
 
 
+def _contained_executable_entry(root: Path, path: Path) -> Path:
+    """Contain the venv entry while allowing its standard interpreter symlink."""
+    try:
+        resolved_parent = path.parent.resolve(strict=True)
+        resolved_parent.relative_to(root)
+        return resolved_parent / path.name
+    except (OSError, ValueError):
+        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
+
+
 def resolve_wechat_courier_dependency(
     root: Path,
     *,
@@ -119,7 +129,10 @@ def resolve_wechat_courier_dependency(
     source_root = _contained(resolved_root, resolved_root / "source")
     git_metadata = _contained(resolved_root, source_root / ".git")
     module_path = _contained(resolved_root, source_root / "wechat_courier.py")
-    python_executable = _contained(resolved_root, resolved_root / "venv/bin/python")
+    python_executable = _contained_executable_entry(
+        resolved_root,
+        resolved_root / "venv/bin/python",
+    )
     required_directories = (
         _contained(resolved_root, resolved_root / "runtime"),
         _contained(resolved_root, resolved_root / "tmp"),
