@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+import fcntl
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -10,9 +13,12 @@ import app.alerts.wechat_courier as courier
 from app.alerts.wechat_courier import (
     WeChatCourierDependency,
     WeChatCourierError,
+    WeChatGroupAlertSender,
+    WeChatGroupSendSummary,
     WeChatCourierRunner,
     resolve_wechat_courier_dependency,
 )
+from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage
 from app.alerts.wechat_group_config import WeChatGroupTarget
 
 
@@ -57,6 +63,18 @@ def _target() -> WeChatGroupTarget:
         "wechat-courier",
         "primary_alert_group",
         "fixture-group-title",
+    )
+
+
+def _message() -> AlertNotificationMessage:
+    return AlertNotificationMessage(
+        rule_code="htdy_original_15m",
+        symbol="ag",
+        product_name="白银",
+        contract="AG2610",
+        frequency="15m",
+        bar_end=datetime(2026, 8, 13, 2, 45, tzinfo=UTC),
+        result_codes=("buy",),
     )
 
 
@@ -195,3 +213,129 @@ def test_runner_collapses_child_failure_without_leaking_private_output(
     with pytest.raises(WeChatCourierError) as captured:
         WeChatCourierRunner(dependency, run_process=run_process).verify_target(_target())
     assert "fixture-group-title" not in str(captured.value)
+
+
+def test_gui_lock_is_nonblocking_and_never_starts_second_child(tmp_path: Path) -> None:
+    root = _dependency_tree(tmp_path)
+    dependency = WeChatCourierDependency(
+        root.resolve(),
+        (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
+        PINNED_COMMIT,
+    )
+    lock_path = root / "runtime/guiyi-wechat-courier.lock"
+    holder = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        runner = WeChatCourierRunner(
+            dependency,
+            run_process=lambda *_args, **_kwargs: pytest.fail(
+                "busy sender must not start a child"
+            ),
+        )
+        with pytest.raises(WeChatCourierError, match="^WECHAT_COURIER_BUSY$"):
+            runner.send_text(_target(), "fixture-alert")
+    finally:
+        fcntl.flock(holder, fcntl.LOCK_UN)
+        os.close(holder)
+
+
+def test_runner_send_uses_one_child_and_does_not_put_private_text_in_argv(
+    tmp_path: Path,
+) -> None:
+    root = _dependency_tree(tmp_path)
+    dependency = WeChatCourierDependency(
+        root.resolve(),
+        (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
+        PINNED_COMMIT,
+    )
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def run_process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, '{"status":"sent"}', "private")
+
+    WeChatCourierRunner(dependency, run_process=run_process).send_text(
+        _target(), "fixture-alert"
+    )
+
+    assert len(calls) == 1
+    assert "fixture-alert" not in " ".join(calls[0][0])
+    assert json.loads(str(calls[0][1]["input"])) == {
+        "action": "send",
+        "target_chat": "fixture-group-title",
+        "text": "fixture-alert",
+        "upstream_root": str(dependency.source_root),
+    }
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "error_code"),
+    (
+        (1, '{"status":"failed","error_code":"WECHAT_COURIER_SEND_FAILED"}', "WECHAT_COURIER_SEND_FAILED"),
+        (0, "not-json", "WECHAT_COURIER_DEPENDENCY_INVALID"),
+        (0, '{"status":"sent","extra":true}', "WECHAT_COURIER_DEPENDENCY_INVALID"),
+    ),
+)
+def test_runner_send_failure_is_single_shot_and_privacy_safe(
+    tmp_path: Path,
+    returncode: int,
+    stdout: str,
+    error_code: str,
+) -> None:
+    root = _dependency_tree(tmp_path)
+    dependency = WeChatCourierDependency(
+        root.resolve(),
+        (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
+        PINNED_COMMIT,
+    )
+    calls = 0
+
+    def run_process(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(argv, returncode, stdout, "fixture-alert raw")
+
+    with pytest.raises(WeChatCourierError, match=f"^{error_code}$"):
+        WeChatCourierRunner(dependency, run_process=run_process).send_text(
+            _target(), "fixture-alert"
+        )
+    assert calls == 1
+
+
+def test_group_sender_formats_once_and_returns_structured_canary_summary() -> None:
+    calls: list[tuple[WeChatGroupTarget, str]] = []
+
+    class Runner:
+        def send_text(self, target: WeChatGroupTarget, text: str) -> None:
+            calls.append((target, text))
+
+    sender = WeChatGroupAlertSender(target=_target(), runner=Runner())
+    sender.send(_message())
+    summary = sender.send_canary()
+
+    assert calls == [
+        (
+            _target(),
+            "【归一量化】AG 白银\n\n火天大有 · 买入观察\n主力：AG2610\n15m · 10:45 收线",
+        ),
+        (_target(), ALERT_CANARY_TEXT),
+    ]
+    assert summary == WeChatGroupSendSummary(1, 1, 0, ())
+
+
+def test_group_canary_failure_returns_alias_only_without_retry() -> None:
+    calls = 0
+
+    class Runner:
+        def send_text(self, _target: WeChatGroupTarget, _text: str) -> None:
+            nonlocal calls
+            calls += 1
+            raise WeChatCourierError("WECHAT_COURIER_SEND_FAILED")
+
+    summary = WeChatGroupAlertSender(target=_target(), runner=Runner()).send_canary()
+
+    assert calls == 1
+    assert summary == WeChatGroupSendSummary(1, 0, 1, ("primary_alert_group",))

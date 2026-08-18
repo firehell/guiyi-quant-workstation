@@ -249,18 +249,38 @@ def _valid_private_text(value: object) -> bool:
     )
 
 
+def _valid_message_text(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= 65_536
+        and all(
+            character == "\n"
+            or not unicodedata.category(character).startswith("C")
+            for character in value
+        )
+    )
+
+
 def execute_adapter_action(
     payload: object,
     *,
     open_search_ui: Callable[[ModuleType, str], None] = _open_search_ui,
     sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, str]:
+    if not isinstance(payload, dict):
+        raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID")
+    action = payload.get("action")
+    expected_keys = (
+        {"action", "target_chat", "upstream_root"}
+        if action == "verify"
+        else {"action", "target_chat", "text", "upstream_root"}
+    )
     if (
-        not isinstance(payload, dict)
-        or set(payload) != {"action", "target_chat", "upstream_root"}
-        or payload.get("action") != "verify"
+        action not in {"verify", "send"}
+        or set(payload) != expected_keys
         or not _valid_private_text(payload.get("target_chat"))
         or not isinstance(payload.get("upstream_root"), str)
+        or (action == "send" and not _valid_message_text(payload.get("text")))
     ):
         raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID")
     private_output = io.StringIO()
@@ -272,6 +292,12 @@ def execute_adapter_action(
             open_search_ui=open_search_ui,
             sleep=sleep,
         )
+        if action == "send":
+            try:
+                upstream.paste_and_send_text(payload["text"])
+            except Exception:
+                raise AdapterError("WECHAT_COURIER_SEND_FAILED") from None
+            return {"status": "sent"}
     return {"status": "verified"}
 
 

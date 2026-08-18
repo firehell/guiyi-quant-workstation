@@ -188,11 +188,15 @@ def main(
                 "foreground": True,
             }
         else:
-            alert_canary_sender_factory().send_canary()
+            summary = alert_canary_sender_factory().send_canary()
             payload = {
                 "schema_version": 1,
                 "command": "runtime.alert-canary",
-                "status": "ok",
+                "status": "ok" if summary.failed == 0 else "failed",
+                "attempted": summary.attempted,
+                "automation_completed": summary.automation_completed,
+                "failed": summary.failed,
+                "failed_aliases": list(summary.failed_aliases),
             }
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
         # 执行期异常：error code 仅暴露公开码或 CLI_INTERNAL_ERROR

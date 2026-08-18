@@ -67,6 +67,7 @@ def _fake_upstream(
     boxes: list[str] | None = None,
     title: str = TARGET,
     safety: str = "clean-chat",
+    send_failure: bool = False,
 ) -> Path:
     source_root.mkdir(parents=True)
     module_path = source_root / "wechat_courier.py"
@@ -109,7 +110,7 @@ def _fake_upstream(
         "paste_and_send_text": (
             "def paste_and_send_text(text):\n"
             "    record('paste_and_send_text')\n"
-            "    raise AssertionError('verify must never send')\n"
+            + ("    raise RuntimeError('private send failure')\n" if send_failure else "")
         ),
     }
     if missing is not None:
@@ -224,3 +225,68 @@ def test_missing_exact_upstream_export_fails_dependency_closed(tmp_path: Path) -
             open_search_ui=lambda _upstream, _target: None,
             sleep=lambda _seconds: None,
         )
+
+
+def test_send_verifies_then_calls_physical_send_exactly_once(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    _fake_upstream(source_root)
+
+    result = execute_adapter_action(
+        {
+            "action": "send",
+            "target_chat": TARGET,
+            "text": "fixture-alert",
+            "upstream_root": str(source_root),
+        },
+        open_search_ui=lambda _upstream, _target: None,
+        sleep=lambda _seconds: None,
+    )
+
+    assert result == {"status": "sent"}
+    calls = (source_root / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert calls.count("paste_and_send_text") == 1
+    assert calls[-1] == "paste_and_send_text"
+
+
+@pytest.mark.parametrize("boxes", ([], [f"{TARGET}-near"], [TARGET, TARGET]))
+def test_send_target_verification_failure_calls_no_send(
+    tmp_path: Path,
+    boxes: list[str],
+) -> None:
+    source_root = tmp_path / "source"
+    _fake_upstream(source_root, boxes=boxes)
+
+    with pytest.raises(AdapterError, match="^WECHAT_GROUP_TARGET_UNVERIFIED$"):
+        execute_adapter_action(
+            {
+                "action": "send",
+                "target_chat": TARGET,
+                "text": "fixture-alert",
+                "upstream_root": str(source_root),
+            },
+            open_search_ui=lambda _upstream, _target: None,
+            sleep=lambda _seconds: None,
+        )
+
+    calls = (source_root / "calls.log").read_text(encoding="utf-8")
+    assert "paste_and_send_text" not in calls
+
+
+def test_send_primitive_failure_is_not_retried(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    _fake_upstream(source_root, send_failure=True)
+
+    with pytest.raises(AdapterError, match="^WECHAT_COURIER_SEND_FAILED$"):
+        execute_adapter_action(
+            {
+                "action": "send",
+                "target_chat": TARGET,
+                "text": "fixture-alert",
+                "upstream_root": str(source_root),
+            },
+            open_search_ui=lambda _upstream, _target: None,
+            sleep=lambda _seconds: None,
+        )
+
+    calls = (source_root / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert calls.count("paste_and_send_text") == 1

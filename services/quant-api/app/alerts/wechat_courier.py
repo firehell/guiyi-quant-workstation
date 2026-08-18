@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -11,6 +13,11 @@ import stat
 import subprocess
 from typing import Any
 
+from app.alerts.notification import (
+    ALERT_CANARY_TEXT,
+    AlertNotificationMessage,
+    format_alert_message,
+)
 from app.alerts.wechat_group_config import WeChatGroupTarget
 from app.core.env import PROJECT_ROOT
 
@@ -19,6 +26,12 @@ VERSIONS_FILE = PROJECT_ROOT / "deploy/wechat-courier/versions.json"
 ADAPTER_PATH = PROJECT_ROOT / "services/quant-api/app/alerts/wechat_courier_adapter.py"
 _REPOSITORY = "bladydora/WeChat-Courier-macOS"
 _TIMEOUT_SECONDS = 45.0
+_PUBLIC_ERROR_CODES = {
+    "WECHAT_COURIER_BUSY",
+    "WECHAT_GROUP_TARGET_UNVERIFIED",
+    "WECHAT_COURIER_DEPENDENCY_INVALID",
+    "WECHAT_COURIER_SEND_FAILED",
+}
 
 
 class WeChatCourierError(RuntimeError):
@@ -33,6 +46,14 @@ class WeChatCourierDependency:
     source_root: Path
     python_executable: Path
     upstream_commit: str
+
+
+@dataclass(frozen=True, slots=True)
+class WeChatGroupSendSummary:
+    attempted: int
+    automation_completed: int
+    failed: int
+    failed_aliases: tuple[str, ...]
 
 
 RunProcess = Callable[..., subprocess.CompletedProcess[str]]
@@ -147,6 +168,37 @@ def courier_child_environment(root: Path) -> dict[str, str]:
     }
 
 
+@contextmanager
+def _nonblocking_gui_lock(dependency: WeChatCourierDependency):
+    lock_path = dependency.root / "runtime/guiyi-wechat-courier.lock"
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            lock_path,
+            os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+            0o600,
+        )
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
+            raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise WeChatCourierError("WECHAT_COURIER_BUSY") from None
+        yield
+    except WeChatCourierError:
+        raise
+    except OSError:
+        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
+    finally:
+        if descriptor is not None:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            os.close(descriptor)
+
+
 class WeChatCourierRunner:
     def __init__(
         self,
@@ -163,26 +215,70 @@ class WeChatCourierRunner:
             "target_chat": target.target_chat,
             "upstream_root": str(self._dependency.source_root),
         }
+        self._run_child(payload, {"status": "verified"})
+
+    def send_text(self, target: WeChatGroupTarget, text: str) -> None:
+        payload = {
+            "action": "send",
+            "target_chat": target.target_chat,
+            "text": text,
+            "upstream_root": str(self._dependency.source_root),
+        }
+        self._run_child(payload, {"status": "sent"})
+
+    def _run_child(self, payload: dict[str, str], expected: dict[str, str]) -> None:
         try:
-            result = self._run_process(
-                [str(self._dependency.python_executable), str(ADAPTER_PATH)],
-                input=json.dumps(payload, separators=(",", ":")),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=_TIMEOUT_SECONDS,
-                env=courier_child_environment(self._dependency.root),
-            )
+            with _nonblocking_gui_lock(self._dependency):
+                result = self._run_process(
+                    [str(self._dependency.python_executable), str(ADAPTER_PATH)],
+                    input=json.dumps(payload, separators=(",", ":")),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=_TIMEOUT_SECONDS,
+                    env=courier_child_environment(self._dependency.root),
+                )
             parsed: Any = json.loads(result.stdout)
+        except WeChatCourierError:
+            raise
         except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
             raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
         if result.returncode != 0:
             code = parsed.get("error_code") if isinstance(parsed, dict) else None
-            if code in {
-                "WECHAT_GROUP_TARGET_UNVERIFIED",
-                "WECHAT_COURIER_DEPENDENCY_INVALID",
-            }:
+            if code in _PUBLIC_ERROR_CODES:
                 raise WeChatCourierError(code)
             raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
-        if parsed != {"status": "verified"}:
+        if parsed != expected:
             raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+
+
+class WeChatGroupAlertSender:
+    def __init__(
+        self,
+        *,
+        target: WeChatGroupTarget,
+        runner: WeChatCourierRunner,
+    ) -> None:
+        self._target = target
+        self._runner = runner
+
+    def send(self, message: AlertNotificationMessage) -> None:
+        text = format_alert_message(message)
+        self._runner.send_text(self._target, text)
+
+    def send_canary(self) -> WeChatGroupSendSummary:
+        try:
+            self._runner.send_text(self._target, ALERT_CANARY_TEXT)
+        except WeChatCourierError:
+            return WeChatGroupSendSummary(
+                attempted=1,
+                automation_completed=0,
+                failed=1,
+                failed_aliases=(self._target.group_alias,),
+            )
+        return WeChatGroupSendSummary(
+            attempted=1,
+            automation_completed=1,
+            failed=0,
+            failed_aliases=(),
+        )

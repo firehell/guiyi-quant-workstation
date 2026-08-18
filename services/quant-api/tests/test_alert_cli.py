@@ -21,7 +21,8 @@ def _run(args: list[str], **factories):
         stderr=stderr,
         **factories,
     )
-    return code, json.loads((stdout if code == 0 else stderr).getvalue())
+    stream = stdout if stdout.getvalue() else stderr
+    return code, json.loads(stream.getvalue())
 
 
 def test_runtime_parser_exposes_alert_and_fixed_canary() -> None:
@@ -65,8 +66,18 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
     calls: list[str] = []
 
     class Sender:
-        def send_canary(self) -> None:
+        def send_canary(self):
             calls.append("send_canary")
+            return type(
+                "Summary",
+                (),
+                {
+                    "attempted": 1,
+                    "automation_completed": 1,
+                    "failed": 0,
+                    "failed_aliases": (),
+                },
+            )()
 
     def forbidden_session_factory():
         raise AssertionError("alert canary must not create Event or modify Scope")
@@ -87,6 +98,41 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
         "schema_version": 1,
         "command": "runtime.alert-canary",
         "status": "ok",
+        "attempted": 1,
+        "automation_completed": 1,
+        "failed": 0,
+        "failed_aliases": [],
+    }
+
+
+def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> None:
+    class Sender:
+        def send_canary(self):
+            return type(
+                "Summary",
+                (),
+                {
+                    "attempted": 1,
+                    "automation_completed": 0,
+                    "failed": 1,
+                    "failed_aliases": ("primary_alert_group",),
+                },
+            )()
+
+    code, payload = _run(
+        ["runtime", "alert-canary"],
+        alert_canary_sender_factory=lambda: Sender(),
+    )
+
+    assert code == 1
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.alert-canary",
+        "status": "failed",
+        "attempted": 1,
+        "automation_completed": 0,
+        "failed": 1,
+        "failed_aliases": ["primary_alert_group"],
     }
 
 
