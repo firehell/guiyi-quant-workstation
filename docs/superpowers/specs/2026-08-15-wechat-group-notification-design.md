@@ -498,3 +498,23 @@ Mac PoC 层：
 6. 真实发送必须等待单次明确 Gate。
 
 满足代码层与 dry-run PoC 后，才进入真实微信群 canary。
+
+---
+
+## 15. Peekaboo P0 实测兼容边界（BLOCKED）
+
+本节记录 2026-08-18 在本地 Mac mini 上完成的只读 P0 事实；不包含真实群名、联系人、聊天列表、消息内容、Accessibility 原文或截图。
+
+- WeChat.app：`4.1.11 (269136)`。
+- Peekaboo：`4.2.0`。v3 的 `inspect-ui` 已在 v4 移除；其本次已通过的 AX-only 等价检查使用固定 argv `peekaboo see --app WeChat --tree --no-screenshot --json --no-remote`。
+- 该命令不进行像素截图、OCR、AI/LLM 分析、坐标操作或输入操作；权限检查已确认执行 host 的 Screen Recording 与 Accessibility 可用。
+- Peekaboo v4 会持久化一次 observation 的 snapshot/UI map。因此每次 P0 inspection 必须只从原始 JSON 提取一个合法 snapshot id，随后以 `peekaboo clean --snapshot <id> --json --no-remote` 精确删除并验证目标 snapshot 路径不存在。原始 JSON 只能位于仓库外 owner-only 临时目录，且与隐藏输入一并在 finally 清理。
+- 当前已手工打开测试群的 inspection 成功返回可解析 AX JSON，且 tree 未报告截断；这仅证明 v4 AX-only inspection 可运行，不证明目标会话可验证。
+- 当前聊天标题无法唯一验证：可用 AX 元数据没有给出精确目标标题匹配或可机器判定的 header/ancestor 结构。
+- 消息输入控件无法定位：可用 AX 元数据没有给出 text-field/text-area、value-settable identifier 或可机器判定的 composer 结构。
+- 搜索结果未继续检查：前述“当前聊天标题”和“composer”两个必要条件已 fail-closed，继续搜索不能使 P0 通过。
+- 本次真实 WeChat 消息发送：否；真实 WeCom 消息发送：否。
+
+结论：`P0 BLOCKED，不允许进入发送实现`。不得以第一条搜索结果、模糊名称、固定坐标、OCR、AI vision、LLM、Hook、Frida 或 OpenClaw 代替缺失的 Accessibility 证据。
+
+未来若重新评估，应作为新的兼容性任务，先把 `AlertSender Protocol` 的组合 sender 修正保留为设计项，再重新验证精确聊天标题、唯一搜索结果与 composer 的结构化 Accessibility 合同；本次不实现任何 `WeChatGroupSender`、Runtime/composition 接入或发送路径。
