@@ -4,22 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import json
-import os
-from pathlib import Path
 from typing import Any
 
+from app.alerts.clawbot import build_clawbot_sender_from_env
 from app.alerts.evaluators import HtdyOriginal15mEvaluator
 from app.alerts.runtime import AlertRuntime
-from app.alerts.wechat_courier import (
-    WeChatCourierError,
-    WeChatCourierRunner,
-    WeChatGroupAlertSender,
-    resolve_wechat_courier_dependency,
-)
-from app.alerts.wechat_group_config import (
-    WeChatGroupConfigError,
-    load_wechat_group_target,
-)
 from app.core.env import PROJECT_ROOT
 from app.db.session import SessionLocal
 from app.market_data.composition import (
@@ -32,21 +21,6 @@ from app.redis_connections import get_redis_connection
 
 
 ALERT_RUNTIME_ACTIVATION_MARKER = PROJECT_ROOT / ".run" / "alert-runtime-enabled"
-WECHAT_EXTERNAL_VOLUME_ROOT = Path("/Volumes")
-
-
-def _resolve_under_external_volume(path: Path) -> Path:
-    if not path.is_absolute():
-        raise ValueError
-    allowed_root = WECHAT_EXTERNAL_VOLUME_ROOT.resolve(strict=True)
-    resolved = path.resolve(strict=True)
-    try:
-        relative = resolved.relative_to(allowed_root)
-    except ValueError:
-        raise ValueError from None
-    if not relative.parts:
-        raise ValueError
-    return resolved
 
 
 class RedisAlertMessageSource:
@@ -78,22 +52,6 @@ class RedisAlertHeartbeatStore:
         )
 
 
-def build_wechat_group_sender_from_env() -> WeChatGroupAlertSender:
-    courier_root = os.getenv("GUIYI_WECHAT_COURIER_ROOT", "")
-    group_config_path = os.getenv("GUIYI_ALERT_WECHAT_GROUP_PATH", "")
-    if not courier_root or not group_config_path:
-        raise RuntimeError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY")
-    try:
-        root = _resolve_under_external_volume(Path(courier_root))
-        config_path = _resolve_under_external_volume(Path(group_config_path))
-        target = load_wechat_group_target(config_path)
-        dependency = resolve_wechat_courier_dependency(root)
-        runner = WeChatCourierRunner(dependency)
-    except (OSError, ValueError, WeChatGroupConfigError, WeChatCourierError):
-        raise RuntimeError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY") from None
-    return WeChatGroupAlertSender(target=target, runner=runner)
-
-
 def build_alert_runtime() -> AlertRuntime:
     """构造已显式 activation 的 Alert Runtime；缺 Gate 时保持关闭。"""
     try:
@@ -104,7 +62,7 @@ def build_alert_runtime() -> AlertRuntime:
         raise RuntimeError("ALERT_RUNTIME_NOT_ENABLED")
     operational_products = load_operational_products()
     taxonomy = load_product_taxonomy()
-    sender = build_wechat_group_sender_from_env()
+    sender = build_clawbot_sender_from_env(live_probe=True)
     redis = get_redis_connection()
     return AlertRuntime(
         session_factory=SessionLocal,

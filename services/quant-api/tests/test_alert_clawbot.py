@@ -14,15 +14,24 @@ from app.alerts.clawbot import (
     ClawbotError,
     ClawbotOwnerCandidate,
     ClawbotRunner,
+    clawbot_transport_configured_from_env,
     resolve_clawbot_dependency,
 )
-from app.alerts.clawbot_owner import ClawbotOwner
+from app.alerts.clawbot_owner import ClawbotOwner, write_clawbot_owner_atomic
 from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage, format_alert_message
 
 
 def _tree(tmp_path: Path) -> tuple[ClawbotDependency, Path]:
     root = tmp_path / "plugin"
     root.mkdir()
+    for relative in (
+        "dist/src/auth/accounts.js",
+        "dist/src/messaging/inbound.js",
+        "dist/src/messaging/send.js",
+    ):
+        module = root / relative
+        module.parent.mkdir(parents=True, exist_ok=True)
+        module.write_text("export {};\n", encoding="utf-8")
     state = tmp_path / "state"
     state.mkdir()
     config = state / "openclaw.json"
@@ -250,3 +259,37 @@ def test_canary_failure_is_one_attempt_and_sanitized(tmp_path: Path) -> None:
     assert summary.provider_accepted == 0
     assert summary.failed == 1
     assert summary.failed_aliases == ("owner",)
+
+
+def test_structural_transport_check_reads_files_without_version_probe_or_send(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dependency, manifest = _tree(tmp_path)
+    write_clawbot_owner_atomic(
+        dependency.owner_path,
+        account_id="fixture-account",
+        target_user_id="fixture-owner@im.wechat",
+    )
+    monkeypatch.setattr(clawbot, "VERSIONS_PATH", manifest)
+    for name, value in zip(clawbot.CLAWBOT_PATH_ENV_NAMES, (
+        dependency.openclaw_bin,
+        dependency.node_bin,
+        dependency.plugin_root,
+        dependency.state_dir,
+        dependency.config_path,
+        dependency.owner_path,
+    ), strict=True):
+        monkeypatch.setenv(name, str(value))
+    monkeypatch.setattr(
+        clawbot.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("structural health must not spawn a child")
+        ),
+    )
+
+    assert clawbot_transport_configured_from_env() is True
+
+    dependency.owner_path.chmod(0o644)
+    assert clawbot_transport_configured_from_env() is False

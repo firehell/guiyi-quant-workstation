@@ -9,13 +9,9 @@ from types import SimpleNamespace
 import pytest
 
 import app.alerts.composition as alert_composition
-from app.alerts.composition import (
-    build_alert_runtime,
-    build_wechat_group_sender_from_env,
-)
+from app.alerts.composition import build_alert_runtime
 from app.alerts.clawbot import ClawbotError, ClawbotOwnerCandidate
 from app.alerts.clawbot_owner import ClawbotOwner
-from app.alerts.wechat_courier import WeChatCourierError
 from app.guiyi_cli.main import build_parser, main
 
 
@@ -332,127 +328,38 @@ def test_default_alert_factories_fail_closed_without_activation_or_transport(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    monkeypatch.delenv("GUIYI_WECHAT_COURIER_ROOT", raising=False)
-    monkeypatch.delenv("GUIYI_ALERT_WECHAT_GROUP_PATH", raising=False)
     monkeypatch.setattr(
         "app.alerts.composition.ALERT_RUNTIME_ACTIVATION_MARKER",
         tmp_path / "missing-marker",
     )
 
-    with pytest.raises(RuntimeError, match="ALERT_NOTIFICATION_TRANSPORT_NOT_READY"):
-        build_wechat_group_sender_from_env()
     with pytest.raises(RuntimeError, match="ALERT_RUNTIME_NOT_ENABLED"):
         build_alert_runtime()
 
 
-@pytest.mark.parametrize("failure", ("missing_config", "invalid_config", "wrong_commit"))
-def test_group_sender_composition_collapses_private_config_and_dependency_failures(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-    failure: str,
-) -> None:
-    root = tmp_path / "courier"
-    root.mkdir()
-    secrets = tmp_path / "secrets"
-    secrets.mkdir(mode=0o700)
-    config = secrets / "alert-wechat-group.json"
-    if failure != "missing_config":
-        config.write_text(
-            '{"version":1,"channel":"wechat-courier","group_alias":"primary_alert_group","target_chat":"fixture-group-title"}',
-            encoding="utf-8",
-        )
-        config.chmod(0o644 if failure == "invalid_config" else 0o600)
-    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(root))
-    monkeypatch.setenv("GUIYI_ALERT_WECHAT_GROUP_PATH", str(config))
-    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", tmp_path)
-    if failure == "wrong_commit":
-        monkeypatch.setattr(
-            alert_composition,
-            "resolve_wechat_courier_dependency",
-            lambda _root: (_ for _ in ()).throw(
-                WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
-            ),
-        )
-
-    with pytest.raises(RuntimeError, match="^ALERT_NOTIFICATION_TRANSPORT_NOT_READY$"):
-        build_wechat_group_sender_from_env()
-
-
-def test_valid_group_sender_composition_does_no_gui_verify_or_send(
+def test_alert_runtime_composition_uses_one_live_clawbot_probe_and_never_sends(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    root = tmp_path / "courier"
-    root.mkdir()
-    secrets = tmp_path / "secrets"
-    secrets.mkdir(mode=0o700)
-    config = secrets / "alert-wechat-group.json"
-    config.write_text(
-        '{"version":1,"channel":"wechat-courier","group_alias":"primary_alert_group","target_chat":"fixture-group-title"}',
-        encoding="utf-8",
-    )
-    config.chmod(0o600)
-    dependency = object()
-    constructed: list[object] = []
-
-    class StructuralRunner:
-        def __init__(self, value: object) -> None:
-            constructed.append(value)
-
-        def verify_target(self, *_args: object) -> None:
-            raise AssertionError("composition must not open GUI or verify")
-
-        def send_text(self, *_args: object) -> None:
-            raise AssertionError("composition must not send")
-
-    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(root))
-    monkeypatch.setenv("GUIYI_ALERT_WECHAT_GROUP_PATH", str(config))
-    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", tmp_path)
+    marker = tmp_path / "alert-runtime-enabled"
+    marker.write_text("enabled\n", encoding="utf-8")
+    sender = object()
+    calls: list[bool] = []
+    monkeypatch.setattr(alert_composition, "ALERT_RUNTIME_ACTIVATION_MARKER", marker)
     monkeypatch.setattr(
         alert_composition,
-        "resolve_wechat_courier_dependency",
-        lambda _root: dependency,
+        "build_clawbot_sender_from_env",
+        lambda *, live_probe: calls.append(live_probe) or sender,
     )
-    monkeypatch.setattr(alert_composition, "WeChatCourierRunner", StructuralRunner)
-
-    sender = build_wechat_group_sender_from_env()
-
-    assert constructed == [dependency]
-    assert sender is not None
-
-
-def test_group_sender_composition_rejects_external_volume_escape(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    allowed_root = tmp_path / "Volumes"
-    allowed_root.mkdir()
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    courier = outside / "courier"
-    courier.mkdir()
-    secrets = outside / "secrets"
-    secrets.mkdir(mode=0o700)
-    config = secrets / "alert-wechat-group.json"
-    config.write_text(
-        '{"version":1,"channel":"wechat-courier","group_alias":"primary_alert_group","target_chat":"fixture-group-title"}',
-        encoding="utf-8",
-    )
-    config.chmod(0o600)
-    escape = allowed_root / "escape"
-    escape.symlink_to(outside, target_is_directory=True)
-
-    monkeypatch.setattr(alert_composition, "WECHAT_EXTERNAL_VOLUME_ROOT", allowed_root)
-    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", str(escape / "courier"))
-    monkeypatch.setenv(
-        "GUIYI_ALERT_WECHAT_GROUP_PATH",
-        str(escape / "secrets/alert-wechat-group.json"),
-    )
+    monkeypatch.setattr(alert_composition, "load_operational_products", lambda: ("ag",))
+    monkeypatch.setattr(alert_composition, "load_product_taxonomy", lambda: {})
     monkeypatch.setattr(
         alert_composition,
-        "load_wechat_group_target",
-        lambda _path: (_ for _ in ()).throw(AssertionError("escaped path reached loader")),
+        "get_redis_connection",
+        lambda: SimpleNamespace(pubsub=lambda **_kwargs: object()),
     )
 
-    with pytest.raises(RuntimeError, match="^ALERT_NOTIFICATION_TRANSPORT_NOT_READY$"):
-        build_wechat_group_sender_from_env()
+    runtime = build_alert_runtime()
+
+    assert calls == [True]
+    assert runtime._sender is sender

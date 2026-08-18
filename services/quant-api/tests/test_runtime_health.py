@@ -24,8 +24,10 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
     monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
     monkeypatch.setattr("app.services.runtime_health._alert_runtime_activation_enabled", lambda: False)
-    monkeypatch.delenv("GUIYI_WECHAT_COURIER_ROOT", raising=False)
-    monkeypatch.delenv("GUIYI_ALERT_WECHAT_GROUP_PATH", raising=False)
+    monkeypatch.setattr(
+        "app.services.runtime_health.clawbot_transport_configured_from_env",
+        lambda: False,
+    )
     monkeypatch.setattr(
         "app.api.runtime.build_runtime_health",
         lambda session: build_runtime_health(session, after_market_status_path=None),
@@ -77,8 +79,10 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
 
 def test_alert_health_activation_and_transport_fail_closed(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
-    monkeypatch.delenv("GUIYI_WECHAT_COURIER_ROOT", raising=False)
-    monkeypatch.delenv("GUIYI_ALERT_WECHAT_GROUP_PATH", raising=False)
+    monkeypatch.setattr(
+        "app.services.runtime_health.clawbot_transport_configured_from_env",
+        lambda: False,
+    )
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
@@ -113,10 +117,6 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
     marker = tmp_path / ".run" / "alert-runtime-enabled"
     marker.parent.mkdir()
     marker.write_text("enabled\n", encoding="utf-8")
-    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", "/Volumes/fixture/courier")
-    monkeypatch.setenv(
-        "GUIYI_ALERT_WECHAT_GROUP_PATH", "/Volumes/fixture/secrets/group.json"
-    )
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
@@ -216,14 +216,10 @@ def test_alert_health_structural_transport_is_ready_from_process_environment(
     monkeypatch,
 ) -> None:
     now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
-    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", "/Volumes/fixture/courier")
-    monkeypatch.setenv(
-        "GUIYI_ALERT_WECHAT_GROUP_PATH", "/Volumes/fixture/secrets/group.json"
-    )
     calls: list[str] = []
     monkeypatch.setattr(
-        "app.services.runtime_health.build_wechat_group_sender_from_env",
-        lambda: calls.append("structural-preflight") or object(),
+        "app.services.runtime_health.clawbot_transport_configured_from_env",
+        lambda: calls.append("structural-check") or True,
     )
     TestingSessionLocal = _session_factory()
 
@@ -248,7 +244,7 @@ def test_alert_health_structural_transport_is_ready_from_process_environment(
             after_market_status_path=None,
         )
 
-    assert calls == ["structural-preflight"]
+    assert calls == ["structural-check"]
     assert payload["components"]["alert"]["status"] == "ok"
     assert payload["components"]["alert"]["notification_transport_configured"] is True
 
@@ -258,8 +254,11 @@ def test_alert_health_rejects_invalid_transport_paths(monkeypatch, tmp_path) -> 
     marker = tmp_path / ".run" / "alert-runtime-enabled"
     marker.parent.mkdir()
     marker.write_text("enabled\n", encoding="utf-8")
-    monkeypatch.setenv("GUIYI_WECHAT_COURIER_ROOT", "relative/private-root")
-    monkeypatch.setenv("GUIYI_ALERT_WECHAT_GROUP_PATH", "/absolute/group.json")
+    monkeypatch.setattr(
+        "app.services.runtime_health.clawbot_transport_configured_from_env",
+        lambda: False,
+    )
+    monkeypatch.setenv("GUIYI_OPENCLAW_BIN", "relative/openclaw")
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:

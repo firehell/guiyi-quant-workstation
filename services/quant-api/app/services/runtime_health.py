@@ -24,7 +24,10 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.alerts.composition import build_wechat_group_sender_from_env
+from app.alerts.clawbot import (
+    CLAWBOT_PATH_ENV_NAMES,
+    clawbot_transport_configured_from_env,
+)
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -74,16 +77,8 @@ def build_runtime_health(
         else alert_runtime_enabled
     )
     if notification_transport_configured is None:
-        courier_root = os.getenv("GUIYI_WECHAT_COURIER_ROOT", "")
-        group_config_path = os.getenv("GUIYI_ALERT_WECHAT_GROUP_PATH", "")
-        transport_present = bool(courier_root or group_config_path)
-        try:
-            if not courier_root or not group_config_path:
-                raise RuntimeError
-            build_wechat_group_sender_from_env()
-            transport_configured = True
-        except RuntimeError:
-            transport_configured = False
+        transport_present = any(os.getenv(name, "") for name in CLAWBOT_PATH_ENV_NAMES)
+        transport_configured = clawbot_transport_configured_from_env()
         transport_error_type = (
             None
             if transport_configured

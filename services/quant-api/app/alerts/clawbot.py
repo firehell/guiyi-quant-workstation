@@ -11,7 +11,12 @@ import stat
 import subprocess
 from typing import Any
 
-from app.alerts.clawbot_owner import CLAWBOT_OWNER_ALIAS, ClawbotOwner, load_clawbot_owner
+from app.alerts.clawbot_owner import (
+    CLAWBOT_OWNER_ALIAS,
+    ClawbotOwner,
+    ClawbotOwnerError,
+    load_clawbot_owner,
+)
 from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage, format_alert_message
 from app.core.env import PROJECT_ROOT
 
@@ -20,7 +25,7 @@ VERSIONS_PATH = PROJECT_ROOT / "deploy/clawbot/versions.json"
 SINGLE_SHOT_PATH = PROJECT_ROOT / "services/quant-api/app/alerts/openclaw_weixin_single_shot.mjs"
 CHILD_TIMEOUT_SECONDS = 15.0
 VERSION_TIMEOUT_SECONDS = 10.0
-_ENV_PATHS = (
+CLAWBOT_PATH_ENV_NAMES = (
     "GUIYI_OPENCLAW_BIN",
     "GUIYI_OPENCLAW_NODE_BIN",
     "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT",
@@ -140,6 +145,15 @@ def resolve_clawbot_dependency(
     resolved_plugin = _directory(plugin_root)
     resolved_state = _directory(state_dir)
     resolved_config = _regular(config_path)
+    try:
+        for relative_value in manifest["plugin_modules"].values():
+            relative = Path(relative_value)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError
+            module = _regular(resolved_plugin / relative)
+            module.relative_to(resolved_plugin)
+    except (KeyError, OSError, TypeError, ValueError, ClawbotError):
+        raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY") from None
     try:
         if not owner_path.is_absolute():
             raise ValueError
@@ -292,7 +306,7 @@ class ClawbotAlertSender:
 
 
 def build_clawbot_dependency_from_env(*, verify_versions: bool) -> ClawbotDependency:
-    values = [os.getenv(name, "") for name in _ENV_PATHS]
+    values = [os.getenv(name, "") for name in CLAWBOT_PATH_ENV_NAMES]
     if any(not value for value in values):
         raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY")
     return resolve_clawbot_dependency(
@@ -321,3 +335,13 @@ def build_clawbot_sender_from_env(*, live_probe: bool = True) -> ClawbotAlertSen
             raise
         raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY") from None
     return ClawbotAlertSender(owner, runner)
+
+
+def clawbot_transport_configured_from_env() -> bool:
+    """Validate local Clawbot structure without spawning or contacting the provider."""
+    try:
+        dependency = build_clawbot_dependency_from_env(verify_versions=False)
+        load_clawbot_owner(dependency.owner_path)
+    except (ClawbotError, ClawbotOwnerError, OSError, ValueError):
+        return False
+    return True
