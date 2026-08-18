@@ -4,7 +4,7 @@
 
 **Goal:** Safely migrate the production Alert notification transport from the current exact-tag WeCom Runtime to one fixed WeChat group through the pinned local WeChat-Courier transport, while preserving Alert Event-first/no-retry semantics and proving target verification before any production switch.
 
-**Architecture:** Production remains on the current exact-tag WeCom Runtime until the WeChat-Courier dependency, private target, macOS GUI permissions, no-send target verification, real canary, stability matrix, release, continuous notification scope, and exact-tag Runtime identity have each passed their own Gate. The new sender always uses `primary_alert_group`, strict unique search-result verification, exact chat-title verification, a non-blocking GUI lock, and at most one physical text-send primitive per newly committed AlertEvent.
+**Architecture:** Production remains on the current exact-tag WeCom Runtime until the WeChat-Courier dependency, private target, macOS GUI permissions, no-send target verification, real canary, stability matrix, release, continuous notification scope, and exact-tag Runtime identity have each passed their own Gate. The new sender always uses `primary_alert_group`, selects exactly one visible pinned home-chat row without search or scrolling, performs exact chat-title verification, uses a non-blocking GUI lock, and invokes at most one physical text-send primitive per newly committed AlertEvent.
 
 **Tech Stack:** macOS GUI session, official WeChat.app, Python 3.13 project Runtime, dedicated WeChat-Courier venv, Pillow 11.3.0, AppleScript/System Events, macOS Vision/Swift helpers, launchd, Git worktrees, existing FastAPI/Alert Runtime.
 
@@ -22,7 +22,7 @@
 - Private config parent mode is `0700`; file mode is `0600`; both must be owned by the current Runtime user.
 - No OpenClaw, Tencent iLink, inbound listener, context monitor, queue, retry, replay, backfill, outbox, provider fallback, or auto-order path is allowed.
 - `htdy_original_15m`, `subing_entry_signal_v1`, their current production Scope, Alert two-table schema, DB revision, Market eight-table contract, Canonical, and `auto_order=false` must remain unchanged.
-- Every real GUI action is a separate external-operation Gate. `alert-target-verify` is no-send but is **not** readonly: it activates WeChat, searches, clicks, screenshots, and OCRs.
+- Every real GUI action is a separate external-operation Gate. `alert-target-verify` is no-send but is **not** readonly: it activates WeChat, exits any existing search/overlay, clicks a uniquely matched visible home-chat row, screenshots, and OCRs.
 - `runtime alert-canary` is a real message send and always requires its own explicit Gate.
 - Failure at any Gate stops the rollout. Do not weaken exact matching, choose the first result, switch to fuzzy matching, send by coordinates only, or add retry to obtain a pass.
 - Keep the old `v1.4.2` Runtime worktree intact through Gate G9 so rollback remains available by a new explicit Gate. It is not an active fallback; it is rollback material only.
@@ -147,7 +147,7 @@ Do not run upstream watcher, queue, MCP server, `send_wechat.py`, or any example
 
 **Mutation:** private local config only.
 
-**Does not authorize:** opening/searching WeChat, screenshot/OCR, send, launchd reload, Runtime switch.
+**Does not authorize:** opening or navigating WeChat, screenshot/OCR, send, launchd reload, Runtime switch.
 
 - [ ] Ensure the private directory exists with exact ownership/mode:
 
@@ -218,7 +218,7 @@ file=0600 current uid
 Upstream exact commit requires: official desktop WeChat logged in, Python 3, Xcode Command Line Tools / Swift, Accessibility, Automation, and Screen Recording for the automation execution context.
 
 - [ ] User manually starts official WeChat.app and confirms it is logged in.
-- [ ] Verify toolchain without opening/searching a chat:
+- [ ] Verify toolchain without opening or navigating a chat:
 
 ```bash
 xcode-select -p
@@ -258,7 +258,8 @@ export GUIYI_WECHAT_COURIER_ROOT='/Volumes/扩展盘/wechat-courier'
 export GUIYI_ALERT_WECHAT_GROUP_PATH='/Volumes/扩展盘/guiyi-secrets/alert-wechat-group.json'
 ```
 
-- [ ] User manually opens a **non-target** WeChat chat first. This proves the adapter must navigate and verify instead of relying on current-chat state.
+- [ ] User keeps the unique target group pinned and visible on the WeChat home chat list. Multiple other pinned groups are allowed; the target must require no scrolling.
+- [ ] User manually opens a **non-target** WeChat chat first. This proves the adapter must return to the home chat list, select the unique exact row, and verify instead of relying on current-chat state.
 - [ ] Execute exactly once:
 
 ```bash
@@ -292,7 +293,7 @@ Expected: no retained OCR screenshot files. If files exist, stop; identify exact
 
 - [ ] If target verification returns `WECHAT_GROUP_TARGET_UNVERIFIED`, `WECHAT_COURIER_BUSY`, or dependency errors, stop. Do not run the command repeatedly until it passes; first diagnose the exact cause.
 
-**G3C PASS:** exact target can be opened and verified with zero message sends.
+**G3C PASS:** the unique visible pinned target can be opened without search or scrolling and verified with zero message sends.
 
 ---
 
@@ -341,11 +342,11 @@ Every row is an independent experiment. No automatic retry between rows.
 - [ ] Run one approved `alert-target-verify`.
 - [ ] Expected: target verified, `message_sent=false`.
 
-### G5.2 Target not relied on as recent/current chat
+### G5.2 Target pinned and visible among other chats
 
-- [ ] User navigates away from target and leaves WeChat in a normal non-target state.
+- [ ] User navigates away from target and leaves WeChat in a normal non-target state while the target remains pinned and visible without scrolling.
 - [ ] Run one approved `alert-target-verify`.
-- [ ] Expected: successful exact search/title verification, no send.
+- [ ] Expected: successful unique home-chat/title verification without search or scrolling, no send.
 
 ### G5.3 Near-name ambiguity contract
 

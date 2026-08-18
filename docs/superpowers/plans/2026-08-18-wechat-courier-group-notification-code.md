@@ -4,7 +4,7 @@
 
 **Goal:** Pivot the in-progress D1 notification migration from Tencent iLink four-person DMs to one fixed WeChat group sent through a pinned, locally hardened WeChat-Courier transport while preserving Alert Event-first/no-retry semantics.
 
-**Architecture:** Keep the transport-neutral notification contract already created by old Task 1. Delete/revert all iLink-specific work from the current Task5–6 worktree, then add one private group config, one pinned WeChat-Courier dependency contract, one hardened child adapter that exact-verifies search result/title before a single send, and one `WeChatGroupAlertSender`. No OpenClaw/iLink/context monitor/recipient fan-out remains.
+**Architecture:** Keep the transport-neutral notification contract already created by old Task 1. Delete/revert all iLink-specific work from the current Task5–6 worktree, then add one private group config, one pinned WeChat-Courier dependency contract, one hardened child adapter that exact-verifies a uniquely visible pinned home-chat row and title before a single send, and one `WeChatGroupAlertSender`. The adapter does not search or scroll. No OpenClaw/iLink/context monitor/recipient fan-out remains.
 
 **Tech Stack:** Python 3.13 stdlib + existing FastAPI/SQLAlchemy stack, macOS WeChat.app, AppleScript/System Events, macOS Vision/Swift helpers through pinned `bladydora/WeChat-Courier-macOS@981bd14e238302b2a0e206cb5f28e8e2505bb874`, macOS launchd.
 
@@ -20,7 +20,7 @@
 - Preserve Event-first: committed Event is never rolled back because notification failed; no notification retry/replay/backfill/outbox/queue.
 - V1 target is exactly one private group alias: `primary_alert_group`.
 - Real group title never appears in tracked files, tests, logs, receipts or chat.
-- Upstream WeChat-Courier fuzzy `text_matches_target` is not accepted as the final safety boundary. Project code must exact-verify unique search result + title.
+- Upstream WeChat-Courier fuzzy `text_matches_target` is not accepted as the final safety boundary. Project code must exact-verify one uniquely visible pinned home-chat row + title without search or scrolling.
 - Upstream queue/watcher/retry/MCP/HTTP surfaces are forbidden.
 - Tests use fake Courier trees, fixture OCR boxes/text, mocked subprocesses, temp private config and render-only launchd only.
 
@@ -361,7 +361,7 @@ In `wechat_courier_adapter.py` expose pure helpers for engineering tests:
 ```python
 def normalize_chat_name(value: str) -> str: ...
 def title_matches_exact_target(ocr_line: str, target: str) -> bool: ...
-def select_unique_search_box(box_texts: Sequence[str], target: str) -> int: ...
+def select_unique_chat_list_box(box_texts: Sequence[str], target: str) -> int: ...
 ```
 
 Test:
@@ -383,12 +383,11 @@ Fixture exports only the exact reviewed functions the adapter may use:
 
 ```python
 activate_wechat
-make_search_results_screenshot
+get_wechat_window_rect
+get_wechat_window_name
 ocr_boxes
-search_result_row_click_point
+box_center_screen_point
 click_point
-make_safety_screenshot
-make_title_screenshot
 ocr_image
 paste_and_send_text
 ```
@@ -403,9 +402,9 @@ Use `importlib.util.spec_from_file_location()` on exactly:
 <upstream_root>/wechat_courier.py
 ```
 
-Require all nine callable exports above. Missing/extra upstream behavior is not guessed. Wrong shape -> `WECHAT_COURIER_DEPENDENCY_INVALID`.
+Require all eight callable exports above. Missing upstream behavior is not guessed. Wrong shape -> `WECHAT_COURIER_DEPENDENCY_INVALID`.
 
-Do not call upstream `find_search_result_click_point()` or `text_matches_target()`.
+Do not call upstream `find_search_result_click_point()`, `open_chat()` or `text_matches_target()`.
 
 - [ ] **Step 5: Implement `verify` without any send primitive**
 
@@ -413,9 +412,9 @@ Exact sequence:
 
 ```text
 activate_wechat
-→ open search UI using project-reviewed helper logic based on upstream primitives
-→ OCR search-result crop
-→ require exactly one exact normalized result
+→ press Escape twice to leave any search/overlay
+→ OCR the visible home chat-list crop without scrolling
+→ require exactly one exact normalized target among the visible pinned chats
 → click that row
 → OCR safety crop and reject known search-page markers
 → OCR title crop
@@ -424,7 +423,7 @@ activate_wechat
 → return {"status":"verified"}
 ```
 
-If implementing search UI requires calling upstream `open_chat()`, monkey-patch/replace its result selector inside this one adapter so the upstream fuzzy selector cannot run. Engineering tests must prove fuzzy `text_matches_target()` is never called.
+The target group is a user-maintained pinned chat that must remain visible without scrolling. Engineering tests must prove the adapter does not type the target, search, scroll, call `open_chat()`, or call fuzzy `text_matches_target()`.
 
 - [ ] **Step 6: Silence upstream output**
 
@@ -905,7 +904,7 @@ PASS private target is one group alias only
 PASS target config is 0700 parent / 0600 file and never logged
 PASS WeChat-Courier exact commit is pinned and clean
 PASS upstream fuzzy target match is not the final safety boundary
-PASS search-result exact match is unique or send aborts
+PASS visible pinned home-chat exact match is unique or send aborts
 PASS title exact match/member-count suffix is verified or send aborts
 PASS same-prefix/near-name/same-name ambiguity sends zero messages
 PASS OCR screenshots are deleted by default and raw OCR never reaches guiyi logs

@@ -75,7 +75,7 @@ services/quant-api/app/alerts/wechat_courier_adapter.py
 允许依赖 pinned WeChat-Courier 的窄内部函数，并负责：
 
 - exact commit / exact function-shape compatibility；
-- 搜索结果严格唯一匹配；
+- 微信首页可见聊天列表严格唯一匹配；
 - 当前聊天标题严格二次确认；
 - safety crop reject；
 - stdout/stderr/raw OCR 脱敏；
@@ -94,7 +94,7 @@ Unicode NFKC
 → remove only visual spacing/punctuation allowed by explicit rule
 ```
 
-搜索结果阶段：必须恰好存在 1 个 OCR box，其 normalized text 与 `target_chat` normalized value 相等。0 个或 >1 个均失败。
+首页聊天列表阶段：目标群必须由用户保持置顶，并在当前可见范围内，无需滚动。adapter 只退出已有搜索/浮层，不输入群名、不搜索、不滚动；随后只截取左侧可见聊天列表。多个置顶群允许共存，但必须恰好存在 1 个 OCR box，其 normalized text 与 `target_chat` normalized value 相等。0 个或 >1 个均失败。
 
 标题阶段：必须存在且仅存在一个标题候选，满足：
 
@@ -106,7 +106,7 @@ exact normalized target + trailing member-count suffix
 
 允许的 member-count suffix 仅：`(N)` / `（N）`，其中 N 为正整数。不得使用 substring/fuzzy/first-result fallback。
 
-如果同名联系人/同名群、近似群、OCR 拆字、标题无法唯一确认，统一 fail-closed：
+如果目标不在可见首页、同名联系人/同名群、近似群、OCR 拆字、标题无法唯一确认，统一 fail-closed：
 
 ```text
 WECHAT_GROUP_TARGET_UNVERIFIED
@@ -176,7 +176,7 @@ AlertNotificationMessage
           ▼
 wechat_courier_adapter.py
           │
-          ├─ unique exact search-result OCR
+          ├─ unique exact visible home-chat OCR
           ├─ exact title OCR verification
           ├─ local safety reject
           └─ single send primitive
@@ -331,7 +331,7 @@ new Event commit
 
 ```text
 真实微信群名
-搜索结果 OCR 原文
+首页聊天列表 OCR 原文
 聊天标题 OCR 原文
 其他会话名称
 截图
@@ -350,7 +350,7 @@ WECHAT_COURIER_SEND_FAILED
 elapsed_ms
 ```
 
-项目 runner 必须 capture/discard 上游 stdout/stderr；不能把上游会打印的搜索 OCR、target 或 `Sent via WeChat to ...` 原样透出。
+项目 runner 必须 capture/discard 上游 stdout/stderr；不能把上游会打印的 OCR、target 或 `Sent via WeChat to ...` 原样透出。
 
 截图默认由上游 helper 删除；项目 adapter 禁止 `--retain-ocr-screenshot`、`--screenshot`、`--after-screenshot` 等生产路径。
 
@@ -412,7 +412,8 @@ D1 全部使用 fake Courier tree / mocked child process / temp private config�
 
 - config 权限/schema/symlink/alias/channel 校验；
 - exact pinned commit identity；
-- strict search-result 0/1/>1 匹配；
+- visible home-chat list 0/1/>1 exact 匹配；
+- multiple pinned chats / near-name / split OCR / no-scroll fail-closed；
 - title exact + member-count suffix；
 - near-match / same-prefix / same-name ambiguity fail-closed；
 - raw OCR/stdout/stderr 不泄露；
@@ -438,10 +439,10 @@ D1 只完成代码与本地 fake verification。D1 PASS 后再单独写新的微
 
 ```text
 G2 install exact WeChat-Courier on expansion disk
-→ G3 macOS permissions + P0 open/search/OCR exact verify, no send
+→ G3 macOS permissions + P0 visible pinned-chat/OCR exact verify, no send
 → G4 one real group canary + human receipt
 → G5 stability matrix
-   - group not in recent chats
+   - target remains pinned and visible among multiple pinned chats
    - another chat currently open
    - near-name decoy group
    - WeChat restart/warm state
@@ -464,7 +465,7 @@ G2 install exact WeChat-Courier on expansion disk
 3. V1 只存在一个群 alias：`primary_alert_group`。
 4. 真实群名仅来自 `0600` 私有文件，Runtime 启动时冻结。
 5. WeChat-Courier exact commit pinned；main/latest/auto-update 禁止。
-6. 项目 adapter 对搜索结果与标题执行严格唯一验证，不直接依赖 upstream fuzzy match 作为最终安全边界。
+6. 项目 adapter 对首页可见聊天列表与标题执行严格唯一验证，不搜索、不滚动，不直接依赖 upstream fuzzy match 作为最终安全边界。
 7. 一条新 Event 最多一次物理 send primitive；OCR retry 不得导致 send retry。
 8. 目标无法确认、同名/近似冲突、GUI busy、依赖漂移时 fail-closed。
 9. 无 OpenClaw/iLink/context monitor/recipient fan-out/群 inbound/LLM。

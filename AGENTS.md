@@ -68,7 +68,7 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
 main/tag/release、Canonical 写入或订单。production migration、v1.3 release/tag、Runtime promotion/switch、SuBing Scope write/activation 和真实 WeCom/canary 都是独立的一次性 Gate；mock、测试、render-only 或其中一个 Gate 不授权其余 Gate。测试路由的 Scope PUT 不构成真实 Scope mutation 授权。
 
 `develop` 的通知目标架构已改为单一固定微信群的 pinned WeChat-Courier 单次 GUI 自动化：私有配置只保存
-`primary_alert_group` 对应的精确群名，search result 必须唯一精确匹配，chat title 必须精确匹配或仅带正整数成员数后缀；不使用 upstream 模糊匹配作为安全边界。每个 committed Event 最多启动一个 child、调用一次发送 primitive，GUI lock 使用非阻塞独占锁，不形成 retry、queue、replay 或 backfill。仓库不引入 OpenClaw、Tencent iLink、context monitor、inbound、Agent/LLM/slash/tool/reply 路径。当前 production exact-tag Runtime 仍为 WeCom，直至未来独立 rollout、release 与 Runtime promotion 被记录于 `STATUS.md`；本次 develop 代码、fixture、render-only 和测试不改变该事实或授予真实 Courier 安装、TCC、群验证、canary、发送或 Runtime switch。
+`primary_alert_group` 对应的精确群名；目标群由用户保持置顶且无需滚动，首页可见聊天列表必须唯一精确匹配，adapter 不输入群名、不搜索、不滚动；chat title 必须精确匹配或仅带正整数成员数后缀，不使用 upstream 模糊匹配作为安全边界。每个 committed Event 最多启动一个 child、调用一次发送 primitive，GUI lock 使用非阻塞独占锁，不形成 retry、queue、replay 或 backfill。仓库不引入 OpenClaw、Tencent iLink、context monitor、inbound、Agent/LLM/slash/tool/reply 路径。当前 production exact-tag Runtime 仍为 WeCom，直至未来独立 rollout、release 与 Runtime promotion 被记录于 `STATUS.md`；本次 develop 代码、fixture、render-only 和测试不改变该事实或授予真实 Courier 安装、TCC、群验证、canary、发送或 Runtime switch。
 
 ## 工程与业务硬规则
 

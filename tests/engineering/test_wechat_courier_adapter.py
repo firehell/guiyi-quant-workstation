@@ -11,12 +11,13 @@ import pytest
 import app.alerts.wechat_courier_adapter as adapter
 from app.alerts.wechat_courier_adapter import (
     _capture_screen_rect,
+    _prepare_home_chat_list,
     _validate_ocr_box,
     _validate_pinned_temp_directory,
     AdapterError,
     execute_adapter_action,
     normalize_chat_name,
-    select_unique_search_box,
+    select_unique_chat_list_box,
     title_matches_exact_target,
 )
 
@@ -64,12 +65,12 @@ def test_title_match_accepts_only_exact_target_and_positive_member_suffix(
     assert title_matches_exact_target(title, "归一量化") is expected
 
 
-def test_select_unique_search_box_requires_exactly_one_normalized_match() -> None:
-    assert select_unique_search_box(["near-fixture-group-title", TARGET], TARGET) == 1
+def test_select_unique_chat_list_box_requires_exactly_one_normalized_match() -> None:
+    assert select_unique_chat_list_box(["near-fixture-group-title", TARGET], TARGET) == 1
 
     for boxes in ([], [f"{TARGET}-near"], [TARGET, TARGET]):
         with pytest.raises(AdapterError, match="^WECHAT_GROUP_TARGET_UNVERIFIED$"):
-            select_unique_search_box(boxes, TARGET)
+            select_unique_chat_list_box(boxes, TARGET)
 
 
 def _fake_upstream(
@@ -81,7 +82,7 @@ def _fake_upstream(
     safety: str = "clean-chat",
     send_failure: bool = False,
     geometry: tuple[float, float, float, float] = (0.1, 0.2, 0.3, 0.1),
-    click_point: tuple[int, int] = (142, 384),
+    click_point: tuple[int, int] = (250, 384),
 ) -> Path:
     source_root.mkdir(parents=True)
     module_path = source_root / "wechat_courier.py"
@@ -101,11 +102,11 @@ def _fake_upstream(
             "def ocr_boxes(path):\n"
             "    record('ocr_boxes')\n"
             "    print(PRIVATE_RAW)\n"
-            "    return [dict(item) for item in SEARCH_BOXES]\n"
+            "    return [dict(item) for item in CHAT_BOXES]\n"
         ),
-        "search_result_row_click_point": (
-            "def search_result_row_click_point(box, point_box):\n"
-            "    record('search_result_row_click_point')\n"
+        "box_center_screen_point": (
+            "def box_center_screen_point(box, point_box):\n"
+            "    record('box_center_screen_point')\n"
             f"    return {click_point!r}\n"
         ),
         "click_point": "def click_point(x, y):\n    record('click_point')\n",
@@ -128,7 +129,7 @@ def _fake_upstream(
         f"ROOT = Path({str(source_root)!r})\n"
         "LOG = ROOT / 'calls.log'\n"
         f"PRIVATE_RAW = {TARGET!r}\n"
-        f"SEARCH_BOXES = {json.dumps([{'text': text, 'min_x': geometry[0], 'min_y': geometry[1], 'width': geometry[2], 'height': geometry[3]} for text in (boxes if boxes is not None else [TARGET])])}\n"
+        f"CHAT_BOXES = {json.dumps([{'text': text, 'min_x': geometry[0], 'min_y': geometry[1], 'width': geometry[2], 'height': geometry[3]} for text in (boxes if boxes is not None else [TARGET])])}\n"
         f"SAFETY_TEXT = {safety!r}\n"
         f"TITLE_TEXT = {title!r}\n"
         "def record(name):\n"
@@ -153,7 +154,7 @@ def _fixture_capture(
         if observed is not None:
             observed.append((prefix, box))
         path = source_root / f"{prefix}-{count}.png"
-        if cleanup_failure and prefix == "search":
+        if cleanup_failure and prefix == "home-list":
             path.mkdir()
         else:
             path.write_bytes(b"fixture")
@@ -173,7 +174,7 @@ def test_screen_rect_capture_uses_fixed_bounded_argv_and_private_file(
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     screenshot = _capture_screen_rect(
-        "search",
+        "home-list",
         (100, 278, 490, 820),
         temp_root=tmp_path,
         run_process=run_process,
@@ -197,13 +198,40 @@ def test_screen_rect_capture_timeout_removes_partial_private_file(tmp_path: Path
 
     with pytest.raises(AdapterError, match="^WECHAT_GROUP_TARGET_UNVERIFIED$"):
         _capture_screen_rect(
-            "search",
+            "home-list",
             (100, 278, 490, 820),
             temp_root=tmp_path,
             run_process=run_process,
         )
 
     assert list(tmp_path.glob("*.png")) == []
+
+
+def test_prepare_home_chat_list_only_exits_search_and_does_not_type_or_scroll(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], str | None]] = []
+
+    def run_private_command(
+        argv: list[str],
+        *,
+        input_text: str | None = None,
+    ) -> None:
+        calls.append((argv, input_text))
+
+    monkeypatch.setattr(adapter, "_run_private_command", run_private_command)
+
+    _prepare_home_chat_list(object())  # type: ignore[arg-type]
+
+    assert len(calls) == 1
+    argv, input_text = calls[0]
+    assert argv[:2] == ["/usr/bin/osascript", "-e"]
+    assert input_text is None
+    script = argv[2]
+    assert script.count("key code 53") == 2
+    assert "keystroke" not in script
+    assert "scroll" not in script.lower()
+    assert "/usr/bin/pbcopy" not in argv
 
 
 def test_pinned_temp_directory_rejects_path_identity_swap(
@@ -263,13 +291,17 @@ def test_ocr_box_rejects_nonfinite_or_out_of_range_geometry(
         )
 
 
-def test_verify_uses_exact_private_seam_cleans_screenshots_and_never_sends(
+def test_verify_selects_unique_target_from_visible_pinned_home_chats_without_search(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     source_root = tmp_path / "source"
-    _fake_upstream(source_root)
-    opened: list[str] = []
+    _fake_upstream(
+        source_root,
+        boxes=["first-pinned-chat", TARGET, "another-pinned-chat"],
+        click_point=(250, 384),
+    )
+    prepared: list[str] = []
     validations: list[tuple[Path, str]] = []
     captures: list[tuple[str, tuple[int, int, int, int]]] = []
 
@@ -280,7 +312,7 @@ def test_verify_uses_exact_private_seam_cleans_screenshots_and_never_sends(
             "upstream_root": str(source_root),
             "upstream_commit": PINNED_COMMIT,
         },
-        open_search_ui=lambda _upstream, target: opened.append(target),
+        prepare_home_chat_list=lambda _upstream: prepared.append("home"),
         capture_rect=_fixture_capture(source_root, observed=captures),
         sleep=lambda _seconds: None,
         validate_upstream=lambda root, commit: validations.append((root, commit)),
@@ -288,10 +320,10 @@ def test_verify_uses_exact_private_seam_cleans_screenshots_and_never_sends(
     )
 
     assert result == {"status": "verified"}
-    assert opened == [TARGET]
+    assert prepared == ["home"]
     assert validations == [(source_root, PINNED_COMMIT), (source_root, PINNED_COMMIT)]
     assert captures == [
-        ("search", (100, 278, 490, 820)),
+        ("home-list", (160, 278, 450, 1000)),
         ("safety-1", (100, 235, 1100, 440)),
         ("title-1", (450, 200, 1080, 295)),
     ]
@@ -301,7 +333,7 @@ def test_verify_uses_exact_private_seam_cleans_screenshots_and_never_sends(
         "activate_wechat",
         "get_wechat_window_rect",
         "ocr_boxes",
-        "search_result_row_click_point",
+        "box_center_screen_point",
         "click_point",
         "get_wechat_window_rect",
         "get_wechat_window_rect",
@@ -311,8 +343,11 @@ def test_verify_uses_exact_private_seam_cleans_screenshots_and_never_sends(
     ]
 
 
-@pytest.mark.parametrize("boxes", ([], [f"{TARGET}-near"], [TARGET, TARGET]))
-def test_search_miss_near_match_or_ambiguity_fails_before_click(
+@pytest.mark.parametrize(
+    "boxes",
+    ([], [f"{TARGET}-near"], [TARGET[:8], TARGET[8:]], [TARGET, TARGET]),
+)
+def test_home_chat_list_miss_near_match_or_ambiguity_fails_before_click(
     tmp_path: Path,
     boxes: list[str],
 ) -> None:
@@ -327,7 +362,7 @@ def test_search_miss_near_match_or_ambiguity_fails_before_click(
                 "upstream_root": str(source_root),
                 "upstream_commit": PINNED_COMMIT,
             },
-            open_search_ui=lambda _upstream, _target: None,
+            prepare_home_chat_list=lambda _upstream: None,
             capture_rect=_fixture_capture(source_root),
             sleep=lambda _seconds: None,
             validate_upstream=_accept_fixture_upstream,
@@ -361,7 +396,7 @@ def test_invalid_ocr_geometry_or_out_of_bounds_point_fails_before_click(
                 "upstream_root": str(source_root),
                 "upstream_commit": PINNED_COMMIT,
             },
-            open_search_ui=lambda _upstream, _target: None,
+            prepare_home_chat_list=lambda _upstream: None,
             capture_rect=_fixture_capture(source_root),
             sleep=lambda _seconds: None,
             validate_upstream=_accept_fixture_upstream,
@@ -388,7 +423,7 @@ def test_title_failure_retries_only_read_only_ocr_three_times_and_cleans(
                 "upstream_root": str(source_root),
                 "upstream_commit": PINNED_COMMIT,
             },
-            open_search_ui=lambda _upstream, _target: None,
+            prepare_home_chat_list=lambda _upstream: None,
             capture_rect=_fixture_capture(source_root, observed=captures),
             sleep=lambda _seconds: None,
             validate_upstream=_accept_fixture_upstream,
@@ -416,7 +451,7 @@ def test_missing_exact_upstream_export_fails_dependency_closed(tmp_path: Path) -
                 "upstream_root": str(source_root),
                 "upstream_commit": PINNED_COMMIT,
             },
-            open_search_ui=lambda _upstream, _target: None,
+            prepare_home_chat_list=lambda _upstream: None,
             capture_rect=_fixture_capture(source_root),
             sleep=lambda _seconds: None,
             validate_upstream=_accept_fixture_upstream,
@@ -436,7 +471,7 @@ def test_send_verifies_then_calls_physical_send_exactly_once(tmp_path: Path) -> 
             "upstream_root": str(source_root),
             "upstream_commit": PINNED_COMMIT,
         },
-        open_search_ui=lambda _upstream, _target: None,
+        prepare_home_chat_list=lambda _upstream: None,
         capture_rect=_fixture_capture(source_root),
         sleep=lambda _seconds: None,
         validate_upstream=_accept_fixture_upstream,
@@ -461,7 +496,7 @@ def test_send_temp_path_swap_fails_before_physical_send(
     monkeypatch.setenv("TMPDIR", str(pinned))
     monkeypatch.setenv("GUIYI_WECHAT_COURIER_TMP_FD", str(descriptor))
 
-    def swap_temp_path(_upstream: object, _target: str) -> None:
+    def swap_temp_path(_upstream: object) -> None:
         held = tmp_path / "held"
         outside = tmp_path / "outside"
         outside.mkdir(mode=0o700)
@@ -478,7 +513,7 @@ def test_send_temp_path_swap_fails_before_physical_send(
                     "upstream_root": str(source_root),
                     "upstream_commit": PINNED_COMMIT,
                 },
-                open_search_ui=swap_temp_path,
+                prepare_home_chat_list=swap_temp_path,
                 capture_rect=_fixture_capture(source_root),
                 sleep=lambda _seconds: None,
                 validate_upstream=_accept_fixture_upstream,
@@ -490,7 +525,10 @@ def test_send_temp_path_swap_fails_before_physical_send(
     assert "paste_and_send_text" not in calls
 
 
-@pytest.mark.parametrize("boxes", ([], [f"{TARGET}-near"], [TARGET, TARGET]))
+@pytest.mark.parametrize(
+    "boxes",
+    ([], [f"{TARGET}-near"], [TARGET[:8], TARGET[8:]], [TARGET, TARGET]),
+)
 def test_send_target_verification_failure_calls_no_send(
     tmp_path: Path,
     boxes: list[str],
@@ -507,7 +545,7 @@ def test_send_target_verification_failure_calls_no_send(
                 "upstream_root": str(source_root),
                 "upstream_commit": PINNED_COMMIT,
             },
-            open_search_ui=lambda _upstream, _target: None,
+            prepare_home_chat_list=lambda _upstream: None,
             capture_rect=_fixture_capture(source_root),
             sleep=lambda _seconds: None,
             validate_upstream=_accept_fixture_upstream,
@@ -531,7 +569,7 @@ def test_send_primitive_failure_is_not_retried(tmp_path: Path) -> None:
                 "upstream_root": str(source_root),
                 "upstream_commit": PINNED_COMMIT,
             },
-            open_search_ui=lambda _upstream, _target: None,
+            prepare_home_chat_list=lambda _upstream: None,
             capture_rect=_fixture_capture(source_root),
             sleep=lambda _seconds: None,
             validate_upstream=_accept_fixture_upstream,
@@ -555,7 +593,7 @@ def test_screenshot_cleanup_failure_aborts_before_send(tmp_path: Path) -> None:
                 "upstream_root": str(source_root),
                 "upstream_commit": PINNED_COMMIT,
             },
-            open_search_ui=lambda _upstream, _target: None,
+            prepare_home_chat_list=lambda _upstream: None,
             capture_rect=_fixture_capture(source_root, cleanup_failure=True),
             sleep=lambda _seconds: None,
             validate_upstream=_accept_fixture_upstream,

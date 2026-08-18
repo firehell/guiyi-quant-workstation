@@ -163,7 +163,7 @@ plutil -lint .run/launchd/com.guiyi.quant-alert.plist
 
 这些命令只使用隔离数据库、mock sender、fake pinned plugin tree、tmp_path/fake process 或 render-only，
 不启动真实 AlertRuntime。它们不授权或执行真实 Courier install、macOS TCC/Screen Recording/Accessibility
-变更、打开/搜索真实微信群、真实 WeChat OCR 截图、真实 canary/send、Runtime switch/release、production
+变更、打开/导航真实微信群、真实 WeChat OCR 截图、真实 canary/send、Runtime switch/release、production
 migration 或 SuBing Scope write/activation。当前 production exact-tag 仍为 WeCom。`alembic
 upgrade/current`、`runtime alert-canary`、`--confirm-alert-runtime`、真实 Scope PUT 禁止作为
 本节验证；`runtime alert-target-verify` 虽然 no-send，但会真实改变 WeChat GUI 状态并产生临时截图/OCR，

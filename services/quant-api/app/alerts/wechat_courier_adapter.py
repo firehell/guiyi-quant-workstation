@@ -29,7 +29,7 @@ _REQUIRED_EXPORTS = (
     "get_wechat_window_rect",
     "get_wechat_window_name",
     "ocr_boxes",
-    "search_result_row_click_point",
+    "box_center_screen_point",
     "click_point",
     "ocr_image",
     "paste_and_send_text",
@@ -46,6 +46,7 @@ UpstreamValidator = Callable[[Path, str], None]
 TempValidator = Callable[[], None]
 PointBox = tuple[int, int, int, int]
 CaptureRect = Callable[[str, PointBox], Path]
+HomeChatListPreparer = Callable[[ModuleType], None]
 
 
 class AdapterError(RuntimeError):
@@ -97,7 +98,7 @@ def title_matches_exact_target(ocr_line: str, target: str) -> bool:
     ) is not None
 
 
-def select_unique_search_box(box_texts: Sequence[str], target: str) -> int:
+def select_unique_chat_list_box(box_texts: Sequence[str], target: str) -> int:
     normalized_target = normalize_chat_name(target)
     matches = [
         index
@@ -280,8 +281,7 @@ def _capture_screen_rect(
         raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED") from None
 
 
-def _open_search_ui(_upstream: ModuleType, target: str) -> None:
-    _run_private_command(["/usr/bin/pbcopy"], input_text=target)
+def _prepare_home_chat_list(_upstream: ModuleType) -> None:
     _run_private_command(
         [
             "/usr/bin/osascript",
@@ -291,13 +291,7 @@ tell application "System Events"
   key code 53
   delay 0.2
   key code 53
-  delay 0.2
-  keystroke "f" using command down
-  delay 0.3
-  keystroke "a" using command down
-  delay 0.1
-  keystroke "v" using command down
-  delay 1.0
+  delay 0.5
 end tell
 """,
         ]
@@ -329,15 +323,14 @@ def _window_rect(upstream: ModuleType) -> tuple[int, int, int, int]:
         raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED") from None
 
 
-def _search_screenshot(
+def _home_chat_list_screenshot(
     upstream: ModuleType,
     capture_rect: CaptureRect,
 ) -> tuple[Path, PointBox]:
     x, y, width, height = _window_rect(upstream)
-    right = x + int(min(max(390, width * 0.34), 540))
-    bottom = y + min(height, 620)
-    point_box = (x, y + 78, right, bottom)
-    return capture_rect("search", point_box), point_box
+    right = x + int(min(max(280, width * 0.35), 390))
+    point_box = (x + 60, y + 78, right, y + height)
+    return capture_rect("home-list", point_box), point_box
 
 
 def _region_screenshot(
@@ -364,22 +357,22 @@ def _region_screenshot(
     return capture_rect(f"{region}-{attempt}", point_box)
 
 
-def _validate_search_result(
+def _validate_home_chat_list(
     upstream: ModuleType,
     target: str,
     capture_rect: CaptureRect,
 ) -> None:
     screenshot: object | None = None
     try:
-        screenshot, point_box = _search_screenshot(upstream, capture_rect)
+        screenshot, point_box = _home_chat_list_screenshot(upstream, capture_rect)
         boxes = upstream.ocr_boxes(screenshot)
         if not isinstance(boxes, list):
             raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
         texts: list[str] = []
         for box in boxes:
             texts.append(str(_validate_ocr_box(box)["text"]))
-        selected = _validate_ocr_box(boxes[select_unique_search_box(texts, target)])
-        point = upstream.search_result_row_click_point(selected, point_box)
+        selected = _validate_ocr_box(boxes[select_unique_chat_list_box(texts, target)])
+        point = upstream.box_center_screen_point(selected, point_box)
         if (
             not isinstance(point, tuple)
             or len(point) != 2
@@ -443,14 +436,14 @@ def _verify_target(
     upstream: ModuleType,
     target: str,
     *,
-    open_search_ui: Callable[[ModuleType, str], None],
+    prepare_home_chat_list: HomeChatListPreparer,
     capture_rect: CaptureRect,
     sleep: Callable[[float], None],
 ) -> None:
     try:
         upstream.activate_wechat()
-        open_search_ui(upstream, target)
-        _validate_search_result(upstream, target, capture_rect)
+        prepare_home_chat_list(upstream)
+        _validate_home_chat_list(upstream, target, capture_rect)
         sleep(1.0)
     except AdapterError:
         raise
@@ -490,7 +483,7 @@ def _valid_message_text(value: object) -> bool:
 def execute_adapter_action(
     payload: object,
     *,
-    open_search_ui: Callable[[ModuleType, str], None] = _open_search_ui,
+    prepare_home_chat_list: HomeChatListPreparer = _prepare_home_chat_list,
     capture_rect: CaptureRect = _capture_screen_rect,
     sleep: Callable[[float], None] = time.sleep,
     validate_upstream: UpstreamValidator = _validate_upstream_identity,
@@ -524,7 +517,7 @@ def execute_adapter_action(
         _verify_target(
             upstream,
             payload["target_chat"],
-            open_search_ui=open_search_ui,
+            prepare_home_chat_list=prepare_home_chat_list,
             capture_rect=capture_rect,
             sleep=sleep,
         )
