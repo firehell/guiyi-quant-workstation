@@ -129,28 +129,58 @@ function validateProjection(input) {
 }
 
 
+function validateRecipientList(recipients, fieldName) {
+  if (!Array.isArray(recipients)) {
+    fail("WEIXIN_ADAPTER_INPUT_INVALID");
+  }
+  for (const recipient of recipients) {
+    requireObject(recipient);
+    if (
+      Object.keys(recipient).sort().join(",") !== "alias,target"
+      || typeof recipient.alias !== "string"
+      || typeof recipient.target !== "string"
+      || !recipient.target.endsWith("@im.wechat")
+    ) {
+      fail("WEIXIN_ADAPTER_INPUT_INVALID");
+    }
+  }
+  if (fieldName === "enabled_recipients" && recipients.length === 0) {
+    fail("WEIXIN_ADAPTER_INPUT_INVALID");
+  }
+}
+
+
+function resolveExactAccount(seam, config, requestedAccountId) {
+  const accountIds = seam.listIndexedWeixinAccountIds();
+  if (!Array.isArray(accountIds)) fail("WEIXIN_ACCOUNT_UNAVAILABLE");
+  const selectedIds = requestedAccountId === null
+    ? accountIds
+    : accountIds.filter((value) => value === requestedAccountId);
+  const ready = selectedIds
+    .map((accountId) => seam.resolveWeixinAccount(config, accountId))
+    .filter((account) => (
+      account !== null
+      && typeof account === "object"
+      && typeof account.accountId === "string"
+      && account.enabled === true
+      && account.configured === true
+      && typeof account.token === "string"
+      && account.token.length > 0
+      && typeof account.baseUrl === "string"
+      && account.baseUrl.length > 0
+    ));
+  if (ready.length !== 1 || (requestedAccountId !== null && ready[0].accountId !== requestedAccountId)) {
+    fail("WEIXIN_ACCOUNT_UNAVAILABLE");
+  }
+  return ready[0];
+}
+
+
 async function probe(input) {
   validateProjection(input);
   const seam = await loadPrivateSeam(input.plugin_root);
   const config = await seam.loadConfig();
-  const accountIds = seam.listIndexedWeixinAccountIds();
-  if (!Array.isArray(accountIds) || !accountIds.includes(input.account_id)) {
-    fail("WEIXIN_ACCOUNT_UNAVAILABLE");
-  }
-  const account = seam.resolveWeixinAccount(config, input.account_id);
-  if (
-    account === null
-    || typeof account !== "object"
-    || account.accountId !== input.account_id
-    || account.enabled !== true
-    || account.configured !== true
-    || typeof account.token !== "string"
-    || account.token.length === 0
-    || typeof account.baseUrl !== "string"
-    || account.baseUrl.length === 0
-  ) {
-    fail("WEIXIN_ACCOUNT_UNAVAILABLE");
-  }
+  const account = resolveExactAccount(seam, config, input.account_id);
   seam.restoreContextTokens(input.account_id);
   for (const recipient of input.enabled_recipients) {
     const contextToken = seam.getContextToken(input.account_id, recipient.target);
@@ -162,13 +192,96 @@ async function probe(input) {
 }
 
 
+function registrationText(message) {
+  return message.item_list?.find((item) => item?.type === 1)?.text_item?.text;
+}
+
+
+async function register(input) {
+  if (
+    (input.account_id !== null && typeof input.account_id !== "string")
+    || typeof input.challenge !== "string"
+    || input.challenge.length < 20
+    || typeof input.timeout_seconds !== "number"
+    || !Number.isFinite(input.timeout_seconds)
+    || input.timeout_seconds <= 0
+  ) {
+    fail("WEIXIN_ADAPTER_INPUT_INVALID");
+  }
+  validateRecipientList(input.approved_recipients, "approved_recipients");
+  const seam = await loadPrivateSeam(input.plugin_root);
+  const config = await seam.loadConfig();
+  const account = resolveExactAccount(seam, config, input.account_id);
+  seam.restoreContextTokens(account.accountId);
+  const approvedTargets = new Set(input.approved_recipients.map((item) => item.target));
+  const syncPath = seam.getSyncBufFilePath(account.accountId);
+  let cursor = seam.loadGetUpdatesBuf(syncPath) ?? "";
+  const deadline = Date.now() + input.timeout_seconds * 1000;
+  while (Date.now() < deadline) {
+    const response = requireObject(await seam.getUpdates({
+      baseUrl: account.baseUrl,
+      token: account.token,
+      timeoutMs: 35_000,
+      get_updates_buf: cursor,
+    }));
+    if (response.ret !== 0 || !Array.isArray(response.msgs)) {
+      fail("WEIXIN_ADAPTER_UNAVAILABLE");
+    }
+    if (typeof response.get_updates_buf === "string") {
+      seam.saveGetUpdatesBuf(syncPath, response.get_updates_buf);
+      cursor = response.get_updates_buf;
+    }
+    const candidates = [];
+    for (const message of response.msgs) {
+      if (message === null || typeof message !== "object") continue;
+      const sender = message.from_user_id;
+      const contextToken = message.context_token;
+      if (
+        approvedTargets.has(sender)
+        && typeof contextToken === "string"
+        && contextToken.length > 0
+      ) {
+        seam.setContextToken(account.accountId, sender, contextToken);
+      }
+      const isCandidate = (
+        registrationText(message) === input.challenge
+        && typeof sender === "string"
+        && sender.endsWith("@im.wechat")
+        && typeof contextToken === "string"
+        && contextToken.length > 0
+      );
+      if (isCandidate) candidates.push({ target: sender, contextToken });
+    }
+    if (candidates.length > 1) fail("WEIXIN_REGISTRATION_AMBIGUOUS");
+    if (candidates.length === 1) {
+      const candidate = candidates[0];
+      seam.setContextToken(account.accountId, candidate.target, candidate.contextToken);
+      return {
+        status: "registered",
+        account_id: account.accountId,
+        target: candidate.target,
+      };
+    }
+  }
+  fail("WEIXIN_REGISTRATION_TIMEOUT");
+}
+
+
 async function main() {
   const command = process.argv[2];
   const input = await readInput();
-  if (command !== "probe" || Object.keys(input).sort().join(",") !== "account_id,enabled_recipients,plugin_root") {
+  if (command === "probe" && Object.keys(input).sort().join(",") === "account_id,enabled_recipients,plugin_root") {
+    return probe(input);
+  }
+  if (
+    command === "register"
+    && Object.keys(input).sort().join(",") === "account_id,approved_recipients,challenge,plugin_root,timeout_seconds"
+  ) {
+    return register(input);
+  }
+  {
     fail("WEIXIN_ADAPTER_INPUT_INVALID");
   }
-  return probe(input);
 }
 
 

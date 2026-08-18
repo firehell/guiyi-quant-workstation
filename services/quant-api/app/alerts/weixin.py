@@ -7,11 +7,20 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
+import secrets
 import stat
 import subprocess
-from typing import Any
+from typing import Any, TextIO
 
-from app.alerts.recipient_registry import RecipientRegistryDocument
+from app.alerts.recipient_registry import (
+    NotificationRecipient,
+    RecipientRegistryDocument,
+    RecipientRegistryError,
+    add_recipient,
+    load_recipient_registry,
+    write_recipient_registry,
+)
 from app.core.env import PROJECT_ROOT
 
 
@@ -19,10 +28,17 @@ VERSIONS_FILE = PROJECT_ROOT / "deploy/openclaw/versions.json"
 ADAPTER_PATH = PROJECT_ROOT / "services/quant-api/app/alerts/openclaw_weixin_adapter.mjs"
 _INSPECT_PLUGIN_ID = "openclaw-weixin"
 _COMMAND_TIMEOUT_SECONDS = 15.0
+_ALIAS_PATTERN = re.compile(r"[a-z][a-z0-9_]{0,31}")
 
 
 class WeixinDependencyError(RuntimeError):
     """The pinned OpenClaw/Weixin dependency is unavailable or incompatible."""
+
+
+class WeixinRegistrationError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,3 +263,168 @@ class OpenClawWeixinAdapterRunner:
             or parsed["recipient_count"] != len(registry.enabled_recipients)
         ):
             raise RuntimeError("WEIXIN_ADAPTER_UNAVAILABLE")
+
+    def register(
+        self,
+        *,
+        account_id: str | None,
+        approved_recipients: tuple[NotificationRecipient, ...],
+        challenge: str,
+        timeout_seconds: float,
+    ) -> tuple[str, str]:
+        payload = {
+            "plugin_root": str(self._dependency.plugin_root),
+            "account_id": account_id,
+            "approved_recipients": [
+                {"alias": recipient.alias, "target": recipient.target}
+                for recipient in approved_recipients
+            ],
+            "challenge": challenge,
+            "timeout_seconds": timeout_seconds,
+        }
+        try:
+            result = self._run_process(
+                [
+                    str(self._dependency.node_executable),
+                    str(ADAPTER_PATH),
+                    "register",
+                ],
+                input=json.dumps(payload, separators=(",", ":")),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_seconds + _COMMAND_TIMEOUT_SECONDS,
+                env=openclaw_child_environment(self._dependency.root),
+            )
+            parsed = json.loads(result.stdout)
+        except subprocess.TimeoutExpired as exc:
+            raise WeixinRegistrationError("WEIXIN_REGISTRATION_TIMEOUT") from exc
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            raise WeixinRegistrationError("WEIXIN_ADAPTER_UNAVAILABLE") from exc
+        if result.returncode != 0:
+            code = parsed.get("error_code") if isinstance(parsed, dict) else None
+            if code in {
+                "WEIXIN_REGISTRATION_TIMEOUT",
+                "WEIXIN_REGISTRATION_AMBIGUOUS",
+                "WEIXIN_ACCOUNT_UNAVAILABLE",
+            }:
+                raise WeixinRegistrationError(code)
+            raise WeixinRegistrationError("WEIXIN_ADAPTER_UNAVAILABLE")
+        if (
+            not isinstance(parsed, dict)
+            or set(parsed) != {"status", "account_id", "target"}
+            or parsed.get("status") != "registered"
+            or not isinstance(parsed.get("account_id"), str)
+            or not parsed["account_id"]
+            or not isinstance(parsed.get("target"), str)
+            or not parsed["target"].endswith("@im.wechat")
+        ):
+            raise WeixinRegistrationError("WEIXIN_ADAPTER_UNAVAILABLE")
+        return parsed["account_id"], parsed["target"]
+
+
+def generate_registration_challenge() -> str:
+    """Generate a URL-safe 128-bit one-time challenge."""
+    return secrets.token_urlsafe(16)
+
+
+def _context_monitor_running() -> bool:
+    try:
+        result = subprocess.run(
+            [
+                "/bin/launchctl",
+                "print",
+                f"gui/{os.getuid()}/com.guiyi.quant-weixin-context",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+            env={},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise WeixinRegistrationError("WEIXIN_CONTEXT_MONITOR_STATE_UNKNOWN") from exc
+    return result.returncode == 0
+
+
+def _absolute_environment_path(name: str) -> Path:
+    raw = os.getenv(name, "")
+    path = Path(raw)
+    if not raw or not path.is_absolute():
+        raise WeixinRegistrationError("WEIXIN_REGISTRATION_CONFIG_INVALID")
+    return path
+
+
+def register_recipient(
+    alias: str,
+    *,
+    prompt_stream: TextIO,
+    timeout_seconds: float = 180.0,
+    run_process: RunProcess = subprocess.run,
+    monitor_running: Callable[[], bool] = _context_monitor_running,
+) -> RecipientRegistryDocument:
+    """Register one exact challenge match without exposing its direct target."""
+    if _ALIAS_PATTERN.fullmatch(alias) is None:
+        raise WeixinRegistrationError("WEIXIN_REGISTRATION_ALIAS_INVALID")
+    if not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
+        raise WeixinRegistrationError("WEIXIN_REGISTRATION_TIMEOUT_INVALID")
+    if monitor_running():
+        raise WeixinRegistrationError("WEIXIN_CONTEXT_MONITOR_RUNNING")
+
+    root = _absolute_environment_path("GUIYI_OPENCLAW_ROOT")
+    registry_path = _absolute_environment_path("GUIYI_ALERT_RECIPIENTS_PATH")
+    try:
+        registry_path.lstat()
+    except FileNotFoundError:
+        existing = None
+    except OSError as exc:
+        raise WeixinRegistrationError("RECIPIENT_REGISTRY_INVALID") from exc
+    else:
+        try:
+            existing = load_recipient_registry(registry_path)
+        except RecipientRegistryError as exc:
+            raise WeixinRegistrationError(str(exc)) from exc
+    if existing is not None and any(item.alias == alias for item in existing.recipients):
+        raise WeixinRegistrationError("WEIXIN_REGISTRATION_ALIAS_EXISTS")
+
+    try:
+        dependency = resolve_openclaw_weixin_dependency(root, run_process=run_process)
+    except WeixinDependencyError as exc:
+        raise WeixinRegistrationError("WEIXIN_ADAPTER_UNAVAILABLE") from exc
+    challenge = generate_registration_challenge()
+    prompt_stream.write(f"alias={alias}\nchallenge={challenge}\n")
+    prompt_stream.flush()
+    account_id, target = OpenClawWeixinAdapterRunner(
+        dependency,
+        run_process=run_process,
+    ).register(
+        account_id=existing.account_id if existing is not None else None,
+        approved_recipients=existing.recipients if existing is not None else (),
+        challenge=challenge,
+        timeout_seconds=float(timeout_seconds),
+    )
+    if existing is not None:
+        if account_id != existing.account_id:
+            raise WeixinRegistrationError("WEIXIN_ACCOUNT_UNAVAILABLE")
+        if any(item.target == target for item in existing.recipients):
+            raise WeixinRegistrationError("WEIXIN_REGISTRATION_TARGET_EXISTS")
+        try:
+            updated = add_recipient(
+                existing,
+                NotificationRecipient(alias, target, True),
+            )
+        except RecipientRegistryError as exc:
+            raise WeixinRegistrationError(str(exc)) from exc
+    else:
+        updated = RecipientRegistryDocument(
+            1,
+            "openclaw-weixin",
+            account_id,
+            (NotificationRecipient(alias, target, True),),
+        )
+    try:
+        write_recipient_registry(registry_path, updated)
+    except RecipientRegistryError as exc:
+        raise WeixinRegistrationError(str(exc)) from exc
+    return updated

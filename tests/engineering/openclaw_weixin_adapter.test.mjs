@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -50,7 +50,15 @@ export function resolveWeixinAccount(_cfg, accountId) {
   await writeModule(
     path.join(root, "dist/src/api/api.js"),
     `
-export async function getUpdates() { throw new Error("probe called getUpdates"); }
+import { appendFileSync } from "node:fs";
+const updates = JSON.parse(process.env.FAKE_UPDATES || "[]");
+export async function getUpdates() {
+  appendFileSync(process.env.FAKE_LOG, "getUpdates\\n");
+  const next = updates.shift();
+  if (next) return next;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  return { ret: 0, msgs: [], get_updates_buf: "idle" };
+}
 export async function notifyStart() { throw new Error("probe called notifyStart"); }
 export async function notifyStop() { throw new Error("probe called notifyStop"); }
 `,
@@ -58,19 +66,21 @@ export async function notifyStop() { throw new Error("probe called notifyStop");
   await writeModule(
     path.join(root, "dist/src/storage/sync-buf.js"),
     `
-export function getSyncBufFilePath() { return "unused"; }
-export function loadGetUpdatesBuf() { return ""; }
-export function saveGetUpdatesBuf() { throw new Error("probe saved cursor"); }
+import { appendFileSync } from "node:fs";
+export function getSyncBufFilePath() { return "cursor-fixture"; }
+export function loadGetUpdatesBuf() { return "cursor-start"; }
+export function saveGetUpdatesBuf(_path, value) { appendFileSync(process.env.FAKE_LOG, "save:" + value + "\\n"); }
 `,
   );
   await writeModule(
     path.join(root, "dist/src/messaging/inbound.js"),
     `
+import { appendFileSync } from "node:fs";
 export function restoreContextTokens() {}
 export function getContextToken(_accountId, target) {
   return target === "u1@im.wechat" || target === "u2@im.wechat" ? "context-fixture" : undefined;
 }
-export function setContextToken() { throw new Error("probe set context"); }
+export function setContextToken(_account, target, _token) { appendFileSync(process.env.FAKE_LOG, "context:" + target + "\\n"); }
 `,
   );
   await writeModule(
@@ -83,11 +93,11 @@ export function setContextToken() { throw new Error("probe set context"); }
 }
 
 
-function runAdapter(pluginRoot, input) {
-  return spawnSync(process.execPath, [ADAPTER, "probe"], {
+function runAdapter(pluginRoot, input, { command = "probe", env = {} } = {}) {
+  return spawnSync(process.execPath, [ADAPTER, command], {
     input: JSON.stringify({ plugin_root: pluginRoot, ...input }),
     encoding: "utf8",
-    env: { ...process.env, OPENCLAW_LOG_LEVEL: "FATAL" },
+    env: { ...process.env, OPENCLAW_LOG_LEVEL: "FATAL", ...env },
   });
 }
 
@@ -121,4 +131,119 @@ test("probe fails closed when exact private module shape changes", async () => {
     error_code: "WEIXIN_ADAPTER_INCOMPATIBLE",
   });
   assert.equal(result.stderr, "");
+});
+
+
+function message(from, text, context = "context-new") {
+  return {
+    from_user_id: from,
+    context_token: context,
+    item_list: [{ type: 1, text_item: { text } }],
+  };
+}
+
+const EXACT_CHALLENGE = "exact-challenge-value-123";
+
+
+test("register saves cursor first, refreshes approved context, and matches exact challenge", async () => {
+  const pluginRoot = await fakePluginTree();
+  const logPath = path.join(pluginRoot, "events.log");
+  await writeFile(logPath, "");
+  const updates = [{
+    ret: 0,
+    get_updates_buf: "cursor-next",
+    msgs: [
+      message("unknown@im.wechat", "wrong"),
+      message("u1@im.wechat", "ordinary approved message", "approved-context"),
+      message("candidate@im.wechat", EXACT_CHALLENGE, "candidate-context"),
+    ],
+  }];
+  const result = runAdapter(pluginRoot, {
+    account_id: "account-fixture",
+    approved_recipients: [{ alias: "owner", target: "u1@im.wechat" }],
+    challenge: EXACT_CHALLENGE,
+    timeout_seconds: 1,
+  }, {
+    command: "register",
+    env: { FAKE_LOG: logPath, FAKE_UPDATES: JSON.stringify(updates) },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    status: "registered",
+    account_id: "account-fixture",
+    target: "candidate@im.wechat",
+  });
+  assert.deepEqual((await readFile(logPath, "utf8")).trim().split("\n"), [
+    "getUpdates",
+    "save:cursor-next",
+    "context:u1@im.wechat",
+    "context:candidate@im.wechat",
+  ]);
+});
+
+
+test("register fails ambiguous without persisting either matching context", async () => {
+  const pluginRoot = await fakePluginTree();
+  const logPath = path.join(pluginRoot, "events.log");
+  await writeFile(logPath, "");
+  const result = runAdapter(pluginRoot, {
+    account_id: "account-fixture",
+    approved_recipients: [],
+    challenge: EXACT_CHALLENGE,
+    timeout_seconds: 1,
+  }, {
+    command: "register",
+    env: {
+      FAKE_LOG: logPath,
+      FAKE_UPDATES: JSON.stringify([{
+        ret: 0,
+        get_updates_buf: "cursor-next",
+        msgs: [
+          message("first@im.wechat", EXACT_CHALLENGE),
+          message("second@im.wechat", EXACT_CHALLENGE),
+        ],
+      }]),
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    status: "failed",
+    error_code: "WEIXIN_REGISTRATION_AMBIGUOUS",
+  });
+  assert.equal((await readFile(logPath, "utf8")).includes("context:"), false);
+});
+
+
+test("register ignores missing-context and invalid sender then times out", async () => {
+  const pluginRoot = await fakePluginTree();
+  const logPath = path.join(pluginRoot, "events.log");
+  await writeFile(logPath, "");
+  const result = runAdapter(pluginRoot, {
+    account_id: "account-fixture",
+    approved_recipients: [],
+    challenge: EXACT_CHALLENGE,
+    timeout_seconds: 0.04,
+  }, {
+    command: "register",
+    env: {
+      FAKE_LOG: logPath,
+      FAKE_UPDATES: JSON.stringify([{
+        ret: 0,
+        get_updates_buf: "cursor-next",
+        msgs: [
+          message("invalid-group-id", EXACT_CHALLENGE),
+          message("missing@im.wechat", EXACT_CHALLENGE, ""),
+        ],
+      }]),
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    status: "failed",
+    error_code: "WEIXIN_REGISTRATION_TIMEOUT",
+  });
+  assert.equal((await readFile(logPath, "utf8")).includes("context:"), false);
 });

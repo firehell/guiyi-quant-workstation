@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 from pathlib import Path
 import subprocess
 
@@ -15,6 +16,8 @@ from app.alerts.weixin import (
     OpenClawWeixinAdapterRunner,
     OpenClawWeixinDependency,
     WeixinDependencyError,
+    generate_registration_challenge,
+    register_recipient,
     resolve_openclaw_weixin_dependency,
 )
 
@@ -253,3 +256,113 @@ def test_probe_fails_closed_on_child_failure(
 
     with pytest.raises(RuntimeError, match="^WEIXIN_ADAPTER_UNAVAILABLE$"):
         OpenClawWeixinAdapterRunner(dependency, run_process=run_process).probe(document)
+
+
+def test_registration_challenge_is_high_entropy_and_one_time() -> None:
+    first = generate_registration_challenge()
+    second = generate_registration_challenge()
+
+    assert first != second
+    assert len(first) >= 20
+    assert all(character.isalnum() or character in "-_" for character in first)
+
+
+def test_register_recipient_writes_private_registry_and_keeps_target_internal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, plugin = _dependency_tree(tmp_path)
+    registry_parent = tmp_path / "private"
+    registry_parent.mkdir(mode=0o700)
+    registry_path = registry_parent / "recipients.json"
+    monkeypatch.setenv("GUIYI_OPENCLAW_ROOT", str(root))
+    monkeypatch.setenv("GUIYI_ALERT_RECIPIENTS_PATH", str(registry_path))
+    monkeypatch.setattr(weixin, "VERSIONS_FILE", _versions_file(tmp_path))
+    prompt = io.StringIO()
+    observed: dict[str, object] = {}
+
+    def run_process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if argv == [str(root / "runtime/bin/openclaw"), "--version"]:
+            return subprocess.CompletedProcess(argv, 0, "2026.8.1\n", "")
+        if argv == [str(root / "runtime/tools/node/bin/node"), "--version"]:
+            return subprocess.CompletedProcess(argv, 0, "v24.15.0\n", "")
+        if "plugins" in argv:
+            return subprocess.CompletedProcess(argv, 0, json.dumps(_inspect_payload(plugin)), "")
+        observed["payload"] = json.loads(str(kwargs["input"]))
+        challenge = str(observed["payload"]["challenge"])  # type: ignore[index]
+        assert challenge in prompt.getvalue()
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "status": "registered",
+                    "account_id": "account-fixture",
+                    "target": "private-target@im.wechat",
+                }
+            ),
+            "provider private output",
+        )
+
+    document = register_recipient(
+        "owner",
+        prompt_stream=prompt,
+        run_process=run_process,
+        monitor_running=lambda: False,
+    )
+
+    assert document.account_id == "account-fixture"
+    assert document.recipients[0].target == "private-target@im.wechat"
+    assert registry_path.stat().st_mode & 0o777 == 0o600
+    assert observed["payload"] == {
+        "plugin_root": str(plugin.resolve()),
+        "account_id": None,
+        "approved_recipients": [],
+        "challenge": observed["payload"]["challenge"],  # type: ignore[index]
+        "timeout_seconds": 180.0,
+    }
+
+
+def test_register_recipient_refuses_monitor_and_duplicate_alias_before_poll(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _plugin = _dependency_tree(tmp_path)
+    registry_parent = tmp_path / "private"
+    registry_parent.mkdir(mode=0o700)
+    registry_path = registry_parent / "recipients.json"
+    monkeypatch.setenv("GUIYI_OPENCLAW_ROOT", str(root))
+    monkeypatch.setenv("GUIYI_ALERT_RECIPIENTS_PATH", str(registry_path))
+
+    with pytest.raises(RuntimeError, match="^WEIXIN_CONTEXT_MONITOR_RUNNING$"):
+        register_recipient(
+            "owner",
+            prompt_stream=io.StringIO(),
+            monitor_running=lambda: True,
+        )
+
+    document = RecipientRegistryDocument(
+        1,
+        "openclaw-weixin",
+        "account-fixture",
+        (NotificationRecipient("owner", "u1@im.wechat", True),),
+    )
+    from app.alerts.recipient_registry import write_recipient_registry
+
+    write_recipient_registry(registry_path, document)
+    with pytest.raises(RuntimeError, match="^WEIXIN_REGISTRATION_ALIAS_EXISTS$"):
+        register_recipient(
+            "owner",
+            prompt_stream=io.StringIO(),
+            monitor_running=lambda: False,
+        )
+
+
+@pytest.mark.parametrize("alias", ("", "Owner", "has space", "bad\nline", "a" * 33))
+def test_register_recipient_rejects_invalid_alias_before_prompt(
+    alias: str,
+) -> None:
+    prompt = io.StringIO()
+    with pytest.raises(RuntimeError, match="^WEIXIN_REGISTRATION_ALIAS_INVALID$"):
+        register_recipient(alias, prompt_stream=prompt, monitor_running=lambda: False)
+    assert prompt.getvalue() == ""
