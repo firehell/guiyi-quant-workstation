@@ -56,14 +56,7 @@ OpenClaw 仅作为受控外部依赖提供：
 - `openclaw channels login --channel openclaw-weixin` QR 登录；
 - plugin config/account credential/state 的官方落盘结构。
 
-归一量化自己的代码负责：
-
-- recipient registry；
-- registration challenge；
-- `getUpdates` context 维护；
-- Alert message formatting；
-- 单次 `sendMessage` fan-out；
-- privacy-safe error/status。
+归一量化自己的代码负责 recipient registry、registration challenge、`getUpdates` context 维护、Alert message formatting、单次 `sendMessage` fan-out 与 privacy-safe error/status。
 
 ### 2.4 不走 OpenClaw durable `send`
 
@@ -144,21 +137,9 @@ monitor
 send
 ```
 
-其中：
+其中 `probe` 只读兼容性/account/context readiness；`register` 是受控一次性 challenge onboarding；`monitor` 长期 `getUpdates`、只维护 approved recipient context；`send` 一次 Alert fan-out、每 recipient 最多一次 `sendMessageWeixin()`。
 
-- `probe`：只读兼容性/account/context readiness；
-- `register`：受控一次性 challenge onboarding；
-- `monitor`：长期 `getUpdates`，只维护 approved recipient context；
-- `send`：一次 Alert fan-out，每 recipient 最多一次 `sendMessageWeixin()`。
-
-禁止 adapter 调用：
-
-- OpenClaw agent/reply/session routing；
-- Tencent plugin `processOneMessage()`；
-- `/echo`、`/toggle-debug` 或任何 slash command handler；
-- `message_sending` hook/Agent tool pipeline；
-- OpenClaw durable delivery；
-- queue/retry/replay/backfill。
+禁止 adapter 调用 OpenClaw agent/reply/session routing、Tencent plugin `processOneMessage()`、slash command handler、Agent hook/tool pipeline、OpenClaw durable delivery、notification queue/retry/replay/backfill。
 
 ### 4.1 Exact internal seam
 
@@ -197,6 +178,25 @@ messaging/send
 
 若 exact path/export 不存在，返回 `WEIXIN_ADAPTER_INCOMPATIBLE`；不得 glob、fallback、猜测替代路径或兼容多版本。
 
+### 4.2 Plugin root discovery
+
+Python preflight 只通过固定 OpenClaw CLI 的只读 surface 找 plugin root：
+
+```text
+$GUIYI_OPENCLAW_ROOT/runtime/bin/openclaw
+plugins inspect openclaw-weixin --json
+```
+
+必须同时验证：
+
+- plugin id 精确为 `openclaw-weixin`；
+- plugin enabled/loaded 状态符合要求；
+- recorded/observed version 精确等于 `deploy/openclaw/versions.json`；
+- install path 存在且 `realpath` 位于 `GUIYI_OPENCLAW_ROOT` 允许根；
+- 4.1 所列 exact module/export shape 可加载。
+
+通过后将 exact plugin root 冻结到当前 process snapshot；`register`/`monitor`/`send` 不自行搜索、改选或更新 plugin root。
+
 ---
 
 ## 5. OpenClaw 安装与状态布局
@@ -229,9 +229,9 @@ npm_config_cache=/Volumes/扩展盘/openclaw/cache/npm
 TMPDIR=/Volumes/扩展盘/openclaw/tmp
 ```
 
-`OPENCLAW_CONFIG` 与 `OPENCLAW_CONFIG_PATH` 指向同一文件；这是因为 private adapter 复用的 Tencent plugin helper 当前读取两种 config surface。
+`OPENCLAW_CONFIG` 与 `OPENCLAW_CONFIG_PATH` 指向同一文件；private adapter 复用的 Tencent helper 当前读取两种 config surface。
 
-OpenClaw rootless installer 的稳定 Node symlink 作为固定 executable：
+OpenClaw rootless installer 的稳定 Node symlink作为固定 executable：
 
 ```text
 $OPENCLAW_PREFIX/tools/node/bin/node
@@ -239,7 +239,7 @@ $OPENCLAW_PREFIX/tools/node/bin/node
 
 不依赖系统 `node` 或 shell PATH。
 
-Private adapter 运行时设置：
+Private adapter 运行时强制：
 
 ```text
 OPENCLAW_LOG_LEVEL=FATAL
@@ -287,16 +287,7 @@ Alert Runtime 与 WeixinContextMonitor 均在各自启动时读取并冻结 reci
 
 ### 6.2 Runtime validation
 
-Runtime loader fail-closed：
-
-- 文件缺失、非 regular、权限不是 `0600`；
-- JSON malformed；
-- version/channel/account invalid；
-- recipient 为空或全部 disabled；
-- duplicate alias/target；
-- target 非 `@im.wechat` direct identity；
-- enabled 类型非法；
-- 超过实现安全上限。
+Runtime loader fail-closed：文件缺失、非 regular、权限不是 `0600`、JSON malformed、version/channel/account invalid、recipient 为空或全部 disabled、duplicate alias/target、target 非 `@im.wechat` direct identity、enabled 类型非法或超过实现安全上限。
 
 代码不永久硬编码四人；D4/D5/D6/D8 对本次 approved scope 验证 enabled count 精确为 4。
 
@@ -333,11 +324,11 @@ guiyi runtime weixin-register --alias <alias>
 
 规则：
 
-- 初始第一个 recipient 注册时，若 registry 不存在，必须从 plugin account index 解析“有且仅有一个”已登录 account；否则 fail-closed；
+- 初始第一个 recipient 注册时，若 registry 不存在，必须从 plugin account index 解析“有且仅有一个”已登录 account，否则 fail-closed；
 - 后续注册必须使用 registry 已冻结的同一 account；
 - duplicate alias/target 均拒绝；
 - 非匹配消息永不回复、永不注册；
-- 注册期间已 approved recipient 的新 context token可以刷新；unknown non-matching sender 不持久化 target/token；
+- 注册期间已 approved recipient 的新 context token 可以刷新；unknown non-matching sender 不持久化 target/token；
 - registration 与 monitor 不得同时消费同一个 getUpdates cursor；初次 4 人注册完成后再启动 monitor；以后增删 recipient 必须先停止 monitor，再 mutation，再重启。
 
 Adapter `register` 的内部 stdout 允许把 matched target 仅返回给 capture-only Python parent；parent 不得打印、记录或透传该值。所有用户可见 CLI/日志必须脱敏。
@@ -352,17 +343,11 @@ Adapter `register` 的内部 stdout 允许把 matched target 仅返回给 captur
 guiyi runtime weixin-context
 ```
 
-由 launchd：
-
-```text
-com.guiyi.quant-weixin-context
-```
-
-托管。它属于归一量化 exact Git Runtime identity，不是 OpenClaw external service。
+由 launchd `com.guiyi.quant-weixin-context` 托管。它属于归一量化 exact Git Runtime identity，不是 OpenClaw external service。
 
 ### 8.1 职责
 
-启动时：
+启动：
 
 ```text
 load immutable recipient registry
@@ -372,27 +357,25 @@ load immutable recipient registry
 
 Adapter monitor：
 
-1. 从同一 account 的 persisted sync cursor 开始 `getUpdates` long-poll；
+1. 从同一 account persisted sync cursor 开始 `getUpdates` long-poll；
 2. 每次响应先持久化新的 `get_updates_buf`；
-3. 对每条 inbound：
-   - `from_user_id` 在 approved target set 且 `context_token` 非空 → `setContextToken()`；
-   - 其他 sender → 直接丢弃；
-4. 不读取业务消息正文、不产生任何回复、不创建 OpenClaw session、不调用 Agent；
+3. inbound `from_user_id` 在 approved target set 且 `context_token` 非空时调用 `setContextToken()`；其他 sender 直接丢弃；
+4. 不读取业务正文、不产生回复、不创建 OpenClaw session、不调用 Agent；
 5. 不将 target/body/token 写入 guiyi 日志。
 
-`getUpdates` 自身允许网络重连/backoff，因为这是 inbound context maintenance，不是 Alert notification retry；该 retry 不得触发任何 outbound message。
+`getUpdates` 允许网络重连/backoff，因为这是 inbound context maintenance，不是 Alert notification retry；该 retry 不得触发任何 outbound message。
 
 Bot token stale/invalid 时 monitor 不自动登录、不生成 QR；只进入 degraded 状态并周期性重新读取同一 account credential，等待人工重新登录后恢复。
 
 ### 8.2 Monitor status
 
-Monitor 维护 privacy-safe 0600 status 文件：
+Monitor 维护 privacy-safe `0600` status：
 
 ```text
 <GUIYI_PROJECT_ROOT>/.run/weixin-context-status.json
 ```
 
-只允许字段：
+只允许：
 
 ```json
 {
@@ -407,11 +390,7 @@ Monitor 维护 privacy-safe 0600 status 文件：
 
 不得包含 account id、target、context token、body 或 provider raw response。
 
-`local-services-status.sh` 在 Alert Runtime enabled 时要求：
-
-- `com.guiyi.quant-weixin-context` 与 Alert 使用同一 guiyi Runtime root/commit；
-- monitor status=`ok`；
-- `last_poll_at` 在约定 freshness window 内。
+`local-services-status.sh` 在 Alert Runtime enabled 时要求 `com.guiyi.quant-weixin-context` 与 Alert 使用同一 guiyi Runtime root/commit，monitor status=`ok` 且 `last_poll_at` 在 freshness window 内。
 
 Alert Runtime startup 还必须通过 adapter `probe`；已经运行的 Alert Runtime 不因 monitor 后续瞬时 degraded 自动停止或 replay。
 
@@ -419,20 +398,7 @@ Alert Runtime startup 还必须通过 adapter `probe`；已经运行的 Alert Ru
 
 ## 9. Notification domain abstraction
 
-新增：
-
-```text
-notification.py
-```
-
-负责：
-
-```text
-AlertNotificationMessage
-AlertNotificationSender Protocol
-format_alert_message()
-canary text
-```
+新增 `notification.py`，负责 `AlertNotificationMessage`、`AlertNotificationSender Protocol`、`format_alert_message()` 和 canary text。
 
 `AlertRuntime` 只依赖：
 
@@ -447,14 +413,7 @@ class AlertNotificationSender(Protocol):
 
 ## 10. WeixinAlertSender 与 SingleShot send
 
-`WeixinAlertSender`：
-
-- 启动时持有 immutable recipient snapshot + validated exact plugin root；
-- 对一个 `AlertNotificationMessage` 只格式化一次；
-- 启动一个 adapter `send` 子进程；
-- adapter 对全部 enabled recipients 各调用最多一次 `sendMessageWeixin()`；
-- 使用 `Promise.allSettled` 等等价隔离方式，单 recipient failure 不 short-circuit 其他 recipient；
-- 返回 privacy-safe aggregate result。
+`WeixinAlertSender` 启动时持有 immutable recipient snapshot + validated exact plugin root；对一个 `AlertNotificationMessage` 只格式化一次；启动一个 adapter `send` 子进程；adapter 对全部 enabled recipients 各调用最多一次 `sendMessageWeixin()`；单 recipient failure 不 short-circuit 其他 recipient；只返回 privacy-safe aggregate result。
 
 Adapter `send` 每次 physical send 前重新从 plugin state 解析同一 account 并要求：
 
@@ -467,9 +426,7 @@ context_token present for exact target
 
 任一 target context missing → 该 recipient `WEIXIN_CONTEXT_MISSING`，0 physical send。
 
-不重新选择 account/recipient/plugin root；不 retry；不调用 OpenClaw durable message path。
-
-底层 provider `ret=0` 只表示 provider accepted，不声称用户 delivered/read。
+不重新选择 account/recipient/plugin root；不 retry；不调用 OpenClaw durable message path。provider `ret=0` 只表示 provider accepted，不声称用户 delivered/read。
 
 ---
 
@@ -489,7 +446,7 @@ $GUIYI_OPENCLAW_ROOT/runtime/tools/node/bin/node
 <GUIYI_PROJECT_ROOT>/services/quant-api/app/alerts/openclaw_weixin_adapter.mjs
 ```
 
-公开错误只使用稳定码，例如：
+公开错误只使用稳定码：
 
 ```text
 WEIXIN_ADAPTER_UNAVAILABLE
@@ -504,7 +461,7 @@ WEIXIN_REGISTRATION_TIMEOUT
 WEIXIN_REGISTRATION_AMBIGUOUS
 ```
 
-归一量化日志允许：alias、attempted/sent/failed、elapsed、稳定错误码；禁止 target、account id、token、context token、消息全文、challenge、provider raw body。
+归一量化日志允许 alias、attempted/sent/failed、elapsed、稳定错误码；禁止 target、account id、token、context token、消息全文、challenge、provider raw body。
 
 ---
 
@@ -517,24 +474,11 @@ completed Bar
 → notification attempt
 ```
 
-正式语义：
+正式语义为 **at-most-one application send attempt per newly created AlertEvent × recipient**。
 
-> **at-most-one application send attempt per newly created AlertEvent × recipient**
+明确禁止 notification retry、replay/backfill、outbox/queue、delivery DB/history、provider failover。
 
-明确禁止：
-
-- notification retry；
-- replay/backfill；
-- outbox/queue；
-- delivery DB/history；
-- provider failover。
-
-任一 recipient/adapter failure：
-
-- 不 rollback 已提交 Event；
-- 不阻断其余 recipient；
-- 不阻断后续 completed Bar；
-- 不补发旧 Event。
+任一 recipient/adapter failure不 rollback Event、不阻断其余 recipient、不阻断后续 completed Bar、不补发旧 Event。
 
 WeixinContextMonitor 的 `getUpdates` 网络重连不属于 notification retry，因为它不会产生 outbound Alert。
 
@@ -556,12 +500,7 @@ adapter probe = ready
 4 / 4 context tokens present
 ```
 
-否则：
-
-```text
-ALERT_NOTIFICATION_TRANSPORT_NOT_READY
-→ Alert Runtime 不进入消费循环
-```
+否则 `ALERT_NOTIFICATION_TRANSPORT_NOT_READY`，Alert Runtime 不进入消费循环。
 
 运行期某个 context/session/network 后续失效时，本次 recipient fail，其他 recipient 和后续 Bar 继续；不 replay。
 
@@ -605,18 +544,9 @@ QR login
 
 ### D5 — First real canary
 
-保留唯一入口：
+保留唯一入口 `guiyi runtime alert-canary`，走与正式 Runtime 相同的 Weixin sender/registry，禁止 `--target`/`--recipient` 绕过。
 
-```text
-guiyi runtime alert-canary
-```
-
-走与正式 Runtime 相同的 Weixin sender/registry，禁止 `--target`/`--recipient` 绕过。
-
-PASS 要求：
-
-- 系统 4/4 provider accepted；
-- 四名用户人工确认实际收到。
+PASS 要求系统 4/4 provider accepted 且四名用户人工确认实际收到。
 
 ### D6 — Silent-window canary
 
@@ -690,17 +620,7 @@ services/quant-api/app/alerts/wecom.py
 services/quant-api/tests/test_alert_wecom.py
 ```
 
-并关闭 active executable/canonical references：
-
-```text
-WeComWebhookSender
-build_wecom_sender_from_env
-WECOM_WEBHOOK_URL
-WECOM_*
-qyapi.weixin.qq.com
-```
-
-历史 release/evidence 中描述当时 WeCom 事实的内容允许保留。
+并关闭 active executable/canonical references：`WeComWebhookSender`、`build_wecom_sender_from_env`、`WECOM_WEBHOOK_URL`、`WECOM_*`、`qyapi.weixin.qq.com`。历史 release/evidence 中描述当时 WeCom 事实的内容允许保留。
 
 ### 明确禁止修改
 
@@ -726,15 +646,7 @@ qyapi.weixin.qq.com
 
 ### Private adapter
 
-使用 fake pinned plugin tree，不联网，覆盖：
-
-- exact version/module/export gate；
-- `probe` 绝不调用 send；
-- `register` exact challenge、timeout、duplicate/non-direct、unknown-message ignore；
-- `monitor` approved sender refresh、unknown sender drop、绝不调用 Agent/reply/send；
-- `send` 4 recipients=最多 4 physical attempts、1 fail 不阻断其他、context missing=0 send、timeout/crash=no retry；
-- plugin logger 强制 FATAL；
-- user-visible stdout/stderr 不泄露 target/account/token/context/body/challenge/provider raw response。
+使用 fake pinned plugin tree，不联网，覆盖 exact version/module/export gate、`probe` no-send、`register` exact challenge/timeout/non-direct/unknown ignore、`monitor` approved refresh/unknown drop/no Agent/reply/send、`send` 4 recipients=最多4次、1 fail隔离、context missing=0 send、timeout/crash=no retry、plugin logger FATAL，以及用户可见输出不泄露 target/account/token/context/body/challenge/provider raw response。
 
 ### Context monitor
 
@@ -756,15 +668,7 @@ notification failure → next Bar continues
 
 ### Operations
 
-验证：
-
-- `com.guiyi.quant-weixin-context` 与 guiyi Runtime exact root/commit identity 一致；
-- OpenClaw 本身无 launchd Gateway label；
-- fixed Node executable；
-- explicit expansion-disk state/cache/tmp；
-- no FRPC/public bind；
-- `local-services-status.sh` 同时报告 guiyi context monitor 与 external dependency versions；
-- render-only 不安装、不登录、不发送、不启用 Runtime。
+验证 `com.guiyi.quant-weixin-context` 与 guiyi Runtime exact root/commit identity 一致、OpenClaw 无长期 Gateway label、fixed Node executable、explicit expansion-disk state/cache/tmp、no FRPC/public bind、`local-services-status.sh` 同时报告 guiyi context monitor 与 external dependency versions、render-only 无外部副作用。
 
 ### Secret/privacy
 
@@ -798,30 +702,9 @@ Tracked secret scan + log contract tests必须证明仓库/归一量化日志不
 
 ## 18. 通用与非目标
 
-应该通用：
+应该通用：`AlertNotificationMessage`、`AlertNotificationSender`、`format_alert_message`、`NotificationRecipient`、`RecipientRegistrySnapshot`。
 
-```text
-AlertNotificationMessage
-AlertNotificationSender
-format_alert_message
-NotificationRecipient
-RecipientRegistrySnapshot
-```
-
-V1 不建设：
-
-```text
-GenericNotificationPlatform
-ChannelPluginRegistry
-Rule→Recipient DSL
-DB recipient manager
-Web notification admin
-OpenClaw generic SDK
-Gateway/Agent chat
-provider failover
-queue/outbox/retry scheduler
-delivery analytics
-```
+V1 不建设 GenericNotificationPlatform、ChannelPluginRegistry、Rule→Recipient DSL、DB recipient manager、Web notification admin、OpenClaw generic SDK、Gateway/Agent chat、provider failover、queue/outbox/retry scheduler、delivery analytics。
 
 也不实现普通微信群、聊天指令控制、AI 决定是否发送、自动交易、已读回执、自动 recipient discovery、自动插件升级或 OpenClaw 公网暴露。
 
