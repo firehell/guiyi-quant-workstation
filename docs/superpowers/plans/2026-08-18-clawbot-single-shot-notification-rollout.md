@@ -16,30 +16,30 @@
 
 - Enter this plan only after D1/R1 verdict is `D1 CLAWBOT CODE PASS` with Critical=`0`, Important=`0`.
 - Current production stays exact-tag `v1.4.2` / `fb96506493763340e082ed85e8112b60d6670d65` + WeCom until Gate G8 completes.
-- The old v1.4.2 Runtime worktree and the old private WeCom credential remain rollback material until G9 natural evidence succeeds; they are not an automatic fallback.
-- Guiyi never installs, upgrades, enables/disables, logs in/out, restarts or reconfigures OpenClaw during this rollout. OpenClaw/Clawbot remains externally supervised by its existing setup.
+- The old v1.4.2 Runtime worktree and old private WeCom credential remain rollback material until G9 natural evidence succeeds; they are not an automatic fallback.
+- Guiyi never installs, upgrades, enables/disables, logs in/out, restarts or reconfigures OpenClaw during this rollout. OpenClaw/Clawbot remains externally supervised.
 - Guiyi never runs `openclaw message send`; formal sends use only the D1 single-shot seam and Tencent `sendMessageWeixin()` at most once.
 - No retry, queue, replay, backfill, outbox, provider failover, WeCom fallback, Courier fallback or synthetic AlertEvent is allowed.
-- `htdy_original_15m`, `subing_entry_signal_v1`, current production Scope, Alert schema/Event identity, DB revision, Market eight-table contract, Canonical, Execution Review and `auto_order=false` must remain unchanged unless a separate user Gate explicitly changes them.
-- Real account id, target user id, bot token, context token and real message body must never be printed into chat/task reports or committed to Git.
-- All real notification targets are derived only from `/Volumes/扩展盘/guiyi-secrets/alert-clawbot-owner.json`; no runtime `--target`/`--account` override exists.
-- Any failed Gate stops the rollout. Do not rerun a real canary without a new explicit authorization.
+- `htdy_original_15m`, `subing_entry_signal_v1`, current production Scope, Alert schema/Event identity, DB revision, Market eight-table contract, Canonical, Execution Review and `auto_order=false` remain unchanged unless separately gated.
+- Real account id, target user id, bot token, context token and real message body never appear in chat/task reports or Git.
+- All real targets come only from `/Volumes/扩展盘/guiyi-secrets/alert-clawbot-owner.json`; no runtime target/account override exists.
+- Any failed Gate stops rollout. A real canary is never rerun without a new explicit authorization.
 
 ---
 
 ## Preconditions From G1 / D1 / R1
 
-Before G2, read back:
+Before G2 read back:
 
 ```text
-origin/develop contains the D1 Clawbot implementation
-D1 verification all required checks passed
+origin/develop contains D1 Clawbot implementation
+D1 required verification PASS
 R1 Critical=0 / Important=0
-deploy/clawbot/versions.json matches the actual installed OpenClaw/Node/plugin versions discovered in G1
-current production status still reports v1.4.2 + WeCom
+deploy/clawbot/versions.json matches the G1-installed OpenClaw/Node/plugin versions
+current production still reports v1.4.2 + WeCom
 ```
 
-Also retain the exact local paths discovered in G1 for the rollout shell environment:
+Retain the exact local G1 paths in the rollout shell only:
 
 ```text
 GUIYI_OPENCLAW_BIN
@@ -50,28 +50,17 @@ GUIYI_OPENCLAW_CONFIG_PATH
 GUIYI_ALERT_CLAWBOT_OWNER_PATH=/Volumes/扩展盘/guiyi-secrets/alert-clawbot-owner.json
 ```
 
-These paths are local operational facts, not Git content.
-
 ---
 
 ## Gate G2 — Bootstrap and Freeze the One Owner
 
-**Mutation:** writes one private recipient-scope file.
-
-**Does not authorize:** sending a message, release, Runtime promotion, Scope changes, OpenClaw configuration changes.
+**Mutation:** one private recipient-scope file. **Does not authorize:** message send, release, Runtime promotion, Scope change or OpenClaw config change.
 
 ### G2.1 Read-only discovery
 
-- [ ] Export only the exact G1 path values in the current shell. Do not export account/user/token/context values.
-- [ ] Confirm current production first:
-
-```bash
-scripts/ops/macos/local-services-status.sh
-```
-
-Expected: production still reports WeCom.
-
-- [ ] Run the owner bootstrap in discovery mode only:
+- [ ] Export only exact G1 path values; never export account/user/token/context values manually.
+- [ ] Confirm production truth with `scripts/ops/macos/local-services-status.sh`; expected channel remains WeCom.
+- [ ] Run:
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -92,24 +81,15 @@ context_available=true
 owner_written=false
 ```
 
-No id/token/context may appear in stdout/stderr.
-
-If context is unavailable, stop. The user may use the Clawbot normally from WeChat to refresh context, then a new read-only discovery may be run. Guiyi must not start a getUpdates monitor or alter OpenClaw.
+No id/token/context may appear in stdout/stderr. If context is unavailable, stop; the user may use Clawbot normally to refresh it and then repeat only the read-only discovery. Guiyi must not create a context monitor.
 
 ### G2.2 Human Gate
 
-- [ ] Obtain explicit approval for exactly:
+- [ ] Obtain explicit approval to write the unique discovered owner to `/Volumes/扩展盘/guiyi-secrets/alert-clawbot-owner.json`.
 
-```text
-write the unique currently discovered Clawbot owner identity to
-/Volumes/扩展盘/guiyi-secrets/alert-clawbot-owner.json
-```
+### G2.3 Write exactly once
 
-This is a notification-recipient scope mutation.
-
-### G2.3 Write owner once
-
-- [ ] Ensure `/Volumes/扩展盘/guiyi-secrets` exists, is current-user owned and exact mode `0700`.
+- [ ] Ensure `/Volumes/扩展盘/guiyi-secrets` exists, current-user owned, exact mode `0700`.
 - [ ] Run once:
 
 ```bash
@@ -118,16 +98,17 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   guiyi runtime clawbot-owner-bootstrap --confirm-write-owner
 ```
 
-Expected public result:
+Required public result:
 
 ```text
-status=ready|ok
+status=ok
 readonly=false
+channel=openclaw-weixin
 owner_alias=owner
 owner_written=true
 ```
 
-- [ ] Validate only metadata, never file contents:
+- [ ] Validate metadata only:
 
 ```bash
 stat -f '%Lp %u %N' '/Volumes/扩展盘/guiyi-secrets'
@@ -136,18 +117,16 @@ stat -f '%Lp %u %N' '/Volumes/扩展盘/guiyi-secrets/alert-clawbot-owner.json'
 
 Required: parent `0700`, file `0600`, both current uid.
 
-**G2 PASS:** one immutable owner config exists; zero messages sent.
+**G2 PASS:** immutable owner file exists; zero messages sent.
 
 ---
 
 ## Gate G3 — Real Zero-Send Clawbot Preflight
 
-**Mutation:** none in Guiyi; read-only account/context/provider readiness.
+**Mutation:** none in Guiyi. **Message send:** forbidden.
 
-**Message send:** forbidden.
-
-- [ ] Obtain approval for one real preflight read against the existing Clawbot state.
-- [ ] Run exactly once:
+- [ ] Obtain approval for one real read-only preflight.
+- [ ] Run once:
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -155,7 +134,7 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   guiyi runtime clawbot-preflight
 ```
 
-Required public result:
+Required result:
 
 ```text
 status=ok
@@ -167,22 +146,21 @@ context_available=true
 would_send=false
 ```
 
-- [ ] Confirm there is no new WeChat message caused by this command.
-- [ ] Confirm Guiyi logs contain only alias/stable codes and no owner/account/target data.
+- [ ] Confirm no new WeChat message appeared and Guiyi logs contain only alias/stable codes.
 
-If dependency version, account identity or context is invalid, stop. Do not weaken the owner match or call send without context.
+Dependency/version/account/context failure blocks G4. Never send without context or loosen owner matching.
 
-**G3 PASS:** exact owner/account/context are ready and physical send count is zero.
+**G3 PASS:** exact owner/account/context ready, physical send count 0.
 
 ---
 
 ## Gate G4 — First Real Single Clawbot Canary
 
-**Mutation:** exactly one Clawbot direct message to the frozen owner.
+**Mutation:** exactly one Clawbot direct message.
 
-- [ ] Run `clawbot-preflight` immediately before the canary. If it fails, G4 is blocked.
-- [ ] Obtain explicit approval for exactly one real canary to `owner`.
-- [ ] Execute once:
+- [ ] Run `clawbot-preflight` immediately before canary; failure blocks G4.
+- [ ] Obtain explicit authorization for exactly one canary to `owner`.
+- [ ] Run once:
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -199,123 +177,98 @@ failed=0
 failed_aliases=[]
 ```
 
-`provider_accepted=1` is not read/delivery proof.
+`provider_accepted=1` is not delivered/read proof.
 
-- [ ] User manually confirms the canary arrived in the intended Clawbot direct chat and only once.
-- [ ] Do not repeat the canary merely to collect more evidence. A second canary requires a new explicit Gate.
+- [ ] User manually confirms exactly one canary arrived in the intended Clawbot direct chat.
+- [ ] No repeat canary without a new explicit authorization.
 
-**G4 PASS:** one machine send accepted + one human receipt confirmation, no duplicate.
+**G4 PASS:** one machine acceptance + one human receipt, no duplicate.
 
 ---
 
-## Gate G5 — Stability Checks Before Release
+## Gate G5 — Stability Before Release
 
-No automatic retries. Each real send, if any, requires its own approval.
+No automatic retries; any real send needs a distinct approval.
 
-### G5.1 Normal Clawbot chat refresh
+### G5.1 Normal Clawbot context refresh
 
-- [ ] User sends a normal message to the Clawbot through WeChat and uses it normally.
-- [ ] Run one approved `clawbot-preflight`.
-- [ ] Expected: context remains available; zero send.
+- [ ] User talks to Clawbot normally through WeChat.
+- [ ] Run one approved `clawbot-preflight`; require zero-send PASS.
 
-### G5.2 OpenClaw/Clawbot restart by its existing owner mechanism
+### G5.2 External OpenClaw/Clawbot restart
 
-Guiyi must not restart OpenClaw itself.
+Guiyi must not restart OpenClaw.
 
-- [ ] User restarts the existing OpenClaw/Clawbot through its normal external supervisor/process management.
+- [ ] User restarts the existing OpenClaw/Clawbot through its normal external mechanism.
 - [ ] Confirm normal Clawbot functionality returns.
-- [ ] Run `clawbot-preflight`.
-- [ ] Expected: persisted/restored account/context passes, zero send.
+- [ ] Run `clawbot-preflight`; require persisted/restored account/context PASS.
+- [ ] If context is absent, user may send a normal Clawbot message to refresh it, then run a new preflight; do not add Guiyi context/retry logic.
 
-If context does not survive, the user may send the Clawbot a normal message to refresh it, then run a new preflight. Do not add Guiyi retry/context-monitor logic.
+### G5.3 Version-drift rejection
 
-### G5.3 Version drift rejection
+- [ ] Re-read OpenClaw, Node and plugin exact versions and require equality with `deploy/clawbot/versions.json`.
+- [ ] Any version drift blocks release until a new compatibility review/code change is made.
 
-- [ ] Read current `openclaw --version`, Node version and plugin inspect version again.
-- [ ] Require exact match to `deploy/clawbot/versions.json`.
-- [ ] If any version changed since G1/D1, stop and perform a new compatibility review/code change; do not silently accept drift.
+### G5.4 Single-shot regression
 
-### G5.4 Single-shot engineering evidence
+- [ ] Re-run D1 tests proving context missing=0 send, success=1 send, send failure=1 attempt, child failure no respawn and no public OpenClaw message-send path.
 
-- [ ] Re-run the D1 node/Python tests proving context missing=0 send, success=1 send, failure=1 attempt, timeout/crash no respawn and no public `openclaw message send` path.
+### G5.5 Optional second canary
 
-### G5.5 Optional second canary only if justified
+A second canary is not required just because G5 occurred. Use one only if zero-send evidence cannot resolve a restart/context uncertainty, and only after new explicit one-message authorization.
 
-A second real canary is not required solely because G5 occurred. If restart/context behavior creates uncertainty that zero-send preflight cannot resolve, obtain a new explicit one-message approval and run one canary; otherwise record `second_canary=not_required`.
-
-**G5 PASS:** normal chat/restart/version-drift/single-shot contracts are stable.
+**G5 PASS:** normal chat/restart/version/single-shot contracts stable.
 
 ---
 
 ## Gate G6 — Release Exact Clawbot Code
 
-**Mutation:** Git release only.
+**Mutation:** Git release only. **Does not authorize:** ongoing notifications, Runtime promotion, Scope change or another canary.
 
-**Does not authorize:** ongoing notification, Runtime promotion, Scope changes, another canary.
+- [ ] Re-read `origin/develop`, D1/R1/G2-G5 evidence and run release-candidate verification from a clean worktree.
+- [ ] Open normal release PR `develop -> main`; independent review must confirm notification-only scope.
+- [ ] Merge only after verification/review PASS.
+- [ ] Create an annotated semver tag chosen at release time; this plan does not preselect the version number.
+- [ ] Read back main, tag and peeled commit.
 
-- [ ] Re-read `origin/develop`, D1/R1/G2-G5 evidence and run release-candidate verification from a clean task/release worktree.
-- [ ] Open the normal release PR from `develop` to `main` according to repository workflow.
-- [ ] Independent release review must confirm notification transport only; no evaluator/Scope/DB/Canonical/order change.
-- [ ] Merge only after review/verification passes.
-- [ ] Create an annotated semver tag determined at release time; do not pre-bake a version number in this rollout plan.
-- [ ] Read back `main`, annotated tag and peeled commit identity.
-
-**G6 PASS:** exact release tag exists; production Runtime is still v1.4.2 + WeCom.
+**G6 PASS:** exact release tag exists; production is still v1.4.2 + WeCom.
 
 ---
 
 ## Gate G7 — Continuous Natural Alert Notification Authorization
 
-This is the authorization that permits future natural AlertEvents to send to the frozen owner. It is independent of release and Runtime promotion.
-
-- [ ] Read the production Alert Rule registry and current exact Scope at Gate time. Do not assume Scope is still `jm` if it has changed through a separately approved workflow.
-- [ ] Read owner config metadata and confirm `owner_alias=owner`; do not print ids.
-- [ ] Obtain explicit bounded authorization for exactly:
+- [ ] Read production Rule registry and exact current Scope at Gate time; do not assume `jm` if it changed separately.
+- [ ] Confirm owner config metadata `owner_alias=owner` without printing ids.
+- [ ] Obtain explicit bounded authorization for:
 
 ```text
-htdy_original_15m × its current approved production scope × owner × clawbot-openclaw-weixin
-subing_entry_signal_v1 × its current approved production scope × owner × clawbot-openclaw-weixin
+htdy_original_15m × current approved production scope × owner × clawbot-openclaw-weixin
+subing_entry_signal_v1 × current approved production scope × owner × clawbot-openclaw-weixin
 ```
 
-Authorization includes only newly created natural AlertEvents after G8 promotion.
+Authorization covers only newly created natural AlertEvents after G8. It does not authorize new Rules/Scopes/owner replacement, synthetic Event, replay/backfill, canary retry, release, Runtime promotion, DB/Canonical/order changes.
 
-It does **not** authorize:
+Any later owner replacement is a new recipient-scope Gate and requires Runtime restart.
 
-```text
-new Rule
-new product Scope
-new recipient/owner
-owner replacement
-manual/synthetic Event
-replay/backfill
-canary retry
-release
-Runtime promotion
-DB/Canonical/order changes
-```
-
-Any later owner file replacement is a new recipient-scope Gate and requires Runtime restart/re-read.
-
-**G7 PASS:** bounded continuous notification authorization exists.
+**G7 PASS:** bounded continuous authorization exists.
 
 ---
 
-## Gate G8 — Exact-Tag Runtime Promotion to Clawbot
+## Gate G8 — Exact-Tag Runtime Promotion
 
-**Mutation:** Guiyi production Runtime only. OpenClaw remains externally owned and untouched.
+**Mutation:** Guiyi production Runtime only; OpenClaw remains externally owned and untouched.
 
 ### G8.1 Preflight
 
-- [ ] Require G6 exact tag and G7 continuous authorization.
-- [ ] Require current `clawbot-preflight` PASS immediately before promotion.
-- [ ] Require exact dependency versions still match the released manifest.
-- [ ] Require owner config valid, `0600`, current uid.
-- [ ] Require current DB revision, Rule registry/Scope and `auto_order=false` match pre-promotion evidence.
-- [ ] Create/verify a clean detached exact-tag Runtime worktree using the project's existing Runtime promotion procedure. Preserve the old `v1.4.2` worktree for rollback material.
+- [ ] Require G6 tag + G7 continuous authorization.
+- [ ] Require fresh `clawbot-preflight` PASS.
+- [ ] Require dependency versions equal released manifest and owner config valid `0600/current uid`.
+- [ ] Require DB revision, Rule registry/Scope, execution-review roll state and `auto_order=false` unchanged.
+- [ ] Create/verify clean detached exact-tag Runtime worktree through the existing promotion procedure; preserve old v1.4.2 worktree as rollback material.
 
-### G8.2 Render the new exact paths
+### G8.2 Render exact paths
 
-Export the exact local G1/G5 dependency paths and owner config path. Run render-only first:
+Export exact G1/G5 local dependency paths and owner path, then:
 
 ```bash
 scripts/ops/macos/install-local-services.sh --render-only
@@ -323,38 +276,36 @@ plutil -lint .run/launchd/com.guiyi.quant-api.plist
 plutil -lint .run/launchd/com.guiyi.quant-alert.plist
 ```
 
-Read the rendered plist values and confirm API/Alert receive exactly the same six Clawbot paths. Never print owner-file contents.
+Confirm API/Alert plists carry identical six Clawbot paths; never print owner-file contents.
 
-### G8.3 Promote services within one bounded Gate
+### G8.3 Promote the full supervised Runtime in one bounded Gate
 
-Use the existing service promotion sequence from the exact-tag Runtime. The bounded Gate may temporarily have mixed roots while services are being switched; do not treat that transient state as final evidence.
+Use the existing service promotion sequence from the exact-tag Runtime. Temporary mixed roots during the bounded switch are not final evidence.
 
 Required final state:
 
 ```text
-API/Web/Live/after-market/Alert all point at the same new exact tag/commit
+API/Web/Live/after-market/Alert all same new exact tag/commit
 Market activation preserved
 Alert activation preserved
-new Alert source identity = clawbot-openclaw-weixin
+notification source = clawbot-openclaw-weixin
 OpenClaw external dependency ready
 owner config ready
 DB revision unchanged
 Rule Scope unchanged
-execution-review roll state unchanged
+execution-review roll unchanged
 auto_order=false
 ```
 
-No canary is implied by promotion. Do not send a test message during G8.
+No canary is implied by promotion.
 
-### G8.4 Read-back
-
-Run:
+### G8.4 Final read-back
 
 ```bash
 scripts/ops/macos/local-services-status.sh
 ```
 
-Require sanitized final evidence:
+Require:
 
 ```text
 alert.notification_channel=clawbot-openclaw-weixin
@@ -363,73 +314,58 @@ external.openclaw.status=ready
 external.openclaw_weixin.status=ready
 external.clawbot_owner_config=ready
 health.runtime status=ok readonly=true
-all supervised roots/commits identical to exact release tag
+all supervised roots/commits equal exact release tag
 ```
 
-Also verify `/api/runtime/health`, DB revision, Rule Scope and Runtime version.
+Also verify `/api/runtime/health`, DB revision, Rule Scope and Runtime version. Only after successful read-back may current `STATUS.md` production facts change from WeCom to Clawbot; historical WeCom text stays.
 
-Only after all G8 read-back succeeds may `STATUS.md` current-runtime facts be updated from WeCom to Clawbot. Historical WeCom sections remain historical truth.
-
-**G8 PASS:** production exact-tag Runtime uses Clawbot as the only active notification transport.
+**G8 PASS:** production exact-tag Runtime uses Clawbot as its only active notification transport.
 
 ---
 
 ## Gate G9 — First Natural Alert Evidence and Final WeCom Retirement
 
-G9 must use a natural completed-Bar Alert. No synthetic Event, replay, backfill or manual notification injection.
+No synthetic Event, replay, backfill or manual Alert injection.
 
-### G9.1 Wait for natural evidence
+### G9.1 Natural evidence
 
-- [ ] Wait for the next naturally created Event in an already-authorized Rule/Scope.
-- [ ] Verify Event exists in DB before its notification attempt evidence, consistent with Event-first semantics.
-- [ ] Verify Guiyi logged only stable alias/error facts.
-- [ ] User manually confirms the corresponding Clawbot message arrived once.
+- [ ] Wait for the next natural Event in an already-authorized Rule/Scope.
+- [ ] Verify Event exists before notification-attempt evidence, preserving Event-first.
+- [ ] Verify Guiyi logs contain only alias/stable facts.
+- [ ] User confirms the matching Clawbot message arrived exactly once.
 
-If no natural Event occurs, leave G9 `pending`. Do not fabricate evidence; G8 production promotion remains a separate completed fact if it passed.
+If no natural Event occurs, leave G9 pending; do not fabricate evidence. G8 remains a separate completed fact if it passed.
 
-### G9.2 Failure handling
+### G9.2 Natural-send failure contract
 
-If the first natural Event notification fails:
+If notification fails: Event remains committed, no retry/replay/backfill, old Event is never resent. A defect may require a new code/release/promotion cycle; never restore automatic WeCom fallback.
 
-```text
-Event remains committed
-no retry/replay/backfill
-old Event is not resent
-future new Events continue under the same continuous authorization if Runtime remains healthy
-```
+### G9.3 Explicit final WeCom cleanup Gate
 
-A transport defect may justify a new code/release/promotion cycle. Do not re-enable automatic WeCom fallback.
-
-### G9.3 Final WeCom cleanup Gate
-
-Only after at least one natural Clawbot Alert is confirmed, obtain a separate explicit cleanup approval to:
+After at least one natural Clawbot Alert is confirmed, obtain separate cleanup approval to:
 
 ```text
-remove the obsolete v1.4.2 rollback Runtime worktree after all formal references are zero
-remove the stale private WECOM_WEBHOOK_URL/WeCom credential from the production runtime environment/secrets store
-verify no active launchd plist/process references the old Runtime
+remove obsolete v1.4.2 rollback Runtime worktree after formal references are zero
+remove stale private WECOM_WEBHOOK_URL/WeCom credential from production env/secrets
+verify no launchd plist/process references old Runtime
 verify current source/config contains no active WeCom transport
 ```
 
-Do not rewrite historical Git/STATUS evidence that WeCom was used previously.
+Do not rewrite historical Git/STATUS evidence.
 
-**G9 PASS:** natural Clawbot notification evidence exists and obsolete WeCom operational rollback material/credential is explicitly retired.
+**G9 PASS:** natural Clawbot evidence exists and obsolete WeCom operational rollback material/credential is retired.
 
 ---
 
 ## Rollback Contract
 
-Before G8 completes, rollback is unnecessary because production is still v1.4.2 + WeCom.
+Before G8, production is still WeCom so no migration rollback is needed. After G8 and before G9 cleanup, old v1.4.2 may be used only under a new explicit rollback Gate; there is no automatic provider fallback. Rollback must rebind the complete supervised Runtime consistently and re-read DB/Scope/runtime identity.
 
-After G8 and before G9 final cleanup, the old exact-tag v1.4.2 worktree may be used only by a new explicit rollback Gate. There is no automatic provider fallback. A rollback must rebind the full supervised Runtime consistently, not only the Alert service, and must re-read DB/Scope/runtime identity afterward.
-
-After G9 cleanup, any future rollback to WeCom requires a new design/release; the old webhook secret and active implementation are intentionally retired.
+After G9 cleanup, any future WeCom return requires a new design/release; the old webhook secret and active implementation are intentionally retired.
 
 ---
 
 ## Final Production Contract
-
-After G9:
 
 ```text
 completed Bar
@@ -441,13 +377,4 @@ completed Bar
 → end
 ```
 
-And the active system contains no:
-
-```text
-WeCom transport
-WeChat-Courier transport
-OpenClaw public message-send path
-notification queue/retry/replay/backfill/outbox
-recipient fan-out
-automatic trading/order path
-```
+Final active system contains no WeCom transport, WeChat-Courier transport, OpenClaw public message-send path, notification queue/retry/replay/backfill/outbox, recipient fan-out or automatic order path.
