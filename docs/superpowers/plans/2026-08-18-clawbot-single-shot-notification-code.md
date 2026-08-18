@@ -109,7 +109,6 @@ NODE_BIN="$(command -v node)"
 "$NODE_BIN" --version
 "$OPENCLAW_BIN" config file
 "$OPENCLAW_BIN" plugins inspect openclaw-weixin --runtime --json
-"$OPENCLAW_BIN" channels status --channel openclaw-weixin --probe --json
 ```
 
 Forbidden in G1: `plugins install/update/enable/disable`, `config set/patch/unset`, `channels login/logout/add/remove`, `message send` or any OpenClaw writer.
@@ -130,9 +129,12 @@ Do not copy raw plugin/account diagnostics into the report.
 - [ ] **Step 4: Resolve exact config/state paths without guessing**
 
 Use the current official `openclaw config file` surface for the config path. Require stdout to contain exactly one
-non-empty absolute path line, resolve it with `realpath`, and require an existing readable regular file that is not a
-symlink. Empty/multiline/relative/missing/non-regular/unreadable output or command failure is a hard stop; do not use a
-default path, environment inference, candidate scan or wrapper. For state dir:
+non-empty path line. Accept an absolute path, or one leading `~/` path expanded only against exact `HOME` from the
+currently loaded `ai.openclaw.gateway` official service-env; then resolve with `realpath` and require an existing
+readable regular file that is not a symlink. The service-env itself must be the unique path read from the loaded job,
+current-uid owned, `0600`, regular and not a symlink; source it only in a child shell and never print its values.
+Empty/multiline/other-relative/missing/non-regular/unreadable output or command failure is a hard stop; do not use a
+default path, candidate scan or custom wrapper. For state dir:
 
 1. if `OPENCLAW_STATE_DIR` is explicitly set, require an absolute existing directory and use its realpath;
 2. otherwise accept the config file's parent only if the expected Tencent state subtree for this installed plugin exists there and can be structurally verified without printing account contents;
@@ -165,6 +167,11 @@ inbound.js:
 send.js:
   sendMessageWeixin
 ```
+
+Because current OpenClaw `channels status --channel` cannot address dynamic `openclaw-weixin`, use these exact frozen
+modules for a zero-send readiness probe after export validation: require exactly one indexed account, configured token
+and `userId` ending `@im.wechat`, restore persisted context, and require non-empty context for that same account/user.
+Only sanitized counts/booleans may leave the probe. `sendMessageWeixin()` call count must remain zero.
 
 No glob/fallback path and no `src/*.ts` import is allowed.
 

@@ -239,14 +239,20 @@ owner_alias = owner
 openclaw --version
 openclaw config file
 openclaw plugins inspect openclaw-weixin --runtime --json
-openclaw channels status --channel openclaw-weixin --probe --json
 node --version
 ```
 
 当前 official OpenClaw `2026.7.1-2` 的 `config file` 不提供 `--json`。该 surface 必须精确返回一行
-非空绝对路径；不得包含额外 stdout 行，路径必须指向 existing regular file，并以 `realpath` 冻结。
-任何空值、多行、相对路径、symlink/non-regular、不可读或命令失败均 fail closed；不得改用默认目录、
-环境推断、候选扫描或 wrapper。
+非空路径且不得包含额外 stdout 行。只接受绝对路径，或由当前 loaded `ai.openclaw.gateway` official
+service-env 的 exact `HOME` 确定性展开的单个 `~/` 路径；展开后必须指向 existing readable regular
+file、reject symlink，并以 `realpath` 冻结。任何其他相对路径、空值、多行、不可读或命令失败均
+fail closed；不得改用默认目录、候选扫描或自建 wrapper。
+
+当前 CLI 的 `channels status --channel` 枚举不支持动态 `openclaw-weixin` channel，即使 runtime plugin
+已经 loaded。因此 G1 readiness 改为：official plugin inspect 必须确认 exact plugin loaded/activated，
+随后对冻结的三个 compiled private modules 执行 zero-send Node probe，只公开 account count、唯一 owner
+candidate 和 context available 的布尔/计数事实；不得输出 account/user/token/context，且不得调用
+`sendMessageWeixin()`。
 
 从官方 OpenClaw surfaces 读取并冻结：
 
