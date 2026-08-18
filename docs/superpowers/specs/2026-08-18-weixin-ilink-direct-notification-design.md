@@ -360,11 +360,14 @@ services/quant-api/app/alerts/openclaw_weixin_bridge.mjs
 
 允许依赖 Tencent plugin 内部模块。
 
-桥接层只使用 pinned plugin 的窄能力：
+桥接层使用 OpenClaw 的配置读取 surface 和 pinned Tencent plugin 的窄内部能力：
 
 ```text
+openclaw/plugin-sdk/config-runtime
+  → loadConfig()
+
 auth/accounts
-  → loadWeixinAccount()
+  → resolveWeixinAccount()
 
 messaging/inbound
   → restoreContextTokens()
@@ -373,6 +376,16 @@ messaging/inbound
 messaging/send
   → sendMessageWeixin()
 ```
+
+每次 `probe` 或 `send` 都必须用 registry 中冻结的 `account_id` 精确解析同一个 account，并要求：
+
+```text
+account.enabled == true
+account.configured == true
+account.token present
+```
+
+任一不满足均 fail-closed；不得回退到其他 account 或 default account。
 
 归一量化 Python 代码不认识这些 internal module paths。
 
@@ -394,24 +407,69 @@ openclaw plugins inspect openclaw-weixin --json
 
 任何不一致返回 `WEIXIN_BRIDGE_INCOMPATIBLE`，不得 glob、fallback 或猜测替代 module path。
 
-### 7.3 Bridge I/O
+Startup preflight 得到 validated plugin root 后，将该 exact realpath 冻结到当前 Alert Runtime 的 sender snapshot；后续每个 Alert 不重新搜索或重新选择 plugin install root。
 
-Bridge 是一次性子进程，不是 daemon/service。
+### 7.3 Bridge actions 与 I/O
 
-输入通过 stdin JSON，不把 target/text/account 放 argv：
+Bridge 是一次性子进程，不是 daemon/service。只支持两个内部 action：
+
+```text
+probe
+send
+```
+
+所有输入通过 stdin JSON，不把 plugin path、target、text、account 放 argv。
+
+`probe` 输入：
 
 ```json
 {
-  "account_id": "...",
+  "action": "probe",
+  "plugin_root": "<validated-plugin-root>",
+  "account_id": "<private-account-id>",
   "recipients": [
-    {"alias": "owner", "target": "..."}
+    {"alias": "owner", "target": "<opaque-user-id@im.wechat>"}
+  ]
+}
+```
+
+`probe` 必须验证：
+
+- exact required modules/exports 可加载；
+- OpenClaw config 与 state 指向当前 sidecar；
+- 指定 account enabled/configured/token present；
+- context token store 可恢复；
+- 每个 recipient 的 context token 存在。
+
+`probe` 绝不调用 `sendMessageWeixin()`。
+
+`probe` stdout 只允许：
+
+```json
+{
+  "status": "ready",
+  "recipient_count": 4
+}
+```
+
+`send` 输入：
+
+```json
+{
+  "action": "send",
+  "plugin_root": "<validated-plugin-root>",
+  "account_id": "<private-account-id>",
+  "recipients": [
+    {"alias": "owner", "target": "<opaque-user-id@im.wechat>"}
   ],
   "text": "...",
   "timeout_ms": 8000
 }
 ```
 
-stdout 只返回脱敏结果：
+`send` 在 physical send 前仍重新校验同一 account enabled/configured/token present，并从当前持久化 state 恢复 context token；它不重新选择 recipient、account 或 plugin root。
+
+`send` stdout 只允许返回脱敏结果：
 
 ```json
 {
@@ -422,7 +480,7 @@ stdout 只返回脱敏结果：
 }
 ```
 
-禁止输出：target、context token、bot token、消息全文、原始 Tencent response、原始 stderr。
+禁止输出：plugin realpath 之外的内部安装细节、target、context token、bot token、消息全文、原始 Tencent response、原始 stderr。
 
 ### 7.4 Fan-out
 
@@ -527,7 +585,8 @@ OpenClaw executable / exact version valid
 Tencent plugin exact version valid
 plugin private seam compatible
 Gateway reachable
-Weixin account configured
+Weixin account enabled/configured/token present
+bridge probe status = ready
 4 / 4 context tokens present
 ```
 
@@ -734,7 +793,7 @@ qyapi.weixin.qq.com
 
 ### 12.3 Bridge contract
 
-Bridge 支持 `probe` 与 `send` 两类内部动作。
+Bridge 支持 `probe` 与 `send` 两类内部 action。
 
 `probe` 只验证 plugin root/version/module shape/account/context store；绝不发送。
 
@@ -742,6 +801,7 @@ Bridge 支持 `probe` 与 `send` 两类内部动作。
 
 - 4 recipients → 4 次 physical attempt；
 - 1 个失败，其余继续；
+- account disabled/unconfigured/token missing → 0 physical send；
 - context missing → 0 physical send；
 - timeout/crash → 不 retry；
 - stdout/stderr 不泄露 target/token/text/provider raw response；
