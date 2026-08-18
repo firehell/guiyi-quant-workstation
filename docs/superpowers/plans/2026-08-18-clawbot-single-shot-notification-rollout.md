@@ -225,8 +225,15 @@ A second canary is not required just because G5 occurred. Use one only if zero-s
 
 **Mutation:** Git release only. **Does not authorize:** ongoing notifications, Runtime promotion, Scope change or another canary.
 
+**2026-08-19 approved scope revision:** `origin/main..origin/develop` also contains the already-accepted
+Market Live stale-feed repair, HTDY chart/UI clarification and their canonical/status updates. The user explicitly
+approved releasing the complete accumulated `develop` diff together in G6. Therefore this Gate's independent review
+must cover that exact widened scope and confirm that nothing beyond Clawbot + Market Live repair + HTDY UI/canonical
+updates is present; the former notification-only review condition no longer applies to this release. Gate ordering,
+production `v1.4.2 + WeCom` truth and all G7–G9 authorization boundaries remain unchanged.
+
 - [ ] Re-read `origin/develop`, D1/R1/G2-G5 evidence and run release-candidate verification from a clean worktree.
-- [ ] Open normal release PR `develop -> main`; independent review must confirm notification-only scope.
+- [ ] Open normal release PR `develop -> main`; independent review must confirm the exact approved widened scope above.
 - [ ] Merge only after verification/review PASS.
 - [ ] Create an annotated semver tag chosen at release time; this plan does not preselect the version number.
 - [ ] Read back main, tag and peeled commit.
