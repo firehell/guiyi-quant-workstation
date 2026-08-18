@@ -10,10 +10,14 @@ from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import json
+import math
+import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 from types import ModuleType
 from typing import TextIO
@@ -22,12 +26,11 @@ import unicodedata
 
 _REQUIRED_EXPORTS = (
     "activate_wechat",
-    "make_search_results_screenshot",
+    "get_wechat_window_rect",
+    "get_wechat_window_name",
     "ocr_boxes",
     "search_result_row_click_point",
     "click_point",
-    "make_safety_screenshot",
-    "make_title_screenshot",
     "ocr_image",
     "paste_and_send_text",
 )
@@ -40,12 +43,42 @@ _SAFETY_REJECT_TERMS = (
     "相关搜索",
 )
 UpstreamValidator = Callable[[Path, str], None]
+TempValidator = Callable[[], None]
+PointBox = tuple[int, int, int, int]
+CaptureRect = Callable[[str, PointBox], Path]
 
 
 class AdapterError(RuntimeError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+def _validate_pinned_temp_directory() -> None:
+    try:
+        descriptor_text = os.environ["GUIYI_WECHAT_COURIER_TMP_FD"]
+        temp_text = os.environ["TMPDIR"]
+        if re.fullmatch(r"[1-9][0-9]*", descriptor_text) is None:
+            raise ValueError
+        descriptor = int(descriptor_text)
+        if descriptor < 3:
+            raise ValueError
+        temp_root = Path(temp_text)
+        if not temp_root.is_absolute():
+            raise ValueError
+        held = os.fstat(descriptor)
+        current = temp_root.stat(follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(held.st_mode)
+            or not stat.S_ISDIR(current.st_mode)
+            or stat.S_IMODE(held.st_mode) != 0o700
+            or held.st_uid != os.getuid()
+            or held.st_dev != current.st_dev
+            or held.st_ino != current.st_ino
+        ):
+            raise ValueError
+    except (KeyError, OSError, ValueError):
+        raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
 
 
 def normalize_chat_name(value: str) -> str:
@@ -74,6 +107,39 @@ def select_unique_search_box(box_texts: Sequence[str], target: str) -> int:
     if len(matches) != 1:
         raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
     return matches[0]
+
+
+def _validate_ocr_box(box: object) -> dict[str, object]:
+    if not isinstance(box, dict) or set(box) != {
+        "text",
+        "min_x",
+        "min_y",
+        "width",
+        "height",
+    }:
+        raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
+    if not isinstance(box["text"], str):
+        raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
+    geometry: list[float] = []
+    for key in ("min_x", "min_y", "width", "height"):
+        value = box[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
+        geometry.append(numeric)
+    min_x, min_y, width, height = geometry
+    if (
+        not 0.0 <= min_x <= 1.0
+        or not 0.0 <= min_y <= 1.0
+        or not 0.0 < width <= 1.0
+        or not 0.0 < height <= 1.0
+        or min_x + width > 1.0
+        or min_y + height > 1.0
+    ):
+        raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
+    return box
 
 
 def _load_upstream(upstream_root: Path) -> ModuleType:
@@ -147,6 +213,73 @@ def _run_private_command(
         raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
 
 
+def _capture_screen_rect(
+    prefix: str,
+    point_box: PointBox,
+    *,
+    temp_root: Path | None = None,
+    run_process: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> Path:
+    """Capture an exact screen rect without upstream Finder desktop-size lookup."""
+    screenshot: Path | None = None
+    try:
+        if re.fullmatch(r"[a-z0-9-]+", prefix) is None:
+            raise ValueError
+        if len(point_box) != 4 or any(type(value) is not int for value in point_box):
+            raise ValueError
+        left, top, right, bottom = point_box
+        width = right - left
+        height = bottom - top
+        if (
+            not -32_768 <= left <= 32_768
+            or not -32_768 <= top <= 32_768
+            or not 1 <= width <= 16_384
+            or not 1 <= height <= 16_384
+        ):
+            raise ValueError
+        root = (temp_root or Path(tempfile.gettempdir())).resolve(strict=True)
+        metadata = root.stat()
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o700
+            or metadata.st_uid != os.getuid()
+        ):
+            raise ValueError
+        screenshot = root / f"guiyi-wechat-courier-{prefix}-{time.time_ns()}.png"
+        if screenshot.exists() or screenshot.is_symlink():
+            raise ValueError
+        result = run_process(
+            [
+                "/usr/sbin/screencapture",
+                "-x",
+                f"-R{left},{top},{width},{height}",
+                str(screenshot),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10.0,
+        )
+        if result.returncode != 0:
+            raise ValueError
+        screenshot_metadata = screenshot.lstat()
+        if (
+            not stat.S_ISREG(screenshot_metadata.st_mode)
+            or screenshot_metadata.st_size == 0
+            or screenshot.is_symlink()
+        ):
+            raise ValueError
+        screenshot.chmod(0o600)
+        return screenshot
+    except (OSError, subprocess.SubprocessError, ValueError):
+        if screenshot is not None:
+            try:
+                screenshot.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED") from None
+
+
 def _open_search_ui(_upstream: ModuleType, target: str) -> None:
     _run_private_command(["/usr/bin/pbcopy"], input_text=target)
     _run_private_command(
@@ -179,27 +312,82 @@ def _unlink_screenshot(path: object) -> bool:
         return False
 
 
-def _validate_search_result(upstream: ModuleType, target: str) -> None:
+def _window_rect(upstream: ModuleType) -> tuple[int, int, int, int]:
+    try:
+        value = upstream.get_wechat_window_rect()
+        if (
+            not isinstance(value, tuple)
+            or len(value) != 4
+            or any(type(item) is not int for item in value)
+        ):
+            raise ValueError
+        x, y, width, height = value
+        if width <= 300 or height <= 300:
+            raise ValueError
+        return x, y, width, height
+    except Exception:
+        raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED") from None
+
+
+def _search_screenshot(
+    upstream: ModuleType,
+    capture_rect: CaptureRect,
+) -> tuple[Path, PointBox]:
+    x, y, width, height = _window_rect(upstream)
+    right = x + int(min(max(390, width * 0.34), 540))
+    bottom = y + min(height, 620)
+    point_box = (x, y + 78, right, bottom)
+    return capture_rect("search", point_box), point_box
+
+
+def _region_screenshot(
+    upstream: ModuleType,
+    capture_rect: CaptureRect,
+    region: str,
+    attempt: int,
+) -> Path:
+    x, y, width, _height = _window_rect(upstream)
+    if region == "safety":
+        point_box = (x, y + 35, x + width, y + 240)
+    elif region == "title":
+        try:
+            window_name = upstream.get_wechat_window_name()
+        except Exception:
+            raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED") from None
+        if not isinstance(window_name, str):
+            raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
+        is_main_window = window_name in {"微信", "WeChat"}
+        left = x if width < 850 and not is_main_window else x + max(280, int(width * 0.35))
+        point_box = (left, y, x + width - 20, y + 95)
+    else:
+        raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
+    return capture_rect(f"{region}-{attempt}", point_box)
+
+
+def _validate_search_result(
+    upstream: ModuleType,
+    target: str,
+    capture_rect: CaptureRect,
+) -> None:
     screenshot: object | None = None
     try:
-        screenshot, point_box = upstream.make_search_results_screenshot(
-            "guiyi-wechat-courier-search"
-        )
+        screenshot, point_box = _search_screenshot(upstream, capture_rect)
         boxes = upstream.ocr_boxes(screenshot)
         if not isinstance(boxes, list):
             raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
         texts: list[str] = []
         for box in boxes:
-            if not isinstance(box, dict) or not isinstance(box.get("text"), str):
-                raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
-            texts.append(box["text"])
-        selected = boxes[select_unique_search_box(texts, target)]
+            texts.append(str(_validate_ocr_box(box)["text"]))
+        selected = _validate_ocr_box(boxes[select_unique_search_box(texts, target)])
         point = upstream.search_result_row_click_point(selected, point_box)
         if (
             not isinstance(point, tuple)
             or len(point) != 2
             or any(type(value) is not int for value in point)
         ):
+            raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
+        left, top, right, bottom = point_box
+        if not left <= point[0] < right or not top <= point[1] < bottom:
             raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED")
         upstream.click_point(point[0], point[1])
     except AdapterError:
@@ -216,12 +404,17 @@ def _safety_text_is_clean(value: str) -> bool:
     return not any(normalize_chat_name(term) in normalized for term in _SAFETY_REJECT_TERMS)
 
 
-def _validate_title_attempt(upstream: ModuleType, target: str, attempt: int) -> None:
+def _validate_title_attempt(
+    upstream: ModuleType,
+    target: str,
+    attempt: int,
+    capture_rect: CaptureRect,
+) -> None:
     screenshots: list[object] = []
     try:
-        safety = upstream.make_safety_screenshot(f"guiyi-wechat-courier-safety-{attempt}")
+        safety = _region_screenshot(upstream, capture_rect, "safety", attempt)
         screenshots.append(safety)
-        title = upstream.make_title_screenshot(f"guiyi-wechat-courier-title-{attempt}")
+        title = _region_screenshot(upstream, capture_rect, "title", attempt)
         screenshots.append(title)
         safety_text = upstream.ocr_image(safety)
         title_text = upstream.ocr_image(title)
@@ -251,12 +444,13 @@ def _verify_target(
     target: str,
     *,
     open_search_ui: Callable[[ModuleType, str], None],
+    capture_rect: CaptureRect,
     sleep: Callable[[float], None],
 ) -> None:
     try:
         upstream.activate_wechat()
         open_search_ui(upstream, target)
-        _validate_search_result(upstream, target)
+        _validate_search_result(upstream, target, capture_rect)
         sleep(1.0)
     except AdapterError:
         raise
@@ -264,7 +458,7 @@ def _verify_target(
         raise AdapterError("WECHAT_GROUP_TARGET_UNVERIFIED") from None
     for attempt in range(1, 4):
         try:
-            _validate_title_attempt(upstream, target, attempt)
+            _validate_title_attempt(upstream, target, attempt, capture_rect)
             return
         except AdapterError:
             if attempt < 3:
@@ -297,8 +491,10 @@ def execute_adapter_action(
     payload: object,
     *,
     open_search_ui: Callable[[ModuleType, str], None] = _open_search_ui,
+    capture_rect: CaptureRect = _capture_screen_rect,
     sleep: Callable[[float], None] = time.sleep,
     validate_upstream: UpstreamValidator = _validate_upstream_identity,
+    validate_temp_directory: TempValidator = _validate_pinned_temp_directory,
 ) -> dict[str, str]:
     if not isinstance(payload, dict):
         raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID")
@@ -320,6 +516,7 @@ def execute_adapter_action(
         raise AdapterError("WECHAT_COURIER_DEPENDENCY_INVALID")
     private_output = io.StringIO()
     with redirect_stdout(private_output), redirect_stderr(private_output):
+        validate_temp_directory()
         upstream_root = Path(payload["upstream_root"])
         validate_upstream(upstream_root, payload["upstream_commit"])
         upstream = _load_upstream(upstream_root)
@@ -328,9 +525,12 @@ def execute_adapter_action(
             upstream,
             payload["target_chat"],
             open_search_ui=open_search_ui,
+            capture_rect=capture_rect,
             sleep=sleep,
         )
         if action == "send":
+            validate_temp_directory()
+            validate_upstream(upstream_root, payload["upstream_commit"])
             try:
                 upstream.paste_and_send_text(payload["text"])
             except Exception:

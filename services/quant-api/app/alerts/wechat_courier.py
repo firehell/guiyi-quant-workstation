@@ -9,6 +9,8 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
+import signal
 import stat
 import subprocess
 from typing import Any
@@ -25,7 +27,7 @@ from app.core.env import PROJECT_ROOT
 VERSIONS_FILE = PROJECT_ROOT / "deploy/wechat-courier/versions.json"
 ADAPTER_PATH = PROJECT_ROOT / "services/quant-api/app/alerts/wechat_courier_adapter.py"
 _REPOSITORY = "bladydora/WeChat-Courier-macOS"
-_TIMEOUT_SECONDS = 45.0
+_TIMEOUT_SECONDS = 25.0
 _TRUSTED_SYSTEM_PYTHON_ENTRIES = (
     Path("/usr/bin/python3"),
     Path("/Library/Developer/CommandLineTools/usr/bin/python3"),
@@ -63,6 +65,9 @@ class WeChatGroupSendSummary:
 
 RunProcess = Callable[..., subprocess.CompletedProcess[str]]
 DependencyResolver = Callable[[Path], WeChatCourierDependency]
+_SCREENSHOT_NAME = re.compile(
+    r"guiyi-wechat-courier-(?:search|safety-[1-3]|title-[1-3])-[0-9]+\.png"
+)
 
 
 def _is_private_directory(path: Path) -> bool:
@@ -150,10 +155,18 @@ def resolve_wechat_courier_dependency(
         resolved_root,
         resolved_root / "venv/bin/python",
     )
-    required_directories = (
-        _contained(resolved_root, resolved_root / "runtime"),
-        _contained(resolved_root, resolved_root / "tmp"),
-        _contained(resolved_root, resolved_root / "cache/clang"),
+    unresolved_directories = (
+        resolved_root / "runtime",
+        resolved_root / "tmp",
+        resolved_root / "cache/clang",
+    )
+    if any(
+        directory.is_symlink()
+        for directory in (*unresolved_directories, resolved_root / "cache")
+    ):
+        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+    required_directories = tuple(
+        _contained(resolved_root, directory) for directory in unresolved_directories
     )
     if (
         not _is_private_directory(resolved_root)
@@ -216,13 +229,126 @@ def resolve_wechat_courier_dependency(
     )
 
 
-def courier_child_environment(root: Path) -> dict[str, str]:
+def courier_child_environment(root: Path, temp_descriptor: int) -> dict[str, str]:
     return {
         "PATH": f"{root}/venv/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "TMPDIR": str(root / "tmp"),
         "CLANG_MODULE_CACHE_PATH": str(root / "cache/clang"),
+        "GUIYI_WECHAT_COURIER_TMP_FD": str(temp_descriptor),
         "PYTHONUNBUFFERED": "1",
     }
+
+
+def _run_process_group(
+    argv: list[str],
+    *,
+    input: str,
+    capture_output: bool,
+    text: bool,
+    check: bool,
+    timeout: float,
+    env: dict[str, str],
+    cwd: str,
+    pass_fds: tuple[int, ...],
+    popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
+    kill_process_group: Callable[[int, int], None] = os.killpg,
+) -> subprocess.CompletedProcess[str]:
+    """Run one child tree and kill the entire tree on the bounded timeout."""
+    if not capture_output or not text or check:
+        raise OSError
+    process = popen(
+        argv,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        cwd=cwd,
+        pass_fds=pass_fds,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(input=input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            kill_process_group(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate()
+        raise
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
+@contextmanager
+def _pinned_temp_directory(root: Path):
+    temp_root = root / "tmp"
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            temp_root,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        )
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o700
+            or metadata.st_uid != os.getuid()
+        ):
+            raise OSError
+        yield descriptor, temp_root
+    except OSError:
+        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _temp_directory_identity_matches(descriptor: int, temp_root: Path) -> bool:
+    try:
+        held = os.fstat(descriptor)
+        current = temp_root.stat(follow_symlinks=False)
+        return (
+            stat.S_ISDIR(current.st_mode)
+            and held.st_dev == current.st_dev
+            and held.st_ino == current.st_ino
+        )
+    except OSError:
+        return False
+
+
+def _screenshot_snapshot(descriptor: int) -> frozenset[str]:
+    try:
+        return frozenset(
+            name
+            for name in os.listdir(descriptor)
+            if _SCREENSHOT_NAME.fullmatch(name) is not None
+        )
+    except OSError:
+        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID") from None
+
+
+def _cleanup_action_screenshots(
+    descriptor: int,
+    temp_root: Path,
+    baseline: frozenset[str],
+) -> bool:
+    try:
+        for name in os.listdir(descriptor):
+            if (
+                name in baseline
+                or _SCREENSHOT_NAME.fullmatch(name) is None
+            ):
+                continue
+            metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if not stat.S_ISREG(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
+                return False
+            os.unlink(name, dir_fd=descriptor)
+        return _temp_directory_identity_matches(descriptor, temp_root) and all(
+            name in baseline or _SCREENSHOT_NAME.fullmatch(name) is None
+            for name in os.listdir(descriptor)
+        )
+    except OSError:
+        return False
 
 
 @contextmanager
@@ -263,7 +389,7 @@ class WeChatCourierRunner:
         self,
         dependency: WeChatCourierDependency,
         *,
-        run_process: RunProcess = subprocess.run,
+        run_process: RunProcess = _run_process_group,
         resolve_dependency: DependencyResolver = resolve_wechat_courier_dependency,
     ) -> None:
         self._dependency = dependency
@@ -295,16 +421,37 @@ class WeChatCourierRunner:
                 refreshed = self._resolve_dependency(self._dependency.root)
                 if refreshed != self._dependency:
                     raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
-                result = self._run_process(
-                    [str(self._dependency.python_executable), str(ADAPTER_PATH)],
-                    input=json.dumps(payload, separators=(",", ":")),
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=_TIMEOUT_SECONDS,
-                    env=courier_child_environment(self._dependency.root),
-                    cwd=str(self._dependency.root / "runtime"),
-                )
+                with _pinned_temp_directory(self._dependency.root) as (
+                    temp_descriptor,
+                    temp_root,
+                ):
+                    baseline = _screenshot_snapshot(temp_descriptor)
+                    if not _temp_directory_identity_matches(temp_descriptor, temp_root):
+                        raise WeChatCourierError("WECHAT_COURIER_DEPENDENCY_INVALID")
+                    try:
+                        result = self._run_process(
+                            [str(self._dependency.python_executable), str(ADAPTER_PATH)],
+                            input=json.dumps(payload, separators=(",", ":")),
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                            timeout=_TIMEOUT_SECONDS,
+                            env=courier_child_environment(
+                                self._dependency.root,
+                                temp_descriptor,
+                            ),
+                            cwd=str(self._dependency.root / "runtime"),
+                            pass_fds=(temp_descriptor,),
+                        )
+                    finally:
+                        if not _cleanup_action_screenshots(
+                            temp_descriptor,
+                            temp_root,
+                            baseline,
+                        ):
+                            raise WeChatCourierError(
+                                "WECHAT_COURIER_DEPENDENCY_INVALID"
+                            ) from None
             parsed: Any = json.loads(result.stdout)
         except WeChatCourierError:
             raise

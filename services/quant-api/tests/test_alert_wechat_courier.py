@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 
 import pytest
@@ -140,6 +141,8 @@ def test_dependency_resolver_accepts_standard_venv_python_symlink(
         "dirty",
         "escaping_source",
         "escaping_python_parent",
+        "symlink_cache",
+        "symlink_tmp",
         "untrusted_python_target",
         "unsafe_runtime_mode",
     ),
@@ -177,6 +180,14 @@ def test_dependency_resolver_fails_closed(
         python.write_text("#!/bin/sh\n", encoding="utf-8")
         python.chmod(0o700)
         (root / "venv/bin").symlink_to(outside, target_is_directory=True)
+    elif failure == "symlink_tmp":
+        held = root / "tmp-held"
+        (root / "tmp").rename(held)
+        (root / "tmp").symlink_to(held, target_is_directory=True)
+    elif failure == "symlink_cache":
+        held = root / "cache-held"
+        (root / "cache").rename(held)
+        (root / "cache").symlink_to(held, target_is_directory=True)
     elif failure == "untrusted_python_target":
         outside = tmp_path / "outside-python"
         outside.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -213,6 +224,7 @@ def test_runner_uses_fixed_child_argv_stdin_and_exact_environment(tmp_path: Path
         observed["input"] = json.loads(str(kwargs["input"]))
         observed["env"] = kwargs["env"]
         observed["cwd"] = kwargs["cwd"]
+        observed["pass_fds"] = kwargs["pass_fds"]
         return subprocess.CompletedProcess(argv, 0, '{"status":"verified"}\n', "private")
 
     validations: list[Path] = []
@@ -237,10 +249,14 @@ def test_runner_uses_fixed_child_argv_stdin_and_exact_environment(tmp_path: Path
         "upstream_root": str(dependency.source_root),
         "upstream_commit": PINNED_COMMIT,
     }
+    assert isinstance(observed["pass_fds"], tuple)
+    assert len(observed["pass_fds"]) == 1
+    temp_descriptor = observed["pass_fds"][0]  # type: ignore[index]
     assert observed["env"] == {
         "PATH": f"{root.resolve()}/venv/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "TMPDIR": str(root.resolve() / "tmp"),
         "CLANG_MODULE_CACHE_PATH": str(root.resolve() / "cache/clang"),
+        "GUIYI_WECHAT_COURIER_TMP_FD": str(temp_descriptor),
         "PYTHONUNBUFFERED": "1",
     }
     assert observed["cwd"] == str(dependency.root / "runtime")
@@ -343,6 +359,116 @@ def test_runner_rejects_resolved_python_identity_drift_before_child(
                 run_process=git_process,
             ),
         ).verify_target(_target())
+
+
+def test_process_group_runner_kills_entire_child_tree_on_timeout() -> None:
+    observed: dict[str, object] = {}
+
+    class Process:
+        pid = 4242
+        returncode = -signal.SIGKILL
+        calls = 0
+
+        def communicate(
+            self,
+            input: str | None = None,
+            timeout: float | None = None,
+        ) -> tuple[str, str]:
+            self.calls += 1
+            if self.calls == 1:
+                raise subprocess.TimeoutExpired(["child"], timeout)
+            return "", ""
+
+    process = Process()
+
+    def popen(argv: list[str], **kwargs: object):
+        observed["argv"] = argv
+        observed["kwargs"] = kwargs
+        return process
+
+    killed: list[tuple[int, int]] = []
+    with pytest.raises(subprocess.TimeoutExpired):
+        courier._run_process_group(
+            ["/fixture/python", "/fixture/adapter.py"],
+            input="{}",
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=25.0,
+            env={"PATH": "/usr/bin:/bin"},
+            cwd="/fixture/runtime",
+            pass_fds=(7,),
+            popen=popen,
+            kill_process_group=lambda pid, sig: killed.append((pid, sig)),
+        )
+
+    assert observed["argv"] == ["/fixture/python", "/fixture/adapter.py"]
+    assert isinstance(observed["kwargs"], dict)
+    assert observed["kwargs"]["start_new_session"] is True  # type: ignore[index]
+    assert killed == [(4242, signal.SIGKILL)]
+    assert process.calls == 2
+
+
+def test_runner_timeout_cleans_only_screenshots_created_by_this_action(
+    tmp_path: Path,
+) -> None:
+    root = _dependency_tree(tmp_path)
+    dependency = WeChatCourierDependency(
+        root.resolve(),
+        (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
+        (root / "venv/bin/python").resolve(),
+        PINNED_COMMIT,
+    )
+    prior = root / "tmp/guiyi-wechat-courier-search-100.png"
+    created = root / "tmp/guiyi-wechat-courier-title-1-200.png"
+    prior.write_bytes(b"prior")
+
+    def run_process(argv: list[str], **kwargs: object):
+        created.write_bytes(b"partial")
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    with pytest.raises(WeChatCourierError, match="^WECHAT_COURIER_DEPENDENCY_INVALID$"):
+        WeChatCourierRunner(
+            dependency,
+            run_process=run_process,
+            resolve_dependency=lambda _root: dependency,
+        ).verify_target(_target())
+
+    assert prior.read_bytes() == b"prior"
+    assert not created.exists()
+
+
+def test_runner_tmp_symlink_swap_fails_without_deleting_outside_file(
+    tmp_path: Path,
+) -> None:
+    root = _dependency_tree(tmp_path)
+    dependency = WeChatCourierDependency(
+        root.resolve(),
+        (root / "source").resolve(),
+        (root / "venv/bin/python").resolve(),
+        (root / "venv/bin/python").resolve(),
+        PINNED_COMMIT,
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    outside_screenshot = outside / "guiyi-wechat-courier-search-300.png"
+
+    def run_process(argv: list[str], **_kwargs: object):
+        held = root / "tmp-held"
+        (root / "tmp").rename(held)
+        (root / "tmp").symlink_to(outside, target_is_directory=True)
+        outside_screenshot.write_bytes(b"outside")
+        return subprocess.CompletedProcess(argv, 0, '{"status":"verified"}', "")
+
+    with pytest.raises(WeChatCourierError, match="^WECHAT_COURIER_DEPENDENCY_INVALID$"):
+        WeChatCourierRunner(
+            dependency,
+            run_process=run_process,
+            resolve_dependency=lambda _root: dependency,
+        ).verify_target(_target())
+
+    assert outside_screenshot.read_bytes() == b"outside"
 
 
 def test_gui_lock_is_nonblocking_and_never_starts_second_child(tmp_path: Path) -> None:
