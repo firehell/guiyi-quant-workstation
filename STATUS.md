@@ -19,7 +19,7 @@
   replay、backfill 或 retry 代替。
 - `develop` 已完成 Clawbot single-shot D1 code PASS，并在 `d82ea43dd` 修复多行 Alert 正文的 LF
   校验合同。rollout G2 owner bootstrap 与 G3 zero-send preflight 已完成；`2026-08-19` 的唯一一次新授权
-  G4 canary 已获 provider acceptance，等待用户确认微信中恰好收到一条，因此 G4 尚未 PASS。
+  G4 canary 已获 provider acceptance，用户已确认微信中恰好收到一条，因此 G4 PASS。
   尚未执行 G5～G9、release 或 Runtime promotion；production 继续保持 `v1.4.2 + WeCom`。
 
 ## Clawbot Single-Shot D1（CODE PASS / NOT RELEASED）
@@ -33,12 +33,11 @@
 - owner 采用 Git 外 `0700` parent / `0600` file 的严格不可变 schema，公开只使用别名 `owner`；
   后续 rollout 已完成 G2 写入和 G3 zero-send preflight。早先 G4 尝试因 single-shot seam 误将正文 LF
   视为非法控制字符而在调用腾讯 primitive 前失败；`d82ea43dd` 已通过真实 Node seam RED→GREEN 修复，
-  新授权的单次 G4 返回 `attempted=1 / provider_accepted=1 / failed=0`，人工收件确认仍 pending。
+  新授权的单次 G4 返回 `attempted=1 / provider_accepted=1 / failed=0`，用户确认只收到一条，G4 PASS。
   本次 LF 修复与 G4 未修改 OpenClaw、未 load/reload launchd、未切换 Runtime。
 - Courier active source/tests/tooling 已从 D1 代码删除，active WeCom sender source/config 仍为零；
   production exact-tag/hotfix Runtime 的 WeCom 事实未改变。D1 完整验证及独立 R1 为
-  Critical=`0` / Important=`0` / Minor=`0`；当前 rollout 为 G2/G3 PASS、G4 机器接受且人工回执待确认，
-  G5～G9 均未执行。
+  Critical=`0` / Important=`0` / Minor=`0`；当前 rollout 为 G2/G3/G4 PASS，G5～G9 均未执行。
 
 ## After-Market Bounded Retry V1.4.2（RELEASED / RUNTIME PROMOTED）
 
