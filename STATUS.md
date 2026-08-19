@@ -24,6 +24,11 @@
 - `v1.6.0` 同时包含 SuBing Lifecycle V2 的 research-only exact policy、不可变领域合同与 causal
   ConfirmedPivot/Breakout/Retest 结构 kernel 基础；尚未接入 API、Web、Alert、Runtime 或正式 Rule，
   不表示完整 Lifecycle V2 已完成、策略有效或可晋升。
+- `develop` 已存在 SuBing Lifecycle V2 research-only 代码链：纯函数 lifecycle、
+  additive API/Web 投影与 Historical-only Shadow CLI；V1 Factor/Signal/resolver、Alert Rule/Scope 和
+  `AlertRuntime` 消费边界不变。该 develop 代码尚未 release、Runtime promotion 或 Runtime load，
+  也未运行真实 `jm` Shadow/current-market observation；因此无 live `jm` 证据，不表示策略有效、
+  正式 Rule ready 或可晋升。
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
