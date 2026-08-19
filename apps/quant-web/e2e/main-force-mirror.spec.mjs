@@ -56,6 +56,28 @@ async function mockChartMarketApi(page, requests) {
   })
 }
 
+async function secondaryPaneBounds(shell) {
+  return shell.locator('.chart').evaluate((chart) => {
+    const paneRows = Array.from(chart.querySelectorAll('tr'))
+      .filter((row) => row.querySelectorAll('canvas').length >= 4)
+    const secondaryPane = paneRows[2]
+    if (!secondaryPane) return null
+    const rect = secondaryPane.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom, height: rect.height }
+  })
+}
+
+async function tabsAreInsideSecondaryPane(shell, tabs) {
+  const [pane, tabsBox] = await Promise.all([
+    secondaryPaneBounds(shell),
+    tabs.boundingBox(),
+  ])
+  return pane !== null
+    && tabsBox !== null
+    && tabsBox.y >= pane.top
+    && tabsBox.y < pane.bottom
+}
+
 test('secondary pane defaults to MACD and switches to main-force mirror without refetching bars', async ({ page }) => {
   const requests = []
   await page.addInitScript(() => {
@@ -77,6 +99,18 @@ test('secondary pane defaults to MACD and switches to main-force mirror without 
   await expect(tabs.getByRole('tab')).toHaveText(['MACD', '主力照妖镜'])
   await expect(shell).toHaveAttribute('data-secondary-panel', 'macd')
   await expect(tabs.getByRole('tab', { name: 'MACD' })).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => tabsAreInsideSecondaryPane(shell, tabs)).toBe(true)
+
+  const paneBeforeResize = await secondaryPaneBounds(shell)
+  expect(paneBeforeResize).not.toBeNull()
+  await page.setViewportSize({ width: 1280, height: 1200 })
+  await expect.poll(async () => {
+    const paneAfterResize = await secondaryPaneBounds(shell)
+    return paneAfterResize !== null
+      && paneBeforeResize !== null
+      && Math.abs(paneAfterResize.height - paneBeforeResize.height) > 1
+  }).toBe(true)
+  await expect.poll(() => tabsAreInsideSecondaryPane(shell, tabs)).toBe(true)
 
   const barRequestsBeforeSwitch = requests.filter((url) => url.pathname.endsWith('/bars/page')).length
   await tabs.getByRole('tab', { name: '主力照妖镜' }).click()

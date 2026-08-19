@@ -90,7 +90,6 @@ export function calculateMainForceMirror(
 
   const high = bars.map((bar) => bar.high)
   const low = bars.map((bar) => bar.low)
-  const close = bars.map((bar) => bar.close)
   const volume = bars.map((bar) => bar.volume)
 
   const volumeMean = rollingMean(volume, config.volumeWindow)
