@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -44,12 +45,13 @@ from app.market_data.subing_research import (
     SubingSignalResolution,
     SubingSignalEvaluation,
     SubingSignalStatus,
+    calculate_subing_factor,
     calculate_subing_factor_series as calculate_factor_series,
 )
 
 
 _SEGMENT_START = date(2026, 8, 3)
-_NOW = datetime(2026, 8, 3, 8, 0, tzinfo=UTC)
+_NOW = datetime(2026, 8, 3, 13, 0, tzinfo=UTC)
 
 
 def test_snapshot_reads_only_the_current_rank1_contract_segment() -> None:
@@ -125,6 +127,118 @@ def test_snapshot_fails_closed_when_history_extends_past_rank1_segment() -> None
                 BarFrequency.M15: companion,
             }
         ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+
+def test_future_historical_bar_is_excluded_from_v1_and_lifecycle() -> None:
+    completed_5m = _bars(
+        frequency=BarFrequency.M5,
+        count=150,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    completed_15m = _bars(
+        frequency=BarFrequency.M15,
+        count=50,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    future = _bar(_NOW + timedelta(minutes=5), _SEGMENT_START, Decimal("999"))
+
+    result = _service_with_lifecycle(
+        {
+            BarFrequency.M5: completed_5m + (future,),
+            BarFrequency.M15: completed_15m,
+        }
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+    assert result.primary.snapshot is not None
+    assert result.primary.snapshot.bar_end == completed_5m[-1].bar_end
+    assert result.lifecycle.observed_at == completed_5m[-1].bar_end
+
+
+def test_future_live_bar_is_excluded_from_v1_and_lifecycle() -> None:
+    history = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=150,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=50,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+    }
+    future = _bar(_NOW + timedelta(minutes=5), _SEGMENT_START, Decimal("999"))
+
+    result = _service_with_lifecycle(
+        history,
+        live={BarFrequency.M5: (future,), BarFrequency.M15: ()},
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+    assert result.primary.snapshot is not None
+    assert result.primary.snapshot.bar_end == history[BarFrequency.M5][-1].bar_end
+    assert result.lifecycle.observed_at == history[BarFrequency.M5][-1].bar_end
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("symbol", "rb"),
+        ("series_kind", SeriesKind.ACTUAL_DOMINANT.value),
+        ("frequency", BarFrequency.M30.value),
+    ],
+)
+def test_wrong_market_read_state_identity_cannot_admit_live(
+    field: str,
+    value: str,
+) -> None:
+    history = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=150,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=50,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+    }
+    live_bar = _bar(
+        history[BarFrequency.M5][-1].bar_end + timedelta(minutes=5),
+        _SEGMENT_START,
+        Decimal("999"),
+    )
+    canonical = _service_with_lifecycle(history).snapshot(
+        SubingReadRequest("jm", BarFrequency.M5), now=_NOW
+    )
+    invalid = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_StateIdentityOverrideMarketRead(
+            history,
+            live={BarFrequency.M5: (live_bar,), BarFrequency.M15: ()},
+            field=field,
+            value=value,
+        ),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+    assert invalid.primary == canonical.primary
+    assert invalid.lifecycle == canonical.lifecycle
+    assert invalid.source_mode == "canonical"
+    assert invalid.live_reason == "live_unavailable"
 
 
 def test_companion_is_cut_off_at_the_primary_confirmed_bar() -> None:
@@ -324,6 +438,178 @@ def test_source_mode_uses_only_live_bars_retained_by_the_primary_cutoff() -> Non
     assert result.live_observation == "available"
 
 
+def test_source_mode_retains_live_companion_provenance_when_factor_is_insufficient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    boundary = datetime(2026, 8, 3, 1, 15, tzinfo=UTC)
+    history = {
+        BarFrequency.M15: (
+            _bar(boundary, _SEGMENT_START, Decimal("100")),
+        ),
+        BarFrequency.M5: (
+            _bar(boundary - timedelta(minutes=10), _SEGMENT_START, Decimal("100")),
+        ),
+    }
+    retained_live = _bar(boundary, _SEGMENT_START, Decimal("101"))
+
+    def factor_series(bars, *, timeframe, **_kwargs):
+        if timeframe is BarFrequency.M5:
+            return tuple(
+                SubingFactorResult(SubingFactorStatus.INSUFFICIENT_DATA, None)
+                for _bar_value in bars
+            )
+        return _repeat_factor(
+            bars,
+            _signal_factor(timeframe, boundary, cross=MacdCross.NONE),
+        )
+
+    monkeypatch.setattr(
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        factor_series,
+    )
+    result = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_FakeMarketRead(
+            history,
+            live={BarFrequency.M5: (retained_live,), BarFrequency.M15: ()},
+        ),
+        calibration=_accepted_calibration(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M15), now=_NOW)
+
+    assert result.companion is not None
+    assert result.companion.status is SubingFactorStatus.INSUFFICIENT_DATA
+    assert result.companion.snapshot is None
+    assert result.source_mode == "canonical_live"
+
+
+@pytest.mark.parametrize(
+    ("requested", "primary_count", "companion_count"),
+    [
+        (BarFrequency.M5, 150, 55),
+        (BarFrequency.M15, 45, 150),
+        (BarFrequency.M5, 10, 50),
+        (BarFrequency.M15, 3, 150),
+    ],
+)
+def test_full_factor_series_companion_projection_matches_cutoff_prefix(
+    requested: BarFrequency,
+    primary_count: int,
+    companion_count: int,
+) -> None:
+    companion_frequency = _companion_frequency(requested)
+    history = {
+        requested: _bars(
+            frequency=requested,
+            count=primary_count,
+            trading_day=_SEGMENT_START,
+            first_end=_first_end(requested),
+            first_close=Decimal("100"),
+        ),
+        companion_frequency: _bars(
+            frequency=companion_frequency,
+            count=companion_count,
+            trading_day=_SEGMENT_START,
+            first_end=_first_end(companion_frequency),
+            first_close=Decimal("200"),
+        ),
+    }
+
+    result = _service_with_calibration(history).snapshot(
+        SubingReadRequest("jm", requested), now=_NOW
+    )
+
+    assert result.primary.snapshot is not None or primary_count < 21
+    primary_cutoff = history[requested][-1].bar_end
+    completed_prefix = tuple(
+        bar
+        for bar in history[companion_frequency]
+        if bar.bar_end <= min(primary_cutoff, _NOW)
+    )
+    expected = calculate_subing_factor(
+        completed_prefix,
+        timeframe=companion_frequency,
+        contract="JM2609",
+        segment_start_trading_day=_SEGMENT_START,
+        latest_bar_source="canonical",
+    )
+    assert result.companion == expected
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected_status"),
+    [
+        (BarFrequency.M5, SubingFactorStatus.READY),
+        (BarFrequency.M15, SubingFactorStatus.READY),
+        (BarFrequency.M5, SubingFactorStatus.INSUFFICIENT_DATA),
+        (BarFrequency.M15, SubingFactorStatus.INSUFFICIENT_DATA),
+    ],
+)
+def test_live_companion_projection_matches_exact_cutoff_prefix_and_source(
+    requested: BarFrequency,
+    expected_status: SubingFactorStatus,
+) -> None:
+    companion_frequency = _companion_frequency(requested)
+    ready = expected_status is SubingFactorStatus.READY
+    if ready:
+        primary_count = 150 if requested is BarFrequency.M5 else 50
+        companion_count = 50 if companion_frequency is BarFrequency.M15 else 150
+        historical_companion_count = (
+            40 if companion_frequency is BarFrequency.M15 else 120
+        )
+    else:
+        primary_count = 6 if requested is BarFrequency.M5 else 2
+        companion_count = 2
+        historical_companion_count = 1
+    primary = _bars(
+        frequency=requested,
+        count=primary_count,
+        trading_day=_SEGMENT_START,
+        first_end=_first_end(requested),
+        first_close=Decimal("100"),
+    )
+    if ready:
+        companion = _bars(
+            frequency=companion_frequency,
+            count=companion_count,
+            trading_day=_SEGMENT_START,
+            first_end=_first_end(companion_frequency),
+            first_close=Decimal("200"),
+        )
+    else:
+        companion = (
+            _bar(_first_end(companion_frequency), _SEGMENT_START, Decimal("200")),
+            _bar(primary[-1].bar_end, _SEGMENT_START, Decimal("201")),
+        )
+    history = {
+        requested: primary,
+        companion_frequency: companion[:historical_companion_count],
+    }
+    live = {
+        requested: (),
+        companion_frequency: companion[historical_companion_count:],
+    }
+
+    result = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_FakeMarketRead(history, live=live),
+        calibration=_accepted_calibration(),
+    ).snapshot(SubingReadRequest("jm", requested), now=_NOW)
+
+    completed_prefix = tuple(
+        bar for bar in companion if bar.bar_end <= min(primary[-1].bar_end, _NOW)
+    )
+    expected = calculate_subing_factor(
+        completed_prefix,
+        timeframe=companion_frequency,
+        contract="JM2609",
+        segment_start_trading_day=_SEGMENT_START,
+        latest_bar_source="live",
+    )
+    assert result.companion == expected
+    assert result.companion.status is expected_status
+    assert result.source_mode == "canonical_live"
+
+
 def test_read_request_rejects_malformed_ascii_product_symbols() -> None:
     """Catches malformed non-product text reaching dominant resolution."""
     with pytest.raises(ValueError, match="invalid SuBing symbol"):
@@ -443,6 +729,71 @@ def test_canonical_and_completed_live_prefixes_have_identical_lifecycle() -> Non
     assert canonical.lifecycle == split.lifecycle
     assert canonical.lifecycle.observed_at == full_5m[-1].bar_end
     assert split.source_mode == "canonical_live"
+
+
+def test_reversed_live_arrival_representation_has_identical_full_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    full_5m = _bars(
+        frequency=BarFrequency.M5,
+        count=150,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    full_15m = _bars(
+        frequency=BarFrequency.M15,
+        count=50,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    history = {
+        BarFrequency.M5: full_5m[:120],
+        BarFrequency.M15: full_15m[:40],
+    }
+    traces: list[object] = []
+
+    def capture(**kwargs):
+        trace = reduce_subing_lifecycle(**kwargs)
+        traces.append(trace)
+        return trace
+
+    monkeypatch.setattr(
+        "app.market_data.subing_read_service.evaluate_subing_lifecycle", capture
+    )
+    _service_with_lifecycle(
+        history,
+        live={
+            BarFrequency.M5: full_5m[120:],
+            BarFrequency.M15: full_15m[40:],
+        },
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+    _service_with_lifecycle(
+        history,
+        live={
+            BarFrequency.M5: tuple(reversed(full_5m[120:])),
+            BarFrequency.M15: tuple(reversed(full_15m[40:])),
+        },
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+    assert len(traces) == 2
+    forward = traces[0]
+    reverse = traces[1]
+    assert forward.confirmed_pivots == reverse.confirmed_pivots
+    assert forward.completed_opportunities == reverse.completed_opportunities
+    assert forward.transitions == reverse.transitions
+    assert forward.snapshots == reverse.snapshots
+    assert forward.current_snapshot == reverse.current_snapshot
+    boundary = full_15m[-1].bar_end
+    boundary_snapshots = tuple(
+        snapshot for snapshot in forward.snapshots if snapshot.observed_at == boundary
+    )
+    assert len(boundary_snapshots) == 1
+    assert boundary_snapshots[0].anchor_bar_end == boundary
+    assert sum(
+        transition.transition_at == boundary for transition in forward.transitions
+    ) <= 1
 
 
 def test_intraday_factor_series_is_calculated_once_per_timeframe(
@@ -1086,6 +1437,17 @@ class _HistoricalOnlyMarketRead(_FakeMarketRead):
         raise AssertionError("1d SuBing must not query Live snapshot")
 
 
+class _StateIdentityOverrideMarketRead(_FakeMarketRead):
+    def __init__(self, *args, field: str, value: str, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.field = field
+        self.value = value
+
+    def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:
+        state = super().state(identity, now)
+        return replace(state, **{self.field: self.value})
+
+
 def _service(
     history: dict[BarFrequency, tuple[CanonicalBar, ...]],
 ) -> SubingReadService:
@@ -1204,6 +1566,15 @@ def _v1_projection(snapshot: SubingReadSnapshot) -> tuple[object, ...]:
         snapshot.primary_signal,
         snapshot.resolved_signal,
     )
+
+
+def _companion_frequency(frequency: BarFrequency) -> BarFrequency:
+    return BarFrequency.M15 if frequency is BarFrequency.M5 else BarFrequency.M5
+
+
+def _first_end(frequency: BarFrequency) -> datetime:
+    minute = 5 if frequency is BarFrequency.M5 else 15
+    return datetime(2026, 8, 3, 0, minute, tzinfo=UTC)
 
 
 def _bars(

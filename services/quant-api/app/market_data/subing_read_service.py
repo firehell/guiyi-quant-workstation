@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Protocol, cast
 
@@ -177,6 +177,7 @@ class SubingReadService:
                 _identity(request.symbol, request.frequency, dominant.actual_contract),
                 segment.start_trading_day,
                 segment.end_trading_day,
+                now,
             )
             primary_series = calculate_subing_factor_series(
                 primary_bars,
@@ -233,7 +234,7 @@ class SubingReadService:
             primary_bars = bars_by_frequency[request.frequency]
             primary = _latest_factor(factors_by_frequency[request.frequency])
             primary_cutoff = primary_bars[-1].bar_end if primary_bars else None
-            companion = _factor_at_or_before(
+            companion, companion_source = _factor_at_or_before(
                 bars_by_frequency[companion_frequency],
                 factors_by_frequency[companion_frequency],
                 cutoff=primary_cutoff,
@@ -244,11 +245,6 @@ class SubingReadService:
                 if primary_bars
                 and primary_bars[-1].bar_end
                 in live_ends_by_frequency[request.frequency]
-                else "canonical"
-            )
-            companion_source = (
-                companion.snapshot.bar_source
-                if companion.snapshot is not None
                 else "canonical"
             )
             source_mode = (
@@ -341,26 +337,32 @@ class SubingReadService:
                 identities[frequency],
                 segment_start,
                 segment_end,
+                now,
             )
             for frequency in (BarFrequency.M5, BarFrequency.M15)
         }
-        states = tuple(
-            self._market_read.state(identities[frequency], now)
+        states = {
+            frequency: self._market_read.state(identities[frequency], now)
             for frequency in (BarFrequency.M5, BarFrequency.M15)
-        )
+        }
         live_reason: str | None = None
         if any(
             state.live_contract is not None and state.live_contract != contract
-            for state in states
+            for state in states.values()
         ):
             live_reason = "contract_mismatch"
         elif any(
-            state.trading_day is not None and state.trading_day != segment_end
-            for state in states
+            not _state_matches_identity(
+                state,
+                identity=identities[frequency],
+                trading_day=segment_end,
+            )
+            for frequency, state in states.items()
         ):
             live_reason = "live_unavailable"
         elif not all(
-            state.live_available and state.live_contract == contract for state in states
+            state.live_available and state.live_contract == contract
+            for state in states.values()
         ):
             live_reason = "live_unavailable"
 
@@ -441,8 +443,11 @@ class SubingReadService:
         identity: SeriesPageQuery,
         segment_start: date,
         segment_end: date,
+        cutoff: datetime,
     ) -> tuple[CanonicalBar, ...]:
-        page = self._market_read.history_page(identity)
+        page = self._market_read.history_page(
+            replace(identity, before=cutoff + timedelta(microseconds=1))
+        )
         if any(bar.trading_day > segment_end for bar in page.bars):
             raise MarketDataError("DOMINANT_SEGMENT_HISTORY_INCONSISTENT")
         return tuple(
@@ -451,6 +456,7 @@ class SubingReadService:
                     bar
                     for bar in page.bars
                     if segment_start <= bar.trading_day <= segment_end
+                    and bar.bar_end <= cutoff
                 ),
                 key=lambda bar: bar.bar_end,
             )
@@ -468,7 +474,10 @@ class SubingReadService:
         live = self._market_read.live_snapshot(identity, historical_end, now)
         by_end = {bar.bar_end: (bar, "canonical") for bar in historical}
         for bar in live:
-            if segment_start <= bar.trading_day <= segment_end:
+            if (
+                segment_start <= bar.trading_day <= segment_end
+                and bar.bar_end <= now
+            ):
                 by_end.setdefault(bar.bar_end, (bar, "live"))
         ordered = tuple(by_end[key] for key in sorted(by_end))
         bars = tuple(item[0] for item in ordered)
@@ -507,6 +516,20 @@ def _same_ready_boundary(
     )
 
 
+def _state_matches_identity(
+    state: MarketReadState,
+    *,
+    identity: SeriesPageQuery,
+    trading_day: date,
+) -> bool:
+    return (
+        state.symbol == identity.symbol
+        and state.series_kind == identity.series_kind.value
+        and state.frequency == identity.frequency.value
+        and state.trading_day == trading_day
+    )
+
+
 def _latest_factor(
     factors: tuple[SubingFactorResult, ...],
 ) -> SubingFactorResult:
@@ -521,9 +544,12 @@ def _factor_at_or_before(
     *,
     cutoff: datetime | None,
     live_ends: frozenset[datetime],
-) -> SubingFactorResult:
+) -> tuple[SubingFactorResult, str]:
     if cutoff is None:
-        return SubingFactorResult(SubingFactorStatus.INSUFFICIENT_DATA, None)
+        return (
+            SubingFactorResult(SubingFactorStatus.INSUFFICIENT_DATA, None),
+            "canonical",
+        )
     selected_index = next(
         (
             index
@@ -533,12 +559,16 @@ def _factor_at_or_before(
         None,
     )
     if selected_index is None:
-        return SubingFactorResult(SubingFactorStatus.INSUFFICIENT_DATA, None)
+        return (
+            SubingFactorResult(SubingFactorStatus.INSUFFICIENT_DATA, None),
+            "canonical",
+        )
     result = factors[selected_index]
-    if result.snapshot is None:
-        return result
     source = "live" if bars[selected_index].bar_end in live_ends else "canonical"
-    return replace(result, snapshot=replace(result.snapshot, bar_source=source))
+    if result.snapshot is None:
+        return result, source
+    projected = replace(result, snapshot=replace(result.snapshot, bar_source=source))
+    return projected, source
 
 
 def _unavailable_lifecycle(
