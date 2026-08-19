@@ -32,6 +32,7 @@ export interface CanonicalBarDto {
 export interface BarData {
   time: string
   trading_day?: string
+  physicalContract?: string
   open: number
   high: number
   low: number

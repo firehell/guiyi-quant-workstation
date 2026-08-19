@@ -125,6 +125,8 @@ async function mockMarketApi(page, requests, controls = {}) {
     if (url.pathname.endsWith('/bars/page')) {
       const before = url.searchParams.get('before')
       const symbol = url.searchParams.get('symbol') || 'ag'
+      const seriesKind = url.searchParams.get('series_kind')
+      const requestedContract = url.searchParams.get('contract')
       const frequency = url.searchParams.get('frequency')
       const pageBars = frequency === '1d' || frequency === '1w'
         ? daily
@@ -139,7 +141,7 @@ async function mockMarketApi(page, requests, controls = {}) {
             : initial)
       await route.fulfill({ json: {
         request: {
-          series_kind: url.searchParams.get('series_kind'), symbol, contract: null,
+          series_kind: seriesKind, symbol, contract: requestedContract,
           frequency: url.searchParams.get('frequency'), before, limit: 1200,
         },
         bars: pageBars,
@@ -147,7 +149,9 @@ async function mockMarketApi(page, requests, controls = {}) {
         page: before
           ? { has_more_before: false, next_before: null }
           : { has_more_before: true, next_before: initial[0].bar_end },
-        resolved_contract_segments: [],
+        resolved_contract_segments: seriesKind === 'actual_dominant'
+          ? [{ contract: `${symbol.toUpperCase()}2601`, start_trading_day: '2026-01-01', end_trading_day: '2026-12-31' }]
+          : [],
       } })
       return
     }

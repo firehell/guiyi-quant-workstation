@@ -30,6 +30,15 @@ export interface MergedMarketPage {
   nextBefore: string | null
 }
 
+export class MarketSeriesPhysicalIdentityError extends Error {
+  readonly code = 'MFM_FUTURES_V1_SEGMENT_CONFLICT'
+
+  constructor() {
+    super('MFM_FUTURES_V1_SEGMENT_CONFLICT')
+    this.name = 'MarketSeriesPhysicalIdentityError'
+  }
+}
+
 interface MarketOverlayIdentity {
   source: Exclude<MarketOverlaySource, 'none'>
   tradingDay: string
@@ -57,11 +66,31 @@ export interface MarketSeriesDependencies {
   clearReconnect?: (handle: unknown) => void
 }
 
+function normalizePhysicalContract(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim().toUpperCase()
+  return normalized || undefined
+}
+
+export function resolveHistoricalPhysicalContract(
+  page: MarketBarsPageResponse,
+  bar: CanonicalBarDto,
+): string | undefined {
+  if (page.request.series_kind === 'contract') return normalizePhysicalContract(page.request.contract)
+  if (page.request.series_kind === 'continuous') return undefined
+
+  const matches = page.resolved_contract_segments.filter((segment) => (
+    segment.start_trading_day <= bar.trading_day && bar.trading_day <= segment.end_trading_day
+  ))
+  if (matches.length > 1) throw new MarketSeriesPhysicalIdentityError()
+  return matches.length === 1 ? normalizePhysicalContract(matches[0].contract) : undefined
+}
+
 /** Maps the canonical page DTO once at the HTTP boundary. */
-function toBarData(item: CanonicalBarDto): BarData {
+function toBarData(item: CanonicalBarDto, physicalContract?: string): BarData {
   return {
     time: item.bar_end,
     trading_day: item.trading_day,
+    physicalContract,
     open: Number(item.open),
     high: Number(item.high),
     low: Number(item.low),
@@ -74,7 +103,7 @@ function toBarData(item: CanonicalBarDto): BarData {
 
 export function mergeInitialPage(page: MarketBarsPageResponse): MergedMarketPage {
   return {
-    bars: normalizeBarSeries(page.bars.map(toBarData)),
+    bars: normalizeBarSeries(page.bars.map((bar) => toBarData(bar, resolveHistoricalPhysicalContract(page, bar)))),
     hasMoreBefore: page.page.has_more_before,
     nextBefore: page.page.next_before,
   }
@@ -85,7 +114,10 @@ export function prependHistoricalPage(
   page: MarketBarsPageResponse,
 ): MergedMarketPage {
   return {
-    bars: normalizeBarSeries([...page.bars.map(toBarData), ...current]),
+    bars: normalizeBarSeries([
+      ...page.bars.map((bar) => toBarData(bar, resolveHistoricalPhysicalContract(page, bar))),
+      ...current,
+    ]),
     hasMoreBefore: page.page.has_more_before,
     nextBefore: page.page.next_before,
   }
@@ -285,9 +317,11 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     }
   }
 
-  function applyLiveBars(incoming: CanonicalBarDto[]): boolean {
+  function applyLiveBars(incoming: CanonicalBarDto[], physicalContract?: string): boolean {
     const seam = latestEnd(canonicalBars)
-    const accepted = normalizeBarSeries(incoming.map(toBarData).filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam)))
+    const accepted = normalizeBarSeries(incoming
+      .map((bar) => toBarData(bar, physicalContract))
+      .filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam)))
     if (!accepted.length) return false
     liveBars = normalizeBarSeries([...liveBars, ...accepted])
     publishMerged({ kind: 'live', bars: accepted })
@@ -319,9 +353,19 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
           publishMerged({ kind: 'replace' })
           return
         }
+        const snapshotContract = normalizePhysicalContract(payload.contract)
+        if (!snapshotContract || (
+          nextIdentity.seriesKind === 'contract'
+          && snapshotContract !== normalizePhysicalContract(nextIdentity.contract)
+        )) {
+          liveUnavailable.value = true
+          clearOverlay()
+          publishMerged({ kind: 'replace' })
+          return
+        }
         const samePhysicalIdentity = overlayIdentity === null
           || (overlayIdentity.tradingDay === payload.trading_day
-            && overlayIdentity.contract === payload.contract)
+            && overlayIdentity.contract === snapshotContract)
         if (!samePhysicalIdentity) {
           clearOverlay()
           publishMerged({ kind: 'replace' })
@@ -329,9 +373,9 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         overlayIdentity = {
           source: payload.source,
           tradingDay: payload.trading_day,
-          contract: payload.contract,
+          contract: snapshotContract,
         }
-        const accepted = applyLiveBars(payload.bars)
+        const accepted = applyLiveBars(payload.bars, snapshotContract)
         if (accepted || liveBars.length > 0) {
           overlaySource.value = payload.source
         }
@@ -342,7 +386,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       }
       if (payload.type === 'bar') {
         liveUnavailable.value = false
-        const accepted = applyLiveBars([payload.bar])
+        const accepted = applyLiveBars([payload.bar], overlayIdentity?.contract)
         if (accepted || liveBars.length > 0) {
           overlaySource.value = 'realtime'
           if (overlayIdentity) overlayIdentity.source = 'realtime'
