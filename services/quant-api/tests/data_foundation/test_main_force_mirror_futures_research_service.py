@@ -20,9 +20,9 @@ from app.market_data.domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
-    SeriesQuery,
 )
 from app.market_data.main_force_mirror_futures_research_service import (
+    MAIN_FORCE_MIRROR_FUTURES_REPRESENTATIVE_PRODUCTS,
     MainForceMirrorFuturesResearchRequest,
     MainForceMirrorFuturesResearchService,
     _extract_events,
@@ -77,15 +77,8 @@ class _FakeMarketData:
     ) -> None:
         self.contract_result = contract_result
         self.dominant_result = dominant_result
-        self.queries: list[SeriesQuery] = []
         self.contract_queries: list[ContractTradingDayQuery] = []
         self.dominant_queries: list[ActualDominantTradingDayQuery] = []
-
-    def query(self, request: SeriesQuery) -> MarketSeriesResult:
-        self.queries.append(request)
-        if self.contract_result is None:
-            raise AssertionError("contract query was not expected")
-        return self.contract_result
 
     def query_contract_trading_days(
         self,
@@ -177,6 +170,34 @@ def test_service_accepts_only_a_market_data_reader_dependency() -> None:
             MainForceMirrorFuturesResearchService(forbidden)
 
 
+def test_representative_products_are_an_exact_non_executing_parameter_contract() -> (
+    None
+):
+    assert MAIN_FORCE_MIRROR_FUTURES_REPRESENTATIVE_PRODUCTS == (
+        "jm",
+        "ag",
+        "cu",
+        "m",
+        "sc",
+    )
+    assert isinstance(MAIN_FORCE_MIRROR_FUTURES_REPRESENTATIVE_PRODUCTS, tuple)
+
+
+def test_service_reader_requires_only_the_two_trading_day_read_seams() -> None:
+    reader = type(
+        "TradingDayReader",
+        (),
+        {
+            "query_actual_dominant_trading_days": lambda self, request: request,
+            "query_contract_trading_days": lambda self, request: request,
+        },
+    )()
+
+    service = MainForceMirrorFuturesResearchService(reader)
+
+    assert service._market_data is reader
+
+
 def test_actual_dominant_uses_only_exact_trading_day_query_and_segments() -> None:
     bars = (_bar(trading_day=_DAY_ONE), _bar(trading_day=_DAY_TWO, hour=2))
     segments = (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),)
@@ -187,7 +208,6 @@ def test_actual_dominant_uses_only_exact_trading_day_query_and_segments() -> Non
     assert market_data.dominant_queries == [
         ActualDominantTradingDayQuery("jm", BarFrequency.H1, _DAY_ONE, _DAY_TWO)
     ]
-    assert market_data.queries == []
     assert result.products == ("jm",)
     assert result.bars_valid_count == 2
     assert result.segment_reset_count == 0
@@ -214,7 +234,6 @@ def test_contract_uses_only_exact_trading_day_query_and_binds_requested_contract
             _DAY_TWO,
         )
     ]
-    assert market_data.queries == []
     assert market_data.dominant_queries == []
     assert result.products == ("jm",)
     assert result.bars_valid_count == 2
@@ -381,6 +400,7 @@ def test_service_uses_future_bars_only_for_mirrored_segment_local_outcomes(
     assert result.event_count_long == 1
     assert result.event_count_short == 1
     assert result.conflict_count == 1
+    assert result.events_per_1000_caution_ready_bars == 166.666667
     assert result.segment_reset_count == 1
     assert result.score_distribution == (70, 85)
     assert result.reason_code_distribution == {
@@ -411,10 +431,58 @@ def test_service_uses_future_bars_only_for_mirrored_segment_local_outcomes(
         assert summary.warning_mae == ()
 
 
+def test_event_rate_uses_only_directional_events_and_is_null_without_ready_bars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bars = tuple(
+        _bar(trading_day=_DAY_ONE, hour=index + 1) for index in range(3)
+    )
+    market_data = _FakeMarketData(
+        dominant_result=_result(
+            bars,
+            (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_ONE),),
+        )
+    )
+    monkeypatch.setattr(
+        research_module,
+        "compute_main_force_mirror_futures",
+        lambda **_kwargs: _observation(
+            3,
+            cautions={0: "long_chase_caution", 1: "short_chase_caution"},
+            conflicts=(2,),
+        ),
+    )
+
+    result = MainForceMirrorFuturesResearchService(market_data).run(
+        _request(through=_DAY_ONE)
+    )
+
+    assert result.event_count_long == 1
+    assert result.event_count_short == 1
+    assert result.conflict_count == 1
+    assert result.events_per_1000_caution_ready_bars == 666.666667
+
+    empty_market_data = _FakeMarketData(dominant_result=_result(()))
+    monkeypatch.setattr(
+        research_module,
+        "compute_main_force_mirror_futures",
+        lambda **_kwargs: _observation(0, cautions={}),
+    )
+
+    empty = MainForceMirrorFuturesResearchService(empty_market_data).run(_request())
+
+    assert empty.bars_caution_ready_count == 0
+    assert empty.events_per_1000_caution_ready_bars is None
+
+
 def test_runtime_kernel_loader_uses_exact_python_v1_authority_and_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     loader = getattr(research_module, "_load_main_force_mirror_futures_kernel")
+    rounding_loader = getattr(
+        research_module,
+        "_load_main_force_mirror_futures_rounder",
+    )
     assert research_module._KERNEL_MODULE_PARTS == (
         "guiyi_quant",
         "indicators",
@@ -427,6 +495,13 @@ def test_runtime_kernel_loader_uses_exact_python_v1_authority_and_fails_closed(
 
     assert loader() is authority.compute_main_force_mirror_futures
     assert loader().__module__ == "guiyi_quant.indicators.main_force_mirror_futures"
+    assert (
+        rounding_loader() is authority.round_half_away_from_zero_binary64
+    )
+    assert (
+        research_module.round_half_away_from_zero_binary64
+        is authority.round_half_away_from_zero_binary64
+    )
 
     with monkeypatch.context() as context:
         context.setattr(

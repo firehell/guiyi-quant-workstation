@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from types import MappingProxyType
-from typing import Protocol, cast
+from typing import Final, Protocol, cast
 
 from .domain import (
     ActualDominantTradingDayQuery,
@@ -17,18 +17,25 @@ from .domain import (
     ContractTradingDayQuery,
     MarketSeriesResult,
     SeriesKind,
-    SeriesQuery,
     normalize_contract_for_symbol,
 )
 
 
 _HORIZONS = (1, 3, 5, 10)
+MAIN_FORCE_MIRROR_FUTURES_REPRESENTATIVE_PRODUCTS: Final = (
+    "jm",
+    "ag",
+    "cu",
+    "m",
+    "sc",
+)
 _KERNEL_MODULE_PARTS = (
     "guiyi_quant",
     "indicators",
     "main_force_mirror_futures",
 )
 _KERNEL_FUNCTION = "compute_main_force_mirror_futures"
+_KERNEL_ROUNDING_FUNCTION = "round_half_away_from_zero_binary64"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +118,7 @@ class MainForceMirrorFuturesResearchResult:
     event_count_long: int
     event_count_short: int
     conflict_count: int
+    events_per_1000_caution_ready_bars: float | None
     missing_oi_count: int
     segment_reset_count: int
     timestamp_invalid_count: int
@@ -121,8 +129,6 @@ class MainForceMirrorFuturesResearchResult:
 
 
 class _MarketDataReader(Protocol):
-    def query(self, request: SeriesQuery) -> MarketSeriesResult: ...
-
     def query_actual_dominant_trading_days(
         self,
         request: ActualDominantTradingDayQuery,
@@ -163,6 +169,10 @@ class _KernelCallable(Protocol):
     ) -> _KernelResult: ...
 
 
+class _KernelRoundCallable(Protocol):
+    def __call__(self, value: float, digits: int) -> float: ...
+
+
 class MainForceMirrorFuturesResearchError(RuntimeError):
     """Stable public read-only Shadow failure without storage details."""
 
@@ -185,7 +195,22 @@ def _load_main_force_mirror_futures_kernel() -> _KernelCallable:
     return cast(_KernelCallable, candidate)
 
 
+def _load_main_force_mirror_futures_rounder() -> _KernelRoundCallable:
+    """Load the fixed V1 public rounding authority through the same boundary."""
+    try:
+        module = importlib.import_module(".".join(_KERNEL_MODULE_PARTS))
+    except ImportError as exc:
+        raise MainForceMirrorFuturesResearchError(
+            "MFM_FUTURES_V1_KERNEL_UNAVAILABLE"
+        ) from exc
+    candidate = getattr(module, _KERNEL_ROUNDING_FUNCTION, None)
+    if not callable(candidate):
+        raise MainForceMirrorFuturesResearchError("MFM_FUTURES_V1_KERNEL_UNAVAILABLE")
+    return cast(_KernelRoundCallable, candidate)
+
+
 compute_main_force_mirror_futures = _load_main_force_mirror_futures_kernel()
+round_half_away_from_zero_binary64 = _load_main_force_mirror_futures_rounder()
 
 
 def _extract_events(
@@ -305,8 +330,7 @@ class MainForceMirrorFuturesResearchService:
 
     def __init__(self, market_data: _MarketDataReader) -> None:
         if (
-            not callable(getattr(market_data, "query", None))
-            or not callable(
+            not callable(
                 getattr(market_data, "query_actual_dominant_trading_days", None)
             )
             or not callable(getattr(market_data, "query_contract_trading_days", None))
@@ -356,24 +380,40 @@ class MainForceMirrorFuturesResearchService:
         reason_distribution = Counter(
             reason for event in events for reason in event.reason_codes
         )
+        bars_caution_ready_count = sum(
+            bool(value) for value in observation.caution_ready
+        )
+        event_count_long = sum(
+            event.caution_direction == "long_chase_caution" for event in events
+        )
+        event_count_short = sum(
+            event.caution_direction == "short_chase_caution" for event in events
+        )
+        events_per_1000_caution_ready_bars = (
+            None
+            if bars_caution_ready_count == 0
+            else round_half_away_from_zero_binary64(
+                (event_count_long + event_count_short)
+                * 1000.0
+                / bars_caution_ready_count,
+                6,
+            )
+        )
         return MainForceMirrorFuturesResearchResult(
             products=(request.symbol,),
             bars_valid_count=sum(bool(value) for value in observation.valid),
             bars_state_ready_count=sum(
                 bool(value) for value in observation.state_ready
             ),
-            bars_caution_ready_count=sum(
-                bool(value) for value in observation.caution_ready
-            ),
-            event_count_long=sum(
-                event.caution_direction == "long_chase_caution" for event in events
-            ),
-            event_count_short=sum(
-                event.caution_direction == "short_chase_caution" for event in events
-            ),
+            bars_caution_ready_count=bars_caution_ready_count,
+            event_count_long=event_count_long,
+            event_count_short=event_count_short,
             conflict_count=sum(
                 value == "MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT"
                 for value in observation.caution_availability_reason
+            ),
+            events_per_1000_caution_ready_bars=(
+                events_per_1000_caution_ready_bars
             ),
             missing_oi_count=sum(
                 value == "MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE"

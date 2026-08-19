@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 import io
@@ -12,7 +13,7 @@ from app.market_data import composition as market_data_composition
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
 from app.guiyi_cli.data_parser import CliUsageError
-from app.guiyi_cli.research_commands import build_research_request
+from app.guiyi_cli.research_commands import build_research_request, run_research_command
 from app.market_data.candidate_validation import (
     CandidateValidationReport,
     CandidateWindowKind,
@@ -1141,6 +1142,7 @@ def _mirror_result() -> MainForceMirrorFuturesResearchResult:
         event_count_long=2,
         event_count_short=1,
         conflict_count=1,
+        events_per_1000_caution_ready_bars=33.333333,
         missing_oi_count=3,
         segment_reset_count=2,
         timestamp_invalid_count=1,
@@ -1275,6 +1277,7 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
         "event_count_long",
         "event_count_short",
         "conflict_count",
+        "events_per_1000_caution_ready_bars",
         "missing_oi_count",
         "segment_reset_count",
         "timestamp_invalid_count",
@@ -1288,6 +1291,7 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
     assert payload["readonly"] is True
     assert payload["series_kind"] == "actual_dominant"
     assert payload["contract"] is None
+    assert payload["events_per_1000_caution_ready_bars"] == 33.333333
     assert payload["score_distribution"] == [70, 85, 100]
     assert payload["horizon_summary"] == {
         "1": {
@@ -1324,6 +1328,28 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
         assert forbidden not in rendered
 
 
+def test_mirror_cli_renders_undefined_event_rate_as_json_null() -> None:
+    result = replace(
+        _mirror_result(),
+        bars_caution_ready_count=0,
+        event_count_long=0,
+        event_count_short=0,
+        events_per_1000_caution_ready_bars=None,
+    )
+    request = MainForceMirrorFuturesResearchRequest(
+        symbol="jm",
+        series_kind=SeriesKind.ACTUAL_DOMINANT,
+        contract=None,
+        frequency=BarFrequency.H1,
+        since=date(2023, 1, 1),
+        through=date(2026, 8, 18),
+    )
+
+    payload = run_research_command(request, _FakeMirrorResearchService(result))
+
+    assert payload["events_per_1000_caution_ready_bars"] is None
+
+
 def test_mirror_composition_wraps_only_the_market_data_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1331,7 +1357,6 @@ def test_mirror_composition_wraps_only_the_market_data_service(
         "MarketDataReader",
         (),
         {
-            "query": lambda self, request: request,
             "query_actual_dominant_trading_days": lambda self, request: request,
             "query_contract_trading_days": lambda self, request: request,
         },

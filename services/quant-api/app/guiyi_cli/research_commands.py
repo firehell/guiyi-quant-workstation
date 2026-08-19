@@ -175,6 +175,9 @@ def _main_force_mirror_futures_payload(
         "event_count_long": result.event_count_long,
         "event_count_short": result.event_count_short,
         "conflict_count": result.conflict_count,
+        "events_per_1000_caution_ready_bars": (
+            result.events_per_1000_caution_ready_bars
+        ),
         "missing_oi_count": result.missing_oi_count,
         "segment_reset_count": result.segment_reset_count,
         "timestamp_invalid_count": result.timestamp_invalid_count,
