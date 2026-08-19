@@ -23,6 +23,10 @@ from app.market_data.subing_calibration import (
     HorizonEvaluation,
     ThresholdEvaluation,
 )
+from app.market_data.subing_lifecycle_research_service import (
+    LifecycleResearchRequest,
+    SubingLifecycleResearchResult,
+)
 
 
 def _arguments(
@@ -51,7 +55,18 @@ def _request(arguments: list[str]):
     return build_research_request(build_parser().parse_args(arguments))
 
 
-def test_research_parser_exposes_only_subing_calibration() -> None:
+def _lifecycle_arguments() -> list[str]:
+    return [
+        "research",
+        "subing-lifecycle",
+        "--since",
+        "2026-01-01",
+        "--through",
+        "2026-03-31",
+    ]
+
+
+def test_research_parser_exposes_only_the_two_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
     research_parser = domain_action.choices["research"]
@@ -61,7 +76,66 @@ def test_research_parser_exposes_only_subing_calibration() -> None:
         if action.dest == "research_command"
     )
 
-    assert set(command_action.choices) == {"subing-calibration"}
+    assert set(command_action.choices) == {
+        "subing-calibration",
+        "subing-lifecycle",
+    }
+
+
+def test_lifecycle_request_parses_dates_and_normalizes_optional_symbol() -> None:
+    request = _request([*_lifecycle_arguments(), "--symbol", " JM "])
+
+    assert request == LifecycleResearchRequest(
+        since=date(2026, 1, 1),
+        through=date(2026, 3, 31),
+        symbol="jm",
+    )
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        [
+            "research",
+            "subing-lifecycle",
+            "--since",
+            "2026-04-01",
+            "--through",
+            "2026-03-31",
+        ],
+        [*_lifecycle_arguments(), "--policy-id", "anything"],
+    ),
+)
+def test_invalid_lifecycle_input_exits_two_before_either_service_construction(
+    arguments: list[str],
+) -> None:
+    calibration_calls: list[object] = []
+    lifecycle_calls: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        arguments,
+        session_factory=lambda: nullcontext(object()),
+        research_service_factory=lambda session: calibration_calls.append(session),
+        lifecycle_research_service_factory=lambda session: lifecycle_calls.append(
+            session
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "research.subing-lifecycle",
+        "status": "error",
+        "readonly": True,
+        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
+    }
+    assert calibration_calls == []
+    assert lifecycle_calls == []
 
 
 def test_research_parser_accepts_the_supported_frequency_set() -> None:
@@ -404,6 +478,16 @@ class _FakeResearchService:
         return self.result
 
 
+class _FakeLifecycleResearchService:
+    def __init__(self, result: SubingLifecycleResearchResult) -> None:
+        self.result = result
+        self.requests: list[LifecycleResearchRequest] = []
+
+    def run(self, request: LifecycleResearchRequest) -> SubingLifecycleResearchResult:
+        self.requests.append(request)
+        return self.result
+
+
 def _run_research(arguments: list[str], service: object):
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -416,6 +500,138 @@ def _run_research(arguments: list[str], service: object):
     )
     stream = stdout if code == 0 else stderr
     return code, json.loads(stream.getvalue())
+
+
+def test_lifecycle_shadow_outputs_readonly_research_observations_as_json() -> None:
+    service = _FakeLifecycleResearchService(
+        SubingLifecycleResearchResult(
+            products=("jm",),
+            segment_count=2,
+            evaluable_boundary_count=10,
+            funnel_counts={
+                "DATA_READY": 10,
+                "DIRECTION_CONTEXT_ALIGNED": 6,
+                "SETUP_ARMED": 4,
+                "TRIGGER_OBSERVED": 3,
+                "ENTRY_CONFIRMED": 2,
+            },
+            funnel_count_units={
+                "DATA_READY": "boundary_occupancy",
+                "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+                "SETUP_ARMED": "boundary_event",
+                "TRIGGER_OBSERVED": "boundary_event",
+                "ENTRY_CONFIRMED": "boundary_event",
+            },
+            confirmation_source_counts={
+                "FORMAL_V1": 1,
+                "MOMENTUM_HOLD": 1,
+                "PIVOT_BREAK_HOLD": 0,
+                "PIVOT_RETEST_REBREAK": 0,
+            },
+            v1_v2_overlap_counts={
+                "V1_AND_V2": 1,
+                "V2_ONLY": 1,
+                "V1_ONLY": 0,
+            },
+            v2_to_v1_lead_bars=(2, 5),
+            confirmed_trading_day_span_counts={"SAME_DAY": 1, "CROSS_DAY": 1},
+            risk_reason_counts={"ANCHOR_EMA21_BREACH": 1},
+            recovery_reason_counts={"ANCHOR_RECOVERY_CONFIRMED": 1},
+            close_reason_counts={"ANCHOR_TREND_BROKEN": 1},
+            horizon_summary={3: _horizon(), 5: _horizon(sample_count=1), 8: _horizon()},
+        )
+    )
+    calibration_calls: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [*_lifecycle_arguments(), "--symbol", "jm"],
+        session_factory=lambda: nullcontext(object()),
+        research_service_factory=lambda session: calibration_calls.append(session),
+        lifecycle_research_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert service.requests == [
+        LifecycleResearchRequest(date(2026, 1, 1), date(2026, 3, 31), "jm")
+    ]
+    assert calibration_calls == []
+    payload = json.loads(stdout.getvalue())
+    assert payload == {
+        "schema_version": 1,
+        "command": "research.subing-lifecycle",
+        "status": "ok",
+        "readonly": True,
+        "policy_id": "subing_lifecycle_v2_research_v1",
+        "since": "2026-01-01",
+        "through": "2026-03-31",
+        "products": ["jm"],
+        "segment_count": 2,
+        "evaluable_boundary_count": 10,
+        "funnel_counts": {
+            "DATA_READY": 10,
+            "DIRECTION_CONTEXT_ALIGNED": 6,
+            "SETUP_ARMED": 4,
+            "TRIGGER_OBSERVED": 3,
+            "ENTRY_CONFIRMED": 2,
+        },
+        "funnel_count_units": {
+            "DATA_READY": "boundary_occupancy",
+            "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+            "SETUP_ARMED": "boundary_event",
+            "TRIGGER_OBSERVED": "boundary_event",
+            "ENTRY_CONFIRMED": "boundary_event",
+        },
+        "confirmation_source_counts": {
+            "FORMAL_V1": 1,
+            "MOMENTUM_HOLD": 1,
+            "PIVOT_BREAK_HOLD": 0,
+            "PIVOT_RETEST_REBREAK": 0,
+        },
+        "v1_v2_overlap_counts": {
+            "V1_AND_V2": 1,
+            "V2_ONLY": 1,
+            "V1_ONLY": 0,
+        },
+        "v2_to_v1_lead_bars": [2, 5],
+        "confirmed_trading_day_span_counts": {"SAME_DAY": 1, "CROSS_DAY": 1},
+        "risk_reason_counts": {"ANCHOR_EMA21_BREACH": 1},
+        "recovery_reason_counts": {"ANCHOR_RECOVERY_CONFIRMED": 1},
+        "close_reason_counts": {"ANCHOR_TREND_BROKEN": 1},
+        "horizon_summary": {
+            "3": {
+                "sample_count": 2,
+                "ema21_sample_count": 2,
+                "median_directional_return_bps": "12.3400",
+                "median_mfe_bps": "18.500",
+                "median_mae_bps": "-3.250",
+                "ema21_failure_rate": "0.1250",
+            },
+            "5": {
+                "sample_count": 1,
+                "ema21_sample_count": 1,
+                "median_directional_return_bps": "12.3400",
+                "median_mfe_bps": "18.500",
+                "median_mae_bps": "-3.250",
+                "ema21_failure_rate": "0.1250",
+            },
+            "8": {
+                "sample_count": 2,
+                "ema21_sample_count": 2,
+                "median_directional_return_bps": "12.3400",
+                "median_mfe_bps": "18.500",
+                "median_mae_bps": "-3.250",
+                "ema21_failure_rate": "0.1250",
+            },
+        },
+    }
+    rendered = stdout.getvalue().lower()
+    for forbidden in ("backtest", "pnl", "profitability", "readiness", "promotion"):
+        assert forbidden not in rendered
 
 
 def test_slope_discovery_outputs_json_safe_decimal_strings_and_active_60() -> None:

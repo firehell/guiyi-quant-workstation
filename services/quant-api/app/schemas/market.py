@@ -169,6 +169,67 @@ class SubingSignalOut(BaseModel):
     error_code: str | None
 
 
+class SubingLifecyclePivotOut(BaseModel):
+    """SuBing research lifecycle 绑定的已确认 Pivot。"""
+
+    pivot_id: str
+    kind: str
+    timeframe: str
+    pivot_time: datetime
+    confirmed_at: datetime
+    price: Decimal
+    contract: str
+    segment_start_trading_day: date
+
+
+class SubingLifecycleTransitionOut(BaseModel):
+    """SuBing research lifecycle 的最近一次状态转换。"""
+
+    transition_id: str
+    transition_at: datetime
+    from_stage: str
+    to_stage: str
+    reason_codes: list[str]
+
+
+class SubingLifecycleSnapshotOut(BaseModel):
+    """SuBing Lifecycle V2 的只读 research-only 当前快照。"""
+
+    formula_version: str
+    policy_id: str
+    research_only: bool
+    observed_at: datetime | None
+    anchor_bar_end: datetime | None
+    availability: str
+    unavailable_reason: str | None
+    direction: str
+    stage: str
+    opportunity_key: str | None
+    entry_progress: str | None
+    trigger_kind: str | None
+    trigger_timeframe: str | None
+    triggered_at: datetime | None
+    confirmation_source: str | None
+    confirmed_at: datetime | None
+    hold_count: int
+    hold_required: int
+    bound_reference_pivot: SubingLifecyclePivotOut | None
+    rebreak_reference_price: Decimal | None
+    retest_at: datetime | None
+    retest_rebreak_count: int
+    volume_ratio_prev: Decimal | None
+    open_interest_delta: Decimal | None
+    current_risk_codes: list[str]
+    risk_progress: str | None
+    lower_tf_risk_count: int
+    last_confirmed_stage: str
+    last_confirmed_at: datetime | None
+    latest_transition: SubingLifecycleTransitionOut | None
+    crossed_trading_day: bool
+    boundary_reset: str | None
+    formal_v1_matched: bool
+
+
 class SubingResearchResponse(BaseModel):
     """``/research/subing`` current-rank1 只读研究快照。"""
 
@@ -189,6 +250,7 @@ class SubingResearchResponse(BaseModel):
     companion: SubingFactorResultOut | None
     primary_signal: SubingSignalOut
     resolved_signal: SubingSignalOut | None
+    lifecycle: SubingLifecycleSnapshotOut
 
 
 class MarketRadarSummaryOut(BaseModel):

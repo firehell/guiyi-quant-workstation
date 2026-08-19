@@ -5,6 +5,7 @@ import {
   type SubingResearchResponse,
   type SubingSignal,
 } from '@/types/market'
+import SubingLifecyclePanel from '@/components/market/SubingLifecyclePanel.vue'
 
 defineProps<{
   snapshot: SubingResearchResponse | null
@@ -61,6 +62,7 @@ function signal(value: SubingSignal) {
         <div class="subing-research__factor"><dt>Companion Factor</dt><dd>{{ factor(snapshot.companion.snapshot) }}</dd></div>
       </template>
     </dl>
+    <SubingLifecyclePanel v-if="snapshot && !loading && !error" :lifecycle="snapshot.lifecycle" />
   </section>
 </template>
 

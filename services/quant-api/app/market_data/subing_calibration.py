@@ -132,14 +132,21 @@ def load_subing_calibration(path: Path | None = None) -> SubingCalibration:
 def load_accepted_subing_calibration(path: Path | None = None) -> SubingCalibration:
     """Load only the frozen production identity; same-id semantic drift is invalid."""
     calibration = load_subing_calibration(path)
-    if (
-        calibration.calibration_id != _ACCEPTED_INTRADAY_CALIBRATION_ID
-        or calibration.accepted_timeframes != _ACCEPTED_INTRADAY_TIMEFRAMES
-        or calibration.slope_flat_threshold_bps_per_bar
-        != _ACCEPTED_INTRADAY_THRESHOLDS
-    ):
+    if not is_accepted_subing_calibration(calibration):
         raise SubingCalibrationError()
     return calibration
+
+
+def is_accepted_subing_calibration(calibration: object) -> bool:
+    """Return whether an in-memory value has the exact frozen accepted semantics."""
+
+    return (
+        isinstance(calibration, SubingCalibration)
+        and calibration.calibration_id == _ACCEPTED_INTRADAY_CALIBRATION_ID
+        and calibration.accepted_timeframes == _ACCEPTED_INTRADAY_TIMEFRAMES
+        and calibration.slope_flat_threshold_bps_per_bar
+        == _ACCEPTED_INTRADAY_THRESHOLDS
+    )
 
 
 class DirectionalSide(StrEnum):

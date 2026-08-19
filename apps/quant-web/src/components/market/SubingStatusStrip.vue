@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { NAlert, NTag } from 'naive-ui'
 import {
+  subingLifecycleProgressLabel,
+  subingLifecycleStageLabel,
   subingSignalLabel,
   type SubingFactorSnapshot,
   type SubingResearchResponse,
@@ -24,6 +26,18 @@ const signalContext = computed(() => {
   const timeframe = signal.value.trigger_timeframe ? `${signal.value.trigger_timeframe} · ` : ''
   const confirmation = signal.value.lower_tf_confirmation ? ' · 低周期确认' : ''
   return `${timeframe}${subingSignalLabel(signal.value)}${confirmation}`
+})
+const lifecycleContext = computed(() => {
+  const lifecycle = props.snapshot?.lifecycle
+  if (!lifecycle) return ''
+  if (lifecycle.availability !== 'ready') {
+    return lifecycle.unavailable_reason ? `Lifecycle 当前不可用 · ${lifecycle.unavailable_reason}` : 'Lifecycle 当前不可用'
+  }
+  const progressLabel = subingLifecycleProgressLabel(lifecycle)
+  const progress = progressLabel === '—'
+    ? ''
+    : progressLabel === '已研究确认' ? ` · ${progressLabel}` : ` · 确认 ${progressLabel}`
+  return `Research lifecycle · ${subingLifecycleStageLabel(lifecycle.stage)}${progress}`
 })
 const directions = computed(() => {
   if (!primary.value) return ''
@@ -82,10 +96,18 @@ function confirmedTime(value: string) {
     <div>MACD {{ crossLabel(primary!.macd_cross) }} · 距零轴 {{ primary!.macd_zero_distance_bps.toFixed(1) }} bps · 量 {{ ratio(primary!.volume_ratio_prev) }}</div>
     <div>Factor 条件观察 · zero-distance 仅作描述</div>
   </NAlert>
+  <NAlert v-if="snapshot?.lifecycle && !loading && !error" type="info" :show-icon="false" class="subing-lifecycle-strip">
+    <div class="subing-strip__row">
+      <strong>{{ lifecycleContext }}</strong>
+      <NTag size="small" type="info">Research only</NTag>
+    </div>
+  </NAlert>
 </template>
 
 <style scoped>
 .subing-strip { margin-bottom: 8px; }
+.subing-lifecycle-strip { margin-bottom: 8px; border-left-color: var(--gy-text-muted); }
+.subing-lifecycle-strip :deep(.n-alert-body__content) { display: grid; gap: 4px; font-size: var(--gy-font-size-sm); }
 .subing-strip :deep(.n-alert-body__content) { display: grid; gap: 4px; font-size: var(--gy-font-size-sm); }
 .subing-strip__row { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
 </style>

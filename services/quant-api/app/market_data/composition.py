@@ -33,6 +33,13 @@ from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.market_data.subing_calibration_service import SubingCalibrationResearchService
+from app.market_data.subing_lifecycle_policy import (
+    SubingLifecyclePolicyError,
+    load_subing_lifecycle_policy,
+)
+from app.market_data.subing_lifecycle_research_service import (
+    SubingLifecycleResearchService,
+)
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.operational_universe import load_active_products
 from app.market_data.product_taxonomy import load_product_taxonomy
@@ -44,6 +51,9 @@ _PRODUCT_STARTS = PROJECT_ROOT / "data/universe/product_window_starts.csv"
 _HISTORY_FLOOR = PROJECT_ROOT / "data/universe/active_history_floor.txt"
 _SUBING_CALIBRATION = (
     PROJECT_ROOT / "data/research_policies/subing_calibration_intraday_v1.json"
+)
+_SUBING_LIFECYCLE_POLICY = (
+    PROJECT_ROOT / "data/research_policies/subing_lifecycle_v2_research_v1.json"
 )
 
 
@@ -134,12 +144,24 @@ def build_market_read_service(session: Session) -> MarketReadService:
 
 
 def build_subing_read_service(session: Session) -> SubingReadService:
-    """构造注入 tracked slope-only Calibration 的 SuBing 只读模型。"""
+    """构造注入 accepted Calibration 与 exact research Policy 的只读模型。"""
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
     calibration = load_accepted_subing_calibration(_SUBING_CALIBRATION)
+    try:
+        lifecycle_policy = load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY)
+    except SubingLifecyclePolicyError:
+        lifecycle_policy = None
     return SubingReadService(
         market_data=build_market_data_service(session),
         market_read=build_market_read_service(session),
         calibration=calibration,
+        lifecycle_policy=lifecycle_policy,
+        lifecycle_coverage=DatabaseCoverageSource(
+            session,
+            _PRODUCT_STARTS,
+            history_floor_path=_HISTORY_FLOOR,
+        ),
     )
 
 
@@ -150,6 +172,18 @@ def build_subing_calibration_research_service(
     return SubingCalibrationResearchService(
         market_data=build_market_data_service(session),
         products=load_active_products(),
+    )
+
+
+def build_subing_lifecycle_research_service(
+    session: Session,
+) -> SubingLifecycleResearchService:
+    """Construct historical-only lifecycle research over MarketDataService."""
+    return SubingLifecycleResearchService(
+        build_market_data_service(session),
+        products=load_active_products(),
+        calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
+        policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
     )
 
 

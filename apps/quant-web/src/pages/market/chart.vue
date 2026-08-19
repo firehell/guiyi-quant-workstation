@@ -32,6 +32,7 @@ import {
   filterBarsToSubingSegment,
   MARKET_FREQUENCIES,
 } from '@/types/market'
+import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
@@ -156,6 +157,12 @@ const visibleBars = computed(() => {
   return segmentStart ? filterBarsToSubingSegment(bars.value, segmentStart) : []
 })
 const visibleStartTradingDay = computed(() => visibleBars.value[0]?.trading_day || '')
+const lifecycleMarkers = computed(() => {
+  if (subingLoading.value || subingError.value) return []
+  return selectedOverlay.value === 'subing' && subing.value
+    ? lifecycleSnapshotToMarkers(subing.value.lifecycle)
+    : []
+})
 const canLoadEarlier = computed(() => {
   if (selectedOverlay.value !== 'subing' || !subingSupported.value) return hasMoreBefore.value
   const segmentStart = subing.value?.segment_start_trading_day
@@ -233,11 +240,16 @@ watch(selectedOverlay, async () => {
 })
 
 watch([symbol, seriesKind, contract], () => {
-  if (metadataReady) void syncPersistentAlertMarkers(currentIdentity(), [], 'replace')
+  if (metadataReady) void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), [], 'replace')
 })
 
 watch([frequency, selectedOverlay], () => {
-  if (metadataReady) void syncPersistentAlertMarkers(currentIdentity(), [], 'replace')
+  if (metadataReady) void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), [], 'replace')
+})
+
+watch(subing, () => {
+  if (!metadataReady || selectedOverlay.value !== 'subing') return
+  void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), visibleBars.value, 'replace')
 })
 
 watch([symbol, seriesKind, contract], () => {
@@ -257,7 +269,7 @@ watch(frequency, (period) => {
 
 watch(mutation, (nextMutation) => {
   const rendered = selectedOverlay.value === 'subing' ? visibleBars.value : bars.value
-  void syncPersistentAlertMarkers(currentIdentity(), rendered, nextMutation.kind)
+  void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), rendered, nextMutation.kind)
   if (selectedOverlay.value === 'subing') {
     if (nextMutation.kind === 'live' && subingSupported.value) void refreshSubing()
     chart.value?.replaceBars(rendered, nextMutation.kind !== 'replace' || !followLatest.value)
@@ -297,6 +309,14 @@ function currentIdentity() {
     seriesKind: effective.seriesKind,
     symbol: symbol.value,
     contract: effective.contract,
+    frequency: frequency.value,
+  }
+}
+
+function currentAlertMarkerIdentity() {
+  return {
+    seriesKind: seriesKind.value,
+    symbol: symbol.value,
     frequency: frequency.value,
   }
 }
@@ -529,6 +549,7 @@ function normalizeSymbol(value: unknown): string | null {
               :period="frequency"
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
+              :research-markers="lifecycleMarkers"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
             />

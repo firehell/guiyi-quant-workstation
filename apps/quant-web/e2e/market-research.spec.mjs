@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test'
+import {
+  cloneSubingLifecycleCase,
+  lifecycleChartBars,
+  reidentifySubingResponse,
+} from '../tests/fixtures/subingLifecycleCases.mjs'
 
 function bar(index) {
   const barEnd = new Date(Date.UTC(2026, 0, index + 1, 7)).toISOString()
@@ -255,31 +260,7 @@ test('Market homepage stays inside the three desktop acceptance viewports', asyn
 })
 
 function subing(overrides = {}) {
-  const snapshot = (timeframe, barEnd, priceSide = 'above') => ({
-    timeframe, bar_end: barEnd, trading_day: '2026-01-12', contract: 'AG2601',
-    segment_start_trading_day: '2026-01-12', bar_source: 'live', close: '111.5',
-    ema21: '109.5', price_side: priceSide, slope_5_raw: '0.12', slope_10_raw: '0.08',
-    slope_5_bps_per_bar: '2.70', slope_10_bps_per_bar: '1.80', macd_dif: '0.7',
-    macd_dea: '0.5', macd_histogram: '0.4', macd_cross: 'golden', macd_cross_level: '0.6',
-    macd_zero_distance_abs: '0.6', macd_zero_distance_bps: '59.70', volume: '342',
-    previous_volume: '100', volume_ratio_prev: '3.42',
-  })
-  return {
-    symbol: 'ag', product_name: '白银', frequency: '5m', actual_contract: 'AG2601',
-    dominant_mapping_date: '2026-08-11', segment_start_trading_day: '2026-01-12',
-    source_mode: 'canonical_live', live_observation: 'available', live_reason: null,
-    macd_policy_id: 'web_macd_legacy_v1', signal_macd_policy_id: 'subing_macd_sma_window_scale2_v1',
-    calibration_state: 'accepted', calibration_id: 'subing_intraday_v1',
-    primary: { status: 'ready', snapshot: snapshot('5m', '2026-01-12T02:25:00Z') },
-    companion: { status: 'ready', snapshot: snapshot('15m', '2026-01-12T02:15:00Z') },
-    primary_signal: {
-      status: 'not_matched', direction: 'none', trigger_timeframe: '5m',
-      lower_tf_confirmation: false, resolution: null,
-      conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
-    },
-    resolved_signal: null,
-    ...overrides,
-  }
+  return { ...cloneSubingLifecycleCase('longSetup'), ...overrides }
 }
 
 async function mockWorkspace(page, researchResponse, options = {}) {
@@ -297,7 +278,7 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       }
       const responses = options.dominantsResponses || []
       const response = responses[Math.min(dominantResponseIndex, responses.length - 1)]
-        || { items: [{ product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-08-11' }] }
+        || { items: [{ product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-01-12' }] }
       dominantResponseIndex += 1
       return route.fulfill({ json: response })
     }
@@ -310,6 +291,9 @@ async function mockWorkspace(page, researchResponse, options = {}) {
         || options.subingResponse
         || subing()
       subingResponseIndex += 1
+      if (response?.__http_status) {
+        return route.fulfill({ status: response.__http_status, json: response.json || { detail: 'unavailable' } })
+      }
       return route.fulfill({ json: response })
     }
     if (url.pathname.endsWith('/state')) return route.fulfill({ json: { symbol: 'ag', series_kind: url.searchParams.get('series_kind'), frequency: url.searchParams.get('frequency'), operational: true, phase: options.live ? 'TRADING' : 'CLOSED', trading_day: '2026-08-11', live_eligible: !!options.live, live_available: !!options.live, live_contract: options.live ? 'AG2601' : null, canonical_end: null, after_market: {} } })
@@ -318,6 +302,24 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       marketRequests.push(request)
       return route.fulfill({ json: { request: { series_kind: request.series_kind, symbol: 'ag', contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 }, bars: options.bars || Array.from({ length: 120 }, (_, index) => bar(index)), canonical_coverage: null, page: options.pageMeta || { has_more_before: false, next_before: null }, resolved_contract_segments: [] } })
     }
+    return route.abort()
+  })
+}
+
+async function mockAlertMarkerSurface(page) {
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: {
+    status: 'ok', components: { alert: { status: 'disabled' } },
+  } }))
+  await page.route('**/api/alerts/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/products/ag')) return route.fulfill({ json: { symbol: 'ag', rules: [] } })
+    if (url.pathname.endsWith('/current-events')) return route.fulfill({ json: { status: 'ready', trading_day: '2026-01-12', items: [] } })
+    if (url.pathname.endsWith('/events')) return route.fulfill({ json: { items: [{
+      id: 101, rule_code: 'subing_entry_signal_v1', symbol: 'ag', contract: 'AG2601',
+      trading_day: '2026-01-12', frequency: '5m', bar_end: '2026-01-12T02:20:00Z',
+      result_codes: ['buy'], lower_tf_confirmation: false, detected_at: '2026-01-12T02:20:01Z',
+      notification_attempted_at: null,
+    }] } })
     return route.abort()
   })
 }
@@ -383,28 +385,128 @@ test('SuBing clips old same-contract bars and renders the requested primary Sign
   await expect(page.locator('body')).not.toContainText('ZERO_BAND')
 })
 
+test('SuBing lifecycle remains an explicitly research-only funnel beside formal V1 wording', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: cloneSubingLifecycleCase('formalDirectLong'),
+  })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  await expect(page.locator('.subing-strip')).toContainText('5m · 买入信号')
+  const lifecycle = page.getByTestId('subing-lifecycle-panel')
+  await expect(lifecycle).toContainText('Research only')
+  await expect(lifecycle).toContainText('研究确认')
+  await expect(lifecycle).toContainText('确认进度')
+  await expect(lifecycle).toContainText('已研究确认')
+  await expect(lifecycle).not.toContainText('3/3')
+  await expect(lifecycle).toContainText('最近状态转换')
+  await expect(lifecycle).not.toContainText('买入信号')
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+})
+
+test('SuBing lifecycle shows a reducer-produced long momentum hold', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: cloneSubingLifecycleCase('longMomentumHold'),
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('1/3')
+  await expect(page.locator('.subing-lifecycle-strip')).toContainText('确认 1/3')
+  await expect(page.locator('.subing-research__factor').filter({ hasText: 'Primary Factor' })).toContainText('S5 2.0 bps/bar · MACD 金叉')
+  await expect(page.locator('.subing-strip')).toContainText('当前不匹配')
+})
+
+test('retest confirmation renders its own zero then one bar progress', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    bars: lifecycleChartBars,
+    subingResponses: [cloneSubingLifecycleCase('pivotRetest0'), cloneSubingLifecycleCase('pivotRetest1')],
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('0/3')
+  await expect(page.locator('.subing-lifecycle-strip')).toContainText('确认 0/3')
+  const overlay = page.getByRole('group', { name: 'Overlay' })
+  await overlay.getByRole('button', { name: '无', exact: true }).click()
+  await overlay.getByRole('button', { name: '苏冰', exact: true }).click()
+  await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('1/3')
+  await expect(page.locator('.subing-lifecycle-strip')).toContainText('确认 1/3')
+})
+
+test('lifecycle markers keep Alert counts independent and clear stale research snapshots', async ({ page }) => {
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    subingDelayMs: 400,
+    subingResponses: [cloneSubingLifecycleCase('longSetup'), cloneSubingLifecycleCase('pivotRetestConfirmed'), { __http_status: 503 }],
+    bars: lifecycleChartBars,
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  const shell = page.getByTestId('kline-shell')
+  const setupPanel = page.getByTestId('subing-lifecycle-panel')
+  await expect(setupPanel).toBeVisible()
+  await expect(setupPanel).toContainText('准备中')
+  await expect(setupPanel).toContainText('—')
+  await expect(shell).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-research-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '1')
+
+  const overlay = page.getByRole('group', { name: 'Overlay' })
+  await overlay.getByRole('button', { name: '无', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
+  await overlay.getByRole('button', { name: '苏冰', exact: true }).click()
+  await expect(page.getByTestId('subing-lifecycle-panel')).toHaveCount(0)
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
+  await expect.poll(async () => shell.getAttribute('data-research-marker-count')).toBe('2')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '2')
+  await expect(shell).toHaveAttribute('data-alert-marker-count', '1')
+
+  await overlay.getByRole('button', { name: '无', exact: true }).click()
+  await overlay.getByRole('button', { name: '苏冰', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
+  await expect(page.getByText('苏冰 Factor 快照不可用', { exact: true })).toBeVisible()
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
+  await expect(page.getByTestId('subing-lifecycle-panel')).toHaveCount(0)
+})
+
+test('SuBing lifecycle renders risk and closed research stages without trade instructions', async ({ page }) => {
+  for (const [caseName, expected] of [['shortExitRiskFirst', '退出风险'], ['oppositeContextClosed', '本轮结束']]) {
+    const isRisk = caseName === 'shortExitRiskFirst'
+    await mockWorkspace(page, { json: research() }, {
+      subingResponse: cloneSubingLifecycleCase(caseName),
+    })
+    await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+    const lifecycle = page.getByTestId('subing-lifecycle-panel')
+    await expect(lifecycle).toContainText(expected)
+    await expect(page.locator('.subing-research__factor').filter({ hasText: 'Primary Factor' })).toContainText(isRisk ? 'S5 -2.0 bps/bar' : 'S5 2.0 bps/bar')
+    await expect(lifecycle).not.toContainText(/下单|加仓|平仓指令/)
+  }
+})
+
+test('SuBing daily lifecycle unavailability leaves the existing Factor view readable', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: cloneSubingLifecycleCase('dailyUnavailable'),
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=1d')
+
+  await expect(page.locator('.subing-strip')).toContainText('苏冰 Factor')
+  await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('SUBING_LIFECYCLE_INTRADAY_ONLY')
+  await expect(page.getByText('Primary Factor', { exact: true })).toBeVisible()
+})
+
 test('SuBing shows a same-boundary companion-only match without replacing the requested primary', async ({ page }) => {
   await mockWorkspace(page, { json: research() }, {
-    subingResponse: subing({
-      primary: {
-        status: 'ready',
-        snapshot: { ...subing().primary.snapshot, bar_end: '2026-01-12T02:30:00Z' },
-      },
-      companion: {
-        status: 'ready',
-        snapshot: { ...subing().companion.snapshot, bar_end: '2026-01-12T02:30:00Z' },
-      },
-      primary_signal: {
-        status: 'not_matched', direction: 'none', trigger_timeframe: '5m',
-        lower_tf_confirmation: false, resolution: null,
-        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
-      },
-      resolved_signal: {
-        status: 'matched', direction: 'long', trigger_timeframe: '15m',
-        lower_tf_confirmation: false, resolution: null,
-        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
-      },
-    }),
+    subingResponse: cloneSubingLifecycleCase('companionFormalLong5m'),
   })
   await page.setViewportSize({ width: 1680, height: 1000 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
@@ -421,26 +523,7 @@ test('SuBing same-boundary dual match keeps 5m primary and resolves one 15m buy 
     return route.abort()
   })
   await mockWorkspace(page, { json: research() }, {
-    subingResponse: subing({
-      primary: {
-        status: 'ready',
-        snapshot: { ...subing().primary.snapshot, bar_end: '2026-01-12T02:30:00Z' },
-      },
-      companion: {
-        status: 'ready',
-        snapshot: { ...subing().companion.snapshot, bar_end: '2026-01-12T02:30:00Z' },
-      },
-      primary_signal: {
-        status: 'matched', direction: 'long', trigger_timeframe: '5m',
-        lower_tf_confirmation: false, resolution: null,
-        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
-      },
-      resolved_signal: {
-        status: 'matched', direction: 'long', trigger_timeframe: '15m',
-        lower_tf_confirmation: true, resolution: 'higher_timeframe_wins',
-        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
-      },
-    }),
+    subingResponse: cloneSubingLifecycleCase('dualFormalLong5m'),
   })
   await page.setViewportSize({ width: 1680, height: 1000 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
@@ -457,27 +540,7 @@ test('SuBing same-boundary dual match keeps 5m primary and resolves one 15m buy 
 
 test('SuBing same-boundary 15m request keeps 15m as both primary and resolved signal', async ({ page }) => {
   await mockWorkspace(page, { json: research() }, {
-    subingResponse: subing({
-      frequency: '15m',
-      primary: {
-        status: 'ready',
-        snapshot: { ...subing().companion.snapshot, bar_end: '2026-01-12T02:30:00Z' },
-      },
-      companion: {
-        status: 'ready',
-        snapshot: { ...subing().primary.snapshot, bar_end: '2026-01-12T02:30:00Z' },
-      },
-      primary_signal: {
-        status: 'matched', direction: 'short', trigger_timeframe: '15m',
-        lower_tf_confirmation: false, resolution: null,
-        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
-      },
-      resolved_signal: {
-        status: 'matched', direction: 'short', trigger_timeframe: '15m',
-        lower_tf_confirmation: true, resolution: 'higher_timeframe_wins',
-        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
-      },
-    }),
+    subingResponse: cloneSubingLifecycleCase('dualFormalShort15m'),
   })
   await page.setViewportSize({ width: 1680, height: 1000 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
@@ -489,23 +552,7 @@ test('SuBing same-boundary 15m request keeps 15m as both primary and resolved si
 
 test('SuBing 15m non-match keeps the requested primary and creates no resolved signal', async ({ page }) => {
   await mockWorkspace(page, { json: research() }, {
-    subingResponse: subing({
-      frequency: '15m',
-      primary: {
-        status: 'ready',
-        snapshot: { ...subing().companion.snapshot, bar_end: '2026-01-12T02:15:00Z' },
-      },
-      companion: {
-        status: 'ready',
-        snapshot: { ...subing().primary.snapshot, bar_end: '2026-01-12T02:15:00Z' },
-      },
-      primary_signal: {
-        status: 'not_matched', direction: 'none', trigger_timeframe: '15m',
-        lower_tf_confirmation: false, resolution: null,
-        conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
-      },
-      resolved_signal: null,
-    }),
+    subingResponse: cloneSubingLifecycleCase('noFormalLong15m'),
   })
   await page.setViewportSize({ width: 1680, height: 1000 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
@@ -549,10 +596,8 @@ test('SuBing refreshes dominant metadata once before accepting a rollover snapsh
   const marketRequests = []
   const subingRequests = []
   const dominantRequests = []
-  const ag2602 = subing({
-    actual_contract: 'AG2602',
-    dominant_mapping_date: '2026-08-12',
-  })
+  const ag2602 = reidentifySubingResponse(cloneSubingLifecycleCase('longSetup'), 'AG2602')
+  ag2602.dominant_mapping_date = '2026-08-12'
   await mockWorkspace(page, { json: research() }, {
     marketRequests,
     subingRequests,
@@ -580,10 +625,8 @@ test('SuBing refreshes dominant metadata once before accepting a rollover snapsh
 test('SuBing fails closed after one dominant refresh still mismatches the snapshot', async ({ page }) => {
   const subingRequests = []
   const dominantRequests = []
-  const mismatched = subing({
-    actual_contract: 'AG2602',
-    dominant_mapping_date: '2026-08-12',
-  })
+  const mismatched = reidentifySubingResponse(cloneSubingLifecycleCase('longSetup'), 'AG2602')
+  mismatched.dominant_mapping_date = '2026-08-12'
   await mockWorkspace(page, { json: research() }, {
     subingRequests,
     dominantRequests,
@@ -601,15 +644,7 @@ test('SuBing fails closed after one dominant refresh still mismatches the snapsh
 
 test('SuBing performs exactly one delayed refresh for an older companion at the 5m common boundary', async ({ page }) => {
   const subingRequests = []
-  const boundarySnapshot = subing({
-    primary: {
-      status: 'ready',
-      snapshot: {
-        ...subing().primary.snapshot,
-        bar_end: '2026-01-12T02:30:00Z',
-      },
-    },
-  })
+  const boundarySnapshot = cloneSubingLifecycleCase('olderCompanionAtBoundary')
   await mockWorkspace(page, { json: research() }, {
     subingRequests,
     subingResponse: boundarySnapshot,

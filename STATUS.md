@@ -8,12 +8,25 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 release 为 `v1.4.2`；Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
+- 当前 `develop` Release Candidate 版本为 `v1.6.0`；当前 Git release 与 production Runtime
+  仍均为 `v1.5.0`，尚未执行 `v1.6.0` main merge/tag 或独立 Runtime promotion。
+  production Alert 的唯一 active transport 已切换为 `clawbot-openclaw-weixin`。
+  Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
   Historical Canonical 与 Redis Live Overlay 分离，Live 不写 Parquet/DB。
 - Alert Runtime V2 的 Code Registry 精确为 `htdy_original_15m` 与
   `subing_entry_signal_v1`；production 两条 Rule 的 Scope 当前均精确为 `jm`。
+- `v1.6.0` 已包含并完成仓库原生验证的 `main_force_mirror_v0`（主力照妖镜 observation V0）：
+  Python Indicator Kernel 为唯一口径，Web 在现有最底部副图通过 `MACD / 主力照妖镜` Tab 二选一，
+  默认 MACD；“小心”保持 `rising_edge(BARSLAST(HIGH=HHV(HIGH,5))<10)`。六色柱仅为 OHLCV
+  设计代理，不是实测资金流；该指标仍为 `observation_only`，未进入 Alert、backtest、live、
+  notification 或 Runtime。Git release 不表示 production Runtime promotion。
+- `v1.6.0` 同时包含完整 SuBing Lifecycle V2 research-only 代码链：exact policy、
+  不可变领域合同、causal ConfirmedPivot/Breakout/Retest/lifecycle reducer、additive API/Web 投影与
+  Historical-only Shadow CLI。V1 Factor/Signal/resolver、Alert Rule/Scope 和 `AlertRuntime` 消费边界不变；
+  Lifecycle 无 DB/Redis/queue/notification 路径。本版未运行真实 `jm` Shadow/current-market
+  observation，因此无 live `jm` 证据，不表示策略有效、正式 Rule ready 或可晋升。
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
@@ -21,10 +34,15 @@
   校验合同。rollout G2 owner bootstrap 与 G3 zero-send preflight 已完成；`2026-08-19` 的唯一一次新授权
   G4 canary 已获 provider acceptance，用户已确认微信中恰好收到一条，因此 G4 PASS。
   G5 已完成正常微信入站后的 preflight、一次外部 restart 后的 persisted-context preflight、版本无漂移
-  与 single-shot 回归；尚未执行 G6～G9、release 或 Runtime promotion，production 继续保持
-  `v1.4.2 + WeCom`。
+  与 single-shot 回归。G6 已按用户批准的完整累计 `develop` 范围完成 release PR #170、独立审查与
+  annotated `v1.5.0` tag；G7 已在 Gate time 读回两条 enabled Rule 的精确 Scope 均为 `jm`，并将
+  bounded continuous authorization 只锁定到两条精确 Rule × `jm` × `owner` × Clawbot tuple；该 G7
+  授权不授权 G8 或 G9。G8 以独立 exact-tag Runtime promotion Gate 将正式五服务统一切换至
+  `v1.5.0` 并完成读回。`2026-08-19` 用户明确决定不再等待 G9 自然 Alert，并接受缺少自然送达证据
+  的风险；G9 因此以 `NATURAL_EVIDENCE_WAIVED_BY_OWNER` 收口，最终 WeCom credential 与旧 Runtime
+  worktree 已在正式引用清零后完成清理。该收口不把 canary、synthetic Event 或零事件冒充自然证据。
 
-## Clawbot Single-Shot D1（CODE PASS / NOT RELEASED）
+## Clawbot Single-Shot D1（RELEASED / RUNTIME PROMOTED）
 
 - `develop` 的唯一 active 通知 transport 已改为 `AlertEvent commit -> ClawbotAlertSender -> one Node
   child -> openclaw-weixin private seam -> sendMessageWeixin()`；每个 Event 最多一个 child、一次发送
@@ -38,11 +56,44 @@
   新授权的单次 G4 返回 `attempted=1 / provider_accepted=1 / failed=0`，用户确认只收到一条，G4 PASS。
   本次 LF 修复与 G4 未修改 OpenClaw、未 load/reload launchd、未切换 Runtime。
 - Courier active source/tests/tooling 已从 D1 代码删除，active WeCom sender source/config 仍为零；
-  production exact-tag/hotfix Runtime 的 WeCom 事实未改变。D1 完整验证及独立 R1 为
+  在当时的 D1 code-only 阶段，production exact-tag/hotfix Runtime 仍为 WeCom。这是 G8 前的历史事实，
+  不代表当前 production transport；D1 完整验证及独立 R1 为
   Critical=`0` / Important=`0` / Minor=`0`。G5 的两次 zero-send preflight 均 PASS；外部 restart 仅按用户
   明确委托执行一次，restart 后 account/context 仍 ready；OpenClaw/Node/plugin 版本精确匹配 manifest，
   Node seam `22 passed`、Clawbot/Alert `138 passed`、launchd engineering `29 passed`，禁止 active path
-  为零且未执行可选第二次 canary。当前 rollout 为 G2～G5 PASS，G6～G9 均未执行。
+  为零且未执行可选第二次 canary。
+- G6 按用户批准的方案 2 将 Clawbot、Market Live stale-feed repair、HTDY UI/canonical/status 与
+  `v1.5.0` release identity 作为完整累计 `develop` 差异发布。clean detached 候选验证包括 backend
+  `984 passed / 14 skipped`、engineering `53 passed`、Node seam `22 passed`、Web unit
+  `150 passed / 1 conditional skip`、browser E2E `52 passed`、Web production build、Ruff、Mypy、
+  shell/plist、render-only 六路径一致性、secret scan 0 与 diff check；17 项需要显式 isolated PostgreSQL
+  test DB 的测试未使用 production DB。fresh independent review 为 Critical=`0` / Important=`0` /
+  Minor=`0`。release PR #170 已合并；`origin/main` 与 annotated tag `v1.5.0` 的 peeled commit 均为
+  `957d19893187c7876b88e58f82fd5656536ee214`。
+- G7 Gate-time 只读核对确认 Code/DB Registry 均精确为 `htdy_original_15m` 与
+  `subing_entry_signal_v1`，两条 Rule 均 `enabled=true / scope=jm`；owner 严格 schema 元数据为
+  `owner × openclaw-weixin`，未输出私有 id。G7 的 bounded continuous authorization 精确记录为
+  `htdy_original_15m × jm × owner × clawbot-openclaw-weixin` 与
+  `subing_entry_signal_v1 × jm × owner × clawbot-openclaw-weixin`，且只覆盖 G8 后新建的自然
+  AlertEvent；不覆盖新 Rule/Scope/owner、synthetic Event、replay/backfill、canary、release、Runtime
+  promotion、DB/Canonical、订单、rollback 或 G9 cleanup，也不作为这些 Gate 的授权证据。
+- G8 只依据独立的 exact-tag `v1.5.0` production Runtime promotion Gate 执行；fresh zero-send preflight、
+  OpenClaw/Node/plugin exact-version、owner `0600/current uid`、DB revision、
+  Rule/Scope、Execution Review roll 与无订单边界均通过。正式五服务已统一切换至 clean/detached
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.5.0@957d19893187c7876b88e58f82fd5656536ee214`；
+  API version=`1.5.0`，notification channel=`clawbot-openclaw-weixin`，owner/OpenClaw/plugin 均 ready。
+  切换后 Live 等待首根完整 Bar 时短暂 degraded，5 秒后自然收到 `2026-08-18T16:52:00+00:00`
+  并恢复 health=`ok`，未重载或重试。DB=`20260815_0039`、两 Rule `scope=jm`、roll disabled 均未变，
+  OpenClaw gateway PID 前后均为 `23054`。G8 执行时旧 `v1.4.2` worktree 仍保留为显式 rollback material；
+  该 material 已在后续 G9 明确清理 Gate 中移除。当前 rollout 为 G2～G8 PASS、G9
+  `COMPLETED_WITH_NATURAL_EVIDENCE_WAIVER`。
+- G8 后 `2026-08-19 00:54～01:04 +08:00` 的只读 G9 监控覆盖 01:00 自然收线及后续评估，
+  `post_g8_natural_event_count=0`，因此没有 notification attempt，也没有自然消息到达证据。用户随后
+  明确豁免该自然证据并授权最终清理；删除前 fail-closed 扫描确认旧 worktree clean/detached/registered、
+  五个正式服务与 launchd/process 对旧根零引用、active source/config 对 WeCom 零引用，且 private
+  `WECOM_WEBHOOK_URL` 恰有一个 `0600/current uid` 键。随后旧 `v1.4.2` worktree 已通过
+  `git worktree remove` 删除，private WeCom credential 键已移除且环境文件保持 `0600/current uid`。
+  G9 记录为完成但自然证据被明确豁免；未来恢复 WeCom 必须重新设计、配置、发布并取得独立 Gate。
 
 ## After-Market Bounded Retry V1.4.2（RELEASED / RUNTIME PROMOTED）
 
@@ -100,7 +151,7 @@
   和轻量 health。
 - CLI：`guiyi data update|refresh|audit|after-market`；只读
   `guiyi research subing-calibration`、`guiyi runtime status|live|alert`。
-- `guiyi runtime alert-canary` 是真实 WeCom Gate，不是普通测试命令。
+- `guiyi runtime alert-canary` 是向固定 `owner` 发出一次 Clawbot 消息的独立真实通知 Gate，不是普通测试命令。
 - Runtime：Live 与盘后更新共用同一 `operational_products.txt`；盘后时点为 18:05，
   只对 `NEXT_TRADING_SESSION_NOT_READY` 允许最多一次一小时后 retry。
 
@@ -124,11 +175,25 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   cross-roll EMA/MACD 继承或 zero-band hard gate；1d 仍为 `RESEARCH_PENDING`。
 - Alert HTDY 保持 event-cutoff；SuBing 只复用 accepted Calibration、FormalPolicy 和
   `SubingReadService` resolver。incoming Event Bar 与读回的当前最后 Bar 必须整体相同。
-- production Alert Event 先提交，然后最多尝试一次 WeCom；develop Clawbot D1 保持相同
-  Event-first/at-most-once 语义；两者都不建 replay/backfill/retry/outbox/queue。
+- production Alert Event 先提交，然后最多启动一个 child、调用一次 Clawbot `sendMessageWeixin()`；
+  失败不回滚 Event，也不建 replay/backfill/retry/outbox/queue 或 WeCom fallback。
 
 ## 当前 Runtime 事实
 
+- `2026-08-19 00:51～00:52 +08:00` 已按独立 G8 exact-tag Runtime promotion Gate 把
+  API/Web/Live/after-market/Alert 一次性
+  promotion 至 clean/detached exact-tag Runtime
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.5.0@957d19893187c7876b88e58f82fd5656536ee214`。
+  五个 launchd label 的 root/loaded commit 一致；API/Web/Live/Alert running，after-market 仍为
+  schedule-only not running；API/Web=200、API version=`1.5.0`、Runtime health=`ok/readonly=true`、
+  状态脚本 `overall=passed`。Alert transport=`clawbot-openclaw-weixin`，owner alias=`owner`，
+  OpenClaw `2026.7.1-2 (0790d9f)` / plugin `2.4.6` / owner config 均 ready。
+- 切换未修改或重启 OpenClaw，gateway PID 前后均为 `23054`；未执行 migration、RQData/Canonical/DB
+  写入、Scope mutation、canary、replay/backfill、Execution Review 或订单操作。DB revision 仍为
+  `20260815_0039`，两 Rule 仍为 `enabled=true/scope=jm`，Execution Review roll 仍 disabled，
+  `auto_order=false`。新 Runtime 根未复制旧 after-market status，G8 读回时该组件为 `pending`，但
+  activation 已保留且 overall health 为 ok；下一次只接受自然 18:05 状态。旧 `v1.4.2` worktree 在
+  G8 读回时仍保留且未自动 fallback，后续已按 G9 明确清理 Gate 删除。
 - `2026-08-18 23:32 +08:00` 已按明确单次授权将本机统一五服务 Runtime 从
   `579cb034222b44e45f4a365c534428d58c1cf252` 切换至 UI-only 补丁提交
   `1bbd70e3bf6705df196a53fde5184ac3de8fbde0`。该提交仅为 `579cb034` 基线加入本次 HTDY
@@ -170,13 +235,13 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.4.2` Runtime promotion 及 Live hotfix 切换已完成；正式五服务已统一加载 identity
-  `579cb034222b44e45f4a365c534428d58c1cf252`，Market/Alert 原持续授权范围未扩大，旧
-  `v1.4.1` Runtime worktree 已清理。Gate D 仍为 `disabled / not activated`。
+- `v1.5.0` Runtime promotion 已完成；正式五服务已统一加载 identity
+  `957d19893187c7876b88e58f82fd5656536ee214`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
+  `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review Gate D 仍为
+  `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证；该独立 pending 状态不改写 `v1.4.2` release/Runtime promotion 完成事实。
-- 最小下一步：只等待首个完整 post-restart 15m bucket 自然完成并只读验收；不回填、
-  不补证。SuBing Natural Canary 与 Gate D 继续分别保持 `pending`、
-  `disabled / not activated`。
+  不人工补证；该独立 pending 状态不改写 `v1.5.0` release/Runtime promotion 或 G9 明确豁免收口事实。
+- 最小下一步：保持现有 `v1.5.0 + clawbot-openclaw-weixin` 自然运行；未来真实 Alert 只作为正常观察
+  证据，不再作为 G9 cleanup 前置。Execution Review Gate D 继续 `disabled / not activated`。

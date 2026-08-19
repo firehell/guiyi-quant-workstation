@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-18
+更新时间：2026-08-19
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -53,6 +53,23 @@ pnpm --dir apps/quant-web build
 Runtime `DATABASE_URL` 物理身份不同的 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。测试 guard 会以
 数据库名和 OID 双重拒绝 production/Runtime 库；禁止为了让测试运行而放宽该校验。
 
+## 主力照妖镜 Observation V0
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror.py \
+  services/quant-api/tests/test_indicator_registry_v1.py
+
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web exec playwright test e2e/main-force-mirror.spec.mjs
+pnpm --dir apps/quant-web build
+```
+
+这些命令验证 frozen designed-v0、Python/Web deterministic parity、“小心”的 HHV5/BARSLAST
+rising-edge 边界，以及同一副图内默认 MACD 的 Tab 切换。它们不授权公式调整、Alert/Runtime 接入、
+Canonical/DB 写入、通知或订单行为。
+
 ## Execution Review V1
 
 ```bash
@@ -75,7 +92,7 @@ pnpm --dir apps/quant-web build
 
 这些测试覆盖 trusted-partial reference/evidence 一一对应、缺失 multiplier 的 nullable RMB 估算、
 Episode snapshot、四状态工作流、reconstruction、roll estimate、stats 和 Web unavailable 展示。测试
-不执行 production migration、release、Runtime switch、roll marker、Scope/WeCom、Canonical 或订单行为。
+不执行 production migration、release、Runtime switch、roll marker、Scope/notification、Canonical 或订单行为。
 
 ## SuBing Factor / Calibration / Signal Observation V1
 
@@ -84,7 +101,11 @@ Episode snapshot、四状态工作流、reconstruction、roll estimate、stats �
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_lifecycle_policy.py \
+  services/quant-api/tests/test_subing_structure.py \
+  services/quant-api/tests/test_subing_lifecycle.py \
   services/quant-api/tests/test_subing_calibration.py \
+  services/quant-api/tests/data_foundation/test_subing_lifecycle_research_service.py \
   services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
   services/quant-api/tests/test_research_cli.py \
   services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
@@ -114,8 +135,9 @@ pnpm --dir apps/quant-web exec playwright test \
 pnpm --dir apps/quant-web build
 ```
 
-这些命令覆盖 strict slope-only Calibration loader、MarketDataService-only research/CLI、scoped MACD
-equivalence、Signal pure core、`SubingReadService` reciprocal orchestration、API、Web unit/E2E、
+这些命令覆盖 strict slope-only Calibration loader、exact research-only Lifecycle Policy、causal
+ConfirmedPivot/Breakout/Retest 和 Lifecycle reducer、MarketDataService-only research/CLI、scoped MACD
+equivalence、Signal pure core、`SubingReadService` reciprocal/lifecycle orchestration、API、Web unit/E2E、
 current-rank1 segment、Historical/completed Live seam 和有效当前合约视图。测试只使用 fixture、mock、
 临时目录或隔离数据库，不运行 provider、Canonical/DB/Redis 写入、Runtime switch 或通知。
 
@@ -123,6 +145,10 @@ current-rank1 segment、Historical/completed Live seam 和有效当前合约视�
 输出 stdout JSON，不直接读 provider，也不写 DB、Canonical 或 Redis，不自动 promotion。Discovery/
 Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不运行真实研究窗口。当前 accepted
 intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distance 不参与 executable Signal。
+
+`guiyi research subing-lifecycle` 同样只读 Historical Canonical：它通过 `MarketDataService`
+按 current-rank1 segment 独立复算 research-only lifecycle Shadow，只输出 stdout JSON。测试只验证
+命令、分段因果与报告合同，不运行真实当前市场观察，也不表示正式回测、策略有效或可晋升。
 
 ## Alert V2
 
@@ -165,20 +191,22 @@ plutil -lint .run/launchd/com.guiyi.quant-alert.plist
 这些命令只使用隔离数据库、mock sender、fake exact-version plugin tree、tmp_path/fake process 或 render-only，
 不启动真实 AlertRuntime，不写真实 owner，不执行真实 Clawbot preflight/canary/send，也不修改或监督
 OpenClaw。它们不授权 Runtime switch/release、production migration 或 SuBing Scope write/activation。
-当前 production exact-tag 仍为 WeCom。`alembic upgrade/current`、`runtime clawbot-owner-bootstrap
+当前 production exact-tag 已运行 `clawbot-openclaw-weixin`；本节测试不会改变该事实，也不授权任何后续
+真实 Gate。`alembic upgrade/current`、`runtime clawbot-owner-bootstrap
 --confirm-write-owner`、`runtime clawbot-preflight`、`runtime alert-canary`、`--confirm-alert-runtime` 与真实
 Scope PUT 禁止作为本节验证命令。测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
 
 ### 独立受控外部 Gate
 
-- production PostgreSQL migration：仅在明确授权的短维护窗口升级到
-  `20260814_0038`；读回两张 Alert Application Domain 表与八表 Market Catalog 未变。
-- v1.3 release/tag 与 Alert Runtime promotion/switch：分别取得明确授权，不得让 running
-  v1.2 API/Alert 与 V2 schema 共存。
+- production PostgreSQL migration：仅在明确授权的短维护窗口升级到目标 revision；读回两张
+  Alert Application Domain 表与八表 Market Catalog 未变。
+- release/tag 与 Alert Runtime promotion/switch：分别取得明确授权；不得让 Runtime 与其所需
+  Alert schema 版本不一致。
 - SuBing Scope write/activation：对精确 `subing_entry_signal_v1 × product` 另行授权；seed
   必须保持空集，不从 HTDY Scope 或 `operational_products.txt` 自动扩张。
-- Clawbot owner bootstrap/write、zero-send preflight、真实 canary/send：每类只在未来 rollout 的独立明确
-  授权后执行；不写 AlertEvent、不改 Scope、不修改 OpenClaw、不自动启用或切换 Runtime。
+- Clawbot owner bootstrap/write、zero-send preflight、真实 canary/send：每次执行仍需自身精确 Gate；
+  已完成的 G2～G8、测试或历史批准不授权重试、owner/Scope/transport 变更、rollback 或 G9 cleanup。
+  这些命令不写 AlertEvent、不改 Scope、不修改 OpenClaw、不自动启用或切换 Runtime。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
 mock 通过只证明实现，不证明任何生产 Gate 已执行。

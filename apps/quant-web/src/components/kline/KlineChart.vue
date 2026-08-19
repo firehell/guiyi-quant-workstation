@@ -22,6 +22,10 @@ import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/util
 import { normalizeBarSeries } from '@/utils/barSeries'
 import { buildKlineDerivedData, resolveKlineHoverContext, type KlineValuePoint } from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
+import {
+  calculateMainForceMirror,
+  type MainForceMirrorState,
+} from '@/utils/mainForceMirror'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -30,12 +34,14 @@ const props = withDefaults(defineProps<{
   period?: string
   visibleMainIndicators?: MainIndicatorId[]
   alertMarkers?: KlineMarker[]
+  researchMarkers?: KlineMarker[]
 }>(), {
   loading: false,
   error: null,
   period: '15m',
   visibleMainIndicators: () => [],
   alertMarkers: () => [],
+  researchMarkers: () => [],
 })
 
 const emit = defineEmits<{
@@ -51,6 +57,9 @@ let volume: ISeriesApi<'Histogram'> | null = null
 let macdHistogram: ISeriesApi<'Histogram'> | null = null
 let macdDif: ISeriesApi<'Line'> | null = null
 let macdDea: ISeriesApi<'Line'> | null = null
+let mainForceHistogram: ISeriesApi<'Histogram'> | null = null
+let mainForceCaution: ISeriesApi<'Histogram'> | null = null
+let mainForceMarkers: ISeriesMarkersPluginApi<Time> | null = null
 let htdyZk1: ISeriesApi<'Line'> | null = null
 let htdyZd1: ISeriesApi<'Line'> | null = null
 let htdyZd2: ISeriesApi<'Line'> | null = null
@@ -62,10 +71,27 @@ let isNearLeftBoundary = false
 let paginationArmed = false
 let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
+const secondaryPanelTop = ref<number | null>(null)
+const renderedResearchMarkerCount = ref(0)
 let derivedData = buildKlineDerivedData([], [])
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
+type SecondaryPanelId = 'macd' | 'main_force_mirror'
 const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
+const selectedSecondaryPanel = ref<SecondaryPanelId>('macd')
+const SECONDARY_PANEL_TABS: Array<{ id: SecondaryPanelId; label: string }> = [
+  { id: 'macd', label: 'MACD' },
+  { id: 'main_force_mirror', label: '主力照妖镜' },
+]
+const MAIN_FORCE_COLORS: Record<MainForceMirrorState, string> = {
+  entry: '#ef4444',
+  wash: '#22c55e',
+  pull_up: '#3b82f6',
+  distribute: '#eab308',
+  exit: '#06b6d4',
+  lure: '#f97316',
+}
+const CAUTION_COLOR = '#22c55e'
 
 onMounted(async () => {
   await nextTick()
@@ -114,12 +140,16 @@ onMounted(async () => {
   macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 2)
   macdDif = chart.addSeries(LineSeries, { color: theme.macdDif, lineWidth: 1, lastValueVisible: false }, 2)
   macdDea = chart.addSeries(LineSeries, { color: theme.macdDea, lineWidth: 1, lastValueVisible: false }, 2)
+  mainForceHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false, priceLineVisible: false }, 2)
+  mainForceCaution = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false, priceLineVisible: false }, 2)
+  mainForceMarkers = createSeriesMarkers(mainForceCaution)
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.05 } })
   chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart.subscribeCrosshairMove(onCrosshairMove)
   observer = new ResizeObserver(() => resize())
   observer.observe(container.value)
+  container.value.addEventListener('pointerup', syncSecondaryPanelTop)
   replaceBars(props.bars)
 })
 
@@ -127,6 +157,7 @@ onUnmounted(() => {
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart?.unsubscribeCrosshairMove(onCrosshairMove)
   observer?.disconnect()
+  container.value?.removeEventListener('pointerup', syncSecondaryPanelTop)
   chart?.remove()
 })
 
@@ -141,6 +172,14 @@ watch(() => props.visibleMainIndicators, () => {
 watch(() => props.alertMarkers, () => {
   renderDerivedSeries()
 }, { deep: true })
+
+watch(() => props.researchMarkers, () => {
+  renderDerivedSeries()
+}, { deep: true })
+
+watch(selectedSecondaryPanel, () => {
+  renderDerivedSeries()
+})
 
 function barValues(bars: BarData[]) {
   return bars.map((bar) => ({
@@ -174,6 +213,7 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
     const range = chart?.timeScale().getVisibleLogicalRange()
     isNearLeftBoundary = !!range && range.from <= 20
     paginationArmed = true
+    syncSecondaryPanelTop()
   })
 }
 
@@ -251,26 +291,72 @@ function renderAllSeries(): void {
 }
 
 function renderDerivedSeries(): void {
-  if (!chart || !macdHistogram || !macdDif || !macdDea) return
+  renderedResearchMarkerCount.value = 0
+  if (!chart || !macdHistogram || !macdDif || !macdDea || !mainForceHistogram || !mainForceCaution) return
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators)
   const theme = resolveChartTheme()
 
   EMA_INDICATORS.forEach((indicator) => {
     emaLines[indicator]?.setData(chartValues(derivedData.ema[indicator]))
   })
-  macdDif.setData(chartValues(derivedData.macd.dif))
-  macdDea.setData(chartValues(derivedData.macd.dea))
-  macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => ({
-    ...point,
-    color: point.value >= 0 ? theme.volumeUp : theme.volumeDown,
-  })))
+
+  if (selectedSecondaryPanel.value === 'macd') {
+    macdDif.setData(chartValues(derivedData.macd.dif))
+    macdDea.setData(chartValues(derivedData.macd.dea))
+    macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => ({
+      ...point,
+      color: point.value >= 0 ? theme.volumeUp : theme.volumeDown,
+    })))
+    mainForceHistogram.setData([])
+    mainForceCaution.setData([])
+    mainForceMarkers?.setMarkers([])
+  } else {
+    macdDif.setData([])
+    macdDea.setData([])
+    macdHistogram.setData([])
+    renderMainForceMirror()
+  }
+
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
+  renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
   htdyMarkers?.setMarkers(chartMarkers(mergeKlineMarkers(
-    derivedData.htdy?.markers ?? [],
-    props.alertMarkers,
+    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    props.researchMarkers,
   )))
+}
+
+function renderMainForceMirror() {
+  if (!mainForceHistogram || !mainForceCaution) return
+  const observation = calculateMainForceMirror(renderedBars)
+  mainForceHistogram.setData(observation.points.flatMap((point, index) => {
+    if (point.value === null || point.state === null || !renderedBars[index]) return []
+    return [{
+      time: chartTime(renderedBars[index]),
+      value: point.value,
+      color: MAIN_FORCE_COLORS[point.state],
+    }]
+  }))
+  mainForceCaution.setData(observation.points.flatMap((point, index) => {
+    if (point.cautionLevel === null || !renderedBars[index]) return []
+    return [{
+      time: chartTime(renderedBars[index]),
+      value: point.cautionLevel,
+      color: CAUTION_COLOR,
+    }]
+  }))
+  mainForceMarkers?.setMarkers(observation.points.flatMap((point, index) => {
+    if (!point.caution || !renderedBars[index]) return []
+    return [{
+      time: chartTime(renderedBars[index]),
+      position: 'aboveBar' as const,
+      shape: 'arrowUp' as const,
+      color: CAUTION_COLOR,
+      text: '小心',
+      size: 1.5,
+    }]
+  }))
 }
 
 function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
@@ -327,9 +413,16 @@ function isDaily() {
   return props.period === '1d' || props.period === '1w'
 }
 
+function syncSecondaryPanelTop() {
+  const panes = chart?.panes()
+  if (!panes || panes.length < 3) return
+  secondaryPanelTop.value = panes[0].getHeight() + panes[1].getHeight()
+}
+
 function resize() {
   if (!container.value || !chart) return
   chart.resize(container.value.clientWidth, container.value.clientHeight)
+  requestAnimationFrame(syncSecondaryPanelTop)
 }
 
 defineExpose({
@@ -341,9 +434,46 @@ defineExpose({
 </script>
 
 <template>
-  <div class="kline-shell" data-testid="kline-shell" :data-alert-marker-count="alertMarkers.length">
+  <div
+    class="kline-shell"
+    data-testid="kline-shell"
+    :data-alert-marker-count="alertMarkers.length"
+    :data-research-marker-count="researchMarkers.length"
+    :data-rendered-research-marker-count="renderedResearchMarkerCount"
+    :data-secondary-panel="selectedSecondaryPanel"
+  >
     <div ref="container" class="chart" />
-    <KlineHoverLegend :context="hoverContext" />
+    <KlineHoverLegend
+      :context="hoverContext"
+      :show-macd="selectedSecondaryPanel === 'macd'"
+    />
+    <div
+      class="secondary-panel-header"
+      data-testid="secondary-panel-tabs"
+      role="tablist"
+      aria-label="副图指标"
+      :style="{ top: secondaryPanelTop === null ? '80%' : `${secondaryPanelTop + 5}px` }"
+    >
+      <button
+        v-for="item in SECONDARY_PANEL_TABS"
+        :key="item.id"
+        type="button"
+        class="secondary-panel-tab"
+        :class="{ 'secondary-panel-tab--active': selectedSecondaryPanel === item.id }"
+        role="tab"
+        :aria-selected="selectedSecondaryPanel === item.id"
+        @click="selectedSecondaryPanel = item.id"
+      >{{ item.label }}</button>
+      <div v-if="selectedSecondaryPanel === 'main_force_mirror'" class="main-force-legend" aria-label="主力照妖镜图例">
+        <span><i class="mirror-dot mirror-dot--entry" />进场</span>
+        <span><i class="mirror-dot mirror-dot--wash" />洗盘</span>
+        <span><i class="mirror-dot mirror-dot--pull" />拉高</span>
+        <span><i class="mirror-dot mirror-dot--distribute" />出货</span>
+        <span><i class="mirror-dot mirror-dot--exit" />退场</span>
+        <span><i class="mirror-dot mirror-dot--lure" />诱多</span>
+        <span class="main-force-legend__note">小心＝HHV5/BARSLAST10 结构警戒，非实测资金流</span>
+      </div>
+    </div>
     <div
       v-if="visibleMainIndicators.includes('htdy')"
       class="htdy-legend"
@@ -363,6 +493,20 @@ defineExpose({
 <style scoped>
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
 .chart { width: 100%; height: 100%; }
+.secondary-panel-header { position: absolute; z-index: 3; left: 10px; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 84px); min-height: 26px; pointer-events: auto; }
+.secondary-panel-tab { appearance: none; border: 0; border-bottom: 2px solid transparent; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-muted); font: inherit; font-size: var(--gy-font-size-xs); cursor: pointer; }
+.secondary-panel-tab:hover { color: var(--gy-text-primary); }
+.secondary-panel-tab--active { border-bottom-color: var(--gy-accent); color: var(--gy-text-primary); font-weight: 600; }
+.main-force-legend { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
+.main-force-legend span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.main-force-legend__note { overflow: hidden; max-width: 340px; text-overflow: ellipsis; }
+.mirror-dot { width: 7px; height: 7px; border-radius: 50%; }
+.mirror-dot--entry { background: #ef4444; }
+.mirror-dot--wash { background: #22c55e; }
+.mirror-dot--pull { background: #3b82f6; }
+.mirror-dot--distribute { background: #eab308; }
+.mirror-dot--exit { background: #06b6d4; }
+.mirror-dot--lure { background: #f97316; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }
 .htdy-legend span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
 .htdy-legend__line { display: inline-block; width: 18px; border-top: 2px solid; }
@@ -371,4 +515,9 @@ defineExpose({
 .htdy-legend__line--zd2 { border-color: var(--gy-chart-htdy-zd2); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gy-text-muted); background: rgba(11, 17, 27, .48); pointer-events: none; }
 .overlay.error { color: var(--gy-status-error); }
+
+@media (max-width: 980px) {
+  .main-force-legend span:not(.main-force-legend__note) { display: none; }
+  .main-force-legend__note { max-width: 240px; }
+}
 </style>
