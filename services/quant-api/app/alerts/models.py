@@ -104,3 +104,62 @@ class AlertEvent(Base):
         DateTime(timezone=True), default=utc_now, nullable=False
     )
     rule: Mapped[AlertRule] = relationship(back_populates="events")
+    notification_attempts: Mapped[list[AlertNotificationAttempt]] = relationship(
+        back_populates="event"
+    )
+
+
+class AlertNotificationAttempt(Base):
+    """One fixed-recipient notification delivery outcome for an alert event."""
+
+    __tablename__ = "alert_notification_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id",
+            "recipient_alias",
+            "channel",
+            name="uq_alert_notification_attempts_event_alias_channel",
+        ),
+        CheckConstraint(
+            "status IN ('STARTED','PROVIDER_ACCEPTED','FAILED')",
+            name="ck_alert_notification_attempts_status",
+        ),
+        CheckConstraint(
+            "((status = 'STARTED' AND completed_at IS NULL AND error_code IS NULL) "
+            "OR (status = 'PROVIDER_ACCEPTED' AND completed_at IS NOT NULL "
+            "AND error_code IS NULL) "
+            "OR (status = 'FAILED' AND completed_at IS NOT NULL "
+            "AND error_code IS NOT NULL))",
+            name="ck_alert_notification_attempts_completion",
+        ),
+        Index("ix_alert_notification_attempts_event_id", "event_id"),
+        Index(
+            "ix_alert_notification_attempts_status_attempted_at",
+            "status",
+            "attempted_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("alert_events.id"), nullable=False
+    )
+    recipient_alias: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    event: Mapped[AlertEvent] = relationship(back_populates="notification_attempts")

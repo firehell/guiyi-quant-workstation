@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, CheckConstraint, Date, Index, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 
 
@@ -80,6 +88,68 @@ def test_alert_timestamps_are_timezone_aware_and_required() -> None:
     notification_attempted_at = AlertEvent.__table__.c.notification_attempted_at
     assert notification_attempted_at.nullable is True
     assert notification_attempted_at.type.timezone is True
+
+
+def test_alert_notification_attempt_tracks_one_recipient_delivery_outcome() -> None:
+    """A missing attempt ledger would leave recipient deliveries unaccountable."""
+
+    from app.alerts.models import AlertEvent, AlertNotificationAttempt
+
+    table = AlertNotificationAttempt.__table__
+    assert {column.name for column in table.c} == {
+        "id",
+        "event_id",
+        "recipient_alias",
+        "channel",
+        "status",
+        "attempted_at",
+        "completed_at",
+        "error_code",
+        "created_at",
+        "updated_at",
+    }
+    assert table.c.event_id.nullable is False
+    assert table.c.recipient_alias.nullable is False
+    assert isinstance(table.c.recipient_alias.type, String)
+    assert table.c.recipient_alias.type.length == 32
+    assert isinstance(table.c.channel.type, String)
+    assert table.c.channel.type.length == 64
+    assert isinstance(table.c.error_code.type, String)
+    assert table.c.error_code.type.length == 64
+    assert {fk.target_fullname for fk in table.c.event_id.foreign_keys} == {
+        "alert_events.id"
+    }
+    assert _unique_columns(
+        table, "uq_alert_notification_attempts_event_alias_channel"
+    ) == ("event_id", "recipient_alias", "channel")
+    assert _check_names(table) == {
+        "ck_alert_notification_attempts_status",
+        "ck_alert_notification_attempts_completion",
+    }
+    assert _index_columns(table, "ix_alert_notification_attempts_event_id") == (
+        "event_id",
+    )
+    assert _index_columns(
+        table, "ix_alert_notification_attempts_status_attempted_at"
+    ) == ("status", "attempted_at")
+    timestamp_columns = (
+        table.c.attempted_at,
+        table.c.completed_at,
+        table.c.created_at,
+        table.c.updated_at,
+    )
+    assert all(isinstance(column.type, DateTime) for column in timestamp_columns)
+    assert all(column.type.timezone is True for column in timestamp_columns)
+    assert table.c.completed_at.nullable is True
+    assert all(
+        column.nullable is False
+        for column in (table.c.attempted_at, table.c.created_at, table.c.updated_at)
+    )
+    assert (
+        AlertNotificationAttempt.event.property.back_populates
+        == "notification_attempts"
+    )
+    assert AlertEvent.notification_attempts.property.back_populates == "event"
 
 
 def _check_names(table: object) -> set[str]:

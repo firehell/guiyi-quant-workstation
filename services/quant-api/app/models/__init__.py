@@ -14,8 +14,10 @@ from app.models.market_tables import (
     TradingCalendar,
     TradingSession,
 )
+from app.alerts.models import AlertNotificationAttempt
 
 __all__ = [
+    "AlertNotificationAttempt",
     "Contract",
     "Exchange",
     "Instrument",
