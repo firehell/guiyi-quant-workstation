@@ -17,7 +17,7 @@
 | Product Scope | `60m + contract|actual_dominant` only |
 | Capability | `observation_only`; Web yes; backtest/live/alert/notification no |
 | External Side Effects | none |
-| Owner Gate | 代码实现按本合同；release/Runtime/真实 Shadow/evidence/通知/DB 另行授权 |
+| Owner Gate | 当前仅 Plan/TASK 完成；Task 1 代码实现仍等待用户明确批准；release/Runtime/真实 Shadow/evidence/通知/DB 另行授权 |
 
 ## 1. 当前判断
 
@@ -47,7 +47,7 @@ FORMULA_DRIFT_REQUIRES_NEW_VERSION
 - 会话：新开总控会话；每个 Task fresh 子会话/agent
 - Plan：Plan-then-execute；严格执行已批准 Spec/Implementation Plan，不重新 brainstorming
 - 工作区：每个 Task 从执行时最新 `develop` 创建新 task branch/worktree
-- 人工 Gate：Lane 3 Task 独立 Review；最终 whole-branch 独立 Review；release/Runtime/真实 Shadow 均不在本合同
+- 人工 Gate：Task 1 首次实现前需要用户明确批准；Lane 3 Task 独立 Review；最终 whole-branch 独立 Review；release/Runtime/真实 Shadow 均不在本合同
 
 ### Worktree / Branch / PR 规则
 
@@ -60,6 +60,7 @@ latest origin/develop
 → cleanup merged task worktree/branch
 ```
 
+- Task 1 未获新的明确实现批准前不得创建实现 worktree 或修改代码；
 - Task 1/2/4 必须独立 Review 后才可进 `develop`；
 - Task 3/5/6 也必须跑本合同定向测试；可由 Codex 在 review clean 后自动集成 `develop`；
 - Task 7 使用新独立 Sol Review 会话；Critical/Important 必须为 0；
@@ -144,6 +145,25 @@ services/quant-api/tests/test_main_force_mirror_futures.py
 
 Task 1 不修改 Registry/Policy/Web，不让半完成 indicator 成为 consumer-visible。
 
+### 测试实现注意
+
+`ready/state_ready/caution_ready` 最终为 NumPy bool arrays；测试不得写：
+
+```python
+assert result.state_ready[19] is False
+```
+
+因为 `np.bool_ is False` 不是值比较。必须写：
+
+```python
+assert not bool(result.state_ready[19])
+assert bool(result.state_ready[20])
+assert not bool(result.caution_ready[29])
+assert bool(result.caution_ready[30])
+```
+
+这条执行合同覆盖 Plan 中示例断言的 Python identity 语法歧义，不改变 readiness 业务语义。
+
 ### 验收
 
 - exact parameter key-set 等于 Spec；
@@ -159,7 +179,7 @@ Task 1 不修改 Registry/Policy/Web，不让半完成 indicator 成为 consumer
 
 ### 完成流转
 
-Review clean 后合入 `develop`；读回 ancestry 后清理分支/worktree。
+在用户明确批准 Task 1 implementation 后执行；Review clean 后合入 `develop`；读回 ancestry 后清理分支/worktree。
 
 ## 7. Task 2 执行合同 — Python Kernel / Caution / Latch
 
@@ -452,6 +472,7 @@ MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT
 
 执行 TASK-MAIN-FORCE-MIRROR-FUTURES-V1-20260819 的 Task <N>。
 
+只有在用户已明确批准当前 Task implementation 时才执行；否则只读 Plan 并停止在 Gate 前。
 以本 Task 执行时最新 origin/develop 创建独立 task branch/worktree。
 Spec 是公式/行为最高权威；Plan 是实施步骤；TASK 是允许/禁止与流转合同。
 
@@ -491,7 +512,7 @@ Spec 是公式/行为最高权威；Plan 是实施步骤；TASK 是允许/禁止
 
 ```text
 PLAN_READY
-允许进入 Task 1 实现
+WAITING_FOR_TASK1_IMPLEMENTATION_APPROVAL
 ```
 
-该结论只代表设计与执行合同完整；不代表任何代码 Task 已执行，也不授权 release、Runtime 或真实研究运行。
+该结论只代表设计、Implementation Plan 和 TASK 执行合同完整；不代表任何代码 Task 已执行，也不构成 Lane 3 Task 1 的实现授权，更不授权 release、Runtime 或真实研究运行。
