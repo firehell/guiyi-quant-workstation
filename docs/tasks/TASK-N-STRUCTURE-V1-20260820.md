@@ -7,6 +7,8 @@
 > Plan：`docs/superpowers/plans/2026-08-20-n-structure-v1.md`
 >
 > 本合同只定义后续 Codex 执行边界；当前 docs 提交不授权实现、release、Runtime、Alert、数据/DB 写入、通知或订单。
+>
+> 本合同是 Lane 3 实施的规范性补充：当 Design / Plan 对某个边界保持沉默、而本合同给出更精确的执行规则时，执行与 Review 以本合同的精确边界为准；若出现真正语义冲突则 `BLOCKED_CANONICAL_DRIFT`，不得自行裁决。
 
 ## 1. 目标
 
@@ -86,7 +88,7 @@ Runtime promotion/switch/reload
 
 ## 5. Lane 3 公式冻结
 
-Tasks 1～4 不得自行做新的业务选择。必须精确实现 Spec：
+Tasks 1～4 不得自行做新的业务选择。必须精确实现 Spec 与本合同：
 
 ```text
 5m only
@@ -105,9 +107,53 @@ no machine STRONG/MEDIUM/WEAK
 Structure >=2 completed N in same evidence epoch
 HH+HL bull / LH+LL bear / otherwise range
 strict defense break → range, no auto reverse
+same-boundary new Structure/new defense + defense breach → record establishment/advance fact first, then defense break → RANGE at the same bar_end; no intrabar-order claim
 ```
 
-需要改变任意一条：输出 `FORMULA_DRIFT_REQUIRES_NEW_TASK`，停止当前 Task。
+### 5.1 Same-boundary Structure defense 规范性澄清
+
+这是 Planning Review 的最终 Important 修复。
+
+当某根 completed 5m boundary **首次建立 BULL/BEAR Structure，或推进其 trailing defense**，而同一根 K 线的已知 high/low 已经严格越过这个刚刚建立/推进的 defense 时：
+
+```text
+BULL:
+new_defense = qualifying LOW
+current.low < new_defense.price
+
+BEAR:
+new_defense = qualifying HIGH
+current.high > new_defense.price
+```
+
+必须在同一个 `bar_end` 记录：
+
+```text
+1. Structure establishment / defense advancement fact
+2. BULL_STRUCTURE_BROKEN 或 BEAR_STRUCTURE_BROKEN
+3. final Structure state = RANGE
+```
+
+固定事实顺序为“建立/推进 → break → RANGE”，但**不得声称这就是 intrabar 真实先后顺序**；它只表示截至该 completed boundary，建立/推进证据与 strict defense breach 两组价格事实同时可知。
+
+禁止：
+
+```text
+把刚刚已被同 boundary 严格越过的 defense 保留为 active 到下一根 K
+因为无法知道 intrabar 顺序而丢弃已知 strict level breach
+在该 boundary 自动反手建立相反方向 Structure
+```
+
+Task 4 必须有两个独立 RED→GREEN 用例：
+
+```text
+same-boundary initial establishment + defense break
+same-boundary trailing-defense advancement + defense break
+```
+
+Task 9 的 prefix matrix 必须覆盖这两个场景。
+
+需要改变本节任意语义：输出 `FORMULA_DRIFT_REQUIRES_NEW_TASK`，停止当前 Task。
 
 ## 6. Temporal / OOS 冻结
 
