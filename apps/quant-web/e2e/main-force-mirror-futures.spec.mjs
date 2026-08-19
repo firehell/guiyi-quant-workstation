@@ -162,3 +162,28 @@ test('three-tab pane remains within each required desktop viewport', async ({ pa
     expect(await page.locator('body').evaluate((body) => body.scrollWidth <= window.innerWidth)).toBe(true)
   }
 })
+
+test('actual-dominant V1 hover follows the chart crosshair and exposes readiness without fabricated values', async ({ page }) => {
+  const requests = []
+  const fixtureBars = futuresFixture.bars.map((bar) => ({
+    bar_end: bar.time, trading_day: bar.time.slice(0, 10), open: bar.open, high: bar.high, low: bar.low,
+    close: bar.close, volume: bar.volume, turnover: null, open_interest: bar.open_interest,
+  }))
+  await mockChartMarketApi(page, requests, fixtureBars)
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=60m')
+  await expect(page.getByText('40 bars')).toBeVisible()
+  await page.getByTestId('secondary-panel-tabs').getByRole('tab', { name: '主力照妖镜' }).click()
+  const chart = page.locator('.chart')
+  const box = await chart.boundingBox()
+  if (!box) throw new Error('chart bounds unavailable')
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.2)
+
+  await expect(page.getByTestId('mfm-hover-time')).toHaveText(futuresFixture.bars[21].time)
+  await expect(page.getByTestId('mfm-hover-contract')).toHaveText('合约 AG2601')
+  await expect(page.getByTestId('mfm-hover-state-ready')).toHaveText('state_ready true')
+  await expect(page.getByTestId('mfm-hover-caution-ready')).toHaveText('caution_ready false')
+  await expect(page.getByTestId('mfm-hover-availability')).toHaveText('可用性 小心预热')
+  await expect(page.getByTestId('mfm-hover-availability-reason')).toHaveText('不可用原因 MFM_FUTURES_V1_CAUTION_WARMUP')
+  await expect(page.getByTestId('mfm-hover-price-impulse')).not.toHaveText('价冲 —')
+  await expect(page.getByTestId('mfm-hover-long-score')).toHaveText('多分 —')
+})

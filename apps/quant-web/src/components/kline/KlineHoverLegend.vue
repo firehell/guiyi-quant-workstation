@@ -18,7 +18,7 @@ defineProps<{
 
 <template>
   <div v-if="context" class="kline-hover-legend" aria-live="polite">
-    <span>{{ context.time }}</span>
+    <span data-testid="mfm-hover-time">{{ context.time }}</span>
     <span>O {{ formatKlineHoverValue(context.bar.open) }}</span>
     <span>H {{ formatKlineHoverValue(context.bar.high) }}</span>
     <span>L {{ formatKlineHoverValue(context.bar.low) }}</span>
@@ -34,22 +34,22 @@ defineProps<{
       <span>HIST {{ formatKlineHoverValue(context.macd?.histogram) }}</span>
     </template>
     <template v-if="showMainForceFutures && context.mainForceFutures">
-      <span>合约 {{ context.mainForceFutures.physicalContract || '—' }}</span>
+      <span data-testid="mfm-hover-contract">合约 {{ context.mainForceFutures.physicalContract || '—' }}</span>
       <span>状态 {{ context.mainForceFutures.state || '—' }}</span>
-      <span>state_ready {{ context.mainForceFutures.stateReady ? 'true' : 'false' }}</span>
-      <span>caution_ready {{ context.mainForceFutures.cautionReady ? 'true' : 'false' }}</span>
-      <span>可用性 {{ futuresAvailabilityLabel(context.mainForceFutures.availabilityKind) }}</span>
+      <span data-testid="mfm-hover-state-ready">state_ready {{ context.mainForceFutures.stateReady ? 'true' : 'false' }}</span>
+      <span data-testid="mfm-hover-caution-ready">caution_ready {{ context.mainForceFutures.cautionReady ? 'true' : 'false' }}</span>
+      <span data-testid="mfm-hover-availability">可用性 {{ futuresAvailabilityLabel(context.mainForceFutures.availabilityKind) }}</span>
       <span>强度 {{ formatKlineHoverValue(context.mainForceFutures.strength) }}</span>
-      <span>价冲 {{ formatKlineHoverValue(context.mainForceFutures.priceImpulse) }}</span>
+      <span data-testid="mfm-hover-price-impulse">价冲 {{ formatKlineHoverValue(context.mainForceFutures.priceImpulse) }}</span>
       <span>CLV {{ formatKlineHoverValue(context.mainForceFutures.clv) }}</span>
       <span>量比 {{ formatKlineHoverValue(context.mainForceFutures.volumeRatio) }}</span>
       <span>ΔOI {{ formatKlineHoverValue(context.mainForceFutures.deltaOi) }}</span>
       <span>OI冲 {{ formatKlineHoverValue(context.mainForceFutures.oiImpulse) }}</span>
       <span>区间 {{ formatKlineHoverValue(context.mainForceFutures.rangePosition) }}</span>
-      <span>多分 {{ formatKlineHoverValue(context.mainForceFutures.longScore) }}</span>
+      <span data-testid="mfm-hover-long-score">多分 {{ formatKlineHoverValue(context.mainForceFutures.longScore) }}</span>
       <span>空分 {{ formatKlineHoverValue(context.mainForceFutures.shortScore) }}</span>
       <span>原因 {{ context.mainForceFutures.reasonCodes.join('、') || '—' }}</span>
-      <span>不可用原因 {{ context.mainForceFutures.availabilityReason || '—' }}</span>
+      <span data-testid="mfm-hover-availability-reason">不可用原因 {{ context.mainForceFutures.availabilityReason || '—' }}</span>
     </template>
   </div>
 </template>
