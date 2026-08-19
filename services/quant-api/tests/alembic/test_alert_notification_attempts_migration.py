@@ -124,6 +124,7 @@ def test_upgrade_from_execution_review_to_head_creates_attempt_ledger(
     assert {
         index["name"]: tuple(index["column_names"])
         for index in inspector.get_indexes("alert_notification_attempts")
+        if not index.get("duplicates_constraint")
     } == {
         "ix_alert_notification_attempts_event_id": ("event_id",),
         "ix_alert_notification_attempts_status_attempted_at": (
