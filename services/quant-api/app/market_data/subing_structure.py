@@ -162,6 +162,10 @@ def assess_pivot_breakout(
     _require_matching_pivot_direction(pivot, direction)
     if previous.bar_end >= current.bar_end:
         raise ValueError("SUBING_STRUCTURE_BARS_NOT_STRICTLY_ORDERED")
+    if previous.trading_day != current.trading_day:
+        raise ValueError("SUBING_BREAKOUT_CROSS_TRADING_DAY")
+    if pivot.confirmed_at < current.bar_end and previous.bar_end < pivot.confirmed_at:
+        raise ValueError("SUBING_BREAKOUT_PREVIOUS_BEFORE_PIVOT_CONFIRMATION")
     if direction is SubingDirection.LONG:
         intrabar_touched = current.high >= pivot.price
         close_beyond_level = current.close > pivot.price

@@ -78,6 +78,15 @@ async function tabsAreInsideSecondaryPane(shell, tabs) {
     && tabsBox.y < pane.bottom
 }
 
+async function hoverPrimaryPane(shell) {
+  const chartBox = await shell.locator('.chart').boundingBox()
+  if (!chartBox) throw new Error('chart bounds unavailable')
+  await shell.page().mouse.move(
+    chartBox.x + chartBox.width / 2,
+    chartBox.y + chartBox.height / 5,
+  )
+}
+
 test('secondary pane defaults to MACD and switches to main-force mirror without refetching bars', async ({ page }) => {
   const requests = []
   await page.addInitScript(() => {
@@ -100,6 +109,8 @@ test('secondary pane defaults to MACD and switches to main-force mirror without 
   await expect(shell).toHaveAttribute('data-secondary-panel', 'macd')
   await expect(tabs.getByRole('tab', { name: 'MACD' })).toHaveAttribute('aria-selected', 'true')
   await expect.poll(() => tabsAreInsideSecondaryPane(shell, tabs)).toBe(true)
+  await hoverPrimaryPane(shell)
+  await expect(page.getByText(/^DIF /)).toBeVisible()
 
   const paneBeforeResize = await secondaryPaneBounds(shell)
   expect(paneBeforeResize).not.toBeNull()
@@ -118,6 +129,8 @@ test('secondary pane defaults to MACD and switches to main-force mirror without 
   await expect(shell).toHaveAttribute('data-secondary-panel', 'main_force_mirror')
   await expect(tabs.getByRole('tab', { name: '主力照妖镜' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('小心＝HHV5/BARSLAST10 结构警戒，非实测资金流')).toBeVisible()
+  await hoverPrimaryPane(shell)
+  await expect(page.getByText(/^DIF /)).toBeHidden()
   expect(requests.filter((url) => url.pathname.endsWith('/bars/page')).length).toBe(barRequestsBeforeSwitch)
 
   await tabs.getByRole('tab', { name: 'MACD' }).click()

@@ -4,6 +4,7 @@ import { formatKlineHoverValue } from '@/utils/klineViewModel'
 
 defineProps<{
   context: HoverKlineContext | null
+  showMacd: boolean
 }>()
 </script>
 
@@ -19,9 +20,11 @@ defineProps<{
     <span v-for="indicator in context.mainIndicators" :key="indicator.id">
       {{ indicator.displayName }} {{ formatKlineHoverValue(indicator.value) }}
     </span>
-    <span>DIF {{ formatKlineHoverValue(context.macd?.dif) }}</span>
-    <span>DEA {{ formatKlineHoverValue(context.macd?.dea) }}</span>
-    <span>HIST {{ formatKlineHoverValue(context.macd?.histogram) }}</span>
+    <template v-if="showMacd">
+      <span>DIF {{ formatKlineHoverValue(context.macd?.dif) }}</span>
+      <span>DEA {{ formatKlineHoverValue(context.macd?.dea) }}</span>
+      <span>HIST {{ formatKlineHoverValue(context.macd?.histogram) }}</span>
+    </template>
   </div>
 </template>
 

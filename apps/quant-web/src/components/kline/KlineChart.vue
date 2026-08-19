@@ -432,7 +432,10 @@ defineExpose({
     :data-secondary-panel="selectedSecondaryPanel"
   >
     <div ref="container" class="chart" />
-    <KlineHoverLegend :context="hoverContext" />
+    <KlineHoverLegend
+      :context="hoverContext"
+      :show-macd="selectedSecondaryPanel === 'macd'"
+    />
     <div
       class="secondary-panel-header"
       data-testid="secondary-panel-tabs"

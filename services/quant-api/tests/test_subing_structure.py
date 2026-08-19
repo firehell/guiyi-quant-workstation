@@ -244,6 +244,51 @@ def test_pivot_confirmed_at_current_boundary_cannot_break_out_same_boundary() ->
     assert older_boundary.crossed_on_close is True
 
 
+def test_breakout_rejects_previous_bar_before_pivot_confirmation() -> None:
+    previous = _bar(0, high="100", low="98", close="99")
+    current = _bar(2, high="102", low="99", close="101")
+    confirmed_between_bars = ConfirmedPivot(
+        pivot_id="JM2701:2026-08-03:5m:high:2026-08-19T00:50:00+00:00",
+        kind=PivotKind.HIGH,
+        source_timeframe=BarFrequency.M5,
+        pivot_time=_START - timedelta(minutes=15),
+        confirmed_at=_START + timedelta(minutes=5),
+        price=Decimal("100"),
+        contract=_CONTRACT,
+        segment_start_trading_day=_SEGMENT_START,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="SUBING_BREAKOUT_PREVIOUS_BEFORE_PIVOT_CONFIRMATION",
+    ):
+        assess_pivot_breakout(
+            previous,
+            current,
+            pivot=confirmed_between_bars,
+            direction=SubingDirection.LONG,
+        )
+
+
+def test_breakout_rejects_cross_trading_day_bar_pair() -> None:
+    previous = _bar(
+        0,
+        high="100",
+        low="98",
+        close="99",
+        trading_day=_TRADING_DAY - timedelta(days=1),
+    )
+    current = _bar(1, high="102", low="99", close="101")
+
+    with pytest.raises(ValueError, match="SUBING_BREAKOUT_CROSS_TRADING_DAY"):
+        assess_pivot_breakout(
+            previous,
+            current,
+            pivot=_confirmed_pivot(kind=PivotKind.HIGH),
+            direction=SubingDirection.LONG,
+        )
+
+
 def _confirmed_pivot(
     *,
     kind: PivotKind,

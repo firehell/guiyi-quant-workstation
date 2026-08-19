@@ -699,8 +699,7 @@ subing_lifecycle_v2_research_v1
   "trend_anchor_timeframe": "15m",
   "setup": {
     "requires_both_timeframes": true,
-    "calibration_id": "subing_intraday_v1",
-    "slope10_direction_threshold_bps_per_bar": "0"
+    "calibration_id": "subing_intraday_v1"
   },
   "pivot": {
     "source_timeframe": "5m",
@@ -738,6 +737,9 @@ subing_lifecycle_v2_research_v1
 - 同 `policy_id` 内容漂移 fail-closed；
 - 参数变化创建新 Policy ID；
 - 只引用 accepted Calibration ID，不复制 slope threshold 数值。
+
+`setup` 只绑定 `calibration_id`；slope10 方向条件读取该 accepted Calibration，不属于本 Policy 的
+exact JSON 字段。
 
 ## 18. API / Web / Shadow
 
