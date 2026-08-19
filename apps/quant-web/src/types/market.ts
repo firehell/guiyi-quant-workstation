@@ -152,6 +152,69 @@ export interface SubingSignal {
   error_code: string | null
 }
 
+export type SubingLifecycleAvailability = 'ready' | 'unavailable'
+export type SubingLifecycleDirection = 'long' | 'short' | 'none'
+export type SubingLifecycleStage = 'idle' | 'setup_armed' | 'entry_confirmed' | 'continuation' | 'exit_risk' | 'closed'
+export type SubingLifecycleEntryProgress = 'waiting_trigger' | 'hold_confirming' | 'retest_confirming'
+export type SubingLifecycleConfirmationSource = 'formal_v1' | 'momentum_hold' | 'pivot_break_hold' | 'pivot_retest_rebreak'
+export type SubingLifecyclePivotKind = 'high' | 'low'
+export type SubingLifecycleTriggerKind = 'macd_cross' | 'pivot_break'
+
+export interface SubingLifecyclePivot {
+  pivot_id: string
+  kind: SubingLifecyclePivotKind
+  timeframe: '5m' | '15m'
+  pivot_time: string
+  confirmed_at: string
+  price: number
+  contract: string
+  segment_start_trading_day: string
+}
+
+export interface SubingLifecycleTransition {
+  transition_id: string
+  transition_at: string
+  from_stage: SubingLifecycleStage
+  to_stage: SubingLifecycleStage
+  reason_codes: string[]
+}
+
+export interface SubingLifecycleSnapshot {
+  formula_version: string
+  policy_id: string
+  research_only: boolean
+  observed_at: string | null
+  anchor_bar_end: string | null
+  availability: SubingLifecycleAvailability
+  unavailable_reason: string | null
+  direction: SubingLifecycleDirection
+  stage: SubingLifecycleStage
+  opportunity_key: string | null
+  entry_progress: SubingLifecycleEntryProgress | null
+  trigger_kind: SubingLifecycleTriggerKind | null
+  trigger_timeframe: '5m' | '15m' | null
+  triggered_at: string | null
+  confirmation_source: SubingLifecycleConfirmationSource | null
+  confirmed_at: string | null
+  hold_count: number
+  hold_required: number
+  bound_reference_pivot: SubingLifecyclePivot | null
+  rebreak_reference_price: number | null
+  retest_at: string | null
+  retest_rebreak_count: number
+  volume_ratio_prev: number | null
+  open_interest_delta: number | null
+  current_risk_codes: string[]
+  risk_progress: string | null
+  lower_tf_risk_count: number
+  last_confirmed_stage: SubingLifecycleStage
+  last_confirmed_at: string | null
+  latest_transition: SubingLifecycleTransition | null
+  crossed_trading_day: boolean
+  boundary_reset: 'segment_changed' | null
+  formal_v1_matched: boolean
+}
+
 export interface SubingResearchResponse {
   symbol: string
   product_name: string
@@ -170,6 +233,18 @@ export interface SubingResearchResponse {
   companion: SubingFactorResult | null
   primary_signal: SubingSignal
   resolved_signal: SubingSignal | null
+  lifecycle: SubingLifecycleSnapshot
+}
+
+export function subingLifecycleStageLabel(stage: SubingLifecycleStage): string {
+  switch (stage) {
+    case 'setup_armed': return '准备中'
+    case 'entry_confirmed': return '研究确认'
+    case 'continuation': return '延续'
+    case 'exit_risk': return '退出风险'
+    case 'closed': return '本轮结束'
+    default: return '暂无机会'
+  }
 }
 
 export function subingSignalLabel(
@@ -188,6 +263,19 @@ export function normalizeSubingResearch(payload: SubingResearchResponse): Subing
     ...payload,
     primary: normalizeSubingFactorResult(payload.primary),
     companion: payload.companion ? normalizeSubingFactorResult(payload.companion) : null,
+    lifecycle: normalizeSubingLifecycle(payload.lifecycle),
+  }
+}
+
+function normalizeSubingLifecycle(snapshot: SubingLifecycleSnapshot): SubingLifecycleSnapshot {
+  return {
+    ...snapshot,
+    bound_reference_pivot: snapshot.bound_reference_pivot
+      ? { ...snapshot.bound_reference_pivot, price: Number(snapshot.bound_reference_pivot.price) }
+      : null,
+    rebreak_reference_price: snapshot.rebreak_reference_price === null ? null : Number(snapshot.rebreak_reference_price),
+    volume_ratio_prev: snapshot.volume_ratio_prev === null ? null : Number(snapshot.volume_ratio_prev),
+    open_interest_delta: snapshot.open_interest_delta === null ? null : Number(snapshot.open_interest_delta),
   }
 }
 

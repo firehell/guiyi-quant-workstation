@@ -278,6 +278,17 @@ function subing(overrides = {}) {
       conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
     },
     resolved_signal: null,
+    lifecycle: {
+      formula_version: 'subing_lifecycle_v2', policy_id: 'subing_lifecycle_v2_research_v1', research_only: true,
+      observed_at: '2026-01-12T02:25:00Z', anchor_bar_end: '2026-01-12T02:15:00Z',
+      availability: 'ready', unavailable_reason: null, direction: 'none', stage: 'idle', opportunity_key: null,
+      entry_progress: null, trigger_kind: null, trigger_timeframe: null, triggered_at: null,
+      confirmation_source: null, confirmed_at: null, hold_count: 0, hold_required: 3,
+      bound_reference_pivot: null, rebreak_reference_price: null, retest_at: null, retest_rebreak_count: 0,
+      volume_ratio_prev: null, open_interest_delta: null, current_risk_codes: [], risk_progress: null,
+      lower_tf_risk_count: 0, last_confirmed_stage: 'idle', last_confirmed_at: null, latest_transition: null,
+      crossed_trading_day: false, boundary_reset: null, formal_v1_matched: false,
+    },
     ...overrides,
   }
 }
@@ -381,6 +392,82 @@ test('SuBing clips old same-contract bars and renders the requested primary Sign
   await expect(page.locator('body')).not.toContainText('卖出')
   await expect(page.locator('body')).not.toContainText('formal signal')
   await expect(page.locator('body')).not.toContainText('ZERO_BAND')
+})
+
+test('SuBing lifecycle remains an explicitly research-only funnel beside formal V1 wording', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: subing({
+      resolved_signal: {
+        status: 'matched', direction: 'long', trigger_timeframe: '15m', lower_tf_confirmation: true,
+        resolution: 'higher_timeframe_wins', conditions: [], error_code: null,
+      },
+      lifecycle: {
+        ...subing().lifecycle,
+        direction: 'long', stage: 'entry_confirmed',
+        opportunity_key: 'subing_lifecycle_v2_research_v1:AG:AG2601:2026-01-12:long:2026-01-12T02:00:00Z',
+        trigger_kind: 'pivot_break', trigger_timeframe: '15m', triggered_at: '2026-01-12T02:15:00Z',
+        confirmation_source: 'pivot_break_hold', confirmed_at: '2026-01-12T02:25:00Z', hold_count: 3,
+        bound_reference_pivot: {
+          pivot_id: 'pivot:high', kind: 'high', timeframe: '15m', pivot_time: '2026-01-12T01:45:00Z',
+          confirmed_at: '2026-01-12T02:15:00Z', price: '104.5', contract: 'AG2601', segment_start_trading_day: '2026-01-12',
+        },
+        volume_ratio_prev: '3.42', open_interest_delta: '18', last_confirmed_stage: 'entry_confirmed',
+        last_confirmed_at: '2026-01-12T02:25:00Z', latest_transition: {
+          transition_id: 'transition:entry', transition_at: '2026-01-12T02:25:00Z',
+          from_stage: 'setup_armed', to_stage: 'entry_confirmed', reason_codes: ['PIVOT_BREAK_HOLD'],
+        },
+      },
+    }),
+  })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  await expect(page.locator('.subing-strip')).toContainText('15m · 买入信号 · 低周期确认')
+  const lifecycle = page.getByTestId('subing-lifecycle-panel')
+  await expect(lifecycle).toContainText('Research only')
+  await expect(lifecycle).toContainText('研究确认')
+  await expect(lifecycle).toContainText('确认进度')
+  await expect(lifecycle).toContainText('3/3')
+  await expect(lifecycle).toContainText('绑定前高')
+  await expect(lifecycle).toContainText('最近状态转换')
+  await expect(lifecycle).not.toContainText('买入信号')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+test('SuBing lifecycle renders risk and closed research stages without trade instructions', async ({ page }) => {
+  for (const [stage, expected] of [['exit_risk', '退出风险'], ['closed', '本轮结束']]) {
+    await mockWorkspace(page, { json: research() }, {
+      subingResponse: subing({
+        lifecycle: {
+          ...subing().lifecycle, direction: 'short', stage,
+          opportunity_key: `key:${stage}`, current_risk_codes: stage === 'exit_risk' ? ['LOWER_TF_EMA21_BREACH'] : [],
+          latest_transition: { transition_id: `transition:${stage}`, transition_at: '2026-01-12T02:30:00Z', from_stage: 'continuation', to_stage: stage, reason_codes: ['RESEARCH_ONLY'] },
+        },
+      }),
+    })
+    await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+    const lifecycle = page.getByTestId('subing-lifecycle-panel')
+    await expect(lifecycle).toContainText(expected)
+    await expect(lifecycle).not.toContainText(/下单|加仓|平仓指令/)
+  }
+})
+
+test('SuBing daily lifecycle unavailability leaves the existing Factor view readable', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: subing({
+      frequency: '1d',
+      primary: { status: 'ready', snapshot: { ...subing().primary.snapshot, timeframe: '1d', bar_end: '2026-01-12T07:00:00Z' } },
+      companion: null,
+      lifecycle: {
+        ...subing().lifecycle, availability: 'unavailable', unavailable_reason: 'SUBING_LIFECYCLE_INTRADAY_ONLY',
+      },
+    }),
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=1d')
+
+  await expect(page.locator('.subing-strip')).toContainText('苏冰 Factor')
+  await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('SUBING_LIFECYCLE_INTRADAY_ONLY')
+  await expect(page.getByText('Primary Factor', { exact: true })).toBeVisible()
 })
 
 test('SuBing shows a same-boundary companion-only match without replacing the requested primary', async ({ page }) => {
