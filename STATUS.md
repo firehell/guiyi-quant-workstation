@@ -49,7 +49,7 @@
 - 当前 Git release 与 production Runtime 仍为 `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
   本次未执行 release、tag、Runtime promotion/reload、migration、DB/Canonical 写入、Scope/通知或订单操作。
 
-## Candidate Validation V1（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EVIDENCE PENDING）
+## Candidate Validation V1（PHASE 4B COMPLETE；RESEARCH BASELINE ONLY）
 
 - `develop` 已新增 `subing_lifecycle_v2_candidate_v1 × candidate_validation_v1` 的 exact
   Candidate/Protocol、不可变 report contracts、10 个 12m reference + 3m test rolling folds、从
@@ -60,12 +60,18 @@
   segments=`11`、evaluable boundaries=`58862`、entries=`463`，3/5/8 Bar outcome samples 分别为
   `439 / 424 / 402`。preflight 暴露的自然日窗口越过 trading-day Session 边界问题已收敛到
   `MarketDataService` 的 exact trading-day query；未使用消费者侧夜盘时刻或 fallback。
-- fresh Gate 为 Candidate focused `118 passed`、上游 SuBing `474 passed`、Ruff PASS、Mypy
+- implementation Gate 为 Candidate focused `118 passed`、上游 SuBing `474 passed`、Ruff PASS、Mypy
   `41 source files`、secret scan `finding_count=0`、diff check PASS；独立 implementation Review 为
   Critical=`0` / Important=`0` / Minor=`0`。
-- formal versioned `jm` Candidate baseline 尚未运行，prospective OOS 也尚无样本证据。本状态不表示
-  策略有效、Candidate 可晋升、Alert Rule ready、已发布或 Runtime ready；未执行 release/tag、
-  Runtime/Alert 扩张、DB/Canonical/Redis 写入、通知或订单。
+- exact-develop 真实只读 CLI 已生成唯一版本化 evidence：
+  `reports/research/candidate_validation/subing_lifecycle_v2_candidate_v1/jm-retrospective-baseline-freeze-2026-08-19.json`。
+  artifact 包含 frozen retrospective、10 个 rolling
+  reference/test folds 与 threshold-free stability；Task 9 独立 Evidence Review 为 Critical=`0` /
+  Important=`0` / Minor=`0`，并确认 identity、窗口、完整性及禁止结论字段全部通过。
+- Phase 4B 的唯一结论是：已形成可复算的 `jm` retrospective / rolling historical baseline；
+  prospective OOS 为 `pending`，尚无 prospective OOS evidence。本状态不表示策略有效、Candidate 可晋升、
+  Alert Rule ready、已发布或 Runtime ready；未执行 release/tag、Runtime/Alert 扩张、
+  DB/Canonical/Redis 写入、通知或订单。
 
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
