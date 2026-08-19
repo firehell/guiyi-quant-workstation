@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research subing-calibration"]
+      RCLI["guiyi research<br/>subing-calibration / subing-lifecycle"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -29,6 +29,7 @@ flowchart TB
       MR["MarketReadService"]
       MRS["MarketResearchService"]
       SR["SubingReadService"]
+      SL["SuBing Lifecycle V2<br/>research-only snapshot / Shadow"]
       SCR["SubingCalibrationResearchService"]
       LM["LiveMarketService"]
       AM["AfterMarketUpdater"]
@@ -62,6 +63,7 @@ flowchart TB
     API --> MRS
     API --> SR
     RCLI --> SCR --> MQ
+    RCLI --> SL --> MQ
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
     ERS --> ER4 --> EPG
@@ -72,6 +74,7 @@ flowchart TB
     MRS --> MQ
     SR --> MQ
     SR --> MR
+    SR --> SL
     CLI --> MS
     CLI --> HM
     LM --> RD
@@ -106,9 +109,14 @@ flowchart TB
   薄 `SubingReadService` 复用 `MarketDataService` 的 current rank1 segment 身份和
   `MarketReadService` 的 Historical/completed Live seam；composition 只注入 Git-tracked slope-only
   Calibration，并对冻结 ID/timeframes/两个 exact Decimal 做整体身份校验，同 ID 内容漂移也 fail-closed；
-  它再调用 pure `evaluate_subing_signal()`。Historical 输入同时受 current rank1 segment 起止日约束。
+  它再调用 pure `evaluate_subing_signal()`，并以 exact Git-tracked research Policy 附加投影 pure
+  Lifecycle V2 snapshot。Historical 输入同时受 current rank1 segment 起止日约束。
   该服务不拥有或修改 Calibration/Signal 公式，
   不直连 provider/Redis，不持久化 Signal，不写 Canonical/DB，也不管理 Runtime。
+  `SubingLifecycleResearchService` 只通过 `MarketDataService` 对 Historical Canonical 按 rank1
+  segment 独立复算 Shadow，结果仅由 read-only CLI 输出 stdout JSON。Lifecycle 无独立
+  DB/Redis persistence、worker/queue 或 notification path；`AlertRuntime` 仍只消费 V1
+  `resolved_signal`，不依赖 Lifecycle evaluator 或 snapshot。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
@@ -156,7 +164,8 @@ confirmation，反方向 fail-closed，普通 reciprocal `NOT_MATCHED` 不覆盖
 
 该链没有 research DB 或 Signal persistence。`macd_zero_distance_abs/bps` 只保留为
 Factor/Web/research observation，不是 executable Signal 条件；Alert V2 只调用该链已有
-`SubingReadService` 读模型，不复制 Factor、Calibration、FormalPolicy 或 same-boundary resolver。
+`SubingReadService` 读模型的 V1 `resolved_signal`，不复制 Factor、Calibration、FormalPolicy 或
+same-boundary resolver，也不消费 additive research-only lifecycle。
 scoped consumer policy 是 `subing_macd_sma_window_scale2_v1`，其 equivalence
 tuple 固定为 `("sma_window", 2, "fast12_slow26_signal9", True)`；generic MACD 继续保持
 `compatibility_validated`，backtest/live/alert capability 均未晋升。

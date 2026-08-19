@@ -101,7 +101,11 @@ Episode snapshot、四状态工作流、reconstruction、roll estimate、stats �
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_lifecycle_policy.py \
+  services/quant-api/tests/test_subing_structure.py \
+  services/quant-api/tests/test_subing_lifecycle.py \
   services/quant-api/tests/test_subing_calibration.py \
+  services/quant-api/tests/data_foundation/test_subing_lifecycle_research_service.py \
   services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
   services/quant-api/tests/test_research_cli.py \
   services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
@@ -131,8 +135,9 @@ pnpm --dir apps/quant-web exec playwright test \
 pnpm --dir apps/quant-web build
 ```
 
-这些命令覆盖 strict slope-only Calibration loader、MarketDataService-only research/CLI、scoped MACD
-equivalence、Signal pure core、`SubingReadService` reciprocal orchestration、API、Web unit/E2E、
+这些命令覆盖 strict slope-only Calibration loader、exact research-only Lifecycle Policy、causal
+ConfirmedPivot/Breakout/Retest 和 Lifecycle reducer、MarketDataService-only research/CLI、scoped MACD
+equivalence、Signal pure core、`SubingReadService` reciprocal/lifecycle orchestration、API、Web unit/E2E、
 current-rank1 segment、Historical/completed Live seam 和有效当前合约视图。测试只使用 fixture、mock、
 临时目录或隔离数据库，不运行 provider、Canonical/DB/Redis 写入、Runtime switch 或通知。
 
@@ -140,6 +145,10 @@ current-rank1 segment、Historical/completed Live seam 和有效当前合约视�
 输出 stdout JSON，不直接读 provider，也不写 DB、Canonical 或 Redis，不自动 promotion。Discovery/
 Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不运行真实研究窗口。当前 accepted
 intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distance 不参与 executable Signal。
+
+`guiyi research subing-lifecycle` 同样只读 Historical Canonical：它通过 `MarketDataService`
+按 current-rank1 segment 独立复算 research-only lifecycle Shadow，只输出 stdout JSON。测试只验证
+命令、分段因果与报告合同，不运行真实当前市场观察，也不表示正式回测、策略有效或可晋升。
 
 ## Alert V2
 
