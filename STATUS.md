@@ -49,6 +49,24 @@
 - 当前 Git release 与 production Runtime 仍为 `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
   本次未执行 release、tag、Runtime promotion/reload、migration、DB/Canonical 写入、Scope/通知或订单操作。
 
+## Candidate Validation V1（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EVIDENCE PENDING）
+
+- `develop` 已新增 `subing_lifecycle_v2_candidate_v1 × candidate_validation_v1` 的 exact
+  Candidate/Protocol、不可变 report contracts、10 个 12m reference + 3m test rolling folds、从
+  `2026-08-20` 开始的 prospective OOS 编排，以及只读 `guiyi research candidate-validation`。
+  全链保持 `research_only / Historical-only`，只复用既有 `SubingLifecycleResearchService ->
+  MarketDataService -> Historical Canonical`，不新增第二套 lifecycle/outcome/rank1 算法或存储路径。
+- 实现前的真实 `jm / 2023-01-01..2026-08-18` Shadow baseline preflight 已只读通过：rank1
+  segments=`11`、evaluable boundaries=`58862`、entries=`463`，3/5/8 Bar outcome samples 分别为
+  `439 / 424 / 402`。preflight 暴露的自然日窗口越过 trading-day Session 边界问题已收敛到
+  `MarketDataService` 的 exact trading-day query；未使用消费者侧夜盘时刻或 fallback。
+- fresh Gate 为 Candidate focused `118 passed`、上游 SuBing `474 passed`、Ruff PASS、Mypy
+  `41 source files`、secret scan `finding_count=0`、diff check PASS；独立 implementation Review 为
+  Critical=`0` / Important=`0` / Minor=`0`。
+- formal versioned `jm` Candidate baseline 尚未运行，prospective OOS 也尚无样本证据。本状态不表示
+  策略有效、Candidate 可晋升、Alert Rule ready、已发布或 Runtime ready；未执行 release/tag、
+  Runtime/Alert 扩张、DB/Canonical/Redis 写入、通知或订单。
+
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
 - Market WebSocket 新增同次读取的 `MarketDisplaySnapshot`：`realtime` 继续要求既有 live eligibility 与
