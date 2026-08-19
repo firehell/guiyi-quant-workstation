@@ -8,9 +8,20 @@ import json
 
 import pytest
 
+from app.market_data import composition as market_data_composition
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
+from app.guiyi_cli.data_parser import CliUsageError
 from app.guiyi_cli.research_commands import build_research_request
+from app.market_data.candidate_validation import (
+    CandidateValidationReport,
+    CandidateWindowKind,
+    ProspectiveOosResult,
+    ProspectiveOosStatus,
+    RollingCandidateFold,
+    project_lifecycle_window,
+    summarize_rolling_stability,
+)
 from app.market_data.domain import BarFrequency
 from app.market_data.subing_calibration_service import (
     CalibrationMode,
@@ -26,6 +37,10 @@ from app.market_data.subing_calibration import (
 from app.market_data.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
+)
+from app.market_data.subing_candidate_validation_service import (
+    CandidateValidationRequest,
+    SubingCandidateValidationService,
 )
 
 
@@ -66,7 +81,7 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_two_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_three_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
     research_parser = domain_action.choices["research"]
@@ -77,6 +92,7 @@ def test_research_parser_exposes_only_the_two_readonly_commands() -> None:
     )
 
     assert set(command_action.choices) == {
+        "candidate-validation",
         "subing-calibration",
         "subing-lifecycle",
     }
@@ -812,3 +828,228 @@ def test_research_service_construction_error_is_always_readonly() -> None:
             "type": "ResearchConstructionError",
         },
     }
+
+
+def _candidate_arguments(*, through: str = "2026-08-19") -> list[str]:
+    return [
+        "research",
+        "candidate-validation",
+        "--candidate",
+        "subing_lifecycle_v2_candidate_v1",
+        "--protocol",
+        "candidate_validation_v1",
+        "--symbol",
+        "jm",
+        "--through",
+        through,
+    ]
+
+
+def _candidate_source() -> SubingLifecycleResearchResult:
+    return SubingLifecycleResearchResult(
+        products=("jm",),
+        segment_count=2,
+        evaluable_boundary_count=10,
+        funnel_counts={
+            "DATA_READY": 10,
+            "DIRECTION_CONTEXT_ALIGNED": 6,
+            "SETUP_ARMED": 4,
+            "TRIGGER_OBSERVED": 3,
+            "ENTRY_CONFIRMED": 2,
+        },
+        funnel_count_units={
+            "DATA_READY": "boundary_occupancy",
+            "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+            "SETUP_ARMED": "boundary_event",
+            "TRIGGER_OBSERVED": "boundary_event",
+            "ENTRY_CONFIRMED": "boundary_event",
+        },
+        confirmation_source_counts={
+            "FORMAL_V1": 1,
+            "MOMENTUM_HOLD": 1,
+            "PIVOT_BREAK_HOLD": 0,
+            "PIVOT_RETEST_REBREAK": 0,
+        },
+        v1_v2_overlap_counts={"V1_AND_V2": 1, "V2_ONLY": 1, "V1_ONLY": 0},
+        v2_to_v1_lead_bars=(2, 5),
+        confirmed_trading_day_span_counts={"SAME_DAY": 1, "CROSS_DAY": 1},
+        risk_reason_counts={"ANCHOR_EMA21_BREACH": 1},
+        recovery_reason_counts={"ANCHOR_RECOVERY_CONFIRMED": 1},
+        close_reason_counts={"ANCHOR_TREND_BROKEN": 1},
+        horizon_summary={3: _horizon(), 5: _horizon(), 8: _horizon()},
+    )
+
+
+def _candidate_report() -> CandidateValidationReport:
+    source = _candidate_source()
+    retrospective = project_lifecycle_window(
+        window_id="retrospective",
+        window_kind=CandidateWindowKind.RETROSPECTIVE,
+        since=date(2023, 1, 1),
+        through=date(2026, 8, 18),
+        source=source,
+    )
+    fold = RollingCandidateFold(
+        fold_id="fold_01",
+        reference=project_lifecycle_window(
+            window_id="fold_01_reference",
+            window_kind=CandidateWindowKind.ROLLING_REFERENCE,
+            since=date(2023, 1, 1),
+            through=date(2023, 12, 31),
+            source=source,
+        ),
+        test=project_lifecycle_window(
+            window_id="fold_01_test",
+            window_kind=CandidateWindowKind.ROLLING_TEST,
+            since=date(2024, 1, 1),
+            through=date(2024, 3, 31),
+            source=source,
+        ),
+    )
+    folds = (fold,)
+    return CandidateValidationReport(
+        schema_version=1,
+        candidate_id="subing_lifecycle_v2_candidate_v1",
+        policy_id="subing_lifecycle_v2_research_v1",
+        formula_version="subing_lifecycle_v2",
+        protocol_id="candidate_validation_v1",
+        research_only=True,
+        symbol="jm",
+        retrospective=retrospective,
+        rolling_folds=folds,
+        rolling_stability=summarize_rolling_stability(folds),
+        prospective_oos=ProspectiveOosResult(
+            status=ProspectiveOosStatus.PENDING,
+            first_trading_day=date(2026, 8, 20),
+            through=date(2026, 8, 19),
+            result=None,
+        ),
+        quality_flags=("PROSPECTIVE_OOS_PENDING",),
+    )
+
+
+class _FakeCandidateValidationService:
+    def __init__(self, report: CandidateValidationReport) -> None:
+        self.report = report
+        self.requests: list[CandidateValidationRequest] = []
+
+    def run(self, request: CandidateValidationRequest) -> CandidateValidationReport:
+        self.requests.append(request)
+        return self.report
+
+
+def test_candidate_parser_uses_exact_frozen_choices() -> None:
+    request = _request(_candidate_arguments(through="2026-08-17"))
+
+    assert request == CandidateValidationRequest(
+        candidate_id="subing_lifecycle_v2_candidate_v1",
+        protocol_id="candidate_validation_v1",
+        symbol="jm",
+        through=date(2026, 8, 17),
+    )
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                *_candidate_arguments(),
+                "--candidate",
+                "other_candidate",
+            ]
+        )
+
+
+def test_candidate_cli_dispatches_explicit_service_and_serializes_report() -> None:
+    service = _FakeCandidateValidationService(_candidate_report())
+    calibration_calls: list[object] = []
+    lifecycle_calls: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        _candidate_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        research_service_factory=lambda session: calibration_calls.append(session),
+        lifecycle_research_service_factory=lambda session: lifecycle_calls.append(
+            session
+        ),
+        candidate_validation_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert calibration_calls == []
+    assert lifecycle_calls == []
+    assert service.requests == [
+        CandidateValidationRequest(
+            candidate_id="subing_lifecycle_v2_candidate_v1",
+            protocol_id="candidate_validation_v1",
+            symbol="jm",
+            through=date(2026, 8, 19),
+        )
+    ]
+    payload = json.loads(stdout.getvalue())
+    assert set(payload) == {
+        "schema_version",
+        "command",
+        "status",
+        "readonly",
+        "candidate_id",
+        "policy_id",
+        "formula_version",
+        "protocol_id",
+        "research_only",
+        "symbol",
+        "retrospective",
+        "rolling_folds",
+        "rolling_stability",
+        "prospective_oos",
+        "quality_flags",
+    }
+    assert payload["command"] == "research.candidate-validation"
+    assert payload["readonly"] is True
+    assert payload["research_only"] is True
+    assert payload["retrospective"]["window_kind"] == "retrospective"
+    assert payload["rolling_folds"][0]["fold_id"] == "fold_01"
+    assert payload["rolling_stability"] == {
+        "fold_count": 1,
+        "folds_with_entries": 1,
+        "entry_count_min": 2,
+        "entry_count_max": 2,
+        "entry_count_median": "2",
+    }
+    assert payload["prospective_oos"] == {
+        "status": "pending",
+        "first_trading_day": "2026-08-20",
+        "through": "2026-08-19",
+        "result": None,
+    }
+    assert payload["retrospective"]["horizon_summary"]["3"][
+        "median_directional_return_bps"
+    ] == "12.3400"
+
+
+def test_candidate_composition_reuses_the_lifecycle_research_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lifecycle = object()
+    sessions: list[object] = []
+
+    def build_lifecycle(session: object) -> object:
+        sessions.append(session)
+        return lifecycle
+
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_subing_lifecycle_research_service",
+        build_lifecycle,
+    )
+    session = object()
+
+    service = market_data_composition.build_subing_candidate_validation_service(
+        session  # type: ignore[arg-type]
+    )
+
+    assert isinstance(service, SubingCandidateValidationService)
+    assert service._lifecycle_research is lifecycle
+    assert sessions == [session]

@@ -9,7 +9,7 @@ from typing import Any
 def add_research_commands(
     commands: argparse._SubParsersAction[Any],
 ) -> None:
-    """Register the two Historical-only SuBing research commands."""
+    """Register the three Historical-only SuBing research commands."""
     calibration = commands.add_parser("subing-calibration")
     calibration.add_argument("--phase", choices=("slope", "zero-band"), required=True)
     calibration.add_argument("--mode", choices=("discovery", "validation"), required=True)
@@ -26,3 +26,17 @@ def add_research_commands(
     lifecycle.add_argument("--since", required=True)
     lifecycle.add_argument("--through", required=True)
     lifecycle.add_argument("--symbol")
+
+    candidate = commands.add_parser("candidate-validation")
+    candidate.add_argument(
+        "--candidate",
+        choices=("subing_lifecycle_v2_candidate_v1",),
+        required=True,
+    )
+    candidate.add_argument(
+        "--protocol",
+        choices=("candidate_validation_v1",),
+        required=True,
+    )
+    candidate.add_argument("--symbol", required=True)
+    candidate.add_argument("--through", required=True)

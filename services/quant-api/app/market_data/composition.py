@@ -18,6 +18,10 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.catalog import MarketCatalog
+from app.market_data.candidate_validation_policy import (
+    load_candidate_manifest,
+    load_candidate_validation_protocol,
+)
 from app.market_data.live_market import (
     RQDataLiveProvider,
     LiveMarketService,
@@ -33,6 +37,9 @@ from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.market_data.subing_calibration_service import SubingCalibrationResearchService
+from app.market_data.subing_candidate_validation_service import (
+    SubingCandidateValidationService,
+)
 from app.market_data.subing_lifecycle_policy import (
     SubingLifecyclePolicyError,
     load_subing_lifecycle_policy,
@@ -54,6 +61,12 @@ _SUBING_CALIBRATION = (
 )
 _SUBING_LIFECYCLE_POLICY = (
     PROJECT_ROOT / "data/research_policies/subing_lifecycle_v2_research_v1.json"
+)
+_CANDIDATE_MANIFEST = (
+    PROJECT_ROOT / "data/research_candidates/subing_lifecycle_v2_candidate_v1.json"
+)
+_CANDIDATE_VALIDATION_PROTOCOL = (
+    PROJECT_ROOT / "data/research_protocols/candidate_validation_v1.json"
 )
 
 
@@ -184,6 +197,17 @@ def build_subing_lifecycle_research_service(
         products=load_active_products(),
         calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
         policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
+    )
+
+
+def build_subing_candidate_validation_service(
+    session: Session,
+) -> SubingCandidateValidationService:
+    """Compose Candidate validation around the single Lifecycle research path."""
+    return SubingCandidateValidationService(
+        build_subing_lifecycle_research_service(session),
+        manifest=load_candidate_manifest(_CANDIDATE_MANIFEST),
+        protocol=load_candidate_validation_protocol(_CANDIDATE_VALIDATION_PROTOCOL),
     )
 
 
