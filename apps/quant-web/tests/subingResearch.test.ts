@@ -13,136 +13,30 @@ import {
   type SubingResearchResponse,
 } from '../src/types/market.ts'
 import { lifecycleSnapshotToMarkers } from '../src/utils/subingLifecycleMarkers.ts'
+import { cloneSubingLifecycleCase } from './fixtures/subingLifecycleCases.mjs'
 
-const LIFECYCLE_POLICY_ID = 'subing_lifecycle_v2_research_v1'
-
-function utcIso(value: string): string {
-  return value.replace('Z', '+00:00')
-}
-
-function opportunityKey(direction: 'long' | 'short' = 'long'): string {
-  return `${LIFECYCLE_POLICY_ID}:JM:JM2609:2026-08-12:${direction}:2026-08-13T02:00:00+00:00`
-}
-
-function transitionId(key: string, transitionAt: string, toStage: string): string {
-  return `${key}:${utcIso(transitionAt)}:${toStage}`
-}
-
-function pivotId(kind: 'high' | 'low' = 'high'): string {
-  return `JM2609:2026-08-12:5m:${kind}:2026-08-13T01:45:00+00:00`
-}
-
-const readyPayload = {
-  symbol: 'jm',
-  product_name: '焦煤',
-  frequency: '5m',
-  actual_contract: 'JM2609',
-  dominant_mapping_date: '2026-08-13',
-  segment_start_trading_day: '2026-08-12',
-  source_mode: 'canonical_live',
-  live_observation: 'available',
-  live_reason: null,
-  macd_policy_id: 'web_macd_legacy_v1',
-  signal_macd_policy_id: 'subing_macd_sma_window_scale2_v1',
-  calibration_state: 'accepted',
-  calibration_id: 'subing_intraday_v1',
-  primary: {
-    status: 'ready',
-    snapshot: {
-      timeframe: '5m',
-      bar_end: '2026-08-13T02:25:00Z',
-      trading_day: '2026-08-13',
-      contract: 'JM2609',
-      segment_start_trading_day: '2026-08-12',
-      bar_source: 'live',
-      close: '100.5',
-      ema21: '99.5',
-      price_side: 'above',
-      slope_5_raw: '0.12',
-      slope_10_raw: '0.08',
-      slope_5_bps_per_bar: '2.7',
-      slope_10_bps_per_bar: '1.8',
-      macd_dif: '0.7',
-      macd_dea: '0.5',
-      macd_histogram: '0.4',
-      macd_cross: 'golden',
-      macd_cross_level: '0.6',
-      macd_zero_distance_abs: '0.6',
-      macd_zero_distance_bps: '59.7',
-      volume: '342',
-      previous_volume: '100',
-      volume_ratio_prev: '3.42',
-    },
-  },
-  companion: {
-    status: 'insufficient_data',
-    snapshot: null,
-  },
-  primary_signal: {
-    status: 'not_matched', direction: 'none', trigger_timeframe: '5m',
-    lower_tf_confirmation: false, resolution: null,
-    conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
-  },
-  resolved_signal: null,
-  lifecycle: {
-    formula_version: 'subing_lifecycle_v2', policy_id: 'subing_lifecycle_v2_research_v1', research_only: true,
-    observed_at: '2026-08-13T02:25:00Z', anchor_bar_end: '2026-08-13T02:15:00Z',
-    availability: 'ready', unavailable_reason: null, direction: 'none', stage: 'idle',
-    opportunity_key: null, entry_progress: null, trigger_kind: null, trigger_timeframe: null,
-    triggered_at: null, confirmation_source: null, confirmed_at: null, hold_count: 0, hold_required: 3,
-    bound_reference_pivot: null, rebreak_reference_price: null, retest_at: null, retest_rebreak_count: 0,
-    volume_ratio_prev: null, open_interest_delta: null, current_risk_codes: [], risk_progress: null,
-    lower_tf_risk_count: 0, last_confirmed_stage: 'idle', last_confirmed_at: '2026-08-13T02:25:00Z', latest_transition: null,
-    crossed_trading_day: false, boundary_reset: null, formal_v1_matched: false,
-  },
-} as unknown as SubingResearchResponse
+const readyPayload = cloneSubingLifecycleCase('longSetup') as SubingResearchResponse
 
 test('normalizes Decimal Factor values at the SuBing HTTP boundary', () => {
   const result = normalizeSubingResearch(readyPayload)
 
-  assert.equal(result.primary.snapshot?.slope_5_bps_per_bar, 2.7)
-  assert.equal(result.primary.snapshot?.macd_zero_distance_bps, 59.7)
-  assert.equal(result.primary.snapshot?.volume_ratio_prev, 3.42)
+  assert.equal(result.primary.snapshot?.slope_5_bps_per_bar, 2)
+  assert.equal(result.primary.snapshot?.macd_zero_distance_bps, 15)
+  assert.equal(result.primary.snapshot?.volume_ratio_prev, 1)
 })
 
 test('normalizes the complete additive lifecycle contract without changing Factor values', () => {
-  const result = normalizeSubingResearch({
-    ...readyPayload,
-    primary_signal: {
-      status: 'matched', direction: 'long', trigger_timeframe: '5m',
-      lower_tf_confirmation: false, resolution: null,
-      conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
-    },
-    lifecycle: {
-      formula_version: 'subing_lifecycle_v2', policy_id: 'subing_lifecycle_v2_research_v1', research_only: true,
-      observed_at: '2026-08-13T02:25:00Z', anchor_bar_end: '2026-08-13T02:15:00Z',
-      availability: 'ready', unavailable_reason: null, direction: 'long', stage: 'entry_confirmed',
-      opportunity_key: opportunityKey(),
-      entry_progress: null, trigger_kind: 'pivot_break', trigger_timeframe: '5m',
-      triggered_at: '2026-08-13T02:15:00Z', confirmation_source: 'formal_v1',
-      confirmed_at: '2026-08-13T02:25:00Z', hold_count: 2, hold_required: 3,
-      bound_reference_pivot: {
-        pivot_id: pivotId(), kind: 'high', timeframe: '5m',
-        pivot_time: '2026-08-13T01:45:00Z', confirmed_at: '2026-08-13T02:10:00Z',
-        price: '104.5', contract: 'JM2609', segment_start_trading_day: '2026-08-12',
-      },
-      rebreak_reference_price: '104.5', retest_at: null, retest_rebreak_count: 0,
-      volume_ratio_prev: '3.42', open_interest_delta: '-12.5', current_risk_codes: [],
-      risk_progress: null, lower_tf_risk_count: 0, last_confirmed_stage: 'entry_confirmed',
-      last_confirmed_at: '2026-08-13T02:25:00Z', latest_transition: {
-        transition_id: transitionId(opportunityKey(), '2026-08-13T02:25:00Z', 'entry_confirmed'),
-        transition_at: '2026-08-13T02:25:00Z', from_stage: 'setup_armed', to_stage: 'entry_confirmed', reason_codes: ['FORMAL_V1_MATCHED'],
-      },
-      crossed_trading_day: false, boundary_reset: null, formal_v1_matched: true,
-    },
-  } as SubingResearchResponse)
+  const result = normalizeSubingResearch(
+    cloneSubingLifecycleCase('pivotRetest1') as SubingResearchResponse,
+  )
 
-  assert.equal(result.primary.snapshot?.slope_5_bps_per_bar, 2.7)
-  assert.equal(result.lifecycle.bound_reference_pivot?.price, 104.5)
-  assert.equal(result.lifecycle.rebreak_reference_price, 104.5)
-  assert.equal(result.lifecycle.volume_ratio_prev, 3.42)
-  assert.equal(result.lifecycle.open_interest_delta, -12.5)
-  assert.equal(result.lifecycle.latest_transition?.to_stage, 'entry_confirmed')
+  assert.equal(result.primary.snapshot?.slope_5_bps_per_bar, 2)
+  assert.equal(result.companion?.status, 'ready')
+  assert.equal(result.lifecycle.bound_reference_pivot?.price, 110)
+  assert.equal(result.lifecycle.rebreak_reference_price, 115)
+  assert.equal(result.lifecycle.volume_ratio_prev, 3)
+  assert.equal(result.lifecycle.open_interest_delta, 18)
+  assert.equal(result.lifecycle.latest_transition?.to_stage, 'setup_armed')
 })
 
 test('keeps research lifecycle labels separate from formal V1 signal labels', () => {
@@ -158,67 +52,28 @@ test('keeps research lifecycle labels separate from formal V1 signal labels', ()
 })
 
 test('maps only current immutable lifecycle facts to neutral research markers', () => {
-  const lifecycle = normalizeSubingResearch({
-    ...readyPayload,
-    primary: {
-      ...readyPayload.primary,
-      snapshot: { ...readyPayload.primary.snapshot, bar_end: '2026-08-13T02:30:00Z' },
-    },
-    companion: {
-      status: 'ready',
-      snapshot: { ...readyPayload.primary.snapshot, timeframe: '15m', bar_end: '2026-08-13T02:30:00Z' },
-    },
-    lifecycle: {
-      formula_version: 'subing_lifecycle_v2', policy_id: 'subing_lifecycle_v2_research_v1', research_only: true,
-      observed_at: '2026-08-13T02:30:00Z', anchor_bar_end: '2026-08-13T02:30:00Z',
-      availability: 'ready', unavailable_reason: null, direction: 'long', stage: 'exit_risk',
-      opportunity_key: opportunityKey(),
-      entry_progress: null, trigger_kind: 'pivot_break', trigger_timeframe: '5m',
-      triggered_at: '2026-08-13T02:05:00Z', confirmation_source: 'pivot_break_hold',
-      confirmed_at: '2026-08-13T02:15:00Z', hold_count: 3, hold_required: 3,
-      bound_reference_pivot: {
-        pivot_id: pivotId(), kind: 'high', timeframe: '5m',
-        pivot_time: '2026-08-13T01:45:00Z', confirmed_at: '2026-08-13T02:00:00Z',
-        price: '104.5', contract: 'JM2609', segment_start_trading_day: '2026-08-12',
-      },
-      rebreak_reference_price: '104.5', retest_at: null, retest_rebreak_count: 0,
-      volume_ratio_prev: null, open_interest_delta: null, current_risk_codes: ['LOWER_TF_EMA21_BREACH'],
-      risk_progress: null, lower_tf_risk_count: 2, last_confirmed_stage: 'exit_risk',
-      last_confirmed_at: '2026-08-13T02:30:00Z', latest_transition: {
-        transition_id: transitionId(opportunityKey(), '2026-08-13T02:30:00Z', 'exit_risk'),
-        transition_at: '2026-08-13T02:30:00Z',
-        from_stage: 'continuation', to_stage: 'exit_risk', reason_codes: ['LOWER_TF_EMA21_BREACH'],
-      },
-      crossed_trading_day: false, boundary_reset: null, formal_v1_matched: false,
-    },
-  } as SubingResearchResponse).lifecycle
+  const lifecycle = normalizeSubingResearch(
+    cloneSubingLifecycleCase('shortExitRiskFirst') as SubingResearchResponse,
+  ).lifecycle
+  const key = lifecycle.opportunity_key!
+  const transitionId = lifecycle.latest_transition!.transition_id
 
   assert.deepEqual(lifecycleSnapshotToMarkers(lifecycle), [
-    { id: 'lifecycle:subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00:pivot-break', time: '2026-08-13T02:05:00Z', label: '前高突破', tooltip: 'SuBing 生命周期研究 · 前高突破', tone: 'neutral', position: 'belowBar', shape: 'circle' },
-    { id: 'lifecycle:subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00:entry', time: '2026-08-13T02:15:00Z', label: '研究确认', tooltip: 'SuBing 生命周期研究 · 研究确认', tone: 'neutral', position: 'belowBar', shape: 'circle' },
-    { id: `lifecycle:${opportunityKey()}:transition:${transitionId(opportunityKey(), '2026-08-13T02:30:00Z', 'exit_risk')}`, time: '2026-08-13T02:30:00Z', label: '风险', tooltip: 'SuBing 生命周期研究 · 风险', tone: 'neutral', position: 'belowBar', shape: 'circle' },
+    { id: `lifecycle:${key}:entry`, time: '2026-01-12T02:00:00Z', label: '研究确认', tooltip: 'SuBing 生命周期研究 · 研究确认', tone: 'neutral', position: 'belowBar', shape: 'circle' },
+    { id: `lifecycle:${key}:transition:${transitionId}`, time: '2026-01-12T02:10:00Z', label: '风险', tooltip: 'SuBing 生命周期研究 · 风险', tone: 'neutral', position: 'belowBar', shape: 'circle' },
   ])
 })
 
-test('maps a closed lifecycle only to its immutable close marker', () => {
-  const markers = lifecycleSnapshotToMarkers({
-    formula_version: 'subing_lifecycle_v2', policy_id: 'subing_lifecycle_v2_research_v1', research_only: true,
-    observed_at: '2026-08-13T02:30:00Z', anchor_bar_end: '2026-08-13T02:30:00Z',
-    availability: 'ready', unavailable_reason: null, direction: 'short', stage: 'closed',
-    opportunity_key: opportunityKey('short'),
-    entry_progress: null, trigger_kind: null, trigger_timeframe: null, triggered_at: null,
-    confirmation_source: null, confirmed_at: null, hold_count: 0, hold_required: 3,
-    bound_reference_pivot: null, rebreak_reference_price: null, retest_at: null, retest_rebreak_count: 0,
-    volume_ratio_prev: null, open_interest_delta: null, current_risk_codes: [], risk_progress: null,
-    lower_tf_risk_count: 0, last_confirmed_stage: 'closed', last_confirmed_at: '2026-08-13T02:30:00Z',
-    latest_transition: { transition_id: transitionId(opportunityKey('short'), '2026-08-13T02:30:00Z', 'closed'), transition_at: '2026-08-13T02:30:00Z', from_stage: 'setup_armed', to_stage: 'closed', reason_codes: ['DIRECTION_CONTEXT_INVALIDATED'] },
-    crossed_trading_day: false, boundary_reset: null, formal_v1_matched: false,
-  })
+test('maps a confirmed hard close to its immutable entry and close facts', () => {
+  const lifecycle = (cloneSubingLifecycleCase('oppositeContextClosed') as SubingResearchResponse).lifecycle
+  const markers = lifecycleSnapshotToMarkers(lifecycle)
+  const key = lifecycle.opportunity_key!
+  const transitionId = lifecycle.latest_transition!.transition_id
 
-  assert.deepEqual(markers, [{
-    id: `lifecycle:${opportunityKey('short')}:transition:${transitionId(opportunityKey('short'), '2026-08-13T02:30:00Z', 'closed')}`, time: '2026-08-13T02:30:00Z', label: '结束',
-    tooltip: 'SuBing 生命周期研究 · 结束', tone: 'neutral', position: 'belowBar', shape: 'circle',
-  }])
+  assert.deepEqual(markers, [
+    { id: `lifecycle:${key}:entry`, time: '2026-01-12T02:00:00Z', label: '研究确认', tooltip: 'SuBing 生命周期研究 · 研究确认', tone: 'neutral', position: 'belowBar', shape: 'circle' },
+    { id: `lifecycle:${key}:transition:${transitionId}`, time: '2026-01-12T02:15:00Z', label: '结束', tooltip: 'SuBing 生命周期研究 · 结束', tone: 'neutral', position: 'belowBar', shape: 'circle' },
+  ])
 })
 
 test('filters old same-contract bars before the current dominant segment', () => {
@@ -235,7 +90,9 @@ test('filters old same-contract bars before the current dominant segment', () =>
 })
 
 test('keeps an insufficient companion explicit without inventing a Factor snapshot', () => {
-  const result = normalizeSubingResearch(readyPayload)
+  const payload = cloneSubingLifecycleCase('longSetup') as SubingResearchResponse
+  payload.companion = { status: 'insufficient_data', snapshot: null }
+  const result = normalizeSubingResearch(payload)
 
   assert.equal(result.companion?.status, 'insufficient_data')
   assert.equal(result.companion?.snapshot, null)
@@ -267,24 +124,9 @@ test('maps every formal Signal status without trading or zero-band language', ()
 })
 
 test('schedules one bounded refresh only for an older companion at a common 5m boundary', () => {
-  const commonBoundary = normalizeSubingResearch({
-    ...readyPayload,
-    primary: {
-      ...readyPayload.primary,
-      snapshot: {
-        ...readyPayload.primary.snapshot!,
-        bar_end: '2026-08-13T02:30:00Z',
-      },
-    },
-    companion: {
-      status: 'ready',
-      snapshot: {
-        ...readyPayload.primary.snapshot!,
-        timeframe: '15m',
-        bar_end: '2026-08-13T02:15:00Z',
-      },
-    },
-  })
+  const commonBoundary = normalizeSubingResearch(
+    cloneSubingLifecycleCase('olderCompanionAtBoundary') as SubingResearchResponse,
+  )
 
   assert.equal(shouldScheduleSubingCompanionRefresh(commonBoundary), true)
   assert.equal(shouldScheduleSubingCompanionRefresh({
@@ -295,22 +137,22 @@ test('schedules one bounded refresh only for an older companion at a common 5m b
     ...commonBoundary,
     primary: {
       ...commonBoundary.primary,
-      snapshot: { ...commonBoundary.primary.snapshot!, bar_end: '2026-08-13T02:25:00Z' },
+      snapshot: { ...commonBoundary.primary.snapshot!, bar_end: commonBoundary.companion!.snapshot!.bar_end },
     },
   }), false)
 })
 
 test('SuBing observation composable preserves current dominant identity after extraction', async () => {
   const selectedOverlay = ref<'subing' | 'htdy' | 'none'>('subing')
-  const symbol = ref('jm')
+  const symbol = ref('ag')
   const frequency = ref<'5m' | '15m' | '1d'>('5m')
   const dominants = ref([{
-    product: 'jm',
-    product_name: '焦煤',
-    sector: 'black',
-    exchange: 'DCE',
-    actual_contract: 'JM2609',
-    dominant_mapping_date: '2026-08-13',
+    product: 'ag',
+    product_name: '白银',
+    sector: 'precious',
+    exchange: 'SHFE',
+    actual_contract: 'AG2601',
+    dominant_mapping_date: '2026-01-12',
   }])
   const replacements: BarData[][] = []
   const controller = useSubingObservation({
@@ -323,13 +165,13 @@ test('SuBing observation composable preserves current dominant identity after ex
     fetchSnapshot: async () => normalizeSubingResearch(readyPayload),
     fetchDominants: async () => ({ items: dominants.value }),
     refreshSeries: async () => true,
-    visibleBars: () => [bar('2026-08-13T02:25:00Z', '2026-08-13')],
+    visibleBars: () => [bar('2026-01-12T01:30:00Z', '2026-01-12')],
     replaceChartBars: (items) => replacements.push(items),
   })
 
   await controller.refresh()
 
-  assert.equal(controller.subing.value?.actual_contract, 'JM2609')
+  assert.equal(controller.subing.value?.actual_contract, 'AG2601')
   assert.equal(controller.subingError.value, false)
   assert.equal(controller.subingLoading.value, false)
   assert.equal(replacements.length, 1)
