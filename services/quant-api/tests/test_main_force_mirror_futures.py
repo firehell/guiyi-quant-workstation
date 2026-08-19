@@ -633,3 +633,422 @@ def test_futures_v1_base_outputs_are_prefix_invariant() -> None:
         "short_open_pressure",
     ):
         assert_array_prefix_equal(getattr(full, field), getattr(prefix, field), 60)
+
+
+def _caution_evidence(**overrides: object):
+    from guiyi_quant.indicators.main_force_mirror_futures import (
+        _evaluate_main_force_mirror_futures_caution_evidence,
+    )
+
+    values: dict[str, object] = {
+        "state": "turnover",
+        "oi_impulse": 0.0,
+        "range_position": 0.5,
+        "high": 100.0,
+        "low": 90.0,
+        "open_": 95.0,
+        "close": 95.0,
+        "volume_ratio": 1.0,
+        "clv": 0.0,
+        "long_open_pressure": 1.0,
+        "short_open_pressure": 1.0,
+        "prior_highs": (110.0,) * 10,
+        "prior_lows": (80.0,) * 10,
+        "prior_long_open_pressures": (1.0,) * 10,
+        "prior_short_open_pressures": (1.0,) * 10,
+    }
+    values.update(overrides)
+    return _evaluate_main_force_mirror_futures_caution_evidence(**values)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_long", "expected_short", "expected_reason"),
+    [
+        (
+            {"range_position": 0.85},
+            30.0,
+            0.0,
+            "LONG_UPPER_EXTREME",
+        ),
+        (
+            {"state": "short_cover", "oi_impulse": -0.5},
+            30.0,
+            0.0,
+            "LONG_SHORT_COVER_DOMINATED",
+        ),
+        (
+            {"high": 111.0, "long_open_pressure": 0.7},
+            25.0,
+            0.0,
+            "LONG_OPEN_PRESSURE_DIVERGENCE",
+        ),
+        (
+            {
+                "open_": 90.0,
+                "close": 92.0,
+                "volume_ratio": 1.5,
+                "clv": -0.6,
+            },
+            15.0,
+            0.0,
+            "LONG_HIGH_VOLUME_EXHAUSTION",
+        ),
+        (
+            {"range_position": 0.15},
+            0.0,
+            30.0,
+            "SHORT_LOWER_EXTREME",
+        ),
+        (
+            {"state": "long_liquidation", "oi_impulse": -0.5},
+            0.0,
+            30.0,
+            "SHORT_LONG_LIQUIDATION_DOMINATED",
+        ),
+        (
+            {"low": 79.0, "short_open_pressure": 0.7},
+            0.0,
+            25.0,
+            "SHORT_OPEN_PRESSURE_DIVERGENCE",
+        ),
+        (
+            {
+                "open_": 98.0,
+                "close": 100.0,
+                "volume_ratio": 1.5,
+                "clv": 0.6,
+            },
+            0.0,
+            15.0,
+            "SHORT_LOW_PRICE_ABSORPTION",
+        ),
+    ],
+)
+def test_each_caution_reason_contributes_its_exact_frozen_weight(
+    overrides: dict[str, object],
+    expected_long: float,
+    expected_short: float,
+    expected_reason: str,
+) -> None:
+    evidence = _caution_evidence(**overrides)
+
+    assert evidence.long_score == expected_long
+    assert evidence.short_score == expected_short
+    assert evidence.reason_codes == (expected_reason,)
+
+
+def test_caution_reason_codes_follow_the_fixed_spec_order() -> None:
+    long_evidence = _caution_evidence(
+        range_position=0.85,
+        state="short_cover",
+        oi_impulse=-0.5,
+        high=111.0,
+        long_open_pressure=0.7,
+        open_=90.0,
+        close=92.0,
+        volume_ratio=1.5,
+        clv=-0.6,
+    )
+    short_evidence = _caution_evidence(
+        range_position=0.15,
+        state="long_liquidation",
+        oi_impulse=-0.5,
+        low=79.0,
+        short_open_pressure=0.7,
+        open_=98.0,
+        close=100.0,
+        volume_ratio=1.5,
+        clv=0.6,
+    )
+
+    assert long_evidence.reason_codes == (
+        "LONG_UPPER_EXTREME",
+        "LONG_SHORT_COVER_DOMINATED",
+        "LONG_OPEN_PRESSURE_DIVERGENCE",
+        "LONG_HIGH_VOLUME_EXHAUSTION",
+    )
+    assert long_evidence.long_score == 100.0
+    assert short_evidence.reason_codes == (
+        "SHORT_LOWER_EXTREME",
+        "SHORT_LONG_LIQUIDATION_DOMINATED",
+        "SHORT_OPEN_PRESSURE_DIVERGENCE",
+        "SHORT_LOW_PRICE_ABSORPTION",
+    )
+    assert short_evidence.short_score == 100.0
+
+
+def test_candidate_threshold_uses_raw_score_at_exact_69_70_boundary() -> None:
+    from guiyi_quant.indicators.main_force_mirror_futures import (
+        is_main_force_mirror_futures_candidate,
+        round_half_away_from_zero_binary64,
+    )
+
+    raw_score_that_displays_as_70 = 69.9999996
+    assert round_half_away_from_zero_binary64(raw_score_that_displays_as_70, 6) == 70.0
+    assert is_main_force_mirror_futures_candidate(69.0) is False
+    assert is_main_force_mirror_futures_candidate(raw_score_that_displays_as_70) is False
+    assert is_main_force_mirror_futures_candidate(70.0) is True
+
+
+def _latch_state(**overrides: object):
+    from guiyi_quant.indicators.main_force_mirror_futures import (
+        MainForceMirrorFuturesLatchState,
+    )
+
+    values: dict[str, object] = {
+        "long_armed": True,
+        "short_armed": True,
+        "long_low_score_streak": 0,
+        "short_low_score_streak": 0,
+        "long_build_streak": 0,
+        "short_build_streak": 0,
+    }
+    values.update(overrides)
+    return MainForceMirrorFuturesLatchState(**values)
+
+
+def _latch_step(state, **overrides: object):
+    from guiyi_quant.indicators.main_force_mirror_futures import (
+        step_main_force_mirror_futures_latch,
+    )
+
+    values: dict[str, object] = {
+        "caution_ready": True,
+        "derived_available": True,
+        "block_reset": False,
+        "long_score": 0.0,
+        "short_score": 0.0,
+        "position_state": "turnover",
+        "range_position": 0.5,
+    }
+    values.update(overrides)
+    return step_main_force_mirror_futures_latch(state, **values)
+
+
+def test_latch_single_long_event_consumes_only_long_side() -> None:
+    step = _latch_step(_latch_state(), long_score=70.0)
+
+    assert step.caution == "long_chase_caution"
+    assert step.reason is None
+    assert step.state == _latch_state(long_armed=False)
+
+
+def test_latch_single_short_event_consumes_only_short_side() -> None:
+    step = _latch_step(_latch_state(), short_score=70.0)
+
+    assert step.caution == "short_chase_caution"
+    assert step.reason is None
+    assert step.state == _latch_state(short_armed=False)
+
+
+def test_conflict_emits_no_event_and_preserves_all_latch_state() -> None:
+    before = _latch_state(
+        long_armed=False,
+        short_armed=False,
+        long_low_score_streak=2,
+        short_low_score_streak=1,
+        long_build_streak=1,
+        short_build_streak=2,
+    )
+    step = _latch_step(
+        before,
+        long_score=70.0,
+        short_score=70.0,
+        position_state="long_build",
+        range_position=0.1,
+    )
+
+    assert step.caution is None
+    assert step.reason == "MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT"
+    assert step.state == before
+
+
+def test_conflict_does_not_hide_the_next_legal_latch_event() -> None:
+    before = _latch_state()
+    conflict = _latch_step(before, long_score=70.0, short_score=70.0)
+    legal = _latch_step(conflict.state, long_score=70.0, short_score=0.0)
+
+    assert conflict.state == before
+    assert legal.caution == "long_chase_caution"
+    assert legal.state.long_armed is False
+    assert legal.state.short_armed is True
+
+
+def test_latch_event_clears_triggered_counters_and_advances_other_side() -> None:
+    before = _latch_state(
+        short_armed=False,
+        long_low_score_streak=2,
+        long_build_streak=1,
+        short_low_score_streak=2,
+    )
+    step = _latch_step(
+        before,
+        long_score=70.0,
+        short_score=0.0,
+        range_position=0.5,
+    )
+
+    assert step.caution == "long_chase_caution"
+    assert step.state.long_armed is False
+    assert step.state.long_low_score_streak == 0
+    assert step.state.long_build_streak == 0
+    assert step.state.short_armed is True
+    assert step.state.short_low_score_streak == 0
+    assert step.state.short_build_streak == 0
+
+
+def test_long_range_rearm_is_effective_only_after_the_current_bar() -> None:
+    before = _latch_state(long_armed=False, long_low_score_streak=2)
+    rearmed = _latch_step(before, long_score=0.0, range_position=0.649999)
+
+    assert rearmed.caution is None
+    assert rearmed.state == _latch_state()
+
+    next_bar = _latch_step(rearmed.state, long_score=70.0)
+    assert next_bar.caution == "long_chase_caution"
+    assert next_bar.state.long_armed is False
+
+
+def test_long_build_rearm_requires_two_consecutive_build_bars() -> None:
+    before = _latch_state(
+        long_armed=False,
+        long_low_score_streak=2,
+        long_build_streak=1,
+    )
+    rearmed = _latch_step(
+        before,
+        long_score=0.0,
+        position_state="long_build",
+        range_position=0.65,
+    )
+
+    assert rearmed.caution is None
+    assert rearmed.state == _latch_state()
+
+
+def test_short_range_rearm_is_effective_only_after_the_current_bar() -> None:
+    before = _latch_state(short_armed=False, short_low_score_streak=2)
+    rearmed = _latch_step(before, short_score=0.0, range_position=0.350001)
+
+    assert rearmed.caution is None
+    assert rearmed.state == _latch_state()
+
+    next_bar = _latch_step(rearmed.state, short_score=70.0)
+    assert next_bar.caution == "short_chase_caution"
+    assert next_bar.state.short_armed is False
+
+
+def test_short_build_rearm_requires_two_consecutive_build_bars() -> None:
+    before = _latch_state(
+        short_armed=False,
+        short_low_score_streak=2,
+        short_build_streak=1,
+    )
+    rearmed = _latch_step(
+        before,
+        short_score=0.0,
+        position_state="short_build",
+        range_position=0.35,
+    )
+
+    assert rearmed.caution is None
+    assert rearmed.state == _latch_state()
+
+
+def test_rearm_false_conditions_reset_streaks_directly_to_zero() -> None:
+    before = _latch_state(
+        long_armed=False,
+        short_armed=False,
+        long_low_score_streak=2,
+        short_low_score_streak=2,
+        long_build_streak=1,
+        short_build_streak=1,
+    )
+    step = _latch_step(
+        before,
+        long_score=40.0,
+        short_score=40.0,
+        position_state="turnover",
+    )
+
+    assert step.state == _latch_state(long_armed=False, short_armed=False)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "step_overrides"),
+    [
+        (
+            {
+                "long_armed": False,
+                "long_low_score_streak": 2,
+                "long_build_streak": 1,
+            },
+            {"derived_available": False},
+        ),
+        (
+            {
+                "short_armed": False,
+                "short_low_score_streak": 2,
+                "short_build_streak": 1,
+            },
+            {"caution_ready": False},
+        ),
+    ],
+)
+def test_rearm_derived_unavailable_and_caution_warmup_pause_all_state(
+    overrides: dict[str, object],
+    step_overrides: dict[str, object],
+) -> None:
+    before = _latch_state(**overrides)
+    assert _latch_step(before, **step_overrides).state == before
+
+
+def test_invalid_or_contract_block_change_resets_latch_state() -> None:
+    before = _latch_state(
+        long_armed=False,
+        short_armed=False,
+        long_low_score_streak=2,
+        short_low_score_streak=2,
+        long_build_streak=1,
+        short_build_streak=1,
+    )
+
+    assert _latch_step(before, block_reset=True).state == _latch_state()
+
+
+def test_armed_side_rearm_counters_always_remain_zero() -> None:
+    before = _latch_state(
+        long_low_score_streak=2,
+        short_low_score_streak=2,
+        long_build_streak=1,
+        short_build_streak=1,
+    )
+    step = _latch_step(before, long_score=0.0, short_score=0.0)
+
+    assert step.state == _latch_state()
+
+
+def test_compute_integrates_raw_caution_evidence_and_latch_event() -> None:
+    payload = make_valid_inputs(31)
+    payload["open_"][30] = 129.0
+    payload["high"][30] = 134.0
+    payload["low"][30] = 128.0
+    payload["close"][30] = 131.0
+    payload["volume"][30] = 5000.0
+    payload["open_interest"][30] = 5270.0
+
+    result = _compute(payload)
+
+    assert result.state[30] == "short_cover"
+    assert result.long_caution_score[30] == 100.0
+    assert result.short_caution_score[30] == 15.0
+    assert result.caution_reason_codes[30] == (
+        "LONG_UPPER_EXTREME",
+        "LONG_SHORT_COVER_DOMINATED",
+        "LONG_OPEN_PRESSURE_DIVERGENCE",
+        "LONG_HIGH_VOLUME_EXHAUSTION",
+        "SHORT_LOW_PRICE_ABSORPTION",
+    )
+    assert result.caution[30] == "long_chase_caution"
+    assert result.reason[30] is None
+    assert result.caution_availability_reason[30] is None

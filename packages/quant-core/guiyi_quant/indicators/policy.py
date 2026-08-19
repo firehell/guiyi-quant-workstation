@@ -66,6 +66,28 @@ _POLICIES: dict[str, FormalPolicy] = {
             "the caution event mirrors the provided HHV/BARSLAST formula."
         ),
     ),
+    "main_force_mirror_futures_observation_v1": FormalPolicy(
+        policy_id="main_force_mirror_futures_observation_v1",
+        indicator_family="MAIN_FORCE_MIRROR_FUTURES",
+        seed_policy=None,
+        smoothing_policy=None,
+        histogram_scale=None,
+        lookback="60m_state21_caution31_physical_contract_segment",
+        confirmed_only=True,
+        frozen_legacy=False,
+        allowed_consumers=("Web_manual_observation",),
+        blocked_consumers=(
+            FORMAL_BACKTEST_CONSUMER,
+            "live",
+            "alert",
+            "notification",
+            "auto_order",
+        ),
+        notes=(
+            "60m Web-only directional position-pressure observation proxy. "
+            "Not measured fund flow, participant identity, an Alert, or a trade signal."
+        ),
+    ),
     "subing_macd_sma_window_scale2_v1": FormalPolicy(
         policy_id="subing_macd_sma_window_scale2_v1",
         indicator_family="MACD",

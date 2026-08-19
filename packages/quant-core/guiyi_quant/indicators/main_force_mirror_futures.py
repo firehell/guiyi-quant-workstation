@@ -114,6 +114,32 @@ class MainForceMirrorFuturesResult:
     metadata: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class MainForceMirrorFuturesCautionEvidence:
+    """Unrounded bilateral evidence scores with stable Spec-ordered reasons."""
+
+    long_score: float
+    short_score: float
+    reason_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MainForceMirrorFuturesLatchState:
+    long_armed: bool
+    short_armed: bool
+    long_low_score_streak: int
+    short_low_score_streak: int
+    long_build_streak: int
+    short_build_streak: int
+
+
+@dataclass(frozen=True)
+class MainForceMirrorFuturesLatchStep:
+    state: MainForceMirrorFuturesLatchState
+    caution: MainForceMirrorFuturesCaution | None
+    reason: str | None
+
+
 def round_half_away_from_zero_binary64(value: float, digits: int) -> float:
     """Round a binary64 value with the frozen cross-runtime V1 policy."""
 
@@ -150,6 +176,248 @@ def classify_main_force_mirror_futures_state(
         "short_build"
         if oi_impulse >= DEFAULT_PARAMETERS["oi_deadband"]
         else "long_liquidation"
+    )
+
+
+def is_main_force_mirror_futures_candidate(score: float) -> bool:
+    """Apply the frozen caution threshold to an unrounded evidence score."""
+
+    return score >= DEFAULT_PARAMETERS["caution_threshold"]
+
+
+def _evaluate_main_force_mirror_futures_caution_evidence(
+    *,
+    state: MainForceMirrorFuturesState,
+    oi_impulse: float,
+    range_position: float,
+    high: float,
+    low: float,
+    open_: float,
+    close: float,
+    volume_ratio: float,
+    clv: float,
+    long_open_pressure: float,
+    short_open_pressure: float,
+    prior_highs: Sequence[float],
+    prior_lows: Sequence[float],
+    prior_long_open_pressures: Sequence[float],
+    prior_short_open_pressures: Sequence[float],
+) -> MainForceMirrorFuturesCautionEvidence:
+    """Evaluate all eight frozen caution reasons from raw state-ready values."""
+
+    window = DEFAULT_PARAMETERS["pressure_divergence_window"]
+    prior_sequences = (
+        prior_highs,
+        prior_lows,
+        prior_long_open_pressures,
+        prior_short_open_pressures,
+    )
+    if any(len(values) != window for values in prior_sequences):
+        raise ValueError(f"prior caution evidence must contain exactly {window} points")
+
+    long_score = 0.0
+    short_score = 0.0
+    reasons: list[str] = []
+    prior_high = max(prior_highs)
+    prior_low = min(prior_lows)
+    prior_long_pressure = max(prior_long_open_pressures)
+    prior_short_pressure = max(prior_short_open_pressures)
+    price_range = high - low
+    upper_wick_ratio = (
+        0.0 if price_range == 0.0 else (high - max(open_, close)) / price_range
+    )
+    lower_wick_ratio = (
+        0.0 if price_range == 0.0 else (min(open_, close) - low) / price_range
+    )
+
+    if range_position >= DEFAULT_PARAMETERS["upper_location_threshold"]:
+        long_score += 30.0
+        reasons.append("LONG_UPPER_EXTREME")
+    if (
+        state == "short_cover"
+        and oi_impulse
+        <= -DEFAULT_PARAMETERS["liquidation_dominated_oi_threshold"]
+    ):
+        long_score += 30.0
+        reasons.append("LONG_SHORT_COVER_DOMINATED")
+    if (
+        high > prior_high
+        and prior_long_pressure > 0.0
+        and long_open_pressure
+        <= DEFAULT_PARAMETERS["pressure_confirmation_ratio"] * prior_long_pressure
+    ):
+        long_score += 25.0
+        reasons.append("LONG_OPEN_PRESSURE_DIVERGENCE")
+    if volume_ratio >= DEFAULT_PARAMETERS["high_volume_threshold"] and (
+        clv <= DEFAULT_PARAMETERS["clv_rejection_threshold"]
+        or upper_wick_ratio >= DEFAULT_PARAMETERS["wick_rejection_threshold"]
+    ):
+        long_score += 15.0
+        reasons.append("LONG_HIGH_VOLUME_EXHAUSTION")
+
+    if range_position <= DEFAULT_PARAMETERS["lower_location_threshold"]:
+        short_score += 30.0
+        reasons.append("SHORT_LOWER_EXTREME")
+    if (
+        state == "long_liquidation"
+        and oi_impulse
+        <= -DEFAULT_PARAMETERS["liquidation_dominated_oi_threshold"]
+    ):
+        short_score += 30.0
+        reasons.append("SHORT_LONG_LIQUIDATION_DOMINATED")
+    if (
+        low < prior_low
+        and prior_short_pressure > 0.0
+        and short_open_pressure
+        <= DEFAULT_PARAMETERS["pressure_confirmation_ratio"] * prior_short_pressure
+    ):
+        short_score += 25.0
+        reasons.append("SHORT_OPEN_PRESSURE_DIVERGENCE")
+    if volume_ratio >= DEFAULT_PARAMETERS["high_volume_threshold"] and (
+        clv >= -DEFAULT_PARAMETERS["clv_rejection_threshold"]
+        or lower_wick_ratio >= DEFAULT_PARAMETERS["wick_rejection_threshold"]
+    ):
+        short_score += 15.0
+        reasons.append("SHORT_LOW_PRICE_ABSORPTION")
+
+    return MainForceMirrorFuturesCautionEvidence(
+        long_score=long_score,
+        short_score=short_score,
+        reason_codes=tuple(reasons),
+    )
+
+
+def _initial_main_force_mirror_futures_latch_state() -> (
+    MainForceMirrorFuturesLatchState
+):
+    return MainForceMirrorFuturesLatchState(
+        long_armed=True,
+        short_armed=True,
+        long_low_score_streak=0,
+        short_low_score_streak=0,
+        long_build_streak=0,
+        short_build_streak=0,
+    )
+
+
+def step_main_force_mirror_futures_latch(
+    latch_state: MainForceMirrorFuturesLatchState,
+    *,
+    caution_ready: bool,
+    derived_available: bool,
+    block_reset: bool,
+    long_score: float | None,
+    short_score: float | None,
+    position_state: MainForceMirrorFuturesState | None,
+    range_position: float | None,
+) -> MainForceMirrorFuturesLatchStep:
+    """Apply one exact conflict/event/re-arm transition after raw scoring."""
+
+    if block_reset:
+        return MainForceMirrorFuturesLatchStep(
+            state=_initial_main_force_mirror_futures_latch_state(),
+            caution=None,
+            reason=None,
+        )
+    if not derived_available or not caution_ready:
+        return MainForceMirrorFuturesLatchStep(
+            state=latch_state,
+            caution=None,
+            reason=None,
+        )
+    if (
+        long_score is None
+        or short_score is None
+        or position_state is None
+        or range_position is None
+    ):
+        raise ValueError("caution-ready latch transition requires complete raw values")
+
+    long_candidate = is_main_force_mirror_futures_candidate(long_score)
+    short_candidate = is_main_force_mirror_futures_candidate(short_score)
+    if long_candidate and short_candidate:
+        return MainForceMirrorFuturesLatchStep(
+            state=latch_state,
+            caution=None,
+            reason="MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT",
+        )
+
+    long_triggered = latch_state.long_armed and long_candidate
+    short_triggered = latch_state.short_armed and short_candidate
+    caution: MainForceMirrorFuturesCaution | None = None
+    if long_triggered:
+        caution = "long_chase_caution"
+    elif short_triggered:
+        caution = "short_chase_caution"
+
+    long_armed = latch_state.long_armed
+    long_low_score_streak = latch_state.long_low_score_streak
+    long_build_streak = latch_state.long_build_streak
+    if long_triggered:
+        long_armed = False
+        long_low_score_streak = 0
+        long_build_streak = 0
+    elif long_armed:
+        long_low_score_streak = 0
+        long_build_streak = 0
+    else:
+        long_low_score_streak = (
+            long_low_score_streak + 1
+            if long_score < DEFAULT_PARAMETERS["rearm_score_threshold"]
+            else 0
+        )
+        long_build_streak = (
+            long_build_streak + 1 if position_state == "long_build" else 0
+        )
+        if long_low_score_streak >= DEFAULT_PARAMETERS["rearm_low_score_bars"] and (
+            range_position < DEFAULT_PARAMETERS["long_rearm_range_threshold"]
+            or long_build_streak >= DEFAULT_PARAMETERS["rearm_build_bars"]
+        ):
+            long_armed = True
+            long_low_score_streak = 0
+            long_build_streak = 0
+
+    short_armed = latch_state.short_armed
+    short_low_score_streak = latch_state.short_low_score_streak
+    short_build_streak = latch_state.short_build_streak
+    if short_triggered:
+        short_armed = False
+        short_low_score_streak = 0
+        short_build_streak = 0
+    elif short_armed:
+        short_low_score_streak = 0
+        short_build_streak = 0
+    else:
+        short_low_score_streak = (
+            short_low_score_streak + 1
+            if short_score < DEFAULT_PARAMETERS["rearm_score_threshold"]
+            else 0
+        )
+        short_build_streak = (
+            short_build_streak + 1 if position_state == "short_build" else 0
+        )
+        if (
+            short_low_score_streak >= DEFAULT_PARAMETERS["rearm_low_score_bars"]
+            and (
+                range_position > DEFAULT_PARAMETERS["short_rearm_range_threshold"]
+                or short_build_streak >= DEFAULT_PARAMETERS["rearm_build_bars"]
+            )
+        ):
+            short_armed = True
+            short_low_score_streak = 0
+            short_build_streak = 0
+
+    return MainForceMirrorFuturesLatchStep(
+        state=MainForceMirrorFuturesLatchState(
+            long_armed=long_armed,
+            short_armed=short_armed,
+            long_low_score_streak=long_low_score_streak,
+            short_low_score_streak=short_low_score_streak,
+            long_build_streak=long_build_streak,
+            short_build_streak=short_build_streak,
+        ),
+        caution=caution,
+        reason=None,
     )
 
 
@@ -191,6 +459,7 @@ def compute_main_force_mirror_futures(
     caution_ready = np.zeros(count, dtype=bool)
     reason = np.full(count, None, dtype=object)
     caution_reason = np.full(count, None, dtype=object)
+    open_values = np.full(count, np.nan, dtype=float)
     high_values = np.full(count, np.nan, dtype=float)
     low_values = np.full(count, np.nan, dtype=float)
     close_values = np.full(count, np.nan, dtype=float)
@@ -208,6 +477,10 @@ def compute_main_force_mirror_futures(
     range_position = np.full(count, np.nan, dtype=float)
     long_open_pressure = np.full(count, np.nan, dtype=float)
     short_open_pressure = np.full(count, np.nan, dtype=float)
+    long_caution_score = np.full(count, np.nan, dtype=float)
+    short_caution_score = np.full(count, np.nan, dtype=float)
+    caution = np.full(count, None, dtype=object)
+    caution_reason_codes: list[tuple[str, ...]] = [() for _ in range(count)]
 
     max_seen_parseable_time: int | None = None
 
@@ -231,6 +504,8 @@ def compute_main_force_mirror_futures(
         close_value = _finite_number(raw_close[index])
         volume_value = _finite_number(raw_volume[index])
         oi_value = _finite_number(raw_open_interest[index])
+        if open_value is not None:
+            open_values[index] = open_value
         if high_value is not None:
             high_values[index] = high_value
         if low_value is not None:
@@ -270,6 +545,7 @@ def compute_main_force_mirror_futures(
     _apply_readiness(
         valid=valid,
         contracts=normalized_contracts,
+        open_=open_values,
         high=high_values,
         low=low_values,
         close=close_values,
@@ -291,11 +567,11 @@ def compute_main_force_mirror_futures(
         long_open_pressure=long_open_pressure,
         short_open_pressure=short_open_pressure,
         strength=strength,
+        long_caution_score=long_caution_score,
+        short_caution_score=short_caution_score,
+        caution=caution,
+        caution_reason_codes=caution_reason_codes,
     )
-
-    long_caution_score = np.full(count, np.nan, dtype=float)
-    short_caution_score = np.full(count, np.nan, dtype=float)
-    caution = np.full(count, None, dtype=object)
     parameters = dict(DEFAULT_PARAMETERS)
     parameters_payload = json.dumps(
         parameters,
@@ -328,7 +604,7 @@ def compute_main_force_mirror_futures(
         long_caution_score=long_caution_score,
         short_caution_score=short_caution_score,
         caution=caution,
-        caution_reason_codes=tuple(() for _ in range(count)),
+        caution_reason_codes=tuple(caution_reason_codes),
         metadata={
             "indicator_code": INDICATOR_CODE,
             "indicator_version": INDICATOR_VERSION,
@@ -357,6 +633,7 @@ def _apply_readiness(
     *,
     valid: np.ndarray,
     contracts: np.ndarray,
+    open_: np.ndarray,
     high: np.ndarray,
     low: np.ndarray,
     close: np.ndarray,
@@ -378,6 +655,10 @@ def _apply_readiness(
     long_open_pressure: np.ndarray,
     short_open_pressure: np.ndarray,
     strength: np.ndarray,
+    long_caution_score: np.ndarray,
+    short_caution_score: np.ndarray,
+    caution: np.ndarray,
+    caution_reason_codes: list[tuple[str, ...]],
 ) -> None:
     count = len(valid)
     index = 0
@@ -391,6 +672,7 @@ def _apply_readiness(
             index += 1
         end = index + 1
 
+        block_open = open_[start:end]
         block_high = high[start:end]
         block_low = low[start:end]
         block_close = close[start:end]
@@ -402,6 +684,9 @@ def _apply_readiness(
         range_low = _rolling_extreme(block_low, 20, maximum=False)
         oi_delta = np.diff(block_oi)
         oi_baseline = _ema_sma_seed(np.abs(oi_delta), 20)
+        raw_long_pressures = np.full(end - start, np.nan, dtype=float)
+        raw_short_pressures = np.full(end - start, np.nan, dtype=float)
+        latch_state = _initial_main_force_mirror_futures_latch_state()
 
         for block_index in range(end - start):
             output_index = start + block_index
@@ -532,6 +817,9 @@ def _apply_readiness(
                     )
                 )
 
+            raw_long_pressures[block_index] = raw_long_open_pressure
+            raw_short_pressures[block_index] = raw_short_open_pressure
+
             digits = DEFAULT_PARAMETERS["round_digits"]
             state[output_index] = raw_state
             signed_score[output_index] = round_half_away_from_zero_binary64(
@@ -570,6 +858,45 @@ def _apply_readiness(
             if block_index >= 30 and bool(np.all(state_ready[prior_start:output_index])):
                 caution_ready[output_index] = True
                 caution_reason[output_index] = None
+                prior_slice = slice(block_index - 10, block_index)
+                evidence = _evaluate_main_force_mirror_futures_caution_evidence(
+                    state=raw_state,
+                    oi_impulse=raw_oi_impulse,
+                    range_position=raw_range_position,
+                    high=float(block_high[block_index]),
+                    low=float(block_low[block_index]),
+                    open_=float(block_open[block_index]),
+                    close=float(block_close[block_index]),
+                    volume_ratio=raw_volume_ratio,
+                    clv=raw_clv,
+                    long_open_pressure=raw_long_open_pressure,
+                    short_open_pressure=raw_short_open_pressure,
+                    prior_highs=block_high[prior_slice],
+                    prior_lows=block_low[prior_slice],
+                    prior_long_open_pressures=raw_long_pressures[prior_slice],
+                    prior_short_open_pressures=raw_short_pressures[prior_slice],
+                )
+                long_caution_score[output_index] = (
+                    round_half_away_from_zero_binary64(evidence.long_score, digits)
+                )
+                short_caution_score[output_index] = (
+                    round_half_away_from_zero_binary64(evidence.short_score, digits)
+                )
+                caution_reason_codes[output_index] = evidence.reason_codes
+                latch_step = step_main_force_mirror_futures_latch(
+                    latch_state,
+                    caution_ready=True,
+                    derived_available=True,
+                    block_reset=False,
+                    long_score=evidence.long_score,
+                    short_score=evidence.short_score,
+                    position_state=raw_state,
+                    range_position=raw_range_position,
+                )
+                latch_state = latch_step.state
+                caution[output_index] = latch_step.caution
+                if latch_step.reason is not None:
+                    caution_reason[output_index] = latch_step.reason
         index = end
 
 

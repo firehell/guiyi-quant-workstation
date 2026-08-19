@@ -133,6 +133,7 @@ def test_main_force_mirror_registry_is_web_observation_only() -> None:
     from guiyi_quant.indicators import get_indicator, require_formal_policy
 
     definition = get_indicator("main_force_mirror_v0")
+    assert definition.indicator_version == "designed-v0"
     assert definition.display_type == "subpane"
     assert definition.status == "observation_only"
     assert definition.repainting_risk == "none"
@@ -141,9 +142,27 @@ def test_main_force_mirror_registry_is_web_observation_only() -> None:
     assert definition.live_capable is False
     assert definition.alert_capable is False
     assert definition.supported_intervals == ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+    assert definition.default_parameters == {
+        "volume_window": 20,
+        "flow_ema_period": 5,
+        "range_window": 20,
+        "caution_high_window": 5,
+        "caution_quiet_window": 10,
+        "flow_clip": 3.0,
+        "score_scale": 50.0,
+        "exit_lure_scale": 0.35,
+        "caution_level": 50.0,
+    }
 
     policy = require_formal_policy(definition.formal_policy_id, consumer="Web_manual_observation")
     assert policy.policy_id == "main_force_mirror_observation_v0"
+    assert policy.allowed_consumers == ("Web_manual_observation",)
+    assert policy.blocked_consumers == (
+        "formal_backtest",
+        "live",
+        "alert",
+        "notification",
+    )
 
     for consumer in ("formal_backtest", "live", "alert", "notification"):
         try:

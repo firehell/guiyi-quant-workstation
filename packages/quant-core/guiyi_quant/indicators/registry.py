@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
+from .main_force_mirror_futures import DEFAULT_PARAMETERS as MFM_FUTURES_PARAMETERS
 from .models import IndicatorDefinition, build_indicator_definition
 
 
@@ -147,6 +148,48 @@ _REGISTRY: dict[str, IndicatorDefinition] = {
         default_color="#22c55e",
         output_schema="signal_state",
         formal_policy_id="main_force_mirror_observation_v0",
+        seed_policy=None,
+        smoothing_policy=None,
+        histogram_scale=None,
+    ),
+    "main_force_mirror_futures_v1": build_indicator_definition(
+        indicator_code="main_force_mirror_futures_v1",
+        indicator_version="futures-research-v1",
+        display_name="主力照妖镜·期货 V1",
+        display_type="subpane",
+        input_fields=(
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "open_interest",
+            "physical_contract",
+        ),
+        supported_intervals=("60m",),
+        default_parameters=dict(MFM_FUTURES_PARAMETERS),
+        lookback_bars=31,
+        warmup_bars=30,
+        calculation_source=(
+            "guiyi_quant.indicators.main_force_mirror_futures."
+            "compute_main_force_mirror_futures"
+        ),
+        closed_bar_only=True,
+        confirmed_only=True,
+        status="observation_only",
+        repainting_risk="none",
+        repainting_notes=(
+            "Causal 60m futures directional position-pressure proxy; not measured fund flow, "
+            "participant identity, an Alert, or a trading instruction."
+        ),
+        web_capable=True,
+        backtest_capable=False,
+        live_capable=False,
+        alert_capable=False,
+        default_visible=False,
+        default_color="#22c55e",
+        output_schema="signal_state",
+        formal_policy_id="main_force_mirror_futures_observation_v1",
         seed_policy=None,
         smoothing_policy=None,
         histogram_scale=None,
