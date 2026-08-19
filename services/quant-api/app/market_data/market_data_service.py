@@ -27,6 +27,7 @@ from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
+    ContractTradingDayQuery,
     DatasetKey,
     DatasetKind,
     MarketSeriesPageResult,
@@ -48,7 +49,7 @@ from app.market_data.session_clock import (
     session_windows_for_trading_day,
 )
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
-from app.models import Instrument, MainContractMap
+from app.models import Contract, Instrument, MainContractMap
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -115,25 +116,83 @@ class MarketDataService:
         request: ActualDominantTradingDayQuery,
     ) -> MarketSeriesResult:
         """按精确交易日读取 actual-dominant，不由消费者猜自然时间边界。"""
+        start, end = self._trading_day_window(
+            symbol=request.symbol,
+            since=request.since,
+            through=request.through,
+        )
+        return self.query(
+            SeriesQuery(
+                SeriesKind.ACTUAL_DOMINANT,
+                request.symbol,
+                request.frequency,
+                start,
+                end,
+            )
+        )
+
+    def query_contract_trading_days(
+        self,
+        request: ContractTradingDayQuery,
+    ) -> MarketSeriesResult:
+        """按合约有效期内的精确交易日读取单一物理合约。"""
+        contract = self.catalog.session.scalar(
+            select(Contract).where(
+                Contract.contract_code == request.contract,
+                Contract.instrument_symbol == request.symbol,
+            )
+        )
+        if contract is None or contract.listed_date is None:
+            raise MarketDataError("CONTRACT_METADATA_MISSING")
+        since = max(request.since, contract.listed_date)
+        through = request.through
+        if contract.expired_date is not None:
+            through = min(through, contract.expired_date - timedelta(days=1))
+        if since > through:
+            raise MarketDataError("CONTRACT_ACTIVE_WINDOW_MISSING")
+        start, end = self._trading_day_window(
+            symbol=request.symbol,
+            since=since,
+            through=through,
+        )
+        return self.query(
+            SeriesQuery(
+                SeriesKind.CONTRACT,
+                request.symbol,
+                request.frequency,
+                start,
+                end,
+                contract=request.contract,
+            )
+        )
+
+    def _trading_day_window(
+        self,
+        *,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> tuple[datetime, datetime]:
+        """Resolve inclusive trading-day bounds to the exact outer Session window."""
         try:
             trading_days = self.catalog.trading_days(
-                request.symbol,
-                request.since,
-                request.through,
+                symbol,
+                since,
+                through,
             )
             if not trading_days:
                 raise MarketDataError("TRADING_CALENDAR_MISSING")
-            exchange = self.catalog.exchange_for_symbol(request.symbol)
+            exchange = self.catalog.exchange_for_symbol(symbol)
             first_windows = session_windows_for_trading_day(
                 self.catalog.session,
                 exchange=exchange,
-                symbol=request.symbol,
+                symbol=symbol,
                 trading_day=trading_days[0],
             )
             last_windows = session_windows_for_trading_day(
                 self.catalog.session,
                 exchange=exchange,
-                symbol=request.symbol,
+                symbol=symbol,
                 trading_day=trading_days[-1],
             )
         except CatalogError as exc:
@@ -142,14 +201,9 @@ class MarketDataService:
             raise MarketDataError(exc.code) from exc
         if not first_windows or not last_windows:
             raise MarketDataError("TRADING_SESSION_MISSING")
-        return self.query(
-            SeriesQuery(
-                SeriesKind.ACTUAL_DOMINANT,
-                request.symbol,
-                request.frequency,
-                min(window.start for window in first_windows),
-                max(window.end for window in last_windows),
-            )
+        return (
+            min(window.start for window in first_windows),
+            max(window.end for window in last_windows),
         )
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:

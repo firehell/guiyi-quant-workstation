@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
+import importlib
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime
 from types import MappingProxyType
 from typing import Protocol, cast
-
-from guiyi_quant.indicators.main_force_mirror_futures import (
-    MainForceMirrorFuturesResult,
-    compute_main_force_mirror_futures,
-)
 
 from .domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
+    ContractTradingDayQuery,
     MarketSeriesResult,
     SeriesKind,
     SeriesQuery,
@@ -26,6 +23,12 @@ from .domain import (
 
 
 _HORIZONS = (1, 3, 5, 10)
+_KERNEL_MODULE_PARTS = (
+    "guiyi_quant",
+    "indicators",
+    "main_force_mirror_futures",
+)
+_KERNEL_FUNCTION = "compute_main_force_mirror_futures"
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +128,40 @@ class _MarketDataReader(Protocol):
         request: ActualDominantTradingDayQuery,
     ) -> MarketSeriesResult: ...
 
+    def query_contract_trading_days(
+        self,
+        request: ContractTradingDayQuery,
+    ) -> MarketSeriesResult: ...
+
+
+class _KernelResult(Protocol):
+    metadata: Mapping[str, object]
+    valid: Sequence[bool]
+    state_ready: Sequence[bool]
+    caution_ready: Sequence[bool]
+    reason: Sequence[str | None]
+    caution_availability_reason: Sequence[str | None]
+    state: Sequence[str | None]
+    long_caution_score: Sequence[float]
+    short_caution_score: Sequence[float]
+    caution: Sequence[str | None]
+    caution_reason_codes: Sequence[tuple[str, ...]]
+
+
+class _KernelCallable(Protocol):
+    def __call__(
+        self,
+        *,
+        datetimes: Sequence[datetime],
+        physical_contract: Sequence[str],
+        open_: Sequence[float],
+        high: Sequence[float],
+        low: Sequence[float],
+        close: Sequence[float],
+        volume: Sequence[float],
+        open_interest: Sequence[float | None],
+    ) -> _KernelResult: ...
+
 
 class MainForceMirrorFuturesResearchError(RuntimeError):
     """Stable public read-only Shadow failure without storage details."""
@@ -134,12 +171,29 @@ class MainForceMirrorFuturesResearchError(RuntimeError):
         super().__init__(code)
 
 
+def _load_main_force_mirror_futures_kernel() -> _KernelCallable:
+    """Load the fixed Python V1 authority without expanding static type imports."""
+    try:
+        module = importlib.import_module(".".join(_KERNEL_MODULE_PARTS))
+    except ImportError as exc:
+        raise MainForceMirrorFuturesResearchError(
+            "MFM_FUTURES_V1_KERNEL_UNAVAILABLE"
+        ) from exc
+    candidate = getattr(module, _KERNEL_FUNCTION, None)
+    if not callable(candidate):
+        raise MainForceMirrorFuturesResearchError("MFM_FUTURES_V1_KERNEL_UNAVAILABLE")
+    return cast(_KernelCallable, candidate)
+
+
+compute_main_force_mirror_futures = _load_main_force_mirror_futures_kernel()
+
+
 def _extract_events(
     *,
     request: MainForceMirrorFuturesResearchRequest,
     bars: tuple[CanonicalBar, ...],
     physical_contracts: tuple[str, ...],
-    observation: MainForceMirrorFuturesResult,
+    observation: _KernelResult,
 ) -> tuple[MainForceMirrorFuturesEvent, ...]:
     """Project directional Kernel cautions into immutable event identities."""
 
@@ -250,8 +304,12 @@ class MainForceMirrorFuturesResearchService:
     """Evaluate Futures V1 once over one exact Historical market sequence."""
 
     def __init__(self, market_data: _MarketDataReader) -> None:
-        if not callable(getattr(market_data, "query", None)) or not callable(
-            getattr(market_data, "query_actual_dominant_trading_days", None)
+        if (
+            not callable(getattr(market_data, "query", None))
+            or not callable(
+                getattr(market_data, "query_actual_dominant_trading_days", None)
+            )
+            or not callable(getattr(market_data, "query_contract_trading_days", None))
         ):
             raise TypeError("market_data must implement the read-only query contract")
         self._market_data = market_data
@@ -361,22 +419,13 @@ class MainForceMirrorFuturesResearchService:
                 )
             )
         assert request.contract is not None
-        return self._market_data.query(
-            SeriesQuery(
-                series_kind=SeriesKind.CONTRACT,
+        return self._market_data.query_contract_trading_days(
+            ContractTradingDayQuery(
                 symbol=request.symbol,
                 contract=request.contract,
                 frequency=request.frequency,
-                start=datetime.combine(
-                    request.since - timedelta(days=7),
-                    time.min,
-                    tzinfo=UTC,
-                ),
-                end=datetime.combine(
-                    request.through + timedelta(days=1),
-                    time.min,
-                    tzinfo=UTC,
-                ),
+                since=request.since,
+                through=request.through,
             )
         )
 

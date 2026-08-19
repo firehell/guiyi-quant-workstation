@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+import importlib
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from inspect import signature
 from pathlib import Path
@@ -8,10 +9,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.market_data import (
+    main_force_mirror_futures_research_service as research_module,
+)
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
+    ContractTradingDayQuery,
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
@@ -73,10 +78,20 @@ class _FakeMarketData:
         self.contract_result = contract_result
         self.dominant_result = dominant_result
         self.queries: list[SeriesQuery] = []
+        self.contract_queries: list[ContractTradingDayQuery] = []
         self.dominant_queries: list[ActualDominantTradingDayQuery] = []
 
     def query(self, request: SeriesQuery) -> MarketSeriesResult:
         self.queries.append(request)
+        if self.contract_result is None:
+            raise AssertionError("contract query was not expected")
+        return self.contract_result
+
+    def query_contract_trading_days(
+        self,
+        request: ContractTradingDayQuery,
+    ) -> MarketSeriesResult:
+        self.contract_queries.append(request)
         if self.contract_result is None:
             raise AssertionError("contract query was not expected")
         return self.contract_result
@@ -178,7 +193,9 @@ def test_actual_dominant_uses_only_exact_trading_day_query_and_segments() -> Non
     assert result.segment_reset_count == 0
 
 
-def test_contract_uses_only_series_query_and_binds_requested_contract() -> None:
+def test_contract_uses_only_exact_trading_day_query_and_binds_requested_contract() -> (
+    None
+):
     bars = (_bar(trading_day=_DAY_ONE), _bar(trading_day=_DAY_TWO, hour=2))
     market_data = _FakeMarketData(contract_result=_result(bars))
     request = _request(
@@ -188,12 +205,16 @@ def test_contract_uses_only_series_query_and_binds_requested_contract() -> None:
 
     result = MainForceMirrorFuturesResearchService(market_data).run(request)
 
-    assert len(market_data.queries) == 1
-    query = market_data.queries[0]
-    assert query.series_kind is SeriesKind.CONTRACT
-    assert query.symbol == "jm"
-    assert query.contract == "JM2609"
-    assert query.frequency is BarFrequency.H1
+    assert market_data.contract_queries == [
+        ContractTradingDayQuery(
+            "jm",
+            "JM2609",
+            BarFrequency.H1,
+            _DAY_ONE,
+            _DAY_TWO,
+        )
+    ]
+    assert market_data.queries == []
     assert market_data.dominant_queries == []
     assert result.products == ("jm",)
     assert result.bars_valid_count == 2
@@ -388,6 +409,169 @@ def test_service_uses_future_bars_only_for_mirrored_segment_local_outcomes(
         assert summary.reversal_returns == ()
         assert summary.warning_mfe == ()
         assert summary.warning_mae == ()
+
+
+def test_runtime_kernel_loader_uses_exact_python_v1_authority_and_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader = getattr(research_module, "_load_main_force_mirror_futures_kernel")
+    assert research_module._KERNEL_MODULE_PARTS == (
+        "guiyi_quant",
+        "indicators",
+        "main_force_mirror_futures",
+    )
+    assert research_module._KERNEL_FUNCTION == "compute_main_force_mirror_futures"
+    authority = importlib.import_module(
+        "guiyi_quant.indicators.main_force_mirror_futures"
+    )
+
+    assert loader() is authority.compute_main_force_mirror_futures
+    assert loader().__module__ == "guiyi_quant.indicators.main_force_mirror_futures"
+
+    with monkeypatch.context() as context:
+        context.setattr(
+            research_module.importlib,
+            "import_module",
+            lambda _name: SimpleNamespace(compute_main_force_mirror_futures=None),
+        )
+        with pytest.raises(RuntimeError) as exc_info:
+            loader()
+    assert getattr(exc_info.value, "code", None) == "MFM_FUTURES_V1_KERNEL_UNAVAILABLE"
+
+    def missing_module(_name: str) -> object:
+        raise ModuleNotFoundError
+
+    with monkeypatch.context() as context:
+        context.setattr(research_module.importlib, "import_module", missing_module)
+        with pytest.raises(RuntimeError) as exc_info:
+            loader()
+    assert getattr(exc_info.value, "code", None) == "MFM_FUTURES_V1_KERNEL_UNAVAILABLE"
+
+
+def test_real_kernel_full_public_prefix_identity_and_only_outcomes_gain_samples() -> (
+    None
+):
+    count = 41
+    datetimes = [
+        datetime(2026, 8, 17, tzinfo=UTC) + timedelta(hours=index)
+        for index in range(count)
+    ]
+    close = [100.0 + index for index in range(count)]
+    open_ = [value - 0.5 for value in close]
+    high = [value + 1.0 for value in close]
+    low = [value - 1.0 for value in close]
+    volume = [1000.0 + index for index in range(count)]
+    open_interest = [5000.0 + 10.0 * index for index in range(count)]
+    open_[30] = 129.0
+    high[30] = 134.0
+    low[30] = 128.0
+    close[30] = 131.0
+    volume[30] = 5000.0
+    open_interest[30] = 5270.0
+    payload = {
+        "datetimes": datetimes,
+        "physical_contract": ["JM2609"] * count,
+        "open_": open_,
+        "high": high,
+        "low": low,
+        "close": close,
+        "volume": volume,
+        "open_interest": open_interest,
+    }
+    prefix_count = 31
+    full_observation = research_module.compute_main_force_mirror_futures(**payload)
+    prefix_observation = research_module.compute_main_force_mirror_futures(
+        **{key: values[:prefix_count] for key, values in payload.items()}
+    )
+
+    for field in (
+        "valid",
+        "state_ready",
+        "caution_ready",
+        "ready",
+        "reason",
+        "caution_availability_reason",
+        "state",
+        "signed_score",
+        "strength",
+        "price_impulse",
+        "clv",
+        "volume_ratio",
+        "delta_oi",
+        "oi_impulse",
+        "direction",
+        "range_position",
+        "long_open_pressure",
+        "short_open_pressure",
+        "long_caution_score",
+        "short_caution_score",
+        "caution",
+        "caution_reason_codes",
+    ):
+        full_prefix = tuple(getattr(full_observation, field)[:prefix_count])
+        prefix = tuple(getattr(prefix_observation, field))
+        assert len(full_prefix) == len(prefix)
+        for left, right in zip(full_prefix, prefix, strict=True):
+            if left != left:  # NaN is the only public scalar unequal to itself.
+                assert right != right
+            else:
+                assert left == right
+
+    bars = tuple(
+        CanonicalBar(
+            bar_end=datetimes[index],
+            trading_day=_DAY_ONE,
+            open=Decimal(str(open_[index])),
+            high=Decimal(str(high[index])),
+            low=Decimal(str(low[index])),
+            close=Decimal(str(close[index])),
+            volume=Decimal(str(volume[index])),
+            turnover=None,
+            open_interest=Decimal(str(open_interest[index])),
+        )
+        for index in range(count)
+    )
+    request = _request(through=_DAY_ONE)
+    full_events = _extract_events(
+        request=request,
+        bars=bars,
+        physical_contracts=("JM2609",) * count,
+        observation=full_observation,
+    )
+    prefix_events = _extract_events(
+        request=request,
+        bars=bars[:prefix_count],
+        physical_contracts=("JM2609",) * prefix_count,
+        observation=prefix_observation,
+    )
+
+    assert prefix_events
+    assert (
+        tuple(
+            event
+            for event in full_events
+            if event.bar_end <= bars[prefix_count - 1].bar_end
+        )
+        == prefix_events
+    )
+
+    segment = (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_ONE),)
+    prefix_result = MainForceMirrorFuturesResearchService(
+        _FakeMarketData(dominant_result=_result(bars[:prefix_count], segment))
+    ).run(request)
+    full_result = MainForceMirrorFuturesResearchService(
+        _FakeMarketData(dominant_result=_result(bars, segment))
+    ).run(request)
+
+    assert full_result.event_count_long == prefix_result.event_count_long == 1
+    assert full_result.event_count_short == prefix_result.event_count_short == 0
+    assert full_result.score_distribution == prefix_result.score_distribution == (100,)
+    assert (
+        full_result.reason_code_distribution == prefix_result.reason_code_distribution
+    )
+    for horizon in (1, 3, 5, 10):
+        assert prefix_result.horizon_summary[horizon].sample_count == 0
+        assert full_result.horizon_summary[horizon].sample_count == 1
 
 
 def test_insufficient_future_bars_do_not_create_horizon_samples(

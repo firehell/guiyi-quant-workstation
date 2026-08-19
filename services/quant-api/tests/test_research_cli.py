@@ -1333,6 +1333,7 @@ def test_mirror_composition_wraps_only_the_market_data_service(
         {
             "query": lambda self, request: request,
             "query_actual_dominant_trading_days": lambda self, request: request,
+            "query_contract_trading_days": lambda self, request: request,
         },
     )()
     sessions: list[object] = []
