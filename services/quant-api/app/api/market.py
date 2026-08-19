@@ -29,6 +29,7 @@ from app.market_data.domain import (
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.market_research_service import ResearchSeriesIdentity
 from app.market_data.subing_calibration import SubingCalibrationError
+from app.market_data.subing_lifecycle import SubingLifecycleSnapshot
 from app.market_data.subing_read_service import SubingReadRequest
 from app.market_data.subing_research import SubingFactorResult, SubingSignalEvaluation
 from app.schemas.market import (
@@ -47,6 +48,9 @@ from app.schemas.market import (
     SubingConditionOut,
     SubingFactorResultOut,
     SubingFactorSnapshotOut,
+    SubingLifecyclePivotOut,
+    SubingLifecycleSnapshotOut,
+    SubingLifecycleTransitionOut,
     SubingResearchResponse,
     SubingSignalOut,
 )
@@ -258,6 +262,7 @@ def subing_research(
             if snapshot.resolved_signal is not None
             else None
         ),
+        lifecycle=_subing_lifecycle(snapshot.lifecycle),
     )
 
 
@@ -380,4 +385,94 @@ def _subing_signal(signal: SubingSignalEvaluation) -> SubingSignalOut:
             for condition in signal.conditions
         ],
         error_code=signal.error_code,
+    )
+
+
+def _subing_lifecycle(snapshot: SubingLifecycleSnapshot) -> SubingLifecycleSnapshotOut:
+    """Project the immutable research snapshot without evaluating lifecycle logic."""
+    pivot = snapshot.bound_reference_pivot
+    transition = snapshot.latest_transition
+    return SubingLifecycleSnapshotOut(
+        formula_version=snapshot.formula_version,
+        policy_id=snapshot.policy_id,
+        research_only=snapshot.research_only,
+        observed_at=snapshot.observed_at,
+        anchor_bar_end=snapshot.anchor_bar_end,
+        availability=snapshot.availability.value,
+        unavailable_reason=snapshot.unavailable_reason,
+        direction=snapshot.direction.value,
+        stage=snapshot.stage.value,
+        opportunity_key=_subing_opportunity_key(snapshot),
+        entry_progress=(
+            snapshot.entry_progress.value if snapshot.entry_progress is not None else None
+        ),
+        trigger_kind=snapshot.trigger_kind,
+        trigger_timeframe=(
+            snapshot.trigger_timeframe.value
+            if snapshot.trigger_timeframe is not None
+            else None
+        ),
+        triggered_at=snapshot.triggered_at,
+        confirmation_source=(
+            snapshot.confirmation_source.value
+            if snapshot.confirmation_source is not None
+            else None
+        ),
+        confirmed_at=snapshot.confirmed_at,
+        hold_count=snapshot.hold_count,
+        hold_required=snapshot.hold_required,
+        bound_reference_pivot=(
+            SubingLifecyclePivotOut(
+                pivot_id=pivot.pivot_id,
+                kind=pivot.kind.value,
+                timeframe=pivot.source_timeframe.value,
+                pivot_time=pivot.pivot_time,
+                confirmed_at=pivot.confirmed_at,
+                price=pivot.price,
+                contract=pivot.contract,
+                segment_start_trading_day=pivot.segment_start_trading_day,
+            )
+            if pivot is not None
+            else None
+        ),
+        rebreak_reference_price=snapshot.rebreak_reference_price,
+        retest_at=snapshot.retest_at,
+        retest_rebreak_count=snapshot.retest_rebreak_count,
+        volume_ratio_prev=snapshot.volume_ratio_prev,
+        open_interest_delta=snapshot.open_interest_delta,
+        current_risk_codes=list(snapshot.current_risk_codes),
+        risk_progress=snapshot.risk_progress,
+        lower_tf_risk_count=snapshot.lower_tf_risk_count,
+        last_confirmed_stage=snapshot.last_confirmed_stage.value,
+        last_confirmed_at=snapshot.last_confirmed_at,
+        latest_transition=(
+            SubingLifecycleTransitionOut(
+                transition_id=transition.transition_id,
+                transition_at=transition.transition_at,
+                from_stage=transition.from_stage.value,
+                to_stage=transition.to_stage.value,
+                reason_codes=list(transition.reason_codes),
+            )
+            if transition is not None
+            else None
+        ),
+        crossed_trading_day=snapshot.crossed_trading_day,
+        boundary_reset=snapshot.boundary_reset,
+        formal_v1_matched=snapshot.formal_v1_matched,
+    )
+
+
+def _subing_opportunity_key(snapshot: SubingLifecycleSnapshot) -> str | None:
+    key = snapshot.opportunity_key
+    if key is None:
+        return None
+    return ":".join(
+        (
+            key.policy_id,
+            key.symbol,
+            key.contract,
+            key.segment_start_trading_day.isoformat(),
+            key.direction.value,
+            key.origin_at.isoformat(),
+        )
     )
