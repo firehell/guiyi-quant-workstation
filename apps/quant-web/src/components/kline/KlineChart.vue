@@ -69,6 +69,7 @@ let isNearLeftBoundary = false
 let paginationArmed = false
 let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
+const secondaryPanelTop = ref<number | null>(null)
 let derivedData = buildKlineDerivedData([], [])
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
@@ -145,6 +146,7 @@ onMounted(async () => {
   chart.subscribeCrosshairMove(onCrosshairMove)
   observer = new ResizeObserver(() => resize())
   observer.observe(container.value)
+  container.value.addEventListener('pointerup', syncSecondaryPanelTop)
   replaceBars(props.bars)
 })
 
@@ -152,6 +154,7 @@ onUnmounted(() => {
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart?.unsubscribeCrosshairMove(onCrosshairMove)
   observer?.disconnect()
+  container.value?.removeEventListener('pointerup', syncSecondaryPanelTop)
   chart?.remove()
 })
 
@@ -203,6 +206,7 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
     const range = chart?.timeScale().getVisibleLogicalRange()
     isNearLeftBoundary = !!range && range.from <= 20
     paginationArmed = true
+    syncSecondaryPanelTop()
   })
 }
 
@@ -400,9 +404,16 @@ function isDaily() {
   return props.period === '1d' || props.period === '1w'
 }
 
+function syncSecondaryPanelTop() {
+  const panes = chart?.panes()
+  if (!panes || panes.length < 3) return
+  secondaryPanelTop.value = panes[0].getHeight() + panes[1].getHeight()
+}
+
 function resize() {
   if (!container.value || !chart) return
   chart.resize(container.value.clientWidth, container.value.clientHeight)
+  requestAnimationFrame(syncSecondaryPanelTop)
 }
 
 defineExpose({
@@ -414,7 +425,12 @@ defineExpose({
 </script>
 
 <template>
-  <div class="kline-shell" data-testid="kline-shell" :data-alert-marker-count="alertMarkers.length">
+  <div
+    class="kline-shell"
+    data-testid="kline-shell"
+    :data-alert-marker-count="alertMarkers.length"
+    :data-secondary-panel="selectedSecondaryPanel"
+  >
     <div ref="container" class="chart" />
     <KlineHoverLegend :context="hoverContext" />
     <div
@@ -422,6 +438,7 @@ defineExpose({
       data-testid="secondary-panel-tabs"
       role="tablist"
       aria-label="副图指标"
+      :style="{ top: secondaryPanelTop === null ? '80%' : `${secondaryPanelTop + 5}px` }"
     >
       <button
         v-for="item in SECONDARY_PANEL_TABS"
@@ -462,7 +479,7 @@ defineExpose({
 <style scoped>
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
 .chart { width: 100%; height: 100%; }
-.secondary-panel-header { position: absolute; z-index: 3; top: calc(80% + 5px); left: 10px; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 84px); min-height: 26px; pointer-events: auto; }
+.secondary-panel-header { position: absolute; z-index: 3; left: 10px; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 84px); min-height: 26px; pointer-events: auto; }
 .secondary-panel-tab { appearance: none; border: 0; border-bottom: 2px solid transparent; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-muted); font: inherit; font-size: var(--gy-font-size-xs); cursor: pointer; }
 .secondary-panel-tab:hover { color: var(--gy-text-primary); }
 .secondary-panel-tab--active { border-bottom-color: var(--gy-accent); color: var(--gy-text-primary); font-weight: 600; }
