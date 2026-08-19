@@ -21,7 +21,19 @@ from app.market_data.market_data_service import (
 )
 from app.market_data.market_read_service import MarketReadState
 from app.market_data.subing_calibration import SubingCalibration, SubingCalibrationError
-from app.market_data.subing_read_service import SubingReadRequest, SubingReadService
+from app.market_data.subing_lifecycle import (
+    LifecycleAvailability,
+    evaluate_subing_lifecycle as reduce_subing_lifecycle,
+)
+from app.market_data.subing_lifecycle_policy import (
+    SubingLifecyclePolicyError,
+    load_subing_lifecycle_policy,
+)
+from app.market_data.subing_read_service import (
+    SubingReadRequest,
+    SubingReadService,
+    SubingReadSnapshot,
+)
 from app.market_data.subing_research import (
     MacdCross,
     PriceSide,
@@ -32,6 +44,7 @@ from app.market_data.subing_research import (
     SubingSignalResolution,
     SubingSignalEvaluation,
     SubingSignalStatus,
+    calculate_subing_factor_series as calculate_factor_series,
 )
 
 
@@ -344,6 +357,245 @@ def test_daily_snapshot_is_historical_only_and_has_no_companion() -> None:
     assert result.live_reason == "daily_historical_only"
 
 
+def test_intraday_lifecycle_is_independent_of_requested_v1_timeframe() -> None:
+    bars = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=150,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=50,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+    }
+    service = _service_with_lifecycle(bars)
+
+    requested_5m = service.snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+    requested_15m = service.snapshot(
+        SubingReadRequest("jm", BarFrequency.M15), now=_NOW
+    )
+
+    assert requested_5m.frequency is BarFrequency.M5
+    assert requested_15m.frequency is BarFrequency.M15
+    assert requested_5m.lifecycle == requested_15m.lifecycle
+    assert requested_5m.lifecycle.availability is LifecycleAvailability.READY
+
+
+def test_daily_lifecycle_is_intraday_only_without_changing_v1_projection() -> None:
+    daily = _bars(
+        frequency=BarFrequency.D1,
+        count=50,
+        trading_day=date(2026, 6, 15),
+        first_end=datetime(2026, 6, 15, 7, 0, tzinfo=UTC),
+        first_close=Decimal("100"),
+        trading_day_step=True,
+    )
+    result = SubingReadService(
+        market_data=_FakeMarketData(segment_start=daily[0].trading_day),
+        market_read=_HistoricalOnlyMarketRead({BarFrequency.D1: daily}),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.D1), now=_NOW)
+
+    assert result.primary.snapshot is not None
+    assert result.primary.snapshot.bar_end == daily[-1].bar_end
+    assert result.primary_signal.status is SubingSignalStatus.RESEARCH_PENDING
+    assert result.primary_signal.error_code == "SUBING_DAILY_RESEARCH_PENDING"
+    assert result.lifecycle.availability is LifecycleAvailability.UNAVAILABLE
+    assert result.lifecycle.unavailable_reason == "SUBING_LIFECYCLE_INTRADAY_ONLY"
+
+
+def test_canonical_and_completed_live_prefixes_have_identical_lifecycle() -> None:
+    full_5m = _bars(
+        frequency=BarFrequency.M5,
+        count=150,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    full_15m = _bars(
+        frequency=BarFrequency.M15,
+        count=50,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    canonical = _service_with_lifecycle(
+        {BarFrequency.M5: full_5m, BarFrequency.M15: full_15m}
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+    split = _service_with_lifecycle(
+        {
+            BarFrequency.M5: full_5m[:120],
+            BarFrequency.M15: full_15m[:40],
+        },
+        live={
+            BarFrequency.M15: full_15m[40:],
+            BarFrequency.M5: full_5m[120:],
+        },
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M15), now=_NOW)
+
+    assert canonical.lifecycle == split.lifecycle
+    assert canonical.lifecycle.observed_at == full_5m[-1].bar_end
+    assert split.source_mode == "canonical_live"
+
+
+def test_intraday_factor_series_is_calculated_once_per_timeframe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[BarFrequency] = []
+
+    def calculate_once(bars, *, timeframe, **kwargs):
+        calls.append(timeframe)
+        return calculate_factor_series(bars, timeframe=timeframe, **kwargs)
+
+    monkeypatch.setattr(
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        calculate_once,
+    )
+    bars = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=150,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=50,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+    }
+
+    _service_with_lifecycle(bars).snapshot(
+        SubingReadRequest("jm", BarFrequency.M15), now=_NOW
+    )
+
+    assert calls == [BarFrequency.M5, BarFrequency.M15]
+
+
+def test_lifecycle_excludes_future_companion_from_the_reducer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bars_5m = _bars(
+        frequency=BarFrequency.M5,
+        count=150,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    bars_15m = _bars(
+        frequency=BarFrequency.M15,
+        count=51,
+        trading_day=_SEGMENT_START,
+        first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    observed: dict[str, object] = {}
+
+    def capture(**kwargs):
+        observed.update(kwargs)
+        return reduce_subing_lifecycle(**kwargs)
+
+    monkeypatch.setattr(
+        "app.market_data.subing_read_service.evaluate_subing_lifecycle", capture
+    )
+
+    result = _service_with_lifecycle(
+        {BarFrequency.M5: bars_5m, BarFrequency.M15: bars_15m}
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M15), now=_NOW)
+
+    reducer_5m = observed["bars_5m"]
+    reducer_15m = observed["bars_15m"]
+    assert isinstance(reducer_5m, tuple)
+    assert isinstance(reducer_15m, tuple)
+    assert reducer_5m[-1].bar_end == bars_5m[-1].bar_end
+    assert reducer_15m[-1].bar_end <= reducer_5m[-1].bar_end
+    assert bars_15m[-1].bar_end > reducer_5m[-1].bar_end
+    assert result.primary.snapshot is not None
+    assert result.primary.snapshot.bar_end == bars_15m[-1].bar_end
+
+
+def test_stale_live_identity_falls_back_to_canonical_for_v1_and_lifecycle() -> None:
+    history = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=150,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=50,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+    }
+    live = {
+        BarFrequency.M5: (
+            _bar(history[BarFrequency.M5][-1].bar_end + timedelta(minutes=5), _SEGMENT_START, Decimal("999")),
+        ),
+        BarFrequency.M15: (),
+    }
+    canonical = _service_with_lifecycle(history).snapshot(
+        SubingReadRequest("jm", BarFrequency.M5), now=_NOW
+    )
+    stale = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_FakeMarketRead(
+            history,
+            live=live,
+            state_trading_day=date(2026, 8, 2),
+        ),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+    assert stale.primary == canonical.primary
+    assert stale.lifecycle == canonical.lifecycle
+    assert stale.source_mode == "canonical"
+    assert stale.live_reason == "live_unavailable"
+
+
+def test_missing_lifecycle_policy_does_not_degrade_existing_v1_fields() -> None:
+    bars = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=150,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=50,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+    }
+    ready = _service_with_lifecycle(bars).snapshot(
+        SubingReadRequest("jm", BarFrequency.M5), now=_NOW
+    )
+    unavailable = _service_with_calibration(bars).snapshot(
+        SubingReadRequest("jm", BarFrequency.M5), now=_NOW
+    )
+
+    assert _v1_projection(unavailable) == _v1_projection(ready)
+    assert unavailable.lifecycle.availability is LifecycleAvailability.UNAVAILABLE
+    assert unavailable.lifecycle.unavailable_reason == "SUBING_LIFECYCLE_POLICY_INVALID"
+
+
 @pytest.mark.parametrize("frequency", [BarFrequency.M5, BarFrequency.M15])
 def test_intraday_snapshot_keeps_primary_evaluation_separate_from_resolved_signal(
     monkeypatch: pytest.MonkeyPatch,
@@ -355,11 +607,10 @@ def test_intraday_snapshot_keeps_primary_evaluation_separate_from_resolved_signa
     )
     boundary = datetime(2026, 8, 3, 5, 0, tzinfo=UTC)
     monkeypatch.setattr(
-        "app.market_data.subing_read_service.calculate_subing_factor",
-        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
-            timeframe,
-            boundary,
-            cross=MacdCross.NONE,
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        lambda bars, *, timeframe, **_kwargs: _repeat_factor(
+            bars,
+            _signal_factor(timeframe, boundary, cross=MacdCross.NONE),
         ),
     )
 
@@ -395,12 +646,17 @@ def test_same_boundary_reciprocal_only_match_is_resolved_without_overwriting_pri
         BarFrequency.M15 if frequency is BarFrequency.M5 else BarFrequency.M5
     )
     monkeypatch.setattr(
-        "app.market_data.subing_read_service.calculate_subing_factor",
-        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
-            timeframe,
-            boundary,
-            cross=(MacdCross.NONE if timeframe is frequency else reciprocal_cross),
-            direction=direction,
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        lambda bars, *, timeframe, **_kwargs: _repeat_factor(
+            bars,
+            _signal_factor(
+                timeframe,
+                boundary,
+                cross=(
+                    MacdCross.NONE if timeframe is frequency else reciprocal_cross
+                ),
+                direction=direction,
+            ),
         ),
     )
 
@@ -441,12 +697,15 @@ def test_same_boundary_dual_match_resolves_to_15m_without_overwriting_primary(
         BarFrequency.M15 if frequency is BarFrequency.M5 else BarFrequency.M5
     )
     monkeypatch.setattr(
-        "app.market_data.subing_read_service.calculate_subing_factor",
-        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
-            timeframe,
-            boundary,
-            cross=cross,
-            direction=direction,
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        lambda bars, *, timeframe, **_kwargs: _repeat_factor(
+            bars,
+            _signal_factor(
+                timeframe,
+                boundary,
+                cross=cross,
+                direction=direction,
+            ),
         ),
     )
 
@@ -484,11 +743,16 @@ def test_same_boundary_only_primary_match_resolves_to_requested_timeframe(
         BarFrequency.M15 if frequency is BarFrequency.M5 else BarFrequency.M5
     )
     monkeypatch.setattr(
-        "app.market_data.subing_read_service.calculate_subing_factor",
-        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
-            timeframe,
-            boundary,
-            cross=MacdCross.GOLDEN if timeframe is frequency else MacdCross.NONE,
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        lambda bars, *, timeframe, **_kwargs: _repeat_factor(
+            bars,
+            _signal_factor(
+                timeframe,
+                boundary,
+                cross=(
+                    MacdCross.GOLDEN if timeframe is frequency else MacdCross.NONE
+                ),
+            ),
         ),
     )
 
@@ -514,11 +778,10 @@ def test_same_boundary_opposite_matches_fail_closed_without_overwriting_primary(
         BarFrequency.M15 if frequency is BarFrequency.M5 else BarFrequency.M5
     )
     monkeypatch.setattr(
-        "app.market_data.subing_read_service.calculate_subing_factor",
-        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
-            timeframe,
-            boundary,
-            cross=MacdCross.GOLDEN,
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        lambda bars, *, timeframe, **_kwargs: _repeat_factor(
+            bars,
+            _signal_factor(timeframe, boundary, cross=MacdCross.GOLDEN),
         ),
     )
 
@@ -566,11 +829,10 @@ def test_missing_calibration_keeps_intraday_signal_research_pending(
 ) -> None:
     boundary = datetime(2026, 8, 3, 5, 0, tzinfo=UTC)
     monkeypatch.setattr(
-        "app.market_data.subing_read_service.calculate_subing_factor",
-        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
-            timeframe,
-            boundary,
-            cross=MacdCross.GOLDEN,
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        lambda bars, *, timeframe, **_kwargs: _repeat_factor(
+            bars,
+            _signal_factor(timeframe, boundary, cross=MacdCross.GOLDEN),
         ),
     )
     pending = SubingCalibration(None, frozenset(), {})
@@ -596,11 +858,10 @@ def test_daily_signal_remains_research_pending_with_accepted_intraday_calibratio
 ) -> None:
     boundary = datetime(2026, 8, 3, 7, 0, tzinfo=UTC)
     monkeypatch.setattr(
-        "app.market_data.subing_read_service.calculate_subing_factor",
-        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
-            timeframe,
-            boundary,
-            cross=MacdCross.GOLDEN,
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        lambda bars, *, timeframe, **_kwargs: _repeat_factor(
+            bars,
+            _signal_factor(timeframe, boundary, cross=MacdCross.GOLDEN),
         ),
     )
     result = SubingReadService(
@@ -622,11 +883,10 @@ def test_signal_provenance_keeps_factor_and_scoped_policy_ids_distinct(
 ) -> None:
     boundary = datetime(2026, 8, 3, 5, 0, tzinfo=UTC)
     monkeypatch.setattr(
-        "app.market_data.subing_read_service.calculate_subing_factor",
-        lambda _bars, *, timeframe, **_kwargs: _signal_factor(
-            timeframe,
-            boundary,
-            cross=MacdCross.GOLDEN,
+        "app.market_data.subing_read_service.calculate_subing_factor_series",
+        lambda bars, *, timeframe, **_kwargs: _repeat_factor(
+            bars,
+            _signal_factor(timeframe, boundary, cross=MacdCross.GOLDEN),
         ),
     )
     result = _service_with_calibration(
@@ -641,7 +901,7 @@ def test_signal_provenance_keeps_factor_and_scoped_policy_ids_distinct(
     assert result.calibration_id == "subing_intraday_v1"
 
 
-def test_composition_injects_only_the_tracked_production_calibration(
+def test_composition_injects_tracked_calibration_and_lifecycle_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected = _accepted_calibration()
@@ -650,25 +910,37 @@ def test_composition_injects_only_the_tracked_production_calibration(
     monkeypatch.setattr(composition, "build_market_data_service", lambda _session: "md")
     monkeypatch.setattr(composition, "build_market_read_service", lambda _session: "mr")
 
-    def load(path):
-        observed["path"] = path
+    expected_policy = load_subing_lifecycle_policy()
+
+    def load_calibration(path):
+        observed["calibration_path"] = path
         return expected
+
+    def load_lifecycle(path):
+        observed["lifecycle_path"] = path
+        return expected_policy
 
     class CapturingService:
         def __init__(self, **kwargs) -> None:
             observed.update(kwargs)
 
-    monkeypatch.setattr(composition, "load_accepted_subing_calibration", load)
+    monkeypatch.setattr(
+        composition, "load_accepted_subing_calibration", load_calibration
+    )
+    monkeypatch.setattr(composition, "load_subing_lifecycle_policy", load_lifecycle)
     monkeypatch.setattr(composition, "SubingReadService", CapturingService)
 
     composition.build_subing_read_service(object())
 
     assert observed == {
-        "path": PROJECT_ROOT
+        "calibration_path": PROJECT_ROOT
         / "data/research_policies/subing_calibration_intraday_v1.json",
+        "lifecycle_path": PROJECT_ROOT
+        / "data/research_policies/subing_lifecycle_v2_research_v1.json",
         "market_data": "md",
         "market_read": "mr",
         "calibration": expected,
+        "lifecycle_policy": expected_policy,
     }
 
 
@@ -683,6 +955,35 @@ def test_composition_propagates_malformed_calibration_without_defaulting(
 
     with pytest.raises(SubingCalibrationError, match="SUBING_CALIBRATION_INVALID"):
         composition.build_subing_read_service(object())
+
+
+def test_composition_degrades_only_lifecycle_when_lifecycle_policy_is_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+    monkeypatch.setattr(composition, "build_market_data_service", lambda _session: "md")
+    monkeypatch.setattr(composition, "build_market_read_service", lambda _session: "mr")
+    monkeypatch.setattr(
+        composition,
+        "load_accepted_subing_calibration",
+        lambda _path: _accepted_calibration(),
+    )
+    monkeypatch.setattr(
+        composition,
+        "load_subing_lifecycle_policy",
+        lambda _path: (_ for _ in ()).throw(SubingLifecyclePolicyError()),
+    )
+
+    class CapturingService:
+        def __init__(self, **kwargs) -> None:
+            observed.update(kwargs)
+
+    monkeypatch.setattr(composition, "SubingReadService", CapturingService)
+
+    composition.build_subing_read_service(object())
+
+    assert observed["calibration"] == _accepted_calibration()
+    assert observed["lifecycle_policy"] is None
 
 
 class _FakeMarketData:
@@ -719,11 +1020,13 @@ class _FakeMarketRead:
         live: dict[BarFrequency, tuple[CanonicalBar, ...]] | None = None,
         live_contract: str = "JM2609",
         live_available: bool = True,
+        state_trading_day: date = _SEGMENT_START,
     ) -> None:
         self.history = history
         self.live = live or {}
         self.live_contract = live_contract
         self.live_available = live_available
+        self.state_trading_day = state_trading_day
 
     def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         assert request.series_kind is SeriesKind.CONTRACT
@@ -750,7 +1053,7 @@ class _FakeMarketRead:
             frequency=identity.frequency.value,
             operational=True,
             phase="trading",
-            trading_day=_SEGMENT_START,
+            trading_day=self.state_trading_day,
             live_eligible=True,
             live_available=self.live_available,
             live_contract=self.live_contract,
@@ -800,6 +1103,23 @@ def _service_with_calibration(
         market_data=_FakeMarketData(),
         market_read=_FakeMarketRead(history, live_available=False),
         calibration=_accepted_calibration(),
+    )
+
+
+def _service_with_lifecycle(
+    history: dict[BarFrequency, tuple[CanonicalBar, ...]],
+    *,
+    live: dict[BarFrequency, tuple[CanonicalBar, ...]] | None = None,
+) -> SubingReadService:
+    return SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_FakeMarketRead(
+            history,
+            live=live,
+            live_available=live is not None,
+        ),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
     )
 
 
@@ -854,6 +1174,35 @@ def _signal_factor(
             previous_volume=Decimal("100"),
             volume_ratio_prev=Decimal("3.5"),
         ),
+    )
+
+
+def _repeat_factor(
+    bars: tuple[CanonicalBar, ...],
+    factor: SubingFactorResult,
+) -> tuple[SubingFactorResult, ...]:
+    return tuple(factor for _bar_value in bars)
+
+
+def _v1_projection(snapshot: SubingReadSnapshot) -> tuple[object, ...]:
+    return (
+        snapshot.symbol,
+        snapshot.product_name,
+        snapshot.frequency,
+        snapshot.actual_contract,
+        snapshot.dominant_mapping_date,
+        snapshot.segment_start_trading_day,
+        snapshot.source_mode,
+        snapshot.live_observation,
+        snapshot.live_reason,
+        snapshot.macd_policy_id,
+        snapshot.signal_macd_policy_id,
+        snapshot.calibration_state,
+        snapshot.calibration_id,
+        snapshot.primary,
+        snapshot.companion,
+        snapshot.primary_signal,
+        snapshot.resolved_signal,
     )
 
 
