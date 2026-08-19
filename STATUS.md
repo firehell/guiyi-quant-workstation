@@ -8,8 +8,8 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 `develop` 正在形成 `v1.6.1` Release Candidate；Git release 与 production Runtime 仍均为
-  `v1.6.0@5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`。
+- 当前 Git release 为 `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`；production Runtime
+  继续保持 `v1.6.0@5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`，v1.6.1 Runtime promotion pending。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
@@ -31,7 +31,7 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## v1.6.1 收盘快照交接（RELEASE CANDIDATE / RUNTIME PROMOTION PENDING）
+## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTION PENDING）
 
 - Market WebSocket 新增同次读取的 `MarketDisplaySnapshot`：`realtime` 继续要求既有 live eligibility 与
   heartbeat；`post_close` 仅在 CLOSED phase、operational product、1m/5m/15m/30m/60m，以及
@@ -44,9 +44,11 @@
   Web unit `173 passed / 1 conditional skip`、完整 browser `66 passed`、修复后 Market browser `5 passed`、
   production build `2996 modules`、shell/plist/render-only、secret scan 0 与 diff check。独立 Review 为
   Critical=`0` / Important=`0` / Minor=`0`。
-- develop push、main Release PR 与 annotated `v1.6.1` tag 仍待完成。production Runtime 保持 `v1.6.0`；
-  未创建 v1.6.1 Runtime worktree，未执行 Runtime build/reload、migration、RQData/Canonical/DB 写入、
-  Scope/通知或手工盘后任务。
+- Release PR #177 已合并；`origin/main` 与 annotated `v1.6.1` peeled commit 均为
+  `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，tag message=`Release v1.6.1`。`origin/main` 是
+  最终 `origin/develop` 的祖先，API/Web 版本面均为 `1.6.1`。
+- production Runtime 保持 `v1.6.0`；未创建 v1.6.1 Runtime worktree，未执行 Runtime build/reload、
+  migration、RQData/Canonical/DB 写入、Scope/通知或手工盘后任务。
 
 ## v1.6.0 Release / Runtime（RELEASED / RUNTIME PROMOTED）
 
@@ -276,6 +278,6 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证；该独立 pending 状态不改写 `v1.6.0` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持现有 `v1.6.0 + clawbot-openclaw-weixin` 自然运行；Lifecycle
-  真实 `jm` Shadow/current-market observation 继续等待单独 Gate。Execution Review Gate D 继续
-  `disabled / not activated`。
+- 最小下一步：仅在另行取得精确 `v1.6.1` production Runtime promotion 单次执行意图后创建隔离
+  Runtime worktree并切换；此前保持现有 `v1.6.0 + clawbot-openclaw-weixin` 自然运行，Execution
+  Review Gate D 继续 `disabled / not activated`。
