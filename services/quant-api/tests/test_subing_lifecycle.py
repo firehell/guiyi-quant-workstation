@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.market_data import subing_lifecycle as lifecycle_module
 from app.market_data.subing_lifecycle import (
     ConfirmationSource,
     EntryProgress,
@@ -15,6 +16,7 @@ from app.market_data.subing_lifecycle import (
     SubingLifecycleState,
     SubingLifecycleStateError,
     SubingOpportunityKey,
+    evaluate_subing_direction_context,
     evaluate_subing_lifecycle,
 )
 from app.market_data.domain import BarFrequency, CanonicalBar
@@ -220,12 +222,85 @@ def test_lifecycle_enums_expose_the_approved_wire_values() -> None:
         "hold_confirming",
         "retest_confirming",
     )
+
+
+def test_public_direction_context_is_the_reducer_exact_pure_fact() -> None:
+    boundary = _bar(15)
+    long_5m = _factor(boundary, BarFrequency.M5).snapshot
+    long_15m = _factor(boundary, BarFrequency.M15).snapshot
+    short_15m = _factor(
+        boundary,
+        BarFrequency.M15,
+        direction=SubingDirection.SHORT,
+    ).snapshot
+    assert long_5m is not None
+    assert long_15m is not None
+    assert short_15m is not None
+
+    assert (
+        evaluate_subing_direction_context(
+            long_5m,
+            long_15m,
+            _accepted_calibration(),
+        )
+        is SubingDirection.LONG
+    )
+    assert (
+        evaluate_subing_direction_context(
+            long_5m,
+            short_15m,
+            _accepted_calibration(),
+        )
+        is SubingDirection.NONE
+    )
     assert tuple(member.value for member in ConfirmationSource) == (
         "formal_v1",
         "momentum_hold",
         "pivot_break_hold",
         "pivot_retest_rebreak",
     )
+
+
+def test_reducer_trace_calls_public_direction_fact_without_semantic_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = evaluate_subing_direction_context
+    observed: list[SubingDirection] = []
+
+    def characterize(*args: object, **kwargs: object) -> SubingDirection:
+        result = original(*args, **kwargs)  # type: ignore[arg-type]
+        observed.append(result)
+        return result
+
+    monkeypatch.setattr(
+        lifecycle_module,
+        "evaluate_subing_direction_context",
+        characterize,
+    )
+    first, trigger, formal = (_bar(value) for value in (5, 10, 15))
+    trace = _evaluate(
+        (first, trigger, formal),
+        factors_5m=(
+            _factor(first, BarFrequency.M5),
+            _factor(trigger, BarFrequency.M5, cross=MacdCross.GOLDEN),
+            _factor(
+                formal,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+        bars_15m=(_bar(0), _bar(15)),
+    )
+
+    assert observed == [SubingDirection.LONG] * 3
+    assert tuple(snapshot.stage for snapshot in trace.snapshots) == (
+        LifecycleStage.SETUP_ARMED,
+        LifecycleStage.SETUP_ARMED,
+        LifecycleStage.ENTRY_CONFIRMED,
+    )
+    assert trace.current_snapshot.confirmation_source is ConfirmationSource.FORMAL_V1
+    assert trace.current_snapshot.triggered_at == trigger.bar_end
 
 
 def test_opportunity_key_keeps_exact_immutable_identity() -> None:

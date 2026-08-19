@@ -114,6 +114,7 @@ def _lifecycle_payload(
         "segment_count": result.segment_count,
         "evaluable_boundary_count": result.evaluable_boundary_count,
         "funnel_counts": dict(result.funnel_counts),
+        "funnel_count_units": dict(result.funnel_count_units),
         "confirmation_source_counts": dict(result.confirmation_source_counts),
         "v1_v2_overlap_counts": dict(result.v1_v2_overlap_counts),
         "v2_to_v1_lead_bars": list(result.v2_to_v1_lead_bars),

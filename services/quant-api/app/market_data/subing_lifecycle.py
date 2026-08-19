@@ -980,7 +980,11 @@ def evaluate_subing_lifecycle(
         factor_5m = factors_5m[index].snapshot
         factor_15m = anchor_factor.snapshot
         assert factor_5m is not None and factor_15m is not None
-        direction = _direction_context(factor_5m, factor_15m, calibration)
+        direction = evaluate_subing_direction_context(
+            factor_5m,
+            factor_15m,
+            calibration,
+        )
         formal = _formal_v1_at_boundary(
             factor_5m=factors_5m[index],
             factor_15m=anchor_factor,
@@ -1402,11 +1406,12 @@ def _boundary_contract_error(
     return None
 
 
-def _direction_context(
+def evaluate_subing_direction_context(
     factor_5m: SubingFactorSnapshot,
     factor_15m: SubingFactorSnapshot,
     calibration: SubingCalibration,
 ) -> SubingDirection:
+    """Return the reducer's exact instantaneous 5m/15m direction context."""
     threshold_5m = calibration.slope_flat_threshold_bps_per_bar[BarFrequency.M5]
     threshold_15m = calibration.slope_flat_threshold_bps_per_bar[BarFrequency.M15]
     if (

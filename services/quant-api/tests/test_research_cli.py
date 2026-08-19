@@ -515,6 +515,13 @@ def test_lifecycle_shadow_outputs_readonly_research_observations_as_json() -> No
                 "TRIGGER_OBSERVED": 3,
                 "ENTRY_CONFIRMED": 2,
             },
+            funnel_count_units={
+                "DATA_READY": "boundary_occupancy",
+                "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+                "SETUP_ARMED": "boundary_event",
+                "TRIGGER_OBSERVED": "boundary_event",
+                "ENTRY_CONFIRMED": "boundary_event",
+            },
             confirmation_source_counts={
                 "FORMAL_V1": 1,
                 "MOMENTUM_HOLD": 1,
@@ -571,6 +578,13 @@ def test_lifecycle_shadow_outputs_readonly_research_observations_as_json() -> No
             "SETUP_ARMED": 4,
             "TRIGGER_OBSERVED": 3,
             "ENTRY_CONFIRMED": 2,
+        },
+        "funnel_count_units": {
+            "DATA_READY": "boundary_occupancy",
+            "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+            "SETUP_ARMED": "boundary_event",
+            "TRIGGER_OBSERVED": "boundary_event",
+            "ENTRY_CONFIRMED": "boundary_event",
         },
         "confirmation_source_counts": {
             "FORMAL_V1": 1,
