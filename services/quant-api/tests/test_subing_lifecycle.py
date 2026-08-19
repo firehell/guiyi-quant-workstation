@@ -2072,6 +2072,27 @@ def _confirmed_closed_trace():
     )
 
 
+def _two_setup_closed_trace():
+    first, first_close, second, second_close = (
+        _bar(minutes) for minutes in (5, 10, 15, 20)
+    )
+    short_anchor = _bar(15)
+    return _evaluate(
+        (first, first_close, second, second_close),
+        factors_5m=(
+            _factor(first, BarFrequency.M5),
+            _factor(first_close, BarFrequency.M5, direction=SubingDirection.SHORT),
+            _factor(second, BarFrequency.M5, direction=SubingDirection.SHORT),
+            _factor(second_close, BarFrequency.M5),
+        ),
+        bars_15m=(_bar(0), short_anchor),
+        factors_15m=(
+            _factor(_bar(0), BarFrequency.M15),
+            _factor(short_anchor, BarFrequency.M15, direction=SubingDirection.SHORT),
+        ),
+    )
+
+
 def test_trace_rejects_missing_completed_state_for_closed_transition() -> None:
     trace = _confirmed_closed_trace()
 
@@ -2128,30 +2149,52 @@ def test_trace_rejects_stripped_confirmation_from_close_snapshot_and_state() -> 
 
 
 def test_trace_rejects_completed_states_out_of_closed_transition_order() -> None:
-    first, first_close, second, second_close = (
-        _bar(minutes) for minutes in (5, 10, 15, 20)
-    )
-    short_anchor = _bar(15)
-    trace = _evaluate(
-        (first, first_close, second, second_close),
-        factors_5m=(
-            _factor(first, BarFrequency.M5),
-            _factor(first_close, BarFrequency.M5, direction=SubingDirection.SHORT),
-            _factor(second, BarFrequency.M5, direction=SubingDirection.SHORT),
-            _factor(second_close, BarFrequency.M5),
-        ),
-        bars_15m=(_bar(0), short_anchor),
-        factors_15m=(
-            _factor(_bar(0), BarFrequency.M15),
-            _factor(short_anchor, BarFrequency.M15, direction=SubingDirection.SHORT),
-        ),
-    )
+    trace = _two_setup_closed_trace()
     assert len(trace.completed_opportunities) == 2
 
     with pytest.raises(SubingLifecycleContractError):
         replace(
             trace,
             completed_opportunities=tuple(reversed(trace.completed_opportunities)),
+        )
+
+
+def test_trace_rejects_transitions_and_completions_reversed_together() -> None:
+    trace = _two_setup_closed_trace()
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            trace,
+            transitions=tuple(reversed(trace.transitions)),
+            completed_opportunities=tuple(reversed(trace.completed_opportunities)),
+        )
+
+
+def test_trace_rejects_forged_setup_close_after_confirmed_entry() -> None:
+    trace = _confirmed_closed_trace()
+    forged_close = replace(
+        trace.transitions[-1],
+        from_stage=LifecycleStage.SETUP_ARMED,
+    )
+    forged_snapshot = replace(
+        trace.current_snapshot,
+        confirmation_source=None,
+        confirmed_at=None,
+        latest_transition=forged_close,
+    )
+    forged_completed = replace(
+        trace.completed_opportunities[0],
+        confirmation_source=None,
+        confirmed_at=None,
+    )
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            trace,
+            transitions=(*trace.transitions[:-1], forged_close),
+            snapshots=(*trace.snapshots[:-1], forged_snapshot),
+            current_snapshot=forged_snapshot,
+            completed_opportunities=(forged_completed,),
         )
 
 
@@ -2292,3 +2335,106 @@ def test_short_lower_tf_risk_and_completed_anchor_recovery_are_mirrored() -> Non
     assert trace.snapshots[2].stage is LifecycleStage.EXIT_RISK
     assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
     assert trace.transitions[-1].reason_codes == ("ANCHOR_RECOVERY_CONFIRMED",)
+
+
+def test_exit_risk_rejects_lower_tf_code_with_zero_count() -> None:
+    confirmed, first_risk, second_risk = (
+        _bar(minutes) for minutes in (15, 20, 25)
+    )
+    snapshot = _evaluate(
+        (confirmed, first_risk, second_risk),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(first_risk, BarFrequency.M5, ema21="101"),
+            _factor(second_risk, BarFrequency.M5, ema21="101"),
+        ),
+        bars_15m=(confirmed,),
+    ).current_snapshot
+    assert snapshot.stage is LifecycleStage.EXIT_RISK
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(snapshot, lower_tf_risk_count=0, risk_progress=None)
+
+
+def test_exit_risk_rejects_mixed_anchor_and_lower_tf_codes() -> None:
+    confirmed, first_risk, second_risk = (
+        _bar(minutes) for minutes in (15, 20, 25)
+    )
+    snapshot = _evaluate(
+        (confirmed, first_risk, second_risk),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(first_risk, BarFrequency.M5, ema21="101"),
+            _factor(second_risk, BarFrequency.M5, ema21="101"),
+        ),
+        bars_15m=(confirmed,),
+    ).current_snapshot
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            snapshot,
+            current_risk_codes=(
+                "LOWER_TF_EMA21_BREACH",
+                "ANCHOR_EMA21_BREACH",
+            ),
+            lower_tf_risk_count=1,
+            risk_progress="watching",
+        )
+
+
+def test_entry_confirmed_rejects_crossed_trading_day_projection() -> None:
+    boundary = _bar(15)
+    snapshot = _evaluate(
+        (boundary,),
+        factors_5m=(
+            _factor(
+                boundary,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+        bars_15m=(boundary,),
+    ).current_snapshot
+    assert snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(snapshot, crossed_trading_day=True)
+
+
+def test_confirmed_closed_snapshot_may_retain_crossed_trading_day() -> None:
+    confirmed = _bar(15)
+    next_day = _bar(20, trading_day=date(2026, 8, 4))
+    close_boundary = _bar(30, trading_day=date(2026, 8, 4))
+    trace = _evaluate(
+        (confirmed, next_day, close_boundary),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(next_day, BarFrequency.M5),
+            _factor(close_boundary, BarFrequency.M5, direction=SubingDirection.SHORT),
+        ),
+        bars_15m=(confirmed, close_boundary),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15),
+            _factor(close_boundary, BarFrequency.M15, direction=SubingDirection.SHORT),
+        ),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.current_snapshot.confirmation_source is ConfirmationSource.FORMAL_V1
+    assert trace.current_snapshot.crossed_trading_day is True
