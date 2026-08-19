@@ -1,4 +1,4 @@
-import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
+import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue, SeriesKind } from '../types/market.ts'
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
 import type { MainForceMirrorFuturesResult } from './mainForceMirrorFutures.ts'
@@ -41,6 +41,11 @@ export interface MainForceFuturesAvailability {
   reason: string | null
 }
 
+export interface MainForceFuturesSupport {
+  period: string
+  seriesKind: SeriesKind
+}
+
 export interface MainForceFuturesRenderModel {
   histogram: Array<{ time: string; value: number; colorKey: 'up' | 'down' | 'ema21' | 'macdDif' | 'textMuted' }>
   markers: Array<{ time: string; position: 'aboveBar' | 'belowBar'; shape: 'arrowDown' | 'arrowUp'; tone: 'up' | 'down'; text: string }>
@@ -56,11 +61,14 @@ const DERIVED_UNAVAILABLE_REASONS = new Set([
 
 /** Maps frozen V1 support and point reasons to one user-visible availability contract. */
 export function resolveMainForceFuturesAvailability(
-  supported: boolean,
+  support: MainForceFuturesSupport,
   point: MainForceMirrorFuturesResult['points'][number] | null,
   fallbackReason: string | null,
 ): MainForceFuturesAvailability {
-  if (!supported) return { kind: 'unsupported', reason: 'MFM_FUTURES_V1_UNSUPPORTED_IDENTITY' }
+  if (support.period !== '60m') return { kind: 'unsupported', reason: 'MFM_FUTURES_V1_FREQUENCY_UNSUPPORTED' }
+  if (support.seriesKind !== 'contract' && support.seriesKind !== 'actual_dominant') {
+    return { kind: 'unsupported', reason: 'MFM_FUTURES_V1_SERIES_UNSUPPORTED' }
+  }
   if (!point) return { kind: 'state_warmup', reason: fallbackReason || 'MFM_FUTURES_V1_WARMUP' }
   if (!point.valid) return { kind: 'input_unavailable', reason: point.reason || fallbackReason || 'MFM_FUTURES_V1_INPUT_INVALID' }
   if (point.reason && DERIVED_UNAVAILABLE_REASONS.has(point.reason)) {
@@ -74,6 +82,39 @@ export function resolveMainForceFuturesAvailability(
     return { kind: 'conflict', reason: point.caution_availability_reason }
   }
   return { kind: 'ready', reason: null }
+}
+
+/** Resolves the pane from the current logical viewport, never from the loaded tail. */
+export function resolveMainForceFuturesWindowAvailability(
+  support: MainForceFuturesSupport,
+  points: MainForceMirrorFuturesResult['points'],
+  range: { from: number; to: number } | null,
+): MainForceFuturesAvailability {
+  const identity = resolveMainForceFuturesAvailability(support, null, null)
+  if (identity.kind === 'unsupported') return identity
+  if (!range || !points.length) return resolveMainForceFuturesAvailability(support, null, null)
+  const from = Math.max(0, Math.ceil(range.from))
+  const to = Math.min(points.length - 1, Math.floor(range.to))
+  const visible = points.slice(from, to + 1)
+  if (!visible.length) return resolveMainForceFuturesAvailability(support, null, null)
+  const stateReady = visible.filter((point) => point.state_ready)
+  if (stateReady.length) return resolveMainForceFuturesAvailability(support, stateReady.at(-1) ?? null, null)
+  return visible
+    .map((point) => resolveMainForceFuturesAvailability(support, point, null))
+    .sort((left, right) => unavailablePriority(left) - unavailablePriority(right))[0]
+    ?? resolveMainForceFuturesAvailability(support, null, null)
+}
+
+function unavailablePriority(availability: MainForceFuturesAvailability): number {
+  const reason = availability.reason
+  if (reason === 'MFM_FUTURES_V1_TIMESTAMP_INVALID') return 5
+  if (reason === 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE') return 6
+  if (reason === 'MFM_FUTURES_V1_INPUT_INVALID') return 7
+  if (availability.kind === 'state_warmup') return 8
+  if (availability.kind === 'derived_unavailable') return 9
+  if (availability.kind === 'caution_warmup') return 10
+  if (availability.kind === 'conflict') return 11
+  return 12
 }
 
 /** Pure V1 secondary-pane projection: signed scores and directional markers never share numeric data. */
@@ -183,7 +224,7 @@ export function resolveKlineHoverContext(
   visibleMainIndicators: MainIndicatorId[],
   time: string,
   mainForceFutures: MainForceMirrorFuturesResult | null = null,
-  mainForceFuturesSupported = true,
+  mainForceFuturesSupport: MainForceFuturesSupport = { period: '60m', seriesKind: 'contract' },
 ): HoverKlineContext | null {
   const bar = bars.find((item) => item.time === time)
   if (!bar) return null
@@ -199,14 +240,14 @@ export function resolveKlineHoverContext(
       dea: pointValue(derived.macd.dea, time),
       histogram: pointValue(derived.macd.histogram, time),
     },
-    mainForceFutures: toMainForceFuturesHover(mainForceFutures, time, mainForceFuturesSupported),
+    mainForceFutures: toMainForceFuturesHover(mainForceFutures, time, mainForceFuturesSupport),
   }
 }
 
-function toMainForceFuturesHover(result: MainForceMirrorFuturesResult | null, time: string, supported: boolean) {
+function toMainForceFuturesHover(result: MainForceMirrorFuturesResult | null, time: string, support: MainForceFuturesSupport) {
   const point = result?.points.find((item) => item.time === time)
   if (!point) return null
-  const availability = resolveMainForceFuturesAvailability(supported, point, null)
+  const availability = resolveMainForceFuturesAvailability(support, point, null)
   return {
     physicalContract: point.physical_contract,
     valid: point.valid,

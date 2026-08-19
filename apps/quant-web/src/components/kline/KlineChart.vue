@@ -25,6 +25,7 @@ import {
   buildMainForceFuturesRenderModel,
   resolveKlineHoverContext,
   resolveMainForceFuturesAvailability,
+  resolveMainForceFuturesWindowAvailability,
   type KlineValuePoint,
   type MainForceFuturesAvailability,
 } from '@/utils/klineViewModel'
@@ -86,11 +87,14 @@ let paginationArmed = false
 let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
 const secondaryPanelTop = ref<number | null>(null)
+const visibleLogicalRange = ref('')
 const renderedResearchMarkerCount = ref(0)
+const renderedAlertMarkerCount = ref(0)
+const renderedAlertMarkerSignature = ref('')
 const renderedMainForceFuturesMarkerCount = ref(0)
 let derivedData = buildKlineDerivedData([], [])
 let mainForceFuturesResult: MainForceMirrorFuturesResult | null = null
-const mainForceFuturesAvailability = ref<MainForceFuturesAvailability>(resolveMainForceFuturesAvailability(false, null, null))
+const mainForceFuturesAvailability = ref<MainForceFuturesAvailability>(resolveMainForceFuturesAvailability({ period: props.period, seriesKind: props.seriesKind }, null, null))
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 type SecondaryPanelId = 'macd' | 'main_force_mirror_futures' | 'main_force_mirror_v0'
@@ -194,6 +198,7 @@ watch([() => props.period, () => props.seriesKind], () => {
   if (selectedSecondaryPanel.value === 'main_force_mirror_futures' && !isMainForceFuturesSupported()) {
     selectedSecondaryPanel.value = 'macd'
   }
+  refreshMainForceFuturesAvailability()
 })
 
 watch(() => props.visibleMainIndicators, () => {
@@ -242,7 +247,9 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   else chart.timeScale().fitContent()
   requestAnimationFrame(() => {
     const range = chart?.timeScale().getVisibleLogicalRange()
+    visibleLogicalRange.value = range ? `${Math.round(range.from * 100) / 100}:${Math.round(range.to * 100) / 100}` : ''
     isNearLeftBoundary = !!range && range.from <= 20
+    refreshMainForceFuturesAvailability(range)
     paginationArmed = true
     syncSecondaryPanelTop()
   })
@@ -262,6 +269,7 @@ function prependBars(bars: BarData[]): void {
       to: visibleRange.to + prependedCount,
     })
   }
+  refreshMainForceFuturesAvailability(chart.timeScale().getVisibleLogicalRange())
 }
 
 function updateBar(bar: BarData): void {
@@ -271,6 +279,7 @@ function updateBar(bar: BarData): void {
   renderedBars = normalizeBarSeries(renderedBars)
   // Live updates rebuild only series data; viewport ownership remains with the user/follow state.
   renderAllSeries()
+  refreshMainForceFuturesAvailability(chart?.timeScale().getVisibleLogicalRange() ?? null)
 }
 
 function scrollToLatest(): void {
@@ -283,6 +292,8 @@ function scrollToLatest(): void {
 
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   if (!range || !renderedBars.length) return
+  visibleLogicalRange.value = `${Math.round(range.from * 100) / 100}:${Math.round(range.to * 100) / 100}`
+  refreshMainForceFuturesAvailability(range)
   const isFollowing = range.to >= renderedBars.length - 3
   if (isFollowing !== followLatest) {
     followLatest = isFollowing
@@ -308,7 +319,7 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
   }
   const bar = renderedBars.find((item) => sameChartTime(chartTime(item), param.time!))
   const nextContext = bar
-    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time, mainForceFuturesResult, isMainForceFuturesSupported())
+    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time, mainForceFuturesResult, mainForceFuturesSupport())
     : null
   hoverContext.value = nextContext
   emit('crosshair-change', nextContext)
@@ -358,10 +369,17 @@ function renderDerivedSeries(): void {
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
   renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
-  htdyMarkers?.setMarkers(chartMarkers(mergeKlineMarkers(
+  const renderedAlertMarkers = chartMarkers(props.alertMarkers)
+  const renderedMarkers = chartMarkers(mergeKlineMarkers(
     mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
     props.researchMarkers,
-  )))
+  ))
+  renderedAlertMarkerCount.value = renderedMarkers.filter((marker) => renderedAlertMarkers.some((alert) => alert.id === marker.id)).length
+  renderedAlertMarkerSignature.value = renderedMarkers
+    .filter((marker) => renderedAlertMarkers.some((alert) => alert.id === marker.id))
+    .map((marker) => `${marker.id}:${String(marker.time)}:${marker.position}:${marker.shape}`)
+    .join('|')
+  htdyMarkers?.setMarkers(renderedMarkers)
 }
 
 function clearMainForceV0() {
@@ -376,7 +394,7 @@ function clearMainForceFutures() {
   mainForceFuturesMarkers?.setMarkers([])
   mainForceFuturesResult = null
   renderedMainForceFuturesMarkerCount.value = 0
-  mainForceFuturesAvailability.value = resolveMainForceFuturesAvailability(isMainForceFuturesSupported(), null, null)
+  mainForceFuturesAvailability.value = resolveMainForceFuturesAvailability(mainForceFuturesSupport(), null, null)
 }
 
 function renderMainForceV0() {
@@ -414,8 +432,7 @@ function renderMainForceV0() {
 function renderMainForceFutures() {
   if (!mainForceFuturesHistogram || !isMainForceFuturesSupported()) return
   mainForceFuturesResult = calculateMainForceMirrorFutures(renderedBars)
-  const currentPoint = mainForceFuturesResult.points.at(-1) ?? null
-  mainForceFuturesAvailability.value = resolveMainForceFuturesAvailability(true, currentPoint, null)
+  refreshMainForceFuturesAvailability()
   const model = buildMainForceFuturesRenderModel(mainForceFuturesResult)
   const theme = resolveChartTheme()
   const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
@@ -435,7 +452,20 @@ function renderMainForceFutures() {
 }
 
 function isMainForceFuturesSupported() {
-  return props.period === '60m' && (props.seriesKind === 'actual_dominant' || props.seriesKind === 'contract')
+  const support = mainForceFuturesSupport()
+  return support.period === '60m' && (support.seriesKind === 'actual_dominant' || support.seriesKind === 'contract')
+}
+
+function mainForceFuturesSupport() {
+  return { period: props.period, seriesKind: props.seriesKind }
+}
+
+function refreshMainForceFuturesAvailability(range: LogicalRange | null = chart?.timeScale().getVisibleLogicalRange() ?? null) {
+  mainForceFuturesAvailability.value = resolveMainForceFuturesWindowAvailability(
+    mainForceFuturesSupport(),
+    mainForceFuturesResult?.points ?? [],
+    range,
+  )
 }
 
 function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
@@ -517,10 +547,13 @@ defineExpose({
     class="kline-shell"
     data-testid="kline-shell"
     :data-alert-marker-count="alertMarkers.length"
+    :data-rendered-alert-marker-count="renderedAlertMarkerCount"
+    :data-rendered-alert-marker-signature="renderedAlertMarkerSignature"
     :data-research-marker-count="researchMarkers.length"
     :data-rendered-research-marker-count="renderedResearchMarkerCount"
     :data-main-force-futures-marker-count="renderedMainForceFuturesMarkerCount"
     :data-secondary-panel="selectedSecondaryPanel"
+    :data-visible-logical-range="visibleLogicalRange"
   >
     <div ref="container" class="chart" />
     <KlineHoverLegend
@@ -560,7 +593,7 @@ defineExpose({
         <span data-testid="main-force-futures-pane-status">{{ mainForceFuturesAvailability.kind }} · {{ mainForceFuturesAvailability.reason || 'READY' }}</span>
       </div>
       <div v-else-if="!isMainForceFuturesSupported()" class="main-force-legend" data-testid="main-force-futures-pane-status">
-        <span>unsupported · MFM_FUTURES_V1_UNSUPPORTED_IDENTITY</span>
+        <span>unsupported · {{ mainForceFuturesAvailability.reason }}</span>
       </div>
     </div>
     <div

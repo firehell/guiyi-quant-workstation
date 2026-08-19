@@ -8,6 +8,7 @@ import {
   formatKlineHoverValue,
   resolveKlineHoverContext,
   resolveMainForceFuturesAvailability,
+  resolveMainForceFuturesWindowAvailability,
 } from '../src/utils/klineViewModel.ts'
 
 const bars: BarData[] = Array.from({ length: 100 }, (_, index) => {
@@ -128,32 +129,48 @@ test('crosshair projects the timestamp-aligned futures mirror observation withou
 })
 
 test('futures availability prioritizes support and stable reasons over readiness booleans', () => {
-  const unsupported = resolveMainForceFuturesAvailability(false, null, null)
+  const supported = { period: '60m', seriesKind: 'contract' as const }
+  const frequencyUnsupported = resolveMainForceFuturesAvailability({ period: '15m', seriesKind: 'continuous' }, null, null)
+  assert.equal(frequencyUnsupported.reason, 'MFM_FUTURES_V1_FREQUENCY_UNSUPPORTED')
+  const unsupported = resolveMainForceFuturesAvailability({ period: '60m', seriesKind: 'continuous' }, null, null)
   assert.equal(unsupported.kind, 'unsupported')
-  assert.equal(unsupported.reason, 'MFM_FUTURES_V1_UNSUPPORTED_IDENTITY')
+  assert.equal(unsupported.reason, 'MFM_FUTURES_V1_SERIES_UNSUPPORTED')
 
-  const oiUnavailable = resolveMainForceFuturesAvailability(true, futuresPoint({
+  const oiUnavailable = resolveMainForceFuturesAvailability(supported, futuresPoint({
     valid: false,
     reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE',
   }), null)
   assert.equal(oiUnavailable.kind, 'input_unavailable')
   assert.equal(oiUnavailable.reason, 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE')
 
-  const stateWarmup = resolveMainForceFuturesAvailability(true, futuresPoint({ state_ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }), null)
+  const stateWarmup = resolveMainForceFuturesAvailability(supported, futuresPoint({ state_ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }), null)
   assert.equal(stateWarmup.kind, 'state_warmup')
 
-  const cautionWarmup = resolveMainForceFuturesAvailability(true, futuresPoint({ state_ready: true, caution_ready: false, reason: null, caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_WARMUP' }), null)
+  const cautionWarmup = resolveMainForceFuturesAvailability(supported, futuresPoint({ state_ready: true, caution_ready: false, reason: null, caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_WARMUP' }), null)
   assert.equal(cautionWarmup.kind, 'caution_warmup')
 
-  const derivedUnavailable = resolveMainForceFuturesAvailability(true, futuresPoint({ state_ready: false, reason: 'MFM_FUTURES_V1_ATR_INVALID' }), null)
+  const derivedUnavailable = resolveMainForceFuturesAvailability(supported, futuresPoint({ state_ready: false, reason: 'MFM_FUTURES_V1_ATR_INVALID' }), null)
   assert.equal(derivedUnavailable.kind, 'derived_unavailable')
   assert.equal(derivedUnavailable.reason, 'MFM_FUTURES_V1_ATR_INVALID')
 
-  const conflict = resolveMainForceFuturesAvailability(true, futuresPoint({ caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT' }), null)
+  const conflict = resolveMainForceFuturesAvailability(supported, futuresPoint({ caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT' }), null)
   assert.equal(conflict.kind, 'conflict')
 
-  const ready = resolveMainForceFuturesAvailability(true, futuresPoint(), null)
+  const ready = resolveMainForceFuturesAvailability(supported, futuresPoint(), null)
   assert.equal(ready.kind, 'ready')
+})
+
+test('futures pane availability is derived from the visible logical window, not the loaded tail', () => {
+  const supported = { period: '60m', seriesKind: 'actual_dominant' as const }
+  const points = [
+    futuresPoint({ state_ready: false, caution_ready: false, ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }),
+    futuresPoint({ state_ready: false, caution_ready: false, ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }),
+    futuresPoint(),
+  ]
+  const warmup = resolveMainForceFuturesWindowAvailability(supported, points, { from: 0, to: 1.9 })
+  assert.deepEqual(warmup, { kind: 'state_warmup', reason: 'MFM_FUTURES_V1_WARMUP' })
+  const ready = resolveMainForceFuturesWindowAvailability(supported, points, { from: 2, to: 2.1 })
+  assert.deepEqual(ready, { kind: 'ready', reason: null })
 })
 
 test('futures render model keeps signed scores separate from bilateral caution markers and clears as an empty model', () => {
