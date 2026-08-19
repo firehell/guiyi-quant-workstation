@@ -8,9 +8,8 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 `develop` Release Candidate 版本为 `v1.6.0`；当前 Git release 与 production Runtime
-  仍均为 `v1.5.0`，尚未执行 `v1.6.0` main merge/tag 或独立 Runtime promotion。
-  production Alert 的唯一 active transport 已切换为 `clawbot-openclaw-weixin`。
+- 当前 Git release 与 production Runtime 均为 `v1.6.0@5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`。
+  production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
@@ -20,8 +19,8 @@
 - `v1.6.0` 已包含并完成仓库原生验证的 `main_force_mirror_v0`（主力照妖镜 observation V0）：
   Python Indicator Kernel 为唯一口径，Web 在现有最底部副图通过 `MACD / 主力照妖镜` Tab 二选一，
   默认 MACD；“小心”保持 `rising_edge(BARSLAST(HIGH=HHV(HIGH,5))<10)`。六色柱仅为 OHLCV
-  设计代理，不是实测资金流；该指标仍为 `observation_only`，未进入 Alert、backtest、live、
-  notification 或 Runtime。Git release 不表示 production Runtime promotion。
+  设计代理，不是实测资金流；该指标仍为 `observation_only`，未进入 Alert、backtest、live
+  或 notification consumer。production Runtime 仅部署其 Web 观察面，不改变能力边界。
 - `v1.6.0` 同时包含完整 SuBing Lifecycle V2 research-only 代码链：exact policy、
   不可变领域合同、causal ConfirmedPivot/Breakout/Retest/lifecycle reducer、additive API/Web 投影与
   Historical-only Shadow CLI。V1 Factor/Signal/resolver、Alert Rule/Scope 和 `AlertRuntime` 消费边界不变；
@@ -30,6 +29,22 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+
+## v1.6.0 Release / Runtime（RELEASED / RUNTIME PROMOTED）
+
+- Release PR #176 已合并；`origin/main` 与 `origin/develop` 均为
+  `5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`，annotated tag `v1.6.0` 的 peeled commit 与之一致。
+- clean Release Candidate 验证为 backend `1376 passed`、engineering `53 passed`、Ruff、Mypy
+  `61 source files`、Web unit `167 passed / 1 conditional skip`、selected browser `37 passed`、
+  Web build `2996 modules`、shell/plist/render-only、secret scan 0 与 diff check 全通过；隔离
+  PostgreSQL 测试库名与 OID 均与 production 不同。独立 Release Review 为
+  Critical=`0` / Important=`0` / Minor=`0`。
+- 独立 exact-tag Runtime Gate 已将 API/Web/Live/after-market/Alert 五个 label 统一切换到
+  clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.0@5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`。
+  API version=`1.6.0`，API/Web 为 200，Runtime health=`ok/readonly`，Market/Alert enabled，Clawbot/owner
+  ready，Execution Review roll disabled，DB 仍为 `20260815_0039`，两条 Rule Scope 仍精确为 `jm`。
+- 本次没有运行 migration、RQData/Canonical/DB 写入、真实 Lifecycle Shadow/current-market
+  observation、Scope/owner/transport mutation、canary/通知、replay/backfill/retry 或订单。
 - `develop` 已完成 Clawbot single-shot D1 code PASS，并在 `d82ea43dd` 修复多行 Alert 正文的 LF
   校验合同。rollout G2 owner bootstrap 与 G3 zero-send preflight 已完成；`2026-08-19` 的唯一一次新授权
   G4 canary 已获 provider acceptance，用户已确认微信中恰好收到一条，因此 G4 PASS。
@@ -235,13 +250,14 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.5.0` Runtime promotion 已完成；正式五服务已统一加载 identity
-  `957d19893187c7876b88e58f82fd5656536ee214`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
+- `v1.6.0` Runtime promotion 已完成；正式五服务已统一加载 identity
+  `5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
   `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review Gate D 仍为
   `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证；该独立 pending 状态不改写 `v1.5.0` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持现有 `v1.5.0 + clawbot-openclaw-weixin` 自然运行；未来真实 Alert 只作为正常观察
-  证据，不再作为 G9 cleanup 前置。Execution Review Gate D 继续 `disabled / not activated`。
+  不人工补证；该独立 pending 状态不改写 `v1.6.0` release/Runtime promotion 或 G9 明确豁免收口事实。
+- 最小下一步：保持现有 `v1.6.0 + clawbot-openclaw-weixin` 自然运行；Lifecycle
+  真实 `jm` Shadow/current-market observation 继续等待单独 Gate。Execution Review Gate D 继续
+  `disabled / not activated`。
