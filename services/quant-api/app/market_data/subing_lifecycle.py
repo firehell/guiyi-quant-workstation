@@ -913,7 +913,7 @@ def evaluate_subing_lifecycle(
     if input_error is None:
         try:
             pivots = _all_confirmed_pivots(
-                bars_5m[1:],
+                bars_5m,
                 contract=contract,
                 segment_start_trading_day=segment_start_trading_day,
             )

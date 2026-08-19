@@ -11,6 +11,8 @@ from typing import Protocol, cast
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
+    DatasetKey,
+    DatasetKind,
     MarketSeriesPageResult,
     SeriesKind,
     SeriesPageQuery,
@@ -69,6 +71,17 @@ class SubingMarketRead(Protocol):
         after: datetime | None,
         now: datetime,
     ) -> tuple[CanonicalBar, ...]: ...
+
+
+class SubingLifecycleCoverage(Protocol):
+    def expected_bar_ends(
+        self,
+        key: DatasetKey,
+        year: int,
+        month: int,
+        start: date,
+        end: date,
+    ) -> tuple[datetime, ...]: ...
 
 
 class _SignalCalibrationView(Protocol):
@@ -155,11 +168,13 @@ class SubingReadService:
         market_read: SubingMarketRead,
         calibration: SubingCalibration,
         lifecycle_policy: SubingLifecyclePolicy | None = None,
+        lifecycle_coverage: SubingLifecycleCoverage | None = None,
     ) -> None:
         self._market_data = market_data
         self._market_read = market_read
         self._calibration = calibration
         self._lifecycle_policy = lifecycle_policy
+        self._lifecycle_coverage = lifecycle_coverage
 
     def snapshot(self, request: SubingReadRequest, now: datetime) -> SubingReadSnapshot:
         if not isinstance(request, SubingReadRequest):
@@ -364,15 +379,29 @@ class SubingReadService:
             frequency: _identity(symbol, frequency, contract)
             for frequency in (BarFrequency.M5, BarFrequency.M15)
         }
-        historical = {
-            frequency: self._historical_intraday_segment(
-                identities[frequency],
-                segment_start,
-                segment_end,
-                now,
-            )
-            for frequency in (BarFrequency.M5, BarFrequency.M15)
-        }
+        if self._lifecycle_policy is None:
+            historical: dict[BarFrequency, _HistoricalIntradaySeries] = {}
+            for frequency in (BarFrequency.M5, BarFrequency.M15):
+                bars = self._historical_segment(
+                    identities[frequency],
+                    segment_start,
+                    segment_end,
+                    now,
+                )
+                historical[frequency] = _HistoricalIntradaySeries(
+                    projection_bars=bars,
+                    lifecycle_bars=bars,
+                )
+        else:
+            historical = {
+                frequency: self._historical_intraday_segment(
+                    identities[frequency],
+                    segment_start,
+                    segment_end,
+                    now,
+                )
+                for frequency in (BarFrequency.M5, BarFrequency.M15)
+            }
         states = {
             frequency: self._market_read.state(identities[frequency], now)
             for frequency in (BarFrequency.M5, BarFrequency.M15)
@@ -515,6 +544,8 @@ class SubingReadService:
         segment_end: date,
         cutoff: datetime,
     ) -> _HistoricalIntradaySeries:
+        if self._lifecycle_coverage is None:
+            raise MarketDataError("DOMINANT_SEGMENT_HISTORY_COVERAGE_UNAVAILABLE")
         request = replace(identity, before=cutoff + timedelta(microseconds=1))
         pages: list[tuple[CanonicalBar, ...]] = []
         seen: set[datetime] = set()
@@ -528,6 +559,13 @@ class SubingReadService:
                 raise MarketDataError("DOMINANT_SEGMENT_HISTORY_INCONSISTENT")
             if any(bar.bar_end in seen for bar in page.bars):
                 raise MarketDataError("DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID")
+            _validate_segment_page_continuity(
+                coverage=self._lifecycle_coverage,
+                identity=identity,
+                segment_start=segment_start,
+                page_bars=page.bars,
+                newer_page_bars=(pages[-1] if pages else ()),
+            )
             seen.update(bar.bar_end for bar in page.bars)
             pages.append(page.bars)
             reached_segment_start = reached_segment_start or any(
@@ -683,6 +721,69 @@ def _validate_history_page(
         or (not page.has_more_before and page.next_before is not None)
     )
     if invalid:
+        raise MarketDataError("DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID")
+
+
+def _validate_segment_page_continuity(
+    *,
+    coverage: SubingLifecycleCoverage,
+    identity: SeriesPageQuery,
+    segment_start: date,
+    page_bars: tuple[CanonicalBar, ...],
+    newer_page_bars: tuple[CanonicalBar, ...],
+) -> None:
+    current = tuple(bar for bar in page_bars if bar.trading_day >= segment_start)
+    newer = tuple(bar for bar in newer_page_bars if bar.trading_day >= segment_start)
+    if current:
+        _require_expected_interval(
+            coverage=coverage,
+            identity=identity,
+            bars=current,
+        )
+    if current and newer:
+        _require_expected_interval(
+            coverage=coverage,
+            identity=identity,
+            bars=(current[-1], newer[0]),
+        )
+
+
+def _require_expected_interval(
+    *,
+    coverage: SubingLifecycleCoverage,
+    identity: SeriesPageQuery,
+    bars: tuple[CanonicalBar, ...],
+) -> None:
+    first = bars[0]
+    last = bars[-1]
+    key = DatasetKey(
+        kind=DatasetKind.CONTRACT,
+        symbol=identity.symbol,
+        series_or_contract=cast(str, identity.contract),
+        frequency=identity.frequency,
+    )
+    cursor = date(first.trading_day.year, first.trading_day.month, 1)
+    final_month = date(last.trading_day.year, last.trading_day.month, 1)
+    expected: list[datetime] = []
+    while cursor <= final_month:
+        expected.extend(
+            coverage.expected_bar_ends(
+                key,
+                cursor.year,
+                cursor.month,
+                first.trading_day,
+                last.trading_day,
+            )
+        )
+        cursor = (
+            date(cursor.year + 1, 1, 1)
+            if cursor.month == 12
+            else date(cursor.year, cursor.month + 1, 1)
+        )
+    expected_interval = tuple(
+        bar_end for bar_end in expected if first.bar_end <= bar_end <= last.bar_end
+    )
+    if tuple(bar.bar_end for bar in bars) != expected_interval:
         raise MarketDataError("DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID")
 
 

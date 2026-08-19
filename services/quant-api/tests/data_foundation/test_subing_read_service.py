@@ -234,6 +234,7 @@ def test_wrong_market_read_state_identity_cannot_admit_live(
         ),
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(history),
     ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
 
     assert invalid.primary == canonical.primary
@@ -685,6 +686,7 @@ def test_long_segment_preserves_legacy_v1_latest_300_projection(
         market_read=_CursorHonoringMarketRead(full, live_available=False),
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(full),
     ).snapshot(SubingReadRequest("jm", requested), now=_NOW)
     legacy_window = _service_with_lifecycle(
         {frequency: bars[-300:] for frequency, bars in full.items()}
@@ -701,6 +703,7 @@ def test_long_segment_lifecycle_matches_direct_full_segment_reducer() -> None:
         market_read=_CursorHonoringMarketRead(full, live_available=False),
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(full),
     ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
     factors_5m = calculate_factor_series(
         full[BarFrequency.M5],
@@ -732,9 +735,18 @@ def test_long_segment_lifecycle_matches_direct_full_segment_reducer() -> None:
     assert service_snapshot.lifecycle.stage is LifecycleStage.SETUP_ARMED
 
 
-@pytest.mark.parametrize("fault", ("cursor_not_progressing", "duplicate_bar"))
+@pytest.mark.parametrize(
+    ("fault", "fault_frequency"),
+    (
+        ("cursor_not_progressing", BarFrequency.M5),
+        ("duplicate_bar", BarFrequency.M5),
+        ("missing_middle_page", BarFrequency.M5),
+        ("missing_middle_page", BarFrequency.M15),
+    ),
+)
 def test_lifecycle_pagination_fails_closed_on_invalid_page_chain(
     fault: str,
+    fault_frequency: BarFrequency,
 ) -> None:
     """Catches malformed pagination being accepted as a complete causal segment."""
     full = _long_segment_bars()
@@ -744,9 +756,11 @@ def test_lifecycle_pagination_fails_closed_on_invalid_page_chain(
             full,
             live_available=False,
             fault=fault,
+            fault_frequency=fault_frequency,
         ),
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(full),
     )
 
     with pytest.raises(
@@ -764,6 +778,7 @@ def test_lifecycle_pagination_fails_closed_when_segment_start_is_missing() -> No
         market_read=_CursorHonoringMarketRead(full, live_available=False),
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(full),
     )
 
     with pytest.raises(
@@ -1010,6 +1025,7 @@ def test_stale_live_identity_falls_back_to_canonical_for_v1_and_lifecycle() -> N
         ),
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(history),
     ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
 
     assert stale.primary == canonical.primary
@@ -1381,7 +1397,15 @@ def test_composition_injects_tracked_calibration_and_lifecycle_policy(
     monkeypatch.setattr(composition, "load_subing_lifecycle_policy", load_lifecycle)
     monkeypatch.setattr(composition, "SubingReadService", CapturingService)
 
-    composition.build_subing_read_service(object())
+    session = object()
+    monkeypatch.setattr(
+        "app.market_data.coverage_source.DatabaseCoverageSource",
+        lambda received, *_args, **_kwargs: (
+            "coverage" if received is session else "wrong-coverage-session"
+        ),
+    )
+
+    composition.build_subing_read_service(session)
 
     assert observed == {
         "calibration_path": PROJECT_ROOT
@@ -1392,6 +1416,7 @@ def test_composition_injects_tracked_calibration_and_lifecycle_policy(
         "market_read": "mr",
         "calibration": expected,
         "lifecycle_policy": expected_policy,
+        "lifecycle_coverage": "coverage",
     }
 
 
@@ -1424,6 +1449,10 @@ def test_composition_degrades_only_lifecycle_when_lifecycle_policy_is_invalid(
         "load_subing_lifecycle_policy",
         lambda _path: (_ for _ in ()).throw(SubingLifecyclePolicyError()),
     )
+    monkeypatch.setattr(
+        "app.market_data.coverage_source.DatabaseCoverageSource",
+        lambda *_args, **_kwargs: "coverage",
+    )
 
     class CapturingService:
         def __init__(self, **kwargs) -> None:
@@ -1435,6 +1464,7 @@ def test_composition_degrades_only_lifecycle_when_lifecycle_policy_is_invalid(
 
     assert observed["calibration"] == _accepted_calibration()
     assert observed["lifecycle_policy"] is None
+    assert observed["lifecycle_coverage"] == "coverage"
 
 
 class _FakeMarketData:
@@ -1562,15 +1592,48 @@ class _CursorHonoringMarketRead(_FakeMarketRead):
         )
 
 
+class _FakeLifecycleCoverage:
+    def __init__(
+        self,
+        history: dict[BarFrequency, tuple[CanonicalBar, ...]],
+    ) -> None:
+        self.history = history
+
+    def expected_bar_ends(
+        self,
+        key,
+        year: int,
+        month: int,
+        start: date,
+        end: date,
+    ) -> tuple[datetime, ...]:
+        return tuple(
+            bar.bar_end
+            for bar in self.history[key.frequency]
+            if start <= bar.trading_day <= end
+            and bar.trading_day.year == year
+            and bar.trading_day.month == month
+        )
+
+
 class _InvalidPaginationMarketRead(_CursorHonoringMarketRead):
-    def __init__(self, *args, fault: str, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        fault: str,
+        fault_frequency: BarFrequency,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.fault = fault
+        self.fault_frequency = fault_frequency
         self.calls: dict[BarFrequency, int] = {}
         self.first_page_oldest: dict[BarFrequency, CanonicalBar] = {}
 
     def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         page = super().history_page(request)
+        if request.frequency is not self.fault_frequency:
+            return page
         call = self.calls.get(request.frequency, 0) + 1
         self.calls[request.frequency] = call
         if call == 1 and page.bars:
@@ -1586,6 +1649,15 @@ class _InvalidPaginationMarketRead(_CursorHonoringMarketRead):
                 bars=bars,
                 canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
                 next_before=(bars[0].bar_end if page.has_more_before else None),
+            )
+        if self.fault == "missing_middle_page" and call == 2:
+            bars = self.history[request.frequency][:100]
+            return replace(
+                page,
+                bars=bars,
+                canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
+                has_more_before=False,
+                next_before=None,
             )
         return page
 
@@ -1635,6 +1707,7 @@ def _service_with_lifecycle(
         ),
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(history),
     )
 
 
@@ -1743,9 +1816,9 @@ def _long_segment_bars() -> dict[BarFrequency, tuple[CanonicalBar, ...]]:
         ),
         BarFrequency.M15: _bars(
             frequency=BarFrequency.M15,
-            count=234,
+            count=700,
             trading_day=_SEGMENT_START,
-            first_end=_NOW - timedelta(minutes=15 * 233),
+            first_end=_NOW - timedelta(minutes=15 * 699),
             first_close=Decimal("100"),
         ),
     }

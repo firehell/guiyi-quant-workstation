@@ -690,6 +690,19 @@ def test_unavailable_warmup_boundary_carries_only_first_segment_reset() -> None:
     ) == 1
 
 
+def test_reset_boundary_remains_valid_pivot_left_context() -> None:
+    bars = _long_pivot_prefix()[:5]
+
+    trace = _evaluate_raw(bars, bars_15m=(_bar(0),))
+
+    assert trace.snapshots[0].boundary_reset == "segment_changed"
+    assert trace.snapshots[0].stage is LifecycleStage.IDLE
+    assert trace.transitions[0].transition_at == bars[1].bar_end
+    assert len(trace.confirmed_pivots) == 1
+    assert trace.confirmed_pivots[0].pivot_time == bars[2].bar_end
+    assert trace.confirmed_pivots[0].confirmed_at == bars[4].bar_end
+
+
 @pytest.mark.parametrize(
     "direction",
     (SubingDirection.LONG, SubingDirection.SHORT),

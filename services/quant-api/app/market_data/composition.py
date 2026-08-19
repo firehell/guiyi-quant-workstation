@@ -145,6 +145,8 @@ def build_market_read_service(session: Session) -> MarketReadService:
 
 def build_subing_read_service(session: Session) -> SubingReadService:
     """构造注入 accepted Calibration 与 exact research Policy 的只读模型。"""
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
     calibration = load_accepted_subing_calibration(_SUBING_CALIBRATION)
     try:
         lifecycle_policy = load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY)
@@ -155,6 +157,11 @@ def build_subing_read_service(session: Session) -> SubingReadService:
         market_read=build_market_read_service(session),
         calibration=calibration,
         lifecycle_policy=lifecycle_policy,
+        lifecycle_coverage=DatabaseCoverageSource(
+            session,
+            _PRODUCT_STARTS,
+            history_floor_path=_HISTORY_FLOOR,
+        ),
     )
 
 
