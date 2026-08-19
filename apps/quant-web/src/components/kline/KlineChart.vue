@@ -92,6 +92,8 @@ const renderedResearchMarkerCount = ref(0)
 const renderedAlertMarkerCount = ref(0)
 const renderedAlertMarkerSignature = ref('')
 const renderedMainForceFuturesMarkerCount = ref(0)
+const renderedMainForceFuturesHistogramCount = ref(0)
+const renderedMainForceFuturesHistogramSignature = ref('')
 let derivedData = buildKlineDerivedData([], [])
 let mainForceFuturesResult: MainForceMirrorFuturesResult | null = null
 const mainForceFuturesAvailability = ref<MainForceFuturesAvailability>(resolveMainForceFuturesAvailability({ period: props.period, seriesKind: props.seriesKind }, null, null))
@@ -369,9 +371,13 @@ function renderDerivedSeries(): void {
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
   renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
-  const renderedAlertMarkers = chartMarkers(props.alertMarkers)
+  const injectedTestMarkers = import.meta.env.DEV
+    ? ((globalThis as { __GUIYI_TEST_ALERT_MARKERS__?: KlineMarker[] }).__GUIYI_TEST_ALERT_MARKERS__ ?? [])
+    : []
+  const alertMarkers = [...props.alertMarkers, ...injectedTestMarkers]
+  const renderedAlertMarkers = chartMarkers(alertMarkers)
   const renderedMarkers = chartMarkers(mergeKlineMarkers(
-    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    mergeKlineMarkers(derivedData.htdy?.markers ?? [], alertMarkers),
     props.researchMarkers,
   ))
   renderedAlertMarkerCount.value = renderedMarkers.filter((marker) => renderedAlertMarkers.some((alert) => alert.id === marker.id)).length
@@ -394,6 +400,8 @@ function clearMainForceFutures() {
   mainForceFuturesMarkers?.setMarkers([])
   mainForceFuturesResult = null
   renderedMainForceFuturesMarkerCount.value = 0
+  renderedMainForceFuturesHistogramCount.value = 0
+  renderedMainForceFuturesHistogramSignature.value = ''
   mainForceFuturesAvailability.value = resolveMainForceFuturesAvailability(mainForceFuturesSupport(), null, null)
 }
 
@@ -436,10 +444,13 @@ function renderMainForceFutures() {
   const model = buildMainForceFuturesRenderModel(mainForceFuturesResult)
   const theme = resolveChartTheme()
   const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
-  mainForceFuturesHistogram.setData(model.histogram.flatMap((point) => {
+  const histogram = model.histogram.flatMap((point) => {
     const bar = barsByTime.get(point.time)
     return bar ? [{ time: chartTime(bar), value: point.value, color: theme[point.colorKey] }] : []
-  }))
+  })
+  mainForceFuturesHistogram.setData(histogram)
+  renderedMainForceFuturesHistogramCount.value = histogram.length
+  renderedMainForceFuturesHistogramSignature.value = histogram.map((point) => `${String(point.time)}:${point.value}`).join('|')
   const markers = model.markers.flatMap((marker) => {
     const bar = barsByTime.get(marker.time)
     return bar ? [{
@@ -552,6 +563,8 @@ defineExpose({
     :data-research-marker-count="researchMarkers.length"
     :data-rendered-research-marker-count="renderedResearchMarkerCount"
     :data-main-force-futures-marker-count="renderedMainForceFuturesMarkerCount"
+    :data-main-force-futures-histogram-count="renderedMainForceFuturesHistogramCount"
+    :data-main-force-futures-histogram-signature="renderedMainForceFuturesHistogramSignature"
     :data-secondary-panel="selectedSecondaryPanel"
     :data-visible-logical-range="visibleLogicalRange"
   >

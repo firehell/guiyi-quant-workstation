@@ -171,6 +171,19 @@ test('futures pane availability is derived from the visible logical window, not 
   assert.deepEqual(warmup, { kind: 'state_warmup', reason: 'MFM_FUTURES_V1_WARMUP' })
   const ready = resolveMainForceFuturesWindowAvailability(supported, points, { from: 2, to: 2.1 })
   assert.deepEqual(ready, { kind: 'ready', reason: null })
+
+  const mixed = resolveMainForceFuturesWindowAvailability(supported, [
+    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }),
+    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING' }),
+    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE' }),
+    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_SEGMENT_CONFLICT' }),
+  ], { from: 0, to: 3 })
+  assert.deepEqual(mixed, { kind: 'input_unavailable', reason: 'MFM_FUTURES_V1_SEGMENT_CONFLICT' })
+  const physicalBeforeWarmup = resolveMainForceFuturesWindowAvailability(supported, [
+    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }),
+    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING' }),
+  ], { from: 0, to: 1 })
+  assert.deepEqual(physicalBeforeWarmup, { kind: 'input_unavailable', reason: 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING' })
 })
 
 test('futures render model keeps signed scores separate from bilateral caution markers and clears as an empty model', () => {

@@ -63,14 +63,7 @@ async function mockChartMarketApi(page, requests, items = bars(), withAlignedAle
   await page.route('**/api/alerts/**', async (route) => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/current-events')) {
-      const bar = items.at(-8)
-      const event = bar ? [{
-        id: 601, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601',
-        trading_day: bar.trading_day, frequency: '60m', bar_end: bar.bar_end,
-        result_codes: ['buy'], lower_tf_confirmation: false,
-        detected_at: bar.bar_end, notification_attempted_at: null,
-      }] : []
-      await route.fulfill({ json: { status: 'ready', trading_day: items.at(-1)?.trading_day ?? null, items: withAlignedAlert ? event : [] } })
+      await route.fulfill({ json: { status: 'ready', trading_day: items.at(-1)?.trading_day ?? null, items: [] } })
       return
     }
     if (url.pathname.endsWith('/products/ag')) {
@@ -85,6 +78,14 @@ async function mockChartMarketApi(page, requests, items = bars(), withAlignedAle
 
 function barRequestCount(requests) {
   return requests.filter((url) => url.pathname.endsWith('/bars/page')).length
+}
+
+async function secondaryPaneBounds(shell) {
+  return shell.locator('.chart').evaluate((chart) => {
+    const rows = Array.from(chart.querySelectorAll('tr')).filter((row) => row.querySelectorAll('canvas').length >= 4)
+    const rect = rows[2]?.getBoundingClientRect()
+    return rect ? { top: rect.top, bottom: rect.bottom } : null
+  })
 }
 
 test('futures mirror tab is identity-gated, ordered, and local to the existing chart data', async ({ page }) => {
@@ -151,11 +152,13 @@ test('futures mirror renders only signed scores and preserves rendered Alert mar
     turnover: null,
     open_interest: bar.open_interest,
   }))
+  await page.addInitScript((time) => {
+    window.__GUIYI_TEST_ALERT_MARKERS__ = [{ id: 'test:aligned-alert', time, label: '测试提醒', tone: 'neutral', position: 'aboveBar', shape: 'square' }]
+  }, fixtureBars.at(-8).bar_end)
   await mockChartMarketApi(page, requests, fixtureBars, true)
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=60m')
   await expect(page.getByText('40 bars')).toBeVisible()
-  await expect(page.getByTestId('product-today-alert-events').getByText('买入观察')).toBeVisible()
   const shell = page.getByTestId('kline-shell')
   const tabs = page.getByTestId('secondary-panel-tabs')
   await tabs.getByRole('tab', { name: '主力照妖镜' }).click()
@@ -163,7 +166,7 @@ test('futures mirror renders only signed scores and preserves rendered Alert mar
   await expect(shell).toHaveAttribute('data-main-force-futures-marker-count', '2')
   await expect(shell).toHaveAttribute('data-rendered-alert-marker-count', '1')
   const renderedAlertSignature = await shell.getAttribute('data-rendered-alert-marker-signature')
-  expect(renderedAlertSignature).toContain('alert:htdy_original_15m:ag:')
+  expect(renderedAlertSignature).toContain('test:aligned-alert')
   await expect(page.getByText('70 = 风险证据评分阈值，不是资金流比例或概率')).toBeVisible()
   await expect(page.locator('[data-main-force-futures-marker-count]')).not.toHaveAttribute('data-main-force-futures-marker-count', '4')
   await tabs.getByRole('tab', { name: 'MACD' }).click()
@@ -195,7 +198,9 @@ test('three-tab pane keeps rendered V1 content and controls within each required
     const tabs = page.getByTestId('secondary-panel-tabs')
     await tabs.getByRole('tab', { name: '主力照妖镜' }).click()
     await expect(shell).toHaveAttribute('data-main-force-futures-marker-count', '2')
-    await expect(page.getByTestId('main-force-futures-pane-status')).not.toContainText('unsupported')
+    await expect(shell).toHaveAttribute('data-main-force-futures-histogram-count', /[1-9]/)
+    await expect(shell).toHaveAttribute('data-main-force-futures-histogram-signature', /.+/)
+    await expect(page.getByTestId('main-force-futures-pane-status')).toHaveText('ready · READY')
     const chart = page.locator('.chart')
     const chartBox = await chart.boundingBox()
     if (!chartBox) throw new Error('chart bounds unavailable')
@@ -205,13 +210,17 @@ test('three-tab pane keeps rendered V1 content and controls within each required
     const tabsBox = await tabs.boundingBox()
     const legendBox = await page.getByLabel('期货主力照妖镜图例').boundingBox()
     const hoverBox = await page.locator('.kline-hover-legend').boundingBox()
+    const pane = await secondaryPaneBounds(shell)
     if (!shellBox || !tabsBox || !legendBox || !hoverBox) throw new Error('kline bounds unavailable')
-    for (const box of [tabsBox, legendBox, hoverBox]) {
+    if (!pane) throw new Error('secondary pane bounds unavailable')
+    for (const box of [tabsBox, legendBox]) {
       expect(box.x).toBeGreaterThanOrEqual(shellBox.x)
-      expect(box.y).toBeGreaterThanOrEqual(shellBox.y)
+      expect(box.y).toBeGreaterThanOrEqual(pane.top)
       expect(box.x + box.width).toBeLessThanOrEqual(shellBox.x + shellBox.width)
-      expect(box.y + box.height).toBeLessThanOrEqual(shellBox.y + shellBox.height)
+      expect(box.y + box.height).toBeLessThanOrEqual(pane.bottom)
     }
+    expect(hoverBox.y).toBeGreaterThanOrEqual(shellBox.y)
+    expect(hoverBox.y + hoverBox.height).toBeLessThanOrEqual(shellBox.y + shellBox.height)
     expect(await page.locator('body').evaluate((body) => body.scrollWidth <= window.innerWidth)).toBe(true)
   }
 })

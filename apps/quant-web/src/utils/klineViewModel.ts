@@ -107,6 +107,8 @@ export function resolveMainForceFuturesWindowAvailability(
 
 function unavailablePriority(availability: MainForceFuturesAvailability): number {
   const reason = availability.reason
+  if (reason === 'MFM_FUTURES_V1_SEGMENT_CONFLICT') return 3
+  if (reason === 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING') return 4
   if (reason === 'MFM_FUTURES_V1_TIMESTAMP_INVALID') return 5
   if (reason === 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE') return 6
   if (reason === 'MFM_FUTURES_V1_INPUT_INVALID') return 7

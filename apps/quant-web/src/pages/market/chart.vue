@@ -33,7 +33,6 @@ import {
   MARKET_FREQUENCIES,
 } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
-import { alertEventsToMarkers, mergeKlineMarkers } from '@/utils/alertMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
@@ -165,12 +164,6 @@ const lifecycleMarkers = computed(() => {
     ? lifecycleSnapshotToMarkers(subing.value.lifecycle)
     : []
 })
-const chartAlertMarkers = computed(() => mergeKlineMarkers(
-  persistentAlertMarkers.value,
-  alertEventsToMarkers(currentEvents.value.filter((event) => (
-    seriesKind.value === 'actual_dominant' && event.frequency === frequency.value
-  ))),
-))
 const canLoadEarlier = computed(() => {
   if (selectedOverlay.value !== 'subing' || !subingSupported.value) return hasMoreBefore.value
   const segmentStart = subing.value?.segment_start_trading_day
@@ -565,7 +558,7 @@ function normalizeSymbol(value: unknown): string | null {
               :period="frequency"
               :series-kind="effectiveIdentity.seriesKind"
               :visible-main-indicators="visibleMainIndicators"
-              :alert-markers="chartAlertMarkers"
+              :alert-markers="persistentAlertMarkers"
               :research-markers="lifecycleMarkers"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
