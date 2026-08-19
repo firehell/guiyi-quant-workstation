@@ -1,10 +1,126 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import MappingProxyType
 
 import numpy as np
 import pytest
+
+
+_SHARED_GOLDEN_FIELDS = (
+    "valid",
+    "state_ready",
+    "caution_ready",
+    "ready",
+    "reason",
+    "caution_availability_reason",
+    "state",
+    "signed_score",
+    "strength",
+    "price_impulse",
+    "clv",
+    "volume_ratio",
+    "delta_oi",
+    "oi_impulse",
+    "direction",
+    "range_position",
+    "long_open_pressure",
+    "short_open_pressure",
+    "long_caution_score",
+    "short_caution_score",
+    "caution",
+    "caution_reason_codes",
+)
+
+
+def _json_safe_golden_value(value: object) -> object:
+    if isinstance(value, (float, np.floating)):
+        number = float(value)
+        if not np.isfinite(number):
+            return None
+        return 0.0 if number == 0.0 else number
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, tuple):
+        return list(value)
+    return value
+
+
+def test_futures_v1_matches_shared_golden_across_python_and_web() -> None:
+    fixture_path = (
+        Path(__file__).resolve().parents[3]
+        / "tests"
+        / "fixtures"
+        / "main_force_mirror_futures_v1_golden.json"
+    )
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    assert fixture["schema_version"] == 1
+    assert fixture["indicator_code"] == "main_force_mirror_futures_v1"
+    assert fixture["indicator_version"] == "futures-research-v1"
+    assert fixture["parameters_hash"] == "f7fd0c9bce0b08d1"
+
+    bars = fixture["bars"]
+    result = _compute(
+        {
+            "datetimes": [bar["time"] for bar in bars],
+            "physical_contract": [bar["physical_contract"] for bar in bars],
+            "open_": [bar["open"] for bar in bars],
+            "high": [bar["high"] for bar in bars],
+            "low": [bar["low"] for bar in bars],
+            "close": [bar["close"] for bar in bars],
+            "volume": [bar["volume"] for bar in bars],
+            "open_interest": [bar["open_interest"] for bar in bars],
+        }
+    )
+
+    assert result.metadata["indicator_code"] == fixture["indicator_code"]
+    assert result.metadata["indicator_version"] == fixture["indicator_version"]
+    assert result.metadata["parameters_hash"] == fixture["parameters_hash"]
+    actual_points = [
+        {
+            field: _json_safe_golden_value(getattr(result, field)[index])
+            for field in _SHARED_GOLDEN_FIELDS
+        }
+        for index in range(len(bars))
+    ]
+    assert actual_points == fixture["expected_points"]
+
+    assert {bar["physical_contract"] for bar in bars} == {"JM2609", "AG2612"}
+    assert {point["state"] for point in actual_points if point["state"]} == {
+        "long_build",
+        "short_build",
+        "short_cover",
+        "long_liquidation",
+        "turnover",
+    }
+    assert [
+        index
+        for index, point in enumerate(actual_points)
+        if point["caution"] == "long_chase_caution"
+    ] == [30, 34]
+    assert [
+        index
+        for index, point in enumerate(actual_points)
+        if point["caution"] == "short_chase_caution"
+    ] == [37]
+    assert [
+        index
+        for index, point in enumerate(actual_points)
+        if point["caution_availability_reason"]
+        == "MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT"
+    ] == [36]
+    assert all(actual_points[index]["long_caution_score"] < 40 for index in (31, 32, 33))
+    assert actual_points[33]["range_position"] < 0.65
+    assert actual_points[19]["state_ready"] is False
+    assert actual_points[20]["state_ready"] is True
+    assert actual_points[29]["caution_ready"] is False
+    assert actual_points[30]["caution_ready"] is True
+    assert bars[38]["open_interest"] is None
+    assert actual_points[38]["reason"] == "MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE"
+    assert actual_points[40]["reason"] == "MFM_FUTURES_V1_TIMESTAMP_INVALID"
 
 
 def make_valid_inputs(
