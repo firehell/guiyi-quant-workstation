@@ -69,14 +69,31 @@ def _factor(
     segment_start: date = _SEGMENT_START,
     status: SubingFactorStatus = SubingFactorStatus.READY,
     volume_ratio: Decimal | None = Decimal("1"),
+    ema21: str | None = None,
+    slope5: str | None = None,
+    slope10: str | None = None,
 ) -> SubingFactorResult:
     if status is SubingFactorStatus.INSUFFICIENT_DATA:
         return SubingFactorResult(status=status, snapshot=None)
     long = direction is SubingDirection.LONG
-    price_side = PriceSide.ABOVE if long else PriceSide.BELOW
-    slope5 = Decimal("2") if long else Decimal("-2")
-    slope10 = Decimal("1") if long else Decimal("-1")
-    ema21 = bar.close - Decimal("1") if long else bar.close + Decimal("1")
+    slope5_value = (
+        Decimal(slope5) if slope5 is not None else Decimal("2") if long else Decimal("-2")
+    )
+    slope10_value = (
+        Decimal(slope10)
+        if slope10 is not None
+        else Decimal("1") if long else Decimal("-1")
+    )
+    ema21_value = (
+        Decimal(ema21)
+        if ema21 is not None
+        else bar.close - Decimal("1") if long else bar.close + Decimal("1")
+    )
+    price_side = (
+        PriceSide.ABOVE
+        if bar.close > ema21_value
+        else PriceSide.BELOW if bar.close < ema21_value else PriceSide.EQUAL
+    )
     return SubingFactorResult(
         status=SubingFactorStatus.READY,
         snapshot=SubingFactorSnapshot(
@@ -87,12 +104,12 @@ def _factor(
             segment_start_trading_day=segment_start,
             bar_source="canonical",
             close=bar.close,
-            ema21=ema21,
+            ema21=ema21_value,
             price_side=price_side,
-            slope_5_raw=slope5,
-            slope_10_raw=slope10,
-            slope_5_bps_per_bar=slope5,
-            slope_10_bps_per_bar=slope10,
+            slope_5_raw=slope5_value,
+            slope_10_raw=slope10_value,
+            slope_5_bps_per_bar=slope5_value,
+            slope_10_bps_per_bar=slope10_value,
             macd_dif=Decimal("1"),
             macd_dea=Decimal("1"),
             macd_histogram=Decimal("0"),
@@ -156,6 +173,17 @@ def _long_pivot_prefix() -> tuple[CanonicalBar, ...]:
         _bar(20, close="102", high="103", low="99"),
         _bar(25, close="108", high="109", low="101"),
         _bar(30, close="111", high="115", low="109"),
+    )
+
+
+def _short_pivot_prefix() -> tuple[CanonicalBar, ...]:
+    return (
+        _bar(5, close="100", high="101", low="99"),
+        _bar(10, close="100", high="101", low="98"),
+        _bar(15, close="95", high="100", low="90"),
+        _bar(20, close="98", high="101", low="97"),
+        _bar(25, close="92", high="99", low="91"),
+        _bar(30, close="89", high="91", low="85"),
     )
 
 
@@ -622,6 +650,722 @@ def test_idle_formal_v1_match_confirms_with_origin_at_confirmed_boundary() -> No
     assert snapshot.opportunity_key.origin_at == boundary.bar_end
     assert len(trace.transitions) == 1
     assert trace.transitions[0].from_stage is LifecycleStage.IDLE
+
+
+def test_entry_confirmed_exists_only_on_its_confirmation_boundary() -> None:
+    confirmed = _bar(15)
+    next_boundary = _bar(20)
+
+    trace = _evaluate(
+        (confirmed, next_boundary),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(next_boundary, BarFrequency.M5),
+        ),
+        bars_15m=(confirmed,),
+    )
+
+    assert tuple(snapshot.stage for snapshot in trace.snapshots) == (
+        LifecycleStage.ENTRY_CONFIRMED,
+        LifecycleStage.CONTINUATION,
+    )
+    assert trace.transitions[-1].from_stage is LifecycleStage.ENTRY_CONFIRMED
+    assert trace.transitions[-1].to_stage is LifecycleStage.CONTINUATION
+    assert trace.transitions[-1].reason_codes == ("CONFIRMED_TREND_CONTINUES",)
+
+
+@pytest.mark.parametrize(
+    ("risk_code", "factor_kwargs"),
+    (
+        ("LOWER_TF_EMA21_BREACH", {"ema21": "101"}),
+        ("LOWER_TF_SLOPE5_REVERSAL", {"slope5": "-1"}),
+        ("LOWER_TF_MACD_OPPOSITE_CROSS", {"cross": MacdCross.DEAD}),
+    ),
+)
+def test_two_consecutive_lower_tf_risks_enter_exit_risk(
+    risk_code: str,
+    factor_kwargs: dict[str, object],
+) -> None:
+    confirmed, first_risk, second_risk = (
+        _bar(minutes) for minutes in (15, 20, 25)
+    )
+
+    trace = _evaluate(
+        (confirmed, first_risk, second_risk),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(first_risk, BarFrequency.M5, **factor_kwargs),  # type: ignore[arg-type]
+            _factor(second_risk, BarFrequency.M5, **factor_kwargs),  # type: ignore[arg-type]
+        ),
+        bars_15m=(confirmed,),
+    )
+
+    watching = trace.snapshots[1]
+    assert watching.stage is LifecycleStage.CONTINUATION
+    assert watching.current_risk_codes == (risk_code,)
+    assert watching.risk_progress == "watching"
+    assert watching.lower_tf_risk_count == 1
+    assert trace.current_snapshot.stage is LifecycleStage.EXIT_RISK
+    assert trace.current_snapshot.current_risk_codes == (risk_code,)
+    assert trace.current_snapshot.lower_tf_risk_count == 2
+    assert trace.transitions[-1].reason_codes == (risk_code,)
+
+
+def test_two_confirmed_lower_tf_risks_require_exit_risk_stage() -> None:
+    confirmed = _bar(15)
+    first_risk = _bar(20)
+    watching = _evaluate(
+        (confirmed, first_risk),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(first_risk, BarFrequency.M5, ema21="101"),
+        ),
+        bars_15m=(confirmed,),
+    ).current_snapshot
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            watching,
+            lower_tf_risk_count=2,
+            risk_progress=None,
+        )
+
+
+def test_clean_lower_tf_boundary_resets_risk_count() -> None:
+    confirmed, first_risk, clean, risk_after_reset = (
+        _bar(minutes) for minutes in (15, 20, 25, 30)
+    )
+
+    trace = _evaluate(
+        (confirmed, first_risk, clean, risk_after_reset),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(first_risk, BarFrequency.M5, ema21="101"),
+            _factor(clean, BarFrequency.M5),
+            _factor(risk_after_reset, BarFrequency.M5, ema21="101"),
+        ),
+        bars_15m=(confirmed,),
+    )
+
+    assert trace.snapshots[1].lower_tf_risk_count == 1
+    assert trace.snapshots[2].lower_tf_risk_count == 0
+    assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
+    assert trace.current_snapshot.lower_tf_risk_count == 1
+
+
+def test_unavailable_boundary_pauses_lower_tf_risk_count() -> None:
+    confirmed, first_risk, unavailable, second_risk = (
+        _bar(minutes) for minutes in (15, 20, 25, 30)
+    )
+
+    trace = _evaluate(
+        (confirmed, first_risk, unavailable, second_risk),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(first_risk, BarFrequency.M5, ema21="101"),
+            _factor(
+                unavailable,
+                BarFrequency.M5,
+                status=SubingFactorStatus.INSUFFICIENT_DATA,
+            ),
+            _factor(second_risk, BarFrequency.M5, ema21="101"),
+        ),
+        bars_15m=(confirmed,),
+    )
+
+    paused = trace.snapshots[2]
+    assert paused.availability is LifecycleAvailability.UNAVAILABLE
+    assert paused.lower_tf_risk_count == 1
+    assert paused.risk_progress == "watching"
+    assert trace.current_snapshot.stage is LifecycleStage.EXIT_RISK
+    assert trace.current_snapshot.lower_tf_risk_count == 2
+
+
+def test_unavailable_snapshot_retains_the_last_evaluable_stage_and_time() -> None:
+    confirmed, transition_boundary, stable_boundary, unavailable = (
+        _bar(minutes) for minutes in (15, 20, 25, 30)
+    )
+
+    trace = _evaluate(
+        (confirmed, transition_boundary, stable_boundary, unavailable),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(transition_boundary, BarFrequency.M5),
+            _factor(stable_boundary, BarFrequency.M5),
+            _factor(
+                unavailable,
+                BarFrequency.M5,
+                status=SubingFactorStatus.INSUFFICIENT_DATA,
+            ),
+        ),
+        bars_15m=(confirmed,),
+    )
+
+    assert trace.snapshots[2].latest_transition == trace.transitions[-1]
+    assert trace.snapshots[2].last_confirmed_stage is LifecycleStage.CONTINUATION
+    assert trace.snapshots[2].last_confirmed_at == stable_boundary.bar_end
+    assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
+    assert trace.current_snapshot.last_confirmed_stage is LifecycleStage.CONTINUATION
+    assert trace.current_snapshot.last_confirmed_at == stable_boundary.bar_end
+
+
+def test_bound_pivot_reentry_is_a_lower_tf_risk() -> None:
+    confirmed_bars = (
+        *_long_pivot_prefix(),
+        _bar(35, close="112", high="113", low="111"),
+        _bar(40, close="113", high="114", low="112"),
+    )
+    reentry = _bar(45, close="109", high="110", low="108")
+
+    trace = _evaluate((*confirmed_bars, reentry), bars_15m=(_bar(0),))
+
+    assert trace.snapshots[-2].confirmation_source is ConfirmationSource.PIVOT_BREAK_HOLD
+    assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
+    assert trace.current_snapshot.current_risk_codes == (
+        "LOWER_TF_BOUND_PIVOT_REENTRY",
+    )
+    assert trace.current_snapshot.lower_tf_risk_count == 1
+
+
+@pytest.mark.parametrize(
+    ("risk_code", "factor_5m_kwargs", "factor_15m_kwargs"),
+    (
+        ("ANCHOR_EMA21_BREACH", {}, {"ema21": "101"}),
+        ("ANCHOR_SLOPE5_REVERSAL", {}, {"slope5": "-1"}),
+        ("ANCHOR_MACD_OPPOSITE_CROSS", {}, {"cross": MacdCross.DEAD}),
+        ("TIMEFRAME_ALIGNMENT_LOST", {"slope5": "0.5"}, {}),
+    ),
+)
+def test_completed_15m_soft_risk_enters_exit_risk_immediately(
+    risk_code: str,
+    factor_5m_kwargs: dict[str, object],
+    factor_15m_kwargs: dict[str, object],
+) -> None:
+    confirmed = _bar(15)
+    anchor_risk = _bar(30)
+
+    trace = _evaluate(
+        (confirmed, anchor_risk),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(anchor_risk, BarFrequency.M5, **factor_5m_kwargs),  # type: ignore[arg-type]
+        ),
+        bars_15m=(confirmed, anchor_risk),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15),
+            _factor(anchor_risk, BarFrequency.M15, **factor_15m_kwargs),  # type: ignore[arg-type]
+        ),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.EXIT_RISK
+    assert risk_code in trace.current_snapshot.current_risk_codes
+    assert trace.current_snapshot.lower_tf_risk_count == 0
+    assert trace.transitions[-1].reason_codes == (risk_code,)
+
+
+def test_completed_anchor_risk_is_not_synthesized_on_a_later_5m_boundary() -> None:
+    confirmed = _bar(5)
+    clean = _bar(10)
+    skipped_anchor_boundary = _bar(15)
+    later_5m = _bar(20)
+
+    trace = _evaluate(
+        (confirmed, clean, later_5m),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(clean, BarFrequency.M5),
+            _factor(later_5m, BarFrequency.M5),
+        ),
+        bars_15m=(_bar(0), skipped_anchor_boundary),
+        factors_15m=(
+            _factor(_bar(0), BarFrequency.M15),
+            _factor(skipped_anchor_boundary, BarFrequency.M15, slope5="-1"),
+        ),
+    )
+
+    assert trace.current_snapshot.anchor_bar_end == skipped_anchor_boundary.bar_end
+    assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
+    assert trace.current_snapshot.current_risk_codes == ()
+    assert all(
+        transition.reason_codes != ("ANCHOR_SLOPE5_REVERSAL",)
+        for transition in trace.transitions
+    )
+
+
+def test_exit_risk_recovers_only_on_a_clean_completed_15m_boundary() -> None:
+    confirmed = _bar(15)
+    risk = _bar(30)
+    non_anchor_clean = _bar(40)
+    recovery = _bar(45)
+
+    trace = _evaluate(
+        (confirmed, risk, non_anchor_clean, recovery),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(risk, BarFrequency.M5),
+            _factor(non_anchor_clean, BarFrequency.M5),
+            _factor(recovery, BarFrequency.M5),
+        ),
+        bars_15m=(confirmed, risk, recovery),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15),
+            _factor(risk, BarFrequency.M15, slope5="-1"),
+            _factor(recovery, BarFrequency.M15),
+        ),
+    )
+
+    assert trace.snapshots[1].stage is LifecycleStage.EXIT_RISK
+    assert trace.snapshots[2].stage is LifecycleStage.EXIT_RISK
+    assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
+    assert trace.current_snapshot.current_risk_codes == ()
+    assert trace.transitions[-1].reason_codes == ("ANCHOR_RECOVERY_CONFIRMED",)
+
+
+@pytest.mark.parametrize(
+    ("factor_5m_kwargs", "factor_15m_kwargs"),
+    (
+        ({}, {"ema21": "101"}),
+        ({}, {"slope10": "-1"}),
+        ({}, {"cross": MacdCross.DEAD}),
+        ({"ema21": "101"}, {}),
+    ),
+)
+def test_exit_risk_recovery_requires_every_approved_condition(
+    factor_5m_kwargs: dict[str, object],
+    factor_15m_kwargs: dict[str, object],
+) -> None:
+    confirmed = _bar(15)
+    risk = _bar(30)
+    blocked_recovery = _bar(45)
+
+    trace = _evaluate(
+        (confirmed, risk, blocked_recovery),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(risk, BarFrequency.M5),
+            _factor(blocked_recovery, BarFrequency.M5, **factor_5m_kwargs),  # type: ignore[arg-type]
+        ),
+        bars_15m=(confirmed, risk, blocked_recovery),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15),
+            _factor(risk, BarFrequency.M15, slope5="-1"),
+            _factor(blocked_recovery, BarFrequency.M15, **factor_15m_kwargs),  # type: ignore[arg-type]
+        ),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.EXIT_RISK
+    assert trace.transitions[-1].to_stage is LifecycleStage.EXIT_RISK
+
+
+def test_hard_close_prioritizes_opposite_formal_over_all_other_facts() -> None:
+    confirmed = _bar(15)
+    close_boundary = _bar(30)
+
+    trace = _evaluate(
+        (confirmed, close_boundary),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(
+                close_boundary,
+                BarFrequency.M5,
+                direction=SubingDirection.SHORT,
+                cross=MacdCross.DEAD,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+        bars_15m=(confirmed, close_boundary),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15),
+            _factor(
+                close_boundary,
+                BarFrequency.M15,
+                direction=SubingDirection.SHORT,
+                cross=MacdCross.DEAD,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.transitions[-1].reason_codes == ("OPPOSITE_FORMAL_V1",)
+
+
+def test_hard_close_prioritizes_opposite_context_over_anchor_break() -> None:
+    confirmed = _bar(15)
+    close_boundary = _bar(30)
+
+    trace = _evaluate(
+        (confirmed, close_boundary),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(close_boundary, BarFrequency.M5, direction=SubingDirection.SHORT),
+        ),
+        bars_15m=(confirmed, close_boundary),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15),
+            _factor(close_boundary, BarFrequency.M15, direction=SubingDirection.SHORT),
+        ),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.transitions[-1].reason_codes == (
+        "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED",
+    )
+
+
+def test_hard_close_prioritizes_anchor_break_over_structure_invalidation() -> None:
+    confirmed_bars = (
+        *_long_pivot_prefix(),
+        _bar(35, close="112", high="113", low="111"),
+        _bar(40, close="113", high="114", low="112"),
+    )
+    close_boundary = _bar(45, close="109", high="110", low="108")
+
+    trace = _evaluate(
+        (*confirmed_bars, close_boundary),
+        factors_5m=tuple(
+            _factor(bar, BarFrequency.M5)
+            for bar in (*confirmed_bars, close_boundary)
+        ),
+        bars_15m=(_bar(0), close_boundary),
+        factors_15m=(
+            _factor(_bar(0), BarFrequency.M15),
+            _factor(close_boundary, BarFrequency.M15, ema21="110", slope10="-1"),
+        ),
+    )
+
+    assert trace.snapshots[-2].confirmation_source is ConfirmationSource.PIVOT_BREAK_HOLD
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.transitions[-1].reason_codes == ("ANCHOR_TREND_BROKEN",)
+
+
+def test_structure_invalidation_closes_only_a_pivot_confirmed_opportunity() -> None:
+    confirmed_bars = (
+        *_long_pivot_prefix(),
+        _bar(35, close="112", high="113", low="111"),
+        _bar(40, close="113", high="114", low="112"),
+    )
+    close_boundary = _bar(45, close="109", high="110", low="108")
+
+    trace = _evaluate(
+        (*confirmed_bars, close_boundary),
+        bars_15m=(_bar(0), close_boundary),
+        factors_15m=(
+            _factor(_bar(0), BarFrequency.M15),
+            _factor(close_boundary, BarFrequency.M15, ema21="108", slope10="1"),
+        ),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.transitions[-1].reason_codes == ("STRUCTURE_INVALIDATED",)
+    completed = trace.completed_opportunities[-1]
+    assert completed.confirmation_source is ConfirmationSource.PIVOT_BREAK_HOLD
+    assert completed.confirmed_at == confirmed_bars[-1].bar_end
+
+
+def test_non_pivot_confirmation_does_not_use_structure_invalidation() -> None:
+    confirmed = _bar(15, close="100")
+    below_unbound_price = _bar(30, close="90")
+
+    trace = _evaluate(
+        (confirmed, below_unbound_price),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(below_unbound_price, BarFrequency.M5, ema21="89"),
+        ),
+        bars_15m=(confirmed, below_unbound_price),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15),
+            _factor(below_unbound_price, BarFrequency.M15, ema21="89"),
+        ),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
+    assert all(
+        transition.reason_codes != ("STRUCTURE_INVALIDATED",)
+        for transition in trace.transitions
+    )
+
+
+def test_short_anchor_trend_break_uses_the_exact_mirrored_formula() -> None:
+    confirmed = _bar(15)
+    close_boundary = _bar(30)
+
+    trace = _evaluate(
+        (confirmed, close_boundary),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                direction=SubingDirection.SHORT,
+                cross=MacdCross.DEAD,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(close_boundary, BarFrequency.M5, direction=SubingDirection.SHORT),
+        ),
+        bars_15m=(confirmed, close_boundary),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15, direction=SubingDirection.SHORT),
+            _factor(
+                close_boundary,
+                BarFrequency.M15,
+                direction=SubingDirection.SHORT,
+                ema21="99",
+                slope10="1",
+            ),
+        ),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.transitions[-1].reason_codes == ("ANCHOR_TREND_BROKEN",)
+
+
+def test_short_pivot_structure_invalidation_uses_close_above_bound_low() -> None:
+    prefix = _short_pivot_prefix()
+    confirmed_bars = (
+        *prefix,
+        _bar(35, close="88", high="89", low="87"),
+        _bar(40, close="87", high="88", low="86"),
+    )
+    close_boundary = _bar(45, close="91", high="92", low="90")
+    all_bars = (*confirmed_bars, close_boundary)
+
+    trace = _evaluate(
+        all_bars,
+        factors_5m=tuple(
+            _factor(bar, BarFrequency.M5, direction=SubingDirection.SHORT)
+            for bar in all_bars
+        ),
+        bars_15m=(_bar(0), close_boundary),
+        factors_15m=(
+            _factor(_bar(0), BarFrequency.M15, direction=SubingDirection.SHORT),
+            _factor(
+                close_boundary,
+                BarFrequency.M15,
+                direction=SubingDirection.SHORT,
+                ema21="92",
+                slope10="-1",
+            ),
+        ),
+    )
+
+    assert trace.snapshots[-2].confirmation_source is ConfirmationSource.PIVOT_BREAK_HOLD
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.transitions[-1].reason_codes == ("STRUCTURE_INVALIDATED",)
+
+
+def test_confirmed_opportunity_continues_across_trading_day_in_same_segment() -> None:
+    confirmed = _bar(15)
+    next_day = _bar(20, trading_day=date(2026, 8, 4))
+
+    trace = _evaluate(
+        (confirmed, next_day),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(next_day, BarFrequency.M5),
+        ),
+        bars_15m=(confirmed,),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
+    assert trace.current_snapshot.crossed_trading_day is True
+    assert all(
+        transition.reason_codes != ("UNCONFIRMED_TRADING_DAY_ROLLOVER",)
+        for transition in trace.transitions
+    )
+
+
+def test_exit_risk_continues_across_trading_day_without_automatic_close() -> None:
+    confirmed, first_risk, exit_risk = (
+        _bar(minutes) for minutes in (15, 20, 25)
+    )
+    next_day = _bar(30, trading_day=date(2026, 8, 4))
+
+    trace = _evaluate(
+        (confirmed, first_risk, exit_risk, next_day),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(first_risk, BarFrequency.M5, ema21="101"),
+            _factor(exit_risk, BarFrequency.M5, ema21="101"),
+            _factor(next_day, BarFrequency.M5),
+        ),
+        bars_15m=(confirmed,),
+    )
+
+    assert trace.snapshots[-2].stage is LifecycleStage.EXIT_RISK
+    assert trace.current_snapshot.stage is LifecycleStage.EXIT_RISK
+    assert trace.current_snapshot.crossed_trading_day is True
+    assert trace.transitions[-1].to_stage is LifecycleStage.EXIT_RISK
+
+
+def test_lifecycle_facts_are_prefix_invariant_for_every_fixture_boundary() -> None:
+    bars_5m = (
+        *_long_pivot_prefix(),
+        _bar(35, close="112", high="113", low="111"),
+        _bar(40, close="113", high="114", low="112"),
+        _bar(45, close="114", high="115", low="113"),
+        _bar(60, close="100", high="101", low="99"),
+    )
+    factors_5m = tuple(
+        _factor(
+            bar,
+            BarFrequency.M5,
+            cross=MacdCross.GOLDEN if bar.bar_end == bars_5m[5].bar_end else MacdCross.NONE,
+            volume_ratio=(
+                Decimal("3") if bar.bar_end == bars_5m[5].bar_end else Decimal("1")
+            ),
+            ema21=(
+                str(bar.close + Decimal("1"))
+                if bar.bar_end in {bars_5m[6].bar_end, bars_5m[7].bar_end}
+                else None
+            ),
+            direction=(
+                SubingDirection.SHORT
+                if bar.bar_end == bars_5m[-1].bar_end
+                else SubingDirection.LONG
+            ),
+        )
+        for bar in bars_5m
+    )
+    bars_15m = (_bar(0), _bar(15), _bar(30), _bar(45), bars_5m[-1])
+    factors_15m = tuple(
+        _factor(
+            bar,
+            BarFrequency.M15,
+            direction=(
+                SubingDirection.SHORT
+                if bar.bar_end == bars_15m[-1].bar_end
+                else SubingDirection.LONG
+            ),
+        )
+        for bar in bars_15m
+    )
+    full = _evaluate(
+        bars_5m,
+        factors_5m=factors_5m,
+        bars_15m=bars_15m,
+        factors_15m=factors_15m,
+    )
+
+    assert tuple(transition.reason_codes for transition in full.transitions) == (
+        ("DIRECTION_CONTEXT_ALIGNED",),
+        ("FORMAL_V1_MATCHED",),
+        ("LOWER_TF_EMA21_BREACH",),
+        ("LOWER_TF_EMA21_BREACH",),
+        ("ANCHOR_RECOVERY_CONFIRMED",),
+        ("OPPOSITE_DIRECTION_CONTEXT_CONFIRMED",),
+    )
+
+    for prefix_length, boundary in enumerate(bars_5m, start=1):
+        visible_anchors = tuple(
+            (bar, factor)
+            for bar, factor in zip(bars_15m, factors_15m)
+            if bar.bar_end <= boundary.bar_end
+        )
+        prefix = _evaluate(
+            bars_5m[:prefix_length],
+            factors_5m=factors_5m[:prefix_length],
+            bars_15m=tuple(bar for bar, _ in visible_anchors),
+            factors_15m=tuple(factor for _, factor in visible_anchors),
+        )
+        expected_transitions = tuple(
+            transition
+            for transition in full.transitions
+            if transition.transition_at <= boundary.bar_end
+        )
+        completed_keys = {
+            transition.opportunity_key
+            for transition in expected_transitions
+            if transition.to_stage is LifecycleStage.CLOSED
+        }
+
+        assert prefix.snapshots == full.snapshots[:prefix_length]
+        assert prefix.transitions == expected_transitions
+        assert prefix.confirmed_pivots == tuple(
+            pivot
+            for pivot in full.confirmed_pivots
+            if pivot.confirmed_at <= boundary.bar_end
+        )
+        assert prefix.completed_opportunities == tuple(
+            state
+            for state in full.completed_opportunities
+            if state.opportunity_key in completed_keys
+        )
 
 
 def test_direct_formal_without_trigger_rejects_positive_hold_count() -> None:
@@ -1229,6 +1973,13 @@ def test_timezone_equivalent_transition_times_share_canonical_identity() -> None
         ("research_only", False),
         ("observed_at", datetime(2026, 8, 3, 1, 15)),
         ("stage", LifecycleStage.IDLE),
+        ("current_risk_codes", ["LOWER_TF_EMA21_BREACH"]),
+        ("risk_progress", "confirmed"),
+        ("lower_tf_risk_count", 3),
+        ("last_confirmed_stage", "continuation"),
+        ("last_confirmed_at", datetime(2026, 8, 3, 1, 15)),
+        ("crossed_trading_day", 1),
+        ("boundary_reset", "trading_day_changed"),
     ),
 )
 def test_snapshot_contract_rejects_invalid_identity_time_and_projection(

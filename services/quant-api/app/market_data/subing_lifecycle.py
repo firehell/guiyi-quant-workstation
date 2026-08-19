@@ -306,6 +306,13 @@ class SubingLifecycleSnapshot:
     formal_v1_matched: bool = False
     volume_ratio_prev: Decimal | None = None
     open_interest_delta: Decimal | None = None
+    current_risk_codes: tuple[str, ...] = ()
+    risk_progress: str | None = None
+    lower_tf_risk_count: int = 0
+    last_confirmed_stage: LifecycleStage = LifecycleStage.IDLE
+    last_confirmed_at: datetime | None = None
+    crossed_trading_day: bool = False
+    boundary_reset: str | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -361,6 +368,10 @@ class _ActiveOpportunity:
     retest_at: datetime | None = None
     retest_rebreak_count: int = 0
     last_evaluable_close: Decimal | None = None
+    current_risk_codes: tuple[str, ...] = ()
+    risk_progress: str | None = None
+    lower_tf_risk_count: int = 0
+    crossed_trading_day: bool = False
 
 
 def _is_aware_datetime(value: object) -> bool:
@@ -386,6 +397,35 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
         or type(snapshot.retest_rebreak_count) is not int
         or not 0 <= snapshot.retest_rebreak_count <= 3
         or type(snapshot.formal_v1_matched) is not bool
+        or type(snapshot.current_risk_codes) is not tuple
+        or any(
+            not isinstance(code, str) or not code.strip()
+            for code in snapshot.current_risk_codes
+        )
+        or snapshot.risk_progress not in {None, "watching"}
+        or type(snapshot.lower_tf_risk_count) is not int
+        or not 0 <= snapshot.lower_tf_risk_count <= 2
+        or not isinstance(snapshot.last_confirmed_stage, LifecycleStage)
+        or type(snapshot.crossed_trading_day) is not bool
+        or snapshot.boundary_reset not in {None, "segment_changed"}
+    ):
+        raise SubingLifecycleContractError()
+
+    if snapshot.lower_tf_risk_count == 0 and snapshot.risk_progress is not None:
+        raise SubingLifecycleContractError()
+    if snapshot.lower_tf_risk_count == 1 and snapshot.risk_progress != "watching":
+        raise SubingLifecycleContractError()
+    if snapshot.lower_tf_risk_count > 0 and not snapshot.current_risk_codes:
+        raise SubingLifecycleContractError()
+    if (
+        snapshot.lower_tf_risk_count == 2
+        and snapshot.stage is not LifecycleStage.EXIT_RISK
+    ):
+        raise SubingLifecycleContractError()
+    if snapshot.last_confirmed_at is not None and (
+        not _is_aware_datetime(snapshot.last_confirmed_at)
+        or snapshot.observed_at is None
+        or snapshot.last_confirmed_at > snapshot.observed_at
     ):
         raise SubingLifecycleContractError()
 
@@ -445,6 +485,10 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
             snapshot.formal_v1_matched,
             snapshot.volume_ratio_prev is not None,
             snapshot.open_interest_delta is not None,
+            snapshot.current_risk_codes,
+            snapshot.risk_progress is not None,
+            snapshot.lower_tf_risk_count != 0,
+            snapshot.crossed_trading_day,
         )
     ):
         raise SubingLifecycleContractError()
@@ -553,6 +597,24 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
         ):
             raise SubingLifecycleContractError()
         replace(transition)
+
+    if snapshot.last_confirmed_at is None and (
+        snapshot.last_confirmed_stage is not LifecycleStage.IDLE
+    ):
+        raise SubingLifecycleContractError()
+    if snapshot.last_confirmed_at is not None and (
+        snapshot.last_confirmed_stage is not snapshot.stage
+    ):
+        raise SubingLifecycleContractError()
+    if (
+        snapshot.availability is LifecycleAvailability.READY
+        and snapshot.observed_at is not None
+        and (
+            snapshot.last_confirmed_stage is not snapshot.stage
+            or snapshot.last_confirmed_at != snapshot.observed_at
+        )
+    ):
+        raise SubingLifecycleContractError()
 
     for evidence in (snapshot.volume_ratio_prev, snapshot.open_interest_delta):
         if evidence is not None and (
@@ -687,6 +749,8 @@ def evaluate_subing_lifecycle(
     transitions: list[SubingLifecycleTransition] = []
     completed: list[SubingLifecycleState] = []
     opportunity: _ActiveOpportunity | None = None
+    last_confirmed_stage = LifecycleStage.IDLE
+    last_confirmed_at: datetime | None = None
     anchor_index = -1
     input_error = _input_contract_error(
         symbol=symbol,
@@ -760,6 +824,8 @@ def evaluate_subing_lifecycle(
                     ),
                     opportunity=opportunity,
                     latest_transition=(transitions[-1] if transitions else None),
+                    last_confirmed_stage=last_confirmed_stage,
+                    last_confirmed_at=last_confirmed_at,
                 )
             )
             assert len(transitions) == transition_count_before
@@ -824,6 +890,24 @@ def evaluate_subing_lifecycle(
                         reason_code="DIRECTION_CONTEXT_ALIGNED",
                     )
                 )
+        elif opportunity.stage in {
+            LifecycleStage.ENTRY_CONFIRMED,
+            LifecycleStage.CONTINUATION,
+            LifecycleStage.EXIT_RISK,
+        }:
+            _advance_confirmed_opportunity(
+                opportunity,
+                transition_at=bar_5m.bar_end,
+                trading_day=bar_5m.trading_day,
+                factor_5m=factor_5m,
+                factor_15m=factor_15m,
+                same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
+                formal=formal,
+                direction_context=direction,
+                policy=policy,
+                transitions=transitions,
+                completed=completed,
+            )
         elif opportunity.stage is LifecycleStage.SETUP_ARMED:
             if bar_5m.trading_day > opportunity.origin_trading_day:
                 _close_setup(
@@ -1049,6 +1133,10 @@ def evaluate_subing_lifecycle(
                                     bar_5m.open_interest - previous.open_interest
                                 )
         assert len(transitions) - transition_count_before <= 1
+        last_confirmed_stage = (
+            opportunity.stage if opportunity is not None else LifecycleStage.IDLE
+        )
+        last_confirmed_at = bar_5m.bar_end
         snapshots.append(
             _snapshot(
                 policy=policy,
@@ -1064,6 +1152,8 @@ def evaluate_subing_lifecycle(
                 opportunity=opportunity,
                 latest_transition=(transitions[-1] if transitions else None),
                 formal_v1_matched=formal_match,
+                last_confirmed_stage=last_confirmed_stage,
+                last_confirmed_at=last_confirmed_at,
             )
         )
 
@@ -1407,6 +1497,295 @@ def _confirm_entry(
     opportunity.confirmed_at = confirmed_at
 
 
+def _advance_confirmed_opportunity(
+    opportunity: _ActiveOpportunity,
+    *,
+    transition_at: datetime,
+    trading_day: date,
+    factor_5m: SubingFactorSnapshot,
+    factor_15m: SubingFactorSnapshot,
+    same_boundary: bool,
+    formal: SubingSignalEvaluation,
+    direction_context: SubingDirection,
+    policy: SubingLifecyclePolicy,
+    transitions: list[SubingLifecycleTransition],
+    completed: list[SubingLifecycleState],
+) -> None:
+    opportunity.crossed_trading_day = (
+        opportunity.crossed_trading_day
+        or trading_day > opportunity.origin_trading_day
+    )
+    previous_stage = opportunity.stage
+    hard_close_reason = _hard_close_reason(
+        opportunity,
+        factor_15m=factor_15m,
+        same_boundary=same_boundary,
+        formal=formal,
+        direction_context=direction_context,
+    )
+    if hard_close_reason is not None:
+        _close_confirmed(
+            opportunity,
+            transition_at=transition_at,
+            from_stage=previous_stage,
+            reason_code=hard_close_reason,
+            transitions=transitions,
+            completed=completed,
+        )
+        return
+
+    if (
+        previous_stage is LifecycleStage.EXIT_RISK
+        and same_boundary
+        and _recovery_allowed(opportunity, factor_5m, factor_15m)
+    ):
+        opportunity.stage = LifecycleStage.CONTINUATION
+        opportunity.current_risk_codes = ()
+        opportunity.lower_tf_risk_count = 0
+        opportunity.risk_progress = None
+        transitions.append(
+            _transition(
+                opportunity_key=opportunity.key,
+                transition_at=transition_at,
+                from_stage=LifecycleStage.EXIT_RISK,
+                to_stage=LifecycleStage.CONTINUATION,
+                reason_code="ANCHOR_RECOVERY_CONFIRMED",
+            )
+        )
+        return
+
+    anchor_risk_codes = (
+        _anchor_soft_risk_codes(
+            opportunity,
+            factor_15m,
+            direction_context=direction_context,
+        )
+        if same_boundary
+        else ()
+    )
+    if anchor_risk_codes:
+        opportunity.current_risk_codes = anchor_risk_codes
+        opportunity.lower_tf_risk_count = 0
+        opportunity.risk_progress = None
+        if previous_stage is not LifecycleStage.EXIT_RISK:
+            opportunity.stage = LifecycleStage.EXIT_RISK
+            transitions.append(
+                _transition(
+                    opportunity_key=opportunity.key,
+                    transition_at=transition_at,
+                    from_stage=previous_stage,
+                    to_stage=LifecycleStage.EXIT_RISK,
+                    reason_code=anchor_risk_codes[0],
+                )
+            )
+        return
+
+    risk_codes = _lower_tf_risk_codes(opportunity, factor_5m)
+    opportunity.current_risk_codes = risk_codes
+    if risk_codes:
+        opportunity.lower_tf_risk_count = min(
+            opportunity.lower_tf_risk_count + 1,
+            policy.lower_tf_risk_consecutive_bars,
+        )
+    else:
+        opportunity.lower_tf_risk_count = 0
+    opportunity.risk_progress = (
+        "watching" if opportunity.lower_tf_risk_count == 1 else None
+    )
+
+    if (
+        opportunity.lower_tf_risk_count
+        >= policy.lower_tf_risk_consecutive_bars
+        and previous_stage is not LifecycleStage.EXIT_RISK
+    ):
+        opportunity.stage = LifecycleStage.EXIT_RISK
+        transitions.append(
+            _transition(
+                opportunity_key=opportunity.key,
+                transition_at=transition_at,
+                from_stage=previous_stage,
+                to_stage=LifecycleStage.EXIT_RISK,
+                reason_code=risk_codes[0],
+            )
+        )
+    elif previous_stage is LifecycleStage.ENTRY_CONFIRMED:
+        opportunity.stage = LifecycleStage.CONTINUATION
+        transitions.append(
+            _transition(
+                opportunity_key=opportunity.key,
+                transition_at=transition_at,
+                from_stage=LifecycleStage.ENTRY_CONFIRMED,
+                to_stage=LifecycleStage.CONTINUATION,
+                reason_code=(
+                    risk_codes[0] if risk_codes else "CONFIRMED_TREND_CONTINUES"
+                ),
+            )
+        )
+
+
+def _lower_tf_risk_codes(
+    opportunity: _ActiveOpportunity,
+    factor_5m: SubingFactorSnapshot,
+) -> tuple[str, ...]:
+    direction = opportunity.key.direction
+    long = direction is SubingDirection.LONG
+    opposite_cross = MacdCross.DEAD if long else MacdCross.GOLDEN
+    codes: list[str] = []
+    if (long and factor_5m.close < factor_5m.ema21) or (
+        not long and factor_5m.close > factor_5m.ema21
+    ):
+        codes.append("LOWER_TF_EMA21_BREACH")
+    if (long and factor_5m.slope_5_bps_per_bar < 0) or (
+        not long and factor_5m.slope_5_bps_per_bar > 0
+    ):
+        codes.append("LOWER_TF_SLOPE5_REVERSAL")
+    if factor_5m.macd_cross is opposite_cross:
+        codes.append("LOWER_TF_MACD_OPPOSITE_CROSS")
+    pivot = opportunity.bound_reference_pivot
+    if pivot is not None and (
+        (long and factor_5m.close < pivot.price)
+        or (not long and factor_5m.close > pivot.price)
+    ):
+        codes.append("LOWER_TF_BOUND_PIVOT_REENTRY")
+    return tuple(codes)
+
+
+def _anchor_soft_risk_codes(
+    opportunity: _ActiveOpportunity,
+    factor_15m: SubingFactorSnapshot,
+    *,
+    direction_context: SubingDirection,
+) -> tuple[str, ...]:
+    long = opportunity.key.direction is SubingDirection.LONG
+    opposite_cross = MacdCross.DEAD if long else MacdCross.GOLDEN
+    anchor_side_preserved = (
+        factor_15m.close > factor_15m.ema21
+        if long
+        else factor_15m.close < factor_15m.ema21
+    )
+    codes: list[str] = []
+    if not anchor_side_preserved:
+        codes.append("ANCHOR_EMA21_BREACH")
+    if (long and factor_15m.slope_5_bps_per_bar < 0) or (
+        not long and factor_15m.slope_5_bps_per_bar > 0
+    ):
+        codes.append("ANCHOR_SLOPE5_REVERSAL")
+    if factor_15m.macd_cross is opposite_cross:
+        codes.append("ANCHOR_MACD_OPPOSITE_CROSS")
+    if direction_context is not opportunity.key.direction:
+        codes.append("TIMEFRAME_ALIGNMENT_LOST")
+    return tuple(codes)
+
+
+def _recovery_allowed(
+    opportunity: _ActiveOpportunity,
+    factor_5m: SubingFactorSnapshot,
+    factor_15m: SubingFactorSnapshot,
+) -> bool:
+    long = opportunity.key.direction is SubingDirection.LONG
+    opposite_cross = MacdCross.DEAD if long else MacdCross.GOLDEN
+    anchor_recovered = (
+        factor_15m.close > factor_15m.ema21
+        and factor_15m.slope_10_bps_per_bar > 0
+        if long
+        else factor_15m.close < factor_15m.ema21
+        and factor_15m.slope_10_bps_per_bar < 0
+    )
+    pivot = opportunity.bound_reference_pivot
+    pivot_side_preserved = pivot is None or (
+        factor_15m.close >= pivot.price
+        if long
+        else factor_15m.close <= pivot.price
+    )
+    return (
+        anchor_recovered
+        and factor_15m.macd_cross is not opposite_cross
+        and not _lower_tf_risk_codes(opportunity, factor_5m)
+        and pivot_side_preserved
+    )
+
+
+def _hard_close_reason(
+    opportunity: _ActiveOpportunity,
+    *,
+    factor_15m: SubingFactorSnapshot,
+    same_boundary: bool,
+    formal: SubingSignalEvaluation,
+    direction_context: SubingDirection,
+) -> str | None:
+    direction = opportunity.key.direction
+    opposite = (
+        SubingDirection.SHORT
+        if direction is SubingDirection.LONG
+        else SubingDirection.LONG
+    )
+    if (
+        formal.status is SubingSignalStatus.MATCHED
+        and formal.direction is opposite
+    ):
+        return "OPPOSITE_FORMAL_V1"
+    if direction_context is opposite:
+        return "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED"
+    if not same_boundary:
+        return None
+
+    anchor_broken = (
+        factor_15m.close < factor_15m.ema21
+        and factor_15m.slope_10_bps_per_bar < 0
+        if direction is SubingDirection.LONG
+        else factor_15m.close > factor_15m.ema21
+        and factor_15m.slope_10_bps_per_bar > 0
+    )
+    if anchor_broken:
+        return "ANCHOR_TREND_BROKEN"
+
+    pivot = opportunity.bound_reference_pivot
+    pivot_confirmed = opportunity.confirmation_source in {
+        ConfirmationSource.PIVOT_BREAK_HOLD,
+        ConfirmationSource.PIVOT_RETEST_REBREAK,
+    }
+    if pivot_confirmed and pivot is not None and (
+        (direction is SubingDirection.LONG and factor_15m.close < pivot.price)
+        or (direction is SubingDirection.SHORT and factor_15m.close > pivot.price)
+    ):
+        return "STRUCTURE_INVALIDATED"
+    return None
+
+
+def _close_confirmed(
+    opportunity: _ActiveOpportunity,
+    *,
+    transition_at: datetime,
+    from_stage: LifecycleStage,
+    reason_code: str,
+    transitions: list[SubingLifecycleTransition],
+    completed: list[SubingLifecycleState],
+) -> None:
+    opportunity.stage = LifecycleStage.CLOSED
+    opportunity.current_risk_codes = (reason_code,)
+    opportunity.risk_progress = None
+    opportunity.lower_tf_risk_count = 0
+    transitions.append(
+        _transition(
+            opportunity_key=opportunity.key,
+            transition_at=transition_at,
+            from_stage=from_stage,
+            to_stage=LifecycleStage.CLOSED,
+            reason_code=reason_code,
+        )
+    )
+    completed.append(
+        SubingLifecycleState(
+            availability=LifecycleAvailability.READY,
+            direction=opportunity.key.direction,
+            stage=LifecycleStage.CLOSED,
+            opportunity_key=opportunity.key,
+            confirmation_source=opportunity.confirmation_source,
+            confirmed_at=opportunity.confirmed_at,
+        )
+    )
+
+
 def _close_setup(
     opportunity: _ActiveOpportunity,
     *,
@@ -1489,6 +1868,8 @@ def _snapshot(
     opportunity: _ActiveOpportunity | None,
     latest_transition: SubingLifecycleTransition | None,
     formal_v1_matched: bool = False,
+    last_confirmed_stage: LifecycleStage = LifecycleStage.IDLE,
+    last_confirmed_at: datetime | None = None,
 ) -> SubingLifecycleSnapshot:
     stage = opportunity.stage if opportunity is not None else LifecycleStage.IDLE
     return SubingLifecycleSnapshot(
@@ -1531,6 +1912,18 @@ def _snapshot(
         ),
         open_interest_delta=(
             opportunity.open_interest_delta if opportunity is not None else None
+        ),
+        current_risk_codes=(
+            opportunity.current_risk_codes if opportunity is not None else ()
+        ),
+        risk_progress=(opportunity.risk_progress if opportunity is not None else None),
+        lower_tf_risk_count=(
+            opportunity.lower_tf_risk_count if opportunity is not None else 0
+        ),
+        last_confirmed_stage=last_confirmed_stage,
+        last_confirmed_at=last_confirmed_at,
+        crossed_trading_day=(
+            opportunity.crossed_trading_day if opportunity is not None else False
         ),
     )
 
