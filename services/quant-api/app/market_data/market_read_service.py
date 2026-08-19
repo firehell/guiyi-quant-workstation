@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path
 from types import MappingProxyType
-from typing import Protocol
+from typing import Literal, Protocol
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -59,6 +59,17 @@ class MarketReadState:
     live_contract: str | None
     canonical_end: datetime | None
     after_market: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketDisplaySnapshot:
+    """同一次状态读取下的 Web 专用瞬态展示快照。"""
+
+    state: MarketReadState
+    source: Literal["none", "realtime", "post_close"]
+    trading_day: date | None
+    contract: str | None
+    bars: tuple[CanonicalBar, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,18 +226,65 @@ class MarketReadService:
         state = self.state(identity, now)
         if not state.live_eligible or not state.live_available or state.trading_day is None:
             return ()
-        cutoff = _later(after, state.canonical_end)
-        try:
-            source = self._live_store.bars_after(
-                state.trading_day,
-                identity.symbol,
-                identity.frequency.value,
-                cutoff,
+        bars = self._snapshot_bars(identity, state, after=after)
+        return () if bars is None else bars
+
+    def display_snapshot(
+        self,
+        identity: SeriesPageQuery,
+        after: datetime | None,
+        now: datetime,
+    ) -> MarketDisplaySnapshot:
+        """读取 Web 展示快照；收盘快照不扩大严格实时消费者语义。"""
+        state = self.state(identity, now)
+        if (
+            state.live_eligible
+            and state.live_available
+            and state.trading_day is not None
+            and state.live_contract is not None
+        ):
+            bars = self._snapshot_bars(identity, state, after=after)
+            if bars is None:
+                return _empty_display_snapshot(state)
+            return MarketDisplaySnapshot(
+                state=state,
+                source="realtime",
+                trading_day=state.trading_day,
+                contract=state.live_contract,
+                bars=bars,
             )
-        except Exception:  # noqa: BLE001 - transient Redis must not break historical display
-            return ()
-        deduped = {bar.bar_end: bar for bar in source if state.canonical_end is None or bar.bar_end > state.canonical_end}
-        return tuple(deduped[key] for key in sorted(deduped))
+
+        if (
+            state.phase != MarketPhase.CLOSED.value
+            or not state.operational
+            or state.trading_day is None
+            or identity.frequency not in INTRADAY_FREQUENCIES
+        ):
+            return _empty_display_snapshot(state)
+
+        contract = self._subscription_contract(
+            symbol=identity.symbol,
+            trading_day=state.trading_day,
+        )
+        if contract is None or not (
+            identity.series_kind is SeriesKind.ACTUAL_DOMINANT
+            or (
+                identity.series_kind is SeriesKind.CONTRACT
+                and identity.contract == contract
+            )
+        ):
+            return _empty_display_snapshot(state)
+
+        bars = self._snapshot_bars(identity, state, after=after)
+        if bars is None:
+            return _empty_display_snapshot(state)
+        return MarketDisplaySnapshot(
+            state=state,
+            source="post_close",
+            trading_day=state.trading_day,
+            contract=contract,
+            bars=bars,
+        )
 
     def _canonical_end(self, identity: SeriesPageQuery) -> datetime | None:
         latest = self.history_page(replace(identity, before=None, limit=1))
@@ -245,6 +303,42 @@ class MarketReadService:
         )
         return contract, bool(heartbeat and heartbeat.get("available") is True)
 
+    def _subscription_contract(self, *, symbol: str, trading_day: date) -> str | None:
+        try:
+            subscriptions = self._live_store.subscriptions(trading_day)
+        except Exception:  # noqa: BLE001 - Redis failure must preserve historical display
+            return None
+        return normalize_contract_for_symbol(
+            symbol,
+            subscriptions.get(symbol) if subscriptions else None,
+        )
+
+    def _snapshot_bars(
+        self,
+        identity: SeriesPageQuery,
+        state: MarketReadState,
+        *,
+        after: datetime | None,
+    ) -> tuple[CanonicalBar, ...] | None:
+        assert state.trading_day is not None
+        cutoff = _later(after, state.canonical_end)
+        try:
+            source = self._live_store.bars_after(
+                state.trading_day,
+                identity.symbol,
+                identity.frequency.value,
+                cutoff,
+            )
+        except Exception:  # noqa: BLE001 - transient Redis must not break historical display
+            return None
+        deduped = {
+            bar.bar_end: bar
+            for bar in source
+            if bar.trading_day == state.trading_day
+            and (cutoff is None or bar.bar_end > cutoff)
+        }
+        return tuple(deduped[key] for key in sorted(deduped))
+
 
 def _later(first: datetime | None, second: datetime | None) -> datetime | None:
     if first is None:
@@ -252,6 +346,16 @@ def _later(first: datetime | None, second: datetime | None) -> datetime | None:
     if second is None:
         return first
     return max(first, second)
+
+
+def _empty_display_snapshot(state: MarketReadState) -> MarketDisplaySnapshot:
+    return MarketDisplaySnapshot(
+        state=state,
+        source="none",
+        trading_day=None,
+        contract=None,
+        bars=(),
+    )
 
 
 def _load_after_market_status(path: Path) -> Mapping[str, object]:

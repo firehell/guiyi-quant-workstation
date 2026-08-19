@@ -103,6 +103,10 @@ flowchart TB
 - 接入层只解析请求和输出结果；不实现下载、聚合、文件选择或主力判断。
 - `HistoricalDataManager` 是唯一历史写应用服务；`MarketDataService` 是唯一历史读服务；
   `MarketReadService` 只在展示边界合并 Canonical 与 Redis Live，不创建第二条历史读链。
+- `MarketReadService.display_snapshot()` 为 Market WebSocket 在一次读取中冻结 phase/state 与 overlay：
+  `realtime` 继续服从既有 heartbeat 资格；`post_close` 只在 CLOSED phase 为 Web 展示 Redis 中尚未被
+  Canonical edge 接管的当日完成 Bar。`post_close` 不写历史资产、不构成 Live，也不进入 SuBing、Alert
+  或其他 consumer；Redis、subscription、交易日或合约身份异常时返回 `none`。
 - `MarketResearchService` 仅组合 `MarketDataService` 的 Historical Canonical 结果，不读 Redis Live。
   `SubingCalibrationResearchService` 只通过 `MarketDataService` 读取 segment-local Historical，结果由
   CLI 以 stdout JSON 返回；不直连 provider，不写 DB/Canonical/Redis，也不自动晋升参数。

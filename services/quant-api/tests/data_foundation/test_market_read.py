@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import json
@@ -200,6 +201,183 @@ def test_closed_product_never_exposes_live_overlay() -> None:
 
     assert state.live_eligible is False
     assert state.live_available is False
+
+
+def test_closed_display_snapshot_reads_post_close_bars_without_heartbeat() -> None:
+    """Catches CLOSED refreshes dropping completed Redis bars before Canonical takeover."""
+    class HeartbeatForbiddenLiveStore(FakeLiveStore):
+        def heartbeat(self) -> dict[str, object]:
+            raise AssertionError("post-close display must not depend on heartbeat")
+
+    result = _service(
+        live=HeartbeatForbiddenLiveStore((_bar(1), _bar(2), _bar(3))),
+        market_phase=MarketPhase.CLOSED,
+    ).display_snapshot(
+        SeriesPageQuery("actual_dominant", "j", "1m"),
+        after=None,
+        now=datetime(2025, 1, 2, 1, 4, tzinfo=UTC),
+    )
+
+    assert result.state.live_eligible is False
+    assert result.state.live_available is False
+    assert result.source == "post_close"
+    assert result.trading_day == date(2025, 1, 2)
+    assert result.contract == "J2505"
+    assert tuple(bar.bar_end for bar in result.bars) == (
+        datetime(2025, 1, 2, 1, 3, tzinfo=UTC),
+    )
+
+
+def test_closed_display_snapshot_returns_none_when_redis_bars_are_unreadable() -> None:
+    """Catches a Redis read failure being mislabeled as a valid frozen snapshot."""
+    class BrokenBarsLiveStore(FakeLiveStore):
+        def bars_after(
+            self,
+            trading_day: date,
+            symbol: str,
+            frequency: str,
+            after: datetime | None,
+        ) -> tuple[CanonicalBar, ...]:
+            raise RuntimeError("redis unavailable")
+
+    result = _service(
+        live=BrokenBarsLiveStore(()),
+        market_phase=MarketPhase.CLOSED,
+    ).display_snapshot(
+        SeriesPageQuery("actual_dominant", "j", "1m"),
+        after=None,
+        now=datetime(2025, 1, 2, 1, 4, tzinfo=UTC),
+    )
+
+    assert result.source == "none"
+    assert result.trading_day is None
+    assert result.contract is None
+    assert result.bars == ()
+
+
+@pytest.mark.parametrize("frequency", ("1m", "5m", "15m", "30m", "60m"))
+def test_closed_display_snapshot_supports_each_intraday_frequency(frequency: str) -> None:
+    """Catches an allowed derived intraday period being omitted from the handoff."""
+    class AnyFrequencyLiveStore(FakeLiveStore):
+        def bars_after(
+            self,
+            trading_day: date,
+            symbol: str,
+            requested_frequency: str,
+            after: datetime | None,
+        ) -> tuple[CanonicalBar, ...]:
+            assert (trading_day, symbol, requested_frequency) == (
+                date(2025, 1, 2),
+                "j",
+                frequency,
+            )
+            return tuple(bar for bar in self.bars if after is None or bar.bar_end > after)
+
+    result = _service(
+        live=AnyFrequencyLiveStore((_bar(3),)),
+        market_phase=MarketPhase.CLOSED,
+    ).display_snapshot(
+        SeriesPageQuery("actual_dominant", "j", frequency),
+        after=None,
+        now=datetime(2025, 1, 2, 1, 4, tzinfo=UTC),
+    )
+
+    assert result.source == "post_close"
+    assert result.bars == (_bar(3),)
+
+
+@pytest.mark.parametrize(
+    "identity",
+    (
+        SeriesPageQuery("continuous", "j", "1m"),
+        SeriesPageQuery("contract", "j", "1m", contract="J2509"),
+        SeriesPageQuery("actual_dominant", "j", "1d"),
+        SeriesPageQuery("actual_dominant", "j", "1w"),
+    ),
+)
+def test_closed_display_snapshot_rejects_unsupported_identity(
+    identity: SeriesPageQuery,
+) -> None:
+    """Catches post-close data escaping its exact Market Web identity boundary."""
+    result = _service(
+        live=FakeLiveStore((_bar(3),)),
+        market_phase=MarketPhase.CLOSED,
+    ).display_snapshot(
+        identity,
+        after=None,
+        now=datetime(2025, 1, 2, 1, 4, tzinfo=UTC),
+    )
+
+    assert result.source == "none"
+    assert result.bars == ()
+
+
+def test_closed_display_snapshot_allows_only_the_subscribed_real_contract() -> None:
+    result = _service(
+        live=FakeLiveStore((_bar(3),)),
+        market_phase=MarketPhase.CLOSED,
+    ).display_snapshot(
+        SeriesPageQuery("contract", "j", "1m", contract="J2505"),
+        after=None,
+        now=datetime(2025, 1, 2, 1, 4, tzinfo=UTC),
+    )
+
+    assert result.source == "post_close"
+    assert result.contract == "J2505"
+    assert result.bars == (_bar(3),)
+
+
+def test_closed_display_snapshot_filters_day_seam_and_duplicate_bar_ends() -> None:
+    duplicate_end = _bar(3).bar_end
+    live = FakeLiveStore((
+        replace(_bar(4), trading_day=date(2025, 1, 1)),
+        _bar(2),
+        _bar_at(duplicate_end, close="101"),
+        _bar_at(duplicate_end, close="102"),
+    ))
+
+    result = _service(live=live, market_phase=MarketPhase.CLOSED).display_snapshot(
+        SeriesPageQuery("actual_dominant", "j", "1m"),
+        after=None,
+        now=datetime(2025, 1, 2, 1, 4, tzinfo=UTC),
+    )
+
+    assert len(result.bars) == 1
+    assert result.bars[0].bar_end == duplicate_end
+    assert result.bars[0].close == Decimal("102")
+
+
+@pytest.mark.parametrize(
+    ("phase", "trading_day", "operational_products"),
+    (
+        (MarketPhase.CLOSED, date(2025, 1, 2), ()),
+        (MarketPhase.UNKNOWN, None, ("j",)),
+        (MarketPhase.CLOSED, None, ("j",)),
+    ),
+)
+def test_display_snapshot_requires_operational_closed_resolved_day(
+    phase: MarketPhase,
+    trading_day: date | None,
+    operational_products: tuple[str, ...],
+) -> None:
+    """Catches an unscoped or unresolved product reading a Redis snapshot."""
+    service = MarketReadService(
+        market_data=FakeMarketDataService(_bar(2)),
+        phase_resolver=FakePhaseResolver(
+            ProductMarketPhase("j", phase, trading_day, None, None)
+        ),
+        operational_products=operational_products,
+        live_store=FakeLiveStore((_bar(3),)),
+    )
+
+    result = service.display_snapshot(
+        SeriesPageQuery("actual_dominant", "j", "1m"),
+        after=None,
+        now=datetime(2025, 1, 2, 1, 4, tzinfo=UTC),
+    )
+
+    assert result.source == "none"
+    assert result.bars == ()
 
 
 def test_live_snapshot_excludes_canonical_seam_and_preserves_newer_bars() -> None:

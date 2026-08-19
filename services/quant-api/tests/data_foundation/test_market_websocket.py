@@ -17,7 +17,7 @@ from app.market_data.live_market import LiveMarketService, RedisLiveStore
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.main import app
 from app.market_data.domain import CanonicalBar
-from app.market_data.market_read_service import MarketReadState
+from app.market_data.market_read_service import MarketDisplaySnapshot, MarketReadState
 
 
 def _bar(minute: int) -> CanonicalBar:
@@ -82,6 +82,24 @@ class FakeReadService:
         self.snapshot_after = after
         return (self.race_bar,)
 
+    def display_snapshot(
+        self,
+        identity: object,
+        after: datetime | None,
+        now: datetime,
+    ) -> MarketDisplaySnapshot:
+        assert self.subscribed is True
+        state = self.state(identity, now)
+        assert state.canonical_end is not None
+        self.snapshot_after = state.canonical_end if after is None else max(after, state.canonical_end)
+        return MarketDisplaySnapshot(
+            state=state,
+            source="realtime",
+            trading_day=state.trading_day,
+            contract=state.live_contract,
+            bars=(self.race_bar,),
+        )
+
 
 class FakePubSub:
     def __init__(self, read_service: FakeReadService) -> None:
@@ -139,6 +157,9 @@ def test_market_websocket_subscribes_before_snapshot_dedupes_race_and_resets(mon
     assert [message["type"] for message in messages] == ["state", "snapshot", "bar", "reset", "state"]
     assert pubsub.channels == ("live:bar:j:1m", "market:state")
     assert read_service.snapshot_after == _bar(1).bar_end
+    assert messages[1]["source"] == "realtime"
+    assert messages[1]["trading_day"] == "2025-01-02"
+    assert messages[1]["contract"] == "J2505"
     assert [bar["bar_end"] for bar in messages[1]["bars"]] == ["2025-01-02T01:02:00Z"]
     assert messages[2]["bar"]["bar_end"] == "2025-01-02T01:03:00Z"
     assert messages[3] == {"type": "reset", "trading_day": "2025-01-03", "contract": "J2509"}
@@ -153,6 +174,20 @@ class StaticReadService:
 
     def live_snapshot(self, identity: object, after: datetime | None, now: datetime) -> tuple[CanonicalBar, ...]:
         return ()
+
+    def display_snapshot(
+        self,
+        identity: object,
+        after: datetime | None,
+        now: datetime,
+    ) -> MarketDisplaySnapshot:
+        return MarketDisplaySnapshot(
+            state=self._state,
+            source="none",
+            trading_day=None,
+            contract=None,
+            bars=(),
+        )
 
 
 class ClosingPubSub:
@@ -215,7 +250,13 @@ def test_market_websocket_never_forwards_bars_when_live_state_disallows_overlay(
 
     with TestClient(app).websocket_connect(f"/api/v1/market/ws?{query}") as websocket:
         assert websocket.receive_json()["type"] == "state"
-        assert websocket.receive_json() == {"type": "snapshot", "bars": []}
+        assert websocket.receive_json() == {
+            "type": "snapshot",
+            "source": "none",
+            "trading_day": None,
+            "contract": None,
+            "bars": [],
+        }
         with pytest.raises(WebSocketDisconnect) as disconnected:
             websocket.receive_json()
 
@@ -273,7 +314,7 @@ async def test_idle_websocket_detects_client_disconnect_and_closes_pubsub(monkey
 
     assert pubsub.closed is True
     assert redis.closed is True
-    assert session.close_count == 2
+    assert session.close_count == 1
 
 
 class BridgeRedis:
