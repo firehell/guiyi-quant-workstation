@@ -129,6 +129,30 @@ def round_half_away_from_zero_binary64(value: float, digits: int) -> float:
     return 0.0 if result == 0 else result
 
 
+def classify_main_force_mirror_futures_state(
+    direction: float,
+    oi_impulse: float,
+) -> MainForceMirrorFuturesState:
+    """Classify one raw direction/OI point using the frozen strict deadbands."""
+
+    if (
+        abs(direction) < DEFAULT_PARAMETERS["direction_deadband"]
+        or abs(oi_impulse) < DEFAULT_PARAMETERS["oi_deadband"]
+    ):
+        return "turnover"
+    if direction >= DEFAULT_PARAMETERS["direction_deadband"]:
+        return (
+            "long_build"
+            if oi_impulse >= DEFAULT_PARAMETERS["oi_deadband"]
+            else "short_cover"
+        )
+    return (
+        "short_build"
+        if oi_impulse >= DEFAULT_PARAMETERS["oi_deadband"]
+        else "long_liquidation"
+    )
+
+
 def compute_main_force_mirror_futures(
     datetimes: Sequence[Any],
     physical_contract: Sequence[str | None],
@@ -172,6 +196,18 @@ def compute_main_force_mirror_futures(
     close_values = np.full(count, np.nan, dtype=float)
     volume_values = np.full(count, np.nan, dtype=float)
     oi_values = np.full(count, np.nan, dtype=float)
+    state = np.full(count, None, dtype=object)
+    signed_score = np.full(count, np.nan, dtype=float)
+    strength = np.full(count, np.nan, dtype=float)
+    price_impulse = np.full(count, np.nan, dtype=float)
+    clv = np.full(count, np.nan, dtype=float)
+    volume_ratio = np.full(count, np.nan, dtype=float)
+    delta_oi = np.full(count, np.nan, dtype=float)
+    oi_impulse = np.full(count, np.nan, dtype=float)
+    direction = np.full(count, np.nan, dtype=float)
+    range_position = np.full(count, np.nan, dtype=float)
+    long_open_pressure = np.full(count, np.nan, dtype=float)
+    short_open_pressure = np.full(count, np.nan, dtype=float)
 
     max_seen_parseable_time: int | None = None
 
@@ -243,20 +279,20 @@ def compute_main_force_mirror_futures(
         caution_ready=caution_ready,
         reason=reason,
         caution_reason=caution_reason,
+        state=state,
+        signed_score=signed_score,
+        price_impulse=price_impulse,
+        clv=clv,
+        volume_ratio=volume_ratio,
+        delta_oi=delta_oi,
+        oi_impulse=oi_impulse,
+        direction=direction,
+        range_position=range_position,
+        long_open_pressure=long_open_pressure,
+        short_open_pressure=short_open_pressure,
+        strength=strength,
     )
 
-    state = np.full(count, None, dtype=object)
-    signed_score = np.full(count, np.nan, dtype=float)
-    strength = np.full(count, np.nan, dtype=float)
-    price_impulse = np.full(count, np.nan, dtype=float)
-    clv = np.full(count, np.nan, dtype=float)
-    volume_ratio = np.full(count, np.nan, dtype=float)
-    delta_oi = np.full(count, np.nan, dtype=float)
-    oi_impulse = np.full(count, np.nan, dtype=float)
-    direction = np.full(count, np.nan, dtype=float)
-    range_position = np.full(count, np.nan, dtype=float)
-    long_open_pressure = np.full(count, np.nan, dtype=float)
-    short_open_pressure = np.full(count, np.nan, dtype=float)
     long_caution_score = np.full(count, np.nan, dtype=float)
     short_caution_score = np.full(count, np.nan, dtype=float)
     caution = np.full(count, None, dtype=object)
@@ -330,6 +366,18 @@ def _apply_readiness(
     caution_ready: np.ndarray,
     reason: np.ndarray,
     caution_reason: np.ndarray,
+    state: np.ndarray,
+    signed_score: np.ndarray,
+    price_impulse: np.ndarray,
+    clv: np.ndarray,
+    volume_ratio: np.ndarray,
+    delta_oi: np.ndarray,
+    oi_impulse: np.ndarray,
+    direction: np.ndarray,
+    range_position: np.ndarray,
+    long_open_pressure: np.ndarray,
+    short_open_pressure: np.ndarray,
+    strength: np.ndarray,
 ) -> None:
     count = len(valid)
     index = 0
@@ -386,6 +434,137 @@ def _apply_readiness(
                 continue
             state_ready[output_index] = True
             reason[output_index] = None
+
+            raw_price_impulse = float(
+                np.clip(
+                    (block_close[block_index] - block_close[block_index - 1])
+                    / atr[block_index],
+                    -DEFAULT_PARAMETERS["price_impulse_clip"],
+                    DEFAULT_PARAMETERS["price_impulse_clip"],
+                )
+            )
+            if block_high[block_index] > block_low[block_index]:
+                raw_clv = float(
+                    np.clip(
+                        (
+                            2.0 * block_close[block_index]
+                            - block_high[block_index]
+                            - block_low[block_index]
+                        )
+                        / (block_high[block_index] - block_low[block_index]),
+                        -1.0,
+                        1.0,
+                    )
+                )
+            else:
+                raw_clv = 0.0
+            raw_direction = float(
+                DEFAULT_PARAMETERS["direction_price_weight"] * raw_price_impulse
+                + DEFAULT_PARAMETERS["direction_clv_weight"] * raw_clv
+            )
+            raw_volume_ratio = float(
+                np.clip(
+                    block_volume[block_index] / volume_mean[block_index],
+                    0.0,
+                    DEFAULT_PARAMETERS["volume_ratio_clip"],
+                )
+            )
+            participation = float(np.sqrt(raw_volume_ratio))
+            raw_delta_oi = float(block_oi[block_index] - block_oi[block_index - 1])
+            baseline = float(oi_baseline[oi_baseline_index])
+            raw_oi_impulse = (
+                0.0
+                if baseline == 0.0
+                else float(
+                    np.clip(
+                        raw_delta_oi / baseline,
+                        -DEFAULT_PARAMETERS["oi_impulse_clip"],
+                        DEFAULT_PARAMETERS["oi_impulse_clip"],
+                    )
+                )
+            )
+            raw_range_position = float(
+                np.clip(
+                    (block_close[block_index] - range_low[block_index])
+                    / (range_high[block_index] - range_low[block_index]),
+                    0.0,
+                    1.0,
+                )
+            )
+            raw_long_open_pressure = (
+                max(raw_direction, 0.0)
+                * max(raw_oi_impulse, 0.0)
+                * participation
+            )
+            raw_short_open_pressure = (
+                max(-raw_direction, 0.0)
+                * max(raw_oi_impulse, 0.0)
+                * participation
+            )
+            raw_strength = float(
+                np.clip(
+                    abs(raw_direction)
+                    * abs(raw_oi_impulse)
+                    * participation
+                    * DEFAULT_PARAMETERS["strength_scale"],
+                    0.0,
+                    100.0,
+                )
+            )
+            raw_state = classify_main_force_mirror_futures_state(
+                raw_direction,
+                raw_oi_impulse,
+            )
+            if raw_state in ("long_build", "short_cover"):
+                raw_signed_score = raw_strength
+            elif raw_state in ("short_build", "long_liquidation"):
+                raw_signed_score = -raw_strength
+            elif raw_direction == 0.0:
+                raw_signed_score = 0.0
+            else:
+                raw_signed_score = float(
+                    np.copysign(
+                        min(
+                            raw_strength,
+                            DEFAULT_PARAMETERS["turnover_display_cap"],
+                        ),
+                        raw_direction,
+                    )
+                )
+
+            digits = DEFAULT_PARAMETERS["round_digits"]
+            state[output_index] = raw_state
+            signed_score[output_index] = round_half_away_from_zero_binary64(
+                raw_signed_score, digits
+            )
+            price_impulse[output_index] = round_half_away_from_zero_binary64(
+                raw_price_impulse, digits
+            )
+            clv[output_index] = round_half_away_from_zero_binary64(raw_clv, digits)
+            volume_ratio[output_index] = round_half_away_from_zero_binary64(
+                raw_volume_ratio, digits
+            )
+            delta_oi[output_index] = round_half_away_from_zero_binary64(
+                raw_delta_oi, digits
+            )
+            oi_impulse[output_index] = round_half_away_from_zero_binary64(
+                raw_oi_impulse, digits
+            )
+            direction[output_index] = round_half_away_from_zero_binary64(
+                raw_direction, digits
+            )
+            range_position[output_index] = round_half_away_from_zero_binary64(
+                raw_range_position, digits
+            )
+            long_open_pressure[output_index] = round_half_away_from_zero_binary64(
+                raw_long_open_pressure, digits
+            )
+            short_open_pressure[output_index] = round_half_away_from_zero_binary64(
+                raw_short_open_pressure, digits
+            )
+            strength[output_index] = round_half_away_from_zero_binary64(
+                raw_strength, digits
+            )
 
             prior_start = output_index - 10
             if block_index >= 30 and bool(np.all(state_ready[prior_start:output_index])):

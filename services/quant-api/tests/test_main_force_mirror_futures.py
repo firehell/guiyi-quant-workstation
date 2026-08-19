@@ -258,14 +258,14 @@ def test_readiness_boundaries_are_exact() -> None:
     assert np.array_equal(result.ready, result.caution_ready)
 
 
-def test_state_readiness_retains_no_task_2_or_3_outputs() -> None:
+def test_state_readiness_exposes_base_outputs_but_no_task_3_caution() -> None:
     result = _compute(make_valid_inputs(31))
 
     assert result.reason[20] is None
     assert result.caution_availability_reason[20] == "MFM_FUTURES_V1_CAUTION_WARMUP"
-    assert result.state[20] is None
-    assert np.isnan(result.signed_score[20])
-    assert np.isnan(result.strength[20])
+    assert result.state[20] == "long_build"
+    assert result.signed_score[20] == 8.791034
+    assert result.strength[20] == 8.791034
     assert np.isnan(result.long_caution_score[20])
     assert np.isnan(result.short_caution_score[20])
     assert result.caution[20] is None
@@ -333,6 +333,9 @@ def test_volume_and_range_rolling_readiness_boundaries_are_exact() -> None:
     assert range_high[19] == 120.0
     assert np.isnan(range_low[18])
     assert range_low[19] == 81.0
+    assert (119.0 - 81.0) / (range_high[19] - range_low[19]) == pytest.approx(
+        38.0 / 39.0
+    )
 
 
 def test_seed_readiness_helpers_use_exact_first_indices() -> None:
@@ -352,5 +355,221 @@ def test_seed_readiness_helpers_use_exact_first_indices() -> None:
 
     assert np.isnan(atr[12])
     assert atr[13] == 2.0
+    assert atr[14] == 2.0
     assert np.isnan(oi_baseline[18])
     assert oi_baseline[19] == 10.0
+
+
+def test_exact_raw_math_uses_frozen_binary64_operation_order() -> None:
+    payload = make_valid_inputs(21)
+    payload["open_"][20] = 120.0
+    payload["close"][20] = 120.5
+    result = _compute(payload)
+
+    assert result.price_impulse[20] == 0.75
+    assert result.clv[20] == 0.5
+    assert result.direction[20] == 0.675
+    assert result.volume_ratio[20] == 1.009401
+    assert result.oi_impulse[20] == 1.0
+    assert result.range_position[20] == 0.97619
+    assert result.long_open_pressure[20] == 0.678166
+    assert result.short_open_pressure[20] == 0.0
+    assert result.strength[20] == 16.954138
+
+
+def test_oi_abs_delta_ema_recurses_after_the_sma_seed() -> None:
+    from guiyi_quant.indicators.main_force_mirror_futures import _ema_sma_seed
+
+    payload = make_valid_inputs(22)
+    payload["open_interest"][21] = 5230.0
+    oi_delta = np.diff(np.asarray(payload["open_interest"], dtype=float))
+    oi_baseline = _ema_sma_seed(np.abs(oi_delta), 20)
+    result = _compute(payload)
+
+    assert oi_baseline[19] == 10.0
+    assert oi_baseline[20] == pytest.approx(11.904761904761905)
+    assert result.oi_impulse[21] == 2.52
+
+
+@pytest.mark.parametrize(
+    ("close_value", "open_value", "high_value", "low_value", "expected"),
+    [
+        (219.0, 218.5, 220.0, 218.0, 3.0),
+        (20.0, 19.5, 21.0, 19.0, -3.0),
+    ],
+)
+def test_price_impulse_clips_at_exact_bounds(
+    close_value: float,
+    open_value: float,
+    high_value: float,
+    low_value: float,
+    expected: float,
+) -> None:
+    payload = make_valid_inputs(21)
+    payload["close"][20] = close_value
+    payload["open_"][20] = open_value
+    payload["high"][20] = high_value
+    payload["low"][20] = low_value
+
+    assert _compute(payload).price_impulse[20] == expected
+
+
+@pytest.mark.parametrize(
+    ("open_interest", "expected"),
+    [(6190.0, 3.0), (4190.0, -3.0)],
+)
+def test_oi_impulse_clips_at_exact_bounds(
+    open_interest: float,
+    expected: float,
+) -> None:
+    payload = make_valid_inputs(21)
+    payload["open_interest"][20] = open_interest
+
+    assert _compute(payload).oi_impulse[20] == expected
+
+
+@pytest.mark.parametrize(
+    ("direction", "oi_impulse", "expected"),
+    [
+        (0.149999, 1.0, "turnover"),
+        (0.15, 0.25, "long_build"),
+        (-0.15, 0.25, "short_build"),
+        (0.15, -0.25, "short_cover"),
+        (-0.15, -0.25, "long_liquidation"),
+        (1.0, 0.249999, "turnover"),
+    ],
+)
+def test_five_state_boundaries_use_strict_deadbands(
+    direction: float,
+    oi_impulse: float,
+    expected: str,
+) -> None:
+    from guiyi_quant.indicators.main_force_mirror_futures import (
+        classify_main_force_mirror_futures_state,
+    )
+
+    assert classify_main_force_mirror_futures_state(direction, oi_impulse) == expected
+
+
+def test_state_decision_uses_raw_value_before_public_rounding() -> None:
+    payload = make_valid_inputs(21)
+    close_value = 119.42857028571429
+    payload["open_"][20] = close_value - 0.5
+    payload["high"][20] = close_value + 1.0
+    payload["low"][20] = close_value - 1.0
+    payload["close"][20] = close_value
+    result = _compute(payload)
+
+    assert result.direction[20] == 0.15
+    assert result.state[20] == "turnover"
+
+
+@pytest.mark.parametrize(
+    ("close_value", "expected_score"),
+    [(119.4, 15.0), (118.6, -15.0)],
+)
+def test_turnover_signed_score_has_exact_display_cap(
+    close_value: float,
+    expected_score: float,
+) -> None:
+    payload = make_valid_inputs(21)
+    payload["open_"][20] = close_value - 0.5
+    payload["high"][20] = close_value + 1.0
+    payload["low"][20] = close_value - 1.0
+    payload["close"][20] = close_value
+    payload["volume"][20] = 1_000_000_000.0
+    payload["open_interest"][20] = 6190.0
+    result = _compute(payload)
+
+    assert result.state[20] == "turnover"
+    assert result.strength[20] > 15.0
+    assert result.signed_score[20] == expected_score
+
+
+def test_turnover_with_exact_zero_direction_has_zero_signed_score() -> None:
+    payload = make_valid_inputs(21)
+    payload["open_"][20] = 118.5
+    payload["high"][20] = 120.0
+    payload["low"][20] = 118.0
+    payload["close"][20] = 119.0
+    result = _compute(payload)
+
+    assert result.direction[20] == 0.0
+    assert result.state[20] == "turnover"
+    assert result.signed_score[20] == 0.0
+
+
+def test_strength_and_signed_score_cap_at_one_hundred() -> None:
+    payload = make_valid_inputs(21)
+    payload["open_"][20] = 218.5
+    payload["high"][20] = 220.0
+    payload["low"][20] = 218.0
+    payload["close"][20] = 219.0
+    payload["volume"][20] = 1_000_000_000.0
+    payload["open_interest"][20] = 6190.0
+    result = _compute(payload)
+
+    assert result.state[20] == "long_build"
+    assert result.strength[20] == 100.0
+    assert result.signed_score[20] == 100.0
+
+
+@pytest.mark.parametrize(
+    ("close_value", "open_interest", "expected_state", "score_sign"),
+    [
+        (118.0, 5200.0, "short_build", -1),
+        (120.0, 5180.0, "short_cover", 1),
+        (118.0, 5180.0, "long_liquidation", -1),
+    ],
+)
+def test_compute_assigns_quadrant_state_and_signed_score(
+    close_value: float,
+    open_interest: float,
+    expected_state: str,
+    score_sign: int,
+) -> None:
+    payload = make_valid_inputs(21)
+    payload["open_"][20] = close_value - 0.5
+    payload["high"][20] = close_value + 1.0
+    payload["low"][20] = close_value - 1.0
+    payload["close"][20] = close_value
+    payload["open_interest"][20] = open_interest
+    result = _compute(payload)
+
+    assert result.state[20] == expected_state
+    assert np.sign(result.signed_score[20]) == score_sign
+    if open_interest > 5190.0 and close_value < 119.0:
+        assert result.long_open_pressure[20] == 0.0
+        assert result.short_open_pressure[20] > 0.0
+    else:
+        assert result.long_open_pressure[20] == 0.0
+        assert result.short_open_pressure[20] == 0.0
+
+
+def test_futures_v1_base_outputs_are_prefix_invariant() -> None:
+    full_inputs = make_valid_inputs(80)
+    prefix_inputs = {key: values[:60] for key, values in full_inputs.items()}
+    full = _compute(full_inputs)
+    prefix = _compute(prefix_inputs)
+
+    assert full.state[20] == "long_build"
+    for field in (
+        "valid",
+        "state_ready",
+        "caution_ready",
+        "ready",
+        "reason",
+        "state",
+        "signed_score",
+        "strength",
+        "price_impulse",
+        "clv",
+        "volume_ratio",
+        "delta_oi",
+        "oi_impulse",
+        "direction",
+        "range_position",
+        "long_open_pressure",
+        "short_open_pressure",
+    ):
+        assert_array_prefix_equal(getattr(full, field), getattr(prefix, field), 60)
