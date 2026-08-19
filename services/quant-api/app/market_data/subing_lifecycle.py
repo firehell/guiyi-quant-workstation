@@ -383,6 +383,18 @@ def _is_aware_datetime(value: object) -> bool:
 
 
 def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
+    lower_tf_risk_codes = {
+        "LOWER_TF_EMA21_BREACH",
+        "LOWER_TF_SLOPE5_REVERSAL",
+        "LOWER_TF_MACD_OPPOSITE_CROSS",
+        "LOWER_TF_BOUND_PIVOT_REENTRY",
+    }
+    approved_risk_codes = lower_tf_risk_codes | {
+        "ANCHOR_EMA21_BREACH",
+        "ANCHOR_SLOPE5_REVERSAL",
+        "ANCHOR_MACD_OPPOSITE_CROSS",
+        "TIMEFRAME_ALIGNMENT_LOST",
+    }
     if (
         snapshot.formula_version != _FORMULA_VERSION
         or snapshot.policy_id != _POLICY_ID
@@ -420,6 +432,51 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
     if (
         snapshot.lower_tf_risk_count == 2
         and snapshot.stage is not LifecycleStage.EXIT_RISK
+    ):
+        raise SubingLifecycleContractError()
+    if any(code not in approved_risk_codes for code in snapshot.current_risk_codes):
+        raise SubingLifecycleContractError()
+    has_risk_projection = bool(snapshot.current_risk_codes) or any(
+        (
+            snapshot.risk_progress is not None,
+            snapshot.lower_tf_risk_count != 0,
+        )
+    )
+    if has_risk_projection and snapshot.stage not in {
+        LifecycleStage.CONTINUATION,
+        LifecycleStage.EXIT_RISK,
+    }:
+        raise SubingLifecycleContractError()
+    if snapshot.lower_tf_risk_count > 0 and not any(
+        code in lower_tf_risk_codes for code in snapshot.current_risk_codes
+    ):
+        raise SubingLifecycleContractError()
+    if (
+        snapshot.stage is LifecycleStage.CONTINUATION
+        and snapshot.current_risk_codes
+        and (
+            snapshot.lower_tf_risk_count != 1
+            or snapshot.risk_progress != "watching"
+        )
+    ):
+        raise SubingLifecycleContractError()
+    confirmed_stages = {
+        LifecycleStage.ENTRY_CONFIRMED,
+        LifecycleStage.CONTINUATION,
+        LifecycleStage.EXIT_RISK,
+        LifecycleStage.CLOSED,
+    }
+    if snapshot.crossed_trading_day and (
+        snapshot.stage not in confirmed_stages
+        or snapshot.confirmation_source is None
+        or snapshot.confirmed_at is None
+    ):
+        raise SubingLifecycleContractError()
+    if snapshot.boundary_reset == "segment_changed" and (
+        snapshot.stage is not LifecycleStage.IDLE
+        or snapshot.opportunity_key is not None
+        or has_risk_projection
+        or snapshot.crossed_trading_day
     ):
         raise SubingLifecycleContractError()
     if snapshot.last_confirmed_at is not None and (
@@ -689,21 +746,72 @@ def _validate_trace_contract(trace: SubingLifecycleTrace) -> None:
         if snapshot.latest_transition != latest_transition:
             raise SubingLifecycleContractError()
 
+    snapshots_by_time = {
+        snapshot.observed_at: snapshot for snapshot in trace.snapshots
+    }
+    expected_completed: list[SubingLifecycleState] = []
+    for transition in trace.transitions:
+        if transition.to_stage is not LifecycleStage.CLOSED:
+            continue
+        closing_snapshot = snapshots_by_time.get(transition.transition_at)
+        if (
+            closing_snapshot is None
+            or closing_snapshot.availability is not LifecycleAvailability.READY
+            or closing_snapshot.stage is not LifecycleStage.CLOSED
+            or closing_snapshot.opportunity_key != transition.opportunity_key
+            or closing_snapshot.direction is not transition.opportunity_key.direction
+        ):
+            raise SubingLifecycleContractError()
+        closes_confirmed_stage = transition.from_stage in {
+            LifecycleStage.ENTRY_CONFIRMED,
+            LifecycleStage.CONTINUATION,
+            LifecycleStage.EXIT_RISK,
+        }
+        entry_transitions = tuple(
+            candidate
+            for candidate in trace.transitions
+            if candidate.opportunity_key == transition.opportunity_key
+            and candidate.to_stage is LifecycleStage.ENTRY_CONFIRMED
+            and candidate.transition_at < transition.transition_at
+        )
+        if closes_confirmed_stage:
+            if len(entry_transitions) != 1:
+                raise SubingLifecycleContractError()
+            confirmation_snapshot = snapshots_by_time.get(
+                entry_transitions[0].transition_at
+            )
+            if (
+                confirmation_snapshot is None
+                or confirmation_snapshot.stage is not LifecycleStage.ENTRY_CONFIRMED
+                or confirmation_snapshot.opportunity_key != transition.opportunity_key
+                or confirmation_snapshot.confirmation_source is None
+                or confirmation_snapshot.confirmed_at is None
+                or closing_snapshot.confirmation_source
+                is not confirmation_snapshot.confirmation_source
+                or closing_snapshot.confirmed_at != confirmation_snapshot.confirmed_at
+            ):
+                raise SubingLifecycleContractError()
+        elif (
+            closing_snapshot.confirmation_source is not None
+            or closing_snapshot.confirmed_at is not None
+        ):
+            raise SubingLifecycleContractError()
+        expected_completed.append(
+            SubingLifecycleState(
+                availability=closing_snapshot.availability,
+                direction=closing_snapshot.direction,
+                stage=LifecycleStage.CLOSED,
+                opportunity_key=closing_snapshot.opportunity_key,
+                confirmation_source=closing_snapshot.confirmation_source,
+                confirmed_at=closing_snapshot.confirmed_at,
+            )
+        )
     for state in trace.completed_opportunities:
         if not isinstance(state, SubingLifecycleState):
             raise SubingLifecycleContractError()
         replace(state)
-        if (
-            state.stage is not LifecycleStage.CLOSED
-            or state.opportunity_key is None
-            or not _key_matches_trace(state.opportunity_key, trace)
-            or not any(
-                transition.opportunity_key == state.opportunity_key
-                and transition.to_stage is LifecycleStage.CLOSED
-                for transition in trace.transitions
-            )
-        ):
-            raise SubingLifecycleContractError()
+    if trace.completed_opportunities != tuple(expected_completed):
+        raise SubingLifecycleContractError()
 
     pivot_ids: set[str] = set()
     for pivot in trace.confirmed_pivots:
@@ -1762,7 +1870,7 @@ def _close_confirmed(
     completed: list[SubingLifecycleState],
 ) -> None:
     opportunity.stage = LifecycleStage.CLOSED
-    opportunity.current_risk_codes = (reason_code,)
+    opportunity.current_risk_codes = ()
     opportunity.risk_progress = None
     opportunity.lower_tf_risk_count = 0
     transitions.append(

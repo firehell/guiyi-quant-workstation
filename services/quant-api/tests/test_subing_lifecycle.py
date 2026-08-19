@@ -2048,3 +2048,247 @@ def test_trace_contract_rejects_invalid_identity_or_current_projection(
         replace(trace, **values)
 
     assert exc_info.value.code == "SUBING_LIFECYCLE_CONTRACT_INVALID"
+
+
+def _confirmed_closed_trace():
+    confirmed = _bar(15)
+    close_boundary = _bar(30)
+    return _evaluate(
+        (confirmed, close_boundary),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(close_boundary, BarFrequency.M5, direction=SubingDirection.SHORT),
+        ),
+        bars_15m=(confirmed, close_boundary),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15),
+            _factor(close_boundary, BarFrequency.M15, direction=SubingDirection.SHORT),
+        ),
+    )
+
+
+def test_trace_rejects_missing_completed_state_for_closed_transition() -> None:
+    trace = _confirmed_closed_trace()
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(trace, completed_opportunities=())
+
+
+def test_trace_rejects_duplicate_completed_state() -> None:
+    trace = _confirmed_closed_trace()
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            trace,
+            completed_opportunities=(
+                *trace.completed_opportunities,
+                *trace.completed_opportunities,
+            ),
+        )
+
+
+def test_trace_rejects_confirmed_completion_with_stripped_confirmation() -> None:
+    trace = _confirmed_closed_trace()
+    completed = trace.completed_opportunities[0]
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            trace,
+            completed_opportunities=(
+                replace(completed, confirmation_source=None, confirmed_at=None),
+            ),
+        )
+
+
+def test_trace_rejects_stripped_confirmation_from_close_snapshot_and_state() -> None:
+    trace = _confirmed_closed_trace()
+    stripped_snapshot = replace(
+        trace.current_snapshot,
+        confirmation_source=None,
+        confirmed_at=None,
+    )
+    stripped_state = replace(
+        trace.completed_opportunities[0],
+        confirmation_source=None,
+        confirmed_at=None,
+    )
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            trace,
+            snapshots=(*trace.snapshots[:-1], stripped_snapshot),
+            current_snapshot=stripped_snapshot,
+            completed_opportunities=(stripped_state,),
+        )
+
+
+def test_trace_rejects_completed_states_out_of_closed_transition_order() -> None:
+    first, first_close, second, second_close = (
+        _bar(minutes) for minutes in (5, 10, 15, 20)
+    )
+    short_anchor = _bar(15)
+    trace = _evaluate(
+        (first, first_close, second, second_close),
+        factors_5m=(
+            _factor(first, BarFrequency.M5),
+            _factor(first_close, BarFrequency.M5, direction=SubingDirection.SHORT),
+            _factor(second, BarFrequency.M5, direction=SubingDirection.SHORT),
+            _factor(second_close, BarFrequency.M5),
+        ),
+        bars_15m=(_bar(0), short_anchor),
+        factors_15m=(
+            _factor(_bar(0), BarFrequency.M15),
+            _factor(short_anchor, BarFrequency.M15, direction=SubingDirection.SHORT),
+        ),
+    )
+    assert len(trace.completed_opportunities) == 2
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            trace,
+            completed_opportunities=tuple(reversed(trace.completed_opportunities)),
+        )
+
+
+def test_unconfirmed_setup_completion_legally_has_no_confirmation_metadata() -> None:
+    first, close_boundary = (_bar(minutes) for minutes in (5, 10))
+    trace = _evaluate(
+        (first, close_boundary),
+        factors_5m=(
+            _factor(first, BarFrequency.M5),
+            _factor(close_boundary, BarFrequency.M5, direction=SubingDirection.SHORT),
+        ),
+        bars_15m=(_bar(0),),
+    )
+
+    assert trace.completed_opportunities[0].confirmation_source is None
+    assert trace.completed_opportunities[0].confirmed_at is None
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("risk", "crossed_trading_day", "boundary_reset"),
+)
+def test_setup_snapshot_rejects_confirmed_only_projection_fields(
+    mutation: str,
+) -> None:
+    snapshot = _evaluate((_bar(5),), bars_15m=(_bar(0),)).current_snapshot
+    assert snapshot.stage is LifecycleStage.SETUP_ARMED
+    if mutation == "risk":
+        values = {
+            "current_risk_codes": ("LOWER_TF_EMA21_BREACH",),
+            "risk_progress": "watching",
+            "lower_tf_risk_count": 1,
+        }
+    elif mutation == "crossed_trading_day":
+        values = {"crossed_trading_day": True}
+    else:
+        values = {"boundary_reset": "segment_changed"}
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(snapshot, **values)
+
+
+def test_segment_boundary_reset_requires_empty_idle_projection() -> None:
+    snapshot = _evaluate((), bars_15m=()).current_snapshot
+
+    reset = replace(snapshot, boundary_reset="segment_changed")
+
+    assert reset.stage is LifecycleStage.IDLE
+    assert reset.opportunity_key is None
+    assert reset.current_risk_codes == ()
+
+
+def test_closed_snapshot_keeps_close_reason_only_in_latest_transition() -> None:
+    trace = _confirmed_closed_trace()
+
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.current_snapshot.current_risk_codes == ()
+    assert trace.current_snapshot.latest_transition is not None
+    assert trace.current_snapshot.latest_transition.reason_codes == (
+        "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED",
+    )
+
+
+def test_snapshot_rejects_risk_codes_in_inconsistent_stage_or_source() -> None:
+    confirmed, risk = (_bar(minutes) for minutes in (15, 20))
+    watching = _evaluate(
+        (confirmed, risk),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(risk, BarFrequency.M5, ema21="101"),
+        ),
+        bars_15m=(confirmed,),
+    ).current_snapshot
+    assert watching.stage is LifecycleStage.CONTINUATION
+
+    for values in (
+        {"current_risk_codes": ("UNKNOWN_RISK",)},
+        {"current_risk_codes": ("ANCHOR_EMA21_BREACH",)},
+        {
+            "current_risk_codes": ("ANCHOR_EMA21_BREACH",),
+            "risk_progress": None,
+            "lower_tf_risk_count": 0,
+        },
+    ):
+        with pytest.raises(SubingLifecycleContractError):
+            replace(watching, **values)
+
+    closed = _confirmed_closed_trace().current_snapshot
+    with pytest.raises(SubingLifecycleContractError):
+        replace(
+            closed,
+            current_risk_codes=("OPPOSITE_DIRECTION_CONTEXT_CONFIRMED",),
+        )
+
+
+def test_short_lower_tf_risk_and_completed_anchor_recovery_are_mirrored() -> None:
+    confirmed, first_risk, second_risk, recovery = (
+        _bar(minutes) for minutes in (15, 20, 25, 30)
+    )
+    trace = _evaluate(
+        (confirmed, first_risk, second_risk, recovery),
+        factors_5m=(
+            _factor(
+                confirmed,
+                BarFrequency.M5,
+                direction=SubingDirection.SHORT,
+                cross=MacdCross.DEAD,
+                volume_ratio=Decimal("3"),
+            ),
+            _factor(
+                first_risk,
+                BarFrequency.M5,
+                direction=SubingDirection.SHORT,
+                ema21="99",
+            ),
+            _factor(
+                second_risk,
+                BarFrequency.M5,
+                direction=SubingDirection.SHORT,
+                ema21="99",
+            ),
+            _factor(recovery, BarFrequency.M5, direction=SubingDirection.SHORT),
+        ),
+        bars_15m=(confirmed, recovery),
+        factors_15m=(
+            _factor(confirmed, BarFrequency.M15, direction=SubingDirection.SHORT),
+            _factor(recovery, BarFrequency.M15, direction=SubingDirection.SHORT),
+        ),
+    )
+
+    assert trace.snapshots[1].current_risk_codes == ("LOWER_TF_EMA21_BREACH",)
+    assert trace.snapshots[1].risk_progress == "watching"
+    assert trace.snapshots[2].stage is LifecycleStage.EXIT_RISK
+    assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
+    assert trace.transitions[-1].reason_codes == ("ANCHOR_RECOVERY_CONFIRMED",)
