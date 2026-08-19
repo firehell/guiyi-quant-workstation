@@ -130,8 +130,8 @@ def test_alert_notification_attempt_tracks_one_recipient_delivery_outcome() -> N
         "event_id",
     )
     assert _index_columns(
-        table, "ix_alert_notification_attempts_status_attempted_at"
-    ) == ("status", "attempted_at")
+        table, "ix_alert_notification_attempts_attempted_at"
+    ) == ("attempted_at",)
     timestamp_columns = (
         table.c.attempted_at,
         table.c.completed_at,

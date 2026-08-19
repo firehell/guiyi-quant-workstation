@@ -133,11 +133,7 @@ class AlertNotificationAttempt(Base):
             name="ck_alert_notification_attempts_completion",
         ),
         Index("ix_alert_notification_attempts_event_id", "event_id"),
-        Index(
-            "ix_alert_notification_attempts_status_attempted_at",
-            "status",
-            "attempted_at",
-        ),
+        Index("ix_alert_notification_attempts_attempted_at", "attempted_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

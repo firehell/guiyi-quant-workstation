@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import DateTime, Integer, String, create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
@@ -45,8 +45,8 @@ def test_attempt_migration_is_additive_and_declares_the_next_revision() -> None:
     assert recorder.created_indexes == [
         ("ix_alert_notification_attempts_event_id", ("event_id",)),
         (
-            "ix_alert_notification_attempts_status_attempted_at",
-            ("status", "attempted_at"),
+            "ix_alert_notification_attempts_attempted_at",
+            ("attempted_at",),
         ),
     ]
     assert recorder.forbidden_operations == []
@@ -110,6 +110,77 @@ def test_upgrade_from_execution_review_to_head_creates_attempt_ledger(
     assert "notification_attempted_at" in {
         column["name"] for column in inspector.get_columns("alert_events")
     }
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("alert_notification_attempts")
+    }
+    assert set(columns) == {
+        "id",
+        "event_id",
+        "recipient_alias",
+        "channel",
+        "status",
+        "attempted_at",
+        "completed_at",
+        "error_code",
+        "created_at",
+        "updated_at",
+    }
+    assert isinstance(columns["id"]["type"], Integer)
+    assert isinstance(columns["event_id"]["type"], Integer)
+    for column_name, length in {
+        "recipient_alias": 32,
+        "channel": 64,
+        "status": 32,
+        "error_code": 64,
+    }.items():
+        assert isinstance(columns[column_name]["type"], String)
+        assert columns[column_name]["type"].length == length
+    for column_name in {
+        "attempted_at",
+        "completed_at",
+        "created_at",
+        "updated_at",
+    }:
+        assert isinstance(columns[column_name]["type"], DateTime)
+        assert columns[column_name]["type"].timezone is True
+    assert {
+        column_name
+        for column_name, column in columns.items()
+        if not column["nullable"]
+    } == {
+        "id",
+        "event_id",
+        "recipient_alias",
+        "channel",
+        "status",
+        "attempted_at",
+        "created_at",
+        "updated_at",
+    }
+    assert columns["id"]["default"] is not None
+    assert columns["created_at"]["default"] == "CURRENT_TIMESTAMP"
+    assert columns["updated_at"]["default"] == "CURRENT_TIMESTAMP"
+    assert all(
+        columns[column_name]["default"] is None
+        for column_name in {
+            "event_id",
+            "recipient_alias",
+            "channel",
+            "status",
+            "attempted_at",
+            "completed_at",
+            "error_code",
+        }
+    )
+    assert {
+        (
+            tuple(foreign_key["constrained_columns"]),
+            foreign_key["referred_table"],
+            tuple(foreign_key["referred_columns"]),
+        )
+        for foreign_key in inspector.get_foreign_keys("alert_notification_attempts")
+    } == {(("event_id",), "alert_events", ("id",))}
     assert {
         constraint["name"]
         for constraint in inspector.get_unique_constraints("alert_notification_attempts")
@@ -127,10 +198,7 @@ def test_upgrade_from_execution_review_to_head_creates_attempt_ledger(
         if not index.get("duplicates_constraint")
     } == {
         "ix_alert_notification_attempts_event_id": ("event_id",),
-        "ix_alert_notification_attempts_status_attempted_at": (
-            "status",
-            "attempted_at",
-        ),
+        "ix_alert_notification_attempts_attempted_at": ("attempted_at",),
     }
     with engine.connect() as connection:
         assert connection.execute(
@@ -181,6 +249,13 @@ def test_upgrade_from_execution_review_to_head_creates_attempt_ledger(
             "constraint": "ck_alert_notification_attempts_completion",
         },
         {
+            "recipient_alias": "started-with-error",
+            "status": "STARTED",
+            "completed_at": None,
+            "error_code": "UNEXPECTED_ERROR",
+            "constraint": "ck_alert_notification_attempts_completion",
+        },
+        {
             "recipient_alias": "accepted-open",
             "status": "PROVIDER_ACCEPTED",
             "completed_at": None,
@@ -188,10 +263,24 @@ def test_upgrade_from_execution_review_to_head_creates_attempt_ledger(
             "constraint": "ck_alert_notification_attempts_completion",
         },
         {
+            "recipient_alias": "accepted-with-error",
+            "status": "PROVIDER_ACCEPTED",
+            "completed_at": now,
+            "error_code": "UNEXPECTED_ERROR",
+            "constraint": "ck_alert_notification_attempts_completion",
+        },
+        {
             "recipient_alias": "failed-without-error",
             "status": "FAILED",
             "completed_at": now,
             "error_code": None,
+            "constraint": "ck_alert_notification_attempts_completion",
+        },
+        {
+            "recipient_alias": "failed-open",
+            "status": "FAILED",
+            "completed_at": None,
+            "error_code": "PROVIDER_TIMEOUT",
             "constraint": "ck_alert_notification_attempts_completion",
         },
     )

@@ -69,9 +69,9 @@ def upgrade() -> None:
         ["event_id"],
     )
     op.create_index(
-        "ix_alert_notification_attempts_status_attempted_at",
+        "ix_alert_notification_attempts_attempted_at",
         "alert_notification_attempts",
-        ["status", "attempted_at"],
+        ["attempted_at"],
     )
 
 
