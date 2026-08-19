@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>subing-calibration / subing-lifecycle"]
+      RCLI["guiyi research<br/>calibration / lifecycle / candidate-validation"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -31,6 +31,7 @@ flowchart TB
       SR["SubingReadService"]
       SL["SuBing Lifecycle V2<br/>research-only snapshot / Shadow"]
       SCR["SubingCalibrationResearchService"]
+      CV["Candidate Validation V1<br/>exact Candidate / Protocol"]
       LM["LiveMarketService"]
       AM["AfterMarketUpdater"]
       AR["AlertRuntime"]
@@ -64,6 +65,7 @@ flowchart TB
     API --> SR
     RCLI --> SCR --> MQ
     RCLI --> SL --> MQ
+    RCLI --> CV --> SL
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
     ERS --> ER4 --> EPG
@@ -121,6 +123,10 @@ flowchart TB
   segment 独立复算 Shadow，结果仅由 read-only CLI 输出 stdout JSON。Lifecycle 无独立
   DB/Redis persistence、worker/queue 或 notification path；`AlertRuntime` 仍只消费 V1
   `resolved_signal`，不依赖 Lifecycle evaluator 或 snapshot。
+  Candidate Validation V1 以 exact Git-tracked Candidate/Protocol 编排该同一个 Lifecycle service，
+  只投影 retrospective、rolling 与 prospective OOS 事实到 stdout JSON 或版本化 research report；
+  不重算 lifecycle/outcome/rank1，不建立 order、position、cost、equity、DB/Redis persistence 或
+  Alert consumer，也不产生自动 KEEP/DROP/PROMOTE 结论。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，

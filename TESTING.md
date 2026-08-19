@@ -102,10 +102,13 @@ Episode snapshot、四状态工作流、reconstruction、roll estimate、stats �
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_subing_lifecycle_policy.py \
+  services/quant-api/tests/test_candidate_validation_policy.py \
+  services/quant-api/tests/test_candidate_validation.py \
   services/quant-api/tests/test_subing_structure.py \
   services/quant-api/tests/test_subing_lifecycle.py \
   services/quant-api/tests/test_subing_calibration.py \
   services/quant-api/tests/data_foundation/test_subing_lifecycle_research_service.py \
+  services/quant-api/tests/data_foundation/test_subing_candidate_validation_service.py \
   services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
   services/quant-api/tests/test_research_cli.py \
   services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
@@ -150,6 +153,12 @@ intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distan
 按 exact trading-day Session window 与 current-rank1 segment 独立复算 research-only lifecycle
 Shadow，只输出 stdout JSON。测试只验证命令、分段因果与报告合同，不运行真实当前市场观察，
 也不表示正式回测、策略有效或可晋升。
+
+`guiyi research candidate-validation` 只接受 Git-tracked exact Candidate/Protocol，通过既有
+`SubingLifecycleResearchService` 投影 frozen retrospective、10 个 12m+3m rolling folds 和从
+`2026-08-20` 开始的 prospective OOS。命令只输出 stdout JSON，保持 `research_only=true` 与
+`readonly=true`；测试使用 fake source 验证合同和时间边界，不运行真实 Candidate report，也不授权
+Candidate 晋升、Alert/Runtime 接入、DB/Canonical/Redis 写入、通知或订单。
 
 ## Alert V2
 
