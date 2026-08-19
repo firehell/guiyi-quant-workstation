@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -37,7 +37,7 @@ uv run --offline --project services/quant-api ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-MYPYPATH=services/quant-api \
+MYPYPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
   services/quant-api/app/market_data services/quant-api/app/guiyi_cli services/quant-api/app/alerts \
   services/quant-api/app/execution_review \
@@ -69,6 +69,36 @@ pnpm --dir apps/quant-web build
 这些命令验证 frozen designed-v0、Python/Web deterministic parity、“小心”的 HHV5/BARSLAST
 rising-edge 边界，以及同一副图内默认 MACD 的 Tab 切换。它们不授权公式调整、Alert/Runtime 接入、
 Canonical/DB 写入、通知或订单行为。
+
+## 主力照妖镜·期货 V1
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  services/quant-api/tests/test_main_force_mirror.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
+  services/quant-api/tests/test_research_cli.py
+
+pnpm --dir apps/quant-web test
+
+pnpm --dir apps/quant-web exec playwright test \
+  e2e/main-force-mirror.spec.mjs \
+  e2e/main-force-mirror-futures.spec.mjs \
+  e2e/market-runtime.spec.mjs \
+  e2e/market-research.spec.mjs \
+  e2e/alert-v1.spec.mjs
+
+pnpm --dir apps/quant-web build
+```
+
+这些命令验证 V0 零变化、V1 exact identity、60m physical-contract segment reset、readiness、五状态、
+双向警戒、conflict/latch/re-arm、Python/Web 单一 golden parity、动态 marker/hover 与 historical-only Shadow
+CLI，包括 `(long+short)*1000/caution_ready` 的 6 位 half-away 事件率、conflict 不计事件、零分母 JSON
+`null`，以及不可执行的 `("jm", "ag", "cu", "m", "sc")` 代表参数 tuple。它们不执行真实 Shadow 代表
+矩阵，也不授权 Canonical/DB 写入、Alert/notification、Runtime、订单、release 或策略晋升。
 
 ## Execution Review V1
 

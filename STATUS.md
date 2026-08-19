@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 
 ## 当前结论
 
@@ -22,6 +22,10 @@
   默认 MACD；“小心”保持 `rising_edge(BARSLAST(HIGH=HHV(HIGH,5))<10)`。六色柱仅为 OHLCV
   设计代理，不是实测资金流；该指标仍为 `observation_only`，未进入 Alert、backtest、live
   或 notification consumer。production Runtime 仅部署其 Web 观察面，不改变能力边界。
+- `develop` 已完成 `main_force_mirror_futures_v1` 的 60m Web observation 与 Historical-only Shadow
+  实现及仓库原生验证；只支持 `contract / actual_dominant`，V0 的 code/version/formula/golden/capability
+  保持不变。V1 仍为 `observation_only`，未进入 Alert、notification、正式 backtest、Runtime consumer
+  或订单路径。本次未运行真实代表矩阵 Shadow，未形成策略有效性、正式证据或晋升结论。
 - `v1.6.0` 同时包含完整 SuBing Lifecycle V2 research-only 代码链：exact policy、
   不可变领域合同、causal ConfirmedPivot/Breakout/Retest/lifecycle reducer、additive API/Web 投影与
   Historical-only Shadow CLI。V1 Factor/Signal/resolver、Alert Rule/Scope 和 `AlertRuntime` 消费边界不变；
