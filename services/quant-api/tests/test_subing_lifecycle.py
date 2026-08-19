@@ -624,6 +624,46 @@ def test_idle_formal_v1_match_confirms_with_origin_at_confirmed_boundary() -> No
     assert trace.transitions[0].from_stage is LifecycleStage.IDLE
 
 
+def test_direct_formal_without_trigger_rejects_positive_hold_count() -> None:
+    boundary = _bar(15)
+    snapshot = _evaluate(
+        (boundary,),
+        factors_5m=(
+            _factor(
+                boundary,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+        bars_15m=(boundary,),
+    ).current_snapshot
+
+    assert snapshot.trigger_kind is None
+    with pytest.raises(SubingLifecycleContractError):
+        replace(snapshot, hold_count=1)
+
+
+def test_direct_formal_without_trigger_rejects_completed_hold_count() -> None:
+    boundary = _bar(15)
+    snapshot = _evaluate(
+        (boundary,),
+        factors_5m=(
+            _factor(
+                boundary,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+        bars_15m=(boundary,),
+    ).current_snapshot
+
+    assert snapshot.trigger_kind is None
+    with pytest.raises(SubingLifecycleContractError):
+        replace(snapshot, hold_count=snapshot.hold_required)
+
+
 def test_closed_direction_is_not_reused_for_a_new_opposite_opportunity() -> None:
     first, close_boundary, new_boundary = (_bar(value) for value in (5, 10, 15))
     anchor_long = _bar(0)
@@ -890,6 +930,7 @@ def test_formal_v1_preempts_active_momentum_hold_with_prior_trigger_evidence() -
     for inconsistent in (
         {"triggered_at": snapshot.confirmed_at},
         {"hold_count": 0},
+        {"hold_count": snapshot.hold_required},
     ):
         with pytest.raises(SubingLifecycleContractError):
             replace(snapshot, **inconsistent)

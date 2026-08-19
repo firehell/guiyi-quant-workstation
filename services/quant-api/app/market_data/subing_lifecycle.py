@@ -517,11 +517,14 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
         raise SubingLifecycleContractError()
 
     if snapshot.confirmation_source is ConfirmationSource.FORMAL_V1:
-        if snapshot.trigger_kind is not None and (
-            snapshot.triggered_at is None
-            or snapshot.confirmed_at is None
-            or snapshot.triggered_at >= snapshot.confirmed_at
-            or not 1 <= snapshot.hold_count < snapshot.hold_required
+        if (snapshot.trigger_kind is None and snapshot.hold_count != 0) or (
+            snapshot.trigger_kind is not None
+            and (
+                snapshot.triggered_at is None
+                or snapshot.confirmed_at is None
+                or snapshot.triggered_at >= snapshot.confirmed_at
+                or not 1 <= snapshot.hold_count < snapshot.hold_required
+            )
         ):
             raise SubingLifecycleContractError()
     elif snapshot.confirmation_source is ConfirmationSource.MOMENTUM_HOLD:
