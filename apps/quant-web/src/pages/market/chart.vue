@@ -556,6 +556,7 @@ function normalizeSymbol(value: unknown): string | null {
               :loading="loading"
               :error="error"
               :period="frequency"
+              :series-kind="effectiveIdentity.seriesKind"
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
               :research-markers="lifecycleMarkers"

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { BarData } from '../src/types/market.ts'
+import type { MainForceMirrorFuturesPoint, MainForceMirrorFuturesResult } from '../src/utils/mainForceMirrorFutures.ts'
 import { buildKlineDerivedData, formatKlineHoverValue, resolveKlineHoverContext } from '../src/utils/klineViewModel.ts'
 
 const bars: BarData[] = Array.from({ length: 100 }, (_, index) => {
@@ -67,6 +68,57 @@ test('missing hover values render as unavailable instead of a fabricated zero', 
   assert.equal(formatKlineHoverValue(undefined), '—')
   assert.equal(formatKlineHoverValue(null), '—')
   assert.equal(formatKlineHoverValue(0), '0')
+})
+
+test('crosshair projects the timestamp-aligned futures mirror observation without inventing missing values', () => {
+  const result = buildKlineDerivedData(bars, [])
+  const target = bars[79]
+  const point: MainForceMirrorFuturesPoint = {
+    time: target.time,
+    physical_contract: 'AG2601',
+    valid: true,
+    state_ready: true,
+    caution_ready: true,
+    ready: true,
+    reason: null,
+    caution_availability_reason: null,
+    state: 'long_build',
+    signed_score: 82,
+    strength: 82,
+    price_impulse: 0.23,
+    clv: null,
+    volume_ratio: 1.4,
+    delta_oi: 41,
+    oi_impulse: 0.18,
+    direction: 0.56,
+    range_position: 0.79,
+    long_open_pressure: 82,
+    short_open_pressure: 12,
+    long_caution_score: 70,
+    short_caution_score: 10,
+    caution: 'long_chase_caution',
+    caution_reason_codes: ['LONG_BUILD_STREAK'],
+  }
+  const futures: MainForceMirrorFuturesResult = {
+    points: [point],
+    metadata: {} as MainForceMirrorFuturesResult['metadata'],
+  }
+
+  const hover = resolveKlineHoverContext(bars, result, [], target.time, futures)
+
+  assert.ok(hover?.mainForceFutures)
+  assert.equal(hover.mainForceFutures.physicalContract, 'AG2601')
+  assert.equal(hover.mainForceFutures.state, 'long_build')
+  assert.equal(hover.mainForceFutures.strength, 82)
+  assert.equal(hover.mainForceFutures.priceImpulse, 0.23)
+  assert.equal(hover.mainForceFutures.volumeRatio, 1.4)
+  assert.equal(hover.mainForceFutures.deltaOi, 41)
+  assert.equal(hover.mainForceFutures.oiImpulse, 0.18)
+  assert.equal(hover.mainForceFutures.rangePosition, 0.79)
+  assert.equal(hover.mainForceFutures.longScore, 70)
+  assert.equal(hover.mainForceFutures.shortScore, 10)
+  assert.deepEqual(hover.mainForceFutures.reasonCodes, ['LONG_BUILD_STREAK'])
+  assert.equal(formatKlineHoverValue(hover.mainForceFutures.clv), '—')
 })
 
 function makeDeterministicHtdyBars(seed: number, length = 100): BarData[] {

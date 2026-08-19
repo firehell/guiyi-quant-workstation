@@ -1,6 +1,7 @@
 import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
+import type { MainForceMirrorFuturesResult } from './mainForceMirrorFutures.ts'
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
@@ -105,6 +106,7 @@ export function resolveKlineHoverContext(
   derived: KlineDerivedData,
   visibleMainIndicators: MainIndicatorId[],
   time: string,
+  mainForceFutures: MainForceMirrorFuturesResult | null = null,
 ): HoverKlineContext | null {
   const bar = bars.find((item) => item.time === time)
   if (!bar) return null
@@ -120,6 +122,33 @@ export function resolveKlineHoverContext(
       dea: pointValue(derived.macd.dea, time),
       histogram: pointValue(derived.macd.histogram, time),
     },
+    mainForceFutures: toMainForceFuturesHover(mainForceFutures, time),
+  }
+}
+
+function toMainForceFuturesHover(result: MainForceMirrorFuturesResult | null, time: string) {
+  const point = result?.points.find((item) => item.time === time)
+  if (!point) return null
+  return {
+    physicalContract: point.physical_contract,
+    valid: point.valid,
+    stateReady: point.state_ready,
+    cautionReady: point.caution_ready,
+    ready: point.ready,
+    availabilityReason: point.reason,
+    cautionAvailabilityReason: point.caution_availability_reason,
+    state: point.state,
+    strength: point.strength,
+    priceImpulse: point.price_impulse,
+    clv: point.clv,
+    volumeRatio: point.volume_ratio,
+    deltaOi: point.delta_oi,
+    oiImpulse: point.oi_impulse,
+    rangePosition: point.range_position,
+    longScore: point.long_caution_score,
+    shortScore: point.short_caution_score,
+    caution: point.caution,
+    reasonCodes: point.caution_reason_codes,
   }
 }
 
