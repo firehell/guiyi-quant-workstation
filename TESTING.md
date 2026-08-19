@@ -53,6 +53,23 @@ pnpm --dir apps/quant-web build
 Runtime `DATABASE_URL` 物理身份不同的 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。测试 guard 会以
 数据库名和 OID 双重拒绝 production/Runtime 库；禁止为了让测试运行而放宽该校验。
 
+## 主力照妖镜 Observation V0
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror.py \
+  services/quant-api/tests/test_indicator_registry_v1.py
+
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web exec playwright test e2e/main-force-mirror.spec.mjs
+pnpm --dir apps/quant-web build
+```
+
+这些命令验证 frozen designed-v0、Python/Web deterministic parity、“小心”的 HHV5/BARSLAST
+rising-edge 边界，以及同一副图内默认 MACD 的 Tab 切换。它们不授权公式调整、Alert/Runtime 接入、
+Canonical/DB 写入、通知或订单行为。
+
 ## Execution Review V1
 
 ```bash

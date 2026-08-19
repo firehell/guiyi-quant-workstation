@@ -15,6 +15,11 @@
   Historical Canonical 与 Redis Live Overlay 分离，Live 不写 Parquet/DB。
 - Alert Runtime V2 的 Code Registry 精确为 `htdy_original_15m` 与
   `subing_entry_signal_v1`；production 两条 Rule 的 Scope 当前均精确为 `jm`。
+- `develop` 已包含并完成仓库原生验证的 `main_force_mirror_v0`（主力照妖镜 observation V0）：
+  Python Indicator Kernel 为唯一口径，Web 在现有最底部副图通过 `MACD / 主力照妖镜` Tab 二选一，
+  默认 MACD；“小心”保持 `rising_edge(BARSLAST(HIGH=HHV(HIGH,5))<10)`。六色柱仅为 OHLCV
+  设计代理，不是实测资金流；该指标仍为 `observation_only`，未进入 Alert、backtest、live、
+  notification 或 Runtime。本条只记录 develop 实现与验证，不表示 release 或 Runtime promotion。
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
