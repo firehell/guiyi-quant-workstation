@@ -11,6 +11,7 @@ from app.market_data.subing_lifecycle import (
     LifecycleAvailability,
     LifecycleStage,
     SubingLifecycleState,
+    SubingLifecycleStateError,
     SubingOpportunityKey,
 )
 from app.market_data.subing_research import SubingDirection
@@ -133,6 +134,113 @@ def test_entry_confirmed_requires_opportunity_identity() -> None:
             stage=LifecycleStage.ENTRY_CONFIRMED,
             confirmation_source=ConfirmationSource.FORMAL_V1,
         )
+
+
+@pytest.mark.parametrize(
+    "stage",
+    (
+        LifecycleStage.ENTRY_CONFIRMED,
+        LifecycleStage.CONTINUATION,
+        LifecycleStage.EXIT_RISK,
+    ),
+)
+def test_confirmed_stage_rejects_missing_confirmation_time(
+    stage: LifecycleStage,
+) -> None:
+    with pytest.raises(ValueError, match="SUBING_LIFECYCLE_STATE_INVALID"):
+        SubingLifecycleState(
+            availability=LifecycleAvailability.READY,
+            direction=SubingDirection.LONG,
+            stage=stage,
+            opportunity_key=_opportunity_key(),
+            confirmation_source=ConfirmationSource.MOMENTUM_HOLD,
+        )
+
+
+@pytest.mark.parametrize(
+    "stage",
+    (
+        LifecycleStage.ENTRY_CONFIRMED,
+        LifecycleStage.CONTINUATION,
+        LifecycleStage.EXIT_RISK,
+    ),
+)
+def test_confirmed_stage_rejects_naive_confirmation_time(
+    stage: LifecycleStage,
+) -> None:
+    with pytest.raises(ValueError, match="SUBING_LIFECYCLE_STATE_INVALID"):
+        SubingLifecycleState(
+            availability=LifecycleAvailability.READY,
+            direction=SubingDirection.LONG,
+            stage=stage,
+            opportunity_key=_opportunity_key(),
+            confirmation_source=ConfirmationSource.MOMENTUM_HOLD,
+            confirmed_at=datetime(2026, 8, 19, 9, 15),
+        )
+
+
+@pytest.mark.parametrize(
+    "stage",
+    (
+        LifecycleStage.ENTRY_CONFIRMED,
+        LifecycleStage.CONTINUATION,
+        LifecycleStage.EXIT_RISK,
+    ),
+)
+def test_confirmed_stage_accepts_aware_real_confirmation_time(
+    stage: LifecycleStage,
+) -> None:
+    confirmed_at = datetime(2026, 8, 19, 1, 15, tzinfo=timezone.utc)
+
+    state = SubingLifecycleState(
+        availability=LifecycleAvailability.READY,
+        direction=SubingDirection.LONG,
+        stage=stage,
+        opportunity_key=_opportunity_key(),
+        confirmation_source=ConfirmationSource.MOMENTUM_HOLD,
+        confirmed_at=confirmed_at,
+    )
+
+    assert state.confirmed_at == confirmed_at
+
+
+def test_confirmed_stage_rejects_confirmation_before_opportunity_origin() -> None:
+    with pytest.raises(SubingLifecycleStateError):
+        SubingLifecycleState(
+            availability=LifecycleAvailability.READY,
+            direction=SubingDirection.LONG,
+            stage=LifecycleStage.ENTRY_CONFIRMED,
+            opportunity_key=_opportunity_key(),
+            confirmation_source=ConfirmationSource.MOMENTUM_HOLD,
+            confirmed_at=datetime(2026, 8, 19, 1, 0, tzinfo=timezone.utc),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    (
+        ("direction", []),
+        ("opportunity_key", object()),
+    ),
+)
+def test_state_runtime_type_errors_use_stable_domain_error(
+    field: str,
+    invalid: object,
+) -> None:
+    values: dict[str, object] = {
+        "availability": LifecycleAvailability.READY,
+        "direction": SubingDirection.LONG,
+        "stage": LifecycleStage.SETUP_ARMED,
+        "opportunity_key": _opportunity_key(),
+        "entry_progress": EntryProgress.WAITING_TRIGGER,
+    }
+    values[field] = invalid
+
+    with pytest.raises(SubingLifecycleStateError) as exc_info:
+        SubingLifecycleState(**values)  # type: ignore[arg-type]
+
+    assert exc_info.value.code == "SUBING_LIFECYCLE_STATE_INVALID"
+    assert str(exc_info.value) == "SUBING_LIFECYCLE_STATE_INVALID"
 
 
 def test_state_direction_must_match_opportunity_identity() -> None:

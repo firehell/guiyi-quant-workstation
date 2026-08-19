@@ -34,6 +34,13 @@ class ConfirmationSource(StrEnum):
     PIVOT_RETEST_REBREAK = "pivot_retest_rebreak"
 
 
+class SubingLifecycleStateError(ValueError):
+    code = "SUBING_LIFECYCLE_STATE_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
 @dataclass(frozen=True, slots=True)
 class SubingOpportunityKey:
     policy_id: str
@@ -69,17 +76,10 @@ class SubingLifecycleState:
     opportunity_key: SubingOpportunityKey | None = None
     entry_progress: EntryProgress | None = None
     confirmation_source: ConfirmationSource | None = None
+    confirmed_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        directional = self.direction in {
-            SubingDirection.LONG,
-            SubingDirection.SHORT,
-        }
-        has_matching_key = (
-            self.opportunity_key is not None
-            and self.opportunity_key.direction is self.direction
-        )
-        invalid = (
+        invalid_type = (
             not isinstance(self.availability, LifecycleAvailability)
             or not isinstance(self.direction, SubingDirection)
             or not isinstance(self.stage, LifecycleStage)
@@ -95,7 +95,31 @@ class SubingLifecycleState:
                 self.confirmation_source is not None
                 and not isinstance(self.confirmation_source, ConfirmationSource)
             )
+            or (self.confirmed_at is not None and not isinstance(self.confirmed_at, datetime))
         )
+        if invalid_type:
+            raise SubingLifecycleStateError()
+
+        directional = self.direction in {
+            SubingDirection.LONG,
+            SubingDirection.SHORT,
+        }
+        has_matching_key = (
+            isinstance(self.opportunity_key, SubingOpportunityKey)
+            and self.opportunity_key.direction is self.direction
+        )
+        has_aware_confirmation_time = (
+            isinstance(self.confirmed_at, datetime)
+            and self.confirmed_at.tzinfo is not None
+            and self.confirmed_at.utcoffset() is not None
+        )
+        invalid = self.confirmed_at is not None and not has_aware_confirmation_time
+        if (
+            has_aware_confirmation_time
+            and isinstance(self.opportunity_key, SubingOpportunityKey)
+            and self.confirmed_at < self.opportunity_key.origin_at
+        ):
+            invalid = True
         if self.stage is LifecycleStage.IDLE:
             invalid = invalid or any(
                 (
@@ -103,6 +127,7 @@ class SubingLifecycleState:
                     self.opportunity_key is not None,
                     self.entry_progress is not None,
                     self.confirmation_source is not None,
+                    self.confirmed_at is not None,
                 )
             )
         elif self.stage is LifecycleStage.SETUP_ARMED:
@@ -111,17 +136,26 @@ class SubingLifecycleState:
                 invalid
                 or self.entry_progress is None
                 or self.confirmation_source is not None
+                or self.confirmed_at is not None
             )
-        elif self.stage is LifecycleStage.ENTRY_CONFIRMED:
+        elif self.stage in {
+            LifecycleStage.ENTRY_CONFIRMED,
+            LifecycleStage.CONTINUATION,
+            LifecycleStage.EXIT_RISK,
+        }:
             invalid = invalid or not directional or not has_matching_key
             invalid = (
                 invalid
                 or self.entry_progress is not None
                 or self.confirmation_source is None
+                or not has_aware_confirmation_time
             )
         else:
             invalid = invalid or not directional or not has_matching_key
             invalid = invalid or self.entry_progress is not None
+            invalid = invalid or (
+                (self.confirmation_source is None) != (self.confirmed_at is None)
+            )
 
         if invalid:
-            raise ValueError("SUBING_LIFECYCLE_STATE_INVALID")
+            raise SubingLifecycleStateError()
