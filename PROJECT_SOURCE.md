@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-18
+更新时间：2026-08-19
 
 ## 定位与边界
 
@@ -71,11 +71,11 @@ Alert V2 只保留两条 code-defined Rule：`htdy_original_15m` 复用 `MarketR
 
 SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `trading_day` 同一时创建 Event，stale 或不可用状态 fail-closed。final Session Bar 只在 Live 共享的有界 arrival grace 内可见；该 phase observation 不建立 `snapshot_at`/cutoff/replay 路径。5m 事件落在同一 15m boundary 时依既有 TradingSession bucket 语义延后，继续由 15m snapshot 唯一决议。HTDY event-cutoff 语义不变。
 
-当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后 develop 的 `ClawbotAlertSender` 最多启动一个固定 Node child，通过唯一 `openclaw-weixin` private seam 调用一次 `sendMessageWeixin()`；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示 provider 已接受或用户已收到。无 replay/backfill/retry/outbox/queue/fan-out/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
+当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后 production 的 `ClawbotAlertSender` 最多启动一个固定 Node child，通过唯一 `openclaw-weixin` private seam 调用一次 `sendMessageWeixin()`；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示 provider 已接受或用户已收到。无 replay/backfill/retry/outbox/queue/fan-out/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
 
 Clawbot owner 只存于 Git 外的单份 `0700` parent / `0600` private JSON，Runtime 只公开固定别名 `owner`，不输出 account id、target id、token、context 或消息正文。OpenClaw、Node、`openclaw-weixin` 的 exact version、plugin root 与三个 compiled module shape 由 manifest 冻结；缺失 context、timeout、crash 或 malformed child output 都是 zero-retry failure。OpenClaw 是既有外部依赖，不由归一量化安装、更新、登录、启动、停止或监督；仓库没有 public OpenClaw message-send、durable queue、微信 inbound、context monitor 或 Agent/LLM/slash/tool/reply pipeline。
 
-Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 仍运行既有 WeCom transport；develop 的 Clawbot single-shot 目标不等于 production 已迁移。owner bootstrap/write、preflight、真实 canary/send、release/tag、Runtime promotion/switch、SuBing Scope write/activation 与任何 OpenClaw 变更是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam 或 render-only 不证明任何 Gate 已执行。
+Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 已完成独立 release/promotion，唯一 active transport 为 `clawbot-openclaw-weixin`；旧 `v1.4.2` Runtime worktree 与 private WeCom credential 只作为 G9 前的显式 rollback material，不是自动 fallback。owner bootstrap/write、preflight、真实 canary/send、release/tag、Runtime promotion/switch、SuBing Scope write/activation、rollback、G9 cleanup 与任何 OpenClaw 变更仍是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam、render-only 或已经完成的其他 Gate 不证明未来 Gate 获得授权。
 
 ## Execution Review V1 应用边界
 
@@ -94,12 +94,12 @@ release、通知或订单动作。
 Alert Runtime V2 只有在用户对识别出的本地工作站明确执行 promotion，且目标 Scope 已获得精确 Rule + Product 授权后，才获得独立、有界的持续授权：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × WeCom
+htdy_original_15m × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
 +
-subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
 ```
 
-未来第三条 Rule 不自动继承该授权。V2 migration 保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation。该授权不覆盖新增 Rule/渠道、migration、Runtime switch、release、Canonical 写入或订单，也不能从 Market Runtime V1、既有 HTDY Scope 或其他 Gate 推导出 SuBing 授权。
+当前 exact instance 是两条 Rule 各自的 `scope_products=jm`；可变运行事实仍只由 `STATUS.md` 记录。该持续授权只覆盖 G8 后新建的自然 AlertEvent，不覆盖未来第三条 Rule、owner/渠道替换、synthetic Event、replay/backfill、canary、migration、Runtime switch、release、Canonical 写入、订单、rollback 或 G9 cleanup。V2 migration 保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation；不能从 Market Runtime V1、既有 HTDY Scope 或其他 Gate 推导授权。
 
 当前本机部署根属于可变运行事实，只由 `STATUS.md` 记录。功能开发期可临时从 `develop` 部署以便快速观察；最终 Runtime 采用绑定精确提交的独立 worktree，验收读回身份、拓扑、健康和范围。已经在同一代码谱系形成且由用户接受的自然时点证据不因部署封装重复采集；开发态部署仍不等于 Ready、release 或 Runtime promotion。
 

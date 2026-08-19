@@ -75,7 +75,7 @@ pnpm --dir apps/quant-web build
 
 这些测试覆盖 trusted-partial reference/evidence 一一对应、缺失 multiplier 的 nullable RMB 估算、
 Episode snapshot、四状态工作流、reconstruction、roll estimate、stats 和 Web unavailable 展示。测试
-不执行 production migration、release、Runtime switch、roll marker、Scope/WeCom、Canonical 或订单行为。
+不执行 production migration、release、Runtime switch、roll marker、Scope/notification、Canonical 或订单行为。
 
 ## SuBing Factor / Calibration / Signal Observation V1
 
@@ -165,7 +165,8 @@ plutil -lint .run/launchd/com.guiyi.quant-alert.plist
 这些命令只使用隔离数据库、mock sender、fake exact-version plugin tree、tmp_path/fake process 或 render-only，
 不启动真实 AlertRuntime，不写真实 owner，不执行真实 Clawbot preflight/canary/send，也不修改或监督
 OpenClaw。它们不授权 Runtime switch/release、production migration 或 SuBing Scope write/activation。
-当前 production exact-tag 仍为 WeCom。`alembic upgrade/current`、`runtime clawbot-owner-bootstrap
+当前 production exact-tag 已运行 `clawbot-openclaw-weixin`；本节测试不会改变该事实，也不授权任何后续
+真实 Gate。`alembic upgrade/current`、`runtime clawbot-owner-bootstrap
 --confirm-write-owner`、`runtime clawbot-preflight`、`runtime alert-canary`、`--confirm-alert-runtime` 与真实
 Scope PUT 禁止作为本节验证命令。测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
 
@@ -177,8 +178,9 @@ Scope PUT 禁止作为本节验证命令。测试路由 Scope PUT 只证明 API 
   v1.2 API/Alert 与 V2 schema 共存。
 - SuBing Scope write/activation：对精确 `subing_entry_signal_v1 × product` 另行授权；seed
   必须保持空集，不从 HTDY Scope 或 `operational_products.txt` 自动扩张。
-- Clawbot owner bootstrap/write、zero-send preflight、真实 canary/send：每类只在未来 rollout 的独立明确
-  授权后执行；不写 AlertEvent、不改 Scope、不修改 OpenClaw、不自动启用或切换 Runtime。
+- Clawbot owner bootstrap/write、zero-send preflight、真实 canary/send：每次执行仍需自身精确 Gate；
+  已完成的 G2～G8、测试或历史批准不授权重试、owner/Scope/transport 变更、rollback 或 G9 cleanup。
+  这些命令不写 AlertEvent、不改 Scope、不修改 OpenClaw、不自动启用或切换 Runtime。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
 mock 通过只证明实现，不证明任何生产 Gate 已执行。

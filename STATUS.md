@@ -23,9 +23,10 @@
   G4 canary 已获 provider acceptance，用户已确认微信中恰好收到一条，因此 G4 PASS。
   G5 已完成正常微信入站后的 preflight、一次外部 restart 后的 persisted-context preflight、版本无漂移
   与 single-shot 回归。G6 已按用户批准的完整累计 `develop` 范围完成 release PR #170、独立审查与
-  annotated `v1.5.0` tag；G7 已在 Gate time 读回两条 enabled Rule 的精确 Scope 均为 `jm`，并按用户
-  预先明确授权的顺序锁定两条 Rule 的 bounded continuous authorization。G8 已将正式五服务统一
-  promotion 至 exact-tag `v1.5.0` 并完成读回；G9 首个自然 Alert 与最终 WeCom 清理仍 pending。
+  annotated `v1.5.0` tag；G7 已在 Gate time 读回两条 enabled Rule 的精确 Scope 均为 `jm`，并将
+  bounded continuous authorization 只锁定到两条精确 Rule × `jm` × `owner` × Clawbot tuple；该 G7
+  授权不授权 G8 或 G9。G8 以独立 exact-tag Runtime promotion Gate 将正式五服务统一切换至
+  `v1.5.0` 并完成读回；G9 首个自然 Alert 与最终 WeCom 清理仍 pending。
 
 ## Clawbot Single-Shot D1（RELEASED / RUNTIME PROMOTED）
 
@@ -41,7 +42,8 @@
   新授权的单次 G4 返回 `attempted=1 / provider_accepted=1 / failed=0`，用户确认只收到一条，G4 PASS。
   本次 LF 修复与 G4 未修改 OpenClaw、未 load/reload launchd、未切换 Runtime。
 - Courier active source/tests/tooling 已从 D1 代码删除，active WeCom sender source/config 仍为零；
-  production exact-tag/hotfix Runtime 的 WeCom 事实未改变。D1 完整验证及独立 R1 为
+  在当时的 D1 code-only 阶段，production exact-tag/hotfix Runtime 仍为 WeCom。这是 G8 前的历史事实，
+  不代表当前 production transport；D1 完整验证及独立 R1 为
   Critical=`0` / Important=`0` / Minor=`0`。G5 的两次 zero-send preflight 均 PASS；外部 restart 仅按用户
   明确委托执行一次，restart 后 account/context 仍 ready；OpenClaw/Node/plugin 版本精确匹配 manifest，
   Node seam `22 passed`、Clawbot/Alert `138 passed`、launchd engineering `29 passed`，禁止 active path
@@ -56,12 +58,13 @@
   `957d19893187c7876b88e58f82fd5656536ee214`。
 - G7 Gate-time 只读核对确认 Code/DB Registry 均精确为 `htdy_original_15m` 与
   `subing_entry_signal_v1`，两条 Rule 均 `enabled=true / scope=jm`；owner 严格 schema 元数据为
-  `owner × openclaw-weixin`，未输出私有 id。依据用户对既定 G2→G9 顺序的明确整体授权，持续通知
-  范围锁定为 `htdy_original_15m × jm × owner × clawbot-openclaw-weixin` 与
+  `owner × openclaw-weixin`，未输出私有 id。G7 的 bounded continuous authorization 精确记录为
+  `htdy_original_15m × jm × owner × clawbot-openclaw-weixin` 与
   `subing_entry_signal_v1 × jm × owner × clawbot-openclaw-weixin`，且只覆盖 G8 后新建的自然
   AlertEvent；不覆盖新 Rule/Scope/owner、synthetic Event、replay/backfill、canary、release、Runtime
-  promotion、DB/Canonical 或订单。
-- G8 fresh zero-send preflight、OpenClaw/Node/plugin exact-version、owner `0600/current uid`、DB revision、
+  promotion、DB/Canonical、订单、rollback 或 G9 cleanup，也不作为这些 Gate 的授权证据。
+- G8 只依据独立的 exact-tag `v1.5.0` production Runtime promotion Gate 执行；fresh zero-send preflight、
+  OpenClaw/Node/plugin exact-version、owner `0600/current uid`、DB revision、
   Rule/Scope、Execution Review roll 与无订单边界均通过。正式五服务已统一切换至 clean/detached
   `/Volumes/扩展盘/guiyi-quant-runtime-v1.5.0@957d19893187c7876b88e58f82fd5656536ee214`；
   API version=`1.5.0`，notification channel=`clawbot-openclaw-weixin`，owner/OpenClaw/plugin 均 ready。
@@ -129,7 +132,7 @@
   和轻量 health。
 - CLI：`guiyi data update|refresh|audit|after-market`；只读
   `guiyi research subing-calibration`、`guiyi runtime status|live|alert`。
-- `guiyi runtime alert-canary` 是真实 WeCom Gate，不是普通测试命令。
+- `guiyi runtime alert-canary` 是向固定 `owner` 发出一次 Clawbot 消息的独立真实通知 Gate，不是普通测试命令。
 - Runtime：Live 与盘后更新共用同一 `operational_products.txt`；盘后时点为 18:05，
   只对 `NEXT_TRADING_SESSION_NOT_READY` 允许最多一次一小时后 retry。
 
@@ -158,7 +161,8 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 
 ## 当前 Runtime 事实
 
-- `2026-08-19 00:51～00:52 +08:00` 已按既定 G8 授权把 API/Web/Live/after-market/Alert 一次性
+- `2026-08-19 00:51～00:52 +08:00` 已按独立 G8 exact-tag Runtime promotion Gate 把
+  API/Web/Live/after-market/Alert 一次性
   promotion 至 clean/detached exact-tag Runtime
   `/Volumes/扩展盘/guiyi-quant-runtime-v1.5.0@957d19893187c7876b88e58f82fd5656536ee214`。
   五个 launchd label 的 root/loaded commit 一致；API/Web/Live/Alert running，after-market 仍为

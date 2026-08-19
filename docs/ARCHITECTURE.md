@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-08-16
+更新时间：2026-08-19
 
 ## 系统定位
 
@@ -37,7 +37,7 @@ flowchart TB
     subgraph AlertApp["Alert Application Domain"]
       AS["AlertService / Scope / Event"]
       AE["HTDY original 15m Evaluator"]
-      WC["WeCom one-shot sender"]
+      CB["ClawbotAlertSender / one Node child"]
     end
     subgraph ExecutionReview["Execution Review Application Domain"]
       ERS["ExecutionReviewService"]
@@ -56,6 +56,7 @@ flowchart TB
       EPG["PostgreSQL execution-review application tables"]
       PQ["Parquet / PyArrow reader-writer"]
       RD["Redis Live Overlay"]
+      OC["External OpenClaw / openclaw-weixin"]
     end
     WEB --> API --> MR
     API --> MRS
@@ -79,7 +80,7 @@ flowchart TB
     AR --> AE
     AR --> AS
     AS --> APG
-    AS --> WC
+    AS --> CB --> OC
     AM --> HM
     MS --> MM
     HM --> DK
@@ -181,7 +182,8 @@ observation 可见，不新增 `snapshot_at`/cutoff/replay；5m 与 15m 落在�
 boundary 时延后 5m，使用既有 resolver 唯一决议。
 
 两条 Rule 都只在自身显式 `scope_products` 内创建幂等 `AlertEvent`，Event commit 先于
-one-shot WeCom。停机期间不 replay/backfill，发送失败不 retry，不建 outbox/queue/
+Clawbot single-shot：每个 Event 最多一个固定 Node child，并只经 `openclaw-weixin` private seam
+调用一次 `sendMessageWeixin()`。停机期间不 replay/backfill，发送失败不 retry，不建 outbox/queue/
 Signal Center/订单。SuBing migration seed Scope 为空集。当前交易日由
 `MarketPhaseResolver + operational_products.txt` 唯一解析，缺失或不一致时 API 显式
 `unavailable`。
@@ -189,15 +191,17 @@ Signal Center/订单。SuBing migration seed Scope 为空集。当前交易日�
 AlertRuntime 是独立进程、独立 activation marker 与独立健康组件。其有界持续授权只限于：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × WeCom
+htdy_original_15m × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
 +
-subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
 ```
 
-未来第三条 Rule 不继承授权。production migration、v1.3 release/tag、Runtime
-promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 互不授权。每条
-completed-bar 消息与 heartbeat 都使用独立短 Session/transaction；Webhook sender 与 health 共用
-exact 企业微信目标校验器。
+当前 exact instance 为两条 Rule 各自的 `scope_products=jm`。未来第三条 Rule 不继承授权；production
+migration、release/tag、Runtime promotion/switch、Scope/owner/transport 变更、真实 canary/send、rollback
+与 G9 cleanup 互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短 Session/transaction；
+Clawbot sender 与 structural health 共用 exact manifest/root/config/owner 校验。OpenClaw 是外部依赖，
+不由归一量化安装、更新、登录、启动、停止或监督。当前 production 已运行该 Clawbot transport；旧
+`v1.4.2` Runtime worktree 与 private WeCom credential 只作 G9 前 rollback material，不形成 fallback。
 
 Execution Review 不反向依赖或修改 Alert Event：只从不可变 `subing_entry_signal_v1` Event 建立人工
 Decision、固定合约/方向的 Episode、真实手工 Execution timeline 和结构化 Review。一个品种最多一个

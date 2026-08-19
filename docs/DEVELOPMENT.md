@@ -37,8 +37,8 @@ develop
 当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
 Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
 Alert V2 的 Application Domain、API 与独立 `runtime alert` 代码面，以及 Execution Review 的四表
-Application Domain、API 和 `/trade-records`，都不恢复已退役的旧 Signal/Review/Strategy 链。production migration `20260814_0038`、v1.3 release/tag、Runtime
-promotion/switch、SuBing Scope write/activation 与真实 WeCom/canary 未经各自明确请求
+Application Domain、API 和 `/trade-records`，都不恢复已退役的旧 Signal/Review/Strategy 链。production migration、release/tag、Runtime
+promotion/switch、Scope/owner/transport 变更、真实 canary/send、rollback 与 G9 cleanup 未经各自明确请求
 不得执行，当前实施与生产状态只以 `STATUS.md` 为准。测试路由的 Scope PUT
 只验证代码合同，不是真实 Scope mutation 授权。
 唯一 active 运维链为 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；本地状态只使用
@@ -94,16 +94,17 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 Alert Runtime V2 是另一份独立持续授权，且只列举：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × WeCom
+htdy_original_15m × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
 +
-subing_entry_signal_v1 × 该 Rule 显式 scope_products × WeCom
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
 ```
 
 用户必须先对识别出的本地工作站明确执行 V2 Runtime promotion，目标 Scope 还必须已获得精确 Rule +
 Product 授权；开启成功后只允许该精确范围的后续自然事件持续创建 Event
-并尝试一次 WeCom。未来第三条 Rule 不继承授权。该授权不从 Market Runtime、既有
-HTDY Scope 或任何其他 Gate 推导；production migration、v1.3 release/tag、Runtime
-promotion/switch、Scope write/activation 和真实 WeCom/canary 都必须分别取得一次性执行意图。
+并通过固定 `owner` 的 Clawbot single-shot seam 尝试一次发送。当前 exact instance 的两条 Scope 均为
+`jm`，可变事实以 `STATUS.md` 为准。未来第三条 Rule 不继承授权。该授权不从 Market Runtime、既有
+HTDY Scope 或任何其他 Gate 推导；production migration、release/tag、Runtime promotion/switch、
+Scope/owner/transport 变更、真实 canary/send、rollback 和 G9 cleanup 都必须分别取得一次性执行意图。
 其中 V2 migration 只保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation。
 
 ## 不可放宽的业务边界
