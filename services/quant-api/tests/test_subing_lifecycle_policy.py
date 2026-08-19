@@ -103,6 +103,14 @@ def test_malformed_lifecycle_policy_fails_closed(tmp_path: Path) -> None:
         load_subing_lifecycle_policy(path)
 
 
+def test_non_utf8_lifecycle_policy_fails_closed(tmp_path: Path) -> None:
+    path = tmp_path / "policy.json"
+    path.write_bytes(b"\xff\xfe\x00")
+
+    with pytest.raises(SubingLifecyclePolicyError, match="SUBING_LIFECYCLE_POLICY_INVALID"):
+        load_subing_lifecycle_policy(path)
+
+
 @pytest.mark.parametrize(
     ("container_path", "key"),
     (

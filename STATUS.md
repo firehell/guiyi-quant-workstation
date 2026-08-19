@@ -31,6 +31,24 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
+## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
+
+- `develop` 已在不改变 V1 Signal、Alert、Web API 字段、DB、Canonical 或 Runtime 的边界内完成
+  Lifecycle V2 最终 Review 修复：下一交易日首个可评价 boundary 由同方向 `FORMAL_V1` 优先确认旧
+  Setup 并标记 `crossed_trading_day=true`；无同方向 Formal 才执行 rollover，不可用 boundary 继续暂停。
+- Lifecycle 输入合同已 fail-closed：5m/15m Bar 与 Factor 任一长度错配均返回
+  `UNAVAILABLE / SUBING_LIFECYCLE_SERIES_ALIGNMENT_INVALID`；非法 identity 的 Trace 三项身份字段全部为
+  `None`，且不携带 Pivot、Opportunity 或 Transition，不再推断或伪造身份。
+- Confirmed Pivot reducer 改为单向 cursor，breakout 只读取当前交易日最新 HIGH/LOW Pivot；Trace validator
+  使用 set/dict 关联，均保持线性消费。Policy loader 将非 UTF-8、文件与 JSON 损坏统一降级为
+  `SubingLifecyclePolicyError`，composition 只禁用 Lifecycle Policy，V1 SuBing service 仍可构造。
+- fresh 验证为 SuBing backend canonical 测试 `613 passed`、Ruff PASS、Mypy `52 source files`、
+  Web unit `173 passed / 1 skipped`、production build `2996 modules`、完整 Playwright `66 passed`、
+  secret scan `finding_count=0` 与 diff check PASS；独立 Standards Review 为
+  Critical=`0` / Important=`0` / Minor=`0`。
+- 当前 Git release 与 production Runtime 仍为 `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
+  本次未执行 release、tag、Runtime promotion/reload、migration、DB/Canonical 写入、Scope/通知或订单操作。
+
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
 - Market WebSocket 新增同次读取的 `MarketDisplaySnapshot`：`realtime` 继续要求既有 live eligibility 与

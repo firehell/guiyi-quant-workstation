@@ -514,7 +514,7 @@ Do not run parallel confirmation machines.
 
 - [ ] **Step 9: Add unconfirmed trading-day rollover**
 
-At first **evaluable** 5m boundary of a later `trading_day`, close unconfirmed setup as `UNCONFIRMED_TRADING_DAY_ROLLOVER`. Unavailable boundary pauses and does not close.
+At the first **evaluable** 5m boundary of a later `trading_day`, a same-direction `FORMAL_V1` match first confirms the existing setup and sets `crossed_trading_day=true`. Otherwise, including an opposite-direction Formal match, close the old setup as `UNCONFIRMED_TRADING_DAY_ROLLOVER`; a new direction may start no earlier than the next evaluable boundary. An unavailable boundary pauses and neither confirms nor closes.
 
 - [ ] **Step 10: Verify Task 3**
 

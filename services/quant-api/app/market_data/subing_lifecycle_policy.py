@@ -104,7 +104,7 @@ def load_subing_lifecycle_policy(path: Path | None = None) -> SubingLifecyclePol
     source = path if path is not None else _SUBING_LIFECYCLE_POLICY_PATH
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise SubingLifecyclePolicyError() from exc
 
     if not _matches_exact(payload, _EXPECTED_PAYLOAD):
