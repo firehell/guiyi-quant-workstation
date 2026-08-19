@@ -1,518 +1,546 @@
 # TASK-MAIN-FORCE-MIRROR-FUTURES-V1-20260819
 
-> 单一执行合同：实现 `main_force_mirror_futures_v1` 的 60m 期货方向性持仓压力观察、双向追价警戒、Web 三 Tab 与只读 Historical Shadow。本文只调度仓库开发；不授权 release、Runtime、真实 Shadow、通知、DB/Canonical 或订单。
+> 主力照妖镜·期货 V1 的单一 executable contract。Issue 是远程生命周期入口，Spec 是业务/数学设计权威，Implementation Plan 是逐步执行权威；本文件固定任务边界、调度、Gate、停止码和 Codex 主 Prompt。
 
-## 0. 元信息
+## 0. Metadata
 
-| 字段 | 值 |
+| Field | Value |
 | --- | --- |
 | Task ID | `TASK-MAIN-FORCE-MIRROR-FUTURES-V1-20260819` |
 | GitHub Issue | `#179` |
-| Status | `PLAN_READY` |
 | Spec | `docs/superpowers/specs/2026-08-19-main-force-mirror-futures-v1-design.md` |
 | Implementation Plan | `docs/superpowers/plans/2026-08-19-main-force-mirror-futures-v1.md` |
-| Existing V0 | `main_force_mirror_v0 / designed-v0` — frozen |
-| New V1 | `main_force_mirror_futures_v1 / futures-research-v1` |
-| Base | 每个 Task 执行时最新 `origin/develop`，必须包含本 Spec/Plan/TASK |
-| Product Scope | `60m + contract|actual_dominant` only |
-| Capability | `observation_only`; Web yes; backtest/live/alert/notification no |
-| External Side Effects | none |
-| Owner Gate | 当前仅 Plan/TASK 完成；Task 1 代码实现仍等待用户明确批准；release/Runtime/真实 Shadow/evidence/通知/DB 另行授权 |
+| Existing V0 | `main_force_mirror_v0@designed-v0` |
+| New V1 | `main_force_mirror_futures_v1@futures-research-v1` |
+| Planning baseline | `develop@7e58cfd07a1d274b4e206603496b0d79d302528b` (hardened Plan commit); execution still uses the then-latest `origin/develop` |
+| Execution base | execution-time latest clean `origin/develop` containing Spec-fix commit `a5180f97c5ac6675a6d73e6a48bc837efac8be06` |
+| Status | `PLAN_READY / AWAITING_IMPLEMENTATION_APPROVAL` |
+| Owner | `firehell` |
+| External side effects | none authorized |
+| Release/Runtime | not authorized |
 
-## 1. 当前判断
+## 1. Current Judgment
 
-这是一个**混合车道但整体按高风险公式合同调度**的任务：
+The approved design is ready for implementation planning and task dispatch.
 
-```text
-Lane 3：Python Indicator Kernel 公式、readiness、rounding、caution/latch、Python/Web parity
-Lane 2：Web physical-contract plumbing、三 Tab、marker、hover
-Lane 1：Historical-only Shadow service / CLI
-Lane 3 review：whole-branch final review / canonical closeout
-```
-
-V1 是新版本，不允许原地改 V0。任何实现者发现需要改变已批准参数、权重、阈值、readiness、rounding、conflict 或 re-arm 规则时必须停止并输出：
+The current V0 remains a published historical-reproduction observation. V1 is a new futures-only observation based on:
 
 ```text
-FORMULA_DRIFT_REQUIRES_NEW_VERSION
+OHLCV
++ open interest
++ exact physical contract
+→ five futures position-pressure states
+→ long/short chase caution scores
+→ episode latch/re-arm
+→ Web observation
+→ read-only Historical Shadow
 ```
 
-不得以“效果更好”为理由修改 `futures-research-v1`。
+V1 does not identify a participant account, member seat, net-long owner, net-short owner, or measured capital flow. Its threshold `70` is an evidence score, not a percentage or reversal probability.
 
-## 2. Codex 总调度建议
+This TASK does not authorize implementation merely by existing. Each implementation Task starts only after the user explicitly approves that Task or the full implementation sequence.
 
-- 任务车道：Lane 3 主控；内部含 Lane 2 / Lane 1 子任务
+## 2. Approved Review Resolutions
+
+The implementation must preserve all nine frozen resolutions:
+
+1. Direction conflict emits no directional event, consumes neither latch, performs no re-arm, and pauses counters.
+2. `state_ready` begins at block index 20; `caution_ready/ready` begins at block index 30; `warmup_bars=30`, `lookback_bars=31`.
+3. OI is required. Missing/null/non-finite/negative OI invalidates the whole bar and resets the block; the OI reason is a diagnostic specialization.
+4. A bad/non-increasing timestamp invalidates the offending bar; it cannot seed a new block; later bars must exceed the historical maximum parseable timestamp.
+5. A false re-arm streak condition resets directly to zero; unavailable/warm-up pauses.
+6. TURNOVER with exact zero direction has signed score zero.
+7. The exact parameter is `liquidation_dominated_oi_threshold`.
+8. Caution uses dynamic series markers, never fixed `+92/-92` numeric points.
+9. Python and Web use `half_away_from_zero_binary64`; state/threshold decisions use raw values.
+
+Changing any item requires a new Spec/version, not a “small implementation fix”.
+
+## 3. Exact Scope
+
+### Included
+
+- Python V1 Indicator Kernel;
+- exact Registry and FormalPolicy;
+- V0 regression protection;
+- per-bar physical-contract identity in Web read models;
+- TypeScript Web mirror;
+- one shared frozen Python/Web golden fixture;
+- bottom-pane tabs `MACD / 主力照妖镜 / 原型V0`;
+- dynamic bilateral caution markers and V1 hover facts;
+- read-only Historical Shadow service and CLI;
+- repository-native tests, build, documentation, independent review, develop-only closeout.
+
+### Excluded
+
+- any V0 formula/version/golden/capability change;
+- frequencies other than 60m;
+- continuous-series interpretation;
+- member positions, L2, tick aggressor, second provider;
+- measured fund-flow percentage or participant identity;
+- formal backtest engine/API/Web/worker;
+- Alert Rule/Scope/evaluator or notification;
+- Execution Review automatic entry;
+- DB/migration/Catalog/Canonical/Parquet/Redis mutation;
+- background worker/queue/outbox;
+- account, position, risk, order, or auto-order path;
+- real representative-matrix Shadow run;
+- formal evidence persistence;
+- `main`, release/tag, Runtime reload/promotion.
+
+## Codex 调度建议
+
+- 任务车道：Lane 3 主控；内部按 Task 使用 Lane 3 / Lane 2 / Lane 1
 - 执行入口：Codex App
-- 推荐模型：Sol
-- 推理强度：高
-- 会话：新开总控会话；每个 Task fresh 子会话/agent
-- Plan：Plan-then-execute；严格执行已批准 Spec/Implementation Plan，不重新 brainstorming
-- 工作区：每个 Task 从执行时最新 `develop` 创建新 task branch/worktree
-- 人工 Gate：Task 1 首次实现前需要用户明确批准；Lane 3 Task 独立 Review；最终 whole-branch 独立 Review；release/Runtime/真实 Shadow 均不在本合同
+- 推荐模型：Sol；Task 4 与 Task 6 可使用 Terra
+- 推理强度：高；纯 Web plumbing 为中
+- 会话：每个独立 Task 新开会话；Task 8 新开独立 Review 会话
+- Plan：Lane 3 Task 为 Plan-only → 人工批准 → 执行；Lane 1/2 为 Plan-then-execute
+- 工作区：每个 Task 从执行时最新 `origin/develop` 创建新 task branch/worktree
+- 人工 Gate：Lane 3 Task Plan 批准 + 独立 Review；最终 whole-branch Review；release/Runtime/真实 Shadow 均未授权
 
-### Worktree / Branch / PR 规则
+涉及 worktree 的固定流转：
 
 ```text
-latest origin/develop
-→ task branch/worktree
-→ task RED/GREEN/verification/self-review
-→ task PR or equivalent reviewable integration record → develop
+execution-time latest origin/develop
+→ one Task branch/worktree
+→ RED/GREEN + scoped verification
+→ required Review
+→ integrate develop
 → read back develop ancestry
-→ cleanup merged task worktree/branch
+→ remove only the merged Task worktree/branch
 ```
 
-- Task 1 未获新的明确实现批准前不得创建实现 worktree 或修改代码；
-- Task 1/2/4 必须独立 Review 后才可进 `develop`；
-- Task 3/5/6 也必须跑本合同定向测试；可由 Codex 在 review clean 后自动集成 `develop`；
-- Task 7 使用新独立 Sol Review 会话；Critical/Important 必须为 0；
-- 所有 Task 都从**当时最新 develop** 开始，不能长期堆叠在一个陈旧 task branch；
-- 不允许任何 task branch 直接合并 `main`；
-- 不创建正式 tag；
-- 不修改 Runtime worktree；
-- task branch 合入并读回 `develop` 后才清理；未合入/有未提交文件时不强制删除。
+- 从哪个 branch 创建：每次从最新 `origin/develop`
+- 完成后集成到哪个 branch：`develop`
+- 是否允许自动 task → `develop`：Lane 1/2 在测试与 Review clean 后允许；Lane 3 需 Task Plan/Review Gate
+- 是否需要 PR：推荐；至少保留等价可审查 integration record
+- 何时清理：确认提交已进入 `develop` 且 worktree clean 后
+- 是否触及 `main`、tag 或 Runtime：不允许
 
-## 3. Task Dispatch Matrix
+## 4. Codex Dispatch Matrix
 
-| Task | Lane | 模型 | 推理 | Session | Branch 建议 | Review | 完成码 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 Contracts/readiness/rounding | Lane 3 | Sol | 高 | 新 | `research/mfm-futures-v1-contracts` | 独立 | `MFM_FUTURES_V1_CONTRACTS_READY` |
-| 2 Python kernel/caution/latch | Lane 3 | Sol | 高 | 新 | `research/mfm-futures-v1-kernel` | 独立 | `MFM_FUTURES_V1_KERNEL_READY` |
-| 3 Web physical contract | Lane 2 | Terra | 中 | 新 | `feat/mfm-futures-v1-physical-contract` | task review | `MFM_FUTURES_V1_IDENTITY_READY` |
-| 4 Web mirror/parity | Lane 3 | Sol | 高 | 新 | `feat/mfm-futures-v1-web-mirror` | 独立 | `MFM_FUTURES_V1_PARITY_READY` |
-| 5 Web pane/marker/hover | Lane 2 | Terra | 中 | 新 | `feat/mfm-futures-v1-web-pane` | task review | `MFM_FUTURES_V1_WEB_READY` |
-| 6 Shadow service/CLI | Lane 1 | Sol | 高 | 新 | `research/mfm-futures-v1-shadow` | task review | `MFM_FUTURES_V1_SHADOW_CODE_READY` |
-| 7 Regression/final review | Lane 3 review | Sol | 高 | 新独立 Review | `docs/mfm-futures-v1-closeout` 或 read-only review worktree | whole-branch | `MFM_FUTURES_V1_DEVELOP_VERIFIED` |
+| Task | Lane | Entry | Model | Reasoning | Session | Plan | Workspace | Human Gate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 Python contract/readiness/rounding | Lane 3 | Codex App | Sol | 高 | new | Plan-only → approved execution | new task worktree | Task Plan approval + independent review |
+| 2 Python math/five states | Lane 3 | Codex App | Sol | 高 | new | Plan-only → approved execution | new task worktree | Task Plan approval + formula review |
+| 3 Caution/latch/Registry/Policy/V0 guard | Lane 3 | Codex App | Sol | 高 | new | Plan-only → approved execution | new task worktree | Task Plan approval + independent review |
+| 4 Web physical identity | Lane 2 | Codex App | Terra | 中 | new | Plan-then-execute | new task worktree | scoped tests/review |
+| 5 Web mirror/golden parity | Lane 3 | Codex App | Sol | 高 | new | Plan-only → approved execution | new task worktree | parity review |
+| 6 Web pane/marker/hover | Lane 2 | Codex App | Terra | 中 | new | Plan-then-execute | new task worktree | unit/E2E/build review |
+| 7 Historical Shadow/CLI | Lane 1 | Codex App | Sol | 高 | new | Plan-then-execute | new task worktree | leakage/segment review |
+| 8 Full verification/closeout | Lane 3 Review | Codex App | Sol | 高 | new independent Review | Review-only | closeout worktree | Critical=0 / Important=0 |
 
-Terra 两轮无法解决、根因涉及 formula/physical identity/parity、或范围跨三个以上模块时，停止当前 Terra 会话并用 Sol 新会话重新分析；不得在已混乱上下文中继续猜。
-
-## 4. 绝对禁止范围
-
-任何 Task 均不得：
-
-- 修改 `main_force_mirror_v0` 数学、version、golden 或 capability；
-- 把 70 写成资金流百分比、反转概率或主力账户事实；
-- 引入会员席位、Level-2、逐笔或第二 provider；
-- 新增/修改 DatasetKey、八表 Market Catalog、Canonical schema 或 Parquet 分区模型；
-- 新增 DB/migration/Redis lifecycle state/worker/queue/outbox；
-- 新增 Alert Rule、Scope、Alert evaluator、Clawbot、真实微信；
-- 修改 Execution Review；
-- 恢复通用 backtest API/Web/worker；
-- 调 provider、执行正式 Canonical/DB 写入；
-- 执行真实 `jm/ag/cu/m/sc` representative Shadow；
-- 保存正式 research evidence；
-- release `main` / tag；
-- reload/promote Runtime；
-- 创建订单、连接账户或自动改变仓位。
-
-## 5. 全局公式硬合同
-
-Codex 不得重新解释以下规则：
+Default integration:
 
 ```text
-period                 = 60m only
-series                 = contract | actual_dominant
-state first ready      = block index 20 / 21st bar
-caution/ready first    = block index 30 / 31st bar
-OI                     = required input
-caution threshold      = 70 / 100 evidence score
-round                  = half_away_from_zero_binary64 / 6 digits
-long conflict behavior = no event / no latch consume / no re-arm
-short conflict behavior= same
-re-arm interruption    = streak reset to 0
-warmup/unavailable     = pause latch/re-arm counters
-input/OI/id/time invalid= block reset
-timestamp offender     = invalid; cannot seed new block
-contract switch        = valid new contract bar may seed new block index 0
-TURNOVER direction=0   = signed score 0
-caution marker         = dynamic series marker; no fixed ±92 point
+latest develop
+→ one Task branch/worktree
+→ TDD + scoped tests
+→ required review
+→ integrate develop
+→ read back ancestry
+→ clean merged Task worktree/branch
 ```
 
-Exact parameters、reason precedence、公式与权重只看 Spec；聊天解释不是第二事实源。
+Ordinary successful Task integration to `develop` does not authorize `main`, tag, Runtime, data writes, or notifications.
 
-## 6. Task 1 执行合同 — Exact Contracts / Readiness / Rounding
+## 5. Task Sequence and Deliverables
 
-### 目标
+### Task 1 — Python contract/readiness/rounding
 
-先建立不对外注册的 V1 Python domain contract：exact parameters、result shape、valid/block/readiness、timestamp/OI reset 与统一 rounding。
+Deliver:
+- new Python module;
+- exact constants/parameters/reasons;
+- whole-bar OI validation;
+- timestamp maximum handling;
+- calculation-block reset;
+- ATR/volume/range/OI readiness;
+- `state_ready`, `caution_ready`, `ready`;
+- shared half-away rounding;
+- Task 1 tests.
 
-### 允许修改
+Allowed conclusion:
 
 ```text
-packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py
-services/quant-api/tests/test_main_force_mirror_futures.py
+PYTHON_CONTRACT_READY
 ```
 
-### 禁止
+### Task 2 — Python math/five states
 
-Task 1 不修改 Registry/Policy/Web，不让半完成 indicator 成为 consumer-visible。
+Deliver:
+- price impulse;
+- CLV/direction;
+- relative volume/participation;
+- OI impulse;
+- long/short opening pressure;
+- strength;
+- LONG_BUILD, SHORT_BUILD, SHORT_COVER, LONG_LIQUIDATION, TURNOVER;
+- signed-score and prefix-invariance tests.
 
-### 测试实现注意
-
-`ready/state_ready/caution_ready` 最终为 NumPy bool arrays；测试不得写：
-
-```python
-assert result.state_ready[19] is False
-```
-
-因为 `np.bool_ is False` 不是值比较。必须写：
-
-```python
-assert not bool(result.state_ready[19])
-assert bool(result.state_ready[20])
-assert not bool(result.caution_ready[29])
-assert bool(result.caution_ready[30])
-```
-
-这条执行合同覆盖 Plan 中示例断言的 Python identity 语法歧义，不改变 readiness 业务语义。
-
-### 验收
-
-- exact parameter key-set 等于 Spec；
-- 参数名只有 `liquidation_dominated_oi_threshold`；
-- positive/negative half-tie；
-- `-0 → 0`；
-- OI missing/null/nonfinite/negative invalid；
-- timestamp duplicate/regression/offender/new seed；
-- state index20 / caution index30；
-- contract A→B reset；
-- pytest + Ruff + diff check GREEN；
-- Independent Task Review Critical=0 / Important=0。
-
-### 完成流转
-
-在用户明确批准 Task 1 implementation 后执行；Review clean 后合入 `develop`；读回 ancestry 后清理分支/worktree。
-
-## 7. Task 2 执行合同 — Python Kernel / Caution / Latch
-
-### 目标
-
-完成 Python authoritative exact math、five-state、signed score、双向 evidence score、conflict、Episode latch/re-arm，并在完成后登记 Registry/Policy。
-
-### 允许修改
+Allowed conclusion:
 
 ```text
-packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py
-packages/quant-core/guiyi_quant/indicators/__init__.py
-packages/quant-core/guiyi_quant/indicators/registry.py
-packages/quant-core/guiyi_quant/indicators/policy.py
-services/quant-api/tests/test_main_force_mirror_futures.py
-services/quant-api/tests/test_indicator_registry_v1.py
-services/quant-api/tests/test_main_force_mirror.py   # regression assertions only
+PYTHON_BASE_KERNEL_READY
 ```
 
-### 验收
+### Task 3 — Caution/latch/policy
 
-- ATR14 Wilder seed；volume20；OI abs-delta EMA20 SMA seed；range20；
-- five states + deadband exact thresholds；
-- TURNOVER cap/zero；
-- all 8 reason weights；
-- 69/70 boundary；
-- conflict/latch exact semantics；
-- four re-arm paths + counter reset/pause；
-- prefix invariance；
-- V0 regression unchanged；
-- Registry `("60m",)` only；
-- FormalPolicy only `Web_manual_observation` allowed；
-- test/Ruff/diff GREEN；Review clean。
+Deliver:
+- eight reason conditions;
+- 69/70 candidate boundary;
+- conflict fail-closed;
+- long/short latch and four re-arm paths;
+- Registry 60m-only support;
+- Web-only FormalPolicy;
+- package exports;
+- V0 unchanged regression;
+- independent formula review.
 
-## 8. Task 3 执行合同 — Web Physical Contract Identity
-
-### 目标
-
-给每根 Web Bar 建立可验证 physical contract identity，使 actual-dominant 换月成为真实 calculation reset，而不是价格/OI 假信号。
-
-### 允许修改
+Allowed conclusion:
 
 ```text
-apps/quant-web/src/types/market.ts
-apps/quant-web/src/composables/useMarketSeries.ts
-apps/quant-web/tests/marketSeries.test.ts
+PYTHON_V1_POLICY_READY
 ```
 
-### 实现细节
+### Task 4 — Web physical identity
 
-可增加 Web-only：
+Deliver:
+- `BarData.physicalContract`;
+- contract and actual-dominant Historical mapping;
+- segment conflict fail-closed;
+- snapshot/bar overlay identity;
+- no `live_contract` guessing;
+- prepend/replace/live preservation;
+- Web unit/Market runtime regression.
 
-```ts
-physicalContract?: string
-physicalContractReason?:
-  | 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING'
-  | 'MFM_FUTURES_V1_SEGMENT_CONFLICT'
-```
-
-不得修改 Canonical DTO/HTTP schema 来保存该字段。
-
-### 验收
-
-contract、actual_dominant exact one/zero/multiple segment、prepend page、snapshot、subsequent bar、no-identity bar 均有测试；不得从 `live_contract` 猜普通 bar identity；Node test + diff GREEN。
-
-## 9. Task 4 执行合同 — Web Mirror / Shared Golden
-
-### 目标
-
-实现 `mainForceMirrorFutures.ts`，与 Python authority 共用一份 deterministic golden，逐点锁定 9 项用户 Review 边界。
-
-### 允许修改/新增
+Allowed conclusion:
 
 ```text
-apps/quant-web/src/utils/mainForceMirrorFutures.ts
-apps/quant-web/tests/mainForceMirrorFutures.test.ts
-tests/fixtures/main_force_mirror_futures_v1_golden.json
-services/quant-api/tests/test_main_force_mirror_futures.py
+WEB_PHYSICAL_IDENTITY_READY
 ```
 
-### 验收
+### Task 5 — Web mirror/golden
 
-单 fixture 同时覆盖 2 contracts、5 states、long/short warning、conflict、re-arm、missing OI、timestamp regression、half-ties、state/caution readiness；Python 与 Web 所有 public fields deep-equal；prefix invariance；Review clean。
+Deliver:
+- one shared root golden fixture;
+- TypeScript mirror;
+- identical rounding and operation order;
+- exact point-by-point Python/Web comparison;
+- conflict/re-arm/OI gap/timestamp/segment/readiness/tie cases;
+- independent parity review.
 
-不得创建 Python fixture + Web fixture 两份人工副本。
-
-## 10. Task 5 执行合同 — Three Tabs / Dynamic Marker / Hover
-
-### 目标
-
-现有 pane 2 改为：
+Allowed conclusion:
 
 ```text
-MACD | 主力照妖镜 | 原型V0
+PYTHON_WEB_PARITY_READY
 ```
 
-其中 `主力照妖镜`=Futures V1，`原型V0`=已发布 V0；默认仍 MACD。
+### Task 6 — Web pane/markers/hover
 
-### 允许修改
+Deliver:
+- tabs `MACD / 主力照妖镜 / 原型V0`;
+- MACD default;
+- V1 support/disabled logic;
+- V1 histogram;
+- dynamic long/short markers;
+- no fixed caution numeric point;
+- V1 hover and reason display;
+- V0 still accessible;
+- no-refetch E2E and production build.
+
+Allowed conclusion:
 
 ```text
-apps/quant-web/src/components/kline/KlineChart.vue
-apps/quant-web/src/components/kline/KlineHoverLegend.vue
-apps/quant-web/src/utils/klineViewModel.ts
-apps/quant-web/src/types/market.ts
-apps/quant-web/src/pages/market/chart.vue
-apps/quant-web/src/styles/chartTheme.ts
-apps/quant-web/src/styles/tokens.css
-apps/quant-web/tests/kline-view-model.test.ts
-apps/quant-web/e2e/main-force-mirror-futures.spec.mjs
-apps/quant-web/e2e/main-force-mirror.spec.mjs
-apps/quant-web/e2e/market-runtime.spec.mjs  # 仅已有 harness 所需回归
+WEB_OBSERVATION_READY
 ```
 
-### 验收
+### Task 7 — Historical Shadow/CLI
 
-- V1 only enabled for 60m contract/actual_dominant；
-- 15m/continuous disabled；
-- Tab switch no refetch；
-- pane count unchanged；
-- three series/marker families clear each other；
-- long marker above/arrowDown、short below/arrowUp；
-- no `±92` value；
-- strength 100 不改变 marker scale；
-- Hover 有 physical contract/state/readiness/OI/score/reason；
-- 70 disclaimer visible；
-- V0 original formula UI still available；
-- Web unit、target Playwright、production build GREEN。
+Deliver:
+- MarketDataService-only service;
+- 60m contract/actual-dominant validation;
+- directional events;
+- conflict diagnostic only;
+- 1/3/5/10 same-segment outcomes;
+- readonly stdout CLI;
+- no persistence/promotion;
+- leakage/identity review.
 
-## 11. Task 6 执行合同 — Historical Shadow Code / CLI
-
-### 目标
-
-建立只读 `guiyi research main-force-mirror-futures`，复用 MarketDataService + Python kernel，计算 segment-local warnings 与 1/3/5/10 outcome summaries。
-
-### 允许修改/新增
+Allowed conclusion:
 
 ```text
-services/quant-api/app/market_data/main_force_mirror_futures_research_service.py
-services/quant-api/app/market_data/composition.py
-services/quant-api/app/guiyi_cli/research_parser.py
-services/quant-api/app/guiyi_cli/research_commands.py
-services/quant-api/app/guiyi_cli/main.py
-services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py
-services/quant-api/tests/test_research_cli.py
+READONLY_SHADOW_CODE_READY
 ```
 
-### 验收
+This conclusion does not mean a real Shadow matrix was executed.
 
-- request rejects unsupported series/frequency；
-- contract requires contract；
-- actual_dominant uses existing resolver/segments；
-- no direct Parquet/provider/Redis；
-- conflict not event；
-- outcomes do not cross segment；
-- stdout readonly JSON；
-- no evidence file/DB/Canonical write；
-- no promotion/recommendation field；
-- tests/Ruff/diff GREEN。
+### Task 8 — full closeout
 
-真实代表矩阵 `jm/ag/cu/m/sc` 不在本 Task 执行。
+Deliver:
+- full backend/engineering/Ruff/Mypy/Web/E2E/build/safety checks;
+- updated Indicator Kernel and Testing canonical docs;
+- independent final Review;
+- develop-only STATUS entry after all gates;
+- readback and cleanup.
 
-## 12. Task 7 执行合同 — Full Regression / Independent Review / Closeout
-
-### 目标
-
-执行仓库原生完整验证、独立 whole-branch Review，只有 clean 后更新 canonical docs 和 `STATUS.md` develop-only 状态。
-
-### 允许修改
+Allowed conclusion:
 
 ```text
-docs/INDICATOR_KERNEL.md
-TESTING.md
-STATUS.md  # only after all verification + review pass
+DEVELOP_IMPLEMENTATION_VERIFIED
 ```
 
-Review finding 的代码修复可修改 Task 1–6 已触及文件，但必须先补 regression test。
+## 6. Stable Stop Codes
 
-### Required verification
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_main_force_mirror_futures.py \
-  services/quant-api/tests/test_main_force_mirror.py \
-  services/quant-api/tests/test_indicator_registry_v1.py \
-  services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
-  services/quant-api/tests/test_research_cli.py
-
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-uv run --offline --project services/quant-api pytest -q services/quant-api/tests
-
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-uv run --offline --project services/quant-api ruff check \
-  services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant
-
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-MYPYPATH=services/quant-api \
-uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
-  services/quant-api/app/market_data services/quant-api/app/guiyi_cli \
-  services/quant-api/app/alerts services/quant-api/app/execution_review \
-  services/quant-api/app/services/runtime_health.py \
-  services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py \
-  services/quant-api/app/api/alerts.py services/quant-api/app/api/execution_review.py
-
-pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web exec playwright test \
-  e2e/main-force-mirror-futures.spec.mjs \
-  e2e/main-force-mirror.spec.mjs \
-  e2e/market-runtime.spec.mjs
-pnpm --dir apps/quant-web build
-
-python3 scripts/engineering/secret_scan.py --json
-git diff --check
-git status --short
-```
-
-执行时如果最新 `TESTING.md` 要求更多受影响测试，以最新文件为准，只能增加不能删减。
-
-### Review Gate
-
-新独立 Sol Review：
-
-```text
-Critical = 0
-Important = 0
-```
-
-重点逐条审：
-
-1. conflict 不消耗 latch；
-2. state 21 / caution 31；
-3. OI 缺失整根 invalid；
-4. timestamp offender 不 seed；
-5. streak interruption reset=0；
-6. TURNOVER zero；
-7. parameter rename；
-8. dynamic marker no ±92；
-9. half-away Python/Web parity；
-10. V0 invariance；
-11. physical segment reset；
-12. no Alert/DB/Runtime/order path。
-
-### STATUS 允许写入的唯一结论
-
-```text
-main_force_mirror_futures_v1
-DEVELOP CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE
-observation_only
-```
-
-并明确：未 release、未 Runtime promotion、未真实 representative Shadow、未正式 evidence、未 Alert/notification。
-
-## 13. 全局失败码 / 停止条件
-
-Codex 遇到以下情况不得自行降级：
+Stop instead of guessing when any condition applies:
 
 ```text
 FORMULA_DRIFT_REQUIRES_NEW_VERSION
-MFM_FUTURES_V1_FREQUENCY_UNSUPPORTED
-MFM_FUTURES_V1_SERIES_UNSUPPORTED
-MFM_FUTURES_V1_SEGMENT_CONFLICT
-MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING
-MFM_FUTURES_V1_TIMESTAMP_INVALID
-MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE
-MFM_FUTURES_V1_INPUT_INVALID
-MFM_FUTURES_V1_WARMUP
-MFM_FUTURES_V1_CAUTION_WARMUP
-MFM_FUTURES_V1_ATR_INVALID
-MFM_FUTURES_V1_VOLUME_BASELINE_INVALID
-MFM_FUTURES_V1_RANGE_INVALID
-MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT
 ```
 
-这些是业务结果/诊断；真正停止整个实现的条件是：active canonical 与 Spec 冲突、需要新公式选择、测试无法在不改变业务合同的前提下修复、或会触发本合同禁止的真实外部副作用。
-
-## 14. 每个 Codex 会话的最小执行 Prompt
+A fix requires changing a frozen parameter, formula, threshold, evidence weight, readiness index, conflict/latch/re-arm, rounding, or supported identity.
 
 ```text
-请先阅读最新：
-- STATUS.md
-- AGENTS.md
-- docs/DEVELOPMENT.md
-- PROJECT_SOURCE.md
-- DECISIONS.md
-- docs/superpowers/specs/2026-08-19-main-force-mirror-futures-v1-design.md
-- docs/superpowers/plans/2026-08-19-main-force-mirror-futures-v1.md
-- docs/tasks/TASK-MAIN-FORCE-MIRROR-FUTURES-V1-20260819.md
-
-执行 TASK-MAIN-FORCE-MIRROR-FUTURES-V1-20260819 的 Task <N>。
-
-只有在用户已明确批准当前 Task implementation 时才执行；否则只读 Plan 并停止在 Gate 前。
-以本 Task 执行时最新 origin/develop 创建独立 task branch/worktree。
-Spec 是公式/行为最高权威；Plan 是实施步骤；TASK 是允许/禁止与流转合同。
-
-必须 TDD：先 RED，确认失败，再最小 GREEN。
-不得改变 V0，不得重新选择 V1 参数/阈值/readiness/conflict/re-arm/rounding。
-若必须改变公式，停止并输出 FORMULA_DRIFT_REQUIRES_NEW_VERSION。
-
-不得触碰 main/tag/release/Runtime、真实 Shadow、DB/Canonical、Alert/Scope/通知或订单。
-
-完成后：
-1. 运行本 Task 定向验证；
-2. 自审 scope 与 forbidden paths；
-3. 按调度矩阵完成独立 Task Review；
-4. review clean 后按仓库流程集成 develop；
-5. 读回 develop ancestry；
-6. 安全清理已合并临时 worktree/branch；
-7. 输出修改摘要、RED/GREEN 证据、测试结果、Review 结果、集成/清理结果、风险和未完成项。
+PHYSICAL_IDENTITY_CONTRACT_UNRESOLVED
 ```
 
-将 `<N>` 替换为 1–7 的精确 Task 编号，不得一次 Codex 会话跨多个独立 Task 实现；Task 7 whole-branch Review 除外。
-
-## 15. 用户最终审查重点
-
-用户不需要逐行审核所有机械代码，重点确认：
-
-- 五状态的解释仍是“更偏向”，没有变成主力账户事实；
-- 70 仍是 evidence score；
-- OI/换月 identity 没有被 fallback；
-- conflict/latch/re-arm 与 approved Spec 一致；
-- Python/Web golden 没有通过重复两份实现“假一致”；
-- V0 可以继续历史复现；
-- Web 的“主力照妖镜”已经是 Futures V1，“原型V0”明确区分；
-- Shadow 只产生研究统计，没有 promotion；
-- `STATUS.md` 没有提前宣布 release/Runtime/策略有效。
-
-## 16. 当前结论
+The Web/Shadow path cannot bind each required bar to exactly one physical contract without guessing or changing the Market data contract.
 
 ```text
-PLAN_READY
-WAITING_FOR_TASK1_IMPLEMENTATION_APPROVAL
+PYTHON_WEB_PARITY_BLOCKED
 ```
 
-该结论只代表设计、Implementation Plan 和 TASK 执行合同完整；不代表任何代码 Task 已执行，也不构成 Lane 3 Task 1 的实现授权，更不授权 release、Runtime 或真实研究运行。
+The same shared fixture does not produce exact identical public output after verifying operation order and rounding.
+
+```text
+V0_REGRESSION_DETECTED
+```
+
+V0 output, metadata, Registry, policy, or Web behavior changes.
+
+```text
+SHADOW_DATA_IDENTITY_BLOCKED
+```
+
+The read-only research service would need direct Parquet/provider/Redis access, copied rank1 resolution, or cross-segment outcomes.
+
+```text
+FULL_VERIFICATION_FAILED
+```
+
+Any required Task 8 command fails or cannot be run in the required isolated environment.
+
+```text
+CANONICAL_CONFLICT
+```
+
+`STATUS.md`, `AGENTS.md`, `docs/DEVELOPMENT.md`, `PROJECT_SOURCE.md`, `DECISIONS.md`, `docs/INDICATOR_KERNEL.md`, the Spec, or later accepted ADR contradicts this Task.
+
+A stop code is a blocking result, not permission to weaken validation.
+
+## 7. Acceptance Gates
+
+### Formula/Kernel
+
+- V0 exact regression remains green.
+- V1 parameters/hash/support/capabilities match Spec.
+- OI and timestamp invalidation match exact block semantics.
+- readiness indices are exact.
+- all five states and boundaries pass.
+- all eight bilateral reasons pass.
+- 69 does not trigger; 70 triggers.
+- conflict does not consume latches.
+- all four re-arm paths and reset/pause rules pass.
+- binary64 half-away parity passes.
+
+### Web
+
+- every V1-ready bar has exact `physicalContract`;
+- contract/actual-dominant mapping is deterministic;
+- unsupported identity is disabled, not silently substituted;
+- tabs are exact and local;
+- marker direction/text/score is exact;
+- no fixed ±92 caution data exists;
+- hover distinguishes missing, warm-up, caution warm-up, conflict, ready;
+- switching tabs does not fetch bars or alter the main chart/Alert markers;
+- no responsive overflow;
+- production build passes.
+
+### Shadow
+
+- only `MarketDataService`;
+- no future leakage into event creation;
+- outcomes stay inside one physical segment;
+- conflict is diagnostic, not event;
+- CLI is readonly stdout JSON;
+- no promotion/recommendation/profitability field;
+- no real matrix run under this contract.
+
+### Final
+
+- full repository-native checks pass;
+- secret scan has zero findings;
+- diff check passes;
+- independent Review has Critical=0 / Important=0;
+- STATUS says develop-only and no more.
+
+## 8. Worktree and Integration Rules
+
+For each implementation Task:
+
+1. fetch `origin`;
+2. create from current latest `origin/develop`;
+3. verify Spec-fix commit `a5180f97...` is an ancestor;
+4. read current canonical docs and exact Task section;
+5. modify only listed Task files;
+6. run RED before implementation;
+7. run GREEN and scoped regression;
+8. perform self-review;
+9. obtain required independent review;
+10. integrate only to `develop`;
+11. read back the integrated commit;
+12. remove only that merged Task worktree/branch.
+
+Do not:
+- reuse a stale Task branch after `develop` changes;
+- force-update refs;
+- mix two independent Tasks in one branch;
+- clean another Task’s worktree;
+- touch `main`, tag, release, Runtime, production data, or notification.
+
+## 9. Copyable Codex Master Prompt
+
+```text
+请先读取并遵守：
+
+1. STATUS.md
+2. AGENTS.md
+3. docs/DEVELOPMENT.md
+4. PROJECT_SOURCE.md
+5. DECISIONS.md
+6. docs/INDICATOR_KERNEL.md
+7. docs/superpowers/specs/2026-08-19-main-force-mirror-futures-v1-design.md
+8. docs/superpowers/plans/2026-08-19-main-force-mirror-futures-v1.md
+9. docs/tasks/TASK-MAIN-FORCE-MIRROR-FUTURES-V1-20260819.md
+10. GitHub Issue #179
+
+你正在执行主力照妖镜·期货 V1 的一个明确 Task，不是自由重构。
+
+先确认：
+- 当前基线是 execution-time 最新、clean 的 origin/develop；
+- `a5180f97c5ac6675a6d73e6a48bc837efac8be06` 是当前基线祖先；
+- 当前 Task 的 Lane、模型、Plan 模式、允许文件和禁止范围；
+- main、tag、release、Runtime、真实通知、真实 Shadow、DB/Canonical 写入均未获授权。
+
+必须使用 Superpowers：
+- 实现会话使用 subagent-driven-development（推荐）或 executing-plans；
+- 每个行为先写失败测试并实际观察 RED；
+- 最小实现后观察 GREEN；
+- 完成 Task 后进行自审和要求的独立 Review；
+- 声明完成前运行该 Task 的完整验证命令。
+
+数学和业务权威只看已批准 Spec：
+- V0 零修改；
+- V1 仅 60m + contract|actual_dominant；
+- OI 必需，缺失整根 invalid；
+- state_ready 第21根、完整 ready 第31根；
+- conflict 不消耗 latch；
+- re-arm 中断清零、unavailable 暂停；
+- TURNOVER direction=0 输出0；
+- 参数名 liquidation_dominated_oi_threshold；
+- marker 动态附着，不使用固定 ±92；
+- half_away_from_zero_binary64；
+- 70 是证据评分，不是资金比例或概率。
+
+不得：
+- 调整公式、参数、阈值、权重、reason、readiness 或支持周期；
+- 读取/输出凭据；
+- 直读 Parquet、调用 RQData、复制主力 resolver；
+- 新增 Alert/通知/订单/DB/Catalog/Canonical/Redis/worker/queue；
+- 发布 main/tag 或切换 Runtime；
+- 运行真实代表矩阵 Shadow；
+- 用部分测试冒充完整通过。
+
+如发现必须改变设计，输出：
+FORMULA_DRIFT_REQUIRES_NEW_VERSION
+
+如无法确定物理合约，输出：
+PHYSICAL_IDENTITY_CONTRACT_UNRESOLVED
+
+如 Python/Web 不一致，输出：
+PYTHON_WEB_PARITY_BLOCKED
+
+如 V0 变化，输出：
+V0_REGRESSION_DETECTED
+
+如 Shadow 身份/泄漏边界失败，输出：
+SHADOW_DATA_IDENTITY_BLOCKED
+
+如验证失败，输出：
+FULL_VERIFICATION_FAILED
+
+当前只执行用户明确批准的 Task N。
+按 Plan 中 Task N 的步骤逐项完成，不提前执行后续 Task。
+
+完成后输出：
+- baseline branch/commit
+- 修改文件
+- RED 证据
+- GREEN 与回归结果
+- Review 结论
+- 公式/身份/能力边界核对
+- commit/PR/集成结果
+- develop ancestry readback
+- worktree/branch 清理结果
+- 风险、停止码和未完成项
+
+不得把 develop 实现写成 release、Runtime-ready、策略有效、可盈利或可交易。
+```
+
+## 10. Required Codex Completion Report
+
+Every Task report contains:
+
+```text
+Task ID
+Task number and Lane
+base develop commit
+task branch/worktree
+changed paths
+RED command and observed failure
+GREEN/scoped commands and result
+review findings and resolution
+V0 guard result
+forbidden-path scan result
+commit SHA
+develop integration/readback
+cleanup result
+remaining risks
+final decision
+```
+
+Allowed final decisions:
+
+```text
+允许继续实现
+允许集成 develop
+要求修正后再集成
+阻塞
+```
+
+No other phrase grants release, tag, Runtime, real Shadow, evidence persistence, Alert, notification, data write, or order permission.
+
+## 11. Current Handoff
+
+Current document state:
+
+```text
+Spec: approved and review gaps resolved
+Plan: ready
+TASK: ready
+Issue #179: lifecycle entry
+Implementation: not started by this documentation action
+Release/Runtime/real Shadow: not authorized
+```
+
+Next legitimate action is an explicit user approval to start Task 1 or the full Task 1–8 implementation sequence. Lane 3 Tasks still retain their Plan/review Gates even when the overall sequence is approved.
