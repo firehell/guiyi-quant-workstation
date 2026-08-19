@@ -116,6 +116,7 @@ class SubingLifecycleState:
         invalid = self.confirmed_at is not None and not has_aware_confirmation_time
         if (
             has_aware_confirmation_time
+            and isinstance(self.confirmed_at, datetime)
             and isinstance(self.opportunity_key, SubingOpportunityKey)
             and self.confirmed_at < self.opportunity_key.origin_at
         ):
