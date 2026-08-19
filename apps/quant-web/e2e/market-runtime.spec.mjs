@@ -88,7 +88,7 @@ async function installFakeWebSocket(page) {
   })
 }
 
-async function mockMarketApi(page, requests) {
+async function mockMarketApi(page, requests, controls = {}) {
   const initialStart = Date.UTC(2026, 7, 7, 1)
   const initial = bars(initialStart, 1200)
   const daily = dailyBars(Date.UTC(2026, 0, 1, 7), 120)
@@ -115,8 +115,10 @@ async function mockMarketApi(page, requests) {
         series_kind: kind,
         frequency,
         phase: weekend ? 'CLOSED' : (breaking ? 'BREAK' : 'TRADING'),
+        trading_day: weekend ? '2026-08-19' : '2026-08-07',
         live_eligible: !weekend && !breaking,
         live_available: !weekend && !breaking,
+        after_market: weekend ? { last_successful_trading_day: null } : {},
       }) })
       return
     }
@@ -128,6 +130,10 @@ async function mockMarketApi(page, requests) {
         ? daily
         : before
         ? older
+        : (symbol === 'jm' && controls.jmCanonicalReady === false)
+        ? initial
+        : (symbol === 'jm' && controls.jmCanonicalReady === true)
+        ? formalAdvance
         : (requests.filter((request) => request.pathname.endsWith('/bars/page') && request.searchParams.get('symbol') === symbol).length > 1
             ? formalAdvance
             : initial)
@@ -164,7 +170,7 @@ test('renders the latest canonical page first, paginates left, and overlays actu
   await expect.poll(() => page.evaluate(() => window.__marketSockets.filter((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).length)).toBe(1)
 
   await page.evaluate(() => {
-    window.__marketSockets.find((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).serverSend({ type: 'snapshot', bars: [
+    window.__marketSockets.find((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).serverSend({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-19', contract: 'AG2601', bars: [
       { bar_end: '2026-08-19T13:00:00.000Z', trading_day: '2026-08-19', open: 1299, high: 1301, low: 1298, close: 1300, volume: 1, turnover: null, open_interest: null },
       { bar_end: '2026-08-19T13:15:00.000Z', trading_day: '2026-08-19', open: 1300, high: 1302, low: 1299, close: 1301, volume: 1, turnover: null, open_interest: null },
     ] })
@@ -213,6 +219,46 @@ test('keeps continuous, BREAK, and weekend-closed history readable without Live 
   await expect(page.getByTestId('market-display-state')).toHaveText('Historical')
   await expect(page.getByTestId('market-phase')).toHaveText('已收盘')
   await expect(page.locator('.overlay.error')).toHaveCount(0)
+})
+
+test('shows a post-close snapshot until the canonical edge takes it over', async ({ page }) => {
+  const requests = []
+  const controls = { jmCanonicalReady: false }
+  await installFakeWebSocket(page)
+  await mockMarketApi(page, requests, controls)
+
+  await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=15m')
+  await expect(page.locator('.identity-row strong')).toHaveText('JM 焦煤')
+  await expect(page.getByTestId('market-display-state')).toHaveText('Historical')
+  await expect.poll(() => page.evaluate(() => window.__marketSockets.some((socket) => !socket.closed && socket.url.includes('symbol=jm')))).toBe(true)
+
+  await page.evaluate(() => {
+    const payload = {
+      type: 'snapshot',
+      source: 'post_close',
+      trading_day: '2026-08-19',
+      contract: 'JM2601',
+      bars: [
+        { bar_end: '2026-08-19T13:00:00.000Z', trading_day: '2026-08-19', open: 1299, high: 1301, low: 1298, close: 1300, volume: 1, turnover: null, open_interest: null },
+      ],
+    }
+    for (const socket of window.__marketSockets.filter((candidate) => !candidate.closed && candidate.url.includes('symbol=jm'))) socket.serverSend(payload)
+  })
+  await expect(page.getByTestId('market-display-state')).toHaveText('收盘快照 · 待盘后更新')
+  await expect(page.getByText('1201 bars')).toBeVisible()
+
+  controls.jmCanonicalReady = true
+  await page.evaluate(() => {
+    const payload = { type: 'state', state: {
+      symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', operational: true, phase: 'CLOSED',
+      trading_day: '2026-08-19', live_eligible: false, live_available: false, live_contract: null,
+      canonical_end: '2026-08-19T13:00:00.000Z', after_market: { last_successful_trading_day: '2026-08-19' },
+    } }
+    for (const socket of window.__marketSockets.filter((candidate) => !candidate.closed && candidate.url.includes('symbol=jm'))) socket.serverSend(payload)
+  })
+  await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page') && url.searchParams.get('symbol') === 'jm').length).toBe(2)
+  await expect(page.getByTestId('market-display-state')).toHaveText('Historical')
+  await expect(page.getByText('1201 bars')).toBeVisible()
 })
 
 test('does not leak a stale symbol websocket message after switching the displayed symbol', async ({ page }) => {

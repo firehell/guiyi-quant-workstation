@@ -2,6 +2,15 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.6.1] - 2026-08-19
+
+- 修复日盘收盘后、Canonical 盘后更新接管前刷新或切换 Market K 线时，当日已完成 Bar 消失的问题；
+  Market WebSocket 新增只读 `post_close` 展示快照，并在 Canonical edge 前移后按 `bar_end` 无缝交接。
+- `post_close` 仅限 CLOSED phase、operational product、五个日内周期与 Redis subscription 精确身份，
+  Redis/交易日/合约异常均 fail-closed；它不依赖 heartbeat，也不会被视为 realtime Live。
+- 不改变 `live_snapshot()`、`bars_until()`、SuBing、Alert、Redis TTL、18:05 调度、Canonical、Catalog、
+  MainContractMap、数据库或通知语义；production Runtime 在独立 promotion Gate 前继续保持 `v1.6.0`。
+
 ## [1.6.0] - 2026-08-19
 
 - 新增 causal、`observation_only` 的主力照妖镜 V0：Python Indicator Kernel 为唯一数学口径，Web

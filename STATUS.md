@@ -8,7 +8,8 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 Git release 与 production Runtime 均为 `v1.6.0@5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`。
+- 当前 `develop` 正在形成 `v1.6.1` Release Candidate；Git release 与 production Runtime 仍均为
+  `v1.6.0@5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
@@ -29,6 +30,23 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+
+## v1.6.1 收盘快照交接（RELEASE CANDIDATE / RUNTIME PROMOTION PENDING）
+
+- Market WebSocket 新增同次读取的 `MarketDisplaySnapshot`：`realtime` 继续要求既有 live eligibility 与
+  heartbeat；`post_close` 仅在 CLOSED phase、operational product、1m/5m/15m/30m/60m，以及
+  actual-dominant 或 Redis subscription 精确真实合约身份下读取当日完成 Bar。
+- `post_close` 只补齐 Canonical 盘后接管前的展示空窗，不进入 `live_snapshot()`、`bars_until()`、
+  SuBing 或 Alert；Redis/交易日/合约异常返回 `none`。Web 在 Canonical edge 前移后按 `bar_end` 接管，
+  并保持 `isLiveDisplay` 仅代表 realtime。
+- Release Candidate 已通过 backend `1392 passed`（隔离 PostgreSQL 库 OID `581975`，production OID
+  `16384`）、Market Runtime 专项 `130 passed`、engineering `53 passed`、Ruff、Mypy `61 source files`、
+  Web unit `173 passed / 1 conditional skip`、完整 browser `66 passed`、修复后 Market browser `5 passed`、
+  production build `2996 modules`、shell/plist/render-only、secret scan 0 与 diff check。独立 Review 为
+  Critical=`0` / Important=`0` / Minor=`0`。
+- develop push、main Release PR 与 annotated `v1.6.1` tag 仍待完成。production Runtime 保持 `v1.6.0`；
+  未创建 v1.6.1 Runtime worktree，未执行 Runtime build/reload、migration、RQData/Canonical/DB 写入、
+  Scope/通知或手工盘后任务。
 
 ## v1.6.0 Release / Runtime（RELEASED / RUNTIME PROMOTED）
 

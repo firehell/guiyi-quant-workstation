@@ -82,6 +82,7 @@ const {
   loadingBefore,
   marketState,
   liveUnavailable,
+  overlaySource,
   mutation,
   replaceSeries,
   loadMoreBefore,
@@ -172,6 +173,11 @@ const canLoadEarlier = computed(() => {
 const isLiveDisplay = computed(() => !!marketState.value?.live_eligible
   && !!marketState.value.live_available
   && !liveUnavailable.value)
+const isPostCloseDisplay = computed(() => overlaySource.value === 'post_close')
+const displayStateLabel = computed(() => {
+  if (isPostCloseDisplay.value) return '收盘快照 · 待盘后更新'
+  return isLiveDisplay.value ? 'Live' : 'Historical'
+})
 const phaseLabel = computed(() => {
   switch (marketState.value?.phase) {
     case 'TRADING': return '交易中'
@@ -520,7 +526,10 @@ function normalizeSymbol(value: unknown): string | null {
           <span>{{ visibleBars.length }} bars</span>
           <span v-if="canonicalCoverage">{{ canonicalCoverage.start }} → {{ canonicalCoverage.end }}</span>
           <NTag v-if="canLoadEarlier" type="info">可继续向前加载</NTag>
-          <NTag data-testid="market-display-state" :type="isLiveDisplay ? 'success' : 'default'">{{ isLiveDisplay ? 'Live' : 'Historical' }}</NTag>
+          <NTag
+            data-testid="market-display-state"
+            :type="isLiveDisplay ? 'success' : (isPostCloseDisplay ? 'warning' : 'default')"
+          >{{ displayStateLabel }}</NTag>
           <NTag data-testid="market-phase">{{ phaseLabel }}</NTag>
           <span v-if="isLiveDisplay && marketState?.live_contract">当前 Live 主力合约 {{ marketState.live_contract }}</span>
           <NTag v-if="afterMarketFailed" type="warning">最近盘后更新失败</NTag>

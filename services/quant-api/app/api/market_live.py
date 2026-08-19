@@ -71,22 +71,30 @@ async def market_websocket(
     channels = (live_bar_channel(identity.symbol, identity.frequency), LIVE_STATE_CHANNEL)
     try:
         await pubsub.subscribe(*channels)
-        initial_state = _read_and_release_session(
+        display = _read_and_release_session(
             session,
-            lambda: read_service.state(identity, datetime.now(UTC)),
+            lambda: read_service.display_snapshot(identity, after, datetime.now(UTC)),
         )
+        initial_state = display.state
         await websocket.accept()
         await _send_state(websocket, initial_state)
 
         cutoff = _later(after, initial_state.canonical_end)
-        snapshot = _read_and_release_session(
-            session,
-            lambda: read_service.live_snapshot(identity, cutoff, datetime.now(UTC)),
+        snapshot = _newer_bars(
+            display.bars,
+            canonical_end=initial_state.canonical_end,
+            after=cutoff,
         )
-        snapshot = _newer_bars(snapshot, canonical_end=initial_state.canonical_end, after=cutoff)
         await websocket.send_json(
             {
                 "type": "snapshot",
+                "source": display.source,
+                "trading_day": (
+                    None
+                    if display.trading_day is None
+                    else display.trading_day.isoformat()
+                ),
+                "contract": display.contract,
                 "bars": [_bar_response(bar) for bar in snapshot],
             }
         )

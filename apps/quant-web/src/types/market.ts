@@ -407,9 +407,17 @@ export interface MarketReadState {
   after_market: Record<string, unknown>
 }
 
+export type MarketOverlaySource = 'none' | 'realtime' | 'post_close'
+
 export type MarketWsMessage =
   | { type: 'state'; state: MarketReadState }
-  | { type: 'snapshot'; bars: CanonicalBarDto[] }
+  | {
+      type: 'snapshot'
+      source: MarketOverlaySource
+      trading_day: string | null
+      contract: string | null
+      bars: CanonicalBarDto[]
+    }
   | { type: 'bar'; bar: CanonicalBarDto }
   | { type: 'reset'; trading_day: string | null; contract: string | null }
 

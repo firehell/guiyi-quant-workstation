@@ -7,6 +7,7 @@ import type {
   MarketBarsPageRequest,
   MarketBarsPageResponse,
   MarketFrequency,
+  MarketOverlaySource,
   MarketReadState,
   MarketWsMessage,
   SeriesKind,
@@ -27,6 +28,12 @@ export interface MergedMarketPage {
   bars: BarData[]
   hasMoreBefore: boolean
   nextBefore: string | null
+}
+
+interface MarketOverlayIdentity {
+  source: Exclude<MarketOverlaySource, 'none'>
+  tradingDay: string
+  contract: string
 }
 
 export type MarketSeriesMutation =
@@ -162,7 +169,8 @@ function shouldAwaitAfterMarketSeam(
     state.phase !== 'CLOSED'
     || !state.operational
     || state.trading_day === null
-    || identity.seriesKind !== 'actual_dominant'
+    || (identity.seriesKind !== 'actual_dominant'
+      && !(identity.seriesKind === 'contract' && !!identity.contract))
     || !INTRADAY_FREQUENCIES.has(identity.frequency)
   ) return false
   return state.after_market.last_successful_trading_day !== state.trading_day
@@ -183,6 +191,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   const loadingBefore = ref(false)
   const marketState = ref<MarketReadState | null>(null)
   const liveUnavailable = ref(false)
+  const overlaySource = ref<MarketOverlaySource>('none')
   const mutation = ref<MarketSeriesMutation>({ kind: 'replace' })
   const fetchPage = dependencies.fetchPage ?? defaultFetchPage
   const fetchState = dependencies.fetchState ?? defaultFetchState
@@ -197,10 +206,21 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   let activeSocket: MarketWebSocket | null = null
   let reconnectHandle: unknown = null
   let canonicalRefreshToken = 0
+  let overlayIdentity: MarketOverlayIdentity | null = null
+
+  function clearOverlay(): void {
+    liveBars = []
+    overlaySource.value = 'none'
+    overlayIdentity = null
+  }
 
   function publishMerged(nextMutation: MarketSeriesMutation): void {
     const seam = latestEnd(canonicalBars)
     liveBars = liveBars.filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam))
+    if (!liveBars.length && overlaySource.value === 'post_close') {
+      overlaySource.value = 'none'
+      overlayIdentity = null
+    }
     bars.value = normalizeBarSeries([...canonicalBars, ...liveBars])
     mutation.value = nextMutation
   }
@@ -238,9 +258,11 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       const fresh = merged.bars
       const freshEnd = latestEnd(fresh)
       if (freshEnd === null || Date.parse(freshEnd) < Date.parse(expectedCanonicalEnd)) {
-        liveBars = []
         liveUnavailable.value = true
-        publishMerged({ kind: 'replace' })
+        if (overlaySource.value !== 'post_close') {
+          clearOverlay()
+          publishMerged({ kind: 'replace' })
+        }
         return false
       }
       const freshStart = fresh[0].time
@@ -253,20 +275,23 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       return true
     } catch {
       if (isCurrentGeneration(requestGeneration, generation) && refreshToken === canonicalRefreshToken) {
-        liveBars = []
         liveUnavailable.value = true
-        publishMerged({ kind: 'replace' })
+        if (overlaySource.value !== 'post_close') {
+          clearOverlay()
+          publishMerged({ kind: 'replace' })
+        }
       }
       return false
     }
   }
 
-  function applyLiveBars(incoming: CanonicalBarDto[]): void {
+  function applyLiveBars(incoming: CanonicalBarDto[]): boolean {
     const seam = latestEnd(canonicalBars)
     const accepted = normalizeBarSeries(incoming.map(toBarData).filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam)))
-    if (!accepted.length) return
+    if (!accepted.length) return false
     liveBars = normalizeBarSeries([...liveBars, ...accepted])
     publishMerged({ kind: 'live', bars: accepted })
+    return true
   }
 
   function openSocket(requestGeneration: number, nextIdentity: MarketSeriesIdentity): void {
@@ -284,16 +309,48 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       if (!isMarketWsMessage(payload)) return
       if (payload.type === 'snapshot') {
         liveUnavailable.value = false
-        applyLiveBars(payload.bars)
+        if (payload.source === 'none') {
+          clearOverlay()
+          publishMerged({ kind: 'replace' })
+          return
+        }
+        if (payload.trading_day === null || payload.contract === null) {
+          clearOverlay()
+          publishMerged({ kind: 'replace' })
+          return
+        }
+        const samePhysicalIdentity = overlayIdentity === null
+          || (overlayIdentity.tradingDay === payload.trading_day
+            && overlayIdentity.contract === payload.contract)
+        if (!samePhysicalIdentity) {
+          clearOverlay()
+          publishMerged({ kind: 'replace' })
+        }
+        overlayIdentity = {
+          source: payload.source,
+          tradingDay: payload.trading_day,
+          contract: payload.contract,
+        }
+        const accepted = applyLiveBars(payload.bars)
+        if (accepted || liveBars.length > 0) {
+          overlaySource.value = payload.source
+        }
+        if (payload.source === 'realtime') {
+          return
+        }
         return
       }
       if (payload.type === 'bar') {
         liveUnavailable.value = false
-        applyLiveBars([payload.bar])
+        const accepted = applyLiveBars([payload.bar])
+        if (accepted || liveBars.length > 0) {
+          overlaySource.value = 'realtime'
+          if (overlayIdentity) overlayIdentity.source = 'realtime'
+        }
         return
       }
       if (payload.type === 'reset') {
-        liveBars = []
+        clearOverlay()
         publishMerged({ kind: 'replace' })
         return
       }
@@ -346,7 +403,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     clearSocket()
     identity = { ...nextIdentity }
     canonicalBars = []
-    liveBars = []
+    clearOverlay()
     canonicalCoverage.value = null
     canonicalRefreshToken += 1
     marketState.value = null
@@ -409,6 +466,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     loadingBefore,
     marketState,
     liveUnavailable,
+    overlaySource,
     mutation,
     replaceSeries,
     loadMoreBefore,

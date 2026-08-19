@@ -223,7 +223,7 @@ describe('market Live overlay', () => {
     })
 
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
-    sockets[0].message({ type: 'snapshot', bars: [
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [
       liveBar('2026-08-07T09:30:00Z', 999),
       liveBar('2026-08-07T09:45:00Z', 101),
     ] })
@@ -399,6 +399,246 @@ describe('market Live overlay', () => {
     ])
   })
 
+  it('restores a post-close display snapshot without treating it as realtime Live', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([
+        liveBar('2026-08-10T07:00:00Z', 100),
+      ], { has_more_before: false, next_before: null }),
+      fetchState: async () => state({
+        phase: 'CLOSED',
+        trading_day: '2026-08-10',
+        live_eligible: false,
+        live_available: false,
+        canonical_end: '2026-08-10T07:00:00Z',
+        after_market: { last_successful_trading_day: null },
+      }),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({
+      type: 'snapshot',
+      source: 'post_close',
+      trading_day: '2026-08-10',
+      contract: 'AG2601',
+      bars: [liveBar('2026-08-10T07:15:00Z', 101)],
+    })
+
+    assert.equal(series.overlaySource.value, 'post_close')
+    assert.deepEqual(series.bars.value.map((bar) => bar.time), [
+      '2026-08-10T07:00:00Z',
+      '2026-08-10T07:15:00Z',
+    ])
+    assert.equal(series.marketState.value?.live_eligible, false)
+  })
+
+  it('opens the post-close handoff for an explicitly requested real contract', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([
+        liveBar('2026-08-10T07:00:00Z', 100),
+      ], { has_more_before: false, next_before: null }),
+      fetchState: async () => state({
+        series_kind: 'contract',
+        phase: 'CLOSED',
+        trading_day: '2026-08-10',
+        live_eligible: false,
+        live_available: false,
+        live_contract: null,
+        canonical_end: '2026-08-10T07:00:00Z',
+        after_market: { last_successful_trading_day: null },
+      }),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({
+      seriesKind: 'contract',
+      symbol: 'ag',
+      contract: 'AG2601',
+      frequency: '15m',
+    })
+
+    assert.equal(sockets.length, 1)
+    assert.match(sockets[0].url, /series_kind=contract/)
+    assert.match(sockets[0].url, /contract=AG2601/)
+  })
+
+  it('preserves an empty post-close reconnect but clears an explicit none source', async () => {
+    const sockets: FakeSocket[] = []
+    const scheduled: Array<() => void> = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([
+        liveBar('2026-08-10T07:00:00Z', 100),
+      ], { has_more_before: false, next_before: null }),
+      fetchState: async () => state({
+        phase: 'CLOSED',
+        trading_day: '2026-08-10',
+        live_eligible: false,
+        live_available: false,
+        canonical_end: '2026-08-10T07:00:00Z',
+        after_market: {
+          last_successful_trading_day: null,
+          last_failure: { trading_day: '2026-08-10', error_code: 'UPDATE_FAILED' },
+        },
+      }),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+      scheduleReconnect: (callback) => {
+        scheduled.push(callback)
+        return scheduled.length
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({
+      type: 'snapshot',
+      source: 'post_close',
+      trading_day: '2026-08-10',
+      contract: 'AG2601',
+      bars: [liveBar('2026-08-10T07:15:00Z', 101)],
+    })
+    sockets[0].disconnect()
+    scheduled[0]()
+    sockets[1].message({
+      type: 'snapshot',
+      source: 'post_close',
+      trading_day: '2026-08-10',
+      contract: 'AG2601',
+      bars: [],
+    })
+
+    assert.equal(series.overlaySource.value, 'post_close')
+    assert.deepEqual(series.bars.value.map((bar) => bar.time), [
+      '2026-08-10T07:00:00Z',
+      '2026-08-10T07:15:00Z',
+    ])
+
+    sockets[1].message({
+      type: 'snapshot',
+      source: 'none',
+      trading_day: null,
+      contract: null,
+      bars: [],
+    })
+    assert.equal(series.overlaySource.value, 'none')
+    assert.deepEqual(series.bars.value.map((bar) => bar.time), [
+      '2026-08-10T07:00:00Z',
+    ])
+  })
+
+  it('drops old post-close bars when a reconnect snapshot changes day or contract', async () => {
+    for (const replacement of [
+      { tradingDay: '2026-08-11', contract: 'AG2601' },
+      { tradingDay: '2026-08-10', contract: 'AG2605' },
+    ]) {
+      const sockets: FakeSocket[] = []
+      const scheduled: Array<() => void> = []
+      const series = useMarketSeries({
+        fetchPage: async () => page([
+          liveBar('2026-08-10T07:00:00Z', 100),
+        ], { has_more_before: false, next_before: null }),
+        fetchState: async () => state({
+          phase: 'CLOSED',
+          trading_day: '2026-08-10',
+          live_eligible: false,
+          live_available: false,
+          live_contract: null,
+          canonical_end: '2026-08-10T07:00:00Z',
+          after_market: { last_successful_trading_day: null },
+        }),
+        createWebSocket: (url: string) => {
+          const socket = new FakeSocket(url)
+          sockets.push(socket)
+          return socket
+        },
+        scheduleReconnect: (callback) => {
+          scheduled.push(callback)
+          return scheduled.length
+        },
+      })
+
+      await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+      sockets[0].message({
+        type: 'snapshot',
+        source: 'post_close',
+        trading_day: '2026-08-10',
+        contract: 'AG2601',
+        bars: [liveBar('2026-08-10T07:15:00Z', 101)],
+      })
+      sockets[0].disconnect()
+      scheduled[0]()
+      sockets[1].message({
+        type: 'snapshot',
+        source: 'post_close',
+        trading_day: replacement.tradingDay,
+        contract: replacement.contract,
+        bars: [],
+      })
+
+      assert.equal(series.overlaySource.value, 'none')
+      assert.deepEqual(series.bars.value.map((bar) => bar.time), [
+        '2026-08-10T07:00:00Z',
+      ])
+      series.dispose()
+    }
+  })
+
+  it('tracks an empty realtime snapshot identity before the first bar arrives', async () => {
+    const sockets: FakeSocket[] = []
+    const scheduled: Array<() => void> = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([
+        liveBar('2026-08-07T09:30:00Z', 100),
+      ], { has_more_before: false, next_before: null }),
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+      scheduleReconnect: (callback) => {
+        scheduled.push(callback)
+        return scheduled.length
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({
+      type: 'snapshot',
+      source: 'realtime',
+      trading_day: '2026-08-07',
+      contract: 'AG2601',
+      bars: [],
+    })
+    sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
+    sockets[0].disconnect()
+    scheduled[0]()
+    sockets[1].message({
+      type: 'snapshot',
+      source: 'realtime',
+      trading_day: '2026-08-08',
+      contract: 'AG2605',
+      bars: [],
+    })
+
+    assert.equal(series.overlaySource.value, 'none')
+    assert.deepEqual(series.bars.value.map((bar) => bar.time), [
+      '2026-08-07T09:30:00Z',
+    ])
+  })
+
   it('keeps the canonical page visible when the optional state request is unavailable', async () => {
     const series = useMarketSeries({
       fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
@@ -453,7 +693,7 @@ describe('market Live overlay', () => {
     })
 
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
-    sockets[0].message({ type: 'snapshot', bars: [
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [
       liveBar('2026-08-07T09:45:00Z', 150),
       liveBar('2026-08-07T10:00:00Z', 160),
     ] })
@@ -577,6 +817,59 @@ describe('market Live overlay', () => {
     ])
   })
 
+  it('retains a post-close snapshot when the announced canonical refresh fails', async () => {
+    let calls = 0
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => {
+        calls += 1
+        if (calls === 1) {
+          return page([liveBar('2026-08-10T07:00:00Z', 100)], { has_more_before: false, next_before: null })
+        }
+        throw new Error('canonical refresh unavailable')
+      },
+      fetchState: async () => state({
+        phase: 'CLOSED',
+        trading_day: '2026-08-10',
+        live_eligible: false,
+        live_available: false,
+        live_contract: null,
+        canonical_end: '2026-08-10T07:00:00Z',
+        after_market: { last_successful_trading_day: null },
+      }),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({
+      type: 'snapshot',
+      source: 'post_close',
+      trading_day: '2026-08-10',
+      contract: 'AG2601',
+      bars: [liveBar('2026-08-10T07:15:00Z', 101)],
+    })
+    sockets[0].message({ type: 'state', state: state({
+      phase: 'CLOSED',
+      trading_day: '2026-08-10',
+      live_eligible: false,
+      live_available: false,
+      live_contract: null,
+      canonical_end: '2026-08-10T07:15:00Z',
+      after_market: { last_successful_trading_day: null },
+    }) })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    assert.equal(series.overlaySource.value, 'post_close')
+    assert.deepEqual(series.bars.value.map((bar) => [bar.time, bar.close]), [
+      ['2026-08-10T07:00:00Z', 100],
+      ['2026-08-10T07:15:00Z', 101],
+    ])
+  })
+
   it('drops stale Live bars when an advanced canonical refresh returns an empty page', async () => {
     let calls = 0
     const sockets: FakeSocket[] = []
@@ -637,7 +930,7 @@ describe('market Live overlay', () => {
     })
 
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
-    sockets[0].message({ type: 'snapshot', bars: [
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [
       liveBar('2026-08-07T09:45:00Z', 150),
       liveBar('2026-08-07T10:00:00Z', 160),
       liveBar('2026-08-07T10:15:00Z', 170),
