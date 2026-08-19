@@ -742,6 +742,8 @@ def test_long_segment_lifecycle_matches_direct_full_segment_reducer() -> None:
         ("duplicate_bar", BarFrequency.M5),
         ("missing_middle_page", BarFrequency.M5),
         ("missing_middle_page", BarFrequency.M15),
+        ("missing_segment_start_prefix", BarFrequency.M5),
+        ("missing_segment_start_prefix", BarFrequency.M15),
     ),
 )
 def test_lifecycle_pagination_fails_closed_on_invalid_page_chain(
@@ -1652,6 +1654,26 @@ class _InvalidPaginationMarketRead(_CursorHonoringMarketRead):
             )
         if self.fault == "missing_middle_page" and call == 2:
             bars = self.history[request.frequency][:100]
+            return replace(
+                page,
+                bars=bars,
+                canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
+                has_more_before=False,
+                next_before=None,
+            )
+        if self.fault == "missing_segment_start_prefix" and call == 3:
+            width = 5 if request.frequency is BarFrequency.M5 else 15
+            omitted = self.history[request.frequency][:50]
+            before_segment = tuple(
+                replace(
+                    bar,
+                    bar_end=bar.bar_end - timedelta(minutes=width * 50),
+                    trading_day=_SEGMENT_START - timedelta(days=1),
+                )
+                for bar in omitted
+            )
+            retained = self.history[request.frequency][50:100]
+            bars = (*before_segment, *retained)
             return replace(
                 page,
                 bars=bars,

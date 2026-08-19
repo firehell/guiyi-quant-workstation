@@ -611,6 +611,12 @@ class SubingReadService:
             segment_end=segment_end,
             cutoff=cutoff,
         )
+        _require_complete_segment_prefix(
+            coverage=self._lifecycle_coverage,
+            identity=identity,
+            segment_start=segment_start,
+            bars=full_bars,
+        )
         return _HistoricalIntradaySeries(
             projection_bars=projection_bars or (),
             lifecycle_bars=full_bars,
@@ -756,14 +762,54 @@ def _require_expected_interval(
 ) -> None:
     first = bars[0]
     last = bars[-1]
+    expected = _expected_bar_ends(
+        coverage=coverage,
+        identity=identity,
+        start=first.trading_day,
+        end=last.trading_day,
+    )
+    expected_interval = tuple(
+        bar_end for bar_end in expected if first.bar_end <= bar_end <= last.bar_end
+    )
+    if tuple(bar.bar_end for bar in bars) != expected_interval:
+        raise MarketDataError("DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID")
+
+
+def _require_complete_segment_prefix(
+    *,
+    coverage: SubingLifecycleCoverage,
+    identity: SeriesPageQuery,
+    segment_start: date,
+    bars: tuple[CanonicalBar, ...],
+) -> None:
+    if not bars:
+        return
+    expected = _expected_bar_ends(
+        coverage=coverage,
+        identity=identity,
+        start=segment_start,
+        end=bars[-1].trading_day,
+    )
+    expected_prefix = tuple(bar_end for bar_end in expected if bar_end <= bars[-1].bar_end)
+    if tuple(bar.bar_end for bar in bars) != expected_prefix:
+        raise MarketDataError("DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID")
+
+
+def _expected_bar_ends(
+    *,
+    coverage: SubingLifecycleCoverage,
+    identity: SeriesPageQuery,
+    start: date,
+    end: date,
+) -> tuple[datetime, ...]:
     key = DatasetKey(
         kind=DatasetKind.CONTRACT,
         symbol=identity.symbol,
         series_or_contract=cast(str, identity.contract),
         frequency=identity.frequency,
     )
-    cursor = date(first.trading_day.year, first.trading_day.month, 1)
-    final_month = date(last.trading_day.year, last.trading_day.month, 1)
+    cursor = date(start.year, start.month, 1)
+    final_month = date(end.year, end.month, 1)
     expected: list[datetime] = []
     while cursor <= final_month:
         expected.extend(
@@ -771,8 +817,8 @@ def _require_expected_interval(
                 key,
                 cursor.year,
                 cursor.month,
-                first.trading_day,
-                last.trading_day,
+                start,
+                end,
             )
         )
         cursor = (
@@ -780,11 +826,7 @@ def _require_expected_interval(
             if cursor.month == 12
             else date(cursor.year, cursor.month + 1, 1)
         )
-    expected_interval = tuple(
-        bar_end for bar_end in expected if first.bar_end <= bar_end <= last.bar_end
-    )
-    if tuple(bar.bar_end for bar in bars) != expected_interval:
-        raise MarketDataError("DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID")
+    return tuple(expected)
 
 
 def _identity(
