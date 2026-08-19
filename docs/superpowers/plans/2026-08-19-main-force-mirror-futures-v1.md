@@ -2,256 +2,351 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在完全保留 `main_force_mirror_v0` 的前提下，实现 60m-only、observation-only 的 `main_force_mirror_futures_v1`：以 OHLCV + Open Interest + 真实物理合约分段计算五类期货持仓压力状态、对称“追多小心 / 追空小心”、70/100 风险证据评分、Episode latch/re-arm、Web 三 Tab 观察与只读 Historical Shadow。
+**Goal:** Implement `main_force_mirror_futures_v1` as a 60m-only, observation-only futures position-pressure indicator with exact physical-contract resets, five symmetric futures states, bilateral chase-risk cautions, deterministic Python/Web parity, a three-tab Web pane, and a read-only Historical Shadow research entry.
 
-**Architecture:** Python Indicator Kernel 是唯一数学与 lifecycle 权威；Web 只保留逐点 golden 对齐的浏览器 mirror。Historical/Live Bar 在 Web 边界先绑定 `physicalContract`，任何换月、OI/input/timestamp invalid 都切断 calculation block 并重新 warm-up；`actual_dominant` 绝不跨真实合约继承 ATR、OI baseline、pressure、caution latch 或 re-arm。实现完成后只形成 Web observation 与 read-only Shadow 入口，不新增 Alert、DB、Canonical、Runtime 或交易能力。
+**Architecture:** Python `quant-core` remains the sole formula authority. The Web receives the same Canonical bars, enriches each bar with an exact physical contract, and runs a browser-only mirror constrained by one shared frozen golden fixture; the existing bottom pane switches locally among MACD, Futures V1, and V0 without changing market identity or fetching data. Historical Shadow uses only `MarketDataService`, evaluates outcomes inside one physical-contract segment, and emits stdout JSON without persistence or promotion.
 
-**Tech Stack:** Python 3.13、NumPy、FastAPI CLI composition、MarketDataService、Vue 3、TypeScript 6、Lightweight Charts 5.2、Node test、Playwright、pytest、Ruff、Mypy、Vite。
+**Tech Stack:** Python 3.13, NumPy, FastAPI service composition, `MarketDataService`, Vue 3, TypeScript 6, Lightweight Charts 5.2, Node test, Playwright, pytest, Ruff, Mypy, Vite.
 
 **Spec:** `docs/superpowers/specs/2026-08-19-main-force-mirror-futures-v1-design.md`
 
 ## Global Constraints
 
-- 每个 Task 开始前读取执行时最新 `STATUS.md`、`AGENTS.md`、`docs/DEVELOPMENT.md`、`PROJECT_SOURCE.md`、`DECISIONS.md`、本 Spec 和本 Plan；若 active canonical 与本 Plan 冲突，按 canonical fail-closed，不能猜。
-- 执行基线必须是当时最新 `develop`，并包含已批准 Spec；不得从旧 v1.6.1 tag 或旧 V0 task branch 开工。
-- `main_force_mirror_v0` 的 source、version、formula、golden、Registry、FormalPolicy 与现有 Web 行为零语义变化；V0 只能增加回归断言，不能“顺手优化”。
-- V1 精确支持 `60m + contract|actual_dominant`；`continuous`、1m/5m/15m/30m/1d/1w 必须 unavailable/disabled，不自动 fallback V0。
-- V1 输入精确包含 `open/high/low/close/volume/open_interest/physical_contract`；OI 是必需输入，不支持 state-only 的 OI 缺失降级。
-- `70` 只表示固定风险证据阈值 70/100；代码、UI、CLI、测试、文档不得称为“70% 主力流出”、概率、账户或会员席位事实。
-- Python/Web 阈值判断使用未 round binary64；公开数值统一 `half_away_from_zero_binary64`、6 位，不用 Python `round()` 或 JS `toFixed()` 作为数学实现。
-- `state_ready` 第一根精确为同 block 第 21 根（index 20）；`caution_ready == ready` 第一根精确为第 31 根（index 30）。
-- conflict 精确行为：不输出方向事件、不消耗任一 latch、不执行 re-arm、所有 re-arm counters 暂停；下一根合法 candidate 继续使用 conflict 前 latch 状态。
-- re-arm streak 条件中断直接清零到 0；warm-up/derived unavailable/conflict 只暂停，input/OI/identity/timestamp invalid 或换合约重置。
-- offending timestamp Bar 自身 invalid，不能成为新 block seed；后续必须严格大于此前历史最大可解析 timestamp。
-- caution marker 使用附着 V1 histogram 的 series marker；禁止恢复固定 `+92/-92` 数据点。
-- Historical 数据只经 `MarketDataService`；不得直读 Parquet、RQData、Redis 或复制主力 resolver。
-- 本 Plan 不授权真实 representative-matrix Shadow、正式 evidence 保存、main/release/tag、Runtime reload/promotion、Alert Rule/Scope、真实通知、DB/Canonical 写入、账户或订单。
-- `auto_order=false` 始终成立。
-- 任一 Task 的公式实现如需要改变 Spec 中参数、权重、threshold、readiness、conflict、rounding 或 re-arm 语义，输出 `FORMULA_DRIFT_REQUIRES_NEW_VERSION` 并停止；不得在 `futures-research-v1` 下漂移。
-- 所有行为修改遵守 TDD：先 RED，确认失败原因命中目标，再最小 GREEN；每个 Task 结束运行定向测试、Ruff/Node check（适用时）、`git diff --check`，并自审 scope。
+- Execution starts from the then-latest clean `origin/develop`; its ancestry must contain Spec-fix commit `a5180f97c5ac6675a6d73e6a48bc837efac8be06`. If the active canonical conflicts with this Plan, stop and revise the Plan instead of guessing.
+- Preserve `main_force_mirror_v0` code, version, formula, golden outputs, Registry capabilities, and existing Web behavior. V1 is a new indicator and never silently replaces V0 history.
+- V1 exact identity is `main_force_mirror_futures_v1@futures-research-v1`; exact policy is `main_force_mirror_futures_observation_v1`.
+- V1 supports only `60m + contract|actual_dominant`. `continuous` and `1m/5m/15m/30m/1d/1w` fail closed; the UI must not silently fall back to V0.
+- `open_interest` and `physical_contract` are required inputs. Missing/invalid OI invalidates the whole bar; a legal physical-contract switch starts a fresh block; input/timestamp failure invalidates the offending bar and the next valid block starts later.
+- The first state-ready point is block index 20, the first complete caution-ready/ready point is block index 30, `warmup_bars=30`, and `lookback_bars=31`.
+- The frozen parameter key is `liquidation_dominated_oi_threshold`; the retired draft name must not appear in executable code, metadata, fixtures, or tests.
+- Public numbers use `half_away_from_zero_binary64`; threshold and state decisions use unrounded values. Do not use Python `round()` or JavaScript `toFixed()` as the mathematical implementation.
+- `reason` describes base input/state availability; `caution_availability_reason` describes caution warm-up or direction conflict. A state-ready/caution-warm-up point has `reason=null` and `caution_availability_reason=MFM_FUTURES_V1_CAUTION_WARMUP`; a conflict has base `reason=null` and caution reason `MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT`.
+- A dual-direction candidate is fail-closed: no directional caution, no Shadow event, neither latch is consumed, and all re-arm counters pause for that bar.
+- Re-arm streaks reset directly to zero when their condition is false; warm-up/derived-unavailable/conflict pauses them; input/identity/timestamp failure and physical-contract change reset them with the calculation block.
+- Caution markers are Lightweight Charts series markers attached outside the V1 histogram bar. V1 creates no fixed `+92/-92` numeric caution points.
+- `70` is an evidence-score threshold, not 70% outflow, a probability, member-position evidence, participant identity, or measured capital flow.
+- V1 remains `observation_only`: `web=true`, `backtest=false`, `live=false`, `alert=false`, `notification=false`, `auto_order=false`.
+- No Task may add or modify Alert Rule/Scope/evaluator, Clawbot/owner/transport, Execution Review, DB/migration, DatasetKey, the eight-table Market Catalog, Canonical schema/data, Redis state, worker, queue, account, position, or order code.
+- Tasks may commit and integrate only into `develop`. `main`, release/tag, Runtime worktrees, Runtime reload/promotion, real notification, real Shadow matrix execution, formal evidence persistence, and production DB/Canonical writes remain separate human Gates.
+- Every behavior change follows TDD: observe RED, make the minimum implementation, observe GREEN, then run the scoped regression and review the exact diff.
+- `STATUS.md` may be changed only in Task 8 after all repository-native verification and independent review pass; it may record develop-only implementation, never release, Runtime promotion, profitability, or strategy validity.
+- Tracked-file changes require `python3 scripts/engineering/secret_scan.py --json` before final closeout.
 
 ---
 
-## Codex 调度矩阵
+## Codex Task Dispatch Matrix
 
-| Task | Lane | Model | 推理 | 会话 | Plan | 工作区 | 集成 Gate |
+| Task | Lane | Model | Reasoning | Session | Plan mode | Workspace | Integration Gate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 Exact contracts / readiness / rounding | Lane 3 | Sol | 高 | 新会话 | Plan-then-execute；Spec 已批准 | 最新 develop 新 task worktree | 定向测试 + 独立 Task Review |
-| 2 Python kernel / caution / latch | Lane 3 | Sol | 高 | 新会话 | Plan-then-execute | 最新 develop 新 task worktree | Python exact math + V0 regression + Review |
-| 3 Web physical-contract identity | Lane 2 | Terra | 中 | 新会话 | Plan-then-execute | 最新 develop 新 task worktree | MarketSeries tests + Review |
-| 4 Web mirror + Python/Web golden | Lane 3 contract parity | Sol | 高 | 新会话 | Plan-then-execute | 最新 develop 新 task worktree | exact golden parity + Review |
-| 5 Three-tab pane / dynamic marker / hover | Lane 2 | Terra | 中 | 新会话 | Plan-then-execute | 最新 develop 新 task worktree | Web unit + Playwright + build + Review |
-| 6 Historical Shadow service / CLI | Lane 1 | Sol | 高 | 新会话 | Plan-then-execute | 最新 develop 新 task worktree | read-only service/CLI tests + Review |
-| 7 Full regression / docs / final review | Lane 3 review | Sol | 高 | 新独立 Review 会话 | Review-only + bounded fixes | develop review worktree | Critical=0 / Important=0 |
+| 1. Python contract, validation, readiness, rounding | Lane 3 | Sol | 高 | 新开会话 | Plan-only, then execute only after Task approval | New task worktree from latest `develop` | Scoped tests + independent formula-contract review |
+| 2. Python exact math and five states | Lane 3 | Sol | 高 | 新开会话 | Plan-only, then approved execution | New task worktree from latest `develop` | Exact-math tests + prefix review |
+| 3. Caution, conflict, latch, Registry/Policy, V0 guard | Lane 3 | Sol | 高 | 新开会话 | Plan-only, then approved execution | New task worktree from latest `develop` | Independent formula review, Critical=0 / Important=0 |
+| 4. Web physical-contract identity propagation | Lane 2 | Terra | 中 | 新开会话 | Plan-then-execute | New task worktree from latest `develop` | Web unit regression |
+| 5. Web mirror and shared golden parity | Lane 3 | Sol | 高 | 新开会话 | Plan-only, then approved execution | New task worktree from latest `develop` | Python/Web exact parity review |
+| 6. Three-tab pane, dynamic markers, hover | Lane 2 | Terra | 中 | 新开会话 | Plan-then-execute | New task worktree from latest `develop` | Unit + focused Playwright + build |
+| 7. Read-only Historical Shadow service and CLI | Lane 1 | Sol | 高 | 新开会话 | Plan-then-execute | New task worktree from latest `develop` | Segment/outcome leakage review |
+| 8. Full regression, docs, independent closeout | Lane 3 review | Sol | 高 | 新开独立 Review 会话 | Review-only; code fixes require a new fix Task | New closeout worktree from latest `develop` | Full green suite + Critical=0 / Important=0 |
 
-默认执行方式使用 `superpowers:subagent-driven-development`：每个 Task fresh implementer + scoped reviewer；公式/contract Task 1/2/4 与最终 Review 使用 Sol，纯 Web plumbing Task 3/5 可使用 Terra。Terra 任一轮出现公式/identity 不确定、跨模块根因或两轮未解决，立即升级 Sol 新会话。
-
-每个实现 Task 的 branch/worktree 链路：
+Task worktree lifecycle:
 
 ```text
-execution-time latest develop
+latest origin/develop
 → task branch/worktree
-→ RED → GREEN → task verification → self-review
-→ independent task review
+→ RED/GREEN + scoped verification
+→ self-review
+→ required independent review
 → task branch → develop
 → read back develop ancestry
-→ remove merged task worktree/branch
+→ remove merged task worktree and merged task branch
 ```
 
-建议分支：
+Recommended branch names:
 
 ```text
-research/mfm-futures-v1-contracts
-research/mfm-futures-v1-kernel
-feat/mfm-futures-v1-physical-contract
-feat/mfm-futures-v1-web-mirror
-feat/mfm-futures-v1-web-pane
+feature/mfm-futures-v1-contracts
+feature/mfm-futures-v1-math
+feature/mfm-futures-v1-caution-policy
+feature/mfm-futures-v1-physical-identity
+feature/mfm-futures-v1-web-parity
+feature/mfm-futures-v1-web-pane
 research/mfm-futures-v1-shadow
 docs/mfm-futures-v1-closeout
 ```
 
-任何 Task 都不得触及 `main`、release worktree、tag 或 production Runtime worktree。
+No Task touches `main`, a release worktree, an exact-tag Runtime worktree, or loaded service state.
 
 ---
 
 ## File Structure
 
-### Task 1–2：Python Kernel
+### Create
 
-- Create `packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py` — V1 constants、domain types、rounding、input/block/readiness、exact math、state、caution、latch/re-arm。
-- Create `services/quant-api/tests/test_main_force_mirror_futures.py` — V1 exact contract 与 kernel oracle tests。
-- Modify `packages/quant-core/guiyi_quant/indicators/__init__.py` — Task 2 完成 kernel 后导出 V1 public symbols。
-- Modify `packages/quant-core/guiyi_quant/indicators/registry.py` — Task 2 完成后登记 V1；V0 definition byte/semantic unchanged。
-- Modify `packages/quant-core/guiyi_quant/indicators/policy.py` — Task 2 新增 observation-only FormalPolicy。
-- Modify `services/quant-api/tests/test_indicator_registry_v1.py` — 从“全指标七周期”改成逐指标 exact set；V1 只 `60m`。
-- Test `services/quant-api/tests/test_main_force_mirror.py` — V0 regression。
+- `packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py` — Python formula authority, validation/block state, exact math, five states, bilateral scoring, latch/re-arm, metadata.
+- `services/quant-api/tests/test_main_force_mirror_futures.py` — Python exact-contract, math, readiness, caution, latch, reason, prefix, and V0-regression tests.
+- `tests/fixtures/main_force_mirror_futures_v1_golden.json` — single Git-tracked deterministic cross-runtime fixture; test evidence only, never Canonical or production data.
+- `apps/quant-web/src/utils/mainForceMirrorFutures.ts` — browser observation mirror and identical rounding/state/latch semantics.
+- `apps/quant-web/tests/mainForceMirrorFutures.test.ts` — shared-fixture parity and Web calculation tests.
+- `apps/quant-web/e2e/main-force-mirror-futures.spec.mjs` — three-tab, availability, marker, hover, no-refetch, responsive acceptance.
+- `services/quant-api/app/market_data/main_force_mirror_futures_research_service.py` — Historical-only, segment-local Shadow orchestration through `MarketDataService`.
+- `services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py` — read-path, event, outcome, and no-cross-segment tests.
 
-### Task 3：Web physical identity
+### Modify
 
-- Modify `apps/quant-web/src/types/market.ts` — `BarData.physicalContract?` 与 internal diagnostic `physicalContractReason?`。
-- Modify `apps/quant-web/src/composables/useMarketSeries.ts` — page segment mapping、contract identity、snapshot/bar physical identity。
-- Modify `apps/quant-web/tests/marketSeries.test.ts` — exact mapping、prepend、conflict/missing、snapshot/bar tests。
+- `packages/quant-core/guiyi_quant/indicators/__init__.py` — export V1 result/types/function only after Task 3 completes.
+- `packages/quant-core/guiyi_quant/indicators/registry.py` — register V1 with exact 60m support, parameters, readiness, and capability.
+- `packages/quant-core/guiyi_quant/indicators/policy.py` — add exact Web-only observation policy.
+- `services/quant-api/tests/test_indicator_registry_v1.py` — replace the global all-seven-frequency assertion with per-indicator contracts and verify V1 blocked consumers.
+- `services/quant-api/tests/test_main_force_mirror.py` — retain and assert V0 deterministic output/metadata unchanged.
+- `apps/quant-web/src/types/market.ts` — add per-bar physical contract, V1 hover/output types, and secondary-panel identity types.
+- `apps/quant-web/src/composables/useMarketSeries.ts` — bind Historical and completed overlay bars to exact physical contracts without guessing.
+- `apps/quant-web/tests/marketSeries.test.ts` — contract/actual-dominant/segment/snapshot/bar identity cases.
+- `apps/quant-web/src/components/kline/KlineChart.vue` — three local tabs, V1 histogram, dynamic V1 markers, mutual clearing, unsupported-state behavior.
+- `apps/quant-web/src/components/kline/KlineHoverLegend.vue` — V1 physical-contract/features/readiness/reason display.
+- `apps/quant-web/src/utils/klineViewModel.ts` — timestamp-aligned V1 hover projection.
+- `apps/quant-web/src/pages/market/chart.vue` — pass effective `seriesKind` to the chart; no new market request.
+- `apps/quant-web/tests/kline-view-model.test.ts` — V1 hover alignment and unavailable rendering.
+- `apps/quant-web/e2e/main-force-mirror.spec.mjs` — preserve explicit V0 access under `原型V0`.
+- `apps/quant-web/e2e/market-runtime.spec.mjs` — preserve existing Historical/Live/Post-close behavior with enriched bars.
+- `services/quant-api/app/market_data/composition.py` — compose the read-only V1 research service.
+- `services/quant-api/app/guiyi_cli/research_parser.py` — register the exact read-only CLI command and choices.
+- `services/quant-api/app/guiyi_cli/research_commands.py` — immutable request, result rendering, and command dispatch type.
+- `services/quant-api/app/guiyi_cli/main.py` — inject/select the V1 research service without changing other research commands.
+- `services/quant-api/tests/test_research_cli.py` — parser, JSON, readonly, error, and factory-selection tests.
+- `docs/INDICATOR_KERNEL.md` — document implemented V1 exact contract after code is green.
+- `TESTING.md` — add focused V1 verification commands.
+- `STATUS.md` — Task 8 only, after all verification/review gates pass.
 
-`physicalContractReason` 只允许：
+### Explicitly untouched
 
-```ts
-'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING'
-| 'MFM_FUTURES_V1_SEGMENT_CONFLICT'
-```
-
-它是 Web 边界诊断字段，不改变 Canonical DTO，也不写回 API/DB。
-
-### Task 4：Web mirror + single golden fixture
-
-- Create `apps/quant-web/src/utils/mainForceMirrorFutures.ts` — Python V1 的 browser mirror。
-- Create `apps/quant-web/tests/mainForceMirrorFutures.test.ts`。
-- Create `tests/fixtures/main_force_mirror_futures_v1_golden.json` — Python/Web 共用单一 deterministic fixture；禁止两份手工拷贝。
-- Modify `services/quant-api/tests/test_main_force_mirror_futures.py` — 读取同一 fixture 并验证 expected output。
-
-### Task 5：Web pane / marker / hover
-
-- Modify `apps/quant-web/src/components/kline/KlineChart.vue`。
-- Modify `apps/quant-web/src/components/kline/KlineHoverLegend.vue`。
-- Modify `apps/quant-web/src/utils/klineViewModel.ts`。
-- Modify `apps/quant-web/src/types/market.ts` — secondary hover DTO。
-- Modify `apps/quant-web/src/pages/market/chart.vue` — 将 current `seriesKind` 传入 KlineChart，不创建新行情 request。
-- Modify `apps/quant-web/src/styles/chartTheme.ts` 与 `apps/quant-web/src/styles/tokens.css` — V1 状态/marker theme token；数学 util 不硬编码颜色。
-- Create `apps/quant-web/e2e/main-force-mirror-futures.spec.mjs`。
-- Modify `apps/quant-web/e2e/main-force-mirror.spec.mjs` — V0 改名显示“原型V0”后的回归。
-- Modify `apps/quant-web/e2e/market-runtime.spec.mjs` — no-refetch / identity regression only where existing harness already owns it。
-
-### Task 6：Read-only Shadow
-
-- Create `services/quant-api/app/market_data/main_force_mirror_futures_research_service.py`。
-- Create `services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py`。
-- Modify `services/quant-api/app/market_data/composition.py` — build read-only service。
-- Modify `services/quant-api/app/guiyi_cli/research_parser.py`。
-- Modify `services/quant-api/app/guiyi_cli/research_commands.py`。
-- Modify `services/quant-api/app/guiyi_cli/main.py`。
-- Modify `services/quant-api/tests/test_research_cli.py`。
-
-### Task 7：Closeout
-
-- Modify `docs/INDICATOR_KERNEL.md`。
-- Modify `TESTING.md`。
-- Modify `STATUS.md` **only after all Task 1–6 verification and final independent review pass**。
+- `packages/quant-core/guiyi_quant/indicators/main_force_mirror.py`
+- Alert application code and tables
+- Execution Review code and tables
+- Market Catalog/Canonical schema/data
+- Runtime/install/launchd files
+- `main`, release tags, Runtime worktrees
 
 ---
 
-# Task 1: Python Exact Contracts, Readiness and Rounding
+### Task 1: Python Exact Contract, Validation, Readiness, and Rounding
 
-**Lane:** Lane 3 — indicator formula contract. Sol/high，新会话。
+**Lane:** Lane 3. Formula/input contract. Sol/high in a new session; Plan-only until this Task is explicitly approved.
 
 **Files:**
 - Create: `packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py`
 - Create: `services/quant-api/tests/test_main_force_mirror_futures.py`
 
 **Interfaces:**
-- Produces exact constants `INDICATOR_CODE`, `INDICATOR_VERSION`, `DEFAULT_PARAMETERS`。
-- Produces public type aliases `MainForceMirrorFuturesState` / `MainForceMirrorFuturesCaution`。
-- Produces frozen `MainForceMirrorFuturesResult` dataclass shape required by Task 2/4/6。
-- Produces `round_public(value: float, digits: int = 6) -> float` with `half_away_from_zero_binary64`。
-- Produces stable reason constants and private block/readiness helpers；不登记 Registry，不暴露半完成 indicator consumer。
+- Consumes: the exact Spec parameters/reasons and NumPy only.
+- Produces:
+  - `INDICATOR_CODE = "main_force_mirror_futures_v1"`
+  - `INDICATOR_VERSION = "futures-research-v1"`
+  - immutable `DEFAULT_PARAMETERS`
+  - `MainForceMirrorFuturesState`
+  - `MainForceMirrorFuturesCaution`
+  - frozen `MainForceMirrorFuturesResult`
+  - `round_half_away_from_zero_binary64(value: float, digits: int) -> float`
+  - `compute_main_force_mirror_futures(datetimes, physical_contract, open_, high, low, close, volume, open_interest) -> MainForceMirrorFuturesResult`
+- Task 1 implements validation, block boundaries, ATR/volume/range/OI seed availability, readiness/reason arrays, and public rounding. State/caution numeric output remains unavailable until Tasks 2–3.
+- Internal deterministic seams used by Task 2 tests:
+  - `_wilder_atr14(high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray`
+  - `_ema_sma_seed(values: np.ndarray, period: int) -> np.ndarray`
 
-- [ ] **Step 1: 写 parameter/domain RED tests**
+- [ ] **Step 1: Write the shared synthetic-input helpers and RED tests for exact constants/rounding**
 
-在 `test_main_force_mirror_futures.py` 固定：
+Add these test helpers once at the top of `test_main_force_mirror_futures.py`:
 
 ```python
-from guiyi_quant.indicators.main_force_mirror_futures import (
-    DEFAULT_PARAMETERS,
-    INDICATOR_CODE,
-    INDICATOR_VERSION,
-    round_public,
-)
+from datetime import UTC, datetime, timedelta
 
+def make_valid_inputs(
+    count: int,
+    contract: str = "JM2609",
+) -> dict[str, list[object]]:
+    close = [100.0 + index for index in range(count)]
+    return {
+        "datetimes": [
+            datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=index)
+            for index in range(count)
+        ],
+        "physical_contract": [contract] * count,
+        "open_": [value - 0.5 for value in close],
+        "high": [value + 1.0 for value in close],
+        "low": [value - 1.0 for value in close],
+        "close": close,
+        "volume": [1000.0 + index for index in range(count)],
+        "open_interest": [5000.0 + 10.0 * index for index in range(count)],
+    }
 
-def test_identity_and_exact_parameters() -> None:
+def assert_array_prefix_equal(
+    full: np.ndarray,
+    prefix: np.ndarray,
+    count: int,
+) -> None:
+    assert len(prefix) == count
+    for left, right in zip(full[:count], prefix, strict=True):
+        if isinstance(left, (float, np.floating)) and np.isnan(left):
+            assert isinstance(right, (float, np.floating)) and np.isnan(right)
+        else:
+            assert left == right
+```
+
+Then add assertions equivalent to:
+
+```python
+def test_futures_v1_exact_identity_parameters_and_rounding() -> None:
+    from guiyi_quant.indicators.main_force_mirror_futures import (
+        DEFAULT_PARAMETERS,
+        INDICATOR_CODE,
+        INDICATOR_VERSION,
+        round_half_away_from_zero_binary64,
+    )
+
     assert INDICATOR_CODE == "main_force_mirror_futures_v1"
     assert INDICATOR_VERSION == "futures-research-v1"
     assert DEFAULT_PARAMETERS["liquidation_dominated_oi_threshold"] == 0.5
     assert "closing_dominated_oi_threshold" not in DEFAULT_PARAMETERS
-    assert DEFAULT_PARAMETERS["round_digits"] == 6
     assert DEFAULT_PARAMETERS["rounding_policy"] == "half_away_from_zero_binary64"
+    assert round_half_away_from_zero_binary64(1.25, 1) == 1.3
+    assert round_half_away_from_zero_binary64(-1.25, 1) == -1.3
+    assert round_half_away_from_zero_binary64(-0.0, 6) == 0.0
 ```
 
-并加入 exact key-set 断言，完整 key-set 必须与 Spec 5.2 一致，不能只抽查几项。
+- [ ] **Step 2: Run the rounding RED test**
 
-- [ ] **Step 2: 写 rounding RED tests**
-
-```python
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        (1.2345675, 1.234568),
-        (-1.2345675, -1.234568),
-        (0.0000005, 0.000001),
-        (-0.0000005, -0.000001),
-        (-0.0, 0.0),
-    ],
-)
-def test_round_public_half_away_from_zero(value: float, expected: float) -> None:
-    assert round_public(value) == expected
-```
-
-- [ ] **Step 3: 运行 RED**
+Run:
 
 ```bash
-PYTHONPATH=packages/quant-core \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_main_force_mirror_futures.py
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  -k exact_identity_parameters_and_rounding
 ```
 
-Expected: import/module failure，因为新 kernel 尚不存在。
+Expected: FAIL because the V1 module does not exist.
 
-- [ ] **Step 4: 实现 exact constants 与 rounding**
+- [ ] **Step 3: Implement exact constants and the shared rounding helper**
 
-实现方式必须等价于：
+Use the Spec formula literally:
 
 ```python
-from math import floor
-
-
-def round_public(value: float, digits: int = 6) -> float:
+def round_half_away_from_zero_binary64(value: float, digits: int) -> float:
     if not np.isfinite(value):
         return value
-    if value == 0.0:
-        return 0.0
+    if isinstance(digits, bool) or not isinstance(digits, int) or digits < 0:
+        raise ValueError("digits must be a non-negative integer")
     scale = float(10**digits)
-    result = np.copysign(floor(abs(value) * scale + 0.5) / scale, value)
-    return 0.0 if result == 0.0 else float(result)
+    if value == 0:
+        return 0.0
+    magnitude = np.floor(abs(value) * scale + 0.5) / scale
+    result = float(np.copysign(magnitude, value))
+    return 0.0 if result == 0 else result
 ```
 
-不得使用内建 `round()`。
+Store `DEFAULT_PARAMETERS` behind `MappingProxyType`, preserving the exact key order and values from Spec §5.2.
 
-- [ ] **Step 5: 写 readiness RED tests**
+- [ ] **Step 4: Run the rounding test GREEN**
 
-使用 40 根同一 contract、valid 60m synthetic bars，断言：
+Run the command from Step 2.
+
+Expected: PASS.
+
+- [ ] **Step 5: Write RED tests for input reason priority and block reset**
+
+Build deterministic 60m bars and assert:
 
 ```python
-assert result.state_ready[19] is False
-assert result.state_ready[20] is True
-assert result.caution_ready[29] is False
-assert result.caution_ready[30] is True
-assert np.array_equal(result.ready, result.caution_ready)
+def test_oi_failure_is_invalid_and_resets_the_block() -> None:
+    payload = make_valid_inputs(63)
+    payload["open_interest"][31] = None
+    result = compute_main_force_mirror_futures(**payload)
+
+    assert result.reason[31] == "MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE"
+    assert not bool(result.valid[31])
+    assert not bool(result.state_ready[31])
+    assert not bool(result.caution_ready[31])
+    assert bool(result.state_ready[52])
+    assert bool(result.caution_ready[62])
 ```
 
-Task 1 可通过 private contract-evaluation helper 暴露这些 boundary facts；完整 state/math 在 Task 2 实现。
+Add separate tests for:
+- physical contract missing;
+- generic OHLC/volume invalid;
+- timestamp parse failure;
+- duplicate timestamp;
+- timestamp regression;
+- a post-regression timestamp still below the historical maximum;
+- the first later timestamp above the historical maximum starting block index 0;
+- legal contract A→B transition making B’s first bar valid but warm-up.
 
-- [ ] **Step 6: 写 input/timestamp/OI contract RED tests**
-
-覆盖：OI `None/NaN/inf/-1` → `OPEN_INTEREST_UNAVAILABLE` + invalid；OHLC/volume invalid → `INPUT_INVALID`；duplicate/regression timestamp → `TIMESTAMP_INVALID`；offending Bar 不能 seed 新 block；合约合法 A→B 当前 B Bar 可以成为新 block index 0。
-
-- [ ] **Step 7: 实现 domain/result、input validator、block tracker 与 readiness helper**
-
-`MainForceMirrorFuturesResult` 精确包含 Spec 第 11 节字段；Task 1 只实现结构、valid/block index/readiness/rounding 基础，不实现 state/caution 数学。
-
-- [ ] **Step 8: GREEN + lint + diff check**
+- [ ] **Step 6: Run validation RED tests**
 
 ```bash
-PYTHONPATH=packages/quant-core \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  -k "invalid or timestamp or contract or oi_failure"
+```
+
+Expected: FAIL because validation/block semantics are not implemented.
+
+- [ ] **Step 7: Implement input normalization, reason priority, and maximal blocks**
+
+Implementation requirements:
+- process input order without sorting;
+- keep `max_seen_parseable_time`;
+- normalize physical contract with `str(value).strip().upper()`, accepting only a non-empty result;
+- validate all required numeric fields and OHLC/volume/OI relations;
+- an invalid/timestamp/OI bar clears all block state and is never a seed;
+- a valid physical-contract change clears block state and seeds a new block with the current valid bar;
+- reason priority follows Spec §15 exactly;
+- return aligned arrays with no fabricated zero observations.
+
+- [ ] **Step 8: Write RED tests for closed-form readiness**
+
+Assert exact zero-based boundaries:
+
+```python
+def test_readiness_boundaries_are_exact() -> None:
+    result = compute_main_force_mirror_futures(**make_valid_inputs(31))
+    assert not bool(result.state_ready[19])
+    assert bool(result.state_ready[20])
+    assert not bool(result.caution_ready[29])
+    assert bool(result.caution_ready[30])
+    assert np.array_equal(result.ready, result.caution_ready)
+```
+
+Also assert `state_ready=true/caution_ready=false` retains no caution score/event and uses `MFM_FUTURES_V1_CAUTION_WARMUP`.
+
+- [ ] **Step 9: Run readiness RED**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  -k readiness
+```
+
+Expected: FAIL.
+
+- [ ] **Step 10: Implement ATR14, volume SMA20, OI abs-delta EMA20 seed, range20, and readiness arrays**
+
+Use these first-ready indices:
+- ATR: 13;
+- volume/range: 19;
+- OI impulse: 20;
+- state: 20;
+- caution/ready: 30.
+
+A derived invalidity (`ATR<=0`, volume mean `<=0`, equal range) pauses output but does not end a raw-valid block.
+
+- [ ] **Step 11: Run all Task 1 tests and Ruff**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_main_force_mirror_futures.py
 
@@ -259,124 +354,372 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 uv run --offline --project services/quant-api ruff check \
   packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py \
   services/quant-api/tests/test_main_force_mirror_futures.py
-
-git diff --check
 ```
 
-- [ ] **Step 9: Commit**
+Expected: PASS.
+
+- [ ] **Step 12: Review and commit Task 1**
 
 ```bash
+git diff --check
+git status --short
 git add \
   packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py \
   services/quant-api/tests/test_main_force_mirror_futures.py
-git commit -m "feat(indicator): define futures mirror v1 contracts"
+git commit -m "feat(indicators): add futures mirror input contracts"
 ```
 
-**Task 1 acceptance:** exact identity/parameters、readiness 21/31、OI/timestamp reset、half-away rounding 已被 tests 冻结；indicator 尚未进入 Registry/Web consumer。
+Independent review must verify readiness arithmetic, timestamp maximum handling, and OI whole-bar invalidation before integration to `develop`.
 
 ---
 
-# Task 2: Python Exact Math, Five States, Caution and Episode Latch
+### Task 2: Python Exact Math and Five-State Kernel
 
-**Lane:** Lane 3 — formula/lifecycle semantics. Sol/high，新会话。
+**Lane:** Lane 3. Formula semantics. Sol/high, new session, Plan-only until approved.
 
 **Files:**
 - Modify: `packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py`
 - Modify: `services/quant-api/tests/test_main_force_mirror_futures.py`
-- Modify: `packages/quant-core/guiyi_quant/indicators/__init__.py`
-- Modify: `packages/quant-core/guiyi_quant/indicators/registry.py`
-- Modify: `packages/quant-core/guiyi_quant/indicators/policy.py`
-- Modify: `services/quant-api/tests/test_indicator_registry_v1.py`
-- Test: `services/quant-api/tests/test_main_force_mirror.py`
 
 **Interfaces:**
-- Produces `compute_main_force_mirror_futures(...) -> MainForceMirrorFuturesResult`。
-- Produces Python business authority used by Web golden and Shadow。
-- Registers `main_force_mirror_futures_v1` only after complete GREEN。
+- Consumes Task 1 validation, readiness, rounding, block state, and result shape.
+- Produces aligned, rounded public values for ATR-derived price impulse, CLV, direction, volume ratio, OI impulse, range position, pressures, strength, state, and signed score.
+- It does not yet emit bilateral caution events; those remain unavailable until Task 3.
 
-- [ ] **Step 1: 写 exact indicator math RED tests**
+- [ ] **Step 1: Add RED tests for exact rolling math**
 
-Tests must independently assert：ATR14 Wilder SMA seed、volume SMA20、OI abs-delta EMA20 SMA seed、price impulse clip、CLV、direction weights、range20、long/short pressure、strength cap 100。
+Use a hand-computable fixture to assert:
+- ATR14 Wilder SMA seed at index 13;
+- recursive ATR at index 14;
+- volume SMA20 at index 19;
+- OI abs-delta SMA seed at index 20;
+- recursive OI EMA at index 21;
+- range position at index 19;
+- clipping at ±3.
 
-关键 OI seed assertion：第 21 根 Bar（index 20）使用 `abs(delta_oi_1..20)` 的 mean 作为 first baseline；不得以首个 delta 直接 seed。
-
-- [ ] **Step 2: 写 five-state/deadband RED tests**
-
-用 pure classifier helper 或 deterministic input sequence 锁定：
-
-```text
-LONG_BUILD
-SHORT_BUILD
-SHORT_COVER
-LONG_LIQUIDATION
-TURNOVER
-```
-
-并覆盖 exact thresholds `±0.15 / ±0.25`、`TURNOVER + direction==0 → signed_score=0`、TURNOVER cap 15、其他 state sign 与 strength cap 100。
-
-- [ ] **Step 3: 写 caution score RED tests**
-
-分别构造 4 个 long reason 和 4 个 short reason；断言权重精确 `30/30/25/15`，score 69 不 candidate、70 candidate。Pressure divergence 必须只读取当前 Bar 之前同 block 连续 10 个 `state_ready` points。
-
-- [ ] **Step 4: 写 conflict/latch/re-arm RED tests**
-
-至少冻结：
+Example:
 
 ```python
-assert conflict.caution is None
-assert next_valid_candidate.caution == "long_chase_caution"  # conflict 未消耗 latch
+def test_atr_and_oi_seed_follow_exact_contract() -> None:
+    inputs = make_valid_inputs(22)
+    atr = _wilder_atr14(
+        np.asarray(inputs["high"], dtype=float),
+        np.asarray(inputs["low"], dtype=float),
+        np.asarray(inputs["close"], dtype=float),
+    )
+    oi_delta = np.diff(np.asarray(inputs["open_interest"], dtype=float))
+    oi_baseline = _ema_sma_seed(np.abs(oi_delta), 20)
+
+    assert atr[13] == 2.0
+    assert atr[14] == 2.0
+    assert np.isnan(oi_baseline[18])
+    assert oi_baseline[19] == 10.0
+
+    result = compute_main_force_mirror_futures(**inputs)
+    assert np.isnan(result.oi_impulse[19])
+    assert result.oi_impulse[20] == 1.0
 ```
 
-以及：long/short 独立 latch、event Bar 不 re-arm、low-score/build streak 中断清零、unavailable pause、invalid/contract reset、re-arm 当前 Bar 末生效。
-
-- [ ] **Step 5: 运行 RED**
+- [ ] **Step 2: Run math RED**
 
 ```bash
-PYTHONPATH=packages/quant-core \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  -k "atr or volume or impulse or range"
+```
+
+Expected: FAIL for missing derived outputs.
+
+- [ ] **Step 3: Implement exact raw math in the Spec order**
+
+For each state-ready bar, calculate from unrounded binary64 inputs:
+1. `price_impulse`;
+2. `clv`;
+3. `direction`;
+4. `participation`;
+5. `oi_impulse`;
+6. `long_open_pressure`;
+7. `short_open_pressure`;
+8. `strength`.
+
+Apply public rounding only when assigning result arrays.
+
+- [ ] **Step 4: Add RED tests for all five states and boundary equality**
+
+Assert exact deadband semantics:
+
+```python
+@pytest.mark.parametrize(
+    ("direction", "oi_impulse", "expected"),
+    [
+        (0.149999, 1.0, "turnover"),
+        (0.15, 0.25, "long_build"),
+        (-0.15, 0.25, "short_build"),
+        (0.15, -0.25, "short_cover"),
+        (-0.15, -0.25, "long_liquidation"),
+        (1.0, 0.249999, "turnover"),
+    ],
+)
+def test_five_state_boundaries(direction, oi_impulse, expected):
+    assert classify_main_force_mirror_futures_state(direction, oi_impulse) == expected
+```
+
+Also assert:
+- TURNOVER display cap 15;
+- `direction==0 → signed_score==0`;
+- strength cap 100;
+- long/short pressure sign and mutual exclusivity.
+
+- [ ] **Step 5: Run state RED**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  -k "state or turnover or strength or pressure"
+```
+
+Expected: FAIL.
+
+- [ ] **Step 6: Implement state classification and signed score**
+
+Add:
+
+```python
+def classify_main_force_mirror_futures_state(
+    direction: float,
+    oi_impulse: float,
+) -> MainForceMirrorFuturesState:
+```
+
+Use strict `< deadband` for TURNOVER so equality at 0.15/0.25 enters the quadrant table. Keep state explanations outside the numerical function.
+
+- [ ] **Step 7: Add prefix-invariance RED/GREEN test**
+
+```python
+def test_futures_v1_base_outputs_are_prefix_invariant() -> None:
+    full_inputs = make_valid_inputs(80)
+    prefix_inputs = {key: values[:60] for key, values in full_inputs.items()}
+    full = compute_main_force_mirror_futures(**full_inputs)
+    prefix = compute_main_force_mirror_futures(**prefix_inputs)
+
+    for field in (
+        "valid",
+        "state_ready",
+        "caution_ready",
+        "ready",
+        "reason",
+        "state",
+        "signed_score",
+        "strength",
+        "price_impulse",
+        "clv",
+        "volume_ratio",
+        "delta_oi",
+        "oi_impulse",
+        "direction",
+        "range_position",
+        "long_open_pressure",
+        "short_open_pressure",
+    ):
+        assert_array_prefix_equal(getattr(full, field), getattr(prefix, field), 60)
+```
+
+The comparison covers validity, readiness, reasons, base features, state, strength, and signed score.
+
+- [ ] **Step 8: Run Task 2 scope**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py
+
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+uv run --offline --project services/quant-api ruff check \
+  packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py \
   services/quant-api/tests/test_main_force_mirror_futures.py
 ```
 
-Expected: 新 math/state/caution assertions FAIL。
+Expected: PASS.
 
-- [ ] **Step 6: 实现 exact math**
-
-按 Spec 7–10 节逐项实现，内部 raw binary64 先判断 threshold，最后才 `round_public()` 写 public arrays。`state_ready=true && caution_ready=false` 输出 state/features，但 caution scores/caution unavailable；不得 partial score。
-
-- [ ] **Step 7: 实现 reason precedence**
-
-按 Spec 15 精确优先级：unsupported → identity → timestamp → OI → generic input → state warmup → derived invalid → caution warmup → conflict → ready。OI reason 是 input invalid 的专用细分，不再叠加 generic reason。
-
-- [ ] **Step 8: 登记 Registry / FormalPolicy**
-
-新增 definition：
-
-```text
-code=main_force_mirror_futures_v1
-version=futures-research-v1
-supported_intervals=("60m",)
-lookback=31
-warmup=30
-status=observation_only
-web=true
-backtest/live/alert=false
-policy=main_force_mirror_futures_observation_v1
-```
-
-FormalPolicy allowed only `Web_manual_observation`；blocked 包含 `formal_backtest/live/alert/notification/auto_order`。
-
-`test_indicator_registry_v1.py` 改为逐 indicator exact supported set；不得放宽其他 indicator。
-
-- [ ] **Step 9: 加 V0 invariance regression**
-
-现有 `test_main_force_mirror.py` 全部必须保持 GREEN，并增加 definition/policy snapshot assertion，证明 V1 注册没有改变 V0 default parameters、version、capability 与 policy。
-
-- [ ] **Step 10: Verify Task 2**
+- [ ] **Step 9: Commit Task 2**
 
 ```bash
-PYTHONPATH=packages/quant-core \
+git diff --check
+git add \
+  packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py \
+  services/quant-api/tests/test_main_force_mirror_futures.py
+git commit -m "feat(indicators): add futures mirror pressure states"
+```
+
+Review must compare every formula and equality boundary against Spec §§7–8.
+
+---
+
+### Task 3: Bilateral Caution, Conflict, Latch/Re-arm, Registry/Policy, and V0 Guard
+
+**Lane:** Lane 3. Risk formula and lifecycle semantics. Sol/high, new session, Plan-only until approved.
+
+**Files:**
+- Modify: `packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py`
+- Modify: `packages/quant-core/guiyi_quant/indicators/__init__.py`
+- Modify: `packages/quant-core/guiyi_quant/indicators/registry.py`
+- Modify: `packages/quant-core/guiyi_quant/indicators/policy.py`
+- Modify: `services/quant-api/tests/test_main_force_mirror_futures.py`
+- Modify: `services/quant-api/tests/test_indicator_registry_v1.py`
+- Modify: `services/quant-api/tests/test_main_force_mirror.py`
+
+**Interfaces:**
+- Consumes Task 2 state-ready features and pressures.
+- Produces:
+  - exact long/short reason-code tuples and scores;
+  - `is_main_force_mirror_futures_candidate(score: float) -> bool`;
+  - frozen latch state/step contracts;
+  - conflict fail-closed semantics;
+  - final `compute_main_force_mirror_futures`;
+  - package exports;
+  - Registry/Policy entry.
+
+Define testable immutable latch contracts:
+
+```python
+@dataclass(frozen=True)
+class MainForceMirrorFuturesLatchState:
+    long_armed: bool
+    short_armed: bool
+    long_low_score_streak: int
+    short_low_score_streak: int
+    long_build_streak: int
+    short_build_streak: int
+
+@dataclass(frozen=True)
+class MainForceMirrorFuturesLatchStep:
+    state: MainForceMirrorFuturesLatchState
+    caution: MainForceMirrorFuturesCaution | None
+    reason: str | None
+```
+
+- [ ] **Step 1: Write RED tests for the eight evidence reasons and 69/70**
+
+Assert each isolated reason contributes exactly its frozen weight and that:
+- score 69 is not a candidate;
+- score 70 is a candidate;
+- threshold uses raw score, not rounded display score;
+- the parameter name is the revised liquidation name.
+
+- [ ] **Step 2: Run evidence RED**
+
+```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  -k "caution_reason or candidate_threshold"
+```
+
+Expected: FAIL.
+
+- [ ] **Step 3: Implement exact evidence evaluation**
+
+Implement pure evidence evaluators that receive the current unrounded feature set plus the previous ten state-ready points. Do not compute partial scores before caution readiness. Return reason tuples in fixed Spec order, so Python/Web JSON comparison is stable.
+
+- [ ] **Step 4: Write RED tests for conflict and latch state**
+
+Cover:
+- single long/short event consumes only its side;
+- conflict emits no event;
+- conflict leaves both latch booleans unchanged;
+- conflict leaves all four counters unchanged;
+- next legal bar triggers immediately;
+- event bar clears triggered-side counters;
+- non-triggered side continues its own re-arm.
+
+- [ ] **Step 5: Run conflict/latch RED**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  -k "conflict or latch"
+```
+
+Expected: FAIL.
+
+- [ ] **Step 6: Implement candidate resolution and latch transitions**
+
+The transition order must match Spec §10.1. Conflict assigns `MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT` to `caution_availability_reason`, keeps base `reason` clear, and bypasses all latch/re-arm mutation.
+
+- [ ] **Step 7: Write RED tests for all four re-arm paths and counter resets**
+
+Cover:
+- long range;
+- long build;
+- short range;
+- short build;
+- false condition resets directly to zero;
+- derived-unavailable pauses;
+- state-ready/caution-warmup pauses;
+- invalid/block change resets;
+- armed-side counters remain zero;
+- re-arm becomes effective after the current bar.
+
+- [ ] **Step 8: Implement re-arm and integrate it into `compute_main_force_mirror_futures`**
+
+Only caution-ready, non-conflict bars can advance re-arm counters. Keep the long and short sides independent.
+
+- [ ] **Step 9: Add Registry/Policy RED tests**
+
+Assert:
+
+```python
+definition = get_indicator("main_force_mirror_futures_v1")
+assert definition.supported_intervals == ("60m",)
+assert definition.lookback_bars == 31
+assert definition.warmup_bars == 30
+assert definition.status == "observation_only"
+assert definition.web_capable is True
+assert definition.backtest_capable is False
+assert definition.live_capable is False
+assert definition.alert_capable is False
+```
+
+Assert the exact parameters and `parameters_hash`. Verify only `Web_manual_observation` is allowed; `formal_backtest/live/alert/notification/auto_order` are blocked.
+
+Replace the old global frequency test with:
+- existing Registry entries equal the original seven-frequency tuple;
+- V1 equals `("60m",)`.
+
+- [ ] **Step 10: Add V0 regression characterization**
+
+Retain the existing V0 deterministic expected outputs:
+
+```text
+20  -0.654814  distribute
+21   0.697117  exit
+22   1.896099  exit
+23  -2.603149  lure
+24  -0.181907  lure
+25  -2.923248  pull_up
+26  -0.584624  lure
+27  -2.445683  lure
+```
+
+Also assert its indicator version, default parameters, policy, and caution indexes are unchanged.
+
+- [ ] **Step 11: Implement Registry, Policy, and exports**
+
+Add V1 without altering V0 entries. Use `input_fields=("open","high","low","close","volume","open_interest","physical_contract")`, exact 60m support, exact parameters, and interpretation/capability notes.
+
+- [ ] **Step 12: Run Task 3 regression**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_main_force_mirror_futures.py \
   services/quant-api/tests/test_main_force_mirror.py \
@@ -386,263 +729,432 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 uv run --offline --project services/quant-api ruff check \
   packages/quant-core/guiyi_quant/indicators \
   services/quant-api/tests/test_main_force_mirror_futures.py \
+  services/quant-api/tests/test_main_force_mirror.py \
   services/quant-api/tests/test_indicator_registry_v1.py
-
-git diff --check
 ```
 
-- [ ] **Step 11: Commit**
+Expected: PASS.
+
+- [ ] **Step 13: Independent formula review and commit**
+
+Review checklist:
+- all four weights and both directions;
+- conflict does not consume latch;
+- counter reset/pause semantics;
+- no V0 diff;
+- no forbidden consumer capability.
 
 ```bash
-git add packages/quant-core/guiyi_quant/indicators services/quant-api/tests/test_main_force_mirror_futures.py services/quant-api/tests/test_main_force_mirror.py services/quant-api/tests/test_indicator_registry_v1.py
-git commit -m "feat(indicator): implement futures mirror v1 kernel"
+git diff --check
+git add \
+  packages/quant-core/guiyi_quant/indicators \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  services/quant-api/tests/test_main_force_mirror.py \
+  services/quant-api/tests/test_indicator_registry_v1.py
+git commit -m "feat(indicators): add futures mirror cautions and policy"
 ```
 
-**Task 2 acceptance:** Python authority 完整；V1 causal/observation-only；V0 零语义变化。
+Critical and Important findings must be zero before integration.
 
 ---
 
-# Task 3: Web Physical Contract Mapping and Segment-Local Identity
+### Task 4: Web Physical-Contract Identity Propagation
 
-**Lane:** Lane 2. Terra/mid，新会话；identity ambiguity 升级 Sol。
+**Lane:** Lane 2. Ordinary read-model enrichment, no formula change. Terra/medium.
 
 **Files:**
 - Modify: `apps/quant-web/src/types/market.ts`
 - Modify: `apps/quant-web/src/composables/useMarketSeries.ts`
 - Modify: `apps/quant-web/tests/marketSeries.test.ts`
+- Modify: `apps/quant-web/e2e/market-runtime.spec.mjs`
 
 **Interfaces:**
-- Produces `BarData.physicalContract?: string`。
-- Produces `BarData.physicalContractReason?: 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING' | 'MFM_FUTURES_V1_SEGMENT_CONFLICT'`。
-- Task 4 mirror consumes only BarData；Task 5 uses seriesKind/frequency to enable Tab。
+- Consumes existing `MarketBarsPageResponse.request`, `resolved_contract_segments`, and WebSocket snapshot contract.
+- Produces:
+  - `BarData.physicalContract?: string`;
+  - `resolveHistoricalPhysicalContract(page, bar) -> string | undefined`;
+  - stable `MarketSeriesPhysicalIdentityError` with code `MFM_FUTURES_V1_SEGMENT_CONFLICT`;
+  - Historical and overlay bars enriched without a new HTTP/API field or request.
 
-- [ ] **Step 1: 写 page mapping RED tests**
+- [ ] **Step 1: Write RED unit tests for Historical mapping**
 
-覆盖：
+Tests:
+- `contract` maps every bar to normalized `request.contract`;
+- `actual_dominant` maps each bar to exactly one inclusive segment;
+- zero segment match leaves `physicalContract` undefined;
+- two segment matches throw `MFM_FUTURES_V1_SEGMENT_CONFLICT`;
+- `continuous` leaves the field undefined;
+- prepend performs the same mapping independently.
 
-```text
-contract page → every Bar physicalContract=request.contract
-actual_dominant → trading_day exact one segment
-zero segment → no contract + MISSING reason
-multiple segments → no contract + CONFLICT reason
-prepend page → page-own segments used, no prior-page guessing
-continuous → no physicalContract
-```
-
-- [ ] **Step 2: 写 WebSocket identity RED tests**
-
-`snapshot` 精确 `contract` 绑定 incoming completed bars；subsequent `bar` 只能复用已建立 overlay identity。无 overlay identity 的 `bar` 不使用 `marketState.live_contract` 猜测。
-
-- [ ] **Step 3: 运行 RED**
+- [ ] **Step 2: Run mapping RED**
 
 ```bash
-pnpm --dir apps/quant-web test -- --test-name-pattern="physical contract|resolved segment|overlay identity"
+cd apps/quant-web
+node --test tests/marketSeries.test.ts
 ```
 
-若 package runner 不透传 pattern，则运行：
+Expected: FAIL.
+
+- [ ] **Step 3: Implement Historical physical identity**
+
+Change `toBarData` to accept an optional exact physical contract. Make `mergeInitialPage` and `prependHistoricalPage` map from the page’s own request/segments. Do not infer from the latest dominant or symbol.
+
+- [ ] **Step 4: Write RED tests for completed overlay identity**
+
+Cover:
+- snapshot bars use payload contract;
+- contract request rejects/makes unavailable a mismatched snapshot contract;
+- actual-dominant accepts the exact snapshot contract;
+- ordinary `bar` reuses an established overlay contract;
+- ordinary `bar` before any snapshot identity receives no physical contract;
+- reset/identity change clears overlay identity;
+- existing realtime/post-close seam behavior remains unchanged.
+
+- [ ] **Step 5: Implement overlay binding**
+
+Reuse the existing `overlayIdentity.contract`; do not use `marketState.live_contract` as a fallback for an unbound bar. Keep `physicalContract` through normalization, prepend, replace, and live mutations.
+
+- [ ] **Step 6: Run Web unit and focused Market E2E**
 
 ```bash
-node --test apps/quant-web/tests/marketSeries.test.ts
+pnpm --dir apps/quant-web test
+
+pnpm --dir apps/quant-web exec playwright test \
+  e2e/market-runtime.spec.mjs
 ```
 
-- [ ] **Step 4: 实现 deterministic page resolver**
+Expected: PASS.
 
-新增 pure helper（可位于 `useMarketSeries.ts`）：
-
-```ts
-function resolvePagePhysicalContract(
-  bar: CanonicalBarDto,
-  page: MarketBarsPageResponse,
-): { physicalContract?: string; physicalContractReason?: BarData['physicalContractReason'] }
-```
-
-`actual_dominant` 用 inclusive trading-day range；exact 1 match 才返回 contract。
-
-- [ ] **Step 5: 实现 live/post-close resolver**
-
-`applyLiveBars` 显式接收 physical contract identity，不从 global dominant 推导。Contract request 如 payload contract 与请求不一致，该 Bar 不获得可用 V1 physical identity。
-
-- [ ] **Step 6: GREEN + full MarketSeries unit**
+- [ ] **Step 7: Commit Task 4**
 
 ```bash
-node --test apps/quant-web/tests/marketSeries.test.ts
 git diff --check
+git add \
+  apps/quant-web/src/types/market.ts \
+  apps/quant-web/src/composables/useMarketSeries.ts \
+  apps/quant-web/tests/marketSeries.test.ts \
+  apps/quant-web/e2e/market-runtime.spec.mjs
+git commit -m "feat(web): bind bars to physical contracts"
 ```
 
-- [ ] **Step 7: Commit**
-
-```bash
-git add apps/quant-web/src/types/market.ts apps/quant-web/src/composables/useMarketSeries.ts apps/quant-web/tests/marketSeries.test.ts
-git commit -m "feat(web): bind futures bars to physical contracts"
-```
-
-**Task 3 acceptance:** Web 每根可用于 V1 的 Bar 具有可验证 physical identity；分页/Live 都不猜合约。
+Review must confirm no new market fetch, no API change, and no physical-contract guessing.
 
 ---
 
-# Task 4: Browser Mirror and Shared Python/Web Golden Parity
+### Task 5: Web Mirror and One Shared Python/Web Golden Fixture
 
-**Lane:** Lane 3 contract parity. Sol/high，新会话。
+**Lane:** Lane 3. Cross-runtime formula parity. Sol/high, new session, Plan-only until approved.
 
 **Files:**
+- Create: `tests/fixtures/main_force_mirror_futures_v1_golden.json`
 - Create: `apps/quant-web/src/utils/mainForceMirrorFutures.ts`
 - Create: `apps/quant-web/tests/mainForceMirrorFutures.test.ts`
-- Create: `tests/fixtures/main_force_mirror_futures_v1_golden.json`
 - Modify: `services/quant-api/tests/test_main_force_mirror_futures.py`
 
 **Interfaces:**
-- Produces `calculateMainForceMirrorFutures(bars: BarData[]): MainForceMirrorFuturesWebResult`。
-- Web point fields mirror Python public fields using camelCase only at TS boundary；reason string values remain identical。
-- Shared fixture is the parity oracle consumed by both runtimes。
+- Consumes Task 3 Python public contract and Task 4 `BarData.physicalContract`.
+- Produces:
+  - TypeScript state/caution/result types matching Python names;
+  - `roundHalfAwayFromZeroBinary64(value: number, digits: number): number`;
+  - `calculateMainForceMirrorFutures(bars: BarData[]): MainForceMirrorFuturesResult`;
+  - one shared immutable golden JSON read by both runtimes.
 
-- [ ] **Step 1: 创建 shared input+expected fixture**
-
-Fixture schema 固定：
+Golden JSON schema:
 
 ```json
 {
   "schema_version": 1,
   "indicator_code": "main_force_mirror_futures_v1",
-  "input": [{"time":"...","physical_contract":"JM2701","open":1,"high":2,"low":1,"close":2,"volume":10,"open_interest":100}],
-  "expected": [{"valid":true,"state_ready":false,"caution_ready":false,"ready":false,"reason":"MFM_FUTURES_V1_WARMUP"}]
+  "indicator_version": "futures-research-v1",
+  "parameters_hash": "f7fd0c9bce0b08d1",
+  "bars": [
+    {
+      "time": "2026-01-01T01:00:00Z",
+      "physical_contract": "JM2609",
+      "open": 100.0,
+      "high": 102.0,
+      "low": 99.0,
+      "close": 101.0,
+      "volume": 1000.0,
+      "open_interest": 5000.0
+    }
+  ],
+  "rounding_cases": [
+    {"value": 1.25, "digits": 1, "expected": 1.3},
+    {"value": -1.25, "digits": 1, "expected": -1.3}
+  ],
+  "expected_points": [
+    {
+      "valid": true,
+      "state_ready": false,
+      "caution_ready": false,
+      "ready": false,
+      "reason": "MFM_FUTURES_V1_WARMUP",
+      "caution_availability_reason": "MFM_FUTURES_V1_CAUTION_WARMUP",
+      "state": null,
+      "signed_score": null,
+      "strength": null,
+      "price_impulse": null,
+      "clv": null,
+      "volume_ratio": null,
+      "delta_oi": null,
+      "oi_impulse": null,
+      "direction": null,
+      "range_position": null,
+      "long_open_pressure": null,
+      "short_open_pressure": null,
+      "long_caution_score": null,
+      "short_caution_score": null,
+      "caution": null,
+      "caution_reason_codes": []
+    }
+  ]
 }
 ```
 
-实际 fixture 至少包含 Spec 17.7 的：2 contracts、5 states、long/short caution、conflict、re-arm、missing OI、timestamp regression、positive/negative half-tie、readiness 20/30 boundaries。Expected 数值来自已通过 Task 2 exact unit tests 的 Python authority，并 review 后冻结；测试不得运行时动态重写 fixture。
+The committed fixture must include two contracts, all five states, long/short caution, one conflict, one re-arm, an OI gap, timestamp regression, readiness boundaries, and positive/negative rounding ties.
 
-- [ ] **Step 2: Python fixture RED/GREEN**
+- [ ] **Step 1: Add Python RED test requiring the absent shared fixture**
 
-Python test 读取 fixture，逐点核对所有 public fields 与 expected；任何 expected 缺字段均 FAIL，避免“只比最后几根”。
+The test reads `tests/fixtures/main_force_mirror_futures_v1_golden.json`, calculates Python output, converts non-finite numeric outputs to JSON `null`, and compares every listed field exactly.
 
-- [ ] **Step 3: 写 TS RED tests**
-
-锁定 exact `DEFAULTS`、half-away rounding、state/readiness/reason/caution/re-arm semantics；先确认新 util import failure。
-
-- [ ] **Step 4: 实现 TypeScript mirror**
-
-数学运算顺序与 Python 保持一致；不调用 `toFixed()` 决定结果。OI 缺失、timestamp failure、contract switch reset 等完全照 Spec。
-
-- [ ] **Step 5: Web fixture parity**
-
-Node test 读取仓库同一个 `tests/fixtures/main_force_mirror_futures_v1_golden.json`，对每个 point 做 deep equality（数值已 public-round）。禁止在 `apps/quant-web/tests` 再复制一份 golden。
-
-- [ ] **Step 6: Prefix invariance**
-
-Python 与 Web 都对 fixture 每个 prefix 重算，历史 ready/state/caution 输出不得因追加未来 Bar 改变。
-
-- [ ] **Step 7: Verify Task 4**
+- [ ] **Step 2: Run RED**
 
 ```bash
-PYTHONPATH=packages/quant-core \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  -k shared_golden
+```
+
+Expected: FAIL because the fixture does not exist.
+
+- [ ] **Step 3: Create the deterministic input sequence and freeze Python expected output**
+
+Use a one-off local Python command that calls the approved Python Kernel and writes the exact JSON schema. The test itself must never rewrite the fixture. Inspect the resulting diff to confirm the required cases and no sensitive/real market data.
+
+- [ ] **Step 4: Run Python shared-golden GREEN**
+
+Run Step 2 again.
+
+Expected: PASS.
+
+- [ ] **Step 5: Write TypeScript RED parity tests**
+
+Import the same root fixture using `fs.readFileSync(new URL('../../../tests/fixtures/main_force_mirror_futures_v1_golden.json', import.meta.url))`. Assert:
+- exact parameter identity;
+- every point field;
+- ordered reason codes;
+- positive/negative tie rounding;
+- `-0` normalization;
+- threshold decisions remain based on raw values.
+
+- [ ] **Step 6: Run TypeScript RED**
+
+```bash
+cd apps/quant-web
+node --test tests/mainForceMirrorFutures.test.ts
+```
+
+Expected: FAIL because the Web mirror does not exist.
+
+- [ ] **Step 7: Implement the TypeScript mirror**
+
+Mirror the Python operation order and block machine exactly. Use no `toFixed()` in mathematical code. Do not hard-code chart colors or UI text in the business utility.
+
+- [ ] **Step 8: Run parity and full Web unit GREEN**
+
+```bash
+cd apps/quant-web
+node --test tests/mainForceMirrorFutures.test.ts
+cd ../..
+pnpm --dir apps/quant-web test
+
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_main_force_mirror_futures.py
-
-node --test apps/quant-web/tests/mainForceMirrorFutures.test.ts
-git diff --check
 ```
 
-- [ ] **Step 8: Commit**
+Expected: PASS.
+
+- [ ] **Step 9: Independent parity review and commit**
+
+Reviewer compares Python/TypeScript arithmetic order, raw-vs-rounded decisions, reason priority, conflict, and latch behavior.
 
 ```bash
-git add apps/quant-web/src/utils/mainForceMirrorFutures.ts apps/quant-web/tests/mainForceMirrorFutures.test.ts tests/fixtures/main_force_mirror_futures_v1_golden.json services/quant-api/tests/test_main_force_mirror_futures.py
-git commit -m "test(indicator): lock futures mirror python web parity"
+git diff --check
+git add \
+  tests/fixtures/main_force_mirror_futures_v1_golden.json \
+  apps/quant-web/src/utils/mainForceMirrorFutures.ts \
+  apps/quant-web/tests/mainForceMirrorFutures.test.ts \
+  services/quant-api/tests/test_main_force_mirror_futures.py
+git commit -m "test(indicators): freeze futures mirror cross-runtime parity"
 ```
 
-**Task 4 acceptance:** Python/Web 单一 fixture 逐点一致，包括 user-review 的 9 个边界。
+Critical and Important findings must be zero.
 
 ---
 
-# Task 5: Three-Tab Pane, Dynamic Caution Markers and Hover
+### Task 6: Three-Tab Pane, Dynamic Markers, and Hover
 
-**Lane:** Lane 2. Terra/mid，新会话。
+**Lane:** Lane 2. Web integration. Terra/medium.
 
 **Files:**
+- Modify: `apps/quant-web/src/types/market.ts`
 - Modify: `apps/quant-web/src/components/kline/KlineChart.vue`
 - Modify: `apps/quant-web/src/components/kline/KlineHoverLegend.vue`
 - Modify: `apps/quant-web/src/utils/klineViewModel.ts`
-- Modify: `apps/quant-web/src/types/market.ts`
 - Modify: `apps/quant-web/src/pages/market/chart.vue`
-- Modify: `apps/quant-web/src/styles/chartTheme.ts`
-- Modify: `apps/quant-web/src/styles/tokens.css`
-- Create: `apps/quant-web/e2e/main-force-mirror-futures.spec.mjs`
+- Modify: `apps/quant-web/tests/kline-view-model.test.ts`
 - Modify: `apps/quant-web/e2e/main-force-mirror.spec.mjs`
-- Test: `apps/quant-web/tests/kline-view-model.test.ts`
+- Create: `apps/quant-web/e2e/main-force-mirror-futures.spec.mjs`
 
 **Interfaces:**
-- `SecondaryPanelId = 'macd' | 'main_force_mirror_futures' | 'main_force_mirror_v0'`。
-- UI label exact order: `MACD | 主力照妖镜 | 原型V0`。
-- `KlineChart` receives current `seriesKind` prop in addition to `period`；不发请求。
+- Consumes Task 5 `calculateMainForceMirrorFutures`.
+- Produces secondary panel IDs:
+  - `macd`;
+  - `main_force_mirror_futures`;
+  - `main_force_mirror_v0`.
+- Adds `seriesKind: SeriesKind` to `KlineChart` props.
+- Adds nullable `mainForceFutures` details to `HoverKlineContext`.
+- Keeps MACD selected by default.
 
-- [ ] **Step 1: 写 Tab capability RED tests/E2E**
+- [ ] **Step 1: Write E2E RED for tab order, support, and no refetch**
 
-证明：默认 MACD；60m actual_dominant/contract V1 enabled；15m/continuous V1 disabled；原型V0 保持可打开；点击 Tab 不增加 `/bars/page` request count。
+Test:
+- exact labels `MACD`, `主力照妖镜`, `原型V0`;
+- MACD selected initially;
+- V1 enabled for 60m actual-dominant and contract;
+- V1 disabled for 15m and continuous;
+- clicking V1/V0/MACD does not add `/bars/page` requests;
+- changing identity while V1 is selected and unsupported moves selection to MACD, never V0.
 
-- [ ] **Step 2: 写 render isolation RED tests**
+- [ ] **Step 2: Run E2E RED**
 
-切换三面板时，每次只保留当前 pane series/markers；切 V1 后 MACD/V0 data 清空；切回后 V1 marker/data 清空；pane count 始终 3。
-
-- [ ] **Step 3: 实现三 Tab 与 capability**
-
-不要把 current V0 `main_force_mirror` id 复用成 V1；明确重命名内部 id，避免 local state 误读。
-
-- [ ] **Step 4: 实现 V1 histogram 与 theme tokens**
-
-五状态颜色从 `resolveChartTheme()` 获取；`mainForceMirrorFutures.ts` 不含颜色。V1 right scale 保持 `[-105,+105]` 视觉约束，不用 caution 数值撑 scale。
-
-- [ ] **Step 5: 实现 dynamic series markers**
-
-V1 marker 挂在 V1 histogram series：
-
-```text
-long  → aboveBar / arrowDown / 追多小心 {score}
-short → belowBar / arrowUp   / 追空小心 {score}
+```bash
+pnpm --dir apps/quant-web exec playwright test \
+  e2e/main-force-mirror-futures.spec.mjs
 ```
 
-不创建 `±92` histogram。Conflict 不画方向 marker。
+Expected: FAIL.
 
-- [ ] **Step 6: 扩展 hover context**
+- [ ] **Step 3: Refactor series names and add local three-tab control**
 
-`HoverKlineContext` 添加 nullable futures-mirror observation，显示：physical contract、state、state/caution readiness、strength、price impulse、volume ratio20、delta OI、OI impulse、range position、long/short scores、caution reasons、availability reason。所有 unavailable 使用既有 `formatKlineHoverValue()` → `—`。
+Rename current V0 variables explicitly (`mainForceV0Histogram`, `mainForceV0Caution`, `mainForceV0Markers`). Add V1 histogram and V1 marker plugin on pane 2. Keep pane count and stretch factors unchanged.
 
-- [ ] **Step 7: 图例与文案**
-
-V1 图例明确：
+Map V1 colors only through existing theme values:
 
 ```text
-多头增仓 / 空头增仓 / 空头回补 / 多头减仓 / 换手
+LONG_BUILD       → theme.up
+SHORT_BUILD      → theme.down
+SHORT_COVER      → theme.ema21
+LONG_LIQUIDATION → theme.macdDif
+TURNOVER         → theme.textMuted
+```
+
+Do not place colors in `mainForceMirrorFutures.ts`.
+
+- [ ] **Step 4: Add fixed histogram scale without caution points**
+
+Configure the V1 histogram’s `autoscaleInfoProvider` to return `minValue=-105`, `maxValue=105`. The V1 data series contains only signed scores; there is no V1 caution histogram.
+
+- [ ] **Step 5: Write marker RED tests/E2E**
+
+Assert:
+- long caution marker is `aboveBar`, `arrowDown`, text `追多小心 {score}`;
+- short caution marker is `belowBar`, `arrowUp`, text `追空小心 {score}`;
+- conflict draws no directional marker;
+- marker creation does not add a ±92 data point;
+- a strength-100 bar keeps the fixed histogram scale.
+
+- [ ] **Step 6: Implement dynamic V1 markers**
+
+Create markers from the V1 observation and attach them to the V1 histogram with `createSeriesMarkers`. Clear V1 markers whenever another tab is selected.
+
+- [ ] **Step 7: Write hover RED tests**
+
+Add a V1 hover object containing:
+- physical contract;
+- state;
+- state/caution readiness;
+- strength;
+- price impulse;
+- volume ratio;
+- delta OI;
+- OI impulse;
+- range position;
+- long/short scores;
+- reason codes;
+- availability reason.
+
+Assert missing values format as `—`.
+
+- [ ] **Step 8: Implement timestamp-aligned hover projection**
+
+Keep generic OHLC/EMA behavior unchanged. `KlineChart` stores the current V1 result and passes the matching point into `resolveKlineHoverContext`; the legend shows V1 fields only on the V1 tab.
+
+- [ ] **Step 9: Add legend/status copy**
+
+V1 legend includes:
+
+```text
 70 = 风险证据评分阈值，不是资金流比例或概率
 ```
 
-V0 图例继续明确原型 HHV5/BARSLAST10，不改 V0 数学。
+Differentiate:
+- unsupported identity;
+- OI/input unavailable;
+- state warm-up;
+- caution warm-up;
+- conflict;
+- ready.
 
-- [ ] **Step 8: Web unit + Playwright RED→GREEN**
+No missing value becomes zero.
+
+- [ ] **Step 10: Preserve V0 under `原型V0`**
+
+Update the existing V0 E2E so its original bars/caution/legend remain accessible and deterministic. The label move must not modify V0 calculation or tests.
+
+- [ ] **Step 11: Run Web verification**
 
 ```bash
 pnpm --dir apps/quant-web test
+
 pnpm --dir apps/quant-web exec playwright test \
+  e2e/main-force-mirror.spec.mjs \
   e2e/main-force-mirror-futures.spec.mjs \
-  e2e/main-force-mirror.spec.mjs
+  e2e/market-runtime.spec.mjs
+
 pnpm --dir apps/quant-web build
-git diff --check
 ```
 
-E2E 额外证明 strength 100 时 marker 不创建固定 price point、换月后 V1 warm-up、OI unavailable 文案与 caution warm-up 文案不同、无 horizontal overflow。
+Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 12: Responsive review and commit**
+
+Verify 1440×900, 1280×720, and 1024×768 have no horizontal overflow.
 
 ```bash
-git add apps/quant-web/src apps/quant-web/tests apps/quant-web/e2e/main-force-mirror-futures.spec.mjs apps/quant-web/e2e/main-force-mirror.spec.mjs
-git commit -m "feat(web): add futures main-force mirror observation"
+git diff --check
+git add \
+  apps/quant-web/src/types/market.ts \
+  apps/quant-web/src/components/kline/KlineChart.vue \
+  apps/quant-web/src/components/kline/KlineHoverLegend.vue \
+  apps/quant-web/src/utils/klineViewModel.ts \
+  apps/quant-web/src/pages/market/chart.vue \
+  apps/quant-web/tests/kline-view-model.test.ts \
+  apps/quant-web/e2e/main-force-mirror.spec.mjs \
+  apps/quant-web/e2e/main-force-mirror-futures.spec.mjs
+git commit -m "feat(web): add futures main-force mirror pane"
 ```
-
-**Task 5 acceptance:** 用户可在同一副图 pane 中选择 MACD/V1/V0；V1 双向 marker 可解释且不污染 scale；切换不 refetch。
 
 ---
 
-# Task 6: Read-Only Historical Shadow Service and CLI
+### Task 7: Read-Only Historical Shadow Service and CLI
 
-**Lane:** Lane 1 research，因涉及 OI/segment/outcome 语义使用 Sol/high，新会话。
+**Lane:** Lane 1 with Sol/high because segment-local outcomes and future-horizon accounting require leakage review.
 
 **Files:**
 - Create: `services/quant-api/app/market_data/main_force_mirror_futures_research_service.py`
@@ -654,8 +1166,8 @@ git commit -m "feat(web): add futures main-force mirror observation"
 - Modify: `services/quant-api/tests/test_research_cli.py`
 
 **Interfaces:**
-
-新增 immutable request：
+- Consumes `MarketDataService` and Python V1 only.
+- Produces:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -666,77 +1178,130 @@ class MainForceMirrorFuturesResearchRequest:
     frequency: BarFrequency
     since: date
     through: date
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorFuturesEvent:
+    indicator_code: str
+    indicator_version: str
+    parameters_hash: str
+    symbol: str
+    series_kind: SeriesKind
+    physical_contract: str
+    trading_day: date
+    bar_end: datetime
+    caution_direction: str
+    score: float
+    reason_codes: tuple[str, ...]
+    state: str
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorFuturesHorizonSummary:
+    horizon_bars: int
+    sample_count: int
+    reversal_returns: tuple[float, ...]
+    warning_mfe: tuple[float, ...]
+    warning_mae: tuple[float, ...]
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorFuturesResearchResult:
+    products: tuple[str, ...]
+    bars_valid_count: int
+    bars_state_ready_count: int
+    bars_caution_ready_count: int
+    event_count_long: int
+    event_count_short: int
+    conflict_count: int
+    missing_oi_count: int
+    segment_reset_count: int
+    timestamp_invalid_count: int
+    state_distribution: Mapping[str, int]
+    reason_code_distribution: Mapping[str, int]
+    score_distribution: tuple[int, ...]
+    horizon_summary: Mapping[int, MainForceMirrorFuturesHorizonSummary]
+
+MainForceMirrorFuturesResearchService.run(
+    request: MainForceMirrorFuturesResearchRequest
+) -> MainForceMirrorFuturesResearchResult
 ```
 
-构造时精确拒绝：frequency 非 60m、continuous、contract 缺 contract、since>through。
+The method signature above is the exact public contract. Task 7 supplies the complete implementation before merge.
 
-Service：
+- [ ] **Step 1: Write request-validation RED tests**
 
-```python
-class MainForceMirrorFuturesResearchService:
-    def run(
-        self,
-        request: MainForceMirrorFuturesResearchRequest,
-    ) -> MainForceMirrorFuturesResearchResult: ...
-```
+Reject:
+- frequency other than 60m;
+- continuous;
+- contract without contract code;
+- actual-dominant with a contract argument;
+- invalid symbol/date order.
 
-- [ ] **Step 1: 写 request/read path RED tests**
+- [ ] **Step 2: Write MarketDataService-only RED tests**
 
-Fake `MarketDataService` 必须记录 query；actual_dominant 走既有 dominant query/result segments，contract 走既有 physical SeriesQuery；测试显式断言 service 没有 file/parquet/provider/Redis dependency。
+Use a fake implementing `query(SeriesQuery)` and `query_actual_dominant_trading_days(ActualDominantTradingDayQuery)`. Assert the service does not accept a Parquet path, store, provider, Redis, or DB writer.
 
-- [ ] **Step 2: 写 segment/event/outcome RED tests**
-
-构造 2 segments；只有 `caution != null` 生成 event；conflict 只 `conflict_count += 1`；1/3/5/10 outcome 只在同 physical contract segment 内计算，跨 segment 为 unavailable。
-
-- [ ] **Step 3: 写 summary RED tests**
-
-精确字段：`bars_valid_count`、`bars_state_ready_count`、`bars_caution_ready_count`、long/short event count、conflict count、events per 1000 caution-ready bars、state/reason/score distributions、forward reversal/MFE/MAE、missing OI、segment reset、timestamp invalid。
-
-- [ ] **Step 4: 实现 service**
-
-只消费 Task 2 Python kernel；不复制公式。所有 `Decimal`/float JSON 序列化规则与现有 research CLI 风格一致，result 不包含 promotion/recommendation 字段。
-
-- [ ] **Step 5: CLI parser RED**
-
-新增：
+- [ ] **Step 3: Run service RED**
 
 ```bash
-guiyi research main-force-mirror-futures \
-  --symbol jm \
-  --series-kind actual_dominant \
-  --frequency 60m \
-  --since 2025-01-01 \
-  --through 2026-08-19
-```
-
-`contract` 模式要求 `--contract`。Parser 允许的 frequency 只有 `60m`。
-
-- [ ] **Step 6: CLI composition GREEN**
-
-`main.py` 增加独立 `main_force_mirror_futures_research_service_factory`，只在该 research_command 分支构造。`_execution_is_readonly()` 已对 research 返回 true，保持不变。
-
-stdout schema 至少：
-
-```json
-{
-  "schema_version": 1,
-  "command": "research.main-force-mirror-futures",
-  "status": "ok",
-  "readonly": true,
-  "indicator_code": "main_force_mirror_futures_v1",
-  "indicator_version": "futures-research-v1"
-}
-```
-
-- [ ] **Step 7: 代表矩阵只做合同测试**
-
-在 test 中固定允许 research examples `jm/ag/cu/m/sc`，但本 Task **不得**调用真实 Canonical 执行这五个品种，也不得保存正式 evidence。
-
-- [ ] **Step 8: Verify Task 6**
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py
+```
+
+Expected: FAIL.
+
+- [ ] **Step 4: Implement exact Historical read orchestration**
+
+- `actual_dominant`: use `query_actual_dominant_trading_days` for 60m and the returned resolved segments.
+- `contract`: use `SeriesQuery` through `MarketDataService.query`.
+- bind every bar to one physical contract;
+- run Python V1 once over the aligned sequence;
+- never fabricate a segment or bridge a gap.
+
+- [ ] **Step 5: Write event/outcome RED tests**
+
+Cover:
+- long/short events only when Kernel caution is directional;
+- conflict count increments but creates no event;
+- horizons 1/3/5/10;
+- exact long/short mirrored formulas;
+- insufficient future bars produce no sample for that horizon;
+- physical-contract change before `t+h` makes that outcome unavailable;
+- event identity contains exact code/version/hash/contract/time/reasons/state.
+
+- [ ] **Step 6: Implement event extraction and segment-local outcomes**
+
+Use only bars after the event for outcomes; never feed forward outcomes back into event creation. This separation is required for prefix invariance and leakage safety.
+
+- [ ] **Step 7: Write CLI RED tests**
+
+Exact command:
+
+```text
+guiyi research main-force-mirror-futures
+  --symbol jm
+  --series-kind actual_dominant
+  --frequency 60m
+  --since 2023-01-01
+  --through 2026-08-18
+```
+
+Contract mode requires `--contract`. JSON asserts:
+- `command="research.main-force-mirror-futures"`;
+- `readonly=true`;
+- no `promotion`, `recommendation`, or profitability field;
+- stable counts/distributions/horizon schema;
+- factory selection does not affect existing research commands.
+
+- [ ] **Step 8: Implement parser, request union, renderer, composition, and CLI selection**
+
+Add a dedicated injected factory to `guiyi_cli.main.main`. Do not overload the SuBing lifecycle or candidate-validation service.
+
+- [ ] **Step 9: Run Task 7 tests, Ruff, and Mypy**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
   services/quant-api/tests/test_research_cli.py
@@ -744,92 +1309,142 @@ uv run --offline --project services/quant-api pytest -q \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 uv run --offline --project services/quant-api ruff check \
   services/quant-api/app/market_data/main_force_mirror_futures_research_service.py \
+  services/quant-api/app/market_data/composition.py \
   services/quant-api/app/guiyi_cli \
   services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
   services/quant-api/tests/test_research_cli.py
 
-git diff --check
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+MYPYPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api mypy \
+  --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/market_data/main_force_mirror_futures_research_service.py \
+  services/quant-api/app/guiyi_cli
 ```
 
-- [ ] **Step 9: Commit**
+Expected: PASS.
+
+- [ ] **Step 10: Leakage/identity review and commit**
+
+Reviewer checks that:
+- only `MarketDataService` reads data;
+- outcomes stay within one segment;
+- future bars affect only outcome metrics, never caution creation;
+- real representative-matrix research was not run;
+- no persistence/promotion path exists.
 
 ```bash
-git add services/quant-api/app/market_data/main_force_mirror_futures_research_service.py services/quant-api/app/market_data/composition.py services/quant-api/app/guiyi_cli services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py services/quant-api/tests/test_research_cli.py
-git commit -m "feat(research): add futures mirror shadow CLI"
+git diff --check
+git add \
+  services/quant-api/app/market_data/main_force_mirror_futures_research_service.py \
+  services/quant-api/app/market_data/composition.py \
+  services/quant-api/app/guiyi_cli \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
+  services/quant-api/tests/test_research_cli.py
+git commit -m "feat(research): add futures mirror shadow analysis"
 ```
-
-**Task 6 acceptance:** repo 具备 deterministic read-only Shadow 代码入口；没有真实 Shadow execution/evidence，也无 write side effect。
 
 ---
 
-# Task 7: Full Regression, Canonical Documentation and Independent Review
+### Task 8: Full Regression, Documentation, Independent Review, and Develop Closeout
 
-**Lane:** Lane 3 review. Sol/high，新独立 Review 会话。
+**Lane:** Lane 3 review. Sol/high in a fresh independent Review session.
 
 **Files:**
 - Modify: `docs/INDICATOR_KERNEL.md`
 - Modify: `TESTING.md`
-- Modify: `STATUS.md` only after all gates pass
-- Review all Task 1–6 changed files
+- Modify: `STATUS.md` only after all verification/review gates pass.
 
-**Interfaces:** Final branch must expose V1 on `develop` only and preserve all production/runtime claims exactly unless separately released later。
+**Interfaces:**
+- Consumes the integrated Tasks 1–7 on latest `develop`.
+- Produces repository-native verification evidence, accurate canonical docs, and a develop-only status statement.
+- Task 8 does not make production-code fixes. A failure opens a targeted fix Task and ends with `FULL_VERIFICATION_FAILED`.
 
-- [ ] **Step 1: 更新 Indicator Kernel canonical**
-
-写明 V0 与 V1 双版本：V0 股票式原型保持 frozen；V1 60m/OI/physical-contract、five-state、double caution、70 evidence、rounding、readiness、consumer blocks。不得写“主力资金实测”。
-
-- [ ] **Step 2: 更新 TESTING.md focused commands**
-
-新增 Main Force Mirror Futures V1 无副作用验证节，列出 Task 2/4/5/6 的 exact pytest/node/playwright/build 命令；明确真实 representative Shadow 与 Runtime 不属于测试。
-
-- [ ] **Step 3: 运行 focused V1 suite**
+- [ ] **Step 1: Verify ancestry and exact scope**
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
+git fetch origin
+git checkout develop
+git pull --ff-only origin develop
+git merge-base --is-ancestor a5180f97c5ac6675a6d73e6a48bc837efac8be06 HEAD
+git status --short
+```
+
+Expected: ancestor check exit 0 and clean status.
+
+- [ ] **Step 2: Run the focused Python indicator matrix**
+
+```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_main_force_mirror_futures.py \
   services/quant-api/tests/test_main_force_mirror.py \
   services/quant-api/tests/test_indicator_registry_v1.py \
   services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
   services/quant-api/tests/test_research_cli.py
-
-pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web exec playwright test \
-  e2e/main-force-mirror-futures.spec.mjs \
-  e2e/main-force-mirror.spec.mjs \
-  e2e/market-runtime.spec.mjs
-pnpm --dir apps/quant-web build
 ```
 
-- [ ] **Step 4: 运行 repository-native regression**
+Expected: PASS.
 
-按执行时最新 `TESTING.md` 运行完整 backend tests、Ruff、Mypy、Web unit、Market browser suite、Web production build、engineering tests（若受影响）。不得删测试来换绿。
-
-最低命令：
+- [ ] **Step 3: Run full backend and engineering tests**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-uv run --offline --project services/quant-api pytest -q services/quant-api/tests
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests
 
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+uv run --offline --project services/quant-api pytest -q \
+  tests/engineering
+```
+
+Expected: PASS. PostgreSQL tests run only with an explicitly isolated test database satisfying `TESTING.md`; never use the Runtime/production database.
+
+- [ ] **Step 4: Run Ruff and Mypy**
+
+```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 uv run --offline --project services/quant-api ruff check \
-  services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant
+  services/quant-api/app \
+  services/quant-api/tests \
+  packages/quant-core/guiyi_quant
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-MYPYPATH=services/quant-api \
-uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
-  services/quant-api/app/market_data services/quant-api/app/guiyi_cli \
-  services/quant-api/app/alerts services/quant-api/app/execution_review \
+MYPYPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api mypy \
+  --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/market_data \
+  services/quant-api/app/guiyi_cli \
+  services/quant-api/app/alerts \
+  services/quant-api/app/execution_review \
   services/quant-api/app/services/runtime_health.py \
-  services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py \
-  services/quant-api/app/api/alerts.py services/quant-api/app/api/execution_review.py
+  services/quant-api/app/api/market.py \
+  services/quant-api/app/api/market_live.py \
+  services/quant-api/app/api/alerts.py \
+  services/quant-api/app/api/execution_review.py
+```
 
+Expected: PASS.
+
+- [ ] **Step 5: Run Web unit, E2E, and production build**
+
+```bash
 pnpm --dir apps/quant-web test
+
+pnpm --dir apps/quant-web exec playwright test \
+  e2e/main-force-mirror.spec.mjs \
+  e2e/main-force-mirror-futures.spec.mjs \
+  e2e/market-runtime.spec.mjs \
+  e2e/market-research.spec.mjs \
+  e2e/alert-v1.spec.mjs
+
 pnpm --dir apps/quant-web build
 ```
 
-- [ ] **Step 5: 安全与 diff checks**
+Expected: PASS.
+
+- [ ] **Step 6: Run safety and diff checks**
 
 ```bash
 python3 scripts/engineering/secret_scan.py --json
@@ -837,78 +1452,94 @@ git diff --check
 git status --short
 ```
 
-Secret scan 必须 `finding_count=0`；输出不可包含 secret content。
+Expected:
+- secret `finding_count=0`;
+- no diff errors;
+- only Task 8 documentation changes, if any.
 
-- [ ] **Step 6: 独立 whole-branch Review**
+- [ ] **Step 7: Update canonical documentation**
 
-Review 必须逐项检查：Spec 9 项 user findings、V0 invariance、未来函数/prefix invariance、physical segment reset、OI missing semantics、timestamp max rule、Python/Web rounding、conflict latch、re-arm off-by-one、dynamic marker、read-only Shadow、无 Alert/DB/Runtime/order path。
+`docs/INDICATOR_KERNEL.md` records:
+- V1 exact identity/status/support;
+- required inputs and physical-contract reset;
+- first state-ready/complete-ready indices;
+- five states and bilateral score;
+- conflict/latch/rounding contract;
+- no measured fund-flow claim;
+- no formal consumer capability;
+- shared golden fixture path.
 
-Gate：
+`TESTING.md` records the focused commands from Steps 2 and 5.
+
+- [ ] **Step 8: Conduct independent final review**
+
+New Review session compares Spec, Plan, all diffs, tests, and forbidden boundaries. Required result:
 
 ```text
 Critical = 0
 Important = 0
 ```
 
-Minor 可修则修；任何 load-bearing Minor 未解决不得伪装 clean。
+Minor findings are either fixed in a separate reviewed commit or explicitly accepted as non-behavioral.
 
-- [ ] **Step 7: Review findings RED→GREEN 修复并 re-review**
+- [ ] **Step 9: Update `STATUS.md` only after Steps 1–8 pass**
 
-任何代码 finding 必须先补 regression test；修复后重跑受影响 full domain tests。若 finding 要改变 approved formula，停止并返回 `FORMULA_DRIFT_REQUIRES_NEW_VERSION`。
-
-- [ ] **Step 8: STATUS develop-only closeout**
-
-只有前述全部 GREEN + Review clean 后，`STATUS.md` 可新增：
+Allowed wording:
 
 ```text
-main_force_mirror_futures_v1
-DEVELOP CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE
+develop 已完成 main_force_mirror_futures_v1 的 60m Web observation
+实现与仓库原生验证；V0 保持不变。V1 仍为 observation_only，
+未进入 Alert、notification、正式 backtest、Runtime consumer 或订单路径。
+本次未运行真实代表矩阵 Shadow，未形成策略有效性或晋升结论。
 ```
 
-并明确：
+Do not claim release, tag, Runtime promotion, production deployment, profitability, or formal evidence.
 
-```text
-未 release
-未 Runtime promotion
-未真实 representative Shadow
-未保存正式 evidence
-未 Alert/notification
-observation_only
-```
-
-不得修改当前 production release/runtime identity，除非另有真实 Gate 已执行。
-
-- [ ] **Step 9: Final commit**
+- [ ] **Step 10: Commit and integrate closeout**
 
 ```bash
 git add docs/INDICATOR_KERNEL.md TESTING.md STATUS.md
-git commit -m "docs: close futures main-force mirror v1 implementation"
+git commit -m "docs: close futures main-force mirror v1 on develop"
 ```
 
-- [ ] **Step 10: Integration readback and cleanup**
-
-确认实现 commits 已进入 `develop` ancestry；仅在 merged/readback 成功且 task worktree clean 后移除临时 worktree/branch。不得发布 main/tag，不得 reload Runtime。
-
-**Task 7 acceptance:** 只能宣布 `main_force_mirror_futures_v1 Web observation implementation verified on develop`；不能宣布策略有效、可盈利、Alert-ready、Runtime-ready 或可交易。
+After integration:
+- read back `develop` ancestry;
+- remove the merged closeout worktree/branch;
+- leave `main`, tags, and Runtime unchanged.
 
 ---
 
-## Plan Self-Review Checklist
+## Plan Self-Review Record
 
-执行前 controller 必须再次确认：
+### Spec coverage
 
-- [ ] Spec 21 节 9 项用户 Review 决议全部有 Task/test 对应：conflict→Task2/4；readiness→Task1/2/4；OI→Task1/2/3；timestamp→Task1/2/4；re-arm reset→Task2；TURNOVER zero→Task2；参数 rename→Task1；dynamic marker→Task5；rounding→Task1/4。
-- [ ] V0 invariance 在 Task2、Task5、Task7 都有回归；没有任何 Task 要重写 V0 formula/golden。
-- [ ] Python authoritative kernel 在 Task2 完成后才注册 consumer，Task1 不把半实现 indicator 暴露出去。
-- [ ] `physicalContractReason` 是 Web internal diagnostic，不改 API DTO/Canonical。
-- [ ] 单一 golden fixture 路径只存在 `tests/fixtures/main_force_mirror_futures_v1_golden.json`。
-- [ ] Task5 不新增 pane，不新增 bar request；只复用现有 pane 2。
-- [ ] Task6 只实现 Shadow 代码；真实 jm/ag/cu/m/sc 运行不是本 Plan 自动执行项。
-- [ ] 所有 Task 都有 RED、GREEN、verification、commit 和 reviewer gate。
-- [ ] 没有 `TBD`、`TODO`、`implement later` 或“自行决定参数”的执行占位。
+- Indicator identity, capability, parameters, support set: Tasks 1 and 3.
+- Closed-form readiness and OI/timestamp/block rules: Task 1.
+- Exact math and five states: Task 2.
+- Bilateral evidence, conflict, latch, re-arm: Task 3.
+- Physical-contract mapping: Task 4.
+- Binary64 round and Python/Web parity: Task 5.
+- Three tabs, dynamic markers, hover, unsupported states: Task 6.
+- Historical Shadow/outcomes/CLI: Task 7.
+- Full regression, documentation, independent Review, develop-only status: Task 8.
+- V0 zero-change guard and forbidden capability paths: Tasks 3 and 8.
 
-## Execution Handoff
+### Placeholder scan
 
-推荐采用 **Subagent-Driven Development**：fresh subagent per Task，Task 1/2/4/6 用 Sol，Task 3/5 用 Terra，Task 7 用独立 Sol Review；按 Task 顺序连续执行，不跨 Task 共享未审查代码。
+This Plan contains no reserved placeholder tokens or undefined cross-task shorthand. Every Task identifies exact files, interfaces, RED/GREEN commands, and commit boundary.
 
-Inline 执行时必须使用 `superpowers:executing-plans`，仍保持相同 Task boundaries、TDD 与 Review Gate。
+### Type consistency
+
+The following names are fixed across Tasks:
+- `MainForceMirrorFuturesResult`
+- `MainForceMirrorFuturesState`
+- `MainForceMirrorFuturesCaution`
+- `compute_main_force_mirror_futures`
+- `round_half_away_from_zero_binary64`
+- `calculateMainForceMirrorFutures`
+- `roundHalfAwayFromZeroBinary64`
+- `MainForceMirrorFuturesResearchRequest`
+- `MainForceMirrorFuturesResearchResult`
+- secondary panel IDs `macd`, `main_force_mirror_futures`, `main_force_mirror_v0`.
+
+Any implementation that changes these names must update the Plan before code integration.
