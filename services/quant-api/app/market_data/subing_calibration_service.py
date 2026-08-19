@@ -2,20 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from statistics import median
 from types import MappingProxyType
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
 from .domain import (
+    ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
     MarketSeriesResult,
-    SeriesKind,
-    SeriesQuery,
 )
 from .subing_calibration import (
     CalibrationReport,
@@ -36,7 +34,6 @@ from .subing_research import (
 )
 
 
-_SHANGHAI = ZoneInfo("Asia/Shanghai")
 _SUPPORTED_FREQUENCIES = frozenset({BarFrequency.M5, BarFrequency.M15, BarFrequency.D1})
 _INTRADAY_FREQUENCIES = frozenset({BarFrequency.M5, BarFrequency.M15})
 _HORIZONS = (3, 5, 8)
@@ -152,7 +149,10 @@ class CalibrationResearchResult:
 
 
 class _MarketDataReader(Protocol):
-    def query(self, request: SeriesQuery) -> MarketSeriesResult: ...
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -422,14 +422,12 @@ class SubingCalibrationResearchService:
         frequency: BarFrequency,
         request: CalibrationResearchRequest,
     ) -> _FactorSeries:
-        start, end = _research_window(request.since, request.through)
-        result = self._market_data.query(
-            SeriesQuery(
-                SeriesKind.ACTUAL_DOMINANT,
+        result = self._market_data.query_actual_dominant_trading_days(
+            ActualDominantTradingDayQuery(
                 symbol,
                 frequency,
-                start,
-                end,
+                request.since,
+                request.through,
             )
         )
         requested_bars = tuple(
@@ -468,16 +466,6 @@ class SubingCalibrationResearchService:
         return _FactorSeries(
             segments=tuple(factor_segments),
         )
-
-
-def _research_window(since: date, through: date) -> tuple[datetime, datetime]:
-    start = datetime.combine(since - timedelta(days=1), time.min, _SHANGHAI).astimezone(
-        UTC
-    )
-    end = datetime.combine(through + timedelta(days=1), time.max, _SHANGHAI).astimezone(
-        UTC
-    )
-    return start, end
 
 
 def _align_latest_companions(

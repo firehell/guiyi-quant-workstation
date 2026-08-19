@@ -2,20 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from statistics import median
 from types import MappingProxyType
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
 from .domain import (
+    ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
     MarketSeriesResult,
     ResolvedContractSegment,
-    SeriesKind,
-    SeriesQuery,
 )
 from .market_data_service import DominantContractSegmentSummary
 from .subing_calibration import (
@@ -44,7 +42,6 @@ from .subing_research import (
 )
 
 
-_SHANGHAI = ZoneInfo("Asia/Shanghai")
 _HORIZONS = (3, 5, 8)
 _FUNNEL_KEYS = (
     "DATA_READY",
@@ -108,7 +105,10 @@ class SubingLifecycleResearchResult:
 
 
 class _MarketDataReader(Protocol):
-    def query(self, request: SeriesQuery) -> MarketSeriesResult: ...
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult: ...
 
     def dominant_segment_for_day(
         self,
@@ -414,15 +414,13 @@ class SubingLifecycleResearchService:
         symbol: str,
         request: LifecycleResearchRequest,
     ) -> _ResolvedProductSeries:
-        probe_start, end = _research_window(request.since, request.through)
         probe = {
-            frequency: self._market_data.query(
-                SeriesQuery(
-                    SeriesKind.ACTUAL_DOMINANT,
+            frequency: self._market_data.query_actual_dominant_trading_days(
+                ActualDominantTradingDayQuery(
                     symbol,
                     frequency,
-                    probe_start,
-                    end,
+                    request.since,
+                    request.through,
                 )
             )
             for frequency in (BarFrequency.M5, BarFrequency.M15)
@@ -440,15 +438,13 @@ class SubingLifecycleResearchService:
         if not segments or segments != probe_segments[BarFrequency.M15]:
             raise ValueError("rank1 segment identity is missing or inconsistent")
 
-        full_start, _ = _research_window(segments[0].start_trading_day, request.through)
         full = {
-            frequency: self._market_data.query(
-                SeriesQuery(
-                    SeriesKind.ACTUAL_DOMINANT,
+            frequency: self._market_data.query_actual_dominant_trading_days(
+                ActualDominantTradingDayQuery(
                     symbol,
                     frequency,
-                    full_start,
-                    end,
+                    segments[0].start_trading_day,
+                    request.through,
                 )
             )
             for frequency in (BarFrequency.M5, BarFrequency.M15)
@@ -581,16 +577,6 @@ class SubingLifecycleResearchService:
             latest_bar_source="canonical",
         )
         return _SegmentSeries(segment_bars, factors)
-
-def _research_window(since: date, through: date) -> tuple[datetime, datetime]:
-    start = datetime.combine(since - timedelta(days=1), time.min, _SHANGHAI).astimezone(
-        UTC
-    )
-    end = datetime.combine(through + timedelta(days=1), time.max, _SHANGHAI).astimezone(
-        UTC
-    )
-    return start, end
-
 
 def _ready_factor_snapshots(
     series: _SegmentSeries,

@@ -24,6 +24,7 @@ from app.market_data.catalog import (
     MarketCatalog,
 )
 from app.market_data.domain import (
+    ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
     DatasetKey,
@@ -107,6 +108,48 @@ class MarketDataService:
             request,
             bars,
             (),
+        )
+
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult:
+        """按精确交易日读取 actual-dominant，不由消费者猜自然时间边界。"""
+        try:
+            trading_days = self.catalog.trading_days(
+                request.symbol,
+                request.since,
+                request.through,
+            )
+            if not trading_days:
+                raise MarketDataError("TRADING_CALENDAR_MISSING")
+            exchange = self.catalog.exchange_for_symbol(request.symbol)
+            first_windows = session_windows_for_trading_day(
+                self.catalog.session,
+                exchange=exchange,
+                symbol=request.symbol,
+                trading_day=trading_days[0],
+            )
+            last_windows = session_windows_for_trading_day(
+                self.catalog.session,
+                exchange=exchange,
+                symbol=request.symbol,
+                trading_day=trading_days[-1],
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        except SessionClockError as exc:
+            raise MarketDataError(exc.code) from exc
+        if not first_windows or not last_windows:
+            raise MarketDataError("TRADING_SESSION_MISSING")
+        return self.query(
+            SeriesQuery(
+                SeriesKind.ACTUAL_DOMINANT,
+                request.symbol,
+                request.frequency,
+                min(window.start for window in first_windows),
+                max(window.end for window in last_windows),
+            )
         )
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:

@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
-from app.market_data.domain import CanonicalBar, DatasetKey, SeriesQuery
+from app.market_data.domain import (
+    ActualDominantTradingDayQuery,
+    CanonicalBar,
+    DatasetKey,
+    SeriesQuery,
+)
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import (
@@ -649,6 +654,94 @@ def test_actual_dominant_after_day_close_does_not_require_future_session_facts(
     )
 
     assert [bar.close for bar in result.bars] == [Decimal("100")]
+
+
+def test_actual_dominant_trading_day_query_normalizes_and_rejects_invalid_window() -> None:
+    query = ActualDominantTradingDayQuery(
+        " JM ",
+        "1m",
+        date(2025, 1, 6),
+        date(2025, 1, 6),
+    )
+
+    assert query.symbol == "jm"
+    with pytest.raises(ValueError):
+        ActualDominantTradingDayQuery(
+            "jm",
+            "1m",
+            date(2025, 1, 7),
+            date(2025, 1, 6),
+        )
+
+
+def test_trading_day_query_includes_weekend_night_and_excludes_future_day(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    contract = DatasetKey("contract", "jm", "JM2509", "1m")
+    friday_night = CanonicalBar(
+        datetime(2025, 1, 3, 13, 5, tzinfo=UTC),
+        date(2025, 1, 6),
+        Decimal("100"),
+        Decimal("101"),
+        Decimal("99"),
+        Decimal("100"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    monday_day = CanonicalBar(
+        datetime(2025, 1, 6, 1, 5, tzinfo=UTC),
+        date(2025, 1, 6),
+        Decimal("101"),
+        Decimal("102"),
+        Decimal("100"),
+        Decimal("101"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    _publish(catalog, store, contract, (friday_night, monday_day))
+    session.add_all(
+        (
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 6), is_trading_day=True
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 7), is_trading_day=True
+            ),
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name="night",
+                start_time=time(21),
+                end_time=time(23),
+                effective_from=date(2025, 1, 6),
+                is_active=True,
+            ),
+        )
+    )
+    catalog.upsert_main_contracts(
+        (("jm", date(2025, 1, 6), "JM2509"),)
+    )
+    session.commit()
+
+    result = MarketDataService(catalog, store).query_actual_dominant_trading_days(
+        ActualDominantTradingDayQuery(
+            "jm",
+            "1m",
+            date(2025, 1, 6),
+            date(2025, 1, 6),
+        )
+    )
+
+    assert result.bars == (friday_night, monday_day)
+    assert result.request_identity["start"] == "2025-01-03T13:00:00+00:00"
+    assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
 
 
 def test_actual_dominant_week_uses_last_trading_day_owner(session, tmp_path) -> None:

@@ -147,8 +147,9 @@ Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不
 intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distance 不参与 executable Signal。
 
 `guiyi research subing-lifecycle` 同样只读 Historical Canonical：它通过 `MarketDataService`
-按 current-rank1 segment 独立复算 research-only lifecycle Shadow，只输出 stdout JSON。测试只验证
-命令、分段因果与报告合同，不运行真实当前市场观察，也不表示正式回测、策略有效或可晋升。
+按 exact trading-day Session window 与 current-rank1 segment 独立复算 research-only lifecycle
+Shadow，只输出 stdout JSON。测试只验证命令、分段因果与报告合同，不运行真实当前市场观察，
+也不表示正式回测、策略有效或可晋升。
 
 ## Alert V2
 

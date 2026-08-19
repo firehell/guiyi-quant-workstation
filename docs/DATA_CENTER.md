@@ -111,6 +111,11 @@ coverage 缺失时 fail-closed。`actual_dominant` 按与 `(start, end]` 相交�
 夜盘 bar 的身份始终是其 `trading_day`，而不是发生时刻所在的前一自然日。响应只返回请求、bars、
 coverage 和 resolved contract segments。
 
+按 `since/through` 交易日表达窗口的研究消费者使用
+`ActualDominantTradingDayQuery`；`MarketDataService` 经权威 TradingCalendar/TradingSession 解析首末
+真实 Session 后再进入同一 `SeriesQuery`。消费者不得用自然日加减或固定夜盘时刻猜测查询边界，
+也不得因此要求窗口外下一交易日的 MainContractMap。
+
 ## 6. CLI 与外部操作
 
 ```bash
