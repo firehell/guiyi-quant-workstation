@@ -7,8 +7,9 @@
 - 新增 causal、`observation_only` 的主力照妖镜 V0：Python Indicator Kernel 为唯一数学口径，Web
   在现有最底部副图以 `MACD / 主力照妖镜` Tab 二选一，默认仍为 MACD；六色柱仅为 OHLCV
   设计代理，“小心”保持 `rising_edge(BARSLAST(HIGH=HHV(HIGH,5))<10)`。
-- 加入 SuBing Lifecycle V2 的 research-only 基础：exact policy、不可变领域合同与 causal
-  ConfirmedPivot/Breakout/Retest 结构 kernel；尚未接入 API、Web、Alert、Runtime 或正式 Rule。
+- 加入完整 SuBing Lifecycle V2 research-only 代码链：exact policy、不可变领域合同、
+  causal ConfirmedPivot/Breakout/Retest/lifecycle reducer、additive API/Web 生命周期与独立研究 Marker、
+  Historical-only Shadow CLI；不改 V1 正式信号、Alert Rule/Scope/Runtime 或通知。
 - 不新增 DB/migration、Canonical、Redis、Scope、通知或订单行为，`auto_order=false` 不变；
   production Runtime 在取得独立 promotion 授权前继续保持 `v1.5.0`。
 
