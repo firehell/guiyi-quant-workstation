@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -19,6 +20,28 @@ def _mirror_api():
     assert callable(compute)
     assert callable(classify)
     return compute, classify
+
+
+def _golden_inputs(count: int = 28):
+    datetimes: list[str] = []
+    open_values: list[float] = []
+    high_values: list[float] = []
+    low_values: list[float] = []
+    close_values: list[float] = []
+    volume_values: list[float] = []
+    for index in range(count):
+        base = 100 + index * 0.6 + 4 * math.sin(index / 2.2)
+        open_value = base + 0.7 * math.sin(index * 1.7)
+        close_value = base + 1.1 * math.sin(index * 1.1)
+        high_value = max(open_value, close_value) + 1.5 + (index % 3) * 0.2
+        low_value = min(open_value, close_value) - 1.2 - (index % 4) * 0.15
+        datetimes.append(f"golden-{index}")
+        open_values.append(open_value)
+        high_values.append(high_value)
+        low_values.append(low_value)
+        close_values.append(close_value)
+        volume_values.append(1000 + (index % 5) * 250 + index * 15)
+    return datetimes, open_values, high_values, low_values, close_values, volume_values
 
 
 def test_main_force_mirror_exposes_six_designed_observation_states() -> None:
@@ -50,6 +73,30 @@ def test_caution_matches_barslast_hhv5_less_than_10_rising_edge() -> None:
     assert result.caution_level.tolist()[15] == 50.0
     assert "outflow_ratio" not in result.metadata
     assert result.metadata["interpretation"] == "structural_warning_not_measured_fund_flow"
+
+
+def test_main_force_mirror_matches_shared_golden_observation_sample() -> None:
+    compute, _ = _mirror_api()
+    result = compute(*_golden_inputs())
+
+    expected = [
+        (20, -0.654814, "distribute"),
+        (21, 0.697117, "exit"),
+        (22, 1.896099, "exit"),
+        (23, -2.603149, "lure"),
+        (24, -0.181907, "lure"),
+        (25, -2.923248, "pull_up"),
+        (26, -0.584624, "lure"),
+        (27, -2.445683, "lure"),
+    ]
+    actual = [
+        (index, round(float(result.score[index]), 6), result.state[index])
+        for index in range(len(result.score))
+        if bool(result.ready[index])
+    ]
+
+    assert actual == expected
+    assert [index for index, value in enumerate(result.caution) if bool(value)] == [4]
 
 
 def test_main_force_mirror_registry_is_web_observation_only() -> None:
