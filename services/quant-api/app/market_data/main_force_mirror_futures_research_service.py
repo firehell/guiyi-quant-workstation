@@ -172,7 +172,7 @@ class MainForceMirrorFuturesResearchError(RuntimeError):
 
 
 def _load_main_force_mirror_futures_kernel() -> _KernelCallable:
-    """Load the fixed Python V1 authority without expanding static type imports."""
+    """Load the fixed Python V1 authority through one runtime boundary."""
     try:
         module = importlib.import_module(".".join(_KERNEL_MODULE_PARTS))
     except ImportError as exc:

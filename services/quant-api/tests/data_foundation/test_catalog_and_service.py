@@ -753,7 +753,7 @@ def test_contract_trading_day_query_uses_weekend_night_and_last_session_bounds(
                 contract_code="JM2509",
                 instrument_symbol="jm",
                 exchange_code="DCE",
-                listed_date=date(2025, 1, 6),
+                listed_date=date(2025, 1, 4),
                 expired_date=date(2025, 9, 25),
                 status="active",
             ),
@@ -798,6 +798,151 @@ def test_contract_trading_day_query_uses_weekend_night_and_last_session_bounds(
     assert result.bars == (friday_night, monday_close)
     assert result.request_identity["start"] == "2025-01-03T13:00:00+00:00"
     assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
+
+
+@pytest.mark.parametrize(
+    "present_days",
+    ((7, 8), (6, 8)),
+    ids=("leading-row-absent", "intermediate-row-absent"),
+)
+def test_contract_trading_day_query_fails_closed_for_missing_calendar_row(
+    session,
+    tmp_path,
+    present_days,
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 1, 9),
+            status="active",
+        )
+    )
+    for day in present_days:
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=True,
+            )
+        )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^TRADING_CALENDAR_MISSING$"):
+        MarketDataService(catalog, store).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 6),
+                date(2025, 1, 8),
+            )
+        )
+
+
+def test_contract_trading_day_query_requires_expiry_metadata(session, tmp_path) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=None,
+            status="active",
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^CONTRACT_METADATA_MISSING$"):
+        MarketDataService(catalog, store).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 6),
+                date(2025, 1, 6),
+            )
+        )
+
+
+def test_contract_trading_day_query_clamps_to_exclusive_expiry_ceiling(
+    session,
+    tmp_path,
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    active_bars = (_bar(6, 206), _bar(7, 207))
+    expired_bar = _bar(8, 208)
+    _publish(catalog, store, key, (*active_bars, expired_bar))
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 1, 8),
+            status="active",
+        )
+    )
+    for day in (6, 7):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=True,
+            )
+        )
+    session.commit()
+
+    result = MarketDataService(catalog, store).query_contract_trading_days(
+        ContractTradingDayQuery(
+            "jm",
+            "JM2509",
+            "1d",
+            date(2025, 1, 6),
+            date(2025, 1, 9),
+        )
+    )
+
+    assert result.bars == active_bars
+    assert result.request_identity["end"] == "2025-01-07T07:00:00+00:00"
+
+
+def test_contract_trading_day_query_rejects_window_after_expiry(
+    session,
+    tmp_path,
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 1, 8),
+            status="active",
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^CONTRACT_ACTIVE_WINDOW_MISSING$"):
+        MarketDataService(catalog, store).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 8),
+                date(2025, 1, 9),
+            )
+        )
 
 
 def test_contract_trading_day_query_clamps_to_contract_active_floor(

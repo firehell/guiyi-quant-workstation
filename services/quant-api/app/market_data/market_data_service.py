@@ -142,12 +142,14 @@ class MarketDataService:
                 Contract.instrument_symbol == request.symbol,
             )
         )
-        if contract is None or contract.listed_date is None:
+        if (
+            contract is None
+            or contract.listed_date is None
+            or contract.expired_date is None
+        ):
             raise MarketDataError("CONTRACT_METADATA_MISSING")
         since = max(request.since, contract.listed_date)
-        through = request.through
-        if contract.expired_date is not None:
-            through = min(through, contract.expired_date - timedelta(days=1))
+        through = min(request.through, contract.expired_date - timedelta(days=1))
         if since > through:
             raise MarketDataError("CONTRACT_ACTIVE_WINDOW_MISSING")
         start, end = self._trading_day_window(
@@ -175,10 +177,19 @@ class MarketDataService:
     ) -> tuple[datetime, datetime]:
         """Resolve inclusive trading-day bounds to the exact outer Session window."""
         try:
-            trading_days = self.catalog.trading_days(
+            calendar_days = self.catalog.calendar_days(
                 symbol,
                 since,
                 through,
+            )
+            expected_days = tuple(
+                since + timedelta(days=offset)
+                for offset in range((through - since).days + 1)
+            )
+            if tuple(day for day, _is_trading_day in calendar_days) != expected_days:
+                raise MarketDataError("TRADING_CALENDAR_MISSING")
+            trading_days = tuple(
+                day for day, is_trading_day in calendar_days if is_trading_day
             )
             if not trading_days:
                 raise MarketDataError("TRADING_CALENDAR_MISSING")
