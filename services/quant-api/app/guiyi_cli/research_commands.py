@@ -1,11 +1,11 @@
-"""``guiyi research`` request construction for read-only Calibration."""
+"""``guiyi research`` request construction and read-only JSON rendering."""
 
 from __future__ import annotations
 
 import argparse
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Protocol
+from typing import Protocol, cast
 
 from app.market_data.domain import BarFrequency
 from app.market_data.subing_calibration import (
@@ -20,14 +20,33 @@ from app.market_data.subing_calibration_service import (
     CalibrationResearchResult,
     SlopeThresholds,
 )
+from app.market_data.subing_lifecycle_research_service import (
+    LifecycleResearchRequest,
+    SubingLifecycleResearchResult,
+)
 
 
-class _ResearchService(Protocol):
+class _CalibrationResearchService(Protocol):
     def run(self, request: CalibrationResearchRequest) -> CalibrationResearchResult: ...
 
 
-def build_research_request(args: argparse.Namespace) -> CalibrationResearchRequest:
-    """Convert validated CLI strings into the fixed Task2 request interface."""
+class _LifecycleResearchService(Protocol):
+    def run(self, request: LifecycleResearchRequest) -> SubingLifecycleResearchResult: ...
+
+
+ResearchRequest = CalibrationResearchRequest | LifecycleResearchRequest
+
+
+def build_research_request(args: argparse.Namespace) -> ResearchRequest:
+    """Convert CLI strings into one of the two immutable research requests."""
+    if args.research_command == "subing-lifecycle":
+        return LifecycleResearchRequest(
+            since=_day(args.since),
+            through=_day(args.through),
+            symbol=args.symbol,
+        )
+    if args.research_command != "subing-calibration":
+        raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
     slope_5m = _decimal(args.slope_threshold_5m_bps)
     slope_15m = _decimal(args.slope_threshold_15m_bps)
     slope_thresholds: SlopeThresholds | None = None
@@ -49,11 +68,15 @@ def build_research_request(args: argparse.Namespace) -> CalibrationResearchReque
 
 
 def run_research_command(
-    request: CalibrationResearchRequest,
-    service: _ResearchService,
+    request: ResearchRequest,
+    service: object,
 ) -> dict[str, object]:
-    """Run historical-only Calibration and render its explicit JSON schema."""
-    result = service.run(request)
+    """Run one Historical-only research command and render its JSON schema."""
+    if isinstance(request, LifecycleResearchRequest):
+        lifecycle_service = cast(_LifecycleResearchService, service)
+        return _lifecycle_payload(request, lifecycle_service.run(request))
+    calibration_service = cast(_CalibrationResearchService, service)
+    result = calibration_service.run(request)
     payload: dict[str, object] = {
         "schema_version": 1,
         "command": "research.subing-calibration",
@@ -73,6 +96,38 @@ def run_research_command(
             for name in ("A", "B")
         }
     return payload
+
+
+def _lifecycle_payload(
+    request: LifecycleResearchRequest,
+    result: SubingLifecycleResearchResult,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command": "research.subing-lifecycle",
+        "status": "ok",
+        "readonly": True,
+        "policy_id": "subing_lifecycle_v2_research_v1",
+        "since": request.since.isoformat(),
+        "through": request.through.isoformat(),
+        "products": list(result.products),
+        "segment_count": result.segment_count,
+        "evaluable_boundary_count": result.evaluable_boundary_count,
+        "funnel_counts": dict(result.funnel_counts),
+        "confirmation_source_counts": dict(result.confirmation_source_counts),
+        "v1_v2_overlap_counts": dict(result.v1_v2_overlap_counts),
+        "v2_to_v1_lead_bars": list(result.v2_to_v1_lead_bars),
+        "confirmed_trading_day_span_counts": dict(
+            result.confirmed_trading_day_span_counts
+        ),
+        "risk_reason_counts": dict(result.risk_reason_counts),
+        "recovery_reason_counts": dict(result.recovery_reason_counts),
+        "close_reason_counts": dict(result.close_reason_counts),
+        "horizon_summary": {
+            str(horizon): _horizon_payload(evaluation)
+            for horizon, evaluation in result.horizon_summary.items()
+        },
+    }
 
 
 def _report_payload(

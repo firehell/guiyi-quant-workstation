@@ -39,6 +39,7 @@ from app.guiyi_cli.output import (
 )
 from app.guiyi_cli.research_parser import add_research_commands
 from app.guiyi_cli.research_commands import (
+    ResearchRequest,
     build_research_request,
     run_research_command,
 )
@@ -46,11 +47,11 @@ from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
     build_subing_calibration_research_service,
+    build_subing_lifecycle_research_service,
 )
 from app.market_data.after_market import build_after_market_updater
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
-from app.market_data.subing_calibration_service import CalibrationResearchRequest
 from app.services.runtime_health import build_runtime_health
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
@@ -139,6 +140,9 @@ def main(
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
+    lifecycle_research_service_factory: ResearchServiceFactory = (
+        build_subing_lifecycle_research_service
+    ),
     execution_review_roll_marker_state: RollMarkerState = (
         _execution_review_roll_marker_state
     ),
@@ -152,7 +156,7 @@ def main(
     """CLI 主流程：解析 → 执行 → JSON 输出；返回进程退出码（0 成功，2 参数，1 执行错误）。"""
     raw = list(argv) if argv is not None else sys.argv[1:]
     command = ".".join(raw[:2]) if raw else "guiyi"
-    research_request: CalibrationResearchRequest | None = None
+    research_request: ResearchRequest | None = None
     try:
         args = build_parser().parse_args(raw)
         if args.domain == "data":
@@ -187,9 +191,14 @@ def main(
         elif args.domain == "research":
             assert research_request is not None
             with session_factory() as session:
+                service_factory = (
+                    lifecycle_research_service_factory
+                    if args.research_command == "subing-lifecycle"
+                    else research_service_factory
+                )
                 payload = run_research_command(
                     research_request,
-                    research_service_factory(session),
+                    service_factory(session),
                 )
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源

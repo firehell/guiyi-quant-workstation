@@ -37,6 +37,9 @@ from app.market_data.subing_lifecycle_policy import (
     SubingLifecyclePolicyError,
     load_subing_lifecycle_policy,
 )
+from app.market_data.subing_lifecycle_research_service import (
+    SubingLifecycleResearchService,
+)
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.operational_universe import load_active_products
 from app.market_data.product_taxonomy import load_product_taxonomy
@@ -162,6 +165,18 @@ def build_subing_calibration_research_service(
     return SubingCalibrationResearchService(
         market_data=build_market_data_service(session),
         products=load_active_products(),
+    )
+
+
+def build_subing_lifecycle_research_service(
+    session: Session,
+) -> SubingLifecycleResearchService:
+    """Construct historical-only lifecycle research over MarketDataService."""
+    return SubingLifecycleResearchService(
+        build_market_data_service(session),
+        products=load_active_products(),
+        calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
+        policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
     )
 
 
