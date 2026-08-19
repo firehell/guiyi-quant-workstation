@@ -848,6 +848,62 @@ def test_canonical_and_completed_live_prefixes_have_identical_lifecycle() -> Non
     assert split.source_mode == "canonical_live"
 
 
+@pytest.mark.parametrize("gap_frequency", (BarFrequency.M5, BarFrequency.M15))
+def test_lifecycle_rejects_gap_between_historical_and_completed_live(
+    gap_frequency: BarFrequency,
+) -> None:
+    full = _live_seam_bars()
+    history = {
+        frequency: bars[:-2] if frequency is gap_frequency else bars[:-1]
+        for frequency, bars in full.items()
+    }
+    live = {
+        frequency: bars[-1:]
+        for frequency, bars in full.items()
+    }
+    service = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_FakeMarketRead(history, live=live),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(full),
+    )
+
+    with pytest.raises(
+        MarketDataError,
+        match="DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID",
+    ):
+        service.snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+
+@pytest.mark.parametrize("gap_frequency", (BarFrequency.M5, BarFrequency.M15))
+def test_lifecycle_rejects_late_live_prefix_when_historical_is_empty(
+    gap_frequency: BarFrequency,
+) -> None:
+    full = _live_seam_bars()
+    history = {
+        frequency: (() if frequency is gap_frequency else bars[:-1])
+        for frequency, bars in full.items()
+    }
+    live = {
+        frequency: (bars[50:] if frequency is gap_frequency else bars[-1:])
+        for frequency, bars in full.items()
+    }
+    service = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_FakeMarketRead(history, live=live),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        lifecycle_coverage=_FakeLifecycleCoverage(full),
+    )
+
+    with pytest.raises(
+        MarketDataError,
+        match="DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID",
+    ):
+        service.snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+
 def test_reversed_live_arrival_representation_has_identical_full_trace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1520,7 +1576,9 @@ class _FakeMarketRead:
         return MarketSeriesPageResult(
             request_identity=_page_identity(request),
             bars=bars,
-            canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
+            canonical_coverage=(
+                (bars[0].bar_end, bars[-1].bar_end) if bars else None
+            ),
             has_more_before=False,
             next_before=None,
             resolved_contract_segments=(),
@@ -1540,7 +1598,11 @@ class _FakeMarketRead:
             live_eligible=True,
             live_available=self.live_available,
             live_contract=self.live_contract,
-            canonical_end=self.history[identity.frequency][-1].bar_end,
+            canonical_end=(
+                self.history[identity.frequency][-1].bar_end
+                if self.history[identity.frequency]
+                else None
+            ),
             after_market={},
         )
 
@@ -1720,6 +1782,21 @@ def _service_with_lifecycle(
     *,
     live: dict[BarFrequency, tuple[CanonicalBar, ...]] | None = None,
 ) -> SubingReadService:
+    coverage = {
+        frequency: tuple(
+            sorted(
+                {
+                    bar.bar_end: bar
+                    for bar in (
+                        *history.get(frequency, ()),
+                        *(live or {}).get(frequency, ()),
+                    )
+                }.values(),
+                key=lambda bar: bar.bar_end,
+            )
+        )
+        for frequency in (BarFrequency.M5, BarFrequency.M15)
+    }
     return SubingReadService(
         market_data=_FakeMarketData(),
         market_read=_FakeMarketRead(
@@ -1729,7 +1806,7 @@ def _service_with_lifecycle(
         ),
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
-        lifecycle_coverage=_FakeLifecycleCoverage(history),
+        lifecycle_coverage=_FakeLifecycleCoverage(coverage),
     )
 
 
@@ -1841,6 +1918,25 @@ def _long_segment_bars() -> dict[BarFrequency, tuple[CanonicalBar, ...]]:
             count=700,
             trading_day=_SEGMENT_START,
             first_end=_NOW - timedelta(minutes=15 * 699),
+            first_close=Decimal("100"),
+        ),
+    }
+
+
+def _live_seam_bars() -> dict[BarFrequency, tuple[CanonicalBar, ...]]:
+    return {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=152,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=52,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
             first_close=Decimal("100"),
         ),
     }

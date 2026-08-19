@@ -652,6 +652,17 @@ class SubingReadService:
             segment_end=segment_end,
             now=now,
         )
+        if self._lifecycle_policy is not None:
+            if self._lifecycle_coverage is None:
+                raise MarketDataError(
+                    "DOMINANT_SEGMENT_HISTORY_COVERAGE_UNAVAILABLE"
+                )
+            _require_complete_segment_prefix(
+                coverage=self._lifecycle_coverage,
+                identity=identity,
+                segment_start=segment_start,
+                bars=lifecycle_bars,
+            )
         return bars, lifecycle_bars, latest_source, live_ends
 
 
