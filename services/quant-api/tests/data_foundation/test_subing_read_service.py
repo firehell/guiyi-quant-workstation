@@ -24,6 +24,7 @@ from app.market_data.market_read_service import MarketReadState
 from app.market_data.subing_calibration import SubingCalibration, SubingCalibrationError
 from app.market_data.subing_lifecycle import (
     LifecycleAvailability,
+    LifecycleStage,
     evaluate_subing_lifecycle as reduce_subing_lifecycle,
 )
 from app.market_data.subing_lifecycle_policy import (
@@ -671,6 +672,105 @@ def test_intraday_lifecycle_is_independent_of_requested_v1_timeframe() -> None:
     assert requested_15m.frequency is BarFrequency.M15
     assert requested_5m.lifecycle == requested_15m.lifecycle
     assert requested_5m.lifecycle.availability is LifecycleAvailability.READY
+
+
+@pytest.mark.parametrize("requested", (BarFrequency.M5, BarFrequency.M15))
+def test_long_segment_preserves_legacy_v1_latest_300_projection(
+    requested: BarFrequency,
+) -> None:
+    """Catches lifecycle pagination silently reseeding frozen V1 outputs."""
+    full = _long_segment_bars()
+    paged = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_CursorHonoringMarketRead(full, live_available=False),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+    ).snapshot(SubingReadRequest("jm", requested), now=_NOW)
+    legacy_window = _service_with_lifecycle(
+        {frequency: bars[-300:] for frequency, bars in full.items()}
+    ).snapshot(SubingReadRequest("jm", requested), now=_NOW)
+
+    assert _v1_projection(paged) == _v1_projection(legacy_window)
+
+
+def test_long_segment_lifecycle_matches_direct_full_segment_reducer() -> None:
+    """Catches a single latest-page read recreating opportunity identity after 300 bars."""
+    full = _long_segment_bars()
+    service_snapshot = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_CursorHonoringMarketRead(full, live_available=False),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+    factors_5m = calculate_factor_series(
+        full[BarFrequency.M5],
+        timeframe=BarFrequency.M5,
+        contract="JM2609",
+        segment_start_trading_day=_SEGMENT_START,
+        latest_bar_source="canonical",
+    )
+    factors_15m = calculate_factor_series(
+        full[BarFrequency.M15],
+        timeframe=BarFrequency.M15,
+        contract="JM2609",
+        segment_start_trading_day=_SEGMENT_START,
+        latest_bar_source="canonical",
+    )
+    direct = reduce_subing_lifecycle(
+        symbol="jm",
+        contract="JM2609",
+        segment_start_trading_day=_SEGMENT_START,
+        bars_5m=full[BarFrequency.M5],
+        factors_5m=factors_5m,
+        bars_15m=full[BarFrequency.M15],
+        factors_15m=factors_15m,
+        calibration=_accepted_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    assert service_snapshot.lifecycle == direct.current_snapshot
+    assert service_snapshot.lifecycle.stage is LifecycleStage.SETUP_ARMED
+
+
+@pytest.mark.parametrize("fault", ("cursor_not_progressing", "duplicate_bar"))
+def test_lifecycle_pagination_fails_closed_on_invalid_page_chain(
+    fault: str,
+) -> None:
+    """Catches malformed pagination being accepted as a complete causal segment."""
+    full = _long_segment_bars()
+    service = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_InvalidPaginationMarketRead(
+            full,
+            live_available=False,
+            fault=fault,
+        ),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+    )
+
+    with pytest.raises(
+        MarketDataError,
+        match="DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID",
+    ):
+        service.snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+
+def test_lifecycle_pagination_fails_closed_when_segment_start_is_missing() -> None:
+    """Catches a skipped page silently recreating state after the real segment start."""
+    full = _long_segment_bars()
+    service = SubingReadService(
+        market_data=_FakeMarketData(segment_start=date(2026, 8, 1)),
+        market_read=_CursorHonoringMarketRead(full, live_available=False),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+    )
+
+    with pytest.raises(
+        MarketDataError,
+        match="DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID",
+    ):
+        service.snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
 
 
 def test_daily_lifecycle_is_intraday_only_without_changing_v1_projection() -> None:
@@ -1386,7 +1486,7 @@ class _FakeMarketRead:
         assert request.limit == 300
         bars = self.history[request.frequency]
         return MarketSeriesPageResult(
-            request_identity={},
+            request_identity=_page_identity(request),
             bars=bars,
             canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
             has_more_before=False,
@@ -1435,6 +1535,59 @@ class _HistoricalOnlyMarketRead(_FakeMarketRead):
         now: datetime,
     ) -> tuple[CanonicalBar, ...]:
         raise AssertionError("1d SuBing must not query Live snapshot")
+
+
+class _CursorHonoringMarketRead(_FakeMarketRead):
+    def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        assert request.series_kind is SeriesKind.CONTRACT
+        assert request.symbol == "jm"
+        assert request.contract == "JM2609"
+        assert request.limit == 300
+        eligible = tuple(
+            bar
+            for bar in self.history[request.frequency]
+            if request.before is None or bar.bar_end < request.before
+        )
+        has_more_before = len(eligible) > request.limit
+        bars = eligible[-request.limit :]
+        return MarketSeriesPageResult(
+            request_identity=_page_identity(request),
+            bars=bars,
+            canonical_coverage=(
+                (bars[0].bar_end, bars[-1].bar_end) if bars else None
+            ),
+            has_more_before=has_more_before,
+            next_before=bars[0].bar_end if has_more_before else None,
+            resolved_contract_segments=(),
+        )
+
+
+class _InvalidPaginationMarketRead(_CursorHonoringMarketRead):
+    def __init__(self, *args, fault: str, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.fault = fault
+        self.calls: dict[BarFrequency, int] = {}
+        self.first_page_oldest: dict[BarFrequency, CanonicalBar] = {}
+
+    def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        page = super().history_page(request)
+        call = self.calls.get(request.frequency, 0) + 1
+        self.calls[request.frequency] = call
+        if call == 1 and page.bars:
+            self.first_page_oldest[request.frequency] = page.bars[0]
+        if self.fault == "cursor_not_progressing" and call == 1:
+            assert request.before is not None
+            return replace(page, next_before=request.before)
+        if self.fault == "duplicate_bar" and call == 2:
+            duplicate = self.first_page_oldest[request.frequency]
+            bars = (*page.bars[1:], duplicate)
+            return replace(
+                page,
+                bars=bars,
+                canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
+                next_before=(bars[0].bar_end if page.has_more_before else None),
+            )
+        return page
 
 
 class _StateIdentityOverrideMarketRead(_FakeMarketRead):
@@ -1566,6 +1719,36 @@ def _v1_projection(snapshot: SubingReadSnapshot) -> tuple[object, ...]:
         snapshot.primary_signal,
         snapshot.resolved_signal,
     )
+
+
+def _page_identity(request: SeriesPageQuery) -> dict[str, object]:
+    return {
+        "series_kind": request.series_kind.value,
+        "symbol": request.symbol,
+        "contract": request.contract,
+        "frequency": request.frequency.value,
+        "before": request.before.isoformat() if request.before else None,
+        "limit": request.limit,
+    }
+
+
+def _long_segment_bars() -> dict[BarFrequency, tuple[CanonicalBar, ...]]:
+    return {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=700,
+            trading_day=_SEGMENT_START,
+            first_end=_NOW - timedelta(minutes=5 * 699),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=234,
+            trading_day=_SEGMENT_START,
+            first_end=_NOW - timedelta(minutes=15 * 233),
+            first_close=Decimal("100"),
+        ),
+    }
 
 
 def _companion_frequency(frequency: BarFrequency) -> BarFrequency:

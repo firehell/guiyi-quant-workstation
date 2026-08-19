@@ -913,7 +913,7 @@ def evaluate_subing_lifecycle(
     if input_error is None:
         try:
             pivots = _all_confirmed_pivots(
-                bars_5m,
+                bars_5m[1:],
                 contract=contract,
                 segment_start_trading_day=segment_start_trading_day,
             )
@@ -953,6 +953,30 @@ def evaluate_subing_lifecycle(
                 contract=contract,
                 segment_start_trading_day=segment_start_trading_day,
             )
+
+        if index == 0:
+            snapshots.append(
+                _snapshot(
+                    policy=policy,
+                    observed_at=bar_5m.bar_end,
+                    anchor_bar_end=(None if anchor_bar is None else anchor_bar.bar_end),
+                    availability=(
+                        LifecycleAvailability.UNAVAILABLE
+                        if boundary_error is not None
+                        else LifecycleAvailability.READY
+                    ),
+                    unavailable_reason=boundary_error,
+                    direction=SubingDirection.NONE,
+                    opportunity=None,
+                    latest_transition=None,
+                    last_confirmed_at=(
+                        bar_5m.bar_end if boundary_error is None else None
+                    ),
+                    boundary_reset="segment_changed",
+                )
+            )
+            assert len(transitions) == transition_count_before
+            continue
 
         if boundary_error is not None:
             snapshots.append(
@@ -1315,6 +1339,7 @@ def evaluate_subing_lifecycle(
         direction=SubingDirection.NONE,
         opportunity=None,
         latest_transition=None,
+        boundary_reset="segment_changed",
     )
     trace_symbol, trace_contract = _canonical_trace_identity(symbol, contract)
     return SubingLifecycleTrace(
@@ -2020,6 +2045,7 @@ def _snapshot(
     formal_v1_matched: bool = False,
     last_confirmed_stage: LifecycleStage = LifecycleStage.IDLE,
     last_confirmed_at: datetime | None = None,
+    boundary_reset: str | None = None,
 ) -> SubingLifecycleSnapshot:
     stage = opportunity.stage if opportunity is not None else LifecycleStage.IDLE
     return SubingLifecycleSnapshot(
@@ -2075,6 +2101,7 @@ def _snapshot(
         crossed_trading_day=(
             opportunity.crossed_trading_day if opportunity is not None else False
         ),
+        boundary_reset=boundary_reset,
     )
 
 

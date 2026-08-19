@@ -81,12 +81,20 @@ class _SignalCalibrationView(Protocol):
 class _AlignedIntradaySeries:
     bars_5m: tuple[CanonicalBar, ...]
     bars_15m: tuple[CanonicalBar, ...]
+    lifecycle_bars_5m: tuple[CanonicalBar, ...]
+    lifecycle_bars_15m: tuple[CanonicalBar, ...]
     latest_5m_source: str
     latest_15m_source: str
     live_ends_5m: frozenset[datetime]
     live_ends_15m: frozenset[datetime]
     live_observation: str
     live_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _HistoricalIntradaySeries:
+    projection_bars: tuple[CanonicalBar, ...]
+    lifecycle_bars: tuple[CanonicalBar, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +227,28 @@ class SubingReadService:
                 segment_start_trading_day=segment.start_trading_day,
                 latest_bar_source=aligned.latest_15m_source,
             )
+            lifecycle_factors_5m = (
+                factors_5m
+                if aligned.lifecycle_bars_5m == aligned.bars_5m
+                else calculate_subing_factor_series(
+                    aligned.lifecycle_bars_5m,
+                    timeframe=BarFrequency.M5,
+                    contract=dominant.actual_contract,
+                    segment_start_trading_day=segment.start_trading_day,
+                    latest_bar_source=aligned.latest_5m_source,
+                )
+            )
+            lifecycle_factors_15m = (
+                factors_15m
+                if aligned.lifecycle_bars_15m == aligned.bars_15m
+                else calculate_subing_factor_series(
+                    aligned.lifecycle_bars_15m,
+                    timeframe=BarFrequency.M15,
+                    contract=dominant.actual_contract,
+                    segment_start_trading_day=segment.start_trading_day,
+                    latest_bar_source=aligned.latest_15m_source,
+                )
+            )
             bars_by_frequency = {
                 BarFrequency.M5: aligned.bars_5m,
                 BarFrequency.M15: aligned.bars_15m,
@@ -255,12 +285,14 @@ class SubingReadService:
             live_observation = aligned.live_observation
             live_reason = aligned.live_reason
             lifecycle_cutoff = (
-                aligned.bars_5m[-1].bar_end if aligned.bars_5m else None
+                aligned.lifecycle_bars_5m[-1].bar_end
+                if aligned.lifecycle_bars_5m
+                else None
             )
             lifecycle_15m_count = (
                 sum(
                     bar.bar_end <= lifecycle_cutoff
-                    for bar in aligned.bars_15m
+                    for bar in aligned.lifecycle_bars_15m
                 )
                 if lifecycle_cutoff is not None
                 else 0
@@ -275,10 +307,10 @@ class SubingReadService:
                     symbol=request.symbol,
                     contract=dominant.actual_contract,
                     segment_start_trading_day=segment.start_trading_day,
-                    bars_5m=aligned.bars_5m,
-                    factors_5m=factors_5m,
-                    bars_15m=aligned.bars_15m[:lifecycle_15m_count],
-                    factors_15m=factors_15m[:lifecycle_15m_count],
+                    bars_5m=aligned.lifecycle_bars_5m,
+                    factors_5m=lifecycle_factors_5m,
+                    bars_15m=aligned.lifecycle_bars_15m[:lifecycle_15m_count],
+                    factors_15m=lifecycle_factors_15m[:lifecycle_15m_count],
                     calibration=self._calibration,
                     policy=self._lifecycle_policy,
                 ).current_snapshot
@@ -333,7 +365,7 @@ class SubingReadService:
             for frequency in (BarFrequency.M5, BarFrequency.M15)
         }
         historical = {
-            frequency: self._historical_segment(
+            frequency: self._historical_intraday_segment(
                 identities[frequency],
                 segment_start,
                 segment_end,
@@ -368,8 +400,10 @@ class SubingReadService:
 
         if live_reason is not None:
             return _AlignedIntradaySeries(
-                bars_5m=historical[BarFrequency.M5],
-                bars_15m=historical[BarFrequency.M15],
+                bars_5m=historical[BarFrequency.M5].projection_bars,
+                bars_15m=historical[BarFrequency.M15].projection_bars,
+                lifecycle_bars_5m=historical[BarFrequency.M5].lifecycle_bars,
+                lifecycle_bars_15m=historical[BarFrequency.M15].lifecycle_bars,
                 latest_5m_source="canonical",
                 latest_15m_source="canonical",
                 live_ends_5m=frozenset(),
@@ -380,21 +414,33 @@ class SubingReadService:
 
         merged: dict[
             BarFrequency,
-            tuple[tuple[CanonicalBar, ...], str, frozenset[datetime]],
+            tuple[
+                tuple[CanonicalBar, ...],
+                tuple[CanonicalBar, ...],
+                str,
+                frozenset[datetime],
+            ],
         ] = {}
         for frequency in (BarFrequency.M5, BarFrequency.M15):
             merged[frequency] = self._merge_live(
                 identities[frequency],
-                historical[frequency],
+                historical[frequency].projection_bars,
+                historical[frequency].lifecycle_bars,
                 segment_start,
                 segment_end,
                 now,
             )
-        bars_5m, latest_5m_source, live_ends_5m = merged[BarFrequency.M5]
-        bars_15m, latest_15m_source, live_ends_15m = merged[BarFrequency.M15]
+        bars_5m, lifecycle_bars_5m, latest_5m_source, live_ends_5m = merged[
+            BarFrequency.M5
+        ]
+        bars_15m, lifecycle_bars_15m, latest_15m_source, live_ends_15m = merged[
+            BarFrequency.M15
+        ]
         return _AlignedIntradaySeries(
             bars_5m=bars_5m,
             bars_15m=bars_15m,
+            lifecycle_bars_5m=lifecycle_bars_5m,
+            lifecycle_bars_15m=lifecycle_bars_15m,
             latest_5m_source=latest_5m_source,
             latest_15m_source=latest_15m_source,
             live_ends_5m=live_ends_5m,
@@ -462,30 +508,182 @@ class SubingReadService:
             )
         )
 
+    def _historical_intraday_segment(
+        self,
+        identity: SeriesPageQuery,
+        segment_start: date,
+        segment_end: date,
+        cutoff: datetime,
+    ) -> _HistoricalIntradaySeries:
+        request = replace(identity, before=cutoff + timedelta(microseconds=1))
+        pages: list[tuple[CanonicalBar, ...]] = []
+        seen: set[datetime] = set()
+        projection_bars: tuple[CanonicalBar, ...] | None = None
+        reached_segment_start = False
+
+        while True:
+            page = self._market_read.history_page(request)
+            _validate_history_page(page, request=request)
+            if any(bar.trading_day > segment_end for bar in page.bars):
+                raise MarketDataError("DOMINANT_SEGMENT_HISTORY_INCONSISTENT")
+            if any(bar.bar_end in seen for bar in page.bars):
+                raise MarketDataError("DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID")
+            seen.update(bar.bar_end for bar in page.bars)
+            pages.append(page.bars)
+            reached_segment_start = reached_segment_start or any(
+                bar.trading_day == segment_start for bar in page.bars
+            )
+            if projection_bars is None:
+                projection_bars = _segment_bars(
+                    page.bars,
+                    segment_start=segment_start,
+                    segment_end=segment_end,
+                    cutoff=cutoff,
+                )
+
+            crossed_segment_start = any(
+                bar.trading_day < segment_start for bar in page.bars
+            )
+            if crossed_segment_start:
+                if not reached_segment_start and any(
+                    segment_start < bar.trading_day <= segment_end
+                    for page_bars in pages
+                    for bar in page_bars
+                ):
+                    raise MarketDataError(
+                        "DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID"
+                    )
+                break
+            if not page.has_more_before:
+                if not reached_segment_start and any(
+                    segment_start < bar.trading_day <= segment_end
+                    for page_bars in pages
+                    for bar in page_bars
+                ):
+                    raise MarketDataError(
+                        "DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID"
+                    )
+                break
+            assert page.next_before is not None
+            request = replace(request, before=page.next_before)
+
+        full_bars = _segment_bars(
+            tuple(bar for page_bars in reversed(pages) for bar in page_bars),
+            segment_start=segment_start,
+            segment_end=segment_end,
+            cutoff=cutoff,
+        )
+        return _HistoricalIntradaySeries(
+            projection_bars=projection_bars or (),
+            lifecycle_bars=full_bars,
+        )
+
     def _merge_live(
         self,
         identity: SeriesPageQuery,
         historical: tuple[CanonicalBar, ...],
+        lifecycle_historical: tuple[CanonicalBar, ...],
         segment_start: date,
         segment_end: date,
         now: datetime,
-    ) -> tuple[tuple[CanonicalBar, ...], str, frozenset[datetime]]:
+    ) -> tuple[
+        tuple[CanonicalBar, ...],
+        tuple[CanonicalBar, ...],
+        str,
+        frozenset[datetime],
+    ]:
         historical_end = historical[-1].bar_end if historical else None
         live = self._market_read.live_snapshot(identity, historical_end, now)
-        by_end = {bar.bar_end: (bar, "canonical") for bar in historical}
-        for bar in live:
-            if (
-                segment_start <= bar.trading_day <= segment_end
-                and bar.bar_end <= now
-            ):
-                by_end.setdefault(bar.bar_end, (bar, "live"))
-        ordered = tuple(by_end[key] for key in sorted(by_end))
-        bars = tuple(item[0] for item in ordered)
-        latest_source = ordered[-1][1] if ordered else "canonical"
-        live_ends = frozenset(
-            bar.bar_end for bar, source in ordered if source == "live"
+        bars, latest_source, live_ends = _merge_completed_bars(
+            historical,
+            live,
+            segment_start=segment_start,
+            segment_end=segment_end,
+            now=now,
         )
-        return bars, latest_source, live_ends
+        lifecycle_bars, _, _ = _merge_completed_bars(
+            lifecycle_historical,
+            live,
+            segment_start=segment_start,
+            segment_end=segment_end,
+            now=now,
+        )
+        return bars, lifecycle_bars, latest_source, live_ends
+
+
+def _merge_completed_bars(
+    historical: tuple[CanonicalBar, ...],
+    live: tuple[CanonicalBar, ...],
+    *,
+    segment_start: date,
+    segment_end: date,
+    now: datetime,
+) -> tuple[tuple[CanonicalBar, ...], str, frozenset[datetime]]:
+    by_end = {bar.bar_end: (bar, "canonical") for bar in historical}
+    for bar in live:
+        if segment_start <= bar.trading_day <= segment_end and bar.bar_end <= now:
+            by_end.setdefault(bar.bar_end, (bar, "live"))
+    ordered = tuple(by_end[key] for key in sorted(by_end))
+    bars = tuple(item[0] for item in ordered)
+    latest_source = ordered[-1][1] if ordered else "canonical"
+    live_ends = frozenset(
+        bar.bar_end for bar, source in ordered if source == "live"
+    )
+    return bars, latest_source, live_ends
+
+
+def _segment_bars(
+    bars: tuple[CanonicalBar, ...],
+    *,
+    segment_start: date,
+    segment_end: date,
+    cutoff: datetime,
+) -> tuple[CanonicalBar, ...]:
+    return tuple(
+        bar
+        for bar in bars
+        if segment_start <= bar.trading_day <= segment_end and bar.bar_end <= cutoff
+    )
+
+
+def _validate_history_page(
+    page: MarketSeriesPageResult,
+    *,
+    request: SeriesPageQuery,
+) -> None:
+    expected_identity = {
+        "series_kind": request.series_kind.value,
+        "symbol": request.symbol,
+        "contract": request.contract,
+        "frequency": request.frequency.value,
+        "before": request.before.isoformat() if request.before else None,
+        "limit": request.limit,
+    }
+    expected_coverage = (
+        (page.bars[0].bar_end, page.bars[-1].bar_end) if page.bars else None
+    )
+    invalid = (
+        dict(page.request_identity) != expected_identity
+        or page.canonical_coverage != expected_coverage
+        or bool(page.resolved_contract_segments)
+        or len(page.bars) > request.limit
+        or any(
+            left.bar_end >= right.bar_end
+            for left, right in zip(page.bars, page.bars[1:])
+        )
+        or (
+            page.has_more_before
+            and (
+                not page.bars
+                or page.next_before != page.bars[0].bar_end
+                or request.before is None
+                or page.next_before >= request.before
+            )
+        )
+        or (not page.has_more_before and page.next_before is not None)
+    )
+    if invalid:
+        raise MarketDataError("DOMINANT_SEGMENT_HISTORY_PAGINATION_INVALID")
 
 
 def _identity(

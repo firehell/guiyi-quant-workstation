@@ -146,6 +146,51 @@ def _evaluate(
     calibration: SubingCalibration | None = None,
     policy: SubingLifecyclePolicy | None = None,
 ):
+    if not bars_5m:
+        return _evaluate_raw(
+            bars_5m,
+            factors_5m=factors_5m,
+            bars_15m=bars_15m,
+            factors_15m=factors_15m,
+            calibration=calibration,
+            policy=policy,
+        )
+    reset_bar = replace(
+        bars_5m[0],
+        bar_end=bars_5m[0].bar_end - timedelta(minutes=5),
+    )
+    effective_factors = (
+        factors_5m
+        if factors_5m is not None
+        else tuple(_factor(bar, BarFrequency.M5) for bar in bars_5m)
+    )
+    trace = _evaluate_raw(
+        (reset_bar, *bars_5m),
+        factors_5m=(
+            _factor(
+                reset_bar,
+                BarFrequency.M5,
+                status=SubingFactorStatus.INSUFFICIENT_DATA,
+            ),
+            *effective_factors,
+        ),
+        bars_15m=bars_15m,
+        factors_15m=factors_15m,
+        calibration=calibration,
+        policy=policy,
+    )
+    return replace(trace, snapshots=trace.snapshots[1:])
+
+
+def _evaluate_raw(
+    bars_5m: tuple[CanonicalBar, ...],
+    *,
+    factors_5m: tuple[SubingFactorResult, ...] | None = None,
+    bars_15m: tuple[CanonicalBar, ...],
+    factors_15m: tuple[SubingFactorResult, ...] | None = None,
+    calibration: SubingCalibration | None = None,
+    policy: SubingLifecyclePolicy | None = None,
+):
     return evaluate_subing_lifecycle(
         symbol="JM",
         contract="JM2701",
@@ -586,6 +631,63 @@ def test_missing_completed_15m_anchor_is_unavailable_without_a_transition() -> N
     assert trace.current_snapshot.unavailable_reason == "SUBING_15M_ANCHOR_UNAVAILABLE"
     assert trace.current_snapshot.stage is LifecycleStage.IDLE
     assert trace.transitions == ()
+
+
+def test_empty_segment_emits_one_idle_segment_reset_diagnostic() -> None:
+    trace = _evaluate_raw((), bars_15m=())
+
+    assert trace.snapshots == ()
+    assert trace.transitions == ()
+    assert trace.completed_opportunities == ()
+    assert trace.current_snapshot.stage is LifecycleStage.IDLE
+    assert trace.current_snapshot.boundary_reset == "segment_changed"
+
+
+def test_first_evaluable_boundary_is_reset_only_then_lifecycle_starts() -> None:
+    reset_boundary, evaluable = (_bar(minutes) for minutes in (5, 10))
+    trace = _evaluate_raw((reset_boundary, evaluable), bars_15m=(_bar(0),))
+
+    reset, current = trace.snapshots
+    assert reset.availability is LifecycleAvailability.READY
+    assert reset.stage is LifecycleStage.IDLE
+    assert reset.boundary_reset == "segment_changed"
+    assert reset.opportunity_key is None
+    assert reset.latest_transition is None
+    assert reset.current_risk_codes == ()
+    assert reset.crossed_trading_day is False
+    assert len(trace.transitions) == 1
+    assert trace.transitions[0].transition_at == evaluable.bar_end
+    assert current.stage is LifecycleStage.SETUP_ARMED
+    assert current.boundary_reset is None
+
+
+def test_unavailable_warmup_boundary_carries_only_first_segment_reset() -> None:
+    warmup, evaluable = (_bar(minutes) for minutes in (5, 10))
+    trace = _evaluate_raw(
+        (warmup, evaluable),
+        factors_5m=(
+            _factor(
+                warmup,
+                BarFrequency.M5,
+                status=SubingFactorStatus.INSUFFICIENT_DATA,
+            ),
+            _factor(evaluable, BarFrequency.M5),
+        ),
+        bars_15m=(_bar(0),),
+    )
+
+    reset, current = trace.snapshots
+    assert reset.availability is LifecycleAvailability.UNAVAILABLE
+    assert reset.stage is LifecycleStage.IDLE
+    assert reset.boundary_reset == "segment_changed"
+    assert reset.opportunity_key is None
+    assert reset.latest_transition is None
+    assert current.availability is LifecycleAvailability.READY
+    assert current.stage is LifecycleStage.SETUP_ARMED
+    assert current.boundary_reset is None
+    assert sum(
+        snapshot.boundary_reset == "segment_changed" for snapshot in trace.snapshots
+    ) == 1
 
 
 @pytest.mark.parametrize(

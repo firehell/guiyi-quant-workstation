@@ -684,9 +684,13 @@ def test_real_reducer_lead_requires_later_same_direction_formal(
     later_kind: str,
     expected_lead: tuple[int, ...],
 ) -> None:
-    minutes_5m = (5, 10, 15, 20, 25) if later_kind != "opposite" else (5, 10, 15, 20, 30)
+    minutes_5m = (
+        (0, 5, 10, 15, 20, 25)
+        if later_kind != "opposite"
+        else (0, 5, 10, 15, 20, 30)
+    )
     if later_kind == "none":
-        minutes_5m = (5, 10, 15, 20)
+        minutes_5m = (0, 5, 10, 15, 20)
     bars_5m = tuple(_bar_at(_DAY_ONE, minute) for minute in minutes_5m)
     minutes_15m = (0, 15, 30) if later_kind == "opposite" else (0, 15)
     bars_15m = tuple(_bar_at(_DAY_ONE, minute) for minute in minutes_15m)
@@ -704,7 +708,7 @@ def test_real_reducer_lead_requires_later_same_direction_formal(
         )
         trigger = (
             timeframe is BarFrequency.M5
-            and (bar is bars_5m[1] or same_formal or opposite)
+            and (bar.bar_end.minute == 10 or same_formal or opposite)
         ) or (timeframe is BarFrequency.M15 and opposite)
         return _factor(
             bar,
@@ -738,7 +742,7 @@ def test_real_reducer_lead_requires_later_same_direction_formal(
 def test_real_reducer_counts_instant_context_not_persisted_opportunity_direction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bars_5m = tuple(_bar_at(_DAY_ONE, minute) for minute in (15, 30, 45, 60))
+    bars_5m = tuple(_bar_at(_DAY_ONE, minute) for minute in (0, 15, 30, 45, 60))
     bars_15m = bars_5m
 
     def factor_builder(
@@ -769,7 +773,7 @@ def test_real_reducer_counts_instant_context_not_persisted_opportunity_direction
 
     result = service.run(LifecycleResearchRequest(_DAY_ONE, _DAY_ONE, "jm"))
 
-    assert result.funnel_counts["DATA_READY"] == 4
+    assert result.funnel_counts["DATA_READY"] == 5
     assert result.funnel_counts["DIRECTION_CONTEXT_ALIGNED"] == 2
     assert result.risk_reason_counts == {"ANCHOR_SLOPE5_REVERSAL": 1}
     assert result.recovery_reason_counts == {"ANCHOR_RECOVERY_CONFIRMED": 1}
