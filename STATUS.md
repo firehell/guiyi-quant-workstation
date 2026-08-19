@@ -8,8 +8,9 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 Git release 为 `v1.6.0`；production Runtime 仍为 `v1.5.0`，尚未执行独立的 `v1.6.0`
-  Runtime promotion。production Alert 的唯一 active transport 已切换为 `clawbot-openclaw-weixin`。
+- 当前 `develop` Release Candidate 版本为 `v1.6.0`；当前 Git release 与 production Runtime
+  仍均为 `v1.5.0`，尚未执行 `v1.6.0` main merge/tag 或独立 Runtime promotion。
+  production Alert 的唯一 active transport 已切换为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
