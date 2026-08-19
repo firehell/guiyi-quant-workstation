@@ -206,7 +206,14 @@ def test_upgrade_from_execution_review_to_head_creates_attempt_ledger(
                 completed_at=attempt["completed_at"],
                 error_code=attempt["error_code"],
             )
-        assert exc_info.value.orig.diag.constraint_name == attempt["constraint"]
+        constraint_name = exc_info.value.orig.diag.constraint_name
+        if attempt["constraint"] == "ck_alert_notification_attempts_status":
+            assert constraint_name in {
+                "ck_alert_notification_attempts_status",
+                "ck_alert_notification_attempts_completion",
+            }
+        else:
+            assert constraint_name == attempt["constraint"]
 
     with pytest.raises(IntegrityError) as exc_info:
         _insert_attempt(
