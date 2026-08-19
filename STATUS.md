@@ -59,6 +59,12 @@
   Alert Rule 仍均为 enabled 且 Scope 精确为 `jm`，正式服务已无 v1.6.0 root 引用。
 - 本次未执行 migration、RQData/Canonical/DB 写入、Scope/owner/transport mutation、真实通知、
   手工盘后任务、replay/backfill/retry 或订单；旧 v1.6.0 worktree 仅作可恢复资产保留。
+- `2026-08-19` 的自然盘后任务在 Runtime 切换中断后仅完成部分品种，且原 Live snapshot
+  已不存在，因此不将后续手动处理冒充为自然 18:05 验收。在用户另行精确授权后，以
+  `HistoricalDataManager` 唯一写入路径执行一次 `data update --universe active --through 2026-08-19 --apply`：
+  `planned=443/applied=443/failed=0/provider_requests=147`。随后全量 audit 为 `finding_count=0`，并通过
+  420 次 `MarketDataService` 读取确认 active 60 的 1m/5m/15m/30m/60m/1d 均到 2026-08-19，1w 均为
+  最近完整周 2026-08-14。未重载 Runtime、未执行通知、未做第二次重试或伪造盘后状态。
 
 ## v1.6.0 Release / Runtime（RELEASED / RUNTIME PROMOTED）
 
