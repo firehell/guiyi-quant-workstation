@@ -72,6 +72,7 @@ let paginationArmed = false
 let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
 const secondaryPanelTop = ref<number | null>(null)
+const renderedResearchMarkerCount = ref(0)
 let derivedData = buildKlineDerivedData([], [])
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
@@ -290,6 +291,7 @@ function renderAllSeries(): void {
 }
 
 function renderDerivedSeries(): void {
+  renderedResearchMarkerCount.value = 0
   if (!chart || !macdHistogram || !macdDif || !macdDea || !mainForceHistogram || !mainForceCaution) return
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators)
   const theme = resolveChartTheme()
@@ -318,6 +320,7 @@ function renderDerivedSeries(): void {
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
+  renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
   htdyMarkers?.setMarkers(chartMarkers(mergeKlineMarkers(
     mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
     props.researchMarkers,
@@ -436,6 +439,7 @@ defineExpose({
     data-testid="kline-shell"
     :data-alert-marker-count="alertMarkers.length"
     :data-research-marker-count="researchMarkers.length"
+    :data-rendered-research-marker-count="renderedResearchMarkerCount"
     :data-secondary-panel="selectedSecondaryPanel"
   >
     <div ref="container" class="chart" />

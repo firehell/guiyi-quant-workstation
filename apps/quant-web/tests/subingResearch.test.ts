@@ -14,6 +14,24 @@ import {
 } from '../src/types/market.ts'
 import { lifecycleSnapshotToMarkers } from '../src/utils/subingLifecycleMarkers.ts'
 
+const LIFECYCLE_POLICY_ID = 'subing_lifecycle_v2_research_v1'
+
+function utcIso(value: string): string {
+  return value.replace('Z', '+00:00')
+}
+
+function opportunityKey(direction: 'long' | 'short' = 'long'): string {
+  return `${LIFECYCLE_POLICY_ID}:JM:JM2609:2026-08-12:${direction}:2026-08-13T02:00:00+00:00`
+}
+
+function transitionId(key: string, transitionAt: string, toStage: string): string {
+  return `${key}:${utcIso(transitionAt)}:${toStage}`
+}
+
+function pivotId(kind: 'high' | 'low' = 'high'): string {
+  return `JM2609:2026-08-12:5m:${kind}:2026-08-13T01:45:00+00:00`
+}
+
 const readyPayload = {
   symbol: 'jm',
   product_name: '焦煤',
@@ -61,9 +79,9 @@ const readyPayload = {
     snapshot: null,
   },
   primary_signal: {
-    status: 'matched', direction: 'long', trigger_timeframe: '5m',
+    status: 'not_matched', direction: 'none', trigger_timeframe: '5m',
     lower_tf_confirmation: false, resolution: null,
-    conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
+    conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'fail' }], error_code: null,
   },
   resolved_signal: null,
   lifecycle: {
@@ -90,27 +108,32 @@ test('normalizes Decimal Factor values at the SuBing HTTP boundary', () => {
 test('normalizes the complete additive lifecycle contract without changing Factor values', () => {
   const result = normalizeSubingResearch({
     ...readyPayload,
+    primary_signal: {
+      status: 'matched', direction: 'long', trigger_timeframe: '5m',
+      lower_tf_confirmation: false, resolution: null,
+      conditions: [{ code: 'PRIMARY_MACD_CROSS', state: 'pass' }], error_code: null,
+    },
     lifecycle: {
       formula_version: 'subing_lifecycle_v2', policy_id: 'subing_lifecycle_v2_research_v1', research_only: true,
       observed_at: '2026-08-13T02:25:00Z', anchor_bar_end: '2026-08-13T02:15:00Z',
       availability: 'ready', unavailable_reason: null, direction: 'long', stage: 'entry_confirmed',
-      opportunity_key: 'subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00',
+      opportunity_key: opportunityKey(),
       entry_progress: null, trigger_kind: 'pivot_break', trigger_timeframe: '5m',
-      triggered_at: '2026-08-13T02:15:00Z', confirmation_source: 'pivot_break_hold',
-      confirmed_at: '2026-08-13T02:25:00Z', hold_count: 3, hold_required: 3,
+      triggered_at: '2026-08-13T02:15:00Z', confirmation_source: 'formal_v1',
+      confirmed_at: '2026-08-13T02:25:00Z', hold_count: 2, hold_required: 3,
       bound_reference_pivot: {
-        pivot_id: 'pivot:high:2026-08-13T01:45:00Z', kind: 'high', timeframe: '5m',
-        pivot_time: '2026-08-13T01:45:00Z', confirmed_at: '2026-08-13T02:15:00Z',
+        pivot_id: pivotId(), kind: 'high', timeframe: '5m',
+        pivot_time: '2026-08-13T01:45:00Z', confirmed_at: '2026-08-13T02:10:00Z',
         price: '104.5', contract: 'JM2609', segment_start_trading_day: '2026-08-12',
       },
       rebreak_reference_price: '104.5', retest_at: null, retest_rebreak_count: 0,
       volume_ratio_prev: '3.42', open_interest_delta: '-12.5', current_risk_codes: [],
       risk_progress: null, lower_tf_risk_count: 0, last_confirmed_stage: 'entry_confirmed',
       last_confirmed_at: '2026-08-13T02:25:00Z', latest_transition: {
-        transition_id: 'transition:entry', transition_at: '2026-08-13T02:25:00Z',
-        from_stage: 'setup_armed', to_stage: 'entry_confirmed', reason_codes: ['PIVOT_BREAK_HOLD'],
+        transition_id: transitionId(opportunityKey(), '2026-08-13T02:25:00Z', 'entry_confirmed'),
+        transition_at: '2026-08-13T02:25:00Z', from_stage: 'setup_armed', to_stage: 'entry_confirmed', reason_codes: ['FORMAL_V1_MATCHED'],
       },
-      crossed_trading_day: false, boundary_reset: null, formal_v1_matched: false,
+      crossed_trading_day: false, boundary_reset: null, formal_v1_matched: true,
     },
   } as SubingResearchResponse)
 
@@ -137,24 +160,33 @@ test('keeps research lifecycle labels separate from formal V1 signal labels', ()
 test('maps only current immutable lifecycle facts to neutral research markers', () => {
   const lifecycle = normalizeSubingResearch({
     ...readyPayload,
+    primary: {
+      ...readyPayload.primary,
+      snapshot: { ...readyPayload.primary.snapshot, bar_end: '2026-08-13T02:30:00Z' },
+    },
+    companion: {
+      status: 'ready',
+      snapshot: { ...readyPayload.primary.snapshot, timeframe: '15m', bar_end: '2026-08-13T02:30:00Z' },
+    },
     lifecycle: {
       formula_version: 'subing_lifecycle_v2', policy_id: 'subing_lifecycle_v2_research_v1', research_only: true,
       observed_at: '2026-08-13T02:30:00Z', anchor_bar_end: '2026-08-13T02:30:00Z',
       availability: 'ready', unavailable_reason: null, direction: 'long', stage: 'exit_risk',
-      opportunity_key: 'subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00',
+      opportunity_key: opportunityKey(),
       entry_progress: null, trigger_kind: 'pivot_break', trigger_timeframe: '5m',
-      triggered_at: '2026-08-13T02:15:00Z', confirmation_source: 'pivot_break_hold',
-      confirmed_at: '2026-08-13T02:25:00Z', hold_count: 3, hold_required: 3,
+      triggered_at: '2026-08-13T02:05:00Z', confirmation_source: 'pivot_break_hold',
+      confirmed_at: '2026-08-13T02:15:00Z', hold_count: 3, hold_required: 3,
       bound_reference_pivot: {
-        pivot_id: 'pivot:high:risk', kind: 'high', timeframe: '5m',
-        pivot_time: '2026-08-13T01:45:00Z', confirmed_at: '2026-08-13T02:10:00Z',
+        pivot_id: pivotId(), kind: 'high', timeframe: '5m',
+        pivot_time: '2026-08-13T01:45:00Z', confirmed_at: '2026-08-13T02:00:00Z',
         price: '104.5', contract: 'JM2609', segment_start_trading_day: '2026-08-12',
       },
       rebreak_reference_price: '104.5', retest_at: null, retest_rebreak_count: 0,
       volume_ratio_prev: null, open_interest_delta: null, current_risk_codes: ['LOWER_TF_EMA21_BREACH'],
       risk_progress: null, lower_tf_risk_count: 2, last_confirmed_stage: 'exit_risk',
       last_confirmed_at: '2026-08-13T02:30:00Z', latest_transition: {
-        transition_id: 'transition:risk', transition_at: '2026-08-13T02:30:00Z',
+        transition_id: transitionId(opportunityKey(), '2026-08-13T02:30:00Z', 'exit_risk'),
+        transition_at: '2026-08-13T02:30:00Z',
         from_stage: 'continuation', to_stage: 'exit_risk', reason_codes: ['LOWER_TF_EMA21_BREACH'],
       },
       crossed_trading_day: false, boundary_reset: null, formal_v1_matched: false,
@@ -162,9 +194,9 @@ test('maps only current immutable lifecycle facts to neutral research markers', 
   } as SubingResearchResponse).lifecycle
 
   assert.deepEqual(lifecycleSnapshotToMarkers(lifecycle), [
-    { id: 'lifecycle:subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00:pivot-break', time: '2026-08-13T02:15:00Z', label: '前高突破', tooltip: 'SuBing 生命周期研究 · 前高突破', tone: 'neutral', position: 'belowBar', shape: 'circle' },
-    { id: 'lifecycle:subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00:entry', time: '2026-08-13T02:25:00Z', label: '研究确认', tooltip: 'SuBing 生命周期研究 · 研究确认', tone: 'neutral', position: 'belowBar', shape: 'circle' },
-    { id: 'lifecycle:subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00:transition:transition:risk', time: '2026-08-13T02:30:00Z', label: '风险', tooltip: 'SuBing 生命周期研究 · 风险', tone: 'neutral', position: 'belowBar', shape: 'circle' },
+    { id: 'lifecycle:subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00:pivot-break', time: '2026-08-13T02:05:00Z', label: '前高突破', tooltip: 'SuBing 生命周期研究 · 前高突破', tone: 'neutral', position: 'belowBar', shape: 'circle' },
+    { id: 'lifecycle:subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:long:2026-08-13T02:00:00+00:00:entry', time: '2026-08-13T02:15:00Z', label: '研究确认', tooltip: 'SuBing 生命周期研究 · 研究确认', tone: 'neutral', position: 'belowBar', shape: 'circle' },
+    { id: `lifecycle:${opportunityKey()}:transition:${transitionId(opportunityKey(), '2026-08-13T02:30:00Z', 'exit_risk')}`, time: '2026-08-13T02:30:00Z', label: '风险', tooltip: 'SuBing 生命周期研究 · 风险', tone: 'neutral', position: 'belowBar', shape: 'circle' },
   ])
 })
 
@@ -173,18 +205,18 @@ test('maps a closed lifecycle only to its immutable close marker', () => {
     formula_version: 'subing_lifecycle_v2', policy_id: 'subing_lifecycle_v2_research_v1', research_only: true,
     observed_at: '2026-08-13T02:30:00Z', anchor_bar_end: '2026-08-13T02:30:00Z',
     availability: 'ready', unavailable_reason: null, direction: 'short', stage: 'closed',
-    opportunity_key: 'subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:short:2026-08-13T02:00:00+00:00',
+    opportunity_key: opportunityKey('short'),
     entry_progress: null, trigger_kind: null, trigger_timeframe: null, triggered_at: null,
     confirmation_source: null, confirmed_at: null, hold_count: 0, hold_required: 3,
     bound_reference_pivot: null, rebreak_reference_price: null, retest_at: null, retest_rebreak_count: 0,
     volume_ratio_prev: null, open_interest_delta: null, current_risk_codes: [], risk_progress: null,
     lower_tf_risk_count: 0, last_confirmed_stage: 'closed', last_confirmed_at: '2026-08-13T02:30:00Z',
-    latest_transition: { transition_id: 'transition:closed', transition_at: '2026-08-13T02:30:00Z', from_stage: 'setup_armed', to_stage: 'closed', reason_codes: ['DIRECTION_CONTEXT_INVALIDATED'] },
+    latest_transition: { transition_id: transitionId(opportunityKey('short'), '2026-08-13T02:30:00Z', 'closed'), transition_at: '2026-08-13T02:30:00Z', from_stage: 'setup_armed', to_stage: 'closed', reason_codes: ['DIRECTION_CONTEXT_INVALIDATED'] },
     crossed_trading_day: false, boundary_reset: null, formal_v1_matched: false,
   })
 
   assert.deepEqual(markers, [{
-    id: 'lifecycle:subing_lifecycle_v2_research_v1:JM:JM2609:2026-08-12:short:2026-08-13T02:00:00+00:00:transition:transition:closed', time: '2026-08-13T02:30:00Z', label: '结束',
+    id: `lifecycle:${opportunityKey('short')}:transition:${transitionId(opportunityKey('short'), '2026-08-13T02:30:00Z', 'closed')}`, time: '2026-08-13T02:30:00Z', label: '结束',
     tooltip: 'SuBing 生命周期研究 · 结束', tone: 'neutral', position: 'belowBar', shape: 'circle',
   }])
 })

@@ -250,13 +250,15 @@ export function subingLifecycleStageLabel(stage: SubingLifecycleStage): string {
 export function subingLifecycleProgressLabel(
   lifecycle: Pick<
     SubingLifecycleSnapshot,
-    'stage' | 'entry_progress' | 'hold_count' | 'hold_required' | 'confirmation_source'
+    'stage' | 'entry_progress' | 'hold_count' | 'hold_required' | 'retest_rebreak_count' | 'confirmation_source'
   >,
 ): string {
-  if (
-    lifecycle.stage === 'setup_armed'
-    && (lifecycle.entry_progress === 'hold_confirming' || lifecycle.entry_progress === 'retest_confirming')
-  ) return `${lifecycle.hold_count}/${lifecycle.hold_required}`
+  if (lifecycle.stage === 'setup_armed' && lifecycle.entry_progress === 'hold_confirming') {
+    return `${lifecycle.hold_count}/${lifecycle.hold_required}`
+  }
+  if (lifecycle.stage === 'setup_armed' && lifecycle.entry_progress === 'retest_confirming') {
+    return `${lifecycle.retest_rebreak_count}/${lifecycle.hold_required}`
+  }
   if (
     lifecycle.stage === 'entry_confirmed'
     || lifecycle.stage === 'continuation'
