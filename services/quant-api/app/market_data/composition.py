@@ -35,6 +35,9 @@ from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
+from app.market_data.main_force_mirror_futures_research_service import (
+    MainForceMirrorFuturesResearchService,
+)
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.market_data.subing_calibration_service import SubingCalibrationResearchService
 from app.market_data.subing_candidate_validation_service import (
@@ -127,6 +130,13 @@ def build_market_data_service(session: Session) -> MarketDataService:
 def build_market_research_service(session: Session) -> MarketResearchService:
     """构造 Product Workspace 的只读研究服务。"""
     return MarketResearchService(build_market_data_service(session))
+
+
+def build_main_force_mirror_futures_research_service(
+    session: Session,
+) -> MainForceMirrorFuturesResearchService:
+    """Compose read-only Futures Mirror Shadow over MarketDataService only."""
+    return MainForceMirrorFuturesResearchService(build_market_data_service(session))
 
 
 def build_market_radar_service(session: Session) -> MarketRadarService:

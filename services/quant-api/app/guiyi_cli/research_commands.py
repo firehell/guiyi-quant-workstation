@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Protocol, cast
+from typing import Protocol, TypeAlias, cast
 
 from app.market_data.candidate_validation import (
     CandidateValidationReport,
@@ -13,7 +13,12 @@ from app.market_data.candidate_validation import (
     ProspectiveOosResult,
     RollingCandidateFold,
 )
-from app.market_data.domain import BarFrequency
+from app.market_data.domain import BarFrequency, SeriesKind
+from app.market_data.main_force_mirror_futures_research_service import (
+    MainForceMirrorFuturesHorizonSummary,
+    MainForceMirrorFuturesResearchRequest,
+    MainForceMirrorFuturesResearchResult,
+)
 from app.market_data.subing_calibration import (
     CalibrationReport,
     HorizonEvaluation,
@@ -47,13 +52,32 @@ class _CandidateValidationService(Protocol):
     def run(self, request: CandidateValidationRequest) -> CandidateValidationReport: ...
 
 
-ResearchRequest = (
-    CalibrationResearchRequest | LifecycleResearchRequest | CandidateValidationRequest
+class _MainForceMirrorFuturesResearchService(Protocol):
+    def run(
+        self,
+        request: MainForceMirrorFuturesResearchRequest,
+    ) -> MainForceMirrorFuturesResearchResult: ...
+
+
+ResearchRequest: TypeAlias = (
+    CalibrationResearchRequest
+    | LifecycleResearchRequest
+    | CandidateValidationRequest
+    | MainForceMirrorFuturesResearchRequest
 )
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
-    """Convert CLI strings into one of the three immutable research requests."""
+    """Convert CLI strings into one immutable research request."""
+    if args.research_command == "main-force-mirror-futures":
+        return MainForceMirrorFuturesResearchRequest(
+            symbol=args.symbol,
+            series_kind=SeriesKind(args.series_kind),
+            contract=args.contract,
+            frequency=BarFrequency(args.frequency),
+            since=_day(args.since),
+            through=_day(args.through),
+        )
     if args.research_command == "candidate-validation":
         return CandidateValidationRequest(
             candidate_id=args.candidate,
@@ -94,6 +118,12 @@ def run_research_command(
     service: object,
 ) -> dict[str, object]:
     """Run one Historical-only research command and render its JSON schema."""
+    if isinstance(request, MainForceMirrorFuturesResearchRequest):
+        mirror_service = cast(_MainForceMirrorFuturesResearchService, service)
+        return _main_force_mirror_futures_payload(
+            request,
+            mirror_service.run(request),
+        )
     if isinstance(request, CandidateValidationRequest):
         candidate_service = cast(_CandidateValidationService, service)
         return _candidate_payload(candidate_service.run(request))
@@ -121,6 +151,53 @@ def run_research_command(
             for name in ("A", "B")
         }
     return payload
+
+
+def _main_force_mirror_futures_payload(
+    request: MainForceMirrorFuturesResearchRequest,
+    result: MainForceMirrorFuturesResearchResult,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command": "research.main-force-mirror-futures",
+        "status": "ok",
+        "readonly": True,
+        "symbol": request.symbol,
+        "series_kind": request.series_kind.value,
+        "contract": request.contract,
+        "frequency": request.frequency.value,
+        "since": request.since.isoformat(),
+        "through": request.through.isoformat(),
+        "products": list(result.products),
+        "bars_valid_count": result.bars_valid_count,
+        "bars_state_ready_count": result.bars_state_ready_count,
+        "bars_caution_ready_count": result.bars_caution_ready_count,
+        "event_count_long": result.event_count_long,
+        "event_count_short": result.event_count_short,
+        "conflict_count": result.conflict_count,
+        "missing_oi_count": result.missing_oi_count,
+        "segment_reset_count": result.segment_reset_count,
+        "timestamp_invalid_count": result.timestamp_invalid_count,
+        "state_distribution": dict(result.state_distribution),
+        "reason_code_distribution": dict(result.reason_code_distribution),
+        "score_distribution": list(result.score_distribution),
+        "horizon_summary": {
+            str(horizon): _main_force_mirror_futures_horizon_payload(summary)
+            for horizon, summary in result.horizon_summary.items()
+        },
+    }
+
+
+def _main_force_mirror_futures_horizon_payload(
+    summary: MainForceMirrorFuturesHorizonSummary,
+) -> dict[str, object]:
+    return {
+        "horizon_bars": summary.horizon_bars,
+        "sample_count": summary.sample_count,
+        "reversal_returns": list(summary.reversal_returns),
+        "warning_mfe": list(summary.warning_mfe),
+        "warning_mae": list(summary.warning_mae),
+    }
 
 
 def _lifecycle_payload(

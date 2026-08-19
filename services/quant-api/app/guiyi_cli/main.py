@@ -46,6 +46,7 @@ from app.guiyi_cli.research_commands import (
 from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
+    build_main_force_mirror_futures_research_service,
     build_subing_candidate_validation_service,
     build_subing_calibration_research_service,
     build_subing_lifecycle_research_service,
@@ -147,6 +148,9 @@ def main(
     candidate_validation_service_factory: ResearchServiceFactory = (
         build_subing_candidate_validation_service
     ),
+    main_force_mirror_futures_research_service_factory: ResearchServiceFactory = (
+        build_main_force_mirror_futures_research_service
+    ),
     execution_review_roll_marker_state: RollMarkerState = (
         _execution_review_roll_marker_state
     ),
@@ -199,6 +203,10 @@ def main(
                     service_factory = lifecycle_research_service_factory
                 elif args.research_command == "candidate-validation":
                     service_factory = candidate_validation_service_factory
+                elif args.research_command == "main-force-mirror-futures":
+                    service_factory = (
+                        main_force_mirror_futures_research_service_factory
+                    )
                 elif args.research_command == "subing-calibration":
                     service_factory = research_service_factory
                 else:
