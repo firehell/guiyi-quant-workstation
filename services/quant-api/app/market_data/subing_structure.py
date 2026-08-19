@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
+import re
 
 from .domain import BarFrequency, CanonicalBar
 from .subing_research import SubingDirection
@@ -13,6 +14,16 @@ from .subing_research import SubingDirection
 class PivotKind(StrEnum):
     HIGH = "high"
     LOW = "low"
+
+
+class SubingStructureContractError(ValueError):
+    code = "SUBING_STRUCTURE_CONTRACT_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+_CONTRACT_PATTERN = re.compile(r"[A-Z]+[0-9]{3,4}\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +36,37 @@ class ConfirmedPivot:
     price: Decimal
     contract: str
     segment_start_trading_day: date
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.pivot_id, str)
+            or not isinstance(self.kind, PivotKind)
+            or not isinstance(self.source_timeframe, BarFrequency)
+            or self.source_timeframe is not BarFrequency.M5
+            or not _is_normalized_contract(self.contract)
+            or type(self.segment_start_trading_day) is not date
+            or not _is_aware_datetime(self.pivot_time)
+            or not _is_aware_datetime(self.confirmed_at)
+            or not isinstance(self.price, Decimal)
+            or not self.price.is_finite()
+        ):
+            raise SubingStructureContractError()
+
+        pivot_time = self.pivot_time.astimezone(UTC)
+        confirmed_at = self.confirmed_at.astimezone(UTC)
+        if pivot_time >= confirmed_at:
+            raise SubingStructureContractError()
+        expected_id = _canonical_pivot_id(
+            contract=self.contract,
+            segment_start_trading_day=self.segment_start_trading_day,
+            source_timeframe=self.source_timeframe,
+            kind=self.kind,
+            pivot_time=pivot_time,
+        )
+        if self.pivot_id != expected_id:
+            raise SubingStructureContractError()
+        object.__setattr__(self, "pivot_time", pivot_time)
+        object.__setattr__(self, "confirmed_at", confirmed_at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,14 +227,12 @@ def _pivot(
     contract: str,
     segment_start_trading_day: date,
 ) -> ConfirmedPivot:
-    pivot_id = ":".join(
-        (
-            contract,
-            segment_start_trading_day.isoformat(),
-            source_timeframe.value,
-            kind.value,
-            bar.bar_end.isoformat(),
-        )
+    pivot_id = _canonical_pivot_id(
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
+        source_timeframe=source_timeframe,
+        kind=kind,
+        pivot_time=bar.bar_end,
     )
     return ConfirmedPivot(
         pivot_id=pivot_id,
@@ -203,6 +243,39 @@ def _pivot(
         price=bar.high if kind is PivotKind.HIGH else bar.low,
         contract=contract,
         segment_start_trading_day=segment_start_trading_day,
+    )
+
+
+def _canonical_pivot_id(
+    *,
+    contract: str,
+    segment_start_trading_day: date,
+    source_timeframe: BarFrequency,
+    kind: PivotKind,
+    pivot_time: datetime,
+) -> str:
+    return ":".join(
+        (
+            contract,
+            segment_start_trading_day.isoformat(),
+            source_timeframe.value,
+            kind.value,
+            pivot_time.astimezone(UTC).isoformat(),
+        )
+    )
+
+
+def _is_normalized_contract(value: object) -> bool:
+    if not isinstance(value, str) or _CONTRACT_PATTERN.fullmatch(value) is None:
+        return False
+    return 1 <= int(value[-2:]) <= 12
+
+
+def _is_aware_datetime(value: object) -> bool:
+    return (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() is not None
     )
 
 

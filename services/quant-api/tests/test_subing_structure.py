@@ -159,7 +159,9 @@ def test_confirmed_pivot_retains_exact_source_and_segment_identity() -> None:
     assert pivot.contract == _CONTRACT
     assert pivot.segment_start_trading_day == _SEGMENT_START
     assert pivot.price == Decimal("18")
-    assert pivot.pivot_id
+    assert pivot.pivot_id == (
+        "JM2701:2026-08-03:5m:high:2026-08-19T01:15:00+00:00"
+    )
 
 
 def test_confirmed_pivots_reject_non_5m_source() -> None:
@@ -205,7 +207,7 @@ def test_pivot_confirmed_at_current_boundary_cannot_break_out_same_boundary() ->
     previous = _bar(0, high="100", low="98", close="99")
     current = _bar(1, high="102", low="99", close="101")
     just_confirmed = ConfirmedPivot(
-        pivot_id="current-boundary-pivot",
+        pivot_id="JM2701:2026-08-03:5m:high:2026-08-19T00:55:00+00:00",
         kind=PivotKind.HIGH,
         source_timeframe=BarFrequency.M5,
         pivot_time=previous.bar_end - timedelta(minutes=10),
@@ -215,7 +217,7 @@ def test_pivot_confirmed_at_current_boundary_cannot_break_out_same_boundary() ->
         segment_start_trading_day=_SEGMENT_START,
     )
     previously_confirmed = ConfirmedPivot(
-        pivot_id="previous-boundary-pivot",
+        pivot_id="JM2701:2026-08-03:5m:high:2026-08-19T00:50:00+00:00",
         kind=PivotKind.HIGH,
         source_timeframe=BarFrequency.M5,
         pivot_time=previous.bar_end - timedelta(minutes=15),
@@ -247,8 +249,12 @@ def _confirmed_pivot(
     kind: PivotKind,
     price: str = "100",
 ) -> ConfirmedPivot:
+    pivot_id = {
+        PivotKind.HIGH: "JM2701:2026-08-03:5m:high:2026-08-19T00:50:00+00:00",
+        PivotKind.LOW: "JM2701:2026-08-03:5m:low:2026-08-19T00:50:00+00:00",
+    }[kind]
     return ConfirmedPivot(
-        pivot_id=f"confirmed-{kind.value}-pivot",
+        pivot_id=pivot_id,
         kind=kind,
         source_timeframe=BarFrequency.M5,
         pivot_time=_START - timedelta(minutes=15),
@@ -257,6 +263,125 @@ def _confirmed_pivot(
         contract=_CONTRACT,
         segment_start_trading_day=_SEGMENT_START,
     )
+
+
+def _valid_pivot_values() -> dict[str, object]:
+    return {
+        "pivot_id": "JM2701:2026-08-03:5m:high:2026-08-19T00:50:00+00:00",
+        "kind": PivotKind.HIGH,
+        "source_timeframe": BarFrequency.M5,
+        "pivot_time": _START - timedelta(minutes=15),
+        "confirmed_at": _START - timedelta(minutes=5),
+        "price": Decimal("100"),
+        "contract": _CONTRACT,
+        "segment_start_trading_day": _SEGMENT_START,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    (
+        ("kind", "high"),
+        ("kind", SubingDirection.LONG),
+        ("source_timeframe", "5m"),
+        ("source_timeframe", PivotKind.HIGH),
+    ),
+)
+def test_confirmed_pivot_rejects_wrong_enum_runtime_types(
+    field: str,
+    invalid: object,
+) -> None:
+    values = _valid_pivot_values()
+    values[field] = invalid
+
+    with pytest.raises(ValueError) as exc_info:
+        ConfirmedPivot(**values)  # type: ignore[arg-type]
+
+    assert getattr(exc_info.value, "code", None) == "SUBING_STRUCTURE_CONTRACT_INVALID"
+    assert str(exc_info.value) == "SUBING_STRUCTURE_CONTRACT_INVALID"
+
+
+def test_confirmed_pivot_rejects_non_5m_source() -> None:
+    values = _valid_pivot_values()
+    values["source_timeframe"] = BarFrequency.M15
+
+    with pytest.raises(ValueError, match="SUBING_STRUCTURE_CONTRACT_INVALID"):
+        ConfirmedPivot(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    ("", " jm2701", "jm2701", "JM-2701", "JM2713", 2701),
+)
+def test_confirmed_pivot_rejects_empty_or_non_normalized_contract(
+    invalid: object,
+) -> None:
+    values = _valid_pivot_values()
+    values["contract"] = invalid
+
+    with pytest.raises(ValueError, match="SUBING_STRUCTURE_CONTRACT_INVALID"):
+        ConfirmedPivot(**values)  # type: ignore[arg-type]
+
+
+def test_confirmed_pivot_rejects_non_date_segment_identity() -> None:
+    values = _valid_pivot_values()
+    values["segment_start_trading_day"] = datetime(2026, 8, 3, tzinfo=UTC)
+
+    with pytest.raises(ValueError, match="SUBING_STRUCTURE_CONTRACT_INVALID"):
+        ConfirmedPivot(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    (
+        ("pivot_time", datetime(2026, 8, 19, 0, 50)),
+        ("confirmed_at", datetime(2026, 8, 19, 1, 0)),
+        ("pivot_time", "2026-08-19T00:50:00Z"),
+        ("confirmed_at", "2026-08-19T01:00:00Z"),
+        ("confirmed_at", _START - timedelta(minutes=15)),
+        ("confirmed_at", _START - timedelta(minutes=20)),
+    ),
+)
+def test_confirmed_pivot_rejects_naive_invalid_type_or_non_later_confirmation(
+    field: str,
+    invalid: object,
+) -> None:
+    values = _valid_pivot_values()
+    values[field] = invalid
+
+    with pytest.raises(ValueError, match="SUBING_STRUCTURE_CONTRACT_INVALID"):
+        ConfirmedPivot(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    (
+        "100",
+        100,
+        Decimal("NaN"),
+        Decimal("Infinity"),
+        Decimal("-Infinity"),
+    ),
+)
+def test_confirmed_pivot_rejects_non_decimal_or_non_finite_price(
+    invalid: object,
+) -> None:
+    values = _valid_pivot_values()
+    values["price"] = invalid
+
+    with pytest.raises(ValueError, match="SUBING_STRUCTURE_CONTRACT_INVALID"):
+        ConfirmedPivot(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("invalid", ("", "forged-pivot-id", 123))
+def test_confirmed_pivot_rejects_empty_forged_or_non_string_identity(
+    invalid: object,
+) -> None:
+    values = _valid_pivot_values()
+    values["pivot_id"] = invalid
+
+    with pytest.raises(ValueError, match="SUBING_STRUCTURE_CONTRACT_INVALID"):
+        ConfirmedPivot(**values)  # type: ignore[arg-type]
 
 
 def test_long_breakout_requires_previous_close_at_or_below_and_current_close_above() -> None:
