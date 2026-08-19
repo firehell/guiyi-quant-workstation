@@ -1,6 +1,6 @@
 # 主力照妖镜·期货 V1 设计规格
 
-> 状态：Design basis approved；本文为书面 Spec，待用户审阅后再进入 implementation plan。
+> 状态：Design basis approved；书面 Spec 已完成自审，待用户审阅后再进入 implementation plan。
 >
 > 日期：2026-08-19
 >
@@ -10,11 +10,11 @@
 >
 > 新版本：`main_force_mirror_futures_v1` / `futures-research-v1`
 >
-> 公式与生命周期边界：本设计只建立期货专用 observation V1，不修改已经发布的 V0，不授权 Alert、通知、回测晋升、release、tag 或 Runtime promotion。
+> 本文只定义期货专用 observation V1；不修改已经发布的 V0，不授权 Alert、通知、回测晋升、release、tag 或 Runtime promotion。
 
-## 1. 结论
+## 1. 设计结论
 
-现有 `main_force_mirror_v0` 是一套 causal、Web-only、OHLCV 设计代理：
+现有 V0 是 causal、Web-only 的 OHLCV 设计代理：
 
 ```text
 CLV × 相对成交量
@@ -22,107 +22,100 @@ CLV × 相对成交量
 → 单侧 HHV5 / BARSLAST10 “小心”
 ```
 
-它满足“股票式高位警戒原型”的复现需要，但不适合作为期货长期版本，原因是：
+它适合作为股票式原型和历史复现版本，但不适合作为期货长期版本：
 
-1. “小心”只在短期高点状态重新激活时出现，只有追多一侧的风险语义；
-2. 在 60m 图上固定使用 `HHV5 / BARSLAST10`，信号过密，不能表达一个完整方向 Episode；
-3. 六色柱没有使用期货现成的 `open_interest`，无法区分上涨中的增仓与减仓，也无法区分下跌中的增仓与减仓；
-4. `actual_dominant` 跨真实合约拼接时，若不显式按物理合约重置，价格与持仓跳变会伪造“主力行为”；
-5. “70% 主力流出”不是当前 Bar 数据可以直接测量的事实，不能继续作为数值字段或确定性结论。
+1. “小心”只有追多一侧；
+2. 固定 `HHV5 / BARSLAST10` 在 60m 图上过密；
+3. 未使用期货现成的 `open_interest`；
+4. 无法区分上涨中的多头增仓与空头回补，也无法区分下跌中的空头增仓与多头减仓；
+5. 未显式按真实合约段重置，换月价格/OI 跳变可能伪造行为；
+6. “70% 主力流出”不是当前 Bar 数据可以直接测量的事实。
 
-因此新增独立版本：
+新增独立 V1：
 
 ```text
-main_force_mirror_futures_v1
-
 OHLCV + Open Interest + Physical Contract Segment
 → 多头增仓 / 空头增仓 / 空头回补 / 多头减仓 / 换手
 → 追多小心 / 追空小心
 → 0..100 风险证据评分
-→ 可解释 reason codes
+→ reason codes
 → Historical Shadow 统计
 ```
 
-V1 的“70”表示**风险证据评分阈值 70/100**，不是资金流出比例、概率、会员席位结论或账户级事实。
+V1 的“70”精确定义为**风险证据评分阈值 70/100**，不是资金流出比例、概率、会员席位结论或账户级事实。
 
 ## 2. 当前仓库事实
 
 规划基线下：
 
-- production Git release 与 Runtime 为 `v1.6.1`；V0 已随 v1.6.0 发布并继续存在于当前 Runtime 的 Web 观察面；
-- Python Indicator Kernel 位于 `packages/quant-core/guiyi_quant/indicators/`，是指标业务口径唯一权威；
-- V0 Python authority 为 `main_force_mirror.py`，Web mirror 为 `apps/quant-web/src/utils/mainForceMirror.ts`；
-- 当前副图在 Lightweight Charts 最底部 pane 内通过 `MACD / 主力照妖镜` Tab 二选一；
+- production Git release 与 Runtime 为 `v1.6.1`；V0 已发布并存在于当前 Web 观察面；
+- Python Indicator Kernel 是指标业务口径唯一权威；
+- V0 authority 为 `packages/quant-core/guiyi_quant/indicators/main_force_mirror.py`，Web mirror 为 `apps/quant-web/src/utils/mainForceMirror.ts`；
+- 当前最底部 pane 通过 `MACD / 主力照妖镜` Tab 二选一；
 - Canonical Bar 与 Web `BarData` 已包含 `open_interest / openInterest`；
-- 5m/15m/30m/60m 聚合的 OI 取桶内最后一根 Canonical 1m Bar；
-- `/api/v1/market/bars/page` 已返回 `resolved_contract_segments`，但 Web `useMarketSeries()` 当前只保留 bars 和 coverage，没有把每根 Bar 的真实物理合约身份传到指标层；
-- WebSocket `snapshot` 已返回精确 `contract`，可用于给 completed Live/Post-close Bars 绑定物理合约；
+- 5m/15m/30m/60m 聚合时 OI 取桶内最后一根 Canonical 1m Bar；
+- `/api/v1/market/bars/page` 已返回 `resolved_contract_segments`，但 `useMarketSeries()` 尚未把每根 Bar 的物理合约身份传入指标层；
+- WebSocket `snapshot` 已返回精确 `contract`；
 - 当前没有会员多空持仓排名、逐笔主动买卖、Level-2 或账户身份数据。
 
-所以 V1 可以使用现有可信数据完成“方向性持仓压力代理”，但不能声称识别了具体主力账户。
+因此 V1 只能定义为**方向性持仓压力代理**，不能声称识别了具体“主力”账户。
 
 ## 3. 产品目标
 
 V1 首版只解决四个问题：
 
-1. **识别价格运动由增仓还是减仓驱动**：区分多头增仓、空头增仓、空头回补和多头减仓；
-2. **把“小心”改造成期货双向追价风险**：分别提示“追多小心”和“追空小心”；
-3. **降低固定 HHV/BARSLAST 的重复噪声**：使用方向 Episode latch 与 re-arm，而不是每隔固定 K 线机械重发；
-4. **积累可复盘证据**：输出分数、原因码、状态和后续 1/3/5/10 Bar 结果分布。
+1. 区分价格运动由增仓还是减仓驱动；
+2. 建立对称的“追多小心 / 追空小心”；
+3. 以 Episode latch 降低固定 K 线冷却产生的重复噪声；
+4. 输出可解释状态、分数、原因和后续结果，积累复盘证据。
 
-长期价值必须至少实现：
+它必须明确提高至少一项长期价值：减少盯盘判断成本、提高方向风险识别一致性、增加未来研究证据。
 
-- 减少个人盯盘时对“上涨是多增还是空减、下跌是空增还是多减”的人工判断成本；
-- 让追多/追空风险具有对称、可解释、可回看结构；
-- 为后续研究“持仓确认是否提高警戒质量”积累事件证据。
+## 4. 首版范围与禁止范围
 
-## 4. 首版范围
-
-首版精确范围：
+### 4.1 精确范围
 
 ```text
-frequency   = 60m only
-series_kind = contract | actual_dominant
-status      = observation_only
-web         = true
-backtest    = false
-live        = false
-alert       = false
-notification= false
-auto_order  = false
+frequency    = 60m only
+series_kind  = contract | actual_dominant
+status       = observation_only
+web          = true
+backtest     = false
+live         = false
+alert        = false
+notification = false
+auto_order   = false
 ```
 
-说明：
+`web=true` 允许浏览器对 Historical 与 completed Live/Post-close Bars 做只读观察；`live=false` 表示没有正式 live consumer、Runtime evaluator 或交易能力。
 
-- `web=true` 允许浏览器对 Historical 与 completed Live/Post-close Bars 做只读观察；
-- `live=false` 表示不获得正式 live consumer、Runtime evaluator 或交易能力；
-- `actual_dominant` 必须按真实 `physical_contract` 分段重置；
-- `continuous` 首版明确不可用，不做 OI 解释；
-- 1m/5m/15m/30m/1d/1w 首版明确不可用，不把 60m 参数机械复用到其他周期。
+首版明确不支持：
 
-## 5. 明确不做
+```text
+continuous
+1m / 5m / 15m / 30m / 1d / 1w
+```
 
-V1 首版不做：
+不把 60m 参数机械复用到其他周期，也不自动回退 V0。
+
+### 4.2 严格禁止
 
 - 不修改或删除 `main_force_mirror_v0`；
-- 不把 V1 结果写回 V0 code、version 或 golden；
-- 不引入交易所会员多空持仓排名、席位、Level-2、逐笔主动买卖或第二数据 provider；
-- 不把 OI 增减解释成具体账户的净多、净空或资金净流入；
-- 不创建 `outflow_ratio`、`main_force_ratio` 或“70% 已流出”字段；
+- 不把 V1 结果写回 V0 code/version/golden；
+- 不新增会员席位、L2、逐笔或第二 provider；
+- 不生成 `outflow_ratio`、`main_force_ratio` 或“70% 已流出”；
 - 不新增 Market Catalog 表、Canonical 字段、Parquet 副本或长期派生数据表；
-- 不新增 API 写路径、数据库、migration、Redis 状态、worker、queue、outbox；
-- 不新增 Alert Rule、Scope、Clawbot 通知、Execution Review 自动入口；
+- 不新增 DB、migration、Redis 状态、worker、queue、outbox；
+- 不新增 Alert Rule、Scope、Clawbot、Execution Review 自动入口；
 - 不恢复通用 backtest API/Web/worker；
-- 不产生订单，不连接账户，不自动改变仓位；
-- 不自动把 Shadow 结果晋升为正式策略或通知规则。
+- 不连接账户，不产生订单，不自动改变仓位；
+- 不根据 Shadow 结果自动晋升。
 
-未来若要接会员持仓或 L2，必须作为独立 Data Foundation / provider 合同任务，不属于 V1 的补丁。
+未来若接会员持仓或 L2，必须另立 Data Foundation/provider 合同任务。
 
-## 6. 指标身份与生命周期
+## 5. Indicator Registry 与固定参数
 
-### 6.1 Indicator Registry
-
-新增定义：
+### 5.1 Registry 定义
 
 ```text
 indicator_code    = main_force_mirror_futures_v1
@@ -140,9 +133,11 @@ alert_capable     = false
 default_visible   = false
 output_schema     = signal_state
 formal_policy_id  = main_force_mirror_futures_observation_v1
+lookback_bars     = 31
+warmup_bars       = 30
 ```
 
-精确输入：
+输入：
 
 ```text
 open
@@ -160,18 +155,48 @@ physical_contract
 ("60m",)
 ```
 
-完整 warning 输出首次可用需要 31 根同一物理合约、连续有效的 60m Bars：
+当前 `test_indicator_registry_v1.py` 中“所有指标都支持七周期”的全局断言需要改为**逐指标支持集断言**：现有指标仍保持现有七周期合同，V1 精确为 `("60m",)`。这不改变 Data Foundation 的七周期，只允许具体指标声明子集。
 
-```text
-lookback_bars = 31
-warmup_bars   = 30
+### 5.2 Exact parameters
+
+Registry `default_parameters` 与 Python metadata 精确冻结为：
+
+```json
+{
+  "atr_period": 14,
+  "volume_window": 20,
+  "oi_impulse_ema_period": 20,
+  "range_window": 20,
+  "pressure_divergence_window": 10,
+  "direction_price_weight": 0.7,
+  "direction_clv_weight": 0.3,
+  "direction_deadband": 0.15,
+  "oi_deadband": 0.25,
+  "volume_ratio_clip": 3.0,
+  "price_impulse_clip": 3.0,
+  "oi_impulse_clip": 3.0,
+  "strength_scale": 25.0,
+  "turnover_display_cap": 15.0,
+  "upper_location_threshold": 0.85,
+  "lower_location_threshold": 0.15,
+  "closing_dominated_oi_threshold": 0.5,
+  "pressure_confirmation_ratio": 0.7,
+  "high_volume_threshold": 1.5,
+  "clv_rejection_threshold": 0.25,
+  "wick_rejection_threshold": 0.35,
+  "caution_threshold": 70,
+  "rearm_score_threshold": 40,
+  "rearm_low_score_bars": 3,
+  "rearm_build_bars": 2,
+  "long_rearm_range_threshold": 0.65,
+  "short_rearm_range_threshold": 0.35,
+  "round_digits": 6
+}
 ```
 
-基础状态可在第 21 根 Bar 首次 ready；完整 caution divergence 还需要前 10 个 ready pressure points，因此 Registry 以完整 V1 输出的 31 根为准。
+同一 indicator code/version 下不得静默修改这些值；任何研究调整必须产生新 version。
 
-### 6.2 Formal Policy
-
-新增：
+### 5.3 Formal Policy
 
 ```text
 policy_id        = main_force_mirror_futures_observation_v1
@@ -187,46 +212,31 @@ blocked_consumers:
   - auto_order
 ```
 
-未知 consumer 必须 fail-closed。
+未知 consumer fail-closed。
 
-## 7. 数据身份与物理合约分段
+## 6. 物理合约身份与计算 block
 
-### 7.1 为什么必须绑定 physical contract
+### 6.1 Web Bar 身份
 
-`actual_dominant` 是查询时按 rank1 拼接的逻辑序列。换月时：
-
-- 价格可能跳变；
-- 成交量规模可能跳变；
-- OI 绝对值通常大幅变化；
-- 新合约 warm-up 不应继承旧合约状态。
-
-因此 V1 的任何 rolling、EMA、ATR、Episode 和 caution latch 都不能跨真实合约段继承。
-
-### 7.2 Web Bar 身份
-
-`BarData` 增加可选字段：
+`BarData` 增加：
 
 ```ts
 physicalContract?: string
 ```
 
-它是每根 Bar 的物理合约身份，不等同于用户选择的 `series_kind` 或查询参数 `contract`。
-
-映射规则：
-
 #### `series_kind=contract`
 
-每根 Historical Bar：
+Historical Bar：
 
 ```text
 physicalContract = request.contract
 ```
 
-Live Bar 只在 WebSocket physical identity 与请求合约一致时绑定；否则该 Bar 对 V1 unavailable。
+Completed Live Bar 仅在 WebSocket physical identity 与请求合约一致时绑定。
 
 #### `series_kind=actual_dominant`
 
-Historical page 对每根 Bar 使用其 `trading_day` 在 `resolved_contract_segments` 中查找：
+Historical page 对每根 Bar 按 `trading_day` 在 `resolved_contract_segments` 中查找：
 
 ```text
 start_trading_day <= trading_day <= end_trading_day
@@ -234,35 +244,51 @@ start_trading_day <= trading_day <= end_trading_day
 
 必须精确命中一个 segment：
 
-- 0 个命中：该 Bar 无 physical contract，V1 fail-closed；
-- 多于 1 个命中：视为 segment contract 冲突，V1 fail-closed；
-- 1 个命中：绑定该 segment 的 contract。
+- 0 个：`PHYSICAL_CONTRACT_MISSING`；
+- 多于 1 个：`SEGMENT_CONFLICT`；
+- 1 个：绑定 segment contract。
 
-每次 initial page、prepend page 都独立完成映射；不依赖页面外猜测。
+initial page 与每个 prepend page 都独立映射，不依赖页外猜测。
 
-Completed Live/Post-close `snapshot` 直接使用 payload 的精确 `contract`；普通 `bar` 消息只允许复用此前已经建立的 WebSocket overlay physical identity。若 bar 先于 identity 到达，不使用 `live_contract` 猜测，当前 V1 point unavailable。
+Completed Live/Post-close `snapshot` 使用 payload 的精确 `contract`。普通 `bar` 消息只复用已经建立的 overlay physical identity；若 bar 先于 identity 到达，不使用 `live_contract` 猜测，当前 V1 point unavailable。
 
 #### `series_kind=continuous`
 
+不绑定 physical contract，V1 unavailable。
+
+### 6.2 输入有效性
+
+一根 Bar 只有同时满足以下条件才是 valid input：
+
 ```text
-physicalContract = undefined
-V1 unavailable
+time 可解析且按序列严格递增
+physical_contract 为非空规范化合约字符串
+open/high/low/close/volume/open_interest 均为有限数
+high >= max(open, close)
+low <= min(open, close)
+high >= low
+volume >= 0
+open_interest >= 0
 ```
 
-不自动回退到 V0。
+### 6.3 valid 与 ready
 
-### 7.3 计算 block
+```text
+valid = 当前 Bar 输入及身份有效
+ready = valid 且当前 calculation block 已满足对应 warm-up
+```
 
-Python 与 Web 都把输入切分成 maximal contiguous calculation blocks。以下任一事件开始新 block：
+不得把 invalid、unsupported、unavailable 或 warm-up 输出成数值 0。
+
+### 6.4 calculation block
+
+Python 与 Web 都切分 maximal contiguous blocks。以下任一事件结束旧 block：
 
 - `physical_contract` 改变；
-- required input 缺失或非有限；
-- `open_interest < 0`；
-- OHLC 关系无效；
-- volume 无效；
-- datetime/Bar 顺序不严格递增。
+- required input invalid；
+- timestamp 非严格递增。
 
-新 block 必须从零 warm-up，以下状态全部重置：
+新 block 从零 warm-up，并重置：
 
 ```text
 ATR14
@@ -270,44 +296,34 @@ SMA(volume,20)
 EMA(abs(delta_oi),20)
 HHV/LLV20
 prior pressure window
-long/short caution armed latch
+long/short caution latch
 re-arm counters
 ```
 
-无效 Bar 自身输出 unavailable；下一根有效 Bar 不能继承无效 Bar 之前的状态。
+无效 Bar 自身 unavailable；下一根有效 Bar 不能继承无效 Bar 之前的状态。
 
-## 8. Exact 60m 数学口径
+## 7. Exact 60m 数学口径
 
-所有公式仅使用当前及过去的 completed Bars，不使用未来 Bar。
+所有公式只使用当前及过去 completed Bars。
 
-### 8.1 True Range 与 ATR14
-
-对同一 calculation block：
+### 7.1 ATR14
 
 ```text
+TR_0 = high_0 - low_0
+
 TR_t = max(
   high_t - low_t,
   abs(high_t - close_{t-1}),
   abs(low_t - close_{t-1})
 )
-```
 
-第一根 TR 使用：
-
-```text
-TR_0 = high_0 - low_0
-```
-
-ATR14 使用 Wilder SMA seed：
-
-```text
 ATR14_13 = SMA(TR_0..TR_13)
 ATR14_t  = (ATR14_{t-1} * 13 + TR_t) / 14
 ```
 
 `ATR14 <= 0` 时相关 point unavailable。
 
-### 8.2 Price Impulse
+### 7.2 Price impulse 与 CLV
 
 ```text
 price_impulse_t = clip(
@@ -316,8 +332,6 @@ price_impulse_t = clip(
   3
 )
 ```
-
-### 8.3 Close Location Value
 
 ```text
 if high_t > low_t:
@@ -330,19 +344,11 @@ else:
   clv_t = 0
 ```
 
-### 8.4 Direction
-
 ```text
 direction_t = 0.7 * price_impulse_t + 0.3 * clv_t
 ```
 
-方向 deadband：
-
-```text
-DIRECTION_DEADBAND = 0.15
-```
-
-### 8.5 Relative Volume
+### 7.3 Relative volume
 
 ```text
 volume_ratio_t = clip(
@@ -354,28 +360,24 @@ volume_ratio_t = clip(
 participation_t = sqrt(volume_ratio_t)
 ```
 
-滚动 volume mean 小于等于 0 时 point unavailable。
+滚动均值 `<=0` 时 unavailable。
 
-### 8.6 Open Interest Impulse
+### 7.4 OI impulse
 
 ```text
 delta_oi_t = open_interest_t - open_interest_{t-1}
 ```
 
-先计算：
-
 ```text
 oi_abs_baseline_t = EMA(abs(delta_oi),20)
 ```
 
-EMA20 使用 SMA seed：前 20 个有效 `abs(delta_oi)` 的平均值作为第一点，之后：
+EMA20 使用 SMA seed：前 20 个有效 `abs(delta_oi)` 的平均值为第一点，之后：
 
 ```text
-EMA_t = alpha * value_t + (1-alpha) * EMA_{t-1}
 alpha = 2 / 21
+EMA_t = alpha * value_t + (1-alpha) * EMA_{t-1}
 ```
-
-然后：
 
 ```text
 if oi_abs_baseline_t == 0:
@@ -384,13 +386,7 @@ else:
   oi_impulse_t = clip(delta_oi_t / oi_abs_baseline_t, -3, 3)
 ```
 
-OI deadband：
-
-```text
-OI_DEADBAND = 0.25
-```
-
-### 8.7 20 Bar 位置
+### 7.5 20 Bar 位置
 
 ```text
 range_high_t = HHV(high,20)
@@ -403,9 +399,9 @@ range_position_t = clip(
 )
 ```
 
-`range_high == range_low` 时 point unavailable。
+`range_high == range_low` 时 unavailable。
 
-### 8.8 压力与柱体强度
+### 7.6 压力与强度
 
 ```text
 long_open_pressure_t =
@@ -419,8 +415,6 @@ short_open_pressure_t =
   * participation_t
 ```
 
-柱体强度：
-
 ```text
 strength_t = clip(
   abs(direction_t)
@@ -432,11 +426,9 @@ strength_t = clip(
 )
 ```
 
-输出按 6 位小数稳定 round。
+全部数值按 6 位小数稳定 round。
 
-## 9. 五状态模型
-
-### 9.1 状态分类
+## 8. 五状态模型
 
 先判断 deadband：
 
@@ -450,67 +442,52 @@ or abs(oi_impulse) < 0.25:
 
 | Direction | OI impulse | 状态 | 解释 |
 | --- | --- | --- | --- |
-| `>= +0.15` | `>= +0.25` | `LONG_BUILD` | 上涨伴随增仓，多头方向新增压力 |
-| `<= -0.15` | `>= +0.25` | `SHORT_BUILD` | 下跌伴随增仓，空头方向新增压力 |
+| `>= +0.15` | `>= +0.25` | `LONG_BUILD` | 上涨伴随增仓，多头新增压力 |
+| `<= -0.15` | `>= +0.25` | `SHORT_BUILD` | 下跌伴随增仓，空头新增压力 |
 | `>= +0.15` | `<= -0.25` | `SHORT_COVER` | 上涨伴随减仓，更偏空头回补 |
 | `<= -0.15` | `<= -0.25` | `LONG_LIQUIDATION` | 下跌伴随减仓，更偏多头减仓 |
 
-`TURNOVER` 表示方向或 OI 变化不足，不解释为具体主导行为。
-
-### 9.2 signed score
+signed score：
 
 ```text
 LONG_BUILD / SHORT_COVER:
-  signed_score = +strength
+  +strength
 
 SHORT_BUILD / LONG_LIQUIDATION:
-  signed_score = -strength
+  -strength
 
 TURNOVER:
-  signed_score = sign(direction) * strength
+  sign(direction) * min(strength, 15)
 ```
 
-图形方向只表示价格运动方向；颜色/状态名表示增仓或减仓性质。
+状态解释始终使用“更偏向”，不表述为账户级确定事实。
 
-## 10. 双向“小心”风险评分
+## 9. 双向风险评分
 
-V1 不使用 V0 的 `HHV5 / BARSLAST10` 作为触发器。V0 原公式继续只属于 `main_force_mirror_v0`。
-
-V1 每个 ready Bar 同时计算：
+V1 不使用 V0 的 `HHV5 / BARSLAST10` 作为触发器。V0 原公式继续只属于 V0。
 
 ```text
-long_caution_score  ∈ {0,15,25,30,...,100}
-short_caution_score ∈ {0,15,25,30,...,100}
+long_caution_score  = 四项证据加权和
+short_caution_score = 四项证据加权和
+CAUTION_THRESHOLD   = 70
 ```
 
-触发阈值：
+### 9.1 追多小心
+
+#### `LONG_UPPER_EXTREME`，30 分
 
 ```text
-CAUTION_THRESHOLD = 70
-```
-
-这个 70 是加权证据评分，不是百分比或概率。
-
-### 10.1 追多小心
-
-#### A. 高位位置，30 分
-
-```text
-LONG_UPPER_EXTREME:
 range_position >= 0.85
 ```
 
-#### B. 空头回补主导，30 分
+#### `LONG_SHORT_COVER_DOMINATED`，30 分
 
 ```text
-LONG_SHORT_COVER_DOMINATED:
 state == SHORT_COVER
 and oi_impulse <= -0.50
 ```
 
-含义：价格上涨，但总持仓显著下降，本轮上涨更偏向对手方退出，而不是新增多头持续确认。
-
-#### C. 多头开仓压力背离，25 分
+#### `LONG_OPEN_PRESSURE_DIVERGENCE`，25 分
 
 使用当前 Bar 之前的 10 个 ready points：
 
@@ -518,23 +495,21 @@ and oi_impulse <= -0.50
 prior_high = max(high_{t-10}..high_{t-1})
 prior_long_pressure = max(long_open_pressure_{t-10}..long_open_pressure_{t-1})
 
-LONG_OPEN_PRESSURE_DIVERGENCE:
 high_t > prior_high
 and prior_long_pressure > 0
 and long_open_pressure_t <= 0.70 * prior_long_pressure
 ```
 
-#### D. 高量能衰竭，15 分
+#### `LONG_HIGH_VOLUME_EXHAUSTION`，15 分
 
 ```text
 upper_wick_ratio =
   (high - max(open,close)) / (high-low)
 ```
 
-`high==low` 时 wick ratio 为 0。
+`high==low` 时为 0。
 
 ```text
-LONG_HIGH_VOLUME_EXHAUSTION:
 volume_ratio >= 1.50
 and (
   clv <= 0.25
@@ -542,38 +517,33 @@ and (
 )
 ```
 
-### 10.2 追空小心
+### 9.2 追空小心
 
-完全对称。
-
-#### A. 低位位置，30 分
+#### `SHORT_LOWER_EXTREME`，30 分
 
 ```text
-SHORT_LOWER_EXTREME:
 range_position <= 0.15
 ```
 
-#### B. 多头减仓主导，30 分
+#### `SHORT_LONG_LIQUIDATION_DOMINATED`，30 分
 
 ```text
-SHORT_LONG_LIQUIDATION_DOMINATED:
 state == LONG_LIQUIDATION
 and oi_impulse <= -0.50
 ```
 
-#### C. 空头开仓压力背离，25 分
+#### `SHORT_OPEN_PRESSURE_DIVERGENCE`，25 分
 
 ```text
 prior_low = min(low_{t-10}..low_{t-1})
 prior_short_pressure = max(short_open_pressure_{t-10}..short_open_pressure_{t-1})
 
-SHORT_OPEN_PRESSURE_DIVERGENCE:
 low_t < prior_low
 and prior_short_pressure > 0
 and short_open_pressure_t <= 0.70 * prior_short_pressure
 ```
 
-#### D. 低位吸收，15 分
+#### `SHORT_LOW_PRICE_ABSORPTION`，15 分
 
 ```text
 lower_wick_ratio =
@@ -581,7 +551,6 @@ lower_wick_ratio =
 ```
 
 ```text
-SHORT_LOW_PRICE_ABSORPTION:
 volume_ratio >= 1.50
 and (
   clv >= -0.25
@@ -589,27 +558,20 @@ and (
 )
 ```
 
-### 10.3 事件
-
-```text
-long_caution_candidate  = long_caution_score  >= 70
-short_caution_candidate = short_caution_score >= 70
-```
-
-事件名称：
+### 9.3 事件
 
 ```text
 LONG_CHASE_CAUTION  → 追多小心
 SHORT_CHASE_CAUTION → 追空小心
 ```
 
-同一 Bar 若因为异常数据出现两个 candidate，必须 fail-closed 为 `CAUTION_DIRECTION_CONFLICT`，不选择优先级。
+```text
+candidate = corresponding_score >= 70
+```
 
-## 11. Episode latch 与重新武装
+同一 Bar 若异常地产生两个 candidate，输出 `CAUTION_DIRECTION_CONFLICT`，不设优先级。
 
-V1 不使用固定 10 Bar cooldown。多空两侧各自维护独立 latch。
-
-### 11.1 初始状态
+## 10. Episode latch 与 re-arm
 
 每个 calculation block 开始：
 
@@ -618,25 +580,23 @@ long_armed  = true
 short_armed = true
 ```
 
-### 11.2 触发顺序
+每根 ready Bar：
 
-每根 ready completed Bar：
+1. 先判断 armed side 是否 score `>=70`；
+2. 触发一次后该 side `armed=false`；
+3. 事件 Bar 不执行 re-arm；
+4. 多空 latch 独立。
 
-1. 先判断当前 armed side 是否满足 score `>=70`；
-2. 满足则输出一次 caution event，并将该 side `armed=false`；
-3. 事件 Bar 不同时执行 re-arm；
-4. 另一方向 latch 保持独立。
+### 10.1 Long re-arm
 
-### 11.3 Long re-arm
-
-`long_armed=false` 后，仅在以下条件同时成立时重新武装：
+必须同时满足：
 
 ```text
 long_caution_score < 40
 连续 3 根 ready Bars
 ```
 
-并且满足任一：
+并满足任一：
 
 ```text
 range_position < 0.65
@@ -649,16 +609,16 @@ state == LONG_BUILD
 连续 2 根 ready Bars
 ```
 
-re-arm 在当前 Bar 结束后生效，最早从下一根 Bar 再触发。
+### 10.2 Short re-arm
 
-### 11.4 Short re-arm
+必须同时满足：
 
 ```text
 short_caution_score < 40
 连续 3 根 ready Bars
 ```
 
-并且满足任一：
+并满足任一：
 
 ```text
 range_position > 0.35
@@ -671,19 +631,13 @@ state == SHORT_BUILD
 连续 2 根 ready Bars
 ```
 
-### 11.5 unavailable Bar
+re-arm 在当前 Bar 结束后生效，最早下一根再触发。
 
-unavailable Bar：
+warm-up/unavailable Bar 不推进计数；required input invalid 会结束 block 并在下一有效 block 重置 latch。
 
-- 不触发；
-- 不推进 low-score count；
-- 不推进 build count；
-- 不擅自 re-arm；
-- 若由 required input invalid 引起，则该 Bar 后开始新 calculation block，全部 latch 重置。
+## 11. Python Kernel 输出合同
 
-## 12. Python Kernel 输出合同
-
-新增模块建议：
+新增：
 
 ```text
 packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py
@@ -731,8 +685,6 @@ class MainForceMirrorFuturesResult:
     metadata: dict[str, Any]
 ```
 
-公开函数：
-
 ```python
 def compute_main_force_mirror_futures(
     datetimes: Sequence[Any],
@@ -747,26 +699,13 @@ def compute_main_force_mirror_futures(
     ...
 ```
 
-metadata 必须包含：
+metadata 必须包含 code/version/status、supported frequency/series、future/repainting、capability、parameters、parameters_hash、`auto_order=false`，以及：
 
 ```text
-indicator_code
-indicator_version
-status=observation_only
-supported_frequency=60m
-supported_series_kind=[contract,actual_dominant]
-future_looking=false
-repainting_risk=none
-historical_backtest_allowed=false
-alert_capable=false
-notification_capable=false
-auto_order=false
-interpretation=directional_position_pressure_proxy_not_measured_fund_flow
-caution_threshold=70
-parameters_hash
+interpretation = directional_position_pressure_proxy_not_measured_fund_flow
 ```
 
-## 13. Web mirror 与一致性
+## 12. Web mirror 与交互
 
 新增：
 
@@ -774,111 +713,59 @@ parameters_hash
 apps/quant-web/src/utils/mainForceMirrorFutures.ts
 ```
 
-Web mirror：
+Web mirror 只服务浏览器，逐点与 Python golden 对齐；冲突时以 Python Kernel 为准。
 
-- 只服务浏览器显示；
-- 函数签名与 Python 公式字段一一对应；
-- 不成为 Factor、Signal、Alert 或 Runtime 事实源；
-- 每次修改必须同时更新 Python/Web golden；
-- 口径冲突时以 Python Kernel 为准。
+### 12.1 Tab
 
-建议 Web result：
-
-```ts
-interface MainForceMirrorFuturesPoint {
-  time: Time
-  physicalContract: string | null
-  ready: boolean
-  valid: boolean
-  reason: string | null
-  state: MainForceMirrorFuturesState | null
-  signedScore: number | null
-  strength: number | null
-  volumeRatio: number | null
-  deltaOi: number | null
-  oiImpulse: number | null
-  direction: number | null
-  rangePosition: number | null
-  longCautionScore: number | null
-  shortCautionScore: number | null
-  caution: MainForceMirrorFuturesCaution | null
-  cautionReasonCodes: MainForceMirrorFuturesReasonCode[]
-}
-```
-
-## 14. Web 交互设计
-
-### 14.1 副图 Tab
-
-稳定期使用一行三个 Tab：
+稳定观察期使用：
 
 ```text
 MACD | 主力照妖镜 | 原型V0
 ```
 
-含义：
+- `MACD` 保持默认；
+- `主力照妖镜` 指期货 V1；
+- `原型V0` 用于历史复现与并行观察。
 
-- `MACD`：保持默认；
-- `主力照妖镜`：期货 V1；
-- `原型V0`：已发布股票式原型，只用于历史复现和并行观察。
+V1 Tab 仅在 60m + contract/actual_dominant 可选择。身份支持但局部 Bar 缺失 OI/segment 时，Tab 仍可打开，缺失区间逐点显示 unavailable；若当前可见窗口没有任何 ready point，则显示精确不可用说明。continuous 或其他周期直接 disabled。
 
-V1 Tab 可用条件：
+切换 Tab 不得 refetch bars，不改变主图 overlay、EMA 偏好、行情 identity、Alert markers 或 pane 数量。
 
-```text
-frequency == 60m
-series_kind in {contract, actual_dominant}
-所有可见目标 Bars 能绑定 physicalContract
-当前 ready 区域存在 openInterest
-```
-
-不可用时 Tab 禁用并显示精确原因，不自动回退 V0。
-
-### 14.2 柱体语义
+### 12.2 柱体与 scale
 
 ```text
-零轴上方：
-  LONG_BUILD  多头增仓，强上行色
-  SHORT_COVER 空头回补，弱上行色
-
-零轴下方：
-  SHORT_BUILD      空头增仓，强下行色
-  LONG_LIQUIDATION 多头减仓，弱下行色
-
-零轴附近：
-  TURNOVER 换手/方向不足，中性色
+零轴上方：LONG_BUILD / SHORT_COVER
+零轴下方：SHORT_BUILD / LONG_LIQUIDATION
+零轴附近：TURNOVER
 ```
 
-颜色必须使用 chart theme token，不在业务函数中硬编码。
+颜色只使用 chart theme token；业务函数不硬编码颜色。
 
-V1 price scale 固定覆盖：
+V1 scale 固定：
 
 ```text
-[-105, +105]
+[-105,+105]
 ```
 
-避免不同窗口 autoscale 导致相同强度视觉不一致。
-
-### 14.3 Caution marker
+### 12.3 caution marker
 
 ```text
 LONG_CHASE_CAUTION:
-  +92 附近
-  文案：追多小心 {score}
+  +92，文案“追多小心 {score}”
 
 SHORT_CHASE_CAUTION:
-  -92 附近
-  文案：追空小心 {score}
+  -92，文案“追空小心 {score}”
 ```
 
-图例固定说明：
+图例固定：
 
 ```text
 70 = 风险证据评分阈值，不是资金流比例或概率
 ```
 
-### 14.4 Hover
+### 12.4 Hover
 
-选择 V1 时，hover 至少展示：
+至少展示：
 
 ```text
 物理合约
@@ -894,47 +781,29 @@ OI冲击
 警戒原因
 ```
 
-缺失值显示 `—`，不得补 0。
+缺失显示 `—`，不得补 0。
 
-## 15. V0 共存与迁移
+## 13. V0 共存
 
-`main_force_mirror_v0`：
+V0 的 code/version/formula/golden/capability 全部保持不变。
 
-- indicator code/version 不变；
-- 原“小心”公式不变；
-- existing golden 不变；
-- capability 不变；
-- 不被 V1 静默替换。
+只有在 V1 完成 Shadow、用户人工接受，并另开 UI 收口任务后，才允许从默认 UI 移除“原型V0”。即使移除 UI，V0 Registry 与 Git 历史仍保留。
 
-稳定观察阶段：
+## 14. Historical Shadow
 
-```text
-MACD
-主力照妖镜（期货 V1）
-原型V0
-```
-
-只有在 V1 完成 Shadow、用户人工接受，并另开 UI 收口任务后，才允许从默认 UI 移除“原型V0”。即使 UI 移除，V0 Registry 与 Git 历史仍保留以支持复现。
-
-## 16. Historical Shadow 设计
-
-V1 仍是 observation-only，但需要只读 Historical Shadow 统计验证是否降低噪声、提高双向警戒质量。
-
-### 16.1 唯一数据链路
+### 14.1 唯一链路
 
 ```text
 MarketDataService
-→ actual_dominant 60m bars + resolved physical segments
-→ Python main_force_mirror_futures_v1
+→ actual_dominant 60m + resolved physical segments
+→ Python V1
 → caution events
 → forward outcome summaries
 ```
 
 不得直读 Parquet、RQData、Redis 或复制主力 resolver。
 
-### 16.2 初始代表品种
-
-首轮固定观察矩阵：
+### 14.2 初始代表矩阵
 
 ```text
 jm  黑色
@@ -944,9 +813,9 @@ m   农产品
 sc  能源
 ```
 
-这些只是研究样本，不写入 indicator capability，也不表示其他 active 品种不支持。
+只是研究样本，不限制 indicator capability。
 
-### 16.3 事件身份
+### 14.3 事件身份
 
 ```text
 indicator_code
@@ -963,15 +832,15 @@ reason_codes
 state
 ```
 
-### 16.4 后续结果
+### 14.4 Outcome
 
-同一 physical contract segment 内统计：
+同一 physical contract segment 内：
 
 ```text
 horizons = [1,3,5,10] completed 60m bars
 ```
 
-追多小心：
+追多：
 
 ```text
 reversal_return_h = (close_t - close_{t+h}) / close_t
@@ -979,7 +848,7 @@ warning_mfe_h     = (close_t - min(low_{t+1..t+h})) / close_t
 warning_mae_h     = (max(high_{t+1..t+h}) - close_t) / close_t
 ```
 
-追空小心：
+追空：
 
 ```text
 reversal_return_h = (close_{t+h} - close_t) / close_t
@@ -987,38 +856,34 @@ warning_mfe_h     = (max(high_{t+1..t+h}) - close_t) / close_t
 warning_mae_h     = (close_t - min(low_{t+1..t+h})) / close_t
 ```
 
-如果 horizon 跨物理合约边界，该 outcome 为 unavailable，不跨换月拼接。
+跨 segment 的 outcome unavailable。
 
-### 16.5 汇总
-
-每个品种与合并样本输出：
+### 14.5 汇总
 
 ```text
 bars_ready_count
-event_count_long
-event_count_short
+event_count_long / short
 events_per_1000_ready_bars
 state_distribution
 reason_code_distribution
 score_distribution
 forward_reversal_return distribution
-warning_mfe distribution
-warning_mae distribution
+warning_mfe / warning_mae distribution
 missing_oi_count
 segment_reset_count
 ```
 
-不输出盈利、胜率保证、可晋升或自动参数建议。
+不输出盈利保证、自动参数建议或晋升结论。
 
-### 16.6 CLI
+### 14.6 CLI
 
-后续 implementation plan 可以增加只读命令：
+后续 plan 可增加只读命令：
 
 ```text
 guiyi research main-force-mirror-futures
 ```
 
-要求显式参数：
+显式参数：
 
 ```text
 --symbol
@@ -1029,11 +894,11 @@ guiyi research main-force-mirror-futures
 --through
 ```
 
-stdout JSON；不写 DB、Canonical、Redis，不自动保存正式报告，不修改 STATUS。
+stdout JSON；不写 DB、Canonical、Redis，不自动保存正式 evidence，不修改 STATUS。
 
-## 17. 失败与 unavailable reason codes
+## 15. Stable unavailable reason codes
 
-V1 必须使用稳定 reason codes，至少包括：
+至少包括：
 
 ```text
 MFM_FUTURES_V1_FREQUENCY_UNSUPPORTED
@@ -1049,18 +914,11 @@ MFM_FUTURES_V1_RANGE_INVALID
 MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT
 ```
 
-UI 必须区分：
+UI 必须区分 unsupported、unavailable、warm-up 和 ready。不得把 unavailable 当 TURNOVER。
 
-- unsupported：身份或周期不支持；
-- unavailable：该数据窗口缺少 OI/segment/有效输入；
-- warmup：合法但历史长度不足；
-- ready：可显示状态与评分。
+## 16. 文件边界
 
-不得把 unavailable 当成 TURNOVER。
-
-## 18. 文件边界
-
-### 18.1 新增
+### 16.1 新增
 
 ```text
 packages/quant-core/guiyi_quant/indicators/main_force_mirror_futures.py
@@ -1070,195 +928,172 @@ apps/quant-web/tests/mainForceMirrorFutures.test.ts
 apps/quant-web/e2e/main-force-mirror-futures.spec.mjs
 ```
 
-如首轮同时实现 Shadow：
+Shadow 同轮实施时新增：
 
 ```text
 services/quant-api/app/market_data/main_force_mirror_futures_research_service.py
 services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py
 ```
 
-### 18.2 修改
+### 16.2 修改
 
 ```text
 packages/quant-core/guiyi_quant/indicators/__init__.py
 packages/quant-core/guiyi_quant/indicators/registry.py
 packages/quant-core/guiyi_quant/indicators/policy.py
+services/quant-api/tests/test_indicator_registry_v1.py
 apps/quant-web/src/types/market.ts
 apps/quant-web/src/composables/useMarketSeries.ts
 apps/quant-web/src/components/kline/KlineChart.vue
 apps/quant-web/src/components/kline/KlineHoverLegend.vue
+apps/quant-web/src/utils/klineViewModel.ts
 apps/quant-web/src/pages/market/chart.vue
 apps/quant-web/tests/marketSeries.test.ts
+apps/quant-web/tests/kline-view-model.test.ts
+apps/quant-web/e2e/main-force-mirror.spec.mjs
 apps/quant-web/e2e/market-runtime.spec.mjs
 docs/INDICATOR_KERNEL.md
 TESTING.md
 ```
 
-`STATUS.md` 只能在完整实现、仓库原生验证和独立 Review 全部通过后记录 develop-only 事实。
-
-### 18.3 禁止修改
+Shadow CLI 同轮实施时修改：
 
 ```text
-Market DatasetKey / 八表 Catalog / Canonical schema
-Alert registry / Rule / Scope / event evaluator
+services/quant-api/app/guiyi_cli/research_parser.py
+services/quant-api/app/guiyi_cli/research_commands.py
+services/quant-api/app/guiyi_cli/main.py
+services/quant-api/tests/test_research_cli.py
+```
+
+`STATUS.md` 只能在完整实现、仓库原生验证和独立 Review 通过后记录 develop-only 事实。
+
+### 16.3 禁止修改
+
+```text
+DatasetKey / 八表 Catalog / Canonical schema
+Alert registry / Rule / Scope / evaluator
 Clawbot / owner / transport
 Execution Review
 production DB / migration
 main / release / tag / Runtime worktree
 ```
 
-## 19. 测试与验证矩阵
+## 17. 测试矩阵
 
-### 19.1 Kernel 数学
+### 17.1 Kernel
 
 必须覆盖：
 
 - ATR14 Wilder SMA seed；
 - volume SMA20；
 - OI abs-delta EMA20 SMA seed；
-- deadband 精确边界 `0.15 / 0.25`；
-- 四象限和 TURNOVER 五状态；
-- signed score 正负与 0..100 cap；
+- exact parameters hash；
+- deadband `0.15 / 0.25`；
+- 四象限与 TURNOVER；
+- TURNOVER display cap 15；
+- signed score 与 100 cap；
 - long/short pressure；
-- 四个 long reason 与四个 short reason；
+- 八个 caution reasons；
 - score 69 不触发、70 触发；
-- long/short conflict fail-closed；
-- re-arm 三根低分 + range reset；
-- re-arm 三根低分 + 两根 opening build；
-- unavailable Bar 暂停或 block reset；
+- conflict fail-closed；
+- 两种 long/short re-arm；
+- invalid gap block reset；
 - prefix invariance；
 - V0 output hash 不变。
 
-### 19.2 Segment
+### 17.2 Segment
 
 必须覆盖：
 
-- contract series 全部 Bar 绑定请求合约；
-- actual_dominant 每根 Bar 精确命中一个 segment；
-- segment 0 命中和多命中 fail-closed；
-- prepend page 的 older Bars 获得正确物理合约；
-- WebSocket snapshot 使用 payload contract；
-- 无 overlay identity 的 bar 不猜合约；
-- A→B 换月存在巨大价格/OI 跳变时，B 段重新 warm-up，不产生假柱或假 caution；
-- horizon 不跨 segment。
+- contract Bars 绑定请求合约；
+- actual_dominant 精确命中 segment；
+- 0/多命中 fail-closed；
+- prepend page 映射；
+- snapshot contract；
+- 无 identity 的 bar 不猜合约；
+- A→B 巨大价格/OI 跳变后 B 重新 warm-up，无假柱/假 caution；
+- outcome 不跨 segment。
 
-### 19.3 Python/Web parity
+### 17.3 Python/Web parity
 
-使用同一 deterministic fixture 覆盖至少：
+同一 deterministic fixture 至少包含：
 
 ```text
-两段物理合约
-完整五状态
-至少一个追多小心
-至少一个追空小心
-至少一次 re-arm
+两个 physical contracts
+五状态
+一个追多小心
+一个追空小心
+一次 re-arm
 一个 missing OI gap
 ```
 
-逐点核对：
+逐点核对 ready/valid/reason、state、所有核心数值、score、caution 和 reason codes。
 
-```text
-ready/valid/reason
-state
-signed_score
-price_impulse
-volume_ratio
-delta_oi
-oi_impulse
-direction
-range_position
-long/short caution score
-caution
-reason codes
-```
-
-### 19.4 Web
+### 17.4 Web
 
 Playwright 必须证明：
 
-- 默认仍为 MACD；
-- 三个 Tab 顺序固定；
+- 默认 MACD；
+- Tab 顺序 `MACD / 主力照妖镜 / 原型V0`；
 - 60m actual_dominant 可打开 V1；
-- 15m、continuous 的 V1 disabled 且原因正确；
-- 切换 Tab 不 refetch bars；
-- V1/V0/MACD 相互清空旧 series 与 markers；
-- 追多与追空 marker 方向、文案和 score 正确；
-- 页面显示“70 非资金比例”；
-- 物理合约切换后 V1 warm-up；
-- no horizontal overflow；
-- Web production build 通过。
+- 15m、continuous disabled；
+- 切换不 refetch bars；
+- 三类 pane series/markers 相互清理；
+- 双向 marker、文案、score 正确；
+- “70 非资金比例”可见；
+- 换月后 warm-up；
+- 无水平溢出；
+- production build 通过。
 
-### 19.5 仓库回归
+### 17.5 仓库回归
 
-按 `TESTING.md` 执行受影响的：
+按 `TESTING.md` 执行 backend、registry/policy、Ruff、Mypy、Web unit、Market E2E、Web build、secret scan、`git diff --check`。测试不运行 provider、DB/Canonical 写入、Runtime switch 或真实通知。
 
-```text
-backend tests
-indicator registry/policy tests
-Ruff
-Mypy
-Web unit
-Market browser E2E
-Web production build
-secret scan
-git diff --check
-```
+## 18. 验收标准
 
-测试不运行 provider、DB/Canonical 写入、Runtime switch 或真实通知。
-
-## 20. 验收标准
-
-V1 实现验收必须同时满足：
+必须同时满足：
 
 1. V0 code/version/golden/capability 零变化；
-2. V1 只有 60m + contract/actual_dominant 可用；
-3. 每根 ready Bar 有精确 physical contract；
-4. 换月后所有指标与 latch 重新 warm-up；
-5. 五状态与 OI 四象限一致；
-6. 追多/追空评分由精确四项证据组成，阈值固定 70；
-7. 同一 Episode 不连续刷屏，re-arm 合同通过；
-8. Python/Web golden 逐点一致；
+2. V1 只支持 60m + contract/actual_dominant；
+3. ready Bar 具有精确 physical contract；
+4. 换月和 invalid gap 后重新 warm-up；
+5. 五状态与价格/OI 四象限一致；
+6. 双向评分由精确四项证据组成，阈值固定 70；
+7. latch/re-arm 不连续刷屏；
+8. Python/Web 逐点一致；
 9. UI 不把 70 表述为百分比、概率或实测资金流；
 10. 无 Alert、notification、DB、Canonical、Runtime 或订单新路径；
-11. Shadow 输出只读、segment-local、无自动晋升；
+11. Shadow 只读、segment-local、无自动晋升；
 12. 独立 Review 为 Critical=0 / Important=0。
 
-通过以上验收只能得出：
+通过只能得出：
 
 ```text
 main_force_mirror_futures_v1 Web observation implementation verified on develop
 ```
 
-不能得出：
+不能得出策略有效、可盈利、可发正式 Alert、可 Runtime promotion 或可自动交易。
 
-```text
-策略有效
-可盈利
-可发正式 Alert
-可 Runtime promotion
-可自动交易
-```
+## 19. 推荐实施顺序
 
-## 21. 推荐实施顺序
-
-后续 implementation plan 应拆为：
+后续 implementation plan 拆为：
 
 ```text
 Task 1  Python domain contract + exact math + RED/GREEN
-Task 2  Registry/Policy + segment-local reset + V0 regression
+Task 2  Registry/Policy + segment reset + V0 regression
 Task 3  Web physicalContract mapping + Python/Web golden
-Task 4  V1 pane/UI/hover + three-tab Playwright
+Task 4  V1 pane/hover + three-tab Playwright
 Task 5  Historical Shadow CLI/service + representative matrix tests
 Task 6  Full regression + docs + independent Review
 ```
 
-前四个 Task 形成可用 Web observation；Task 5 形成研究证据入口；Task 6 才允许 develop-only 收口。
+前四项形成 Web observation；Task 5 形成研究证据入口；Task 6 才允许 develop-only 收口。
 
-## 22. 人工 Gate
+## 20. 人工 Gate
 
-本 Spec 审阅通过后，下一步只允许生成 implementation plan 和 TASK contracts。
+本 Spec 审阅通过后，下一步只生成 implementation plan 与 TASK contracts。
 
-后续代码可以按批准任务集成 `develop`，但以下操作始终需要独立明确请求：
+后续代码可以在批准后集成 `develop`，但以下始终是独立 Gate：
 
 ```text
 release/main/tag
@@ -1269,4 +1104,4 @@ Runtime reload/promotion
 DB/Canonical 写入
 ```
 
-AI 可以自动研究和生成报告，但不能自动晋升 V1。
+AI 可以自动研究并生成报告，但不能自动晋升 V1。
