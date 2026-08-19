@@ -8,8 +8,8 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 Git release 为 `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`；production Runtime
-  继续保持 `v1.6.0@5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`，v1.6.1 Runtime promotion pending。
+- 当前 Git release 与 production Runtime 均为
+  `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
@@ -31,7 +31,7 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTION PENDING）
+## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
 - Market WebSocket 新增同次读取的 `MarketDisplaySnapshot`：`realtime` 继续要求既有 live eligibility 与
   heartbeat；`post_close` 仅在 CLOSED phase、operational product、1m/5m/15m/30m/60m，以及
@@ -47,8 +47,18 @@
 - Release PR #177 已合并；`origin/main` 与 annotated `v1.6.1` peeled commit 均为
   `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，tag message=`Release v1.6.1`。`origin/main` 是
   最终 `origin/develop` 的祖先，API/Web 版本面均为 `1.6.1`。
-- production Runtime 保持 `v1.6.0`；未创建 v1.6.1 Runtime worktree，未执行 Runtime build/reload、
-  migration、RQData/Canonical/DB 写入、Scope/通知或手工盘后任务。
+- 独立 Runtime worktree `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.1` 为 clean/detached 的精确
+  `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`；Web production build 为 `2996 modules`，Market Runtime
+  专项为 `130 passed`，launchd render/plist 验证通过。
+- 首次单次 promotion 在 base 与 Market 已切换后，因新 root 的 Alert 私有路径未注入而
+  fail-closed，当次未重试。随后依据用户新的精确单次授权，从旧 exact-tag Runtime plist
+  只读取回并校验六项 Clawbot 私有路径，完成 base + Alert promotion；未重载 Market。
+- 读回确认 API/Web/Live/after-market/Alert 五个正式服务均加载 v1.6.1 root 与
+  `75cbf37c`，API version=`1.6.1`，API/Web=`200`，Runtime health=`ok/readonly`，Market/Alert
+  enabled，Clawbot/owner ready，Execution Review roll disabled。DB 仍为 `20260815_0039`，两条
+  Alert Rule 仍均为 enabled 且 Scope 精确为 `jm`，正式服务已无 v1.6.0 root 引用。
+- 本次未执行 migration、RQData/Canonical/DB 写入、Scope/owner/transport mutation、真实通知、
+  手工盘后任务、replay/backfill/retry 或订单；旧 v1.6.0 worktree 仅作可恢复资产保留。
 
 ## v1.6.0 Release / Runtime（RELEASED / RUNTIME PROMOTED）
 
@@ -270,14 +280,13 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.6.0` Runtime promotion 已完成；正式五服务已统一加载 identity
-  `5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
+- `v1.6.1` Runtime promotion 已完成；正式五服务已统一加载 identity
+  `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
   `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review Gate D 仍为
   `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证；该独立 pending 状态不改写 `v1.6.0` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：仅在另行取得精确 `v1.6.1` production Runtime promotion 单次执行意图后创建隔离
-  Runtime worktree并切换；此前保持现有 `v1.6.0 + clawbot-openclaw-weixin` 自然运行，Execution
-  Review Gate D 继续 `disabled / not activated`。
+  不人工补证；该独立 pending 状态不改写 `v1.6.1` release/Runtime promotion 或 G9 明确豁免收口事实。
+- 最小下一步：保持 `v1.6.1 + clawbot-openclaw-weixin` 自然运行，仅等待 SuBing Natural
+  Canary 的自然证据；不人工补证，Execution Review Gate D 继续 `disabled / not activated`。
