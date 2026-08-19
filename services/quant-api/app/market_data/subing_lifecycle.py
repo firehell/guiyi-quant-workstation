@@ -8,8 +8,12 @@ from enum import StrEnum
 from typing import Protocol, cast
 
 from .domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
-from .subing_calibration import SubingCalibration
-from .subing_lifecycle_policy import SubingLifecyclePolicy
+from .subing_calibration import SubingCalibration, is_accepted_subing_calibration
+from .subing_lifecycle_policy import (
+    _FORMULA_VERSION,
+    _POLICY_ID,
+    SubingLifecyclePolicy,
+)
 from .subing_research import (
     MacdCross,
     SubingSignalEvaluation,
@@ -71,6 +75,13 @@ class SubingLifecycleStateError(ValueError):
         super().__init__(self.code)
 
 
+class SubingLifecycleContractError(ValueError):
+    code = "SUBING_LIFECYCLE_CONTRACT_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
 @dataclass(frozen=True, slots=True)
 class SubingOpportunityKey:
     policy_id: str
@@ -83,11 +94,13 @@ class SubingOpportunityKey:
     def __post_init__(self) -> None:
         if (
             not isinstance(self.policy_id, str)
-            or not self.policy_id.strip()
+            or self.policy_id != _POLICY_ID
             or not isinstance(self.symbol, str)
             or not self.symbol.strip()
+            or self.symbol != self.symbol.strip()
             or not isinstance(self.contract, str)
-            or not self.contract.strip()
+            or normalize_contract_for_symbol(self.symbol, self.contract)
+            != self.contract
             or type(self.segment_start_trading_day) is not date
             or not isinstance(self.direction, SubingDirection)
             or self.direction not in {SubingDirection.LONG, SubingDirection.SHORT}
@@ -202,6 +215,60 @@ class SubingLifecycleTransition:
     to_stage: LifecycleStage
     reason_codes: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        try:
+            allowed_targets = {
+                LifecycleStage.IDLE: {
+                    LifecycleStage.SETUP_ARMED,
+                    LifecycleStage.ENTRY_CONFIRMED,
+                },
+                LifecycleStage.SETUP_ARMED: {
+                    LifecycleStage.ENTRY_CONFIRMED,
+                    LifecycleStage.CLOSED,
+                },
+                LifecycleStage.ENTRY_CONFIRMED: {
+                    LifecycleStage.CONTINUATION,
+                    LifecycleStage.EXIT_RISK,
+                    LifecycleStage.CLOSED,
+                },
+                LifecycleStage.CONTINUATION: {
+                    LifecycleStage.EXIT_RISK,
+                    LifecycleStage.CLOSED,
+                },
+                LifecycleStage.EXIT_RISK: {
+                    LifecycleStage.CONTINUATION,
+                    LifecycleStage.CLOSED,
+                },
+                LifecycleStage.CLOSED: set(),
+            }
+            if (
+                not isinstance(self.transition_id, str)
+                or not isinstance(self.opportunity_key, SubingOpportunityKey)
+                or not _is_aware_datetime(self.transition_at)
+                or not isinstance(self.from_stage, LifecycleStage)
+                or not isinstance(self.to_stage, LifecycleStage)
+                or self.from_stage is self.to_stage
+                or self.to_stage not in allowed_targets.get(self.from_stage, set())
+                or type(self.reason_codes) is not tuple
+                or not self.reason_codes
+                or any(
+                    not isinstance(code, str) or not code.strip()
+                    for code in self.reason_codes
+                )
+                or self.transition_at < self.opportunity_key.origin_at
+                or self.transition_id
+                != _transition_identity(
+                    opportunity_key=self.opportunity_key,
+                    transition_at=self.transition_at,
+                    to_stage=self.to_stage,
+                )
+            ):
+                raise SubingLifecycleContractError()
+        except (AttributeError, TypeError, ValueError) as exc:
+            if isinstance(exc, SubingLifecycleContractError):
+                raise
+            raise SubingLifecycleContractError() from exc
+
 
 @dataclass(frozen=True, slots=True)
 class SubingLifecycleSnapshot:
@@ -232,6 +299,14 @@ class SubingLifecycleSnapshot:
     volume_ratio_prev: Decimal | None = None
     open_interest_delta: Decimal | None = None
 
+    def __post_init__(self) -> None:
+        try:
+            _validate_snapshot_contract(self)
+        except (AttributeError, TypeError, ValueError) as exc:
+            if isinstance(exc, SubingLifecycleContractError):
+                raise
+            raise SubingLifecycleContractError() from exc
+
 
 @dataclass(frozen=True, slots=True)
 class SubingLifecycleTrace:
@@ -245,6 +320,14 @@ class SubingLifecycleTrace:
     transitions: tuple[SubingLifecycleTransition, ...]
     snapshots: tuple[SubingLifecycleSnapshot, ...]
     current_snapshot: SubingLifecycleSnapshot
+
+    def __post_init__(self) -> None:
+        try:
+            _validate_trace_contract(self)
+        except (AttributeError, TypeError, ValueError) as exc:
+            if isinstance(exc, SubingLifecycleContractError):
+                raise
+            raise SubingLifecycleContractError() from exc
 
     @property
     def confirmed_transitions(self) -> tuple[SubingLifecycleTransition, ...]:
@@ -270,6 +353,304 @@ class _ActiveOpportunity:
     retest_at: datetime | None = None
     retest_rebreak_count: int = 0
     last_evaluable_close: Decimal | None = None
+
+
+def _is_aware_datetime(value: object) -> bool:
+    return (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() is not None
+    )
+
+
+def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
+    if (
+        snapshot.formula_version != _FORMULA_VERSION
+        or snapshot.policy_id != _POLICY_ID
+        or snapshot.research_only is not True
+        or not isinstance(snapshot.availability, LifecycleAvailability)
+        or not isinstance(snapshot.direction, SubingDirection)
+        or not isinstance(snapshot.stage, LifecycleStage)
+        or type(snapshot.hold_count) is not int
+        or type(snapshot.hold_required) is not int
+        or snapshot.hold_required != 3
+        or not 0 <= snapshot.hold_count <= snapshot.hold_required
+        or type(snapshot.retest_rebreak_count) is not int
+        or not 0 <= snapshot.retest_rebreak_count <= 3
+        or type(snapshot.formal_v1_matched) is not bool
+    ):
+        raise SubingLifecycleContractError()
+
+    if snapshot.observed_at is None:
+        if snapshot.anchor_bar_end is not None:
+            raise SubingLifecycleContractError()
+    elif not _is_aware_datetime(snapshot.observed_at):
+        raise SubingLifecycleContractError()
+    if snapshot.anchor_bar_end is not None and (
+        not _is_aware_datetime(snapshot.anchor_bar_end)
+        or snapshot.observed_at is None
+        or snapshot.anchor_bar_end > snapshot.observed_at
+    ):
+        raise SubingLifecycleContractError()
+
+    has_reason = (
+        isinstance(snapshot.unavailable_reason, str)
+        and bool(snapshot.unavailable_reason.strip())
+    )
+    if (
+        snapshot.availability is LifecycleAvailability.READY
+        and snapshot.unavailable_reason is not None
+    ) or (
+        snapshot.availability is LifecycleAvailability.UNAVAILABLE
+        and not has_reason
+    ):
+        raise SubingLifecycleContractError()
+
+    try:
+        SubingLifecycleState(
+            availability=snapshot.availability,
+            direction=snapshot.direction,
+            stage=snapshot.stage,
+            opportunity_key=snapshot.opportunity_key,
+            entry_progress=snapshot.entry_progress,
+            confirmation_source=snapshot.confirmation_source,
+            confirmed_at=snapshot.confirmed_at,
+        )
+    except SubingLifecycleStateError as exc:
+        raise SubingLifecycleContractError() from exc
+
+    key = snapshot.opportunity_key
+    if key is not None and key.policy_id != snapshot.policy_id:
+        raise SubingLifecycleContractError()
+    if key is None and any(
+        (
+            snapshot.trigger_kind is not None,
+            snapshot.trigger_timeframe is not None,
+            snapshot.triggered_at is not None,
+            snapshot.confirmation_source is not None,
+            snapshot.confirmed_at is not None,
+            snapshot.hold_count != 0,
+            snapshot.bound_reference_pivot is not None,
+            snapshot.rebreak_reference_price is not None,
+            snapshot.retest_at is not None,
+            snapshot.retest_rebreak_count != 0,
+            snapshot.formal_v1_matched,
+            snapshot.volume_ratio_prev is not None,
+            snapshot.open_interest_delta is not None,
+        )
+    ):
+        raise SubingLifecycleContractError()
+
+    for timestamp in (
+        snapshot.triggered_at,
+        snapshot.confirmed_at,
+        snapshot.retest_at,
+    ):
+        if timestamp is not None and (
+            not _is_aware_datetime(timestamp)
+            or snapshot.observed_at is None
+            or timestamp > snapshot.observed_at
+        ):
+            raise SubingLifecycleContractError()
+    if key is not None and (
+        (snapshot.triggered_at is not None and snapshot.triggered_at < key.origin_at)
+        or (snapshot.retest_at is not None and snapshot.retest_at < key.origin_at)
+    ):
+        raise SubingLifecycleContractError()
+
+    trigger_fields = (
+        snapshot.trigger_kind,
+        snapshot.trigger_timeframe,
+        snapshot.triggered_at,
+    )
+    if snapshot.trigger_kind is None:
+        if any(value is not None for value in trigger_fields[1:]):
+            raise SubingLifecycleContractError()
+    elif (
+        snapshot.trigger_kind not in {"macd_cross", "pivot_break"}
+        or not isinstance(snapshot.trigger_timeframe, BarFrequency)
+        or not _is_aware_datetime(snapshot.triggered_at)
+    ):
+        raise SubingLifecycleContractError()
+
+    if snapshot.entry_progress is EntryProgress.WAITING_TRIGGER and (
+        snapshot.trigger_kind is not None or snapshot.hold_count != 0
+    ):
+        raise SubingLifecycleContractError()
+    if snapshot.entry_progress is EntryProgress.HOLD_CONFIRMING and (
+        snapshot.trigger_kind is None or snapshot.hold_count < 1
+    ):
+        raise SubingLifecycleContractError()
+    if snapshot.entry_progress is EntryProgress.RETEST_CONFIRMING and (
+        snapshot.trigger_kind != "pivot_break"
+        or snapshot.retest_at is None
+        or snapshot.hold_count < 1
+    ):
+        raise SubingLifecycleContractError()
+
+    pivot = snapshot.bound_reference_pivot
+    if snapshot.trigger_kind == "pivot_break":
+        if (
+            not isinstance(pivot, ConfirmedPivot)
+            or snapshot.trigger_timeframe is not BarFrequency.M5
+            or not isinstance(snapshot.rebreak_reference_price, Decimal)
+            or not snapshot.rebreak_reference_price.is_finite()
+            or key is None
+            or pivot.contract != key.contract
+            or pivot.segment_start_trading_day != key.segment_start_trading_day
+        ):
+            raise SubingLifecycleContractError()
+    elif (
+        pivot is not None
+        or snapshot.rebreak_reference_price is not None
+        or snapshot.retest_at is not None
+        or snapshot.retest_rebreak_count != 0
+    ):
+        raise SubingLifecycleContractError()
+
+    if snapshot.confirmation_source is ConfirmationSource.FORMAL_V1:
+        if snapshot.trigger_kind is not None:
+            raise SubingLifecycleContractError()
+    elif snapshot.confirmation_source is ConfirmationSource.MOMENTUM_HOLD:
+        if snapshot.trigger_kind != "macd_cross":
+            raise SubingLifecycleContractError()
+    elif snapshot.confirmation_source in {
+        ConfirmationSource.PIVOT_BREAK_HOLD,
+        ConfirmationSource.PIVOT_RETEST_REBREAK,
+    } and snapshot.trigger_kind != "pivot_break":
+        raise SubingLifecycleContractError()
+
+    if snapshot.latest_transition is not None:
+        transition = snapshot.latest_transition
+        if (
+            not isinstance(transition, SubingLifecycleTransition)
+            or snapshot.observed_at is None
+            or transition.transition_at > snapshot.observed_at
+            or (key is not None and transition.opportunity_key != key)
+            or (
+                transition.transition_at == snapshot.observed_at
+                and (
+                    transition.to_stage is not snapshot.stage
+                    or transition.opportunity_key != key
+                )
+            )
+        ):
+            raise SubingLifecycleContractError()
+        replace(transition)
+
+    for evidence in (snapshot.volume_ratio_prev, snapshot.open_interest_delta):
+        if evidence is not None and (
+            not isinstance(evidence, Decimal) or not evidence.is_finite()
+        ):
+            raise SubingLifecycleContractError()
+
+
+def _validate_trace_contract(trace: SubingLifecycleTrace) -> None:
+    if (
+        trace.formula_version != _FORMULA_VERSION
+        or trace.policy_id != _POLICY_ID
+        or not isinstance(trace.symbol, str)
+        or not trace.symbol.strip()
+        or trace.symbol != trace.symbol.strip()
+        or not isinstance(trace.contract, str)
+        or normalize_contract_for_symbol(trace.symbol, trace.contract)
+        != trace.contract
+        or type(trace.segment_start_trading_day) is not date
+        or type(trace.confirmed_pivots) is not tuple
+        or type(trace.completed_opportunities) is not tuple
+        or type(trace.transitions) is not tuple
+        or type(trace.snapshots) is not tuple
+        or not isinstance(trace.current_snapshot, SubingLifecycleSnapshot)
+    ):
+        raise SubingLifecycleContractError()
+
+    replace(trace.current_snapshot)
+    if trace.snapshots:
+        if trace.current_snapshot != trace.snapshots[-1]:
+            raise SubingLifecycleContractError()
+    elif trace.current_snapshot.observed_at is not None:
+        raise SubingLifecycleContractError()
+
+    observed_at: list[datetime] = []
+    for snapshot in trace.snapshots:
+        if not isinstance(snapshot, SubingLifecycleSnapshot):
+            raise SubingLifecycleContractError()
+        replace(snapshot)
+        if snapshot.observed_at is None:
+            raise SubingLifecycleContractError()
+        observed_at.append(snapshot.observed_at)
+        key = snapshot.opportunity_key
+        if key is not None and not _key_matches_trace(key, trace):
+            raise SubingLifecycleContractError()
+    if any(left >= right for left, right in zip(observed_at, observed_at[1:])):
+        raise SubingLifecycleContractError()
+
+    transition_times: set[datetime] = set()
+    for transition in trace.transitions:
+        if not isinstance(transition, SubingLifecycleTransition):
+            raise SubingLifecycleContractError()
+        replace(transition)
+        if (
+            not _key_matches_trace(transition.opportunity_key, trace)
+            or transition.transition_at in transition_times
+            or transition.transition_at not in observed_at
+        ):
+            raise SubingLifecycleContractError()
+        transition_times.add(transition.transition_at)
+
+    latest_transition: SubingLifecycleTransition | None = None
+    transitions_by_time = {
+        transition.transition_at: transition for transition in trace.transitions
+    }
+    for snapshot in trace.snapshots:
+        if snapshot.observed_at is None:
+            raise SubingLifecycleContractError()
+        projected_transition = transitions_by_time.get(snapshot.observed_at)
+        if projected_transition is not None:
+            latest_transition = projected_transition
+        if snapshot.latest_transition != latest_transition:
+            raise SubingLifecycleContractError()
+
+    for state in trace.completed_opportunities:
+        if not isinstance(state, SubingLifecycleState):
+            raise SubingLifecycleContractError()
+        replace(state)
+        if (
+            state.stage is not LifecycleStage.CLOSED
+            or state.opportunity_key is None
+            or not _key_matches_trace(state.opportunity_key, trace)
+            or not any(
+                transition.opportunity_key == state.opportunity_key
+                and transition.to_stage is LifecycleStage.CLOSED
+                for transition in trace.transitions
+            )
+        ):
+            raise SubingLifecycleContractError()
+
+    pivot_ids: set[str] = set()
+    for pivot in trace.confirmed_pivots:
+        if (
+            not isinstance(pivot, ConfirmedPivot)
+            or pivot.contract != trace.contract
+            or pivot.segment_start_trading_day != trace.segment_start_trading_day
+            or pivot.pivot_id in pivot_ids
+            or (observed_at and pivot.confirmed_at > observed_at[-1])
+        ):
+            raise SubingLifecycleContractError()
+        replace(pivot)
+        pivot_ids.add(pivot.pivot_id)
+
+
+def _key_matches_trace(
+    key: SubingOpportunityKey,
+    trace: SubingLifecycleTrace,
+) -> bool:
+    return (
+        key.policy_id == trace.policy_id
+        and key.symbol == trace.symbol
+        and key.contract == trace.contract
+        and key.segment_start_trading_day == trace.segment_start_trading_day
+    )
 
 
 def evaluate_subing_lifecycle(
@@ -428,7 +809,15 @@ def evaluate_subing_lifecycle(
                     )
                 )
         elif opportunity.stage is LifecycleStage.SETUP_ARMED:
-            if formal_match and formal.direction is opportunity.key.direction:
+            if bar_5m.trading_day > opportunity.origin_trading_day:
+                _close_setup(
+                    opportunity,
+                    transition_at=bar_5m.bar_end,
+                    reason_code="UNCONFIRMED_TRADING_DAY_ROLLOVER",
+                    transitions=transitions,
+                    completed=completed,
+                )
+            elif formal_match and formal.direction is opportunity.key.direction:
                 _confirm_entry(
                     opportunity,
                     source=ConfirmationSource.FORMAL_V1,
@@ -442,14 +831,6 @@ def evaluate_subing_lifecycle(
                         to_stage=LifecycleStage.ENTRY_CONFIRMED,
                         reason_code="FORMAL_V1_MATCHED",
                     )
-                )
-            elif bar_5m.trading_day > opportunity.origin_trading_day:
-                _close_setup(
-                    opportunity,
-                    transition_at=bar_5m.bar_end,
-                    reason_code="UNCONFIRMED_TRADING_DAY_ROLLOVER",
-                    transitions=transitions,
-                    completed=completed,
                 )
             elif opportunity.progress is EntryProgress.RETEST_CONFIRMING:
                 pivot = opportunity.bound_reference_pivot
@@ -680,12 +1061,17 @@ def evaluate_subing_lifecycle(
         opportunity=None,
         latest_transition=None,
     )
+    trace_symbol, trace_contract = _canonical_trace_identity(symbol, contract)
     return SubingLifecycleTrace(
-        formula_version=policy.formula_version,
-        policy_id=policy.policy_id,
-        symbol=symbol,
-        contract=contract,
-        segment_start_trading_day=segment_start_trading_day,
+        formula_version=_FORMULA_VERSION,
+        policy_id=_POLICY_ID,
+        symbol=trace_symbol,
+        contract=trace_contract,
+        segment_start_trading_day=(
+            segment_start_trading_day
+            if type(segment_start_trading_day) is date
+            else date.min
+        ),
         confirmed_pivots=pivots,
         completed_opportunities=tuple(completed),
         transitions=tuple(transitions),
@@ -721,17 +1107,7 @@ def _input_contract_error(
         replace(policy)
     except (TypeError, ValueError):
         return "SUBING_LIFECYCLE_POLICY_INVALID"
-    if (
-        not isinstance(calibration, SubingCalibration)
-        or calibration.calibration_id != "subing_intraday_v1"
-        or not {BarFrequency.M5, BarFrequency.M15}.issubset(
-            calibration.accepted_timeframes
-        )
-        or any(
-            timeframe not in calibration.slope_flat_threshold_bps_per_bar
-            for timeframe in (BarFrequency.M5, BarFrequency.M15)
-        )
-    ):
+    if not is_accepted_subing_calibration(calibration):
         return "SUBING_CALIBRATION_INVALID"
     if len(bars_5m) != len(factors_5m) or len(bars_15m) != len(factors_15m):
         return "SUBING_LIFECYCLE_SERIES_ALIGNMENT_INVALID"
@@ -1052,7 +1428,27 @@ def _transition(
     to_stage: LifecycleStage,
     reason_code: str,
 ) -> SubingLifecycleTransition:
-    transition_id = ":".join(
+    return SubingLifecycleTransition(
+        transition_id=_transition_identity(
+            opportunity_key=opportunity_key,
+            transition_at=transition_at,
+            to_stage=to_stage,
+        ),
+        opportunity_key=opportunity_key,
+        transition_at=transition_at,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        reason_codes=(reason_code,),
+    )
+
+
+def _transition_identity(
+    *,
+    opportunity_key: SubingOpportunityKey,
+    transition_at: datetime,
+    to_stage: LifecycleStage,
+) -> str:
+    return ":".join(
         (
             opportunity_key.policy_id,
             opportunity_key.symbol,
@@ -1063,14 +1459,6 @@ def _transition(
             transition_at.isoformat(),
             to_stage.value,
         )
-    )
-    return SubingLifecycleTransition(
-        transition_id=transition_id,
-        opportunity_key=opportunity_key,
-        transition_at=transition_at,
-        from_stage=from_stage,
-        to_stage=to_stage,
-        reason_codes=(reason_code,),
     )
 
 
@@ -1088,9 +1476,9 @@ def _snapshot(
 ) -> SubingLifecycleSnapshot:
     stage = opportunity.stage if opportunity is not None else LifecycleStage.IDLE
     return SubingLifecycleSnapshot(
-        formula_version=policy.formula_version,
-        policy_id=policy.policy_id,
-        research_only=policy.research_only,
+        formula_version=_FORMULA_VERSION,
+        policy_id=_POLICY_ID,
+        research_only=True,
         observed_at=observed_at,
         anchor_bar_end=anchor_bar_end,
         availability=availability,
@@ -1109,7 +1497,7 @@ def _snapshot(
         ),
         confirmed_at=(opportunity.confirmed_at if opportunity is not None else None),
         hold_count=(opportunity.hold_count if opportunity is not None else 0),
-        hold_required=policy.hold_required_bars,
+        hold_required=3,
         bound_reference_pivot=(
             opportunity.bound_reference_pivot if opportunity is not None else None
         ),
@@ -1129,3 +1517,22 @@ def _snapshot(
             opportunity.open_interest_delta if opportunity is not None else None
         ),
     )
+
+
+def _canonical_trace_identity(symbol: object, contract: object) -> tuple[str, str]:
+    if (
+        isinstance(symbol, str)
+        and isinstance(contract, str)
+        and normalize_contract_for_symbol(symbol, contract) == contract
+    ):
+        return symbol, contract
+    if isinstance(contract, str):
+        normalized_contract = contract.strip().upper()
+        candidate_symbol = normalized_contract.rstrip("0123456789")
+        if (
+            candidate_symbol
+            and normalize_contract_for_symbol(candidate_symbol, normalized_contract)
+            == normalized_contract
+        ):
+            return candidate_symbol, normalized_contract
+    return "INVALID", "INVALID0001"

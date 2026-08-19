@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -11,6 +11,7 @@ from app.market_data.subing_lifecycle import (
     EntryProgress,
     LifecycleAvailability,
     LifecycleStage,
+    SubingLifecycleContractError,
     SubingLifecycleState,
     SubingLifecycleStateError,
     SubingOpportunityKey,
@@ -215,9 +216,11 @@ def test_opportunity_key_keeps_exact_immutable_identity() -> None:
 @pytest.mark.parametrize(
     ("field", "invalid"),
     (
+        ("policy_id", "another_policy"),
         ("policy_id", ""),
         ("symbol", ""),
         ("contract", ""),
+        ("contract", "RB2701"),
         ("segment_start_trading_day", datetime(2026, 8, 3, tzinfo=timezone.utc)),
         ("direction", SubingDirection.NONE),
         ("direction", "long"),
@@ -537,6 +540,27 @@ def test_missing_accepted_calibration_is_unavailable() -> None:
         (boundary,),
         bars_15m=(boundary,),
         calibration=SubingCalibration(None, frozenset(), {}),
+    )
+
+    assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
+    assert trace.current_snapshot.unavailable_reason == "SUBING_CALIBRATION_INVALID"
+
+
+def test_same_id_calibration_threshold_drift_is_unavailable() -> None:
+    boundary = _bar(15)
+    accepted = _accepted_calibration()
+    drifted_thresholds = dict(accepted.slope_flat_threshold_bps_per_bar)
+    drifted_thresholds[BarFrequency.M5] += Decimal("0.000000000000000000000000001")
+    drifted = SubingCalibration(
+        calibration_id=accepted.calibration_id,
+        accepted_timeframes=accepted.accepted_timeframes,
+        slope_flat_threshold_bps_per_bar=drifted_thresholds,
+    )
+
+    trace = _evaluate(
+        (boundary,),
+        bars_15m=(boundary,),
+        calibration=drifted,
     )
 
     assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
@@ -934,6 +958,38 @@ def test_unconfirmed_rollover_waits_for_first_evaluable_later_day_boundary() -> 
     assert trace.current_snapshot.opportunity_key == trace.snapshots[0].opportunity_key
 
 
+def test_next_day_rollover_preempts_simultaneous_formal_v1_match() -> None:
+    next_day = date(2026, 8, 4)
+    first = _bar(5)
+    next_day_boundary = _bar(24 * 60 + 15, trading_day=next_day)
+    first_anchor = _bar(0)
+    next_day_anchor = _bar(24 * 60 + 15, trading_day=next_day)
+
+    trace = _evaluate(
+        (first, next_day_boundary),
+        factors_5m=(
+            _factor(first, BarFrequency.M5),
+            _factor(
+                next_day_boundary,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+        bars_15m=(first_anchor, next_day_anchor),
+    )
+
+    old_key = trace.snapshots[0].opportunity_key
+    assert old_key is not None
+    assert trace.current_snapshot.stage is LifecycleStage.CLOSED
+    assert trace.current_snapshot.opportunity_key == old_key
+    assert trace.current_snapshot.confirmation_source is None
+    assert trace.current_snapshot.confirmed_at is None
+    assert trace.transitions[-1].reason_codes == (
+        "UNCONFIRMED_TRADING_DAY_ROLLOVER",
+    )
+
+
 def test_previous_trading_day_pivot_cannot_trigger_a_new_day_opportunity() -> None:
     next_day = date(2026, 8, 4)
     prior_day = _long_pivot_prefix()[:-1]
@@ -1000,3 +1056,110 @@ def test_symbol_contract_mismatch_is_unavailable() -> None:
 
     assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
     assert trace.current_snapshot.unavailable_reason == "SUBING_LIFECYCLE_IDENTITY_INVALID"
+    assert (trace.symbol, trace.contract) == ("RB", "RB2701")
+
+
+def test_transition_contract_requires_canonical_id_and_aware_time() -> None:
+    boundary = _bar(15)
+    transition = _evaluate((boundary,), bars_15m=(boundary,)).transitions[0]
+    expected_id = ":".join(
+        (
+            "subing_lifecycle_v2_research_v1",
+            "JM",
+            "JM2701",
+            _SEGMENT_START.isoformat(),
+            "long",
+            boundary.bar_end.isoformat(),
+            boundary.bar_end.isoformat(),
+            "setup_armed",
+        )
+    )
+
+    assert transition.transition_id == expected_id
+    for field, invalid in (
+        ("transition_id", "forged"),
+        ("transition_at", boundary.bar_end.replace(tzinfo=None)),
+        ("from_stage", LifecycleStage.CLOSED),
+    ):
+        with pytest.raises(SubingLifecycleContractError) as exc_info:
+            replace(transition, **{field: invalid})
+        assert exc_info.value.code == "SUBING_LIFECYCLE_CONTRACT_INVALID"
+        assert str(exc_info.value) == "SUBING_LIFECYCLE_CONTRACT_INVALID"
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    (
+        ("policy_id", "another_policy"),
+        ("formula_version", "another_formula"),
+        ("research_only", False),
+        ("observed_at", datetime(2026, 8, 3, 1, 15)),
+        ("stage", LifecycleStage.IDLE),
+    ),
+)
+def test_snapshot_contract_rejects_invalid_identity_time_and_projection(
+    field: str,
+    invalid: object,
+) -> None:
+    boundary = _bar(15)
+    snapshot = _evaluate((boundary,), bars_15m=(boundary,)).current_snapshot
+
+    with pytest.raises(SubingLifecycleContractError) as exc_info:
+        replace(snapshot, **{field: invalid})
+
+    assert exc_info.value.code == "SUBING_LIFECYCLE_CONTRACT_INVALID"
+
+
+def test_idle_snapshot_rejects_stale_opportunity_evidence() -> None:
+    snapshot = _evaluate((), bars_15m=()).current_snapshot
+
+    with pytest.raises(SubingLifecycleContractError) as exc_info:
+        replace(snapshot, volume_ratio_prev=Decimal("1"))
+
+    assert exc_info.value.code == "SUBING_LIFECYCLE_CONTRACT_INVALID"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "policy_id",
+        "formula_version",
+        "symbol_contract",
+        "current_snapshot",
+        "transitions_projection",
+        "completed_projection",
+    ),
+)
+def test_trace_contract_rejects_invalid_identity_or_current_projection(
+    mutation: str,
+) -> None:
+    bars = (_bar(5), _bar(10))
+    trace = _evaluate(bars, bars_15m=(_bar(0),))
+    if mutation == "policy_id":
+        values = {"policy_id": "another_policy"}
+    elif mutation == "formula_version":
+        values = {"formula_version": "another_formula"}
+    elif mutation == "symbol_contract":
+        values = {"symbol": "RB"}
+    elif mutation == "transitions_projection":
+        values = {"transitions": ()}
+    elif mutation == "completed_projection":
+        snapshot = trace.current_snapshot
+        values = {
+            "completed_opportunities": (
+                SubingLifecycleState(
+                    availability=LifecycleAvailability.READY,
+                    direction=snapshot.direction,
+                    stage=LifecycleStage.SETUP_ARMED,
+                    opportunity_key=snapshot.opportunity_key,
+                    entry_progress=EntryProgress.WAITING_TRIGGER,
+                ),
+            )
+        }
+    else:
+        values = {"current_snapshot": trace.snapshots[0]}
+
+    with pytest.raises(SubingLifecycleContractError) as exc_info:
+        replace(trace, **values)
+
+    assert exc_info.value.code == "SUBING_LIFECYCLE_CONTRACT_INVALID"

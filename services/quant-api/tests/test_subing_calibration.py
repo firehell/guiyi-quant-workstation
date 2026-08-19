@@ -12,6 +12,7 @@ from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data import subing_calibration as calibration_module
 from app.market_data.subing_calibration import (
     DirectionalSide,
+    SubingCalibration,
     build_outcomes_at,
     build_research_samples,
     candidate_quantiles,
@@ -108,6 +109,34 @@ def _series(*, timeframe: BarFrequency = BarFrequency.M5):
         _bar(8, close="108", high="110", low="105"),
     )
     return bars, tuple(_factor(bar, timeframe=timeframe) for bar in bars)
+
+
+def test_exact_accepted_calibration_predicate_has_no_io_or_semantic_relaxation() -> None:
+    accepted = calibration_module.load_accepted_subing_calibration()
+    drifted_thresholds = dict(accepted.slope_flat_threshold_bps_per_bar)
+    drifted_thresholds[BarFrequency.M5] += Decimal("0.000000000000000000000000001")
+    drifted = SubingCalibration(
+        calibration_id=accepted.calibration_id,
+        accepted_timeframes=accepted.accepted_timeframes,
+        slope_flat_threshold_bps_per_bar=drifted_thresholds,
+    )
+    missing = SubingCalibration(None, frozenset(), {})
+
+    assert calibration_module.is_accepted_subing_calibration(accepted) is True
+    assert calibration_module.is_accepted_subing_calibration(drifted) is False
+    assert calibration_module.is_accepted_subing_calibration(missing) is False
+
+
+def test_accepted_calibration_predicate_returns_false_for_malformed_objects() -> None:
+    accepted = calibration_module.load_accepted_subing_calibration()
+    object.__setattr__(
+        accepted,
+        "slope_flat_threshold_bps_per_bar",
+        {BarFrequency.M5: Decimal("NaN"), BarFrequency.M15: Decimal("1")},
+    )
+
+    assert calibration_module.is_accepted_subing_calibration(accepted) is False
+    assert calibration_module.is_accepted_subing_calibration(object()) is False
 
 
 @pytest.mark.parametrize(
