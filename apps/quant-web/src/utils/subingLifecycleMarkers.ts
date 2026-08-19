@@ -10,7 +10,7 @@ export function lifecycleSnapshotToMarkers(snapshot: SubingLifecycleSnapshot): K
   const markers: KlineMarker[] = []
   const key = snapshot.opportunity_key
   if (snapshot.stage === 'setup_armed') {
-    addMarker(markers, key, 'setup', snapshot.latest_transition?.transition_at ?? snapshot.observed_at, '准备')
+    addTransitionMarker(markers, snapshot, 'setup_armed', '准备')
   }
   if (snapshot.trigger_kind === 'pivot_break') {
     addMarker(markers, key, 'pivot-break', snapshot.triggered_at, snapshot.direction === 'short' ? '前低突破' : '前高突破')
@@ -19,12 +19,29 @@ export function lifecycleSnapshotToMarkers(snapshot: SubingLifecycleSnapshot): K
     addMarker(markers, key, 'entry', snapshot.confirmed_at, '研究确认')
   }
   if (snapshot.stage === 'exit_risk') {
-    addMarker(markers, key, 'exit-risk', snapshot.latest_transition?.transition_at ?? snapshot.observed_at, '风险')
+    addTransitionMarker(markers, snapshot, 'exit_risk', '风险')
   }
   if (snapshot.stage === 'closed') {
-    addMarker(markers, key, 'closed', snapshot.latest_transition?.transition_at ?? snapshot.observed_at, '结束')
+    addTransitionMarker(markers, snapshot, 'closed', '结束')
   }
   return markers.sort((left, right) => Date.parse(left.time) - Date.parse(right.time) || left.id.localeCompare(right.id))
+}
+
+function addTransitionMarker(
+  markers: KlineMarker[],
+  snapshot: SubingLifecycleSnapshot,
+  target: 'setup_armed' | 'exit_risk' | 'closed',
+  label: string,
+): void {
+  const transition = snapshot.latest_transition
+  if (!transition || transition.to_stage !== target || !snapshot.opportunity_key) return
+  addMarker(
+    markers,
+    snapshot.opportunity_key,
+    `transition:${transition.transition_id}`,
+    transition.transition_at,
+    label,
+  )
 }
 
 function addMarker(

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { NTag } from 'naive-ui'
 import {
+  subingLifecycleProgressLabel,
   subingLifecycleStageLabel,
   type SubingLifecycleSnapshot,
 } from '@/types/market'
@@ -15,9 +16,7 @@ const direction = computed(() => {
   if (props.lifecycle.direction === 'short') return '向下研究'
   return '暂无方向'
 })
-const progress = computed(() => props.lifecycle.hold_required > 0
-  ? `${props.lifecycle.hold_count}/${props.lifecycle.hold_required}`
-  : '—')
+const progress = computed(() => subingLifecycleProgressLabel(props.lifecycle))
 const pivotLabel = computed(() => props.lifecycle.bound_reference_pivot?.kind === 'low' ? '绑定前低' : '绑定前高')
 const triggerLabel = computed(() => {
   if (props.lifecycle.trigger_kind === 'pivot_break') {

@@ -62,7 +62,7 @@ function signal(value: SubingSignal) {
         <div class="subing-research__factor"><dt>Companion Factor</dt><dd>{{ factor(snapshot.companion.snapshot) }}</dd></div>
       </template>
     </dl>
-    <SubingLifecyclePanel v-if="snapshot" :lifecycle="snapshot.lifecycle" />
+    <SubingLifecyclePanel v-if="snapshot && !loading && !error" :lifecycle="snapshot.lifecycle" />
   </section>
 </template>
 

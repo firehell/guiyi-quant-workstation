@@ -163,7 +163,7 @@ export type SubingLifecycleTriggerKind = 'macd_cross' | 'pivot_break'
 export interface SubingLifecyclePivot {
   pivot_id: string
   kind: SubingLifecyclePivotKind
-  timeframe: '5m' | '15m'
+  timeframe: '5m'
   pivot_time: string
   confirmed_at: string
   price: number
@@ -205,7 +205,7 @@ export interface SubingLifecycleSnapshot {
   volume_ratio_prev: number | null
   open_interest_delta: number | null
   current_risk_codes: string[]
-  risk_progress: string | null
+  risk_progress: 'watching' | null
   lower_tf_risk_count: number
   last_confirmed_stage: SubingLifecycleStage
   last_confirmed_at: string | null
@@ -245,6 +245,25 @@ export function subingLifecycleStageLabel(stage: SubingLifecycleStage): string {
     case 'closed': return '本轮结束'
     default: return '暂无机会'
   }
+}
+
+export function subingLifecycleProgressLabel(
+  lifecycle: Pick<
+    SubingLifecycleSnapshot,
+    'stage' | 'entry_progress' | 'hold_count' | 'hold_required' | 'confirmation_source'
+  >,
+): string {
+  if (
+    lifecycle.stage === 'setup_armed'
+    && (lifecycle.entry_progress === 'hold_confirming' || lifecycle.entry_progress === 'retest_confirming')
+  ) return `${lifecycle.hold_count}/${lifecycle.hold_required}`
+  if (
+    lifecycle.stage === 'entry_confirmed'
+    || lifecycle.stage === 'continuation'
+    || lifecycle.stage === 'exit_risk'
+    || (lifecycle.stage === 'closed' && lifecycle.confirmation_source !== null)
+  ) return '已研究确认'
+  return '—'
 }
 
 export function subingSignalLabel(

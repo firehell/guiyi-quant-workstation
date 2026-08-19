@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { NAlert, NTag } from 'naive-ui'
 import {
+  subingLifecycleProgressLabel,
   subingLifecycleStageLabel,
   subingSignalLabel,
   type SubingFactorSnapshot,
@@ -32,7 +33,10 @@ const lifecycleContext = computed(() => {
   if (lifecycle.availability !== 'ready') {
     return lifecycle.unavailable_reason ? `Lifecycle 当前不可用 · ${lifecycle.unavailable_reason}` : 'Lifecycle 当前不可用'
   }
-  const progress = lifecycle.hold_required > 0 ? ` · 确认 ${lifecycle.hold_count}/${lifecycle.hold_required}` : ''
+  const progressLabel = subingLifecycleProgressLabel(lifecycle)
+  const progress = progressLabel === '—'
+    ? ''
+    : progressLabel === '已研究确认' ? ` · ${progressLabel}` : ` · 确认 ${progressLabel}`
   return `Research lifecycle · ${subingLifecycleStageLabel(lifecycle.stage)}${progress}`
 })
 const directions = computed(() => {
@@ -92,7 +96,7 @@ function confirmedTime(value: string) {
     <div>MACD {{ crossLabel(primary!.macd_cross) }} · 距零轴 {{ primary!.macd_zero_distance_bps.toFixed(1) }} bps · 量 {{ ratio(primary!.volume_ratio_prev) }}</div>
     <div>Factor 条件观察 · zero-distance 仅作描述</div>
   </NAlert>
-  <NAlert v-if="snapshot?.lifecycle" type="info" :show-icon="false" class="subing-lifecycle-strip">
+  <NAlert v-if="snapshot?.lifecycle && !loading && !error" type="info" :show-icon="false" class="subing-lifecycle-strip">
     <div class="subing-strip__row">
       <strong>{{ lifecycleContext }}</strong>
       <NTag size="small" type="info">Research only</NTag>

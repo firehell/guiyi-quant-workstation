@@ -34,12 +34,14 @@ const props = withDefaults(defineProps<{
   period?: string
   visibleMainIndicators?: MainIndicatorId[]
   alertMarkers?: KlineMarker[]
+  researchMarkers?: KlineMarker[]
 }>(), {
   loading: false,
   error: null,
   period: '15m',
   visibleMainIndicators: () => [],
   alertMarkers: () => [],
+  researchMarkers: () => [],
 })
 
 const emit = defineEmits<{
@@ -167,6 +169,10 @@ watch(() => props.visibleMainIndicators, () => {
 }, { deep: true })
 
 watch(() => props.alertMarkers, () => {
+  renderDerivedSeries()
+}, { deep: true })
+
+watch(() => props.researchMarkers, () => {
   renderDerivedSeries()
 }, { deep: true })
 
@@ -313,8 +319,8 @@ function renderDerivedSeries(): void {
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
   htdyMarkers?.setMarkers(chartMarkers(mergeKlineMarkers(
-    derivedData.htdy?.markers ?? [],
-    props.alertMarkers,
+    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    props.researchMarkers,
   )))
 }
 
@@ -429,6 +435,7 @@ defineExpose({
     class="kline-shell"
     data-testid="kline-shell"
     :data-alert-marker-count="alertMarkers.length"
+    :data-research-marker-count="researchMarkers.length"
     :data-secondary-panel="selectedSecondaryPanel"
   >
     <div ref="container" class="chart" />
