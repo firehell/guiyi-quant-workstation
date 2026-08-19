@@ -345,6 +345,9 @@ def test_seed_readiness_helpers_use_exact_first_indices() -> None:
     )
 
     payload = make_valid_inputs(22)
+    payload["high"][14] = 121.0
+    payload["low"][14] = 120.0
+    payload["close"][14] = 120.5
     atr = _wilder_atr14(
         np.asarray(payload["high"], dtype=float),
         np.asarray(payload["low"], dtype=float),
@@ -355,7 +358,7 @@ def test_seed_readiness_helpers_use_exact_first_indices() -> None:
 
     assert np.isnan(atr[12])
     assert atr[13] == 2.0
-    assert atr[14] == 2.0
+    assert atr[14] == (2.0 * 13.0 + 8.0) / 14.0
     assert np.isnan(oi_baseline[18])
     assert oi_baseline[19] == 10.0
 
@@ -389,6 +392,50 @@ def test_oi_abs_delta_ema_recurses_after_the_sma_seed() -> None:
     assert oi_baseline[19] == 10.0
     assert oi_baseline[20] == pytest.approx(11.904761904761905)
     assert result.oi_impulse[21] == 2.52
+
+
+def test_zero_oi_baseline_outputs_zero_impulse_and_turnover() -> None:
+    payload = make_valid_inputs(21)
+    payload["open_interest"] = [5000.0] * 21
+    result = _compute(payload)
+
+    assert result.delta_oi[20] == 0.0
+    assert result.oi_impulse[20] == 0.0
+    assert result.state[20] == "turnover"
+    assert result.strength[20] == 0.0
+    assert result.signed_score[20] == 0.0
+
+
+def test_flat_bar_clv_is_zero_while_twenty_bar_range_remains_valid() -> None:
+    payload = make_valid_inputs(21)
+    payload["open_"][20] = 120.0
+    payload["high"][20] = 120.0
+    payload["low"][20] = 120.0
+    payload["close"][20] = 120.0
+    result = _compute(payload)
+
+    assert bool(result.state_ready[20])
+    assert result.clv[20] == 0.0
+    assert result.range_position[20] == 1.0
+
+
+def test_volume_ratio_cap_is_applied_before_sqrt_participation() -> None:
+    payload = make_valid_inputs(21)
+    payload["volume"][20] = 1_000_000_000.0
+    result = _compute(payload)
+
+    assert result.volume_ratio[20] == 3.0
+    assert result.long_open_pressure[20] == 0.606218
+    assert result.short_open_pressure[20] == 0.0
+    assert result.strength[20] == 15.155445
+
+
+def test_public_delta_oi_uses_half_away_rounding() -> None:
+    payload = make_valid_inputs(21)
+    payload["open_interest"][20] = 5200.1234567
+    result = _compute(payload)
+
+    assert result.delta_oi[20] == 10.123457
 
 
 @pytest.mark.parametrize(
@@ -515,18 +562,26 @@ def test_strength_and_signed_score_cap_at_one_hundred() -> None:
 
 
 @pytest.mark.parametrize(
-    ("close_value", "open_interest", "expected_state", "score_sign"),
+    (
+        "close_value",
+        "open_interest",
+        "expected_state",
+        "expected_strength",
+        "expected_signed_score",
+    ),
     [
-        (118.0, 5200.0, "short_build", -1),
-        (120.0, 5180.0, "short_cover", 1),
-        (118.0, 5180.0, "long_liquidation", -1),
+        (120.0, 5200.0, "long_build", 8.791034, 8.791034),
+        (118.0, 5200.0, "short_build", 8.791034, -8.791034),
+        (120.0, 5180.0, "short_cover", 8.791034, 8.791034),
+        (118.0, 5180.0, "long_liquidation", 8.791034, -8.791034),
     ],
 )
 def test_compute_assigns_quadrant_state_and_signed_score(
     close_value: float,
     open_interest: float,
     expected_state: str,
-    score_sign: int,
+    expected_strength: float,
+    expected_signed_score: float,
 ) -> None:
     payload = make_valid_inputs(21)
     payload["open_"][20] = close_value - 0.5
@@ -537,10 +592,15 @@ def test_compute_assigns_quadrant_state_and_signed_score(
     result = _compute(payload)
 
     assert result.state[20] == expected_state
-    assert np.sign(result.signed_score[20]) == score_sign
-    if open_interest > 5190.0 and close_value < 119.0:
-        assert result.long_open_pressure[20] == 0.0
-        assert result.short_open_pressure[20] > 0.0
+    assert result.strength[20] == expected_strength
+    assert result.signed_score[20] == expected_signed_score
+    if open_interest > 5190.0:
+        if close_value > 119.0:
+            assert result.long_open_pressure[20] > 0.0
+            assert result.short_open_pressure[20] == 0.0
+        else:
+            assert result.long_open_pressure[20] == 0.0
+            assert result.short_open_pressure[20] > 0.0
     else:
         assert result.long_open_pressure[20] == 0.0
         assert result.short_open_pressure[20] == 0.0
