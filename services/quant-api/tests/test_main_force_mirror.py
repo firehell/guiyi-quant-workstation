@@ -75,6 +75,36 @@ def test_caution_matches_barslast_hhv5_less_than_10_rising_edge() -> None:
     assert result.metadata["interpretation"] == "structural_warning_not_measured_fund_flow"
 
 
+def test_caution_does_not_repeat_while_equal_hhv5_events_keep_state_active() -> None:
+    compute, _ = _mirror_api()
+    highs = [1, 2, 3, 4, 5, 5, 5, 4, 3, 2, 1, 0]
+    result = compute(
+        [f"tie-{index}" for index in range(len(highs))],
+        [value - 1.0 for value in highs],
+        highs,
+        [value - 2.0 for value in highs],
+        [value - 0.5 for value in highs],
+        [1_000] * len(highs),
+    )
+
+    assert [index for index, flag in enumerate(result.caution) if bool(flag)] == [4]
+
+
+def test_caution_stays_active_at_barslast_nine() -> None:
+    compute, _ = _mirror_api()
+    highs = [1, 2, 3, 4, 5, 4, 3, 2, 1, 0, -1, -2, -3, 6]
+    result = compute(
+        [f"barslast-nine-{index}" for index in range(len(highs))],
+        [value - 1.0 for value in highs],
+        highs,
+        [value - 2.0 for value in highs],
+        [value - 0.5 for value in highs],
+        [1_000] * len(highs),
+    )
+
+    assert [index for index, flag in enumerate(result.caution) if bool(flag)] == [4]
+
+
 def test_main_force_mirror_matches_shared_golden_observation_sample() -> None:
     compute, _ = _mirror_api()
     result = compute(*_golden_inputs())
@@ -137,5 +167,6 @@ def test_main_force_mirror_warmup_remains_unavailable() -> None:
     )
 
     assert len(result.score) == count
+    assert all(math.isnan(float(value)) for value in result.score)
     assert all(value is None for value in result.state.tolist())
     assert all(not bool(value) for value in result.ready)

@@ -50,6 +50,38 @@ test('caution reproduces the rising edge of BARSLAST(HIGH = HHV(HIGH, 5)) < 10',
   assert.equal(result.points[15].cautionLevel, 50)
 })
 
+test('caution does not repeat while equal HHV5 events keep the state active', () => {
+  const highs = [1, 2, 3, 4, 5, 5, 5, 4, 3, 2, 1, 0]
+  const bars: BarData[] = highs.map((high, index) => ({
+    time: `tie-${index}`,
+    open: high - 1,
+    high,
+    low: high - 2,
+    close: high - 0.5,
+    volume: 1_000,
+  }))
+
+  const result = calculateMainForceMirror(bars)
+
+  assert.deepEqual(result.points.flatMap((point, index) => point.caution ? [index] : []), [4])
+})
+
+test('caution stays active when a new HHV5 arrives at BARSLAST nine', () => {
+  const highs = [1, 2, 3, 4, 5, 4, 3, 2, 1, 0, -1, -2, -3, 6]
+  const bars: BarData[] = highs.map((high, index) => ({
+    time: `barslast-nine-${index}`,
+    open: high - 1,
+    high,
+    low: high - 2,
+    close: high - 0.5,
+    volume: 1_000,
+  }))
+
+  const result = calculateMainForceMirror(bars)
+
+  assert.deepEqual(result.points.flatMap((point, index) => point.caution ? [index] : []), [4])
+})
+
 test('main-force mirror matches the shared kernel golden observation sample', () => {
   const result = calculateMainForceMirror(goldenBars())
   const actual = result.points.flatMap((point, index) => (
