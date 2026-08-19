@@ -83,6 +83,15 @@ export interface MainForceMirrorFuturesResult {
     status: 'observation_only'
     supported_frequencies: readonly ['60m']
     supported_series_kinds: readonly ['contract', 'actual_dominant']
+    future_looking: false
+    repainting_risk: 'none'
+    closed_bar_only: true
+    confirmed_only: true
+    web_capable: true
+    backtest_capable: false
+    live_capable: false
+    alert_capable: false
+    notification_capable: false
     parameters: typeof DEFAULT_PARAMETERS
     rounding_policy: typeof DEFAULT_PARAMETERS.rounding_policy
     interpretation: 'directional_position_pressure_proxy_not_measured_fund_flow'
@@ -240,6 +249,15 @@ export function calculateMainForceMirrorFutures(bars: BarData[]): MainForceMirro
       status: 'observation_only',
       supported_frequencies: ['60m'],
       supported_series_kinds: ['contract', 'actual_dominant'],
+      future_looking: false,
+      repainting_risk: 'none',
+      closed_bar_only: true,
+      confirmed_only: true,
+      web_capable: true,
+      backtest_capable: false,
+      live_capable: false,
+      alert_capable: false,
+      notification_capable: false,
       parameters: DEFAULT_PARAMETERS,
       rounding_policy: DEFAULT_PARAMETERS.rounding_policy,
       interpretation: 'directional_position_pressure_proxy_not_measured_fund_flow',
@@ -677,7 +695,7 @@ function wilderAtr14(high: number[], low: number[], close: number[]): number[] {
     if (previousAtr === null) {
       trueRanges.push(trueRange)
       if (trueRanges.length < DEFAULT_PARAMETERS.atr_period) continue
-      previousAtr = mean(trueRanges.slice(-DEFAULT_PARAMETERS.atr_period))
+      previousAtr = numpyFloat64Mean(trueRanges.slice(-DEFAULT_PARAMETERS.atr_period))
     } else {
       previousAtr = (
         previousAtr * (DEFAULT_PARAMETERS.atr_period - 1) + trueRange
@@ -698,7 +716,7 @@ function emaSmaSeed(values: number[], period: number): number[] {
     if (previous === null) {
       seed.push(value)
       if (seed.length < period) continue
-      previous = mean(seed.slice(-period))
+      previous = numpyFloat64Mean(seed.slice(-period))
     } else previous = alpha * value + (1 - alpha) * previous
     output[index] = previous
   }
@@ -708,7 +726,7 @@ function emaSmaSeed(values: number[], period: number): number[] {
 function rollingMean(values: number[], window: number): number[] {
   const output = Array<number>(values.length).fill(Number.NaN)
   for (let index = window - 1; index < values.length; index += 1) {
-    output[index] = mean(values.slice(index - window + 1, index + 1))
+    output[index] = numpyFloat64Mean(values.slice(index - window + 1, index + 1))
   }
   return output
 }
@@ -725,8 +743,51 @@ function rollingExtreme(
   return output
 }
 
-function mean(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0) / values.length
+const NUMPY_PAIRWISE_BLOCK_SIZE = 128
+
+/** Exact binary64 operation order used by NumPy's pairwise float64 reduction. */
+export function numpyFloat64Mean(values: readonly number[]): number {
+  if (values.length === 0) return Number.NaN
+  return numpyFloat64PairwiseSum(values, 0, values.length) / values.length
+}
+
+function numpyFloat64PairwiseSum(
+  values: readonly number[],
+  start: number,
+  length: number,
+): number {
+  if (length < 8) {
+    let result = -0
+    for (let offset = 0; offset < length; offset += 1) {
+      result += values[start + offset]
+    }
+    return result
+  }
+  if (length <= NUMPY_PAIRWISE_BLOCK_SIZE) {
+    const lanes = values.slice(start, start + 8)
+    let offset = 8
+    const alignedEnd = length - (length % 8)
+    for (; offset < alignedEnd; offset += 8) {
+      for (let lane = 0; lane < 8; lane += 1) {
+        lanes[lane] += values[start + offset + lane]
+      }
+    }
+    let result = (
+      (lanes[0] + lanes[1])
+      + (lanes[2] + lanes[3])
+    ) + (
+      (lanes[4] + lanes[5])
+      + (lanes[6] + lanes[7])
+    )
+    for (; offset < length; offset += 1) result += values[start + offset]
+    return result
+  }
+  let half = Math.floor(length / 2)
+  half -= half % 8
+  return (
+    numpyFloat64PairwiseSum(values, start, half)
+    + numpyFloat64PairwiseSum(values, start + half, length - half)
+  )
 }
 
 function normalizeContract(value: string | undefined): string | null {

@@ -9,6 +9,7 @@ import {
   PARAMETERS_HASH,
   calculateMainForceMirrorFutures,
   isMainForceMirrorFuturesCandidate,
+  numpyFloat64Mean,
   roundHalfAwayFromZeroBinary64,
 } from '../src/utils/mainForceMirrorFutures.ts'
 
@@ -28,9 +29,19 @@ interface GoldenFixture {
   indicator_code: string
   indicator_version: string
   parameters_hash: string
+  metadata: Record<string, unknown>
   bars: GoldenBar[]
   rounding_cases: Array<{ value: number; digits: number; expected: number }>
+  numpy_mean_cases: Array<{ name: string; values: number[]; expected: number }>
   expected_points: Array<Record<string, unknown>>
+  raw_threshold_case: {
+    bars: GoldenBar[]
+    boundary_index: number
+    latch_followup_index: number
+    raw_volume_mean: number
+    raw_volume_ratio: number
+    expected_points: Array<Record<string, unknown>>
+  }
 }
 
 const fixture = JSON.parse(readFileSync(new URL(
@@ -39,6 +50,8 @@ const fixture = JSON.parse(readFileSync(new URL(
 ), 'utf8')) as GoldenFixture
 
 const pointFields = [
+  'time',
+  'physical_contract',
   'valid',
   'state_ready',
   'caution_ready',
@@ -63,10 +76,66 @@ const pointFields = [
   'caution_reason_codes',
 ] as const
 
-function jsonSafe(value: unknown): unknown {
-  if (typeof value !== 'number') return value
-  if (!Number.isFinite(value)) return null
-  return Object.is(value, -0) ? 0 : value
+const nullableNumericPointFields = [
+  'signed_score',
+  'strength',
+  'price_impulse',
+  'clv',
+  'volume_ratio',
+  'delta_oi',
+  'oi_impulse',
+  'direction',
+  'range_position',
+  'long_open_pressure',
+  'short_open_pressure',
+  'long_caution_score',
+  'short_caution_score',
+] as const
+
+const orderedReasonCodes = [
+  'LONG_UPPER_EXTREME',
+  'LONG_SHORT_COVER_DOMINATED',
+  'LONG_OPEN_PRESSURE_DIVERGENCE',
+  'LONG_HIGH_VOLUME_EXHAUSTION',
+  'SHORT_LOWER_EXTREME',
+  'SHORT_LONG_LIQUIDATION_DOMINATED',
+  'SHORT_OPEN_PRESSURE_DIVERGENCE',
+  'SHORT_LOW_PRICE_ABSORPTION',
+] as const
+
+function toBars(bars: GoldenBar[]): BarData[] {
+  return bars.map((bar) => ({
+    time: bar.time,
+    physicalContract: bar.physical_contract,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+    openInterest: bar.open_interest === null ? undefined : bar.open_interest,
+  }))
+}
+
+function assertPublicNumbersAreJsonSafe(
+  points: ReturnType<typeof calculateMainForceMirrorFutures>['points'],
+): void {
+  for (const point of points) {
+    for (const field of nullableNumericPointFields) {
+      const value = point[field]
+      assert.ok(
+        value === null || (Number.isFinite(value) && !Object.is(value, -0)),
+        `${point.time} ${field} must be null or finite and not -0`,
+      )
+    }
+  }
+}
+
+function selectPointFields(
+  points: ReturnType<typeof calculateMainForceMirrorFutures>['points'],
+): Array<Record<string, unknown>> {
+  return points.map((point) => Object.fromEntries(
+    pointFields.map((field) => [field, point[field]]),
+  ))
 }
 
 test('futures mirror freezes exact indicator and parameter identity', () => {
@@ -108,22 +177,11 @@ test('futures mirror freezes exact indicator and parameter identity', () => {
 })
 
 test('futures mirror matches every shared golden point exactly', () => {
-  const bars: BarData[] = fixture.bars.map((bar) => ({
-    time: bar.time,
-    physicalContract: bar.physical_contract,
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    close: bar.close,
-    volume: bar.volume,
-    openInterest: bar.open_interest === null ? undefined : bar.open_interest,
-  }))
+  const result = calculateMainForceMirrorFutures(toBars(fixture.bars))
+  assertPublicNumbersAreJsonSafe(result.points)
+  const actual = selectPointFields(result.points)
 
-  const result = calculateMainForceMirrorFutures(bars)
-  const actual = result.points.map((point) => Object.fromEntries(
-    pointFields.map((field) => [field, jsonSafe(point[field])]),
-  ))
-
+  assert.deepEqual(result.metadata, fixture.metadata)
   assert.deepEqual(actual, fixture.expected_points)
   assert.deepEqual(actual[36].caution_reason_codes, [
     'LONG_SHORT_COVER_DOMINATED',
@@ -133,6 +191,74 @@ test('futures mirror matches every shared golden point exactly', () => {
     'SHORT_OPEN_PRESSURE_DIVERGENCE',
     'SHORT_LOW_PRICE_ABSORPTION',
   ])
+})
+
+test('futures mirror matches NumPy pairwise means for every used window length', () => {
+  assert.deepEqual(fixture.numpy_mean_cases.map((meanCase) => meanCase.values.length), [14, 20])
+  for (const meanCase of fixture.numpy_mean_cases) {
+    assert.equal(numpyFloat64Mean(meanCase.values), meanCase.expected, meanCase.name)
+  }
+})
+
+test('futures mirror keeps the raw 1.5 threshold on the Python side through calculate', () => {
+  const thresholdCase = fixture.raw_threshold_case
+  const result = calculateMainForceMirrorFutures(toBars(thresholdCase.bars))
+  assertPublicNumbersAreJsonSafe(result.points)
+  assert.deepEqual(result.metadata, fixture.metadata)
+  const boundary = result.points[thresholdCase.boundary_index]
+  assert.equal(boundary.volume_ratio, 1.5)
+  assert.equal(boundary.long_caution_score, 55)
+  assert.equal(boundary.short_caution_score, 0)
+  assert.deepEqual(boundary.caution_reason_codes, [
+    'LONG_UPPER_EXTREME',
+    'LONG_OPEN_PRESSURE_DIVERGENCE',
+  ])
+  assert.equal(boundary.caution, null)
+
+  const latchFollowup = result.points[thresholdCase.latch_followup_index]
+  assert.equal(latchFollowup.long_caution_score, 70)
+  assert.deepEqual(latchFollowup.caution_reason_codes, [
+    'LONG_UPPER_EXTREME',
+    'LONG_OPEN_PRESSURE_DIVERGENCE',
+    'LONG_HIGH_VOLUME_EXHAUSTION',
+    'SHORT_LOW_PRICE_ABSORPTION',
+  ])
+  assert.equal(latchFollowup.caution, 'long_chase_caution')
+
+  const actual = selectPointFields(result.points)
+  assert.deepEqual(actual, thresholdCase.expected_points)
+
+  const rawWindow = thresholdCase.bars
+    .slice(thresholdCase.boundary_index - 19, thresholdCase.boundary_index + 1)
+    .map((bar) => bar.volume)
+  const rawMean = numpyFloat64Mean(rawWindow)
+  const rawRatio = rawWindow.at(-1)! / rawMean
+  assert.equal(rawMean, thresholdCase.raw_volume_mean)
+  assert.equal(rawRatio, thresholdCase.raw_volume_ratio)
+  assert.ok(rawRatio < DEFAULT_PARAMETERS.high_volume_threshold)
+})
+
+test('futures mirror covers all reason codes in fixed Python evaluation order', () => {
+  const allPoints = [
+    ...fixture.expected_points,
+    ...fixture.raw_threshold_case.expected_points,
+  ]
+  const observed = new Set<string>()
+  for (const point of allPoints) {
+    const reasons = point.caution_reason_codes as string[]
+    reasons.forEach((reason) => observed.add(reason))
+    assert.deepEqual(
+      reasons,
+      [...reasons].sort(
+        (left, right) => orderedReasonCodes.indexOf(left as typeof orderedReasonCodes[number])
+          - orderedReasonCodes.indexOf(right as typeof orderedReasonCodes[number]),
+      ),
+    )
+  }
+  assert.deepEqual([...observed].sort(
+    (left, right) => orderedReasonCodes.indexOf(left as typeof orderedReasonCodes[number])
+      - orderedReasonCodes.indexOf(right as typeof orderedReasonCodes[number]),
+  ), [...orderedReasonCodes])
 })
 
 test('futures mirror uses binary64 half-away rounding and normalizes negative zero', () => {

@@ -10,6 +10,8 @@ import pytest
 
 
 _SHARED_GOLDEN_FIELDS = (
+    "time",
+    "physical_contract",
     "valid",
     "state_ready",
     "caution_ready",
@@ -36,6 +38,10 @@ _SHARED_GOLDEN_FIELDS = (
 
 
 def _json_safe_golden_value(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: _json_safe_golden_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_golden_value(item) for item in value]
     if isinstance(value, (float, np.floating)):
         number = float(value)
         if not np.isfinite(number):
@@ -43,9 +49,38 @@ def _json_safe_golden_value(value: object) -> object:
         return 0.0 if number == 0.0 else number
     if isinstance(value, (bool, np.bool_)):
         return bool(value)
-    if isinstance(value, tuple):
-        return list(value)
     return value
+
+
+def _compute_shared_fixture_bars(bars: list[dict[str, object]]) -> object:
+    return _compute(
+        {
+            "datetimes": [bar["time"] for bar in bars],
+            "physical_contract": [bar["physical_contract"] for bar in bars],
+            "open_": [bar["open"] for bar in bars],
+            "high": [bar["high"] for bar in bars],
+            "low": [bar["low"] for bar in bars],
+            "close": [bar["close"] for bar in bars],
+            "volume": [bar["volume"] for bar in bars],
+            "open_interest": [bar["open_interest"] for bar in bars],
+        }
+    )
+
+
+def _shared_golden_points(result: object, count: int) -> list[dict[str, object]]:
+    source_fields = {
+        "time": "datetimes",
+        "physical_contract": "physical_contract",
+    }
+    return [
+        {
+            field: _json_safe_golden_value(
+                getattr(result, source_fields.get(field, field))[index]
+            )
+            for field in _SHARED_GOLDEN_FIELDS
+        }
+        for index in range(count)
+    ]
 
 
 def test_futures_v1_matches_shared_golden_across_python_and_web() -> None:
@@ -63,29 +98,10 @@ def test_futures_v1_matches_shared_golden_across_python_and_web() -> None:
     assert fixture["parameters_hash"] == "f7fd0c9bce0b08d1"
 
     bars = fixture["bars"]
-    result = _compute(
-        {
-            "datetimes": [bar["time"] for bar in bars],
-            "physical_contract": [bar["physical_contract"] for bar in bars],
-            "open_": [bar["open"] for bar in bars],
-            "high": [bar["high"] for bar in bars],
-            "low": [bar["low"] for bar in bars],
-            "close": [bar["close"] for bar in bars],
-            "volume": [bar["volume"] for bar in bars],
-            "open_interest": [bar["open_interest"] for bar in bars],
-        }
-    )
+    result = _compute_shared_fixture_bars(bars)
 
-    assert result.metadata["indicator_code"] == fixture["indicator_code"]
-    assert result.metadata["indicator_version"] == fixture["indicator_version"]
-    assert result.metadata["parameters_hash"] == fixture["parameters_hash"]
-    actual_points = [
-        {
-            field: _json_safe_golden_value(getattr(result, field)[index])
-            for field in _SHARED_GOLDEN_FIELDS
-        }
-        for index in range(len(bars))
-    ]
+    assert _json_safe_golden_value(result.metadata) == fixture["metadata"]
+    actual_points = _shared_golden_points(result, len(bars))
     assert actual_points == fixture["expected_points"]
 
     assert {bar["physical_contract"] for bar in bars} == {"JM2609", "AG2612"}
@@ -121,6 +137,74 @@ def test_futures_v1_matches_shared_golden_across_python_and_web() -> None:
     assert bars[38]["open_interest"] is None
     assert actual_points[38]["reason"] == "MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE"
     assert actual_points[40]["reason"] == "MFM_FUTURES_V1_TIMESTAMP_INVALID"
+
+    mean_cases = fixture["numpy_mean_cases"]
+    assert [len(case["values"]) for case in mean_cases] == [14, 20]
+    for mean_case in mean_cases:
+        assert float(np.mean(np.asarray(mean_case["values"], dtype=np.float64))) == (
+            mean_case["expected"]
+        )
+
+    threshold_case = fixture["raw_threshold_case"]
+    threshold_bars = threshold_case["bars"]
+    boundary_index = threshold_case["boundary_index"]
+    latch_followup_index = threshold_case["latch_followup_index"]
+    threshold_window = np.asarray(
+        [
+            bar["volume"]
+            for bar in threshold_bars[boundary_index - 19 : boundary_index + 1]
+        ],
+        dtype=np.float64,
+    )
+    raw_volume_mean = float(np.mean(threshold_window))
+    raw_volume_ratio = float(threshold_window[-1] / raw_volume_mean)
+    assert raw_volume_mean == threshold_case["raw_volume_mean"]
+    assert raw_volume_ratio == threshold_case["raw_volume_ratio"]
+    assert raw_volume_ratio < 1.5
+
+    threshold_result = _compute_shared_fixture_bars(threshold_bars)
+    assert _json_safe_golden_value(threshold_result.metadata) == fixture["metadata"]
+    threshold_points = _shared_golden_points(threshold_result, len(threshold_bars))
+    assert threshold_points == threshold_case["expected_points"]
+    boundary = threshold_points[boundary_index]
+    assert boundary["volume_ratio"] == 1.5
+    assert boundary["long_caution_score"] == 55.0
+    assert boundary["short_caution_score"] == 0.0
+    assert boundary["caution_reason_codes"] == [
+        "LONG_UPPER_EXTREME",
+        "LONG_OPEN_PRESSURE_DIVERGENCE",
+    ]
+    assert boundary["caution"] is None
+    latch_followup = threshold_points[latch_followup_index]
+    assert latch_followup["long_caution_score"] == 70.0
+    assert latch_followup["caution_reason_codes"] == [
+        "LONG_UPPER_EXTREME",
+        "LONG_OPEN_PRESSURE_DIVERGENCE",
+        "LONG_HIGH_VOLUME_EXHAUSTION",
+        "SHORT_LOW_PRICE_ABSORPTION",
+    ]
+    assert latch_followup["caution"] == "long_chase_caution"
+
+    ordered_reason_codes = (
+        "LONG_UPPER_EXTREME",
+        "LONG_SHORT_COVER_DOMINATED",
+        "LONG_OPEN_PRESSURE_DIVERGENCE",
+        "LONG_HIGH_VOLUME_EXHAUSTION",
+        "SHORT_LOWER_EXTREME",
+        "SHORT_LONG_LIQUIDATION_DOMINATED",
+        "SHORT_OPEN_PRESSURE_DIVERGENCE",
+        "SHORT_LOW_PRICE_ABSORPTION",
+    )
+    observed_reason_codes = {
+        reason_code
+        for point in [*actual_points, *threshold_points]
+        for reason_code in point["caution_reason_codes"]
+    }
+    assert observed_reason_codes == set(ordered_reason_codes)
+    reason_order = {reason: index for index, reason in enumerate(ordered_reason_codes)}
+    for point in [*actual_points, *threshold_points]:
+        reasons = point["caution_reason_codes"]
+        assert reasons == sorted(reasons, key=reason_order.__getitem__)
 
 
 def make_valid_inputs(
