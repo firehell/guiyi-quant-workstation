@@ -5,6 +5,12 @@ from .htdy_strict import BOOLEAN_FIELDS as HTDY_STRICT_BOOLEAN_FIELDS
 from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
 from .htdy_strict import compute_strict_fields
 from .macd import macd_series
+from .main_force_mirror import (
+    MainForceMirrorResult,
+    MainForceMirrorState,
+    classify_main_force_mirror_state,
+    compute_main_force_mirror,
+)
 from .models import (
     AtrSmoothingPolicy,
     FormalPolicy,
@@ -54,10 +60,14 @@ __all__ = [
     "IndicatorSeries",
     "IndicatorStatus",
     "MacdSeries",
+    "MainForceMirrorResult",
+    "MainForceMirrorState",
     "RepaintingRisk",
     "SeedPolicy",
     "atr_series",
     "build_indicator_definition",
+    "classify_main_force_mirror_state",
+    "compute_main_force_mirror",
     "definition_to_metadata",
     "compute_htdy_original",
     "compute_strict_fields",
