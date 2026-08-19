@@ -12,7 +12,15 @@ from collections.abc import Sequence, Sized
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import Any, Literal, SupportsFloat, SupportsIndex, TypedDict, cast
+from typing import (
+    Any,
+    Literal,
+    ReadOnly,
+    SupportsFloat,
+    SupportsIndex,
+    TypedDict,
+    cast,
+)
 
 import numpy as np
 
@@ -33,72 +41,71 @@ MainForceMirrorFuturesCaution = Literal[
 
 
 class _MainForceMirrorFuturesParameters(TypedDict):
-    atr_period: int
-    volume_window: int
-    oi_impulse_ema_period: int
-    range_window: int
-    pressure_divergence_window: int
-    direction_price_weight: float
-    direction_clv_weight: float
-    direction_deadband: float
-    oi_deadband: float
-    volume_ratio_clip: float
-    price_impulse_clip: float
-    oi_impulse_clip: float
-    strength_scale: float
-    turnover_display_cap: float
-    upper_location_threshold: float
-    lower_location_threshold: float
-    liquidation_dominated_oi_threshold: float
-    pressure_confirmation_ratio: float
-    high_volume_threshold: float
-    clv_rejection_threshold: float
-    wick_rejection_threshold: float
-    caution_threshold: int
-    rearm_score_threshold: int
-    rearm_low_score_bars: int
-    rearm_build_bars: int
-    long_rearm_range_threshold: float
-    short_rearm_range_threshold: float
-    round_digits: int
-    rounding_policy: str
+    atr_period: ReadOnly[int]
+    volume_window: ReadOnly[int]
+    oi_impulse_ema_period: ReadOnly[int]
+    range_window: ReadOnly[int]
+    pressure_divergence_window: ReadOnly[int]
+    direction_price_weight: ReadOnly[float]
+    direction_clv_weight: ReadOnly[float]
+    direction_deadband: ReadOnly[float]
+    oi_deadband: ReadOnly[float]
+    volume_ratio_clip: ReadOnly[float]
+    price_impulse_clip: ReadOnly[float]
+    oi_impulse_clip: ReadOnly[float]
+    strength_scale: ReadOnly[float]
+    turnover_display_cap: ReadOnly[float]
+    upper_location_threshold: ReadOnly[float]
+    lower_location_threshold: ReadOnly[float]
+    liquidation_dominated_oi_threshold: ReadOnly[float]
+    pressure_confirmation_ratio: ReadOnly[float]
+    high_volume_threshold: ReadOnly[float]
+    clv_rejection_threshold: ReadOnly[float]
+    wick_rejection_threshold: ReadOnly[float]
+    caution_threshold: ReadOnly[int]
+    rearm_score_threshold: ReadOnly[int]
+    rearm_low_score_bars: ReadOnly[int]
+    rearm_build_bars: ReadOnly[int]
+    long_rearm_range_threshold: ReadOnly[float]
+    short_rearm_range_threshold: ReadOnly[float]
+    round_digits: ReadOnly[int]
+    rounding_policy: ReadOnly[str]
 
 
+_DEFAULT_PARAMETERS_LITERAL: _MainForceMirrorFuturesParameters = {
+    "atr_period": 14,
+    "volume_window": 20,
+    "oi_impulse_ema_period": 20,
+    "range_window": 20,
+    "pressure_divergence_window": 10,
+    "direction_price_weight": 0.7,
+    "direction_clv_weight": 0.3,
+    "direction_deadband": 0.15,
+    "oi_deadband": 0.25,
+    "volume_ratio_clip": 3.0,
+    "price_impulse_clip": 3.0,
+    "oi_impulse_clip": 3.0,
+    "strength_scale": 25.0,
+    "turnover_display_cap": 15.0,
+    "upper_location_threshold": 0.85,
+    "lower_location_threshold": 0.15,
+    "liquidation_dominated_oi_threshold": 0.5,
+    "pressure_confirmation_ratio": 0.7,
+    "high_volume_threshold": 1.5,
+    "clv_rejection_threshold": 0.25,
+    "wick_rejection_threshold": 0.35,
+    "caution_threshold": 70,
+    "rearm_score_threshold": 40,
+    "rearm_low_score_bars": 3,
+    "rearm_build_bars": 2,
+    "long_rearm_range_threshold": 0.65,
+    "short_rearm_range_threshold": 0.35,
+    "round_digits": 6,
+    "rounding_policy": "half_away_from_zero_binary64",
+}
 DEFAULT_PARAMETERS = cast(
     _MainForceMirrorFuturesParameters,
-    MappingProxyType(
-        {
-            "atr_period": 14,
-            "volume_window": 20,
-            "oi_impulse_ema_period": 20,
-            "range_window": 20,
-            "pressure_divergence_window": 10,
-            "direction_price_weight": 0.7,
-            "direction_clv_weight": 0.3,
-            "direction_deadband": 0.15,
-            "oi_deadband": 0.25,
-            "volume_ratio_clip": 3.0,
-            "price_impulse_clip": 3.0,
-            "oi_impulse_clip": 3.0,
-            "strength_scale": 25.0,
-            "turnover_display_cap": 15.0,
-            "upper_location_threshold": 0.85,
-            "lower_location_threshold": 0.15,
-            "liquidation_dominated_oi_threshold": 0.5,
-            "pressure_confirmation_ratio": 0.7,
-            "high_volume_threshold": 1.5,
-            "clv_rejection_threshold": 0.25,
-            "wick_rejection_threshold": 0.35,
-            "caution_threshold": 70,
-            "rearm_score_threshold": 40,
-            "rearm_low_score_bars": 3,
-            "rearm_build_bars": 2,
-            "long_rearm_range_threshold": 0.65,
-            "short_rearm_range_threshold": 0.35,
-            "round_digits": 6,
-            "rounding_policy": "half_away_from_zero_binary64",
-        }
-    ),
+    MappingProxyType(_DEFAULT_PARAMETERS_LITERAL),
 )
 
 _PHYSICAL_CONTRACT_MISSING = "MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING"
