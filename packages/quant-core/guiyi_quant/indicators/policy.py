@@ -50,6 +50,22 @@ _POLICIES: dict[str, FormalPolicy] = {
         blocked_consumers=("formal_strategy_signal_until_validated", FORMAL_BACKTEST_CONSUMER),
         notes="Web/Market MACD display compatibility policy; not strategy-validated.",
     ),
+    "main_force_mirror_observation_v0": FormalPolicy(
+        policy_id="main_force_mirror_observation_v0",
+        indicator_family="MAIN_FORCE_MIRROR",
+        seed_policy=None,
+        smoothing_policy=None,
+        histogram_scale=None,
+        lookback="volume20_flowEMA5_range20_cautionHHV5_BARSLAST10",
+        confirmed_only=True,
+        frozen_legacy=False,
+        allowed_consumers=("Web_manual_observation",),
+        blocked_consumers=(FORMAL_BACKTEST_CONSUMER, "live", "alert", "notification"),
+        notes=(
+            "Designed causal OHLCV observation only. Six coloured states are a proxy, not measured fund flow; "
+            "the caution event mirrors the provided HHV/BARSLAST formula."
+        ),
+    ),
     "subing_macd_sma_window_scale2_v1": FormalPolicy(
         policy_id="subing_macd_sma_window_scale2_v1",
         indicator_family="MACD",
