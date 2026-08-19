@@ -42,7 +42,11 @@ async function mockChartMarketApi(page, requests, items = bars()) {
         bars: items,
         canonical_coverage: null,
         page: { has_more_before: false, next_before: null },
-        resolved_contract_segments: [],
+        resolved_contract_segments: [{
+          contract: 'AG2601',
+          start_trading_day: items[0].trading_day,
+          end_trading_day: items.at(-1).trading_day,
+        }],
       } })
       return
     }
@@ -89,6 +93,7 @@ test('futures mirror tab is identity-gated, ordered, and local to the existing c
   await tabs.getByRole('tab', { name: '主力照妖镜' }).click()
   await expect(shell).toHaveAttribute('data-secondary-panel', 'main_force_mirror_futures')
   expect(barRequestCount(requests)).toBe(initialBarRequests)
+  await expect(page.getByTestId('main-force-futures-pane-status')).toContainText(/ready|caution_warmup|conflict/)
   await page.getByLabel('周期').getByText('15m', { exact: true }).click()
   await expect(shell).toHaveAttribute('data-secondary-panel', 'macd')
   await expect(tabs.getByRole('tab', { name: '主力照妖镜' })).toBeDisabled()
@@ -105,6 +110,7 @@ test('futures mirror tab is identity-gated, ordered, and local to the existing c
   await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=60m')
   await expect(page.getByText('96 bars')).toBeVisible()
   await expect(tabs.getByRole('tab', { name: '主力照妖镜' })).toBeDisabled()
+  await expect(page.getByTestId('main-force-futures-pane-status')).toHaveText('unsupported · MFM_FUTURES_V1_UNSUPPORTED_IDENTITY')
 
   await page.goto('/market/chart?symbol=ag&series_kind=contract&contract=AG2601&frequency=60m')
   await expect(page.getByText('96 bars')).toBeVisible()
@@ -135,6 +141,9 @@ test('futures mirror renders only signed scores and dynamic bilateral caution ma
   await expect(shell).toHaveAttribute('data-main-force-futures-marker-count', '2')
   await expect(page.getByText('70 = 风险证据评分阈值，不是资金流比例或概率')).toBeVisible()
   await expect(page.locator('[data-main-force-futures-marker-count]')).not.toHaveAttribute('data-main-force-futures-marker-count', '4')
+  await tabs.getByRole('tab', { name: 'MACD' }).click()
+  await expect(shell).toHaveAttribute('data-main-force-futures-marker-count', '0')
+  await expect(shell).toHaveAttribute('data-alert-marker-count', '0')
 })
 
 test('three-tab pane remains within each required desktop viewport', async ({ page }) => {

@@ -20,7 +20,14 @@ import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, SeriesKi
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
-import { buildKlineDerivedData, resolveKlineHoverContext, type KlineValuePoint } from '@/utils/klineViewModel'
+import {
+  buildKlineDerivedData,
+  buildMainForceFuturesRenderModel,
+  resolveKlineHoverContext,
+  resolveMainForceFuturesAvailability,
+  type KlineValuePoint,
+  type MainForceFuturesAvailability,
+} from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import {
   calculateMainForceMirror,
@@ -29,7 +36,6 @@ import {
 import {
   calculateMainForceMirrorFutures,
   type MainForceMirrorFuturesResult,
-  type MainForceMirrorFuturesState,
 } from '@/utils/mainForceMirrorFutures'
 
 const props = withDefaults(defineProps<{
@@ -84,6 +90,7 @@ const renderedResearchMarkerCount = ref(0)
 const renderedMainForceFuturesMarkerCount = ref(0)
 let derivedData = buildKlineDerivedData([], [])
 let mainForceFuturesResult: MainForceMirrorFuturesResult | null = null
+const mainForceFuturesAvailability = ref<MainForceFuturesAvailability>(resolveMainForceFuturesAvailability(false, null, null))
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 type SecondaryPanelId = 'macd' | 'main_force_mirror_futures' | 'main_force_mirror_v0'
@@ -103,13 +110,6 @@ const MAIN_FORCE_COLORS: Record<MainForceMirrorState, string> = {
   lure: '#f97316',
 }
 const CAUTION_COLOR = '#22c55e'
-const MAIN_FORCE_FUTURES_COLORS: Record<MainForceMirrorFuturesState, keyof ReturnType<typeof resolveChartTheme>> = {
-  long_build: 'up',
-  short_build: 'down',
-  short_cover: 'ema21',
-  long_liquidation: 'macdDif',
-  turnover: 'textMuted',
-}
 
 onMounted(async () => {
   await nextTick()
@@ -308,7 +308,7 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
   }
   const bar = renderedBars.find((item) => sameChartTime(chartTime(item), param.time!))
   const nextContext = bar
-    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time, mainForceFuturesResult)
+    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time, mainForceFuturesResult, isMainForceFuturesSupported())
     : null
   hoverContext.value = nextContext
   emit('crosshair-change', nextContext)
@@ -371,10 +371,12 @@ function clearMainForceV0() {
 }
 
 function clearMainForceFutures() {
-  mainForceFuturesHistogram?.setData([])
+  const model = buildMainForceFuturesRenderModel(null)
+  mainForceFuturesHistogram?.setData(model.histogram)
   mainForceFuturesMarkers?.setMarkers([])
   mainForceFuturesResult = null
   renderedMainForceFuturesMarkerCount.value = 0
+  mainForceFuturesAvailability.value = resolveMainForceFuturesAvailability(isMainForceFuturesSupported(), null, null)
 }
 
 function renderMainForceV0() {
@@ -412,27 +414,21 @@ function renderMainForceV0() {
 function renderMainForceFutures() {
   if (!mainForceFuturesHistogram || !isMainForceFuturesSupported()) return
   mainForceFuturesResult = calculateMainForceMirrorFutures(renderedBars)
+  const currentPoint = mainForceFuturesResult.points.at(-1) ?? null
+  mainForceFuturesAvailability.value = resolveMainForceFuturesAvailability(true, currentPoint, null)
+  const model = buildMainForceFuturesRenderModel(mainForceFuturesResult)
   const theme = resolveChartTheme()
-  mainForceFuturesHistogram.setData(mainForceFuturesResult.points.flatMap((point, index) => {
-    if (point.signed_score === null || point.state === null || !renderedBars[index]) return []
-    return [{
-      time: chartTime(renderedBars[index]),
-      value: point.signed_score,
-      color: theme[MAIN_FORCE_FUTURES_COLORS[point.state]],
-    }]
+  const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
+  mainForceFuturesHistogram.setData(model.histogram.flatMap((point) => {
+    const bar = barsByTime.get(point.time)
+    return bar ? [{ time: chartTime(bar), value: point.value, color: theme[point.colorKey] }] : []
   }))
-  const markers = mainForceFuturesResult.points.flatMap((point, index) => {
-    if (!point.caution || !renderedBars[index]) return []
-    const score = point.caution === 'long_chase_caution' ? point.long_caution_score : point.short_caution_score
-    if (score === null) return []
-    return [{
-      time: chartTime(renderedBars[index]),
-      position: point.caution === 'long_chase_caution' ? 'aboveBar' as const : 'belowBar' as const,
-      shape: point.caution === 'long_chase_caution' ? 'arrowDown' as const : 'arrowUp' as const,
-      color: point.caution === 'long_chase_caution' ? theme.up : theme.down,
-      text: `${point.caution === 'long_chase_caution' ? '追多小心' : '追空小心'} ${score}`,
-      size: 1.5,
-    }]
+  const markers = model.markers.flatMap((marker) => {
+    const bar = barsByTime.get(marker.time)
+    return bar ? [{
+      time: chartTime(bar), position: marker.position, shape: marker.shape,
+      color: marker.tone === 'up' ? theme.up : theme.down, text: marker.text, size: 1.5,
+    }] : []
   })
   renderedMainForceFuturesMarkerCount.value = markers.length
   mainForceFuturesMarkers?.setMarkers(markers)
@@ -561,6 +557,10 @@ defineExpose({
       </div>
       <div v-if="selectedSecondaryPanel === 'main_force_mirror_futures'" class="main-force-legend" aria-label="期货主力照妖镜图例">
         <span class="main-force-legend__note">70 = 风险证据评分阈值，不是资金流比例或概率</span>
+        <span data-testid="main-force-futures-pane-status">{{ mainForceFuturesAvailability.kind }} · {{ mainForceFuturesAvailability.reason || 'READY' }}</span>
+      </div>
+      <div v-else-if="!isMainForceFuturesSupported()" class="main-force-legend" data-testid="main-force-futures-pane-status">
+        <span>unsupported · MFM_FUTURES_V1_UNSUPPORTED_IDENTITY</span>
       </div>
     </div>
     <div

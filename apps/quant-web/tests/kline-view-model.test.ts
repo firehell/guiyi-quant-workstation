@@ -2,7 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { BarData } from '../src/types/market.ts'
 import type { MainForceMirrorFuturesPoint, MainForceMirrorFuturesResult } from '../src/utils/mainForceMirrorFutures.ts'
-import { buildKlineDerivedData, formatKlineHoverValue, resolveKlineHoverContext } from '../src/utils/klineViewModel.ts'
+import {
+  buildKlineDerivedData,
+  buildMainForceFuturesRenderModel,
+  formatKlineHoverValue,
+  resolveKlineHoverContext,
+  resolveMainForceFuturesAvailability,
+} from '../src/utils/klineViewModel.ts'
 
 const bars: BarData[] = Array.from({ length: 100 }, (_, index) => {
   const close = 100 + index
@@ -120,6 +126,63 @@ test('crosshair projects the timestamp-aligned futures mirror observation withou
   assert.deepEqual(hover.mainForceFutures.reasonCodes, ['LONG_BUILD_STREAK'])
   assert.equal(formatKlineHoverValue(hover.mainForceFutures.clv), '—')
 })
+
+test('futures availability prioritizes support and stable reasons over readiness booleans', () => {
+  const unsupported = resolveMainForceFuturesAvailability(false, null, null)
+  assert.equal(unsupported.kind, 'unsupported')
+  assert.equal(unsupported.reason, 'MFM_FUTURES_V1_UNSUPPORTED_IDENTITY')
+
+  const oiUnavailable = resolveMainForceFuturesAvailability(true, futuresPoint({
+    valid: false,
+    reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE',
+  }), null)
+  assert.equal(oiUnavailable.kind, 'input_unavailable')
+  assert.equal(oiUnavailable.reason, 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE')
+
+  const stateWarmup = resolveMainForceFuturesAvailability(true, futuresPoint({ state_ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }), null)
+  assert.equal(stateWarmup.kind, 'state_warmup')
+
+  const cautionWarmup = resolveMainForceFuturesAvailability(true, futuresPoint({ state_ready: true, caution_ready: false, reason: null, caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_WARMUP' }), null)
+  assert.equal(cautionWarmup.kind, 'caution_warmup')
+
+  const derivedUnavailable = resolveMainForceFuturesAvailability(true, futuresPoint({ state_ready: false, reason: 'MFM_FUTURES_V1_ATR_INVALID' }), null)
+  assert.equal(derivedUnavailable.kind, 'derived_unavailable')
+  assert.equal(derivedUnavailable.reason, 'MFM_FUTURES_V1_ATR_INVALID')
+
+  const conflict = resolveMainForceFuturesAvailability(true, futuresPoint({ caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT' }), null)
+  assert.equal(conflict.kind, 'conflict')
+
+  const ready = resolveMainForceFuturesAvailability(true, futuresPoint(), null)
+  assert.equal(ready.kind, 'ready')
+})
+
+test('futures render model keeps signed scores separate from bilateral caution markers and clears as an empty model', () => {
+  const long = futuresPoint({ time: 'long', signed_score: 100, state: 'long_build', caution: 'long_chase_caution', long_caution_score: 70 })
+  const short = futuresPoint({ time: 'short', signed_score: -80, state: 'short_build', caution: 'short_chase_caution', short_caution_score: 75 })
+  const conflict = futuresPoint({ time: 'conflict', signed_score: 76, state: 'long_build', caution: null, caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT' })
+  const model = buildMainForceFuturesRenderModel({ points: [long, short, conflict], metadata: {} as MainForceMirrorFuturesResult['metadata'] })
+
+  assert.deepEqual(model.autoscale, { minValue: -105, maxValue: 105 })
+  assert.deepEqual(model.histogram.map((point) => point.value), [100, -80, 76])
+  assert.equal(model.histogram.some((point) => Math.abs(point.value) === 92), false)
+  assert.deepEqual(model.markers, [
+    { time: 'long', position: 'aboveBar', shape: 'arrowDown', tone: 'up', text: '追多小心 70' },
+    { time: 'short', position: 'belowBar', shape: 'arrowUp', tone: 'down', text: '追空小心 75' },
+  ])
+  assert.deepEqual(buildMainForceFuturesRenderModel(null), {
+    histogram: [], markers: [], autoscale: { minValue: -105, maxValue: 105 },
+  })
+})
+
+function futuresPoint(overrides: Partial<MainForceMirrorFuturesPoint> = {}): MainForceMirrorFuturesPoint {
+  return {
+    time: 'point', physical_contract: 'AG2601', valid: true, state_ready: true, caution_ready: true, ready: true,
+    reason: null, caution_availability_reason: null, state: 'long_build', signed_score: 80, strength: 80,
+    price_impulse: 0.2, clv: 0.1, volume_ratio: 1.2, delta_oi: 10, oi_impulse: 0.3, direction: 0.2,
+    range_position: 0.8, long_open_pressure: 1, short_open_pressure: 0, long_caution_score: 60,
+    short_caution_score: 10, caution: null, caution_reason_codes: [], ...overrides,
+  }
+}
 
 function makeDeterministicHtdyBars(seed: number, length = 100): BarData[] {
   let state = seed >>> 0

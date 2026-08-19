@@ -504,7 +504,7 @@ export interface MainForceFuturesHoverDetails {
   stateReady: boolean
   cautionReady: boolean
   ready: boolean
-  availabilityReason: string | null
+  pointReason: string | null
   cautionAvailabilityReason: string | null
   state: string | null
   strength: number | null
@@ -518,4 +518,6 @@ export interface MainForceFuturesHoverDetails {
   shortScore: number | null
   caution: string | null
   reasonCodes: string[]
+  availabilityKind: 'unsupported' | 'input_unavailable' | 'derived_unavailable' | 'state_warmup' | 'caution_warmup' | 'conflict' | 'ready'
+  availabilityReason: string | null
 }

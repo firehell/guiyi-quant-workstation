@@ -2,13 +2,11 @@
 import type { HoverKlineContext } from '@/types/market'
 import { formatKlineHoverValue } from '@/utils/klineViewModel'
 
-function futuresAvailabilityLabel(details: NonNullable<HoverKlineContext['mainForceFutures']>): string {
-  if (!details.valid) return '输入不可用'
-  if (!details.stateReady) return '状态预热'
-  if (!details.cautionReady) return '小心预热'
-  if (details.cautionAvailabilityReason === 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT') return '方向冲突'
-  if (!details.ready) return '不可用'
-  return '就绪'
+function futuresAvailabilityLabel(kind: NonNullable<HoverKlineContext['mainForceFutures']>['availabilityKind']): string {
+  return {
+    unsupported: '不支持的身份', input_unavailable: '输入不可用', derived_unavailable: '派生输入不可用',
+    state_warmup: '状态预热', caution_warmup: '小心预热', conflict: '方向冲突', ready: '就绪',
+  }[kind]
 }
 
 defineProps<{
@@ -38,7 +36,9 @@ defineProps<{
     <template v-if="showMainForceFutures && context.mainForceFutures">
       <span>合约 {{ context.mainForceFutures.physicalContract || '—' }}</span>
       <span>状态 {{ context.mainForceFutures.state || '—' }}</span>
-      <span>可用性 {{ futuresAvailabilityLabel(context.mainForceFutures) }}</span>
+      <span>state_ready {{ context.mainForceFutures.stateReady ? 'true' : 'false' }}</span>
+      <span>caution_ready {{ context.mainForceFutures.cautionReady ? 'true' : 'false' }}</span>
+      <span>可用性 {{ futuresAvailabilityLabel(context.mainForceFutures.availabilityKind) }}</span>
       <span>强度 {{ formatKlineHoverValue(context.mainForceFutures.strength) }}</span>
       <span>价冲 {{ formatKlineHoverValue(context.mainForceFutures.priceImpulse) }}</span>
       <span>CLV {{ formatKlineHoverValue(context.mainForceFutures.clv) }}</span>
@@ -49,7 +49,7 @@ defineProps<{
       <span>多分 {{ formatKlineHoverValue(context.mainForceFutures.longScore) }}</span>
       <span>空分 {{ formatKlineHoverValue(context.mainForceFutures.shortScore) }}</span>
       <span>原因 {{ context.mainForceFutures.reasonCodes.join('、') || '—' }}</span>
-      <span>不可用原因 {{ context.mainForceFutures.availabilityReason || context.mainForceFutures.cautionAvailabilityReason || '—' }}</span>
+      <span>不可用原因 {{ context.mainForceFutures.availabilityReason || '—' }}</span>
     </template>
   </div>
 </template>
