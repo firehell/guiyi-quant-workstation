@@ -3,7 +3,14 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from .models import HistogramScale, IndicatorPoint, IndicatorSeries, MacdSeries, SeedPolicy, parameters_hash
+from .models import (
+    HistogramScale,
+    IndicatorPoint,
+    IndicatorSeries,
+    MacdSeries,
+    SeedPolicy,
+    parameters_hash,
+)
 
 
 MACD_VERSION = "v1-draft"
@@ -27,9 +34,18 @@ def macd_series(
     strategy-style MACD math without replacing any strategy call sites.
     """
 
-    _validate_macd_params(closes, fast, slow, signal, ema_seed_policy, histogram_scale, bar_ends, round_digits)
+    _validate_macd_params(
+        closes,
+        fast,
+        slow,
+        signal,
+        ema_seed_policy,
+        histogram_scale,
+        bar_ends,
+        round_digits,
+    )
 
-    params = {
+    params: dict[str, int | str] = {
         "fast": fast,
         "slow": slow,
         "signal": signal,
@@ -44,7 +60,9 @@ def macd_series(
     dif_indexes: list[int] = []
     valid_closes = [_finite_float(value) for value in closes]
 
-    for index, (fast_value, slow_value, close_value) in enumerate(zip(fast_ema, slow_ema, valid_closes, strict=True)):
+    for index, (fast_value, slow_value, close_value) in enumerate(
+        zip(fast_ema, slow_ema, valid_closes, strict=True)
+    ):
         if close_value is None or fast_value is None or slow_value is None:
             dif_raw.append(None)
             continue
@@ -80,31 +98,84 @@ def macd_series(
             continue
 
         if dif_value is None:
-            dif_points.append(IndicatorPoint(bar_end=bar_end, value=None, ready=False, valid=True, reason="warming_up"))
-            dea_points.append(IndicatorPoint(bar_end=bar_end, value=None, ready=False, valid=True, reason="warming_up"))
+            dif_points.append(
+                IndicatorPoint(
+                    bar_end=bar_end,
+                    value=None,
+                    ready=False,
+                    valid=True,
+                    reason="warming_up",
+                )
+            )
+            dea_points.append(
+                IndicatorPoint(
+                    bar_end=bar_end,
+                    value=None,
+                    ready=False,
+                    valid=True,
+                    reason="warming_up",
+                )
+            )
             histogram_points.append(
-                IndicatorPoint(bar_end=bar_end, value=None, ready=False, valid=True, reason="warming_up")
+                IndicatorPoint(
+                    bar_end=bar_end,
+                    value=None,
+                    ready=False,
+                    valid=True,
+                    reason="warming_up",
+                )
             )
             continue
 
         dif_points.append(
-            IndicatorPoint(bar_end=bar_end, value=round(dif_value, round_digits), ready=True, valid=True)
+            IndicatorPoint(
+                bar_end=bar_end,
+                value=round(dif_value, round_digits),
+                ready=True,
+                valid=True,
+            )
         )
 
         if dea_value is None:
-            dea_points.append(IndicatorPoint(bar_end=bar_end, value=None, ready=False, valid=True, reason="warming_up"))
+            dea_points.append(
+                IndicatorPoint(
+                    bar_end=bar_end,
+                    value=None,
+                    ready=False,
+                    valid=True,
+                    reason="warming_up",
+                )
+            )
             histogram_points.append(
-                IndicatorPoint(bar_end=bar_end, value=None, ready=False, valid=True, reason="warming_up")
+                IndicatorPoint(
+                    bar_end=bar_end,
+                    value=None,
+                    ready=False,
+                    valid=True,
+                    reason="warming_up",
+                )
             )
             continue
 
         histogram = (dif_value - dea_value) * histogram_scale
-        dea_points.append(IndicatorPoint(bar_end=bar_end, value=round(dea_value, round_digits), ready=True, valid=True))
+        dea_points.append(
+            IndicatorPoint(
+                bar_end=bar_end,
+                value=round(dea_value, round_digits),
+                ready=True,
+                valid=True,
+            )
+        )
         histogram_points.append(
-            IndicatorPoint(bar_end=bar_end, value=round(histogram, round_digits), ready=True, valid=True)
+            IndicatorPoint(
+                bar_end=bar_end,
+                value=round(histogram, round_digits),
+                ready=True,
+                valid=True,
+            )
         )
 
-    basis = {
+    basis: dict[str, int | str | bool] = {
         "input_field": "close",
         "closed_bar_only": True,
         "alignment": "one_point_per_input_bar",
@@ -114,7 +185,9 @@ def macd_series(
     }
     dif_series = _indicator_series("macd_dif", params, params_hash, dif_points, basis)
     dea_series = _indicator_series("macd_dea", params, params_hash, dea_points, basis)
-    histogram_series = _indicator_series("macd_histogram", params, params_hash, histogram_points, basis)
+    histogram_series = _indicator_series(
+        "macd_histogram", params, params_hash, histogram_points, basis
+    )
 
     return MacdSeries(
         indicator_code="macd",
@@ -163,7 +236,9 @@ def _ema_values(
     return _ema_values_sma_window(values, period)
 
 
-def _ema_values_first_value(values: Sequence[float | int | None], period: int) -> list[float | None]:
+def _ema_values_first_value(
+    values: Sequence[float | int | None], period: int
+) -> list[float | None]:
     alpha = 2 / (period + 1)
     result: list[float | None] = []
     previous: float | None = None
@@ -178,7 +253,9 @@ def _ema_values_first_value(values: Sequence[float | int | None], period: int) -
     return result
 
 
-def _ema_values_sma_window(values: Sequence[float | int | None], period: int) -> list[float | None]:
+def _ema_values_sma_window(
+    values: Sequence[float | int | None], period: int
+) -> list[float | None]:
     alpha = 2 / (period + 1)
     result: list[float | None] = [None] * len(values)
     previous: float | None = None
@@ -190,7 +267,9 @@ def _ema_values_sma_window(values: Sequence[float | int | None], period: int) ->
         if index < period - 1:
             continue
         if previous is None:
-            seed_window = [_finite_float(item) for item in values[index - period + 1 : index + 1]]
+            seed_window = [
+                _finite_float(item) for item in values[index - period + 1 : index + 1]
+            ]
             if any(item is None for item in seed_window):
                 continue
             previous = sum(item for item in seed_window if item is not None) / period
@@ -232,7 +311,9 @@ def _bar_end(bar_ends: Sequence[str | None] | None, index: int) -> str | None:
 
 
 def _invalid_point(bar_end: str | None, reason: str) -> IndicatorPoint:
-    return IndicatorPoint(bar_end=bar_end, value=None, ready=True, valid=False, reason=reason)
+    return IndicatorPoint(
+        bar_end=bar_end, value=None, ready=True, valid=False, reason=reason
+    )
 
 
 def _macd_warmup_bars(slow: int, signal: int, ema_seed_policy: SeedPolicy) -> int:

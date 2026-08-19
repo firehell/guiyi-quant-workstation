@@ -6,9 +6,7 @@ calculation source for `huotian_dayou_strict_v1`.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
-
+from collections.abc import Sequence, Sized
 import numpy as np
 
 NUMERIC_FIELDS = ("zk1", "zd1", "zd2", "var23")
@@ -48,7 +46,11 @@ def compute_strict_fields(
     body_high = np.maximum(o, c)
     body_low = np.minimum(o, c)
     over_low = np.maximum(body_low, zk1)
-    yellow_candle = ((zd1 > low_arr) & (zd1 < h)) | ((zd1 > np.minimum(c, o)) & (zd1 < np.maximum(c, o))) | (zd1 > h)
+    yellow_candle = (
+        ((zd1 > low_arr) & (zd1 < h))
+        | ((zd1 > np.minimum(c, o)) & (zd1 < np.maximum(c, o)))
+        | (zd1 > h)
+    )
     white_candle = (body_high > zk1) & (body_high > over_low)
     buy_observation = _new_third_consecutive(yellow_candle)
     sell_observation = _new_third_consecutive(white_candle)
@@ -56,8 +58,16 @@ def compute_strict_fields(
     var23_num = _double_trailing_ema(delta, var23_period)
     var23_den = _double_trailing_ema(np.abs(delta), var23_period)
     with np.errstate(divide="ignore", invalid="ignore"):
-        var23 = np.where(np.isfinite(var23_den) & (var23_den != 0), 100.0 * var23_num / var23_den, np.nan)
-    callback_buy = (_llv(var23, 2) == _llv(var23, 7)) & (_count(var23 < 0, 2) > 0) & _cross(var23, _ma(var23, 2))
+        var23 = np.where(
+            np.isfinite(var23_den) & (var23_den != 0),
+            100.0 * var23_num / var23_den,
+            np.nan,
+        )
+    callback_buy = (
+        (_llv(var23, 2) == _llv(var23, 7))
+        & (_count(var23 < 0, 2) > 0)
+        & _cross(var23, _ma(var23, 2))
+    )
     xg_observation = (zd1 > h) & callback_buy & (low_arr <= zd1)
     return {
         "zk1": zk1,
@@ -73,11 +83,17 @@ def compute_strict_fields(
     }
 
 
-def _double_trailing_ema(values: Sequence[float], period: int) -> np.ndarray:
+def _double_trailing_ema(
+    values: Sequence[float] | np.ndarray,
+    period: int,
+) -> np.ndarray:
     return _trailing_ema_sma_seed(_trailing_ema_sma_seed(values, period), period)
 
 
-def _trailing_ema_sma_seed(values: Sequence[float], period: int) -> np.ndarray:
+def _trailing_ema_sma_seed(
+    values: Sequence[float] | np.ndarray,
+    period: int,
+) -> np.ndarray:
     arr = np.asarray(values, dtype=float)
     out = np.full(len(arr), np.nan, dtype=float)
     alpha = 2.0 / (period + 1)
@@ -100,7 +116,7 @@ def _trailing_ema_sma_seed(values: Sequence[float], period: int) -> np.ndarray:
     return out
 
 
-def _ma(values: Sequence[float], period: int) -> np.ndarray:
+def _ma(values: Sequence[float] | np.ndarray, period: int) -> np.ndarray:
     arr = np.asarray(values, dtype=float)
     out = np.full(len(arr), np.nan, dtype=float)
     for index in range(period - 1, len(arr)):
@@ -110,14 +126,14 @@ def _ma(values: Sequence[float], period: int) -> np.ndarray:
     return out
 
 
-def _ref(values: Sequence[float], periods: int = 1) -> np.ndarray:
+def _ref(values: Sequence[float] | np.ndarray, periods: int = 1) -> np.ndarray:
     arr = np.asarray(values, dtype=float)
     out = np.full(len(arr), np.nan, dtype=float)
     out[periods:] = arr[:-periods]
     return out
 
 
-def _llv(values: Sequence[float], period: int) -> np.ndarray:
+def _llv(values: Sequence[float] | np.ndarray, period: int) -> np.ndarray:
     arr = np.asarray(values, dtype=float)
     out = np.full(len(arr), np.nan, dtype=float)
     for index in range(len(arr)):
@@ -128,7 +144,7 @@ def _llv(values: Sequence[float], period: int) -> np.ndarray:
     return out
 
 
-def _count(condition: Sequence[bool], period: int) -> np.ndarray:
+def _count(condition: Sequence[bool] | np.ndarray, period: int) -> np.ndarray:
     flags = np.asarray(condition, dtype=bool)
     out = np.zeros(len(flags), dtype=int)
     for index in range(len(flags)):
@@ -136,29 +152,42 @@ def _count(condition: Sequence[bool], period: int) -> np.ndarray:
     return out
 
 
-def _cross(left: Sequence[float], right: Sequence[float]) -> np.ndarray:
+def _cross(
+    left: Sequence[float] | np.ndarray,
+    right: Sequence[float] | np.ndarray,
+) -> np.ndarray:
     left_arr = np.asarray(left, dtype=float)
     right_arr = np.asarray(right, dtype=float)
     _require_same_length(left=left_arr, right=right_arr)
     out = np.zeros(len(left_arr), dtype=bool)
     for index in range(1, len(left_arr)):
-        values = (left_arr[index - 1], right_arr[index - 1], left_arr[index], right_arr[index])
+        values = (
+            left_arr[index - 1],
+            right_arr[index - 1],
+            left_arr[index],
+            right_arr[index],
+        )
         if not all(np.isfinite(value) for value in values):
             continue
-        out[index] = left_arr[index - 1] <= right_arr[index - 1] and left_arr[index] > right_arr[index]
+        out[index] = (
+            left_arr[index - 1] <= right_arr[index - 1]
+            and left_arr[index] > right_arr[index]
+        )
     return out
 
 
-def _new_third_consecutive(flags: Sequence[bool]) -> np.ndarray:
+def _new_third_consecutive(flags: Sequence[bool] | np.ndarray) -> np.ndarray:
     arr = np.asarray(flags, dtype=bool)
     out = np.zeros(len(arr), dtype=bool)
     for index in range(2, len(arr)):
         previous_three = arr[index] and arr[index - 1] and arr[index - 2]
-        out[index] = previous_three and not bool(arr[index - 3] if index >= 3 else False)
+        out[index] = previous_three and not bool(
+            arr[index - 3] if index >= 3 else False
+        )
     return out
 
 
-def _require_same_length(**arrays: Sequence[Any]) -> None:
+def _require_same_length(**arrays: Sized) -> None:
     lengths = {name: len(value) for name, value in arrays.items()}
     if len(set(lengths.values())) != 1:
         raise ValueError(f"input lengths must match: {lengths}")

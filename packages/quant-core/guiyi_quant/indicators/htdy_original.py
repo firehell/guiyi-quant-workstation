@@ -10,6 +10,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from collections.abc import Sized
 from typing import Any, Sequence
 
 import numpy as np
@@ -93,7 +94,7 @@ def normalize_period(period: int) -> int:
     return value + 1 if value % 2 == 0 else value
 
 
-def xma(values: Sequence[float], period: int) -> np.ndarray:
+def xma(values: Sequence[float] | np.ndarray, period: int) -> np.ndarray:
     """Centered, clipped XMA that ignores non-finite values in its window."""
 
     array = _float_array(values, name="values")
@@ -213,7 +214,11 @@ def _ema_finite(values: np.ndarray, period: int) -> np.ndarray:
     for index, value in enumerate(values):
         if not np.isfinite(value):
             continue
-        previous = float(value) if previous is None else alpha * float(value) + (1.0 - alpha) * previous
+        previous = (
+            float(value)
+            if previous is None
+            else alpha * float(value) + (1.0 - alpha) * previous
+        )
         output[index] = previous
     return output
 
@@ -221,11 +226,20 @@ def _ema_finite(values: np.ndarray, period: int) -> np.ndarray:
 def _new_third_consecutive(flags: np.ndarray) -> np.ndarray:
     output = np.zeros(len(flags), dtype=bool)
     for index in range(2, len(flags)):
-        output[index] = bool(flags[index] and flags[index - 1] and flags[index - 2] and not (flags[index - 3] if index >= 3 else False))
+        output[index] = bool(
+            flags[index]
+            and flags[index - 1]
+            and flags[index - 2]
+            and not (flags[index - 3] if index >= 3 else False)
+        )
     return output
 
 
-def _float_array(values: Sequence[float], *, name: str) -> np.ndarray:
+def _float_array(
+    values: Sequence[float] | np.ndarray,
+    *,
+    name: str,
+) -> np.ndarray:
     try:
         raw = np.asarray(values, dtype=object)
     except (TypeError, ValueError) as exc:
@@ -243,12 +257,14 @@ def _datetime_array(values: Sequence[Any]) -> np.ndarray:
         array = np.asarray(values, dtype=object)
     except (TypeError, ValueError) as exc:
         raise ValueError("datetimes must be one-dimensional") from exc
-    if array.ndim != 1 or any(isinstance(value, (list, tuple, np.ndarray)) for value in array):
+    if array.ndim != 1 or any(
+        isinstance(value, (list, tuple, np.ndarray)) for value in array
+    ):
         raise ValueError("datetimes must be one-dimensional")
     return array
 
 
-def _require_same_length(**arrays: Sequence[Any]) -> None:
+def _require_same_length(**arrays: Sized) -> None:
     lengths = {name: len(value) for name, value in arrays.items()}
     if len(set(lengths.values())) != 1:
         raise ValueError(f"input lengths must match: {lengths}")
@@ -276,7 +292,9 @@ def _scalar(value: Any) -> Any:
         try:
             normalized = isoformat()
         except (TypeError, ValueError) as exc:
-            raise ValueError("datetime value must be JSON-serializable ISO-8601 text") from exc
+            raise ValueError(
+                "datetime value must be JSON-serializable ISO-8601 text"
+            ) from exc
         if isinstance(normalized, str):
             return normalized
     raise ValueError("datetime value must be JSON-serializable ISO-8601 text")

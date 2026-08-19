@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Sequence, Sized
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Any, Literal, SupportsFloat, SupportsIndex, TypedDict, cast
 
 import numpy as np
 
@@ -31,38 +31,74 @@ MainForceMirrorFuturesCaution = Literal[
     "short_chase_caution",
 ]
 
-DEFAULT_PARAMETERS = MappingProxyType(
-    {
-        "atr_period": 14,
-        "volume_window": 20,
-        "oi_impulse_ema_period": 20,
-        "range_window": 20,
-        "pressure_divergence_window": 10,
-        "direction_price_weight": 0.7,
-        "direction_clv_weight": 0.3,
-        "direction_deadband": 0.15,
-        "oi_deadband": 0.25,
-        "volume_ratio_clip": 3.0,
-        "price_impulse_clip": 3.0,
-        "oi_impulse_clip": 3.0,
-        "strength_scale": 25.0,
-        "turnover_display_cap": 15.0,
-        "upper_location_threshold": 0.85,
-        "lower_location_threshold": 0.15,
-        "liquidation_dominated_oi_threshold": 0.5,
-        "pressure_confirmation_ratio": 0.7,
-        "high_volume_threshold": 1.5,
-        "clv_rejection_threshold": 0.25,
-        "wick_rejection_threshold": 0.35,
-        "caution_threshold": 70,
-        "rearm_score_threshold": 40,
-        "rearm_low_score_bars": 3,
-        "rearm_build_bars": 2,
-        "long_rearm_range_threshold": 0.65,
-        "short_rearm_range_threshold": 0.35,
-        "round_digits": 6,
-        "rounding_policy": "half_away_from_zero_binary64",
-    }
+
+class _MainForceMirrorFuturesParameters(TypedDict):
+    atr_period: int
+    volume_window: int
+    oi_impulse_ema_period: int
+    range_window: int
+    pressure_divergence_window: int
+    direction_price_weight: float
+    direction_clv_weight: float
+    direction_deadband: float
+    oi_deadband: float
+    volume_ratio_clip: float
+    price_impulse_clip: float
+    oi_impulse_clip: float
+    strength_scale: float
+    turnover_display_cap: float
+    upper_location_threshold: float
+    lower_location_threshold: float
+    liquidation_dominated_oi_threshold: float
+    pressure_confirmation_ratio: float
+    high_volume_threshold: float
+    clv_rejection_threshold: float
+    wick_rejection_threshold: float
+    caution_threshold: int
+    rearm_score_threshold: int
+    rearm_low_score_bars: int
+    rearm_build_bars: int
+    long_rearm_range_threshold: float
+    short_rearm_range_threshold: float
+    round_digits: int
+    rounding_policy: str
+
+
+DEFAULT_PARAMETERS = cast(
+    _MainForceMirrorFuturesParameters,
+    MappingProxyType(
+        {
+            "atr_period": 14,
+            "volume_window": 20,
+            "oi_impulse_ema_period": 20,
+            "range_window": 20,
+            "pressure_divergence_window": 10,
+            "direction_price_weight": 0.7,
+            "direction_clv_weight": 0.3,
+            "direction_deadband": 0.15,
+            "oi_deadband": 0.25,
+            "volume_ratio_clip": 3.0,
+            "price_impulse_clip": 3.0,
+            "oi_impulse_clip": 3.0,
+            "strength_scale": 25.0,
+            "turnover_display_cap": 15.0,
+            "upper_location_threshold": 0.85,
+            "lower_location_threshold": 0.15,
+            "liquidation_dominated_oi_threshold": 0.5,
+            "pressure_confirmation_ratio": 0.7,
+            "high_volume_threshold": 1.5,
+            "clv_rejection_threshold": 0.25,
+            "wick_rejection_threshold": 0.35,
+            "caution_threshold": 70,
+            "rearm_score_threshold": 40,
+            "rearm_low_score_bars": 3,
+            "rearm_build_bars": 2,
+            "long_rearm_range_threshold": 0.65,
+            "short_rearm_range_threshold": 0.35,
+            "round_digits": 6,
+            "rounding_policy": "half_away_from_zero_binary64",
+        }
+    ),
 )
 
 _PHYSICAL_CONTRACT_MISSING = "MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING"
@@ -198,10 +234,10 @@ def _evaluate_main_force_mirror_futures_caution_evidence(
     clv: float,
     long_open_pressure: float,
     short_open_pressure: float,
-    prior_highs: Sequence[float],
-    prior_lows: Sequence[float],
-    prior_long_open_pressures: Sequence[float],
-    prior_short_open_pressures: Sequence[float],
+    prior_highs: Sequence[float] | np.ndarray,
+    prior_lows: Sequence[float] | np.ndarray,
+    prior_long_open_pressures: Sequence[float] | np.ndarray,
+    prior_short_open_pressures: Sequence[float] | np.ndarray,
 ) -> MainForceMirrorFuturesCautionEvidence:
     """Evaluate all eight frozen caution reasons from raw state-ready values."""
 
@@ -235,8 +271,7 @@ def _evaluate_main_force_mirror_futures_caution_evidence(
         reasons.append("LONG_UPPER_EXTREME")
     if (
         state == "short_cover"
-        and oi_impulse
-        <= -DEFAULT_PARAMETERS["liquidation_dominated_oi_threshold"]
+        and oi_impulse <= -DEFAULT_PARAMETERS["liquidation_dominated_oi_threshold"]
     ):
         long_score += 30.0
         reasons.append("LONG_SHORT_COVER_DOMINATED")
@@ -260,8 +295,7 @@ def _evaluate_main_force_mirror_futures_caution_evidence(
         reasons.append("SHORT_LOWER_EXTREME")
     if (
         state == "long_liquidation"
-        and oi_impulse
-        <= -DEFAULT_PARAMETERS["liquidation_dominated_oi_threshold"]
+        and oi_impulse <= -DEFAULT_PARAMETERS["liquidation_dominated_oi_threshold"]
     ):
         short_score += 30.0
         reasons.append("SHORT_LONG_LIQUIDATION_DOMINATED")
@@ -396,12 +430,9 @@ def step_main_force_mirror_futures_latch(
         short_build_streak = (
             short_build_streak + 1 if position_state == "short_build" else 0
         )
-        if (
-            short_low_score_streak >= DEFAULT_PARAMETERS["rearm_low_score_bars"]
-            and (
-                range_position > DEFAULT_PARAMETERS["short_rearm_range_threshold"]
-                or short_build_streak >= DEFAULT_PARAMETERS["rearm_build_bars"]
-            )
+        if short_low_score_streak >= DEFAULT_PARAMETERS["rearm_low_score_bars"] and (
+            range_position > DEFAULT_PARAMETERS["short_rearm_range_threshold"]
+            or short_build_streak >= DEFAULT_PARAMETERS["rearm_build_bars"]
         ):
             short_armed = True
             short_low_score_streak = 0
@@ -579,7 +610,9 @@ def compute_main_force_mirror_futures(
         sort_keys=True,
         separators=(",", ":"),
     )
-    parameters_hash = hashlib.sha256(parameters_payload.encode("utf-8")).hexdigest()[:16]
+    parameters_hash = hashlib.sha256(parameters_payload.encode("utf-8")).hexdigest()[
+        :16
+    ]
     return MainForceMirrorFuturesResult(
         datetimes=raw_datetimes,
         physical_contract=normalized_contracts,
@@ -668,7 +701,9 @@ def _apply_readiness(
             continue
         start = index
         contract = contracts[start]
-        while index + 1 < count and valid[index + 1] and contracts[index + 1] == contract:
+        while (
+            index + 1 < count and valid[index + 1] and contracts[index + 1] == contract
+        ):
             index += 1
         end = index + 1
 
@@ -711,10 +746,7 @@ def _apply_readiness(
                 reason[output_index] = _RANGE_INVALID
                 continue
             oi_baseline_index = block_index - 1
-            if (
-                oi_baseline_index < 0
-                or not np.isfinite(oi_baseline[oi_baseline_index])
-            ):
+            if oi_baseline_index < 0 or not np.isfinite(oi_baseline[oi_baseline_index]):
                 reason[output_index] = _WARMUP
                 continue
             state_ready[output_index] = True
@@ -777,14 +809,10 @@ def _apply_readiness(
                 )
             )
             raw_long_open_pressure = (
-                max(raw_direction, 0.0)
-                * max(raw_oi_impulse, 0.0)
-                * participation
+                max(raw_direction, 0.0) * max(raw_oi_impulse, 0.0) * participation
             )
             raw_short_open_pressure = (
-                max(-raw_direction, 0.0)
-                * max(raw_oi_impulse, 0.0)
-                * participation
+                max(-raw_direction, 0.0) * max(raw_oi_impulse, 0.0) * participation
             )
             raw_strength = float(
                 np.clip(
@@ -855,7 +883,9 @@ def _apply_readiness(
             )
 
             prior_start = output_index - 10
-            if block_index >= 30 and bool(np.all(state_ready[prior_start:output_index])):
+            if block_index >= 30 and bool(
+                np.all(state_ready[prior_start:output_index])
+            ):
                 caution_ready[output_index] = True
                 caution_reason[output_index] = None
                 prior_slice = slice(block_index - 10, block_index)
@@ -876,11 +906,11 @@ def _apply_readiness(
                     prior_long_open_pressures=raw_long_pressures[prior_slice],
                     prior_short_open_pressures=raw_short_pressures[prior_slice],
                 )
-                long_caution_score[output_index] = (
-                    round_half_away_from_zero_binary64(evidence.long_score, digits)
+                long_caution_score[output_index] = round_half_away_from_zero_binary64(
+                    evidence.long_score, digits
                 )
-                short_caution_score[output_index] = (
-                    round_half_away_from_zero_binary64(evidence.short_score, digits)
+                short_caution_score[output_index] = round_half_away_from_zero_binary64(
+                    evidence.short_score, digits
                 )
                 caution_reason_codes[output_index] = evidence.reason_codes
                 latch_step = step_main_force_mirror_futures_latch(
@@ -919,7 +949,9 @@ def _wilder_atr14(
     for index, (high_value, low_value, close_value) in enumerate(
         zip(high, low, close, strict=True)
     ):
-        if not all(np.isfinite(value) for value in (high_value, low_value, close_value)):
+        if not all(
+            np.isfinite(value) for value in (high_value, low_value, close_value)
+        ):
             previous_close = None
             previous_atr = None
             seed = []
@@ -1007,7 +1039,7 @@ def _object_array(values: Sequence[Any], *, name: str) -> np.ndarray:
     return array
 
 
-def _require_same_length(**arrays: Sequence[Any]) -> None:
+def _require_same_length(**arrays: Sized) -> None:
     lengths = {name: len(array) for name, array in arrays.items()}
     if len(set(lengths.values())) != 1:
         raise ValueError(f"input lengths must match: {lengths}")
@@ -1024,7 +1056,7 @@ def _finite_number(value: object) -> float | None:
     if value is None or isinstance(value, (bool, np.bool_)):
         return None
     try:
-        number = float(value)
+        number = float(cast(str | bytes | SupportsFloat | SupportsIndex, value))
     except (TypeError, ValueError, OverflowError):
         return None
     return number if np.isfinite(number) else None

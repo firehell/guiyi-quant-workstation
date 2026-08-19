@@ -9,6 +9,7 @@ The ``caution`` event intentionally reproduces the provided TongDaXin logic:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Sized
 from typing import Any, Literal, Sequence
 
 import numpy as np
@@ -42,7 +43,9 @@ def classify_main_force_mirror_state(
 ) -> MainForceMirrorState:
     """Map causal OHLCV proxy features to one of six observation states."""
 
-    if not all(np.isfinite(value) for value in (range_position, flow, flow_delta, price_delta)):
+    if not all(
+        np.isfinite(value) for value in (range_position, flow, flow_delta, price_delta)
+    ):
         raise ValueError("classification inputs must be finite")
 
     if flow < 0:
@@ -115,7 +118,9 @@ def compute_main_force_mirror(
 
     volume_mean = _rolling_mean(volume_values, volume_window)
     volume_ratio = np.full(count, np.nan, dtype=float)
-    valid_volume = np.isfinite(volume_mean) & (volume_mean > 0) & np.isfinite(volume_values)
+    valid_volume = (
+        np.isfinite(volume_mean) & (volume_mean > 0) & np.isfinite(volume_values)
+    )
     volume_ratio[valid_volume] = np.clip(
         volume_values[valid_volume] / volume_mean[valid_volume],
         0.0,
@@ -126,9 +131,10 @@ def compute_main_force_mirror(
     clv = np.zeros(count, dtype=float)
     valid_range = np.isfinite(price_range) & (price_range > 0)
     clv[valid_range] = (
-        (2.0 * close_values[valid_range] - high_values[valid_range] - low_values[valid_range])
-        / price_range[valid_range]
-    )
+        2.0 * close_values[valid_range]
+        - high_values[valid_range]
+        - low_values[valid_range]
+    ) / price_range[valid_range]
     clv[~np.isfinite(clv)] = 0.0
 
     raw_flow = clv * volume_ratio
@@ -137,9 +143,12 @@ def compute_main_force_mirror(
     rolling_low = _rolling_extreme(low_values, range_window, maximum=False)
     range_position = np.full(count, np.nan, dtype=float)
     rolling_width = rolling_high - rolling_low
-    valid_position = np.isfinite(rolling_width) & (rolling_width > 0) & np.isfinite(close_values)
+    valid_position = (
+        np.isfinite(rolling_width) & (rolling_width > 0) & np.isfinite(close_values)
+    )
     range_position[valid_position] = np.clip(
-        (close_values[valid_position] - rolling_low[valid_position]) / rolling_width[valid_position],
+        (close_values[valid_position] - rolling_low[valid_position])
+        / rolling_width[valid_position],
         0.0,
         1.0,
     )
@@ -261,7 +270,11 @@ def _ema_finite(values: np.ndarray, period: int) -> np.ndarray:
     for index, value in enumerate(values):
         if not np.isfinite(value):
             continue
-        previous = float(value) if previous is None else alpha * float(value) + (1.0 - alpha) * previous
+        previous = (
+            float(value)
+            if previous is None
+            else alpha * float(value) + (1.0 - alpha) * previous
+        )
         output[index] = previous
     return output
 
@@ -279,12 +292,14 @@ def _object_array(values: Sequence[Any], *, name: str) -> np.ndarray:
         array = np.asarray(values, dtype=object)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be one-dimensional") from exc
-    if array.ndim != 1 or any(isinstance(value, (list, tuple, np.ndarray)) for value in array):
+    if array.ndim != 1 or any(
+        isinstance(value, (list, tuple, np.ndarray)) for value in array
+    ):
         raise ValueError(f"{name} must be one-dimensional")
     return array
 
 
-def _require_same_length(**arrays: Sequence[Any]) -> None:
+def _require_same_length(**arrays: Sized) -> None:
     lengths = {name: len(value) for name, value in arrays.items()}
     if len(set(lengths.values())) != 1:
         raise ValueError(f"input lengths must match: {lengths}")
