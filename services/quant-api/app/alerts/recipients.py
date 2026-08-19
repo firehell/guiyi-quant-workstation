@@ -7,8 +7,8 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import stat
-import tempfile
 from typing import Any
 import unicodedata
 
@@ -118,15 +118,16 @@ def initialize_recipients_from_owner(
     owner_path: Path,
     recipients_path: Path,
 ) -> RecipientInitializationResult:
-    temporary: Path | None = None
+    parent_descriptor: int | None = None
+    parent_metadata: os.stat_result | None = None
+    temporary_name: str | None = None
     temporary_descriptor: int | None = None
+    published = False
+    published_identity: tuple[int, int] | None = None
     try:
-        _validate_private_parent(recipients_path.parent)
-        try:
-            recipients_path.lstat()
-        except FileNotFoundError:
-            pass
-        else:
+        parent_descriptor, parent_metadata = _open_private_parent(recipients_path.parent)
+        target_name = recipients_path.name
+        if _entry_exists(parent_descriptor, target_name):
             raise ValueError
         owner = load_clawbot_owner(owner_path)
         directory = _parse_directory(
@@ -143,11 +144,10 @@ def initialize_recipients_from_owner(
                 "retired_aliases": [],
             }
         )
-        temporary_descriptor, raw_path = tempfile.mkstemp(
-            prefix=f".{recipients_path.name}.",
-            dir=recipients_path.parent,
+        temporary_descriptor, temporary_name = _create_private_temporary(
+            parent_descriptor,
+            target_name,
         )
-        temporary = Path(raw_path)
         os.fchmod(temporary_descriptor, 0o600)
         payload = {
             "schema_version": directory.schema_version,
@@ -167,11 +167,52 @@ def initialize_recipients_from_owner(
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.link(temporary, recipients_path, follow_symlinks=False)
-        temporary.unlink()
-        temporary = None
-        _fsync_directory(recipients_path.parent)
-        loaded = load_recipient_directory(recipients_path)
+        _validate_parent_binding(
+            recipients_path.parent,
+            parent_descriptor,
+            parent_metadata,
+        )
+        os.link(
+            temporary_name,
+            target_name,
+            src_dir_fd=parent_descriptor,
+            dst_dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        published = True
+        target_metadata = os.stat(
+            target_name,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        temporary_metadata = os.stat(
+            temporary_name,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        published_identity = (target_metadata.st_dev, target_metadata.st_ino)
+        if published_identity != (temporary_metadata.st_dev, temporary_metadata.st_ino):
+            raise ValueError
+        os.fsync(parent_descriptor)
+        _validate_parent_binding(
+            recipients_path.parent,
+            parent_descriptor,
+            parent_metadata,
+        )
+        loaded = _load_recipient_directory_at(parent_descriptor, target_name)
+        _validate_parent_binding(
+            recipients_path.parent,
+            parent_descriptor,
+            parent_metadata,
+        )
+        os.unlink(temporary_name, dir_fd=parent_descriptor)
+        temporary_name = None
+        os.fsync(parent_descriptor)
+        _validate_parent_binding(
+            recipients_path.parent,
+            parent_descriptor,
+            parent_metadata,
+        )
         return RecipientInitializationResult(
             channel=loaded.channel,
             recipient_count=len(loaded.recipients),
@@ -192,12 +233,27 @@ def initialize_recipients_from_owner(
                 os.close(temporary_descriptor)
             except OSError:
                 pass
-        if temporary is not None:
+        if parent_descriptor is not None:
+            if published:
+                _unlink_published_target(
+                    parent_descriptor,
+                    recipients_path.name,
+                    temporary_name,
+                    published_identity,
+                )
+            if temporary_name is not None:
+                _unlink_entry(parent_descriptor, temporary_name)
             try:
-                temporary.unlink(missing_ok=True)
+                os.fsync(parent_descriptor)
             except OSError:
                 pass
         raise ClawbotRecipientError("CLAWBOT_RECIPIENTS_INVALID") from None
+    finally:
+        if parent_descriptor is not None:
+            try:
+                os.close(parent_descriptor)
+            except OSError:
+                pass
 
 
 def validate_clawbot_recipient_ids(account_id: object, target_user_id: object) -> None:
@@ -227,6 +283,50 @@ def _validate_private_parent(parent: Path) -> os.stat_result:
     return metadata
 
 
+def _open_private_parent(parent: Path) -> tuple[int, os.stat_result]:
+    descriptor: int | None = None
+    metadata = _validate_private_parent(parent)
+    try:
+        descriptor = os.open(
+            parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+        opened = os.fstat(descriptor)
+        _validate_private_parent_metadata(opened)
+        if (metadata.st_dev, metadata.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ValueError
+        return descriptor, metadata
+    except Exception:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise
+
+
+def _validate_parent_binding(
+    parent: Path,
+    descriptor: int,
+    expected: os.stat_result,
+) -> None:
+    current = _validate_private_parent(parent)
+    opened = os.fstat(descriptor)
+    _validate_private_parent_metadata(opened)
+    expected_identity = (expected.st_dev, expected.st_ino)
+    if (
+        (current.st_dev, current.st_ino) != expected_identity
+        or (opened.st_dev, opened.st_ino) != expected_identity
+    ):
+        raise ValueError
+
+
+def _validate_private_parent_metadata(metadata: os.stat_result) -> None:
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+        or metadata.st_uid != os.getuid()
+    ):
+        raise ValueError
+
+
 def _validate_private_file(metadata: os.stat_result) -> None:
     if (
         not stat.S_ISREG(metadata.st_mode)
@@ -234,6 +334,86 @@ def _validate_private_file(metadata: os.stat_result) -> None:
         or metadata.st_uid != os.getuid()
     ):
         raise ValueError
+
+
+def _entry_exists(parent_descriptor: int, name: str) -> bool:
+    try:
+        os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _create_private_temporary(parent_descriptor: int, target_name: str) -> tuple[int, str]:
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    for _ in range(16):
+        name = f".{target_name}.{secrets.token_hex(16)}"
+        try:
+            descriptor = os.open(name, flags, 0o600, dir_fd=parent_descriptor)
+        except FileExistsError:
+            continue
+        return descriptor, name
+    raise OSError
+
+
+def _load_recipient_directory_at(
+    parent_descriptor: int,
+    name: str,
+) -> RecipientDirectory:
+    descriptor: int | None = None
+    try:
+        metadata = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+        _validate_private_file(metadata)
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent_descriptor,
+        )
+        opened = os.fstat(descriptor)
+        _validate_private_file(opened)
+        if (metadata.st_dev, metadata.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ValueError
+        with os.fdopen(descriptor, encoding="utf-8") as stream:
+            descriptor = None
+            return _parse_directory(json.load(stream))
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _unlink_published_target(
+    parent_descriptor: int,
+    target_name: str,
+    temporary_name: str | None,
+    published_identity: tuple[int, int] | None,
+) -> None:
+    try:
+        target = os.stat(target_name, dir_fd=parent_descriptor, follow_symlinks=False)
+        expected_identity = published_identity
+        if expected_identity is None and temporary_name is not None:
+            temporary = os.stat(
+                temporary_name,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+            expected_identity = (temporary.st_dev, temporary.st_ino)
+        if expected_identity == (target.st_dev, target.st_ino):
+            os.unlink(target_name, dir_fd=parent_descriptor)
+    except OSError:
+        pass
+
+
+def _unlink_entry(parent_descriptor: int, name: str) -> None:
+    try:
+        os.unlink(name, dir_fd=parent_descriptor)
+    except OSError:
+        pass
 
 
 def _parse_directory(payload: Any) -> RecipientDirectory:
@@ -310,14 +490,3 @@ def _validate_identifier(value: object) -> None:
         or any(unicodedata.category(character).startswith("C") for character in value)
     ):
         raise ValueError
-
-
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(
-        path,
-        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-    )
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)

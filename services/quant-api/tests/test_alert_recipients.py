@@ -55,6 +55,14 @@ def _write(path: Path, payload: object, *, mode: int = 0o600) -> Path:
     return path
 
 
+def _lexists(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def test_loads_frozen_directory_in_owner_first_alias_order(tmp_path: Path) -> None:
     path = _write(
         _private_path(tmp_path),
@@ -411,14 +419,15 @@ def test_initializer_closes_temporary_descriptor_on_early_failure(
         target_user_id=OWNER_TARGET,
     )
     opened_descriptors: list[int] = []
-    original_mkstemp = recipients.tempfile.mkstemp
+    original_open = os.open
 
-    def recording_mkstemp(*args: object, **kwargs: object) -> tuple[int, str]:
-        descriptor, raw_path = original_mkstemp(*args, **kwargs)
-        opened_descriptors.append(descriptor)
-        return descriptor, raw_path
+    def recording_open(candidate: object, flags: int, *args: object, **kwargs: object) -> int:
+        descriptor = original_open(candidate, flags, *args, **kwargs)
+        if flags & os.O_CREAT:
+            opened_descriptors.append(descriptor)
+        return descriptor
 
-    monkeypatch.setattr(recipients.tempfile, "mkstemp", recording_mkstemp)
+    monkeypatch.setattr(recipients.os, "open", recording_open)
     monkeypatch.setattr(
         recipients.os,
         "fchmod",
@@ -433,3 +442,142 @@ def test_initializer_closes_temporary_descriptor_on_early_failure(
         os.fstat(opened_descriptors[0])
     assert not recipients_path.exists()
     assert list(owner_path.parent.glob(f".{recipients_path.name}.*")) == []
+
+
+@pytest.mark.parametrize("replacement_mode", [0o700, 0o755], ids=["safe", "unsafe"])
+def test_initializer_rejects_parent_replacement_before_temporary_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement_mode: int,
+) -> None:
+    owner_path = _private_path(tmp_path, "owner.json")
+    recipients_path = owner_path.parent / "recipients.json"
+    write_clawbot_owner_atomic(
+        owner_path,
+        account_id=ACCOUNT_ID,
+        target_user_id=OWNER_TARGET,
+    )
+    owner_before = owner_path.read_bytes()
+    original_parent = owner_path.parent
+    moved_parent = tmp_path / "moved-private"
+    replacement_parent = tmp_path / "replacement-private"
+    replacement_parent.mkdir(mode=0o700)
+    replacement_parent.chmod(replacement_mode)
+    original_open = os.open
+    replaced = False
+
+    def replacing_open(candidate: object, flags: int, *args: object, **kwargs: object) -> int:
+        nonlocal replaced
+        if flags & os.O_CREAT and not replaced:
+            replaced = True
+            original_parent.rename(moved_parent)
+            replacement_parent.rename(original_parent)
+        return original_open(candidate, flags, *args, **kwargs)
+
+    monkeypatch.setattr(recipients.os, "open", replacing_open)
+
+    with pytest.raises(ClawbotRecipientError) as captured:
+        initialize_recipients_from_owner(owner_path, recipients_path)
+
+    assert str(captured.value) == "CLAWBOT_RECIPIENTS_INVALID"
+    assert moved_parent.is_dir()
+    assert moved_parent.joinpath(owner_path.name).read_bytes() == owner_before
+    for parent in (original_parent, moved_parent):
+        assert not _lexists(parent / recipients_path.name)
+        assert list(parent.glob(f".{recipients_path.name}.*")) == []
+
+
+@pytest.mark.parametrize("replacement_mode", [0o700, 0o755], ids=["safe", "unsafe"])
+def test_initializer_rolls_back_published_target_after_parent_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement_mode: int,
+) -> None:
+    owner_path = _private_path(tmp_path, "owner.json")
+    recipients_path = owner_path.parent / "recipients.json"
+    write_clawbot_owner_atomic(
+        owner_path,
+        account_id=ACCOUNT_ID,
+        target_user_id=OWNER_TARGET,
+    )
+    owner_before = owner_path.read_bytes()
+    original_parent = owner_path.parent
+    moved_parent = tmp_path / "moved-private"
+    replacement_parent = tmp_path / "replacement-private"
+    replacement_parent.mkdir(mode=0o700)
+    replacement_parent.chmod(replacement_mode)
+    original_link = os.link
+    replaced = False
+
+    def replacing_link(
+        source: object,
+        target: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal replaced
+        original_link(source, target, *args, **kwargs)
+        if not replaced:
+            replaced = True
+            original_parent.rename(moved_parent)
+            replacement_parent.rename(original_parent)
+
+    monkeypatch.setattr(recipients.os, "link", replacing_link)
+
+    with pytest.raises(ClawbotRecipientError) as captured:
+        initialize_recipients_from_owner(owner_path, recipients_path)
+
+    assert str(captured.value) == "CLAWBOT_RECIPIENTS_INVALID"
+    assert moved_parent.is_dir()
+    assert moved_parent.joinpath(owner_path.name).read_bytes() == owner_before
+    for parent in (original_parent, moved_parent):
+        assert not _lexists(parent / recipients_path.name)
+        assert list(parent.glob(f".{recipients_path.name}.*")) == []
+
+
+def test_initializer_rolls_back_if_parent_changes_after_temporary_unlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner_path = _private_path(tmp_path, "owner.json")
+    recipients_path = owner_path.parent / "recipients.json"
+    write_clawbot_owner_atomic(
+        owner_path,
+        account_id=ACCOUNT_ID,
+        target_user_id=OWNER_TARGET,
+    )
+    owner_before = owner_path.read_bytes()
+    original_parent = owner_path.parent
+    moved_parent = tmp_path / "moved-private"
+    replacement_parent = tmp_path / "replacement-private"
+    replacement_parent.mkdir(mode=0o700)
+    replacement_parent.chmod(0o700)
+    original_unlink = os.unlink
+    replaced = False
+
+    def replacing_unlink(
+        candidate: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal replaced
+        original_unlink(candidate, *args, **kwargs)
+        if (
+            not replaced
+            and kwargs.get("dir_fd") is not None
+            and str(candidate).startswith(f".{recipients_path.name}.")
+        ):
+            replaced = True
+            original_parent.rename(moved_parent)
+            replacement_parent.rename(original_parent)
+
+    monkeypatch.setattr(recipients.os, "unlink", replacing_unlink)
+
+    with pytest.raises(ClawbotRecipientError) as captured:
+        initialize_recipients_from_owner(owner_path, recipients_path)
+
+    assert str(captured.value) == "CLAWBOT_RECIPIENTS_INVALID"
+    assert moved_parent.joinpath(owner_path.name).read_bytes() == owner_before
+    for parent in (original_parent, moved_parent):
+        assert not _lexists(parent / recipients_path.name)
+        assert list(parent.glob(f".{recipients_path.name}.*")) == []
