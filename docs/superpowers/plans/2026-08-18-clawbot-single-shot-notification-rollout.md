@@ -334,6 +334,13 @@ Also verify `/api/runtime/health`, DB revision, Rule Scope and Runtime version. 
 
 No synthetic Event, replay, backfill or manual Alert injection.
 
+**Execution closeout (2026-08-19):** production observation truth remained
+`post_g8_natural_event_count=0`; no natural notification-attempt or receipt evidence exists. The owner
+explicitly chose not to wait for G9.1, accepted that evidence gap, and separately authorized G9.3 cleanup.
+After fail-closed zero-reference checks, the obsolete `v1.4.2` worktree and private WeCom credential were
+removed. The rollout records G9 as `COMPLETED_WITH_NATURAL_EVIDENCE_WAIVER`, not as a fabricated natural
+Alert PASS. Historical criteria below remain unchanged as the approved baseline.
+
 ### G9.1 Natural evidence
 
 - [ ] Wait for the next natural Event in an already-authorized Rule/Scope.
@@ -360,7 +367,9 @@ verify current source/config contains no active WeCom transport
 
 Do not rewrite historical Git/STATUS evidence.
 
-**G9 PASS:** natural Clawbot evidence exists and obsolete WeCom operational rollback material/credential is retired.
+**Approved-baseline G9 PASS criterion:** natural Clawbot evidence exists and obsolete WeCom operational
+rollback material/credential is retired. The actual closeout used the explicit owner waiver recorded above;
+only the cleanup half is evidenced.
 
 ---
 

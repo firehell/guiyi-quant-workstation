@@ -73,7 +73,7 @@ main/tag/release、Canonical 写入、订单、rollback 或 G9 cleanup。product
 malformed output 或发送失败均 fail-closed，不 retry、queue、replay、backfill、fan-out 或 fallback。OpenClaw
 与腾讯插件是已经存在的外部依赖，归一量化不安装、更新、登录、启动、停止或监督它们，也不引入
 OpenClaw public message-send、durable queue、inbound、context monitor、Agent/LLM/slash/tool/reply 路径。
-当前 production exact-tag Runtime 已完成独立 release/promotion 并运行 `clawbot-openclaw-weixin`；G2～G8 与 G9 pending 的精确事实见 `STATUS.md`。旧 `v1.4.2` Runtime worktree 和 private WeCom credential 仅保留为 G9 前显式 rollback material，不形成自动 provider fallback。已经完成的 Gate、develop 代码、fixture、render-only 和测试均不授权未来 owner/Scope/transport 变更、canary、真实发送、OpenClaw 变更、Runtime switch、rollback 或 G9 cleanup。
+当前 production exact-tag Runtime 已完成独立 release/promotion 并运行 `clawbot-openclaw-weixin`；G2～G8 与 G9 明确豁免收口的精确事实见 `STATUS.md`。旧 `v1.4.2` Runtime worktree 和 private WeCom credential 已在正式引用清零后完成 G9 最终清理，不再提供 rollback 或 provider fallback；未来恢复 WeCom 必须重新设计、配置、发布并取得对应独立 Gate。已经完成的 Gate、develop 代码、fixture、render-only 和测试均不授权未来 owner/Scope/transport 变更、canary、真实发送、OpenClaw 变更、Runtime switch 或 rollback。
 
 ## 工程与业务硬规则
 

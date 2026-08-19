@@ -26,7 +26,9 @@
   annotated `v1.5.0` tag；G7 已在 Gate time 读回两条 enabled Rule 的精确 Scope 均为 `jm`，并将
   bounded continuous authorization 只锁定到两条精确 Rule × `jm` × `owner` × Clawbot tuple；该 G7
   授权不授权 G8 或 G9。G8 以独立 exact-tag Runtime promotion Gate 将正式五服务统一切换至
-  `v1.5.0` 并完成读回；G9 首个自然 Alert 与最终 WeCom 清理仍 pending。
+  `v1.5.0` 并完成读回。`2026-08-19` 用户明确决定不再等待 G9 自然 Alert，并接受缺少自然送达证据
+  的风险；G9 因此以 `NATURAL_EVIDENCE_WAIVED_BY_OWNER` 收口，最终 WeCom credential 与旧 Runtime
+  worktree 已在正式引用清零后完成清理。该收口不把 canary、synthetic Event 或零事件冒充自然证据。
 
 ## Clawbot Single-Shot D1（RELEASED / RUNTIME PROMOTED）
 
@@ -70,11 +72,16 @@
   API version=`1.5.0`，notification channel=`clawbot-openclaw-weixin`，owner/OpenClaw/plugin 均 ready。
   切换后 Live 等待首根完整 Bar 时短暂 degraded，5 秒后自然收到 `2026-08-18T16:52:00+00:00`
   并恢复 health=`ok`，未重载或重试。DB=`20260815_0039`、两 Rule `scope=jm`、roll disabled 均未变，
-  OpenClaw gateway PID 前后均为 `23054`。旧 `v1.4.2` worktree 保留为 G9 前显式 rollback material。
-  当前 rollout 为 G2～G8 PASS；G9 仅等待首个新自然 Alert，不 synthetic/replay/backfill。
+  OpenClaw gateway PID 前后均为 `23054`。G8 执行时旧 `v1.4.2` worktree 仍保留为显式 rollback material；
+  该 material 已在后续 G9 明确清理 Gate 中移除。当前 rollout 为 G2～G8 PASS、G9
+  `COMPLETED_WITH_NATURAL_EVIDENCE_WAIVER`。
 - G8 后 `2026-08-19 00:54～01:04 +08:00` 的只读 G9 监控覆盖 01:00 自然收线及后续评估，
-  `post_g8_natural_event_count=0`，因此没有 notification attempt，也没有消息到达证据。G9 诚实保持
-  pending；未清理旧 `v1.4.2` rollback worktree 或 private WeCom credential。
+  `post_g8_natural_event_count=0`，因此没有 notification attempt，也没有自然消息到达证据。用户随后
+  明确豁免该自然证据并授权最终清理；删除前 fail-closed 扫描确认旧 worktree clean/detached/registered、
+  五个正式服务与 launchd/process 对旧根零引用、active source/config 对 WeCom 零引用，且 private
+  `WECOM_WEBHOOK_URL` 恰有一个 `0600/current uid` 键。随后旧 `v1.4.2` worktree 已通过
+  `git worktree remove` 删除，private WeCom credential 键已移除且环境文件保持 `0600/current uid`。
+  G9 记录为完成但自然证据被明确豁免；未来恢复 WeCom 必须重新设计、配置、发布并取得独立 Gate。
 
 ## After-Market Bounded Retry V1.4.2（RELEASED / RUNTIME PROMOTED）
 
@@ -172,9 +179,9 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - 切换未修改或重启 OpenClaw，gateway PID 前后均为 `23054`；未执行 migration、RQData/Canonical/DB
   写入、Scope mutation、canary、replay/backfill、Execution Review 或订单操作。DB revision 仍为
   `20260815_0039`，两 Rule 仍为 `enabled=true/scope=jm`，Execution Review roll 仍 disabled，
-  `auto_order=false`。新 Runtime 根未复制旧 after-market status，当前该组件为 `pending`，但 activation
-  已保留且 overall health 为 ok；下一次只接受自然 18:05 状态。旧 `v1.4.2` worktree 继续保留，
-  未自动 fallback 或清理。
+  `auto_order=false`。新 Runtime 根未复制旧 after-market status，G8 读回时该组件为 `pending`，但
+  activation 已保留且 overall health 为 ok；下一次只接受自然 18:05 状态。旧 `v1.4.2` worktree 在
+  G8 读回时仍保留且未自动 fallback，后续已按 G9 明确清理 Gate 删除。
 - `2026-08-18 23:32 +08:00` 已按明确单次授权将本机统一五服务 Runtime 从
   `579cb034222b44e45f4a365c534428d58c1cf252` 切换至 UI-only 补丁提交
   `1bbd70e3bf6705df196a53fde5184ac3de8fbde0`。该提交仅为 `579cb034` 基线加入本次 HTDY
@@ -217,12 +224,12 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
 - `v1.5.0` Runtime promotion 已完成；正式五服务已统一加载 identity
-  `957d19893187c7876b88e58f82fd5656536ee214`，Market/Alert Scope 未扩大，旧 `v1.4.2` Runtime
-  worktree 按 G9 合同保留。Execution Review Gate D 仍为 `disabled / not activated`。
+  `957d19893187c7876b88e58f82fd5656536ee214`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
+  `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review Gate D 仍为
+  `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证；该独立 pending 状态不改写 `v1.5.0` release/Runtime promotion 完成事实。
-- 最小下一步：只等待 G8 后首个已授权 Rule/Scope 的自然 AlertEvent，核对 Event-first 与一次 Clawbot
-  到达并由用户确认；不 synthetic、replay、backfill、retry 或人工补证。无自然 Event 时 G9 保持
-  pending；Execution Review Gate D 继续 `disabled / not activated`。
+  不人工补证；该独立 pending 状态不改写 `v1.5.0` release/Runtime promotion 或 G9 明确豁免收口事实。
+- 最小下一步：保持现有 `v1.5.0 + clawbot-openclaw-weixin` 自然运行；未来真实 Alert 只作为正常观察
+  证据，不再作为 G9 cleanup 前置。Execution Review Gate D 继续 `disabled / not activated`。

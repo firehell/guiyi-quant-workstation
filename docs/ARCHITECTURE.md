@@ -201,7 +201,8 @@ migration、release/tag、Runtime promotion/switch、Scope/owner/transport 变�
 与 G9 cleanup 互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短 Session/transaction；
 Clawbot sender 与 structural health 共用 exact manifest/root/config/owner 校验。OpenClaw 是外部依赖，
 不由归一量化安装、更新、登录、启动、停止或监督。当前 production 已运行该 Clawbot transport；旧
-`v1.4.2` Runtime worktree 与 private WeCom credential 只作 G9 前 rollback material，不形成 fallback。
+`v1.4.2` Runtime worktree 与 private WeCom credential 已完成最终清理，不再形成 rollback 或 fallback。
+未来恢复 WeCom 必须重新设计、配置、发布并取得独立 Gate。
 
 Execution Review 不反向依赖或修改 Alert Event：只从不可变 `subing_entry_signal_v1` Event 建立人工
 Decision、固定合约/方向的 Episode、真实手工 Execution timeline 和结构化 Review。一个品种最多一个

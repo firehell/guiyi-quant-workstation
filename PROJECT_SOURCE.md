@@ -75,7 +75,7 @@ SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `tra
 
 Clawbot owner 只存于 Git 外的单份 `0700` parent / `0600` private JSON，Runtime 只公开固定别名 `owner`，不输出 account id、target id、token、context 或消息正文。OpenClaw、Node、`openclaw-weixin` 的 exact version、plugin root 与三个 compiled module shape 由 manifest 冻结；缺失 context、timeout、crash 或 malformed child output 都是 zero-retry failure。OpenClaw 是既有外部依赖，不由归一量化安装、更新、登录、启动、停止或监督；仓库没有 public OpenClaw message-send、durable queue、微信 inbound、context monitor 或 Agent/LLM/slash/tool/reply pipeline。
 
-Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 已完成独立 release/promotion，唯一 active transport 为 `clawbot-openclaw-weixin`；旧 `v1.4.2` Runtime worktree 与 private WeCom credential 只作为 G9 前的显式 rollback material，不是自动 fallback。owner bootstrap/write、preflight、真实 canary/send、release/tag、Runtime promotion/switch、SuBing Scope write/activation、rollback、G9 cleanup 与任何 OpenClaw 变更仍是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam、render-only 或已经完成的其他 Gate 不证明未来 Gate 获得授权。
+Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 已完成独立 release/promotion，唯一 active transport 为 `clawbot-openclaw-weixin`；旧 `v1.4.2` Runtime worktree 与 private WeCom credential 已在正式引用清零后完成最终清理，不再提供 rollback 或自动 fallback。未来恢复 WeCom 必须重新设计、配置、发布并取得对应独立 Gate。owner bootstrap/write、preflight、真实 canary/send、release/tag、Runtime promotion/switch、SuBing Scope write/activation、rollback 与任何 OpenClaw 变更仍是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam、render-only 或已经完成的其他 Gate 不证明未来 Gate 获得授权。
 
 ## Execution Review V1 应用边界
 
