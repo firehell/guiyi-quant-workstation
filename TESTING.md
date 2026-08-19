@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-18
+更新时间：2026-08-19
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -172,10 +172,10 @@ Scope PUT 禁止作为本节验证命令。测试路由 Scope PUT 只证明 API 
 
 ### 独立受控外部 Gate
 
-- production PostgreSQL migration：仅在明确授权的短维护窗口升级到
-  `20260814_0038`；读回两张 Alert Application Domain 表与八表 Market Catalog 未变。
-- v1.3 release/tag 与 Alert Runtime promotion/switch：分别取得明确授权，不得让 running
-  v1.2 API/Alert 与 V2 schema 共存。
+- production PostgreSQL migration：仅在明确授权的短维护窗口升级到目标 revision；读回两张
+  Alert Application Domain 表与八表 Market Catalog 未变。
+- release/tag 与 Alert Runtime promotion/switch：分别取得明确授权；不得让 Runtime 与其所需
+  Alert schema 版本不一致。
 - SuBing Scope write/activation：对精确 `subing_entry_signal_v1 × product` 另行授权；seed
   必须保持空集，不从 HTDY Scope 或 `operational_products.txt` 自动扩张。
 - Clawbot owner bootstrap/write、zero-send preflight、真实 canary/send：每次执行仍需自身精确 Gate；
