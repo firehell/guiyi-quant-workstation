@@ -278,3 +278,15 @@ def test_source_failure_is_wrapped_and_never_returns_partial_report() -> None:
 
     assert isinstance(raised.value.__cause__, ValueError)
     assert len(runner.requests) == 1
+
+
+def test_same_requested_prefix_is_deterministic_despite_later_fake_data() -> None:
+    first_runner = _Runner()
+    later_runner = _Runner()
+    later_runner.observations_after_through = (date(2026, 8, 21),)  # type: ignore[attr-defined]
+
+    first = _service(first_runner).run(_request())
+    with_later_data = _service(later_runner).run(_request())
+
+    assert first == with_later_data
+    assert first_runner.requests == later_runner.requests

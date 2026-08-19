@@ -1053,3 +1053,36 @@ def test_candidate_composition_reuses_the_lifecycle_research_builder(
     assert isinstance(service, SubingCandidateValidationService)
     assert service._lifecycle_research is lifecycle
     assert sessions == [session]
+
+
+def test_candidate_payload_contains_no_automatic_decision_or_profit_fields() -> None:
+    service = _FakeCandidateValidationService(_candidate_report())
+    stdout = io.StringIO()
+    code = main(
+        _candidate_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        candidate_validation_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    assert code == 0
+    payload = json.loads(stdout.getvalue())
+
+    def keys(value: object) -> set[str]:
+        if isinstance(value, dict):
+            return set(value) | set().union(*(keys(item) for item in value.values()))
+        if isinstance(value, list):
+            return set().union(*(keys(item) for item in value))
+        return set()
+
+    assert keys(payload).isdisjoint(
+        {
+            "keep",
+            "drop",
+            "promote",
+            "pass_strategy",
+            "expected_profit",
+            "account_return",
+        }
+    )

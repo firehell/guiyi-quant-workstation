@@ -342,6 +342,75 @@ def test_service_restores_every_true_segment_before_factorization(
     }
 
 
+def test_pre_window_segment_warmup_is_read_but_not_counted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    segment = (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),)
+    summary = (DominantContractSegmentSummary("jm", "JM2609", _DAY_ONE, _DAY_TWO),)
+    probe = {
+        frequency: _result(_bars(frequency, (_DAY_TWO,)), segment)
+        for frequency in (BarFrequency.M5, BarFrequency.M15)
+    }
+    full = {
+        frequency: _result(_bars(frequency, (_DAY_ONE, _DAY_TWO)), segment)
+        for frequency in (BarFrequency.M5, BarFrequency.M15)
+    }
+    factor_days: list[tuple[BarFrequency, tuple[date, ...]]] = []
+
+    def factors(
+        bars: tuple[CanonicalBar, ...],
+        *,
+        timeframe: BarFrequency,
+        contract: str,
+        segment_start_trading_day: date,
+        **_kwargs: object,
+    ) -> tuple[SubingFactorResult, ...]:
+        factor_days.append((timeframe, tuple(bar.trading_day for bar in bars)))
+        return tuple(
+            _factor(
+                bar,
+                timeframe,
+                contract=contract,
+                segment_start=segment_start_trading_day,
+            )
+            for bar in bars
+        )
+
+    def lifecycle(**kwargs: object) -> SimpleNamespace:
+        bars_5m = kwargs["bars_5m"]
+        assert isinstance(bars_5m, tuple)
+        return SimpleNamespace(
+            snapshots=tuple(
+                _snapshot(bar.bar_end, LifecycleStage.IDLE) for bar in bars_5m
+            ),
+            transitions=(),
+        )
+
+    monkeypatch.setattr(
+        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        factors,
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        lifecycle,
+    )
+    service = SubingLifecycleResearchService(
+        _WindowAwareMarketData(probe=probe, full=full, true_segments=summary),
+        products=("jm",),
+        calibration=load_accepted_subing_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    result = service.run(LifecycleResearchRequest(_DAY_TWO, _DAY_TWO, "jm"))
+
+    assert factor_days == [
+        (BarFrequency.M5, (_DAY_ONE, _DAY_TWO)),
+        (BarFrequency.M15, (_DAY_ONE, _DAY_TWO)),
+    ]
+    assert result.evaluable_boundary_count == 1
+    assert result.funnel_counts["DATA_READY"] == 1
+
+
 def test_mid_segment_result_is_invariant_to_probe_left_window() -> None:
     true_summary = (
         DominantContractSegmentSummary("jm", "JM2609", _DAY_ONE, _DAY_TWO),
