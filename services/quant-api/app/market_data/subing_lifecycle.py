@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Protocol, cast
@@ -109,6 +109,7 @@ class SubingOpportunityKey:
             or self.origin_at.utcoffset() is None
         ):
             raise ValueError("SUBING_OPPORTUNITY_KEY_INVALID")
+        object.__setattr__(self, "origin_at", self.origin_at.astimezone(UTC))
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +242,13 @@ class SubingLifecycleTransition:
                 },
                 LifecycleStage.CLOSED: set(),
             }
+            if not _is_aware_datetime(self.transition_at):
+                raise SubingLifecycleContractError()
+            object.__setattr__(
+                self,
+                "transition_at",
+                self.transition_at.astimezone(UTC),
+            )
             if (
                 not isinstance(self.transition_id, str)
                 or not isinstance(self.opportunity_key, SubingOpportunityKey)
@@ -509,7 +517,12 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
         raise SubingLifecycleContractError()
 
     if snapshot.confirmation_source is ConfirmationSource.FORMAL_V1:
-        if snapshot.trigger_kind is not None:
+        if snapshot.trigger_kind is not None and (
+            snapshot.triggered_at is None
+            or snapshot.confirmed_at is None
+            or snapshot.triggered_at >= snapshot.confirmed_at
+            or not 1 <= snapshot.hold_count < snapshot.hold_required
+        ):
             raise SubingLifecycleContractError()
     elif snapshot.confirmation_source is ConfirmationSource.MOMENTUM_HOLD:
         if snapshot.trigger_kind != "macd_cross":
@@ -1455,8 +1468,8 @@ def _transition_identity(
             opportunity_key.contract,
             opportunity_key.segment_start_trading_day.isoformat(),
             opportunity_key.direction.value,
-            opportunity_key.origin_at.isoformat(),
-            transition_at.isoformat(),
+            opportunity_key.origin_at.astimezone(UTC).isoformat(),
+            transition_at.astimezone(UTC).isoformat(),
             to_stage.value,
         )
     )

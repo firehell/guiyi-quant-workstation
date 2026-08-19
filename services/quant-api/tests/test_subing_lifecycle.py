@@ -213,6 +213,17 @@ def test_opportunity_key_keeps_exact_immutable_identity() -> None:
         key.contract = "JM2705"  # type: ignore[misc]
 
 
+def test_timezone_equivalent_opportunity_origins_store_one_utc_identity() -> None:
+    utc_key = _opportunity_key()
+    offset_key = _opportunity_key(
+        origin_at=utc_key.origin_at.astimezone(timezone(timedelta(hours=8)))
+    )
+
+    assert offset_key == utc_key
+    assert offset_key.origin_at.tzinfo is UTC
+    assert offset_key.origin_at.isoformat() == "2026-08-19T01:05:00+00:00"
+
+
 @pytest.mark.parametrize(
     ("field", "invalid"),
     (
@@ -850,6 +861,67 @@ def test_formal_v1_has_priority_over_simultaneous_pivot_break() -> None:
     assert trace.current_snapshot.bound_reference_pivot is None
 
 
+def test_formal_v1_preempts_active_momentum_hold_with_prior_trigger_evidence() -> None:
+    first, trigger, formal = (_bar(value) for value in (5, 10, 15))
+
+    trace = _evaluate(
+        (first, trigger, formal),
+        factors_5m=(
+            _factor(first, BarFrequency.M5),
+            _factor(trigger, BarFrequency.M5, cross=MacdCross.GOLDEN),
+            _factor(
+                formal,
+                BarFrequency.M5,
+                cross=MacdCross.GOLDEN,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+        bars_15m=(_bar(0), _bar(15)),
+    )
+
+    snapshot = trace.current_snapshot
+    assert snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    assert snapshot.confirmation_source is ConfirmationSource.FORMAL_V1
+    assert snapshot.confirmed_at == formal.bar_end
+    assert snapshot.trigger_kind == "macd_cross"
+    assert snapshot.triggered_at == trigger.bar_end
+    assert snapshot.triggered_at < snapshot.confirmed_at
+    assert snapshot.hold_count == 1
+    for inconsistent in (
+        {"triggered_at": snapshot.confirmed_at},
+        {"hold_count": 0},
+    ):
+        with pytest.raises(SubingLifecycleContractError):
+            replace(snapshot, **inconsistent)
+
+
+def test_formal_v1_preempts_active_pivot_hold_with_prior_trigger_evidence() -> None:
+    prefix = _long_pivot_prefix()
+    formal = _bar(35, close="112", high="113", low="111")
+    bars = (*prefix, formal)
+    factors = tuple(
+        _factor(
+            bar,
+            BarFrequency.M5,
+            cross=MacdCross.GOLDEN if index == len(bars) - 1 else MacdCross.NONE,
+            volume_ratio=(Decimal("3") if index == len(bars) - 1 else Decimal("1")),
+        )
+        for index, bar in enumerate(bars)
+    )
+
+    trace = _evaluate(bars, factors_5m=factors, bars_15m=(_bar(0),))
+
+    snapshot = trace.current_snapshot
+    assert snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    assert snapshot.confirmation_source is ConfirmationSource.FORMAL_V1
+    assert snapshot.confirmed_at == formal.bar_end
+    assert snapshot.trigger_kind == "pivot_break"
+    assert snapshot.triggered_at == prefix[-1].bar_end
+    assert snapshot.triggered_at < snapshot.confirmed_at
+    assert snapshot.hold_count == 1
+    assert snapshot.bound_reference_pivot is not None
+
+
 def test_pivot_break_hold_confirms_after_three_bars_with_frozen_pivot() -> None:
     prefix = _long_pivot_prefix()
     bars = (
@@ -1085,6 +1157,27 @@ def test_transition_contract_requires_canonical_id_and_aware_time() -> None:
             replace(transition, **{field: invalid})
         assert exc_info.value.code == "SUBING_LIFECYCLE_CONTRACT_INVALID"
         assert str(exc_info.value) == "SUBING_LIFECYCLE_CONTRACT_INVALID"
+
+
+def test_timezone_equivalent_transition_times_share_canonical_identity() -> None:
+    boundary = _bar(15)
+    transition = _evaluate((boundary,), bars_15m=(boundary,)).transitions[0]
+    offset = timezone(timedelta(hours=8))
+    offset_key = replace(
+        transition.opportunity_key,
+        origin_at=transition.opportunity_key.origin_at.astimezone(offset),
+    )
+
+    equivalent = replace(
+        transition,
+        opportunity_key=offset_key,
+        transition_at=transition.transition_at.astimezone(offset),
+    )
+
+    assert equivalent == transition
+    assert equivalent.opportunity_key.origin_at.tzinfo is UTC
+    assert equivalent.transition_at.tzinfo is UTC
+    assert equivalent.transition_id == transition.transition_id
 
 
 @pytest.mark.parametrize(
