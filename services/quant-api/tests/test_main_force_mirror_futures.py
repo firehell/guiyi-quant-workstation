@@ -89,6 +89,11 @@ def test_futures_v1_exact_identity_parameters_and_rounding() -> None:
     assert np.isnan(round_half_away_from_zero_binary64(float("nan"), 6))
     assert round_half_away_from_zero_binary64(float("inf"), 6) == float("inf")
 
+    result = _compute(make_valid_inputs(1))
+    assert result.metadata["parameters"] == dict(DEFAULT_PARAMETERS)
+    assert result.metadata["parameters_hash"] == "f7fd0c9bce0b08d1"
+    assert result.metadata["rounding_policy"] == DEFAULT_PARAMETERS["rounding_policy"]
+
     for invalid_digits in (True, -1, 1.5):
         with pytest.raises(ValueError, match="digits must be a non-negative integer"):
             round_half_away_from_zero_binary64(1.0, invalid_digits)  # type: ignore[arg-type]
@@ -276,6 +281,7 @@ def test_atr_readiness_invalidity_pauses_without_resetting_the_block() -> None:
     assert result.reason[20] == "MFM_FUTURES_V1_ATR_INVALID"
     assert not bool(result.state_ready[20])
     assert bool(result.state_ready[21])
+    assert not bool(result.caution_ready[30])
     assert bool(result.caution_ready[31])
 
 
@@ -289,19 +295,44 @@ def test_volume_readiness_invalidity_pauses_without_resetting_the_block() -> Non
     assert not bool(result.state_ready[25])
     assert bool(result.state_ready[26])
     assert not bool(result.caution_ready[30])
+    assert not bool(result.caution_ready[35])
     assert bool(result.caution_ready[36])
 
 
 def test_range_readiness_invalidity_has_exact_reason_priority() -> None:
-    payload = make_valid_inputs(21)
-    payload["open_"] = [100.0] * 21
-    payload["high"] = [102.0] + [100.0] * 20
-    payload["low"] = [98.0] + [100.0] * 20
-    payload["close"] = [100.0] * 21
+    payload = make_valid_inputs(32)
+    payload["open_"][:21] = [100.0] * 21
+    payload["high"][:21] = [102.0] + [100.0] * 20
+    payload["low"][:21] = [98.0] + [100.0] * 20
+    payload["close"][:21] = [100.0] * 21
     result = _compute(payload)
 
     assert result.reason[20] == "MFM_FUTURES_V1_RANGE_INVALID"
     assert not bool(result.state_ready[20])
+    assert bool(result.state_ready[21])
+    assert not bool(result.caution_ready[30])
+    assert bool(result.caution_ready[31])
+
+
+def test_volume_and_range_rolling_readiness_boundaries_are_exact() -> None:
+    from guiyi_quant.indicators.main_force_mirror_futures import (
+        _rolling_extreme,
+        _rolling_mean,
+    )
+
+    volume = np.arange(1.0, 21.0)
+    high = np.arange(101.0, 121.0)
+    low = np.arange(81.0, 101.0)
+    volume_mean = _rolling_mean(volume, 20)
+    range_high = _rolling_extreme(high, 20, maximum=True)
+    range_low = _rolling_extreme(low, 20, maximum=False)
+
+    assert np.isnan(volume_mean[18])
+    assert volume_mean[19] == 10.5
+    assert np.isnan(range_high[18])
+    assert range_high[19] == 120.0
+    assert np.isnan(range_low[18])
+    assert range_low[19] == 81.0
 
 
 def test_seed_readiness_helpers_use_exact_first_indices() -> None:
