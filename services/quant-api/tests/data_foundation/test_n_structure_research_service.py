@@ -146,16 +146,22 @@ def test_outcomes_stop_at_requested_through_even_if_loader_returns_later_bars() 
         )
         for index in range(8)
     )
-    loader = _FakeSegmentLoader((*bars, *later))
+    loaded_bars = (*bars, *later)
+    segment = ResolvedContractSegment(
+        contract="JM2701",
+        start_trading_day=date(2026, 8, 18),
+        end_trading_day=date(2026, 8, 21),
+    )
+    loaded_result = MarketSeriesResult(
+        request_identity={},
+        bars=loaded_bars,
+        coverage=(loaded_bars[0].bar_end, loaded_bars[-1].bar_end),
+        resolved_contract_segments=(segment,),
+    )
+    loader = _FakeSegmentLoader(bars)
     loader.result = ActualDominantResearchSeries(
-        results=loader.result.results,
-        segments=(
-            ResolvedContractSegment(
-                contract="JM2701",
-                start_trading_day=date(2026, 8, 18),
-                end_trading_day=date(2026, 8, 21),
-            ),
-        ),
+        results=MappingProxyType({BarFrequency.M5: loaded_result}),
+        segments=(segment,),
     )
     service = NStructureResearchService(
         loader,
@@ -171,5 +177,8 @@ def test_outcomes_stop_at_requested_through_even_if_loader_returns_later_bars() 
         )
     )
 
+    assert loader.result.results[BarFrequency.M5].bars[-1].trading_day == date(
+        2026, 8, 21
+    )
     assert result.horizon_summary[5].sample_count == 0
     assert result.horizon_summary[8].sample_count == 0
