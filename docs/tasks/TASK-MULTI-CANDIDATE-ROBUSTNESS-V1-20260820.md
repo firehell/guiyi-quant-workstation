@@ -7,6 +7,8 @@
 > Plan：`docs/superpowers/plans/2026-08-20-multi-candidate-robustness-v1.md`
 >
 > 本合同约束后续 Codex 实施与 Review。当前 docs 提交不实现代码、不运行真实 evidence、不修改 main/tag/Runtime/Alert/DB/Canonical，也不形成策略晋升授权。
+>
+> 本合同是实施的规范性补充：Design / Plan 对某个执行边界保持概括描述时，以本合同更精确的 fail-closed 规则为准；若出现真正语义冲突则 `BLOCKED_CANONICAL_DRIFT`，不得自行裁决。
 
 ## 1. 任务目标
 
@@ -107,13 +109,7 @@ j jd jm l lc lh m ma ni oi p pb pd pf pg pk pl pp pr ps
 pt px rb rm rs ru sa sc sf sh si sm sn sr ss ta ur v y zn
 ```
 
-总数精确为：
-
-```text
-60
-```
-
-Cross-symbol matrix 精确：
+总数精确为 `60`；Cross-symbol matrix 精确为：
 
 ```text
 2 candidates × 60 products = 120 retained cells
@@ -129,10 +125,11 @@ Cross-symbol matrix 精确：
 只保留“表现好”的品种
 ```
 
-当前 active set 与 frozen 60 drift 时 fail-closed：
+当前 active set 与 frozen 60 drift 时：
 
 ```text
 MULTI_CANDIDATE_ACTIVE_UNIVERSE_DRIFT
+→ fail-closed
 ```
 
 ## 5. Temporal / OOS Freeze
@@ -167,7 +164,7 @@ backfills_oos = false
 
 ## 6. Event Semantics Freeze
 
-### SuBing
+### 6.1 SuBing
 
 唯一 relationship anchor：
 
@@ -175,7 +172,7 @@ backfills_oos = false
 SubingLifecycleTransition.to_stage == ENTRY_CONFIRMED
 ```
 
-### N
+### 6.2 N
 
 唯一 relationship anchor：
 
@@ -183,7 +180,7 @@ SubingLifecycleTransition.to_stage == ENTRY_CONFIRMED
 CompletedNPattern.completed_at
 ```
 
-### Common event identity
+### 6.3 Common event identity
 
 必须携带：
 
@@ -229,9 +226,7 @@ then smaller target_bar_index
 then lexicographically smaller target_event_id
 ```
 
-即 equal-distance tie 选择 earlier target。
-
-同一个 target 可以成为多个 source 的 nearest target；本 V1 **不是 one-to-one assignment**。
+同一个 target 可以成为多个 source 的 nearest target；V1 **不是 one-to-one assignment**。
 
 ### 7.1 Exact counts
 
@@ -242,7 +237,7 @@ exact_opposite_direction_count
 
 是 **event-pair count**。
 
-如果同一 boundary：
+同一 boundary：
 
 ```text
 2 source LONG × 2 target LONG
@@ -257,9 +252,7 @@ within_5_same_direction_source_count
 within_8_same_direction_source_count
 ```
 
-是 **source-event coverage count**。
-
-同一个 source 在每个 bucket 最多计 1 次。
+是 **source-event coverage count**；同一 source 每个 bucket 最多计 1 次。
 
 必须满足：
 
@@ -269,7 +262,7 @@ within_3 <= within_5 <= within_8 <= source_event_count
 
 ### 7.3 双向
 
-必须同时有：
+必须同时输出：
 
 ```text
 SuBing → N
@@ -312,7 +305,7 @@ MFE ratio
 通过某一 common metric 自动判 winner
 ```
 
-SuBing EMA21 failure 继续留在 SuBing source report，不进入 common projection。
+SuBing EMA21 failure 留在 SuBing source report，不进入 common projection。
 
 ## 9. Parameter / Candidate Version Freeze
 
@@ -333,7 +326,7 @@ optimizer
 无 lineage 参数实验
 ```
 
-如果想研究参数变化，先新建 exact Policy/Candidate，再独立 Candidate Validation。
+规则变化必须先新建 exact Policy/Candidate，再独立 Candidate Validation。
 
 ## 10. Decision / Promotion Prohibition
 
@@ -366,7 +359,7 @@ historical median return/MFE/MAE
 quality/data flags
 ```
 
-“历史 median return”是 outcome 描述，不等于盈利能力判断。
+历史 outcome 描述不等于盈利能力判断。
 
 ## 11. Historical Boundary
 
@@ -389,6 +382,71 @@ cross-frequency fallback
 manual contract stitching
 ```
 
+### 11.1 Per-symbol `unavailable` 的唯一允许异常域
+
+Planning Review 冻结：**不得用 `except Exception` 把代码缺陷伪装成某个品种不可用。**
+
+只有下面现有稳定数据边界异常可以转成：
+
+```text
+CandidateSymbolStatus.UNAVAILABLE
+reason_code = MULTI_CANDIDATE_SOURCE_UNAVAILABLE
+```
+
+允许异常类型精确为：
+
+```text
+MarketDataError
+ActualDominantResearchSegmentIdentityError
+NStructureSourceUnavailableError
+NStructureSegmentIdentityError
+```
+
+实现要求：
+
+```python
+try:
+    source = runner.run(request)
+except (
+    MarketDataError,
+    ActualDominantResearchSegmentIdentityError,
+    NStructureSourceUnavailableError,
+    NStructureSegmentIdentityError,
+):
+    return unavailable_row(symbol)
+```
+
+除此以外的异常，包括但不限于：
+
+```text
+TypeError
+ValueError
+AssertionError
+KeyError
+unexpected RuntimeError
+report identity mismatch
+formula/reducer invariant failure
+```
+
+必须向上抛出并阻塞整次 robustness run；不得转成 unavailable。
+
+`MarketDataError.code`、内部 exception message、路径、SQL、provider/store details 不进入 artifact；V1 per-symbol reason 统一脱敏为稳定 code：
+
+```text
+MULTI_CANDIDATE_SOURCE_UNAVAILABLE
+```
+
+Source 返回对象但 `products != (requested_symbol,)` 属于 contract corruption：
+
+```text
+MULTI_CANDIDATE_SOURCE_IDENTITY_INVALID
+→ fail whole run
+```
+
+不得转成 unavailable。
+
+Task 4 和 Task 7 必须有测试/Review 覆盖这一节。
+
 ## 12. Task Gate Table
 
 | Task | 内容 | Lane | Model | Review Gate |
@@ -396,7 +454,7 @@ manual contract stitching
 | 1 | exact protocol + contracts | Lane 2 | Sol high | focused tests/self-review |
 | 2 | causal source event seams | Lane 1 | Sol high | source parity + temporal review |
 | 3 | event relationship engine | Lane 1 | Sol high | segment/leakage review |
-| 4 | active60 cross-symbol | Lane 1 | Sol high | no-silent-drop/source identity |
+| 4 | active60 cross-symbol | Lane 1 | Sol high | no-silent-drop + exact exception domain |
 | 5 | anchor temporal dossier | Lane 1 | Sol high | exact baseline/OOS review |
 | 6 | orchestration + CLI | Lane 2 | Terra medium | readonly/composition tests |
 | 7 | cumulative verification | Lane 1 Review | Sol high | Critical=0 / Important=0 |
@@ -414,6 +472,7 @@ Critical
 Important
 = source event semantic mismatch /
   aggregate source regression /
+  broad exception swallowing /
   silent symbol omission /
   zero-event and unavailable conflation /
   horizon semantics lost /
@@ -478,6 +537,14 @@ secret_scan
 git diff --check
 ```
 
+Task 4 额外必须证明：
+
+```text
+known data-boundary exceptions → explicit unavailable
+unexpected ValueError/TypeError/AssertionError → whole run fails
+source identity mismatch → whole run fails
+```
+
 真实 evidence 前必须证明两份 tracked anchor baseline 仍可由 exact historical command 复算一致。
 
 Evidence artifact 必须 deterministic rerun byte-identical。
@@ -504,7 +571,7 @@ cross-symbol cells = 120
 relationships = 2 directions
 ```
 
-该 artifact 名称中的 `freeze-2026-08-20` 是 Robustness Protocol 设计冻结日期，不表示 prospective OOS 已完成。
+`freeze-2026-08-20` 是 Robustness Protocol 设计冻结日期，不表示 prospective OOS 已完成。
 
 ## 17. Global Prohibitions
 
