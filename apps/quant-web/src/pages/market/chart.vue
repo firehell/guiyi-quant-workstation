@@ -85,6 +85,7 @@ const {
   overlaySource,
   mutation,
   replaceSeries,
+  clearSeries,
   loadMoreBefore,
   dispose,
 } = useMarketSeries()
@@ -328,13 +329,18 @@ function currentAlertMarkerIdentity() {
 }
 
 async function refreshSeries() {
-  if (!symbol.value) return false
+  if (!symbol.value) {
+    clearSeries()
+    return false
+  }
   if (selectedOverlay.value === 'subing' && !selectedDominant.value?.actual_contract) {
+    clearSeries()
     error.value = '苏冰观察需要当前主力合约，等待主力映射'
     return false
   }
   const requested = currentIdentity()
   if (requested.seriesKind === 'contract' && !requested.contract) {
+    clearSeries()
     error.value = '指定真实合约时 contract 必填'
     return false
   }
@@ -556,6 +562,7 @@ function normalizeSymbol(value: unknown): string | null {
               :loading="loading"
               :error="error"
               :period="frequency"
+              :series-kind="effectiveIdentity.seriesKind"
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
               :research-markers="lifecycleMarkers"

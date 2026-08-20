@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 
 ## 当前结论
 
@@ -8,8 +8,10 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 `develop` 正在形成 `v1.6.1` Release Candidate；Git release 与 production Runtime 仍均为
-  `v1.6.0@5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`。
+- 当前 Git release 与 production Runtime 均为
+  `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
+  `develop` 的 API/Web 版本面已准备为 `v1.6.2` candidate，但尚未合入 `main`、创建 tag/release 或切换
+  production Runtime。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
@@ -22,6 +24,13 @@
   默认 MACD；“小心”保持 `rising_edge(BARSLAST(HIGH=HHV(HIGH,5))<10)`。六色柱仅为 OHLCV
   设计代理，不是实测资金流；该指标仍为 `observation_only`，未进入 Alert、backtest、live
   或 notification consumer。production Runtime 仅部署其 Web 观察面，不改变能力边界。
+- `develop` 已完成 `main_force_mirror_futures_v1` 的 60m Web observation 与 Historical-only Shadow
+  实现及仓库原生验证；只支持 `contract / actual_dominant`。换月 Pane 状态严格取可见范围最右侧当前
+  physical-contract block，真实 AG2601→AG2612 回归锁定新 block 第 10/21/31 根 warm-up/readiness、
+  Hover 身份与 marker 不继承。V0 runtime 已逐字恢复为 V1 开发前冻结源码，静态类型由同名 `.pyi`
+  facade 承载，因此 code/version/formula/golden/capability 保持不变。V1 仍为 `observation_only`，未进入
+  Alert、notification、正式 backtest、Runtime consumer 或订单路径。本次未运行真实代表矩阵 Shadow，
+  未形成策略有效性、正式证据或晋升结论。
 - `v1.6.0` 同时包含完整 SuBing Lifecycle V2 research-only 代码链：exact policy、
   不可变领域合同、causal ConfirmedPivot/Breakout/Retest/lifecycle reducer、additive API/Web 投影与
   Historical-only Shadow CLI。V1 Factor/Signal/resolver、Alert Rule/Scope 和 `AlertRuntime` 消费边界不变；
@@ -31,7 +40,49 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## v1.6.1 收盘快照交接（RELEASE CANDIDATE / RUNTIME PROMOTION PENDING）
+## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
+
+- `develop` 已在不改变 V1 Signal、Alert、Web API 字段、DB、Canonical 或 Runtime 的边界内完成
+  Lifecycle V2 最终 Review 修复：下一交易日首个可评价 boundary 由同方向 `FORMAL_V1` 优先确认旧
+  Setup 并标记 `crossed_trading_day=true`；无同方向 Formal 才执行 rollover，不可用 boundary 继续暂停。
+- Lifecycle 输入合同已 fail-closed：5m/15m Bar 与 Factor 任一长度错配均返回
+  `UNAVAILABLE / SUBING_LIFECYCLE_SERIES_ALIGNMENT_INVALID`；非法 identity 的 Trace 三项身份字段全部为
+  `None`，且不携带 Pivot、Opportunity 或 Transition，不再推断或伪造身份。
+- Confirmed Pivot reducer 改为单向 cursor，breakout 只读取当前交易日最新 HIGH/LOW Pivot；Trace validator
+  使用 set/dict 关联，均保持线性消费。Policy loader 将非 UTF-8、文件与 JSON 损坏统一降级为
+  `SubingLifecyclePolicyError`，composition 只禁用 Lifecycle Policy，V1 SuBing service 仍可构造。
+- fresh 验证为 SuBing backend canonical 测试 `613 passed`、Ruff PASS、Mypy `52 source files`、
+  Web unit `173 passed / 1 skipped`、production build `2996 modules`、完整 Playwright `66 passed`、
+  secret scan `finding_count=0` 与 diff check PASS；独立 Standards Review 为
+  Critical=`0` / Important=`0` / Minor=`0`。
+- 当前 Git release 与 production Runtime 仍为 `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
+  本次未执行 release、tag、Runtime promotion/reload、migration、DB/Canonical 写入、Scope/通知或订单操作。
+
+## Candidate Validation V1（PHASE 4B COMPLETE；RESEARCH BASELINE ONLY）
+
+- `develop` 已新增 `subing_lifecycle_v2_candidate_v1 × candidate_validation_v1` 的 exact
+  Candidate/Protocol、不可变 report contracts、10 个 12m reference + 3m test rolling folds、从
+  `2026-08-20` 开始的 prospective OOS 编排，以及只读 `guiyi research candidate-validation`。
+  全链保持 `research_only / Historical-only`，只复用既有 `SubingLifecycleResearchService ->
+  MarketDataService -> Historical Canonical`，不新增第二套 lifecycle/outcome/rank1 算法或存储路径。
+- 实现前的真实 `jm / 2023-01-01..2026-08-18` Shadow baseline preflight 已只读通过：rank1
+  segments=`11`、evaluable boundaries=`58862`、entries=`463`，3/5/8 Bar outcome samples 分别为
+  `439 / 424 / 402`。preflight 暴露的自然日窗口越过 trading-day Session 边界问题已收敛到
+  `MarketDataService` 的 exact trading-day query；未使用消费者侧夜盘时刻或 fallback。
+- implementation Gate 为 Candidate focused `118 passed`、上游 SuBing `474 passed`、Ruff PASS、Mypy
+  `41 source files`、secret scan `finding_count=0`、diff check PASS；独立 implementation Review 为
+  Critical=`0` / Important=`0` / Minor=`0`。
+- exact-develop 真实只读 CLI 已生成唯一版本化 evidence：
+  `reports/research/candidate_validation/subing_lifecycle_v2_candidate_v1/jm-retrospective-baseline-freeze-2026-08-19.json`。
+  artifact 包含 frozen retrospective、10 个 rolling
+  reference/test folds 与 threshold-free stability；Task 9 独立 Evidence Review 为 Critical=`0` /
+  Important=`0` / Minor=`0`，并确认 identity、窗口、完整性及禁止结论字段全部通过。
+- Phase 4B 的唯一结论是：已形成可复算的 `jm` retrospective / rolling historical baseline；
+  prospective OOS 为 `pending`，尚无 prospective OOS evidence。本状态不表示策略有效、Candidate 可晋升、
+  Alert Rule ready、已发布或 Runtime ready；未执行 release/tag、Runtime/Alert 扩张、
+  DB/Canonical/Redis 写入、通知或订单。
+
+## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
 - Market WebSocket 新增同次读取的 `MarketDisplaySnapshot`：`realtime` 继续要求既有 live eligibility 与
   heartbeat；`post_close` 仅在 CLOSED phase、operational product、1m/5m/15m/30m/60m，以及
@@ -44,9 +95,27 @@
   Web unit `173 passed / 1 conditional skip`、完整 browser `66 passed`、修复后 Market browser `5 passed`、
   production build `2996 modules`、shell/plist/render-only、secret scan 0 与 diff check。独立 Review 为
   Critical=`0` / Important=`0` / Minor=`0`。
-- develop push、main Release PR 与 annotated `v1.6.1` tag 仍待完成。production Runtime 保持 `v1.6.0`；
-  未创建 v1.6.1 Runtime worktree，未执行 Runtime build/reload、migration、RQData/Canonical/DB 写入、
-  Scope/通知或手工盘后任务。
+- Release PR #177 已合并；`origin/main` 与 annotated `v1.6.1` peeled commit 均为
+  `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，tag message=`Release v1.6.1`。`origin/main` 是
+  最终 `origin/develop` 的祖先，API/Web 版本面均为 `1.6.1`。
+- 独立 Runtime worktree `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.1` 为 clean/detached 的精确
+  `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`；Web production build 为 `2996 modules`，Market Runtime
+  专项为 `130 passed`，launchd render/plist 验证通过。
+- 首次单次 promotion 在 base 与 Market 已切换后，因新 root 的 Alert 私有路径未注入而
+  fail-closed，当次未重试。随后依据用户新的精确单次授权，从旧 exact-tag Runtime plist
+  只读取回并校验六项 Clawbot 私有路径，完成 base + Alert promotion；未重载 Market。
+- 读回确认 API/Web/Live/after-market/Alert 五个正式服务均加载 v1.6.1 root 与
+  `75cbf37c`，API version=`1.6.1`，API/Web=`200`，Runtime health=`ok/readonly`，Market/Alert
+  enabled，Clawbot/owner ready，Execution Review roll disabled。DB 仍为 `20260815_0039`，两条
+  Alert Rule 仍均为 enabled 且 Scope 精确为 `jm`，正式服务已无 v1.6.0 root 引用。
+- 本次未执行 migration、RQData/Canonical/DB 写入、Scope/owner/transport mutation、真实通知、
+  手工盘后任务、replay/backfill/retry 或订单；旧 v1.6.0 worktree 仅作可恢复资产保留。
+- `2026-08-19` 的自然盘后任务在 Runtime 切换中断后仅完成部分品种，且原 Live snapshot
+  已不存在，因此不将后续手动处理冒充为自然 18:05 验收。在用户另行精确授权后，以
+  `HistoricalDataManager` 唯一写入路径执行一次 `data update --universe active --through 2026-08-19 --apply`：
+  `planned=443/applied=443/failed=0/provider_requests=147`。随后全量 audit 为 `finding_count=0`，并通过
+  420 次 `MarketDataService` 读取确认 active 60 的 1m/5m/15m/30m/60m/1d 均到 2026-08-19，1w 均为
+  最近完整周 2026-08-14。未重载 Runtime、未执行通知、未做第二次重试或伪造盘后状态。
 
 ## v1.6.0 Release / Runtime（RELEASED / RUNTIME PROMOTED）
 
@@ -268,14 +337,13 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.6.0` Runtime promotion 已完成；正式五服务已统一加载 identity
-  `5d4c63f1c6aa68f9f93fc6137fda667f09a6d9cd`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
+- `v1.6.1` Runtime promotion 已完成；正式五服务已统一加载 identity
+  `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
   `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review Gate D 仍为
   `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证；该独立 pending 状态不改写 `v1.6.0` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持现有 `v1.6.0 + clawbot-openclaw-weixin` 自然运行；Lifecycle
-  真实 `jm` Shadow/current-market observation 继续等待单独 Gate。Execution Review Gate D 继续
-  `disabled / not activated`。
+  不人工补证；该独立 pending 状态不改写 `v1.6.1` release/Runtime promotion 或 G9 明确豁免收口事实。
+- 最小下一步：保持 `v1.6.1 + clawbot-openclaw-weixin` 自然运行，仅等待 SuBing Natural
+  Canary 的自然证据；不人工补证，Execution Review Gate D 继续 `disabled / not activated`。

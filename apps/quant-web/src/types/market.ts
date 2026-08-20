@@ -32,6 +32,7 @@ export interface CanonicalBarDto {
 export interface BarData {
   time: string
   trading_day?: string
+  physicalContract?: string
   open: number
   high: number
   low: number
@@ -491,7 +492,32 @@ export interface HoverKlineContext {
   bar: BarData
   mainIndicators?: MainIndicatorValue[]
   macd?: { dif?: number | null; dea?: number | null; histogram?: number | null } | null
+  mainForceFutures?: MainForceFuturesHoverDetails | null
   atr?: number | null
   marker?: KlineMarker | null
   cursorPrice?: number | null
+}
+
+export interface MainForceFuturesHoverDetails {
+  physicalContract: string | null
+  valid: boolean
+  stateReady: boolean
+  cautionReady: boolean
+  ready: boolean
+  pointReason: string | null
+  cautionAvailabilityReason: string | null
+  state: string | null
+  strength: number | null
+  priceImpulse: number | null
+  clv: number | null
+  volumeRatio: number | null
+  deltaOi: number | null
+  oiImpulse: number | null
+  rangePosition: number | null
+  longScore: number | null
+  shortScore: number | null
+  caution: string | null
+  reasonCodes: string[]
+  availabilityKind: 'unsupported' | 'input_unavailable' | 'derived_unavailable' | 'state_warmup' | 'caution_warmup' | 'conflict' | 'ready'
+  availabilityReason: string | null
 }

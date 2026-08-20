@@ -7,12 +7,11 @@ import pytest
 
 from app.market_data import composition
 from app.market_data.domain import (
+    ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
     MarketSeriesResult,
     ResolvedContractSegment,
-    SeriesKind,
-    SeriesQuery,
 )
 from app.market_data.subing_calibration import build_research_samples, slope_direction
 from app.market_data.subing_calibration_service import (
@@ -43,9 +42,12 @@ class _FakeMarketData:
         results: dict[tuple[str, BarFrequency], MarketSeriesResult],
     ) -> None:
         self._results = results
-        self.queries: list[SeriesQuery] = []
+        self.queries: list[ActualDominantTradingDayQuery] = []
 
-    def query(self, request: SeriesQuery) -> MarketSeriesResult:
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult:
         self.queries.append(request)
         return self._results[(request.symbol, request.frequency)]
 
@@ -102,9 +104,42 @@ def test_slope_discovery_factorizes_each_rank1_segment_independently() -> None:
         direction_selector=slope_direction,
     )
     assert report.report.product_sample_counts == {"jm": len(expected_samples)}
-    assert market_data.queries[0].series_kind is SeriesKind.ACTUAL_DOMINANT
-    assert market_data.queries[0].start == datetime(2026, 8, 1, 16, tzinfo=UTC)
-    assert market_data.queries[0].end > datetime(2026, 8, 5, 15, 59, tzinfo=UTC)
+    assert market_data.queries[0] == ActualDominantTradingDayQuery(
+        "jm", BarFrequency.M5, _DAY_ONE, _DAY_TWO
+    )
+
+
+def test_service_uses_exact_trading_day_query() -> None:
+    bars = _bars(
+        frequency=BarFrequency.M5,
+        count=1,
+        trading_day=_DAY_ONE,
+        first_end=datetime(2026, 8, 3, 1, 5, tzinfo=UTC),
+        first_close=Decimal("100"),
+    )
+    market_data = _FakeMarketData(
+        {
+            ("jm", BarFrequency.M5): _result(
+                bars,
+                (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_ONE),),
+            )
+        }
+    )
+
+    SubingCalibrationResearchService(market_data, products=("jm",)).run(
+        CalibrationResearchRequest(
+            CalibrationPhase.SLOPE,
+            CalibrationMode.DISCOVERY,
+            BarFrequency.M5,
+            _DAY_ONE,
+            _DAY_ONE,
+        )
+    )
+
+    assert market_data.queries == [
+        ActualDominantTradingDayQuery("jm", BarFrequency.M5, _DAY_ONE, _DAY_ONE),
+        ActualDominantTradingDayQuery("jm", BarFrequency.M5, _DAY_ONE, _DAY_ONE),
+    ]
 
 
 def test_intraday_zero_band_uses_latest_confirmed_matching_companion(

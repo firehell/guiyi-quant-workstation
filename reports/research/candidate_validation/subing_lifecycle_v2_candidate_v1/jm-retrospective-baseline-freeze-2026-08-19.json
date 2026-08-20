@@ -1,0 +1,2330 @@
+{
+  "candidate_id": "subing_lifecycle_v2_candidate_v1",
+  "command": "research.candidate-validation",
+  "formula_version": "subing_lifecycle_v2",
+  "policy_id": "subing_lifecycle_v2_research_v1",
+  "prospective_oos": {
+    "first_trading_day": "2026-08-20",
+    "result": null,
+    "status": "pending",
+    "through": "2026-08-19"
+  },
+  "protocol_id": "candidate_validation_v1",
+  "quality_flags": [
+    "PROSPECTIVE_OOS_PENDING"
+  ],
+  "readonly": true,
+  "research_only": true,
+  "retrospective": {
+    "close_reason_counts": {
+      "ANCHOR_TREND_BROKEN": 79,
+      "DIRECTION_CONTEXT_INVALIDATED": 906,
+      "MOMENTUM_HOLD_FAILED": 38,
+      "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 245,
+      "OPPOSITE_FORMAL_V1": 1,
+      "PIVOT_RETEST_INVALIDATED": 203,
+      "RETEST_REBREAK_TIMEOUT": 44,
+      "STRUCTURE_INVALIDATED": 134,
+      "UNCONFIRMED_TRADING_DAY_ROLLOVER": 146
+    },
+    "confirmation_source_counts": {
+      "FORMAL_V1": 125,
+      "MOMENTUM_HOLD": 138,
+      "PIVOT_BREAK_HOLD": 146,
+      "PIVOT_RETEST_REBREAK": 54
+    },
+    "confirmed_trading_day_span_counts": {
+      "CROSS_DAY": 310,
+      "SAME_DAY": 153
+    },
+    "evaluable_boundary_count": 58862,
+    "funnel_count_units": {
+      "DATA_READY": "boundary_occupancy",
+      "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+      "ENTRY_CONFIRMED": "boundary_event",
+      "SETUP_ARMED": "boundary_event",
+      "TRIGGER_OBSERVED": "boundary_event"
+    },
+    "funnel_counts": {
+      "DATA_READY": 58862,
+      "DIRECTION_CONTEXT_ALIGNED": 28971,
+      "ENTRY_CONFIRMED": 463,
+      "SETUP_ARMED": 1755,
+      "TRIGGER_OBSERVED": 768
+    },
+    "horizon_summary": {
+      "3": {
+        "ema21_failure_rate": "0.09567198177676537585421412301",
+        "ema21_sample_count": 439,
+        "median_directional_return_bps": "-3.152585119798234552332912989",
+        "median_mae_bps": "-25.25252525252525252525252525",
+        "median_mfe_bps": "25.17834662190516156105749056",
+        "sample_count": 439
+      },
+      "5": {
+        "ema21_failure_rate": "0.1910377358490566037735849057",
+        "ema21_sample_count": 424,
+        "median_directional_return_bps": "-2.914440820845254530054754140",
+        "median_mae_bps": "-33.34352446334435828307253305",
+        "median_mfe_bps": "33.15906271360062158353536630",
+        "sample_count": 424
+      },
+      "8": {
+        "ema21_failure_rate": "0.3258706467661691542288557214",
+        "ema21_sample_count": 402,
+        "median_directional_return_bps": "-2.967814080518438673484433047",
+        "median_mae_bps": "-40.90323592447718182982726120",
+        "median_mfe_bps": "43.91252116120876948080891775",
+        "sample_count": 402
+      }
+    },
+    "products": [
+      "jm"
+    ],
+    "recovery_reason_counts": {
+      "ANCHOR_RECOVERY_CONFIRMED": 963
+    },
+    "risk_reason_counts": {
+      "ANCHOR_EMA21_BREACH": 51,
+      "ANCHOR_MACD_OPPOSITE_CROSS": 169,
+      "ANCHOR_SLOPE5_REVERSAL": 4,
+      "LOWER_TF_BOUND_PIVOT_REENTRY": 11,
+      "LOWER_TF_EMA21_BREACH": 496,
+      "LOWER_TF_MACD_OPPOSITE_CROSS": 19,
+      "LOWER_TF_SLOPE5_REVERSAL": 13,
+      "TIMEFRAME_ALIGNMENT_LOST": 621
+    },
+    "segment_count": 11,
+    "since": "2023-01-01",
+    "through": "2026-08-18",
+    "v1_v2_overlap_counts": {
+      "V1_AND_V2": 125,
+      "V1_ONLY": 178,
+      "V2_ONLY": 338
+    },
+    "v2_to_v1_lead_bars": [
+      56,
+      85,
+      43,
+      28,
+      102,
+      7,
+      24,
+      3,
+      57,
+      4,
+      20,
+      44,
+      122,
+      10,
+      21,
+      78,
+      16,
+      48,
+      55,
+      33,
+      18,
+      11,
+      1,
+      12,
+      4,
+      33,
+      74,
+      18,
+      6,
+      122,
+      166,
+      23,
+      112,
+      2,
+      234,
+      8,
+      19,
+      42,
+      44,
+      32,
+      97,
+      62,
+      19,
+      17,
+      2,
+      76,
+      39,
+      31,
+      22,
+      49,
+      40,
+      10,
+      35,
+      9,
+      86,
+      25,
+      11,
+      90,
+      25,
+      33,
+      62,
+      40,
+      25,
+      55,
+      128,
+      42,
+      32,
+      80,
+      58,
+      5,
+      53,
+      56,
+      41,
+      22,
+      13,
+      25,
+      13,
+      30,
+      3
+    ],
+    "window_id": "retrospective",
+    "window_kind": "retrospective"
+  },
+  "rolling_folds": [
+    {
+      "fold_id": "fold_01",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 18,
+          "DIRECTION_CONTEXT_INVALIDATED": 262,
+          "MOMENTUM_HOLD_FAILED": 4,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 64,
+          "PIVOT_RETEST_INVALIDATED": 50,
+          "RETEST_REBREAK_TIMEOUT": 10,
+          "STRUCTURE_INVALIDATED": 42,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 45
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 27,
+          "MOMENTUM_HOLD": 34,
+          "PIVOT_BREAK_HOLD": 47,
+          "PIVOT_RETEST_REBREAK": 17
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 80,
+          "SAME_DAY": 45
+        },
+        "evaluable_boundary_count": 16138,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16138,
+          "DIRECTION_CONTEXT_ALIGNED": 7934,
+          "ENTRY_CONFIRMED": 125,
+          "SETUP_ARMED": 487,
+          "TRIGGER_OBSERVED": 194
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.1101694915254237288135593220",
+            "ema21_sample_count": 118,
+            "median_directional_return_bps": "-5.159260483377800769917340065",
+            "median_mae_bps": "-26.74171557455535953466053861",
+            "median_mfe_bps": "28.36102470666468552164603921",
+            "sample_count": 118
+          },
+          "5": {
+            "ema21_failure_rate": "0.2017543859649122807017543860",
+            "ema21_sample_count": 114,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-36.88060076708385739591699392",
+            "median_mfe_bps": "40.24291497975708502024291498",
+            "sample_count": 114
+          },
+          "8": {
+            "ema21_failure_rate": "0.3148148148148148148148148148",
+            "ema21_sample_count": 108,
+            "median_directional_return_bps": "-4.058786078098471986417657046",
+            "median_mae_bps": "-42.46429260692495918249474902",
+            "median_mfe_bps": "44.67416566248049613731241044",
+            "sample_count": 108
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 257
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 14,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 51,
+          "ANCHOR_SLOPE5_REVERSAL": 1,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 3,
+          "LOWER_TF_EMA21_BREACH": 136,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 3,
+          "LOWER_TF_SLOPE5_REVERSAL": 6,
+          "TIMEFRAME_ALIGNMENT_LOST": 154
+        },
+        "segment_count": 4,
+        "since": "2023-01-01",
+        "through": "2023-12-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 27,
+          "V1_ONLY": 56,
+          "V2_ONLY": 98
+        },
+        "v2_to_v1_lead_bars": [
+          56,
+          85,
+          43,
+          28,
+          102,
+          7,
+          24,
+          3,
+          57,
+          4,
+          20,
+          44,
+          122,
+          10,
+          21,
+          78,
+          16,
+          48,
+          55,
+          33,
+          18,
+          11,
+          1,
+          12,
+          4
+        ],
+        "window_id": "fold_01_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 6,
+          "DIRECTION_CONTEXT_INVALIDATED": 56,
+          "MOMENTUM_HOLD_FAILED": 1,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 14,
+          "PIVOT_RETEST_INVALIDATED": 13,
+          "RETEST_REBREAK_TIMEOUT": 2,
+          "STRUCTURE_INVALIDATED": 11,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 11
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 7,
+          "MOMENTUM_HOLD": 10,
+          "PIVOT_BREAK_HOLD": 10,
+          "PIVOT_RETEST_REBREAK": 5
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 23,
+          "SAME_DAY": 9
+        },
+        "evaluable_boundary_count": 3954,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 3954,
+          "DIRECTION_CONTEXT_ALIGNED": 1953,
+          "ENTRY_CONFIRMED": 32,
+          "SETUP_ARMED": 111,
+          "TRIGGER_OBSERVED": 49
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.1333333333333333333333333333",
+            "ema21_sample_count": 30,
+            "median_directional_return_bps": "-5.37835393427796201386795297",
+            "median_mae_bps": "-28.03970223325062034739454094",
+            "median_mfe_bps": "21.46943409378341119573763006",
+            "sample_count": 30
+          },
+          "5": {
+            "ema21_failure_rate": "0.2333333333333333333333333333",
+            "ema21_sample_count": 30,
+            "median_directional_return_bps": "-17.42494320558465577819334126",
+            "median_mae_bps": "-40.46721259250808827992059169",
+            "median_mfe_bps": "26.94706640980647838600219298",
+            "sample_count": 30
+          },
+          "8": {
+            "ema21_failure_rate": "0.4285714285714285714285714286",
+            "ema21_sample_count": 28,
+            "median_directional_return_bps": "-4.328795484929255294519605754",
+            "median_mae_bps": "-41.62898666717189057404680191",
+            "median_mfe_bps": "36.75399889994007660800692178",
+            "sample_count": 28
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 75
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 4,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 14,
+          "ANCHOR_SLOPE5_REVERSAL": 1,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 1,
+          "LOWER_TF_EMA21_BREACH": 35,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 1,
+          "LOWER_TF_SLOPE5_REVERSAL": 1,
+          "TIMEFRAME_ALIGNMENT_LOST": 45
+        },
+        "segment_count": 1,
+        "since": "2024-01-01",
+        "through": "2024-03-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 7,
+          "V1_ONLY": 13,
+          "V2_ONLY": 25
+        },
+        "v2_to_v1_lead_bars": [
+          33,
+          74,
+          18,
+          6,
+          122
+        ],
+        "window_id": "fold_01_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_02",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 22,
+          "DIRECTION_CONTEXT_INVALIDATED": 238,
+          "MOMENTUM_HOLD_FAILED": 3,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 65,
+          "PIVOT_RETEST_INVALIDATED": 44,
+          "RETEST_REBREAK_TIMEOUT": 11,
+          "STRUCTURE_INVALIDATED": 44,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 42
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 26,
+          "MOMENTUM_HOLD": 41,
+          "PIVOT_BREAK_HOLD": 47,
+          "PIVOT_RETEST_REBREAK": 18
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 88,
+          "SAME_DAY": 44
+        },
+        "evaluable_boundary_count": 16173,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16173,
+          "DIRECTION_CONTEXT_ALIGNED": 8136,
+          "ENTRY_CONFIRMED": 132,
+          "SETUP_ARMED": 462,
+          "TRIGGER_OBSERVED": 195
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.1269841269841269841269841270",
+            "ema21_sample_count": 126,
+            "median_directional_return_bps": "-4.321225345484105591922303512",
+            "median_mae_bps": "-27.13989165403907179489729157",
+            "median_mfe_bps": "30.72170100146589986627819070",
+            "sample_count": 126
+          },
+          "5": {
+            "ema21_failure_rate": "0.2276422764227642276422764228",
+            "ema21_sample_count": 123,
+            "median_directional_return_bps": "-0",
+            "median_mae_bps": "-39.11342894393741851368970013",
+            "median_mfe_bps": "39.19204100090443171540548689",
+            "sample_count": 123
+          },
+          "8": {
+            "ema21_failure_rate": "0.3478260869565217391304347826",
+            "ema21_sample_count": 115,
+            "median_directional_return_bps": "-2.961208172934557299378146284",
+            "median_mae_bps": "-42.21635883905013192612137203",
+            "median_mfe_bps": "45.31722054380664652567975831",
+            "sample_count": 115
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 281
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 17,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 53,
+          "ANCHOR_SLOPE5_REVERSAL": 2,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 3,
+          "LOWER_TF_EMA21_BREACH": 145,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 4,
+          "LOWER_TF_SLOPE5_REVERSAL": 6,
+          "TIMEFRAME_ALIGNMENT_LOST": 167
+        },
+        "segment_count": 4,
+        "since": "2023-04-01",
+        "through": "2024-03-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 26,
+          "V1_ONLY": 54,
+          "V2_ONLY": 106
+        },
+        "v2_to_v1_lead_bars": [
+          28,
+          102,
+          7,
+          24,
+          3,
+          57,
+          4,
+          20,
+          44,
+          122,
+          10,
+          21,
+          78,
+          16,
+          48,
+          55,
+          33,
+          18,
+          11,
+          1,
+          12,
+          4,
+          33,
+          74,
+          18,
+          6,
+          122
+        ],
+        "window_id": "fold_02_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 6,
+          "DIRECTION_CONTEXT_INVALIDATED": 43,
+          "MOMENTUM_HOLD_FAILED": 2,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 14,
+          "PIVOT_RETEST_INVALIDATED": 13,
+          "RETEST_REBREAK_TIMEOUT": 2,
+          "STRUCTURE_INVALIDATED": 11,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 6
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 6,
+          "MOMENTUM_HOLD": 9,
+          "PIVOT_BREAK_HOLD": 14,
+          "PIVOT_RETEST_REBREAK": 2
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 21,
+          "SAME_DAY": 10
+        },
+        "evaluable_boundary_count": 3895,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 3895,
+          "DIRECTION_CONTEXT_ALIGNED": 1869,
+          "ENTRY_CONFIRMED": 31,
+          "SETUP_ARMED": 96,
+          "TRIGGER_OBSERVED": 48
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0",
+            "ema21_sample_count": 29,
+            "median_directional_return_bps": "5.396654074473826227738801943",
+            "median_mae_bps": "-25.21714766040907817315774727",
+            "median_mfe_bps": "41.65509580672035545681755068",
+            "sample_count": 29
+          },
+          "5": {
+            "ema21_failure_rate": "0.07142857142857142857142857143",
+            "ema21_sample_count": 28,
+            "median_directional_return_bps": "11.14685393754034269625576291",
+            "median_mae_bps": "-32.41661581758760776026027733",
+            "median_mfe_bps": "46.04170710142114683746306959",
+            "sample_count": 28
+          },
+          "8": {
+            "ema21_failure_rate": "0.24",
+            "ema21_sample_count": 25,
+            "median_directional_return_bps": "13.63140676117775354416575791",
+            "median_mae_bps": "-36.42987249544626593806921676",
+            "median_mfe_bps": "65.43075245365321701199563795",
+            "sample_count": 25
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 78
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 2,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 15,
+          "LOWER_TF_EMA21_BREACH": 43,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 1,
+          "LOWER_TF_SLOPE5_REVERSAL": 1,
+          "TIMEFRAME_ALIGNMENT_LOST": 43
+        },
+        "segment_count": 2,
+        "since": "2024-04-01",
+        "through": "2024-06-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 6,
+          "V1_ONLY": 9,
+          "V2_ONLY": 25
+        },
+        "v2_to_v1_lead_bars": [
+          166,
+          23,
+          112,
+          2,
+          234
+        ],
+        "window_id": "fold_02_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_03",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 26,
+          "DIRECTION_CONTEXT_INVALIDATED": 224,
+          "MOMENTUM_HOLD_FAILED": 5,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 65,
+          "PIVOT_RETEST_INVALIDATED": 49,
+          "RETEST_REBREAK_TIMEOUT": 11,
+          "STRUCTURE_INVALIDATED": 44,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 37
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 24,
+          "MOMENTUM_HOLD": 46,
+          "PIVOT_BREAK_HOLD": 50,
+          "PIVOT_RETEST_REBREAK": 16
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 90,
+          "SAME_DAY": 46
+        },
+        "evaluable_boundary_count": 16173,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16173,
+          "DIRECTION_CONTEXT_ALIGNED": 8094,
+          "ENTRY_CONFIRMED": 136,
+          "SETUP_ARMED": 454,
+          "TRIGGER_OBSERVED": 206
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.1068702290076335877862595420",
+            "ema21_sample_count": 131,
+            "median_directional_return_bps": "-2.870264064293915040183696900",
+            "median_mae_bps": "-26.80965147453083109919571046",
+            "median_mfe_bps": "33.43682827800334368282780033",
+            "sample_count": 131
+          },
+          "5": {
+            "ema21_failure_rate": "0.1875",
+            "ema21_sample_count": 128,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-36.67647470926159450749614684",
+            "median_mfe_bps": "38.89571721950377361893792404",
+            "sample_count": 128
+          },
+          "8": {
+            "ema21_failure_rate": "0.3361344537815126050420168067",
+            "ema21_sample_count": 119,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-41.92872117400419287211740042",
+            "median_mfe_bps": "45.34542544678580954921312350",
+            "sample_count": 119
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 289
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 17,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 54,
+          "ANCHOR_SLOPE5_REVERSAL": 2,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 3,
+          "LOWER_TF_EMA21_BREACH": 158,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 5,
+          "LOWER_TF_SLOPE5_REVERSAL": 4,
+          "TIMEFRAME_ALIGNMENT_LOST": 166
+        },
+        "segment_count": 4,
+        "since": "2023-07-01",
+        "through": "2024-06-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 24,
+          "V1_ONLY": 52,
+          "V2_ONLY": 112
+        },
+        "v2_to_v1_lead_bars": [
+          24,
+          3,
+          57,
+          4,
+          20,
+          44,
+          122,
+          10,
+          21,
+          78,
+          16,
+          48,
+          55,
+          33,
+          18,
+          11,
+          1,
+          12,
+          4,
+          33,
+          74,
+          18,
+          6,
+          122,
+          166,
+          23,
+          112,
+          2,
+          234
+        ],
+        "window_id": "fold_03_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 4,
+          "DIRECTION_CONTEXT_INVALIDATED": 59,
+          "MOMENTUM_HOLD_FAILED": 3,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 22,
+          "PIVOT_RETEST_INVALIDATED": 10,
+          "RETEST_REBREAK_TIMEOUT": 3,
+          "STRUCTURE_INVALIDATED": 7,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 9
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 10,
+          "MOMENTUM_HOLD": 10,
+          "PIVOT_BREAK_HOLD": 12,
+          "PIVOT_RETEST_REBREAK": 2
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 21,
+          "SAME_DAY": 13
+        },
+        "evaluable_boundary_count": 4288,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 4288,
+          "DIRECTION_CONTEXT_ALIGNED": 2193,
+          "ENTRY_CONFIRMED": 34,
+          "SETUP_ARMED": 114,
+          "TRIGGER_OBSERVED": 52
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.1515151515151515151515151515",
+            "ema21_sample_count": 33,
+            "median_directional_return_bps": "-11.10288675055514433752775722",
+            "median_mae_bps": "-29.78406552494415487714072971",
+            "median_mfe_bps": "28.26855123674911660777385159",
+            "sample_count": 33
+          },
+          "5": {
+            "ema21_failure_rate": "0.1612903225806451612903225806",
+            "ema21_sample_count": 31,
+            "median_directional_return_bps": "-11.08647450110864745011086475",
+            "median_mae_bps": "-40.65040650406504065040650407",
+            "median_mfe_bps": "31.47128245476003147128245476",
+            "sample_count": 31
+          },
+          "8": {
+            "ema21_failure_rate": "0.2666666666666666666666666667",
+            "ema21_sample_count": 30,
+            "median_directional_return_bps": "0.2808388244561628545546730075",
+            "median_mae_bps": "-41.23005718122158412809810864",
+            "median_mfe_bps": "43.40718692867212613088590313",
+            "sample_count": 30
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 79
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 2,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 15,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 1,
+          "LOWER_TF_EMA21_BREACH": 35,
+          "TIMEFRAME_ALIGNMENT_LOST": 56
+        },
+        "segment_count": 2,
+        "since": "2024-07-01",
+        "through": "2024-09-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 10,
+          "V1_ONLY": 14,
+          "V2_ONLY": 24
+        },
+        "v2_to_v1_lead_bars": [
+          8,
+          19,
+          42,
+          44,
+          32,
+          97
+        ],
+        "window_id": "fold_03_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_04",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 25,
+          "DIRECTION_CONTEXT_INVALIDATED": 220,
+          "MOMENTUM_HOLD_FAILED": 6,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 70,
+          "PIVOT_RETEST_INVALIDATED": 49,
+          "RETEST_REBREAK_TIMEOUT": 10,
+          "STRUCTURE_INVALIDATED": 39,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 36
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 29,
+          "MOMENTUM_HOLD": 44,
+          "PIVOT_BREAK_HOLD": 49,
+          "PIVOT_RETEST_REBREAK": 14
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 89,
+          "SAME_DAY": 47
+        },
+        "evaluable_boundary_count": 16149,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16149,
+          "DIRECTION_CONTEXT_ALIGNED": 7987,
+          "ENTRY_CONFIRMED": 136,
+          "SETUP_ARMED": 446,
+          "TRIGGER_OBSERVED": 206
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.1076923076923076923076923077",
+            "ema21_sample_count": 130,
+            "median_directional_return_bps": "-5.888518929584412381304723145",
+            "median_mae_bps": "-28.91025184552208692349687864",
+            "median_mfe_bps": "30.31115247091054113355214226",
+            "sample_count": 130
+          },
+          "5": {
+            "ema21_failure_rate": "0.1889763779527559055118110236",
+            "ema21_sample_count": 127,
+            "median_directional_return_bps": "-5.526388505111909367228516165",
+            "median_mae_bps": "-39.64623360780725831046050625",
+            "median_mfe_bps": "36.93931398416886543535620053",
+            "sample_count": 127
+          },
+          "8": {
+            "ema21_failure_rate": "0.3333333333333333333333333333",
+            "ema21_sample_count": 120,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-41.20330631492024859837454909",
+            "median_mfe_bps": "45.33132299529622803744644090",
+            "sample_count": 120
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 290
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 16,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 57,
+          "ANCHOR_SLOPE5_REVERSAL": 2,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 2,
+          "LOWER_TF_EMA21_BREACH": 142,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 2,
+          "LOWER_TF_SLOPE5_REVERSAL": 3,
+          "TIMEFRAME_ALIGNMENT_LOST": 184
+        },
+        "segment_count": 4,
+        "since": "2023-10-01",
+        "through": "2024-09-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 29,
+          "V1_ONLY": 50,
+          "V2_ONLY": 107
+        },
+        "v2_to_v1_lead_bars": [
+          21,
+          78,
+          16,
+          48,
+          55,
+          33,
+          18,
+          11,
+          1,
+          12,
+          4,
+          33,
+          74,
+          18,
+          6,
+          122,
+          166,
+          23,
+          112,
+          2,
+          234,
+          8,
+          19,
+          42,
+          44,
+          32,
+          97
+        ],
+        "window_id": "fold_04_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 7,
+          "DIRECTION_CONTEXT_INVALIDATED": 50,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 19,
+          "PIVOT_RETEST_INVALIDATED": 16,
+          "RETEST_REBREAK_TIMEOUT": 4,
+          "STRUCTURE_INVALIDATED": 10,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 11
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 8,
+          "MOMENTUM_HOLD": 13,
+          "PIVOT_BREAK_HOLD": 7,
+          "PIVOT_RETEST_REBREAK": 7
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 26,
+          "SAME_DAY": 9
+        },
+        "evaluable_boundary_count": 4081,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 4081,
+          "DIRECTION_CONTEXT_ALIGNED": 1974,
+          "ENTRY_CONFIRMED": 35,
+          "SETUP_ARMED": 112,
+          "TRIGGER_OBSERVED": 58
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.09375",
+            "ema21_sample_count": 32,
+            "median_directional_return_bps": "-1.672240802675585284280936455",
+            "median_mae_bps": "-22.22917584476220669551505070",
+            "median_mfe_bps": "21.33218008509938120296386252",
+            "sample_count": 32
+          },
+          "5": {
+            "ema21_failure_rate": "0.21875",
+            "ema21_sample_count": 32,
+            "median_directional_return_bps": "-1.955416503715291357059053578",
+            "median_mae_bps": "-28.08997690182368485541349138",
+            "median_mfe_bps": "24.01483277564113243769375586",
+            "sample_count": 32
+          },
+          "8": {
+            "ema21_failure_rate": "0.3666666666666666666666666667",
+            "ema21_sample_count": 30,
+            "median_directional_return_bps": "-11.77427376288614819145042612",
+            "median_mae_bps": "-40.31165245125091076201567590",
+            "median_mfe_bps": "30.14669364821691980401313498",
+            "sample_count": 30
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 71
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 4,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 9,
+          "ANCHOR_SLOPE5_REVERSAL": 1,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 1,
+          "LOWER_TF_EMA21_BREACH": 39,
+          "TIMEFRAME_ALIGNMENT_LOST": 51
+        },
+        "segment_count": 2,
+        "since": "2024-10-01",
+        "through": "2024-12-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 8,
+          "V1_ONLY": 14,
+          "V2_ONLY": 27
+        },
+        "v2_to_v1_lead_bars": [
+          62,
+          19,
+          17,
+          2,
+          76
+        ],
+        "window_id": "fold_04_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_05",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 23,
+          "DIRECTION_CONTEXT_INVALIDATED": 208,
+          "MOMENTUM_HOLD_FAILED": 6,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 69,
+          "PIVOT_RETEST_INVALIDATED": 52,
+          "RETEST_REBREAK_TIMEOUT": 11,
+          "STRUCTURE_INVALIDATED": 39,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 37
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 31,
+          "MOMENTUM_HOLD": 42,
+          "PIVOT_BREAK_HOLD": 43,
+          "PIVOT_RETEST_REBREAK": 16
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 92,
+          "SAME_DAY": 40
+        },
+        "evaluable_boundary_count": 16218,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16218,
+          "DIRECTION_CONTEXT_ALIGNED": 7989,
+          "ENTRY_CONFIRMED": 132,
+          "SETUP_ARMED": 433,
+          "TRIGGER_OBSERVED": 207
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.09677419354838709677419354839",
+            "ema21_sample_count": 124,
+            "median_directional_return_bps": "-3.267646035604749291938881573",
+            "median_mae_bps": "-25.63562141473893913003884598",
+            "median_mfe_bps": "26.64449602460714265446146338",
+            "sample_count": 124
+          },
+          "5": {
+            "ema21_failure_rate": "0.1735537190082644628099173554",
+            "ema21_sample_count": 121,
+            "median_directional_return_bps": "-5.526388505111909367228516165",
+            "median_mae_bps": "-35.40519276160503540519276161",
+            "median_mfe_bps": "33.31482509716823986674069961",
+            "sample_count": 121
+          },
+          "8": {
+            "ema21_failure_rate": "0.3274336283185840707964601770",
+            "ema21_sample_count": 113,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-40.95309009679821295606850335",
+            "median_mfe_bps": "44.41154700222057735011102887",
+            "sample_count": 113
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 303
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 12,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 53,
+          "ANCHOR_SLOPE5_REVERSAL": 2,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 3,
+          "LOWER_TF_EMA21_BREACH": 152,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 2,
+          "LOWER_TF_SLOPE5_REVERSAL": 2,
+          "TIMEFRAME_ALIGNMENT_LOST": 195
+        },
+        "segment_count": 4,
+        "since": "2024-01-01",
+        "through": "2024-12-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 31,
+          "V1_ONLY": 50,
+          "V2_ONLY": 101
+        },
+        "v2_to_v1_lead_bars": [
+          33,
+          74,
+          18,
+          6,
+          122,
+          166,
+          23,
+          112,
+          2,
+          234,
+          8,
+          19,
+          42,
+          44,
+          32,
+          97,
+          62,
+          19,
+          17,
+          2,
+          76
+        ],
+        "window_id": "fold_05_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 8,
+          "DIRECTION_CONTEXT_INVALIDATED": 58,
+          "MOMENTUM_HOLD_FAILED": 3,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 16,
+          "PIVOT_RETEST_INVALIDATED": 10,
+          "RETEST_REBREAK_TIMEOUT": 4,
+          "STRUCTURE_INVALIDATED": 11,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 6
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 9,
+          "MOMENTUM_HOLD": 13,
+          "PIVOT_BREAK_HOLD": 9,
+          "PIVOT_RETEST_REBREAK": 5
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 25,
+          "SAME_DAY": 11
+        },
+        "evaluable_boundary_count": 3885,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 3885,
+          "DIRECTION_CONTEXT_ALIGNED": 1900,
+          "ENTRY_CONFIRMED": 36,
+          "SETUP_ARMED": 113,
+          "TRIGGER_OBSERVED": 55
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.05882352941176470588235294118",
+            "ema21_sample_count": 34,
+            "median_directional_return_bps": "-2.225189141076991544281263908",
+            "median_mae_bps": "-18.77425117388545200032191970",
+            "median_mfe_bps": "14.27176036466247015411330584",
+            "sample_count": 34
+          },
+          "5": {
+            "ema21_failure_rate": "0.1818181818181818181818181818",
+            "ema21_sample_count": 33,
+            "median_directional_return_bps": "-9.216589861751152073732718894",
+            "median_mae_bps": "-29.16869227029654837141468158",
+            "median_mfe_bps": "17.68346595932802829354553492",
+            "sample_count": 33
+          },
+          "8": {
+            "ema21_failure_rate": "0.4333333333333333333333333333",
+            "ema21_sample_count": 30,
+            "median_directional_return_bps": "-8.789501576741174961875464485",
+            "median_mae_bps": "-43.08783872407367230557161866",
+            "median_mfe_bps": "16.19467415613460238206688510",
+            "sample_count": 30
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 64
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 3,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 9,
+          "ANCHOR_SLOPE5_REVERSAL": 1,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 2,
+          "LOWER_TF_EMA21_BREACH": 36,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 4,
+          "TIMEFRAME_ALIGNMENT_LOST": 42
+        },
+        "segment_count": 1,
+        "since": "2025-01-01",
+        "through": "2025-03-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 9,
+          "V1_ONLY": 8,
+          "V2_ONLY": 27
+        },
+        "v2_to_v1_lead_bars": [
+          39,
+          31,
+          22,
+          49,
+          40,
+          10,
+          35
+        ],
+        "window_id": "fold_05_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_06",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 25,
+          "DIRECTION_CONTEXT_INVALIDATED": 210,
+          "MOMENTUM_HOLD_FAILED": 8,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 71,
+          "PIVOT_RETEST_INVALIDATED": 49,
+          "RETEST_REBREAK_TIMEOUT": 13,
+          "STRUCTURE_INVALIDATED": 39,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 32
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 33,
+          "MOMENTUM_HOLD": 45,
+          "PIVOT_BREAK_HOLD": 42,
+          "PIVOT_RETEST_REBREAK": 16
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 94,
+          "SAME_DAY": 42
+        },
+        "evaluable_boundary_count": 16149,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16149,
+          "DIRECTION_CONTEXT_ALIGNED": 7936,
+          "ENTRY_CONFIRMED": 136,
+          "SETUP_ARMED": 435,
+          "TRIGGER_OBSERVED": 213
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.078125",
+            "ema21_sample_count": 128,
+            "median_directional_return_bps": "-3.267646035604749291938881573",
+            "median_mae_bps": "-24.33883705142670289913737917",
+            "median_mfe_bps": "24.39052828932449182631754659",
+            "sample_count": 128
+          },
+          "5": {
+            "ema21_failure_rate": "0.1612903225806451612903225806",
+            "ema21_sample_count": 124,
+            "median_directional_return_bps": "-4.261689566445918663332116309",
+            "median_mae_bps": "-31.84147856624125423908512526",
+            "median_mfe_bps": "29.69858283473305597644670752",
+            "sample_count": 124
+          },
+          "8": {
+            "ema21_failure_rate": "0.3304347826086956521739130435",
+            "ema21_sample_count": 115,
+            "median_directional_return_bps": "-3.133813851457223440927608900",
+            "median_mae_bps": "-41.50702426564495530012771392",
+            "median_mfe_bps": "36.14022406938923021322732201",
+            "sample_count": 115
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 292
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 11,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 48,
+          "ANCHOR_SLOPE5_REVERSAL": 2,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 4,
+          "LOWER_TF_EMA21_BREACH": 153,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 5,
+          "LOWER_TF_SLOPE5_REVERSAL": 1,
+          "TIMEFRAME_ALIGNMENT_LOST": 192
+        },
+        "segment_count": 4,
+        "since": "2024-04-01",
+        "through": "2025-03-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 33,
+          "V1_ONLY": 45,
+          "V2_ONLY": 103
+        },
+        "v2_to_v1_lead_bars": [
+          166,
+          23,
+          112,
+          2,
+          234,
+          8,
+          19,
+          42,
+          44,
+          32,
+          97,
+          62,
+          19,
+          17,
+          2,
+          76,
+          39,
+          31,
+          22,
+          49,
+          40,
+          10,
+          35
+        ],
+        "window_id": "fold_06_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 5,
+          "DIRECTION_CONTEXT_INVALIDATED": 50,
+          "MOMENTUM_HOLD_FAILED": 3,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 19,
+          "PIVOT_RETEST_INVALIDATED": 16,
+          "RETEST_REBREAK_TIMEOUT": 5,
+          "STRUCTURE_INVALIDATED": 5,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 9
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 12,
+          "MOMENTUM_HOLD": 9,
+          "PIVOT_BREAK_HOLD": 5,
+          "PIVOT_RETEST_REBREAK": 2
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 18,
+          "SAME_DAY": 10
+        },
+        "evaluable_boundary_count": 3964,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 3964,
+          "DIRECTION_CONTEXT_ALIGNED": 2020,
+          "ENTRY_CONFIRMED": 28,
+          "SETUP_ARMED": 109,
+          "TRIGGER_OBSERVED": 53
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0",
+            "ema21_sample_count": 28,
+            "median_directional_return_bps": "-0",
+            "median_mae_bps": "-25.21303544922588909125005165",
+            "median_mfe_bps": "17.35964587585053791809184447",
+            "sample_count": 28
+          },
+          "5": {
+            "ema21_failure_rate": "0.1785714285714285714285714286",
+            "ema21_sample_count": 28,
+            "median_directional_return_bps": "-14.08952400141827454602784999",
+            "median_mae_bps": "-31.29959442779051313701287250",
+            "median_mfe_bps": "29.30552858924507740934509472",
+            "sample_count": 28
+          },
+          "8": {
+            "ema21_failure_rate": "0.3571428571428571428571428571",
+            "ema21_sample_count": 28,
+            "median_directional_return_bps": "-22.15896380789594062241085510",
+            "median_mae_bps": "-47.17180774961740026794836753",
+            "median_mfe_bps": "37.09929517237311628181308797",
+            "sample_count": 28
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 76
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 5,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 10,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 1,
+          "LOWER_TF_EMA21_BREACH": 39,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 1,
+          "LOWER_TF_SLOPE5_REVERSAL": 1,
+          "TIMEFRAME_ALIGNMENT_LOST": 48
+        },
+        "segment_count": 2,
+        "since": "2025-04-01",
+        "through": "2025-06-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 12,
+          "V1_ONLY": 10,
+          "V2_ONLY": 16
+        },
+        "v2_to_v1_lead_bars": [
+          9,
+          86,
+          25,
+          11
+        ],
+        "window_id": "fold_06_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_07",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 24,
+          "DIRECTION_CONTEXT_INVALIDATED": 217,
+          "MOMENTUM_HOLD_FAILED": 9,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 76,
+          "PIVOT_RETEST_INVALIDATED": 52,
+          "RETEST_REBREAK_TIMEOUT": 16,
+          "STRUCTURE_INVALIDATED": 33,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 35
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 39,
+          "MOMENTUM_HOLD": 45,
+          "PIVOT_BREAK_HOLD": 33,
+          "PIVOT_RETEST_REBREAK": 16
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 90,
+          "SAME_DAY": 43
+        },
+        "evaluable_boundary_count": 16218,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16218,
+          "DIRECTION_CONTEXT_ALIGNED": 8087,
+          "ENTRY_CONFIRMED": 133,
+          "SETUP_ARMED": 448,
+          "TRIGGER_OBSERVED": 218
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.07874015748031496062992125984",
+            "ema21_sample_count": 127,
+            "median_directional_return_bps": "-3.916960438699569134351743047",
+            "median_mae_bps": "-24.37043054427294882209585703",
+            "median_mfe_bps": "18.87979861548143486469477659",
+            "sample_count": 127
+          },
+          "5": {
+            "ema21_failure_rate": "0.1854838709677419354838709677",
+            "ema21_sample_count": 124,
+            "median_directional_return_bps": "-10.06452004062185799528099312",
+            "median_mae_bps": "-31.61069667720118648954969924",
+            "median_mfe_bps": "24.01483277564113243769375586",
+            "sample_count": 124
+          },
+          "8": {
+            "ema21_failure_rate": "0.3559322033898305084745762712",
+            "ema21_sample_count": 118,
+            "median_directional_return_bps": "-8.789501576741174961875464485",
+            "median_mae_bps": "-42.44835215396834988253331984",
+            "median_mfe_bps": "33.59800625699501187976167730",
+            "sample_count": 118
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 290
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 14,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 43,
+          "ANCHOR_SLOPE5_REVERSAL": 2,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 5,
+          "LOWER_TF_EMA21_BREACH": 149,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 5,
+          "LOWER_TF_SLOPE5_REVERSAL": 1,
+          "TIMEFRAME_ALIGNMENT_LOST": 197
+        },
+        "segment_count": 4,
+        "since": "2024-07-01",
+        "through": "2025-06-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 39,
+          "V1_ONLY": 46,
+          "V2_ONLY": 94
+        },
+        "v2_to_v1_lead_bars": [
+          8,
+          19,
+          42,
+          44,
+          32,
+          97,
+          62,
+          19,
+          17,
+          2,
+          76,
+          39,
+          31,
+          22,
+          49,
+          40,
+          10,
+          35,
+          9,
+          86,
+          25,
+          11
+        ],
+        "window_id": "fold_07_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 3,
+          "DIRECTION_CONTEXT_INVALIDATED": 69,
+          "MOMENTUM_HOLD_FAILED": 8,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 22,
+          "OPPOSITE_FORMAL_V1": 1,
+          "PIVOT_RETEST_INVALIDATED": 15,
+          "RETEST_REBREAK_TIMEOUT": 2,
+          "STRUCTURE_INVALIDATED": 3,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 10
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 8,
+          "MOMENTUM_HOLD": 11,
+          "PIVOT_BREAK_HOLD": 10,
+          "PIVOT_RETEST_REBREAK": 2
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 27,
+          "SAME_DAY": 4
+        },
+        "evaluable_boundary_count": 4450,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 4450,
+          "DIRECTION_CONTEXT_ALIGNED": 2425,
+          "ENTRY_CONFIRMED": 31,
+          "SETUP_ARMED": 134,
+          "TRIGGER_OBSERVED": 57
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.06896551724137931034482758621",
+            "ema21_sample_count": 29,
+            "median_directional_return_bps": "30.62117235345581802274715661",
+            "median_mae_bps": "-20.62706270627062706270627063",
+            "median_mfe_bps": "75.18796992481203007518796992",
+            "sample_count": 29
+          },
+          "5": {
+            "ema21_failure_rate": "0.07142857142857142857142857143",
+            "ema21_sample_count": 28,
+            "median_directional_return_bps": "35.16026766600439695772859129",
+            "median_mae_bps": "-20.63984279468839077216271813",
+            "median_mfe_bps": "82.85753515566895888874904175",
+            "sample_count": 28
+          },
+          "8": {
+            "ema21_failure_rate": "0.1481481481481481481481481481",
+            "ema21_sample_count": 27,
+            "median_directional_return_bps": "45.43577034283353985956216439",
+            "median_mae_bps": "-20.65262288310615448161916563",
+            "median_mfe_bps": "112.1579183490354419021982952",
+            "sample_count": 27
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 77
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 5,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 13,
+          "LOWER_TF_EMA21_BREACH": 34,
+          "LOWER_TF_SLOPE5_REVERSAL": 2,
+          "TIMEFRAME_ALIGNMENT_LOST": 52
+        },
+        "segment_count": 2,
+        "since": "2025-07-01",
+        "through": "2025-09-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 8,
+          "V1_ONLY": 19,
+          "V2_ONLY": 23
+        },
+        "v2_to_v1_lead_bars": [
+          90,
+          25,
+          33,
+          62,
+          40,
+          25,
+          55,
+          128
+        ],
+        "window_id": "fold_07_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_08",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 23,
+          "DIRECTION_CONTEXT_INVALIDATED": 227,
+          "MOMENTUM_HOLD_FAILED": 14,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 76,
+          "OPPOSITE_FORMAL_V1": 1,
+          "PIVOT_RETEST_INVALIDATED": 57,
+          "RETEST_REBREAK_TIMEOUT": 15,
+          "STRUCTURE_INVALIDATED": 29,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 36
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 37,
+          "MOMENTUM_HOLD": 46,
+          "PIVOT_BREAK_HOLD": 31,
+          "PIVOT_RETEST_REBREAK": 16
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 96,
+          "SAME_DAY": 34
+        },
+        "evaluable_boundary_count": 16380,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16380,
+          "DIRECTION_CONTEXT_ALIGNED": 8319,
+          "ENTRY_CONFIRMED": 130,
+          "SETUP_ARMED": 468,
+          "TRIGGER_OBSERVED": 223
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.05691056910569105691056910569",
+            "ema21_sample_count": 123,
+            "median_directional_return_bps": "-0",
+            "median_mae_bps": "-21.35611318739989321943406300",
+            "median_mfe_bps": "23.03086135421464762782128052",
+            "sample_count": 123
+          },
+          "5": {
+            "ema21_failure_rate": "0.1652892561983471074380165289",
+            "ema21_sample_count": 121,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-25.52648372686662412252712189",
+            "median_mfe_bps": "31.40421713772992373261552266",
+            "sample_count": 121
+          },
+          "8": {
+            "ema21_failure_rate": "0.3304347826086956521739130435",
+            "ema21_sample_count": 115,
+            "median_directional_return_bps": "-0",
+            "median_mae_bps": "-32.11009174311926605504587156",
+            "median_mfe_bps": "41.60887656033287101248266297",
+            "sample_count": 115
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 288
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 17,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 41,
+          "ANCHOR_SLOPE5_REVERSAL": 2,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 4,
+          "LOWER_TF_EMA21_BREACH": 148,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 5,
+          "LOWER_TF_SLOPE5_REVERSAL": 3,
+          "TIMEFRAME_ALIGNMENT_LOST": 193
+        },
+        "segment_count": 4,
+        "since": "2024-10-01",
+        "through": "2025-09-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 37,
+          "V1_ONLY": 51,
+          "V2_ONLY": 93
+        },
+        "v2_to_v1_lead_bars": [
+          62,
+          19,
+          17,
+          2,
+          76,
+          39,
+          31,
+          22,
+          49,
+          40,
+          10,
+          35,
+          9,
+          86,
+          25,
+          11,
+          90,
+          25,
+          33,
+          62,
+          40,
+          25,
+          55,
+          128
+        ],
+        "window_id": "fold_08_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 3,
+          "DIRECTION_CONTEXT_INVALIDATED": 70,
+          "MOMENTUM_HOLD_FAILED": 3,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 19,
+          "PIVOT_RETEST_INVALIDATED": 11,
+          "RETEST_REBREAK_TIMEOUT": 7,
+          "STRUCTURE_INVALIDATED": 8,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 8
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 9,
+          "MOMENTUM_HOLD": 8,
+          "PIVOT_BREAK_HOLD": 8,
+          "PIVOT_RETEST_REBREAK": 5
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 19,
+          "SAME_DAY": 11
+        },
+        "evaluable_boundary_count": 4012,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 4012,
+          "DIRECTION_CONTEXT_ALIGNED": 1815,
+          "ENTRY_CONFIRMED": 30,
+          "SETUP_ARMED": 127,
+          "TRIGGER_OBSERVED": 52
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.1333333333333333333333333333",
+            "ema21_sample_count": 30,
+            "median_directional_return_bps": "-19.79256698357821953327571305",
+            "median_mae_bps": "-32.96006589303760942660593958",
+            "median_mfe_bps": "25.30460228784251130619845704",
+            "sample_count": 30
+          },
+          "5": {
+            "ema21_failure_rate": "0.28",
+            "ema21_sample_count": 25,
+            "median_directional_return_bps": "-4.321521175453759723422644771",
+            "median_mae_bps": "-35.54502369668246445497630332",
+            "median_mfe_bps": "27.64612954186413902053712480",
+            "sample_count": 25
+          },
+          "8": {
+            "ema21_failure_rate": "0.375",
+            "ema21_sample_count": 24,
+            "median_directional_return_bps": "-10.50381859527180675333590767",
+            "median_mae_bps": "-35.05859655015627112117873074",
+            "median_mfe_bps": "47.79269099956629916227259239",
+            "sample_count": 24
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 57
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 5,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 7,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 1,
+          "LOWER_TF_EMA21_BREACH": 26,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 3,
+          "LOWER_TF_SLOPE5_REVERSAL": 1,
+          "TIMEFRAME_ALIGNMENT_LOST": 43
+        },
+        "segment_count": 2,
+        "since": "2025-10-01",
+        "through": "2025-12-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 9,
+          "V1_ONLY": 9,
+          "V2_ONLY": 21
+        },
+        "v2_to_v1_lead_bars": [
+          42,
+          32,
+          80,
+          58,
+          5
+        ],
+        "window_id": "fold_08_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_09",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 19,
+          "DIRECTION_CONTEXT_INVALIDATED": 247,
+          "MOMENTUM_HOLD_FAILED": 17,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 76,
+          "OPPOSITE_FORMAL_V1": 1,
+          "PIVOT_RETEST_INVALIDATED": 52,
+          "RETEST_REBREAK_TIMEOUT": 18,
+          "STRUCTURE_INVALIDATED": 27,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 33
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 38,
+          "MOMENTUM_HOLD": 41,
+          "PIVOT_BREAK_HOLD": 32,
+          "PIVOT_RETEST_REBREAK": 14
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 89,
+          "SAME_DAY": 36
+        },
+        "evaluable_boundary_count": 16311,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16311,
+          "DIRECTION_CONTEXT_ALIGNED": 8160,
+          "ENTRY_CONFIRMED": 125,
+          "SETUP_ARMED": 483,
+          "TRIGGER_OBSERVED": 217
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.06611570247933884297520661157",
+            "ema21_sample_count": 121,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-21.53316106804478897502153316",
+            "median_mfe_bps": "23.94253790901835594573024741",
+            "sample_count": 121
+          },
+          "5": {
+            "ema21_failure_rate": "0.1754385964912280701754385965",
+            "ema21_sample_count": 114,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-27.06483019624770550199910182",
+            "median_mfe_bps": "32.51873505556642156474056375",
+            "sample_count": 114
+          },
+          "8": {
+            "ema21_failure_rate": "0.3302752293577981651376146789",
+            "ema21_sample_count": 109,
+            "median_directional_return_bps": "-0",
+            "median_mae_bps": "-31.92338387869114126097366321",
+            "median_mfe_bps": "47.51847940865892291446673706",
+            "sample_count": 109
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 274
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 18,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 39,
+          "ANCHOR_SLOPE5_REVERSAL": 1,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 4,
+          "LOWER_TF_EMA21_BREACH": 135,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 8,
+          "LOWER_TF_SLOPE5_REVERSAL": 4,
+          "TIMEFRAME_ALIGNMENT_LOST": 185
+        },
+        "segment_count": 4,
+        "since": "2025-01-01",
+        "through": "2025-12-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 38,
+          "V1_ONLY": 46,
+          "V2_ONLY": 87
+        },
+        "v2_to_v1_lead_bars": [
+          39,
+          31,
+          22,
+          49,
+          40,
+          10,
+          35,
+          9,
+          86,
+          25,
+          11,
+          90,
+          25,
+          33,
+          62,
+          40,
+          25,
+          55,
+          128,
+          42,
+          32,
+          80,
+          58,
+          5
+        ],
+        "window_id": "fold_09_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 5,
+          "DIRECTION_CONTEXT_INVALIDATED": 65,
+          "MOMENTUM_HOLD_FAILED": 6,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 15,
+          "PIVOT_RETEST_INVALIDATED": 17,
+          "RETEST_REBREAK_TIMEOUT": 1,
+          "STRUCTURE_INVALIDATED": 14,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 10
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 11,
+          "MOMENTUM_HOLD": 8,
+          "PIVOT_BREAK_HOLD": 11,
+          "PIVOT_RETEST_REBREAK": 4
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 20,
+          "SAME_DAY": 14
+        },
+        "evaluable_boundary_count": 3816,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 3816,
+          "DIRECTION_CONTEXT_ALIGNED": 1898,
+          "ENTRY_CONFIRMED": 34,
+          "SETUP_ARMED": 128,
+          "TRIGGER_OBSERVED": 59
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.06666666666666666666666666667",
+            "ema21_sample_count": 30,
+            "median_directional_return_bps": "-13.36305281570534696715248523",
+            "median_mae_bps": "-32.30841803618156526777738364",
+            "median_mfe_bps": "22.10126197473237203344895346",
+            "sample_count": 30
+          },
+          "5": {
+            "ema21_failure_rate": "0.2",
+            "ema21_sample_count": 30,
+            "median_directional_return_bps": "-4.448398576512455516014234876",
+            "median_mae_bps": "-38.55512780723591677176949134",
+            "median_mfe_bps": "22.10126197473237203344895346",
+            "sample_count": 30
+          },
+          "8": {
+            "ema21_failure_rate": "0.3703703703703703703703703704",
+            "ema21_sample_count": 27,
+            "median_directional_return_bps": "-12.36603462489694971145919209",
+            "median_mae_bps": "-49.26108374384236453201970443",
+            "median_mfe_bps": "24.55996725337699549733933688",
+            "sample_count": 27
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 51
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 2,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 9,
+          "LOWER_TF_EMA21_BREACH": 29,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 3,
+          "LOWER_TF_SLOPE5_REVERSAL": 1,
+          "TIMEFRAME_ALIGNMENT_LOST": 37
+        },
+        "segment_count": 1,
+        "since": "2026-01-01",
+        "through": "2026-03-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 11,
+          "V1_ONLY": 13,
+          "V2_ONLY": 23
+        },
+        "v2_to_v1_lead_bars": [
+          53,
+          56,
+          41
+        ],
+        "window_id": "fold_09_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_10",
+      "reference": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 16,
+          "DIRECTION_CONTEXT_INVALIDATED": 254,
+          "MOMENTUM_HOLD_FAILED": 20,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 75,
+          "OPPOSITE_FORMAL_V1": 1,
+          "PIVOT_RETEST_INVALIDATED": 59,
+          "RETEST_REBREAK_TIMEOUT": 15,
+          "STRUCTURE_INVALIDATED": 30,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 37
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 40,
+          "MOMENTUM_HOLD": 36,
+          "PIVOT_BREAK_HOLD": 34,
+          "PIVOT_RETEST_REBREAK": 13
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 85,
+          "SAME_DAY": 38
+        },
+        "evaluable_boundary_count": 16242,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 16242,
+          "DIRECTION_CONTEXT_ALIGNED": 8158,
+          "ENTRY_CONFIRMED": 123,
+          "SETUP_ARMED": 498,
+          "TRIGGER_OBSERVED": 221
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.06837606837606837606837606838",
+            "ema21_sample_count": 117,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-25.12562814070351758793969849",
+            "median_mfe_bps": "26.66666666666666666666666667",
+            "sample_count": 117
+          },
+          "5": {
+            "ema21_failure_rate": "0.1801801801801801801801801802",
+            "ema21_sample_count": 111,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-29.59830866807610993657505285",
+            "median_mfe_bps": "33.50083752093802345058626466",
+            "sample_count": 111
+          },
+          "8": {
+            "ema21_failure_rate": "0.3113207547169811320754716981",
+            "ema21_sample_count": 106,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-32.30919310702422546467646262",
+            "median_mfe_bps": "48.34173675831728108766879200",
+            "sample_count": 106
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 261
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 17,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 39,
+          "LOWER_TF_BOUND_PIVOT_REENTRY": 2,
+          "LOWER_TF_EMA21_BREACH": 128,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 7,
+          "LOWER_TF_SLOPE5_REVERSAL": 5,
+          "TIMEFRAME_ALIGNMENT_LOST": 180
+        },
+        "segment_count": 4,
+        "since": "2025-04-01",
+        "through": "2026-03-31",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 40,
+          "V1_ONLY": 51,
+          "V2_ONLY": 83
+        },
+        "v2_to_v1_lead_bars": [
+          9,
+          86,
+          25,
+          11,
+          90,
+          25,
+          33,
+          62,
+          40,
+          25,
+          55,
+          128,
+          42,
+          32,
+          80,
+          58,
+          5,
+          53,
+          56,
+          41
+        ],
+        "window_id": "fold_10_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "close_reason_counts": {
+          "ANCHOR_TREND_BROKEN": 8,
+          "DIRECTION_CONTEXT_INVALIDATED": 80,
+          "MOMENTUM_HOLD_FAILED": 4,
+          "OPPOSITE_DIRECTION_CONTEXT_CONFIRMED": 13,
+          "PIVOT_RETEST_INVALIDATED": 17,
+          "RETEST_REBREAK_TIMEOUT": 3,
+          "STRUCTURE_INVALIDATED": 6,
+          "UNCONFIRMED_TRADING_DAY_ROLLOVER": 14
+        },
+        "confirmation_source_counts": {
+          "FORMAL_V1": 9,
+          "MOMENTUM_HOLD": 9,
+          "PIVOT_BREAK_HOLD": 6,
+          "PIVOT_RETEST_REBREAK": 3
+        },
+        "confirmed_trading_day_span_counts": {
+          "CROSS_DAY": 16,
+          "SAME_DAY": 11
+        },
+        "evaluable_boundary_count": 3964,
+        "funnel_count_units": {
+          "DATA_READY": "boundary_occupancy",
+          "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
+          "ENTRY_CONFIRMED": "boundary_event",
+          "SETUP_ARMED": "boundary_event",
+          "TRIGGER_OBSERVED": "boundary_event"
+        },
+        "funnel_counts": {
+          "DATA_READY": 3964,
+          "DIRECTION_CONTEXT_ALIGNED": 1851,
+          "ENTRY_CONFIRMED": 27,
+          "SETUP_ARMED": 143,
+          "TRIGGER_OBSERVED": 53
+        },
+        "horizon_summary": {
+          "3": {
+            "ema21_failure_rate": "0.2222222222222222222222222222",
+            "ema21_sample_count": 27,
+            "median_directional_return_bps": "3.995205753096284458649620455",
+            "median_mae_bps": "-23.00966405890473999079613438",
+            "median_mfe_bps": "24.22285022204279370205894227",
+            "sample_count": 27
+          },
+          "5": {
+            "ema21_failure_rate": "0.2692307692307692307692307692",
+            "ema21_sample_count": 26,
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-28.75324355109193900501802940",
+            "median_mfe_bps": "32.28331685333486149502869898",
+            "sample_count": 26
+          },
+          "8": {
+            "ema21_failure_rate": "0.2692307692307692307692307692",
+            "ema21_sample_count": 26,
+            "median_directional_return_bps": "3.714710252600297176820208024",
+            "median_mae_bps": "-33.73999368135870984308707463",
+            "median_mfe_bps": "49.57474585727558531810108777",
+            "sample_count": 26
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "recovery_reason_counts": {
+          "ANCHOR_RECOVERY_CONFIRMED": 47
+        },
+        "risk_reason_counts": {
+          "ANCHOR_EMA21_BREACH": 5,
+          "ANCHOR_MACD_OPPOSITE_CROSS": 9,
+          "LOWER_TF_EMA21_BREACH": 27,
+          "LOWER_TF_MACD_OPPOSITE_CROSS": 2,
+          "TIMEFRAME_ALIGNMENT_LOST": 29
+        },
+        "segment_count": 2,
+        "since": "2026-04-01",
+        "through": "2026-06-30",
+        "v1_v2_overlap_counts": {
+          "V1_AND_V2": 9,
+          "V1_ONLY": 8,
+          "V2_ONLY": 18
+        },
+        "v2_to_v1_lead_bars": [
+          22,
+          13,
+          25,
+          13,
+          30
+        ],
+        "window_id": "fold_10_test",
+        "window_kind": "rolling_test"
+      }
+    }
+  ],
+  "rolling_stability": {
+    "entry_count_max": 36,
+    "entry_count_median": "31.5",
+    "entry_count_min": 27,
+    "fold_count": 10,
+    "folds_with_entries": 10
+  },
+  "schema_version": 1,
+  "status": "ok",
+  "symbol": "jm"
+}

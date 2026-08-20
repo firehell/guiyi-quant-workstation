@@ -105,7 +105,7 @@ test('secondary pane defaults to MACD and switches to main-force mirror without 
 
   const shell = page.getByTestId('kline-shell')
   const tabs = page.getByTestId('secondary-panel-tabs')
-  await expect(tabs.getByRole('tab')).toHaveText(['MACD', '主力照妖镜'])
+  await expect(tabs.getByRole('tab')).toHaveText(['MACD', '主力照妖镜', '原型V0'])
   await expect(shell).toHaveAttribute('data-secondary-panel', 'macd')
   await expect(tabs.getByRole('tab', { name: 'MACD' })).toHaveAttribute('aria-selected', 'true')
   await expect.poll(() => tabsAreInsideSecondaryPane(shell, tabs)).toBe(true)
@@ -124,10 +124,10 @@ test('secondary pane defaults to MACD and switches to main-force mirror without 
   await expect.poll(() => tabsAreInsideSecondaryPane(shell, tabs)).toBe(true)
 
   const barRequestsBeforeSwitch = requests.filter((url) => url.pathname.endsWith('/bars/page')).length
-  await tabs.getByRole('tab', { name: '主力照妖镜' }).click()
+  await tabs.getByRole('tab', { name: '原型V0' }).click()
 
-  await expect(shell).toHaveAttribute('data-secondary-panel', 'main_force_mirror')
-  await expect(tabs.getByRole('tab', { name: '主力照妖镜' })).toHaveAttribute('aria-selected', 'true')
+  await expect(shell).toHaveAttribute('data-secondary-panel', 'main_force_mirror_v0')
+  await expect(tabs.getByRole('tab', { name: '原型V0' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('小心＝HHV5/BARSLAST10 结构警戒，非实测资金流')).toBeVisible()
   await hoverPrimaryPane(shell)
   await expect(page.getByText(/^DIF /)).toBeHidden()

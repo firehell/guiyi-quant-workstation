@@ -2005,7 +2005,7 @@ def test_unconfirmed_rollover_waits_for_first_evaluable_later_day_boundary() -> 
     assert trace.current_snapshot.opportunity_key == trace.snapshots[0].opportunity_key
 
 
-def test_next_day_rollover_preempts_simultaneous_formal_v1_match() -> None:
+def test_next_day_same_direction_formal_v1_preempts_rollover() -> None:
     next_day = date(2026, 8, 4)
     first = _bar(5)
     next_day_boundary = _bar(24 * 60 + 15, trading_day=next_day)
@@ -2028,10 +2028,52 @@ def test_next_day_rollover_preempts_simultaneous_formal_v1_match() -> None:
 
     old_key = trace.snapshots[0].opportunity_key
     assert old_key is not None
+    assert trace.current_snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    assert trace.current_snapshot.opportunity_key == old_key
+    assert trace.current_snapshot.confirmation_source is ConfirmationSource.FORMAL_V1
+    assert trace.current_snapshot.confirmed_at == next_day_boundary.bar_end
+    assert trace.current_snapshot.crossed_trading_day is True
+    assert trace.transitions[-1].reason_codes == (
+        "FORMAL_V1_MATCHED",
+    )
+
+
+def test_next_day_opposite_formal_v1_closes_old_setup_as_rollover() -> None:
+    next_day = date(2026, 8, 4)
+    first = _bar(5)
+    next_day_boundary = _bar(24 * 60 + 15, trading_day=next_day)
+    first_anchor = _bar(0)
+    next_day_anchor = _bar(24 * 60 + 15, trading_day=next_day)
+
+    trace = _evaluate(
+        (first, next_day_boundary),
+        factors_5m=(
+            _factor(first, BarFrequency.M5),
+            _factor(
+                next_day_boundary,
+                BarFrequency.M5,
+                direction=SubingDirection.SHORT,
+                cross=MacdCross.DEAD,
+                volume_ratio=Decimal("3"),
+            ),
+        ),
+        bars_15m=(first_anchor, next_day_anchor),
+        factors_15m=(
+            _factor(first_anchor, BarFrequency.M15),
+            _factor(
+                next_day_anchor,
+                BarFrequency.M15,
+                direction=SubingDirection.SHORT,
+            ),
+        ),
+    )
+
+    old_key = trace.snapshots[0].opportunity_key
+    assert old_key is not None
     assert trace.current_snapshot.stage is LifecycleStage.CLOSED
     assert trace.current_snapshot.opportunity_key == old_key
     assert trace.current_snapshot.confirmation_source is None
-    assert trace.current_snapshot.confirmed_at is None
+    assert trace.current_snapshot.crossed_trading_day is False
     assert trace.transitions[-1].reason_codes == (
         "UNCONFIRMED_TRADING_DAY_ROLLOVER",
     )
@@ -2073,6 +2115,63 @@ def test_previous_trading_day_pivot_cannot_trigger_a_new_day_opportunity() -> No
     assert trace.current_snapshot.bound_reference_pivot is None
 
 
+def test_confirmed_pivot_cursor_consumes_each_pivot_once() -> None:
+    pivots = lifecycle_module._all_confirmed_pivots(
+        _long_pivot_prefix(),
+        contract="JM2701",
+        segment_start_trading_day=_SEGMENT_START,
+    )
+    assert len(pivots) == 1
+
+    class CountingPivots:
+        def __init__(self, values) -> None:
+            self.values = values
+            self.read_count = 0
+
+        def __len__(self) -> int:
+            return len(self.values)
+
+        def __getitem__(self, index: int):
+            self.read_count += 1
+            return self.values[index]
+
+    counting = CountingPivots(pivots)
+    cursor = lifecycle_module._ConfirmedPivotCursor(
+        counting,
+        pivot_trading_days={pivots[0].pivot_id: _SEGMENT_START},
+    )
+    boundaries = (_bar(25), _bar(30), _bar(35), _bar(40))
+
+    observed = tuple(
+        cursor.latest_before(boundary=boundary, kind=lifecycle_module.PivotKind.HIGH)
+        for boundary in boundaries
+    )
+
+    assert observed == (None, pivots[0], pivots[0], pivots[0])
+    assert counting.read_count <= len(boundaries) + len(pivots)
+
+
+def test_trading_days_must_not_move_backwards_inside_a_segment() -> None:
+    later_day = date(2026, 8, 4)
+    first = _bar(5, trading_day=later_day)
+    second = _bar(10, trading_day=_SEGMENT_START)
+
+    trace = _evaluate_raw(
+        (first, second),
+        bars_15m=(_bar(0),),
+    )
+
+    assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
+    assert (
+        trace.current_snapshot.unavailable_reason
+        == "SUBING_LIFECYCLE_SERIES_IDENTITY_INVALID"
+    )
+    assert all(
+        snapshot.availability is LifecycleAvailability.UNAVAILABLE
+        for snapshot in trace.snapshots
+    )
+
+
 def test_corrupted_policy_identity_is_unavailable() -> None:
     boundary = _bar(15)
     policy = load_subing_lifecycle_policy()
@@ -2082,6 +2181,48 @@ def test_corrupted_policy_identity_is_unavailable() -> None:
 
     assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
     assert trace.current_snapshot.unavailable_reason == "SUBING_LIFECYCLE_POLICY_INVALID"
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    ("missing_5m", "extra_5m", "missing_15m", "extra_15m"),
+)
+def test_series_alignment_mismatch_is_unavailable_without_index_error(
+    mismatch: str,
+) -> None:
+    boundary = _bar(15)
+    factor_5m = _factor(boundary, BarFrequency.M5)
+    factor_15m = _factor(boundary, BarFrequency.M15)
+    factors_5m = {
+        "missing_5m": (),
+        "extra_5m": (factor_5m, factor_5m),
+    }.get(mismatch, (factor_5m,))
+    factors_15m = {
+        "missing_15m": (),
+        "extra_15m": (factor_15m, factor_15m),
+    }.get(mismatch, (factor_15m,))
+
+    trace = evaluate_subing_lifecycle(
+        symbol="JM",
+        contract="JM2701",
+        segment_start_trading_day=_SEGMENT_START,
+        bars_5m=(boundary,),
+        factors_5m=factors_5m,
+        bars_15m=(boundary,),
+        factors_15m=factors_15m,
+        calibration=_accepted_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    assert len(trace.snapshots) == 1
+    assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
+    assert (
+        trace.current_snapshot.unavailable_reason
+        == "SUBING_LIFECYCLE_SERIES_ALIGNMENT_INVALID"
+    )
+    assert trace.confirmed_pivots == ()
+    assert trace.completed_opportunities == ()
+    assert trace.transitions == ()
 
 
 def test_symbol_contract_mismatch_is_unavailable() -> None:
@@ -2103,7 +2244,42 @@ def test_symbol_contract_mismatch_is_unavailable() -> None:
 
     assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
     assert trace.current_snapshot.unavailable_reason == "SUBING_LIFECYCLE_IDENTITY_INVALID"
-    assert (trace.symbol, trace.contract) == ("RB", "RB2701")
+    assert (trace.symbol, trace.contract, trace.segment_start_trading_day) == (
+        None,
+        None,
+        None,
+    )
+    assert trace.confirmed_pivots == ()
+    assert trace.completed_opportunities == ()
+    assert trace.transitions == ()
+
+
+def test_identity_less_trace_rejects_a_mixed_unavailable_snapshot_reason() -> None:
+    boundaries = (_bar(15), _bar(20))
+    factors_5m = tuple(
+        _factor(boundary, BarFrequency.M5, contract="RB2701")
+        for boundary in boundaries
+    )
+    trace = evaluate_subing_lifecycle(
+        symbol="JM",
+        contract="RB2701",
+        segment_start_trading_day=_SEGMENT_START,
+        bars_5m=boundaries,
+        factors_5m=factors_5m,
+        bars_15m=(boundaries[0],),
+        factors_15m=(
+            _factor(boundaries[0], BarFrequency.M15, contract="RB2701"),
+        ),
+        calibration=_accepted_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+    forged_first = replace(
+        trace.snapshots[0],
+        unavailable_reason="SUBING_FACTOR_UNAVAILABLE",
+    )
+
+    with pytest.raises(SubingLifecycleContractError):
+        replace(trace, snapshots=(forged_first, trace.snapshots[1]))
 
 
 def test_transition_contract_requires_canonical_id_and_aware_time() -> None:
@@ -2582,7 +2758,7 @@ def test_exit_risk_rejects_mixed_anchor_and_lower_tf_codes() -> None:
         )
 
 
-def test_entry_confirmed_rejects_crossed_trading_day_projection() -> None:
+def test_same_day_entry_confirmation_does_not_claim_crossed_trading_day() -> None:
     boundary = _bar(15)
     snapshot = _evaluate(
         (boundary,),
@@ -2597,9 +2773,7 @@ def test_entry_confirmed_rejects_crossed_trading_day_projection() -> None:
         bars_15m=(boundary,),
     ).current_snapshot
     assert snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
-
-    with pytest.raises(SubingLifecycleContractError):
-        replace(snapshot, crossed_trading_day=True)
+    assert snapshot.crossed_trading_day is False
 
 
 def test_confirmed_closed_snapshot_may_retain_crossed_trading_day() -> None:

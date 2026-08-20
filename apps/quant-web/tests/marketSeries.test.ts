@@ -3,8 +3,10 @@ import { describe, it } from 'node:test'
 
 import {
   isCurrentGeneration,
+  MarketSeriesPhysicalIdentityError,
   mergeInitialPage,
   prependHistoricalPage,
+  resolveHistoricalPhysicalContract,
   useMarketSeries,
 } from '../src/composables/useMarketSeries.ts'
 import type { MarketBarsPageResponse, MarketReadState } from '../src/types/market.ts'
@@ -41,6 +43,76 @@ function page(
 }
 
 describe('market historical series', () => {
+  it('binds contract history to the normalized requested physical contract', () => {
+    const response = page([
+      { bar_end: '2026-08-07T09:15:00Z', close: 101 },
+      { bar_end: '2026-08-07T09:30:00Z', close: 102 },
+    ], { has_more_before: false, next_before: null })
+    response.request = { ...response.request, series_kind: 'contract', contract: ' jm2609 ' }
+
+    assert.deepEqual(mergeInitialPage(response).bars.map((bar) => bar.physicalContract), ['JM2609', 'JM2609'])
+  })
+
+  it('binds actual-dominant history to its one inclusive resolved segment', () => {
+    const response = page([
+      { bar_end: '2026-08-07T09:15:00Z', close: 101 },
+      { bar_end: '2026-08-08T09:15:00Z', close: 102 },
+    ], { has_more_before: false, next_before: null })
+    response.request = { ...response.request, series_kind: 'actual_dominant' }
+    response.resolved_contract_segments = [
+      { contract: ' jm2609 ', start_trading_day: '2026-08-07', end_trading_day: '2026-08-07' },
+      { contract: 'JM2701', start_trading_day: '2026-08-08', end_trading_day: '2026-08-08' },
+    ]
+
+    assert.deepEqual(mergeInitialPage(response).bars.map((bar) => bar.physicalContract), ['JM2609', 'JM2701'])
+  })
+
+  it('leaves an actual-dominant bar without a resolved segment physically unbound', () => {
+    const response = page([{ bar_end: '2026-08-07T09:15:00Z', close: 101 }], { has_more_before: false, next_before: null })
+    response.request = { ...response.request, series_kind: 'actual_dominant' }
+
+    assert.equal(resolveHistoricalPhysicalContract(response, response.bars[0]), undefined)
+    assert.equal(mergeInitialPage(response).bars[0].physicalContract, undefined)
+  })
+
+  it('fails closed when an actual-dominant bar matches multiple resolved segments', () => {
+    const response = page([{ bar_end: '2026-08-07T09:15:00Z', close: 101 }], { has_more_before: false, next_before: null })
+    response.request = { ...response.request, series_kind: 'actual_dominant' }
+    response.resolved_contract_segments = [
+      { contract: 'JM2609', start_trading_day: '2026-08-01', end_trading_day: '2026-08-07' },
+      { contract: 'JM2701', start_trading_day: '2026-08-07', end_trading_day: '2026-08-10' },
+    ]
+
+    assert.throws(
+      () => mergeInitialPage(response),
+      (error: unknown) => error instanceof MarketSeriesPhysicalIdentityError
+        && error.code === 'MFM_FUTURES_V1_SEGMENT_CONFLICT',
+    )
+  })
+
+  it('leaves continuous history physically unbound', () => {
+    const response = page([{ bar_end: '2026-08-07T09:15:00Z', close: 101 }], { has_more_before: false, next_before: null })
+
+    assert.equal(mergeInitialPage(response).bars[0].physicalContract, undefined)
+  })
+
+  it('maps prepend bars from the prepend page identity rather than the current page', () => {
+    const currentPage = page([{ bar_end: '2026-08-08T09:15:00Z', close: 102 }], { has_more_before: true, next_before: '2026-08-07T09:15:00Z' })
+    currentPage.request = { ...currentPage.request, series_kind: 'actual_dominant' }
+    currentPage.resolved_contract_segments = [
+      { contract: 'JM2701', start_trading_day: '2026-08-08', end_trading_day: '2026-08-08' },
+    ]
+    const olderPage = page([{ bar_end: '2026-08-07T09:15:00Z', close: 101 }], { has_more_before: false, next_before: null })
+    olderPage.request = { ...olderPage.request, series_kind: 'actual_dominant' }
+    olderPage.resolved_contract_segments = [
+      { contract: 'JM2609', start_trading_day: '2026-08-07', end_trading_day: '2026-08-07' },
+    ]
+
+    const result = prependHistoricalPage(mergeInitialPage(currentPage).bars, olderPage)
+
+    assert.deepEqual(result.bars.map((bar) => bar.physicalContract), ['JM2609', 'JM2701'])
+  })
+
   it('sorts and deduplicates an initial page by formal bar_end', () => {
     const result = mergeInitialPage(page([
       { bar_end: '2026-08-07T09:30:00Z', close: 102 },
@@ -75,6 +147,28 @@ describe('market historical series', () => {
   it('rejects a page response from an older identity generation', () => {
     assert.equal(isCurrentGeneration(4, 5), false)
     assert.equal(isCurrentGeneration(5, 5), true)
+  })
+
+  it('clears the old public series before a replacement identity can fail', async () => {
+    let rejectReplacement: ((reason: Error) => void) | undefined
+    const series = useMarketSeries({
+      fetchPage: (request) => request.symbol === 'ag'
+        ? Promise.resolve(page(
+            [{ bar_end: '2026-08-07T09:30:00Z', close: 100 }],
+            { has_more_before: true, next_before: '2026-08-07T09:30:00Z' },
+          ))
+        : new Promise((_resolve, reject) => { rejectReplacement = reject }),
+      fetchState: async () => state({ live_eligible: false, live_available: false }),
+    })
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '60m' })
+
+    const replacement = series.replaceSeries({ seriesKind: 'contract', symbol: 'jm', contract: 'JM2609', frequency: '60m' })
+    assert.deepEqual(series.bars.value, [])
+    assert.equal(series.hasMoreBefore.value, false)
+    assert.equal(series.canonicalCoverage.value, null)
+    rejectReplacement?.(new Error('replacement unavailable'))
+    await assert.rejects(replacement, /replacement unavailable/)
+    assert.deepEqual(series.bars.value, [])
   })
 
   it('keeps the API next_before cursor for the earliest formal bar', () => {
@@ -210,6 +304,150 @@ function liveBar(bar_end: string, close: number) {
 }
 
 describe('market Live overlay', () => {
+  it('binds snapshot bars to the snapshot physical contract', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: ' ag2601 ', bars: [
+      liveBar('2026-08-07T09:45:00Z', 101),
+    ] })
+
+    assert.equal(series.bars.value[series.bars.value.length - 1]?.physicalContract, 'AG2601')
+  })
+
+  it('fails closed when a contract snapshot identity differs from the requested contract', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
+      fetchState: async () => state({ series_kind: 'contract' }),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'contract', symbol: 'ag', contract: 'AG2601', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2605', bars: [
+      liveBar('2026-08-07T09:45:00Z', 101),
+    ] })
+
+    assert.equal(series.liveUnavailable.value, true)
+    assert.deepEqual(series.bars.value.map((bar) => bar.close), [100])
+  })
+
+  it('accepts the snapshot physical contract for actual-dominant overlays', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2605', bars: [
+      liveBar('2026-08-07T09:45:00Z', 101),
+    ] })
+
+    assert.equal(series.bars.value[series.bars.value.length - 1]?.physicalContract, 'AG2605')
+  })
+
+  it('reuses the established snapshot identity for ordinary bars', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
+      fetchState: async () => state({ live_contract: 'AG9999' }),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
+    sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
+
+    assert.equal(series.bars.value[series.bars.value.length - 1]?.physicalContract, 'AG2601')
+  })
+
+  it('does not guess a physical contract for an ordinary bar before any snapshot identity', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
+      fetchState: async () => state({ live_contract: 'AG9999' }),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
+
+    assert.equal(series.bars.value[series.bars.value.length - 1]?.physicalContract, undefined)
+  })
+
+  it('clears the overlay identity on reset before the next ordinary bar', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
+    sockets[0].message({ type: 'reset', trading_day: '2026-08-08', contract: 'AG2605' })
+    sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
+
+    assert.equal(series.bars.value[series.bars.value.length - 1]?.physicalContract, undefined)
+  })
+
+  it('replaces the overlay identity when a snapshot changes physical contract', async () => {
+    const sockets: FakeSocket[] = []
+    const series = useMarketSeries({
+      fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
+      fetchState: async () => state(),
+      createWebSocket: (url: string) => {
+        const socket = new FakeSocket(url)
+        sockets.push(socket)
+        return socket
+      },
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [
+      liveBar('2026-08-07T09:45:00Z', 101),
+    ] })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-08', contract: 'AG2605', bars: [
+      liveBar('2026-08-08T09:45:00Z', 102),
+    ] })
+
+    assert.deepEqual(series.bars.value.map((bar) => [bar.close, bar.physicalContract]), [
+      [100, undefined],
+      [102, 'AG2605'],
+    ])
+  })
+
   it('merges only snapshot bars strictly after the canonical seam and replaces duplicate live ends', async () => {
     const sockets: FakeSocket[] = []
     const series = useMarketSeries({

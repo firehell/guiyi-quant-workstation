@@ -327,9 +327,9 @@ class SubingLifecycleSnapshot:
 class SubingLifecycleTrace:
     formula_version: str
     policy_id: str
-    symbol: str
-    contract: str
-    segment_start_trading_day: date
+    symbol: str | None
+    contract: str | None
+    segment_start_trading_day: date | None
     confirmed_pivots: tuple[ConfirmedPivot, ...]
     completed_opportunities: tuple[SubingLifecycleState, ...]
     transitions: tuple[SubingLifecycleTransition, ...]
@@ -372,6 +372,38 @@ class _ActiveOpportunity:
     risk_progress: str | None = None
     lower_tf_risk_count: int = 0
     crossed_trading_day: bool = False
+
+
+class _ConfirmedPivotCursor:
+    """Expose the latest causally available Pivot with one forward scan."""
+
+    __slots__ = ("_index", "_latest", "_pivot_trading_days", "_pivots")
+
+    def __init__(
+        self,
+        pivots: Sequence[ConfirmedPivot],
+        *,
+        pivot_trading_days: Mapping[str, date],
+    ) -> None:
+        self._pivots = pivots
+        self._pivot_trading_days = pivot_trading_days
+        self._index = 0
+        self._latest: dict[tuple[date, PivotKind], ConfirmedPivot] = {}
+
+    def latest_before(
+        self,
+        *,
+        boundary: CanonicalBar,
+        kind: PivotKind,
+    ) -> ConfirmedPivot | None:
+        while self._index < len(self._pivots):
+            pivot = self._pivots[self._index]
+            if pivot.confirmed_at >= boundary.bar_end:
+                break
+            trading_day = self._pivot_trading_days[pivot.pivot_id]
+            self._latest[(trading_day, pivot.kind)] = pivot
+            self._index += 1
+        return self._latest.get((boundary.trading_day, kind))
 
 
 def _is_aware_datetime(value: object) -> bool:
@@ -478,6 +510,7 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
     ):
         raise SubingLifecycleContractError()
     confirmed_stages = {
+        LifecycleStage.ENTRY_CONFIRMED,
         LifecycleStage.CONTINUATION,
         LifecycleStage.EXIT_RISK,
         LifecycleStage.CLOSED,
@@ -697,16 +730,38 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
 
 
 def _validate_trace_contract(trace: SubingLifecycleTrace) -> None:
+    has_valid_identity = (
+        isinstance(trace.symbol, str)
+        and bool(trace.symbol.strip())
+        and trace.symbol == trace.symbol.strip()
+        and isinstance(trace.contract, str)
+        and normalize_contract_for_symbol(trace.symbol, trace.contract)
+        == trace.contract
+        and type(trace.segment_start_trading_day) is date
+    )
+    has_unavailable_identity = (
+        trace.symbol is None
+        and trace.contract is None
+        and trace.segment_start_trading_day is None
+        and trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
+        and trace.current_snapshot.unavailable_reason
+        == "SUBING_LIFECYCLE_IDENTITY_INVALID"
+        and not trace.confirmed_pivots
+        and not trace.completed_opportunities
+        and not trace.transitions
+        and all(
+            isinstance(snapshot, SubingLifecycleSnapshot)
+            and snapshot.availability is LifecycleAvailability.UNAVAILABLE
+            and snapshot.unavailable_reason
+            == "SUBING_LIFECYCLE_IDENTITY_INVALID"
+            and snapshot.opportunity_key is None
+            for snapshot in trace.snapshots
+        )
+    )
     if (
         trace.formula_version != _FORMULA_VERSION
         or trace.policy_id != _POLICY_ID
-        or not isinstance(trace.symbol, str)
-        or not trace.symbol.strip()
-        or trace.symbol != trace.symbol.strip()
-        or not isinstance(trace.contract, str)
-        or normalize_contract_for_symbol(trace.symbol, trace.contract)
-        != trace.contract
-        or type(trace.segment_start_trading_day) is not date
+        or not (has_valid_identity or has_unavailable_identity)
         or type(trace.confirmed_pivots) is not tuple
         or type(trace.completed_opportunities) is not tuple
         or type(trace.transitions) is not tuple
@@ -735,11 +790,16 @@ def _validate_trace_contract(trace: SubingLifecycleTrace) -> None:
             raise SubingLifecycleContractError()
     if any(left >= right for left, right in zip(observed_at, observed_at[1:])):
         raise SubingLifecycleContractError()
+    observed_at_set = set(observed_at)
 
     transition_times: set[datetime] = set()
     previous_transition_at: datetime | None = None
     stage_by_opportunity: dict[SubingOpportunityKey, LifecycleStage] = {}
     terminal_opportunities: set[SubingOpportunityKey] = set()
+    entry_transition_by_opportunity: dict[
+        SubingOpportunityKey,
+        SubingLifecycleTransition,
+    ] = {}
     for transition in trace.transitions:
         if not isinstance(transition, SubingLifecycleTransition):
             raise SubingLifecycleContractError()
@@ -747,7 +807,7 @@ def _validate_trace_contract(trace: SubingLifecycleTrace) -> None:
         if (
             not _key_matches_trace(transition.opportunity_key, trace)
             or transition.transition_at in transition_times
-            or transition.transition_at not in observed_at
+            or transition.transition_at not in observed_at_set
         ):
             raise SubingLifecycleContractError()
         if (
@@ -765,6 +825,10 @@ def _validate_trace_contract(trace: SubingLifecycleTrace) -> None:
         ):
             raise SubingLifecycleContractError()
         stage_by_opportunity[transition.opportunity_key] = transition.to_stage
+        if transition.to_stage is LifecycleStage.ENTRY_CONFIRMED:
+            if transition.opportunity_key in entry_transition_by_opportunity:
+                raise SubingLifecycleContractError()
+            entry_transition_by_opportunity[transition.opportunity_key] = transition
         if transition.to_stage is LifecycleStage.CLOSED:
             terminal_opportunities.add(transition.opportunity_key)
         transition_times.add(transition.transition_at)
@@ -804,18 +868,17 @@ def _validate_trace_contract(trace: SubingLifecycleTrace) -> None:
             LifecycleStage.CONTINUATION,
             LifecycleStage.EXIT_RISK,
         }
-        entry_transitions = tuple(
-            candidate
-            for candidate in trace.transitions
-            if candidate.opportunity_key == transition.opportunity_key
-            and candidate.to_stage is LifecycleStage.ENTRY_CONFIRMED
-            and candidate.transition_at < transition.transition_at
+        entry_transition = entry_transition_by_opportunity.get(
+            transition.opportunity_key
         )
         if closes_confirmed_stage:
-            if len(entry_transitions) != 1:
+            if (
+                entry_transition is None
+                or entry_transition.transition_at >= transition.transition_at
+            ):
                 raise SubingLifecycleContractError()
             confirmation_snapshot = snapshots_by_time.get(
-                entry_transitions[0].transition_at
+                entry_transition.transition_at
             )
             if (
                 confirmation_snapshot is None
@@ -926,6 +989,10 @@ def evaluate_subing_lifecycle(
             }
         except ValueError:
             input_error = "SUBING_STRUCTURE_INVALID"
+    pivot_cursor = _ConfirmedPivotCursor(
+        pivots,
+        pivot_trading_days=pivot_trading_days,
+    )
 
     for index, bar_5m in enumerate(bars_5m):
         transition_count_before = len(transitions)
@@ -934,8 +1001,16 @@ def evaluate_subing_lifecycle(
             and bars_15m[anchor_index + 1].bar_end <= bar_5m.bar_end
         ):
             anchor_index += 1
-        anchor_bar = bars_15m[anchor_index] if anchor_index >= 0 else None
-        anchor_factor = factors_15m[anchor_index] if anchor_index >= 0 else None
+        anchor_bar = (
+            bars_15m[anchor_index]
+            if 0 <= anchor_index < len(bars_15m)
+            else None
+        )
+        anchor_factor = (
+            factors_15m[anchor_index]
+            if 0 <= anchor_index < len(factors_15m)
+            else None
+        )
         boundary_error = input_error or _boundary_contract_error(
             bar=bar_5m,
             factor=factors_5m[index] if index < len(factors_5m) else None,
@@ -1082,15 +1157,11 @@ def evaluate_subing_lifecycle(
                 completed=completed,
             )
         elif opportunity.stage is LifecycleStage.SETUP_ARMED:
-            if bar_5m.trading_day > opportunity.origin_trading_day:
-                _close_setup(
-                    opportunity,
-                    transition_at=bar_5m.bar_end,
-                    reason_code="UNCONFIRMED_TRADING_DAY_ROLLOVER",
-                    transitions=transitions,
-                    completed=completed,
+            if formal_match and formal.direction is opportunity.key.direction:
+                opportunity.crossed_trading_day = (
+                    opportunity.crossed_trading_day
+                    or bar_5m.trading_day > opportunity.origin_trading_day
                 )
-            elif formal_match and formal.direction is opportunity.key.direction:
                 _confirm_entry(
                     opportunity,
                     source=ConfirmationSource.FORMAL_V1,
@@ -1104,6 +1175,14 @@ def evaluate_subing_lifecycle(
                         to_stage=LifecycleStage.ENTRY_CONFIRMED,
                         reason_code="FORMAL_V1_MATCHED",
                     )
+                )
+            elif bar_5m.trading_day > opportunity.origin_trading_day:
+                _close_setup(
+                    opportunity,
+                    transition_at=bar_5m.bar_end,
+                    reason_code="UNCONFIRMED_TRADING_DAY_ROLLOVER",
+                    transitions=transitions,
+                    completed=completed,
                 )
             elif opportunity.progress is EntryProgress.RETEST_CONFIRMING:
                 pivot = opportunity.bound_reference_pivot
@@ -1257,8 +1336,14 @@ def evaluate_subing_lifecycle(
             else:
                 pivot_trigger = (
                     _pivot_breakout_at(
-                        pivots,
-                        pivot_trading_days=pivot_trading_days,
+                        pivot_cursor.latest_before(
+                            boundary=bar_5m,
+                            kind=(
+                                PivotKind.HIGH
+                                if opportunity.key.direction is SubingDirection.LONG
+                                else PivotKind.LOW
+                            ),
+                        ),
                         previous=bars_5m[index - 1],
                         current=bar_5m,
                         direction=opportunity.key.direction,
@@ -1335,22 +1420,20 @@ def evaluate_subing_lifecycle(
         observed_at=None,
         anchor_bar_end=None,
         availability=LifecycleAvailability.UNAVAILABLE,
-        unavailable_reason="SUBING_5M_CLOCK_UNAVAILABLE",
+        unavailable_reason=input_error or "SUBING_5M_CLOCK_UNAVAILABLE",
         direction=SubingDirection.NONE,
         opportunity=None,
         latest_transition=None,
         boundary_reset="segment_changed",
     )
-    trace_symbol, trace_contract = _canonical_trace_identity(symbol, contract)
+    identity_invalid = input_error == "SUBING_LIFECYCLE_IDENTITY_INVALID"
     return SubingLifecycleTrace(
         formula_version=_FORMULA_VERSION,
         policy_id=_POLICY_ID,
-        symbol=trace_symbol,
-        contract=trace_contract,
+        symbol=None if identity_invalid else symbol,
+        contract=None if identity_invalid else contract,
         segment_start_trading_day=(
-            segment_start_trading_day
-            if type(segment_start_trading_day) is date
-            else date.min
+            None if identity_invalid else segment_start_trading_day
         ),
         confirmed_pivots=pivots,
         completed_opportunities=tuple(completed),
@@ -1398,6 +1481,9 @@ def _input_contract_error(
             for bar in bars
         ) or any(
             left.bar_end >= right.bar_end for left, right in zip(bars, bars[1:])
+        ) or any(
+            left.trading_day > right.trading_day
+            for left, right in zip(bars, bars[1:])
         ):
             return "SUBING_LIFECYCLE_SERIES_IDENTITY_INVALID"
     return None
@@ -1470,46 +1556,27 @@ def _all_confirmed_pivots(
     for bar in bars:
         bars_by_trading_day.setdefault(bar.trading_day, []).append(bar)
     return tuple(
-        sorted(
-            (
-                pivot
-                for trading_day, day_bars in bars_by_trading_day.items()
-                for pivot in confirmed_pivots(
-                    day_bars,
-                    source_timeframe=BarFrequency.M5,
-                    contract=contract,
-                    segment_start_trading_day=segment_start_trading_day,
-                    trading_day=trading_day,
-                )
-            ),
-            key=lambda pivot: (pivot.confirmed_at, pivot.pivot_time, pivot.kind.value),
+        pivot
+        for trading_day, day_bars in bars_by_trading_day.items()
+        for pivot in confirmed_pivots(
+            day_bars,
+            source_timeframe=BarFrequency.M5,
+            contract=contract,
+            segment_start_trading_day=segment_start_trading_day,
+            trading_day=trading_day,
         )
     )
 
 
 def _pivot_breakout_at(
-    pivots: Sequence[ConfirmedPivot],
+    pivot: ConfirmedPivot | None,
     *,
-    pivot_trading_days: dict[str, date],
     previous: CanonicalBar,
     current: CanonicalBar,
     direction: SubingDirection,
 ) -> tuple[ConfirmedPivot, BreakoutAssessment] | None:
-    expected_kind = (
-        PivotKind.HIGH
-        if direction is SubingDirection.LONG
-        else PivotKind.LOW
-    )
-    candidates = tuple(
-        pivot
-        for pivot in pivots
-        if pivot.kind is expected_kind
-        and pivot.confirmed_at < current.bar_end
-        and pivot_trading_days[pivot.pivot_id] == current.trading_day
-    )
-    if not candidates:
+    if pivot is None:
         return None
-    pivot = max(candidates, key=lambda item: (item.confirmed_at, item.pivot_time))
     assessment = assess_pivot_breakout(
         previous,
         current,
@@ -2103,22 +2170,3 @@ def _snapshot(
         ),
         boundary_reset=boundary_reset,
     )
-
-
-def _canonical_trace_identity(symbol: object, contract: object) -> tuple[str, str]:
-    if (
-        isinstance(symbol, str)
-        and isinstance(contract, str)
-        and normalize_contract_for_symbol(symbol, contract) == contract
-    ):
-        return symbol, contract
-    if isinstance(contract, str):
-        normalized_contract = contract.strip().upper()
-        candidate_symbol = normalized_contract.rstrip("0123456789")
-        if (
-            candidate_symbol
-            and normalize_contract_for_symbol(candidate_symbol, normalized_contract)
-            == normalized_contract
-        ):
-            return candidate_symbol, normalized_contract
-    return "INVALID", "INVALID0001"

@@ -417,13 +417,17 @@ SETUP_ARMED / HOLD_CONFIRMING
 SETUP_ARMED / RETEST_CONFIRMING
 ```
 
-不跨 `trading_day`。首次遇到下一 `trading_day` 的**可评价** 5m boundary：
+默认不跨 `trading_day`。首次遇到下一 `trading_day` 的**可评价** 5m boundary 时，先按第 14 节优先级评价现有 Formal V1：
 
 ```text
-CLOSED / UNCONFIRMED_TRADING_DAY_ROLLOVER
+同方向 FORMAL_V1
+→ ENTRY_CONFIRMED / FORMAL_V1_MATCHED / crossed_trading_day=true
+
+其余情况（包括反方向 FORMAL_V1）
+→ CLOSED / UNCONFIRMED_TRADING_DAY_ROLLOVER
 ```
 
-如果下一交易日首个 boundary 不可用，不产生伪关闭；等到可评价 boundary 再处理。
+反方向 Formal 不在同一 boundary 创建新 Opportunity；新方向最早从下一可评价 boundary 开始。下一交易日首个 boundary 不可用时，不产生伪确认或伪关闭，等到可评价 boundary 再处理。
 
 已确认的：
 
@@ -641,6 +645,7 @@ current_snapshot
 ```
 
 用于 prefix-invariance、Shadow 和研究 CLI，不持久化数据库，也不默认进入 HTTP。
+合法 Trace 的 `symbol + contract + segment_start_trading_day` 三字段必须同时存在。输入 identity 非法时三字段同时为 `None`，只允许输出 `UNAVAILABLE / SUBING_LIFECYCLE_IDENTITY_INVALID`，不得推导其他品种、回显非法 identity 或制造占位 identity。
 
 ### `SubingLifecycleSnapshot`
 

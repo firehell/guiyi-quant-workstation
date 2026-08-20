@@ -10,10 +10,17 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
-from app.market_data.domain import CanonicalBar, DatasetKey, SeriesQuery
+from app.market_data.domain import (
+    ActualDominantTradingDayQuery,
+    CanonicalBar,
+    ContractTradingDayQuery,
+    DatasetKey,
+    SeriesQuery,
+)
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import (
+    Contract,
     Exchange,
     Instrument,
     MarketPartition,
@@ -649,6 +656,451 @@ def test_actual_dominant_after_day_close_does_not_require_future_session_facts(
     )
 
     assert [bar.close for bar in result.bars] == [Decimal("100")]
+
+
+def test_actual_dominant_trading_day_query_normalizes_and_rejects_invalid_window() -> None:
+    query = ActualDominantTradingDayQuery(
+        " JM ",
+        "1m",
+        date(2025, 1, 6),
+        date(2025, 1, 6),
+    )
+
+    assert query.symbol == "jm"
+    with pytest.raises(ValueError):
+        ActualDominantTradingDayQuery(
+            "jm",
+            "1m",
+            date(2025, 1, 7),
+            date(2025, 1, 6),
+        )
+
+
+def test_contract_trading_day_query_normalizes_identity_and_rejects_invalid_window() -> (
+    None
+):
+    query = ContractTradingDayQuery(
+        " JM ",
+        " jm2509 ",
+        "1m",
+        date(2025, 1, 6),
+        date(2025, 1, 6),
+    )
+
+    assert query.symbol == "jm"
+    assert query.contract == "JM2509"
+    with pytest.raises(ValueError):
+        ContractTradingDayQuery(
+            "jm",
+            "AG2502",
+            "1m",
+            date(2025, 1, 6),
+            date(2025, 1, 6),
+        )
+    with pytest.raises(ValueError):
+        ContractTradingDayQuery(
+            "jm",
+            "JM2509",
+            "1m",
+            date(2025, 1, 7),
+            date(2025, 1, 6),
+        )
+
+
+def test_contract_trading_day_query_uses_weekend_night_and_last_session_bounds(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    contract = DatasetKey("contract", "jm", "JM2509", "60m")
+    friday_night = CanonicalBar(
+        datetime(2025, 1, 3, 14, tzinfo=UTC),
+        date(2025, 1, 6),
+        Decimal("100"),
+        Decimal("101"),
+        Decimal("99"),
+        Decimal("100"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    monday_close = CanonicalBar(
+        datetime(2025, 1, 6, 7, tzinfo=UTC),
+        date(2025, 1, 6),
+        Decimal("101"),
+        Decimal("102"),
+        Decimal("100"),
+        Decimal("101"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    tuesday = CanonicalBar(
+        datetime(2025, 1, 7, 7, tzinfo=UTC),
+        date(2025, 1, 7),
+        Decimal("102"),
+        Decimal("103"),
+        Decimal("101"),
+        Decimal("102"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    _publish(catalog, store, contract, (friday_night, monday_close, tuesday))
+    session.add_all(
+        (
+            Contract(
+                contract_code="JM2509",
+                instrument_symbol="jm",
+                exchange_code="DCE",
+                listed_date=date(2025, 1, 4),
+                expired_date=date(2025, 9, 25),
+                status="active",
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 4), is_trading_day=False
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 5), is_trading_day=False
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 6), is_trading_day=True
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 7), is_trading_day=True
+            ),
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name="night",
+                start_time=time(21),
+                end_time=time(23),
+                effective_from=date(2025, 1, 6),
+                is_active=True,
+            ),
+        )
+    )
+    session.commit()
+
+    result = MarketDataService(catalog, store).query_contract_trading_days(
+        ContractTradingDayQuery(
+            "jm",
+            "JM2509",
+            "60m",
+            date(2025, 1, 4),
+            date(2025, 1, 6),
+        )
+    )
+
+    assert result.bars == (friday_night, monday_close)
+    assert result.request_identity["start"] == "2025-01-03T13:00:00+00:00"
+    assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
+
+
+@pytest.mark.parametrize(
+    "present_days",
+    ((7, 8), (6, 8)),
+    ids=("leading-row-absent", "intermediate-row-absent"),
+)
+def test_contract_trading_day_query_fails_closed_for_missing_calendar_row(
+    session,
+    tmp_path,
+    present_days,
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 1, 9),
+            status="active",
+        )
+    )
+    for day in present_days:
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=True,
+            )
+        )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^TRADING_CALENDAR_MISSING$"):
+        MarketDataService(catalog, store).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 6),
+                date(2025, 1, 8),
+            )
+        )
+
+
+def test_contract_trading_day_query_requires_expiry_metadata(session, tmp_path) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=None,
+            status="active",
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^CONTRACT_METADATA_MISSING$"):
+        MarketDataService(catalog, store).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 6),
+                date(2025, 1, 6),
+            )
+        )
+
+
+def test_contract_trading_day_query_clamps_to_exclusive_expiry_ceiling(
+    session,
+    tmp_path,
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    active_bars = (_bar(6, 206), _bar(7, 207))
+    expired_bar = _bar(8, 208)
+    _publish(catalog, store, key, (*active_bars, expired_bar))
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 1, 8),
+            status="active",
+        )
+    )
+    for day in (6, 7):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=True,
+            )
+        )
+    session.commit()
+
+    result = MarketDataService(catalog, store).query_contract_trading_days(
+        ContractTradingDayQuery(
+            "jm",
+            "JM2509",
+            "1d",
+            date(2025, 1, 6),
+            date(2025, 1, 9),
+        )
+    )
+
+    assert result.bars == active_bars
+    assert result.request_identity["end"] == "2025-01-07T07:00:00+00:00"
+
+
+def test_contract_trading_day_query_rejects_window_after_expiry(
+    session,
+    tmp_path,
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 1, 8),
+            status="active",
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^CONTRACT_ACTIVE_WINDOW_MISSING$"):
+        MarketDataService(catalog, store).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 8),
+                date(2025, 1, 9),
+            )
+        )
+
+
+def test_contract_trading_day_query_clamps_to_contract_active_floor(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    first_available = _bar(6, 209)
+    _publish(catalog, store, key, (first_available,))
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 9, 25),
+            status="active",
+        )
+    )
+    for day in (2, 3, 6):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True
+            )
+        )
+    session.commit()
+
+    result = MarketDataService(catalog, store).query_contract_trading_days(
+        ContractTradingDayQuery(
+            "jm",
+            "JM2509",
+            "1d",
+            date(2025, 1, 2),
+            date(2025, 1, 6),
+        )
+    )
+
+    assert result.bars == (first_available,)
+    assert result.request_identity["start"] == "2025-01-06T01:00:00+00:00"
+    assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
+
+
+def test_contract_trading_day_query_fails_closed_for_incomplete_first_session(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract", "jm", "JM2509", "60m")
+    late_first_bar = CanonicalBar(
+        datetime(2025, 1, 6, 3, tzinfo=UTC),
+        date(2025, 1, 6),
+        Decimal("100"),
+        Decimal("101"),
+        Decimal("99"),
+        Decimal("100"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    _publish(catalog, store, key, (late_first_bar, _bar(6, 101)))
+    session.add_all(
+        (
+            Contract(
+                contract_code="JM2509",
+                instrument_symbol="jm",
+                exchange_code="DCE",
+                listed_date=date(2025, 1, 6),
+                expired_date=date(2025, 9, 25),
+                status="active",
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 6), is_trading_day=True
+            ),
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        MarketDataService(catalog, store).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "60m",
+                date(2025, 1, 6),
+                date(2025, 1, 6),
+            )
+        )
+
+
+def test_trading_day_query_includes_weekend_night_and_excludes_future_day(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    contract = DatasetKey("contract", "jm", "JM2509", "1m")
+    friday_night = CanonicalBar(
+        datetime(2025, 1, 3, 13, 5, tzinfo=UTC),
+        date(2025, 1, 6),
+        Decimal("100"),
+        Decimal("101"),
+        Decimal("99"),
+        Decimal("100"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    monday_day = CanonicalBar(
+        datetime(2025, 1, 6, 1, 5, tzinfo=UTC),
+        date(2025, 1, 6),
+        Decimal("101"),
+        Decimal("102"),
+        Decimal("100"),
+        Decimal("101"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    _publish(catalog, store, contract, (friday_night, monday_day))
+    session.add_all(
+        (
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 6), is_trading_day=True
+            ),
+            TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, 7), is_trading_day=True
+            ),
+            TradingSession(
+                exchange_code="DCE",
+                instrument_symbol="jm",
+                session_name="night",
+                start_time=time(21),
+                end_time=time(23),
+                effective_from=date(2025, 1, 6),
+                is_active=True,
+            ),
+        )
+    )
+    catalog.upsert_main_contracts(
+        (("jm", date(2025, 1, 6), "JM2509"),)
+    )
+    session.commit()
+
+    result = MarketDataService(catalog, store).query_actual_dominant_trading_days(
+        ActualDominantTradingDayQuery(
+            "jm",
+            "1m",
+            date(2025, 1, 6),
+            date(2025, 1, 6),
+        )
+    )
+
+    assert result.bars == (friday_night, monday_day)
+    assert result.request_identity["start"] == "2025-01-03T13:00:00+00:00"
+    assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
 
 
 def test_actual_dominant_week_uses_last_trading_day_owner(session, tmp_path) -> None:

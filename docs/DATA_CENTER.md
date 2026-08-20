@@ -111,6 +111,17 @@ coverage 缺失时 fail-closed。`actual_dominant` 按与 `(start, end]` 相交�
 夜盘 bar 的身份始终是其 `trading_day`，而不是发生时刻所在的前一自然日。响应只返回请求、bars、
 coverage 和 resolved contract segments。
 
+按 `since/through` 交易日表达窗口的研究消费者使用
+`ActualDominantTradingDayQuery` 或 `ContractTradingDayQuery`；`MarketDataService` 先要求目标自然日期区间内
+每一天都有权威 TradingCalendar 行，再从其中的 `is_trading_day=True` 行解析首末 TradingSession，最后进入
+同一 `SeriesQuery`。显式 `is_trading_day=False` 的周末或节假日是完整日历事实并正常跳过；首界、中间或尾界
+任一 Calendar 行缺失均以 `TRADING_CALENDAR_MISSING` fail-closed，Session 缺失同样不得缩短窗口。
+
+`ContractTradingDayQuery` 还必须由 Catalog 中同时存在的 `listed_date` 与 `expired_date` 证明物理合约有效期，
+唯一 active 区间为 `[listed_date, expired_date)`。请求先收窄到该区间；任一 metadata 缺失返回
+`CONTRACT_METADATA_MISSING`，active 区间非法或与请求不相交返回 `CONTRACT_ACTIVE_WINDOW_MISSING`。消费者
+不得用自然日加减或固定夜盘时刻猜测查询边界，也不得因此要求窗口外下一交易日的 MainContractMap。
+
 ## 6. CLI 与外部操作
 
 ```bash

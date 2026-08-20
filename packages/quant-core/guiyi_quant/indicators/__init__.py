@@ -11,6 +11,20 @@ from .main_force_mirror import (
     classify_main_force_mirror_state,
     compute_main_force_mirror,
 )
+from .main_force_mirror_futures import (
+    DEFAULT_PARAMETERS as MAIN_FORCE_MIRROR_FUTURES_DEFAULT_PARAMETERS,
+)
+from .main_force_mirror_futures import (
+    MainForceMirrorFuturesCaution,
+    MainForceMirrorFuturesLatchState,
+    MainForceMirrorFuturesLatchStep,
+    MainForceMirrorFuturesResult,
+    MainForceMirrorFuturesState,
+    classify_main_force_mirror_futures_state,
+    compute_main_force_mirror_futures,
+    is_main_force_mirror_futures_candidate,
+    step_main_force_mirror_futures_latch,
+)
 from .models import (
     AtrSmoothingPolicy,
     FormalPolicy,
@@ -62,12 +76,20 @@ __all__ = [
     "MacdSeries",
     "MainForceMirrorResult",
     "MainForceMirrorState",
+    "MAIN_FORCE_MIRROR_FUTURES_DEFAULT_PARAMETERS",
+    "MainForceMirrorFuturesCaution",
+    "MainForceMirrorFuturesLatchState",
+    "MainForceMirrorFuturesLatchStep",
+    "MainForceMirrorFuturesResult",
+    "MainForceMirrorFuturesState",
     "RepaintingRisk",
     "SeedPolicy",
     "atr_series",
     "build_indicator_definition",
     "classify_main_force_mirror_state",
+    "classify_main_force_mirror_futures_state",
     "compute_main_force_mirror",
+    "compute_main_force_mirror_futures",
     "definition_to_metadata",
     "compute_htdy_original",
     "compute_strict_fields",
@@ -76,6 +98,7 @@ __all__ = [
     "get_formal_policy",
     "get_indicator",
     "indicator_registry",
+    "is_main_force_mirror_futures_candidate",
     "macd_series",
     "parameters_hash",
     "htdy_original_source_sha256",
@@ -88,6 +111,7 @@ __all__ = [
     "require_realtime_repainting_observation_policy",
     "require_formal_policy",
     "resolve_indicator_code",
+    "step_main_force_mirror_futures_latch",
     "validate_definition_capabilities",
     "xma",
 ]

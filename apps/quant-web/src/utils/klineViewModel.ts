@@ -1,6 +1,7 @@
-import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
+import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue, SeriesKind } from '../types/market.ts'
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
+import type { MainForceMirrorFuturesResult } from './mainForceMirrorFutures.ts'
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
@@ -24,6 +25,106 @@ export interface HtdyDerivedData {
   zd1: KlineValuePoint[]
   zd2: KlineValuePoint[]
   markers: KlineMarker[]
+}
+
+export type MainForceFuturesAvailabilityKind =
+  | 'unsupported'
+  | 'input_unavailable'
+  | 'derived_unavailable'
+  | 'state_warmup'
+  | 'caution_warmup'
+  | 'conflict'
+  | 'ready'
+
+export interface MainForceFuturesAvailability {
+  kind: MainForceFuturesAvailabilityKind
+  reason: string | null
+}
+
+export interface MainForceFuturesSupport {
+  period: string
+  seriesKind: SeriesKind
+}
+
+export interface MainForceFuturesRenderModel {
+  histogram: Array<{ time: string; value: number; colorKey: 'up' | 'down' | 'ema21' | 'macdDif' | 'textMuted' }>
+  markers: Array<{ time: string; position: 'aboveBar' | 'belowBar'; shape: 'arrowDown' | 'arrowUp'; tone: 'up' | 'down'; text: string }>
+  autoscale: { minValue: number; maxValue: number }
+}
+
+const MAIN_FORCE_FUTURES_AUTOSCALE = { minValue: -105, maxValue: 105 } as const
+const DERIVED_UNAVAILABLE_REASONS = new Set([
+  'MFM_FUTURES_V1_ATR_INVALID',
+  'MFM_FUTURES_V1_VOLUME_BASELINE_INVALID',
+  'MFM_FUTURES_V1_RANGE_INVALID',
+])
+
+/** Maps frozen V1 support and point reasons to one user-visible availability contract. */
+export function resolveMainForceFuturesAvailability(
+  support: MainForceFuturesSupport,
+  point: MainForceMirrorFuturesResult['points'][number] | null,
+  fallbackReason: string | null,
+): MainForceFuturesAvailability {
+  if (support.period !== '60m') return { kind: 'unsupported', reason: 'MFM_FUTURES_V1_FREQUENCY_UNSUPPORTED' }
+  if (support.seriesKind !== 'contract' && support.seriesKind !== 'actual_dominant') {
+    return { kind: 'unsupported', reason: 'MFM_FUTURES_V1_SERIES_UNSUPPORTED' }
+  }
+  if (!point) return { kind: 'state_warmup', reason: fallbackReason || 'MFM_FUTURES_V1_WARMUP' }
+  if (!point.valid) return { kind: 'input_unavailable', reason: point.reason || fallbackReason || 'MFM_FUTURES_V1_INPUT_INVALID' }
+  if (point.reason && DERIVED_UNAVAILABLE_REASONS.has(point.reason)) {
+    return { kind: 'derived_unavailable', reason: point.reason }
+  }
+  if (!point.state_ready) return { kind: 'state_warmup', reason: point.reason || 'MFM_FUTURES_V1_WARMUP' }
+  if (!point.caution_ready) {
+    return { kind: 'caution_warmup', reason: point.caution_availability_reason || 'MFM_FUTURES_V1_CAUTION_WARMUP' }
+  }
+  if (point.caution_availability_reason === 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT') {
+    return { kind: 'conflict', reason: point.caution_availability_reason }
+  }
+  return { kind: 'ready', reason: null }
+}
+
+/** Resolves the pane from the current logical viewport, never from the loaded tail. */
+export function resolveMainForceFuturesWindowAvailability(
+  support: MainForceFuturesSupport,
+  points: MainForceMirrorFuturesResult['points'],
+  range: { from: number; to: number } | null,
+): MainForceFuturesAvailability {
+  const identity = resolveMainForceFuturesAvailability(support, null, null)
+  if (identity.kind === 'unsupported') return identity
+  if (!range || !points.length) return resolveMainForceFuturesAvailability(support, null, null)
+  const from = Math.max(0, Math.ceil(range.from))
+  const to = Math.min(points.length - 1, Math.floor(range.to))
+  const visible = points.slice(from, to + 1)
+  if (!visible.length) return resolveMainForceFuturesAvailability(support, null, null)
+  return resolveMainForceFuturesAvailability(support, visible.at(-1) ?? null, null)
+}
+
+/** Pure V1 secondary-pane projection: signed scores and directional markers never share numeric data. */
+export function buildMainForceFuturesRenderModel(result: MainForceMirrorFuturesResult | null): MainForceFuturesRenderModel {
+  const model: MainForceFuturesRenderModel = { histogram: [], markers: [], autoscale: { ...MAIN_FORCE_FUTURES_AUTOSCALE } }
+  if (!result) return model
+  for (const point of result.points) {
+    if (point.signed_score !== null && point.state !== null) {
+      const colorKey = point.state === 'long_build' ? 'up'
+        : point.state === 'short_build' ? 'down'
+          : point.state === 'short_cover' ? 'ema21'
+            : point.state === 'long_liquidation' ? 'macdDif' : 'textMuted'
+      model.histogram.push({ time: point.time, value: point.signed_score, colorKey })
+    }
+    if (!point.caution) continue
+    const isLong = point.caution === 'long_chase_caution'
+    const score = isLong ? point.long_caution_score : point.short_caution_score
+    if (score === null) continue
+    model.markers.push({
+      time: point.time,
+      position: isLong ? 'aboveBar' : 'belowBar',
+      shape: isLong ? 'arrowDown' : 'arrowUp',
+      tone: isLong ? 'up' : 'down',
+      text: `${isLong ? '追多小心' : '追空小心'} ${score}`,
+    })
+  }
+  return model
 }
 
 /** Formats a nullable chart observation without inventing a numeric fallback. */
@@ -105,6 +206,8 @@ export function resolveKlineHoverContext(
   derived: KlineDerivedData,
   visibleMainIndicators: MainIndicatorId[],
   time: string,
+  mainForceFutures: MainForceMirrorFuturesResult | null = null,
+  mainForceFuturesSupport: MainForceFuturesSupport = { period: '60m', seriesKind: 'contract' },
 ): HoverKlineContext | null {
   const bar = bars.find((item) => item.time === time)
   if (!bar) return null
@@ -120,6 +223,36 @@ export function resolveKlineHoverContext(
       dea: pointValue(derived.macd.dea, time),
       histogram: pointValue(derived.macd.histogram, time),
     },
+    mainForceFutures: toMainForceFuturesHover(mainForceFutures, time, mainForceFuturesSupport),
+  }
+}
+
+function toMainForceFuturesHover(result: MainForceMirrorFuturesResult | null, time: string, support: MainForceFuturesSupport) {
+  const point = result?.points.find((item) => item.time === time)
+  if (!point) return null
+  const availability = resolveMainForceFuturesAvailability(support, point, null)
+  return {
+    physicalContract: point.physical_contract,
+    valid: point.valid,
+    stateReady: point.state_ready,
+    cautionReady: point.caution_ready,
+    ready: point.ready,
+    pointReason: point.reason,
+    cautionAvailabilityReason: point.caution_availability_reason,
+    state: point.state,
+    strength: point.strength,
+    priceImpulse: point.price_impulse,
+    clv: point.clv,
+    volumeRatio: point.volume_ratio,
+    deltaOi: point.delta_oi,
+    oiImpulse: point.oi_impulse,
+    rangePosition: point.range_position,
+    longScore: point.long_caution_score,
+    shortScore: point.short_caution_score,
+    caution: point.caution,
+    reasonCodes: point.caution_reason_codes,
+    availabilityKind: availability.kind,
+    availabilityReason: availability.reason,
   }
 }
 

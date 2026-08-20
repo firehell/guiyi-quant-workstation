@@ -18,6 +18,10 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.catalog import MarketCatalog
+from app.market_data.candidate_validation_policy import (
+    load_candidate_manifest,
+    load_candidate_validation_protocol,
+)
 from app.market_data.live_market import (
     RQDataLiveProvider,
     LiveMarketService,
@@ -31,8 +35,14 @@ from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
+from app.market_data.main_force_mirror_futures_research_service import (
+    MainForceMirrorFuturesResearchService,
+)
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.market_data.subing_calibration_service import SubingCalibrationResearchService
+from app.market_data.subing_candidate_validation_service import (
+    SubingCandidateValidationService,
+)
 from app.market_data.subing_lifecycle_policy import (
     SubingLifecyclePolicyError,
     load_subing_lifecycle_policy,
@@ -54,6 +64,12 @@ _SUBING_CALIBRATION = (
 )
 _SUBING_LIFECYCLE_POLICY = (
     PROJECT_ROOT / "data/research_policies/subing_lifecycle_v2_research_v1.json"
+)
+_CANDIDATE_MANIFEST = (
+    PROJECT_ROOT / "data/research_candidates/subing_lifecycle_v2_candidate_v1.json"
+)
+_CANDIDATE_VALIDATION_PROTOCOL = (
+    PROJECT_ROOT / "data/research_protocols/candidate_validation_v1.json"
 )
 
 
@@ -114,6 +130,13 @@ def build_market_data_service(session: Session) -> MarketDataService:
 def build_market_research_service(session: Session) -> MarketResearchService:
     """构造 Product Workspace 的只读研究服务。"""
     return MarketResearchService(build_market_data_service(session))
+
+
+def build_main_force_mirror_futures_research_service(
+    session: Session,
+) -> MainForceMirrorFuturesResearchService:
+    """Compose read-only Futures Mirror Shadow over MarketDataService only."""
+    return MainForceMirrorFuturesResearchService(build_market_data_service(session))
 
 
 def build_market_radar_service(session: Session) -> MarketRadarService:
@@ -184,6 +207,17 @@ def build_subing_lifecycle_research_service(
         products=load_active_products(),
         calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
         policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
+    )
+
+
+def build_subing_candidate_validation_service(
+    session: Session,
+) -> SubingCandidateValidationService:
+    """Compose Candidate validation around the single Lifecycle research path."""
+    return SubingCandidateValidationService(
+        build_subing_lifecycle_research_service(session),
+        manifest=load_candidate_manifest(_CANDIDATE_MANIFEST),
+        protocol=load_candidate_validation_protocol(_CANDIDATE_VALIDATION_PROTOCOL),
     )
 
 

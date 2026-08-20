@@ -276,6 +276,64 @@ class SeriesQuery:
 
 
 @dataclass(frozen=True, slots=True)
+class ActualDominantTradingDayQuery:
+    """Research-only actual-dominant request with exact trading-day bounds.
+
+    ``MarketDataService`` resolves the first and last historical Session windows
+    before constructing the canonical instant-based ``SeriesQuery``.  Consumers
+    therefore do not guess night-session boundaries from natural dates.
+    """
+
+    symbol: str
+    frequency: BarFrequency
+    since: date
+    through: date
+
+    def __post_init__(self) -> None:
+        symbol = _text(self.symbol, field="symbol")
+        if _SYMBOL.fullmatch(symbol.upper()) is None:
+            raise ContractError(field="symbol", reason="invalid", value=symbol)
+        frequency = _enum(BarFrequency, self.frequency, field="frequency")
+        if (
+            type(self.since) is not date
+            or type(self.through) is not date
+            or self.since > self.through
+        ):
+            raise ContractError(field="trading_day_window", reason="invalid")
+        object.__setattr__(self, "symbol", symbol)
+        object.__setattr__(self, "frequency", frequency)
+
+
+@dataclass(frozen=True, slots=True)
+class ContractTradingDayQuery:
+    """Research-only physical-contract request with exact trading-day bounds."""
+
+    symbol: str
+    contract: str
+    frequency: BarFrequency
+    since: date
+    through: date
+
+    def __post_init__(self) -> None:
+        symbol = _text(self.symbol, field="symbol")
+        if _SYMBOL.fullmatch(symbol.upper()) is None:
+            raise ContractError(field="symbol", reason="invalid", value=symbol)
+        contract = normalize_contract_for_symbol(symbol, self.contract)
+        if contract is None:
+            raise ContractError(field="contract", reason="invalid", value=self.contract)
+        frequency = _enum(BarFrequency, self.frequency, field="frequency")
+        if (
+            type(self.since) is not date
+            or type(self.through) is not date
+            or self.since > self.through
+        ):
+            raise ContractError(field="trading_day_window", reason="invalid")
+        object.__setattr__(self, "symbol", symbol)
+        object.__setattr__(self, "contract", contract)
+        object.__setattr__(self, "frequency", frequency)
+
+
+@dataclass(frozen=True, slots=True)
 class SeriesPageQuery:
     """历史游标分页请求：返回严格早于 ``before`` 的最新 bars。"""
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -1506,6 +1507,39 @@ def test_composition_degrades_only_lifecycle_when_lifecycle_policy_is_invalid(
         composition,
         "load_subing_lifecycle_policy",
         lambda _path: (_ for _ in ()).throw(SubingLifecyclePolicyError()),
+    )
+    monkeypatch.setattr(
+        "app.market_data.coverage_source.DatabaseCoverageSource",
+        lambda *_args, **_kwargs: "coverage",
+    )
+
+    class CapturingService:
+        def __init__(self, **kwargs) -> None:
+            observed.update(kwargs)
+
+    monkeypatch.setattr(composition, "SubingReadService", CapturingService)
+
+    composition.build_subing_read_service(object())
+
+    assert observed["calibration"] == _accepted_calibration()
+    assert observed["lifecycle_policy"] is None
+    assert observed["lifecycle_coverage"] == "coverage"
+
+
+def test_composition_degrades_only_lifecycle_when_policy_is_not_utf8(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_bytes(b"\xff\xfe\x00")
+    observed: dict[str, object] = {}
+    monkeypatch.setattr(composition, "_SUBING_LIFECYCLE_POLICY", policy_path)
+    monkeypatch.setattr(composition, "build_market_data_service", lambda _session: "md")
+    monkeypatch.setattr(composition, "build_market_read_service", lambda _session: "mr")
+    monkeypatch.setattr(
+        composition,
+        "load_accepted_subing_calibration",
+        lambda _path: _accepted_calibration(),
     )
     monkeypatch.setattr(
         "app.market_data.coverage_source.DatabaseCoverageSource",

@@ -9,12 +9,11 @@ import pytest
 
 from app.market_data import composition
 from app.market_data.domain import (
+    ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
     MarketSeriesResult,
     ResolvedContractSegment,
-    SeriesKind,
-    SeriesQuery,
 )
 from app.market_data.market_data_service import DominantContractSegmentSummary
 from app.market_data.subing_calibration import (
@@ -55,9 +54,12 @@ class _FakeMarketData:
         results: dict[tuple[str, BarFrequency], MarketSeriesResult],
     ) -> None:
         self._results = results
-        self.queries: list[SeriesQuery] = []
+        self.queries: list[ActualDominantTradingDayQuery] = []
 
-    def query(self, request: SeriesQuery) -> MarketSeriesResult:
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult:
         self.queries.append(request)
         return self._results[(request.symbol, request.frequency)]
 
@@ -92,10 +94,13 @@ class _WindowAwareMarketData:
         self._full = full
         self._true_segments = true_segments
         self._query_counts = {BarFrequency.M5: 0, BarFrequency.M15: 0}
-        self.queries: list[SeriesQuery] = []
+        self.queries: list[ActualDominantTradingDayQuery] = []
         self.segment_requests: list[tuple[str, date]] = []
 
-    def query(self, request: SeriesQuery) -> MarketSeriesResult:
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult:
         self.queries.append(request)
         count = self._query_counts[request.frequency]
         self._query_counts[request.frequency] = count + 1
@@ -128,6 +133,35 @@ def test_request_normalizes_symbol_and_rejects_invalid_window() -> None:
             through=_DAY_ONE,
             symbol=None,
         )
+
+
+def test_service_uses_exact_trading_day_queries() -> None:
+    segment = (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),)
+    market_data = _FakeMarketData(
+        {
+            ("jm", BarFrequency.M5): _result(
+                _bars(BarFrequency.M5, (_DAY_ONE, _DAY_TWO)), segment
+            ),
+            ("jm", BarFrequency.M15): _result(
+                _bars(BarFrequency.M15, (_DAY_ONE, _DAY_TWO)), segment
+            ),
+        }
+    )
+    service = SubingLifecycleResearchService(
+        market_data,
+        products=("jm",),
+        calibration=load_accepted_subing_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    service.run(LifecycleResearchRequest(_DAY_ONE, _DAY_TWO, "jm"))
+
+    assert market_data.queries == [
+        ActualDominantTradingDayQuery("jm", BarFrequency.M5, _DAY_ONE, _DAY_TWO),
+        ActualDominantTradingDayQuery("jm", BarFrequency.M15, _DAY_ONE, _DAY_TWO),
+        ActualDominantTradingDayQuery("jm", BarFrequency.M5, _DAY_ONE, _DAY_TWO),
+        ActualDominantTradingDayQuery("jm", BarFrequency.M15, _DAY_ONE, _DAY_TWO),
+    ]
 
 
 def test_service_uses_only_actual_dominant_and_runs_each_segment_independently(
@@ -196,11 +230,11 @@ def test_service_uses_only_actual_dominant_and_runs_each_segment_independently(
 
     assert result.products == ("jm",)
     assert result.segment_count == 2
-    assert [(query.series_kind, query.frequency) for query in market_data.queries] == [
-        (SeriesKind.ACTUAL_DOMINANT, BarFrequency.M5),
-        (SeriesKind.ACTUAL_DOMINANT, BarFrequency.M15),
-        (SeriesKind.ACTUAL_DOMINANT, BarFrequency.M5),
-        (SeriesKind.ACTUAL_DOMINANT, BarFrequency.M15),
+    assert [query.frequency for query in market_data.queries] == [
+        BarFrequency.M5,
+        BarFrequency.M15,
+        BarFrequency.M5,
+        BarFrequency.M15,
     ]
     assert factor_calls == [
         (BarFrequency.M5, "JM2609", _DAY_ONE, 1),
@@ -289,11 +323,11 @@ def test_service_restores_every_true_segment_before_factorization(
     result = service.run(LifecycleResearchRequest(_DAY_TWO, _DAY_THREE, "jm"))
 
     assert result.segment_count == 2
-    assert [(query.frequency, query.series_kind) for query in market_data.queries] == [
-        (BarFrequency.M5, SeriesKind.ACTUAL_DOMINANT),
-        (BarFrequency.M15, SeriesKind.ACTUAL_DOMINANT),
-        (BarFrequency.M5, SeriesKind.ACTUAL_DOMINANT),
-        (BarFrequency.M15, SeriesKind.ACTUAL_DOMINANT),
+    assert [query.frequency for query in market_data.queries] == [
+        BarFrequency.M5,
+        BarFrequency.M15,
+        BarFrequency.M5,
+        BarFrequency.M15,
     ]
     assert factor_calls == [
         (BarFrequency.M5, "JM2609", _DAY_ONE, (_DAY_ONE, _DAY_TWO)),
@@ -306,6 +340,75 @@ def test_service_restores_every_true_segment_before_factorization(
         ("jm", _DAY_TWO),
         ("jm", _DAY_THREE),
     }
+
+
+def test_pre_window_segment_warmup_is_read_but_not_counted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    segment = (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),)
+    summary = (DominantContractSegmentSummary("jm", "JM2609", _DAY_ONE, _DAY_TWO),)
+    probe = {
+        frequency: _result(_bars(frequency, (_DAY_TWO,)), segment)
+        for frequency in (BarFrequency.M5, BarFrequency.M15)
+    }
+    full = {
+        frequency: _result(_bars(frequency, (_DAY_ONE, _DAY_TWO)), segment)
+        for frequency in (BarFrequency.M5, BarFrequency.M15)
+    }
+    factor_days: list[tuple[BarFrequency, tuple[date, ...]]] = []
+
+    def factors(
+        bars: tuple[CanonicalBar, ...],
+        *,
+        timeframe: BarFrequency,
+        contract: str,
+        segment_start_trading_day: date,
+        **_kwargs: object,
+    ) -> tuple[SubingFactorResult, ...]:
+        factor_days.append((timeframe, tuple(bar.trading_day for bar in bars)))
+        return tuple(
+            _factor(
+                bar,
+                timeframe,
+                contract=contract,
+                segment_start=segment_start_trading_day,
+            )
+            for bar in bars
+        )
+
+    def lifecycle(**kwargs: object) -> SimpleNamespace:
+        bars_5m = kwargs["bars_5m"]
+        assert isinstance(bars_5m, tuple)
+        return SimpleNamespace(
+            snapshots=tuple(
+                _snapshot(bar.bar_end, LifecycleStage.IDLE) for bar in bars_5m
+            ),
+            transitions=(),
+        )
+
+    monkeypatch.setattr(
+        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        factors,
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        lifecycle,
+    )
+    service = SubingLifecycleResearchService(
+        _WindowAwareMarketData(probe=probe, full=full, true_segments=summary),
+        products=("jm",),
+        calibration=load_accepted_subing_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    result = service.run(LifecycleResearchRequest(_DAY_TWO, _DAY_TWO, "jm"))
+
+    assert factor_days == [
+        (BarFrequency.M5, (_DAY_ONE, _DAY_TWO)),
+        (BarFrequency.M15, (_DAY_ONE, _DAY_TWO)),
+    ]
+    assert result.evaluable_boundary_count == 1
+    assert result.funnel_counts["DATA_READY"] == 1
 
 
 def test_mid_segment_result_is_invariant_to_probe_left_window() -> None:

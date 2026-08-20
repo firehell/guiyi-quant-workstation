@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -37,7 +37,7 @@ uv run --offline --project services/quant-api ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-MYPYPATH=services/quant-api \
+MYPYPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
   services/quant-api/app/market_data services/quant-api/app/guiyi_cli services/quant-api/app/alerts \
   services/quant-api/app/execution_review \
@@ -69,6 +69,40 @@ pnpm --dir apps/quant-web build
 这些命令验证 frozen designed-v0、Python/Web deterministic parity、“小心”的 HHV5/BARSLAST
 rising-edge 边界，以及同一副图内默认 MACD 的 Tab 切换。它们不授权公式调整、Alert/Runtime 接入、
 Canonical/DB 写入、通知或订单行为。
+
+## 主力照妖镜·期货 V1
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_main_force_mirror_futures.py \
+  services/quant-api/tests/test_main_force_mirror.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
+  services/quant-api/tests/test_research_cli.py
+
+pnpm --dir apps/quant-web test
+
+pnpm --dir apps/quant-web exec playwright test \
+  e2e/main-force-mirror.spec.mjs \
+  e2e/main-force-mirror-futures.spec.mjs \
+  e2e/market-runtime.spec.mjs \
+  e2e/market-research.spec.mjs \
+  e2e/alert-v1.spec.mjs
+
+pnpm --dir apps/quant-web build
+```
+
+这些命令验证 V0 runtime 精确源码 hash、独立 `.pyi` 静态 facade、V1 exact identity、60m physical-contract segment reset、readiness、五状态、
+双向警戒、conflict/latch/re-arm、Python/Web 单一 golden parity、动态 marker/hover、合法 5m/15m Alert
+在 MACD/V0 切换中的保留行为与 historical-only Shadow
+CLI，包括 `(long+short)*1000/caution_ready` 的 6 位 half-away 事件率、conflict 不计事件、零分母 JSON
+`null`，以及不可执行的 `("jm", "ag", "cu", "m", "sc")` 代表参数 tuple。它们不执行真实 Shadow 代表
+矩阵。真实 A→B resolved segments 还会验证 Pane 只取最右侧当前 block、B 第 10/21/31 根 readiness、
+两端 Hover 的 B 合约身份与 marker 不继承。Futures V1 仅支持 60m，persistent Alert markers 仅支持 actual-dominant 5m/15m，因此两者按各自合法
+identity 独立验证，不用生产测试注入伪造重叠状态；这些测试也不授权 Canonical/DB 写入、
+Alert/notification、Runtime、订单、release 或策略晋升。
 
 ## Execution Review V1
 
@@ -102,10 +136,13 @@ Episode snapshot、四状态工作流、reconstruction、roll estimate、stats �
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_subing_lifecycle_policy.py \
+  services/quant-api/tests/test_candidate_validation_policy.py \
+  services/quant-api/tests/test_candidate_validation.py \
   services/quant-api/tests/test_subing_structure.py \
   services/quant-api/tests/test_subing_lifecycle.py \
   services/quant-api/tests/test_subing_calibration.py \
   services/quant-api/tests/data_foundation/test_subing_lifecycle_research_service.py \
+  services/quant-api/tests/data_foundation/test_subing_candidate_validation_service.py \
   services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
   services/quant-api/tests/test_research_cli.py \
   services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
@@ -147,8 +184,15 @@ Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不
 intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distance 不参与 executable Signal。
 
 `guiyi research subing-lifecycle` 同样只读 Historical Canonical：它通过 `MarketDataService`
-按 current-rank1 segment 独立复算 research-only lifecycle Shadow，只输出 stdout JSON。测试只验证
-命令、分段因果与报告合同，不运行真实当前市场观察，也不表示正式回测、策略有效或可晋升。
+按 exact trading-day Session window 与 current-rank1 segment 独立复算 research-only lifecycle
+Shadow，只输出 stdout JSON。测试只验证命令、分段因果与报告合同，不运行真实当前市场观察，
+也不表示正式回测、策略有效或可晋升。
+
+`guiyi research candidate-validation` 只接受 Git-tracked exact Candidate/Protocol，通过既有
+`SubingLifecycleResearchService` 投影 frozen retrospective、10 个 12m+3m rolling folds 和从
+`2026-08-20` 开始的 prospective OOS。命令只输出 stdout JSON，保持 `research_only=true` 与
+`readonly=true`；测试使用 fake source 验证合同和时间边界，不运行真实 Candidate report，也不授权
+Candidate 晋升、Alert/Runtime 接入、DB/Canonical/Redis 写入、通知或订单。
 
 ## Alert V2
 

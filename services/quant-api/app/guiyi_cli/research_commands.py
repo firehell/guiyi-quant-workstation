@@ -5,9 +5,20 @@ from __future__ import annotations
 import argparse
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Protocol, cast
+from typing import Protocol, TypeAlias, cast
 
-from app.market_data.domain import BarFrequency
+from app.market_data.candidate_validation import (
+    CandidateValidationReport,
+    CandidateWindowResult,
+    ProspectiveOosResult,
+    RollingCandidateFold,
+)
+from app.market_data.domain import BarFrequency, SeriesKind
+from app.market_data.main_force_mirror_futures_research_service import (
+    MainForceMirrorFuturesHorizonSummary,
+    MainForceMirrorFuturesResearchRequest,
+    MainForceMirrorFuturesResearchResult,
+)
 from app.market_data.subing_calibration import (
     CalibrationReport,
     HorizonEvaluation,
@@ -24,6 +35,9 @@ from app.market_data.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
+from app.market_data.subing_candidate_validation_service import (
+    CandidateValidationRequest,
+)
 
 
 class _CalibrationResearchService(Protocol):
@@ -34,11 +48,43 @@ class _LifecycleResearchService(Protocol):
     def run(self, request: LifecycleResearchRequest) -> SubingLifecycleResearchResult: ...
 
 
-ResearchRequest = CalibrationResearchRequest | LifecycleResearchRequest
+class _CandidateValidationService(Protocol):
+    def run(self, request: CandidateValidationRequest) -> CandidateValidationReport: ...
+
+
+class _MainForceMirrorFuturesResearchService(Protocol):
+    def run(
+        self,
+        request: MainForceMirrorFuturesResearchRequest,
+    ) -> MainForceMirrorFuturesResearchResult: ...
+
+
+ResearchRequest: TypeAlias = (
+    CalibrationResearchRequest
+    | LifecycleResearchRequest
+    | CandidateValidationRequest
+    | MainForceMirrorFuturesResearchRequest
+)
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
-    """Convert CLI strings into one of the two immutable research requests."""
+    """Convert CLI strings into one immutable research request."""
+    if args.research_command == "main-force-mirror-futures":
+        return MainForceMirrorFuturesResearchRequest(
+            symbol=args.symbol,
+            series_kind=SeriesKind(args.series_kind),
+            contract=args.contract,
+            frequency=BarFrequency(args.frequency),
+            since=_day(args.since),
+            through=_day(args.through),
+        )
+    if args.research_command == "candidate-validation":
+        return CandidateValidationRequest(
+            candidate_id=args.candidate,
+            protocol_id=args.protocol,
+            symbol=args.symbol,
+            through=_day(args.through),
+        )
     if args.research_command == "subing-lifecycle":
         return LifecycleResearchRequest(
             since=_day(args.since),
@@ -72,6 +118,15 @@ def run_research_command(
     service: object,
 ) -> dict[str, object]:
     """Run one Historical-only research command and render its JSON schema."""
+    if isinstance(request, MainForceMirrorFuturesResearchRequest):
+        mirror_service = cast(_MainForceMirrorFuturesResearchService, service)
+        return _main_force_mirror_futures_payload(
+            request,
+            mirror_service.run(request),
+        )
+    if isinstance(request, CandidateValidationRequest):
+        candidate_service = cast(_CandidateValidationService, service)
+        return _candidate_payload(candidate_service.run(request))
     if isinstance(request, LifecycleResearchRequest):
         lifecycle_service = cast(_LifecycleResearchService, service)
         return _lifecycle_payload(request, lifecycle_service.run(request))
@@ -96,6 +151,56 @@ def run_research_command(
             for name in ("A", "B")
         }
     return payload
+
+
+def _main_force_mirror_futures_payload(
+    request: MainForceMirrorFuturesResearchRequest,
+    result: MainForceMirrorFuturesResearchResult,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command": "research.main-force-mirror-futures",
+        "status": "ok",
+        "readonly": True,
+        "symbol": request.symbol,
+        "series_kind": request.series_kind.value,
+        "contract": request.contract,
+        "frequency": request.frequency.value,
+        "since": request.since.isoformat(),
+        "through": request.through.isoformat(),
+        "products": list(result.products),
+        "bars_valid_count": result.bars_valid_count,
+        "bars_state_ready_count": result.bars_state_ready_count,
+        "bars_caution_ready_count": result.bars_caution_ready_count,
+        "event_count_long": result.event_count_long,
+        "event_count_short": result.event_count_short,
+        "conflict_count": result.conflict_count,
+        "events_per_1000_caution_ready_bars": (
+            result.events_per_1000_caution_ready_bars
+        ),
+        "missing_oi_count": result.missing_oi_count,
+        "segment_reset_count": result.segment_reset_count,
+        "timestamp_invalid_count": result.timestamp_invalid_count,
+        "state_distribution": dict(result.state_distribution),
+        "reason_code_distribution": dict(result.reason_code_distribution),
+        "score_distribution": list(result.score_distribution),
+        "horizon_summary": {
+            str(horizon): _main_force_mirror_futures_horizon_payload(summary)
+            for horizon, summary in result.horizon_summary.items()
+        },
+    }
+
+
+def _main_force_mirror_futures_horizon_payload(
+    summary: MainForceMirrorFuturesHorizonSummary,
+) -> dict[str, object]:
+    return {
+        "horizon_bars": summary.horizon_bars,
+        "sample_count": summary.sample_count,
+        "reversal_returns": list(summary.reversal_returns),
+        "warning_mfe": list(summary.warning_mfe),
+        "warning_mae": list(summary.warning_mae),
+    }
 
 
 def _lifecycle_payload(
@@ -128,6 +233,82 @@ def _lifecycle_payload(
             str(horizon): _horizon_payload(evaluation)
             for horizon, evaluation in result.horizon_summary.items()
         },
+    }
+
+
+def _candidate_payload(report: CandidateValidationReport) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": "research.candidate-validation",
+        "status": "ok",
+        "readonly": True,
+        "candidate_id": report.candidate_id,
+        "policy_id": report.policy_id,
+        "formula_version": report.formula_version,
+        "protocol_id": report.protocol_id,
+        "research_only": report.research_only,
+        "symbol": report.symbol,
+        "retrospective": _candidate_window_payload(report.retrospective),
+        "rolling_folds": [
+            _candidate_fold_payload(fold) for fold in report.rolling_folds
+        ],
+        "rolling_stability": {
+            "fold_count": report.rolling_stability.fold_count,
+            "folds_with_entries": report.rolling_stability.folds_with_entries,
+            "entry_count_min": report.rolling_stability.entry_count_min,
+            "entry_count_max": report.rolling_stability.entry_count_max,
+            "entry_count_median": str(report.rolling_stability.entry_count_median),
+        },
+        "prospective_oos": _prospective_payload(report.prospective_oos),
+        "quality_flags": list(report.quality_flags),
+    }
+
+
+def _candidate_fold_payload(fold: RollingCandidateFold) -> dict[str, object]:
+    return {
+        "fold_id": fold.fold_id,
+        "reference": _candidate_window_payload(fold.reference),
+        "test": _candidate_window_payload(fold.test),
+    }
+
+
+def _candidate_window_payload(window: CandidateWindowResult) -> dict[str, object]:
+    return {
+        "window_id": window.window_id,
+        "window_kind": window.window_kind.value,
+        "since": window.since.isoformat(),
+        "through": window.through.isoformat(),
+        "products": list(window.products),
+        "segment_count": window.segment_count,
+        "evaluable_boundary_count": window.evaluable_boundary_count,
+        "funnel_counts": dict(window.funnel_counts),
+        "funnel_count_units": dict(window.funnel_count_units),
+        "confirmation_source_counts": dict(window.confirmation_source_counts),
+        "v1_v2_overlap_counts": dict(window.v1_v2_overlap_counts),
+        "v2_to_v1_lead_bars": list(window.v2_to_v1_lead_bars),
+        "confirmed_trading_day_span_counts": dict(
+            window.confirmed_trading_day_span_counts
+        ),
+        "risk_reason_counts": dict(window.risk_reason_counts),
+        "recovery_reason_counts": dict(window.recovery_reason_counts),
+        "close_reason_counts": dict(window.close_reason_counts),
+        "horizon_summary": {
+            str(horizon): _horizon_payload(evaluation)
+            for horizon, evaluation in window.horizon_summary.items()
+        },
+    }
+
+
+def _prospective_payload(result: ProspectiveOosResult) -> dict[str, object]:
+    return {
+        "status": result.status.value,
+        "first_trading_day": result.first_trading_day.isoformat(),
+        "through": result.through.isoformat(),
+        "result": (
+            None
+            if result.result is None
+            else _candidate_window_payload(result.result)
+        ),
     }
 
 
