@@ -74,7 +74,7 @@ class RollingValidationWindow:
             or self.reference_since.day != 1
             or self.test_since.day != 1
             or self.reference_since > self.reference_through
-            or self.reference_through + timedelta(days=1) != self.test_since
+            or self.reference_through.toordinal() + 1 != self.test_since.toordinal()
             or self.test_since > self.test_through
             or not _is_month_end(self.test_through)
         ):

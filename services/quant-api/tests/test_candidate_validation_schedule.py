@@ -171,6 +171,20 @@ def test_rolling_window_rejects_invalid_fold_identity_and_dates(
         RollingValidationWindow(**values)  # type: ignore[arg-type]
 
 
+def test_rolling_window_wraps_reference_through_date_overflow() -> None:
+    with pytest.raises(
+        CandidateValidationWindowError,
+        match="^CANDIDATE_VALIDATION_WINDOW_INVALID$",
+    ):
+        RollingValidationWindow(
+            fold_id="fold_01",
+            reference_since=date(9999, 1, 1),
+            reference_through=date.max,
+            test_since=date(9999, 12, 1),
+            test_through=date.max,
+        )
+
+
 def test_prospective_window_is_pending_before_first_day_and_bounded_after_it() -> None:
     first_day = date(2026, 8, 20)
 
