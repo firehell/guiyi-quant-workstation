@@ -445,6 +445,43 @@ MULTI_CANDIDATE_SOURCE_IDENTITY_INVALID
 
 不得转成 unavailable。
 
+当前 `NStructureResearchService` 的 loader adapter 必须在 Task 2 一并收窄：
+
+```text
+MarketDataError
+→ NStructureSourceUnavailableError
+
+ActualDominantResearchSegmentIdentityError
+→ NStructureSegmentIdentityError
+
+TypeError / ValueError / AssertionError / unexpected RuntimeError
+→ 原样向上抛出
+```
+
+禁止保留 `except Exception -> NStructureSourceUnavailableError`。Task 4 必须用真实 N service + collector
+链路证明上述穿透边界，而不只测试 fake runner。
+
+`CandidateSymbolRobustness` 的状态合同精确为：
+
+```text
+unavailable:
+  reason_code = MULTI_CANDIDATE_SOURCE_UNAVAILABLE
+  event_count = null
+  evaluable_count = null
+  event_rate_per_1000_evaluable = null
+  horizon_summary = null
+
+available:
+  reason_code = null
+  horizon_summary keys = exact 3 / 5 / 8
+  evaluable_count > 0 -> type(event_rate) is Decimal and value is exact
+  evaluable_count = 0 -> event rate = null
+```
+
+任一 unavailable partial metric、非稳定 reason、available 错误 horizon keys 或不一致 event rate 都必须在
+immutable contract 构造时 fail-closed，而不是留到 renderer 或 Evidence Review；数值相等的 `int/float`
+也必须拒绝，不能依赖 Python cross-type equality。
+
 Task 4 和 Task 7 必须有测试/Review 覆盖这一节。
 
 ## 12. Task Gate Table

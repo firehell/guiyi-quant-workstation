@@ -290,12 +290,38 @@ Validate exact candidate order, relationship order, exact 120 cross-symbol cells
 
 ```python
 if status is CandidateSymbolStatus.AVAILABLE:
-    if reason_code is not None or event_count is None or evaluable_count is None:
+    if (
+        reason_code is not None
+        or event_count is None
+        or evaluable_count is None
+        or tuple(horizon_summary or ()) != (3, 5, 8)
+    ):
+        raise ValueError("MULTI_CANDIDATE_REPORT_INVALID")
+    expected_rate = (
+        None
+        if evaluable_count == 0
+        else Decimal(event_count) * Decimal(1000) / Decimal(evaluable_count)
+    )
+    if (
+        evaluable_count > 0
+        and type(event_rate_per_1000_evaluable) is not Decimal
+    ) or event_rate_per_1000_evaluable != expected_rate:
         raise ValueError("MULTI_CANDIDATE_REPORT_INVALID")
 else:
-    if reason_code is None or event_count is not None or evaluable_count is not None:
+    if (
+        reason_code != "MULTI_CANDIDATE_SOURCE_UNAVAILABLE"
+        or event_count is not None
+        or evaluable_count is not None
+        or event_rate_per_1000_evaluable is not None
+        or horizon_summary is not None
+    ):
         raise ValueError("MULTI_CANDIDATE_REPORT_INVALID")
 ```
+
+RED mutations must cover every field in both branches: an unavailable row carrying any partial metric or a
+non-stable reason is invalid; an available row with a reason, non-exact horizon keys, a missing/non-Decimal rate,
+or a rate inconsistent with `event_count/evaluable_count` is invalid. Include numerically equal `int` and `float`
+rate mutations so Python equality cannot bypass the exact `Decimal` contract.
 
 All mappings are copied then wrapped with `MappingProxyType`; all tuples are re-materialized.
 
@@ -431,6 +457,24 @@ assert after == before
 
 Use the existing fixture’s full aggregate fields, not only event count.
 
+- [ ] **Step 3a: Write RED N source error-adapter tests**
+
+Use the real `NStructureResearchService` with a loader seam that raises each exception. Assert:
+
+```text
+MarketDataError
+→ NStructureSourceUnavailableError
+
+ActualDominantResearchSegmentIdentityError
+→ NStructureSegmentIdentityError
+
+TypeError / ValueError / AssertionError / unexpected RuntimeError
+→ same exception escapes unchanged
+```
+
+This test closes the existing broad `except Exception` path before the robustness collector is allowed to treat
+`NStructureSourceUnavailableError` as a typed unavailable boundary.
+
 - [ ] **Step 4: Refactor SuBing to one internal projection pass**
 
 Introduce an internal frozen result container:
@@ -481,6 +525,17 @@ class _NStructureResearchProjection:
 ```
 
 Append a completion event inside the existing `for pattern in patterns.patterns` branch only after the existing requested-window and bar-alignment checks pass.
+
+In the same bounded service edit, narrow the loader adapter to:
+
+```python
+except ActualDominantResearchSegmentIdentityError:
+    raise NStructureSegmentIdentityError() from None
+except MarketDataError:
+    raise NStructureSourceUnavailableError() from None
+```
+
+Do not catch `Exception`; unexpected programming/invariant errors must continue to fail the whole caller.
 
 - [ ] **Step 6: Implement generic adapters**
 
@@ -786,6 +841,21 @@ assert zero_event.event_count == 0
 ```
 
 No exception text/stack/provider details may be exposed.
+
+Also assert the complete row contract:
+
+```python
+assert unavailable.event_count is None
+assert unavailable.evaluable_count is None
+assert unavailable.event_rate_per_1000_evaluable is None
+assert unavailable.horizon_summary is None
+assert tuple(zero_event.horizon_summary or ()) == (3, 5, 8)
+assert zero_event.event_rate_per_1000_evaluable is None
+```
+
+Add an integration-shaped test using a real `NStructureResearchService` behind the collector: `MarketDataError`
+becomes one explicit unavailable cell, while `TypeError`, `ValueError`, `AssertionError`, unexpected
+`RuntimeError`, and source identity mismatch each abort the complete robustness run.
 
 - [ ] **Step 6: RED candidate summary sign counts**
 

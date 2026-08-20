@@ -661,8 +661,23 @@ Source failure：
 
 ```text
 status = unavailable
-reason_code = sanitized stable code
-metrics = null
+reason_code = MULTI_CANDIDATE_SOURCE_UNAVAILABLE
+event_count = null
+evaluable_count = null
+event_rate_per_1000_evaluable = null
+horizon_summary = null
+```
+
+`unavailable` 不得携带 source error code、异常文本或任何部分 metrics。`available` 必须满足：
+
+```text
+reason_code = null
+horizon_summary keys = exact 3 / 5 / 8
+evaluable_count > 0
+→ type(event_rate) is Decimal
+→ event_rate = Decimal(event_count) * Decimal(1000) / Decimal(evaluable_count)
+evaluable_count = 0
+→ event_rate = null
 ```
 
 报告仍必须保留该 symbol。
@@ -1001,6 +1016,12 @@ MULTI_CANDIDATE_REPORT_INVALID
 - source result products 与 requested symbol 不一致；
 - partial cross-symbol failure 被静默丢弃；
 - 任何自动 rank/promote 字段进入 report。
+
+当前 `NStructureResearchService` 的 source adapter 也属于本阶段要核验的边界：不得用
+`except Exception` 将 loader 的 `TypeError`、`ValueError`、`AssertionError` 或其他编程缺陷包装为
+`NStructureSourceUnavailableError`。实现必须只把 `MarketDataError` 映射为稳定 source-unavailable，
+把 `ActualDominantResearchSegmentIdentityError` 映射为稳定 segment-identity error；其余异常原样向上抛出。
+这只是收窄错误适配器，不修改 N reducer、公式、Candidate 或 source aggregate payload。
 
 ## 20. Testing Contract
 
