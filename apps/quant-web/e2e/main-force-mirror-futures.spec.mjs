@@ -66,7 +66,7 @@ function rolloverBars(contractBCount) {
 }
 
 const rolloverSegments = [
-  { contract: 'JM2609', start_trading_day: '2026-01-02', end_trading_day: '2026-01-02' },
+  { contract: 'AG2601', start_trading_day: '2026-01-02', end_trading_day: '2026-01-02' },
   { contract: 'AG2612', start_trading_day: '2026-01-03', end_trading_day: '2026-01-03' },
 ]
 
@@ -311,14 +311,28 @@ test('actual-dominant rollover resets B readiness identity and caution markers',
   await expect(b31Page.getByTestId('mfm-hover-contract')).toHaveText('合约 AG2612')
   await expect(b31Page.getByTestId('mfm-hover-state-ready')).toHaveText('state_ready true')
   await expect(b31Page.getByTestId('mfm-hover-caution-ready')).toHaveText('caution_ready true')
+  await expect.poll(() => b31Page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
+    expect.arrayContaining([expect.stringMatching(/^追[多空]小心/)]),
+  )
 
   await b31Page.mouse.move(chartBox.x + chartBox.width * 0.9, chartBox.y + chartBox.height * 0.3)
-  for (let index = 0; index < 8; index += 1) await b31Page.mouse.wheel(0, -300)
+  for (let index = 0; index < 10; index += 1) await b31Page.mouse.wheel(0, -300)
+  await b31Page.mouse.move(chartBox.x + chartBox.width * 0.04, chartBox.y + chartBox.height * 0.2)
+  await expect(b31Page.getByTestId('mfm-hover-contract')).toHaveText('合约 AG2612')
+  await b31Page.mouse.move(chartBox.x + chartBox.width * 0.92, chartBox.y + chartBox.height * 0.2)
+  await expect(b31Page.getByTestId('mfm-hover-contract')).toHaveText('合约 AG2612')
+
   await b31Page.evaluate(() => { window.__GUIYI_E2E_CANVAS_TEXT__ = [] })
-  await b31Page.mouse.move(chartBox.x + chartBox.width * 0.91, chartBox.y + chartBox.height * 0.3)
+  const tabs = b31Page.getByTestId('secondary-panel-tabs')
+  await tabs.getByRole('tab', { name: 'MACD' }).click()
+  await tabs.getByRole('tab', { name: '主力照妖镜' }).click()
   await expect.poll(() => b31Page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__.length)).toBeGreaterThan(0)
   const contractBText = await b31Page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)
   expect(contractBText).not.toEqual(expect.arrayContaining([expect.stringMatching(/^追[多空]小心/)]))
+  await b31Page.mouse.move(chartBox.x + chartBox.width * 0.04, chartBox.y + chartBox.height * 0.2)
+  await expect(b31Page.getByTestId('mfm-hover-contract')).toHaveText('合约 AG2612')
+  await b31Page.mouse.move(chartBox.x + chartBox.width * 0.92, chartBox.y + chartBox.height * 0.2)
+  await expect(b31Page.getByTestId('mfm-hover-contract')).toHaveText('合约 AG2612')
 })
 
 test('actual-dominant V1 hover follows the chart crosshair and exposes readiness without fabricated values', async ({ page }) => {
