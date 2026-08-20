@@ -2,7 +2,7 @@
 
 日期：2026-08-20
 
-状态：develop implementation complete；external Gates pending
+状态：develop implementation、Git 外配置与两次独立 canary complete；release/tag 与 Runtime switch pending
 
 ## 目标
 
@@ -41,7 +41,8 @@ parent 必须为 `0700`、file 必须为 `0600`、owner 必须是当前 uid；�
 
 API 与 Alert launchd 必须指向同一个配置路径。结构健康检查不联网，只公开
 `transport=pushplus`、`configured`、`audience_count=2`、`would_send=false`。真实 canary 必须显式选择
-`--audience owner|htdy_observers`，并属于独立通知 Gate。
+`--audience owner|htdy_observers`，并属于独立通知 Gate。owner 与 HTDY Topic 的单次真实 canary 均已完成、
+由 provider 接受且由用户确认实际收到；release 或 Runtime switch 不得重复执行这两次历史 canary。
 
 ## Topic 管理
 
@@ -51,6 +52,9 @@ Topic 成员只在 PushPlus 外部管理。创建者与最多三位朋友扫码�
 
 ## 上线边界
 
-当前 production 仍为 `v1.6.2` 的历史单 owner Clawbot transport。代码/测试完成不授权真实 token/Topic
-配置、canary、release/tag、Runtime promotion/switch、Scope 或自然通知。切换后如需更换 provider，只新增
-adapter 并在 composition 选择唯一 active provider，不改 Rule、evaluator、Event 或数据库。
+当前 production 仍为 `v1.6.3` 的历史单 owner Clawbot transport。Git 外 token/Topic 配置与 owner、HTDY
+Topic 两次历史 canary 已完成，但不授权 release/tag、Runtime promotion/switch、Scope 变更或自然通知；
+持续运行边界只允许 `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic` 与
+`subing_entry_signal_v1 × jm × owner × pushplus-wechat`，并须在独立 Runtime switch 后生效。切换后如需
+更换 provider，只新增 adapter 并在 composition 选择唯一 active provider，不改 Rule、evaluator、Event
+或数据库。
