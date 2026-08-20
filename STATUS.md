@@ -35,6 +35,10 @@
   Historical-only Shadow CLI。V1 Factor/Signal/resolver、Alert Rule/Scope 和 `AlertRuntime` 消费边界不变；
   Lifecycle 无 DB/Redis/queue/notification 路径。本版未运行真实 `jm` Shadow/current-market
   observation，因此无 live `jm` 证据，不表示策略有效、正式 Rule ready 或可晋升。
+- `develop` 已包含 reviewed N Structural Domain V1：5m causal Swing/epoch、N Pattern、level break/
+  Range Band、BULL/BEAR/RANGE Structure、Historical-only research CLI 与第二条独立 Candidate producer。
+  prospective OOS 从 `2026-08-21` 开始；Task 10 真实 `jm` evidence 尚未生成，不形成效果、盈利、晋升、
+  release 或 Runtime 结论。
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
@@ -112,6 +116,27 @@
   prospective OOS 为 `pending`，尚无 prospective OOS evidence。相关代码与历史 evidence 已随 v1.6.2
   发布，但这不表示策略有效、Candidate 可晋升、Alert Rule ready 或 Runtime ready；未执行 Runtime/Alert
   扩张、DB/Canonical/Redis 写入、通知或订单。
+
+## N Structural Domain V1（DEVELOP CODE_COMPLETE / TEST_COMPLETE；TASK 10 EVIDENCE PENDING）
+
+- reviewed implementation 已通过 merge commit
+  `706274ebcf8abed90600288dc44db204437f2e5d` 合入并推送 `develop`。N Structural Domain V1 包含 exact
+  5m policy、causal Swing/epoch、Completed N 与 immutable break/Range Band facts、BULL/BEAR/RANGE
+  Structure、共享 actual-dominant segment loader、price-only outcomes、只读 `guiyi research n-structure`
+  与 N-specific Candidate Validation。
+- N 是第二条独立 Candidate producer：`n_structure_5m_candidate_v1 × n_structure_validation_v1` 复用共享
+  rolling/prospective schedule，但由 `NStructureResearchService` 生成 source-specific report，不复用或
+  改写 SuBing lifecycle/outcome 事实源。retrospective 截止 `2026-08-19`，`2026-08-20` 为 embargo，
+  prospective OOS 从 `2026-08-21` 开始。
+- cumulative Standards 与 Spec scoped re-review 均为 Critical=`0` / Important=`0`；合并态验证为 N 全链
+  `335 passed`、SuBing zero-regression `601 passed`，Ruff、secret scan 与 diff check 均通过。
+- same-boundary completion 加自身 N2/origin break 保留为 Pattern 层的 local defensive contract；在冻结的
+  完整 Swing→Pattern producer 顺序下，正例会先成为 outside epoch reset，或由新 opposite base 替换 attempt，
+  因而不可达。该 canonical reachability ruling 未改变 Swing、Pattern、Structure 公式或边界顺序。
+- Task 10 的 exact-develop 真实 `jm` N baseline 与 Candidate evidence 尚未生成，也未执行真实 research CLI。
+  当前只证明 reviewed implementation 存在于 `develop`；不证明 N 有效、盈利、可交易、Candidate 可晋升、
+  第三条 Alert Rule ready、release 或 Runtime ready。本阶段未执行 main/tag/release、Runtime switch、
+  RQData/Canonical/Redis/DB 写入、Scope/通知或订单操作。
 
 ## v1.6.2 主力照妖镜·期货 V1（RELEASED / RUNTIME PROMOTED）
 
