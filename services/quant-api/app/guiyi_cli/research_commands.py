@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Protocol, TypeAlias, cast
@@ -21,6 +22,13 @@ from app.market_data.main_force_mirror_futures_research_service import (
     MainForceMirrorFuturesHorizonSummary,
     MainForceMirrorFuturesResearchRequest,
     MainForceMirrorFuturesResearchResult,
+)
+from app.market_data.multi_candidate_robustness import (
+    CommonPriceHorizonSummary,
+    MultiCandidateRobustnessReport,
+)
+from app.market_data.multi_candidate_robustness_policy import (
+    MultiCandidateRobustnessRequest,
 )
 from app.market_data.n_structure_research_service import (
     NStructureResearchRequest,
@@ -56,7 +64,9 @@ class _CalibrationResearchService(Protocol):
 
 
 class _LifecycleResearchService(Protocol):
-    def run(self, request: LifecycleResearchRequest) -> SubingLifecycleResearchResult: ...
+    def run(
+        self, request: LifecycleResearchRequest
+    ) -> SubingLifecycleResearchResult: ...
 
 
 class _NStructureResearchService(Protocol):
@@ -77,17 +87,26 @@ class _MainForceMirrorFuturesResearchService(Protocol):
     ) -> MainForceMirrorFuturesResearchResult: ...
 
 
+class _MultiCandidateRobustnessService(Protocol):
+    def run(
+        self, request: MultiCandidateRobustnessRequest
+    ) -> MultiCandidateRobustnessReport: ...
+
+
 ResearchRequest: TypeAlias = (
     CalibrationResearchRequest
     | LifecycleResearchRequest
     | CandidateValidationRequest
     | MainForceMirrorFuturesResearchRequest
     | NStructureResearchRequest
+    | MultiCandidateRobustnessRequest
 )
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
     """Convert CLI strings into one immutable research request."""
+    if args.research_command == "candidate-robustness":
+        return MultiCandidateRobustnessRequest(protocol_id=args.protocol)
     if args.research_command == "main-force-mirror-futures":
         return MainForceMirrorFuturesResearchRequest(
             symbol=args.symbol,
@@ -143,6 +162,9 @@ def run_research_command(
     service: object,
 ) -> dict[str, object]:
     """Run one Historical-only research command and render its JSON schema."""
+    if isinstance(request, MultiCandidateRobustnessRequest):
+        robustness_service = cast(_MultiCandidateRobustnessService, service)
+        return _multi_candidate_robustness_payload(robustness_service.run(request))
     if isinstance(request, MainForceMirrorFuturesResearchRequest):
         mirror_service = cast(_MainForceMirrorFuturesResearchService, service)
         return _main_force_mirror_futures_payload(
@@ -222,6 +244,151 @@ def _main_force_mirror_futures_payload(
     }
 
 
+def _multi_candidate_robustness_payload(
+    report: MultiCandidateRobustnessReport,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": "research.candidate-robustness",
+        "status": "ok",
+        "readonly": report.readonly,
+        "research_only": report.research_only,
+        "protocol_id": report.protocol_id,
+        "frozen_at": report.frozen_at.isoformat(),
+        "anchor_symbol": report.anchor_symbol,
+        "common_retrospective": {
+            "since": report.common_since.isoformat(),
+            "through": report.common_through.isoformat(),
+        },
+        "temporal_dossiers": [
+            _temporal_dossier_payload(value) for value in report.temporal_dossiers
+        ],
+        "cross_symbol_results": [
+            _symbol_robustness_payload(value) for value in report.cross_symbol_results
+        ],
+        "cross_symbol_summaries": [
+            _cross_symbol_summary_payload(value)
+            for value in report.cross_symbol_summaries
+        ],
+        "relationships": [
+            _relationship_payload(value) for value in report.relationships
+        ],
+        "metric_compatibility_flags": list(report.metric_compatibility_flags),
+        "quality_flags": list(report.quality_flags),
+    }
+
+
+def _common_horizons_payload(
+    values: Mapping[int, CommonPriceHorizonSummary] | None,
+) -> dict[str, object] | None:
+    if values is None:
+        return None
+    return {
+        str(horizon): {
+            "sample_count": value.sample_count,
+            "median_directional_return_bps": _optional_decimal(
+                value.median_directional_return_bps
+            ),
+            "median_mfe_bps": _optional_decimal(value.median_mfe_bps),
+            "median_mae_bps": _optional_decimal(value.median_mae_bps),
+        }
+        for horizon, value in values.items()
+    }
+
+
+def _temporal_dossier_payload(value: object) -> dict[str, object]:
+    return {
+        "candidate_id": value.candidate_id,  # type: ignore[attr-defined]
+        "candidate_protocol_id": value.candidate_protocol_id,  # type: ignore[attr-defined]
+        "source_kind": value.source_kind,  # type: ignore[attr-defined]
+        "anchor_symbol": value.anchor_symbol,  # type: ignore[attr-defined]
+        "retrospective_since": value.retrospective_since.isoformat(),  # type: ignore[attr-defined]
+        "retrospective_through": value.retrospective_through.isoformat(),  # type: ignore[attr-defined]
+        "event_unit": value.event_unit,  # type: ignore[attr-defined]
+        "retrospective_event_count": value.retrospective_event_count,  # type: ignore[attr-defined]
+        "rolling_fold_count": value.rolling_fold_count,  # type: ignore[attr-defined]
+        "folds_with_events": value.folds_with_events,  # type: ignore[attr-defined]
+        "test_event_count_min": value.test_event_count_min,  # type: ignore[attr-defined]
+        "test_event_count_median": str(value.test_event_count_median),  # type: ignore[attr-defined]
+        "test_event_count_max": value.test_event_count_max,  # type: ignore[attr-defined]
+        "prospective_status": value.prospective_status,  # type: ignore[attr-defined]
+        "prospective_first_trading_day": value.prospective_first_trading_day.isoformat(),  # type: ignore[attr-defined]
+        "prospective_through": value.prospective_through.isoformat(),  # type: ignore[attr-defined]
+        "horizon_semantics": value.horizon_semantics,  # type: ignore[attr-defined]
+        "horizon_summary": _common_horizons_payload(value.horizon_summary),  # type: ignore[attr-defined]
+        "source_quality_flags": list(value.source_quality_flags),  # type: ignore[attr-defined]
+    }
+
+
+def _symbol_robustness_payload(value: object) -> dict[str, object]:
+    return {
+        "candidate_id": value.candidate_id,  # type: ignore[attr-defined]
+        "source_kind": value.source_kind,  # type: ignore[attr-defined]
+        "symbol": value.symbol,  # type: ignore[attr-defined]
+        "status": value.status.value,  # type: ignore[attr-defined]
+        "reason_code": value.reason_code,  # type: ignore[attr-defined]
+        "event_count": value.event_count,  # type: ignore[attr-defined]
+        "evaluable_count": value.evaluable_count,  # type: ignore[attr-defined]
+        "evaluable_unit": value.evaluable_unit,  # type: ignore[attr-defined]
+        "event_rate_per_1000_evaluable": _optional_decimal(
+            value.event_rate_per_1000_evaluable  # type: ignore[attr-defined]
+        ),
+        "horizon_semantics": value.horizon_semantics,  # type: ignore[attr-defined]
+        "horizon_summary": _common_horizons_payload(value.horizon_summary),  # type: ignore[attr-defined]
+    }
+
+
+def _cross_symbol_summary_payload(value: object) -> dict[str, object]:
+    return {
+        "candidate_id": value.candidate_id,  # type: ignore[attr-defined]
+        "product_count": value.product_count,  # type: ignore[attr-defined]
+        "available_product_count": value.available_product_count,  # type: ignore[attr-defined]
+        "unavailable_product_count": value.unavailable_product_count,  # type: ignore[attr-defined]
+        "products_with_events": value.products_with_events,  # type: ignore[attr-defined]
+        "products_without_events": value.products_without_events,  # type: ignore[attr-defined]
+        "event_rate_available_count": value.event_rate_available_count,  # type: ignore[attr-defined]
+        "event_rate_min": _optional_decimal(value.event_rate_min),  # type: ignore[attr-defined]
+        "event_rate_median": _optional_decimal(value.event_rate_median),  # type: ignore[attr-defined]
+        "event_rate_max": _optional_decimal(value.event_rate_max),  # type: ignore[attr-defined]
+        "horizon_sign_summary": {
+            str(horizon): {
+                "available_median_return_symbols": summary.available_median_return_symbols,
+                "positive_median_return_symbols": summary.positive_median_return_symbols,
+                "zero_median_return_symbols": summary.zero_median_return_symbols,
+                "negative_median_return_symbols": summary.negative_median_return_symbols,
+            }
+            for horizon, summary in value.horizon_sign_summary.items()  # type: ignore[attr-defined]
+        },
+    }
+
+
+def _relationship_payload(value: object) -> dict[str, object]:
+    fields = (
+        "source_candidate_id",
+        "target_candidate_id",
+        "source_event_count",
+        "target_event_count",
+        "exact_same_direction_count",
+        "exact_opposite_direction_count",
+        "within_3_same_direction_source_count",
+        "within_5_same_direction_source_count",
+        "within_8_same_direction_source_count",
+        "nearest_match_count_within_8",
+        "signed_distance_min",
+        "signed_distance_max",
+        "target_earlier_count",
+        "target_same_boundary_count",
+        "target_later_count",
+        "same_trading_day_count",
+        "cross_trading_day_count",
+    )
+    payload = {field: getattr(value, field) for field in fields}
+    payload["signed_distance_median"] = _optional_decimal(
+        value.signed_distance_median  # type: ignore[attr-defined]
+    )
+    return payload
+
+
 def _main_force_mirror_futures_horizon_payload(
     summary: MainForceMirrorFuturesHorizonSummary,
 ) -> dict[str, object]:
@@ -286,9 +453,7 @@ def _n_structure_payload(
         "evaluable_bar_count": result.evaluable_bar_count,
         "confirmed_pivot_count": result.confirmed_pivot_count,
         "ambiguous_outside_reset_count": result.ambiguous_outside_reset_count,
-        "incomplete_attempt_replaced_count": (
-            result.incomplete_attempt_replaced_count
-        ),
+        "incomplete_attempt_replaced_count": (result.incomplete_attempt_replaced_count),
         "completed_n_counts": dict(result.completed_n_counts),
         "n_break_counts": dict(result.n_break_counts),
         "range_band_reentry_count": result.range_band_reentry_count,
@@ -393,9 +558,7 @@ def _n_candidate_window_payload(
         "evaluable_bar_count": window.evaluable_bar_count,
         "confirmed_pivot_count": window.confirmed_pivot_count,
         "ambiguous_outside_reset_count": window.ambiguous_outside_reset_count,
-        "incomplete_attempt_replaced_count": (
-            window.incomplete_attempt_replaced_count
-        ),
+        "incomplete_attempt_replaced_count": (window.incomplete_attempt_replaced_count),
         "completed_n_counts": dict(window.completed_n_counts),
         "n_break_counts": dict(window.n_break_counts),
         "range_band_reentry_count": window.range_band_reentry_count,
@@ -462,9 +625,7 @@ def _prospective_payload(result: ProspectiveOosResult) -> dict[str, object]:
         "first_trading_day": result.first_trading_day.isoformat(),
         "through": result.through.isoformat(),
         "result": (
-            None
-            if result.result is None
-            else _candidate_window_payload(result.result)
+            None if result.result is None else _candidate_window_payload(result.result)
         ),
     }
 

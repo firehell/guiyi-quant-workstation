@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 import io
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -29,6 +30,9 @@ from app.market_data.main_force_mirror_futures_research_service import (
     MainForceMirrorFuturesResearchRequest,
     MainForceMirrorFuturesResearchResult,
     MainForceMirrorFuturesResearchService,
+)
+from app.market_data.multi_candidate_robustness_policy import (
+    MultiCandidateRobustnessRequest,
 )
 from app.market_data.n_candidate_validation import (
     NCandidateWindowKind,
@@ -104,9 +108,11 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_five_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_six_readonly_commands() -> None:
     parser = build_parser()
-    domain_action = next(action for action in parser._actions if action.dest == "domain")
+    domain_action = next(
+        action for action in parser._actions if action.dest == "domain"
+    )
     research_parser = domain_action.choices["research"]
     command_action = next(
         action
@@ -115,12 +121,45 @@ def test_research_parser_exposes_only_the_five_readonly_commands() -> None:
     )
 
     assert set(command_action.choices) == {
+        "candidate-robustness",
         "candidate-validation",
         "main-force-mirror-futures",
         "n-structure",
         "subing-calibration",
         "subing-lifecycle",
     }
+
+
+def test_candidate_robustness_parser_accepts_only_exact_protocol() -> None:
+    request = _request(
+        [
+            "research",
+            "candidate-robustness",
+            "--protocol",
+            "multi_candidate_robustness_v1",
+        ]
+    )
+
+    assert request == MultiCandidateRobustnessRequest(
+        protocol_id="multi_candidate_robustness_v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "flag", ("--since", "--through", "--symbol", "--candidate", "--products")
+)
+def test_candidate_robustness_parser_rejects_runtime_selection_flags(flag: str) -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                "research",
+                "candidate-robustness",
+                "--protocol",
+                "multi_candidate_robustness_v1",
+                flag,
+                "value",
+            ]
+        )
 
 
 def _n_arguments() -> list[str]:
@@ -429,8 +468,7 @@ def test_research_request_rejects_a_reversed_window() -> None:
     (
         (_arguments(mode="validation"), "--slope-threshold-bps"),
         (
-            _arguments(phase="zero-band")
-            + ["--slope-threshold-15m-bps", "1"],
+            _arguments(phase="zero-band") + ["--slope-threshold-15m-bps", "1"],
             "--slope-threshold-5m-bps",
         ),
         (
@@ -927,9 +965,7 @@ def test_slope_discovery_outputs_json_safe_decimal_strings_and_active_60() -> No
 
 def test_slope_validation_outputs_only_the_explicit_threshold_evaluation() -> None:
     report = _validation_report(sample_count=2, product_counts={"jm": 2})
-    service = _FakeResearchService(
-        CalibrationResearchResult(("jm",), report, {})
-    )
+    service = _FakeResearchService(CalibrationResearchResult(("jm",), report, {}))
 
     code, payload = _run_research(
         _arguments(mode="validation")
@@ -946,9 +982,7 @@ def test_slope_validation_outputs_only_the_explicit_threshold_evaluation() -> No
 
 @pytest.mark.parametrize("mode", ("discovery", "validation"))
 def test_zero_band_outputs_both_named_cohorts(mode: str) -> None:
-    report_factory = (
-        _discovery_report if mode == "discovery" else _validation_report
-    )
+    report_factory = _discovery_report if mode == "discovery" else _validation_report
     cohort_a = report_factory(sample_count=3, product_counts={"jm": 3})
     cohort_b = report_factory(sample_count=1, product_counts={"jm": 1})
     service = _FakeResearchService(
@@ -984,16 +1018,12 @@ def test_zero_band_outputs_both_named_cohorts(mode: str) -> None:
             "2.500",
             "4",
         ]
-        assert payload["cohorts"]["B"]["candidate_evaluations"][0][
-            "threshold"
-        ] == "1.2300"
+        assert (
+            payload["cohorts"]["B"]["candidate_evaluations"][0]["threshold"] == "1.2300"
+        )
     else:
-        assert payload["cohorts"]["A"]["threshold_evaluation"][
-            "threshold"
-        ] == "2.7500"
-        assert payload["cohorts"]["B"]["threshold_evaluation"][
-            "threshold"
-        ] == "2.7500"
+        assert payload["cohorts"]["A"]["threshold_evaluation"]["threshold"] == "2.7500"
+        assert payload["cohorts"]["B"]["threshold_evaluation"]["threshold"] == "2.7500"
 
 
 def test_research_payload_contains_no_selection_approval_or_trade_claims() -> None:
@@ -1270,9 +1300,12 @@ def test_candidate_cli_dispatches_explicit_service_and_serializes_report() -> No
         "through": "2026-08-19",
         "result": None,
     }
-    assert payload["retrospective"]["horizon_summary"]["3"][
-        "median_directional_return_bps"
-    ] == "12.3400"
+    assert (
+        payload["retrospective"]["horizon_summary"]["3"][
+            "median_directional_return_bps"
+        ]
+        == "12.3400"
+    )
 
 
 def test_candidate_composition_reuses_the_lifecycle_research_builder(
@@ -1635,9 +1668,7 @@ def _mirror_result() -> MainForceMirrorFuturesResearchResult:
 
 def test_mirror_request_parses_exact_actual_dominant_and_contract_modes() -> None:
     dominant = _request(_mirror_arguments())
-    contract = _request(
-        _mirror_arguments(series_kind="contract", contract="jm2609")
-    )
+    contract = _request(_mirror_arguments(series_kind="contract", contract="jm2609"))
 
     assert dominant == MainForceMirrorFuturesResearchRequest(
         symbol="jm",
@@ -1674,8 +1705,8 @@ def test_invalid_mirror_identity_exits_two_before_any_service_construction(
     code = main(
         arguments,
         session_factory=lambda: nullcontext(object()),
-        main_force_mirror_futures_research_service_factory=lambda session: (
-            calls.append(session)
+        main_force_mirror_futures_research_service_factory=lambda session: calls.append(
+            session
         ),
         stdout=stdout,
         stderr=stderr,
@@ -1702,9 +1733,7 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
     code = main(
         _mirror_arguments(),
         session_factory=lambda: nullcontext(object()),
-        research_service_factory=lambda _session: unrelated_calls.append(
-            "calibration"
-        ),
+        research_service_factory=lambda _session: unrelated_calls.append("calibration"),
         lifecycle_research_service_factory=lambda _session: unrelated_calls.append(
             "lifecycle"
         ),
@@ -1845,12 +1874,295 @@ def test_mirror_composition_wraps_only_the_market_data_service(
     )
     session = object()
 
-    service = (
-        market_data_composition.build_main_force_mirror_futures_research_service(
-            session  # type: ignore[arg-type]
-        )
+    service = market_data_composition.build_main_force_mirror_futures_research_service(
+        session  # type: ignore[arg-type]
     )
 
     assert isinstance(service, MainForceMirrorFuturesResearchService)
     assert service._market_data is market_data
     assert sessions == [session]
+
+
+def _robustness_report() -> SimpleNamespace:
+    horizon = SimpleNamespace(
+        sample_count=2,
+        median_directional_return_bps=Decimal("1.25"),
+        median_mfe_bps=Decimal("2.5"),
+        median_mae_bps=Decimal("-0.5"),
+    )
+    temporal = SimpleNamespace(
+        candidate_id="subing_lifecycle_v2_candidate_v1",
+        candidate_protocol_id="candidate_validation_v1",
+        source_kind="subing_lifecycle",
+        anchor_symbol="jm",
+        retrospective_since=date(2023, 1, 1),
+        retrospective_through=date(2026, 8, 18),
+        event_unit="entry_confirmed",
+        retrospective_event_count=11,
+        rolling_fold_count=10,
+        folds_with_events=9,
+        test_event_count_min=0,
+        test_event_count_median=Decimal("4.5"),
+        test_event_count_max=9,
+        prospective_status="pending",
+        prospective_first_trading_day=date(2026, 8, 20),
+        prospective_through=date(2026, 8, 19),
+        horizon_semantics="same_trading_day_only",
+        horizon_summary={3: horizon, 5: horizon, 8: horizon},
+        source_quality_flags=("PROSPECTIVE_OOS_PENDING",),
+    )
+    row = SimpleNamespace(
+        candidate_id="subing_lifecycle_v2_candidate_v1",
+        source_kind="subing_lifecycle",
+        symbol="jm",
+        status=SimpleNamespace(value="available"),
+        reason_code=None,
+        event_count=1,
+        evaluable_count=2,
+        evaluable_unit="5m_ready_boundary",
+        event_rate_per_1000_evaluable=Decimal("500"),
+        horizon_semantics="same_trading_day_only",
+        horizon_summary={3: horizon, 5: horizon, 8: horizon},
+    )
+    sign = SimpleNamespace(
+        available_median_return_symbols=1,
+        positive_median_return_symbols=1,
+        zero_median_return_symbols=0,
+        negative_median_return_symbols=0,
+    )
+    summary = SimpleNamespace(
+        candidate_id="subing_lifecycle_v2_candidate_v1",
+        product_count=60,
+        available_product_count=60,
+        unavailable_product_count=0,
+        products_with_events=1,
+        products_without_events=59,
+        event_rate_available_count=60,
+        event_rate_min=Decimal("0"),
+        event_rate_median=Decimal("0"),
+        event_rate_max=Decimal("500"),
+        horizon_sign_summary={3: sign, 5: sign, 8: sign},
+    )
+    relationship = SimpleNamespace(
+        source_candidate_id="subing_lifecycle_v2_candidate_v1",
+        target_candidate_id="n_structure_5m_candidate_v1",
+        source_event_count=1,
+        target_event_count=1,
+        exact_same_direction_count=0,
+        exact_opposite_direction_count=0,
+        within_3_same_direction_source_count=1,
+        within_5_same_direction_source_count=1,
+        within_8_same_direction_source_count=1,
+        nearest_match_count_within_8=1,
+        signed_distance_min=1,
+        signed_distance_median=Decimal("1"),
+        signed_distance_max=1,
+        target_earlier_count=0,
+        target_same_boundary_count=0,
+        target_later_count=1,
+        same_trading_day_count=1,
+        cross_trading_day_count=0,
+    )
+    return SimpleNamespace(
+        schema_version=1,
+        protocol_id="multi_candidate_robustness_v1",
+        frozen_at=datetime.fromisoformat("2026-08-20T21:33:00+08:00"),
+        readonly=True,
+        research_only=True,
+        anchor_symbol="jm",
+        common_since=date(2023, 1, 1),
+        common_through=date(2026, 8, 18),
+        temporal_dossiers=(temporal,),
+        cross_symbol_results=(row,),
+        cross_symbol_summaries=(summary,),
+        relationships=(relationship,),
+        metric_compatibility_flags=("EVALUABLE_UNIT_DIFFERS",),
+        quality_flags=("SYMBOL_WITHOUT_EVENT",),
+    )
+
+
+class _FakeRobustnessService:
+    def __init__(self) -> None:
+        self.requests: list[object] = []
+
+    def run(self, request: object) -> SimpleNamespace:
+        self.requests.append(request)
+        return _robustness_report()
+
+
+def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> None:
+    service = _FakeRobustnessService()
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    code = main(
+        [
+            "research",
+            "candidate-robustness",
+            "--protocol",
+            "multi_candidate_robustness_v1",
+        ],
+        session_factory=lambda: nullcontext(object()),
+        multi_candidate_robustness_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert service.requests == [
+        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1")
+    ]
+    payload = json.loads(stdout.getvalue())
+    direct_payload = run_research_command(
+        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"),
+        _FakeRobustnessService(),
+    )
+    assert tuple(direct_payload) == (
+        "schema_version",
+        "command",
+        "status",
+        "readonly",
+        "research_only",
+        "protocol_id",
+        "frozen_at",
+        "anchor_symbol",
+        "common_retrospective",
+        "temporal_dossiers",
+        "cross_symbol_results",
+        "cross_symbol_summaries",
+        "relationships",
+        "metric_compatibility_flags",
+        "quality_flags",
+    )
+    assert payload["command"] == "research.candidate-robustness"
+    assert payload["readonly"] is payload["research_only"] is True
+    assert payload["cross_symbol_results"][0]["event_rate_per_1000_evaluable"] == "500"
+    assert payload["relationships"][0]["signed_distance_median"] == "1"
+
+
+def test_candidate_robustness_payload_contains_no_selection_or_profit_keys() -> None:
+    payload = run_research_command(
+        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"),
+        _FakeRobustnessService(),
+    )
+    forbidden = {
+        "score",
+        "rank",
+        "winner",
+        "better_candidate",
+        "keep",
+        "drop",
+        "promote",
+        "profitability",
+        "expected_profit",
+    }
+
+    def keys(value: object) -> set[str]:
+        if isinstance(value, dict):
+            return {str(key).lower() for key in value} | set().union(
+                *(keys(item) for item in value.values())
+            )
+        if isinstance(value, list):
+            return set().union(*(keys(item) for item in value))
+        return set()
+
+    assert keys(payload).isdisjoint(forbidden)
+
+
+def test_robustness_composition_reuses_one_mds_and_frozen_active60(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    protocol = market_data_composition.load_multi_candidate_robustness_protocol()
+    market_data = object()
+    build_calls: list[object] = []
+    source_calls: list[tuple[str, object, tuple[str, ...]]] = []
+
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_market_data_service",
+        lambda session: build_calls.append(session) or market_data,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_active_products",
+        lambda: protocol.cross_symbol_products,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_accepted_subing_calibration",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_subing_lifecycle_policy",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_n_structure_policy",
+        lambda: object(),
+    )
+    subing = object()
+    n_structure = object()
+    monkeypatch.setattr(
+        market_data_composition,
+        "SubingLifecycleResearchService",
+        lambda mds, *, products, calibration, policy: (
+            source_calls.append(("subing", mds, products)) or subing
+        ),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "ActualDominantResearchSegmentLoader",
+        lambda mds: SimpleNamespace(market_data=mds),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "NStructureResearchService",
+        lambda loader, *, products, policy: (
+            source_calls.append(("n", loader.market_data, products)) or n_structure
+        ),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "SubingCandidateValidationService",
+        lambda source, *, manifest, protocol: SimpleNamespace(source=source),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "NStructureCandidateValidationService",
+        lambda source, *, manifest, protocol: SimpleNamespace(source=source),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_candidate_manifest",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_candidate_validation_protocol",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_n_candidate_manifest",
+        lambda _path: object(),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_n_candidate_validation_protocol",
+        lambda _path: object(),
+    )
+
+    session = object()
+    service = market_data_composition.build_multi_candidate_robustness_service(
+        session  # type: ignore[arg-type]
+    )
+
+    assert build_calls == [session]
+    assert source_calls == [
+        ("subing", market_data, protocol.cross_symbol_products),
+        ("n", market_data, protocol.cross_symbol_products),
+    ]
+    assert service._subing is subing
+    assert service._n is n_structure

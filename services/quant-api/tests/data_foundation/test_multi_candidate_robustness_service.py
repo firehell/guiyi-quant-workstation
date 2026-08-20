@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -13,12 +13,22 @@ from app.market_data.multi_candidate_robustness_service import (
     MultiCandidateRobustnessSourceError,
 )
 from app.market_data.multi_candidate_robustness_policy import (
+    MultiCandidateRobustnessRequest,
     load_multi_candidate_robustness_protocol,
+)
+from app.market_data.n_structure_pattern import NDirection
+from app.market_data.n_structure_research_service import (
+    NStructureCompletionResearchEvent,
 )
 from app.market_data.n_structure_research_service import NStructureResearchRequest
 from app.market_data.n_structure_policy import load_n_structure_policy
 from app.market_data.n_structure_research_service import NStructureResearchService
+from app.market_data.subing_lifecycle import ConfirmationSource, SubingOpportunityKey
 from app.market_data.subing_lifecycle_research_service import LifecycleResearchRequest
+from app.market_data.subing_lifecycle_research_service import (
+    SubingLifecycleEntryResearchEvent,
+)
+from app.market_data.subing_research import SubingDirection
 
 
 def _horizons(value: Decimal | None = None) -> dict[int, SimpleNamespace]:
@@ -56,6 +66,51 @@ class _Runner:
             completed_n_counts={"up": int(symbol == "jm"), "down": 0},
             evaluable_bar_count=4,
             horizon_summary=_horizons(Decimal("-1") if symbol == "jm" else None),
+        )
+
+    def entry_events(
+        self, request: object
+    ) -> tuple[SubingLifecycleEntryResearchEvent, ...]:
+        assert request.symbol == "jm"
+        observed_at = datetime(2026, 1, 2, 2, 0, tzinfo=UTC)
+        key = SubingOpportunityKey(
+            "subing_lifecycle_v2_research_v1",
+            "jm",
+            "JM2605",
+            date(2026, 1, 2),
+            SubingDirection.LONG,
+            observed_at,
+        )
+        return (
+            SubingLifecycleEntryResearchEvent(
+                "subing-1",
+                "jm",
+                "JM2605",
+                date(2026, 1, 2),
+                observed_at,
+                date(2026, 1, 2),
+                10,
+                SubingDirection.LONG,
+                key,
+                ConfirmationSource.FORMAL_V1,
+            ),
+        )
+
+    def completion_events(
+        self, request: object
+    ) -> tuple[NStructureCompletionResearchEvent, ...]:
+        assert request.symbol == "jm"
+        return (
+            NStructureCompletionResearchEvent(
+                "n-1",
+                "jm",
+                "JM2605",
+                date(2026, 1, 2),
+                datetime(2026, 1, 2, 2, 5, tzinfo=UTC),
+                date(2026, 1, 2),
+                11,
+                NDirection.UP,
+            ),
         )
 
 
@@ -212,13 +267,15 @@ def _service(
     subing_validation: object | None = None,
     n_validation: object | None = None,
 ) -> MultiCandidateRobustnessService:
+    protocol = load_multi_candidate_robustness_protocol()
     return MultiCandidateRobustnessService(
-        load_multi_candidate_robustness_protocol(),
+        protocol,
         subing_research=subing or _Runner("subing"),
         n_research=n or _Runner("n"),
         subing_validation=subing_validation
         or _ValidationRunner(_validation_report("subing")),
         n_validation=n_validation or _ValidationRunner(_validation_report("n")),
+        current_active_products=protocol.cross_symbol_products,
     )
 
 
@@ -415,3 +472,46 @@ def test_temporal_dossier_rejects_baseline_identity_or_schedule_drift(
 
     with pytest.raises(ValueError, match="MULTI_CANDIDATE_BASELINE_INVALID"):
         _service(subing_validation=_ValidationRunner(report))._temporal_dossiers()
+
+
+def test_final_orchestration_builds_exact_frozen_report() -> None:
+    report = _service().run(
+        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1")
+    )
+
+    assert report.anchor_symbol == "jm"
+    assert report.common_since == date(2023, 1, 1)
+    assert report.common_through == date(2026, 8, 18)
+    assert len(report.temporal_dossiers) == 2
+    assert len(report.cross_symbol_results) == 120
+    assert len(report.cross_symbol_summaries) == 2
+    assert tuple(
+        (item.source_candidate_id, item.target_candidate_id)
+        for item in report.relationships
+    ) == (
+        ("subing_lifecycle_v2_candidate_v1", "n_structure_5m_candidate_v1"),
+        ("n_structure_5m_candidate_v1", "subing_lifecycle_v2_candidate_v1"),
+    )
+    assert report.metric_compatibility_flags == (
+        "EVALUABLE_UNIT_DIFFERS",
+        "HORIZON_SEMANTICS_DIFFERS",
+    )
+    assert report.quality_flags == (
+        "BASELINE_PROSPECTIVE_PENDING_SUBING",
+        "BASELINE_PROSPECTIVE_PENDING_N",
+        "SYMBOL_WITHOUT_EVENT",
+        "HORIZON_WITHOUT_SAMPLE",
+    )
+
+
+def test_active_universe_drift_aborts_before_any_research() -> None:
+    protocol = load_multi_candidate_robustness_protocol()
+    with pytest.raises(ValueError, match="MULTI_CANDIDATE_ACTIVE_UNIVERSE_DRIFT"):
+        MultiCandidateRobustnessService(
+            protocol,
+            subing_research=_Runner("subing"),
+            n_research=_Runner("n"),
+            subing_validation=_ValidationRunner(_validation_report("subing")),
+            n_validation=_ValidationRunner(_validation_report("n")),
+            current_active_products=protocol.cross_symbol_products[:-1],
+        )

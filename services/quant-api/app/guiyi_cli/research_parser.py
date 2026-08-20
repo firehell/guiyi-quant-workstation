@@ -12,7 +12,9 @@ def add_research_commands(
     """Register the Historical-only research commands."""
     calibration = commands.add_parser("subing-calibration")
     calibration.add_argument("--phase", choices=("slope", "zero-band"), required=True)
-    calibration.add_argument("--mode", choices=("discovery", "validation"), required=True)
+    calibration.add_argument(
+        "--mode", choices=("discovery", "validation"), required=True
+    )
     calibration.add_argument("--frequency", choices=("5m", "15m", "1d"), required=True)
     calibration.add_argument("--since", required=True)
     calibration.add_argument("--through", required=True)
@@ -48,6 +50,13 @@ def add_research_commands(
     )
     candidate.add_argument("--symbol", required=True)
     candidate.add_argument("--through", required=True)
+
+    robustness = commands.add_parser("candidate-robustness")
+    robustness.add_argument(
+        "--protocol",
+        choices=("multi_candidate_robustness_v1",),
+        required=True,
+    )
 
     mirror = commands.add_parser("main-force-mirror-futures")
     mirror.add_argument("--symbol", required=True)

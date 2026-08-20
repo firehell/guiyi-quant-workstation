@@ -4,30 +4,68 @@ from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from statistics import median
-from typing import Protocol
+from typing import Protocol, cast
 
 from .actual_dominant_research import ActualDominantResearchSegmentIdentityError
+from .candidate_validation import CandidateValidationReport
 from .market_data_service import MarketDataError
 from .candidate_validation_schedule import CandidateValidationRequest
 from .multi_candidate_robustness import (
+    CandidateRelationshipSummary,
     CandidateTemporalDossier,
     CandidateSymbolRobustness,
     CandidateSymbolStatus,
     CommonPriceHorizonSummary,
     CrossSymbolCandidateSummary,
     HorizonSignSummary,
+    MultiCandidateRobustnessReport,
 )
-from .multi_candidate_robustness_policy import MultiCandidateRobustnessProtocol
+from .multi_candidate_events import (
+    from_n_completion,
+    from_subing_entry,
+    summarize_candidate_relationship,
+)
+from .multi_candidate_robustness_policy import (
+    MultiCandidateRobustnessProtocol,
+    MultiCandidateRobustnessRequest,
+)
 from .n_structure_research_service import (
+    NStructureCompletionResearchEvent,
     NStructureResearchRequest,
+    NStructureResearchResult,
     NStructureSegmentIdentityError,
     NStructureSourceUnavailableError,
 )
-from .subing_lifecycle_research_service import LifecycleResearchRequest
+from .n_candidate_validation import NStructureCandidateValidationReport
+from .subing_lifecycle_research_service import (
+    LifecycleResearchRequest,
+    SubingLifecycleEntryResearchEvent,
+    SubingLifecycleResearchResult,
+)
 
 
-class _Runner(Protocol):
-    def run(self, request: object) -> object: ...
+class _SubingResearchRunner(Protocol):
+    def run(
+        self, request: LifecycleResearchRequest
+    ) -> SubingLifecycleResearchResult: ...
+
+    def entry_events(
+        self, request: LifecycleResearchRequest
+    ) -> tuple[SubingLifecycleEntryResearchEvent, ...]: ...
+
+
+class _NResearchRunner(Protocol):
+    def run(self, request: NStructureResearchRequest) -> NStructureResearchResult: ...
+
+    def completion_events(
+        self, request: NStructureResearchRequest
+    ) -> tuple[NStructureCompletionResearchEvent, ...]: ...
+
+
+class _ValidationRunner(Protocol):
+    def run(
+        self, request: CandidateValidationRequest
+    ) -> CandidateValidationReport | NStructureCandidateValidationReport: ...
 
 
 class MultiCandidateRobustnessSourceError(ValueError):
@@ -39,6 +77,13 @@ class MultiCandidateRobustnessSourceError(ValueError):
 
 class MultiCandidateRobustnessBaselineError(ValueError):
     code = "MULTI_CANDIDATE_BASELINE_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class MultiCandidateActiveUniverseDriftError(ValueError):
+    code = "MULTI_CANDIDATE_ACTIVE_UNIVERSE_DRIFT"
 
     def __init__(self) -> None:
         super().__init__(self.code)
@@ -123,24 +168,98 @@ class MultiCandidateRobustnessService:
         self,
         protocol: MultiCandidateRobustnessProtocol,
         *,
-        subing_research: _Runner,
-        n_research: _Runner,
-        subing_validation: _Runner,
-        n_validation: _Runner,
+        subing_research: _SubingResearchRunner,
+        n_research: _NResearchRunner,
+        subing_validation: _ValidationRunner,
+        n_validation: _ValidationRunner,
+        current_active_products: tuple[str, ...],
     ) -> None:
+        if current_active_products != protocol.cross_symbol_products:
+            raise MultiCandidateActiveUniverseDriftError()
         self._protocol = protocol
         self._subing = subing_research
         self._n = n_research
         self._subing_validation = subing_validation
         self._n_validation = n_validation
 
+    def run(
+        self, request: MultiCandidateRobustnessRequest
+    ) -> MultiCandidateRobustnessReport:
+        if (
+            not isinstance(request, MultiCandidateRobustnessRequest)
+            or request.protocol_id != self._protocol.protocol_id
+        ):
+            raise ValueError("MULTI_CANDIDATE_REQUEST_INVALID")
+        temporal = self._temporal_dossiers()
+        rows, summaries = self._cross_symbol_results()
+        lifecycle_request = LifecycleResearchRequest(
+            self._protocol.common_since,
+            self._protocol.common_through,
+            self._protocol.anchor_symbol,
+        )
+        n_request = NStructureResearchRequest(
+            self._protocol.common_since,
+            self._protocol.common_through,
+            self._protocol.anchor_symbol,
+        )
+        subing_events = tuple(
+            from_subing_entry(event)
+            for event in self._subing.entry_events(lifecycle_request)
+        )
+        n_events = tuple(
+            from_n_completion(event) for event in self._n.completion_events(n_request)
+        )
+        relationships = (
+            _relationship(subing_events, n_events),
+            _relationship(n_events, subing_events),
+        )
+        quality_flags: list[str] = []
+        if any(row.status is CandidateSymbolStatus.UNAVAILABLE for row in rows):
+            quality_flags.append("CROSS_SYMBOL_SOURCE_UNAVAILABLE")
+        if temporal[0].prospective_status == "pending":
+            quality_flags.append("BASELINE_PROSPECTIVE_PENDING_SUBING")
+        if temporal[1].prospective_status == "pending":
+            quality_flags.append("BASELINE_PROSPECTIVE_PENDING_N")
+        if any(
+            row.status is CandidateSymbolStatus.AVAILABLE and row.event_count == 0
+            for row in rows
+        ):
+            quality_flags.append("SYMBOL_WITHOUT_EVENT")
+        if any(
+            row.status is CandidateSymbolStatus.AVAILABLE
+            and row.horizon_summary is not None
+            and any(value.sample_count == 0 for value in row.horizon_summary.values())
+            for row in rows
+        ):
+            quality_flags.append("HORIZON_WITHOUT_SAMPLE")
+        return MultiCandidateRobustnessReport(
+            schema_version=1,
+            protocol_id=self._protocol.protocol_id,
+            frozen_at=self._protocol.frozen_at,
+            research_only=True,
+            readonly=True,
+            anchor_symbol=self._protocol.anchor_symbol,
+            common_since=self._protocol.common_since,
+            common_through=self._protocol.common_through,
+            temporal_dossiers=temporal,
+            cross_symbol_results=rows,
+            cross_symbol_summaries=summaries,
+            relationships=relationships,
+            metric_compatibility_flags=(
+                "EVALUABLE_UNIT_DIFFERS",
+                "HORIZON_SEMANTICS_DIFFERS",
+            ),
+            quality_flags=tuple(quality_flags),
+        )
+
     def _temporal_dossiers(self) -> tuple[CandidateTemporalDossier, ...]:
         dossiers: list[CandidateTemporalDossier] = []
-        for ref, runner in zip(
-            self._protocol.candidates,
-            (self._subing_validation, self._n_validation),
-            strict=True,
-        ):
+        for ref in self._protocol.candidates:
+            runner = (
+                self._subing_validation
+                if ref.source_kind == "subing_lifecycle"
+                else self._n_validation
+            )
             report = runner.run(
                 CandidateValidationRequest(
                     candidate_id=ref.candidate_id,
@@ -150,19 +269,44 @@ class MultiCandidateRobustnessService:
                 )
             )
             self._validate_baseline(report, ref.candidate_id, ref.candidate_protocol_id)
-            subing = ref.source_kind == "subing_lifecycle"
-            test_counts = tuple(
-                fold.test.funnel_counts["ENTRY_CONFIRMED"]
-                if subing
-                else sum(fold.test.completed_n_counts.values())
-                for fold in report.rolling_folds  # type: ignore[attr-defined]
-            )
-            retrospective = report.retrospective  # type: ignore[attr-defined]
-            retrospective_count = (
-                retrospective.funnel_counts["ENTRY_CONFIRMED"]
-                if subing
-                else sum(retrospective.completed_n_counts.values())
-            )
+            if ref.source_kind == "subing_lifecycle":
+                subing_report = cast(CandidateValidationReport, report)
+                test_counts = tuple(
+                    fold.test.funnel_counts["ENTRY_CONFIRMED"]
+                    for fold in subing_report.rolling_folds
+                )
+                retrospective = subing_report.retrospective
+                retrospective_count = retrospective.funnel_counts["ENTRY_CONFIRMED"]
+                retrospective_since = retrospective.since
+                retrospective_through = retrospective.through
+                common_horizon_summary = {
+                    horizon: CommonPriceHorizonSummary(
+                        value.sample_count,
+                        value.median_directional_return_bps,
+                        value.median_mfe_bps,
+                        value.median_mae_bps,
+                    )
+                    for horizon, value in retrospective.horizon_summary.items()
+                }
+            else:
+                n_report = cast(NStructureCandidateValidationReport, report)
+                test_counts = tuple(
+                    sum(fold.test.completed_n_counts.values())
+                    for fold in n_report.rolling_folds
+                )
+                n_retrospective = n_report.retrospective
+                retrospective_count = sum(n_retrospective.completed_n_counts.values())
+                retrospective_since = n_retrospective.since
+                retrospective_through = n_retrospective.through
+                common_horizon_summary = {
+                    horizon: CommonPriceHorizonSummary(
+                        value.sample_count,
+                        value.median_directional_return_bps,
+                        value.median_mfe_bps,
+                        value.median_mae_bps,
+                    )
+                    for horizon, value in n_retrospective.horizon_summary.items()
+                }
             prospective = report.prospective_oos  # type: ignore[attr-defined]
             status = prospective.status.value
             dossiers.append(
@@ -171,8 +315,8 @@ class MultiCandidateRobustnessService:
                     candidate_protocol_id=ref.candidate_protocol_id,
                     source_kind=ref.source_kind,
                     anchor_symbol=self._protocol.anchor_symbol,
-                    retrospective_since=retrospective.since,
-                    retrospective_through=retrospective.through,
+                    retrospective_since=retrospective_since,
+                    retrospective_through=retrospective_through,
                     event_unit=ref.source_event_kind,
                     retrospective_event_count=retrospective_count,
                     rolling_fold_count=len(test_counts),
@@ -184,15 +328,7 @@ class MultiCandidateRobustnessService:
                     prospective_first_trading_day=prospective.first_trading_day,
                     prospective_through=prospective.through,
                     horizon_semantics=ref.horizon_semantics,
-                    horizon_summary={
-                        horizon: CommonPriceHorizonSummary(
-                            value.sample_count,
-                            value.median_directional_return_bps,
-                            value.median_mfe_bps,
-                            value.median_mae_bps,
-                        )
-                        for horizon, value in retrospective.horizon_summary.items()
-                    },
+                    horizon_summary=common_horizon_summary,
                     source_quality_flags=tuple(report.quality_flags),  # type: ignore[attr-defined]
                 )
             )
@@ -247,27 +383,10 @@ class MultiCandidateRobustnessService:
         tuple[CandidateSymbolRobustness, ...], tuple[CrossSymbolCandidateSummary, ...]
     ]:
         rows: list[CandidateSymbolRobustness] = []
-        for ref, runner in zip(
-            self._protocol.candidates,
-            (self._subing, self._n),
-            strict=True,
-        ):
+        for ref in self._protocol.candidates:
             for symbol in self._protocol.cross_symbol_products:
-                request: object = (
-                    LifecycleResearchRequest(
-                        self._protocol.common_since,
-                        self._protocol.common_through,
-                        symbol,
-                    )
-                    if ref.source_kind == "subing_lifecycle"
-                    else NStructureResearchRequest(
-                        self._protocol.common_since,
-                        self._protocol.common_through,
-                        symbol,
-                    )
-                )
                 try:
-                    source = runner.run(request)
+                    source = self._run_cross_source(ref.source_kind, symbol)
                 except (
                     MarketDataError,
                     ActualDominantResearchSegmentIdentityError,
@@ -300,6 +419,25 @@ class MultiCandidateRobustnessService:
         return normalized, tuple(
             self._summarize(candidate_id, normalized)
             for candidate_id in (ref.candidate_id for ref in self._protocol.candidates)
+        )
+
+    def _run_cross_source(
+        self, source_kind: str, symbol: str
+    ) -> SubingLifecycleResearchResult | NStructureResearchResult:
+        if source_kind == "subing_lifecycle":
+            return self._subing.run(
+                LifecycleResearchRequest(
+                    self._protocol.common_since,
+                    self._protocol.common_through,
+                    symbol,
+                )
+            )
+        return self._n.run(
+            NStructureResearchRequest(
+                self._protocol.common_since,
+                self._protocol.common_through,
+                symbol,
+            )
         )
 
     @staticmethod
@@ -415,3 +553,15 @@ def _decimal_median(values: Sequence[int]) -> Decimal:
     if len(ordered) % 2:
         return Decimal(ordered[middle])
     return (Decimal(ordered[middle - 1]) + Decimal(ordered[middle])) / Decimal(2)
+
+
+def _relationship(
+    source_events: tuple[object, ...], target_events: tuple[object, ...]
+) -> CandidateRelationshipSummary:
+    if source_events or target_events:
+        return summarize_candidate_relationship(
+            source_events,  # type: ignore[arg-type]
+            target_events,  # type: ignore[arg-type]
+            proximity_bars=(3, 5, 8),
+        )
+    raise ValueError("MULTI_CANDIDATE_EVENT_INVALID")
