@@ -302,7 +302,7 @@ Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。
 ### 独立受控外部 Gate
 
 - 创建专用 PushPlus 消息 token 与 Topic；当前 pending；
-- owner 与三位朋友扫码加入 Topic，并人工核对 exact 四人；当前 pending；
+- 人工核对 Topic 当前成员在 `1..4` 人边界内；当前 3 人已由用户确认，第 4 人可后续加入；
 - 写入 `0700/0600` Git 外 private config；当前 pending；
 - `owner` 与 `htdy_observers` 各一次真实 canary/send；当前 pending；
 - exact HTDY Rule + Scope + audience + transport 持续授权：当前 pending；SuBing 保持 owner-only；

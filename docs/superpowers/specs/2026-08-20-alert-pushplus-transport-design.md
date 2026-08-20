@@ -45,8 +45,9 @@ API 与 Alert launchd 必须指向同一个配置路径。结构健康检查不�
 
 ## Topic 管理
 
-Topic 成员只在 PushPlus 外部管理。创建者与三位朋友都扫码加入专用 Topic，由 operator 人工核对 exact
-四人；Guiyi 不保存成员身份，也不调用 Open API 查询成员。Topic 成员变化属于未来授权范围变化。
+Topic 成员只在 PushPlus 外部管理。创建者与最多三位朋友扫码加入专用 Topic；可以先以当前成员启用，
+之后加入第 4 人。operator 每次人工核对总人数在 `1..4` 内；Guiyi 不保存成员身份，也不调用 Open API
+查询成员。超过 4 人、未知成员或更换 Topic 属于新的授权范围。
 
 ## 上线边界
 

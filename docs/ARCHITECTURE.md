@@ -242,7 +242,8 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-we
 ```
 
 当前 production exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner Clawbot
-transport；PushPlus 持续授权尚未取得。未来第三条 Rule 或 Topic 成员变化不继承授权；production
+transport；PushPlus 持续授权尚未取得。已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员；超过
+4 人、未知成员或更换 Topic 必须重新授权。未来第三条 Rule 不继承授权；production
 migration、release/tag、Runtime promotion/switch、Scope/audience/transport 变更、真实 canary/send、
 rollback 与外部旧配置清理互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短
 Session/transaction。develop 的 sender 与 structural health 共用同一 Git 外 private config：只含消息

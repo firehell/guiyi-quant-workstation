@@ -37,7 +37,7 @@
 ## 独立外部 Gates
 
 1. 创建专用消息 token 与 Topic。
-2. owner + 3 位朋友加入并人工核对 exact 四人。
+2. 人工核对 Topic 当前成员在 `1..4` 人内；可以先启用当前成员，后续加入第 4 人。
 3. 写入 Git 外 `0700/0600` private config。
 4. 分别执行 owner 与 Topic 单次真实 canary。
 5. 精确持续授权、release/tag、Runtime promotion/switch/readback 与自然 HTDY 验收。

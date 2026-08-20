@@ -54,7 +54,8 @@
   current uid。launchd/API/Alert 只传同一个 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`；health 仅做结构检查，
   不联网、不读取 Topic 成员、不公开 token 或 Topic code。
 - Topic 成员完全由 PushPlus 管理；owner 与最多三位朋友都通过 PushPlus 页面/二维码加入同一专用 Topic，
-  exact 四人由人工核对。归一量化不建逐人 directory、pairing、fan-out、送达表、Open API、callback、
+  当前已由用户确认 Topic 内有 3 人，第 4 人可后续加入；每次由人工核对且总人数不得超过 4。归一量化
+  不建逐人 directory、pairing、fan-out、送达表、Open API、callback、
   retry、queue、replay、backfill 或 fallback；Alert Application Domain 仍只有两张表。
 - 当前实现的无副作用验证已覆盖 dispatcher/config/SDK adapter/composition/CLI/health 与 launchd/ops：
   Alert focused `170 passed`，全 engineering `53 passed`；全后端 Ruff PASS，Mypy `78 source files`
@@ -62,13 +63,13 @@
   `finding_count=0` 与 diff check PASS。
 - 本次未取得或写入真实 PushPlus token/Topic，未发送通知，未连接 production DB，未执行 Scope、
   main/release/tag、Runtime promotion/switch 或外部旧配置清理。
-- 独立 pending Gate 为：创建专用消息 token/Topic、owner + 3 位朋友加入并人工核对 exact 四人、写入
-  Git 外 private config、分别执行 `owner` 与 `htdy_observers` 真实 canary、取得精确 Rule + Scope +
+- 专用 Topic 已创建且当前 3 人由用户确认；第 4 人允许后续加入。独立 pending Gate 为：取得专用消息
+  token、写入 Git 外 private config、分别执行 `owner` 与 `htdy_observers` 真实 canary、取得精确 Rule + Scope +
   audience + transport 持续授权、main/release/tag、exact-tag Alert Runtime promotion/switch/readback 与
   自然 HTDY 验收。代码和测试不授权其中任何一步。
 - production 事实保持不变：仍为
   `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c` 的单 `owner` exact Runtime，两条 Rule 的 Scope
-  仍精确为 `jm`。没有四人已启用、已发送或已自然验收的证据。
+  仍精确为 `jm`。没有 PushPlus 已配置、已发送或已自然验收的证据。
 
 ## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
 
@@ -445,5 +446,5 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证；该独立 pending 状态不改写 `v1.6.2` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持 production `v1.6.2 + clawbot-openclaw-weixin` 不变；先在 PushPlus 创建专用消息
-  token/Topic，并让 owner + 3 位朋友加入后人工核对 exact 四人，再单独申请 Git 外配置 Gate。
+- 最小下一步：保持 production `v1.6.2 + clawbot-openclaw-weixin` 不变；取得专用 PushPlus 消息 token
+  后写入 Git 外 private config，再单独执行真实 canary Gate。

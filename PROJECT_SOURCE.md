@@ -77,7 +77,7 @@ SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `tra
 
 当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后 develop 的 `AlertNotificationDispatcher` 最多调用一次 PushPlus SDK：HTDY 路由到 `htdy_observers` Topic，SuBing 路由到不带 Topic 的 `owner`。`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，SDK shortCode 只表示 provider 接受请求，二者都不表示微信已送达。无 replay/backfill/retry/outbox/queue/逐人 fan-out/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
 
-PushPlus 消息 token 与 HTDY Topic code 只存于 Git 外的单份 `0700` parent / `0600` private JSON，不写入仓库、日志、health 或 Event。Runtime 只公开两个逻辑 audience 与脱敏 shortCode 后缀，不调用开放接口查询 Topic 成员。owner 与最多三位朋友在 PushPlus 外部扫码加入专用 Topic；创建者也必须加入，exact 四人由人工核对。
+PushPlus 消息 token 与 HTDY Topic code 只存于 Git 外的单份 `0700` parent / `0600` private JSON，不写入仓库、日志、health 或 Event。Runtime 只公开两个逻辑 audience 与脱敏 shortCode 后缀，不调用开放接口查询 Topic 成员。owner 与最多三位朋友在 PushPlus 外部扫码加入专用 Topic；创建者也必须加入。Topic 可在 `1..4` 人边界内先以当前成员启用，后续增加成员仍由 operator 人工核对且不得超过 4 人。
 
 Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 仍运行历史 Clawbot 单 owner transport；develop 的 PushPlus 路径尚未 release/promotion。真实 Git 外配置、owner/Topic canary、release/tag、Runtime promotion/switch、SuBing Scope write/activation 与 rollback 仍是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam、render-only 或已经完成的其他 Gate 不证明未来 Gate 获得授权。
 
@@ -103,7 +103,7 @@ htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplu
 subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 production 的 exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner transport；可变运行事实只由 `STATUS.md` 记录。PushPlus 持续授权尚未取得，只覆盖未来批准后新建的自然 AlertEvent，不覆盖未来第三条 Rule、Topic 成员变化、synthetic Event、replay/backfill、canary、migration、Runtime switch、release、Canonical 写入、订单或 rollback。V2 migration 保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation；不能从 Market Runtime V1、既有 HTDY Scope 或其他 Gate 推导授权。
+当前 production 的 exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner transport；可变运行事实只由 `STATUS.md` 记录。PushPlus 持续授权尚未取得，只覆盖未来批准后新建的自然 AlertEvent。已批准 Topic 在 `1..4` 人内的成员加入不改变代码或 transport；超过 4 人、未知成员或更换 Topic 必须重新授权。该授权不覆盖未来第三条 Rule、synthetic Event、replay/backfill、canary、migration、Runtime switch、release、Canonical 写入、订单或 rollback。V2 migration 保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation；不能从 Market Runtime V1、既有 HTDY Scope 或其他 Gate 推导授权。
 
 当前本机部署根属于可变运行事实，只由 `STATUS.md` 记录。功能开发期可临时从 `develop` 部署以便快速观察；最终 Runtime 采用绑定精确提交的独立 worktree，验收读回身份、拓扑、健康和范围。已经在同一代码谱系形成且由用户接受的自然时点证据不因部署封装重复采集；开发态部署仍不等于 Ready、release 或 Runtime promotion。
 
