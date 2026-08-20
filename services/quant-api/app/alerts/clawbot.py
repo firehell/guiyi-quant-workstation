@@ -23,6 +23,7 @@ from app.alerts.recipients import (
     ClawbotRecipient,
     ClawbotRecipientError,
     load_recipient_directory,
+    validate_clawbot_recipient_ids,
 )
 from app.core.env import PROJECT_ROOT
 
@@ -70,6 +71,12 @@ class ClawbotDependency:
 class ClawbotOwnerCandidate:
     account_id: str = field(repr=False)
     target_user_id: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ClawbotContext:
+    user_id: str = field(repr=False)
+    context_token: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +297,45 @@ class ClawbotRunner:
             return ClawbotOwnerCandidate(account_id, target_user_id)
         except (ClawbotOwnerError, KeyError, TypeError, ValueError):
             raise ClawbotError("CLAWBOT_CHILD_FAILED") from None
+
+    def snapshot_contexts(self) -> tuple[str, tuple[ClawbotContext, ...]]:
+        payload = self._invoke({"action": "snapshot_contexts"}, expected_status="ready")
+        try:
+            if set(payload) != {"status", "action", "account_id", "contexts"}:
+                raise ValueError
+            if payload["action"] != "snapshot_contexts" or not isinstance(payload["contexts"], list):
+                raise ValueError
+            account_id = payload["account_id"]
+            contexts = tuple(
+                self._parse_context(account_id, item) for item in payload["contexts"]
+            )
+            if len(contexts) > 64 or tuple(item.user_id for item in contexts) != tuple(
+                sorted(item.user_id for item in contexts)
+            ) or len({item.user_id for item in contexts}) != len(contexts):
+                raise ValueError
+            if not isinstance(account_id, str):
+                raise ValueError
+            validate_clawbot_recipient_ids(account_id, "validation-only@im.wechat")
+            return account_id, contexts
+        except (ClawbotRecipientError, KeyError, TypeError, ValueError):
+            raise ClawbotError("CLAWBOT_CHILD_FAILED") from None
+
+    @staticmethod
+    def _parse_context(account_id: object, value: object) -> ClawbotContext:
+        if not isinstance(value, dict) or set(value) != {"user_id", "context_token"}:
+            raise ValueError
+        user_id = value["user_id"]
+        context_token = value["context_token"]
+        validate_clawbot_recipient_ids(account_id, user_id)
+        if (
+            not isinstance(user_id, str)
+            or not isinstance(context_token, str)
+            or not context_token
+            or context_token.strip() != context_token
+            or any(unicodedata.category(character).startswith("C") for character in context_token)
+        ):
+            raise ValueError
+        return ClawbotContext(user_id, context_token)
 
     def probe(self, recipient: ClawbotRecipient) -> None:
         payload = self._invoke(

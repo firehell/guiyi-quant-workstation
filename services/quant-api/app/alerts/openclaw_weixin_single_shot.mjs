@@ -16,6 +16,14 @@ const MANIFEST_KEYS = new Set([
   "node_version",
   "plugin_modules",
 ]);
+const MAX_CONTEXT_CANDIDATES = 64;
+const MAX_CONTEXT_SNAPSHOT_BYTES = 65536;
+const ACTION_KEYS = Object.freeze({
+  discover_owner: new Set(["action"]),
+  snapshot_contexts: new Set(["action"]),
+  probe: new Set(["action", "account_id", "target_user_id"]),
+  send: new Set(["action", "account_id", "target_user_id", "text"]),
+});
 
 
 class PublicError extends Error {
@@ -44,7 +52,14 @@ async function readInput() {
     fail("CLAWBOT_INPUT_INVALID");
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("CLAWBOT_INPUT_INVALID");
-  if (!new Set(["discover_owner", "probe", "send"]).has(value.action)) fail("CLAWBOT_INPUT_INVALID");
+  const allowedKeys = Object.hasOwn(ACTION_KEYS, value.action) ? ACTION_KEYS[value.action] : null;
+  if (
+    !allowedKeys ||
+    Object.keys(value).length !== allowedKeys.size ||
+    Object.keys(value).some((key) => !allowedKeys.has(key))
+  ) {
+    fail("CLAWBOT_INPUT_INVALID");
+  }
   return value;
 }
 
@@ -191,7 +206,74 @@ async function discoverOwner(dependency) {
 }
 
 
-async function loadFrozenOwner(dependency, input) {
+async function snapshotContexts(dependency) {
+  const ids = await dependency.accounts.listIndexedWeixinAccountIds();
+  if (!Array.isArray(ids) || ids.length !== 1 || !isPrivateText(ids[0])) {
+    fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+  }
+  const account = await dependency.accounts.loadWeixinAccount(ids[0]);
+  if (
+    !account ||
+    typeof account.token !== "string" ||
+    !account.token.trim() ||
+    !isPrivateText(account.userId) ||
+    !account.userId.endsWith("@im.wechat")
+  ) {
+    fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+  }
+  const stateInput = process.env.OPENCLAW_STATE_DIR;
+  if (!stateInput || !path.isAbsolute(stateInput)) fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+  try {
+    const stateMetadata = await lstat(stateInput);
+    if (!stateMetadata.isDirectory() || stateMetadata.isSymbolicLink()) {
+      fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+    }
+    const state = await realpath(stateInput);
+    const accountsRoot = path.join(state, "openclaw-weixin", "accounts");
+    const contextPath = path.join(accountsRoot, `${ids[0]}.context-tokens.json`);
+    await requireRegularFile(contextPath);
+    const exact = await realpath(contextPath);
+    if (exact !== contextPath || !exact.startsWith(`${accountsRoot}${path.sep}`)) {
+      fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+    }
+    const metadata = await lstat(exact);
+    if (metadata.size > MAX_CONTEXT_SNAPSHOT_BYTES) fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+    const stored = JSON.parse(await readFile(exact, "utf8"));
+    if (!stored || typeof stored !== "object" || Array.isArray(stored)) {
+      fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+    }
+    const entries = Object.entries(stored);
+    if (entries.length > MAX_CONTEXT_CANDIDATES) fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+    const contexts = entries.map(([userId, contextToken]) => {
+      if (
+        !isPrivateText(userId) ||
+        !userId.endsWith("@im.wechat") ||
+        userId === "@im.wechat" ||
+        !isPrivateText(contextToken)
+      ) {
+        fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+      }
+      return { user_id: userId, context_token: contextToken };
+    });
+    contexts.sort((left, right) => {
+      if (left.user_id < right.user_id) return -1;
+      if (left.user_id > right.user_id) return 1;
+      return 0;
+    });
+    return {
+      status: "ready",
+      action: "snapshot_contexts",
+      account_id: ids[0],
+      contexts,
+    };
+  } catch (error) {
+    if (error instanceof PublicError) throw error;
+    fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+  }
+}
+
+
+async function loadFrozenRecipient(dependency, input) {
   const accountId = requirePrivateText(input.account_id);
   const targetUserId = requirePrivateText(input.target_user_id);
   if (!targetUserId.endsWith("@im.wechat")) fail("CLAWBOT_OWNER_INVALID");
@@ -200,7 +282,8 @@ async function loadFrozenOwner(dependency, input) {
     !account ||
     typeof account.token !== "string" ||
     !account.token.trim() ||
-    account.userId !== targetUserId
+    !isPrivateText(account.userId) ||
+    !account.userId.endsWith("@im.wechat")
   ) {
     fail("CLAWBOT_OWNER_INVALID");
   }
@@ -215,19 +298,20 @@ async function execute() {
   const input = await readInput();
   const dependency = await loadDependency();
   if (input.action === "discover_owner") return discoverOwner(dependency);
-  const owner = await loadFrozenOwner(dependency, input);
+  if (input.action === "snapshot_contexts") return snapshotContexts(dependency);
+  const recipient = await loadFrozenRecipient(dependency, input);
   if (input.action === "probe") {
     return { status: "ready", action: "probe", account_configured: true, context_available: true };
   }
   const text = requireMessageText(input.text);
   try {
     await dependency.send.sendMessageWeixin({
-      to: owner.targetUserId,
+      to: recipient.targetUserId,
       text,
       opts: {
-        baseUrl: owner.account.baseUrl?.trim() || dependency.accounts.DEFAULT_BASE_URL,
-        token: owner.account.token,
-        contextToken: owner.contextToken,
+        baseUrl: recipient.account.baseUrl?.trim() || dependency.accounts.DEFAULT_BASE_URL,
+        token: recipient.account.token,
+        contextToken: recipient.contextToken,
       },
     });
   } catch {

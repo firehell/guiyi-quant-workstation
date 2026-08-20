@@ -1,7 +1,7 @@
 """归一量化统一 CLI 入口（``uv run guiyi``）。
 
 子域：``data``（历史数据 audit/update/refresh）、``research``（只读研究）、
-``runtime``（健康与前台 Live）。
+``runtime``（健康与前台 Live）与 ``recipients``（停机期私有接收人配置）。
 默认 JSON 输出至 stdout；参数错误与异常经 output 模块脱敏后写 stderr。
 """
 
@@ -11,6 +11,7 @@ import argparse
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 import logging
+import os
 from pathlib import Path
 import stat
 import sys
@@ -24,8 +25,11 @@ from app.alerts.clawbot import (
 from app.alerts.clawbot_owner import (
     CLAWBOT_CHANNEL,
     CLAWBOT_OWNER_ALIAS,
-    load_clawbot_owner,
-    write_clawbot_owner_atomic,
+)
+from app.alerts.recipient_bootstrap import RecipientBootstrap
+from app.alerts.recipients import (
+    initialize_recipients_from_owner,
+    load_recipient_directory,
 )
 from app.alerts.composition import build_alert_runtime
 from app.core.env import PROJECT_ROOT
@@ -63,8 +67,10 @@ LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 ClawbotRunnerFactory = Callable[[], Any]
-ClawbotOwnerLoader = Callable[[Path], Any]
-ClawbotOwnerWriter = Callable[..., None]
+RecipientDirectoryLoader = Callable[[Path], Any]
+RecipientPaths = Callable[[], tuple[Path, Path]]
+RecipientInitializer = Callable[[Path, Path], Any]
+RecipientBootstrapFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
@@ -73,13 +79,13 @@ logger = logging.getLogger(__name__)
 
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
+    if args.domain == "recipients":
+        return False
     if args.domain == "research":
         return True
     if args.domain == "runtime":
         if args.runtime_command in {"status", "clawbot-preflight"}:
             return True
-        if args.runtime_command == "clawbot-owner-bootstrap":
-            return not bool(args.confirm_write_owner)
         return False
     return not bool(getattr(args, "apply", False))
 
@@ -102,7 +108,7 @@ def _execution_review_roll_marker_state(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构建 guiyi 根解析器：data、research 与 runtime 三个子域。"""
+    """构建 guiyi 根解析器：data、research、runtime 与 recipients。"""
     parser = JsonArgumentParser(prog="guiyi")
     domains = parser.add_subparsers(dest="domain", required=True)
     data = domains.add_parser("data")
@@ -119,10 +125,33 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
     runtime_commands.add_parser("alert-canary")
-    bootstrap = runtime_commands.add_parser("clawbot-owner-bootstrap")
-    bootstrap.add_argument("--confirm-write-owner", action="store_true")
     runtime_commands.add_parser("clawbot-preflight")
+    recipients = domains.add_parser("recipients")
+    recipient_commands = recipients.add_subparsers(
+        dest="recipients_command", required=True
+    )
+    recipient_commands.add_parser("init")
+    for command in ("prepare", "confirm", "retire"):
+        recipient_command = recipient_commands.add_parser(command)
+        recipient_command.add_argument("--alias", required=True)
     return parser
+
+
+def _recipient_paths_from_env() -> tuple[Path, Path]:
+    owner = os.getenv("GUIYI_ALERT_CLAWBOT_OWNER_PATH", "")
+    recipients = os.getenv("GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH", "")
+    if not owner or not recipients:
+        raise RuntimeError("CLAWBOT_RECIPIENT_PATHS_UNAVAILABLE")
+    owner_path = Path(owner)
+    recipients_path = Path(recipients)
+    if not owner_path.is_absolute() or not recipients_path.is_absolute():
+        raise RuntimeError("CLAWBOT_RECIPIENT_PATHS_UNAVAILABLE")
+    return owner_path, recipients_path
+
+
+def _build_recipient_bootstrap() -> RecipientBootstrap:
+    runner = build_clawbot_runner_from_env(verify_versions=True)
+    return RecipientBootstrap(runner, runner.dependency.recipients_path)
 
 
 def main(
@@ -137,8 +166,10 @@ def main(
         build_clawbot_sender_from_env
     ),
     clawbot_runner_factory: ClawbotRunnerFactory = build_clawbot_runner_from_env,
-    clawbot_owner_loader: ClawbotOwnerLoader = load_clawbot_owner,
-    clawbot_owner_writer: ClawbotOwnerWriter = write_clawbot_owner_atomic,
+    recipient_directory_loader: RecipientDirectoryLoader = load_recipient_directory,
+    recipient_paths: RecipientPaths = _recipient_paths_from_env,
+    recipient_initializer: RecipientInitializer = initialize_recipients_from_owner,
+    recipient_bootstrap_factory: RecipientBootstrapFactory = _build_recipient_bootstrap,
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
@@ -215,6 +246,37 @@ def main(
                     research_request,
                     service_factory(session),
                 )
+        elif args.domain == "recipients":
+            if args.recipients_command == "init":
+                owner_path, recipients_path = recipient_paths()
+                directory = recipient_initializer(owner_path, recipients_path)
+                payload = {
+                    "schema_version": 1,
+                    "command": "recipients.init",
+                    "status": "ok",
+                    "readonly": False,
+                    "channel": CLAWBOT_CHANNEL,
+                    "recipient_count": len(directory.recipients),
+                }
+            else:
+                bootstrap = recipient_bootstrap_factory()
+                mutation = getattr(bootstrap, args.recipients_command)
+                result = mutation(args.alias)
+                count_key = {
+                    "prepare": "baseline_candidate_count",
+                    "confirm": "candidate_count",
+                    "retire": "active_recipient_count",
+                }[args.recipients_command]
+                count = getattr(result, count_key)
+                payload = {
+                    "schema_version": 1,
+                    "command": f"recipients.{args.recipients_command}",
+                    "status": "ok",
+                    "readonly": False,
+                    "channel": CLAWBOT_CHANNEL,
+                    "alias": result.alias,
+                    count_key: count,
+                }
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:
@@ -255,40 +317,11 @@ def main(
                 "failed": summary.failed,
                 "failed_aliases": list(summary.failed_aliases),
             }
-        elif args.runtime_command == "clawbot-owner-bootstrap":
-            runner = clawbot_runner_factory()
-            candidate = runner.discover_owner()
-            if args.confirm_write_owner:
-                clawbot_owner_writer(
-                    runner.dependency.owner_path,
-                    account_id=candidate.account_id,
-                    target_user_id=candidate.target_user_id,
-                )
-                payload = {
-                    "schema_version": 1,
-                    "command": "runtime.clawbot-owner-bootstrap",
-                    "status": "ok",
-                    "readonly": False,
-                    "channel": CLAWBOT_CHANNEL,
-                    "owner_alias": CLAWBOT_OWNER_ALIAS,
-                    "owner_written": True,
-                }
-            else:
-                payload = {
-                    "schema_version": 1,
-                    "command": "runtime.clawbot-owner-bootstrap",
-                    "status": "ready",
-                    "readonly": True,
-                    "channel": CLAWBOT_CHANNEL,
-                    "owner_alias": CLAWBOT_OWNER_ALIAS,
-                    "account_count": 1,
-                    "owner_candidate_count": 1,
-                    "context_available": True,
-                    "owner_written": False,
-                }
         elif args.runtime_command == "clawbot-preflight":
             runner = clawbot_runner_factory()
-            owner = clawbot_owner_loader(runner.dependency.owner_path)
+            owner = recipient_directory_loader(
+                runner.dependency.recipients_path
+            ).recipients_for("subing_entry_signal_v1")[0]
             runner.probe(owner)
             payload = {
                 "schema_version": 1,

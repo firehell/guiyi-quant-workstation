@@ -269,6 +269,50 @@ def test_runner_uses_fixed_argv_stdin_and_allowlisted_environment(tmp_path: Path
     }
 
 
+def test_runner_captures_one_private_context_snapshot_without_exposing_it_in_repr(
+    tmp_path: Path,
+) -> None:
+    dependency, _ = _tree(tmp_path)
+    calls = 0
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        assert json.loads(str(kwargs["input"])) == {"action": "snapshot_contexts"}
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "status": "ready",
+                    "action": "snapshot_contexts",
+                    "account_id": "fixture-account",
+                    "contexts": [
+                        {
+                            "user_id": "fixture-friend@im.wechat",
+                            "context_token": "fixture-friend-context",
+                        },
+                        {
+                            "user_id": "fixture-owner@im.wechat",
+                            "context_token": "fixture-owner-context",
+                        },
+                    ],
+                }
+            ),
+            "private raw stderr",
+        )
+
+    account_id, contexts = ClawbotRunner(dependency, run_process=run).snapshot_contexts()
+
+    assert calls == 1
+    assert account_id == "fixture-account"
+    assert tuple((item.user_id, item.context_token) for item in contexts) == (
+        ("fixture-friend@im.wechat", "fixture-friend-context"),
+        ("fixture-owner@im.wechat", "fixture-owner-context"),
+    )
+    assert "fixture" not in repr(contexts)
+
+
 @pytest.mark.parametrize(
     ("account_id", "target_user_id"),
     [
