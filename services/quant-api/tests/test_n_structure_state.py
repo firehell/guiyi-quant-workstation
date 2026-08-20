@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.market_data import n_structure_state as state_module
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.n_structure_pattern import (
     CompletedNPattern,
@@ -174,6 +175,18 @@ def _range_reset_two_n_values() -> tuple[tuple[str, str], ...]:
         ("16", "8.5"),
         ("18", "9"),
     )
+
+
+def _expanding_non_outside_values(cycles: int) -> tuple[tuple[str, str], ...]:
+    values: list[tuple[str, str]] = [("1100", "1000")]
+    high = Decimal("1100")
+    low = Decimal("1000")
+    for _ in range(cycles):
+        high += 1
+        values.append((str(high), str(low)))
+        low -= 1
+        values.append((str(high), str(low)))
+    return tuple(values)
 
 
 def _producer(
@@ -487,6 +500,41 @@ def test_new_epoch_one_completed_n_remains_undefined() -> None:
     assert snapshot.kind is NStructureKind.UNDEFINED
     assert snapshot.established_at is None
     assert snapshot.completed_n_count_in_epoch == 1
+
+
+def test_long_epoch_classification_inspects_only_recent_highs_and_lows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bars = _bars(_expanding_non_outside_values(cycles=96))
+    swings, patterns, policy = _producer(bars)
+    inspected_pivots = 0
+    original_classify = state_module._classify
+
+    def counted_classify(
+        pivots: tuple[NSwingPivot, ...] | list[NSwingPivot],
+        *,
+        completed_n_count: int,
+    ) -> NStructureKind | None:
+        nonlocal inspected_pivots
+        inspected_pivots += len(pivots)
+        return original_classify(
+            pivots,
+            completed_n_count=completed_n_count,
+        )
+
+    monkeypatch.setattr(state_module, "_classify", counted_classify)
+
+    trace = evaluate_n_market_structure(
+        bars,
+        swings=swings,
+        patterns=patterns,
+        policy=policy,
+    )
+
+    assert len(swings.pivots) >= 180
+    assert patterns.patterns == ()
+    assert trace.snapshots[-1].kind is NStructureKind.UNDEFINED
+    assert inspected_pivots <= len(bars) * 4
 
 
 def test_range_reestablishes_only_after_two_n_in_current_epoch() -> None:

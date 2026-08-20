@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+from heapq import heappop, heappush
 
 from .domain import BarFrequency, CanonicalBar
 from .n_structure_policy import NStructurePolicy, is_exact_n_structure_policy
@@ -64,6 +65,21 @@ class CompletedNPattern:
     range_band: NRangeBand
 
     def __post_init__(self) -> None:
+        if (
+            not isinstance(self.n_id, str)
+            or not isinstance(self.direction, NDirection)
+            or not isinstance(self.origin, NSwingPivot)
+            or not isinstance(self.n1_extreme, NSwingPivot)
+            or not isinstance(self.n2_origin, NSwingPivot)
+            or not _is_aware_datetime(self.completed_at)
+            or not _is_positive_finite_decimal(self.completion_level)
+            or not _is_positive_finite_decimal(self.completion_bar_close)
+            or not _is_nonnegative_finite_decimal(
+                self.completion_overshoot_bps
+            )
+            or not isinstance(self.range_band, NRangeBand)
+        ):
+            raise NStructureContractError()
         expected_id = _canonical_n_id(
             self.direction,
             self.origin,
@@ -72,14 +88,8 @@ class CompletedNPattern:
         )
         if (
             self.n_id != expected_id
-            or not _is_aware_datetime(self.completed_at)
             or self.completed_at.astimezone(UTC) < self.n2_origin.confirmed_at
             or self.completion_level != self.n1_extreme.price
-            or not _is_positive_finite_decimal(self.completion_bar_close)
-            or not _is_nonnegative_finite_decimal(
-                self.completion_overshoot_bps
-            )
-            or not isinstance(self.range_band, NRangeBand)
         ):
             raise NStructureContractError()
         object.__setattr__(self, "completed_at", self.completed_at.astimezone(UTC))
@@ -93,16 +103,20 @@ class NBreakEvent:
     observed_at: datetime
 
     def __post_init__(self) -> None:
+        if (
+            not isinstance(self.event_id, str)
+            or not isinstance(self.n_id, str)
+            or not isinstance(self.kind, NBreakKind)
+            or not _is_aware_datetime(self.observed_at)
+        ):
+            raise NStructureContractError()
         expected_id = _canonical_event_id(
             n_id=self.n_id,
             fact="break",
             detail=self.kind.value,
             observed_at=self.observed_at,
         )
-        if (
-            self.event_id != expected_id
-            or not _is_aware_datetime(self.observed_at)
-        ):
+        if self.event_id != expected_id:
             raise NStructureContractError()
         object.__setattr__(self, "observed_at", self.observed_at.astimezone(UTC))
 
@@ -114,16 +128,19 @@ class NRangeBandReentryEvent:
     observed_at: datetime
 
     def __post_init__(self) -> None:
+        if (
+            not isinstance(self.event_id, str)
+            or not isinstance(self.n_id, str)
+            or not _is_aware_datetime(self.observed_at)
+        ):
+            raise NStructureContractError()
         expected_id = _canonical_event_id(
             n_id=self.n_id,
             fact="range_band_reentry",
             detail="first",
             observed_at=self.observed_at,
         )
-        if (
-            self.event_id != expected_id
-            or not _is_aware_datetime(self.observed_at)
-        ):
+        if self.event_id != expected_id:
             raise NStructureContractError()
         object.__setattr__(self, "observed_at", self.observed_at.astimezone(UTC))
 
@@ -157,6 +174,7 @@ class _IncompleteN:
 class _ActiveAssessment:
     pattern: CompletedNPattern
     emitted_breaks: set[NBreakKind]
+    sequence: int
     range_band_reentry_emitted: bool = False
 
     @property
@@ -165,6 +183,120 @@ class _ActiveAssessment:
             NBreakKind.N2_ORIGIN_BROKEN,
             NBreakKind.ORIGIN_BROKEN,
         }
+
+
+_PendingLevel = tuple[Decimal, int, int, str]
+
+
+class _PendingAssessmentIndex:
+    """Index one-shot pending facts by their strict/non-strict price levels."""
+
+    def __init__(self) -> None:
+        self._active: dict[str, _ActiveAssessment] = {}
+        self._up_breaks: list[_PendingLevel] = []
+        self._down_breaks: list[_PendingLevel] = []
+        self._up_reentries: list[_PendingLevel] = []
+        self._down_reentries: list[_PendingLevel] = []
+        self._next_sequence = 0
+
+    def add(self, pattern: CompletedNPattern) -> _ActiveAssessment:
+        assessment = _ActiveAssessment(
+            pattern=pattern,
+            emitted_breaks=set(),
+            sequence=self._next_sequence,
+        )
+        self._next_sequence += 1
+        self._active[pattern.n_id] = assessment
+        break_levels = (
+            (pattern.n2_origin.price, 0),
+            (pattern.origin.price, 1),
+        )
+        target = (
+            self._up_breaks
+            if pattern.direction is NDirection.UP
+            else self._down_breaks
+        )
+        for level, priority in break_levels:
+            heappush(
+                target,
+                (
+                    -level if pattern.direction is NDirection.UP else level,
+                    assessment.sequence,
+                    priority,
+                    pattern.n_id,
+                ),
+            )
+        return assessment
+
+    def activate_reentry(self, assessment: _ActiveAssessment) -> None:
+        if assessment.pattern.n_id not in self._active:
+            return
+        pattern = assessment.pattern
+        if pattern.direction is NDirection.UP:
+            heappush(
+                self._up_reentries,
+                (
+                    -pattern.range_band.upper,
+                    assessment.sequence,
+                    0,
+                    pattern.n_id,
+                ),
+            )
+        else:
+            heappush(
+                self._down_reentries,
+                (
+                    pattern.range_band.lower,
+                    assessment.sequence,
+                    0,
+                    pattern.n_id,
+                ),
+            )
+
+    def triggered_breaks(
+        self,
+        current: CanonicalBar,
+    ) -> tuple[_ActiveAssessment, ...]:
+        selected: dict[str, _ActiveAssessment] = {}
+        while self._up_breaks and -self._up_breaks[0][0] > current.low:
+            self._select(heappop(self._up_breaks)[3], selected)
+        while self._down_breaks and self._down_breaks[0][0] < current.high:
+            self._select(heappop(self._down_breaks)[3], selected)
+        return tuple(sorted(selected.values(), key=lambda item: item.sequence))
+
+    def triggered_reentries(
+        self,
+        current: CanonicalBar,
+    ) -> tuple[_ActiveAssessment, ...]:
+        selected: dict[str, _ActiveAssessment] = {}
+        while (
+            self._up_reentries
+            and -self._up_reentries[0][0] >= current.low
+        ):
+            self._select(heappop(self._up_reentries)[3], selected)
+        while (
+            self._down_reentries
+            and self._down_reentries[0][0] <= current.high
+        ):
+            self._select(heappop(self._down_reentries)[3], selected)
+        return tuple(sorted(selected.values(), key=lambda item: item.sequence))
+
+    def retire_fully_assessed(
+        self,
+        assessments: Sequence[_ActiveAssessment],
+    ) -> None:
+        for assessment in assessments:
+            if assessment.fully_assessed:
+                self._active.pop(assessment.pattern.n_id, None)
+
+    def _select(
+        self,
+        n_id: str,
+        selected: dict[str, _ActiveAssessment],
+    ) -> None:
+        assessment = self._active.get(n_id)
+        if assessment is not None:
+            selected[n_id] = assessment
 
 
 def evaluate_n_patterns(
@@ -184,16 +316,18 @@ def evaluate_n_patterns(
     patterns: list[CompletedNPattern] = []
     break_events: list[NBreakEvent] = []
     reentry_events: list[NRangeBandReentryEvent] = []
-    active_assessments: dict[str, _ActiveAssessment] = {}
+    pending_assessments = _PendingAssessmentIndex()
     recent_pivots: list[NSwingPivot] = []
     incomplete: _IncompleteN | None = None
     replaced_count = 0
 
     for current in bars:
+        new_assessment: _ActiveAssessment | None = None
         # Existing immutable levels are path-independent even on an outside bar.
+        triggered_breaks = pending_assessments.triggered_breaks(current)
         _record_breaks(
             current,
-            tuple(active_assessments.values()),
+            triggered_breaks,
             break_events,
         )
 
@@ -222,24 +356,23 @@ def evaluate_n_patterns(
             ):
                 pattern = _complete_pattern(current, incomplete)
                 patterns.append(pattern)
-                assessment = _ActiveAssessment(
-                    pattern=pattern,
-                    emitted_breaks=set(),
-                )
-                active_assessments[pattern.n_id] = assessment
+                new_assessment = pending_assessments.add(pattern)
                 incomplete = None
                 # A new N's own levels are also facts known at this boundary.
-                _record_breaks(current, (assessment,), break_events)
+                _record_breaks(current, (new_assessment,), break_events)
 
         # The completion boundary itself never counts as first re-entry.
+        triggered_reentries = pending_assessments.triggered_reentries(current)
         _record_range_band_reentries(
             current,
-            tuple(active_assessments.values()),
+            triggered_reentries,
             reentry_events,
         )
-        for n_id, assessment in tuple(active_assessments.items()):
-            if assessment.fully_assessed:
-                del active_assessments[n_id]
+        touched = triggered_breaks + triggered_reentries
+        if new_assessment is not None:
+            pending_assessments.activate_reentry(new_assessment)
+            touched += (new_assessment,)
+        pending_assessments.retire_fully_assessed(touched)
 
     return NPatternTrace(
         patterns=tuple(patterns),

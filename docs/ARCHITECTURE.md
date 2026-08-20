@@ -141,8 +141,9 @@ flowchart TB
   强制统一。两条链都只投影 retrospective、rolling 与 prospective OOS 事实到 stdout
   JSON 或版本化 research report，不建立 Strategy Plugin/Registry、order、position、cost、equity、
   DB/Redis persistence 或 Alert consumer，也不产生自动 KEEP/DROP/PROMOTE 结论。N
-  目前只是 Historical/research-only 结构与 Candidate producer；未执行真实 evidence 生成，
-  不代表效果、promotion、release 或 Runtime 能力。
+  目前只是 Historical/research-only 结构与 Candidate producer；已形成 deterministic jm
+  retrospective/rolling evidence，prospective OOS 仍 pending，不代表效果、promotion、
+  release 或 Runtime 能力。
   `MainForceMirrorFuturesResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
   把每根 Bar 绑定到唯一物理合约后调用 Python Indicator Kernel；结果只由只读 CLI
