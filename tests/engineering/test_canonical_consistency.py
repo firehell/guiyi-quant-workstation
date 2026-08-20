@@ -192,7 +192,7 @@ def test_public_websocket_route_matches_market_api_contract() -> None:
     assert "location /ws/" not in nginx
 
 
-def test_release_candidate_versions_are_consistently_1_6_3() -> None:
+def test_release_candidate_versions_are_consistently_1_6_4() -> None:
     pyproject = (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
     lock = (ROOT / "services/quant-api/uv.lock").read_text(encoding="utf-8")
     api = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
