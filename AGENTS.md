@@ -64,16 +64,29 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-ope
 
 只有目标 Scope 获得精确 Rule + Product + owner + transport 授权、且用户另行明确执行对应 production Runtime promotion 后，才允许对该精确范围此后自然到达的完成 Bar 持续创建 Event，并通过唯一 Clawbot single-shot seam 尝试一次发送。当前 exact instance 为两条 Rule 各自的 `scope_products=jm`、固定别名 `owner` 与 `clawbot-openclaw-weixin`，具体可变事实以 `STATUS.md` 为准。V2 migration 保留已明确授权的 HTDY Scope，不为其虚构第二次 Scope write；SuBing 仍必须独立执行精确 Scope activation。停机历史不 replay/backfill，发送失败不 retry。未来第三条 Rule 不继承授权。
 
+固定收件人简化版在 develop 只达到 `CODE_COMPLETE / TEST_COMPLETE`：v2 directory 允许 `1..4` 人，
+即 `owner + 最多 3 位朋友`；HTDY 路由到冻结目录中的全部 active alias，SuBing 始终保持 owner-only。
+Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表，不保存逐收件人发送事实。
+production 继续运行当前 exact-tag 的单 `owner` Runtime；只有重新取得精确 HTDY Rule + Product + exact
+alias set + transport 持续授权，并完成新的 release 与 Runtime promotion，新增 alias 才能进入自然 Event。
+
 该授权与 Market Runtime V1 相互独立，不覆盖新增 Rule、Scope、owner 或通知渠道、生产 migration、任何 Runtime switch、
 main/tag/release、Canonical 写入、订单、rollback 或 G9 cleanup。production migration、release/tag、Runtime promotion/switch、Scope write/activation、owner bootstrap/write、preflight、真实 canary/send、rollback 和 G9 cleanup 都是独立 Gate；mock、测试、render-only、历史批准或其中一个 Gate 不授权其余 Gate。测试路由的 Scope PUT 不构成真实 Scope mutation 授权。
 
-当前 develop 与 production 的唯一 active 通知架构均为 Clawbot single-shot：每个 committed Event 最多启动一个固定 Node child，
-只允许唯一 `openclaw-weixin` private seam 调用一次 `sendMessageWeixin()`。Git 外的 owner 配置采用
-`0700` parent / `0600` file，只保存固定别名 `owner` 与精确 account/target；缺失 context、超时、crash、
-malformed output 或发送失败均 fail-closed，不 retry、queue、replay、backfill、fan-out 或 fallback。OpenClaw
+develop 固定收件人路径与 production 单 owner 路径都只允许唯一 `openclaw-weixin` private seam。
+develop 对每个 routed alias 最多启动一个固定 Node child，并最多调用一次 `sendMessageWeixin()`；HTDY
+按 owner-first 顺序 fan-out，一个普通 alias 失败时继续后续 alias，因此允许部分送达。该结果只形成安全的
+进程内公开摘要和人工确认，不新增逐收件人 DB 状态，也不自动恢复。Git 外 v2 directory 采用 `0700`
+parent / `0600` file，由单 operator 在 Alert Runtime 已停止时串行执行 owner-only init 及每位朋友的
+prepare/confirm 两步 fingerprint pairing；运行中不热重载。缺失 context、超时、crash、malformed output
+或发送失败均 fail-closed，不 retry、queue、replay、backfill 或 fallback。OpenClaw
 与腾讯插件是已经存在的外部依赖，归一量化不安装、更新、登录、启动、停止或监督它们，也不引入
 OpenClaw public message-send、durable queue、inbound、context monitor、Agent/LLM/slash/tool/reply 路径。
 当前 production exact-tag Runtime 已完成独立 release/promotion 并运行 `clawbot-openclaw-weixin`；G2～G8 与 G9 明确豁免收口的精确事实见 `STATUS.md`。旧 `v1.4.2` Runtime worktree 和 private WeCom credential 已在正式引用清零后完成 G9 最终清理，不再提供 rollback 或 provider fallback；未来恢复 WeCom 必须重新设计、配置、发布并取得对应独立 Gate。已经完成的 Gate、develop 代码、fixture、render-only 和测试均不授权未来 owner/Scope/transport 变更、canary、真实发送、OpenClaw 变更、Runtime switch 或 rollback。
+
+对固定收件人变更，真实 owner-only v2 init、每位朋友 prepare、每位朋友 confirm、全收件人 zero-send
+preflight、每位新增 alias 的 canary、main/release/tag、bounded authorization 与 Runtime promotion/switch
+全部 pending；代码、测试或旧单 owner Gate 均不授权其中任何一步。
 
 ## 工程与业务硬规则
 

@@ -196,64 +196,75 @@ Candidate 晋升、Alert/Runtime 接入、DB/Canonical/Redis 写入、通知或�
 
 ## Alert V2
 
-### 无副作用单元、集成与 render-only 验证
+### 无副作用单元、集成与工程验证
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_registry.py \
-  services/quant-api/tests/test_alert_current_trading_day.py \
-  services/quant-api/tests/test_alert_models.py \
-  services/quant-api/tests/test_alert_service.py \
-  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_recipients.py \
+  services/quant-api/tests/test_alert_recipient_bootstrap.py \
   services/quant-api/tests/test_alert_notification.py \
   services/quant-api/tests/test_alert_clawbot_owner.py \
   services/quant-api/tests/test_alert_clawbot.py \
+  services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_alert_api.py \
   services/quant-api/tests/test_alert_cli.py \
   services/quant-api/tests/test_runtime_health.py \
-  services/quant-api/tests/alembic/test_alert_v2_migration.py \
-  services/quant-api/tests/data_foundation/test_aggregation.py \
-  services/quant-api/tests/data_foundation/test_live_market.py \
-  services/quant-api/tests/data_foundation/test_market_phase.py \
-  services/quant-api/tests/data_foundation/test_market_read.py \
-  services/quant-api/tests/data_foundation/test_subing_read_service.py
+  services/quant-api/tests/data_foundation/test_cli.py
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-  uv run --offline --project services/quant-api pytest -q \
-  tests/engineering/test_alert_runtime_launchd.py \
-  tests/engineering/test_market_runtime_launchd.py
+  uv run --offline --project services/quant-api pytest -q tests/engineering
 
 node --test tests/engineering/openclaw_weixin_single_shot.test.mjs
 
-pnpm --dir apps/quant-web test
-scripts/ops/macos/install-local-services.sh --render-only
-plutil -lint .run/launchd/com.guiyi.quant-alert.plist
+/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/ruff check \
+  services/quant-api/app/alerts/recipients.py \
+  services/quant-api/app/alerts/recipient_bootstrap.py \
+  services/quant-api/app/alerts/clawbot.py \
+  services/quant-api/app/alerts/notification.py \
+  services/quant-api/app/guiyi_cli/main.py \
+  services/quant-api/app/services/runtime_health.py \
+  services/quant-api/app/schemas/runtime.py
+
+MYPYPATH=services/quant-api:packages/quant-core \
+  /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/mypy \
+  --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/alerts/recipients.py \
+  services/quant-api/app/alerts/recipient_bootstrap.py \
+  services/quant-api/app/alerts/clawbot.py \
+  services/quant-api/app/alerts/notification.py \
+  services/quant-api/app/guiyi_cli/main.py \
+  services/quant-api/app/services/runtime_health.py \
+  services/quant-api/app/schemas/runtime.py
+
+find scripts/ops -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+find deploy/launchd -type f -name '*.plist.template' -print0 | xargs -0 -n1 plutil -lint
+python3 scripts/engineering/secret_scan.py --json
+git diff --check
 ```
 
-这些命令只使用隔离数据库、mock sender、fake exact-version plugin tree、tmp_path/fake process 或 render-only，
-不启动真实 AlertRuntime，不写真实 owner，不执行真实 Clawbot preflight/canary/send，也不修改或监督
-OpenClaw。它们不授权 Runtime switch/release、production migration 或 SuBing Scope write/activation。
-当前 production exact-tag 已运行 `clawbot-openclaw-weixin`；本节测试不会改变该事实，也不授权任何后续
-真实 Gate。`alembic upgrade/current`、`runtime clawbot-owner-bootstrap
---confirm-write-owner`、`runtime clawbot-preflight`、`runtime alert-canary`、`--confirm-alert-runtime` 与真实
-Scope PUT 禁止作为本节验证命令。测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
+这些命令使用 fixture、tmp_path、fake sender/process/plugin tree，不读取或修改正式 owner/recipients/context，
+不执行真实 preflight/canary/send，也不启动或切换 Alert Runtime。固定收件人简化版不新增 migration；
+Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。无 Web 变更时不要求前端或 browser
+验收。
+
+全 backend 基线若包含 PostgreSQL-only 测试，仍必须按本文“后端与前端基线”的 guard 使用显式隔离测试
+库；缺少隔离库只能报告环境阻塞，不得借用 Runtime/production `DATABASE_URL`。
 
 ### 独立受控外部 Gate
 
-- production PostgreSQL migration：仅在明确授权的短维护窗口升级到目标 revision；读回两张
-  Alert Application Domain 表与八表 Market Catalog 未变。
-- release/tag 与 Alert Runtime promotion/switch：分别取得明确授权；不得让 Runtime 与其所需
-  Alert schema 版本不一致。
-- SuBing Scope write/activation：对精确 `subing_entry_signal_v1 × product` 另行授权；seed
-  必须保持空集，不从 HTDY Scope 或 `operational_products.txt` 自动扩张。
-- Clawbot owner bootstrap/write、zero-send preflight、真实 canary/send：每次执行仍需自身精确 Gate；
-  已完成的 G2～G8、测试或历史批准不授权重试、owner/Scope/transport 变更、rollback 或 G9 cleanup。
-  这些命令不写 AlertEvent、不改 Scope、不修改 OpenClaw、不自动启用或切换 Runtime。
+- owner-only v2 init：写 Git 外 recipients 文件；当前 pending；
+- 每位朋友 prepare：写一次十分钟 fingerprint staging；当前 pending；
+- 每位朋友 confirm：把唯一 candidate 写入 v2 directory；当前 pending；
+- 全收件人 zero-send preflight：读取真实 context 并启动受限 child，但不发送；当前 pending；
+- 每个新增 alias 的单次真实 canary/send：当前 pending；
+- exact HTDY Rule + Scope + alias set + transport 持续授权：当前 pending；SuBing 保持 owner-only；
+- main/release/tag 与 exact-tag Alert Runtime promotion/switch：分别 pending。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
-mock 通过只证明实现，不证明任何生产 Gate 已执行。
+mock 通过只证明实现，不证明任何真实配置、发送、发布或 Runtime Gate 已执行。当前 production 继续是
+`v1.6.2` 的单 `owner` exact Runtime。
 
 ## OpenSpec
 

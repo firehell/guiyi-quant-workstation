@@ -11,6 +11,7 @@
 - 当前 Git release 与 production Runtime 均为
   `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
+  固定收件人简化版尚未 release/promotion，production 收件人仍精确只有 `owner`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
@@ -37,6 +38,31 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+
+## Alert 固定收件人简化版（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EXTERNAL GATES PENDING）
+
+- develop 实现采用本地单用户、单 operator 模型：v2 directory 只允许 `1..4` 人，即固定 `owner`
+  加最多 3 位朋友；HTDY 按 owner-first 顺序通知全部 active alias，SuBing 仍只通知 owner。
+- 每位朋友通过 stopped Alert Runtime 下的两步 fingerprint pairing 加入：prepare 只保存十分钟
+  HMAC-SHA256 fingerprint staging，普通私聊刷新 direct context，confirm 必须只识别出一个新增或 token
+  变化 candidate 后才原子更新 directory。运行中不热重载。
+- 每个 routed alias 最多一个 Node child、一次 `sendMessageWeixin()`；普通单 alias 失败时继续后续 alias。
+  这允许部分送达风险，只保留安全的进程内公开摘要与人工确认，不新增逐收件人 DB 状态；Alert
+  Application Domain 仍只有 `alert_rules`、`alert_events` 两张表。
+- Event 级 `notification_attempted_at` 仍是原批次尝试元数据，不能解释为逐人送达。没有 retry、queue、
+  replay、backfill、fallback 或订单路径。
+- fresh 完整本地验证：全 backend `1716 passed`（显式隔离库）、全 engineering `56 passed`、Node
+  single-shot `38 passed`；相关 Ruff PASS；正常 follow-imports Mypy `7 source files` PASS；全部 ops shell
+  `bash -n`、6 个 active launchd templates `plutil -lint`、secret scan `finding_count=0` 与 diff check PASS。
+- 本次未读取或写入正式 owner/recipients/context，未连接 production DB，未执行真实 init、prepare、
+  confirm、retire、preflight、canary/send、Scope、release/tag、push/merge 或 Runtime 操作。
+- 本变更的 owner-only v2 init、每位朋友 prepare、每位朋友 confirm、全收件人 zero-send preflight、
+  每位新增 alias 的 canary、精确 HTDY Rule + Scope + alias set + transport 授权、main/release/tag、
+  exact-tag Alert Runtime promotion/switch/readback 与自然 HTDY 验收全部 pending。任一旧单 owner Gate、
+  develop 代码或本地测试均不授权这些操作。
+- production 事实保持不变：仍为
+  `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c` 的单 `owner` exact Runtime，两条 Rule 的 Scope
+  仍精确为 `jm`。没有四人已启用、已发送或已自然验收的证据。
 
 ## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
 
@@ -280,7 +306,10 @@
   和轻量 health。
 - CLI：`guiyi data update|refresh|audit|after-market`；只读
   `guiyi research subing-calibration`、`guiyi runtime status|live|alert`。
-- `guiyi runtime alert-canary` 是向固定 `owner` 发出一次 Clawbot 消息的独立真实通知 Gate，不是普通测试命令。
+- production `v1.6.2` 的 `guiyi runtime alert-canary` 仍只面向固定 `owner`；develop 固定收件人实现改为
+  必须显式 `guiyi runtime alert-canary --alias <active-alias>`。二者都是独立真实通知 Gate，不是测试命令。
+- develop 已提供 `guiyi recipients init|prepare|confirm|retire`，但只达到 CODE_COMPLETE / TEST_COMPLETE；
+  这些命令会读取或修改 Git 外私有状态，当前均未执行，也未进入 production。
 - Runtime：Live 与盘后更新共用同一 `operational_products.txt`；盘后时点为 18:05，
   只对 `NEXT_TRADING_SESSION_NOT_READY` 允许最多一次一小时后 retry。
 
