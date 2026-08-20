@@ -45,7 +45,8 @@ flowchart TB
     subgraph AlertApp["Alert Application Domain"]
       AS["AlertService / Scope / Event"]
       AE["HTDY original 15m Evaluator"]
-      CB["ClawbotAlertSender / one Node child"]
+      ND["AlertNotificationDispatcher"]
+      NT["NotificationTransport / PushPlus adapter"]
     end
     subgraph ExecutionReview["Execution Review Application Domain"]
       ERS["ExecutionReviewService"]
@@ -64,7 +65,7 @@ flowchart TB
       EPG["PostgreSQL execution-review application tables"]
       PQ["Parquet / PyArrow reader-writer"]
       RD["Redis Live Overlay"]
-      OC["External OpenClaw / openclaw-weixin"]
+      PP["External PushPlus SDK / WeChat"]
     end
     WEB --> API --> MR
     API --> MRS
@@ -94,7 +95,7 @@ flowchart TB
     AR --> AE
     AR --> AS
     AS --> APG
-    AS --> CB --> OC
+    AS --> ND --> NT --> PP
     AM --> HM
     MS --> MM
     HM --> DK
@@ -224,28 +225,29 @@ Bar 不同一即 fail-closed。final Session Bar 只在 Live 共享 arrival grac
 observation 可见，不新增 `snapshot_at`/cutoff/replay；5m 与 15m 落在同一 TradingSession bucket
 boundary 时延后 5m，使用既有 resolver 唯一决议。
 
-两条 Rule 都只在自身显式 `scope_products` 内创建幂等 `AlertEvent`，Event commit 先于
-Clawbot single-shot：每个 Event 最多一个固定 Node child，并只经 `openclaw-weixin` private seam
-调用一次 `sendMessageWeixin()`。停机期间不 replay/backfill，发送失败不 retry，不建 outbox/queue/
-Signal Center/订单。SuBing migration seed Scope 为空集。当前交易日由
+两条 Rule 都只在自身显式 `scope_products` 内创建幂等 `AlertEvent`，Event commit 先于通知调用。
+`AlertNotificationDispatcher` 只拥有业务 audience 路由：HTDY 每个 Event 向 `htdy_observers` 发起一次
+PushPlus Topic 请求，SuBing 每个 Event 向不带 Topic 的 `owner` 发起一次请求。SDK shortCode 只表示
+provider 接受，不表示微信最终送达。停机期间不 replay/backfill，发送失败不 retry，不建 outbox/queue/
+逐人 fan-out/Signal Center/订单。SuBing migration seed Scope 为空集。当前交易日由
 `MarketPhaseResolver + operational_products.txt` 唯一解析，缺失或不一致时 API 显式
 `unavailable`。
 
 AlertRuntime 是独立进程、独立 activation marker 与独立健康组件。其有界持续授权只限于：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
+htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic
 +
-subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 exact instance 为两条 Rule 各自的 `scope_products=jm`。未来第三条 Rule 不继承授权；production
-migration、release/tag、Runtime promotion/switch、Scope/owner/transport 变更、真实 canary/send、rollback
-与 G9 cleanup 互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短 Session/transaction；
-Clawbot sender 与 structural health 共用 exact manifest/root/config/owner 校验。OpenClaw 是外部依赖，
-不由归一量化安装、更新、登录、启动、停止或监督。当前 production 已运行该 Clawbot transport；旧
-`v1.4.2` Runtime worktree 与 private WeCom credential 已完成最终清理，不再形成 rollback 或 fallback。
-未来恢复 WeCom 必须重新设计、配置、发布并取得独立 Gate。
+当前 production exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner Clawbot
+transport；PushPlus 持续授权尚未取得。未来第三条 Rule 或 Topic 成员变化不继承授权；production
+migration、release/tag、Runtime promotion/switch、Scope/audience/transport 变更、真实 canary/send、
+rollback 与外部旧配置清理互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短
+Session/transaction。develop 的 sender 与 structural health 共用同一 Git 外 private config：只含消息
+token 与 HTDY Topic code，要求 parent `0700`、file `0600`、current uid；health 不联网、不读取成员，
+也不公开 token/Topic。替换 provider 只新增 adapter 并切换 composition，不修改 Rule、Event 或 evaluator。
 
 Execution Review 不反向依赖或修改 Alert Event：只从不可变 `subing_entry_signal_v1` Event 建立人工
 Decision、固定合约/方向的 Episode、真实手工 Execution timeline 和结构化 Review。一个品种最多一个

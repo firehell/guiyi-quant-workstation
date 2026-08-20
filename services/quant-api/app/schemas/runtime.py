@@ -53,12 +53,11 @@ class RuntimeAfterMarketHealth(BaseModel):
 
 
 class RuntimeAlertNotificationHealth(BaseModel):
-    """Secret-safe structural Clawbot recipient readiness."""
+    """Secret-safe structural notification audience readiness."""
 
     transport: str
     configured: bool = False
-    recipient_count: int = 0
-    ready_count: int = 0
+    audience_count: int = 0
     would_send: bool = False
 
 

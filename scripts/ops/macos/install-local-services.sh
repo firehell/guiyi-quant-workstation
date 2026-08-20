@@ -11,12 +11,7 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
-OPENCLAW_BIN="${GUIYI_OPENCLAW_BIN:-}"
-OPENCLAW_NODE_BIN="${GUIYI_OPENCLAW_NODE_BIN:-}"
-OPENCLAW_WEIXIN_PLUGIN_ROOT="${GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT:-}"
-OPENCLAW_STATE_DIR="${GUIYI_OPENCLAW_STATE_DIR:-}"
-OPENCLAW_CONFIG_PATH="${GUIYI_OPENCLAW_CONFIG_PATH:-}"
-ALERT_CLAWBOT_RECIPIENTS_PATH="${GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH:-}"
+ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
 is_safe_absolute_path() {
   local path="$1" component
@@ -33,38 +28,25 @@ is_safe_absolute_path() {
   done
 }
 
-clawbot_paths_ready() {
-  local recipients_parent
-  for path in "$OPENCLAW_BIN" "$OPENCLAW_NODE_BIN" "$OPENCLAW_WEIXIN_PLUGIN_ROOT" \
-    "$OPENCLAW_STATE_DIR" "$OPENCLAW_CONFIG_PATH" "$ALERT_CLAWBOT_RECIPIENTS_PATH"; do
-    is_safe_absolute_path "$path" || return 1
-  done
-  [[ -f "$OPENCLAW_BIN" && ! -L "$OPENCLAW_BIN" && -x "$OPENCLAW_BIN" ]] || return 1
-  [[ -f "$OPENCLAW_NODE_BIN" && ! -L "$OPENCLAW_NODE_BIN" && -x "$OPENCLAW_NODE_BIN" ]] || return 1
-  [[ -d "$OPENCLAW_WEIXIN_PLUGIN_ROOT" && ! -L "$OPENCLAW_WEIXIN_PLUGIN_ROOT" ]] || return 1
-  [[ -d "$OPENCLAW_STATE_DIR" && ! -L "$OPENCLAW_STATE_DIR" ]] || return 1
-  [[ -f "$OPENCLAW_CONFIG_PATH" && ! -L "$OPENCLAW_CONFIG_PATH" ]] || return 1
-  [[ -f "$ALERT_CLAWBOT_RECIPIENTS_PATH" && ! -L "$ALERT_CLAWBOT_RECIPIENTS_PATH" ]] || return 1
-  recipients_parent="$(dirname "$ALERT_CLAWBOT_RECIPIENTS_PATH")"
-  [[ -d "$recipients_parent" && ! -L "$recipients_parent" ]] || return 1
-  [[ "$(stat -f '%Lp' "$ALERT_CLAWBOT_RECIPIENTS_PATH" 2>/dev/null)" == "600" ]] || return 1
-  [[ "$(stat -f '%Lp' "$recipients_parent" 2>/dev/null)" == "700" ]] || return 1
-  [[ "$(stat -f '%u' "$ALERT_CLAWBOT_RECIPIENTS_PATH" 2>/dev/null)" == "$(id -u)" ]] || return 1
-  [[ "$(stat -f '%u' "$recipients_parent" 2>/dev/null)" == "$(id -u)" ]] || return 1
+notification_config_ready() {
+  local config_parent
+  is_safe_absolute_path "$ALERT_NOTIFICATION_CONFIG_PATH" || return 1
+  [[ -f "$ALERT_NOTIFICATION_CONFIG_PATH" && ! -L "$ALERT_NOTIFICATION_CONFIG_PATH" ]] || return 1
+  config_parent="$(dirname "$ALERT_NOTIFICATION_CONFIG_PATH")"
+  [[ -d "$config_parent" && ! -L "$config_parent" ]] || return 1
+  [[ "$(stat -f '%Lp' "$ALERT_NOTIFICATION_CONFIG_PATH" 2>/dev/null)" == "600" ]] || return 1
+  [[ "$(stat -f '%Lp' "$config_parent" 2>/dev/null)" == "700" ]] || return 1
+  [[ "$(stat -f '%u' "$ALERT_NOTIFICATION_CONFIG_PATH" 2>/dev/null)" == "$(id -u)" ]] || return 1
+  [[ "$(stat -f '%u' "$config_parent" 2>/dev/null)" == "$(id -u)" ]] || return 1
 }
 
 installed_api_notification_paths_match() {
   local api_plist="$AGENT_DIR/com.guiyi.quant-api.plist"
-  local key expected installed
+  local installed
 
   [[ -f "$api_plist" ]] || return 1
-  for key in GUIYI_OPENCLAW_BIN GUIYI_OPENCLAW_NODE_BIN \
-    GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT GUIYI_OPENCLAW_STATE_DIR \
-    GUIYI_OPENCLAW_CONFIG_PATH GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH; do
-    expected="${!key}"
-    installed="$(plutil -extract "EnvironmentVariables.${key}" raw -o - "$api_plist" 2>/dev/null)" || return 1
-    [[ "$installed" == "$expected" ]] || return 1
-  done
+  installed="$(plutil -extract EnvironmentVariables.GUIYI_ALERT_NOTIFICATION_CONFIG_PATH raw -o - "$api_plist" 2>/dev/null)" || return 1
+  [[ "$installed" == "$ALERT_NOTIFICATION_CONFIG_PATH" ]]
 }
 
 write_execution_review_roll_marker() {
@@ -108,18 +90,15 @@ load_labels=("${base_labels[@]}")
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-execution-review-roll]\n' "$0" >&2; exit 2; }
 if [[ "$MODE" == "--confirm-alert-runtime" ]]; then
-  clawbot_paths_ready || {
-    printf '[install-local-services] alert notification paths not configured\n' >&2
+  notification_config_ready || {
+    printf '[install-local-services] alert notification config not ready\n' >&2
     exit 1
   }
 fi
-for path in "$OPENCLAW_BIN" "$OPENCLAW_NODE_BIN" "$OPENCLAW_WEIXIN_PLUGIN_ROOT" \
-  "$OPENCLAW_STATE_DIR" "$OPENCLAW_CONFIG_PATH" "$ALERT_CLAWBOT_RECIPIENTS_PATH"; do
-  if [[ -n "$path" ]] && ! is_safe_absolute_path "$path"; then
-    printf '[install-local-services] invalid alert notification path\n' >&2
-    exit 1
-  fi
-done
+if [[ -n "$ALERT_NOTIFICATION_CONFIG_PATH" ]] && ! is_safe_absolute_path "$ALERT_NOTIFICATION_CONFIG_PATH"; then
+  printf '[install-local-services] invalid alert notification path\n' >&2
+  exit 1
+fi
 if [[ "$MODE" == "--confirm-alert-runtime" ]] && ! installed_api_notification_paths_match; then
   printf '[install-local-services] installed API notification paths do not match\n' >&2
   exit 1
@@ -135,12 +114,7 @@ for label in "${render_labels[@]}"; do
     -e "s|__RUNTIME_DIR__|$RUNTIME_DIR|g" \
     -e "s|__LOG_DIR__|$LOG_DIR|g" \
     -e "s|__HOME__|$HOME|g" \
-    -e "s|__OPENCLAW_BIN__|$OPENCLAW_BIN|g" \
-    -e "s|__OPENCLAW_NODE_BIN__|$OPENCLAW_NODE_BIN|g" \
-    -e "s|__OPENCLAW_WEIXIN_PLUGIN_ROOT__|$OPENCLAW_WEIXIN_PLUGIN_ROOT|g" \
-    -e "s|__OPENCLAW_STATE_DIR__|$OPENCLAW_STATE_DIR|g" \
-    -e "s|__OPENCLAW_CONFIG_PATH__|$OPENCLAW_CONFIG_PATH|g" \
-    -e "s|__ALERT_CLAWBOT_RECIPIENTS_PATH__|$ALERT_CLAWBOT_RECIPIENTS_PATH|g" \
+    -e "s|__ALERT_NOTIFICATION_CONFIG_PATH__|$ALERT_NOTIFICATION_CONFIG_PATH|g" \
     "$template" >"$output"
   plutil -lint "$output" >/dev/null
 done

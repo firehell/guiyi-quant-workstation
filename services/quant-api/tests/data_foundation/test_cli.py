@@ -297,15 +297,14 @@ def test_runtime_parser_exposes_active_runtime_commands() -> None:
         "live",
         "alert",
         "alert-canary",
-        "clawbot-preflight",
     }
 
 
-def test_root_parser_exposes_recipients_as_a_separate_mutation_domain() -> None:
+def test_root_parser_exposes_only_active_domains() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
 
-    assert set(domain_action.choices) == {"data", "research", "runtime", "recipients"}
+    assert set(domain_action.choices) == {"data", "research", "runtime"}
 
 
 def test_runtime_live_runs_only_the_injected_foreground_service() -> None:

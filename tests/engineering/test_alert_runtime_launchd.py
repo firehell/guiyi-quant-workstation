@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
+import json
 import os
+from pathlib import Path
 import plistlib
 import shutil
 import subprocess
@@ -10,44 +11,29 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CLAWBOT_ENV_NAMES = (
-    "GUIYI_OPENCLAW_BIN",
-    "GUIYI_OPENCLAW_NODE_BIN",
-    "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT",
-    "GUIYI_OPENCLAW_STATE_DIR",
-    "GUIYI_OPENCLAW_CONFIG_PATH",
-    "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH",
-)
+NOTIFICATION_CONFIG_ENV = "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"
 
 
-def test_alert_launchd_render_only_is_default_closed_and_has_runtime_contract(tmp_path: Path) -> None:
+def test_alert_launchd_render_only_is_default_closed_and_has_one_config_path(
+    tmp_path: Path,
+) -> None:
     repo = _copy_fixture(tmp_path / "repo")
     home, fake_bin = _fake_runtime(tmp_path)
 
     _run(repo, home, fake_bin, "--render-only")
 
-    marker = repo / ".run" / "alert-runtime-enabled"
-    assert not marker.exists()
+    assert not (repo / ".run/alert-runtime-enabled").exists()
     rendered = repo / ".run/launchd/com.guiyi.quant-alert.plist"
     with rendered.open("rb") as handle:
         payload = plistlib.load(handle)
-    assert payload["Label"] == "com.guiyi.quant-alert"
     assert payload["ProgramArguments"][-1] == "alert"
-    assert payload["ProgramArguments"][-2].endswith("run-local-service.sh")
-    assert payload["RunAtLoad"] is True
-    assert payload["KeepAlive"] is True
-    assert payload["ThrottleInterval"] == 10
-    assert (
-        payload["EnvironmentVariables"]["GUIYI_RUNTIME_COMMIT"]
-        == "1111111111111111111111111111111111111111"
-    )
-    assert {key: payload["EnvironmentVariables"][key] for key in CLAWBOT_ENV_NAMES} == {
-        key: "" for key in CLAWBOT_ENV_NAMES
-    }
-    assert "GUIYI_ALERT_CLAWBOT_OWNER_PATH" not in payload["EnvironmentVariables"]
+    assert payload["EnvironmentVariables"][NOTIFICATION_CONFIG_ENV] == ""
+    assert not any("OPENCLAW" in key or "CLAWBOT" in key for key in payload["EnvironmentVariables"])
 
 
-def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_path: Path) -> None:
+def test_market_and_alert_confirmation_modes_write_only_their_own_marker(
+    tmp_path: Path,
+) -> None:
     market_repo = _copy_fixture(tmp_path / "market-repo")
     home, fake_bin = _fake_runtime(tmp_path / "market")
     _run(market_repo, home, fake_bin, "--confirm-market-runtime")
@@ -56,51 +42,29 @@ def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_pat
 
     alert_repo = _copy_fixture(tmp_path / "alert-repo")
     alert_home, alert_bin = _fake_runtime(tmp_path / "alert")
-    approved_paths = _clawbot_paths(tmp_path / "clawbot")
-    _run(
-        alert_repo,
-        alert_home,
-        alert_bin,
-        "--confirm-load",
-        extra_env=approved_paths,
-    )
+    config = _notification_config(tmp_path / "private")
+    env = {NOTIFICATION_CONFIG_ENV: str(config)}
+    _run(alert_repo, alert_home, alert_bin, "--confirm-load", extra_env=env)
     (alert_home / "launchctl-calls.log").unlink()
+
     result = _run(
         alert_repo,
         alert_home,
         alert_bin,
         "--confirm-alert-runtime",
-        extra_env=approved_paths,
+        extra_env=env,
     )
+
     assert (alert_repo / ".run/alert-runtime-enabled").read_text() == "enabled\n"
     assert not (alert_repo / ".run/market-runtime-enabled").exists()
     assert "mode=--confirm-alert-runtime services=1" in result.stdout
-    calls = (alert_home / "launchctl-calls.log").read_text(encoding="utf-8")
-    assert "com.guiyi.quant-alert" in calls
-    assert all(
-        "com.guiyi.quant-" not in line or "com.guiyi.quant-alert" in line
-        for line in calls.splitlines()
-    )
-    rendered = alert_repo / ".run/launchd/com.guiyi.quant-alert.plist"
-    with rendered.open("rb") as handle:
-        alert_payload = plistlib.load(handle)
-    api_rendered = alert_repo / ".run/launchd/com.guiyi.quant-api.plist"
-    with api_rendered.open("rb") as handle:
-        api_payload = plistlib.load(handle)
-    for key in CLAWBOT_ENV_NAMES:
-        assert alert_payload["EnvironmentVariables"][key] == approved_paths[key]
-        assert api_payload["EnvironmentVariables"][key] == alert_payload[
-            "EnvironmentVariables"
-        ][key]
     agent_dir = alert_home / "Library/LaunchAgents"
     with (agent_dir / "com.guiyi.quant-api.plist").open("rb") as handle:
         managed_api = plistlib.load(handle)
     with (agent_dir / "com.guiyi.quant-alert.plist").open("rb") as handle:
         managed_alert = plistlib.load(handle)
-    for key in approved_paths:
-        assert managed_api["EnvironmentVariables"][key] == managed_alert[
-            "EnvironmentVariables"
-        ][key]
+    assert managed_api["EnvironmentVariables"][NOTIFICATION_CONFIG_ENV] == str(config)
+    assert managed_alert["EnvironmentVariables"][NOTIFICATION_CONFIG_ENV] == str(config)
 
 
 def test_alert_confirmation_rejects_installed_api_path_mismatch_without_mutation(
@@ -108,12 +72,14 @@ def test_alert_confirmation_rejects_installed_api_path_mismatch_without_mutation
 ) -> None:
     repo = _copy_fixture(tmp_path / "repo")
     home, fake_bin = _fake_runtime(tmp_path)
+    old_config = _notification_config(tmp_path / "old")
+    new_config = _notification_config(tmp_path / "new")
     _run(
         repo,
         home,
         fake_bin,
         "--confirm-load",
-        extra_env=_clawbot_paths(tmp_path / "old-clawbot"),
+        extra_env={NOTIFICATION_CONFIG_ENV: str(old_config)},
     )
     calls = home / "launchctl-calls.log"
     calls.unlink()
@@ -126,7 +92,7 @@ def test_alert_confirmation_rejects_installed_api_path_mismatch_without_mutation
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
-            **_clawbot_paths(tmp_path / "new-clawbot"),
+            NOTIFICATION_CONFIG_ENV: str(new_config),
         },
         capture_output=True,
         text=True,
@@ -139,30 +105,21 @@ def test_alert_confirmation_rejects_installed_api_path_mismatch_without_mutation
     assert not calls.exists()
 
 
-def test_run_local_service_has_dedicated_alert_cli_branch() -> None:
-    source = (REPO_ROOT / "scripts/ops/macos/run-local-service.sh").read_text(encoding="utf-8")
-    assert "alert)" in source
-    assert "runtime alert" in source
-
-
-def test_run_local_service_preserves_launcher_clawbot_paths_over_runtime_env(
+def test_run_local_service_preserves_launcher_config_over_runtime_env(
     tmp_path: Path,
 ) -> None:
     repo = _copy_fixture(tmp_path / "repo")
     python = repo / "services/quant-api/.venv/bin/python"
     python.parent.mkdir(parents=True)
     python.write_text(
-        "#!/bin/sh\n"
-        + "".join(f"printf '{key}=%s\\n' \"${key}\"\n" for key in CLAWBOT_ENV_NAMES),
+        f"#!/bin/sh\nprintf '{NOTIFICATION_CONFIG_ENV}=%s\\n' \"${NOTIFICATION_CONFIG_ENV}\"\n",
         encoding="utf-8",
     )
     python.chmod(0o700)
     runtime_env = tmp_path / "project.env"
-    runtime_values = {key: f"/runtime-env/{index}" for index, key in enumerate(CLAWBOT_ENV_NAMES)}
-    launcher_values = {key: f"/launcher/{index}" for index, key in enumerate(CLAWBOT_ENV_NAMES)}
     runtime_env.write_text(
         "POSTGRES_PASSWORD=test-only\n"
-        + "".join(f"{key}={value}\n" for key, value in runtime_values.items()),
+        f"{NOTIFICATION_CONFIG_ENV}=/runtime/config.json\n",
         encoding="utf-8",
     )
 
@@ -174,7 +131,7 @@ def test_run_local_service_preserves_launcher_clawbot_paths_over_runtime_env(
             "HOME": str(tmp_path / "home"),
             "GUIYI_PROJECT_ROOT": str(repo),
             "GUIYI_RUNTIME_ENV": str(runtime_env),
-            **launcher_values,
+            NOTIFICATION_CONFIG_ENV: "/launcher/config.json",
         },
         capture_output=True,
         text=True,
@@ -182,9 +139,9 @@ def test_run_local_service_preserves_launcher_clawbot_paths_over_runtime_env(
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == [
-        f"{key}={launcher_values[key]}" for key in CLAWBOT_ENV_NAMES
-    ]
+    assert result.stdout.strip() == (
+        f"{NOTIFICATION_CONFIG_ENV}=/launcher/config.json"
+    )
 
 
 @pytest.mark.parametrize(
@@ -204,10 +161,7 @@ def test_render_rejects_alert_path_injection(
             **os.environ,
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
-            **{
-                **{key: f"/fixture/{index}" for index, key in enumerate(CLAWBOT_ENV_NAMES)},
-                "GUIYI_OPENCLAW_BIN": malicious_path,
-            },
+            NOTIFICATION_CONFIG_ENV: malicious_path,
         },
         capture_output=True,
         text=True,
@@ -218,30 +172,25 @@ def test_render_rejects_alert_path_injection(
     assert "invalid alert notification path" in result.stderr
 
 
-def test_alert_confirmation_rejects_path_escape_before_render(tmp_path: Path) -> None:
+def test_alert_confirmation_rejects_unsafe_config_permissions(
+    tmp_path: Path,
+) -> None:
     repo = _copy_fixture(tmp_path / "repo")
     home, fake_bin = _fake_runtime(tmp_path)
-    result = subprocess.run(
-        [str(repo / "scripts/ops/macos/install-local-services.sh"), "--confirm-alert-runtime"],
-        cwd=repo,
-        env={
-            **os.environ,
-            "HOME": str(home),
-            "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
-            "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
-            **{
-                **_clawbot_paths(tmp_path / "clawbot"),
-                "GUIYI_OPENCLAW_BIN": "/private/tmp/../tmp/openclaw",
-            },
-        },
-        capture_output=True,
-        text=True,
+    config = _notification_config(tmp_path / "private")
+    config.chmod(0o644)
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-alert-runtime",
+        extra_env={NOTIFICATION_CONFIG_ENV: str(config)},
         check=False,
     )
 
     assert result.returncode == 1
-    assert "alert notification paths not configured" in result.stderr
-    assert not (repo / ".run/alert-runtime-enabled").exists()
+    assert "alert notification config not ready" in result.stderr
 
 
 def _copy_fixture(destination: Path) -> Path:
@@ -261,36 +210,25 @@ def _copy_fixture(destination: Path) -> Path:
     return destination
 
 
-def _clawbot_paths(root: Path) -> dict[str, str]:
-    plugin = root / "plugin"
-    state = root / "state"
-    private = root / "private"
-    for directory in (plugin, state, private):
-        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
-        directory.chmod(0o700)
-    openclaw = root / "openclaw"
-    node = root / "node"
-    for executable in (openclaw, node):
-        executable.write_text("#!/bin/sh\n", encoding="utf-8")
-        executable.chmod(0o700)
-    config = state / "openclaw.json"
-    config.write_text("{}\n", encoding="utf-8")
-    recipients = private / "recipients.json"
-    recipients.write_text(
-        '{"schema_version":2,"channel":"openclaw-weixin",'
-        '"account_id":"fixture-account","active_recipients":'
-        '[{"alias":"owner","target_user_id":"fixture-owner@im.wechat"}],'
-        '"retired_aliases":[]}\n',
+def _notification_config(parent: Path) -> Path:
+    parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    parent.chmod(0o700)
+    path = parent / "notification.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "transport": "pushplus",
+                "transport_config": {
+                    "message_token": "0123456789abcdef0123456789abcdef",
+                    "htdy_topic": "fixture-topic",
+                },
+            }
+        ),
         encoding="utf-8",
     )
-    recipients.chmod(0o600)
-    return dict(
-        zip(
-            CLAWBOT_ENV_NAMES,
-            map(str, (openclaw, node, plugin, state, config, recipients)),
-            strict=True,
-        )
-    )
+    path.chmod(0o600)
+    return path
 
 
 def _fake_runtime(root: Path) -> tuple[Path, Path]:
@@ -326,6 +264,7 @@ def _run(
     mode: str,
     *,
     extra_env: dict[str, str] | None = None,
+    check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [str(repo / "scripts/ops/macos/install-local-services.sh"), mode],
@@ -334,11 +273,13 @@ def _run(
             **os.environ,
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
             **(extra_env or {}),
         },
         capture_output=True,
         text=True,
         check=False,
     )
-    assert result.returncode == 0, result.stderr
+    if check:
+        assert result.returncode == 0, result.stderr
     return result

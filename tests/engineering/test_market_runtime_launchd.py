@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import os
 import plistlib
@@ -11,16 +10,7 @@ import subprocess
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OPENCLAW_VERSION = "OpenClaw 2026.7.1-2 (0790d9f)"
-OPENCLAW_WEIXIN_VERSION = "2.4.6"
-CLAWBOT_PATH_ENV_NAMES = (
-    "GUIYI_OPENCLAW_BIN",
-    "GUIYI_OPENCLAW_NODE_BIN",
-    "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT",
-    "GUIYI_OPENCLAW_STATE_DIR",
-    "GUIYI_OPENCLAW_CONFIG_PATH",
-    "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH",
-)
+NOTIFICATION_CONFIG_ENV = "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"
 
 
 def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tmp_path: Path) -> None:
@@ -173,50 +163,10 @@ def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path)
     assert "com.guiyi.quant-after-market loaded state=not_running" in result.stdout
     assert "com.guiyi.quant-alert loaded state=running" in result.stdout
     assert "loaded_commit=" in result.stdout
-    assert "alert.notification_channel=wecom" in result.stdout
+    assert "alert.notification_channel=pushplus" in result.stdout
+    assert "external.pushplus_config=ready" in result.stdout
+    assert "alert.notification_audience_count=2" in result.stdout
     assert "external.openclaw" not in result.stdout
-    assert "alert.notification_owner_alias" not in result.stdout
-    assert "overall=passed" in result.stdout
-    assert not calls.exists()
-
-
-def test_local_status_reports_clawbot_from_supervised_runtime(tmp_path: Path) -> None:
-    repo, home, fake_bin, calls = _status_fixture(
-        tmp_path,
-        runtime_channel="clawbot",
-        alert_enabled=False,
-        clawbot_state="ready",
-    )
-
-    result = _run_status(repo, home, fake_bin)
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "alert.notification_channel=clawbot-openclaw-weixin" in result.stdout
-    assert "alert.notification_recipient_count=1" in result.stdout
-    assert "external.openclaw.status=ready" in result.stdout
-    assert f"external.openclaw.version={OPENCLAW_VERSION}" in result.stdout
-    assert "external.openclaw_weixin.status=ready" in result.stdout
-    assert f"external.openclaw_weixin.version={OPENCLAW_WEIXIN_VERSION}" in result.stdout
-    assert "external.clawbot_recipients_config=ready" in result.stdout
-    assert "overall=passed" in result.stdout
-    assert not calls.exists()
-
-
-def test_local_status_uses_manifest_module_paths_without_private_path_knowledge(
-    tmp_path: Path,
-) -> None:
-    repo, home, fake_bin, calls = _status_fixture(
-        tmp_path,
-        runtime_channel="clawbot",
-        alert_enabled=False,
-        clawbot_state="ready",
-        custom_plugin_modules=True,
-    )
-
-    result = _run_status(repo, home, fake_bin)
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "external.openclaw_weixin.status=ready" in result.stdout
     assert "overall=passed" in result.stdout
     assert not calls.exists()
 
@@ -224,70 +174,62 @@ def test_local_status_uses_manifest_module_paths_without_private_path_knowledge(
 def test_local_status_fails_closed_for_ambiguous_active_alert_runtime(
     tmp_path: Path,
 ) -> None:
-    for runtime_channel in ("ambiguous", "courier", "none"):
-        repo, home, fake_bin, calls = _status_fixture(
-            tmp_path / runtime_channel,
-            runtime_channel=runtime_channel,
-        )
-
-        result = _run_status(repo, home, fake_bin)
-
-        assert result.returncode == 1
-        assert "alert.notification_channel=unknown" in result.stdout
-        assert "overall=failed" in result.stdout
-        assert not calls.exists()
-
-
-def test_local_status_fails_closed_when_clawbot_plists_disagree(tmp_path: Path) -> None:
     repo, home, fake_bin, calls = _status_fixture(
         tmp_path,
-        runtime_channel="clawbot",
-        alert_enabled=False,
-        clawbot_state="ready",
+        runtime_channel="none",
+    )
+
+    result = _run_status(repo, home, fake_bin)
+
+    assert result.returncode == 1
+    assert "alert.notification_channel=unknown" in result.stdout
+    assert "overall=failed" in result.stdout
+    assert not calls.exists()
+
+
+def test_local_status_fails_closed_when_notification_plists_disagree(tmp_path: Path) -> None:
+    repo, home, fake_bin, calls = _status_fixture(
+        tmp_path,
         api_path_mismatch=True,
     )
 
     result = _run_status(repo, home, fake_bin)
 
     assert result.returncode == 1
-    assert "external.openclaw.status=invalid" in result.stdout
+    assert "external.pushplus_config=invalid" in result.stdout
     assert "overall=failed" in result.stdout
     assert not calls.exists()
 
 
-def test_local_status_fails_closed_when_loaded_clawbot_paths_are_stale(
+def test_local_status_fails_closed_when_loaded_notification_path_is_stale(
     tmp_path: Path,
 ) -> None:
     repo, home, fake_bin, calls = _status_fixture(
         tmp_path,
-        runtime_channel="clawbot",
-        alert_enabled=False,
-        clawbot_state="ready",
         loaded_alert_path_mismatch=True,
     )
 
     result = _run_status(repo, home, fake_bin)
 
     assert result.returncode == 1
-    assert "external.openclaw.status=invalid" in result.stdout
+    assert "external.pushplus_config=invalid" in result.stdout
     assert "overall=failed" in result.stdout
     assert not calls.exists()
 
 
-def test_local_status_fails_for_active_clawbot_with_invalid_dependency(
+def test_local_status_fails_for_invalid_pushplus_config(
     tmp_path: Path,
 ) -> None:
     repo, home, fake_bin, calls = _status_fixture(
         tmp_path,
-        runtime_channel="clawbot",
-        clawbot_state="invalid",
+        notification_config_valid=False,
     )
 
     result = _run_status(repo, home, fake_bin)
 
     assert result.returncode == 1
-    assert "alert.notification_channel=clawbot-openclaw-weixin" in result.stdout
-    assert "external.openclaw.status=invalid" in result.stdout
+    assert "alert.notification_channel=pushplus" in result.stdout
+    assert "external.pushplus_config=invalid" in result.stdout
     assert "overall=failed" in result.stdout
     assert not calls.exists()
 
@@ -345,7 +287,6 @@ def _copy_launchd_fixture(destination: Path) -> Path:
     """Copy only installer inputs so mode tests cannot affect the real workstation."""
     for relative in (
         "deploy/launchd",
-        "deploy/clawbot",
         "scripts/ops/macos/install-local-services.sh",
         "scripts/ops/macos/local-services-status.sh",
         "scripts/ops/macos/run-local-service.sh",
@@ -396,45 +337,25 @@ def _run_installer(
 def _status_fixture(
     tmp_path: Path,
     *,
-    runtime_channel: str = "wecom",
+    runtime_channel: str = "pushplus",
     alert_enabled: bool = True,
-    clawbot_state: str = "missing",
+    notification_config_valid: bool = True,
     missing_after_market: bool = False,
     missing_alert: bool = False,
     mismatched_web_root: bool = False,
     mismatched_loaded_commit: bool = False,
     api_path_mismatch: bool = False,
     loaded_alert_path_mismatch: bool = False,
-    custom_plugin_modules: bool = False,
 ) -> tuple[Path, Path, Path, Path]:
     repo = _copy_launchd_fixture(tmp_path / "runtime")
     alerts = repo / "services/quant-api/app/alerts"
     alerts.mkdir(parents=True)
-    if runtime_channel in {"wecom", "ambiguous"}:
-        (alerts / "wecom.py").write_text("# legacy fixture\n", encoding="utf-8")
-    if runtime_channel in {"clawbot", "ambiguous"}:
-        (alerts / "clawbot.py").write_text("# clawbot fixture\n", encoding="utf-8")
-    if runtime_channel == "courier":
-        (alerts / "wechat_courier.py").write_text("# retired fixture\n", encoding="utf-8")
-    plugin_modules = (
-        {
-            "accounts": "compiled/account-entry.js",
-            "inbound": "compiled/context-entry.js",
-            "send": "compiled/send-entry.js",
-        }
-        if custom_plugin_modules
-        else None
+    if runtime_channel == "pushplus":
+        (alerts / "pushplus.py").write_text("# pushplus fixture\n", encoding="utf-8")
+    notification_path = _status_notification_config(
+        tmp_path / "external-notification",
+        valid=notification_config_valid,
     )
-    clawbot_paths = _status_clawbot_paths(
-        tmp_path / "external-clawbot",
-        state=clawbot_state,
-        plugin_modules=plugin_modules,
-    )
-    if custom_plugin_modules:
-        manifest = repo / "deploy/clawbot/versions.json"
-        payload = json.loads(manifest.read_text(encoding="utf-8"))
-        payload["plugin_modules"] = plugin_modules
-        manifest.write_text(json.dumps(payload), encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     (repo / ".gitignore").write_text(".run/\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
@@ -482,9 +403,9 @@ def _status_fixture(
             if label == "com.guiyi.quant-web" and mismatched_web_root
             else str(repo.resolve())
         )
-        label_clawbot_paths = dict(clawbot_paths)
-        if label == "com.guiyi.quant-api" and api_path_mismatch and label_clawbot_paths:
-            label_clawbot_paths["GUIYI_OPENCLAW_CONFIG_PATH"] += ".stale"
+        label_notification_path = str(notification_path)
+        if label == "com.guiyi.quant-api" and api_path_mismatch:
+            label_notification_path += ".stale"
         with (agent_dir / f"{label}.plist").open("wb") as handle:
             plistlib.dump(
                 {
@@ -493,7 +414,7 @@ def _status_fixture(
                         "GUIYI_PROJECT_ROOT": project_root,
                         "GUIYI_RUNTIME_COMMIT": checkout_commit,
                         **(
-                            label_clawbot_paths
+                            {NOTIFICATION_CONFIG_ENV: label_notification_path}
                             if label in {"com.guiyi.quant-api", "com.guiyi.quant-alert"}
                             else {}
                         ),
@@ -534,20 +455,16 @@ def _status_fixture(
         + 'echo "GUIYI_RUNTIME_COMMIT => $loaded_commit"\n',
         encoding="utf-8",
     )
-    if clawbot_paths:
-        loaded_lines = []
-        for key in CLAWBOT_PATH_ENV_NAMES:
-            value = clawbot_paths[key]
-            if loaded_alert_path_mismatch and key == "GUIYI_OPENCLAW_CONFIG_PATH":
-                value += ".stale"
-            loaded_lines.append(
-                f'if [ "$label" = "com.guiyi.quant-alert" ]; then echo "{key} => {value}"; fi\n'
-            )
-            loaded_lines.append(
-                f'if [ "$label" = "com.guiyi.quant-api" ]; then echo "{key} => {clawbot_paths[key]}"; fi\n'
-            )
-        original = fake_launchctl.read_text(encoding="utf-8")
-        fake_launchctl.write_text(original + "".join(loaded_lines), encoding="utf-8")
+    loaded_alert_value = str(notification_path)
+    if loaded_alert_path_mismatch:
+        loaded_alert_value += ".stale"
+    original = fake_launchctl.read_text(encoding="utf-8")
+    fake_launchctl.write_text(
+        original
+        + f'if [ "$label" = "com.guiyi.quant-alert" ]; then echo "{NOTIFICATION_CONFIG_ENV} => {loaded_alert_value}"; fi\n'
+        + f'if [ "$label" = "com.guiyi.quant-api" ]; then echo "{NOTIFICATION_CONFIG_ENV} => {notification_path}"; fi\n',
+        encoding="utf-8",
+    )
     fake_launchctl.chmod(0o755)
     fake_curl = fake_bin / "curl"
     fake_curl.write_text(
@@ -582,57 +499,19 @@ def _run_status(
     )
 
 
-def _status_clawbot_paths(
-    root: Path,
-    *,
-    state: str,
-    plugin_modules: dict[str, str] | None = None,
-) -> dict[str, str]:
-    if state == "missing":
-        return {}
-    plugin = root / "plugin"
-    state_dir = root / "state"
-    owner_dir = root / "recipients"
-    plugin.mkdir(parents=True)
-    state_dir.mkdir()
-    owner_dir.mkdir(mode=0o700)
-    owner_dir.chmod(0o700)
-    openclaw = root / "openclaw"
-    node = root / "node"
-    openclaw.write_text(f"#!/bin/sh\nprintf '%s\\n' '{OPENCLAW_VERSION}'\n", encoding="utf-8")
-    node.write_text("#!/bin/sh\nprintf '%s\\n' 'v24.15.0'\n", encoding="utf-8")
-    openclaw.chmod(0o700)
-    node.chmod(0o700)
-    config = state_dir / "openclaw.json"
-    config.write_text("{}\n", encoding="utf-8")
-    recipients = owner_dir / "recipients.json"
-    recipients.write_text(
-        '{"schema_version":2,"channel":"openclaw-weixin",'
-        '"account_id":"private-account","active_recipients":'
-        '[{"alias":"owner","target_user_id":"private-owner@im.wechat"}],'
-        '"retired_aliases":[]}\n',
+def _status_notification_config(root: Path, *, valid: bool) -> Path:
+    root.mkdir(parents=True, mode=0o700)
+    root.chmod(0o700)
+    config = root / "notification.json"
+    config.write_text(
+        (
+            '{"schema_version":1,"transport":"pushplus","transport_config":'
+            '{"message_token":"0123456789abcdef0123456789abcdef",'
+            '"htdy_topic":"fixture-topic"}}\n'
+            if valid
+            else '{}\n'
+        ),
         encoding="utf-8",
     )
-    recipients.chmod(0o600)
-    (plugin / "package.json").write_text(
-        f'{{"version":"{OPENCLAW_WEIXIN_VERSION}"}}\n', encoding="utf-8"
-    )
-    module_paths = plugin_modules or {
-        "accounts": "dist/src/auth/accounts.js",
-        "inbound": "dist/src/messaging/inbound.js",
-        "send": "dist/src/messaging/send.js",
-    }
-    for relative in module_paths.values():
-        module = plugin / relative
-        module.parent.mkdir(parents=True, exist_ok=True)
-        module.write_text("export {};\n", encoding="utf-8")
-    if state == "invalid":
-        openclaw.write_text("#!/bin/sh\nprintf 'wrong\\n'\n", encoding="utf-8")
-    return {
-        "GUIYI_OPENCLAW_BIN": str(openclaw),
-        "GUIYI_OPENCLAW_NODE_BIN": str(node),
-        "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT": str(plugin),
-        "GUIYI_OPENCLAW_STATE_DIR": str(state_dir),
-        "GUIYI_OPENCLAW_CONFIG_PATH": str(config),
-        "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH": str(recipients),
-    }
+    config.chmod(0o600)
+    return config
