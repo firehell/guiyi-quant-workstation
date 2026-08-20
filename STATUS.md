@@ -10,12 +10,11 @@
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
 - 当前 Git release 为
   `v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`；annotated tag object 为
-  `ff15cab6ec94bbbbc2063f1e7e411efae929db89`，message=`Release v1.6.3`。本次 production Runtime
-  单次 switch 在 base 与 Market 已切换后，于 Alert `kickstart` 返回 `Operation not permitted` 并
-  fail-closed 停止；API/Web/Live/after-market 与已安装 Alert plist 均已指向 clean/detached
-  `v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`，但新根 Alert activation marker 未写入，
-  Alert job 为 `spawn scheduled / last exit 1`，当前通知 Runtime 关闭。develop 的 PushPlus transport
-  尚未 release/promotion；Clawbot 六项 private path 与 owner-only 配置仍 ready，但不能表述为 active。
+  `ff15cab6ec94bbbbc2063f1e7e411efae929db89`，message=`Release v1.6.3`。production Runtime 已统一为
+  clean/detached `v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`：API/Web/Live/after-market/Alert
+  五个 label 的 root 与 loaded commit 均精确匹配，Market 与 Alert activation marker 均启用。
+  production Alert 的 active transport 仍为 `clawbot-openclaw-weixin`、单 `owner`；develop 的 PushPlus
+  transport 尚未 release/promotion。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
@@ -75,11 +74,10 @@
   Topic 当前三位成员均已人工确认实际收到，`delivery_confirmed=true`，未重试。独立 pending Gate 为：
   取得精确 Rule + Scope + audience + transport 持续授权、main/release/tag、exact-tag Alert Runtime
   promotion/switch/readback 与自然 HTDY 验收。代码和测试不授权其中任何一步。
-- production 两条 Rule 的 Scope 仍精确为 `jm`，Clawbot 六项 private path 与 owner-only 配置仍
-  ready；但 v1.6.3 Alert 首次启用在 marker 写入前的 `kickstart` 失败，当前 Alert Runtime 关闭。
-  没有 PushPlus 已 release/promotion 或已自然验收的证据。
+- production 两条 Rule 的 Scope 仍精确为 `jm`，Clawbot 六项 private path 与 owner-only 配置 ready，
+  Alert Runtime heartbeat=`ok`；没有 PushPlus 已 release/promotion 或已自然验收的证据。
 
-## v1.6.3 Market Radar Freshness Watermark（RELEASED；RUNTIME PARTIAL / ALERT RECOVERY PENDING）
+## v1.6.3 Market Radar Freshness Watermark（RELEASED / RUNTIME PROMOTED）
 
 - v1.6.3 release 只包含 Market Radar freshness 合同、API/Web 实现与测试：区分 `target_as_of`、统一计算使用的
   `data_as_of` 及 `current / pending_after_market / degraded`，并保留 `expected_as_of` 兼容别名。
@@ -107,10 +105,14 @@
   root/commit；API=`1.6.3`、Web=200、Market health readonly/ok。Radar 生产读回包含新旧日期与 freshness
   字段，实际为 `target_as_of=data_as_of=2026-08-20 / current / 60/60`；该时点不处于部分发布窗口，
   `pending_after_market` 仅由确定性测试证明，不虚构自然现场证据。
-- Alert 段在 `launchctl kickstart` 返回 `Operation not permitted` 后立即停止，未重试、未回滚；新根
-  `.run/alert-runtime-enabled` 尚不存在，Alert composition 按合同 fail-closed，当前 job 为
-  `spawn scheduled / last exit 1`。本次未执行 migration、RQData/Canonical/DB 写入、手工 after-market、
-  通知、Scope/canary 或订单操作；v1.6.2 Runtime worktree 仍保留为恢复来源。
+- 首次 Alert 段在 marker 写入前 `kickstart` 返回 `Operation not permitted`，当次按 Gate 合同立即停止，
+  未重试、未回滚。用户随后给出一次仅限 v1.6.3 Alert recovery 的新执行意图：只原子写入既有
+  `enabled\n / 0600` activation marker，并对当前 Alert label 执行一次 `kickstart -k`；两项均成功。
+  最终读回五个 label 均为 v1.6.3 identity，Alert heartbeat=`ok`、Clawbot owner-only ready、两条 Rule
+  Scope 仍仅 `jm`，recovery 后 notification attempt 为 0，DB 仍为 `20260815_0039 (head)`，
+  operational/phase 均为 60。本次未执行 migration、RQData/Canonical/DB 写入、手工 after-market、
+  通知、Scope/canary 或订单操作；v1.6.2 Runtime worktree 仍保留为恢复来源。release 中安装器“先
+  kickstart、后写 marker”的 fresh-root 顺序风险未在本 Radar-only 任务中改代码，后续须独立工程任务处理。
 
 ## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
 
@@ -478,9 +480,9 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.6.3` Runtime 单次 switch 为部分完成：base 与 Market 已加载
-  `e354ea7c9b1de782af830360ca3048bbb1afd057`，Alert plist 同 identity 但 activation marker 未写入，
-  当前 Alert fail-closed 关闭；Market/Alert Scope 未扩大。v1.6.2 cleanup 已在正式
+- `v1.6.3` Runtime promotion 已完成：五个正式 label 均加载
+  `e354ea7c9b1de782af830360ca3048bbb1afd057`，Market/Alert enabled，Clawbot owner-only 与两条 `jm`
+  Scope 未扩大。v1.6.2 cleanup 已在正式
   引用归零后移除旧 v1.6.0/v1.6.1 release worktree，两个 annotated tag 仍保留可恢复；既有 G9 最终
   清理也已完成，旧 `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review
   Gate D 仍为 `disabled / not activated`。
@@ -488,6 +490,5 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证；该独立 pending 状态不改写 `v1.6.2` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：由用户给出一次新的、范围仅限 v1.6.3 Alert recovery 的明确执行意图，再写入既有
-  activation marker、启动当前已安装的 Alert label，并完成五服务与 owner-only/`jm` 读回；不得复用
-  本次已失败的 Runtime Gate。
+- 最小下一步：由用户单独 review v1.6.3 Radar 交付，重点复核未引入 Redis、stale 语义、Canonical-only
+  与 API/Web 向后兼容；fresh-root Alert installer 顺序修复另立窄范围工程任务，不在本 release 回补。
