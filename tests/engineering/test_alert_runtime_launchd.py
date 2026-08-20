@@ -322,6 +322,36 @@ def test_failed_alert_enable_boots_out_started_service_before_marker_rollback(
     assert cleanup_bootout > failed_enable
 
 
+def test_failed_alert_stop_retains_enabled_marker_instead_of_restoring_backup(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    config = _notification_config(tmp_path / "private")
+    env = {NOTIFICATION_CONFIG_ENV: str(config)}
+    _run(repo, home, fake_bin, "--confirm-load", extra_env=env)
+    marker = repo / ".run/alert-runtime-enabled"
+    marker.write_text("previous-state\n", encoding="utf-8")
+    marker.chmod(0o600)
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-alert-runtime",
+        extra_env={
+            **env,
+            "GUIYI_FAKE_FAIL_ALERT_ENABLE": "1",
+            "GUIYI_FAKE_STOP_REMAINS_LOADED": "1",
+        },
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert marker.read_text() == "enabled\n"
+    assert "failed attempt remains loaded; activation marker retained" in result.stderr
+
+
 def test_failed_second_market_label_boots_out_every_touched_service(
     tmp_path: Path,
 ) -> None:
@@ -347,8 +377,10 @@ def test_failed_second_market_label_boots_out_every_touched_service(
     )
     cleanup = recorded[failed_enable + 1 :]
     cleanup_bootouts = [call for call in cleanup if call.startswith("bootout ")]
-    assert any("com.guiyi.quant-after-market" in call for call in cleanup_bootouts)
-    assert any("com.guiyi.quant-live" in call for call in cleanup_bootouts)
+    assert [call.rsplit("/", 1)[-1] for call in cleanup_bootouts] == [
+        "com.guiyi.quant-after-market",
+        "com.guiyi.quant-live",
+    ]
 
 
 def _copy_fixture(destination: Path) -> Path:
@@ -397,10 +429,26 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
     launchctl.write_text(
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$HOME/launchctl-calls.log"\n'
+        'state_dir="$HOME/fake-launchctl-state"\n'
+        'alert_state="$state_dir/com.guiyi.quant-alert"\n'
+        'mkdir -p "$state_dir"\n'
         'case "$*" in *com.guiyi.quant-alert.plist*)\n'
         '  if [ "${GUIYI_FAKE_REQUIRE_ALERT_MARKER:-0}" = "1" ] && [ ! -f "$PWD/.run/alert-runtime-enabled" ]; then exit 9; fi\n'
         '  if [ "${GUIYI_FAKE_FAIL_ALERT_BOOTSTRAP:-0}" = "1" ]; then exit 8; fi\n'
         'esac\n'
+        'if [ "${1:-}" = "bootstrap" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-alert.plist*) touch "$alert_state" ;; esac\n'
+        'fi\n'
+        'if [ "${1:-}" = "bootout" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-alert*)\n'
+        '    if [ -f "$alert_state" ] && [ "${GUIYI_FAKE_STOP_REMAINS_LOADED:-0}" = "1" ]; then exit 8; fi\n'
+        '    rm -f "$alert_state"\n'
+        '    exit 0\n'
+        '  esac\n'
+        'fi\n'
+        'if [ "${1:-}" = "print" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-alert*) [ -f "$alert_state" ] && exit 0 ;; esac\n'
+        'fi\n'
         'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_ALERT_ENABLE:-0}" = "1" ]; then\n'
         '  case "$*" in *com.guiyi.quant-alert*) exit 8 ;; esac\n'
         'fi\n'
