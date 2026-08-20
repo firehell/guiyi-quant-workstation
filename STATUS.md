@@ -120,16 +120,20 @@
 ## N Structural Domain V1（DEVELOP CODE_COMPLETE / TEST_COMPLETE / EVIDENCE_COMPLETE；PROSPECTIVE OOS PENDING）
 
 - reviewed implementation 已通过 merge commit
-  `706274ebcf8abed90600288dc44db204437f2e5d` 合入并推送 `develop`。N Structural Domain V1 包含 exact
-  5m policy、causal Swing/epoch、Completed N 与 immutable break/Range Band facts、BULL/BEAR/RANGE
-  Structure、共享 actual-dominant segment loader、price-only outcomes、只读 `guiyi research n-structure`
-  与 N-specific Candidate Validation。
+  `706274ebcf8abed90600288dc44db204437f2e5d` 合入 `develop`，统一收口变更进一步关闭了 public Pattern
+  输入可信边界、segment 重复计算与 shared actual-dominant loader seam。public Pattern 只接受由同一组 bars
+  精确复算得到的 Swing trace，malformed trace 统一 fail-closed；正式 segment producer 对 Swing / Pattern /
+  Structure 各计算一次，并使用线性 partition、reset epoch map 与 bar index。SuBing 对历史 5m gap 文案的兼容
+  只保留在自身 consumer adapter，不再污染 shared loader。
 - N 是第二条独立 Candidate producer：`n_structure_5m_candidate_v1 × n_structure_validation_v1` 复用共享
   rolling/prospective schedule，但由 `NStructureResearchService` 生成 source-specific report，不复用或
   改写 SuBing lifecycle/outcome 事实源。retrospective 截止 `2026-08-19`，`2026-08-20` 为 embargo，
   prospective OOS 从 `2026-08-21` 开始。
-- cumulative Standards 与 Spec scoped re-review 均为 Critical=`0` / Important=`0`；合并态验证为 N 全链
-  `335 passed`、SuBing zero-regression `601 passed`，Ruff、secret scan 与 diff check 均通过。
+- `docs/superpowers/specs/2026-08-20-n-structure-v1-design.md` 是唯一 active 长期语义事实源；已迁入
+  same-boundary Structure establishment / defense advance / break 顺序与 full-producer own-N break
+  reachability ruling，并删除完成态 Plan 与 Task contract。统一收口独立 Review 为 Critical=`0` /
+  Important=`0` / Minor=`0`；最终验证为 N 全链 `343 passed`、SuBing zero-regression `601 passed`、Ruff
+  PASS、Mypy `70 source files` PASS，secret scan 与 diff check 均通过。
 - same-boundary completion 加自身 N2/origin break 保留为 Pattern 层的 local defensive contract；在冻结的
   完整 Swing→Pattern producer 顺序下，正例会先成为 outside epoch reset，或由新 opposite base 替换 attempt，
   因而不可达。该 canonical reachability ruling 未改变 Swing、Pattern、Structure 公式或边界顺序。
@@ -140,8 +144,10 @@
   分别为 `3987 / 3985 / 3983`；10 个 rolling folds 均按冻结 schedule 生成。retrospective 截止
   `2026-08-19`，`2026-08-20` 仅作为 embargo/request-through context，prospective OOS 仍为 `pending`，
   首个 eligible trading day 为 `2026-08-21`。
-- exact command 重算与 artifact byte-identical；独立 Evidence Review 为 Critical=`0` / Important=`0` /
-  Minor=`0`。该 accepted baseline 只证明 exact Candidate/Protocol 下的可复算 Historical
+- 统一收口最终代码再次执行 exact command，输出 `35982` bytes，SHA256 仍为
+  `12fed018751ae54d5bfd2d24897cc077c513560ac1377935e5fddd14a36a3fc6`，与 tracked artifact
+  byte-identical；独立 Evidence Review 为 Critical=`0` / Important=`0` / Minor=`0`。该 accepted baseline
+  只证明 exact Candidate/Protocol 下的可复算 Historical
   retrospective/rolling evidence，不形成 profitability、effectiveness、KEEP/PROMOTE、可交易、第三条
   Alert Rule、release 或 Runtime ready 结论。
 - 本阶段未执行 RQData download、Canonical/DB/Redis write、Alert/Scope/notification/order、
