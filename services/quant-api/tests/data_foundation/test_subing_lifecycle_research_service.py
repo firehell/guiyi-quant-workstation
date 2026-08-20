@@ -135,7 +135,7 @@ def test_request_normalizes_symbol_and_rejects_invalid_window() -> None:
         )
 
 
-def test_service_uses_exact_trading_day_queries() -> None:
+def test_service_delegates_exact_trading_day_segment_loading() -> None:
     segment = (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),)
     market_data = _FakeMarketData(
         {
