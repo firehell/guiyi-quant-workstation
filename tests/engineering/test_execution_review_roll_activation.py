@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import os
 import plistlib
@@ -156,7 +157,7 @@ def _run_installer(
     fake_bin: Path,
     mode: str,
 ) -> subprocess.CompletedProcess[str]:
-    clawbot_paths = _clawbot_paths(repo.parent / "clawbot-fixture")
+    notification_path = _notification_config(repo.parent / "notification-fixture")
     return subprocess.run(
         [str(repo / "scripts/ops/macos/install-local-services.sh"), mode],
         cwd=repo,
@@ -165,7 +166,7 @@ def _run_installer(
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD": "1",
-            **clawbot_paths,
+            "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH": str(notification_path),
         },
         capture_output=True,
         text=True,
@@ -173,31 +174,25 @@ def _run_installer(
     )
 
 
-def _clawbot_paths(root: Path) -> dict[str, str]:
-    plugin = root / "plugin"
-    state = root / "state"
-    recipients_parent = root / "recipients"
-    for directory in (plugin, state, recipients_parent):
-        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
-        directory.chmod(0o700)
-    openclaw = root / "openclaw"
-    node = root / "node"
-    for executable in (openclaw, node):
-        executable.write_text("#!/bin/sh\n", encoding="utf-8")
-        executable.chmod(0o700)
-    config = state / "openclaw.json"
-    config.write_text("{}\n", encoding="utf-8")
-    recipients = recipients_parent / "recipients.json"
-    recipients.write_text("{}\n", encoding="utf-8")
-    recipients.chmod(0o600)
-    return {
-        "GUIYI_OPENCLAW_BIN": str(openclaw),
-        "GUIYI_OPENCLAW_NODE_BIN": str(node),
-        "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT": str(plugin),
-        "GUIYI_OPENCLAW_STATE_DIR": str(state),
-        "GUIYI_OPENCLAW_CONFIG_PATH": str(config),
-        "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH": str(recipients),
-    }
+def _notification_config(root: Path) -> Path:
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    root.chmod(0o700)
+    config = root / "notification.json"
+    config.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "transport": "pushplus",
+                "transport_config": {
+                    "message_token": "0123456789abcdef0123456789abcdef",
+                    "htdy_topic": "fixture-topic",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    return config
 
 
 def _status_fixture(root: Path) -> tuple[Path, Path, Path]:

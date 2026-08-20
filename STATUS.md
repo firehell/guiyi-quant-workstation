@@ -11,7 +11,7 @@
 - 当前 Git release 与 production Runtime 均为
   `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
-  固定收件人简化版尚未 release/promotion，production 收件人仍精确只有 `owner`。
+  develop 的 PushPlus transport 尚未 release/promotion，production 收件人仍精确只有 `owner`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
@@ -43,34 +43,29 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## Alert 固定收件人简化版（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EXTERNAL GATES PENDING）
+## Alert PushPlus transport（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EXTERNAL GATES PENDING）
 
-- 简化实现已通过 merge commit
-  `ff19305b7a7ac184789da8bb56249cc15ada8139` 合入并推送 `develop`；临时
-  `codex/alert-fixed-recipients-simple` 分支与 `.worktrees/alert-fixed-recipients` worktree 已按 Git
-  正式流程删除。旧 overdesigned `codex/alert-fixed-recipients` 仅保留为未合并历史 branch
-  ref，不构成 production 启用事实。
-- develop 实现采用本地单用户、单 operator 模型：v2 directory 只允许 `1..4` 人，即固定 `owner`
-  加最多 3 位朋友；HTDY 按 owner-first 顺序通知全部 active alias，SuBing 仍只通知 owner。
-- 每位朋友通过 stopped Alert Runtime 下的两步 fingerprint pairing 加入：prepare 只保存十分钟
-  HMAC-SHA256 fingerprint staging，普通私聊刷新 direct context，confirm 必须只识别出一个新增或 token
-  变化 candidate 后才原子更新 directory。运行中不热重载。
-- 每个 routed alias 最多一个 Node child、一次 `sendMessageWeixin()`；普通单 alias 失败时继续后续 alias。
-  这允许部分送达风险，只保留安全的进程内公开摘要与人工确认，不新增逐收件人 DB 状态；Alert
-  Application Domain 仍只有 `alert_rules`、`alert_events` 两张表。
-- Event 级 `notification_attempted_at` 仍是原批次尝试元数据，不能解释为逐人送达。没有 retry、queue、
-  replay、backfill、fallback 或订单路径。
-- 合并后 fresh 完整本地验证：全 backend `1819 passed`（显式隔离库）、全 engineering
-  `56 passed`、Node single-shot `39 passed`；全后端 Ruff PASS；正常 follow-imports Mypy
-  `75 source files` PASS；全部 ops shell
-  `bash -n`、6 个 active launchd templates `plutil -lint`、secret scan `finding_count=0` 与 diff check PASS。
-- 本次未读取或写入正式 owner/recipients/context，未连接 production DB，未执行真实 init、prepare、
-  confirm、retire、preflight、canary/send、Scope、release/tag 或 Runtime 操作；仅完成上述普通
-  `develop` merge/push。
-- 本变更的 owner-only v2 init、每位朋友 prepare、每位朋友 confirm、全收件人 zero-send preflight、
-  每位新增 alias 的 canary、精确 HTDY Rule + Scope + alias set + transport 授权、main/release/tag、
-  exact-tag Alert Runtime promotion/switch/readback 与自然 HTDY 验收全部 pending。任一旧单 owner Gate、
-  develop 代码或本地测试均不授权这些操作。
+- develop 的通知边界已收敛为 `AlertNotificationDispatcher -> NotificationTransport -> PushPlus SDK`，
+  不保留 OpenClaw/Clawbot 或 WxPusher 兼容路径。HTDY 每个 Event 只向逻辑 audience
+  `htdy_observers` 发起一次 Topic 请求；SuBing 每个 Event 只向不带 Topic 的 `owner` 发起一次请求。
+- provider 只使用官方 Python SDK `perk-pushplus-sdk==1.2.1`、`wechat` channel 与 `txt` template。
+  SDK 返回的 shortCode 仅表示 PushPlus 接受请求，不能解释为微信最终送达；公开输出只含脱敏后缀。
+- Git 外唯一 private JSON 只保存消息 token 与 HTDY Topic code，要求 parent `0700`、file `0600`、
+  current uid。launchd/API/Alert 只传同一个 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`；health 仅做结构检查，
+  不联网、不读取 Topic 成员、不公开 token 或 Topic code。
+- Topic 成员完全由 PushPlus 管理；owner 与最多三位朋友都通过 PushPlus 页面/二维码加入同一专用 Topic，
+  exact 四人由人工核对。归一量化不建逐人 directory、pairing、fan-out、送达表、Open API、callback、
+  retry、queue、replay、backfill 或 fallback；Alert Application Domain 仍只有两张表。
+- 当前实现的无副作用验证已覆盖 dispatcher/config/SDK adapter/composition/CLI/health 与 launchd/ops：
+  Alert focused `170 passed`，全 engineering `53 passed`；全后端 Ruff PASS，Mypy `77 source files`
+  PASS，全部 ops shell `bash -n`、6 个 launchd templates `plutil -lint`、secret scan
+  `finding_count=0` 与 diff check PASS。
+- 本次未取得或写入真实 PushPlus token/Topic，未发送通知，未连接 production DB，未执行 Scope、
+  main/release/tag、Runtime promotion/switch 或外部旧配置清理。
+- 独立 pending Gate 为：创建专用消息 token/Topic、owner + 3 位朋友加入并人工核对 exact 四人、写入
+  Git 外 private config、分别执行 `owner` 与 `htdy_observers` 真实 canary、取得精确 Rule + Scope +
+  audience + transport 持续授权、main/release/tag、exact-tag Alert Runtime promotion/switch/readback 与
+  自然 HTDY 验收。代码和测试不授权其中任何一步。
 - production 事实保持不变：仍为
   `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c` 的单 `owner` exact Runtime，两条 Rule 的 Scope
   仍精确为 `jm`。没有四人已启用、已发送或已自然验收的证据。
@@ -349,10 +344,9 @@
   和轻量 health。
 - CLI：`guiyi data update|refresh|audit|after-market`；只读
   `guiyi research subing-calibration`、`guiyi runtime status|live|alert`。
-- production `v1.6.2` 的 `guiyi runtime alert-canary` 仍只面向固定 `owner`；develop 固定收件人实现改为
-  必须显式 `guiyi runtime alert-canary --alias <active-alias>`。二者都是独立真实通知 Gate，不是测试命令。
-- develop 已提供 `guiyi recipients init|prepare|confirm|retire`，但只达到 CODE_COMPLETE / TEST_COMPLETE；
-  这些命令会读取或修改 Git 外私有状态，当前均未执行，也未进入 production。
+- production `v1.6.2` 的 `guiyi runtime alert-canary` 仍只面向历史固定 `owner`；develop 改为必须显式
+  `guiyi runtime alert-canary --audience owner|htdy_observers`。二者都是独立真实通知 Gate，不是测试命令。
+- develop 不再提供 `guiyi recipients *` 或 `alert-preflight`；Topic 成员只在 PushPlus 外部管理。
 - Runtime：Live 与盘后更新共用同一 `operational_products.txt`；盘后时点为 18:05，
   只对 `NEXT_TRADING_SESSION_NOT_READY` 允许最多一次一小时后 retry。
 
@@ -445,5 +439,5 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证；该独立 pending 状态不改写 `v1.6.2` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持 `v1.6.2 + clawbot-openclaw-weixin` 自然运行；SuBing Natural Canary 不人工补证，
-  Execution Review Gate D 继续 `disabled / not activated`。
+- 最小下一步：保持 production `v1.6.2 + clawbot-openclaw-weixin` 不变；先在 PushPlus 创建专用消息
+  token/Topic，并让 owner + 3 位朋友加入后人工核对 exact 四人，再单独申请 Git 外配置 Gate。

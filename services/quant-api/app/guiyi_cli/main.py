@@ -1,7 +1,7 @@
 """归一量化统一 CLI 入口（``uv run guiyi``）。
 
-子域：``data``（历史数据 audit/update/refresh）、``research``（只读研究）、
-``runtime``（健康与前台 Live）与 ``recipients``（停机期私有接收人配置）。
+子域：``data``（历史数据 audit/update/refresh）、``research``（只读研究）与
+``runtime``（健康、前台 Live、Alert 与显式 canary）。
 默认 JSON 输出至 stdout；参数错误与异常经 output 模块脱敏后写 stderr。
 """
 
@@ -11,24 +11,15 @@ import argparse
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 import logging
-import os
 from pathlib import Path
 import stat
 import sys
 from typing import Any, TextIO
 
 from app.db.session import SessionLocal
-from app.alerts.clawbot import (
-    CLAWBOT_TRANSPORT,
-    build_clawbot_runner_from_env,
-    build_clawbot_sender_from_env,
-)
-from app.alerts.clawbot_owner import CLAWBOT_CHANNEL
-from app.alerts.recipient_bootstrap import RecipientBootstrap
-from app.alerts.recipients import (
-    initialize_recipients_from_owner,
-)
 from app.alerts.composition import build_alert_runtime
+from app.alerts.notification import ALERT_AUDIENCES
+from app.alerts.notification_composition import build_notification_sender_from_env
 from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
@@ -66,9 +57,6 @@ AfterMarketFactory = Callable[[HistoricalDataManager], Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
-RecipientPaths = Callable[[], tuple[Path, Path]]
-RecipientInitializer = Callable[[Path, Path], Any]
-RecipientBootstrapFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
@@ -77,20 +65,16 @@ logger = logging.getLogger(__name__)
 
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
-    if args.domain == "recipients":
-        return False
     if args.domain == "research":
         return True
     if args.domain == "runtime":
-        if args.runtime_command in {"status", "clawbot-preflight"}:
+        if args.runtime_command == "status":
             return True
         return False
     return not bool(getattr(args, "apply", False))
 
 
 def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
-    if raw and raw[0] == "recipients":
-        return False
     return not (
         len(raw) >= 2
         and raw[0] == "runtime"
@@ -116,7 +100,7 @@ def _execution_review_roll_marker_state(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构建 guiyi 根解析器：data、research、runtime 与 recipients。"""
+    """构建 guiyi 根解析器：data、research 与 runtime。"""
     parser = JsonArgumentParser(prog="guiyi")
     domains = parser.add_subparsers(dest="domain", required=True)
     data = domains.add_parser("data")
@@ -133,38 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
     alert_canary = runtime_commands.add_parser("alert-canary")
-    alert_canary.add_argument("--alias", required=True)
-    runtime_commands.add_parser("clawbot-preflight")
-    recipients = domains.add_parser("recipients")
-    recipient_commands = recipients.add_subparsers(
-        dest="recipients_command", required=True
+    alert_canary.add_argument(
+        "--audience",
+        required=True,
+        choices=sorted(ALERT_AUDIENCES),
     )
-    recipient_commands.add_parser("init")
-    for command in ("prepare", "confirm", "retire"):
-        recipient_command = recipient_commands.add_parser(command)
-        recipient_command.add_argument("--alias", required=True)
     return parser
-
-
-def _recipient_paths_from_env() -> tuple[Path, Path]:
-    owner = os.getenv("GUIYI_ALERT_CLAWBOT_OWNER_PATH", "")
-    recipients = os.getenv("GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH", "")
-    if not owner or not recipients:
-        raise RuntimeError("CLAWBOT_RECIPIENT_PATHS_UNAVAILABLE")
-    owner_path = Path(owner)
-    recipients_path = Path(recipients)
-    if not owner_path.is_absolute() or not recipients_path.is_absolute():
-        raise RuntimeError("CLAWBOT_RECIPIENT_PATHS_UNAVAILABLE")
-    return owner_path, recipients_path
-
-
-def _build_recipient_bootstrap() -> RecipientBootstrap:
-    runner = build_clawbot_runner_from_env(verify_versions=True)
-    return RecipientBootstrap(runner, runner.dependency.recipients_path)
-
-
-def _build_clawbot_cli_sender() -> Any:
-    return build_clawbot_sender_from_env(live_probe=False)
 
 
 def main(
@@ -175,10 +133,9 @@ def main(
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
-    alert_canary_sender_factory: AlertCanarySenderFactory = _build_clawbot_cli_sender,
-    recipient_paths: RecipientPaths = _recipient_paths_from_env,
-    recipient_initializer: RecipientInitializer = initialize_recipients_from_owner,
-    recipient_bootstrap_factory: RecipientBootstrapFactory = _build_recipient_bootstrap,
+    alert_canary_sender_factory: AlertCanarySenderFactory = (
+        build_notification_sender_from_env
+    ),
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
@@ -275,37 +232,6 @@ def main(
                     research_request,
                     service_factory(session),
                 )
-        elif args.domain == "recipients":
-            if args.recipients_command == "init":
-                owner_path, recipients_path = recipient_paths()
-                directory = recipient_initializer(owner_path, recipients_path)
-                payload = {
-                    "schema_version": 1,
-                    "command": "recipients.init",
-                    "status": "ok",
-                    "readonly": False,
-                    "channel": CLAWBOT_CHANNEL,
-                    "recipient_count": len(directory.recipients),
-                }
-            else:
-                bootstrap = recipient_bootstrap_factory()
-                mutation = getattr(bootstrap, args.recipients_command)
-                result = mutation(args.alias)
-                count_key = {
-                    "prepare": "baseline_candidate_count",
-                    "confirm": "candidate_count",
-                    "retire": "active_recipient_count",
-                }[args.recipients_command]
-                count = getattr(result, count_key)
-                payload = {
-                    "schema_version": 1,
-                    "command": f"recipients.{args.recipients_command}",
-                    "status": "ok",
-                    "readonly": False,
-                    "channel": CLAWBOT_CHANNEL,
-                    "alias": result.alias,
-                    count_key: count,
-                }
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:
@@ -336,34 +262,18 @@ def main(
                 "foreground": True,
             }
         elif args.runtime_command == "alert-canary":
-            summary = alert_canary_sender_factory().send_canary(args.alias)
+            acceptance = alert_canary_sender_factory().send_canary(args.audience)
+            reference = acceptance.reference
             payload = {
                 "schema_version": 1,
                 "command": "runtime.alert-canary",
-                "status": "ok" if summary.failed == 0 else "failed",
-                "alias": args.alias,
-                "attempted": summary.attempted,
-                "provider_accepted": summary.provider_accepted,
-                "failed": summary.failed,
-                "failed_aliases": list(summary.failed_aliases),
-            }
-        elif args.runtime_command == "clawbot-preflight":
-            summary = alert_canary_sender_factory().preflight()
-            payload = {
-                "schema_version": 1,
-                "command": "runtime.clawbot-preflight",
-                "status": (
-                    "ok"
-                    if summary.ready_count == summary.recipient_count
-                    else "failed"
+                "status": "accepted",
+                "audience": args.audience,
+                "provider_accepted": True,
+                "provider_reference_suffix": (
+                    reference[-6:] if isinstance(reference, str) else None
                 ),
-                "readonly": True,
-                "transport": CLAWBOT_TRANSPORT,
-                "configured": True,
-                "recipient_count": summary.recipient_count,
-                "ready_count": summary.ready_count,
-                "failed_aliases": list(summary.failed_aliases),
-                "would_send": False,
+                "delivery_confirmed": False,
             }
         else:
             raise RuntimeError("CLI_RUNTIME_COMMAND_INVALID")
@@ -379,7 +289,7 @@ def main(
         )
         return 1
     print_json(payload, stdout)
-    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok", "ready", "skipped"} else 1
+    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok", "ready", "skipped", "accepted"} else 1
 
 
 def _run_data(

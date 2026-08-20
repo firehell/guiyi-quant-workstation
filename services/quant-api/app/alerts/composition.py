@@ -6,8 +6,8 @@ from collections.abc import Mapping
 import json
 from typing import Any
 
-from app.alerts.clawbot import build_clawbot_sender_from_env
 from app.alerts.evaluators import HtdyOriginal15mEvaluator
+from app.alerts.notification_composition import build_notification_sender_from_env
 from app.alerts.runtime import AlertRuntime
 from app.core.env import PROJECT_ROOT
 from app.db.session import SessionLocal
@@ -62,7 +62,7 @@ def build_alert_runtime() -> AlertRuntime:
         raise RuntimeError("ALERT_RUNTIME_NOT_ENABLED")
     operational_products = load_operational_products()
     taxonomy = load_product_taxonomy()
-    sender = build_clawbot_sender_from_env(live_probe=True)
+    sender = build_notification_sender_from_env()
     redis = get_redis_connection()
     return AlertRuntime(
         session_factory=SessionLocal,

@@ -24,11 +24,9 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.alerts.clawbot import (
-    CLAWBOT_PATH_ENV_NAMES,
-    CLAWBOT_TRANSPORT,
-    clawbot_transport_status_from_env,
-)
+from app.alerts.notification_composition import notification_transport_status_from_env
+from app.alerts.notification_config import NOTIFICATION_CONFIG_ENV
+from app.alerts.pushplus import PUSHPLUS_TRANSPORT
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -78,8 +76,8 @@ def build_runtime_health(
         else alert_runtime_enabled
     )
     if notification_transport_configured is None:
-        transport_present = any(os.getenv(name, "") for name in CLAWBOT_PATH_ENV_NAMES)
-        notification = clawbot_transport_status_from_env()
+        transport_present = bool(os.getenv(NOTIFICATION_CONFIG_ENV, ""))
+        notification = notification_transport_status_from_env()
         transport_configured = notification["configured"] is True
         transport_error_type = (
             None
@@ -90,12 +88,10 @@ def build_runtime_health(
         )
     else:
         transport_configured = notification_transport_configured
-        count = 1 if transport_configured else 0
         notification = {
-            "transport": CLAWBOT_TRANSPORT,
+            "transport": PUSHPLUS_TRANSPORT,
             "configured": transport_configured,
-            "recipient_count": count,
-            "ready_count": count,
+            "audience_count": 2,
             "would_send": False,
         }
         transport_error_type = (

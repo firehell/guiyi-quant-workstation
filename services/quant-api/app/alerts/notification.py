@@ -1,14 +1,20 @@
-"""Alert transport-neutral notification contract and message formatting."""
+"""Alert notification domain contract, routing and message formatting."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
+ALERT_AUDIENCE_OWNER = "owner"
+ALERT_AUDIENCE_HTDY_OBSERVERS = "htdy_observers"
+ALERT_AUDIENCES = frozenset(
+    {ALERT_AUDIENCE_OWNER, ALERT_AUDIENCE_HTDY_OBSERVERS}
+)
 ALERT_CANARY_TEXT = "【归一量化】微信通知测试\n\nAlert 通知通道正常"
 
 
@@ -26,6 +32,74 @@ class AlertNotificationMessage:
 
 class AlertNotificationSender(Protocol):
     def send(self, message: AlertNotificationMessage) -> None: ...
+
+
+class NotificationTransportError(RuntimeError):
+    """Stable transport error that never includes provider-private data."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationDelivery:
+    audience: str
+    title: str
+    content: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderAcceptance:
+    """Provider request reference; acceptance is not final delivery evidence."""
+
+    reference: str | None = field(default=None, repr=False)
+
+
+class NotificationTransport(Protocol):
+    def send(self, delivery: NotificationDelivery) -> ProviderAcceptance: ...
+
+
+class AlertNotificationDispatcher:
+    """Map the two frozen Alert rules to provider-independent audiences."""
+
+    def __init__(
+        self,
+        transport: NotificationTransport,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._transport = transport
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    def send(self, message: AlertNotificationMessage) -> None:
+        rendered = format_alert_message(message)
+        if message.rule_code == "htdy_original_15m":
+            audience = ALERT_AUDIENCE_HTDY_OBSERVERS
+            title = "归一量化 火天大有"
+        elif message.rule_code == "subing_entry_signal_v1":
+            audience = ALERT_AUDIENCE_OWNER
+            title = "归一量化 苏冰"
+        else:
+            raise ValueError("ALERT_NOTIFICATION_RULE_INVALID")
+        self._transport.send(NotificationDelivery(audience, title, rendered))
+
+    def send_canary(self, audience: str) -> ProviderAcceptance:
+        if audience not in ALERT_AUDIENCES:
+            raise NotificationTransportError(
+                "ALERT_NOTIFICATION_AUDIENCE_INVALID"
+            )
+        now = self._clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise NotificationTransportError("ALERT_NOTIFICATION_TIME_INVALID")
+        content = (
+            f"{ALERT_CANARY_TEXT}\n"
+            f"audience={audience}\n"
+            f"time={now.isoformat()}"
+        )
+        return self._transport.send(
+            NotificationDelivery(audience, "归一量化 通知测试", content)
+        )
 
 
 def format_alert_message(message: AlertNotificationMessage) -> str:

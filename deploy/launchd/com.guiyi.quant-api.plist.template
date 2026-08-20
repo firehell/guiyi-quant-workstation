@@ -5,7 +5,7 @@
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>__RUNTIME_DIR__/run-local-service.sh</string><string>api</string></array>
   <key>WorkingDirectory</key><string>__HOME__</string>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string><key>GUIYI_PROJECT_ROOT</key><string>__PROJECT_ROOT__</string><key>GUIYI_RUNTIME_COMMIT</key><string>__RUNTIME_COMMIT__</string><key>GUIYI_OPENCLAW_BIN</key><string>__OPENCLAW_BIN__</string><key>GUIYI_OPENCLAW_NODE_BIN</key><string>__OPENCLAW_NODE_BIN__</string><key>GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT</key><string>__OPENCLAW_WEIXIN_PLUGIN_ROOT__</string><key>GUIYI_OPENCLAW_STATE_DIR</key><string>__OPENCLAW_STATE_DIR__</string><key>GUIYI_OPENCLAW_CONFIG_PATH</key><string>__OPENCLAW_CONFIG_PATH__</string><key>GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH</key><string>__ALERT_CLAWBOT_RECIPIENTS_PATH__</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string><key>GUIYI_PROJECT_ROOT</key><string>__PROJECT_ROOT__</string><key>GUIYI_RUNTIME_COMMIT</key><string>__RUNTIME_COMMIT__</string><key>GUIYI_ALERT_NOTIFICATION_CONFIG_PATH</key><string>__ALERT_NOTIFICATION_CONFIG_PATH__</string></dict>
   <key>StandardOutPath</key><string>__LOG_DIR__/api.log</string>
   <key>StandardErrorPath</key><string>__LOG_DIR__/api.log</string>
 </dict></plist>

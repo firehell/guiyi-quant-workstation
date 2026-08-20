@@ -249,11 +249,11 @@ promotion、release 或 Runtime 结论，不授权数据/DB 写入、Alert/通�
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_recipients.py \
-  services/quant-api/tests/test_alert_recipient_bootstrap.py \
+  services/quant-api/tests/test_alert_notification_dispatcher.py \
   services/quant-api/tests/test_alert_notification.py \
-  services/quant-api/tests/test_alert_clawbot_owner.py \
-  services/quant-api/tests/test_alert_clawbot.py \
+  services/quant-api/tests/test_alert_notification_config.py \
+  services/quant-api/tests/test_alert_pushplus.py \
+  services/quant-api/tests/test_alert_notification_composition.py \
   services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_alert_api.py \
@@ -264,13 +264,11 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q tests/engineering
 
-node --test tests/engineering/openclaw_weixin_single_shot.test.mjs
-
 /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/ruff check \
-  services/quant-api/app/alerts/recipients.py \
-  services/quant-api/app/alerts/recipient_bootstrap.py \
-  services/quant-api/app/alerts/clawbot.py \
   services/quant-api/app/alerts/notification.py \
+  services/quant-api/app/alerts/notification_config.py \
+  services/quant-api/app/alerts/pushplus.py \
+  services/quant-api/app/alerts/notification_composition.py \
   services/quant-api/app/guiyi_cli/main.py \
   services/quant-api/app/services/runtime_health.py \
   services/quant-api/app/schemas/runtime.py
@@ -278,10 +276,10 @@ node --test tests/engineering/openclaw_weixin_single_shot.test.mjs
 MYPYPATH=services/quant-api:packages/quant-core \
   /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/mypy \
   --explicit-package-bases --ignore-missing-imports \
-  services/quant-api/app/alerts/recipients.py \
-  services/quant-api/app/alerts/recipient_bootstrap.py \
-  services/quant-api/app/alerts/clawbot.py \
   services/quant-api/app/alerts/notification.py \
+  services/quant-api/app/alerts/notification_config.py \
+  services/quant-api/app/alerts/pushplus.py \
+  services/quant-api/app/alerts/notification_composition.py \
   services/quant-api/app/guiyi_cli/main.py \
   services/quant-api/app/services/runtime_health.py \
   services/quant-api/app/schemas/runtime.py
@@ -292,8 +290,8 @@ python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-这些命令使用 fixture、tmp_path、fake sender/process/plugin tree，不读取或修改正式 owner/recipients/context，
-不执行真实 preflight/canary/send，也不启动或切换 Alert Runtime。固定收件人简化版不新增 migration；
+这些命令使用 fixture、tmp_path 与 fake PushPlus client，不读取或修改真实 token/Topic，不执行真实
+canary/send，也不启动或切换 Alert Runtime。PushPlus transport 不新增 migration；
 Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。无 Web 变更时不要求前端或 browser
 验收。
 
@@ -302,12 +300,11 @@ Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。
 
 ### 独立受控外部 Gate
 
-- owner-only v2 init：写 Git 外 recipients 文件；当前 pending；
-- 每位朋友 prepare：写一次十分钟 fingerprint staging；当前 pending；
-- 每位朋友 confirm：把唯一 candidate 写入 v2 directory；当前 pending；
-- 全收件人 zero-send preflight：读取真实 context 并启动受限 child，但不发送；当前 pending；
-- 每个新增 alias 的单次真实 canary/send：当前 pending；
-- exact HTDY Rule + Scope + alias set + transport 持续授权：当前 pending；SuBing 保持 owner-only；
+- 创建专用 PushPlus 消息 token 与 Topic；当前 pending；
+- owner 与三位朋友扫码加入 Topic，并人工核对 exact 四人；当前 pending；
+- 写入 `0700/0600` Git 外 private config；当前 pending；
+- `owner` 与 `htdy_observers` 各一次真实 canary/send；当前 pending；
+- exact HTDY Rule + Scope + audience + transport 持续授权：当前 pending；SuBing 保持 owner-only；
 - main/release/tag 与 exact-tag Alert Runtime promotion/switch：分别 pending。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
