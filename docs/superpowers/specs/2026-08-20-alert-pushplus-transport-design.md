@@ -2,7 +2,7 @@
 
 日期：2026-08-20
 
-状态：develop implementation、Git 外配置与两次独立 canary complete；release/tag 与 Runtime switch pending
+状态：v1.6.4 released / Runtime promoted；自然 HTDY/SuBing Event 验收 pending
 
 ## 目标
 
@@ -52,9 +52,9 @@ Topic 成员只在 PushPlus 外部管理。创建者与最多三位朋友扫码�
 
 ## 上线边界
 
-当前 production 仍为 `v1.6.3` 的历史单 owner Clawbot transport。Git 外 token/Topic 配置与 owner、HTDY
-Topic 两次历史 canary 已完成，但不授权 release/tag、Runtime promotion/switch、Scope 变更或自然通知；
-持续运行边界只允许 `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic` 与
-`subing_entry_signal_v1 × jm × owner × pushplus-wechat`，并须在独立 Runtime switch 后生效。切换后如需
+当前 production exact-tag `v1.6.4` Runtime 已启用 PushPlus；Git 外 token/Topic 配置与 owner、HTDY
+Topic 两次历史 canary 已完成，release/switch 未重复 canary。持续运行边界只允许
+`htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic` 与
+`subing_entry_signal_v1 × jm × owner × pushplus-wechat`；自然 HTDY/SuBing Event 验收仍 pending。后续如需
 更换 provider，只新增 adapter 并在 composition 选择唯一 active provider，不改 Rule、evaluator、Event
-或数据库。
+或数据库，并重新取得对应受控外部操作意图。

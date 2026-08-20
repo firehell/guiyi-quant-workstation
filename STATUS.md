@@ -9,14 +9,12 @@
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
 - 当前 Git release 为
-  `v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`；annotated tag object 为
-  `ff15cab6ec94bbbbc2063f1e7e411efae929db89`，message=`Release v1.6.3`。production Runtime 已统一为
-  clean/detached `v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`：API/Web/Live/after-market/Alert
-  五个 label 的 root 与 loaded commit 均精确匹配，Market 与 Alert activation marker 均启用。
-  production Alert 的 active transport 仍为 `clawbot-openclaw-weixin`、单 `owner`；develop 的 PushPlus
-  transport 尚未 release/promotion。
-  当前完整 develop 已准备为 `v1.6.4` release candidate；main/tag 与 production Runtime 在对应 Gate
-  实际完成前仍保持 v1.6.3。
+  `v1.6.4@d85ab7d6f6ca5f64cdcf68611d808a072776edef`；annotated tag object 为
+  `358baf47bdb75cc8a1f05e8bec770b3dd3802ae4`，message=`Release v1.6.4`。production Runtime 已统一为
+  clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.4@d85ab7d6f6ca5f64cdcf68611d808a072776edef`：
+  API/Web/Live/after-market/Alert 五个 label 的 configured root 与 loaded commit 均精确匹配，Market 与
+  Alert activation marker 均启用。production Alert active transport 为 PushPlus：HTDY 只向
+  `htdy_observers` Topic、SuBing 只向 owner；两条 Rule Scope 均精确为 `jm`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
@@ -48,9 +46,9 @@
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## v1.6.4 Full Develop（RELEASE CANDIDATE；RUNTIME GATE PENDING）
+## v1.6.4 Full Develop（RELEASED / RUNTIME PROMOTED）
 
-- candidate 纳入 PushPlus transport、reviewed N Structure V1 research assets、SuBing current-read
+- release 纳入 PushPlus transport、reviewed N Structure V1 research assets、SuBing current-read
   Canonical/Live seam 修复、Web error-only K 线 fallback 与 fresh-root activation fail-closed 修复。
 - SuBing 5m/15m 分别使用各自 `MarketReadState.canonical_end`：current edge 落后时从 latest Canonical
   page bootstrap，历史 cutoff 继续 strict cursor；state 后并发推进到 cutoff 之后时 strict 重读，任何
@@ -60,18 +58,35 @@
   segment 不开放更早分页。installer 在启动前原子建立 marker；late failure 逆序停止所有本次触碰的
   label 后才恢复旧状态，停止无法确认时保留 enabled marker。
 - Alert 持续边界固定为 `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic` 与
-  `subing_entry_signal_v1 × jm × owner × pushplus-wechat`；本 candidate 不执行 Scope mutation、手工通知、
+  `subing_entry_signal_v1 × jm × owner × pushplus-wechat`；本 release 不执行 Scope mutation、手工通知、
   replay/backfill/retry。N Structure 仍为 historical research baseline，prospective OOS pending，不进入
   Alert、Runtime consumer 或订单路径。
-- candidate 不含 migration、Canonical/生产 DB 写入、RQData 下载或订单能力，`auto_order=false` 不变。
-  main/tag 与 exact-tag Runtime switch 尚未执行；production 仍为 v1.6.3 Clawbot transport。
+- release 不含 migration、Canonical/生产 DB 写入、RQData 下载或订单能力，`auto_order=false` 不变。
 - exact `origin/develop@6abc9a8b6db9f399be534343aea7353777e8780d` release worktree 已完成 fresh
   verification：backend `1850 passed`、engineering `60 passed`、Ruff PASS、Mypy `78 source files`、
   Web unit `199 passed / 1 skipped`、完整 Playwright `73 passed`、production build `2997 modules`；
   6 个 launchd plist、shell syntax、OpenSpec `5 passed / 0 failed`、secret scan `0 finding` 与 diff check
   均通过。隔离测试 PostgreSQL role/database 已在测试后删除，不形成 production DB mutation。
+- 同一独立 reviewer 对 `origin/main@e354ea7c9..3a35188b1` 完整 release diff 最终给出
+  `Critical=0 / Important=0 / Minor=0`。Release PR #191 已合入
+  `main@d85ab7d6f6ca5f64cdcf68611d808a072776edef`；annotated `v1.6.4` peeled commit 与 main 精确一致，
+  tag object=`358baf47bdb75cc8a1f05e8bec770b3dd3802ae4`，message=`Release v1.6.4`，并已同步 develop。
+- exact-tag Runtime 已离线锁定 backend/frontend 依赖并完成 Web build `2997 modules`、render-only 与
+  clean-env Runtime targeted `51 passed`。切换前读回 DB=`20260815_0039 (head)`、active/operational
+  均为 60、两条 Rule enabled 且 Scope 仅 `jm`、PushPlus config=`0700/0600 + strict schema ready`、
+  after-market 未运行，notification attempt 基线为 8。
+- 单次 `base -> Market -> Alert` switch 三段均成功。切换后五个 label 均精确指向 v1.6.4 root/commit；
+  API=`1.6.4`、Web=`200`、Runtime=`ok/readonly`、Live operational=`60`、Alert heartbeat=`ok`、
+  PushPlus config=`ready`、enabled Rule=`2`、Scope product=`1`。DB head 不变；notification attempt 仍为 8，
+  本次没有重复 canary 或意外通知。
+- production SuBing `jm` 5m/15m smoke 均 HTTP 200，实际 contract=`JM2701`，primary/companion
+  `bar_end=2026-08-20T07:00:00Z <= cutoff`，无未来 Bar；该时点 Live observation unavailable，不能据此
+  宣称自然 Live seam 或 SuBing Event Canary 已验收。
+- 删除前 plist、loaded root、process cwd/executable 与 dirty state Gate 全部通过；已仅用
+  `git worktree remove` 删除 v1.6.3 release、v1.6.2 Runtime、本次 SuBing task 与 v1.6.4 release 临时
+  worktree。v1.6.3 exact Runtime 保留为回滚源，所有 robustness 工作区未触碰。
 
-## Alert PushPlus transport（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EXTERNAL GATES PENDING）
+## Alert PushPlus transport（RELEASED / RUNTIME PROMOTED；NATURAL EVENTS PENDING）
 
 - develop 的通知边界已收敛为 `AlertNotificationDispatcher -> NotificationTransport -> PushPlus SDK`，
   不保留 OpenClaw/Clawbot 或 WxPusher 兼容路径。HTDY 每个 Event 只向逻辑 audience
@@ -90,17 +105,15 @@
   PASS，全部 ops shell `bash -n`、6 个 launchd templates `plutil -lint`、secret scan
   `finding_count=0` 与 diff check PASS。
 - Git 外 private config 已按单次授权原子写入并只读验证：parent=`0700`、file=`0600`、current uid、
-  strict schema、Topic identity、SDK sender composition 与 structural health 均 PASS；验证明确
-  `network_called=false / would_send=false`。本轮未连接 production DB，未执行 Scope、
-  main/release/tag、Runtime promotion/switch 或外部旧配置清理。
+  strict schema、Topic identity、SDK sender composition 与 structural health 均 PASS；health 验证明确
+  `would_send=false`，production Runtime 的 API 与 Alert 使用同一路径。
 - 专用 Topic 已创建且当前 3 人由用户确认；第 4 人允许后续加入。`owner` 单次真实 canary 已由
   PushPlus 接受（公开回执后缀 `b82d85`），且用户已确认微信实际收到，`delivery_confirmed=true`；
   未重试。`htdy_observers` 单次真实 Topic canary 也已由 PushPlus 接受（公开回执后缀 `e045b2`），
-  Topic 当前三位成员均已人工确认实际收到，`delivery_confirmed=true`，未重试。独立 pending Gate 为：
-  取得精确 Rule + Scope + audience + transport 持续授权、main/release/tag、exact-tag Alert Runtime
-  promotion/switch/readback 与自然 HTDY 验收。代码和测试不授权其中任何一步。
-- production 两条 Rule 的 Scope 仍精确为 `jm`，Clawbot 六项 private path 与 owner-only 配置 ready，
-  Alert Runtime heartbeat=`ok`；没有 PushPlus 已 release/promotion 或已自然验收的证据。
+  Topic 当前三位成员均已人工确认实际收到，`delivery_confirmed=true`，未重试；release/switch 未重复
+  两次历史 canary。独立 pending Gate 为自然 HTDY Topic Event 与自然 SuBing owner Event 验收。
+- production 两条 Rule 的 Scope 精确为 `jm`，PushPlus config=`ready`、Alert Runtime heartbeat=`ok`；
+  本次 release/promotion 只授权后续自然 Event 按既定边界处理，不形成 provider 最终送达或策略效果结论。
 
 ## v1.6.3 Market Radar Freshness Watermark（RELEASED / RUNTIME PROMOTED）
 
@@ -136,7 +149,8 @@
   最终读回五个 label 均为 v1.6.3 identity，Alert heartbeat=`ok`、Clawbot owner-only ready、两条 Rule
   Scope 仍仅 `jm`，recovery 后 notification attempt 为 0，DB 仍为 `20260815_0039 (head)`，
   operational/phase 均为 60。本次未执行 migration、RQData/Canonical/DB 写入、手工 after-market、
-  通知、Scope/canary 或订单操作；v1.6.2 Runtime worktree 仍保留为恢复来源。release 中安装器“先
+  通知、Scope/canary 或订单操作；v1.6.2 Runtime worktree 当时仍保留为恢复来源，已在 v1.6.4 promotion
+  成功且 fail-closed 扫描通过后清理。release 中安装器“先
   kickstart、后写 marker”的 fresh-root 顺序风险未在本 Radar-only 任务中改代码，后续须独立工程任务处理。
 
 ## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
@@ -445,8 +459,8 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   cross-roll EMA/MACD 继承或 zero-band hard gate；1d 仍为 `RESEARCH_PENDING`。
 - Alert HTDY 保持 event-cutoff；SuBing 只复用 accepted Calibration、FormalPolicy 和
   `SubingReadService` resolver。incoming Event Bar 与读回的当前最后 Bar 必须整体相同。
-- production Alert Event 先提交，然后最多启动一个 child、调用一次 Clawbot `sendMessageWeixin()`；
-  失败不回滚 Event，也不建 replay/backfill/retry/outbox/queue 或 WeCom fallback。
+- production Alert Event 先提交，然后最多调用一次 PushPlus SDK；HTDY 使用 Topic、SuBing 使用 owner，
+  失败不回滚 Event，也不建 replay/backfill/retry/outbox/queue 或 provider fallback。
 
 ## 当前 Runtime 事实
 
@@ -505,10 +519,10 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.6.3` Runtime promotion 已完成：五个正式 label 均加载
-  `e354ea7c9b1de782af830360ca3048bbb1afd057`，Market/Alert enabled，Clawbot owner-only 与两条 `jm`
-  Scope 未扩大。v1.6.2 cleanup 已在正式
-  引用归零后移除旧 v1.6.0/v1.6.1 release worktree，两个 annotated tag 仍保留可恢复；既有 G9 最终
+- `v1.6.4` Runtime promotion 已完成：五个正式 label 均加载
+  `d85ab7d6f6ca5f64cdcf68611d808a072776edef`，Market/Alert enabled，PushPlus HTDY Topic / SuBing owner
+  与两条 `jm` Scope 未扩大。v1.6.4 cleanup 已在正式引用归零后移除 v1.6.2 Runtime 与旧 release/task
+  worktree，v1.6.3 exact Runtime 保留为回滚源；既有 G9 最终
   清理也已完成，旧 `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review
   Gate D 仍为 `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成

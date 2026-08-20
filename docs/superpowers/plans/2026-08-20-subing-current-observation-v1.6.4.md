@@ -43,18 +43,18 @@
 
 - [x] 运行 SuBing、Alert、engineering、全 backend、Ruff、Mypy、Web unit、完整 Playwright、build、shell/plist、OpenSpec、secret scan 与 diff check。
 - [x] 一名独立 reviewer 审查 spec、未来泄漏、installer rollback 与实现 diff；Critical/Important 必须为 0。
-- [ ] 同一 reviewer 审查完整 release diff；Critical/Important 必须为 0。
+- [x] 同一 reviewer 审查完整 release diff；Critical/Important 必须为 0。
 - [x] 合入并 push `develop`，读回 exact remote SHA。
 
 ### Task 5: v1.6.4 Release and Runtime
 
 - [x] 从 exact `origin/develop` 创建 release worktree，更新所有 version surfaces、CHANGELOG/README/STATUS/TESTING 后重跑 release verification。
-- [ ] Release PR 合入 `main`，创建并 push annotated `v1.6.4`，读回 tag object、peeled commit、`origin/main`；再同步 develop。
-- [ ] 创建 clean/detached exact-tag Runtime，锁定依赖、build、test、render-only，再单次执行 base -> Market -> Alert switch。
-- [ ] 读回五服务 exact root/commit、API/Web/Runtime、DB head、60 品种、两个 exact Scope、PushPlus transport 和无意外 notification attempt。
+- [x] Release PR 合入 `main`，创建并 push annotated `v1.6.4`，读回 tag object、peeled commit、`origin/main`；再同步 develop。
+- [x] 创建 clean/detached exact-tag Runtime，锁定依赖、build、test、render-only，再单次执行 base -> Market -> Alert switch。
+- [x] 读回五服务 exact root/commit、API/Web/Runtime、DB head、60 品种、两个 exact Scope、PushPlus transport 和无意外 notification attempt。
 
 ### Task 6: Fail-Closed Cleanup and Closeout
 
-- [ ] 删除前扫描 launchd/plist/PID/open files，确认无正式服务引用目标根。
-- [ ] 仅用 `git worktree remove` 删除 v1.6.3 release worktree、v1.6.2 Runtime 和本次临时 worktree；保留 v1.6.3 Runtime 回滚源。
-- [ ] 更新 STATUS，push develop，并读回最终 remote SHA；自然 SuBing/HTDY/after-market 验收保持真实 pending 状态。
+- [x] 删除前扫描 launchd/plist/PID/open files，确认无正式服务引用目标根。
+- [x] 仅用 `git worktree remove` 删除 v1.6.3 release worktree、v1.6.2 Runtime 和本次临时 worktree；保留 v1.6.3 Runtime 回滚源。
+- [x] 更新 STATUS，push develop，并读回最终 remote SHA；自然 SuBing/HTDY/after-market 验收保持真实 pending 状态。

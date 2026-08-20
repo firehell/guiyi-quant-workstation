@@ -241,12 +241,12 @@ htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplu
 subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 production exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner Clawbot
-transport；PushPlus 持续授权尚未取得。已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员；超过
+当前 production exact-tag `v1.6.4` instance 的两条 Rule 各自 `scope_products=jm`，PushPlus 持续边界
+精确为上述 HTDY Topic 与 SuBing owner。已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员；超过
 4 人、未知成员或更换 Topic 必须重新授权。未来第三条 Rule 不继承授权；production
-migration、release/tag、Runtime promotion/switch、Scope/audience/transport 变更、真实 canary/send、
+migration、后续 release/tag、再次 Runtime switch、Scope/audience/transport 变更、真实 canary/send、
 rollback 与外部旧配置清理互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短
-Session/transaction。develop 的 sender 与 structural health 共用同一 Git 外 private config：只含消息
+Session/transaction。production sender 与 structural health 共用同一 Git 外 private config：只含消息
 token 与 HTDY Topic code，要求 parent `0700`、file `0600`、current uid；health 不联网、不读取成员，
 也不公开 token/Topic。替换 provider 只新增 adapter 并切换 composition，不修改 Rule、Event 或 evaluator。
 
