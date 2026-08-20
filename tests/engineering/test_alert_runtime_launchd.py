@@ -193,6 +193,196 @@ def test_alert_confirmation_rejects_unsafe_config_permissions(
     assert "alert notification config not ready" in result.stderr
 
 
+def test_alert_confirmation_writes_activation_marker_before_service_start(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    config = _notification_config(tmp_path / "private")
+    env = {NOTIFICATION_CONFIG_ENV: str(config)}
+    _run(repo, home, fake_bin, "--confirm-load", extra_env=env)
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-alert-runtime",
+        extra_env={**env, "GUIYI_FAKE_REQUIRE_ALERT_MARKER": "1"},
+    )
+
+    assert result.returncode == 0
+    assert (repo / ".run/alert-runtime-enabled").read_text() == "enabled\n"
+
+
+def test_failed_alert_start_restores_absent_activation_marker(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    config = _notification_config(tmp_path / "private")
+    env = {NOTIFICATION_CONFIG_ENV: str(config)}
+    _run(repo, home, fake_bin, "--confirm-load", extra_env=env)
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-alert-runtime",
+        extra_env={**env, "GUIYI_FAKE_FAIL_ALERT_BOOTSTRAP": "1"},
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert not (repo / ".run/alert-runtime-enabled").exists()
+
+
+def test_failed_alert_start_restores_existing_activation_marker_content(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    config = _notification_config(tmp_path / "private")
+    env = {NOTIFICATION_CONFIG_ENV: str(config)}
+    _run(repo, home, fake_bin, "--confirm-load", extra_env=env)
+    marker = repo / ".run/alert-runtime-enabled"
+    marker.write_text("previous-state\n", encoding="utf-8")
+    marker.chmod(0o600)
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-alert-runtime",
+        extra_env={**env, "GUIYI_FAKE_FAIL_ALERT_BOOTSTRAP": "1"},
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert marker.read_text() == "previous-state\n"
+
+
+def test_failed_alert_marker_chmod_stops_before_launchd_and_restores_absence(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    config = _notification_config(tmp_path / "private")
+    env = {NOTIFICATION_CONFIG_ENV: str(config)}
+    _run(repo, home, fake_bin, "--confirm-load", extra_env=env)
+    calls = home / "launchctl-calls.log"
+    calls.unlink()
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-alert-runtime",
+        extra_env={**env, "GUIYI_FAKE_FAIL_MARKER_CHMOD": "1"},
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert not (repo / ".run/alert-runtime-enabled").exists()
+    assert not calls.exists()
+
+
+def test_failed_alert_enable_boots_out_started_service_before_marker_rollback(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    config = _notification_config(tmp_path / "private")
+    env = {NOTIFICATION_CONFIG_ENV: str(config)}
+    _run(repo, home, fake_bin, "--confirm-load", extra_env=env)
+    calls = home / "launchctl-calls.log"
+    calls.unlink()
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-alert-runtime",
+        extra_env={**env, "GUIYI_FAKE_FAIL_ALERT_ENABLE": "1"},
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert not (repo / ".run/alert-runtime-enabled").exists()
+    recorded = calls.read_text().splitlines()
+    failed_enable = next(
+        index
+        for index, call in enumerate(recorded)
+        if call.startswith("enable ") and "com.guiyi.quant-alert" in call
+    )
+    cleanup_bootout = next(
+        index
+        for index, call in enumerate(recorded[failed_enable + 1 :], failed_enable + 1)
+        if call.startswith("bootout ") and "com.guiyi.quant-alert" in call
+    )
+    assert cleanup_bootout > failed_enable
+
+
+def test_failed_alert_stop_retains_enabled_marker_instead_of_restoring_backup(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+    config = _notification_config(tmp_path / "private")
+    env = {NOTIFICATION_CONFIG_ENV: str(config)}
+    _run(repo, home, fake_bin, "--confirm-load", extra_env=env)
+    marker = repo / ".run/alert-runtime-enabled"
+    marker.write_text("previous-state\n", encoding="utf-8")
+    marker.chmod(0o600)
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-alert-runtime",
+        extra_env={
+            **env,
+            "GUIYI_FAKE_FAIL_ALERT_ENABLE": "1",
+            "GUIYI_FAKE_STOP_REMAINS_LOADED": "1",
+        },
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert marker.read_text() == "enabled\n"
+    assert "failed attempt remains loaded; activation marker retained" in result.stderr
+
+
+def test_failed_second_market_label_boots_out_every_touched_service(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    home, fake_bin = _fake_runtime(tmp_path)
+
+    result = _run(
+        repo,
+        home,
+        fake_bin,
+        "--confirm-market-runtime",
+        extra_env={"GUIYI_FAKE_FAIL_AFTER_MARKET_ENABLE": "1"},
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert not (repo / ".run/market-runtime-enabled").exists()
+    recorded = (home / "launchctl-calls.log").read_text().splitlines()
+    failed_enable = next(
+        index
+        for index, call in enumerate(recorded)
+        if call.startswith("enable ") and "com.guiyi.quant-after-market" in call
+    )
+    cleanup = recorded[failed_enable + 1 :]
+    cleanup_bootouts = [call for call in cleanup if call.startswith("bootout ")]
+    assert [call.rsplit("/", 1)[-1] for call in cleanup_bootouts] == [
+        "com.guiyi.quant-after-market",
+        "com.guiyi.quant-live",
+    ]
+
+
 def _copy_fixture(destination: Path) -> Path:
     for relative in (
         "deploy/launchd",
@@ -239,6 +429,32 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
     launchctl.write_text(
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$HOME/launchctl-calls.log"\n'
+        'state_dir="$HOME/fake-launchctl-state"\n'
+        'alert_state="$state_dir/com.guiyi.quant-alert"\n'
+        'mkdir -p "$state_dir"\n'
+        'case "$*" in *com.guiyi.quant-alert.plist*)\n'
+        '  if [ "${GUIYI_FAKE_REQUIRE_ALERT_MARKER:-0}" = "1" ] && [ ! -f "$PWD/.run/alert-runtime-enabled" ]; then exit 9; fi\n'
+        '  if [ "${GUIYI_FAKE_FAIL_ALERT_BOOTSTRAP:-0}" = "1" ]; then exit 8; fi\n'
+        'esac\n'
+        'if [ "${1:-}" = "bootstrap" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-alert.plist*) touch "$alert_state" ;; esac\n'
+        'fi\n'
+        'if [ "${1:-}" = "bootout" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-alert*)\n'
+        '    if [ -f "$alert_state" ] && [ "${GUIYI_FAKE_STOP_REMAINS_LOADED:-0}" = "1" ]; then exit 8; fi\n'
+        '    rm -f "$alert_state"\n'
+        '    exit 0\n'
+        '  esac\n'
+        'fi\n'
+        'if [ "${1:-}" = "print" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-alert*) [ -f "$alert_state" ] && exit 0 ;; esac\n'
+        'fi\n'
+        'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_ALERT_ENABLE:-0}" = "1" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-alert*) exit 8 ;; esac\n'
+        'fi\n'
+        'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_AFTER_MARKET_ENABLE:-0}" = "1" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-after-market*) exit 8 ;; esac\n'
+        'fi\n'
         'case "${1:-}" in bootstrap|enable|kickstart) exit 0 ;; print|bootout) exit 1 ;; *) exit 2 ;; esac\n',
         encoding="utf-8",
     )
@@ -254,6 +470,16 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
     git.chmod(0o755)
+    chmod = fake_bin / "chmod"
+    chmod.write_text(
+        "#!/bin/sh\n"
+        'case "${2:-}" in *alert-runtime-enabled.tmp.*)\n'
+        '  if [ "${GUIYI_FAKE_FAIL_MARKER_CHMOD:-0}" = "1" ]; then exit 7; fi\n'
+        'esac\n'
+        'exec /bin/chmod "$@"\n',
+        encoding="utf-8",
+    )
+    chmod.chmod(0o755)
     return home, fake_bin
 
 

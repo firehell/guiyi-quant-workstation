@@ -1,12 +1,12 @@
 # SuBing Current Observation Canonical / Live Seam 修复规格
 
-> 状态：Design Approved from incident analysis / Written Spec Review Pending
+> 状态：Implementation Complete / Independent Review Approved
 >
 > 日期：2026-08-20
 >
-> 开发基线：`develop@8d9f4d821d772a815f36c4aef7d2b0fa091fc9d6`
+> 开发基线：`develop@139d7a9d03a2665ec53a3b10a95b76cc9437818d`
 >
-> 当前 production：`v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`
+> 当前 production：`v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`
 >
 > 任务性质：SuBing current observation 读取接缝 bug fix。实现阶段按 Lane 3 处理，因为 `SubingReadService` 同时被 Market Web 与 `subing_entry_signal_v1` Alert Runtime 消费；本规格本身只新增文档，不授权 Runtime、release、tag、Scope、通知、DB/Canonical 写入或任何订单行为。
 
@@ -53,7 +53,7 @@ SuBing: Factor 快照不可用
 
 同一页面底部 `MFM_FUTURES_V1_FREQUENCY_UNSUPPORTED` 属于 60m-only 的主力照妖镜 Futures V1 正常能力边界，与本故障无因果关系，不纳入本任务。
 
-当前 production `v1.6.2` 与 develop 的相关 SuBing current-read / Web 展示链在本问题上保持同一基本结构，因此本规格以当前 `develop` 为实现基线。
+当前 production `v1.6.3` 与 develop 的相关 SuBing current-read / Web 展示链在本问题上保持同一基本结构，因此本规格以当前 `develop` 为实现基线。
 
 ### 2.1 已确认的代码链
 
@@ -261,6 +261,11 @@ else:
 
 本任务不要求改变 1d SuBing 的读取语义。
 
+5m 与 15m 必须分别使用各自 `MarketReadState.canonical_end` 作决定，不能以一个频率的 edge 代替另一个频率。
+如果 `state()` 返回后 Canonical 并发推进，导致 `before=None` 的第一页出现 `bar_end > cutoff`，该页不得直接
+裁剪后继续使用；实现必须改用 `before=cutoff + 1 microsecond` 重新执行 strict historical read，以保持
+与历史 cutoff 相同的 300-Bar projection 和因果语义。
+
 ### 6.3 Null bootstrap cursor 的 pagination 校验
 
 SuBing 私有 `_validate_history_page()` 当前把 `request.before is None` + `has_more_before=True` 判为非法，这与 latest-page bootstrap 不兼容。
@@ -438,7 +443,8 @@ auto_order=false
 
 ### 10.1 Backend red reproduction
 
-新增最小回归：
+新增最小回归；首个 RED 必须通过临时 Catalog / Canonical Parquet 与真实 `MarketDataService` 查询路径触发，
+不能由 fake reader 直接抛出预设错误：
 
 ```text
 contract = current rank1
