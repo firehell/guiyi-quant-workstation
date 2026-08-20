@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+MAIN_FORCE_MIRROR_V0_SOURCE_SHA256 = (
+    "0f5b10db28d485c000846d721010efd3f1042aa7e4dae90fa479946539b5f503"
+)
 
 RETIRED_ASSETS = (
     "Makefile",
@@ -154,6 +159,14 @@ def test_futures_mirror_shadow_uses_a_static_kernel_dependency() -> None:
 
     assert "import importlib" not in service
     assert "_load_main_force_mirror_futures_kernel" not in service
+
+
+def test_main_force_mirror_v0_runtime_source_is_frozen() -> None:
+    source = (
+        ROOT / "packages/quant-core/guiyi_quant/indicators/main_force_mirror.py"
+    ).read_bytes()
+
+    assert hashlib.sha256(source).hexdigest() == MAIN_FORCE_MIRROR_V0_SOURCE_SHA256
 
 
 def test_retired_application_surfaces_are_not_restored() -> None:
