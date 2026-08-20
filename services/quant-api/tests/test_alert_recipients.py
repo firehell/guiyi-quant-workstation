@@ -77,6 +77,33 @@ def test_loads_frozen_directory_and_routes_deterministically(tmp_path: Path) -> 
         directory.account_id = "changed"  # type: ignore[misc]
 
 
+def test_recipient_repr_keeps_alias_but_hides_private_identifiers() -> None:
+    recipient = ClawbotRecipient("owner", ACCOUNT_ID, OWNER_TARGET)
+
+    value = repr(recipient)
+
+    assert "owner" in value
+    assert ACCOUNT_ID not in value
+    assert OWNER_TARGET not in value
+
+
+def test_directory_repr_keeps_public_aliases_and_count_but_hides_private_identifiers() -> None:
+    directory = RecipientDirectory(
+        2,
+        "openclaw-weixin",
+        ACCOUNT_ID,
+        (ClawbotRecipient("owner", ACCOUNT_ID, OWNER_TARGET),),
+        (),
+    )
+
+    value = repr(directory)
+
+    assert "owner" in value
+    assert "recipient_count=1" in value
+    assert ACCOUNT_ID not in value
+    assert OWNER_TARGET not in value
+
+
 @pytest.mark.parametrize(
     "payload",
     [

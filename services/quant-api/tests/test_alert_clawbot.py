@@ -441,3 +441,12 @@ def test_dependency_from_env_uses_only_the_v2_recipients_path(
     assert clawbot.build_clawbot_dependency_from_env(verify_versions=False) is marker
     assert observed["recipients_path"] == values["GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH"]
     assert "owner_path" not in observed
+
+
+def test_dependency_repr_hides_private_paths(tmp_path: Path) -> None:
+    dependency, _ = _tree(tmp_path)
+
+    value = repr(dependency)
+
+    assert "ClawbotDependency" in value
+    assert str(dependency.recipients_path) not in value

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
@@ -40,11 +40,11 @@ class ClawbotRecipientError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class ClawbotRecipient:
     alias: str
-    account_id: str
-    target_user_id: str
+    account_id: str = field(repr=False)
+    target_user_id: str = field(repr=False)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class RecipientDirectory:
     schema_version: int
     channel: str
@@ -55,6 +55,17 @@ class RecipientDirectory:
     @property
     def aliases(self) -> tuple[str, ...]:
         return tuple(recipient.alias for recipient in self.recipients)
+
+    def __repr__(self) -> str:
+        return (
+            "RecipientDirectory("
+            f"schema_version={self.schema_version!r}, "
+            f"channel={self.channel!r}, "
+            f"aliases={self.aliases!r}, "
+            f"recipient_count={len(self.recipients)!r}, "
+            f"retired_aliases={self.retired_aliases!r}"
+            ")"
+        )
 
     def recipients_for(self, rule_code: str) -> tuple[ClawbotRecipient, ...]:
         if rule_code == "htdy_original_15m":

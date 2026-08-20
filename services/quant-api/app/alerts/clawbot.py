@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
@@ -57,19 +57,19 @@ class ClawbotError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class ClawbotDependency:
-    openclaw_bin: Path
-    node_bin: Path
-    plugin_root: Path
-    state_dir: Path
-    config_path: Path
-    recipients_path: Path
-    versions_path: Path
+    openclaw_bin: Path = field(repr=False)
+    node_bin: Path = field(repr=False)
+    plugin_root: Path = field(repr=False)
+    state_dir: Path = field(repr=False)
+    config_path: Path = field(repr=False)
+    recipients_path: Path = field(repr=False)
+    versions_path: Path = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
 class ClawbotOwnerCandidate:
-    account_id: str
-    target_user_id: str
+    account_id: str = field(repr=False)
+    target_user_id: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
