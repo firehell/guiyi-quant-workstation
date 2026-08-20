@@ -35,12 +35,15 @@ def add_research_commands(
     candidate = commands.add_parser("candidate-validation")
     candidate.add_argument(
         "--candidate",
-        choices=("subing_lifecycle_v2_candidate_v1",),
+        choices=(
+            "subing_lifecycle_v2_candidate_v1",
+            "n_structure_5m_candidate_v1",
+        ),
         required=True,
     )
     candidate.add_argument(
         "--protocol",
-        choices=("candidate_validation_v1",),
+        choices=("candidate_validation_v1", "n_structure_validation_v1"),
         required=True,
     )
     candidate.add_argument("--symbol", required=True)
