@@ -11,7 +11,7 @@ from .domain import CanonicalBar
 from .n_structure_pattern import (
     CompletedNPattern,
     NPatternTrace,
-    evaluate_n_patterns,
+    _evaluate_n_patterns_from_exact_swings,
 )
 from .n_structure_policy import NStructurePolicy, is_exact_n_structure_policy
 from .n_structure_swing import (
@@ -31,18 +31,15 @@ class NStructureKind(StrEnum):
     RANGE = "range"
 
 
-_REASON_CODES = frozenset(
-    {
-        "BULL_STRUCTURE_ESTABLISHED",
-        "BEAR_STRUCTURE_ESTABLISHED",
-        "RANGE_STRUCTURE_ESTABLISHED",
-        "BULL_TRAILING_DEFENSE_ADVANCED",
-        "BEAR_TRAILING_DEFENSE_ADVANCED",
-        "BULL_STRUCTURE_BROKEN",
-        "BEAR_STRUCTURE_BROKEN",
-        "RANGE_EVIDENCE_EPOCH_RESET",
-    }
-)
+class NStructureTransitionReason(StrEnum):
+    BULL_STRUCTURE_ESTABLISHED = "BULL_STRUCTURE_ESTABLISHED"
+    BEAR_STRUCTURE_ESTABLISHED = "BEAR_STRUCTURE_ESTABLISHED"
+    RANGE_STRUCTURE_ESTABLISHED = "RANGE_STRUCTURE_ESTABLISHED"
+    BULL_TRAILING_DEFENSE_ADVANCED = "BULL_TRAILING_DEFENSE_ADVANCED"
+    BEAR_TRAILING_DEFENSE_ADVANCED = "BEAR_TRAILING_DEFENSE_ADVANCED"
+    BULL_STRUCTURE_BROKEN = "BULL_STRUCTURE_BROKEN"
+    BEAR_STRUCTURE_BROKEN = "BEAR_STRUCTURE_BROKEN"
+    RANGE_EVIDENCE_EPOCH_RESET = "RANGE_EVIDENCE_EPOCH_RESET"
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +99,7 @@ class NStructureTransition:
     transition_at: datetime
     from_kind: NStructureKind
     to_kind: NStructureKind
-    reason_code: str
+    reason_code: NStructureTransitionReason
     trailing_defense_pivot_id: str | None
 
     def __post_init__(self) -> None:
@@ -110,7 +107,7 @@ class NStructureTransition:
             not _is_aware_datetime(self.transition_at)
             or not isinstance(self.from_kind, NStructureKind)
             or not isinstance(self.to_kind, NStructureKind)
-            or self.reason_code not in _REASON_CODES
+            or not isinstance(self.reason_code, NStructureTransitionReason)
             or (
                 self.trailing_defense_pivot_id is not None
                 and not isinstance(self.trailing_defense_pivot_id, str)
@@ -160,6 +157,21 @@ def evaluate_n_market_structure(
     """Evaluate immutable structure facts for one completed M5 segment."""
 
     _validate_inputs(bars, swings=swings, patterns=patterns, policy=policy)
+    return _evaluate_n_market_structure_from_exact_facts(
+        bars,
+        swings=swings,
+        patterns=patterns,
+    )
+
+
+def _evaluate_n_market_structure_from_exact_facts(
+    bars: Sequence[CanonicalBar],
+    *,
+    swings: NSwingTrace,
+    patterns: NPatternTrace,
+) -> NStructureTrace:
+    """Internal single-pass seam for reducer-owned Swing and Pattern facts."""
+
     pivots_by_confirmation: dict[datetime, list[NSwingPivot]] = {}
     for pivot in swings.pivots:
         pivots_by_confirmation.setdefault(pivot.confirmed_at, []).append(pivot)
@@ -192,7 +204,7 @@ def evaluate_n_market_structure(
                     transition_at=current.bar_end,
                     from_kind=kind,
                     to_kind=NStructureKind.RANGE,
-                    reason_code="BULL_STRUCTURE_BROKEN",
+                    reason_code=NStructureTransitionReason.BULL_STRUCTURE_BROKEN,
                     defense=defense,
                 )
                 kind = NStructureKind.RANGE
@@ -209,7 +221,7 @@ def evaluate_n_market_structure(
                     transition_at=current.bar_end,
                     from_kind=kind,
                     to_kind=NStructureKind.RANGE,
-                    reason_code="BEAR_STRUCTURE_BROKEN",
+                    reason_code=NStructureTransitionReason.BEAR_STRUCTURE_BROKEN,
                     defense=defense,
                 )
                 kind = NStructureKind.RANGE
@@ -231,7 +243,9 @@ def evaluate_n_market_structure(
                     transition_at=current.bar_end,
                     from_kind=NStructureKind.RANGE,
                     to_kind=NStructureKind.UNDEFINED,
-                    reason_code="RANGE_EVIDENCE_EPOCH_RESET",
+                    reason_code=(
+                        NStructureTransitionReason.RANGE_EVIDENCE_EPOCH_RESET
+                    ),
                     defense=None,
                 )
                 kind = NStructureKind.UNDEFINED
@@ -268,9 +282,9 @@ def evaluate_n_market_structure(
                             from_kind=previous_kind,
                             to_kind=kind,
                             reason_code=(
-                                "BULL_STRUCTURE_ESTABLISHED"
+                                NStructureTransitionReason.BULL_STRUCTURE_ESTABLISHED
                                 if kind is NStructureKind.BULL
-                                else "BEAR_STRUCTURE_ESTABLISHED"
+                                else NStructureTransitionReason.BEAR_STRUCTURE_ESTABLISHED
                             ),
                             defense=defense,
                         )
@@ -281,9 +295,9 @@ def evaluate_n_market_structure(
                                 from_kind=kind,
                                 to_kind=NStructureKind.RANGE,
                                 reason_code=(
-                                    "BULL_STRUCTURE_BROKEN"
+                                    NStructureTransitionReason.BULL_STRUCTURE_BROKEN
                                     if kind is NStructureKind.BULL
-                                    else "BEAR_STRUCTURE_BROKEN"
+                                    else NStructureTransitionReason.BEAR_STRUCTURE_BROKEN
                                 ),
                                 defense=defense,
                             )
@@ -301,7 +315,9 @@ def evaluate_n_market_structure(
                             transition_at=current.bar_end,
                             from_kind=NStructureKind.UNDEFINED,
                             to_kind=NStructureKind.RANGE,
-                            reason_code="RANGE_STRUCTURE_ESTABLISHED",
+                            reason_code=(
+                                NStructureTransitionReason.RANGE_STRUCTURE_ESTABLISHED
+                            ),
                             defense=None,
                         )
                         kind = NStructureKind.RANGE
@@ -327,9 +343,9 @@ def evaluate_n_market_structure(
                             from_kind=kind,
                             to_kind=kind,
                             reason_code=(
-                                "BULL_TRAILING_DEFENSE_ADVANCED"
+                                NStructureTransitionReason.BULL_TRAILING_DEFENSE_ADVANCED
                                 if kind is NStructureKind.BULL
-                                else "BEAR_TRAILING_DEFENSE_ADVANCED"
+                                else NStructureTransitionReason.BEAR_TRAILING_DEFENSE_ADVANCED
                             ),
                             defense=defense,
                         )
@@ -340,9 +356,9 @@ def evaluate_n_market_structure(
                                 from_kind=kind,
                                 to_kind=NStructureKind.RANGE,
                                 reason_code=(
-                                    "BULL_STRUCTURE_BROKEN"
+                                    NStructureTransitionReason.BULL_STRUCTURE_BROKEN
                                     if kind is NStructureKind.BULL
-                                    else "BEAR_STRUCTURE_BROKEN"
+                                    else NStructureTransitionReason.BEAR_STRUCTURE_BROKEN
                                 ),
                                 defense=defense,
                             )
@@ -408,10 +424,11 @@ def _validate_inputs(
             segment_start_trading_day=swings.segment_start_trading_day,
             segment_end_trading_day=segment_end,
         )
-        exact_patterns = evaluate_n_patterns(
+        exact_patterns = _evaluate_n_patterns_from_exact_swings(
             bars,
             exact_swings,
             policy=policy,
+            inputs_validated=True,
         )
     except (NStructureContractError, NStructureSeriesError):
         raise NStructureSeriesError() from None
@@ -476,7 +493,7 @@ def _append_transition(
     transition_at: datetime,
     from_kind: NStructureKind,
     to_kind: NStructureKind,
-    reason_code: str,
+    reason_code: NStructureTransitionReason,
     defense: NSwingPivot | None,
 ) -> None:
     defense_id = defense.pivot_id if defense is not None else None
@@ -503,7 +520,7 @@ def _canonical_transition_id(
     transition_at: datetime,
     from_kind: NStructureKind,
     to_kind: NStructureKind,
-    reason_code: str,
+    reason_code: NStructureTransitionReason,
     trailing_defense_pivot_id: str | None,
 ) -> str:
     return "|".join(
@@ -512,7 +529,7 @@ def _canonical_transition_id(
             transition_at.astimezone(UTC).isoformat(),
             from_kind.value,
             to_kind.value,
-            reason_code,
+            reason_code.value,
             trailing_defense_pivot_id or "none",
         )
     )

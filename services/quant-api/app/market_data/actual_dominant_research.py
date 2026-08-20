@@ -29,7 +29,7 @@ class _DominantSegmentSummary(Protocol):
     def end_trading_day(self) -> date: ...
 
 
-class _ActualDominantResearchReader(Protocol):
+class ActualDominantResearchReader(Protocol):
     def query_actual_dominant_trading_days(
         self,
         request: ActualDominantTradingDayQuery,
@@ -40,14 +40,6 @@ class _ActualDominantResearchReader(Protocol):
         symbol: str,
         trading_day: date,
     ) -> _DominantSegmentSummary: ...
-
-
-class ActualDominantResearchSourceError(RuntimeError):
-    """Sanitized shared-loader boundary for unavailable source reads."""
-
-    def __init__(self, original_error: Exception) -> None:
-        super().__init__("actual dominant research source unavailable")
-        self.original_error = original_error
 
 
 class ActualDominantResearchSegmentIdentityError(ValueError):
@@ -63,14 +55,9 @@ class ActualDominantResearchSeries:
 class ActualDominantResearchSegmentLoader:
     def __init__(
         self,
-        market_data: _ActualDominantResearchReader,
-        *,
-        legacy_coverage_error_frequency: BarFrequency | None = None,
+        market_data: ActualDominantResearchReader,
     ) -> None:
         self._market_data = market_data
-        self._legacy_coverage_error_frequency = (
-            legacy_coverage_error_frequency
-        )
 
     def load(
         self,
@@ -150,20 +137,14 @@ class ActualDominantResearchSegmentLoader:
         self,
         request: ActualDominantTradingDayQuery,
     ) -> MarketSeriesResult:
-        try:
-            return self._market_data.query_actual_dominant_trading_days(request)
-        except Exception as exc:
-            raise ActualDominantResearchSourceError(exc) from None
+        return self._market_data.query_actual_dominant_trading_days(request)
 
     def _dominant_segment_for_day(
         self,
         symbol: str,
         trading_day: date,
     ) -> _DominantSegmentSummary:
-        try:
-            return self._market_data.dominant_segment_for_day(symbol, trading_day)
-        except Exception as exc:
-            raise ActualDominantResearchSourceError(exc) from None
+        return self._market_data.dominant_segment_for_day(symbol, trading_day)
 
     def _restore_true_segments(
         self,
@@ -183,7 +164,7 @@ class ActualDominantResearchSegmentLoader:
                 "rank1 segment identity is missing or inconsistent"
             )
         self._validate_segment_coverage(
-            {self._coverage_error_frequency(frequency): bars},
+            {frequency: bars},
             raw_segments,
         )
 
@@ -245,16 +226,10 @@ class ActualDominantResearchSegmentLoader:
                 "rank1 segment identity is missing or inconsistent"
             )
         self._validate_segment_coverage(
-            {self._coverage_error_frequency(frequency): bars},
+            {frequency: bars},
             tuple(restored),
         )
         return tuple(restored)
-
-    def _coverage_error_frequency(
-        self,
-        frequency: BarFrequency,
-    ) -> BarFrequency:
-        return self._legacy_coverage_error_frequency or frequency
 
     @staticmethod
     def _validate_segment_coverage(

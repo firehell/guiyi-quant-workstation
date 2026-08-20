@@ -1,6 +1,6 @@
 # N 字 Structural Domain V1 设计规格
 
-> 状态：Design approved by user；Planning Review 已收敛 Important findings。本文是 N 字 Structural Domain V1 的设计事实源，不代表策略有效、Candidate 可晋升、Alert Ready 或任何 production 授权。
+> 状态：IMPLEMENTED / RESEARCH_ONLY。本文是 N 字 Structural Domain V1 的唯一长期设计事实源；实现、测试与历史 evidence 已进入 `develop`，prospective OOS 仍 pending。本文不代表策略有效、Candidate 可晋升、Alert Ready 或任何 production 授权。
 >
 > 日期：2026-08-20
 >
@@ -491,6 +491,8 @@ Completion 可以发生在确认 N2_ORIGIN 的同一 completed boundary，只要
 
 这避免利用未知 intrabar 顺序，又不回写“第一根 N1 突破”事实。
 
+该规则保留为 Pattern 层的 local defensive contract。按本设计冻结的 previous-bar Swing reducer、outside epoch reset 和“先消费新 Pivot、再替换合法 base、最后检查 completion”的完整 producer 顺序，真实 bars 中“新 N completion 同时 strict break 自身 N2/ORIGIN”的正例不可达：对应 crossing 会先成为 outside reset，或先形成新的 opposite base 并替换旧 attempt。focused Pattern 测试可以用 synthetic exact-shape Pivot 验证 local event ordering，但不得把它表述为完整 bars→Swing→Pattern producer 的可达行情路径。
+
 ### 8.7 immutable completion
 
 ```python
@@ -669,7 +671,26 @@ Outside reset 本身不因“路径不明”自动删除已建立 BULL/BEAR。
 4. 只有 post-reset epoch 自己形成足够的 same-direction qualifying evidence，才允许 future defense advance；
 5. opposite-looking post-reset pivots不能在 defense 未破时直接自动反转现有 directional structure。
 
-### 11.7 immutable history
+### 11.7 same-boundary new defense + strict break
+
+当某根 completed 5m boundary 首次建立 BULL/BEAR Structure，或推进已有 directional Structure 的 trailing defense，而同一根 bar 的已知 high/low 已严格越过这个刚建立/推进的 defense 时：
+
+```text
+BULL: current.low  < new_defense.price
+BEAR: current.high > new_defense.price
+```
+
+同一个 `bar_end` 必须按固定事实顺序记录：
+
+```text
+1. Structure establishment / trailing-defense advancement
+2. BULL_STRUCTURE_BROKEN / BEAR_STRUCTURE_BROKEN
+3. final Structure state = RANGE
+```
+
+该顺序只表示截至 completed boundary 两组价格事实均已可知，不声称 intrabar 的真实先后顺序。禁止把已经被同 boundary strict crossing 的新 defense 保留到下一根 bar，禁止因 intrabar 顺序未知而丢弃已知 level breach，也禁止在该 boundary 自动反手建立相反方向 Structure。
+
+### 11.8 immutable history
 
 使用 snapshot + transition，不用“未来修改一个 Episode 对象”：
 
@@ -689,7 +710,7 @@ class NStructureTransition:
     transition_at: datetime
     from_kind: NStructureKind
     to_kind: NStructureKind
-    reason_code: str
+    reason_code: NStructureTransitionReason
     trailing_defense_pivot_id: str | None
 ```
 
@@ -709,7 +730,7 @@ Historical snapshot/transition 不回写；新的 boundary 追加新 snapshot/ev
 6. 若本 boundary strict breach N1，创建新 Completed N
 7. 对“本 boundary 新完成的 N”立即检查同-boundary N2/ORIGIN break，允许同 timestamp 记录
 8. 从 next boundary 起观察 Range Band first re-entry
-9. 基于 same-epoch completed-N + Pivot evidence 建立/推进 Structure
+9. 基于 same-epoch completed-N + Pivot evidence 建立/推进 Structure；若 current bar 已 strict 越过刚建立/推进的 defense，同 boundary 立即记录 break 并落为 RANGE
 10. append immutable snapshot/transition/event
 ```
 
@@ -764,6 +785,8 @@ requested trading-day window
 
 不得 import Catalog/store/RQData/Redis；SuBing 必须 zero regression。
 
+共享 loader 只负责还原 true segment、校验 frequency-accurate identity 并返回 causal prefix。底层 MarketDataService source exception 原样穿过 shared seam，由 consumer adapter 决定公开错误：N adapter 统一脱敏为稳定 `N_STRUCTURE_SOURCE_UNAVAILABLE`；SuBing adapter 保留既有 source error type/message/payload，并在自身模块内兼容旧 15m gap 的 5m 文案。共享 loader 不包含 SuBing-only legacy 参数，不暴露私有 Protocol，也不保存原异常供下游解包。
+
 ## 15. NStructureResearchService
 
 ```python
@@ -774,7 +797,7 @@ class NStructureResearchRequest:
     symbol: str | None
 ```
 
-每个 true segment 只跑一次 N kernel；Reducer 从 segment true start warm-up，但 report 只统计 `since..through` 内事实。
+每个 true segment 只通过公开 `evaluate_n_structure_segment()` 跑一次 N kernel：顺序生成 exact Swing、Pattern、Structure 三个 immutable trace；Structure 不重跑上游 reducer。Reducer 从 segment true start warm-up，但 report 只统计 `since..through` 内事实。Pattern replacement 必须记录 boundary timestamp，Research 直接按 requested window 投影，不允许为得到 prefix replacement count 重跑 kernel。每个 segment 只建立一次 `bar_end → index/trading_day` 映射，不得为每个 Completed N 线性扫描 bars。
 
 至少输出：
 
@@ -1102,6 +1125,8 @@ CANDIDATE_VALIDATION_SOURCE_UNAVAILABLE
 - first strict N1 breach completion；
 - equal N1 no completion；
 - same-boundary completion+break 记录边界事实但不声称 intrabar 顺序；
+- public Pattern interface 拒绝任何不等于 exact Swing reducer 输出的 supplied trace；
+- local synthetic Pivot 只允许通过内部 focused-test seam 验证不可达 defensive contract；
 - overshoot exact Decimal formula；
 - completion identity immutable；
 - N2/ORIGIN strict event once；
@@ -1123,6 +1148,8 @@ CANDIDATE_VALIDATION_SOURCE_UNAVAILABLE
 - equal non-directional；
 - trailing defense 只由 qualifying pair 推进；
 - strict defense break → RANGE；
+- same-boundary initial establishment + new-defense break → establishment、break、RANGE；
+- same-boundary trailing-defense advancement + new-defense break → advancement、break、RANGE；
 - break 不自动反手；
 - outside 可 path-independently break defense；
 - outside 未破 defense 时保留 active direction，但不跨 epoch 拼新 pair；
@@ -1132,12 +1159,14 @@ CANDIDATE_VALIDATION_SOURCE_UNAVAILABLE
 ### 24.5 Research/Candidate
 
 - MarketDataService 唯一 Historical path；
+- 每个 true segment 的 Swing/Pattern/Structure 各执行一次，无 Structure 上游重算、prefix replacement 重算或逐 Completed N 线性 bar lookup；
 - exact trading-day query；
 - true segment prefix warm-up；
 - SuBing segment loader zero regression；
 - N outcomes 可跨 trading day、不可跨 segment；
 - SuBing same-day/EMA21 zero regression；
 - shared Candidate schedule 不改变 SuBing payload；
+- shared loader 报告真实 frequency；N source error 脱敏，SuBing source type/message/payload 与 legacy gap 文案保持不变；
 - N retrospective through 2026-08-19；
 - 2026-08-20 embargo；
 - prospective starts 2026-08-21；
@@ -1200,35 +1229,33 @@ SuBing Lifecycle     N Structure V1
                  versioned evidence
 ```
 
-## 27. Implementation Tasks
+## 27. Implementation Authority
+
+本文只保留长期业务语义和可复算接口，是 N Structural Domain V1 的 active deep canonical。实现完成状态、验证计数、commit 与真实 evidence 见 `STATUS.md`；具体历史执行步骤只从 Git history 追溯，不再保留 active Plan 或 Task Contract。
+
+当前正式实现范围：
 
 ```text
-Task 1  Exact N Structure Policy
-Task 2  Sequential causal Swing reducer + epoch barrier
-Task 3  N completion + same-boundary break + Range Band facts
-Task 4  BULL/BEAR/RANGE Structure + trailing defense
-Task 5  Shared actual-dominant research segment loader + SuBing zero regression
-Task 6  Price-only outcomes + NStructureResearchService + readonly n-structure CLI
-Task 7  Shared Candidate validation schedule + SuBing Candidate zero regression
-Task 8  N Candidate/Protocol + N-specific Candidate Validation + CLI routing
-Task 9  Full causality/prefix/static regression + independent implementation Review + develop closeout
-Task 10 exact-develop real jm N baseline + Candidate evidence + independent Evidence Review
+Exact N Policy
+→ Sequential causal Swing + epoch
+→ Completed N / break / Range Band facts
+→ BULL / BEAR / RANGE + trailing defense
+→ shared actual-dominant Historical loader
+→ price-only outcome + readonly N research CLI
+→ N-specific Candidate Validation + versioned jm evidence
 ```
 
-Tasks 1～4 是价格结构公式/因果可信语义，Lane 3；本 Spec/Plan 的 docs merge 不授权实现，实施前仍需用户批准 Lane 3 Plan。Tasks 5～8 是 research/shared engineering，仍不得推导 production 权限。Task 10 是只读 Historical research。
+实现完成不授权 Candidate promotion、Alert/Runtime 接入、数据/DB 写入、通知、订单、main/tag/release 或 Runtime promotion。未来修改 Swing、N、Structure、outcome、embargo/OOS 等冻结语义必须创建新版本，不能覆盖 V1。
 
-## 28. Planning Review Findings 已处理
+## 28. Canonical Reachability Ruling
 
-本轮 Planning Review 修正：
+完整 producer 的 authority 是公开 `evaluate_n_structure_segment()`：
 
-1. outside reset 新增 `swing_epoch` barrier，N/新 Structure establishment 不得跨 ambiguous reset 拼接；
-2. outside ambiguity 与“已存在 level breach”分开，已有 N/Structure level crossing 仍可记录；
-3. 新 N completion 与自身 N2/ORIGIN 同 boundary crossing 定义为并列 boundary facts，不声称 intrabar 先后；
-4. `completion_overshoot_bps` 补精确公式；
-5. Range Band first re-entry 补 exact touch 规则并排除 completion bar；
-6. Structure 改用 immutable snapshot/transition，明确 outside 后 active direction 与 evidence epoch 关系；
-7. N 3/5/8 outcome 明确可跨 trading day、禁止跨 rank1 segment，同时保持 SuBing same-day zero regression；
-8. N Candidate Protocol 增加 exact `embargo_trading_days=[2026-08-20]`。
+```text
+bars → exact Swing → Pattern → Structure
+```
+
+public Pattern interface 必须拒绝 forged/non-reducer Swing；focused tests 只能通过内部 seam 构造 synthetic trace。§8.6 的 own-N same-boundary break 是 local defensive contract，在完整 producer 中不可达；§11.7 的 same-boundary Structure establishment/defense-advance + break 则由真实 bars producer 覆盖。两者不得混淆，也不得据此改变 frozen Swing/Pattern/Structure 公式。
 
 ## 29. 完成 Gate
 

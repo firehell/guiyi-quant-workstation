@@ -8,7 +8,6 @@ import pytest
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
     ActualDominantResearchSegmentIdentityError,
-    ActualDominantResearchSourceError,
 )
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
@@ -160,8 +159,8 @@ class _UnavailableMarketData:
         raise AssertionError("source query must fail first")
 
 
-def test_loader_types_and_sanitizes_source_failure() -> None:
-    with pytest.raises(ActualDominantResearchSourceError) as captured:
+def test_loader_preserves_source_failure_for_consumer_adapters() -> None:
+    with pytest.raises(FileNotFoundError) as captured:
         ActualDominantResearchSegmentLoader(_UnavailableMarketData()).load(
             symbol="jm",
             frequencies=(BarFrequency.M5,),
@@ -169,10 +168,8 @@ def test_loader_types_and_sanitizes_source_failure() -> None:
             through=_DAY_TWO,
         )
 
-    error = captured.value
-    assert str(error) == "actual dominant research source unavailable"
-    assert error.__cause__ is None
-    assert "/private/canonical" not in str(error)
+    assert str(captured.value) == "/private/canonical/jm-secret.parquet"
+    assert captured.value.__cause__ is None
 
 
 def test_loader_supports_one_frequency_without_cross_frequency_assumption() -> None:
@@ -286,7 +283,7 @@ def test_loader_fails_closed_for_segment_gap_or_overlap(
         )
 
 
-def test_loader_preserves_subing_gap_error_semantics_for_15m() -> None:
+def test_loader_reports_actual_frequency_for_cross_frequency_gap() -> None:
     complete_segment = (
         ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),
     )
@@ -312,12 +309,9 @@ def test_loader_preserves_subing_gap_error_semantics_for_15m() -> None:
 
     with pytest.raises(
         ValueError,
-        match="rank1 segment identity is incomplete for 5m",
+        match="rank1 segment identity is incomplete for 15m",
     ):
-        ActualDominantResearchSegmentLoader(
-            market_data,
-            legacy_coverage_error_frequency=BarFrequency.M5,
-        ).load(
+        ActualDominantResearchSegmentLoader(market_data).load(
             symbol="jm",
             frequencies=_FREQUENCIES,
             since=_DAY_ONE,

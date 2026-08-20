@@ -16,6 +16,7 @@ from app.market_data.n_structure_pattern import (
     NRangeBand,
     NRangeBandReentryEvent,
     NRangeBandRole,
+    _evaluate_n_patterns_from_exact_swings,
     evaluate_n_patterns,
 )
 from app.market_data.n_structure_policy import (
@@ -28,6 +29,8 @@ from app.market_data.n_structure_swing import (
     NSwingPivotKind,
     NSwingTrace,
     NStructureContractError,
+    NStructureSeriesError,
+    reduce_n_swings,
 )
 
 
@@ -35,6 +38,27 @@ _CONTRACT = "JM2701"
 _SEGMENT_START = date(2026, 8, 3)
 _TRADING_DAY = date(2026, 8, 19)
 _START = datetime(2026, 8, 19, 1, 5, tzinfo=UTC)
+
+
+class _BoundedIterationTuple(tuple[datetime, ...]):
+    """Fail if validation repeatedly rescans the full reset history."""
+
+    def __new__(
+        cls,
+        values: tuple[datetime, ...],
+        *,
+        max_iterations: int,
+    ) -> _BoundedIterationTuple:
+        instance = super().__new__(cls, values)
+        instance.max_iterations = max_iterations
+        instance.iterations = 0
+        return instance
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        self.iterations += 1
+        if self.iterations > self.max_iterations:
+            raise AssertionError("reset history was rescanned")
+        return super().__iter__()
 
 
 def _thaw_json(value: object) -> object:
@@ -128,7 +152,7 @@ def _evaluate(
     resets: tuple[int, ...] = (),
     policy: NStructurePolicy | None = None,
 ):
-    return evaluate_n_patterns(
+    return _evaluate_n_patterns_from_exact_swings(
         bars,
         _swing(pivots, resets=resets),
         policy=policy if policy is not None else load_n_structure_policy(),
@@ -161,12 +185,12 @@ def _assert_prefix_invariant(
 ) -> None:
     swing = _swing(pivots, resets=resets)
     policy = load_n_structure_policy()
-    full = evaluate_n_patterns(bars, swing, policy=policy)
+    full = _evaluate_n_patterns_from_exact_swings(bars, swing, policy=policy)
     replacement_counts: list[int] = []
 
     for length in range(1, len(bars) + 1):
         boundary = bars[length - 1].bar_end
-        prefix = evaluate_n_patterns(
+        prefix = _evaluate_n_patterns_from_exact_swings(
             bars[:length],
             _prefix_swing(swing, boundary),
             policy=policy,
@@ -185,6 +209,11 @@ def _assert_prefix_invariant(
             event
             for event in full.range_band_reentries
             if event.observed_at <= boundary
+        )
+        assert prefix.incomplete_attempt_replaced_at == tuple(
+            replaced_at
+            for replaced_at in full.incomplete_attempt_replaced_at
+            if replaced_at <= boundary
         )
         replacement_counts.append(prefix.incomplete_attempt_replaced_count)
 
@@ -751,6 +780,7 @@ def test_new_legal_same_epoch_base_replaces_incomplete_attempt_once() -> None:
     trace = _evaluate(bars, pivots)
 
     assert trace.incomplete_attempt_replaced_count == 1
+    assert trace.incomplete_attempt_replaced_at == (bars[4].bar_end,)
     assert len(trace.patterns) == 1
     assert trace.patterns[0].direction is NDirection.DOWN
     assert trace.patterns[0].origin == pivots[1]
@@ -866,6 +896,90 @@ def test_range_band_rejects_malformed_role_type_with_stable_error() -> None:
             upper=Decimal("12"),
             role="support_reference",  # type: ignore[arg-type]
         )
+
+
+def test_public_pattern_evaluator_rejects_non_reducer_swing_trace() -> None:
+    values = (
+        ("10", "9"),
+        ("9", "8.5"),
+        ("8.5", "8"),
+        ("9.5", "8.2"),
+        ("12", "9"),
+        ("11", "8.8"),
+        ("13", "9"),
+        ("14", "10"),
+        ("13", "9.5"),
+        ("15", "10"),
+    )
+    bars = tuple(
+        _bar(index, high=high, low=low)
+        for index, (high, low) in enumerate(values)
+    )
+    exact = reduce_n_swings(
+        bars,
+        source_timeframe=BarFrequency.M5,
+        contract=_CONTRACT,
+        segment_start_trading_day=_SEGMENT_START,
+        segment_end_trading_day=_TRADING_DAY,
+    )
+    assert exact.pivots
+    forged_pivot = replace(
+        exact.pivots[0],
+        price=exact.pivots[0].price + Decimal("0.1"),
+    )
+    forged = replace(
+        exact,
+        pivots=(forged_pivot, *exact.pivots[1:]),
+    )
+
+    with pytest.raises(
+        NStructureSeriesError,
+        match="N_STRUCTURE_SERIES_INVALID",
+    ):
+        evaluate_n_patterns(
+            bars,
+            forged,
+            policy=load_n_structure_policy(),
+        )
+
+
+def test_pattern_validation_does_not_rescan_resets_for_each_pivot() -> None:
+    values = (
+        ("10", "9"),
+        ("9", "8.5"),
+        ("8.5", "8"),
+        ("9.5", "8.2"),
+        ("12", "9"),
+        ("11", "8.8"),
+        ("13", "9"),
+        ("14", "10"),
+        ("13", "9.5"),
+        ("15", "10"),
+        ("16", "9"),
+    )
+    bars = tuple(
+        _bar(index, high=high, low=low)
+        for index, (high, low) in enumerate(values)
+    )
+    exact = reduce_n_swings(
+        bars,
+        source_timeframe=BarFrequency.M5,
+        contract=_CONTRACT,
+        segment_start_trading_day=_SEGMENT_START,
+        segment_end_trading_day=_TRADING_DAY,
+    )
+    assert len(exact.pivots) >= 3
+    assert exact.ambiguous_outside_reset_at
+    bounded_resets = _BoundedIterationTuple(
+        exact.ambiguous_outside_reset_at,
+        max_iterations=5,
+    )
+
+    evaluate_n_patterns(
+        bars,
+        replace(exact, ambiguous_outside_reset_at=bounded_resets),
+        policy=load_n_structure_policy(),
+    )
 
 
 def test_pattern_requires_exact_m5_research_only_policy() -> None:

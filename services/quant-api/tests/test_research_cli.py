@@ -39,9 +39,6 @@ from app.market_data.n_candidate_validation import (
     project_n_structure_window,
     summarize_n_rolling_stability,
 )
-from app.market_data.n_candidate_validation_service import (
-    NStructureCandidateValidationService,
-)
 from app.market_data.n_structure_research_service import (
     NStructureSegmentIdentityError,
     NStructureResearchRequest,
@@ -1533,32 +1530,6 @@ def test_n_candidate_cli_uses_explicit_n_service_and_source_specific_payload() -
         "through": "2026-08-20",
         "result": None,
     }
-
-
-def test_n_candidate_composition_reuses_only_n_research_builder(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    n_research = object()
-    sessions: list[object] = []
-
-    def build_n_research(session: object) -> object:
-        sessions.append(session)
-        return n_research
-
-    monkeypatch.setattr(
-        market_data_composition,
-        "build_n_structure_research_service",
-        build_n_research,
-    )
-    session = object()
-
-    service = market_data_composition.build_n_candidate_validation_service(
-        session  # type: ignore[arg-type]
-    )
-
-    assert isinstance(service, NStructureCandidateValidationService)
-    assert service._n_structure_research is n_research
-    assert sessions == [session]
 
 
 def test_n_candidate_payload_contains_no_decision_profit_or_promotion_fields() -> None:

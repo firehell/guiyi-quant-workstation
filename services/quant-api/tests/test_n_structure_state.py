@@ -23,6 +23,7 @@ from app.market_data.n_structure_policy import (
 from app.market_data.n_structure_state import (
     NStructureKind,
     NStructureTrace,
+    NStructureTransitionReason,
     evaluate_n_market_structure,
 )
 from app.market_data.n_structure_swing import (
@@ -330,6 +331,10 @@ def test_real_task2_task3_task4_producer_chain_establishes_bull() -> None:
         patterns.patterns[0].completed_at
     )
     assert trace.snapshots[-1].kind is NStructureKind.BULL
+    assert all(
+        isinstance(transition.reason_code, NStructureTransitionReason)
+        for transition in trace.transitions
+    )
     assert trace.snapshots[-1].trailing_defense == swings.pivots[-1]
     assert trace.snapshots[-1].completed_n_count_in_epoch == 2
 

@@ -17,6 +17,7 @@ from .n_structure_swing import (
     NSwingPivot,
     NSwingPivotKind,
     NSwingTrace,
+    reduce_n_swings,
 )
 
 
@@ -150,6 +151,7 @@ class NPatternTrace:
     patterns: tuple[CompletedNPattern, ...]
     break_events: tuple[NBreakEvent, ...]
     range_band_reentries: tuple[NRangeBandReentryEvent, ...]
+    incomplete_attempt_replaced_at: tuple[datetime, ...]
     incomplete_attempt_replaced_count: int
 
 
@@ -305,9 +307,44 @@ def evaluate_n_patterns(
     *,
     policy: NStructurePolicy,
 ) -> NPatternTrace:
-    """Evaluate one explicit completed-5m rank-1 segment without lookahead."""
+    """Evaluate an exact reducer-owned Swing trace for one completed-M5 segment."""
 
     _validate_inputs(bars, swings=swings, policy=policy)
+    segment_end = max(
+        (bar.trading_day for bar in bars),
+        default=swings.segment_start_trading_day,
+    )
+    try:
+        exact_swings = reduce_n_swings(
+            bars,
+            source_timeframe=policy.source_timeframe,
+            contract=swings.contract,
+            segment_start_trading_day=swings.segment_start_trading_day,
+            segment_end_trading_day=segment_end,
+        )
+    except (NStructureContractError, NStructureSeriesError):
+        raise NStructureSeriesError() from None
+    if swings != exact_swings:
+        raise NStructureSeriesError()
+    return _evaluate_n_patterns_from_exact_swings(
+        bars,
+        swings,
+        policy=policy,
+        inputs_validated=True,
+    )
+
+
+def _evaluate_n_patterns_from_exact_swings(
+    bars: Sequence[CanonicalBar],
+    swings: NSwingTrace,
+    *,
+    policy: NStructurePolicy,
+    inputs_validated: bool = False,
+) -> NPatternTrace:
+    """Internal seam for the segment kernel and focused Pattern tests."""
+
+    if not inputs_validated:
+        _validate_inputs(bars, swings=swings, policy=policy)
     pivots_by_confirmation: dict[datetime, NSwingPivot] = {
         pivot.confirmed_at: pivot for pivot in swings.pivots
     }
@@ -319,7 +356,7 @@ def evaluate_n_patterns(
     pending_assessments = _PendingAssessmentIndex()
     recent_pivots: list[NSwingPivot] = []
     incomplete: _IncompleteN | None = None
-    replaced_count = 0
+    replaced_at: list[datetime] = []
 
     for current in bars:
         new_assessment: _ActiveAssessment | None = None
@@ -347,7 +384,7 @@ def evaluate_n_patterns(
                     or candidate.identity != incomplete.identity
                 ):
                     if incomplete is not None:
-                        replaced_count += 1
+                        replaced_at.append(current.bar_end)
                     incomplete = candidate
 
             if incomplete is not None and _completion_breached(
@@ -378,7 +415,8 @@ def evaluate_n_patterns(
         patterns=tuple(patterns),
         break_events=tuple(break_events),
         range_band_reentries=tuple(reentry_events),
-        incomplete_attempt_replaced_count=replaced_count,
+        incomplete_attempt_replaced_at=tuple(replaced_at),
+        incomplete_attempt_replaced_count=len(replaced_at),
     )
 
 
@@ -416,6 +454,14 @@ def _validate_inputs(
     ):
         raise NStructureSeriesError()
 
+    epoch_by_bar_end: dict[datetime, int] = {}
+    reset_set = set(resets)
+    epoch = 0
+    for bar in bars:
+        if bar.bar_end in reset_set:
+            epoch += 1
+        epoch_by_bar_end[bar.bar_end] = epoch
+
     previous_confirmation: datetime | None = None
     for pivot in swings.pivots:
         if (
@@ -431,8 +477,7 @@ def _validate_inputs(
                 previous_confirmation is not None
                 and pivot.confirmed_at <= previous_confirmation
             )
-            or pivot.epoch
-            != sum(reset_at <= pivot.confirmed_at for reset_at in resets)
+            or pivot.epoch != epoch_by_bar_end.get(pivot.confirmed_at)
         ):
             raise NStructureSeriesError()
         previous_confirmation = pivot.confirmed_at

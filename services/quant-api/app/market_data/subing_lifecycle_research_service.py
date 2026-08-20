@@ -8,9 +8,9 @@ from statistics import median
 from types import MappingProxyType
 
 from .actual_dominant_research import (
+    ActualDominantResearchReader,
     ActualDominantResearchSegmentLoader,
-    ActualDominantResearchSourceError,
-    _ActualDominantResearchReader,
+    ActualDominantResearchSegmentIdentityError,
 )
 from .domain import (
     BarFrequency,
@@ -278,7 +278,7 @@ class SubingLifecycleResearchService:
 
     def __init__(
         self,
-        market_data: _ActualDominantResearchReader,
+        market_data: ActualDominantResearchReader,
         *,
         products: Sequence[str],
         calibration: SubingCalibration,
@@ -294,10 +294,7 @@ class SubingLifecycleResearchService:
             raise ValueError("products must contain ASCII product symbols")
         if getattr(policy, "policy_id", None) != _POLICY_ID:
             raise ValueError("lifecycle policy identity is invalid")
-        self._segment_loader = ActualDominantResearchSegmentLoader(
-            market_data,
-            legacy_coverage_error_frequency=BarFrequency.M5,
-        )
+        self._segment_loader = ActualDominantResearchSegmentLoader(market_data)
         self._products = normalized
         self._calibration = calibration
         self._policy = policy
@@ -319,8 +316,12 @@ class SubingLifecycleResearchService:
                     since=request.since,
                     through=request.through,
                 )
-            except ActualDominantResearchSourceError as exc:
-                raise exc.original_error from None
+            except ActualDominantResearchSegmentIdentityError as exc:
+                if str(exc) == "rank1 segment identity is incomplete for 15m":
+                    raise ActualDominantResearchSegmentIdentityError(
+                        "rank1 segment identity is incomplete for 5m"
+                    ) from None
+                raise
             segments = resolved.segments
             computation_bars = {
                 frequency: tuple(

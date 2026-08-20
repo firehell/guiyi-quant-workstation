@@ -207,6 +207,7 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   services/quant-api/tests/test_n_structure_swing.py \
   services/quant-api/tests/test_n_structure_pattern.py \
   services/quant-api/tests/test_n_structure_state.py \
+  services/quant-api/tests/test_n_structure_segment.py \
   services/quant-api/tests/data_foundation/test_actual_dominant_research.py \
   services/quant-api/tests/test_price_outcome.py \
   services/quant-api/tests/data_foundation/test_n_structure_research_service.py \

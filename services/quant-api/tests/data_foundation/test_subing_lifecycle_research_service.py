@@ -164,6 +164,48 @@ def test_shared_loader_preserves_subing_source_error_type_and_payload() -> None:
     assert captured.value.__cause__ is None
 
 
+def test_subing_adapter_preserves_legacy_5m_gap_message_for_15m_gap() -> None:
+    complete = (
+        ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),
+    )
+    incomplete = (
+        ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_ONE),
+    )
+    market_data = _WindowAwareMarketData(
+        probe={
+            BarFrequency.M5: _result(
+                _bars(BarFrequency.M5, (_DAY_ONE, _DAY_TWO)),
+                complete,
+            ),
+            BarFrequency.M15: _result(
+                _bars(BarFrequency.M15, (_DAY_ONE, _DAY_TWO)),
+                incomplete,
+            ),
+        },
+        full={},
+        true_segments=(
+            DominantContractSegmentSummary(
+                "jm",
+                "JM2609",
+                _DAY_ONE,
+                _DAY_TWO,
+            ),
+        ),
+    )
+    service = SubingLifecycleResearchService(
+        market_data,
+        products=("jm",),
+        calibration=load_accepted_subing_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="rank1 segment identity is incomplete for 5m",
+    ):
+        service.run(LifecycleResearchRequest(_DAY_ONE, _DAY_TWO, "jm"))
+
+
 def test_request_normalizes_symbol_and_rejects_invalid_window() -> None:
     request = LifecycleResearchRequest(
         since=_DAY_ONE,

@@ -7,10 +7,10 @@ import traceback
 
 import pytest
 
+from app.market_data import n_structure_research_service as research_module
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
     ActualDominantResearchSeries,
-    ActualDominantResearchSourceError,
 )
 from app.market_data.domain import (
     BarFrequency,
@@ -19,6 +19,7 @@ from app.market_data.domain import (
     ResolvedContractSegment,
 )
 from app.market_data.n_structure_policy import load_n_structure_policy
+from app.market_data.n_structure_segment import evaluate_n_structure_segment
 from app.market_data.n_structure_research_service import (
     NStructureSegmentIdentityError,
     NStructureResearchRequest,
@@ -105,9 +106,7 @@ class _FailingSegmentLoader:
     ("shared_error", "public_error", "code"),
     (
         (
-            ActualDominantResearchSourceError(
-                FileNotFoundError("/private/canonical/jm-secret.parquet")
-            ),
+            FileNotFoundError("/private/canonical/jm-secret.parquet"),
             NStructureSourceUnavailableError,
             "N_STRUCTURE_SOURCE_UNAVAILABLE",
         ),
@@ -152,7 +151,6 @@ def test_shared_loader_failures_map_to_stable_sanitized_n_errors(
     )
     assert "/private/canonical" not in rendered
     assert "FileNotFoundError" not in rendered
-    assert "ActualDominantResearchSourceError" not in rendered
 
 
 def test_reducer_uses_true_segment_prefix_but_counts_only_requested_window() -> None:
@@ -199,6 +197,55 @@ def test_reducer_uses_true_segment_prefix_but_counts_only_requested_window() -> 
     )
     assert result.horizon_summary[5].sample_count == 0
     assert result.horizon_summary[8].sample_count == 0
+
+
+def test_research_uses_one_segment_trace_without_legacy_rescans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def counted_segment(*args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        return evaluate_n_structure_segment(*args, **kwargs)  # type: ignore[arg-type]
+
+    def legacy_scan(*args: object, **kwargs: object) -> None:
+        raise AssertionError("research used a legacy linear rescan")
+
+    monkeypatch.setattr(
+        research_module,
+        "evaluate_n_structure_segment",
+        counted_segment,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        research_module,
+        "_bar_index",
+        legacy_scan,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        research_module,
+        "_prefix_replacement_count",
+        legacy_scan,
+        raising=False,
+    )
+    service = NStructureResearchService(
+        _FakeSegmentLoader(_bars()),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+
+    result = service.run(
+        NStructureResearchRequest(
+            since=date(2026, 8, 19),
+            through=date(2026, 8, 20),
+            symbol="jm",
+        )
+    )
+
+    assert calls == 1
+    assert result.completed_n_counts == {"up": 2, "down": 0}
 
 
 def test_outcomes_stop_at_requested_through_even_if_loader_returns_later_bars() -> None:

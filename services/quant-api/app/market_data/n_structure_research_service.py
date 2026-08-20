@@ -12,16 +12,12 @@ from typing import Protocol
 from .actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
     ActualDominantResearchSeries,
-    ActualDominantResearchSourceError,
 )
 from .domain import BarFrequency, CanonicalBar, ResolvedContractSegment
-from .n_structure_pattern import (
-    NDirection,
-    evaluate_n_patterns,
-)
+from .n_structure_pattern import NDirection
 from .n_structure_policy import NStructurePolicy, is_exact_n_structure_policy
-from .n_structure_state import evaluate_n_market_structure
-from .n_structure_swing import reduce_n_swings
+from .n_structure_segment import evaluate_n_structure_segment
+from .n_structure_state import NStructureTransitionReason
 from .price_outcome import (
     PriceDirection,
     PriceDirectionalOutcome,
@@ -162,21 +158,23 @@ class NStructureResearchService:
                     since=request.since,
                     through=request.through,
                 )
-            except ActualDominantResearchSourceError:
-                raise NStructureSourceUnavailableError() from None
             except ActualDominantResearchSegmentIdentityError:
                 raise NStructureSegmentIdentityError() from None
+            except Exception:
+                raise NStructureSourceUnavailableError() from None
             result = loaded.results.get(BarFrequency.M5)
             if result is None:
                 raise NStructureSegmentIdentityError()
-            for segment in loaded.segments:
-                bars = tuple(
-                    bar
-                    for bar in result.bars
-                    if segment.start_trading_day
-                    <= bar.trading_day
-                    <= min(segment.end_trading_day, request.through)
-                )
+            bars_by_segment = _partition_segment_bars(
+                result.bars,
+                segments=loaded.segments,
+                through=request.through,
+            )
+            for segment, bars in zip(
+                loaded.segments,
+                bars_by_segment,
+                strict=True,
+            ):
                 if not bars:
                     continue
                 self._add_segment(
@@ -230,21 +228,18 @@ class NStructureResearchService:
         since: date,
         through: date,
     ) -> None:
-        swings = reduce_n_swings(
+        segment_trace = evaluate_n_structure_segment(
             bars,
-            source_timeframe=BarFrequency.M5,
             contract=segment.contract,
             segment_start_trading_day=segment.start_trading_day,
             segment_end_trading_day=segment.end_trading_day,
-        )
-        patterns = evaluate_n_patterns(bars, swings, policy=self._policy)
-        structures = evaluate_n_market_structure(
-            bars,
-            swings=swings,
-            patterns=patterns,
             policy=self._policy,
         )
+        swings = segment_trace.swings
+        patterns = segment_trace.patterns
+        structures = segment_trace.structures
         days_by_time = {bar.bar_end: bar.trading_day for bar in bars}
+        bar_index = {bar.bar_end: index for index, bar in enumerate(bars)}
         requested = lambda timestamp: _in_requested_window(  # noqa: E731
             timestamp,
             days_by_time=days_by_time,
@@ -261,21 +256,18 @@ class NStructureResearchService:
         accumulator.ambiguous_outside_reset_count += sum(
             requested(reset_at) for reset_at in swings.ambiguous_outside_reset_at
         )
-        accumulator.incomplete_attempt_replaced_count += (
-            patterns.incomplete_attempt_replaced_count
-            - _prefix_replacement_count(
-                bars,
-                segment=segment,
-                since=since,
-                policy=self._policy,
-            )
+        accumulator.incomplete_attempt_replaced_count += sum(
+            requested(replaced_at)
+            for replaced_at in patterns.incomplete_attempt_replaced_at
         )
 
         for pattern in patterns.patterns:
             if not requested(pattern.completed_at):
                 continue
             accumulator.completed_n_counts[pattern.direction.value] += 1
-            index = _bar_index(bars, pattern.completed_at)
+            index = bar_index.get(pattern.completed_at)
+            if index is None:
+                raise ValueError("N completion is not aligned with its source bar")
             if bars[index].close != pattern.completion_bar_close:
                 raise ValueError("N completion entry is not aligned with its bar")
             direction = (
@@ -305,40 +297,42 @@ class NStructureResearchService:
             if not requested(transition.transition_at):
                 continue
             reason = transition.reason_code
-            if reason == "BULL_STRUCTURE_ESTABLISHED":
+            if reason is NStructureTransitionReason.BULL_STRUCTURE_ESTABLISHED:
                 accumulator.structure_established_counts["bull"] += 1
-            elif reason == "BEAR_STRUCTURE_ESTABLISHED":
+            elif reason is NStructureTransitionReason.BEAR_STRUCTURE_ESTABLISHED:
                 accumulator.structure_established_counts["bear"] += 1
-            elif reason == "RANGE_STRUCTURE_ESTABLISHED":
+            elif reason is NStructureTransitionReason.RANGE_STRUCTURE_ESTABLISHED:
                 accumulator.structure_established_counts["range"] += 1
-            elif reason == "BULL_STRUCTURE_BROKEN":
+            elif reason is NStructureTransitionReason.BULL_STRUCTURE_BROKEN:
                 accumulator.structure_break_counts["bull"] += 1
-            elif reason == "BEAR_STRUCTURE_BROKEN":
+            elif reason is NStructureTransitionReason.BEAR_STRUCTURE_BROKEN:
                 accumulator.structure_break_counts["bear"] += 1
 
 
-def _prefix_replacement_count(
-    bars: tuple[CanonicalBar, ...],
+def _partition_segment_bars(
+    bars: Sequence[CanonicalBar],
     *,
-    segment: ResolvedContractSegment,
-    since: date,
-    policy: NStructurePolicy,
-) -> int:
-    prefix = tuple(bar for bar in bars if bar.trading_day < since)
-    if not prefix:
-        return 0
-    swings = reduce_n_swings(
-        prefix,
-        source_timeframe=BarFrequency.M5,
-        contract=segment.contract,
-        segment_start_trading_day=segment.start_trading_day,
-        segment_end_trading_day=segment.end_trading_day,
-    )
-    return evaluate_n_patterns(
-        prefix,
-        swings,
-        policy=policy,
-    ).incomplete_attempt_replaced_count
+    segments: Sequence[ResolvedContractSegment],
+    through: date,
+) -> tuple[tuple[CanonicalBar, ...], ...]:
+    grouped: list[list[CanonicalBar]] = [[] for _ in segments]
+    segment_index = 0
+    for bar in bars:
+        if bar.trading_day > through:
+            continue
+        while (
+            segment_index < len(segments)
+            and bar.trading_day > segments[segment_index].end_trading_day
+        ):
+            segment_index += 1
+        if (
+            segment_index >= len(segments)
+            or bar.trading_day
+            < segments[segment_index].start_trading_day
+        ):
+            raise NStructureSegmentIdentityError()
+        grouped[segment_index].append(bar)
+    return tuple(tuple(segment_bars) for segment_bars in grouped)
 
 
 def _in_requested_window(
@@ -352,13 +346,6 @@ def _in_requested_window(
     if trading_day is None:
         raise ValueError("N fact is not aligned with its source bar")
     return since <= trading_day <= through
-
-
-def _bar_index(bars: Sequence[CanonicalBar], bar_end: datetime) -> int:
-    for index, bar in enumerate(bars):
-        if bar.bar_end == bar_end:
-            return index
-    raise ValueError("N completion is not aligned with its source bar")
 
 
 def _evaluate_horizon(
