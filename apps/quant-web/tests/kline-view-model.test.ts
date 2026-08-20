@@ -186,6 +186,57 @@ test('futures pane availability is derived from the visible logical window, not 
   assert.deepEqual(physicalBeforeWarmup, { kind: 'input_unavailable', reason: 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING' })
 })
 
+test('futures pane availability follows the rightmost physical-contract block after rollover', () => {
+  const supported = { period: '60m', seriesKind: 'actual_dominant' as const }
+  const contractAReady = futuresPoint({ physical_contract: 'AG2601' })
+
+  for (const [name, rightmost, expected] of [
+    [
+      'B state warmup',
+      futuresPoint({
+        physical_contract: 'AG2602', state_ready: false, caution_ready: false, ready: false,
+        state: null, reason: 'MFM_FUTURES_V1_WARMUP',
+      }),
+      { kind: 'state_warmup', reason: 'MFM_FUTURES_V1_WARMUP' },
+    ],
+    [
+      'B input unavailable',
+      futuresPoint({
+        physical_contract: 'AG2602', valid: false, state_ready: false, caution_ready: false, ready: false,
+        state: null, reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE',
+      }),
+      { kind: 'input_unavailable', reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE' },
+    ],
+    [
+      'B caution warmup',
+      futuresPoint({
+        physical_contract: 'AG2602', caution_ready: false, ready: false,
+        caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_WARMUP',
+      }),
+      { kind: 'caution_warmup', reason: 'MFM_FUTURES_V1_CAUTION_WARMUP' },
+    ],
+    [
+      'B ready',
+      futuresPoint({ physical_contract: 'AG2602' }),
+      { kind: 'ready', reason: null },
+    ],
+    [
+      'B conflict',
+      futuresPoint({
+        physical_contract: 'AG2602', caution: null,
+        caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT',
+      }),
+      { kind: 'conflict', reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT' },
+    ],
+  ] as const) {
+    assert.deepEqual(
+      resolveMainForceFuturesWindowAvailability(supported, [contractAReady, rightmost], { from: 0, to: 1 }),
+      expected,
+      name,
+    )
+  }
+})
+
 test('futures render model keeps signed scores separate from bilateral caution markers and clears as an empty model', () => {
   const long = futuresPoint({ time: 'long', signed_score: 100, state: 'long_build', caution: 'long_chase_caution', long_caution_score: 70 })
   const short = futuresPoint({ time: 'short', signed_score: -80, state: 'short_build', caution: 'short_chase_caution', short_caution_score: 75 })
