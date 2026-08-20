@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -294,8 +295,12 @@ class MarketRadarSectorOut(BaseModel):
 class MarketRadarResponse(BaseModel):
     """``/research/radar`` 全 active universe 的 freshness-aware 只读快照。"""
 
-    status: str
+    status: Literal["ready", "degraded"]
     expected_as_of: date
+    target_as_of: date
+    data_as_of: date
+    freshness_state: Literal["current", "pending_after_market", "degraded"]
+    freshness_message: str
     active_count: int
     participant_count: int
     stale: list[str]

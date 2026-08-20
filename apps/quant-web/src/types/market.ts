@@ -383,6 +383,10 @@ export interface MarketRadarSectorSummary {
 export interface MarketRadarResponse {
   status: 'ready' | 'degraded'
   expected_as_of: string
+  target_as_of: string
+  data_as_of: string
+  freshness_state: 'current' | 'pending_after_market' | 'degraded'
+  freshness_message: '当前完整' | '盘后更新待完成' | '数据异常'
   active_count: number
   participant_count: number
   stale: string[]
