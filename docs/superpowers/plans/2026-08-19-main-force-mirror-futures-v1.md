@@ -89,6 +89,7 @@ No Task touches `main`, a release worktree, an exact-tag Runtime worktree, or lo
 - `apps/quant-web/e2e/main-force-mirror-futures.spec.mjs` — three-tab, availability, marker, hover, no-refetch, responsive acceptance.
 - `services/quant-api/app/market_data/main_force_mirror_futures_research_service.py` — Historical-only, segment-local Shadow orchestration through `MarketDataService`.
 - `services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py` — read-path, event, outcome, and no-cross-segment tests.
+- `packages/quant-core/guiyi_quant/indicators/main_force_mirror.pyi` — final-review-only public typing facade for the byte-frozen V0 runtime module.
 
 ### Modify
 
@@ -115,6 +116,7 @@ No Task touches `main`, a release worktree, an exact-tag Runtime worktree, or lo
 - `docs/INDICATOR_KERNEL.md` — document implemented V1 exact contract after code is green.
 - `TESTING.md` — add focused V1 verification commands.
 - `STATUS.md` — Task 8 only, after all verification/review gates pass.
+- `tests/engineering/test_canonical_consistency.py` — final-review V0 runtime source-hash guard and release-candidate identity.
 
 ### Explicitly untouched
 
@@ -124,6 +126,12 @@ No Task touches `main`, a release worktree, an exact-tag Runtime worktree, or lo
 - Market Catalog/Canonical schema/data
 - Runtime/install/launchd files
 - `main`, release tags, Runtime worktrees
+
+Final-review amendment (2026-08-20): the implementation phase introduced typing-only/formatting drift in the
+otherwise frozen V0 runtime file. The final-review fix is the sole exception to the first untouched entry: restore
+`main_force_mirror.py` byte-for-byte to the pre-V1 `20eac36` blob, add a same-name minimal `main_force_mirror.pyi`
+for strict static typing, and guard the runtime source hash. This restores the original freeze; it does not authorize
+any V0 formula, output, version, golden, Registry, policy, or capability change.
 
 ---
 
@@ -1074,6 +1082,12 @@ Assert:
 Create markers from the V1 observation and attach them to the V1 histogram with `createSeriesMarkers`. Clear V1 markers whenever another tab is selected.
 
 Integration coverage amendment (2026-08-20): prove the marker text reaches Lightweight Charts with test-only Canvas instrumentation; do not add a production `globalThis` injection or signature telemetry seam. Persistent Alert markers are supported only on `actual_dominant` 5m/15m, while Futures V1 is supported only on 60m, so no legal production identity can display both simultaneously. Cover Alert preservation across the legal MACD/V0 pane switch through the real Alert API mock, and cover V1 dynamic markers independently on 60m.
+
+Rollover availability amendment (2026-08-20): after support and visible-range validation, Pane status is derived from
+the rightmost visible point/current physical-contract block only. A ready point in the older A block must never mask
+B warm-up or unavailability. The Playwright fixture must contain two non-overlapping resolved segments and verify B10,
+B21, B31 readiness, B hover identity at both visible edges, and no inherited A caution marker after a forced V1
+marker-series redraw over a B-only range.
 
 - [ ] **Step 7: Write hover RED tests**
 

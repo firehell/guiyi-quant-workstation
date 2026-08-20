@@ -1145,7 +1145,10 @@ V1 Tab 仅在：
 
 身份支持但局部 Bar 缺失 OI/segment 时，Tab 仍可打开，缺失区间逐点显示 unavailable。
 
-若当前可见窗口没有任何 `state_ready` point，则显示精确不可用说明。
+Pane availability 在支持集与可见范围校验后，只读取当前可见范围最右侧 point，也就是用户正在观察的
+最新 physical-contract block。该 point 的 unavailable、state warm-up、caution warm-up、conflict 或 ready
+状态直接决定 Pane 文案；左侧旧合约的 ready point 不得覆盖右侧新合约 warm-up。可见范围没有 point 时显示
+精确无数据说明。
 
 continuous 或其他周期直接 disabled。
 
@@ -1683,11 +1686,17 @@ Playwright 必须证明：
 - marker 不创建固定 ±92 数值点；
 - strength 100 与 marker 不重叠改变 scale；
 - “70 非资金比例”可见；
-- 换月后 warm-up；
+- 使用两个不重叠 `resolved_contract_segments` 真实经过 A→B 换月，并证明 B 第 10 根 state warm-up、
+  第 21 根 state ready/caution warm-up、第 31 根完整 ready；
+- B block 左右边缘 Hover 都显示 B 物理合约，且收窄到 B 后不继承 A marker；
 - OI unavailable 与 warm-up 文案不同；
 - Hover 缺失显示 `—`；
 - 无水平溢出；
 - production build 通过。
+
+V0 冻结回归必须证明 `main_force_mirror.py` 与 V1 开发前批准基线逐字一致；为保持完整静态类型门禁，
+同名 `main_force_mirror.pyi` 可作为只含公开合同的类型 facade，但不得改变运行时实现、公式、输出、
+version、golden 或 capability。
 
 ### 17.9 Shadow
 

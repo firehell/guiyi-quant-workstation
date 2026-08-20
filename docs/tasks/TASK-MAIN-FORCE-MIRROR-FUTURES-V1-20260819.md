@@ -366,6 +366,7 @@ A stop code is a blocking result, not permission to weaken validation.
 - no fixed ±92 caution data exists;
 - hover distinguishes missing, warm-up, caution warm-up, conflict, ready;
 - switching tabs does not fetch bars or alter the main chart; persistent Alert markers remain intact across their legal 5m/15m MACD/V0 pane switch, while 60m-only Futures V1 dynamic markers are verified independently because the two support sets do not overlap;
+- pane availability follows the rightmost visible point/current physical-contract block, so A-ready cannot mask B warm-up; a real two-segment A→B E2E proves B10/B21/B31 readiness, B hover identity, and no inherited A marker;
 - no responsive overflow;
 - production build passes.
 
@@ -378,6 +379,10 @@ A stop code is a blocking result, not permission to weaken validation.
 - CLI is readonly stdout JSON;
 - no promotion/recommendation/profitability field;
 - no real matrix run under this contract.
+
+Final-review freeze amendment (2026-08-20): `main_force_mirror.py` must be byte-identical to the pre-V1 `20eac36`
+runtime source. A same-name minimal `.pyi` may carry its exact public static contract so the full Mypy gate remains
+strict. This is a restoration of “V0 zero change”, not a V0 implementation change.
 
 ### Final
 

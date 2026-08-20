@@ -10,6 +10,8 @@
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
 - 当前 Git release 与 production Runtime 均为
   `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
+  `develop` 的 API/Web 版本面已准备为 `v1.6.2` candidate，但尚未合入 `main`、创建 tag/release 或切换
+  production Runtime。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
@@ -23,9 +25,12 @@
   设计代理，不是实测资金流；该指标仍为 `observation_only`，未进入 Alert、backtest、live
   或 notification consumer。production Runtime 仅部署其 Web 观察面，不改变能力边界。
 - `develop` 已完成 `main_force_mirror_futures_v1` 的 60m Web observation 与 Historical-only Shadow
-  实现及仓库原生验证；只支持 `contract / actual_dominant`，V0 的 code/version/formula/golden/capability
-  保持不变。V1 仍为 `observation_only`，未进入 Alert、notification、正式 backtest、Runtime consumer
-  或订单路径。本次未运行真实代表矩阵 Shadow，未形成策略有效性、正式证据或晋升结论。
+  实现及仓库原生验证；只支持 `contract / actual_dominant`。换月 Pane 状态严格取可见范围最右侧当前
+  physical-contract block，真实 AG2601→AG2612 回归锁定新 block 第 10/21/31 根 warm-up/readiness、
+  Hover 身份与 marker 不继承。V0 runtime 已逐字恢复为 V1 开发前冻结源码，静态类型由同名 `.pyi`
+  facade 承载，因此 code/version/formula/golden/capability 保持不变。V1 仍为 `observation_only`，未进入
+  Alert、notification、正式 backtest、Runtime consumer 或订单路径。本次未运行真实代表矩阵 Shadow，
+  未形成策略有效性、正式证据或晋升结论。
 - `v1.6.0` 同时包含完整 SuBing Lifecycle V2 research-only 代码链：exact policy、
   不可变领域合同、causal ConfirmedPivot/Breakout/Retest/lifecycle reducer、additive API/Web 投影与
   Historical-only Shadow CLI。V1 Factor/Signal/resolver、Alert Rule/Scope 和 `AlertRuntime` 消费边界不变；
