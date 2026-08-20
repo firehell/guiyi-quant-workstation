@@ -17,8 +17,9 @@ from app.alerts.clawbot import (
     clawbot_transport_configured_from_env,
     resolve_clawbot_dependency,
 )
-from app.alerts.clawbot_owner import ClawbotOwner, write_clawbot_owner_atomic
+from app.alerts.clawbot_owner import write_clawbot_owner_atomic
 from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage, format_alert_message
+from app.alerts.recipients import ClawbotRecipient, initialize_recipients_from_owner
 
 
 def _tree(tmp_path: Path) -> tuple[ClawbotDependency, Path]:
@@ -43,7 +44,7 @@ def _tree(tmp_path: Path) -> tuple[ClawbotDependency, Path]:
     owner_parent = tmp_path / "private"
     owner_parent.mkdir(mode=0o700)
     owner_parent.chmod(0o700)
-    owner = owner_parent / "owner.json"
+    recipients = owner_parent / "recipients.json"
     openclaw = tmp_path / "openclaw"
     node = tmp_path / "node"
     for executable in (openclaw, node):
@@ -66,12 +67,12 @@ def _tree(tmp_path: Path) -> tuple[ClawbotDependency, Path]:
         ),
         encoding="utf-8",
     )
-    dependency = ClawbotDependency(openclaw, node, root, state, config, owner, manifest)
+    dependency = ClawbotDependency(openclaw, node, root, state, config, recipients, manifest)
     return dependency, manifest
 
 
-def _owner() -> ClawbotOwner:
-    return ClawbotOwner(1, "openclaw-weixin", "owner", "fixture-account", "fixture-owner@im.wechat")
+def _recipient() -> ClawbotRecipient:
+    return ClawbotRecipient("owner", "fixture-account", "fixture-owner@im.wechat")
 
 
 def _message() -> AlertNotificationMessage:
@@ -113,7 +114,7 @@ def test_dependency_resolver_validates_exact_live_versions_and_plugin_root(tmp_p
         plugin_root=expected.plugin_root,
         state_dir=expected.state_dir,
         config_path=expected.config_path,
-        owner_path=expected.owner_path,
+        recipients_path=expected.recipients_path,
         versions_path=manifest,
         verify_versions=True,
         run_process=run,
@@ -157,7 +158,7 @@ def test_dependency_resolver_fails_closed(tmp_path: Path, problem: str) -> None:
         "plugin_root": expected.plugin_root,
         "state_dir": expected.state_dir,
         "config_path": expected.config_path,
-        "owner_path": expected.owner_path,
+        "recipients_path": expected.recipients_path,
         "versions_path": manifest,
     }
     if problem == "relative":
@@ -168,7 +169,7 @@ def test_dependency_resolver_fails_closed(tmp_path: Path, problem: str) -> None:
         expected.config_path.unlink()
         expected.config_path.mkdir()
     elif problem == "missing_parent":
-        values["owner_path"] = tmp_path / "missing/owner.json"
+        values["recipients_path"] = tmp_path / "missing/recipients.json"
     elif problem == "missing_package":
         (expected.plugin_root / "package.json").unlink()
     elif problem == "package_version":
@@ -218,7 +219,7 @@ def test_python_resolver_uses_manifest_module_paths_without_private_path_knowled
         plugin_root=expected.plugin_root,
         state_dir=expected.state_dir,
         config_path=expected.config_path,
-        owner_path=expected.owner_path,
+        recipients_path=expected.recipients_path,
         versions_path=manifest,
         verify_versions=False,
     )
@@ -321,7 +322,7 @@ def test_runner_failure_never_respawns_or_leaks_raw_child_output(tmp_path: Path,
         return subprocess.CompletedProcess(argv, 1, '{"status":"error","error":"CLAWBOT_CONTEXT_UNAVAILABLE"}', "private token")
 
     with pytest.raises(ClawbotError) as captured:
-        ClawbotRunner(dependency, run_process=run).probe(_owner())
+        ClawbotRunner(dependency, run_process=run).probe(_recipient())
 
     assert calls == 1
     assert "private" not in str(captured.value)
@@ -335,7 +336,7 @@ def test_sender_formats_once_and_canary_reports_provider_acceptance(tmp_path: Pa
         payloads.append(json.loads(str(kwargs["input"])))
         return subprocess.CompletedProcess(argv, 0, '{"status":"accepted","action":"send"}', "")
 
-    sender = ClawbotAlertSender(_owner(), ClawbotRunner(dependency, run_process=run))
+    sender = ClawbotAlertSender(_recipient(), ClawbotRunner(dependency, run_process=run))
     sender.send(_message())
     summary = sender.send_canary()
 
@@ -358,7 +359,7 @@ def test_canary_failure_is_one_attempt_and_sanitized(tmp_path: Path) -> None:
         calls += 1
         return subprocess.CompletedProcess(argv, 1, '{"status":"error","error":"CLAWBOT_SEND_FAILED"}', "private")
 
-    summary = ClawbotAlertSender(_owner(), ClawbotRunner(dependency, run_process=run)).send_canary()
+    summary = ClawbotAlertSender(_recipient(), ClawbotRunner(dependency, run_process=run)).send_canary()
 
     assert calls == 1
     assert summary.attempted == 1
@@ -372,11 +373,13 @@ def test_structural_transport_check_reads_files_without_version_probe_or_send(
     tmp_path: Path,
 ) -> None:
     dependency, manifest = _tree(tmp_path)
+    owner_path = dependency.recipients_path.with_name("owner.json")
     write_clawbot_owner_atomic(
-        dependency.owner_path,
+        owner_path,
         account_id="fixture-account",
         target_user_id="fixture-owner@im.wechat",
     )
+    initialize_recipients_from_owner(owner_path, dependency.recipients_path)
     monkeypatch.setattr(clawbot, "VERSIONS_PATH", manifest)
     for name, value in zip(clawbot.CLAWBOT_PATH_ENV_NAMES, (
         dependency.openclaw_bin,
@@ -384,7 +387,7 @@ def test_structural_transport_check_reads_files_without_version_probe_or_send(
         dependency.plugin_root,
         dependency.state_dir,
         dependency.config_path,
-        dependency.owner_path,
+        dependency.recipients_path,
     ), strict=True):
         monkeypatch.setenv(name, str(value))
     monkeypatch.setattr(
@@ -407,5 +410,34 @@ def test_structural_transport_check_reads_files_without_version_probe_or_send(
         encoding="utf-8",
     )
 
-    dependency.owner_path.chmod(0o644)
+    dependency.recipients_path.chmod(0o644)
     assert clawbot_transport_configured_from_env() is False
+
+
+def test_dependency_from_env_uses_only_the_v2_recipients_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    values = {
+        "GUIYI_OPENCLAW_BIN": tmp_path / "openclaw",
+        "GUIYI_OPENCLAW_NODE_BIN": tmp_path / "node",
+        "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT": tmp_path / "plugin",
+        "GUIYI_OPENCLAW_STATE_DIR": tmp_path / "state",
+        "GUIYI_OPENCLAW_CONFIG_PATH": tmp_path / "config.json",
+        "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH": tmp_path / "recipients.json",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, str(value))
+    monkeypatch.delenv("GUIYI_ALERT_CLAWBOT_OWNER_PATH", raising=False)
+    observed: dict[str, Path] = {}
+    marker = object()
+
+    def resolve(**kwargs: object) -> object:
+        observed.update({key: value for key, value in kwargs.items() if isinstance(value, Path)})
+        return marker
+
+    monkeypatch.setattr(clawbot, "resolve_clawbot_dependency", resolve)
+
+    assert clawbot.build_clawbot_dependency_from_env(verify_versions=False) is marker
+    assert observed["recipients_path"] == values["GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH"]
+    assert "owner_path" not in observed
