@@ -1,0 +1,215 @@
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime
+from types import MappingProxyType
+from typing import Protocol
+
+from .domain import (
+    ActualDominantTradingDayQuery,
+    BarFrequency,
+    CanonicalBar,
+    MarketSeriesResult,
+    ResolvedContractSegment,
+)
+
+
+class _DominantSegmentSummary(Protocol):
+    @property
+    def symbol(self) -> str: ...
+
+    @property
+    def contract(self) -> str: ...
+
+    @property
+    def start_trading_day(self) -> date: ...
+
+    @property
+    def end_trading_day(self) -> date: ...
+
+
+class _ActualDominantResearchReader(Protocol):
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult: ...
+
+    def dominant_segment_for_day(
+        self,
+        symbol: str,
+        trading_day: date,
+    ) -> _DominantSegmentSummary: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ActualDominantResearchSeries:
+    results: Mapping[BarFrequency, MarketSeriesResult]
+    segments: tuple[ResolvedContractSegment, ...]
+
+
+class ActualDominantResearchSegmentLoader:
+    def __init__(self, market_data: _ActualDominantResearchReader) -> None:
+        self._market_data = market_data
+
+    def load(
+        self,
+        *,
+        symbol: str,
+        frequencies: Sequence[BarFrequency],
+        since: date,
+        through: date,
+    ) -> ActualDominantResearchSeries:
+        requested_frequencies = tuple(frequencies)
+        if not requested_frequencies:
+            raise ValueError("rank1 segment identity is missing or inconsistent")
+
+        probe = {
+            frequency: self._market_data.query_actual_dominant_trading_days(
+                ActualDominantTradingDayQuery(
+                    symbol,
+                    frequency,
+                    since,
+                    through,
+                )
+            )
+            for frequency in requested_frequencies
+        }
+        probe_segments = {
+            frequency: self._restore_true_segments(
+                symbol,
+                probe[frequency],
+                since=since,
+                through=through,
+            )
+            for frequency in requested_frequencies
+        }
+        segments = probe_segments[requested_frequencies[0]]
+        if not segments or any(
+            probe_segments[frequency] != segments
+            for frequency in requested_frequencies[1:]
+        ):
+            raise ValueError("rank1 segment identity is missing or inconsistent")
+
+        full = {
+            frequency: self._market_data.query_actual_dominant_trading_days(
+                ActualDominantTradingDayQuery(
+                    symbol,
+                    frequency,
+                    segments[0].start_trading_day,
+                    through,
+                )
+            )
+            for frequency in requested_frequencies
+        }
+        full_segments = {
+            frequency: self._restore_true_segments(
+                symbol,
+                full[frequency],
+                since=segments[0].start_trading_day,
+                through=through,
+            )
+            for frequency in requested_frequencies
+        }
+        if any(
+            full_segments[frequency] != segments
+            for frequency in requested_frequencies
+        ):
+            raise ValueError("rank1 probe/full segment identity is inconsistent")
+        return ActualDominantResearchSeries(MappingProxyType(full), segments)
+
+    def _restore_true_segments(
+        self,
+        symbol: str,
+        result: MarketSeriesResult,
+        *,
+        since: date,
+        through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        bars = tuple(
+            bar for bar in result.bars if since <= bar.trading_day <= through
+        )
+        raw_segments = result.resolved_contract_segments
+        if not bars or not raw_segments:
+            raise ValueError("rank1 segment identity is missing or inconsistent")
+        self._validate_segment_coverage(
+            {BarFrequency.M5: bars},
+            raw_segments,
+        )
+
+        restored: list[ResolvedContractSegment] = []
+        for raw_segment in raw_segments:
+            segment_days = tuple(
+                bar.trading_day
+                for bar in bars
+                if raw_segment.start_trading_day
+                <= bar.trading_day
+                <= raw_segment.end_trading_day
+            )
+            if not segment_days:
+                continue
+            representative = segment_days[0]
+            summary = self._market_data.dominant_segment_for_day(
+                symbol,
+                representative,
+            )
+            if (
+                summary.symbol != symbol
+                or summary.contract != raw_segment.contract
+                or any(
+                    not (
+                        summary.start_trading_day
+                        <= segment_day
+                        <= summary.end_trading_day
+                    )
+                    for segment_day in segment_days
+                )
+                or not (
+                    summary.start_trading_day
+                    <= representative
+                    <= summary.end_trading_day
+                )
+            ):
+                raise ValueError(
+                    "rank1 segment identity conflicts with containing summary"
+                )
+            segment = ResolvedContractSegment(
+                summary.contract,
+                summary.start_trading_day,
+                summary.end_trading_day,
+            )
+            if restored and segment == restored[-1]:
+                continue
+            if restored and segment.start_trading_day <= restored[-1].end_trading_day:
+                raise ValueError("rank1 segment summaries overlap")
+            restored.append(segment)
+        if not restored:
+            raise ValueError("rank1 segment identity is missing or inconsistent")
+        self._validate_segment_coverage(
+            {BarFrequency.M5: bars},
+            tuple(restored),
+        )
+        return tuple(restored)
+
+    @staticmethod
+    def _validate_segment_coverage(
+        requested: Mapping[BarFrequency, tuple[CanonicalBar, ...]],
+        segments: tuple[ResolvedContractSegment, ...],
+    ) -> None:
+        for frequency, bars in requested.items():
+            covered: set[tuple[datetime, date]] = set()
+            for segment in segments:
+                for bar in bars:
+                    if (
+                        segment.start_trading_day
+                        <= bar.trading_day
+                        <= segment.end_trading_day
+                    ):
+                        identity = (bar.bar_end, bar.trading_day)
+                        if identity in covered:
+                            raise ValueError("rank1 segments overlap")
+                        covered.add(identity)
+            if len(covered) != len(bars):
+                raise ValueError(
+                    f"rank1 segment identity is incomplete for {frequency.value}"
+                )

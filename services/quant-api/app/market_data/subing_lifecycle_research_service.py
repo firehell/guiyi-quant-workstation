@@ -6,16 +6,16 @@ from datetime import date, datetime
 from decimal import Decimal
 from statistics import median
 from types import MappingProxyType
-from typing import Protocol
 
+from .actual_dominant_research import (
+    ActualDominantResearchSegmentLoader,
+    _ActualDominantResearchReader,
+)
 from .domain import (
-    ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
-    MarketSeriesResult,
     ResolvedContractSegment,
 )
-from .market_data_service import DominantContractSegmentSummary
 from .subing_calibration import (
     DirectionalSide,
     HorizonEvaluation,
@@ -104,29 +104,10 @@ class SubingLifecycleResearchResult:
     horizon_summary: Mapping[int, HorizonEvaluation]
 
 
-class _MarketDataReader(Protocol):
-    def query_actual_dominant_trading_days(
-        self,
-        request: ActualDominantTradingDayQuery,
-    ) -> MarketSeriesResult: ...
-
-    def dominant_segment_for_day(
-        self,
-        symbol: str,
-        trading_day: date,
-    ) -> DominantContractSegmentSummary: ...
-
-
 @dataclass(frozen=True, slots=True)
 class _SegmentSeries:
     bars: tuple[CanonicalBar, ...]
     factors: tuple[SubingFactorResult, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _ResolvedProductSeries:
-    results: Mapping[BarFrequency, MarketSeriesResult]
-    segments: tuple[ResolvedContractSegment, ...]
 
 
 @dataclass(slots=True)
@@ -296,7 +277,7 @@ class SubingLifecycleResearchService:
 
     def __init__(
         self,
-        market_data: _MarketDataReader,
+        market_data: _ActualDominantResearchReader,
         *,
         products: Sequence[str],
         calibration: SubingCalibration,
@@ -312,7 +293,7 @@ class SubingLifecycleResearchService:
             raise ValueError("products must contain ASCII product symbols")
         if getattr(policy, "policy_id", None) != _POLICY_ID:
             raise ValueError("lifecycle policy identity is invalid")
-        self._market_data = market_data
+        self._segment_loader = ActualDominantResearchSegmentLoader(market_data)
         self._products = normalized
         self._calibration = calibration
         self._policy = policy
@@ -327,7 +308,12 @@ class SubingLifecycleResearchService:
         accumulator = _ResearchAccumulator()
 
         for product in products:
-            resolved = self._query_product(product, request)
+            resolved = self._segment_loader.load(
+                symbol=product,
+                frequencies=(BarFrequency.M5, BarFrequency.M15),
+                since=request.since,
+                through=request.through,
+            )
             segments = resolved.segments
             computation_bars = {
                 frequency: tuple(
@@ -339,7 +325,6 @@ class SubingLifecycleResearchService:
                 )
                 for frequency in (BarFrequency.M5, BarFrequency.M15)
             }
-            self._validate_segment_coverage(computation_bars, segments)
             for segment in segments:
                 series = {
                     frequency: self._segment_series(
@@ -408,154 +393,6 @@ class SubingLifecycleResearchService:
         if symbol not in self._products:
             raise ValueError("symbol is outside the active product scope")
         return (symbol,)
-
-    def _query_product(
-        self,
-        symbol: str,
-        request: LifecycleResearchRequest,
-    ) -> _ResolvedProductSeries:
-        probe = {
-            frequency: self._market_data.query_actual_dominant_trading_days(
-                ActualDominantTradingDayQuery(
-                    symbol,
-                    frequency,
-                    request.since,
-                    request.through,
-                )
-            )
-            for frequency in (BarFrequency.M5, BarFrequency.M15)
-        }
-        probe_segments = {
-            frequency: self._restore_true_segments(
-                symbol,
-                probe[frequency],
-                since=request.since,
-                through=request.through,
-            )
-            for frequency in (BarFrequency.M5, BarFrequency.M15)
-        }
-        segments = probe_segments[BarFrequency.M5]
-        if not segments or segments != probe_segments[BarFrequency.M15]:
-            raise ValueError("rank1 segment identity is missing or inconsistent")
-
-        full = {
-            frequency: self._market_data.query_actual_dominant_trading_days(
-                ActualDominantTradingDayQuery(
-                    symbol,
-                    frequency,
-                    segments[0].start_trading_day,
-                    request.through,
-                )
-            )
-            for frequency in (BarFrequency.M5, BarFrequency.M15)
-        }
-        full_segments = {
-            frequency: self._restore_true_segments(
-                symbol,
-                full[frequency],
-                since=segments[0].start_trading_day,
-                through=request.through,
-            )
-            for frequency in (BarFrequency.M5, BarFrequency.M15)
-        }
-        if (
-            full_segments[BarFrequency.M5] != segments
-            or full_segments[BarFrequency.M15] != segments
-        ):
-            raise ValueError("rank1 probe/full segment identity is inconsistent")
-        return _ResolvedProductSeries(MappingProxyType(full), segments)
-
-    def _restore_true_segments(
-        self,
-        symbol: str,
-        result: MarketSeriesResult,
-        *,
-        since: date,
-        through: date,
-    ) -> tuple[ResolvedContractSegment, ...]:
-        bars = tuple(
-            bar for bar in result.bars if since <= bar.trading_day <= through
-        )
-        raw_segments = result.resolved_contract_segments
-        if not bars or not raw_segments:
-            raise ValueError("rank1 segment identity is missing or inconsistent")
-        self._validate_segment_coverage(
-            {BarFrequency.M5: bars},
-            raw_segments,
-        )
-
-        restored: list[ResolvedContractSegment] = []
-        for raw_segment in raw_segments:
-            segment_days = tuple(
-                bar.trading_day
-                for bar in bars
-                if raw_segment.start_trading_day
-                <= bar.trading_day
-                <= raw_segment.end_trading_day
-            )
-            if not segment_days:
-                continue
-            representative = segment_days[0]
-            summary = self._market_data.dominant_segment_for_day(
-                symbol,
-                representative,
-            )
-            if (
-                summary.symbol != symbol
-                or summary.contract != raw_segment.contract
-                or any(
-                    not (
-                        summary.start_trading_day
-                        <= segment_day
-                        <= summary.end_trading_day
-                    )
-                    for segment_day in segment_days
-                )
-                or not (
-                    summary.start_trading_day
-                    <= representative
-                    <= summary.end_trading_day
-                )
-            ):
-                raise ValueError(
-                    "rank1 segment identity conflicts with containing summary"
-                )
-            segment = ResolvedContractSegment(
-                summary.contract,
-                summary.start_trading_day,
-                summary.end_trading_day,
-            )
-            if restored and segment == restored[-1]:
-                continue
-            if restored and segment.start_trading_day <= restored[-1].end_trading_day:
-                raise ValueError("rank1 segment summaries overlap")
-            restored.append(segment)
-        if not restored:
-            raise ValueError("rank1 segment identity is missing or inconsistent")
-        self._validate_segment_coverage(
-            {BarFrequency.M5: bars},
-            tuple(restored),
-        )
-        return tuple(restored)
-
-    @staticmethod
-    def _validate_segment_coverage(
-        requested: Mapping[BarFrequency, tuple[CanonicalBar, ...]],
-        segments: tuple[ResolvedContractSegment, ...],
-    ) -> None:
-        for frequency, bars in requested.items():
-            covered: set[tuple[datetime, date]] = set()
-            for segment in segments:
-                for bar in bars:
-                    if segment.start_trading_day <= bar.trading_day <= segment.end_trading_day:
-                        identity = (bar.bar_end, bar.trading_day)
-                        if identity in covered:
-                            raise ValueError("rank1 segments overlap")
-                        covered.add(identity)
-            if len(covered) != len(bars):
-                raise ValueError(
-                    f"rank1 segment identity is incomplete for {frequency.value}"
-                )
 
     def _segment_series(
         self,
