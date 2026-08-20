@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
+from app.db.base import Base
+from app.market_data.catalog import MarketCatalog
 from app.market_data import composition
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
+    DatasetKey,
     MarketSeriesPageResult,
     SeriesKind,
     SeriesPageQuery,
@@ -20,6 +25,7 @@ from app.market_data.market_data_service import (
     DominantContractSegmentSummary,
     DominantContractSummary,
     MarketDataError,
+    MarketDataService,
 )
 from app.market_data.market_read_service import MarketReadState
 from app.market_data.subing_calibration import SubingCalibration, SubingCalibrationError
@@ -50,10 +56,117 @@ from app.market_data.subing_research import (
     calculate_subing_factor,
     calculate_subing_factor_series as calculate_factor_series,
 )
+from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
+from app.models import Exchange, Instrument, TradingSession
 
 
 _SEGMENT_START = date(2026, 8, 3)
 _NOW = datetime(2026, 8, 3, 13, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def real_market_session() -> Session:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            (
+                Exchange(code="DCE", name="DCE"),
+                Instrument(
+                    symbol="jm",
+                    name="JM",
+                    exchange_code="DCE",
+                    is_active=True,
+                ),
+                TradingSession(
+                    exchange_code="DCE",
+                    instrument_symbol="jm",
+                    session_name="day",
+                    start_time=time(9),
+                    end_time=time(15),
+                    effective_from=date(2025, 1, 1),
+                    is_active=True,
+                ),
+            )
+        )
+        session.commit()
+        yield session
+
+
+def test_current_intraday_snapshot_uses_real_latest_page_beyond_canonical_edge(
+    real_market_session: Session,
+    tmp_path: Path,
+) -> None:
+    """Catches current reads sending wall-clock cutoffs beyond Catalog coverage."""
+    history = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=150,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 5, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=50,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 0, 15, tzinfo=UTC),
+            first_close=Decimal("100"),
+        ),
+    }
+    live = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=3,
+            trading_day=_SEGMENT_START,
+            first_end=datetime(2026, 8, 3, 12, 35, tzinfo=UTC),
+            first_close=Decimal("250"),
+        ),
+        BarFrequency.M15: (
+            _bar(
+                datetime(2026, 8, 3, 12, 45, tzinfo=UTC),
+                _SEGMENT_START,
+                Decimal("250"),
+            ),
+        ),
+    }
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(real_market_session, tmp_path)
+    for frequency in (BarFrequency.M5, BarFrequency.M15):
+        bars = history[frequency]
+        partition = store.publish(
+            PublishRequest(
+                dataset=DatasetKey("contract", "jm", "JM2609", frequency),
+                year=bars[0].trading_day.year,
+                month=bars[0].trading_day.month,
+                bars=bars,
+                expected_bar_ends=tuple(bar.bar_end for bar in bars),
+            )
+        )
+        catalog.register_partition(partition)
+    real_market_session.commit()
+
+    result = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_RealHistoryMarketRead(
+            history,
+            MarketDataService(catalog, store),
+            live=live,
+            live_available=True,
+        ),
+        calibration=_pending_calibration(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+    assert result.primary.snapshot is not None
+    assert result.primary.snapshot.bar_end == datetime(
+        2026, 8, 3, 12, 45, tzinfo=UTC
+    )
+    assert result.companion is not None
+    assert result.companion.snapshot is not None
+    assert result.companion.snapshot.bar_end == datetime(
+        2026, 8, 3, 12, 45, tzinfo=UTC
+    )
+    assert result.source_mode == "canonical_live"
 
 
 def test_snapshot_reads_only_the_current_rank1_contract_segment() -> None:
@@ -158,6 +271,44 @@ def test_future_historical_bar_is_excluded_from_v1_and_lifecycle() -> None:
     assert result.primary.snapshot is not None
     assert result.primary.snapshot.bar_end == completed_5m[-1].bar_end
     assert result.lifecycle.observed_at == completed_5m[-1].bar_end
+
+
+def test_current_latest_bootstrap_restarts_strictly_after_concurrent_future_publish() -> None:
+    """Catches a post-state Canonical publish shrinking the causal 300-Bar projection."""
+    history = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=400,
+            trading_day=_SEGMENT_START,
+            first_end=_NOW - timedelta(minutes=5 * 398),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=400,
+            trading_day=_SEGMENT_START,
+            first_end=_NOW - timedelta(minutes=15 * 398),
+            first_close=Decimal("100"),
+        ),
+    }
+    strict = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_CursorHonoringMarketRead(history, live_available=False),
+        calibration=_accepted_calibration(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+    raced = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=_StaleCanonicalEndMarketRead(history, live_available=False),
+        calibration=_accepted_calibration(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+    assert raced.primary == strict.primary
+    assert raced.companion == strict.companion
+    assert raced.primary.snapshot is not None
+    assert raced.primary.snapshot.bar_end == _NOW
+    assert raced.companion is not None
+    assert raced.companion.snapshot is not None
+    assert raced.companion.snapshot.bar_end == _NOW
 
 
 def test_future_live_bar_is_excluded_from_v1_and_lifecycle() -> None:
@@ -1665,6 +1816,15 @@ class _HistoricalOnlyMarketRead(_FakeMarketRead):
         raise AssertionError("1d SuBing must not query Live snapshot")
 
 
+class _RealHistoryMarketRead(_FakeMarketRead):
+    def __init__(self, history, market_data: MarketDataService, **kwargs) -> None:
+        super().__init__(history, **kwargs)
+        self.market_data = market_data
+
+    def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        return self.market_data.query_page(request)
+
+
 class _CursorHonoringMarketRead(_FakeMarketRead):
     def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         assert request.series_kind is SeriesKind.CONTRACT
@@ -1688,6 +1848,12 @@ class _CursorHonoringMarketRead(_FakeMarketRead):
             next_before=bars[0].bar_end if has_more_before else None,
             resolved_contract_segments=(),
         )
+
+
+class _StaleCanonicalEndMarketRead(_CursorHonoringMarketRead):
+    def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:
+        state = super().state(identity, now)
+        return replace(state, canonical_end=now - timedelta(minutes=1))
 
 
 class _FakeLifecycleCoverage:
@@ -1737,8 +1903,10 @@ class _InvalidPaginationMarketRead(_CursorHonoringMarketRead):
         if call == 1 and page.bars:
             self.first_page_oldest[request.frequency] = page.bars[0]
         if self.fault == "cursor_not_progressing" and call == 1:
-            assert request.before is not None
-            return replace(page, next_before=request.before)
+            return replace(
+                page,
+                next_before=(request.before or page.bars[-1].bar_end),
+            )
         if self.fault == "duplicate_bar" and call == 2:
             duplicate = self.first_page_oldest[request.frequency]
             bars = (*page.bars[1:], duplicate)

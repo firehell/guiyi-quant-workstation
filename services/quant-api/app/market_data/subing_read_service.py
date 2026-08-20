@@ -201,6 +201,7 @@ class SubingReadService:
                 segment.start_trading_day,
                 segment.end_trading_day,
                 now,
+                None,
             )
             primary_series = calculate_subing_factor_series(
                 primary_bars,
@@ -379,6 +380,10 @@ class SubingReadService:
             frequency: _identity(symbol, frequency, contract)
             for frequency in (BarFrequency.M5, BarFrequency.M15)
         }
+        states = {
+            frequency: self._market_read.state(identities[frequency], now)
+            for frequency in (BarFrequency.M5, BarFrequency.M15)
+        }
         if self._lifecycle_policy is None:
             historical: dict[BarFrequency, _HistoricalIntradaySeries] = {}
             for frequency in (BarFrequency.M5, BarFrequency.M15):
@@ -387,6 +392,7 @@ class SubingReadService:
                     segment_start,
                     segment_end,
                     now,
+                    states[frequency].canonical_end,
                 )
                 historical[frequency] = _HistoricalIntradaySeries(
                     projection_bars=bars,
@@ -399,13 +405,10 @@ class SubingReadService:
                     segment_start,
                     segment_end,
                     now,
+                    states[frequency].canonical_end,
                 )
                 for frequency in (BarFrequency.M5, BarFrequency.M15)
             }
-        states = {
-            frequency: self._market_read.state(identities[frequency], now)
-            for frequency in (BarFrequency.M5, BarFrequency.M15)
-        }
         live_reason: str | None = None
         if any(
             state.live_contract is not None and state.live_contract != contract
@@ -519,9 +522,12 @@ class SubingReadService:
         segment_start: date,
         segment_end: date,
         cutoff: datetime,
+        canonical_end: datetime | None,
     ) -> tuple[CanonicalBar, ...]:
-        page = self._market_read.history_page(
-            replace(identity, before=cutoff + timedelta(microseconds=1))
+        _request, page = self._historical_bootstrap_page(
+            identity,
+            cutoff=cutoff,
+            canonical_end=canonical_end,
         )
         if any(bar.trading_day > segment_end for bar in page.bars):
             raise MarketDataError("DOMINANT_SEGMENT_HISTORY_INCONSISTENT")
@@ -543,17 +549,21 @@ class SubingReadService:
         segment_start: date,
         segment_end: date,
         cutoff: datetime,
+        canonical_end: datetime | None,
     ) -> _HistoricalIntradaySeries:
         if self._lifecycle_coverage is None:
             raise MarketDataError("DOMINANT_SEGMENT_HISTORY_COVERAGE_UNAVAILABLE")
-        request = replace(identity, before=cutoff + timedelta(microseconds=1))
+        request, page = self._historical_bootstrap_page(
+            identity,
+            cutoff=cutoff,
+            canonical_end=canonical_end,
+        )
         pages: list[tuple[CanonicalBar, ...]] = []
         seen: set[datetime] = set()
         projection_bars: tuple[CanonicalBar, ...] | None = None
         reached_segment_start = False
 
         while True:
-            page = self._market_read.history_page(request)
             _validate_history_page(page, request=request)
             if any(bar.trading_day > segment_end for bar in page.bars):
                 raise MarketDataError("DOMINANT_SEGMENT_HISTORY_INCONSISTENT")
@@ -604,6 +614,7 @@ class SubingReadService:
                 break
             assert page.next_before is not None
             request = replace(request, before=page.next_before)
+            page = self._market_read.history_page(request)
 
         full_bars = _segment_bars(
             tuple(bar for page_bars in reversed(pages) for bar in page_bars),
@@ -621,6 +632,32 @@ class SubingReadService:
             projection_bars=projection_bars or (),
             lifecycle_bars=full_bars,
         )
+
+    def _historical_bootstrap_page(
+        self,
+        identity: SeriesPageQuery,
+        *,
+        cutoff: datetime,
+        canonical_end: datetime | None,
+    ) -> tuple[SeriesPageQuery, MarketSeriesPageResult]:
+        request = replace(
+            identity,
+            before=(
+                None
+                if canonical_end is not None and cutoff >= canonical_end
+                else cutoff + timedelta(microseconds=1)
+            ),
+        )
+        page = self._market_read.history_page(request)
+        if request.before is None and any(
+            bar.bar_end > cutoff for bar in page.bars
+        ):
+            request = replace(
+                identity,
+                before=cutoff + timedelta(microseconds=1),
+            )
+            page = self._market_read.history_page(request)
+        return request, page
 
     def _merge_live(
         self,
@@ -731,8 +768,10 @@ def _validate_history_page(
             and (
                 not page.bars
                 or page.next_before != page.bars[0].bar_end
-                or request.before is None
-                or page.next_before >= request.before
+                or (
+                    request.before is not None
+                    and page.next_before >= request.before
+                )
             )
         )
         or (not page.has_more_before and page.next_before is not None)
