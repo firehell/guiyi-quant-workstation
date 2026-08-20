@@ -16,6 +16,7 @@ from .domain import (
     BarFrequency,
     CanonicalBar,
     ResolvedContractSegment,
+    normalize_contract_for_symbol,
 )
 from .subing_calibration import (
     DirectionalSide,
@@ -31,6 +32,7 @@ from .subing_lifecycle import (
     SubingLifecycleSnapshot,
     SubingLifecycleTrace,
     SubingLifecycleTransition,
+    SubingOpportunityKey,
     evaluate_subing_direction_context,
     evaluate_subing_lifecycle,
 )
@@ -106,9 +108,53 @@ class SubingLifecycleResearchResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SubingLifecycleEntryResearchEvent:
+    event_id: str
+    symbol: str
+    contract: str
+    segment_start_trading_day: date
+    observed_at: datetime
+    trading_day: date
+    segment_bar_index: int
+    direction: SubingDirection
+    opportunity_key: SubingOpportunityKey
+    confirmation_source: ConfirmationSource
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.event_id, str)
+            or not self.event_id
+            or not _valid_symbol(self.symbol)
+            or normalize_contract_for_symbol(self.symbol, self.contract)
+            != self.contract
+            or type(self.segment_start_trading_day) is not date
+            or not _aware_datetime(self.observed_at)
+            or type(self.trading_day) is not date
+            or self.trading_day < self.segment_start_trading_day
+            or type(self.segment_bar_index) is not int
+            or self.segment_bar_index < 0
+            or self.direction not in {SubingDirection.LONG, SubingDirection.SHORT}
+            or not isinstance(self.opportunity_key, SubingOpportunityKey)
+            or self.opportunity_key.symbol.lower() != self.symbol
+            or self.opportunity_key.contract != self.contract
+            or self.opportunity_key.segment_start_trading_day
+            != self.segment_start_trading_day
+            or self.opportunity_key.direction is not self.direction
+            or not isinstance(self.confirmation_source, ConfirmationSource)
+        ):
+            raise ValueError("MULTI_CANDIDATE_EVENT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class _SegmentSeries:
     bars: tuple[CanonicalBar, ...]
     factors: tuple[SubingFactorResult, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _SubingResearchProjection:
+    result: SubingLifecycleResearchResult
+    entry_events: tuple[SubingLifecycleEntryResearchEvent, ...]
 
 
 @dataclass(slots=True)
@@ -133,6 +179,7 @@ class _ResearchAccumulator:
         default_factory=lambda: {horizon: [] for horizon in _HORIZONS}
     )
     segment_count: int = 0
+    entry_events: list[SubingLifecycleEntryResearchEvent] = field(default_factory=list)
 
     def add_trace(
         self,
@@ -140,6 +187,8 @@ class _ResearchAccumulator:
         series_5m: _SegmentSeries,
         series_15m: _SegmentSeries,
         *,
+        symbol: str,
+        segment: ResolvedContractSegment,
         calibration: SubingCalibration,
         since: date,
         through: date,
@@ -203,10 +252,14 @@ class _ResearchAccumulator:
                 transition.to_stage is LifecycleStage.SETUP_ARMED
                 for transition in boundary_transitions
             )
-            entry = any(
-                transition.to_stage is LifecycleStage.ENTRY_CONFIRMED
+            entry_transitions = tuple(
+                transition
                 for transition in boundary_transitions
+                if transition.to_stage is LifecycleStage.ENTRY_CONFIRMED
             )
+            if len(entry_transitions) > 1:
+                raise ValueError("multiple entry transitions on one lifecycle boundary")
+            entry = bool(entry_transitions)
             direct_formal_trigger = (
                 entry
                 and snapshot.formal_v1_matched
@@ -234,6 +287,30 @@ class _ResearchAccumulator:
             opportunity_key = snapshot.opportunity_key
             if opportunity_key is None:
                 raise ValueError("entry confirmation opportunity is missing")
+            transition = entry_transitions[0]
+            transition_key = transition.opportunity_key
+            if (
+                transition_key.contract != segment.contract
+                or transition_key.segment_start_trading_day
+                != segment.start_trading_day
+            ):
+                raise ValueError("entry transition segment identity is invalid")
+            self.entry_events.append(
+                SubingLifecycleEntryResearchEvent(
+                    event_id=transition.transition_id,
+                    symbol=symbol,
+                    contract=transition_key.contract,
+                    segment_start_trading_day=(
+                        transition_key.segment_start_trading_day
+                    ),
+                    observed_at=transition.transition_at,
+                    trading_day=observed_bar.trading_day,
+                    segment_bar_index=bar_index[observed_at],
+                    direction=transition_key.direction,
+                    opportunity_key=transition_key,
+                    confirmation_source=source,
+                )
+            )
             related = tuple(
                 later
                 for later in snapshots[snapshot_index:]
@@ -303,6 +380,18 @@ class SubingLifecycleResearchService:
         self,
         request: LifecycleResearchRequest,
     ) -> SubingLifecycleResearchResult:
+        return self._project(request).result
+
+    def entry_events(
+        self,
+        request: LifecycleResearchRequest,
+    ) -> tuple[SubingLifecycleEntryResearchEvent, ...]:
+        return self._project(request).entry_events
+
+    def _project(
+        self,
+        request: LifecycleResearchRequest,
+    ) -> _SubingResearchProjection:
         if not isinstance(request, LifecycleResearchRequest):
             raise TypeError("request must be LifecycleResearchRequest")
         products = self._selected_products(request.symbol)
@@ -359,12 +448,14 @@ class SubingLifecycleResearchService:
                     trace,
                     series[BarFrequency.M5],
                     series[BarFrequency.M15],
+                    symbol=product,
+                    segment=segment,
                     calibration=self._calibration,
                     since=request.since,
                     through=request.through,
                 )
 
-        return SubingLifecycleResearchResult(
+        result = SubingLifecycleResearchResult(
             products=products,
             segment_count=accumulator.segment_count,
             evaluable_boundary_count=accumulator.funnel_counts["DATA_READY"],
@@ -394,6 +485,7 @@ class SubingLifecycleResearchService:
                 }
             ),
         )
+        return _SubingResearchProjection(result, tuple(accumulator.entry_events))
 
     def _selected_products(self, symbol: str | None) -> tuple[str, ...]:
         if symbol is None:
@@ -432,6 +524,24 @@ def _ready_factor_snapshots(
         if snapshot is not None:
             snapshots[snapshot.bar_end] = snapshot
     return snapshots
+
+
+def _valid_symbol(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and value.isascii()
+        and value.isalpha()
+        and value == value.lower()
+    )
+
+
+def _aware_datetime(value: object) -> bool:
+    return (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() is not None
+    )
 
 
 def _increment_reasons(

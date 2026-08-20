@@ -25,6 +25,7 @@ from app.market_data.subing_lifecycle import (
     EntryProgress,
     LifecycleAvailability,
     LifecycleStage,
+    SubingOpportunityKey,
     evaluate_subing_lifecycle as reduce_subing_lifecycle,
 )
 from app.market_data.subing_lifecycle_research_service import (
@@ -825,6 +826,121 @@ def test_service_aggregates_funnel_overlap_close_and_horizon_observations(
     assert result.horizon_summary[3].median_directional_return_bps == Decimal("3")
     assert result.horizon_summary[5].ema21_failure_rate == Decimal("1")
 
+    events = service.entry_events(LifecycleResearchRequest(_DAY_ONE, _DAY_TWO, "jm"))
+    assert tuple(event.contract for event in events) == ("JM2609", "JM2701")
+    assert tuple(event.segment_start_trading_day for event in events) == (
+        _DAY_ONE,
+        _DAY_TWO,
+    )
+    assert tuple(event.segment_bar_index for event in events) == (1, 1)
+    assert tuple(event.confirmation_source for event in events) == (
+        ConfirmationSource.FORMAL_V1,
+        ConfirmationSource.MOMENTUM_HOLD,
+    )
+    assert all(event.direction is SubingDirection.LONG for event in events)
+    assert service.run(LifecycleResearchRequest(_DAY_ONE, _DAY_TWO, "jm")) == result
+
+
+def test_entry_event_prefix_is_invariant_to_future_same_segment_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bars_5m = _bars(BarFrequency.M5, (_DAY_ONE,) * 4)
+    bars_15m = _bars(BarFrequency.M15, (_DAY_ONE,))
+    segment = (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_ONE),)
+
+    def factors(
+        bars: tuple[CanonicalBar, ...],
+        *,
+        timeframe: BarFrequency,
+        contract: str,
+        segment_start_trading_day: date,
+        **_kwargs: object,
+    ) -> tuple[SubingFactorResult, ...]:
+        return tuple(
+            _factor(
+                bar,
+                timeframe,
+                contract=contract,
+                segment_start=segment_start_trading_day,
+            )
+            for bar in bars
+        )
+
+    def lifecycle(**kwargs: object) -> SimpleNamespace:
+        source_bars = kwargs["bars_5m"]
+        assert isinstance(source_bars, tuple)
+        first, second, *later = source_bars
+        key = SubingOpportunityKey(
+            policy_id="subing_lifecycle_v2_research_v1",
+            symbol="jm",
+            contract="JM2609",
+            segment_start_trading_day=_DAY_ONE,
+            direction=SubingDirection.LONG,
+            origin_at=first.bar_end,
+        )
+        snapshots = (
+            _snapshot(first.bar_end, LifecycleStage.SETUP_ARMED, opportunity_key=key),
+            _snapshot(
+                second.bar_end,
+                LifecycleStage.ENTRY_CONFIRMED,
+                entry_progress=None,
+                confirmation_source=ConfirmationSource.FORMAL_V1,
+                confirmed_at=second.bar_end,
+                formal_v1_matched=True,
+                opportunity_key=key,
+            ),
+            *(
+                _snapshot(
+                    bar.bar_end,
+                    LifecycleStage.CONTINUATION,
+                    entry_progress=None,
+                    confirmation_source=ConfirmationSource.FORMAL_V1,
+                    confirmed_at=second.bar_end,
+                    formal_v1_matched=True,
+                    opportunity_key=key,
+                )
+                for bar in later
+            ),
+        )
+        return SimpleNamespace(
+            snapshots=snapshots,
+            transitions=(
+                _transition(first.bar_end, LifecycleStage.SETUP_ARMED, "setup"),
+                _transition(second.bar_end, LifecycleStage.ENTRY_CONFIRMED, "entry"),
+            ),
+        )
+
+    monkeypatch.setattr(
+        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        factors,
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        lifecycle,
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_lifecycle_research_service.build_outcomes_at",
+        lambda *_args, **_kwargs: {3: None, 5: None, 8: None},
+    )
+
+    def service(bars: tuple[CanonicalBar, ...]) -> SubingLifecycleResearchService:
+        return SubingLifecycleResearchService(
+            _FakeMarketData(
+                {
+                    ("jm", BarFrequency.M5): _result(bars, segment),
+                    ("jm", BarFrequency.M15): _result(bars_15m, segment),
+                }
+            ),
+            products=("jm",),
+            calibration=load_accepted_subing_calibration(),
+            policy=SimpleNamespace(policy_id="subing_lifecycle_v2_research_v1"),
+        )
+
+    request = LifecycleResearchRequest(_DAY_ONE, _DAY_ONE, "jm")
+    assert service(bars_5m[:3]).entry_events(request) == service(bars_5m).entry_events(
+        request
+    )
+
 
 def test_real_reducer_trigger_then_formal_counts_one_trigger_and_censors_tail(
     monkeypatch: pytest.MonkeyPatch,
@@ -1358,7 +1474,18 @@ def _transition(
     *,
     from_stage: LifecycleStage = LifecycleStage.IDLE,
 ) -> SimpleNamespace:
+    contract = "JM2609" if transition_at.date() == _DAY_ONE else "JM2701"
+    opportunity_key = SubingOpportunityKey(
+        policy_id="subing_lifecycle_v2_research_v1",
+        symbol="jm",
+        contract=contract,
+        segment_start_trading_day=transition_at.date(),
+        direction=SubingDirection.LONG,
+        origin_at=transition_at - timedelta(minutes=5),
+    )
     return SimpleNamespace(
+        transition_id=f"{contract}:{to_stage.value}:{transition_at.isoformat()}",
+        opportunity_key=opportunity_key,
         transition_at=transition_at,
         to_stage=to_stage,
         from_stage=from_stage,

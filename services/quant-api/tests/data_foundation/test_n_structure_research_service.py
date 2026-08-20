@@ -20,6 +20,7 @@ from app.market_data.domain import (
 )
 from app.market_data.n_structure_policy import load_n_structure_policy
 from app.market_data.n_structure_segment import evaluate_n_structure_segment
+from app.market_data.market_data_service import MarketDataError
 from app.market_data.n_structure_research_service import (
     NStructureSegmentIdentityError,
     NStructureResearchRequest,
@@ -106,7 +107,7 @@ class _FailingSegmentLoader:
     ("shared_error", "public_error", "code"),
     (
         (
-            FileNotFoundError("/private/canonical/jm-secret.parquet"),
+            MarketDataError("DATASET_OR_PARTITION_MISSING"),
             NStructureSourceUnavailableError,
             "N_STRUCTURE_SOURCE_UNAVAILABLE",
         ),
@@ -150,7 +151,31 @@ def test_shared_loader_failures_map_to_stable_sanitized_n_errors(
         )
     )
     assert "/private/canonical" not in rendered
-    assert "FileNotFoundError" not in rendered
+    assert "MarketDataError" not in rendered
+
+
+@pytest.mark.parametrize(
+    "unexpected",
+    (
+        TypeError("bug"),
+        ValueError("bug"),
+        AssertionError("bug"),
+        RuntimeError("bug"),
+    ),
+)
+def test_unexpected_loader_errors_escape_without_unavailable_wrapping(
+    unexpected: Exception,
+) -> None:
+    service = NStructureResearchService(
+        _FailingSegmentLoader(unexpected),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+
+    with pytest.raises(type(unexpected)) as captured:
+        service.run(NStructureResearchRequest(date(2026, 8, 18), date(2026, 8, 20), "jm"))
+
+    assert captured.value is unexpected
 
 
 def test_reducer_uses_true_segment_prefix_but_counts_only_requested_window() -> None:
@@ -161,13 +186,12 @@ def test_reducer_uses_true_segment_prefix_but_counts_only_requested_window() -> 
         policy=load_n_structure_policy(),
     )
 
-    result = service.run(
-        NStructureResearchRequest(
+    request = NStructureResearchRequest(
             since=date(2026, 8, 19),
             through=date(2026, 8, 20),
             symbol=" JM ",
-        )
     )
+    result = service.run(request)
 
     assert loader.calls == [
         {
@@ -197,6 +221,33 @@ def test_reducer_uses_true_segment_prefix_but_counts_only_requested_window() -> 
     )
     assert result.horizon_summary[5].sample_count == 0
     assert result.horizon_summary[8].sample_count == 0
+
+    trace = evaluate_n_structure_segment(
+        _bars(),
+        contract="JM2701",
+        segment_start_trading_day=date(2026, 8, 18),
+        segment_end_trading_day=date(2026, 8, 20),
+        policy=load_n_structure_policy(),
+    )
+    expected = tuple(
+        pattern
+        for pattern in trace.patterns.patterns
+        if pattern.completed_at in {bar.bar_end for bar in _bars()[6:]}
+    )
+    events = service.completion_events(request)
+    assert tuple(event.event_id for event in events) == tuple(
+        pattern.n_id for pattern in expected
+    )
+    assert tuple(event.observed_at for event in events) == tuple(
+        pattern.completed_at for pattern in expected
+    )
+    assert tuple(event.segment_bar_index for event in events) == tuple(
+        _bars().index(next(bar for bar in _bars() if bar.bar_end == pattern.completed_at))
+        for pattern in expected
+    )
+    assert all(event.symbol == "jm" for event in events)
+    assert all(event.contract == "JM2701" for event in events)
+    assert service.run(request) == result
 
 
 def test_research_uses_one_segment_trace_without_legacy_rescans(
@@ -300,6 +351,59 @@ def test_outcomes_stop_at_requested_through_even_if_loader_returns_later_bars() 
     )
     assert result.horizon_summary[5].sample_count == 0
     assert result.horizon_summary[8].sample_count == 0
+
+
+def test_completion_event_prefix_is_invariant_to_future_same_segment_suffix() -> None:
+    bars = _bars()
+    request = NStructureResearchRequest(
+        date(2026, 8, 18),
+        date(2026, 8, 20),
+        "jm",
+    )
+    base_service = NStructureResearchService(
+        _FakeSegmentLoader(bars),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+    prefix = base_service.completion_events(request)
+
+    suffix = tuple(
+        CanonicalBar(
+            bar_end=bars[-1].bar_end + timedelta(minutes=5 * (index + 1)),
+            trading_day=date(2026, 8, 21),
+            open=Decimal("13"),
+            high=Decimal("14"),
+            low=Decimal("12"),
+            close=Decimal("13"),
+            volume=Decimal("1"),
+            turnover=None,
+            open_interest=None,
+        )
+        for index in range(8)
+    )
+    extended_bars = (*bars, *suffix)
+    segment = ResolvedContractSegment("JM2701", date(2026, 8, 18), date(2026, 8, 21))
+    result = MarketSeriesResult(
+        request_identity={},
+        bars=extended_bars,
+        coverage=(extended_bars[0].bar_end, extended_bars[-1].bar_end),
+        resolved_contract_segments=(segment,),
+    )
+    loader = _FakeSegmentLoader(bars)
+    loader.result = ActualDominantResearchSeries(
+        results=MappingProxyType({BarFrequency.M5: result}),
+        segments=(segment,),
+    )
+    extended_service = NStructureResearchService(
+        loader,
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+    extended = extended_service.completion_events(
+        NStructureResearchRequest(date(2026, 8, 18), date(2026, 8, 21), "jm")
+    )
+
+    assert tuple(event for event in extended if event.trading_day <= date(2026, 8, 20)) == prefix
 
 
 def test_rank1_segment_change_resets_the_real_n_producer_chain() -> None:
