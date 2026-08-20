@@ -243,6 +243,24 @@ Candidate report 以及 SuBing same-day/EMA21 语义不变。`guiyi research n-s
 Candidate Validation 只读 Historical Canonical；测试不运行真实 `jm` 数据窗口，不形成效果、
 promotion、release 或 Runtime 结论，不授权数据/DB 写入、Alert/通知或订单。
 
+## Multi-Candidate Robustness V1（Historical / research-only）
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_multi_candidate_robustness_policy.py \
+  services/quant-api/tests/test_multi_candidate_events.py \
+  services/quant-api/tests/test_multi_candidate_robustness.py \
+  services/quant-api/tests/data_foundation/test_multi_candidate_robustness_service.py \
+  services/quant-api/tests/test_research_cli.py
+```
+
+该命令验证两个 frozen Candidate 的 exact Protocol、既有 causal event seam、`jm` 双向
+3/5/8 Bar relationship、完整 active60 的 120-cell 保留矩阵、既有 10-fold Validation 投影与
+只读 `candidate-robustness` CLI。测试不修改 Candidate、公式、参数或 prospective OOS，不运行真实
+Canonical 窗口，不写 DB/Canonical/Redis，不发送通知，也不形成 rank、winner、promotion、release、
+Runtime 或盈利结论。
+
 ## Alert V2
 
 ### 无副作用单元、集成与工程验证
