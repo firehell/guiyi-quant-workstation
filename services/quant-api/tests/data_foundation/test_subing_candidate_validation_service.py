@@ -6,6 +6,8 @@ from decimal import Decimal
 
 import pytest
 
+from app.market_data import candidate_validation_schedule as shared_schedule
+from app.market_data import subing_candidate_validation_service as service_module
 from app.market_data.candidate_validation import ProspectiveOosStatus
 from app.market_data.candidate_validation_policy import (
     load_candidate_manifest,
@@ -37,7 +39,9 @@ def _horizon(sample_count: int = 1) -> HorizonEvaluation:
     )
 
 
-def _result(*, entries: int = 1, horizon_samples: int = 1) -> SubingLifecycleResearchResult:
+def _result(
+    *, entries: int = 1, horizon_samples: int = 1
+) -> SubingLifecycleResearchResult:
     return SubingLifecycleResearchResult(
         products=("jm",),
         segment_count=1,
@@ -109,6 +113,82 @@ def _request(*, through: date = date(2026, 8, 19)) -> CandidateValidationRequest
         symbol="jm",
         through=through,
     )
+
+
+def test_service_reexports_shared_request_and_stable_errors() -> None:
+    assert CandidateValidationRequest is shared_schedule.CandidateValidationRequest
+    assert (
+        CandidateValidationIdentityError
+        is shared_schedule.CandidateValidationIdentityError
+    )
+    assert (
+        CandidateValidationWindowError is shared_schedule.CandidateValidationWindowError
+    )
+    assert (
+        CandidateValidationSourceError is shared_schedule.CandidateValidationSourceError
+    )
+
+
+def test_service_delegates_rolling_and_prospective_date_math(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule_calls: list[dict[str, object]] = []
+    prospective_calls: list[dict[str, date]] = []
+
+    def build_schedule(
+        **values: object,
+    ) -> tuple[shared_schedule.RollingValidationWindow, ...]:
+        schedule_calls.append(values)
+        return (
+            shared_schedule.RollingValidationWindow(
+                fold_id="fold_01",
+                reference_since=date(2025, 1, 1),
+                reference_through=date(2025, 12, 31),
+                test_since=date(2026, 1, 1),
+                test_through=date(2026, 3, 31),
+            ),
+        )
+
+    def build_prospective(
+        *, through: date, first_trading_day: date
+    ) -> tuple[date, date] | None:
+        prospective_calls.append(
+            {"through": through, "first_trading_day": first_trading_day}
+        )
+        return None
+
+    monkeypatch.setattr(
+        service_module,
+        "build_rolling_validation_windows",
+        build_schedule,
+    )
+    monkeypatch.setattr(service_module, "prospective_window", build_prospective)
+    runner = _Runner()
+
+    report = _service(runner).run(_request())
+
+    assert schedule_calls == [
+        {
+            "reference_months": 12,
+            "test_months": 3,
+            "step_months": 3,
+            "first_test_since": date(2024, 1, 1),
+            "last_test_through": date(2026, 6, 30),
+        }
+    ]
+    assert prospective_calls == [
+        {
+            "through": date(2026, 8, 19),
+            "first_trading_day": date(2026, 8, 20),
+        }
+    ]
+    assert runner.requests == [
+        LifecycleResearchRequest(date(2023, 1, 1), date(2026, 8, 18), "jm"),
+        LifecycleResearchRequest(date(2025, 1, 1), date(2025, 12, 31), "jm"),
+        LifecycleResearchRequest(date(2026, 1, 1), date(2026, 3, 31), "jm"),
+    ]
+    assert tuple(fold.fold_id for fold in report.rolling_folds) == ("fold_01",)
+    assert report.prospective_oos.status is ProspectiveOosStatus.PENDING
 
 
 def test_request_normalizes_symbol_without_embedding_protocol_semantics() -> None:
