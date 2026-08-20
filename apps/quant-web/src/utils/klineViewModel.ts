@@ -97,26 +97,7 @@ export function resolveMainForceFuturesWindowAvailability(
   const to = Math.min(points.length - 1, Math.floor(range.to))
   const visible = points.slice(from, to + 1)
   if (!visible.length) return resolveMainForceFuturesAvailability(support, null, null)
-  const stateReady = visible.filter((point) => point.state_ready)
-  if (stateReady.length) return resolveMainForceFuturesAvailability(support, stateReady.at(-1) ?? null, null)
-  return visible
-    .map((point) => resolveMainForceFuturesAvailability(support, point, null))
-    .sort((left, right) => unavailablePriority(left) - unavailablePriority(right))[0]
-    ?? resolveMainForceFuturesAvailability(support, null, null)
-}
-
-function unavailablePriority(availability: MainForceFuturesAvailability): number {
-  const reason = availability.reason
-  if (reason === 'MFM_FUTURES_V1_SEGMENT_CONFLICT') return 3
-  if (reason === 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING') return 4
-  if (reason === 'MFM_FUTURES_V1_TIMESTAMP_INVALID') return 5
-  if (reason === 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE') return 6
-  if (reason === 'MFM_FUTURES_V1_INPUT_INVALID') return 7
-  if (availability.kind === 'state_warmup') return 8
-  if (availability.kind === 'derived_unavailable') return 9
-  if (availability.kind === 'caution_warmup') return 10
-  if (availability.kind === 'conflict') return 11
-  return 12
+  return resolveMainForceFuturesAvailability(support, visible.at(-1) ?? null, null)
 }
 
 /** Pure V1 secondary-pane projection: signed scores and directional markers never share numeric data. */

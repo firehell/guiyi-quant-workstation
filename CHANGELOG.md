@@ -2,6 +2,21 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.6.2] - 2026-08-20
+
+- 新增 60m、`contract | actual_dominant` 的 `main_force_mirror_futures_v1` Web observation 与
+  Historical-only Shadow；保持五状态、双向警戒、21/31 根 readiness、conflict/latch、物理合约分段和
+  Python/Web 单一 golden 合同，不授予 Alert、notification、正式 backtest、Runtime consumer 或订单能力。
+- 纳入 SuBing Candidate Validation V1 的只读 historical baseline/rolling-fold 研究合同与已冻结 jm
+  retrospective evidence；不生成参数晋升、策略有效性或 Runtime 结论。
+- 纳入 N Structure V1 的设计与实施计划文档，仍为未实现规划，不形成代码能力、数据写入或发布授权。
+- 修复 actual-dominant 换月后 Pane 状态可被左侧旧合约 ready 点覆盖的问题：可见状态严格取最右侧 point/
+  当前物理合约 block；真实 AG2601→AG2612 浏览器回归锁定换月后 10/21/31 根 warm-up、hover identity
+  与 marker 不继承。
+- 将 `main_force_mirror_v0` 运行时源码逐字恢复到 V1 开发前冻结版本；静态类型由同名 `.pyi` 单独承载，
+  并以源码 hash 守卫防止后续“仅类型/格式”漂移。公式、输出、版本、golden 与 capability 均未改变。
+- 本条首先形成 develop candidate；正式 main/tag/release 与 production Runtime 切换仍需各自独立 Gate。
+
 ## [1.6.1] - 2026-08-19
 
 - 修复日盘收盘后、Canonical 盘后更新接管前刷新或切换 Market K 线时，当日已完成 Bar 消失的问题；

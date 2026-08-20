@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+MAIN_FORCE_MIRROR_V0_SOURCE_SHA256 = (
+    "0f5b10db28d485c000846d721010efd3f1042aa7e4dae90fa479946539b5f503"
+)
 
 RETIRED_ASSETS = (
     "Makefile",
@@ -156,6 +161,14 @@ def test_futures_mirror_shadow_uses_a_static_kernel_dependency() -> None:
     assert "_load_main_force_mirror_futures_kernel" not in service
 
 
+def test_main_force_mirror_v0_runtime_source_is_frozen() -> None:
+    source = (
+        ROOT / "packages/quant-core/guiyi_quant/indicators/main_force_mirror.py"
+    ).read_bytes()
+
+    assert hashlib.sha256(source).hexdigest() == MAIN_FORCE_MIRROR_V0_SOURCE_SHA256
+
+
 def test_retired_application_surfaces_are_not_restored() -> None:
     forbidden_paths = (
         "services/quant-api/app/worker.py",
@@ -179,7 +192,7 @@ def test_public_websocket_route_matches_market_api_contract() -> None:
     assert "location /ws/" not in nginx
 
 
-def test_release_versions_are_consistently_1_6_1() -> None:
+def test_release_candidate_versions_are_consistently_1_6_2() -> None:
     pyproject = (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
     lock = (ROOT / "services/quant-api/uv.lock").read_text(encoding="utf-8")
     api = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
@@ -188,11 +201,11 @@ def test_release_versions_are_consistently_1_6_1() -> None:
     )
     web = (ROOT / "apps/quant-web/package.json").read_text(encoding="utf-8")
 
-    assert 'version = "1.6.1"' in pyproject
-    assert 'name = "quant-api"\nversion = "1.6.1"\nsource = { editable = "." }' in lock
-    assert 'APP_VERSION = "1.6.1"' in version_module
+    assert 'version = "1.6.2"' in pyproject
+    assert 'name = "quant-api"\nversion = "1.6.2"\nsource = { editable = "." }' in lock
+    assert 'APP_VERSION = "1.6.2"' in version_module
     assert "version=APP_VERSION" in api
-    assert '"version": "1.6.1"' in web
+    assert '"version": "1.6.2"' in web
     assert '"version": APP_VERSION' in api
 
 

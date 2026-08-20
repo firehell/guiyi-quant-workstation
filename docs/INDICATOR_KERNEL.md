@@ -142,6 +142,10 @@ OI 缺失或无效 OHLCV 均逐点 fail-closed，不猜合约、不补零。
 EMA(abs(delta_oi),20)。当前 Bar 前再有连续 10 个同 block `state_ready` points 后，零基
 `block_index=30`（第 31 根）首次可有 `caution_ready=true`，且 `ready == caution_ready`。
 
+Web Pane 的可用状态严格取当前可见范围最右侧 point/当前物理合约 block。换月后即使左侧旧合约已有
+ready 柱，只要右侧新合约仍在第 10 根或第 21 根阶段，Pane 就分别显示 state warm-up 或 caution warm-up；
+直到新 block 第 31 根才显示完整 ready。旧合约 marker 不跨 block 继承。
+
 状态先应用 `abs(direction)<0.15` 或 `abs(oi_impulse)<0.25` 的 TURNOVER deadband，否则按价格方向与 OI
 增减的四象限输出五种观察状态：
 
@@ -187,8 +191,11 @@ Runtime consumer 或订单能力；historical-only Shadow CLI 仅生成可删除
 MAIN_FORCE_MIRROR_FUTURES_REPRESENTATIVE_PRODUCTS = ("jm", "ag", "cu", "m", "sc")
 ```
 
-它不是自动循环、默认 universe 或授权；本次未运行真实代表矩阵 Shadow。V0 的
-code/version/formula/golden/capability 保持不变。
+它不是自动循环、默认 universe 或授权；本次未运行真实代表矩阵 Shadow。
+
+V0 的运行时权威 `main_force_mirror.py` 冻结为 V1 开发前精确源码；同名 `main_force_mirror.pyi` 只提供
+公开静态类型 facade。源码 hash 工程测试与既有 golden/Registry/Policy 回归共同阻止类型整理、格式化或
+业务改动侵入 V0 runtime，因此其 code/version/formula/golden/capability 保持不变。
 
 ## SuBing scoped MACD
 
