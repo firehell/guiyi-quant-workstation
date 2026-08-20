@@ -14,7 +14,7 @@ import re
 import secrets
 import stat
 import tempfile
-from typing import Any, TextIO
+from typing import Any, NoReturn, TextIO
 
 from app.alerts.clawbot import ClawbotContext, ClawbotRunner
 from app.alerts.clawbot_owner import CLAWBOT_OWNER_ALIAS
@@ -372,5 +372,5 @@ class RecipientBootstrap:
         return value
 
     @staticmethod
-    def _fail(code: str) -> None:
+    def _fail(code: str) -> NoReturn:
         raise RecipientBootstrapError(code)
