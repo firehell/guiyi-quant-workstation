@@ -57,7 +57,7 @@
   exact 四人由人工核对。归一量化不建逐人 directory、pairing、fan-out、送达表、Open API、callback、
   retry、queue、replay、backfill 或 fallback；Alert Application Domain 仍只有两张表。
 - 当前实现的无副作用验证已覆盖 dispatcher/config/SDK adapter/composition/CLI/health 与 launchd/ops：
-  Alert focused `170 passed`，全 engineering `53 passed`；全后端 Ruff PASS，Mypy `77 source files`
+  Alert focused `170 passed`，全 engineering `53 passed`；全后端 Ruff PASS，Mypy `78 source files`
   PASS，全部 ops shell `bash -n`、6 个 launchd templates `plutil -lint`、secret scan
   `finding_count=0` 与 diff check PASS。
 - 本次未取得或写入真实 PushPlus token/Topic，未发送通知，未连接 production DB，未执行 Scope、
