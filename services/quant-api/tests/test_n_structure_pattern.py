@@ -7,10 +7,14 @@ from decimal import Decimal
 
 import pytest
 
+from app.market_data import n_structure_pattern as pattern_module
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.n_structure_pattern import (
+    NBreakEvent,
     NBreakKind,
     NDirection,
+    NRangeBand,
+    NRangeBandReentryEvent,
     NRangeBandRole,
     evaluate_n_patterns,
 )
@@ -23,6 +27,7 @@ from app.market_data.n_structure_swing import (
     NSwingPivot,
     NSwingPivotKind,
     NSwingTrace,
+    NStructureContractError,
 )
 
 
@@ -249,6 +254,38 @@ def _down_pivots(
             epoch=epoch,
         ),
     )
+
+
+def _long_rising_fixture(
+    pattern_count: int,
+) -> tuple[tuple[CanonicalBar, ...], tuple[NSwingPivot, ...]]:
+    pivot_count = pattern_count * 2 + 1
+    bars = tuple(
+        _bar(
+            index,
+            high=str(Decimal("100") + index),
+            low=str(Decimal("50") + index),
+        )
+        for index in range(pivot_count + 1)
+    )
+    pivots = tuple(
+        _pivot(
+            index,
+            confirmed_index=index + 1,
+            kind=(
+                NSwingPivotKind.LOW
+                if index % 2 == 0
+                else NSwingPivotKind.HIGH
+            ),
+            price=str(
+                Decimal("1") + index // 2
+                if index % 2 == 0
+                else Decimal("10") + index // 2
+            ),
+        )
+        for index in range(pivot_count)
+    )
+    return bars, pivots
 
 
 @pytest.mark.parametrize(
@@ -739,6 +776,96 @@ def test_outside_reset_discards_attempt_without_counting_replacement() -> None:
     assert trace.patterns == ()
     assert trace.incomplete_attempt_replaced_count == 0
     _assert_prefix_invariant(bars, pivots, resets=(4,))
+
+
+def test_long_rising_series_assesses_only_boundary_triggerable_levels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bars, pivots = _long_rising_fixture(pattern_count=64)
+    inspected_assessments = 0
+    original_record_breaks = pattern_module._record_breaks
+    original_record_reentries = pattern_module._record_range_band_reentries
+
+    def counted_breaks(
+        current: CanonicalBar,
+        assessments: tuple[object, ...],
+        events: list[NBreakEvent],
+    ) -> None:
+        nonlocal inspected_assessments
+        inspected_assessments += len(assessments)
+        original_record_breaks(current, assessments, events)  # type: ignore[arg-type]
+
+    def counted_reentries(
+        current: CanonicalBar,
+        assessments: tuple[object, ...],
+        events: list[NRangeBandReentryEvent],
+    ) -> None:
+        nonlocal inspected_assessments
+        inspected_assessments += len(assessments)
+        original_record_reentries(current, assessments, events)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(pattern_module, "_record_breaks", counted_breaks)
+    monkeypatch.setattr(
+        pattern_module,
+        "_record_range_band_reentries",
+        counted_reentries,
+    )
+
+    trace = _evaluate(bars, pivots)
+
+    assert len(trace.patterns) == 64
+    assert trace.break_events == ()
+    assert trace.range_band_reentries == ()
+    assert inspected_assessments <= len(bars) * 4
+
+
+def test_pattern_fact_dataclasses_reject_malformed_types_with_stable_error() -> None:
+    bars = (
+        _bar(0, high="11", low="10"),
+        _bar(1, high="12", low="10"),
+        _bar(2, high="11", low="11"),
+        _bar(3, high="12", low="11"),
+        _bar(4, high="13", low="12"),
+        _bar(5, high="13", low="9"),
+    )
+    trace = _evaluate(bars, _up_pivots())
+    pattern = trace.patterns[0]
+    break_event = trace.break_events[0]
+    reentry_event = trace.range_band_reentries[0]
+    invalid_fact_builders = (
+        lambda: replace(pattern, n_id=object()),
+        lambda: replace(pattern, direction="up"),
+        lambda: replace(pattern, origin=object()),
+        lambda: replace(pattern, n1_extreme=object()),
+        lambda: replace(pattern, n2_origin=object()),
+        lambda: replace(pattern, completed_at="2026-08-19T00:00:00Z"),
+        lambda: replace(pattern, range_band=object()),
+        lambda: replace(break_event, event_id=object()),
+        lambda: replace(break_event, n_id=object()),
+        lambda: replace(break_event, kind="origin_broken"),
+        lambda: replace(break_event, observed_at="2026-08-19T00:00:00Z"),
+        lambda: replace(reentry_event, event_id=object()),
+        lambda: replace(reentry_event, n_id=object()),
+        lambda: replace(
+            reentry_event,
+            observed_at="2026-08-19T00:00:00Z",
+        ),
+    )
+
+    for build_invalid_fact in invalid_fact_builders:
+        with pytest.raises(NStructureContractError) as captured:
+            build_invalid_fact()  # type: ignore[misc]
+        assert captured.value.code == "N_STRUCTURE_CONTRACT_INVALID"
+        assert str(captured.value) == "N_STRUCTURE_CONTRACT_INVALID"
+
+
+def test_range_band_rejects_malformed_role_type_with_stable_error() -> None:
+    with pytest.raises(NStructureContractError, match="N_STRUCTURE_CONTRACT_INVALID"):
+        NRangeBand(
+            lower=Decimal("10"),
+            upper=Decimal("12"),
+            role="support_reference",  # type: ignore[arg-type]
+        )
 
 
 def test_pattern_requires_exact_m5_research_only_policy() -> None:

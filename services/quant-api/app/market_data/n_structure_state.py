@@ -171,7 +171,7 @@ def evaluate_n_market_structure(
     snapshots: list[NStructureSnapshot] = []
     transitions: list[NStructureTransition] = []
     current_epoch = 0
-    epoch_pivots: list[NSwingPivot] = []
+    recent_epoch_pivots: list[NSwingPivot] = []
     completed_n_count = 0
     kind = NStructureKind.UNDEFINED
     established_at: datetime | None = None
@@ -221,7 +221,7 @@ def evaluate_n_market_structure(
 
         if current.bar_end in outside_resets:
             current_epoch += 1
-            epoch_pivots.clear()
+            recent_epoch_pivots.clear()
             completed_n_count = 0
             qualified_high_id = None
             qualified_low_id = None
@@ -237,19 +237,22 @@ def evaluate_n_market_structure(
                 kind = NStructureKind.UNDEFINED
                 established_at = None
         else:
-            epoch_pivots.extend(pivots_by_confirmation.get(current.bar_end, ()))
+            for pivot in pivots_by_confirmation.get(current.bar_end, ()):
+                _append_recent_pivot(recent_epoch_pivots, pivot)
             completed_here = patterns_by_completion.get(current.bar_end, ())
             completed_n_count += len(completed_here)
 
             if not broken_this_boundary:
                 classification = _classify(
-                    epoch_pivots,
+                    recent_epoch_pivots,
                     completed_n_count=completed_n_count,
                 )
                 if kind in (NStructureKind.UNDEFINED, NStructureKind.RANGE):
                     if classification in (NStructureKind.BULL, NStructureKind.BEAR):
                         previous_kind = kind
-                        latest_high, latest_low = _latest_high_low(epoch_pivots)
+                        latest_high, latest_low = _latest_high_low(
+                            recent_epoch_pivots
+                        )
                         defense = (
                             latest_low
                             if classification is NStructureKind.BULL
@@ -304,7 +307,9 @@ def evaluate_n_market_structure(
                         kind = NStructureKind.RANGE
                         established_at = current.bar_end
                 elif classification is kind:
-                    latest_high, latest_low = _latest_high_low(epoch_pivots)
+                    latest_high, latest_low = _latest_high_low(
+                        recent_epoch_pivots
+                    )
                     candidate_defense = (
                         latest_low if kind is NStructureKind.BULL else latest_high
                     )
@@ -430,6 +435,20 @@ def _classify(
     if current_high.price < previous_high.price and current_low.price < previous_low.price:
         return NStructureKind.BEAR
     return NStructureKind.RANGE
+
+
+def _append_recent_pivot(
+    pivots: list[NSwingPivot],
+    pivot: NSwingPivot,
+) -> None:
+    same_kind_indexes = [
+        index
+        for index, existing in enumerate(pivots)
+        if existing.kind is pivot.kind
+    ]
+    if len(same_kind_indexes) == 2:
+        del pivots[same_kind_indexes[0]]
+    pivots.append(pivot)
 
 
 def _latest_high_low(
