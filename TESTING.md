@@ -178,6 +178,11 @@ equivalence、Signal pure core、`SubingReadService` reciprocal/lifecycle orches
 current-rank1 segment、Historical/completed Live seam 和有效当前合约视图。测试只使用 fixture、mock、
 临时目录或隔离数据库，不运行 provider、Canonical/DB/Redis 写入、Runtime switch 或通知。
 
+`test_subing_read_service.py` 同时覆盖 current cutoff 超过 Canonical edge 时的 latest-page bootstrap、
+5m/15m 非对称 edge、state 后并发发布的 strict 重读及未来 Bar 隔离；`MarketDataService` 的显式 cursor
+超出 coverage 仍独立 fail-closed。`test_alert_runtime_launchd.py` 覆盖 marker-before-start、late failure
+逆序 bootout、absent/existing 原子恢复，以及无法确认停止时保留 enabled marker 的 fail-closed 分支。
+
 `guiyi research subing-calibration` 本身是只读 Historical research：只通过 `MarketDataService` 取数，
 输出 stdout JSON，不直接读 provider，也不写 DB、Canonical 或 Redis，不自动 promotion。Discovery/
 Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不运行真实研究窗口。当前 accepted
@@ -319,16 +324,19 @@ Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。
 
 ### 独立受控外部 Gate
 
-- 创建专用 PushPlus 消息 token 与 Topic；当前 pending；
-- 人工核对 Topic 当前成员在 `1..4` 人边界内；当前 3 人已由用户确认，第 4 人可后续加入；
-- 写入 `0700/0600` Git 外 private config；当前 pending；
-- `owner` 与 `htdy_observers` 各一次真实 canary/send；当前 pending；
-- exact HTDY Rule + Scope + audience + transport 持续授权：当前 pending；SuBing 保持 owner-only；
+- 创建专用 PushPlus 消息 token 与 Topic：已完成；
+- 人工核对 Topic 当前成员在 `1..4` 人边界内：当前 3 人已由用户确认，第 4 人可后续加入；
+- 写入 `0700/0600` Git 外 private config：已完成，structural readback PASS；
+- `owner` 与 `htdy_observers` 各一次真实 canary/send：均已完成、由 provider 接受且经用户确认实际收到，
+  未重试；这两次历史 canary 不得在发布或 Runtime switch 时重复执行；
+- exact HTDY Rule + Scope + audience + transport 持续边界为
+  `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic`；SuBing 固定为
+  `subing_entry_signal_v1 × jm × owner × pushplus-wechat`，不得从历史 canary 推导 release 或 switch；
 - main/release/tag 与 exact-tag Alert Runtime promotion/switch：分别 pending。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
-mock 通过只证明实现，不证明任何真实配置、发送、发布或 Runtime Gate 已执行。当前 production 继续是
-`v1.6.2` 的单 `owner` exact Runtime。
+mock 通过只证明实现，不证明发布或 Runtime Gate 已执行。当前 production 继续是 `v1.6.3` 的单
+`owner` exact Runtime；PushPlus private config 与历史 canary 已完成，但 transport 尚未 release/promotion。
 
 ## OpenSpec
 
