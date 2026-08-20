@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from statistics import median
 from typing import Callable, Literal, Mapping
 
-from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
+from app.market_data.domain import CanonicalBar, BarFrequency, SeriesKind, SeriesPageQuery
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 from app.market_data.research_metrics import ResearchMetrics, calculate_research_metrics
+from app.market_data.session_clock import SHANGHAI
 
 PRICE_MOVE_PCT = Decimal("0.02")
 VOLUME_EXPANSION_RATIO = Decimal("1.50")
@@ -21,7 +22,8 @@ NEAR_HIGH_POSITION = Decimal("0.90")
 NEAR_LOW_POSITION = Decimal("0.10")
 ATTENTION_MIN_REASONS = 2
 ATTENTION_LIMIT = 10
-RADAR_DAILY_LIMIT = 300
+RADAR_DAILY_METRIC_LIMIT = 300
+RADAR_DAILY_QUERY_LIMIT = RADAR_DAILY_METRIC_LIMIT + 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +50,10 @@ class RadarSectorSummary:
 @dataclass(frozen=True, slots=True)
 class MarketRadarSnapshot:
     status: Literal["ready", "degraded"]
-    expected_as_of: date
+    target_as_of: date
+    data_as_of: date
+    freshness_state: Literal["current", "pending_after_market", "degraded"]
+    freshness_message: str
     active_count: int
     participant_count: int
     stale: tuple[str, ...]
@@ -56,6 +61,11 @@ class MarketRadarSnapshot:
     items: tuple[RadarItem, ...]
     attention: tuple[RadarItem, ...]
     sector_summary: tuple[RadarSectorSummary, ...]
+
+    @property
+    def expected_as_of(self) -> date:
+        """Backward-compatible alias for the theoretical target trading day."""
+        return self.target_as_of
 
 
 class MarketRadarService:
@@ -68,31 +78,54 @@ class MarketRadarService:
         products: tuple[str, ...],
         taxonomy: Mapping[str, ProductTaxonomyEntry],
         latest_complete_day: Callable[[tuple[str, ...]], date],
+        today: Callable[[], date] | None = None,
     ) -> None:
         self._market_data = market_data
         self._products = products
         self._taxonomy = taxonomy
         self._latest_complete_day = latest_complete_day
+        self._today = today or (lambda: datetime.now(SHANGHAI).date())
 
     def snapshot(self) -> MarketRadarSnapshot:
-        expected = self._latest_complete_day(self._products)
-        items: list[RadarItem] = []
-        stale: list[str] = []
+        target_as_of = self._latest_complete_day(self._products)
+        daily_by_symbol: dict[str, tuple[CanonicalBar, ...]] = {}
         unavailable: list[str] = []
         for symbol in self._products:
             try:
-                daily = self._market_data.query_page(
+                daily_by_symbol[symbol] = self._market_data.query_page(
                     SeriesPageQuery(
                         SeriesKind.ACTUAL_DOMINANT,
                         symbol,
                         BarFrequency.D1,
-                        limit=RADAR_DAILY_LIMIT,
+                        limit=RADAR_DAILY_QUERY_LIMIT,
                     )
                 ).bars
             except MarketDataError:
                 unavailable.append(symbol)
+
+        target_is_complete = not unavailable and all(
+            any(bar.trading_day == target_as_of for bar in daily_by_symbol[symbol])
+            for symbol in self._products
+        )
+        data_as_of = target_as_of
+        if self._today() == target_as_of and not target_is_complete:
+            prior_days = (
+                bar.trading_day
+                for daily in daily_by_symbol.values()
+                for bar in daily
+                if bar.trading_day < target_as_of
+            )
+            data_as_of = max(prior_days, default=target_as_of)
+
+        items: list[RadarItem] = []
+        stale: list[str] = []
+        for symbol in self._products:
+            if symbol in unavailable:
                 continue
-            if not daily or daily[-1].trading_day != expected:
+            daily = tuple(
+                bar for bar in daily_by_symbol[symbol] if bar.trading_day <= data_as_of
+            )[-RADAR_DAILY_METRIC_LIMIT:]
+            if not daily or daily[-1].trading_day != data_as_of:
                 stale.append(symbol)
                 continue
             metrics = calculate_research_metrics(daily, ())
@@ -126,16 +159,29 @@ class MarketRadarService:
         )
         attention_symbols = {item.symbol for item in attention}
         sectors = tuple(_sector_summaries(self._products, self._taxonomy, items, attention_symbols))
+        freshness_state: Literal["current", "pending_after_market", "degraded"]
+        if stale or unavailable:
+            freshness_state = "degraded"
+            freshness_message = "数据异常"
+        elif data_as_of < target_as_of:
+            freshness_state = "pending_after_market"
+            freshness_message = "盘后更新待完成"
+        else:
+            freshness_state = "current"
+            freshness_message = "当前完整"
         return MarketRadarSnapshot(
-            "ready" if len(items) == len(self._products) else "degraded",
-            expected,
-            len(self._products),
-            len(items),
-            tuple(stale),
-            tuple(unavailable),
-            tuple(items),
-            attention,
-            sectors,
+            status="ready" if len(items) == len(self._products) else "degraded",
+            target_as_of=target_as_of,
+            data_as_of=data_as_of,
+            freshness_state=freshness_state,
+            freshness_message=freshness_message,
+            active_count=len(self._products),
+            participant_count=len(items),
+            stale=tuple(stale),
+            unavailable=tuple(unavailable),
+            items=tuple(items),
+            attention=attention,
+            sector_summary=sectors,
         )
 
 

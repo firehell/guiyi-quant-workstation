@@ -274,6 +274,10 @@ def market_radar(session: Session = Depends(get_db)) -> MarketRadarResponse:
     return MarketRadarResponse(
         status=snapshot.status,
         expected_as_of=snapshot.expected_as_of,
+        target_as_of=snapshot.target_as_of,
+        data_as_of=snapshot.data_as_of,
+        freshness_state=snapshot.freshness_state,
+        freshness_message=snapshot.freshness_message,
         active_count=snapshot.active_count,
         participant_count=snapshot.participant_count,
         stale=list(snapshot.stale),

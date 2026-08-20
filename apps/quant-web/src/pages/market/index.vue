@@ -35,12 +35,12 @@ const preferences = ref(loadMarketWorkspacePreferences())
 const formalEventStates = ref<Record<number, EventState>>({})
 let formalStateGeneration = 0
 const freshnessIssue = computed(() => {
-  if (!radar.value || radar.value.status === 'ready') return ''
+  if (!radar.value || radar.value.freshness_state !== 'degraded') return ''
   const parts = [
     radar.value.stale.length ? `stale ${radar.value.stale.join(', ')}` : '',
     radar.value.unavailable.length ? `unavailable ${radar.value.unavailable.join(', ')}` : '',
   ].filter(Boolean)
-  return `Radar 数据不完整：${parts.join('；')}`
+  return `Radar 数据不完整：${parts.join('；') || radar.value.freshness_message}`
 })
 
 function openChart(item: MarketRadarItem) {

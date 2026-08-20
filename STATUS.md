@@ -9,9 +9,9 @@
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
 - 当前 Git release 与 production Runtime 均为
-  `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
-  `develop` 的 API/Web 版本面已准备为 `v1.6.2` candidate，但尚未合入 `main`、创建 tag/release 或切换
-  production Runtime。
+  `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`。
+  当前 release branch 的 API/Web 版本面已准备为 Radar-only `v1.6.3` candidate，但尚未合入 `main`、
+  创建 tag/release 或切换 production Runtime。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
@@ -39,6 +39,24 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+
+## v1.6.3 Market Radar Freshness Watermark（RELEASE CANDIDATE；EXTERNAL GATES PENDING）
+
+- candidate 只包含 Market Radar freshness 合同、API/Web 实现与测试：区分 `target_as_of`、统一计算使用的
+  `data_as_of` 及 `current / pending_after_market / degraded`，并保留 `expected_as_of` 兼容别名。
+- 同日盘后部分目标日 Bar 已发布时，Radar 统一裁剪到严格早于目标日的最近 Canonical 日期；每个品种
+  仍以完整 300-Bar 指标窗口计算，目标日 Bar 不参与。完整上一日快照继续返回 `ready / 60/60`，跨日
+  缺失仅标记真正 stale 的品种。
+- candidate 严格保持 `MarketDataService -> Canonical` 只读链路，不接 Redis/Live、after-market 状态文件、
+  临时 D1、缓存、轮询或持久化，不修改 Data Foundation、Catalog、MainContractMap、K 线 seam、DB、
+  Alert Scope、通知或订单边界。
+- 本 release diff 明确排除 develop 的 PushPlus、N Structure、migration、Scope 与其他未发布差异。
+  main/tag release 与五服务 Runtime promotion/switch 尚未执行，production 保持 v1.6.2。
+- release candidate fresh 验证为后端 `1585 passed`（隔离 PostgreSQL）、engineering `56 passed`、
+  Ruff PASS、Mypy `65 source files`、Web unit `199 passed / 1 skipped`、指定 Playwright `61 passed`、
+  production build `2997 modules`、secret scan `finding_count=0` 与 diff check PASS。独立双轴 Review 的
+  唯一 Important（pending 快照可能少一根历史输入）已以 `301 query -> 统一裁剪 -> 300 metric bars`
+  关闭，同一 reviewer 最终读回 `Ready to merge: Yes`。
 
 ## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
 

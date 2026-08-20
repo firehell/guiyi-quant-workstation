@@ -46,7 +46,8 @@ function sectorSummary(sector, median) {
 
 function radar(overrides = {}) {
   return {
-    status: 'ready', expected_as_of: '2026-08-15', active_count: 60, participant_count: 60,
+    status: 'ready', expected_as_of: '2026-08-15', target_as_of: '2026-08-15', data_as_of: '2026-08-15',
+    freshness_state: 'current', freshness_message: '当前完整', active_count: 60, participant_count: 60,
     stale: [], unavailable: [],
     summary: { up_count: 20, down_count: 18, volume_expansion_count: 12, oi_increase_count: 9, high_volatility_count: 7 },
     items: [], attention: [], sector_summary: [],
@@ -199,17 +200,18 @@ test('manual Radar refresh keeps the last snapshot on failure and updates on ret
   await page.route('**/api/v1/market/research/radar', async (route) => {
     attempt += 1
     if (attempt === 2) return route.fulfill({ status: 503, json: { detail: 'temporarily unavailable' } })
-    return route.fulfill({ json: radar({ expected_as_of: attempt === 1 ? '2026-08-14' : '2026-08-15' }) })
+    const asOf = attempt === 1 ? '2026-08-14' : '2026-08-15'
+    return route.fulfill({ json: radar({ expected_as_of: asOf, target_as_of: asOf, data_as_of: asOf }) })
   })
   await page.goto('/market')
-  await expect(page.getByText('2026-08-14 · 60/60', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前数据日期 2026-08-14', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: '刷新 Radar' }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toBeVisible()
-  await expect(page.getByText('2026-08-14 · 60/60', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前数据日期 2026-08-14', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: '重试' }).click()
-  await expect(page.getByText('2026-08-15 · 60/60', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前数据日期 2026-08-15', { exact: true })).toBeVisible()
   await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toHaveCount(0)
 })
 
