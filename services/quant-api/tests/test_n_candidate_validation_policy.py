@@ -4,6 +4,7 @@ import json
 from dataclasses import FrozenInstanceError
 from datetime import date
 from pathlib import Path
+import traceback
 from typing import Any, Callable
 
 import pytest
@@ -105,18 +106,32 @@ def test_missing_malformed_and_non_utf8_files_fail_closed(
     loader: Callable[[Path], object],
     error_type: type[ValueError],
 ) -> None:
-    with pytest.raises(error_type):
-        loader(tmp_path / "missing.json")
+    def assert_sanitized(source: Path) -> None:
+        with pytest.raises(error_type) as captured:
+            loader(source)
+        error = captured.value
+        assert getattr(error, "code", None) == str(error)
+        assert error.__cause__ is None
+        rendered = "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        )
+        assert str(source) not in rendered
+        for forbidden in (
+            "FileNotFoundError",
+            "JSONDecodeError",
+            "UnicodeDecodeError",
+        ):
+            assert forbidden not in rendered
+
+    assert_sanitized(tmp_path / "missing.json")
 
     malformed = tmp_path / "malformed.json"
     malformed.write_text("{", encoding="utf-8")
-    with pytest.raises(error_type):
-        loader(malformed)
+    assert_sanitized(malformed)
 
     non_utf8 = tmp_path / "non-utf8.json"
     non_utf8.write_bytes(b"\xff\xfe")
-    with pytest.raises(error_type):
-        loader(non_utf8)
+    assert_sanitized(non_utf8)
 
 
 @pytest.mark.parametrize(

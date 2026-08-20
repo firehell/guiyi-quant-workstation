@@ -7,14 +7,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from . import n_structure_policy as _policy_contract
-from .domain import BarFrequency, CanonicalBar
+from .domain import CanonicalBar
 from .n_structure_pattern import (
     CompletedNPattern,
     NPatternTrace,
     evaluate_n_patterns,
 )
-from .n_structure_policy import NStructurePolicy
+from .n_structure_policy import NStructurePolicy, is_exact_n_structure_policy
 from .n_structure_swing import (
     NStructureContractError,
     NStructureSeriesError,
@@ -372,22 +371,7 @@ def _validate_inputs(
     patterns: NPatternTrace,
     policy: NStructurePolicy,
 ) -> None:
-    if (
-        not isinstance(policy, NStructurePolicy)
-        or type(policy.schema_version) is not int
-        or policy.schema_version != 1
-        or type(policy.policy_id) is not str
-        or policy.policy_id != "n_structure_5m_v1"
-        or type(policy.formula_version) is not str
-        or policy.formula_version != "n_structure_v1"
-        or type(policy.research_only) is not bool
-        or policy.research_only is not True
-        or policy.source_timeframe is not BarFrequency.M5
-        or not _policy_contract._matches_exact(
-            policy.raw,
-            _policy_contract._EXPECTED_PAYLOAD,
-        )
-    ):
+    if not is_exact_n_structure_policy(policy):
         raise NStructureContractError()
     if (
         not isinstance(swings, NSwingTrace)

@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / candidate-validation / futures-mirror"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / candidate-validation / futures-mirror"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -34,9 +34,12 @@ flowchart TB
       AR["AlertRuntime"]
     end
     subgraph Research["只读 Historical Research / Shadow"]
+      ADR["ActualDominantResearchSegmentLoader<br/>true rank1 segment prefix"]
       SL["SuBing Lifecycle V2<br/>research-only snapshot / Shadow"]
+      NS["N Structure V1<br/>5m causal Swing / N / Structure"]
       SCR["SubingCalibrationResearchService"]
-      CV["Candidate Validation V1<br/>exact Candidate / Protocol"]
+      SCV["SuBing Candidate Report<br/>source-specific"]
+      NCV["N Candidate Report<br/>source-specific"]
       MFM["MainForceMirrorFuturesResearchService<br/>historical-only Shadow"]
     end
     subgraph AlertApp["Alert Application Domain"]
@@ -67,8 +70,10 @@ flowchart TB
     API --> MRS
     API --> SR
     RCLI --> SCR --> MQ
-    RCLI --> SL --> MQ
-    RCLI --> CV --> SL
+    RCLI --> SL --> ADR --> MQ
+    RCLI --> NS --> ADR
+    RCLI --> SCV --> SL
+    RCLI --> NCV --> NS
     RCLI --> MFM --> MQ
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
@@ -123,14 +128,21 @@ flowchart TB
   Lifecycle V2 snapshot。Historical 输入同时受 current rank1 segment 起止日约束。
   该服务不拥有或修改 Calibration/Signal 公式，
   不直连 provider/Redis，不持久化 Signal，不写 Canonical/DB，也不管理 Runtime。
-  `SubingLifecycleResearchService` 只通过 `MarketDataService` 对 Historical Canonical 按 rank1
-  segment 独立复算 Shadow，结果仅由 read-only CLI 输出 stdout JSON。Lifecycle 无独立
-  DB/Redis persistence、worker/queue 或 notification path；`AlertRuntime` 仍只消费 V1
-  `resolved_signal`，不依赖 Lifecycle evaluator 或 snapshot。
-  Candidate Validation V1 以 exact Git-tracked Candidate/Protocol 编排该同一个 Lifecycle service，
-  只投影 retrospective、rolling 与 prospective OOS 事实到 stdout JSON 或版本化 research report；
-  不重算 lifecycle/outcome/rank1，不建立 order、position、cost、equity、DB/Redis persistence 或
-  Alert consumer，也不产生自动 KEEP/DROP/PROMOTE 结论。
+  `SubingLifecycleResearchService` 与 `NStructureResearchService` 共用
+  `ActualDominantResearchSegmentLoader`，仅通过 `MarketDataService` 还原 true rank1 segment
+  prefix，再分别进入两个独立 domain。SuBing 保留原 Lifecycle/factor/same-day/EMA21
+  语义；N 仅消费 completed Historical actual-dominant 5m，按 segment 独立运行 Swing epoch、
+  Completed N、break/band raw facts 和 BULL/BEAR/RANGE Structure。两者结果都仅由
+  read-only CLI 输出 stdout JSON。Lifecycle 无独立 DB/Redis persistence、worker/queue 或
+  notification path；`AlertRuntime` 仍只消费 V1 `resolved_signal`，不依赖 Lifecycle
+  evaluator 或 snapshot。
+  Candidate Validation 只共享 exact request/error 与 rolling/prospective schedule；SuBing 与 N
+  各自保留 source-specific report，不把 confirmation/EMA21 与 Swing/N/Structure metrics
+  强制统一。两条链都只投影 retrospective、rolling 与 prospective OOS 事实到 stdout
+  JSON 或版本化 research report，不建立 Strategy Plugin/Registry、order、position、cost、equity、
+  DB/Redis persistence 或 Alert consumer，也不产生自动 KEEP/DROP/PROMOTE 结论。N
+  目前只是 Historical/research-only 结构与 Candidate producer；未执行真实 evidence 生成，
+  不代表效果、promotion、release 或 Runtime 能力。
   `MainForceMirrorFuturesResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
   把每根 Bar 绑定到唯一物理合约后调用 Python Indicator Kernel；结果只由只读 CLI

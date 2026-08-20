@@ -149,8 +149,8 @@ def load_n_candidate_manifest(path: Path | None = None) -> NCandidateManifest:
     )
     try:
         policy = load_n_structure_policy()
-    except NStructurePolicyError as exc:
-        raise NCandidateManifestError() from exc
+    except NStructurePolicyError:
+        raise NCandidateManifestError() from None
     if (
         policy.policy_id != payload["policy_id"]
         or policy.formula_version != payload["formula_version"]
@@ -208,8 +208,8 @@ def _load_exact(
 ) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise error_type() from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise error_type() from None
     if not _matches_exact(payload, expected):
         raise error_type()
     assert isinstance(payload, dict)

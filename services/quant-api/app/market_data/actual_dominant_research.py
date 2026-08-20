@@ -42,6 +42,18 @@ class _ActualDominantResearchReader(Protocol):
     ) -> _DominantSegmentSummary: ...
 
 
+class ActualDominantResearchSourceError(RuntimeError):
+    """Sanitized shared-loader boundary for unavailable source reads."""
+
+    def __init__(self, original_error: Exception) -> None:
+        super().__init__("actual dominant research source unavailable")
+        self.original_error = original_error
+
+
+class ActualDominantResearchSegmentIdentityError(ValueError):
+    """Typed shared-loader boundary for invalid rank-1 segment identity."""
+
+
 @dataclass(frozen=True, slots=True)
 class ActualDominantResearchSeries:
     results: Mapping[BarFrequency, MarketSeriesResult]
@@ -49,8 +61,16 @@ class ActualDominantResearchSeries:
 
 
 class ActualDominantResearchSegmentLoader:
-    def __init__(self, market_data: _ActualDominantResearchReader) -> None:
+    def __init__(
+        self,
+        market_data: _ActualDominantResearchReader,
+        *,
+        legacy_coverage_error_frequency: BarFrequency | None = None,
+    ) -> None:
         self._market_data = market_data
+        self._legacy_coverage_error_frequency = (
+            legacy_coverage_error_frequency
+        )
 
     def load(
         self,
@@ -62,10 +82,12 @@ class ActualDominantResearchSegmentLoader:
     ) -> ActualDominantResearchSeries:
         requested_frequencies = tuple(frequencies)
         if not requested_frequencies:
-            raise ValueError("rank1 segment identity is missing or inconsistent")
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 segment identity is missing or inconsistent"
+            )
 
         probe = {
-            frequency: self._market_data.query_actual_dominant_trading_days(
+            frequency: self._query_actual_dominant_trading_days(
                 ActualDominantTradingDayQuery(
                     symbol,
                     frequency,
@@ -79,6 +101,7 @@ class ActualDominantResearchSegmentLoader:
             frequency: self._restore_true_segments(
                 symbol,
                 probe[frequency],
+                frequency=frequency,
                 since=since,
                 through=through,
             )
@@ -89,10 +112,12 @@ class ActualDominantResearchSegmentLoader:
             probe_segments[frequency] != segments
             for frequency in requested_frequencies[1:]
         ):
-            raise ValueError("rank1 segment identity is missing or inconsistent")
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 segment identity is missing or inconsistent"
+            )
 
         full = {
-            frequency: self._market_data.query_actual_dominant_trading_days(
+            frequency: self._query_actual_dominant_trading_days(
                 ActualDominantTradingDayQuery(
                     symbol,
                     frequency,
@@ -106,6 +131,7 @@ class ActualDominantResearchSegmentLoader:
             frequency: self._restore_true_segments(
                 symbol,
                 full[frequency],
+                frequency=frequency,
                 since=segments[0].start_trading_day,
                 through=through,
             )
@@ -115,14 +141,36 @@ class ActualDominantResearchSegmentLoader:
             full_segments[frequency] != segments
             for frequency in requested_frequencies
         ):
-            raise ValueError("rank1 probe/full segment identity is inconsistent")
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 probe/full segment identity is inconsistent"
+            )
         return ActualDominantResearchSeries(MappingProxyType(full), segments)
+
+    def _query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult:
+        try:
+            return self._market_data.query_actual_dominant_trading_days(request)
+        except Exception as exc:
+            raise ActualDominantResearchSourceError(exc) from None
+
+    def _dominant_segment_for_day(
+        self,
+        symbol: str,
+        trading_day: date,
+    ) -> _DominantSegmentSummary:
+        try:
+            return self._market_data.dominant_segment_for_day(symbol, trading_day)
+        except Exception as exc:
+            raise ActualDominantResearchSourceError(exc) from None
 
     def _restore_true_segments(
         self,
         symbol: str,
         result: MarketSeriesResult,
         *,
+        frequency: BarFrequency,
         since: date,
         through: date,
     ) -> tuple[ResolvedContractSegment, ...]:
@@ -131,9 +179,11 @@ class ActualDominantResearchSegmentLoader:
         )
         raw_segments = result.resolved_contract_segments
         if not bars or not raw_segments:
-            raise ValueError("rank1 segment identity is missing or inconsistent")
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 segment identity is missing or inconsistent"
+            )
         self._validate_segment_coverage(
-            {BarFrequency.M5: bars},
+            {self._coverage_error_frequency(frequency): bars},
             raw_segments,
         )
 
@@ -149,7 +199,7 @@ class ActualDominantResearchSegmentLoader:
             if not segment_days:
                 continue
             representative = segment_days[0]
-            summary = self._market_data.dominant_segment_for_day(
+            summary = self._dominant_segment_for_day(
                 symbol,
                 representative,
             )
@@ -170,26 +220,41 @@ class ActualDominantResearchSegmentLoader:
                     <= summary.end_trading_day
                 )
             ):
-                raise ValueError(
+                raise ActualDominantResearchSegmentIdentityError(
                     "rank1 segment identity conflicts with containing summary"
                 )
-            segment = ResolvedContractSegment(
-                summary.contract,
-                summary.start_trading_day,
-                summary.end_trading_day,
-            )
+            try:
+                segment = ResolvedContractSegment(
+                    summary.contract,
+                    summary.start_trading_day,
+                    summary.end_trading_day,
+                )
+            except (TypeError, ValueError):
+                raise ActualDominantResearchSegmentIdentityError(
+                    "rank1 segment identity conflicts with containing summary"
+                ) from None
             if restored and segment == restored[-1]:
                 continue
             if restored and segment.start_trading_day <= restored[-1].end_trading_day:
-                raise ValueError("rank1 segment summaries overlap")
+                raise ActualDominantResearchSegmentIdentityError(
+                    "rank1 segment summaries overlap"
+                )
             restored.append(segment)
         if not restored:
-            raise ValueError("rank1 segment identity is missing or inconsistent")
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 segment identity is missing or inconsistent"
+            )
         self._validate_segment_coverage(
-            {BarFrequency.M5: bars},
+            {self._coverage_error_frequency(frequency): bars},
             tuple(restored),
         )
         return tuple(restored)
+
+    def _coverage_error_frequency(
+        self,
+        frequency: BarFrequency,
+    ) -> BarFrequency:
+        return self._legacy_coverage_error_frequency or frequency
 
     @staticmethod
     def _validate_segment_coverage(
@@ -207,9 +272,11 @@ class ActualDominantResearchSegmentLoader:
                     ):
                         identity = (bar.bar_end, bar.trading_day)
                         if identity in covered:
-                            raise ValueError("rank1 segments overlap")
+                            raise ActualDominantResearchSegmentIdentityError(
+                                "rank1 segments overlap"
+                            )
                         covered.add(identity)
             if len(covered) != len(bars):
-                raise ValueError(
+                raise ActualDominantResearchSegmentIdentityError(
                     f"rank1 segment identity is incomplete for {frequency.value}"
                 )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from copy import deepcopy
+from collections.abc import Mapping
 from dataclasses import FrozenInstanceError, fields, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -30,6 +30,14 @@ _CONTRACT = "JM2701"
 _SEGMENT_START = date(2026, 8, 3)
 _TRADING_DAY = date(2026, 8, 19)
 _START = datetime(2026, 8, 19, 1, 5, tzinfo=UTC)
+
+
+def _thaw_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
 
 
 def _bar(
@@ -755,11 +763,14 @@ def test_pattern_rejects_exact_policy_scalar_and_nested_raw_drift() -> None:
     bars = (_bar(0, high="11", low="10"),)
     swing = _swing(())
 
-    nested_value_drift = deepcopy(policy.raw)
+    nested_value_drift = _thaw_json(policy.raw)
+    assert isinstance(nested_value_drift, dict)
     nested_value_drift["n_pattern"]["completion"] = "close_breach"  # type: ignore[index]
-    missing_nested_key = deepcopy(policy.raw)
+    missing_nested_key = _thaw_json(policy.raw)
+    assert isinstance(missing_nested_key, dict)
     del missing_nested_key["range_band"]["reentry_starts"]  # type: ignore[index]
-    extra_nested_key = deepcopy(policy.raw)
+    extra_nested_key = _thaw_json(policy.raw)
+    assert isinstance(extra_nested_key, dict)
     extra_nested_key["n_pattern"]["unexpected"] = True  # type: ignore[index]
 
     for drifted in (

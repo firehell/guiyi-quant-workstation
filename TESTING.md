@@ -188,11 +188,59 @@ intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distan
 Shadow，只输出 stdout JSON。测试只验证命令、分段因果与报告合同，不运行真实当前市场观察，
 也不表示正式回测、策略有效或可晋升。
 
-`guiyi research candidate-validation` 只接受 Git-tracked exact Candidate/Protocol，通过既有
-`SubingLifecycleResearchService` 投影 frozen retrospective、10 个 12m+3m rolling folds 和从
-`2026-08-20` 开始的 prospective OOS。命令只输出 stdout JSON，保持 `research_only=true` 与
-`readonly=true`；测试使用 fake source 验证合同和时间边界，不运行真实 Candidate report，也不授权
-Candidate 晋升、Alert/Runtime 接入、DB/Canonical/Redis 写入、通知或订单。
+`guiyi research candidate-validation` 只接受两组 Git-tracked exact Candidate/Protocol pair：
+SuBing 由 `SubingLifecycleResearchService`、N 由 `NStructureResearchService` 分别产生
+source-specific report，只共享 rolling/prospective schedule。两条链都只输出 stdout JSON，
+保持 `research_only=true` 与 `readonly=true`；测试使用 fake source 验证合同和时间边界，
+不运行真实 Candidate report，也不授权 Candidate 晋升、Alert/Runtime 接入、
+DB/Canonical/Redis 写入、通知或订单。N 的 retrospective 截止 `2026-08-19`，
+`2026-08-20` 只是 embargo，prospective 首日是 `2026-08-21`。
+
+## N Structure V1（Historical / research-only）
+
+### N 全链与 CLI
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_n_structure_policy.py \
+  services/quant-api/tests/test_n_structure_swing.py \
+  services/quant-api/tests/test_n_structure_pattern.py \
+  services/quant-api/tests/test_n_structure_state.py \
+  services/quant-api/tests/data_foundation/test_actual_dominant_research.py \
+  services/quant-api/tests/test_price_outcome.py \
+  services/quant-api/tests/data_foundation/test_n_structure_research_service.py \
+  services/quant-api/tests/test_candidate_validation_schedule.py \
+  services/quant-api/tests/test_n_candidate_validation_policy.py \
+  services/quant-api/tests/test_n_candidate_validation.py \
+  services/quant-api/tests/data_foundation/test_n_candidate_validation_service.py \
+  services/quant-api/tests/test_research_cli.py
+```
+
+### 上游 SuBing zero-regression
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_lifecycle_policy.py \
+  services/quant-api/tests/test_subing_structure.py \
+  services/quant-api/tests/test_subing_lifecycle.py \
+  services/quant-api/tests/test_subing_calibration.py \
+  services/quant-api/tests/test_subing_research.py \
+  services/quant-api/tests/data_foundation/test_subing_read_service.py \
+  services/quant-api/tests/data_foundation/test_subing_lifecycle_research_service.py \
+  services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
+  services/quant-api/tests/test_candidate_validation_policy.py \
+  services/quant-api/tests/test_candidate_validation.py \
+  services/quant-api/tests/data_foundation/test_subing_candidate_validation_service.py \
+  services/quant-api/tests/test_research_cli.py
+```
+
+这两组命令验证 `MarketDataService → ActualDominantResearchSegmentLoader →
+SuBing / N` 的 Historical 链、N 的 5m/epoch/segment/prefix 因果合同、独立 source-specific
+Candidate report 以及 SuBing same-day/EMA21 语义不变。`guiyi research n-structure` 与 N
+Candidate Validation 只读 Historical Canonical；测试不运行真实 `jm` 数据窗口，不形成效果、
+promotion、release 或 Runtime 结论，不授权数据/DB 写入、Alert/通知或订单。
 
 ## Alert V2
 

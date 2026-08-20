@@ -57,11 +57,13 @@ RQData
 
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
-`guiyi research candidate-validation`、`guiyi research main-force-mirror-futures` 和 `guiyi runtime
+`guiyi research n-structure`、`guiyi research candidate-validation`、`guiyi research main-force-mirror-futures` 和 `guiyi runtime
 status|live|alert|alert-canary|clawbot-owner-bootstrap|clawbot-preflight`；其中 `alert-canary` 是独立真实通知 Gate，
 `clawbot-owner-bootstrap --confirm-write-owner` 会写 Git 外私有 owner 配置；`clawbot-preflight` 只做 zero-send
-account/context readiness probe，但仍是受控外部 Gate。这些命令都不能由普通只读测试授权。Market
-Runtime 的 Live 与盘后更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
+account/context readiness probe，但仍是受控外部 Gate。这些命令都不能由普通只读测试授权。
+`research n-structure` 只读取 Historical Canonical，经共享行情入口生成 research-only 观察；它不写数据、
+不进入 Runtime，不证明效果，也不授权 candidate promotion。Market Runtime 的 Live 与盘后更新共用
+`operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
 当日 rank1 completed 1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为
 Canonical。DFD-01～DFD-07 和 60 品种 Canonical 闭环已经完成，长期规范位于 `openspec/specs/`；现有旧
 入口不能作为当前合同依据。

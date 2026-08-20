@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 import traceback
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from app.market_data.domain import BarFrequency
 from app.market_data.n_structure_policy import (
     NStructurePolicyError,
+    is_exact_n_structure_policy,
     load_n_structure_policy,
 )
 
@@ -119,6 +121,33 @@ def test_policy_dataclass_is_frozen() -> None:
 
     with pytest.raises(FrozenInstanceError):
         policy.policy_id = "drifted"  # type: ignore[misc]
+
+
+def test_policy_raw_is_recursively_frozen_and_publicly_validated() -> None:
+    policy = load_n_structure_policy()
+
+    assert isinstance(policy.raw, MappingProxyType)
+    swing = policy.raw["swing"]
+    structure = policy.raw["structure"]
+    assert isinstance(swing, MappingProxyType)
+    assert isinstance(structure, MappingProxyType)
+    assert structure["kinds"] == ("bull", "bear", "range")
+    with pytest.raises(TypeError):
+        policy.raw["unexpected"] = True  # type: ignore[index]
+    with pytest.raises(TypeError):
+        swing["outside_bar"] = "guess_intrabar_order"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        structure["kinds"][0] = "range"  # type: ignore[index]
+
+    assert is_exact_n_structure_policy(policy) is True
+    assert (
+        is_exact_n_structure_policy(replace(policy, research_only=False))
+        is False
+    )
+    assert (
+        is_exact_n_structure_policy(replace(policy, schema_version=True))
+        is False
+    )
 
 
 def test_missing_policy_file_fails_closed(tmp_path: Path) -> None:
