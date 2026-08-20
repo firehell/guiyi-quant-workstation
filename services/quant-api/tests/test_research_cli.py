@@ -14,7 +14,11 @@ from app.market_data import composition as market_data_composition
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
 from app.guiyi_cli.data_parser import CliUsageError
-from app.guiyi_cli.research_commands import build_research_request, run_research_command
+from app.guiyi_cli.research_commands import (
+    _optional_decimal,
+    build_research_request,
+    run_research_command,
+)
 from app.market_data.candidate_validation import (
     CandidateValidationReport,
     CandidateWindowKind,
@@ -95,6 +99,23 @@ def _arguments(
 
 def _request(arguments: list[str]):
     return build_research_request(build_parser().parse_args(arguments))
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    (
+        (None, None),
+        (Decimal("-0"), "0"),
+        (Decimal("-0.000"), "0"),
+        (Decimal("0.000"), "0"),
+        (Decimal("12.3400"), "12.3400"),
+    ),
+)
+def test_optional_decimal_canonicalizes_zero_without_changing_nonzero_scale(
+    value: Decimal | None,
+    expected: str | None,
+) -> None:
+    assert _optional_decimal(value) == expected
 
 
 def _lifecycle_arguments() -> list[str]:

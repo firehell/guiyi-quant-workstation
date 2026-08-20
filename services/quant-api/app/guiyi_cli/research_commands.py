@@ -686,7 +686,9 @@ def _horizon_payload(evaluation: HorizonEvaluation) -> dict[str, object]:
 
 
 def _optional_decimal(value: Decimal | None) -> str | None:
-    return None if value is None else str(value)
+    if value is None:
+        return None
+    return "0" if value == 0 else str(value)
 
 
 def _day(value: str) -> date:
