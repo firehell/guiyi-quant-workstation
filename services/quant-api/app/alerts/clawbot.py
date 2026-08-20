@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 import json
+import logging
 import os
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -13,11 +14,7 @@ import subprocess
 from typing import Any
 import unicodedata
 
-from app.alerts.clawbot_owner import (
-    CLAWBOT_OWNER_ALIAS,
-    ClawbotOwnerError,
-    validate_clawbot_owner_ids,
-)
+from app.alerts.clawbot_owner import ClawbotOwnerError, validate_clawbot_owner_ids
 from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage, format_alert_message
 from app.alerts.recipients import (
     ClawbotRecipient,
@@ -33,6 +30,7 @@ VERSIONS_PATH = PROJECT_ROOT / "deploy/clawbot/versions.json"
 SINGLE_SHOT_PATH = PROJECT_ROOT / "services/quant-api/app/alerts/openclaw_weixin_single_shot.mjs"
 CHILD_TIMEOUT_SECONDS = 15.0
 VERSION_TIMEOUT_SECONDS = 10.0
+CLAWBOT_TRANSPORT = "clawbot-openclaw-weixin"
 CLAWBOT_PATH_ENV_NAMES = (
     "GUIYI_OPENCLAW_BIN",
     "GUIYI_OPENCLAW_NODE_BIN",
@@ -49,12 +47,19 @@ _PUBLIC_CHILD_ERRORS = {
     "CLAWBOT_OWNER_UNAVAILABLE",
     "CLAWBOT_SEND_FAILED",
 }
+_LOGGER = logging.getLogger(__name__)
 
 
 class ClawbotError(RuntimeError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+class ClawbotDeliveryError(ClawbotError):
+    def __init__(self, summary: ClawbotSendSummary) -> None:
+        super().__init__("ALERT_NOTIFICATION_DELIVERY_FAILED")
+        self.summary = summary
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +90,13 @@ class ClawbotSendSummary:
     attempted: int
     provider_accepted: int
     failed: int
+    failed_aliases: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ClawbotPreflightSummary:
+    recipient_count: int
+    ready_count: int
     failed_aliases: tuple[str, ...]
 
 
@@ -397,18 +409,71 @@ class ClawbotRunner:
 
 
 class ClawbotAlertSender:
-    def __init__(self, recipient: ClawbotRecipient, runner: ClawbotRunner) -> None:
-        self._recipient = recipient
+    def __init__(self, directory: RecipientDirectory, runner: ClawbotRunner) -> None:
+        self._directory = directory
         self._runner = runner
 
     def send(self, message: AlertNotificationMessage) -> None:
-        self._runner.send_text(self._recipient, format_alert_message(message))
+        rendered = format_alert_message(message)
+        failed_aliases: list[str] = []
+        recipients = self._directory.recipients_for(message.rule_code)
+        for recipient in recipients:
+            try:
+                self._runner.send_text(recipient, rendered)
+            except Exception:  # noqa: BLE001 - isolate one recipient without leaking detail
+                failed_aliases.append(recipient.alias)
+        if failed_aliases:
+            summary = ClawbotSendSummary(
+                attempted=len(recipients),
+                provider_accepted=len(recipients) - len(failed_aliases),
+                failed=len(failed_aliases),
+                failed_aliases=tuple(failed_aliases),
+            )
+            _LOGGER.warning(
+                "ALERT_NOTIFICATION_DELIVERY_FAILED attempted=%s provider_accepted=%s failed=%s failed_aliases=%s",
+                summary.attempted,
+                summary.provider_accepted,
+                summary.failed,
+                ",".join(summary.failed_aliases),
+            )
+            raise ClawbotDeliveryError(summary)
 
-    def send_canary(self) -> ClawbotSendSummary:
+    def preflight(self) -> ClawbotPreflightSummary:
+        failed_aliases: list[str] = []
+        for recipient in self._directory.recipients:
+            try:
+                self._runner.probe(recipient)
+            except Exception:  # noqa: BLE001 - isolate one probe without leaking detail
+                failed_aliases.append(recipient.alias)
+        summary = ClawbotPreflightSummary(
+            recipient_count=len(self._directory.recipients),
+            ready_count=len(self._directory.recipients) - len(failed_aliases),
+            failed_aliases=tuple(failed_aliases),
+        )
+        if failed_aliases:
+            _LOGGER.warning(
+                "ALERT_NOTIFICATION_PREFLIGHT_FAILED recipient_count=%s ready_count=%s failed_aliases=%s",
+                summary.recipient_count,
+                summary.ready_count,
+                ",".join(summary.failed_aliases),
+            )
+        return summary
+
+    def send_canary(self, alias: str) -> ClawbotSendSummary:
+        recipient = next(
+            (
+                candidate
+                for candidate in self._directory.recipients
+                if candidate.alias == alias
+            ),
+            None,
+        )
+        if recipient is None:
+            raise ClawbotError("CLAWBOT_RECIPIENT_ALIAS_INVALID")
         try:
-            self._runner.send_text(self._recipient, ALERT_CANARY_TEXT)
-        except ClawbotError:
-            return ClawbotSendSummary(1, 0, 1, (CLAWBOT_OWNER_ALIAS,))
+            self._runner.send_text(recipient, ALERT_CANARY_TEXT)
+        except Exception:  # noqa: BLE001 - canary summary is public and secret-safe
+            return ClawbotSendSummary(1, 0, 1, (recipient.alias,))
         return ClawbotSendSummary(1, 1, 0, ())
 
 
@@ -437,25 +502,48 @@ def build_clawbot_runner_from_env(*, verify_versions: bool = True) -> ClawbotRun
 
 
 def build_clawbot_sender_from_env(*, live_probe: bool = True) -> ClawbotAlertSender:
-    runner = build_clawbot_runner_from_env(verify_versions=True)
     try:
-        recipient = load_recipient_directory(runner.dependency.recipients_path).recipients_for(
-            "subing_entry_signal_v1"
-        )[0]
+        dependency = build_clawbot_dependency_from_env(verify_versions=True)
+        directory = load_recipient_directory(dependency.recipients_path)
+        runner = ClawbotRunner(
+            dependency,
+            recipient_directory=directory,
+        )
+        sender = ClawbotAlertSender(directory, runner)
         if live_probe:
-            runner.probe(recipient)
+            summary = sender.preflight()
+            if summary.ready_count != summary.recipient_count:
+                raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY")
     except Exception as exc:
         if isinstance(exc, ClawbotError):
             raise
         raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY") from None
-    return ClawbotAlertSender(recipient, runner)
+    return sender
+
+
+def clawbot_transport_status_from_env() -> dict[str, object]:
+    """Return public structural readiness without spawning or contacting the provider."""
+    try:
+        dependency = build_clawbot_dependency_from_env(verify_versions=False)
+        directory = load_recipient_directory(dependency.recipients_path)
+    except (ClawbotError, ClawbotOwnerError, ClawbotRecipientError, OSError, ValueError):
+        return {
+            "transport": CLAWBOT_TRANSPORT,
+            "configured": False,
+            "recipient_count": 0,
+            "ready_count": 0,
+            "would_send": False,
+        }
+    recipient_count = len(directory.recipients)
+    return {
+        "transport": CLAWBOT_TRANSPORT,
+        "configured": True,
+        "recipient_count": recipient_count,
+        "ready_count": recipient_count,
+        "would_send": False,
+    }
 
 
 def clawbot_transport_configured_from_env() -> bool:
-    """Validate local Clawbot structure without spawning or contacting the provider."""
-    try:
-        dependency = build_clawbot_dependency_from_env(verify_versions=False)
-        load_recipient_directory(dependency.recipients_path)
-    except (ClawbotError, ClawbotOwnerError, ClawbotRecipientError, OSError, ValueError):
-        return False
-    return True
+    """Compatibility boolean for structural transport readiness."""
+    return clawbot_transport_status_from_env()["configured"] is True

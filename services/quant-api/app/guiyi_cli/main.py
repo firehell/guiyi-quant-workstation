@@ -19,17 +19,14 @@ from typing import Any, TextIO
 
 from app.db.session import SessionLocal
 from app.alerts.clawbot import (
+    CLAWBOT_TRANSPORT,
     build_clawbot_runner_from_env,
     build_clawbot_sender_from_env,
 )
-from app.alerts.clawbot_owner import (
-    CLAWBOT_CHANNEL,
-    CLAWBOT_OWNER_ALIAS,
-)
+from app.alerts.clawbot_owner import CLAWBOT_CHANNEL
 from app.alerts.recipient_bootstrap import RecipientBootstrap
 from app.alerts.recipients import (
     initialize_recipients_from_owner,
-    load_recipient_directory,
 )
 from app.alerts.composition import build_alert_runtime
 from app.core.env import PROJECT_ROOT
@@ -66,8 +63,6 @@ AfterMarketFactory = Callable[[HistoricalDataManager], Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
-ClawbotRunnerFactory = Callable[[], Any]
-RecipientDirectoryLoader = Callable[[Path], Any]
 RecipientPaths = Callable[[], tuple[Path, Path]]
 RecipientInitializer = Callable[[Path, Path], Any]
 RecipientBootstrapFactory = Callable[[], Any]
@@ -91,7 +86,13 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
 
 
 def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
-    return not raw or raw[0] != "recipients"
+    if raw and raw[0] == "recipients":
+        return False
+    return not (
+        len(raw) >= 2
+        and raw[0] == "runtime"
+        and raw[1] in {"live", "alert", "alert-canary"}
+    )
 
 
 def _execution_review_roll_marker_state(
@@ -128,7 +129,8 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("status")
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
-    runtime_commands.add_parser("alert-canary")
+    alert_canary = runtime_commands.add_parser("alert-canary")
+    alert_canary.add_argument("--alias", required=True)
     runtime_commands.add_parser("clawbot-preflight")
     recipients = domains.add_parser("recipients")
     recipient_commands = recipients.add_subparsers(
@@ -158,6 +160,10 @@ def _build_recipient_bootstrap() -> RecipientBootstrap:
     return RecipientBootstrap(runner, runner.dependency.recipients_path)
 
 
+def _build_clawbot_cli_sender() -> Any:
+    return build_clawbot_sender_from_env(live_probe=False)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -166,11 +172,7 @@ def main(
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
-    alert_canary_sender_factory: AlertCanarySenderFactory = (
-        build_clawbot_sender_from_env
-    ),
-    clawbot_runner_factory: ClawbotRunnerFactory = build_clawbot_runner_from_env,
-    recipient_directory_loader: RecipientDirectoryLoader = load_recipient_directory,
+    alert_canary_sender_factory: AlertCanarySenderFactory = _build_clawbot_cli_sender,
     recipient_paths: RecipientPaths = _recipient_paths_from_env,
     recipient_initializer: RecipientInitializer = initialize_recipients_from_owner,
     recipient_bootstrap_factory: RecipientBootstrapFactory = _build_recipient_bootstrap,
@@ -313,31 +315,33 @@ def main(
                 "foreground": True,
             }
         elif args.runtime_command == "alert-canary":
-            summary = alert_canary_sender_factory().send_canary()
+            summary = alert_canary_sender_factory().send_canary(args.alias)
             payload = {
                 "schema_version": 1,
                 "command": "runtime.alert-canary",
                 "status": "ok" if summary.failed == 0 else "failed",
+                "alias": args.alias,
                 "attempted": summary.attempted,
                 "provider_accepted": summary.provider_accepted,
                 "failed": summary.failed,
                 "failed_aliases": list(summary.failed_aliases),
             }
         elif args.runtime_command == "clawbot-preflight":
-            runner = clawbot_runner_factory()
-            owner = recipient_directory_loader(
-                runner.dependency.recipients_path
-            ).recipients_for("subing_entry_signal_v1")[0]
-            runner.probe(owner)
+            summary = alert_canary_sender_factory().preflight()
             payload = {
                 "schema_version": 1,
                 "command": "runtime.clawbot-preflight",
-                "status": "ok",
+                "status": (
+                    "ok"
+                    if summary.ready_count == summary.recipient_count
+                    else "failed"
+                ),
                 "readonly": True,
-                "channel": CLAWBOT_CHANNEL,
-                "owner_alias": CLAWBOT_OWNER_ALIAS,
-                "account_configured": True,
-                "context_available": True,
+                "transport": CLAWBOT_TRANSPORT,
+                "configured": True,
+                "recipient_count": summary.recipient_count,
+                "ready_count": summary.ready_count,
+                "failed_aliases": list(summary.failed_aliases),
                 "would_send": False,
             }
         else:

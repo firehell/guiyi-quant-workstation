@@ -223,55 +223,59 @@ def test_readonly_command_parser_failures_stay_readonly(arguments: list[str]) ->
     assert payload["readonly"] is True
 
 
-def test_clawbot_preflight_loads_frozen_owner_and_never_sends() -> None:
-    calls: list[object] = []
-    owner = ClawbotRecipient(
-        "owner", "fixture-account", "fixture-owner@im.wechat"
-    )
-    directory = RecipientDirectory(
-        2,
-        "openclaw-weixin",
-        "fixture-account",
-        (owner,),
-        (),
-    )
+def test_clawbot_preflight_probes_all_frozen_recipients_and_never_sends() -> None:
+    calls: list[str] = []
 
-    class Runner:
-        dependency = SimpleNamespace(recipients_path=Path("/private/recipients.json"))
+    class Sender:
+        def preflight(self):
+            calls.append("preflight")
+            return type(
+                "Summary",
+                (),
+                {
+                    "recipient_count": 2,
+                    "ready_count": 2,
+                    "failed_aliases": (),
+                },
+            )()
 
-        def probe(self, value: ClawbotRecipient) -> None:
-            calls.append(value)
-
-        def send_text(self, *_args: object) -> None:
+        def send_canary(self, _alias: str) -> None:
             raise AssertionError("preflight must not send")
 
     code, payload = _run(
         ["runtime", "clawbot-preflight"],
-        clawbot_runner_factory=lambda: Runner(),
-        recipient_directory_loader=lambda _path: directory,
+        alert_canary_sender_factory=lambda: Sender(),
     )
 
     assert code == 0
-    assert calls == [owner]
+    assert calls == ["preflight"]
     assert payload == {
         "schema_version": 1,
         "command": "runtime.clawbot-preflight",
         "status": "ok",
         "readonly": True,
-        "channel": "openclaw-weixin",
-        "owner_alias": "owner",
-        "account_configured": True,
-        "context_available": True,
+        "transport": "clawbot-openclaw-weixin",
+        "configured": True,
+        "recipient_count": 2,
+        "ready_count": 2,
+        "failed_aliases": [],
         "would_send": False,
     }
+
+
+def test_alert_canary_requires_explicit_alias() -> None:
+    code, payload = _run(["runtime", "alert-canary"])
+
+    assert code == 2
+    assert payload["readonly"] is False
 
 
 def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
     calls: list[str] = []
 
     class Sender:
-        def send_canary(self):
-            calls.append("send_canary")
+        def send_canary(self, alias: str):
+            calls.append(alias)
             return type(
                 "Summary",
                 (),
@@ -290,18 +294,19 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
         raise AssertionError("alert canary must not enable or construct Alert Runtime")
 
     code, payload = _run(
-        ["runtime", "alert-canary"],
+        ["runtime", "alert-canary", "--alias", "alice"],
         session_factory=forbidden_session_factory,
         alert_runtime_factory=forbidden_alert_runtime_factory,
         alert_canary_sender_factory=lambda: Sender(),
     )
 
     assert code == 0
-    assert calls == ["send_canary"]
+    assert calls == ["alice"]
     assert payload == {
         "schema_version": 1,
         "command": "runtime.alert-canary",
         "status": "ok",
+        "alias": "alice",
         "attempted": 1,
         "provider_accepted": 1,
         "failed": 0,
@@ -311,7 +316,8 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
 
 def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> None:
     class Sender:
-        def send_canary(self):
+        def send_canary(self, alias: str):
+            assert alias == "owner"
             return type(
                 "Summary",
                 (),
@@ -324,7 +330,7 @@ def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> No
             )()
 
     code, payload = _run(
-        ["runtime", "alert-canary"],
+        ["runtime", "alert-canary", "--alias", "owner"],
         alert_canary_sender_factory=lambda: Sender(),
     )
 
@@ -333,6 +339,7 @@ def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> No
         "schema_version": 1,
         "command": "runtime.alert-canary",
         "status": "failed",
+        "alias": "owner",
         "attempted": 1,
         "provider_accepted": 0,
         "failed": 1,
@@ -345,7 +352,7 @@ def test_alert_canary_factory_exception_is_execution_error() -> None:
         raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY")
 
     code, payload = _run(
-        ["runtime", "alert-canary"],
+        ["runtime", "alert-canary", "--alias", "owner"],
         alert_canary_sender_factory=fail_factory,
     )
 
@@ -364,11 +371,12 @@ def test_alert_canary_factory_exception_is_execution_error() -> None:
 
 def test_alert_canary_send_exception_is_execution_error() -> None:
     class Sender:
-        def send_canary(self):
+        def send_canary(self, alias: str):
+            assert alias == "owner"
             raise ClawbotError("CLAWBOT_SEND_FAILED")
 
     code, payload = _run(
-        ["runtime", "alert-canary"],
+        ["runtime", "alert-canary", "--alias", "owner"],
         alert_canary_sender_factory=lambda: Sender(),
     )
 

@@ -19,7 +19,7 @@ CLAWBOT_PATH_ENV_NAMES = (
     "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT",
     "GUIYI_OPENCLAW_STATE_DIR",
     "GUIYI_OPENCLAW_CONFIG_PATH",
-    "GUIYI_ALERT_CLAWBOT_OWNER_PATH",
+    "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH",
 )
 
 
@@ -192,12 +192,12 @@ def test_local_status_reports_clawbot_from_supervised_runtime(tmp_path: Path) ->
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "alert.notification_channel=clawbot-openclaw-weixin" in result.stdout
-    assert "alert.notification_owner_alias=owner" in result.stdout
+    assert "alert.notification_recipient_count=1" in result.stdout
     assert "external.openclaw.status=ready" in result.stdout
     assert f"external.openclaw.version={OPENCLAW_VERSION}" in result.stdout
     assert "external.openclaw_weixin.status=ready" in result.stdout
     assert f"external.openclaw_weixin.version={OPENCLAW_WEIXIN_VERSION}" in result.stdout
-    assert "external.clawbot_owner_config=ready" in result.stdout
+    assert "external.clawbot_recipients_config=ready" in result.stdout
     assert "overall=passed" in result.stdout
     assert not calls.exists()
 
@@ -592,7 +592,7 @@ def _status_clawbot_paths(
         return {}
     plugin = root / "plugin"
     state_dir = root / "state"
-    owner_dir = root / "owner"
+    owner_dir = root / "recipients"
     plugin.mkdir(parents=True)
     state_dir.mkdir()
     owner_dir.mkdir(mode=0o700)
@@ -605,13 +605,15 @@ def _status_clawbot_paths(
     node.chmod(0o700)
     config = state_dir / "openclaw.json"
     config.write_text("{}\n", encoding="utf-8")
-    owner = owner_dir / "owner.json"
-    owner.write_text(
-        '{"version":1,"channel":"openclaw-weixin","owner_alias":"owner",'
-        '"account_id":"private-account","target_user_id":"private-owner@im.wechat"}\n',
+    recipients = owner_dir / "recipients.json"
+    recipients.write_text(
+        '{"schema_version":2,"channel":"openclaw-weixin",'
+        '"account_id":"private-account","active_recipients":'
+        '[{"alias":"owner","target_user_id":"private-owner@im.wechat"}],'
+        '"retired_aliases":[]}\n',
         encoding="utf-8",
     )
-    owner.chmod(0o600)
+    recipients.chmod(0o600)
     (plugin / "package.json").write_text(
         f'{{"version":"{OPENCLAW_WEIXIN_VERSION}"}}\n', encoding="utf-8"
     )
@@ -632,5 +634,5 @@ def _status_clawbot_paths(
         "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT": str(plugin),
         "GUIYI_OPENCLAW_STATE_DIR": str(state_dir),
         "GUIYI_OPENCLAW_CONFIG_PATH": str(config),
-        "GUIYI_ALERT_CLAWBOT_OWNER_PATH": str(owner),
+        "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH": str(recipients),
     }
