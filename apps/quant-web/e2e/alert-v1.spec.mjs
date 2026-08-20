@@ -37,6 +37,14 @@ function event({ id, ruleCode, frequency, barEnd, resultCode }) {
 
 test('persistent Alert V2 markers stay exact-frequency and actual-dominant only', async ({ page }) => {
   await page.setViewportSize({ width: 1680, height: 1000 })
+  await page.addInitScript(() => {
+    window.__GUIYI_E2E_CANVAS_TEXT__ = []
+    const original = CanvasRenderingContext2D.prototype.fillText
+    CanvasRenderingContext2D.prototype.fillText = function (value, ...args) {
+      window.__GUIYI_E2E_CANVAS_TEXT__.push(String(value))
+      return original.call(this, value, ...args)
+    }
+  })
   const requests = []
   let activeFrequency = '30m'
   const barsByFrequency = { '5m': bars('5m'), '15m': bars('15m'), '30m': bars('15m') }
@@ -107,8 +115,25 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
 
   await page.getByRole('button', { name: '15m', exact: true }).click()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
+  await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
+    expect.arrayContaining(['卖出观察', '买入信号']),
+  )
   await expect.poll(() => requests.filter((request) => request.activeFrequency === '15m').map((request) => request.ruleCode).sort())
     .toEqual(['htdy_original_15m', 'subing_entry_signal_v1'])
+
+  const tabs = page.getByTestId('secondary-panel-tabs')
+  await page.evaluate(() => { window.__GUIYI_E2E_CANVAS_TEXT__ = [] })
+  await tabs.getByRole('tab', { name: '原型V0' }).click()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
+  await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
+    expect.arrayContaining(['卖出观察', '买入信号']),
+  )
+  await page.evaluate(() => { window.__GUIYI_E2E_CANVAS_TEXT__ = [] })
+  await tabs.getByRole('tab', { name: 'MACD' }).click()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
+  await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
+    expect.arrayContaining(['卖出观察', '买入信号']),
+  )
 
   const eventRequestCount = requests.length
   await page.getByRole('button', { name: '主连', exact: true }).click()

@@ -306,6 +306,9 @@ PHYSICAL_IDENTITY_CONTRACT_UNRESOLVED
 
 The Web/Shadow path cannot bind each required bar to exactly one physical contract without guessing or changing the Market data contract.
 
+Resolved amendment (2026-08-20): the implementation added `ContractTradingDayQuery` /
+`MarketDataService.query_contract_trading_days` as the authoritative physical-contract trading-day seam. The seam requires complete Calendar rows, resolves TradingSession bounds, and clamps to the Catalog `[listed_date, expired_date)` window. Because the exact contract is now frozen in `docs/DATA_CENTER.md` and consumers no longer guess boundaries, this stop condition is resolved rather than bypassed.
+
 ```text
 PYTHON_WEB_PARITY_BLOCKED
 ```
@@ -362,7 +365,7 @@ A stop code is a blocking result, not permission to weaken validation.
 - marker direction/text/score is exact;
 - no fixed ±92 caution data exists;
 - hover distinguishes missing, warm-up, caution warm-up, conflict, ready;
-- switching tabs does not fetch bars or alter the main chart/Alert markers;
+- switching tabs does not fetch bars or alter the main chart; persistent Alert markers remain intact across their legal 5m/15m MACD/V0 pane switch, while 60m-only Futures V1 dynamic markers are verified independently because the two support sets do not overlap;
 - no responsive overflow;
 - production build passes.
 

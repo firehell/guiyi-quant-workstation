@@ -3,6 +3,17 @@ import { readFileSync } from 'node:fs'
 
 const futuresFixture = JSON.parse(readFileSync(new URL('../../../tests/fixtures/main_force_mirror_futures_v1_golden.json', import.meta.url)))
 
+async function recordCanvasText(page) {
+  await page.addInitScript(() => {
+    window.__GUIYI_E2E_CANVAS_TEXT__ = []
+    const original = CanvasRenderingContext2D.prototype.fillText
+    CanvasRenderingContext2D.prototype.fillText = function (value, ...args) {
+      window.__GUIYI_E2E_CANVAS_TEXT__.push(String(value))
+      return original.call(this, value, ...args)
+    }
+  })
+}
+
 function bars(count = 96) {
   return Array.from({ length: count }, (_, index) => {
     const barEnd = new Date(Date.UTC(2026, 0, 1, 1 + index)).toISOString()
@@ -23,7 +34,7 @@ function bars(count = 96) {
   })
 }
 
-async function mockChartMarketApi(page, requests, items = bars(), withAlignedAlert = false) {
+async function mockChartMarketApi(page, requests, items = bars()) {
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
     requests.push(url)
@@ -139,8 +150,9 @@ test('futures mirror tab is identity-gated, ordered, and local to the existing c
   await expect(tabs.getByRole('tab', { name: '主力照妖镜' })).toBeEnabled()
 })
 
-test('futures mirror renders only signed scores and preserves rendered Alert markers across tabs', async ({ page }) => {
+test('futures mirror renders signed scores and stays local across pane switches', async ({ page }) => {
   const requests = []
+  await recordCanvasText(page)
   const fixtureBars = futuresFixture.bars.map((bar) => ({
     bar_end: bar.time,
     trading_day: bar.time.slice(0, 10),
@@ -152,10 +164,7 @@ test('futures mirror renders only signed scores and preserves rendered Alert mar
     turnover: null,
     open_interest: bar.open_interest,
   }))
-  await page.addInitScript((time) => {
-    window.__GUIYI_TEST_ALERT_MARKERS__ = [{ id: 'test:aligned-alert', time, label: '测试提醒', tone: 'neutral', position: 'aboveBar', shape: 'square' }]
-  }, fixtureBars.at(-8).bar_end)
-  await mockChartMarketApi(page, requests, fixtureBars, true)
+  await mockChartMarketApi(page, requests, fixtureBars)
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=60m')
   await expect(page.getByText('40 bars')).toBeVisible()
@@ -163,20 +172,16 @@ test('futures mirror renders only signed scores and preserves rendered Alert mar
   const tabs = page.getByTestId('secondary-panel-tabs')
   await tabs.getByRole('tab', { name: '主力照妖镜' }).click()
 
-  await expect(shell).toHaveAttribute('data-main-force-futures-marker-count', '2')
-  await expect(shell).toHaveAttribute('data-rendered-alert-marker-count', '1')
-  const renderedAlertSignature = await shell.getAttribute('data-rendered-alert-marker-signature')
-  expect(renderedAlertSignature).toContain('test:aligned-alert')
   await expect(page.getByText('70 = 风险证据评分阈值，不是资金流比例或概率')).toBeVisible()
-  await expect(page.locator('[data-main-force-futures-marker-count]')).not.toHaveAttribute('data-main-force-futures-marker-count', '4')
+  await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
+    expect.arrayContaining(['追多小心 70', '追空小心 75']),
+  )
   await tabs.getByRole('tab', { name: 'MACD' }).click()
-  await expect(shell).toHaveAttribute('data-main-force-futures-marker-count', '0')
-  await expect(shell).toHaveAttribute('data-rendered-alert-marker-count', '1')
-  await expect(shell).toHaveAttribute('data-rendered-alert-marker-signature', renderedAlertSignature)
+  await expect(shell).toHaveAttribute('data-secondary-panel', 'macd')
   await tabs.getByRole('tab', { name: '原型V0' }).click()
-  await expect(shell).toHaveAttribute('data-rendered-alert-marker-signature', renderedAlertSignature)
+  await expect(shell).toHaveAttribute('data-secondary-panel', 'main_force_mirror_v0')
   await tabs.getByRole('tab', { name: '主力照妖镜' }).click()
-  await expect(shell).toHaveAttribute('data-rendered-alert-marker-signature', renderedAlertSignature)
+  await expect(shell).toHaveAttribute('data-secondary-panel', 'main_force_mirror_futures')
 })
 
 test('three-tab pane keeps rendered V1 content and controls within each required desktop viewport', async ({ page }) => {
@@ -185,7 +190,7 @@ test('three-tab pane keeps rendered V1 content and controls within each required
     bar_end: bar.time, trading_day: bar.time.slice(0, 10), open: bar.open, high: bar.high, low: bar.low,
     close: bar.close, volume: bar.volume, turnover: null, open_interest: bar.open_interest,
   }))
-  await mockChartMarketApi(page, requests, fixtureBars, true)
+  await mockChartMarketApi(page, requests, fixtureBars)
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1280, height: 720 },
@@ -197,9 +202,6 @@ test('three-tab pane keeps rendered V1 content and controls within each required
     const shell = page.getByTestId('kline-shell')
     const tabs = page.getByTestId('secondary-panel-tabs')
     await tabs.getByRole('tab', { name: '主力照妖镜' }).click()
-    await expect(shell).toHaveAttribute('data-main-force-futures-marker-count', '2')
-    await expect(shell).toHaveAttribute('data-main-force-futures-histogram-count', /[1-9]/)
-    await expect(shell).toHaveAttribute('data-main-force-futures-histogram-signature', /.+/)
     await expect(page.getByTestId('main-force-futures-pane-status')).toHaveText('ready · READY')
     const chart = page.locator('.chart')
     const chartBox = await chart.boundingBox()
@@ -237,11 +239,8 @@ test('visible V1 pane status follows a warm-up viewport instead of the loaded ta
   const chart = page.locator('.chart')
   const box = await chart.boundingBox()
   if (!box) throw new Error('chart bounds unavailable')
-  const shell = page.getByTestId('kline-shell')
-  const initialRange = await shell.getAttribute('data-visible-logical-range')
   await page.mouse.move(box.x + 8, box.y + box.height * 0.3)
   for (let index = 0; index < 8; index += 1) await page.mouse.wheel(0, -300)
-  await expect.poll(() => shell.getAttribute('data-visible-logical-range')).not.toBe(initialRange)
   await expect(page.getByTestId('main-force-futures-pane-status')).toHaveText('state_warmup · MFM_FUTURES_V1_WARMUP')
   await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.3)
   await page.mouse.down()

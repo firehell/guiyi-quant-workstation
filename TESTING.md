@@ -95,10 +95,13 @@ pnpm --dir apps/quant-web build
 ```
 
 这些命令验证 V0 零变化、V1 exact identity、60m physical-contract segment reset、readiness、五状态、
-双向警戒、conflict/latch/re-arm、Python/Web 单一 golden parity、动态 marker/hover 与 historical-only Shadow
+双向警戒、conflict/latch/re-arm、Python/Web 单一 golden parity、动态 marker/hover、合法 5m/15m Alert
+在 MACD/V0 切换中的保留行为与 historical-only Shadow
 CLI，包括 `(long+short)*1000/caution_ready` 的 6 位 half-away 事件率、conflict 不计事件、零分母 JSON
 `null`，以及不可执行的 `("jm", "ag", "cu", "m", "sc")` 代表参数 tuple。它们不执行真实 Shadow 代表
-矩阵，也不授权 Canonical/DB 写入、Alert/notification、Runtime、订单、release 或策略晋升。
+矩阵。Futures V1 仅支持 60m，persistent Alert markers 仅支持 actual-dominant 5m/15m，因此两者按各自合法
+identity 独立验证，不用生产测试注入伪造重叠状态；这些测试也不授权 Canonical/DB 写入、
+Alert/notification、Runtime、订单、release 或策略晋升。
 
 ## Execution Review V1
 

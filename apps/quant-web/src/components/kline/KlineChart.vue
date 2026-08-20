@@ -87,13 +87,7 @@ let paginationArmed = false
 let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
 const secondaryPanelTop = ref<number | null>(null)
-const visibleLogicalRange = ref('')
 const renderedResearchMarkerCount = ref(0)
-const renderedAlertMarkerCount = ref(0)
-const renderedAlertMarkerSignature = ref('')
-const renderedMainForceFuturesMarkerCount = ref(0)
-const renderedMainForceFuturesHistogramCount = ref(0)
-const renderedMainForceFuturesHistogramSignature = ref('')
 let derivedData = buildKlineDerivedData([], [])
 let mainForceFuturesResult: MainForceMirrorFuturesResult | null = null
 const mainForceFuturesAvailability = ref<MainForceFuturesAvailability>(resolveMainForceFuturesAvailability({ period: props.period, seriesKind: props.seriesKind }, null, null))
@@ -249,7 +243,6 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   else chart.timeScale().fitContent()
   requestAnimationFrame(() => {
     const range = chart?.timeScale().getVisibleLogicalRange()
-    visibleLogicalRange.value = range ? `${Math.round(range.from * 100) / 100}:${Math.round(range.to * 100) / 100}` : ''
     isNearLeftBoundary = !!range && range.from <= 20
     refreshMainForceFuturesAvailability(range)
     paginationArmed = true
@@ -294,7 +287,6 @@ function scrollToLatest(): void {
 
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   if (!range || !renderedBars.length) return
-  visibleLogicalRange.value = `${Math.round(range.from * 100) / 100}:${Math.round(range.to * 100) / 100}`
   refreshMainForceFuturesAvailability(range)
   const isFollowing = range.to >= renderedBars.length - 3
   if (isFollowing !== followLatest) {
@@ -371,20 +363,10 @@ function renderDerivedSeries(): void {
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
   renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
-  const injectedTestMarkers = import.meta.env.DEV
-    ? ((globalThis as { __GUIYI_TEST_ALERT_MARKERS__?: KlineMarker[] }).__GUIYI_TEST_ALERT_MARKERS__ ?? [])
-    : []
-  const alertMarkers = [...props.alertMarkers, ...injectedTestMarkers]
-  const renderedAlertMarkers = chartMarkers(alertMarkers)
   const renderedMarkers = chartMarkers(mergeKlineMarkers(
-    mergeKlineMarkers(derivedData.htdy?.markers ?? [], alertMarkers),
+    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
     props.researchMarkers,
   ))
-  renderedAlertMarkerCount.value = renderedMarkers.filter((marker) => renderedAlertMarkers.some((alert) => alert.id === marker.id)).length
-  renderedAlertMarkerSignature.value = renderedMarkers
-    .filter((marker) => renderedAlertMarkers.some((alert) => alert.id === marker.id))
-    .map((marker) => `${marker.id}:${String(marker.time)}:${marker.position}:${marker.shape}`)
-    .join('|')
   htdyMarkers?.setMarkers(renderedMarkers)
 }
 
@@ -399,9 +381,6 @@ function clearMainForceFutures() {
   mainForceFuturesHistogram?.setData(model.histogram)
   mainForceFuturesMarkers?.setMarkers([])
   mainForceFuturesResult = null
-  renderedMainForceFuturesMarkerCount.value = 0
-  renderedMainForceFuturesHistogramCount.value = 0
-  renderedMainForceFuturesHistogramSignature.value = ''
   mainForceFuturesAvailability.value = resolveMainForceFuturesAvailability(mainForceFuturesSupport(), null, null)
 }
 
@@ -449,8 +428,6 @@ function renderMainForceFutures() {
     return bar ? [{ time: chartTime(bar), value: point.value, color: theme[point.colorKey] }] : []
   })
   mainForceFuturesHistogram.setData(histogram)
-  renderedMainForceFuturesHistogramCount.value = histogram.length
-  renderedMainForceFuturesHistogramSignature.value = histogram.map((point) => `${String(point.time)}:${point.value}`).join('|')
   const markers = model.markers.flatMap((marker) => {
     const bar = barsByTime.get(marker.time)
     return bar ? [{
@@ -458,7 +435,6 @@ function renderMainForceFutures() {
       color: marker.tone === 'up' ? theme.up : theme.down, text: marker.text, size: 1.5,
     }] : []
   })
-  renderedMainForceFuturesMarkerCount.value = markers.length
   mainForceFuturesMarkers?.setMarkers(markers)
 }
 
@@ -558,15 +534,9 @@ defineExpose({
     class="kline-shell"
     data-testid="kline-shell"
     :data-alert-marker-count="alertMarkers.length"
-    :data-rendered-alert-marker-count="renderedAlertMarkerCount"
-    :data-rendered-alert-marker-signature="renderedAlertMarkerSignature"
     :data-research-marker-count="researchMarkers.length"
     :data-rendered-research-marker-count="renderedResearchMarkerCount"
-    :data-main-force-futures-marker-count="renderedMainForceFuturesMarkerCount"
-    :data-main-force-futures-histogram-count="renderedMainForceFuturesHistogramCount"
-    :data-main-force-futures-histogram-signature="renderedMainForceFuturesHistogramSignature"
     :data-secondary-panel="selectedSecondaryPanel"
-    :data-visible-logical-range="visibleLogicalRange"
   >
     <div ref="container" class="chart" />
     <KlineHoverLegend

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-import importlib
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from types import MappingProxyType
 from typing import Final, Protocol, cast
+
+from guiyi_quant.indicators.main_force_mirror_futures import (
+    MainForceMirrorFuturesResult,
+    compute_main_force_mirror_futures,
+    round_half_away_from_zero_binary64,
+)
 
 from .domain import (
     ActualDominantTradingDayQuery,
@@ -29,15 +34,6 @@ MAIN_FORCE_MIRROR_FUTURES_REPRESENTATIVE_PRODUCTS: Final = (
     "m",
     "sc",
 )
-_KERNEL_MODULE_PARTS = (
-    "guiyi_quant",
-    "indicators",
-    "main_force_mirror_futures",
-)
-_KERNEL_FUNCTION = "compute_main_force_mirror_futures"
-_KERNEL_ROUNDING_FUNCTION = "round_half_away_from_zero_binary64"
-
-
 @dataclass(frozen=True, slots=True)
 class MainForceMirrorFuturesResearchRequest:
     symbol: str
@@ -140,39 +136,6 @@ class _MarketDataReader(Protocol):
     ) -> MarketSeriesResult: ...
 
 
-class _KernelResult(Protocol):
-    metadata: Mapping[str, object]
-    valid: Sequence[bool]
-    state_ready: Sequence[bool]
-    caution_ready: Sequence[bool]
-    reason: Sequence[str | None]
-    caution_availability_reason: Sequence[str | None]
-    state: Sequence[str | None]
-    long_caution_score: Sequence[float]
-    short_caution_score: Sequence[float]
-    caution: Sequence[str | None]
-    caution_reason_codes: Sequence[tuple[str, ...]]
-
-
-class _KernelCallable(Protocol):
-    def __call__(
-        self,
-        *,
-        datetimes: Sequence[datetime],
-        physical_contract: Sequence[str],
-        open_: Sequence[float],
-        high: Sequence[float],
-        low: Sequence[float],
-        close: Sequence[float],
-        volume: Sequence[float],
-        open_interest: Sequence[float | None],
-    ) -> _KernelResult: ...
-
-
-class _KernelRoundCallable(Protocol):
-    def __call__(self, value: float, digits: int) -> float: ...
-
-
 class MainForceMirrorFuturesResearchError(RuntimeError):
     """Stable public read-only Shadow failure without storage details."""
 
@@ -180,45 +143,12 @@ class MainForceMirrorFuturesResearchError(RuntimeError):
         self.code = code
         super().__init__(code)
 
-
-def _load_main_force_mirror_futures_kernel() -> _KernelCallable:
-    """Load the fixed Python V1 authority through one runtime boundary."""
-    try:
-        module = importlib.import_module(".".join(_KERNEL_MODULE_PARTS))
-    except ImportError as exc:
-        raise MainForceMirrorFuturesResearchError(
-            "MFM_FUTURES_V1_KERNEL_UNAVAILABLE"
-        ) from exc
-    candidate = getattr(module, _KERNEL_FUNCTION, None)
-    if not callable(candidate):
-        raise MainForceMirrorFuturesResearchError("MFM_FUTURES_V1_KERNEL_UNAVAILABLE")
-    return cast(_KernelCallable, candidate)
-
-
-def _load_main_force_mirror_futures_rounder() -> _KernelRoundCallable:
-    """Load the fixed V1 public rounding authority through the same boundary."""
-    try:
-        module = importlib.import_module(".".join(_KERNEL_MODULE_PARTS))
-    except ImportError as exc:
-        raise MainForceMirrorFuturesResearchError(
-            "MFM_FUTURES_V1_KERNEL_UNAVAILABLE"
-        ) from exc
-    candidate = getattr(module, _KERNEL_ROUNDING_FUNCTION, None)
-    if not callable(candidate):
-        raise MainForceMirrorFuturesResearchError("MFM_FUTURES_V1_KERNEL_UNAVAILABLE")
-    return cast(_KernelRoundCallable, candidate)
-
-
-compute_main_force_mirror_futures = _load_main_force_mirror_futures_kernel()
-round_half_away_from_zero_binary64 = _load_main_force_mirror_futures_rounder()
-
-
 def _extract_events(
     *,
     request: MainForceMirrorFuturesResearchRequest,
     bars: tuple[CanonicalBar, ...],
     physical_contracts: tuple[str, ...],
-    observation: _KernelResult,
+    observation: MainForceMirrorFuturesResult,
 ) -> tuple[MainForceMirrorFuturesEvent, ...]:
     """Project directional Kernel cautions into immutable event identities."""
 
@@ -308,9 +238,15 @@ def _summarize_horizons(
                 reversal = (target_close - event_close) / event_close
                 warning_mfe = (future_high - event_close) / event_close
                 warning_mae = (event_close - future_low) / event_close
-            outcomes[horizon]["reversal"].append(reversal)
-            outcomes[horizon]["mfe"].append(warning_mfe)
-            outcomes[horizon]["mae"].append(warning_mae)
+            outcomes[horizon]["reversal"].append(
+                round_half_away_from_zero_binary64(reversal, 6)
+            )
+            outcomes[horizon]["mfe"].append(
+                round_half_away_from_zero_binary64(warning_mfe, 6)
+            )
+            outcomes[horizon]["mae"].append(
+                round_half_away_from_zero_binary64(warning_mae, 6)
+            )
     return MappingProxyType(
         {
             horizon: MainForceMirrorFuturesHorizonSummary(

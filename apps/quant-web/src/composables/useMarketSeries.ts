@@ -269,6 +269,23 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     }
   }
 
+  function resetSeriesState(nextIdentity: MarketSeriesIdentity | null): number {
+    const requestGeneration = ++generation
+    clearSocket()
+    identity = nextIdentity ? { ...nextIdentity } : null
+    canonicalBars = []
+    clearOverlay()
+    hasMoreBefore.value = false
+    nextBefore.value = null
+    canonicalCoverage.value = null
+    canonicalRefreshToken += 1
+    marketState.value = null
+    liveUnavailable.value = false
+    loadingBefore.value = false
+    publishMerged({ kind: 'replace' })
+    return requestGeneration
+  }
+
   function shouldKeepStateSocket(
     nextIdentity: MarketSeriesIdentity,
     nextState: MarketReadState,
@@ -443,16 +460,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   }
 
   async function replaceSeries(nextIdentity: MarketSeriesIdentity): Promise<void> {
-    const requestGeneration = ++generation
-    clearSocket()
-    identity = { ...nextIdentity }
-    canonicalBars = []
-    clearOverlay()
-    canonicalCoverage.value = null
-    canonicalRefreshToken += 1
-    marketState.value = null
-    liveUnavailable.value = false
-    loadingBefore.value = false
+    const requestGeneration = resetSeriesState(nextIdentity)
     loadingInitial.value = true
     try {
       const page = await fetchPage(toPageRequest(nextIdentity))
@@ -474,6 +482,11 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     } finally {
       if (isCurrentGeneration(requestGeneration, generation)) loadingInitial.value = false
     }
+  }
+
+  function clearSeries(): void {
+    resetSeriesState(null)
+    loadingInitial.value = false
   }
 
   async function loadMoreBefore(): Promise<void> {
@@ -513,6 +526,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     overlaySource,
     mutation,
     replaceSeries,
+    clearSeries,
     loadMoreBefore,
     dispose,
   }

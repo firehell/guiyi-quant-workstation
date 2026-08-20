@@ -149,6 +149,28 @@ describe('market historical series', () => {
     assert.equal(isCurrentGeneration(5, 5), true)
   })
 
+  it('clears the old public series before a replacement identity can fail', async () => {
+    let rejectReplacement: ((reason: Error) => void) | undefined
+    const series = useMarketSeries({
+      fetchPage: (request) => request.symbol === 'ag'
+        ? Promise.resolve(page(
+            [{ bar_end: '2026-08-07T09:30:00Z', close: 100 }],
+            { has_more_before: true, next_before: '2026-08-07T09:30:00Z' },
+          ))
+        : new Promise((_resolve, reject) => { rejectReplacement = reject }),
+      fetchState: async () => state({ live_eligible: false, live_available: false }),
+    })
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '60m' })
+
+    const replacement = series.replaceSeries({ seriesKind: 'contract', symbol: 'jm', contract: 'JM2609', frequency: '60m' })
+    assert.deepEqual(series.bars.value, [])
+    assert.equal(series.hasMoreBefore.value, false)
+    assert.equal(series.canonicalCoverage.value, null)
+    rejectReplacement?.(new Error('replacement unavailable'))
+    await assert.rejects(replacement, /replacement unavailable/)
+    assert.deepEqual(series.bars.value, [])
+  })
+
   it('keeps the API next_before cursor for the earliest formal bar', () => {
     const result = mergeInitialPage(page([
       { bar_end: '2026-08-07T09:15:00Z', close: 101 },

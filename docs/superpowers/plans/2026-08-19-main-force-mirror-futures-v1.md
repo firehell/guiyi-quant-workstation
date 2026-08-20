@@ -1073,6 +1073,8 @@ Assert:
 
 Create markers from the V1 observation and attach them to the V1 histogram with `createSeriesMarkers`. Clear V1 markers whenever another tab is selected.
 
+Integration coverage amendment (2026-08-20): prove the marker text reaches Lightweight Charts with test-only Canvas instrumentation; do not add a production `globalThis` injection or signature telemetry seam. Persistent Alert markers are supported only on `actual_dominant` 5m/15m, while Futures V1 is supported only on 60m, so no legal production identity can display both simultaneously. Cover Alert preservation across the legal MACD/V0 pane switch through the real Alert API mock, and cover V1 dynamic markers independently on 60m.
+
 - [ ] **Step 7: Write hover RED tests**
 
 Add a V1 hover object containing:
@@ -1159,11 +1161,15 @@ git commit -m "feat(web): add futures main-force mirror pane"
 **Files:**
 - Create: `services/quant-api/app/market_data/main_force_mirror_futures_research_service.py`
 - Create: `services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py`
+- Modify: `services/quant-api/app/market_data/domain.py`
+- Modify: `services/quant-api/app/market_data/market_data_service.py`
 - Modify: `services/quant-api/app/market_data/composition.py`
 - Modify: `services/quant-api/app/guiyi_cli/research_parser.py`
 - Modify: `services/quant-api/app/guiyi_cli/research_commands.py`
 - Modify: `services/quant-api/app/guiyi_cli/main.py`
+- Modify: `services/quant-api/tests/data_foundation/test_catalog_and_service.py`
 - Modify: `services/quant-api/tests/test_research_cli.py`
+- Modify: `docs/DATA_CENTER.md`
 
 **Interfaces:**
 - Consumes `MarketDataService` and Python V1 only.
@@ -1211,6 +1217,7 @@ class MainForceMirrorFuturesResearchResult:
     event_count_long: int
     event_count_short: int
     conflict_count: int
+    events_per_1000_caution_ready_bars: float | None
     missing_oi_count: int
     segment_reset_count: int
     timestamp_invalid_count: int
@@ -1237,7 +1244,7 @@ Reject:
 
 - [ ] **Step 2: Write MarketDataService-only RED tests**
 
-Use a fake implementing `query(SeriesQuery)` and `query_actual_dominant_trading_days(ActualDominantTradingDayQuery)`. Assert the service does not accept a Parquet path, store, provider, Redis, or DB writer.
+Use a fake implementing only `query_actual_dominant_trading_days(ActualDominantTradingDayQuery)` and `query_contract_trading_days(ContractTradingDayQuery)`. Assert the service does not accept a Parquet path, store, provider, Redis, or DB writer.
 
 - [ ] **Step 3: Run service RED**
 
@@ -1253,7 +1260,7 @@ Expected: FAIL.
 - [ ] **Step 4: Implement exact Historical read orchestration**
 
 - `actual_dominant`: use `query_actual_dominant_trading_days` for 60m and the returned resolved segments.
-- `contract`: use `SeriesQuery` through `MarketDataService.query`.
+- `contract`: use `ContractTradingDayQuery` through `MarketDataService.query_contract_trading_days`.
 - bind every bar to one physical contract;
 - run Python V1 once over the aligned sequence;
 - never fabricate a segment or bridge a gap.
@@ -1268,6 +1275,8 @@ Cover:
 - insufficient future bars produce no sample for that horizon;
 - physical-contract change before `t+h` makes that outcome unavailable;
 - event identity contains exact code/version/hash/contract/time/reasons/state.
+
+Implementation amendment (2026-08-20): `ContractTradingDayQuery` is the additive, authoritative trading-day window seam for physical contracts. It centralizes complete Calendar/Session resolution and the `[listed_date, expired_date)` active window inside `MarketDataService`, so the Shadow consumer never guesses natural-day or night-session bounds. This closes, rather than triggers, `PHYSICAL_IDENTITY_CONTRACT_UNRESOLVED`; the long-term contract is recorded in `docs/DATA_CENTER.md` and covered by MarketDataService tests.
 
 - [ ] **Step 6: Implement event extraction and segment-local outcomes**
 
@@ -1304,10 +1313,13 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py \
   services/quant-api/tests/test_research_cli.py
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 uv run --offline --project services/quant-api ruff check \
+  services/quant-api/app/market_data/domain.py \
+  services/quant-api/app/market_data/market_data_service.py \
   services/quant-api/app/market_data/main_force_mirror_futures_research_service.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/app/guiyi_cli \
@@ -1318,6 +1330,8 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 MYPYPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api mypy \
   --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/market_data/domain.py \
+  services/quant-api/app/market_data/market_data_service.py \
   services/quant-api/app/market_data/main_force_mirror_futures_research_service.py \
   services/quant-api/app/guiyi_cli
 ```
@@ -1336,9 +1350,13 @@ Reviewer checks that:
 ```bash
 git diff --check
 git add \
+  docs/DATA_CENTER.md \
+  services/quant-api/app/market_data/domain.py \
+  services/quant-api/app/market_data/market_data_service.py \
   services/quant-api/app/market_data/main_force_mirror_futures_research_service.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/app/guiyi_cli \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py \
   services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
   services/quant-api/tests/test_research_cli.py
 git commit -m "feat(research): add futures mirror shadow analysis"

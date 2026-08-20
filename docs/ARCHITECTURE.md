@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 
 ## 系统定位
 
@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / candidate-validation"]
+      RCLI["guiyi research<br/>calibration / lifecycle / candidate-validation / futures-mirror"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -29,12 +29,15 @@ flowchart TB
       MR["MarketReadService"]
       MRS["MarketResearchService"]
       SR["SubingReadService"]
-      SL["SuBing Lifecycle V2<br/>research-only snapshot / Shadow"]
-      SCR["SubingCalibrationResearchService"]
-      CV["Candidate Validation V1<br/>exact Candidate / Protocol"]
       LM["LiveMarketService"]
       AM["AfterMarketUpdater"]
       AR["AlertRuntime"]
+    end
+    subgraph Research["只读 Historical Research / Shadow"]
+      SL["SuBing Lifecycle V2<br/>research-only snapshot / Shadow"]
+      SCR["SubingCalibrationResearchService"]
+      CV["Candidate Validation V1<br/>exact Candidate / Protocol"]
+      MFM["MainForceMirrorFuturesResearchService<br/>historical-only Shadow"]
     end
     subgraph AlertApp["Alert Application Domain"]
       AS["AlertService / Scope / Event"]
@@ -66,6 +69,7 @@ flowchart TB
     RCLI --> SCR --> MQ
     RCLI --> SL --> MQ
     RCLI --> CV --> SL
+    RCLI --> MFM --> MQ
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
     ERS --> ER4 --> EPG
@@ -127,6 +131,10 @@ flowchart TB
   只投影 retrospective、rolling 与 prospective OOS 事实到 stdout JSON 或版本化 research report；
   不重算 lifecycle/outcome/rank1，不建立 order、position、cost、equity、DB/Redis persistence 或
   Alert consumer，也不产生自动 KEEP/DROP/PROMOTE 结论。
+  `MainForceMirrorFuturesResearchService` 仅通过 `MarketDataService` 的
+  `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
+  把每根 Bar 绑定到唯一物理合约后调用 Python Indicator Kernel；结果只由只读 CLI
+  输出 stdout JSON，不读 Redis/provider，不写 DB/Canonical，不进入 Alert、Runtime 或订单路径。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，

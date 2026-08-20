@@ -124,6 +124,7 @@ def test_current_architecture_facts_are_explicit() -> None:
 
     assert "MarketDataService" in architecture
     assert "HistoricalDataManager" in architecture
+    assert "MainForceMirrorFuturesResearchService" in architecture
     assert "RQData" in architecture
     assert "auto_order=false" in project
     assert "active 60" in status
@@ -135,6 +136,24 @@ def test_current_architecture_facts_are_explicit() -> None:
         "schema、identity、主键单调唯一、OHLCV、session/frequency、coverage 和物理可读性",
     ):
         assert fact in data_contract
+
+
+def test_futures_mirror_production_sources_have_no_test_only_injection() -> None:
+    chart = (
+        ROOT / "apps/quant-web/src/components/kline/KlineChart.vue"
+    ).read_text(encoding="utf-8")
+
+    assert "__GUIYI_TEST_ALERT_MARKERS__" not in chart
+
+
+def test_futures_mirror_shadow_uses_a_static_kernel_dependency() -> None:
+    service = (
+        ROOT
+        / "services/quant-api/app/market_data/main_force_mirror_futures_research_service.py"
+    ).read_text(encoding="utf-8")
+
+    assert "import importlib" not in service
+    assert "_load_main_force_mirror_futures_kernel" not in service
 
 
 def test_retired_application_surfaces_are_not_restored() -> None:

@@ -56,7 +56,8 @@ RQData
    的概率、提高人工观察与研究执行的一致性，或增加未来复盘研究的证据；四项均不满足时，不做。
 
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
-update|refresh|audit|after-market`、只读 `guiyi research subing-calibration` 和 `guiyi runtime
+update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
+`guiyi research candidate-validation`、`guiyi research main-force-mirror-futures` 和 `guiyi runtime
 status|live|alert|alert-canary|clawbot-owner-bootstrap|clawbot-preflight`；其中 `alert-canary` 是独立真实通知 Gate，
 `clawbot-owner-bootstrap --confirm-write-owner` 会写 Git 外私有 owner 配置；`clawbot-preflight` 只做 zero-send
 account/context readiness probe，但仍是受控外部 Gate。这些命令都不能由普通只读测试授权。Market

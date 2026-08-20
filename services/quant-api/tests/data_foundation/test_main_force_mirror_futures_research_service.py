@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from inspect import signature
@@ -23,9 +22,11 @@ from app.market_data.domain import (
 )
 from app.market_data.main_force_mirror_futures_research_service import (
     MAIN_FORCE_MIRROR_FUTURES_REPRESENTATIVE_PRODUCTS,
+    MainForceMirrorFuturesEvent,
     MainForceMirrorFuturesResearchRequest,
     MainForceMirrorFuturesResearchService,
     _extract_events,
+    _summarize_horizons,
 )
 
 
@@ -413,15 +414,15 @@ def test_service_uses_future_bars_only_for_mirrored_segment_local_outcomes(
 
     one = result.horizon_summary[1]
     assert one.sample_count == 2
-    assert one.reversal_returns == pytest.approx((0.1, 10 / 90))
-    assert one.warning_mfe == pytest.approx((0.15, 20 / 90))
-    assert one.warning_mae == pytest.approx((0.05, 10 / 90))
+    assert one.reversal_returns == (0.1, 0.111111)
+    assert one.warning_mfe == (0.15, 0.222222)
+    assert one.warning_mae == (0.05, 0.111111)
 
     three = result.horizon_summary[3]
     assert three.sample_count == 2
-    assert three.reversal_returns == pytest.approx((0.3, 30 / 90))
-    assert three.warning_mfe == pytest.approx((0.4, 40 / 90))
-    assert three.warning_mae == pytest.approx((0.1, 30 / 90))
+    assert three.reversal_returns == (0.3, 0.333333)
+    assert three.warning_mfe == (0.4, 0.444444)
+    assert three.warning_mae == (0.1, 0.333333)
 
     for horizon in (5, 10):
         summary = result.horizon_summary[horizon]
@@ -429,6 +430,49 @@ def test_service_uses_future_bars_only_for_mirrored_segment_local_outcomes(
         assert summary.reversal_returns == ()
         assert summary.warning_mfe == ()
         assert summary.warning_mae == ()
+
+
+def test_horizon_summary_rounds_negative_values_and_normalizes_zero() -> None:
+    event_bar = _bar(close="90", high="90", low="90")
+    lower_bar = _bar(hour=2, close="80", high="81", low="79")
+    flat_bar = _bar(hour=2, close="90", high="90", low="90")
+    event = MainForceMirrorFuturesEvent(
+        indicator_code="main_force_mirror_futures_v1",
+        indicator_version="futures-research-v1",
+        parameters_hash="f7fd0c9bce0b08d1",
+        symbol="jm",
+        series_kind=SeriesKind.ACTUAL_DOMINANT,
+        physical_contract="JM2609",
+        trading_day=_DAY_ONE,
+        bar_end=event_bar.bar_end,
+        caution_direction="short_chase_caution",
+        score=70.0,
+        reason_codes=("SHORT_LOWER_EXTREME",),
+        state="long_liquidation",
+    )
+
+    negative = _summarize_horizons(
+        events=(event,),
+        bars=(event_bar, lower_bar),
+        physical_contracts=("JM2609", "JM2609"),
+    )[1]
+    assert negative.reversal_returns == (-0.111111,)
+    assert negative.warning_mfe == (-0.1,)
+    assert negative.warning_mae == (0.122222,)
+
+    zero = _summarize_horizons(
+        events=(event,),
+        bars=(event_bar, flat_bar),
+        physical_contracts=("JM2609", "JM2609"),
+    )[1]
+    assert zero.reversal_returns == (0.0,)
+    assert zero.warning_mfe == (0.0,)
+    assert zero.warning_mae == (0.0,)
+    assert all(str(value) != "-0.0" for values in (
+        zero.reversal_returns,
+        zero.warning_mfe,
+        zero.warning_mae,
+    ) for value in values)
 
 
 def test_event_rate_uses_only_directional_events_and_is_null_without_ready_bars(
@@ -473,54 +517,6 @@ def test_event_rate_uses_only_directional_events_and_is_null_without_ready_bars(
 
     assert empty.bars_caution_ready_count == 0
     assert empty.events_per_1000_caution_ready_bars is None
-
-
-def test_runtime_kernel_loader_uses_exact_python_v1_authority_and_fails_closed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    loader = getattr(research_module, "_load_main_force_mirror_futures_kernel")
-    rounding_loader = getattr(
-        research_module,
-        "_load_main_force_mirror_futures_rounder",
-    )
-    assert research_module._KERNEL_MODULE_PARTS == (
-        "guiyi_quant",
-        "indicators",
-        "main_force_mirror_futures",
-    )
-    assert research_module._KERNEL_FUNCTION == "compute_main_force_mirror_futures"
-    authority = importlib.import_module(
-        "guiyi_quant.indicators.main_force_mirror_futures"
-    )
-
-    assert loader() is authority.compute_main_force_mirror_futures
-    assert loader().__module__ == "guiyi_quant.indicators.main_force_mirror_futures"
-    assert (
-        rounding_loader() is authority.round_half_away_from_zero_binary64
-    )
-    assert (
-        research_module.round_half_away_from_zero_binary64
-        is authority.round_half_away_from_zero_binary64
-    )
-
-    with monkeypatch.context() as context:
-        context.setattr(
-            research_module.importlib,
-            "import_module",
-            lambda _name: SimpleNamespace(compute_main_force_mirror_futures=None),
-        )
-        with pytest.raises(RuntimeError) as exc_info:
-            loader()
-    assert getattr(exc_info.value, "code", None) == "MFM_FUTURES_V1_KERNEL_UNAVAILABLE"
-
-    def missing_module(_name: str) -> object:
-        raise ModuleNotFoundError
-
-    with monkeypatch.context() as context:
-        context.setattr(research_module.importlib, "import_module", missing_module)
-        with pytest.raises(RuntimeError) as exc_info:
-            loader()
-    assert getattr(exc_info.value, "code", None) == "MFM_FUTURES_V1_KERNEL_UNAVAILABLE"
 
 
 def test_real_kernel_full_public_prefix_identity_and_only_outcomes_gain_samples() -> (
