@@ -14,14 +14,16 @@
 | New V1 | `main_force_mirror_futures_v1@futures-research-v1` |
 | Planning baseline | `develop@7e58cfd07a1d274b4e206603496b0d79d302528b` (hardened Plan commit); execution still uses the then-latest `origin/develop` |
 | Execution base | execution-time latest clean `origin/develop` containing Spec-fix commit `a5180f97c5ac6675a6d73e6a48bc837efac8be06` |
-| Status | `PLAN_READY / AWAITING_IMPLEMENTATION_APPROVAL` |
+| Status | `IMPLEMENTED_ON_DEVELOP / REVIEW_FIX_COMPLETE / RELEASE_GATE_PENDING` |
 | Owner | `firehell` |
 | External side effects | none authorized |
 | Release/Runtime | not authorized |
 
 ## 1. Current Judgment
 
-The approved design is ready for implementation planning and task dispatch.
+The approved design and Task 1–8 implementation are complete on `develop`. The final-review fix restores the exact
+V0 runtime source and makes rollover availability follow the rightmost visible physical-contract block. Repository-native
+verification and independent review are complete; main/tag/release and Runtime promotion remain separate pending Gates.
 
 The current V0 remains a published historical-reproduction observation. V1 is a new futures-only observation based on:
 
@@ -38,7 +40,8 @@ OHLCV
 
 V1 does not identify a participant account, member seat, net-long owner, net-short owner, or measured capital flow. Its threshold `70` is an evidence score, not a percentage or reversal probability.
 
-This TASK does not authorize implementation merely by existing. Each implementation Task starts only after the user explicitly approves that Task or the full implementation sequence.
+This TASK did not authorize implementation merely by existing; the completed sequence was separately approved. Its
+historical task boundaries do not authorize release, Runtime promotion, real Shadow, data writes, notification, or orders.
 
 ## 2. Approved Review Resolutions
 
@@ -544,11 +547,12 @@ Current document state:
 
 ```text
 Spec: approved and review gaps resolved
-Plan: ready
-TASK: ready
-Issue #179: lifecycle entry
-Implementation: not started by this documentation action
+Plan: implemented through Task 8 plus final-review fix
+TASK: implemented on develop; final review complete
+Issue #179: REVIEW_FIX_REQUIRED until develop integration readback, then REVIEW_COMPLETE
+Implementation: v1.6.2 candidate code and repository-native verification complete
 Release/Runtime/real Shadow: not authorized
 ```
 
-Next legitimate action is an explicit user approval to start Task 1 or the full Task 1–8 implementation sequence. Lane 3 Tasks still retain their Plan/review Gates even when the overall sequence is approved.
+Next legitimate action after develop integration readback is a fresh, explicit G1 approval for main/tag/release. Runtime
+promotion and old release-worktree cleanup remain later independent execution intents.
