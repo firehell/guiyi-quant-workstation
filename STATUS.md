@@ -8,10 +8,8 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 Git release 与 production Runtime 均为
-  `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
-  `develop` 的 API/Web 版本面已准备为 `v1.6.2` candidate，但尚未合入 `main`、创建 tag/release 或切换
-  production Runtime。
+- 当前 Git release 为 `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`；production Runtime 仍为
+  `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，本次 G1 未切换 Runtime。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
@@ -55,8 +53,8 @@
   Web unit `173 passed / 1 skipped`、production build `2996 modules`、完整 Playwright `66 passed`、
   secret scan `finding_count=0` 与 diff check PASS；独立 Standards Review 为
   Critical=`0` / Important=`0` / Minor=`0`。
-- 当前 Git release 与 production Runtime 仍为 `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
-  本次未执行 release、tag、Runtime promotion/reload、migration、DB/Canonical 写入、Scope/通知或订单操作。
+- 该 Review 修复当时未执行 release、tag、Runtime promotion/reload、migration、DB/Canonical 写入、
+  Scope/通知或订单操作；当前 release/Runtime 身份以本文“当前结论”为准。
 
 ## Candidate Validation V1（PHASE 4B COMPLETE；RESEARCH BASELINE ONLY）
 
@@ -78,9 +76,25 @@
   reference/test folds 与 threshold-free stability；Task 9 独立 Evidence Review 为 Critical=`0` /
   Important=`0` / Minor=`0`，并确认 identity、窗口、完整性及禁止结论字段全部通过。
 - Phase 4B 的唯一结论是：已形成可复算的 `jm` retrospective / rolling historical baseline；
-  prospective OOS 为 `pending`，尚无 prospective OOS evidence。本状态不表示策略有效、Candidate 可晋升、
-  Alert Rule ready、已发布或 Runtime ready；未执行 release/tag、Runtime/Alert 扩张、
-  DB/Canonical/Redis 写入、通知或订单。
+  prospective OOS 为 `pending`，尚无 prospective OOS evidence。相关代码与历史 evidence 已随 v1.6.2
+  发布，但这不表示策略有效、Candidate 可晋升、Alert Rule ready 或 Runtime ready；未执行 Runtime/Alert
+  扩张、DB/Canonical/Redis 写入、通知或订单。
+
+## v1.6.2 主力照妖镜·期货 V1（RELEASED / RUNTIME PENDING）
+
+- Release PR #183 已将 reviewed `develop@72f9c03f79c4c982473da80b0d9f6cc6351bba84` 合入
+  `main@dbdf6da49d75353a478675a3584de0f91c8bd85c`；annotated `v1.6.2` peeled commit 精确为同一
+  main commit，tag message=`Release v1.6.2`，API/Web 版本面均为 `1.6.2`。
+- release tree 包含 Futures Main-Force Mirror V1、Candidate Validation V1、N Structure V1 规划文档、
+  rollover availability 修复与 V0 exact-source restoration；未包含未合并的
+  `codex/alert-fixed-recipients` 实现。
+- G1 前完整验证为 backend `1581 passed`（隔离 PostgreSQL）、engineering `56 passed`、Mypy
+  `65 source files`、Web unit `199 passed / 1 skipped`、指定 Playwright `47 passed`、build
+  `2997 modules`，Ruff/secret/shell/plist/diff 均通过；独立 Spec 与 Standards/Architecture Review
+  均为 Critical=`0` / Important=`0` / Minor=`0`。
+- production Runtime 仍精确运行 `v1.6.1@75cbf37c`。本次未创建 v1.6.2 Runtime worktree、未重载
+  launchd、未执行 migration、RQData/Canonical/DB 写入、真实 Shadow、Scope/owner/transport mutation、
+  通知、replay/backfill 或订单；Runtime promotion 与旧 release worktree 清理仍是后续独立 Gate。
 
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
