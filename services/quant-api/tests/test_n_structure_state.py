@@ -9,6 +9,7 @@ import pytest
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.n_structure_pattern import (
     CompletedNPattern,
+    NBreakKind,
     NPatternTrace,
     NRangeBand,
     NRangeBandRole,
@@ -26,6 +27,7 @@ from app.market_data.n_structure_state import (
 from app.market_data.n_structure_swing import (
     NStructureSeriesError,
     NSwingPivot,
+    NSwingPivotKind,
     NSwingTrace,
     reduce_n_swings,
 )
@@ -88,6 +90,32 @@ _SAME_BOUNDARY_ESTABLISHMENT_VALUES = (
     ("101.5", "93.5"),
     ("101", "89"),
     ("106", "94"),
+)
+
+_OUTSIDE_BEFORE_COMPLETION_VALUES = _BULL_VALUES[:6] + (
+    ("13", "8"),
+    ("12", "6"),
+    ("11", "5"),
+    ("12", "5.5"),
+    ("14", "6"),
+    ("13", "5.8"),
+    ("12", "5.5"),
+    ("15", "6"),
+)
+
+_OUTSIDE_HOLD_NEW_EPOCH_VALUES = _BULL_VALUES + (
+    ("16", "9.5"),
+    ("17", "10"),
+    ("16", "9.8"),
+    ("15", "9.6"),
+    ("16", "10"),
+    ("16.8", "10.5"),
+    ("16", "10.2"),
+    ("15.5", "9.55"),
+    ("16.2", "9.6"),
+    ("16.5", "10"),
+    ("16", "9.8"),
+    ("15.5", "9.52"),
 )
 
 
@@ -205,20 +233,72 @@ def _assert_series_invalid(callable_: object) -> None:
 
 def _assert_prefix_invariant(values: tuple[tuple[str, str], ...]) -> None:
     bars = _bars(values)
-    full = _evaluate(bars)
+    _assert_bar_prefix_invariant(bars)
+
+
+def _assert_bar_prefix_invariant(
+    bars: tuple[CanonicalBar, ...],
+) -> None:
+    full_swings, full_patterns, policy = _producer(bars)
+    full_structure = evaluate_n_market_structure(
+        bars,
+        swings=full_swings,
+        patterns=full_patterns,
+        policy=policy,
+    )
+    replacement_counts: list[int] = []
     for length in range(1, len(bars) + 1):
         boundary = bars[length - 1].bar_end
-        prefix = _evaluate(bars[:length])
-        assert prefix.snapshots == tuple(
+        prefix_bars = bars[:length]
+        prefix_swings, prefix_patterns, _ = _producer(prefix_bars, policy=policy)
+        prefix_structure = evaluate_n_market_structure(
+            prefix_bars,
+            swings=prefix_swings,
+            patterns=prefix_patterns,
+            policy=policy,
+        )
+        assert prefix_swings.pivots == tuple(
+            pivot
+            for pivot in full_swings.pivots
+            if pivot.confirmed_at <= boundary
+        )
+        assert prefix_swings.ambiguous_outside_reset_at == tuple(
+            reset_at
+            for reset_at in full_swings.ambiguous_outside_reset_at
+            if reset_at <= boundary
+        )
+        assert prefix_patterns.patterns == tuple(
+            pattern
+            for pattern in full_patterns.patterns
+            if pattern.completed_at <= boundary
+        )
+        assert prefix_patterns.break_events == tuple(
+            event
+            for event in full_patterns.break_events
+            if event.observed_at <= boundary
+        )
+        assert prefix_patterns.range_band_reentries == tuple(
+            event
+            for event in full_patterns.range_band_reentries
+            if event.observed_at <= boundary
+        )
+        replacement_counts.append(
+            prefix_patterns.incomplete_attempt_replaced_count
+        )
+        assert prefix_structure.snapshots == tuple(
             snapshot
-            for snapshot in full.snapshots
+            for snapshot in full_structure.snapshots
             if snapshot.observed_at <= boundary
         )
-        assert prefix.transitions == tuple(
+        assert prefix_structure.transitions == tuple(
             transition
-            for transition in full.transitions
+            for transition in full_structure.transitions
             if transition.transition_at <= boundary
         )
+    assert replacement_counts == sorted(replacement_counts)
+    assert replacement_counts[-1] == (
+        full_patterns.incomplete_attempt_replaced_count
+    )
 
 
 def test_real_task2_task3_task4_producer_chain_establishes_bull() -> None:
@@ -233,9 +313,87 @@ def test_real_task2_task3_task4_producer_chain_establishes_bull() -> None:
     )
 
     assert len(patterns.patterns) == 2
+    assert patterns.patterns[0].n2_origin.confirmed_at == (
+        patterns.patterns[0].completed_at
+    )
     assert trace.snapshots[-1].kind is NStructureKind.BULL
     assert trace.snapshots[-1].trailing_defense == swings.pivots[-1]
     assert trace.snapshots[-1].completed_n_count_in_epoch == 2
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_kind", "expected_pivot_index"),
+    (
+        pytest.param(
+            (("10", "5"), ("11", "6"), ("12", "7"), ("13", "8")),
+            None,
+            None,
+            id="straight-trend",
+        ),
+        pytest.param(
+            (("10", "5"), ("12", "6"), ("11", "7"), ("9", "6")),
+            NSwingPivotKind.HIGH,
+            1,
+            id="inside-bar",
+        ),
+        pytest.param(
+            (("10", "5"), ("12", "6"), ("12", "7"), ("11", "5")),
+            NSwingPivotKind.HIGH,
+            1,
+            id="equal-high-keeps-first-tie",
+        ),
+        pytest.param(
+            (("12", "5"), ("11", "4"), ("10", "4"), ("12", "5")),
+            NSwingPivotKind.LOW,
+            1,
+            id="equal-low-keeps-first-tie",
+        ),
+    ),
+)
+def test_basic_swing_matrix_uses_real_full_chain_prefixes(
+    values: tuple[tuple[str, str], ...],
+    expected_kind: NSwingPivotKind | None,
+    expected_pivot_index: int | None,
+) -> None:
+    bars = _bars(values)
+    swings, patterns, _ = _producer(bars)
+
+    assert patterns.patterns == ()
+    if expected_kind is None:
+        assert swings.pivots == ()
+    else:
+        assert len(swings.pivots) == 1
+        assert swings.pivots[0].kind is expected_kind
+        assert swings.pivots[0].pivot_time == bars[expected_pivot_index].bar_end
+    _assert_bar_prefix_invariant(bars)
+
+
+def test_outside_before_completion_blocks_cross_epoch_n() -> None:
+    bars = _bars(_OUTSIDE_BEFORE_COMPLETION_VALUES)
+    swings, patterns, _ = _producer(bars)
+
+    assert swings.ambiguous_outside_reset_at == (bars[6].bar_end,)
+    assert len(patterns.patterns) == 1
+    assert patterns.patterns[0].origin.epoch == 1
+    assert patterns.patterns[0].n1_extreme.epoch == 1
+    assert patterns.patterns[0].n2_origin.epoch == 1
+    assert patterns.patterns[0].completed_at == bars[13].bar_end
+    _assert_bar_prefix_invariant(bars)
+
+
+def test_same_rank1_segment_may_complete_n_across_trading_day() -> None:
+    next_trading_day = _TRADING_DAY + timedelta(days=1)
+    bars = tuple(
+        replace(bar, trading_day=next_trading_day) if index >= 6 else bar
+        for index, bar in enumerate(_bars(_BULL_VALUES))
+    )
+    _, patterns, _ = _producer(bars)
+
+    assert patterns.patterns[0].origin.pivot_time == bars[2].bar_end
+    assert bars[2].trading_day == _TRADING_DAY
+    assert patterns.patterns[0].completed_at == bars[6].bar_end
+    assert bars[6].trading_day == next_trading_day
+    _assert_bar_prefix_invariant(bars)
 
 
 def test_less_than_two_completed_n_stays_undefined() -> None:
@@ -312,11 +470,48 @@ def test_outside_without_break_preserves_unbroken_bull_only() -> None:
 
 def test_outside_breaks_existing_bull_before_epoch_reset() -> None:
     values = _BULL_VALUES + (("16", "9.4"),)
-    trace = _evaluate(_bars(values))
+    bars = _bars(values)
+    swings, patterns, policy = _producer(bars)
+    trace = evaluate_n_market_structure(
+        bars,
+        swings=swings,
+        patterns=patterns,
+        policy=policy,
+    )
 
     assert trace.snapshots[-1].epoch == 1
     assert trace.snapshots[-1].kind is NStructureKind.RANGE
     assert trace.transitions[-1].reason_code == "BULL_STRUCTURE_BROKEN"
+    assert patterns.break_events[-1].kind is NBreakKind.N2_ORIGIN_BROKEN
+    assert patterns.break_events[-1].observed_at == bars[-1].bar_end
+    _assert_bar_prefix_invariant(bars)
+
+
+def test_outside_without_break_keeps_bull_after_new_epoch_opposite_evidence() -> None:
+    bars = _bars(_OUTSIDE_HOLD_NEW_EPOCH_VALUES)
+    swings, patterns, policy = _producer(bars)
+    trace = evaluate_n_market_structure(
+        bars,
+        swings=swings,
+        patterns=patterns,
+        policy=policy,
+    )
+
+    assert swings.ambiguous_outside_reset_at == (bars[10].bar_end,)
+    assert [
+        pattern.direction.value
+        for pattern in patterns.patterns
+        if pattern.origin.epoch == 1
+    ] == ["down", "down"]
+    assert trace.snapshots[-1].epoch == 1
+    assert trace.snapshots[-1].completed_n_count_in_epoch == 2
+    assert trace.snapshots[-1].kind is NStructureKind.BULL
+    assert trace.snapshots[-1].trailing_defense is not None
+    assert trace.snapshots[-1].trailing_defense.price == Decimal("9.5")
+    assert [transition.reason_code for transition in trace.transitions] == [
+        "BULL_STRUCTURE_ESTABLISHED"
+    ]
+    _assert_bar_prefix_invariant(bars)
 
 
 @pytest.mark.parametrize(
@@ -423,6 +618,10 @@ def test_same_boundary_defense_advance_then_new_defense_breaks() -> None:
         NStructureKind.BULL,
         NStructureKind.RANGE,
     )
+    _, patterns, _ = _producer(bars)
+    assert [event.kind for event in patterns.break_events] == [
+        NBreakKind.N2_ORIGIN_BROKEN
+    ]
     assert trace.snapshots[-1].kind is NStructureKind.RANGE
 
 
@@ -545,7 +744,11 @@ def test_exact_policy_and_unsorted_series_fail_closed() -> None:
     "values",
     (
         _BULL_VALUES,
+        _mirror(_BULL_VALUES),
+        _range_values(),
         _range_reset_two_n_values(),
+        _OUTSIDE_BEFORE_COMPLETION_VALUES,
+        _OUTSIDE_HOLD_NEW_EPOCH_VALUES,
         _SAME_BOUNDARY_ESTABLISHMENT_VALUES,
         _BULL_LATE_PAIR_VALUES[:-1] + (("15", "9.85"),),
     ),

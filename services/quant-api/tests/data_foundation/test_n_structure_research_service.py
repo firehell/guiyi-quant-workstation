@@ -182,3 +182,51 @@ def test_outcomes_stop_at_requested_through_even_if_loader_returns_later_bars() 
     )
     assert result.horizon_summary[5].sample_count == 0
     assert result.horizon_summary[8].sample_count == 0
+
+
+def test_rank1_segment_change_resets_the_real_n_producer_chain() -> None:
+    bars = _bars()
+    segments = (
+        ResolvedContractSegment(
+            contract="JM2609",
+            start_trading_day=date(2026, 8, 18),
+            end_trading_day=date(2026, 8, 18),
+        ),
+        ResolvedContractSegment(
+            contract="JM2701",
+            start_trading_day=date(2026, 8, 19),
+            end_trading_day=date(2026, 8, 20),
+        ),
+    )
+    loaded_result = MarketSeriesResult(
+        request_identity={},
+        bars=bars,
+        coverage=(bars[0].bar_end, bars[-1].bar_end),
+        resolved_contract_segments=segments,
+    )
+    loader = _FakeSegmentLoader(bars)
+    loader.result = ActualDominantResearchSeries(
+        results=MappingProxyType({BarFrequency.M5: loaded_result}),
+        segments=segments,
+    )
+    service = NStructureResearchService(
+        loader,
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+
+    result = service.run(
+        NStructureResearchRequest(
+            since=date(2026, 8, 18),
+            through=date(2026, 8, 20),
+            symbol="jm",
+        )
+    )
+
+    assert result.segment_count == 2
+    assert result.evaluable_bar_count == len(bars)
+    assert result.completed_n_counts == {"up": 0, "down": 0}
+    assert all(
+        evaluation.sample_count == 0
+        for evaluation in result.horizon_summary.values()
+    )

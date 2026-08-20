@@ -121,6 +121,62 @@ def test_loader_restores_true_segments_and_reads_full_causal_prefix() -> None:
     }
 
 
+def test_loader_rejects_empty_frequency_request_before_market_read() -> None:
+    market_data = _WindowAwareMarketData(
+        probe={},
+        full={},
+        true_segments=(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="rank1 segment identity is missing or inconsistent",
+    ):
+        ActualDominantResearchSegmentLoader(market_data).load(
+            symbol="jm",
+            frequencies=(),
+            since=_DAY_ONE,
+            through=_DAY_TWO,
+        )
+
+    assert market_data.queries == []
+    assert market_data.segment_requests == []
+
+
+def test_loader_supports_one_frequency_without_cross_frequency_assumption() -> None:
+    segment = ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO)
+    summary = DominantContractSegmentSummary(
+        "jm", "JM2609", _DAY_ONE, _DAY_TWO
+    )
+    result = _result(
+        _bars(BarFrequency.M15, (_DAY_ONE, _DAY_TWO)),
+        (segment,),
+    )
+    market_data = _WindowAwareMarketData(
+        probe={BarFrequency.M15: result},
+        full={BarFrequency.M15: result},
+        true_segments=(summary,),
+    )
+
+    loaded = ActualDominantResearchSegmentLoader(market_data).load(
+        symbol="jm",
+        frequencies=(BarFrequency.M15,),
+        since=_DAY_ONE,
+        through=_DAY_TWO,
+    )
+
+    assert loaded.segments == (segment,)
+    assert tuple(loaded.results) == (BarFrequency.M15,)
+    assert market_data.queries == [
+        ActualDominantTradingDayQuery(
+            "jm", BarFrequency.M15, _DAY_ONE, _DAY_TWO
+        ),
+        ActualDominantTradingDayQuery(
+            "jm", BarFrequency.M15, _DAY_ONE, _DAY_TWO
+        ),
+    ]
+
+
 def test_loader_fails_closed_when_frequency_segment_identities_differ() -> None:
     true_segments = (
         DominantContractSegmentSummary("jm", "JM2609", _DAY_ONE, _DAY_TWO),
@@ -226,11 +282,77 @@ def test_loader_preserves_subing_gap_error_semantics_for_15m() -> None:
         ValueError,
         match="rank1 segment identity is incomplete for 5m",
     ):
-        ActualDominantResearchSegmentLoader(market_data).load(
+        ActualDominantResearchSegmentLoader(
+            market_data,
+            legacy_coverage_error_frequency=BarFrequency.M5,
+        ).load(
             symbol="jm",
             frequencies=_FREQUENCIES,
             since=_DAY_ONE,
             through=_DAY_TWO,
+        )
+
+
+def test_generic_loader_reports_the_actual_single_frequency_gap() -> None:
+    incomplete_segment = (
+        ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_ONE),
+    )
+    market_data = _WindowAwareMarketData(
+        probe={
+            BarFrequency.M15: _result(
+                _bars(BarFrequency.M15, (_DAY_ONE, _DAY_TWO)),
+                incomplete_segment,
+            ),
+        },
+        full={},
+        true_segments=(
+            DominantContractSegmentSummary(
+                "jm", "JM2609", _DAY_ONE, _DAY_TWO
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="rank1 segment identity is incomplete for 15m",
+    ):
+        ActualDominantResearchSegmentLoader(market_data).load(
+            symbol="jm",
+            frequencies=(BarFrequency.M15,),
+            since=_DAY_ONE,
+            through=_DAY_TWO,
+        )
+
+
+def test_loader_rejects_reversed_raw_segment_order() -> None:
+    reversed_segments = (
+        ResolvedContractSegment("JM2701", _DAY_THREE, _DAY_FOUR),
+        ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),
+    )
+    market_data = _WindowAwareMarketData(
+        probe={
+            BarFrequency.M5: _result(
+                _bars(BarFrequency.M5, (_DAY_ONE, _DAY_THREE)),
+                reversed_segments,
+            ),
+        },
+        full={},
+        true_segments=(
+            DominantContractSegmentSummary(
+                "jm", "JM2609", _DAY_ONE, _DAY_TWO
+            ),
+            DominantContractSegmentSummary(
+                "jm", "JM2701", _DAY_THREE, _DAY_FOUR
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="rank1 segment summaries overlap"):
+        ActualDominantResearchSegmentLoader(market_data).load(
+            symbol="jm",
+            frequencies=(BarFrequency.M5,),
+            since=_DAY_ONE,
+            through=_DAY_THREE,
         )
 
 

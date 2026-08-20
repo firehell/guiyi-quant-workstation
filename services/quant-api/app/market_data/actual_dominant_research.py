@@ -49,8 +49,16 @@ class ActualDominantResearchSeries:
 
 
 class ActualDominantResearchSegmentLoader:
-    def __init__(self, market_data: _ActualDominantResearchReader) -> None:
+    def __init__(
+        self,
+        market_data: _ActualDominantResearchReader,
+        *,
+        legacy_coverage_error_frequency: BarFrequency | None = None,
+    ) -> None:
         self._market_data = market_data
+        self._legacy_coverage_error_frequency = (
+            legacy_coverage_error_frequency
+        )
 
     def load(
         self,
@@ -79,6 +87,7 @@ class ActualDominantResearchSegmentLoader:
             frequency: self._restore_true_segments(
                 symbol,
                 probe[frequency],
+                frequency=frequency,
                 since=since,
                 through=through,
             )
@@ -106,6 +115,7 @@ class ActualDominantResearchSegmentLoader:
             frequency: self._restore_true_segments(
                 symbol,
                 full[frequency],
+                frequency=frequency,
                 since=segments[0].start_trading_day,
                 through=through,
             )
@@ -123,6 +133,7 @@ class ActualDominantResearchSegmentLoader:
         symbol: str,
         result: MarketSeriesResult,
         *,
+        frequency: BarFrequency,
         since: date,
         through: date,
     ) -> tuple[ResolvedContractSegment, ...]:
@@ -133,7 +144,7 @@ class ActualDominantResearchSegmentLoader:
         if not bars or not raw_segments:
             raise ValueError("rank1 segment identity is missing or inconsistent")
         self._validate_segment_coverage(
-            {BarFrequency.M5: bars},
+            {self._coverage_error_frequency(frequency): bars},
             raw_segments,
         )
 
@@ -186,10 +197,16 @@ class ActualDominantResearchSegmentLoader:
         if not restored:
             raise ValueError("rank1 segment identity is missing or inconsistent")
         self._validate_segment_coverage(
-            {BarFrequency.M5: bars},
+            {self._coverage_error_frequency(frequency): bars},
             tuple(restored),
         )
         return tuple(restored)
+
+    def _coverage_error_frequency(
+        self,
+        frequency: BarFrequency,
+    ) -> BarFrequency:
+        return self._legacy_coverage_error_frequency or frequency
 
     @staticmethod
     def _validate_segment_coverage(

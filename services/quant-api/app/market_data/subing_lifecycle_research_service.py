@@ -293,7 +293,10 @@ class SubingLifecycleResearchService:
             raise ValueError("products must contain ASCII product symbols")
         if getattr(policy, "policy_id", None) != _POLICY_ID:
             raise ValueError("lifecycle policy identity is invalid")
-        self._segment_loader = ActualDominantResearchSegmentLoader(market_data)
+        self._segment_loader = ActualDominantResearchSegmentLoader(
+            market_data,
+            legacy_coverage_error_frequency=BarFrequency.M5,
+        )
         self._products = normalized
         self._calibration = calibration
         self._policy = policy
