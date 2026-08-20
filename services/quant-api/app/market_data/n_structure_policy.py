@@ -78,8 +78,8 @@ def load_n_structure_policy(path: Path | None = None) -> NStructurePolicy:
     source = path if path is not None else _N_STRUCTURE_POLICY_PATH
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise NStructurePolicyError() from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise NStructurePolicyError() from None
 
     if not _matches_exact(payload, _EXPECTED_PAYLOAD):
         raise NStructurePolicyError()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+import traceback
 from typing import Any
 
 import pytest
@@ -76,13 +77,25 @@ def _set_path(payload: dict[str, Any], path: tuple[str, ...], value: object) -> 
     _nested_mapping(payload, path[:-1])[path[-1]] = value
 
 
-def _assert_invalid(path: Path) -> None:
-    with pytest.raises(
-        NStructurePolicyError,
-        match="N_STRUCTURE_POLICY_INVALID",
-    ) as captured:
+def _assert_invalid(path: Path) -> NStructurePolicyError:
+    with pytest.raises(NStructurePolicyError) as captured:
         load_n_structure_policy(path)
-    assert captured.value.code == "N_STRUCTURE_POLICY_INVALID"
+    error = captured.value
+    assert error.code == "N_STRUCTURE_POLICY_INVALID"
+    assert str(error) == "N_STRUCTURE_POLICY_INVALID"
+    assert error.__cause__ is None
+    return error
+
+
+def _assert_input_details_hidden(
+    error: NStructurePolicyError,
+    *,
+    path: Path,
+    underlying_error: str,
+) -> None:
+    rendered = "".join(traceback.format_exception(error))
+    assert str(path) not in rendered
+    assert underlying_error not in rendered
 
 
 def test_load_exact_policy() -> None:
@@ -109,19 +122,45 @@ def test_policy_dataclass_is_frozen() -> None:
 
 
 def test_missing_policy_file_fails_closed(tmp_path: Path) -> None:
-    _assert_invalid(tmp_path / "missing.json")
+    path = tmp_path / "missing.json"
+
+    error = _assert_invalid(path)
+
+    _assert_input_details_hidden(
+        error,
+        path=path,
+        underlying_error="FileNotFoundError",
+    )
 
 
-@pytest.mark.parametrize(
-    "contents",
-    (
-        b"{",
-        b"[]",
-        b"null",
-        b"\xff\xfe\x00",
-    ),
-)
-def test_malformed_policy_fails_closed(tmp_path: Path, contents: bytes) -> None:
+def test_invalid_json_policy_hides_parser_details(tmp_path: Path) -> None:
+    path = tmp_path / "policy.json"
+    path.write_text("{", encoding="utf-8")
+
+    error = _assert_invalid(path)
+
+    _assert_input_details_hidden(
+        error,
+        path=path,
+        underlying_error="JSONDecodeError",
+    )
+
+
+def test_non_utf8_policy_hides_decoder_details(tmp_path: Path) -> None:
+    path = tmp_path / "policy.json"
+    path.write_bytes(b"\xff\xfe\x00")
+
+    error = _assert_invalid(path)
+
+    _assert_input_details_hidden(
+        error,
+        path=path,
+        underlying_error="UnicodeDecodeError",
+    )
+
+
+@pytest.mark.parametrize("contents", (b"[]", b"null"))
+def test_non_object_policy_fails_closed(tmp_path: Path, contents: bytes) -> None:
     path = tmp_path / "policy.json"
     path.write_bytes(contents)
 
