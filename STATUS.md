@@ -103,7 +103,11 @@
 - DB revision 只读保持 `20260815_0039 (head)`；Alert 两条 Rule 的 Scope 仍精确为 `jm`。实际
   `actual_dominant + 60m` Market 读回返回一根 JM Bar 与一个已解析物理合约 segment。
 - 本次未执行 migration、RQData/Canonical/DB 写入、真实 Shadow、Scope/owner/transport mutation、
-  通知、replay/backfill、手工盘后或订单。旧 v1.6.0/v1.6.1 Runtime worktree 仍保留，清理需独立 Gate。
+  通知、replay/backfill、手工盘后或订单。后续独立 cleanup Gate 在删除前确认五个正式 label、对应
+  installed plist 与进程打开文件均无 v1.6.0/v1.6.1 root 引用，两个旧 worktree 均 clean/detached、
+  精确匹配仍保留的 annotated tag 且已进入 main 历史；随后仅通过 `git worktree remove` 删除两者并
+  执行 `git worktree prune`。当前保留 clean/detached v1.6.2 Runtime 与
+  `codex/alert-fixed-recipients` worktree，删除后 Runtime 状态复核为 `overall=passed`。
 
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
@@ -361,13 +365,13 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
 - `v1.6.2` Runtime promotion 已完成；正式五服务已统一加载 identity
-  `dbdf6da49d75353a478675a3584de0f91c8bd85c`，Market/Alert Scope 未扩大。既有 G9 最终清理已完成，旧
-  `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review Gate D 仍为
-  `disabled / not activated`。
+  `dbdf6da49d75353a478675a3584de0f91c8bd85c`，Market/Alert Scope 未扩大。v1.6.2 cleanup 已在正式
+  引用归零后移除旧 v1.6.0/v1.6.1 release worktree，两个 annotated tag 仍保留可恢复；既有 G9 最终
+  清理也已完成，旧 `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review
+  Gate D 仍为 `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证；该独立 pending 状态不改写 `v1.6.2` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持 `v1.6.2 + clawbot-openclaw-weixin` 自然运行；旧 v1.6.0/v1.6.1 release worktree
-  仅在取得独立清理意图且正式引用为零后删除。SuBing Natural Canary 不人工补证，Execution Review
-  Gate D 继续 `disabled / not activated`。
+- 最小下一步：保持 `v1.6.2 + clawbot-openclaw-weixin` 自然运行；SuBing Natural Canary 不人工补证，
+  Execution Review Gate D 继续 `disabled / not activated`。
