@@ -11,19 +11,17 @@ from . import n_structure_policy as _policy_contract
 from .domain import BarFrequency, CanonicalBar
 from .n_structure_pattern import (
     CompletedNPattern,
-    NBreakEvent,
-    NDirection,
     NPatternTrace,
-    NRangeBandReentryEvent,
+    evaluate_n_patterns,
 )
 from .n_structure_policy import NStructurePolicy
 from .n_structure_swing import (
     NStructureContractError,
     NStructureSeriesError,
-    NSwingLeg,
     NSwingPivot,
     NSwingPivotKind,
     NSwingTrace,
+    reduce_n_swings,
 )
 
 
@@ -43,6 +41,7 @@ _REASON_CODES = frozenset(
         "BEAR_TRAILING_DEFENSE_ADVANCED",
         "BULL_STRUCTURE_BROKEN",
         "BEAR_STRUCTURE_BROKEN",
+        "RANGE_EVIDENCE_EPOCH_RESET",
     }
 )
 
@@ -227,6 +226,17 @@ def evaluate_n_market_structure(
             completed_n_count = 0
             qualified_high_id = None
             qualified_low_id = None
+            if kind is NStructureKind.RANGE and not broken_this_boundary:
+                _append_transition(
+                    transitions,
+                    transition_at=current.bar_end,
+                    from_kind=NStructureKind.RANGE,
+                    to_kind=NStructureKind.UNDEFINED,
+                    reason_code="RANGE_EVIDENCE_EPOCH_RESET",
+                    defense=None,
+                )
+                kind = NStructureKind.UNDEFINED
+                established_at = None
         else:
             epoch_pivots.extend(pivots_by_confirmation.get(current.bar_end, ()))
             completed_here = patterns_by_completion.get(current.bar_end, ())
@@ -303,11 +313,7 @@ def evaluate_n_market_structure(
                         latest_high.pivot_id != qualified_high_id
                         and latest_low.pivot_id != qualified_low_id
                     )
-                    pair_became_known_here = (
-                        candidate_defense.confirmed_at == current.bar_end
-                        or bool(completed_here)
-                    )
-                    if new_pair and pair_became_known_here:
+                    if new_pair:
                         defense = candidate_defense
                         qualified_high_id = latest_high.pivot_id
                         qualified_low_id = latest_low.pivot_id
@@ -389,7 +395,6 @@ def _validate_inputs(
         or not isinstance(swings.pivots, tuple)
         or not isinstance(swings.ambiguous_outside_reset_at, tuple)
         or type(swings.final_epoch) is not int
-        or not isinstance(swings.final_leg, NSwingLeg)
         or not isinstance(patterns.patterns, tuple)
         or not isinstance(patterns.break_events, tuple)
         or not isinstance(patterns.range_band_reentries, tuple)
@@ -402,120 +407,27 @@ def _validate_inputs(
         or patterns.incomplete_attempt_replaced_count < 0
     ):
         raise NStructureSeriesError()
-
-    bar_ends = {bar.bar_end for bar in bars}
-    resets = swings.ambiguous_outside_reset_at
-    actual_resets = tuple(
-        current.bar_end
-        for previous, current in zip(bars, bars[1:])
-        if current.high > previous.high and current.low < previous.low
+    segment_end = max(
+        (bar.trading_day for bar in bars),
+        default=swings.segment_start_trading_day,
     )
-    if (
-        any(not _is_aware_datetime(reset_at) for reset_at in resets)
-        or tuple(sorted(set(resets))) != resets
-        or resets != actual_resets
-        or swings.final_epoch != len(resets)
-    ):
-        raise NStructureSeriesError()
-
-    pivots_by_id: dict[str, NSwingPivot] = {}
-    previous_confirmation: datetime | None = None
-    previous_epoch_kind: tuple[int, NSwingPivotKind] | None = None
-    for pivot in swings.pivots:
-        current_epoch_kind = (pivot.epoch, pivot.kind)
-        if (
-            not isinstance(pivot, NSwingPivot)
-            or pivot.pivot_id in pivots_by_id
-            or pivot.contract != swings.contract
-            or pivot.segment_start_trading_day != swings.segment_start_trading_day
-            or pivot.source_timeframe is not BarFrequency.M5
-            or pivot.pivot_time not in bar_ends
-            or pivot.confirmed_at not in bar_ends
-            or pivot.confirmed_at in resets
-            or (
-                previous_confirmation is not None
-                and pivot.confirmed_at <= previous_confirmation
-            )
-            or pivot.epoch != sum(reset_at <= pivot.confirmed_at for reset_at in resets)
-            or pivot.epoch != sum(reset_at <= pivot.pivot_time for reset_at in resets)
-            or (
-                previous_epoch_kind is not None
-                and previous_epoch_kind[0] == pivot.epoch
-                and previous_epoch_kind[1] is pivot.kind
-            )
-        ):
-            raise NStructureSeriesError()
-        pivots_by_id[pivot.pivot_id] = pivot
-        previous_confirmation = pivot.confirmed_at
-        previous_epoch_kind = current_epoch_kind
-
-    pattern_ids: set[str] = set()
-    previous_completion: datetime | None = None
-    for pattern in patterns.patterns:
-        if (
-            not isinstance(pattern, CompletedNPattern)
-            or pattern.n_id in pattern_ids
-            or pattern.completed_at not in bar_ends
-            or pattern.completed_at in resets
-            or (
-                previous_completion is not None
-                and pattern.completed_at <= previous_completion
-            )
-            or any(
-                pivots_by_id.get(pivot.pivot_id) != pivot
-                for pivot in (
-                    pattern.origin,
-                    pattern.n1_extreme,
-                    pattern.n2_origin,
-                )
-            )
-            or not _valid_pattern_shape(pattern)
-            or pattern.origin.epoch
-            != sum(reset_at <= pattern.completed_at for reset_at in resets)
-        ):
-            raise NStructureSeriesError()
-        pattern_ids.add(pattern.n_id)
-        previous_completion = pattern.completed_at
-
-    if any(
-        not isinstance(event, NBreakEvent)
-        or event.n_id not in pattern_ids
-        or event.observed_at not in bar_ends
-        for event in patterns.break_events
-    ) or any(
-        not isinstance(event, NRangeBandReentryEvent)
-        or event.n_id not in pattern_ids
-        or event.observed_at not in bar_ends
-        for event in patterns.range_band_reentries
-    ):
-        raise NStructureSeriesError()
-
-
-def _valid_pattern_shape(pattern: CompletedNPattern) -> bool:
-    origin = pattern.origin
-    n1_extreme = pattern.n1_extreme
-    n2_origin = pattern.n2_origin
-    if not (origin.epoch == n1_extreme.epoch == n2_origin.epoch):
-        return False
-    if not (
-        origin.confirmed_at < n1_extreme.confirmed_at < n2_origin.confirmed_at
-        <= pattern.completed_at
-    ):
-        return False
-    if pattern.direction is NDirection.UP:
-        return (
-            origin.kind is NSwingPivotKind.LOW
-            and n1_extreme.kind is NSwingPivotKind.HIGH
-            and n2_origin.kind is NSwingPivotKind.LOW
-            and n2_origin.price >= origin.price
+    try:
+        exact_swings = reduce_n_swings(
+            bars,
+            source_timeframe=policy.source_timeframe,
+            contract=swings.contract,
+            segment_start_trading_day=swings.segment_start_trading_day,
+            segment_end_trading_day=segment_end,
         )
-    return (
-        pattern.direction is NDirection.DOWN
-        and origin.kind is NSwingPivotKind.HIGH
-        and n1_extreme.kind is NSwingPivotKind.LOW
-        and n2_origin.kind is NSwingPivotKind.HIGH
-        and n2_origin.price <= origin.price
-    )
+        exact_patterns = evaluate_n_patterns(
+            bars,
+            exact_swings,
+            policy=policy,
+        )
+    except (NStructureContractError, NStructureSeriesError):
+        raise NStructureSeriesError() from None
+    if swings != exact_swings or patterns != exact_patterns:
+        raise NStructureSeriesError()
 
 
 def _classify(
