@@ -8,8 +8,8 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 Git release 为 `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`；production Runtime 仍为
-  `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，本次 G1 未切换 Runtime。
+- 当前 Git release 与 production Runtime 均为
+  `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
@@ -80,7 +80,7 @@
   发布，但这不表示策略有效、Candidate 可晋升、Alert Rule ready 或 Runtime ready；未执行 Runtime/Alert
   扩张、DB/Canonical/Redis 写入、通知或订单。
 
-## v1.6.2 主力照妖镜·期货 V1（RELEASED / RUNTIME PENDING）
+## v1.6.2 主力照妖镜·期货 V1（RELEASED / RUNTIME PROMOTED）
 
 - Release PR #183 已将 reviewed `develop@72f9c03f79c4c982473da80b0d9f6cc6351bba84` 合入
   `main@dbdf6da49d75353a478675a3584de0f91c8bd85c`；annotated `v1.6.2` peeled commit 精确为同一
@@ -92,9 +92,18 @@
   `65 source files`、Web unit `199 passed / 1 skipped`、指定 Playwright `47 passed`、build
   `2997 modules`，Ruff/secret/shell/plist/diff 均通过；独立 Spec 与 Standards/Architecture Review
   均为 Critical=`0` / Important=`0` / Minor=`0`。
-- production Runtime 仍精确运行 `v1.6.1@75cbf37c`。本次未创建 v1.6.2 Runtime worktree、未重载
-  launchd、未执行 migration、RQData/Canonical/DB 写入、真实 Shadow、Scope/owner/transport mutation、
-  通知、replay/backfill 或订单；Runtime promotion 与旧 release worktree 清理仍是后续独立 Gate。
+- 独立 Runtime worktree `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.2` 为 clean/detached 的精确
+  `dbdf6da49d75353a478675a3584de0f91c8bd85c`。锁定 API/Web 依赖安装完成，Runtime 专项
+  `229 passed`、Ruff/secret/diff 通过，Web build 为 `2997 modules` 且拓扑无环；render-only 已验证
+  五个应用 plist 的 root/commit 与六项既有 Clawbot 私有路径一致。
+- 本次单次 G2 依次执行 base、Market 与 Alert promotion；读回确认 API/Web/Live/after-market/Alert
+  五个正式 label 均加载 v1.6.2 root 与 `dbdf6da4`，Runtime checkout clean/detached。API version=`1.6.2`，
+  API/Web=`200`，Runtime health=`ok/readonly`，Market/Alert enabled，operational/phase 总数均为 `60`，
+  Clawbot/owner ready，Execution Review roll disabled。
+- DB revision 只读保持 `20260815_0039 (head)`；Alert 两条 Rule 的 Scope 仍精确为 `jm`。实际
+  `actual_dominant + 60m` Market 读回返回一根 JM Bar 与一个已解析物理合约 segment。
+- 本次未执行 migration、RQData/Canonical/DB 写入、真实 Shadow、Scope/owner/transport mutation、
+  通知、replay/backfill、手工盘后或订单。旧 v1.6.0/v1.6.1 Runtime worktree 仍保留，清理需独立 Gate。
 
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
@@ -351,13 +360,14 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.6.1` Runtime promotion 已完成；正式五服务已统一加载 identity
-  `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
+- `v1.6.2` Runtime promotion 已完成；正式五服务已统一加载 identity
+  `dbdf6da49d75353a478675a3584de0f91c8bd85c`，Market/Alert Scope 未扩大。既有 G9 最终清理已完成，旧
   `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review Gate D 仍为
   `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证；该独立 pending 状态不改写 `v1.6.1` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持 `v1.6.1 + clawbot-openclaw-weixin` 自然运行，仅等待 SuBing Natural
-  Canary 的自然证据；不人工补证，Execution Review Gate D 继续 `disabled / not activated`。
+  不人工补证；该独立 pending 状态不改写 `v1.6.2` release/Runtime promotion 或 G9 明确豁免收口事实。
+- 最小下一步：保持 `v1.6.2 + clawbot-openclaw-weixin` 自然运行；旧 v1.6.0/v1.6.1 release worktree
+  仅在取得独立清理意图且正式引用为零后删除。SuBing Natural Canary 不人工补证，Execution Review
+  Gate D 继续 `disabled / not activated`。
