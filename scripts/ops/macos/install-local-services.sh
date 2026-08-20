@@ -186,26 +186,34 @@ retire_launch_agent() {
   return 1
 }
 
-write_market_runtime_activation_marker() {
-  local temporary_marker
-  temporary_marker="$(mktemp "${MARKET_RUNTIME_MARKER}.tmp.XXXXXX")"
+write_runtime_activation_marker() {
+  local marker="$1" temporary_marker marker_mode
+  temporary_marker="$(mktemp "${marker}.tmp.XXXXXX")" || return 1
   if ! printf 'enabled\n' >"$temporary_marker"; then
     rm -f "$temporary_marker"
     return 1
   fi
-  chmod 600 "$temporary_marker"
-  mv -f "$temporary_marker" "$MARKET_RUNTIME_MARKER"
+  if ! chmod 600 "$temporary_marker"; then
+    rm -f "$temporary_marker"
+    return 1
+  fi
+  if ! mv -f "$temporary_marker" "$marker"; then
+    rm -f "$temporary_marker"
+    return 1
+  fi
+  marker_mode="$(stat -f '%Lp' "$marker" 2>/dev/null)" || return 1
+  if [[ -L "$marker" || "$marker_mode" != "600" ]] \
+    || ! cmp -s "$marker" <(printf 'enabled\n'); then
+    return 1
+  fi
+}
+
+write_market_runtime_activation_marker() {
+  write_runtime_activation_marker "$MARKET_RUNTIME_MARKER"
 }
 
 write_alert_runtime_activation_marker() {
-  local temporary_marker
-  temporary_marker="$(mktemp "${ALERT_RUNTIME_MARKER}.tmp.XXXXXX")"
-  if ! printf 'enabled\n' >"$temporary_marker"; then
-    rm -f "$temporary_marker"
-    return 1
-  fi
-  chmod 600 "$temporary_marker"
-  mv -f "$temporary_marker" "$ALERT_RUNTIME_MARKER"
+  write_runtime_activation_marker "$ALERT_RUNTIME_MARKER"
 }
 
 activation_marker=""
@@ -225,13 +233,18 @@ prepare_runtime_activation_marker() {
   fi
 
   if [[ -e "$activation_marker" ]]; then
-    activation_marker_backup="$(mktemp "${activation_marker}.previous.XXXXXX")"
-    cp -p "$activation_marker" "$activation_marker_backup"
+    activation_marker_backup="$(mktemp "${activation_marker}.previous.XXXXXX")" || return 1
+    if ! cp -p "$activation_marker" "$activation_marker_backup"; then
+      rm -f "$activation_marker_backup"
+      activation_marker_backup=""
+      return 1
+    fi
     activation_marker_existed=1
   fi
   if ! "$writer"; then
-    [[ -z "$activation_marker_backup" ]] || rm -f "$activation_marker_backup"
-    activation_marker_backup=""
+    restore_runtime_activation_marker || {
+      printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
+    }
     return 1
   fi
 }
@@ -241,15 +254,25 @@ restore_runtime_activation_marker() {
     return 0
   fi
   if [[ "$activation_marker_existed" == "1" ]]; then
-    cp -p "$activation_marker_backup" "$activation_marker"
+    [[ -f "$activation_marker_backup" ]] || return 1
+    if ! mv -f "$activation_marker_backup" "$activation_marker"; then
+      return 1
+    fi
+    activation_marker_backup=""
   else
-    rm -f "$activation_marker"
+    rm -f "$activation_marker" || return 1
   fi
-  [[ -z "$activation_marker_backup" ]] || rm -f "$activation_marker_backup"
+  if [[ -n "$activation_marker_backup" ]]; then
+    rm -f "$activation_marker_backup" || return 1
+    activation_marker_backup=""
+  fi
 }
 
 discard_runtime_activation_marker_backup() {
-  [[ -z "$activation_marker_backup" ]] || rm -f "$activation_marker_backup"
+  if [[ -n "$activation_marker_backup" ]]; then
+    rm -f "$activation_marker_backup" || return 1
+    activation_marker_backup=""
+  fi
 }
 
 if [[ "$MODE" != "--confirm-alert-runtime" ]]; then
@@ -260,12 +283,15 @@ fi
 
 prepare_runtime_activation_marker
 
+attempted_load_labels=()
+
 load_selected_services() {
   local label source_plist target_plist
   for label in "${load_labels[@]}"; do
     source_plist="$RENDER_DIR/${label}.plist"
     target_plist="$AGENT_DIR/${label}.plist"
     cp "$source_plist" "$target_plist" || return 1
+    attempted_load_labels+=("$label")
     reload_launch_agent "$label" "$target_plist" || return 1
     launchctl enable "gui/$UID/$label" || return 1
     if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" ]]; then
@@ -274,10 +300,35 @@ load_selected_services() {
   done
 }
 
+stop_attempted_services() {
+  local index label attempt
+  local failed=0
+  for ((index=${#attempted_load_labels[@]} - 1; index >= 0; index--)); do
+    label="${attempted_load_labels[$index]}"
+    launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
+    for attempt in 1 2 3 4 5; do
+      if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+      printf '[install-local-services] ERROR: failed-attempt bootout timed out label=%s\n' "$label" >&2
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
 if ! load_selected_services; then
-  restore_runtime_activation_marker || {
+  if ! stop_attempted_services; then
+    printf '[install-local-services] ERROR: failed attempt remains loaded; activation marker retained\n' >&2
+    exit 1
+  fi
+  if ! restore_runtime_activation_marker; then
     printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
-  }
+    exit 1
+  fi
   exit 1
 fi
 discard_runtime_activation_marker_backup

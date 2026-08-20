@@ -311,6 +311,53 @@ def test_current_latest_bootstrap_restarts_strictly_after_concurrent_future_publ
     assert raced.companion.snapshot.bar_end == _NOW
 
 
+@pytest.mark.parametrize("latest_frequency", (BarFrequency.M5, BarFrequency.M15))
+def test_intraday_frequencies_choose_bootstrap_from_their_own_canonical_edges(
+    latest_frequency: BarFrequency,
+) -> None:
+    """Catches one timeframe's Canonical edge selecting the other's first cursor."""
+    latest_5m = latest_frequency is BarFrequency.M5
+    history = {
+        BarFrequency.M5: _bars(
+            frequency=BarFrequency.M5,
+            count=150,
+            trading_day=_SEGMENT_START,
+            first_end=_NOW
+            + timedelta(minutes=(-5 if latest_5m else 5) - 5 * 149),
+            first_close=Decimal("100"),
+        ),
+        BarFrequency.M15: _bars(
+            frequency=BarFrequency.M15,
+            count=50,
+            trading_day=_SEGMENT_START,
+            first_end=_NOW
+            + timedelta(minutes=(-15 if not latest_5m else 15) - 15 * 49),
+            first_close=Decimal("100"),
+        ),
+    }
+    market_read = _RequestRecordingMarketRead(history, live_available=False)
+
+    result = SubingReadService(
+        market_data=_FakeMarketData(),
+        market_read=market_read,
+        calibration=_accepted_calibration(),
+    ).snapshot(SubingReadRequest("jm", BarFrequency.M5), now=_NOW)
+
+    first_by_frequency = {
+        request.frequency: request for request in market_read.requests[:2]
+    }
+    strict_frequency = _companion_frequency(latest_frequency)
+    assert first_by_frequency[latest_frequency].before is None
+    assert first_by_frequency[strict_frequency].before == (
+        _NOW + timedelta(microseconds=1)
+    )
+    assert result.primary.snapshot is not None
+    assert result.primary.snapshot.bar_end <= _NOW
+    assert result.companion is not None
+    assert result.companion.snapshot is not None
+    assert result.companion.snapshot.bar_end <= _NOW
+
+
 def test_future_live_bar_is_excluded_from_v1_and_lifecycle() -> None:
     history = {
         BarFrequency.M5: _bars(
@@ -1854,6 +1901,16 @@ class _StaleCanonicalEndMarketRead(_CursorHonoringMarketRead):
     def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:
         state = super().state(identity, now)
         return replace(state, canonical_end=now - timedelta(minutes=1))
+
+
+class _RequestRecordingMarketRead(_CursorHonoringMarketRead):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.requests: list[SeriesPageQuery] = []
+
+    def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        self.requests.append(request)
+        return super().history_page(request)
 
 
 class _FakeLifecycleCoverage:
