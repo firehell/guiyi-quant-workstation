@@ -47,6 +47,7 @@ from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
     build_main_force_mirror_futures_research_service,
+    build_n_structure_research_service,
     build_subing_candidate_validation_service,
     build_subing_calibration_research_service,
     build_subing_lifecycle_research_service,
@@ -151,6 +152,9 @@ def main(
     main_force_mirror_futures_research_service_factory: ResearchServiceFactory = (
         build_main_force_mirror_futures_research_service
     ),
+    n_structure_research_service_factory: ResearchServiceFactory = (
+        build_n_structure_research_service
+    ),
     execution_review_roll_marker_state: RollMarkerState = (
         _execution_review_roll_marker_state
     ),
@@ -201,6 +205,8 @@ def main(
             with session_factory() as session:
                 if args.research_command == "subing-lifecycle":
                     service_factory = lifecycle_research_service_factory
+                elif args.research_command == "n-structure":
+                    service_factory = n_structure_research_service_factory
                 elif args.research_command == "candidate-validation":
                     service_factory = candidate_validation_service_factory
                 elif args.research_command == "main-force-mirror-futures":

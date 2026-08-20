@@ -12,6 +12,7 @@ from types import MappingProxyType
 from app.core.env import PROJECT_ROOT
 
 from .domain import BarFrequency, CanonicalBar
+from .price_outcome import PriceDirection, build_price_outcomes_at
 from .subing_research import (
     PriceSide,
     SubingFactorResult,
@@ -399,33 +400,32 @@ def _outcome_for_horizon(
     ):
         return None
 
-    entry_close = entry.close
-    if entry_close == 0:
-        return None
-    sign = Decimal(1) if direction is DirectionalSide.LONG else Decimal(-1)
-    final_close = future_bars[-1].close
-    directional_return = sign * (final_close - entry_close) / entry_close * Decimal(10000)
     ready_factors = tuple(factor for factor, _bar in ready_factor_bars)
     ema21_failure: bool | None = None
     if direction is DirectionalSide.LONG:
-        mfe = (max(bar.high for bar in future_bars) - entry_close) / entry_close * Decimal(10000)
-        mae = (min(bar.low for bar in future_bars) - entry_close) / entry_close * Decimal(10000)
         if len(ready_factors) == horizon:
             ema21_failure = any(
                 factor.close < factor.ema21 for factor in ready_factors
             )
     else:
-        mfe = (entry_close - min(bar.low for bar in future_bars)) / entry_close * Decimal(10000)
-        mae = (entry_close - max(bar.high for bar in future_bars)) / entry_close * Decimal(10000)
         if len(ready_factors) == horizon:
             ema21_failure = any(
                 factor.close > factor.ema21 for factor in ready_factors
             )
+    price_outcome = build_price_outcomes_at(
+        bars,
+        index=index,
+        direction=PriceDirection(direction.value),
+        horizons=(horizon,),
+        same_trading_day_only=False,
+    )[horizon]
+    if price_outcome is None:
+        return None
     return SubingOutcome(
         horizon=horizon,
-        directional_return_bps=directional_return,
-        mfe_bps=mfe,
-        mae_bps=mae,
+        directional_return_bps=price_outcome.directional_return_bps,
+        mfe_bps=price_outcome.mfe_bps,
+        mae_bps=price_outcome.mae_bps,
         ema21_failure=ema21_failure,
     )
 

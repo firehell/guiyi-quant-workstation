@@ -38,6 +38,11 @@ from app.market_data.market_research_service import MarketResearchService
 from app.market_data.main_force_mirror_futures_research_service import (
     MainForceMirrorFuturesResearchService,
 )
+from app.market_data.actual_dominant_research import (
+    ActualDominantResearchSegmentLoader,
+)
+from app.market_data.n_structure_policy import load_n_structure_policy
+from app.market_data.n_structure_research_service import NStructureResearchService
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.market_data.subing_calibration_service import SubingCalibrationResearchService
 from app.market_data.subing_candidate_validation_service import (
@@ -207,6 +212,17 @@ def build_subing_lifecycle_research_service(
         products=load_active_products(),
         calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
         policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
+    )
+
+
+def build_n_structure_research_service(
+    session: Session,
+) -> NStructureResearchService:
+    """Compose read-only N research over the shared segment loader."""
+    return NStructureResearchService(
+        ActualDominantResearchSegmentLoader(build_market_data_service(session)),
+        products=load_active_products(),
+        policy=load_n_structure_policy(),
     )
 
 

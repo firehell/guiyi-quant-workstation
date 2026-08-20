@@ -30,6 +30,11 @@ from app.market_data.main_force_mirror_futures_research_service import (
     MainForceMirrorFuturesResearchResult,
     MainForceMirrorFuturesResearchService,
 )
+from app.market_data.n_structure_research_service import (
+    NStructureResearchRequest,
+    NStructureResearchResult,
+)
+from app.market_data.price_outcome import PriceHorizonEvaluation
 from app.market_data.subing_calibration_service import (
     CalibrationMode,
     CalibrationPhase,
@@ -88,7 +93,7 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_four_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_five_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
     research_parser = domain_action.choices["research"]
@@ -101,9 +106,73 @@ def test_research_parser_exposes_only_the_four_readonly_commands() -> None:
     assert set(command_action.choices) == {
         "candidate-validation",
         "main-force-mirror-futures",
+        "n-structure",
         "subing-calibration",
         "subing-lifecycle",
     }
+
+
+def _n_arguments() -> list[str]:
+    return [
+        "research",
+        "n-structure",
+        "--since",
+        "2026-01-01",
+        "--through",
+        "2026-03-31",
+    ]
+
+
+def test_n_structure_request_parses_dates_and_normalizes_optional_symbol() -> None:
+    request = _request([*_n_arguments(), "--symbol", " JM "])
+
+    assert request == NStructureResearchRequest(
+        since=date(2026, 1, 1),
+        through=date(2026, 3, 31),
+        symbol="jm",
+    )
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        [
+            "research",
+            "n-structure",
+            "--since",
+            "2026-04-01",
+            "--through",
+            "2026-03-31",
+        ],
+        [*_n_arguments(), "--policy-id", "anything"],
+        [*_n_arguments(), "--symbol", "../jm"],
+    ),
+)
+def test_invalid_n_structure_input_fails_closed_before_service_construction(
+    arguments: list[str],
+) -> None:
+    calls: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        arguments,
+        session_factory=lambda: nullcontext(object()),
+        n_structure_research_service_factory=lambda session: calls.append(session),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "research.n-structure",
+        "status": "error",
+        "readonly": True,
+        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
+    }
+    assert calls == []
 
 
 def test_lifecycle_request_parses_dates_and_normalizes_optional_symbol() -> None:
@@ -510,6 +579,112 @@ class _FakeLifecycleResearchService:
     def run(self, request: LifecycleResearchRequest) -> SubingLifecycleResearchResult:
         self.requests.append(request)
         return self.result
+
+
+class _FakeNStructureResearchService:
+    def __init__(self, result: NStructureResearchResult) -> None:
+        self.result = result
+        self.requests: list[NStructureResearchRequest] = []
+
+    def run(self, request: NStructureResearchRequest) -> NStructureResearchResult:
+        self.requests.append(request)
+        return self.result
+
+
+def test_n_structure_outputs_exact_readonly_price_only_payload() -> None:
+    service = _FakeNStructureResearchService(
+        NStructureResearchResult(
+            products=("jm",),
+            segment_count=2,
+            evaluable_bar_count=20,
+            confirmed_pivot_count=8,
+            ambiguous_outside_reset_count=1,
+            incomplete_attempt_replaced_count=2,
+            completed_n_counts={"up": 3, "down": 2},
+            n_break_counts={"n2_origin_broken": 2, "origin_broken": 1},
+            range_band_reentry_count=2,
+            structure_established_counts={"bull": 1, "bear": 1, "range": 1},
+            structure_break_counts={"bull": 1, "bear": 0},
+            horizon_summary={
+                3: PriceHorizonEvaluation(
+                    2,
+                    Decimal("12.5"),
+                    Decimal("25"),
+                    Decimal("-5"),
+                ),
+                5: PriceHorizonEvaluation(0, None, None, None),
+                8: PriceHorizonEvaluation(
+                    1,
+                    Decimal("30"),
+                    Decimal("40"),
+                    Decimal("-10"),
+                ),
+            },
+        )
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [*_n_arguments(), "--symbol", "jm"],
+        session_factory=lambda: nullcontext(object()),
+        n_structure_research_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert service.requests == [
+        NStructureResearchRequest(date(2026, 1, 1), date(2026, 3, 31), "jm")
+    ]
+    payload = json.loads(stdout.getvalue())
+    assert payload == {
+        "schema_version": 1,
+        "command": "research.n-structure",
+        "status": "ok",
+        "readonly": True,
+        "policy_id": "n_structure_5m_v1",
+        "formula_version": "n_structure_v1",
+        "research_only": True,
+        "since": "2026-01-01",
+        "through": "2026-03-31",
+        "products": ["jm"],
+        "segment_count": 2,
+        "evaluable_bar_count": 20,
+        "confirmed_pivot_count": 8,
+        "ambiguous_outside_reset_count": 1,
+        "incomplete_attempt_replaced_count": 2,
+        "completed_n_counts": {"up": 3, "down": 2},
+        "n_break_counts": {"n2_origin_broken": 2, "origin_broken": 1},
+        "range_band_reentry_count": 2,
+        "structure_established_counts": {"bull": 1, "bear": 1, "range": 1},
+        "structure_break_counts": {"bull": 1, "bear": 0},
+        "horizon_summary": {
+            "3": {
+                "sample_count": 2,
+                "median_directional_return_bps": "12.5",
+                "median_mfe_bps": "25",
+                "median_mae_bps": "-5",
+            },
+            "5": {
+                "sample_count": 0,
+                "median_directional_return_bps": None,
+                "median_mfe_bps": None,
+                "median_mae_bps": None,
+            },
+            "8": {
+                "sample_count": 1,
+                "median_directional_return_bps": "30",
+                "median_mfe_bps": "40",
+                "median_mae_bps": "-10",
+            },
+        },
+    }
+    serialized = json.dumps(payload).lower()
+    assert "ema21" not in serialized
+    assert "profit" not in serialized
+    assert "promotion" not in serialized
 
 
 def _run_research(arguments: list[str], service: object):
