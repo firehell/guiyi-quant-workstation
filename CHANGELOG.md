@@ -2,6 +2,25 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.6.4] - 2026-08-20
+
+- 修复 SuBing current snapshot 在 `Canonical edge < now` 时错误把 wall clock 作为 strict Historical
+  cursor、触发 `DATASET_OR_PARTITION_MISSING` 的问题；5m/15m 现在分别依据各自 Canonical edge 选择
+  latest-page bootstrap 或历史 strict cursor，并在并发发布出现 cutoff 后 Bar 时 strict 重读，保持
+  Factor/Signal/Lifecycle 的因果边界与 300-Bar projection。
+- SuBing snapshot 明确失败时，Market Web 保留已经成功加载的当前合约 K 线；loading 阶段仍不暴露未知
+  rank1 segment 的旧 Bar，error fallback 也不放宽向前分页边界。
+- develop 的 Alert transport 由 Clawbot 收敛为 PushPlus：HTDY 每个 Event 对 `htdy_observers` Topic 发起
+  一次请求，SuBing 每个 Event 只发给不带 Topic 的 owner；保持 Event-first、无 retry/replay/backfill、
+  两条 Rule Scope 均仅 `jm`，PushPlus 接受请求不等同于微信最终送达。
+- 纳入 reviewed N Structure V1 causal research domain 与冻结 `jm` retrospective baseline；prospective OOS
+  仍为 pending，仅是 research asset，不形成策略有效、盈利、Alert、Runtime consumer 或晋升结论。
+- 修复 fresh-root Runtime activation 顺序：marker 在服务启动前原子建立；任一 bootstrap/enable/kickstart
+  失败会逆序停止本次触碰的 label 后恢复旧 marker，无法确认停止时保留 enabled marker，避免形成“进程
+  仍运行但 health 显示 disabled”的假安全状态。
+- 本版不新增 migration、Canonical/DB 写入、Scope 扩大、历史 Event 补发、真实通知重试或订单能力，
+  `auto_order=false` 不变。
+
 ## [1.6.3] - 2026-08-20
 
 - 修复 Market Radar 在同日盘后 Canonical 更新窗口内将理论目标日直接作为参与门槛、误报全市场

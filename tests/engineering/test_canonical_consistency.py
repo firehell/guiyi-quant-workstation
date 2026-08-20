@@ -201,11 +201,11 @@ def test_release_candidate_versions_are_consistently_1_6_3() -> None:
     )
     web = (ROOT / "apps/quant-web/package.json").read_text(encoding="utf-8")
 
-    assert 'version = "1.6.3"' in pyproject
-    assert 'name = "quant-api"\nversion = "1.6.3"\nsource = { editable = "." }' in lock
-    assert 'APP_VERSION = "1.6.3"' in version_module
+    assert 'version = "1.6.4"' in pyproject
+    assert 'name = "quant-api"\nversion = "1.6.4"\nsource = { editable = "." }' in lock
+    assert 'APP_VERSION = "1.6.4"' in version_module
     assert "version=APP_VERSION" in api
-    assert '"version": "1.6.3"' in web
+    assert '"version": "1.6.4"' in web
     assert '"version": APP_VERSION' in api
 
 

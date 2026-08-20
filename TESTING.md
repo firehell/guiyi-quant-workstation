@@ -178,6 +178,11 @@ equivalence、Signal pure core、`SubingReadService` reciprocal/lifecycle orches
 current-rank1 segment、Historical/completed Live seam 和有效当前合约视图。测试只使用 fixture、mock、
 临时目录或隔离数据库，不运行 provider、Canonical/DB/Redis 写入、Runtime switch 或通知。
 
+`test_subing_read_service.py` 同时覆盖 current cutoff 超过 Canonical edge 时的 latest-page bootstrap、
+5m/15m 非对称 edge、state 后并发发布的 strict 重读及未来 Bar 隔离；`MarketDataService` 的显式 cursor
+超出 coverage 仍独立 fail-closed。`test_alert_runtime_launchd.py` 覆盖 marker-before-start、late failure
+逆序 bootout、absent/existing 原子恢复，以及无法确认停止时保留 enabled marker 的 fail-closed 分支。
+
 `guiyi research subing-calibration` 本身是只读 Historical research：只通过 `MarketDataService` 取数，
 输出 stdout JSON，不直接读 provider，也不写 DB、Canonical 或 Redis，不自动 promotion。Discovery/
 Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不运行真实研究窗口。当前 accepted

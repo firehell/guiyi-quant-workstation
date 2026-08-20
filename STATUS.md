@@ -15,6 +15,8 @@
   五个 label 的 root 与 loaded commit 均精确匹配，Market 与 Alert activation marker 均启用。
   production Alert 的 active transport 仍为 `clawbot-openclaw-weixin`、单 `owner`；develop 的 PushPlus
   transport 尚未 release/promotion。
+  当前完整 develop 已准备为 `v1.6.4` release candidate；main/tag 与 production Runtime 在对应 Gate
+  实际完成前仍保持 v1.6.3。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
@@ -45,6 +47,29 @@
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
+
+## v1.6.4 Full Develop（RELEASE CANDIDATE；RUNTIME GATE PENDING）
+
+- candidate 纳入 PushPlus transport、reviewed N Structure V1 research assets、SuBing current-read
+  Canonical/Live seam 修复、Web error-only K 线 fallback 与 fresh-root activation fail-closed 修复。
+- SuBing 5m/15m 分别使用各自 `MarketReadState.canonical_end`：current edge 落后时从 latest Canonical
+  page bootstrap，历史 cutoff 继续 strict cursor；state 后并发推进到 cutoff 之后时 strict 重读，任何
+  Factor/Lifecycle Historical Bar 仍满足 `bar_end <= cutoff`。`MarketDataService` strict contract、Factor、
+  Signal、Lifecycle、Alert Rule/Scope 与通知 Event 语义均未放宽。
+- Web 只在 SuBing snapshot 明确 error 后保留当前已加载基础 bars；loading 仍 segment-local 安全，未知
+  segment 不开放更早分页。installer 在启动前原子建立 marker；late failure 逆序停止所有本次触碰的
+  label 后才恢复旧状态，停止无法确认时保留 enabled marker。
+- Alert 持续边界固定为 `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic` 与
+  `subing_entry_signal_v1 × jm × owner × pushplus-wechat`；本 candidate 不执行 Scope mutation、手工通知、
+  replay/backfill/retry。N Structure 仍为 historical research baseline，prospective OOS pending，不进入
+  Alert、Runtime consumer 或订单路径。
+- candidate 不含 migration、Canonical/生产 DB 写入、RQData 下载或订单能力，`auto_order=false` 不变。
+  main/tag 与 exact-tag Runtime switch 尚未执行；production 仍为 v1.6.3 Clawbot transport。
+- exact `origin/develop@6abc9a8b6db9f399be534343aea7353777e8780d` release worktree 已完成 fresh
+  verification：backend `1850 passed`、engineering `60 passed`、Ruff PASS、Mypy `78 source files`、
+  Web unit `199 passed / 1 skipped`、完整 Playwright `73 passed`、production build `2997 modules`；
+  6 个 launchd plist、shell syntax、OpenSpec `5 passed / 0 failed`、secret scan `0 finding` 与 diff check
+  均通过。隔离测试 PostgreSQL role/database 已在测试后删除，不形成 production DB mutation。
 
 ## Alert PushPlus transport（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EXTERNAL GATES PENDING）
 
