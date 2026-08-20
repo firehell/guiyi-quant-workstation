@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Protocol
 
 from .candidate_validation import (
@@ -16,6 +14,14 @@ from .candidate_validation import (
     project_lifecycle_window,
     summarize_rolling_stability,
 )
+from .candidate_validation_schedule import (
+    CandidateValidationIdentityError,
+    CandidateValidationRequest,
+    CandidateValidationSourceError,
+    CandidateValidationWindowError,
+    build_rolling_validation_windows,
+    prospective_window,
+)
 from .candidate_validation_policy import (
     CandidateManifest,
     CandidateValidationProtocol,
@@ -24,55 +30,6 @@ from .subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
-
-
-_IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
-
-
-class CandidateValidationIdentityError(ValueError):
-    code = "CANDIDATE_VALIDATION_IDENTITY_MISMATCH"
-
-    def __init__(self) -> None:
-        super().__init__(self.code)
-
-
-class CandidateValidationWindowError(ValueError):
-    code = "CANDIDATE_VALIDATION_WINDOW_INVALID"
-
-    def __init__(self) -> None:
-        super().__init__(self.code)
-
-
-class CandidateValidationSourceError(ValueError):
-    code = "CANDIDATE_VALIDATION_SOURCE_UNAVAILABLE"
-
-    def __init__(self) -> None:
-        super().__init__(self.code)
-
-
-@dataclass(frozen=True, slots=True)
-class CandidateValidationRequest:
-    candidate_id: str
-    protocol_id: str
-    symbol: str
-    through: date
-
-    def __post_init__(self) -> None:
-        candidate_id = _normalize_identifier(self.candidate_id)
-        protocol_id = _normalize_identifier(self.protocol_id)
-        symbol = self.symbol.strip().lower() if isinstance(self.symbol, str) else ""
-        if (
-            candidate_id is None
-            or protocol_id is None
-            or not symbol
-            or not symbol.isascii()
-            or not symbol.isalpha()
-            or type(self.through) is not date
-        ):
-            raise ValueError("CANDIDATE_VALIDATION_REQUEST_INVALID")
-        object.__setattr__(self, "candidate_id", candidate_id)
-        object.__setattr__(self, "protocol_id", protocol_id)
-        object.__setattr__(self, "symbol", symbol)
 
 
 class _LifecycleResearchRunner(Protocol):
@@ -139,56 +96,54 @@ class SubingCandidateValidationService:
 
     def _rolling_folds(self, symbol: str) -> tuple[RollingCandidateFold, ...]:
         folds: list[RollingCandidateFold] = []
-        test_since = self._protocol.first_test_since
-        index = 1
-        while test_since <= self._protocol.last_test_through:
-            test_through = _add_months(
-                test_since, self._protocol.test_months
-            ) - timedelta(days=1)
-            if test_through > self._protocol.last_test_through:
-                raise CandidateValidationWindowError()
-            fold_id = f"fold_{index:02d}"
-            reference_since = _add_months(
-                test_since, -self._protocol.reference_months
-            )
-            reference_through = test_since - timedelta(days=1)
+        windows = build_rolling_validation_windows(
+            reference_months=self._protocol.reference_months,
+            test_months=self._protocol.test_months,
+            step_months=self._protocol.step_months,
+            first_test_since=self._protocol.first_test_since,
+            last_test_through=self._protocol.last_test_through,
+        )
+        for window in windows:
             folds.append(
                 RollingCandidateFold(
-                    fold_id=fold_id,
+                    fold_id=window.fold_id,
                     reference=self._window(
-                        window_id=f"{fold_id}_reference",
+                        window_id=f"{window.fold_id}_reference",
                         window_kind=CandidateWindowKind.ROLLING_REFERENCE,
-                        since=reference_since,
-                        through=reference_through,
+                        since=window.reference_since,
+                        through=window.reference_through,
                         symbol=symbol,
                     ),
                     test=self._window(
-                        window_id=f"{fold_id}_test",
+                        window_id=f"{window.fold_id}_test",
                         window_kind=CandidateWindowKind.ROLLING_TEST,
-                        since=test_since,
-                        through=test_through,
+                        since=window.test_since,
+                        through=window.test_through,
                         symbol=symbol,
                     ),
                 )
             )
-            test_since = _add_months(test_since, self._protocol.step_months)
-            index += 1
         return tuple(folds)
 
     def _prospective(self, symbol: str, through: date) -> ProspectiveOosResult:
         first_day = self._protocol.prospective_oos_first_trading_day
-        if through < first_day:
+        window = prospective_window(
+            through=through,
+            first_trading_day=first_day,
+        )
+        if window is None:
             return ProspectiveOosResult(
                 status=ProspectiveOosStatus.PENDING,
                 first_trading_day=first_day,
                 through=through,
                 result=None,
             )
+        since, prospective_through = window
         result = self._window(
             window_id="prospective_oos",
             window_kind=CandidateWindowKind.PROSPECTIVE_OOS,
-            since=first_day,
-            through=through,
+            since=since,
+            through=prospective_through,
             symbol=symbol,
         )
         return ProspectiveOosResult(
@@ -227,10 +182,9 @@ class SubingCandidateValidationService:
     ) -> SubingLifecycleResearchResult:
         try:
             result = self._lifecycle_research.run(request)
-            if (
-                not isinstance(result, SubingLifecycleResearchResult)
-                or result.products != (symbol,)
-            ):
+            if not isinstance(
+                result, SubingLifecycleResearchResult
+            ) or result.products != (symbol,):
                 raise ValueError("lifecycle result identity is invalid")
             return result
         except Exception as exc:
@@ -259,16 +213,3 @@ class SubingCandidateValidationService:
         ):
             flags.append("HORIZON_WITHOUT_SAMPLE")
         return tuple(flags)
-
-
-def _normalize_identifier(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    return value if _IDENTIFIER.fullmatch(value) else None
-
-
-def _add_months(value: date, months: int) -> date:
-    start = date(value.year, value.month, 1)
-    absolute = start.year * 12 + (start.month - 1) + months
-    year, month_index = divmod(absolute, 12)
-    return date(year, month_index + 1, 1)
