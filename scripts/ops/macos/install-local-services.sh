@@ -208,27 +208,78 @@ write_alert_runtime_activation_marker() {
   mv -f "$temporary_marker" "$ALERT_RUNTIME_MARKER"
 }
 
+activation_marker=""
+activation_marker_backup=""
+activation_marker_existed=0
+
+prepare_runtime_activation_marker() {
+  local writer
+  if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+    activation_marker="$MARKET_RUNTIME_MARKER"
+    writer=write_market_runtime_activation_marker
+  elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
+    activation_marker="$ALERT_RUNTIME_MARKER"
+    writer=write_alert_runtime_activation_marker
+  else
+    return 0
+  fi
+
+  if [[ -e "$activation_marker" ]]; then
+    activation_marker_backup="$(mktemp "${activation_marker}.previous.XXXXXX")"
+    cp -p "$activation_marker" "$activation_marker_backup"
+    activation_marker_existed=1
+  fi
+  if ! "$writer"; then
+    [[ -z "$activation_marker_backup" ]] || rm -f "$activation_marker_backup"
+    activation_marker_backup=""
+    return 1
+  fi
+}
+
+restore_runtime_activation_marker() {
+  if [[ -z "$activation_marker" ]]; then
+    return 0
+  fi
+  if [[ "$activation_marker_existed" == "1" ]]; then
+    cp -p "$activation_marker_backup" "$activation_marker"
+  else
+    rm -f "$activation_marker"
+  fi
+  [[ -z "$activation_marker_backup" ]] || rm -f "$activation_marker_backup"
+}
+
+discard_runtime_activation_marker_backup() {
+  [[ -z "$activation_marker_backup" ]] || rm -f "$activation_marker_backup"
+}
+
 if [[ "$MODE" != "--confirm-alert-runtime" ]]; then
   for label in "${retired_labels[@]}"; do
     retire_launch_agent "$label"
   done
 fi
 
-for label in "${load_labels[@]}"; do
-  source_plist="$RENDER_DIR/${label}.plist"
-  target_plist="$AGENT_DIR/${label}.plist"
-  cp "$source_plist" "$target_plist"
-  reload_launch_agent "$label" "$target_plist"
-  launchctl enable "gui/$UID/$label"
-  if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" ]]; then
-    launchctl kickstart -k "gui/$UID/$label"
-  fi
-done
+prepare_runtime_activation_marker
 
-if [[ "$MODE" == "--confirm-market-runtime" ]]; then
-  write_market_runtime_activation_marker
-elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
-  write_alert_runtime_activation_marker
+load_selected_services() {
+  local label source_plist target_plist
+  for label in "${load_labels[@]}"; do
+    source_plist="$RENDER_DIR/${label}.plist"
+    target_plist="$AGENT_DIR/${label}.plist"
+    cp "$source_plist" "$target_plist" || return 1
+    reload_launch_agent "$label" "$target_plist" || return 1
+    launchctl enable "gui/$UID/$label" || return 1
+    if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" ]]; then
+      launchctl kickstart -k "gui/$UID/$label" || return 1
+    fi
+  done
+}
+
+if ! load_selected_services; then
+  restore_runtime_activation_marker || {
+    printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
+  }
+  exit 1
 fi
+discard_runtime_activation_marker_backup
 
 printf '[install-local-services] loaded=true mode=%s services=%s\n' "$MODE" "${#load_labels[@]}"

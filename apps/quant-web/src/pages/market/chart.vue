@@ -155,6 +155,7 @@ const effectiveIdentity = computed(() => currentIdentity())
 const visibleBars = computed(() => {
   if (selectedOverlay.value !== 'subing') return bars.value
   if (!subingSupported.value) return bars.value
+  if (subingError.value) return bars.value
   const segmentStart = subing.value?.segment_start_trading_day
   return segmentStart ? filterBarsToSubingSegment(bars.value, segmentStart) : []
 })
