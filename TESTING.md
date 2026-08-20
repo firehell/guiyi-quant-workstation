@@ -178,6 +178,11 @@ equivalence、Signal pure core、`SubingReadService` reciprocal/lifecycle orches
 current-rank1 segment、Historical/completed Live seam 和有效当前合约视图。测试只使用 fixture、mock、
 临时目录或隔离数据库，不运行 provider、Canonical/DB/Redis 写入、Runtime switch 或通知。
 
+`test_subing_read_service.py` 同时覆盖 current cutoff 超过 Canonical edge 时的 latest-page bootstrap、
+5m/15m 非对称 edge、state 后并发发布的 strict 重读及未来 Bar 隔离；`MarketDataService` 的显式 cursor
+超出 coverage 仍独立 fail-closed。`test_alert_runtime_launchd.py` 覆盖 marker-before-start、late failure
+逆序 bootout、absent/existing 原子恢复，以及无法确认停止时保留 enabled marker 的 fail-closed 分支。
+
 `guiyi research subing-calibration` 本身是只读 Historical research：只通过 `MarketDataService` 取数，
 输出 stdout JSON，不直接读 provider，也不写 DB、Canonical 或 Redis，不自动 promotion。Discovery/
 Validation stdout 不能作为正式 artifact；测试只验证 CLI 合同，不运行真实研究窗口。当前 accepted
@@ -188,72 +193,132 @@ intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distan
 Shadow，只输出 stdout JSON。测试只验证命令、分段因果与报告合同，不运行真实当前市场观察，
 也不表示正式回测、策略有效或可晋升。
 
-`guiyi research candidate-validation` 只接受 Git-tracked exact Candidate/Protocol，通过既有
-`SubingLifecycleResearchService` 投影 frozen retrospective、10 个 12m+3m rolling folds 和从
-`2026-08-20` 开始的 prospective OOS。命令只输出 stdout JSON，保持 `research_only=true` 与
-`readonly=true`；测试使用 fake source 验证合同和时间边界，不运行真实 Candidate report，也不授权
-Candidate 晋升、Alert/Runtime 接入、DB/Canonical/Redis 写入、通知或订单。
+`guiyi research candidate-validation` 只接受两组 Git-tracked exact Candidate/Protocol pair：
+SuBing 由 `SubingLifecycleResearchService`、N 由 `NStructureResearchService` 分别产生
+source-specific report，只共享 rolling/prospective schedule。两条链都只输出 stdout JSON，
+保持 `research_only=true` 与 `readonly=true`；测试使用 fake source 验证合同和时间边界，
+不运行真实 Candidate report，也不授权 Candidate 晋升、Alert/Runtime 接入、
+DB/Canonical/Redis 写入、通知或订单。N 的 retrospective 截止 `2026-08-19`，
+`2026-08-20` 只是 embargo，prospective 首日是 `2026-08-21`。
 
-## Alert V2
+## N Structure V1（Historical / research-only）
 
-### 无副作用单元、集成与 render-only 验证
+### N 全链与 CLI
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_alert_registry.py \
-  services/quant-api/tests/test_alert_current_trading_day.py \
-  services/quant-api/tests/test_alert_models.py \
-  services/quant-api/tests/test_alert_service.py \
-  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_n_structure_policy.py \
+  services/quant-api/tests/test_n_structure_swing.py \
+  services/quant-api/tests/test_n_structure_pattern.py \
+  services/quant-api/tests/test_n_structure_state.py \
+  services/quant-api/tests/test_n_structure_segment.py \
+  services/quant-api/tests/data_foundation/test_actual_dominant_research.py \
+  services/quant-api/tests/test_price_outcome.py \
+  services/quant-api/tests/data_foundation/test_n_structure_research_service.py \
+  services/quant-api/tests/test_candidate_validation_schedule.py \
+  services/quant-api/tests/test_n_candidate_validation_policy.py \
+  services/quant-api/tests/test_n_candidate_validation.py \
+  services/quant-api/tests/data_foundation/test_n_candidate_validation_service.py \
+  services/quant-api/tests/test_research_cli.py
+```
+
+### 上游 SuBing zero-regression
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_lifecycle_policy.py \
+  services/quant-api/tests/test_subing_structure.py \
+  services/quant-api/tests/test_subing_lifecycle.py \
+  services/quant-api/tests/test_subing_calibration.py \
+  services/quant-api/tests/test_subing_research.py \
+  services/quant-api/tests/data_foundation/test_subing_read_service.py \
+  services/quant-api/tests/data_foundation/test_subing_lifecycle_research_service.py \
+  services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
+  services/quant-api/tests/test_candidate_validation_policy.py \
+  services/quant-api/tests/test_candidate_validation.py \
+  services/quant-api/tests/data_foundation/test_subing_candidate_validation_service.py \
+  services/quant-api/tests/test_research_cli.py
+```
+
+这两组命令验证 `MarketDataService → ActualDominantResearchSegmentLoader →
+SuBing / N` 的 Historical 链、N 的 5m/epoch/segment/prefix 因果合同、独立 source-specific
+Candidate report 以及 SuBing same-day/EMA21 语义不变。`guiyi research n-structure` 与 N
+Candidate Validation 只读 Historical Canonical；测试不运行真实 `jm` 数据窗口，不形成效果、
+promotion、release 或 Runtime 结论，不授权数据/DB 写入、Alert/通知或订单。
+
+## Alert V2
+
+### 无副作用单元、集成与工程验证
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_notification_dispatcher.py \
   services/quant-api/tests/test_alert_notification.py \
-  services/quant-api/tests/test_alert_clawbot_owner.py \
-  services/quant-api/tests/test_alert_clawbot.py \
+  services/quant-api/tests/test_alert_notification_config.py \
+  services/quant-api/tests/test_alert_pushplus.py \
+  services/quant-api/tests/test_alert_notification_composition.py \
+  services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_alert_api.py \
   services/quant-api/tests/test_alert_cli.py \
   services/quant-api/tests/test_runtime_health.py \
-  services/quant-api/tests/alembic/test_alert_v2_migration.py \
-  services/quant-api/tests/data_foundation/test_aggregation.py \
-  services/quant-api/tests/data_foundation/test_live_market.py \
-  services/quant-api/tests/data_foundation/test_market_phase.py \
-  services/quant-api/tests/data_foundation/test_market_read.py \
-  services/quant-api/tests/data_foundation/test_subing_read_service.py
+  services/quant-api/tests/data_foundation/test_cli.py
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-  uv run --offline --project services/quant-api pytest -q \
-  tests/engineering/test_alert_runtime_launchd.py \
-  tests/engineering/test_market_runtime_launchd.py
+  uv run --offline --project services/quant-api pytest -q tests/engineering
 
-node --test tests/engineering/openclaw_weixin_single_shot.test.mjs
+/Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/ruff check \
+  services/quant-api/app/alerts/notification.py \
+  services/quant-api/app/alerts/notification_config.py \
+  services/quant-api/app/alerts/pushplus.py \
+  services/quant-api/app/alerts/notification_composition.py \
+  services/quant-api/app/guiyi_cli/main.py \
+  services/quant-api/app/services/runtime_health.py \
+  services/quant-api/app/schemas/runtime.py
 
-pnpm --dir apps/quant-web test
-scripts/ops/macos/install-local-services.sh --render-only
-plutil -lint .run/launchd/com.guiyi.quant-alert.plist
+MYPYPATH=services/quant-api:packages/quant-core \
+  /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/mypy \
+  --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/alerts/notification.py \
+  services/quant-api/app/alerts/notification_config.py \
+  services/quant-api/app/alerts/pushplus.py \
+  services/quant-api/app/alerts/notification_composition.py \
+  services/quant-api/app/guiyi_cli/main.py \
+  services/quant-api/app/services/runtime_health.py \
+  services/quant-api/app/schemas/runtime.py
+
+find scripts/ops -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+find deploy/launchd -type f -name '*.plist.template' -print0 | xargs -0 -n1 plutil -lint
+python3 scripts/engineering/secret_scan.py --json
+git diff --check
 ```
 
-这些命令只使用隔离数据库、mock sender、fake exact-version plugin tree、tmp_path/fake process 或 render-only，
-不启动真实 AlertRuntime，不写真实 owner，不执行真实 Clawbot preflight/canary/send，也不修改或监督
-OpenClaw。它们不授权 Runtime switch/release、production migration 或 SuBing Scope write/activation。
-当前 production exact-tag 已运行 `clawbot-openclaw-weixin`；本节测试不会改变该事实，也不授权任何后续
-真实 Gate。`alembic upgrade/current`、`runtime clawbot-owner-bootstrap
---confirm-write-owner`、`runtime clawbot-preflight`、`runtime alert-canary`、`--confirm-alert-runtime` 与真实
-Scope PUT 禁止作为本节验证命令。测试路由 Scope PUT 只证明 API 合同，不授权生产 DB mutation。
+这些命令使用 fixture、tmp_path 与 fake PushPlus client，不读取或修改真实 token/Topic，不执行真实
+canary/send，也不启动或切换 Alert Runtime。PushPlus transport 不新增 migration；
+Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。无 Web 变更时不要求前端或 browser
+验收。
+
+全 backend 基线若包含 PostgreSQL-only 测试，仍必须按本文“后端与前端基线”的 guard 使用显式隔离测试
+库；缺少隔离库只能报告环境阻塞，不得借用 Runtime/production `DATABASE_URL`。
 
 ### 独立受控外部 Gate
 
-- production PostgreSQL migration：仅在明确授权的短维护窗口升级到目标 revision；读回两张
-  Alert Application Domain 表与八表 Market Catalog 未变。
-- release/tag 与 Alert Runtime promotion/switch：分别取得明确授权；不得让 Runtime 与其所需
-  Alert schema 版本不一致。
-- SuBing Scope write/activation：对精确 `subing_entry_signal_v1 × product` 另行授权；seed
-  必须保持空集，不从 HTDY Scope 或 `operational_products.txt` 自动扩张。
-- Clawbot owner bootstrap/write、zero-send preflight、真实 canary/send：每次执行仍需自身精确 Gate；
-  已完成的 G2～G8、测试或历史批准不授权重试、owner/Scope/transport 变更、rollback 或 G9 cleanup。
-  这些命令不写 AlertEvent、不改 Scope、不修改 OpenClaw、不自动启用或切换 Runtime。
+- 创建专用 PushPlus 消息 token 与 Topic：已完成；
+- 人工核对 Topic 当前成员在 `1..4` 人边界内：当前 3 人已由用户确认，第 4 人可后续加入；
+- 写入 `0700/0600` Git 外 private config：已完成，structural readback PASS；
+- `owner` 与 `htdy_observers` 各一次真实 canary/send：均已完成、由 provider 接受且经用户确认实际收到，
+  未重试；这两次历史 canary 不得在发布或 Runtime switch 时重复执行；
+- exact HTDY Rule + Scope + audience + transport 持续边界为
+  `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic`；SuBing 固定为
+  `subing_entry_signal_v1 × jm × owner × pushplus-wechat`，不得从历史 canary 推导 release 或 switch；
+- main/release/tag 与 exact-tag Alert Runtime promotion/switch：分别 pending。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
-mock 通过只证明实现，不证明任何生产 Gate 已执行。
+mock 通过只证明实现，不证明发布或 Runtime Gate 已执行。当前 production 继续是 `v1.6.3` 的单
+`owner` exact Runtime；PushPlus private config 与历史 canary 已完成，但 transport 尚未 release/promotion。
 
 ## OpenSpec
 

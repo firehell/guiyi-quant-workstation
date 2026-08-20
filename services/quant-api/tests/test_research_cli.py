@@ -30,6 +30,22 @@ from app.market_data.main_force_mirror_futures_research_service import (
     MainForceMirrorFuturesResearchResult,
     MainForceMirrorFuturesResearchService,
 )
+from app.market_data.n_candidate_validation import (
+    NCandidateWindowKind,
+    NProspectiveOosResult,
+    NProspectiveOosStatus,
+    NRollingCandidateFold,
+    NStructureCandidateValidationReport,
+    project_n_structure_window,
+    summarize_n_rolling_stability,
+)
+from app.market_data.n_structure_research_service import (
+    NStructureSegmentIdentityError,
+    NStructureResearchRequest,
+    NStructureResearchResult,
+    NStructureSourceUnavailableError,
+)
+from app.market_data.price_outcome import PriceHorizonEvaluation
 from app.market_data.subing_calibration_service import (
     CalibrationMode,
     CalibrationPhase,
@@ -88,7 +104,7 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_four_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_five_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
     research_parser = domain_action.choices["research"]
@@ -101,9 +117,73 @@ def test_research_parser_exposes_only_the_four_readonly_commands() -> None:
     assert set(command_action.choices) == {
         "candidate-validation",
         "main-force-mirror-futures",
+        "n-structure",
         "subing-calibration",
         "subing-lifecycle",
     }
+
+
+def _n_arguments() -> list[str]:
+    return [
+        "research",
+        "n-structure",
+        "--since",
+        "2026-01-01",
+        "--through",
+        "2026-03-31",
+    ]
+
+
+def test_n_structure_request_parses_dates_and_normalizes_optional_symbol() -> None:
+    request = _request([*_n_arguments(), "--symbol", " JM "])
+
+    assert request == NStructureResearchRequest(
+        since=date(2026, 1, 1),
+        through=date(2026, 3, 31),
+        symbol="jm",
+    )
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        [
+            "research",
+            "n-structure",
+            "--since",
+            "2026-04-01",
+            "--through",
+            "2026-03-31",
+        ],
+        [*_n_arguments(), "--policy-id", "anything"],
+        [*_n_arguments(), "--symbol", "../jm"],
+    ),
+)
+def test_invalid_n_structure_input_fails_closed_before_service_construction(
+    arguments: list[str],
+) -> None:
+    calls: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        arguments,
+        session_factory=lambda: nullcontext(object()),
+        n_structure_research_service_factory=lambda session: calls.append(session),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 2
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "research.n-structure",
+        "status": "error",
+        "readonly": True,
+        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
+    }
+    assert calls == []
 
 
 def test_lifecycle_request_parses_dates_and_normalizes_optional_symbol() -> None:
@@ -510,6 +590,151 @@ class _FakeLifecycleResearchService:
     def run(self, request: LifecycleResearchRequest) -> SubingLifecycleResearchResult:
         self.requests.append(request)
         return self.result
+
+
+class _FakeNStructureResearchService:
+    def __init__(self, result: NStructureResearchResult) -> None:
+        self.result = result
+        self.requests: list[NStructureResearchRequest] = []
+
+    def run(self, request: NStructureResearchRequest) -> NStructureResearchResult:
+        self.requests.append(request)
+        return self.result
+
+
+class _FailingNStructureResearchService:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def run(self, request: NStructureResearchRequest) -> NStructureResearchResult:
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    "error",
+    (NStructureSourceUnavailableError(), NStructureSegmentIdentityError()),
+)
+def test_n_structure_cli_preserves_stable_public_failure_code(
+    error: Exception,
+) -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        _n_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        n_structure_research_service_factory=lambda _session: (
+            _FailingNStructureResearchService(error)
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 1
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "research.n-structure",
+        "status": "error",
+        "readonly": True,
+        "error": {"code": error.code, "type": type(error).__name__},  # type: ignore[attr-defined]
+    }
+
+
+def test_n_structure_outputs_exact_readonly_price_only_payload() -> None:
+    service = _FakeNStructureResearchService(
+        NStructureResearchResult(
+            products=("jm",),
+            segment_count=2,
+            evaluable_bar_count=20,
+            confirmed_pivot_count=8,
+            ambiguous_outside_reset_count=1,
+            incomplete_attempt_replaced_count=2,
+            completed_n_counts={"up": 3, "down": 2},
+            n_break_counts={"n2_origin_broken": 2, "origin_broken": 1},
+            range_band_reentry_count=2,
+            structure_established_counts={"bull": 1, "bear": 1, "range": 1},
+            structure_break_counts={"bull": 1, "bear": 0},
+            horizon_summary={
+                3: PriceHorizonEvaluation(
+                    2,
+                    Decimal("12.5"),
+                    Decimal("25"),
+                    Decimal("-5"),
+                ),
+                5: PriceHorizonEvaluation(0, None, None, None),
+                8: PriceHorizonEvaluation(
+                    1,
+                    Decimal("30"),
+                    Decimal("40"),
+                    Decimal("-10"),
+                ),
+            },
+        )
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [*_n_arguments(), "--symbol", "jm"],
+        session_factory=lambda: nullcontext(object()),
+        n_structure_research_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert service.requests == [
+        NStructureResearchRequest(date(2026, 1, 1), date(2026, 3, 31), "jm")
+    ]
+    payload = json.loads(stdout.getvalue())
+    assert payload == {
+        "schema_version": 1,
+        "command": "research.n-structure",
+        "status": "ok",
+        "readonly": True,
+        "policy_id": "n_structure_5m_v1",
+        "formula_version": "n_structure_v1",
+        "research_only": True,
+        "since": "2026-01-01",
+        "through": "2026-03-31",
+        "products": ["jm"],
+        "segment_count": 2,
+        "evaluable_bar_count": 20,
+        "confirmed_pivot_count": 8,
+        "ambiguous_outside_reset_count": 1,
+        "incomplete_attempt_replaced_count": 2,
+        "completed_n_counts": {"up": 3, "down": 2},
+        "n_break_counts": {"n2_origin_broken": 2, "origin_broken": 1},
+        "range_band_reentry_count": 2,
+        "structure_established_counts": {"bull": 1, "bear": 1, "range": 1},
+        "structure_break_counts": {"bull": 1, "bear": 0},
+        "horizon_summary": {
+            "3": {
+                "sample_count": 2,
+                "median_directional_return_bps": "12.5",
+                "median_mfe_bps": "25",
+                "median_mae_bps": "-5",
+            },
+            "5": {
+                "sample_count": 0,
+                "median_directional_return_bps": None,
+                "median_mfe_bps": None,
+                "median_mae_bps": None,
+            },
+            "8": {
+                "sample_count": 1,
+                "median_directional_return_bps": "30",
+                "median_mfe_bps": "40",
+                "median_mae_bps": "-10",
+            },
+        },
+    }
+    serialized = json.dumps(payload).lower()
+    assert "ema21" not in serialized
+    assert "profit" not in serialized
+    assert "promotion" not in serialized
 
 
 def _run_research(arguments: list[str], service: object):
@@ -946,6 +1171,19 @@ class _FakeCandidateValidationService:
         return self.report
 
 
+class _FakeNCandidateValidationService:
+    def __init__(self, report: NStructureCandidateValidationReport) -> None:
+        self.report = report
+        self.requests: list[CandidateValidationRequest] = []
+
+    def run(
+        self,
+        request: CandidateValidationRequest,
+    ) -> NStructureCandidateValidationReport:
+        self.requests.append(request)
+        return self.report
+
+
 def test_candidate_parser_uses_exact_frozen_choices() -> None:
     request = _request(_candidate_arguments(through="2026-08-17"))
 
@@ -1090,6 +1328,239 @@ def test_candidate_payload_contains_no_automatic_decision_or_profit_fields() -> 
             "drop",
             "promote",
             "pass_strategy",
+            "expected_profit",
+            "account_return",
+        }
+    )
+
+
+def _n_candidate_arguments(
+    *,
+    candidate: str = "n_structure_5m_candidate_v1",
+    protocol: str = "n_structure_validation_v1",
+    through: str = "2026-08-20",
+) -> list[str]:
+    return [
+        "research",
+        "candidate-validation",
+        "--candidate",
+        candidate,
+        "--protocol",
+        protocol,
+        "--symbol",
+        "jm",
+        "--through",
+        through,
+    ]
+
+
+def _n_candidate_horizon() -> PriceHorizonEvaluation:
+    return PriceHorizonEvaluation(
+        3,
+        Decimal("1.2"),
+        Decimal("2.3"),
+        Decimal("-0.4"),
+    )
+
+
+def _n_candidate_source() -> NStructureResearchResult:
+    return NStructureResearchResult(
+        products=("jm",),
+        segment_count=2,
+        evaluable_bar_count=10,
+        confirmed_pivot_count=4,
+        ambiguous_outside_reset_count=1,
+        incomplete_attempt_replaced_count=2,
+        completed_n_counts={"up": 2, "down": 1},
+        n_break_counts={"n2_origin_broken": 1, "origin_broken": 1},
+        range_band_reentry_count=2,
+        structure_established_counts={"bull": 1, "bear": 1, "range": 1},
+        structure_break_counts={"bull": 1, "bear": 0},
+        horizon_summary={
+            3: _n_candidate_horizon(),
+            5: _n_candidate_horizon(),
+            8: _n_candidate_horizon(),
+        },
+    )
+
+
+def _n_candidate_report() -> NStructureCandidateValidationReport:
+    source = _n_candidate_source()
+    retrospective = project_n_structure_window(
+        window_id="retrospective",
+        window_kind=NCandidateWindowKind.RETROSPECTIVE,
+        since=date(2023, 1, 1),
+        through=date(2026, 8, 19),
+        source=source,
+    )
+    fold = NRollingCandidateFold(
+        fold_id="fold_01",
+        reference=project_n_structure_window(
+            window_id="fold_01_reference",
+            window_kind=NCandidateWindowKind.ROLLING_REFERENCE,
+            since=date(2023, 1, 1),
+            through=date(2023, 12, 31),
+            source=source,
+        ),
+        test=project_n_structure_window(
+            window_id="fold_01_test",
+            window_kind=NCandidateWindowKind.ROLLING_TEST,
+            since=date(2024, 1, 1),
+            through=date(2024, 3, 31),
+            source=source,
+        ),
+    )
+    folds = (fold,)
+    return NStructureCandidateValidationReport(
+        schema_version=1,
+        candidate_id="n_structure_5m_candidate_v1",
+        policy_id="n_structure_5m_v1",
+        formula_version="n_structure_v1",
+        protocol_id="n_structure_validation_v1",
+        research_only=True,
+        symbol="jm",
+        retrospective=retrospective,
+        rolling_folds=folds,
+        rolling_stability=summarize_n_rolling_stability(folds),
+        prospective_oos=NProspectiveOosResult(
+            status=NProspectiveOosStatus.PENDING,
+            first_trading_day=date(2026, 8, 21),
+            through=date(2026, 8, 20),
+            result=None,
+        ),
+        quality_flags=("PROSPECTIVE_OOS_PENDING",),
+    )
+
+
+def test_candidate_parser_accepts_exactly_two_candidate_and_protocol_ids() -> None:
+    request = _request(_n_candidate_arguments())
+
+    assert request == CandidateValidationRequest(
+        candidate_id="n_structure_5m_candidate_v1",
+        protocol_id="n_structure_validation_v1",
+        symbol="jm",
+        through=date(2026, 8, 20),
+    )
+    cross_pair = _request(_n_candidate_arguments(protocol="candidate_validation_v1"))
+    assert cross_pair.protocol_id == "candidate_validation_v1"
+    for arguments in (
+        _n_candidate_arguments(candidate="other_candidate"),
+        _n_candidate_arguments(protocol="other_protocol"),
+    ):
+        with pytest.raises(CliUsageError):
+            build_parser().parse_args(arguments)
+
+
+def test_n_candidate_cli_uses_explicit_n_service_and_source_specific_payload() -> None:
+    n_service = _FakeNCandidateValidationService(_n_candidate_report())
+    subing_calls: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        _n_candidate_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        candidate_validation_service_factory=lambda session: subing_calls.append(
+            session
+        ),
+        n_candidate_validation_service_factory=lambda _session: n_service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert subing_calls == []
+    assert n_service.requests == [
+        CandidateValidationRequest(
+            candidate_id="n_structure_5m_candidate_v1",
+            protocol_id="n_structure_validation_v1",
+            symbol="jm",
+            through=date(2026, 8, 20),
+        )
+    ]
+    payload = json.loads(stdout.getvalue())
+    assert payload["retrospective"] == {
+        "window_id": "retrospective",
+        "window_kind": "retrospective",
+        "since": "2023-01-01",
+        "through": "2026-08-19",
+        "products": ["jm"],
+        "segment_count": 2,
+        "evaluable_bar_count": 10,
+        "confirmed_pivot_count": 4,
+        "ambiguous_outside_reset_count": 1,
+        "incomplete_attempt_replaced_count": 2,
+        "completed_n_counts": {"up": 2, "down": 1},
+        "n_break_counts": {"n2_origin_broken": 1, "origin_broken": 1},
+        "range_band_reentry_count": 2,
+        "structure_established_counts": {"bull": 1, "bear": 1, "range": 1},
+        "structure_break_counts": {"bull": 1, "bear": 0},
+        "horizon_summary": {
+            "3": {
+                "sample_count": 3,
+                "median_directional_return_bps": "1.2",
+                "median_mfe_bps": "2.3",
+                "median_mae_bps": "-0.4",
+            },
+            "5": {
+                "sample_count": 3,
+                "median_directional_return_bps": "1.2",
+                "median_mfe_bps": "2.3",
+                "median_mae_bps": "-0.4",
+            },
+            "8": {
+                "sample_count": 3,
+                "median_directional_return_bps": "1.2",
+                "median_mfe_bps": "2.3",
+                "median_mae_bps": "-0.4",
+            },
+        },
+    }
+    assert payload["rolling_stability"] == {
+        "fold_count": 1,
+        "folds_with_completed_n": 1,
+        "completed_n_min": 3,
+        "completed_n_max": 3,
+        "completed_n_median": "3",
+    }
+    assert payload["prospective_oos"] == {
+        "status": "pending",
+        "first_trading_day": "2026-08-21",
+        "through": "2026-08-20",
+        "result": None,
+    }
+
+
+def test_n_candidate_payload_contains_no_decision_profit_or_promotion_fields() -> None:
+    service = _FakeNCandidateValidationService(_n_candidate_report())
+    stdout = io.StringIO()
+
+    code = main(
+        _n_candidate_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        n_candidate_validation_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    assert code == 0
+    payload = json.loads(stdout.getvalue())
+
+    def keys(value: object) -> set[str]:
+        if isinstance(value, dict):
+            return set(value) | set().union(*(keys(item) for item in value.values()))
+        if isinstance(value, list):
+            return set().union(*(keys(item) for item in value))
+        return set()
+
+    assert keys(payload).isdisjoint(
+        {
+            "keep",
+            "drop",
+            "promote",
+            "pass_strategy",
+            "profitability",
             "expected_profit",
             "account_return",
         }

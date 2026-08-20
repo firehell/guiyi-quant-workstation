@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 
 本文件只保留当前有效、长期影响代码或数据语义的决策。历史过程由 Git 与 OpenSpec archive 追溯。
 
@@ -27,8 +27,8 @@
 | Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `operational_products.txt` 中 active 60 的 Live 观察和每日 18:05 + 一次 1h retry 的盘后更新持续运行 | 范围变化必须显式修改同一配置；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
 | Alert V2 应用 | 独立 Application Domain 的 Code Registry 只含 `htdy_original_15m` 与 `subing_entry_signal_v1`；两张应用表记录 Scope 与不可变 Event | 不修改八表 Catalog/Canonical/rank1；SuBing seed Scope 为空；不恢复 Signal/Review/Strategy，不 replay/backfill/retry/outbox/queue，不建订单路径 |
 | Alert V2 评估语义 | HTDY 保持 event-cutoff；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，stale identity fail-closed，final Session Bar 只使用共享 arrival grace，5m/15m 同边界使用 TradingSession bucket | 不复制 SuBing 公式/resolver，不建 `snapshot_at`/cutoff/replay 语义；current trading day 只由 `MarketPhaseResolver + operational products` 唯一解析，不可用时 fail-closed |
-| Alert Runtime V2 授权 | 仅 `htdy_original_15m × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin` 与 `subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin` 可在精确授权与独立 Runtime promotion 后持续处理后续自然事件；当前 exact instance 的两条 Scope 均为 `jm` | 未来第三条 Rule 不继承；与 Market Runtime 授权独立；production migration、release/tag、Runtime promotion/switch、Scope/owner/transport 变更、真实 canary/send、rollback 与 G9 cleanup 互不授权 |
-| Alert active 通知架构 | develop 与 production 均为 `AlertEvent commit → ClawbotAlertSender → one Node child → exact openclaw-weixin private seam → sendMessageWeixin()`；owner 配置不可变，exact OpenClaw/Node/plugin version、root 与 compiled module shape fail-closed；每个 Event 最多一个 child、一次发送 primitive | OpenClaw 是既有外部依赖，不由归一量化安装、更新、登录或监督；不使用 public message-send、durable queue、inbound/Agent/LLM；无 retry/queue/replay/backfill/outbox/failover；旧 `v1.4.2` worktree/WeCom credential 已完成最终清理，未来恢复 WeCom 必须重新设计、配置、发布并取得独立 Gate |
+| Alert Runtime V2 授权 | develop 候选为 `htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic` 与 `subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat`；必须精确授权并独立 Runtime promotion 后才可持续处理后续自然事件 | 当前 production 仍是 v1.6.3 历史单 owner transport；已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员，超过 4 人、未知成员或换 Topic 须重新授权；未来第三条 Rule、production migration、release/tag、Runtime switch、Scope/transport、真实 canary/send 与 rollback 互不授权 |
+| Alert active 通知架构 | develop 为 `AlertEvent commit → AlertNotificationDispatcher → NotificationTransport → PushPlus SDK`；HTDY 每 Event 一次 Topic 请求，SuBing 一次 owner 请求；Git 外配置为 0700/0600，只含消息 token 与 Topic code | shortCode 仅表示 provider 接受；Topic 成员由 PushPlus 外部管理并人工核对；无 Open API、callback、逐人 DB 状态、retry/queue/replay/backfill/outbox/failover；替换 provider 只新增 adapter 并切换 composition，不改业务 Rule |
 | Execution Review V1 | 只从不可变 `subing_entry_signal_v1` Event 记录人工 Decision、真实手工 Execution、单品种 OPEN Episode 与结构化 Review | 独立四表 Application Domain；不恢复旧 Review Center，不连接账户、不自动反手、不创建订单；历史重建只经 MarketDataService |
 | Execution Review multiplier | 采用 trusted-partial reference：只跟踪具有正式官方证据且可机器复算的值，reference=evidence⊆active 60 | completeness 不阻断 Decision/Execution/Review；缺失只令人民币估算 unavailable，realized points/拓扑仍可用；Episode 创建时 snapshot，后续 reference 扩大不重写历史；60/60 是独立 reference-data 目标而非 v1.4 release Gate |
 | 开发态部署拓扑 | 功能开发期可让本地 launchd 临时直接运行主 `develop` 工作区；最终验收重新创建绑定精确提交的独立 Runtime worktree | 不热更新；每次重载需新的一次性意图；develop 证据不等于 promotion 或最终 Runtime 证据 |

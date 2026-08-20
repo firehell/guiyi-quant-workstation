@@ -8,11 +8,15 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 Git release 与 production Runtime 均为
-  `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`。
-  当前 release branch 的 API/Web 版本面已准备为 Radar-only `v1.6.3` candidate，但尚未合入 `main`、
-  创建 tag/release 或切换 production Runtime。
-  production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
+- 当前 Git release 为
+  `v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`；annotated tag object 为
+  `ff15cab6ec94bbbbc2063f1e7e411efae929db89`，message=`Release v1.6.3`。production Runtime 已统一为
+  clean/detached `v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`：API/Web/Live/after-market/Alert
+  五个 label 的 root 与 loaded commit 均精确匹配，Market 与 Alert activation marker 均启用。
+  production Alert 的 active transport 仍为 `clawbot-openclaw-weixin`、单 `owner`；develop 的 PushPlus
+  transport 尚未 release/promotion。
+  当前完整 develop 已准备为 `v1.6.4` release candidate；main/tag 与 production Runtime 在对应 Gate
+  实际完成前仍保持 v1.6.3。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
   SuBing Factor/Signal 观察与 Alert V2 上下文。
 - Market Runtime V1 已在本地工作站启用，只处理 `operational_products.txt` 的 active 60；
@@ -36,13 +40,71 @@
   Historical-only Shadow CLI。V1 Factor/Signal/resolver、Alert Rule/Scope 和 `AlertRuntime` 消费边界不变；
   Lifecycle 无 DB/Redis/queue/notification 路径。本版未运行真实 `jm` Shadow/current-market
   observation，因此无 live `jm` 证据，不表示策略有效、正式 Rule ready 或可晋升。
+- `develop` 已包含 reviewed N Structural Domain V1：5m causal Swing/epoch、N Pattern、level break/
+  Range Band、BULL/BEAR/RANGE Structure、Historical-only research CLI 与第二条独立 Candidate producer。
+  Task 10 已形成并通过 Evidence Review 的 deterministic `jm` retrospective/rolling baseline；prospective
+  OOS 从 `2026-08-21` 开始且仍为 `pending`，不形成效果、盈利、晋升、release 或 Runtime 结论。
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
 
-## v1.6.3 Market Radar Freshness Watermark（RELEASE CANDIDATE；EXTERNAL GATES PENDING）
+## v1.6.4 Full Develop（RELEASE CANDIDATE；RUNTIME GATE PENDING）
 
-- candidate 只包含 Market Radar freshness 合同、API/Web 实现与测试：区分 `target_as_of`、统一计算使用的
+- candidate 纳入 PushPlus transport、reviewed N Structure V1 research assets、SuBing current-read
+  Canonical/Live seam 修复、Web error-only K 线 fallback 与 fresh-root activation fail-closed 修复。
+- SuBing 5m/15m 分别使用各自 `MarketReadState.canonical_end`：current edge 落后时从 latest Canonical
+  page bootstrap，历史 cutoff 继续 strict cursor；state 后并发推进到 cutoff 之后时 strict 重读，任何
+  Factor/Lifecycle Historical Bar 仍满足 `bar_end <= cutoff`。`MarketDataService` strict contract、Factor、
+  Signal、Lifecycle、Alert Rule/Scope 与通知 Event 语义均未放宽。
+- Web 只在 SuBing snapshot 明确 error 后保留当前已加载基础 bars；loading 仍 segment-local 安全，未知
+  segment 不开放更早分页。installer 在启动前原子建立 marker；late failure 逆序停止所有本次触碰的
+  label 后才恢复旧状态，停止无法确认时保留 enabled marker。
+- Alert 持续边界固定为 `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic` 与
+  `subing_entry_signal_v1 × jm × owner × pushplus-wechat`；本 candidate 不执行 Scope mutation、手工通知、
+  replay/backfill/retry。N Structure 仍为 historical research baseline，prospective OOS pending，不进入
+  Alert、Runtime consumer 或订单路径。
+- candidate 不含 migration、Canonical/生产 DB 写入、RQData 下载或订单能力，`auto_order=false` 不变。
+  main/tag 与 exact-tag Runtime switch 尚未执行；production 仍为 v1.6.3 Clawbot transport。
+- exact `origin/develop@6abc9a8b6db9f399be534343aea7353777e8780d` release worktree 已完成 fresh
+  verification：backend `1850 passed`、engineering `60 passed`、Ruff PASS、Mypy `78 source files`、
+  Web unit `199 passed / 1 skipped`、完整 Playwright `73 passed`、production build `2997 modules`；
+  6 个 launchd plist、shell syntax、OpenSpec `5 passed / 0 failed`、secret scan `0 finding` 与 diff check
+  均通过。隔离测试 PostgreSQL role/database 已在测试后删除，不形成 production DB mutation。
+
+## Alert PushPlus transport（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EXTERNAL GATES PENDING）
+
+- develop 的通知边界已收敛为 `AlertNotificationDispatcher -> NotificationTransport -> PushPlus SDK`，
+  不保留 OpenClaw/Clawbot 或 WxPusher 兼容路径。HTDY 每个 Event 只向逻辑 audience
+  `htdy_observers` 发起一次 Topic 请求；SuBing 每个 Event 只向不带 Topic 的 `owner` 发起一次请求。
+- provider 只使用官方 Python SDK `perk-pushplus-sdk==1.2.1`、`wechat` channel 与 `txt` template。
+  SDK 返回的 shortCode 仅表示 PushPlus 接受请求，不能解释为微信最终送达；公开输出只含脱敏后缀。
+- Git 外唯一 private JSON 只保存消息 token 与 HTDY Topic code，要求 parent `0700`、file `0600`、
+  current uid。launchd/API/Alert 只传同一个 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`；health 仅做结构检查，
+  不联网、不读取 Topic 成员、不公开 token 或 Topic code。
+- Topic 成员完全由 PushPlus 管理；owner 与最多三位朋友都通过 PushPlus 页面/二维码加入同一专用 Topic，
+  当前已由用户确认 Topic 内有 3 人，第 4 人可后续加入；每次由人工核对且总人数不得超过 4。归一量化
+  不建逐人 directory、pairing、fan-out、送达表、Open API、callback、
+  retry、queue、replay、backfill 或 fallback；Alert Application Domain 仍只有两张表。
+- 当前实现的无副作用验证已覆盖 dispatcher/config/SDK adapter/composition/CLI/health 与 launchd/ops：
+  Alert focused `170 passed`，全 engineering `53 passed`；全后端 Ruff PASS，Mypy `78 source files`
+  PASS，全部 ops shell `bash -n`、6 个 launchd templates `plutil -lint`、secret scan
+  `finding_count=0` 与 diff check PASS。
+- Git 外 private config 已按单次授权原子写入并只读验证：parent=`0700`、file=`0600`、current uid、
+  strict schema、Topic identity、SDK sender composition 与 structural health 均 PASS；验证明确
+  `network_called=false / would_send=false`。本轮未连接 production DB，未执行 Scope、
+  main/release/tag、Runtime promotion/switch 或外部旧配置清理。
+- 专用 Topic 已创建且当前 3 人由用户确认；第 4 人允许后续加入。`owner` 单次真实 canary 已由
+  PushPlus 接受（公开回执后缀 `b82d85`），且用户已确认微信实际收到，`delivery_confirmed=true`；
+  未重试。`htdy_observers` 单次真实 Topic canary 也已由 PushPlus 接受（公开回执后缀 `e045b2`），
+  Topic 当前三位成员均已人工确认实际收到，`delivery_confirmed=true`，未重试。独立 pending Gate 为：
+  取得精确 Rule + Scope + audience + transport 持续授权、main/release/tag、exact-tag Alert Runtime
+  promotion/switch/readback 与自然 HTDY 验收。代码和测试不授权其中任何一步。
+- production 两条 Rule 的 Scope 仍精确为 `jm`，Clawbot 六项 private path 与 owner-only 配置 ready，
+  Alert Runtime heartbeat=`ok`；没有 PushPlus 已 release/promotion 或已自然验收的证据。
+
+## v1.6.3 Market Radar Freshness Watermark（RELEASED / RUNTIME PROMOTED）
+
+- v1.6.3 release 只包含 Market Radar freshness 合同、API/Web 实现与测试：区分 `target_as_of`、统一计算使用的
   `data_as_of` 及 `current / pending_after_market / degraded`，并保留 `expected_as_of` 兼容别名。
 - 同日盘后部分目标日 Bar 已发布时，Radar 统一裁剪到严格早于目标日的最近 Canonical 日期；每个品种
   仍以完整 300-Bar 指标窗口计算，目标日 Bar 不参与。完整上一日快照继续返回 `ready / 60/60`，跨日
@@ -50,13 +112,32 @@
 - candidate 严格保持 `MarketDataService -> Canonical` 只读链路，不接 Redis/Live、after-market 状态文件、
   临时 D1、缓存、轮询或持久化，不修改 Data Foundation、Catalog、MainContractMap、K 线 seam、DB、
   Alert Scope、通知或订单边界。
-- 本 release diff 明确排除 develop 的 PushPlus、N Structure、migration、Scope 与其他未发布差异。
-  main/tag release 与五服务 Runtime promotion/switch 尚未执行，production 保持 v1.6.2。
+- Release PR #190 已合入 `main@e354ea7c9b1de782af830360ca3048bbb1afd057`；annotated `v1.6.3`
+  peeled commit 精确为同一 main commit，tag object 为 `ff15cab6ec94bbbbc2063f1e7e411efae929db89`，
+  message=`Release v1.6.3`。release diff 明确排除 develop 的 PushPlus、N Structure、migration、Scope
+  与其他未发布差异。
 - release candidate fresh 验证为后端 `1585 passed`（隔离 PostgreSQL）、engineering `56 passed`、
   Ruff PASS、Mypy `65 source files`、Web unit `199 passed / 1 skipped`、指定 Playwright `61 passed`、
   production build `2997 modules`、secret scan `finding_count=0` 与 diff check PASS。独立双轴 Review 的
   唯一 Important（pending 快照可能少一根历史输入）已以 `301 query -> 统一裁剪 -> 300 metric bars`
   关闭，同一 reviewer 最终读回 `Ready to merge: Yes`。
+- exact-tag Runtime worktree `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.3` 为 clean/detached 的
+  `e354ea7c9b1de782af830360ca3048bbb1afd057`；锁定依赖、Runtime 专项 `232 passed`、Ruff、Web build
+  `2997 modules`、secret/diff 与 render-only 均通过。切换前确认 after-market/maintenance 未运行、
+  DB=`20260815_0039 (head)`、两条 Scope 均仅 `jm`、active/operational/phase 均为 60、Clawbot
+  owner-only 配置与 `auto_order=false` 未变化。
+- 单次 Runtime switch 的 base 与 Market 成功，API/Web/Live/after-market 及 Alert plist 均读回 v1.6.3
+  root/commit；API=`1.6.3`、Web=200、Market health readonly/ok。Radar 生产读回包含新旧日期与 freshness
+  字段，实际为 `target_as_of=data_as_of=2026-08-20 / current / 60/60`；该时点不处于部分发布窗口，
+  `pending_after_market` 仅由确定性测试证明，不虚构自然现场证据。
+- 首次 Alert 段在 marker 写入前 `kickstart` 返回 `Operation not permitted`，当次按 Gate 合同立即停止，
+  未重试、未回滚。用户随后给出一次仅限 v1.6.3 Alert recovery 的新执行意图：只原子写入既有
+  `enabled\n / 0600` activation marker，并对当前 Alert label 执行一次 `kickstart -k`；两项均成功。
+  最终读回五个 label 均为 v1.6.3 identity，Alert heartbeat=`ok`、Clawbot owner-only ready、两条 Rule
+  Scope 仍仅 `jm`，recovery 后 notification attempt 为 0，DB 仍为 `20260815_0039 (head)`，
+  operational/phase 均为 60。本次未执行 migration、RQData/Canonical/DB 写入、手工 after-market、
+  通知、Scope/canary 或订单操作；v1.6.2 Runtime worktree 仍保留为恢复来源。release 中安装器“先
+  kickstart、后写 marker”的 fresh-root 顺序风险未在本 Radar-only 任务中改代码，后续须独立工程任务处理。
 
 ## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
 
@@ -73,8 +154,8 @@
   Web unit `173 passed / 1 skipped`、production build `2996 modules`、完整 Playwright `66 passed`、
   secret scan `finding_count=0` 与 diff check PASS；独立 Standards Review 为
   Critical=`0` / Important=`0` / Minor=`0`。
-- 当前 Git release 与 production Runtime 仍为 `v1.6.1@75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`。
-  本次未执行 release、tag、Runtime promotion/reload、migration、DB/Canonical 写入、Scope/通知或订单操作。
+- 该 Review 修复当时未执行 release、tag、Runtime promotion/reload、migration、DB/Canonical 写入、
+  Scope/通知或订单操作；当前 release/Runtime 身份以本文“当前结论”为准。
 
 ## Candidate Validation V1（PHASE 4B COMPLETE；RESEARCH BASELINE ONLY）
 
@@ -96,9 +177,76 @@
   reference/test folds 与 threshold-free stability；Task 9 独立 Evidence Review 为 Critical=`0` /
   Important=`0` / Minor=`0`，并确认 identity、窗口、完整性及禁止结论字段全部通过。
 - Phase 4B 的唯一结论是：已形成可复算的 `jm` retrospective / rolling historical baseline；
-  prospective OOS 为 `pending`，尚无 prospective OOS evidence。本状态不表示策略有效、Candidate 可晋升、
-  Alert Rule ready、已发布或 Runtime ready；未执行 release/tag、Runtime/Alert 扩张、
-  DB/Canonical/Redis 写入、通知或订单。
+  prospective OOS 为 `pending`，尚无 prospective OOS evidence。相关代码与历史 evidence 已随 v1.6.2
+  发布，但这不表示策略有效、Candidate 可晋升、Alert Rule ready 或 Runtime ready；未执行 Runtime/Alert
+  扩张、DB/Canonical/Redis 写入、通知或订单。
+
+## N Structural Domain V1（DEVELOP CODE_COMPLETE / TEST_COMPLETE / EVIDENCE_COMPLETE；PROSPECTIVE OOS PENDING）
+
+- reviewed implementation 已通过 merge commit
+  `706274ebcf8abed90600288dc44db204437f2e5d` 合入 `develop`，统一收口变更进一步关闭了 public Pattern
+  输入可信边界、segment 重复计算与 shared actual-dominant loader seam。public Pattern 只接受由同一组 bars
+  精确复算得到的 Swing trace，malformed trace 统一 fail-closed；正式 segment producer 对 Swing / Pattern /
+  Structure 各计算一次，并使用线性 partition、reset epoch map 与 bar index。SuBing 对历史 5m gap 文案的兼容
+  只保留在自身 consumer adapter，不再污染 shared loader。
+- N 是第二条独立 Candidate producer：`n_structure_5m_candidate_v1 × n_structure_validation_v1` 复用共享
+  rolling/prospective schedule，但由 `NStructureResearchService` 生成 source-specific report，不复用或
+  改写 SuBing lifecycle/outcome 事实源。retrospective 截止 `2026-08-19`，`2026-08-20` 为 embargo，
+  prospective OOS 从 `2026-08-21` 开始。
+- `docs/superpowers/specs/2026-08-20-n-structure-v1-design.md` 是唯一 active 长期语义事实源；已迁入
+  same-boundary Structure establishment / defense advance / break 顺序与 full-producer own-N break
+  reachability ruling，并删除完成态 Plan 与 Task contract。统一收口独立 Review 为 Critical=`0` /
+  Important=`0` / Minor=`0`；最终验证为 N 全链 `343 passed`、SuBing zero-regression `601 passed`、Ruff
+  PASS、Mypy `70 source files` PASS，secret scan 与 diff check 均通过。
+- same-boundary completion 加自身 N2/origin break 保留为 Pattern 层的 local defensive contract；在冻结的
+  完整 Swing→Pattern producer 顺序下，正例会先成为 outside epoch reset，或由新 opposite base 替换 attempt，
+  因而不可达。该 canonical reachability ruling 未改变 Swing、Pattern、Structure 公式或边界顺序。
+- Task 10 的 exact-develop 真实只读 CLI 已生成唯一版本化 evidence：
+  `reports/research/candidate_validation/n_structure_5m_candidate_v1/jm-retrospective-baseline-freeze-2026-08-20.json`，
+  SHA256=`12fed018751ae54d5bfd2d24897cc077c513560ac1377935e5fddd14a36a3fc6`。真实 `jm`
+  retrospective 包含 `12` 个 rank1 segments、`60075` 根 evaluable 5m bars，3/5/8 Bar outcome samples
+  分别为 `3987 / 3985 / 3983`；10 个 rolling folds 均按冻结 schedule 生成。retrospective 截止
+  `2026-08-19`，`2026-08-20` 仅作为 embargo/request-through context，prospective OOS 仍为 `pending`，
+  首个 eligible trading day 为 `2026-08-21`。
+- 统一收口最终代码再次执行 exact command，输出 `35982` bytes，SHA256 仍为
+  `12fed018751ae54d5bfd2d24897cc077c513560ac1377935e5fddd14a36a3fc6`，与 tracked artifact
+  byte-identical；独立 Evidence Review 为 Critical=`0` / Important=`0` / Minor=`0`。该 accepted baseline
+  只证明 exact Candidate/Protocol 下的可复算 Historical
+  retrospective/rolling evidence，不形成 profitability、effectiveness、KEEP/PROMOTE、可交易、第三条
+  Alert Rule、release 或 Runtime ready 结论。
+- 本阶段未执行 RQData download、Canonical/DB/Redis write、Alert/Scope/notification/order、
+  main/tag/release、Runtime switch/promotion 或其他真实外部 mutation。
+
+## v1.6.2 主力照妖镜·期货 V1（RELEASED / RUNTIME PROMOTED）
+
+- Release PR #183 已将 reviewed `develop@72f9c03f79c4c982473da80b0d9f6cc6351bba84` 合入
+  `main@dbdf6da49d75353a478675a3584de0f91c8bd85c`；annotated `v1.6.2` peeled commit 精确为同一
+  main commit，tag message=`Release v1.6.2`，API/Web 版本面均为 `1.6.2`。
+- release tree 包含 Futures Main-Force Mirror V1、Candidate Validation V1、N Structure V1 规划文档、
+  rollover availability 修复与 V0 exact-source restoration；未包含未合并的
+  `codex/alert-fixed-recipients` 实现。
+- G1 前完整验证为 backend `1581 passed`（隔离 PostgreSQL）、engineering `56 passed`、Mypy
+  `65 source files`、Web unit `199 passed / 1 skipped`、指定 Playwright `47 passed`、build
+  `2997 modules`，Ruff/secret/shell/plist/diff 均通过；独立 Spec 与 Standards/Architecture Review
+  均为 Critical=`0` / Important=`0` / Minor=`0`。
+- 独立 Runtime worktree `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.2` 为 clean/detached 的精确
+  `dbdf6da49d75353a478675a3584de0f91c8bd85c`。锁定 API/Web 依赖安装完成，Runtime 专项
+  `229 passed`、Ruff/secret/diff 通过，Web build 为 `2997 modules` 且拓扑无环；render-only 已验证
+  五个应用 plist 的 root/commit 与六项既有 Clawbot 私有路径一致。
+- 本次单次 G2 依次执行 base、Market 与 Alert promotion；读回确认 API/Web/Live/after-market/Alert
+  五个正式 label 均加载 v1.6.2 root 与 `dbdf6da4`，Runtime checkout clean/detached。API version=`1.6.2`，
+  API/Web=`200`，Runtime health=`ok/readonly`，Market/Alert enabled，operational/phase 总数均为 `60`，
+  Clawbot/owner ready，Execution Review roll disabled。
+- DB revision 只读保持 `20260815_0039 (head)`；Alert 两条 Rule 的 Scope 仍精确为 `jm`。实际
+  `actual_dominant + 60m` Market 读回返回一根 JM Bar 与一个已解析物理合约 segment。
+- 本次未执行 migration、RQData/Canonical/DB 写入、真实 Shadow、Scope/owner/transport mutation、
+  通知、replay/backfill、手工盘后或订单。后续独立 cleanup Gate 在删除前确认五个正式 label、对应
+  installed plist 与进程打开文件均无 v1.6.0/v1.6.1 root 引用，两个旧 worktree 均 clean/detached、
+  精确匹配仍保留的 annotated tag 且已进入 main 历史；随后仅通过 `git worktree remove` 删除两者并
+  执行 `git worktree prune`。当前保留 clean/detached v1.6.2 Runtime；后续完成
+  `codex/alert-fixed-recipients-simple` 合入 `develop` 后，其 `.worktrees/alert-fixed-recipients`
+  worktree 与本地分支也已删除。旧 `codex/alert-fixed-recipients` 仅为未合并的历史 branch
+  ref；v1.6.2 cleanup 后 Runtime 状态复核为 `overall=passed`。
 
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
@@ -271,7 +419,9 @@
   和轻量 health。
 - CLI：`guiyi data update|refresh|audit|after-market`；只读
   `guiyi research subing-calibration`、`guiyi runtime status|live|alert`。
-- `guiyi runtime alert-canary` 是向固定 `owner` 发出一次 Clawbot 消息的独立真实通知 Gate，不是普通测试命令。
+- production `v1.6.2` 的 `guiyi runtime alert-canary` 仍只面向历史固定 `owner`；develop 改为必须显式
+  `guiyi runtime alert-canary --audience owner|htdy_observers`。二者都是独立真实通知 Gate，不是测试命令。
+- develop 不再提供 `guiyi recipients *` 或 `alert-preflight`；Topic 成员只在 PushPlus 外部管理。
 - Runtime：Live 与盘后更新共用同一 `operational_products.txt`；盘后时点为 18:05，
   只对 `NEXT_TRADING_SESSION_NOT_READY` 允许最多一次一小时后 retry。
 
@@ -355,13 +505,15 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
 - Gate A 已完成 release PR、main merge、annotated tag 与 main -> develop ancestry synchronization。
 - Gate B 已完成 production additive `20260815_0039` migration；Execution Review 四表已存在，
   Market 八表与 Alert 两表 normalized schema signatures 保持不变。
-- `v1.6.1` Runtime promotion 已完成；正式五服务已统一加载 identity
-  `75cbf37ccdb5de1a7267f024f8b9ea44ac859bda`，Market/Alert Scope 未扩大。G9 最终清理已完成，旧
-  `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review Gate D 仍为
-  `disabled / not activated`。
+- `v1.6.3` Runtime promotion 已完成：五个正式 label 均加载
+  `e354ea7c9b1de782af830360ca3048bbb1afd057`，Market/Alert enabled，Clawbot owner-only 与两条 `jm`
+  Scope 未扩大。v1.6.2 cleanup 已在正式
+  引用归零后移除旧 v1.6.0/v1.6.1 release worktree，两个 annotated tag 仍保留可恢复；既有 G9 最终
+  清理也已完成，旧 `v1.4.2` Runtime worktree 与 private WeCom credential 均已移除。Execution Review
+  Gate D 仍为 `disabled / not activated`。
 - bounded retry 修复的部署身份已读回；`2026-08-18` 自然 18:05 盘后运行已形成
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
-  不人工补证；该独立 pending 状态不改写 `v1.6.1` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持 `v1.6.1 + clawbot-openclaw-weixin` 自然运行，仅等待 SuBing Natural
-  Canary 的自然证据；不人工补证，Execution Review Gate D 继续 `disabled / not activated`。
+  不人工补证；该独立 pending 状态不改写 `v1.6.2` release/Runtime promotion 或 G9 明确豁免收口事实。
+- 最小下一步：由用户单独 review v1.6.3 Radar 交付，重点复核未引入 Redis、stale 语义、Canonical-only
+  与 API/Web 向后兼容；fresh-root Alert installer 顺序修复另立窄范围工程任务，不在本 release 回补。

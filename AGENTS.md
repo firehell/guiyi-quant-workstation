@@ -54,26 +54,27 @@ Review 的四张表都是独立 Application Domain，不属于 Market Catalog，
 
 ### Alert Runtime V2 的独立受限持续授权
 
-Alert 代码与 launchd 模板默认关闭。Alert Runtime V2 的有界持续授权只限于：
+Alert 代码与 launchd 模板默认关闭。develop 的唯一 active 通知设计为 `pushplus`：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
+htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic
 +
-subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-只有目标 Scope 获得精确 Rule + Product + owner + transport 授权、且用户另行明确执行对应 production Runtime promotion 后，才允许对该精确范围此后自然到达的完成 Bar 持续创建 Event，并通过唯一 Clawbot single-shot seam 尝试一次发送。当前 exact instance 为两条 Rule 各自的 `scope_products=jm`、固定别名 `owner` 与 `clawbot-openclaw-weixin`，具体可变事实以 `STATUS.md` 为准。V2 migration 保留已明确授权的 HTDY Scope，不为其虚构第二次 Scope write；SuBing 仍必须独立执行精确 Scope activation。停机历史不 replay/backfill，发送失败不 retry。未来第三条 Rule 不继承授权。
+HTDY 只发起一次 Topic 请求，Topic 当前成员由 PushPlus 外部管理；owner 与最多三位朋友必须关注
+PushPlus 公众号并扫码加入同一个专用 Topic，创建者也必须加入。SuBing 不传 Topic，只发给消息 token
+所属 owner。Runtime 不调用 PushPlus 开放接口，不读取成员清单，不声明“精确四人”；同步返回的 shortCode
+只表示 provider 接受请求，不表示微信已送达。Git 外配置只含消息 token 与 HTDY Topic code，要求 `0700`
+parent / `0600` file；结构健康检查不联网、不发送。
 
-该授权与 Market Runtime V1 相互独立，不覆盖新增 Rule、Scope、owner 或通知渠道、生产 migration、任何 Runtime switch、
-main/tag/release、Canonical 写入、订单、rollback 或 G9 cleanup。production migration、release/tag、Runtime promotion/switch、Scope write/activation、owner bootstrap/write、preflight、真实 canary/send、rollback 和 G9 cleanup 都是独立 Gate；mock、测试、render-only、历史批准或其中一个 Gate 不授权其余 Gate。测试路由的 Scope PUT 不构成真实 Scope mutation 授权。
-
-当前 develop 与 production 的唯一 active 通知架构均为 Clawbot single-shot：每个 committed Event 最多启动一个固定 Node child，
-只允许唯一 `openclaw-weixin` private seam 调用一次 `sendMessageWeixin()`。Git 外的 owner 配置采用
-`0700` parent / `0600` file，只保存固定别名 `owner` 与精确 account/target；缺失 context、超时、crash、
-malformed output 或发送失败均 fail-closed，不 retry、queue、replay、backfill、fan-out 或 fallback。OpenClaw
-与腾讯插件是已经存在的外部依赖，归一量化不安装、更新、登录、启动、停止或监督它们，也不引入
-OpenClaw public message-send、durable queue、inbound、context monitor、Agent/LLM/slash/tool/reply 路径。
-当前 production exact-tag Runtime 已完成独立 release/promotion 并运行 `clawbot-openclaw-weixin`；G2～G8 与 G9 明确豁免收口的精确事实见 `STATUS.md`。旧 `v1.4.2` Runtime worktree 和 private WeCom credential 已在正式引用清零后完成 G9 最终清理，不再提供 rollback 或 provider fallback；未来恢复 WeCom 必须重新设计、配置、发布并取得对应独立 Gate。已经完成的 Gate、develop 代码、fixture、render-only 和测试均不授权未来 owner/Scope/transport 变更、canary、真实发送、OpenClaw 变更、Runtime switch 或 rollback。
+Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表；Event 先提交，再最多调用一次
+PushPlus SDK。无逐收件人 DB 状态、retry、queue、replay、backfill、fallback 或订单路径。production
+仍运行当前 exact-tag 的旧单 owner transport；develop 代码、测试或 Topic 配置均不授权 release、真实
+canary/send、Scope 变更或 Runtime promotion/switch。Topic 可在 owner + 最多三位朋友的 `1..4` 人边界内
+先以当前成员启用，之后加入第 4 人不需要修改代码；每次成员变化仍由 operator 在 PushPlus 页面人工
+核对且不得超过 4 人。未来启用前必须分别完成当前成员核对、Git 外配置、owner canary、HTDY Topic
+canary、精确 bounded authorization、release 与 Runtime switch。
 
 ## 工程与业务硬规则
 

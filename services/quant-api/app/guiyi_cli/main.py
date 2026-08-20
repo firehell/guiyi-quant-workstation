@@ -1,7 +1,7 @@
 """归一量化统一 CLI 入口（``uv run guiyi``）。
 
-子域：``data``（历史数据 audit/update/refresh）、``research``（只读研究）、
-``runtime``（健康与前台 Live）。
+子域：``data``（历史数据 audit/update/refresh）、``research``（只读研究）与
+``runtime``（健康、前台 Live、Alert 与显式 canary）。
 默认 JSON 输出至 stdout；参数错误与异常经 output 模块脱敏后写 stderr。
 """
 
@@ -17,17 +17,9 @@ import sys
 from typing import Any, TextIO
 
 from app.db.session import SessionLocal
-from app.alerts.clawbot import (
-    build_clawbot_runner_from_env,
-    build_clawbot_sender_from_env,
-)
-from app.alerts.clawbot_owner import (
-    CLAWBOT_CHANNEL,
-    CLAWBOT_OWNER_ALIAS,
-    load_clawbot_owner,
-    write_clawbot_owner_atomic,
-)
 from app.alerts.composition import build_alert_runtime
+from app.alerts.notification import ALERT_AUDIENCES
+from app.alerts.notification_composition import build_notification_sender_from_env
 from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
@@ -47,11 +39,14 @@ from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
     build_main_force_mirror_futures_research_service,
+    build_n_candidate_validation_service,
+    build_n_structure_research_service,
     build_subing_candidate_validation_service,
     build_subing_calibration_research_service,
     build_subing_lifecycle_research_service,
 )
 from app.market_data.after_market import build_after_market_updater
+from app.market_data.candidate_validation_schedule import CandidateValidationRequest
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
@@ -62,9 +57,6 @@ AfterMarketFactory = Callable[[HistoricalDataManager], Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
-ClawbotRunnerFactory = Callable[[], Any]
-ClawbotOwnerLoader = Callable[[Path], Any]
-ClawbotOwnerWriter = Callable[..., None]
 ResearchServiceFactory = Callable[[Any], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
@@ -76,12 +68,18 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "research":
         return True
     if args.domain == "runtime":
-        if args.runtime_command in {"status", "clawbot-preflight"}:
+        if args.runtime_command == "status":
             return True
-        if args.runtime_command == "clawbot-owner-bootstrap":
-            return not bool(args.confirm_write_owner)
         return False
     return not bool(getattr(args, "apply", False))
+
+
+def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
+    return not (
+        len(raw) >= 2
+        and raw[0] == "runtime"
+        and raw[1] in {"live", "alert", "alert-canary"}
+    )
 
 
 def _execution_review_roll_marker_state(
@@ -102,7 +100,7 @@ def _execution_review_roll_marker_state(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构建 guiyi 根解析器：data、research 与 runtime 三个子域。"""
+    """构建 guiyi 根解析器：data、research 与 runtime。"""
     parser = JsonArgumentParser(prog="guiyi")
     domains = parser.add_subparsers(dest="domain", required=True)
     data = domains.add_parser("data")
@@ -118,10 +116,12 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("status")
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
-    runtime_commands.add_parser("alert-canary")
-    bootstrap = runtime_commands.add_parser("clawbot-owner-bootstrap")
-    bootstrap.add_argument("--confirm-write-owner", action="store_true")
-    runtime_commands.add_parser("clawbot-preflight")
+    alert_canary = runtime_commands.add_parser("alert-canary")
+    alert_canary.add_argument(
+        "--audience",
+        required=True,
+        choices=sorted(ALERT_AUDIENCES),
+    )
     return parser
 
 
@@ -134,11 +134,8 @@ def main(
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
     alert_canary_sender_factory: AlertCanarySenderFactory = (
-        build_clawbot_sender_from_env
+        build_notification_sender_from_env
     ),
-    clawbot_runner_factory: ClawbotRunnerFactory = build_clawbot_runner_from_env,
-    clawbot_owner_loader: ClawbotOwnerLoader = load_clawbot_owner,
-    clawbot_owner_writer: ClawbotOwnerWriter = write_clawbot_owner_atomic,
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
     ),
@@ -148,8 +145,14 @@ def main(
     candidate_validation_service_factory: ResearchServiceFactory = (
         build_subing_candidate_validation_service
     ),
+    n_candidate_validation_service_factory: ResearchServiceFactory = (
+        build_n_candidate_validation_service
+    ),
     main_force_mirror_futures_research_service_factory: ResearchServiceFactory = (
         build_main_force_mirror_futures_research_service
+    ),
+    n_structure_research_service_factory: ResearchServiceFactory = (
+        build_n_structure_research_service
     ),
     execution_review_roll_marker_state: RollMarkerState = (
         _execution_review_roll_marker_state
@@ -183,7 +186,9 @@ def main(
         return 1
     except (CliUsageError, ValueError):
         # 参数/用法错误：固定 CLI_ARGUMENT_INVALID，不写 stack trace
-        print_json(argument_error_payload(command), stderr)
+        payload = argument_error_payload(command)
+        payload["readonly"] = _parse_error_is_readonly(raw)
+        print_json(payload, stderr)
         return 2
 
     try:
@@ -201,8 +206,20 @@ def main(
             with session_factory() as session:
                 if args.research_command == "subing-lifecycle":
                     service_factory = lifecycle_research_service_factory
+                elif args.research_command == "n-structure":
+                    service_factory = n_structure_research_service_factory
                 elif args.research_command == "candidate-validation":
-                    service_factory = candidate_validation_service_factory
+                    if not isinstance(research_request, CandidateValidationRequest):
+                        raise ValueError("CLI_CANDIDATE_REQUEST_INVALID")
+                    if (
+                        research_request.candidate_id
+                        == "subing_lifecycle_v2_candidate_v1"
+                    ):
+                        service_factory = candidate_validation_service_factory
+                    elif research_request.candidate_id == "n_structure_5m_candidate_v1":
+                        service_factory = n_candidate_validation_service_factory
+                    else:
+                        raise ValueError("CLI_CANDIDATE_ID_INVALID")
                 elif args.research_command == "main-force-mirror-futures":
                     service_factory = (
                         main_force_mirror_futures_research_service_factory
@@ -245,61 +262,18 @@ def main(
                 "foreground": True,
             }
         elif args.runtime_command == "alert-canary":
-            summary = alert_canary_sender_factory().send_canary()
+            acceptance = alert_canary_sender_factory().send_canary(args.audience)
+            reference = acceptance.reference
             payload = {
                 "schema_version": 1,
                 "command": "runtime.alert-canary",
-                "status": "ok" if summary.failed == 0 else "failed",
-                "attempted": summary.attempted,
-                "provider_accepted": summary.provider_accepted,
-                "failed": summary.failed,
-                "failed_aliases": list(summary.failed_aliases),
-            }
-        elif args.runtime_command == "clawbot-owner-bootstrap":
-            runner = clawbot_runner_factory()
-            candidate = runner.discover_owner()
-            if args.confirm_write_owner:
-                clawbot_owner_writer(
-                    runner.dependency.owner_path,
-                    account_id=candidate.account_id,
-                    target_user_id=candidate.target_user_id,
-                )
-                payload = {
-                    "schema_version": 1,
-                    "command": "runtime.clawbot-owner-bootstrap",
-                    "status": "ok",
-                    "readonly": False,
-                    "channel": CLAWBOT_CHANNEL,
-                    "owner_alias": CLAWBOT_OWNER_ALIAS,
-                    "owner_written": True,
-                }
-            else:
-                payload = {
-                    "schema_version": 1,
-                    "command": "runtime.clawbot-owner-bootstrap",
-                    "status": "ready",
-                    "readonly": True,
-                    "channel": CLAWBOT_CHANNEL,
-                    "owner_alias": CLAWBOT_OWNER_ALIAS,
-                    "account_count": 1,
-                    "owner_candidate_count": 1,
-                    "context_available": True,
-                    "owner_written": False,
-                }
-        elif args.runtime_command == "clawbot-preflight":
-            runner = clawbot_runner_factory()
-            owner = clawbot_owner_loader(runner.dependency.owner_path)
-            runner.probe(owner)
-            payload = {
-                "schema_version": 1,
-                "command": "runtime.clawbot-preflight",
-                "status": "ok",
-                "readonly": True,
-                "channel": CLAWBOT_CHANNEL,
-                "owner_alias": CLAWBOT_OWNER_ALIAS,
-                "account_configured": True,
-                "context_available": True,
-                "would_send": False,
+                "status": "accepted",
+                "audience": args.audience,
+                "provider_accepted": True,
+                "provider_reference_suffix": (
+                    reference[-6:] if isinstance(reference, str) else None
+                ),
+                "delivery_confirmed": False,
             }
         else:
             raise RuntimeError("CLI_RUNTIME_COMMAND_INVALID")
@@ -315,7 +289,7 @@ def main(
         )
         return 1
     print_json(payload, stdout)
-    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok", "ready", "skipped"} else 1
+    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok", "ready", "skipped", "accepted"} else 1
 
 
 def _run_data(

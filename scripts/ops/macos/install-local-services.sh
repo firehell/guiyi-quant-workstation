@@ -11,12 +11,7 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 MODE="${1:---render-only}"
-OPENCLAW_BIN="${GUIYI_OPENCLAW_BIN:-}"
-OPENCLAW_NODE_BIN="${GUIYI_OPENCLAW_NODE_BIN:-}"
-OPENCLAW_WEIXIN_PLUGIN_ROOT="${GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT:-}"
-OPENCLAW_STATE_DIR="${GUIYI_OPENCLAW_STATE_DIR:-}"
-OPENCLAW_CONFIG_PATH="${GUIYI_OPENCLAW_CONFIG_PATH:-}"
-ALERT_CLAWBOT_OWNER_PATH="${GUIYI_ALERT_CLAWBOT_OWNER_PATH:-}"
+ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
 is_safe_absolute_path() {
   local path="$1" component
@@ -33,38 +28,25 @@ is_safe_absolute_path() {
   done
 }
 
-clawbot_paths_ready() {
-  local owner_parent
-  for path in "$OPENCLAW_BIN" "$OPENCLAW_NODE_BIN" "$OPENCLAW_WEIXIN_PLUGIN_ROOT" \
-    "$OPENCLAW_STATE_DIR" "$OPENCLAW_CONFIG_PATH" "$ALERT_CLAWBOT_OWNER_PATH"; do
-    is_safe_absolute_path "$path" || return 1
-  done
-  [[ -f "$OPENCLAW_BIN" && ! -L "$OPENCLAW_BIN" && -x "$OPENCLAW_BIN" ]] || return 1
-  [[ -f "$OPENCLAW_NODE_BIN" && ! -L "$OPENCLAW_NODE_BIN" && -x "$OPENCLAW_NODE_BIN" ]] || return 1
-  [[ -d "$OPENCLAW_WEIXIN_PLUGIN_ROOT" && ! -L "$OPENCLAW_WEIXIN_PLUGIN_ROOT" ]] || return 1
-  [[ -d "$OPENCLAW_STATE_DIR" && ! -L "$OPENCLAW_STATE_DIR" ]] || return 1
-  [[ -f "$OPENCLAW_CONFIG_PATH" && ! -L "$OPENCLAW_CONFIG_PATH" ]] || return 1
-  [[ -f "$ALERT_CLAWBOT_OWNER_PATH" && ! -L "$ALERT_CLAWBOT_OWNER_PATH" ]] || return 1
-  owner_parent="$(dirname "$ALERT_CLAWBOT_OWNER_PATH")"
-  [[ -d "$owner_parent" && ! -L "$owner_parent" ]] || return 1
-  [[ "$(stat -f '%Lp' "$ALERT_CLAWBOT_OWNER_PATH" 2>/dev/null)" == "600" ]] || return 1
-  [[ "$(stat -f '%Lp' "$owner_parent" 2>/dev/null)" == "700" ]] || return 1
-  [[ "$(stat -f '%u' "$ALERT_CLAWBOT_OWNER_PATH" 2>/dev/null)" == "$(id -u)" ]] || return 1
-  [[ "$(stat -f '%u' "$owner_parent" 2>/dev/null)" == "$(id -u)" ]] || return 1
+notification_config_ready() {
+  local config_parent
+  is_safe_absolute_path "$ALERT_NOTIFICATION_CONFIG_PATH" || return 1
+  [[ -f "$ALERT_NOTIFICATION_CONFIG_PATH" && ! -L "$ALERT_NOTIFICATION_CONFIG_PATH" ]] || return 1
+  config_parent="$(dirname "$ALERT_NOTIFICATION_CONFIG_PATH")"
+  [[ -d "$config_parent" && ! -L "$config_parent" ]] || return 1
+  [[ "$(stat -f '%Lp' "$ALERT_NOTIFICATION_CONFIG_PATH" 2>/dev/null)" == "600" ]] || return 1
+  [[ "$(stat -f '%Lp' "$config_parent" 2>/dev/null)" == "700" ]] || return 1
+  [[ "$(stat -f '%u' "$ALERT_NOTIFICATION_CONFIG_PATH" 2>/dev/null)" == "$(id -u)" ]] || return 1
+  [[ "$(stat -f '%u' "$config_parent" 2>/dev/null)" == "$(id -u)" ]] || return 1
 }
 
 installed_api_notification_paths_match() {
   local api_plist="$AGENT_DIR/com.guiyi.quant-api.plist"
-  local key expected installed
+  local installed
 
   [[ -f "$api_plist" ]] || return 1
-  for key in GUIYI_OPENCLAW_BIN GUIYI_OPENCLAW_NODE_BIN \
-    GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT GUIYI_OPENCLAW_STATE_DIR \
-    GUIYI_OPENCLAW_CONFIG_PATH GUIYI_ALERT_CLAWBOT_OWNER_PATH; do
-    expected="${!key}"
-    installed="$(plutil -extract "EnvironmentVariables.${key}" raw -o - "$api_plist" 2>/dev/null)" || return 1
-    [[ "$installed" == "$expected" ]] || return 1
-  done
+  installed="$(plutil -extract EnvironmentVariables.GUIYI_ALERT_NOTIFICATION_CONFIG_PATH raw -o - "$api_plist" 2>/dev/null)" || return 1
+  [[ "$installed" == "$ALERT_NOTIFICATION_CONFIG_PATH" ]]
 }
 
 write_execution_review_roll_marker() {
@@ -108,18 +90,15 @@ load_labels=("${base_labels[@]}")
 
 [[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-execution-review-roll]\n' "$0" >&2; exit 2; }
 if [[ "$MODE" == "--confirm-alert-runtime" ]]; then
-  clawbot_paths_ready || {
-    printf '[install-local-services] alert notification paths not configured\n' >&2
+  notification_config_ready || {
+    printf '[install-local-services] alert notification config not ready\n' >&2
     exit 1
   }
 fi
-for path in "$OPENCLAW_BIN" "$OPENCLAW_NODE_BIN" "$OPENCLAW_WEIXIN_PLUGIN_ROOT" \
-  "$OPENCLAW_STATE_DIR" "$OPENCLAW_CONFIG_PATH" "$ALERT_CLAWBOT_OWNER_PATH"; do
-  if [[ -n "$path" ]] && ! is_safe_absolute_path "$path"; then
-    printf '[install-local-services] invalid alert notification path\n' >&2
-    exit 1
-  fi
-done
+if [[ -n "$ALERT_NOTIFICATION_CONFIG_PATH" ]] && ! is_safe_absolute_path "$ALERT_NOTIFICATION_CONFIG_PATH"; then
+  printf '[install-local-services] invalid alert notification path\n' >&2
+  exit 1
+fi
 if [[ "$MODE" == "--confirm-alert-runtime" ]] && ! installed_api_notification_paths_match; then
   printf '[install-local-services] installed API notification paths do not match\n' >&2
   exit 1
@@ -135,12 +114,7 @@ for label in "${render_labels[@]}"; do
     -e "s|__RUNTIME_DIR__|$RUNTIME_DIR|g" \
     -e "s|__LOG_DIR__|$LOG_DIR|g" \
     -e "s|__HOME__|$HOME|g" \
-    -e "s|__OPENCLAW_BIN__|$OPENCLAW_BIN|g" \
-    -e "s|__OPENCLAW_NODE_BIN__|$OPENCLAW_NODE_BIN|g" \
-    -e "s|__OPENCLAW_WEIXIN_PLUGIN_ROOT__|$OPENCLAW_WEIXIN_PLUGIN_ROOT|g" \
-    -e "s|__OPENCLAW_STATE_DIR__|$OPENCLAW_STATE_DIR|g" \
-    -e "s|__OPENCLAW_CONFIG_PATH__|$OPENCLAW_CONFIG_PATH|g" \
-    -e "s|__ALERT_CLAWBOT_OWNER_PATH__|$ALERT_CLAWBOT_OWNER_PATH|g" \
+    -e "s|__ALERT_NOTIFICATION_CONFIG_PATH__|$ALERT_NOTIFICATION_CONFIG_PATH|g" \
     "$template" >"$output"
   plutil -lint "$output" >/dev/null
 done
@@ -212,26 +186,93 @@ retire_launch_agent() {
   return 1
 }
 
-write_market_runtime_activation_marker() {
-  local temporary_marker
-  temporary_marker="$(mktemp "${MARKET_RUNTIME_MARKER}.tmp.XXXXXX")"
+write_runtime_activation_marker() {
+  local marker="$1" temporary_marker marker_mode
+  temporary_marker="$(mktemp "${marker}.tmp.XXXXXX")" || return 1
   if ! printf 'enabled\n' >"$temporary_marker"; then
     rm -f "$temporary_marker"
     return 1
   fi
-  chmod 600 "$temporary_marker"
-  mv -f "$temporary_marker" "$MARKET_RUNTIME_MARKER"
+  if ! chmod 600 "$temporary_marker"; then
+    rm -f "$temporary_marker"
+    return 1
+  fi
+  if ! mv -f "$temporary_marker" "$marker"; then
+    rm -f "$temporary_marker"
+    return 1
+  fi
+  marker_mode="$(stat -f '%Lp' "$marker" 2>/dev/null)" || return 1
+  if [[ -L "$marker" || "$marker_mode" != "600" ]] \
+    || ! cmp -s "$marker" <(printf 'enabled\n'); then
+    return 1
+  fi
+}
+
+write_market_runtime_activation_marker() {
+  write_runtime_activation_marker "$MARKET_RUNTIME_MARKER"
 }
 
 write_alert_runtime_activation_marker() {
-  local temporary_marker
-  temporary_marker="$(mktemp "${ALERT_RUNTIME_MARKER}.tmp.XXXXXX")"
-  if ! printf 'enabled\n' >"$temporary_marker"; then
-    rm -f "$temporary_marker"
+  write_runtime_activation_marker "$ALERT_RUNTIME_MARKER"
+}
+
+activation_marker=""
+activation_marker_backup=""
+activation_marker_existed=0
+
+prepare_runtime_activation_marker() {
+  local writer
+  if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+    activation_marker="$MARKET_RUNTIME_MARKER"
+    writer=write_market_runtime_activation_marker
+  elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
+    activation_marker="$ALERT_RUNTIME_MARKER"
+    writer=write_alert_runtime_activation_marker
+  else
+    return 0
+  fi
+
+  if [[ -e "$activation_marker" ]]; then
+    activation_marker_backup="$(mktemp "${activation_marker}.previous.XXXXXX")" || return 1
+    if ! cp -p "$activation_marker" "$activation_marker_backup"; then
+      rm -f "$activation_marker_backup"
+      activation_marker_backup=""
+      return 1
+    fi
+    activation_marker_existed=1
+  fi
+  if ! "$writer"; then
+    restore_runtime_activation_marker || {
+      printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
+    }
     return 1
   fi
-  chmod 600 "$temporary_marker"
-  mv -f "$temporary_marker" "$ALERT_RUNTIME_MARKER"
+}
+
+restore_runtime_activation_marker() {
+  if [[ -z "$activation_marker" ]]; then
+    return 0
+  fi
+  if [[ "$activation_marker_existed" == "1" ]]; then
+    [[ -f "$activation_marker_backup" ]] || return 1
+    if ! mv -f "$activation_marker_backup" "$activation_marker"; then
+      return 1
+    fi
+    activation_marker_backup=""
+  else
+    rm -f "$activation_marker" || return 1
+  fi
+  if [[ -n "$activation_marker_backup" ]]; then
+    rm -f "$activation_marker_backup" || return 1
+    activation_marker_backup=""
+  fi
+}
+
+discard_runtime_activation_marker_backup() {
+  if [[ -n "$activation_marker_backup" ]]; then
+    rm -f "$activation_marker_backup" || return 1
+    activation_marker_backup=""
+  fi
 }
 
 if [[ "$MODE" != "--confirm-alert-runtime" ]]; then
@@ -240,21 +281,56 @@ if [[ "$MODE" != "--confirm-alert-runtime" ]]; then
   done
 fi
 
-for label in "${load_labels[@]}"; do
-  source_plist="$RENDER_DIR/${label}.plist"
-  target_plist="$AGENT_DIR/${label}.plist"
-  cp "$source_plist" "$target_plist"
-  reload_launch_agent "$label" "$target_plist"
-  launchctl enable "gui/$UID/$label"
-  if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" ]]; then
-    launchctl kickstart -k "gui/$UID/$label"
-  fi
-done
+prepare_runtime_activation_marker
 
-if [[ "$MODE" == "--confirm-market-runtime" ]]; then
-  write_market_runtime_activation_marker
-elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
-  write_alert_runtime_activation_marker
+attempted_load_labels=()
+
+load_selected_services() {
+  local label source_plist target_plist
+  for label in "${load_labels[@]}"; do
+    source_plist="$RENDER_DIR/${label}.plist"
+    target_plist="$AGENT_DIR/${label}.plist"
+    cp "$source_plist" "$target_plist" || return 1
+    attempted_load_labels+=("$label")
+    reload_launch_agent "$label" "$target_plist" || return 1
+    launchctl enable "gui/$UID/$label" || return 1
+    if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" ]]; then
+      launchctl kickstart -k "gui/$UID/$label" || return 1
+    fi
+  done
+}
+
+stop_attempted_services() {
+  local index label attempt
+  local failed=0
+  for ((index=${#attempted_load_labels[@]} - 1; index >= 0; index--)); do
+    label="${attempted_load_labels[$index]}"
+    launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
+    for attempt in 1 2 3 4 5; do
+      if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+      printf '[install-local-services] ERROR: failed-attempt bootout timed out label=%s\n' "$label" >&2
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
+if ! load_selected_services; then
+  if ! stop_attempted_services; then
+    printf '[install-local-services] ERROR: failed attempt remains loaded; activation marker retained\n' >&2
+    exit 1
+  fi
+  if ! restore_runtime_activation_marker; then
+    printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
+    exit 1
+  fi
+  exit 1
 fi
+discard_runtime_activation_marker_backup
 
 printf '[install-local-services] loaded=true mode=%s services=%s\n' "$MODE" "${#load_labels[@]}"

@@ -45,7 +45,8 @@ def test_htdy_message_keeps_exact_copy(
         "【归一量化】AG 白银\n\n"
         f"火天大有 · {observation}\n"
         "主力：AG2610\n"
-        "15m · 10:45 收线"
+        "15m · 10:45 收线\n"
+        "研究观察，非交易指令"
     )
 
 

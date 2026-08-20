@@ -119,6 +119,93 @@ class _WindowAwareMarketData:
         )
 
 
+class _LegacySourceFailure(RuntimeError):
+    code = "SUBING_LEGACY_SOURCE_FAILURE"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+        self.payload = {"legacy": True}
+
+
+class _FailingMarketData:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult:
+        raise self.error
+
+    def dominant_segment_for_day(
+        self,
+        symbol: str,
+        trading_day: date,
+    ) -> DominantContractSegmentSummary:
+        raise AssertionError("source query must fail first")
+
+
+def test_shared_loader_preserves_subing_source_error_type_and_payload() -> None:
+    source_error = _LegacySourceFailure()
+    service = SubingLifecycleResearchService(
+        _FailingMarketData(source_error),
+        products=("jm",),
+        calibration=load_accepted_subing_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    with pytest.raises(_LegacySourceFailure) as captured:
+        service.run(LifecycleResearchRequest(_DAY_ONE, _DAY_TWO, "jm"))
+
+    assert captured.value is source_error
+    assert str(captured.value) == "SUBING_LEGACY_SOURCE_FAILURE"
+    assert captured.value.code == "SUBING_LEGACY_SOURCE_FAILURE"
+    assert captured.value.payload == {"legacy": True}
+    assert captured.value.__cause__ is None
+
+
+def test_subing_adapter_preserves_legacy_5m_gap_message_for_15m_gap() -> None:
+    complete = (
+        ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),
+    )
+    incomplete = (
+        ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_ONE),
+    )
+    market_data = _WindowAwareMarketData(
+        probe={
+            BarFrequency.M5: _result(
+                _bars(BarFrequency.M5, (_DAY_ONE, _DAY_TWO)),
+                complete,
+            ),
+            BarFrequency.M15: _result(
+                _bars(BarFrequency.M15, (_DAY_ONE, _DAY_TWO)),
+                incomplete,
+            ),
+        },
+        full={},
+        true_segments=(
+            DominantContractSegmentSummary(
+                "jm",
+                "JM2609",
+                _DAY_ONE,
+                _DAY_TWO,
+            ),
+        ),
+    )
+    service = SubingLifecycleResearchService(
+        market_data,
+        products=("jm",),
+        calibration=load_accepted_subing_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="rank1 segment identity is incomplete for 5m",
+    ):
+        service.run(LifecycleResearchRequest(_DAY_ONE, _DAY_TWO, "jm"))
+
+
 def test_request_normalizes_symbol_and_rejects_invalid_window() -> None:
     request = LifecycleResearchRequest(
         since=_DAY_ONE,
@@ -135,7 +222,7 @@ def test_request_normalizes_symbol_and_rejects_invalid_window() -> None:
         )
 
 
-def test_service_uses_exact_trading_day_queries() -> None:
+def test_service_delegates_exact_trading_day_segment_loading() -> None:
     segment = (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO),)
     market_data = _FakeMarketData(
         {

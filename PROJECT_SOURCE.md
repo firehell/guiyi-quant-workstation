@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 
 ## 定位与边界
 
@@ -57,11 +57,14 @@ RQData
 
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
-`guiyi research candidate-validation`、`guiyi research main-force-mirror-futures` 和 `guiyi runtime
-status|live|alert|alert-canary|clawbot-owner-bootstrap|clawbot-preflight`；其中 `alert-canary` 是独立真实通知 Gate，
-`clawbot-owner-bootstrap --confirm-write-owner` 会写 Git 外私有 owner 配置；`clawbot-preflight` 只做 zero-send
-account/context readiness probe，但仍是受控外部 Gate。这些命令都不能由普通只读测试授权。Market
-Runtime 的 Live 与盘后更新共用 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
+`guiyi research n-structure`、`guiyi research candidate-validation`、`guiyi research main-force-mirror-futures` 和 `guiyi runtime
+status|live|alert|alert-canary`；其中 `alert-canary --audience owner|htdy_observers` 是独立真实通知 Gate。
+这些命令都不能由普通只读测试授权。
+`research n-structure` 只读取 Historical Canonical，经共享行情入口生成 research-only 观察；它不写数据、
+不进入 Runtime，不证明效果，也不授权 candidate promotion。N Structure V1 的唯一长期业务语义见
+`docs/superpowers/specs/2026-08-20-n-structure-v1-design.md`；历史 Plan/Task 只从 Git history 追溯。
+Market Runtime 的 Live 与盘后更新共用
+`operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
 当日 rank1 completed 1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为
 Canonical。DFD-01～DFD-07 和 60 品种 Canonical 闭环已经完成，长期规范位于 `openspec/specs/`；现有旧
 入口不能作为当前合同依据。
@@ -72,11 +75,11 @@ Alert V2 只保留两条 code-defined Rule：`htdy_original_15m` 复用 `MarketR
 
 SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `trading_day` 同一时创建 Event，stale 或不可用状态 fail-closed。final Session Bar 只在 Live 共享的有界 arrival grace 内可见；该 phase observation 不建立 `snapshot_at`/cutoff/replay 路径。5m 事件落在同一 15m boundary 时依既有 TradingSession bucket 语义延后，继续由 15m snapshot 唯一决议。HTDY event-cutoff 语义不变。
 
-当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后 production 的 `ClawbotAlertSender` 最多启动一个固定 Node child，通过唯一 `openclaw-weixin` private seam 调用一次 `sendMessageWeixin()`；`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，不表示 provider 已接受或用户已收到。无 replay/backfill/retry/outbox/queue/fan-out/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
+当前交易日仅由既有 `MarketPhaseResolver` 对 `operational_products.txt` 品种集唯一解析；存在缺失或不一致时 API fail-closed 为 `unavailable`，不用自然日或 Event `bar_end` 猜测。Event 先提交，然后 develop 的 `AlertNotificationDispatcher` 最多调用一次 PushPlus SDK：HTDY 路由到 `htdy_observers` Topic，SuBing 路由到不带 Topic 的 `owner`。`notification_attempted_at` 表示 Runtime 已进入该一次发送阶段，SDK shortCode 只表示 provider 接受请求，二者都不表示微信已送达。无 replay/backfill/retry/outbox/queue/逐人 fan-out/Signal Center/订单路径。SuBing Rule 的 migration seed Scope 为空集。
 
-Clawbot owner 只存于 Git 外的单份 `0700` parent / `0600` private JSON，Runtime 只公开固定别名 `owner`，不输出 account id、target id、token、context 或消息正文。OpenClaw、Node、`openclaw-weixin` 的 exact version、plugin root 与三个 compiled module shape 由 manifest 冻结；缺失 context、timeout、crash 或 malformed child output 都是 zero-retry failure。OpenClaw 是既有外部依赖，不由归一量化安装、更新、登录、启动、停止或监督；仓库没有 public OpenClaw message-send、durable queue、微信 inbound、context monitor 或 Agent/LLM/slash/tool/reply pipeline。
+PushPlus 消息 token 与 HTDY Topic code 只存于 Git 外的单份 `0700` parent / `0600` private JSON，不写入仓库、日志、health 或 Event。Runtime 只公开两个逻辑 audience 与脱敏 shortCode 后缀，不调用开放接口查询 Topic 成员。owner 与最多三位朋友在 PushPlus 外部扫码加入专用 Topic；创建者也必须加入。Topic 可在 `1..4` 人边界内先以当前成员启用，后续增加成员仍由 operator 人工核对且不得超过 4 人。
 
-Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 已完成独立 release/promotion，唯一 active transport 为 `clawbot-openclaw-weixin`；旧 `v1.4.2` Runtime worktree 与 private WeCom credential 已在正式引用清零后完成最终清理，不再提供 rollback 或自动 fallback。未来恢复 WeCom 必须重新设计、配置、发布并取得对应独立 Gate。owner bootstrap/write、preflight、真实 canary/send、release/tag、Runtime promotion/switch、SuBing Scope write/activation、rollback 与任何 OpenClaw 变更仍是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam、render-only 或已经完成的其他 Gate 不证明未来 Gate 获得授权。
+Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 仍运行历史 Clawbot 单 owner transport；develop 的 PushPlus 路径尚未 release/promotion。真实 Git 外配置、owner/Topic canary、release/tag、Runtime promotion/switch、SuBing Scope write/activation 与 rollback 仍是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam、render-only 或已经完成的其他 Gate 不证明未来 Gate 获得授权。
 
 ## Execution Review V1 应用边界
 
@@ -95,12 +98,12 @@ release、通知或订单动作。
 Alert Runtime V2 只有在用户对识别出的本地工作站明确执行 promotion，且目标 Scope 已获得精确 Rule + Product 授权后，才获得独立、有界的持续授权：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
+htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic
 +
-subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 exact instance 是两条 Rule 各自的 `scope_products=jm`；可变运行事实仍只由 `STATUS.md` 记录。该持续授权只覆盖 G8 后新建的自然 AlertEvent，不覆盖未来第三条 Rule、owner/渠道替换、synthetic Event、replay/backfill、canary、migration、Runtime switch、release、Canonical 写入、订单、rollback 或 G9 cleanup。V2 migration 保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation；不能从 Market Runtime V1、既有 HTDY Scope 或其他 Gate 推导授权。
+当前 production 的 exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner transport；可变运行事实只由 `STATUS.md` 记录。PushPlus 持续授权尚未取得，只覆盖未来批准后新建的自然 AlertEvent。已批准 Topic 在 `1..4` 人内的成员加入不改变代码或 transport；超过 4 人、未知成员或更换 Topic 必须重新授权。该授权不覆盖未来第三条 Rule、synthetic Event、replay/backfill、canary、migration、Runtime switch、release、Canonical 写入、订单或 rollback。V2 migration 保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation；不能从 Market Runtime V1、既有 HTDY Scope 或其他 Gate 推导授权。
 
 当前本机部署根属于可变运行事实，只由 `STATUS.md` 记录。功能开发期可临时从 `develop` 部署以便快速观察；最终 Runtime 采用绑定精确提交的独立 worktree，验收读回身份、拓扑、健康和范围。已经在同一代码谱系形成且由用户接受的自然时点证据不因部署封装重复采集；开发态部署仍不等于 Ready、release 或 Runtime promotion。
 

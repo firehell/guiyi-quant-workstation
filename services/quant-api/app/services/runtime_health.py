@@ -24,10 +24,9 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.alerts.clawbot import (
-    CLAWBOT_PATH_ENV_NAMES,
-    clawbot_transport_configured_from_env,
-)
+from app.alerts.notification_composition import notification_transport_status_from_env
+from app.alerts.notification_config import NOTIFICATION_CONFIG_ENV
+from app.alerts.pushplus import PUSHPLUS_TRANSPORT
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -77,8 +76,9 @@ def build_runtime_health(
         else alert_runtime_enabled
     )
     if notification_transport_configured is None:
-        transport_present = any(os.getenv(name, "") for name in CLAWBOT_PATH_ENV_NAMES)
-        transport_configured = clawbot_transport_configured_from_env()
+        transport_present = bool(os.getenv(NOTIFICATION_CONFIG_ENV, ""))
+        notification = notification_transport_status_from_env()
+        transport_configured = notification["configured"] is True
         transport_error_type = (
             None
             if transport_configured
@@ -88,6 +88,12 @@ def build_runtime_health(
         )
     else:
         transport_configured = notification_transport_configured
+        notification = {
+            "transport": PUSHPLUS_TRANSPORT,
+            "configured": transport_configured,
+            "audience_count": 2,
+            "would_send": False,
+        }
         transport_error_type = (
             None
             if transport_configured
@@ -112,7 +118,7 @@ def build_runtime_health(
         redis_connection,
         now=current_time,
         configured_enabled=alert_enabled,
-        notification_transport_configured=transport_configured,
+        notification=notification,
         transport_error_type=transport_error_type,
         freshness_seconds=alert_freshness_seconds,
     )
@@ -151,13 +157,13 @@ def _collect_alert_health(
     *,
     now: datetime,
     configured_enabled: bool,
-    notification_transport_configured: bool,
+    notification: dict[str, object],
     transport_error_type: str | None,
     freshness_seconds: int,
 ) -> dict[str, Any]:
     empty = {
         "configured_enabled": configured_enabled,
-        "notification_transport_configured": notification_transport_configured,
+        "notification": notification,
         "last_heartbeat_at": None,
         "enabled_rule_count": 0,
         "scope_product_count": 0,
@@ -165,7 +171,7 @@ def _collect_alert_health(
     }
     if not configured_enabled:
         return {"status": RUNTIME_STATUS_DISABLED, **empty}
-    if not notification_transport_configured:
+    if notification["configured"] is not True:
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **empty,

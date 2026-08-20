@@ -13,12 +13,26 @@ from app.market_data.candidate_validation import (
     ProspectiveOosResult,
     RollingCandidateFold,
 )
+from app.market_data.candidate_validation_schedule import (
+    CandidateValidationRequest,
+)
 from app.market_data.domain import BarFrequency, SeriesKind
 from app.market_data.main_force_mirror_futures_research_service import (
     MainForceMirrorFuturesHorizonSummary,
     MainForceMirrorFuturesResearchRequest,
     MainForceMirrorFuturesResearchResult,
 )
+from app.market_data.n_structure_research_service import (
+    NStructureResearchRequest,
+    NStructureResearchResult,
+)
+from app.market_data.n_candidate_validation import (
+    NCandidateWindowResult,
+    NProspectiveOosResult,
+    NRollingCandidateFold,
+    NStructureCandidateValidationReport,
+)
+from app.market_data.price_outcome import PriceHorizonEvaluation
 from app.market_data.subing_calibration import (
     CalibrationReport,
     HorizonEvaluation,
@@ -35,9 +49,6 @@ from app.market_data.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
-from app.market_data.subing_candidate_validation_service import (
-    CandidateValidationRequest,
-)
 
 
 class _CalibrationResearchService(Protocol):
@@ -48,8 +59,15 @@ class _LifecycleResearchService(Protocol):
     def run(self, request: LifecycleResearchRequest) -> SubingLifecycleResearchResult: ...
 
 
+class _NStructureResearchService(Protocol):
+    def run(self, request: NStructureResearchRequest) -> NStructureResearchResult: ...
+
+
 class _CandidateValidationService(Protocol):
-    def run(self, request: CandidateValidationRequest) -> CandidateValidationReport: ...
+    def run(
+        self,
+        request: CandidateValidationRequest,
+    ) -> CandidateValidationReport | NStructureCandidateValidationReport: ...
 
 
 class _MainForceMirrorFuturesResearchService(Protocol):
@@ -64,6 +82,7 @@ ResearchRequest: TypeAlias = (
     | LifecycleResearchRequest
     | CandidateValidationRequest
     | MainForceMirrorFuturesResearchRequest
+    | NStructureResearchRequest
 )
 
 
@@ -87,6 +106,12 @@ def build_research_request(args: argparse.Namespace) -> ResearchRequest:
         )
     if args.research_command == "subing-lifecycle":
         return LifecycleResearchRequest(
+            since=_day(args.since),
+            through=_day(args.through),
+            symbol=args.symbol,
+        )
+    if args.research_command == "n-structure":
+        return NStructureResearchRequest(
             since=_day(args.since),
             through=_day(args.through),
             symbol=args.symbol,
@@ -126,10 +151,16 @@ def run_research_command(
         )
     if isinstance(request, CandidateValidationRequest):
         candidate_service = cast(_CandidateValidationService, service)
-        return _candidate_payload(candidate_service.run(request))
+        report = candidate_service.run(request)
+        if isinstance(report, NStructureCandidateValidationReport):
+            return _n_candidate_payload(report)
+        return _candidate_payload(report)
     if isinstance(request, LifecycleResearchRequest):
         lifecycle_service = cast(_LifecycleResearchService, service)
         return _lifecycle_payload(request, lifecycle_service.run(request))
+    if isinstance(request, NStructureResearchRequest):
+        n_service = cast(_NStructureResearchService, service)
+        return _n_structure_payload(request, n_service.run(request))
     calibration_service = cast(_CalibrationResearchService, service)
     result = calibration_service.run(request)
     payload: dict[str, object] = {
@@ -236,6 +267,53 @@ def _lifecycle_payload(
     }
 
 
+def _n_structure_payload(
+    request: NStructureResearchRequest,
+    result: NStructureResearchResult,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command": "research.n-structure",
+        "status": "ok",
+        "readonly": True,
+        "policy_id": "n_structure_5m_v1",
+        "formula_version": "n_structure_v1",
+        "research_only": True,
+        "since": request.since.isoformat(),
+        "through": request.through.isoformat(),
+        "products": list(result.products),
+        "segment_count": result.segment_count,
+        "evaluable_bar_count": result.evaluable_bar_count,
+        "confirmed_pivot_count": result.confirmed_pivot_count,
+        "ambiguous_outside_reset_count": result.ambiguous_outside_reset_count,
+        "incomplete_attempt_replaced_count": (
+            result.incomplete_attempt_replaced_count
+        ),
+        "completed_n_counts": dict(result.completed_n_counts),
+        "n_break_counts": dict(result.n_break_counts),
+        "range_band_reentry_count": result.range_band_reentry_count,
+        "structure_established_counts": dict(result.structure_established_counts),
+        "structure_break_counts": dict(result.structure_break_counts),
+        "horizon_summary": {
+            str(horizon): _price_horizon_payload(evaluation)
+            for horizon, evaluation in result.horizon_summary.items()
+        },
+    }
+
+
+def _price_horizon_payload(
+    evaluation: PriceHorizonEvaluation,
+) -> dict[str, object]:
+    return {
+        "sample_count": evaluation.sample_count,
+        "median_directional_return_bps": _optional_decimal(
+            evaluation.median_directional_return_bps
+        ),
+        "median_mfe_bps": _optional_decimal(evaluation.median_mfe_bps),
+        "median_mae_bps": _optional_decimal(evaluation.median_mae_bps),
+    }
+
+
 def _candidate_payload(report: CandidateValidationReport) -> dict[str, object]:
     return {
         "schema_version": report.schema_version,
@@ -261,6 +339,85 @@ def _candidate_payload(report: CandidateValidationReport) -> dict[str, object]:
         },
         "prospective_oos": _prospective_payload(report.prospective_oos),
         "quality_flags": list(report.quality_flags),
+    }
+
+
+def _n_candidate_payload(
+    report: NStructureCandidateValidationReport,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": "research.candidate-validation",
+        "status": "ok",
+        "readonly": True,
+        "candidate_id": report.candidate_id,
+        "policy_id": report.policy_id,
+        "formula_version": report.formula_version,
+        "protocol_id": report.protocol_id,
+        "research_only": report.research_only,
+        "symbol": report.symbol,
+        "retrospective": _n_candidate_window_payload(report.retrospective),
+        "rolling_folds": [
+            _n_candidate_fold_payload(fold) for fold in report.rolling_folds
+        ],
+        "rolling_stability": {
+            "fold_count": report.rolling_stability.fold_count,
+            "folds_with_completed_n": (report.rolling_stability.folds_with_completed_n),
+            "completed_n_min": report.rolling_stability.completed_n_min,
+            "completed_n_max": report.rolling_stability.completed_n_max,
+            "completed_n_median": str(report.rolling_stability.completed_n_median),
+        },
+        "prospective_oos": _n_prospective_payload(report.prospective_oos),
+        "quality_flags": list(report.quality_flags),
+    }
+
+
+def _n_candidate_fold_payload(fold: NRollingCandidateFold) -> dict[str, object]:
+    return {
+        "fold_id": fold.fold_id,
+        "reference": _n_candidate_window_payload(fold.reference),
+        "test": _n_candidate_window_payload(fold.test),
+    }
+
+
+def _n_candidate_window_payload(
+    window: NCandidateWindowResult,
+) -> dict[str, object]:
+    return {
+        "window_id": window.window_id,
+        "window_kind": window.window_kind.value,
+        "since": window.since.isoformat(),
+        "through": window.through.isoformat(),
+        "products": list(window.products),
+        "segment_count": window.segment_count,
+        "evaluable_bar_count": window.evaluable_bar_count,
+        "confirmed_pivot_count": window.confirmed_pivot_count,
+        "ambiguous_outside_reset_count": window.ambiguous_outside_reset_count,
+        "incomplete_attempt_replaced_count": (
+            window.incomplete_attempt_replaced_count
+        ),
+        "completed_n_counts": dict(window.completed_n_counts),
+        "n_break_counts": dict(window.n_break_counts),
+        "range_band_reentry_count": window.range_band_reentry_count,
+        "structure_established_counts": dict(window.structure_established_counts),
+        "structure_break_counts": dict(window.structure_break_counts),
+        "horizon_summary": {
+            str(horizon): _price_horizon_payload(evaluation)
+            for horizon, evaluation in window.horizon_summary.items()
+        },
+    }
+
+
+def _n_prospective_payload(result: NProspectiveOosResult) -> dict[str, object]:
+    return {
+        "status": result.status.value,
+        "first_trading_day": result.first_trading_day.isoformat(),
+        "through": result.through.isoformat(),
+        "result": (
+            None
+            if result.result is None
+            else _n_candidate_window_payload(result.result)
+        ),
     }
 
 

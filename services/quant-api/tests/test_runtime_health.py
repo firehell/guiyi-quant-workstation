@@ -25,8 +25,13 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
     monkeypatch.setattr("app.services.runtime_health._alert_runtime_activation_enabled", lambda: False)
     monkeypatch.setattr(
-        "app.services.runtime_health.clawbot_transport_configured_from_env",
-        lambda: False,
+        "app.services.runtime_health.notification_transport_status_from_env",
+        lambda: {
+            "transport": "pushplus",
+            "configured": False,
+            "audience_count": 2,
+            "would_send": False,
+        },
     )
     monkeypatch.setattr(
         "app.api.runtime.build_runtime_health",
@@ -69,7 +74,12 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     assert payload["components"]["alert"] == {
         "status": "disabled",
         "configured_enabled": False,
-        "notification_transport_configured": False,
+        "notification": {
+            "transport": "pushplus",
+            "configured": False,
+            "audience_count": 2,
+            "would_send": False,
+        },
         "last_heartbeat_at": None,
         "enabled_rule_count": 0,
         "scope_product_count": 0,
@@ -80,8 +90,13 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
 def test_alert_health_activation_and_transport_fail_closed(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(
-        "app.services.runtime_health.clawbot_transport_configured_from_env",
-        lambda: False,
+        "app.services.runtime_health.notification_transport_status_from_env",
+        lambda: {
+            "transport": "pushplus",
+            "configured": False,
+            "audience_count": 2,
+            "would_send": False,
+        },
     )
     TestingSessionLocal = _session_factory()
 
@@ -172,7 +187,12 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
     assert fresh["components"]["alert"] == {
         "status": "ok",
         "configured_enabled": True,
-        "notification_transport_configured": True,
+        "notification": {
+            "transport": "pushplus",
+            "configured": True,
+            "audience_count": 2,
+            "would_send": False,
+        },
         "last_heartbeat_at": now.isoformat(),
         "enabled_rule_count": 1,
         "scope_product_count": 2,
@@ -218,8 +238,14 @@ def test_alert_health_structural_transport_is_ready_from_process_environment(
     now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
     calls: list[str] = []
     monkeypatch.setattr(
-        "app.services.runtime_health.clawbot_transport_configured_from_env",
-        lambda: calls.append("structural-check") or True,
+        "app.services.runtime_health.notification_transport_status_from_env",
+        lambda: calls.append("structural-check")
+        or {
+            "transport": "pushplus",
+            "configured": True,
+            "audience_count": 2,
+            "would_send": False,
+        },
     )
     TestingSessionLocal = _session_factory()
 
@@ -246,19 +272,32 @@ def test_alert_health_structural_transport_is_ready_from_process_environment(
 
     assert calls == ["structural-check"]
     assert payload["components"]["alert"]["status"] == "ok"
-    assert payload["components"]["alert"]["notification_transport_configured"] is True
+    assert payload["components"]["alert"]["notification"] == {
+        "transport": "pushplus",
+        "configured": True,
+        "audience_count": 2,
+        "would_send": False,
+    }
 
 
-def test_alert_health_rejects_invalid_transport_paths(monkeypatch, tmp_path) -> None:
+def test_alert_health_rejects_invalid_transport_config_path(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
     marker = tmp_path / ".run" / "alert-runtime-enabled"
     marker.parent.mkdir()
     marker.write_text("enabled\n", encoding="utf-8")
     monkeypatch.setattr(
-        "app.services.runtime_health.clawbot_transport_configured_from_env",
-        lambda: False,
+        "app.services.runtime_health.notification_transport_status_from_env",
+        lambda: {
+            "transport": "pushplus",
+            "configured": False,
+            "audience_count": 2,
+            "would_send": False,
+        },
     )
-    monkeypatch.setenv("GUIYI_OPENCLAW_BIN", "relative/openclaw")
+    monkeypatch.setenv(
+        "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH",
+        "relative/notification.json",
+    )
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
@@ -271,7 +310,7 @@ def test_alert_health_rejects_invalid_transport_paths(monkeypatch, tmp_path) -> 
 
     alert = payload["components"]["alert"]
     assert alert["status"] == "degraded"
-    assert alert["notification_transport_configured"] is False
+    assert alert["notification"]["configured"] is False
     assert alert["error_type"] == "alert_notification_transport_invalid"
 
 

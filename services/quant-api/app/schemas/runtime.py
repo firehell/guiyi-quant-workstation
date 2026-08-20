@@ -52,12 +52,21 @@ class RuntimeAfterMarketHealth(BaseModel):
     error_message: str | None = None
 
 
+class RuntimeAlertNotificationHealth(BaseModel):
+    """Secret-safe structural notification audience readiness."""
+
+    transport: str
+    configured: bool = False
+    audience_count: int = 0
+    would_send: bool = False
+
+
 class RuntimeAlertHealth(BaseModel):
     """Alert activation、notification transport 与短 TTL heartbeat 摘要。"""
 
     status: str
     configured_enabled: bool = False
-    notification_transport_configured: bool = False
+    notification: RuntimeAlertNotificationHealth
     last_heartbeat_at: str | None = None
     enabled_rule_count: int = 0
     scope_product_count: int = 0

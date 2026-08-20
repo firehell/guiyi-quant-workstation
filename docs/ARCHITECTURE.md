@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / candidate-validation / futures-mirror"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / candidate-validation / futures-mirror"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -34,15 +34,19 @@ flowchart TB
       AR["AlertRuntime"]
     end
     subgraph Research["只读 Historical Research / Shadow"]
+      ADR["ActualDominantResearchSegmentLoader<br/>true rank1 segment prefix"]
       SL["SuBing Lifecycle V2<br/>research-only snapshot / Shadow"]
+      NS["N Structure V1<br/>5m causal Swing / N / Structure"]
       SCR["SubingCalibrationResearchService"]
-      CV["Candidate Validation V1<br/>exact Candidate / Protocol"]
+      SCV["SuBing Candidate Report<br/>source-specific"]
+      NCV["N Candidate Report<br/>source-specific"]
       MFM["MainForceMirrorFuturesResearchService<br/>historical-only Shadow"]
     end
     subgraph AlertApp["Alert Application Domain"]
       AS["AlertService / Scope / Event"]
       AE["HTDY original 15m Evaluator"]
-      CB["ClawbotAlertSender / one Node child"]
+      ND["AlertNotificationDispatcher"]
+      NT["NotificationTransport / PushPlus adapter"]
     end
     subgraph ExecutionReview["Execution Review Application Domain"]
       ERS["ExecutionReviewService"]
@@ -61,14 +65,16 @@ flowchart TB
       EPG["PostgreSQL execution-review application tables"]
       PQ["Parquet / PyArrow reader-writer"]
       RD["Redis Live Overlay"]
-      OC["External OpenClaw / openclaw-weixin"]
+      PP["External PushPlus SDK / WeChat"]
     end
     WEB --> API --> MR
     API --> MRS
     API --> SR
     RCLI --> SCR --> MQ
-    RCLI --> SL --> MQ
-    RCLI --> CV --> SL
+    RCLI --> SL --> ADR --> MQ
+    RCLI --> NS --> ADR
+    RCLI --> SCV --> SL
+    RCLI --> NCV --> NS
     RCLI --> MFM --> MQ
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
@@ -89,7 +95,7 @@ flowchart TB
     AR --> AE
     AR --> AS
     AS --> APG
-    AS --> CB --> OC
+    AS --> ND --> NT --> PP
     AM --> HM
     MS --> MM
     HM --> DK
@@ -123,14 +129,25 @@ flowchart TB
   Lifecycle V2 snapshot。Historical 输入同时受 current rank1 segment 起止日约束。
   该服务不拥有或修改 Calibration/Signal 公式，
   不直连 provider/Redis，不持久化 Signal，不写 Canonical/DB，也不管理 Runtime。
-  `SubingLifecycleResearchService` 只通过 `MarketDataService` 对 Historical Canonical 按 rank1
-  segment 独立复算 Shadow，结果仅由 read-only CLI 输出 stdout JSON。Lifecycle 无独立
-  DB/Redis persistence、worker/queue 或 notification path；`AlertRuntime` 仍只消费 V1
-  `resolved_signal`，不依赖 Lifecycle evaluator 或 snapshot。
-  Candidate Validation V1 以 exact Git-tracked Candidate/Protocol 编排该同一个 Lifecycle service，
-  只投影 retrospective、rolling 与 prospective OOS 事实到 stdout JSON 或版本化 research report；
-  不重算 lifecycle/outcome/rank1，不建立 order、position、cost、equity、DB/Redis persistence 或
-  Alert consumer，也不产生自动 KEEP/DROP/PROMOTE 结论。
+  `SubingLifecycleResearchService` 与 `NStructureResearchService` 共用
+  `ActualDominantResearchSegmentLoader`，仅通过 `MarketDataService` 还原 true rank1 segment
+  prefix，再分别进入两个独立 domain。SuBing 保留原 Lifecycle/factor/same-day/EMA21
+  语义；N 仅消费 completed Historical actual-dominant 5m，按 segment 独立运行 Swing epoch、
+  Completed N、break/band raw facts 和 BULL/BEAR/RANGE Structure。N 的公开
+  `evaluate_n_structure_segment()` 对每个 true segment 单次生成 exact Swing/Pattern/Structure；
+  Pattern public interface 拒绝 non-reducer trace，Research 不重跑 prefix 或线性查找每个 Completed N。
+  N 的长期业务语义只看 `docs/superpowers/specs/2026-08-20-n-structure-v1-design.md`。两者结果都仅由
+  read-only CLI 输出 stdout JSON。Lifecycle 无独立 DB/Redis persistence、worker/queue 或
+  notification path；`AlertRuntime` 仍只消费 V1 `resolved_signal`，不依赖 Lifecycle
+  evaluator 或 snapshot。
+  Candidate Validation 只共享 exact request/error 与 rolling/prospective schedule；SuBing 与 N
+  各自保留 source-specific report，不把 confirmation/EMA21 与 Swing/N/Structure metrics
+  强制统一。两条链都只投影 retrospective、rolling 与 prospective OOS 事实到 stdout
+  JSON 或版本化 research report，不建立 Strategy Plugin/Registry、order、position、cost、equity、
+  DB/Redis persistence 或 Alert consumer，也不产生自动 KEEP/DROP/PROMOTE 结论。N
+  目前只是 Historical/research-only 结构与 Candidate producer；已形成 deterministic jm
+  retrospective/rolling evidence，prospective OOS 仍 pending，不代表效果、promotion、
+  release 或 Runtime 能力。
   `MainForceMirrorFuturesResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
   把每根 Bar 绑定到唯一物理合约后调用 Python Indicator Kernel；结果只由只读 CLI
@@ -208,28 +225,30 @@ Bar 不同一即 fail-closed。final Session Bar 只在 Live 共享 arrival grac
 observation 可见，不新增 `snapshot_at`/cutoff/replay；5m 与 15m 落在同一 TradingSession bucket
 boundary 时延后 5m，使用既有 resolver 唯一决议。
 
-两条 Rule 都只在自身显式 `scope_products` 内创建幂等 `AlertEvent`，Event commit 先于
-Clawbot single-shot：每个 Event 最多一个固定 Node child，并只经 `openclaw-weixin` private seam
-调用一次 `sendMessageWeixin()`。停机期间不 replay/backfill，发送失败不 retry，不建 outbox/queue/
-Signal Center/订单。SuBing migration seed Scope 为空集。当前交易日由
+两条 Rule 都只在自身显式 `scope_products` 内创建幂等 `AlertEvent`，Event commit 先于通知调用。
+`AlertNotificationDispatcher` 只拥有业务 audience 路由：HTDY 每个 Event 向 `htdy_observers` 发起一次
+PushPlus Topic 请求，SuBing 每个 Event 向不带 Topic 的 `owner` 发起一次请求。SDK shortCode 只表示
+provider 接受，不表示微信最终送达。停机期间不 replay/backfill，发送失败不 retry，不建 outbox/queue/
+逐人 fan-out/Signal Center/订单。SuBing migration seed Scope 为空集。当前交易日由
 `MarketPhaseResolver + operational_products.txt` 唯一解析，缺失或不一致时 API 显式
 `unavailable`。
 
 AlertRuntime 是独立进程、独立 activation marker 与独立健康组件。其有界持续授权只限于：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
+htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic
 +
-subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × clawbot-openclaw-weixin
+subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 exact instance 为两条 Rule 各自的 `scope_products=jm`。未来第三条 Rule 不继承授权；production
-migration、release/tag、Runtime promotion/switch、Scope/owner/transport 变更、真实 canary/send、rollback
-与 G9 cleanup 互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短 Session/transaction；
-Clawbot sender 与 structural health 共用 exact manifest/root/config/owner 校验。OpenClaw 是外部依赖，
-不由归一量化安装、更新、登录、启动、停止或监督。当前 production 已运行该 Clawbot transport；旧
-`v1.4.2` Runtime worktree 与 private WeCom credential 已完成最终清理，不再形成 rollback 或 fallback。
-未来恢复 WeCom 必须重新设计、配置、发布并取得独立 Gate。
+当前 production exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner Clawbot
+transport；PushPlus 持续授权尚未取得。已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员；超过
+4 人、未知成员或更换 Topic 必须重新授权。未来第三条 Rule 不继承授权；production
+migration、release/tag、Runtime promotion/switch、Scope/audience/transport 变更、真实 canary/send、
+rollback 与外部旧配置清理互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短
+Session/transaction。develop 的 sender 与 structural health 共用同一 Git 外 private config：只含消息
+token 与 HTDY Topic code，要求 parent `0700`、file `0600`、current uid；health 不联网、不读取成员，
+也不公开 token/Topic。替换 provider 只新增 adapter 并切换 composition，不修改 Rule、Event 或 evaluator。
 
 Execution Review 不反向依赖或修改 Alert Event：只从不可变 `subing_entry_signal_v1` Event 建立人工
 Decision、固定合约/方向的 Episode、真实手工 Execution timeline 和结构化 Review。一个品种最多一个

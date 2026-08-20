@@ -27,15 +27,23 @@ def add_research_commands(
     lifecycle.add_argument("--through", required=True)
     lifecycle.add_argument("--symbol")
 
+    n_structure = commands.add_parser("n-structure")
+    n_structure.add_argument("--since", required=True)
+    n_structure.add_argument("--through", required=True)
+    n_structure.add_argument("--symbol")
+
     candidate = commands.add_parser("candidate-validation")
     candidate.add_argument(
         "--candidate",
-        choices=("subing_lifecycle_v2_candidate_v1",),
+        choices=(
+            "subing_lifecycle_v2_candidate_v1",
+            "n_structure_5m_candidate_v1",
+        ),
         required=True,
     )
     candidate.add_argument(
         "--protocol",
-        choices=("candidate_validation_v1",),
+        choices=("candidate_validation_v1", "n_structure_validation_v1"),
         required=True,
     )
     candidate.add_argument("--symbol", required=True)
