@@ -192,7 +192,7 @@ def test_public_websocket_route_matches_market_api_contract() -> None:
     assert "location /ws/" not in nginx
 
 
-def test_release_candidate_versions_are_consistently_1_6_2() -> None:
+def test_release_candidate_versions_are_consistently_1_6_3() -> None:
     pyproject = (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
     lock = (ROOT / "services/quant-api/uv.lock").read_text(encoding="utf-8")
     api = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
@@ -201,11 +201,11 @@ def test_release_candidate_versions_are_consistently_1_6_2() -> None:
     )
     web = (ROOT / "apps/quant-web/package.json").read_text(encoding="utf-8")
 
-    assert 'version = "1.6.2"' in pyproject
-    assert 'name = "quant-api"\nversion = "1.6.2"\nsource = { editable = "." }' in lock
-    assert 'APP_VERSION = "1.6.2"' in version_module
+    assert 'version = "1.6.3"' in pyproject
+    assert 'name = "quant-api"\nversion = "1.6.3"\nsource = { editable = "." }' in lock
+    assert 'APP_VERSION = "1.6.3"' in version_module
     assert "version=APP_VERSION" in api
-    assert '"version": "1.6.2"' in web
+    assert '"version": "1.6.3"' in web
     assert '"version": APP_VERSION' in api
 
 
