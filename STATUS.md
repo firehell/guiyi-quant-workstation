@@ -37,8 +37,8 @@
   observation，因此无 live `jm` 证据，不表示策略有效、正式 Rule ready 或可晋升。
 - `develop` 已包含 reviewed N Structural Domain V1：5m causal Swing/epoch、N Pattern、level break/
   Range Band、BULL/BEAR/RANGE Structure、Historical-only research CLI 与第二条独立 Candidate producer。
-  prospective OOS 从 `2026-08-21` 开始；Task 10 真实 `jm` evidence 尚未生成，不形成效果、盈利、晋升、
-  release 或 Runtime 结论。
+  Task 10 已形成并通过 Evidence Review 的 deterministic `jm` retrospective/rolling baseline；prospective
+  OOS 从 `2026-08-21` 开始且仍为 `pending`，不形成效果、盈利、晋升、release 或 Runtime 结论。
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
@@ -117,7 +117,7 @@
   发布，但这不表示策略有效、Candidate 可晋升、Alert Rule ready 或 Runtime ready；未执行 Runtime/Alert
   扩张、DB/Canonical/Redis 写入、通知或订单。
 
-## N Structural Domain V1（DEVELOP CODE_COMPLETE / TEST_COMPLETE；TASK 10 EVIDENCE PENDING）
+## N Structural Domain V1（DEVELOP CODE_COMPLETE / TEST_COMPLETE / EVIDENCE_COMPLETE；PROSPECTIVE OOS PENDING）
 
 - reviewed implementation 已通过 merge commit
   `706274ebcf8abed90600288dc44db204437f2e5d` 合入并推送 `develop`。N Structural Domain V1 包含 exact
@@ -133,10 +133,19 @@
 - same-boundary completion 加自身 N2/origin break 保留为 Pattern 层的 local defensive contract；在冻结的
   完整 Swing→Pattern producer 顺序下，正例会先成为 outside epoch reset，或由新 opposite base 替换 attempt，
   因而不可达。该 canonical reachability ruling 未改变 Swing、Pattern、Structure 公式或边界顺序。
-- Task 10 的 exact-develop 真实 `jm` N baseline 与 Candidate evidence 尚未生成，也未执行真实 research CLI。
-  当前只证明 reviewed implementation 存在于 `develop`；不证明 N 有效、盈利、可交易、Candidate 可晋升、
-  第三条 Alert Rule ready、release 或 Runtime ready。本阶段未执行 main/tag/release、Runtime switch、
-  RQData/Canonical/Redis/DB 写入、Scope/通知或订单操作。
+- Task 10 的 exact-develop 真实只读 CLI 已生成唯一版本化 evidence：
+  `reports/research/candidate_validation/n_structure_5m_candidate_v1/jm-retrospective-baseline-freeze-2026-08-20.json`，
+  SHA256=`12fed018751ae54d5bfd2d24897cc077c513560ac1377935e5fddd14a36a3fc6`。真实 `jm`
+  retrospective 包含 `12` 个 rank1 segments、`60075` 根 evaluable 5m bars，3/5/8 Bar outcome samples
+  分别为 `3987 / 3985 / 3983`；10 个 rolling folds 均按冻结 schedule 生成。retrospective 截止
+  `2026-08-19`，`2026-08-20` 仅作为 embargo/request-through context，prospective OOS 仍为 `pending`，
+  首个 eligible trading day 为 `2026-08-21`。
+- exact command 重算与 artifact byte-identical；独立 Evidence Review 为 Critical=`0` / Important=`0` /
+  Minor=`0`。该 accepted baseline 只证明 exact Candidate/Protocol 下的可复算 Historical
+  retrospective/rolling evidence，不形成 profitability、effectiveness、KEEP/PROMOTE、可交易、第三条
+  Alert Rule、release 或 Runtime ready 结论。
+- 本阶段未执行 RQData download、Canonical/DB/Redis write、Alert/Scope/notification/order、
+  main/tag/release、Runtime switch/promotion 或其他真实外部 mutation。
 
 ## v1.6.2 主力照妖镜·期货 V1（RELEASED / RUNTIME PROMOTED）
 
