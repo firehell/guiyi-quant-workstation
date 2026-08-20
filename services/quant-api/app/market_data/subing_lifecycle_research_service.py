@@ -9,6 +9,7 @@ from types import MappingProxyType
 
 from .actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
+    ActualDominantResearchSourceError,
     _ActualDominantResearchReader,
 )
 from .domain import (
@@ -311,12 +312,15 @@ class SubingLifecycleResearchService:
         accumulator = _ResearchAccumulator()
 
         for product in products:
-            resolved = self._segment_loader.load(
-                symbol=product,
-                frequencies=(BarFrequency.M5, BarFrequency.M15),
-                since=request.since,
-                through=request.through,
-            )
+            try:
+                resolved = self._segment_loader.load(
+                    symbol=product,
+                    frequencies=(BarFrequency.M5, BarFrequency.M15),
+                    since=request.since,
+                    through=request.through,
+                )
+            except ActualDominantResearchSourceError as exc:
+                raise exc.original_error from None
             segments = resolved.segments
             computation_bars = {
                 frequency: tuple(

@@ -43,8 +43,10 @@ from app.market_data.n_candidate_validation_service import (
     NStructureCandidateValidationService,
 )
 from app.market_data.n_structure_research_service import (
+    NStructureSegmentIdentityError,
     NStructureResearchRequest,
     NStructureResearchResult,
+    NStructureSourceUnavailableError,
 )
 from app.market_data.price_outcome import PriceHorizonEvaluation
 from app.market_data.subing_calibration_service import (
@@ -601,6 +603,45 @@ class _FakeNStructureResearchService:
     def run(self, request: NStructureResearchRequest) -> NStructureResearchResult:
         self.requests.append(request)
         return self.result
+
+
+class _FailingNStructureResearchService:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def run(self, request: NStructureResearchRequest) -> NStructureResearchResult:
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    "error",
+    (NStructureSourceUnavailableError(), NStructureSegmentIdentityError()),
+)
+def test_n_structure_cli_preserves_stable_public_failure_code(
+    error: Exception,
+) -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        _n_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        n_structure_research_service_factory=lambda _session: (
+            _FailingNStructureResearchService(error)
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 1
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "research.n-structure",
+        "status": "error",
+        "readonly": True,
+        "error": {"code": error.code, "type": type(error).__name__},  # type: ignore[attr-defined]
+    }
 
 
 def test_n_structure_outputs_exact_readonly_price_only_payload() -> None:

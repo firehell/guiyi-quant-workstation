@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from app.core.env import PROJECT_ROOT
@@ -81,7 +83,7 @@ def load_n_structure_policy(path: Path | None = None) -> NStructurePolicy:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         raise NStructurePolicyError() from None
 
-    if not _matches_exact(payload, _EXPECTED_PAYLOAD):
+    if not _matches_exact_json(payload, _EXPECTED_PAYLOAD):
         raise NStructurePolicyError()
 
     return NStructurePolicy(
@@ -90,22 +92,76 @@ def load_n_structure_policy(path: Path | None = None) -> NStructurePolicy:
         formula_version=payload["formula_version"],
         research_only=payload["research_only"],
         source_timeframe=BarFrequency(payload["source_timeframe"]),
-        raw=payload,
+        raw=_freeze_json(payload),
     )
 
 
-def _matches_exact(value: object, expected: object) -> bool:
+def is_exact_n_structure_policy(policy: object) -> bool:
+    """Return whether ``policy`` is the exact immutable N Structure V1 contract."""
+
+    return (
+        isinstance(policy, NStructurePolicy)
+        and type(policy.schema_version) is int
+        and policy.schema_version == _EXPECTED_PAYLOAD["schema_version"]
+        and type(policy.policy_id) is str
+        and policy.policy_id == _EXPECTED_PAYLOAD["policy_id"]
+        and type(policy.formula_version) is str
+        and policy.formula_version == _EXPECTED_PAYLOAD["formula_version"]
+        and type(policy.research_only) is bool
+        and policy.research_only is _EXPECTED_PAYLOAD["research_only"]
+        and policy.source_timeframe
+        is BarFrequency(_EXPECTED_PAYLOAD["source_timeframe"])
+        and _matches_exact_frozen(policy.raw, _EXPECTED_PAYLOAD)
+    )
+
+
+def _freeze_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _freeze_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _matches_exact_json(value: object, expected: object) -> bool:
     if type(value) is not type(expected):
         return False
     if isinstance(expected, dict):
         return (
             isinstance(value, dict)
             and value.keys() == expected.keys()
-            and all(_matches_exact(value[key], item) for key, item in expected.items())
+            and all(
+                _matches_exact_json(value[key], item)
+                for key, item in expected.items()
+            )
         )
     if isinstance(expected, list):
         return isinstance(value, list) and len(value) == len(expected) and all(
-            _matches_exact(actual, item)
+            _matches_exact_json(actual, item)
             for actual, item in zip(value, expected, strict=True)
         )
     return value == expected
+
+
+def _matches_exact_frozen(value: object, expected: object) -> bool:
+    if isinstance(expected, dict):
+        return (
+            isinstance(value, MappingProxyType)
+            and value.keys() == expected.keys()
+            and all(
+                _matches_exact_frozen(value[key], item)
+                for key, item in expected.items()
+            )
+        )
+    if isinstance(expected, list):
+        return isinstance(value, tuple) and len(value) == len(expected) and all(
+            _matches_exact_frozen(actual, item)
+            for actual, item in zip(value, expected, strict=True)
+        )
+    return (
+        not isinstance(value, MappingABC)
+        and type(value) is type(expected)
+        and value == expected
+    )

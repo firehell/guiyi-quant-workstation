@@ -7,6 +7,8 @@ import pytest
 
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
+    ActualDominantResearchSegmentIdentityError,
+    ActualDominantResearchSourceError,
 )
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
@@ -143,6 +145,36 @@ def test_loader_rejects_empty_frequency_request_before_market_read() -> None:
     assert market_data.segment_requests == []
 
 
+class _UnavailableMarketData:
+    def query_actual_dominant_trading_days(
+        self,
+        request: ActualDominantTradingDayQuery,
+    ) -> MarketSeriesResult:
+        raise FileNotFoundError("/private/canonical/jm-secret.parquet")
+
+    def dominant_segment_for_day(
+        self,
+        symbol: str,
+        trading_day: date,
+    ) -> DominantContractSegmentSummary:
+        raise AssertionError("source query must fail first")
+
+
+def test_loader_types_and_sanitizes_source_failure() -> None:
+    with pytest.raises(ActualDominantResearchSourceError) as captured:
+        ActualDominantResearchSegmentLoader(_UnavailableMarketData()).load(
+            symbol="jm",
+            frequencies=(BarFrequency.M5,),
+            since=_DAY_ONE,
+            through=_DAY_TWO,
+        )
+
+    error = captured.value
+    assert str(error) == "actual dominant research source unavailable"
+    assert error.__cause__ is None
+    assert "/private/canonical" not in str(error)
+
+
 def test_loader_supports_one_frequency_without_cross_frequency_assumption() -> None:
     segment = ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_TWO)
     summary = DominantContractSegmentSummary(
@@ -198,7 +230,7 @@ def test_loader_fails_closed_when_frequency_segment_identities_differ() -> None:
     )
 
     with pytest.raises(
-        ValueError,
+        ActualDominantResearchSegmentIdentityError,
         match="rank1 segment identity is missing or inconsistent",
     ):
         ActualDominantResearchSegmentLoader(market_data).load(

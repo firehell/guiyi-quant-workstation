@@ -9,13 +9,17 @@ from statistics import median
 from types import MappingProxyType
 from typing import Protocol
 
-from .actual_dominant_research import ActualDominantResearchSeries
+from .actual_dominant_research import (
+    ActualDominantResearchSegmentIdentityError,
+    ActualDominantResearchSeries,
+    ActualDominantResearchSourceError,
+)
 from .domain import BarFrequency, CanonicalBar, ResolvedContractSegment
 from .n_structure_pattern import (
     NDirection,
     evaluate_n_patterns,
 )
-from .n_structure_policy import NStructurePolicy
+from .n_structure_policy import NStructurePolicy, is_exact_n_structure_policy
 from .n_structure_state import evaluate_n_market_structure
 from .n_structure_swing import reduce_n_swings
 from .price_outcome import (
@@ -27,6 +31,20 @@ from .price_outcome import (
 
 
 _HORIZONS = (3, 5, 8)
+
+
+class NStructureSourceUnavailableError(RuntimeError):
+    code = "N_STRUCTURE_SOURCE_UNAVAILABLE"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class NStructureSegmentIdentityError(ValueError):
+    code = "N_STRUCTURE_SEGMENT_IDENTITY_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
 
 
 class _ResearchSegmentLoader(Protocol):
@@ -125,13 +143,7 @@ class NStructureResearchService:
             for product in normalized
         ):
             raise ValueError("products must contain ASCII product symbols")
-        if (
-            not isinstance(policy, NStructurePolicy)
-            or policy.policy_id != "n_structure_5m_v1"
-            or policy.formula_version != "n_structure_v1"
-            or policy.research_only is not True
-            or policy.source_timeframe is not BarFrequency.M5
-        ):
+        if not is_exact_n_structure_policy(policy):
             raise ValueError("N structure policy identity is invalid")
         self._segment_loader = segment_loader
         self._products = normalized
@@ -143,15 +155,20 @@ class NStructureResearchService:
         products = self._selected_products(request.symbol)
         accumulator = _Accumulator()
         for product in products:
-            loaded = self._segment_loader.load(
-                symbol=product,
-                frequencies=(BarFrequency.M5,),
-                since=request.since,
-                through=request.through,
-            )
+            try:
+                loaded = self._segment_loader.load(
+                    symbol=product,
+                    frequencies=(BarFrequency.M5,),
+                    since=request.since,
+                    through=request.through,
+                )
+            except ActualDominantResearchSourceError:
+                raise NStructureSourceUnavailableError() from None
+            except ActualDominantResearchSegmentIdentityError:
+                raise NStructureSegmentIdentityError() from None
             result = loaded.results.get(BarFrequency.M5)
             if result is None:
-                raise ValueError("5m research series is missing")
+                raise NStructureSegmentIdentityError()
             for segment in loaded.segments:
                 bars = tuple(
                     bar

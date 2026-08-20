@@ -15,6 +15,13 @@ class PriceDirection(StrEnum):
     SHORT = "short"
 
 
+class PriceOutcomeError(ValueError):
+    code = "PRICE_OUTCOME_ENTRY_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
 @dataclass(frozen=True, slots=True)
 class PriceDirectionalOutcome:
     horizon: int
@@ -49,6 +56,8 @@ def build_price_outcomes_at(
         raise TypeError("same_trading_day_only must be bool")
     requested = _validated_horizons(horizons)
     side = PriceDirection(direction)
+    if bars[index].close <= 0:
+        raise PriceOutcomeError()
 
     return {
         horizon: _outcome_for_horizon(
@@ -82,8 +91,6 @@ def _outcome_for_horizon(
     ):
         return None
     entry_close = entry.close
-    if entry_close == 0:
-        return None
     if direction is PriceDirection.LONG:
         directional_return = (
             (future[-1].close - entry_close) / entry_close * Decimal(10000)

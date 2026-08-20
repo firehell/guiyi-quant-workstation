@@ -3,8 +3,14 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.market_data.domain import CanonicalBar
-from app.market_data.price_outcome import PriceDirection, build_price_outcomes_at
+from app.market_data.price_outcome import (
+    PriceDirection,
+    PriceOutcomeError,
+    build_price_outcomes_at,
+)
 
 
 def _bar(
@@ -99,3 +105,40 @@ def test_same_trading_day_boundary_is_caller_selected() -> None:
     assert same_day == {2: None}
     assert cross_day[2] is not None
     assert cross_day[2].directional_return_bps == Decimal("200")
+
+
+@pytest.mark.parametrize("entry_close", ("0", "-100"))
+def test_nonpositive_entry_close_fails_closed_in_outcome_domain(
+    entry_close: str,
+) -> None:
+    day = date(2026, 1, 2)
+    entry = Decimal(entry_close)
+    bars = (
+        _bar(
+            0,
+            trading_day=day,
+            high=entry_close,
+            low=entry_close,
+            close=entry_close,
+        ),
+        _bar(
+            1,
+            trading_day=day,
+            high=str(entry + Decimal("1")),
+            low=str(entry - Decimal("1")),
+            close=entry_close,
+        ),
+    )
+
+    with pytest.raises(PriceOutcomeError) as captured:
+        build_price_outcomes_at(
+            bars,
+            index=0,
+            direction=PriceDirection.LONG,
+            horizons=(1,),
+            same_trading_day_only=True,
+        )
+
+    assert str(captured.value) == "PRICE_OUTCOME_ENTRY_INVALID"
+    assert captured.value.code == "PRICE_OUTCOME_ENTRY_INVALID"
+    assert captured.value.__cause__ is None

@@ -3,8 +3,15 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
+import traceback
 
-from app.market_data.actual_dominant_research import ActualDominantResearchSeries
+import pytest
+
+from app.market_data.actual_dominant_research import (
+    ActualDominantResearchSegmentIdentityError,
+    ActualDominantResearchSeries,
+    ActualDominantResearchSourceError,
+)
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
@@ -13,8 +20,10 @@ from app.market_data.domain import (
 )
 from app.market_data.n_structure_policy import load_n_structure_policy
 from app.market_data.n_structure_research_service import (
+    NStructureSegmentIdentityError,
     NStructureResearchRequest,
     NStructureResearchService,
+    NStructureSourceUnavailableError,
 )
 
 
@@ -82,6 +91,68 @@ class _FakeSegmentLoader:
     def load(self, **kwargs: object) -> ActualDominantResearchSeries:
         self.calls.append(kwargs)
         return self.result
+
+
+class _FailingSegmentLoader:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def load(self, **kwargs: object) -> ActualDominantResearchSeries:
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    ("shared_error", "public_error", "code"),
+    (
+        (
+            ActualDominantResearchSourceError(
+                FileNotFoundError("/private/canonical/jm-secret.parquet")
+            ),
+            NStructureSourceUnavailableError,
+            "N_STRUCTURE_SOURCE_UNAVAILABLE",
+        ),
+        (
+            ActualDominantResearchSegmentIdentityError(
+                "rank1 segment identity is incomplete for 5m"
+            ),
+            NStructureSegmentIdentityError,
+            "N_STRUCTURE_SEGMENT_IDENTITY_INVALID",
+        ),
+    ),
+)
+def test_shared_loader_failures_map_to_stable_sanitized_n_errors(
+    shared_error: Exception,
+    public_error: type[Exception],
+    code: str,
+) -> None:
+    service = NStructureResearchService(
+        _FailingSegmentLoader(shared_error),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+
+    with pytest.raises(public_error) as captured:
+        service.run(
+            NStructureResearchRequest(
+                since=date(2026, 8, 18),
+                through=date(2026, 8, 20),
+                symbol="jm",
+            )
+        )
+
+    assert str(captured.value) == code
+    assert getattr(captured.value, "code", None) == code
+    assert captured.value.__cause__ is None
+    rendered = "".join(
+        traceback.format_exception(
+            type(captured.value),
+            captured.value,
+            captured.value.__traceback__,
+        )
+    )
+    assert "/private/canonical" not in rendered
+    assert "FileNotFoundError" not in rendered
+    assert "ActualDominantResearchSourceError" not in rendered
 
 
 def test_reducer_uses_true_segment_prefix_but_counts_only_requested_window() -> None:

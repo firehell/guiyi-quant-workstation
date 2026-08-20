@@ -381,6 +381,49 @@ def test_outside_before_completion_blocks_cross_epoch_n() -> None:
     _assert_bar_prefix_invariant(bars)
 
 
+@pytest.mark.parametrize(
+    ("values", "direction"),
+    (
+        (_BULL_VALUES[:6] + (("13", "7.9"),), "up"),
+        (_mirror(_BULL_VALUES[:6] + (("13", "7.9"),)), "down"),
+    ),
+)
+def test_real_producer_cannot_complete_and_break_own_levels_on_one_boundary(
+    values: tuple[tuple[str, str], ...],
+    direction: str,
+) -> None:
+    bars = _bars(values)
+    prior_swings, prior_patterns, _ = _producer(bars[:-1])
+    swings, patterns, _ = _producer(bars)
+
+    assert len(prior_swings.pivots) == 2
+    assert prior_patterns.patterns == ()
+    origin, n1 = prior_swings.pivots
+    if direction == "up":
+        assert (origin.kind, n1.kind) == (
+            NSwingPivotKind.LOW,
+            NSwingPivotKind.HIGH,
+        )
+        assert bars[-1].high > n1.price
+        assert bars[-1].low < bars[-2].low < n1.price
+        assert bars[-1].low < origin.price
+    else:
+        assert (origin.kind, n1.kind) == (
+            NSwingPivotKind.HIGH,
+            NSwingPivotKind.LOW,
+        )
+        assert bars[-1].low < n1.price
+        assert bars[-1].high > bars[-2].high > n1.price
+        assert bars[-1].high > origin.price
+    assert bars[-1].high > bars[-2].high
+    assert bars[-1].low < bars[-2].low
+    assert swings.ambiguous_outside_reset_at == (bars[-1].bar_end,)
+    assert swings.final_epoch == prior_swings.final_epoch + 1
+    assert patterns.patterns == ()
+    assert patterns.break_events == ()
+    _assert_bar_prefix_invariant(bars)
+
+
 def test_same_rank1_segment_may_complete_n_across_trading_day() -> None:
     next_trading_day = _TRADING_DAY + timedelta(days=1)
     bars = tuple(
