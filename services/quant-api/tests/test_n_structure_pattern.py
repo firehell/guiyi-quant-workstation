@@ -943,6 +943,34 @@ def test_public_pattern_evaluator_rejects_non_reducer_swing_trace() -> None:
         )
 
 
+def test_public_pattern_evaluator_sanitizes_malformed_trace_collections() -> None:
+    bars = (
+        _bar(0, high="10", low="9"),
+        _bar(1, high="11", low="9"),
+    )
+    exact = reduce_n_swings(
+        bars,
+        source_timeframe=BarFrequency.M5,
+        contract=_CONTRACT,
+        segment_start_trading_day=_SEGMENT_START,
+        segment_end_trading_day=_TRADING_DAY,
+    )
+
+    for malformed in (
+        replace(exact, pivots=None),  # type: ignore[arg-type]
+        replace(exact, ambiguous_outside_reset_at=None),  # type: ignore[arg-type]
+    ):
+        with pytest.raises(
+            NStructureSeriesError,
+            match="N_STRUCTURE_SERIES_INVALID",
+        ):
+            evaluate_n_patterns(
+                bars,
+                malformed,
+                policy=load_n_structure_policy(),
+            )
+
+
 def test_pattern_validation_does_not_rescan_resets_for_each_pivot() -> None:
     values = (
         ("10", "9"),

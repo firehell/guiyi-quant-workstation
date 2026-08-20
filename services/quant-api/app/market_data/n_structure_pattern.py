@@ -14,6 +14,7 @@ from .n_structure_policy import NStructurePolicy, is_exact_n_structure_policy
 from .n_structure_swing import (
     NStructureContractError,
     NStructureSeriesError,
+    NSwingLeg,
     NSwingPivot,
     NSwingPivotKind,
     NSwingTrace,
@@ -430,6 +431,10 @@ def _validate_inputs(
         raise NStructureContractError()
     if (
         not isinstance(swings, NSwingTrace)
+        or not isinstance(swings.pivots, tuple)
+        or not isinstance(swings.ambiguous_outside_reset_at, tuple)
+        or type(swings.final_epoch) is not int
+        or not isinstance(swings.final_leg, NSwingLeg)
         or any(not isinstance(bar, CanonicalBar) for bar in bars)
         or any(
             previous.bar_end >= current.bar_end

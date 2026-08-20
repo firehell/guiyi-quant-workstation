@@ -494,7 +494,10 @@ def test_range_outside_reset_returns_to_undefined_with_zero_current_evidence() -
     assert snapshot.completed_n_count_in_epoch == 0
     assert trace.transitions[-1].from_kind is NStructureKind.RANGE
     assert trace.transitions[-1].to_kind is NStructureKind.UNDEFINED
-    assert trace.transitions[-1].reason_code == "RANGE_EVIDENCE_EPOCH_RESET"
+    assert (
+        trace.transitions[-1].reason_code
+        is NStructureTransitionReason.RANGE_EVIDENCE_EPOCH_RESET
+    )
 
 
 def test_new_epoch_one_completed_n_remains_undefined() -> None:
@@ -577,7 +580,10 @@ def test_outside_breaks_existing_bull_before_epoch_reset() -> None:
 
     assert trace.snapshots[-1].epoch == 1
     assert trace.snapshots[-1].kind is NStructureKind.RANGE
-    assert trace.transitions[-1].reason_code == "BULL_STRUCTURE_BROKEN"
+    assert (
+        trace.transitions[-1].reason_code
+        is NStructureTransitionReason.BULL_STRUCTURE_BROKEN
+    )
     assert patterns.break_events[-1].kind is NBreakKind.N2_ORIGIN_BROKEN
     assert patterns.break_events[-1].observed_at == bars[-1].bar_end
     _assert_bar_prefix_invariant(bars)
@@ -605,7 +611,7 @@ def test_outside_without_break_keeps_bull_after_new_epoch_opposite_evidence() ->
     assert trace.snapshots[-1].trailing_defense is not None
     assert trace.snapshots[-1].trailing_defense.price == Decimal("9.5")
     assert [transition.reason_code for transition in trace.transitions] == [
-        "BULL_STRUCTURE_ESTABLISHED"
+        NStructureTransitionReason.BULL_STRUCTURE_ESTABLISHED
     ]
     _assert_bar_prefix_invariant(bars)
 
@@ -616,14 +622,14 @@ def test_outside_without_break_keeps_bull_after_new_epoch_opposite_evidence() ->
         (
             _BULL_LATE_PAIR_VALUES,
             NStructureKind.BULL,
-            "BULL_TRAILING_DEFENSE_ADVANCED",
+            NStructureTransitionReason.BULL_TRAILING_DEFENSE_ADVANCED,
             Decimal("9.8"),
             Decimal("9.9"),
         ),
         (
             _mirror(_BULL_LATE_PAIR_VALUES),
             NStructureKind.BEAR,
-            "BEAR_TRAILING_DEFENSE_ADVANCED",
+            NStructureTransitionReason.BEAR_TRAILING_DEFENSE_ADVANCED,
             Decimal("20.2"),
             Decimal("20.1"),
         ),
@@ -632,7 +638,7 @@ def test_outside_without_break_keeps_bull_after_new_epoch_opposite_evidence() ->
 def test_non_defense_pivot_can_complete_new_qualifying_pair(
     values: tuple[tuple[str, str], ...],
     kind: NStructureKind,
-    reason: str,
+    reason: NStructureTransitionReason,
     before: Decimal,
     after: Decimal,
 ) -> None:
@@ -654,19 +660,19 @@ def test_non_defense_pivot_can_complete_new_qualifying_pair(
         (
             _BULL_VALUES + (("14", "9.5"), ("14", "9.4")),
             NStructureKind.BULL,
-            "BULL_STRUCTURE_BROKEN",
+            NStructureTransitionReason.BULL_STRUCTURE_BROKEN,
         ),
         (
             _mirror(_BULL_VALUES + (("14", "9.5"), ("14", "9.4"))),
             NStructureKind.BEAR,
-            "BEAR_STRUCTURE_BROKEN",
+            NStructureTransitionReason.BEAR_STRUCTURE_BROKEN,
         ),
     ),
 )
 def test_existing_defense_break_is_strict_and_equal_does_not_break(
     values: tuple[tuple[str, str], ...],
     kind: NStructureKind,
-    reason: str,
+    reason: NStructureTransitionReason,
 ) -> None:
     equal = _evaluate(_bars(values[:-1]))
     broken = _evaluate(_bars(values))
@@ -686,8 +692,8 @@ def test_same_boundary_initial_establishment_then_new_defense_breaks() -> None:
     )
 
     assert tuple(transition.reason_code for transition in transitions) == (
-        "BEAR_STRUCTURE_ESTABLISHED",
-        "BEAR_STRUCTURE_BROKEN",
+        NStructureTransitionReason.BEAR_STRUCTURE_ESTABLISHED,
+        NStructureTransitionReason.BEAR_STRUCTURE_BROKEN,
     )
     assert tuple(transition.to_kind for transition in transitions) == (
         NStructureKind.BEAR,
@@ -707,8 +713,8 @@ def test_same_boundary_defense_advance_then_new_defense_breaks() -> None:
     )
 
     assert tuple(transition.reason_code for transition in transitions) == (
-        "BULL_TRAILING_DEFENSE_ADVANCED",
-        "BULL_STRUCTURE_BROKEN",
+        NStructureTransitionReason.BULL_TRAILING_DEFENSE_ADVANCED,
+        NStructureTransitionReason.BULL_STRUCTURE_BROKEN,
     )
     assert tuple(transition.to_kind for transition in transitions) == (
         NStructureKind.BULL,

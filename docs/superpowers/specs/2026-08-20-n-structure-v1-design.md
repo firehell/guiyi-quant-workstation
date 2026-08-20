@@ -4,17 +4,13 @@
 >
 > 日期：2026-08-20
 >
-> 初始探索基线：`develop@c62376b65b7776da113a2cc21f4db42a84753f69`
->
-> 最终 Planning Review 基线：`develop@c4b96177350b33bb59356f76615ad5a05762c327`
->
 > 上游阶段：`Candidate Validation V1 / Phase 4B COMPLETE`
 >
 > 原始研究来源：用户提供的《期货技术教程讲义【L修订打印版】》第四章 4.1～4.6（波动、N 字、强弱/支撑压力、分型、结构阶梯）。
 
 ## 1. 结论
 
-下一阶段建立一个独立、research-only、5m-only 的 **N 字 Structural Domain V1**。
+N 字 Structural Domain V1 是一个独立、research-only、5m-only 的价格结构域。
 
 它不是“再加一个指标”，而是把原书中的价格波动归纳转换为可因果复算、可做历史验证的结构事实：
 
