@@ -42,7 +42,8 @@
 ### Task 4: Verification and Review
 
 - [x] 运行 SuBing、Alert、engineering、全 backend、Ruff、Mypy、Web unit、完整 Playwright、build、shell/plist、OpenSpec、secret scan 与 diff check。
-- [ ] 一名独立 reviewer 审查 spec、未来泄漏、installer rollback 与完整 release diff；Critical/Important 必须为 0。
+- [x] 一名独立 reviewer 审查 spec、未来泄漏、installer rollback 与实现 diff；Critical/Important 必须为 0。
+- [ ] 同一 reviewer 审查完整 release diff；Critical/Important 必须为 0。
 - [ ] 合入并 push `develop`，读回 exact remote SHA。
 
 ### Task 5: v1.6.4 Release and Runtime
