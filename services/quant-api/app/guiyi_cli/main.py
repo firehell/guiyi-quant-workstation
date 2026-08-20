@@ -48,12 +48,14 @@ from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
     build_main_force_mirror_futures_research_service,
+    build_n_candidate_validation_service,
     build_n_structure_research_service,
     build_subing_candidate_validation_service,
     build_subing_calibration_research_service,
     build_subing_lifecycle_research_service,
 )
 from app.market_data.after_market import build_after_market_updater
+from app.market_data.candidate_validation_schedule import CandidateValidationRequest
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
@@ -186,6 +188,9 @@ def main(
     candidate_validation_service_factory: ResearchServiceFactory = (
         build_subing_candidate_validation_service
     ),
+    n_candidate_validation_service_factory: ResearchServiceFactory = (
+        build_n_candidate_validation_service
+    ),
     main_force_mirror_futures_research_service_factory: ResearchServiceFactory = (
         build_main_force_mirror_futures_research_service
     ),
@@ -247,7 +252,17 @@ def main(
                 elif args.research_command == "n-structure":
                     service_factory = n_structure_research_service_factory
                 elif args.research_command == "candidate-validation":
-                    service_factory = candidate_validation_service_factory
+                    if not isinstance(research_request, CandidateValidationRequest):
+                        raise ValueError("CLI_CANDIDATE_REQUEST_INVALID")
+                    if (
+                        research_request.candidate_id
+                        == "subing_lifecycle_v2_candidate_v1"
+                    ):
+                        service_factory = candidate_validation_service_factory
+                    elif research_request.candidate_id == "n_structure_5m_candidate_v1":
+                        service_factory = n_candidate_validation_service_factory
+                    else:
+                        raise ValueError("CLI_CANDIDATE_ID_INVALID")
                 elif args.research_command == "main-force-mirror-futures":
                     service_factory = (
                         main_force_mirror_futures_research_service_factory

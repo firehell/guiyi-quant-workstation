@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "protocol_id": "n_structure_validation_v1",
+  "research_only": true,
+  "candidate_frozen_at": "2026-08-20T00:22:00+08:00",
+  "retrospective": {
+    "since": "2023-01-01",
+    "through": "2026-08-19"
+  },
+  "embargo_trading_days": ["2026-08-20"],
+  "rolling_stability": {
+    "reference_months": 12,
+    "test_months": 3,
+    "step_months": 3,
+    "first_test_since": "2024-01-01",
+    "last_test_through": "2026-06-30"
+  },
+  "prospective_oos": {
+    "first_trading_day": "2026-08-21"
+  },
+  "horizons_bars": [3, 5, 8]
+}

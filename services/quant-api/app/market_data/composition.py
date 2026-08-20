@@ -43,6 +43,13 @@ from app.market_data.actual_dominant_research import (
 )
 from app.market_data.n_structure_policy import load_n_structure_policy
 from app.market_data.n_structure_research_service import NStructureResearchService
+from app.market_data.n_candidate_validation_policy import (
+    load_n_candidate_manifest,
+    load_n_candidate_validation_protocol,
+)
+from app.market_data.n_candidate_validation_service import (
+    NStructureCandidateValidationService,
+)
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.market_data.subing_calibration_service import SubingCalibrationResearchService
 from app.market_data.subing_candidate_validation_service import (
@@ -75,6 +82,12 @@ _CANDIDATE_MANIFEST = (
 )
 _CANDIDATE_VALIDATION_PROTOCOL = (
     PROJECT_ROOT / "data/research_protocols/candidate_validation_v1.json"
+)
+_N_CANDIDATE_MANIFEST = (
+    PROJECT_ROOT / "data/research_candidates/n_structure_5m_candidate_v1.json"
+)
+_N_CANDIDATE_VALIDATION_PROTOCOL = (
+    PROJECT_ROOT / "data/research_protocols/n_structure_validation_v1.json"
 )
 
 
@@ -234,6 +247,17 @@ def build_subing_candidate_validation_service(
         build_subing_lifecycle_research_service(session),
         manifest=load_candidate_manifest(_CANDIDATE_MANIFEST),
         protocol=load_candidate_validation_protocol(_CANDIDATE_VALIDATION_PROTOCOL),
+    )
+
+
+def build_n_candidate_validation_service(
+    session: Session,
+) -> NStructureCandidateValidationService:
+    """Compose N Candidate validation over the MDS-only N research path."""
+    return NStructureCandidateValidationService(
+        build_n_structure_research_service(session),
+        manifest=load_n_candidate_manifest(_N_CANDIDATE_MANIFEST),
+        protocol=load_n_candidate_validation_protocol(_N_CANDIDATE_VALIDATION_PROTOCOL),
     )
 
 
