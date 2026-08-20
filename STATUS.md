@@ -8,8 +8,10 @@
   `auto_order=false`，仓库不存在订单创建或提交路径。
 - Data Foundation DFD-01～DFD-07 已完成：active universe 为 60 品种，历史事实链固定为
   `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`。
-- 当前 Git release 与 production Runtime 均为
-  `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`。
+- 当前 Git release 为
+  `v1.6.3@e354ea7c9b1de782af830360ca3048bbb1afd057`；annotated tag object 为
+  `ff15cab6ec94bbbbc2063f1e7e411efae929db89`，message=`Release v1.6.3`。production Runtime 仍为
+  `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c`，尚未执行 v1.6.3 Runtime promotion/switch。
   production Alert 的唯一 active transport 仍为 `clawbot-openclaw-weixin`。
   develop 的 PushPlus transport 尚未 release/promotion，production 收件人仍精确只有 `owner`。
   Market Web 已提供 Radar、品种 K 线、EMA/MACD/HTDY、
@@ -74,6 +76,26 @@
 - production 事实保持不变：仍为
   `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c` 的单 `owner` exact Runtime，两条 Rule 的 Scope
   仍精确为 `jm`。没有 PushPlus 已 release/promotion 或已自然验收的证据。
+
+## v1.6.3 Market Radar Freshness Watermark（RELEASED；RUNTIME PROMOTION PENDING）
+
+- v1.6.3 release 只包含 Market Radar freshness 合同、API/Web 实现与测试：区分 `target_as_of`、统一计算使用的
+  `data_as_of` 及 `current / pending_after_market / degraded`，并保留 `expected_as_of` 兼容别名。
+- 同日盘后部分目标日 Bar 已发布时，Radar 统一裁剪到严格早于目标日的最近 Canonical 日期；每个品种
+  仍以完整 300-Bar 指标窗口计算，目标日 Bar 不参与。完整上一日快照继续返回 `ready / 60/60`，跨日
+  缺失仅标记真正 stale 的品种。
+- candidate 严格保持 `MarketDataService -> Canonical` 只读链路，不接 Redis/Live、after-market 状态文件、
+  临时 D1、缓存、轮询或持久化，不修改 Data Foundation、Catalog、MainContractMap、K 线 seam、DB、
+  Alert Scope、通知或订单边界。
+- Release PR #190 已合入 `main@e354ea7c9b1de782af830360ca3048bbb1afd057`；annotated `v1.6.3`
+  peeled commit 精确为同一 main commit，tag object 为 `ff15cab6ec94bbbbc2063f1e7e411efae929db89`，
+  message=`Release v1.6.3`。release diff 明确排除 develop 的 PushPlus、N Structure、migration、Scope
+  与其他未发布差异；五服务 Runtime promotion/switch 尚未执行，production 保持 v1.6.2。
+- release candidate fresh 验证为后端 `1585 passed`（隔离 PostgreSQL）、engineering `56 passed`、
+  Ruff PASS、Mypy `65 source files`、Web unit `199 passed / 1 skipped`、指定 Playwright `61 passed`、
+  production build `2997 modules`、secret scan `finding_count=0` 与 diff check PASS。独立双轴 Review 的
+  唯一 Important（pending 快照可能少一根历史输入）已以 `301 query -> 统一裁剪 -> 300 metric bars`
+  关闭，同一 reviewer 最终读回 `Ready to merge: Yes`。
 
 ## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
 

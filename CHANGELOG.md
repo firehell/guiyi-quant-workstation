@@ -2,6 +2,20 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.6.3] - 2026-08-20
+
+- 修复 Market Radar 在同日盘后 Canonical 更新窗口内将理论目标日直接作为参与门槛、误报全市场
+  `0/60 stale` 的问题；Radar 现在区分 `target_as_of` 与统一计算使用的 `data_as_of`。
+- 当目标日尚未 60/60 时，继续展示严格早于目标日的最近完整 Canonical 快照，并以
+  `pending_after_market / 盘后更新待完成 / status=ready / 60/60` 明示 freshness；目标日全部发布后
+  自动恢复 `current`，跨自然日真实缺失仍只降级对应品种。
+- API 以加法方式新增 `target_as_of`、`data_as_of`、`freshness_state`、`freshness_message`，保留
+  `expected_as_of` 作为 `target_as_of` 的兼容别名；Web 同时展示数据日、目标日与三态中文标签。
+- Radar 仍只经 `MarketDataService` 读取 Canonical 日线；本版不包含 Redis/Live Radar、临时 D1、
+  migration、PushPlus、N Structure、Scope、通知、数据写入或订单能力，`auto_order=false` 不变。
+- 本条首先形成 Radar-only release candidate；正式 main/tag/release 与 production Runtime 切换仍是
+  两个独立的单次 Gate。
+
 ## [1.6.2] - 2026-08-20
 
 - 新增 60m、`contract | actual_dominant` 的 `main_force_mirror_futures_v1` Web observation 与
