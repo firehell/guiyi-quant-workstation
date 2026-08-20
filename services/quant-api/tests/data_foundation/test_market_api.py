@@ -225,6 +225,10 @@ class FakeRadarService:
         return SimpleNamespace(
             status="ready",
             expected_as_of=date(2025, 1, 2),
+            target_as_of=date(2025, 1, 2),
+            data_as_of=date(2025, 1, 1),
+            freshness_state="pending_after_market",
+            freshness_message="盘后更新待完成",
             active_count=60,
             participant_count=60,
             stale=(),
@@ -247,6 +251,11 @@ def test_market_radar_api_returns_explicit_freshness_and_transparent_reasons(mon
     assert response.status_code == 200
     payload = response.json()
     assert payload["expected_as_of"] == "2025-01-02"
+    assert payload["expected_as_of"] == payload["target_as_of"]
+    assert payload["target_as_of"] == "2025-01-02"
+    assert payload["data_as_of"] == "2025-01-01"
+    assert payload["freshness_state"] == "pending_after_market"
+    assert payload["freshness_message"] == "盘后更新待完成"
     assert payload["active_count"] == 60
     assert payload["participant_count"] == 60
     assert payload["summary"] == {

@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 
-function radar(status = 'ready') {
+function radar(freshnessState = 'current') {
+  const degraded = freshnessState === 'degraded'
+  const pending = freshnessState === 'pending_after_market'
   const items = [
     {
       symbol: 'ag', product_name: '白银', sector: 'precious', price_change_1d: '0.032',
@@ -16,10 +18,15 @@ function radar(status = 'ready') {
     },
   ]
   return {
-    status,
-    expected_as_of: '2026-08-11', active_count: 60,
-    participant_count: status === 'ready' ? 60 : 59,
-    stale: status === 'ready' ? [] : ['jm'], unavailable: [],
+    status: degraded ? 'degraded' : 'ready',
+    expected_as_of: '2026-08-11',
+    target_as_of: '2026-08-11',
+    data_as_of: pending ? '2026-08-10' : '2026-08-11',
+    freshness_state: freshnessState,
+    freshness_message: degraded ? '数据异常' : pending ? '盘后更新待完成' : '当前完整',
+    active_count: 60,
+    participant_count: degraded ? 59 : 60,
+    stale: degraded ? ['jm'] : [], unavailable: [],
     summary: {
       up_count: 1, down_count: 1, volume_expansion_count: 1,
       oi_increase_count: 1, high_volatility_count: 1,
@@ -28,7 +35,7 @@ function radar(status = 'ready') {
     attention: items,
     sector_summary: [
       { sector: 'precious', total_count: 1, participant_count: 1, up_count: 1, down_count: 0, median_price_change_1d: '0.032', attention_count: 1 },
-      { sector: 'black', total_count: 1, participant_count: status === 'ready' ? 1 : 0, up_count: 0, down_count: status === 'ready' ? 1 : 0, median_price_change_1d: status === 'ready' ? '-0.021' : null, attention_count: status === 'ready' ? 1 : 0 },
+      { sector: 'black', total_count: 1, participant_count: degraded ? 0 : 1, up_count: 0, down_count: degraded ? 0 : 1, median_price_change_1d: degraded ? null : '-0.021', attention_count: degraded ? 0 : 1 },
     ],
   }
 }
@@ -43,7 +50,10 @@ test('renders a freshness-aware market discovery view and routes scatter items t
   await page.goto('/market')
 
   await expect(page.getByText('市场概览', { exact: true })).toBeVisible()
-  await expect(page.getByText('2026-08-11 · 60/60')).toBeVisible()
+  await expect(page.getByText('当前数据日期 2026-08-11', { exact: true })).toBeVisible()
+  await expect(page.getByText('目标交易日 2026-08-11', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前完整', { exact: true })).toBeVisible()
+  await expect(page.getByText('60/60', { exact: true })).toBeVisible()
   await expect(page.getByText('价格变化 × OI 变化', { exact: true })).toBeVisible()
   await expect(page.getByText('值得关注', { exact: true })).toBeVisible()
   await expect(page.getByText('上涨 + 增仓', { exact: true })).toBeVisible()
@@ -57,10 +67,32 @@ test('renders a freshness-aware market discovery view and routes scatter items t
   await expect(page).toHaveURL(/\/market\/chart\?symbol=ag&series_kind=actual_dominant&frequency=15m/)
 })
 
-test('does not conceal incomplete freshness as a full-universe result', async ({ page }) => {
+test('shows a complete previous snapshot as pending without a false market-wide warning', async ({ page }) => {
+  await mockRadar(page, radar('pending_after_market'))
+  await page.goto('/market')
+
+  await expect(page.getByText('当前数据日期 2026-08-10', { exact: true })).toBeVisible()
+  await expect(page.getByText('目标交易日 2026-08-11', { exact: true })).toBeVisible()
+  await expect(page.getByText('盘后更新待完成', { exact: true })).toBeVisible()
+  await expect(page.getByText('60/60', { exact: true })).toBeVisible()
+  await expect(page.getByText(/Radar 数据不完整/)).toHaveCount(0)
+})
+
+test('does not conceal degraded freshness as a full-universe result', async ({ page }) => {
   await mockRadar(page, radar('degraded'))
   await page.goto('/market')
 
-  await expect(page.getByText('2026-08-11 · 59/60')).toBeVisible()
+  await expect(page.getByText('数据异常', { exact: true })).toBeVisible()
+  await expect(page.getByText('59/60', { exact: true })).toBeVisible()
   await expect(page.getByText('Radar 数据不完整：stale jm', { exact: true })).toBeVisible()
+})
+
+test('keeps the freshness summary readable at a narrow viewport', async ({ page }) => {
+  await mockRadar(page, radar('pending_after_market'))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/market')
+
+  await expect(page.getByText('当前数据日期 2026-08-10', { exact: true })).toBeVisible()
+  await expect(page.getByText('目标交易日 2026-08-11', { exact: true })).toBeVisible()
+  await expect(page.getByText('盘后更新待完成', { exact: true })).toBeVisible()
 })
