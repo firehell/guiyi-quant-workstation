@@ -90,6 +90,10 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
     return not bool(getattr(args, "apply", False))
 
 
+def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
+    return not raw or raw[0] != "recipients"
+
+
 def _execution_review_roll_marker_state(
     project_root: Path = PROJECT_ROOT,
 ) -> str:
@@ -214,7 +218,9 @@ def main(
         return 1
     except (CliUsageError, ValueError):
         # 参数/用法错误：固定 CLI_ARGUMENT_INVALID，不写 stack trace
-        print_json(argument_error_payload(command), stderr)
+        payload = argument_error_payload(command)
+        payload["readonly"] = _parse_error_is_readonly(raw)
+        print_json(payload, stderr)
         return 2
 
     try:

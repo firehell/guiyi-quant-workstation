@@ -22,6 +22,7 @@ from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage,
 from app.alerts.recipients import (
     ClawbotRecipient,
     ClawbotRecipientError,
+    RecipientDirectory,
     load_recipient_directory,
     validate_clawbot_recipient_ids,
 )
@@ -280,8 +281,15 @@ def _child_environment(dependency: ClawbotDependency) -> dict[str, str]:
 
 
 class ClawbotRunner:
-    def __init__(self, dependency: ClawbotDependency, *, run_process: RunProcess = subprocess.run) -> None:
+    def __init__(
+        self,
+        dependency: ClawbotDependency,
+        *,
+        recipient_directory: RecipientDirectory,
+        run_process: RunProcess = subprocess.run,
+    ) -> None:
         self.dependency = dependency
+        self._active_recipients = frozenset(recipient_directory.recipients)
         self._run_process = run_process
 
     def discover_owner(self) -> ClawbotOwnerCandidate:
@@ -338,6 +346,7 @@ class ClawbotRunner:
         return ClawbotContext(user_id, context_token)
 
     def probe(self, recipient: ClawbotRecipient) -> None:
+        self._require_active_recipient(recipient)
         payload = self._invoke(
             {"action": "probe", "account_id": recipient.account_id, "target_user_id": recipient.target_user_id},
             expected_status="ready",
@@ -346,12 +355,17 @@ class ClawbotRunner:
             raise ClawbotError("CLAWBOT_CHILD_FAILED")
 
     def send_text(self, recipient: ClawbotRecipient, text: str) -> None:
+        self._require_active_recipient(recipient)
         payload = self._invoke(
             {"action": "send", "account_id": recipient.account_id, "target_user_id": recipient.target_user_id, "text": text},
             expected_status="accepted",
         )
         if payload != {"status": "accepted", "action": "send"}:
             raise ClawbotError("CLAWBOT_CHILD_FAILED")
+
+    def _require_active_recipient(self, recipient: ClawbotRecipient) -> None:
+        if recipient not in self._active_recipients:
+            raise ClawbotError("CLAWBOT_RECIPIENT_INVALID")
 
     def _invoke(self, payload: dict[str, object], *, expected_status: str) -> dict[str, Any]:
         argv = [str(self.dependency.node_bin), str(SINGLE_SHOT_PATH)]
@@ -414,7 +428,12 @@ def build_clawbot_dependency_from_env(*, verify_versions: bool) -> ClawbotDepend
 
 
 def build_clawbot_runner_from_env(*, verify_versions: bool = True) -> ClawbotRunner:
-    return ClawbotRunner(build_clawbot_dependency_from_env(verify_versions=verify_versions))
+    dependency = build_clawbot_dependency_from_env(verify_versions=verify_versions)
+    try:
+        directory = load_recipient_directory(dependency.recipients_path)
+    except ClawbotRecipientError:
+        raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY") from None
+    return ClawbotRunner(dependency, recipient_directory=directory)
 
 
 def build_clawbot_sender_from_env(*, live_probe: bool = True) -> ClawbotAlertSender:

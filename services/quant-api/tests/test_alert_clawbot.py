@@ -19,7 +19,11 @@ from app.alerts.clawbot import (
 )
 from app.alerts.clawbot_owner import write_clawbot_owner_atomic
 from app.alerts.notification import ALERT_CANARY_TEXT, AlertNotificationMessage, format_alert_message
-from app.alerts.recipients import ClawbotRecipient, initialize_recipients_from_owner
+from app.alerts.recipients import (
+    ClawbotRecipient,
+    RecipientDirectory,
+    initialize_recipients_from_owner,
+)
 
 
 def _tree(tmp_path: Path) -> tuple[ClawbotDependency, Path]:
@@ -73,6 +77,16 @@ def _tree(tmp_path: Path) -> tuple[ClawbotDependency, Path]:
 
 def _recipient() -> ClawbotRecipient:
     return ClawbotRecipient("owner", "fixture-account", "fixture-owner@im.wechat")
+
+
+def _directory(*recipients: ClawbotRecipient) -> RecipientDirectory:
+    return RecipientDirectory(
+        2,
+        "openclaw-weixin",
+        "fixture-account",
+        recipients or (_recipient(),),
+        (),
+    )
 
 
 def _message() -> AlertNotificationMessage:
@@ -248,7 +262,9 @@ def test_runner_uses_fixed_argv_stdin_and_allowlisted_environment(tmp_path: Path
             "private raw stderr",
         )
 
-    candidate = ClawbotRunner(dependency, run_process=run).discover_owner()
+    candidate = ClawbotRunner(
+        dependency, recipient_directory=_directory(), run_process=run
+    ).discover_owner()
 
     assert candidate == ClawbotOwnerCandidate("fixture-account", "fixture-owner@im.wechat")
     assert observed["argv"] == [str(dependency.node_bin), str(clawbot.SINGLE_SHOT_PATH)]
@@ -302,7 +318,9 @@ def test_runner_captures_one_private_context_snapshot_without_exposing_it_in_rep
             "private raw stderr",
         )
 
-    account_id, contexts = ClawbotRunner(dependency, run_process=run).snapshot_contexts()
+    account_id, contexts = ClawbotRunner(
+        dependency, recipient_directory=_directory(), run_process=run
+    ).snapshot_contexts()
 
     assert calls == 1
     assert account_id == "fixture-account"
@@ -311,6 +329,63 @@ def test_runner_captures_one_private_context_snapshot_without_exposing_it_in_rep
         ("fixture-owner@im.wechat", "fixture-owner-context"),
     )
     assert "fixture" not in repr(contexts)
+
+
+def test_runner_rejects_recipient_outside_frozen_directory_before_starting_child(
+    tmp_path: Path,
+) -> None:
+    dependency, _ = _tree(tmp_path)
+    calls = 0
+
+    def run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("unbound recipient must fail before child")
+
+    runner = ClawbotRunner(
+        dependency,
+        recipient_directory=_directory(),
+        run_process=run,
+    )
+    unbound = ClawbotRecipient(
+        "friend", "fixture-account", "fixture-friend@im.wechat"
+    )
+
+    with pytest.raises(ClawbotError, match="^CLAWBOT_RECIPIENT_INVALID$"):
+        runner.probe(unbound)
+    with pytest.raises(ClawbotError, match="^CLAWBOT_RECIPIENT_INVALID$"):
+        runner.send_text(unbound, "fixture alert")
+
+    assert calls == 0
+
+
+def test_runner_allows_frozen_active_recipient_for_probe_and_send(tmp_path: Path) -> None:
+    dependency, _ = _tree(tmp_path)
+    payloads: list[dict[str, object]] = []
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        payload = json.loads(str(kwargs["input"]))
+        payloads.append(payload)
+        output = (
+            {"status": "ready", "action": "probe", "account_configured": True, "context_available": True}
+            if payload["action"] == "probe"
+            else {"status": "accepted", "action": "send"}
+        )
+        return subprocess.CompletedProcess(argv, 0, json.dumps(output), "")
+
+    active = ClawbotRecipient(
+        "friend", "fixture-account", "fixture-friend@im.wechat"
+    )
+    runner = ClawbotRunner(
+        dependency,
+        recipient_directory=_directory(_recipient(), active),
+        run_process=run,
+    )
+
+    runner.probe(active)
+    runner.send_text(active, "fixture alert")
+
+    assert [payload["action"] for payload in payloads] == ["probe", "send"]
 
 
 @pytest.mark.parametrize(
@@ -346,7 +421,9 @@ def test_runner_discovery_rejects_ids_that_owner_schema_cannot_persist(
         )
 
     with pytest.raises(ClawbotError, match="^CLAWBOT_CHILD_FAILED$"):
-        ClawbotRunner(dependency, run_process=run).discover_owner()
+        ClawbotRunner(
+            dependency, recipient_directory=_directory(), run_process=run
+        ).discover_owner()
 
 
 @pytest.mark.parametrize("failure", ["timeout", "crash", "malformed", "private_error"])
@@ -366,7 +443,9 @@ def test_runner_failure_never_respawns_or_leaks_raw_child_output(tmp_path: Path,
         return subprocess.CompletedProcess(argv, 1, '{"status":"error","error":"CLAWBOT_CONTEXT_UNAVAILABLE"}', "private token")
 
     with pytest.raises(ClawbotError) as captured:
-        ClawbotRunner(dependency, run_process=run).probe(_recipient())
+        ClawbotRunner(
+            dependency, recipient_directory=_directory(), run_process=run
+        ).probe(_recipient())
 
     assert calls == 1
     assert "private" not in str(captured.value)
@@ -380,7 +459,12 @@ def test_sender_formats_once_and_canary_reports_provider_acceptance(tmp_path: Pa
         payloads.append(json.loads(str(kwargs["input"])))
         return subprocess.CompletedProcess(argv, 0, '{"status":"accepted","action":"send"}', "")
 
-    sender = ClawbotAlertSender(_recipient(), ClawbotRunner(dependency, run_process=run))
+    sender = ClawbotAlertSender(
+        _recipient(),
+        ClawbotRunner(
+            dependency, recipient_directory=_directory(), run_process=run
+        ),
+    )
     sender.send(_message())
     summary = sender.send_canary()
 
@@ -403,7 +487,12 @@ def test_canary_failure_is_one_attempt_and_sanitized(tmp_path: Path) -> None:
         calls += 1
         return subprocess.CompletedProcess(argv, 1, '{"status":"error","error":"CLAWBOT_SEND_FAILED"}', "private")
 
-    summary = ClawbotAlertSender(_recipient(), ClawbotRunner(dependency, run_process=run)).send_canary()
+    summary = ClawbotAlertSender(
+        _recipient(),
+        ClawbotRunner(
+            dependency, recipient_directory=_directory(), run_process=run
+        ),
+    ).send_canary()
 
     assert calls == 1
     assert summary.attempted == 1

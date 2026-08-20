@@ -65,7 +65,7 @@ async function readInput() {
 
 
 function isPrivateText(value) {
-  return typeof value === "string" && Boolean(value) && value.trim() === value && !/[\u0000-\u001f\u007f]/u.test(value);
+  return typeof value === "string" && Boolean(value) && value.trim() === value && !/\p{C}/u.test(value);
 }
 
 
@@ -276,7 +276,9 @@ async function snapshotContexts(dependency) {
 async function loadFrozenRecipient(dependency, input) {
   const accountId = requirePrivateText(input.account_id);
   const targetUserId = requirePrivateText(input.target_user_id);
-  if (!targetUserId.endsWith("@im.wechat")) fail("CLAWBOT_OWNER_INVALID");
+  if (!targetUserId.endsWith("@im.wechat") || targetUserId === "@im.wechat") {
+    fail("CLAWBOT_OWNER_INVALID");
+  }
   const account = await dependency.accounts.loadWeixinAccount(accountId);
   if (
     !account ||
@@ -289,7 +291,7 @@ async function loadFrozenRecipient(dependency, input) {
   }
   await dependency.inbound.restoreContextTokens(accountId);
   const contextToken = await dependency.inbound.getContextToken(accountId, targetUserId);
-  if (typeof contextToken !== "string" || !contextToken.trim()) fail("CLAWBOT_CONTEXT_UNAVAILABLE");
+  if (!isPrivateText(contextToken)) fail("CLAWBOT_CONTEXT_UNAVAILABLE");
   return { account, accountId, targetUserId, contextToken };
 }
 

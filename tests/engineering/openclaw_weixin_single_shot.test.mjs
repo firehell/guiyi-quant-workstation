@@ -49,6 +49,9 @@ export async function loadWeixinAccount() {
     `export async function restoreContextTokens() {}
 export async function getContextToken(_accountId, targetUserId) {
   if (process.env.FAKE_SCENARIO === "missing_context") return "";
+  if (process.env.FAKE_SCENARIO === "context_leading_space") return " fixture-context";
+  if (process.env.FAKE_SCENARIO === "context_control") return "fixture\\ncontext";
+  if (process.env.FAKE_SCENARIO === "context_c1") return "fixture\\u0085context";
   if (targetUserId === "fixture-friend@im.wechat") return "fixture-friend-context";
   return "fixture-context";
 }
@@ -306,6 +309,34 @@ test("send accepts one direct friend and invokes Tencent exactly once", () => {
   assert.equal(result.calls[0].to, "fixture-friend@im.wechat");
   assert.equal(result.calls[0].opts.contextToken, "fixture-friend-context");
 });
+
+
+for (const [name, targetUserId, scenario, error] of [
+  ["suffix-only target", "@im.wechat", "ready", "CLAWBOT_OWNER_INVALID"],
+  ["leading-space target", " fixture-friend@im.wechat", "ready", "CLAWBOT_INPUT_INVALID"],
+  ["control target", "fixture\nfriend@im.wechat", "ready", "CLAWBOT_INPUT_INVALID"],
+  ["C1 target", "fixture\u0085friend@im.wechat", "ready", "CLAWBOT_INPUT_INVALID"],
+  ["leading-space context", "fixture-owner@im.wechat", "context_leading_space", "CLAWBOT_CONTEXT_UNAVAILABLE"],
+  ["control context", "fixture-owner@im.wechat", "context_control", "CLAWBOT_CONTEXT_UNAVAILABLE"],
+  ["C1 context", "fixture-owner@im.wechat", "context_c1", "CLAWBOT_CONTEXT_UNAVAILABLE"],
+]) {
+  test(`direct send rejects ${name} before physical send`, () => {
+    const result = invoke(
+      fixture(),
+      {
+        action: "send",
+        account_id: "fixture-account",
+        target_user_id: targetUserId,
+        text: "fixture alert",
+      },
+      scenario,
+    );
+
+    assert.notEqual(result.status, 0);
+    assert.equal(result.output.error, error);
+    assert.deepEqual(result.calls, []);
+  });
+}
 
 
 test("send invokes Tencent primitive exactly once with the required shape", () => {

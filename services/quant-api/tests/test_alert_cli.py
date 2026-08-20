@@ -186,6 +186,43 @@ def test_recipient_failure_is_nonreadonly_and_never_exposes_private_values() -> 
     assert "fixture" not in json.dumps(payload)
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["recipients", "prepare"],
+        ["recipients", "confirm", "--alias", "alice", "--confirm"],
+        ["recipients", "unknown"],
+    ],
+)
+def test_recipient_parser_failures_remain_nonreadonly_mutations(
+    arguments: list[str],
+) -> None:
+    code, payload = _run(arguments)
+
+    assert code == 2
+    assert payload["status"] == "error"
+    assert payload["readonly"] is False
+    assert payload["error"] == {
+        "code": "CLI_ARGUMENT_INVALID",
+        "type": "CliUsageError",
+    }
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["runtime", "status", "--unexpected"],
+        ["research", "unknown"],
+    ],
+)
+def test_readonly_command_parser_failures_stay_readonly(arguments: list[str]) -> None:
+    code, payload = _run(arguments)
+
+    assert code == 2
+    assert payload["status"] == "error"
+    assert payload["readonly"] is True
+
+
 def test_clawbot_preflight_loads_frozen_owner_and_never_sends() -> None:
     calls: list[object] = []
     owner = ClawbotRecipient(
