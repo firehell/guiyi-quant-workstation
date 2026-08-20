@@ -67,12 +67,14 @@
   main/release/tag、Runtime promotion/switch 或外部旧配置清理。
 - 专用 Topic 已创建且当前 3 人由用户确认；第 4 人允许后续加入。`owner` 单次真实 canary 已由
   PushPlus 接受（公开回执后缀 `b82d85`），且用户已确认微信实际收到，`delivery_confirmed=true`；
-  未重试且未发送 Topic。独立 pending Gate 为：执行 `htdy_observers` 真实 canary、取得精确 Rule + Scope +
+  未重试。`htdy_observers` 单次真实 Topic canary 也已由 PushPlus 接受（公开回执后缀 `e045b2`），
+  当前 `delivery_confirmed=false`，未重试，等待 Topic 当前三位成员人工确认。独立 pending Gate 为：
+  完成 Topic 实际送达确认、取得精确 Rule + Scope +
   audience + transport 持续授权、main/release/tag、exact-tag Alert Runtime promotion/switch/readback 与
   自然 HTDY 验收。代码和测试不授权其中任何一步。
 - production 事实保持不变：仍为
   `v1.6.2@dbdf6da49d75353a478675a3584de0f91c8bd85c` 的单 `owner` exact Runtime，两条 Rule 的 Scope
-  仍精确为 `jm`。没有 PushPlus Topic 已发送、已 release/promotion 或已自然验收的证据。
+  仍精确为 `jm`。没有 PushPlus 已 release/promotion 或已自然验收的证据。
 
 ## SuBing Lifecycle V2 Review 修复（DEVELOP CODE_COMPLETE / TEST_COMPLETE）
 
@@ -449,5 +451,5 @@ HTTP·Web·worker、data-center HTTP、旧 RQ worker/scheduler、自动交易与
   `passed/attempts=1` 业务证据，未手工运行、回填、retry 或补证。
 - SuBing Natural Canary 继续作为独立 pending evidence；无自然 Event 就保持 pending，
   不人工补证；该独立 pending 状态不改写 `v1.6.2` release/Runtime promotion 或 G9 明确豁免收口事实。
-- 最小下一步：保持 production `v1.6.2 + clawbot-openclaw-weixin` 不变；单独批准一次
-  `htdy_observers` Topic canary，并由当前三位成员人工确认实际收到。
+- 最小下一步：保持 production `v1.6.2 + clawbot-openclaw-weixin` 不变；由 Topic 当前三位成员人工
+  确认是否都实际收到本次 canary，不重试或补发。
