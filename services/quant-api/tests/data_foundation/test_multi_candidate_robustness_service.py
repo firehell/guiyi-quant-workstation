@@ -252,6 +252,18 @@ class _ValidationRunner:
         return self.report
 
 
+class _ZeroEventRunner(_Runner):
+    def entry_events(
+        self, request: object
+    ) -> tuple[SubingLifecycleEntryResearchEvent, ...]:
+        return ()
+
+    def completion_events(
+        self, request: object
+    ) -> tuple[NStructureCompletionResearchEvent, ...]:
+        return ()
+
+
 class _FailingLoader:
     def __init__(self, error: Exception) -> None:
         self.error = error
@@ -515,3 +527,36 @@ def test_active_universe_drift_aborts_before_any_research() -> None:
             n_validation=_ValidationRunner(_validation_report("n")),
             current_active_products=protocol.cross_symbol_products[:-1],
         )
+
+
+def test_final_orchestration_retains_valid_zero_event_relationships() -> None:
+    report = _service(
+        subing=_ZeroEventRunner("subing"),
+        n=_ZeroEventRunner("n"),
+    ).run(MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"))
+
+    assert tuple(
+        (
+            relationship.source_candidate_id,
+            relationship.target_candidate_id,
+            relationship.source_event_count,
+            relationship.target_event_count,
+            relationship.nearest_match_count_within_8,
+        )
+        for relationship in report.relationships
+    ) == (
+        (
+            "subing_lifecycle_v2_candidate_v1",
+            "n_structure_5m_candidate_v1",
+            0,
+            0,
+            0,
+        ),
+        (
+            "n_structure_5m_candidate_v1",
+            "subing_lifecycle_v2_candidate_v1",
+            0,
+            0,
+            0,
+        ),
+    )

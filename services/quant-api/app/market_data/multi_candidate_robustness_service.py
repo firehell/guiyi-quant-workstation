@@ -21,6 +21,7 @@ from .multi_candidate_robustness import (
     MultiCandidateRobustnessReport,
 )
 from .multi_candidate_events import (
+    CandidateResearchEvent,
     from_n_completion,
     from_subing_entry,
     summarize_candidate_relationship,
@@ -210,8 +211,18 @@ class MultiCandidateRobustnessService:
             from_n_completion(event) for event in self._n.completion_events(n_request)
         )
         relationships = (
-            _relationship(subing_events, n_events),
-            _relationship(n_events, subing_events),
+            _relationship(
+                subing_events,
+                n_events,
+                "subing_lifecycle_v2_candidate_v1",
+                "n_structure_5m_candidate_v1",
+            ),
+            _relationship(
+                n_events,
+                subing_events,
+                "n_structure_5m_candidate_v1",
+                "subing_lifecycle_v2_candidate_v1",
+            ),
         )
         quality_flags: list[str] = []
         if any(row.status is CandidateSymbolStatus.UNAVAILABLE for row in rows):
@@ -556,12 +567,34 @@ def _decimal_median(values: Sequence[int]) -> Decimal:
 
 
 def _relationship(
-    source_events: tuple[object, ...], target_events: tuple[object, ...]
+    source_events: tuple[CandidateResearchEvent, ...],
+    target_events: tuple[CandidateResearchEvent, ...],
+    source_candidate_id: str,
+    target_candidate_id: str,
 ) -> CandidateRelationshipSummary:
     if source_events or target_events:
         return summarize_candidate_relationship(
-            source_events,  # type: ignore[arg-type]
-            target_events,  # type: ignore[arg-type]
+            source_events,
+            target_events,
             proximity_bars=(3, 5, 8),
         )
-    raise ValueError("MULTI_CANDIDATE_EVENT_INVALID")
+    return CandidateRelationshipSummary(
+        source_candidate_id=source_candidate_id,
+        target_candidate_id=target_candidate_id,
+        source_event_count=0,
+        target_event_count=0,
+        exact_same_direction_count=0,
+        exact_opposite_direction_count=0,
+        within_3_same_direction_source_count=0,
+        within_5_same_direction_source_count=0,
+        within_8_same_direction_source_count=0,
+        nearest_match_count_within_8=0,
+        signed_distance_min=None,
+        signed_distance_median=None,
+        signed_distance_max=None,
+        target_earlier_count=0,
+        target_same_boundary_count=0,
+        target_later_count=0,
+        same_trading_day_count=0,
+        cross_trading_day_count=0,
+    )

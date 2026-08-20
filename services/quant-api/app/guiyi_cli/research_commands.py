@@ -25,6 +25,7 @@ from app.market_data.main_force_mirror_futures_research_service import (
 )
 from app.market_data.multi_candidate_robustness import (
     CommonPriceHorizonSummary,
+    CrossSymbolCandidateSummary,
     MultiCandidateRobustnessReport,
 )
 from app.market_data.multi_candidate_robustness_policy import (
@@ -338,26 +339,28 @@ def _symbol_robustness_payload(value: object) -> dict[str, object]:
     }
 
 
-def _cross_symbol_summary_payload(value: object) -> dict[str, object]:
+def _cross_symbol_summary_payload(
+    value: CrossSymbolCandidateSummary,
+) -> dict[str, object]:
     return {
         "candidate_id": value.candidate_id,  # type: ignore[attr-defined]
         "product_count": value.product_count,  # type: ignore[attr-defined]
         "available_product_count": value.available_product_count,  # type: ignore[attr-defined]
         "unavailable_product_count": value.unavailable_product_count,  # type: ignore[attr-defined]
-        "products_with_events": value.products_with_events,  # type: ignore[attr-defined]
-        "products_without_events": value.products_without_events,  # type: ignore[attr-defined]
+        "symbols_with_events": value.symbols_with_events,
+        "symbols_without_events": value.symbols_without_events,
         "event_rate_available_count": value.event_rate_available_count,  # type: ignore[attr-defined]
         "event_rate_min": _optional_decimal(value.event_rate_min),  # type: ignore[attr-defined]
         "event_rate_median": _optional_decimal(value.event_rate_median),  # type: ignore[attr-defined]
         "event_rate_max": _optional_decimal(value.event_rate_max),  # type: ignore[attr-defined]
         "horizon_sign_summary": {
             str(horizon): {
-                "available_median_return_symbols": summary.available_median_return_symbols,
+                "symbols_with_samples": summary.symbols_with_samples,
                 "positive_median_return_symbols": summary.positive_median_return_symbols,
                 "zero_median_return_symbols": summary.zero_median_return_symbols,
                 "negative_median_return_symbols": summary.negative_median_return_symbols,
             }
-            for horizon, summary in value.horizon_sign_summary.items()  # type: ignore[attr-defined]
+            for horizon, summary in value.horizon_sign_summary.items()
         },
     }
 

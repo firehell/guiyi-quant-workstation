@@ -1925,7 +1925,7 @@ def _robustness_report() -> SimpleNamespace:
         horizon_summary={3: horizon, 5: horizon, 8: horizon},
     )
     sign = SimpleNamespace(
-        available_median_return_symbols=1,
+        symbols_with_samples=1,
         positive_median_return_symbols=1,
         zero_median_return_symbols=0,
         negative_median_return_symbols=0,
@@ -1935,8 +1935,8 @@ def _robustness_report() -> SimpleNamespace:
         product_count=60,
         available_product_count=60,
         unavailable_product_count=0,
-        products_with_events=1,
-        products_without_events=59,
+        symbols_with_events=1,
+        symbols_without_events=59,
         event_rate_available_count=60,
         event_rate_min=Decimal("0"),
         event_rate_median=Decimal("0"),
