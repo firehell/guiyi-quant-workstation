@@ -396,6 +396,33 @@ def test_runner_allows_frozen_active_recipient_for_probe_and_send(tmp_path: Path
     runner.send_text(active, "fixture alert")
 
     assert [payload["action"] for payload in payloads] == ["probe", "send"]
+    assert [payload["recipient_alias"] for payload in payloads] == ["friend", "friend"]
+
+
+def test_runner_propagates_public_owner_mismatch_without_private_values(
+    tmp_path: Path,
+) -> None:
+    dependency, _ = _tree(tmp_path)
+    payloads: list[dict[str, object]] = []
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        payloads.append(json.loads(str(kwargs["input"])))
+        return subprocess.CompletedProcess(
+            argv,
+            1,
+            '{"status":"error","error":"CLAWBOT_OWNER_INVALID"}',
+            "private owner mismatch",
+        )
+
+    with pytest.raises(ClawbotError, match="^CLAWBOT_OWNER_INVALID$") as captured:
+        ClawbotRunner(
+            dependency,
+            recipient_directory=_directory(),
+            run_process=run,
+        ).send_text(_recipient(), "fixture alert")
+
+    assert payloads[0]["recipient_alias"] == "owner"
+    assert "private" not in str(captured.value)
 
 
 @pytest.mark.parametrize(
@@ -479,8 +506,20 @@ def test_sender_fans_htdy_out_to_every_frozen_recipient_once(tmp_path: Path) -> 
     sender.send(_message())
 
     assert payloads == [
-        {"action": "send", "account_id": "fixture-account", "target_user_id": "fixture-owner@im.wechat", "text": format_alert_message(_message())},
-        {"action": "send", "account_id": "fixture-account", "target_user_id": "fixture-alice@im.wechat", "text": format_alert_message(_message())},
+        {
+            "action": "send",
+            "recipient_alias": "owner",
+            "account_id": "fixture-account",
+            "target_user_id": "fixture-owner@im.wechat",
+            "text": format_alert_message(_message()),
+        },
+        {
+            "action": "send",
+            "recipient_alias": "alice",
+            "account_id": "fixture-account",
+            "target_user_id": "fixture-alice@im.wechat",
+            "text": format_alert_message(_message()),
+        },
     ]
 
 
@@ -523,7 +562,12 @@ def test_sender_continues_after_recipient_failure_then_raises_public_summary(
         target = json.loads(str(kwargs["input"]))["target_user_id"]
         targets.append(target)
         if target == "fixture-alice@im.wechat":
-            raise RuntimeError("private provider detail")
+            return subprocess.CompletedProcess(
+                argv,
+                1,
+                '{"status":"error","error":"CLAWBOT_SEND_FAILED"}',
+                "private provider detail",
+            )
         return subprocess.CompletedProcess(argv, 0, '{"status":"accepted","action":"send"}', "")
 
     directory = _directory(_recipient(), _friend(), _friend("bob"))
@@ -550,6 +594,24 @@ def test_sender_continues_after_recipient_failure_then_raises_public_summary(
     assert "fixture-alice@im.wechat" not in public
 
 
+def test_sender_propagates_unexpected_runner_implementation_error(
+    tmp_path: Path,
+) -> None:
+    dependency, _ = _tree(tmp_path)
+
+    def run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise AttributeError("implementation defect")
+
+    directory = _directory(_recipient(), _friend())
+    sender = ClawbotAlertSender(
+        directory,
+        ClawbotRunner(dependency, recipient_directory=directory, run_process=run),
+    )
+
+    with pytest.raises(AttributeError, match="implementation defect"):
+        sender.send(_message())
+
+
 def test_canary_selects_one_active_alias_and_reports_provider_acceptance(tmp_path: Path) -> None:
     dependency, _ = _tree(tmp_path)
     payloads: list[dict[str, object]] = []
@@ -566,7 +628,13 @@ def test_canary_selects_one_active_alias_and_reports_provider_acceptance(tmp_pat
     summary = sender.send_canary("alice")
 
     assert payloads == [
-        {"action": "send", "account_id": "fixture-account", "target_user_id": "fixture-alice@im.wechat", "text": ALERT_CANARY_TEXT},
+        {
+            "action": "send",
+            "recipient_alias": "alice",
+            "account_id": "fixture-account",
+            "target_user_id": "fixture-alice@im.wechat",
+            "text": ALERT_CANARY_TEXT,
+        },
     ]
     assert summary.attempted == 1
     assert summary.provider_accepted == 1
@@ -597,6 +665,27 @@ def test_canary_failure_is_one_attempt_and_sanitized(tmp_path: Path) -> None:
     assert summary.failed_aliases == ("owner",)
 
 
+def test_canary_propagates_unexpected_runner_implementation_error(
+    tmp_path: Path,
+) -> None:
+    dependency, _ = _tree(tmp_path)
+
+    def run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise AttributeError("implementation defect")
+
+    sender = ClawbotAlertSender(
+        _directory(),
+        ClawbotRunner(
+            dependency,
+            recipient_directory=_directory(),
+            run_process=run,
+        ),
+    )
+
+    with pytest.raises(AttributeError, match="implementation defect"):
+        sender.send_canary("owner")
+
+
 def test_preflight_probes_every_active_recipient_without_sending_and_summarizes_failures(
     tmp_path: Path,
 ) -> None:
@@ -607,7 +696,12 @@ def test_preflight_probes_every_active_recipient_without_sending_and_summarizes_
         payload = json.loads(str(kwargs["input"]))
         actions.append((payload["action"], payload["target_user_id"]))
         if payload["target_user_id"] == "fixture-alice@im.wechat":
-            raise RuntimeError("private probe failure")
+            return subprocess.CompletedProcess(
+                argv,
+                1,
+                '{"status":"error","error":"CLAWBOT_CONTEXT_UNAVAILABLE"}',
+                "private probe failure",
+            )
         return subprocess.CompletedProcess(
             argv,
             0,
@@ -631,6 +725,27 @@ def test_preflight_probes_every_active_recipient_without_sending_and_summarizes_
     assert summary.recipient_count == 3
     assert summary.ready_count == 2
     assert summary.failed_aliases == ("alice",)
+
+
+def test_preflight_propagates_unexpected_runner_implementation_error(
+    tmp_path: Path,
+) -> None:
+    dependency, _ = _tree(tmp_path)
+
+    def run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise AttributeError("implementation defect")
+
+    sender = ClawbotAlertSender(
+        _directory(),
+        ClawbotRunner(
+            dependency,
+            recipient_directory=_directory(),
+            run_process=run,
+        ),
+    )
+
+    with pytest.raises(AttributeError, match="implementation defect"):
+        sender.preflight()
 
 
 def test_sender_builder_loads_directory_once_and_preflights_all_before_return(

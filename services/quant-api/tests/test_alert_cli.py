@@ -16,7 +16,11 @@ from app.alerts.recipient_bootstrap import (
     BootstrapPrepareResult,
     RecipientRetireResult,
 )
-from app.alerts.recipients import ClawbotRecipient, RecipientDirectory
+from app.alerts.recipients import (
+    ClawbotRecipient,
+    ClawbotRecipientError,
+    RecipientDirectory,
+)
 from app.guiyi_cli.main import build_parser, main
 
 
@@ -118,6 +122,37 @@ def test_recipients_init_is_nonreadonly_and_outputs_only_public_count() -> None:
         "recipient_count": 1,
     }
     assert "fixture" not in json.dumps(payload)
+
+
+def test_recipients_init_domain_failure_uses_stable_public_code_without_secrets() -> None:
+    private_detail = "fixture-private-recipient"
+
+    def fail_init(_owner: Path, _recipients: Path) -> None:
+        error = ClawbotRecipientError("CLAWBOT_RECIPIENT_INVALID")
+        error.add_note(private_detail)
+        raise error
+
+    code, payload = _run(
+        ["recipients", "init"],
+        recipient_paths=lambda: (
+            Path("/private/owner.json"),
+            Path("/private/recipients.json"),
+        ),
+        recipient_initializer=fail_init,
+    )
+
+    assert code == 1
+    assert payload == {
+        "schema_version": 1,
+        "command": "recipients.init",
+        "status": "error",
+        "readonly": False,
+        "error": {
+            "code": "CLAWBOT_RECIPIENT_INVALID",
+            "type": "ClawbotRecipientError",
+        },
+    }
+    assert private_detail not in json.dumps(payload)
 
 
 @pytest.mark.parametrize(

@@ -36,6 +36,10 @@ _MAX_ACTIVE_RECIPIENTS = 4
 class ClawbotRecipientError(RuntimeError):
     """Stable public error that never includes recipient configuration data."""
 
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
 
 @dataclass(frozen=True, slots=True)
 class ClawbotRecipient:

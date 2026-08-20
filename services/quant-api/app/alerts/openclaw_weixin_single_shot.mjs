@@ -21,8 +21,8 @@ const MAX_CONTEXT_SNAPSHOT_BYTES = 65536;
 const ACTION_KEYS = Object.freeze({
   discover_owner: new Set(["action"]),
   snapshot_contexts: new Set(["action"]),
-  probe: new Set(["action", "account_id", "target_user_id"]),
-  send: new Set(["action", "account_id", "target_user_id", "text"]),
+  probe: new Set(["action", "recipient_alias", "account_id", "target_user_id"]),
+  send: new Set(["action", "recipient_alias", "account_id", "target_user_id", "text"]),
 });
 
 
@@ -71,6 +71,14 @@ function isPrivateText(value) {
 
 function requirePrivateText(value) {
   if (!isPrivateText(value)) {
+    fail("CLAWBOT_INPUT_INVALID");
+  }
+  return value;
+}
+
+
+function requireRecipientAlias(value) {
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/u.test(value)) {
     fail("CLAWBOT_INPUT_INVALID");
   }
   return value;
@@ -274,6 +282,7 @@ async function snapshotContexts(dependency) {
 
 
 async function loadFrozenRecipient(dependency, input) {
+  const recipientAlias = requireRecipientAlias(input.recipient_alias);
   const accountId = requirePrivateText(input.account_id);
   const targetUserId = requirePrivateText(input.target_user_id);
   if (!targetUserId.endsWith("@im.wechat") || targetUserId === "@im.wechat") {
@@ -287,6 +296,9 @@ async function loadFrozenRecipient(dependency, input) {
     !isPrivateText(account.userId) ||
     !account.userId.endsWith("@im.wechat")
   ) {
+    fail("CLAWBOT_OWNER_INVALID");
+  }
+  if (recipientAlias === "owner" && account.userId !== targetUserId) {
     fail("CLAWBOT_OWNER_INVALID");
   }
   await dependency.inbound.restoreContextTokens(accountId);

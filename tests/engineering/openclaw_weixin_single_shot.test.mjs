@@ -250,6 +250,7 @@ for (const scenario of [
 test("probe validates the frozen owner and context without sending", () => {
   const result = invoke(fixture(), {
     action: "probe",
+    recipient_alias: "owner",
     account_id: "fixture-account",
     target_user_id: "fixture-owner@im.wechat",
   });
@@ -264,11 +265,36 @@ test("probe validates the frozen owner and context without sending", () => {
 });
 
 
+test("owner mismatch fails closed before physical send", () => {
+  const result = invoke(
+    fixture(),
+    {
+      action: "send",
+      recipient_alias: "owner",
+      account_id: "fixture-account",
+      target_user_id: "fixture-owner@im.wechat",
+      text: "fixture alert",
+    },
+    "owner_mismatch",
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.equal(result.output.error, "CLAWBOT_OWNER_INVALID");
+  assert.deepEqual(result.calls, []);
+  assert.equal(result.stderr, "");
+});
+
+
 for (const scenario of ["missing_account", "missing_context"]) {
   test(`probe fails closed for ${scenario} with zero send`, () => {
     const result = invoke(
       fixture(),
-      { action: "probe", account_id: "fixture-account", target_user_id: "fixture-owner@im.wechat" },
+      {
+        action: "probe",
+        recipient_alias: "owner",
+        account_id: "fixture-account",
+        target_user_id: "fixture-owner@im.wechat",
+      },
       scenario,
     );
     assert.notEqual(result.status, 0);
@@ -281,6 +307,7 @@ for (const scenario of ["missing_account", "missing_context"]) {
 test("probe accepts a direct recipient that differs from the account owner", () => {
   const result = invoke(fixture(), {
     action: "probe",
+    recipient_alias: "alice",
     account_id: "fixture-account",
     target_user_id: "fixture-friend@im.wechat",
   });
@@ -299,6 +326,7 @@ test("probe accepts a direct recipient that differs from the account owner", () 
 test("send accepts one direct friend and invokes Tencent exactly once", () => {
   const result = invoke(fixture(), {
     action: "send",
+    recipient_alias: "alice",
     account_id: "fixture-account",
     target_user_id: "fixture-friend@im.wechat",
     text: "fixture alert",
@@ -325,6 +353,7 @@ for (const [name, targetUserId, scenario, error] of [
       fixture(),
       {
         action: "send",
+        recipient_alias: "owner",
         account_id: "fixture-account",
         target_user_id: targetUserId,
         text: "fixture alert",
@@ -342,6 +371,7 @@ for (const [name, targetUserId, scenario, error] of [
 test("send invokes Tencent primitive exactly once with the required shape", () => {
   const result = invoke(fixture(), {
     action: "send",
+    recipient_alias: "owner",
     account_id: "fixture-account",
     target_user_id: "fixture-owner@im.wechat",
     text: "fixture alert",
@@ -365,6 +395,7 @@ test("send preserves the fixed multiline Alert canary and invokes Tencent exactl
   const text = "【归一量化】微信通知测试\n\nAlert 通知通道正常";
   const result = invoke(fixture(), {
     action: "send",
+    recipient_alias: "owner",
     account_id: "fixture-account",
     target_user_id: "fixture-owner@im.wechat",
     text,
@@ -386,6 +417,7 @@ for (const [name, text] of [
   test(`send rejects ${name} in message text before physical send`, () => {
     const result = invoke(fixture(), {
       action: "send",
+      recipient_alias: "owner",
       account_id: "fixture-account",
       target_user_id: "fixture-owner@im.wechat",
       text,
@@ -400,7 +432,13 @@ for (const [name, text] of [
 test("send throw records one physical attempt and never retries", () => {
   const result = invoke(
     fixture(),
-    { action: "send", account_id: "fixture-account", target_user_id: "fixture-owner@im.wechat", text: "fixture alert" },
+    {
+      action: "send",
+      recipient_alias: "owner",
+      account_id: "fixture-account",
+      target_user_id: "fixture-owner@im.wechat",
+      text: "fixture alert",
+    },
     "send_throw",
   );
   assert.notEqual(result.status, 0);
@@ -414,7 +452,13 @@ test("send throw records one physical attempt and never retries", () => {
 test("missing context prevents physical send", () => {
   const result = invoke(
     fixture(),
-    { action: "send", account_id: "fixture-account", target_user_id: "fixture-owner@im.wechat", text: "fixture alert" },
+    {
+      action: "send",
+      recipient_alias: "owner",
+      account_id: "fixture-account",
+      target_user_id: "fixture-owner@im.wechat",
+      text: "fixture alert",
+    },
     "missing_context",
   );
   assert.notEqual(result.status, 0);
@@ -430,6 +474,7 @@ test("manifest version mismatch fails before any send", () => {
   writeFileSync(fx.manifest, JSON.stringify(manifest));
   const result = invoke(fx, {
     action: "send",
+    recipient_alias: "owner",
     account_id: "fixture-account",
     target_user_id: "fixture-owner@im.wechat",
     text: "fixture alert",

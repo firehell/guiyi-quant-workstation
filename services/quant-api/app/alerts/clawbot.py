@@ -360,7 +360,12 @@ class ClawbotRunner:
     def probe(self, recipient: ClawbotRecipient) -> None:
         self._require_active_recipient(recipient)
         payload = self._invoke(
-            {"action": "probe", "account_id": recipient.account_id, "target_user_id": recipient.target_user_id},
+            {
+                "action": "probe",
+                "recipient_alias": recipient.alias,
+                "account_id": recipient.account_id,
+                "target_user_id": recipient.target_user_id,
+            },
             expected_status="ready",
         )
         if payload != {"status": "ready", "action": "probe", "account_configured": True, "context_available": True}:
@@ -369,7 +374,13 @@ class ClawbotRunner:
     def send_text(self, recipient: ClawbotRecipient, text: str) -> None:
         self._require_active_recipient(recipient)
         payload = self._invoke(
-            {"action": "send", "account_id": recipient.account_id, "target_user_id": recipient.target_user_id, "text": text},
+            {
+                "action": "send",
+                "recipient_alias": recipient.alias,
+                "account_id": recipient.account_id,
+                "target_user_id": recipient.target_user_id,
+                "text": text,
+            },
             expected_status="accepted",
         )
         if payload != {"status": "accepted", "action": "send"}:
@@ -420,7 +431,7 @@ class ClawbotAlertSender:
         for recipient in recipients:
             try:
                 self._runner.send_text(recipient, rendered)
-            except Exception:  # noqa: BLE001 - isolate one recipient without leaking detail
+            except ClawbotError:
                 failed_aliases.append(recipient.alias)
         if failed_aliases:
             summary = ClawbotSendSummary(
@@ -443,7 +454,7 @@ class ClawbotAlertSender:
         for recipient in self._directory.recipients:
             try:
                 self._runner.probe(recipient)
-            except Exception:  # noqa: BLE001 - isolate one probe without leaking detail
+            except ClawbotError:
                 failed_aliases.append(recipient.alias)
         summary = ClawbotPreflightSummary(
             recipient_count=len(self._directory.recipients),
@@ -472,7 +483,7 @@ class ClawbotAlertSender:
             raise ClawbotError("CLAWBOT_RECIPIENT_ALIAS_INVALID")
         try:
             self._runner.send_text(recipient, ALERT_CANARY_TEXT)
-        except Exception:  # noqa: BLE001 - canary summary is public and secret-safe
+        except ClawbotError:
             return ClawbotSendSummary(1, 0, 1, (recipient.alias,))
         return ClawbotSendSummary(1, 1, 0, ())
 

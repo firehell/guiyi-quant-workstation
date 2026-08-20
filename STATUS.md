@@ -41,6 +41,9 @@
 
 ## Alert 固定收件人简化版（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EXTERNAL GATES PENDING）
 
+- 当前 code/test identity 是开发分支 `codex/alert-fixed-recipients-simple` 与 linked worktree
+  `.worktrees/alert-fixed-recipients`；旧 overdesigned `codex/alert-fixed-recipients` 仅保留为未合并的
+  历史 branch ref，不是当前开发 worktree，也不构成 production 启用事实。
 - develop 实现采用本地单用户、单 operator 模型：v2 directory 只允许 `1..4` 人，即固定 `owner`
   加最多 3 位朋友；HTDY 按 owner-first 顺序通知全部 active alias，SuBing 仍只通知 owner。
 - 每位朋友通过 stopped Alert Runtime 下的两步 fingerprint pairing 加入：prepare 只保存十分钟
@@ -133,7 +136,9 @@
   installed plist 与进程打开文件均无 v1.6.0/v1.6.1 root 引用，两个旧 worktree 均 clean/detached、
   精确匹配仍保留的 annotated tag 且已进入 main 历史；随后仅通过 `git worktree remove` 删除两者并
   执行 `git worktree prune`。当前保留 clean/detached v1.6.2 Runtime 与
-  `codex/alert-fixed-recipients` worktree，删除后 Runtime 状态复核为 `overall=passed`。
+  `codex/alert-fixed-recipients-simple` 开发分支的 `.worktrees/alert-fixed-recipients` worktree；旧
+  `codex/alert-fixed-recipients` 仅为未合并的历史 branch ref。删除后 Runtime 状态复核为
+  `overall=passed`。
 
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
