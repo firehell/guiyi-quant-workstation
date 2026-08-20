@@ -133,11 +133,12 @@ launch_value() {
   printf '%s\n' "$output" | sed -n "s/^[[:space:]]*${key} => //p" | head -1
 }
 
-owner_config_valid() {
+recipients_config_count() {
   local path="$1"
   python3 - "$path" <<'PY'
 import json
 import os
+import re
 import stat
 import sys
 import unicodedata
@@ -153,21 +154,45 @@ try:
     if stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid():
         raise ValueError
     payload = json.load(open(path, encoding="utf-8"))
-    if set(payload) != {"version", "channel", "owner_alias", "account_id", "target_user_id"}:
+    if set(payload) != {"schema_version", "channel", "account_id", "active_recipients", "retired_aliases"}:
         raise ValueError
-    if payload["version"] != 1 or type(payload["version"]) is not int:
+    if payload["schema_version"] != 2 or type(payload["schema_version"]) is not int:
         raise ValueError
-    if payload["channel"] != "openclaw-weixin" or payload["owner_alias"] != "owner":
+    if payload["channel"] != "openclaw-weixin":
         raise ValueError
     account = payload["account_id"]
-    target = payload["target_user_id"]
-    for value in (account, target):
+    active = payload["active_recipients"]
+    retired = payload["retired_aliases"]
+    if not isinstance(active, list) or not 1 <= len(active) <= 4:
+        raise ValueError
+    if not isinstance(retired, list) or retired != sorted(retired) or len(retired) != len(set(retired)):
+        raise ValueError
+    aliases = []
+    targets = []
+    for item in active:
+        if not isinstance(item, dict) or set(item) != {"alias", "target_user_id"}:
+            raise ValueError
+        alias = item["alias"]
+        target = item["target_user_id"]
+        if not isinstance(alias, str) or re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", alias) is None:
+            raise ValueError
+        aliases.append(alias)
+        targets.append(target)
+    if aliases[0] != "owner" or aliases[1:] != sorted(aliases[1:]) or len(aliases) != len(set(aliases)):
+        raise ValueError
+    if len(targets) != len(set(targets)) or set(aliases) & set(retired):
+        raise ValueError
+    for alias in retired:
+        if not isinstance(alias, str) or re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", alias) is None:
+            raise ValueError
+    for value in (account, *targets):
         if not isinstance(value, str) or not value or value.strip() != value:
             raise ValueError
         if any(unicodedata.category(character).startswith("C") for character in value):
             raise ValueError
-    if not target.endswith("@im.wechat") or target == "@im.wechat":
+    if any(not target.endswith("@im.wechat") or target == "@im.wechat" for target in targets):
         raise ValueError
+    print(len(active))
 except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
     raise SystemExit(1)
 PY
@@ -240,7 +265,6 @@ elif [[ "$wecom_present" == "false" && "$clawbot_present" == "true" && "$courier
 fi
 printf '[local-services-status] alert.notification_channel=%s\n' "$notification_channel"
 if [[ "$notification_channel" == "clawbot-openclaw-weixin" ]]; then
-  printf '[local-services-status] alert.notification_owner_alias=owner\n'
   versions_manifest="$runtime_root/deploy/clawbot/versions.json"
   openclaw_version="$(manifest_value "$versions_manifest" openclaw_version 2>/dev/null || printf 'unknown')"
   node_version="$(manifest_value "$versions_manifest" node_version 2>/dev/null || printf 'unknown')"
@@ -262,7 +286,7 @@ if [[ "$notification_channel" == "clawbot-openclaw-weixin" ]]; then
     GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT
     GUIYI_OPENCLAW_STATE_DIR
     GUIYI_OPENCLAW_CONFIG_PATH
-    GUIYI_ALERT_CLAWBOT_OWNER_PATH
+    GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH
   )
   for key in "${clawbot_env_names[@]}"; do
     api_value="$(plist_value com.guiyi.quant-api "$key")"
@@ -285,7 +309,7 @@ if [[ "$notification_channel" == "clawbot-openclaw-weixin" ]]; then
   state_dir="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_STATE_DIR)"
   config_path="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_CONFIG_PATH)"
   plugin_root="$(plist_value com.guiyi.quant-alert GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT)"
-  owner_path="$(plist_value com.guiyi.quant-alert GUIYI_ALERT_CLAWBOT_OWNER_PATH)"
+  recipients_path="$(plist_value com.guiyi.quant-alert GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH)"
 
   openclaw_status=missing
   if [[ "$openclaw_bin" != "missing" && "$node_bin" != "missing" \
@@ -315,24 +339,29 @@ if [[ "$notification_channel" == "clawbot-openclaw-weixin" ]]; then
     fi
   fi
 
-  owner_status=missing
-  if [[ "$owner_path" != "missing" && -e "$owner_path" ]]; then
-    owner_status=invalid
-    owner_config_valid "$owner_path" && owner_status=ready
+  recipients_status=missing
+  recipient_count=0
+  if [[ "$recipients_path" != "missing" && -e "$recipients_path" ]]; then
+    recipients_status=invalid
+    if configured_count="$(recipients_config_count "$recipients_path" 2>/dev/null)"; then
+      recipients_status=ready
+      recipient_count="$configured_count"
+    fi
   fi
   if [[ "$clawbot_identity_valid" != "true" ]]; then
     openclaw_status=invalid
     plugin_status=invalid
-    owner_status=invalid
+    recipients_status=invalid
     record_failure
   fi
   printf '[local-services-status] external.openclaw.status=%s\n' "$openclaw_status"
   printf '[local-services-status] external.openclaw.version=%s\n' "$openclaw_version"
   printf '[local-services-status] external.openclaw_weixin.status=%s\n' "$plugin_status"
   printf '[local-services-status] external.openclaw_weixin.version=%s\n' "$plugin_version"
-  printf '[local-services-status] external.clawbot_owner_config=%s\n' "$owner_status"
+  printf '[local-services-status] external.clawbot_recipients_config=%s\n' "$recipients_status"
+  printf '[local-services-status] alert.notification_recipient_count=%s\n' "$recipient_count"
   if [[ "$alert_marker_enabled" == "true" \
-    && ( "$openclaw_status" != "ready" || "$plugin_status" != "ready" || "$owner_status" != "ready" ) ]]; then
+    && ( "$openclaw_status" != "ready" || "$plugin_status" != "ready" || "$recipients_status" != "ready" ) ]]; then
     record_failure
   fi
 fi

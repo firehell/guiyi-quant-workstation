@@ -16,7 +16,7 @@ CLAWBOT_ENV_NAMES = (
     "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT",
     "GUIYI_OPENCLAW_STATE_DIR",
     "GUIYI_OPENCLAW_CONFIG_PATH",
-    "GUIYI_ALERT_CLAWBOT_OWNER_PATH",
+    "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH",
 )
 
 
@@ -44,6 +44,7 @@ def test_alert_launchd_render_only_is_default_closed_and_has_runtime_contract(tm
     assert {key: payload["EnvironmentVariables"][key] for key in CLAWBOT_ENV_NAMES} == {
         key: "" for key in CLAWBOT_ENV_NAMES
     }
+    assert "GUIYI_ALERT_CLAWBOT_OWNER_PATH" not in payload["EnvironmentVariables"]
 
 
 def test_market_and_alert_confirmation_modes_write_only_their_own_marker(tmp_path: Path) -> None:
@@ -274,13 +275,19 @@ def _clawbot_paths(root: Path) -> dict[str, str]:
         executable.chmod(0o700)
     config = state / "openclaw.json"
     config.write_text("{}\n", encoding="utf-8")
-    owner = private / "owner.json"
-    owner.write_text("{}\n", encoding="utf-8")
-    owner.chmod(0o600)
+    recipients = private / "recipients.json"
+    recipients.write_text(
+        '{"schema_version":2,"channel":"openclaw-weixin",'
+        '"account_id":"fixture-account","active_recipients":'
+        '[{"alias":"owner","target_user_id":"fixture-owner@im.wechat"}],'
+        '"retired_aliases":[]}\n',
+        encoding="utf-8",
+    )
+    recipients.chmod(0o600)
     return dict(
         zip(
             CLAWBOT_ENV_NAMES,
-            map(str, (openclaw, node, plugin, state, config, owner)),
+            map(str, (openclaw, node, plugin, state, config, recipients)),
             strict=True,
         )
     )

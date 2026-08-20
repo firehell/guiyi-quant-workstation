@@ -60,7 +60,8 @@ def _format_htdy_message(message: AlertNotificationMessage) -> str:
         f"【归一量化】{message.symbol.strip().upper()} {message.product_name.strip()}\n\n"
         f"火天大有 · {observation}\n"
         f"主力：{message.contract.strip().upper()}\n"
-        f"15m · {local_time} 收线"
+        f"15m · {local_time} 收线\n"
+        "研究观察，非交易指令"
     )
 
 

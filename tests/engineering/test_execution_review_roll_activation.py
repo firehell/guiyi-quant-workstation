@@ -176,8 +176,8 @@ def _run_installer(
 def _clawbot_paths(root: Path) -> dict[str, str]:
     plugin = root / "plugin"
     state = root / "state"
-    owner_parent = root / "owner"
-    for directory in (plugin, state, owner_parent):
+    recipients_parent = root / "recipients"
+    for directory in (plugin, state, recipients_parent):
         directory.mkdir(parents=True, mode=0o700, exist_ok=True)
         directory.chmod(0o700)
     openclaw = root / "openclaw"
@@ -187,16 +187,16 @@ def _clawbot_paths(root: Path) -> dict[str, str]:
         executable.chmod(0o700)
     config = state / "openclaw.json"
     config.write_text("{}\n", encoding="utf-8")
-    owner = owner_parent / "owner.json"
-    owner.write_text("{}\n", encoding="utf-8")
-    owner.chmod(0o600)
+    recipients = recipients_parent / "recipients.json"
+    recipients.write_text("{}\n", encoding="utf-8")
+    recipients.chmod(0o600)
     return {
         "GUIYI_OPENCLAW_BIN": str(openclaw),
         "GUIYI_OPENCLAW_NODE_BIN": str(node),
         "GUIYI_OPENCLAW_WEIXIN_PLUGIN_ROOT": str(plugin),
         "GUIYI_OPENCLAW_STATE_DIR": str(state),
         "GUIYI_OPENCLAW_CONFIG_PATH": str(config),
-        "GUIYI_ALERT_CLAWBOT_OWNER_PATH": str(owner),
+        "GUIYI_ALERT_CLAWBOT_RECIPIENTS_PATH": str(recipients),
     }
 
 

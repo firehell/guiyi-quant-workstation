@@ -10,8 +10,17 @@ import pytest
 
 import app.alerts.composition as alert_composition
 from app.alerts.composition import build_alert_runtime
-from app.alerts.clawbot import ClawbotError, ClawbotOwnerCandidate
-from app.alerts.clawbot_owner import ClawbotOwner
+from app.alerts.clawbot import ClawbotError
+from app.alerts.recipient_bootstrap import (
+    BootstrapConfirmResult,
+    BootstrapPrepareResult,
+    RecipientRetireResult,
+)
+from app.alerts.recipients import (
+    ClawbotRecipient,
+    ClawbotRecipientError,
+    RecipientDirectory,
+)
 from app.guiyi_cli.main import build_parser, main
 
 
@@ -43,9 +52,21 @@ def test_runtime_parser_exposes_alert_and_fixed_canary() -> None:
         "live",
         "alert",
         "alert-canary",
-        "clawbot-owner-bootstrap",
         "clawbot-preflight",
     }
+
+
+def test_recipient_parser_exposes_only_four_mutation_commands() -> None:
+    parser = build_parser()
+    domain_action = next(action for action in parser._actions if action.dest == "domain")
+    recipients_parser = domain_action.choices["recipients"]
+    command_action = next(
+        action
+        for action in recipients_parser._actions
+        if action.dest == "recipients_command"
+    )
+
+    assert set(command_action.choices) == {"init", "prepare", "confirm", "retire"}
 
 
 def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
@@ -74,106 +95,222 @@ def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
     }
 
 
-def test_clawbot_owner_bootstrap_discovery_is_readonly_and_hides_ids() -> None:
-    class Runner:
-        dependency = SimpleNamespace(owner_path=Path("/private/owner.json"))
-
-        def discover_owner(self) -> ClawbotOwnerCandidate:
-            return ClawbotOwnerCandidate("fixture-account", "fixture-owner@im.wechat")
+def test_recipients_init_is_nonreadonly_and_outputs_only_public_count() -> None:
+    directory = RecipientDirectory(
+        2,
+        "openclaw-weixin",
+        "fixture-account",
+        (ClawbotRecipient("owner", "fixture-account", "fixture-owner@im.wechat"),),
+        (),
+    )
+    calls: list[tuple[Path, Path]] = []
 
     code, payload = _run(
-        ["runtime", "clawbot-owner-bootstrap"],
-        clawbot_runner_factory=lambda: Runner(),
+        ["recipients", "init"],
+        recipient_paths=lambda: (Path("/private/owner.json"), Path("/private/recipients.json")),
+        recipient_initializer=lambda owner, recipients: calls.append((owner, recipients)) or directory,
     )
 
     assert code == 0
+    assert calls == [(Path("/private/owner.json"), Path("/private/recipients.json"))]
     assert payload == {
         "schema_version": 1,
-        "command": "runtime.clawbot-owner-bootstrap",
-        "status": "ready",
-        "readonly": True,
-        "channel": "openclaw-weixin",
-        "owner_alias": "owner",
-        "account_count": 1,
-        "owner_candidate_count": 1,
-        "context_available": True,
-        "owner_written": False,
-    }
-    assert "fixture-account" not in json.dumps(payload)
-    assert "fixture-owner" not in json.dumps(payload)
-
-
-def test_clawbot_owner_bootstrap_write_requires_explicit_flag_and_hides_ids() -> None:
-    writes: list[tuple[Path, str, str]] = []
-
-    class Runner:
-        dependency = SimpleNamespace(owner_path=Path("/private/owner.json"))
-
-        def discover_owner(self) -> ClawbotOwnerCandidate:
-            return ClawbotOwnerCandidate("fixture-account", "fixture-owner@im.wechat")
-
-    code, payload = _run(
-        ["runtime", "clawbot-owner-bootstrap", "--confirm-write-owner"],
-        clawbot_runner_factory=lambda: Runner(),
-        clawbot_owner_writer=lambda path, *, account_id, target_user_id: writes.append(
-            (path, account_id, target_user_id)
-        ),
-    )
-
-    assert code == 0
-    assert writes == [(Path("/private/owner.json"), "fixture-account", "fixture-owner@im.wechat")]
-    assert payload == {
-        "schema_version": 1,
-        "command": "runtime.clawbot-owner-bootstrap",
+        "command": "recipients.init",
         "status": "ok",
         "readonly": False,
         "channel": "openclaw-weixin",
-        "owner_alias": "owner",
-        "owner_written": True,
+        "recipient_count": 1,
     }
-    assert "fixture-account" not in json.dumps(payload)
+    assert "fixture" not in json.dumps(payload)
 
 
-def test_clawbot_preflight_loads_frozen_owner_and_never_sends() -> None:
-    calls: list[object] = []
-    owner = ClawbotOwner(1, "openclaw-weixin", "owner", "fixture-account", "fixture-owner@im.wechat")
+def test_recipients_init_domain_failure_uses_stable_public_code_without_secrets() -> None:
+    private_detail = "fixture-private-recipient"
 
-    class Runner:
-        dependency = SimpleNamespace(owner_path=Path("/private/owner.json"))
+    def fail_init(_owner: Path, _recipients: Path) -> None:
+        error = ClawbotRecipientError("CLAWBOT_RECIPIENT_INVALID")
+        error.add_note(private_detail)
+        raise error
 
-        def probe(self, value: ClawbotOwner) -> None:
-            calls.append(value)
+    code, payload = _run(
+        ["recipients", "init"],
+        recipient_paths=lambda: (
+            Path("/private/owner.json"),
+            Path("/private/recipients.json"),
+        ),
+        recipient_initializer=fail_init,
+    )
 
-        def send_text(self, *_args: object) -> None:
+    assert code == 1
+    assert payload == {
+        "schema_version": 1,
+        "command": "recipients.init",
+        "status": "error",
+        "readonly": False,
+        "error": {
+            "code": "CLAWBOT_RECIPIENT_INVALID",
+            "type": "ClawbotRecipientError",
+        },
+    }
+    assert private_detail not in json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    ("command", "result", "count_key", "count"),
+    [
+        ("prepare", BootstrapPrepareResult("alice", 2), "baseline_candidate_count", 2),
+        ("confirm", BootstrapConfirmResult("alice", 1), "candidate_count", 1),
+        ("retire", RecipientRetireResult("alice", 1), "active_recipient_count", 1),
+    ],
+)
+def test_recipient_mutations_are_nonreadonly_and_output_only_alias_and_count(
+    command: str,
+    result: object,
+    count_key: str,
+    count: int,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class Bootstrap:
+        def __getattribute__(self, name: str):
+            if name in {"prepare", "confirm", "retire"}:
+                return lambda alias: calls.append((name, alias)) or result
+            return super().__getattribute__(name)
+
+    code, payload = _run(
+        ["recipients", command, "--alias", "alice"],
+        recipient_bootstrap_factory=lambda: Bootstrap(),
+    )
+
+    assert code == 0
+    assert calls == [(command, "alice")]
+    assert payload == {
+        "schema_version": 1,
+        "command": f"recipients.{command}",
+        "status": "ok",
+        "readonly": False,
+        "channel": "openclaw-weixin",
+        "alias": "alice",
+        count_key: count,
+    }
+
+
+def test_recipient_failure_is_nonreadonly_and_never_exposes_private_values() -> None:
+    class Bootstrap:
+        def confirm(self, _alias: str) -> None:
+            from app.alerts.recipient_bootstrap import RecipientBootstrapError
+
+            raise RecipientBootstrapError("CLAWBOT_RECIPIENT_CANDIDATE_INVALID")
+
+    code, payload = _run(
+        ["recipients", "confirm", "--alias", "alice"],
+        recipient_bootstrap_factory=lambda: Bootstrap(),
+    )
+
+    assert code == 1
+    assert payload == {
+        "schema_version": 1,
+        "command": "recipients.confirm",
+        "status": "error",
+        "readonly": False,
+        "error": {
+            "code": "CLAWBOT_RECIPIENT_CANDIDATE_INVALID",
+            "type": "RecipientBootstrapError",
+        },
+    }
+    assert "fixture" not in json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["recipients", "prepare"],
+        ["recipients", "confirm", "--alias", "alice", "--confirm"],
+        ["recipients", "unknown"],
+    ],
+)
+def test_recipient_parser_failures_remain_nonreadonly_mutations(
+    arguments: list[str],
+) -> None:
+    code, payload = _run(arguments)
+
+    assert code == 2
+    assert payload["status"] == "error"
+    assert payload["readonly"] is False
+    assert payload["error"] == {
+        "code": "CLI_ARGUMENT_INVALID",
+        "type": "CliUsageError",
+    }
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["runtime", "status", "--unexpected"],
+        ["research", "unknown"],
+    ],
+)
+def test_readonly_command_parser_failures_stay_readonly(arguments: list[str]) -> None:
+    code, payload = _run(arguments)
+
+    assert code == 2
+    assert payload["status"] == "error"
+    assert payload["readonly"] is True
+
+
+def test_clawbot_preflight_probes_all_frozen_recipients_and_never_sends() -> None:
+    calls: list[str] = []
+
+    class Sender:
+        def preflight(self):
+            calls.append("preflight")
+            return type(
+                "Summary",
+                (),
+                {
+                    "recipient_count": 2,
+                    "ready_count": 2,
+                    "failed_aliases": (),
+                },
+            )()
+
+        def send_canary(self, _alias: str) -> None:
             raise AssertionError("preflight must not send")
 
     code, payload = _run(
         ["runtime", "clawbot-preflight"],
-        clawbot_runner_factory=lambda: Runner(),
-        clawbot_owner_loader=lambda _path: owner,
+        alert_canary_sender_factory=lambda: Sender(),
     )
 
     assert code == 0
-    assert calls == [owner]
+    assert calls == ["preflight"]
     assert payload == {
         "schema_version": 1,
         "command": "runtime.clawbot-preflight",
         "status": "ok",
         "readonly": True,
-        "channel": "openclaw-weixin",
-        "owner_alias": "owner",
-        "account_configured": True,
-        "context_available": True,
+        "transport": "clawbot-openclaw-weixin",
+        "configured": True,
+        "recipient_count": 2,
+        "ready_count": 2,
+        "failed_aliases": [],
         "would_send": False,
     }
+
+
+def test_alert_canary_requires_explicit_alias() -> None:
+    code, payload = _run(["runtime", "alert-canary"])
+
+    assert code == 2
+    assert payload["readonly"] is False
 
 
 def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
     calls: list[str] = []
 
     class Sender:
-        def send_canary(self):
-            calls.append("send_canary")
+        def send_canary(self, alias: str):
+            calls.append(alias)
             return type(
                 "Summary",
                 (),
@@ -192,18 +329,19 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
         raise AssertionError("alert canary must not enable or construct Alert Runtime")
 
     code, payload = _run(
-        ["runtime", "alert-canary"],
+        ["runtime", "alert-canary", "--alias", "alice"],
         session_factory=forbidden_session_factory,
         alert_runtime_factory=forbidden_alert_runtime_factory,
         alert_canary_sender_factory=lambda: Sender(),
     )
 
     assert code == 0
-    assert calls == ["send_canary"]
+    assert calls == ["alice"]
     assert payload == {
         "schema_version": 1,
         "command": "runtime.alert-canary",
         "status": "ok",
+        "alias": "alice",
         "attempted": 1,
         "provider_accepted": 1,
         "failed": 0,
@@ -213,7 +351,8 @@ def test_alert_canary_uses_only_shared_sender_without_alert_mutation() -> None:
 
 def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> None:
     class Sender:
-        def send_canary(self):
+        def send_canary(self, alias: str):
+            assert alias == "owner"
             return type(
                 "Summary",
                 (),
@@ -226,7 +365,7 @@ def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> No
             )()
 
     code, payload = _run(
-        ["runtime", "alert-canary"],
+        ["runtime", "alert-canary", "--alias", "owner"],
         alert_canary_sender_factory=lambda: Sender(),
     )
 
@@ -235,6 +374,7 @@ def test_alert_canary_partial_failure_is_normal_stdout_json_and_exit_one() -> No
         "schema_version": 1,
         "command": "runtime.alert-canary",
         "status": "failed",
+        "alias": "owner",
         "attempted": 1,
         "provider_accepted": 0,
         "failed": 1,
@@ -247,7 +387,7 @@ def test_alert_canary_factory_exception_is_execution_error() -> None:
         raise ClawbotError("ALERT_NOTIFICATION_TRANSPORT_NOT_READY")
 
     code, payload = _run(
-        ["runtime", "alert-canary"],
+        ["runtime", "alert-canary", "--alias", "owner"],
         alert_canary_sender_factory=fail_factory,
     )
 
@@ -266,11 +406,12 @@ def test_alert_canary_factory_exception_is_execution_error() -> None:
 
 def test_alert_canary_send_exception_is_execution_error() -> None:
     class Sender:
-        def send_canary(self):
+        def send_canary(self, alias: str):
+            assert alias == "owner"
             raise ClawbotError("CLAWBOT_SEND_FAILED")
 
     code, payload = _run(
-        ["runtime", "alert-canary"],
+        ["runtime", "alert-canary", "--alias", "owner"],
         alert_canary_sender_factory=lambda: Sender(),
     )
 
