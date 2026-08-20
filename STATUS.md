@@ -41,9 +41,11 @@
 
 ## Alert 固定收件人简化版（DEVELOP CODE_COMPLETE / TEST_COMPLETE；EXTERNAL GATES PENDING）
 
-- 当前 code/test identity 是开发分支 `codex/alert-fixed-recipients-simple` 与 linked worktree
-  `.worktrees/alert-fixed-recipients`；旧 overdesigned `codex/alert-fixed-recipients` 仅保留为未合并的
-  历史 branch ref，不是当前开发 worktree，也不构成 production 启用事实。
+- 简化实现已通过 merge commit
+  `ff19305b7a7ac184789da8bb56249cc15ada8139` 合入并推送 `develop`；临时
+  `codex/alert-fixed-recipients-simple` 分支与 `.worktrees/alert-fixed-recipients` worktree 已按 Git
+  正式流程删除。旧 overdesigned `codex/alert-fixed-recipients` 仅保留为未合并历史 branch
+  ref，不构成 production 启用事实。
 - develop 实现采用本地单用户、单 operator 模型：v2 directory 只允许 `1..4` 人，即固定 `owner`
   加最多 3 位朋友；HTDY 按 owner-first 顺序通知全部 active alias，SuBing 仍只通知 owner。
 - 每位朋友通过 stopped Alert Runtime 下的两步 fingerprint pairing 加入：prepare 只保存十分钟
@@ -54,11 +56,13 @@
   Application Domain 仍只有 `alert_rules`、`alert_events` 两张表。
 - Event 级 `notification_attempted_at` 仍是原批次尝试元数据，不能解释为逐人送达。没有 retry、queue、
   replay、backfill、fallback 或订单路径。
-- fresh 完整本地验证：全 backend `1716 passed`（显式隔离库）、全 engineering `56 passed`、Node
-  single-shot `38 passed`；相关 Ruff PASS；正常 follow-imports Mypy `7 source files` PASS；全部 ops shell
+- 合并后 fresh 完整本地验证：全 backend `1819 passed`（显式隔离库）、全 engineering
+  `56 passed`、Node single-shot `39 passed`；全后端 Ruff PASS；正常 follow-imports Mypy
+  `75 source files` PASS；全部 ops shell
   `bash -n`、6 个 active launchd templates `plutil -lint`、secret scan `finding_count=0` 与 diff check PASS。
 - 本次未读取或写入正式 owner/recipients/context，未连接 production DB，未执行真实 init、prepare、
-  confirm、retire、preflight、canary/send、Scope、release/tag、push/merge 或 Runtime 操作。
+  confirm、retire、preflight、canary/send、Scope、release/tag 或 Runtime 操作；仅完成上述普通
+  `develop` merge/push。
 - 本变更的 owner-only v2 init、每位朋友 prepare、每位朋友 confirm、全收件人 zero-send preflight、
   每位新增 alias 的 canary、精确 HTDY Rule + Scope + alias set + transport 授权、main/release/tag、
   exact-tag Alert Runtime promotion/switch/readback 与自然 HTDY 验收全部 pending。任一旧单 owner Gate、
@@ -135,10 +139,10 @@
   通知、replay/backfill、手工盘后或订单。后续独立 cleanup Gate 在删除前确认五个正式 label、对应
   installed plist 与进程打开文件均无 v1.6.0/v1.6.1 root 引用，两个旧 worktree 均 clean/detached、
   精确匹配仍保留的 annotated tag 且已进入 main 历史；随后仅通过 `git worktree remove` 删除两者并
-  执行 `git worktree prune`。当前保留 clean/detached v1.6.2 Runtime 与
-  `codex/alert-fixed-recipients-simple` 开发分支的 `.worktrees/alert-fixed-recipients` worktree；旧
-  `codex/alert-fixed-recipients` 仅为未合并的历史 branch ref。删除后 Runtime 状态复核为
-  `overall=passed`。
+  执行 `git worktree prune`。当前保留 clean/detached v1.6.2 Runtime；后续完成
+  `codex/alert-fixed-recipients-simple` 合入 `develop` 后，其 `.worktrees/alert-fixed-recipients`
+  worktree 与本地分支也已删除。旧 `codex/alert-fixed-recipients` 仅为未合并的历史 branch
+  ref；v1.6.2 cleanup 后 Runtime 状态复核为 `overall=passed`。
 
 ## v1.6.1 收盘快照交接（RELEASED / RUNTIME PROMOTED）
 
