@@ -9,6 +9,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from .domain import BarFrequency, CanonicalBar
+from . import n_structure_policy as _policy_contract
 from .n_structure_policy import NStructurePolicy
 from .n_structure_swing import (
     NStructureContractError,
@@ -257,11 +258,19 @@ def _validate_inputs(
 ) -> None:
     if (
         not isinstance(policy, NStructurePolicy)
+        or type(policy.schema_version) is not int
         or policy.schema_version != 1
+        or type(policy.policy_id) is not str
         or policy.policy_id != "n_structure_5m_v1"
+        or type(policy.formula_version) is not str
         or policy.formula_version != "n_structure_v1"
+        or type(policy.research_only) is not bool
         or policy.research_only is not True
         or policy.source_timeframe is not BarFrequency.M5
+        or not _policy_contract._matches_exact(
+            policy.raw,
+            _policy_contract._EXPECTED_PAYLOAD,
+        )
     ):
         raise NStructureContractError()
     if (
@@ -276,9 +285,15 @@ def _validate_inputs(
 
     bar_ends = {bar.bar_end for bar in bars}
     resets = swings.ambiguous_outside_reset_at
+    actual_resets = tuple(
+        current.bar_end
+        for previous, current in zip(bars, bars[1:])
+        if current.high > previous.high and current.low < previous.low
+    )
     if (
         any(not _is_aware_datetime(reset_at) for reset_at in resets)
         or tuple(sorted(set(resets))) != resets
+        or resets != actual_resets
         or any(reset_at not in bar_ends for reset_at in resets)
         or swings.final_epoch != len(resets)
     ):

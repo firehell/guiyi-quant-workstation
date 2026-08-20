@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import FrozenInstanceError, fields, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -443,21 +444,49 @@ def test_same_boundary_completion_records_n2_then_origin_break_facts(
         _bar(0, high="11", low="10"),
         _bar(1, high="12", low="10"),
         _bar(2, high="11", low="11"),
-        _bar(3, high="13", low=completion_low, close="12"),
+        _bar(3, high="12", low="11"),
+        _bar(4, high="12", low=completion_low),
+        _bar(5, high="13", low=completion_low, close="12"),
     )
 
     trace = _evaluate(bars, pivots)
 
     assert len(trace.patterns) == 1
-    assert trace.patterns[0].completed_at == bars[3].bar_end
+    assert trace.patterns[0].completed_at == bars[5].bar_end
     assert tuple(event.kind for event in trace.break_events) == expected_kinds
     assert {event.observed_at for event in trace.break_events} == {
-        bars[3].bar_end
+        bars[5].bar_end
     }
     assert all(
         field.name != "intrabar_order"
         for field in fields(type(trace.break_events[0]))
     )
+    _assert_prefix_invariant(bars, pivots)
+
+
+def test_down_same_boundary_completion_records_n2_then_origin_break_facts() -> None:
+    pivots = _down_pivots(origin="12", n1="10", n2="11")
+    bars = (
+        _bar(0, high="12", low="11"),
+        _bar(1, high="11", low="10"),
+        _bar(2, high="11", low="10"),
+        _bar(3, high="11", low="10"),
+        _bar(4, high="13", low="10"),
+        _bar(5, high="13", low="9", close="10"),
+    )
+
+    trace = _evaluate(bars, pivots)
+
+    assert len(trace.patterns) == 1
+    assert trace.patterns[0].direction is NDirection.DOWN
+    assert trace.patterns[0].completed_at == bars[5].bar_end
+    assert [event.kind for event in trace.break_events] == [
+        NBreakKind.N2_ORIGIN_BROKEN,
+        NBreakKind.ORIGIN_BROKEN,
+    ]
+    assert {event.observed_at for event in trace.break_events} == {
+        bars[5].bar_end
+    }
     _assert_prefix_invariant(bars, pivots)
 
 
@@ -495,7 +524,37 @@ def test_equal_levels_do_not_break_and_each_kind_emits_only_once() -> None:
         _bar(5, high="13", low="11"),
         _bar(6, high="13", low="10"),
         _bar(7, high="13", low="9"),
-        _bar(8, high="20", low="8"),
+        _bar(8, high="13", low="8"),
+    )
+
+    at_equal_n2 = _evaluate(bars[:6], pivots)
+    at_equal_origin = _evaluate(bars[:7], pivots)
+    full = _evaluate(bars, pivots)
+
+    assert at_equal_n2.break_events == ()
+    assert [event.kind for event in at_equal_origin.break_events] == [
+        NBreakKind.N2_ORIGIN_BROKEN
+    ]
+    assert [event.kind for event in full.break_events] == [
+        NBreakKind.N2_ORIGIN_BROKEN,
+        NBreakKind.ORIGIN_BROKEN,
+    ]
+    assert len({event.event_id for event in full.break_events}) == 2
+    _assert_prefix_invariant(bars, pivots)
+
+
+def test_down_equal_levels_do_not_break_and_each_kind_emits_only_once() -> None:
+    pivots = _down_pivots(origin="13", n1="10", n2="12")
+    bars = (
+        _bar(0, high="13", low="11"),
+        _bar(1, high="12", low="10"),
+        _bar(2, high="12", low="11"),
+        _bar(3, high="12", low="10"),
+        _bar(4, high="10", low="9", close="9.5"),
+        _bar(5, high="12", low="9"),
+        _bar(6, high="13", low="9"),
+        _bar(7, high="14", low="9"),
+        _bar(8, high="15", low="9"),
     )
 
     at_equal_n2 = _evaluate(bars[:6], pivots)
@@ -522,7 +581,7 @@ def test_completed_identity_is_frozen_and_future_extremes_never_rewrite_it() -> 
         _bar(2, high="11", low="11"),
         _bar(3, high="12", low="11"),
         _bar(4, high="13", low="11", close="12.5"),
-        _bar(5, high="30", low="9", close="20"),
+        _bar(5, high="30", low="11", close="20"),
     )
 
     completed = _evaluate(bars[:5], pivots).patterns[0]
@@ -689,6 +748,58 @@ def test_pattern_requires_exact_m5_research_only_policy() -> None:
             match="N_STRUCTURE_CONTRACT_INVALID",
         ):
             evaluate_n_patterns(bars, swing, policy=drifted)
+
+
+def test_pattern_rejects_exact_policy_scalar_and_nested_raw_drift() -> None:
+    policy = load_n_structure_policy()
+    bars = (_bar(0, high="11", low="10"),)
+    swing = _swing(())
+
+    nested_value_drift = deepcopy(policy.raw)
+    nested_value_drift["n_pattern"]["completion"] = "close_breach"  # type: ignore[index]
+    missing_nested_key = deepcopy(policy.raw)
+    del missing_nested_key["range_band"]["reentry_starts"]  # type: ignore[index]
+    extra_nested_key = deepcopy(policy.raw)
+    extra_nested_key["n_pattern"]["unexpected"] = True  # type: ignore[index]
+
+    for drifted in (
+        replace(policy, schema_version=True),
+        replace(policy, raw=nested_value_drift),
+        replace(policy, raw=missing_nested_key),
+        replace(policy, raw=extra_nested_key),
+    ):
+        with pytest.raises(
+            ValueError,
+            match="N_STRUCTURE_CONTRACT_INVALID",
+        ):
+            evaluate_n_patterns(bars, swing, policy=drifted)
+
+
+@pytest.mark.parametrize(
+    ("bars", "resets"),
+    (
+        (
+            (
+                _bar(0, high="11", low="10"),
+                _bar(1, high="12", low="9"),
+            ),
+            (),
+        ),
+        (
+            (
+                _bar(0, high="11", low="10"),
+                _bar(1, high="12", low="10"),
+            ),
+            (1,),
+        ),
+    ),
+)
+def test_pattern_requires_exact_outside_trace_identity(
+    bars: tuple[CanonicalBar, ...],
+    resets: tuple[int, ...],
+) -> None:
+    with pytest.raises(ValueError, match="N_STRUCTURE_SERIES_INVALID"):
+        _evaluate(bars, (), resets=resets)
 
 
 def test_pattern_rejects_unsorted_bars_or_foreign_swing_identity() -> None:
