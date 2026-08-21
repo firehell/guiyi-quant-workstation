@@ -169,44 +169,14 @@ export interface MainForceMirrorV2Point {
   unavailable_reason: string | null
 }
 
-type MainForceMirrorV2DecimalWirePoint = Omit<
-  MainForceMirrorV2Point,
-  | 'instant_pressure'
-  | 'accumulated_pressure'
-  | 'long_caution_score'
-  | 'short_caution_score'
-  | 'price_impulse'
-  | 'clv'
-  | 'volume_ratio'
-  | 'delta_oi'
-  | 'oi_impulse'
-  | 'range_position'
-  | 'member_change_bias'
-  | 'member_strength'
-  | 'position_skew'
-  | 'top5_volume_share'
-> & {
-  instant_pressure: string | null
-  accumulated_pressure: string | null
-  long_caution_score: string | null
-  short_caution_score: string | null
-  price_impulse: string | null
-  clv: string | null
-  volume_ratio: string | null
-  delta_oi: string | null
-  oi_impulse: string | null
-  range_position: string | null
-  member_change_bias: string | null
-  member_strength: string | null
-  position_skew: string | null
-  top5_volume_share: string | null
-}
+/** The Task 5 Pydantic contract serializes all public V2 numerics as JSON numbers. */
+type MainForceMirrorV2WirePoint = MainForceMirrorV2Point
 
 export interface MainForceMirrorV2PageWireResponse {
   request: MainForceMirrorV2RequestIdentity
   indicator: MainForceMirrorV2Indicator
   member_dataset: MainForceMirrorV2MemberDataset
-  points: MainForceMirrorV2DecimalWirePoint[]
+  points: MainForceMirrorV2WirePoint[]
   page: MarketPageMeta
   resolved_contract_segments: ResolvedContractSegment[]
 }
@@ -220,34 +190,75 @@ export interface MainForceMirrorV2PageResponse {
   resolved_contract_segments: ResolvedContractSegment[]
 }
 
-/** FastAPI serializes Decimal values as strings; this is the sole V2 wire boundary. */
+/** The sole V2 HTTP boundary: validate finite JSON numerics and return detached DTO copies. */
 export function normalizeMainForceMirrorV2Page(
   payload: MainForceMirrorV2PageWireResponse,
 ): MainForceMirrorV2PageResponse {
+  if (!hasMainForceMirrorV2PageShape(payload)) {
+    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
+  }
   return {
     ...payload,
-    points: payload.points.map((point) => ({
-      ...point,
-      instant_pressure: toMainForceMirrorV2Number(point.instant_pressure),
-      accumulated_pressure: toMainForceMirrorV2Number(point.accumulated_pressure),
-      long_caution_score: toMainForceMirrorV2Number(point.long_caution_score),
-      short_caution_score: toMainForceMirrorV2Number(point.short_caution_score),
-      price_impulse: toMainForceMirrorV2Number(point.price_impulse),
-      clv: toMainForceMirrorV2Number(point.clv),
-      volume_ratio: toMainForceMirrorV2Number(point.volume_ratio),
-      delta_oi: toMainForceMirrorV2Number(point.delta_oi),
-      oi_impulse: toMainForceMirrorV2Number(point.oi_impulse),
-      range_position: toMainForceMirrorV2Number(point.range_position),
-      member_change_bias: toMainForceMirrorV2Number(point.member_change_bias),
-      member_strength: toMainForceMirrorV2Number(point.member_strength),
-      position_skew: toMainForceMirrorV2Number(point.position_skew),
-      top5_volume_share: toMainForceMirrorV2Number(point.top5_volume_share),
-    })),
+    request: { ...payload.request },
+    indicator: { ...payload.indicator },
+    member_dataset: {
+      ...payload.member_dataset,
+      coverage: payload.member_dataset.coverage ? { ...payload.member_dataset.coverage } : null,
+    },
+    points: payload.points.map(normalizeMainForceMirrorV2Point),
+    page: { ...payload.page },
+    resolved_contract_segments: payload.resolved_contract_segments.map((segment) => ({ ...segment })),
   }
 }
 
-function toMainForceMirrorV2Number(value: string | null): number | null {
-  return value === null ? null : Number(value)
+function normalizeMainForceMirrorV2Point(point: MainForceMirrorV2WirePoint): MainForceMirrorV2Point {
+  if (!Array.isArray(point.caution_reason_codes)) {
+    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
+  }
+  return {
+    ...point,
+    instant_pressure: normalizeMainForceMirrorV2Number(point.instant_pressure),
+    accumulated_pressure: normalizeMainForceMirrorV2Number(point.accumulated_pressure),
+    long_caution_score: normalizeMainForceMirrorV2Number(point.long_caution_score),
+    short_caution_score: normalizeMainForceMirrorV2Number(point.short_caution_score),
+    price_impulse: normalizeMainForceMirrorV2Number(point.price_impulse),
+    clv: normalizeMainForceMirrorV2Number(point.clv),
+    volume_ratio: normalizeMainForceMirrorV2Number(point.volume_ratio),
+    delta_oi: normalizeMainForceMirrorV2Number(point.delta_oi),
+    oi_impulse: normalizeMainForceMirrorV2Number(point.oi_impulse),
+    range_position: normalizeMainForceMirrorV2Number(point.range_position),
+    member_change_bias: normalizeMainForceMirrorV2Number(point.member_change_bias),
+    member_strength: normalizeMainForceMirrorV2Number(point.member_strength),
+    position_skew: normalizeMainForceMirrorV2Number(point.position_skew),
+    top5_volume_share: normalizeMainForceMirrorV2Number(point.top5_volume_share),
+    caution_reason_codes: [...point.caution_reason_codes],
+  }
+}
+
+function normalizeMainForceMirrorV2Number(value: number | null): number | null {
+  if (value === null) return null
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
+  }
+  return Object.is(value, -0) ? 0 : value
+}
+
+function hasMainForceMirrorV2PageShape(value: unknown): value is MainForceMirrorV2PageWireResponse {
+  if (!isMainForceMirrorV2Record(value)) return false
+  const memberDataset = value.member_dataset
+  return isMainForceMirrorV2Record(value.request)
+    && isMainForceMirrorV2Record(value.indicator)
+    && isMainForceMirrorV2Record(memberDataset)
+    && (memberDataset.coverage === null || isMainForceMirrorV2Record(memberDataset.coverage))
+    && Array.isArray(value.points)
+    && value.points.every(isMainForceMirrorV2Record)
+    && isMainForceMirrorV2Record(value.page)
+    && Array.isArray(value.resolved_contract_segments)
+    && value.resolved_contract_segments.every(isMainForceMirrorV2Record)
+}
+
+function isMainForceMirrorV2Record(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Read-only Product Research snapshot; nullable backend metrics stay nullable in the browser. */

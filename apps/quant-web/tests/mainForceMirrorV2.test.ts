@@ -64,28 +64,28 @@ function wirePoint(barEnd: string, overrides: Partial<MainForceMirrorV2PageWireR
     physical_contract: 'JM2609',
     pressure_ready: true,
     pressure_state: 'long_build' as const,
-    instant_pressure: '36.200000',
+    instant_pressure: 36.2,
     accumulated_ready: true,
-    accumulated_pressure: '15.500000',
+    accumulated_pressure: 15.5,
     caution_ready: true,
     caution: 'long_chase_caution' as const,
     caution_conflict: false,
-    long_caution_score: '72.000000',
-    short_caution_score: '4.000000',
+    long_caution_score: 72,
+    short_caution_score: 4,
     caution_reason_codes: ['LONG_UPPER_EXTREME'],
-    price_impulse: '0.123400',
-    clv: '-0.300000',
-    volume_ratio: '1.500000',
-    delta_oi: '320.000000',
-    oi_impulse: '0.456000',
-    range_position: '0.800000',
+    price_impulse: 0.1234,
+    clv: -0.3,
+    volume_ratio: 1.5,
+    delta_oi: 320,
+    oi_impulse: 0.456,
+    range_position: 0.8,
     member_status: 'ready' as const,
     member_trade_date: '2026-08-19',
     member_direction: 'long' as const,
-    member_change_bias: '0.200000',
-    member_strength: '2.100000',
-    position_skew: '0.600000',
-    top5_volume_share: '0.400000',
+    member_change_bias: 0.2,
+    member_strength: 2.1,
+    position_skew: 0.6,
+    top5_volume_share: 0.4,
     relation_to_accumulated: 'strong_aligned' as const,
     relation_to_caution: 'aligned' as const,
     unavailable_reason: null,
@@ -108,7 +108,7 @@ function deferred<T>() {
 }
 
 describe('main force mirror v2 HTTP normalization', () => {
-  it('normalizes every Decimal-backed V2 value once at the HTTP boundary', () => {
+  it('accepts every numeric V2 API value once at the HTTP boundary and normalizes negative zero', () => {
     const result = normalizeMainForceMirrorV2Page(mirrorPage())
     const point = result.points[0]
 
@@ -127,6 +127,29 @@ describe('main force mirror v2 HTTP normalization', () => {
     assert.equal(point.position_skew, 0.6)
     assert.equal(point.top5_volume_share, 0.4)
     assert.equal(point.caution_conflict, false)
+    const negativeZero = normalizeMainForceMirrorV2Page(mirrorPage({
+      points: [wirePoint('2026-08-20T02:30:00Z', { member_strength: -0 })],
+    }))
+    assert.equal(Object.is(negativeZero.points[0].member_strength, -0), false)
+  })
+
+  it('rejects non-finite numeric values and string transport values', () => {
+    const nonFinite = mirrorPage({
+      points: [wirePoint('2026-08-20T02:30:00Z', { instant_pressure: Infinity })],
+    })
+    const stringTransport = mirrorPage({
+      points: [wirePoint('2026-08-20T02:30:00Z', { instant_pressure: '36.2' as never })],
+    })
+
+    assert.throws(() => normalizeMainForceMirrorV2Page(nonFinite))
+    assert.throws(() => normalizeMainForceMirrorV2Page(stringTransport))
+  })
+
+  it('rejects malformed page shapes before they enter V2 state', () => {
+    assert.throws(() => normalizeMainForceMirrorV2Page({
+      ...mirrorPage(),
+      page: null as never,
+    }))
   })
 })
 
@@ -240,6 +263,29 @@ describe('main force mirror v2 page state', () => {
     assert.equal(mirror.error.value, '主力照妖镜 V2 暂不可用')
   })
 
+  it('clears V2 state when HTTP normalization rejects an invalid numeric response', async () => {
+    let calls = 0
+    const mirror = useMainForceMirrorV2({
+      fetchPage: async () => {
+        calls += 1
+        return calls === 1
+          ? normalizedPage()
+          : normalizeMainForceMirrorV2Page(mirrorPage({
+              request: { ...mirrorPage().request, symbol: 'ag' },
+              points: [wirePoint('2026-08-20T02:30:00Z', { instant_pressure: Infinity })],
+            }))
+      },
+    })
+
+    await mirror.replace(identity())
+    await mirror.replace(identity('ag'))
+
+    assert.deepEqual(mirror.points.value, [])
+    assert.equal(mirror.memberDataset.value, null)
+    assert.equal(mirror.canonicalEnd.value, null)
+    assert.equal(mirror.error.value, '主力照妖镜 V2 暂不可用')
+  })
+
   it('prepends an overlapping V2 page by its own cursor and retains ascending bar_end order', async () => {
     const requests: MainForceMirrorV2PageRequest[] = []
     const mirror = useMainForceMirrorV2({
@@ -257,7 +303,7 @@ describe('main force mirror v2 page state', () => {
               request: { ...request, contract: request.contract ?? null },
               points: [
                 wirePoint('2026-08-20T01:30:00Z'),
-                wirePoint('2026-08-20T02:30:00Z', { instant_pressure: '99.000000' }),
+                wirePoint('2026-08-20T02:30:00Z', { instant_pressure: 99 }),
               ],
               page: { has_more_before: false, next_before: null },
             })
