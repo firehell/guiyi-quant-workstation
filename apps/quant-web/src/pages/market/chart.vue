@@ -142,6 +142,10 @@ const {
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
+let canonicalReplacementGeneration = 0
+let canonicalPendingGeneration: number | null = null
+let acceptedCanonical: { generation: number; identity: ReturnType<typeof currentIdentity> } | null = null
+let mirrorRequestedCanonicalGeneration: number | null = null
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
 const mainForceMirrorV2DisplayError = computed(() => {
@@ -316,14 +320,20 @@ function currentAlertMarkerIdentity() {
 }
 
 async function refreshSeries() {
+  const replacementGeneration = ++canonicalReplacementGeneration
+  canonicalPendingGeneration = replacementGeneration
+  acceptedCanonical = null
+  mirrorRequestedCanonicalGeneration = null
   mirror.clear()
   if (!symbol.value) {
     clearSeries()
+    settleFailedCanonicalReplacement(replacementGeneration)
     return false
   }
   const requested = currentIdentity()
   if (requested.seriesKind === 'contract' && !requested.contract) {
     clearSeries()
+    settleFailedCanonicalReplacement(replacementGeneration)
     error.value = '指定真实合约时 contract 必填'
     return false
   }
@@ -331,19 +341,21 @@ async function refreshSeries() {
   followLatest.value = true
   try {
     await replaceSeries(requested)
-    if (!isCurrentIdentity(requested)) return false
+    if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
     await router.replace({ query: {
       symbol: requested.symbol,
       contract: contract.value || undefined,
       series_kind: seriesKind.value,
       frequency: requested.frequency,
     } })
-    if (selectedSecondaryPanel.value === 'main_force_mirror_v2') {
-      await mirror.replace(requested)
-    }
+    if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
+    canonicalPendingGeneration = null
+    acceptedCanonical = { generation: replacementGeneration, identity: { ...requested } }
+    await requestMirrorForAcceptedCanonical()
     return true
   } catch {
-    if (!isCurrentIdentity(requested)) return false
+    if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
+    settleFailedCanonicalReplacement(replacementGeneration)
     error.value = '读取失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
     return false
@@ -376,7 +388,10 @@ async function refreshResearch() {
 async function loadEarlierBars() {
   try {
     await loadMoreBefore()
-    if (selectedSecondaryPanel.value === 'main_force_mirror_v2') {
+    if (selectedSecondaryPanel.value === 'main_force_mirror_v2'
+      && canonicalPendingGeneration === null
+      && acceptedCanonical
+      && isCurrentIdentity(acceptedCanonical.identity)) {
       await mirror.loadMoreBefore()
     }
   } catch {
@@ -388,10 +403,30 @@ async function loadEarlierBars() {
 async function updateSecondaryPanel(value: SecondaryPanelId) {
   selectedSecondaryPanel.value = value
   if (value === 'macd') {
+    mirrorRequestedCanonicalGeneration = null
     mirror.clear()
     return
   }
-  await mirror.replace(currentIdentity())
+  await requestMirrorForAcceptedCanonical()
+}
+
+async function requestMirrorForAcceptedCanonical() {
+  const accepted = acceptedCanonical
+  if (selectedSecondaryPanel.value !== 'main_force_mirror_v2'
+    || canonicalPendingGeneration !== null
+    || !accepted
+    || !isCurrentIdentity(accepted.identity)
+    || mirrorRequestedCanonicalGeneration === accepted.generation) return
+  mirrorRequestedCanonicalGeneration = accepted.generation
+  await mirror.replace(accepted.identity)
+}
+
+function settleFailedCanonicalReplacement(generation: number) {
+  if (generation !== canonicalReplacementGeneration) return
+  canonicalPendingGeneration = null
+  acceptedCanonical = null
+  mirrorRequestedCanonicalGeneration = null
+  mirror.clear()
 }
 
 function isCurrentIdentity(candidate: ReturnType<typeof currentIdentity>) {

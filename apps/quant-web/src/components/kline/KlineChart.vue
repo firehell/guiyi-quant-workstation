@@ -541,7 +541,8 @@ defineExpose({
 .overlay.error { color: var(--gy-status-error); }
 
 @media (max-width: 980px) {
-  .main-force-legend span:not(.main-force-legend__note) { display: none; }
-  .main-force-legend__note { max-width: 240px; }
+  .secondary-panel-header { right: 10px; flex-wrap: wrap; max-width: none; }
+  .main-force-legend { flex: 1 1 100%; flex-wrap: wrap; gap: 3px 9px; padding: 2px 6px; background: color-mix(in srgb, var(--gy-bg-panel) 92%, transparent); }
+  .main-force-legend__note { display: none; }
 }
 </style>
