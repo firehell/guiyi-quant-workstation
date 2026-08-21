@@ -74,7 +74,7 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
       aria-label="品种"
       @update:value="emit('update:symbol', $event)"
     />
-    <NButtonGroup v-if="selectedOverlay !== 'subing'" size="small" class="toolbar__series">
+    <NButtonGroup size="small" class="toolbar__series">
       <NButton
         :type="seriesKind === 'actual_dominant' ? 'primary' : 'default'"
         @click="emit('update:series-kind', 'actual_dominant')"
@@ -84,8 +84,8 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
         @click="emit('update:series-kind', 'continuous')"
       >主连</NButton>
     </NButtonGroup>
-    <NTag v-else size="small" type="info" class="toolbar__dominant">
-      当前主力 {{ currentDominant || '等待映射' }}
+    <NTag v-if="selectedOverlay === 'subing'" size="small" type="info" class="toolbar__subing-basis">
+      苏冰计算 {{ currentDominant || '等待映射' }}
     </NTag>
     <NButtonGroup size="small" class="toolbar__periods" aria-label="周期">
       <NButton
@@ -112,7 +112,7 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
         @click="toggleOptionalEma(item.value)"
       >{{ item.label }}</NButton>
     </NButtonGroup>
-    <NPopover v-if="selectedOverlay !== 'subing'" trigger="click" placement="bottom-end">
+    <NPopover trigger="click" placement="bottom-end">
       <template #trigger><NButton size="small" tertiary>高级</NButton></template>
       <div class="toolbar__advanced">
         <span>指定真实合约</span>
@@ -138,7 +138,7 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
 <style scoped>
 .product-workspace-toolbar { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .toolbar__symbol { width: 184px; }
-.toolbar__series, .toolbar__periods, .toolbar__overlay, .toolbar__ema, .toolbar__dominant { white-space: nowrap; }
+.toolbar__series, .toolbar__periods, .toolbar__overlay, .toolbar__ema, .toolbar__subing-basis { white-space: nowrap; }
 .toolbar__spacer { flex: 1 1 8px; }
 .toolbar__advanced { display: grid; gap: 8px; width: 196px; padding: 4px; }
 .toolbar__advanced > span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
