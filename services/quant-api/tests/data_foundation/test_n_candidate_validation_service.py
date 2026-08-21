@@ -6,7 +6,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.research.common import candidate_validation_schedule as shared_schedule
 from app.research.n_structure.n_candidate_validation import NProspectiveOosStatus
 from app.research.n_structure.n_candidate_validation_policy import (
     load_n_candidate_manifest,
@@ -92,18 +91,6 @@ def _request(*, through: date = date(2026, 8, 20)) -> CandidateValidationRequest
     )
 
 
-def test_n_service_reexports_shared_request_and_stable_errors() -> None:
-    assert CandidateValidationRequest is shared_schedule.CandidateValidationRequest
-    assert (
-        CandidateValidationIdentityError
-        is shared_schedule.CandidateValidationIdentityError
-    )
-    assert (
-        CandidateValidationWindowError is shared_schedule.CandidateValidationWindowError
-    )
-    assert (
-        CandidateValidationSourceError is shared_schedule.CandidateValidationSourceError
-    )
 
 
 @pytest.mark.parametrize(

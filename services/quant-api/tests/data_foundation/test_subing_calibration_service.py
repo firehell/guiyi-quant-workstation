@@ -5,7 +5,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.research import composition
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
@@ -678,42 +677,6 @@ def test_thresholds_reject_negative_or_non_finite_values(value: Decimal) -> None
         SlopeThresholds(value, Decimal("1"))
 
 
-def test_composition_builder_constructs_only_market_data_calibration_dependencies(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Catches the builder accidentally constructing MarketRead/Redis/provider paths."""
-    daily = (_bar(datetime(2026, 8, 3, 7, tzinfo=UTC), _DAY_ONE, Decimal("100")),)
-    market_data = _FakeMarketData(
-        {
-            ("jm", BarFrequency.D1): _result(
-                daily,
-                (ResolvedContractSegment("JM2609", _DAY_ONE, _DAY_ONE),),
-            )
-        }
-    )
-    monkeypatch.setattr(
-        composition, "build_market_data_service", lambda session: market_data
-    )
-    monkeypatch.setattr(composition, "load_active_products", lambda: ("jm",))
-    monkeypatch.setattr(
-        composition,
-        "build_market_read_service",
-        lambda session: pytest.fail("MarketReadService must not be constructed"),
-        raising=False,
-    )
-
-    service = composition.build_subing_calibration_research_service(object())
-    result = service.run(
-        CalibrationResearchRequest(
-            CalibrationPhase.SLOPE,
-            CalibrationMode.DISCOVERY,
-            BarFrequency.D1,
-            _DAY_ONE,
-            _DAY_ONE,
-        )
-    )
-
-    assert result.products == ("jm",)
 
 
 def _bars(

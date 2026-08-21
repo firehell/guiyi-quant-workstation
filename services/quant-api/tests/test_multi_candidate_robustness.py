@@ -3,12 +3,10 @@ from __future__ import annotations
 from dataclasses import fields, replace
 from datetime import date, datetime
 from decimal import Decimal
-import json
 from types import MappingProxyType
 
 import pytest
 
-from app.guiyi_cli.research_payloads import _multi_candidate_robustness_payload
 from app.research.robustness.multi_candidate_robustness import (
     CandidateRelationshipSummary,
     CandidateSymbolRobustness,
@@ -195,20 +193,6 @@ def test_valid_report_is_exactly_ordered_and_immutable() -> None:
     assert isinstance(report.cross_symbol_results[0].horizon_summary, MappingProxyType)
 
 
-def test_real_report_renderer_uses_canonical_fields_and_is_byte_deterministic() -> None:
-    payload = _multi_candidate_robustness_payload(_report())
-    encoded_once = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    encoded_twice = json.dumps(
-        _multi_candidate_robustness_payload(_report()),
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-    assert encoded_once == encoded_twice
-    summary = payload["cross_symbol_summaries"][0]  # type: ignore[index]
-    assert summary["symbols_with_events"] == 0  # type: ignore[index]
-    assert summary["symbols_without_events"] == 60  # type: ignore[index]
-    assert summary["horizon_sign_summary"]["3"]["symbols_with_samples"] == 0  # type: ignore[index]
 
 
 @pytest.mark.parametrize(

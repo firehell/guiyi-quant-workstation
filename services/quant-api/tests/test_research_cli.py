@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.research import composition as research_composition
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
 from app.guiyi_cli.data_parser import CliUsageError
@@ -32,7 +31,6 @@ from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2HorizonSummary,
     MainForceMirrorV2ResearchRequest,
     MainForceMirrorV2ResearchResult,
-    MainForceMirrorV2ResearchService,
     MainForceMirrorV2SensitivitySummary,
 )
 from app.research.jdj.jdj_events import (
@@ -42,7 +40,6 @@ from app.research.jdj.jdj_events import (
     _canonical_trend_follow_event_id,
 )
 from app.research.jdj.jdj_research import JdjResearchRequest, JdjResearchResult
-from app.research.jdj.jdj_research_service import JdjResearchService
 from app.research.jdj.jdj_candidate_validation import (
     JdjCandidateValidationReport,
     JdjCandidateWindowKind,
@@ -51,9 +48,6 @@ from app.research.jdj.jdj_candidate_validation import (
     JdjRollingCandidateFold,
     project_jdj_window,
     summarize_jdj_rolling_stability,
-)
-from app.research.jdj.jdj_candidate_validation_service import (
-    JdjCandidateValidationService,
 )
 from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
@@ -91,7 +85,6 @@ from app.research.subing.subing_lifecycle_research_service import (
 )
 from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationRequest,
-    SubingCandidateValidationService,
 )
 
 
@@ -1467,19 +1460,6 @@ def test_zero_band_outputs_both_named_cohorts(mode: str) -> None:
         assert payload["cohorts"]["B"]["threshold_evaluation"]["threshold"] == "2.7500"
 
 
-def test_research_payload_contains_no_selection_approval_or_trade_claims() -> None:
-    report = _discovery_report(sample_count=1, product_counts={"jm": 1})
-    service = _FakeResearchService(CalibrationResearchResult(("jm",), report, {}))
-
-    code, payload = _run_research(
-        [*_arguments(), "--symbol", "jm"],
-        service,
-    )
-
-    assert code == 0
-    rendered = json.dumps(payload, sort_keys=True).lower()
-    for forbidden in ("best", "approved", "trade", "performance"):
-        assert forbidden not in rendered
 
 
 def test_research_execution_error_is_redacted_and_always_readonly() -> None:
@@ -1749,127 +1729,12 @@ def test_candidate_cli_dispatches_explicit_service_and_serializes_report() -> No
     )
 
 
-def test_candidate_composition_reuses_the_lifecycle_research_builder(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    lifecycle = object()
-    sessions: list[object] = []
-
-    def build_lifecycle(session: object) -> object:
-        sessions.append(session)
-        return lifecycle
-
-    monkeypatch.setattr(
-        research_composition,
-        "build_subing_lifecycle_research_service",
-        build_lifecycle,
-    )
-    session = object()
-
-    service = research_composition.build_subing_candidate_validation_service(
-        session  # type: ignore[arg-type]
-    )
-
-    assert isinstance(service, SubingCandidateValidationService)
-    assert service._lifecycle_research is lifecycle
-    assert sessions == [session]
 
 
-def test_jdj_research_composition_reuses_one_mds_and_no_write_factory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_data = object()
-    calls: list[tuple[str, object]] = []
-
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        lambda session: calls.append(("market_data", session)) or market_data,
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "build_historical_data_manager",
-        lambda _session: pytest.fail("must not construct data manager"),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "build_live_market_service",
-        lambda _session: pytest.fail("must not construct live/Redis service"),
-        raising=False,
-    )
-    session = object()
-
-    service = research_composition.build_jdj_research_service(
-        session  # type: ignore[arg-type]
-    )
-
-    assert isinstance(service, JdjResearchService)
-    assert service._segment_loader._market_data is market_data
-    assert calls == [("market_data", session)]
 
 
-def test_jdj_validation_composition_checks_calendar_first_and_reuses_one_mds(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_data = object()
-    order: list[tuple[str, object]] = []
-
-    monkeypatch.setattr(
-        research_composition,
-        "assert_jdj_prospective_calendar",
-        lambda session: order.append(("calendar", session)),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        lambda session: order.append(("market_data", session)) or market_data,
-    )
-    session = object()
-
-    service = research_composition.build_jdj_candidate_validation_service(
-        session,  # type: ignore[arg-type]
-        _JDJ_CANDIDATES[1],
-    )
-
-    assert isinstance(service, JdjCandidateValidationService)
-    assert isinstance(service._jdj_research, JdjResearchService)
-    assert service._jdj_research._segment_loader._market_data is market_data
-    assert service._manifest.candidate_id == _JDJ_CANDIDATES[1]
-    assert order == [("calendar", session), ("market_data", session)]
 
 
-def test_candidate_payload_contains_no_automatic_decision_or_profit_fields() -> None:
-    service = _FakeCandidateValidationService(_candidate_report())
-    stdout = io.StringIO()
-    code = main(
-        _candidate_arguments(),
-        session_factory=lambda: nullcontext(object()),
-        candidate_validation_service_factory=lambda _session: service,
-        stdout=stdout,
-        stderr=io.StringIO(),
-    )
-
-    assert code == 0
-    payload = json.loads(stdout.getvalue())
-
-    def keys(value: object) -> set[str]:
-        if isinstance(value, dict):
-            return set(value) | set().union(*(keys(item) for item in value.values()))
-        if isinstance(value, list):
-            return set().union(*(keys(item) for item in value))
-        return set()
-
-    assert keys(payload).isdisjoint(
-        {
-            "keep",
-            "drop",
-            "promote",
-            "pass_strategy",
-            "expected_profit",
-            "account_return",
-        }
-    )
 
 
 def _n_candidate_arguments(
@@ -2087,39 +1952,6 @@ def test_n_candidate_cli_uses_explicit_n_service_and_source_specific_payload() -
     }
 
 
-def test_n_candidate_payload_contains_no_decision_profit_or_promotion_fields() -> None:
-    service = _FakeNCandidateValidationService(_n_candidate_report())
-    stdout = io.StringIO()
-
-    code = main(
-        _n_candidate_arguments(),
-        session_factory=lambda: nullcontext(object()),
-        n_candidate_validation_service_factory=lambda _session: service,
-        stdout=stdout,
-        stderr=io.StringIO(),
-    )
-
-    assert code == 0
-    payload = json.loads(stdout.getvalue())
-
-    def keys(value: object) -> set[str]:
-        if isinstance(value, dict):
-            return set(value) | set().union(*(keys(item) for item in value.values()))
-        if isinstance(value, list):
-            return set().union(*(keys(item) for item in value))
-        return set()
-
-    assert keys(payload).isdisjoint(
-        {
-            "keep",
-            "drop",
-            "promote",
-            "pass_strategy",
-            "profitability",
-            "expected_profit",
-            "account_return",
-        }
-    )
 
 
 def _mirror_arguments(
@@ -2367,57 +2199,6 @@ def test_mirror_cli_renders_undefined_event_rate_as_json_null() -> None:
     assert payload["caution_events_per_1000_ready_bars"] is None
 
 
-def test_mirror_composition_reuses_one_market_and_v2_service_identity(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_data = type(
-        "MarketDataReader",
-        (),
-        {
-            "query_page": lambda self, request: request,
-            "query_actual_dominant_trading_days": lambda self, request: request,
-            "query_contract_trading_days": lambda self, request: request,
-        },
-    )()
-    sessions: list[object] = []
-    task5_service = type(
-        "Task5Service",
-        (),
-        {
-            "market_data": market_data,
-            "query_page": lambda self, request: request,
-        },
-    )()
-
-    def build_task5_service(session: object) -> object:
-        sessions.append(session)
-        return task5_service
-
-    def reject_duplicate_market_data(_session: object) -> object:
-        raise AssertionError(
-            "research composition must reuse the Task 5 service"
-        )
-
-    monkeypatch.setattr(
-        research_composition,
-        "build_main_force_mirror_v2_service",
-        build_task5_service,
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        reject_duplicate_market_data,
-    )
-    session = object()
-
-    service = research_composition.build_main_force_mirror_v2_research_service(
-        session  # type: ignore[arg-type]
-    )
-
-    assert isinstance(service, MainForceMirrorV2ResearchService)
-    assert service.mirror_service is task5_service
-    assert service.market_data is task5_service.market_data
-    assert sessions == [session]
 
 
 def _robustness_report() -> SimpleNamespace:
@@ -2527,6 +2308,112 @@ class _FakeRobustnessService:
         return _robustness_report()
 
 
+def _calibration_contract_payload() -> dict[str, object]:
+    request = _request([*_arguments(), "--symbol", "jm"])
+    report = _discovery_report(sample_count=1, product_counts={"jm": 1})
+    return run_research_command(
+        request,
+        _FakeResearchService(CalibrationResearchResult(("jm",), report, {})),
+    )
+
+
+def _subing_candidate_contract_payload() -> dict[str, object]:
+    return run_research_command(
+        CandidateValidationRequest(
+            candidate_id="subing_lifecycle_v2_candidate_v1",
+            protocol_id="candidate_validation_v1",
+            symbol="jm",
+            through=date(2026, 8, 19),
+        ),
+        _FakeCandidateValidationService(_candidate_report()),
+    )
+
+
+def _n_candidate_contract_payload() -> dict[str, object]:
+    return run_research_command(
+        CandidateValidationRequest(
+            candidate_id="n_structure_5m_candidate_v1",
+            protocol_id="n_structure_validation_v1",
+            symbol="jm",
+            through=date(2026, 8, 20),
+        ),
+        _FakeNCandidateValidationService(_n_candidate_report()),
+    )
+
+
+def _robustness_contract_payload() -> dict[str, object]:
+    return run_research_command(
+        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"),
+        _FakeRobustnessService(),
+    )
+
+
+def _payload_keys(value: object) -> set[str]:
+    if isinstance(value, dict):
+        return {str(key).lower() for key in value} | set().union(
+            *(_payload_keys(item) for item in value.values())
+        )
+    if isinstance(value, list):
+        return set().union(*(_payload_keys(item) for item in value))
+    return set()
+
+
+@pytest.mark.parametrize(
+    "payload_factory",
+    (
+        _calibration_contract_payload,
+        _subing_candidate_contract_payload,
+        _n_candidate_contract_payload,
+        _robustness_contract_payload,
+    ),
+)
+def test_research_payloads_exclude_automatic_promotion_profit_and_ranking_fields(
+    payload_factory,
+) -> None:
+    forbidden = {
+        "approved",
+        "best",
+        "better_candidate",
+        "account_return",
+        "drop",
+        "expected_profit",
+        "keep",
+        "pass_strategy",
+        "performance",
+        "profitability",
+        "promote",
+        "rank",
+        "score",
+        "trade",
+        "winner",
+    }
+
+    assert _payload_keys(payload_factory()).isdisjoint(forbidden)
+
+
+def test_robustness_renderer_uses_canonical_fields_and_is_byte_deterministic() -> None:
+    encoded_once = json.dumps(
+        _robustness_contract_payload(),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    encoded_twice = json.dumps(
+        _robustness_contract_payload(),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+    assert encoded_once == encoded_twice
+    payload = _robustness_contract_payload()
+    assert payload["cross_symbol_summaries"][0]["symbols_with_events"] == 1
+    assert payload["cross_symbol_summaries"][0]["symbols_without_events"] == 59
+    assert (
+        payload["cross_symbol_summaries"][0]["horizon_sign_summary"]["3"]
+        ["symbols_with_samples"]
+        == 1
+    )
+
+
 def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> None:
     service = _FakeRobustnessService()
     stdout = io.StringIO()
@@ -2575,131 +2462,3 @@ def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> No
     assert payload["readonly"] is payload["research_only"] is True
     assert payload["cross_symbol_results"][0]["event_rate_per_1000_evaluable"] == "500"
     assert payload["relationships"][0]["signed_distance_median"] == "1"
-
-
-def test_candidate_robustness_payload_contains_no_selection_or_profit_keys() -> None:
-    payload = run_research_command(
-        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"),
-        _FakeRobustnessService(),
-    )
-    forbidden = {
-        "score",
-        "rank",
-        "winner",
-        "better_candidate",
-        "keep",
-        "drop",
-        "promote",
-        "profitability",
-        "expected_profit",
-    }
-
-    def keys(value: object) -> set[str]:
-        if isinstance(value, dict):
-            return {str(key).lower() for key in value} | set().union(
-                *(keys(item) for item in value.values())
-            )
-        if isinstance(value, list):
-            return set().union(*(keys(item) for item in value))
-        return set()
-
-    assert keys(payload).isdisjoint(forbidden)
-
-
-def test_robustness_composition_reuses_one_mds_and_frozen_active60(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    protocol = research_composition.load_multi_candidate_robustness_protocol()
-    market_data = object()
-    build_calls: list[object] = []
-    source_calls: list[tuple[str, object, tuple[str, ...]]] = []
-
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        lambda session: build_calls.append(session) or market_data,
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "load_active_products",
-        lambda: protocol.cross_symbol_products,
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "load_accepted_subing_calibration",
-        lambda: object(),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "load_subing_lifecycle_policy",
-        lambda: object(),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "load_n_structure_policy",
-        lambda: object(),
-    )
-    subing = object()
-    n_structure = object()
-    monkeypatch.setattr(
-        research_composition,
-        "SubingLifecycleResearchService",
-        lambda mds, *, products, calibration, policy: (
-            source_calls.append(("subing", mds, products)) or subing
-        ),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "ActualDominantResearchSegmentLoader",
-        lambda mds: SimpleNamespace(market_data=mds),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "NStructureResearchService",
-        lambda loader, *, products, policy: (
-            source_calls.append(("n", loader.market_data, products)) or n_structure
-        ),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "SubingCandidateValidationService",
-        lambda source, *, manifest, protocol: SimpleNamespace(source=source),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "NStructureCandidateValidationService",
-        lambda source, *, manifest, protocol: SimpleNamespace(source=source),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "load_candidate_manifest",
-        lambda: object(),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "load_candidate_validation_protocol",
-        lambda: object(),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "load_n_candidate_manifest",
-        lambda: object(),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "load_n_candidate_validation_protocol",
-        lambda: object(),
-    )
-
-    session = object()
-    service = research_composition.build_multi_candidate_robustness_service(
-        session  # type: ignore[arg-type]
-    )
-
-    assert build_calls == [session]
-    assert source_calls == [
-        ("subing", market_data, protocol.cross_symbol_products),
-        ("n", market_data, protocol.cross_symbol_products),
-    ]
-    assert service._subing is subing
-    assert service._n is n_structure

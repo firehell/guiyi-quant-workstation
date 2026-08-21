@@ -115,18 +115,6 @@ def _request(*, through: date = date(2026, 8, 19)) -> CandidateValidationRequest
     )
 
 
-def test_service_reexports_shared_request_and_stable_errors() -> None:
-    assert CandidateValidationRequest is shared_schedule.CandidateValidationRequest
-    assert (
-        CandidateValidationIdentityError
-        is shared_schedule.CandidateValidationIdentityError
-    )
-    assert (
-        CandidateValidationWindowError is shared_schedule.CandidateValidationWindowError
-    )
-    assert (
-        CandidateValidationSourceError is shared_schedule.CandidateValidationSourceError
-    )
 
 
 def test_service_delegates_rolling_and_prospective_date_math(

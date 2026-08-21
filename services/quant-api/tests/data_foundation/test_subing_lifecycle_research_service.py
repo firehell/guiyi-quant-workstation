@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.research import composition
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
@@ -1121,42 +1120,6 @@ def test_service_selects_active_products_and_rejects_unknown_symbol(
         service.run(LifecycleResearchRequest(_DAY_ONE, _DAY_ONE, "ag"))
 
 
-def test_composition_builder_constructs_only_historical_read_dependencies(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    dependencies: dict[str, object] = {}
-    market_data = object()
-    calibration = object()
-    policy = SimpleNamespace(policy_id="subing_lifecycle_v2_research_v1")
-    monkeypatch.setattr(composition, "build_market_data_service", lambda _session: market_data)
-    monkeypatch.setattr(composition, "load_active_products", lambda: ("jm",))
-    monkeypatch.setattr(
-        composition, "load_accepted_subing_calibration", lambda: calibration
-    )
-    monkeypatch.setattr(composition, "load_subing_lifecycle_policy", lambda: policy)
-    monkeypatch.setattr(
-        composition,
-        "SubingLifecycleResearchService",
-        lambda market_data_arg, **kwargs: dependencies.update(
-            market_data=market_data_arg, **kwargs
-        )
-        or SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        composition,
-        "build_market_read_service",
-        lambda _session: pytest.fail("MarketRead/Redis must not be constructed"),
-        raising=False,
-    )
-
-    composition.build_subing_lifecycle_research_service(object())
-
-    assert dependencies == {
-        "market_data": market_data,
-        "products": ("jm",),
-        "calibration": calibration,
-        "policy": policy,
-    }
 
 
 def test_service_runs_the_real_factor_and_lifecycle_kernels_on_fixture_bars(

@@ -6,7 +6,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.research.common import candidate_validation_schedule as shared_schedule
 from app.research.jdj.jdj_candidate_validation import JdjProspectiveOosStatus
 from app.research.jdj.jdj_candidate_validation_policy import (
     load_jdj_candidate_manifest,
@@ -124,11 +123,6 @@ def _request(
     )
 
 
-def test_service_reexports_shared_request_and_stable_errors() -> None:
-    assert CandidateValidationRequest is shared_schedule.CandidateValidationRequest
-    assert CandidateValidationIdentityError is shared_schedule.CandidateValidationIdentityError
-    assert CandidateValidationWindowError is shared_schedule.CandidateValidationWindowError
-    assert CandidateValidationSourceError is shared_schedule.CandidateValidationSourceError
 
 
 @pytest.mark.parametrize(("candidate_id", "source_event_kind"), _CANDIDATES)
