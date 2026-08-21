@@ -10,7 +10,7 @@ formal policy、能力矩阵）与可复用的研究辅助结构。
 
 ## 设计原则
 
-- **只服务研究闭环**：数据、指标、复盘和信号语义；**非 Web 入口**（当前 Web 仅 Market）。不写自动实盘下单逻辑。
+- **只服务研究闭环**：数据、指标、复盘和信号语义；**非 Web 入口**。不写自动实盘下单逻辑。
 - **Indicator Kernel 为权威**：算法与 formal policy 只在 `guiyi_quant/indicators/`；Web TS 仅为观察镜像。
 - **外部数据源隔离**：指标与未来策略不得直接调用 RQData、TqSdk、TuShare 或读取 raw 文件，统一读取本地标准化数据。
 - **依赖边界清晰**：RQData 是 V1 主数据源；TqSdk 仅是 V2 候选 / 历史 validation 工具；TuShare 仅是后期辅助数据候选。

@@ -1,7 +1,10 @@
 import type { AlertEvent, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
-
-const SUBING_RULE_CODE = 'subing_entry_signal_v1'
-const HTDY_RULE_CODE = 'htdy_original_15m'
+import {
+  ALERT_RULE_PRESENTATIONS,
+  alertDirectionalTone,
+  alertResultLabel,
+  getAlertRulePresentation,
+} from './alertRules.ts'
 
 export function isPersistentAlertIdentity(
   seriesKind: SeriesKind,
@@ -15,24 +18,23 @@ export function markerRuleCodes(
   frequency: MarketFrequency,
 ): string[] {
   if (seriesKind !== 'actual_dominant') return []
-  if (frequency === '5m') return [SUBING_RULE_CODE]
-  if (frequency === '15m') return [HTDY_RULE_CODE, SUBING_RULE_CODE]
-  return []
+  return ALERT_RULE_PRESENTATIONS
+    .filter((presentation) => presentation.persistentFrequencies.includes(frequency))
+    .map((presentation) => presentation.ruleCode)
 }
 
 export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
   return [...events]
     .sort((left, right) => Date.parse(left.bar_end) - Date.parse(right.bar_end))
     .flatMap((event) => {
-      const observations = new Set(event.result_codes)
-      const label = markerLabel(event.rule_code, observations)
-      if (!label) return []
+      const label = alertResultLabel(event.rule_code, event.result_codes)
+      if (label === '提醒记录') return []
       return [{
         id: `alert:${event.rule_code}:${event.symbol}:${event.bar_end}`,
         time: event.bar_end,
         label,
         tooltip: `持久 AlertEvent · ${event.contract} · ${label}`,
-        tone: markerTone(event.rule_code, observations),
+        tone: markerTone(event.rule_code, event.result_codes),
         position: 'aboveBar' as const,
         shape: 'square' as const,
       }]
@@ -41,24 +43,14 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
 
 function markerTone(
   ruleCode: string,
-  observations: Set<'buy' | 'sell'>,
+  observations: Array<'buy' | 'sell'>,
 ): KlineMarker['tone'] {
-  if (ruleCode === HTDY_RULE_CODE) return 'htdy'
-  if (ruleCode !== SUBING_RULE_CODE) return 'neutral'
-  if (observations.size === 1 && observations.has('buy')) return 'up'
-  if (observations.size === 1 && observations.has('sell')) return 'down'
+  const presentation = getAlertRulePresentation(ruleCode)
+  if (presentation?.markerTone) return presentation.markerTone
+  const direction = alertDirectionalTone(ruleCode, observations)
+  if (direction === 'buy') return 'up'
+  if (direction === 'sell') return 'down'
   return 'neutral'
-}
-
-function markerLabel(ruleCode: string, observations: Set<'buy' | 'sell'>): string | null {
-  const category = ruleCode === SUBING_RULE_CODE
-    ? '信号'
-    : ruleCode === HTDY_RULE_CODE ? '观察' : null
-  if (!category) return null
-  if (observations.has('buy') && observations.has('sell')) return `买入/卖出${category}`
-  if (observations.has('buy')) return `买入${category}`
-  if (observations.has('sell')) return `卖出${category}`
-  return null
 }
 
 export function mergeKlineMarkers(

@@ -86,6 +86,44 @@ class JdjBarContext:
             )
 
 
+def valid_context_fact_identity(
+    context: JdjBarContext,
+    *,
+    previous: JdjBarContext | None,
+    contract: str,
+    segment_start_trading_day: date,
+) -> bool:
+    """Validate that a reducer sees only causal, same-segment context facts."""
+
+    snapshot_at = context.trend_snapshot_observed_at
+    pivots = (
+        context.eligible_high_pivot,
+        context.eligible_low_pivot,
+    )
+    if previous is None or previous.bar.trading_day != context.bar.trading_day:
+        return (
+            snapshot_at is None
+            and context.trend_kind is NStructureKind.UNDEFINED
+            and all(pivot is None for pivot in pivots)
+        )
+    if snapshot_at is None:
+        return (
+            context.trend_kind is NStructureKind.UNDEFINED
+            and all(pivot is None for pivot in pivots)
+        )
+    strict_before_boundary = previous.bar.bar_end
+    if snapshot_at > strict_before_boundary:
+        return False
+    for pivot in pivots:
+        if pivot is not None and (
+            pivot.contract != contract
+            or pivot.segment_start_trading_day != segment_start_trading_day
+            or pivot.confirmed_at > strict_before_boundary
+        ):
+            return False
+    return True
+
+
 def build_jdj_context_series(
     bars_1m: Sequence[CanonicalBar],
     bars_5m: Sequence[CanonicalBar],

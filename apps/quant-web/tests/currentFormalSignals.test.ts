@@ -49,15 +49,12 @@ test('network error stays unavailable instead of ready empty', async () => {
   assert.equal(state.loading.value, false)
 })
 
-test('homepage formal signals fail closed against HTDY observations', async () => {
+test('homepage preserves the backend formal-signal response without duplicating rule filtering', async () => {
   const state = useCurrentFormalSignals({
     fetchCurrent: async () => ({
       status: 'ready',
       trading_day: '2026-08-15',
-      items: [
-        currentItem('subing_entry_signal_v1', '苏冰'),
-        currentItem('htdy_original_15m', '火天大有'),
-      ],
+      items: [currentItem('subing_entry_signal_v1', '苏冰')],
     }),
   })
 

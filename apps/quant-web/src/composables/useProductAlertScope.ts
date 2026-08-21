@@ -27,8 +27,6 @@ export function useProductAlertScope(dependencies: Dependencies) {
   const rulesByCode = computed(() => new Map(
     alertRules.value.map((rule) => [rule.rule_code, rule]),
   ))
-  const htdyRule = computed(() => rulesByCode.value.get('htdy_original_15m') ?? null)
-  const subingRule = computed(() => rulesByCode.value.get('subing_entry_signal_v1') ?? null)
   let generation = 0
 
   async function refresh(): Promise<void> {
@@ -101,8 +99,6 @@ export function useProductAlertScope(dependencies: Dependencies) {
 
   return {
     alertRules,
-    htdyRule,
-    subingRule,
     alertRuntimeStatus,
     alertLoading,
     savingRuleCodes,

@@ -114,6 +114,59 @@ def test_project_assistance_matches_the_active_market_architecture() -> None:
     assert "每项任务默认主 agent，最多增加一个必要的 specialist 或 reviewer" in guidance
 
 
+def test_active_guidance_delegates_mutable_state_and_matches_current_surfaces() -> None:
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    governor = (ROOT / ".agents/skills/project-governor/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    backend = (ROOT / ".agents/skills/quant-backend/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    frontend = (ROOT / ".agents/skills/quant-frontend/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    product_reviewer = (
+        ROOT / ".codex/agents/product-reviewer.toml"
+    ).read_text(encoding="utf-8")
+    architecture_reviewer = (
+        ROOT / ".codex/agents/architecture-reviewer.toml"
+    ).read_text(encoding="utf-8")
+    execution_review = (ROOT / "docs/EXECUTION_REVIEW.md").read_text(
+        encoding="utf-8"
+    )
+    development = (ROOT / "docs/DEVELOPMENT.md").read_text(encoding="utf-8")
+    backend_readme = (ROOT / "services/quant-api/README.md").read_text(
+        encoding="utf-8"
+    )
+    core_readme = (ROOT / "packages/quant-core/README.md").read_text(
+        encoding="utf-8"
+    )
+
+    mutable_guidance = "\n".join((agents, governor, product_reviewer))
+    assert not re.search(r"当前(?:正式)?\s*release[^\n]*v\d+\.\d+\.\d+", mutable_guidance)
+    assert "当前 production、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`" in agents
+    assert "PushPlus" in backend
+    assert "Execution Review" in backend
+    assert "`/trade-records`" in frontend
+    assert "Execution Review" in architecture_reviewer
+    assert "WeCom" not in "\n".join((backend, execution_review))
+    assert "v1.4 Runtime" not in execution_review
+    assert "v1.4 release" not in execution_review
+    assert "Lane 3" not in execution_review
+    assert "G9 cleanup" not in development
+    for command in (
+        "subing-calibration",
+        "subing-lifecycle",
+        "n-structure",
+        "jdj-1m",
+        "candidate-validation",
+        "candidate-robustness",
+        "main-force-mirror-futures",
+    ):
+        assert command in backend_readme
+    assert "当前 Web 仅 Market" not in core_readme
+
+
 def test_active_canonical_has_no_retired_entrypoint_references() -> None:
     for relative in ACTIVE_CANONICAL:
         text = (ROOT / relative).read_text(encoding="utf-8")
@@ -242,6 +295,103 @@ def test_release_versions_are_consistent() -> None:
     assert re.fullmatch(r"\d+\.\d+\.\d+", versions.pop())
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
+
+
+def test_isolated_postgresql_tests_are_separate_from_the_local_baseline() -> None:
+    pyproject = tomllib.loads(
+        (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
+    )
+    testing = (ROOT / "TESTING.md").read_text(encoding="utf-8")
+    service_tree = ast.parse(
+        (ROOT / "services/quant-api/tests/test_execution_review_service.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    migration_tree = ast.parse(
+        (
+            ROOT
+            / "services/quant-api/tests/alembic/test_execution_review_v1_migration.py"
+        ).read_text(encoding="utf-8")
+    )
+
+    markers = pyproject["tool"]["pytest"]["ini_options"]["markers"]
+    assert any(marker.startswith("isolated_postgresql:") for marker in markers)
+    assert 'pytest -q -m "not isolated_postgresql" services/quant-api/tests' in testing
+    assert "pytest -q -m isolated_postgresql services/quant-api/tests" in testing
+
+    postgresql_tests = [
+        node
+        for node in service_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_postgresql_")
+    ]
+    migration_tests = [
+        node
+        for node in migration_tree.body
+        if isinstance(node, ast.FunctionDef)
+        and any(arg.arg == "isolated_migration_context" for arg in node.args.args)
+    ]
+    assert postgresql_tests
+    assert migration_tests
+    for test in (*postgresql_tests, *migration_tests):
+        decorators = {ast.unparse(decorator) for decorator in test.decorator_list}
+        assert "pytest.mark.isolated_postgresql" in decorators, test.name
+
+
+def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
+    rule_codes = ("htdy_original_15m", "subing_entry_signal_v1")
+    backend_sources = tuple(
+        path
+        for path in (ROOT / "services/quant-api/app").rglob("*.py")
+        if any(code in path.read_text(encoding="utf-8") for code in rule_codes)
+    )
+    frontend_sources = tuple(
+        path
+        for path in (ROOT / "apps/quant-web/src").rglob("*")
+        if path.suffix in {".ts", ".vue"}
+        and any(code in path.read_text(encoding="utf-8") for code in rule_codes)
+    )
+
+    assert {path.relative_to(ROOT).as_posix() for path in backend_sources} == {
+        "services/quant-api/app/alerts/registry.py"
+    }
+    assert {path.relative_to(ROOT).as_posix() for path in frontend_sources} == {
+        "apps/quant-web/src/utils/alertRules.ts"
+    }
+
+
+def test_exact_contract_and_jdj_identity_have_one_implementation() -> None:
+    market_data = ROOT / "services/quant-api/app/market_data"
+    exact_contract = market_data / "exact_json_contract.py"
+    assert exact_contract.is_file()
+    exact_source = exact_contract.read_text(encoding="utf-8")
+    for function in (
+        "matches_exact_json",
+        "load_exact_json",
+        "freeze_json",
+        "matches_exact_frozen",
+    ):
+        assert f"def {function}(" in exact_source
+
+    duplicate_exact_definitions = []
+    duplicate_jdj_definitions = []
+    for path in market_data.glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        if path != exact_contract and re.search(
+            r"^def _?(?:matches_exact|load_exact|freeze_json|matches_exact_json|matches_exact_frozen)\(",
+            source,
+            re.MULTILINE,
+        ):
+            duplicate_exact_definitions.append(path.name)
+        if path.name != "jdj_context.py" and re.search(
+            r"^def _?valid_context_fact_identity\(", source, re.MULTILINE
+        ):
+            duplicate_jdj_definitions.append(path.name)
+
+    assert duplicate_exact_definitions == []
+    assert duplicate_jdj_definitions == []
+    assert "def valid_context_fact_identity(" in (
+        market_data / "jdj_context.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_release_candidate_excludes_private_sources_and_retired_ai_guidance() -> None:

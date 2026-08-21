@@ -110,8 +110,7 @@ const {
   refreshSeries: () => refreshSeries(),
 })
 const {
-  htdyRule,
-  subingRule,
+  alertRules,
   alertRuntimeStatus,
   alertLoading,
   savingRuleCodes,
@@ -550,8 +549,7 @@ function normalizeSymbol(value: unknown): string | null {
               :subing-loading="subingLoading || metadataLoading"
               :subing-error="subingError"
               :subing-supported="subingSupported"
-              :htdy-rule="htdyRule"
-              :subing-rule="subingRule"
+              :alert-rules="alertRules"
               :alert-runtime-status="alertRuntimeStatus"
               :alert-loading="alertLoading"
               :saving-rule-codes="savingRuleCodes"
@@ -594,8 +592,7 @@ function normalizeSymbol(value: unknown): string | null {
           :subing-loading="subingLoading || metadataLoading"
           :subing-error="subingError"
           :subing-supported="subingSupported"
-          :htdy-rule="htdyRule"
-          :subing-rule="subingRule"
+          :alert-rules="alertRules"
           :alert-runtime-status="alertRuntimeStatus"
           :alert-loading="alertLoading"
           :saving-rule-codes="savingRuleCodes"

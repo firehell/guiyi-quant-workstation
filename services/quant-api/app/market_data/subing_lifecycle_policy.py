@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -8,6 +7,7 @@ from typing import Any
 from app.core.env import PROJECT_ROOT
 
 from .domain import BarFrequency
+from .exact_json_contract import load_exact_json
 
 
 _SUBING_LIFECYCLE_POLICY_PATH = (
@@ -102,13 +102,7 @@ class SubingLifecyclePolicy:
 
 def load_subing_lifecycle_policy(path: Path | None = None) -> SubingLifecyclePolicy:
     source = path if path is not None else _SUBING_LIFECYCLE_POLICY_PATH
-    try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise SubingLifecyclePolicyError() from exc
-
-    if not _matches_exact(payload, _EXPECTED_PAYLOAD):
-        raise SubingLifecyclePolicyError()
+    payload = load_exact_json(source, _EXPECTED_PAYLOAD, SubingLifecyclePolicyError)
 
     return SubingLifecyclePolicy(
         policy_id=payload["policy_id"],
@@ -128,20 +122,3 @@ def load_subing_lifecycle_policy(path: Path | None = None) -> SubingLifecyclePol
         pivot_right_span=payload["pivot"]["right_span"],
         pivot_tie_policy=payload["pivot"]["tie_policy"],
     )
-
-
-def _matches_exact(value: object, expected: object) -> bool:
-    if type(value) is not type(expected):
-        return False
-    if isinstance(expected, dict):
-        return (
-            isinstance(value, dict)
-            and value.keys() == expected.keys()
-            and all(_matches_exact(value[key], item) for key, item in expected.items())
-        )
-    if isinstance(expected, list):
-        return isinstance(value, list) and len(value) == len(expected) and all(
-            _matches_exact(actual, item)
-            for actual, item in zip(value, expected, strict=True)
-        )
-    return value == expected

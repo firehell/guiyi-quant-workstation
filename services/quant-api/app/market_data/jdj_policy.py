@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, Mapping
 
 from app.core.env import PROJECT_ROOT
 
 from .domain import BarFrequency
+from .exact_json_contract import (
+    freeze_json,
+    load_exact_json,
+    matches_exact_frozen,
+)
 
 
 _JDJ_POLICY_PATH = PROJECT_ROOT / "data/research_policies/jdj_1m_policy_v1.json"
@@ -110,14 +112,7 @@ class JdjPolicy:
 
 def load_jdj_policy(path: Path | None = None) -> JdjPolicy:
     source = path if path is not None else _JDJ_POLICY_PATH
-    try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        raise JdjPolicyError() from None
-
-    if not _matches_exact_json(payload, _EXPECTED_PAYLOAD):
-        raise JdjPolicyError()
-    assert isinstance(payload, dict)
+    payload = load_exact_json(source, _EXPECTED_PAYLOAD, JdjPolicyError)
 
     return JdjPolicy(
         schema_version=payload["schema_version"],
@@ -134,7 +129,7 @@ def load_jdj_policy(path: Path | None = None) -> JdjPolicy:
             and payload["previous_bar_trigger"]["equal_is_breach"] is False
         ),
         same_epoch_key_level=payload["trend_context"]["same_epoch_key_level"],
-        raw=_freeze_json(payload),
+        raw=freeze_json(payload),
     )
 
 
@@ -166,57 +161,5 @@ def is_exact_jdj_policy(policy: object) -> bool:
         and type(policy.same_epoch_key_level) is bool
         and policy.same_epoch_key_level
         is _EXPECTED_PAYLOAD["trend_context"]["same_epoch_key_level"]
-        and _matches_exact_frozen(policy.raw, _EXPECTED_PAYLOAD)
-    )
-
-
-def _freeze_json(value: Any) -> Any:
-    if isinstance(value, dict):
-        return MappingProxyType(
-            {key: _freeze_json(item) for key, item in value.items()}
-        )
-    if isinstance(value, list):
-        return tuple(_freeze_json(item) for item in value)
-    return value
-
-
-def _matches_exact_json(value: object, expected: object) -> bool:
-    if type(value) is not type(expected):
-        return False
-    if isinstance(expected, dict):
-        return (
-            isinstance(value, dict)
-            and value.keys() == expected.keys()
-            and all(
-                _matches_exact_json(value[key], item)
-                for key, item in expected.items()
-            )
-        )
-    if isinstance(expected, list):
-        return isinstance(value, list) and len(value) == len(expected) and all(
-            _matches_exact_json(actual, item)
-            for actual, item in zip(value, expected, strict=True)
-        )
-    return value == expected
-
-
-def _matches_exact_frozen(value: object, expected: object) -> bool:
-    if isinstance(expected, dict):
-        return (
-            isinstance(value, MappingProxyType)
-            and value.keys() == expected.keys()
-            and all(
-                _matches_exact_frozen(value[key], item)
-                for key, item in expected.items()
-            )
-        )
-    if isinstance(expected, list):
-        return isinstance(value, tuple) and len(value) == len(expected) and all(
-            _matches_exact_frozen(actual, item)
-            for actual, item in zip(value, expected, strict=True)
-        )
-    return (
-        not isinstance(value, MappingABC)
-        and type(value) is type(expected)
-        and value == expected
+        and matches_exact_frozen(policy.raw, _EXPECTED_PAYLOAD)
     )

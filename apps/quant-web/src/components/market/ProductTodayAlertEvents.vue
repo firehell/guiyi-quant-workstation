@@ -1,39 +1,35 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { NSpin } from 'naive-ui'
+import type { ProductAlertRuleState } from '@/api/alerts'
 import type { AlertEvent } from '@/types/market'
+import {
+  alertDirectionalTone,
+  alertResultLabel,
+  alertRuleShortLabel,
+} from '@/utils/alertRules'
 
-defineProps<{
+const props = defineProps<{
   loading: boolean
   status: 'ready' | 'unavailable' | null
   items: AlertEvent[]
+  rules: ProductAlertRuleState[]
 }>()
 
+const displayNames = computed(() => new Map(
+  props.rules.map((rule) => [rule.rule_code, rule.display_name]),
+))
+
 function ruleLabel(ruleCode: string) {
-  if (ruleCode === 'subing_entry_signal_v1') return '苏冰'
-  if (ruleCode === 'htdy_original_15m') return '火天大有'
-  return '未知提醒'
+  return displayNames.value.get(ruleCode) ?? alertRuleShortLabel(ruleCode)
 }
 
 function resultLabel(event: AlertEvent) {
-  const hasBuy = event.result_codes.includes('buy')
-  const hasSell = event.result_codes.includes('sell')
-  if (event.rule_code === 'subing_entry_signal_v1') {
-    if (hasBuy && hasSell) return '买入/卖出信号'
-    if (hasBuy) return '买入信号'
-    if (hasSell) return '卖出信号'
-  }
-  if (event.rule_code === 'htdy_original_15m') {
-    if (hasBuy && hasSell) return '买入/卖出观察'
-    if (hasBuy) return '买入观察'
-    if (hasSell) return '卖出观察'
-  }
-  return '提醒记录'
+  return alertResultLabel(event.rule_code, event.result_codes)
 }
 
 function resultClass(event: AlertEvent) {
-  if (event.result_codes.length !== 1) return ''
-  if (event.rule_code !== 'subing_entry_signal_v1' && event.rule_code !== 'htdy_original_15m') return ''
-  const direction = event.result_codes[0]
+  const direction = alertDirectionalTone(event.rule_code, event.result_codes)
   return direction === 'buy' ? 'product-today-alert-events__result--buy'
     : direction === 'sell' ? 'product-today-alert-events__result--sell'
       : ''

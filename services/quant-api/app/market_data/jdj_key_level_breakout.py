@@ -9,7 +9,11 @@ from decimal import Decimal
 from enum import StrEnum
 
 from .domain import normalize_contract_for_symbol
-from .jdj_context import JdjBarContext, JdjContextError
+from .jdj_context import (
+    JdjBarContext,
+    JdjContextError,
+    valid_context_fact_identity as _valid_context_fact_identity,
+)
 from .jdj_events import (
     _JDJ_KEY_LEVEL_BREAKOUT_CANDIDATE_ID,
     _JDJ_KEY_LEVEL_BREAKOUT_SOURCE_EVENT_KIND,
@@ -412,46 +416,6 @@ def _validate_inputs(
         )
     ):
         raise JdjContextError()
-
-
-def _valid_context_fact_identity(
-    context: JdjBarContext,
-    *,
-    previous: JdjBarContext | None,
-    contract: str,
-    segment_start_trading_day: date,
-) -> bool:
-    snapshot_at = context.trend_snapshot_observed_at
-    pivots = (
-        context.eligible_high_pivot,
-        context.eligible_low_pivot,
-    )
-    if (
-        previous is None
-        or previous.bar.trading_day != context.bar.trading_day
-    ):
-        return (
-            snapshot_at is None
-            and context.trend_kind is NStructureKind.UNDEFINED
-            and all(pivot is None for pivot in pivots)
-        )
-    if snapshot_at is None:
-        return (
-            context.trend_kind is NStructureKind.UNDEFINED
-            and all(pivot is None for pivot in pivots)
-        )
-    strict_before_boundary = previous.bar.bar_end
-    if snapshot_at > strict_before_boundary:
-        return False
-    for pivot in pivots:
-        if pivot is not None and (
-            pivot.contract != contract
-            or pivot.segment_start_trading_day
-            != segment_start_trading_day
-            or pivot.confirmed_at > strict_before_boundary
-        ):
-            return False
-    return True
 
 
 def _trend_epoch_regresses(

@@ -17,11 +17,12 @@ description: 当任务涉及归一量化前端、Vue 3、Vite、TypeScript、Nai
 
 ## Current surface
 
-仅 Market 工作台：`/` → `/market` 与 `/market/chart`。展示 Canonical 历史行情、EMA/HTDY/MACD、
-SuBing current-rank1-segment-local Factor/Signal observation、server-side Alert Scope 与 persistent Event
-铃铛，并在允许的 series/phase 上叠加 Redis Live observation。
+当前 Web 包含 Market 工作台（`/` → `/market` 与 `/market/chart`）和独立 Execution Review
+（`/trade-records`）。Market 展示 Canonical 历史行情、EMA/HTDY/MACD、SuBing
+current-rank1-segment-local Factor/Signal observation、server-side Alert Scope 与 persistent Event 铃铛，
+并在允许的 series/phase 上叠加 Redis Live observation；Execution Review 只记录人工事实与复盘。
 
-已卸（勿当现行页面）：Dashboard、数据中心、策略中心、回测任务/报告、信号扫描、复盘中心、系统设置。
+已卸（勿当现行页面）：Dashboard、数据中心、策略中心、回测任务/报告、旧信号扫描、旧 Review Center、系统设置。
 
 ## 规则
 

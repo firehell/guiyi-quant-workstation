@@ -38,7 +38,7 @@ develop
 Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
 Alert V2 的 Application Domain、API 与独立 `runtime alert` 代码面，以及 Execution Review 的四表
 Application Domain、API 和 `/trade-records`，都不恢复已退役的旧 Signal/Review/Strategy 链。production migration、release/tag、Runtime
-promotion/switch、Scope/owner/transport 变更、真实 canary/send、rollback 与 G9 cleanup 未经各自明确请求
+promotion/switch、Scope/owner/transport 变更、真实 canary/send 与 rollback 未经各自明确请求
 不得执行，当前实施与生产状态只以 `STATUS.md` 为准。测试路由的 Scope PUT
 只验证代码合同，不是真实 Scope mutation 授权。
 唯一 active 运维链为 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；本地状态只使用
@@ -102,11 +102,10 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-we
 用户必须先对识别出的本地工作站明确执行 V2 Runtime promotion，目标 Scope 还必须已获得精确 Rule +
 Product + audience + transport 授权；开启成功后只允许该精确范围的后续自然事件持续创建 Event
 并通过 PushPlus SDK 尝试一次请求。HTDY 的 Topic 成员在 PushPlus 外部人工管理，SuBing 保持 owner-only；
-同步 shortCode 不代表送达。当前 production 两条 Scope 均为 `jm`，HTDY 使用
-`htdy_observers` Topic、SuBing 使用 owner；可变事实以 `STATUS.md` 为准。未来第三条 Rule 不继承授权。该授权不从 Market Runtime、既有
+同步 shortCode 不代表送达。当前 production Scope、audience、transport 与运行状态只看 `STATUS.md`；
+未来第三条 Rule 不继承授权。该授权不从 Market Runtime、既有
 HTDY Scope 或任何其他 Gate 推导；production migration、release/tag、Runtime promotion/switch、
-Scope/owner/transport 变更、真实 canary/send、rollback 和 G9 cleanup 都必须分别取得一次性执行意图。
-其中 V2 migration 只保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation。
+Scope/owner/transport 变更、真实 canary/send 和 rollback 都必须分别取得一次性执行意图。
 
 ## 不可放宽的业务边界
 

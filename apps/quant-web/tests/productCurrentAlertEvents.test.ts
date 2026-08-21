@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import ts from 'typescript'
 import { nextTick, ref } from 'vue'
 import { useProductCurrentAlertEvents } from '../src/composables/useProductCurrentAlertEvents.ts'
 import type { AlertEvent } from '../src/types/market.ts'
+import {
+  alertDirectionalTone,
+  alertResultLabel,
+  alertRuleShortLabel,
+} from '../src/utils/alertRules.ts'
 
 const todayEventsSource = readFileSync(new URL('../src/components/market/ProductTodayAlertEvents.vue', import.meta.url), 'utf-8')
 const formalSignalSource = readFileSync(new URL('../src/components/market/ProductFormalSignalCard.vue', import.meta.url), 'utf-8')
@@ -78,35 +82,31 @@ test('preserves the backend bar_end descending order', async () => {
 })
 
 test('uses a stable safe fallback for an unknown current-event rule', () => {
-  assert.match(todayEventsSource, /return '未知提醒'/)
+  assert.match(todayEventsSource, /alertRuleShortLabel\(ruleCode\)/)
   assert.match(todayEventsSource, /v-for="item in items"/)
 })
 
 test('does not infer a formal or observation result for an unknown current-event rule', () => {
-  const { ruleLabel, resultLabel, resultClass } = productTodayResultHelpers()
   const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy'] })
 
-  assert.equal(ruleLabel(unknown.rule_code), '未知提醒')
-  assert.equal(resultLabel(unknown), '提醒记录')
-  assert.equal(resultClass(unknown), '')
+  assert.equal(alertRuleShortLabel(unknown.rule_code), '未知提醒')
+  assert.equal(alertResultLabel(unknown.rule_code, unknown.result_codes), '提醒记录')
+  assert.equal(alertDirectionalTone(unknown.rule_code, unknown.result_codes), null)
 })
 
 test('preserves legal combined HTDY and SuBing current-event directions without coloring them as one direction', () => {
-  const { resultLabel, resultClass } = productTodayResultHelpers()
-
-  assert.equal(resultLabel(eventWith({ rule_code: 'htdy_original_15m', result_codes: ['buy', 'sell'] })), '买入/卖出观察')
-  assert.equal(resultLabel(eventWith({ rule_code: 'subing_entry_signal_v1', result_codes: ['buy', 'sell'] })), '买入/卖出信号')
-  assert.equal(resultClass(eventWith({ rule_code: 'htdy_original_15m', result_codes: ['buy', 'sell'] })), '')
-  assert.equal(resultClass(eventWith({ rule_code: 'subing_entry_signal_v1', result_codes: ['buy', 'sell'] })), '')
+  assert.equal(alertResultLabel('htdy_original_15m', ['buy', 'sell']), '买入/卖出观察')
+  assert.equal(alertResultLabel('subing_entry_signal_v1', ['buy', 'sell']), '买入/卖出信号')
+  assert.equal(alertDirectionalTone('htdy_original_15m', ['buy', 'sell']), null)
+  assert.equal(alertDirectionalTone('subing_entry_signal_v1', ['buy', 'sell']), null)
 })
 
 test('keeps an unknown combined current event fail-closed', () => {
-  const { ruleLabel, resultLabel, resultClass } = productTodayResultHelpers()
   const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy', 'sell'] })
 
-  assert.equal(ruleLabel(unknown.rule_code), '未知提醒')
-  assert.equal(resultLabel(unknown), '提醒记录')
-  assert.equal(resultClass(unknown), '')
+  assert.equal(alertRuleShortLabel(unknown.rule_code), '未知提醒')
+  assert.equal(alertResultLabel(unknown.rule_code, unknown.result_codes), '提醒记录')
+  assert.equal(alertDirectionalTone(unknown.rule_code, unknown.result_codes), null)
 })
 
 test('derives the sidebar HTDY observation from the latest existing HTDY marker', () => {
@@ -147,19 +147,4 @@ function event(id: number): AlertEvent {
 
 function eventWith(overrides: Pick<AlertEvent, 'rule_code' | 'result_codes'>): AlertEvent {
   return { ...event(9), ...overrides }
-}
-
-function productTodayResultHelpers() {
-  const source = todayEventsSource.slice(
-    todayEventsSource.indexOf('function ruleLabel'),
-    todayEventsSource.indexOf('function barTime'),
-  )
-  const javascript = ts.transpileModule(source, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022 },
-  }).outputText
-  return Function(`${javascript}; return { ruleLabel, resultLabel, resultClass }`)() as {
-    ruleLabel: (ruleCode: string) => string
-    resultLabel: (event: AlertEvent) => string
-    resultClass: (event: AlertEvent) => string
-  }
 }

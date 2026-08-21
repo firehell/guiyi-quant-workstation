@@ -1833,6 +1833,7 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
     assert filtered.review_issue_top.entry == {}
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
     postgres_engine: Engine,
 ) -> None:
@@ -1882,6 +1883,7 @@ def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
         ),
     ],
 )
+@pytest.mark.isolated_postgresql
 def test_postgresql_open_race_reclassifies_winner_business_facts(
     postgres_engine: Engine,
     second_changes: dict[str, object],
@@ -1909,6 +1911,7 @@ def test_postgresql_open_race_reclassifies_winner_business_facts(
         assert _count(check, TradeExecution) == 1
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_disposition_correction_open_race_reclassifies_winner(
     postgres_engine: Engine,
 ) -> None:
@@ -1977,6 +1980,7 @@ def test_postgresql_disposition_correction_open_race_reclassifies_winner(
         assert _count(check, TradeExecution) == 1
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_episode_lock_serializes_concurrent_manual_appends(
     postgres_engine: Engine,
 ) -> None:
@@ -2016,6 +2020,7 @@ def test_postgresql_episode_lock_serializes_concurrent_manual_appends(
         assert [row.sequence_no for row in rows] == [1, 2, 3]
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_decision_update_serializes_with_disposition_correction(
     postgres_engine: Engine,
 ) -> None:
@@ -2096,6 +2101,7 @@ def test_postgresql_decision_update_serializes_with_disposition_correction(
         assert decision.stop_basis is None
 
 
+@pytest.mark.isolated_postgresql
 @pytest.mark.parametrize("correction_kind", ["execution", "timeline"])
 def test_postgresql_causal_corrections_serialize_decision_and_execution(
     postgres_engine: Engine,
@@ -2206,6 +2212,7 @@ def test_postgresql_causal_corrections_serialize_decision_and_execution(
         assert _utc(decision.decided_at) <= _utc(execution.executed_at)
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_event_states_uses_one_consistent_statement_snapshot(
     postgres_engine: Engine,
 ) -> None:
@@ -2269,6 +2276,7 @@ def test_postgresql_event_states_uses_one_consistent_statement_snapshot(
     assert state == "pending_decision"
 
 
+@pytest.mark.isolated_postgresql
 @pytest.mark.parametrize("read_kind", ["items", "stats"])
 def test_postgresql_read_models_do_not_mix_disposition_correction_snapshots(
     postgres_engine: Engine,
@@ -2353,6 +2361,7 @@ def test_postgresql_read_models_do_not_mix_disposition_correction_snapshots(
         assert observed == (1, 0)
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_episode_detail_uses_one_statement_snapshot(
     postgres_engine: Engine,
 ) -> None:

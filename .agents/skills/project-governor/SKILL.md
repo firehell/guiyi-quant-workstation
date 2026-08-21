@@ -7,15 +7,15 @@ description: 当任务涉及归一量化功能取舍、阶段归属、优先级�
 
 ## 判断原则
 
-当前 release 基线为 v1.3.1：可信 Canonical 60 品种之上已完成 Market Radar /
-Product Workspace、HTDY/SuBing 研究观察与严格限域的 Alert V2。任何功能先判断是否
+当前具体 release、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`。active 产品面以可信 Canonical 60
+品种为基础，包含 Market Radar / Product Workspace、HTDY/SuBing 研究观察、严格限域的 Alert V2 与
+独立 Execution Review。任何功能先判断是否
 加强这条研究闭环；旧 Signal/Review/Strategy 子系统与回测仍已退役，不得因历史
 文件或名称恢复为兼容面。Alert Rule 与 SuBing observation 不代表通用策略平台。
 
 ## 阶段口径
 
-- 当前 release：v1.3.1 Market Web + Market Runtime V1 + Alert Runtime V2。
-- 当前 develop：围绕可信数据、研究观察和自然事件验收做收敛性修正。
+- 当前阶段：以 `STATUS.md` 为准，围绕可信数据、研究观察、人工 Execution Review 和自然事件验收收敛。
 - 未来研究阶段：按新合同重建策略、回测、OOS/Walk-forward、Signal/Review 与 AI 辅助研究。
 - 长期不做：自动交易、实盘下单、多用户 SaaS、tick 级高频和 AI 自动晋升正式策略。
 

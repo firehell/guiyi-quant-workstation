@@ -83,12 +83,12 @@ export function getAlertEvents(params: {
   symbol: string
   start: string
   end: string
-  ruleCode?: string
+  ruleCode: string
 }) {
   return request.get<never, AlertEventListResponse>('/api/alerts/events', {
     params: {
       symbol: params.symbol,
-      rule_code: params.ruleCode || 'htdy_original_15m',
+      rule_code: params.ruleCode,
       start: params.start,
       end: params.end,
     },

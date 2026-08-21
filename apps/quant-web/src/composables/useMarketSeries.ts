@@ -31,10 +31,10 @@ export interface MergedMarketPage {
 }
 
 export class MarketSeriesPhysicalIdentityError extends Error {
-  readonly code = 'MFM_FUTURES_V1_SEGMENT_CONFLICT'
+  readonly code = 'MARKET_SERIES_SEGMENT_CONFLICT'
 
   constructor() {
-    super('MFM_FUTURES_V1_SEGMENT_CONFLICT')
+    super('MARKET_SERIES_SEGMENT_CONFLICT')
     this.name = 'MarketSeriesPhysicalIdentityError'
   }
 }
@@ -81,8 +81,10 @@ export function resolveHistoricalPhysicalContract(
   const matches = page.resolved_contract_segments.filter((segment) => (
     segment.start_trading_day <= bar.trading_day && bar.trading_day <= segment.end_trading_day
   ))
-  if (matches.length > 1) throw new MarketSeriesPhysicalIdentityError()
-  return matches.length === 1 ? normalizePhysicalContract(matches[0].contract) : undefined
+  if (matches.length !== 1) throw new MarketSeriesPhysicalIdentityError()
+  const contract = normalizePhysicalContract(matches[0].contract)
+  if (!contract) throw new MarketSeriesPhysicalIdentityError()
+  return contract
 }
 
 /** Maps the canonical page DTO once at the HTTP boundary. */

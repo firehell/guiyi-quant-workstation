@@ -21,9 +21,10 @@ description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Ale
 
 - Market Canonical 读：`/api/v1/market/bars|coverage|dominants`
 - Market 研究读：Product Research、Radar 与 SuBing current-rank1 observation API
-- Alert Application Domain：server-side Scope/Event API、独立 Alert Runtime 与 WeCom one-shot sender
+- Alert Application Domain：server-side Scope/Event API、独立 Alert Runtime 与 PushPlus one-shot sender
+- Execution Review Application Domain：Decision、Episode/Execution timeline、Review、reconstruction 与 stats
 - `guiyi data update|refresh|audit`
-- `guiyi research subing-calibration`（只读 stdout 研究报告）
+- `guiyi research`：calibration、lifecycle、N/JDJ、candidate validation/robustness 与 main-force-mirror-futures
 - runtime 只读状态：`/api/runtime/health` + `guiyi runtime status`
 - 轻量 liveness：`/health`、`/api/health`、`/healthz`（同一 payload）
 
@@ -31,12 +32,13 @@ description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Ale
 
 ## 分层
 
-- `api/`：路由和依赖注入（当前 market + alerts + runtime）。
+- `api/`：路由和依赖注入（当前 market + alerts + execution-review + runtime）。
 - `schemas/`：Pydantic 请求/响应。
 - `models/market_tables.py`：八表 ORM。
 - `market_data/`：Catalog / Storage / MarketDataService / maintenance。
 - `guiyi_cli/`：统一 CLI。
-- `alerts/`：Rule/Scope/Event、HTDY scoped evaluator、短 Session Runtime 与严格 WeCom sender。
+- `alerts/`：Rule/Scope/Event、HTDY scoped evaluator、短 Session Runtime 与严格 PushPlus sender。
+- `execution_review/`：人工事实写入、Episode/Execution timeline、reconstruction 与一致快照读模型。
 - `app/services/runtime_health.py`：只读 Market/Alert runtime 探测。
 
 ## 规则

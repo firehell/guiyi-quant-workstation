@@ -30,7 +30,8 @@ Secret scan 默认只扫描 `git ls-files`，只报告文件、行号和规则�
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-  uv run --offline --project services/quant-api pytest -q services/quant-api/tests
+  uv run --offline --project services/quant-api \
+  pytest -q -m "not isolated_postgresql" services/quant-api/tests
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 uv run --offline --project services/quant-api ruff check \
@@ -52,6 +53,13 @@ pnpm --dir apps/quant-web build
 需要运行 Alembic 或 PostgreSQL 约束测试时，必须显式提供一个库名包含 `test` 或 `isolated`、且与
 Runtime `DATABASE_URL` 物理身份不同的 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。测试 guard 会以
 数据库名和 OID 双重拒绝 production/Runtime 库；禁止为了让测试运行而放宽该校验。
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='<isolated-postgresql-url>' \
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api \
+  pytest -q -m isolated_postgresql services/quant-api/tests
+```
 
 ## 主力照妖镜 Observation V0
 
@@ -110,14 +118,14 @@ Alert/notification、Runtime、订单、release 或策略晋升。
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api pytest -q \
+  -m "not isolated_postgresql" \
   services/quant-api/tests/test_execution_review_contracts.py \
   services/quant-api/tests/test_execution_review_pnl.py \
   services/quant-api/tests/test_execution_review_models.py \
   services/quant-api/tests/test_execution_review_service.py \
   services/quant-api/tests/test_execution_review_api.py \
   services/quant-api/tests/test_execution_review_reconstruction.py \
-  services/quant-api/tests/test_execution_review_reconciler.py \
-  services/quant-api/tests/alembic/test_execution_review_v1_migration.py
+  services/quant-api/tests/test_execution_review_reconciler.py
 
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web exec playwright test e2e/execution-review.spec.mjs

@@ -8,6 +8,13 @@ from datetime import UTC, datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
+from app.alerts.registry import (
+    HTDY_RULE,
+    SUBING_RULE,
+    AlertRuleDefinition,
+    get_alert_rule_definition,
+)
+
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 ALERT_AUDIENCE_OWNER = "owner"
@@ -74,10 +81,11 @@ class AlertNotificationDispatcher:
 
     def send(self, message: AlertNotificationMessage) -> None:
         rendered = format_alert_message(message)
-        if message.rule_code == "htdy_original_15m":
+        definition = _notification_rule(message.rule_code)
+        if definition == HTDY_RULE:
             audience = ALERT_AUDIENCE_HTDY_OBSERVERS
             title = "归一量化 火天大有"
-        elif message.rule_code == "subing_entry_signal_v1":
+        elif definition == SUBING_RULE:
             audience = ALERT_AUDIENCE_OWNER
             title = "归一量化 苏冰"
         else:
@@ -111,11 +119,19 @@ def format_alert_message(message: AlertNotificationMessage) -> str:
         or not message.contract.strip()
     ):
         raise ValueError("ALERT_NOTIFICATION_IDENTITY_INVALID")
-    if message.rule_code == "htdy_original_15m":
+    definition = _notification_rule(message.rule_code)
+    if definition == HTDY_RULE:
         return _format_htdy_message(message)
-    if message.rule_code == "subing_entry_signal_v1":
+    if definition == SUBING_RULE:
         return _format_subing_message(message)
     raise ValueError("ALERT_NOTIFICATION_RULE_INVALID")
+
+
+def _notification_rule(rule_code: str) -> AlertRuleDefinition:
+    try:
+        return get_alert_rule_definition(rule_code)
+    except KeyError:
+        raise ValueError("ALERT_NOTIFICATION_RULE_INVALID") from None
 
 
 def _format_htdy_message(message: AlertNotificationMessage) -> str:

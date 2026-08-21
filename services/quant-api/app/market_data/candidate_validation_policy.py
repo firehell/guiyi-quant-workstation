@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -8,6 +7,7 @@ from typing import Any
 
 from app.core.env import PROJECT_ROOT
 
+from .exact_json_contract import load_exact_json as _load_exact
 from .subing_lifecycle_policy import (
     SubingLifecyclePolicyError,
     load_subing_lifecycle_policy,
@@ -200,35 +200,3 @@ def load_candidate_validation_protocol(
         ),
         horizons_bars=tuple(payload["horizons_bars"]),
     )
-
-
-def _load_exact(
-    path: Path,
-    expected: dict[str, Any],
-    error_type: type[ValueError],
-) -> dict[str, Any]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise error_type() from exc
-    if not _matches_exact(payload, expected):
-        raise error_type()
-    assert isinstance(payload, dict)
-    return payload
-
-
-def _matches_exact(value: object, expected: object) -> bool:
-    if type(value) is not type(expected):
-        return False
-    if isinstance(expected, dict):
-        return (
-            isinstance(value, dict)
-            and value.keys() == expected.keys()
-            and all(_matches_exact(value[key], item) for key, item in expected.items())
-        )
-    if isinstance(expected, list):
-        return isinstance(value, list) and len(value) == len(expected) and all(
-            _matches_exact(actual, item)
-            for actual, item in zip(value, expected, strict=True)
-        )
-    return value == expected

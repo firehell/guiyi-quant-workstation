@@ -3,10 +3,10 @@ import { computed } from 'vue'
 import { NSpin, NSwitch, NTag } from 'naive-ui'
 import type { ProductAlertRuleState } from '@/api/alerts'
 import { alertRuntimeLabel, type AlertRuntimeStatus } from '@/utils/alertControl'
+import { ALERT_RULE_PRESENTATIONS } from '@/utils/alertRules'
 
 const props = defineProps<{
-  htdyRule: ProductAlertRuleState | null
-  subingRule: ProductAlertRuleState | null
+  rules: ProductAlertRuleState[]
   runtimeStatus: AlertRuntimeStatus | null
   loading: boolean
   savingRuleCodes: Set<string>
@@ -21,10 +21,16 @@ const runtimeTagType = computed(() => props.runtimeStatus === 'ok'
   ? 'success'
   : props.runtimeStatus === 'disabled' ? 'default' : 'warning')
 
-const rows = computed(() => [
-  { ruleCode: 'htdy_original_15m', label: '火天大有 · 15m', rule: props.htdyRule },
-  { ruleCode: 'subing_entry_signal_v1', label: '苏冰入场信号', rule: props.subingRule },
-])
+const rows = computed(() => ALERT_RULE_PRESENTATIONS.map((presentation) => {
+  const rule = props.rules.find((item) => item.rule_code === presentation.ruleCode) ?? null
+  return {
+    ruleCode: presentation.ruleCode,
+    label: rule
+      ? `${rule.display_name} · ${rule.input_frequencies.join('/')}`
+      : presentation.shortLabel,
+    rule,
+  }
+}))
 </script>
 
 <template>

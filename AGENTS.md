@@ -69,12 +69,11 @@ PushPlus 公众号并扫码加入同一个专用 Topic，创建者也必须加�
 parent / `0600` file；结构健康检查不联网、不发送。
 
 Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表；Event 先提交，再最多调用一次
-PushPlus SDK。无逐收件人 DB 状态、retry、queue、replay、backfill、fallback 或订单路径。production
-仍运行当前 exact-tag 的旧单 owner transport；develop 代码、测试或 Topic 配置均不授权 release、真实
-canary/send、Scope 变更或 Runtime promotion/switch。Topic 可在 owner + 最多三位朋友的 `1..4` 人边界内
-先以当前成员启用，之后加入第 4 人不需要修改代码；每次成员变化仍由 operator 在 PushPlus 页面人工
-核对且不得超过 4 人。未来启用前必须分别完成当前成员核对、Git 外配置、owner canary、HTDY Topic
-canary、精确 bounded authorization、release 与 Runtime switch。
+PushPlus SDK。无逐收件人 DB 状态、retry、queue、replay、backfill、fallback 或订单路径。develop 代码、
+测试或 Topic 配置均不授权 release、真实 canary/send、Scope 变更或 Runtime promotion/switch。Topic 成员
+始终由 operator 在 PushPlus 页面人工核对且不得超过 owner + 三位朋友；成员变化不修改代码，也不扩大
+Rule、Scope、audience 或 transport 授权。当前 production、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`，
+不得由本节、历史 canary、已有配置或既有 release 推断。
 
 ## 工程与业务硬规则
 

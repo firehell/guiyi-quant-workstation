@@ -56,13 +56,16 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
     ] } })
     if (url.pathname.endsWith('/bars/page')) {
       activeFrequency = url.searchParams.get('frequency')
+      const seriesKind = url.searchParams.get('series_kind')
       const marketBars = barsByFrequency[activeFrequency]
       return route.fulfill({ json: {
-        request: { series_kind: url.searchParams.get('series_kind'), symbol: 'ag', contract: null, frequency: activeFrequency, before: null, limit: 1200 },
+        request: { series_kind: seriesKind, symbol: 'ag', contract: null, frequency: activeFrequency, before: null, limit: 1200 },
         bars: marketBars,
         canonical_coverage: null,
         page: { has_more_before: false, next_before: null },
-        resolved_contract_segments: [],
+        resolved_contract_segments: seriesKind === 'actual_dominant'
+          ? [{ contract: 'AG2610', start_trading_day: '2026-08-13', end_trading_day: '2026-08-13' }]
+          : [],
       } })
     }
     if (url.pathname.endsWith('/state')) return route.fulfill({ json: {

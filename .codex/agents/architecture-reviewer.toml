@@ -63,5 +63,5 @@ developer_instructions = """
 - Canonical 的 DatasetKey、月分区、质量与原子发布合同
 - actual_dominant 的 rank1 map 解析与连续主连语义不可混淆
 - 消费者不得 glob、自判主力、跨频回退或绕过质量状态
-- 当前仓库不包含回测、Signal/Review、交易账户或订单接口
+- 当前仓库不包含回测、旧 Signal/Review、交易账户或订单接口；独立 Execution Review 不是旧 Review Center
 - YAGNI：本地单用户工作站不引入分布式中台或重复 resolver"""

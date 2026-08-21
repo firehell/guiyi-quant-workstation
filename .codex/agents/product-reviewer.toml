@@ -55,7 +55,8 @@ developer_instructions = """
 
 ## 注意事项
 
-- 当前 v1.3.1 只有 Canonical 60 品种、Market Web/API/CLI、有界 Market Runtime 与 Alert V2；不得把已退役的
-  策略、回测、Signal/Review 或交易表面当作现成功能
+- 当前 release、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`；active 产品面包含 Canonical 60 品种、
+  Market Web/API/CLI、有界 Market/Alert Runtime 与独立 Execution Review，不得恢复已退役的策略、回测、
+  Signal/旧 Review 或交易表面
 - 未来策略/回测需求必须作为新合同，并包含可复算 lineage、成本、时序与 OOS 定义
 - 行情数据相关需求必须说明数据频率和来源"""

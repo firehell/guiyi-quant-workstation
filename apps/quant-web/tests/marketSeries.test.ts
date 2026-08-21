@@ -67,12 +67,15 @@ describe('market historical series', () => {
     assert.deepEqual(mergeInitialPage(response).bars.map((bar) => bar.physicalContract), ['JM2609', 'JM2701'])
   })
 
-  it('leaves an actual-dominant bar without a resolved segment physically unbound', () => {
+  it('fails closed when an actual-dominant bar has no resolved segment', () => {
     const response = page([{ bar_end: '2026-08-07T09:15:00Z', close: 101 }], { has_more_before: false, next_before: null })
     response.request = { ...response.request, series_kind: 'actual_dominant' }
 
-    assert.equal(resolveHistoricalPhysicalContract(response, response.bars[0]), undefined)
-    assert.equal(mergeInitialPage(response).bars[0].physicalContract, undefined)
+    assert.throws(
+      () => mergeInitialPage(response),
+      (error: unknown) => error instanceof MarketSeriesPhysicalIdentityError
+        && error.code === 'MARKET_SERIES_SEGMENT_CONFLICT',
+    )
   })
 
   it('fails closed when an actual-dominant bar matches multiple resolved segments', () => {
@@ -86,7 +89,21 @@ describe('market historical series', () => {
     assert.throws(
       () => mergeInitialPage(response),
       (error: unknown) => error instanceof MarketSeriesPhysicalIdentityError
-        && error.code === 'MFM_FUTURES_V1_SEGMENT_CONFLICT',
+        && error.code === 'MARKET_SERIES_SEGMENT_CONFLICT',
+    )
+  })
+
+  it('fails closed when the resolved segment has no physical contract', () => {
+    const response = page([{ bar_end: '2026-08-07T09:15:00Z', close: 101 }], { has_more_before: false, next_before: null })
+    response.request = { ...response.request, series_kind: 'actual_dominant' }
+    response.resolved_contract_segments = [
+      { contract: ' ', start_trading_day: '2026-08-07', end_trading_day: '2026-08-07' },
+    ]
+
+    assert.throws(
+      () => mergeInitialPage(response),
+      (error: unknown) => error instanceof MarketSeriesPhysicalIdentityError
+        && error.code === 'MARKET_SERIES_SEGMENT_CONFLICT',
     )
   })
 

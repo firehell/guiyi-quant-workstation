@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from app.core.env import PROJECT_ROOT
+
+from .exact_json_contract import load_exact_json
 
 
 _PROTOCOL_PATH = (
@@ -129,13 +130,11 @@ class MultiCandidateRobustnessRequest:
 def load_multi_candidate_robustness_protocol(
     path: Path | None = None,
 ) -> MultiCandidateRobustnessProtocol:
-    try:
-        payload = json.loads((path or _PROTOCOL_PATH).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        raise MultiCandidateRobustnessProtocolError() from None
-    if not _matches_exact(payload, _EXPECTED):
-        raise MultiCandidateRobustnessProtocolError()
-    assert isinstance(payload, dict)
+    payload = load_exact_json(
+        path or _PROTOCOL_PATH,
+        _EXPECTED,
+        MultiCandidateRobustnessProtocolError,
+    )
     return MultiCandidateRobustnessProtocol(
         schema_version=payload["schema_version"],
         protocol_id=payload["protocol_id"],
@@ -165,20 +164,3 @@ def _candidate_ref(value: dict[str, Any]) -> RobustnessCandidateRef:
         evaluable_unit=value["evaluable_unit"],
         horizon_semantics=value["horizon_semantics"],
     )
-
-
-def _matches_exact(value: object, expected: object) -> bool:
-    if type(value) is not type(expected):
-        return False
-    if isinstance(expected, dict):
-        return (
-            isinstance(value, dict)
-            and value.keys() == expected.keys()
-            and all(_matches_exact(value[key], item) for key, item in expected.items())
-        )
-    if isinstance(expected, list):
-        return isinstance(value, list) and len(value) == len(expected) and all(
-            _matches_exact(actual, item)
-            for actual, item in zip(value, expected, strict=True)
-        )
-    return value == expected

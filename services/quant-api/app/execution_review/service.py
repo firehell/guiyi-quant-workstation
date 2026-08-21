@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, aliased
 
 from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.registry import SUBING_RULE
 from app.execution_review.contracts import (
     MULTIPLIER_POLICY_ID,
     STOP_BASES,
@@ -40,7 +41,7 @@ from app.market_data.market_data_service import (
 )
 
 
-ELIGIBLE_RULE_CODE = "subing_entry_signal_v1"
+ELIGIBLE_RULE_CODE = SUBING_RULE.rule_code
 ELIGIBLE_FREQUENCIES = frozenset({"5m", "15m"})
 MAX_DATABASE_INTEGER = 2_147_483_647
 MAX_DATABASE_DECIMAL = Decimal("10000000000000000")
