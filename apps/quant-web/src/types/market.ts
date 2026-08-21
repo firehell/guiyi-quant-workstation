@@ -77,6 +77,179 @@ export interface MarketBarsPageResponse {
   resolved_contract_segments: ResolvedContractSegment[]
 }
 
+export type MainForceMirrorV2State =
+  | 'long_build'
+  | 'short_build'
+  | 'short_cover'
+  | 'long_liquidation'
+  | 'turnover'
+export type MainForceMirrorV2Caution = 'long_chase_caution' | 'short_chase_caution'
+export type MainForceMemberRelation =
+  | 'strong_aligned'
+  | 'aligned'
+  | 'divergent'
+  | 'neutral'
+  | 'unavailable'
+
+export interface MainForceMirrorV2Identity {
+  seriesKind: Extract<SeriesKind, 'actual_dominant' | 'contract'>
+  symbol: string
+  contract?: string
+  frequency: '60m'
+  limit?: number
+}
+
+export interface MainForceMirrorV2PageRequest {
+  series_kind: MainForceMirrorV2Identity['seriesKind']
+  symbol: string
+  contract?: string
+  frequency: '60m'
+  before: string | null
+  limit?: number
+}
+
+export interface MainForceMirrorV2RequestIdentity {
+  series_kind: MainForceMirrorV2Identity['seriesKind']
+  symbol: string
+  contract: string | null
+  frequency: '60m'
+  before: string | null
+  limit: number
+}
+
+export interface MainForceMirrorV2Indicator {
+  indicator_code: 'main_force_mirror_v2'
+  indicator_version: 'futures-member-research-v2'
+  formal_policy_id: 'main_force_mirror_observation_v2'
+  parameters_hash: string
+  interpretation: 'directional_position_pressure_proxy_not_measured_fund_flow'
+  observation_only: true
+  historical_only: true
+  auto_order: false
+}
+
+export interface MainForceMirrorV2MemberDataset {
+  status: 'ready' | 'unavailable'
+  dataset_id: string | null
+  schema_version: number | null
+  admitted_product: boolean
+  coverage: { start: string; end: string } | null
+}
+
+export interface MainForceMirrorV2Point {
+  bar_end: string
+  trading_day: string
+  physical_contract: string
+  pressure_ready: boolean
+  pressure_state: MainForceMirrorV2State | null
+  instant_pressure: number | null
+  accumulated_ready: boolean
+  accumulated_pressure: number | null
+  caution_ready: boolean
+  caution: MainForceMirrorV2Caution | null
+  caution_conflict: boolean
+  long_caution_score: number | null
+  short_caution_score: number | null
+  caution_reason_codes: string[]
+  price_impulse: number | null
+  clv: number | null
+  volume_ratio: number | null
+  delta_oi: number | null
+  oi_impulse: number | null
+  range_position: number | null
+  member_status: 'ready' | 'unavailable'
+  member_trade_date: string | null
+  member_direction: 'long' | 'short' | 'neutral' | null
+  member_change_bias: number | null
+  member_strength: number | null
+  position_skew: number | null
+  top5_volume_share: number | null
+  relation_to_accumulated: MainForceMemberRelation
+  relation_to_caution: MainForceMemberRelation
+  unavailable_reason: string | null
+}
+
+type MainForceMirrorV2DecimalWirePoint = Omit<
+  MainForceMirrorV2Point,
+  | 'instant_pressure'
+  | 'accumulated_pressure'
+  | 'long_caution_score'
+  | 'short_caution_score'
+  | 'price_impulse'
+  | 'clv'
+  | 'volume_ratio'
+  | 'delta_oi'
+  | 'oi_impulse'
+  | 'range_position'
+  | 'member_change_bias'
+  | 'member_strength'
+  | 'position_skew'
+  | 'top5_volume_share'
+> & {
+  instant_pressure: string | null
+  accumulated_pressure: string | null
+  long_caution_score: string | null
+  short_caution_score: string | null
+  price_impulse: string | null
+  clv: string | null
+  volume_ratio: string | null
+  delta_oi: string | null
+  oi_impulse: string | null
+  range_position: string | null
+  member_change_bias: string | null
+  member_strength: string | null
+  position_skew: string | null
+  top5_volume_share: string | null
+}
+
+export interface MainForceMirrorV2PageWireResponse {
+  request: MainForceMirrorV2RequestIdentity
+  indicator: MainForceMirrorV2Indicator
+  member_dataset: MainForceMirrorV2MemberDataset
+  points: MainForceMirrorV2DecimalWirePoint[]
+  page: MarketPageMeta
+  resolved_contract_segments: ResolvedContractSegment[]
+}
+
+export interface MainForceMirrorV2PageResponse {
+  request: MainForceMirrorV2RequestIdentity
+  indicator: MainForceMirrorV2Indicator
+  member_dataset: MainForceMirrorV2MemberDataset
+  points: MainForceMirrorV2Point[]
+  page: MarketPageMeta
+  resolved_contract_segments: ResolvedContractSegment[]
+}
+
+/** FastAPI serializes Decimal values as strings; this is the sole V2 wire boundary. */
+export function normalizeMainForceMirrorV2Page(
+  payload: MainForceMirrorV2PageWireResponse,
+): MainForceMirrorV2PageResponse {
+  return {
+    ...payload,
+    points: payload.points.map((point) => ({
+      ...point,
+      instant_pressure: toMainForceMirrorV2Number(point.instant_pressure),
+      accumulated_pressure: toMainForceMirrorV2Number(point.accumulated_pressure),
+      long_caution_score: toMainForceMirrorV2Number(point.long_caution_score),
+      short_caution_score: toMainForceMirrorV2Number(point.short_caution_score),
+      price_impulse: toMainForceMirrorV2Number(point.price_impulse),
+      clv: toMainForceMirrorV2Number(point.clv),
+      volume_ratio: toMainForceMirrorV2Number(point.volume_ratio),
+      delta_oi: toMainForceMirrorV2Number(point.delta_oi),
+      oi_impulse: toMainForceMirrorV2Number(point.oi_impulse),
+      range_position: toMainForceMirrorV2Number(point.range_position),
+      member_change_bias: toMainForceMirrorV2Number(point.member_change_bias),
+      member_strength: toMainForceMirrorV2Number(point.member_strength),
+      position_skew: toMainForceMirrorV2Number(point.position_skew),
+      top5_volume_share: toMainForceMirrorV2Number(point.top5_volume_share),
+    })),
+  }
+}
+
+function toMainForceMirrorV2Number(value: string | null): number | null {
+  return value === null ? null : Number(value)
+}
+
 /** Read-only Product Research snapshot; nullable backend metrics stay nullable in the browser. */
 export interface ProductResearchResponse {
   symbol: string
