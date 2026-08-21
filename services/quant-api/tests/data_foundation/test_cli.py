@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import json
 from datetime import date
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -10,7 +12,14 @@ from app.guiyi_cli.main import CliUsageError, build_parser, main
 from app.guiyi_cli.output import exception_error_payload
 from app.market_data.after_market import AfterMarketResult
 from app.market_data.historical_data_manager import MaintenanceResult
-from app.market_data.member_rank_snapshot_builder import MemberRankSnapshotResult
+from app.market_data.catalog import MainMapFact
+from app.market_data.member_rank_snapshot import MemberRankRow
+from app.market_data.member_rank_snapshot_builder import (
+    MemberRankFetch,
+    MemberRankSnapshotBuilder,
+    MemberRankSnapshotResult,
+)
+from app.market_data.rqdata_adapter import RQDataMemberRankProvider
 
 
 class FakeManager:
@@ -111,6 +120,132 @@ def test_member_rank_snapshot_defaults_to_plan_and_uses_shared_json_exit_path() 
     assert payload["readonly"] is True
     assert calls[0].apply is False
     assert manager.calls == []
+
+
+def test_member_rank_cli_real_builder_dry_run_never_constructs_provider(tmp_path: Path) -> None:
+    factory_calls = 0
+
+    def factory():
+        nonlocal factory_calls
+        factory_calls += 1
+        raise AssertionError("provider factory must not run")
+
+    code, payload = _run(
+        _member_rank_arguments(),
+        FakeManager(),
+        member_rank_snapshot_builder_factory=lambda _session: _snapshot_builder(
+            tmp_path, factory
+        ),
+    )
+
+    assert code == 0
+    assert payload["status"] == "planned"
+    assert payload["provider_calls"] == 0
+    assert payload["readonly"] is True
+    assert factory_calls == 0
+    assert not (tmp_path / "main_force_member_rank_v1").exists()
+
+
+def test_member_rank_cli_published_uses_shared_success_exit_path(tmp_path: Path) -> None:
+    code, payload = _run(
+        [*_member_rank_arguments(), "--apply"],
+        FakeManager(),
+        member_rank_snapshot_builder_factory=lambda _session: _snapshot_builder(
+            tmp_path, lambda: _CompleteProvider()
+        ),
+    )
+
+    assert code == 0
+    assert payload["status"] == "published"
+    assert payload["readonly"] is False
+    assert (tmp_path / "main_force_member_rank_v1" / "mfm-member-20260821").is_dir()
+
+
+def test_member_rank_cli_provider_failure_has_stable_safe_json(tmp_path: Path) -> None:
+    code, payload = _run(
+        [*_member_rank_arguments(), "--apply"],
+        FakeManager(),
+        member_rank_snapshot_builder_factory=lambda _session: _snapshot_builder(
+            tmp_path,
+            lambda: RQDataMemberRankProvider(_BrokenProviderClient()),
+        ),
+    )
+
+    assert code == 1
+    assert payload == {
+        "schema_version": 1,
+        "command": "data.member-rank",
+        "status": "error",
+        "readonly": False,
+        "error": {
+            "code": "RQDATA_MEMBER_RANK_UNAVAILABLE",
+            "type": "MemberRankSnapshotBuildError",
+        },
+    }
+
+
+class _SnapshotFacts:
+    def rank1_map(self, symbol: str, since: date, through: date):
+        return (MainMapFact(symbol, since, "JM2609"),)
+
+    def trading_days(self, symbol: str, since: date, through: date):
+        return (since,)
+
+
+class _SnapshotVerifier:
+    def is_trading_day(self, symbol: str, trade_date: date) -> bool:
+        return symbol == "jm" and trade_date == date(2026, 8, 20)
+
+    def is_contract_valid(self, physical_contract: str, trade_date: date) -> bool:
+        return physical_contract == "JM2609" and trade_date == date(2026, 8, 20)
+
+
+class _CompleteProvider:
+    def fetch(self, request: MemberRankFetch):
+        return tuple(
+            MemberRankRow(
+                physical_contract=request.physical_contract,
+                trade_date=request.since,
+                rank_by=request.rank_by,
+                rank=rank,
+                member_name=f"member-{rank}",
+                value=Decimal(rank),
+                change=Decimal(rank - 10),
+            )
+            for rank in range(1, 21)
+        )
+
+
+class _BrokenProviderClient:
+    def member_rank(self, *_args, **_kwargs):
+        raise RuntimeError("provider secret must not escape")
+
+
+def _snapshot_builder(tmp_path: Path, provider_factory) -> MemberRankSnapshotBuilder:
+    return MemberRankSnapshotBuilder(
+        tmp_path,
+        rank1_source=_SnapshotFacts(),
+        trading_calendar=_SnapshotVerifier(),
+        contract_validity=_SnapshotVerifier(),
+        provider_factory=provider_factory,
+        provider_client_version="fake",
+    )
+
+
+def _member_rank_arguments() -> list[str]:
+    return [
+        "data",
+        "member-rank",
+        "snapshot",
+        "--dataset-id",
+        "mfm-member-20260821",
+        "--products",
+        "jm",
+        "--since",
+        "2026-08-20",
+        "--through",
+        "2026-08-20",
+    ]
 
 
 def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:

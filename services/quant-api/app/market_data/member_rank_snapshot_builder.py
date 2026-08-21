@@ -189,17 +189,25 @@ class MemberRankSnapshotBuilder:
                 staging / "main_force_member_rank_v1" / request.dataset_id,
                 final,
             )
-            (staging / "main_force_member_rank_v1").rmdir()
-            staging.rmdir()
         except Exception:
             if staging.exists():
                 shutil.rmtree(staging)
             raise
+        self._clean_published_staging_wrapper(staging)
         return plan.as_result(
             status="published",
             provider_calls=len(plan.fetches),
             partition_count=len(plan.partitions),
         )
+
+    @staticmethod
+    def _clean_published_staging_wrapper(staging: Path) -> None:
+        """Best-effort cleanup after publish; never turn a successful rename into failure."""
+        try:
+            (staging / "main_force_member_rank_v1").rmdir()
+            staging.rmdir()
+        except OSError:
+            return
 
     def _trading_days(self, product: str, since: date, through: date) -> tuple[date, ...]:
         try:

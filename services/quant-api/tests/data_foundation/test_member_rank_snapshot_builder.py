@@ -80,6 +80,7 @@ def _builder(
     root: Path,
     *,
     provider: object | None = None,
+    provider_factory=None,
     facts: tuple[MainMapFact, ...] | None = None,
 ) -> MemberRankSnapshotBuilder:
     return MemberRankSnapshotBuilder(
@@ -94,7 +95,8 @@ def _builder(
         ),
         trading_calendar=_Calendar(),
         contract_validity=_ContractValidity(),
-        provider_factory=lambda: provider or _FailingIfCalledProvider(),
+        provider_factory=provider_factory
+        or (lambda: provider or _FailingIfCalledProvider()),
         provider_client_version="test-client",
     )
 
@@ -129,11 +131,19 @@ def _complete_rows() -> tuple:
 
 
 def test_member_rank_snapshot_defaults_to_plan_without_provider_or_write(tmp_path: Path) -> None:
-    result = _builder(tmp_path, provider=_FailingIfCalledProvider()).snapshot(_request())
+    factory_calls = 0
+
+    def failing_factory() -> _FailingIfCalledProvider:
+        nonlocal factory_calls
+        factory_calls += 1
+        raise AssertionError("provider factory must not run")
+
+    result = _builder(tmp_path, provider_factory=failing_factory).snapshot(_request())
 
     assert result.status == "planned"
     assert result.provider_calls == 0
     assert result.as_payload()["readonly"] is True
+    assert factory_calls == 0
     assert not (tmp_path / "main_force_member_rank_v1").exists()
 
 
@@ -144,6 +154,25 @@ def test_plan_uses_exact_contiguous_rank1_contract_windows(tmp_path: Path) -> No
         ("JM2609", _DAY, _NEXT_DAY, "volume"),
         ("JM2609", _DAY, _NEXT_DAY, "long"),
         ("JM2609", _DAY, _NEXT_DAY, "short"),
+    ]
+
+
+def test_plan_splits_rank1_contract_change_into_exact_six_fetches(tmp_path: Path) -> None:
+    plan = _builder(
+        tmp_path,
+        facts=(
+            MainMapFact("jm", _DAY, "JM2609"),
+            MainMapFact("jm", _NEXT_DAY, "JM2610"),
+        ),
+    ).plan(_request())
+
+    assert [(item.physical_contract, item.since, item.through, item.rank_by) for item in plan.fetches] == [
+        ("JM2609", _DAY, _DAY, "volume"),
+        ("JM2609", _DAY, _DAY, "long"),
+        ("JM2609", _DAY, _DAY, "short"),
+        ("JM2610", _NEXT_DAY, _NEXT_DAY, "volume"),
+        ("JM2610", _NEXT_DAY, _NEXT_DAY, "long"),
+        ("JM2610", _NEXT_DAY, _NEXT_DAY, "short"),
     ]
 
 
@@ -168,6 +197,40 @@ def test_apply_rejects_one_missing_rank_without_publishing(tmp_path: Path) -> No
     assert not (tmp_path / "main_force_member_rank_v1" / "mfm-member-20260821").exists()
 
 
+def test_apply_failure_cleans_only_its_own_staging_directory(tmp_path: Path) -> None:
+    sibling = tmp_path / ".member-rank-other.staging-keep"
+    sibling.mkdir()
+    marker = sibling / "keep"
+    marker.write_text("keep")
+
+    with pytest.raises(MemberRankSnapshotBuildError, match="MEMBER_CONTRACT_DAY_INCOMPLETE"):
+        _builder(tmp_path, provider=_RowsProvider(_complete_rows()[:-1])).snapshot(
+            _request(apply=True)
+        )
+
+    assert marker.read_text() == "keep"
+    assert not (tmp_path / "main_force_member_rank_v1" / "mfm-member-20260821").exists()
+
+
+def test_existing_final_is_preserved_and_rejected_before_provider_factory(tmp_path: Path) -> None:
+    final = tmp_path / "main_force_member_rank_v1" / "mfm-member-20260821"
+    final.mkdir(parents=True)
+    marker = final / "keep"
+    marker.write_text("keep")
+    factory_calls = 0
+
+    def failing_factory() -> _FailingIfCalledProvider:
+        nonlocal factory_calls
+        factory_calls += 1
+        raise AssertionError("existing final must reject before factory")
+
+    with pytest.raises(MemberRankSnapshotBuildError, match="MEMBER_SNAPSHOT_ALREADY_EXISTS"):
+        _builder(tmp_path, provider_factory=failing_factory).snapshot(_request(apply=True))
+
+    assert factory_calls == 0
+    assert marker.read_text() == "keep"
+
+
 def test_apply_publishes_immutable_descriptor_after_reader_readback(tmp_path: Path) -> None:
     provider = _RowsProvider(_complete_rows())
     result = _builder(tmp_path, provider=provider).snapshot(_request(apply=True))
@@ -184,6 +247,26 @@ def test_apply_publishes_immutable_descriptor_after_reader_readback(tmp_path: Pa
     assert repository.day("JM2609", _DAY) is not None
     with pytest.raises(MemberRankSnapshotBuildError, match="MEMBER_SNAPSHOT_ALREADY_EXISTS"):
         _builder(tmp_path, provider=provider).snapshot(_request(apply=True))
+
+
+def test_post_publish_staging_cleanup_failure_does_not_undo_published_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_rmdir = Path.rmdir
+
+    def failing_rmdir(path: Path) -> None:
+        if path.name.startswith(".member-rank-"):
+            raise OSError("cleanup failure")
+        original_rmdir(path)
+
+    monkeypatch.setattr(Path, "rmdir", failing_rmdir)
+
+    result = _builder(tmp_path, provider=_RowsProvider(_complete_rows())).snapshot(
+        _request(apply=True)
+    )
+
+    assert result.status == "published"
+    assert (tmp_path / "main_force_member_rank_v1" / "mfm-member-20260821").is_dir()
 
 
 @pytest.mark.parametrize("rank_by", ("volume", "long", "short"))
