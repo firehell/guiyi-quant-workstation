@@ -2186,7 +2186,7 @@ def _mirror_result() -> MainForceMirrorV2ResearchResult:
         evaluation_classification="retrospective_walk_forward_diagnostic",
         requested_since=date(2023, 1, 1),
         requested_through=date(2026, 8, 18),
-        prospective_oos_starts_after=date(2026, 8, 18),
+        prospective_oos_starts_after=date(2026, 8, 20),
         member_dataset_id="fixture-member-v1",
         products=("jm",),
         member_coverage=Decimal("0.75"),
@@ -2381,15 +2381,33 @@ def test_mirror_composition_reuses_one_market_and_v2_service_identity(
         },
     )()
     sessions: list[object] = []
+    task5_service = type(
+        "Task5Service",
+        (),
+        {
+            "market_data": market_data,
+            "query_page": lambda self, request: request,
+        },
+    )()
 
-    def build_market_data(session: object) -> object:
+    def build_task5_service(session: object) -> object:
         sessions.append(session)
-        return market_data
+        return task5_service
+
+    def reject_duplicate_market_data(_session: object) -> object:
+        raise AssertionError(
+            "research composition must reuse the Task 5 service"
+        )
 
     monkeypatch.setattr(
         market_data_composition,
+        "build_main_force_mirror_v2_service",
+        build_task5_service,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
         "build_market_data_service",
-        build_market_data,
+        reject_duplicate_market_data,
     )
     session = object()
 
@@ -2398,8 +2416,8 @@ def test_mirror_composition_reuses_one_market_and_v2_service_identity(
     )
 
     assert isinstance(service, MainForceMirrorV2ResearchService)
-    assert service.market_data is market_data
-    assert service.mirror_service.market_data is market_data
+    assert service.mirror_service is task5_service
+    assert service.market_data is task5_service.market_data
     assert sessions == [session]
 
 

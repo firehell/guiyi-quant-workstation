@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from types import MappingProxyType
-from typing import Literal, Protocol, TypeAlias
+from typing import Final, Literal, Protocol, TypeAlias
 
 from guiyi_quant.indicators.main_force_mirror_v2 import MainForceMirrorV2Point
 
@@ -44,6 +44,7 @@ COHORTS = (
 SENSITIVITY_THRESHOLDS = tuple(
     Decimal(value) for value in ("0.5", "1.0", "1.5", "2.0", "2.5")
 )
+KNOWN_RETROSPECTIVE_END: Final = date(2026, 8, 20)
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,7 +240,9 @@ class MainForceMirrorV2ResearchService:
             evaluation_classification="retrospective_walk_forward_diagnostic",
             requested_since=request.since,
             requested_through=request.through,
-            prospective_oos_starts_after=request.through,
+            prospective_oos_starts_after=max(
+                request.through, KNOWN_RETROSPECTIVE_END
+            ),
             member_dataset_id=page_identity.member_dataset.dataset_id,
             products=(request.symbol,),
             member_coverage=(
@@ -259,7 +262,7 @@ class MainForceMirrorV2ResearchService:
             yearly=yearly,
             by_product=by_product,
             pooled=pooled,
-            top_bottom_spreads=_top_bottom_spreads(pooled),
+            top_bottom_spreads=_top_bottom_spreads(observations, bars, points),
             sensitivity=_sensitivity(request.symbol, bars, points),
         )
 
@@ -499,10 +502,10 @@ def _outcome(
         mfe = max(Decimal(0), max((source - bar.low) / source for bar in future))
         mae = max(Decimal(0), max((bar.high - source) / source for bar in future))
     return _Outcome(
-        directional_return=_rounded(directional),
-        reversal_return=_rounded(-directional),
-        mfe=_rounded(mfe),
-        mae=_rounded(mae),
+        directional_return=directional,
+        reversal_return=-directional,
+        mfe=mfe,
+        mae=mae,
     )
 
 
@@ -530,11 +533,11 @@ def _summary(
     return MainForceMirrorV2HorizonSummary(
         horizon_bars=horizon,
         sample_count=len(outcomes),
-        median_directional_return=_median(
-            tuple(value.directional_return for value in outcomes)
+        median_directional_return=_rounded(
+            _median(tuple(value.directional_return for value in outcomes))
         ),
-        median_reversal_return=_median(
-            tuple(value.reversal_return for value in outcomes)
+        median_reversal_return=_rounded(
+            _median(tuple(value.reversal_return for value in outcomes))
         ),
         hit_rate=_ratio(
             sum(
@@ -547,8 +550,8 @@ def _summary(
             ),
             len(outcomes),
         ),
-        median_mfe=_median(tuple(value.mfe for value in outcomes)),
-        median_mae=_median(tuple(value.mae for value in outcomes)),
+        median_mfe=_rounded(_median(tuple(value.mfe for value in outcomes))),
+        median_mae=_rounded(_median(tuple(value.mae for value in outcomes))),
     )
 
 
@@ -627,15 +630,35 @@ def _by_product(
 
 
 def _top_bottom_spreads(
-    pooled: CohortMap,
+    observations: tuple[_Observation, ...],
+    bars: tuple[CanonicalBar, ...],
+    points: tuple[MainForceMirrorV2Point, ...],
 ) -> Mapping[int, MainForceMirrorV2GroupSpread]:
     result: dict[int, MainForceMirrorV2GroupSpread] = {}
     for horizon in HORIZONS:
-        available = tuple(
-            (cohort, summaries[horizon])
-            for cohort, summaries in pooled.items()
-            if summaries[horizon].median_directional_return is not None
-        )
+        available: list[tuple[str, Decimal, int]] = []
+        for cohort in COHORTS:
+            outcomes = tuple(
+                outcome
+                for observation in observations
+                if observation.cohort == cohort
+                and (
+                    outcome := _outcome(observation, horizon, bars, points)
+                )
+                is not None
+            )
+            if outcomes:
+                available.append(
+                    (
+                        cohort,
+                        _median(
+                            tuple(
+                                value.directional_return for value in outcomes
+                            )
+                        ),
+                        len(outcomes),
+                    )
+                )
         if not available:
             result[horizon] = MainForceMirrorV2GroupSpread(
                 horizon, "", "", None, 0, 0
@@ -644,23 +667,19 @@ def _top_bottom_spreads(
         ordered = sorted(
             available,
             key=lambda item: (
-                item[1].median_directional_return,
+                item[1],
                 item[0],
             ),
         )
-        bottom_group, bottom = ordered[0]
-        top_group, top = ordered[-1]
-        assert top.median_directional_return is not None
-        assert bottom.median_directional_return is not None
+        bottom_group, bottom_median, bottom_count = ordered[0]
+        top_group, top_median, top_count = ordered[-1]
         result[horizon] = MainForceMirrorV2GroupSpread(
             horizon_bars=horizon,
             top_group=top_group,
             bottom_group=bottom_group,
-            directional_return_spread=_rounded(
-                top.median_directional_return - bottom.median_directional_return
-            ),
-            top_sample_count=top.sample_count,
-            bottom_sample_count=bottom.sample_count,
+            directional_return_spread=_rounded(top_median - bottom_median),
+            top_sample_count=top_count,
+            bottom_sample_count=bottom_count,
         )
     return MappingProxyType(result)
 
@@ -708,8 +727,8 @@ def _median(values: tuple[Decimal, ...]) -> Decimal:
     ordered = sorted(values)
     midpoint = len(ordered) // 2
     if len(ordered) % 2:
-        return _rounded(ordered[midpoint])
-    return _rounded((ordered[midpoint - 1] + ordered[midpoint]) / Decimal(2))
+        return ordered[midpoint]
+    return (ordered[midpoint - 1] + ordered[midpoint]) / Decimal(2)
 
 
 def _is_warning_cohort(cohort: str) -> bool:

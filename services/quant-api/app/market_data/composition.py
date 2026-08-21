@@ -301,21 +301,9 @@ def build_main_force_mirror_v2_research_service(
     session: Session,
 ) -> MainForceMirrorV2ResearchService:
     """Compose retrospective V2 around the exact API service identities."""
-    from app.market_data.coverage_source import DatabaseCoverageSource
-
-    market_data = build_market_data_service(session)
-    mirror_service = MainForceMirrorV2Service(
-        market_data=market_data,
-        segment_loader=ActualDominantResearchSegmentLoader(market_data),
-        coverage=DatabaseCoverageSource(
-            session,
-            _PRODUCT_STARTS,
-            history_floor_path=_HISTORY_FLOOR,
-        ),
-        member_repository=member_rank_repository_from_env(session),
-    )
+    mirror_service = build_main_force_mirror_v2_service(session)
     return MainForceMirrorV2ResearchService(
-        market_data=market_data,
+        market_data=mirror_service.market_data,
         mirror_service=mirror_service,
     )
 

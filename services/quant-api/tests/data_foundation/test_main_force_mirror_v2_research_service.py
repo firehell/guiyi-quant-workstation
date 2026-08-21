@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
+
+import pytest
 
 from guiyi_quant.indicators.main_force_mirror_v2 import (
     MainForceMirrorV2Point,
@@ -139,12 +141,21 @@ _SEGMENTS = (
 
 
 class _MarketData:
+    def __init__(
+        self,
+        *,
+        bars: tuple[CanonicalBar, ...] = _BARS,
+        segments: tuple[ResolvedContractSegment, ...] = _SEGMENTS,
+    ) -> None:
+        self.bars = bars
+        self.segments = segments
+
     def query_actual_dominant_trading_days(self, request: object) -> MarketSeriesResult:
         return MarketSeriesResult(
             request_identity=MappingProxyType({"fixture": True}),
-            bars=_BARS,
-            coverage=(_BARS[0].bar_end, _BARS[-1].bar_end),
-            resolved_contract_segments=_SEGMENTS,
+            bars=self.bars,
+            coverage=(self.bars[0].bar_end, self.bars[-1].bar_end),
+            resolved_contract_segments=self.segments,
         )
 
     def query_contract_trading_days(self, request: object) -> MarketSeriesResult:
@@ -156,9 +167,11 @@ class _MirrorService:
         self,
         *,
         points: tuple[MainForceMirrorV2Point, ...] = _POINTS,
+        segments: tuple[ResolvedContractSegment, ...] = _SEGMENTS,
         member_dataset: MemberDatasetState | None = None,
     ) -> None:
         self.points = points
+        self.segments = segments
         self.member_dataset = member_dataset or MemberDatasetState(
             "ready",
             "fixture-member-v1",
@@ -178,7 +191,7 @@ class _MirrorService:
             member_dataset=self.member_dataset,
             has_more_before=False,
             next_before=None,
-            resolved_contract_segments=_SEGMENTS,
+            resolved_contract_segments=self.segments,
         )
 
 
@@ -254,12 +267,32 @@ def test_research_labels_retrospective_and_reports_explicit_denominators() -> No
     assert result.evaluation_classification == (
         "retrospective_walk_forward_diagnostic"
     )
-    assert result.prospective_oos_starts_after == date(2026, 1, 6)
+    assert result.prospective_oos_starts_after == date(2026, 8, 20)
     assert result.member_dataset_id == "fixture-member-v1"
     assert result.member_coverage == Decimal("0.583333")
     assert result.caution_ready_bars == 10
     assert result.caution_events == 2
     assert result.caution_events_per_1000_ready_bars == Decimal("200")
+
+
+@pytest.mark.parametrize(
+    ("through", "expected_starts_after"),
+    (
+        (date(2026, 1, 6), date(2026, 8, 20)),
+        (date(2026, 8, 20), date(2026, 8, 20)),
+        (date(2026, 8, 21), date(2026, 8, 21)),
+    ),
+)
+def test_research_never_repackages_known_retrospective_days_as_prospective(
+    through: date,
+    expected_starts_after: date,
+) -> None:
+    result = MainForceMirrorV2ResearchService(
+        market_data=_MarketData(),
+        mirror_service=_MirrorService(),
+    ).run(replace(_request(), through=through))
+
+    assert result.prospective_oos_starts_after == expected_starts_after
 
 
 def test_research_reports_member_coverage_unknown_when_dataset_is_unavailable() -> None:
@@ -276,3 +309,223 @@ def test_research_reports_member_coverage_unknown_when_dataset_is_unavailable() 
 
     assert result.member_dataset_id is None
     assert result.member_coverage is None
+
+
+def _minimal_point(
+    bar: CanonicalBar,
+    *,
+    physical_contract: str,
+    instant_pressure: float | None,
+    accumulated_pressure: float | None = None,
+    member: MemberRankObservation | None = None,
+) -> MainForceMirrorV2Point:
+    ready = instant_pressure is not None
+    accumulated_ready = accumulated_pressure is not None
+    return MainForceMirrorV2Point(
+        bar_end=bar.bar_end,
+        trading_day=bar.trading_day,
+        physical_contract=physical_contract,
+        pressure_ready=ready,
+        pressure_state="long_build" if ready or accumulated_ready else None,
+        instant_pressure=instant_pressure,
+        accumulated_ready=accumulated_ready,
+        accumulated_pressure=accumulated_pressure,
+        caution_ready=False,
+        caution=None,
+        caution_conflict=False,
+        long_caution_score=None,
+        short_caution_score=None,
+        caution_reason_codes=(),
+        member=member,
+        unavailable_reason=None,
+        price_impulse=None,
+        clv=None,
+        volume_ratio=None,
+        delta_oi=None,
+        oi_impulse=None,
+        range_position=None,
+    )
+
+
+def _custom_result(
+    bars: tuple[CanonicalBar, ...],
+    points: tuple[MainForceMirrorV2Point, ...],
+    segments: tuple[ResolvedContractSegment, ...],
+    *,
+    since: date,
+    through: date,
+):
+    return MainForceMirrorV2ResearchService(
+        market_data=_MarketData(bars=bars, segments=segments),
+        mirror_service=_MirrorService(points=points, segments=segments),
+    ).run(
+        MainForceMirrorV2ResearchRequest(
+            symbol="jm",
+            series_kind=SeriesKind.ACTUAL_DOMINANT,
+            contract=None,
+            frequency=BarFrequency.H1,
+            since=since,
+            through=through,
+        )
+    )
+
+
+def test_research_hit_rate_uses_raw_micro_returns_before_public_rounding() -> None:
+    day = date(2026, 1, 8)
+    prices = (
+        Decimal("1000000"),
+        Decimal("1000000.4"),
+        Decimal("1000000"),
+        Decimal("999999.6"),
+    )
+    bars = tuple(
+        CanonicalBar(
+            bar_end=datetime(2026, 1, 8, index + 1, tzinfo=UTC),
+            trading_day=day,
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+            volume=Decimal("1"),
+            turnover=None,
+            open_interest=Decimal("1"),
+        )
+        for index, price in enumerate(prices)
+    )
+    points = tuple(
+        _minimal_point(
+            bar,
+            physical_contract="JM2609",
+            instant_pressure=1.0 if index in {0, 2} else None,
+        )
+        for index, bar in enumerate(bars)
+    )
+    result = _custom_result(
+        bars,
+        points,
+        (ResolvedContractSegment("JM2609", day, day),),
+        since=day,
+        through=day,
+    )
+
+    summary = result.pooled["instant_pressure"][1]
+    assert summary.sample_count == 2
+    assert summary.median_directional_return == Decimal("0")
+    assert summary.hit_rate == Decimal("0.5")
+
+
+def _directional_fixture_result():
+    first_day = date(2026, 2, 2)
+    second_day = date(2026, 2, 3)
+    bars: list[CanonicalBar] = []
+    points: list[MainForceMirrorV2Point] = []
+    aligned = _member(
+        direction="long",
+        strength="1.0",
+        accumulated_relation="aligned",
+        caution_relation="neutral",
+    )
+    divergent = _member(
+        direction="short",
+        strength="1.0",
+        accumulated_relation="divergent",
+        caution_relation="neutral",
+    )
+    for block, (trading_day, contract, price_step, member) in enumerate(
+        (
+            (first_day, "JM2609", 1, aligned),
+            (second_day, "JM2701", -1, divergent),
+        )
+    ):
+        for offset in range(11):
+            close = Decimal(100 + price_step * offset)
+            bar = CanonicalBar(
+                bar_end=datetime(2026, 2, 2 + block, tzinfo=UTC)
+                + timedelta(hours=offset + 1),
+                trading_day=trading_day,
+                open=close,
+                high=close + 1,
+                low=close - 1,
+                close=close,
+                volume=Decimal("10"),
+                turnover=None,
+                open_interest=Decimal("100"),
+            )
+            bars.append(bar)
+            points.append(
+                _minimal_point(
+                    bar,
+                    physical_contract=contract,
+                    instant_pressure=1.0 if offset == 0 else None,
+                    accumulated_pressure=1.0 if offset == 0 else None,
+                    member=member if offset == 0 else None,
+                )
+            )
+    return _custom_result(
+        tuple(bars),
+        tuple(points),
+        (
+            ResolvedContractSegment("JM2609", first_day, first_day),
+            ResolvedContractSegment("JM2701", second_day, second_day),
+        ),
+        since=first_day,
+        through=second_day,
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "horizon",
+        "aligned_return",
+        "aligned_mfe",
+        "divergent_return",
+        "divergent_mae",
+        "pooled_excursion",
+        "spread_value",
+    ),
+    (
+        (1, "0.01", "0.02", "-0.01", "0.02", "0.01", "0.02"),
+        (3, "0.03", "0.04", "-0.03", "0.04", "0.02", "0.06"),
+        (5, "0.05", "0.06", "-0.05", "0.06", "0.03", "0.1"),
+        (10, "0.1", "0.11", "-0.1", "0.11", "0.055", "0.2"),
+    ),
+)
+def test_research_hand_fixture_covers_directional_metrics_and_group_spread(
+    horizon: int,
+    aligned_return: str,
+    aligned_mfe: str,
+    divergent_return: str,
+    divergent_mae: str,
+    pooled_excursion: str,
+    spread_value: str,
+) -> None:
+    result = _directional_fixture_result()
+    instant = result.pooled["instant_pressure"][horizon]
+    accumulated = result.pooled["accumulated_pressure"][horizon]
+    aligned = result.pooled["member_aligned"][horizon]
+    divergent = result.pooled["member_divergent"][horizon]
+    spread = result.top_bottom_spreads[horizon]
+
+    assert instant.sample_count == accumulated.sample_count == 2
+    assert instant.median_directional_return == Decimal("0")
+    assert accumulated.median_directional_return == Decimal("0")
+    assert instant.hit_rate == accumulated.hit_rate == Decimal("0.5")
+    assert instant.median_mfe == accumulated.median_mfe == Decimal(
+        pooled_excursion
+    )
+    assert instant.median_mae == accumulated.median_mae == Decimal(
+        pooled_excursion
+    )
+    assert aligned.sample_count == 1
+    assert aligned.median_directional_return == Decimal(aligned_return)
+    assert aligned.hit_rate == Decimal("1")
+    assert aligned.median_mfe == Decimal(aligned_mfe)
+    assert aligned.median_mae == Decimal("0")
+    assert divergent.sample_count == 1
+    assert divergent.median_directional_return == Decimal(divergent_return)
+    assert divergent.hit_rate == Decimal("0")
+    assert divergent.median_mfe == Decimal("0")
+    assert divergent.median_mae == Decimal(divergent_mae)
+    assert spread.top_group == "member_aligned"
+    assert spread.bottom_group == "member_divergent"
+    assert spread.directional_return_spread == Decimal(spread_value)
