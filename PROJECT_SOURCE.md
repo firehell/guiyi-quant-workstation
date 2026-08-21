@@ -57,13 +57,19 @@ RQData
 
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
-`guiyi research n-structure`、`guiyi research candidate-validation`、`guiyi research candidate-robustness`、
+`guiyi research n-structure`、`guiyi research jdj-1m`、`guiyi research candidate-validation`、`guiyi research candidate-robustness`、
 `guiyi research main-force-mirror-futures` 和 `guiyi runtime
 status|live|alert|alert-canary`；其中 `alert-canary --audience owner|htdy_observers` 是独立真实通知 Gate。
 这些命令都不能由普通只读测试授权。
 `research n-structure` 只读取 Historical Canonical，经共享行情入口生成 research-only 观察；它不写数据、
 不进入 Runtime，不证明效果，也不授权 candidate promotion。N Structure V1 的长期业务语义由本节、
 `docs/ARCHITECTURE.md`、exact policy 与对应测试共同定义；历史 Plan/Task 只从 Git history 追溯。
+`research jdj-1m` 通过同一个 `ActualDominantResearchSegmentLoader` 一次读取 exact 1m/5m
+actual-dominant true segment prefix，以 existing N Structure 5m facts 投影 strict-before 1m context，
+再分别运行 Trend Follow、Trend Reentry 6、Key-Level Breakout 三个 causal reducer。三条 Candidate
+只产生 immutable trigger/outcome research facts；Candidate Validation 复用既有 10-fold schedule，
+prospective 首日冻结为 `2026-08-24` 且当前 pending。它不建立 backtest/fill/order/position/cost/equity、
+不自动排名或晋升，也不进入 Alert/Runtime。
 `research candidate-robustness` 只比较已冻结的 SuBing/N exact Candidate research facts：复用各自
 Candidate Validation 生成 anchor temporal dossier，在冻结 active60 上保留完整 120-cell 矩阵，
 并且只在 same symbol + same physical contract + same rank1 segment 内比较 `jm` 双向 causal
