@@ -371,6 +371,10 @@ class DatabaseCoverageSource:
         )
         return bar.bar_end in expected
 
+    def previous_trading_day(self, symbol: str, trading_day: date) -> date:
+        """从正式 TradingCalendar 解析品种指定日的上一交易日。"""
+        return self._previous_trading_day(self._exchange(symbol), trading_day)
+
     def _exchange(self, symbol: str) -> str:
         """品种所属交易所代码；缺失时 fail-closed。"""
         value = self.session.scalar(

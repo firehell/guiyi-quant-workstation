@@ -35,6 +35,14 @@ from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
+from app.market_data.main_force_mirror_v2_service import (
+    MainForceMirrorV2Error,
+    MainForceMirrorV2Service,
+)
+from app.market_data.member_rank_snapshot import (
+    MemberRankSnapshotError,
+    MemberRankSnapshotRepository,
+)
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
 from app.market_data.main_force_mirror_futures_research_service import (
@@ -231,6 +239,52 @@ def build_market_data_service(session: Session) -> MarketDataService:
     """构造只读 ``MarketDataService``（查询路径不注入 RQData 与维护依赖）。"""
     root = canonical_root()
     return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
+
+
+def member_rank_repository_from_env(
+    session: Session | None,
+) -> MemberRankSnapshotRepository | None:
+    """Resolve only an exact configured member snapshot; never discover latest."""
+    root_value = os.getenv("GUIYI_RESEARCH_DATA_ROOT")
+    dataset_id = os.getenv("GUIYI_MAIN_FORCE_MEMBER_RANK_DATASET_ID")
+    if not root_value and not dataset_id:
+        return None
+    if not root_value or not dataset_id:
+        raise MainForceMirrorV2Error(
+            "MFM_V2_MEMBER_DATASET_IDENTITY_CONFLICT"
+        )
+    try:
+        if session is None:
+            return MemberRankSnapshotRepository(Path(root_value), dataset_id)
+        catalog = MarketCatalog(session, canonical_root())
+        verifiers = _CatalogMemberRankVerifiers(session, catalog)
+        return MemberRankSnapshotRepository(
+            Path(root_value),
+            dataset_id,
+            trading_calendar=verifiers,
+            contract_validity=verifiers,
+        )
+    except MemberRankSnapshotError:
+        raise MainForceMirrorV2Error("MFM_V2_MEMBER_DATASET_INVALID") from None
+
+
+def build_main_force_mirror_v2_service(
+    session: Session,
+) -> MainForceMirrorV2Service:
+    """Compose the historical-only V2 page service without write dependencies."""
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
+    market_data = build_market_data_service(session)
+    return MainForceMirrorV2Service(
+        market_data=market_data,
+        segment_loader=ActualDominantResearchSegmentLoader(market_data),
+        coverage=DatabaseCoverageSource(
+            session,
+            _PRODUCT_STARTS,
+            history_floor_path=_HISTORY_FLOOR,
+        ),
+        member_repository=member_rank_repository_from_env(session),
+    )
 
 
 def build_market_research_service(session: Session) -> MarketResearchService:

@@ -5,6 +5,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 from app.market_data.domain import (
@@ -14,6 +15,15 @@ from app.market_data.domain import (
     SeriesKind,
 )
 from app.market_data.market_data_service import MarketDataError
+from app.market_data.main_force_mirror_v2_service import (
+    MainForceMirrorV2Error,
+    MainForceMirrorV2PageResult,
+    MemberDatasetState,
+)
+from guiyi_quant.indicators.main_force_mirror_v2 import (
+    MainForceMirrorV2Point,
+    MemberRankObservation,
+)
 
 
 class FakeService:
@@ -188,6 +198,240 @@ def test_product_research_api_maps_market_errors_without_internal_details(monkey
 
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "QUERY_WINDOW_EMPTY"}}
+
+
+class _FakeMirrorService:
+    def __init__(self, failure: MainForceMirrorV2Error | None = None) -> None:
+        self.failure = failure
+        self.requests = []
+
+    def query_page(self, request):
+        self.requests.append(request)
+        if self.failure is not None:
+            raise self.failure
+        member = MemberRankObservation(
+            status="ready",
+            member_trade_date=date(2026, 8, 20),
+            direction="long",
+            change_bias=0.000001,
+            strength=2.0,
+            position_skew=0.0,
+            top5_volume_share=0.4,
+            relation_to_accumulated="aligned",
+            relation_to_caution="strong_aligned",
+            unavailable_reason=None,
+        )
+        point = MainForceMirrorV2Point(
+            bar_end=datetime(2026, 8, 21, 7, tzinfo=UTC),
+            trading_day=date(2026, 8, 21),
+            physical_contract="JM2701",
+            pressure_ready=True,
+            pressure_state="long_build",
+            instant_pressure=-0.0,
+            accumulated_ready=True,
+            accumulated_pressure=1.2345674,
+            caution_ready=True,
+            caution="long_chase_caution",
+            caution_conflict=False,
+            long_caution_score=70.0,
+            short_caution_score=0.0,
+            caution_reason_codes=("LONG_UPPER_EXTREME",),
+            member=member,
+            unavailable_reason=None,
+            price_impulse=1.0,
+            clv=0.5,
+            volume_ratio=2.0,
+            delta_oi=10.0,
+            oi_impulse=1.0,
+            range_position=0.9,
+        )
+        return MainForceMirrorV2PageResult(
+            request_identity={
+                "series_kind": request.series_kind.value,
+                "symbol": request.symbol,
+                "contract": request.contract,
+                "frequency": request.frequency.value,
+                "before": request.before.isoformat() if request.before else None,
+                "limit": request.limit,
+            },
+            indicator_code="main_force_mirror_v2",
+            indicator_version="futures-member-research-v2",
+            formal_policy_id="main_force_mirror_observation_v2",
+            parameters_hash="fixture-hash",
+            points=(point,),
+            member_dataset=MemberDatasetState(
+                status="ready",
+                dataset_id="fixture-member-v1",
+                schema_version=1,
+                admitted_product=True,
+                coverage=(date(2026, 7, 1), date(2026, 8, 20)),
+            ),
+            has_more_before=True,
+            next_before=point.bar_end,
+            resolved_contract_segments=(
+                ResolvedContractSegment(
+                    "JM2701", date(2026, 8, 21), date(2026, 8, 21)
+                ),
+            ),
+        )
+
+
+def test_main_force_mirror_v2_api_returns_exact_identity_t_minus_one_and_rounding(
+    monkeypatch,
+) -> None:
+    fake = _FakeMirrorService()
+    monkeypatch.setattr(
+        "app.api.market.build_main_force_mirror_v2_service",
+        lambda _session: fake,
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/main-force-mirror",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "60m",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {
+        "request",
+        "indicator",
+        "member_dataset",
+        "points",
+        "page",
+        "resolved_contract_segments",
+    }
+    assert payload["indicator"] == {
+        "indicator_code": "main_force_mirror_v2",
+        "indicator_version": "futures-member-research-v2",
+        "formal_policy_id": "main_force_mirror_observation_v2",
+        "parameters_hash": "fixture-hash",
+        "interpretation": "directional_position_pressure_proxy_not_measured_fund_flow",
+        "observation_only": True,
+        "historical_only": True,
+        "auto_order": False,
+    }
+    assert payload["member_dataset"] == {
+        "status": "ready",
+        "dataset_id": "fixture-member-v1",
+        "schema_version": 1,
+        "admitted_product": True,
+        "coverage": {"start": "2026-07-01", "end": "2026-08-20"},
+    }
+    assert payload["points"][0]["member_trade_date"] == "2026-08-20"
+    assert payload["points"][0]["instant_pressure"] == 0.0
+    assert payload["points"][0]["accumulated_pressure"] == 1.234567
+    assert payload["points"][0]["member_change_bias"] == 0.000001
+    assert payload["points"][0]["relation_to_caution"] == "strong_aligned"
+    assert payload["page"] == {
+        "has_more_before": True,
+        "next_before": "2026-08-21T07:00:00Z",
+    }
+
+
+@pytest.mark.parametrize(
+    ("code", "status_code"),
+    [
+        ("MFM_V2_UNSUPPORTED_SERIES_KIND", 422),
+        ("MFM_V2_UNSUPPORTED_FREQUENCY", 422),
+        ("MFM_V2_CONTRACT_INVALID", 422),
+        ("MFM_V2_REQUEST_INVALID", 422),
+        ("MFM_V2_MARKET_IDENTITY_CONFLICT", 409),
+        ("MFM_V2_PHYSICAL_CONTRACT_MISSING", 409),
+        ("MFM_V2_MEMBER_DATASET_INVALID", 409),
+        ("MFM_V2_MEMBER_DATASET_IDENTITY_CONFLICT", 409),
+    ],
+)
+def test_main_force_mirror_v2_api_maps_only_stable_public_codes(
+    monkeypatch,
+    code: str,
+    status_code: int,
+) -> None:
+    fake = _FakeMirrorService(MainForceMirrorV2Error(code))
+    monkeypatch.setattr(
+        "app.api.market.build_main_force_mirror_v2_service",
+        lambda _session: fake,
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/main-force-mirror",
+        params={
+            "series_kind": "contract",
+            "symbol": "jm",
+            "contract": "JM2609",
+            "frequency": "60m",
+        },
+    )
+
+    assert response.status_code == status_code
+    assert response.json() == {"detail": {"code": code}}
+
+
+def test_main_force_mirror_v2_api_hides_corrupt_snapshot_details(monkeypatch) -> None:
+    class _CorruptComposition:
+        def __call__(self, _session):
+            try:
+                raise OSError("/private/research/secret/member_rank.parquet")
+            except OSError as exc:
+                raise MainForceMirrorV2Error(
+                    "MFM_V2_MEMBER_DATASET_INVALID"
+                ) from exc
+
+    monkeypatch.setattr(
+        "app.api.market.build_main_force_mirror_v2_service",
+        _CorruptComposition(),
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/main-force-mirror",
+        params={
+            "series_kind": "contract",
+            "symbol": "jm",
+            "contract": "JM2609",
+            "frequency": "60m",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "MFM_V2_MEMBER_DATASET_INVALID"}
+    }
+    assert "/private/research" not in response.text
+
+
+def test_main_force_mirror_v2_api_replaces_unknown_error_text_with_stable_code(
+    monkeypatch,
+) -> None:
+    fake = _FakeMirrorService(
+        MainForceMirrorV2Error("/private/research/secret/member_rank.parquet")
+    )
+    monkeypatch.setattr(
+        "app.api.market.build_main_force_mirror_v2_service",
+        lambda _session: fake,
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/main-force-mirror",
+        params={
+            "series_kind": "contract",
+            "symbol": "jm",
+            "contract": "JM2609",
+            "frequency": "60m",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "MFM_V2_MARKET_IDENTITY_CONFLICT"}
+    }
+    assert "/private/research" not in response.text
 
 
 class FakeRadarService:
