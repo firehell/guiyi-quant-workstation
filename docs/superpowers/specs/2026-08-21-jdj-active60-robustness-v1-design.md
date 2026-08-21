@@ -1,8 +1,8 @@
 # Phase 7 — JDJ Active60 Robustness V1 Design
 
-状态：DESIGN_APPROVED / IMPLEMENTATION_NOT_STARTED  
-日期：2026-08-21  
-设计冻结：2026-08-21T20:34:00+08:00  
+状态：DESIGN_APPROVED / IMPLEMENTATION_NOT_STARTED
+日期：2026-08-21
+设计冻结：2026-08-21T20:34:00+08:00
 阶段属性：research-only / historical-only / read-only / no promotion
 
 ## 1. 目标

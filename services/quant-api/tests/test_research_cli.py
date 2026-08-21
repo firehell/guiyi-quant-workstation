@@ -612,10 +612,31 @@ def test_candidate_robustness_parser_builds_concrete_protocol_request(
 
 
 @pytest.mark.parametrize(
+    "flag", ("--since", "--through", "--symbol", "--candidate", "--products")
+)
+def test_multi_candidate_robustness_parser_rejects_runtime_selection_flags(
+    flag: str,
+) -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                "research",
+                "candidate-robustness",
+                "--protocol",
+                "multi_candidate_robustness_v1",
+                flag,
+                "value",
+            ]
+        )
+
+
+@pytest.mark.parametrize(
     "flag",
     ("--since", "--through", "--symbols", "--threshold", "--score", "--rank"),
 )
-def test_candidate_robustness_parser_rejects_runtime_selection_flags(flag: str) -> None:
+def test_jdj_active60_robustness_parser_rejects_runtime_selection_flags(
+    flag: str,
+) -> None:
     with pytest.raises(CliUsageError):
         build_parser().parse_args(
             [
