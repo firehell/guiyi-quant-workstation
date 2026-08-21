@@ -81,7 +81,7 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
     assert {
         code: definition.supported_intervals
         for code, definition in indicator_registry.items()
-        if code != "main_force_mirror_futures_v1"
+        if code not in {"main_force_mirror_futures_v1", "main_force_mirror_v2"}
     } == {
         code: expected
         for code in (
@@ -461,3 +461,64 @@ def test_main_force_mirror_futures_registry_and_policy_are_web_only() -> None:
             require_formal_policy(policy.policy_id, consumer=consumer)
     with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_NOT_ALLOWED"):
         require_formal_policy(policy.policy_id, consumer="unknown_consumer")
+
+
+def test_main_force_mirror_v2_registry_and_policy_are_web_manual_observation_only() -> None:
+    """Catches widening V2 into a formal, live, alert, or order consumer."""
+    from guiyi_quant.indicators import (
+        get_indicator,
+        parameters_hash,
+        require_formal_policy,
+    )
+    from guiyi_quant.indicators.main_force_mirror_v2 import DEFAULT_PARAMETERS
+
+    definition = get_indicator("main_force_mirror_v2")
+    assert definition.indicator_version == "futures-member-research-v2"
+    assert definition.display_name == "主力照妖镜 V2"
+    assert definition.display_type == "subpane"
+    assert definition.input_fields == (
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "open_interest",
+        "physical_contract",
+        "member_rank_t_minus_1",
+    )
+    assert definition.supported_intervals == ("60m",)
+    assert definition.lookback_bars == 31
+    assert definition.warmup_bars == 30
+    assert definition.closed_bar_only is True
+    assert definition.confirmed_only is True
+    assert definition.status == "observation_only"
+    assert definition.repainting_risk == "none"
+    assert definition.web_capable is True
+    assert definition.backtest_capable is False
+    assert definition.live_capable is False
+    assert definition.alert_capable is False
+    assert definition.default_visible is False
+    assert definition.output_schema == "main_force_mirror_v2_point"
+    assert definition.formal_policy_id == "main_force_mirror_observation_v2"
+    assert definition.default_parameters == dict(DEFAULT_PARAMETERS)
+    assert parameters_hash(definition.default_parameters) == "539920ccf4d239fa"
+
+    policy = require_formal_policy(
+        definition.formal_policy_id,
+        consumer="Web_manual_observation",
+    )
+    assert policy.indicator_family == "MAIN_FORCE_MIRROR_V2"
+    assert policy.confirmed_only is True
+    assert policy.allowed_consumers == ("Web_manual_observation",)
+    assert policy.blocked_consumers == (
+        "formal_backtest",
+        "live",
+        "alert",
+        "notification",
+        "auto_order",
+    )
+    for consumer in policy.blocked_consumers:
+        with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+            require_formal_policy(policy.policy_id, consumer=consumer)
+    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_NOT_ALLOWED"):
+        require_formal_policy(policy.policy_id, consumer="Signal")

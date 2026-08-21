@@ -88,6 +88,28 @@ _POLICIES: dict[str, FormalPolicy] = {
             "Not measured fund flow, participant identity, an Alert, or a trade signal."
         ),
     ),
+    "main_force_mirror_observation_v2": FormalPolicy(
+        policy_id="main_force_mirror_observation_v2",
+        indicator_family="MAIN_FORCE_MIRROR_V2",
+        seed_policy="sma_window",
+        smoothing_policy=None,
+        histogram_scale=None,
+        lookback="60m_state21_caution31_t_minus_1_member_context",
+        confirmed_only=True,
+        frozen_legacy=False,
+        allowed_consumers=("Web_manual_observation",),
+        blocked_consumers=(
+            FORMAL_BACKTEST_CONSUMER,
+            "live",
+            "alert",
+            "notification",
+            "auto_order",
+        ),
+        notes=(
+            "60m Web-manual observation only: causal exact-contract pressure with "
+            "T-1 member context. Not a signal, Alert, notification, or order path."
+        ),
+    ),
     "subing_macd_sma_window_scale2_v1": FormalPolicy(
         policy_id="subing_macd_sma_window_scale2_v1",
         indicator_family="MACD",

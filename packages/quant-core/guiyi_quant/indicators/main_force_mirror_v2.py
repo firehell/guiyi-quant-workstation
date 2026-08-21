@@ -12,6 +12,7 @@ import json
 from collections.abc import Mapping, Sequence, Sized
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from types import MappingProxyType
 from typing import Any, Literal, SupportsFloat, SupportsIndex, cast
 
@@ -98,6 +99,58 @@ _ATR_INVALID = "MFM_V2_ATR_INVALID"
 _VOLUME_BASELINE_INVALID = "MFM_V2_VOLUME_BASELINE_INVALID"
 _RANGE_INVALID = "MFM_V2_RANGE_INVALID"
 _CAUTION_DIRECTION_CONFLICT = "MFM_V2_CAUTION_DIRECTION_CONFLICT"
+_MEMBER_INPUT_INVALID = "MFM_V2_MEMBER_INPUT_INVALID"
+_MEMBER_WARMUP = "MFM_V2_MEMBER_WARMUP"
+
+
+@dataclass(frozen=True, slots=True)
+class MemberRankDailyInput:
+    """Complete T-1 Top20 aggregates selected by the read-only service."""
+
+    member_trade_date: date
+    long_total: Decimal
+    short_total: Decimal
+    long_change_total: Decimal
+    short_change_total: Decimal
+    top5_volume_total: Decimal
+    top20_volume_total: Decimal
+
+    def is_valid(self) -> bool:
+        values = (
+            self.long_total,
+            self.short_total,
+            self.long_change_total,
+            self.short_change_total,
+            self.top5_volume_total,
+            self.top20_volume_total,
+        )
+        if not all(value.is_finite() for value in values):
+            return False
+        if (
+            self.long_total < 0
+            or self.short_total < 0
+            or self.top5_volume_total < 0
+            or self.top20_volume_total <= 0
+            or self.top5_volume_total > self.top20_volume_total
+        ):
+            return False
+        return self.long_total + self.short_total > 0
+
+    @property
+    def change_bias(self) -> Decimal:
+        return (self.long_change_total - self.short_change_total) / (
+            self.long_total + self.short_total
+        )
+
+    @property
+    def position_skew(self) -> Decimal:
+        return (self.long_total - self.short_total) / (
+            self.long_total + self.short_total
+        )
+
+    @property
+    def top5_volume_share(self) -> Decimal:
+        return self.top5_volume_total / self.top20_volume_total
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +165,26 @@ class MemberRankObservation:
     relation_to_accumulated: MemberRankRelation
     relation_to_caution: MemberRankRelation
     unavailable_reason: str | None
+
+    @classmethod
+    def unavailable(
+        cls,
+        reason: str,
+        *,
+        member_trade_date: date | None = None,
+    ) -> MemberRankObservation:
+        return cls(
+            status="unavailable",
+            member_trade_date=member_trade_date,
+            direction=None,
+            change_bias=None,
+            strength=None,
+            position_skew=None,
+            top5_volume_share=None,
+            relation_to_accumulated="unavailable",
+            relation_to_caution="unavailable",
+            unavailable_reason=reason,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +252,109 @@ def round_half_away_from_zero_binary64(value: float, digits: int) -> float:
     magnitude = np.floor(abs(value) * scale + 0.5) / scale
     rounded = float(np.copysign(magnitude, value))
     return 0.0 if rounded == 0.0 else rounded
+
+
+def compute_member_rank_observation(
+    current: MemberRankDailyInput,
+    prior_change_biases: Sequence[Decimal],
+    *,
+    accumulated_pressure: float | None,
+    caution: MainForceMirrorV2Caution | None,
+) -> MemberRankObservation:
+    """Derive causal T-1 member context without affecting the pressure kernel."""
+
+    if not current.is_valid():
+        return MemberRankObservation.unavailable(
+            _MEMBER_INPUT_INVALID,
+            member_trade_date=current.member_trade_date,
+        )
+
+    prior_values = tuple(prior_change_biases[-60:])
+    if len(prior_values) < 20 or not all(
+        value.is_finite() for value in prior_values
+    ):
+        return MemberRankObservation.unavailable(
+            _MEMBER_WARMUP,
+            member_trade_date=current.member_trade_date,
+        )
+    baseline_values = tuple(sorted(abs(value) for value in prior_values))
+    midpoint = len(baseline_values) // 2
+    baseline = (
+        baseline_values[midpoint]
+        if len(baseline_values) % 2
+        else (baseline_values[midpoint - 1] + baseline_values[midpoint]) / Decimal(2)
+    )
+    if baseline <= 0:
+        return MemberRankObservation.unavailable(
+            _MEMBER_WARMUP,
+            member_trade_date=current.member_trade_date,
+        )
+
+    change_bias = current.change_bias
+    strength = abs(change_bias) / baseline
+    direction: MemberRankDirection = (
+        "neutral"
+        if strength < Decimal("0.5")
+        else "long"
+        if change_bias > 0
+        else "short"
+    )
+    return MemberRankObservation(
+        status="ready",
+        member_trade_date=current.member_trade_date,
+        direction=direction,
+        change_bias=_round_member_value(change_bias),
+        strength=_round_member_value(strength),
+        position_skew=_round_member_value(current.position_skew),
+        top5_volume_share=_round_member_value(current.top5_volume_share),
+        relation_to_accumulated=_relation_to_accumulated(
+            direction,
+            change_bias,
+            accumulated_pressure,
+        ),
+        relation_to_caution=_relation_to_caution(direction, change_bias, strength, caution),
+        unavailable_reason=None,
+    )
+
+
+def _round_member_value(value: Decimal) -> float:
+    return round_half_away_from_zero_binary64(
+        float(value),
+        int(DEFAULT_PARAMETERS["round_digits"]),
+    )
+
+
+def _relation_to_accumulated(
+    direction: MemberRankDirection,
+    change_bias: Decimal,
+    accumulated_pressure: float | None,
+) -> MemberRankRelation:
+    if (
+        direction == "neutral"
+        or accumulated_pressure is None
+        or not np.isfinite(accumulated_pressure)
+        or accumulated_pressure == 0.0
+    ):
+        return "neutral"
+    return (
+        "aligned"
+        if (change_bias > 0) == (accumulated_pressure > 0)
+        else "divergent"
+    )
+
+
+def _relation_to_caution(
+    direction: MemberRankDirection,
+    change_bias: Decimal,
+    strength: Decimal,
+    caution: MainForceMirrorV2Caution | None,
+) -> MemberRankRelation:
+    if direction == "neutral" or caution is None:
+        return "neutral"
+    crowded_long = caution == "long_chase_caution"
+    if (change_bias > 0) != crowded_long:
+        return "divergent"
+    return "strong_aligned" if strength >= Decimal("2.0") else "aligned"
 
 
 def is_main_force_mirror_v2_candidate(score: float) -> bool:

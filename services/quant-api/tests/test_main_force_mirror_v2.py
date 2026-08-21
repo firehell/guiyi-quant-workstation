@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from decimal import Decimal
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
@@ -18,6 +19,8 @@ from guiyi_quant.indicators.main_force_mirror_v2 import (
     INDICATOR_CODE,
     INDICATOR_VERSION,
     MemberRankObservation,
+    MemberRankDailyInput,
+    compute_member_rank_observation,
     compute_main_force_mirror_v2,
     is_main_force_mirror_v2_candidate,
     round_half_away_from_zero_binary64,
@@ -312,6 +315,155 @@ def test_v2_member_input_is_a_non_interfering_task_4_seam() -> None:
         assert [getattr(point, field) for point in with_member.points] == [
             getattr(point, field) for point in without_member.points
         ]
+
+
+def _member_day(
+    *,
+    trade_date: date = date(2025, 12, 31),
+    long_total: str = "600",
+    short_total: str = "400",
+    long_change_total: str = "30",
+    short_change_total: str = "-10",
+    top5_volume_total: str = "300",
+    top20_volume_total: str = "1000",
+) -> MemberRankDailyInput:
+    return MemberRankDailyInput(
+        member_trade_date=trade_date,
+        long_total=Decimal(long_total),
+        short_total=Decimal(short_total),
+        long_change_total=Decimal(long_change_total),
+        short_change_total=Decimal(short_change_total),
+        top5_volume_total=Decimal(top5_volume_total),
+        top20_volume_total=Decimal(top20_volume_total),
+    )
+
+
+def test_member_strength_uses_current_top20_aggregation_and_prior_only_median() -> None:
+    """Catches current-day leakage into the causal baseline or wrong Top20 totals."""
+    result = compute_member_rank_observation(
+        current=_member_day(
+            long_total="400",
+            short_total="600",
+            top5_volume_total="999",
+        ),
+        prior_change_biases=(Decimal("0.010"),) * 10
+        + (Decimal("0.020"),) * 10,
+        accumulated_pressure=25.0,
+        caution="long_chase_caution",
+    )
+
+    assert result.status == "ready"
+    assert result.member_trade_date == date(2025, 12, 31)
+    assert result.change_bias == 0.04
+    assert result.position_skew == -0.2
+    assert result.top5_volume_share == 0.999
+    assert result.direction == "long"
+    assert result.strength == 2.666667
+    assert result.relation_to_accumulated == "aligned"
+    assert result.relation_to_caution == "strong_aligned"
+
+
+@pytest.mark.parametrize(
+    (
+        "change",
+        "expected_direction",
+        "expected_strength",
+        "expected_accumulated_relation",
+        "expected_caution_relation",
+    ),
+    [
+        ("4.999", "neutral", 0.4999, "neutral", "neutral"),
+        ("5", "long", 0.5, "divergent", "divergent"),
+        ("20", "long", 2.0, "divergent", "divergent"),
+        ("-20", "short", 2.0, "aligned", "strong_aligned"),
+    ],
+)
+def test_member_direction_strength_thresholds_are_exact(
+    change: str,
+    expected_direction: str,
+    expected_strength: float,
+    expected_accumulated_relation: str,
+    expected_caution_relation: str,
+) -> None:
+    """Catches changing neutral/directional/strong tier boundaries."""
+    result = compute_member_rank_observation(
+        current=_member_day(long_change_total=change, short_change_total="0"),
+        prior_change_biases=(Decimal("0.010"),) * 20,
+        accumulated_pressure=-1.0,
+        caution="short_chase_caution",
+    )
+
+    assert result.direction == expected_direction
+    assert result.strength == expected_strength
+    assert result.relation_to_accumulated == expected_accumulated_relation
+    assert result.relation_to_caution == expected_caution_relation
+
+
+def test_member_baseline_uses_at_most_the_latest_sixty_prior_days() -> None:
+    """Catches a baseline that uses stale values beyond the approved 60-day cap."""
+    result = compute_member_rank_observation(
+        current=_member_day(long_change_total="20", short_change_total="0"),
+        prior_change_biases=(Decimal("1.000"), Decimal("1.000"))
+        + (Decimal("0.010"),) * 60,
+        accumulated_pressure=None,
+        caution=None,
+    )
+
+    assert result.status == "ready"
+    assert result.strength == 2.0
+    assert result.direction == "long"
+    assert result.relation_to_accumulated == "neutral"
+    assert result.relation_to_caution == "neutral"
+
+
+@pytest.mark.parametrize(
+    "current",
+    [
+        _member_day(long_total="0", short_total="0"),
+        _member_day(top5_volume_total="1", top20_volume_total="0"),
+    ],
+)
+def test_member_invalid_current_aggregate_is_unavailable(
+    current: MemberRankDailyInput,
+) -> None:
+    """Catches accepting non-positive member aggregation denominators."""
+    result = compute_member_rank_observation(
+        current=current,
+        prior_change_biases=(Decimal("0.010"),) * 20,
+        accumulated_pressure=1.0,
+        caution=None,
+    )
+
+    assert result.status == "unavailable"
+    assert result.unavailable_reason == "MFM_V2_MEMBER_INPUT_INVALID"
+    assert result.direction is None
+    assert result.relation_to_accumulated == "unavailable"
+    assert result.relation_to_caution == "unavailable"
+
+
+@pytest.mark.parametrize(
+    "prior_change_biases",
+    [
+        (Decimal("0.010"),) * 19,
+        (Decimal("0.000"),) * 20,
+    ],
+)
+def test_member_baseline_warmup_is_fail_closed(
+    prior_change_biases: tuple[Decimal, ...],
+) -> None:
+    """Catches insufficient or zero causal baseline becoming a direction."""
+    result = compute_member_rank_observation(
+        current=_member_day(),
+        prior_change_biases=prior_change_biases,
+        accumulated_pressure=1.0,
+        caution="long_chase_caution",
+    )
+
+    assert result.status == "unavailable"
+    assert result.unavailable_reason == "MFM_V2_MEMBER_WARMUP"
+    assert result.direction is None
+    assert result.relation_to_accumulated == "unavailable"
+    assert result.relation_to_caution == "unavailable"
 
 
 def test_v2_candidate_and_state_boundaries_use_unrounded_values() -> None:
