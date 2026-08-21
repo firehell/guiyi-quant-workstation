@@ -41,6 +41,8 @@ from app.guiyi_cli.research_commands import (
 )
 from app.market_data.composition import (
     build_historical_data_manager,
+    build_jdj_candidate_validation_service,
+    build_jdj_research_service,
     build_live_market_service,
     build_main_force_mirror_futures_research_service,
     build_multi_candidate_robustness_service,
@@ -51,7 +53,10 @@ from app.market_data.composition import (
     build_subing_lifecycle_research_service,
 )
 from app.market_data.after_market import build_after_market_updater
-from app.market_data.candidate_validation_schedule import CandidateValidationRequest
+from app.market_data.candidate_validation_schedule import (
+    CandidateValidationIdentityError,
+    CandidateValidationRequest,
+)
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
@@ -63,6 +68,7 @@ LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
+JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
 
@@ -157,6 +163,12 @@ def main(
     n_structure_research_service_factory: ResearchServiceFactory = (
         build_n_structure_research_service
     ),
+    jdj_research_service_factory: ResearchServiceFactory = (
+        build_jdj_research_service
+    ),
+    jdj_candidate_validation_service_factory: (
+        JdjCandidateValidationServiceFactory
+    ) = build_jdj_candidate_validation_service,
     multi_candidate_robustness_service_factory: ResearchServiceFactory = (
         build_multi_candidate_robustness_service
     ),
@@ -211,11 +223,13 @@ def main(
             assert research_request is not None
             with session_factory() as session:
                 if args.research_command == "subing-lifecycle":
-                    service_factory = lifecycle_research_service_factory
+                    service = lifecycle_research_service_factory(session)
                 elif args.research_command == "candidate-robustness":
-                    service_factory = multi_candidate_robustness_service_factory
+                    service = multi_candidate_robustness_service_factory(session)
                 elif args.research_command == "n-structure":
-                    service_factory = n_structure_research_service_factory
+                    service = n_structure_research_service_factory(session)
+                elif args.research_command == "jdj-1m":
+                    service = jdj_research_service_factory(session)
                 elif args.research_command == "candidate-validation":
                     if not isinstance(research_request, CandidateValidationRequest):
                         raise ValueError("CLI_CANDIDATE_REQUEST_INVALID")
@@ -223,20 +237,36 @@ def main(
                         research_request.candidate_id
                         == "subing_lifecycle_v2_candidate_v1"
                     ):
-                        service_factory = candidate_validation_service_factory
+                        service = candidate_validation_service_factory(session)
                     elif research_request.candidate_id == "n_structure_5m_candidate_v1":
-                        service_factory = n_candidate_validation_service_factory
+                        service = n_candidate_validation_service_factory(session)
+                    elif research_request.candidate_id in {
+                        "jdj_trend_follow_1m_candidate_v1",
+                        "jdj_trend_reentry_6_1m_candidate_v1",
+                        "jdj_key_level_breakout_1m_candidate_v1",
+                    }:
+                        if (
+                            research_request.protocol_id
+                            != "jdj_candidate_validation_v1"
+                        ):
+                            raise CandidateValidationIdentityError()
+                        service = jdj_candidate_validation_service_factory(
+                            session,
+                            research_request.candidate_id,
+                        )
                     else:
                         raise ValueError("CLI_CANDIDATE_ID_INVALID")
                 elif args.research_command == "main-force-mirror-futures":
-                    service_factory = main_force_mirror_futures_research_service_factory
+                    service = main_force_mirror_futures_research_service_factory(
+                        session
+                    )
                 elif args.research_command == "subing-calibration":
-                    service_factory = research_service_factory
+                    service = research_service_factory(session)
                 else:
                     raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
                 payload = run_research_command(
                     research_request,
-                    service_factory(session),
+                    service,
                 )
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源

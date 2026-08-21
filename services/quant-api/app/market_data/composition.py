@@ -41,6 +41,18 @@ from app.market_data.main_force_mirror_futures_research_service import (
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
 )
+from app.market_data.jdj_candidate_validation_calendar import (
+    assert_jdj_prospective_calendar,
+)
+from app.market_data.jdj_candidate_validation_policy import (
+    load_jdj_candidate_manifest,
+    load_jdj_candidate_validation_protocol,
+)
+from app.market_data.jdj_candidate_validation_service import (
+    JdjCandidateValidationService,
+)
+from app.market_data.jdj_policy import load_jdj_policy
+from app.market_data.jdj_research_service import JdjResearchService
 from app.market_data.n_structure_policy import load_n_structure_policy
 from app.market_data.n_structure_research_service import NStructureResearchService
 from app.market_data.multi_candidate_robustness_policy import (
@@ -242,6 +254,30 @@ def build_n_structure_research_service(
         ActualDominantResearchSegmentLoader(build_market_data_service(session)),
         products=load_active_products(),
         policy=load_n_structure_policy(),
+    )
+
+
+def build_jdj_research_service(session: Session) -> JdjResearchService:
+    """Compose exact read-only JDJ research over one shared MDS."""
+    market_data = build_market_data_service(session)
+    return JdjResearchService(
+        ActualDominantResearchSegmentLoader(market_data),
+        products=load_active_products(),
+        jdj_policy=load_jdj_policy(),
+        n_policy=load_n_structure_policy(),
+    )
+
+
+def build_jdj_candidate_validation_service(
+    session: Session,
+    candidate_id: str,
+) -> JdjCandidateValidationService:
+    """Compose exact JDJ validation only after the frozen calendar gate."""
+    assert_jdj_prospective_calendar(session)
+    return JdjCandidateValidationService(
+        build_jdj_research_service(session),
+        manifest=load_jdj_candidate_manifest(candidate_id),
+        protocol=load_jdj_candidate_validation_protocol(),
     )
 
 

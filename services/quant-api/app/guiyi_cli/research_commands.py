@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping
-from datetime import date
+from dataclasses import fields
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from enum import Enum
 from typing import Protocol, TypeAlias, cast
 
 from app.market_data.candidate_validation import (
@@ -18,6 +20,14 @@ from app.market_data.candidate_validation_schedule import (
     CandidateValidationRequest,
 )
 from app.market_data.domain import BarFrequency, SeriesKind
+from app.market_data.jdj_research import JdjResearchRequest, JdjResearchResult
+from app.market_data.jdj_candidate_validation import (
+    JdjCandidateValidationReport,
+    JdjCandidateWindowResult,
+    JdjProspectiveOosResult,
+    JdjRollingCandidateFold,
+)
+from app.market_data.jdj_events import JdjTriggerEvent
 from app.market_data.main_force_mirror_futures_research_service import (
     MainForceMirrorFuturesHorizonSummary,
     MainForceMirrorFuturesResearchRequest,
@@ -74,11 +84,19 @@ class _NStructureResearchService(Protocol):
     def run(self, request: NStructureResearchRequest) -> NStructureResearchResult: ...
 
 
+class _JdjResearchService(Protocol):
+    def run(self, request: JdjResearchRequest) -> JdjResearchResult: ...
+
+
 class _CandidateValidationService(Protocol):
     def run(
         self,
         request: CandidateValidationRequest,
-    ) -> CandidateValidationReport | NStructureCandidateValidationReport: ...
+    ) -> (
+        CandidateValidationReport
+        | NStructureCandidateValidationReport
+        | JdjCandidateValidationReport
+    ): ...
 
 
 class _MainForceMirrorFuturesResearchService(Protocol):
@@ -97,6 +115,7 @@ class _MultiCandidateRobustnessService(Protocol):
 ResearchRequest: TypeAlias = (
     CalibrationResearchRequest
     | LifecycleResearchRequest
+    | JdjResearchRequest
     | CandidateValidationRequest
     | MainForceMirrorFuturesResearchRequest
     | NStructureResearchRequest
@@ -123,6 +142,13 @@ def build_research_request(args: argparse.Namespace) -> ResearchRequest:
             protocol_id=args.protocol,
             symbol=args.symbol,
             through=_day(args.through),
+        )
+    if args.research_command == "jdj-1m":
+        return JdjResearchRequest(
+            since=_day(args.since),
+            through=_day(args.through),
+            symbol=args.symbol,
+            candidate_id=args.candidate,
         )
     if args.research_command == "subing-lifecycle":
         return LifecycleResearchRequest(
@@ -172,9 +198,14 @@ def run_research_command(
             request,
             mirror_service.run(request),
         )
+    if isinstance(request, JdjResearchRequest):
+        jdj_service = cast(_JdjResearchService, service)
+        return _jdj_research_payload(request, jdj_service.run(request))
     if isinstance(request, CandidateValidationRequest):
         candidate_service = cast(_CandidateValidationService, service)
         report = candidate_service.run(request)
+        if isinstance(report, JdjCandidateValidationReport):
+            return _jdj_candidate_payload(report)
         if isinstance(report, NStructureCandidateValidationReport):
             return _n_candidate_payload(report)
         return _candidate_payload(report)
@@ -205,6 +236,54 @@ def run_research_command(
             for name in ("A", "B")
         }
     return payload
+
+
+def _jdj_research_payload(
+    request: JdjResearchRequest,
+    result: JdjResearchResult,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command": "research.jdj-1m",
+        "status": "ok",
+        "readonly": True,
+        "research_only": True,
+        "candidate_id": result.candidate_id,
+        "source_event_kind": result.source_event_kind,
+        "policy_id": "jdj_1m_policy_v1",
+        "formula_version": "jdj_1m_v1",
+        "since": request.since.isoformat(),
+        "through": request.through.isoformat(),
+        "products": list(result.products),
+        "segment_count": result.segment_count,
+        "evaluable_bar_count": result.evaluable_bar_count,
+        "trigger_count_long": result.trigger_count_long,
+        "trigger_count_short": result.trigger_count_short,
+        "horizon_summary": {
+            str(horizon): _price_horizon_payload(evaluation)
+            for horizon, evaluation in result.horizon_summary.items()
+        },
+        "events": [_jdj_event_payload(event) for event in result.events],
+    }
+
+
+def _jdj_event_payload(event: JdjTriggerEvent) -> dict[str, object]:
+    return {
+        field.name: _jdj_json_value(getattr(event, field.name))
+        for field in fields(event)
+    }
+
+
+def _jdj_json_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        return _optional_decimal(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if type(value) is date:
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    return value
 
 
 def _main_force_mirror_futures_payload(
@@ -507,6 +586,89 @@ def _candidate_payload(report: CandidateValidationReport) -> dict[str, object]:
         },
         "prospective_oos": _prospective_payload(report.prospective_oos),
         "quality_flags": list(report.quality_flags),
+    }
+
+
+def _jdj_candidate_payload(
+    report: JdjCandidateValidationReport,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": "research.candidate-validation",
+        "status": "ok",
+        "readonly": True,
+        "candidate_id": report.candidate_id,
+        "source_event_kind": report.source_event_kind,
+        "policy_id": report.policy_id,
+        "formula_version": report.formula_version,
+        "protocol_id": report.protocol_id,
+        "research_only": report.research_only,
+        "symbol": report.symbol,
+        "retrospective": _jdj_candidate_window_payload(
+            report.retrospective
+        ),
+        "rolling_folds": [
+            _jdj_candidate_fold_payload(fold)
+            for fold in report.rolling_folds
+        ],
+        "rolling_stability": {
+            "fold_count": report.rolling_stability.fold_count,
+            "folds_with_events": report.rolling_stability.folds_with_events,
+            "event_count_min": report.rolling_stability.event_count_min,
+            "event_count_max": report.rolling_stability.event_count_max,
+            "event_count_median": str(
+                report.rolling_stability.event_count_median
+            ),
+        },
+        "prospective_oos": _jdj_prospective_payload(
+            report.prospective_oos
+        ),
+        "quality_flags": list(report.quality_flags),
+    }
+
+
+def _jdj_candidate_fold_payload(
+    fold: JdjRollingCandidateFold,
+) -> dict[str, object]:
+    return {
+        "fold_id": fold.fold_id,
+        "reference": _jdj_candidate_window_payload(fold.reference),
+        "test": _jdj_candidate_window_payload(fold.test),
+    }
+
+
+def _jdj_candidate_window_payload(
+    window: JdjCandidateWindowResult,
+) -> dict[str, object]:
+    return {
+        "window_id": window.window_id,
+        "window_kind": window.window_kind.value,
+        "since": window.since.isoformat(),
+        "through": window.through.isoformat(),
+        "products": list(window.products),
+        "segment_count": window.segment_count,
+        "evaluable_bar_count": window.evaluable_bar_count,
+        "trigger_count_long": window.trigger_count_long,
+        "trigger_count_short": window.trigger_count_short,
+        "horizon_summary": {
+            str(horizon): _price_horizon_payload(evaluation)
+            for horizon, evaluation in window.horizon_summary.items()
+        },
+    }
+
+
+def _jdj_prospective_payload(
+    result: JdjProspectiveOosResult,
+) -> dict[str, object]:
+    return {
+        "status": result.status.value,
+        "first_trading_day": result.first_trading_day.isoformat(),
+        "through": result.through.isoformat(),
+        "result": (
+            None
+            if result.result is None
+            else _jdj_candidate_window_payload(result.result)
+        ),
     }
 
 

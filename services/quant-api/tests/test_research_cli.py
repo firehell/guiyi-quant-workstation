@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import io
 import json
@@ -34,6 +34,26 @@ from app.market_data.main_force_mirror_futures_research_service import (
     MainForceMirrorFuturesResearchRequest,
     MainForceMirrorFuturesResearchResult,
     MainForceMirrorFuturesResearchService,
+)
+from app.market_data.jdj_events import (
+    JdjDirection,
+    JdjSetupKind,
+    JdjTrendFollowTriggerEvent,
+    _canonical_trend_follow_event_id,
+)
+from app.market_data.jdj_research import JdjResearchRequest, JdjResearchResult
+from app.market_data.jdj_research_service import JdjResearchService
+from app.market_data.jdj_candidate_validation import (
+    JdjCandidateValidationReport,
+    JdjCandidateWindowKind,
+    JdjProspectiveOosResult,
+    JdjProspectiveOosStatus,
+    JdjRollingCandidateFold,
+    project_jdj_window,
+    summarize_jdj_rolling_stability,
+)
+from app.market_data.jdj_candidate_validation_service import (
+    JdjCandidateValidationService,
 )
 from app.market_data.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
@@ -129,7 +149,7 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_six_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_seven_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(
         action for action in parser._actions if action.dest == "domain"
@@ -144,10 +164,409 @@ def test_research_parser_exposes_only_the_six_readonly_commands() -> None:
     assert set(command_action.choices) == {
         "candidate-robustness",
         "candidate-validation",
+        "jdj-1m",
         "main-force-mirror-futures",
         "n-structure",
         "subing-calibration",
         "subing-lifecycle",
+    }
+
+
+_JDJ_CANDIDATES = (
+    "jdj_trend_follow_1m_candidate_v1",
+    "jdj_trend_reentry_6_1m_candidate_v1",
+    "jdj_key_level_breakout_1m_candidate_v1",
+)
+
+
+def _jdj_arguments(
+    *,
+    candidate: str = _JDJ_CANDIDATES[0],
+) -> list[str]:
+    return [
+        "research",
+        "jdj-1m",
+        "--candidate",
+        candidate,
+        "--symbol",
+        " JM ",
+        "--since",
+        "2026-01-01",
+        "--through",
+        "2026-03-31",
+    ]
+
+
+@pytest.mark.parametrize("candidate_id", _JDJ_CANDIDATES)
+def test_jdj_parser_builds_exact_frozen_request(candidate_id: str) -> None:
+    request = _request(_jdj_arguments(candidate=candidate_id))
+
+    assert request == JdjResearchRequest(
+        since=date(2026, 1, 1),
+        through=date(2026, 3, 31),
+        symbol="jm",
+        candidate_id=candidate_id,
+    )
+
+
+@pytest.mark.parametrize(
+    "flag",
+    (
+        "--ema-period",
+        "--volume-multiple",
+        "--timeout-bars",
+        "--trend-method",
+        "--key-level-distance",
+    ),
+)
+def test_jdj_parser_rejects_runtime_formula_flags(flag: str) -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args([*_jdj_arguments(), flag, "1"])
+
+
+def test_jdj_parser_rejects_non_candidate_identity() -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(_jdj_arguments(candidate="other_candidate"))
+
+
+def _jdj_horizon() -> PriceHorizonEvaluation:
+    return PriceHorizonEvaluation(
+        1,
+        Decimal("1.2500"),
+        Decimal("2.500"),
+        Decimal("-0.750"),
+    )
+
+
+def _jdj_event() -> JdjTrendFollowTriggerEvent:
+    segment_start = date(2026, 1, 1)
+    reaction_at = datetime(2026, 1, 5, 1, 1, tzinfo=UTC)
+    observed_at = reaction_at + timedelta(minutes=1)
+    trigger_level = Decimal("105.00")
+    return JdjTrendFollowTriggerEvent(
+        event_id=_canonical_trend_follow_event_id(
+            candidate_id=_JDJ_CANDIDATES[0],
+            symbol="jm",
+            contract="JM2605",
+            segment_start_trading_day=segment_start,
+            direction=JdjDirection.LONG,
+            reaction_at=reaction_at,
+            observed_at=observed_at,
+            trigger_level=trigger_level,
+        ),
+        source_kind="jdj_1m",
+        setup_kind=JdjSetupKind.TREND_FOLLOW,
+        candidate_id=_JDJ_CANDIDATES[0],
+        source_event_kind="jdj_trend_follow_triggered",
+        direction=JdjDirection.LONG,
+        symbol="jm",
+        contract="JM2605",
+        segment_start_trading_day=segment_start,
+        trading_day=date(2026, 1, 5),
+        observed_at=observed_at,
+        segment_bar_index=2,
+        trend_snapshot_observed_at=reaction_at - timedelta(minutes=1),
+        reaction_at=reaction_at,
+        ema20_at_reaction=Decimal("100.00"),
+        trigger_level=trigger_level,
+        observation_close=Decimal("106.00"),
+    )
+
+
+def _jdj_result(*, events: bool = True) -> JdjResearchResult:
+    event_values = (_jdj_event(),) if events else ()
+    return JdjResearchResult(
+        candidate_id=_JDJ_CANDIDATES[0],
+        source_event_kind="jdj_trend_follow_triggered",
+        products=("jm",),
+        segment_count=1,
+        evaluable_bar_count=100,
+        trigger_count_long=len(event_values),
+        trigger_count_short=0,
+        horizon_summary={
+            3: _jdj_horizon(),
+            5: _jdj_horizon(),
+            8: _jdj_horizon(),
+            20: _jdj_horizon(),
+        },
+        events=event_values,
+    )
+
+
+class _FakeJdjResearchService:
+    def __init__(self, result: JdjResearchResult) -> None:
+        self.result = result
+        self.requests: list[JdjResearchRequest] = []
+
+    def run(self, request: JdjResearchRequest) -> JdjResearchResult:
+        self.requests.append(request)
+        return self.result
+
+
+def test_jdj_source_renderer_is_readonly_deterministic_and_decimal_safe() -> None:
+    request = _request(_jdj_arguments())
+    payload = run_research_command(
+        request,
+        _FakeJdjResearchService(_jdj_result()),
+    )
+
+    assert payload["command"] == "research.jdj-1m"
+    assert payload["readonly"] is True
+    assert payload["research_only"] is True
+    assert payload["policy_id"] == "jdj_1m_policy_v1"
+    assert payload["formula_version"] == "jdj_1m_v1"
+    assert tuple(payload["horizon_summary"]) == ("3", "5", "8", "20")
+    assert payload["horizon_summary"]["20"] == {
+        "sample_count": 1,
+        "median_directional_return_bps": "1.2500",
+        "median_mfe_bps": "2.500",
+        "median_mae_bps": "-0.750",
+    }
+    assert payload["events"] == [
+        {
+            "event_id": _jdj_event().event_id,
+            "source_kind": "jdj_1m",
+            "setup_kind": "trend_follow",
+            "candidate_id": _JDJ_CANDIDATES[0],
+            "source_event_kind": "jdj_trend_follow_triggered",
+            "direction": "long",
+            "symbol": "jm",
+            "contract": "JM2605",
+            "segment_start_trading_day": "2026-01-01",
+            "trading_day": "2026-01-05",
+            "observed_at": "2026-01-05T01:02:00+00:00",
+            "segment_bar_index": 2,
+            "trend_snapshot_observed_at": "2026-01-05T01:00:00+00:00",
+            "reaction_at": "2026-01-05T01:01:00+00:00",
+            "ema20_at_reaction": "100.00",
+            "trigger_level": "105.00",
+            "observation_close": "106.00",
+        }
+    ]
+    json.dumps(payload)
+
+
+def test_jdj_source_cli_uses_only_dedicated_readonly_factory() -> None:
+    service = _FakeJdjResearchService(_jdj_result())
+    unrelated_calls: list[str] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        _jdj_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        manager_factory=lambda _session: unrelated_calls.append("manager"),
+        live_service_factory=lambda _session: unrelated_calls.append("live"),
+        alert_runtime_factory=lambda: unrelated_calls.append("alert"),
+        alert_canary_sender_factory=lambda: unrelated_calls.append(
+            "notification"
+        ),
+        research_service_factory=lambda _session: unrelated_calls.append(
+            "calibration"
+        ),
+        lifecycle_research_service_factory=lambda _session: unrelated_calls.append(
+            "lifecycle"
+        ),
+        candidate_validation_service_factory=lambda _session: unrelated_calls.append(
+            "subing_candidate"
+        ),
+        n_candidate_validation_service_factory=lambda _session: unrelated_calls.append(
+            "n_candidate"
+        ),
+        jdj_research_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert unrelated_calls == []
+    assert service.requests == [_request(_jdj_arguments())]
+    assert json.loads(stdout.getvalue())["command"] == "research.jdj-1m"
+
+
+def _jdj_candidate_report() -> JdjCandidateValidationReport:
+    source = _jdj_result(events=False)
+    retrospective = project_jdj_window(
+        window_id="retrospective",
+        window_kind=JdjCandidateWindowKind.RETROSPECTIVE,
+        since=date(2023, 1, 1),
+        through=date(2026, 8, 20),
+        source=source,
+    )
+    fold = JdjRollingCandidateFold(
+        fold_id="fold_01",
+        reference=project_jdj_window(
+            window_id="fold_01_reference",
+            window_kind=JdjCandidateWindowKind.ROLLING_REFERENCE,
+            since=date(2023, 1, 1),
+            through=date(2023, 12, 31),
+            source=source,
+        ),
+        test=project_jdj_window(
+            window_id="fold_01_test",
+            window_kind=JdjCandidateWindowKind.ROLLING_TEST,
+            since=date(2024, 1, 1),
+            through=date(2024, 3, 31),
+            source=source,
+        ),
+    )
+    folds = (fold,)
+    return JdjCandidateValidationReport(
+        schema_version=1,
+        candidate_id=_JDJ_CANDIDATES[0],
+        source_event_kind="jdj_trend_follow_triggered",
+        policy_id="jdj_1m_policy_v1",
+        formula_version="jdj_1m_v1",
+        protocol_id="jdj_candidate_validation_v1",
+        research_only=True,
+        symbol="jm",
+        retrospective=retrospective,
+        rolling_folds=folds,
+        rolling_stability=summarize_jdj_rolling_stability(folds),
+        prospective_oos=JdjProspectiveOosResult(
+            status=JdjProspectiveOosStatus.PENDING,
+            first_trading_day=date(2026, 8, 24),
+            through=date(2026, 8, 21),
+            result=None,
+        ),
+        quality_flags=(
+            "PROSPECTIVE_OOS_PENDING",
+            "ROLLING_FOLD_WITHOUT_EVENT",
+        ),
+    )
+
+
+class _FakeJdjCandidateValidationService:
+    def __init__(self, report: JdjCandidateValidationReport) -> None:
+        self.report = report
+        self.requests: list[CandidateValidationRequest] = []
+
+    def run(
+        self,
+        request: CandidateValidationRequest,
+    ) -> JdjCandidateValidationReport:
+        self.requests.append(request)
+        return self.report
+
+
+def test_jdj_candidate_renderer_precedes_generic_candidate_fallback() -> None:
+    request = CandidateValidationRequest(
+        candidate_id=_JDJ_CANDIDATES[0],
+        protocol_id="jdj_candidate_validation_v1",
+        symbol="jm",
+        through=date(2026, 8, 21),
+    )
+    payload = run_research_command(
+        request,
+        _FakeJdjCandidateValidationService(_jdj_candidate_report()),
+    )
+
+    assert payload["command"] == "research.candidate-validation"
+    assert payload["readonly"] is True
+    assert payload["research_only"] is True
+    assert payload["source_event_kind"] == "jdj_trend_follow_triggered"
+    assert payload["rolling_stability"] == {
+        "fold_count": 1,
+        "folds_with_events": 0,
+        "event_count_min": 0,
+        "event_count_max": 0,
+        "event_count_median": "0",
+    }
+    assert tuple(payload["retrospective"]["horizon_summary"]) == (
+        "3",
+        "5",
+        "8",
+        "20",
+    )
+    assert payload["retrospective"]["horizon_summary"]["20"][
+        "median_directional_return_bps"
+    ] == "1.2500"
+    assert payload["prospective_oos"] == {
+        "status": "pending",
+        "first_trading_day": "2026-08-24",
+        "through": "2026-08-21",
+        "result": None,
+    }
+    json.dumps(payload)
+
+
+def test_jdj_candidate_cli_routes_all_exact_ids_to_typed_factory() -> None:
+    for candidate_id in _JDJ_CANDIDATES:
+        report = _jdj_candidate_report()
+        if candidate_id != _JDJ_CANDIDATES[0]:
+            report = replace(
+                report,
+                candidate_id=candidate_id,
+                source_event_kind={
+                    _JDJ_CANDIDATES[1]: "jdj_trend_reentry_6_triggered",
+                    _JDJ_CANDIDATES[2]: "jdj_key_level_breakout_triggered",
+                }[candidate_id],
+            )
+        service = _FakeJdjCandidateValidationService(report)
+        factory_calls: list[tuple[object, str]] = []
+        stdout = io.StringIO()
+
+        code = main(
+            [
+                "research",
+                "candidate-validation",
+                "--candidate",
+                candidate_id,
+                "--protocol",
+                "jdj_candidate_validation_v1",
+                "--symbol",
+                "jm",
+                "--through",
+                "2026-08-21",
+            ],
+            session_factory=lambda: nullcontext(object()),
+            jdj_candidate_validation_service_factory=(
+                lambda session, selected: (
+                    factory_calls.append((session, selected)) or service
+                )
+            ),
+            stdout=stdout,
+            stderr=io.StringIO(),
+        )
+
+        assert code == 0
+        assert len(factory_calls) == 1
+        assert factory_calls[0][1] == candidate_id
+        assert service.requests[0].candidate_id == candidate_id
+        assert json.loads(stdout.getvalue())["candidate_id"] == candidate_id
+
+
+def test_jdj_candidate_cross_pair_reaches_identity_error_before_source_run() -> None:
+    factory_calls: list[tuple[object, str]] = []
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "research",
+            "candidate-validation",
+            "--candidate",
+            _JDJ_CANDIDATES[0],
+            "--protocol",
+            "candidate_validation_v1",
+            "--symbol",
+            "jm",
+            "--through",
+            "2026-08-21",
+        ],
+        session_factory=lambda: nullcontext(object()),
+        jdj_candidate_validation_service_factory=lambda session, candidate: (
+            factory_calls.append((session, candidate))
+        ),
+        stdout=io.StringIO(),
+        stderr=stderr,
+    )
+
+    assert code == 1
+    assert factory_calls == []
+    assert json.loads(stderr.getvalue())["error"] == {
+        "code": "CANDIDATE_VALIDATION_IDENTITY_MISMATCH",
+        "type": "CandidateValidationIdentityError",
     }
 
 
@@ -1355,6 +1774,68 @@ def test_candidate_composition_reuses_the_lifecycle_research_builder(
     assert sessions == [session]
 
 
+def test_jdj_research_composition_reuses_one_mds_and_no_write_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_data = object()
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_market_data_service",
+        lambda session: calls.append(("market_data", session)) or market_data,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_historical_data_manager",
+        lambda _session: pytest.fail("must not construct data manager"),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_live_market_service",
+        lambda _session: pytest.fail("must not construct live/Redis service"),
+    )
+    session = object()
+
+    service = market_data_composition.build_jdj_research_service(
+        session  # type: ignore[arg-type]
+    )
+
+    assert isinstance(service, JdjResearchService)
+    assert service._segment_loader._market_data is market_data
+    assert calls == [("market_data", session)]
+
+
+def test_jdj_validation_composition_checks_calendar_first_and_reuses_one_mds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_data = object()
+    order: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        market_data_composition,
+        "assert_jdj_prospective_calendar",
+        lambda session: order.append(("calendar", session)),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_market_data_service",
+        lambda session: order.append(("market_data", session)) or market_data,
+    )
+    session = object()
+
+    service = market_data_composition.build_jdj_candidate_validation_service(
+        session,  # type: ignore[arg-type]
+        _JDJ_CANDIDATES[1],
+    )
+
+    assert isinstance(service, JdjCandidateValidationService)
+    assert isinstance(service._jdj_research, JdjResearchService)
+    assert service._jdj_research._segment_loader._market_data is market_data
+    assert service._manifest.candidate_id == _JDJ_CANDIDATES[1]
+    assert order == [("calendar", session), ("market_data", session)]
+
+
 def test_candidate_payload_contains_no_automatic_decision_or_profit_fields() -> None:
     service = _FakeCandidateValidationService(_candidate_report())
     stdout = io.StringIO()
@@ -1486,7 +1967,7 @@ def _n_candidate_report() -> NStructureCandidateValidationReport:
     )
 
 
-def test_candidate_parser_accepts_exactly_two_candidate_and_protocol_ids() -> None:
+def test_candidate_parser_accepts_exactly_five_candidate_and_three_protocol_ids() -> None:
     request = _request(_n_candidate_arguments())
 
     assert request == CandidateValidationRequest(
@@ -1497,6 +1978,23 @@ def test_candidate_parser_accepts_exactly_two_candidate_and_protocol_ids() -> No
     )
     cross_pair = _request(_n_candidate_arguments(protocol="candidate_validation_v1"))
     assert cross_pair.protocol_id == "candidate_validation_v1"
+    for candidate_id in _JDJ_CANDIDATES:
+        request = _request(
+            [
+                "research",
+                "candidate-validation",
+                "--candidate",
+                candidate_id,
+                "--protocol",
+                "jdj_candidate_validation_v1",
+                "--symbol",
+                "jm",
+                "--through",
+                "2026-08-21",
+            ]
+        )
+        assert request.candidate_id == candidate_id
+        assert request.protocol_id == "jdj_candidate_validation_v1"
     for arguments in (
         _n_candidate_arguments(candidate="other_candidate"),
         _n_candidate_arguments(protocol="other_protocol"),
