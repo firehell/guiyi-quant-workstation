@@ -193,13 +193,42 @@ intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distan
 Shadow，只输出 stdout JSON。测试只验证命令、分段因果与报告合同，不运行真实当前市场观察，
 也不表示正式回测、策略有效或可晋升。
 
-`guiyi research candidate-validation` 只接受两组 Git-tracked exact Candidate/Protocol pair：
-SuBing 由 `SubingLifecycleResearchService`、N 由 `NStructureResearchService` 分别产生
-source-specific report，只共享 rolling/prospective schedule。两条链都只输出 stdout JSON，
+`guiyi research candidate-validation` 只接受五个 Git-tracked exact Candidate 与三个
+exact Protocol：SuBing 由 `SubingLifecycleResearchService`、N 由
+`NStructureResearchService`、三个 JDJ Candidate 由 `JdjResearchService` 分别产生
+source-specific report，只共享 rolling/prospective schedule。三条链都只输出 stdout JSON，
 保持 `research_only=true` 与 `readonly=true`；测试使用 fake source 验证合同和时间边界，
 不运行真实 Candidate report，也不授权 Candidate 晋升、Alert/Runtime 接入、
 DB/Canonical/Redis 写入、通知或订单。N 的 retrospective 截止 `2026-08-19`，
-`2026-08-20` 只是 embargo，prospective 首日是 `2026-08-21`。
+`2026-08-20` 只是 embargo，prospective 首日是 `2026-08-21`；JDJ 的 retrospective
+截止 `2026-08-20`，`2026-08-21` 是 embargo，prospective 首日是 `2026-08-24`。
+
+## JDJ 1m Research & Candidate V1
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_jdj_policy.py \
+  services/quant-api/tests/test_jdj_candidate_validation_policy.py \
+  services/quant-api/tests/test_jdj_context.py \
+  services/quant-api/tests/test_jdj_trend_follow.py \
+  services/quant-api/tests/test_jdj_trend_reentry.py \
+  services/quant-api/tests/test_jdj_key_level_breakout.py \
+  services/quant-api/tests/test_jdj_research.py \
+  services/quant-api/tests/data_foundation/test_jdj_research_service.py \
+  services/quant-api/tests/test_jdj_candidate_validation.py \
+  services/quant-api/tests/data_foundation/test_jdj_candidate_validation_service.py \
+  services/quant-api/tests/data_foundation/test_jdj_candidate_validation_calendar.py \
+  services/quant-api/tests/test_price_outcome.py \
+  services/quant-api/tests/test_research_cli.py
+```
+
+该命令验证 exact Policy/Manifest/Protocol、EMA20 parity、5m N strict-before context、
+三个 causal reducer、M1/M5 actual-dominant segment source、3/5/8/20 outcome、共享
+10-fold schedule、calendar freeze 与 readonly CLI。测试只使用 fixture、fake source、
+临时目录或隔离数据库，不运行真实 `jm` research/evidence，不写入
+DB/Canonical/Redis，也不授权 evidence 生成、Candidate promotion、main/tag/release、
+Runtime/Alert/通知、订单或任何盈利结论。
 
 ## N Structure V1（Historical / research-only）
 
