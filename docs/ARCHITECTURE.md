@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-08-20
+更新时间：2026-08-21
 
 ## 系统定位
 
@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / candidate-validation / futures-mirror"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / candidate-validation / robustness / futures-mirror"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -40,6 +40,7 @@ flowchart TB
       SCR["SubingCalibrationResearchService"]
       SCV["SuBing Candidate Report<br/>source-specific"]
       NCV["N Candidate Report<br/>source-specific"]
+      MCR["MultiCandidateRobustnessService<br/>temporal / active60 / relationship"]
       MFM["MainForceMirrorFuturesResearchService<br/>historical-only Shadow"]
     end
     subgraph AlertApp["Alert Application Domain"]
@@ -75,6 +76,11 @@ flowchart TB
     RCLI --> NS --> ADR
     RCLI --> SCV --> SL
     RCLI --> NCV --> NS
+    RCLI --> MCR
+    SCV --> MCR
+    NCV --> MCR
+    SL --> MCR
+    NS --> MCR
     RCLI --> MFM --> MQ
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
@@ -148,6 +154,13 @@ flowchart TB
   目前只是 Historical/research-only 结构与 Candidate producer；已形成 deterministic jm
   retrospective/rolling evidence，prospective OOS 仍 pending，不代表效果、promotion、
   release 或 Runtime 能力。
+  `MultiCandidateRobustnessService` 在两条 frozen Candidate 之上增加薄的只读组合层：
+  temporal 仅投影既有 10-fold Candidate Validation，cross-symbol 保留冻结 active60 的完整
+  120-cell 矩阵，event relationship 仅比较 same symbol + same physical contract + same rank1
+  segment 的 `jm` 5m bar index。结果只输出版本化 retrospective research evidence；不改变
+  Candidate/公式/参数，不做一对一 greedy matching、score、winner、rank 或 promotion，不进入
+  DB/Canonical/Redis、Alert、Runtime 或订单路径。两条 Candidate 的 prospective OOS 仍由各自
+  exact Protocol 独立累积。
   `MainForceMirrorFuturesResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
   把每根 Bar 绑定到唯一物理合约后调用 Python Indicator Kernel；结果只由只读 CLI

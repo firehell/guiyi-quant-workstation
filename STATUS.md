@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-20
+更新时间：2026-08-21
 
 ## 当前结论
 
@@ -42,6 +42,10 @@
   Range Band、BULL/BEAR/RANGE Structure、Historical-only research CLI 与第二条独立 Candidate producer。
   Task 10 已形成并通过 Evidence Review 的 deterministic `jm` retrospective/rolling baseline；prospective
   OOS 从 `2026-08-21` 开始且仍为 `pending`，不形成效果、盈利、晋升、release 或 Runtime 结论。
+- `develop` 已完成 Multi-Candidate Research & Robustness V1：以冻结的 SuBing/N exact Candidate
+  生成可复算的 temporal、active60 cross-symbol 与 `jm` 双向 event-relationship retrospective
+  dossier。两条 Candidate 的 prospective OOS 仍按各自 exact Protocol 独立累积且均为
+  `pending`；该 evidence 不形成排名、winner、有效性、盈利、晋升、release 或 Runtime 结论。
 - HTDY 自然 Event/WeCom 闭环已验收。SuBing Scope 已由用户通过 Product Workspace 单独激活，
   但尚未观察到自然 SuBing Event；Natural Canary 仍为 pending，不得用 synthetic Event、
   replay、backfill 或 retry 代替。
@@ -230,6 +234,39 @@
   Alert Rule、release 或 Runtime ready 结论。
 - 本阶段未执行 RQData download、Canonical/DB/Redis write、Alert/Scope/notification/order、
   main/tag/release、Runtime switch/promotion 或其他真实外部 mutation。
+
+## Multi-Candidate Research & Robustness V1（DEVELOP CODE_COMPLETE / TEST_COMPLETE / EVIDENCE_COMPLETE；PROSPECTIVE OOS PENDING）
+
+- exact Protocol 固定为 `multi_candidate_robustness_v1`，frozen at
+  `2026-08-20T21:33:00+08:00`，anchor=`jm`，共同 retrospective 窗口为
+  `2023-01-01..2026-08-18`。实现仅比较冻结的
+  `subing_lifecycle_v2_candidate_v1` 与 `n_structure_5m_candidate_v1`，不改动 Candidate、
+  公式、参数、回溯窗口或 prospective schedule；`parameter_perturbation=false`、
+  `automatic_ranking=false`、`automatic_promotion=false`。
+- active60 矩阵精确保留 `2 × 60 = 120` cells：`98` available、`22` unavailable。
+  两条 Candidate 各有 `11` 个品种因既有 typed source boundary 显式标记
+  `MULTI_CANDIDATE_SOURCE_UNAVAILABLE`，未丢弃零事件或数据不可用品种，也未吞掉非预期软件错误。
+- `jm` relationship 只在 same symbol + same physical contract + same rank1 segment 内以 5m bar index
+  比较，分别输出 SuBing→N 与 N→SuBing 的 3/5/8 Bar descriptive facts；不做 greedy
+  matching，不计算 overlap/similarity score，不生成 winner。metric compatibility 仍显式保留
+  `EVALUABLE_UNIT_DIFFERS` 与 `HORIZON_SEMANTICS_DIFFERS`。
+- exact-develop source `c9a770ad18c57cbe85f43fa6d37c529b4770e025` 重算的 SuBing/N tracked
+  baseline 均 byte-identical：SuBing SHA256=`1a1b3064dcb9084adc7347e024c001a2fe7c4bb7ba909c6c80f31659ecc3b3d1`，
+  N SHA256=`12fed018751ae54d5bfd2d24897cc077c513560ac1377935e5fddd14a36a3fc6`。SuBing evidence
+  中 Decimal 零的 JSON 表示已统一为 `"0"`；pre-MCR 重算证明该表示维护不是 robustness 语义回归。
+- 唯一首份版本化 evidence 为
+  `reports/research/candidate_robustness/multi_candidate_robustness_v1/anchor-jm-active60-retrospective-freeze-2026-08-20.json`；
+  连续两次主执行与一次独立 Review 执行均精确生成 `131907` bytes，
+  SHA256=`6aaa624d13eb3492232eeff44b919efb704bd2018ab9e35503678ffc2c17f433`。独立
+  Evidence Review 为 Critical=`0` / Important=`0` / Minor=`0`。
+- 累计验证为 robustness focused `147 passed`、N 全链 `362 passed`、SuBing zero-regression
+  `620 passed`、Ruff PASS、Mypy `58 source files` PASS、secret scan `finding_count=0` 与 diff check PASS。
+  本阶段未执行 RQData download、Canonical/DB/Redis write、Alert/Scope/notification/order、
+  main/tag/release 或 Runtime switch/promotion。
+- 本阶段唯一结论是 retrospective robustness dossier 已可复算。SuBing prospective OOS 从
+  `2026-08-20` 开始、N prospective OOS 从 `2026-08-21` 开始，两者仍由各自 exact
+  Candidate Protocol 独立累积且均为 `pending`；不进行 OOS 回填，不形成候选优劣、
+  KEEP/DROP/PROMOTE、盈利、可交易、Alert Rule、release 或 Runtime ready 结论。
 
 ## v1.6.2 主力照妖镜·期货 V1（RELEASED / RUNTIME PROMOTED）
 
