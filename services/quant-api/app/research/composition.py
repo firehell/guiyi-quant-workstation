@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
 )
-from app.market_data.candidate_validation_policy import (
+from app.research.subing.candidate_validation_policy import (
     load_candidate_manifest,
     load_candidate_validation_protocol,
 )
@@ -15,44 +15,44 @@ from app.market_data.composition import (
     build_main_force_mirror_v2_service,
     build_market_data_service,
 )
-from app.market_data.jdj_candidate_validation_calendar import (
+from app.research.jdj.jdj_candidate_validation_calendar import (
     assert_jdj_prospective_calendar,
 )
-from app.market_data.jdj_candidate_validation_policy import (
+from app.research.jdj.jdj_candidate_validation_policy import (
     load_jdj_candidate_manifest,
     load_jdj_candidate_validation_protocol,
 )
-from app.market_data.jdj_candidate_validation_service import (
+from app.research.jdj.jdj_candidate_validation_service import (
     JdjCandidateValidationService,
 )
-from app.market_data.jdj_policy import load_jdj_policy
-from app.market_data.jdj_research_service import JdjResearchService
-from app.market_data.main_force_mirror_v2_research_service import (
+from app.research.jdj.jdj_policy import load_jdj_policy
+from app.research.jdj.jdj_research_service import JdjResearchService
+from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2ResearchService,
 )
-from app.market_data.multi_candidate_robustness_policy import (
+from app.research.robustness.multi_candidate_robustness_policy import (
     load_multi_candidate_robustness_protocol,
 )
-from app.market_data.multi_candidate_robustness_service import (
+from app.research.robustness.multi_candidate_robustness_service import (
     MultiCandidateRobustnessService,
 )
-from app.market_data.n_candidate_validation_policy import (
+from app.research.n_structure.n_candidate_validation_policy import (
     load_n_candidate_manifest,
     load_n_candidate_validation_protocol,
 )
-from app.market_data.n_candidate_validation_service import (
+from app.research.n_structure.n_candidate_validation_service import (
     NStructureCandidateValidationService,
 )
-from app.market_data.n_structure_policy import load_n_structure_policy
-from app.market_data.n_structure_research_service import NStructureResearchService
+from app.research.n_structure.n_structure_policy import load_n_structure_policy
+from app.research.n_structure.n_structure_research_service import NStructureResearchService
 from app.market_data.operational_universe import load_active_products
 from app.market_data.subing_calibration import load_accepted_subing_calibration
-from app.market_data.subing_calibration_service import SubingCalibrationResearchService
-from app.market_data.subing_candidate_validation_service import (
+from app.research.subing.subing_calibration_service import SubingCalibrationResearchService
+from app.research.subing.subing_candidate_validation_service import (
     SubingCandidateValidationService,
 )
 from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import (
     SubingLifecycleResearchService,
 )
 
@@ -143,7 +143,7 @@ def build_multi_candidate_robustness_service(
     protocol = load_multi_candidate_robustness_protocol()
     active_products = load_active_products()
     if active_products != protocol.cross_symbol_products:
-        from app.market_data.multi_candidate_robustness_service import (
+        from app.research.robustness.multi_candidate_robustness_service import (
             MultiCandidateActiveUniverseDriftError,
         )
 

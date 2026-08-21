@@ -264,6 +264,8 @@ def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
 
 def test_exact_contract_and_jdj_identity_have_one_implementation() -> None:
     market_data = ROOT / "services/quant-api/app/market_data"
+    research = ROOT / "services/quant-api/app/research"
+    jdj_context = research / "jdj/jdj_context.py"
     exact_contract = market_data / "exact_json_contract.py"
     assert exact_contract.is_file()
     exact_source = exact_contract.read_text(encoding="utf-8")
@@ -277,7 +279,7 @@ def test_exact_contract_and_jdj_identity_have_one_implementation() -> None:
 
     duplicate_exact_definitions = []
     duplicate_jdj_definitions = []
-    for path in market_data.glob("*.py"):
+    for path in (*market_data.glob("*.py"), *research.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
         if path != exact_contract and re.search(
             r"^def _?(?:matches_exact|load_exact|freeze_json|matches_exact_json|matches_exact_frozen)\(",
@@ -285,16 +287,16 @@ def test_exact_contract_and_jdj_identity_have_one_implementation() -> None:
             re.MULTILINE,
         ):
             duplicate_exact_definitions.append(path.name)
-        if path.name != "jdj_context.py" and re.search(
+        if path != jdj_context and re.search(
             r"^def _?valid_context_fact_identity\(", source, re.MULTILINE
         ):
             duplicate_jdj_definitions.append(path.name)
 
     assert duplicate_exact_definitions == []
     assert duplicate_jdj_definitions == []
-    assert "def valid_context_fact_identity(" in (
-        market_data / "jdj_context.py"
-    ).read_text(encoding="utf-8")
+    assert "def valid_context_fact_identity(" in jdj_context.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_release_candidate_excludes_private_sources() -> None:

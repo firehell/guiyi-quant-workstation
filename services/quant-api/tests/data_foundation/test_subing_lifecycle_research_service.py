@@ -28,7 +28,7 @@ from app.market_data.subing_lifecycle import (
     SubingOpportunityKey,
     evaluate_subing_lifecycle as reduce_subing_lifecycle,
 )
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchService,
 )
@@ -300,11 +300,11 @@ def test_service_uses_only_actual_dominant_and_runs_each_segment_independently(
         return SimpleNamespace(snapshots=(), transitions=())
 
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        "app.research.subing.subing_lifecycle_research_service.calculate_subing_factor_series",
         factors,
     )
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        "app.research.subing.subing_lifecycle_research_service.evaluate_subing_lifecycle",
         lifecycle,
     )
     service = SubingLifecycleResearchService(
@@ -394,11 +394,11 @@ def test_service_restores_every_true_segment_before_factorization(
         return tuple(object() for _bar_value in bars)
 
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        "app.research.subing.subing_lifecycle_research_service.calculate_subing_factor_series",
         factors,
     )
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        "app.research.subing.subing_lifecycle_research_service.evaluate_subing_lifecycle",
         lambda **_kwargs: SimpleNamespace(snapshots=(), transitions=()),
     )
     service = SubingLifecycleResearchService(
@@ -475,11 +475,11 @@ def test_pre_window_segment_warmup_is_read_but_not_counted(
         )
 
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        "app.research.subing.subing_lifecycle_research_service.calculate_subing_factor_series",
         factors,
     )
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        "app.research.subing.subing_lifecycle_research_service.evaluate_subing_lifecycle",
         lifecycle,
     )
     service = SubingLifecycleResearchService(
@@ -770,15 +770,15 @@ def test_service_aggregates_funnel_overlap_close_and_horizon_observations(
         }
 
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        "app.research.subing.subing_lifecycle_research_service.calculate_subing_factor_series",
         factors,
     )
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        "app.research.subing.subing_lifecycle_research_service.evaluate_subing_lifecycle",
         lifecycle,
     )
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.build_outcomes_at",
+        "app.research.subing.subing_lifecycle_research_service.build_outcomes_at",
         outcomes,
     )
     service = SubingLifecycleResearchService(
@@ -911,15 +911,15 @@ def test_entry_event_prefix_is_invariant_to_future_same_segment_suffix(
         )
 
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        "app.research.subing.subing_lifecycle_research_service.calculate_subing_factor_series",
         factors,
     )
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        "app.research.subing.subing_lifecycle_research_service.evaluate_subing_lifecycle",
         lifecycle,
     )
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.build_outcomes_at",
+        "app.research.subing.subing_lifecycle_research_service.build_outcomes_at",
         lambda *_args, **_kwargs: {3: None, 5: None, 8: None},
     )
 
@@ -1100,11 +1100,11 @@ def test_service_selects_active_products_and_rejects_unknown_symbol(
     }
     market_data = _FakeMarketData(jm_results)
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        "app.research.subing.subing_lifecycle_research_service.calculate_subing_factor_series",
         lambda bars, **_kwargs: tuple(object() for _bar_value in bars),
     )
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        "app.research.subing.subing_lifecycle_research_service.evaluate_subing_lifecycle",
         lambda **_kwargs: SimpleNamespace(snapshots=(), transitions=()),
     )
     service = SubingLifecycleResearchService(
@@ -1182,7 +1182,7 @@ def test_service_runs_the_real_factor_and_lifecycle_kernels_on_fixture_bars(
         return trace
 
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        "app.research.subing.subing_lifecycle_research_service.evaluate_subing_lifecycle",
         capture_trace,
     )
     service = SubingLifecycleResearchService(
@@ -1254,7 +1254,7 @@ def test_real_kernels_reset_state_and_factor_identity_at_cross_roll(
         return reduce_subing_lifecycle(**kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.evaluate_subing_lifecycle",
+        "app.research.subing.subing_lifecycle_research_service.evaluate_subing_lifecycle",
         capture_trace,
     )
     service = SubingLifecycleResearchService(
@@ -1345,7 +1345,7 @@ def _actual_reducer_service(
         return tuple(factor_builder(bar, timeframe) for bar in bars)
 
     monkeypatch.setattr(
-        "app.market_data.subing_lifecycle_research_service.calculate_subing_factor_series",
+        "app.research.subing.subing_lifecycle_research_service.calculate_subing_factor_series",
         calculate,
     )
     return SubingLifecycleResearchService(

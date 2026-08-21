@@ -6,7 +6,7 @@ from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
-from app.market_data import jdj_research_service as research_module
+from app.research.jdj import jdj_research_service as research_module
 from app.market_data.actual_dominant_research import ActualDominantResearchSeries
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
@@ -17,21 +17,21 @@ from app.market_data.domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
 )
-from app.market_data.jdj_context import JdjContextError
-from app.market_data.jdj_context import JdjBarContext
-from app.market_data.jdj_events import JdjDirection
-from app.market_data.jdj_events import (
+from app.research.jdj.jdj_context import JdjContextError
+from app.research.jdj.jdj_context import JdjBarContext
+from app.research.jdj.jdj_events import JdjDirection
+from app.research.jdj.jdj_events import (
     JdjSetupKind,
     JdjTrendFollowTriggerEvent,
     _canonical_trend_follow_event_id,
 )
-from app.market_data.jdj_policy import load_jdj_policy
-from app.market_data.jdj_research import JdjResearchRequest
-from app.market_data.jdj_research import JdjSourceUnavailableError
-from app.market_data.jdj_research_service import JdjResearchService
+from app.research.jdj.jdj_policy import load_jdj_policy
+from app.research.jdj.jdj_research import JdjResearchRequest
+from app.research.jdj.jdj_research import JdjSourceUnavailableError
+from app.research.jdj.jdj_research_service import JdjResearchService
 from app.market_data.market_data_service import MarketDataError
-from app.market_data.n_structure_policy import load_n_structure_policy
-from app.market_data.n_structure_state import NStructureKind
+from app.research.n_structure.n_structure_policy import load_n_structure_policy
+from app.research.n_structure.n_structure_state import NStructureKind
 
 
 _CANDIDATE = "jdj_trend_follow_1m_candidate_v1"

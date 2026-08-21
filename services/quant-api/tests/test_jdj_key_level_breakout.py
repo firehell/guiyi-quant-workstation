@@ -8,18 +8,18 @@ from typing import TypedDict
 import pytest
 
 from app.market_data.domain import BarFrequency, CanonicalBar
-from app.market_data.jdj_context import JdjBarContext, JdjContextError
-from app.market_data.jdj_events import (
+from app.research.jdj.jdj_context import JdjBarContext, JdjContextError
+from app.research.jdj.jdj_events import (
     JdjDirection,
     JdjKeyLevelBreakoutTriggerEvent,
     JdjSetupKind,
 )
-from app.market_data.jdj_key_level_breakout import (
+from app.research.jdj.jdj_key_level_breakout import (
     JdjKeyLevelBreakoutTrace,
     reduce_jdj_key_level_breakout,
 )
-from app.market_data.n_structure_state import NStructureKind
-from app.market_data.n_structure_swing import NSwingPivot, NSwingPivotKind
+from app.research.n_structure.n_structure_state import NStructureKind
+from app.research.n_structure.n_structure_swing import NSwingPivot, NSwingPivotKind
 
 
 _SYMBOL = "jm"

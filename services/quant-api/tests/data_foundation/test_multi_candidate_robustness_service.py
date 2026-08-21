@@ -6,26 +6,26 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.market_data.candidate_validation_schedule import CandidateValidationRequest
+from app.research.common.candidate_validation_schedule import CandidateValidationRequest
 from app.market_data.market_data_service import MarketDataError
-from app.market_data.multi_candidate_robustness_service import (
+from app.research.robustness.multi_candidate_robustness_service import (
     MultiCandidateRobustnessService,
     MultiCandidateRobustnessSourceError,
 )
-from app.market_data.multi_candidate_robustness_policy import (
+from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
     load_multi_candidate_robustness_protocol,
 )
-from app.market_data.n_structure_pattern import NDirection
-from app.market_data.n_structure_research_service import (
+from app.research.n_structure.n_structure_pattern import NDirection
+from app.research.n_structure.n_structure_research_service import (
     NStructureCompletionResearchEvent,
 )
-from app.market_data.n_structure_research_service import NStructureResearchRequest
-from app.market_data.n_structure_policy import load_n_structure_policy
-from app.market_data.n_structure_research_service import NStructureResearchService
+from app.research.n_structure.n_structure_research_service import NStructureResearchRequest
+from app.research.n_structure.n_structure_policy import load_n_structure_policy
+from app.research.n_structure.n_structure_research_service import NStructureResearchService
 from app.market_data.subing_lifecycle import ConfirmationSource, SubingOpportunityKey
-from app.market_data.subing_lifecycle_research_service import LifecycleResearchRequest
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import LifecycleResearchRequest
+from app.research.subing.subing_lifecycle_research_service import (
     SubingLifecycleEntryResearchEvent,
 )
 from app.market_data.subing_research import SubingDirection

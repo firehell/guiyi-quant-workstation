@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from app.market_data.domain import BarFrequency
-from app.market_data.jdj_policy import (
+from app.research.jdj.jdj_policy import (
     JdjPolicyError,
     is_exact_jdj_policy,
     load_jdj_policy,

@@ -7,7 +7,7 @@ import traceback
 
 import pytest
 
-from app.market_data import n_structure_research_service as research_module
+from app.research.n_structure import n_structure_research_service as research_module
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
     ActualDominantResearchSeries,
@@ -18,10 +18,10 @@ from app.market_data.domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
 )
-from app.market_data.n_structure_policy import load_n_structure_policy
-from app.market_data.n_structure_segment import evaluate_n_structure_segment
+from app.research.n_structure.n_structure_policy import load_n_structure_policy
+from app.research.n_structure.n_structure_segment import evaluate_n_structure_segment
 from app.market_data.market_data_service import MarketDataError
-from app.market_data.n_structure_research_service import (
+from app.research.n_structure.n_structure_research_service import (
     NStructureSegmentIdentityError,
     NStructureResearchRequest,
     NStructureResearchService,

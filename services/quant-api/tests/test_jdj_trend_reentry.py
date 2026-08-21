@@ -8,17 +8,17 @@ from typing import TypedDict
 import pytest
 
 from app.market_data.domain import CanonicalBar
-from app.market_data.jdj_context import JdjBarContext, JdjContextError
-from app.market_data.jdj_trend_reentry import (
+from app.research.jdj.jdj_context import JdjBarContext, JdjContextError
+from app.research.jdj.jdj_trend_reentry import (
     JdjTrendReentryTrace,
     reduce_jdj_trend_reentry_6,
 )
-from app.market_data.jdj_events import (
+from app.research.jdj.jdj_events import (
     JdjDirection,
     JdjSetupKind,
     JdjTrendReentryTriggerEvent,
 )
-from app.market_data.n_structure_state import NStructureKind
+from app.research.n_structure.n_structure_state import NStructureKind
 
 
 _SYMBOL = "jm"

@@ -6,21 +6,21 @@ from decimal import Decimal
 
 import pytest
 
-from app.market_data import candidate_validation_schedule as shared_schedule
-from app.market_data.jdj_candidate_validation import JdjProspectiveOosStatus
-from app.market_data.jdj_candidate_validation_policy import (
+from app.research.common import candidate_validation_schedule as shared_schedule
+from app.research.jdj.jdj_candidate_validation import JdjProspectiveOosStatus
+from app.research.jdj.jdj_candidate_validation_policy import (
     load_jdj_candidate_manifest,
     load_jdj_candidate_validation_protocol,
 )
-from app.market_data.jdj_candidate_validation_service import (
+from app.research.jdj.jdj_candidate_validation_service import (
     CandidateValidationIdentityError,
     CandidateValidationRequest,
     CandidateValidationSourceError,
     CandidateValidationWindowError,
     JdjCandidateValidationService,
 )
-from app.market_data.jdj_context import JdjContextError
-from app.market_data.jdj_research import (
+from app.research.jdj.jdj_context import JdjContextError
+from app.research.jdj.jdj_research import (
     JdjResearchRequest,
     JdjResearchResult,
     JdjSourceUnavailableError,

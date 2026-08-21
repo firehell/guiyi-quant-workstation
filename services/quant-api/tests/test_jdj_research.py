@@ -7,8 +7,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from app.market_data.jdj_context import JdjContextError
-from app.market_data.jdj_events import (
+from app.research.jdj.jdj_context import JdjContextError
+from app.research.jdj.jdj_events import (
     JdjDirection,
     JdjKeyLevelBreakoutTriggerEvent,
     JdjTrendFollowTriggerEvent,
@@ -17,7 +17,7 @@ from app.market_data.jdj_events import (
     JdjSetupKind,
     _canonical_trend_follow_event_id,
 )
-from app.market_data.jdj_research import (
+from app.research.jdj.jdj_research import (
     JdjResearchRequest,
     JdjResearchResult,
     JdjSourceUnavailableError,

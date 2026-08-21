@@ -9,7 +9,7 @@ from types import MappingProxyType
 import pytest
 
 from app.guiyi_cli.research_commands import _multi_candidate_robustness_payload
-from app.market_data.multi_candidate_robustness import (
+from app.research.robustness.multi_candidate_robustness import (
     CandidateRelationshipSummary,
     CandidateSymbolRobustness,
     CandidateSymbolStatus,
@@ -19,7 +19,7 @@ from app.market_data.multi_candidate_robustness import (
     HorizonSignSummary,
     MultiCandidateRobustnessReport,
 )
-from app.market_data.multi_candidate_robustness_policy import (
+from app.research.robustness.multi_candidate_robustness_policy import (
     load_multi_candidate_robustness_protocol,
 )
 

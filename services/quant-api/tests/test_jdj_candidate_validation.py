@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.market_data.jdj_candidate_validation import (
+from app.research.jdj.jdj_candidate_validation import (
     JdjCandidateStabilitySummary,
     JdjCandidateValidationReport,
     JdjCandidateWindowKind,
@@ -17,7 +17,7 @@ from app.market_data.jdj_candidate_validation import (
     project_jdj_window,
     summarize_jdj_rolling_stability,
 )
-from app.market_data.jdj_research import JdjResearchResult
+from app.research.jdj.jdj_research import JdjResearchResult
 from app.market_data.price_outcome import PriceHorizonEvaluation
 
 

@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-import app.market_data.jdj_policy as jdj_policy_module
-import app.market_data.jdj_candidate_validation_policy as policy_module
-from app.market_data.jdj_candidate_validation_policy import (
+import app.research.jdj.jdj_policy as jdj_policy_module
+import app.research.jdj.jdj_candidate_validation_policy as policy_module
+from app.research.jdj.jdj_candidate_validation_policy import (
     JdjCandidateManifest,
     JdjCandidateManifestError,
     JdjCandidateRef,

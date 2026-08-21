@@ -6,22 +6,22 @@ from decimal import Decimal
 
 import pytest
 
-from app.market_data import candidate_validation_schedule as shared_schedule
-from app.market_data import subing_candidate_validation_service as service_module
-from app.market_data.candidate_validation import ProspectiveOosStatus
-from app.market_data.candidate_validation_policy import (
+from app.research.common import candidate_validation_schedule as shared_schedule
+from app.research.subing import subing_candidate_validation_service as service_module
+from app.research.subing.candidate_validation import ProspectiveOosStatus
+from app.research.subing.candidate_validation_policy import (
     load_candidate_manifest,
     load_candidate_validation_protocol,
 )
 from app.market_data.subing_calibration import HorizonEvaluation
-from app.market_data.subing_candidate_validation_service import (
+from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationIdentityError,
     CandidateValidationRequest,
     CandidateValidationSourceError,
     CandidateValidationWindowError,
     SubingCandidateValidationService,
 )
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )

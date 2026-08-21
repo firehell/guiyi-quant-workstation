@@ -45,7 +45,7 @@ from app.market_data.composition import (
     build_live_market_service,
 )
 from app.market_data.after_market import build_after_market_updater
-from app.market_data.candidate_validation_schedule import (
+from app.research.common.candidate_validation_schedule import (
     CandidateValidationIdentityError,
     CandidateValidationRequest,
 )

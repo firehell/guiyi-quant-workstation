@@ -6,20 +6,20 @@ from decimal import Decimal
 
 import pytest
 
-from app.market_data import candidate_validation_schedule as shared_schedule
-from app.market_data.n_candidate_validation import NProspectiveOosStatus
-from app.market_data.n_candidate_validation_policy import (
+from app.research.common import candidate_validation_schedule as shared_schedule
+from app.research.n_structure.n_candidate_validation import NProspectiveOosStatus
+from app.research.n_structure.n_candidate_validation_policy import (
     load_n_candidate_manifest,
     load_n_candidate_validation_protocol,
 )
-from app.market_data.n_candidate_validation_service import (
+from app.research.n_structure.n_candidate_validation_service import (
     CandidateValidationIdentityError,
     CandidateValidationRequest,
     CandidateValidationSourceError,
     CandidateValidationWindowError,
     NStructureCandidateValidationService,
 )
-from app.market_data.n_structure_research_service import (
+from app.research.n_structure.n_structure_research_service import (
     NStructureResearchRequest,
     NStructureResearchResult,
 )

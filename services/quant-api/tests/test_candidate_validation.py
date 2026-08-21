@@ -7,7 +7,7 @@ from types import MappingProxyType
 
 import pytest
 
-from app.market_data.candidate_validation import (
+from app.research.subing.candidate_validation import (
     CandidateStabilitySummary,
     CandidateValidationReport,
     CandidateWindowKind,
@@ -19,7 +19,7 @@ from app.market_data.candidate_validation import (
     summarize_rolling_stability,
 )
 from app.market_data.subing_calibration import HorizonEvaluation
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import (
     SubingLifecycleResearchResult,
 )
 

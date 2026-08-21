@@ -7,7 +7,7 @@ from types import MappingProxyType
 
 import pytest
 
-from app.market_data.n_candidate_validation import (
+from app.research.n_structure.n_candidate_validation import (
     NCandidateStabilitySummary,
     NCandidateWindowKind,
     NCandidateWindowResult,
@@ -18,7 +18,7 @@ from app.market_data.n_candidate_validation import (
     project_n_structure_window,
     summarize_n_rolling_stability,
 )
-from app.market_data.n_structure_research_service import NStructureResearchResult
+from app.research.n_structure.n_structure_research_service import NStructureResearchResult
 from app.market_data.price_outcome import PriceHorizonEvaluation
 
 

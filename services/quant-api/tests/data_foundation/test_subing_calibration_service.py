@@ -14,7 +14,7 @@ from app.market_data.domain import (
     ResolvedContractSegment,
 )
 from app.market_data.subing_calibration import build_research_samples, slope_direction
-from app.market_data.subing_calibration_service import (
+from app.research.subing.subing_calibration_service import (
     CalibrationMode,
     CalibrationPhase,
     CalibrationResearchRequest,
@@ -209,7 +209,7 @@ def test_intraday_zero_band_uses_latest_confirmed_matching_companion(
         )
 
     monkeypatch.setattr(
-        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        "app.research.subing.subing_calibration_service.calculate_subing_factor_series",
         factors,
     )
     service = SubingCalibrationResearchService(market_data, products=("jm",))
@@ -297,7 +297,7 @@ def test_companion_alignment_ignores_latest_confirmed_other_segment(
         )
 
     monkeypatch.setattr(
-        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        "app.research.subing.subing_calibration_service.calculate_subing_factor_series",
         factors,
     )
 
@@ -328,7 +328,7 @@ def test_slope_labels_never_consume_an_insufficient_next_rank1_segment(
     """Catches a pre-roll entry labeling the next contract's large price gap."""
     market_data = _rollover_market_data(frequency)
     monkeypatch.setattr(
-        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        "app.research.subing.subing_calibration_service.calculate_subing_factor_series",
         _rollover_factors,
     )
 
@@ -361,7 +361,7 @@ def test_zero_band_cohorts_keep_future_labels_inside_each_rank1_segment(
     """Catches Cohort A or B outcomes crossing into insufficient rollover warm-up."""
     market_data = _rollover_market_data(frequency)
     monkeypatch.setattr(
-        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        "app.research.subing.subing_calibration_service.calculate_subing_factor_series",
         _rollover_factors,
     )
     inputs: dict[str, object]
@@ -441,7 +441,7 @@ def test_slope_discovery_uses_equal_product_weight_and_two_read_passes(
         )
 
     monkeypatch.setattr(
-        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        "app.research.subing.subing_calibration_service.calculate_subing_factor_series",
         factors,
     )
 
@@ -552,7 +552,7 @@ def test_zero_band_discovery_uses_cohort_b_product_quantiles_and_reports_both(
         )
 
     monkeypatch.setattr(
-        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        "app.research.subing.subing_calibration_service.calculate_subing_factor_series",
         factors,
     )
 
@@ -622,7 +622,7 @@ def test_daily_cohort_b_has_no_companion_or_volume_hard_condition(
         )
 
     monkeypatch.setattr(
-        "app.market_data.subing_calibration_service.calculate_subing_factor_series",
+        "app.research.subing.subing_calibration_service.calculate_subing_factor_series",
         factors,
     )
 

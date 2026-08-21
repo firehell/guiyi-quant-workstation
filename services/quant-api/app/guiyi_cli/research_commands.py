@@ -10,44 +10,44 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Protocol, TypeAlias, cast
 
-from app.market_data.candidate_validation import (
+from app.research.subing.candidate_validation import (
     CandidateValidationReport,
     CandidateWindowResult,
     ProspectiveOosResult,
     RollingCandidateFold,
 )
-from app.market_data.candidate_validation_schedule import (
+from app.research.common.candidate_validation_schedule import (
     CandidateValidationRequest,
 )
 from app.market_data.domain import BarFrequency, SeriesKind
-from app.market_data.jdj_research import JdjResearchRequest, JdjResearchResult
-from app.market_data.jdj_candidate_validation import (
+from app.research.jdj.jdj_research import JdjResearchRequest, JdjResearchResult
+from app.research.jdj.jdj_candidate_validation import (
     JdjCandidateValidationReport,
     JdjCandidateWindowResult,
     JdjProspectiveOosResult,
     JdjRollingCandidateFold,
 )
-from app.market_data.jdj_events import JdjTriggerEvent
-from app.market_data.main_force_mirror_v2_research_service import (
+from app.research.jdj.jdj_events import JdjTriggerEvent
+from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2GroupSpread,
     MainForceMirrorV2HorizonSummary,
     MainForceMirrorV2ResearchRequest,
     MainForceMirrorV2ResearchResult,
     MainForceMirrorV2SensitivitySummary,
 )
-from app.market_data.multi_candidate_robustness import (
+from app.research.robustness.multi_candidate_robustness import (
     CommonPriceHorizonSummary,
     CrossSymbolCandidateSummary,
     MultiCandidateRobustnessReport,
 )
-from app.market_data.multi_candidate_robustness_policy import (
+from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
 )
-from app.market_data.n_structure_research_service import (
+from app.research.n_structure.n_structure_research_service import (
     NStructureResearchRequest,
     NStructureResearchResult,
 )
-from app.market_data.n_candidate_validation import (
+from app.research.n_structure.n_candidate_validation import (
     NCandidateWindowResult,
     NProspectiveOosResult,
     NRollingCandidateFold,
@@ -59,14 +59,14 @@ from app.market_data.subing_calibration import (
     HorizonEvaluation,
     ThresholdEvaluation,
 )
-from app.market_data.subing_calibration_service import (
+from app.research.subing.subing_calibration_service import (
     CalibrationMode,
     CalibrationPhase,
     CalibrationResearchRequest,
     CalibrationResearchResult,
     SlopeThresholds,
 )
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )

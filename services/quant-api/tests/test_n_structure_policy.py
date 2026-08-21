@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from app.market_data.domain import BarFrequency
-from app.market_data.n_structure_policy import (
+from app.research.n_structure.n_structure_policy import (
     NStructurePolicyError,
     is_exact_n_structure_policy,
     load_n_structure_policy,

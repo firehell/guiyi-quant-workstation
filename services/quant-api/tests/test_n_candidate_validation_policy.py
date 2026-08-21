@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 import pytest
 
-from app.market_data.n_candidate_validation_policy import (
+from app.research.n_structure.n_candidate_validation_policy import (
     NCandidateManifestError,
     NCandidateValidationProtocolError,
     load_n_candidate_manifest,

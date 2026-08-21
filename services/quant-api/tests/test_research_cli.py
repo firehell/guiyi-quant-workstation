@@ -19,7 +19,7 @@ from app.guiyi_cli.research_commands import (
     build_research_request,
     run_research_command,
 )
-from app.market_data.candidate_validation import (
+from app.research.subing.candidate_validation import (
     CandidateValidationReport,
     CandidateWindowKind,
     ProspectiveOosResult,
@@ -29,7 +29,7 @@ from app.market_data.candidate_validation import (
     summarize_rolling_stability,
 )
 from app.market_data.domain import BarFrequency, SeriesKind
-from app.market_data.main_force_mirror_v2_research_service import (
+from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2GroupSpread,
     MainForceMirrorV2HorizonSummary,
     MainForceMirrorV2ResearchRequest,
@@ -37,15 +37,15 @@ from app.market_data.main_force_mirror_v2_research_service import (
     MainForceMirrorV2ResearchService,
     MainForceMirrorV2SensitivitySummary,
 )
-from app.market_data.jdj_events import (
+from app.research.jdj.jdj_events import (
     JdjDirection,
     JdjSetupKind,
     JdjTrendFollowTriggerEvent,
     _canonical_trend_follow_event_id,
 )
-from app.market_data.jdj_research import JdjResearchRequest, JdjResearchResult
-from app.market_data.jdj_research_service import JdjResearchService
-from app.market_data.jdj_candidate_validation import (
+from app.research.jdj.jdj_research import JdjResearchRequest, JdjResearchResult
+from app.research.jdj.jdj_research_service import JdjResearchService
+from app.research.jdj.jdj_candidate_validation import (
     JdjCandidateValidationReport,
     JdjCandidateWindowKind,
     JdjProspectiveOosResult,
@@ -54,13 +54,13 @@ from app.market_data.jdj_candidate_validation import (
     project_jdj_window,
     summarize_jdj_rolling_stability,
 )
-from app.market_data.jdj_candidate_validation_service import (
+from app.research.jdj.jdj_candidate_validation_service import (
     JdjCandidateValidationService,
 )
-from app.market_data.multi_candidate_robustness_policy import (
+from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
 )
-from app.market_data.n_candidate_validation import (
+from app.research.n_structure.n_candidate_validation import (
     NCandidateWindowKind,
     NProspectiveOosResult,
     NProspectiveOosStatus,
@@ -69,14 +69,14 @@ from app.market_data.n_candidate_validation import (
     project_n_structure_window,
     summarize_n_rolling_stability,
 )
-from app.market_data.n_structure_research_service import (
+from app.research.n_structure.n_structure_research_service import (
     NStructureSegmentIdentityError,
     NStructureResearchRequest,
     NStructureResearchResult,
     NStructureSourceUnavailableError,
 )
 from app.market_data.price_outcome import PriceHorizonEvaluation
-from app.market_data.subing_calibration_service import (
+from app.research.subing.subing_calibration_service import (
     CalibrationMode,
     CalibrationPhase,
     SlopeThresholds,
@@ -87,11 +87,11 @@ from app.market_data.subing_calibration import (
     HorizonEvaluation,
     ThresholdEvaluation,
 )
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
-from app.market_data.subing_candidate_validation_service import (
+from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationRequest,
     SubingCandidateValidationService,
 )

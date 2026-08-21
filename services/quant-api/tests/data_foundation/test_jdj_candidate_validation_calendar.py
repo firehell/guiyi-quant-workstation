@@ -6,12 +6,12 @@ import pytest
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
 
-import app.market_data.jdj_candidate_validation_calendar as calendar_module
+import app.research.jdj.jdj_candidate_validation_calendar as calendar_module
 from app.db.base import Base
-from app.market_data.jdj_candidate_validation_policy import (
+from app.research.jdj.jdj_candidate_validation_policy import (
     JdjCandidateValidationProtocolError,
 )
-from app.market_data.jdj_candidate_validation_calendar import (
+from app.research.jdj.jdj_candidate_validation_calendar import (
     JdjProspectiveCalendarError,
     assert_jdj_prospective_calendar,
 )

@@ -21,7 +21,7 @@ from app.market_data.domain import (
     ResolvedContractSegment,
     SeriesKind,
 )
-from app.market_data.main_force_mirror_v2_research_service import (
+from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2ResearchError,
     MainForceMirrorV2ResearchRequest,
     MainForceMirrorV2ResearchService,
