@@ -42,6 +42,7 @@ from app.guiyi_cli.research_commands import (
 from app.market_data.composition import (
     build_member_rank_snapshot_builder,
     build_historical_data_manager,
+    build_jdj_active60_robustness_service,
     build_jdj_candidate_validation_service,
     build_jdj_research_service,
     build_live_market_service,
@@ -58,6 +59,7 @@ from app.market_data.candidate_validation_schedule import (
     CandidateValidationIdentityError,
     CandidateValidationRequest,
 )
+from app.market_data.jdj_robustness import JdjActive60RobustnessRequest
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
@@ -177,6 +179,9 @@ def main(
     multi_candidate_robustness_service_factory: ResearchServiceFactory = (
         build_multi_candidate_robustness_service
     ),
+    jdj_active60_robustness_service_factory: ResearchServiceFactory = (
+        build_jdj_active60_robustness_service
+    ),
     execution_review_roll_marker_state: RollMarkerState = (
         _execution_review_roll_marker_state
     ),
@@ -231,7 +236,17 @@ def main(
                 if args.research_command == "subing-lifecycle":
                     service = lifecycle_research_service_factory(session)
                 elif args.research_command == "candidate-robustness":
-                    service = multi_candidate_robustness_service_factory(session)
+                    if isinstance(
+                        research_request,
+                        JdjActive60RobustnessRequest,
+                    ):
+                        service = jdj_active60_robustness_service_factory(
+                            session
+                        )
+                    else:
+                        service = multi_candidate_robustness_service_factory(
+                            session
+                        )
                 elif args.research_command == "n-structure":
                     service = n_structure_research_service_factory(session)
                 elif args.research_command == "jdj-1m":

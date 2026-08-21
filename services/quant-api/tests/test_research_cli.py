@@ -45,6 +45,11 @@ from app.market_data.jdj_events import (
 )
 from app.market_data.jdj_research import JdjResearchRequest, JdjResearchResult
 from app.market_data.jdj_research_service import JdjResearchService
+from app.market_data.jdj_robustness import (
+    JdjActive60RobustnessRequest,
+    JdjRobustnessStatus,
+    load_jdj_active60_robustness_protocol,
+)
 from app.market_data.jdj_candidate_validation import (
     JdjCandidateValidationReport,
     JdjCandidateWindowKind,
@@ -573,23 +578,42 @@ def test_jdj_candidate_cross_pair_reaches_identity_error_before_source_run() -> 
     }
 
 
-def test_candidate_robustness_parser_accepts_only_exact_protocol() -> None:
+@pytest.mark.parametrize(
+    ("protocol_id", "expected"),
+    (
+        (
+            "multi_candidate_robustness_v1",
+            MultiCandidateRobustnessRequest(
+                protocol_id="multi_candidate_robustness_v1"
+            ),
+        ),
+        (
+            "jdj_active60_robustness_v1",
+            JdjActive60RobustnessRequest(
+                protocol_id="jdj_active60_robustness_v1"
+            ),
+        ),
+    ),
+)
+def test_candidate_robustness_parser_builds_concrete_protocol_request(
+    protocol_id: str,
+    expected: MultiCandidateRobustnessRequest | JdjActive60RobustnessRequest,
+) -> None:
     request = _request(
         [
             "research",
             "candidate-robustness",
             "--protocol",
-            "multi_candidate_robustness_v1",
+            protocol_id,
         ]
     )
 
-    assert request == MultiCandidateRobustnessRequest(
-        protocol_id="multi_candidate_robustness_v1"
-    )
+    assert request == expected
 
 
 @pytest.mark.parametrize(
-    "flag", ("--since", "--through", "--symbol", "--candidate", "--products")
+    "flag",
+    ("--since", "--through", "--symbols", "--threshold", "--score", "--rank"),
 )
 def test_candidate_robustness_parser_rejects_runtime_selection_flags(flag: str) -> None:
     with pytest.raises(CliUsageError):
@@ -598,7 +622,7 @@ def test_candidate_robustness_parser_rejects_runtime_selection_flags(flag: str) 
                 "research",
                 "candidate-robustness",
                 "--protocol",
-                "multi_candidate_robustness_v1",
+                "jdj_active60_robustness_v1",
                 flag,
                 "value",
             ]
@@ -2525,6 +2549,269 @@ class _FakeRobustnessService:
     def run(self, request: object) -> SimpleNamespace:
         self.requests.append(request)
         return _robustness_report()
+
+
+def _jdj_robustness_report() -> SimpleNamespace:
+    protocol = load_jdj_active60_robustness_protocol()
+    horizon = SimpleNamespace(
+        sample_count=2,
+        historical_positive_outcome_rate=Decimal("0.5"),
+        median_directional_return_bps=Decimal("1.2500"),
+        median_mfe_bps=Decimal("2.500"),
+        median_mae_bps=Decimal("-0.750"),
+    )
+    yearly = {
+        year: SimpleNamespace(
+            event_count=2,
+            horizon_sample_count={value: 2 for value in (3, 5, 8, 20)},
+            horizon_positive_outcome_rate={
+                value: Decimal("0.5") for value in (3, 5, 8, 20)
+            },
+            horizon_median_directional_return_bps={
+                value: Decimal("1.2500") for value in (3, 5, 8, 20)
+            },
+        )
+        for year in (2023, 2024, 2025, 2026)
+    }
+    rows = tuple(
+        SimpleNamespace(
+            candidate_id=candidate_id,
+            symbol=symbol,
+            sector=next(
+                sector
+                for sector, symbols in protocol.sector_groups.items()
+                if symbol in symbols
+            ),
+            status=JdjRobustnessStatus.AVAILABLE,
+            reason_code=None,
+            observed_since=date(2023, 1, 1),
+            observed_through=date(2026, 8, 20),
+            evaluable_bar_count=4,
+            event_count=2,
+            long_event_count=1,
+            short_event_count=1,
+            event_rate_per_1000_evaluable=Decimal("500.00"),
+            horizon_summary={value: horizon for value in (3, 5, 8, 20)},
+            yearly=yearly,
+        )
+        for candidate_id in _JDJ_CANDIDATES
+        for symbol in protocol.cross_symbol_products
+    )
+    sector_horizon = SimpleNamespace(
+        symbols_with_samples=1,
+        positive_median_symbol_count=1,
+        zero_median_symbol_count=0,
+        negative_median_symbol_count=0,
+        median_of_symbol_median_return_bps=Decimal("1.2500"),
+    )
+    sectors = tuple(
+        SimpleNamespace(
+            candidate_id=candidate_id,
+            sector=sector,
+            symbol_count=len(symbols),
+            available_symbol_count=len(symbols),
+            symbols_with_events=len(symbols),
+            horizon_summary={
+                value: sector_horizon for value in (3, 5, 8, 20)
+            },
+        )
+        for candidate_id in _JDJ_CANDIDATES
+        for sector, symbols in protocol.sector_groups.items()
+    )
+    return SimpleNamespace(
+        schema_version=1,
+        command=(
+            "guiyi research candidate-robustness "
+            "--protocol jdj_active60_robustness_v1"
+        ),
+        protocol_id="jdj_active60_robustness_v1",
+        frozen_at=datetime.fromisoformat("2026-08-21T20:34:00+08:00"),
+        research_only=True,
+        readonly=True,
+        common_since=date(2023, 1, 1),
+        common_through=date(2026, 8, 20),
+        embargo_trading_days=(date(2026, 8, 21),),
+        prospective_first_trading_day=date(2026, 8, 24),
+        prospective_consumed=False,
+        candidate_ids=_JDJ_CANDIDATES,
+        cross_symbol_results=rows,
+        sector_summaries=sectors,
+        quality_flags=("SHORT_HISTORY_PRESENT",),
+    )
+
+
+class _FakeJdjRobustnessService:
+    def __init__(self) -> None:
+        self.requests: list[JdjActive60RobustnessRequest] = []
+
+    def run(
+        self,
+        request: JdjActive60RobustnessRequest,
+    ) -> SimpleNamespace:
+        self.requests.append(request)
+        return _jdj_robustness_report()
+
+
+def test_jdj_robustness_cli_selects_its_concrete_factory() -> None:
+    service = _FakeJdjRobustnessService()
+    old_factory_calls: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "research",
+            "candidate-robustness",
+            "--protocol",
+            "jdj_active60_robustness_v1",
+        ],
+        session_factory=lambda: nullcontext(object()),
+        multi_candidate_robustness_service_factory=lambda session: (
+            old_factory_calls.append(session)
+        ),
+        jdj_active60_robustness_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert old_factory_calls == []
+    assert service.requests == [
+        JdjActive60RobustnessRequest("jdj_active60_robustness_v1")
+    ]
+    assert json.loads(stdout.getvalue())["protocol_id"] == (
+        "jdj_active60_robustness_v1"
+    )
+
+
+def test_jdj_robustness_renderer_preserves_exact_matrix_and_decimal_strings() -> None:
+    payload = run_research_command(
+        JdjActive60RobustnessRequest("jdj_active60_robustness_v1"),
+        _FakeJdjRobustnessService(),
+    )
+
+    assert tuple(payload) == (
+        "schema_version",
+        "command",
+        "status",
+        "protocol_id",
+        "frozen_at",
+        "research_only",
+        "readonly",
+        "common_retrospective",
+        "embargo_trading_days",
+        "prospective_oos",
+        "prospective_consumed",
+        "candidate_ids",
+        "cross_symbol_results",
+        "sector_summaries",
+        "quality_flags",
+    )
+    assert payload["command"] == (
+        "guiyi research candidate-robustness "
+        "--protocol jdj_active60_robustness_v1"
+    )
+    assert payload["common_retrospective"] == {
+        "since": "2023-01-01",
+        "through": "2026-08-20",
+    }
+    assert payload["embargo_trading_days"] == ["2026-08-21"]
+    assert payload["prospective_oos"] == {
+        "first_trading_day": "2026-08-24"
+    }
+    assert payload["prospective_consumed"] is False
+    assert payload["candidate_ids"] == list(_JDJ_CANDIDATES)
+    rows = payload["cross_symbol_results"]
+    assert isinstance(rows, list)
+    assert len(rows) == 180
+    assert rows[0]["event_rate_per_1000_evaluable"] == "500.00"
+    assert rows[0]["horizon_summary"]["20"] == {
+        "sample_count": 2,
+        "historical_positive_outcome_rate": "0.5",
+        "median_directional_return_bps": "1.2500",
+        "median_mfe_bps": "2.500",
+        "median_mae_bps": "-0.750",
+    }
+    assert rows[0]["yearly"]["2026"]["horizon_summary"]["20"] == {
+        "sample_count": 2,
+        "historical_positive_outcome_rate": "0.5",
+        "median_directional_return_bps": "1.2500",
+    }
+    sectors = payload["sector_summaries"]
+    assert isinstance(sectors, list)
+    assert sectors[0]["horizon_summary"]["20"] == {
+        "symbols_with_samples": 1,
+        "positive_median_symbol_count": 1,
+        "zero_median_symbol_count": 0,
+        "negative_median_symbol_count": 0,
+        "median_of_symbol_median_return_bps": "1.2500",
+    }
+    assert payload["quality_flags"] == ["SHORT_HISTORY_PRESENT"]
+    json.dumps(payload)
+
+
+def test_jdj_robustness_payload_recursively_excludes_forbidden_keys() -> None:
+    payload = run_research_command(
+        JdjActive60RobustnessRequest("jdj_active60_robustness_v1"),
+        _FakeJdjRobustnessService(),
+    )
+    forbidden = {
+        "score",
+        "rank",
+        "winner",
+        "decision",
+        "pnl",
+        "order",
+        "fill",
+        "position",
+    }
+
+    def keys(value: object) -> set[str]:
+        if isinstance(value, dict):
+            return {str(key).lower() for key in value} | set().union(
+                *(keys(item) for item in value.values())
+            )
+        if isinstance(value, list):
+            return set().union(*(keys(item) for item in value))
+        return set()
+
+    assert keys(payload).isdisjoint(forbidden)
+
+
+def test_jdj_robustness_composition_reuses_existing_jdj_research(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    protocol = object()
+    jdj_research = object()
+    session = object()
+    constructor_calls: list[tuple[object, object]] = []
+    expected = object()
+
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_jdj_active60_robustness_protocol",
+        lambda: protocol,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_jdj_research_service",
+        lambda value: jdj_research if value is session else None,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "JdjActive60RobustnessService",
+        lambda value, *, jdj_research: (
+            constructor_calls.append((value, jdj_research)) or expected
+        ),
+    )
+
+    service = market_data_composition.build_jdj_active60_robustness_service(
+        session  # type: ignore[arg-type]
+    )
+
+    assert service is expected
+    assert constructor_calls == [(protocol, jdj_research)]
 
 
 def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> None:

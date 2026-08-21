@@ -75,7 +75,10 @@ def add_research_commands(
     robustness = commands.add_parser("candidate-robustness")
     robustness.add_argument(
         "--protocol",
-        choices=("multi_candidate_robustness_v1",),
+        choices=(
+            "multi_candidate_robustness_v1",
+            "jdj_active60_robustness_v1",
+        ),
         required=True,
     )
 

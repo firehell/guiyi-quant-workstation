@@ -28,6 +28,14 @@ from app.market_data.jdj_candidate_validation import (
     JdjRollingCandidateFold,
 )
 from app.market_data.jdj_events import JdjTriggerEvent
+from app.market_data.jdj_robustness import (
+    JdjActive60RobustnessReport,
+    JdjActive60RobustnessRequest,
+    JdjRobustnessHorizonSummary,
+    JdjRobustnessSectorSummary,
+    JdjRobustnessSymbolResult,
+    JdjRobustnessYearSummary,
+)
 from app.market_data.main_force_mirror_v2_research_service import (
     MainForceMirrorV2GroupSpread,
     MainForceMirrorV2HorizonSummary,
@@ -114,6 +122,12 @@ class _MultiCandidateRobustnessService(Protocol):
     ) -> MultiCandidateRobustnessReport: ...
 
 
+class _JdjActive60RobustnessService(Protocol):
+    def run(
+        self, request: JdjActive60RobustnessRequest
+    ) -> JdjActive60RobustnessReport: ...
+
+
 ResearchRequest: TypeAlias = (
     CalibrationResearchRequest
     | LifecycleResearchRequest
@@ -122,12 +136,15 @@ ResearchRequest: TypeAlias = (
     | MainForceMirrorV2ResearchRequest
     | NStructureResearchRequest
     | MultiCandidateRobustnessRequest
+    | JdjActive60RobustnessRequest
 )
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
     """Convert CLI strings into one immutable research request."""
     if args.research_command == "candidate-robustness":
+        if args.protocol == "jdj_active60_robustness_v1":
+            return JdjActive60RobustnessRequest(protocol_id=args.protocol)
         return MultiCandidateRobustnessRequest(protocol_id=args.protocol)
     if args.research_command == "main-force-mirror-v2":
         return MainForceMirrorV2ResearchRequest(
@@ -191,6 +208,11 @@ def run_research_command(
     service: object,
 ) -> dict[str, object]:
     """Run one Historical-only research command and render its JSON schema."""
+    if isinstance(request, JdjActive60RobustnessRequest):
+        jdj_robustness_service = cast(_JdjActive60RobustnessService, service)
+        return _jdj_active60_robustness_payload(
+            jdj_robustness_service.run(request)
+        )
     if isinstance(request, MultiCandidateRobustnessRequest):
         robustness_service = cast(_MultiCandidateRobustnessService, service)
         return _multi_candidate_robustness_payload(robustness_service.run(request))
@@ -365,6 +387,150 @@ def _multi_candidate_robustness_payload(
         ],
         "metric_compatibility_flags": list(report.metric_compatibility_flags),
         "quality_flags": list(report.quality_flags),
+    }
+
+
+def _jdj_active60_robustness_payload(
+    report: JdjActive60RobustnessReport,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": report.command,
+        "status": "ok",
+        "protocol_id": report.protocol_id,
+        "frozen_at": report.frozen_at.isoformat(),
+        "research_only": report.research_only,
+        "readonly": report.readonly,
+        "common_retrospective": {
+            "since": report.common_since.isoformat(),
+            "through": report.common_through.isoformat(),
+        },
+        "embargo_trading_days": [
+            value.isoformat() for value in report.embargo_trading_days
+        ],
+        "prospective_oos": {
+            "first_trading_day": (
+                report.prospective_first_trading_day.isoformat()
+            ),
+        },
+        "prospective_consumed": report.prospective_consumed,
+        "candidate_ids": list(report.candidate_ids),
+        "cross_symbol_results": [
+            _jdj_robustness_symbol_payload(value)
+            for value in report.cross_symbol_results
+        ],
+        "sector_summaries": [
+            _jdj_robustness_sector_payload(value)
+            for value in report.sector_summaries
+        ],
+        "quality_flags": list(report.quality_flags),
+    }
+
+
+def _jdj_robustness_symbol_payload(
+    value: JdjRobustnessSymbolResult,
+) -> dict[str, object]:
+    return {
+        "candidate_id": value.candidate_id,
+        "symbol": value.symbol,
+        "sector": value.sector,
+        "status": value.status.value,
+        "reason_code": value.reason_code,
+        "observed_since": (
+            value.observed_since.isoformat()
+            if value.observed_since is not None
+            else None
+        ),
+        "observed_through": (
+            value.observed_through.isoformat()
+            if value.observed_through is not None
+            else None
+        ),
+        "evaluable_bar_count": value.evaluable_bar_count,
+        "event_count": value.event_count,
+        "long_event_count": value.long_event_count,
+        "short_event_count": value.short_event_count,
+        "event_rate_per_1000_evaluable": _optional_decimal(
+            value.event_rate_per_1000_evaluable
+        ),
+        "horizon_summary": _jdj_robustness_horizons_payload(
+            value.horizon_summary
+        ),
+        "yearly": _jdj_robustness_yearly_payload(value.yearly),
+    }
+
+
+def _jdj_robustness_horizons_payload(
+    values: Mapping[int, JdjRobustnessHorizonSummary] | None,
+) -> dict[str, object] | None:
+    if values is None:
+        return None
+    return {
+        str(horizon): {
+            "sample_count": value.sample_count,
+            "historical_positive_outcome_rate": _optional_decimal(
+                value.historical_positive_outcome_rate
+            ),
+            "median_directional_return_bps": _optional_decimal(
+                value.median_directional_return_bps
+            ),
+            "median_mfe_bps": _optional_decimal(value.median_mfe_bps),
+            "median_mae_bps": _optional_decimal(value.median_mae_bps),
+        }
+        for horizon, value in values.items()
+    }
+
+
+def _jdj_robustness_yearly_payload(
+    values: Mapping[int, JdjRobustnessYearSummary] | None,
+) -> dict[str, object] | None:
+    if values is None:
+        return None
+    return {
+        str(year): {
+            "event_count": value.event_count,
+            "horizon_summary": {
+                str(horizon): {
+                    "sample_count": value.horizon_sample_count[horizon],
+                    "historical_positive_outcome_rate": _optional_decimal(
+                        value.horizon_positive_outcome_rate[horizon]
+                    ),
+                    "median_directional_return_bps": _optional_decimal(
+                        value.horizon_median_directional_return_bps[horizon]
+                    ),
+                }
+                for horizon in value.horizon_sample_count
+            },
+        }
+        for year, value in values.items()
+    }
+
+
+def _jdj_robustness_sector_payload(
+    value: JdjRobustnessSectorSummary,
+) -> dict[str, object]:
+    return {
+        "candidate_id": value.candidate_id,
+        "sector": value.sector,
+        "symbol_count": value.symbol_count,
+        "available_symbol_count": value.available_symbol_count,
+        "symbols_with_events": value.symbols_with_events,
+        "horizon_summary": {
+            str(horizon): {
+                "symbols_with_samples": summary.symbols_with_samples,
+                "positive_median_symbol_count": (
+                    summary.positive_median_symbol_count
+                ),
+                "zero_median_symbol_count": summary.zero_median_symbol_count,
+                "negative_median_symbol_count": (
+                    summary.negative_median_symbol_count
+                ),
+                "median_of_symbol_median_return_bps": _optional_decimal(
+                    summary.median_of_symbol_median_return_bps
+                ),
+            }
+            for horizon, summary in value.horizon_summary.items()
+        },
     }
 
 
