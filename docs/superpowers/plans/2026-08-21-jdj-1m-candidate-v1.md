@@ -118,44 +118,9 @@ reports/research/candidate_validation/jdj_key_level_breakout_1m_candidate_v1/jm-
 - 工作区：从最新 `develop` 创建 `research/jdj-v1-contracts` task worktree
 - 人工 Gate：Plan 批准 + 独立 Review
 
-**Files:** exact JSON contracts, `jdj_policy.py`, `jdj_candidate_validation_policy.py`, two policy test files.
+**Files:** exact JSON contracts, `jdj_policy.py`, `jdj_candidate_validation_policy.py`, `test_jdj_policy.py`, `test_jdj_candidate_validation_policy.py`.
 
-**Interfaces:**
-
-```python
-class JdjPolicyError(ValueError):
-    code = "JDJ_POLICY_INVALID"
-
-@dataclass(frozen=True, slots=True)
-class JdjPolicy:
-    schema_version: int
-    policy_id: str
-    formula_version: str
-    research_only: bool
-    source_timeframe: BarFrequency
-    trend_context_timeframe: BarFrequency
-    ema_period: int
-    ema_seed_policy: str
-    ema_round_digits: int
-    strict_previous_bar_trigger: bool
-    same_epoch_key_level: bool
-    raw: Mapping[str, object]
-
-def load_jdj_policy(path: Path | None = None) -> JdjPolicy: ...
-def is_exact_jdj_policy(policy: object) -> bool: ...
-
-@dataclass(frozen=True, slots=True)
-class JdjCandidateManifest: ...
-@dataclass(frozen=True, slots=True)
-class JdjCandidateRef:
-    candidate_id: str
-    source_event_kind: str
-@dataclass(frozen=True, slots=True)
-class JdjCandidateValidationProtocol: ...
-
-def load_jdj_candidate_manifest(candidate_id: str) -> JdjCandidateManifest: ...
-def load_jdj_candidate_validation_protocol() -> JdjCandidateValidationProtocol: ...
-```
+**Interfaces:** Task 1 must define these exact public names: `JdjPolicyError`, `JdjPolicy`, `load_jdj_policy(path: Path | None = None) -> JdjPolicy`, `is_exact_jdj_policy(policy: object) -> bool`, `JdjCandidateManifest`, `JdjCandidateRef`, `JdjCandidateValidationProtocol`, `load_jdj_candidate_manifest(candidate_id: str) -> JdjCandidateManifest`, `load_jdj_candidate_validation_protocol() -> JdjCandidateValidationProtocol`. `JdjCandidateRef` has exactly `candidate_id: str` and `source_event_kind: str`. `JdjPolicy` exposes the identity/EMA/context fields listed in the policy test below plus recursively frozen `raw`.
 
 - [ ] **Step 1: Create task worktree**
 
@@ -192,9 +157,9 @@ Parameterize missing/extra/wrong-type mutations for **every** nested policy fiel
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/test_jdj_policy.py
 ```
 
-- [ ] **Step 4: Create exact policy JSON that mechanically freezes all three formulas**
+Expected: import/file failure because Task 1 implementation does not yet exist.
 
-The exact payload must include these sections and values; the loader compares the complete nested object, including key order/type/value:
+- [ ] **Step 4: Create exact policy JSON that mechanically freezes all three formulas**
 
 ```json
 {
@@ -267,9 +232,9 @@ The exact payload must include these sections and values; the loader compares th
 }
 ```
 
-This prevents code formula drift under an unchanged `jdj_1m_policy_v1` identity.
+Strict loader compares complete nested key/type/value shape and recursively freezes mappings/tuples. This mechanically prevents formula drift under unchanged identity.
 
-- [ ] **Step 5: RED Candidate/Protocol tests**
+- [ ] **Step 5: Write RED Candidate/Protocol tests**
 
 ```python
 EXPECTED_IDS = (
@@ -283,24 +248,24 @@ EXPECTED_EVENTS = (
     "jdj_key_level_breakout_triggered",
 )
 
-def test_protocol_freezes_three_candidate_event_pairs_and_dates() -> None:
-    p = load_jdj_candidate_validation_protocol()
-    assert tuple(x.candidate_id for x in p.candidates) == EXPECTED_IDS
-    assert tuple(x.source_event_kind for x in p.candidates) == EXPECTED_EVENTS
-    assert p.candidate_frozen_at.isoformat() == "2026-08-21T09:34:00+08:00"
-    assert p.retrospective_since == date(2023, 1, 1)
-    assert p.retrospective_through == date(2026, 8, 20)
-    assert p.embargo_trading_days == (date(2026, 8, 21),)
-    assert p.prospective_oos_first_trading_day == date(2026, 8, 24)
-    assert p.baseline_request_through == date(2026, 8, 21)
-    assert p.horizons_bars == (3, 5, 8, 20)
+def test_protocol_freezes_candidate_event_pairs_and_dates() -> None:
+    protocol = load_jdj_candidate_validation_protocol()
+    assert tuple(item.candidate_id for item in protocol.candidates) == EXPECTED_IDS
+    assert tuple(item.source_event_kind for item in protocol.candidates) == EXPECTED_EVENTS
+    assert protocol.candidate_frozen_at.isoformat() == "2026-08-21T09:34:00+08:00"
+    assert protocol.retrospective_since == date(2023, 1, 1)
+    assert protocol.retrospective_through == date(2026, 8, 20)
+    assert protocol.embargo_trading_days == (date(2026, 8, 21),)
+    assert protocol.prospective_oos_first_trading_day == date(2026, 8, 24)
+    assert protocol.baseline_request_through == date(2026, 8, 21)
+    assert protocol.horizons_bars == (3, 5, 8, 20)
 ```
 
 - [ ] **Step 6: Implement fixed-path strict loaders**
 
-Three manifests use exact `source_kind=jdj_1m`, `policy_id=jdj_1m_policy_v1`, `formula_version=jdj_1m_v1`, `research_only=true`. Protocol contains exact ordered candidate/event refs, anchor `jm`, 12/3/3 rolling config, freeze dates, horizons and `automatic_ranking=false`, `automatic_promotion=false`. Unknown candidate id fails; no directory scan/registry.
+Three manifests use exact `source_kind=jdj_1m`, `policy_id=jdj_1m_policy_v1`, `formula_version=jdj_1m_v1`, `research_only=true`. Protocol contains exact ordered candidate/event refs, anchor `jm`, 12/3/3 rolling config, freeze dates, horizons and `automatic_ranking=false`, `automatic_promotion=false`. Unknown candidate id raises the stable manifest error; no directory scan/registry.
 
-- [ ] **Step 7: GREEN, Ruff, secret scan, diff-check**
+- [ ] **Step 7: Run GREEN and static checks**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
@@ -315,7 +280,7 @@ python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-- [ ] **Step 8: Independent Review C0/I0, commit, integrate develop, cleanup**
+- [ ] **Step 8: Independent Review C0/I0, then commit/integrate/cleanup**
 
 ```bash
 git add data/research_policies/jdj_1m_policy_v1.json data/research_candidates/jdj_*_candidate_v1.json \
@@ -325,6 +290,8 @@ git add data/research_policies/jdj_1m_policy_v1.json data/research_candidates/jd
   services/quant-api/tests/test_jdj_policy.py services/quant-api/tests/test_jdj_candidate_validation_policy.py
 git commit -m 'feat(research): freeze JDJ 1m v1 contracts'
 ```
+
+Read back develop ancestry after integration and clean the merged task worktree/branch. Do not touch main/tag/Runtime.
 
 ---
 
@@ -341,50 +308,31 @@ git commit -m 'feat(research): freeze JDJ 1m v1 contracts'
 - 工作区：`research/jdj-v1-context` from latest develop
 - 人工 Gate：Plan 批准 + 独立 Review
 
-**Files:** `jdj_context.py`, `test_jdj_context.py`; existing N/EMA files remain unchanged.
+**Files:** create `jdj_context.py`, `test_jdj_context.py`; existing N/EMA files remain unchanged.
 
-**Interfaces:**
+**Interfaces:** define `JdjContextError(ValueError)` with `code="JDJ_CONTEXT_INVALID"`. Define frozen `JdjBarContext` fields exactly: `bar: CanonicalBar`, `ema20: Decimal | None`, `trend_kind: NStructureKind`, `trend_snapshot_observed_at: datetime | None`, `trend_epoch: int | None`, `eligible_high_pivot: NSwingPivot | None`, `eligible_low_pivot: NSwingPivot | None`. Public function signature is `build_jdj_context_series(bars_1m: Sequence[CanonicalBar], bars_5m: Sequence[CanonicalBar], *, contract: str, segment_start_trading_day: date, segment_end_trading_day: date, jdj_policy: JdjPolicy, n_policy: NStructurePolicy) -> tuple[JdjBarContext, ...]`.
 
-```python
-class JdjContextError(ValueError):
-    code = "JDJ_CONTEXT_INVALID"
-
-@dataclass(frozen=True, slots=True)
-class JdjBarContext:
-    bar: CanonicalBar
-    ema20: Decimal | None
-    trend_kind: NStructureKind
-    trend_snapshot_observed_at: datetime | None
-    trend_epoch: int | None
-    eligible_high_pivot: NSwingPivot | None
-    eligible_low_pivot: NSwingPivot | None
-
-def build_jdj_context_series(
-    bars_1m: Sequence[CanonicalBar],
-    bars_5m: Sequence[CanonicalBar],
-    *,
-    contract: str,
-    segment_start_trading_day: date,
-    segment_end_trading_day: date,
-    jdj_policy: JdjPolicy,
-    n_policy: NStructurePolicy,
-) -> tuple[JdjBarContext, ...]: ...
-```
-
-- [ ] **Step 1: RED EMA20 exact parity/readiness** using direct `ema_series` and `Decimal(str(point.value))` comparison for every 1m boundary.
-- [ ] **Step 2: RED strict-before 09:35/09:36 test**: snapshot confirmed 09:35 is invisible to 09:35 1m, visible from 09:36.
-- [ ] **Step 3: RED same-epoch pivot test**: outside reset makes old epoch pivot ineligible; new matching-epoch pivot becomes eligible only after strict-before confirmation.
-- [ ] **Step 4: RED invalid series/policy/identity tests**: non-monotonic bars, wrong contract/segment day, non-exact JDJ/N policy all raise `JDJ_CONTEXT_INVALID`.
-- [ ] **Step 5: Implement one-pass projection**:
+- [ ] **Step 1: Write RED EMA20 parity/readiness test** using direct `ema_series` and `Decimal(str(point.value))` comparison at every boundary.
+- [ ] **Step 2: Run the context test and confirm RED** because `jdj_context` does not exist yet.
+- [ ] **Step 3: Write RED strict-before 09:35/09:36 test**: a snapshot confirmed 09:35 is invisible to the 09:35 1m and visible from 09:36.
+- [ ] **Step 4: Write RED same-epoch pivot test**: outside reset invalidates old-epoch level; new matching-epoch pivot becomes eligible only after its confirmation is strict-before.
+- [ ] **Step 5: Implement EMA + N projection** with this exact kernel call:
 
 ```python
-n_trace = evaluate_n_structure_segment(...)
-ema = ema_series(...)
+ema = ema_series(
+    [float(bar.close) for bar in bars_1m],
+    20,
+    bar_ends=[bar.bar_end.isoformat() for bar in bars_1m],
+    seed_policy="sma_window",
+    indicator_code="ema20",
+    round_digits=6,
+)
 ```
 
-Advance snapshot/pivot pointers only while `fact_time <= previous_1m.bar_end`; pivot must match snapshot epoch. Choose latest eligible pivot by `(confirmed_at, pivot_time, pivot_id)`.
-- [ ] **Step 6: Prefix causality test**: future 1m/5m suffix cannot alter earlier contexts.
-- [ ] **Step 7: GREEN + N/EMA regressions + Review C0/I0**.
+Run `evaluate_n_structure_segment()` exactly once for the 5m segment. Iterate 1m in ascending order; advance snapshot/pivot pointers only while fact time is `<= previous_1m.bar_end`. Only pivots with `pivot.epoch == latest_snapshot.epoch` may be selected. Latest is deterministic by `(confirmed_at, pivot_time, pivot_id)`.
+- [ ] **Step 6: Add fail-closed validation** for non-monotonic M1/M5, contract/segment mismatch, wrong exact policy and impossible snapshot/pivot identity; all map to `JDJ_CONTEXT_INVALID` without internal path detail.
+- [ ] **Step 7: Add prefix-causality test**: future M1/M5 suffix cannot change earlier contexts.
+- [ ] **Step 8: Run GREEN + N/EMA regressions + Review C0/I0**.
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
@@ -412,52 +360,15 @@ git diff --check
 
 **Files:** create `jdj_events.py`, `jdj_trend_follow.py`, `test_jdj_trend_follow.py`.
 
-**Interfaces:**
+**Interfaces:** `JdjDirection={LONG,SHORT}` and `JdjSetupKind={TREND_FOLLOW,TREND_REENTRY_6,KEY_LEVEL_BREAKOUT}`. Frozen `JdjTrendFollowTriggerEvent` fields exactly: event/candidate/source-event identity, direction, symbol, contract, segment start/trading day, observed_at/index, trend snapshot observed_at, reaction_at, ema20_at_reaction, trigger_level, observation_close. Frozen `JdjTrendFollowTrace` fields: `events`, `ambiguous_count`, `invalidated_count`. Public reducer signature is `reduce_jdj_trend_follow(contexts: Sequence[JdjBarContext], *, symbol: str, contract: str, segment_start_trading_day: date) -> JdjTrendFollowTrace`.
 
-```python
-class JdjDirection(StrEnum):
-    LONG = "long"
-    SHORT = "short"
-
-class JdjSetupKind(StrEnum):
-    TREND_FOLLOW = "trend_follow"
-    TREND_REENTRY_6 = "trend_reentry_6"
-    KEY_LEVEL_BREAKOUT = "key_level_breakout"
-
-@dataclass(frozen=True, slots=True)
-class JdjTrendFollowTriggerEvent:
-    event_id: str
-    candidate_id: str
-    source_event_kind: str
-    direction: JdjDirection
-    symbol: str
-    contract: str
-    segment_start_trading_day: date
-    trading_day: date
-    observed_at: datetime
-    segment_bar_index: int
-    trend_snapshot_observed_at: datetime
-    reaction_at: datetime
-    ema20_at_reaction: Decimal
-    trigger_level: Decimal
-    observation_close: Decimal
-
-@dataclass(frozen=True, slots=True)
-class JdjTrendFollowTrace:
-    events: tuple[JdjTrendFollowTriggerEvent, ...]
-    ambiguous_count: int
-    invalidated_count: int
-
-def reduce_jdj_trend_follow(contexts: Sequence[JdjBarContext], *, symbol: str, contract: str, segment_start_trading_day: date) -> JdjTrendFollowTrace: ...
-```
-
-- [ ] **Step 1:** RED LONG/SHORT EMA reaction tests.
-- [ ] **Step 2:** RED dynamic previous-bar strict trigger; equal does not trigger; later trigger uses latest previous bar, not reaction bar.
-- [ ] **Step 3:** RED trend/EMA invalidation and same-bar trigger+invalidation ambiguity.
-- [ ] **Step 4:** Implement explicit `_Armed` state; reaction bar cannot trigger; terminal state allows later new reaction episode.
-- [ ] **Step 5:** Event id uses deterministic business fields; no UUID/hash/run counter.
-- [ ] **Step 6:** RED trading-day reset, LONG/SHORT symmetry, prefix stability.
-- [ ] **Step 7:** GREEN + Review C0/I0.
+- [ ] **Step 1: Write RED LONG/SHORT EMA reaction tests**.
+- [ ] **Step 2: Write RED dynamic previous-bar strict trigger test**; equal high/low does not trigger; after one non-trigger bar, next trigger references that latest previous bar rather than original reaction bar.
+- [ ] **Step 3: Write RED invalidation/ambiguity tests** for trend loss, `close<=EMA20` LONG / `close>=EMA20` SHORT, and trigger+invalidation same OHLC.
+- [ ] **Step 4: Implement explicit armed state** storing direction, reaction time, reaction EMA and trend snapshot time. The reaction boundary cannot also trigger.
+- [ ] **Step 5: Implement deterministic event id** from candidate/symbol/contract/segment/direction/reaction_at/observed_at/trigger_level; no random UUID, Python hash or run counter.
+- [ ] **Step 6: Write RED day-reset, LONG/SHORT symmetry and prefix tests**.
+- [ ] **Step 7: Run GREEN and independent formula Review C0/I0**.
 
 ---
 
@@ -476,41 +387,17 @@ def reduce_jdj_trend_follow(contexts: Sequence[JdjBarContext], *, symbol: str, c
 
 **Files:** modify `jdj_events.py`; create `jdj_trend_reentry.py`, `test_jdj_trend_reentry.py`.
 
-**Interfaces:**
+**Interfaces:** frozen `JdjTrendReentryTriggerEvent` includes common event identity plus `trend_snapshot_observed_at`, `excursion_started_at`, `excursion_extreme`, `reclaimed_at`, `reaction_at`, `trigger_level`, `observation_close`. Public reducer signature is `reduce_jdj_trend_reentry_6(contexts: Sequence[JdjBarContext], *, symbol: str, contract: str, segment_start_trading_day: date) -> JdjTrendReentryTrace`.
 
-```python
-@dataclass(frozen=True, slots=True)
-class JdjTrendReentryTriggerEvent:
-    event_id: str
-    candidate_id: str
-    source_event_kind: str
-    direction: JdjDirection
-    symbol: str
-    contract: str
-    segment_start_trading_day: date
-    trading_day: date
-    observed_at: datetime
-    segment_bar_index: int
-    trend_snapshot_observed_at: datetime
-    excursion_started_at: datetime
-    excursion_extreme: Decimal
-    reclaimed_at: datetime
-    reaction_at: datetime
-    trigger_level: Decimal
-    observation_close: Decimal
-
-def reduce_jdj_trend_reentry_6(...) -> JdjTrendReentryTrace: ...
-```
-
-- [ ] **Step 1:** RED trend-side prerequisite; starting below/above EMA cannot infer prior crossing.
-- [ ] **Step 2:** RED excursion extreme aggregation.
-- [ ] **Step 3:** RED reclaim; reclaim bar cannot be reaction.
-- [ ] **Step 4:** RED first post-reclaim reaction only; `reaction.low > excursion_low` / `reaction.high < excursion_high`; first failure terminal.
-- [ ] **Step 5:** RED reclaim failure starts a new independent excursion.
-- [ ] **Step 6:** Implement explicit phases `WAIT_TREND_SIDE/WAIT_EXCURSION/IN_EXCURSION/WAIT_REACTION/ARMED`.
-- [ ] **Step 7:** ARMED reuses dynamic previous-bar trigger + EMA/trend invalidation + same-bar ambiguity, not Trend Follow state object.
-- [ ] **Step 8:** symmetry/prefix/event-id stability tests.
-- [ ] **Step 9:** GREEN + Review C0/I0.
+- [ ] **Step 1: Write RED trend-side prerequisite test**; starting the day on the opposite EMA side cannot infer a prior crossing.
+- [ ] **Step 2: Write RED excursion-extreme aggregation test**.
+- [ ] **Step 3: Write RED reclaim test**; reclaim bar cannot be the post-reclaim reaction.
+- [ ] **Step 4: Write RED first-post-reclaim reaction test**; first reaction must satisfy higher-low/lower-high against excursion extreme, otherwise terminal; later nicer reaction cannot be selected.
+- [ ] **Step 5: Write RED reclaim-failure test**; crossing back before first reaction starts a new independent excursion at the current bar.
+- [ ] **Step 6: Implement phases** `WAIT_TREND_SIDE`, `WAIT_EXCURSION`, `IN_EXCURSION`, `WAIT_REACTION`, `ARMED` with explicit direction and provenance.
+- [ ] **Step 7: Implement ARMED logic** using the same exact dynamic previous-bar trigger and EMA/trend invalidation predicates as the policy, without calling or embedding Trend Follow state.
+- [ ] **Step 8: Add symmetry/prefix/event-id tests**.
+- [ ] **Step 9: Run GREEN + independent Review C0/I0**.
 
 ---
 
@@ -529,44 +416,18 @@ def reduce_jdj_trend_reentry_6(...) -> JdjTrendReentryTrace: ...
 
 **Files:** modify `jdj_events.py`; create `jdj_key_level_breakout.py`, `test_jdj_key_level_breakout.py`.
 
-**Interfaces:**
+**Interfaces:** frozen `JdjKeyLevelBreakoutTriggerEvent` includes common event identity plus `trend_snapshot_observed_at`, `trend_epoch`, `key_level_pivot_id`, `key_level_price`, `key_level_confirmed_at`, `first_break_at`, `retest_at`, `trigger_level`, `observation_close`. Public reducer signature is `reduce_jdj_key_level_breakout(contexts: Sequence[JdjBarContext], *, symbol: str, contract: str, segment_start_trading_day: date) -> JdjKeyLevelBreakoutTrace`.
 
-```python
-@dataclass(frozen=True, slots=True)
-class JdjKeyLevelBreakoutTriggerEvent:
-    event_id: str
-    candidate_id: str
-    source_event_kind: str
-    direction: JdjDirection
-    symbol: str
-    contract: str
-    segment_start_trading_day: date
-    trading_day: date
-    observed_at: datetime
-    segment_bar_index: int
-    trend_snapshot_observed_at: datetime
-    trend_epoch: int
-    key_level_pivot_id: str
-    key_level_price: Decimal
-    key_level_confirmed_at: datetime
-    first_break_at: datetime
-    retest_at: datetime
-    trigger_level: Decimal
-    observation_close: Decimal
-
-def reduce_jdj_key_level_breakout(...) -> JdjKeyLevelBreakoutTrace: ...
-```
-
-- [ ] **Step 1:** RED eligible pivot exact kind + same epoch + strict-before.
-- [ ] **Step 2:** RED post-confirmation origin-side prerequisite.
-- [ ] **Step 3:** RED FIRST_BREAK uses close transition; first break never emits Candidate event; intrabar high/low alone not enough.
-- [ ] **Step 4:** RED first-break bar cannot retest; freeze pivot/level; later pivot cannot replace active episode.
-- [ ] **Step 5:** RED accepted/failed retest exact mirror rules.
-- [ ] **Step 6:** RED ARMED invalidation exact: frozen key-level/trend only; EMA20 must have no effect. Trigger+key-level invalidation same bar → ambiguous/no event.
-- [ ] **Step 7:** RED no-retest/context expiry, same-pivot consumption, new-pivot new episode.
-- [ ] **Step 8:** Implement phases `WAIT_ORIGIN_SIDE/WAIT_FIRST_BREAK/WAIT_RETEST/ARMED`; no volume threshold/proximity/timeout.
-- [ ] **Step 9:** symmetry/prefix/determinism tests.
-- [ ] **Step 10:** GREEN + Review C0/I0.
+- [ ] **Step 1: Write RED eligible-pivot test** for exact kind + same epoch + strict-before.
+- [ ] **Step 2: Write RED post-confirmation origin-side test**.
+- [ ] **Step 3: Write RED FIRST_BREAK test**: only close transition confirms; first break never emits Candidate event; intrabar high/low alone is insufficient.
+- [ ] **Step 4: Write RED freeze/no-chase test**: first-break bar cannot retest; active episode keeps frozen pivot/level even when later pivot appears.
+- [ ] **Step 5: Write RED accepted/failed retest mirror tests**.
+- [ ] **Step 6: Write RED ARMED invalidation test** proving EMA20 changes do not affect this setup; only frozen key-level/trend can invalidate. Trigger+key-level invalidation same bar is ambiguous/no event.
+- [ ] **Step 7: Write RED no-retest/context-expiry/same-pivot-consumption tests**.
+- [ ] **Step 8: Implement phases** `WAIT_ORIGIN_SIDE`, `WAIT_FIRST_BREAK`, `WAIT_RETEST`, `ARMED`; no volume threshold, proximity zone or fixed timeout.
+- [ ] **Step 9: Add symmetry/prefix/determinism tests**.
+- [ ] **Step 10: Run GREEN + independent Review C0/I0**.
 
 ---
 
@@ -583,52 +444,19 @@ def reduce_jdj_key_level_breakout(...) -> JdjKeyLevelBreakoutTrace: ...
 - 工作区：new task worktree from latest develop
 - 人工 Gate：Plan 批准 + 独立 Review
 
-**Files:** create `jdj_research.py`, `jdj_research_service.py`, tests; modify `jdj_events.py` to add the union alias.
+**Files:** create `jdj_research.py`, `jdj_research_service.py`, `test_jdj_research.py`, `data_foundation/test_jdj_research_service.py`; modify `jdj_events.py` to add the exact union alias.
 
-**Interfaces:**
+**Interfaces:** define `JdjTriggerEvent` as the exact union of the three trigger-event dataclasses. Define `JdjSourceUnavailableError(RuntimeError)` with code `JDJ_SOURCE_UNAVAILABLE`. Frozen `JdjResearchRequest` fields are `since`, `through`, `symbol`, `candidate_id`. Frozen `JdjResearchResult` fields are `candidate_id`, `source_event_kind`, `products`, `segment_count`, `evaluable_bar_count`, `trigger_count_long`, `trigger_count_short`, `horizon_summary`, `events`. Public service method is `JdjResearchService.run(request: JdjResearchRequest) -> JdjResearchResult`.
 
-```python
-JdjTriggerEvent: TypeAlias = (
-    JdjTrendFollowTriggerEvent
-    | JdjTrendReentryTriggerEvent
-    | JdjKeyLevelBreakoutTriggerEvent
-)
-
-class JdjSourceUnavailableError(RuntimeError):
-    code = "JDJ_SOURCE_UNAVAILABLE"
-
-@dataclass(frozen=True, slots=True)
-class JdjResearchRequest:
-    since: date
-    through: date
-    symbol: str
-    candidate_id: str
-
-@dataclass(frozen=True, slots=True)
-class JdjResearchResult:
-    candidate_id: str
-    source_event_kind: str
-    products: tuple[str, ...]
-    segment_count: int
-    evaluable_bar_count: int
-    trigger_count_long: int
-    trigger_count_short: int
-    horizon_summary: Mapping[int, PriceHorizonEvaluation]
-    events: tuple[JdjTriggerEvent, ...]
-
-class JdjResearchService:
-    def run(self, request: JdjResearchRequest) -> JdjResearchResult: ...
-```
-
-- [ ] **Step 1:** RED request identity; unknown candidate/date/symbol invalid before loader call.
-- [ ] **Step 2:** RED loader called once with `(M1, M5)` and restored true segment prefix.
-- [ ] **Step 3:** RED exact candidate→reducer→source_event isolation.
-- [ ] **Step 4:** Implement deterministic partition by returned exact `ResolvedContractSegment`; uncovered M1/M5 bar raises context/segment error, never re-resolves rank1.
-- [ ] **Step 5:** RED outcomes call existing `build_price_outcomes_at(..., horizons=(3,5,8,20), same_trading_day_only=True)` at trigger-bar index.
-- [ ] **Step 6:** Trim bars to request.through before outcome evaluation; no later-bar completion past requested waterline.
-- [ ] **Step 7:** Source error mapping only `MarketDataError`/`ActualDominantResearchSegmentIdentityError`→`JDJ_SOURCE_UNAVAILABLE`; `JdjContextError` stays stable context error; unexpected programming errors propagate.
-- [ ] **Step 8:** RED deterministic event ordering `(observed_at, segment_bar_index, event_id)` and prefix stability.
-- [ ] **Step 9:** GREEN/Mypy/Ruff + Review C0/I0.
+- [ ] **Step 1: Write RED request identity tests**; invalid candidate/date/symbol fails before loader call.
+- [ ] **Step 2: Write RED loader-call test** requiring exactly `(BarFrequency.M1, BarFrequency.M5)` once per symbol/window and restored true segment prefix.
+- [ ] **Step 3: Write RED candidate→reducer→source-event isolation tests**.
+- [ ] **Step 4: Implement deterministic partition by returned `ResolvedContractSegment`**; uncovered M1/M5 bar is an identity error and never triggers a second rank1 resolution.
+- [ ] **Step 5: Write RED price-outcome test** calling existing `build_price_outcomes_at` at the trigger-bar index with `(3,5,8,20)` and `same_trading_day_only=True`.
+- [ ] **Step 6: Write RED request-through cutoff test**; bars later than request.through cannot complete a horizon.
+- [ ] **Step 7: Implement typed source error boundary**: only `MarketDataError` and `ActualDominantResearchSegmentIdentityError` convert to `JDJ_SOURCE_UNAVAILABLE`; `JdjContextError` remains its own stable context error; programming exceptions propagate.
+- [ ] **Step 8: Add deterministic event ordering and prefix tests** using `(observed_at, segment_bar_index, event_id)`.
+- [ ] **Step 9: Run GREEN, Mypy, Ruff and independent Review C0/I0**.
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
@@ -657,42 +485,19 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project service
 - 工作区：new task worktree from latest develop
 - 人工 Gate：独立 Review；不授权 OOS backfill/promotion
 
-**Files:** create three candidate validation Python files, `jdj_candidate_validation_calendar.py`, four tests including calendar test.
+**Files:** create `jdj_candidate_validation.py`, `jdj_candidate_validation_service.py`, `jdj_candidate_validation_calendar.py`, `test_jdj_candidate_validation.py`, `data_foundation/test_jdj_candidate_validation_service.py`, `data_foundation/test_jdj_candidate_validation_calendar.py`.
 
-**Interfaces:**
+**Interfaces:** define `JdjProspectiveCalendarError(ValueError)` with code `JDJ_PROSPECTIVE_CALENDAR_INVALID` and exact function signature `assert_jdj_prospective_calendar(session: Session) -> None`. Define frozen `JdjCandidateWindowResult`, `JdjRollingCandidateFold`, `JdjCandidateStabilitySummary`, `JdjProspectiveOosResult`, `JdjCandidateValidationReport`, plus enum `JdjProspectiveOosStatus={PENDING,EVALUATED}`. Public validation method is `JdjCandidateValidationService.run(request: CandidateValidationRequest) -> JdjCandidateValidationReport`.
 
-```python
-class JdjProspectiveCalendarError(ValueError):
-    code = "JDJ_PROSPECTIVE_CALENDAR_INVALID"
-
-def assert_jdj_prospective_calendar(session: Session) -> None: ...
-
-@dataclass(frozen=True, slots=True)
-class JdjCandidateWindowResult: ...
-@dataclass(frozen=True, slots=True)
-class JdjRollingCandidateFold: ...
-@dataclass(frozen=True, slots=True)
-class JdjCandidateStabilitySummary: ...
-class JdjProspectiveOosStatus(StrEnum):
-    PENDING = "pending"
-    EVALUATED = "evaluated"
-@dataclass(frozen=True, slots=True)
-class JdjProspectiveOosResult: ...
-@dataclass(frozen=True, slots=True)
-class JdjCandidateValidationReport: ...
-
-class JdjCandidateValidationService:
-    def run(self, request: CandidateValidationRequest) -> JdjCandidateValidationReport: ...
-```
-
-- [ ] **Step 1:** RED immutable window/report contracts; horizon keys exact `(3,5,8,20)`; no decision fields.
-- [ ] **Step 2:** RED shared exact 10 folds via `build_rolling_validation_windows`.
-- [ ] **Step 3:** RED baseline request: retrospective source through 2026-08-20 + 20 rolling source calls; no prospective source call at baseline through 2026-08-21.
-- [ ] **Step 4:** Implement exact candidate/protocol identity pairing; wrong cross-pair fails before source.
-- [ ] **Step 5:** Candidate service only maps `JdjSourceUnavailableError` and `JdjContextError` to `CandidateValidationSourceError`; unexpected errors propagate.
-- [ ] **Step 6:** Implement `assert_jdj_prospective_calendar(session)` using existing `Instrument` to resolve `jm` exchange and existing `TradingCalendar` to prove 2026-08-21 trading, 22/23 non-eligible, 24 trading. Read-only only; missing/duplicate/conflicting facts fail stable error.
-- [ ] **Step 7:** Allowed quality flags only `PROSPECTIVE_OOS_PENDING`, `ROLLING_FOLD_WITHOUT_EVENT`, `HORIZON_WITHOUT_SAMPLE`.
-- [ ] **Step 8:** GREEN + OOS Review C0/I0.
+- [ ] **Step 1: Write RED immutable window/report tests**; exact `(3,5,8,20)` horizon keys and no decision fields.
+- [ ] **Step 2: Write RED exact rolling test** reusing `build_rolling_validation_windows` and asserting existing fold_01..fold_10 boundaries.
+- [ ] **Step 3: Write RED baseline-call test**: one retrospective through 2026-08-20 + 20 rolling source calls; no prospective source call at baseline through 2026-08-21.
+- [ ] **Step 4: Implement exact candidate/protocol pairing**; wrong cross-pair fails before source call.
+- [ ] **Step 5: Implement validation source exception policy**; only `JdjSourceUnavailableError` and `JdjContextError` convert to shared `CandidateValidationSourceError`; programming errors propagate.
+- [ ] **Step 6: Write RED calendar facts test** using isolated/fake session rows for `jm` Instrument and TradingCalendar.
+- [ ] **Step 7: Implement read-only `assert_jdj_prospective_calendar`** to prove 2026-08-21 trading, 22/23 non-eligible, 24 trading; missing/duplicate/conflicting facts fail stable error and never alter the frozen date.
+- [ ] **Step 8: Implement structural-only quality flags**: `PROSPECTIVE_OOS_PENDING`, `ROLLING_FOLD_WITHOUT_EVENT`, `HORIZON_WITHOUT_SAMPLE`.
+- [ ] **Step 9: Run GREEN + OOS Review C0/I0**.
 
 ---
 
@@ -709,26 +514,17 @@ class JdjCandidateValidationService:
 - 工作区：new task worktree from latest develop
 - 人工 Gate：无真实写入 Gate；tests+self-review 后可集成 develop
 
-**Files:** `composition.py`, research parser/commands/main, `test_research_cli.py`.
+**Files:** modify `composition.py`, `research_parser.py`, `research_commands.py`, `main.py`, `test_research_cli.py`.
 
-- [ ] **Step 1:** RED research command set becomes exact seven commands with `jdj-1m`.
-- [ ] **Step 2:** RED `jdj-1m` accepts exact 3 candidates + symbol/since/through; rejects formula runtime flags.
-- [ ] **Step 3:** Add 3 JDJ candidates and `jdj_candidate_validation_v1` to candidate-validation parser choices; cross-pairs still fail service identity.
-- [ ] **Step 4:** Composition:
-
-```python
-def build_jdj_research_service(session: Session) -> JdjResearchService: ...
-def build_jdj_candidate_validation_service(session: Session, candidate_id: str) -> JdjCandidateValidationService:
-    assert_jdj_prospective_calendar(session)
-    ...
-```
-
-Reuse one MDS per builder; no registry/plugin.
-- [ ] **Step 5:** Add `JdjResearchRequest` to `ResearchRequest` union and deterministic JSON renderer; Decimal fields as strings.
-- [ ] **Step 6:** Candidate renderer recognizes `JdjCandidateValidationReport` and emits exact 3/5/8/20 data.
-- [ ] **Step 7:** `main()` adds typed JDJ factories and routes exact three ids; invalid arguments fail before service construction.
-- [ ] **Step 8:** RED no data manager/Runtime/Alert/notification construction on JDJ research paths.
-- [ ] **Step 9:** GREEN + full CLI/Mypy/Ruff/secret_scan/diff-check.
+- [ ] **Step 1: Write RED command-set test**: research commands become exact seven with `jdj-1m`.
+- [ ] **Step 2: Write RED `jdj-1m` parser tests**: exact 3 candidates + symbol/since/through; reject `--ema-period`, `--volume-multiple`, `--timeout-bars`, `--trend-method`, `--key-level-distance`.
+- [ ] **Step 3: Write RED Candidate Validation parser/identity tests** for the three JDJ ids and `jdj_candidate_validation_v1`; wrong cross-pair reaches identity error before source construction.
+- [ ] **Step 4: Implement exact composition builders** with public signatures `build_jdj_research_service(session: Session) -> JdjResearchService` and `build_jdj_candidate_validation_service(session: Session, candidate_id: str) -> JdjCandidateValidationService`. The validation builder first calls `assert_jdj_prospective_calendar(session)`. Reuse one MDS inside each builder and do not create a registry/plugin.
+- [ ] **Step 5: Add `JdjResearchRequest` to ResearchRequest union and implement deterministic source JSON rendering** with `readonly=true`, `research_only=true`; Decimal fields serialize as strings.
+- [ ] **Step 6: Add JDJ Candidate Validation renderer** before generic SuBing fallback; emit exact 3/5/8/20 horizon data.
+- [ ] **Step 7: Add typed factories/routing in `main()`** for source and exact three Candidate ids.
+- [ ] **Step 8: Write RED no-side-effect factory test** proving JDJ research does not construct data manager/Runtime/Alert/notification paths.
+- [ ] **Step 9: Run GREEN + CLI/Mypy/Ruff/secret_scan/diff-check**.
 
 ---
 
@@ -745,17 +541,17 @@ Reuse one MDS per builder; no registry/plugin.
 - 工作区：clean detached worktree at exact develop
 - 人工 Gate：Critical=0 / Important=0
 
-**Files:** modify `TESTING.md`; code/tests only if concrete review finding requires a dedicated fix branch.
+**Files:** modify `TESTING.md`; code/tests only if a concrete review finding is fixed on a separate branch.
 
-- [ ] **Step 1:** detached exact-develop review worktree and record SHA.
-- [ ] **Step 2:** run all JDJ focused tests.
-- [ ] **Step 3:** run existing N full-chain regression.
-- [ ] **Step 4:** run existing SuBing Candidate Validation + Multi-Candidate Robustness V1 regressions.
-- [ ] **Step 5:** run Ruff, Mypy, secret scan, `git diff --check` fresh.
-- [ ] **Step 6:** Review Critical list: future leak, cross identity/day leakage, N identity mutation, OOS backfill, optimistic OHLC ordering, fill/order semantics, production boundary.
-- [ ] **Step 7:** Review Important list: EMA drift, cross-epoch pivot, Key-Level EMA invalidation, first-break direct entry, Reentry first-reaction skip, broad exception swallowing, candidate mixing, trigger-bar outcome leak, nondeterminism, duplicate resolver.
-- [ ] **Step 8:** if finding exists, fix in separate branch, rerun affected+cumulative suite and Review again.
-- [ ] **Step 9:** add exact `## JDJ 1m Research & Candidate V1` test block to TESTING.md; state fixtures/read-only do not authorize real evidence/release/Runtime/Alert.
+- [ ] **Step 1: Create detached exact-develop Review worktree and record SHA**.
+- [ ] **Step 2: Run all JDJ focused tests fresh**.
+- [ ] **Step 3: Run existing N full-chain regression fresh**.
+- [ ] **Step 4: Run existing SuBing Candidate Validation + Multi-Candidate Robustness V1 regressions fresh**.
+- [ ] **Step 5: Run Ruff, Mypy, secret scan, `git diff --check` fresh**.
+- [ ] **Step 6: Review Critical list**: future leak, cross identity/day leakage, N identity mutation, OOS backfill, optimistic OHLC ordering, fill/order semantics, production boundary.
+- [ ] **Step 7: Review Important list**: EMA drift, cross-epoch pivot, Key-Level EMA invalidation, first-break direct entry, Reentry first-reaction skip, broad exception swallowing, candidate mixing, trigger-bar outcome leak, nondeterminism, duplicate resolver.
+- [ ] **Step 8: If finding exists, fix it in a dedicated branch, rerun affected+cumulative suites and repeat Review until C0/I0**.
+- [ ] **Step 9: Add exact `## JDJ 1m Research & Candidate V1` block to TESTING.md** and state tests are fixture/read-only and do not authorize real evidence/release/Runtime/Alert.
 
 ---
 
@@ -772,12 +568,12 @@ Reuse one MDS per builder; no registry/plugin.
 - 工作区：independent evidence branch/worktree from exact accepted develop
 - 人工 Gate：Evidence Review C0/I0；不得 main/tag/Runtime promotion
 
-**Files:** create three exact baseline JSON; update STATUS/PROJECT_SOURCE/ARCHITECTURE; TESTING only if evidence command text needs correction.
+**Files:** create three exact baseline JSON; update STATUS/PROJECT_SOURCE/ARCHITECTURE; TESTING only if evidence command text itself needs correction.
 
-- [ ] **Step 1:** create clean evidence worktree and record exact develop SHA.
-- [ ] **Step 2:** rerun Task 9 verification fresh; failure blocks evidence.
-- [ ] **Step 3:** rerun existing SuBing/N exact baseline commands and `cmp` tracked artifacts; mismatch blocks and old artifacts are not modified.
-- [ ] **Step 4:** run three JDJ exact commands:
+- [ ] **Step 1: Create clean evidence worktree and record exact develop SHA**.
+- [ ] **Step 2: Rerun Task 9 verification fresh**; any failure blocks evidence.
+- [ ] **Step 3: Rerun existing SuBing/N exact baseline commands and `cmp` tracked artifacts**; mismatch blocks and old artifacts remain unchanged.
+- [ ] **Step 4: Run three exact JDJ baseline commands**:
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api guiyi research candidate-validation \
@@ -791,12 +587,12 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project service
   > /tmp/jdj-key-level-breakout-v1.json
 ```
 
-- [ ] **Step 5:** validate each artifact: exact candidate/protocol, `readonly/research_only=true`, retrospective 2023-01-01..2026-08-20, 10 folds, prospective `{pending, first=2026-08-24, through=2026-08-21, result=null}`, horizons 3/5/8/20, no decision/profit/fill/order keys.
-- [ ] **Step 6:** rerun all 3 commands and `cmp`; record byte sizes and SHA-256 only after byte identity succeeds.
-- [ ] **Step 7:** copy to exact three tracked report paths.
-- [ ] **Step 8:** independent Evidence Review checks no OOS backfill, no cross-day/segment horizon, no old baseline mutation, deterministic artifacts; Gate C0/I0.
-- [ ] **Step 9:** STATUS records exact code/test/evidence facts only; PROJECT_SOURCE adds readonly JDJ CLI; ARCHITECTURE adds N5m context→JDJ three Candidate→existing Validation. No profitability claim.
-- [ ] **Step 10:** secret scan + diff check, commit evidence/docs, integrate develop, read back ancestry, cleanup. No main/tag/Runtime/Alert.
+- [ ] **Step 5: Validate each artifact**: exact candidate/protocol, `readonly/research_only=true`, retrospective 2023-01-01..2026-08-20, 10 folds, prospective pending/first 2026-08-24/through 2026-08-21/result null, horizons 3/5/8/20, no decision/profit/fill/order keys.
+- [ ] **Step 6: Rerun all three commands and `cmp`**; record byte sizes and SHA-256 only after byte identity succeeds.
+- [ ] **Step 7: Copy exact files to the three tracked report paths** from Planned File Map.
+- [ ] **Step 8: Independent Evidence Review** checks no OOS backfill, no cross-day/segment horizon, no old baseline mutation, deterministic artifacts; Gate C0/I0.
+- [ ] **Step 9: Canonical closeout**: STATUS records exact code/test/evidence facts only; PROJECT_SOURCE adds readonly JDJ CLI; ARCHITECTURE adds N5m context→JDJ three Candidate→existing Validation. No profitability claim.
+- [ ] **Step 10: Run secret scan + diff-check, commit evidence/docs, integrate develop, read back ancestry and cleanup**. No main/tag/Runtime/Alert.
 
 ---
 
