@@ -156,7 +156,7 @@ def test_active_guidance_delegates_mutable_state_and_matches_current_surfaces() 
         "jdj-1m",
         "candidate-validation",
         "candidate-robustness",
-        "main-force-mirror-futures",
+        "main-force-mirror-v2",
     ):
         assert command in backend_readme
     assert "当前 Web 仅 Market" not in core_readme
