@@ -39,15 +39,15 @@ from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2Error,
     MainForceMirrorV2Service,
 )
+from app.market_data.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2ResearchService,
+)
 from app.market_data.member_rank_snapshot import (
     MemberRankSnapshotError,
     MemberRankSnapshotRepository,
 )
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
-from app.market_data.main_force_mirror_futures_research_service import (
-    MainForceMirrorFuturesResearchService,
-)
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
 )
@@ -297,11 +297,27 @@ def build_market_research_service(session: Session) -> MarketResearchService:
     return MarketResearchService(build_market_data_service(session))
 
 
-def build_main_force_mirror_futures_research_service(
+def build_main_force_mirror_v2_research_service(
     session: Session,
-) -> MainForceMirrorFuturesResearchService:
-    """Compose read-only Futures Mirror Shadow over MarketDataService only."""
-    return MainForceMirrorFuturesResearchService(build_market_data_service(session))
+) -> MainForceMirrorV2ResearchService:
+    """Compose retrospective V2 around the exact API service identities."""
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
+    market_data = build_market_data_service(session)
+    mirror_service = MainForceMirrorV2Service(
+        market_data=market_data,
+        segment_loader=ActualDominantResearchSegmentLoader(market_data),
+        coverage=DatabaseCoverageSource(
+            session,
+            _PRODUCT_STARTS,
+            history_floor_path=_HISTORY_FLOOR,
+        ),
+        member_repository=member_rank_repository_from_env(session),
+    )
+    return MainForceMirrorV2ResearchService(
+        market_data=market_data,
+        mirror_service=mirror_service,
+    )
 
 
 def build_market_radar_service(session: Session) -> MarketRadarService:

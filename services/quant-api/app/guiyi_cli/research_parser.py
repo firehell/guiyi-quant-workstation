@@ -79,7 +79,7 @@ def add_research_commands(
         required=True,
     )
 
-    mirror = commands.add_parser("main-force-mirror-futures")
+    mirror = commands.add_parser("main-force-mirror-v2")
     mirror.add_argument("--symbol", required=True)
     mirror.add_argument(
         "--series-kind",

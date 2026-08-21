@@ -45,7 +45,7 @@ from app.market_data.composition import (
     build_jdj_candidate_validation_service,
     build_jdj_research_service,
     build_live_market_service,
-    build_main_force_mirror_futures_research_service,
+    build_main_force_mirror_v2_research_service,
     build_multi_candidate_robustness_service,
     build_n_candidate_validation_service,
     build_n_structure_research_service,
@@ -162,8 +162,8 @@ def main(
     n_candidate_validation_service_factory: ResearchServiceFactory = (
         build_n_candidate_validation_service
     ),
-    main_force_mirror_futures_research_service_factory: ResearchServiceFactory = (
-        build_main_force_mirror_futures_research_service
+    main_force_mirror_v2_research_service_factory: ResearchServiceFactory = (
+        build_main_force_mirror_v2_research_service
     ),
     n_structure_research_service_factory: ResearchServiceFactory = (
         build_n_structure_research_service
@@ -262,8 +262,8 @@ def main(
                         )
                     else:
                         raise ValueError("CLI_CANDIDATE_ID_INVALID")
-                elif args.research_command == "main-force-mirror-futures":
-                    service = main_force_mirror_futures_research_service_factory(
+                elif args.research_command == "main-force-mirror-v2":
+                    service = main_force_mirror_v2_research_service_factory(
                         session
                     )
                 elif args.research_command == "subing-calibration":
