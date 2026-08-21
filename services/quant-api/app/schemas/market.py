@@ -98,9 +98,16 @@ class MainForceMirrorV2PointOut(BaseModel):
     accumulated_pressure: float | None
     caution_ready: bool
     caution: str | None
+    caution_conflict: bool
     long_caution_score: float | None
     short_caution_score: float | None
     caution_reason_codes: list[str]
+    price_impulse: float | None
+    clv: float | None
+    volume_ratio: float | None
+    delta_oi: float | None
+    oi_impulse: float | None
+    range_position: float | None
     member_status: Literal["ready", "unavailable"]
     member_trade_date: date | None
     member_direction: str | None

@@ -118,7 +118,7 @@ class MainForceMirrorV2Service:
         self.member_repository = member_repository
 
     def query_page(self, request: SeriesPageQuery) -> MainForceMirrorV2PageResult:
-        self._validate_request(request)
+        validate_main_force_mirror_v2_request(request)
         try:
             target = self.market_data.query_page(request)
             if not target.bars:
@@ -172,16 +172,6 @@ class MainForceMirrorV2Service:
             next_before=target.next_before,
             resolved_contract_segments=target.resolved_contract_segments,
         )
-
-    @staticmethod
-    def _validate_request(request: SeriesPageQuery) -> None:
-        if request.series_kind not in {
-            SeriesKind.ACTUAL_DOMINANT,
-            SeriesKind.CONTRACT,
-        }:
-            raise MainForceMirrorV2Error("MFM_V2_UNSUPPORTED_SERIES_KIND")
-        if request.frequency is not BarFrequency.H1:
-            raise MainForceMirrorV2Error("MFM_V2_UNSUPPORTED_FREQUENCY")
 
     def _full_calculation_prefix(
         self,
@@ -252,6 +242,13 @@ class MainForceMirrorV2Service:
                 history.bars,
                 history.resolved_contract_segments,
             )
+            if any(
+                rank1_contract_by_day.get(bar.trading_day) != contract
+                for bar, contract in zip(full.bars, contracts, strict=True)
+            ):
+                raise MainForceMirrorV2Error(
+                    "MFM_V2_MARKET_IDENTITY_CONFLICT"
+                )
 
         observations: list[MemberRankObservation] = []
         previous_by_day: dict[date, date | None] = {}
@@ -331,7 +328,7 @@ class MainForceMirrorV2Service:
         try:
             current_day = repository.day(contract, member_trade_date)
         except MemberRankSnapshotError as exc:
-            if exc.code.startswith("MEMBER_CONTRACT_DAY_"):
+            if exc.code == "MEMBER_CONTRACT_DAY_INCOMPLETE":
                 return "MFM_V2_MEMBER_CONTRACT_DAY_INCOMPLETE"
             raise
         if current_day is None:
@@ -375,6 +372,17 @@ class MainForceMirrorV2Service:
             symbol in descriptor.admitted_products,
             coverage,
         )
+
+
+def validate_main_force_mirror_v2_request(request: SeriesPageQuery) -> None:
+    """Validate pure V2 support before constructing configured dependencies."""
+    if request.series_kind not in {
+        SeriesKind.ACTUAL_DOMINANT,
+        SeriesKind.CONTRACT,
+    }:
+        raise MainForceMirrorV2Error("MFM_V2_UNSUPPORTED_SERIES_KIND")
+    if request.frequency is not BarFrequency.H1:
+        raise MainForceMirrorV2Error("MFM_V2_UNSUPPORTED_FREQUENCY")
 
 
 class _BarInputs(TypedDict):

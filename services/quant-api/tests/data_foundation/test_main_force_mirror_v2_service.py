@@ -22,7 +22,11 @@ from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2Error,
     MainForceMirrorV2Service,
 )
-from app.market_data.member_rank_snapshot import MemberRankDay, MemberRankRow
+from app.market_data.member_rank_snapshot import (
+    MemberRankDay,
+    MemberRankRow,
+    MemberRankSnapshotError,
+)
 
 
 _DAY = date(2026, 8, 21)
@@ -433,3 +437,95 @@ def test_repository_environment_is_absent_partial_or_corrupt_fail_closed(
 
     assert str(tmp_path) not in str(captured.value)
     assert captured.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("root_value", "dataset_id"),
+    [
+        ("", ""),
+        ("   ", "fixture-member-v1"),
+        ("/tmp/research", "\t"),
+    ],
+)
+def test_repository_environment_present_empty_or_whitespace_is_identity_conflict(
+    monkeypatch,
+    root_value: str,
+    dataset_id: str,
+) -> None:
+    monkeypatch.setenv("GUIYI_RESEARCH_DATA_ROOT", root_value)
+    monkeypatch.setenv("GUIYI_MAIN_FORCE_MEMBER_RANK_DATASET_ID", dataset_id)
+
+    with pytest.raises(
+        MainForceMirrorV2Error,
+        match="MFM_V2_MEMBER_DATASET_IDENTITY_CONFLICT",
+    ) as captured:
+        member_rank_repository_from_env(None)
+
+    assert captured.value.__cause__ is None
+
+
+def test_member_contract_day_identity_corruption_is_request_level_invalid() -> None:
+    class _CorruptRepository(_Repository):
+        def day(self, physical_contract: str, trade_date: date):
+            raise MemberRankSnapshotError("MEMBER_CONTRACT_DAY_IDENTITY_CORRUPT")
+
+    bar = _bar(0)
+    segment = (ResolvedContractSegment("JM2609", _DAY, _DAY),)
+    target = _page((bar,), segment)
+    market_data = _MarketData(
+        target,
+        contract_history=_series((bar,), ()),
+    )
+
+    with pytest.raises(
+        MainForceMirrorV2Error,
+        match="MFM_V2_MEMBER_DATASET_INVALID",
+    ) as captured:
+        _service(
+            market_data,
+            object(),
+            repository=_CorruptRepository(),
+        ).query_page(
+            SeriesPageQuery(
+                SeriesKind.CONTRACT,
+                "jm",
+                BarFrequency.H1,
+                limit=1,
+                contract="JM2609",
+            )
+        )
+
+    assert captured.value.__cause__ is None
+
+
+def test_actual_history_rank1_identity_must_match_loader_on_overlap() -> None:
+    bar = _bar(0)
+    target_segment = (ResolvedContractSegment("JM2701", _DAY, _DAY),)
+    history_segment = (ResolvedContractSegment("JM2609", _DAY, _DAY),)
+    target = _page((bar,), target_segment)
+    market_data = _MarketData(
+        target,
+        actual_history=_series((bar,), history_segment),
+    )
+    loader = _Loader(
+        ActualDominantResearchSeries(
+            {BarFrequency.H1: _series((bar,), target_segment)},
+            target_segment,
+        )
+    )
+
+    with pytest.raises(
+        MainForceMirrorV2Error,
+        match="MFM_V2_MARKET_IDENTITY_CONFLICT",
+    ):
+        _service(
+            market_data,
+            loader,
+            repository=_Repository(),
+        ).query_page(
+            SeriesPageQuery("actual_dominant", "jm", "60m", limit=1)
+        )
+
+    assert len(market_data.page_requests) == 1
+    assert len(loader.requests) == 1
+    assert len(market_data.actual_requests) == 1

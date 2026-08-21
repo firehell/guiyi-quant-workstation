@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -238,12 +239,12 @@ class _FakeMirrorService:
             caution_reason_codes=("LONG_UPPER_EXTREME",),
             member=member,
             unavailable_reason=None,
-            price_impulse=1.0,
-            clv=0.5,
-            volume_ratio=2.0,
-            delta_oi=10.0,
-            oi_impulse=1.0,
-            range_position=0.9,
+            price_impulse=-0.0,
+            clv=0.1234565,
+            volume_ratio=2.1234564,
+            delta_oi=-0.0,
+            oi_impulse=-1.2345675,
+            range_position=0.9876545,
         )
         return MainForceMirrorV2PageResult(
             request_identity={
@@ -327,6 +328,13 @@ def test_main_force_mirror_v2_api_returns_exact_identity_t_minus_one_and_roundin
     assert payload["points"][0]["accumulated_pressure"] == 1.234567
     assert payload["points"][0]["member_change_bias"] == 0.000001
     assert payload["points"][0]["relation_to_caution"] == "strong_aligned"
+    assert payload["points"][0]["caution_conflict"] is False
+    assert payload["points"][0]["price_impulse"] == 0.0
+    assert payload["points"][0]["clv"] == 0.123457
+    assert payload["points"][0]["volume_ratio"] == 2.123456
+    assert payload["points"][0]["delta_oi"] == 0.0
+    assert payload["points"][0]["oi_impulse"] == -1.234568
+    assert payload["points"][0]["range_position"] == 0.987655
     assert payload["page"] == {
         "has_more_before": True,
         "next_before": "2026-08-21T07:00:00Z",
@@ -403,6 +411,81 @@ def test_main_force_mirror_v2_api_hides_corrupt_snapshot_details(monkeypatch) ->
         "detail": {"code": "MFM_V2_MEMBER_DATASET_INVALID"}
     }
     assert "/private/research" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("series_kind", "frequency", "expected_code"),
+    [
+        ("continuous", "60m", "MFM_V2_UNSUPPORTED_SERIES_KIND"),
+        ("actual_dominant", "15m", "MFM_V2_UNSUPPORTED_FREQUENCY"),
+    ],
+)
+def test_main_force_mirror_v2_api_rejects_unsupported_before_repository_build(
+    monkeypatch,
+    series_kind: str,
+    frequency: str,
+    expected_code: str,
+) -> None:
+    build_requests = []
+
+    def _corrupt_builder(session):
+        build_requests.append(session)
+        raise MainForceMirrorV2Error("MFM_V2_MEMBER_DATASET_INVALID")
+
+    monkeypatch.setattr(
+        "app.api.market.build_main_force_mirror_v2_service",
+        _corrupt_builder,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/main-force-mirror",
+        params={
+            "series_kind": series_kind,
+            "symbol": "jm",
+            "frequency": frequency,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": expected_code}}
+    assert build_requests == []
+
+
+def test_main_force_mirror_v2_api_preserves_core_unavailable_reason(monkeypatch) -> None:
+    class _CoreUnavailableMirrorService(_FakeMirrorService):
+        def query_page(self, request):
+            result = super().query_page(request)
+            member = MemberRankObservation.unavailable(
+                "MFM_V2_MEMBER_WARMUP",
+                member_trade_date=date(2026, 8, 20),
+            )
+            point = replace(
+                result.points[0],
+                pressure_ready=False,
+                member=member,
+                unavailable_reason="MFM_V2_WARMUP",
+            )
+            return replace(result, points=(point,))
+
+    monkeypatch.setattr(
+        "app.api.market.build_main_force_mirror_v2_service",
+        lambda _session: _CoreUnavailableMirrorService(),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/main-force-mirror",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "60m",
+        },
+    )
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    assert point["pressure_ready"] is False
+    assert point["member_status"] == "unavailable"
+    assert point["unavailable_reason"] == "MFM_V2_WARMUP"
 
 
 def test_main_force_mirror_v2_api_replaces_unknown_error_text_with_stable_code(

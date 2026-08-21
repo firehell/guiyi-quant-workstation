@@ -247,9 +247,14 @@ def member_rank_repository_from_env(
     """Resolve only an exact configured member snapshot; never discover latest."""
     root_value = os.getenv("GUIYI_RESEARCH_DATA_ROOT")
     dataset_id = os.getenv("GUIYI_MAIN_FORCE_MEMBER_RANK_DATASET_ID")
-    if not root_value and not dataset_id:
+    if root_value is None and dataset_id is None:
         return None
-    if not root_value or not dataset_id:
+    if (
+        root_value is None
+        or dataset_id is None
+        or not root_value.strip()
+        or not dataset_id.strip()
+    ):
         raise MainForceMirrorV2Error(
             "MFM_V2_MEMBER_DATASET_IDENTITY_CONFLICT"
         )

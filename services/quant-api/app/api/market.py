@@ -31,6 +31,7 @@ from app.market_data.market_data_service import MarketDataError
 from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2Error,
     MainForceMirrorV2PageResult,
+    validate_main_force_mirror_v2_request,
 )
 from app.market_data.market_research_service import ResearchSeriesIdentity
 from app.market_data.subing_calibration import SubingCalibrationError
@@ -186,6 +187,7 @@ def main_force_mirror_v2_page(
             ),
             limit=limit,
         )
+        validate_main_force_mirror_v2_request(request)
         result = build_main_force_mirror_v2_service(session).query_page(request)
         return to_main_force_mirror_v2_response(result)
     except ContractError as exc:
@@ -276,9 +278,16 @@ def _main_force_mirror_v2_point(point) -> MainForceMirrorV2PointOut:
         accumulated_pressure=_v2_number(point.accumulated_pressure),
         caution_ready=point.caution_ready,
         caution=point.caution,
+        caution_conflict=point.caution_conflict,
         long_caution_score=_v2_number(point.long_caution_score),
         short_caution_score=_v2_number(point.short_caution_score),
         caution_reason_codes=list(point.caution_reason_codes),
+        price_impulse=_v2_number(point.price_impulse),
+        clv=_v2_number(point.clv),
+        volume_ratio=_v2_number(point.volume_ratio),
+        delta_oi=_v2_number(point.delta_oi),
+        oi_impulse=_v2_number(point.oi_impulse),
+        range_position=_v2_number(point.range_position),
         member_status=member.status if member is not None else "unavailable",
         member_trade_date=(member.member_trade_date if member is not None else None),
         member_direction=(member.direction if member is not None else None),
@@ -299,7 +308,11 @@ def _main_force_mirror_v2_point(point) -> MainForceMirrorV2PointOut:
             member.relation_to_caution if member is not None else "unavailable"
         ),
         unavailable_reason=(
-            member.unavailable_reason if member is not None else None
+            point.unavailable_reason
+            if point.unavailable_reason is not None
+            else member.unavailable_reason
+            if member is not None
+            else None
         ),
     )
 
