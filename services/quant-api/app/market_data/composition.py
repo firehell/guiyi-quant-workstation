@@ -43,6 +43,12 @@ from app.market_data.actual_dominant_research import (
 )
 from app.market_data.n_structure_policy import load_n_structure_policy
 from app.market_data.n_structure_research_service import NStructureResearchService
+from app.market_data.multi_candidate_robustness_policy import (
+    load_multi_candidate_robustness_protocol,
+)
+from app.market_data.multi_candidate_robustness_service import (
+    MultiCandidateRobustnessService,
+)
 from app.market_data.n_candidate_validation_policy import (
     load_n_candidate_manifest,
     load_n_candidate_validation_protocol,
@@ -258,6 +264,50 @@ def build_n_candidate_validation_service(
         build_n_structure_research_service(session),
         manifest=load_n_candidate_manifest(_N_CANDIDATE_MANIFEST),
         protocol=load_n_candidate_validation_protocol(_N_CANDIDATE_VALIDATION_PROTOCOL),
+    )
+
+
+def build_multi_candidate_robustness_service(
+    session: Session,
+) -> MultiCandidateRobustnessService:
+    """Compose the exact read-only robustness dossier over one shared MDS."""
+    protocol = load_multi_candidate_robustness_protocol()
+    active_products = load_active_products()
+    if active_products != protocol.cross_symbol_products:
+        from app.market_data.multi_candidate_robustness_service import (
+            MultiCandidateActiveUniverseDriftError,
+        )
+
+        raise MultiCandidateActiveUniverseDriftError()
+    market_data = build_market_data_service(session)
+    subing = SubingLifecycleResearchService(
+        market_data,
+        products=protocol.cross_symbol_products,
+        calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
+        policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
+    )
+    n_structure = NStructureResearchService(
+        ActualDominantResearchSegmentLoader(market_data),
+        products=protocol.cross_symbol_products,
+        policy=load_n_structure_policy(),
+    )
+    return MultiCandidateRobustnessService(
+        protocol,
+        subing_research=subing,
+        n_research=n_structure,
+        subing_validation=SubingCandidateValidationService(
+            subing,
+            manifest=load_candidate_manifest(_CANDIDATE_MANIFEST),
+            protocol=load_candidate_validation_protocol(_CANDIDATE_VALIDATION_PROTOCOL),
+        ),
+        n_validation=NStructureCandidateValidationService(
+            n_structure,
+            manifest=load_n_candidate_manifest(_N_CANDIDATE_MANIFEST),
+            protocol=load_n_candidate_validation_protocol(
+                _N_CANDIDATE_VALIDATION_PROTOCOL
+            ),
+        ),
+        current_active_products=active_products,
     )
 
 

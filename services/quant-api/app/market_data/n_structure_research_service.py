@@ -13,7 +13,13 @@ from .actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
     ActualDominantResearchSeries,
 )
-from .domain import BarFrequency, CanonicalBar, ResolvedContractSegment
+from .domain import (
+    BarFrequency,
+    CanonicalBar,
+    ResolvedContractSegment,
+    normalize_contract_for_symbol,
+)
+from .market_data_service import MarketDataError
 from .n_structure_pattern import NDirection
 from .n_structure_policy import NStructurePolicy, is_exact_n_structure_policy
 from .n_structure_segment import evaluate_n_structure_segment
@@ -93,6 +99,41 @@ class NStructureResearchResult:
     horizon_summary: Mapping[int, PriceHorizonEvaluation]
 
 
+@dataclass(frozen=True, slots=True)
+class NStructureCompletionResearchEvent:
+    event_id: str
+    symbol: str
+    contract: str
+    segment_start_trading_day: date
+    observed_at: datetime
+    trading_day: date
+    segment_bar_index: int
+    direction: NDirection
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.event_id, str)
+            or not self.event_id
+            or not _valid_symbol(self.symbol)
+            or normalize_contract_for_symbol(self.symbol, self.contract)
+            != self.contract
+            or type(self.segment_start_trading_day) is not date
+            or not _aware_datetime(self.observed_at)
+            or type(self.trading_day) is not date
+            or self.trading_day < self.segment_start_trading_day
+            or type(self.segment_bar_index) is not int
+            or self.segment_bar_index < 0
+            or not isinstance(self.direction, NDirection)
+        ):
+            raise ValueError("MULTI_CANDIDATE_EVENT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class _NStructureResearchProjection:
+    result: NStructureResearchResult
+    completion_events: tuple[NStructureCompletionResearchEvent, ...]
+
+
 @dataclass(slots=True)
 class _Accumulator:
     segment_count: int = 0
@@ -118,6 +159,9 @@ class _Accumulator:
     )
     outcomes: dict[int, list[PriceDirectionalOutcome]] = field(
         default_factory=lambda: {horizon: [] for horizon in _HORIZONS}
+    )
+    completion_events: list[NStructureCompletionResearchEvent] = field(
+        default_factory=list
     )
 
 
@@ -146,6 +190,18 @@ class NStructureResearchService:
         self._policy = policy
 
     def run(self, request: NStructureResearchRequest) -> NStructureResearchResult:
+        return self._project(request).result
+
+    def completion_events(
+        self,
+        request: NStructureResearchRequest,
+    ) -> tuple[NStructureCompletionResearchEvent, ...]:
+        return self._project(request).completion_events
+
+    def _project(
+        self,
+        request: NStructureResearchRequest,
+    ) -> _NStructureResearchProjection:
         if not isinstance(request, NStructureResearchRequest):
             raise TypeError("request must be NStructureResearchRequest")
         products = self._selected_products(request.symbol)
@@ -160,7 +216,7 @@ class NStructureResearchService:
                 )
             except ActualDominantResearchSegmentIdentityError:
                 raise NStructureSegmentIdentityError() from None
-            except Exception:
+            except MarketDataError:
                 raise NStructureSourceUnavailableError() from None
             result = loaded.results.get(BarFrequency.M5)
             if result is None:
@@ -180,11 +236,12 @@ class NStructureResearchService:
                 self._add_segment(
                     accumulator,
                     bars,
+                    symbol=product,
                     segment=segment,
                     since=request.since,
                     through=request.through,
                 )
-        return NStructureResearchResult(
+        research_result = NStructureResearchResult(
             products=products,
             segment_count=accumulator.segment_count,
             evaluable_bar_count=accumulator.evaluable_bar_count,
@@ -211,6 +268,10 @@ class NStructureResearchService:
                 }
             ),
         )
+        return _NStructureResearchProjection(
+            research_result,
+            tuple(accumulator.completion_events),
+        )
 
     def _selected_products(self, symbol: str | None) -> tuple[str, ...]:
         if symbol is None:
@@ -224,6 +285,7 @@ class NStructureResearchService:
         accumulator: _Accumulator,
         bars: tuple[CanonicalBar, ...],
         *,
+        symbol: str,
         segment: ResolvedContractSegment,
         since: date,
         through: date,
@@ -270,6 +332,18 @@ class NStructureResearchService:
                 raise ValueError("N completion is not aligned with its source bar")
             if bars[index].close != pattern.completion_bar_close:
                 raise ValueError("N completion entry is not aligned with its bar")
+            accumulator.completion_events.append(
+                NStructureCompletionResearchEvent(
+                    event_id=pattern.n_id,
+                    symbol=symbol,
+                    contract=segment.contract,
+                    segment_start_trading_day=segment.start_trading_day,
+                    observed_at=pattern.completed_at,
+                    trading_day=bars[index].trading_day,
+                    segment_bar_index=index,
+                    direction=pattern.direction,
+                )
+            )
             direction = (
                 PriceDirection.LONG
                 if pattern.direction is NDirection.UP
@@ -346,6 +420,24 @@ def _in_requested_window(
     if trading_day is None:
         raise ValueError("N fact is not aligned with its source bar")
     return since <= trading_day <= through
+
+
+def _valid_symbol(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and value.isascii()
+        and value.isalpha()
+        and value == value.lower()
+    )
+
+
+def _aware_datetime(value: object) -> bool:
+    return (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() is not None
+    )
 
 
 def _evaluate_horizon(

@@ -57,12 +57,18 @@ RQData
 
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
-`guiyi research n-structure`、`guiyi research candidate-validation`、`guiyi research main-force-mirror-futures` 和 `guiyi runtime
+`guiyi research n-structure`、`guiyi research candidate-validation`、`guiyi research candidate-robustness`、
+`guiyi research main-force-mirror-futures` 和 `guiyi runtime
 status|live|alert|alert-canary`；其中 `alert-canary --audience owner|htdy_observers` 是独立真实通知 Gate。
 这些命令都不能由普通只读测试授权。
 `research n-structure` 只读取 Historical Canonical，经共享行情入口生成 research-only 观察；它不写数据、
-不进入 Runtime，不证明效果，也不授权 candidate promotion。N Structure V1 的唯一长期业务语义见
-`docs/superpowers/specs/2026-08-20-n-structure-v1-design.md`；历史 Plan/Task 只从 Git history 追溯。
+不进入 Runtime，不证明效果，也不授权 candidate promotion。N Structure V1 的长期业务语义由本节、
+`docs/ARCHITECTURE.md`、exact policy 与对应测试共同定义；历史 Plan/Task 只从 Git history 追溯。
+`research candidate-robustness` 只比较已冻结的 SuBing/N exact Candidate research facts：复用各自
+Candidate Validation 生成 anchor temporal dossier，在冻结 active60 上保留完整 120-cell 矩阵，
+并且只在 same symbol + same physical contract + same rank1 segment 内比较 `jm` 双向 causal
+event relationship。它不改变 Candidate/公式/参数，不做自动排名或晋升，不写
+DB/Canonical/Redis，不进入 Alert/Runtime/订单路径，也不形成盈利、有效性或交易结论。
 Market Runtime 的 Live 与盘后更新共用
 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
 当日 rank1 completed 1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为
@@ -79,7 +85,7 @@ SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end` 和 `tra
 
 PushPlus 消息 token 与 HTDY Topic code 只存于 Git 外的单份 `0700` parent / `0600` private JSON，不写入仓库、日志、health 或 Event。Runtime 只公开两个逻辑 audience 与脱敏 shortCode 后缀，不调用开放接口查询 Topic 成员。owner 与最多三位朋友在 PushPlus 外部扫码加入专用 Topic；创建者也必须加入。Topic 可在 `1..4` 人边界内先以当前成员启用，后续增加成员仍由 operator 人工核对且不得超过 4 人。
 
-Alert 代码与 launchd 模板默认关闭。当前 production exact-tag Runtime 仍运行历史 Clawbot 单 owner transport；develop 的 PushPlus 路径尚未 release/promotion。真实 Git 外配置、owner/Topic canary、release/tag、Runtime promotion/switch、SuBing Scope write/activation 与 rollback 仍是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam、render-only 或已经完成的其他 Gate 不证明未来 Gate 获得授权。
+Alert 代码与 launchd 模板默认关闭。当前 production exact-tag `v1.6.4` Runtime 已启用 PushPlus：HTDY 只向 `htdy_observers` Topic，SuBing 只向不带 Topic 的 owner，两条 Rule Scope 均精确为 `jm`。Git 外配置、owner/Topic 历史 canary、v1.6.4 release/tag 与本次 Runtime switch 已完成；自然 HTDY/SuBing Event 验收仍 pending。未来 Scope/transport 变化、后续 release/tag、再次 Runtime switch、真实 canary/send 与 rollback 仍是互不授权的受控外部操作；代码、测试、测试路由 Scope PUT、fake seam、render-only 或已经完成的 Gate 不证明未来 Gate 获得授权。
 
 ## Execution Review V1 应用边界
 
@@ -103,7 +109,7 @@ htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplu
 subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 production 的 exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner transport；可变运行事实只由 `STATUS.md` 记录。PushPlus 持续授权尚未取得，只覆盖未来批准后新建的自然 AlertEvent。已批准 Topic 在 `1..4` 人内的成员加入不改变代码或 transport；超过 4 人、未知成员或更换 Topic 必须重新授权。该授权不覆盖未来第三条 Rule、synthetic Event、replay/backfill、canary、migration、Runtime switch、release、Canonical 写入、订单或 rollback。V2 migration 保留已明确授权的 HTDY Scope，SuBing 仍必须独立执行精确 Scope activation；不能从 Market Runtime V1、既有 HTDY Scope 或其他 Gate 推导授权。
+当前 production exact-tag `v1.6.4` instance 的两条 Rule 各自 `scope_products=jm`，PushPlus 持续授权只覆盖之后新建的自然 AlertEvent，并精确保持 HTDY Topic / SuBing owner 路由；可变运行事实只由 `STATUS.md` 记录。已批准 Topic 在 `1..4` 人内的成员加入不改变代码或 transport；超过 4 人、未知成员或更换 Topic 必须重新授权。该授权不覆盖未来第三条 Rule、synthetic Event、replay/backfill、额外 canary、migration、再次 Runtime switch、后续 release、Canonical 写入、订单或 rollback。未来 Scope 变化仍必须独立执行精确 Rule + Product activation，不能从 Market Runtime V1、既有 Scope 或其他 Gate 推导授权。
 
 当前本机部署根属于可变运行事实，只由 `STATUS.md` 记录。功能开发期可临时从 `develop` 部署以便快速观察；最终 Runtime 采用绑定精确提交的独立 worktree，验收读回身份、拓扑、健康和范围。已经在同一代码谱系形成且由用户接受的自然时点证据不因部署封装重复采集；开发态部署仍不等于 Ready、release 或 Runtime promotion。
 

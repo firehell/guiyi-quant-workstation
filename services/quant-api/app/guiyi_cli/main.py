@@ -23,7 +23,11 @@ from app.alerts.notification_composition import build_notification_sender_from_e
 from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
 from app.guiyi_cli.data_commands import build_request, run_data_command
-from app.guiyi_cli.data_parser import CliUsageError, JsonArgumentParser, add_data_commands
+from app.guiyi_cli.data_parser import (
+    CliUsageError,
+    JsonArgumentParser,
+    add_data_commands,
+)
 from app.guiyi_cli.output import (
     argument_error_payload,
     exception_error_payload,
@@ -39,6 +43,7 @@ from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
     build_main_force_mirror_futures_research_service,
+    build_multi_candidate_robustness_service,
     build_n_candidate_validation_service,
     build_n_structure_research_service,
     build_subing_candidate_validation_service,
@@ -107,9 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = data.add_subparsers(dest="data_command", required=True)
     add_data_commands(commands)
     research = domains.add_parser("research")
-    research_commands = research.add_subparsers(
-        dest="research_command", required=True
-    )
+    research_commands = research.add_subparsers(dest="research_command", required=True)
     add_research_commands(research_commands)
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
@@ -153,6 +156,9 @@ def main(
     ),
     n_structure_research_service_factory: ResearchServiceFactory = (
         build_n_structure_research_service
+    ),
+    multi_candidate_robustness_service_factory: ResearchServiceFactory = (
+        build_multi_candidate_robustness_service
     ),
     execution_review_roll_marker_state: RollMarkerState = (
         _execution_review_roll_marker_state
@@ -206,6 +212,8 @@ def main(
             with session_factory() as session:
                 if args.research_command == "subing-lifecycle":
                     service_factory = lifecycle_research_service_factory
+                elif args.research_command == "candidate-robustness":
+                    service_factory = multi_candidate_robustness_service_factory
                 elif args.research_command == "n-structure":
                     service_factory = n_structure_research_service_factory
                 elif args.research_command == "candidate-validation":
@@ -221,9 +229,7 @@ def main(
                     else:
                         raise ValueError("CLI_CANDIDATE_ID_INVALID")
                 elif args.research_command == "main-force-mirror-futures":
-                    service_factory = (
-                        main_force_mirror_futures_research_service_factory
-                    )
+                    service_factory = main_force_mirror_futures_research_service_factory
                 elif args.research_command == "subing-calibration":
                     service_factory = research_service_factory
                 else:
@@ -289,7 +295,12 @@ def main(
         )
         return 1
     print_json(payload, stdout)
-    return 0 if payload.get("status") in {"passed", "planned", "noop", "ok", "ready", "skipped", "accepted"} else 1
+    return (
+        0
+        if payload.get("status")
+        in {"passed", "planned", "noop", "ok", "ready", "skipped", "accepted"}
+        else 1
+    )
 
 
 def _run_data(
@@ -312,9 +323,7 @@ def _run_data(
         ):
             try:
                 with session_factory() as followup_session:
-                    roll_reconciler_factory(
-                        followup_session
-                    ).reconcile_open_episodes()
+                    roll_reconciler_factory(followup_session).reconcile_open_episodes()
             except Exception:  # noqa: BLE001 - isolated best-effort follow-up
                 logger.warning("EXECUTION_REVIEW_ROLL_FOLLOWUP_FAILED")
         return payload

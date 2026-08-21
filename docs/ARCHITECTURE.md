@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-08-20
+更新时间：2026-08-21
 
 ## 系统定位
 
@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / candidate-validation / futures-mirror"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / candidate-validation / robustness / futures-mirror"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -40,6 +40,7 @@ flowchart TB
       SCR["SubingCalibrationResearchService"]
       SCV["SuBing Candidate Report<br/>source-specific"]
       NCV["N Candidate Report<br/>source-specific"]
+      MCR["MultiCandidateRobustnessService<br/>temporal / active60 / relationship"]
       MFM["MainForceMirrorFuturesResearchService<br/>historical-only Shadow"]
     end
     subgraph AlertApp["Alert Application Domain"]
@@ -75,6 +76,11 @@ flowchart TB
     RCLI --> NS --> ADR
     RCLI --> SCV --> SL
     RCLI --> NCV --> NS
+    RCLI --> MCR
+    SCV --> MCR
+    NCV --> MCR
+    SL --> MCR
+    NS --> MCR
     RCLI --> MFM --> MQ
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
@@ -136,7 +142,7 @@ flowchart TB
   Completed N、break/band raw facts 和 BULL/BEAR/RANGE Structure。N 的公开
   `evaluate_n_structure_segment()` 对每个 true segment 单次生成 exact Swing/Pattern/Structure；
   Pattern public interface 拒绝 non-reducer trace，Research 不重跑 prefix 或线性查找每个 Completed N。
-  N 的长期业务语义只看 `docs/superpowers/specs/2026-08-20-n-structure-v1-design.md`。两者结果都仅由
+  N 的长期业务语义由 `PROJECT_SOURCE.md`、本架构说明、exact policy 与对应测试共同定义。两者结果都仅由
   read-only CLI 输出 stdout JSON。Lifecycle 无独立 DB/Redis persistence、worker/queue 或
   notification path；`AlertRuntime` 仍只消费 V1 `resolved_signal`，不依赖 Lifecycle
   evaluator 或 snapshot。
@@ -148,6 +154,13 @@ flowchart TB
   目前只是 Historical/research-only 结构与 Candidate producer；已形成 deterministic jm
   retrospective/rolling evidence，prospective OOS 仍 pending，不代表效果、promotion、
   release 或 Runtime 能力。
+  `MultiCandidateRobustnessService` 在两条 frozen Candidate 之上增加薄的只读组合层：
+  temporal 仅投影既有 10-fold Candidate Validation，cross-symbol 保留冻结 active60 的完整
+  120-cell 矩阵，event relationship 仅比较 same symbol + same physical contract + same rank1
+  segment 的 `jm` 5m bar index。结果只输出版本化 retrospective research evidence；不改变
+  Candidate/公式/参数，不做一对一 greedy matching、score、winner、rank 或 promotion，不进入
+  DB/Canonical/Redis、Alert、Runtime 或订单路径。两条 Candidate 的 prospective OOS 仍由各自
+  exact Protocol 独立累积。
   `MainForceMirrorFuturesResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
   把每根 Bar 绑定到唯一物理合约后调用 Python Indicator Kernel；结果只由只读 CLI
@@ -241,12 +254,12 @@ htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplu
 subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 production exact instance 仍是两条 Rule 各自的 `scope_products=jm` 与历史单 owner Clawbot
-transport；PushPlus 持续授权尚未取得。已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员；超过
+当前 production exact-tag `v1.6.4` instance 的两条 Rule 各自 `scope_products=jm`，PushPlus 持续边界
+精确为上述 HTDY Topic 与 SuBing owner。已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员；超过
 4 人、未知成员或更换 Topic 必须重新授权。未来第三条 Rule 不继承授权；production
-migration、release/tag、Runtime promotion/switch、Scope/audience/transport 变更、真实 canary/send、
+migration、后续 release/tag、再次 Runtime switch、Scope/audience/transport 变更、真实 canary/send、
 rollback 与外部旧配置清理互不授权。每条 completed-bar 消息与 heartbeat 都使用独立短
-Session/transaction。develop 的 sender 与 structural health 共用同一 Git 外 private config：只含消息
+Session/transaction。production sender 与 structural health 共用同一 Git 外 private config：只含消息
 token 与 HTDY Topic code，要求 parent `0700`、file `0600`、current uid；health 不联网、不读取成员，
 也不公开 token/Topic。替换 provider 只新增 adapter 并切换 composition，不修改 Rule、Event 或 evaluator。
 

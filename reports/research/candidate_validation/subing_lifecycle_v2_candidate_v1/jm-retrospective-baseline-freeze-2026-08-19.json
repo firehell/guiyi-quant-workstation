@@ -452,7 +452,7 @@
           "5": {
             "ema21_failure_rate": "0.2276422764227642276422764228",
             "ema21_sample_count": 123,
-            "median_directional_return_bps": "-0",
+            "median_directional_return_bps": "0",
             "median_mae_bps": "-39.11342894393741851368970013",
             "median_mfe_bps": "39.19204100090443171540548689",
             "sample_count": 123
@@ -1416,7 +1416,7 @@
           "3": {
             "ema21_failure_rate": "0",
             "ema21_sample_count": 28,
-            "median_directional_return_bps": "-0",
+            "median_directional_return_bps": "0",
             "median_mae_bps": "-25.21303544922588909125005165",
             "median_mfe_bps": "17.35964587585053791809184447",
             "sample_count": 28
@@ -1727,7 +1727,7 @@
           "3": {
             "ema21_failure_rate": "0.05691056910569105691056910569",
             "ema21_sample_count": 123,
-            "median_directional_return_bps": "-0",
+            "median_directional_return_bps": "0",
             "median_mae_bps": "-21.35611318739989321943406300",
             "median_mfe_bps": "23.03086135421464762782128052",
             "sample_count": 123
@@ -1743,7 +1743,7 @@
           "8": {
             "ema21_failure_rate": "0.3304347826086956521739130435",
             "ema21_sample_count": 115,
-            "median_directional_return_bps": "-0",
+            "median_directional_return_bps": "0",
             "median_mae_bps": "-32.11009174311926605504587156",
             "median_mfe_bps": "41.60887656033287101248266297",
             "sample_count": 115
@@ -1957,7 +1957,7 @@
           "8": {
             "ema21_failure_rate": "0.3302752293577981651376146789",
             "ema21_sample_count": 109,
-            "median_directional_return_bps": "-0",
+            "median_directional_return_bps": "0",
             "median_mae_bps": "-31.92338387869114126097366321",
             "median_mfe_bps": "47.51847940865892291446673706",
             "sample_count": 109

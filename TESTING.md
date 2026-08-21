@@ -248,6 +248,24 @@ Candidate report 以及 SuBing same-day/EMA21 语义不变。`guiyi research n-s
 Candidate Validation 只读 Historical Canonical；测试不运行真实 `jm` 数据窗口，不形成效果、
 promotion、release 或 Runtime 结论，不授权数据/DB 写入、Alert/通知或订单。
 
+## Multi-Candidate Robustness V1（Historical / research-only）
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_multi_candidate_robustness_policy.py \
+  services/quant-api/tests/test_multi_candidate_events.py \
+  services/quant-api/tests/test_multi_candidate_robustness.py \
+  services/quant-api/tests/data_foundation/test_multi_candidate_robustness_service.py \
+  services/quant-api/tests/test_research_cli.py
+```
+
+该命令验证两个 frozen Candidate 的 exact Protocol、既有 causal event seam、`jm` 双向
+3/5/8 Bar relationship、完整 active60 的 120-cell 保留矩阵、既有 10-fold Validation 投影与
+只读 `candidate-robustness` CLI。测试不修改 Candidate、公式、参数或 prospective OOS，不运行真实
+Canonical 窗口，不写 DB/Canonical/Redis，不发送通知，也不形成 rank、winner、promotion、release、
+Runtime 或盈利结论。
+
 ## Alert V2
 
 ### 无副作用单元、集成与工程验证
@@ -314,11 +332,12 @@ Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。
 - exact HTDY Rule + Scope + audience + transport 持续边界为
   `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic`；SuBing 固定为
   `subing_entry_signal_v1 × jm × owner × pushplus-wechat`，不得从历史 canary 推导 release 或 switch；
-- main/release/tag 与 exact-tag Alert Runtime promotion/switch：分别 pending。
+- v1.6.4 main/release/tag 与 exact-tag Alert Runtime promotion/switch：均已完成；后续版本或再次 switch
+  仍是新的独立 Gate。
 
-这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或
-mock 通过只证明实现，不证明发布或 Runtime Gate 已执行。当前 production 继续是 `v1.6.3` 的单
-`owner` exact Runtime；PushPlus private config 与历史 canary 已完成，但 transport 尚未 release/promotion。
+这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或 mock 通过只证明
+实现，不证明未来发布或 Runtime Gate 已授权。当前 production 为 `v1.6.4` exact Runtime，PushPlus
+transport 已按两条精确 `jm` 边界启用；自然 HTDY Topic Event 与自然 SuBing owner Event 验收仍 pending。
 
 ## OpenSpec
 
